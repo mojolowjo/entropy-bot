@@ -519,7 +519,7 @@ final class Mining {
                     + (other > 0 ? (held + buried > 0 ? ", " : "") + other + " of another block of the family" : "");
             return null;
         }
-        var pick = io.github.mojolowjo.entropybot.aa.brain.Goals.pickPriced(ores, Jobs.here(p)[1], p.isInWater(),
+        var pick = io.github.mojolowjo.entropybot.aa.brain.Goals.pickPriced(fam, ores, Jobs.here(p)[1], p.isInWater(),
                 io.github.mojolowjo.entropybot.aa.AaEscape.throwaway(Gui.inventory(p)),
                 io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), io.github.mojolowjo.entropybot.aa.IronOptions.digMax());
         if (pick == null) {
@@ -697,7 +697,7 @@ final class Mining {
 
     static final class ExRun {
         long until, start, targetAt, scanAt, findAt = -1, untilAt = -1;
-        /** live-facts: the planner word whose source, once known, ends the walk (a chain's explore); null: none. */
+        /** live-facts: the item whose source, once known, ends the walk (a chain's explore); null: none. */
         String untilSource;
         int chunks, sx, sz;
         /** 0.33.0: where the walk started (the report says how far it went). */
@@ -1009,7 +1009,7 @@ final class Mining {
         // live-facts: a chain's explore ends the moment the missing source is known (the one Nearby fact), checked once a second
         if (ex.untilSource != null && done == null && (ex.untilAt < 0 || now() - ex.untilAt >= 20) && commands.aaRuntime != null) {  // structural: once a second in ticks
             ex.untilAt = now();
-            String known = ExploreRules.untilFound(ex.untilSource, commands.aaRuntime::nearestSource);
+            String known = ExploreRules.untilFound(ex.untilSource, commands.aaRuntime::knownSource);
             if (known != null) {
                 LOG.info("[entropybot] explore: {}", known);
                 s.note = known + tookText(ex.took);

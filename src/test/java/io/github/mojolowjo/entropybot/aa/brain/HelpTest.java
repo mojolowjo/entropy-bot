@@ -53,7 +53,7 @@ class HelpTest {
         in.bag = Map.of("oak_planks", 3);
         p = Help.pick(in, 20);
         assertEquals("fetch", p.what());
-        assertEquals("plan oak_planks 32 > give oak_planks 32", io.github.mojolowjo.entropybot.aa.TS.label(p.steps()));
+        assertEquals("obtain 32 oak_planks > give oak_planks 32", io.github.mojolowjo.entropybot.aa.TS.label(p.steps()));
     }
 
     @Test void everyPickRunsOnlyVerbsThatExist() {
@@ -70,7 +70,7 @@ class HelpTest {
         for (Help.Pick p : picks) {
             assertNotNull(p);
             for (var step : p.steps()) {
-                if (step instanceof io.github.mojolowjo.entropybot.aa.moves.Step.Plan) continue;      // the planner's routine, typed at its side
+                if (step instanceof io.github.mojolowjo.entropybot.aa.moves.Step.Obtain) continue;      // the chain, priced when the step runs
                 String cmd = io.github.mojolowjo.entropybot.commands.StepCommands.command(step);
                 assertNotNull(io.github.mojolowjo.entropybot.commands.VerbTable.of(cmd.split("\\s+")[0]), cmd);
             }

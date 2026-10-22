@@ -121,7 +121,7 @@ public final class Feasibility {
         return n;
     }
 
-    static int tier(String material) { return io.github.mojolowjo.entropybot.plan.PlanFacts.tier(material); }
+    static int tier(String material) { return io.github.mojolowjo.entropybot.aa.brain.MiningTiers.toolTier(material, "pickaxe"); }
 
     static String tierName(int t) { return switch (t) { case 1 -> "wooden"; case 2 -> "stone"; case 3 -> "iron"; default -> "diamond"; }; }
 

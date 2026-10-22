@@ -22,6 +22,12 @@ class AaLiveTest {
     final Clock.Fake clock = new Clock.Fake(10_000_000);
     final FakePort port = new FakePort();
     final Blackboard bb = new Blackboard(clock, port, new Tracer());
+
+    @org.junit.jupiter.api.BeforeEach
+    void chainWorld() { TS.richWorld(bb); }
+
+    @org.junit.jupiter.api.AfterEach
+    void chainWorldGone() { io.github.mojolowjo.entropybot.aa.brain.TestData.clear(); }
     final AaTree tree = AaTree.build(new AaScorer());
 
     static void ids(JsonObject n, List<String> out) {

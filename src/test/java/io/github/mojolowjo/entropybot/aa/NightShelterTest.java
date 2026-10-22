@@ -62,17 +62,17 @@ class NightShelterTest {
     void fullNightShelterTrumpsAHighToolsRunButNotStarvingFood() {
         double[] v = {88, 0};
         Brain br = new Brain("brain", "t",
-                new Desire("needs.food", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do food")), "brain"), b -> v[0]),
-                new Desire("night.shelter", Desire.Kind.UPKEEP, RunJob.of("b.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do shelter")), "brain"), b -> v[1]).trumps());
+                new Desire("needs.food", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("do food", 1)), "brain"), b -> v[0]),
+                new Desire("night.shelter", Desire.Kind.UPKEEP, RunJob.of("b.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("do shelter", 1)), "brain"), b -> v[1]).trumps());
         bb.in.food = 2;
         br.tick(bb);
-        assertEquals("plan do food", port.started.get(port.started.size() - 1).chain());
+        assertEquals("obtain 1 do food", port.started.get(port.started.size() - 1).chain());
         v[1] = 99;
         br.tick(bb);
-        assertEquals("plan do food", port.started.get(port.started.size() - 1).chain(), "food under 4 keeps running");
+        assertEquals("obtain 1 do food", port.started.get(port.started.size() - 1).chain(), "food under 4 keeps running");
         bb.in.food = 10;
         br.tick(bb);
-        assertEquals("plan do shelter", port.started.get(port.started.size() - 1).chain(), "99 beats 88 + the margin");
+        assertEquals("obtain 1 do shelter", port.started.get(port.started.size() - 1).chain(), "99 beats 88 + the margin");
     }
 
     @Test
@@ -90,15 +90,15 @@ class NightShelterTest {
     void urgentWithGraceWaitsForTheStepThenInterrupts() {
         double[] v = {74, 0};
         Brain br = new Brain("brain", "t",
-                new Desire("tools", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do tools")), "brain"), b -> v[0]),
-                new Desire("night.shelter", Desire.Kind.UPKEEP, RunJob.of("b.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do shelter")), "brain"), b -> v[1]).grace(8_000));
+                new Desire("tools", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("do tools", 1)), "brain"), b -> v[0]),
+                new Desire("night.shelter", Desire.Kind.UPKEEP, RunJob.of("b.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("do shelter", 1)), "brain"), b -> v[1]).grace(8_000));
         br.tick(bb);
-        assertEquals("plan do tools", port.started.get(port.started.size() - 1).chain());
+        assertEquals("obtain 1 do tools", port.started.get(port.started.size() - 1).chain());
         v[1] = 90;
         br.tick(bb);
-        assertEquals("plan do tools", port.started.get(port.started.size() - 1).chain(), "the grace: the step finishes");
+        assertEquals("obtain 1 do tools", port.started.get(port.started.size() - 1).chain(), "the grace: the step finishes");
         clock.advance(8_000);
         br.tick(bb);
-        assertEquals("plan do shelter", port.started.get(port.started.size() - 1).chain());
+        assertEquals("obtain 1 do shelter", port.started.get(port.started.size() - 1).chain());
     }
 }

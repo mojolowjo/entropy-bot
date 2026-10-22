@@ -15,7 +15,7 @@ import java.util.function.Supplier;
 /**
  * simple-tools (0.39.w1): the one answer to "what is nearby". Baritone is asked first, through the same cached world scan its
  * mine process uses ({@code IWorldScanner.scanChunkRadius}); AA's own sightings are only the fallback when that scan finds
- * nothing. {@link NeedChain} and the planner's "a tree seen" all read this fact and no other.
+ * nothing. {@link NeedChain} reads this fact and no other.
  * <ul>
  * <li>{@link #log}: the nearest log block (any block the game tags as logs) that has leaves (any block tagged leaves) within
  *     {@code nearby.leafReach} blocks above or beside it, i.e. a tree and not a stack of logs in a build.</li>
@@ -47,19 +47,17 @@ public final class Nearby {
     }
 
     /**
-     * live-facts: the blocks that give a planner word: for every item the word stands for ({@code itemsOf}), the blocks the
-     * game's loot data says drop it, then the item's own block ({@code ownBlock}, null: none), the same pairing the collect
-     * step uses. Empty: no block gives it (a mob drop, an unknown item).
+     * live-facts, one-planner: the blocks that give an item: the blocks the game's loot data says drop it, then the item's
+     * own block ({@code ownBlock}, null: none), the same pairing the collect step uses. Empty: no block gives it (a mob
+     * drop, an unknown item).
      */
-    public static Set<String> sourceBlocks(String word, LootBook book, Function<String, List<String>> itemsOf, Function<String, String> ownBlock) {
+    public static Set<String> sourceBlocks(String item, LootBook book, Function<String, String> ownBlock) {
         Set<String> out = new LinkedHashSet<>();
-        List<String> items = itemsOf == null ? null : itemsOf.apply(word);
-        if (items == null) return out;
-        for (String item : items) {
-            if (book != null) out.addAll(book.blocksDropping(item));
-            String own = ownBlock == null ? null : ownBlock.apply(item);
-            if (own != null) out.add(own);
-        }
+        if (item == null) return out;
+        String id = item.indexOf(':') < 0 ? "minecraft:" + item : item;
+        if (book != null) out.addAll(book.blocksDropping(id));
+        String own = ownBlock == null ? null : ownBlock.apply(id);
+        if (own != null) out.add(own);
         return out;
     }
 

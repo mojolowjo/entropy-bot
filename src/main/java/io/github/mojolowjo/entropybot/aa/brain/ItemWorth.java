@@ -59,8 +59,28 @@ public final class ItemWorth {
      */
     public record Mob(double health, double damage, MobMove move, boolean flagged) {}
 
-    /** One recipe for an item: the output count and the ingredient ids (one per slot, the first choice). */
-    public record Recipe(int outCount, List<String> inputs) {}
+    /**
+     * One recipe for an item: the output count, the ingredient ids (one per slot, the first choice), every id each slot takes
+     * ({@code options}: an ingredient given as a tag lists all its members, in the game's order) and the recipe's kind
+     * ({@link #CRAFT}, {@link #SMELT}, or another station's: stonecutting, smithing, smoking...).
+     */
+    public record Recipe(int outCount, List<String> inputs, List<List<String>> options, String kind) {
+        public Recipe {
+            inputs = List.copyOf(inputs);
+            if (options == null) {
+                List<List<String>> o = new java.util.ArrayList<>();
+                for (String i : inputs) o.add(List.of(i));
+                options = o;
+            }
+            options = List.copyOf(options);
+            if (kind == null) kind = CRAFT;
+        }
+
+        public Recipe(int outCount, List<String> inputs) { this(outCount, inputs, null, CRAFT); }
+    }
+
+    /** The recipe kinds the chain reads: a crafting grid's and a furnace's (the game's RecipeType ids). */
+    public static final String CRAFT = "minecraft:crafting", SMELT = "minecraft:smelting";
 
     /** The world's data. {@link #facts} never null; {@link #recipes} empty when the item has none. */
     public interface Source {
@@ -104,6 +124,44 @@ public final class ItemWorth {
         default java.util.Set<String> fishingFish() { return java.util.Set.of(); }
         /** An item that blocks attacks when used (a shield: the game's BLOCK use animation). */
         default boolean shield(String id) { return false; }
+        /** one-planner: item -> ticks it burns in a furnace (the game's fuel table); empty: none loaded. */
+        default Map<String, Integer> fuels() { return Map.of(); }
+        /** one-planner: the block item a recipe kind is made at (the recipe's toast symbol: the crafting table, the furnace); null unknown. */
+        default String stationOf(String kind) { return null; }
+        /** one-planner: every item the game gives food facts (the FOOD component), harmful ones included. */
+        default Set<String> edible() { return Set.of(); }
+    }
+
+    /** one-planner: the game's fuel table (item -> burn ticks; empty without data: said once). */
+    public static Map<String, Integer> fuels() {
+        Source s = source;
+        if (s == null || s.fuels().isEmpty()) { warnOnce("fuels", "no fuel table loaded: nothing burns in a furnace"); return Map.of(); }
+        return s.fuels();
+    }
+
+    /** one-planner: the station block item a recipe kind needs (null: unknown, said once). */
+    public static String stationOf(String kind) {
+        Source s = source;
+        String st = s == null ? null : s.stationOf(kind);
+        if (st == null) warnOnce("station:" + kind, "no station known for " + kind + " recipes");
+        return st;
+    }
+
+    /** one-planner: the plain foods (food facts, not junk, not a special effect food), sorted. */
+    public static List<String> plainFoods() {
+        Source s = source;
+        if (s == null) return List.of();
+        List<String> out = new java.util.ArrayList<>();
+        for (String id : s.edible()) if (s.facts(id).nutrition() > 0 && !s.junkFood(id) && !s.effectFood(id)) out.add(id);
+        java.util.Collections.sort(out);
+        return out;
+    }
+
+    /** one-planner: every recipe of the item of one kind (CRAFT, SMELT). */
+    public static List<Recipe> recipes(String id, String kind) {
+        List<Recipe> out = new java.util.ArrayList<>();
+        for (Recipe r : recipes(id)) if (r.kind().equals(kind)) out.add(r);
+        return out;
     }
 
     /** Where a once-only note goes (the adapter sets the mod log; tests may collect). */

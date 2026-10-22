@@ -82,40 +82,6 @@ public interface JobPort {
     /** A monotonic activity counter (steps done + blocks moved + bag changes): the no-progress watch. */
     long progress(long taskId);
 
-    /** MINING_PLAN 10.1 (S0): what the planner said about a goal: still SEARCHING, NONE (no plan, {@code why}), or READY. */
-    enum PlanState { SEARCHING, NONE, READY }
-
-    /**
-     * The planner's answer with its state and cost (the planner's own step-cost sum). rm-execution2: {@code steps} is the
-     * planner's routine typed ONCE at the planner's side (the adapter); AA never reads or builds the routine's text. A
-     * routine the facts cannot run now is NONE with {@code why} starting {@value #INFEASIBLE}.
-     */
-    record Resolved(java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, double cost, PlanState state, String why, int logsMissing) {
-        public Resolved {
-            steps = steps == null ? null : java.util.List.copyOf(steps);
-        }
-
-        public static Resolved ready(java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, double cost) { return new Resolved(steps, cost, PlanState.READY, null, 0); }
-
-        public static Resolved searching() { return new Resolved(null, 0, PlanState.SEARCHING, null, 0); }
-
-        public static Resolved none(String why) { return none(why, 0); }
-
-        /** No plan; logsMissing: the logs the planner's dead end lacked (the wood way answers them), else 0. */
-        public static Resolved none(String why, int logsMissing) { return new Resolved(null, 0, PlanState.NONE, why == null ? "the planner found no plan" : why, Math.max(0, logsMissing)); }
-
-        /** The routine exists but the facts cannot run it now (brain/Feasibility's verdict). */
-        public boolean infeasible() { return state == PlanState.NONE && why != null && why.startsWith(INFEASIBLE); }
-    }
-
-    String INFEASIBLE = "infeasible: ";
-
-    /**
-     * The planner's answer for {@code goal} (its name: "torch 16", "iron tools"): SEARCHING, NONE with why, or READY with
-     * the routine as typed steps. Default (no planner): NONE.
-     */
-    default Resolved resolveState(String goal) { return Resolved.none("no planner"); }
-
     /** A line for the game log ("[entropybot] aa: ..."). */
     default void log(String line) {}
 

@@ -88,12 +88,7 @@ public final class Tuning {
         // AA_STEP3 A (TIME_MODEL loss terms): only the curve's shape is a hand number; its ends are the facts (hpS, the death cost)
         def("danger.hpCurve", 3, "AA_STEP3 A1", "the cost_of_hp curve's power: hpS at full health rising to the death cost at 1 hp");
         def("pausedRepriceS", 10, "AA_STEP3 A5", "seconds a job may sit paused by a reflex within a minute before it ends and the brain picks again");
-        // round 4A N: the needs' ways (Need, Ways): the planner as a priced row, the facts wait after a prerequisite
-        def("planUnit", 5, "MINING_PLAN 3.6", "walk-blocks per planner step-cost unit (a planner chain's price = its cost x this)");
-        def("searchPenalty", 60, "AA_ROUND4 A2", "seconds added to the planner row while it still searches (a known way wins while it thinks)");
-        def("plannerHandS", 60, "AA_ROUND4 A2", "seconds the planner row is priced at while its own cost is unknown (searching, or after a prerequisite)");
-        def("plannerWaitS", 45, "aa371", "seconds the planner may search before its row is dropped");
-        def("plannerHoldS", 120, "AA_ROUND4 A2", "seconds a planner row dropped for searching too long stays held (key planner <goal>)");
+        // round 4A N: the needs' ways (Need, Ways): the chain as a priced row, the facts wait after a prerequisite
         def("settleMaxS", 75, "review 2 (2b)", "the most seconds a need waits for the facts after a prerequisite ended (bag or station facts change ends it sooner)");
         // AA_ROUND4A O: the station, base and bag option sets (TIME_MODEL craft 0.5 s, place 0.25 s)
         def("station.craftS", 0.3, "AA_ROUND4A O", "seconds one craft takes (TIME_MODEL)");
@@ -130,7 +125,6 @@ public final class Tuning {
         def("mine.stallS", 60, "0.25 bridge port (rm-mining moved it)", "seconds without a move or a pickup while Baritone mines before the job stops (stage stall)");
         def("quarry.digK", 1.5, "AA_ROUND4 C","walk-blocks one planned dig cell costs in a quarry site's price");
         def("run.weight", 2, "aa-danger 2", "heuristic units per block along the preferred run heading (Baritone walks ~4.6 per block)");
-        def("planner.gapMs", 5000, "aa371", "milliseconds between two planner asks after which the earlier search wait is over (AA ticks at 4 Hz)");
         // builder placements (0.39.q1): the movers' time limits and retries, out of aa/moves
         def("moves.calcFails", 20, "backbone step 2", "Baritone ticks of failed path calculation before a move leg fails");
         def("moves.walkS", 30, "backbone step 2", "seconds a walk / cover leg may take");

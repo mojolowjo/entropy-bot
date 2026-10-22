@@ -32,7 +32,10 @@ class ToolsChainsTest {
     @AfterEach
     void clear() { TestData.clear(); Tuning.reset(); }
 
-    static final Thing.Catalog CATALOG = new Thing.Catalog(List.of(), List.of("minecraft:iron_ore"), Map.of(), Map.of("minecraft:iron_ore", 2), null);
+    /** iron_ore's loot drops raw iron (the test's loot data both ways). */
+    static final Thing.Catalog CATALOG = new Thing.Catalog(List.of("minecraft:raw_iron"), List.of("minecraft:iron_ore"), Map.of(), Map.of("minecraft:iron_ore", 2),
+            Map.of("minecraft:iron_ore", new Thing.Gen(java.util.Set.of(Thing.OVERWORLD), -64, 72)),
+            b -> b.equals("minecraft:iron_ore") ? List.of("minecraft:raw_iron") : List.of(), i -> i.equals("minecraft:raw_iron") ? List.of("minecraft:iron_ore") : List.of());
 
     void world(World w) { bb.fact(NeedChain.WORLD_FACT, (Supplier<World>) () -> w); }
 
@@ -73,40 +76,42 @@ class ToolsChainsTest {
     void anOreGoalThatNeedsAPickaxeMakesTheLowestOneItsBlockAsksFor() {
         ScenariosTest.toolWorld();
         var r = Thing.resolve("iron_ore", CATALOG);
+        assertEquals(List.of("minecraft:raw_iron"), r.ids(), "an ore block means what its loot drops");
         assertEquals(2, r.tier(), r.text());
-        world(ScenariosTest.w(Map.of(), false, false, ScenariosTest.s4Seen()));
+        Spot iron = new Spot(0, 40, 20, 20, "minecraft:iron_ore", 10);
+        Map<String, List<Spot>> seen = new java.util.HashMap<>(ScenariosTest.s4Seen());
+        seen.put("minecraft:raw_iron", List.of(iron));
+        world(ScenariosTest.w(Map.of(), false, false, seen));
         Goals.Goal g = Goals.add(bb, r, 0, 0, clock.now());
-        bb.in.pickTier = 0;
         List<Step> steps = Goals.steps(bb, g);
         assertNotNull(steps, "the dig makes its pickaxe");
         assertTrue(steps.contains(new Step.Craft("wooden_pickaxe", 1)), steps.toString());
-        assertEquals(new Step.Craft("stone_pickaxe", 1), steps.get(steps.size() - 1), "iron ore asks for stone: " + steps);
+        assertTrue(steps.contains(new Step.Craft("stone_pickaxe", 1)), "iron ore asks for stone: " + steps);
+        assertEquals(new Step.Collect("raw_iron", 8), steps.get(steps.size() - 1), "then the dig: " + steps);
         assertTrue(steps.stream().noneMatch(s -> s instanceof Step.Craft k && (k.item().startsWith("iron") || k.item().startsWith("golden"))), steps.toString());
         assertNull(Goals.prereq(bb, g), "no tools need to wait for");
-        bb.in.pickTier = 2;
-        assertTrue(Goals.steps(bb, g).get(0) instanceof Step.Mine || Goals.steps(bb, g).get(0) instanceof Step.Explore || Goals.steps(bb, g).get(0) instanceof Step.MarkMine, "with the pickaxe: the mine steps");
     }
 
     @Test
-    void theTorchesGetAChainRowThatPullsTheWoodenPickaxeIn() {
+    void theTorchesNeedIsAChainThatPullsTheWoodenPickaxeIn() {
         ScenariosTest.toolWorld();
         Spot coal = new Spot(0, 40, 20, 20, "minecraft:coal_ore", 4);
-        world(ScenariosTest.w(Map.of(), false, false, Map.of("log", List.of(ScenariosTest.tree(10, 6)), "fuel", List.of(coal))));
-        bb.in.coal = 0;
-        Options.Choice c = new CoalOptions.Torches().choose(bb, null, 0, null);
-        Options.Option row = c.ranked().stream().filter(o -> o.id().equals("chain torch")).findFirst().orElseThrow(() -> new AssertionError(c.why()));
-        assertTrue(row.why().contains("dig fuel seen 20 m with wooden_pickaxe"), row.why());
-        assertFalse(row.why().contains("stone_pickaxe") && !row.why().contains("dropped"), row.why());
-        assertTrue(row.steps().contains(new Step.Craft("wooden_pickaxe", 1)), row.steps().toString());
+        world(ScenariosTest.w(Map.of(), false, false, Map.of("minecraft:oak_log", List.of(ScenariosTest.tree(10, 6)), "minecraft:coal", List.of(coal))));
+        Ways.Plan p = Ways.plan(bb, null, "needs.torches", List.of(new Step.Obtain("torch", 16)), clock.now());
+        assertTrue(p.ready(), p.why());
+        assertTrue(p.chain().why().contains("dig coal seen 20 m with wooden_pickaxe"), p.chain().why());
+        assertTrue(p.steps().contains(new Step.Craft("wooden_pickaxe", 1)), p.steps().toString());
+        assertFalse(p.chain().why().contains("fuel"), "no family word: " + p.chain().why());
     }
 
     @Test
     void aChainThatEndsInAnExploreIsARowLikeAnyOtherAndCompetesOnItsPrice() {
         ScenariosTest.toolWorld();
         world(ScenariosTest.w(Map.of(), false, false, Map.of()));
-        bb.in.coal = 0;
-        Options.Choice c = new CoalOptions.Torches().choose(bb, null, 0, null);
-        Options.Option row = c.ranked().stream().filter(o -> o.id().equals("chain torch")).findFirst().orElseThrow(() -> new AssertionError(c.why()));
+        List<Step> goal = List.of(new Step.Obtain("torch", 16));
+        Options.Choice c = Ways.goalRows(goal, Ways.plan(bb, null, "needs.torches", goal, clock.now()), new Options.OptionMemory(), clock.now(), 30);
+        Options.Option row = c.best();
+        assertNotNull(row, c.why());
         assertTrue(row.steps().stream().anyMatch(s -> s instanceof Step.Explore), row.steps().toString());
     }
 }

@@ -18,7 +18,7 @@ import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 0.36.a8 (MINING_PLAN 3.6, phase 4): the IRON rung's option scorer, its memory, the chain rewrite and the switch. */
+/** 0.36.a8 (MINING_PLAN 3.6, phase 4), one-planner: the per-ore scorer the owner's mine verb prices with, its memory and the switch. */
 class IronOptionsTest {
     static final String PLANNED = "mine iron_ore 3 dig then smelt raw_iron 3 then smelt collect all then craft iron_pickaxe 1";
 
@@ -35,7 +35,7 @@ class IronOptionsTest {
         Choice c = IronOptions.choose(facts(List.of(open(10, 60, 0, 10, true), buried(5, 50, 0, 5, 12, false)), 60), new Memory(), 0);
         assertEquals(Way.WALK_KNOWN, c.way());
         assertEquals("10 60 0", c.target().key());
-        assertEquals("mine iron 1 at 10 60 0 walk", c.command(3));
+        assertEquals("mine iron 1 at 10 60 0 walk", c.command("iron", 3));
         assertTrue(c.why().contains("walk_known 10 60 0"), c.why());
         assertTrue(c.why().contains("dig_known 5 50 0"), c.why());
     }
@@ -44,7 +44,7 @@ class IronOptionsTest {
     void aBuriedOreIsDugToWhenTheWalkIsFar() {
         Choice c = IronOptions.choose(facts(List.of(open(80, 60, 0, 80, true), buried(5, 56, 0, 6, 5, false)), 60), new Memory(), 0);
         assertEquals(Way.DIG_KNOWN, c.way());
-        assertEquals("mine iron 1 at 5 56 0 dig", c.command(3));
+        assertEquals("mine iron 1 at 5 56 0 dig", c.command("iron", 3));
     }
 
     /** Owner's rule 2026-10-19 (live r2b: iron 17-18 deep never picked): depth is a cost, not a limit. */
@@ -52,7 +52,7 @@ class IronOptionsTest {
     void aDeepOreIsACostlierDigNotADrop() {
         Choice c = IronOptions.choose(facts(List.of(buried(5, 40, 0, 6, 18, false)), 60), new Memory(), 0);
         assertEquals(Way.DIG_KNOWN, c.way(), c.why());
-        assertEquals("mine iron 1 at 5 40 0 dig", c.command(3));
+        assertEquals("mine iron 1 at 5 40 0 dig", c.command("iron", 3));
         assertTrue(c.why().contains("past 16"), c.why());
         assertEquals(16 * IronOptions.digBlockV() + 2 * IronOptions.digDeepBlock(), IronOptions.digCost(18), 1e-9);
         // a shallower ore a little farther still wins over the deep one near
@@ -89,7 +89,7 @@ class IronOptionsTest {
         m.failed(Way.DIG_KNOWN, up, "no path", 0);
         c = IronOptions.choose(f, m, 1);
         assertEquals(Way.PILLAR_KNOWN, c.way());
-        assertEquals("goto 2 71 0 > mine iron 1 at 2 70 0 dig", c.command(3));
+        assertEquals("goto 2 71 0 > mine iron 1 at 2 70 0 dig", c.command("iron", 3));
         Facts few = new Facts(List.of(up), 60, false, 4, true, -1, false, null, -1, false, false, 0);
         c = IronOptions.choose(few, m, 1);
         assertNull(c.way());
@@ -102,7 +102,7 @@ class IronOptionsTest {
         Memory m = new Memory();
         Choice c = IronOptions.choose(f, m, 0);
         assertEquals(Way.CAVE, c.way(), "30 + 120 < 200");
-        assertEquals("mine cave iron 3", c.command(3));
+        assertEquals("mine cave iron 3", c.command("iron", 3));
         m.failed(Way.CAVE, null, "no known cave", 0);
         c = IronOptions.choose(f, m, 1);
         assertEquals(Way.STRIP, c.way(), "a failed option is blocked for a while");
@@ -124,18 +124,6 @@ class IronOptionsTest {
     }
 
     @Test
-    void theRewriteReplacesTheOreAndSmeltStepsOnly() {
-        Choice c = IronOptions.choose(new Facts(List.of(open(10, 60, 0, 10, true)), 60, false, 0, true, -1, false, null, 80, true, false, 0), new Memory(), 0);
-        assertEquals(Smelt.HERE, c.smelt());
-        assertEquals("mine iron 1 at 10 60 0 walk", IronOptions.rewrite(io.github.mojolowjo.entropybot.aa.TS.s(PLANNED), c), "one ore of 3: the chain ends after it, the Need picks again");
-        assertEquals("mine iron 1 at 10 60 0 walk > smelt raw_iron 1 here", IronOptions.rewrite(io.github.mojolowjo.entropybot.aa.TS.s("mine iron 1 then smelt raw_iron 1"), c), "one ore left: the rest stays");
-        Choice none = new Choice(null, null, Smelt.CAMP, List.of(), List.of());
-        assertEquals(TS.label(TS.s(PLANNED)), IronOptions.rewrite(io.github.mojolowjo.entropybot.aa.TS.s(PLANNED), none), "nothing chosen: the planner's steps stay (typed)");
-        assertTrue(IronOptions.hasMineStep(io.github.mojolowjo.entropybot.aa.TS.s("mine strip iron 3 then craft x 1")));
-        assertFalse(IronOptions.hasMineStep(io.github.mojolowjo.entropybot.aa.TS.s("smelt raw_iron 3 then craft iron_pickaxe 1")));
-    }
-
-    @Test
     void whatCountsAsAReasonToSwitch() {
         assertTrue(IronOptions.switchable("stopped at step 1 (mine iron 3 dig): 3 iron ore known within 96 but none I could reach (tried 5)"));
         assertTrue(IronOptions.switchable("stopped at step 1 (mine iron 3 dig): all 2 nearest known iron are below me and I'm in the water"));
@@ -148,104 +136,5 @@ class IronOptionsTest {
         assertEquals("ore", IronOptions.failedPart("timeout"));
         assertEquals("smelt", IronOptions.failedPart("stopped at step 2 (smelt raw_iron 3 here): no free spot next to me"));
         assertEquals("other", IronOptions.failedPart("stopped at step 4 (craft iron_pickaxe 1): missing 2 stick"));
-    }
-
-    // ---- the Need with the picker ----
-
-    final Clock.Fake clock = new Clock.Fake(10_000_000);
-    final FakePort port = new FakePort();
-    final Blackboard bb = new Blackboard(clock, port, new Tracer());
-
-    Facts live = new Facts(List.of(open(10, 60, 0, 10, true), buried(5, 56, 0, 6, 5, false)), 60, false, 0, true, 40, false, "no mine marked", 10, false, false, 0);
-
-    Need ironRung() {
-        bb.in.pickTier = 2;
-        bb.in.pickaxes = 1;
-        bb.fact(IronOptions.FACTS, (Supplier<Facts>) () -> live);
-        port.resolveTo = PLANNED;
-        return new Need("needs.iron", io.github.mojolowjo.entropybot.aa.core.TaskKind.IRON, b -> b.in.pickTier < 3, b -> null, b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("iron tools")), new IronOptions.Picker());
-    }
-
-    @Test
-    void aFailedWaySwitchesToTheNextAtOnceWithoutACooldown() {
-        Need r = ironRung();
-        assertEquals(Status.RUNNING, r.tick(bb));
-        assertEquals("mine iron 1 at 10 60 0 walk", port.started.get(0).chain());
-        port.fail(1, "stopped at step 1 (mine iron 3): 2 iron ore known within 96 but none I could reach (tried 5)");
-        assertEquals(Status.RUNNING, r.tick(bb), "the next option starts in the same tick");
-        assertEquals(2, port.started.size());
-        assertEquals("mine iron 1 at 5 56 0 dig", port.started.get(1).chain());
-        assertTrue(r.options().contains("dig_known 5 56 0"), r.options());
-        assertTrue(String.join("|", port.log).contains("options: dig_known 5 56 0"), port.log.toString());
-        // the dig fails too: the cave is next
-        port.fail(2, "stopped at step 1 (mine iron 3 dig): couldn't get to the known iron at 5 56 0");
-        assertEquals(Status.RUNNING, r.tick(bb));
-        assertEquals("mine cave iron 3 > smelt raw_iron 3 > smelt collect all > craft iron_pickaxe 1", port.started.get(2).chain());
-        // the cave fails: nothing left (strip has no mine) -> the Need fails with the options line, and cools down
-        port.fail(3, "stopped at step 1 (mine cave iron 3): no known cave");
-        assertEquals(Status.FAILURE, r.tick(bb));
-        assertTrue(r.reason().contains("no way can run"), r.reason());
-        assertTrue(r.reason().contains("walk 10 60 0:"), r.reason());
-        assertEquals(3, port.started.size());
-        clock.advance(1000);
-        assertEquals(Status.FAILURE, r.tick(bb), "every row held: no retry");
-        assertTrue(r.reason().contains("no way can run") && port.started.size() == 3, r.reason());
-    }
-
-    @Test
-    void theOwnersStopAndACraftFailureEndTheRungAsBefore() {
-        Need r = ironRung();
-        r.tick(bb);
-        port.fail(1, "stopped at step 4 (craft iron_pickaxe 1): missing 2 stick");
-        assertEquals(Status.FAILURE, r.tick(bb));
-        assertEquals(1, port.started.size(), "no switch for a craft failure");
-        assertTrue(r.reason().contains("missing 2 stick"), r.reason());
-    }
-
-    @Test
-    void withoutFactsThePlannersChainRunsAsItIs() {
-        Need r = ironRung();
-        bb.fact(IronOptions.FACTS, null);
-        r.tick(bb);
-        assertEquals(TS.label(TS.s(PLANNED)), port.started.get(0).chain());
-        assertTrue(r.options().contains("no iron facts"), r.options());
-    }
-
-    /** Round 2 item 5: the walk names its ore, so a failed walk blocks that ore only: the next open ore is the next option. */
-    @Test
-    void aWalkFailureBlocksThatOreOnly() {
-        Need r = ironRung();
-        live = new Facts(List.of(open(10, 60, 0, 10, true), open(12, 60, 0, 12, true), open(14, 60, 0, 14, true)), 60, false, 0, true, -1, false, null, 10, false, false, 0);
-        r.tick(bb);
-        assertEquals("mine iron 1 at 10 60 0 walk", port.started.get(0).chain());
-        port.fail(1, "stopped at step 1 (mine iron 1 at 10 60 0 walk): couldn't get to the iron_ore at 10 60 0 (no path)");
-        assertEquals(Status.RUNNING, r.tick(bb));
-        assertEquals("mine iron 1 at 12 60 0 walk", port.started.get(1).chain());
-    }
-    @Test
-    void switchesRunThroughEveryWayThenTheRungFails() {
-        Need r = ironRung();
-        // walk, dig, pillar, cave, strip: five ways, four switches (MAX_SWITCHES), then the Need fails
-        live = new Facts(List.of(open(10, 60, 0, 10, true), buried(5, 56, 0, 6, 5, false), buried(2, 70, 0, 10, 1, false)), 60, false, 12, true, 30, true, null, 10, false, false, 0);
-        r.tick(bb);
-        for (long id = 1; id <= IronOptions.maxSwitches(); id++) {
-            port.fail(id, "stopped at step 1 (" + port.started.get((int) id - 1).steps().get(0).text() + "): no path to the ore");
-            assertEquals(Status.RUNNING, r.tick(bb), "switch " + id);
-        }
-        assertEquals(IronOptions.maxSwitches() + 1, port.started.size());
-        port.fail(IronOptions.maxSwitches() + 1, "stopped at step 1 (mine strip iron 3): no path to the ore");
-        assertEquals(Status.FAILURE, r.tick(bb), "nothing left, and the cap is reached");
-    }
-
-    /** Review: smelting on the spot failed: the ore is mined already, the chain goes on at the camp without the ore step. */
-    @Test
-    void aSmeltHereFailureGoesOnWithoutTheOreStep() {
-        Need r = ironRung();
-        live = new Facts(List.of(open(10, 60, 0, 10, true)), 60, false, 0, true, -1, false, null, 80, true, false, 0);
-        r.tick(bb);
-        assertEquals("mine iron 1 at 10 60 0 walk", port.started.get(0).chain());
-        port.fail(1, "stopped at step 2 (smelt raw_iron 3 here): no free spot next to me for mine");
-        assertEquals(Status.RUNNING, r.tick(bb));
-        assertEquals("smelt raw_iron 3 > smelt collect all > craft iron_pickaxe 1", port.started.get(1).chain());
     }
 }

@@ -1,6 +1,7 @@
 package io.github.mojolowjo.entropybot.aa.brain;
 
 import io.github.mojolowjo.entropybot.aa.IronOptions;
+import io.github.mojolowjo.entropybot.aa.NeedChain;
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Clock;
 import io.github.mojolowjo.entropybot.aa.core.FakePort;
@@ -12,22 +13,23 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** AA round 2 item 5: an ore goal names its nearest takeable ore ("mine coal 1 at x y z dig|walk"). */
+/** one-planner: an owner's goal is its chain (the dig of the known ore the loot data names); the owner's mine verb's ore pick stays. */
 class GoalsTest {
     final Clock.Fake clock = new Clock.Fake(10_000_000);
     final Blackboard bb = new Blackboard(clock, new FakePort(), new Tracer());
 
     @Test
-    void anOreGoalMinesItsNearestOreByName() {
-        BrainB5Test.withLearned(null, 80);
-        bb.in.pickTier = 2;
-        Goals.Goal g = Goals.add(bb, AaFix3Test.COAL, 16, 0, clock.now());
-        bb.fact(Goals.KNOWN_FACT, Map.of(g.r.key(), 5));
-        assertEquals("mine coal 16 dig", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g)), "no nearest fact: as before");
-        bb.fact(Goals.NEAREST_FACT, Map.of(g.r.key(), new int[]{4, 60, -2, 0}));
-        assertEquals("mine coal 1 at 4 60 -2 walk", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g)));
-        bb.fact(Goals.NEAREST_FACT, Map.of(g.r.key(), new int[]{4, 50, -2, 1}));
-        assertEquals("mine coal 1 at 4 50 -2 dig", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g)));
+    void anItemGoalIsItsChain() {
+        TestData d = TestData.planner().tag("wooden_pickaxe", "minecraft:pickaxes").install();
+        try {
+            NeedChain.Spot ore = new NeedChain.Spot(4, 60, -2, 8, "minecraft:coal_ore", 20);
+            bb.fact(NeedChain.WORLD_FACT, (java.util.function.Supplier<NeedChain.World>) () -> new NeedChain.World(Map.of("minecraft:wooden_pickaxe", 1), false,
+                    w -> w.equals("minecraft:coal") ? ore : null));
+            Goals.Goal g = Goals.add(bb, AaFix3Test.COAL, 16, 0, clock.now());
+            assertEquals("goto 4 60 -2 near 2 > collect coal 16", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g)));
+            assertTrue(Goals.chain(bb, g).why().startsWith("coal <- dig coal seen 8 m"), Goals.chain(bb, g).why());
+            assertTrue(Goals.line(bb, g, "70").contains(" - chain: coal <- dig coal"), Goals.line(bb, g, "70"));
+        } finally { TestData.clear(); }
     }
 
     @Test

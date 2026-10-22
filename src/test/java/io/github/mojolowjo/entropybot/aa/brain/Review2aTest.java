@@ -18,7 +18,7 @@ class Review2aTest {
     final Blackboard bb = new Blackboard(clock, new FakePort(), new Tracer());
 
     Desire d(String id, Desire.Kind k, double v, Desire.Exposure e) {
-        return new Desire(id, k, RunJob.of(id + ".job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do " + id)), "brain"), b -> v).cost(0).exposure(e);
+        return new Desire(id, k, RunJob.of(id + ".job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("do " + id, 1)), "brain"), b -> v).cost(0).exposure(e);
     }
 
     void normalNight() {

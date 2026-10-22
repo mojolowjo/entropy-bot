@@ -42,21 +42,12 @@ class IronFairTest {
     void aSeenOreIsTakenAsBefore() {
         Choice c = IronOptions.choose(facts(List.of(buried(5, 56, 0, 6, 5)), fair(Set.of("5 56 0"))), new Memory(), 0);
         assertEquals(Way.DIG_KNOWN, c.way());
-        assertEquals("mine iron 1 at 5 56 0 dig", c.command(3));
+        assertEquals("mine iron 1 at 5 56 0 dig", c.command("iron", 3));
     }
 
     @Test
     void fairOffIsTodaysBehaviour() {
         Choice c = IronOptions.choose(facts(List.of(buried(5, 56, 0, 6, 5)), null), new Memory(), 0);
         assertEquals(Way.DIG_KNOWN, c.way());
-    }
-
-    @Test
-    void theStripRowPlacesTheMineAtTheBestBand() {
-        var set = new IronOptions.Set();
-        var ch = set.choose(facts(List.of(), fair(Set.of())), new Options.OptionMemory(), 0,
-                io.github.mojolowjo.entropybot.aa.TS.s("mine iron_ore 3 dig then smelt raw_iron 3"), 10, null, null);
-        assertNotNull(ch.best(), ch.line());
-        assertTrue(io.github.mojolowjo.entropybot.aa.TS.flat(ch.best().steps()).endsWith("goto 100 34 170"), ch.best().command());
     }
 }

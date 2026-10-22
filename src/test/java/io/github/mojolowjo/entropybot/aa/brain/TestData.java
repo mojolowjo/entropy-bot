@@ -52,10 +52,34 @@ public final class TestData implements ItemWorth.Source, MiningTiers.Source {
     public TestData armour(String id, double def, double tough, double dur) { facts.put(id(id), new Facts(Role.OTHER, 0, 0, dur, def, tough, 0, 0, 0, 0, 0)); return this; }
     public TestData food(String id, double nut, double sat) { facts.put(id(id), new Facts(Role.OTHER, 0, 0, 0, 0, 0, 0, nut, sat, 0, 0)); return this; }
     public TestData block(String id, double hard, int light) { facts.put(id(id), new Facts(Role.OTHER, 0, 0, 0, 0, 0, 0, 0, 0, hard, light)); return this; }
-    public TestData recipe(String out, int n, String... in) {
-        recipes.computeIfAbsent(id(out), k -> new ArrayList<>()).add(new Recipe(n, Arrays.stream(in).map(TestData::id).toList()));
+    public TestData recipe(String out, int n, String... in) { return recipe(ItemWorth.CRAFT, out, n, in); }
+
+    /** one-planner: a furnace recipe (kind SMELT); the input may be a tag ("#minecraft:logs_that_burn"). */
+    public TestData smelt(String out, String in) {
+        if (!in.startsWith("#")) smeltInputs.put(id(out), id(in));
+        return recipe(ItemWorth.SMELT, out, 1, in);
+    }
+
+    /** A recipe of a kind; an ingredient "#ns:tag" is every member of that tag (read when the recipe is asked for). */
+    public TestData recipe(String kind, String out, int n, String... in) {
+        raw.computeIfAbsent(id(out), k -> new ArrayList<>()).add(new Raw(kind, n, List.of(in)));
         return this;
     }
+
+    private record Raw(String kind, int n, List<String> in) {}
+    private final Map<String, List<Raw>> raw = new HashMap<>();
+
+    /** one-planner: the fuel table (item -> burn ticks), the stations of the recipe kinds. */
+    public final Map<String, Integer> fuels = new HashMap<>();
+    public final Map<String, String> stations = new HashMap<>(Map.of(ItemWorth.CRAFT, id("crafting_table"), ItemWorth.SMELT, id("furnace")));
+    @Override public Map<String, Integer> fuels() { return fuels; }
+    @Override public String stationOf(String kind) { return stations.get(kind); }
+    @Override public Set<String> edible() {
+        Set<String> out = new HashSet<>();
+        for (var e : facts.entrySet()) if (e.getValue().nutrition() > 0) out.add(e.getKey());
+        return out;
+    }
+    public TestData fuel(String id, int ticks) { fuels.put(id(id), ticks); return this; }
 
     public static TestData vanilla() {
         TestData d = new TestData();
@@ -136,9 +160,9 @@ public final class TestData implements ItemWorth.Source, MiningTiers.Source {
     /** The vanilla data plus the recipes, furnace recipes and ore drops the goal planner reads (PlanRecipes). */
     public static TestData planner() {
         TestData d = vanilla();
-        for (String s : List.of("iron_ingot", "diamond", "coal")) d.recipes.remove(id(s));
+        for (String s : List.of("iron_ingot", "diamond", "coal")) { d.recipes.remove(id(s)); d.raw.remove(id(s)); }
         for (String w : List.of("oak", "spruce", "birch", "jungle", "acacia", "cherry", "dark_oak")) d.recipe(w + "_planks", 4, w + "_log");
-        d.recipe("stick", 4, "oak_planks", "oak_planks").recipe("torch", 4, "coal", "stick").recipe("crafting_table", 1, "oak_planks", "oak_planks", "oak_planks", "oak_planks");
+        d.recipe("stick", 4, "oak_planks", "oak_planks").recipe("torch", 4, "#minecraft:coals", "stick").recipe("crafting_table", 1, "oak_planks", "oak_planks", "oak_planks", "oak_planks");
         d.recipe("chest", 1, java.util.Collections.nCopies(8, "oak_planks").toArray(new String[0])).recipe("furnace", 1, java.util.Collections.nCopies(8, "cobblestone").toArray(new String[0]));
         d.recipe("white_bed", 1, "white_wool", "white_wool", "white_wool", "oak_planks", "oak_planks", "oak_planks").recipe("bucket", 1, "iron_ingot", "iron_ingot", "iron_ingot");
         d.recipe("shield", 1, "oak_planks", "oak_planks", "oak_planks", "oak_planks", "oak_planks", "oak_planks", "iron_ingot");
@@ -151,8 +175,15 @@ public final class TestData implements ItemWorth.Source, MiningTiers.Source {
                 .recipe("iron_leggings", 1, java.util.Collections.nCopies(7, "iron_ingot").toArray(new String[0])).recipe("iron_boots", 1, java.util.Collections.nCopies(4, "iron_ingot").toArray(new String[0]));
         for (String s : List.of("chest", "furnace", "white_bed", "bucket", "shield", "iron_helmet", "iron_chestplate", "iron_leggings", "iron_boots")) d.tableItems.add(id(s));
         for (String m : List.of("wooden", "stone", "iron", "diamond")) for (String k : List.of("pickaxe", "axe", "shovel", "sword", "hoe")) d.tableItems.add(id(m + "_" + k));
-        String[][] smelt = {{"iron_ingot", "raw_iron"}, {"gold_ingot", "raw_gold"}, {"copper_ingot", "raw_copper"}, {"glass", "sand"}, {"stone", "cobblestone"}, {"charcoal", "oak_log"}};
-        for (String[] s : smelt) { d.smeltInputs.put(id(s[0]), id(s[1])); d.recipe(s[0], 1, s[1]); }
+        String[][] smelt = {{"iron_ingot", "raw_iron"}, {"gold_ingot", "raw_gold"}, {"copper_ingot", "raw_copper"}, {"glass", "sand"}, {"stone", "cobblestone"}};
+        for (String[] s : smelt) d.smelt(s[0], s[1]);
+        // one-planner: charcoal is any log that burns, the game's tag (an ingredient given as a tag: every member a candidate)
+        for (String w : List.of("oak", "spruce", "birch", "jungle", "acacia", "cherry", "dark_oak")) d.tag(w + "_log", "minecraft:logs_that_burn");
+        d.smelt("charcoal", "#minecraft:logs_that_burn");
+        for (var e : d.cooks.entrySet()) d.smelt(e.getValue(), e.getKey());      // the cooking recipes are furnace recipes too
+        // one-planner: the fuel table (vanilla burn ticks), the furnace's only input source
+        d.fuel("coal", 1600).fuel("charcoal", 1600).fuel("coal_block", 16000).fuel("stick", 100).fuel("crafting_table", 300).fuel("wooden_pickaxe", 200);
+        for (String w : List.of("oak", "spruce", "birch", "jungle", "acacia", "cherry", "dark_oak")) d.fuel(w + "_log", 300).fuel(w + "_planks", 300);
         String[][] ores = {{"raw_iron", "iron_ore"}, {"raw_copper", "copper_ore"}, {"raw_gold", "gold_ore"}, {"coal", "coal_ore"}, {"diamond", "diamond_ore"},
                 {"redstone", "redstone_ore"}, {"lapis_lazuli", "lapis_ore"}, {"emerald", "emerald_ore"}};
         for (String[] o : ores) d.oreDrops.put(id(o[0]), id(o[1]));
@@ -166,7 +197,23 @@ public final class TestData implements ItemWorth.Source, MiningTiers.Source {
     public static void clear() { ItemWorth.use(null); MiningTiers.use(null); ToolGroup.use(null); }
 
     @Override public Facts facts(String id) { return facts.getOrDefault(id, Facts.NONE); }
-    @Override public List<Recipe> recipes(String id) { return recipes.getOrDefault(id, List.of()); }
+    @Override public List<Recipe> recipes(String id) {
+        List<Recipe> out = new ArrayList<>(recipes.getOrDefault(id, List.of()));
+        for (Raw r : raw.getOrDefault(id, List.of())) {
+            List<String> first = new ArrayList<>();
+            List<List<String>> opts = new ArrayList<>();
+            for (String in : r.in()) {
+                List<String> o = new ArrayList<>();
+                if (in.startsWith("#")) { o.addAll(withTag(id(in.substring(1)))); java.util.Collections.sort(o); }
+                else o.add(id(in));
+                if (o.isEmpty()) o.add(id(in.substring(1)));
+                first.add(o.get(0));
+                opts.add(o);
+            }
+            out.add(new Recipe(r.n(), first, opts, r.kind()));
+        }
+        return out;
+    }
     @Override public List<String> smeltResults() { return List.of(id("iron_ingot"), id("diamond"), id("coal")); }
     @Override public Map<String, String> cooks() { return cooks; }
     @Override public boolean stoneLike(String id) { return stone.contains(id); }

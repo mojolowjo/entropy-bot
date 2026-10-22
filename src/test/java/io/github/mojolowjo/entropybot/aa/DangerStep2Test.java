@@ -120,11 +120,11 @@ class DangerStep2Test {
     void twoDesiresAtTheCapCannotAlternate() {
         double[] v = {99, -1};
         Brain br = new Brain("brain", "t",
-                new Desire("a", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do a")), "brain"), b -> v[0]).trumps(),
-                new Desire("b", Desire.Kind.UPKEEP, RunJob.of("b.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do b")), "brain"), b -> v[1]).overTrumps());
+                new Desire("a", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("do a", 1)), "brain"), b -> v[0]).trumps(),
+                new Desire("b", Desire.Kind.UPKEEP, RunJob.of("b.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("do b", 1)), "brain"), b -> v[1]).overTrumps());
         bb.in.food = 20;
         br.tick(bb);
-        assertEquals("plan do a", port.started.get(port.started.size() - 1).chain());
+        assertEquals("obtain 1 do a", port.started.get(port.started.size() - 1).chain());
         v[1] = 99;
         for (int i = 0; i < 5; i++) {
             clock.advance(3_000);
@@ -137,20 +137,20 @@ class DangerStep2Test {
     void review1FoodUnder4AndTheOwnersOrderStillBeatADangerAt99() {
         double[] v = {99, -1};
         Brain br = new Brain("brain", "t",
-                new Desire("danger", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do danger")), "brain"), b -> v[0]).overTrumps(),
-                new Desire("needs.food", Desire.Kind.UPKEEP, RunJob.of("f.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do food")), "brain"), b -> v[1]));
+                new Desire("danger", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("do danger", 1)), "brain"), b -> v[0]).overTrumps(),
+                new Desire("needs.food", Desire.Kind.UPKEEP, RunJob.of("f.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("do food", 1)), "brain"), b -> v[1]));
         bb.in.food = 10;
         br.tick(bb);
-        assertEquals("plan do danger", port.started.get(port.started.size() - 1).chain());
+        assertEquals("obtain 1 do danger", port.started.get(port.started.size() - 1).chain());
         v[1] = 80;
         clock.advance(3_000);
         br.tick(bb);
-        assertEquals("plan do danger", port.started.get(port.started.size() - 1).chain(), "food 10: danger keeps the slot");
+        assertEquals("obtain 1 do danger", port.started.get(port.started.size() - 1).chain(), "food 10: danger keeps the slot");
         bb.in.food = 2;
         clock.advance(3_000);
         br.tick(bb);
         br.tick(bb);
-        assertEquals("plan do food", port.started.get(port.started.size() - 1).chain(), "food under 4 beats the danger at 99 " + port.log);
+        assertEquals("obtain 1 do food", port.started.get(port.started.size() - 1).chain(), "food under 4 beats the danger at 99 " + port.log);
     }
 
     @Test
@@ -196,7 +196,7 @@ class DangerStep2Test {
     }
 
     Desire siteDesire(String id, double v, Site s) {
-        return new Desire(id, Desire.Kind.UPKEEP, RunJob.of(id + ".job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do " + id)), "brain"), b -> v).cost(0).site(b -> s);
+        return new Desire(id, Desire.Kind.UPKEEP, RunJob.of(id + ".job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("do " + id, 1)), "brain"), b -> v).cost(0).site(b -> s);
     }
 
     @Test

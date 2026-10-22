@@ -57,14 +57,13 @@ class IdleBandsTest {
         bb.in.coal = 32;
         bb.in.cobble = 0;
         bb.in.pickTier = 3;
-        port.resolveTo = null;         // the planner never has a chain: the old idle starved here
         for (int i = 0; i < 12; i++) tree.tick(bb);
         assertTrue(port.started.stream().anyMatch(t -> t.chain().startsWith("wait ")), "the floor runs instead of the same option failing every tick: " + port.log);
     }
 
     @Test
     void lightingRunsOncePerNight() {
-        var light = AaTree.oncePerNight(io.github.mojolowjo.entropybot.aa.core.RunJob.of("l", TaskKind.LIGHT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("light here 8")), "idle"));
+        var light = AaTree.oncePerNight(io.github.mojolowjo.entropybot.aa.core.RunJob.of("l", TaskKind.LIGHT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("light here 8", 1)), "idle"));
         bb.in.night = true;
         assertEquals(Status.RUNNING, light.tick(bb));
         port.done(1, "done");

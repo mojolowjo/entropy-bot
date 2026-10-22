@@ -67,7 +67,7 @@ class BlueprintTest {
                 Map.of("minecraft:cobblestone", 20), 0, 150, 0, 0, 6);
         Blueprint.Build b = build(s);
         bb.in.bag = Map.of("oak_planks", 64);
-        assertEquals("plan cobblestone 50", text(Blueprint.step(bb, b)));         // the whole build's cobblestone, one trip
+        assertEquals("obtain 50 cobblestone", text(Blueprint.step(bb, b)));         // the whole build's cobblestone, one trip
         bb.in.bag = Map.of("cobblestone", 5);
         assertEquals("build schematic house 10 64 -5", text(Blueprint.step(bb, b)));   // some in the bag: place it first
         String line = Blueprint.line(bb, b, "score 70");
@@ -93,7 +93,7 @@ class BlueprintTest {
     void noPlanItemIsSkippedAndThreeEmptyRunsPark() {
         Blueprint.Build b = build(new Blueprint.Scan(Map.of("minecraft:glass", 4), Map.of("minecraft:glass", 4), 0, 4, 0, 0, 1));
         bb.in.bag = Map.of();
-        assertEquals("plan glass 4", text(Blueprint.step(bb, b)));
+        assertEquals("obtain 4 glass", text(Blueprint.step(bb, b)));
         b.unresolved.add("glass");
         assertEquals("build schematic house 10 64 -5", text(Blueprint.step(bb, b)));
         b.fails = Blueprint.maxFails();

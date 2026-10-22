@@ -23,8 +23,23 @@ public final class TS {
         bb.fact(NeedChain.WORLD_FACT, (java.util.function.Supplier<NeedChain.World>) () -> new NeedChain.World(java.util.Map.of(), false, w -> null));
     }
 
-    /** One planner goal as a need's goal steps. */
-    public static List<Step> plan(String goal) { return List.of(new Step.Plan(goal)); }
+    /**
+     * one-planner: the game's data (TestData.planner, with the pickaxes tag) and a world around the bot: a tree 10 m, stone 16 m,
+     * coal ore 20 m, iron ore 25 m; the bag and the stations read from {@code bb.in}. The caller clears TestData after.
+     */
+    public static void richWorld(io.github.mojolowjo.entropybot.aa.core.Blackboard bb) {
+        var d = io.github.mojolowjo.entropybot.aa.brain.TestData.planner();
+        for (String m : List.of("wooden", "stone", "iron")) d.tag(m + "_pickaxe", "minecraft:pickaxes");
+        d.install();
+        java.util.Map<String, NeedChain.Spot> spots = java.util.Map.of("minecraft:oak_log", new NeedChain.Spot(10, 64, 0, 10, "minecraft:oak_log", 64),
+                "minecraft:cobblestone", new NeedChain.Spot(0, 60, 16, 16, "minecraft:stone", 200), "minecraft:coal", new NeedChain.Spot(0, 40, 20, 20, "minecraft:coal_ore", 40),
+                "minecraft:raw_iron", new NeedChain.Spot(0, 30, 20, 25, "minecraft:iron_ore", 40));
+        bb.fact(NeedChain.WORLD_FACT, (java.util.function.Supplier<NeedChain.World>) () -> new NeedChain.World(bb.in.bag, bb.in.tableKnown, bb.in.furnaceKnown,
+                item -> spots.containsKey(item) ? List.of(spots.get(item)) : List.of(), null, null, null, 0));
+    }
+
+    /** One need goal ("I need 1 of it") as a need's goal steps. */
+    public static List<Step> plan(String goal) { return List.of(new Step.Obtain(goal, 1)); }
 
     /** The steps with every compound step replaced by its parts (as aa/moves/Steps runs them), as their label. */
     public static String flat(List<Step> steps) {

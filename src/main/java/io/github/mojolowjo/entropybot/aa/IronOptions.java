@@ -16,10 +16,10 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 0.36.a8 (MINING_PLAN 3.6, phase 4): the option scorer inside AA's IRON rung. The planner still says <i>what</i>
- * ({@code mine iron N then smelt raw_iron N then craft iron_pickaxe 1 ...}); the scorer replaces the <i>how</i> of the
- * ore step and of the smelt step from the facts the adapter reads ({@link Facts}, a {@code Supplier} on the blackboard
- * under {@link #FACTS}) and from what failed here before ({@link Memory}):
+ * 0.36.a8 (MINING_PLAN 3.6, phase 4), one-planner: the per-ore pricing of the owner's {@code mine <ore> N} verb (Mining's
+ * per-ore loop through {@code Goals.pickPriced}). AA's needs no longer use it (the iron need is the chain's: NeedChain).
+ * It prices the <i>how</i> of one ore step from the facts the caller reads ({@link Facts}) and from what failed here
+ * before ({@link Memory}); the ore's name comes from the owner's order ({@link Choice#steps(String, int)}):
  *
  * <table>
  * <tr><th>Way</th><th>When</th><th>Cost (blocks of walking)</th><th>Runs</th></tr>
@@ -38,15 +38,13 @@ import java.util.regex.Pattern;
  * <p>A task that ends failed is classified ({@link #switchable}): a precondition or a mining end ("none I could reach",
  * "in the water", "no path", "no progress"...) is recorded against its option and the rung switches to the next best at
  * once (at most {@link #MAX_SWITCHES} per task) instead of failing and cooling down; the owner's stop, a fight or a craft
- * failure end the rung as before. {@link #why()} is the options line for {@code aa why}. Pure (JUnit: IronOptionsTest).
- * Loader notes: none (the facts come from the adapter, {@code AaRuntime.ironFacts}).
+ * failure end the rung as before. Pure (JUnit: IronOptionsTest). Loader notes: none (the facts come from Mining.aaOres).
  */
 public final class IronOptions {
     private IronOptions() {}
 
-    /** The blackboard fact: a {@code Supplier<Facts>} the adapter sets (none: the planner's chain runs as it is). */
+    /** The blackboard fact name the iron facts once had (kept for the tests' fakes; nothing sets it now). */
     public static final String FACTS = "iron.facts";
-    public static final String FAMILY = "iron";
 
     public enum Way { WALK_KNOWN, DIG_KNOWN, PILLAR_KNOWN, CAVE, STRIP, WATER_STAND, WATER_PLACE, DRY_SIDE }
 
@@ -276,36 +274,36 @@ public final class IronOptions {
         }
 
         /** rm-execution: the ore step for the chosen way as typed steps. */
-        public List<Step> steps(int n) {
+        public List<Step> steps(String ore, int n) {
             List<Step> out = new ArrayList<>();
             if (target != null && stand != null && (way == Way.WATER_STAND || way == Way.WATER_PLACE || way == Way.DRY_SIDE)) {
                 if (place != null) out.add(Step.Build.one(PLACE_BLOCK_ID, place[0], place[1], place[2]));
                 out.add(new Step.Walk(stand[0], stand[1], stand[2], 0));
-                out.add(new Step.MineAt(FAMILY, target.x(), target.y(), target.z(), true));
+                out.add(new Step.MineAt(ore, target.x(), target.y(), target.z(), true));
                 return out;
             }
             if (target != null && (way == Way.WALK_KNOWN || way == Way.DIG_KNOWN || way == Way.PILLAR_KNOWN)) {
                 if (way == Way.PILLAR_KNOWN) out.add(new Step.Walk(target.x(), target.y() + 1, target.z(), 0));
-                out.add(new Step.MineAt(FAMILY, target.x(), target.y(), target.z(), way != Way.WALK_KNOWN));
+                out.add(new Step.MineAt(ore, target.x(), target.y(), target.z(), way != Way.WALK_KNOWN));
                 if (way == Way.PILLAR_KNOWN) tail(out);
                 return out;
             }
             switch (way) {
-                case WALK_KNOWN -> out.add(new Step.Mine(FAMILY, n, Step.Mine.How.KNOWN));
-                case DIG_KNOWN, WATER_STAND, WATER_PLACE, DRY_SIDE -> out.add(new Step.Mine(FAMILY, n, Step.Mine.How.DIG));
+                case WALK_KNOWN -> out.add(new Step.Mine(ore, n, Step.Mine.How.KNOWN));
+                case DIG_KNOWN, WATER_STAND, WATER_PLACE, DRY_SIDE -> out.add(new Step.Mine(ore, n, Step.Mine.How.DIG));
                 case PILLAR_KNOWN -> {
                     out.add(new Step.Walk(target.x(), target.y() + 1, target.z(), 0));
-                    out.add(new Step.Mine(FAMILY, n, Step.Mine.How.DIG));
+                    out.add(new Step.Mine(ore, n, Step.Mine.How.DIG));
                     tail(out);
                 }
-                case CAVE -> out.add(new Step.Mine(FAMILY, n, Step.Mine.How.CAVE));
-                case STRIP -> out.add(new Step.Mine(FAMILY, n, Step.Mine.How.STRIP));
+                case CAVE -> out.add(new Step.Mine(ore, n, Step.Mine.How.CAVE));
+                case STRIP -> out.add(new Step.Mine(ore, n, Step.Mine.How.STRIP));
             }
             return out;
         }
 
         /** The ore step's label (Step.label of {@link #steps}): logs and tests. */
-        public String command(int n) { return Step.label(steps(n)); }
+        public String command(String ore, int n) { return Step.label(steps(ore, n)); }
     }
 
     // ---- the memory of what failed here ----
@@ -447,97 +445,13 @@ public final class IronOptions {
 
     /**
      * The camp furnace within {@link #SMELT_WALK}: there; else on the spot when a furnace is in the bag ({@code smelt ...
-     * here}); else the camp (the planner's way). Review: a furnace crafted on the spot from cobble is not offered yet (the
+     * here}); else the camp. Review: a furnace crafted on the spot from cobble is not offered yet (the
      * smelt step would end "no furnace"); the table rung keeps a spare table, a spare furnace is the next step.
      */
     public static Smelt smeltWhere(Facts f, Memory m, long now) {
         if (!f.furnaceInBag() || m.blocked(null, null, now)) return Smelt.CAMP;
         if (f.furnaceDist() < 0) return Smelt.HERE;
         return f.furnaceDist() <= smeltWalk() ? Smelt.CAMP : Smelt.HERE;
-    }
-
-    // ---- the planner's routine with the ore and smelt steps chosen here (typed; the routine came typed from the planner's side) ----
-
-    private static final Pattern IRON = Pattern.compile("^(?:minecraft:)?(?:deepslate_)?iron(?:_ore)?$");
-    private static final Pattern IRON_SMELT = Pattern.compile("^(?:minecraft:)?(?:raw_iron|iron_ingot)$");
-
-    /** The routine's iron ore step (any way the planner wrote it), and its count. */
-    static boolean ironMine(Step s) {
-        return (s instanceof Step.Mine m && IRON.matcher(m.family().toLowerCase(Locale.ROOT)).matches())
-                || (s instanceof Step.MineAt a && IRON.matcher(a.family().toLowerCase(Locale.ROOT)).matches());
-    }
-
-    static int mineCount(Step s) { return s instanceof Step.Mine m ? m.n() : 1; }
-
-    /** The item a step names (a craft, smelt, fetch...), null for a step without one. */
-    static String itemOf(Step s) {
-        return switch (s) {
-            case Step.Craft c -> c.item();
-            case Step.Smelt c -> c.item();
-            case Step.Cook c -> c.item();
-            case Step.Collect c -> c.item();
-            case Step.Fetch c -> c.item();
-            default -> null;
-        };
-    }
-
-    /** The label of {@link #rewriteSteps} (logs, tests). */
-    public static String rewrite(List<Step> steps, Choice c) { return Step.label(rewriteSteps(steps, c, false)); }
-
-    /**
-     * rm-execution: the planner's steps with the ore step and the smelt step replaced by the choice.
-     *
-     * @param afterOre the ore step is done already (a smelt-on-the-spot failure): it is left out
-     */
-    public static List<Step> rewriteSteps(List<Step> steps, Choice c, boolean afterOre) {
-        List<Step> out = new ArrayList<>();
-        for (Step s : steps) {
-            boolean ore = ironMine(s);
-            if (afterOre && ore) continue;
-            if (c.way() != null && ore) {
-                int n = mineCount(s);
-                out.addAll(c.steps(n));
-                // round 2 item 5: one ore is not the planner's N: the option ends after it, the rung picks again
-                // (the next ore, or the smelt once the bag has enough)
-                if (n > 1 && perOre(c)) break;
-                continue;
-            }
-            out.add(c.smelt() == Smelt.HERE && s instanceof Step.Smelt m && !m.here() ? new Step.Smelt(m.item(), m.n(), true) : s);
-        }
-        return out;
-    }
-
-    /** The choice mines one named ore ({@code mine iron 1 at ...}). */
-    static boolean perOre(Choice c) {
-        return c.target() != null && c.way() != Way.CAVE && c.way() != Way.STRIP;
-    }
-
-    /**
-     * aa-trees (STOCK_IRON live: "smelt iron_ingot 16" planned with no raw iron, then "missing 16 raw_iron" at once): a
-     * routine that smelts iron the bag lacks, with no ore step and no other step for raw_iron, gets an iron ore step of the
-     * shortfall in front of the smelt, so the ways below price the ore. Unknown bag (-1) or enough raw iron: as it is.
-     */
-    static List<Step> withOreStep(List<Step> steps, Facts f) {
-        if (f.rawIron() < 0 || hasMineStep(steps)) return steps;
-        for (Step s : steps) {
-            String it = itemOf(s);
-            if (!(s instanceof Step.Smelt) && it != null && it.contains("raw_iron")) return steps;
-        }
-        for (int i = 0; i < steps.size(); i++) {
-            if (!(steps.get(i) instanceof Step.Smelt m) || !IRON_SMELT.matcher(m.item().toLowerCase(Locale.ROOT)).matches()) continue;
-            int lack = m.n() - f.rawIron();
-            if (lack <= 0) return steps;
-            List<Step> out = new ArrayList<>(steps);
-            out.add(i, new Step.Mine(FAMILY, lack, Step.Mine.How.KNOWN));
-            return out;
-        }
-        return steps;
-    }
-
-    /** The routine holds an ore step (else the scorer has nothing to choose, the smelt choice still applies). */
-    public static boolean hasMineStep(List<Step> steps) {
-        for (Step s : steps) if (ironMine(s)) return true;
-        return false;
     }
 
     // ---- what failed, and may the rung switch ----
@@ -567,125 +481,5 @@ public final class IronOptions {
         if (Options.ownerOrDanger(end)) return false;
         if (part.equals("smelt")) return true;         // the smelt on the spot did not work out: the camp furnace is the other way
         return Failures.classify(end) != null || MINE_END.matcher(t).find();
-    }
-
-
-    // ---- the rung's option set and picker (S0: on the generic Options framework) ----
-
-    /**
-     * IRON's {@link Options.OptionSet}: every ranked way becomes an option whose command is the planner's chain with the
-     * ore step (and the smelt step) rewritten; a smelt-on-the-spot failure goes on at the camp without the ore step.
-     */
-    public static final class Set implements Options.OptionSet<Facts> {
-        private Smelt lastSmelt = Smelt.CAMP;
-
-        @Override public Options.Choice choose(Facts f, Options.OptionMemory om, long now, List<Step> planned, double plannedCost, String plannerWhy, String afterFail) {
-            if (planned == null) return new Options.Choice(null, List.of(), List.of(), "no plan for iron" + (plannerWhy == null ? "" : ": " + plannerWhy));
-            List<Step> steps = withOreStep(planned, f);
-            Choice c = IronOptions.choose(f, new Memory(om), now);
-            lastSmelt = c.smelt();
-            if (afterFail != null && failedPart(afterFail).equals("smelt")) {       // the ore is mined: the camp smelts
-                List<Step> rest = rewriteSteps(steps, c, true);
-                Options.Option o = rest.isEmpty() ? null
-                        : new Options.Option("camp smelt", "smelt", rest, 0, "the ore is mined; on at the camp", "smelt camp", true);
-                return new Options.Choice(o, o == null ? List.of() : List.of(o), c.dropped(), c.why());
-            }
-            if (c.way() == null) {
-                if (hasMineStep(steps)) return new Options.Choice(null, List.of(), c.dropped(), c.why());
-                List<Step> typed = rewriteSteps(steps, c, false);
-                if (typed.isEmpty()) return new Options.Choice(null, List.of(), c.dropped(), c.why() + "; planner: an empty routine");
-                Options.Option o = new Options.Option("planner", "planner", typed, plannedCost * Options.planUnit(), "the planner's routine, no ore step", "planner", true);
-                return new Options.Choice(o, List.of(o), c.dropped(), c.why());
-            }
-            List<Options.Option> rows = new ArrayList<>();
-            List<String> dropped = new ArrayList<>(c.dropped());
-            int oreIdx = mineStepIndex(steps);
-            for (Scored s : c.ranked()) {
-                Choice one = new Choice(s.way(), s.target(), c.smelt(), c.ranked(), c.dropped(), s.stand(), s.place(), s.after());
-                String id = s.way().name().toLowerCase(Locale.ROOT) + (s.target() == null ? "" : " " + s.target().key());
-                List<Step> typed = rewriteSteps(steps, one, false);
-                // AA_ROUND3 3: strip at the best band with no mine marked: the mine is placed there first
-                List<Step> pre = f.fair() == null ? null : s.way() == Way.STRIP ? f.fair().stripPrefix() : s.way() == Way.CAVE ? f.fair().cavePrefix() : null;
-                List<Step> all = new ArrayList<>(pre == null ? List.of() : pre);
-                if (!(pre != null && s.way() == Way.STRIP && f.fair().stripLeg())) all.addAll(typed);
-                // the ore step's index in the typed list (the way back is decided after it; returnLeg adds the pillar's walk)
-                int mineIdx = -1;
-                for (int i = 0; i < all.size() && mineIdx < 0; i++) if (all.get(i) instanceof Step.MineAt || all.get(i) instanceof Step.Mine) mineIdx = i;
-                int idx = oreIdx < 0 || mineIdx < 0 ? -1 : s.way() == Way.PILLAR_KNOWN ? mineIdx - 1 : mineIdx;
-                rows.add(new Options.Option(id, s.way().name().toLowerCase(Locale.ROOT), all, s.cost(), s.why(), Memory.key(s.way(), s.target()), true,
-                        returnLeg(s, f, idx), s.target() != null ? io.github.mojolowjo.entropybot.aa.brain.Site.at(s.target().x(), s.target().y(), s.target().z())
-                        : s.way() == Way.CAVE && f.fair() != null && f.fair().caveSite() != null
-                        ? io.github.mojolowjo.entropybot.aa.brain.Site.at(f.fair().caveSite()[0], f.fair().caveSite()[1], f.fair().caveSite()[2]) : null));
-            }
-            if (rows.isEmpty()) return new Options.Choice(null, List.of(), dropped, Options.Choice.line(rows, dropped, "no way to iron"));
-            // aa-replan: ranked by the round trip (go + do + return)
-            rows.sort(java.util.Comparator.comparingDouble(Options.Option::total));
-            return new Options.Choice(rows.get(0), rows, dropped, Options.Choice.line(rows, dropped, "no way to iron") + "; smelt " + c.smelt().name().toLowerCase(Locale.ROOT));
-        }
-
-        @Override public boolean switchable(String end) { return IronOptions.switchable(end); }
-
-        @Override public String blame(Options.Choice last, Options.Option ran, String end) {
-            String part = failedPart(end);
-            // aa-trees: a smelt that lacks the ore is the ore way's failure, charged to it (held), not to the smelt place
-            if (end != null && end.toLowerCase(Locale.ROOT).contains("missing") && end.toLowerCase(Locale.ROOT).contains("raw_iron"))
-                return ran == null || ran.way().equals("planner") || ran.way().equals("smelt") ? null : ran.memoryKey();
-            if (part.equals("smelt")) return lastSmelt == Smelt.HERE ? Memory.key(null, null) : null;
-            if (part.equals("ore")) return ran == null || ran.way().equals("planner") || ran.way().equals("smelt") ? null : ran.memoryKey();
-            return null;
-        }
-    }
-
-    /** The first ore step's index in the steps (0-based), -1 none. */
-    static int mineStepIndex(List<Step> steps) {
-        for (int i = 0; i < steps.size(); i++) if (ironMine(steps.get(i))) return i;
-        return -1;
-    }
-
-    /**
-     * aa-replan: the way back after the ore step. A dig to a buried ore digs its own shaft down (aa380: straight down):
-     * pillar it (refill x0.05) when the bag has a block per level, else the stairs/walk; an open face in a cave or a cave
-     * walks back its distance; a pillar up drops back down; an ore open to the sky and a strip mine need none here.
-     */
-    static Replan.Ret returnLeg(Scored s, Facts f, int oreIdx) {
-        Ore o = s.target();
-        return switch (s.way()) {
-            case DIG_KNOWN -> o == null || oreIdx < 0 ? Replan.Ret.NONE : Replan.chooseReturn(Math.max(1, o.depth()), true, f.throwaway(), f.placeAllowed(), 0, oreIdx);
-            case WALK_KNOWN -> o == null || o.skyOpen() ? Replan.Ret.NONE : Replan.chooseReturn(0, false, f.throwaway(), f.placeAllowed(), o.dist(), oreIdx);
-            case PILLAR_KNOWN -> o == null ? Replan.Ret.NONE : Replan.chooseReturn(0, false, f.throwaway(), f.placeAllowed(), Math.max(0, o.y() - f.meY()), oreIdx < 0 ? -1 : oreIdx + 1);
-            case CAVE -> Replan.chooseReturn(0, false, f.throwaway(), f.placeAllowed(), Math.max(0, f.caveDist()), oreIdx);
-            case STRIP -> Replan.Ret.NONE;
-            case WATER_STAND, WATER_PLACE, DRY_SIDE -> o == null ? Replan.Ret.NONE : Replan.chooseReturn(0, false, f.throwaway(), f.placeAllowed(), o.dist(), oreIdx);
-        };
-    }
-
-    /**
-     * aa-r1fix (round 1: 3x "failed STOCK_IRON: smelt iron_ingot N: missing raw_iron"): the idle stock_iron desire ran the planner's
-     * chain bare. The ore step now comes first and is priced through the iron option set (the same ways as the IRON rung).
-     * Returns the chain to run; null with {@code why[0]} set when no ore way can run now. No facts: the chain as it is.
-     */
-    static Options.Option idleOption(Object factsSupplier, List<Step> planned, long now, String[] why) {
-        if (!(factsSupplier instanceof java.util.function.Supplier<?> s)) { why[0] = "no iron facts"; return null; }
-        Object fo;
-        try {
-            fo = s.get();
-        } catch (RuntimeException e) {
-            why[0] = "iron facts unreadable: " + e;
-            return null;
-        }
-        if (!(fo instanceof Facts f)) { why[0] = "no iron facts"; return null; }
-        Options.Choice c = new Set().choose(f, new Options.OptionMemory(), now, planned, 0, null, null);
-        if (c.best() == null) {
-            why[0] = "no iron option (" + c.why() + ")";
-            return null;
-        }
-        return c.best();
-    }
-
-    /** The IRON rung's {@link Rung.Picker}: the generic picker over {@link Set}. */
-    public static final class Picker extends Options.Picker<Facts> {
-        public Picker() { super("IRON", FACTS, Facts.class, new Set()); }
-
-        public Picker(java.util.function.Consumer<String> errors) { super("IRON", FACTS, Facts.class, new Set(), errors); }
     }
 }

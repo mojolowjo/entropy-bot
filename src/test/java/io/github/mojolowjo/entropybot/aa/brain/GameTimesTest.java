@@ -1,6 +1,5 @@
 package io.github.mojolowjo.entropybot.aa.brain;
 
-import io.github.mojolowjo.entropybot.aa.CoalOptions;
 import io.github.mojolowjo.entropybot.aa.IronOptions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -135,7 +134,7 @@ class GameTimesTest {
     }
 
     @Test
-    void ironAndCoalDigTermsFromTheGame() {
+    void ironDigTermsFromTheGame() {
         assertEquals(16 * 3 + 2 * 6, IronOptions.digCost(18), 1e-9);                                   // the old constant
         double live = Unit.blocks(0.6);                                                                  // a stone pickaxe: 2.59 walk-blocks
         assertEquals(16 * live + 2 * (live + 3), IronOptions.digCost(18, live), 1e-9);
@@ -143,7 +142,5 @@ class GameTimesTest {
         assertEquals(live, f.digPerBlock(), 1e-9);
         IronOptions.Facts old = new IronOptions.Facts(List.of(), 64, false, 0, false, -1, false, "x", -1, false, false, 0);
         assertEquals(IronOptions.digBlockV(), old.digPerBlock(), 1e-9);
-        CoalOptions.CoalFacts c = new CoalOptions.CoalFacts(8, 1, List.of(), List.of(), List.of(), 0, 0, false, -1, false, 0, live);
-        assertEquals(live, c.withNeed(3).digPerBlock(), 1e-9);
     }
 }

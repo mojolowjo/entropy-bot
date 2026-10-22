@@ -24,7 +24,7 @@ class NightTwoTest {
         boolean[] met = {false};
         double[] v = {40};
         Brain br = new Brain("brain", "t",
-                new Desire("needs.surface", Desire.Kind.GATE, RunJob.of("s.job", TaskKind.TABLE_FURNACE, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("climb")), "brain"), b -> v[0]).met(b -> met[0]));
+                new Desire("needs.surface", Desire.Kind.GATE, RunJob.of("s.job", TaskKind.TABLE_FURNACE, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("climb", 1)), "brain"), b -> v[0]).met(b -> met[0]));
         br.tick(bb);
         assertEquals(1, port.started.size());
         v[0] = -1;                          // the flow dried up: "needs.surface wanted -1"
@@ -39,7 +39,7 @@ class NightTwoTest {
 
     @Test
     void reasonGoneWithoutPredicateAsBefore() {
-        Desire d = new Desire("x", Desire.Kind.UPKEEP, RunJob.of("x.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("x")), "brain"), b -> 0);
+        Desire d = new Desire("x", Desire.Kind.UPKEEP, RunJob.of("x.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("x", 1)), "brain"), b -> 0);
         assertTrue(Brain.reasonGone(new Brain.Scored(d, -1, -1, "", "not wanted", -1, 0), null));
         assertFalse(Brain.reasonGone(new Brain.Scored(d, -1, -1, "", "not wanted", -1, 0), false));
     }

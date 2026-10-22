@@ -13,35 +13,12 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 0.36.a6 (aa371): the planner wait clock, the camp latch, the under-ground escape choice. */
+/** 0.36.a6 (aa371): the camp latch, the under-ground escape choice. */
 @org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class AaQuickTest {
     final Clock.Fake clock = new Clock.Fake(10_000_000);
     final FakePort port = new FakePort();
     final Blackboard bb = new Blackboard(clock, port, new Tracer());
-
-    @Test
-    void aStaleWaitClockNeverSkipsAFreshPlan() {
-        Need r = new Need("t", TaskKind.TABLE_FURNACE, b -> true, b -> null, b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("furnace")));
-        port.resolveTo = null;
-        assertEquals(Status.RUNNING, r.tick(bb), "planning starts");
-        clock.advance(45_000L + 60_000);              // another rung's job ran meanwhile
-        assertEquals(Status.RUNNING, r.tick(bb), "a fresh ask waits again, not 'found none in 45s'");
-        port.resolveTo = "craft furnace 1";
-        clock.advance(250);
-        r.tick(bb);
-        assertEquals("plan furnace", port.started.get(port.started.size() - 1).chain(), "the planner's routine runs (asked again by the Plan step)");
-    }
-
-    @Test
-    void anotherGoalRestartsTheWait() {
-        String[] g = {"table"};
-        Need r = new Need("t", TaskKind.TABLE_FURNACE, b -> true, b -> null, b -> TS.plan(g[0]));
-        port.resolveTo = null;
-        for (int i = 0; i < 40; i++) { r.tick(bb); clock.advance(1000); }
-        g[0] = "furnace";
-        for (int i = 0; i < 10; i++) { assertEquals(Status.RUNNING, r.tick(bb)); clock.advance(1000); }
-    }
 
     @Test
     void campLatch() {

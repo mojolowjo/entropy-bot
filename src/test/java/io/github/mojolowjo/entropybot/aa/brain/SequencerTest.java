@@ -67,7 +67,7 @@ class SequencerTest {
     final double[] s = new double[3];
 
     Desire d(int i, String id, double cost, Site site) {
-        Desire x = new Desire(id, Desire.Kind.WANT, RunJob.of(id + ".job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do " + id)), "brain"), b -> s[i]).cost(cost);
+        Desire x = new Desire(id, Desire.Kind.WANT, RunJob.of(id + ".job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("do " + id, 1)), "brain"), b -> s[i]).cost(cost);
         return site == null ? x : x.site(b -> site);
     }
 
@@ -85,13 +85,13 @@ class SequencerTest {
     void thePlansNextRunsWhileItsSiteIsNear() {
         Brain br = brain();
         assertEquals(Status.RUNNING, br.tick(bb));
-        assertEquals("plan do iron", last());
+        assertEquals("obtain 1 do iron", last());
         assertTrue(br.planText().contains("iron (at 100 20 0) > coal"), br.planText());
         bb.in.pos = new int[]{100, 20, 0};              // at the cave
         port.done(1, "done");
         br.tick(bb);
         br.tick(bb);
-        assertEquals("plan do coal", last(), "coal is the plan's next though other scores higher");
+        assertEquals("obtain 1 do coal", last(), "coal is the plan's next though other scores higher");
     }
 
     @Test
@@ -103,7 +103,7 @@ class SequencerTest {
         port.done(1, "done");
         br.tick(bb);
         br.tick(bb);
-        assertEquals("plan do other", last());
+        assertEquals("obtain 1 do other", last());
         assertTrue(br.planText().contains("dropped"), br.planText());
     }
 
@@ -114,6 +114,6 @@ class SequencerTest {
         s[1] = 20;
         br.failures.failed("needs.surface", null, "stuck", clock.now(), bb.in);
         br.tick(bb);
-        assertEquals("plan do needs.surface", last());
+        assertEquals("obtain 1 do needs.surface", last());
     }
 }

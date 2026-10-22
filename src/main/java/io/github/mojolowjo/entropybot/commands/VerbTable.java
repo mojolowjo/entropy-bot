@@ -66,9 +66,9 @@ public final class VerbTable {
         v("need", "", "stocking", O, "need <item|kind> <n> | need <item>", "a standing need (the brain works toward it: it gathers when it has under half of n, then up to n); without a count: what it takes and what is missing (that becomes cost <item> in 0.24)",
                 "need torch 64|need refinedstorage:basic_processor", "needs");
         v("needs", "", "stocking", O, "needs | needs clear <item>|all", "removed in 0.38.b7 (the old brain): AA does this (aa on, aa want <thing>)", "needs|needs clear torch", "need <item> <n>");
-        v("goal", "", "stocking", O, "goal camp | goal stone tools | goal iron tools | goal iron <n> | goal food <n> | goal wood <n> | goal light <area> | goal bed | goal furnace | goal table | goal shelter | goal <item> <n> | goal show [name]",
-                "a longer task: the planner finds a chain of verbs for it (cut, craft, place, smelt, mine, fetch...), saves it as the routine goal_<name> (yours to read, edit or delete; an edited one is kept and used) and runs it now, or notes it for the brain when I'm busy; no way -> what is missing",
-                "goal bed|goal iron 16|goal stone tools|goal show bed", "goals");
+        v("goal", "", "stocking", O, "goal <item|group> [n] [high|low]",
+                "the same as aa want: an owner's goal through AA's one chain (have it, craft it from the game's recipes, dig a known source with the pickaxe its block asks for, hunt it, else explore); the answer is the chain line",
+                "goal torch 16|goal diamond_chestplate|goal stone tools", "aa want");
         v("goals", "", "stocking", O, "goals | goals clear <n>|all", "the goals waiting for the brain", "goals|goals clear 1", "goal <text>");
         v("have", "", "stocking", G, "have [item]", "what we have as a group (my bag, the chests, the RS network, your bag) and which chest has it", "have iron_ingot|have", "fetch <item> [n]");
         v("stock", "", "stocking", O, "stock [filter] | stock targets | stock set <item> <n> | stock clear <item>|all",
@@ -169,8 +169,8 @@ public final class VerbTable {
                 "idle list|idle list set strip, cave", "brain on");
         v("dayplan", "", "brain", O, "dayplan | dayplan skip | dayplan clear [hold] | dayplan now", "removed in 0.38.b7 (the old brain): AA does this (aa on, aa want <thing>)",
                 "dayplan|dayplan skip|dayplan now", "why");
-        v("plan", "", "brain", O, "plan <goal>", "a dry run of goal <goal>: the chain the planner finds with each step's cost, nothing runs (or what is missing)", "plan furnace|plan iron tools", "goal <goal>");
-        v("actions", "", "brain", O, "actions | actions <verb>", "the action table: what each verb needs and gives, which ones the planner chains; all of it with the state is entropybot/actions.json (for a model)",
+        v("plan", "", "brain", O, "plan <item|group> [n]", "a dry run: the chain AA would run for n of the item, with its seconds and the dropped ways; nothing runs", "plan furnace|plan torch 16|plan stone tools", "goal <item>");
+        v("actions", "", "brain", O, "actions | actions <verb>", "the action table: what each verb needs and gives, which ones a chain runs; all of it with the state is entropybot/actions.json (for a model)",
                 "actions|actions craft", "plan <goal>");
         v("done", "free", "brain", O, "done | free", "I have nothing for you: do what you want (the brain may leave 32 blocks of you); your next order, come or escort takes it back", "done", "status");
         v("sleep", "", "brain", O, "sleep | sleep status | sleep auto on|off", "go to the nearest bed (or put mine down at night) and sleep until morning or stop; auto: go to bed when others sleep (the brain, default on)",

@@ -31,111 +31,35 @@ class FoodOptionsTest {
     }
 
     @Test
-    void theBedHuntsSheepForWoolFirst() {
-        assertEquals("plan bed", TS.label(BedOptions.steps(3, null)));
-        assertEquals("hunt 2 sheep for white_wool 3 > plan bed", TS.label(BedOptions.steps(1, null)));
-        assertEquals("hunt 3 sheep for white_wool 3 at 40 -8 > plan bed", TS.label(BedOptions.steps(0, new int[]{40, -8, 50, 80})));
+    void getFoodIsTheChainsRowAndEatingStaysARow() {
+        var chain = java.util.List.<io.github.mojolowjo.entropybot.aa.moves.Step>of(new io.github.mojolowjo.entropybot.aa.moves.Step.HuntAt("minecraft:cow", 4, new int[]{15, 0}, "beef", 8));
+        Options.Choice c = new FoodOptions.Food().choose(facts(10, Map.of(), true, Map.of(), null), new Options.OptionMemory(), 0, chain, 20, "food <- 8 beef <- hunt 4 cow seen 15 m: 14.5 s", null);
+        assertEquals("chain", c.best().id(), c.why());
+        assertEquals("hunt 4 cow for beef 8 at 15 0", c.best().command());
+        assertTrue(c.best().why().contains("hunt 4 cow seen 15 m"), c.best().why());
+        Options.Choice none = choose(facts(10, Map.of(), true, Map.of("cow", 3), null));
+        assertTrue(none.dropped().stream().anyMatch(d -> d.startsWith("chain: ")), "no hand-priced hunt row: the chain hunts: " + none.why());
+        assertTrue(none.ranked().stream().noneMatch(o -> o.id().startsWith("hunt") || o.id().startsWith("cook")), none.why());
     }
 
     @Test
-    void aSeenHerdIsARoundTripPricedByConfidence() {
-        var fresh = new FoodOptions.Herd("cow", 80, 64, 0, 8, 1.0, 80);
-        Options.Choice c = choose(withHerds(Map.of(), java.util.List.of(fresh)));
-        assertNotNull(c.best(), c.why());
-        assertEquals("go hunt cow", c.best().id());
-        assertEquals("hunt 2 cow at 80 0 > cook beef 2", c.best().command());
-        assertTrue(c.best().typed() && c.best().steps().get(0) instanceof io.github.mojolowjo.entropybot.aa.moves.Step.HuntAt, "rm-execution: typed hunt step");
-        assertEquals("sighting/animal cow 80 0", c.best().memoryKey());
-        assertNotNull(c.best().site(), "the site feeds the sequencer");
-        // an older sighting costs more: x 1 / confidence
-        var old = new FoodOptions.Herd("cow", 80, 64, 0, 8, 0.25, 80);
-        double cFresh = c.best().cost(), cOld = choose(withHerds(Map.of(), java.util.List.of(old))).best().cost();
-        assertEquals(4 * cFresh, cOld, 1e-6);
-        // the best herd of a type wins; a type in reach is the plain hunt, not a walk to memory
-        var near = new FoodOptions.Herd("cow", 20, 64, 0, 3, 1.0, 20);
-        assertEquals("hunt 2 cow at 20 0 > cook beef 2", choose(withHerds(Map.of(), java.util.List.of(fresh, near))).best().command());
-        Options.Choice inReach = choose(withHerds(Map.of("cow", 4), java.util.List.of(fresh)));
-        assertEquals("hunt cow", inReach.best().id());
-        assertTrue(inReach.ranked().stream().noneMatch(o -> o.id().equals("go hunt cow")));
-        // forgotten (under 0.05) or too far: dropped with why
-        Options.Choice gone = choose(withHerds(Map.of(), java.util.List.of(new FoodOptions.Herd("cow", 80, 64, 0, 8, 0.01, 80),
-                new FoodOptions.Herd("pig", 900, 64, 0, 8, 1, 900))));
-        assertTrue(gone.dropped().stream().anyMatch(d -> d.contains("seen too long ago")), gone.dropped().toString());
-        assertTrue(gone.dropped().stream().anyMatch(d -> d.startsWith("go hunt pig at 900 0: 900 away")), gone.dropped().toString());
-    }
-
-    @Test
-    void aaep1HuntsTheAnimalsNearAndCooksTheMeat() {
-        Options.Choice c = choose(facts(6, Map.of(), true, Map.of("cow", 9, "sheep", 4, "chicken", 3), null));
-        assertNotNull(c.best(), c.why());
-        assertEquals("hunt cow", c.best().id());
-        assertEquals("hunt 2 cow > cook beef 2", c.best().command(), "24 points: 2 cooked beef (20.8 each)");
-    }
-
-    @Test
-    void theHuntIsOneRowPricedByItsWalk() {
-        FoodOptions.FoodFacts f = new FoodOptions.FoodFacts(5, 0, Map.of(), 24, true, Map.of("cow", 3), null,
-                null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, 20, 30, null);
-        Options.Choice c = choose(f);
-        assertNotNull(c.best(), c.why());
-        assertEquals("hunt cow", c.best().id());
-        assertEquals("hunt 2 cow > cook beef 2", c.best().command(), "no out word: the hunt walks to the animals itself");
-        assertEquals(java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.HuntAt("minecraft:cow", 2, null), new io.github.mojolowjo.entropybot.aa.moves.Step.Cook("beef", 2)).toString(),
-                c.best().steps().toString(), "rm-execution: the hunt row emits typed steps, no chain text");
-        assertTrue(c.best().why().contains("travel 2x30"), c.best().why());
-        FoodOptions.FoodFacts calm = new FoodOptions.FoodFacts(12, 0, Map.of(), 24, true, Map.of("cow", 3), null,
-                null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, 20, 30, null);
-        Options.Choice cc = choose(calm);
-        assertEquals("hunt cow", cc.best().id(), "not urgent, still the only way, at a dearer travel");
-        assertTrue(cc.best().cost() > c.best().cost(), cc.why());
-        FoodOptions.FoodFacts calmBerry = new FoodOptions.FoodFacts(12, 0, Map.of(), 24, true, Map.of("cow", 3), null,
-                null, "oak", -1, new int[]{5, 64, 5}, 5, null, null, null, false, false, 0, false, ME, 20, 30, null);
-        assertEquals("berries", choose(calmBerry).best().id(), "a berry bush near beats a far hunt when not urgent: " + choose(calmBerry).why());
-        FoodOptions.FoodFacts near = new FoodOptions.FoodFacts(12, 0, Map.of(), 24, true, Map.of("cow", 3), null,
-                null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, 20, 3, null);
-        assertTrue(choose(near).best().cost() < cc.best().cost(), "a near herd is cheaper than a far one");
-    }
-
-    @Test
-    void noFurnaceNeverRawChicken() {
-        Options.Choice c = choose(facts(10, Map.of(), false, Map.of("chicken", 5), null));
-        assertNull(c.best(), c.why());
-        assertTrue(c.why().contains("chickens only, no furnace"), c.why());
-        Options.Choice pig = choose(facts(10, Map.of(), false, Map.of("pig", 2), null));
-        assertTrue(pig.best().command().startsWith("hunt ") && !pig.best().command().contains("cook"), pig.why());
-    }
-
-    @Test
-    void eatFromTheBagFirstAndCookWhatIsRaw() {
+    void eatFromTheBagFirst() {
         Options.Choice c = choose(facts(10, Map.of("cooked_beef", 1, "beef", 3), true, Map.of("cow", 3), null));
         assertEquals("eat", c.best().id(), c.why());
-        assertEquals("cook beef", c.ranked().get(1).id(), c.why());
-        assertEquals("cook beef 3", c.ranked().get(1).command());
         Options.Choice notYet = choose(facts(16, Map.of("cooked_beef", 1), true, Map.of(), null));
         assertTrue(notYet.ranked().stream().noneMatch(o -> o.id().equals("eat")), "down 4, steak gives 8: no waste");
     }
 
     @Test
-    void theOwnersHuntingOffIsSaid() {
-        Options.Choice c = choose(facts(6, Map.of(), true, Map.of("cow", 9), "hunting is off"));
-        assertNull(c.best());
-        assertTrue(c.why().contains("hunt: hunting is off"), c.why());
-    }
-
-    @Test
-    void foragingWaysAndAWheatFieldWhenNotHungry() {
+    void theWaterWaysAndAFieldWhenNotHungry() {
         FoodOptions.FoodFacts f = new FoodOptions.FoodFacts(16, 2, Map.of("wheat_seeds", 5, "oak_planks", 4), 24, true, Map.of(), null,
                 new int[]{5, 64, 5}, "oak", 7, new int[]{3, 64, 0}, 3, new int[]{1, 64, 1}, new int[]{2, 64, 2}, null, true, false, 0, true, ME);
         Options.Choice c = choose(f);
         java.util.Set<String> ids = new java.util.HashSet<>();
         c.ranked().forEach(o -> ids.add(o.id()));
-        assertTrue(ids.containsAll(java.util.List.of("berries", "stew", "apples")), c.why());
         assertTrue(ids.contains("kelp"), "aa-kelpfish: kelp seen + a furnace is a costed way: " + c.why());
         assertTrue(c.why().contains("fishing: no fishing rod"), c.why());
         assertTrue(c.why().contains("wheat by water: no dry spot next to water"), "aa383: no field here just because water is 12 away: " + c.why());
-        Options.Option stew = c.ranked().stream().filter(o -> o.id().equals("stew")).findFirst().orElseThrow();
-        assertEquals("dig 1 64 1 1 64 1 > dig 2 64 2 2 64 2 > craft bowl 1 > craft mushroom_stew 1", stew.command());
-        // hungry: no field (too slow)
         FoodOptions.FoodFacts hungry = new FoodOptions.FoodFacts(5, 0, f.bag(), 24, true, Map.of(), null,
                 null, "oak", -1, null, -1, null, null, null, true, false, 0, false, ME);
         assertTrue(choose(hungry).why().contains("wheat: too slow while hungry"), choose(hungry).why());
@@ -167,24 +91,11 @@ class FoodOptionsTest {
         FoodOptions.FoodFacts none = facts(6, Map.of(), true, Map.of(), null);
         String why = FoodOptions.noSource(none);
         assertNotNull(why);
-        assertTrue(why.startsWith("no food source: ") && why.contains("hunt: no animal in reach"), why);
-        assertNull(FoodOptions.noSource(facts(6, Map.of(), true, Map.of("pig", 1), null)));
+        assertTrue(why.startsWith("no food source: ") && why.contains("chain: no stored food"), why);
         FoodOptions.FoodFacts stored = new FoodOptions.FoodFacts(6, 0, Map.of(), 24, true, Map.of(), null,
                 null, "oak", -1, null, -1, null, null, null, false, false, 3, false, ME);
         assertNull(FoodOptions.noSource(stored), "food in storage: the planner fetches it");
         assertNull(FoodOptions.noSource(null), "no facts: never parked");
-    }
-
-    @Test
-    void aSlowWayThatGainedNothingIsChargedNotRerunForever() {
-        FoodOptions.FoodFacts f = new FoodOptions.FoodFacts(16, 2, Map.of(), 24, true, Map.of(), null,
-                new int[]{5, 64, 5}, "oak", 7, null, -1, null, null, null, false, false, 0, false, ME);
-        FoodOptions.Food set = new FoodOptions.Food();
-        Options.OptionMemory m = new Options.OptionMemory();
-        assertEquals("apples", set.choose(f, m, 0, null, 0, null, null).best().id());
-        Options.Choice again = set.choose(f, m, 1000, null, 0, null, null);
-        assertNull(again.best(), again.why());
-        assertTrue(again.why().contains("no food gained last time"), again.why());
     }
 
     // ---- the desire ----
@@ -210,34 +121,5 @@ class FoodOptionsTest {
         assertFalse(food.unmet(bb), "full and stocked: met");
         bb.in.bag = Map.of();
         assertTrue(food.unmet(bb), "full but empty bag: gather before hunger");
-    }
-
-    @Test
-    void aPlannerChainThatHuntsAnAnimalNobodySawIsDropped() {
-        Options.Choice c = new FoodOptions.Food().choose(facts(10, Map.of(), false, Map.of(), null), new Options.OptionMemory(), 0,
-                TS.s("gather food 8 then hunt 8 cow"), 20, null, null);
-        assertTrue(c.ranked().stream().noneMatch(o -> o.id().equals("planner")), c.why());
-        assertTrue(c.dropped().stream().anyMatch(d -> d.startsWith("planner:") && d.contains("hunts cow")), c.dropped().toString());
-        // the cow is in reach, or remembered: the chain stays
-        Options.Choice near = new FoodOptions.Food().choose(facts(10, Map.of(), true, Map.of("cow", 3), null), new Options.OptionMemory(), 0,
-                TS.s("gather food 8 then hunt 8 cow"), 20, null, null);
-        assertTrue(near.ranked().stream().anyMatch(o -> o.id().equals("planner")));
-        Options.Choice seen = new FoodOptions.Food().choose(withHerds(Map.of(), java.util.List.of(new FoodOptions.Herd("cow", 80, 64, 0, 8, 1.0, 80))),
-                new Options.OptionMemory(), 0, TS.s("gather food 8 then hunt 8 cow"), 20, null, null);
-        assertTrue(seen.ranked().stream().anyMatch(o -> o.id().equals("planner")));
-        // sheep seen, the chain hunts cows: dropped, and the sheep walk wins
-        Options.Choice sheep = new FoodOptions.Food().choose(withHerds(Map.of(), java.util.List.of(new FoodOptions.Herd("sheep", 80, 64, 0, 1, 0.8, 106))),
-                new Options.OptionMemory(), 0, TS.s("gather food 8 then hunt 8 cow"), 20, null, null);
-        assertEquals("go hunt sheep", sheep.best().id());
-    }
-
-    @Test
-    void desireParksOnTheFactsAndComesBack() {
-        Supplier<FoodOptions.FoodFacts> sup = () -> facts(6, Map.of(), true, Map.of(), null);
-        bb.fact(FoodOptions.FACTS, sup);
-        assertNotNull(AaDesires.foodInfeasible(bb));
-        Supplier<FoodOptions.FoodFacts> cows = () -> facts(6, Map.of(), true, Map.of("cow", 2), null);
-        bb.fact(FoodOptions.FACTS, cows);
-        assertNull(AaDesires.foodInfeasible(bb), "re-checked: animals came into reach");
     }
 }

@@ -63,7 +63,8 @@ public final class StepCommands {
             case Step.FarmPlant k -> "farm plant " + k.crop() + " here " + k.n();
             case Step.MarkFarm k -> "place farm" + (k.at() == null ? "" : " " + k.at()[0] + " " + k.at()[1] + " " + k.at()[2]);
             case Step.BuildSchematic k -> "build schematic " + k.name() + " " + k.x() + " " + k.y() + " " + k.z();
-            case Step.Plan k -> throw new IllegalStateException("a plan step is expanded by Steps, never run by the hands");
+            case Step.Obtain k -> throw new IllegalStateException("an obtain step is expanded by Steps (the chain), never run by the hands");
+            case Step.ToBand k -> throw new IllegalStateException("a band step runs on its own hands (StepHands.toBand)");
             case Step.StripLeg k -> throw new IllegalStateException("a compound step is expanded by Steps, never run by the hands");
             case Step.ClearChunk k -> throw new IllegalStateException("a compound step is expanded by Steps, never run by the hands");
         };

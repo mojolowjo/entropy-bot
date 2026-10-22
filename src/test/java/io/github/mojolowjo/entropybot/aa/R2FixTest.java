@@ -45,12 +45,4 @@ class R2FixTest {
         assertTrue(Math.abs(s.cell()[0]) >= 6);
         assertNull(BedSpot.choose(me, null, null, me, c -> false, c -> true, Set.of()), "no free cell at all: none");
     }
-
-    // ---- stock iron: the routine expanded ----
-
-    @Test void expandedRoutineKeepsItsOreStepBeforeTheSmelt() {
-        Options.Option o = IronOptions.idleOption((java.util.function.Supplier<IronOptions.Facts>) () -> WoodOptionsTest.facts(0),
-                io.github.mojolowjo.entropybot.aa.TS.s("craft planks 4 then craft furnace 1 then smelt iron_ingot 16 then smelt collect all"), 0, new String[1]);
-        if (o != null) assertTrue(o.command().indexOf("mine") >= 0 && o.command().indexOf("mine") < o.command().indexOf("smelt iron_ingot"), o.command());
-    }
 }

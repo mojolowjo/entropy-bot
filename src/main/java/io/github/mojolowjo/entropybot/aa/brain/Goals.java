@@ -18,7 +18,7 @@ import java.util.Map;
 public final class Goals {
     private Goals() {}
 
-    public static final String FACT = "aa.ownerGoals", KNOWN_FACT = "aa.oreKnown";
+    public static final String FACT = "aa.ownerGoals";
     public static int high() { return Tuning.i("goals.high"); }
     public static int oreDefault() { return Tuning.i("goals.oreDefault"); }
     /** A fresh goal may interrupt the running task (once) within this time. */
@@ -101,15 +101,11 @@ public final class Goals {
         Thing.Where w = g.r.where();
         if (w != null && w.dim() != null && !w.dim().equals(bb.in.dimension))
             return g.r.key() + " is only in " + Thing.dimName(w.dim()) + "; I don't travel there yet";
-        if (g.r.tier() >= 4 && bb.in.pickTier < 4) return "needs a diamond pickaxe (aa want diamond_pickaxe first)";  // game fact: pickaxe tier scale: wood 1, stone 2, iron 3, diamond 4
         return null;
     }
 
-    /** The desire that supplies the missing pickaxe (value flows to it, 2.2), else null. Below iron the goal's own steps make the pickaxe ({@link #steps}). */
-    public static String prereq(Blackboard bb, Goal g) {
-        if (g.r.tier() >= 3 && bb.in.pickTier < 3) return "needs.iron";  // game fact: pickaxe tier scale: wood 1, stone 2, iron 3, diamond 4
-        return null;
-    }
+    /** one-planner: no prerequisite desire: the chain makes the pickaxe a dig asks for (the lowest tier that does it). */
+    public static String prereq(Blackboard bb, Goal g) { return null; }
 
     /** What the chains start from (the adapter's {@link NeedChain#WORLD_FACT}), null: not readable yet. */
     public static io.github.mojolowjo.entropybot.aa.NeedChain.World world(Blackboard bb) {
@@ -118,56 +114,24 @@ public final class Goals {
     }
 
     /**
-     * rm-execution2: the typed steps for what is left, or null (done, or the pickaxe missing: the prereq works first). A
-     * goal a recipe makes is the planner's ({@link Step.Plan}); an ore is a per-ore {@link Step.MineAt} at the nearest
-     * cell, else the mine verb's ways; a dropped item its loot step.
+     * one-planner: every owner order goes through the chain. A group (ruling b) is one job ({@code NeedChain.resolveAll}: one
+     * table, one trip, a simulated bag); an item is "I need n of it" ({@code NeedChain.resolve}: have it, craft it, dig a
+     * known source with the pickaxe its block asks for, hunt it, else explore, at its worldgen height first). Null: no world
+     * yet, done, or no chain at all ({@link #chain} says why).
      */
     public static List<Step> steps(Blackboard bb, Goal g) {
-        int left = g.n - have(bb.in.bag, g);
-        if (left <= 0) return null;
-        var world = world(bb);
-        if (g.r.group()) {          // ruling (b): the whole group is one job, one chain (one table, one trip, a simulated bag)
-            var ch = world == null ? null : io.github.mojolowjo.entropybot.aa.NeedChain.resolveAll(g.r.key(), g.r.ids(), g.n, world);
-            return ch == null || !ch.ok() || ch.steps().isEmpty() ? null : ch.steps();
-        }
-        if (bb.in.pickTier < g.r.tier()) {          // ruling (a): the dig makes the lowest pickaxe its block asks for (iron and up: the iron need)
-            if (g.r.tier() >= 3 || world == null) return null;       // game fact: pickaxe tier scale: wood 1, stone 2, iron 3, diamond 4
-            var ch = io.github.mojolowjo.entropybot.aa.NeedChain.resolveTool(g.r.tier(), world);
-            return !ch.ok() || ch.steps().isEmpty() ? null : ch.steps();
-        }
-        if (!g.r.ore()) {
-            LootBook.Plan lp = loot(bb, g, left);
-            return List.of(lp != null && lp.step() != null ? lp.step() : new Step.Plan(g.r.key() + " " + left));
-        }
-        String w = g.r.key().replaceFirst("^.*:", "");
-        // round 2 item 5: the nearest known ore by name (that cell and its vein); the goal picks again for the next one
-        int[] at = nearest(bb, g.r.key());
-        // aa-water (1f): a wet ore whose cheapest way stands first (a floor, a placed block, a dry side): that way's steps
-        if (at != null && bb.fact(WATER_CMD_FACT) instanceof Map<?, ?> wc && wc.get(g.r.key()) instanceof List<?> ws) {
-            List<Step> out = new ArrayList<>();
-            for (Object o : ws) if (o instanceof Step s) out.add(s instanceof Step.MineAt m ? new Step.MineAt(w, m.x(), m.y(), m.z(), m.dig()) : s);
-            if (!out.isEmpty()) return out;
-        }
-        if (at != null) return List.of(new Step.MineAt(w, at[0], at[1], at[2], !(at.length > 3 && at[3] == 0)));  // structural: a position array is x y z, with an optional 4th flag
-        if (known(bb, g.r.key()) > 0) return List.of(new Step.Mine(w, left, Step.Mine.How.DIG));
-        // AA_ROUND3 3 (aa fair): no ore seen: the cheapest discovery way (explore cave, strip at Y, clear chunk), priced
-        Discovery.Opt d = discovery(bb, g.r.key());
-        if (d != null) return d.steps();
-        // B5: no known ore and no idea at what height it lives (not learned yet): look around first, the chunk pass learns
-        if (g.r.where() != null && !g.r.where().yKnown()) return List.of(new Step.Explore((int) Tuning.get("steps.exploreMin")));
-        // overnight 2026-10-19 (coal goal: "mine strip" with no mine marked failed twice): the iron-style ways in order
-        if (bb.fact(WAYS_FACT) instanceof Ways ws) {
-            if (ws.caveDist() >= 0) return List.of(new Step.Mine(w, left, Step.Mine.How.CAVE));
-            if (ws.mineMarked()) return List.of(new Step.Mine(w, left, Step.Mine.How.STRIP));
-            return List.of(new Step.MarkMine(null, "north"), new Step.Mine(w, left, Step.Mine.How.STRIP));
-        }
-        return List.of(new Step.Mine(w, left, Step.Mine.How.STRIP));
+        if (g.n - have(bb.in.bag, g) <= 0) return null;
+        var ch = chain(bb, g);
+        return ch == null || !ch.ok() || ch.steps().isEmpty() ? null : ch.steps();
     }
 
-    /** The adapter's ore-goal facts (set with {@link #KNOWN_FACT}): a known cave within reach (-1 none), a mine marked. */
-    public static final String WAYS_FACT = "aa.oreWays";
-
-    public record Ways(int caveDist, boolean mineMarked) {}
+    /** The goal's chain on the world fact now (null: no world facts yet). */
+    public static io.github.mojolowjo.entropybot.aa.NeedChain.Chain chain(Blackboard bb, Goal g) {
+        var world = world(bb);
+        if (world == null) return null;
+        if (g.r.group()) return io.github.mojolowjo.entropybot.aa.NeedChain.resolveAll(g.r.key(), g.r.ids(), g.n, world);
+        return io.github.mojolowjo.entropybot.aa.NeedChain.resolve(g.r.ids().isEmpty() ? g.r.key() : g.r.ids().get(0), g.n, world);
+    }
 
     /**
      * aa-costs (was: 4 coal kept back while a coal goal is open): the open coal goal's score and size, {score, n}
@@ -175,14 +139,13 @@ public final class Goals {
      */
     public static double[] coalGoal(Blackboard bb) {
         if (!(bb.fact(FACT) instanceof List<?>)) return new double[]{0, 0};
-        for (Goal g : of(bb)) if (g.r.key().replaceFirst("^.*:", "").matches("(deepslate_)?coal(_ore)?") && have(bb.in.bag, g) < g.n) return new double[]{score(bb, g), g.n};
+        for (Goal g : of(bb)) {
+            boolean coal = false;
+            for (String id : g.r.ids()) coal |= ItemWorth.hasTag(id, "minecraft:coals");       // the game's coals tag, not a name
+            if (coal && have(bb.in.bag, g) < g.n) return new double[]{score(bb, g), g.n};
+        }
         return new double[]{0, 0};
     }
-
-    /** Round 2 item 5: goal key -> the nearest known ore AA can take, {x, y, z, dig 1 | walk 0} (the adapter refreshes it). */
-    public static final String NEAREST_FACT = "aa.oreNearest";
-    /** aa-water: goal key -> the steps of a water way (IronOptions WATER_STAND / WATER_PLACE / DRY_SIDE) for the picked ore. */
-    public static final String WATER_CMD_FACT = "aa.oreWaterCmd";
 
     /**
      * aa-water (1f): the ore goal's pick by the iron scorer's prices (the water ways weigh against a floating dig and
@@ -190,7 +153,7 @@ public final class Goals {
      */
     public record Pick(int[] at, List<Step> waterSteps) {}
 
-    public static Pick pickPriced(List<io.github.mojolowjo.entropybot.aa.IronOptions.Ore> ores, int meY, boolean inWater, int throwaway, boolean placeAllowed, int digMax) {
+    public static Pick pickPriced(String ore, List<io.github.mojolowjo.entropybot.aa.IronOptions.Ore> ores, int meY, boolean inWater, int throwaway, boolean placeAllowed, int digMax) {
         var f = new io.github.mojolowjo.entropybot.aa.IronOptions.Facts(ores, meY, inWater, throwaway, placeAllowed, -1, false, null, -1, false, false, 0);
         var c = io.github.mojolowjo.entropybot.aa.IronOptions.choose(f, new io.github.mojolowjo.entropybot.aa.IronOptions.Memory(), 0);
         for (var s : c.ranked()) {
@@ -199,7 +162,7 @@ public final class Goals {
             if (s.way() == io.github.mojolowjo.entropybot.aa.IronOptions.Way.WATER_STAND || s.way() == io.github.mojolowjo.entropybot.aa.IronOptions.Way.WATER_PLACE
                     || s.way() == io.github.mojolowjo.entropybot.aa.IronOptions.Way.DRY_SIDE) {
                 var one = new io.github.mojolowjo.entropybot.aa.IronOptions.Choice(s.way(), o, c.smelt(), c.ranked(), c.dropped(), s.stand(), s.place());
-                return new Pick(new int[]{o.x(), o.y(), o.z(), 1}, one.steps(1));
+                return new Pick(new int[]{o.x(), o.y(), o.z(), 1}, one.steps(ore, 1));
             }
             // the cheapest walk/dig row (the floating dig priced in: "another ore" wins over a wet one)
             if (s.way() == io.github.mojolowjo.entropybot.aa.IronOptions.Way.WALK_KNOWN) return new Pick(new int[]{o.x(), o.y(), o.z(), o.loaded() ? 0 : 1}, null);
@@ -207,16 +170,6 @@ public final class Goals {
         }
         int[] at = pickOre(ores, digMax);
         return at == null ? null : new Pick(at, null);
-    }
-
-    /** AA_ROUND3 3: the goal's cheapest discovery option (the adapter's {@link Discovery#FACT}), null none. */
-    @SuppressWarnings("unchecked")
-    public static Discovery.Opt discovery(Blackboard bb, String key) {
-        return bb.fact(Discovery.FACT) instanceof Map<?, ?> m && m.get(key) instanceof List<?> l && !l.isEmpty() && l.get(0) instanceof Discovery.Opt o ? o : null;
-    }
-
-    public static int[] nearest(Blackboard bb, String key) {
-        return bb.fact(NEAREST_FACT) instanceof Map<?, ?> m && m.get(key) instanceof int[] a && a.length >= 3 ? a : null;  // structural: a position has 3 coordinates
     }
 
     /**
@@ -232,35 +185,6 @@ public final class Goals {
         return null;
     }
 
-    /**
-     * Loot data: an item no recipe makes, with a drop source the bot can work ("mine gravel 30", "hunt 3 cow for
-     * leather 3"), else the reason; null when the book has nothing (or a recipe makes it: the planner goes first).
-     */
-    public static LootBook.Plan loot(Blackboard bb, Goal g, int left) {
-        if (g.r.ore() || !(bb.fact(LootBook.FACT) instanceof LootBook book) || book.isEmpty()) return null;
-        String id = g.r.ids().isEmpty() ? g.r.key() : g.r.ids().get(0);
-        if (bb.fact(TechTree.FACT) instanceof TechTree t && t.makes(id)) return null;
-        LootBook.Ctx ctx = bb.fact(LootBook.CTX_FACT) instanceof LootBook.Ctx c ? c : LootBook.Ctx.NONE;
-        @SuppressWarnings("unchecked")
-        Map<String, int[]> herds = bb.fact(LootBook.HERDS_FACT) instanceof Map<?, ?> hm ? (Map<String, int[]>) hm : null;
-        LootBook.Plan p = book.plan(id, Math.max(1, left), g.n, ctx, fightOk(bb, ctx), herds);     // review: hunt stops at the bag total
-        return p.command() == null && p.text() == null ? null : p;
-    }
-
-    /** The brain's fight rule for a hunt of a hostile mob: armed, health 14+, no danger or creeper near. */
-    public static boolean fightOk(Blackboard bb, LootBook.Ctx ctx) {
-        return ctx.armed() && bb.in.health >= Tuning.i("goals.fightHealth") && bb.in.danger == 0 && !bb.in.creeperClose && !bb.in.hurtRecently;
-    }
-
-    /** Known positions of the family (the adapter refreshes {@link #KNOWN_FACT}). */
-    public static int known(Blackboard bb, String key) {
-        return bb.fact(KNOWN_FACT) instanceof Map<?, ?> m && m.get(key) instanceof Integer i ? i : 0;
-    }
-
-    private static String lootNote(Blackboard bb, Goal g) {
-        LootBook.Plan lp = loot(bb, g, Math.max(1, g.n - have(bb.in.bag, g)));
-        return lp == null || lp.text() == null ? "" : " (" + lp.text() + ")";
-    }
 
     /** The goals reached now (removed from the list); the adapter drops their desires and tells the owner. */
     public static List<Goal> done(Blackboard bb) {
@@ -273,12 +197,9 @@ public final class Goals {
     /** One aa goals line: "iron 2/8 high: score 90 - mine iron 6 dig | ...". */
     public static String line(Blackboard bb, Goal g, String scoreText) {
         String b = blocked(bb, g);
-        List<Step> st = b == null ? steps(bb, g) : null;
-        String c = st == null ? null : Step.label(st);
-        String p = b == null && c == null ? prereq(bb, g) : null;
+        var ch = b == null ? chain(bb, g) : null;
         return g.r.key() + " " + have(bb.in.bag, g) + "/" + g.n + (g.prio > 0 ? " high" : g.prio < 0 ? " low" : "") + ": " + scoreText
-                + (b != null ? " - parked: " + b : c != null ? " - next: " + c : p != null ? " - first " + p : "")
-                + lootNote(bb, g)
-                + " [" + g.r.text() + (known(bb, g.r.key()) > 0 ? "; " + known(bb, g.r.key()) + " known near" : "") + "]";
+                + (b != null ? " - parked: " + b : ch != null ? " - chain: " + ch.why() : " - no facts for the chain yet")
+                + " [" + g.r.text() + "]";
     }
 }

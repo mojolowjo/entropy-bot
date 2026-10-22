@@ -105,22 +105,21 @@ class LootDataTest {
     }
 
     @Test
-    void goalChainUsesLootOnlyWhenNoRecipeMakesIt() {
+    void theGoalsChainReadsTheLootDataBlocksAndMobs() {
         Blackboard bb = new Blackboard(new Clock.Fake(1_000), new FakePort(), new Tracer());
         Thing.Catalog cat = new Thing.Catalog(List.of("minecraft:flint", "minecraft:leather"), List.of("minecraft:gravel"), Map.of(), Map.of(), null);
+        var gravel = new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(5, 64, 0, 5, "minecraft:gravel", 64);
+        var cow = new io.github.mojolowjo.entropybot.aa.NeedChain.Mob("minecraft:cow", 12, 64, 0, 12);
+        bb.fact(io.github.mojolowjo.entropybot.aa.NeedChain.WORLD_FACT, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.NeedChain.World>) () ->
+                new io.github.mojolowjo.entropybot.aa.NeedChain.World(bb.in.bag, false, w -> w.equals("minecraft:flint") ? gravel : null)
+                        .withMobs(t -> t.equals("minecraft:cow") ? List.of(cow) : List.of(), book()));
         Goals.Goal flint = Goals.add(bb, Thing.resolve("flint", cat), 3, 0, 0);
-        assertEquals("plan flint 3", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, flint)), "no book: the planner");
-        bb.fact(LootBook.FACT, book());
-        bb.fact(LootBook.CTX_FACT, ctx(true, Set.of(), false));
-        assertEquals("mine gravel 30", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, flint)));
-        bb.fact(TechTree.FACT, new TechTree(List.of(new TechTree.Recipe("minecraft:flint", List.of(Set.of("minecraft:gravel"))))));
-        assertEquals("plan flint 3", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, flint)), "a recipe makes it: the planner first");
+        List<io.github.mojolowjo.entropybot.aa.moves.Step> fs = Goals.steps(bb, flint);
+        assertTrue(fs.get(fs.size() - 1) instanceof io.github.mojolowjo.entropybot.aa.moves.Step.Collect k && k.item().equals("flint"), "the gravel the loot data names: " + fs);
         Goals.Goal leather = Goals.add(bb, Thing.resolve("leather", cat), 2, 0, 0);
-        assertEquals("hunt 2 cow for leather 2", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, leather)));
-        bb.in.bag = Map.of("leather", 1);
-        assertEquals("hunt 1 cow for leather 2", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, leather)), "the hunt stops at the bag total");
-        bb.in.bag = Map.of();
-        assertTrue(Goals.line(bb, leather, "70").contains("kill cow for leather"), Goals.line(bb, leather, "70"));
+        List<io.github.mojolowjo.entropybot.aa.moves.Step> ls = Goals.steps(bb, leather);
+        assertTrue(ls.get(0) instanceof io.github.mojolowjo.entropybot.aa.moves.Step.HuntAt h && h.type().equals("minecraft:cow") && h.forItem().equals("leather"), "a known cow, the mob drop: " + ls);
+        assertFalse(Goals.line(bb, leather, "70").contains("chests"), "no chest-loot talk: " + Goals.line(bb, leather, "70"));
     }
 
     @Test

@@ -101,7 +101,7 @@ public final class Blueprint {
         public final String name, file;
         /** The dimension it stands in (the adapter sets it; null = any). */
         public String dim;
-        /** Items the planner found no way to get (review 1): skipped by the chain, Baritone builds the rest. */
+        /** Items the chain found no way to get (review 1): skipped by the chain, Baritone builds the rest. */
         public final Set<String> unresolved = java.util.concurrent.ConcurrentHashMap.newKeySet();
         /** Build runs in a row that placed nothing (review 3): parked at {@link #MAX_FAILS}. */
         public volatile int fails;
@@ -174,7 +174,7 @@ public final class Blueprint {
 
     /**
      * The next step: null before the first scan or when done; the current layer lacks an item that the bag has none of
-     * -> the planner's {@code <item> <bag + whole-build shortfall>} (one trip per item); else the build step itself (Baritone
+     * -> the chain's "I need {@code <bag + whole-build shortfall>} of {@code <item>}" (one trip per item); else the build step itself (Baritone
      * places what it carries and the next round gathers the rest).
      */
     public static io.github.mojolowjo.entropybot.aa.moves.Step step(Blackboard bb, Build b) {
@@ -184,7 +184,7 @@ public final class Blueprint {
         for (Map.Entry<String, Integer> e : missing(s.layerLeft, bag).entrySet()) {
             String k = bagKey(e.getKey());
             if (bag.getOrDefault(k, 0) > 0 || b.unresolved.contains(k)) continue;   // in the bag: build with it first; no plan: skip
-            return new io.github.mojolowjo.entropybot.aa.moves.Step.Plan(k + " " + Math.max(e.getValue(), s.left.getOrDefault(e.getKey(), 0)));   // none in the bag: the whole build's need
+            return new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain(k, Math.max(e.getValue(), s.left.getOrDefault(e.getKey(), 0)));   // none in the bag: the whole build's need
         }
         return new io.github.mojolowjo.entropybot.aa.moves.Step.BuildSchematic(b.name, b.origin[0], b.origin[1], b.origin[2]);
     }

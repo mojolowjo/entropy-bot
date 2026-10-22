@@ -21,7 +21,7 @@ public final class ExploreRules {
 
     /**
      * live-facts: a chain's explore for a missing source ends the moment the source is known: the one Nearby fact
-     * ({@code source}: AaRuntime.nearestSource, Baritone's scan or a sighting) answers for the word. The end text, or null
+     * ({@code source}: AaRuntime.knownSource: a block by Baritone's scan or a sighting, or an animal whose loot drops it) answers for the item. The end text, or null
      * while nothing is known (or no word was given). The chain is then priced again by the need that runs it.
      */
     public static String untilFound(String word, java.util.function.Function<String, io.github.mojolowjo.entropybot.aa.NeedChain.Spot> source) {

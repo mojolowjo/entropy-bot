@@ -135,6 +135,41 @@ final class BaritoneHand implements JobHands.Hand {
         }
     }
 
+    /** one-planner: the fork's placeNear (Baritone picks the cell, the stand and the face; the mod names none). */
+    @Override public void startPlaceNear(String item, int radius, int timeoutTicks) {
+        proc = null;
+        builder = null;
+        forced = null;
+        try {
+            var p = Minecraft.getInstance().player;
+            var lv = Minecraft.getInstance().level;
+            if (p == null || lv == null) { forced = Car.Status.failed("stage plan: no player"); return; }
+            ResourceLocation rl = ResourceLocation.tryParse(item.contains(":") ? item : "minecraft:" + item);
+            Item it = rl == null ? Items.AIR : BuiltInRegistries.ITEM.get(rl);
+            if (!(it instanceof net.minecraft.world.item.BlockItem bi)) { forced = Car.Status.failed("stage plan: " + item + " is not a block item (the builder places blocks only)"); return; }
+            if (p.getInventory().countItem(it) < 1) { forced = Car.Status.failed("stage items: need 1 " + rl.getPath() + ", the bag has 0"); return; }
+            String dim = Guard.dimOf(lv);
+            baritone.api.process.IBuilderProcess.LegGuard g = new baritone.api.process.IBuilderProcess.LegGuard() {
+                @Override public String cell(BlockPos q) { return guardVerdict(lv, dim, q, "place"); }
+
+                @Override public String stand(BlockPos f) { return standVerdict(dim, f); }
+
+                @Override public String breakCell(BlockPos q) { return guardVerdict(lv, dim, q, "break"); }
+            };
+            builder = b().getBuilderProcess();
+            builder.placeNear("place " + rl.getPath() + " near me", bi.getBlock().defaultBlockState(), radius, timeoutTicks, g);
+            buildRun = builder.legRun();
+        } catch (LinkageError e) {
+            forced = Car.Status.failed("this Baritone has no placeNear (an older jar? install the entropy fork from baritone-one-planner): " + e);
+            if (!warned) {
+                warned = true;
+                LOG.warn("[entropybot] job hands: {}", forced.why());
+            }
+        } catch (RuntimeException e) {
+            forced = Car.Status.failed("start: " + e);
+        }
+    }
+
     /** The guard's dry run for this action on the cell: null = allowed, else "the guard: why". */
     private static String guardVerdict(net.minecraft.world.level.Level lv, String dim, BlockPos q, String action) {
         var v = Guard.INSTANCE.core.checkUnlogged(dim, q.getX(), q.getY(), q.getZ(), action, Guard.INSTANCE.infoFor(lv, q));

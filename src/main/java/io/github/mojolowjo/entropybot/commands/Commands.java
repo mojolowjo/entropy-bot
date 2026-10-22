@@ -706,7 +706,6 @@ public final class Commands implements Chains.Env {
             }
             stepRun.tick();                                                                          // rm-execution: the typed steps (AA's and the owner's verbs)
             if (tick % 5 == 2 && worldTicks > 400 && aaRuntime != null) { try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(io.github.mojolowjo.entropybot.aa.door.Driver.AA)) { aaRuntime.tick(tick); } }             // 0.36.0: AA at 4 Hz, never throws
-        planning.drainSearches();                                                                    // 0.23.1: the planner's answers from the worker
         if (worldTicks > 400) planning.tick(tick);                                                  // B3: actions.json when the state changed (every 5 s), never throws
             if (tick % 40 == 21) {
                 try { camp.junkTick(player); } catch (RuntimeException e) { LOG.warn("[entropybot] junk: {}", e.toString()); }      // C5
@@ -1094,7 +1093,7 @@ public final class Commands implements Chains.Env {
         if (isOwner && !internal && !auto) vocab.unrelease(verb);
         if (verb.equals("done") || verb.equals("free")) return Reply.now(vocab.release());
         if (verb.equals("needs")) return Reply.now(removedVerb("needs"));      // AA_CLEANUP 3
-        if (verb.equals("goal")) return Reply.now(planning.goal(from, player, rest));         // B3: the planner
+        if (verb.equals("goal")) return Reply.now(planning.goal(from, player, rest));         // one-planner: the order through the chain
         // 0.32.3 (PATHS_PLAN P3): paper planning: plan path ... / plan go / plan last; the result is whispered when done
         if (verb.equals("plan") && rest.trim().toLowerCase().matches("^(path\\b.*|go( anyway)?|last)$")) {
             String to = from;

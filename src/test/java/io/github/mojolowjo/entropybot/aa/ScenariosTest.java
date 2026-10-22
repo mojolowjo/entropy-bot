@@ -39,8 +39,11 @@ class ScenariosTest {
 
     static final Spot STONE_12 = new Spot(12, 60, 3, 12, "minecraft:stone", 40);
 
+    /** A world of the scenario's facts; the seen map is keyed by item id (a short id gets "minecraft:"). */
     static World w(Map<String, Integer> bag, boolean table, boolean furnace, Map<String, List<Spot>> seen) {
-        return new World(bag, table, word -> null, 0, word -> seen.getOrDefault(word, List.of()), furnace);
+        Map<String, List<Spot>> ids = new java.util.HashMap<>();
+        for (var e : seen.entrySet()) ids.put(e.getKey().contains(":") ? e.getKey() : "minecraft:" + e.getKey(), e.getValue());
+        return new World(bag, table, furnace, item -> ids.getOrDefault(item, List.of()), null, null, null, 0);
     }
 
     static String chainPart(String why) { int k = why.indexOf(" | dropped:"); return k < 0 ? why : why.substring(0, k); }
@@ -53,7 +56,7 @@ class ScenariosTest {
         Chain c = NeedChain.resolve("planks", 4, w(Map.of("minecraft:oak_log", 1), false, false, Map.of()));
         assertTrue(c.ok() && !c.explore(), c.why());
         assertEquals(0.3, c.seconds(), TOL, c.why());
-        assertTrue(c.why().startsWith("planks <- craft: 1 log: 0.3 s"), c.why());
+        assertTrue(c.why().startsWith("planks <- 4 oak_planks <- craft: 1 oak_log: 0.3 s"), c.why());
         assertEquals(1, c.steps().size(), c.steps().toString());
         assertTrue(c.dropped().isEmpty(), c.dropped().toString());
     }
@@ -61,10 +64,10 @@ class ScenariosTest {
     @Test
     void s2_aTreeSeenTenMetresIsWalkPlusBreakAndNoExplore() {
         world("wooden");
-        Chain c = NeedChain.resolve("log", 1, w(Map.of(), false, false, Map.of("log", List.of(tree(10, 4)))));
+        Chain c = NeedChain.resolve("oak_log", 1, w(Map.of(), false, false, Map.of("oak_log", List.of(tree(10, 4)))));
         assertTrue(c.ok() && !c.explore(), c.why());
         assertEquals(6.0, c.seconds(), TOL, c.why());
-        assertTrue(c.why().startsWith("log <- cut tree seen 10 m: 6.0 s"), c.why());
+        assertTrue(c.why().startsWith("oak_log <- cut tree seen 10 m: 6.0 s"), c.why());
         assertTrue(c.dropped().isEmpty(), c.dropped().toString());
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Explore), c.steps().toString());
     }
@@ -72,16 +75,16 @@ class ScenariosTest {
     @Test
     void s3_nothingSeenIsTheExploreStepWithNoPriceAndNeverNoWay() {
         world("wooden");
-        Chain c = NeedChain.resolve("log", 1, w(Map.of(), false, false, Map.of()));
+        Chain c = NeedChain.resolve("oak_log", 1, w(Map.of(), false, false, Map.of()));
         assertTrue(c.ok(), "never a no way: " + c.why());
         assertTrue(c.explore(), c.why());
-        assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes(), "log")), c.steps());
-        assertTrue(c.why().startsWith("log <- explore ("), c.why());
+        assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes(), "oak_log")), c.steps());
+        assertTrue(c.why().startsWith("oak_log <- explore ("), c.why());
         assertFalse(c.why().matches("(?s).*\\d+(\\.\\d+)? s\\b.*"), "no price in the why line: " + c.why());
         assertFalse(c.why().contains("no way"), c.why());
     }
 
-    static Map<String, List<Spot>> s4Seen() { return Map.of("log", List.of(tree(30, 6)), "cobblestone", List.of(STONE_12)); }
+    static Map<String, List<Spot>> s4Seen() { return Map.of("oak_log", List.of(tree(30, 6)), "cobblestone", List.of(STONE_12)); }
 
     @Test
     void s4_threeCobblestoneTakeTheWoodenPickaxeAndDropTheLoopAndTheUnknownSources() {
@@ -91,7 +94,7 @@ class ScenariosTest {
         assertEquals(28.05, c.seconds(), TOL, c.why());
         String chain = chainPart(c.why());
         assertTrue(chain.startsWith("cobblestone <- dig cobblestone seen 12 m with wooden_pickaxe"), c.why());
-        assertTrue(chain.contains("craft: 3 planks") && chain.contains("2 stick") && chain.contains("table") && chain.contains("tree seen 30 m"), c.why());
+        assertTrue(chain.contains("craft: 3 oak_planks") && chain.contains("2 stick") && chain.contains("table") && chain.contains("tree seen 30 m"), c.why());
         assertFalse(chain.contains("gold") || chain.contains("iron") || chain.contains("stone_pickaxe"), "no other pickaxe in the chain: " + c.why());
         Step.ChopTree chop = c.steps().stream().filter(s -> s instanceof Step.ChopTree).map(s -> (Step.ChopTree) s).findFirst().orElseThrow();
         assertEquals(3, chop.logs(), "9 planks = 3 logs: " + c.steps());
@@ -118,10 +121,10 @@ class ScenariosTest {
     @Test
     void s6_twoTreesTheNearOneIsCutAndTheFarOneIsDroppedWithItsSeconds() {
         world("wooden");
-        Chain c = NeedChain.resolve("log", 1, w(Map.of(), false, false, Map.of("log", List.of(tree(40, 5), tree(10, 5)))));
+        Chain c = NeedChain.resolve("oak_log", 1, w(Map.of(), false, false, Map.of("oak_log", List.of(tree(40, 5), tree(10, 5)))));
         assertTrue(c.ok() && !c.explore(), c.why());
         assertEquals(6.0, c.seconds(), TOL, c.why());
-        assertTrue(c.why().startsWith("log <- cut tree seen 10 m: 6.0 s"), c.why());
+        assertTrue(c.why().startsWith("oak_log <- cut tree seen 10 m: 6.0 s"), c.why());
         assertEquals(1, c.dropped().size(), c.dropped().toString());
         assertTrue(c.dropped().get(0).startsWith("tree 40 m: 15.0 s"), c.dropped().toString());
     }
@@ -163,7 +166,7 @@ class ScenariosTest {
     void s9_fromNothingTheTableIsAnItemWoodTableWoodenPickaxeCobblestoneStonePickaxeAndNoCellIsAsked() {
         world("wooden", "stone");
         Spot stone16 = new Spot(0, 60, 16, 16, "minecraft:stone", 40);
-        Chain c = NeedChain.resolve("stone_pickaxe", 1, w(Map.of(), false, false, Map.of("log", List.of(tree(10, 6)), "cobblestone", List.of(stone16))));
+        Chain c = NeedChain.resolve("stone_pickaxe", 1, w(Map.of(), false, false, Map.of("oak_log", List.of(tree(10, 6)), "cobblestone", List.of(stone16))));
         assertTrue(c.ok() && !c.explore(), c.why());
         assertEquals(28.35, c.seconds(), TOL, c.why());
         assertFalse(c.why().contains("free cell") || c.why().contains("no free"), c.why());
@@ -208,7 +211,8 @@ class ScenariosTest {
      * coal:   walk 20 m 6.02, 4 ore x (3 x 30 / 2 = 45 ticks = 2.25 s, wooden pickaxe) 9.0    = 15.02
      * torches: 4 sticks wanted, 2 left: one more stick craft 0.3 (2 of the 3 spare planks); 4 torch crafts x 0.3 = 1.2   = 1.5
      * total 12.01 + 1.95 + 15.02 + 1.5 = 30.48 s
-     * (the planner calls coal "fuel": the dig is "dig fuel seen 20 m with wooden_pickaxe")
+     * (one-planner: coal is coal, the torch's ingredient is the game's coals tag; charcoal, the other member, would need 7 logs
+     * of a 6-log tree: it ends in an explore and stands no chance)
      * </pre>
      */
     @Test
@@ -217,22 +221,23 @@ class ScenariosTest {
         Spot coal = new Spot(0, 40, 20, 20, "minecraft:coal_ore", 4);
         Spot stone16 = new Spot(0, 60, 16, 16, "minecraft:stone", 40);
         assertEquals(16, (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("torch.target"));
-        Chain c = NeedChain.resolve("torch", 16, w(Map.of(), false, false, Map.of("log", List.of(tree(10, 6)), "fuel", List.of(coal), "cobblestone", List.of(stone16))));
+        Chain c = NeedChain.resolve("torch", 16, w(Map.of(), false, false, Map.of("oak_log", List.of(tree(10, 6)), "coal", List.of(coal), "cobblestone", List.of(stone16))));
         assertTrue(c.ok() && !c.explore(), c.why());
         assertEquals(30.48, c.seconds(), TOL, c.why());
         String chain = chainPart(c.why());
         assertFalse(chain.contains("stone_pickaxe") || chain.contains("furnace"), "wood tier digs coal ore: " + c.why());
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Smelt || s instanceof Step.Explore), c.steps().toString());
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Craft k && (k.item().contains("stone_pickaxe") || k.item().contains("furnace"))), c.steps().toString());
-        assertTrue(chain.contains("dig fuel seen 20 m with wooden_pickaxe"), c.why());
-        assertTrue(c.steps().contains(new Step.Collect("fuel", 4)), "4 coal ore in one collect (the planner calls coal fuel): " + c.steps());
+        assertTrue(chain.contains("dig coal seen 20 m with wooden_pickaxe"), c.why());
+        assertFalse(c.why().contains("fuel"), "no family word: " + c.why());
+        assertTrue(c.steps().contains(new Step.Collect("coal", 4)), "4 coal ore in one collect: " + c.steps());
         assertEquals(16, ((Step.Craft) c.steps().get(c.steps().size() - 1)).n(), "the torches are the last craft: " + c.steps());
         assertEquals("torch", ((Step.Craft) c.steps().get(c.steps().size() - 1)).item(), c.steps().toString());
         int wooden = -1, dig = -1;
         for (int i = 0; i < c.steps().size(); i++) {
             Step s = c.steps().get(i);
             if (s instanceof Step.Craft k && k.item().equals("wooden_pickaxe")) wooden = i;
-            else if (s instanceof Step.Collect k && k.item().equals("fuel")) dig = i;
+            else if (s instanceof Step.Collect k && k.item().equals("coal")) dig = i;
         }
         assertTrue(wooden >= 0 && wooden < dig, "the pickaxe is made before the dig: " + c.steps());
     }
@@ -263,7 +268,7 @@ class ScenariosTest {
         toolWorld();
         Spot stone16 = new Spot(0, 60, 16, 16, "minecraft:stone", 40);
         List<String> group = io.github.mojolowjo.entropybot.aa.brain.ToolGroup.items("stone_tools");
-        Chain c = NeedChain.resolveAll("stone_tools", group, 1, w(Map.of(), false, false, Map.of("log", List.of(tree(10, 12)), "cobblestone", List.of(stone16))));
+        Chain c = NeedChain.resolveAll("stone_tools", group, 1, w(Map.of(), false, false, Map.of("oak_log", List.of(tree(10, 12)), "cobblestone", List.of(stone16))));
         assertTrue(c.ok() && !c.explore(), c.why());
         assertEquals(1, c.steps().stream().filter(s -> s instanceof Step.PlaceNear p && p.item().equals("crafting_table")).count(), "one table: " + c.steps());
         assertEquals(1, c.steps().stream().filter(s -> s instanceof Step.Collect k && k.item().equals("cobblestone")).count(), "one trip to the stone: " + c.steps());
@@ -272,6 +277,188 @@ class ScenariosTest {
         assertEquals(1, crafts(c, "wooden_pickaxe"), "the digging pickaxe is made once: " + c.steps());
         for (String t : List.of("stone_pickaxe", "stone_axe", "stone_hoe", "stone_sword", "stone_shovel")) assertEquals(1, crafts(c, t), t + ": " + c.steps());
         assertFalse(chainPart(c.why()).contains("golden") || chainPart(c.why()).contains("iron") || chainPart(c.why()).contains("diamond"), "only the stone group: " + c.why());
+    }
+
+    /** S12/S13: a tree 10 m (12 logs) and stone 16 m known. */
+    static Map<String, List<Spot>> s12Seen() {
+        return Map.of("oak_log", List.of(tree(10, 12)), "cobblestone", List.of(new Spot(0, 60, 16, 16, "minecraft:stone", 40)));
+    }
+
+    /**
+     * S12 (owner ruling 2026-10-21 a): 16 torches, a tree 10 m (12 logs) and stone 16 m known, NO coal known: the charcoal path. The
+     * torch's ingredient is the game's coals tag (coal | charcoal); coal has no known source, so charcoal: 4 logs smelted in a furnace
+     * (8 cobblestone, a wooden pickaxe, a table), the burn from the fuel table (3 planks of 300 ticks for 4 smelts of 200, left in the bag).
+     * <pre>
+     * walk to the tree 10 m 3.01; 8 logs x 3.0 = 24.0 (4 charcoal, 4 for planks: pickaxe, its sticks, the table, the torches' sticks)
+     * crafts: planks x4 1.2, sticks x2 0.6, table 0.3, wooden pickaxe 0.3, furnace 0.3, torches x4 1.2 = 3.9; places: table, furnace 0.3
+     * walk to the stone 16 m 4.82; 8 cobblestone x 1.5 (wooden pickaxe: 2 x 30 / 2 = 30 ticks) = 12.0; walk back to the table 4.82
+     * smelt 4 x 10 = 40.0 (the bot waits); the burn: 3 planks already in the bag, 0
+     * total 3.01 + 24.0 + 3.9 + 0.3 + 4.82 + 12.0 + 4.82 + 40.0 = 92.85 s
+     * </pre>
+     */
+    @Test
+    void s12_torchesWithNoCoalKnownTakeTheCharcoalPathAndTheFuelTable() {
+        world("wooden", "stone");
+        Chain c = NeedChain.resolve("torch", 16, w(Map.of(), false, false, s12Seen()));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertEquals(92.85, c.seconds(), TOL, c.why());
+        String chain = chainPart(c.why());
+        assertTrue(chain.startsWith("torch <- craft: 4 charcoal <- smelt 4 oak_log <- cut tree seen 10 m + furnace <- craft: 8 cobblestone"), c.why());
+        assertTrue(chain.contains("burn 3 oak_planks (in the bag)"), "planks burn, from the game's fuel table: " + c.why());
+        assertFalse(c.why().contains("fuel"), "no family word anywhere: " + c.why());
+        List<Class<?>> order = List.of(Step.ChopTree.class, Step.PlaceNear.class, Step.Collect.class, Step.Smelt.class);
+        int last = -1;
+        for (Class<?> k : order) {
+            int at = -1;
+            for (int i = 0; i < c.steps().size(); i++) if (k.isInstance(c.steps().get(i))) { at = i; break; }
+            assertTrue(at > last, k.getSimpleName() + " in order: " + c.steps());
+            last = at;
+        }
+        assertTrue(c.steps().contains(new Step.PlaceNear("furnace")), c.steps().toString());
+        assertEquals(new Step.Smelt("charcoal", 4, true), c.steps().stream().filter(s -> s instanceof Step.Smelt).findFirst().orElseThrow());
+        assertEquals(new Step.Craft("torch", 16), c.steps().get(c.steps().size() - 1));
+    }
+
+    /**
+     * S13: S12 plus coal ore 20 m (4 blocks): the coal path (S10's chain, 30.48 s) beats charcoal, which is listed with its seconds:
+     * the charcoal trial is S12 without the torches' own sticks and crafts (1 log 3.0 + planks 0.3 + sticks 0.3 + torches 1.2 = 4.8):
+     * 92.85 - 4.8 = 88.05 s. No furnace in the chain.
+     */
+    @Test
+    void s13_coalKnownBeatsCharcoalAndCharcoalIsDroppedWithItsSeconds() {
+        world("wooden", "stone");
+        Map<String, List<Spot>> seen = new java.util.HashMap<>(s12Seen());
+        seen.put("coal", List.of(new Spot(0, 40, 20, 20, "minecraft:coal_ore", 4)));
+        Chain c = NeedChain.resolve("torch", 16, w(Map.of(), false, false, seen));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertEquals(30.48, c.seconds(), TOL, c.why());
+        assertTrue(chainPart(c.why()).contains("4 coal <- dig coal seen 20 m with wooden_pickaxe"), c.why());
+        assertFalse(chainPart(c.why()).contains("furnace"), c.why());
+        String charcoal = c.dropped().stream().filter(d -> d.startsWith("charcoal: ")).findFirst().orElseThrow(() -> new AssertionError(c.dropped().toString()));
+        assertTrue(charcoal.startsWith("charcoal: 88.0 s (dearer than coal)"), charcoal);
+    }
+
+    /** S14: the food need's world: the game's loot data says a cow drops 2 beef a kill, a wheat crop 1 wheat. */
+    static io.github.mojolowjo.entropybot.aa.brain.LootBook foodBook() {
+        return new io.github.mojolowjo.entropybot.aa.brain.LootBook(List.of(
+                new io.github.mojolowjo.entropybot.aa.brain.LootBook.Source(io.github.mojolowjo.entropybot.aa.brain.LootBook.Kind.MOB, "minecraft:cow", "minecraft:beef", 2, 1, false, null),
+                new io.github.mojolowjo.entropybot.aa.brain.LootBook.Source(io.github.mojolowjo.entropybot.aa.brain.LootBook.Kind.BLOCK, "minecraft:wheat", "minecraft:wheat", 1, 1, false, null)), "test");
+    }
+
+    static Chain food(World w) {
+        return NeedChain.resolveAny("food", io.github.mojolowjo.entropybot.aa.brain.ItemWorth.plainFoods(), 8, w, io.github.mojolowjo.entropybot.aa.brain.ItemWorth::energy);
+    }
+
+    /**
+     * S14: food 8 with a cow known 15 m (the mob source: an animal of that kind known) and no crops. The members compare by seconds a
+     * point of food (nutrition + saturation, the FOOD data) with the eating counted (32 ticks = 1.6 s an item, game fact).
+     * <pre>
+     * hunt: walk 15 m 4.52 + 4 kills (8 beef, 2 a kill) x ceil(10 hp / 1) x 0.25 s = 10.0                    = 14.52 s (raw)
+     * cook (a furnace known, a coal in the bag): + walk back 15 m 4.52 + smelt 8 x 10 = 80                   = 99.03 s
+     * a point: raw (14.52 + 8 x 1.6) / (8 x 4.8) = 0.71; cooked (99.03 + 12.8) / (8 x 20.8) = 0.67: cooked
+     * no furnace known (and no stone to make one): cooked ends in an explore, never competes: raw 14.52 s
+     * only a wheat crop 10 m known: 8 bread = 24 wheat: walk 3.01 + 24 x 3.0 (no hardness in the data: needChain.unknownBreakS)
+     *   + 8 crafts 2.4 = 77.41 s
+     * </pre>
+     */
+    @Test
+    void s14_foodIsTheHuntAndTheCookWhenAFurnaceIsKnownElseRawAndACropElse() {
+        world("wooden", "stone").mob("cow", 10, Double.NaN, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.MobMove.WALK, false).install();
+        var cow = new NeedChain.Mob("minecraft:cow", 15, 64, 0, 15);
+        java.util.function.Function<String, List<NeedChain.Mob>> cows = t -> t.equals("minecraft:cow") ? List.of(cow) : List.of();
+        Chain cooked = food(w(Map.of("minecraft:coal", 1), false, true, Map.of()).withMobs(cows, foodBook()));
+        assertTrue(cooked.ok() && !cooked.explore(), cooked.why());
+        assertEquals(99.03, cooked.seconds(), TOL, cooked.why());
+        assertTrue(cooked.why().startsWith("food <- 8 cooked_beef <- smelt 8 beef <- hunt 4 cow seen 15 m"), cooked.why());
+        assertEquals(new Step.HuntAt("minecraft:cow", 4, new int[]{15, 0}, "beef", 8).text(), cooked.steps().get(0).text());
+        assertTrue(cooked.dropped().stream().anyMatch(d -> d.startsWith("beef: 14.5 s, 0.71 s a point")), cooked.dropped().toString());
+        Chain raw = food(w(Map.of(), false, false, Map.of()).withMobs(cows, foodBook()));
+        assertTrue(raw.ok() && !raw.explore(), raw.why());
+        assertEquals(14.52, raw.seconds(), TOL, raw.why());
+        assertTrue(raw.why().startsWith("food <- 8 beef <- hunt 4 cow seen 15 m: 14.5 s"), raw.why());
+        Chain crop = food(w(Map.of(), false, false, Map.of("wheat", List.of(new Spot(10, 64, 0, 10, "minecraft:wheat", 30)))).withMobs(t -> List.of(), foodBook()));
+        assertTrue(crop.ok() && !crop.explore(), crop.why());
+        assertEquals(77.41, crop.seconds(), TOL, crop.why());
+        assertTrue(crop.why().startsWith("food <- 8 bread <- craft: 24 wheat <- dig wheat seen 10 m"), crop.why());
+    }
+
+    /**
+     * S15: `aa want diamond_chestplate` (a single item through the chain, never the old planner or chest loot). With 8 diamond blocks in
+     * the bag and a table known: 9 diamonds from a block (one craft, 0.3 s), the chestplate (8 diamonds, 0.3 s) = 0.6 s, nothing else.
+     * With no diamonds: the diamond's only source is a block (diamond ore, the loot data) nothing knows: one Baritone goal to the band it
+     * generates at (worldgen, -64..16), then the explore, no price, and no chest-loot talk.
+     */
+    @Test
+    void s15_aSingleItemOrderIsTheChainAndNoDiamondsIsTheExploreAtItsBand() {
+        TestData d = world("wooden", "stone");
+        d.recipe("diamond", 9, "diamond_block").recipe("diamond_block", 1, java.util.Collections.nCopies(9, "diamond").toArray(new String[0]));
+        d.tableItems.add(TestData.id("diamond_chestplate"));
+        d.install();
+        Chain c = NeedChain.resolve("diamond_chestplate", 1, w(Map.of("minecraft:diamond_block", 8), true, false, Map.of()));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertEquals(0.6, c.seconds(), TOL, c.why());
+        assertEquals(List.of(new Step.Craft("diamond", 9), new Step.Craft("diamond_chestplate", 1)), c.steps(), "nothing else");
+        Chain none = NeedChain.resolve("diamond_chestplate", 1, w(Map.of(), true, false, Map.of()).withBand(i -> i.equals("minecraft:diamond") ? new int[]{-64, 16} : null));
+        assertTrue(none.ok() && none.explore(), none.why());
+        assertEquals(List.of(new Step.ToBand(-64, 16), new Step.Explore(NeedChain.exploreMinutes(), "diamond")), none.steps());
+        assertTrue(none.why().contains("explore (no diamond source known; it generates at Y -64..16, going there first)"), none.why());
+        assertFalse(none.why().contains("chests") || none.why().contains("treasure") || none.why().contains("still searching"), "no chest-loot talk, no planner: " + none.why());
+    }
+
+    /**
+     * S16: place-near. The fork's placeNear answers FAILED("no cell within 3 blocks"): the hands' step fails with that reason at once
+     * (no 40-s stuck), the run ends FAILED naming it, and the need's chain row is held so the next pick prices again.
+     */
+    @Test
+    void s16_aPlaceNearTheForkCannotDoFailsTheStepWithItsReasonAndTheChainIsPricedAgain() {
+        // the fork's answer through the job hands
+        final String no = "place crafting_table near me: no cell within 3 blocks";
+        var hand = new io.github.mojolowjo.entropybot.aa.moves.JobHands.Hand() {
+            String placed;
+            @Override public void start(List<int[]> dig, List<io.github.mojolowjo.entropybot.aa.moves.JobHands.Click> clicks, int t) {}
+            @Override public void startBuild(List<int[]> cells, List<String> items, int t, boolean replace) {}
+            @Override public void startPlaceNear(String item, int radius, int t) { placed = item + " r" + radius; }
+            @Override public boolean reflexActive() { return false; }
+            @Override public io.github.mojolowjo.entropybot.aa.moves.Car.Status status() { return io.github.mojolowjo.entropybot.aa.moves.Car.Status.failed("stage build: " + no); }
+            @Override public void cancel(String why) {}
+            @Override public String verdict(String action, int[] cell) { return ""; }
+            @Override public void look(double x, double y, double z) {}
+        };
+        var hands = new io.github.mojolowjo.entropybot.aa.moves.JobHands(hand, () -> 0L);
+        var r = hands.placeNear("crafting_table", 3, 200, "steps");
+        assertTrue(r.running(), r.why());
+        assertEquals("crafting_table r3", hand.placed, "the mod names the item and the radius, never a cell");
+        var end = hands.placeNear("crafting_table", 3, 200, "steps");
+        assertTrue(end.failed() && end.why().contains("no cell within 3 blocks"), end.why());
+        // the step fails at once with that reason (Steps over hands that answer as StepHands does)
+        var steps = new io.github.mojolowjo.entropybot.aa.moves.Steps(new io.github.mojolowjo.entropybot.aa.moves.Steps.Hands() {
+            @Override public String start(Step s) { return null; }
+            @Override public io.github.mojolowjo.entropybot.aa.moves.Car.Status status(Step s) {
+                return s instanceof Step.PlaceNear ? io.github.mojolowjo.entropybot.aa.moves.Car.Status.failed(end.why()) : io.github.mojolowjo.entropybot.aa.moves.Car.Status.done("ok");
+            }
+            @Override public void cancel(String why) {}
+        });
+        steps.start("chain obtain 1 stone_pickaxe", List.of(new Step.Craft("crafting_table", 1), new Step.PlaceNear("crafting_table"), new Step.Craft("wooden_pickaxe", 1)), 0);
+        steps.tick(1);
+        steps.tick(2);
+        assertEquals(io.github.mojolowjo.entropybot.aa.moves.Steps.Phase.FAILED, steps.phase(), steps.why());
+        assertTrue(steps.why().startsWith("stopped at step 2 (place crafting_table near me)") && steps.why().contains("no cell within 3 blocks"), steps.why());
+        assertEquals("chain obtain 1 stone_pickaxe", steps.failedKey());
+        // the need: the chain row fails with that reason and is held; the next pick prices again (no stuck wait)
+        world("wooden", "stone");
+        var clock = new io.github.mojolowjo.entropybot.aa.core.Clock.Fake(10_000_000);
+        var port = new io.github.mojolowjo.entropybot.aa.core.FakePort();
+        var bb = new io.github.mojolowjo.entropybot.aa.core.Blackboard(clock, port, new io.github.mojolowjo.entropybot.aa.core.Tracer());
+        bb.fact(NeedChain.WORLD_FACT, (java.util.function.Supplier<World>) () -> w(Map.of("minecraft:oak_log", 8), false, false, s4Seen()));
+        Need n = new Need("needs.table", io.github.mojolowjo.entropybot.aa.core.TaskKind.TABLE_FURNACE, b -> true, b -> null, b -> List.of(new Step.Obtain("stone_pickaxe", 1)));
+        assertEquals(io.github.mojolowjo.entropybot.aa.core.Status.RUNNING, n.tick(bb));
+        port.fail(1, steps.why());
+        assertEquals(io.github.mojolowjo.entropybot.aa.core.Status.FAILURE, n.tick(bb), "a failed step ends the task: the need fails with its reason, no wait");
+        assertTrue(n.reason().contains("no cell within 3 blocks"), n.reason());
+        clock.advance(250);
+        n.tick(bb);
+        assertTrue(n.options().contains("dropped: chain: ") && n.options().contains("no cell within 3 blocks"), "priced again: the failed chain held with its reason: " + n.options());
+        assertEquals(1, port.started.size(), "held: not run again at once");
     }
 
     @Test

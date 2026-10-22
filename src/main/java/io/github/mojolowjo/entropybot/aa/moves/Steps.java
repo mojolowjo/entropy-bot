@@ -27,13 +27,13 @@ public final class Steps {
         void cancel(String why);
 
         /**
-         * rm-execution2: the planner's routine for a {@link Step.Plan}, typed at the planner's side; {@link Routine#why}
-         * says why there is none (no plan, still searching, a routine line with no typed step).
+         * one-planner: the chain for a {@link Step.Obtain} (NeedChain on the facts of the moment); {@link Routine#why}
+         * says why there is none (no facts yet, no way at all).
          */
-        default Routine routine(Step.Plan p) { return new Routine(null, "no planner in these hands"); }
+        default Routine routine(Step.Obtain p) { return new Routine(null, "no chain in these hands"); }
     }
 
-    /** The planner's routine as typed steps, or null with why. */
+    /** The chain as typed steps, or null with why. */
     public record Routine(List<Step> steps, String why) {}
 
     /** At most this many expansions (a plan in a plan) per run: a routine that names itself ends FAILED, never loops. */
@@ -104,24 +104,24 @@ public final class Steps {
     }
 
     /**
-     * rm-execution2: a {@link Step.Compound} or a {@link Step.Plan} at the current index is replaced by its parts / the
-     * planner's routine (same machine, same failure path). Null when the index holds a plain step (or ran past the end),
+     * rm-execution2: a {@link Step.Compound} or a {@link Step.Obtain} at the current index is replaced by its parts / the
+     * chain (same machine, same failure path). Null when the index holds a plain step (or ran past the end),
      * else why the expansion failed.
      */
     private String expand() {
-        while (idx < steps.size() && (steps.get(idx) instanceof Step.Compound || steps.get(idx) instanceof Step.Plan)) {
-            if (++expansions > maxExpansions()) return "more than " + maxExpansions() + " plans and compound steps in one run";
+        while (idx < steps.size() && (steps.get(idx) instanceof Step.Compound || steps.get(idx) instanceof Step.Obtain)) {
+            if (++expansions > maxExpansions()) return "more than " + maxExpansions() + " chains and compound steps in one run";
             Step s = steps.get(idx);
             List<Step> parts;
             if (s instanceof Step.Compound c) parts = c.parts();
             else {
                 Routine r;
                 try {
-                    r = hands.routine((Step.Plan) s);
+                    r = hands.routine((Step.Obtain) s);
                 } catch (RuntimeException e) {
-                    r = new Routine(null, "the planner: " + e);
+                    r = new Routine(null, "the chain: " + e);
                 }
-                if (r == null || r.steps() == null) return "no routine for " + ((Step.Plan) s).goal() + ": " + (r == null || r.why() == null ? "the planner gave no answer" : r.why());
+                if (r == null || r.steps() == null) return "no chain for " + s.text() + ": " + (r == null || r.why() == null ? "no answer" : r.why());
                 parts = r.steps();
             }
             java.util.List<Step> all = new java.util.ArrayList<>(steps.subList(0, idx));

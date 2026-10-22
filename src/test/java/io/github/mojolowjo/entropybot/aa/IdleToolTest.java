@@ -51,7 +51,6 @@ class IdleToolTest {
     void whyShowsTheBestOptionAndTheNext() {
         allMet();
         AaTree tree = AaTree.build(new AaScorer());
-        port.resolveTo = "goal wood 64";
         tree.tick(bb);
         String line = tree.brain.whyLines(30).stream().filter(l -> l.startsWith("idle ")).findFirst().orElseThrow();
         assertTrue(line.contains("[idle: stock stone 25 (next stock wood 21, wait 3)]"), line);
@@ -63,7 +62,6 @@ class IdleToolTest {
     void theLiveTreeShowsIdleAsOneNodeWithItsOptions() {
         allMet();
         AaTree tree = AaTree.build(new AaScorer());
-        port.resolveTo = "goal wood 64";
         tree.tick(bb);
         JsonObject o = AaLive.json(tree, bb, true, 5);
         JsonObject idle = null;
@@ -77,7 +75,6 @@ class IdleToolTest {
     void aFailedIdleOptionGivesTheNextItsTurnInsideTheDesire() {
         allMet();
         AaTree tree = AaTree.build(new AaScorer());
-        port.resolveTo = null;         // no planner chain: the stock-ups fail before a task
         for (int i = 0; i < 12; i++) tree.tick(bb);
         assertTrue(port.started.stream().anyMatch(t -> t.chain().startsWith("wait ")), port.log.toString());
     }

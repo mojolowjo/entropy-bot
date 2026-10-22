@@ -18,8 +18,8 @@ import java.util.function.Predicate;
 
 /**
  * Round 4A N (AA_ROUND4 A1): one basic need (food, station, torches, base, bed, bag, iron). It ticks one way:
- * facts -> its option set's choice (with the {@link Ways} rows: the planner, cut N + planner, the climb as a priced first
- * step) -> the best row's chain -> {@link RunJob}. No planner-first, no fixed waits, no own cooldown: the brain's
+ * facts -> its option set's choice (with the {@link Ways} rows: the chain for its "I need N of X", the climb as a priced
+ * first step) -> the best row's steps -> {@link RunJob}. No fixed waits, no own cooldown: the brain's
  * {@link Failures} is the one memory (a failed row is held by its key; a need with no runnable row fails with every
  * reason and the brain rests it Cooldown.NO_RUN_MS, Brain.ended). A prerequisite row that ends done keeps the need
  * RUNNING on a {@value #WAIT_FACTS} step until the bag or station facts change (at most Tuning settleMaxS), then it
@@ -35,7 +35,7 @@ public final class Need extends Node {
     public static final String WAIT_FACTS = "wait facts";
 
     /**
-     * A need's option scorer ({@link Options.Picker} over an {@link Options.OptionSet}): the planner's chain in (null when
+     * A need's option scorer ({@link Options.Picker} over an {@link Options.OptionSet}): the need's chain in (null when
      * it has none), the chain to run out (null: no row can run, {@link #why()} says why; {@link Options#NOTHING}: the need
      * passes); a failed end is offered back ({@code true}: another row runs at once, the failed one held).
      */
@@ -90,7 +90,6 @@ public final class Need extends Node {
     private boolean surface;
     private double handS = 60;
     private final RunJob job;
-    private final Ways.State plan = new Ways.State();
     private Failures failures = new Failures();
     /** The memory of the Ways rows (wood, climb, plain commands): a view over the brain's record once bound. */
     private final Options.OptionMemory mem = new Options.OptionMemory();
@@ -102,7 +101,7 @@ public final class Need extends Node {
     /**
      * @param unmet the need is on (its band lives in here)
      * @param noWay why no row of it can run now (null: rows may), e.g. "no base chests scanned"
-     * @param goal  rm-execution2: the typed steps its rows are built on: one {@link Step.Plan} (a planner goal) or the
+     * @param goal  the typed steps its rows are built on: one {@link Step.Obtain} ("I need N of X", the chain) or the
      *              need's plain way ({@link Step.Deposit}, a craft)
      */
     public Need(String id, TaskKind kind, Predicate<Blackboard> unmet, Function<Blackboard, String> noWay, Function<Blackboard, List<Step>> goal, Picker picker) {
@@ -200,10 +199,6 @@ public final class Need extends Node {
             lastLogged = why;
             return fail(why);
         }
-        if (Ways.WAIT_PLAN.equals(p.command)) {
-            bb.fact(PLANNING_FACT, kind + ": " + Step.label(g) + " (" + p.why + ")");
-            return Status.RUNNING;
-        }
         clearPlanning(bb);
         if (Options.NOTHING.equals(p.command)) {
             bb.port.log(kind + " passes: " + p.why);
@@ -236,15 +231,14 @@ public final class Need extends Node {
     private Pick pick(Blackboard bb, List<Step> g, long now) {
         runOpt = null;
         bb.fact(CURRENT, id);
-        Ways.Plan pl = Ways.plan(bb, plan, failures, id, mem, g, now);
+        Ways.Plan pl = Ways.plan(bb, failures, id, g, now);
         Ways.Pre climb = Ways.climb(bb, mem, now);       // used by a surface need, and by a wood row (trees grow up there)
         String cmd, key = null, why;
         boolean pre = false;
         double rowS;
         if (picker == null) {
-            Options.Choice c = Ways.goalRows(g, pl, plan, mem, now, handS);
+            Options.Choice c = Ways.goalRows(g, pl, mem, now, handS);
             Options.Option b = c.best();
-            if (b != null && Ways.WAIT_PLAN.equals(b.command())) return note(new Pick(b.command(), false, null, pl.why()), lastCostS);
             why = c.why();
             runOpt = b;
             cmd = b == null ? null : b.command();
@@ -252,11 +246,7 @@ public final class Need extends Node {
             pre = b != null && Ways.PREREQ.equals(b.way());
             rowS = b == null ? Double.NaN : b.seconds();
         } else {
-            if (picker instanceof Options.Picker<?> op) op.extra = ch -> Ways.withPlan(ch, pl, plan, mem, now);
-            cmd = picker.pick(bb, pl != null && pl.ready() ? pl.steps() : null, pl == null ? 0 : pl.cost(), pl == null ? null : pl.why());
-            // no facts readable: the picker has no row for a searching planner; the need waits for it (bounded by plannerWaitS)
-            if (cmd == null && pl != null && pl.state() == JobPort.PlanState.SEARCHING) cmd = Ways.WAIT_PLAN;
-            if (Ways.WAIT_PLAN.equals(cmd)) return note(new Pick(cmd, false, null, pl.why()), lastCostS);
+            cmd = picker.pick(bb, pl != null && pl.ready() ? pl.steps() : null, pl == null ? 0 : pl.cost(), pl == null ? null : pl.ready() ? pl.chain().why() : pl.why());
             why = picker.why();
             rowS = picker.lastCostS();
             if (picker instanceof Options.Picker<?> op && op.ran() != null) {
@@ -265,7 +255,7 @@ public final class Need extends Node {
             }
         }
         climbS = 0;
-        if (cmd != null && climb != null && (surface || pre) && !Ways.WAIT_PLAN.equals(cmd) && !Options.NOTHING.equals(cmd)) {
+        if (cmd != null && climb != null && (surface || pre) && !Options.NOTHING.equals(cmd)) {
             if (climb.option() == null) return note(new Pick(null, false, null, climb.why() + "; then " + why), Double.NaN);
             climbS = climb.seconds();
             why = climb.why() + " (" + Math.round(climbS) + " s) first, then " + why;
@@ -274,7 +264,7 @@ public final class Need extends Node {
             key = climb.key();
             pre = true;
         }
-        if (cmd == null && pl != null && pl.state() == JobPort.PlanState.NONE && !why.contains(pl.why())) why = why + "; planner: " + pl.why();
+        if (cmd == null && pl != null && !pl.ready() && pl.why() != null && !why.contains(pl.why())) why = why + "; chain: " + pl.why();
         Pick p = new Pick(cmd, pre, key, why);
         note(p, Double.isNaN(rowS) ? Double.NaN : rowS + climbS);
         if (cmd != null && !why.equals(lastLogged)) {
@@ -369,8 +359,8 @@ public final class Need extends Node {
     public boolean unmet(Blackboard bb) { return unmet.test(bb); }
 
     /**
-     * Could this need start a task now? Null when it can (or a task runs), else the reason: met, no way, a held or NONE
-     * planner, no row after a rescore. Touches no state but the picker's last cost; the brain asks before an interrupt.
+     * Could this need start a task now? Null when it can (or a task runs), else the reason: met, no way, a held chain or
+     * none, no row after a rescore. Touches no state but the picker's last cost; the brain asks before an interrupt.
      */
     public String probe(Blackboard bb) {
         if (job.running() || waitSince >= 0) return null;
@@ -383,13 +373,9 @@ public final class Need extends Node {
         if (g == null || g.isEmpty()) return kind + " has nothing to run";
         if (forced) return null;
         if (picker == null) {
-            String pg = Ways.planGoal(g);
-            if (pg == null) return null;
-            String held = failures.held(id, Ways.planKey(pg), bb.clock.now());
-            if (held != null) return Ways.planKey(pg) + " held: " + held;
-            JobPort.Resolved r = bb.port.resolveState(pg);
-            if (r.state() == JobPort.PlanState.NONE && r.logsMissing() == 0) return "no plan for " + pg + ": " + r.why();
-            return null;
+            Ways.Plan pl = Ways.plan(bb, failures, id, g, bb.clock.now());
+            if (pl == null || pl.ready()) return null;
+            return "no chain for " + pl.goal().text() + ": " + pl.why();
         }
         picker.refresh(bb);
         return picker.noOption();

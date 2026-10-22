@@ -8,6 +8,8 @@ import io.github.mojolowjo.entropybot.aa.core.Request;
 import io.github.mojolowjo.entropybot.aa.core.Status;
 import io.github.mojolowjo.entropybot.aa.core.TaskKind;
 import io.github.mojolowjo.entropybot.aa.core.Tracer;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -19,6 +21,22 @@ class AaTreeTest {
     final Tracer tracer = new Tracer();
     final Blackboard bb = new Blackboard(clock, port, tracer);
     final AaTree tree = AaTree.build(new AaScorer());
+
+    /** one-planner: the needs' chains need the game's data and a world: a tree, stone, coal and iron ore known around. */
+    @BeforeEach
+    void world() {
+        var d = io.github.mojolowjo.entropybot.aa.brain.TestData.planner();
+        for (String m : java.util.List.of("wooden", "stone", "iron")) d.tag(m + "_pickaxe", "minecraft:pickaxes");
+        d.install();
+        java.util.Map<String, NeedChain.Spot> spots = java.util.Map.of("minecraft:oak_log", new NeedChain.Spot(10, 64, 0, 10, "minecraft:oak_log", 64),
+                "minecraft:cobblestone", new NeedChain.Spot(0, 60, 16, 16, "minecraft:stone", 200), "minecraft:coal", new NeedChain.Spot(0, 40, 20, 20, "minecraft:coal_ore", 40),
+                "minecraft:raw_iron", new NeedChain.Spot(0, 30, 20, 25, "minecraft:iron_ore", 40));
+        bb.fact(NeedChain.WORLD_FACT, (java.util.function.Supplier<NeedChain.World>) () -> new NeedChain.World(bb.in.bag, bb.in.tableKnown, bb.in.furnaceKnown,
+                item -> spots.containsKey(item) ? java.util.List.of(spots.get(item)) : java.util.List.of(), null, null, null, 0));
+    }
+
+    @AfterEach
+    void clear() { io.github.mojolowjo.entropybot.aa.brain.TestData.clear(); }
 
     /** A fresh Peaceful start: nothing in the bag, nothing known. */
     void freshStart() {
@@ -69,7 +87,7 @@ class AaTreeTest {
         assertFalse(port.started.isEmpty(), "no table at all: the table need starts a task (there is no tools need: a pickaxe comes with a dig)");
         assertEquals("needs", tree.driver());
         assertEquals(TaskKind.TABLE_FURNACE, bb.task().kind);
-        assertEquals("plan table", lastChain());
+        assertTrue(lastChain().endsWith("craft crafting_table 1"), lastChain());
         // the bag changes meanwhile: no re-choice
         bb.in.torches = 0;
         pick(1);
@@ -80,18 +98,18 @@ class AaTreeTest {
         assertNull(bb.task());
         bb.in.tableKnown = true;
         tree.tick(bb);
-        assertEquals("plan furnace", lastChain());
+        assertTrue(lastChain().endsWith("craft furnace 1"), lastChain());
         port.done(2, "done");
         tree.tick(bb);
         bb.in.furnaceKnown = true;
         tree.tick(bb);
-        assertEquals("plan torch 16", lastChain());
+        assertTrue(lastChain().endsWith("craft torch 16"), lastChain());
         port.done(3, "done");
         tree.tick(bb);
         bb.in.torches = 16;
         tree.tick(bb);
         // AA_ROUND2 4: Peaceful (danger 0): a base is worth 16 (Worth.base), so iron (70) comes first
-        assertEquals("plan iron tools", lastChain(), "bed (no wool) and bag (no chests) are skipped with reasons");
+        assertTrue(lastChain().endsWith("craft iron_pickaxe 1"), "bed (no wool) and bag (no chests) are skipped with reasons: " + lastChain());
         port.done(4, "done");
         tree.tick(bb);
         pick(3);
@@ -152,12 +170,12 @@ class AaTreeTest {
         bb.in.food = 5;
         tree.tick(bb);
         assertEquals("idle", tree.driver(), "Peaceful: no food rung");
-        assertEquals("plan wood 64", lastChain());
+        assertEquals("obtain 64 #minecraft:logs", lastChain());
         port.done(1, "done");
         tree.tick(bb);
         bb.in.hungerDrains = true;
         tree.tick(bb);
-        assertEquals("plan food 8", lastChain());
+        assertEquals(TaskKind.FOOD, bb.task().kind, lastChain());
     }
 
     @Test
@@ -249,32 +267,6 @@ class AaTreeTest {
     }
 
     @Test
-    void aGoalStillPlanningIsWaitedForThenSkipped() {
-        freshStart();
-        pick(2);
-        bb.in.tableKnown = bb.in.furnaceKnown = true;      // tools are met: the torches goal is the planner's
-        port.resolveTo = null;
-        assertEquals(Status.RUNNING, tree.tick(bb), "the slot waits on the Need that plans");
-        assertEquals("needs>planning TORCHES: plan torch 16 (still searching (0 s))", tree.driver() + ">" + bb.taskText(clock.now()));
-        assertEquals(0, port.started.size());
-        Need tools = Need.all(tree.ladder).stream().filter(r -> r.id.equals("needs.torches")).findFirst().orElseThrow();
-        for (int i = 0; i < 45_000L / 1000; i++) {
-            clock.advance(1000);
-            assertEquals(Status.RUNNING, tools.tick(bb));
-        }
-        clock.advance(1);
-        assertEquals(Status.FAILURE, tools.tick(bb));
-        assertTrue(tools.reason().contains("still searched after 45 s"), tools.reason());
-        assertEquals("no task", bb.taskText(clock.now()));
-        port.resolveTo = "craft stone_pickaxe 1";
-        tools.tick(bb);
-        assertTrue(tools.reason().contains("held"), "held for a while even though a plan exists now: " + tools.reason());
-        clock.advance(2 * 60_000 + 1);
-        assertEquals(Status.RUNNING, tools.tick(bb));
-        assertEquals("craft stone_pickaxe 1", lastChain(), "the planner's routine is what runs");
-    }
-
-    @Test
     void aRefusedStartCoolsDownAndIdleHasInertia() {
         freshStart();
         pick(3);
@@ -285,12 +277,12 @@ class AaTreeTest {
         assertTrue(tree.root.reason().contains("busy: a hunt runs"), tree.root.reason());
         port.refuse = null;
         tree.tick(bb);
-        assertEquals("plan cobblestone 64", lastChain(), "S1: the refused option cools down 30 s, the next one runs at once");
+        assertEquals("obtain 64 #minecraft:stone_tool_materials", lastChain(), "S1: the refused option cools down 30 s, the next one runs at once");
         port.done(1, "done");
         tree.tick(bb);
         clock.advance(Cooldown.noRunMsV() + 1);
         tree.tick(bb);            // wood 100 vs stone 100 + 15 inertia
-        assertEquals("plan cobblestone 64", lastChain());
+        assertEquals("obtain 64 #minecraft:stone_tool_materials", lastChain());
     }
 
     /** 0.36.4 (aa40d): short air alone holds the danger guard at most 30 s; then the task runs again. */
@@ -342,7 +334,7 @@ class AaTreeTest {
         bb.in.underDepth = 9;
         tree.tick(bb);
         // round 4A N: no surface gate; placing needs no open sky, a gather row prices its own climb (StationOptions)
-        assertEquals("plan table", lastChain());
+        assertTrue(lastChain().endsWith("craft crafting_table 1"), lastChain());
     }
 
     /** 0.36.3: no reachable tree: the woodArea Need runs the area command the adapter found. */
@@ -355,7 +347,7 @@ class AaTreeTest {
         bb.in.torches = 16;
         AaLadder.noteShelter(bb);
         tree.tick(bb);
-        assertEquals("plan iron tools", lastChain());
+        assertTrue(lastChain().endsWith("craft iron_pickaxe 1"), lastChain());
     }
 
     /** 0.36.2, the 40-minute run: a failed idle task cools down; the next idle option runs meanwhile. */
@@ -366,12 +358,12 @@ class AaTreeTest {
         bb.in.tableKnown = bb.in.furnaceKnown = bb.in.baseKnown = true;
         bb.in.torches = 16;
         tree.tick(bb);
-        assertEquals("plan wood 64", lastChain());
+        assertEquals("obtain 64 #minecraft:logs", lastChain());
         port.fail(1, "error: chopped nothing");
         tree.tick(bb);
         clock.advance(250);
         tree.tick(bb);
-        assertNotEquals("plan wood 64", lastChain(), "no restart 0.25 s after the failure");
+        assertNotEquals("obtain 64 #minecraft:logs", lastChain(), "no restart 0.25 s after the failure");
         assertEquals(2, port.started.size());
     }
 
@@ -382,19 +374,17 @@ class AaTreeTest {
         pick(2);
         bb.in.tableKnown = bb.in.furnaceKnown = true;
         tree.tick(bb);
-        assertEquals("plan torch 16", lastChain());
+        assertTrue(lastChain().endsWith("craft torch 16"), lastChain());
         bb.in.furnaceKnown = false;          // the furnace Need becomes unmet (and would plan) while torches run
-        port.resolveTo = null;
         for (int i = 0; i < 5; i++) assertEquals(Status.RUNNING, tree.tick(bb));
-        assertEquals("plan torch 16", bb.task().spec().chain(), "the torches job still runs");
+        assertTrue(bb.task().spec().chain().endsWith("craft torch 16"), "the torches job still runs");
         assertEquals(0, port.cancelled.size());
         assertEquals(0, tracer.counts.switches);
-        port.resolveTo = "*";
         port.done(1, "done");
         bb.in.torches = 16;                  // round 4A N: no settle hole; the torches are made
         tree.tick(bb);
         tree.tick(bb);
-        assertEquals("plan furnace", lastChain(), "then the furnace Need gets its turn");
+        assertTrue(lastChain().endsWith("craft furnace 1"), "then the furnace Need gets its turn: " + lastChain());
     }
 
     @Test

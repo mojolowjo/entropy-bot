@@ -19,16 +19,11 @@ import java.util.regex.Pattern;
  *
  * <ul>
  * <li>eat: food in the bag and the bar down by at least what the best of it restores (or urgent): {@code eat}.</li>
- * <li>cook: raw meat, potatoes or kelp in the bag and a furnace (known or in the bag): {@code cook <raw> n}.</li>
- * <li>hunt: allowed animals within the hunt's reach, the walk to the nearest priced (hunting not switched off by the owner): {@code hunt n <animal>}
- *     then {@code cook <meat> n} with a furnace (raw beef/pork/mutton without one; never raw chicken).</li>
- * <li>berries: a ripe sweet-berry bush seen: {@code dig} its cell (a broken ripe bush drops 2-3 berries).</li>
- * <li>stew: a red and a brown mushroom seen or had, a bowl or 3 planks: dig them, {@code craft bowl}, {@code craft mushroom_stew}.</li>
- * <li>apples: oak or dark-oak trees near: {@code cut 16 <type>} (apples fall from the decaying leaves, about one per
- *     16 logs; the logs are kept).</li>
+ * <li>chain (one-planner): any plain food (the game's FOOD data), the cheapest per point ({@code NeedChain.resolveAny}):
+ *     cook what is raw, hunt a known animal (the loot data's mob drops) and cook it when a furnace is at hand, a crop or
+ *     a bush seen (the loot data's block drops), a recipe (bread, stew); else explore.</li>
  * <li>wheat: no farm yet, 4+ seeds (or a grass patch to dig for them) and water near, not hungry: plant a field and mark
- *     it {@code place farm}: slow (8 min to grow) but endless; the planner's bread then has a source.</li>
- * <li>planner: {@code goal food n} (storage, bread from the farm).</li>
+ *     it {@code place farm}: slow (8 min to grow) but endless; the chain's bread then has a source.</li>
  * <li>Kelp in the water and fishing are named with why they cannot run (the kelp and fish steps of the steps machine).</li>
  * </ul>
  * {@link #noSource} is the desire's park reason: no row at all (re-checked whenever the facts refresh). Pure (JUnit
@@ -145,34 +140,6 @@ public final class FoodOptions {
             if (best > 0 && (urgent || 20 - f.food() >= best))  // game fact: the food bar is 20 points
                 RungOptions.add(rows, dropped, m, now, Options.typed("eat", "eat", List.of(new Step.Eat()), eatCost(), "the bag's best gives " + best, "eat", m));
 
-            // cook what is raw
-            String raw = null;
-            double gain = 0;
-            for (var e : FoodModel.cooks().entrySet()) {
-                int n = f.has(e.getKey());
-                double g = n * (FoodModel.energyOf(e.getValue()) - FoodModel.energyOf(e.getKey()));
-                if (n > 0 && g > gain) { raw = e.getKey(); gain = g; }
-            }
-            if (raw != null) {
-                int n = Math.min(16, f.has(raw));
-                if (!f.furnace()) dropped.add("cook " + raw + ": no furnace known or in the bag");
-                else RungOptions.add(rows, dropped, m, now, Options.typed("cook " + raw, "cook", List.of(new Step.Cook(raw, n)),
-                        Options.MINUTE * (0.5 + n / Tuning.get("foodOptions.cookPerMin")), n + " raw " + raw + " in the bag", "cook", m));
-            }
-
-            hunt(f, m, now, rows, dropped, short_);
-
-            // berries, stew, apples: little per round, charged per round needed
-            if (f.berry() != null)
-                RungOptions.add(rows, dropped, m, now, Options.typed("berries", "forage", List.of(dig(f.berry())),
-                        (f.berryDist() + Options.MINUTE * Tuning.get("foodOptions.berryMin")) * rounds(short_, berryYield()), "a ripe berry bush " + Math.round(f.berryDist()) + " away", "berries", m));
-            stew(f, m, now, rows, dropped, short_);
-            if (f.oak() != null)
-                RungOptions.add(rows, dropped, m, now, Options.typed("apples", "apples", List.of(
-                                new Step.Walk(f.oak()[0], f.oak()[1], f.oak()[2], (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("steps.walkNear")),
-                                new Step.ChopTree(f.oak(), 16, "minecraft:" + f.oakType() + "_log")),
-                        Options.MINUTE * Tuning.i("foodOptions.appleMin") * rounds(short_, appleYield()), "apples fall from decaying " + f.oakType() + " leaves, about 1 per 16 logs", "apples", m));
-
             wheat(f, m, now, rows, dropped, urgent);
 
             // water ways (aa-kelpfish): kelp columns -> dried kelp, a rod -> fish; costed per round like the other slow ways
@@ -183,11 +150,10 @@ public final class FoodOptions {
                         Options.MINUTE * (kelp ? 4 : 5) * rounds(short_, each), w.why(), w.name(), m));
             }
 
-            String huntGap = planned == null ? null : plannerHuntGap(planned, f);
-            if (planned == null) dropped.add("planner: " + (plannerWhy == null ? "no plan" : plannerWhy));
-            else if (huntGap != null) dropped.add("planner: its routine \"" + Step.label(planned) + "\" " + huntGap);
-            else RungOptions.add(rows, dropped, m, now, Options.typed("planner", "planner", planned, pc * Options.planUnit(),
-                    "the planner's food (storage" + (f.farmKnown() ? ", bread from the farm" : "") + ")", "planner", true, m));
+            // one-planner: getting food is the chain's (any plain food, the cheapest per point: hunt a known animal and cook
+            // it when a furnace is at hand, a crop, a recipe; else explore); eating, a field and the water ways stay rows
+            if (planned == null) dropped.add("chain: " + (plannerWhy == null ? "no chain" : plannerWhy));
+            else RungOptions.add(rows, dropped, m, now, Options.typed("chain", "chain", planned, pc, plannerWhy == null ? "the chain" : plannerWhy, "chain food", true, m));
             return Options.Choice.of(rows, dropped, "no way to food");
         }
 
@@ -197,116 +163,8 @@ public final class FoodOptions {
         }
     }
 
-    static void hunt(FoodFacts f, Options.OptionMemory m, long now, List<Options.Option> rows, List<String> dropped, double short_) {
-        if (f.huntWhy() != null) { dropped.add("hunt: " + f.huntWhy()); return; }
-        String animal = most(f.animals(), f.furnace());
-        if (animal == null) dropped.add("hunt: no animal in reach"
-                + (f.furnace() || f.animals() == null || f.animals().getOrDefault("chicken", 0) == 0 ? "" : " (chickens only, no furnace)"));
-        else huntRow(f, m, now, rows, dropped, short_, animal, f.animals().get(animal));
-        seenRows(f, m, now, rows, dropped, short_);
-    }
-
-    /**
-     * AA_ROUND3 5: "go hunt &lt;type&gt; at x z" for a herd I saw earlier and whose type is not in reach now: a round
-     * trip (walk there + the hunt + walk back, + the cook) x 1 / confidence; the best one per type. Its memory key is
-     * {@code sighting/animal <type> <x z>} (a visit that finds none fails it through Failures).
-     */
-    static void seenRows(FoodFacts f, Options.OptionMemory m, long now, List<Options.Option> rows, List<String> dropped, double short_) {
-        if (f.herds() == null || f.herds().isEmpty()) return;
-        Map<String, Options.Option> best = new java.util.HashMap<>();
-        for (Herd h : f.herds()) {
-            if (!meatAnimals().contains(h.type())) continue;
-            if (h.type().equals("chicken") && !f.furnace()) continue;
-            if (f.animals() != null && f.animals().getOrDefault(h.type(), 0) > 0) continue;     // in reach: the plain hunt
-            if (h.conf() < herdMinConf()) { dropped.add("go hunt " + h.type() + " at " + h.x() + " " + h.z() + ": seen too long ago (confidence " + String.format(Locale.ROOT, "%.2f", h.conf()) + ")"); continue; }
-            if (h.dist() > herdMax()) { dropped.add("go hunt " + h.type() + " at " + h.x() + " " + h.z() + ": " + Math.round(h.dist()) + " away"); continue; }
-            String meat = meatOf(h.type()), cooked = FoodModel.cooked(meat);
-            double each = f.furnace() ? FoodModel.energyOf(cooked) : FoodModel.energyOf(meat);
-            int n = Math.max(2, Math.min(Math.min(8, Math.max(2, h.count())), FoodModel.count(short_, each)));
-            double trip = 2 * h.dist() + Options.MINUTE * (1 + n * 0.5) + (f.furnace() ? Options.MINUTE * (0.5 + n / Tuning.get("foodOptions.cookPerMin")) : 0);
-            double cost = trip / Math.max(herdMinConf(), h.conf());
-            String key = "sighting/animal " + h.type() + " " + h.x() + " " + h.z();
-            Options.Option o = Options.typed("go hunt " + h.type(), "hunt", huntSteps(h.type(), n, new int[]{h.x(), h.z()}, f.furnace() ? meat : null), cost,
-                    String.format(Locale.ROOT, "%d %s seen at %d %d, %.0f away, round trip %.0f / confidence %.2f", h.count(), h.type(), h.x(), h.z(), h.dist(), trip, h.conf())
-                            + (f.furnace() ? ", cooked" : ", eaten raw: no furnace"), key, m)
-                    .withSite(io.github.mojolowjo.entropybot.aa.brain.Site.at(h.x(), h.y(), h.z()));      // the sequencer chains by it
-            Options.Option was = best.get(h.type());
-            if (was == null || o.cost() < was.cost()) best.put(h.type(), o);
-        }
-        for (Options.Option o : best.values()) RungOptions.add(rows, dropped, m, now, o);
-    }
-
-    /**
-     * aa395 (131 picks of "gather food 8 -> hunt 8 cow" with no cow within 64): a planner chain that hunts an animal
-     * type with none in reach and no remembered herd is not runnable. Returns why, or null
-     * (no hunt step, or the animal is known somewhere).
-     */
-    static String plannerHuntGap(List<Step> planned, FoodFacts f) {
-        for (Step s : planned) {
-            if (!(s instanceof Step.HuntAt hunt)) continue;
-            String a = hunt.type().replaceFirst("^minecraft:", "");
-            if (f.animals() != null && f.animals().getOrDefault(a, 0) > 0) continue;
-            boolean herd = false;
-            if (f.herds() != null) for (Herd h : f.herds()) if (h.type().equals(a) && h.conf() >= herdMinConf() && h.dist() <= herdMax()) herd = true;
-            if (!herd) return "hunts " + a + ", none seen in reach or remembered";
-        }
-        return null;
-    }
-
-    /** The animal with the most head(the meatiest first on a tie; no chicken without a furnace: raw chicken poisons). */
-    static String most(Map<String, Integer> animals, boolean furnace) {
-        if (animals == null) return null;
-        String animal = null;
-        int most = 0;
-        for (String a : io.github.mojolowjo.entropybot.camp.FoodPlan.order()) {
-            int n = animals.getOrDefault(a, 0);
-            String raw = meatOf(a);
-            if (!furnace && raw != null && io.github.mojolowjo.entropybot.aa.brain.ItemWorth.riskyFood("minecraft:" + raw)) continue;      // raw meat that can poison: only with a furnace to cook it
-            if (n > most) { animal = a; most = n; }
-        }
-        return animal;
-    }
-
-    private static void huntRow(FoodFacts f, Options.OptionMemory m, long now, List<Options.Option> rows, List<String> dropped, double short_,
-                                String animal, int most) {
-        String meat = meatOf(animal), cooked = FoodModel.cooked(meat);
-        double each = f.furnace() ? FoodModel.energyOf(cooked) : FoodModel.energyOf(meat);
-        int n = Math.max(2, Math.min(8, FoodModel.count(short_, each)));
-        // owner's rule 2026-10-19: the walk to the animals is priced (there and back, divided by the food urgency)
-        double cost = Options.MINUTE * (1 + n * 0.5) + (f.furnace() ? Options.MINUTE * (0.5 + n / Tuning.get("foodOptions.cookPerMin")) : 0)
-                + io.github.mojolowjo.entropybot.aa.brain.Costs.huntTravel(f.huntDist(), f.food(), f.health());
-        RungOptions.add(rows, dropped, m, now, Options.typed("hunt " + animal, "hunt", huntSteps(animal, n, null, f.furnace() ? meat : null), cost,
-                most + " " + animal + " in reach (" + io.github.mojolowjo.entropybot.aa.brain.Costs.huntTerms(f.huntDist(), f.food(), f.health()) + ")"
-                        + (f.furnace() ? ", cooked" : ", eaten raw: no furnace"), "hunt", m));
-    }
-
-    /** rm-execution: a hunt row's steps: hunt n of the animal (near {x, z} when given), then cook its meat when a furnace is known. */
-    static List<Step> huntSteps(String animal, int n, int[] at, String cookMeat) {
-        List<Step> s = new ArrayList<>();
-        s.add(new Step.HuntAt("minecraft:" + animal, n, at));
-        if (cookMeat != null) s.add(new Step.Cook(cookMeat, n));
-        return s;
-    }
-
-    static void stew(FoodFacts f, Options.OptionMemory m, long now, List<Options.Option> rows, List<String> dropped, double short_) {
-        boolean red = f.has("red_mushroom") > 0 || f.red() != null, brown = f.has("brown_mushroom") > 0 || f.brown() != null;
-        if (!red && !brown) return;
-        if (!red || !brown) { dropped.add("stew: only a " + (red ? "red" : "brown") + " mushroom seen"); return; }
-        int planks = 0;
-        if (f.bag() != null) for (var e : f.bag().entrySet()) if (e.getKey().endsWith("_planks")) planks += e.getValue();
-        if (f.has("bowl") == 0 && planks < 3) { dropped.add("stew: no bowl and under 3 planks"); return; }  // game fact: a bowl takes 3 planks
-        List<Step> steps = new ArrayList<>();
-        double walk = 0;
-        if (f.has("red_mushroom") == 0) { steps.add(dig(f.red())); walk += dist(f.me(), f.red()); }
-        if (f.has("brown_mushroom") == 0) { steps.add(dig(f.brown())); walk += dist(f.me(), f.brown()); }
-        if (f.has("bowl") == 0) steps.add(new Step.Craft("bowl", 1));
-        steps.add(new Step.Craft("mushroom_stew", 1));
-        RungOptions.add(rows, dropped, m, now, Options.typed("stew", "forage", steps,
-                (walk + Options.MINUTE) * rounds(short_, stewYield()), "a red and a brown mushroom", "stew", m));
-    }
-
     static void wheat(FoodFacts f, Options.OptionMemory m, long now, List<Options.Option> rows, List<String> dropped, boolean urgent) {
-        if (f.farmKnown()) return;                          // the planner's bread has its source
+        if (f.farmKnown()) return;                          // the chain's bread has its source
         if (urgent) { dropped.add("wheat: too slow while hungry (8 min to grow)"); return; }
         int seeds = f.has("wheat_seeds");
         List<Step> seedsStep = new ArrayList<>();

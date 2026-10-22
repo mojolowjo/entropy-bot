@@ -89,9 +89,6 @@ final class TuningDefs {
         Tuning.def("assistRules.treeMax", 4, "rm-constants 0.39.u2 (was AssistRules.TREE_MAX)", "the tree max of AssistRules");
         Tuning.def("assistRules.farmR", 16, "rm-constants 0.39.u2 (was AssistRules.FARM_R)", "the farm r of AssistRules");
         // bedOptions
-        Tuning.def("bedOptions.kill", 25, "rm-constants 0.39.u2 (was BedOptions.KILL)", "the kill of BedOptions");
-        Tuning.def("bedOptions.craft", 20, "rm-constants 0.39.u2 (was BedOptions.CRAFT)", "the craft of BedOptions");
-        Tuning.def("bedOptions.herdFix", 20, "rm-constants 0.39.u2 (was BedOptions.HERD_FIX)", "the herd fix of BedOptions");
         // bedSpot
         Tuning.def("bedSpot.offCamp", 1.5, "rm-constants 0.39.u2 (was BedSpot.OFF_CAMP)", "Blocks of cost per block the bed lies away from being next to the table or chest");
         Tuning.def("bedSpot.blockedHead", 0.5, "rm-constants 0.39.u2 (was BedSpot.BLOCKED_HEAD)", "Cost of each head direction that is blocked");
@@ -99,6 +96,13 @@ final class TuningDefs {
         Tuning.def("bedSpot.far", 10, "rm-constants 0.39.u2 (was BedSpot.FAR)", "How far from the anchor a bed may stand");
         // blueprint
         Tuning.def("blueprint.maxFails", 3, "rm-constants 0.39.u2 (was Blueprint.MAX_FAILS)", "Largest schematic AA takes (cells, air included)");
+        Tuning.def("steps.placeNearR", 3, "one-planner 0.39.z1", "blocks within which the fork's placeNear picks the cell of a place-near step (a table, a furnace)");
+        Tuning.def("needChain.candidates", 8, "one-planner 0.39.z1", "members of one requirement (a tag ingredient, the fuel table, a group) priced in full, the likeliest first (RULES 14: rough)");
+        Tuning.def("needChain.maxTrials", 4000, "one-planner 0.39.z1", "ways priced in one chain before every further requirement prices only its likeliest member (a bound on the search)");
+        Tuning.def("needChain.unknownBreakS", 3, "one-planner 0.39.z1 (was coalOptions.mineOre)", "seconds a block takes to break when the game gives it no hardness (no data loaded)");
+        Tuning.def("needChain.unknownMobHp", 10, "one-planner 0.39.z1", "health points a mob is priced at when the game's attributes give none (the hunt's kill time)");
+        Tuning.def("needs.foodItems", 8, "one-planner 0.39.z1 (was the planner goal food 8)", "food items the food need's chain gets (any plain food, the cheapest per point)");
+        Tuning.def("needs.ironTier", 3, "one-planner 0.39.z1 (was the game-fact tier 3 of the iron rung)", "the pickaxe tier the iron need wants (the bot's scale: wood 1, stone 2, iron 3, diamond 4)");
         Tuning.def("needChain.exploreReturn", 0.5, "rm-bootstrap 0.39.v1", "share of the explore time the walk back costs again (the explore way's return leg)");
         Tuning.def("nearby.scanR", 32, "simple-tools 0.39.w1", "blocks round the bot Baritone's world scan looks for the nearest tree log and stone (the radius its own mine process uses)");
         Tuning.def("nearby.scanMax", 64, "simple-tools 0.39.w1", "most blocks one Baritone world scan returns for the nearby fact");
@@ -190,11 +194,6 @@ final class TuningDefs {
         Tuning.def("climbPlan.hintMax", 24, "rm-constants 0.39.u2 (was ClimbPlan.HINT_MAX)", "Deeper than this a failed walk gets no climb hint (a mine, not a pit)");
         Tuning.def("climbPlan.startR", 4, "rm-constants 0.39.u2 (was ClimbPlan.START_R)", "the start r of ClimbPlan");
         // coalOptions
-        Tuning.def("coalOptions.mineOre", 3, "rm-constants 0.39.u2 (was CoalOptions.MINE_ORE)", "the mine ore of CoalOptions");
-        Tuning.def("coalOptions.smeltItem", 10, "rm-constants 0.39.u2 (was CoalOptions.SMELT_ITEM)", "the smelt item of CoalOptions");
-        Tuning.def("coalOptions.furnaceTrip", 2, "rm-constants 0.39.u2 (was CoalOptions.FURNACE_TRIP)", "the furnace trip of CoalOptions");
-        Tuning.def("coalOptions.furnaceMake", 15, "rm-constants 0.39.u2 (was CoalOptions.FURNACE_MAKE)", "the furnace make of CoalOptions");
-        Tuning.def("coalOptions.digMax", 16, "rm-constants 0.39.u2 (was CoalOptions.DIG_MAX)", "the dig max of CoalOptions");
         // commands
         Tuning.def("commands.pickupHoldMs", 10 * 60_000L, "rm-constants 0.39.u2 (was Commands.PICKUP_HOLD_MS)", "A 'stop' holds the pickups this long (like the autominer's hold)");
         Tuning.def("commands.pickupNearBase", 48, "rm-constants 0.39.u2 (was Commands.PICKUP_NEAR_BASE)", "Blocks from the base within which the bot picks furnace output up by itself");
@@ -567,10 +566,6 @@ final class TuningDefs {
         // placedPlan
         Tuning.def("placedPlan.defaultRadius", 24, "rm-constants 0.39.u2 (was PlacedPlan.DEFAULT_RADIUS)", "The walk-back limit of 'restore placed' without a radius");
         // planner
-        Tuning.def("planner.maxNodes", 2000, "rm-constants 0.39.u2 (was Planner.MAX_NODES)", "the max nodes of Planner");
-        Tuning.def("planner.maxSteps", 24, "rm-constants 0.39.u2 (was Planner.MAX_STEPS)", "the max steps of Planner");
-        Tuning.def("planner.budgetMs", 200, "rm-constants 0.39.u2 (was Planner.BUDGET_MS)", "the budget ms of Planner");
-        Tuning.def("planner.shelterBlocks", 32, "rm-constants 0.39.u2 (was Planner.SHELTER_BLOCKS)", "the shelter blocks of Planner");
         // policyStats
         Tuning.def("policyStats.differFull", 5, "rm-constants 0.39.u2 (was PolicyStats.DIFFER_FULL)", "How many 'would differ' lines go to the log in full before the rate limit (one per LOG_EVERY_MS) applies");
         // predictions
@@ -746,7 +741,6 @@ final class TuningDefs {
         Tuning.def("techTree.depth", 3, "rm-constants 0.39.u2 (was TechTree.DEPTH)", "the depth of TechTree");
         Tuning.def("techTree.discount", 0.5, "rm-constants 0.39.u2 (was TechTree.DISCOUNT)", "the discount of TechTree");
         // thing
-        Tuning.def("thing.learnMin", 25, "rm-constants 0.39.u2 (was Thing.LEARN_MIN)", "Samples before what was learned beats the vanilla table (a few veins say little)");
         // threatFacts
         Tuning.def("threatFacts.shoreReach", 32, "rm-constants 0.39.u2 (was ThreatFacts.SHORE_REACH)", "AA_STEP3 A4: how far the shore scan looks (blocks, horizontally)");
         Tuning.def("threatFacts.lit", 8, "rm-constants 0.39.u2 (was ThreatFacts.LIT)", "Light this high is lit (spawning stops)");
@@ -821,7 +815,6 @@ final class TuningDefs {
         Tuning.def("waterWays.floatSlow", 5, "rm-constants 0.39.u2 (was WaterWays.FLOAT_SLOW)", "Blocks per second walking, swimming");
         // woodOptions
         Tuning.def("woodOptions.cutLog", 6, "rm-constants 0.39.u2 (was WoodOptions.CUT_LOG)", "the cut log of WoodOptions");
-        Tuning.def("woodOptions.search", 60, "rm-constants 0.39.u2 (was WoodOptions.SEARCH)", "the search of WoodOptions");
         Tuning.def("woodOptions.farMax", 256, "rm-constants 0.39.u2 (was WoodOptions.FAR_MAX)", "the far max of WoodOptions");
         // ---- inline literals that were hand numbers in a decision (rm-constants part 2)
         Tuning.def("aaDesires.coolMin", 5, "rm-constants 0.39.u2 (inline literal in AaDesires)", "minutes a desire cools after its way failed");
@@ -833,7 +826,6 @@ final class TuningDefs {
         Tuning.def("aaDesires.pointAgeMs", 60_000, "rm-constants 0.39.u2 (inline literal in AaDesires)", "milliseconds a remembered point stays good");
         Tuning.def("aaDesires.samePointR", 4, "rm-constants 0.39.u2 (inline literal in AaDesires)", "blocks within which a point counts as the same one");
         Tuning.def("aaDesires.shareScore", 30, "rm-constants 0.39.u2 (inline literal in AaDesires)", "score of a desire per unit of its planned share");
-        Tuning.def("aaRuntime.coalMemoMs", 10_000, "rm-constants 0.39.u2 (inline literal in AaRuntime)", "milliseconds the coal position is remembered");
         Tuning.def("aaRuntime.creeperNear", 10, "rm-constants 0.39.u2 (inline literal in AaRuntime)", "blocks within which an owner-side creeper counts");
         Tuning.def("aaRuntime.errorWindowMs", 60_000, "rm-constants 0.39.u2 (inline literal in AaRuntime)", "milliseconds an error count covers");
         Tuning.def("aaRuntime.errorsLogged", 3, "rm-constants 0.39.u2 (inline literal in AaRuntime)", "errors logged in full before only their text is");
@@ -917,7 +909,6 @@ final class TuningDefs {
         Tuning.def("clearing.stageWaitTicks", 10, "rm-constants 0.39.u2 (inline literal in Clearing)", "ticks a stage waits");
         Tuning.def("clearing.startWaitTicks", 60, "rm-constants 0.39.u2 (inline literal in Clearing)", "ticks a build waits after its start");
         Tuning.def("clearing.stillTicks", 200, "rm-constants 0.39.u2 (inline literal in Clearing)", "ticks Baritone may stand still before the build is nudged");
-        Tuning.def("coalOptions.charcoalExtraS", 10, "rm-constants 0.39.u2 (inline literal in CoalOptions)", "seconds added to the charcoal row for the fuel and the wait");
         Tuning.def("costs.armorCut", 0.6, "rm-constants 0.39.u2 (inline literal in Costs)", "the most full armour cuts the night danger by");
         Tuning.def("costs.foodNeedSpan", 14.0, "rm-constants 0.39.u2 (inline literal in Costs)", "food points short of full at which the food need counts as full");
         Tuning.def("costs.healthNeedSpan", 10.0, "rm-constants 0.39.u2 (inline literal in Costs)", "health points short of full at which the health need counts as full");
@@ -975,10 +966,7 @@ final class TuningDefs {
         Tuning.def("floorFill.tries", 3, "rm-constants 0.39.u2 (inline literal in FloorFill)", "tries at one cell before it is skipped");
         Tuning.def("floorSteps.beatTicks", 20, "rm-constants 0.39.u2 (inline literal in FloorSteps)", "ticks between two lease beats");
         Tuning.def("floorSteps.settleTicks", 4, "rm-constants 0.39.u2 (inline literal in FloorSteps)", "ticks a step waits after its start");
-        Tuning.def("foodOptions.appleMin", 4, "rm-constants 0.39.u2 (inline literal in FoodOptions)", "minutes of waiting under the leaves per apple round");
-        Tuning.def("foodOptions.berryMin", 0.3, "rm-constants 0.39.u2 (inline literal in FoodOptions)", "minutes one berry visit takes");
         Tuning.def("foodOptions.berryYieldK", 2.5, "rm-constants 0.39.u2 (inline literal in FoodOptions)", "berry energy per bush visit, in sweet berries");
-        Tuning.def("foodOptions.cookPerMin", 6.0, "rm-constants 0.39.u2 (inline literal in FoodOptions)", "items a furnace cooks per minute");
         Tuning.def("foodOptions.fishPerTrip", 4, "rm-constants 0.39.u2 (inline literal in FoodOptions)", "fish one fishing trip brings");
         Tuning.def("foodOptions.kelpPerTrip", 8, "rm-constants 0.39.u2 (inline literal in FoodOptions)", "dried kelp one kelp trip brings");
         Tuning.def("foodOptions.noGain", 0.1, "rm-constants 0.39.u2 (inline literal in FoodOptions)", "energy gain under which a slow food way counts as stalled");
@@ -987,7 +975,6 @@ final class TuningDefs {
         Tuning.def("foodOptions.wheatBucketMin", 7, "rm-constants 0.39.u2 (inline literal in FoodOptions)", "minutes a wheat field made with a water bucket takes");
         Tuning.def("foodOptions.wheatFieldMin", 6, "rm-constants 0.39.u2 (inline literal in FoodOptions)", "minutes a wheat field by water takes");
         Tuning.def("freeSpots.maxRing", 3, "rm-constants 0.39.u2 (inline literal in FreeSpots)", "rings of cells round a spot the free-spot search looks through");
-        Tuning.def("goals.fightHealth", 14, "rm-constants 0.39.u2 (inline literal in Goals)", "health from which the bot fights");
         Tuning.def("goals.maxN", 4096, "rm-constants 0.39.u2 (inline literal in Goals)", "the most items one goal may ask for");
         Tuning.def("guard.astarLogTicks", 100, "rm-constants 0.39.u2 (inline literal in Guard)", "ticks between two logs of the A* search");
         Tuning.def("help.giveWeight", 1.5, "rm-constants 0.39.u2 (inline literal in Help)", "weight of the give pick");
@@ -1042,7 +1029,6 @@ final class TuningDefs {
         Tuning.def("threatRuntime.fullEveryMs", 15_000, "rm-constants 0.39.u2 (inline literal in ThreatRuntime)", "milliseconds between two full scans while mobs are near");
         Tuning.def("threatRuntime.seenDist", 2.5, "rm-constants 0.39.u2 (inline literal in ThreatRuntime)", "blocks within which a mob counts as seen without a line of sight");
         Tuning.def("waterPlan.sliceCap", 8, "rm-constants 0.39.u2 (inline literal in WaterPlan)", "rounds one slice may take");
-        Tuning.def("ways.woodRetryMs", 1000, "rm-constants 0.39.u2 (inline literal in Ways)", "milliseconds before the wood facts are asked again");
         Tuning.def("worth.baseShare", 0.8, "rm-constants 0.39.u2 (inline literal in Worth)", "a base is worth this share of a bed");
         Tuning.def("worth.bedBase", 20, "rm-constants 0.39.u2 (inline literal in Worth)", "the bed worth floor");
         Tuning.def("worth.bedSpan", 60, "rm-constants 0.39.u2 (inline literal in Worth)", "the bed worth span (scaled by the night danger)");

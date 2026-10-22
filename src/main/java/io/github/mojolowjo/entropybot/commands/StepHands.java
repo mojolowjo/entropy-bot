@@ -73,6 +73,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.HuntAt h -> hunt(p, h);
                 case Step.Build b -> build(b);
                 case Step.PlaceNear n -> placeNear(p, n);
+                case Step.ToBand t -> toBand(p, t);
                 case Step.Climb k -> climb(p);
                 case Step.Fish fs -> fish(p, fs);
                 case Step.KelpCut k -> kelpCut(p, k);
@@ -99,6 +100,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.HuntAt h -> huntStatus(p, h);
                 case Step.Build b -> buildStatus(b);
                 case Step.PlaceNear n -> placeNearStatus(n);
+                case Step.ToBand t -> toBandStatus(p, t);
                 case Step.Climb k -> climbStatus();
                 default -> requestStatus();
             };
@@ -123,6 +125,10 @@ public final class StepHands implements Steps.Hands {
                 if (b != null) Jobs.cancel(b);
             }
             if (step instanceof Step.Build || step instanceof Step.PlaceNear) io.github.mojolowjo.entropybot.aa.moves.JobHands.get().stop(why);
+            if (step instanceof Step.ToBand) {
+                IBaritone b = Jobs.baritone();
+                if (b != null) Jobs.cancel(b);
+            }
             if (step instanceof Step.Climb && climbing && c.chains.running() && "climb".equals(c.chains.name())) c.chains.clear();
             if ((req != null && !req.finished) || walkJob != null) {
                 if (c.jobs.running()) c.jobs.finish("stopped: " + why);
@@ -154,15 +160,10 @@ public final class StepHands implements Steps.Hands {
         climbEnd = null;
     }
 
-    /** rm-execution2: the planner's routine for a Plan step, typed at the planner's side (AaRuntime.resolveState). */
-    @Override public Steps.Routine routine(Step.Plan p) {
-        if (c.aaRuntime == null) return new Steps.Routine(null, "no planner (aa not loaded)");
-        var r = c.aaRuntime.resolveState(p.goal());
-        return switch (r.state()) {
-            case READY -> new Steps.Routine(r.steps(), null);
-            case SEARCHING -> new Steps.Routine(null, "the planner still searches for " + p.goal());
-            case NONE -> new Steps.Routine(null, r.why());
-        };
+    /** one-planner: the chain for an Obtain step, on the facts as it starts (AaRuntime.obtainSteps: NeedChain). */
+    @Override public Steps.Routine routine(Step.Obtain o) {
+        if (c.aaRuntime == null) return new Steps.Routine(null, "no chain (aa not loaded)");
+        return c.aaRuntime.obtainSteps(o);
     }
 
     // ---- fish: cast and reel as item inputs on Baritone's look, in the one Steps machine ----
@@ -405,23 +406,44 @@ public final class StepHands implements Steps.Hands {
         return Car.Status.running(r.why());
     }
 
-    // ---- place near me: the one cell ahead of the bot goes to the builder leg; whether it can be placed there is the builder's answer ----
-
-    private int[] nearCell;
+    // ---- place near me: the fork's placeNear picks the cell (free, reachable, the guard allowing), the stand and the face; the mod names none ----
 
     private String placeNear(LocalPlayer p, Step.PlaceNear n) {
-        int[] me = Jobs.here(p);
-        var d = p.getDirection();
-        nearCell = new int[]{me[0] + d.getStepX(), me[1], me[2] + d.getStepZ()};
-        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().build(List.of(nearCell), List.of(n.item()), (int) (20 * Tuning.need("hands.buildS")), "steps", null, false);
+        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().placeNear(n.item(), Tuning.i("steps.placeNearR"), (int) (20 * Tuning.need("hands.buildS")), "steps");
         return r.failed() ? "error: " + r.why() : null;
     }
 
     private Car.Status placeNearStatus(Step.PlaceNear n) {
-        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().build(List.of(nearCell), List.of(n.item()), (int) (20 * Tuning.need("hands.buildS")), "steps", null, false);
+        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().placeNear(n.item(), Tuning.i("steps.placeNearR"), (int) (20 * Tuning.need("hands.buildS")), "steps");
         if (r.done()) return Car.Status.done("ok: " + n.text());
         if (r.failed()) return Car.Status.failed(r.why());
         return Car.Status.running(r.why());
+    }
+
+    // ---- to a height band: one Baritone goal (GoalYLevel to the nearest Y of the band); done once the feet are in it ----
+
+    private String toBand(LocalPlayer p, Step.ToBand t) {
+        int y = Jobs.here(p)[1];
+        if (y >= t.minY() && y <= t.maxY()) { instant = "ok: already at y " + y + " (band " + t.minY() + ".." + t.maxY() + ")"; return null; }
+        IBaritone b = Jobs.baritone();
+        if (b == null) return "error: baritone not loaded";
+        int target = Math.max(t.minY(), Math.min(t.maxY(), y));
+        b.getCustomGoalProcess().setGoalAndPath(new baritone.api.pathing.goals.GoalYLevel(target));
+        LOG.info("[entropybot] steps: {} - Baritone GoalYLevel {}", t.text(), target);
+        return null;
+    }
+
+    private Car.Status toBandStatus(LocalPlayer p, Step.ToBand t) {
+        if (instant != null) return Car.Status.done(instant);
+        int y = Jobs.here(p)[1];
+        IBaritone b = Jobs.baritone();
+        if (y >= t.minY() && y <= t.maxY()) {
+            if (b != null) Jobs.cancel(b);
+            return Car.Status.done("ok: at y " + y + " (band " + t.minY() + ".." + t.maxY() + ")");
+        }
+        if (b == null) return Car.Status.failed("baritone not loaded");
+        if (!b.getCustomGoalProcess().isActive() && !Core.INSTANCE.reflexes.hold()) return Car.Status.failed(t.text() + ": Baritone's goal ended at y " + y + " (no path into the band)");
+        return Car.Status.running(t.text() + ": at y " + y);
     }
 
     // ---- hunt: GoalNear on the animal, the strike stays the reflexes' input ----

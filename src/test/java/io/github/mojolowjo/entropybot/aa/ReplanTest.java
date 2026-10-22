@@ -27,20 +27,6 @@ class ReplanTest {
         assertEquals(Replan.Leg.NONE, Replan.returnNow(p, 0, true, 20));
     }
 
-    @Test void ironDigRanksByRoundTrip() {
-        IronOptions.Ore buried = new IronOptions.Ore(0, 40, 0, 10, true, false, false, 12, false, null, false);
-        IronOptions.Ore cave = new IronOptions.Ore(30, 60, 0, 30, true, true, false, 5, false, null, false);
-        IronOptions.Facts f = new IronOptions.Facts(List.of(buried, cave), 64, false, 64, true, -1, false, "no", -1, false, false, 0);
-        Options.Choice c = new IronOptions.Set().choose(f, new Options.OptionMemory(), 0, io.github.mojolowjo.entropybot.aa.TS.s("mine iron 3 then smelt raw_iron 3"), 1, null, null);
-        Options.Option dig = c.ranked().stream().filter(o -> o.way().equals("dig_known")).findFirst().orElseThrow();
-        assertEquals(Replan.Leg.PILLAR, dig.ret().leg());
-        assertEquals(0, dig.ret().afterStep());
-        Options.Option walk = c.ranked().stream().filter(o -> o.way().equals("walk_known")).findFirst().orElseThrow();
-        assertEquals(Replan.Leg.WALK, walk.ret().leg());
-        assertTrue(walk.total() > walk.cost());
-        for (int i = 1; i < c.ranked().size(); i++) assertTrue(c.ranked().get(i - 1).total() <= c.ranked().get(i).total());
-    }
-
     @Test void timerBoundaryAndLongStep() {
         Replan.Timer t = new Replan.Timer();
         assertTrue(t.due("1/3 a", 0));

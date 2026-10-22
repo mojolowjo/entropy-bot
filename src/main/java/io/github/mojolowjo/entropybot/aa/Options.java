@@ -23,7 +23,7 @@ import java.util.regex.Pattern;
  * {@link Need.Picker}: it runs the best, remembers failures per option ({@link OptionMemory}) and switches to the next
  * best on a failure the set calls switchable (at most {@link #MAX_SWITCHES} per task).
  *
- * <p>Cost unit: walk-blocks; 1 minute of work = {@link #MINUTE} blocks, a planner step-cost unit = Tuning {@code planUnit}
+ * <p>Cost unit: walk-blocks; 1 minute of work = {@link #MINUTE} blocks (one-planner: a chain row's cost is the chain's own seconds as blocks)
  * blocks (owner's defaults, 2026-10-18; tuned from the decision log). Score = cost x (1 + fails of that option); a
  * floor deny or a live memory block drops the row with its reason; a tie goes to the earlier option. Pure (JUnit:
  * OptionsTest, IronOptionsTest). Loader notes: none.
@@ -33,8 +33,6 @@ public final class Options {
 
     public static final double MINUTE = 60; // structural: seconds in a minute (unit)
 
-    /** Round 4A N: walk-blocks per planner step-cost unit (Tuning planUnit, was the constant PLAN_UNIT 5). */
-    public static double planUnit() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("planUnit"); }
     public static int maxSwitches() { return Tuning.i("options.maxSwitches"); }
     /** A failed option is skipped this long per failure (at most an hour). */
     public static long retryMs() { return Tuning.l("options.retryMs"); }
@@ -49,7 +47,7 @@ public final class Options {
      *                     Only the sentinels {@link #NOTHING} and {@link Ways#WAIT_PLAN} have no steps (they never run).
      * @param cost         walk-blocks, already weighted by the failures
      * @param memoryKey    what a failure of it is remembered under
-     * @param needsPlanner it is the planner's routine (or built on it)
+     * @param needsPlanner it is the need's chain (or built on it)
      * @param steps        the typed steps the option runs ({@code aa/moves/Steps})
      */
     public record Option(String id, String way, String command, double cost, String why, String memoryKey, boolean needsPlanner, Replan.Ret ret,
@@ -57,7 +55,7 @@ public final class Options {
         public Option {
             if (ret == null) ret = Replan.Ret.NONE;
             steps = steps == null ? List.of() : List.copyOf(steps);
-            if (steps.isEmpty() && !NOTHING.equals(command) && !Ways.WAIT_PLAN.equals(command))
+            if (steps.isEmpty() && !NOTHING.equals(command))
                 throw new IllegalArgumentException("option " + id + " has no typed steps");
         }
 
@@ -71,7 +69,7 @@ public final class Options {
             this(id, way, steps, cost, why, memoryKey, needsPlanner, Replan.Ret.NONE, null);
         }
 
-        /** A sentinel row that never runs ({@link #NOTHING}: the need passes; {@link Ways#WAIT_PLAN}: the planner thinks). */
+        /** A sentinel row that never runs ({@link #NOTHING}: the need passes). */
         public static Option sentinel(String id, String way, String command, double cost, String why, String memoryKey) {
             return new Option(id, way, command, cost, why, memoryKey, false, Replan.Ret.NONE, null, List.of());
         }
@@ -191,9 +189,8 @@ public final class Options {
     /** One rung's options: facts and the planner's chain in, a ranked choice out. */
     public interface OptionSet<F> {
         /**
-         * @param planned     the planner's routine as typed steps (typed at the planner's side; null: the planner has none,
-         *                    {@code plannerWhy} says why)
-         * @param plannedCost the planner's own cost (its step-cost sum)
+         * @param planned     the need's chain as typed steps (NeedChain; null: none, {@code plannerWhy} says why)
+         * @param plannedCost the chain's price in walk-blocks
          * @param afterFail   the failed end that made the rung pick again (a switch), null on a fresh pick
          */
         Choice choose(F facts, OptionMemory m, long now, List<io.github.mojolowjo.entropybot.aa.moves.Step> planned, double plannedCost, String plannerWhy, String afterFail);
@@ -288,9 +285,9 @@ public final class Options {
 
         public Picker(String rung, String factsKey, Class<F> type, OptionSet<F> set) { this(rung, factsKey, type, set, null); }
 
-        private java.util.function.BiFunction<Blackboard, List<io.github.mojolowjo.entropybot.aa.moves.Step>, Option> noFacts = (b, planned) -> planned == null ? null : new Option("planner", "planner", planned, 0, "no facts: the planner's routine as it is", "planner", true);
+        private java.util.function.BiFunction<Blackboard, List<io.github.mojolowjo.entropybot.aa.moves.Step>, Option> noFacts = (b, planned) -> planned == null ? null : new Option("chain", "chain", planned, 0, "no facts: the chain as it is", "chain", true);
 
-        /** What runs without facts (default: the planner's routine as it is; null: nothing). */
+        /** What runs without facts (default: the need's chain as it is; null: nothing). */
         public Picker<F> withoutFacts(java.util.function.BiFunction<Blackboard, List<io.github.mojolowjo.entropybot.aa.moves.Step>, Option> f) {
             noFacts = f;
             return this;
@@ -373,7 +370,7 @@ public final class Options {
             long now = bb.clock.now();
             ran = null;
             if (!(sup instanceof Supplier<?> s)) {
-                why = "no " + rung.toLowerCase(Locale.ROOT) + " facts from the adapter: the planner's chain as it is";
+                why = "no " + rung.toLowerCase(Locale.ROOT) + " facts from the adapter: the chain as it is";
                 last = null;
                 ran = noFacts.apply(bb, planned);
                 return ran == null ? null : ran.command();
@@ -390,7 +387,7 @@ public final class Options {
                 fo = null;
             }
             if (!type.isInstance(fo)) {
-                why = rung.toLowerCase(Locale.ROOT) + " facts not readable now: the planner's chain as it is";
+                why = rung.toLowerCase(Locale.ROOT) + " facts not readable now: the chain as it is";
                 last = null;
                 ran = noFacts.apply(bb, planned);
                 return ran == null ? null : ran.command();
@@ -433,8 +430,8 @@ public final class Options {
         }
 
         /**
-         * Round 4A N: the rows the need's {@link Ways} adds to the set's choice (the planner while it searches, cut N +
-         * planner); set by the need before each pick, null none.
+         * Round 4A N: extra rows a caller may add to the set's choice (one-planner: the need sets none; its chain comes in
+         * as {@code planned}); null none.
          */
         public java.util.function.UnaryOperator<Choice> extra;
 

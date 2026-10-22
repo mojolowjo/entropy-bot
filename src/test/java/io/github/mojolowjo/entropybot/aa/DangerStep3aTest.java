@@ -17,6 +17,9 @@ import static org.junit.jupiter.api.Assertions.*;
 /** AA_STEP3 A: the loss terms by situation (hp curve, air), the wait where it stands, pillar from the bag and out of water, the shore. */
 @org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class DangerStep3aTest {
+    @org.junit.jupiter.api.AfterEach
+    void chainWorldGone() { io.github.mojolowjo.entropybot.aa.brain.TestData.clear(); }
+
     @AfterEach
     void defaults() { Tuning.reset(); }
 
@@ -97,6 +100,7 @@ class DangerStep3aTest {
         bb.in.baseKnown = false; bb.in.bedKnown = false; bb.in.baseChests = false; bb.in.freeSlots = 36; bb.in.wool = 0;
         bb.in.basePlace = null; bb.in.hungerDrains = false;
         bb.in.pos = new int[]{-195, 60, -238};
+        TS.richWorld(bb);
         AaTree tree = AaTree.build(new AaScorer());
         tree.tick(bb);
         assertTrue(bb.task() != null && !bb.task().paused(), "a job runs in the slot");
@@ -161,6 +165,7 @@ class DangerStep3aTest {
         bb.in.pickTier = 0; bb.in.pickaxes = 0; bb.in.tableKnown = false; bb.in.furnaceKnown = false; bb.in.torches = 0;
         bb.in.baseKnown = false; bb.in.bedKnown = false; bb.in.baseChests = false; bb.in.freeSlots = 36; bb.in.wool = 0;
         bb.in.basePlace = null; bb.in.hungerDrains = false;
+        TS.richWorld(bb);
         AaTree tree = AaTree.build(new AaScorer());
         tree.tick(bb);
         bb.in.inLavaOrFire = true;

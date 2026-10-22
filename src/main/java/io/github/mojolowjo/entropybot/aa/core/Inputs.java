@@ -77,6 +77,24 @@ public final class Inputs {
     /** aa-night2 P0 2: a weapon with hit 4+ in the bag (a sword or an axe; Hostility.weaponHit); a zombie seen this run. Not in the vector. */
     public boolean armed, zombieSeen;
 
+    /**
+     * one-planner: a bag lookup by the game's tag (items by path or id; ItemWorth's tag data): how many the bag holds of
+     * every item the game tags {@code tag}. The named counters above are filled by these, never by names.
+     */
+    public static int tagged(java.util.Map<String, Integer> bag, String tag) {
+        if (bag == null) return 0;
+        int n = 0;
+        for (var e : bag.entrySet()) if (e.getValue() != null && e.getValue() > 0 && io.github.mojolowjo.entropybot.aa.brain.ItemWorth.hasTag(e.getKey(), tag)) n += e.getValue();
+        return n;
+    }
+
+    /** one-planner: the bag holds the item (by path or id); false for a null id (no data loaded). */
+    public static boolean has(java.util.Map<String, Integer> bag, String id) {
+        if (bag == null || id == null) return false;
+        String path = id.indexOf(':') >= 0 ? id.substring(id.indexOf(':') + 1) : id;
+        return bag.getOrDefault(path, 0) > 0 || bag.getOrDefault(id, 0) > 0;
+    }
+
     /** Torches may burn coal: the torches' gain per coal over the coal goal's loss per coal (Costs.torchCoal). */
     public boolean torchCoal() { return io.github.mojolowjo.entropybot.aa.brain.Costs.torchCoal(coal, torches, coalGoalScore, coalGoalN); }
 

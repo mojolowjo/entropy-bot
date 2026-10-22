@@ -1,6 +1,5 @@
 package io.github.mojolowjo.entropybot.aa.brain;
 
-import io.github.mojolowjo.entropybot.aa.CoalOptions;
 import io.github.mojolowjo.entropybot.aa.Need;
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Clock;
@@ -20,7 +19,7 @@ class OneRecordTest {
 
     @Test
     void aNoTaskRungFailureRestsTheRung() {
-        Need r = new Need("needs.table", TaskKind.TABLE_FURNACE, b -> true, b -> "no base chests scanned", b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("table")));
+        Need r = new Need("needs.table", TaskKind.TABLE_FURNACE, b -> true, b -> "no base chests scanned", b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("table", 1)));
         Brain brain = new Brain("brain", "test", new Desire("needs.table", Desire.Kind.UPKEEP, r, b -> 50));
         brain.tick(bb);
         assertEquals(0, port.started.size());
@@ -32,14 +31,16 @@ class OneRecordTest {
     }
 
     @Test
-    void nestedBrainAndCoalMemoryShareTheOneRecord() {
+    void nestedBrainAndAnOptionMemoryShareTheOneRecord() {
         Brain inner = new Brain("idle.options", "inner").nested();
         Brain outer = new Brain("brain", "outer", new Desire("idle", Desire.Kind.UPKEEP, inner, b -> -1));
         assertSame(outer.failures, inner.failures);
         outer.tick(bb);
         assertSame(outer.failures, bb.fact(Brain.FAILURES_FACT));
-        CoalOptions.memory(bb).held.failed("charcoal", "no furnace", clock.now());
-        assertTrue(outer.failures.blocked(CoalOptions.MEM_DESIRE, "charcoal", clock.now()));
+        var held = new io.github.mojolowjo.entropybot.aa.Options.OptionMemory();
+        held.bind(outer.failures, "chain");
+        held.failed("charcoal", "no furnace", clock.now());
+        assertTrue(outer.failures.blocked("chain", "charcoal", clock.now()));
         assertEquals(1, outer.heldLines(clock.now()).size(), "one held list, no duplicate from the nested brain");
     }
 }

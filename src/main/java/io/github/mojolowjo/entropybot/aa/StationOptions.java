@@ -1,7 +1,6 @@
 package io.github.mojolowjo.entropybot.aa;
 
-import io.github.mojolowjo.entropybot.aa.brain.Tuning;
-
+import io.github.mojolowjo.entropybot.aa.brain.ItemWorth;
 import io.github.mojolowjo.entropybot.aa.brain.Site;
 import io.github.mojolowjo.entropybot.aa.moves.Step;
 
@@ -10,16 +9,14 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * AA_ROUND4A O (AA_ROUND4 A3): a station (crafting table, furnace, chest) as a priced option set, the ways:
+ * AA_ROUND4A O, one-planner: a station (the crafting table, the furnace: the stations the game's recipe data names; the
+ * camp chest) as a priced option set, the ways:
  * <ul>
- * <li><b>use known</b>: one is known within {@code station.near} (48): walk to its cell (its distance, or
- *     {@code base.distGuess}); sensed near with no cell: dropped (nothing to walk to).</li>
- * <li><b>place from bag</b>: the item in the bag: "place it near me" (Baritone's builder picks the cell), 0.15 s.</li>
- * <li><b>craft + place</b>: the materials in the bag (table 4 planks, chest 8 planks, furnace 8 cobblestone; a log is 4
- *     planks): craft 0.5 s + place 0.25 s.</li>
- * <li><b>cut + craft</b> (table, chest): wood short: the wood set's best row (WoodOptions) prepended at its price.</li>
- * <li><b>gather + craft</b> (furnace): cobblestone short and a pickaxe: {@link CoalOptions#MINE_ORE} per block.</li>
- * <li><b>planner</b>: the planner's chain at its step cost x {@link Options#PLAN_UNIT}.</li>
+ * <li><b>use known</b>: one is known within {@code station.near}: walk to its cell; sensed near with no cell: dropped
+ *     (nothing to walk to).</li>
+ * <li><b>place from bag</b>: the item in the bag: "place it near me" (the fork's placeNear picks the cell), 0.15 s.</li>
+ * <li><b>chain + place</b>: the need's chain for the item ({@link NeedChain}: craft it from what is had or known, the
+ *     ingredients recursing, else explore), then place it: the chain's price + 0.15 s.</li>
  * </ul>
  * Every row not offered is dropped with its reason; a held row says what failed. Pure (JUnit: StationOptionsTest).
  * Loader notes: none (facts from {@code commands.NeedFacts}).
@@ -28,37 +25,39 @@ public final class StationOptions {
     private StationOptions() {}
 
     public enum Kind {
-        TABLE("crafting_table", "planks", 4), FURNACE("furnace", "cobblestone", 8), CHEST("chest", "planks", 8);
-        public final String item, material;
-        public final int amount;
+        TABLE, FURNACE, CHEST;
 
-        Kind(String item, String material, int amount) {
-            this.item = item;
-            this.material = material;
-            this.amount = amount;
+        /** The station's block item: the crafting and furnace stations from the game's recipe data; the camp chest. */
+        public String item() {
+            return switch (this) {
+                case TABLE -> ItemWorth.stationOf(ItemWorth.CRAFT);
+                case FURNACE -> ItemWorth.stationOf(ItemWorth.SMELT);
+                case CHEST -> CHEST_ITEM;
+            };
         }
 
         /** Blackboard fact key of this station's facts supplier. */
         public String factsKey() { return "station." + name().toLowerCase(Locale.ROOT) + ".facts"; }
     }
 
+    /** The camp chest's item (the owner's camp rule names a chest; no recipe data names it). */
+    public static final String CHEST_ITEM = "minecraft:chest";
+
     /**
      * @param kind     which station
      * @param inBag    the station item in the bag
      * @param known    one is sensed near; {@code knownAt} its cell (null: only "near" known), {@code knownDist} blocks (-1 unknown)
-     * @param planks   planks in the bag; {@code logs} logs (4 planks each); {@code cobble} cobblestone
-     * @param pickTier best pickaxe (0 none)
-     * @param wood     the wood set's best row (cut logs), null none; {@code woodWhy} the wood set's line
-     * @param under    under ground ({@code depth} blocks); a wood or cobble gather climbs first
+     * @param under    under ground ({@code depth} blocks)
      */
-    public record StationFacts(Kind kind, boolean inBag, boolean known, int[] knownAt, double knownDist, int planks, int logs, int cobble,
-                               int pickTier, Options.Option wood, String woodWhy, boolean under, int depth) {}
+    public record StationFacts(Kind kind, boolean inBag, boolean known, int[] knownAt, double knownDist, boolean under, int depth) {}
 
-    public static Options.Choice choose(StationFacts f, Options.OptionMemory m, long now, List<Step> planned, double plannedCost, String plannerWhy) {
+    public static Options.Choice choose(StationFacts f, Options.OptionMemory m, long now, List<Step> planned, double plannedCost, String plannedWhy) {
         List<Options.Option> rows = new ArrayList<>();
         List<String> dropped = new ArrayList<>();
         Kind k = f.kind();
-        String item = k.item;
+        String id = k.item();
+        if (id == null) return Options.Choice.of(rows, List.of("the game's data names no " + k.name().toLowerCase(Locale.ROOT) + " station (no recipe data loaded)"), "no way to a station");
+        String item = id.startsWith("minecraft:") ? id.substring(10) : id;
         double near = Price.tune("station.near");
         // 1. a known one
         if (!f.known()) dropped.add("use known " + item + ": none sensed near");
@@ -76,60 +75,27 @@ public final class StationOptions {
         place.add(new Step.PlaceNear(item));
         if (k == Kind.CHEST) place.add(new Step.Scan());
         // 2. from the bag
-        if (f.inBag()) {
-            if (!place.isEmpty()) add(rows, dropped, m, now, Options.typed("place " + item, "place", place, Price.s(Price.placeS()),
-                    "in the bag, place " + Price.placeS() + " s", "place " + item, m), f);
-        } else dropped.add("place " + item + " from the bag: none in the bag");
-        // 3. craft from the bag's materials
-        int have = k == Kind.FURNACE ? f.cobble() : f.planks() + 4 * f.logs();  // game fact: a log makes 4 planks
-        int lack = Math.max(0, k.amount - have);
-        double craftPlace = Price.s(Price.craftS() + Price.placeS());
-        Step craft = new Step.Craft(item, 1);
-        if (!f.inBag() && !place.isEmpty()) {
-            if (lack == 0) add(rows, dropped, m, now, Options.typed("make " + item, "craft", join(List.of(craft), place), craftPlace,
-                    have + " " + k.material + " (" + k.amount + " wanted), craft " + Price.craftS() + " s + place " + Price.placeS() + " s", "make " + item, m), f);
-            else if (k == Kind.FURNACE) {
-                if (f.pickTier() < 1) dropped.add("gather + craft furnace: " + lack + " cobblestone short, no pickaxe");
-                else {
-                    add(rows, dropped, m, now, Options.typed("gather + craft furnace", "craft", join(List.of(new Step.Collect(k.material, lack), craft), place),
-                            lack * CoalOptions.mineOre() + craftPlace, lack + " cobblestone short x " + Price.r(CoalOptions.mineOre()) + ", craft + place",
-                            "gather craft furnace", m), f);
-                }
-            } else if (f.wood() == null) dropped.add("cut + craft " + item + ": " + lack + " planks short, no wood way (" + (f.woodWhy() == null ? "no wood facts" : f.woodWhy()) + ")");
-            else if (!f.wood().typed()) dropped.add("cut + craft " + item + ": the wood way " + f.wood().id() + " has no typed steps");
-            else {
-                double climb = Price.climb(f.under(), f.depth());
-                List<Step> first = new ArrayList<>();
-                if (f.under()) first.add(new Step.Climb());
-                first.addAll(f.wood().steps());
-                first.add(craft);
-                add(rows, dropped, m, now, Options.typed("cut + craft " + item, "craft", join(first, place),
-                        climb + f.wood().total() + craftPlace, lack + " planks short: " + f.wood().id() + " " + Price.r(f.wood().total())
-                                + (f.under() ? ", climb " + Price.r(climb) : "") + ", craft + place", "cut craft " + item, m), f);
-            }
-        }        // 4. the planner
-        if (planned == null) dropped.add("planner: " + (plannerWhy == null ? "no chain" : plannerWhy));
-        else Price.add(rows, dropped, m, now, Options.typed("planner", "planner", planned, plannedCost * Options.planUnit(),
-                "plan cost " + Price.r(plannedCost) + " x " + Price.r(Options.planUnit()), "planner " + item, true, m));
+        if (f.inBag()) Price.add(rows, dropped, m, now, Options.typed("place " + item, "place", place, Price.s(Price.placeS()),
+                "in the bag, place " + Price.placeS() + " s", "place " + item, m));
+        else dropped.add("place " + item + " from the bag: none in the bag");
+        // 3. the chain for the item, then place it
+        if (f.inBag()) { /* the bag row stands */ }
+        else if (planned == null) dropped.add("chain + place " + item + ": " + (plannedWhy == null ? "no chain" : plannedWhy));
+        else {
+            List<Step> all = new ArrayList<>(planned);
+            all.addAll(place);
+            Price.add(rows, dropped, m, now, Options.typed("chain + place " + item, "chain", all, plannedCost + Price.s(Price.placeS()),
+                    (plannedWhy == null ? "the chain" : plannedWhy) + ", place " + Price.placeS() + " s", "chain " + item, true, m));
+        }
         return Options.Choice.of(rows, dropped, "no way to a " + item);
-    }
-
-    private static List<Step> join(List<Step> a, List<Step> b) {
-        List<Step> out = new ArrayList<>(a);
-        out.addAll(b);
-        return out;
-    }
-
-    private static void add(List<Options.Option> rows, List<String> dropped, Options.OptionMemory m, long now, Options.Option o, StationFacts f) {
-        Price.add(rows, dropped, m, now, o);
     }
 
     /** A failed place or craft may be answered with the next way (never the owner's stop, a fight, a death). */
     public static boolean switchable(String end) { return end != null && !Options.ownerOrDanger(end); }
 
     public static final class Set implements Options.OptionSet<StationFacts> {
-        @Override public Options.Choice choose(StationFacts f, Options.OptionMemory m, long now, List<Step> planned, double cost, String plannerWhy, String afterFail) {
-            return StationOptions.choose(f, m, now, planned, cost, plannerWhy);
+        @Override public Options.Choice choose(StationFacts f, Options.OptionMemory m, long now, List<Step> planned, double cost, String plannedWhy, String afterFail) {
+            return StationOptions.choose(f, m, now, planned, cost, plannedWhy);
         }
 
         @Override public boolean switchable(String end) { return StationOptions.switchable(end); }

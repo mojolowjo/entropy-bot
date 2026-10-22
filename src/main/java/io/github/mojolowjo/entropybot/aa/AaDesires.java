@@ -108,13 +108,30 @@ public final class AaDesires {
         return StationOptions.Kind.CHEST;
     }
 
+    /** The torch the torches need is about, and the beds tag the bed need takes any member of (step targets, not lists). */
+    static final String TORCH = "minecraft:torch", BEDS = "#minecraft:beds";
+
     /** The dawn climb-out need (scores Tuning dawnClimb while NightWork.climbAtDawn). */
     public static final String DAWN_ID = "night.dawnClimb";
 
     private static int t(String name) { return (int) Tuning.get(name); }
 
-    /** rm-execution2: a need's planner goal (one Step.Plan; Ways asks the planner about it). */
-    static List<Step> plan(String goal) { return List.of(new Step.Plan(goal)); }
+    /** one-planner: a need's goal, "I need n of what" (one Step.Obtain; Ways prices its chain). */
+    static List<Step> obtain(String what, int n) { return what == null ? null : List.of(new Step.Obtain(what, n)); }
+
+    /** The plain foods (the game's FOOD data): the food need's group, any member, the cheapest per point. */
+    static List<Step> food(int n) { return List.of(new Step.Obtain("food", n, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.plainFoods())); }
+
+    /** The iron need: any pickaxe of the iron tier or above (the game's pickaxes tag and tool data), the cheapest. */
+    static List<Step> ironPickaxe() {
+        List<String> picks = new ArrayList<>();
+        for (String id : io.github.mojolowjo.entropybot.aa.brain.ItemWorth.withTag("pickaxes"))
+            if (io.github.mojolowjo.entropybot.aa.brain.MiningTiers.toolTier(id, "pickaxe") >= Tuning.i("needs.ironTier")) picks.add(id);
+        return picks.isEmpty() ? null : List.of(new Step.Obtain("pickaxe of tier " + Tuning.i("needs.ironTier") + "+", 1, picks));
+    }
+
+    /** The station block item of a recipe kind (the game's recipe data), null while no data is loaded. */
+    static String station(String kind) { return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.stationOf(kind); }
 
     /** A row for a need whose facts are not readable (its fixed way). */
     static Options.Option noFacts(String id, List<Step> steps) {
@@ -126,44 +143,43 @@ public final class AaDesires {
                 bag = new io.github.mojolowjo.entropybot.aa.core.Band(t("bag.enter"), t("bag.leave")), food = new io.github.mojolowjo.entropybot.aa.core.Band(t("band.foodOn"), t("band.foodOff"));
         Need hunger = new Need("needs.food", TaskKind.FOOD,
                 bb -> bb.in.hungerDrains && (food.update(bb.in.food) | foodStockLow(bb)),
-                bb -> null, bb -> plan("food 8"), new Options.Picker<>("FOOD", FoodOptions.FACTS, FoodOptions.FoodFacts.class, new FoodOptions.Food()));
+                bb -> null, bb -> food(Tuning.i("needs.foodItems")), new Options.Picker<>("FOOD", FoodOptions.FACTS, FoodOptions.FoodFacts.class, new FoodOptions.Food()));
         // a table or furnace in the bag counts (the near-block fact is false as soon as the bot walks away)
-        // round 4A O: craft+place at the cell, cut + craft, the planner, a known one (StationOptions); a gather climbs first there
+        // round 4A O, one-planner: a known one, place from the bag, the chain for the item + place it (StationOptions)
         Need tableFurnace = new Need(STATION_ID, TaskKind.TABLE_FURNACE,
                 bb -> !(bb.in.tableKnown || bb.in.tableInBag) || !(bb.in.furnaceKnown || bb.in.furnaceInBag) || !campChest(bb),
                 // rm-areas: the chest has no chain of its own: the station set's place / craft rows own it
-                bb -> null, bb -> !(bb.in.tableKnown || bb.in.tableInBag) ? plan("table") : !(bb.in.furnaceKnown || bb.in.furnaceInBag) ? plan("furnace")
-                        : null, new Options.Picker<>("STATION", STATION_FACTS, StationOptions.StationFacts.class, new StationOptions.Set()));
+                bb -> null, bb -> !(bb.in.tableKnown || bb.in.tableInBag) ? obtain(station(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT), 1)
+                        : !(bb.in.furnaceKnown || bb.in.furnaceInBag) ? obtain(station(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT), 1) : null, new Options.Picker<>("STATION", STATION_FACTS, StationOptions.StationFacts.class, new StationOptions.Set()));
         Need spare = new Need("needs.spareTable", TaskKind.TABLE_FURNACE,
                 bb -> AaLadder.spareTableWanted(bb.in.tableInBag, bb.in.planks),
-                bb -> null, bb -> List.of(new Step.Craft("crafting_table", 1))).hand(io.github.mojolowjo.entropybot.aa.brain.ToolWear.craftSV());
+                bb -> null, bb -> obtain(station(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT), 1));
         Need torch = new Need("needs.torches", TaskKind.TORCHES,
                 bb -> torches.update(bb.in.torches),
                 bb -> !bb.in.torchCoal() ? "coal kept for the coal goal (" + bb.in.torchCoalTerms() + ")" : null,
-                bb -> plan("torch " + CoalOptions.Torches.target()), new CoalOptions.Torches());
+                bb -> obtain(TORCH, t("torch.target")));
         Need base = new Need("needs.base", TaskKind.BASE_BED,
                 bb -> !bb.in.baseKnown && !bb.flag(AaLadder.SHELTER_FACT),
                 bb -> null, bb -> bb.in.basePlace != null ? List.of(new Step.House(bb.in.basePlace)) : List.of(new Step.Shelter()),
                 // round 4A O: house <area>, shelter here, burrow, priced with the night (BaseOptions; its rows climb first)
                 new Options.Picker<>("BASE", BaseOptions.FACTS, BaseOptions.BaseFacts.class, new BaseOptions.Set())
                         .withoutFacts((b, planned) -> b.in.basePlace != null ? noFacts("house", List.of(new Step.House(b.in.basePlace))) : noFacts("shelter", List.of(new Step.Shelter()))));
-        // round 4 fix 4: the ways to a bed are priced (BedOptions); the climb is the first step of its row under ground
+        // one-planner: a bed is "I need 1 of the beds tag" (the chain: wool from the bag, a sheep known, else explore)
         Need bed = new Need("needs.bed", TaskKind.BASE_BED,
                 bb -> !bb.in.bedKnown && !bb.in.bedInBag,
-                bb -> bb.in.wool >= 3 || bb.in.sheepSeen || sheepHerd(bb) != null ? null : "no wool for a bed (" + bb.in.wool + "/3; no sheep seen)",  // game fact: a bed needs 3 wool
-                bb -> BedOptions.steps(bb.in.wool, sheepHerd(bb)),
-                new Options.Picker<>("BED", BedOptions.FACTS, BedOptions.BedFacts.class, new BedOptions.Set()));      // its rows price the climb (BedOptions)
+                bb -> null,
+                bb -> obtain(BEDS, 1)).surface();
         Need deposit = new Need("needs.bag", TaskKind.BAG,
                 bb -> bag.update(bb.in.freeSlots),
                 bb -> null,
                 // round 4A O: deposit at the base chest, craft+place a chest here, drop junk (BagOptions)
                 bb -> List.of(new Step.Deposit()), new Options.Picker<>("BAG", BagOptions.FACTS, BagOptions.BagFacts.class, new BagOptions.Set())
                         .withoutFacts((b, planned) -> b.in.baseChests ? noFacts("deposit", List.of(new Step.Deposit())) : null));
-        // 0.36.a8 (MINING_PLAN 3.6): the option scorer chooses how the planner's ore and smelt steps run (IronOptions)
+        // one-planner: the iron need is "a pickaxe of the iron tier" through the chain (its ore dig, the smelt, the craft)
         Need iron = new Need("needs.iron", TaskKind.IRON,
-                bb -> bb.in.pickTier < 3,  // game fact: pickaxe tier scale: wood 1, stone 2, iron 3, diamond 4
+                bb -> bb.in.pickTier < Tuning.i("needs.ironTier"),
                 bb -> null,
-                bb -> plan("iron tools"), new IronOptions.Picker());
+                bb -> ironPickaxe());
         // review 4A-N (1): the dawn climb out of the night stairs is a need of its own, priced by WayUp's ways (no gate)
         Need dawn = new Need(DAWN_ID, TaskKind.TABLE_FURNACE, bb -> NightWork.climbAtDawn(bb, AaLadder.surfaceDepth()), bb -> null, bb -> List.of(new Step.Climb()),
                 new Options.Picker<>("SURFACE", RungOptions.SURFACE_FACTS, RungOptions.SurfaceFacts.class, new RungOptions.Surface())
@@ -180,7 +196,7 @@ public final class AaDesires {
     /** Round 4A N: a need as a desire (its score, value-flow prerequisite, feasibility, live cost, probe and site). */
     public static Desire need(Need r) {
         Desire d = switch (r.id) {
-            case "needs.food" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, AaDesires::foodScore)).infeasible(AaDesires::foodInfeasible);
+            case "needs.food" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, AaDesires::foodScore));
             case "needs.torches" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(Tuning.get("torch.base") + Curves.upkeep(Tuning.get("torch.span"), b.in.torches, t("torch.target")), factor(b, "torches"))))
                     .prereq(b -> b.in.tableKnown || b.in.tableInBag ? null : "needs.tableFurnace");
             case "needs.bag" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(Tuning.get("bag.base") + Curves.upkeep(Tuning.get("bag.span"), b.in.freeSlots, t("bag.leave")), factor(b, "bag"))));
@@ -197,18 +213,14 @@ public final class AaDesires {
         return wire(d, r).site(b -> rungSite(r, b));
     }
 
-    /** AA_ROUND3 2: blackboard fact, a {@code Supplier<int[]>} of the nearest known coal ore (the adapter caches it). */
-    public static final String COAL_SITE_FACT = "aa.coalSite";
-
     /**
-     * AA_ROUND3 2: a need's site for the sequencer: iron from its chosen option, torches at the nearest known coal,
-     * the table/furnace at the camp (else the base), base/bed/bag at the base; the rest none.
+     * AA_ROUND3 2: a need's site for the sequencer: iron from its chosen option, the table/furnace at the camp (else the
+     * base), base/bed/bag at the base; the rest none.
      */
     static io.github.mojolowjo.entropybot.aa.brain.Site rungSite(Need r, Blackboard b) {
         int[] place = b.in.campPos != null ? b.in.campPos : b.in.basePos;
         return switch (r.id) {
             case "needs.iron" -> r.picker() == null ? null : r.picker().lastSite();
-            case "needs.torches" -> b.fact(COAL_SITE_FACT) instanceof java.util.function.Supplier<?> s && s.get() instanceof int[] p ? io.github.mojolowjo.entropybot.aa.brain.Site.of(p) : null;
             case "needs.tableFurnace", "needs.spareTable" -> io.github.mojolowjo.entropybot.aa.brain.Site.of(place);
             case "needs.base", "needs.bed", "needs.bag" -> io.github.mojolowjo.entropybot.aa.brain.Site.of(b.in.basePos);
             default -> null;
@@ -344,14 +356,6 @@ public final class AaDesires {
         return Math.min(100, Math.max(1, Math.max(bar, stock < 0 ? 0 : scaled(stock, factor(b, "food")))));
     }
 
-    /** Parked while no way to food exists (FoodOptions.noSource on the adapter's facts; re-checked as they refresh). */
-    @SuppressWarnings("unchecked")
-    static String foodInfeasible(Blackboard bb) {
-        if (!(bb.fact(FoodOptions.FACTS) instanceof java.util.function.Supplier<?> s)) return null;
-        Object f = s.get();
-        return f instanceof FoodOptions.FoodFacts ff ? FoodOptions.noSource(ff) : null;
-    }
-
     /** B3 (2.4): the personality's upkeep factor (1 by default). */
     static double factor(Blackboard bb, String key) { return Personality.of(bb).get(key); }
 
@@ -393,18 +397,20 @@ public final class AaDesires {
     /** "minecraft:shield" -> "shield"; a modded id stays whole. */
     static String goalName(String id) { return id.startsWith("minecraft:") ? id.substring(10) : id; }
 
-    /** 2.8: the tech tree's best idea as a planner goal ("goal shield 1"), from an iron pickaxe on. */
+    /** 2.8: the tech tree's best idea as "I need 1 of it" (the chain), from an iron pickaxe on. */
     public static Desire ideas() {
         RunJob job = new RunJob("ideas.job", TaskKind.EXPLORE, bb -> {
             Pick p = bestIdea(bb);
             if (p == null) return null;
-            String goal = goalName(p.item()) + " 1";
-            JobPort.Resolved r = bb.port.resolveState(goal);
-            if (r.state() == JobPort.PlanState.NONE) {             // review: no plan for it: left out for this session, the next idea gets its turn
+            var w = io.github.mojolowjo.entropybot.aa.brain.Goals.world(bb);
+            if (w == null) return null;
+            NeedChain.Chain c = NeedChain.resolve(p.item(), 1, w);
+            if (!c.ok() || c.explore()) {                  // review: no chain that stands now: left out for this session, the next idea gets its turn
                 bad(bb).add(p.item());
-                bb.port.log("ideas: no plan for " + goalName(p.item()) + " - left out this session (" + r.why() + ")");
+                bb.port.log("ideas: no chain for " + goalName(p.item()) + " - left out this session (" + c.why() + ")");
+                return null;
             }
-            return r.state() != JobPort.PlanState.READY ? null : JobPort.TaskSpec.steps(TaskKind.EXPLORE, plan(goal), "ideas");
+            return c.steps().isEmpty() ? null : JobPort.TaskSpec.steps(TaskKind.EXPLORE, c.steps(), "ideas");
         });
         Node node = AaTree.idleCd("ideas.cd", job);
         return new Desire("ideas", Desire.Kind.PROGRESS, node, bb -> {
@@ -432,14 +438,6 @@ public final class AaDesires {
         RunJob job = new RunJob(id + ".job", TaskKind.EXPLORE, bb -> {
             List<Step> s = io.github.mojolowjo.entropybot.aa.brain.Goals.steps(bb, g);
             if (s == null) return null;
-            String pg = Ways.planGoal(s);
-            if (pg != null) {
-                JobPort.Resolved r = bb.port.resolveState(pg);
-                if (r.state() != JobPort.PlanState.READY) {
-                    bb.port.log("aa goal " + g.r.key() + ": no plan for " + pg + " (" + (r.state() == JobPort.PlanState.SEARCHING ? "still searching" : r.why()) + ")");
-                    return null;
-                }
-            }
             return JobPort.TaskSpec.steps(TaskKind.EXPLORE, s, "owner goal");
         });
         Node node = AaTree.idleCd(id + ".cd", job);
@@ -458,13 +456,14 @@ public final class AaDesires {
         RunJob job = new RunJob(id + ".job", TaskKind.BASE_BED, bb -> {
             Step s = io.github.mojolowjo.entropybot.aa.brain.Blueprint.step(bb, b);
             if (s == null) return null;
-            if (s instanceof Step.Plan p) {
-                JobPort.Resolved r = bb.port.resolveState(p.goal());
-                if (r.state() == JobPort.PlanState.NONE) {                     // review 1: skip it next pick; Baritone builds the rest
-                    bb.port.log("aa build " + b.name + ": no plan for " + p.goal() + " - building without it (" + r.why() + ")");
-                    b.unresolved.add(p.goal().split(" ")[0]);
+            if (s instanceof Step.Obtain o) {
+                var w = io.github.mojolowjo.entropybot.aa.brain.Goals.world(bb);
+                NeedChain.Chain c = w == null ? null : NeedChain.of(o, w);
+                if (c != null && !c.ok()) {                                    // review 1: skip it next pick; Baritone builds the rest
+                    bb.port.log("aa build " + b.name + ": no chain for " + o.text() + " - building without it (" + c.why() + ")");
+                    b.unresolved.add(o.what());
                 }
-                return r.state() != JobPort.PlanState.READY ? null : JobPort.TaskSpec.steps(TaskKind.EXPLORE, List.of(s), "owner build");
+                return c == null || !c.ok() ? null : JobPort.TaskSpec.steps(TaskKind.EXPLORE, List.of(s), "owner build");
             }
             return JobPort.TaskSpec.steps(TaskKind.BASE_BED, List.of(s), "owner build", Tuning.i("aaDesires.ownerBuildMin") * 60_000L, JobPort.TaskSpec.noProgressMsV());
         });
@@ -834,11 +833,6 @@ public final class AaDesires {
         RunJob job = new RunJob("help.owner.job", TaskKind.EXPLORE, bb -> {
             var p = io.github.mojolowjo.entropybot.aa.brain.Help.pick(bb.in, Personality.of(bb).get("help"));
             if (p == null) return null;
-            for (Step s : p.steps())
-                if (s instanceof Step.Plan pl && bb.port.resolveState(pl.goal()).state() != JobPort.PlanState.READY) {
-                    bb.port.log("help: no plan for " + pl.goal() + " (or still searching)");
-                    return null;
-                }
             bb.port.log("help: " + p.line());
             return JobPort.TaskSpec.steps(TaskKind.EXPLORE, p.steps(), "help", helpTimeoutMs(), JobPort.TaskSpec.noProgressMsV());
         });
@@ -850,7 +844,7 @@ public final class AaDesires {
         }).cools(Cooldown.noRunMsV(), Cooldown.noRunMsV()).lastTry().nightProof();     // the owner's call, not cheaper at night
     }
 
-    /** A help task is short (a walk, a fight, a hand-over); a fetch gets the planner's time. */
+    /** A help task is short (a walk, a fight, a hand-over); a fetch gets the chain's time. */
     static long helpTimeoutMs() { return Tuning.l("aaDesires.helpTimeoutMs"); }
 
     /** aa status: "help: give 30 (give me oak_planks 32)" or why it is off. */

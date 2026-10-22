@@ -76,11 +76,12 @@ public final class SenseRuntime {
             if (st.isEmpty()) continue;
             String id = Commands.itemId(st);
             if (st.has(DataComponents.FOOD)) food += st.getCount();
-            if (id.endsWith("_log") || id.endsWith("_planks") || id.endsWith("_wood") || id.endsWith("_stem")) wood += st.getCount();      // 0.25.1
-            if (id.equals("minecraft:torch")) torches += st.getCount();
-            if (id.equals("minecraft:coal") || id.equals("minecraft:charcoal")) coal += st.getCount();      // 0.26.1 R2
-            if (id.endsWith("_log") || id.endsWith("_stem")) logs += st.getCount();
-            if (id.endsWith("_bed")) bedBag = true;
+            // one-planner: the counters are the game's tags and components, never names
+            if (st.is(net.minecraft.tags.ItemTags.LOGS) || st.is(net.minecraft.tags.ItemTags.PLANKS)) wood += st.getCount();      // 0.25.1
+            if (io.github.mojolowjo.entropybot.aa.brain.ItemWorth.lightSource(id)) torches += st.getCount();
+            if (st.is(net.minecraft.tags.ItemTags.COALS)) coal += st.getCount();      // 0.26.1 R2
+            if (st.is(net.minecraft.tags.ItemTags.LOGS)) logs += st.getCount();
+            if (st.is(net.minecraft.tags.ItemTags.BEDS)) bedBag = true;
             bag.merge(id.substring(id.indexOf(':') + 1), st.getCount(), Integer::sum);
             if (id.endsWith("_pickaxe")) {
                 picks++;
@@ -210,7 +211,7 @@ public final class SenseRuntime {
                 if (n > 0) f.stock.merge(k, n, Integer::sum);
             }
             int t = 0;
-            for (String k : bag.keySet()) if (k.endsWith("_pickaxe")) t = Math.max(t, io.github.mojolowjo.entropybot.plan.PlanFacts.tier(k));
+            for (String k : bag.keySet()) t = Math.max(t, io.github.mojolowjo.entropybot.aa.brain.MiningTiers.toolTier(k, "pickaxe"));      // the tool data, not the id
             f.pickTier = t;
             Core core = Core.INSTANCE;
             for (Map.Entry<String, JsonObject> e : core.knowledge.places().entrySet()) f.places.put(e.getKey(), xyz(e.getValue()));
@@ -227,8 +228,6 @@ public final class SenseRuntime {
             if (s.now - nearAt > 60_000) {
                 nearAt = s.now;
                 net.minecraft.client.multiplayer.ClientLevel lv = Minecraft.getInstance().level;
-                io.github.mojolowjo.entropybot.plan.PlanFacts pf = new io.github.mojolowjo.entropybot.plan.PlanFacts();
-                GoalPlanning.scan(lv, s.botPos, pf);
                 nearTrees = c.planning.treeSeen();
                 nearTable = CampCommands.near(lv, s.botPos, "crafting_table");
                 nearFurnace = CampCommands.near(lv, s.botPos, "furnace");

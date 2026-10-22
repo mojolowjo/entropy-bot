@@ -1,7 +1,5 @@
 package io.github.mojolowjo.entropybot.aa.brain;
 
-import io.github.mojolowjo.entropybot.strip.OreSpec;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashSet;
@@ -11,15 +9,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Function;
-import java.util.regex.Pattern;
 
 /**
- * BRAIN_PLAN 2.5 (B4): the resolver behind {@code aa want <thing>}: which ids a word means (registry id, ore family,
- * display name), what pickaxe it takes (block tags) and where it is (singleplayer worldgen, else the vanilla table, else
- * a guess from the name). Pure: the adapter hands in a {@link Catalog} read from the registries.
- *
- * <p>Order (2.5 step 1): an ore id ({@code iron_ore}) takes its whole family (Q5: say so); a family word or a raw drop
- * ({@code iron}, {@code raw_osmium}, {@code osmiums}) the family's ores; then a plain item/block id; then a display name.
+ * BRAIN_PLAN 2.5 (B4), one-planner: the resolver behind {@code aa want <thing>}: which item a word means and where the
+ * blocks that give it generate. An item or block id, a tool group ({@link ToolGroup}), else a display name. A block
+ * whose loot gives other items (an ore) means what it drops ("iron_ore" -> raw_iron: an ore is any block whose loot drops
+ * the item; no family words). The pickaxe tier and the height band come from the blocks that drop the item (the loot data,
+ * the block tags, the worldgen read at load). Pure: the adapter hands in a {@link Catalog} read from the registries.
  * Pickaxe tiers as {@code Inputs.pickTier}: 0 hand, 1 wood, 2 stone, 3 iron, 4 diamond.
  */
 public final class Thing {
@@ -28,23 +24,22 @@ public final class Thing {
     public static final String OVERWORLD = "minecraft:overworld", NETHER = "minecraft:the_nether", END = "minecraft:the_end";
     public static final int UNKNOWN_Y = Integer.MIN_VALUE; // structural
 
-    /** Where an ore generates (from the worldgen features): dimensions and the Y range over all its placements. */
+    /** Where a block generates (from the worldgen features): dimensions and the Y range over all its placements. */
     public record Gen(Set<String> dims, int minY, int maxY) {}
 
-    /** The registries as the resolver needs them (ids "ns:path"; names id -> lower-case display name; tiers 0..4). */
+    /**
+     * The registries as the resolver needs them (ids "ns:path"; names id -> lower-case display name; tiers 0..4; gen block ->
+     * where it generates); {@code dropsOf}: block -> the items its loot gives; {@code droppedBy}: item -> the blocks whose loot
+     * gives it (both the loot data; null: none read).
+     */
     public record Catalog(Collection<String> items, Collection<String> blocks, Map<String, String> names,
-                          Map<String, Integer> tiers, Map<String, Gen> gen, Function<String, Learned> learned) {
+                          Map<String, Integer> tiers, Map<String, Gen> gen, Function<String, List<String>> dropsOf,
+                          Function<String, List<String>> droppedBy) {
         public Catalog(Collection<String> items, Collection<String> blocks, Map<String, String> names,
                        Map<String, Integer> tiers, Map<String, Gen> gen) {
-            this(items, blocks, names, tiers, gen, null);
+            this(items, blocks, names, tiers, gen, null, null);
         }
     }
-
-    /** B5: where the chunk pass has seen a family (5th..95th percentile Y, the busiest Y, n ores seen). */
-    public record Learned(String dim, int lowY, int highY, int peakY, int n) {}
-
-    /** Samples before what was learned beats the vanilla table (a few veins say little). */
-    public static int learnMin() { return Tuning.i("thing.learnMin"); }
 
     /** Where to look: a dimension, a Y range (UNKNOWN_Y when unknown), and the source of that answer. */
     public record Where(String dim, int minY, int maxY, String source) {
@@ -56,8 +51,8 @@ public final class Thing {
     }
 
     /**
-     * What a word means. {@code ore}: the family's ore blocks ({@code ids}), counted with their drops ({@code counts}).
-     * Otherwise one item/block id. {@code err} set = nothing found (the rest null).
+     * What a word means: one item ({@code ids}), counted by its bag name ({@code counts}), or a group. {@code ore}: blocks
+     * that generate in the world give it (its {@code where} is their band). {@code err} set = nothing found (the rest null).
      */
     public record Result(String word, String key, boolean ore, List<String> ids, List<String> counts, int tier,
                          Where where, String note, String err, boolean group) {
@@ -77,76 +72,48 @@ public final class Thing {
 
     public static Result resolve(String word, Catalog c) {
         String w = norm(word);
-        if (w.isEmpty()) return err(word, "want what? e.g. aa want iron_ore 8");
+        if (w.isEmpty()) return err(word, "want what? e.g. aa want diamond 3");
         List<String> grouped = ToolGroup.items(w);          // ruling (b): "stone tools" is every tool of that material, one job
         if (!grouped.isEmpty()) return group(word, w, grouped);
-        List<String> ores = new ArrayList<>();
-        for (String b : c.blocks()) if (OreSpec.oreId(b)) ores.add(b);
         String id = w.contains(":") ? w : "minecraft:" + w;
-        // 1. an ore id: its whole family (Q5)
-        if (ores.contains(id)) return ore(word, OreSpec.family(id), familyIds(ores, OreSpec.family(id)), c, null);
-        // 2. a family word, its plural or a raw drop ("iron", "diamonds", "raw_osmium", "mekanism:osmium")
-        Result f = family(word, w, ores, c);
-        if (f != null) return f;
-        // 3. a plain item or block id
-        if (c.items().contains(id) || c.blocks().contains(id)) return item(word, id, c, null);
-        // 4. a display name ("Raw Osmium", "osmium ore", "oak log")
+        if (c.items().contains(id) || c.blocks().contains(id)) return thing(word, id, c, null);
+        // a display name ("Raw Iron", "oak log")
         String spaced = w.replace('_', ' ');
         List<String> hits = new ArrayList<>();
         for (Map.Entry<String, String> e : c.names().entrySet()) if (e.getValue().equals(spaced)) hits.add(e.getKey());
         if (!hits.isEmpty()) {
             hits.sort(null);
-            for (String h : hits) if (ores.contains(h)) return ore(word, OreSpec.family(h), familyIds(ores, OreSpec.family(h)), c, "from the name \"" + spaced + "\"");
-            String note = hits.size() > 1 ? "\"" + spaced + "\" is " + String.join(" or ", hits) + "; I take " + hits.get(0) : null;
-            return item(word, hits.get(0), c, note);
+            String note = hits.size() > 1 ? "\"" + spaced + "\" is " + String.join(" or ", hits) + "; I take " + hits.get(0) : "from the name \"" + spaced + "\"";
+            return thing(word, hits.get(0), c, note);
         }
-        return err(word, "I don't know a thing called " + w + " (no item, block, ore family or name matches)");
+        return err(word, "I don't know a thing called " + w + " (no item, block or name matches)");
     }
 
-    private static Result family(String word, String w, List<String> ores, Catalog c) {
-        String base = w.replaceFirst("^raw_", "").replaceFirst(":raw_", ":");
-        for (String cand : new String[]{base, base.endsWith("s") ? base.substring(0, base.length() - 1) : null}) {
-            if (cand == null || cand.isEmpty()) continue;
-            List<String> ids = new ArrayList<>();
-            if (cand.contains(":")) {                      // "mekanism:osmium": that namespace's family only
-                for (String o : ores) if (OreSpec.family(o).equals(cand.replaceFirst("^minecraft:", ""))) ids.add(o);
-            } else {
-                Pattern re = Pattern.compile("(^|[:_])" + Pattern.quote(cand) + "_ore$");
-                for (String o : ores) if (re.matcher(o).find()) ids.add(o);
-                if (ids.isEmpty() && (cand.equals("ancient_debris") || cand.equals("netherite_scrap")))
-                    for (String o : ores) if (o.endsWith(":ancient_debris")) ids.add(o);
-            }
-            if (ids.isEmpty()) continue;
-            ids.sort(null);
-            Set<String> fams = new TreeSet<>();
-            for (String o : ids) fams.add(OreSpec.family(o));
-            String note = fams.size() > 1 ? "\"" + cand + "\" is " + String.join(" and ", fams) + "; I take them all" : null;
-            return ore(word, fams.size() == 1 ? fams.iterator().next() : cand.replaceFirst("^.*:", ""), ids, c, note);
+    /** An id: a block whose loot gives other items means its first drop (the loot data); else the item itself. */
+    private static Result thing(String word, String id, Catalog c, String note) {
+        List<String> drops = c.dropsOf() == null ? List.of() : c.dropsOf().apply(id);
+        if (c.blocks().contains(id) && drops != null && !drops.isEmpty() && !drops.contains(id)) {
+            String d = drops.get(0);
+            String n = shortId(id) + " drops " + shortId(d) + " (the game's loot data): I want " + shortId(d);
+            return item(word, d, c, note == null ? n : note + "; " + n);
         }
-        return null;
-    }
-
-    private static List<String> familyIds(List<String> ores, String fam) {
-        List<String> ids = new ArrayList<>();
-        for (String o : ores) if (OreSpec.family(o).equals(fam)) ids.add(o);
-        ids.sort(null);
-        return ids;
-    }
-
-    private static Result ore(String word, String fam, List<String> ids, Catalog c, String note) {
-        int tier = 0;
-        for (String id : ids) tier = Math.max(tier, c.tiers().getOrDefault(id, 1));
-        if (ids.size() > 1 && note == null) {
-            List<String> s = new ArrayList<>();
-            for (String id : ids) s.add(shortId(id));
-            note = String.join(" or ", s) + "? I take " + (ids.size() == 2 ? "both" : "all " + ids.size());
-        }
-        return new Result(word, fam, true, ids, drops(fam, ids), tier, where(fam, ids, c), note, null);
+        return item(word, id, c, note);
     }
 
     private static Result item(String word, String id, Catalog c, String note) {
+        List<String> from = c.droppedBy() == null ? List.of() : c.droppedBy().apply(id);
+        if (from == null) from = List.of();
         int tier = c.tiers().getOrDefault(id, 0);
-        return new Result(word, shortId(id), false, List.of(id), List.of(path(id)), tier, null, note, null);
+        List<String> gens = new ArrayList<>();
+        for (String b : from) {
+            if (c.gen() != null && c.gen().containsKey(b)) gens.add(b);
+        }
+        if (!gens.isEmpty()) {                               // the lowest tier among the generated blocks that drop it
+            tier = Integer.MAX_VALUE;
+            for (String b : gens) tier = Math.min(tier, c.tiers().getOrDefault(b, 0));
+        }
+        Where where = where(gens, c);
+        return new Result(word, shortId(id), where != null, List.of(id), List.of(path(id)), tier, where, note, null);
     }
 
     private static Result group(String word, String key, List<String> ids) {
@@ -161,31 +128,13 @@ public final class Thing {
         return new Result(word, null, false, List.of(), List.of(), 0, null, null, why);
     }
 
-    /** The bag names (paths) that count for an ore family: the ore blocks, raw_x, x and the vanilla drops. */
-    static List<String> drops(String fam, List<String> ids) {
-        Set<String> s = new LinkedHashSet<>();
-        for (String id : ids) s.add(path(id));
-        String w = fam.replaceFirst("^.*:", "");
-        switch (w) {
-            case "lapis" -> s.add("lapis_lazuli");
-            case "nether_quartz" -> s.add("quartz");
-            case "nether_gold" -> s.add("gold_nugget");
-            case "ancient_debris" -> {}
-            default -> {
-                s.add("raw_" + w);
-                s.add(w);
-            }
-        }
-        return new ArrayList<>(s);
-    }
-
     // ---- where (2.5 step 3) ----
 
-    /** Worldgen first (singleplayer), else the vanilla table, else a guess from the ids. */
-    static Where where(String fam, List<String> ids, Catalog c) {
+    /** The worldgen band of the blocks (singleplayer: read at load); null when none of them generates (or no worldgen read). */
+    static Where where(List<String> blocks, Catalog c) {
         Set<String> dims = new TreeSet<>();
         int lo = Integer.MAX_VALUE, hi = Integer.MIN_VALUE;
-        for (String id : ids) {
+        for (String id : blocks) {
             Gen g = c.gen() == null ? null : c.gen().get(id);
             if (g == null) continue;
             dims.addAll(g.dims());
@@ -194,58 +143,10 @@ public final class Thing {
                 hi = Math.max(hi, g.maxY());
             }
         }
-        if (!dims.isEmpty()) {
-            String d = dims.contains(OVERWORLD) ? OVERWORLD : dims.iterator().next();
-            return new Where(d, lo == Integer.MAX_VALUE ? UNKNOWN_Y : lo, lo == Integer.MAX_VALUE ? UNKNOWN_Y : hi, "from worldgen");
-        }
-        Learned l = c.learned() == null ? null : c.learned().apply(fam);
-        if (l != null && l.n() >= learnMin()) return learnedWhere(l);
-        Where v = vanilla(fam);
-        if (v != null) return v;
-        Where g = guess(ids);
-        // a few samples still beat a bare guess when the guess has no Y
-        return l != null && l.n() > 0 && !g.yKnown() ? learnedWhere(l) : g;
+        if (dims.isEmpty()) return null;
+        String d = dims.contains(OVERWORLD) ? OVERWORLD : dims.iterator().next();
+        return new Where(d, lo == Integer.MAX_VALUE ? UNKNOWN_Y : lo, lo == Integer.MAX_VALUE ? UNKNOWN_Y : hi, "from worldgen");
     }
-
-    static Where learnedWhere(Learned l) {
-        return new Where(l.dim(), l.lowY(), l.highY(), "learned from " + l.n() + " ores seen, most at Y " + l.peakY());
-    }
-
-    /** Vanilla 1.21 ore heights (the placed features' ranges; ores outside them are rare). */
-    static Where vanilla(String fam) {
-        int[] r = switch (fam) {
-            case "coal" -> new int[]{0, 320};
-            case "iron" -> new int[]{-64, 320};  // game fact: vanilla ore generation height range of iron
-            case "copper" -> new int[]{-16, 112};  // game fact: vanilla ore generation height range of copper
-            case "gold" -> new int[]{-64, 32};  // game fact: vanilla ore generation height range of gold
-            case "redstone" -> new int[]{-64, 15};  // game fact: vanilla ore generation height range of redstone
-            case "lapis" -> new int[]{-64, 64};  // game fact: vanilla ore generation height range of lapis
-            case "diamond" -> new int[]{-64, 16};  // game fact: vanilla ore generation height range of diamond
-            case "emerald" -> new int[]{-16, 320};  // game fact: vanilla ore generation height range of emerald
-            case "nether_gold", "nether_quartz" -> new int[]{10, 117};
-            case "ancient_debris" -> new int[]{8, 119};
-            default -> null;
-        };
-        if (r == null) return null;
-        String d = fam.startsWith("nether") || fam.equals("ancient_debris") ? NETHER : OVERWORLD;
-        return new Where(d, r[0], r[1], "the vanilla table");
-    }
-
-    /** An unknown (modded) ore with no worldgen data: nether/end from the name, deepslate-only = deep, else unknown Y. */
-    static Where guess(List<String> ids) {
-        boolean nether = false, end = false, allDeep = !ids.isEmpty();
-        for (String id : ids) {
-            String p = path(id), ns = id.contains(":") ? id.substring(0, id.indexOf(':')) : "";
-            if (p.contains("nether")) nether = true;
-            if (p.startsWith("end_") || p.contains("_end_") || p.startsWith("endstone") || p.contains("end_stone") || ns.equals("end")) end = true;
-            if (!p.startsWith("deepslate_")) allDeep = false;
-        }
-        if (nether) return new Where(NETHER, 10, 117, "a guess from the name; exploring tells");
-        if (end) return new Where(END, UNKNOWN_Y, UNKNOWN_Y, "a guess from the name");
-        if (allDeep) return new Where(OVERWORLD, -64, 0, "a guess: deepslate only");  // game fact: the overworld bottom is y -64
-        return new Where(OVERWORLD, UNKNOWN_Y, UNKNOWN_Y, "unknown, exploring");
-    }
-
     /** A vertical anchor (worldgen JSON) to a Y: "absolute", "above_bottom" or "below_top". */
     public static int anchorY(String kind, int v, int bottom, int top) {
         return switch (kind) {

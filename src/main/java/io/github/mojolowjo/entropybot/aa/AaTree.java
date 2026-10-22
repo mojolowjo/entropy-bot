@@ -162,11 +162,12 @@ public final class AaTree {
                 // cools down like a rung (2 min doubling); planning and busy refusals do not count
                 // S1 (MINING_PLAN 12): the owner's targets; a planner-null option cools down 30 s (Cooldown.NO_RUN_MS) so the
                 // next option gets its turn (the probe's hypothesis: STOCK_WOOD failing "nothing to run" every tick)
-                java.util.Map.entry(TaskKind.STOCK_WOOD, (Node) idleCd("idle.wood.cd", goal("idle.wood", TaskKind.STOCK_WOOD, "wood " + AaScorer.woodHi()))),
-                java.util.Map.entry(TaskKind.STOCK_STONE, (Node) idleCd("idle.stone.cd", underGoal("idle.stone", TaskKind.STOCK_STONE, "cobblestone " + AaScorer.stoneHi()))),
-                java.util.Map.entry(TaskKind.STOCK_COAL, (Node) idleCd("idle.coal.cd", coalStock())),
-                java.util.Map.entry(TaskKind.STOCK_IRON, (Node) idleCd("idle.iron.cd", underGoal("idle.iron", TaskKind.STOCK_IRON, "iron " + AaScorer.ironHi()))),
-                java.util.Map.entry(TaskKind.STOCK_TORCHES, (Node) idleCd("idle.torches.cd", torchStock())),
+                // one-planner: each stock-up is "I need N of X" (an item or the game's tag) through the chain
+                java.util.Map.entry(TaskKind.STOCK_WOOD, (Node) idleCd("idle.wood.cd", goal("idle.wood", TaskKind.STOCK_WOOD, LOGS, AaScorer.woodHi()))),
+                java.util.Map.entry(TaskKind.STOCK_STONE, (Node) idleCd("idle.stone.cd", underGoal("idle.stone", TaskKind.STOCK_STONE, STONE, AaScorer.stoneHi()))),
+                java.util.Map.entry(TaskKind.STOCK_COAL, (Node) idleCd("idle.coal.cd", underGoal("idle.coal", TaskKind.STOCK_COAL, COALS, AaScorer.coalHi()))),
+                java.util.Map.entry(TaskKind.STOCK_IRON, (Node) idleCd("idle.iron.cd", underGoal("idle.iron", TaskKind.STOCK_IRON, IRON, AaScorer.ironHi()))),
+                java.util.Map.entry(TaskKind.STOCK_TORCHES, (Node) idleCd("idle.torches.cd", goal("idle.torches", TaskKind.STOCK_TORCHES, AaDesires.TORCH, AaScorer.torchHi()))),
                 java.util.Map.entry(TaskKind.DEPOSIT, (Node) idleCd("idle.deposit.cd", RunJob.of("idle.deposit", TaskKind.DEPOSIT, List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Deposit()), "idle"))),
                 java.util.Map.entry(TaskKind.LIGHT, (Node) idleCd("idle.light.cd", oncePerNight(RunJob.of("idle.light", TaskKind.LIGHT, List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Light(io.github.mojolowjo.entropybot.aa.brain.Help.lightR())), "idle")))),
                 java.util.Map.entry(TaskKind.WAIT, (Node) new RunJob("idle.wait", TaskKind.WAIT, bb -> JobPort.TaskSpec.steps(TaskKind.WAIT, List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Wait((int) io.github.mojolowjo.entropybot.aa.brain.Brain.waitSeconds(bb.clock.now(),
@@ -180,28 +181,30 @@ public final class AaTree {
         return self[0];
     }
 
-    /** An idle goal through the planner (none or still searching: the option fails this tick and cools down 30 s). */
-    private static RunJob goal(String id, TaskKind kind, String goal) {
-        return new RunJob(id, kind, bb -> planTask(bb, kind, goal, "idle"));
+    /** The stock-ups' targets: the game's tags (logs, the stone tool materials, the coals, the iron ingots) and the torch. */
+    static final String LOGS = "#minecraft:logs", STONE = "#minecraft:stone_tool_materials", COALS = "#minecraft:coals", IRON = "#c:ingots/iron";
+
+    /** An idle stock-up through the chain (no chain: the option fails this tick and cools down 30 s). */
+    private static RunJob goal(String id, TaskKind kind, String what, int n) {
+        return new RunJob(id, kind, bb -> chainTask(bb, kind, what, n, "idle"));
     }
 
     /**
-     * rm-execution2: the planner's goal as a task of one {@link io.github.mojolowjo.entropybot.aa.moves.Step.Plan} (its
-     * routine is asked for again when the step runs), once the planner has one; null with the reason pending otherwise.
+     * one-planner: "I need {@code n} of {@code what}" as a task of one {@link io.github.mojolowjo.entropybot.aa.moves.Step.Obtain}
+     * (the chain is priced again when the step runs), once a chain stands now; null with the reason pending otherwise.
      */
-    static JobPort.TaskSpec planTask(Blackboard bb, TaskKind kind, String goal, String source) {
-        JobPort.Resolved r = bb.port.resolveState(goal);
-        if (r.state() != JobPort.PlanState.READY) {
-            bb.pendingReason(source + " " + goal + ": " + (r.state() == JobPort.PlanState.SEARCHING ? "the planner still searches" : r.why()));
+    static JobPort.TaskSpec chainTask(Blackboard bb, TaskKind kind, String what, int n, String source) {
+        var w = io.github.mojolowjo.entropybot.aa.brain.Goals.world(bb);
+        if (w == null) {
+            bb.pendingReason(source + " " + what + ": no facts for the chain yet");
             return null;
         }
-        return JobPort.TaskSpec.steps(kind, List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan(goal)), source);
-    }
-
-    /** The planner's routine for {@code goal} as typed steps (READY), else null. */
-    static List<io.github.mojolowjo.entropybot.aa.moves.Step> routine(Blackboard bb, String goal) {
-        JobPort.Resolved r = bb.port.resolveState(goal);
-        return r.state() == JobPort.PlanState.READY ? r.steps() : null;
+        NeedChain.Chain c = NeedChain.resolve(what, n, w);
+        if (!c.ok() || c.steps().isEmpty()) {
+            bb.pendingReason(source + " " + what + ": " + (c.ok() ? "in the bag" : c.why()));
+            return null;
+        }
+        return JobPort.TaskSpec.steps(kind, List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain(what, n)), source);
     }
 
     /**
@@ -213,9 +216,9 @@ public final class AaTree {
     /**
      * AA_ROUND2 4 (was the night.work desire at 78): a mining stock-up's UNDER option. Sheltered at a hostile night with
      * night work to do (NightWork.pick: smelt, craft, else a shaft and stairs from the shell floor), that runs instead
-     * of the planner's goal: the work is cheaper under ground, the brain's exposure factor says so.
+     * of the chain: the work is cheaper under ground, the brain's exposure factor says so.
      */
-    private static RunJob underGoal(String id, TaskKind kind, String goal) {
+    private static RunJob underGoal(String id, TaskKind kind, String what, int n) {
         return new RunJob(id, kind, bb -> {
             if (io.github.mojolowjo.entropybot.aa.brain.NightWork.active(bb)) {
                 var w = io.github.mojolowjo.entropybot.aa.brain.NightWork.pick(bb.in);
@@ -226,61 +229,10 @@ public final class AaTree {
                             "night", JobPort.TaskSpec.timeoutMsV(), AaDesires.shelterPatienceMs());
                 }
             }
-            if (kind == TaskKind.STOCK_IRON) {      // aa-r1fix: the ore step first, priced through the iron options
-                List<io.github.mojolowjo.entropybot.aa.moves.Step> planned = routine(bb, goal);
-                if (planned == null) return planTask(bb, kind, goal, "idle");          // not READY: says why
-                String[] why = new String[1];
-                // aa-r2fix: the routine comes whole (typed at the planner's side), so its ore/smelt steps are seen here
-                Options.Option o = IronOptions.idleOption(bb.fact(IronOptions.FACTS), planned, bb.clock.now(), why);
-                if (o == null) {
-                    bb.pendingReason("idle iron: " + why[0]);
-                    return null;
-                }
-                // rm-execution: the iron option's typed steps run on aa/moves/Steps, never as chain text
-                return JobPort.TaskSpec.typed(kind, o.command(), o.steps(), "idle");
-            }
-            return planTask(bb, kind, goal, "idle");
+            return chainTask(bb, kind, what, n, "idle");
         });
     }
 
-    /**
-     * three-tier r1: the coal stock-up through the priced coal set (mine seen / find / charcoal, CoalOptions). Night work
-     * as underGoal; no facts readable: the planner's "goal coal" as before. No runnable way: logged with every reason.
-     */
-    private static RunJob coalStock() {
-        return new RunJob("idle.coal", TaskKind.STOCK_COAL, bb -> {
-            if (io.github.mojolowjo.entropybot.aa.brain.NightWork.active(bb)) {
-                var w = io.github.mojolowjo.entropybot.aa.brain.NightWork.pick(bb.in);
-                if (w != io.github.mojolowjo.entropybot.aa.brain.NightWork.Work.NONE) {
-                    int[] p = bb.in.pos == null ? new int[3] : bb.in.pos;
-                    io.github.mojolowjo.entropybot.aa.brain.NightWork.noteDug(bb, w);
-                    return JobPort.TaskSpec.steps(TaskKind.STOCK_COAL, io.github.mojolowjo.entropybot.aa.brain.NightWork.steps(bb.in, w, p[0], p[1], p[2], 1, 0),
-                            "night", JobPort.TaskSpec.timeoutMsV(), AaDesires.shelterPatienceMs());
-                }
-            }
-            Options.Choice c = CoalOptions.plan(bb, Math.max(1, AaScorer.coalHi() - bb.in.coal));
-            if (c != null) {
-                if (c.best() == null) {
-                    bb.port.log("STOCK_COAL has no coal way: " + c.why());
-                    return null;
-                }
-                bb.port.log("STOCK_COAL coal ways: " + c.why());
-                return JobPort.TaskSpec.typed(TaskKind.STOCK_COAL, c.best().command(), c.best().steps(), "idle");
-            }
-            return planTask(bb, TaskKind.STOCK_COAL, "coal " + AaScorer.coalHi(), "idle");
-        });
-    }
-
-    /** three-tier r1: torches with no coal in the bag run the best coal way first (CoalOptions.torchesFirst), never a bare craft. */
-    private static RunJob torchStock() {
-        return new RunJob("idle.torches", TaskKind.STOCK_TORCHES, bb -> {
-            List<io.github.mojolowjo.entropybot.aa.moves.Step> planned = routine(bb, "torch " + AaScorer.torchHi());
-            String[] why = new String[1];
-            List<io.github.mojolowjo.entropybot.aa.moves.Step> steps = CoalOptions.torchesFirst(bb, planned, AaScorer.torchHi(), why);
-            if (why[0] != null) bb.port.log("STOCK_TORCHES coal ways: " + why[0]);
-            return steps == null ? null : JobPort.TaskSpec.steps(TaskKind.STOCK_TORCHES, steps, "idle");
-        });
-    }
     /** S1: lighting the spot runs once per night (a SUCCESS holds it until the day). */
     static Node oncePerNight(Node child) {
         return new Node(child.id + ".night", "once per night") {

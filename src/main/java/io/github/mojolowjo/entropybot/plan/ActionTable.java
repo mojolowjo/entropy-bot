@@ -103,7 +103,7 @@ public final class ActionTable {
 
     /**
      * The load check (BRAIN_PLAN 6.3): every VerbTable verb has a note, every "a:" note names an action, every planner
-     * action of {@link Planner#ACTIONS} is in the table. Returns the problems (empty = fine).
+     * action is in the table. Returns the problems (empty = fine).
      */
     public static List<String> selfTest() {
         List<String> bad = new ArrayList<>();
@@ -112,7 +112,6 @@ public final class ActionTable {
             if (n == null) bad.add("verb " + v.name() + " has no entry");
             else if (n.startsWith("a:") && !ACTIONS.containsKey(n.substring(2))) bad.add("verb " + v.name() + " names no action " + n);
         }
-        for (String a : Planner.ACTIONS) if (!ACTIONS.containsKey(a) || !ACTIONS.get(a).planner()) bad.add("planner action " + a + " not in the table");
         return bad;
     }
 
@@ -145,7 +144,7 @@ public final class ActionTable {
             verbs.add(a);
         }
         o.add("verbs", verbs);
-        o.addProperty("goals", GoalGrammar.FORMS);
+        o.addProperty("goals", "goal <item|group> [n]: the chain (have it, craft it, dig a known source, else explore); plan <item> [n]: its dry run");
         return o;
     }
 
@@ -163,7 +162,7 @@ public final class ActionTable {
             VerbTable.Verb v = VerbTable.of(w);
             ActionSpec a = ACTIONS.get(w);
             if (a == null && v != null && VERBS.getOrDefault(v.name(), "").startsWith("a:")) a = ACTIONS.get(VERBS.get(v.name()).substring(2));
-            if (a != null) return a.id() + ": " + a.verb() + " | needs: " + a.pre() + " | gives: " + a.eff() + " | cost " + a.cost() + (a.planner() ? " | the planner uses it" : "");
+            if (a != null) return a.id() + ": " + a.verb() + " | needs: " + a.pre() + " | gives: " + a.eff() + " | cost " + a.cost() + (a.planner() ? " | a chain step" : "");
             if (v != null) return v.name() + ": not planable (" + VERBS.getOrDefault(v.name(), "n:?").substring(2) + ")";
             return "no action or verb " + w + " - actions lists them";
         }
@@ -171,7 +170,7 @@ public final class ActionTable {
         for (ActionSpec a : ACTIONS.values()) if (a.planner()) p.add(a.id());
         List<String> o = new ArrayList<>();
         for (ActionSpec a : ACTIONS.values()) if (!a.planner()) o.add(a.id());
-        return "actions v" + VERSION + ": the planner chains " + String.join(", ", p) + "; also " + String.join(", ", o)
+        return "actions v" + VERSION + ": the chain's steps " + String.join(", ", p) + "; also " + String.join(", ", o)
                 + " - actions <verb> for one; the full table with the state is entropybot/actions.json (dashboard /api/actions)";
     }
 }

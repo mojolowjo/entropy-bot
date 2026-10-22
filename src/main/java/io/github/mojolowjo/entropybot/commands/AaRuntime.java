@@ -21,7 +21,6 @@ import io.github.mojolowjo.entropybot.aa.core.Tracer;
 import io.github.mojolowjo.entropybot.sense.BrainState;
 import io.github.mojolowjo.entropybot.sense.Feasibility;
 import io.github.mojolowjo.entropybot.engine.Reflexes;
-import io.github.mojolowjo.entropybot.plan.RoutineRule;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import org.slf4j.Logger;
@@ -99,19 +98,14 @@ public final class AaRuntime implements JobPort {
             c.saved();
         }
         worldLoaded();
-        bb.fact(IronOptions.FACTS, perTick(new io.github.mojolowjo.entropybot.aa.FactsMemo<>(0), timed("iron", this::ironFacts)));
         bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.SURFACE_FACTS, perTick(new io.github.mojolowjo.entropybot.aa.FactsMemo<>(0), timed("surface", this::surfaceFacts)));
-        bb.fact(io.github.mojolowjo.entropybot.aa.CoalOptions.FACTS, (java.util.function.IntFunction<io.github.mojolowjo.entropybot.aa.CoalOptions.CoalFacts>) this::coalFacts);
-        bb.fact(io.github.mojolowjo.entropybot.aa.WoodOptions.FACTS,(java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.WoodOptions.WoodFacts>) this::woodFacts);
         bb.fact(io.github.mojolowjo.entropybot.aa.NeedChain.WORLD_FACT, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.NeedChain.World>) this::needWorld);
         bb.fact(io.github.mojolowjo.entropybot.aa.FoodOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts>) this::foodFacts);
-        bb.fact(io.github.mojolowjo.entropybot.aa.BedOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.BedOptions.BedFacts>) this::bedFacts);     // round 4 fix 4
         NeedFacts.install(bb, this);          // round 4A N wiring: the station, bed, base and bag facts (O's sets)
         bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.STATS_FACT, tree.brain.stats);
         // AA_ROUND3 2: the sequencer's horizon (aa horizon, saved) and the nearest known coal (torches' site, cached 10 s)
         io.github.mojolowjo.entropybot.sense.Seen.fair(!d.has("fair") || d.get("fair").getAsBoolean());     // AA_ROUND3 3: default on
         if (d.has("horizon")) bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.HORIZON_FACT, d.get("horizon").getAsInt());
-        bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.COAL_SITE_FACT, (java.util.function.Supplier<int[]>) this::coalSite);
         bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.THREAT_FACT, (java.util.function.Supplier<io.github.mojolowjo.entropybot.threat.ThreatFacts>) this::threatFacts);     // AA_CLEANUP 4
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.SURFACE_Y_FACT, (java.util.function.IntBinaryOperator) AaRuntime::surfaceY);        // AA_ROUND4 B1
         loadTuning();                                                                                                                        // AA_ROUND4 B3
@@ -366,7 +360,11 @@ public final class AaRuntime implements JobPort {
             double bagE = io.github.mojolowjo.entropybot.aa.brain.FoodModel.energy(bb.in.bag);
             double target = io.github.mojolowjo.entropybot.aa.AaDesires.foodTarget(bb);
             if (bb.in.hungerDrains && !io.github.mojolowjo.entropybot.aa.brain.HungerConserve.covered(bagE, target)) {
-                String park = io.github.mojolowjo.entropybot.aa.FoodOptions.noSource(foodFacts());
+                // one-planner: food has a source when the chain for the food need stands without an explore
+                var fw = needWorld();
+                var fch = fw == null ? null : io.github.mojolowjo.entropybot.aa.NeedChain.resolveAny("food", io.github.mojolowjo.entropybot.aa.brain.ItemWorth.plainFoods(),
+                        Tuning.i("needs.foodItems"), fw, io.github.mojolowjo.entropybot.aa.brain.ItemWorth::energy);
+                String park = fch != null && fch.ok() && !fch.explore() ? null : io.github.mojolowjo.entropybot.aa.FoodOptions.noSource(foodFacts());
                 // aa-costs: sprint's measured hunger cost vs the time it saves, weighted by scarcity
                 double hand = io.github.mojolowjo.entropybot.aa.brain.FoodModel.handRate(io.github.mojolowjo.entropybot.aa.core.TaskKind.EXPLORE);
                 double scale = tree.brain.stats.drain(io.github.mojolowjo.entropybot.aa.core.TaskKind.EXPLORE.name(), hand) / hand;
@@ -417,55 +415,6 @@ public final class AaRuntime implements JobPort {
     }
 
     /**
-     * 0.36.a8 (MINING_PLAN 3.6): the facts the IRON rung's option scorer reads, read once per pick (not per tick): the
-     * nearest known iron with its faces, depth, water and policy verdict (Mining.aaOres), the nearest known cave, strip
-     * preconditions, the camp furnace's distance and the bag. Null (the planner's chain runs as it is) when nothing can
-     * be read; never throws.
-     */
-    IronOptions.Facts ironFacts() {
-        try {
-            Minecraft mc = Minecraft.getInstance();
-            LocalPlayer p = mc.player;
-            if (p == null || mc.level == null || sensed == null) return null;
-            GameTimesLive.refreshUnit(p);              // aa-times: the live walk speed, fresh per facts build
-            int[] me = Jobs.here(p);
-            String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level);
-            boolean fair = io.github.mojolowjo.entropybot.sense.Seen.fair();
-            long t0 = System.nanoTime();
-            List<IronOptions.Ore> ores = Mining.get().aaOres(p, IronOptions.FAMILY, ironOres(), fair ? 2 : 0);
-            long t1 = System.nanoTime();
-            var cave = Core.INSTANCE.caves.nearest(dim, me[0], me[1], me[2]);
-            int caveDist = cave == null ? -1 : (int) Math.round(Math.sqrt(Jobs.distSq(me, new int[]{cave.ex, cave.ey, cave.ez})));
-            if (caveDist > io.github.mojolowjo.entropybot.cave.Caves.pickWithin()) caveDist = -1;      // review: "mine cave" picks only within 64, else it starts a new cave here
-            Map<String, Integer> bag = sensed.feas != null ? sensed.feas.bag : Map.of();
-            boolean mineMarked = sensed.feas != null && sensed.feas.mineMarked;
-            String stripWhy = !mineMarked ? "no mine marked (place mine)" : null;
-            IronOptions.Fair fairFacts = null;
-            if (fair) {         // AA_ROUND3 3: seen ores only, discovery priced
-                java.util.Set<String> seenKeys = new java.util.HashSet<>();
-                var sn = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.seen();
-                for (IronOptions.Ore o : ores) if (sn != null && sn.has(dim, o.x(), o.y(), o.z())) seenKeys.add(o.key());
-                List<String> dd = new ArrayList<>();
-                var opts = io.github.mojolowjo.entropybot.aa.brain.Discovery.rank(discoveryFacts(dim, me, IronOptions.FAMILY, caveDist, mineMarked, false), IronOptions.FAMILY, 3, dd);
-                fairFacts = new IronOptions.Fair(seenKeys, opts, dd);
-            }
-            long t2 = System.nanoTime();
-            int[] furnace = furnaceMemo.get(gameTick(), System.currentTimeMillis(), dim + " " + me[0] + " " + me[1] + " " + me[2] + " " + bb.in.furnaceKnown + " " + bb.in.furnaceInBag + " " + bag.getOrDefault("furnace", 0), () -> c.crafting.findFurnace(p));     // AA_ROUND3 4: 1-3 ms a read
-            factsParts = "ores " + (t1 - t0) / 1000 + " us [" + Mining.aaOresParts + "], cave+discovery " + (t2 - t1) / 1000 + " us, furnace " + (System.nanoTime() - t2) / 1000 + " us";  // structural: milliseconds per second
-            int furnaceDist = furnace == null ? -1 : (int) Math.round(Math.sqrt(Jobs.distSq(me, furnace)));
-            return new IronOptions.Facts(ores, me[1], p.isInWater(), AaEscape.throwaway(bag),
-                    io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), caveDist, stripWhy == null, stripWhy,
-                    furnaceDist, bag.getOrDefault("furnace", 0) > 0, bag.getOrDefault("crafting_table", 0) > 0,
-                    bag.getOrDefault("cobblestone", 0) + bag.getOrDefault("cobbled_deepslate", 0), io.github.mojolowjo.entropybot.aa.brain.ToolWear.kit(bb.in), fairFacts,
-                    litterSite(dim, me, ores.size()), bag.getOrDefault("raw_iron", 0),
-                    io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(GameTimesLive.bestPickaxeStoneSeconds(p)));     // aa-times: the dig term from the game
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] aa: iron facts: {}", e.toString());
-            return null;
-        }
-    }
-
-    /**
      * aa-litter: what the price of a scaffold needs about this spot, read with the iron facts: the distance to the nearest
      * area edge or protect box (the known builds and places), my pickaxe tier, the return leg and the cave sighting's
      * confidence x the ore still known (the revisits), and whether I stand in my own camp (MAIN) box. Never throws.
@@ -487,79 +436,6 @@ public final class AaRuntime implements JobPort {
             LOG.debug("[entropybot] aa: litter site: {}", e.toString());
             return null;
         }
-    }
-
-    private final io.github.mojolowjo.entropybot.aa.FactsMemo<io.github.mojolowjo.entropybot.aa.CoalOptions.CoalFacts> coalMemo = new io.github.mojolowjo.entropybot.aa.FactsMemo<>(10_000);
-
-    /**
-     * three-tier r1: the coal set's facts (seen coal, the discovery rows for the coal family, logs, the furnace, trees seen),
-     * read once per pick and kept 10 s for the same spot and bag. Null when nothing can be read; never throws.
-     */
-    io.github.mojolowjo.entropybot.aa.CoalOptions.CoalFacts coalFacts(int need) {
-        try {
-            Minecraft mc = Minecraft.getInstance();
-            LocalPlayer p = mc.player;
-            if (p == null || mc.level == null || sensed == null) return null;
-            GameTimesLive.refreshUnit(p);              // aa-times: the live walk speed, fresh per facts build
-            int[] me = Jobs.here(p);
-            Map<String, Integer> bag = sensed.feas != null ? sensed.feas.bag : Map.of();
-            int logs = 0;
-            for (Map.Entry<String, Integer> e : bag.entrySet()) if (e.getKey().endsWith("_log") || e.getKey().endsWith("_stem")) logs += e.getValue();
-            String key = me[0] + " " + me[1] + " " + me[2] + " " + need + " " + logs + " " + bb.in.planks + " " + bb.in.pickTier + " " + bb.in.furnaceKnown + " " + bag.getOrDefault("furnace", 0);
-            final int logsNow = logs;
-            return coalMemo.get(gameTick(), System.currentTimeMillis(), key, () -> {
-                String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level);
-                List<IronOptions.Ore> ores = Mining.get().aaOres(p, io.github.mojolowjo.entropybot.aa.CoalOptions.FAMILY, 8);
-                var cave = Core.INSTANCE.caves.nearest(dim, me[0], me[1], me[2]);
-                int caveDist = cave == null ? -1 : (int) Math.round(Math.sqrt(Jobs.distSq(me, new int[]{cave.ex, cave.ey, cave.ez})));
-                if (caveDist > io.github.mojolowjo.entropybot.cave.Caves.pickWithin()) caveDist = -1;
-                boolean mineMarked = sensed.feas != null && sensed.feas.mineMarked;
-                String stripWhy = !mineMarked ? "no mine marked (place mine)" : null;
-                List<String> dd = new ArrayList<>();
-                var opts = io.github.mojolowjo.entropybot.aa.brain.Discovery.rank(discoveryFacts(dim, me, io.github.mojolowjo.entropybot.aa.CoalOptions.FAMILY, caveDist, mineMarked, false),
-                        io.github.mojolowjo.entropybot.aa.CoalOptions.FAMILY, need, dd);
-                int[] furnace = bag.getOrDefault("furnace", 0) > 0 ? null : c.crafting.findFurnace(p);
-                int furnaceDist = furnace != null ? (int) Math.round(Math.sqrt(Jobs.distSq(me, furnace))) : bb.in.furnaceKnown ? 30 : -1;
-                var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
-                boolean trees = nearbyLog() != null;
-                return new io.github.mojolowjo.entropybot.aa.CoalOptions.CoalFacts(need, bb.in.pickTier, ores, opts, dd, logsNow, bb.in.planks,
-                        bag.getOrDefault("furnace", 0) > 0, furnaceDist, trees, bb.in.cobble,
-                        io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(GameTimesLive.bestPickaxeStoneSeconds(p)));     // aa-times: the dig term from the game
-            });
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] aa: coal facts: {}", e.toString());
-            return null;
-        }
-    }
-
-    /**
-     * AA_ROUND3 3: the discovery facts for a family: the known cave, the cave yield (Seen), the mine, the best
-     * band and its density (OreStats, this dimension), my pickaxe's seconds per stone block.
-     */
-    private io.github.mojolowjo.entropybot.aa.brain.Discovery.Facts discoveryFacts(String dim, int[] me, String fam, int caveDist, boolean mineMarked, boolean ownerGoal) {
-        var pass = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE;
-        var st = pass.stats();
-        var sg = pass.sightings();
-        var sn = sg == null ? null : sg.ore();
-        // AA_ROUND3 5: the nearest cave opening I have seen (not exhausted) and the learned chance to see one per 100 blocks
-        var seenCave = sg == null ? null : sg.nearestCave(dim, me[0], me[1], me[2], io.github.mojolowjo.entropybot.aa.brain.Discovery.seenCaveWithin());
-        var r = st == null ? null : st.range(dim, fam);
-        int bestY = r == null ? Integer.MIN_VALUE : r.peakY();
-        double density = r == null ? -1 : st.density(dim, fam, io.github.mojolowjo.entropybot.aa.brain.Discovery.stripY(
-                new io.github.mojolowjo.entropybot.aa.brain.Discovery.Facts(caveDist, 0, mineMarked, me[0], me[1], me[2], bestY, -1, 1, ownerGoal)));
-        // aa-times: the game's seconds per stone block with my best pickaxe (GameTimesLive), and the live walk speed for Unit
-        var lp = Minecraft.getInstance().player;
-        double dig = lp == null ? io.github.mojolowjo.entropybot.aa.brain.ToolWear.withTool(io.github.mojolowjo.entropybot.aa.brain.ToolWear.STONE_SPEED) : GameTimesLive.bestPickaxeStoneSeconds(lp);
-        GameTimesLive.refreshUnit(lp);
-        int down = me[1] - io.github.mojolowjo.entropybot.aa.brain.Discovery.stripY(
-                new io.github.mojolowjo.entropybot.aa.brain.Discovery.Facts(caveDist, 0, mineMarked, me[0], me[1], me[2], bestY, -1, 1, ownerGoal));
-        var lv = Minecraft.getInstance().level;
-        var downs = mineMarked || down <= 0 || lv == null ? null : downHeadings(lv, me, down);
-        return new io.github.mojolowjo.entropybot.aa.brain.Discovery.Facts(caveDist, sn == null ? io.github.mojolowjo.entropybot.sense.Seen.priorRate() : sn.caveRate(fam),
-                mineMarked, me[0], me[1], me[2], bestY, density, dig, ownerGoal, downs,
-                seenCave == null ? null : new int[]{seenCave.x(), seenCave.y(), seenCave.z()}, sg == null ? io.github.mojolowjo.entropybot.sense.Sightings.priorCaves() : sg.cavesPer100(),
-                bb.in.basePos == null ? -1 : Math.sqrt(Jobs.distSq(me, bb.in.basePos)),
-                io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(io.github.mojolowjo.entropybot.aa.brain.Brain.horizon(bb)), bb.in.dayTime);
     }
 
     /** AA_ROUND3 4: the staircase steps down whose cells are read per heading (the pick-time budget). */
@@ -684,26 +560,72 @@ public final class AaRuntime implements JobPort {
     /** The open-sky cell search radius (columns), S2. */
     static int skyR() { return Tuning.i("aaRuntime.skyR"); }
 
-    /** rm-bootstrap: what NeedChain starts from: the bag, a table in reach, the nearest source of any word (live-facts: {@link #nearestSource}). Null while the senses are not ready. */
+    /**
+     * one-planner: what the chain starts from: the bag, a table and a furnace known, the nearest known block of any item
+     * ({@link #nearestSource}), the animals of a kind known ({@link #animalsKnown}), the loot data, and where the blocks
+     * that drop an item generate ({@link #band}). Null while the senses are not ready.
+     */
     io.github.mojolowjo.entropybot.aa.NeedChain.World needWorld() {
         if (sensed == null || sensed.feas == null) return null;
         var in = bb.in;
-        return new io.github.mojolowjo.entropybot.aa.NeedChain.World(in.bag, in.tableKnown, this::nearestSource);
+        return new io.github.mojolowjo.entropybot.aa.NeedChain.World(in.bag, in.tableKnown, in.furnaceKnown,
+                item -> { var s = nearestSource(item); return s == null ? List.of() : List.of(s); },
+                this::animalsKnown, currentLootBook(), this::band, 0);
     }
 
-    /** live-facts: planner word -> the item ids it stands for (PlanFacts.canon over the item registry), built once. */
-    private Map<String, List<String>> wordItems;
+    /** one-planner: the chain for an "I need N of X" step as it starts (the facts of that moment); no chain: why. */
+    io.github.mojolowjo.entropybot.aa.moves.Steps.Routine obtainSteps(io.github.mojolowjo.entropybot.aa.moves.Step.Obtain o) {
+        var w = needWorld();
+        if (w == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");
+        var ch = io.github.mojolowjo.entropybot.aa.NeedChain.of(o, w);
+        LOG.info("[entropybot] aa: {}: {}", o.text(), ch.why());
+        if (!ch.ok()) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, ch.why());
+        return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(ch.steps(), null);
+    }
 
-    private List<String> itemsOf(String word) {
-        if (wordItems == null) {
-            Map<String, List<String>> m = new java.util.HashMap<>();
-            for (var e : net.minecraft.core.registries.BuiltInRegistries.ITEM.entrySet()) {
-                String id = e.getKey().location().toString();
-                m.computeIfAbsent(io.github.mojolowjo.entropybot.plan.PlanFacts.canon(id), k -> new ArrayList<>()).add(id);
+    /**
+     * one-planner: the animals of a kind known now: those in view within the hunt's reach, then the herds seen earlier (the
+     * sightings, confidence and distance within the food set's limits), nearest first. Never throws (empty on a failure, logged).
+     */
+    List<io.github.mojolowjo.entropybot.aa.NeedChain.Mob> animalsKnown(String type) {
+        List<io.github.mojolowjo.entropybot.aa.NeedChain.Mob> out = new ArrayList<>();
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            LocalPlayer p = mc.player;
+            if (p == null || mc.level == null) return out;
+            int[] me = Jobs.here(p);
+            for (var e : mc.level.getEntitiesOfClass(net.minecraft.world.entity.LivingEntity.class, p.getBoundingBox().inflate(io.github.mojolowjo.entropybot.commands.StepRun.animalRange()))) {
+                if (!e.isAlive() || !net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString().equals(type)) continue;
+                out.add(new io.github.mojolowjo.entropybot.aa.NeedChain.Mob(type, e.getBlockX(), e.getBlockY(), e.getBlockZ(), p.distanceTo(e)));
             }
-            wordItems = m;
+            for (var h : herds(mc.level, me)) {
+                String id = h.type().indexOf(':') >= 0 ? h.type() : "minecraft:" + h.type();
+                if (!id.equals(type) || h.conf() < io.github.mojolowjo.entropybot.aa.FoodOptions.herdMinConf() || h.dist() > io.github.mojolowjo.entropybot.aa.FoodOptions.herdMax()) continue;
+                out.add(new io.github.mojolowjo.entropybot.aa.NeedChain.Mob(type, h.x(), h.y(), h.z(), h.dist()));
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] aa: animals known of {}: {}", type, e.toString());
         }
-        return wordItems.getOrDefault(io.github.mojolowjo.entropybot.plan.PlanFacts.canon(word), List.of());
+        out.sort(java.util.Comparator.comparingDouble(io.github.mojolowjo.entropybot.aa.NeedChain.Mob::dist));
+        return out;
+    }
+
+    /**
+     * one-planner: {minY, maxY} where the blocks that drop the item generate (the loot data's blocks and the item's own
+     * block, the worldgen read at load); null: none of them generates, or no worldgen was read (multiplayer).
+     */
+    int[] band(String item) {
+        var cat = catalog;
+        if (cat == null || cat.gen() == null) return null;
+        java.util.Set<String> blocks = io.github.mojolowjo.entropybot.aa.Nearby.sourceBlocks(item, currentLootBook(), AaRuntime::ownBlock);
+        int lo = Integer.MAX_VALUE, hi = Integer.MIN_VALUE;
+        for (String b : blocks) {
+            var g = cat.gen().get(b);
+            if (g == null || g.minY() == io.github.mojolowjo.entropybot.aa.brain.Thing.UNKNOWN_Y) continue;
+            lo = Math.min(lo, g.minY());
+            hi = Math.max(hi, g.maxY());
+        }
+        return lo == Integer.MAX_VALUE ? null : new int[]{lo, hi};
     }
 
     /** The item's own block id (the block it places), null when it places none. */
@@ -715,13 +637,13 @@ public final class AaRuntime implements JobPort {
     }
 
     /**
-     * live-facts: the nearest source of any planner word: the blocks the loot book says drop its items plus their own blocks
+     * live-facts: the nearest source of an item: the blocks the loot book says drop it plus its own block
      * (Nearby.sourceBlocks, the collect step's pairing), then the one Nearby fact (Baritone's scan; a log only as a tree, an ore
      * only under the fair-play rule, the policy allowing); the fallback is AA's sightings: the trees for a log, the ore index else.
      * Null: no block gives it, or none is known.
      */
-    io.github.mojolowjo.entropybot.aa.NeedChain.Spot nearestSource(String word) {
-        java.util.Set<String> blocks = io.github.mojolowjo.entropybot.aa.Nearby.sourceBlocks(word, currentLootBook(), this::itemsOf, AaRuntime::ownBlock);
+    io.github.mojolowjo.entropybot.aa.NeedChain.Spot nearestSource(String item) {
+        java.util.Set<String> blocks = io.github.mojolowjo.entropybot.aa.Nearby.sourceBlocks(item, currentLootBook(), AaRuntime::ownBlock);
         if (blocks.isEmpty()) return null;
         boolean logs = false;
         for (String b : blocks)
@@ -729,6 +651,27 @@ public final class AaRuntime implements JobPort {
                     .map(x -> x.defaultBlockState().is(net.minecraft.tags.BlockTags.LOGS)).orElse(false);
         final boolean tree = logs;
         return c.nearby.nearest(blocks, () -> tree ? treeSighting() : indexedSighting(blocks));
+    }
+
+    /**
+     * one-planner: a known source of an item for the chain's explore to end on: a block that gives it (nearestSource), else an
+     * animal of a kind whose loot drops it (animalsKnown, the loot data's mob drops). Null: none known.
+     */
+    io.github.mojolowjo.entropybot.aa.NeedChain.Spot knownSource(String item) {
+        String id = item == null ? null : item.indexOf(':') < 0 ? "minecraft:" + item : item;
+        var s = nearestSource(id);
+        if (s != null || id == null) return s;
+        var book = currentLootBook();
+        if (book == null) return null;
+        for (var src : book.sources(id)) {
+            if (src.kind() != io.github.mojolowjo.entropybot.aa.brain.LootBook.Kind.MOB) continue;
+            var known = animalsKnown(src.from());
+            if (!known.isEmpty()) {
+                var a = known.get(0);
+                return new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(a.x(), a.y(), a.z(), a.dist(), src.from());
+            }
+        }
+        return null;
     }
 
     /** The nearest tree AA's sightings know that I may cut (the tree fact's fallback). */
@@ -1238,11 +1181,11 @@ public final class AaRuntime implements JobPort {
         in.wood = s.woodItems;
         in.coal = s.coal;
         Map<String, Integer> bag = s.feas.bag;
-        in.cobble = bag.getOrDefault("cobblestone", 0) + bag.getOrDefault("cobbled_deepslate", 0);
-        in.ironIngots = bag.getOrDefault("iron_ingot", 0);
-        in.wool = 0;
-        for (Map.Entry<String, Integer> e : bag.entrySet()) if (e.getKey().endsWith("_wool")) in.wool += e.getValue();
-        in.string = bag.getOrDefault("string", 0);
+        // one-planner: the counters are bag lookups by the game's tags, never names
+        in.cobble = io.github.mojolowjo.entropybot.aa.core.Inputs.tagged(bag, "minecraft:stone_tool_materials");
+        in.ironIngots = io.github.mojolowjo.entropybot.aa.core.Inputs.tagged(bag, "c:ingots/iron");
+        in.wool = io.github.mojolowjo.entropybot.aa.core.Inputs.tagged(bag, "minecraft:wool");
+        in.string = io.github.mojolowjo.entropybot.aa.core.Inputs.tagged(bag, "c:strings");
         in.bag = bag;
         if (mc.level != null) in.dimension = mc.level.dimension().location().toString();
         if (!sheepLatch && mc.level != null && !mc.level.getEntitiesOfClass(net.minecraft.world.entity.animal.Sheep.class, p.getBoundingBox().inflate(48)).isEmpty()) sheepLatch = true;
@@ -1272,10 +1215,9 @@ public final class AaRuntime implements JobPort {
         boolean tLatch = latch("tableAtCamp", s.feas.table || io.github.mojolowjo.entropybot.craft.OwnTable.takeCampTable(), camp), fLatch = latch("furnaceAtCamp", s.feas.furnace, camp);
         in.tableKnown = s.feas.table || tLatch;
         in.furnaceKnown = s.feas.furnace || fLatch;
-        in.tableInBag = bag.getOrDefault("crafting_table", 0) > 0;
-        in.planks = 0;
-        for (Map.Entry<String, Integer> e : bag.entrySet()) if (e.getKey().endsWith("_planks")) in.planks += e.getValue();
-        in.furnaceInBag = bag.getOrDefault("furnace", 0) > 0;
+        in.tableInBag = io.github.mojolowjo.entropybot.aa.core.Inputs.has(bag, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.stationOf(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT));
+        in.planks = io.github.mojolowjo.entropybot.aa.core.Inputs.tagged(bag, "minecraft:planks");
+        in.furnaceInBag = io.github.mojolowjo.entropybot.aa.core.Inputs.has(bag, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.stationOf(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT));
         in.baseChests = s.feas.baseChests;
         in.baseKnown = s.basePos != null;
         in.basePos = s.basePos;
@@ -1615,25 +1557,6 @@ public final class AaRuntime implements JobPort {
         return "ok: aa horizon " + s + " s (was " + now + ")";
     }
 
-    private int[] coalAt;
-    private long coalAtMs = -1;
-
-    /** The nearest known coal ore (Mining.aaOres, family coal), cached 10 s; null none or unreadable (logged). */
-    int[] coalSite() {
-        long now = System.currentTimeMillis();
-        if (coalAtMs >= 0 && now - coalAtMs < Tuning.i("aaRuntime.coalMemoMs")) return coalAt;
-        coalAtMs = now;
-        try {
-            LocalPlayer p = Minecraft.getInstance().player;
-            List<IronOptions.Ore> ores = p == null ? List.of() : Mining.get().aaOres(p, "coal", 1);
-            coalAt = ores.isEmpty() ? null : new int[]{ores.get(0).x(), ores.get(0).y(), ores.get(0).z()};
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] aa: coal site: {}", e.toString());
-            coalAt = null;
-        }
-        return coalAt;
-    }
-
     String replan(String arg) {
         String a = arg == null ? "" : arg.trim();
         if (!a.equals("on") && !a.equals("off")) return "usage: aa replan on|off (now " + (replanOn() ? "on" : "off") + "); " + replanLog.text(replanOn());
@@ -1870,10 +1793,8 @@ public final class AaRuntime implements JobPort {
             if (e.startsWith("done") && io.github.mojolowjo.entropybot.aa.AaLadder.zeroGain(e)) {
                 LOG.info("[entropybot] aa: the task ended \"done\" with nothing gained - counted failed: {}", e);
                 e = "failed: nothing gained - " + e.substring(4).replaceFirst("^\\s*-\\s*", "");
-                io.github.mojolowjo.entropybot.aa.CoalOptions.noteEnd(bb, currentChain, e, true);        // three-tier r1: a coal way that gained nothing is held
                 return JobState.failed(e);
             }
-            io.github.mojolowjo.entropybot.aa.CoalOptions.noteEnd(bb, currentChain, e, !e.startsWith("done"));
             return e.startsWith("done") ? JobState.done(e) : JobState.failed(e);
         }
         if (escapePending || escapeWay != null) return JobState.RUNNING;      // 0.36.a6: getting out, then the task goes on
@@ -1936,60 +1857,6 @@ public final class AaRuntime implements JobPort {
 
     @Override public void resume(long taskId) {
         if (taskId == current && typedRun) c.stepRun.steps.resume();
-    }
-
-    /**
-     * S0 (MINING_PLAN 10.1) + rm-execution2: the planner's tri-state for {@code goal}. The planner's side of the boundary:
-     * a READY routine is checked against the facts (Feasibility: NONE "infeasible: ..."), expanded to its plain lines and
-     * typed ONCE here (PlanLines); a line with no typed step makes it NONE with that line named. AA never sees the text.
-     */
-    @Override public Resolved resolveState(String goal) {
-        if (goal == null || goal.isBlank()) return Resolved.none("no goal");
-        GoalPlanning.Answer a = c.planning.chainState(goal);
-        if (a.state() == io.github.mojolowjo.entropybot.aa.core.JobPort.PlanState.SEARCHING) return Resolved.searching();
-        if (a.state() == io.github.mojolowjo.entropybot.aa.core.JobPort.PlanState.NONE || a.chain() == null) return Resolved.none(a.why(), a.logsMissing());
-        String inf = infeasible(a.chain());
-        if (inf != null) return Resolved.none(inf);
-        List<String> lines;
-        try {
-            lines = c.chains.expandSteps(Texts.splitChain(a.chain()), 0);
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] aa: the planner's routine for {} could not be expanded: {}", goal, e.toString());
-            return Resolved.none("the planner's routine " + a.chain() + " could not be read: " + e.getMessage());
-        }
-        String[] bad = new String[1];
-        List<io.github.mojolowjo.entropybot.aa.moves.Step> steps = PlanLines.of(lines, bad);
-        if (steps == null) return Resolved.none("the planner's step \"" + bad[0] + "\" has no typed step");
-        if (steps.isEmpty()) return Resolved.none("the planner's routine for " + goal + " is empty");
-        return Resolved.ready(steps, a.cost());
-    }
-
-    /** Feasibility (AA_PLAN 9): why the routine cannot start now ({@code JobPort.INFEASIBLE} + the verdict), or null. */
-    private String infeasible(String chain) {
-        if (sensed == null || !sensed.feas.known) return null;
-        try {
-            Feasibility.Verdict v = Feasibility.check(routineSteps(chain), sensed);
-            if (!v.infeasible()) return null;
-            // 0.36.1: a saved goal routine the facts no longer support is deleted, so the planner plans the goal afresh
-            // next time (GoalPlanning keeps a saved routine otherwise; the hook cache forgets it within a minute)
-            // 0.36.2: only the planner's own text (RoutineRule OVERWRITE); a routine the owner edited is theirs, kept
-            if (chain.startsWith("goal_") && c.chains.isRoutine(chain)
-                    && RoutineRule.decide(c.planning.routineText(chain), c.planning.plannedText(chain)) == RoutineRule.Decision.OVERWRITE) {
-                String r = c.chains.routineCommand("delete " + chain);
-                LOG.info("[entropybot] aa: routine {} dropped as infeasible ({}): {}", chain, v.missing(), r);
-            }
-            return io.github.mojolowjo.entropybot.aa.core.JobPort.INFEASIBLE + v.missing() + (v.stepText() == null ? "" : " for " + v.stepText());
-        } catch (RuntimeException e) {
-            // the check is optimistic by design: a verdict that cannot be read lets the routine run (its own steps fail with their reason)
-            io.github.mojolowjo.entropybot.Quiet.warn("aa: the feasibility check of " + chain + " could not run (the routine runs unchecked)", e);
-            return null;
-        }
-    }
-
-    /** A routine name -> its steps joined with "then" (Feasibility reads the steps). */
-    private String routineSteps(String chain) {
-        if (c.chains.isRoutine(chain)) return c.chains.routines().get(chain.toLowerCase()).getAsString();
-        return chain;
     }
 
     @Override public void log(String line) {
@@ -2407,26 +2274,6 @@ public final class AaRuntime implements JobPort {
     }
 
     /**
-     * Round 4 fix 4: the bed's facts: white wool in the bag, sheep within the hunt's range now, the best remembered sheep
-     * herd not in view (herdsSeen), the bot's cell. Null when nothing can be read; never throws.
-     */
-    io.github.mojolowjo.entropybot.aa.BedOptions.BedFacts bedFacts() {
-        try {
-            Minecraft mc = Minecraft.getInstance();
-            LocalPlayer p = mc.player;
-            if (p == null || mc.level == null) return null;
-            int wool = io.github.mojolowjo.entropybot.gui.Gui.inventory(p).getOrDefault("minecraft:white_wool", 0);
-            int sheep = mc.level.getEntitiesOfClass(net.minecraft.world.entity.animal.Sheep.class, p.getBoundingBox().inflate(io.github.mojolowjo.entropybot.commands.StepRun.animalRange()),
-                    e -> e.isAlive() && !e.isBaby() && !e.hasCustomName()).size();
-            int[] herd = herdsSeen(mc.level, p).get("minecraft:sheep");
-            return new io.github.mojolowjo.entropybot.aa.BedOptions.BedFacts(wool, sheep, herd, Jobs.here(p));
-        } catch (RuntimeException e) {
-            LOG.debug("[entropybot] aa: bed facts: {}", e.toString());
-            return null;
-        }
-    }
-
-    /**
      * aa-trees: the trees the bot has SEEN (sense/Sightings kind TREE) as wood options facts: distance, and a deny reason
      * (the policy's keep-out / no-break, a protected build near; a tree that failed is held by its option's key). A seen tree whose chunk is
      * loaded and whose lowest log is gone is exhausted here. Null when nothing can be read; never throws.
@@ -2740,11 +2587,17 @@ public final class AaRuntime implements JobPort {
             names.putIfAbsent(id, e.getValue().getName().getString().toLowerCase(java.util.Locale.ROOT));
         }
         Map<String, io.github.mojolowjo.entropybot.aa.brain.Thing.Gen> gen = worldgen(mc);
-        catalog = new io.github.mojolowjo.entropybot.aa.brain.Thing.Catalog(items, blocks, names, tiers, gen, AaRuntime::learned);
-        catalogWorld = world;
         lootPassive = new java.util.HashSet<>();
         var book = lootBook(mc, lootPassive);
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.LootBook.FACT, book);
+        // one-planner: an ore is any block whose loot drops the item (the loot data both ways), no family words
+        java.util.function.Function<String, List<String>> dropsOf = b -> {
+            List<String> out = new ArrayList<>();
+            for (var s : book.blockDrops(b)) if (!out.contains(s.item())) out.add(s.item());
+            return out;
+        };
+        catalog = new io.github.mojolowjo.entropybot.aa.brain.Thing.Catalog(items, blocks, names, tiers, gen, dropsOf, book::blocksDropping);
+        catalogWorld = world;
         if (book.origin.startsWith("read failed")) catalogWorld = null;      // review: try again on the next aa want
         LOG.info("[entropybot] aa: resolver catalog: {} items, {} blocks, worldgen {}", items.size(), blocks.size(),
                 gen == null ? "none (multiplayer)" : gen.size() + " ore blocks");
@@ -2951,13 +2804,6 @@ public final class AaRuntime implements JobPort {
         }
     }
 
-    /** B5: what the chunk pass has learned about a family (read live, so a cached catalog stays current). */
-    private static io.github.mojolowjo.entropybot.aa.brain.Thing.Learned learned(String family) {
-        var st = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.stats();
-        var r = st == null ? null : st.best(family);
-        return r == null ? null : new io.github.mojolowjo.entropybot.aa.brain.Thing.Learned(r.dim(), r.lowY(), r.highY(), r.peakY(), r.n());
-    }
-
     /** aa ore [<thing>]: the heights learned from the chunks seen (plus what the resolver says for a word). */
     String oreInfo(String arg) {
         var st = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.stats();
@@ -2970,15 +2816,13 @@ public final class AaRuntime implements JobPort {
         return (r.err() != null ? r.err() : r.text()) + "\nlearned: " + learned;
     }
 
-    /** Every 10 s while goals exist: known positions per family (OreIndex, 256 around), reached goals said and dropped. */
+    /** Every 10 s while goals exist: the loot context refreshed, reached goals said and dropped (the chain prices the rest). */
     private boolean knownDue;
-
-    private final Map<String, String> discLines = new java.util.HashMap<>();
 
     private void goalsTick(LocalPlayer p, long tick) {
         buildsTick(p, tick);
         var goals = io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb);
-        if (goals.isEmpty()) { bb.fact(io.github.mojolowjo.entropybot.aa.brain.Discovery.FACT, Map.of()); return; }
+        if (goals.isEmpty()) return;
         if (tick % 200 != 7 && !knownDue) return;  // structural: periodic cadence in ticks (20 ticks = 1 s)
         knownDue = false;
         lootCtx();
@@ -2987,72 +2831,6 @@ public final class AaRuntime implements JobPort {
             String msg = "got " + io.github.mojolowjo.entropybot.aa.brain.Goals.have(bb.in.bag, g) + " " + g.r.key() + " (goal " + g.n + " done)";
             LOG.info("[entropybot] aa: {}", msg);
             c.whisper(c.owner(), "aa: " + msg);
-        }
-        Map<String, Integer> known = new java.util.HashMap<>();
-        var pass = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE;
-        int[] me = Jobs.here(p);
-        Map<String, io.github.mojolowjo.entropybot.sense.OreIndex.Count> within = pass.index().within(bb.in.dimension, me[0], me[1], me[2], 256);
-        var seenNow = io.github.mojolowjo.entropybot.sense.Seen.fair() ? pass.seen() : null;
-        for (var g : goals) {
-            if (!g.r.ore()) continue;
-            if (io.github.mojolowjo.entropybot.sense.Seen.fair()) {       // AA_ROUND3 3: only the cells I have seen count as known
-                String sf = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(g.r.key());
-                known.put(g.r.key(), seenNow == null || sf == null || sf.equals("?") ? 0 : seenNow.near(bb.in.dimension, io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(g.r.key()), me[0], me[1], me[2], 256).size());
-                continue;
-            }
-            int n = 0;
-            // aa-water (live water1): the index is keyed by family ("iron"), the goal by ids ("iron_ore"): both count
-            String fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(g.r.key());
-            for (var e : within.entrySet()) if (g.r.ids().contains(e.getKey()) || e.getKey().equals(fam)) n += e.getValue().n();
-            known.put(g.r.key(), n);
-        }
-        bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.KNOWN_FACT, known);
-        // round 2 item 5: each ore goal's nearest takeable ore, for its "mine <ore> 1 at x y z" step
-        Map<String, int[]> nearest = new java.util.HashMap<>();
-        Map<String, List<io.github.mojolowjo.entropybot.aa.moves.Step>> waterCmd = new java.util.HashMap<>();
-        Map<String, Integer> bagNow = sensed != null && sensed.feas != null ? sensed.feas.bag : Map.of();
-        for (var g : goals) {
-            if (!g.r.ore() || known.getOrDefault(g.r.key(), 0) == 0) continue;
-            // aa-water (1f): priced by the iron scorer (the water ways, a floating dig, the other ores)
-            var pick = io.github.mojolowjo.entropybot.aa.brain.Goals.pickPriced(Mining.get().aaOres(p,
-                    io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(g.r.key()), ironOres()), me[1], p.isInWater(), AaEscape.throwaway(bagNow),
-                    io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), IronOptions.digMax());
-            if (pick == null) continue;
-            nearest.put(g.r.key(), pick.at());
-            if (pick.waterSteps() != null) {
-                waterCmd.put(g.r.key(), pick.waterSteps());
-                LOG.info("[entropybot] aa: goal {}: water way {}", g.r.key(), io.github.mojolowjo.entropybot.aa.moves.Step.label(pick.waterSteps()));
-            }
-        }
-        bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.NEAREST_FACT, nearest);
-        bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.WATER_CMD_FACT, waterCmd);
-        if (sensed != null && Minecraft.getInstance().level != null) {
-            String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(Minecraft.getInstance().level);
-            var cave = Core.INSTANCE.caves.nearest(dim, me[0], me[1], me[2]);
-            int caveDist = cave == null ? -1 : (int) Math.round(Math.sqrt(Jobs.distSq(me, new int[]{cave.ex, cave.ey, cave.ez})));
-            if (caveDist > io.github.mojolowjo.entropybot.cave.Caves.pickWithin()) caveDist = -1;
-            bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.WAYS_FACT, new io.github.mojolowjo.entropybot.aa.brain.Goals.Ways(caveDist,
-                    sensed.feas != null && sensed.feas.mineMarked));
-            // AA_ROUND3 3: each ore goal's discovery options (fair on), cheapest first; the choice is logged when it changes
-            Map<String, List<io.github.mojolowjo.entropybot.aa.brain.Discovery.Opt>> disc = new java.util.HashMap<>();
-            if (io.github.mojolowjo.entropybot.sense.Seen.fair()) {
-                boolean marked = sensed.feas != null && sensed.feas.mineMarked;
-                for (var g : goals) {
-                    if (!g.r.ore()) continue;
-                    String fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(g.r.key());
-                    List<String> dd = new ArrayList<>();
-                    var opts = io.github.mojolowjo.entropybot.aa.brain.Discovery.rank(discoveryFacts(dim, me, fam, caveDist, marked, true),
-                            g.r.key().replaceFirst("^.*:", ""), Math.max(1, g.n - io.github.mojolowjo.entropybot.aa.brain.Goals.have(bb.in.bag, g)), dd);
-                    disc.put(g.r.key(), opts);
-                    String line = opts.isEmpty() ? "none (" + String.join("; ", dd) + ")" : opts.get(0).text() + (opts.size() > 1 ? "; then " + opts.get(1).text() : "");
-                    String head = opts.isEmpty() ? "none" : opts.get(0).label();       // logged when the chosen way changes, not its price
-                    if (!head.equals(discLines.get(g.r.key()))) {
-                        discLines.put(g.r.key(), head);
-                        if (known.getOrDefault(g.r.key(), 0) == 0) LOG.info("[entropybot] aa: goal {}: none seen; discovery: {}", g.r.key(), line);
-                    }
-                }
-            }
-            bb.fact(io.github.mojolowjo.entropybot.aa.brain.Discovery.FACT, disc);
         }
     }
 
@@ -3150,13 +2928,9 @@ public final class AaRuntime implements JobPort {
         }
         var g = io.github.mojolowjo.entropybot.aa.brain.Goals.add(bb, r, a.n(), a.prio(), now);
         lootCtx();
-        String lootLine = "";
-        if (!r.ore() && !r.group() && bb.fact(io.github.mojolowjo.entropybot.aa.brain.LootBook.FACT) instanceof io.github.mojolowjo.entropybot.aa.brain.LootBook book) {
-            String from = book.sourcesText(r.ids().get(0), 3);
-            var lp = io.github.mojolowjo.entropybot.aa.brain.Goals.loot(bb, g, g.n);
-            lootLine = from != null ? "; " + from + (lp != null && lp.text() != null ? " - " + lp.text() : "")
-                    : book.isEmpty() ? "; loot data: " + book.origin : "";
-        }
+        // one-planner: the order is priced by the one chain now; the line says the chain or the explore it starts
+        var ch = io.github.mojolowjo.entropybot.aa.brain.Goals.chain(bb, g);
+        String lootLine = ch == null ? "; chain: no facts yet (the senses are not ready)" : "; chain: " + ch.why();
         tree.brain.add(io.github.mojolowjo.entropybot.aa.AaDesires.ownerGoal(g));
         knownDue = true;                              // review: known positions now, not in up to 10 s
         String blocked = io.github.mojolowjo.entropybot.aa.brain.Goals.blocked(bb, g);

@@ -36,6 +36,13 @@ public final class JobHands {
          */
         void startBuild(List<int[]> cells, List<String> items, int timeoutTicks, boolean replace);
 
+        /**
+         * one-planner: put one block item near me: the fork's {@code IBuilderProcess.placeNear} picks the cell within
+         * {@code radius} (free, reachable, the guard allowing), the stand, the face and the click; the mod names no cell.
+         * Status / cancel then follow it; no cell fits: FAILED at once with the fork's reason.
+         */
+        default void startPlaceNear(String item, int radius, int timeoutTicks) { throw new UnsupportedOperationException("these hands cannot place near"); }
+
         /** A higher temporary Baritone process (a reflex goal, the pause, a danger burrow) holds control now. */
         boolean reflexActive();
 
@@ -167,6 +174,40 @@ public final class JobHands {
 
     private List<int[]> buildCells;
     private List<String> buildItems;
+    private String nearItem;
+    private int nearRadius;
+
+    /**
+     * one-planner: place block item {@code item} near me within {@code radius} (the fork picks the cell, the stand and
+     * the face); called every tick until DONE or FAILED. FAILED carries the fork's reason ("no cell within 3 blocks",
+     * "cannot reach: ...").
+     */
+    public synchronized Result placeNear(String item, int radius, int timeoutTicks, String who) {
+        String ks = "place " + item + " near me";
+        if (key != null && ks.equals(key)) return request(ks, List.of(), List.of(), timeoutTicks, who, null, "place", null);
+        if (key != null && !finished) return new Result(State.RUNNING, "waiting: my hands are busy with " + key + (this.who.isEmpty() ? "" : " for " + this.who));
+        clear();
+        key = ks;
+        this.who = who == null ? "" : who;
+        dig = List.of();
+        clicks = List.of();
+        nearItem = item;
+        nearRadius = radius;
+        startedMs = clock.getAsLong();
+        timeout = timeoutTicks;
+        onDone = null;
+        action = "place";
+        verdictCell = null;
+        retries = 0;
+        cells = List.of();
+        Result r = start();
+        if (r.failed()) {
+            Result f = r;
+            clear();
+            return f;
+        }
+        return r;
+    }
 
     private synchronized Result request(String k, List<int[]> d, List<Click> cl, int t, String w, Runnable done, String act, int[] vc) {
         if (key != null && k.equals(key)) {
@@ -211,7 +252,8 @@ public final class JobHands {
 
     private Result start() {
         try {
-            if (buildCells != null) hand.startBuild(buildCells, buildItems, timeout, buildReplace);
+            if (nearItem != null) hand.startPlaceNear(nearItem, nearRadius, timeout);
+            else if (buildCells != null) hand.startBuild(buildCells, buildItems, timeout, buildReplace);
             else hand.start(dig, clicks, timeout);
         } catch (RuntimeException e) {
             return finish(new Result(State.FAILED, key + ": start: " + e));
@@ -262,7 +304,7 @@ public final class JobHands {
                 }
                 String v = "";
                 int[] vc = s.cell() != null ? s.cell() : verdictCell;
-                try { v = hand.verdict(action, vc); } catch (RuntimeException e) { v = "; guard verdict unknown (" + e + ")"; warn.accept("[entropybot] job hands: verdict for " + key + ": " + e); }
+                try { v = vc == null ? "" : hand.verdict(action, vc); } catch (RuntimeException e) { v = "; guard verdict unknown (" + e + ")"; warn.accept("[entropybot] job hands: verdict for " + key + ": " + e); }
                 yield finish(new Result(State.FAILED, "gave up at " + key + ": " + why + (v == null ? "" : v)));
             }
         };
@@ -287,6 +329,7 @@ public final class JobHands {
         cells = List.of();
         buildCells = null;
         buildItems = null;
+        nearItem = null;
     }
 
     /** Once a client tick: follows a running request so its end (and onDone) is seen without the caller. */

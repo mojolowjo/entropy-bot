@@ -55,7 +55,7 @@ class BrainB3Test {
     }
 
     Desire d(String id, Desire.Kind k, double v, Desire.Exposure e) {
-        return new Desire(id, k, RunJob.of(id + ".job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do " + id)), "brain"), b -> v).cost(0).exposure(e);
+        return new Desire(id, k, RunJob.of(id + ".job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("do " + id, 1)), "brain"), b -> v).cost(0).exposure(e);
     }
 
     @Test
@@ -70,7 +70,7 @@ class BrainB3Test {
         assertEquals(30 * (1 + danger / 2), s.get(0).score(), 1e-9);
         assertEquals(35 / (1 + danger), s.get(1).score(), 1e-9);
         assertEquals(Status.RUNNING, br.tick(bb));
-        assertEquals("plan do mine", port.started.get(0).chain());
+        assertEquals("obtain 1 do mine", port.started.get(0).chain());
         bb.in.hungerDrains = false;                      // Peaceful: no shift
         assertEquals(30, br.scoreAll(bb).get(0).score(), 1e-9);
     }
@@ -82,17 +82,17 @@ class BrainB3Test {
         bb.fact(Personality.FACT, p);
         double[] v = {70, 0};
         Brain br = new Brain("brain", "t",
-                new Desire("a", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do a")), "brain"), b -> v[0]),
-                new Desire("b", Desire.Kind.UPKEEP, RunJob.of("b.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do b")), "brain"), b -> v[1]));
+                new Desire("a", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("do a", 1)), "brain"), b -> v[0]),
+                new Desire("b", Desire.Kind.UPKEEP, RunJob.of("b.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("do b", 1)), "brain"), b -> v[1]));
         br.tick(bb);
         v[1] = 80;                                       // urgent, beats 70 + 0 (the default 15 would hold it)
         br.tick(bb);
-        assertEquals("plan do b", port.started.get(port.started.size() - 1).chain());
+        assertEquals("obtain 1 do b", port.started.get(port.started.size() - 1).chain());
     }
 
     @Test
     void aWantThatSucceedsIsBoredAgainFromZero() {
-        Desire w = new Desire("want.tidy", Desire.Kind.WANT, RunJob.of("t.job", TaskKind.DEPOSIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("deposit")), "want"),
+        Desire w = new Desire("want.tidy", Desire.Kind.WANT, RunJob.of("t.job", TaskKind.DEPOSIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("deposit", 1)), "want"),
                 b -> Wants.score(b, "want.tidy", "tidy"));
         Brain br = new Brain("brain", "t", w);
         br.scoreAll(bb);                                 // first seen now

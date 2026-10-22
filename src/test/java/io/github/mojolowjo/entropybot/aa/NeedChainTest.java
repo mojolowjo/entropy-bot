@@ -14,7 +14,7 @@ import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** rm-bootstrap: the tools need resolved by recursion over the recipe data - wood, a table, a pickaxe for the stone, then the stone pickaxe. */
+/** rm-bootstrap, one-planner: an item resolved by recursion over the game's data - wood, a table, a pickaxe for the stone, then the stone pickaxe; item ids only. */
 class NeedChainTest {
 
     @BeforeEach
@@ -28,7 +28,7 @@ class NeedChainTest {
     void clear() { TestData.clear(); }
 
     static Function<String, Spot> seen(Spot tree, Spot stone) {
-        return w -> w.equals("log") ? tree : w.equals("cobblestone") ? stone : null;
+        return w -> w.equals("minecraft:oak_log") ? tree : w.equals("minecraft:cobblestone") ? stone : null;
     }
 
     static final Spot TREE = new Spot(30, 64, 0, 30, null), STONE = new Spot(12, 60, 3, 12, "minecraft:stone");
@@ -59,8 +59,8 @@ class NeedChainTest {
         NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, seen(null, null)));
         assertTrue(c.ok(), "no tree seen is not infeasible: " + c.why());
         assertTrue(c.explore());
-        assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes(), "log")), c.steps());
-        assertTrue(c.why().contains("explore") && c.why().contains("no tree seen"), c.why());
+        assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes(), "oak_log")), c.steps());
+        assertTrue(c.why().contains("explore") && c.why().contains("no oak_log source known"), c.why());
         assertTrue(c.cost() > NeedChain.exploreMinutes() * Options.MINUTE, "the return leg is priced: " + c.cost());
     }
 
@@ -142,7 +142,7 @@ class NeedChainTest {
         assertTrue(c.ok(), "no recipe and no source is an explore, not a 'no way': " + c.why());
         assertTrue(c.explore());
         assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes(), "mystery")), c.steps());
-        assertTrue(c.why().contains("mystery") && c.why().contains("no recipe and no block I know drops mystery"), c.why());
+        assertTrue(c.why().contains("mystery") && c.why().contains("no mystery source known"), c.why());
     }
 
     @Test
@@ -150,8 +150,8 @@ class NeedChainTest {
         NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, seen(null, STONE)));
         System.out.println("WHY-LINE " + c.why());
         assertTrue(c.ok() && c.explore(), c.why());
-        assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes(), "log")), c.steps());
-        assertTrue(c.why().startsWith("stone_pickaxe <- ") && c.why().contains("explore") && c.why().contains("no tree seen"), c.why());
+        assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes(), "oak_log")), c.steps());
+        assertTrue(c.why().startsWith("stone_pickaxe <- ") && c.why().contains("explore") && c.why().contains("no oak_log source known"), c.why());
     }
 
     @Test

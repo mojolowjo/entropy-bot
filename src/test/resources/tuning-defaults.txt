@@ -24,7 +24,6 @@ aaLive.depthMax	40.0
 aaLive.switches	12.0
 aaManual.askMs	60000.0
 aaManual.doMaxMs	600000.0
-aaRuntime.coalMemoMs	10000.0
 aaRuntime.creeperNear	10.0
 aaRuntime.drainWindowMs	300000.0
 aaRuntime.errorWindowMs	60000.0
@@ -114,9 +113,6 @@ band.torchOn	8.0
 base.distGuess	16.0
 base.houseS	300.0
 base.nightW	1.0
-bedOptions.craft	20.0
-bedOptions.herdFix	20.0
-bedOptions.kill	25.0
 bedSpot.blockedHead	0.5
 bedSpot.far	10.0
 bedSpot.near	4.0
@@ -245,12 +241,6 @@ climbPerBlockS	1.5
 climbPlan.hintMax	24.0
 climbPlan.hole	3.0
 climbPlan.startR	4.0
-coalOptions.charcoalExtraS	10.0
-coalOptions.digMax	16.0
-coalOptions.furnaceMake	15.0
-coalOptions.furnaceTrip	2.0
-coalOptions.mineOre	3.0
-coalOptions.smeltItem	10.0
 commands.memoryBlockMs	20000.0
 commands.mobsCap	48.0
 commands.mobsRadius	32.0
@@ -482,10 +472,7 @@ foodModel.minStock	8.0
 foodModel.stockBase	25.0
 foodModel.stockW	35.0
 foodModel.urgentFood	6.0
-foodOptions.appleMin	4.0
-foodOptions.berryMin	0.3
 foodOptions.berryYieldK	2.5
-foodOptions.cookPerMin	6.0
 foodOptions.eatCost	2.0
 foodOptions.fishPerTrip	4.0
 foodOptions.herdMax	400.0
@@ -507,7 +494,6 @@ furnaceJobs.slackMs	2000.0
 furnaceJobs.smeltMs	10000.0
 furnaceJobs.stallMs	60000.0
 game.lavaHpPerS	8.0
-goals.fightHealth	14.0
 goals.freshMs	300000.0
 goals.high	20.0
 goals.maxN	4096.0
@@ -691,15 +677,6 @@ placeRules.selfClear	0.8
 placeRules.stonePicksDefault	3.0
 placeRules.tableNear	24.0
 placedPlan.defaultRadius	24.0
-planUnit	5.0
-planner.budgetMs	200.0
-planner.gapMs	5000.0
-planner.maxNodes	2000.0
-planner.maxSteps	24.0
-planner.shelterBlocks	32.0
-plannerHandS	60.0
-plannerHoldS	120.0
-plannerWaitS	45.0
 pointS	6.0
 policyRuntime.waterColumnMax	32.0
 policyStats.differFull	5.0
@@ -809,7 +786,6 @@ rungOptions.skyWalk	2.0
 safetyRules.netAt	100.0
 safetyRules.netEvery	200.0
 safetyRules.protectEvery	200.0
-searchPenalty	60.0
 seen.coneDeg	60.0
 seen.priorMin	2.0
 seen.priorRate	0.5
@@ -911,7 +887,6 @@ swimWatch.stallMs	20000.0
 tech.keyWeight	3.0
 techTree.depth	3.0
 techTree.discount	0.5
-thing.learnMin	25.0
 threatFacts.lit	8.0
 threatFacts.litMaxDist	24.0
 threatFacts.rangedRange	16.0
@@ -988,10 +963,8 @@ waterScan.maxVisit	4096.0
 waterScan.near	12.0
 waterScan.radius	32.0
 waterWays.floatSlow	5.0
-ways.woodRetryMs	1000.0
 woodOptions.cutLog	6.0
 woodOptions.farMax	256.0
-woodOptions.search	60.0
 worth.armourK	0.8
 worth.baseShare	0.8
 worth.bedBase	20.0
@@ -1020,3 +993,10 @@ nearby.scanMax	64.0
 nearby.scanR	32.0
 nearby.scanY	10.0
 only.otherWeight	0.0
+steps.placeNearR	3.0
+needChain.candidates	8.0
+needChain.maxTrials	4000.0
+needChain.unknownBreakS	3.0
+needChain.unknownMobHp	10.0
+needs.foodItems	8.0
+needs.ironTier	3.0

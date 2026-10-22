@@ -157,7 +157,7 @@ public sealed interface Step {
 
     /**
      * Walk new land for {@code minutes} (the explore verb: Baritone's explore goal), the want's way. live-facts: {@code until}
-     * (a planner word, null: none) ends it the moment a source of that word is known (a chain's explore for a missing source).
+     * (an item id, null: none) ends it the moment a source of that item is known (a chain's explore for a missing source).
      */
     record Explore(int minutes, String until) implements Step {
         public Explore(int minutes) { this(minutes, null); }
@@ -177,8 +177,9 @@ public sealed interface Step {
     }
 
     /**
-     * Place {@code item} (from the bag) near me: no cell is named by AA. The hands hand the builder one cell ahead of the bot;
-     * if the game cannot put the block there, the builder's own reason is the step's failure.
+     * Place {@code item} (from the bag) near me: no cell is named by the mod. The fork's {@code IBuilderProcess.placeNear}
+     * picks a free, reachable, policy-allowed cell within {@code steps.placeNearR}, the stand and the face; when none fits,
+     * its reason ("no cell within 3 blocks", "cannot reach: ...") is the step's failure.
      */
     record PlaceNear(String item) implements Step {
         public String text() { return "place " + item + " near me"; }
@@ -302,12 +303,27 @@ public sealed interface Step {
     }
 
     /**
-     * The planner's routine for {@code goal} ("torch 16", "iron tools"): when the step runs, {@link Steps} asks its hands
-     * for the planner's routine (typed once at the planner's side) and runs those steps in its place. AA never builds the
-     * routine's text.
+     * one-planner: "I need {@code n} of {@code what}": when the step runs, {@link Steps} asks its hands for the chain
+     * ({@code NeedChain} on the facts of that moment: have it, craft it, dig a known source, else explore) and runs its steps
+     * in its place. {@code what}: an item id or a tag ("#minecraft:logs"); {@code anyOf}: a group (any one member, the
+     * cheapest: the plain foods), null none; then {@code what} is only its name in the lines.
      */
-    record Plan(String goal) implements Step {
-        public String text() { return "plan " + goal; }
+    record Obtain(String what, int n, List<String> anyOf) implements Step {
+        public Obtain {
+            anyOf = anyOf == null ? null : List.copyOf(anyOf);
+        }
+
+        public Obtain(String what, int n) { this(what, n, null); }
+
+        public String text() { return "obtain " + n + " " + what; }
+    }
+
+    /**
+     * one-planner: go to the height band {@code minY..maxY} where the wanted block generates (the catalog's worldgen): one
+     * Baritone goal (GoalYLevel to the nearest Y in the band); done at once when the bot is in the band.
+     */
+    record ToBand(int minY, int maxY) implements Step {
+        public String text() { return "to y " + minY + ".." + maxY; }
     }
 
     /** A step made of steps: {@link Steps} runs its parts in its place (one machine, one failure path). */

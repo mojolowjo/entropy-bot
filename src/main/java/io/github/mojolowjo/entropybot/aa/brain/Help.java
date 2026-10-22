@@ -11,7 +11,7 @@ import java.util.List;
  * <ol>
  * <li>fight: monsters near the owner: come, then attack the nearest; 2 x weight + 10 per monster (3 at most).</li>
  * <li>give: the owner builds and the bag holds 8+ of the block they place: give them n; 1.5 x weight.</li>
- * <li>fetch: they build and the bag lacks it: the planner's {@code <block> 32} ({@link Step.Plan}), then give; 1 x weight.</li>
+ * <li>fetch: they build and the bag lacks it: the chain's "I need 32 of {@code <block>}" ({@link Step.Obtain}), then give; 1 x weight.</li>
  * <li>light: the owner's spot is dark, the bot has 4+ torches: come, then light here 8; 1.25 x weight.</li>
  * <li>follow at a distance: they are busy more than 16 away: come; 1 x weight.</li>
  * </ol>
@@ -31,7 +31,7 @@ public final class Help {
     public static int mobsMax() { return Tuning.i("help.mobsMax"); }
     public static double capV() { return Tuning.get("help.cap"); }
 
-    /** What to do: the typed steps (a planner {@link Step.Plan} first when the bag lacks the block). */
+    /** What to do: the typed steps (a {@link Step.Obtain} first when the bag lacks the block). */
     public record Pick(String what, List<Step> steps, double score) {
         /** The text for aa why / the log ("give 30: give oak_planks 32"). */
         public String line() { return what + " " + Math.round(score) + ": " + Step.label(steps); }
@@ -57,7 +57,7 @@ public final class Help {
             String b = path(in.ownerPlaced);
             int have = in.bag.getOrDefault(b, 0);
             Pick p = have >= giveMin() ? new Pick("give", List.of(new Step.Give(b, Math.min(giveN(), have))), cap(Tuning.get("help.giveWeight") * weight * f))
-                    : new Pick("fetch", List.of(new Step.Plan(b + " " + giveN()), new Step.Give(b, giveN())), cap(weight * f));
+                    : new Pick("fetch", List.of(new Step.Obtain(b, giveN()), new Step.Give(b, giveN())), cap(weight * f));
             if (p.score() > 0) return p;
         }
         if (in.ownerDark && busy && in.torches >= torchesMin()) {

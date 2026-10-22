@@ -23,7 +23,7 @@ class SwitchTwoTest {
     final double[] s = new double[3];
 
     Desire d(int i, String id, TaskKind k) {
-        return new Desire(id, Desire.Kind.PROGRESS, RunJob.of(id + ".job", k, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do " + id)), "brain"), b -> s[i]).cost(0);
+        return new Desire(id, Desire.Kind.PROGRESS, RunJob.of(id + ".job", k, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("do " + id, 1)), "brain"), b -> s[i]).cost(0);
     }
 
     /** 17 of 19: STOCK_IRON refused ("123 steps"), the next start counted it as a live switch. */
@@ -81,7 +81,7 @@ class SwitchTwoTest {
         clock.advance(500);
         br.tick(bb);
         assertEquals(1, port.cancelled.size(), port.log.toString());
-        assertEquals("plan do idle", port.started.get(port.started.size() - 1).chain());
+        assertEquals("obtain 1 do idle", port.started.get(port.started.size() - 1).chain());
     }
 
     /** An unmet own check keeps the task however long the score is -1; met, it ends at once as done (not pointless). */

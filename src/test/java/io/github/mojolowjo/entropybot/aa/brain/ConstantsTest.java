@@ -22,7 +22,7 @@ class ConstantsTest {
             Map.entry("bag.base", 20.0), Map.entry("bag.span", 60.0), Map.entry("cost.station", 60.0), Map.entry("cost.spareTable", 10.0),
             Map.entry("cost.base", 240.0), Map.entry("cost.bed", 120.0), Map.entry("cost.iron", 600.0), Map.entry("need.defaultScore", 30.0),
             Map.entry("sprint.drainFloor", 0.25), Map.entry("quarry.radius", 48.0), Map.entry("quarry.cacheMs", 10000.0),
-            Map.entry("quarry.digK", 1.5), Map.entry("run.weight", 2.0), Map.entry("planner.gapMs", 5000.0),
+            Map.entry("quarry.digK", 1.5), Map.entry("run.weight", 2.0),
             Map.entry("mine.maxMin", 20.0), Map.entry("mine.stallS", 60.0));
 
     @Test void everyMovedConstantIsRegisteredWithItsOldDefault() {

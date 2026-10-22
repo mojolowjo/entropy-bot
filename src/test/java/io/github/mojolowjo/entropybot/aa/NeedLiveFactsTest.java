@@ -4,7 +4,6 @@ import io.github.mojolowjo.entropybot.aa.NeedChain.Spot;
 import io.github.mojolowjo.entropybot.aa.brain.LootBook;
 import io.github.mojolowjo.entropybot.aa.brain.TestData;
 import io.github.mojolowjo.entropybot.aa.moves.Step;
-import io.github.mojolowjo.entropybot.plan.PlanFacts;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,7 +16,7 @@ import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** live-facts (0.39.y3): NeedChain's live source of any word: the loot book's blocks plus the item's own block, then the one Nearby fact. */
+/** live-facts (0.39.y3), one-planner: NeedChain's live source of an item: the loot book's blocks plus the item's own block, then the one Nearby fact. */
 class NeedLiveFactsTest {
     static final int[] ME = {0, 64, 0};
 
@@ -34,15 +33,6 @@ class NeedLiveFactsTest {
             new LootBook.Source(LootBook.Kind.BLOCK, "minecraft:oak_log", "minecraft:oak_log", 1, 1, false, null),
             new LootBook.Source(LootBook.Kind.BLOCK, "minecraft:spruce_log", "minecraft:spruce_log", 1, 1, false, null),
             new LootBook.Source(LootBook.Kind.MOB, "minecraft:cod", "minecraft:cod", 1, 1, false, null)), "test");
-
-    static final List<String> ITEMS = List.of("minecraft:raw_iron", "minecraft:coal", "minecraft:cod", "minecraft:oak_log", "minecraft:spruce_log", "minecraft:iron_ore");
-
-    /** The planner word -> the item ids it stands for (as the adapter builds it from the item registry). */
-    static List<String> itemsOf(String word) {
-        List<String> out = new ArrayList<>();
-        for (String id : ITEMS) if (PlanFacts.canon(id).equals(PlanFacts.canon(word))) out.add(id);
-        return out;
-    }
 
     /** Items that place a block: the logs and the ore item; raw iron, coal and cod place none. */
     static String ownBlock(String item) { return item.endsWith("_log") || item.endsWith("_ore") ? item : null; }
@@ -68,7 +58,7 @@ class NeedLiveFactsTest {
     };
 
     static Spot source(String word) {
-        return Nearby.nearest(SCAN, ME, Nearby.sourceBlocks(word, BOOK, NeedLiveFactsTest::itemsOf, NeedLiveFactsTest::ownBlock), () -> null);
+        return Nearby.nearest(SCAN, ME, Nearby.sourceBlocks(word, BOOK, NeedLiveFactsTest::ownBlock), () -> null);
     }
 
     static final Function<String, Spot> SEEN = NeedLiveFactsTest::source;
@@ -83,19 +73,18 @@ class NeedLiveFactsTest {
 
     @Test
     void aMobDropWithNoBlockResolvesToNullWithoutAThrow() {
-        assertTrue(Nearby.sourceBlocks("cod", BOOK, NeedLiveFactsTest::itemsOf, NeedLiveFactsTest::ownBlock).isEmpty());
+        assertTrue(Nearby.sourceBlocks("cod", BOOK, NeedLiveFactsTest::ownBlock).isEmpty());
         assertNull(assertDoesNotThrow(() -> source("cod")));
-        assertTrue(Nearby.sourceBlocks("cod", null, NeedLiveFactsTest::itemsOf, NeedLiveFactsTest::ownBlock).isEmpty(), "no loot book: no block either");
+        assertTrue(Nearby.sourceBlocks("cod", null, NeedLiveFactsTest::ownBlock).isEmpty(), "no loot book: no block either");
     }
 
     @Test
-    void oakAndSpruceLogBothResolveViaTheLogsTagToTheTreeNotTheBuild() {
-        for (String w : List.of("oak_log", "spruce_log")) {
-            Spot s = source(PlanFacts.canon(w));
-            assertNotNull(s, w);
-            assertEquals(-20, s.x(), w + ": the oak stack at 3 has no leaves by it");
-            assertEquals("minecraft:spruce_log", s.block());
-        }
+    void aLogResolvesToATreeNotTheBuild() {
+        Spot s = source("spruce_log");
+        assertNotNull(s);
+        assertEquals(-20, s.x());
+        assertEquals("minecraft:spruce_log", s.block());
+        assertNull(source("oak_log"), "the oak stack at 3 has no leaves by it: no tree; an item is its own id, no log family");
     }
 
     @Test
@@ -117,12 +106,12 @@ class NeedLiveFactsTest {
             @Override public boolean allowed(int x, int y, int z) { return true; }
             @Override public String blockAt(int x, int y, int z) { return cells.get(x + " " + y + " " + z); }
         };
-        Function<String, Spot> source = w -> Nearby.nearest(scan, ME, Nearby.sourceBlocks(w, BOOK, NeedLiveFactsTest::itemsOf, NeedLiveFactsTest::ownBlock), () -> null);
-        // nothing known: a chain's explore names the word it looks for (here a tree's), and the explore for coal waits on its word
+        Function<String, Spot> source = w -> Nearby.nearest(scan, ME, Nearby.sourceBlocks(w, BOOK, NeedLiveFactsTest::ownBlock), () -> null);
+        // nothing known: a chain's explore names the item it looks for (here the oak log), and the explore for coal waits on its item
         NeedChain.Chain c = NeedChain.resolve("oak_planks", 4, new NeedChain.World(Map.of(), false, source));
         assertTrue(c.explore(), c.why());
-        assertEquals("log", ((Step.Explore) c.steps().get(c.steps().size() - 1)).until());
-        Step.Explore ex = new Step.Explore(NeedChain.exploreMinutes(), PlanFacts.canon("coal"));
+        assertEquals("oak_log", ((Step.Explore) c.steps().get(c.steps().size() - 1)).until());
+        Step.Explore ex = new Step.Explore(NeedChain.exploreMinutes(), "coal");
         assertNull(io.github.mojolowjo.entropybot.cave.ExploreRules.untilFound(ex.until(), source), "the walk goes on while no coal is known");
         cells.put("6 60 0", "minecraft:coal_ore");
         String end = io.github.mojolowjo.entropybot.cave.ExploreRules.untilFound(ex.until(), source);

@@ -13,8 +13,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * rm-execution + rm-execution2: every option set and desire of AA emits typed steps for aa/moves/Steps; none hands chain
- * text to the old job interpreter (an option's command is only the steps' label, never parsed back). The planner's
- * routine is typed once at the planner's side; a planner goal runs as one {@link Step.Plan} the machine expands.
+ * text to the old job interpreter (an option's command is only the steps' label, never parsed back). one-planner: a
+ * need's "I need N of X" runs as one {@link Step.Obtain} the machine expands into the chain's steps.
  */
 @org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class TypedOptionsTest {
@@ -27,9 +27,9 @@ class TypedOptionsTest {
         for (Step s : o.steps()) runnable(s);
     }
 
-    /** A step the game side runs: its command is a verb the bot knows (a Plan / compound is expanded by Steps first). */
+    /** A step the game side runs: its command is a verb the bot knows (an Obtain / compound is expanded by Steps first). */
     static void runnable(Step s) {
-        if (s instanceof Step.Plan || s instanceof Step.Compound || s instanceof Step.Fish || s instanceof Step.KelpCut) return;     // fishing and kelp cuts have hands of their own, no verb
+        if (s instanceof Step.Obtain || s instanceof Step.ToBand || s instanceof Step.Compound || s instanceof Step.Fish || s instanceof Step.KelpCut) return;     // fishing and kelp cuts have hands of their own, no verb
         String cmd = io.github.mojolowjo.entropybot.commands.StepCommands.command(s);
         assertNotNull(io.github.mojolowjo.entropybot.commands.VerbTable.of(cmd.split("\\s+")[0]), "no verb for " + cmd);
     }
@@ -40,49 +40,25 @@ class TypedOptionsTest {
     }
 
     @Test
-    void woodEmitsAWalkAndBaritonesTreeMining() {
-        Options.Choice c = WoodOptions.choose(new WoodOptions.WoodFacts(6, List.of(new WoodOptions.Tree(40, 70, -12, 30, null))), new Options.OptionMemory(), 0);
-        typed(c.best());
-        assertInstanceOf(Step.Walk.class, c.best().steps().get(0));
-        Step.ChopTree t = (Step.ChopTree) c.best().steps().get(1);
-        assertArrayEquals(new int[]{40, 70, -12}, t.at(), "the tree's cell comes from Sightings, no mod-side column scan");
-        assertEquals(6, t.logs());
+    void theChainsStepsAreRunnable() {
+        io.github.mojolowjo.entropybot.aa.brain.TestData.planner().tag("wooden_pickaxe", "minecraft:pickaxes").tag("stone_pickaxe", "minecraft:pickaxes").install();
+        NeedChain.Spot tree = new NeedChain.Spot(10, 64, 0, 10, "minecraft:oak_log", 6), stone = new NeedChain.Spot(0, 60, 16, 16, "minecraft:stone", 40);
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new NeedChain.World(Map.of(), false, w -> w.equals("minecraft:oak_log") ? tree : w.equals("minecraft:cobblestone") ? stone : null));
+        assertTrue(c.ok() && !c.steps().isEmpty(), c.why());
+        for (Step s : c.steps()) runnable(s);
+        assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.ChopTree t && java.util.Arrays.equals(t.at(), new int[]{10, 64, 0})), "the tree's cell comes from the facts, no mod-side scan: " + c.steps());
     }
 
     @Test
-    void foodHuntRowsAreTypedHuntSteps() {
-        Options.Choice c = FoodOptionsTest.choose(FoodOptionsTest.withHerds(Map.of("cow", 4), List.of()));
-        allTyped(c);
-        Options.Option hunt = c.ranked().stream().filter(o -> o.way().equals("hunt")).findFirst().orElseThrow();
-        Step.HuntAt h = (Step.HuntAt) hunt.steps().get(0);
-        assertEquals("minecraft:cow", h.type());
-    }
-
-    @Test
-    void ironRowsAreTypedOreAndSmeltSteps() {
+    void ironOreStepsAreTyped() {
         IronOptions.Facts f = IronOptionsTest.facts(List.of(IronOptionsTest.open(10, 60, 0, 10, true), IronOptionsTest.buried(5, 50, 0, 5, 12, false)), 60);
-        Options.Choice c = new IronOptions.Set().choose(f, new Options.OptionMemory(), 0, TS.s(IronOptionsTest.PLANNED), 10, null, null);
-        allTyped(c);
-        Options.Option walk = c.ranked().stream().filter(o -> o.id().startsWith("walk_known")).findFirst().orElseThrow();
-        assertEquals(new Step.MineAt("iron", 10, 60, 0, false), walk.steps().get(0));
-    }
-
-    @Test
-    void coalRowsAreTyped() {
-        var ore = IronOptionsTest.open(3, 60, 3, 8, true);
-        var disc = List.of(CoalOptionsTest.strip(300));
-        Options.Choice c = CoalOptions.choose(new CoalOptions.CoalFacts(8, 1, List.of(ore), disc, List.of(), 2, 0, false, -1, true, 0), new Options.OptionMemory(), 0);
-        allTyped(c);
-        Options.Option mine = c.ranked().stream().filter(o -> o.id().equals("seen coal")).findFirst().orElseThrow();
-        assertEquals(new Step.MineAt("coal", 3, 60, 3, false), mine.steps().get(0), "the priced ore is the step's target");
-        Options.Option charcoal = c.ranked().stream().filter(o -> o.id().equals("charcoal")).findFirst().orElseThrow();
-        assertEquals("collect cobblestone 8 > craft furnace 1 > cut 8 > smelt charcoal 8", charcoal.command());
-        assertEquals("smelt charcoal 2 > craft torch 16", Step.label(CoalOptions.torchSteps(List.of(new Step.Smelt("charcoal", 2, false)), 16)));
+        IronOptions.Choice c = IronOptions.choose(f, new IronOptions.Memory(), 0);
+        for (Step s : c.steps("iron", 3)) runnable(s);
+        assertEquals(new Step.MineAt("iron", 10, 60, 0, false), c.steps("iron", 3).get(0), "the owner's ore word names the step, the scorer the cell");
     }
 
     @Test
     void bedBaseBagRowsAreTyped() {
-        allTyped(BedOptions.choose(new BedOptions.BedFacts(0, 2, new int[]{9, 9, 30, 50}, ME, true, true, true, 4), new Options.OptionMemory(), 0));
         Options.Choice base = BaseOptions.choose(new BaseOptions.BaseFacts("home", null, 20, true, 1, true, 5, true), new Options.OptionMemory(), 0);
         allTyped(base);
         Options.Option burrow = base.ranked().stream().filter(o -> o.id().equals("burrow")).findFirst().orElseThrow();
@@ -140,20 +116,20 @@ class TypedOptionsTest {
         for (Step s : io.github.mojolowjo.entropybot.aa.brain.NightWork.stairs(0, 64, 0, 1, 0)) runnable(s);
         var d = new io.github.mojolowjo.entropybot.aa.brain.Kit.Death("minecraft:overworld", 5, 60, 5, Map.of(), 0);
         assertEquals(List.of(new Step.Walk(5, 60, 5, 0), new Step.Wait(3)), io.github.mojolowjo.entropybot.aa.brain.Kit.recoverSteps(d));
-        assertEquals(List.of(new Step.Plan("bed")), BedOptions.steps(3, null));
     }
 
     @Test
-    void thePlannerRowIsOnePlanStep() {
-        var p = new Ways.Plan("torch 16", io.github.mojolowjo.entropybot.aa.core.JobPort.PlanState.READY, List.of(new Step.Craft("torch", 16)), 4, null, 0, null);
-        Options.Choice c = Ways.goalRows(TS.plan("torch 16"), p, new Ways.State(), new Options.OptionMemory(), 0, 30);
-        assertEquals(List.of(new Step.Plan("torch 16")), c.best().steps(), "the routine is asked for again when the step runs");
-        Options.Choice plain = Ways.goalRows(List.of(new Step.Deposit()), null, new Ways.State(), new Options.OptionMemory(), 0, 30);
+    void theChainRowIsTheChainsSteps() {
+        Step.Obtain o = new Step.Obtain("torch", 16);
+        var chain = new NeedChain.Chain(List.of(new Step.Craft("torch", 16)), 0.3, "torch <- craft: 4 coal (in the bag) + 4 stick (in the bag): 0.3 s", false, null);
+        Options.Choice c = Ways.goalRows(List.of(o), new Ways.Plan(o, chain, null), new Options.OptionMemory(), 0, 30);
+        assertEquals(List.of(new Step.Craft("torch", 16)), c.best().steps(), "the chain's typed steps");
+        Options.Choice plain = Ways.goalRows(List.of(new Step.Deposit()), null, new Options.OptionMemory(), 0, 30);
         assertEquals(List.of(new Step.Deposit()), plain.best().steps());
     }
 
     @Test
-    void thePlannersWordsAreTypedAtItsSideOnce() {
+    void theOwnersLinesAreTypedOnce() {
         var L = (java.util.function.Function<String, Step>) io.github.mojolowjo.entropybot.commands.PlanLines::one;
         assertEquals(new Step.Craft("iron_pickaxe", 1), L.apply("craft iron_pickaxe 1"));
         assertEquals(new Step.SmeltCollect(), L.apply("smelt collect all"));
@@ -161,14 +137,9 @@ class TypedOptionsTest {
         assertEquals(new Step.Restore(true, 0), L.apply("restore keep pillar"));
         assertEquals(new Step.Deposit(), L.apply("deposit"));
         assertNull(L.apply("goal bed"));
-        // a routine line with no typed step: the planner's answer is NONE with that line named (never handed on as text)
-        var port = new io.github.mojolowjo.entropybot.aa.core.FakePort();
-        port.resolveTo = "frobnicate 2 then mine iron 3";
-        var r = port.resolveState("iron tools");
-        assertEquals(io.github.mojolowjo.entropybot.aa.core.JobPort.PlanState.NONE, r.state());
     }
 
-    /** Fake hands: every step is DONE at once; the planner's routine for "torch 4" is a craft. */
+    /** Fake hands: every step is DONE at once; the chain for 4 torches is two crafts. */
     static final class Hands implements Steps.Hands {
         final List<Step> ran = new ArrayList<>();
         Step cur;
@@ -179,24 +150,24 @@ class TypedOptionsTest {
 
         @Override public void cancel(String why) {}
 
-        @Override public Steps.Routine routine(Step.Plan p) {
-            return p.goal().equals("torch 4") ? new Steps.Routine(List.of(new Step.Craft("stick", 1), new Step.Craft("torch", 4)), null) : new Steps.Routine(null, "no plan for " + p.goal());
+        @Override public Steps.Routine routine(Step.Obtain o) {
+            return o.what().equals("torch") && o.n() == 4 ? new Steps.Routine(List.of(new Step.Craft("stick", 1), new Step.Craft("torch", 4)), null) : new Steps.Routine(null, "no way to " + o.what());
         }
     }
 
     @Test
-    void aPlanStepRunsThePlannersRoutineOnTheSameMachine() {
+    void anObtainStepRunsTheChainOnTheSameMachine() {
         Hands h = new Hands();
         Steps st = new Steps(h);
-        st.start("k", List.of(new Step.Plan("torch 4"), new Step.Deposit()), 0);
+        st.start("k", List.of(new Step.Obtain("torch", 4), new Step.Deposit()), 0);
         for (int i = 1; i < 10 && st.running(); i++) st.tick(i);
         assertEquals(Steps.Phase.DONE, st.phase(), st.why());
         assertEquals(List.of(new Step.Craft("stick", 1), new Step.Craft("torch", 4), new Step.Deposit()), h.ran);
         Steps bad = new Steps(new Hands());
-        bad.start("k", List.of(new Step.Plan("bed")), 0);
+        bad.start("k", List.of(new Step.Obtain("bed", 1)), 0);
         assertEquals(Steps.Phase.FAILED, bad.phase());
         assertEquals("k", bad.failedKey());
-        assertTrue(bad.why().contains("no routine for bed: no plan for bed"), bad.why());
+        assertTrue(bad.why().contains("no chain for obtain 1 bed: no way to bed"), bad.why());
     }
 
     @Test

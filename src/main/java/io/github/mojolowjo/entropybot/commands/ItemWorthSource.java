@@ -63,6 +63,11 @@ final class ItemWorthSource implements ItemWorth.Source {
             }
             try { ItemWorth.Facts f = factsOf(item); if (f != ItemWorth.Facts.NONE) s.facts.put(id, f); }
             catch (RuntimeException e) { s.failed++; }
+            if (fp != null) s.edible.add(id);
+            try {                                               // one-planner: the game's fuel table (the burn-time data map)
+                int burn = item.getDefaultInstance().getBurnTime(RecipeType.SMELTING);
+                if (burn > 0) s.fuels.put(id, burn);
+            } catch (RuntimeException e) { s.failed++; }
         }
         for (Item item : BuiltInRegistries.ITEM) {
             if (!(item instanceof BlockItem bi)) continue;
@@ -94,14 +99,23 @@ final class ItemWorthSource implements ItemWorth.Source {
             if (out == null || out.isEmpty()) continue;
             String oid = BuiltInRegistries.ITEM.getKey(out.getItem()).toString();
             List<String> in = new ArrayList<>();
+            List<List<String>> opts = new ArrayList<>();
             boolean ok = true;
             for (var ing : r.getIngredients()) {
                 ItemStack[] items = ing.getItems();
                 if (items.length == 0) { if (!ing.isEmpty()) ok = false; continue; }
                 in.add(BuiltInRegistries.ITEM.getKey(items[0].getItem()).toString());
+                List<String> o = new ArrayList<>();          // one-planner: an ingredient given as a tag: every member
+                for (ItemStack it : items) { String iid = BuiltInRegistries.ITEM.getKey(it.getItem()).toString(); if (!o.contains(iid)) o.add(iid); }
+                opts.add(o);
             }
             if (!ok || in.isEmpty()) continue;
-            s.recipes.computeIfAbsent(oid, k -> new ArrayList<>()).add(new ItemWorth.Recipe(Math.max(1, out.getCount()), in));
+            String kind = BuiltInRegistries.RECIPE_TYPE.getKey(r.getType()) == null ? "?" : BuiltInRegistries.RECIPE_TYPE.getKey(r.getType()).toString();
+            s.recipes.computeIfAbsent(oid, k -> new ArrayList<>()).add(new ItemWorth.Recipe(Math.max(1, out.getCount()), in, opts, kind));
+            if (!s.kindStations.containsKey(kind)) {                // one-planner: where a kind is made (the recipe's toast symbol)
+                ItemStack sym = r.getToastSymbol();
+                if (sym != null && !sym.isEmpty()) s.kindStations.put(kind, BuiltInRegistries.ITEM.getKey(sym.getItem()).toString());
+            }
             if (r.getType() == RecipeType.SMELTING && !s.smelts.contains(oid)) s.smelts.add(oid);
             if (r.getType() == RecipeType.SMELTING) s.smeltInputs.putIfAbsent(oid, in.get(0));
             if (s.recipes.get(oid).size() == 1) {      // the first recipe is the one the planner reads: does it need a table?
@@ -328,6 +342,12 @@ final class ItemWorthSource implements ItemWorth.Source {
     @Override public boolean junkFood(String id) { return junkFood.contains(id); }
     @Override public boolean plank(String id) { return planks.contains(id); }
     @Override public boolean ore(String id) { return ores.contains(id); }
+    private final Map<String, Integer> fuels = new HashMap<>();
+    private final Map<String, String> kindStations = new HashMap<>();
+    private final java.util.Set<String> edible = new java.util.HashSet<>();
+    @Override public Map<String, Integer> fuels() { return fuels; }
+    @Override public String stationOf(String kind) { return kindStations.get(kind); }
+    @Override public java.util.Set<String> edible() { return edible; }
     int itemsWithFacts() { return facts.size(); }
     int itemsWithRecipes() { return recipes.size(); }
 }
