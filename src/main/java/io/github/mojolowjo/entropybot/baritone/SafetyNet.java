@@ -48,7 +48,9 @@ public final class SafetyNet {
             if (!Guard.INSTANCE.floorReady()) return;
             Settings s = BaritoneAPI.getSettings();
             if (SafetyRules.protectedDue(tick, list != null)) putProtected(s);
-            if (SafetyRules.netDue(tick)) net(s);
+            // 0.39.z2 (owner 2026-10-22, "AA is the only driver"): the 200-tick sweep that turned breaking/placing off
+            // and cancelled Baritone with no mod job is deleted; AA's door is the one driver gate, the owner's raw
+            // Baritone commands are the owner's. The protected-block list (the policy's floor) stays.
         } catch (Throwable t) {
             if (errors++ < 5) LOG.warn("[entropybot] safety net: {}", t.toString());
         }
@@ -94,17 +96,6 @@ public final class SafetyNet {
         } catch (Throwable t) {
             return "unknown (" + t + ")";
         }
-    }
-
-    private void net(Settings s) {
-        IBaritone b = primary();
-        if (!SafetyRules.shouldTurnOff(s.allowBreak.value, s.allowPlace.value, breakingOwned(b), placingOwned())) return;
-        boolean jobRunning = false;
-        try { jobRunning = Core.INSTANCE.commands.jobs.running(); } catch (Throwable caught) { Quiet.warn("SafetyNet.net failed, carrying on with the fallback", caught); }
-        if (b != null && SafetyRules.cancelBaritone(idle(b), jobRunning)) cancel(b);
-        restore();
-        LOG.info("[entropybot] safety net: turned breaking/placing back off");
-        try { Core.INSTANCE.events.push("job", "safety net: turned breaking/placing back off", null); } catch (Throwable caught) { Quiet.warn("SafetyNet.net failed, carrying on with the fallback", caught); }
     }
 
     /**
