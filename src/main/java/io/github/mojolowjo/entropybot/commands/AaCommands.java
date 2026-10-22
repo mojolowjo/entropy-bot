@@ -10,7 +10,7 @@ import java.util.List;
 final class AaCommands {
     private AaCommands() {}
 
-    static final String USAGE = "usage: aa on|off|status|why|tree|stats | aa like [<key> <n>] | aa tune [<name> <n>] | aa worth <item> | aa want <thing> [n] [high|low] | aa drop <thing>|all | aa only <need>|off | aa goals | aa build <name> here|at <x y z> [high|low] | aa ore [info] [<thing>] | aa ask on|off | aa pick <n> | aa do <need>|none | aa skip <need>|none | aa use <option> | aa replan on|off | aa look [smooth <ticks>] | aa horizon [seconds] | aa fair [on|off] | aa litter | aa slow [on|off|step] | aa go | aa predict";
+    static final String USAGE = "usage: aa on|off|status|why|tree|stats | aa like [<key> <n>] | aa tune [<name> <n>] | aa worth <item> | aa want <thing> [n] [high|low] | aa drop <thing>|all | aa needs on|off | aa only <need>|off | aa goals | aa build <name> here|at <x y z> [high|low] | aa ore [info] [<thing>] | aa ask on|off | aa pick <n> | aa do <need>|none | aa skip <need>|none | aa use <option> | aa replan on|off | aa look [smooth <ticks>] | aa horizon [seconds] | aa fair [on|off] | aa litter | aa slow [on|off|step] | aa go | aa predict";
 
     static String handle(Commands c, String rest) {
         AaRuntime aa = c.aaRuntime;
@@ -37,6 +37,7 @@ final class AaCommands {
                 return arg.isEmpty() ? (set == null ? "aa only: off (usage: aa only <need>|off, e.g. aa only torches)" : "only: " + set)
                         : set == null ? "aa only: off - every need and want is back" : "only: " + set + " - every other need and want is silent (danger, reflexes and your orders stay on); aa only off to end";
             }
+            case "needs" -> { return aa.needs(arg); }               // orders-tier: aa needs on|off (saved per world)
             case "stats" -> { return aa.statsText(); }
             case "litter" -> { return RestoreLive.INSTANCE.litterText(); }
             case "like" -> { return aa.like(arg); }

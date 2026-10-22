@@ -55,6 +55,11 @@ public final class FakePort implements JobPort {
 
     @Override public void incident(String what) { incidents.add(what); }
 
+    /** orders-tier: the lines whispered to the owner. */
+    public final List<String> told = new ArrayList<>();
+
+    @Override public void tellOwner(String line) { told.add(line); }
+
     public void done(long id, String text) { states.put(id, JobState.done(text)); }
 
     public void fail(long id, String text) { states.put(id, JobState.failed(text)); }

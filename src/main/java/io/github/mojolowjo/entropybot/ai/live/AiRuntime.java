@@ -192,12 +192,18 @@ public final class AiRuntime {
     public void tick(Commands c) {
         try {
             cmds = c;
+            long now = System.currentTimeMillis();
+            // orders-tier (0.39.z9): off unless this world's switch says ai on: no loading, no polling, no log line, no call
+            if (!c.aiWorldOn()) {
+                if (loop != null && loop.on()) loop.disable(now);
+                started = false;
+                return;
+            }
             ensureLoaded();
             if (dir == null) return;
-            long now = System.currentTimeMillis();
             if (!started) {
                 started = true;
-                if (settings.enabled) start(now);
+                start(now);
             }
             if (loop == null || !loop.on()) return;
             Result r;
@@ -343,6 +349,8 @@ public final class AiRuntime {
                 if (settingsError != null) return "error: " + settingsError;
                 settings.enabled = true;
                 String se = saveSettings();
+                c.aiWorld(true);                          // orders-tier: saved per world (off in every world until ai on there)
+                started = true;
                 start(now);
                 if (startError != null) return "error: the AI operator can't start: " + startError + (se == null ? "" : "; " + se);
                 return "ok: AI operator on (" + provider.describe() + ", key " + keys.source(settings.provider) + "). Tell me what to do: ai <request>"
@@ -351,6 +359,7 @@ public final class AiRuntime {
             case "off" -> {
                 settings.enabled = false;
                 String se = saveSettings();
+                c.aiWorld(false);
                 if (loop != null) loop.disable(now);
                 return "ok: AI operator off" + (se == null ? "" : "; " + se);
             }
@@ -379,7 +388,7 @@ public final class AiRuntime {
                 if (loop != null) loop.disable(now);
                 reload();
                 started = true;
-                if (settings.enabled) start(now);
+                if (c.aiWorldOn()) start(now);
                 return "ok: ai.json read again - " + (on() ? "on" : "off" + (startError != null ? ": " + startError : ""));
             }
             case "test" -> {
@@ -489,7 +498,8 @@ public final class AiRuntime {
         settingsError = null;
         loop = null;
         started = true;
-        if (settings.enabled && Minecraft.getInstance().player != null) start(now);
+        if (cmds != null && Minecraft.getInstance().player != null) cmds.aiWorld(settings.enabled);     // orders-tier: the screen's switch is this world's
+        if (settings.enabled && cmds != null && Minecraft.getInstance().player != null) start(now);
         else started = false;                              // starts on the first tick in a world
         log.line(now, "settings saved from the screen: " + readyLine());
         return null;

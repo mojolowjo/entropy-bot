@@ -53,6 +53,26 @@ public final class AaSwitch {
         else sw.addProperty(ONLY, need);
     }
 
+    /**
+     * orders-tier (0.39.z9): the world's need switch as saved: {@link io.github.mojolowjo.entropybot.aa.brain.Only#ORDERS}
+     * (orders and reflexes only), {@link io.github.mojolowjo.entropybot.aa.brain.Only#NEEDS} (the full set) or one need
+     * ({@code aa only}). No saved choice is the default, orders only.
+     */
+    public static String mode(JsonObject sw) {
+        String m = only(sw);
+        return m == null || m.isBlank() ? io.github.mojolowjo.entropybot.aa.brain.Only.ORDERS : m;
+    }
+
+    /** True when the world has a saved need choice ({@code aa on} writes the default, orders, only when it has none). */
+    public static boolean hasMode(JsonObject sw) { return only(sw) != null; }
+
+    /** orders-tier: the AI translator's per-world switch ({@code ai on|off}); off when never set. */
+    public static final String AI = "ai";
+
+    public static boolean ai(JsonObject sw) { return sw.has(AI) && sw.get(AI).getAsBoolean(); }
+
+    public static void ai(JsonObject sw, boolean on) { sw.addProperty(AI, on); }
+
     /** Removes the old bot-wide switch keys from the "aa" settings object; the names removed (for the log line). */
     public static List<String> dropOldGlobal(JsonObject aa) {
         List<String> out = new ArrayList<>();

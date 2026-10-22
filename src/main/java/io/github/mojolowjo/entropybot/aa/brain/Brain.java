@@ -586,6 +586,7 @@ public final class Brain extends Node {
                 falseInterrupts++;
                 bb.tracer.counts.pointless++;
                 failed(bb, d.id, "false interrupt: " + d.node.reason(), now);
+                d.failedRun(bb, d.node.reason());
                 bb.port.log("brain: false interrupt by " + d.id + ": " + d.node.reason());
                 if (not != null) {
                     int ni = desires.indexOf(not);
@@ -742,7 +743,11 @@ public final class Brain extends Node {
             if (d.selfCool && d.restMs > 0) failures.rest(d.id, d.restMs, now, "done just now (a rest before it runs again)");
             if (d.kind == Desire.Kind.WANT) Wants.done(bb, d.id, now);   // B3: boredom starts over
             onEnd(d, true, taskSeen, now - startedAt);
-        } else if (taskSeen) {
+            taskSeen = false;
+            return;
+        }
+        d.failedRun(bb, d.node.reason());                 // orders-tier: an owner order parks itself (said once, no retry)
+        if (taskSeen) {
             // P(success) drops; a self-cooling desire is held here (2 min doubling), a rung by its own cooldown
             if (d.selfCool && !d.optionHolds) failures.failed(d.id, null, d.node.reason(), now, bb.in);
             else failures.counted(d.id, null, d.node.reason());
@@ -795,6 +800,7 @@ public final class Brain extends Node {
         bb.port.incident("aa " + why);
         cur.node.halt(why);
         failed(bb, cur.id, why, now);
+        cur.failedRun(bb, why);                            // orders-tier: an owner order parks itself (said once, no retry)
         if (taskSeen) onEnd(cur, false, true, now - startedAt);
         taskSeen = false;
         running = -1;

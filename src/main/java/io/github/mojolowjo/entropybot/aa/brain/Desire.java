@@ -77,6 +77,27 @@ public final class Desire {
     }
 
     /** A failed try ends this tick's picking (the idle options: one try per tick, as the idle chooser did). */
+    /**
+     * orders-tier (0.39.z9): told when a run of this desire ends as a failure (its node failed, or the stuck watchdog
+     * halted it) with the reason; an owner order parks itself there (said once, no retry). Null: none.
+     */
+    java.util.function.BiConsumer<Blackboard, String> onFail;
+
+    public Desire onFail(java.util.function.BiConsumer<Blackboard, String> f) {
+        onFail = f;
+        return this;
+    }
+
+    /** Calls {@link #onFail} (a failing hook is logged, never thrown into the brain). */
+    void failedRun(Blackboard bb, String why) {
+        if (onFail == null) return;
+        try {
+            onFail.accept(bb, why);
+        } catch (RuntimeException e) {
+            bb.port.log("brain: " + id + " fail hook failed: " + e);
+        }
+    }
+
     boolean lastTry;
 
     public Desire lastTry() {

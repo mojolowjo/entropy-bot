@@ -440,12 +440,21 @@ public final class AaDesires {
         String id = g.id();
         RunJob job = new RunJob(id + ".job", TaskKind.EXPLORE, bb -> {
             List<Step> s = io.github.mojolowjo.entropybot.aa.brain.Goals.steps(bb, g);
-            if (s == null) return null;
+            if (s == null) {
+                // orders-tier: a chain that does not stand parks the order with its reason (no retry every few seconds);
+                // no world facts yet or the order already met is no reason to park
+                var ch = io.github.mojolowjo.entropybot.aa.brain.Goals.chain(bb, g);
+                if (ch != null && io.github.mojolowjo.entropybot.aa.brain.Goals.have(bb.in.bag, g) < g.n && (!ch.ok() || ch.steps().isEmpty()))
+                    io.github.mojolowjo.entropybot.aa.brain.Goals.park(bb, g, "no way to get it: " + ch.why());
+                return null;
+            }
             return JobPort.TaskSpec.steps(TaskKind.EXPLORE, s, "owner goal");
         });
         Node node = AaTree.idleCd(id + ".cd", job);
         return new Desire(id, Desire.Kind.OWNER, node, bb -> io.github.mojolowjo.entropybot.aa.brain.Goals.score(bb, g))
                 .infeasible(bb -> io.github.mojolowjo.entropybot.aa.brain.Goals.blocked(bb, g))
+                // orders-tier: a run that fails parks the order with its reason, said once; a busy slot is no reason
+                .onFail((bb, why) -> { if (!io.github.mojolowjo.entropybot.aa.brain.Goals.passing(why)) io.github.mojolowjo.entropybot.aa.brain.Goals.park(bb, g, why); })
                 .prereq(bb -> io.github.mojolowjo.entropybot.aa.brain.Goals.prereq(bb, g))
                 .fresh(g.given + io.github.mojolowjo.entropybot.aa.brain.Goals.freshMs())
                 .cost(600).exposure(g.r.ore() ? Desire.Exposure.UNDER : Desire.Exposure.ANY).cools(Cooldown.noRunMsV(), Cooldown.noRunMsV()).lastTry();

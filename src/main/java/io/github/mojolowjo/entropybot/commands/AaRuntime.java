@@ -856,23 +856,43 @@ public final class AaRuntime implements JobPort {
         JsonObject s = sw();
         heldUntil = io.github.mojolowjo.entropybot.aa.AaSwitch.heldUntil(s);
         bb.fact(AaLadder.SHELTER_FACT, io.github.mojolowjo.entropybot.aa.AaSwitch.shelterBuilt(s) ? Boolean.TRUE : null);
-        io.github.mojolowjo.entropybot.aa.brain.Only.set(io.github.mojolowjo.entropybot.aa.AaSwitch.only(s));
+        io.github.mojolowjo.entropybot.aa.brain.Only.set(io.github.mojolowjo.entropybot.aa.AaSwitch.mode(s));     // orders-tier: no saved choice = orders only
         offReason = null;
         if (!on()) lookRestore();
-        String only = io.github.mojolowjo.entropybot.aa.brain.Only.statusText();
-        return "aa " + (on() ? "on" : "off") + " in this world" + (only == null ? "" : ", " + only);
+        return "aa " + (on() ? "on" : "off") + " in this world, " + io.github.mojolowjo.entropybot.aa.brain.Only.modeText();
     }
 
-    /** aa only <need>|off: the watched need, saved in this world's switch. */
+    /** aa only <need>|off: the watched need, saved in this world's switch (off: the full set of needs). */
     String only(String arg) {
-        String set = io.github.mojolowjo.entropybot.aa.brain.Only.set(arg == null || arg.isEmpty() ? null : arg);
-        io.github.mojolowjo.entropybot.aa.AaSwitch.only(sw(), set);
+        if (arg == null || arg.isEmpty()) return io.github.mojolowjo.entropybot.aa.brain.Only.statusText() == null ? null : io.github.mojolowjo.entropybot.aa.brain.Only.need();
+        String set = io.github.mojolowjo.entropybot.aa.brain.Only.set(arg);
+        io.github.mojolowjo.entropybot.aa.AaSwitch.only(sw(), set == null ? io.github.mojolowjo.entropybot.aa.brain.Only.NEEDS : set);
         c.saved();
         return set;
     }
 
+    /** orders-tier (0.39.z9): aa needs on|off: the full set of needs, wants and night desires, or orders only; saved per world. */
+    String needs(String arg) {
+        String a = arg == null ? "" : arg.trim().toLowerCase(java.util.Locale.ROOT);
+        String v = switch (a) {
+            case "on" -> io.github.mojolowjo.entropybot.aa.brain.Only.NEEDS;
+            case "off" -> io.github.mojolowjo.entropybot.aa.brain.Only.ORDERS;
+            default -> null;
+        };
+        if (v == null) return "aa needs: " + io.github.mojolowjo.entropybot.aa.brain.Only.modeText() + " (usage: aa needs on|off)";
+        io.github.mojolowjo.entropybot.aa.brain.Only.set(v);
+        io.github.mojolowjo.entropybot.aa.AaSwitch.only(sw(), v);
+        c.saved();
+        LOG.info("[entropybot] aa: needs {} ({})", a, io.github.mojolowjo.entropybot.aa.brain.Only.modeText());
+        return a.equals("on") ? "ok: needs on - food, torches, tools, bed, base, stock-ups, wants and the night run again (saved for this world; aa needs off for orders only)"
+                : "ok: orders only - every need, want and night desire is silent; danger, reflexes and your orders stay (saved for this world)";
+    }
+
     String turnOn() {
-        io.github.mojolowjo.entropybot.aa.AaSwitch.turnOn(sw(), System.currentTimeMillis());
+        JsonObject s0 = sw();
+        if (!io.github.mojolowjo.entropybot.aa.AaSwitch.hasMode(s0)) io.github.mojolowjo.entropybot.aa.AaSwitch.only(s0, io.github.mojolowjo.entropybot.aa.brain.Only.ORDERS);     // orders-tier: the default
+        io.github.mojolowjo.entropybot.aa.brain.Only.set(io.github.mojolowjo.entropybot.aa.AaSwitch.mode(s0));
+        io.github.mojolowjo.entropybot.aa.AaSwitch.turnOn(s0, System.currentTimeMillis());
         offReason = null;
         heldUntil = 0;
         c.saved();
@@ -896,7 +916,10 @@ public final class AaRuntime implements JobPort {
         io.github.mojolowjo.entropybot.clear.OreDetour.valuer = this::oreBlockValue;     // small-3: the ore detour is valued while AA runs
         LOG.info("[entropybot] aa: on{}", ended);
         LOG.info("[entropybot] aa: ready ({} desires)", tree.brain.lastScored().size());
-        return "ok: aa on - danger > your orders > AI requests > basic needs > idle; one task at a time; aa status says who drives" + ended;
+        String mode = io.github.mojolowjo.entropybot.aa.brain.Only.modeText();
+        return "ok: aa on, " + mode + (io.github.mojolowjo.entropybot.aa.brain.Only.orders()
+                ? " - danger > your orders (aa want, aa go, aa do); with no order I stand still; aa needs on for the needs" + ended
+                : " - danger > your orders > AI requests > basic needs > idle; one task at a time; aa status says who drives" + ended);
     }
 
     /** small-3: seconds of value in one mined block of this ore (OreValue), from the tech tree and the open goals. */
@@ -1882,6 +1905,9 @@ public final class AaRuntime implements JobPort {
         LOG.info("[entropybot] aa: {}", line);
     }
 
+    /** orders-tier: an order that stopped, whispered to the owner (the log line comes from the caller). */
+    @Override public void tellOwner(String line) { c.whisper(c.owner(), "aa: " + line); }
+
     @Override public void incident(String what) {
         try {
             Core.INSTANCE.recorder.jobEnded("aa", what, "error: " + what);
@@ -2330,13 +2356,11 @@ public final class AaRuntime implements JobPort {
     public String statusLine() {
         long now = System.currentTimeMillis();
         if (!on()) return "AA: off" + (offReason != null ? " (" + offReason + ")" : "");
-        StringBuilder b = new StringBuilder("AA: ");
+        StringBuilder b = new StringBuilder("AA: ").append(io.github.mojolowjo.entropybot.aa.brain.Only.modeText()).append(" | ");     // orders-tier: the mode first
         if (now < heldUntil) b.append("held ").append((heldUntil - now + 59_999) / 60_000).append(" min after a stop");  // structural: round up to whole minutes
         else b.append(tree.driver()).append('>').append(bb.taskText(now));
         b.append(" | danger: ").append(tree.dangerWhy());
         if (conserving) b.append(" | conserving hunger");
-        String only = io.github.mojolowjo.entropybot.aa.brain.Only.statusText();
-        if (only != null) b.append(" | ").append(only);
         b.append(" | last switch ").append(tracer.lastSwitchText(now));
         return b.toString();
     }
@@ -2932,7 +2956,8 @@ public final class AaRuntime implements JobPort {
         if (wantKey != null) {         // a want by name: bored now (it wins by its weight when nothing more urgent runs)
             io.github.mojolowjo.entropybot.aa.brain.Wants.done(bb, "want." + wantKey, now - (long) (100 * io.github.mojolowjo.entropybot.aa.brain.Wants.DAY_MS));  // structural: percent
             return "ok: want." + wantKey + " is bored now (weight " + io.github.mojolowjo.entropybot.aa.brain.Personality.fmt(io.github.mojolowjo.entropybot.aa.brain.Personality.of(bb).get(wantKey))
-                    + "; aa like " + wantKey + " <n> to raise it)";
+                    + "; aa like " + wantKey + " <n> to raise it)"
+                    + (io.github.mojolowjo.entropybot.aa.brain.Only.orders() ? " - but orders only is on: wants are silent (aa needs on to let it run)" : "");
         }
         for (var d : tree.brain.desires())
             if (d.id.equals("needs." + w)) return w + " is one of my needs: aa do " + w + " runs it now";
@@ -2945,6 +2970,7 @@ public final class AaRuntime implements JobPort {
             return "aa want: " + r.err();
         }
         var g = io.github.mojolowjo.entropybot.aa.brain.Goals.add(bb, r, a.n(), a.prio(), now);
+        tree.brain.failures.forget(g.id());           // orders-tier: aa want again clears a parked order and its old holds
         lootCtx();
         // one-planner: the order is priced by the one chain now; the line says the chain or the explore it starts
         var ch = io.github.mojolowjo.entropybot.aa.brain.Goals.chain(bb, g);

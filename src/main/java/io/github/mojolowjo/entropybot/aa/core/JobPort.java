@@ -92,4 +92,7 @@ public interface JobPort {
 
     /** An incident for the recorder (timeout, no progress). */
     default void incident(String what) {}
+
+    /** orders-tier (0.39.z9): a line whispered to the owner (an order that stopped and why). */
+    default void tellOwner(String line) {}
 }

@@ -37,6 +37,30 @@ public final class Goals {
         }
 
         public String id() { return "goal." + r.key(); }
+
+        /** orders-tier (0.39.z9): why the order stopped (said once; aa want again or aa drop clears it), null: it goes on. */
+        public volatile String parked;
+    }
+
+    /**
+     * orders-tier (0.39.z9): the order cannot progress: parked with its reason, said ONCE in the log and the whisper; the
+     * brain never starts it again (it is infeasible while parked). {@code aa want} again makes a fresh goal; {@code aa drop}
+     * removes it. False when it was already parked.
+     */
+    public static boolean park(Blackboard bb, Goal g, String why) {
+        if (g.parked != null) return false;
+        g.parked = why == null || why.isBlank() ? "no reason given" : why;
+        String line = "order " + g.r.key() + " stopped: " + g.parked + " (aa want " + g.r.word().trim() + " to try again, aa drop " + g.r.key() + " to clear it)";
+        bb.port.log(line);
+        bb.port.tellOwner(line);
+        return true;
+    }
+
+    /** orders-tier: a failure that says nothing about the order itself (the slot busy, no facts yet): no park. */
+    public static boolean passing(String why) {
+        if (why == null) return false;
+        String w = why.toLowerCase(Locale.ROOT);
+        return w.startsWith("busy") || w.equals("nothing to run");
     }
 
     /** {@code aa want} words: the thing (several words joined), n (0 = default), priority -1/0/+1. */
@@ -98,6 +122,7 @@ public final class Goals {
 
     /** Why it cannot go on now (another dimension, a diamond pickaxe), else null: parked, said in aa goals (Q6). */
     public static String blocked(Blackboard bb, Goal g) {
+        if (g.parked != null) return g.parked;
         Thing.Where w = g.r.where();
         if (w != null && w.dim() != null && !w.dim().equals(bb.in.dimension))
             return g.r.key() + " is only in " + Thing.dimName(w.dim()) + "; I don't travel there yet";

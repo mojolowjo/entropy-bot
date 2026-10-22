@@ -263,6 +263,15 @@ public final class Commands implements Chains.Env {
     /** The commands store's object (commands.json): supplies, routines, rules, run, and package D's furnace jobs and smelt mode. */
     JsonObject brainData() { return brainStore.data(); }
 
+    /** orders-tier (0.39.z9): the AI translator's switch of this world ({@code ai on|off}); off when never set. */
+    public boolean aiWorldOn() { return io.github.mojolowjo.entropybot.aa.AaSwitch.ai(io.github.mojolowjo.entropybot.aa.AaSwitch.of(brainData())); }
+
+    /** orders-tier: sets this world's AI translator switch and saves it. */
+    public void aiWorld(boolean on) {
+        io.github.mojolowjo.entropybot.aa.AaSwitch.ai(io.github.mojolowjo.entropybot.aa.AaSwitch.of(brainData()), on);
+        saved();
+    }
+
     /** B7e (E1): the three stores, for "memory". */
     /** commands.json written now (a crash before the debounced save would repeat an import). */
     void brainFlush() { brainStore.flush(); }
