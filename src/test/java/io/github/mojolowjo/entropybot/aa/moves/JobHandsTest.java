@@ -317,4 +317,40 @@ class JobHandsTest {
         h.build(List.of(new int[]{2, 2, 2}), List.of("minecraft:dirt"), 100, "t", null, true);
         assertTrue(f.lastReplace);
     }
+
+    /** Owner 2026-10-22: use goes to the fork's InteractProcess, never the placing click; its reason reaches the craft step. */
+    @Test
+    void aUseTheForkCannotDoFailsTheCraftStepWithTheForkReason() {
+        int[] used = new int[1];
+        Fake f = new Fake() {
+            @Override public void startUse(int[] on) {
+                used[0]++;
+                assertArrayEquals(new int[]{4, 64, 9}, on);
+                status = Car.Status.running("walking within 4.5 m of crafting_table at 4 64 9");
+            }
+        };
+        JobHands h = new JobHands(f);
+        assertTrue(h.use(new int[]{4, 64, 9}, "the crafting table").running());
+        assertEquals(1, used[0], "the interact process, once");
+        assertEquals(0, f.starts, "never the builder's click hand");
+        assertTrue(h.busy(4, 64, 9));
+        f.status = Car.Status.failed("no stand within reach: no standable cell within 4.5 m of crafting_table at 4 64 9 sees a face of it (from 0 64 0)");
+        JobHands.Result r = h.use(new int[]{4, 64, 9}, "the crafting table");
+        assertTrue(r.failed(), r.why());
+        // Crafting's "opentable" stage: craftFail(s, st, CraftJob.couldNotOpenTable(r.why()))
+        String line = io.github.mojolowjo.entropybot.craft.CraftJob.couldNotOpenTable(r.why());
+        assertTrue(line.startsWith("error: could not open the crafting table: ") && line.contains("no stand within reach"), line);
+        assertTrue(h.idle());
+    }
+
+    @Test
+    void aUseThatOpenedAMenuIsDone() {
+        Fake f = new Fake() {
+            @Override public void startUse(int[] on) { status = Car.Status.running("using"); }
+        };
+        JobHands h = new JobHands(f);
+        h.use(new int[]{1, 2, 3}, "the bed");
+        f.status = Car.Status.done("opened crafting_table at 1 2 3 (clicked 1, menu 0 -> 3)");
+        assertTrue(h.use(new int[]{1, 2, 3}, "the bed").done());
+    }
 }

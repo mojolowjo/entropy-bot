@@ -46,6 +46,7 @@ final class BaritoneHand implements JobHands.Hand {
     @Override public void start(List<int[]> dig, List<JobHands.Click> clicks, int timeoutTicks) {
         proc = null;
         builder = null;
+        interact = null;
         forced = null;
         try {
             List<BlockPos> d = new ArrayList<>();
@@ -88,6 +89,7 @@ final class BaritoneHand implements JobHands.Hand {
     @Override public void startBuild(List<int[]> cells, List<String> items, int timeoutTicks, boolean replace) {
         proc = null;
         builder = null;
+        interact = null;
         forced = null;
         try {
             var p = Minecraft.getInstance().player;
@@ -139,6 +141,7 @@ final class BaritoneHand implements JobHands.Hand {
     @Override public void startPlaceNear(String item, int radius, int timeoutTicks) {
         proc = null;
         builder = null;
+        interact = null;
         forced = null;
         try {
             var p = Minecraft.getInstance().player;
@@ -168,6 +171,46 @@ final class BaritoneHand implements JobHands.Hand {
         } catch (RuntimeException e) {
             forced = Car.Status.failed("start: " + e);
         }
+    }
+
+    // ---- block use (fork: IInteractProcess, apart from the placing hands) ----
+    private baritone.api.process.IInteractProcess interact;
+    private int useRun = -1;
+
+    /** The fork's InteractProcess.use: it stands within reach, looks and clicks; the policy's walk verdict vetoes the stand before each click. */
+    @Override public void startUse(int[] on) {
+        proc = null;
+        builder = null;
+        interact = null;
+        forced = null;
+        try {
+            var lv = Minecraft.getInstance().level;
+            if (lv == null) { forced = Car.Status.failed("use: no world"); return; }
+            String dim = Guard.dimOf(lv);
+            interact = b().getInteractProcess();
+            interact.use(pos(on), f -> standVerdict(dim, f));
+            useRun = interact.run();
+        } catch (LinkageError e) {
+            interact = null;
+            forced = Car.Status.failed("this Baritone has no interact process (an older jar? install the entropy fork from baritone-interact): " + e);
+            if (!warned) {
+                warned = true;
+                LOG.warn("[entropybot] job hands: {}", forced.why());
+            }
+        } catch (RuntimeException e) {
+            interact = null;
+            forced = Car.Status.failed("use: start: " + e);
+        }
+    }
+
+    private Car.Status useStatus() {
+        if (interact.run() != useRun) return Car.Status.failed("another use took the interact process (run " + interact.run() + ", mine " + useRun + ")");
+        return switch (interact.status()) {
+            case DONE -> Car.Status.done(interact.why());
+            case FAILED -> interact.end() == baritone.api.process.LegEnd.LOST_CONTROL ? Car.Status.lost(interact.why()) : Car.Status.failed(interact.why());
+            case IDLE -> Car.Status.failed("never started");
+            default -> Car.Status.running(interact.why());
+        };
     }
 
     /** The guard's dry run for this action on the cell: null = allowed, else "the guard: why". */
@@ -214,6 +257,9 @@ final class BaritoneHand implements JobHands.Hand {
         if (builder != null) {
             try { return buildStatus(); } catch (RuntimeException | LinkageError e) { return Car.Status.failed("status: " + e); }
         }
+        if (interact != null) {
+            try { return useStatus(); } catch (RuntimeException | LinkageError e) { return Car.Status.failed("status: " + e); }
+        }
         if (proc == null) return Car.Status.failed("nothing started");
         try {
             // review 2: another run (a danger move's burrow) took the process: its status is not mine
@@ -234,9 +280,11 @@ final class BaritoneHand implements JobHands.Hand {
         try {
             if (proc != null && proc.run() == mine && proc.status() == IBurrowProcess.Status.RUNNING) proc.cancel(why);
             if (builder != null && builder.legRun() == buildRun) builder.cancelLeg(why);
+            if (interact != null && interact.run() == useRun && interact.status() == baritone.api.process.IInteractProcess.Status.RUNNING) interact.cancel();
         } catch (RuntimeException | LinkageError e) {
             LOG.warn("[entropybot] job hands: cancel failed: {}", e.toString());
         }
+        interact = null;
         builder = null;
         proc = null;
         forced = null;

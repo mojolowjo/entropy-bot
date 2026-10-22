@@ -43,6 +43,13 @@ public final class JobHands {
          */
         default void startPlaceNear(String item, int radius, int timeoutTicks) { throw new UnsupportedOperationException("these hands cannot place near"); }
 
+        /**
+         * Use block {@code on} with whatever is in hand (a table, furnace, chest, bed): the fork's
+         * {@code IInteractProcess.use} gets within reach, looks, clicks; DONE when a menu opened or the block changed,
+         * FAILED with the fork's reason. Status / cancel then follow it.
+         */
+        default void startUse(int[] on) { throw new UnsupportedOperationException("these hands cannot use a block"); }
+
         /** A higher temporary Baritone process (a reflex goal, the pause, a danger burrow) holds control now. */
         boolean reflexActive();
 
@@ -125,10 +132,40 @@ public final class JobHands {
         return request("click " + c(on) + " " + item, List.of(), List.of(k), timeoutTicks, who, onDone, "place", on.clone());
     }
 
-    /** Right-click block {@code on} with the empty or held hand (a bed, a crafting table, a chest): Baritone looks, stands and clicks; called every tick until DONE or FAILED. */
-    public Result use(int[] on, String who) {
-        return click(on, null, (int) (20 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("hands.buildS")), who, null);
+    /**
+     * Use block {@code on} with the empty or held hand (a bed, a crafting table, a chest) through the fork's
+     * InteractProcess (owner 2026-10-22: block interaction is Baritone's, apart from the placing hand): it stands within
+     * reach, looks and clicks; called every tick until DONE (a menu opened or the block changed) or FAILED with the
+     * fork's reason ("no stand within reach", "no face visible from ...", "clicked N times, nothing opened", ...).
+     */
+    public synchronized Result use(int[] on, String who) {
+        String ks = "use " + c(on);
+        int t = (int) (20 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("hands.buildS"));
+        if (key != null && ks.equals(key)) return request(ks, List.of(), List.of(), t, who, null, "place", null);
+        if (key != null && !finished) return new Result(State.RUNNING, "waiting: my hands are busy with " + key + (this.who.isEmpty() ? "" : " for " + this.who));
+        clear();
+        key = ks;
+        this.who = who == null ? "" : who;
+        dig = List.of();
+        clicks = List.of();
+        useCell = on.clone();
+        startedMs = clock.getAsLong();
+        timeout = t;
+        onDone = null;
+        action = "place";
+        verdictCell = null;
+        retries = 0;
+        cells = List.of(useCell);
+        Result r = start();
+        if (r.failed()) {
+            Result f = r;
+            clear();
+            return f;
+        }
+        return r;
     }
+
+    private int[] useCell;
 
     /**
      * Builder placements: put block item {@code item} into cell x y z as a one-block schematic leg (Baritone picks
@@ -252,7 +289,8 @@ public final class JobHands {
 
     private Result start() {
         try {
-            if (nearItem != null) hand.startPlaceNear(nearItem, nearRadius, timeout);
+            if (useCell != null) hand.startUse(useCell);
+            else if (nearItem != null) hand.startPlaceNear(nearItem, nearRadius, timeout);
             else if (buildCells != null) hand.startBuild(buildCells, buildItems, timeout, buildReplace);
             else hand.start(dig, clicks, timeout);
         } catch (RuntimeException e) {
@@ -330,6 +368,7 @@ public final class JobHands {
         buildCells = null;
         buildItems = null;
         nearItem = null;
+        useCell = null;
     }
 
     /** Once a client tick: follows a running request so its end (and onDone) is seen without the caller. */
