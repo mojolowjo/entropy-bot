@@ -203,6 +203,9 @@ public final class Brain extends Node {
                 bb.port.log("brain: " + d.id + " parked value failed: " + e);
             }
         }
+        // chop C: a desire at 0 never starts (it would be ended as 'its reason is gone' 5 s later, every 5 s); the brain's
+        // idle is the wait option, which keeps its own score
+        if (skip == null && v <= 0) skip = "not wanted (score 0 never starts)";
         return new Scored(d, v, rank, parts, skip, v, pv);
     }
 

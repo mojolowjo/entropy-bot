@@ -272,7 +272,7 @@ class ScenariosTest {
         assertTrue(c.ok() && !c.explore(), c.why());
         assertEquals(1, c.steps().stream().filter(s -> s instanceof Step.PlaceNear p && p.item().equals("crafting_table")).count(), "one table: " + c.steps());
         assertEquals(1, c.steps().stream().filter(s -> s instanceof Step.Collect k && k.item().equals("cobblestone")).count(), "one trip to the stone: " + c.steps());
-        assertEquals(1, c.steps().stream().filter(s -> s instanceof Step.Walk w && w.z() == 16).count(), "one walk to the stone: " + c.steps());
+        assertEquals(0, c.steps().stream().filter(s -> s instanceof Step.Walk).count(), "chop B2 (2026-10-22): no walk step before a block source, the collect paths itself: " + c.steps());
         assertTrue(c.steps().contains(new Step.Collect("cobblestone", 11)), "3 + 3 + 2 + 2 + 1 cobblestone: " + c.steps());
         assertEquals(1, crafts(c, "wooden_pickaxe"), "the digging pickaxe is made once: " + c.steps());
         for (String t : List.of("stone_pickaxe", "stone_axe", "stone_hoe", "stone_sword", "stone_shovel")) assertEquals(1, crafts(c, t), t + ": " + c.steps());
@@ -459,6 +459,115 @@ class ScenariosTest {
         n.tick(bb);
         assertTrue(n.options().contains("dropped: chain: ") && n.options().contains("no cell within 3 blocks"), "priced again: the failed chain held with its reason: " + n.options());
         assertEquals(1, port.started.size(), "held: not run again at once");
+    }
+
+    /**
+     * S17 (chop, owner 2026-10-22): cut 3 logs, the nearest tree 10 m with 8 logs in a canopy. The chain has no walk step (the
+     * chop paths itself; the spot only names the blocks and gives the price) and one cut of 3 at the tree. The fork's chop takes
+     * the whole tree (its ChopTreeTest: quantity 3 keeps all 8 as targets, ends "have 8 valid items"), so the bag ends with 8.
+     * <pre>
+     * the chain (what AA prices, unchanged rule):  walk 10 m 3.01 (10 x 1.3 / 4.317) + 3 logs x 3.0 = 9.0     = 12.01 s
+     * the run (what the chop does):               walk 10 m 3.01 + 8 logs x 3.0 = 24.0                       = 27.01 s
+     * </pre>
+     * The chain still prices the logs wanted (S2, S4, S9, S10, S12, S13 hold their hand numbers on that rule); pricing the
+     * whole tree is the owner's call (it would change those numbers).
+     */
+    @Test
+    void s17_cutThreeLogsIsOneCutWithNoWalkAndTheChopTakesTheWholeTree() {
+        world("wooden");
+        Chain c = NeedChain.resolve("oak_log", 3, w(Map.of(), false, false, Map.of("oak_log", List.of(tree(10, 8)))));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Walk), "no walk step: " + c.steps());
+        assertEquals(1, c.steps().size(), c.steps().toString());
+        Step.ChopTree cut = (Step.ChopTree) c.steps().get(0);
+        assertEquals(3, cut.logs());
+        assertArrayEquals(new int[]{10, 64, 0}, cut.at());
+        assertEquals("cut at 10 64 0", NeedChain.sourceKey(cut), "its source key is the tree");
+        assertEquals(12.01, c.seconds(), TOL, c.why());
+        double walk = NeedChain.walkS(10), perLog = (c.seconds() - walk) / cut.logs();
+        assertEquals(3.0, perLog, TOL);
+        assertEquals(27.01, walk + 8 * perLog, TOL, "the run: the chop takes all 8 logs of the tree");
+    }
+
+    /**
+     * S18 (chop C): `aa only torches`, the torches chain held (its need fails "held"), a wood stock-up (60 x 0.25 = 15 before
+     * the only weight) and want.explore (20) silenced to 0. A 0 never starts: the brain is idle, one wait, nothing else.
+     * Before: the 0s started and were ended "its reason is gone" 5 s later, every 5 s.
+     */
+    @Test
+    void s18_underOnlyTorchesWithTheTorchesChainHeldNothingElseStartsTheBrainWaits() {
+        var clock = new io.github.mojolowjo.entropybot.aa.core.Clock.Fake(10_000_000);
+        var port = new io.github.mojolowjo.entropybot.aa.core.FakePort();
+        var bb = new io.github.mojolowjo.entropybot.aa.core.Blackboard(clock, port, new io.github.mojolowjo.entropybot.aa.core.Tracer());
+        io.github.mojolowjo.entropybot.aa.brain.Only.set("torches");
+        try {
+            double[] sc = new double[io.github.mojolowjo.entropybot.aa.core.TaskKind.values().length];
+            sc[io.github.mojolowjo.entropybot.aa.core.TaskKind.STOCK_WOOD.ordinal()] = 60;
+            sc[io.github.mojolowjo.entropybot.aa.core.TaskKind.WAIT.ordinal()] = AaScorer.waitScore();
+            io.github.mojolowjo.entropybot.aa.core.Scorer scorer = in -> sc.clone();
+            List<Map.Entry<io.github.mojolowjo.entropybot.aa.core.TaskKind, io.github.mojolowjo.entropybot.aa.core.Node>> idle = List.of(
+                    Map.entry(io.github.mojolowjo.entropybot.aa.core.TaskKind.STOCK_WOOD, io.github.mojolowjo.entropybot.aa.core.RunJob.of("idle.wood",
+                            io.github.mojolowjo.entropybot.aa.core.TaskKind.STOCK_WOOD, List.of(new Step.Obtain("oak_log", 4)), "idle")),
+                    Map.entry(io.github.mojolowjo.entropybot.aa.core.TaskKind.WAIT, io.github.mojolowjo.entropybot.aa.core.RunJob.of("idle.wait",
+                            io.github.mojolowjo.entropybot.aa.core.TaskKind.WAIT, List.of(new Step.Wait(10)), "idle")));
+            var heldTorches = new io.github.mojolowjo.entropybot.aa.core.Node("needs.torches.held", "the torches need, its chain held") {
+                @Override protected io.github.mojolowjo.entropybot.aa.core.Status run(io.github.mojolowjo.entropybot.aa.core.Blackboard b) {
+                    return fail("TORCHES: no way can run (chain: held: cut 3 logs: none in range (9 min))");
+                }
+            };
+            var torches = new io.github.mojolowjo.entropybot.aa.brain.Desire("needs.torches", io.github.mojolowjo.entropybot.aa.brain.Desire.Kind.UPKEEP, heldTorches, b -> 40).cost(0);
+            var explore = new io.github.mojolowjo.entropybot.aa.brain.Desire("want.explore", io.github.mojolowjo.entropybot.aa.brain.Desire.Kind.WANT,
+                    io.github.mojolowjo.entropybot.aa.core.RunJob.of("want.explore.job", io.github.mojolowjo.entropybot.aa.core.TaskKind.WAIT, List.of(new Step.Explore(1, "anything")), "want"), b -> 20).cost(0);
+            var br = new io.github.mojolowjo.entropybot.aa.brain.Brain("brain", "t", torches, explore, AaDesires.idleSet(idle, scorer));
+            for (int i = 0; i < 12; i++) {           // a minute of picks, 5 s apart
+                br.tick(bb);
+                clock.advance(5000);
+            }
+            assertEquals(1, port.started.size(), "one start in a minute: " + port.started);
+            assertEquals(List.of(new Step.Wait(10)), port.started.get(0).steps(), "the brain is idle: a plain wait");
+            assertTrue(br.scoreAll(bb).stream().filter(s -> s.d().id.equals("want.explore")).allMatch(s -> s.skip() != null && s.skip().startsWith("not wanted")),
+                    "a 0 is not wanted: " + br.scoreAll(bb));
+        } finally {
+            io.github.mojolowjo.entropybot.aa.brain.Only.set("off");
+        }
+    }
+
+    /**
+     * S19 (chop D): cut 3 logs, tree A 10 m and tree B 40 m (8 logs each). The cut at A fails "none in range": that source is
+     * held by its key (cut at 10 64 0), the chain is priced again at once and runs B; the chain row and B are not held.
+     * <pre>
+     * first:  walk 10 m 3.01 + 3 x 3.0 = 12.01 s (A)
+     * again:  walk 40 m 12.04 (40 x 1.3 / 4.317) + 3 x 3.0 = 21.04 s (B, A out)
+     * </pre>
+     */
+    @Test
+    void s19_aCutThatFailsNoneInRangeRepricesToTheNextTreeAtOnceAndHoldsOnlyThatTree() {
+        world("wooden");
+        Spot a = tree(10, 8), b = tree(40, 8);
+        World both = w(Map.of(), false, false, Map.of("oak_log", List.of(a, b)));
+        assertEquals(12.01, NeedChain.resolve("oak_log", 3, both).seconds(), TOL);
+        assertEquals(21.04, NeedChain.resolve("oak_log", 3, both.without((item, sp) -> sp.x() == 10)).seconds(), TOL, "B with A out");
+        var clock = new io.github.mojolowjo.entropybot.aa.core.Clock.Fake(10_000_000);
+        var port = new io.github.mojolowjo.entropybot.aa.core.FakePort();
+        var bb = new io.github.mojolowjo.entropybot.aa.core.Blackboard(clock, port, new io.github.mojolowjo.entropybot.aa.core.Tracer());
+        bb.fact(NeedChain.WORLD_FACT, (java.util.function.Supplier<World>) () -> both);
+        Step.Obtain goal = new Step.Obtain("oak_log", 3);
+        Need n = new Need("needs.wood", io.github.mojolowjo.entropybot.aa.core.TaskKind.STOCK_WOOD, x -> true, x -> null, x -> List.of(goal));
+        var f = new io.github.mojolowjo.entropybot.aa.brain.Failures();
+        n.bindFailures(f);
+        assertEquals(io.github.mojolowjo.entropybot.aa.core.Status.RUNNING, n.tick(bb));
+        Step first = port.started.get(0).steps().get(0);
+        assertEquals("cut 3 at 10 64 0", first.text());
+        port.fail(1, "stopped at step 1 (cut 3 at 10 64 0): cut 3 logs: none in range (got 0 of 3)", first);
+        assertEquals(io.github.mojolowjo.entropybot.aa.core.Status.RUNNING, n.tick(bb), "re-priced at once, no hold of the need");
+        assertEquals(2, port.started.size(), "the next source started in the same tick: " + port.started);
+        assertEquals("cut 3 at 40 64 0", port.started.get(1).steps().get(0).text());
+        long now = clock.now();
+        assertTrue(f.blocked("needs.wood", "cut at 10 64 0", now), f.describe(now).toString());
+        assertTrue(f.reason("needs.wood", "cut at 10 64 0").contains("none in range"));
+        assertFalse(f.blocked("needs.wood", "cut at 40 64 0", now), "B is not held");
+        assertNull(f.held("needs.wood", Ways.chainKey(goal), now), "the chain row is not held for one tree");
+        assertEquals(1, f.heldCount(now), "Failures holds A only: " + f.describe(now));
     }
 
     @Test

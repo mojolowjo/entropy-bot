@@ -26,7 +26,7 @@ class GoalsTest {
             bb.fact(NeedChain.WORLD_FACT, (java.util.function.Supplier<NeedChain.World>) () -> new NeedChain.World(Map.of("minecraft:wooden_pickaxe", 1), false,
                     w -> w.equals("minecraft:coal") ? ore : null));
             Goals.Goal g = Goals.add(bb, AaFix3Test.COAL, 16, 0, clock.now());
-            assertEquals("goto 4 60 -2 near 2 > collect coal 16", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g)));
+            assertEquals("collect coal 16", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g)), "chop B2: no walk before a block source");
             assertTrue(Goals.chain(bb, g).why().startsWith("coal <- dig coal seen 8 m"), Goals.chain(bb, g).why());
             assertTrue(Goals.line(bb, g, "70").contains(" - chain: coal <- dig coal"), Goals.line(bb, g, "70"));
         } finally { TestData.clear(); }

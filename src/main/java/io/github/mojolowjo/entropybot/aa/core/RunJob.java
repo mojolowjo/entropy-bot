@@ -47,6 +47,7 @@ public final class RunJob extends Node {
             }
             taskId = id;
             running = t;
+            failedStep = null;
             source = t.source();
             startedAt = lastProgressAt = now;
             lastProgress = bb.port.progress(id);
@@ -67,6 +68,7 @@ public final class RunJob extends Node {
                 bb.port.log("failed " + running.kind() + ": " + st.text());
                 bb.tracer.outcome(now, "failed: " + st.text());
                 bb.tracer.counts.fails++;
+                failedStep = st.step();
                 return end(bb, Status.FAILURE, st.text());
             }
             case GONE -> {
@@ -155,6 +157,11 @@ public final class RunJob extends Node {
         if (board == null) throw new IllegalStateException("RunJob " + id + " halted before its first tick");
         return board;
     }
+
+    /** chop D: the typed step the last FAILED task stopped at (null: none known, or it did not fail at a step). */
+    private io.github.mojolowjo.entropybot.aa.moves.Step failedStep;
+
+    public io.github.mojolowjo.entropybot.aa.moves.Step failedStep() { return failedStep; }
 
     public boolean running() { return taskId >= 0; }
 

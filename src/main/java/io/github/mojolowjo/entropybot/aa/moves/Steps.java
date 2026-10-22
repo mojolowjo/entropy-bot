@@ -59,6 +59,7 @@ public final class Steps {
         if (phase == Phase.RUNNING) cancel("replaced by " + key);
         this.key = key;
         this.steps = List.copyOf(steps);
+        failedStep = null;
         this.now = tick;
         idx = -1;
         lastStatus = null;
@@ -193,6 +194,7 @@ public final class Steps {
 
     private void fail(String reason) {
         phase = Phase.FAILED;
+        failedStep = idx >= 0 && idx < steps.size() ? steps.get(idx) : null;
         why = "stopped at step " + (idx + 1) + " (" + steps.get(Math.max(0, Math.min(idx, steps.size() - 1))).text() + "): " + reason.replaceFirst("^error: ", "");
     }
 
@@ -235,6 +237,11 @@ public final class Steps {
 
     /** The option's memory key when the run FAILED (Failures charges it), else null. */
     public String failedKey() { return phase == Phase.FAILED ? key : null; }
+
+    private Step failedStep;
+
+    /** chop D: the step the run FAILED at by its hands (a cancel is none), else null. */
+    public Step failedStep() { return phase == Phase.FAILED ? failedStep : null; }
 
     public String key() { return key; }
 

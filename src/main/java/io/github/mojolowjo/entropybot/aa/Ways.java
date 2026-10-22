@@ -53,6 +53,8 @@ public final class Ways {
         if (held != null) return new Plan(o, null, "held: " + held);
         NeedChain.World w = Goals.world(bb);
         if (w == null) return new Plan(o, null, "no facts for the chain yet (the senses are not ready)");
+        // chop D: a block source whose step failed is held by its own key (Failures); the chain is priced without it
+        if (f != null) w = w.without((item, sp) -> f.blocked(need, NeedChain.sourceKey(item, sp), now));
         NeedChain.Chain c = NeedChain.of(o, w);
         if (!c.ok()) return new Plan(o, c, c.why());
         if (c.steps().isEmpty()) return new Plan(o, c, o.what() + " is in the bag");

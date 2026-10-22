@@ -339,6 +339,17 @@ public final class Need extends Node {
             return Status.SUCCESS;
         }
         if (why != null && Options.ownerOrDanger(why)) return fail(why);
+        // chop D: a block source's step failed (a cut, a collect): that source is held by its own key (step kind + its
+        // position or block) and the chain is priced again at once without it, so the next source runs; the need's chain
+        // row is not held for one source. With no source left the re-price itself says so (an explore or no way).
+        String src = pre ? null : NeedChain.sourceKey(job.failedStep());
+        if (src != null) {
+            failures.failed(id, src, why == null ? "ended failed without an end text" : why, now, bb.in);
+            bb.port.log(kind + ": " + src + " failed (\"" + why + "\"), that source held; the chain is priced again without it");
+            bb.pendingReason("needs: " + kind + " re-priced after \"" + why + "\"");
+            switched = true;
+            return Status.RUNNING;
+        }
         if (pre || picker == null) {
             if (ranKey != null) {
                 mem.failed(ranKey, why == null ? "ended failed without an end text while running " + resolved : why, now, bb.in);

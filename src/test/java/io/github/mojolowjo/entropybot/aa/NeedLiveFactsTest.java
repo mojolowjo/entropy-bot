@@ -135,6 +135,6 @@ class NeedLiveFactsTest {
             if (st instanceof Step.Walk w && w.x() == 10) walk = true;
             if (st instanceof Step.Collect k && k.item().equals("raw_iron")) collect = true;
         }
-        assertTrue(walk && collect, c.steps().toString());
+        assertTrue(!walk && collect, "chop B2: no walk step before a block source, the collect paths itself: " + c.steps());
     }
 }

@@ -59,6 +59,9 @@ public final class FakePort implements JobPort {
 
     public void fail(long id, String text) { states.put(id, JobState.failed(text)); }
 
+    /** chop D: a run that failed at a typed step (the step's source is charged). */
+    public void fail(long id, String text, io.github.mojolowjo.entropybot.aa.moves.Step step) { states.put(id, JobState.failed(text, step)); }
+
     public void gone(long id, String who) { states.put(id, JobState.gone(who)); }
 
     public void step(long id) { progress.merge(id, 1L, Long::sum); }

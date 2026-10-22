@@ -104,7 +104,7 @@ public final class AaRuntime implements JobPort {
         NeedFacts.install(bb, this);          // round 4A N wiring: the station, bed, base and bag facts (O's sets)
         bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.STATS_FACT, tree.brain.stats);
         // AA_ROUND3 2: the sequencer's horizon (aa horizon, saved) and the nearest known coal (torches' site, cached 10 s)
-        io.github.mojolowjo.entropybot.sense.Seen.fair(!d.has("fair") || d.get("fair").getAsBoolean());     // AA_ROUND3 3: default on
+        applyFair(!d.has("fair") || d.get("fair").getAsBoolean());     // AA_ROUND3 3: default on
         if (d.has("horizon")) bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.HORIZON_FACT, d.get("horizon").getAsInt());
         bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.THREAT_FACT, (java.util.function.Supplier<io.github.mojolowjo.entropybot.threat.ThreatFacts>) this::threatFacts);     // AA_CLEANUP 4
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.SURFACE_Y_FACT, (java.util.function.IntBinaryOperator) AaRuntime::surfaceY);        // AA_ROUND4 B1
@@ -497,6 +497,23 @@ public final class AaRuntime implements JobPort {
         caveTickAt = now;
     }
 
+    /**
+     * chop B4: the owner's fair switch. Baritone's own legitMine (+ legitMineIncludeDiagonals) is the miner's half: its
+     * mine and chop processes target only blocks in view (and their diagonal neighbours). The mod keeps only what legitMine
+     * does not cover: the planner's half (sense.Seen: which indexed ore cells count as a known source before the bot goes
+     * there). Nothing in the mod filtered Baritone's targets, so no mod rule was a copy of legitMine.
+     */
+    static void applyFair(boolean on) {
+        io.github.mojolowjo.entropybot.sense.Seen.fair(on);
+        try {
+            var s = baritone.api.BaritoneAPI.getSettings();
+            s.legitMine.value = on;
+            s.legitMineIncludeDiagonals.value = on;
+        } catch (RuntimeException | LinkageError e) {
+            LOG.warn("[entropybot] aa: fair {}: Baritone's legitMine not set: {}", on ? "on" : "off", e.toString());
+        }
+    }
+
     /** aa fair on|off (saved): seen ore only (default) or today's behaviour (the whole chunk index). */
     String fair(String arg) {
         String a = arg == null ? "" : arg.trim().toLowerCase(java.util.Locale.ROOT);
@@ -505,7 +522,7 @@ public final class AaRuntime implements JobPort {
                 + (sn == null ? "" : "; " + sn.caveText()) + "; " + io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightingsText();
         if (a.isEmpty()) return state;
         if (!a.equals("on") && !a.equals("off")) return "usage: aa fair on|off (" + state + ")";
-        io.github.mojolowjo.entropybot.sense.Seen.fair(a.equals("on"));
+        applyFair(a.equals("on"));
         data().addProperty("fair", a.equals("on"));
         knownDue = true;                  // review: the goals' known counts and discovery refresh at once
         c.saved();
@@ -1657,8 +1674,12 @@ public final class AaRuntime implements JobPort {
             return;
         }
         lastEnd = msg;
+        lastEndStep = done ? null : st.failedStep();            // chop D: the source a failed step charges
         pendingReturnSteps = null;
     }
+
+    /** chop D: the typed step the ended run failed at (read with its end in {@link #poll}). */
+    private io.github.mojolowjo.entropybot.aa.moves.Step lastEndStep;
 
     /** The ore step is done and a pillar way back is stored: check the shaft and the blocks again, pillar or walk. */
     private void startReturn(LocalPlayer p, Minecraft mc) {
@@ -1790,7 +1811,9 @@ public final class AaRuntime implements JobPort {
                 e = "failed: nothing gained - " + e.substring(4).replaceFirst("^\\s*-\\s*", "");
                 return JobState.failed(e);
             }
-            return e.startsWith("done") ? JobState.done(e) : JobState.failed(e);
+            var failedAt = lastEndStep;
+            lastEndStep = null;
+            return e.startsWith("done") ? JobState.done(e) : JobState.failed(e, failedAt);
         }
         if (escapePending || escapeWay != null) return JobState.RUNNING;      // 0.36.a6: getting out, then the task goes on
         if (typedRun) return JobState.RUNNING;                                  // its end comes through typedEnded above

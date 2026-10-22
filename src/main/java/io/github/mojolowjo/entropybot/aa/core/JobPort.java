@@ -49,12 +49,17 @@ public interface JobPort {
     enum State { RUNNING, DONE, FAILED, GONE }
 
     /** The task's state; {@code text} = the end text (DONE/FAILED) or who removed it (GONE). */
-    record JobState(State state, String text) {
+    record JobState(State state, String text, io.github.mojolowjo.entropybot.aa.moves.Step step) {
         public static final JobState RUNNING = new JobState(State.RUNNING, null);
+
+        /** {@code step}: the typed step a FAILED run stopped at (null: none known). */
+        public JobState(State state, String text) { this(state, text, null); }
 
         public static JobState done(String text) { return new JobState(State.DONE, text); }
 
         public static JobState failed(String text) { return new JobState(State.FAILED, text); }
+
+        public static JobState failed(String text, io.github.mojolowjo.entropybot.aa.moves.Step step) { return new JobState(State.FAILED, text, step); }
 
         public static JobState gone(String who) { return new JobState(State.GONE, who); }
     }

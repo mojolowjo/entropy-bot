@@ -33,6 +33,7 @@ public final class Only {
     public static double factor(String id, Desire.Kind kind) {
         if (need == null) return 1;
         if (is(id) || id.equals(AaDesires.DANGER_ID) || kind == Desire.Kind.OWNER || kind == Desire.Kind.GATE) return 1;
+        if (id.equals(AaDesires.IDLE_ID) || id.equals(AaDesires.WAIT_ID)) return 1;      // chop C: idle stays a plain wait (the idle desire scores its best option)
         return Tuning.get("only.otherWeight");
     }
 

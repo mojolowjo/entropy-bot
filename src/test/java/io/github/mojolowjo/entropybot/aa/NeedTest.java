@@ -45,7 +45,7 @@ class NeedTest {
         Need n = new Need("needs.table", TaskKind.TABLE_FURNACE, b -> true, b -> null, b -> List.of(new Step.Obtain("crafting_table", 1)));
         assertEquals(Status.RUNNING, n.tick(bb));
         String ran = port.started.get(0).chain();
-        assertTrue(ran.startsWith("goto 10 64 0") && ran.contains("cut 1") && ran.endsWith("craft crafting_table 1"), ran);
+        assertTrue(ran.startsWith("cut 1 at 10 64 0") && ran.endsWith("craft crafting_table 1"), "chop B2: no walk before the cut: " + ran);
         assertTrue(n.options().startsWith("chain"), n.options());
         assertTrue(n.options().contains("crafting_table <- craft: 4 oak_planks"), n.options());
         port.done(1, "done");

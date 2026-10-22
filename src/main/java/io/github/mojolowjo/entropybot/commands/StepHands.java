@@ -27,8 +27,9 @@ import java.util.Map;
 
 /**
  * rm-execution: {@link Steps.Hands} in the game. Baritone underneath: a walk is the travel job's one Baritone goal
- * (GoalNear when the step asks for it); a tree or a block to collect is Baritone's own MineProcess on the blocks the
- * game data names (logs: the block tag; a collected item: the blocks whose loot gives it), counted in the bag; a hunt
+ * (GoalNear when the step asks for it); a tree (blocks the game tags as logs) is the fork's ChopProcess (the whole tree,
+ * its own end reason), any other block to collect Baritone's MineProcess, on the blocks the game data names (logs: the
+ * block tag; a collected item: the blocks whose loot gives it), with the count and placing on, counted in the bag; a hunt
  * walks with GoalNear to the animal and hands it to the strike input (the reflexes' fight loop); a build is the builder
  * leg ({@code JobHands.build}); the item actions (craft, smelt, cook, scan) and the mine verb's per-ore and discovery
  * steps start their own job with one command and are followed through its request. Nothing here picks a stand spot, a
@@ -47,7 +48,7 @@ public final class StepHands implements Steps.Hands {
     private Jobs.Job walkJob;
     private int startCount, want;
     private List<String> countIds = List.of();
-    private boolean mining;
+    private boolean mining, chopping;
     private String miningWhat;
     // the hunt
     private int huntTarget = -1, huntTicks;
@@ -114,7 +115,8 @@ public final class StepHands implements Steps.Hands {
         try {
             if (mining) {
                 IBaritone b = Jobs.baritone();
-                if (b != null) b.getMineProcess().cancel();
+                if (b != null && chopping) b.getChopProcess().cancel();
+                else if (b != null) b.getMineProcess().cancel();
                 Jobs.safeSettings();
             }
             if (fishing != null) fishing.end();
@@ -147,6 +149,7 @@ public final class StepHands implements Steps.Hands {
         instant = null;
         walkJob = null;
         mining = false;
+        chopping = false;
         miningWhat = null;
         countIds = List.of();
         huntTarget = -1;
@@ -344,27 +347,59 @@ public final class StepHands implements Steps.Hands {
         return mine(p, blocks, List.of(id), k.n(), "collect " + k.n() + " " + k.item());
     }
 
+    /** chop B1: blocks the game tags as logs go to the fork's chop process (the whole tree); others to the mine process. */
+    static boolean allLogs(List<Block> blocks) {
+        for (Block b : blocks) if (!b.defaultBlockState().is(BlockTags.LOGS)) return false;
+        return !blocks.isEmpty();
+    }
+
     private String mine(LocalPlayer p, List<Block> blocks, List<String> ids, int n, String what) {
         IBaritone b = Jobs.baritone();
         if (b == null) return "error: baritone not loaded";
         countIds = ids;
         startCount = count(p);
         want = Math.max(1, n);
+        chopping = allLogs(blocks);
+        BlockOptionalMetaLookup filter = new BlockOptionalMetaLookup(blocks.toArray(new Block[0]));
+        // the count goes to Baritone (not 0): it counts the bag's items its filter matches (the blocks' drops), so its
+        // target is what is there now + want
+        int target = itemsOf(p, filter) + want;
         try {
             Jobs.safeSettings();
             var s = baritone.api.BaritoneAPI.getSettings();
             s.allowBreak.value = true;
+            s.allowPlace.value = true;                 // chop B1: placing is part of the job (the climb to a trunk top); safeSettings restores it
             s.allowBreakAnyway.value = new ArrayList<>(blocks);
             io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE, "steps");
         } catch (RuntimeException | LinkageError e) {
             return "error: Baritone's mine settings: " + e;
         }
-        // quantity 0: Baritone mines on; the step counts what came into the bag itself (a drop's item, not the block's)
-        b.getMineProcess().mine(0, new BlockOptionalMetaLookup(blocks.toArray(new Block[0])));
         mining = true;
         miningWhat = what;
-        LOG.info("[entropybot] steps: {} - Baritone's mine process on {} block kind(s)", what, blocks.size());
+        if (chopping) {
+            b.getChopProcess().chop(target, filter);
+            if (!b.getChopProcess().isActive()) {          // it ended at its start (none in range, breaking off): its own reason
+                mining = false;
+                Jobs.safeSettings();
+                return "error: " + what + ": " + endOf(b.getChopProcess().lastEnd());
+            }
+        } else {
+            b.getMineProcess().mine(target, filter);
+        }
+        LOG.info("[entropybot] steps: {} - Baritone's {} process on {} block kind(s), until {} in the bag", what, chopping ? "chop" : "mine", blocks.size(), target);
         return null;
+    }
+
+    /** The bag's items the filter matches now (what Baritone's quantity counts: its main inventory, as MineProcess reads it). */
+    private static int itemsOf(LocalPlayer p, BlockOptionalMetaLookup filter) {
+        int n = 0;
+        for (net.minecraft.world.item.ItemStack st : p.getInventory().items) if (!st.isEmpty() && filter.has(st)) n += st.getCount();
+        return n;
+    }
+
+    /** The chop's end reason as the step's failure text (an empty one is said so, never guessed). */
+    static String endOf(String lastEnd) {
+        return lastEnd == null || lastEnd.isEmpty() ? "the chop process ended without a reason" : lastEnd;
     }
 
     private int count(LocalPlayer p) {
@@ -377,6 +412,16 @@ public final class StepHands implements Steps.Hands {
     private Car.Status mineStatus(LocalPlayer p) {
         int got = count(p) - startCount;
         IBaritone b = Jobs.baritone();
+        if (chopping) {
+            // chop: the whole tree is the job; the process ends itself (the count is checked between trees) with its reason
+            if (b == null) return Car.Status.failed("baritone not loaded");
+            if (b.getChopProcess().isActive() || Core.INSTANCE.reflexes.hold()) return Car.Status.running(miningWhat + ": " + got + " of " + want);
+            Jobs.safeSettings();
+            mining = false;
+            String end = endOf(b.getChopProcess().lastEnd());
+            if (got >= want) return Car.Status.done("ok: " + miningWhat + ": got " + got + " (" + end + ")");
+            return Car.Status.failed(miningWhat + ": " + end + " (got " + got + " of " + want + ")");
+        }
         if (got >= want) {
             if (b != null) b.getMineProcess().cancel();
             Jobs.safeSettings();
@@ -387,7 +432,7 @@ public final class StepHands implements Steps.Hands {
         if (!b.getMineProcess().isActive() && !Core.INSTANCE.reflexes.hold()) {
             Jobs.safeSettings();
             mining = false;
-            return Car.Status.failed(miningWhat + ": Baritone's mine process ended with " + got + " of " + want + " (no more it could reach)");
+            return Car.Status.failed(miningWhat + ": Baritone's mine process ended with " + got + " of " + want + " (the mine process gives no reason)");
         }
         return Car.Status.running(miningWhat + ": " + got + " of " + want);
     }

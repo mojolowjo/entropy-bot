@@ -48,7 +48,7 @@ class NeedChainTest {
                 stone = at(s, Step.Collect.class, "cobblestone"), last = at(s, Step.Craft.class, "stone_pickaxe");
         assertTrue(chop >= 0 && table > chop && wooden > table && stone > wooden && last > stone, s.toString());
         assertEquals(s.size() - 1, last, "the stone pickaxe is the last step");
-        assertEquals(new Step.Walk(30, 64, 0, 0).x(), ((Step.Walk) s.get(chop - 1)).x(), "one Baritone goal at the seen tree before the cut");
+        assertTrue(s.stream().noneMatch(x -> x instanceof Step.Walk), "chop B2: no walk step before the cut, the chop paths itself: " + s);
         assertTrue(c.why().startsWith("stone_pickaxe <- craft: 3 cobblestone <- dig cobblestone seen 12 m"), c.why());
         assertTrue(c.why().contains("planks <- ") && c.why().contains("tree seen 30 m"), c.why());
         assertTrue(c.cost() > 0);

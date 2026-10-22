@@ -92,6 +92,12 @@ public final class NeedChain {
         public World withMobs(Function<String, List<Mob>> m, LootBook l) { return new World(bag, tableNear, furnaceNear, seenAll, m, l, band, horizonBlocks); }
 
         public World withBand(Function<String, int[]> b) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, b, horizonBlocks); }
+
+        /** chop: the same world less the sources {@code held} names (item id, spot): a failed source is out of the re-price. */
+        public World without(java.util.function.BiPredicate<String, Spot> held) {
+            Function<String, List<Spot>> sa = seenAll;
+            return new World(bag, tableNear, furnaceNear, w -> sa.apply(w).stream().filter(sp -> !held.test(id(w), sp)).toList(), mobs, loot, band, horizonBlocks);
+        }
     }
 
     /**
@@ -630,6 +636,21 @@ public final class NeedChain {
         return alts;
     }
 
+    /**
+     * chop: the Failures key of a block source, the same for the step that ran it and the spot it came from: a tree is its
+     * position ("cut at x y z"), a collect its item ("collect coal": the collect hand mines every block that gives the item).
+     * Null: not a block source.
+     */
+    public static String sourceKey(Step s) {
+        if (s instanceof Step.ChopTree t && t.at() != null) return "cut at " + t.at()[0] + " " + t.at()[1] + " " + t.at()[2];
+        if (s instanceof Step.Collect k) return "collect " + k.item();
+        return null;
+    }
+
+    /** The key of a spot of {@code item} (see {@link #sourceKey(Step)}). */
+    public static String sourceKey(String item, Spot sp) {
+        return tree(item, sp) ? "cut at " + sp.x() + " " + sp.y() + " " + sp.z() : "collect " + sh(item);
+    }
     /** A block the game tags as logs is a tree (Baritone's tree mining). */
     private static boolean tree(String item, Spot sp) {
         String b = sp.block() != null ? sp.block() : item;
@@ -643,7 +664,7 @@ public final class NeedChain {
         return 1;
     }
 
-    /** Walk to the first spot (and on to the next while it has too few blocks) and break: after the pickaxe tier the block asks for. */
+    /** Break at the first spot (and on at the next while it has too few blocks), the walk priced in but no walk step (chop B2): after the pickaxe tier the block asks for. */
     private static String sourceFrom(Ctx c, String item, int lack, List<Spot> order) {
         Spot first = order.get(0);
         boolean log = tree(item, first);
@@ -670,8 +691,8 @@ public final class NeedChain {
                 c.steps.set(at, prev instanceof Step.ChopTree t ? new Step.ChopTree(t.at(), t.logs() + got, t.log())
                         : new Step.Collect(((Step.Collect) prev).item(), ((Step.Collect) prev).n() + got));
             } else {
-                c.leafAt.put(sp.key(), c.steps.size() + 1);
-                c.steps.add(new Step.Walk(sp.x(), sp.y(), sp.z(), (int) Tuning.get("steps.walkNear")));
+                // chop: no walk step before a block source (the cut/collect paths itself; the spot names the blocks and the price)
+                c.leafAt.put(sp.key(), c.steps.size());
                 c.steps.add(log ? new Step.ChopTree(new int[]{sp.x(), sp.y(), sp.z()}, got, null) : new Step.Collect(sh(item), got));
                 c.seconds += walkS(sp.dist());
                 c.away = sp.dist();
