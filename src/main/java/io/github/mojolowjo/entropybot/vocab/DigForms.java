@@ -3,7 +3,7 @@ package io.github.mojolowjo.entropybot.vocab;
 import java.util.List;
 
 /**
- * V1b (VOCABULARY 3): {@code dig <area> [-N|+N] [ores] [junk drop] [water [large]]}. An area with its own heights digs its
+ * V1b (VOCABULARY 3): {@code dig <area> [-N|+N] [ores]}. An area with its own heights digs its
  * box; an all-heights area needs -N (N below the surface) or +N (N above it), so no dig goes to bedrock by accident
  * (owner's answer 3). Checked before the confirm question is asked. Pure.
  */
@@ -11,7 +11,7 @@ public final class DigForms {
     private DigForms() {}
 
     /** 0.30.0: "via engine" (the old engine) and "via baritone" (the default now) too. */
-    public static final List<String> AREA_WORDS = List.of("ores", "junk", "drop", "water", "large", "via", "baritone", "engine");
+    public static final List<String> AREA_WORDS = List.of("ores", "via", "baritone", "engine");
 
     /** The signed N of "dig &lt;area&gt; ... -N|+N" ("-3" or "+2"), or null. words: the line after "dig". */
     public static String signed(List<String> words) {
@@ -30,7 +30,7 @@ public final class DigForms {
         for (int i = 1; i < words.size(); i++) {
             String w = words.get(i);
             if (!AREA_WORDS.contains(w) && !w.matches("^[+-]\\d{1,4}$") && !w.equals("confirm"))
-                return "usage: dig <area> [-N|+N] [ores] [junk drop] [water [large]] [via engine] (stone is not an area: dig stone [n] is the quarry)";
+                return "usage: dig <area> [-N|+N] [ores] [via engine] (stone is not an area: dig stone [n] is the quarry)";
         }
         if (allY && signed(words) == null)
             return "error: " + name + " covers all heights: add -N for N below the surface (dig " + name + " -3) or +N above it";

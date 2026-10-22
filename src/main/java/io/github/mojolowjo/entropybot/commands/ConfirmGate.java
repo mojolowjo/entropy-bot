@@ -158,15 +158,6 @@ public final class ConfirmGate {
         return p != null && now <= p.until;
     }
 
-    /**
-     * Water plan: a job that stopped asks its requester first ("a large body of water: confirm and I seal it"). The
-     * question waits like any other: "confirm" from {@code from} within 30 s runs {@code runLine}, anything else cancels.
-     * Returns the question to whisper.
-     */
-    public synchronized String offer(String from, String runLine, String summary, long now) {
-        return ask(from == null ? "" : from.toLowerCase(Locale.ROOT), runLine, summary, now).reply();
-    }
-
     private Gate ask(String key, String runLine, String summary, long now) {
         pending.put(key, new Pending(runLine, Texts.verbAndRest(runLine)[2].replaceFirst("(?i)\\s+confirm$", ""), now + windowMs()));
         return Gate.say("confirm? " + summary + " - say \"confirm\" within " + windowMs() / 1000 + " s (anything else cancels)");
@@ -187,13 +178,18 @@ public final class ConfirmGate {
         }
     }
 
+    /** A plain whole number, or null. */
+    private static Integer num(String s) {
+        return s.matches("^[+-]?\\d{1,9}$") ? Integer.valueOf(s) : null;
+    }
+
     /** The box's block count of "dig x1 y1 z1 x2 y2 z2 [words]", or -1 when it isn't one. */
     static long digVolume(List<String> w) {
         if (w.size() < 5) return -1;
         // V1b: "dig x1 z1 x2 z2 -N|+N": at most columns x N blocks (the verb counts the real ones)
         if (io.github.mojolowjo.entropybot.clear.DigArgs.signedForm(w.toArray(new String[0])) != null) {
-            Integer a = io.github.mojolowjo.entropybot.clear.RelCoord.parse(w.get(0), 0), b = io.github.mojolowjo.entropybot.clear.RelCoord.parse(w.get(1), 0),
-                    c = io.github.mojolowjo.entropybot.clear.RelCoord.parse(w.get(2), 0), d = io.github.mojolowjo.entropybot.clear.RelCoord.parse(w.get(3), 0);
+            Integer a = num(w.get(0)), b = num(w.get(1)),
+                    c = num(w.get(2)), d = num(w.get(3));
             if (a == null || b == null || c == null || d == null) return -1;
             int depth;
             try {
@@ -206,8 +202,7 @@ public final class ConfirmGate {
         if (w.size() < 6) return -1;
         long[] n = new long[6];
         for (int i = 0; i < 6; i++) {
-            // ~ forms count from 0: right when both ends of an axis are ~ (or both plain)
-            Integer v = io.github.mojolowjo.entropybot.clear.RelCoord.parse(w.get(i), 0);
+            Integer v = num(w.get(i));
             if (v == null) return -1;
             n[i] = v;
         }

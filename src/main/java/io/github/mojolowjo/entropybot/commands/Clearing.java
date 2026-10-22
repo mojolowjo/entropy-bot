@@ -185,8 +185,6 @@ public final class Clearing {
         String note;
         /** table pickups a failed trip took out of the Seq (B7d review 3): the job's end names a table still there */
         final List<Seq.Step> tablesLeft = new ArrayList<>();
-        /** B7e F: where the bot stood (x, z) when the clear began: "junk drop" throws toward it (the dug side) */
-        double[] start;
     }
 
     /** A placeblock step's state. */
@@ -202,8 +200,6 @@ public final class Clearing {
         LeaseSet leases;
         /** the table pickup to arm once the table really went down (18a) */
         Seq.Step pickup;
-        /** water plan: a block sealing water off at the edge of this dig box (a seal lease, LeaseSet.sealLease) */
-        ClearBox seal;
     }
 
     /** A Baritone build step's state (build floor|walls|fill|shell). */
@@ -364,8 +360,6 @@ public final class Clearing {
                 endBuild(bs);
             } else if (st.state instanceof BuilderDig.State ds) {
                 BuilderDig.ended(ds);                   // 0.29.0: the builder off, its settings back, its leases
-            } else if (st.state instanceof FloorSteps.FloorState fs) {
-                FloorSteps.ended(fs);                   // B7e F: the fill's place leases
             }
             if (st.state instanceof ClearState s) tables.addAll(s.tablesLeft);
             if (armedPickup(st)) tables.add(st);
@@ -425,10 +419,6 @@ public final class Clearing {
         if (KIND_BUILD.equals(st.kind)) return buildRun(seq, st, p, elapsed);
         if (SchematicBuild.KIND.equals(st.kind))                                                       // B7 (2.12)
             return st.state instanceof BuildState sb ? SchematicBuild.run(seq, sb, p) : "the schematic build was not set up";
-        if (FloorSteps.KIND_FLOOR.equals(st.kind)) return FloorSteps.floorRun(seq, st, p);       // B7e F
-        if (FloorSteps.KIND_JUNK.equals(st.kind)) return FloorSteps.junkRun(seq, st, p);
-        if (WaterSteps.KIND_WATER.equals(st.kind)) return WaterSteps.waterRun(seq, st, p);          // water plan
-        if (WaterSteps.KIND_DRAIN.equals(st.kind)) return WaterSteps.drainRun(seq, st, p);
         if (BuilderDig.KIND.equals(st.kind)) return BuilderDig.run(seq, st, p);                  // 0.29.0: dig ... via baritone
         return clearRun(seq, st, p);
     }
@@ -453,7 +443,6 @@ public final class Clearing {
         }
         ClearState s = st.state instanceof ClearState cs ? cs : new ClearState();
         s.world.set(p);
-        if (s.start == null) s.start = new double[]{p.getX(), p.getZ()};
         s.ores = new KnowledgeOres();
         s.job = ClearJob.start(opts, zone, s.ores);
         s.job.standOk = standCheck(c);
@@ -550,14 +539,6 @@ public final class Clearing {
         s.leases.releaseAll();
         addTally(s.job.oreTally);
         int left = s.job.lastScanLeft != null ? s.job.lastScanLeft : 0;
-        // water plan: "dig ... water" stopped by water: a water round comes next (it ends the job itself when it can't)
-        if (WaterSteps.wants(st, msg)) {
-            st.cleared = new Outcome(false, s.job.broken, left, new LinkedHashMap<>(s.job.oreTally), new ArrayList<>(s.ores.noted), msg);
-            LOG.info("[entropybot] clear: {} - looking at the water", msg);
-            seq.splice(seq.idx + 1, List.of(WaterSteps.step(st, s.job)));
-            return "next";
-        }
-        msg = WaterSteps.endText(st, s.job, msg);
         boolean ok = msg.startsWith("ok");
         st.cleared = new Outcome(ok, s.job.broken, left, new LinkedHashMap<>(s.job.oreTally), new ArrayList<>(s.ores.noted), msg);
         LOG.info("[entropybot] clear: {}", msg);
@@ -906,13 +887,6 @@ public final class Clearing {
 
     /** The bag is full: the base chests (or the clear's dump chests), valuables kept when collecting. */
     private static String depositTrip(Seq seq, Seq.Step st, ClearState s, McBody body, LocalPlayer p, ClearRun.Out out) {
-        if (s.job.junkDrop) {
-            // B7e F: far from the base: throw the plain junk away here and dig on (no /home trip)
-            splice(seq, s, List.of(FloorSteps.junkStep(s.job, s.start)), "deposit");
-            s.run.tripStarted(ClearRun.Kind.DEPOSIT);
-            LOG.info("[entropybot] clear: inventory full, throwing junk blocks away");
-            return "wait";
-        }
         List<Seq.Step> steps = depositSteps(seq.storage, p, s.job);
         if (steps == null) {
             s.run.depositNotStarted();
@@ -1210,7 +1184,7 @@ public final class Clearing {
         if (ps.stage.equals("place")) {
             // 4b: only a click into a cell that was free just before it makes the block ours
             boolean freeBefore = Minecraft.getInstance().level.getBlockState(new BlockPos(pos[0], pos[1], pos[2])).canBeReplaced();
-            String r = placeAt(p, id, pos[0], pos[1], pos[2], ps.leases, ps.seal);
+            String r = placeAt(p, id, pos[0], pos[1], pos[2], ps.leases, null);
             // 28c: a later try finding the block already there (it showed up after the 6-tick wait) must not undo our first click
             ps.clicked = ps.clicked || PlaceRules.ourClick(freeBefore, r);
             if (!r.endsWith("(waiting)")) ps.mobSince = -1;          // review: the wait is per entity in the way, from its first sight
@@ -1703,8 +1677,6 @@ public final class Clearing {
                 int x = (int) Math.floor(e.getX()), y = (int) Math.floor(e.getY() + 0.01), z = (int) Math.floor(e.getZ());  // structural: epsilon: standing check
                 // near the box, not down a hole under the walkway, and (T3) never where the policy refuses with the fence on
                 if (!job.dropWanted(x, y, z)) continue;
-                // B7e F: with "junk drop", junk drops stay where they lie (but the floor's block while it has few)
-                if (job.junkDrop && !io.github.mojolowjo.entropybot.clear.JunkDrop.chase(Gui.itemId(((ItemEntity) e).getItem()), job, inv(), x, y, z, seq.now())) continue;
                 double d = e.distanceTo(p);
                 if (d > Tuning.get("clearing.dropMin") && d < Tuning.i("clearing.dropMax")) out.add(new ClearRun.Drop(String.valueOf(e.getId()), x, y, z, d));
             }

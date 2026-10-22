@@ -78,18 +78,18 @@ class V1bOneTest {
 
     @Test
     void digSignedForms() {
-        DigArgs a = DigArgs.parse("0 0 10 10 -3", null);
+        DigArgs a = DigArgs.parse("0 0 10 10 -3");
         assertTrue(a.surfaceForm());
         assertEquals("down", a.surface());
         assertEquals(3, a.depth());
-        DigArgs up = DigArgs.parse("0 0 10 10 +5 ores", null);
+        DigArgs up = DigArgs.parse("0 0 10 10 +5 ores");
         assertEquals("up", up.surface());
         assertTrue(up.ores());
-        DigArgs box = DigArgs.parse("0 60 0 10 -3 10", null);
+        DigArgs box = DigArgs.parse("0 60 0 10 -3 10");
         assertFalse(box.surfaceForm(), "-3 followed by a coordinate is a box's y2");
-        assertNull(DigArgs.parse("0 0 10 10 down 3", null), "the old words are gone");
+        assertNull(DigArgs.parse("0 0 10 10 down 3"), "the old words are gone");
         assertEquals("dig 0 0 10 10 -3 ores", DigArgs.oldSurfaceHint("0 0 10 10 down 3 ores"));
-        assertEquals("dig ~-8 ~-8 ~8 ~8 +10", DigArgs.oldSurfaceHint("~-8 ~-8 ~8 ~8 up 10"));
+        assertEquals("dig -8 -8 8 8 +10", DigArgs.oldSurfaceHint("-8 -8 8 8 up 10"));
         assertNull(DigArgs.oldSurfaceHint("0 60 0 10 64 10"));
         assertEquals("that is now dig 0 0 10 10 -3", io.github.mojolowjo.entropybot.commands.OldWords.removedAnswer("dig", "0 0 10 10 down 3", "dig 0 0 10 10 down 3"));
         // dig <area>: heights before the question

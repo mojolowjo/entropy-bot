@@ -343,13 +343,6 @@ final class TuningDefs {
         Tuning.def("fishing.scanUp", 2, "rm-final 0.39.u3 (was an inline literal in Fishing)", "blocks above the bot the water-surface scan reaches");
         // fleeHeading
         Tuning.def("fleeHeading.clear", 2.5, "rm-constants 0.39.u2 (was FleeHeading.CLEAR)", "the clear of FleeHeading");
-        // floorFill
-        Tuning.def("floorFill.stoneKeep", 64, "rm-constants 0.39.u2 (was FloorFill.STONE_KEEP)", "Stone pickaxe material (the game's stone_tool_materials tag)");
-        Tuning.def("floorFill.maxSteps", 6, "rm-constants 0.39.u2 (was FloorFill.MAX_STEPS)", "The most step blocks it puts down below the floor to climb out of a cave");
-        Tuning.def("floorFill.near", 16, "rm-constants 0.39.u2 (was FloorFill.NEAR)", "Cells within this many blocks (sideways) of the bot are looked at each pick");
-        Tuning.def("floorFill.mapR", 9, "rm-constants 0.39.u2 (was FloorFill.MAP_R)", "How far (sideways) from its focus the walking map reaches");
-        // floorSteps
-        Tuning.def("floorSteps.maxRounds", 4, "rm-constants 0.39.u2 (was FloorSteps.MAX_ROUNDS)", "the max rounds of FloorSteps");
         // foodModel
         Tuning.def("foodModel.horizonMin", 60, "rm-constants 0.39.u2 (was FoodModel.HORIZON_MIN)", "the horizon min of FoodModel");
         Tuning.def("foodModel.minStock", 8, "rm-constants 0.39.u2 (was FoodModel.MIN_STOCK)", "the min stock of FoodModel");
@@ -444,10 +437,6 @@ final class TuningDefs {
         Tuning.def("jobPort.maxMs", 60 * 60_000, "rm-constants 0.39.u2 (was JobPort.MAX_MS)", "the max ms of JobPort");
         // jobs
         Tuning.def("jobs.travelFails", 3, "rm-constants 0.39.u2 (was Jobs.TRAVEL_FAILS)", "the travel fails of Jobs");
-        // junkDrop
-        Tuning.def("junkDrop.floorKeep", 64, "rm-constants 0.39.u2 (was JunkDrop.FLOOR_KEEP)", "What a floor dig keeps of its fill block");
-        Tuning.def("junkDrop.thrownTicks", 20L * 120, "rm-constants 0.39.u2 (was JunkDrop.THROWN_TICKS)", "How long (ticks) and how near (blocks) the drops where it threw junk are left alone");
-        Tuning.def("junkDrop.thrownNear", 6, "rm-constants 0.39.u2 (was JunkDrop.THROWN_NEAR)", "the thrown near of JunkDrop");
         // kelpRules
         Tuning.def("kelpRules.defaultN", 8, "rm-constants 0.39.u2 (was KelpRules.DEFAULT_N)", "the default n of KelpRules");
         // kelping
@@ -785,17 +774,6 @@ final class TuningDefs {
         Tuning.def("watchCamera.watchFps", 60, "rm-constants 0.39.u2 (was WatchCamera.WATCH_FPS)", "the watch fps of WatchCamera");
         Tuning.def("watchCamera.moving", 0.03, "rm-constants 0.39.u2 (was WatchCamera.MOVING)", "Horizontal speed (blocks per tick) below which the bot counts as standing");
         Tuning.def("watchCamera.ease", 0.12f, "rm-constants 0.39.u2 (was WatchCamera.EASE)", "Share of the way to the walking direction covered per client tick (about 0.5 s to settle at 20 ticks/s)");
-        // waterPlan
-        Tuning.def("waterPlan.maxRounds", 40, "rm-constants 0.39.u2 (was WaterPlan.MAX_ROUNDS)", "How many water rounds one dig may take (each must get it further)");
-        Tuning.def("waterPlan.drainTicks", 600, "rm-constants 0.39.u2 (was WaterPlan.DRAIN_TICKS)", "The most ticks it waits for water to drain after plugging it (30 s)");
-        Tuning.def("waterPlan.reserve", 64, "rm-constants 0.39.u2 (was WaterPlan.RESERVE)", "What a 'junk drop' dig with 'water' keeps of its junk blocks for sealing (on top of the 64 for pickaxes)");
-        Tuning.def("waterPlan.slices", 4, "rm-constants 0.39.u2 (was WaterPlan.SLICES)", "The most slices one round seals (as many as it can place from where it may stand)");
-        Tuning.def("waterPlan.maxStuck", 3, "rm-constants 0.39.u2 (was WaterPlan.MAX_STUCK)", "Rounds in a row whose clear broke nothing after it before the dig gives up on the water");
-        // waterScan
-        Tuning.def("waterScan.largeLimit", 64, "rm-constants 0.39.u2 (was WaterScan.LARGE_LIMIT)", "More connected source blocks than this is a large body of water (the owner confirms first)");
-        Tuning.def("waterScan.maxVisit", 4096, "rm-constants 0.39.u2 (was WaterScan.MAX_VISIT)", "The most fluid cells the upstream search looks at");
-        Tuning.def("waterScan.radius", 32, "rm-constants 0.39.u2 (was WaterScan.RADIUS)", "How far (blocks, each axis) from the spot the search goes");
-        Tuning.def("waterScan.near", 12, "rm-constants 0.39.u2 (was WaterScan.NEAR)", "How far (blocks, each axis) from the spot the work's own water cells are gathered");
         // waterWays
         Tuning.def("waterWays.floatSlow", 5, "rm-constants 0.39.u2 (was WaterWays.FLOAT_SLOW)", "Blocks per second walking, swimming");
         // woodOptions
@@ -923,8 +901,6 @@ final class TuningDefs {
         Tuning.def("discovery.floorY", 58, "rm-constants 0.39.u2 (inline literal in Discovery)", "the lowest y (as -58) a discovery search digs to");
         Tuning.def("drownRisk.riskK", 4, "rm-constants 0.39.u2 (inline literal in DrownRisk)", "weight of the drown risk squared in the price");
         Tuning.def("engineProcess.errorsOff", 5, "rm-constants 0.39.u2 (inline literal in EngineProcess)", "errors after which the engine process switches itself off");
-        Tuning.def("floorSteps.throwLookDist", 8, "rm-final 0.39.u3", "blocks ahead of the bot the camera is aimed at for the junk throw");
-        Tuning.def("floorSteps.throwLookUp", 1.4, "rm-final 0.39.u3", "blocks above eye level the throw aims (about 10 degrees up at 8 blocks)");
         Tuning.def("threatFacts.unknownHit", 5, "rm-final 0.39.u3 (was the table's default)", "raw damage per hit assumed for a mob kind the game data does not know");
         Tuning.def("threatFacts.shooterHit", 3, "rm-final 0.39.u3 (prior: no attribute exists)", "raw damage per shot assumed for a shooter: its arrow carries the damage, the game has no per-mob number (vanilla arrows hurt about 3 at Normal)");
         Tuning.def("threatFacts.unknownHealth", 20, "rm-final 0.39.u3 (was the table's default)", "health assumed for a mob kind the game data does not know (the player's own 20)");
@@ -936,18 +912,6 @@ final class TuningDefs {
         Tuning.def("fireReflex.useMaxTicks", 45, "rm-constants 0.39.u2 (inline literal in FireReflex)", "ticks a water bucket use may last");
         Tuning.def("fireReflex.useStartTicks", 5, "rm-constants 0.39.u2 (inline literal in FireReflex)", "ticks a use gets to start");
         Tuning.def("fireReflex.whyLogTicks", 100, "rm-constants 0.39.u2 (inline literal in FireReflex)", "ticks between two logs of why the bucket is not used");
-        Tuning.def("floorFill.cacheH", 3, "rm-constants 0.39.u2 (inline literal in FloorFill)", "blocks above and below the cached map the bot must stay within");
-        Tuning.def("floorFill.cacheR", 2, "rm-constants 0.39.u2 (inline literal in FloorFill)", "blocks round the cached map the bot must stay within");
-        Tuning.def("floorFill.cacheTicks", 200, "rm-constants 0.39.u2 (inline literal in FloorFill)", "ticks a cached map is kept");
-        Tuning.def("floorFill.far", 24, "rm-constants 0.39.u2 (inline literal in FloorFill)", "blocks beyond which a cell is walked to first");
-        Tuning.def("floorFill.gapTicks", 5, "rm-constants 0.39.u2 (inline literal in FloorFill)", "ticks without a tick call after which the job counts as interrupted");
-        Tuning.def("floorFill.minPhaseTicks", 6, "rm-constants 0.39.u2 (inline literal in FloorFill)", "ticks a phase runs at least");
-        Tuning.def("floorFill.minTicks", 20, "rm-constants 0.39.u2 (inline literal in FloorFill)", "ticks a phase runs before its idle check");
-        Tuning.def("floorFill.pickTicks", 10, "rm-constants 0.39.u2 (inline literal in FloorFill)", "ticks a phase waits before it picks the next cell");
-        Tuning.def("floorFill.stuckTicks", 160, "rm-constants 0.39.u2 (inline literal in FloorFill)", "ticks without a move after which the walk counts as stuck");
-        Tuning.def("floorFill.tries", 3, "rm-constants 0.39.u2 (inline literal in FloorFill)", "tries at one cell before it is skipped");
-        Tuning.def("floorSteps.beatTicks", 20, "rm-constants 0.39.u2 (inline literal in FloorSteps)", "ticks between two lease beats");
-        Tuning.def("floorSteps.settleTicks", 4, "rm-constants 0.39.u2 (inline literal in FloorSteps)", "ticks a step waits after its start");
         Tuning.def("foodOptions.appleMin", 4, "rm-constants 0.39.u2 (inline literal in FoodOptions)", "minutes of waiting under the leaves per apple round");
         Tuning.def("foodOptions.berryMin", 0.3, "rm-constants 0.39.u2 (inline literal in FoodOptions)", "minutes one berry visit takes");
         Tuning.def("foodOptions.berryYieldK", 2.5, "rm-constants 0.39.u2 (inline literal in FoodOptions)", "berry energy per bush visit, in sweet berries");
@@ -972,7 +936,6 @@ final class TuningDefs {
         Tuning.def("jobs.homeDistSq", 64, "rm-constants 0.39.u2 (inline literal in Jobs)", "squared blocks within which the bot counts as home (8 blocks)");
         Tuning.def("jobs.startWaitTicks", 40, "rm-constants 0.39.u2 (inline literal in Jobs)", "ticks a job gives its first event");
         Tuning.def("jobs.stepGapTicks", 40, "rm-constants 0.39.u2 (inline literal in Jobs)", "ticks since the last step after which a job counts as idle");
-        Tuning.def("junkDrop.thrownKeep", 8, "rm-constants 0.39.u2 (inline literal in JunkDrop)", "thrown stacks remembered");
         Tuning.def("lootBook.minChance", 0.01, "rm-constants 0.39.u2 (inline literal in LootBook)", "a player-drop chance under this is left out of the book");
         Tuning.def("miningTiers.swordBase", 3, "rm-constants 0.39.u2 (inline literal in MiningTiers)", "attack points below a sword hit that the weapon tier subtracts");
         Tuning.def("mobDamage.maxHit", 100, "rm-constants 0.39.u2 (inline literal in MobDamage)", "the most one hit may be worth before it is dropped as a glitch");
@@ -1014,7 +977,6 @@ final class TuningDefs {
         Tuning.def("threatRuntime.errorsLogged", 5, "rm-constants 0.39.u2 (inline literal in ThreatRuntime)", "errors logged in full before only their rate is");
         Tuning.def("threatRuntime.fullEveryMs", 15_000, "rm-constants 0.39.u2 (inline literal in ThreatRuntime)", "milliseconds between two full scans while mobs are near");
         Tuning.def("threatRuntime.seenDist", 2.5, "rm-constants 0.39.u2 (inline literal in ThreatRuntime)", "blocks within which a mob counts as seen without a line of sight");
-        Tuning.def("waterPlan.sliceCap", 8, "rm-constants 0.39.u2 (inline literal in WaterPlan)", "rounds one slice may take");
         Tuning.def("ways.woodRetryMs", 1000, "rm-constants 0.39.u2 (inline literal in Ways)", "milliseconds before the wood facts are asked again");
         Tuning.def("worth.baseShare", 0.8, "rm-constants 0.39.u2 (inline literal in Worth)", "a base is worth this share of a bed");
         Tuning.def("worth.bedBase", 20, "rm-constants 0.39.u2 (inline literal in Worth)", "the bed worth floor");

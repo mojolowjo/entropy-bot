@@ -37,8 +37,8 @@ import org.slf4j.Logger;
 /**
  * 0.29.0 (docs/DIG_VIA_BARITONE_PLAN.md, P1): {@code dig x1 y1 z1 x2 y2 z2 [...] via baritone}. Baritone's builder walks,
  * picks where to stand and breaks; the mod decides per cell what may go ({@link BaritoneMask}, the only filter: the
- * builder's click ignores Baritone's own protected lists), takes the guard's break lease, throws junk or makes a base trip
- * when the bag is full, runs the water round when asked, and writes the end report ({@link BuilderReport}).
+ * builder's click ignores Baritone's own protected lists), takes the guard's break lease, makes a base trip
+ * when the bag is full, and writes the end report ({@link BuilderReport}).
  *
  * <p>Baritone API only ({@code IBuilderProcess.build}, {@code MaskSchematic}, {@code FillSchematic}, {@code Settings}):
  * loader-neutral. Minecraft types: {@link BlockState}, {@link Blocks#AIR}, {@link BlockPos}. Error catching: the mask is
@@ -97,7 +97,6 @@ public final class BuilderDig {
         long startTick, lastPoll, lastBeat = -1000, lastErrLog = -10000, loggedErrors, lastRefresh = -1000;
         int brokeAtPoll, brokeAtStart, restarts;
         boolean holdSeen;
-        double[] startXZ;
         Saved saved;
         /** the drop sweep running now (the builder is stopped meanwhile), what comes after it, the totals */
         io.github.mojolowjo.entropybot.clear.DropSweep sweep;
@@ -233,7 +232,6 @@ public final class BuilderDig {
         Jobs.cancel(b);
         Jobs.safeSettings();
         s.world.set(p);
-        s.startXZ = new double[]{p.getX(), p.getZ()};
         s.job = ClearJob.start(o, null, null);
         s.job.standOk = Clearing.standCheck(c);
         ClearBox box = s.job.box;
@@ -465,7 +463,7 @@ public final class BuilderDig {
         String nt = toolMissing(s, p);
         if (nt != null) return toolEnd(seq, st, s, p, nt);
         seq.setStatus(s.job.label + ": broke " + b + " of " + s.startCells.size() + " (via baritone; " + s.mask.counters() + ")");
-        // the bag is full: the builder stops, junk is thrown or taken home, then it starts again
+        // the bag is full: the builder stops, the loot is taken home, then it starts again
         if (!s.noDeposit && p.getInventory().getFreeSlot() < 0) {
             // first what still fits (stacks with room), then the trip
             if (!s.sweptForTrip) return startSweep(seq, s, p, now, null, true);
@@ -568,21 +566,16 @@ public final class BuilderDig {
         return end(seq, st, s, p, s.afterSweep, null);
     }
 
-    /** The drops the plain dig would chase (its dropWanted and junk-drop rules), in the sweep's area, with room in the bag. */
+    /** The drops the plain dig would chase (its dropWanted rule), in the sweep's area, with room in the bag. */
     private static List<io.github.mojolowjo.entropybot.clear.DropSweep.Item> seenDrops(State s, LocalPlayer p, long now) {
         List<io.github.mojolowjo.entropybot.clear.DropSweep.Item> out = new ArrayList<>();
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return out;
-        Map<String, Integer> inv = null;
         var pinv = p.getInventory();
         for (net.minecraft.world.entity.Entity e : mc.level.entitiesForRendering()) {
             if (!(e instanceof net.minecraft.world.entity.item.ItemEntity ie) || !e.isAlive()) continue;
             int x = (int) Math.floor(e.getX()), y = (int) Math.floor(e.getY() + 0.01), z = (int) Math.floor(e.getZ());
             if (!s.sweep.covers(x, y, z) || !s.job.dropWanted(x, y, z)) continue;
-            if (s.job.junkDrop) {
-                if (inv == null) inv = io.github.mojolowjo.entropybot.gui.Gui.inventory(p);
-                if (!io.github.mojolowjo.entropybot.clear.JunkDrop.chase(io.github.mojolowjo.entropybot.gui.Gui.itemId(ie.getItem()), s.job, inv, x, y, z, now)) continue;
-            }
             if (pinv.getFreeSlot() < 0 && pinv.getSlotWithRemainingSpace(ie.getItem()) < 0) continue;
             out.add(new io.github.mojolowjo.entropybot.clear.DropSweep.Item(String.valueOf(e.getId()), x, y, z, e.distanceTo(p)));
         }
@@ -747,21 +740,14 @@ public final class BuilderDig {
         return le;
     }
 
-    /** The bag is full: junk thrown here ("junk drop") or a base trip; the builder waits cancelled. */
+    /** The bag is full: a base trip; the builder waits cancelled. */
     private static String trip(Seq seq, State s, LocalPlayer p) {
-        List<Seq.Step> steps;
-        String kind;
-        if (s.job.junkDrop) {
-            steps = List.of(FloorSteps.junkStep(s.job, s.startXZ));
-            kind = "junk";
-        } else {
-            steps = Clearing.depositSteps(seq.storage, p, s.job);
-            kind = "deposit";
-            if (steps == null) {
-                s.noDeposit = true;
-                LOG.info("[entropybot] dig via baritone: inventory full and nothing to put away - drops stay on the ground");
-                return "wait";
-            }
+        List<Seq.Step> steps = Clearing.depositSteps(seq.storage, p, s.job);
+        String kind = "deposit";
+        if (steps == null) {
+            s.noDeposit = true;
+            LOG.info("[entropybot] dig via baritone: inventory full and nothing to put away - drops stay on the ground");
+            return "wait";
         }
         stopBuilder(s);
         s.sweptForTrip = false;                             // after this trip, the next full bag sweeps first again
@@ -778,7 +764,7 @@ public final class BuilderDig {
 
     /**
      * The end: builder cancelled, settings back, the leases released, the box re-scanned, the report. gave: how it ended
-     * (null: an error, text in {@code stop}). The water round comes next when the dig asked for water and water is left.
+     * (null: an error, text in {@code stop}).
      */
     private static String end(Seq seq, Seq.Step st, State s, LocalPlayer p, BuilderReport.End gave, String stop) {
         stopBuilder(s);
@@ -816,13 +802,6 @@ public final class BuilderDig {
             LOG.info("[entropybot] dig via baritone: gave up ({}) in {}: {}", gave, s.job.box, msg);
             try { Core.INSTANCE.events.push("job", "dig via baritone gave up: " + lastEnd, null); } catch (Throwable caught) { Quiet.warn("BuilderDig.end failed, carrying on with the fallback", caught); }
         }
-        if (WaterSteps.wants(st, msg)) {
-            st.cleared = new Clearing.Outcome(false, broke, leftN, new LinkedHashMap<>(), new ArrayList<>(), msg);
-            LOG.info("[entropybot] dig via baritone: {} - looking at the water", msg);
-            seq.splice(seq.idx + 1, List.of(WaterSteps.step(st, s.job)));
-            return "next";
-        }
-        msg = WaterSteps.endText(st, s.job, msg);
         st.cleared = new Clearing.Outcome(msg.startsWith("done") || msg.startsWith("ok"), broke, leftN, Map.of(), List.of(), msg);
         LOG.info("[entropybot] dig via baritone: {}", msg);
         seq.jobs.finish(msg);

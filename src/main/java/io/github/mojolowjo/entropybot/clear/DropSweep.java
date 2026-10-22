@@ -12,8 +12,8 @@ import java.util.Set;
  * 0.29.0: the drop sweep of a {@code dig ... via baritone}. Baritone's builder never walks over what it broke, so after it
  * (done, gave up) and before a full-bag trip the step walks over the drops lying in the box or one block around it,
  * nearest first, one walk at a time, each walk at most {@link #WALK_TICKS}, the whole sweep at most {@link #MAX_WALKS}
- * walks or {@link #MAX_TICKS} ticks. Which drops count (the junk-drop rule, the stand fence, room in the bag) the caller
- * decides as the plain dig does ({@link ClearJob#dropWanted}, {@link JunkDrop#chase}); this class picks the order and
+ * walks or {@link #MAX_TICKS} ticks. Which drops count (the stand fence, room in the bag) the caller
+ * decides as the plain dig does ({@link ClearJob#dropWanted}); this class picks the order and
  * keeps the cap. Game-free.
  */
 public final class DropSweep {

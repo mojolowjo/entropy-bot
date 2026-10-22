@@ -44,12 +44,6 @@ public final class ClearJob {
         /** while this says false the clear breaks nothing (the table pickup disarmed); null: always armed */
         public java.util.function.BooleanSupplier armed;
 
-        /** F: "dig ... junk drop": a full bag throws plain junk blocks away instead of a trip to the base chests */
-        public boolean junkDrop;
-        /** F: "dig ... floor [block]": the layer under the box is filled afterwards (block null: {@link FloorFill#FALLBACK}) */
-        public boolean floor;
-        public String floorBlock;
-
         /**
          * Water plan item 1 (2026-10-04): blocks left because they touch water or lava end the clear as "blocked by water
          * at x y z" (not ok), so a chain stops there. The dig verb sets it; strip branches and caves keep their old ending.
@@ -65,29 +59,9 @@ public final class ClearJob {
         public boolean waterOk;
         public Options waterOk(boolean w) { waterOk = w; return this; }
 
-        /**
-         * Water plan: "dig ... water": water that stops the dig is sealed off ({@link WaterPlan}) and the dig goes on;
-         * waterLarge ("water large"): a large body of water too. waterTally: the rounds so far (shared by the re-runs of
-         * the same dig); line: the dig's own command, for the confirm question.
-         */
-        public boolean water, waterLarge;
-        public WaterPlan.Tally waterTally;
-        public String line;
-
-        public Options water(boolean w, boolean large) {
-            water = w || large;
-            waterLarge = large;
-            if (water && waterTally == null) waterTally = new WaterPlan.Tally();
-            return this;
-        }
-
-        public Options line(String l) { line = l; return this; }
-
-        /** 0.29.0: "dig ... via baritone": Baritone's builder breaks the box ({@link BaritoneMask}); the water round's re-run too. */
+        /** 0.29.0: "dig ... via baritone": Baritone's builder breaks the box ({@link BaritoneMask}). */
         public boolean viaBaritone;
         public Options viaBaritone(boolean v) { viaBaritone = v; return this; }
-        public Options junkDrop(boolean j) { junkDrop = j; return this; }
-        public Options floor(boolean f, String block) { floor = f; floorBlock = block; return this; }
         public Options box(ClearBox b) { box = b; return this; }
         public Options exactId(String id) { exactId = id; return this; }
         public Options armed(java.util.function.BooleanSupplier a) { armed = a; return this; }
@@ -121,17 +95,10 @@ public final class ClearJob {
     public final boolean keepOres, collect, soft, mustFinish, force;
     /** V1a: {@link Options#destroyArea} (null: not a destroy dig). */
     public final String destroyArea;
-    /** F: {@link Options#junkDrop}, {@link Options#floor} / {@link Options#floorBlock} */
-    public final boolean junkDrop, floor;
-    public final String floorBlock;
     /** {@link Options#liquidBlocks} */
     public final boolean liquidBlocks;
     /** {@link Options#waterOk} */
     public final boolean waterOk;
-    /** {@link Options#water}: keep a reserve of junk blocks for sealing ("junk drop" throws the rest) */
-    public final boolean water;
-    /** F: where (feet x y z) and when (tick) "junk drop" threw junk; those drops are left alone a while ({@link JunkDrop#nearThrow}) */
-    public final List<double[]> thrown = new ArrayList<>();
     /** true when no box or only list was given (the work zone) */
     public final boolean zone;
     public Integer minStandY;
@@ -211,12 +178,8 @@ public final class ClearJob {
         this.ores = ores != null ? ores : new OreBook.Simple();
         this.exactId = o.exactId;
         this.armed = o.armed;
-        this.junkDrop = o.junkDrop;
-        this.floor = o.floor;
-        this.floorBlock = o.floorBlock;
         this.liquidBlocks = o.liquidBlocks;
         this.waterOk = o.waterOk;
-        this.water = o.water;
     }
 
     /**

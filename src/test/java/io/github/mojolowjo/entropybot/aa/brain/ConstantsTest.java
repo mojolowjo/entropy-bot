@@ -83,7 +83,7 @@ class ConstantsTest {
 
     /** Where a decision literal is checked: these packages whole, and these command files. */
     private static final List<String> SCOPE_DIRS = List.of("aa", "engine", "threat", "guard", "clear", "cave", "camp");
-    private static final List<String> SCOPE_COMMANDS = List.of("AaRuntime", "Jobs", "Clearing", "DigCommands", "FloorSteps", "StepHands", "StepRun", "Crafting");
+    private static final List<String> SCOPE_COMMANDS = List.of("AaRuntime", "Jobs", "Clearing", "DigCommands", "StepHands", "StepRun", "Crafting");
 
     /** 0, 1, 2 and a half are the identity, the step, the pair and the middle: arithmetic, not hand numbers. */
     private static final java.util.Set<Double> TRIVIAL = java.util.Set.of(0.0, 1.0, 2.0, 0.5);
