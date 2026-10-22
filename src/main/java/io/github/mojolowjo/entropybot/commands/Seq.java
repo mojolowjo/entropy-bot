@@ -432,11 +432,8 @@ public final class Seq {
     private String openStep(Step st, LocalPlayer p, long elapsed) {
         Minecraft mc = Minecraft.getInstance();
         if (stage == null) {
-            if (mc.screen != null || Gui.open(p)) {
-                Gui.close(p);                 // something else is still open: close it first
-                stage = "closing";
-                return "wait";
-            }
+            // 0.39.z7 (owner 2026-10-22): no blind close of "something else" before opening; the step that opened a
+            // screen closes it
             stage = "click";
         }
         if (stage.equals("closing")) {
@@ -657,7 +654,6 @@ public final class Seq {
             stage = "open";
         }
         if (stage.equals("open")) {
-            if (mc.screen != null || Gui.open(p)) Gui.close(p);
             storage.lastOpened = null;       // not a chest: don't remember its contents as one
             lootBefore = Gui.totalItems(p);
             io.github.mojolowjo.entropybot.aa.moves.Moves.lookAt(new double[]{c.getX(), c.getY(), c.getZ()});      // rm-execution: Baritone's look (never throws: JobHands logs)

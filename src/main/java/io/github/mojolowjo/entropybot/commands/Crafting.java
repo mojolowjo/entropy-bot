@@ -1632,8 +1632,7 @@ final class Crafting {
         }
         // fill: the right grid first
         if (size == 0) {
-            Gui.close(p);                          // a fight closed the table (or something else is open)
-            return "wait";
+            return "wait";                         // 0.39.z7: no grid open yet; no blind close of whatever screen is open
         }
         if ((step.needsTable() || !recipe.fits(2)) && size == 2) {
             if (c.triedTable && c.table == null) return craftFail(s, st, CraftJob.noTable(step.item()));

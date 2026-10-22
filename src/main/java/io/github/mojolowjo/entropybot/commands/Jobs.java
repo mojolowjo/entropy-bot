@@ -353,8 +353,8 @@ public final class Jobs {
         if (j.seq != null) { try { String m = Clearing.ended(j.seq, msg); if (m != null && !m.equals(msg)) { msg = m; j.status = m; } } catch (RuntimeException e) { LOG.warn("[entropybot] clear end hook: {}", e.toString()); } }           // B7d D1: a clear's leases end with the job, however it ends (a table left is named); never keeps the request open
         if (j.seq != null) {
             LocalPlayer p = mc.player;
-            boolean close = "always".equals(j.closeOnEnd) || ("fail".equals(j.closeOnEnd) && !msg.startsWith("ok"));
-            if (close && p != null && (io.github.mojolowjo.entropybot.gui.Gui.open(p) || mc.screen != null)) io.github.mojolowjo.entropybot.gui.Gui.close(p);
+            // 0.39.z7 (owner 2026-10-22, "open a GUI, do what is needed, close it"): no auto-close of whatever screen is
+            // open when a job ends; the step that opened a screen closes it
             IBaritone b = baritone();
             if (b != null && !msg.startsWith("ok")) cancel(b);
         }
