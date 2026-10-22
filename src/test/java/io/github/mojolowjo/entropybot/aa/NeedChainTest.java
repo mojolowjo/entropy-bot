@@ -174,4 +174,51 @@ class NeedChainTest {
         assertEquals(-1, at(c.steps(), Step.Craft.class, "wooden_pickaxe"), c.steps().toString());
         assertTrue(at(c.steps(), Step.Collect.class, "cobblestone") >= 0);
     }
-}
+
+    /** The 0.39.w1 owner-watched world: a golden pickaxe (tier of a wooden one) whose gold is a recipe loop, beside the wooden one. */
+    static void goldWorld() {
+        TestData d = TestData.planner();
+        for (String m : List.of("wooden", "stone", "iron", "diamond", "golden")) d.tag(m + "_pickaxe", "minecraft:pickaxes");
+        d.recipe("golden_pickaxe", 1, "gold_ingot", "gold_ingot", "gold_ingot", "stick", "stick");
+        d.recipe("gold_ingot", 1, "gold_block");
+        d.recipe("gold_block", 1, "gold_ingot", "gold_ingot", "gold_ingot", "gold_ingot", "gold_ingot", "gold_ingot", "gold_ingot", "gold_ingot", "gold_ingot");
+        d.tableItems.add(TestData.id("golden_pickaxe"));
+        d.install();
+    }
+
+    static String chainPart(String why) { int k = why.indexOf(" | dropped:"); return k < 0 ? why : why.substring(0, k); }
+
+    @Test
+    void stoneWithATreeSeenTakesTheWoodenPickaxeNotTheGoldOne() {
+        goldWorld();
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, CELL, seen(TREE, STONE)));
+        System.out.println("WHY-LINE (a) " + c.why());
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertTrue(at(c.steps(), Step.Craft.class, "wooden_pickaxe") >= 0, c.steps().toString());
+        assertEquals(-1, at(c.steps(), Step.Craft.class, "golden_pickaxe"), c.steps().toString());
+        assertFalse(chainPart(c.why()).contains("gold"), c.why());
+        assertTrue(c.dropped().stream().anyMatch(x -> x.startsWith("golden_pickaxe: ") && x.contains("blocks (")), c.dropped().toString());
+        double gold = Double.parseDouble(c.dropped().stream().filter(x -> x.startsWith("golden_pickaxe: ")).findFirst().get().replaceAll("^golden_pickaxe: (\\d+) blocks.*$", "$1"));
+        assertTrue(c.cost() < gold, "cheaper than the gold branch (" + gold + "): " + c.cost());
+        assertTrue(c.dropped().stream().noneMatch(x -> x.startsWith("stone_pickaxe: ") && !x.contains("on the path")), "a higher tier is never taken: " + c.dropped());
+    }
+
+    @Test
+    void theRecipeLoopCandidateIsPricedOutAndTheChainCompletes() {
+        goldWorld();
+        NeedChain.Chain c = NeedChain.resolve("cobblestone", 3, new World(Map.of(), false, CELL, seen(TREE, STONE)));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertTrue(c.dropped().stream().anyMatch(x -> x.startsWith("golden_pickaxe: ")), c.dropped().toString());
+        assertTrue(at(c.steps(), Step.Collect.class, "cobblestone") > at(c.steps(), Step.Craft.class, "wooden_pickaxe"), c.steps().toString());
+    }
+
+    @Test
+    void noTreeStoneSeenExploresForALogNotForGold() {
+        goldWorld();
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, CELL, seen(null, STONE)));
+        System.out.println("WHY-LINE (c) " + c.why());
+        assertTrue(c.ok() && c.explore(), c.why());
+        String chain = chainPart(c.why());
+        assertTrue(chain.contains("log") && chain.contains("explore"), c.why());
+        assertFalse(chain.contains("gold_ingot"), c.why());
+    }}

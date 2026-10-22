@@ -266,9 +266,7 @@ public final class NeedChain {
         String pre = null;
         int tier = s.block() == null ? 0 : Math.max(0, MiningTiers.blockTierOf(s.block()));
         if (tier > c.pickTier) {
-            String pick = pickaxeFor(tier);
-            if (pick == null) { c.fail = "no pickaxe item of tier " + tier + " to dig " + s.block(); return null; }
-            pre = obtain(c, PlanFacts.canon(pick), 1);
+            pre = cheapestPickaxe(c, tier);
             if (c.fail != null) return null;
             if (c.stuck) return "dig " + word + " seen " + Math.round(s.dist()) + " m (after " + pre + ")";      // the pickaxe's own source is still to find: the chain ends at that explore
             c.pickTier = tier;
@@ -301,17 +299,55 @@ public final class NeedChain {
 
     private static boolean stoneLike(String word) { return ItemWorth.stoneLike(word.indexOf(':') < 0 ? "minecraft:" + word : word); }
 
-    /** The pickaxe item of the least tier that is at least {@code tier} and can be crafted, from the game's pickaxes tag; null none. */
-    static String pickaxeFor(int tier) {
-        String best = null;
-        int bestTier = Integer.MAX_VALUE;
+    /**
+     * A requirement several items meet (any pickaxe of at least {@code tier}, from the game's pickaxes tag): every candidate is
+     * priced in full, recursively (loops and dead branches priced out as everywhere), tried on a snapshot and put back; the
+     * cheapest is then done for real and each loser goes to the dropped list with its price and reason. Ties (chains that end at the same explore cost the same): the less raw work the recipe tree still holds (a loop holds infinite), then the lower tier.
+     * No candidate stands: c.fail. Returns the winner's phrase.
+     */
+    private static String cheapestPickaxe(Ctx c, int tier) {
+        record Trial(String id, int tier, double cost, double work, boolean stuck, String fail) {}
+        List<Trial> trials = new ArrayList<>();
         for (String id : ItemWorth.withTag("pickaxes")) {
             int t = MiningTiers.toolTier(id, "pickaxe");
-            if (t >= tier && t < bestTier && PlanRecipes.of(PlanFacts.canon(id)) != null) { best = id; bestTier = t; }
+            String cw = PlanFacts.canon(id);
+            if (t < tier || PlanRecipes.of(cw) == null) continue;
+            if (c.path.contains(cw)) { c.dropped.add(cw + ": on the path already, a loop"); continue; }
+            Ctx.Snap s0 = c.snap();
+            int drops = c.dropped.size();
+            double base = c.total();
+            obtain(c, cw, 1);
+            trials.add(new Trial(cw, t, c.total() - base, rawWork(cw, new ArrayList<>()), c.stuck, c.fail));
+            c.restore(s0);
+            while (c.dropped.size() > drops) c.dropped.remove(c.dropped.size() - 1);
         }
-        return best;
+        Trial win = null;
+        for (Trial t : trials) {
+            if (t.fail() != null) continue;
+            if (win == null || t.cost() < win.cost() || (t.cost() == win.cost() && (t.work() < win.work() || (t.work() == win.work() && t.tier() < win.tier())))) win = t;
+        }
+        if (win == null) {
+            for (Trial t : trials) c.dropped.add(t.id() + ": " + Math.round(t.cost()) + " blocks (" + t.fail() + ")");
+            c.fail = "no pickaxe of tier " + tier + " can be had to dig" + (trials.isEmpty() ? ": none in the game data can be crafted" : "");
+            return null;
+        }
+        for (Trial t : trials) {
+            if (t == win) continue;
+            c.dropped.add(t.id() + ": " + Math.round(t.cost()) + " blocks (" + (t.fail() != null ? t.fail() : (t.stuck() ? "ends in an explore, " : "") + "dearer than " + win.id()) + ")");
+        }
+        return obtain(c, win.id(), 1);
     }
-
+    /** The raw items a word's whole recipe tree takes (recipe data only); a recipe loop is infinite work. Breaks the tie between chains that stop at the same explore. */
+    private static double rawWork(String word, List<String> path) {
+        if (path.contains(word)) return Double.POSITIVE_INFINITY;
+        PlanRecipes.Recipe rec = isLog(word) ? null : PlanRecipes.of(word);
+        if (rec == null) return 1;
+        path.add(word);
+        double sum = 0;
+        for (var e : rec.in().entrySet()) sum += e.getValue() * rawWork(e.getKey(), path);
+        path.remove(path.size() - 1);
+        return sum / rec.out();
+    }
     /** The item a craft step names: planks are the kind the bag's logs make, else the word itself. */
     private static String concrete(Ctx c, String word) {
         String bare = word.indexOf(':') < 0 ? word : word.substring(word.indexOf(':') + 1);
