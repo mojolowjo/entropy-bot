@@ -63,6 +63,35 @@ public final class Nearby {
         return out;
     }
 
+    /**
+     * TAG_NEEDS: the blocks that give any item of a need word (an item id, a tag "#ns:path", or several joined by "|"): a tag's
+     * part is every block whose loot drops a member (the loot data's own index, no member list) and every block whose own item
+     * is a member ({@code tagBlocks}: the game's tag index; null: none); an item's part is {@link #sourceBlocks}.
+     */
+    public static Set<String> sourceBlocksOf(String word, LootBook book, Function<String, String> ownBlock, Function<String, Set<String>> tagBlocks) {
+        Set<String> out = new LinkedHashSet<>();
+        String w = NeedChain.word(word);
+        if (w == null) return out;
+        for (String part : w.split("\\|")) {
+            if (!part.startsWith("#")) { out.addAll(sourceBlocks(part, book, ownBlock)); continue; }
+            String tag = part.substring(1);
+            if (book != null) out.addAll(book.blocksDroppingAny(i -> io.github.mojolowjo.entropybot.aa.brain.ItemWorth.isIn(i, tag)));
+            if (tagBlocks != null) out.addAll(tagBlocks.apply(tag));
+        }
+        return out;
+    }
+
+    /**
+     * TAG_NEEDS: what a block gives of a need word: the drop of its loot that is in the need (the loot data), else its own item
+     * when that is in it ({@code ownItem}); null: neither (the chain then counts the need itself).
+     */
+    public static String gives(String block, String word, LootBook book, Function<String, String> ownItem) {
+        if (block == null || word == null) return null;
+        if (book != null) for (LootBook.Source s : book.blockDrops(block)) if (NeedChain.gives(word, s.item())) return s.item();
+        String own = ownItem == null ? null : ownItem.apply(block);
+        return own != null && NeedChain.gives(word, own) ? own : null;
+    }
+
     /** The nearest block of the set I may work at by Baritone's scan (a log only with leaves by it, an ore only if fair), else the fallback; null: none. */
     public static Spot nearest(Scan s, int[] me, Set<String> blocks, Supplier<Spot> fallback) {
         if (s != null && blocks != null && !blocks.isEmpty()) {

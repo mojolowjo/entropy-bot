@@ -12,9 +12,13 @@ import io.github.mojolowjo.entropybot.aa.moves.Step;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -26,12 +30,10 @@ import java.util.function.ToDoubleFunction;
  * game's own books and nothing of ours. Item ids and the game's tags only (no family words, no pseudo-items).
  * <ul>
  * <li>Have it: nothing to do.</li>
- * <li>Craft it: every crafting recipe of the item ({@link ItemWorth#recipes(String, String)} kind CRAFT); an ingredient
- *     given as a tag makes every member a candidate, each priced, the cheapest wins; ingredients recurse; a 3x3 recipe
- *     needs the crafting station (the recipes' own toast symbol, {@link ItemWorth#station}), itself an item.</li>
- * <li>Smelt it: every furnace recipe (kind SMELT), its input candidates priced the same way, the furnace (an item, placed
- *     near me by Baritone's builder), and the burn: every item of the game's fuel table ({@link ItemWorth#fuels}) is a
- *     candidate, priced, the cheapest wins; 10 s an item (TIME_MODEL).</li>
+ * <li>Craft it: every crafting recipe of the item ({@link ItemWorth#recipes(String, String)} kind CRAFT); ingredients
+ *     recurse; a 3x3 recipe needs the crafting station (the recipes' own toast symbol, {@link ItemWorth#station}), itself an item.</li>
+ * <li>Smelt it: every furnace recipe (kind SMELT), the furnace (an item, placed near me by Baritone's builder), and the
+ *     burn: the game's fuel table ({@link ItemWorth#fuels}) by its burn classes (the tag rule below); 10 s an item (TIME_MODEL).</li>
  * <li>Dig it: every known block that gives it (the loot data's blocks plus the item's own block, Baritone's scan first,
  *     the world's {@link World#seenAll}); the pickaxe tier the block asks for (the mining-tier data) pulls in the cheapest
  *     pickaxe of at least that tier (the game's pickaxes tag), each candidate priced.</li>
@@ -40,17 +42,30 @@ import java.util.function.ToDoubleFunction;
  * <li>Else explore until a source is known: no price (the check before the chain, SCENARIOS); for an item a block
  *     generates with (the catalog's worldgen) one Baritone goal to that height band first ({@link Step.ToBand}).</li>
  * </ul>
+ * TAG_NEEDS (owner 2026-10-22): a need is {@code N of <item>} or {@code N of #<tag>} (a recipe slot as the recipe gives it,
+ * {@link ItemWorth.Recipe#needs}). A tag need stays a tag until a step must name a block or an item in the world: it is met
+ * by any members in the bag summed (the game's tag index, {@link ItemWorth#isIn}); it is made by its members' recipes grouped
+ * by what they need (one price per group, never per member; one-ingredient recipes of the same shape merge into one need,
+ * {@code #planks <- #logs}); it is dug by its known sources grouped by the member they give (a tree is any log); the explore
+ * is for its whole source set. The member is whatever the leaf (the bag, the tree, the ore) yields.
  * An item already on the path is a loop: that way is dropped. A way that ends in an explore never competes with one that
  * does not. Every loser goes to the dropped list with its seconds or its reason. Rough prices (RULES 14): walk, break,
- * craft, place, smelt, kill; a requirement with many members prices the {@code needChain.candidates} likeliest in full.
- * Pure (JUnit: NeedChainTest, ScenariosTest). Loader notes: none (the facts come from {@code AaRuntime.needWorld}).
+ * craft, place, smelt, kill. Pure (JUnit: NeedChainTest, ScenariosTest). Loader notes: none (the facts come from
+ * {@code AaRuntime.needWorld}).
  */
 public final class NeedChain {
     private NeedChain() {}
 
-    /** A seen source: a cell to walk to, the straight-line {@code dist}, the block's id (its pickaxe tier comes from it), how many blocks there are (0: not counted, as many as needed; a tree: its connected logs, all of which the chop takes). */
-    public record Spot(int x, int y, int z, double dist, String block, int count) {
-        public Spot(int x, int y, int z, double dist, String block) { this(x, y, z, dist, block, 0); }
+    /**
+     * A seen source: a cell to walk to, the straight-line {@code dist}, the block's id (its pickaxe tier comes from it), how
+     * many blocks there are (0: not counted, as many as needed; a tree: its connected logs, all of which the chop takes), and
+     * {@code gives}: the item it yields when a tag need asked for it (the loot data; null: the item asked for, or the block).
+     */
+    public record Spot(int x, int y, int z, double dist, String block, int count, String gives) {
+        public Spot(int x, int y, int z, double dist, String block, int count) { this(x, y, z, dist, block, count, null); }
+        public Spot(int x, int y, int z, double dist, String block) { this(x, y, z, dist, block, 0, null); }
+        /** The same spot, yielding {@code item}. */
+        public Spot giving(String item) { return new Spot(x, y, z, dist, block, count, item); }
         String key() { return x + "," + y + "," + z; }
     }
 
@@ -59,10 +74,11 @@ public final class NeedChain {
 
     /**
      * What the bot knows now. {@code bag}: item id -> count; {@code tableNear} / {@code furnaceNear}: one within reach;
-     * {@code seenAll}: item id -> the known blocks that give it (nearest first not needed); {@code mobs}: entity id -> the
-     * animals of that kind known; {@code loot}: the game's loot data (mob drops; null: none read); {@code band}: item id ->
-     * {minY, maxY} where the blocks that drop it generate (the worldgen data; null: unknown); {@code horizonBlocks}: a way
-     * dearer than this is priced out when another stands (0: the planning horizon). Lookups are memoised per World.
+     * {@code seenAll}: a need word (an item id, a tag "#ns:path", or several joined by "|") -> the known blocks that give it
+     * (for a tag: any member; nearest first not needed); {@code mobs}: entity id -> the animals of that kind known;
+     * {@code loot}: the game's loot data (mob drops; null: none read); {@code band}: need word -> {minY, maxY} where the
+     * blocks that drop it generate (the worldgen data; null: unknown); {@code horizonBlocks}: a way dearer than this is
+     * priced out when another stands (0: the planning horizon). Lookups are memoised per World.
      */
     public record World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
                         Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks) {
@@ -72,7 +88,7 @@ public final class NeedChain {
             bag = Map.copyOf(b);
             Function<String, List<Spot>> sa = seenAll == null ? w -> List.of() : seenAll;
             Map<String, List<Spot>> memo = new ConcurrentHashMap<>();
-            seenAll = w -> memo.computeIfAbsent(id(w), k -> { List<Spot> l = sa.apply(k); return l == null ? List.of() : List.copyOf(l); });
+            seenAll = w -> memo.computeIfAbsent(word(w), k -> { List<Spot> l = sa.apply(k); return l == null ? List.of() : List.copyOf(l); });
             Function<String, List<Mob>> mb = mobs == null ? w -> List.of() : mobs;
             Map<String, List<Mob>> mmemo = new ConcurrentHashMap<>();
             mobs = w -> mmemo.computeIfAbsent(id(w), k -> { List<Mob> l = mb.apply(k); return l == null ? List.of() : List.copyOf(l); });
@@ -93,10 +109,10 @@ public final class NeedChain {
 
         public World withBand(Function<String, int[]> b) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, b, horizonBlocks); }
 
-        /** chop: the same world less the sources {@code held} names (item id, spot): a failed source is out of the re-price. */
+        /** chop: the same world less the sources {@code held} names (need word, spot): a failed source is out of the re-price. */
         public World without(java.util.function.BiPredicate<String, Spot> held) {
             Function<String, List<Spot>> sa = seenAll;
-            return new World(bag, tableNear, furnaceNear, w -> sa.apply(w).stream().filter(sp -> !held.test(id(w), sp)).toList(), mobs, loot, band, horizonBlocks);
+            return new World(bag, tableNear, furnaceNear, w -> sa.apply(w).stream().filter(sp -> !held.test(word(w), sp)).toList(), mobs, loot, band, horizonBlocks);
         }
     }
 
@@ -117,7 +133,6 @@ public final class NeedChain {
     public static int exploreMinutes() { return io.github.mojolowjo.entropybot.aa.brain.Discovery.exploreMinutes(); }
     /** Share of the explore time the walk back costs again. */
     public static double exploreReturn() { return Tuning.get("needChain.exploreReturn"); }
-    static int candidates() { return Math.max(1, Tuning.i("needChain.candidates")); }
     static int maxTrials() { return Tuning.i("needChain.maxTrials"); }
 
     /** Game fact: the player's bare hit is 1 damage (Attributes.ATTACK_DAMAGE base), 4 full-strength hits a second (ATTACK_SPEED base). */
@@ -127,6 +142,8 @@ public final class NeedChain {
     private static final double EAT_S = 1.6; // game fact: eating takes 32 ticks = 1.6 s per item
     /** Game fact: the inventory's crafting grid is 2x2: more than 4 ingredients need the crafting station. */
     private static final int GRID_2X2 = 4; // game fact: the inventory crafting grid holds 4 ingredients
+    /** The tag the game gives every log block: a block of it is a tree (Baritone's chop). */
+    private static final String LOGS_TAG = "minecraft:logs";
 
     /** TIME_MODEL: walk = straight line x 1.3 / walk speed, before Baritone has planned a path. */
     static double walkS(double dist) { return dist * StepTimes.pathFactor() / Unit.walkBps(); }
@@ -137,6 +154,69 @@ public final class NeedChain {
 
     /** The id as the lines and steps write it ("minecraft:torch" -> "torch"; a modded id stays whole). */
     static String sh(String id) { return id == null ? "?" : id.startsWith("minecraft:") ? id.substring(10) : id; }
+
+    // ---- TAG_NEEDS: a need word is an item id, a tag ("#ns:path") or several of them joined by "|" ----
+
+    /** TAG_NEEDS: the item counts for the need word (an item, a tag member by the game's tag index, or one of several); the live lookups' test. */
+    public static boolean gives(String word, String item) { return word != null && new Want(word).has(item); }
+
+    /** TAG_NEEDS: the need word is one item (not a tag, not several). */
+    public static boolean plain(String word) { return word != null && new Want(word).item(); }
+
+    /** A need word in full: "#planks" -> "#minecraft:planks", "torch" -> "minecraft:torch"; several parts in one canonical order. */
+    public static String word(String raw) {
+        if (raw == null) return null;
+        if (raw.indexOf('|') < 0) return raw.startsWith("#") ? "#" + id(raw.substring(1)) : id(raw);
+        Set<String> parts = new TreeSet<>();
+        for (String p : raw.split("\\|")) if (!p.isEmpty()) parts.add(word(p));
+        return String.join("|", parts);
+    }
+
+    /** A need word as the lines write it: "#minecraft:planks" -> "#planks". */
+    static String shw(String word) {
+        if (word == null) return "?";
+        if (word.indexOf('|') >= 0) {
+            List<String> out = new ArrayList<>();
+            for (String p : word.split("\\|")) out.add(shw(p));
+            return String.join("|", out);
+        }
+        return word.startsWith("#") ? "#" + sh(word.substring(1)) : sh(word);
+    }
+
+    /** One requirement: an item, a tag (any member: the game's tag index), or several (any of them). */
+    static final class Want {
+        final String word;
+        final Set<String> items = new LinkedHashSet<>();
+        final List<String> tags = new ArrayList<>();
+
+        Want(String raw) {
+            word = word(raw);
+            for (String p : word.split("\\|")) {
+                if (p.startsWith("#")) tags.add(p.substring(1));
+                else items.add(p);
+            }
+        }
+
+        boolean item() { return tags.isEmpty() && items.size() == 1; }
+
+        String id() { return items.iterator().next(); }
+
+        /** The bag entry counts for this need: a member (the game's tag index), or the token a way of this need made. */
+        boolean has(String id) {
+            if (id == null) return false;
+            if (id.startsWith("#") || id.indexOf('|') >= 0) return id.equals(word);
+            if (items.contains(id)) return true;
+            for (String t : tags) if (ItemWorth.isIn(id, t)) return true;
+            return false;
+        }
+
+        /** The members whose recipe data the craft and smelt ways read (a set in id order: the groups' listing order only). */
+        Set<String> members() {
+            Set<String> out = new TreeSet<>(items);
+            for (String t : tags) out.addAll(ItemWorth.itemsIn(t));
+            return out;
+        }
+    }
 
     // ---- the recursion ----
 
@@ -152,8 +232,8 @@ public final class NeedChain {
         double away;          // straight metres from the last new source to where the stations are (0: at them)
         boolean tableReady, furnaceReady, stuck;
         String fail;          // the way being tried cannot be done: the reason
-        String unknown;       // the first item nothing is known to give (the explore leaf's)
-        String loopOn;        // the item a loop failure came back to (set with fail)
+        String unknown;       // the first need nothing is known to give (the explore leaf's)
+        String loopOn;        // the need a loop failure came back to (set with fail)
         String pickItem;      // the best pickaxe in hand or made
         int pickTier;
         int trials;           // ways priced so far (the search's bound)
@@ -195,18 +275,67 @@ public final class NeedChain {
         }
     }
 
+    /** Rule 1 (have it): what the bag holds of the need, mixed members summed. */
+    private static int have(Ctx c, Want w) {
+        if (w.item()) return c.have(w.id());
+        int n = 0;
+        for (var e : c.bag.entrySet()) if (e.getValue() > 0 && w.has(e.getKey())) n += e.getValue();
+        return n;
+    }
+
+    /**
+     * Takes {@code n} of the need out of the simulated bag: {@code prefer} first (what the way just made), then the bag's
+     * members as they came in. Returns what was taken, item -> count.
+     */
+    private static Map<String, Integer> take(Ctx c, Want w, int n, String prefer) {
+        Map<String, Integer> out = new LinkedHashMap<>();
+        if (n <= 0) return out;
+        if (w.item()) {
+            c.bag.merge(w.id(), -n, Integer::sum);
+            out.put(w.id(), n);
+            return out;
+        }
+        List<String> keys = new ArrayList<>();
+        if (prefer != null && w.has(prefer)) keys.add(prefer);
+        for (String k : c.bag.keySet()) if (!keys.contains(k) && w.has(k)) keys.add(k);
+        int left = n;
+        for (String k : keys) {
+            int t = Math.min(left, c.have(k));
+            if (t <= 0) continue;
+            c.bag.merge(k, -t, Integer::sum);
+            out.merge(k, t, Integer::sum);
+            left -= t;
+        }
+        if (left > 0) { c.bag.merge(w.word, -left, Integer::sum); out.merge(w.word, left, Integer::sum); }   // the way's own token
+        return out;
+    }
+
+    /** What a take of {@code n} from the bag would name: one kind when one kind covers it, else the need word. */
+    private static String bagName(Ctx c, Want w, int n) {
+        if (w.item()) return w.id();
+        for (var e : c.bag.entrySet()) if (e.getValue() > 0 && w.has(e.getKey())) return e.getValue() >= n ? e.getKey() : w.word;
+        return w.word;
+    }
+
+    /** "3 oak_log", "2 oak_log + 1 oak_planks". */
+    private static String counted(Map<String, Integer> took) {
+        List<String> out = new ArrayList<>();
+        for (var e : took.entrySet()) out.add(e.getValue() + " " + shw(e.getKey()));
+        return String.join(" + ", out);
+    }
+
     /**
      * The chain that gets {@code n} of {@code what} into the bag from {@code w}. {@code what}: an item id, or a tag
-     * ("#minecraft:planks", or an id the game has no item for but a tag of: "planks"): any member, the cheapest.
+     * ("#minecraft:planks", or an id the game has no item for but a tag of: "planks"): any member (TAG_NEEDS).
      */
     public static Chain resolve(String what, int n, World w) {
         Ctx c = new Ctx(w);
         String tag = tagOf(what);
         if (tag != null) {
-            List<String> members = ItemWorth.withTag(tag);
-            if (members.isEmpty()) return finish(c, what, what + ": the game has no item and no tag called " + what);
-            Got g = need(c, members, n, sh(tag) + " (any)", null);
-            return finish(c, sh(what.replaceFirst("^#", "")), g == null ? sh(what) + ": " + c.fail : sh(what.replaceFirst("^#", "")) + " <- " + g.line());
+            String name = sh(tag);
+            if (ItemWorth.itemsIn(tag).isEmpty()) return finish(c, what, what + ": the game has no item and no tag called " + what);
+            Got g = needTag(c, new Want("#" + tag), n);
+            return finish(c, name, g == null ? name + ": " + c.fail : name + " <- " + g.line());
         }
         String item = id(what);
         String phrase = obtain(c, item, n);
@@ -225,7 +354,7 @@ public final class NeedChain {
         if (what.startsWith("#")) return id(what.substring(1));
         String i = id(what);
         if (!ItemWorth.recipes(i).isEmpty() || ItemWorth.facts(i) != ItemWorth.Facts.NONE) return null;
-        return ItemWorth.withTag(i).isEmpty() ? null : i;
+        return ItemWorth.itemsIn(i).isEmpty() ? null : i;
     }
 
     /**
@@ -238,7 +367,7 @@ public final class NeedChain {
         List<String> ids = new ArrayList<>();
         for (String i : items) ids.add(id(i));
         if (ids.isEmpty()) return finish(c, label, label + ": the game's data names no member");
-        Got g = need(c, ids, n, label, energy);
+        Got g = needAny(c, ids, n, label, energy);
         if (g == null) return finish(c, label, label + ": " + c.fail);
         return finish(c, label, label + " <- " + g.line());
     }
@@ -271,7 +400,7 @@ public final class NeedChain {
             for (String other : unknown.keySet()) if (!other.equals(first)) waiting.add(other);
             for (String other : waiting) drop(c, other, "not priced: " + first + " ends in an explore");
         } else {
-            for (var e : unknown.entrySet()) drop(c, e.getKey(), "no known source for " + sh(e.getValue()));
+            for (var e : unknown.entrySet()) drop(c, e.getKey(), "no known source for " + shw(e.getValue()));
         }
         return finish(c, group, phrases.isEmpty() ? group + ": nothing to make" : group + " <- " + String.join("; ", phrases));
     }
@@ -296,7 +425,8 @@ public final class NeedChain {
     /** One way to get a requirement: what runs it on the simulated bag, its name for the dropped list, and what breaks a tie. */
     private static final class Alt {
         final String label;
-        final Supplier<String> run;
+        Supplier<String> run;
+        /** The item the way yields (a tag need's member; set by the way itself when only its run knows it), null: the need word. */
         String id;
         int tier, rank;
         double work;
@@ -313,12 +443,14 @@ public final class NeedChain {
     /**
      * Prices every way on a snapshot (each put back), takes the cheapest that stands (no failure, no explore in it; past the
      * horizon last), restores the winner's state and lists every other with its seconds, its loop or its "no known source".
+     * Past {@code needChain.maxTrials} ways in one chain (the search's bound) the first way that stands ends the pricing.
      * Null: no way stands and none ends in an explore (every failure is in the dropped list); the caller makes the explore leaf.
      */
     private static Trial choose(Ctx c, List<Alt> alts, String self) {
         if (alts.isEmpty()) return null;
         List<Trial> trials = new ArrayList<>();
         for (int i = 0; i < alts.size(); i++) {
+            if (c.trials > maxTrials() && trials.stream().anyMatch(t -> t.fail() == null && !t.stuck())) break;
             Ctx.Snap s0 = c.snap();
             double base = c.seconds;
             c.trials++;
@@ -345,7 +477,7 @@ public final class NeedChain {
         for (Trial t : trials) {
             if (t == win) continue;
             if (t.fail() != null) drop(c, t.alt().label, t.fail());
-            else if (t.stuck()) { if (!win.stuck() && !t.alt().quiet) drop(c, t.alt().label, "no known source for " + sh(t.unknown())); }
+            else if (t.stuck()) { if (!win.stuck() && !t.alt().quiet) drop(c, t.alt().label, "no known source for " + shw(t.unknown())); }
             else if (t.alt().rate != null) drop(c, t.alt().label, s(t.seconds()) + String.format(Locale.ROOT, ", %.2f s a point with the eating (dearer a point than %s, %.2f)", t.alt().value(t.seconds()), win.alt().label, win.alt().value(win.seconds())));
             else drop(c, t.alt().label, s(t.seconds()) + " (dearer than " + win.alt().label + (t.seconds() > horizonS ? ", past the horizon" : "") + ")");
         }
@@ -359,36 +491,38 @@ public final class NeedChain {
         c.dropped.add(head + why);
     }
 
-    /** What one requirement got: the member that won and its phrase (null: it was in the bag). */
+    /** What one requirement got: the member that won (or the need word while no leaf named one) and its phrase (null: it was in the bag). */
     private record Got(String id, int n, String phrase) {
-        String line() { return phrase == null ? n + " " + sh(id) + " (in the bag)" : n + " " + sh(id) + " <- " + phrase; }
-        String part() { return phrase == null ? n + " " + sh(id) : n + " " + sh(id) + " <- " + phrase; }
+        String line() { return phrase == null ? n + " " + shw(id) + " (in the bag)" : n + " " + shw(id) + " <- " + phrase; }
+        String part() { return phrase == null ? n + " " + shw(id) : n + " " + shw(id) + " <- " + phrase; }
+    }
+
+    /** {@code n} of a recipe slot's need word: an item ({@link #obtain}), else the tag rule ({@link #needTag}). Null: none can be had (c.fail set). */
+    private static Got needWord(Ctx c, String word, int n) {
+        Want w = new Want(word);
+        if (w.item()) {
+            String p = obtain(c, w.id(), n);
+            return c.fail != null ? null : new Got(w.id(), n, p);
+        }
+        return needTag(c, w, n);
     }
 
     /**
-     * {@code n} of any one of {@code options} (a tag ingredient, the fuel table, a group): one member is the plain
-     * {@link #obtain}; several are priced each ({@link #choose}), the likeliest {@code needChain.candidates} in full (in the
-     * bag, a known source, a recipe from what is in the bag or known, then the rest; past {@code needChain.maxTrials} only
-     * the first). {@code energy} (food): compare by seconds per point, eating counted. Null: none can be had (c.fail set).
+     * {@code n} of any one of {@code options} (a group of items, not a tag: the plain foods, the pickaxes of a tier): one member
+     * is the plain {@link #obtain}; several are each priced in full ({@link #choose}). {@code energy} (food): compare by seconds
+     * per point, eating counted, a member in the bag at 0 s. Null: none can be had (c.fail set).
      */
-    private static Got need(Ctx c, List<String> options, int n, String label, ToDoubleFunction<String> energy) {
+    private static Got needAny(Ctx c, List<String> options, int n, String label, ToDoubleFunction<String> energy) {
         if (options.size() == 1) {
             String only = options.get(0);
             String p = obtain(c, only, n);
             return c.fail != null ? null : new Got(only, n, p);
         }
-        for (String o : options) if (c.have(o) >= n) return new Got(o, n, null);          // in the bag: nothing to price
-        List<String> ranked = new ArrayList<>(options);
-        Map<String, Integer> rank = new LinkedHashMap<>();
-        for (String o : ranked) rank.put(o, reach(c, o, n));
-        ranked.sort(Comparator.comparingInt((String o) -> rank.get(o)).thenComparing(Comparator.naturalOrder()));
-        int cap = c.trials > maxTrials() ? 1 : candidates();
+        if (energy == null) for (String o : options) if (c.have(o) >= n) return new Got(o, n, null);          // any one in the bag meets it: nothing to price
         List<Alt> alts = new ArrayList<>();
-        for (int i = 0; i < ranked.size() && i < cap; i++) {
-            String o = ranked.get(i);
+        for (String o : options) {
             Alt a = new Alt(sh(o), () -> obtain(c, o, n));
             a.id = o;
-            a.rank = rank.get(o);
             a.quiet = true;
             if (energy != null) {
                 double pts = Math.max(1e-9, n * energy.applyAsDouble(o));  // structural: epsilon
@@ -396,7 +530,6 @@ public final class NeedChain {
             }
             alts.add(a);
         }
-        if (ranked.size() > cap) drop(c, label + " (" + (ranked.size() - cap) + " more members)", "not priced: the " + cap + " likeliest were (needChain.candidates)");
         Trial win = choose(c, alts, null);
         if (win == null) {
             if (c.fail == null) c.fail = "no member of " + label + " can be had";
@@ -405,32 +538,196 @@ public final class NeedChain {
         return new Got(win.alt().id, n, win.phrase());
     }
 
-    /** How likely a member is to be had cheaply, for the order and the cap: 0 in the bag, 1 a known source, 2 made from what is had or known, 3 else. */
-    private static int reach(Ctx c, String item, int n) {
-        if (c.have(item) > 0) return 0;
-        if (!c.w.seenAll().apply(item).isEmpty() || mobKnown(c, item)) return 1;
-        for (ItemWorth.Recipe r : recipesOf(item)) {
-            boolean all = true;
-            for (List<String> slot : r.options()) {
-                boolean any = false;
-                for (String o : slot) if (c.have(o) > 0 || !c.w.seenAll().apply(o).isEmpty() || mobKnown(c, o)) { any = true; break; }
-                if (!any) { all = false; break; }
-            }
-            if (all) return 2;
+    /**
+     * TAG_NEEDS: {@code n} of a tag need. Have it: any members in the bag, summed. Else its ways, each priced once: its members'
+     * recipes grouped by what they need ({@link #groups}), its known sources grouped by the member they give (every tree one way
+     * each: any log), the animals whose loot drops a member; none known: the explore for the whole source set. The member is
+     * what the winning way yields; while none is named the need word stands in the line. Null: none can be had (c.fail set).
+     */
+    private static Got needTag(Ctx c, Want w, int n) {
+        if (c.dead() || n <= 0) return c.fail != null ? null : new Got(w.word, n, null);
+        int have = have(c, w);
+        if (have >= n) return new Got(bagName(c, w, n), n, null);
+        int lack = n - have;
+        if (c.path.contains(w.word)) {
+            c.fail = "loop: " + shw(w.word) + " needs itself (a recipe loop: " + String.join(" > ", c.path.stream().map(NeedChain::shw).toList()) + " > " + shw(w.word) + ")";
+            c.loopOn = w.word;
+            return null;
         }
-        return 3;
+        c.path.add(w.word);
+        try {
+            List<Alt> alts = new ArrayList<>();
+            for (Group g : groups(w, ItemWorth.CRAFT)) alts.add(groupAlt(c, w, lack, g));
+            for (Group g : groups(w, ItemWorth.SMELT)) alts.add(groupAlt(c, w, lack, g));
+            alts.addAll(tagSourceAlts(c, w, lack));
+            alts.addAll(tagHuntAlts(c, w, lack));
+            for (Alt a : alts) a.quiet = true;
+            Trial win = choose(c, alts, w.word);
+            if (win != null) return new Got(win.alt().id != null ? win.alt().id : w.word, n, win.phrase());
+            if (c.fail != null) return null;
+            return new Got(w.word, n, exploreLeaf(c, w.word, noSource(c, w.word)));
+        } finally {
+            c.path.remove(c.path.size() - 1);
+        }
     }
 
-    private static List<ItemWorth.Recipe> recipesOf(String item) {
-        List<ItemWorth.Recipe> out = new ArrayList<>(ItemWorth.recipes(item, ItemWorth.CRAFT));
-        out.addAll(ItemWorth.recipes(item, ItemWorth.SMELT));
+    /**
+     * One way of a tag need: its members' recipes of one kind that need the same: {@code recs} (with {@code outs}, the member
+     * each makes), {@code slots} (need word -> pieces a batch) and the batch's {@code outCount}.
+     */
+    private record Group(String kind, int outCount, List<ItemWorth.Recipe> recs, List<String> outs, Map<String, Integer> slots) {
+        Set<String> made() { return new LinkedHashSet<>(outs); }
+    }
+
+    /** A recipe's slots by need word, in the recipe's order: word -> pieces a batch. */
+    private static Map<String, Integer> slotWords(ItemWorth.Recipe r) {
+        Map<String, Integer> out = new LinkedHashMap<>();
+        for (String sw : r.needs()) out.merge(word(sw), 1, Integer::sum);
         return out;
     }
 
-    private static boolean mobKnown(Ctx c, String item) {
-        if (c.w.loot() == null) return false;
-        for (LootBook.Source s : c.w.loot().sources(item)) if (s.kind() == LootBook.Kind.MOB && !c.w.mobs().apply(s.from()).isEmpty()) return true;
+    /**
+     * TAG_NEEDS rule 2: a tag need's members' recipes of {@code kind}, grouped by what they need (a recipe that takes a member
+     * of the tag itself, a dye-over, is no way to make it). One-ingredient recipes of the same shape are one group whose
+     * need is any of their ingredients ({@link #cover}: {@code #planks <- #logs}); others group by their exact need words.
+     */
+    private static List<Group> groups(Want w, String kind) {
+        Map<String, List<ItemWorth.Recipe>> recs = new LinkedHashMap<>();
+        Map<String, List<String>> outs = new LinkedHashMap<>();
+        Map<String, Map<String, Integer>> slots = new LinkedHashMap<>();
+        Map<String, Set<String>> merged = new LinkedHashMap<>();
+        for (String m : w.members()) {
+            for (ItemWorth.Recipe r : ItemWorth.recipes(m, kind)) {
+                if (takesItself(w, r)) continue;
+                Map<String, Integer> sw = slotWords(r);
+                boolean one = sw.size() == 1;
+                String key = one ? r.outCount() + " x" + sw.values().iterator().next() : r.outCount() + " " + new TreeMap<>(sw);
+                recs.computeIfAbsent(key, k -> new ArrayList<>()).add(r);
+                outs.computeIfAbsent(key, k -> new ArrayList<>()).add(m);
+                if (one) merged.computeIfAbsent(key, k -> new TreeSet<>()).add(sw.keySet().iterator().next());
+                else slots.putIfAbsent(key, sw);
+            }
+        }
+        List<Group> out = new ArrayList<>();
+        for (var e : recs.entrySet()) {
+            String key = e.getKey();
+            ItemWorth.Recipe first = e.getValue().get(0);
+            Map<String, Integer> sw = merged.containsKey(key) ? Map.of(cover(merged.get(key)), first.needs().size()) : slots.get(key);
+            out.add(new Group(kind, first.outCount(), e.getValue(), outs.get(key), sw));
+        }
+        return out;
+    }
+
+    /** A recipe that takes a member of the need itself (a dye-over, a packing): not a way to make it. */
+    private static boolean takesItself(Want w, ItemWorth.Recipe r) {
+        for (List<String> slot : r.options()) for (String o : slot) if (w.has(o)) return true;
         return false;
+    }
+
+    /**
+     * The need "any of these words": one word as it is; several as the one game tag whose items are exactly theirs (the
+     * planks' log tags together are {@code #logs}), else all of them joined.
+     */
+    static String cover(Set<String> words) {
+        if (words.size() == 1) return words.iterator().next();
+        Set<String> all = new TreeSet<>();
+        for (String w : words) all.addAll(new Want(w).members());
+        if (all.isEmpty()) return word(String.join("|", words));
+        Set<String> hits = new TreeSet<>();
+        for (String t : ItemWorth.itemTagsOf(all.iterator().next())) if (ItemWorth.itemsIn(t).equals(all)) hits.add(t);
+        return hits.isEmpty() ? word(String.join("|", words)) : "#" + hits.iterator().next();
+    }
+
+    /** A group as one way: one member made: that member's own recipe (the item way); several: {@link #makeGroup}. */
+    private static Alt groupAlt(Ctx c, Want w, int lack, Group g) {
+        Set<String> made = g.made();
+        boolean craft = ItemWorth.CRAFT.equals(g.kind());
+        if (made.size() == 1) {
+            String out = made.iterator().next();
+            ItemWorth.Recipe r = g.recs().get(0);
+            Alt a = new Alt(sh(out), () -> craft ? craft(c, out, lack, r) : smelt(c, out, lack, r));
+            a.id = out;
+            return a;
+        }
+        List<String> needs = new ArrayList<>();
+        for (String sw : g.slots().keySet()) needs.add(shw(sw));
+        Alt a = new Alt((craft ? "" : "smelting ") + shw(w.word) + " from " + String.join("+", needs), null);
+        a.run = () -> makeGroup(c, w, lack, g, a);
+        return a;
+    }
+
+    /**
+     * Several members from one group's recipes: the need of each slot (tag rule), the station, the batches; the member is the
+     * one whose recipe takes what went in (the bag decides), else the step names the tag and the craft fills it from the bag.
+     */
+    private static String makeGroup(Ctx c, Want w, int lack, Group g, Alt self) {
+        boolean craft = ItemWorth.CRAFT.equals(g.kind());
+        int batches = (lack + g.outCount() - 1) / g.outCount();
+        List<String> parts = new ArrayList<>();
+        Map<String, Integer> used = new LinkedHashMap<>();
+        List<Map.Entry<String, Integer>> ins = new ArrayList<>(g.slots().entrySet());
+        ins.sort(Comparator.comparingInt((Map.Entry<String, Integer> e) -> rawUnseen(c, e.getKey()) ? 1 : 0));
+        String verb = craft ? "craft: " : "smelt ";
+        int pieces = 0;
+        for (var e : ins) {
+            int want = e.getValue() * batches;
+            pieces += e.getValue();
+            Got got = needWord(c, e.getKey(), want);
+            if (c.fail != null || got == null) { if (c.fail == null) c.fail = "no " + shw(e.getKey()) + " can be had"; return null; }
+            parts.add(got.part());
+            if (c.stuck) return verb + String.join(" + ", parts);
+            take(c, new Want(e.getKey()), want, got.id()).forEach((k, v) -> used.merge(k, v, Integer::sum));
+        }
+        if (craft) {
+            boolean table = pieces > GRID_2X2;
+            for (String m : g.made()) table |= ItemWorth.needsTable(m);
+            if (table) {
+                String t = station(c, ItemWorth.CRAFT);
+                if (c.fail != null) return null;
+                if (t != null) parts.add("table <- " + t);
+                if (c.stuck) return verb + String.join(" + ", parts);
+                walkBack(c);
+            }
+        } else {
+            String f = station(c, ItemWorth.SMELT);
+            if (c.fail != null) return null;
+            if (f != null) parts.add("furnace <- " + f);
+            if (c.stuck) return verb + String.join(" + ", parts);
+            String burn = burn(c, batches);
+            if (c.fail != null) return null;
+            parts.add(burn);
+            if (c.stuck) return verb + String.join(" + ", parts);
+            walkBack(c);
+        }
+        String out = outputOf(g, used);
+        self.id = out;
+        String name = out != null ? out : w.word;
+        int made = batches * g.outCount();
+        if (craft) {
+            c.steps.add(new Step.Craft(out != null ? sh(out) : shw(w.word), made));
+            c.seconds += Price.craftS() * batches;
+        } else {
+            c.steps.add(new Step.Smelt(out != null ? sh(out) : shw(w.word), made, true));
+            c.seconds += batches * smeltTicks() / GameTimes.TPS;
+        }
+        c.bag.merge(name, made, Integer::sum);
+        return verb + String.join(" + ", parts);
+    }
+
+    /** The one member whose recipe takes everything that went in (each slot's own need word, the game's tag index); null: none or several. */
+    private static String outputOf(Group g, Map<String, Integer> used) {
+        Set<String> outs = new LinkedHashSet<>();
+        for (int i = 0; i < g.recs().size(); i++) {
+            ItemWorth.Recipe r = g.recs().get(i);
+            boolean all = true;
+            for (String k : used.keySet()) {
+                boolean in = false;
+                for (String sw : r.needs()) if (new Want(sw).has(k)) { in = true; break; }
+                if (!in) { all = false; break; }
+            }
+            if (all) outs.add(g.outs().get(i));
+        }
+        return outs.size() == 1 ? outs.iterator().next() : null;
     }
 
     /**
@@ -443,7 +740,7 @@ public final class NeedChain {
         if (have >= n) return null;
         int lack = n - have;
         if (c.path.contains(item)) {
-            c.fail = "loop: " + sh(item) + " needs itself (a recipe loop: " + String.join(" > ", c.path.stream().map(NeedChain::sh).toList()) + " > " + sh(item) + ")";
+            c.fail = "loop: " + sh(item) + " needs itself (a recipe loop: " + String.join(" > ", c.path.stream().map(NeedChain::shw).toList()) + " > " + sh(item) + ")";
             c.loopOn = item;
             return null;
         }
@@ -455,7 +752,7 @@ public final class NeedChain {
                 alts.add(new Alt(sh(item) + " from " + ingredients(r), () -> craft(c, item, lack, r)));
             }
             for (ItemWorth.Recipe r : ItemWorth.recipes(item, ItemWorth.SMELT)) alts.add(new Alt("smelting " + sh(item) + " from " + ingredients(r), () -> smelt(c, item, lack, r)));
-            alts.addAll(sourceAlts(c, item, lack));
+            alts.addAll(sourceAlts(c, item, item, lack, c.w.seenAll().apply(item)));
             alts.addAll(huntAlts(c, item, lack));
             Trial w = choose(c, alts, item);
             if (w != null) return w.phrase();
@@ -472,45 +769,55 @@ public final class NeedChain {
         return false;
     }
 
-    /** "oak_planks+stick", a tag slot as its first member and how many more ("oak_planks|+10"). */
+    /** "oak_planks+stick", a tag slot as its tag ("#coals+stick"). */
     private static String ingredients(ItemWorth.Recipe r) {
         List<String> out = new ArrayList<>();
-        for (List<String> slot : r.options()) {
-            String t = slotLabel(slot);
+        for (String sw : r.needs()) {
+            String t = shw(word(sw));
             if (!out.contains(t)) out.add(t);
         }
         return String.join("+", out);
     }
 
-    private static String slotLabel(List<String> slot) { return sh(slot.get(0)) + (slot.size() > 1 ? "|+" + (slot.size() - 1) : ""); }
-
-    private static String noSource(Ctx c, String item) {
-        return "no " + sh(item) + " source known";
+    private static String noSource(Ctx c, String word) {
+        return "no " + shw(word) + " source known";
     }
 
     /** True when nothing makes it and nothing known gives it (its explore ends the chain, so it is asked for last). */
-    private static boolean rawUnseen(Ctx c, List<String> slot) {
-        for (String o : slot) {
-            if (c.have(o) > 0 || !recipesOf(o).isEmpty() || !c.w.seenAll().apply(o).isEmpty() || mobKnown(c, o)) return false;
-        }
+    private static boolean rawUnseen(Ctx c, String word) {
+        Want w = new Want(word);
+        if (have(c, w) > 0 || !c.w.seenAll().apply(w.word).isEmpty() || mobKnown(c, w)) return false;
+        if (w.item()) return recipesOf(w.id()).isEmpty();
+        for (String m : w.members()) if (!recipesOf(m).isEmpty()) return false;
         return true;
+    }
+
+    private static List<ItemWorth.Recipe> recipesOf(String item) {
+        List<ItemWorth.Recipe> out = new ArrayList<>(ItemWorth.recipes(item, ItemWorth.CRAFT));
+        out.addAll(ItemWorth.recipes(item, ItemWorth.SMELT));
+        return out;
+    }
+
+    private static boolean mobKnown(Ctx c, Want w) {
+        if (c.w.loot() == null) return false;
+        List<LootBook.Source> l = w.item() ? c.w.loot().sources(w.id()) : c.w.loot().sourcesMatching(w::has);
+        for (LootBook.Source s : l) if (s.kind() == LootBook.Kind.MOB && !c.w.mobs().apply(s.from()).isEmpty()) return true;
+        return false;
     }
 
     private static String craft(Ctx c, String item, int lack, ItemWorth.Recipe rec) {
         int batches = (lack + rec.outCount() - 1) / rec.outCount();
         List<String> parts = new ArrayList<>();
-        // the slots, the same choice counted once (4 planks of one tag); what can be made or fetched first, a raw source nothing knows last
-        Map<List<String>, Integer> slots = new LinkedHashMap<>();
-        for (List<String> slot : rec.options()) slots.merge(slot, 1, Integer::sum);
-        List<Map.Entry<List<String>, Integer>> ins = new ArrayList<>(slots.entrySet());
-        ins.sort(Comparator.comparingInt((Map.Entry<List<String>, Integer> e) -> rawUnseen(c, e.getKey()) ? 1 : 0));
+        // the slots by need word, the same word counted once (4 planks of one tag); what can be made or fetched first, a raw source nothing knows last
+        List<Map.Entry<String, Integer>> ins = new ArrayList<>(slotWords(rec).entrySet());
+        ins.sort(Comparator.comparingInt((Map.Entry<String, Integer> e) -> rawUnseen(c, e.getKey()) ? 1 : 0));
         for (var e : ins) {
             int want = e.getValue() * batches;
-            Got g = need(c, e.getKey(), want, slotLabel(e.getKey()), null);
-            if (c.fail != null || g == null) { if (c.fail == null) c.fail = "no " + sh(e.getKey().get(0)) + " can be had"; return null; }
+            Got g = needWord(c, e.getKey(), want);
+            if (c.fail != null || g == null) { if (c.fail == null) c.fail = "no " + shw(e.getKey()) + " can be had"; return null; }
             parts.add(g.part());
             if (c.stuck) return "craft: " + String.join(" + ", parts);                 // something needed is not known: the chain ends at the explore
-            c.bag.merge(g.id(), -want, Integer::sum);
+            take(c, new Want(e.getKey()), want, g.id());
         }
         if (ItemWorth.needsTable(item) || rec.inputs().size() > GRID_2X2) {
             String t = station(c, ItemWorth.CRAFT);
@@ -526,18 +833,18 @@ public final class NeedChain {
     }
 
     /**
-     * A furnace turns the input into the item: the input (any member of the recipe's ingredient, priced), the furnace in
-     * reach, the burn (any item of the game's fuel table, priced: its burn ticks / a smelt's ticks items per piece), 10 s an
-     * item, the walk back to the furnace.
+     * A furnace turns the input into the item: the input (the recipe's ingredient, a tag by the tag rule), the furnace in
+     * reach, the burn ({@link #burn}), 10 s an item, the walk back to the furnace.
      */
     private static String smelt(Ctx c, String item, int lack, ItemWorth.Recipe rec) {
         int k = (lack + rec.outCount() - 1) / rec.outCount();
         List<String> parts = new ArrayList<>();
-        Got in = need(c, rec.options().get(0), k, slotLabel(rec.options().get(0)), null);
-        if (c.fail != null || in == null) { if (c.fail == null) c.fail = "no " + sh(rec.inputs().get(0)) + " can be had"; return null; }
+        String input = word(rec.needs().get(0));
+        Got in = needWord(c, input, k);
+        if (c.fail != null || in == null) { if (c.fail == null) c.fail = "no " + shw(input) + " can be had"; return null; }
         parts.add(in.part());
         if (c.stuck) return "smelt " + String.join(" + ", parts);
-        c.bag.merge(in.id(), -k, Integer::sum);
+        take(c, new Want(input), k, in.id());
         String f = station(c, ItemWorth.SMELT);
         if (c.fail != null) return null;
         if (f != null) parts.add("furnace <- " + f);
@@ -555,43 +862,51 @@ public final class NeedChain {
 
     static double smeltTicks() { return Tuning.get("craftJob.smeltTicks"); }
 
-    /** The burn for {@code k} smelts: every item of the game's fuel table is a candidate (count = k x smelt ticks / its burn ticks), the cheapest wins. */
+    /**
+     * The burn for {@code k} smelts by the tag rule (TAG_NEEDS 6): the fuel table's items in classes of the same burn ticks
+     * (count = k x smelt ticks / its burn ticks), each class one need (any of its items, mixed in the bag). In the bag: the
+     * class that burns longest a piece and is covered. Else each class priced once, the cheapest wins.
+     */
     private static String burn(Ctx c, int k) {
         Map<String, Integer> fuels = ItemWorth.fuels();
         if (fuels.isEmpty()) { c.fail = "the game's fuel table is empty (no data loaded)"; return null; }
-        Map<String, Integer> count = new LinkedHashMap<>();
-        for (var e : fuels.entrySet()) if (e.getValue() > 0) count.put(e.getKey(), (int) Math.ceil(k * smeltTicks() / e.getValue()));
-        // in the bag, enough of one: burnt, no price
-        for (var e : count.entrySet()) if (c.have(e.getKey()) >= e.getValue()) {
-            c.bag.merge(e.getKey(), -e.getValue(), Integer::sum);
-            return "burn " + e.getValue() + " " + sh(e.getKey()) + " (in the bag)";
+        TreeMap<Integer, Set<String>> classes = new TreeMap<>(Comparator.reverseOrder());
+        for (var e : fuels.entrySet()) if (e.getValue() > 0) classes.computeIfAbsent(e.getValue(), t -> new TreeSet<>()).add(e.getKey());
+        for (var e : classes.entrySet()) {
+            int count = (int) Math.ceil(k * smeltTicks() / e.getKey());
+            Want cw = new Want(classWord(e.getValue()));
+            if (have(c, cw) >= count) return "burn " + counted(take(c, cw, count, null)) + " (in the bag)";
         }
-        List<String> ranked = new ArrayList<>(count.keySet());
-        Map<String, Integer> rank = new LinkedHashMap<>();
-        for (String o : ranked) rank.put(o, reach(c, o, count.get(o)));
-        ranked.sort(Comparator.comparingInt((String o) -> rank.get(o)).thenComparing(Comparator.naturalOrder()));
-        int cap = c.trials > maxTrials() ? 1 : candidates();
         List<Alt> alts = new ArrayList<>();
-        for (int i = 0; i < ranked.size() && i < cap; i++) {
-            String o = ranked.get(i);
-            int n = count.get(o);
-            Alt a = new Alt("burn " + sh(o), () -> {
-                String p = obtain(c, o, n);
-                if (c.fail == null && !c.stuck) c.bag.merge(o, -n, Integer::sum);
-                return "burn " + n + " " + sh(o) + (p == null ? "" : " <- " + p);
-            });
-            a.id = o;
-            a.rank = rank.get(o);
+        for (var e : classes.entrySet()) {
+            int count = (int) Math.ceil(k * smeltTicks() / e.getKey());
+            String cw = classWord(e.getValue());
+            boolean plain = new Want(cw).item() || cw.indexOf('|') < 0;
+            Alt a = new Alt("burn " + (plain ? shw(cw) : e.getValue().size() + " items of " + e.getKey() + " ticks"), null);
+            a.run = () -> {
+                Got g = needWord(c, cw, count);
+                if (g == null) return null;
+                a.id = g.id();
+                if (c.fail == null && !c.stuck) take(c, new Want(cw), count, g.id());
+                return "burn " + g.part();
+            };
             a.quiet = true;
             alts.add(a);
         }
-        if (ranked.size() > cap) drop(c, "burn (" + (ranked.size() - cap) + " more of the fuel table)", "not priced: the " + cap + " likeliest were (needChain.candidates)");
         Trial win = choose(c, alts, null);
         if (win == null) {
             if (c.fail == null) c.fail = "nothing of the fuel table can be had";
             return null;
         }
         return win.phrase();
+    }
+
+    /** A burn class as one need word: one item, or the tag its items are exactly ({@link #cover}), else all of them. */
+    private static String classWord(Set<String> items) {
+        if (items.size() == 1) return word(items.iterator().next());
+        Set<String> words = new TreeSet<>();
+        for (String i : items) words.add(word(i));
+        return cover(words);
     }
 
     /**
@@ -622,16 +937,82 @@ public final class NeedChain {
 
     // ---- the sources: a known block, a known animal ----
 
-    /** The ways a known block gives the item: one per known block (nearest others fill what it lacks). */
-    private static List<Alt> sourceAlts(Ctx c, String item, int lack) {
-        List<Spot> spots = new ArrayList<>(c.w.seenAll().apply(item));
+    /**
+     * The ways known blocks give {@code gives} (asked for as {@code word}): one per known block (nearest others fill what it
+     * lacks).
+     */
+    private static List<Alt> sourceAlts(Ctx c, String word, String gives, int lack, List<Spot> known) {
+        List<Spot> spots = new ArrayList<>(known);
         spots.sort(Comparator.comparingDouble(Spot::dist));
         List<Alt> alts = new ArrayList<>();
         for (Spot first : spots) {
             List<Spot> order = new ArrayList<>();
             order.add(first);
             for (Spot o : spots) if (o != first) order.add(o);
-            alts.add(new Alt((tree(item, first) ? "tree " : sh(item) + " ") + Math.round(first.dist()) + " m", () -> sourceFrom(c, item, lack, order)));
+            alts.add(new Alt((tree(word, first) ? "tree " : shw(gives) + " ") + Math.round(first.dist()) + " m", () -> sourceFrom(c, word, gives, lack, order)));
+        }
+        return alts;
+    }
+
+    /**
+     * TAG_NEEDS: the known sources of a tag need (the world's lookup for the whole source set): every tree its own way (the
+     * chop takes any log; the member is the tree's), the other blocks one way per member they give (an ore dig), its spots
+     * priced inside it.
+     */
+    private static List<Alt> tagSourceAlts(Ctx c, Want w, int lack) {
+        List<Spot> spots = new ArrayList<>(c.w.seenAll().apply(w.word));
+        spots.sort(Comparator.comparingDouble(Spot::dist));
+        List<Spot> trees = new ArrayList<>();
+        Map<String, List<Spot>> dig = new LinkedHashMap<>();
+        for (Spot sp : spots) {
+            if (tree(w.word, sp)) trees.add(sp);
+            else dig.computeIfAbsent(givesOf(sp, w), k -> new ArrayList<>()).add(sp);
+        }
+        List<Alt> alts = new ArrayList<>();
+        for (Spot first : trees) {
+            List<Spot> order = new ArrayList<>();
+            order.add(first);
+            for (Spot o : trees) if (o != first) order.add(o);
+            String gives = givesOf(first, w);
+            Alt a = new Alt("tree " + Math.round(first.dist()) + " m", () -> sourceFrom(c, w.word, gives, lack, order));
+            a.id = gives;
+            alts.add(a);
+        }
+        for (var e : dig.entrySet()) {
+            String gives = e.getKey();
+            List<Spot> sps = e.getValue();
+            Alt a = new Alt(shw(gives), () -> {
+                Trial t = choose(c, sourceAlts(c, w.word, gives, lack, sps), null);
+                if (t != null) return t.phrase();
+                if (c.fail == null) c.fail = "no known " + shw(gives) + " source can be dug";
+                return null;
+            });
+            a.id = gives;
+            alts.add(a);
+        }
+        return alts;
+    }
+
+    /** What a spot of a tag need yields: what the lookup says (the loot data), else its block when that is a member, else the need's token. */
+    private static String givesOf(Spot sp, Want w) {
+        if (sp.gives() != null) return word(sp.gives());
+        if (sp.block() != null && w.has(sp.block())) return sp.block();
+        return w.word;
+    }
+
+    /** TAG_NEEDS: the animals whose loot drops any member, each its own way (the member it drops). */
+    private static List<Alt> tagHuntAlts(Ctx c, Want w, int lack) {
+        List<Alt> alts = new ArrayList<>();
+        if (c.w.loot() == null) return alts;
+        for (LootBook.Source s : c.w.loot().sourcesMatching(w::has)) {
+            if (s.kind() != LootBook.Kind.MOB || s.per() <= 0) continue;
+            List<Mob> known = new ArrayList<>(c.w.mobs().apply(s.from()));
+            if (known.isEmpty()) continue;
+            known.sort(Comparator.comparingDouble(Mob::dist));
+            Mob m = known.get(0);
+            Alt a = new Alt("hunt " + sh(s.from()) + " " + Math.round(m.dist()) + " m", () -> hunt(c, s.item(), lack, s, m));
+            a.id = s.item();
+            alts.add(a);
         }
         return alts;
     }
@@ -647,14 +1028,20 @@ public final class NeedChain {
         return null;
     }
 
-    /** The key of a spot of {@code item} (see {@link #sourceKey(Step)}). */
+    /** The key of a spot of {@code item} (a need word; a tag's spot by the item it gives) (see {@link #sourceKey(Step)}). */
     public static String sourceKey(String item, Spot sp) {
-        return tree(item, sp) ? "cut at " + sp.x() + " " + sp.y() + " " + sp.z() : "collect " + sh(item);
+        return tree(item, sp) ? "cut at " + sp.x() + " " + sp.y() + " " + sp.z() : "collect " + shw(sp.gives() != null ? word(sp.gives()) : item);
     }
-    /** A block the game tags as logs is a tree (Baritone's tree mining). */
+
+    /** A block the game tags as logs is a tree (Baritone's tree mining); a spot with no block known for a tag need: a tree when the need is logs only. */
     private static boolean tree(String item, Spot sp) {
-        String b = sp.block() != null ? sp.block() : item;
-        return ItemWorth.hasTag(b, "minecraft:logs");
+        String b = sp.block() != null ? sp.block() : sp.gives() != null ? sp.gives() : item;
+        if (b == null) return false;
+        if (!b.startsWith("#") && b.indexOf('|') < 0) return ItemWorth.hasTag(b, LOGS_TAG);
+        Set<String> m = new Want(b).members();
+        if (m.isEmpty()) return false;
+        for (String i : m) if (!ItemWorth.hasTag(i, LOGS_TAG)) return false;
+        return true;
     }
 
     /** How many of the item one block of {@code block} drops (the loot data's expectation; 1 when unknown). */
@@ -664,21 +1051,25 @@ public final class NeedChain {
         return 1;
     }
 
-    /** Break at the first spot (and on at the next while it has too few blocks), the walk priced in but no walk step (chop B2): after the pickaxe tier the block asks for. */
-    private static String sourceFrom(Ctx c, String item, int lack, List<Spot> order) {
+    /**
+     * Break at the first spot (and on at the next while it has too few blocks), the walk priced in but no walk step (chop B2):
+     * after the pickaxe tier the block asks for. {@code word}: the need (its explore when the known blocks fall short);
+     * {@code gives}: what goes into the bag (the item, a tag need's member, or its token).
+     */
+    private static String sourceFrom(Ctx c, String word, String gives, int lack, List<Spot> order) {
         Spot first = order.get(0);
-        boolean log = tree(item, first);
+        boolean log = tree(word, first);
         String pre = null;
-        int tier = tierOf(item, first);
+        int tier = tierOf(word, first);
         if (tier > c.pickTier) {
             pre = cheapestPickaxe(c, tier);
             if (c.fail != null) return null;
-            if (c.stuck) return "dig " + sh(item) + " seen " + Math.round(first.dist()) + " m (after " + pre + ")";      // the pickaxe's own source is still to find: the chain ends at that explore
+            if (c.stuck) return "dig " + shw(gives) + " seen " + Math.round(first.dist()) + " m (after " + pre + ")";      // the pickaxe's own source is still to find: the chain ends at that explore
         }
         int remaining = lack;
         for (Spot sp : order) {
             if (remaining <= 0) break;
-            double per = perBlock(c, item, sp.block());
+            double per = perBlock(c, gives, sp.block());
             int blocksWanted = (int) Math.ceil(remaining / per - 1e-9);  // structural: epsilon
             int avail = sp.count() <= 0 ? blocksWanted : sp.count() - c.taken.getOrDefault(sp.key(), 0);
             // S20 (owner 2026-10-22): the chop takes the whole tree (the fork's ChopTree), so a counted tree is priced and
@@ -697,17 +1088,17 @@ public final class NeedChain {
             } else {
                 // chop: no walk step before a block source (the cut/collect paths itself; the spot names the blocks and the price)
                 c.leafAt.put(sp.key(), c.steps.size());
-                c.steps.add(log ? new Step.ChopTree(new int[]{sp.x(), sp.y(), sp.z()}, wanted, null) : new Step.Collect(sh(item), wanted));
+                c.steps.add(log ? new Step.ChopTree(new int[]{sp.x(), sp.y(), sp.z()}, wanted, null) : new Step.Collect(shw(gives), wanted));
                 c.seconds += walkS(sp.dist());
                 c.away = sp.dist();
             }
-            c.seconds += breakS(c, item, sp) * take;
+            c.seconds += breakS(c, gives, sp) * take;
             c.taken.merge(sp.key(), take, Integer::sum);
-            c.bag.merge(item, got, Integer::sum);
+            c.bag.merge(gives, got, Integer::sum);
             remaining -= got;
         }
-        String how = (log ? "cut tree" : "dig " + sh(item)) + " seen " + Math.round(first.dist()) + " m" + (pre == null ? "" : " with " + pre);
-        if (remaining > 0) return how + " + " + exploreLeaf(c, item, "not enough " + sh(item) + " known");
+        String how = (log ? "cut tree" : "dig " + shw(gives)) + " seen " + Math.round(first.dist()) + " m" + (pre == null ? "" : " with " + pre);
+        if (remaining > 0) return how + " + " + exploreLeaf(c, word, "not enough " + shw(word) + " known");
         return how;
     }
 
@@ -766,15 +1157,16 @@ public final class NeedChain {
     }
 
     /**
-     * The leaf when no way stands: look for the item's source. It has no price. An item a block generates with (the worldgen
-     * band of the blocks that drop it) first goes to that height (one Baritone goal), then explores until a source is known.
+     * The leaf when no way stands: look for the need's source (a tag: any member's: the whole source set). It has no price.
+     * A need blocks generate with (the worldgen band of the blocks that drop it) first goes to that height (one Baritone
+     * goal), then explores until a source is known.
      */
-    private static String exploreLeaf(Ctx c, String item, String reason) {
-        int[] band = c.w.band().apply(item);
+    private static String exploreLeaf(Ctx c, String word, String reason) {
+        int[] band = c.w.band().apply(word);
         if (band != null) c.steps.add(new Step.ToBand(band[0], band[1]));
-        c.steps.add(new Step.Explore(exploreMinutes(), sh(item)));      // live-facts: it ends once a source of the item is known
+        c.steps.add(new Step.Explore(exploreMinutes(), shw(word)));      // live-facts: it ends once a source of the need is known
         c.stuck = true;
-        if (c.unknown == null) c.unknown = item;
+        if (c.unknown == null) c.unknown = word;
         return "explore (" + reason + (band == null ? "" : "; it generates at Y " + band[0] + ".." + band[1] + ", going there first") + ")";
     }
 
@@ -785,9 +1177,7 @@ public final class NeedChain {
      */
     private static String cheapestPickaxe(Ctx c, int tier) {
         List<Alt> alts = new ArrayList<>();
-        List<String> ids = new ArrayList<>(ItemWorth.withTag("pickaxes"));
-        java.util.Collections.sort(ids);
-        for (String pid : ids) {
+        for (String pid : new TreeSet<>(ItemWorth.itemsIn("pickaxes"))) {
             int t = MiningTiers.toolTier(pid, "pickaxe");
             if (t < tier || ItemWorth.recipes(pid, ItemWorth.CRAFT).isEmpty()) continue;
             Alt a = new Alt(sh(pid), () -> obtain(c, pid, 1));
@@ -804,16 +1194,34 @@ public final class NeedChain {
         return win.alt().label + " (<- " + win.phrase() + ")";
     }
 
-    /** The raw items an item's whole recipe tree takes (recipe data only, a slot's first member); a recipe loop is infinite work. Breaks the tie between chains that stop at the same explore. */
-    private static double rawWork(String item, List<String> path) {
-        if (path.contains(item)) return Double.POSITIVE_INFINITY;
+    /**
+     * The raw items a need's whole recipe tree takes (recipe data only; a tag slot by its least-work group, TAG_NEEDS); a recipe
+     * loop is infinite work. Breaks the tie between chains that stop at the same explore.
+     */
+    private static double rawWork(String word, List<String> path) {
+        if (path.contains(word)) return Double.POSITIVE_INFINITY;
+        Want w = new Want(word);
+        if (!w.item()) {
+            List<Group> gs = groups(w, ItemWorth.CRAFT);
+            if (gs.isEmpty()) return 1;
+            double best = Double.POSITIVE_INFINITY;
+            path.add(w.word);
+            for (Group g : gs) {
+                double sum = 0;
+                for (var e : g.slots().entrySet()) sum += e.getValue() * rawWork(e.getKey(), path);
+                best = Math.min(best, sum / g.outCount());
+            }
+            path.remove(path.size() - 1);
+            return best;
+        }
+        String item = w.id();
         List<ItemWorth.Recipe> rs = ItemWorth.recipes(item, ItemWorth.CRAFT);
         ItemWorth.Recipe rec = null;
         for (ItemWorth.Recipe r : rs) if (!packing(item, r)) { rec = r; break; }
         if (rec == null) return 1;
         path.add(item);
         double sum = 0;
-        for (List<String> slot : rec.options()) sum += rawWork(slot.get(0), path);
+        for (String sw : rec.needs()) sum += rawWork(word(sw), path);
         path.remove(path.size() - 1);
         return sum / rec.outCount();
     }

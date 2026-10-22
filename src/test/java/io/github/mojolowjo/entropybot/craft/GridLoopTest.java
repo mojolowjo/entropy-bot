@@ -87,8 +87,9 @@ class GridLoopTest {
             for (int row = 0; row < size; row++) {
                 for (int col = 0; col < size; col++) {
                     int s = 1 + row * size + col;
-                    String need = row < r.height() && col < r.width() && !r.cells().get(row * r.width() + col).isEmpty() ? r.cells().get(row * r.width() + col).get(0) : null;
-                    if (need == null ? n[s] > 0 : n[s] == 0 || !need.equals(id[s])) return false;
+                    // the game's Ingredient.test: any item of the cell's ingredient (a tag cell takes any member)
+                    List<String> need = row < r.height() && col < r.width() && !r.cells().get(row * r.width() + col).isEmpty() ? r.cells().get(row * r.width() + col) : null;
+                    if (need == null ? n[s] > 0 : n[s] == 0 || !need.contains(id[s])) return false;
                 }
             }
             return true;
@@ -216,6 +217,45 @@ class GridLoopTest {
         }
         last[0] = null;
         return maxTicks;
+    }
+
+    /**
+     * TAG_NEEDS rule 4: a recipe that says #planks (its cells: the tag's members, the game's expansion of the ingredient) is
+     * made from 2 oak + 2 birch planks: each cell takes any member the bag holds, the craft never asks for one wood.
+     */
+    @Test
+    void aTagCellTakesAnyMemberAMixedBagMakesTheTable() {
+        List<String> planks = List.of("minecraft:oak_planks", "minecraft:birch_planks", "minecraft:spruce_planks");
+        RecipeData table = RecipeData.shaped("minecraft:crafting_table", "minecraft:crafting_table", 1, 2, 2, Collections.nCopies(4, planks));
+        Table t = new Table(2, table, 2).give("minecraft:oak_planks", 2).give("minecraft:birch_planks", 2);
+        GridLayout.Layout lay = GridLayout.layout(table, 2, java.util.Map.of("minecraft:oak_planks", 2, "minecraft:birch_planks", 2));
+        assertTrue(lay.ok(), lay.error());
+        assertEquals(2, lay.slots().values().stream().filter("minecraft:oak_planks"::equals).count(), lay.slots().toString());
+        assertEquals(2, lay.slots().values().stream().filter("minecraft:birch_planks"::equals).count(), lay.slots().toString());
+        GridLoop loop = new GridLoop(table, 2, 1, 0);
+        GridLoop.Out[] o = new GridLoop.Out[1];
+        run(loop, t, 400, o);
+        assertNotNull(o[0], "the loop ended");
+        assertEquals(GridLoop.State.DONE, o[0].state(), o[0].error());
+        assertEquals(1, t.has("minecraft:crafting_table"));
+        assertEquals(0, t.has("minecraft:oak_planks"));
+        assertEquals(0, t.has("minecraft:birch_planks"));
+        assertEquals(0, t.inGrid());
+        // the planner counts the mixed members as the one ingredient (the cell's alternatives summed)
+        FakeRecipes src = new FakeRecipes().add(table);
+        Crafter.Plan p = new CraftPlanner(src).plan("minecraft:crafting_table", 1, new java.util.LinkedHashMap<>(java.util.Map.of("minecraft:oak_planks", 2, "minecraft:birch_planks", 2)));
+        assertTrue(p.ok(), p.error());
+        assertEquals(1, p.steps().size(), p.steps().toString());
+        // the chain's tag step ("craft #planks 4"): the member is the one the bag makes (birch logs in the bag: birch planks)
+        FakeRecipes woods = new FakeRecipes()
+                .shapeless("minecraft:oak_planks", "oak_planks", 4, FakeRecipes.alts("oak_log"))
+                .shapeless("minecraft:birch_planks", "birch_planks", 4, FakeRecipes.alts("birch_log"));
+        woods.tags.put("minecraft:planks", List.of("minecraft:oak_planks", "minecraft:birch_planks"));
+        CraftPlanner cp = new CraftPlanner(woods);
+        CraftPlanner.Targets tg = cp.parseCraftTargets("#planks 4", java.util.Map.of("minecraft:birch_log", 1));
+        assertTrue(tg.ok(), tg.error());
+        assertEquals(List.of(new CraftPlanner.Target("minecraft:birch_planks", 4)), tg.list());
+        assertFalse(cp.parseCraftTargets("#planks 4", java.util.Map.of()).ok(), "no member can be made from an empty bag: said, not guessed");
     }
 
     @Test

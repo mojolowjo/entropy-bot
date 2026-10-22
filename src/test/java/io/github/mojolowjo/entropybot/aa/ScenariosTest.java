@@ -39,11 +39,25 @@ class ScenariosTest {
 
     static final Spot STONE_12 = new Spot(12, 60, 3, 12, "minecraft:stone", 40);
 
-    /** A world of the scenario's facts; the seen map is keyed by item id (a short id gets "minecraft:"). */
+    /**
+     * A world of the scenario's facts; the seen map is keyed by item id (a short id gets "minecraft:"). TAG_NEEDS: a tag word
+     * ("#minecraft:coals", or several joined by "|") is the seen spots of every item the game's tag index puts in it, each
+     * giving that item (what the live lookup reads off the loot data).
+     */
     static World w(Map<String, Integer> bag, boolean table, boolean furnace, Map<String, List<Spot>> seen) {
         Map<String, List<Spot>> ids = new java.util.HashMap<>();
         for (var e : seen.entrySet()) ids.put(e.getKey().contains(":") ? e.getKey() : "minecraft:" + e.getKey(), e.getValue());
-        return new World(bag, table, furnace, item -> ids.getOrDefault(item, List.of()), null, null, null, 0);
+        return new World(bag, table, furnace, word -> lookup(ids, word), null, null, null, 0);
+    }
+
+    static List<Spot> lookup(Map<String, List<Spot>> ids, String word) {
+        List<Spot> out = new java.util.ArrayList<>();
+        for (String part : word.split("\\|")) {
+            if (!part.startsWith("#")) { out.addAll(ids.getOrDefault(part, List.of())); continue; }
+            for (var e : ids.entrySet())
+                if (io.github.mojolowjo.entropybot.aa.brain.ItemWorth.isIn(e.getKey(), part.substring(1))) for (Spot s : e.getValue()) out.add(s.giving(e.getKey()));
+        }
+        return out;
     }
 
     static String chainPart(String why) { int k = why.indexOf(" | dropped:"); return k < 0 ? why : why.substring(0, k); }
@@ -606,6 +620,91 @@ class ScenariosTest {
         assertFalse(f.blocked("needs.wood", "cut at 40 64 0", now), "B is not held");
         assertNull(f.held("needs.wood", Ways.chainKey(goal), now), "the chain row is not held for one tree");
         assertEquals(1, f.heldCount(now), "Failures holds A only: " + f.describe(now));
+    }
+
+    // ---- TAG_NEEDS (docs/TAG_NEEDS.md, owner 2026-10-22): a tag need stays a tag until a leaf names a block or an item ----
+
+    /** One wood the vanilla way: its log in its own log tag and in #logs, its planks in #planks, made from its log tag (4 a log). */
+    static TestData wood(TestData d, String ns, String wood) {
+        String log = ns + ":" + wood + "_log", planks = ns + ":" + wood + "_planks", logs = ns + ":" + wood + "_logs";
+        d.block(log, 2, 0).block(planks, 2, 0).tag(log, logs, "minecraft:logs").tag(planks, "minecraft:planks");
+        return d.recipe(planks, 4, "#" + logs);
+    }
+
+    /** The recipe book of the tag scenarios: the table from #planks, the planks from their logs' tags, torches from #coals and sticks. */
+    static TestData tagWorld() {
+        TestData d = new TestData();
+        wood(d, "minecraft", "oak");
+        wood(d, "minecraft", "birch");
+        d.recipe("crafting_table", 1, "#minecraft:planks", "#minecraft:planks", "#minecraft:planks", "#minecraft:planks");
+        d.recipe("stick", 4, "#minecraft:planks", "#minecraft:planks").recipe("torch", 4, "#minecraft:coals", "stick");
+        d.tag("coal", "minecraft:coals").tag("charcoal", "minecraft:coals");
+        return d.install();
+    }
+
+    static Spot treeOf(String log, double dist, int logs) { return new Spot((int) dist, 64, 0, dist, log, logs); }
+
+    /** S21: 2 oak + 2 birch planks make the table from the bag: one craft, 0.3 s; no tree, no dropped list of woods. */
+    @Test
+    void s21_mixedPlanksInTheBagMakeTheTable() {
+        tagWorld();
+        Chain c = NeedChain.resolve("crafting_table", 1, w(Map.of("minecraft:oak_planks", 2, "minecraft:birch_planks", 2), false, false, Map.of()));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertEquals(0.3, c.seconds(), TOL, c.why());
+        assertEquals(List.of(new Step.Craft("crafting_table", 1)), c.steps());
+        assertTrue(c.why().startsWith("crafting_table <- craft: 4 #planks: 0.3 s"), c.why());
+        assertTrue(c.dropped().isEmpty(), c.dropped().toString());
+    }
+
+    /**
+     * S22: bag empty, a birch tree 10 m (6 logs) and an oak tree 40 m (8 logs): the nearest tree of any kind. Cut the birch (the
+     * whole tree): walk 3.0 + 6 x 3.0 = 21.0; planks 0.3; table 0.3 = 21.6 s. The oak tree is dropped (its cut 12.0 + 24.0 = 36.0;
+     * its whole chain 12.0 + 24.0 + 0.6 = 36.6 s). Nothing says birch before the cut step; with no tree known the line reads #planks.
+     */
+    @Test
+    void s22_theNearestTreeOfAnyKindAndNoMemberBeforeTheCut() {
+        tagWorld();
+        Spot birch = treeOf("minecraft:birch_log", 10, 6), oak = treeOf("minecraft:oak_log", 40, 8);
+        World both = w(Map.of(), false, false, Map.of("birch_log", List.of(birch), "oak_log", List.of(oak)));
+        Chain c = NeedChain.resolve("crafting_table", 1, both);
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertEquals(21.6, c.seconds(), TOL, c.why());
+        assertEquals(List.of("cut 1 at 10 64 0", "craft birch_planks 4", "craft crafting_table 1"), c.steps().stream().map(Step::text).toList(),
+                "the cut first (any log: no wood named), the planks follow what it gives");
+        assertFalse(c.steps().get(0).text().contains("birch"), "the cut names the tree's place, no wood: " + c.steps());
+        assertNull(((Step.ChopTree) c.steps().get(0)).log(), "the chop takes the tree's logs, whatever wood");
+        assertTrue(c.dropped().stream().anyMatch(d -> d.startsWith("tree 40 m: 36.0 s (dearer than tree 10 m)")), c.dropped().toString());
+        assertEquals(36.6, NeedChain.resolve("crafting_table", 1, both.without((word, sp) -> sp.x() == 10)).seconds(), TOL, "the oak tree's whole chain");
+        // no tree known: the chain keeps the tag words until the explore, which is for any log
+        Chain none = NeedChain.resolve("crafting_table", 1, w(Map.of(), false, false, Map.of()));
+        assertTrue(none.ok() && none.explore(), none.why());
+        assertTrue(none.why().startsWith("crafting_table <- craft: 4 #planks <- craft: 1 #logs <- explore (no #logs source known)"), none.why());
+        assertFalse(none.why().contains("birch") || none.why().contains("oak"), "no member before a tree is known: " + none.why());
+        assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes(), "#logs")), none.steps());
+    }
+
+    /** S23: 2 charcoal + 2 coal + 4 sticks: 16 torches from the bag, both coals members count: 4 crafts, 1.2 s. */
+    @Test
+    void s23_torchesByTagFromMixedCoals() {
+        tagWorld();
+        Chain c = NeedChain.resolve("torch", 16, w(Map.of("minecraft:charcoal", 2, "minecraft:coal", 2, "minecraft:stick", 4), false, false, Map.of()));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertEquals(1.2, c.seconds(), TOL, c.why());
+        assertEquals(List.of(new Step.Craft("torch", 16)), c.steps());
+        assertTrue(c.why().startsWith("torch <- craft: 4 #coals + 4 stick: 1.2 s"), c.why());
+    }
+
+    /**
+     * S24: a modded wood the code has never heard of: the test book registers test:ash_planks in #planks (from #test:ash_logs, in
+     * #logs) and an ash tree 5 m (6 logs): the table comes from ash: walk 1.5 + 6 x 3.0 + 0.6 = 20.1 s.
+     */
+    @Test
+    void s24_aModdedWoodInThePlanksTagNeedsNoCode() {
+        wood(tagWorld(), "test", "ash").install();
+        Chain c = NeedChain.resolve("crafting_table", 1, w(Map.of(), false, false, Map.of("test:ash_log", List.of(treeOf("test:ash_log", 5, 6)))));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertEquals(20.1, c.seconds(), TOL, c.why());
+        assertEquals(List.of("cut 1 at 5 64 0", "craft test:ash_planks 4", "craft crafting_table 1"), c.steps().stream().map(Step::text).toList());
     }
 
     @Test

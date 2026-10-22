@@ -173,6 +173,17 @@ public final class McRecipes implements RecipeSource {
         });
     }
 
+    /** TAG_NEEDS: the item tag's members from the game's registry (its tag index as the world loaded it). */
+    @Override
+    public List<String> tagMembers(String tag) {
+        ResourceLocation rl = ResourceLocation.tryParse(tag);
+        if (rl == null) return List.of();
+        List<String> out = new ArrayList<>();
+        for (var h : BuiltInRegistries.ITEM.getTagOrEmpty(net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.ITEM, rl)))
+            out.add(BuiltInRegistries.ITEM.getKey(h.value()).toString());
+        return out;
+    }
+
     @Override
     public synchronized List<String> allItemIds() {
         if (allIds == null) {

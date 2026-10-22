@@ -938,7 +938,6 @@ nearby.scanR	32.0
 nearby.scanY	10.0
 only.otherWeight	0.0
 steps.placeNearR	3.0
-needChain.candidates	8.0
 needChain.maxTrials	4000.0
 needChain.unknownBreakS	3.0
 needChain.unknownMobHp	10.0

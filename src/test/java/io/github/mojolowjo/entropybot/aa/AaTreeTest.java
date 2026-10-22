@@ -31,8 +31,11 @@ class AaTreeTest {
         java.util.Map<String, NeedChain.Spot> spots = java.util.Map.of("minecraft:oak_log", new NeedChain.Spot(10, 64, 0, 10, "minecraft:oak_log", 64),
                 "minecraft:cobblestone", new NeedChain.Spot(0, 60, 16, 16, "minecraft:stone", 200), "minecraft:coal", new NeedChain.Spot(0, 40, 20, 20, "minecraft:coal_ore", 40),
                 "minecraft:raw_iron", new NeedChain.Spot(0, 30, 20, 25, "minecraft:iron_ore", 40));
+        // TAG_NEEDS: the world answers a tag word with any member's spots (the live lookup's source set), as ScenariosTest's
+        java.util.Map<String, java.util.List<NeedChain.Spot>> seen = new java.util.HashMap<>();
+        spots.forEach((k, v) -> seen.put(k, java.util.List.of(v)));
         bb.fact(NeedChain.WORLD_FACT, (java.util.function.Supplier<NeedChain.World>) () -> new NeedChain.World(bb.in.bag, bb.in.tableKnown, bb.in.furnaceKnown,
-                item -> spots.containsKey(item) ? java.util.List.of(spots.get(item)) : java.util.List.of(), null, null, null, 0));
+                word -> ScenariosTest.lookup(seen, word), null, null, null, 0));
     }
 
     @AfterEach

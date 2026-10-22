@@ -97,8 +97,7 @@ final class TuningDefs {
         // blueprint
         Tuning.def("blueprint.maxFails", 3, "rm-constants 0.39.u2 (was Blueprint.MAX_FAILS)", "Largest schematic AA takes (cells, air included)");
         Tuning.def("steps.placeNearR", 3, "one-planner 0.39.z1", "blocks within which the fork's placeNear picks the cell of a place-near step (a table, a furnace)");
-        Tuning.def("needChain.candidates", 8, "one-planner 0.39.z1", "members of one requirement (a tag ingredient, the fuel table, a group) priced in full, the likeliest first (RULES 14: rough)");
-        Tuning.def("needChain.maxTrials", 4000, "one-planner 0.39.z1", "ways priced in one chain before every further requirement prices only its likeliest member (a bound on the search)");
+        Tuning.def("needChain.maxTrials", 4000, "one-planner 0.39.z1", "ways priced in one chain before a requirement takes the first of its ways that stands, the rest unpriced (a bound on the search)");
         Tuning.def("needChain.unknownBreakS", 3, "one-planner 0.39.z1 (was coalOptions.mineOre)", "seconds a block takes to break when the game gives it no hardness (no data loaded)");
         Tuning.def("needChain.unknownMobHp", 10, "one-planner 0.39.z1", "health points a mob is priced at when the game's attributes give none (the hunt's kill time)");
         Tuning.def("needs.foodItems", 8, "one-planner 0.39.z1 (was the planner goal food 8)", "food items the food need's chain gets (any plain food, the cheapest per point)");

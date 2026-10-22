@@ -118,6 +118,25 @@ public final class LootBook {
         return out;
     }
 
+    /**
+     * TAG_NEEDS: every source whose item the test accepts (a tag need: any member), read off the book's own index (no member
+     * list): the same order as {@link #sources}, then by item.
+     */
+    public List<Source> sourcesMatching(Predicate<String> item) {
+        List<Source> l = new ArrayList<>();
+        for (var e : byItem.entrySet()) if (item.test(e.getKey())) l.addAll(e.getValue());
+        l.sort(Comparator.comparingInt((Source s) -> s.kind().ordinal() >= 2 ? 1 : 0).thenComparing((Source s) -> -s.per() * Math.max(0.01, s.chance()))
+                .thenComparing(Source::from).thenComparing(Source::item));
+        return l;
+    }
+
+    /** TAG_NEEDS: the blocks whose loot gives any item the test accepts (a tag need's source set). */
+    public List<String> blocksDroppingAny(Predicate<String> item) {
+        List<String> out = new ArrayList<>();
+        for (Source s : sourcesMatching(item)) if (s.kind() == Kind.BLOCK && s.chance() > 0 && !out.contains(s.from())) out.add(s.from());
+        return out;
+    }
+
     /** "from: kill cow (about 1 each), break gravel (10%); +3 more" (or null when the book has nothing). */
     public String sourcesText(String item, int max) {
         List<Source> l = sources(item);

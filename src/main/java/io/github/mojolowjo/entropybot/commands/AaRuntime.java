@@ -634,7 +634,7 @@ public final class AaRuntime implements JobPort {
     int[] band(String item) {
         var cat = catalog;
         if (cat == null || cat.gen() == null) return null;
-        java.util.Set<String> blocks = io.github.mojolowjo.entropybot.aa.Nearby.sourceBlocks(item, currentLootBook(), AaRuntime::ownBlock);
+        java.util.Set<String> blocks = sourceBlocksOf(item);
         int lo = Integer.MAX_VALUE, hi = Integer.MIN_VALUE;
         for (String b : blocks) {
             var g = cat.gen().get(b);
@@ -660,27 +660,58 @@ public final class AaRuntime implements JobPort {
      * Null: no block gives it, or none is known.
      */
     io.github.mojolowjo.entropybot.aa.NeedChain.Spot nearestSource(String item) {
-        java.util.Set<String> blocks = io.github.mojolowjo.entropybot.aa.Nearby.sourceBlocks(item, currentLootBook(), AaRuntime::ownBlock);
+        String word = io.github.mojolowjo.entropybot.aa.NeedChain.word(item);
+        java.util.Set<String> blocks = sourceBlocksOf(word);
         if (blocks.isEmpty()) return null;
         boolean logs = false;
         for (String b : blocks)
             logs |= net.minecraft.core.registries.BuiltInRegistries.BLOCK.getOptional(net.minecraft.resources.ResourceLocation.tryParse(b))
                     .map(x -> x.defaultBlockState().is(net.minecraft.tags.BlockTags.LOGS)).orElse(false);
         final boolean tree = logs;
-        return c.nearby.nearest(blocks, () -> tree ? treeSighting() : indexedSighting(blocks));
+        var s = c.nearby.nearest(blocks, () -> tree ? treeSighting() : indexedSighting(blocks));
+        // TAG_NEEDS: a tag need's spot says which member it gives (its loot drop in the tag, else its own item)
+        if (s == null || io.github.mojolowjo.entropybot.aa.NeedChain.plain(word)) return s;
+        String gives = io.github.mojolowjo.entropybot.aa.Nearby.gives(s.block(), word, currentLootBook(), AaRuntime::ownItem);
+        return gives == null ? s : s.giving(gives);
+    }
+
+    /** TAG_NEEDS: the blocks that give any item of a need word (an item, a tag, several): the loot data, then the blocks whose own item it is. */
+    java.util.Set<String> sourceBlocksOf(String word) {
+        return io.github.mojolowjo.entropybot.aa.Nearby.sourceBlocksOf(word, currentLootBook(), AaRuntime::ownBlock, AaRuntime::tagBlocks);
+    }
+
+    /** TAG_NEEDS: the blocks whose own item is in the item tag (the game's tag index), for a tag need's source set. */
+    private static java.util.Set<String> tagBlocks(String tag) {
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        for (var b : net.minecraft.core.registries.BuiltInRegistries.BLOCK) {
+            var it = b.asItem();
+            if (it == net.minecraft.world.item.Items.AIR) continue;
+            if (io.github.mojolowjo.entropybot.aa.brain.ItemWorth.isIn(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(it).toString(), tag))
+                out.add(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(b).toString());
+        }
+        return out;
+    }
+
+    /** The item a block places back as (its own item), null: none. */
+    private static String ownItem(String block) {
+        var b = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getOptional(net.minecraft.resources.ResourceLocation.tryParse(block)).orElse(null);
+        if (b == null || b.asItem() == net.minecraft.world.item.Items.AIR) return null;
+        return net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(b.asItem()).toString();
     }
 
     /**
      * one-planner: a known source of an item for the chain's explore to end on: a block that gives it (nearestSource), else an
-     * animal of a kind whose loot drops it (animalsKnown, the loot data's mob drops). Null: none known.
+     * animal of a kind whose loot drops it (animalsKnown, the loot data's mob drops). TAG_NEEDS: a tag word's ("#logs") source is
+     * any member's. Null: none known.
      */
     io.github.mojolowjo.entropybot.aa.NeedChain.Spot knownSource(String item) {
-        String id = item == null ? null : item.indexOf(':') < 0 ? "minecraft:" + item : item;
+        String id = io.github.mojolowjo.entropybot.aa.NeedChain.word(item);
         var s = nearestSource(id);
         if (s != null || id == null) return s;
         var book = currentLootBook();
         if (book == null) return null;
-        for (var src : book.sources(id)) {
+        var from = io.github.mojolowjo.entropybot.aa.NeedChain.plain(id) ? book.sources(id) : book.sourcesMatching(i -> io.github.mojolowjo.entropybot.aa.NeedChain.gives(id, i));
+        for (var src : from) {
             if (src.kind() != io.github.mojolowjo.entropybot.aa.brain.LootBook.Kind.MOB) continue;
             var known = animalsKnown(src.from());
             if (!known.isEmpty()) {

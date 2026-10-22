@@ -84,6 +84,11 @@ final class ItemWorthSource implements ItemWorth.Source {
             try {
                 ItemStack st = item.getDefaultInstance();
                 st.getTags().forEach(k -> s.tags.computeIfAbsent(id, x -> new java.util.HashSet<>()).add(k.location().toString()));
+                // TAG_NEEDS: the item tags alone (ItemStack.is(TagKey)'s index), with no block tag of the same id mixed in
+                st.getTags().forEach(k -> {
+                    s.itemTags.computeIfAbsent(id, x -> new java.util.HashSet<>()).add(k.location().toString());
+                    s.tagItems.computeIfAbsent(k.location().toString(), x -> new java.util.HashSet<>()).add(id);
+                });
                 if (st.getUseAnimation() == net.minecraft.world.item.UseAnim.BLOCK) s.shields.add(id);
             } catch (RuntimeException e) { s.failed++; }
         }
@@ -100,18 +105,21 @@ final class ItemWorthSource implements ItemWorth.Source {
             String oid = BuiltInRegistries.ITEM.getKey(out.getItem()).toString();
             List<String> in = new ArrayList<>();
             List<List<String>> opts = new ArrayList<>();
+            List<String> needs = new ArrayList<>();
             boolean ok = true;
             for (var ing : r.getIngredients()) {
                 ItemStack[] items = ing.getItems();
                 if (items.length == 0) { if (!ing.isEmpty()) ok = false; continue; }
+                // the worth formula's first id (ItemWorth.derive; TAG_NEEDS "not in this job": a tag's worth by its best member)
                 in.add(BuiltInRegistries.ITEM.getKey(items[0].getItem()).toString());
-                List<String> o = new ArrayList<>();          // one-planner: an ingredient given as a tag: every member
+                List<String> o = new ArrayList<>();          // the ingredient's own items (the game expands its tags)
                 for (ItemStack it : items) { String iid = BuiltInRegistries.ITEM.getKey(it.getItem()).toString(); if (!o.contains(iid)) o.add(iid); }
                 opts.add(o);
+                needs.add(needWord(ing, o));
             }
             if (!ok || in.isEmpty()) continue;
             String kind = BuiltInRegistries.RECIPE_TYPE.getKey(r.getType()) == null ? "?" : BuiltInRegistries.RECIPE_TYPE.getKey(r.getType()).toString();
-            s.recipes.computeIfAbsent(oid, k -> new ArrayList<>()).add(new ItemWorth.Recipe(Math.max(1, out.getCount()), in, opts, kind));
+            s.recipes.computeIfAbsent(oid, k -> new ArrayList<>()).add(new ItemWorth.Recipe(Math.max(1, out.getCount()), in, opts, kind, needs));
             if (!s.kindStations.containsKey(kind)) {                // one-planner: where a kind is made (the recipe's toast symbol)
                 ItemStack sym = r.getToastSymbol();
                 if (sym != null && !sym.isEmpty()) s.kindStations.put(kind, BuiltInRegistries.ITEM.getKey(sym.getItem()).toString());
@@ -128,6 +136,23 @@ final class ItemWorthSource implements ItemWorth.Source {
             }
         }
         return s;
+    }
+
+    /**
+     * TAG_NEEDS: the slot as the recipe gives it: one tag ({@code #ns:path}), one item, or its values joined by {@code |}
+     * (several tags or items); a NeoForge custom ingredient (no values to read) is the items it lists.
+     */
+    static String needWord(net.minecraft.world.item.crafting.Ingredient ing, List<String> items) {
+        if (!ing.isCustom()) {
+            List<String> parts = new ArrayList<>();
+            for (var v : ing.getValues()) {
+                if (v instanceof net.minecraft.world.item.crafting.Ingredient.TagValue t) parts.add("#" + t.tag().location());
+                else if (v instanceof net.minecraft.world.item.crafting.Ingredient.ItemValue iv) parts.add(BuiltInRegistries.ITEM.getKey(iv.item().getItem()).toString());
+                else { parts = null; break; }                // a value of another kind: the items it lists
+            }
+            if (parts != null && !parts.isEmpty()) return String.join("|", parts);
+        }
+        return String.join("|", items);
     }
 
     /** Mob -> its food drop from the loot tables (singleplayer server only: a client has none, said once by ItemWorth). */
@@ -335,6 +360,10 @@ final class ItemWorthSource implements ItemWorth.Source {
         for (var e : tags.entrySet()) if (e.getValue().contains(tag)) out.add(e.getKey());
         return out;
     }
+    private final Map<String, java.util.Set<String>> itemTags = new HashMap<>(), tagItems = new HashMap<>();
+    @Override public boolean itemIs(String id, String tag) { var t = itemTags.get(id); return t != null && t.contains(tag); }
+    @Override public java.util.Set<String> itemsInTag(String tag) { return tagItems.getOrDefault(tag, java.util.Set.of()); }
+    @Override public java.util.Set<String> itemTags(String id) { return itemTags.getOrDefault(id, java.util.Set.of()); }
     @Override public Map<String, String> mobFood() { return mobFood; }
     @Override public boolean shield(String id) { return shields.contains(id); }
     @Override public boolean riskyFood(String id) { return risky.contains(id); }

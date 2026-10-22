@@ -95,4 +95,11 @@ final class FakeRecipes implements RecipeSource {
     @Override public boolean catalyst(String item) {
         return catalysts.contains(item);
     }
+
+    /** TAG_NEEDS: item tags ("ns:path" -> members), as the game's tag index answers. */
+    final java.util.Map<String, List<String>> tags = new java.util.LinkedHashMap<>();
+
+    @Override public List<String> tagMembers(String tag) {
+        return tags.getOrDefault(tag, List.of());
+    }
 }

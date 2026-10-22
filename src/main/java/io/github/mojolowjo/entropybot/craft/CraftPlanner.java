@@ -579,11 +579,43 @@ public final class CraftPlanner implements Crafter {
                 for (String id : set) out.add(new Target(id, want));
                 continue;
             }
+            if (q.startsWith("#")) {                     // TAG_NEEDS: "craft #planks 8": the member the bag can make (the chain's step)
+                String tag = q.substring(1).indexOf(':') < 0 ? "minecraft:" + q.substring(1) : q.substring(1);
+                List<String> members = src.tagMembers(tag);
+                if (members.isEmpty()) return new Targets(List.of(), "I don't know an item tag called " + q);
+                String id = memberFromBag(members, want, counts);
+                if (id == null) return new Targets(List.of(), "no member of " + q + " can be made from what I have (" + members.size() + " members)");
+                out.add(new Target(id, want));
+                continue;
+            }
             String id = resolveItem(String.join("_", words), counts);
             if (id == null) return new Targets(List.of(), "I don't know an item called " + q);
             out.add(new Target(id, want));
         }
         return new Targets(List.copyOf(out), null);
+    }
+
+    /**
+     * TAG_NEEDS: the member of a tag the counts make: of the members whose plan for {@code want} stands, the one with the
+     * fewest steps (the bag holds most of what it takes), then the most of its ingredients in hand; null: none can be made.
+     * An exact tie keeps the tag's own order (the game's).
+     */
+    String memberFromBag(List<String> members, int want, Map<String, Integer> counts) {
+        String best = null;
+        int bestSteps = Integer.MAX_VALUE;
+        double bestScore = -1;
+        for (String m : members) {
+            if (!itemExists(m)) continue;
+            Plan p = plan(m, want, copy(counts));
+            if (!p.ok()) continue;
+            double score = craftScore(m, counts);
+            if (p.steps().size() < bestSteps || (p.steps().size() == bestSteps && score > bestScore)) {
+                best = m;
+                bestSteps = p.steps().size();
+                bestScore = score;
+            }
+        }
+        return best;
     }
 
     /**

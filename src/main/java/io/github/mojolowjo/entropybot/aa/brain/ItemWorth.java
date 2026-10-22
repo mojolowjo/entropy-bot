@@ -61,10 +61,12 @@ public final class ItemWorth {
 
     /**
      * One recipe for an item: the output count, the ingredient ids (one per slot, the first choice), every id each slot takes
-     * ({@code options}: an ingredient given as a tag lists all its members, in the game's order) and the recipe's kind
-     * ({@link #CRAFT}, {@link #SMELT}, or another station's: stonecutting, smithing, smoking...).
+     * ({@code options}: an ingredient given as a tag lists all its members, in the game's order), the recipe's kind
+     * ({@link #CRAFT}, {@link #SMELT}, or another station's: stonecutting, smithing, smoking...) and {@code needs}: each slot as
+     * the recipe gives it (TAG_NEEDS): {@code "#ns:path"} for a tag ingredient, the item id for one item, the ids joined by
+     * {@code |} for several items or tags. The chain plans on {@code needs}; {@code inputs} is the worth formula's.
      */
-    public record Recipe(int outCount, List<String> inputs, List<List<String>> options, String kind) {
+    public record Recipe(int outCount, List<String> inputs, List<List<String>> options, String kind, List<String> needs) {
         public Recipe {
             inputs = List.copyOf(inputs);
             if (options == null) {
@@ -74,9 +76,19 @@ public final class ItemWorth {
             }
             options = List.copyOf(options);
             if (kind == null) kind = CRAFT;
+            if (needs == null) {
+                // TAG_NEEDS: a slot the recipe gives as one item is that item; several items without a tag word: all of them ("a|b")
+                List<String> w = new java.util.ArrayList<>();
+                for (List<String> slot : options) w.add(String.join("|", slot));
+                needs = w;
+            }
+            needs = List.copyOf(needs);
+            if (needs.size() != options.size()) throw new IllegalArgumentException("recipe: " + needs.size() + " slot words for " + options.size() + " slots");
         }
 
-        public Recipe(int outCount, List<String> inputs) { this(outCount, inputs, null, CRAFT); }
+        public Recipe(int outCount, List<String> inputs, List<List<String>> options, String kind) { this(outCount, inputs, options, kind, null); }
+
+        public Recipe(int outCount, List<String> inputs) { this(outCount, inputs, null, CRAFT, null); }
     }
 
     /** The recipe kinds the chain reads: a crafting grid's and a furnace's (the game's RecipeType ids). */
@@ -110,6 +122,12 @@ public final class ItemWorth {
         default boolean riskyFood(String id) { return false; }
         /** Every id carrying the tag ("namespace:path"), for the lists a rule once spelled out. */
         default Set<String> withTag(String tag) { return Set.of(); }
+        /** TAG_NEEDS: the game's item tag index: the item is in the item tag (ItemStack.is(TagKey)). */
+        default boolean itemIs(String id, String tag) { return tags(id).contains(tag); }
+        /** TAG_NEEDS: the items in the item tag (the recipe data of a tag's members is read through these). */
+        default Set<String> itemsInTag(String tag) { return withTag(tag); }
+        /** TAG_NEEDS: the item tags an item is in. */
+        default Set<String> itemTags(String id) { return tags(id); }
         /** Mob id -> the food item its loot table drops (animals the bot may hunt are the friendly ones); empty on a client with no loot tables. */
         default Map<String, String> mobFood() { return Map.of(); }
         /** What the game says of a mob kind (full entity id); null = not read. */
@@ -282,6 +300,22 @@ public final class ItemWorth {
         java.util.Collections.sort(out);
         return out;
     }
+    /** TAG_NEEDS: the item is in the item tag ("namespace:path"; a bare path is minecraft's), the game's tag index. */
+    public static boolean isIn(String id, String tag) {
+        Source s = source;
+        return s != null && id != null && tag != null && s.itemIs(full(id), full(tag));
+    }
+
+    /** TAG_NEEDS: the items of an item tag, as a set (no order: the chain never picks a member by its place in a list). */
+    public static Set<String> itemsIn(String tag) {
+        Source s = source;
+        if (s == null) { warnOnce("tag:" + tag, "no item data loaded: the tag " + tag + " is empty"); return Set.of(); }
+        return s.itemsInTag(full(tag));
+    }
+
+    /** TAG_NEEDS: the item tags of an item (empty without data). */
+    public static Set<String> itemTagsOf(String id) { Source s = source; return s == null || id == null ? Set.of() : s.itemTags(full(id)); }
+
     public static boolean riskyFood(String id) { Source s = source; return s != null && s.riskyFood(full(id)); }
     public static boolean effectFood(String id) { Source s = source; return s != null && s.effectFood(full(id)); }
 

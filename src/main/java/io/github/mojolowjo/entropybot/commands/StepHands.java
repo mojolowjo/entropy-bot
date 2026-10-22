@@ -338,6 +338,7 @@ public final class StepHands implements Steps.Hands {
     }
 
     private String collect(LocalPlayer p, Step.Collect k) {
+        if (!io.github.mojolowjo.entropybot.aa.NeedChain.plain(k.item())) return collectAny(p, k);
         String id = k.item().contains(":") ? k.item() : "minecraft:" + k.item();
         // the blocks that give it: the game's loot data (LootBook), and the block of the item itself
         List<Block> blocks = new ArrayList<>();
@@ -350,6 +351,25 @@ public final class StepHands implements Steps.Hands {
         });
         if (blocks.isEmpty()) return "error: no block gives " + k.item() + (book == null || book.isEmpty() ? " (no loot data in this world)" : " (the game's loot data)");
         return mine(p, blocks, List.of(id), k.n(), "collect " + k.n() + " " + k.item());
+    }
+
+    /**
+     * TAG_NEEDS: a collect of a tag need whose member no lookup named ("collect #coals 4"): Baritone's MineProcess on every block
+     * whose loot gives a member or whose own item is one (AaRuntime.sourceBlocksOf), counted as any member in the bag (the
+     * game's tag index).
+     */
+    private String collectAny(LocalPlayer p, Step.Collect k) {
+        String word = io.github.mojolowjo.entropybot.aa.NeedChain.word(k.item());
+        if (c.aaRuntime == null) return "error: collect " + k.item() + ": aa is not loaded (no source lookup)";
+        List<Block> blocks = new ArrayList<>();
+        for (String bid : c.aaRuntime.sourceBlocksOf(word)) BuiltInRegistries.BLOCK.getOptional(ResourceLocation.tryParse(bid)).ifPresent(blocks::add);
+        if (blocks.isEmpty()) return "error: no block gives any of " + k.item() + " (the game's loot data and tags)";
+        List<String> ids = new ArrayList<>();
+        for (var it : BuiltInRegistries.ITEM) {
+            String iid = BuiltInRegistries.ITEM.getKey(it).toString();
+            if (io.github.mojolowjo.entropybot.aa.NeedChain.gives(word, iid)) ids.add(iid);
+        }
+        return mine(p, blocks, ids, k.n(), "collect " + k.n() + " " + k.item());
     }
 
     /** chop B1: blocks the game tags as logs go to the fork's chop process (the whole tree); others to the mine process. */

@@ -30,4 +30,9 @@ public interface RecipeSource {
     default boolean catalyst(String item) {
         return false;
     }
+
+    /** TAG_NEEDS: the items of an item tag ("ns:path"), the game's tag index; empty: no such tag (or no game, a fake). */
+    default List<String> tagMembers(String tag) {
+        return List.of();
+    }
 }

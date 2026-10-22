@@ -202,6 +202,7 @@ public final class TestData implements ItemWorth.Source, MiningTiers.Source {
         for (Raw r : raw.getOrDefault(id, List.of())) {
             List<String> first = new ArrayList<>();
             List<List<String>> opts = new ArrayList<>();
+            List<String> needs = new ArrayList<>();
             for (String in : r.in()) {
                 List<String> o = new ArrayList<>();
                 if (in.startsWith("#")) { o.addAll(withTag(id(in.substring(1)))); java.util.Collections.sort(o); }
@@ -209,8 +210,9 @@ public final class TestData implements ItemWorth.Source, MiningTiers.Source {
                 if (o.isEmpty()) o.add(id(in.substring(1)));
                 first.add(o.get(0));
                 opts.add(o);
+                needs.add(in.startsWith("#") ? "#" + id(in.substring(1)) : id(in));     // TAG_NEEDS: the slot as the recipe gives it
             }
-            out.add(new Recipe(r.n(), first, opts, r.kind()));
+            out.add(new Recipe(r.n(), first, opts, r.kind(), needs));
         }
         return out;
     }
