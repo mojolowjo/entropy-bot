@@ -943,3 +943,6 @@ needChain.unknownBreakS	3.0
 needChain.unknownMobHp	10.0
 needs.foodItems	8.0
 needs.ironTier	3.0
+pathCost.budgetMs	15.0
+pathCost.budgetS	300.0
+pathCost.perChainMax	12.0

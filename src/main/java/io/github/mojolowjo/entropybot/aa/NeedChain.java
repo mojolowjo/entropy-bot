@@ -81,7 +81,13 @@ public final class NeedChain {
      * priced out when another stands (0: the planning horizon). Lookups are memoised per World.
      */
     public record World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
-                        Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks) {
+                        Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path) {
+        /** No path provider: every walk is the straight line x 1.3 (and the line says nothing of it). */
+        public World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
+                     Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks) {
+            this(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, null);
+        }
+
         public World {
             Map<String, Integer> b = new LinkedHashMap<>();
             if (bag != null) for (var e : bag.entrySet()) b.merge(id(e.getKey()), e.getValue(), Integer::sum);
@@ -105,14 +111,17 @@ public final class NeedChain {
             this(bag, tableNear, false, w -> { Spot s = seen == null ? null : seen.apply(w); return s == null ? List.of() : List.of(s); }, null, null, null, horizonBlocks);
         }
 
-        public World withMobs(Function<String, List<Mob>> m, LootBook l) { return new World(bag, tableNear, furnaceNear, seenAll, m, l, band, horizonBlocks); }
+        public World withMobs(Function<String, List<Mob>> m, LootBook l) { return new World(bag, tableNear, furnaceNear, seenAll, m, l, band, horizonBlocks, path); }
 
-        public World withBand(Function<String, int[]> b) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, b, horizonBlocks); }
+        public World withBand(Function<String, int[]> b) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, b, horizonBlocks, path); }
+
+        /** path-cost: the walks priced by Baritone's planned path first (null: the line). */
+        public World withPath(PathPrice p) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, p); }
 
         /** chop: the same world less the sources {@code held} names (need word, spot): a failed source is out of the re-price. */
         public World without(java.util.function.BiPredicate<String, Spot> held) {
             Function<String, List<Spot>> sa = seenAll;
-            return new World(bag, tableNear, furnaceNear, w -> sa.apply(w).stream().filter(sp -> !held.test(word(w), sp)).toList(), mobs, loot, band, horizonBlocks);
+            return new World(bag, tableNear, furnaceNear, w -> sa.apply(w).stream().filter(sp -> !held.test(word(w), sp)).toList(), mobs, loot, band, horizonBlocks, path);
         }
     }
 
@@ -229,7 +238,9 @@ public final class NeedChain {
         final List<String> path = new ArrayList<>();
         List<String> dropped = new ArrayList<>();
         double seconds;       // everything priced so far, in seconds
-        double away;          // straight metres from the last new source to where the stations are (0: at them)
+        double away;          // seconds of the walk from the last new source back to where the stations are (0: at them)
+        final Map<String, Walked> walks = new LinkedHashMap<>();   // path-cost: spot key -> its walk, one pricing pass (never restored)
+        int pathAsked;        // path-cost: Baritone queries this pass (bounded by pathCost.perChainMax)
         boolean tableReady, furnaceReady, stuck;
         String fail;          // the way being tried cannot be done: the reason
         String unknown;       // the first need nothing is known to give (the explore leaf's)
@@ -930,10 +941,41 @@ public final class NeedChain {
         return made == null ? "in the bag, placed" : made + ", placed";
     }
 
-    /** Back to the stations after a trip to a new source: the straight walk. */
+    /** Back to the stations after a trip to a new source: the same walk as the trip there (its path, or its line). */
     private static void walkBack(Ctx c) {
-        if (c.away > 0) { c.seconds += walkS(c.away); c.away = 0; }
+        if (c.away > 0) { c.seconds += c.away; c.away = 0; }
     }
+
+    /**
+     * path-cost: one trip's walk. {@code note}: how the line says it ("" with no path provider: the old line rule, unsaid;
+     * else "walk 48.2 s (path)", "walk about 48.2 s (path)" for a partial path, "walk 18.0 s (line)").
+     */
+    record Walked(double seconds, String note) {}
+
+    /**
+     * path-cost: the walk to the cell at {@code dist} straight metres: Baritone's planned path first (the world's
+     * {@link PathPrice}, each spot once a pass, at most {@code pathCost.perChainMax} queries), else the straight line x 1.3
+     * (TIME_MODEL path_length).
+     */
+    private static Walked walk(Ctx c, int x, int y, int z, double dist) {
+        PathPrice pp = c.w.path();
+        if (pp == null) return new Walked(walkS(dist), "");
+        String key = x + "," + y + "," + z;
+        Walked known = c.walks.get(key);
+        if (known != null) return known;
+        PathPrice.Walk a = null;
+        if (c.pathAsked < PathPrice.perChainMax()) {
+            c.pathAsked++;
+            a = pp.toBlock(x, y, z);
+        }
+        Walked out = a == null || Double.isNaN(a.seconds()) || a.seconds() < 0
+                ? new Walked(walkS(dist), "walk " + s(walkS(dist)) + " (line)")
+                : new Walked(a.seconds(), "walk " + (a.about() ? "about " : "") + s(a.seconds()) + " (path)");
+        c.walks.put(key, out);
+        return out;
+    }
+
+    private static String noted(String phrase, Walked w) { return w.note().isEmpty() ? phrase : phrase + ", " + w.note(); }
 
     // ---- the sources: a known block, a known animal ----
 
@@ -1061,12 +1103,14 @@ public final class NeedChain {
         boolean log = tree(word, first);
         String pre = null;
         int tier = tierOf(word, first);
+        if (tier == MiningTiers.UNKNOWN) { c.fail = "the pickaxe tier of " + shw(blockOf(gives, first)) + " is not known (no mining data loaded yet)"; return null; }
         if (tier > c.pickTier) {
             pre = cheapestPickaxe(c, tier);
             if (c.fail != null) return null;
             if (c.stuck) return "dig " + shw(gives) + " seen " + Math.round(first.dist()) + " m (after " + pre + ")";      // the pickaxe's own source is still to find: the chain ends at that explore
         }
         int remaining = lack;
+        Walked firstWalk = null;
         for (Spot sp : order) {
             if (remaining <= 0) break;
             double per = perBlock(c, gives, sp.block());
@@ -1089,8 +1133,10 @@ public final class NeedChain {
                 // chop: no walk step before a block source (the cut/collect paths itself; the spot names the blocks and the price)
                 c.leafAt.put(sp.key(), c.steps.size());
                 c.steps.add(log ? new Step.ChopTree(new int[]{sp.x(), sp.y(), sp.z()}, wanted, null) : new Step.Collect(shw(gives), wanted));
-                c.seconds += walkS(sp.dist());
-                c.away = sp.dist();
+                Walked wk = walk(c, sp.x(), sp.y(), sp.z(), sp.dist());
+                if (firstWalk == null) firstWalk = wk;
+                c.seconds += wk.seconds();
+                c.away = wk.seconds();
             }
             c.seconds += breakS(c, gives, sp) * take;
             c.taken.merge(sp.key(), take, Integer::sum);
@@ -1098,6 +1144,7 @@ public final class NeedChain {
             remaining -= got;
         }
         String how = (log ? "cut tree" : "dig " + shw(gives)) + " seen " + Math.round(first.dist()) + " m" + (pre == null ? "" : " with " + pre);
+        if (firstWalk != null) how = noted(how, firstWalk);
         if (remaining > 0) return how + " + " + exploreLeaf(c, word, "not enough " + shw(word) + " known");
         return how;
     }
@@ -1105,10 +1152,23 @@ public final class NeedChain {
     /** The block a spot's break is priced on: its own id, else the item's own block. */
     private static String blockOf(String item, Spot sp) { return sp.block() != null ? sp.block() : item; }
 
-    /** The pickaxe tier the block asks for (0: none; a tree: none). */
-    private static int tierOf(String item, Spot sp) {
+    /**
+     * The pickaxe tier the block asks for (0: none; a tree: none). A tag need's spot with no block named (a sighting) is
+     * priced by the item it gives (its least dropping block's tier, the loot data), never by the tag word (no block: tier
+     * "-1" read as 0 dropped the pickaxe before a coal-ore dig, owner-watched 2026-10-22). No mining data loaded at all:
+     * {@link MiningTiers#UNKNOWN}, which the dig refuses (a missing fact is said, not priced as "no tool").
+     */
+    static int tierOf(String item, Spot sp) {
         if (tree(item, sp)) return 0;
-        return Math.max(0, MiningTiers.blockTierOf(blockOf(item, sp)));
+        MiningTiers.Source src = MiningTiers.source();
+        if (src == null) return MiningTiers.UNKNOWN;
+        String gives = sp.gives() != null ? word(sp.gives()) : item;
+        int t = sp.block() != null ? src.blockTier(id(sp.block())) : MiningTiers.UNKNOWN;
+        if (t < 0 && gives != null && !gives.startsWith("#") && gives.indexOf('|') < 0) {
+            t = src.blockTier(gives);                                             // the item's own block
+            if (t < 0) t = src.dropTier(gives);                                   // the blocks that drop it
+        }
+        return Math.max(0, t);
     }
 
     /**
@@ -1150,10 +1210,11 @@ public final class NeedChain {
         for (var e : c.bag.entrySet()) if (e.getValue() > 0) dmg = Math.max(dmg, ItemWorth.facts(e.getKey()).attack());
         double killS = Math.ceil(hp / dmg - 1e-9) * HIT_S;  // structural: epsilon
         c.steps.add(new Step.HuntAt(s.from(), kills, new int[]{m.x(), m.z()}, sh(item), lack));
-        c.seconds += walkS(m.dist()) + kills * killS;
-        c.away = m.dist();
+        Walked wk = walk(c, m.x(), m.y(), m.z(), m.dist());
+        c.seconds += wk.seconds() + kills * killS;
+        c.away = wk.seconds();
         c.bag.merge(item, lack, Integer::sum);
-        return "hunt " + kills + " " + sh(s.from()) + " seen " + Math.round(m.dist()) + " m";
+        return noted("hunt " + kills + " " + sh(s.from()) + " seen " + Math.round(m.dist()) + " m", wk);
     }
 
     /**

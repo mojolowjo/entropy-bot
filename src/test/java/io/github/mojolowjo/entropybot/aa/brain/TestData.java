@@ -21,6 +21,8 @@ public final class TestData implements ItemWorth.Source, MiningTiers.Source {
     /** Block (or item placing it) -> the pickaxe tier that mines it; missing = unknown. */
     public final Map<String, Integer> tiers = new HashMap<>();
     @Override public int blockTier(String itemId) { return tiers.getOrDefault(itemId, -1); }
+    /** The tier of the ore block that drops the item (the test's ore drops), -1: none. */
+    @Override public int dropTier(String itemId) { String ore = oreDrops.get(itemId); return ore == null ? -1 : tiers.getOrDefault(ore, -1); }
     public final Map<String, Facts> facts = new HashMap<>();
     public final Map<String, List<Recipe>> recipes = new HashMap<>();
     public final Map<String, String> cooks = new HashMap<>();

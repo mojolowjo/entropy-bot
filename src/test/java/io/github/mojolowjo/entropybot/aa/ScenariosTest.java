@@ -707,6 +707,154 @@ class ScenariosTest {
         assertEquals(List.of("cut 1 at 5 64 0", "craft test:ash_planks 4", "craft crafting_table 1"), c.steps().stream().map(Step::text).toList());
     }
 
+    /** path-cost: a fake of Baritone's walk price: the cells it knows a path for (seconds), the rest "as the line"; null cells: no path. */
+    static final class FakePath implements PathPrice {
+        final Map<String, Double> seconds = new java.util.HashMap<>();
+        final java.util.Map<String, Integer> asked = new java.util.HashMap<>();
+        boolean about;
+
+        FakePath path(Spot s, double metres) { seconds.put(s.x() + "," + s.y() + "," + s.z(), metres * StepTimes.pathFactor() / io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps()); return this; }
+        FakePath asLine(Spot s) { return path(s, s.dist()); }
+
+        @Override public Walk toBlock(int x, int y, int z) {
+            String k = x + "," + y + "," + z;
+            asked.merge(k, 1, Integer::sum);
+            Double s = seconds.get(k);
+            return s == null ? null : new Walk(s, about);
+        }
+    }
+
+    /**
+     * S25 (path-cost, owner-watched 2026-10-22: "aa want torch" chose "dig coal" at an ore whose real route was far longer than its
+     * line). Bag empty; a tree 10 m (8 logs), stone 12 m, coal ore 40 m by line (4 blocks); Baritone's path to the coal ore is
+     * 160 m (a ravine between): 160 x 1.3 / 4.317 = 48.2 s; the tree and the stone are as their line. 16 torches.
+     * <pre>
+     * coal way:     the tree 3.01 + 8 logs x 3.0 = 27.01; the pickaxe chain (planks x3 0.9, sticks 0.3, table 0.3 + place 0.15,
+     *               wooden pickaxe 0.3) 1.95; walk 160 m 48.18 (path) + 4 ore x 2.25 = 57.18; one more stick craft 0.3 +
+     *               4 torch crafts 1.2 = 1.5; back: 0 (the torch is a 2x2 craft, no station to walk back to)  = 87.64 s
+     *               (by the line it was 12.05 + 9.0: 51.51 s, and coal won)
+     * charcoal way (the #coals trial, priced before the torches' own sticks, as S13): the tree 27.01; planks x3 0.9, sticks 0.3,
+     *               table 0.3 + place 0.15, wooden pickaxe 0.3; 8 cobblestone: walk 12 m 3.61 + 8 x 1.5 = 12.0, walk back 3.61;
+     *               furnace 0.3 + place 0.15; smelt 4 x 10 = 40.0; the burn 1 oak_log + 2 oak_planks from the bag 0  = 88.63 s
+     * </pre>
+     * By the chain's rules coal still wins by 1.0 s: the chain charges no walk back from its last source (the torch needs no
+     * station), where the hand sketch added one (+48.2: coal 135.8 s). With 8 logs charcoal could not finish anyway (the
+     * torches' sticks would need a 9th log: an explore). S25b shows the flip once the path is dearer than charcoal.
+     */
+    @Test
+    void s25_aCoalOreBehindARavineIsPricedByItsPath() {
+        world("wooden", "stone");
+        Spot tree = tree(10, 8);
+        Spot coal = new Spot(0, 40, 40, 40, "minecraft:coal_ore", 4);
+        Map<String, List<Spot>> seen = Map.of("oak_log", List.of(tree), "cobblestone", List.of(STONE_12), "coal", List.of(coal));
+        FakePath fake = new FakePath().asLine(tree).asLine(STONE_12).path(coal, 160);
+        Chain c = NeedChain.resolve("torch", 16, w(Map.of(), false, false, seen).withPath(fake));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertEquals(87.64, c.seconds(), TOL, c.why());
+        assertTrue(chainPart(c.why()).contains("with wooden_pickaxe (<- craft: 3 oak_planks"), "the dig keeps its pickaxe chain: " + c.why());
+        assertTrue(chainPart(c.why()).contains("), walk 48.2 s (path)"), "the coal walk is Baritone's path: " + c.why());
+        assertTrue(chainPart(c.why()).contains("cut tree seen 10 m, walk 3.0 s (path)"), c.why());
+        String charcoal = c.dropped().stream().filter(d -> d.startsWith("charcoal: ")).findFirst().orElseThrow(() -> new AssertionError(c.dropped().toString()));
+        assertTrue(charcoal.startsWith("charcoal: 88.6 s (dearer than coal)"), charcoal);
+        // by the line (no path provider) the same coal walk was 40 x 1.3 / 4.317 = 12.05 s: 51.51 s
+        Chain line = NeedChain.resolve("torch", 16, w(Map.of(), false, false, seen));
+        assertEquals(51.51, line.seconds(), TOL, line.why());
+        assertFalse(line.why().contains("(path)") || line.why().contains("(line)"), "no provider: the old line, unsaid: " + line.why());
+        for (var e : fake.asked.entrySet()) assertEquals(1, e.getValue(), "each spot asked once a pass: " + fake.asked);
+    }
+
+    /**
+     * S25b: S25 with S12's 12-log tree and the ravine path 200 m (60.23 s). coal: the tree 3.01 + 12 x 3.0 = 39.01, the pickaxe
+     * chain 1.95, walk 60.23 + 4 x 2.25 = 69.23, sticks + torches 1.5 = 111.69 s. charcoal: S12 (104.55) with the stone at 12 m
+     * instead of 16 (walks 3.61 there and back instead of 4.82): 104.55 - 2.41 = 102.14 s. Charcoal wins; coal is dropped with
+     * its path price (110.2 s: its trial before the torches' own 1.5).
+     */
+    @Test
+    void s25b_aDearPathToTheCoalOreMakesCharcoalWin() {
+        world("wooden", "stone");
+        Spot tree = tree(10, 12);
+        Spot coal = new Spot(0, 40, 40, 40, "minecraft:coal_ore", 4);
+        FakePath fake = new FakePath().asLine(tree).asLine(STONE_12).path(coal, 200);
+        Chain c = NeedChain.resolve("torch", 16, w(Map.of(), false, false, Map.of("oak_log", List.of(tree), "cobblestone", List.of(STONE_12), "coal", List.of(coal))).withPath(fake));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertEquals(102.14, c.seconds(), TOL, c.why());
+        assertTrue(chainPart(c.why()).startsWith("torch <- craft: 4 charcoal <- smelt 4 oak_log"), c.why());
+        assertTrue(chainPart(c.why()).contains("dig cobblestone seen 12 m with wooden_pickaxe"), c.why());
+        String coalWay = c.dropped().stream().filter(d -> d.startsWith("coal: ")).findFirst().orElseThrow(() -> new AssertionError(c.dropped().toString()));
+        assertTrue(coalWay.startsWith("coal: 110.2 s (dearer than charcoal)"), coalWay);
+    }
+
+    /** path-cost: no path answer is the line, said "(line)"; a partial path is used and said "about"; past perChainMax the line. */
+    @Test
+    void aWalkWithNoPathIsTheLineAndSaysSoAndThePerChainBoundHolds() {
+        world("wooden", "stone");
+        Spot tree = tree(10, 8);
+        Chain none = NeedChain.resolve("crafting_table", 1, w(Map.of(), false, false, Map.of("oak_log", List.of(tree))).withPath(new FakePath()));
+        assertTrue(none.why().contains("cut tree seen 10 m, walk 3.0 s (line)"), none.why());
+        FakePath about = new FakePath().path(tree, 20);
+        about.about = true;
+        Chain partial = NeedChain.resolve("crafting_table", 1, w(Map.of(), false, false, Map.of("oak_log", List.of(tree))).withPath(about));
+        assertTrue(partial.why().contains("walk about 6.0 s (path)"), partial.why());
+        io.github.mojolowjo.entropybot.aa.brain.Tuning.set("pathCost.perChainMax", 0);
+        try {
+            FakePath never = new FakePath().path(tree, 20);
+            Chain capped = NeedChain.resolve("crafting_table", 1, w(Map.of(), false, false, Map.of("oak_log", List.of(tree))).withPath(never));
+            assertTrue(never.asked.isEmpty(), never.asked.toString());
+            assertTrue(capped.why().contains("walk 3.0 s (line)"), capped.why());
+        } finally {
+            io.github.mojolowjo.entropybot.aa.brain.Tuning.reset();
+        }
+    }
+
+    /** Point 3: a "dig coal ore" way with no pickaxe carries the pickaxe chain in its price and makes the pickaxe before the collect. */
+    @Test
+    void aCoalOreDigWithNoPickaxeCarriesThePickaxeChain() {
+        world("wooden", "stone");
+        Spot coal = new Spot(0, 40, 20, 20, "minecraft:coal_ore", 4);
+        Chain c = NeedChain.resolve("coal", 4, w(Map.of(), false, false, Map.of("oak_log", List.of(tree(10, 6)), "coal", List.of(coal))));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        // the tree 3.01 + 18.0, the pickaxe chain 1.95, walk 20 m 6.02 + 4 x 2.25 = 9.0: 38.0 s; the dig alone would be 15.02
+        assertEquals(38.0, c.seconds(), TOL, c.why());
+        assertTrue(c.why().contains("dig coal seen 20 m with wooden_pickaxe (<- "), c.why());
+        assertPickaxeBeforeCollect(c, "coal");
+    }
+
+    /**
+     * Addendum (a), owner-watched: a tag need's dig of a spot with no block named (a sighting that only says what it gives) must
+     * still ask the pickaxe: the tier comes from the item it gives (the ore that drops it), never from the tag word.
+     */
+    @Test
+    void aTagSourceDigWithNoBlockNamedStillMakesThePickaxeFirst() {
+        world("wooden", "stone");
+        Spot sighting = new Spot(0, 40, 20, 20, null, 4).giving("minecraft:coal");
+        Chain c = NeedChain.resolve("#minecraft:coals", 4, new World(Map.of(), false, false,
+                word -> word.equals("#minecraft:coals") ? List.of(sighting) : word.equals("#minecraft:logs") || word.equals("minecraft:oak_log") ? List.of(tree(10, 6)) : List.of(),
+                null, null, null, 0));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertTrue(c.why().contains("with wooden_pickaxe"), c.why());
+        assertPickaxeBeforeCollect(c, "coal");
+    }
+
+    /** No mining data loaded at all: the dig is not priced as "no tool needed"; it fails with the reason. */
+    @Test
+    void aDigWithNoMiningDataIsRefusedWithItsReason() {
+        world("wooden", "stone");
+        io.github.mojolowjo.entropybot.aa.brain.MiningTiers.use(null);
+        Chain c = NeedChain.resolve("coal", 4, w(Map.of(), false, false, Map.of("coal", List.of(new Spot(0, 40, 20, 20, "minecraft:coal_ore", 4)))));
+        assertTrue(c.dropped().stream().anyMatch(d -> d.contains("the pickaxe tier of coal_ore is not known (no mining data loaded yet)")), c.why());
+        assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Collect), c.steps().toString());
+    }
+
+    static void assertPickaxeBeforeCollect(Chain c, String item) {
+        int pick = -1, dig = -1;
+        for (int i = 0; i < c.steps().size(); i++) {
+            Step s = c.steps().get(i);
+            if (s instanceof Step.Craft k && k.item().equals("wooden_pickaxe") && pick < 0) pick = i;
+            else if (s instanceof Step.Collect k && k.item().equals(item) && dig < 0) dig = i;
+        }
+        assertTrue(pick >= 0 && dig > pick, "the pickaxe is made before the collect: " + c.steps());
+    }
+
     @Test
     void theDroppedListNamesEachLosingCandidateOnce() {
         TestData d = toolWorld();

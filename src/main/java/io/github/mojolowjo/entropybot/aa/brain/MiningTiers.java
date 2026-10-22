@@ -85,6 +85,33 @@ public final class MiningTiers {
         return Math.max(1, t);
     }
 
+    /**
+     * The collect hand's guard (owner-watched 2026-10-22: it walked to coal ore with no pickaxe and dug): of the blocks a dig
+     * may take ({@code blockIds}: each block's item id), those the bag's best pickaxe tier {@code have} can dig, in order.
+     * Without mining data every block stays (the guard cannot judge; the caller says so).
+     */
+    public static List<String> diggable(List<String> blockIds, int have) {
+        List<String> out = new ArrayList<>();
+        for (String b : blockIds) {
+            int t = source == null ? 0 : blockTierOf(b);
+            if (t <= have) out.add(b);
+        }
+        return out;
+    }
+
+    /** The refusal when none of the blocks can be dug: "coal_ore needs tier 1, I have 0" (the least tier among them); null when one can. */
+    public static String digRefusal(List<String> blockIds, int have) {
+        if (blockIds.isEmpty() || !diggable(blockIds, have).isEmpty()) return null;
+        String least = null;
+        int lt = Integer.MAX_VALUE;
+        for (String b : blockIds) {
+            int t = blockTierOf(b);
+            if (t < lt) { lt = t; least = b; }
+        }
+        String name = least.startsWith("minecraft:") ? least.substring(10) : least;
+        return name + " needs tier " + (lt == UNREACHABLE ? "none of the game's pickaxes has" : String.valueOf(lt)) + ", I have " + have;
+    }
+
     /** The pickaxe tier the block (or the block an item places) needs, from the game's tags; {@link #UNKNOWN} (said once) without data. */
     public static int blockTierOf(String id) {
         Source s = source;

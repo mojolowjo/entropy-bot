@@ -587,7 +587,7 @@ public final class AaRuntime implements JobPort {
         var in = bb.in;
         return new io.github.mojolowjo.entropybot.aa.NeedChain.World(in.bag, in.tableKnown, in.furnaceKnown,
                 item -> { var s = nearestSource(item); return s == null ? List.of() : List.of(s); },
-                this::animalsKnown, currentLootBook(), this::band, 0);
+                this::animalsKnown, currentLootBook(), this::band, 0, LivePathPrice.INSTANCE);
     }
 
     /** one-planner: the chain for an "I need N of X" step as it starts (the facts of that moment); no chain: why. */

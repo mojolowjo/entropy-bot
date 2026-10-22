@@ -102,6 +102,9 @@ final class TuningDefs {
         Tuning.def("needChain.unknownMobHp", 10, "one-planner 0.39.z1", "health points a mob is priced at when the game's attributes give none (the hunt's kill time)");
         Tuning.def("needs.foodItems", 8, "one-planner 0.39.z1 (was the planner goal food 8)", "food items the food need's chain gets (any plain food, the cheapest per point)");
         Tuning.def("needs.ironTier", 3, "one-planner 0.39.z1 (was the game-fact tier 3 of the iron rung)", "the pickaxe tier the iron need wants (the bot's scale: wood 1, stone 2, iron 3, diamond 4)");
+        Tuning.def("pathCost.budgetMs", 15, "path-cost 0.39.z12", "milliseconds one walk price may ask Baritone's A* (IPathCost) on the game thread; the fork caps it at its pathCostMaxMs");
+        Tuning.def("pathCost.budgetS", 300, "path-cost 0.39.z12", "seconds of walk past which Baritone's A* stops pricing a walk (its cost ceiling); a dearer walk takes the line");
+        Tuning.def("pathCost.perChainMax", 12, "path-cost 0.39.z12", "walk prices one chain may ask Baritone for (each spot once); past them the line x 1.3");
         Tuning.def("needChain.exploreReturn", 0.5, "rm-bootstrap 0.39.v1", "share of the explore time the walk back costs again (the explore way's return leg)");
         Tuning.def("nearby.scanR", 32, "simple-tools 0.39.w1", "blocks round the bot Baritone's world scan looks for the nearest tree log and stone (the radius its own mine process uses)");
         Tuning.def("nearby.scanMax", 64, "simple-tools 0.39.w1", "most blocks one Baritone world scan returns for the nearby fact");

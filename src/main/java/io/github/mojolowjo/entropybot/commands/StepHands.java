@@ -381,10 +381,27 @@ public final class StepHands implements Steps.Hands {
     private String mine(LocalPlayer p, List<Block> blocks, List<String> ids, int n, String what) {
         IBaritone b = Jobs.baritone();
         if (b == null) return "error: baritone not loaded";
+        chopping = allLogs(blocks);
+        if (!chopping) {
+            // the tier guard (owner-watched 2026-10-22): never start a dig the bag's pickaxe cannot do; the step fails at once
+            // and the chain re-prices with the pickaxe first. Blocks it cannot dig leave the filter.
+            int have = 0;
+            for (net.minecraft.world.item.ItemStack st : p.getInventory().items)
+                if (!st.isEmpty()) have = Math.max(have, io.github.mojolowjo.entropybot.aa.brain.MiningTiers.toolTier(BuiltInRegistries.ITEM.getKey(st.getItem()).toString(), "pickaxe"));
+            List<String> blockItems = new ArrayList<>();
+            for (Block bl : blocks) blockItems.add(BuiltInRegistries.ITEM.getKey(bl.asItem()).toString());
+            String refusal = io.github.mojolowjo.entropybot.aa.brain.MiningTiers.digRefusal(blockItems, have);
+            if (refusal != null) return "error: " + what + ": " + refusal;
+            if (!io.github.mojolowjo.entropybot.aa.brain.MiningTiers.ready()) LOG.warn("[entropybot] steps: {}: no mining-tier data loaded, the pickaxe tier is not checked", what);
+            List<String> ok = io.github.mojolowjo.entropybot.aa.brain.MiningTiers.diggable(blockItems, have);
+            List<Block> kept = new ArrayList<>();
+            for (int i = 0; i < blocks.size(); i++) if (ok.contains(blockItems.get(i))) kept.add(blocks.get(i));
+            if (kept.size() < blocks.size()) LOG.info("[entropybot] steps: {}: {} of {} block kinds need a better pickaxe than tier {}, left out", what, blocks.size() - kept.size(), blocks.size(), have);
+            blocks = kept;
+        }
         countIds = ids;
         startCount = count(p);
         want = Math.max(1, n);
-        chopping = allLogs(blocks);
         BlockOptionalMetaLookup filter = new BlockOptionalMetaLookup(blocks.toArray(new Block[0]));
         // the count goes to Baritone (not 0): it counts the bag's items its filter matches (the blocks' drops), so its
         // target is what is there now + want

@@ -30,4 +30,20 @@ class MiningTiersTest {
         assertEquals(0, MiningTiers.toolTier("minecraft:diamond_pickaxe", "pickaxe"), "no data: unknown, said once");
         assertEquals(MiningTiers.UNKNOWN, MiningTiers.blockTierOf("minecraft:iron_ore"));
     }
+
+    /** Addendum (b), owner-watched: the collect hand refuses a dig its bag's pickaxe cannot do, with the block, its tier and mine. */
+    @Test
+    void theCollectHandRefusesADigItsPickaxeCannotDo() {
+        TestData.planner().install();
+        try {
+            List<String> coal = List.of("minecraft:coal_ore");
+            assertEquals("coal_ore needs tier 1, I have 0", MiningTiers.digRefusal(coal, 0));
+            assertNull(MiningTiers.digRefusal(coal, 1), "a wooden pickaxe digs coal ore");
+            assertEquals("iron_ore needs tier 2, I have 1", MiningTiers.digRefusal(List.of("minecraft:diamond_ore", "minecraft:iron_ore"), 1), "the least tier is named");
+            assertEquals(List.of("minecraft:coal_ore"), MiningTiers.diggable(List.of("minecraft:coal_ore", "minecraft:iron_ore"), 1), "what it cannot dig leaves the filter");
+            assertNull(MiningTiers.digRefusal(List.of("minecraft:dirt"), 0), "dirt needs no pickaxe");
+        } finally {
+            TestData.clear();
+        }
+    }
 }
