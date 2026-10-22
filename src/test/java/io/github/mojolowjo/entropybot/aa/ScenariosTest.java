@@ -14,12 +14,11 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * docs/SCENARIOS.md S1-S8: the chains the owner worked by hand (docs/TIME_MODEL.md), each built from the scenario's facts. The
+ * docs/SCENARIOS.md S1-S9: the chains the owner worked by hand (docs/TIME_MODEL.md), each built from the scenario's facts. The
  * hand number is the truth: a price is asserted within 0.1 s of it (the walk is the straight line x 1.3 / 4.317, so 30 m is
  * 9.03 s where the hand says 9.0). No game; the break times are the game's formula from the block data the test installs.
  */
 class ScenariosTest {
-    static final int[] CELL = {3, 64, 1};
     static final double TOL = 0.1;
 
     @AfterEach
@@ -41,7 +40,7 @@ class ScenariosTest {
     static final Spot STONE_12 = new Spot(12, 60, 3, 12, "minecraft:stone", 40);
 
     static World w(Map<String, Integer> bag, boolean table, boolean furnace, Map<String, List<Spot>> seen) {
-        return new World(bag, table, CELL, word -> null, 0, word -> seen.getOrDefault(word, List.of()), furnace);
+        return new World(bag, table, word -> null, 0, word -> seen.getOrDefault(word, List.of()), furnace);
     }
 
     static String chainPart(String why) { int k = why.indexOf(" | dropped:"); return k < 0 ? why : why.substring(0, k); }
@@ -158,5 +157,27 @@ class ScenariosTest {
         assertEquals(3, c.steps().stream().filter(s -> s instanceof Step.Smelt).mapToInt(s -> ((Step.Smelt) s).n()).sum(), "3 ingots smelted: " + c.steps());
         assertEquals(1, crafts(c, "gold_nugget"), c.steps().toString());
         assertEquals(1, crafts(c, "gold_trinket"), c.steps().toString());
+    }
+
+    @Test
+    void s9_fromNothingTheTableIsAnItemWoodTableWoodenPickaxeCobblestoneStonePickaxeAndNoCellIsAsked() {
+        world("wooden", "stone");
+        Spot stone16 = new Spot(0, 60, 16, 16, "minecraft:stone", 40);
+        Chain c = NeedChain.resolve("stone_pickaxe", 1, w(Map.of(), false, false, Map.of("log", List.of(tree(10, 6)), "cobblestone", List.of(stone16))));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertEquals(28.35, c.seconds(), TOL, c.why());
+        assertFalse(c.why().contains("free cell") || c.why().contains("no free"), c.why());
+        assertTrue(c.dropped().stream().noneMatch(d -> d.contains("cell")), c.dropped().toString());
+        int chop = -1, table = -1, wooden = -1, dig = -1, stonePick = -1;
+        for (int i = 0; i < c.steps().size(); i++) {
+            Step s = c.steps().get(i);
+            if (s instanceof Step.ChopTree) chop = i;
+            else if (s instanceof Step.PlaceNear p && p.item().equals("crafting_table")) table = i;
+            else if (s instanceof Step.Craft k && k.item().equals("wooden_pickaxe")) wooden = i;
+            else if (s instanceof Step.Collect k && k.item().equals("cobblestone")) dig = i;
+            else if (s instanceof Step.Craft k && k.item().equals("stone_pickaxe")) stonePick = i;
+        }
+        assertTrue(chop >= 0 && chop < table && table < wooden && wooden < dig && dig < stonePick, c.steps().toString());
+        assertEquals(3, ((Step.ChopTree) c.steps().get(chop)).logs(), "9 planks = 3 logs: " + c.steps());
     }
 }

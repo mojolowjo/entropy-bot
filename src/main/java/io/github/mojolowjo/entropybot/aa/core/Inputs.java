@@ -61,13 +61,6 @@ public final class Inputs {
     public int[] campPos, basePos;
     /** AA_STEP3 A1: the world spawn (where a death respawns the bot without a bed), null unknown. Not in the vector. */
     public int[] spawnPos;
-    /**
-     * aa-r1fix: the camp chest's cell (ChestSpot: free, the policy allowing, next to the table, cheapest not refused), null none
-     * found; why it was chosen; the cells the game refused ("x y z"). Not in the vector.
-     */
-    public int[] chestCell;
-    public String chestWhy;
-    public final java.util.Set<String> chestFailed = new java.util.HashSet<>();
     /** S1: the spot was lit this night (AaTree keeps it; the idle LIGHT option scores -1 then). Not in the vector. */
     public boolean litTonight;
     /** nightwork: inside a shell of its own that is built and waiting (ShelterJob WAIT, at its cell). Not in the vector. */

@@ -690,10 +690,10 @@ public final class AaRuntime implements JobPort {
                 io.github.mojolowjo.entropybot.aa.brain.Costs.swordWanted(in.zombieSeen, in.armed), in.cobble, sticks, in.planks, in.tableKnown || in.tableInBag, needWorld());
     }
 
-    /** rm-bootstrap: what NeedChain starts from: the bag, a table in reach, a free cell for one, the nearest seen tree and stone. */
+    /** rm-bootstrap: what NeedChain starts from: the bag, a table in reach, the nearest seen tree and stone. */
     io.github.mojolowjo.entropybot.aa.NeedChain.World needWorld() {
         var in = bb.in;
-        return new io.github.mojolowjo.entropybot.aa.NeedChain.World(in.bag, in.tableKnown, in.chestCell, word -> {
+        return new io.github.mojolowjo.entropybot.aa.NeedChain.World(in.bag, in.tableKnown, word -> {
             if (word.equals(io.github.mojolowjo.entropybot.plan.PlanFacts.canon("oak_log"))) return nearbyLog();
             if (!io.github.mojolowjo.entropybot.aa.brain.ItemWorth.stoneLike(word.indexOf(':') < 0 ? "minecraft:" + word : word)) return null;
             return c.nearby.stone(this::nearestStone);
@@ -1289,7 +1289,6 @@ public final class AaRuntime implements JobPort {
         // AA_STEP3 A1: the world spawn for the death cost's walk back (client Level.getSharedSpawnPos, the level data)
         var sp = mc.level.getSharedSpawnPos();
         in.spawnPos = sp == null ? null : new int[]{sp.getX(), sp.getY(), sp.getZ()};
-        fillChestCell(in, mc, me);
         areaFacts(in, me);                                      // AREAS: the labelled places as facts (the same tick as in.pos)
         in.ownerOnline = s.ownerOnline;
         in.hungerDrains = mc.level.getDifficulty() != net.minecraft.world.Difficulty.PEACEFUL;
@@ -1299,40 +1298,6 @@ public final class AaRuntime implements JobPort {
         in.ownerOrderPending = in.otherJob != null;
         in.aiRequestPending = bb.peek("ai") != null;
         fillOwner(in, s, p, mc);
-    }
-
-    /**
-     * aa-r1fix: the camp chest's cell, only while the camp needs one (table and furnace stand, no base chest yet): the free cells
-     * around the base (else me) the policy allows, ranked by walk and distance from the table (ChestSpot); refused cells are skipped.
-     */
-    private void fillChestCell(Inputs in, Minecraft mc, int[] me) {
-        if (in.baseChests) {
-            in.chestCell = null;
-            in.chestWhy = null;
-            in.chestFailed.clear();
-            return;
-        }
-        if (mc.level == null || !(in.tableKnown || in.tableInBag) || !(in.furnaceKnown || in.furnaceInBag)) return;
-        try {
-            var lv = mc.level;
-            String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(lv);
-            int[] anchor = in.basePos != null ? in.basePos : me;
-            int[] table = Crafting.findBlockAround(anchor, "crafting_table", 8, 3);
-            var ranked = io.github.mojolowjo.entropybot.aa.ChestSpot.rank(anchor, table, me,
-                    cc -> {
-                        var b = new net.minecraft.core.BlockPos(cc[0], cc[1], cc[2]);
-                        return lv.isLoaded(b) && CampCommands.placeable(lv, b) && lv.getBlockState(b.above()).canBeReplaced();
-                    },
-                    cc -> c.workAllowed(dim, cc[0], cc[1], cc[2]));
-            var pick = io.github.mojolowjo.entropybot.aa.ChestSpot.pick(ranked, in.chestFailed);
-            in.chestCell = pick == null ? null : pick.cell();
-            in.chestWhy = pick == null ? "no free cell within " + io.github.mojolowjo.entropybot.aa.ChestSpot.radius() + " of the "
-                    + (in.basePos != null ? "base" : "bot") + " (" + in.chestFailed.size() + " refused)"
-                    : "chest cell " + pick.key() + ": " + pick.why() + " (" + ranked.size() + " free, " + in.chestFailed.size() + " refused)";
-        } catch (RuntimeException e) {
-            in.chestCell = null;
-            in.chestWhy = "chest cell: " + e;
-        }
     }
 
     /**

@@ -112,7 +112,7 @@ public final class RungOptions {
         public boolean swordMats() { return cobble >= 2 && (sticks >= 1 || planks >= 2) && table; }
     }
 
-    private static final Pattern TOOLS_END = Pattern.compile("no chests|scan base|no free spot|no trees|chopped nothing|no path|no progress|timeout|stuck|couldn't|can't|missing");
+    private static final Pattern TOOLS_END = Pattern.compile("no chests|scan base|no trees|chopped nothing|no path|no progress|timeout|stuck|couldn't|can't|missing");
 
     public static final class Tools implements Options.OptionSet<ToolsFacts> {
         @Override public Options.Choice choose(ToolsFacts f, Options.OptionMemory m, long now, List<Step> planned, double cost, String plannerWhy, String afterFail) {
@@ -126,15 +126,11 @@ public final class RungOptions {
                 else add(rows, dropped, m, now, Options.typed("sword only", "craft", List.of(new Step.Craft("stone_sword", 1)), io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(s),
                         "a stone sword from the bag: craft " + Math.round(s) + " s", "sword only", m));
                 if (!f.pickWanted()) {
-                    if (planned != null) add(rows, dropped, m, now, Options.typed("planner", "planner", planned, cost * Options.planUnit(), "the planner's stone tools (the sword in it)", "planner", true, m));
                     dropped.add("chain: the pickaxe is fine (the sword alone is wanted)");
                     return Options.Choice.of(rows, dropped, "no way to a sword");
                 }
             }
-            // the planner's goal stone tools covers a chest's stock too (PlanFacts.addStock: fetch steps)
-            if (planned == null) dropped.add("planner: " + (plannerWhy == null ? "no plan" : plannerWhy));
-            else add(rows, dropped, m, now, Options.typed("planner", "planner", planned, cost * Options.planUnit(), "the planner's stone tools", "planner", true, m));
-            // rm-bootstrap: the need resolved by the recipe data (NeedChain): the item's ingredients, a table, a seen source, else explore
+            // the one way to tools: the need resolved by the recipe data (NeedChain): the item's ingredients, a table (an item like any other), a seen source, else explore
             if (f.world() == null) dropped.add("chain: no world facts (the senses are not ready)");
             else if (f.pickTier() >= 2 && !f.pickWanted()) dropped.add("chain: the stone pickaxe exists");
             else {

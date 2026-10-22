@@ -43,7 +43,7 @@ public final class StepCommands {
             case Step.Restore k -> k.keep() ? "restore keep pillar" : "restore placed " + k.radius();
             case Step.Deposit k -> "deposit";
             case Step.DropJunk k -> "drop " + k.item() + " " + k.n();
-            case Step.PlaceChest k -> "place chest " + k.x() + " " + k.y() + " " + k.z();
+            case Step.PlaceNear k -> "place " + k.item();
             case Step.MarkBase k -> "place base " + k.x() + " " + k.y() + " " + k.z();
             case Step.Sleep k -> "sleep";
             case Step.Burrow k -> "burrow";

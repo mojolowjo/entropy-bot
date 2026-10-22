@@ -89,19 +89,19 @@ class TypedOptionsTest {
         assertEquals(List.of(new Step.Burrow(), new Step.Wait(120)), burrow.steps(), "no 'burrow then wait 120' text: two typed steps, the wait from Tuning");
         Options.Option house = base.ranked().stream().filter(o -> o.id().startsWith("house")).findFirst().orElseThrow();
         assertEquals(List.of(new Step.Climb(), new Step.House("home")), house.steps(), "under ground the climb comes first");
-        allTyped(BagOptions.choose(new BagOptions.BagFacts(0, 1, true, 5, ME, false, 8, 0, ME, ME, 1, List.of(new Step.DropJunk("dirt", 3))), new Options.OptionMemory(), 0));
-        Options.Choice chest = BagOptions.choose(new BagOptions.BagFacts(0, 1, false, -1, null, false, 8, 0, new int[]{1, 64, 0}, ME, 0, List.of()), new Options.OptionMemory(), 0);
+        allTyped(BagOptions.choose(new BagOptions.BagFacts(0, 1, true, 5, ME, false, 8, 0, ME, 1, List.of(new Step.DropJunk("dirt", 3))), new Options.OptionMemory(), 0));
+        Options.Choice chest = BagOptions.choose(new BagOptions.BagFacts(0, 1, false, -1, null, false, 8, 0, ME, 0, List.of()), new Options.OptionMemory(), 0);
         allTyped(chest);
-        assertEquals(List.of(new Step.Craft("chest", 1), new Step.PlaceChest(1, 64, 0), new Step.MarkBase(0, 64, 0), new Step.Scan(true), new Step.Deposit()), chest.best().steps());
+        assertEquals(List.of(new Step.Craft("chest", 1), new Step.PlaceNear("chest"), new Step.MarkBase(0, 64, 0), new Step.Scan(true), new Step.Deposit()), chest.best().steps());
     }
 
     @Test
     void wayUpAndToolsRowsAreTyped() {
         var f = new RungOptions.SurfaceFacts(10, ME, true, 20, true, true, new int[]{20, 70, 5}, 25, false);
         allTyped(WayUp.choose(f, new Options.OptionMemory(), 0));
-        Options.Choice tools = new RungOptions.Tools().choose(new RungOptions.ToolsFacts(1, true), new Options.OptionMemory(), 0, TS.s("cut 3 logs then craft stone_pickaxe 1"), 12, null, null);
+        Options.Choice tools = new RungOptions.Tools().choose(new RungOptions.ToolsFacts(1, true, true, false, 0, 0, 0, false, new NeedChain.World(java.util.Map.of(), false, w -> null)), new Options.OptionMemory(), 0, null, 0, null, null);
         allTyped(tools);
-        assertTrue(tools.ranked().stream().anyMatch(o -> o.id().equals("planner")));
+        assertTrue(tools.ranked().stream().anyMatch(o -> o.id().equals("chain stone_pickaxe")));
     }
 
     @Test

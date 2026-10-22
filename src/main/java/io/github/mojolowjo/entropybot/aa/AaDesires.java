@@ -161,19 +161,13 @@ public final class AaDesires {
         return new Options.Option(id, id, steps, 0, "no facts: the fixed way", id, false);
     }
 
-    /** Without facts: the planner's routine as it is (null: none). */
-    static Options.Option plannerRow(List<Step> planned) {
-        return planned == null ? null : new Options.Option("planner", "planner", planned, 0, "no facts: the planner's routine as it is", "planner", true);
-    }
-
     public static List<Need> needs() {
         io.github.mojolowjo.entropybot.aa.core.Band torches = new io.github.mojolowjo.entropybot.aa.core.Band(t("band.torchOn"), t("band.torchOff")),
                 bag = new io.github.mojolowjo.entropybot.aa.core.Band(t("bag.enter"), t("bag.leave")), food = new io.github.mojolowjo.entropybot.aa.core.Band(t("band.foodOn"), t("band.foodOff"));
         Need tools = new Need("needs.tools", TaskKind.TOOLS,
                 // aa-night2 P0 2: a stone sword too once a zombie was seen (the sword-only row, or the planner's goal)
                 bb -> bb.in.pickTier < t("tools.stoneTier") || (bb.in.pickPct < t("tools.wearPct") && bb.in.pickaxes < t("tools.spares")) || io.github.mojolowjo.entropybot.aa.brain.Costs.swordWanted(bb.in.zombieSeen, bb.in.armed),
-                bb -> null, bb -> plan("stone tools"), new Options.Picker<>("TOOLS", RungOptions.TOOLS_FACTS, RungOptions.ToolsFacts.class, new RungOptions.Tools())
-                        .withoutFacts((b, planned) -> plannerRow(planned))).surface();      // trees and stone at hand up there: under ground the climb is its first row
+                bb -> null, bb -> List.of(new Step.Craft(RungOptions.TOOLS_ITEM, 1)), new Options.Picker<>("TOOLS", RungOptions.TOOLS_FACTS, RungOptions.ToolsFacts.class, new RungOptions.Tools())).surface();      // trees and stone at hand up there: under ground the climb is its first row
         Need hunger = new Need("needs.food", TaskKind.FOOD,
                 bb -> bb.in.hungerDrains && (food.update(bb.in.food) | foodStockLow(bb)),
                 bb -> null, bb -> plan("food 8"), new Options.Picker<>("FOOD", FoodOptions.FACTS, FoodOptions.FoodFacts.class, new FoodOptions.Food()));

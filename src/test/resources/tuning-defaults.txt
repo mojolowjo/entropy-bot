@@ -188,8 +188,6 @@ caves.pickWithin	64.0
 caves.probeStep	4.0
 chains.runResumeMs	43200000.0
 chestMin	35.0
-chestSpot.offTable	2.0
-chestSpot.radius	3.0
 chunkSummary.lavaLake	12.0
 clearEngine.breakSlack	30.0
 clearEngine.failTries	4.0

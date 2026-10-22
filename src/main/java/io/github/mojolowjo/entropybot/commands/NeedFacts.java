@@ -89,7 +89,7 @@ public final class NeedFacts {
             case FURNACE -> in.furnaceKnown;
             case CHEST -> in.baseChests;
         };
-        return new StationOptions.StationFacts(k, inBag, known, null, -1, in.planks, in.wood, in.cobble, in.pickTier, in.chestCell,
+        return new StationOptions.StationFacts(k, inBag, known, null, -1, in.planks, in.wood, in.cobble, in.pickTier,
                 wood == null ? null : wood.best(), wood == null ? null : wood.why(), in.underGround, in.underDepth);
     }
 
@@ -117,6 +117,6 @@ public final class NeedFacts {
             drops.add(new io.github.mojolowjo.entropybot.aa.moves.Step.DropJunk(id.indexOf(':') >= 0 ? id.substring(id.indexOf(':') + 1) : id, n));
         }
         return new BagOptions.BagFacts(in.freeSlots, want, in.baseChests, in.baseDist, in.basePos, count(bag, "minecraft:chest") > 0,
-                in.planks, in.wood, in.chestCell, in.pos, junkSlots, drops);
+                in.planks, in.wood, in.pos, junkSlots, drops);
     }
 }

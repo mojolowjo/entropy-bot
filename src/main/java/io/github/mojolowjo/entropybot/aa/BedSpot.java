@@ -10,7 +10,7 @@ import java.util.function.Predicate;
 
 /**
  * aa-r2fix (round 2: "couldn't place the white_bed at x y z" and "no room for my bed next to me (2 free blocks in a row)"): the bed
- * went one block east of the bot, whatever stood there. Now the cell is chosen like the chest's ({@link ChestSpot}): a free,
+ * went one block east of the bot, whatever stood there. Now the cell is chosen like the chest's (a ranked scan): a free,
  * standable cell whose 2-cell footprint (the foot here, the head one block on, in any of the four directions) is free, the policy
  * allowing (no keep-out / no-break box), ranked by cost: the walk from the anchor (the table / base / me), plus a penalty for each block it lies off the
  * table or chest, plus a small one for each direction the head could not go (the game picks the head by the way the bot faces,

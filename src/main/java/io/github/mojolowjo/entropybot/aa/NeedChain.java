@@ -47,30 +47,29 @@ public final class NeedChain {
 
     /**
      * What the bot knows now. {@code bag}: item id -> count; {@code tableNear} / {@code furnaceNear}: one within reach;
-     * {@code tableCell}: a free cell to place one at (null none); {@code seen}: planner word ({@link PlanFacts#canon}) -> the
+     * {@code seen}: planner word ({@link PlanFacts#canon}) -> the
      * nearest source of it, null when none (a tree for "log", stone for a stone-like item; always {@link Nearby}'s answer);
      * {@code seenAll}: every source seen for the word (null: just {@code seen}'s one); {@code horizonBlocks}: a way dearer than
      * this is priced out when another stands (0: the planning horizon).
      */
-    public record World(Map<String, Integer> bag, boolean tableNear, int[] tableCell, Function<String, Spot> seen, double horizonBlocks,
+    public record World(Map<String, Integer> bag, boolean tableNear, Function<String, Spot> seen, double horizonBlocks,
                         Function<String, List<Spot>> seenAll, boolean furnaceNear) {
         public World {
             Map<String, Integer> b = new LinkedHashMap<>();
             if (bag != null) for (var e : bag.entrySet()) b.merge(e.getKey().indexOf(':') < 0 ? "minecraft:" + e.getKey() : e.getKey(), e.getValue(), Integer::sum);
             bag = Map.copyOf(b);
-            tableCell = tableCell == null ? null : tableCell.clone();
             Function<String, Spot> one = seen == null ? w -> null : seen;
             seen = one;
             if (seenAll == null) seenAll = w -> { Spot s = one.apply(w); return s == null ? List.of() : List.of(s); };
             if (horizonBlocks <= 0) horizonBlocks = Unit.blocks(Sequencer.defaultHorizonS());
         }
 
-        public World(Map<String, Integer> bag, boolean tableNear, int[] tableCell, Function<String, Spot> seen, double horizonBlocks) {
-            this(bag, tableNear, tableCell, seen, horizonBlocks, null, false);
+        public World(Map<String, Integer> bag, boolean tableNear, Function<String, Spot> seen, double horizonBlocks) {
+            this(bag, tableNear, seen, horizonBlocks, null, false);
         }
 
-        public World(Map<String, Integer> bag, boolean tableNear, int[] tableCell, Function<String, Spot> seen) {
-            this(bag, tableNear, tableCell, seen, 0, null, false);
+        public World(Map<String, Integer> bag, boolean tableNear, Function<String, Spot> seen) {
+            this(bag, tableNear, seen, 0, null, false);
         }
     }
 
@@ -316,19 +315,20 @@ public final class NeedChain {
         return "smelt " + String.join(" + ", parts);
     }
 
-    /** A crafting table or furnace in reach: the phrase of how it gets there, null when one already is. */
+    /**
+     * A crafting table or furnace in reach is an item like any other: placed and known -> used (0 s); in the bag or made by the same recursion -> 
+     * "place it near me" (Baritone's builder picks the cell; if it cannot, the step fails with its reason). Null when one already is in reach.
+     */
     private static String station(Ctx c, String item, boolean table) {
         if (table ? c.tableReady : c.furnaceReady) return null;
-        if (c.w.tableCell() == null) { c.fail = "no free cell to place a " + item.replace('_', ' ') + " at"; return null; }
         String made = obtain(c, item, 1);
         if (c.fail != null) return null;
         if (c.stuck) return made;
-        int[] at = c.w.tableCell();
-        c.steps.add(Step.Build.one(item, at[0], at[1], at[2]));
+        c.steps.add(new Step.PlaceNear(item));
         c.seconds += Price.placeS();
         c.bag.merge(item, -1, Integer::sum);
         if (table) c.tableReady = true; else c.furnaceReady = true;
-        c.away = 0;                                       // placed where the bot stands
+        c.away = 0;                                       // placed near where the bot stands
         return made == null ? "in the bag, placed" : made + ", placed";
     }
 

@@ -72,6 +72,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.Collect k -> collect(p, k);
                 case Step.HuntAt h -> hunt(p, h);
                 case Step.Build b -> build(b);
+                case Step.PlaceNear n -> placeNear(p, n);
                 case Step.Climb k -> climb(p);
                 case Step.Fish fs -> fish(p, fs);
                 case Step.KelpCut k -> kelpCut(p, k);
@@ -97,6 +98,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.Fish fs -> fishStatus(p);
                 case Step.HuntAt h -> huntStatus(p, h);
                 case Step.Build b -> buildStatus(b);
+                case Step.PlaceNear n -> placeNearStatus(n);
                 case Step.Climb k -> climbStatus();
                 default -> requestStatus();
             };
@@ -120,7 +122,7 @@ public final class StepHands implements Steps.Hands {
                 IBaritone b = Jobs.baritone();
                 if (b != null) Jobs.cancel(b);
             }
-            if (step instanceof Step.Build) io.github.mojolowjo.entropybot.aa.moves.JobHands.get().stop(why);
+            if (step instanceof Step.Build || step instanceof Step.PlaceNear) io.github.mojolowjo.entropybot.aa.moves.JobHands.get().stop(why);
             if (step instanceof Step.Climb && climbing && c.chains.running() && "climb".equals(c.chains.name())) c.chains.clear();
             if ((req != null && !req.finished) || walkJob != null) {
                 if (c.jobs.running()) c.jobs.finish("stopped: " + why);
@@ -399,6 +401,25 @@ public final class StepHands implements Steps.Hands {
     private Car.Status buildStatus(Step.Build b) {
         var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().build(b.cells(), b.items(), (int) (20 * Tuning.need("hands.buildS")), "steps", null, false);
         if (r.done()) return Car.Status.done("ok: " + b.text());
+        if (r.failed()) return Car.Status.failed(r.why());
+        return Car.Status.running(r.why());
+    }
+
+    // ---- place near me: the one cell ahead of the bot goes to the builder leg; whether it can be placed there is the builder's answer ----
+
+    private int[] nearCell;
+
+    private String placeNear(LocalPlayer p, Step.PlaceNear n) {
+        int[] me = Jobs.here(p);
+        var d = p.getDirection();
+        nearCell = new int[]{me[0] + d.getStepX(), me[1], me[2] + d.getStepZ()};
+        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().build(List.of(nearCell), List.of(n.item()), (int) (20 * Tuning.need("hands.buildS")), "steps", null, false);
+        return r.failed() ? "error: " + r.why() : null;
+    }
+
+    private Car.Status placeNearStatus(Step.PlaceNear n) {
+        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().build(List.of(nearCell), List.of(n.item()), (int) (20 * Tuning.need("hands.buildS")), "steps", null, false);
+        if (r.done()) return Car.Status.done("ok: " + n.text());
         if (r.failed()) return Car.Status.failed(r.why());
         return Car.Status.running(r.why());
     }

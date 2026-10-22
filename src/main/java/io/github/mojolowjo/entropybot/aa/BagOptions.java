@@ -10,7 +10,7 @@ import java.util.List;
  * AA_ROUND4A O: a full bag as a priced option set, the ways:
  * <ul>
  * <li><b>deposit</b>: base chests known: walk there and back (2 x the base distance) + {@code bag.depositS}.</li>
- * <li><b>chest here</b>: no base chests: a chest (in the bag, or crafted from 8 planks) placed at the free cell, marked
+ * <li><b>chest here</b>: no base chests: a chest (in the bag, or crafted from 8 planks) placed near me, marked
  *     base, scanned, then the deposit: craft 0.5 s + place 0.25 s + {@code bag.depositS}.</li>
  * <li><b>drop junk</b>: junk (the junk list) in the bag: {@code bag.dropS}, one {@code drop <item> <n>} step per junk item; frees only the junk's slots, so it is priced
  *     per slot it fails to free against the slots wanted.</li>
@@ -26,12 +26,11 @@ public final class BagOptions {
      * @param freeSlots   free slots now; {@code want} slots the need wants free
      * @param baseChests  base chests known; {@code baseDist} blocks to the base (-1 unknown); {@code base} its cell
      * @param chestInBag  a chest item in the bag; {@code planks} planks (+ 4 per log in {@code logs})
-     * @param cell        the free cell for a chest here (ChestSpot), null none
-     * @param me          the bot's cell (the base mark of a chest here)
+         * @param me          the bot's cell (the base mark of a chest here)
      * @param junkSlots   slots the junk items fill; {@code junkDrops} the drop steps (typed: item and count), one per junk item
      */
     public record BagFacts(int freeSlots, int want, boolean baseChests, double baseDist, int[] base, boolean chestInBag, int planks, int logs,
-                           int[] cell, int[] me, int junkSlots, List<Step.DropJunk> junkDrops) {}
+                           int[] me, int junkSlots, List<Step.DropJunk> junkDrops) {}
 
     public static Options.Choice choose(BagFacts f, Options.OptionMemory m, long now) {
         List<Options.Option> rows = new ArrayList<>();
@@ -48,19 +47,19 @@ public final class BagOptions {
         // 2. a chest here (no base chests)
         int planks = f.planks() + 4 * f.logs();  // game fact: a log makes 4 planks
         if (f.baseChests()) dropped.add("chest here: base chests known");
-        else if (f.cell() == null || f.me() == null) dropped.add("chest here: no free cell");
+        else if (f.me() == null) dropped.add("chest here: my cell is not known");
         else if (!f.chestInBag() && planks < 8) dropped.add("chest here: " + planks + " planks, 8 wanted");  // game fact: a chest takes 8 planks
         else {
             double s = (f.chestInBag() ? 0 : Price.craftS()) + Price.placeS() + dep;
             List<Step> st = new java.util.ArrayList<>();
             if (!f.chestInBag()) st.add(new Step.Craft("chest", 1));
-            st.add(new Step.PlaceChest(f.cell()[0], f.cell()[1], f.cell()[2]));
+            st.add(new Step.PlaceNear("chest"));
             st.add(new Step.MarkBase(f.me()[0], f.me()[1], f.me()[2]));
             st.add(new Step.Scan(true));
             st.add(new Step.Deposit());
             Price.add(rows, dropped, m, now, Options.typed("chest here", "chest", st, Price.s(s),
                     (f.chestInBag() ? "a chest in the bag" : planks + " planks, craft " + Price.craftS() + " s") + ", place " + Price.placeS() + " s, deposit " + Price.r(dep) + " s",
-                    "chest here", m).withSite(Site.of(f.cell())));
+                    "chest here", m));
         }
         // 3. drop the junk
         if (f.junkSlots() <= 0 || f.junkDrops() == null || f.junkDrops().isEmpty()) dropped.add("drop junk: no junk in the bag");

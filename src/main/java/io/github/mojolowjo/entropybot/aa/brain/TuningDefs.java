@@ -176,9 +176,6 @@ final class TuningDefs {
         Tuning.def("caves.pickWithin", 64, "rm-constants 0.39.u2 (was Caves.PICK_WITHIN)", "Package H: the cells of one cave, of all caves together, and the number of caves (memory/Limits)");
         // chains
         Tuning.def("chains.runResumeMs", 12L * 3600 * 1000, "rm-constants 0.39.u2 (was Chains.RUN_RESUME_MS)", "the run resume ms of Chains");
-        // chestSpot
-        Tuning.def("chestSpot.offTable", 2, "rm-constants 0.39.u2 (was ChestSpot.OFF_TABLE)", "Blocks of cost per block the chest lies away from being next to the table");
-        Tuning.def("chestSpot.radius", 3, "rm-constants 0.39.u2 (was ChestSpot.RADIUS)", "How far from the anchor (the base, else the bot) a chest may stand");
         // chunkSummary
         Tuning.def("chunkSummary.lavaLake", 12, "rm-constants 0.39.u2 (was ChunkSummary.LAVA_LAKE)", "Lava sources in one section that make a 'lava lake' (as PoiScanner had it)");
         // clearEngine

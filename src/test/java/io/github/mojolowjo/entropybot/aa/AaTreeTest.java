@@ -19,6 +19,7 @@ class AaTreeTest {
     final Tracer tracer = new Tracer();
     final Blackboard bb = new Blackboard(clock, port, tracer);
     final AaTree tree = AaTree.build(new AaScorer());
+    { TS.tools(bb); }
 
     /** A fresh Peaceful start: nothing in the bag, nothing known. */
     void freshStart() {
@@ -77,39 +78,32 @@ class AaTreeTest {
         port.done(1, "done");
         assertEquals(Status.SUCCESS, tree.tick(bb));
         assertNull(bb.task());
-        // a wooden pickaxe now: the tools Need is still unmet; S2: its goal text stays "goal stone tools" (the options
-        // choose bootstrap or the plan), so the settle time passes first
-        clock.advance(75_000L + 1);
-        assertEquals(Status.RUNNING, tree.tick(bb));
-        assertEquals("plan stone tools", lastChain());
-        port.done(2, "done");
-        tree.tick(bb);
         pick(2);
         tree.tick(bb);
         assertEquals("plan table", lastChain());
-        port.done(3, "done");
+        port.done(2, "done");
         tree.tick(bb);
         bb.in.tableKnown = true;
         tree.tick(bb);
         assertEquals("plan furnace", lastChain());
-        port.done(4, "done");
+        port.done(3, "done");
         tree.tick(bb);
         bb.in.furnaceKnown = true;
         tree.tick(bb);
         assertEquals("plan torch 16", lastChain());
-        port.done(5, "done");
+        port.done(4, "done");
         tree.tick(bb);
         bb.in.torches = 16;
         tree.tick(bb);
         // AA_ROUND2 4: Peaceful (danger 0): a base is worth 16 (Worth.base), so iron (70) comes first
         assertEquals("plan iron tools", lastChain(), "bed (no wool) and bag (no chests) are skipped with reasons");
-        port.done(6, "done");
+        port.done(5, "done");
         tree.tick(bb);
         pick(3);
         stocked();                                // Peaceful base (16): after the idle stock-ups
         tree.tick(bb);
         assertEquals("shelter", lastChain(), "no area: a shelter, not a house");
-        port.done(7, "done");
+        port.done(6, "done");
         assertEquals(Status.SUCCESS, tree.tick(bb));
         assertTrue(bb.flag(AaLadder.SHELTER_FACT), "the shelter is AA's own fact");
         assertTrue(tree.brain.whyLines(20).stream().anyMatch(l -> l.startsWith("needs.bed PROGRESS 0") && l.contains("parked: no wool source")), "parked, not scored: " + tree.brain.whyLines(20));
@@ -262,13 +256,13 @@ class AaTreeTest {
     @Test
     void aGoalStillPlanningIsWaitedForThenSkipped() {
         freshStart();
-        pick(1);
-        bb.in.tableKnown = bb.in.furnaceKnown = true;      // AA_ROUND2 4: with no tech tree a table is worth 80, over the wooden pickaxe's tools
+        pick(2);
+        bb.in.tableKnown = bb.in.furnaceKnown = true;      // tools are met: the torches goal is the planner's
         port.resolveTo = null;
         assertEquals(Status.RUNNING, tree.tick(bb), "the slot waits on the Need that plans");
-        assertEquals("needs>planning TOOLS: plan stone tools (still searching (0 s))", tree.driver() + ">" + bb.taskText(clock.now()));
+        assertEquals("needs>planning TORCHES: plan torch 16 (still searching (0 s))", tree.driver() + ">" + bb.taskText(clock.now()));
         assertEquals(0, port.started.size());
-        Need tools = Need.all(tree.ladder).stream().filter(r -> r.id.equals("needs.tools")).findFirst().orElseThrow();
+        Need tools = Need.all(tree.ladder).stream().filter(r -> r.id.equals("needs.torches")).findFirst().orElseThrow();
         for (int i = 0; i < 45_000L / 1000; i++) {
             clock.advance(1000);
             assertEquals(Status.RUNNING, tools.tick(bb));

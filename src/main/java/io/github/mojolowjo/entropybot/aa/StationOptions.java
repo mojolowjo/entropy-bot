@@ -14,7 +14,7 @@ import java.util.Locale;
  * <ul>
  * <li><b>use known</b>: one is known within {@code station.near} (48): walk to its cell (its distance, or
  *     {@code base.distGuess}); sensed near with no cell: dropped (nothing to walk to).</li>
- * <li><b>place from bag</b>: the item in the bag and a free cell (ChestSpot / the table cell): place 0.25 s.</li>
+ * <li><b>place from bag</b>: the item in the bag: "place it near me" (Baritone's builder picks the cell), 0.15 s.</li>
  * <li><b>craft + place</b>: the materials in the bag (table 4 planks, chest 8 planks, furnace 8 cobblestone; a log is 4
  *     planks): craft 0.5 s + place 0.25 s.</li>
  * <li><b>cut + craft</b> (table, chest): wood short: the wood set's best row (WoodOptions) prepended at its price.</li>
@@ -48,12 +48,11 @@ public final class StationOptions {
      * @param known    one is sensed near; {@code knownAt} its cell (null: only "near" known), {@code knownDist} blocks (-1 unknown)
      * @param planks   planks in the bag; {@code logs} logs (4 planks each); {@code cobble} cobblestone
      * @param pickTier best pickaxe (0 none)
-     * @param cell     the free cell to place it at (ChestSpot / the table cell), null none found
      * @param wood     the wood set's best row (cut logs), null none; {@code woodWhy} the wood set's line
      * @param under    under ground ({@code depth} blocks); a wood or cobble gather climbs first
      */
     public record StationFacts(Kind kind, boolean inBag, boolean known, int[] knownAt, double knownDist, int planks, int logs, int cobble,
-                               int pickTier, int[] cell, Options.Option wood, String woodWhy, boolean under, int depth) {}
+                               int pickTier, Options.Option wood, String woodWhy, boolean under, int depth) {}
 
     public static Options.Choice choose(StationFacts f, Options.OptionMemory m, long now, List<Step> planned, double plannedCost, String plannerWhy) {
         List<Options.Option> rows = new ArrayList<>();
@@ -74,10 +73,8 @@ public final class StationOptions {
         }
         // a placed chest is noted by a scan round me (the base chests fact reads the noted chests)
         List<Step> place = new ArrayList<>();
-        if (f.cell() != null) {
-            place.add(Step.Build.one(item, f.cell()[0], f.cell()[1], f.cell()[2]));
-            if (k == Kind.CHEST) place.add(new Step.Scan());
-        } else dropped.add("place " + item + ": no free cell");
+        place.add(new Step.PlaceNear(item));
+        if (k == Kind.CHEST) place.add(new Step.Scan());
         // 2. from the bag
         if (f.inBag()) {
             if (!place.isEmpty()) add(rows, dropped, m, now, Options.typed("place " + item, "place", place, Price.s(Price.placeS()),
@@ -124,7 +121,7 @@ public final class StationOptions {
     }
 
     private static void add(List<Options.Option> rows, List<String> dropped, Options.OptionMemory m, long now, Options.Option o, StationFacts f) {
-        Price.add(rows, dropped, m, now, f.cell() == null ? o : o.withSite(Site.of(f.cell())));
+        Price.add(rows, dropped, m, now, o);
     }
 
     /** A failed place or craft may be answered with the next way (never the owner's stop, a fight, a death). */

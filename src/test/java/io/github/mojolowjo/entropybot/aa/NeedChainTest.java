@@ -16,7 +16,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** rm-bootstrap: the tools need resolved by recursion over the recipe data - wood, a table, a pickaxe for the stone, then the stone pickaxe. */
 class NeedChainTest {
-    static final int[] CELL = {3, 64, 1};
 
     @BeforeEach
     void data() {
@@ -41,11 +40,11 @@ class NeedChainTest {
 
     @Test
     void fromNothingATreeAndStoneSeenGiveTheWholeChain() {
-        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, CELL, seen(TREE, STONE)));
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, seen(TREE, STONE)));
         assertTrue(c.ok(), c.why());
         assertFalse(c.explore());
         List<Step> s = c.steps();
-        int chop = at(s, Step.ChopTree.class, "cut"), table = at(s, Step.Build.class, "crafting_table"), wooden = at(s, Step.Craft.class, "wooden_pickaxe"),
+        int chop = at(s, Step.ChopTree.class, "cut"), table = at(s, Step.PlaceNear.class, "crafting_table"), wooden = at(s, Step.Craft.class, "wooden_pickaxe"),
                 stone = at(s, Step.Collect.class, "cobblestone"), last = at(s, Step.Craft.class, "stone_pickaxe");
         assertTrue(chop >= 0 && table > chop && wooden > table && stone > wooden && last > stone, s.toString());
         assertEquals(s.size() - 1, last, "the stone pickaxe is the last step");
@@ -57,7 +56,7 @@ class NeedChainTest {
 
     @Test
     void nothingSeenIsTheExploreWayPricedForThatNeedNeverADrop() {
-        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, CELL, seen(null, null)));
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, seen(null, null)));
         assertTrue(c.ok(), "no tree seen is not infeasible: " + c.why());
         assertTrue(c.explore());
         assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes())), c.steps());
@@ -67,44 +66,44 @@ class NeedChainTest {
 
     @Test
     void logsInTheBagGoStraightToTheTableAndTheCrafts() {
-        World w = new World(Map.of("minecraft:oak_log", 8), false, CELL, seen(null, STONE));
+        World w = new World(Map.of("minecraft:oak_log", 8), false, seen(null, STONE));
         NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, w);
         assertTrue(c.ok(), c.why());
         assertEquals(-1, at(c.steps(), Step.ChopTree.class, "cut"), "8 logs are enough: " + c.steps());
         assertFalse(c.explore());
-        assertTrue(at(c.steps(), Step.Craft.class, "planks") < at(c.steps(), Step.Build.class, "crafting_table"));
+        assertTrue(at(c.steps(), Step.Craft.class, "planks") < at(c.steps(), Step.PlaceNear.class, "crafting_table"));
     }
 
     @Test
     void aTableInReachIsNotMadeAgain() {
-        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of("minecraft:oak_log", 8), true, null, seen(null, STONE)));
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of("minecraft:oak_log", 8), true, seen(null, STONE)));
         assertTrue(c.ok(), c.why());
-        assertEquals(-1, at(c.steps(), Step.Build.class, "crafting_table"), c.steps().toString());
+        assertEquals(-1, at(c.steps(), Step.PlaceNear.class, "crafting_table"), c.steps().toString());
         assertEquals(-1, at(c.steps(), Step.Craft.class, "crafting_table"), c.steps().toString());
     }
 
     @Test
     void aTableFromTheBagIsPlacedNotCrafted() {
-        World w = new World(Map.of("minecraft:oak_log", 8, "minecraft:crafting_table", 1), false, CELL, seen(null, STONE));
+        World w = new World(Map.of("minecraft:oak_log", 8, "minecraft:crafting_table", 1), false, seen(null, STONE));
         NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, w);
-        assertTrue(at(c.steps(), Step.Build.class, "crafting_table") >= 0);
+        assertTrue(at(c.steps(), Step.PlaceNear.class, "crafting_table") >= 0);
         assertEquals(-1, at(c.steps(), Step.Craft.class, "crafting_table"));
     }
 
     @Test
     void whatIsInTheBagIsNoWork() {
-        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of("minecraft:stone_pickaxe", 1), false, CELL, seen(null, null)));
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of("minecraft:stone_pickaxe", 1), false, seen(null, null)));
         assertTrue(c.ok());
         assertTrue(c.steps().isEmpty());
     }
 
     @Test
-    void noCellForTheTableIsADroppedBranchNamedInTheWhyNeverANoWay() {
-        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of("minecraft:oak_log", 8), false, null, seen(null, STONE)));
-        assertTrue(c.ok(), "a branch that cannot be done is priced out, the chain stays: " + c.why());
-        assertTrue(c.explore(), c.why());
-        assertTrue(c.dropped().stream().anyMatch(d -> d.contains("no free cell")), c.dropped().toString());
-        assertTrue(c.why().contains("dropped:") && c.why().contains("no free cell"), c.why());
+    void theTableIsAnItemPlacedNearMeAndNoCellIsEverAsked() {
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of("minecraft:oak_log", 8), false, seen(null, STONE)));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertTrue(c.steps().contains(new Step.PlaceNear("crafting_table")), c.steps().toString());
+        assertFalse(c.why().contains("cell"), c.why());
+        assertTrue(c.dropped().stream().noneMatch(d -> d.contains("cell")), c.dropped().toString());
     }
 
     @Test
@@ -113,7 +112,7 @@ class NeedChainTest {
         d.recipe("zinc_ingot", 1, "zinc_block");
         d.recipe("zinc_block", 1, "zinc_ingot");
         d.install();
-        NeedChain.Chain c = NeedChain.resolve("zinc_ingot", 1, new World(Map.of(), false, CELL, seen(TREE, STONE)));
+        NeedChain.Chain c = NeedChain.resolve("zinc_ingot", 1, new World(Map.of(), false, seen(TREE, STONE)));
         assertTrue(c.ok(), "a loop never kills the chain: " + c.why());
         assertTrue(c.explore(), c.why());
         assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Explore), c.steps().toString());
@@ -128,7 +127,7 @@ class NeedChainTest {
         d.recipe("zinc_block", 1, "zinc_ingot");
         d.recipe("gadget", 1, "zinc_ingot", "oak_planks");
         d.install();
-        NeedChain.Chain c = NeedChain.resolve("gadget", 1, new World(Map.of(), true, CELL, seen(TREE, STONE)));
+        NeedChain.Chain c = NeedChain.resolve("gadget", 1, new World(Map.of(), true, seen(TREE, STONE)));
         assertTrue(c.ok(), c.why());
         assertTrue(at(c.steps(), Step.ChopTree.class, "cut") >= 0 || at(c.steps(), Step.Explore.class, "") >= 0, c.steps().toString());
         assertFalse(c.dropped().isEmpty(), c.why());
@@ -139,7 +138,7 @@ class NeedChainTest {
         TestData d = TestData.planner();
         d.recipe("gadget", 1, "mystery");
         d.install();
-        NeedChain.Chain c = NeedChain.resolve("gadget", 1, new World(Map.of(), true, CELL, seen(TREE, STONE)));
+        NeedChain.Chain c = NeedChain.resolve("gadget", 1, new World(Map.of(), true, seen(TREE, STONE)));
         assertTrue(c.ok(), "no recipe and no source is an explore, not a 'no way': " + c.why());
         assertTrue(c.explore());
         assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes())), c.steps());
@@ -148,7 +147,7 @@ class NeedChainTest {
 
     @Test
     void aNoTreeWorldIsTheExploreLeafAndTheWhyLineShowsTheChain() {
-        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, CELL, seen(null, STONE)));
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, seen(null, STONE)));
         System.out.println("WHY-LINE " + c.why());
         assertTrue(c.ok() && c.explore(), c.why());
         assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes())), c.steps());
@@ -162,14 +161,14 @@ class NeedChainTest {
         d.recipe("far_thing", 1, "gadget");
         d.install();
         // the tree is 30 m away: crafting from logs costs more than a 1-block horizon, and far_thing has no other branch, so the craft stays
-        NeedChain.Chain c = NeedChain.resolve("far_thing", 1, new World(Map.of(), false, CELL, seen(TREE, STONE), 1));
+        NeedChain.Chain c = NeedChain.resolve("far_thing", 1, new World(Map.of(), false, seen(TREE, STONE), 1));
         assertTrue(c.ok(), c.why());
         assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Craft || s instanceof Step.Explore), c.steps().toString());
     }
 
     @Test
     void aWoodenPickaxeInTheBagSkipsTheTierSubNeed() {
-        World w = new World(Map.of("minecraft:wooden_pickaxe", 1, "minecraft:oak_log", 4), true, CELL, seen(null, STONE));
+        World w = new World(Map.of("minecraft:wooden_pickaxe", 1, "minecraft:oak_log", 4), true, seen(null, STONE));
         NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, w);
         assertEquals(-1, at(c.steps(), Step.Craft.class, "wooden_pickaxe"), c.steps().toString());
         assertTrue(at(c.steps(), Step.Collect.class, "cobblestone") >= 0);
@@ -191,7 +190,7 @@ class NeedChainTest {
     @Test
     void stoneWithATreeSeenTakesTheWoodenPickaxeNotTheGoldOne() {
         goldWorld();
-        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, CELL, seen(TREE, STONE)));
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, seen(TREE, STONE)));
         System.out.println("WHY-LINE (a) " + c.why());
         assertTrue(c.ok() && !c.explore(), c.why());
         assertTrue(at(c.steps(), Step.Craft.class, "wooden_pickaxe") >= 0, c.steps().toString());
@@ -204,7 +203,7 @@ class NeedChainTest {
     @Test
     void theRecipeLoopCandidateIsPricedOutAndTheChainCompletes() {
         goldWorld();
-        NeedChain.Chain c = NeedChain.resolve("cobblestone", 3, new World(Map.of(), false, CELL, seen(TREE, STONE)));
+        NeedChain.Chain c = NeedChain.resolve("cobblestone", 3, new World(Map.of(), false, seen(TREE, STONE)));
         assertTrue(c.ok() && !c.explore(), c.why());
         assertTrue(c.dropped().stream().anyMatch(x -> x.startsWith("golden_pickaxe: ")), c.dropped().toString());
         assertTrue(at(c.steps(), Step.Collect.class, "cobblestone") > at(c.steps(), Step.Craft.class, "wooden_pickaxe"), c.steps().toString());
@@ -213,7 +212,7 @@ class NeedChainTest {
     @Test
     void noTreeStoneSeenExploresForALogNotForGold() {
         goldWorld();
-        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, CELL, seen(null, STONE)));
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, seen(null, STONE)));
         System.out.println("WHY-LINE (c) " + c.why());
         assertTrue(c.ok() && c.explore(), c.why());
         String chain = chainPart(c.why());

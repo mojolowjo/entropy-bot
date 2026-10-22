@@ -343,12 +343,6 @@ public final class Need extends Node {
         long now = bb.clock.now();
         boolean pre = ranPre;
         ranPre = false;
-        // aa-r1fix: a camp chest cell the game refused is not tried again (the next cell of ChestSpot's ranking is)
-        if (kind == TaskKind.TABLE_FURNACE && ChestSpot.failedCell(why) != null) {
-            ChestSpot.noteFailure(bb.in.chestFailed, why);
-            bb.port.log(kind + ": chest cell refused (\"" + why + "\"), the next free cell is tried");
-            return fail(why);
-        }
         // S2 (aa373): the need is met, the task's failed tail is not this need's failure
         if (!lastForced && !unmet.test(bb) && !Options.ownerOrDanger(why == null ? "" : why)) {
             bb.port.log(kind + ": the task ended \"" + why + "\" but the need is met - counted done");

@@ -18,6 +18,12 @@ public final class TS {
         return out;
     }
 
+    /** The TOOLS need's facts (the chain row is the only way): a world that knows nothing, tier from the inputs. */
+    public static void tools(io.github.mojolowjo.entropybot.aa.core.Blackboard bb) {
+        bb.fact(RungOptions.TOOLS_FACTS, (java.util.function.Supplier<RungOptions.ToolsFacts>) () -> new RungOptions.ToolsFacts(bb.in.pickTier, true, bb.in.pickTier < 2, false, 0, 0, 0, false,
+                new NeedChain.World(java.util.Map.of(), false, w -> null)));
+    }
+
     /** One planner goal as a need's goal steps. */
     public static List<Step> plan(String goal) { return List.of(new Step.Plan(goal)); }
 

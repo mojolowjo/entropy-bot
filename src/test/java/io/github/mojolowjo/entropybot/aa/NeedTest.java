@@ -62,6 +62,7 @@ class NeedTest {
     @Test
     void toolsUnderGroundPriceTheClimbAsTheirFirstRow() {
         Need tools = AaDesires.needs().stream().filter(x -> x.id.equals("needs.tools")).findFirst().orElseThrow();
+        TS.tools(bb);
         bb.in.pickTier = 0;
         bb.in.underDepth = 10;
         assertEquals(Status.RUNNING, tools.tick(bb));

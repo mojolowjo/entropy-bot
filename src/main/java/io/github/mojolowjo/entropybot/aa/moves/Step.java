@@ -172,9 +172,12 @@ public sealed interface Step {
         public String text() { return "drop " + item + " " + n; }
     }
 
-    /** Place a chest from the bag at x y z (Baritone's builder places it). */
-    record PlaceChest(int x, int y, int z) implements Step {
-        public String text() { return "place chest " + x + " " + y + " " + z; }
+    /**
+     * Place {@code item} (from the bag) near me: no cell is named by AA. The hands hand the builder one cell ahead of the bot;
+     * if the game cannot put the block there, the builder's own reason is the step's failure.
+     */
+    record PlaceNear(String item) implements Step {
+        public String text() { return "place " + item + " near me"; }
     }
 
     /** Mark x y z as the base (a fact for the home, no block). */

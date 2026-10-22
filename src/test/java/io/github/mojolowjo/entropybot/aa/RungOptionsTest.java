@@ -41,13 +41,13 @@ class RungOptionsTest {
     void toolsFromNothingIsTheChainRowNotAFixedJob() {
         io.github.mojolowjo.entropybot.aa.brain.TestData.planner().install();
         try {
-            NeedChain.World w = new NeedChain.World(java.util.Map.of(), false, new int[]{1, 64, 1},
+            NeedChain.World w = new NeedChain.World(java.util.Map.of(), false,
                     word -> word.equals("log") ? new NeedChain.Spot(30, 64, 0, 30, null) : null);
             Options.Choice c = new RungOptions.Tools().choose(new ToolsFacts(0, false, true, false, 0, 0, 0, false, w), m, 0, null, 0, "missing cobblestone", null);
             assertEquals("chain stone_pickaxe", c.best().id(), c.why());
             assertTrue(c.best().typed());
             assertTrue(c.best().why().contains("tree seen 30 m"), c.best().why());
-            assertTrue(c.why().contains("planner: missing cobblestone"), c.why());
+            assertTrue(c.dropped().stream().noneMatch(d -> d.startsWith("planner")), "the chain is the one way for tools: " + c.dropped());
         } finally {
             io.github.mojolowjo.entropybot.aa.brain.TestData.clear();
         }
@@ -57,7 +57,7 @@ class RungOptionsTest {
     void aFailedChainIsHeldUnderItsKeyAndTheNextPickShowsWhy() {
         io.github.mojolowjo.entropybot.aa.brain.TestData.planner().install();
         try {
-            NeedChain.World w = new NeedChain.World(java.util.Map.of(), false, new int[]{1, 64, 1}, word -> null);
+            NeedChain.World w = new NeedChain.World(java.util.Map.of(), false, word -> null);
             m.failed("chain stone_pickaxe", "stopped at step 1 (explore 5): timeout", 0);
             Options.Choice c = new RungOptions.Tools().choose(new ToolsFacts(0, false, true, false, 0, 0, 0, false, w), m, 1, null, 0, "x", null);
             assertNull(c.best());
