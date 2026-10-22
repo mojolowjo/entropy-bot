@@ -213,6 +213,8 @@ public final class Commands implements Chains.Env {
     final CampCommands camp = new CampCommands(this);
     /** B3: goal, plan, actions, actions.json, the brain's planner hook. */
     final GoalPlanning planning = new GoalPlanning(this);
+    /** simple-tools: the one "what is nearby" fact (Baritone's scan first, sightings as the fallback). */
+    final NearbyLive nearby = new NearbyLive(this);
 
     /** The owner's typed places (camp, base, chest and other labelled areas; an empty array without a policy). */
     com.google.gson.JsonArray places() { return policy == null ? new com.google.gson.JsonArray() : policy.places(); }

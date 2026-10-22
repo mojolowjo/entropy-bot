@@ -10,7 +10,7 @@ import java.util.List;
 final class AaCommands {
     private AaCommands() {}
 
-    static final String USAGE = "usage: aa on|off|status|why|tree|stats | aa like [<key> <n>] | aa tune [<name> <n>] | aa worth <item> | aa want <thing> [n] [high|low] | aa drop <thing>|all | aa goals | aa build <name> here|at <x y z> [high|low] | aa ore [info] [<thing>] | aa ask on|off | aa pick <n> | aa do <need>|none | aa skip <need>|none | aa use <option> | aa replan on|off | aa look [smooth <ticks>] | aa horizon [seconds] | aa fair [on|off] | aa litter | aa slow [on|off|step] | aa go | aa predict";
+    static final String USAGE = "usage: aa on|off|status|why|tree|stats | aa like [<key> <n>] | aa tune [<name> <n>] | aa worth <item> | aa want <thing> [n] [high|low] | aa drop <thing>|all | aa only <need>|off | aa goals | aa build <name> here|at <x y z> [high|low] | aa ore [info] [<thing>] | aa ask on|off | aa pick <n> | aa do <need>|none | aa skip <need>|none | aa use <option> | aa replan on|off | aa look [smooth <ticks>] | aa horizon [seconds] | aa fair [on|off] | aa litter | aa slow [on|off|step] | aa go | aa predict";
 
     static String handle(Commands c, String rest) {
         AaRuntime aa = c.aaRuntime;
@@ -32,6 +32,11 @@ final class AaCommands {
             }
             case "tree" -> { return aa.tree.mermaid() + (aa.on() ? "\n%% desires now: " + String.join(" | ", aa.brainLines(30)) + "\n%% " + aa.ideasLine() : ""); }
             case "worth" -> { return arg.isEmpty() ? "usage: aa worth <item> (e.g. aa worth iron_pickaxe): the terms its worth is derived from, or UNKNOWN" : io.github.mojolowjo.entropybot.aa.brain.ItemWorth.explain(arg.replace(" ", "_")); }     // AA_ROUND4 C
+            case "only" -> {
+                String set = io.github.mojolowjo.entropybot.aa.brain.Only.set(arg.isEmpty() ? null : arg);
+                return arg.isEmpty() ? (set == null ? "aa only: off (usage: aa only <need>|off, e.g. aa only tools)" : "only: " + set)
+                        : set == null ? "aa only: off - every need and want is back" : "only: " + set + " - every other need and want is silent (danger, reflexes and your orders stay on); aa only off to end";
+            }
             case "stats" -> { return aa.statsText(); }
             case "litter" -> { return RestoreLive.INSTANCE.litterText(); }
             case "like" -> { return aa.like(arg); }

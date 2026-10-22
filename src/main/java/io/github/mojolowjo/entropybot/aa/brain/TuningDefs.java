@@ -104,6 +104,14 @@ final class TuningDefs {
         // blueprint
         Tuning.def("blueprint.maxFails", 3, "rm-constants 0.39.u2 (was Blueprint.MAX_FAILS)", "Largest schematic AA takes (cells, air included)");
         Tuning.def("needChain.exploreReturn", 0.5, "rm-bootstrap 0.39.v1", "share of the explore time the walk back costs again (the explore way's return leg)");
+        Tuning.def("nearby.scanR", 32, "simple-tools 0.39.w1", "blocks round the bot Baritone's world scan looks for the nearest tree log and stone (the radius its own mine process uses)");
+        Tuning.def("nearby.scanMax", 64, "simple-tools 0.39.w1", "most blocks one Baritone world scan returns for the nearby fact");
+        Tuning.def("nearby.scanY", 10, "simple-tools 0.39.w1", "the y-level threshold passed to Baritone's world scan (the one its mine process uses)");
+        Tuning.def("nearby.maxChecks", 24, "simple-tools 0.39.w1", "scanned blocks checked (nearest first) for leaves, the policy and the tier before the nearby fact falls back to the sightings");
+        Tuning.def("nearby.leafReach", 2, "simple-tools 0.39.w1", "blocks above or beside a log a leaf block must be within for the log to count as a tree");
+        Tuning.def("nearby.cacheMs", 3000, "simple-tools 0.39.w1", "milliseconds a nearby answer is reused while the bot stays near where it was asked");
+        Tuning.def("nearby.cacheMove", 4, "simple-tools 0.39.w1", "blocks the bot may move before a cached nearby answer is asked again");
+        Tuning.def("only.otherWeight", 0, "simple-tools 0.39.w1", "factor on every other need's and want's score while 'aa only <need>' is on (0: they are silent; reflexes and danger stay)");
         // campCommands (the station search radius)
         Tuning.def("campCommands.near", 8, "rm-bootstrap 0.39.v1 (was bootstrapPlan.near)", "blocks round the bot a crafting table, furnace or chest counts as near");
         // brain

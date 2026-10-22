@@ -144,7 +144,7 @@ public final class Brain extends Node {
     Scored score(Blackboard bb, Desire d, long now) {
         double v;
         try {
-            v = d.score.applyAsDouble(bb);
+            v = Only.apply(d.id, d.kind, d.score.applyAsDouble(bb));     // simple-tools: 'aa only <need>' silences the others
         } catch (RuntimeException e) {
             bb.port.log("brain: " + d.id + " score failed: " + e);
             return new Scored(d, -1, -1, "score failed", "score failed: " + e);

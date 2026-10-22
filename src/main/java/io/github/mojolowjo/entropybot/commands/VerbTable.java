@@ -162,7 +162,7 @@ public final class VerbTable {
         // ---- the brain's words (VOCABULARY 7, BRAIN_LOOP)
         v("brain", "", "brain", O, "brain on|off|status | brain copy on|off|status | brain get [key] | brain set <key> <value> | brain reset <key>|all|parks | brain tree [reload] | brain learned [job kind] | brain learned reset", "removed in 0.38.b7 (the old brain): AA does this (aa on, aa want <thing>)",
                 "brain on|brain status|brain copy on", "why");
-        v("aa", "", "brain", O, "aa on|off|status|why|tree|stats | aa like [<key> <n>]",
+        v("aa", "", "brain", O, "aa on|off|status|why|tree|stats | aa only <need>|off | aa like [<key> <n>]",
                 "the new brain (AA v0, docs/AA_PLAN.md): a behavior tree with fixed priorities, danger > your orders > AI requests > basic needs (stone tools, table and furnace, torches, base, bag, iron tools) > idle (wood, stone, wait), and one task at a time: a task runs to its end before AA chooses again; only danger pauses it and only your order replaces it (logged); status: who drives, the counters, each rung's reason; why: the last 10 decisions; tree: the tree as Mermaid; like: the personality (want weights build/explore/tidy, upkeep factors, sleep/shelter, night shift, margin) in entropybot/aa-personality.json, aa like build 30 sets one",
                 "aa on|aa status|aa why", "brain off");
         v("idle", "", "brain", O, "idle list | idle list set <items> | idle list reset", "removed in 0.38.b7 (the old brain): AA does this (aa on, aa want <thing>)",

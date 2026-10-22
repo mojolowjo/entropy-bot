@@ -229,7 +229,7 @@ public final class SenseRuntime {
                 net.minecraft.client.multiplayer.ClientLevel lv = Minecraft.getInstance().level;
                 io.github.mojolowjo.entropybot.plan.PlanFacts pf = new io.github.mojolowjo.entropybot.plan.PlanFacts();
                 GoalPlanning.scan(lv, s.botPos, pf);
-                nearTrees = pf.flags.contains("trees");
+                nearTrees = c.planning.treeSeen();
                 nearTable = CampCommands.near(lv, s.botPos, "crafting_table");
                 nearFurnace = CampCommands.near(lv, s.botPos, "furnace");
             }

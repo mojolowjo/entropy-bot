@@ -99,10 +99,72 @@ class NeedChainTest {
     }
 
     @Test
-    void noCellForTheTableNamesTheMissingThing() {
+    void noCellForTheTableIsADroppedBranchNamedInTheWhyNeverANoWay() {
         NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of("minecraft:oak_log", 8), false, null, seen(null, STONE)));
-        assertFalse(c.ok());
-        assertTrue(c.missing().contains("no free cell"), c.missing());
+        assertTrue(c.ok(), "a branch that cannot be done is priced out, the chain stays: " + c.why());
+        assertTrue(c.explore(), c.why());
+        assertTrue(c.dropped().stream().anyMatch(d -> d.contains("no free cell")), c.dropped().toString());
+        assertTrue(c.why().contains("dropped:") && c.why().contains("no free cell"), c.why());
+    }
+
+    @Test
+    void aRecipeLoopIsADeadBranchNamedInTheWhyAndTheLeafIsTheExplore() {
+        TestData d = TestData.planner();
+        d.recipe("zinc_ingot", 1, "zinc_block");
+        d.recipe("zinc_block", 1, "zinc_ingot");
+        d.install();
+        NeedChain.Chain c = NeedChain.resolve("zinc_ingot", 1, new World(Map.of(), false, CELL, seen(TREE, STONE)));
+        assertTrue(c.ok(), "a loop never kills the chain: " + c.why());
+        assertTrue(c.explore(), c.why());
+        assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Explore), c.steps().toString());
+        assertTrue(c.dropped().stream().anyMatch(x -> x.contains("needs itself") && x.contains("zinc_ingot")), c.dropped().toString());
+        assertTrue(c.why().contains("recipe loop"), c.why());
+    }
+
+    @Test
+    void oneBadBranchDoesNotKillTheRestOfTheChain() {
+        TestData d = TestData.planner();
+        d.recipe("zinc_ingot", 1, "zinc_block");
+        d.recipe("zinc_block", 1, "zinc_ingot");
+        d.recipe("gadget", 1, "zinc_ingot", "oak_planks");
+        d.install();
+        NeedChain.Chain c = NeedChain.resolve("gadget", 1, new World(Map.of(), true, CELL, seen(TREE, STONE)));
+        assertTrue(c.ok(), c.why());
+        assertTrue(at(c.steps(), Step.ChopTree.class, "cut") >= 0 || at(c.steps(), Step.Explore.class, "") >= 0, c.steps().toString());
+        assertFalse(c.dropped().isEmpty(), c.why());
+    }
+
+    @Test
+    void anIngredientWithNoRecipeAndNoKnownSourceIsTheExploreLeafForThatItem() {
+        TestData d = TestData.planner();
+        d.recipe("gadget", 1, "mystery");
+        d.install();
+        NeedChain.Chain c = NeedChain.resolve("gadget", 1, new World(Map.of(), true, CELL, seen(TREE, STONE)));
+        assertTrue(c.ok(), "no recipe and no source is an explore, not a 'no way': " + c.why());
+        assertTrue(c.explore());
+        assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes())), c.steps());
+        assertTrue(c.why().contains("mystery") && c.why().contains("no recipe and no block I know drops mystery"), c.why());
+    }
+
+    @Test
+    void aNoTreeWorldIsTheExploreLeafAndTheWhyLineShowsTheChain() {
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, CELL, seen(null, STONE)));
+        System.out.println("WHY-LINE " + c.why());
+        assertTrue(c.ok() && c.explore(), c.why());
+        assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes())), c.steps());
+        assertTrue(c.why().startsWith("stone_pickaxe <- ") && c.why().contains("explore") && c.why().contains("no tree seen"), c.why());
+    }
+
+    @Test
+    void aBranchPastTheHorizonLosesToTheOtherBranch() {
+        TestData d = TestData.planner();
+        d.recipe("gadget", 1, "oak_planks");
+        d.recipe("far_thing", 1, "gadget");
+        d.install();
+        // the tree is 30 m away: crafting from logs costs more than a 1-block horizon, and far_thing has no other branch, so the craft stays
+        NeedChain.Chain c = NeedChain.resolve("far_thing", 1, new World(Map.of(), false, CELL, seen(TREE, STONE), 1));
+        assertTrue(c.ok(), c.why());
+        assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Craft || s instanceof Step.Explore), c.steps().toString());
     }
 
     @Test

@@ -516,7 +516,7 @@ public final class AaRuntime implements JobPort {
                 int[] furnace = bag.getOrDefault("furnace", 0) > 0 ? null : c.crafting.findFurnace(p);
                 int furnaceDist = furnace != null ? (int) Math.round(Math.sqrt(Jobs.distSq(me, furnace))) : bb.in.furnaceKnown ? 30 : -1;
                 var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
-                boolean trees = sg != null && sg.treesNear(dim, me[0], me[2], io.github.mojolowjo.entropybot.aa.WoodOptions.farMax()).iterator().hasNext();
+                boolean trees = nearbyLog() != null;
                 return new io.github.mojolowjo.entropybot.aa.CoalOptions.CoalFacts(need, bb.in.pickTier, ores, opts, dd, logsNow, bb.in.planks,
                         bag.getOrDefault("furnace", 0) > 0, furnaceDist, trees, bb.in.cobble,
                         io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(GameTimesLive.bestPickaxeStoneSeconds(p)));     // aa-times: the dig term from the game
@@ -686,26 +686,28 @@ public final class AaRuntime implements JobPort {
         // round 4A N: the sword-only row reads the bag (sticks from the bag map, the rest from the inputs)
         int sticks = in.bag == null ? 0 : in.bag.getOrDefault("stick", 0);
         boolean pick = in.pickTier < 2 || (in.pickPct < Tuning.i("aaRuntime.wornPct") && in.pickaxes < 2);
-        return new io.github.mojolowjo.entropybot.aa.RungOptions.ToolsFacts(in.pickTier, sensed.feas.trees, pick,
+        return new io.github.mojolowjo.entropybot.aa.RungOptions.ToolsFacts(in.pickTier, nearbyLog() != null, pick,
                 io.github.mojolowjo.entropybot.aa.brain.Costs.swordWanted(in.zombieSeen, in.armed), in.cobble, sticks, in.planks, in.tableKnown || in.tableInBag, needWorld());
     }
 
     /** rm-bootstrap: what NeedChain starts from: the bag, a table in reach, a free cell for one, the nearest seen tree and stone. */
     io.github.mojolowjo.entropybot.aa.NeedChain.World needWorld() {
         var in = bb.in;
-        var trees = woodFacts();
-        io.github.mojolowjo.entropybot.aa.NeedChain.Spot tree = null;
-        if (trees != null) for (var t : trees.trees()) {
-            if (t.deny() == null) { tree = new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(t.x(), t.y(), t.z(), t.dist(), null); break; }
-        }
-        final var treeSpot = tree;
-        io.github.mojolowjo.entropybot.aa.NeedChain.Spot[] stone = {null};
-        boolean[] scanned = {false};
         return new io.github.mojolowjo.entropybot.aa.NeedChain.World(in.bag, in.tableKnown, in.chestCell, word -> {
-            if (word.equals(io.github.mojolowjo.entropybot.plan.PlanFacts.canon("oak_log"))) return treeSpot;
+            if (word.equals(io.github.mojolowjo.entropybot.plan.PlanFacts.canon("oak_log"))) return nearbyLog();
             if (!io.github.mojolowjo.entropybot.aa.brain.ItemWorth.stoneLike(word.indexOf(':') < 0 ? "minecraft:" + word : word)) return null;
-            if (!scanned[0]) { scanned[0] = true; stone[0] = nearestStone(); }
-            return stone[0];
+            return c.nearby.stone(this::nearestStone);
+        });
+    }
+
+    /** simple-tools: the one "tree nearby" fact: Baritone's scan first, AA's sightings (the policy allowing) as the fallback. */
+    io.github.mojolowjo.entropybot.aa.NeedChain.Spot nearbyLog() {
+        return c.nearby.log(() -> {
+            var trees = woodFacts();
+            if (trees != null) for (var t : trees.trees()) {
+                if (t.deny() == null) return new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(t.x(), t.y(), t.z(), t.dist(), null);
+            }
+            return null;
         });
     }
 
@@ -2477,6 +2479,8 @@ public final class AaRuntime implements JobPort {
         else b.append(tree.driver()).append('>').append(bb.taskText(now));
         b.append(" | danger: ").append(tree.dangerWhy());
         if (conserving) b.append(" | conserving hunger");
+        String only = io.github.mojolowjo.entropybot.aa.brain.Only.statusText();
+        if (only != null) b.append(" | ").append(only);
         b.append(" | last switch ").append(tracer.lastSwitchText(now));
         return b.toString();
     }

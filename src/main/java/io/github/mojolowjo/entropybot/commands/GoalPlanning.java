@@ -89,6 +89,7 @@ final class GoalPlanning {
         if (free.size() > 0) { f.table = free.get(0); f.flag("spot:table"); }
         if (free.size() > 1) { f.furnace = free.get(1); f.flag("spot:furnace"); }
         scan(lv, feet, f);
+        if (treeSeen()) f.flag("trees");
         JsonObject m = c.minePlace();
         if (m != null && m.has("dir")) f.flag("mine");
         return f;
@@ -120,7 +121,12 @@ final class GoalPlanning {
 
     static Map<String, Integer> minus(Map<String, Integer> totals, Map<String, Integer> bag) { return PlanFacts.minusBag(totals, bag); }
 
-    /** Logs, stone and ores within 16 blocks (8 up and down): the trees, stone and ore:<family> facts. */
+    /** simple-tools: "a tree seen" is the one Nearby fact (Baritone's scan, then the sightings), not a block scan of its own. */
+    boolean treeSeen() {
+        return (c.aaRuntime != null ? c.aaRuntime.nearbyLog() : c.nearby.log(null)) != null;
+    }
+
+    /** Stone and ores within 16 blocks (8 up and down): the stone and ore:<family> facts (the trees fact is {@link #treeSeen}). */
     static void scan(ClientLevel lv, int[] c, PlanFacts f) {
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
         boolean stoneBelow = false;
@@ -129,8 +135,7 @@ final class GoalPlanning {
             m.set(c[0] + dx, c[1] + dy, c[2] + dz);
             if (!lv.isLoaded(m)) continue;
             String id = lv.getBlockState(m).getBlock().getDescriptionId();
-            if (id.endsWith("_log") || id.endsWith("_stem")) f.flag("trees");
-            else if (id.endsWith("_ore")) {
+            if (id.endsWith("_ore")) {
                 String fam = id.substring(id.lastIndexOf('.') + 1).replaceFirst("^deepslate_", "").replaceFirst("_ore$", "");
                 f.flag("ore:" + fam);
             } else if (dy < 0 && Math.abs(dx) <= 10 && Math.abs(dz) <= 10 && (id.endsWith(".stone") || id.endsWith(".deepslate") || id.endsWith(".andesite")
