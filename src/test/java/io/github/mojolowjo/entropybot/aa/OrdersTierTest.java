@@ -91,9 +91,11 @@ class OrdersTierTest {
     }
 
     @Test
-    void ordersOnlyKeepsDangerAndTheOwnersGoals() {
+    void ordersOnlyKeepsTheOwnersGoalsAndSilencesDanger() {
+        // 0.39.z11 (owner 2026-10-22 "turn off the danger orders for now"): danger is silent in orders mode too; the
+        // true reflexes live outside the brain
         Only.set(Only.ORDERS);
-        assertEquals(70, Only.apply(AaDesires.DANGER_ID, io.github.mojolowjo.entropybot.aa.brain.Desire.Kind.UPKEEP, 70), 1e-9);
+        assertEquals(0, Only.apply(AaDesires.DANGER_ID, io.github.mojolowjo.entropybot.aa.brain.Desire.Kind.UPKEEP, 70), 1e-9);
         assertEquals(70, Only.apply("goal.x", io.github.mojolowjo.entropybot.aa.brain.Desire.Kind.OWNER, 70), 1e-9);
         assertEquals(0, Only.apply("needs.food", io.github.mojolowjo.entropybot.aa.brain.Desire.Kind.UPKEEP, 80), 1e-9);
         assertEquals(0, Only.apply(AaDesires.IDLE_ID, io.github.mojolowjo.entropybot.aa.brain.Desire.Kind.UPKEEP, 5), 1e-9);
