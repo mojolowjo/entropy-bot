@@ -655,8 +655,6 @@ final class DigCommands {
         // 0.30.1 review 5: a throw or a refused start before the job runs gives back the lease and the settings
         try {
         Settings s = BaritoneAPI.getSettings();
-        s.allowPlace.value = true;
-        s.allowBreak.value = false;
         io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.BUILD, "build");
         s.buildIgnoreExisting.value = true;
         s.allowInventory.value = true;
@@ -670,7 +668,6 @@ final class DigCommands {
             // the pillars are scattered cells, not a box: the mod's own placer does them (lowest first), no Baritone builder
             bs.rim = true;
             bs.stage = "pick";
-            Jobs.safeSettings();
         } else {
         int yLayer = shape.equals("roof") ? box.y2() : ylo;              // 0.28.2: roof = the top layer
         boolean layer = shape.equals("floor") || shape.equals("roof");
@@ -684,7 +681,6 @@ final class DigCommands {
         Seq.Step st = Clearing.clearStep(new ClearJob.Options().box(box).label(bs.status));
         st.kind = Clearing.KIND_BUILD;
         st.state = bs;
-        Clearing.placingOwned = !under;
         String started = c.jobs.startSeq(new Seq(c.jobs, c.storage, bs.status, List.of(st), "fail"), "fail");
         if (started == null || !started.startsWith("started") || c.jobs.job == null) {
             Clearing.endBuild(bs);

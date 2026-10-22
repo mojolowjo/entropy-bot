@@ -117,7 +117,6 @@ public final class StepHands implements Steps.Hands {
                 IBaritone b = Jobs.baritone();
                 if (b != null && chopping) b.getChopProcess().cancel();
                 else if (b != null) b.getMineProcess().cancel();
-                Jobs.safeSettings();
             }
             if (fishing != null) fishing.end();
             if (vein != null) vein.stop();
@@ -141,6 +140,12 @@ public final class StepHands implements Steps.Hands {
         reset();
     }
 
+    /** A collect / chop ended: the policy intent back to travel (the fork process put its own settings back). */
+    private void endMining() {
+        mining = false;
+        io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "steps end");
+    }
+
     private void reset() {
         step = null;
         fishing = null;
@@ -148,7 +153,7 @@ public final class StepHands implements Steps.Hands {
         req = null;
         instant = null;
         walkJob = null;
-        mining = false;
+        if (mining) endMining();
         chopping = false;
         miningWhat = null;
         countIds = List.of();
@@ -364,27 +369,24 @@ public final class StepHands implements Steps.Hands {
         // the count goes to Baritone (not 0): it counts the bag's items its filter matches (the blocks' drops), so its
         // target is what is there now + want
         int target = itemsOf(p, filter) + want;
-        try {
-            Jobs.safeSettings();
-            var s = baritone.api.BaritoneAPI.getSettings();
-            s.allowBreak.value = true;
-            s.allowPlace.value = true;                 // chop B1: placing is part of the job (the climb to a trunk top); safeSettings restores it
-            s.allowBreakAnyway.value = new ArrayList<>(blocks);
-            io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE, "steps");
-        } catch (RuntimeException | LinkageError e) {
-            return "error: Baritone's mine settings: " + e;
-        }
+        // 0.39.z8 (owner 2026-10-22, "remove the old job habit"): no Baritone setting here; the fork's chop / mine run
+        // owns breaking and placing for its run (and the chop the bag's placeable blocks as throwaway)
+        io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE, "steps");
         mining = true;
         miningWhat = what;
-        if (chopping) {
-            b.getChopProcess().chop(target, filter);
-            if (!b.getChopProcess().isActive()) {          // it ended at its start (none in range, breaking off): its own reason
-                mining = false;
-                Jobs.safeSettings();
-                return "error: " + what + ": " + endOf(b.getChopProcess().lastEnd());
+        try {
+            if (chopping) {
+                b.getChopProcess().chop(target, filter);
+                if (!b.getChopProcess().isActive()) {          // it ended at its start (none in range): its own reason
+                    endMining();
+                    return "error: " + what + ": " + endOf(b.getChopProcess().lastEnd());
+                }
+            } else {
+                b.getMineProcess().mineWith(target, filter, true);
             }
-        } else {
-            b.getMineProcess().mine(target, filter);
+        } catch (LinkageError e) {
+            endMining();
+            return "error: this Baritone has no mineWith (the stock jar? install the entropy fork): " + e;
         }
         LOG.info("[entropybot] steps: {} - Baritone's {} process on {} block kind(s), until {} in the bag", what, chopping ? "chop" : "mine", blocks.size(), target);
         return null;
@@ -416,22 +418,19 @@ public final class StepHands implements Steps.Hands {
             // chop: the whole tree is the job; the process ends itself (the count is checked between trees) with its reason
             if (b == null) return Car.Status.failed("baritone not loaded");
             if (b.getChopProcess().isActive() || Core.INSTANCE.reflexes.hold()) return Car.Status.running(miningWhat + ": " + got + " of " + want);
-            Jobs.safeSettings();
-            mining = false;
+            endMining();
             String end = endOf(b.getChopProcess().lastEnd());
             if (got >= want) return Car.Status.done("ok: " + miningWhat + ": got " + got + " (" + end + ")");
             return Car.Status.failed(miningWhat + ": " + end + " (got " + got + " of " + want + ")");
         }
         if (got >= want) {
             if (b != null) b.getMineProcess().cancel();
-            Jobs.safeSettings();
-            mining = false;
+            endMining();
             return Car.Status.done("ok: " + miningWhat + ": got " + got);
         }
         if (b == null) return Car.Status.failed("baritone not loaded");
         if (!b.getMineProcess().isActive() && !Core.INSTANCE.reflexes.hold()) {
-            Jobs.safeSettings();
-            mining = false;
+            endMining();
             return Car.Status.failed(miningWhat + ": Baritone's mine process ended with " + got + " of " + want + " (the mine process gives no reason)");
         }
         return Car.Status.running(miningWhat + ": " + got + " of " + want);

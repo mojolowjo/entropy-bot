@@ -285,7 +285,6 @@ final class StripSteps {
             }
             if (b == null) return "baritone not loaded";
             Goal goal = new GoalNear(new BlockPos(pos.x(), pos.y(), pos.z()), 2);
-            Jobs.safeSettings();
             b.getCustomGoalProcess().setGoalAndPath(goal);
             j.goalObj = goal;
             j.goal = null;

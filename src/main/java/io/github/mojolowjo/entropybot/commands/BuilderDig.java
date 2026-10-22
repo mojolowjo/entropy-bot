@@ -55,7 +55,7 @@ public final class BuilderDig {
     /** The step kind (a "clear" step that Clearing.step hands here). */
     static final String KIND = "builderdig";
 
-    /** The SafetyNet's third owner of allowBreak: true while a builder dig runs Baritone's builder. */
+    /** True while a builder dig runs Baritone's builder (the fork's builder run owns allowBreak for itself). */
     private static volatile boolean breaking;
     /** The running dig (block changes are counted against it), or null. */
     private static volatile State current;
@@ -230,7 +230,6 @@ public final class BuilderDig {
         IBaritone b = Jobs.baritone();
         if (b == null) return "error: baritone not loaded";
         Jobs.cancel(b);
-        Jobs.safeSettings();
         s.world.set(p);
         s.job = ClearJob.start(o, null, null);
         s.job.standOk = Clearing.standCheck(c);
@@ -269,7 +268,7 @@ public final class BuilderDig {
 
     // ---- the builder ----
 
-    /** Settings for the job (saved first): breaking on (path digging), placing off, top layer first, the cell under the feet. */
+    /** Settings for the job (saved first): top layer first, the cell under the feet (breaking / placing: the fork builder's own). */
     static void applySettings(State s) {
         Settings st = BaritoneAPI.getSettings();
         if (s.saved == null) {
@@ -283,8 +282,7 @@ public final class BuilderDig {
             sv.randomLooking113 = st.randomLooking113.value;
             s.saved = sv;
         }
-        st.allowBreak.value = true;
-        st.allowPlace.value = false;
+        // 0.39.z8 (owner 2026-10-22, "remove the old job habit"): breaking / placing are the fork builder run's own
         io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.BUILD, "builder dig");
         st.buildInLayers.value = true;
         st.layerOrder.value = true;
@@ -303,7 +301,6 @@ public final class BuilderDig {
 
     /** Puts every setting this job changed back (safe travel settings, the builder's own as they were). */
     static void restoreSettings(State s) {
-        Jobs.safeSettings();
         try {
             Settings st = BaritoneAPI.getSettings();
             st.allowInventory.value = false;
@@ -547,7 +544,6 @@ public final class BuilderDig {
         var a = sw.tick(now, seenDrops(s, p, now), alive, idle);
         if (a.kind() == io.github.mojolowjo.entropybot.clear.DropSweep.Kind.WALK) {
             if (b != null) {
-                Jobs.safeSettings();
                 b.getCustomGoalProcess().setGoalAndPath(new baritone.api.pathing.goals.GoalBlock(new BlockPos(a.item().x(), a.item().y(), a.item().z())));
             }
             return "wait";

@@ -25,7 +25,7 @@ public final class BaritoneHook {
     /**
      * Settings no job may turn on (B2, the drift guard): chat and prefix control would let anyone with chat
      * access drive Baritone, exploreForBlocks sends it wandering, a water-bucket fall places water. Breaking and
-     * placing are the mod's own jobs' to turn on (SafetyNet turns them off when no job owns them).
+     * placing are never set by the mod (0.39.z8): each fork process owns them for its own run.
      */
     static final String[] FIXED_OFF = { "chatcontrol", "chatcontrolanyway", "prefixcontrol", "exploreforblocks", "allowwaterbucketfall" };
 

@@ -178,11 +178,9 @@ final class Mining {
 
     /** Breaking off, the break list empty, placing off (the bridge's restoreSafeSettings, Baritone's part). */
     static void restoreSettings() {
+        // 0.39.z8 (owner 2026-10-22, "remove the old job habit"): Baritone's breaking / placing are not touched here;
+        // the fork's mine run owns them and puts them back at its end. The policy intent goes back to travel.
         try {
-            var s = BaritoneAPI.getSettings();
-            s.allowBreak.value = false;
-            s.allowPlace.value = false;
-            s.allowBreakAnyway.value = new ArrayList<>();
             io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "mine ended");
         } catch (Throwable t) {
             io.github.mojolowjo.entropybot.Quiet.warn("mine: Baritone's settings could not be put back after the mine", t);
@@ -1131,7 +1129,6 @@ final class Mining {
             return "next";
         }
         if (b != null) {
-            Jobs.safeSettings();
             b.getCustomGoalProcess().setGoalAndPath(new GoalXZ(ex.target.x(), ex.target.z()));
         }
         ex.targetAt = now();
@@ -1321,7 +1318,6 @@ final class Mining {
             cv.walk = ko;
             cv.walkAt = now();
             if (b != null) {
-                Jobs.safeSettings();
                 b.getCustomGoalProcess().setGoalAndPath(new GoalNear(bp(ko), 2));
             }
             s.setStatus(s.label + " - walking to known ore at " + Jobs.fmt(ko) + " (" + cv.got() + " ores so far)");
@@ -1342,7 +1338,6 @@ final class Mining {
         cv.walk = new int[]{f.x(), f.y(), f.z()};
         cv.walkAt = now();
         if (b != null) {
-            Jobs.safeSettings();
             b.getCustomGoalProcess().setGoalAndPath(new GoalNear(bp(cv.walk), 1));
         }
         return "wait";
@@ -1443,7 +1438,6 @@ final class Mining {
         IBaritone b = Jobs.baritone();
         if (s.stage == null) {
             if (b != null) {
-                Jobs.safeSettings();
                 b.getCustomGoalProcess().setGoalAndPath(new GoalXZ(st.pos[0], st.pos[2]));
             }
             s.stage = "walking";
@@ -1655,15 +1649,12 @@ final class Mining {
         return false;
     }
 
-    /** Only the job's block may be broken (with dig: tunnelling too; the protected blocks never). */
+    /**
+     * The mine's policy intent. 0.39.z8 (owner 2026-10-22): no Baritone setting here; the fork's mine run
+     * ({@code mineWith}) owns breaking for its run and the policy prices which blocks (the protected blocks never).
+     */
     private static void mineSettings(MineRun j) {
         try {
-            Jobs.safeSettings();
-            var s = BaritoneAPI.getSettings();
-            List<Block> list = new ArrayList<>();
-            list.add(j.block);
-            s.allowBreakAnyway.value = list;
-            s.allowBreak.value = j.dig;
             // mining plan phase 1: Baritone's mine digs under the MINE intent
             io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE, "mine");
         } catch (Throwable t) {
@@ -1674,15 +1665,10 @@ final class Mining {
     /** The job's hooks: a fight holds it (Baritone's mine stops, breaking off), and however it ends, breaking goes off. */
     private void hooks(Jobs.Job job, MineRun j) {
         job.holdOnFight = true;
-        job.ownsBreaking = true;
         // P1: with dig, every block but the target that Baritone breaks is a path break the restore ledger puts back
         RestoreLive.INSTANCE.pathContext(job.id, BuiltInRegistries.BLOCK.getKey(j.block).toString());
-        // 0.36.8: while this job runs, breaking next to water is allowed; the per-ore step's walk may dig where the policy allows
-        MineWater.start(job, () -> {
-            if (j.kTarget == null || !j.atDig) return false;
-            var pl = net.minecraft.client.Minecraft.getInstance().player;
-            return pl != null && core.commands.workAllowed(Storage.dim(), (int) Math.floor(pl.getX()), (int) Math.floor(pl.getZ()));
-        });
+        // 0.36.8: while this job runs, breaking next to water is allowed
+        MineWater.start(job);
         job.onHold = () -> {
             j.held = true;
             j.heldBy = core.reflexes.reflex().name().toLowerCase();
@@ -1741,7 +1727,7 @@ final class Mining {
         if (r.need != null) holdPick(p, r);
         if (knownStart(p, r)) return;
         IBaritone b = Jobs.baritone();
-        if (b != null) b.getMineProcess().mine(r.count, r.block);
+        if (b != null) b.getMineProcess().mineWith(r.count, new baritone.api.utils.BlockOptionalMetaLookup(r.block), false);
     }
 
     /** Ends the mine: Baritone stops, breaking off, the leases go, and the job reports. */
@@ -1858,7 +1844,7 @@ final class Mining {
         mineSettings(j);
         if (j.need != null) holdPick(p, j);
         if (j.dig && s.job() != null) RestoreLive.INSTANCE.pathContext(s.job().id, BuiltInRegistries.BLOCK.getKey(j.block).toString());
-        b.getMineProcess().mine(Math.max(1, j.count - mineCount(p, j)), j.block);
+        b.getMineProcess().mineWith(Math.max(1, j.count - mineCount(p, j)), new baritone.api.utils.BlockOptionalMetaLookup(j.block), false);
         j.phase = "mining";
         j.anchor = me;
         j.startTick = now();

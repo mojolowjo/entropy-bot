@@ -71,9 +71,8 @@ public final class Jobs {
          * B7d (D3): an urgent fight holds this job instead of ending it (the bridge's job.holdOnFight: explore, mine
          * cave, the Baritone mine); onHold runs when a reflex starts holding it (the Baritone mine stops and breaking
          * goes off), onEnd however it ends (finish, stop, a reflex, the fence): breaking off, leases released.
-         * ownsBreaking: the job turned Baritone's breaking on (SafetyNet leaves it be while Baritone's mine runs).
          */
-        public boolean holdOnFight, ownsBreaking;
+        public boolean holdOnFight;
         public Runnable onHold, onEnd;
         /** rm-routes: a far walk asks Baritone for GoalXZ first; on arrival the walk sets its GoalBlock (finalGoal). */
         baritone.api.pathing.goals.Goal finalGoal;
@@ -233,82 +232,6 @@ public final class Jobs {
         try { b.getPathingBehavior().cancelEverything(); } catch (Throwable caught) { Quiet.warn("Jobs.cancel failed, carrying on with the fallback", caught); }
     }
 
-    /**
-     * A walk's Baritone settings (the bridge's restoreSafeSettings, for Baritone's part). Mining plan phase 1: a walk
-     * runs under the TRAVEL intent; with the cost hook live, breaking stays ON and the policy's costs (x6 outside, x10
-     * in the camp, never under water from in the water, cap 24 a walk) do the limiting; breaking next to water is
-     * Baritone's setting the policy needs for that. Without the hook: as before, no breaking.
-     */
-    static void safeSettings() {
-        try {
-            var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
-            boolean build = PaperPlan.ownsBreak() || PaperPlan.ownsPlace();
-            // a mine job's mid-job walks keep the MINE intent (its Baritone mine and vein clear are not travel)
-            boolean mine = false;
-            try { var j = Core.INSTANCE.commands.jobs.job; mine = j != null && !j.done && j.ownsBreaking; } catch (Throwable caught) { Quiet.warn("Jobs.safeSettings failed, carrying on with the fallback", caught); }
-            pr.setIntent(build ? io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.BUILD : mine ? io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE
-                    : io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, build ? "plan go" : mine ? "mine walk" : "walk");
-            boolean travel = pr.travelMayBreak();
-            // 0.32.3: a plan-go job keeps the breaking/placing its plan needs (PaperPlan owns them for that job only)
-            // 0.36.8: a mine job's walk to a known ore may dig (MineWater: the policy allowing; next to water too, never lava)
-            BaritoneAPI.getSettings().allowBreak.value = PaperPlan.ownsBreak() || MineWater.walkDig() || travel;
-            MineWater.set(MineWater.active() || travel);
-            // owner's place rule (aa372): a walk may place under the policy's costs (x3 travel, a refill of its own dug
-            // cell about free, COST_INF where the rule set places nothing); the click veto asks the same policy
-            // (review: TRAVEL walks only - a mine job's walk keeps Mining's allowPlace=false, and the route map's
-            // travelOnlyPlacing holds)
-            BaritoneAPI.getSettings().allowPlace.value = PaperPlan.ownsPlace() || (pr.travelMayPlace() && !build && !mine);
-        } catch (Throwable caught) { Quiet.warn("Jobs.safeSettings failed, carrying on with the fallback", caught); }
-    }
-
-    /**
-     * Builder placements (floor fill climb-out): a walk under the TRAVEL intent whatever job runs, so Baritone may
-     * pillar out (allowPlace under the travel costs). 0.39.q4: answers what was there before; the climb's own end
-     * (done, fail, cancel, job stop) calls {@link Saved#restore()}. Throws when the settings could not be set (the
-     * old values are put back first), so the caller fails the step with the reason instead of climbing on leftovers.
-     */
-    static Saved travelSettings() {
-        var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
-        var s = BaritoneAPI.getSettings();
-        Saved saved = new Saved(pr.intent(), pr.intentBy(), s.allowBreak.value, s.allowPlace.value);
-        try {
-            pr.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "climb out");
-            s.allowBreak.value = pr.travelMayBreak();
-            s.allowPlace.value = pr.travelMayPlace();
-        } catch (RuntimeException t) {
-            saved.restore();
-            throw t;
-        }
-        return saved;
-    }
-
-    /** The intent and Baritone's break/place settings from before a climb; restore() puts them back once. */
-    static final class Saved {
-        final io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent intent;
-        final String by;
-        final boolean allowBreak, allowPlace;
-        private boolean restored;
-
-        Saved(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent intent, String by, boolean allowBreak, boolean allowPlace) {
-            this.intent = intent;
-            this.by = by;
-            this.allowBreak = allowBreak;
-            this.allowPlace = allowPlace;
-        }
-
-        void restore() {
-            if (restored) return;
-            restored = true;
-            try {
-                io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(intent, by);
-                BaritoneAPI.getSettings().allowBreak.value = allowBreak;
-                BaritoneAPI.getSettings().allowPlace.value = allowPlace;
-            } catch (Throwable t) {
-                LOG.warn("[entropybot] climb out: settings not put back: {}", t.toString());
-            }
-        }
-    }
-
     static int[] here(Player p) {
         return new int[]{(int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ())};
     }
@@ -408,7 +331,6 @@ public final class Jobs {
             }
             IBaritone b = baritone();
             if (b != null) cancel(b);
-            safeSettings();
             j.restoreMsg = msg;
             j.restoreRun = r;
             j.status = "putting back " + r.total() + (r.total() == 1 ? " block" : " blocks") + " I broke on the way";
@@ -425,7 +347,6 @@ public final class Jobs {
         if (!door("restore " + label)) return io.github.mojolowjo.entropybot.aa.door.Door.refusal("restore " + label);
         followWatch = null;
         followFix = null;
-        safeSettings();
         Job j = new Job();
         j.type = "restore";
         j.startTick = core.tick();
@@ -510,7 +431,6 @@ public final class Jobs {
         }
         followWatch = null;
         followFix = null;
-        safeSettings();
         Job j = new Job();
         j.type = "travel";
         j.startTick = core.tick();
@@ -555,7 +475,6 @@ public final class Jobs {
 
     /** Sets the walk's one Baritone goal and remembers it (a reflex hold sets it again afterwards). */
     static void walkGoal(IBaritone b, Job j, baritone.api.pathing.goals.Goal g) {
-        safeSettings();
         b.getCustomGoalProcess().setGoalAndPath(g);
         j.goalObj = g;
     }
@@ -894,7 +813,7 @@ public final class Jobs {
     }
 
     /** 0.32.3: "plan go": a plain walk to the plan's end; onJob gets the job id before the goal is set. */
-    String startPlanGo(int[] e, boolean brk, boolean plc, String from, java.util.function.LongConsumer onJob) {
+    String startPlanGo(int[] e, String from, java.util.function.LongConsumer onJob) {
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null) return "error: not in a world";
         String r = startTravel("goto " + fmt(e), "plan go to " + fmt(e), e, Guard.dimOf(p.level()), false);
@@ -904,7 +823,7 @@ public final class Jobs {
         IBaritone b = baritone();
         j.finalGoal = null;                          // the plan's own end, one GoalBlock
         if (b != null) walkGoal(b, j, new baritone.api.pathing.goals.GoalBlock(e[0], e[1], e[2]));
-        return r + (brk || plc ? " (breaking " + (brk ? "on" : "off") + ", placing " + (plc ? "on" : "off") + " for this walk only)" : "");
+        return r;
     }
 
 

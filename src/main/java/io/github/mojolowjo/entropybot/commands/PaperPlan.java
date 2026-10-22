@@ -73,11 +73,10 @@ public final class PaperPlan {
     /** review 3: the plan-go job itself (not its id): a new job never matches a stale owner. */
     private volatile Object goJobObj;
     private volatile long goJob = -1;
-    private volatile boolean goBreak, goPlace;
 
     public Result last() { return last; }
 
-    /** The plan-go job runs and owns breaking/placing (SafetyNet's fourth owner). */
+    /** The plan-go job runs (0.39.z8: it owns no Baritone setting; its walk uses Baritone's own travel settings). */
     public static boolean owned() {
         PaperPlan pp = INSTANCE;
         Object o = pp.goJobObj;
@@ -91,18 +90,14 @@ public final class PaperPlan {
         }
     }
 
-    public static boolean ownsBreak() { return owned() && INSTANCE.goBreak; }
-
-    public static boolean ownsPlace() { return owned() && INSTANCE.goPlace; }
-
-    /** Core tick: a plan-go job that ended gives breaking/placing back at once (the safety net is the backstop). */
+    /** Core tick: a plan-go job that ended lets go of the plan-go slot (and the stop leftovers are put back). */
     public void tick() {
         if (goJobObj != null && !owned()) {
             goJobObj = null;
             goJob = -1;
             try {
                 io.github.mojolowjo.entropybot.baritone.SafetyNet.INSTANCE.restore();
-                LOG.info("[entropybot] plan go: the job ended, breaking/placing off again");
+                LOG.info("[entropybot] plan go: the job ended");
             } catch (Throwable t) {
                 LOG.warn("[entropybot] plan go: couldn't restore the settings: {}", t.toString());
             }
@@ -117,7 +112,7 @@ public final class PaperPlan {
         last = null;
         if (was) {
             try { io.github.mojolowjo.entropybot.baritone.SafetyNet.INSTANCE.restore(); } catch (Throwable caught) { Quiet.warn("PaperPlan.reset failed, carrying on with the fallback", caught); }
-            LOG.info("[entropybot] plan go: {}: breaking/placing off, plan dropped", why);
+            LOG.info("[entropybot] plan go: {}: plan dropped", why);
         }
     }
 
@@ -159,12 +154,15 @@ public final class PaperPlan {
         boolean brk = rules.equals("break"), plc = rules.equals("break") || rules.equals("place");
         baritone.pathing.movement.CalculationContext ctx;
         Settings s = BaritoneAPI.getSettings();
-        boolean ob = s.allowBreak.value, op = s.allowPlace.value;
+        // 0.39.z8 (owner 2026-10-22, "remove the old job habit"): the mod never sets Baritone's breaking / placing; a plan
+        // is made with Baritone's own. Rules that ask for something else fail loudly instead of planning a different world.
+        boolean brkNow = s.allowBreak.value, plcNow = s.allowPlace.value;
+        if (brk != brkNow || plc != plcNow)
+            return "error: plan path " + rules + " is retired: AA drives (Baritone's own settings now: breaking " + (brkNow ? "on" : "off")
+                    + ", placing " + (plcNow ? "on" : "off") + "; the plan can only use those - plan path " + target + " " + (brkNow ? "break" : plcNow ? "place" : "walk") + ")";
         double obp = s.blockBreakAdditionalPenalty.value, opp = s.blockPlacementPenalty.value;
         try {
             // the context copies these at construction (game thread), then they are put back at once
-            s.allowBreak.value = brk;
-            s.allowPlace.value = plc;
             s.blockBreakAdditionalPenalty.value = Math.max(obp, 6.0);     // owner: a walk keeps breaking/placing expensive
             s.blockPlacementPenalty.value = Math.max(opp, 20.0);
             // mining plan phase 1: a plan's own context: BUILD (no travel cap) when it may break or place, else walking only
@@ -172,8 +170,6 @@ public final class PaperPlan {
                     brk || plc ? io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.BUILD : io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.NONE,
                     () -> new baritone.pathing.movement.CalculationContext(b, true));
         } finally {
-            s.allowBreak.value = ob;
-            s.allowPlace.value = op;
             s.blockBreakAdditionalPenalty.value = obp;
             s.blockPlacementPenalty.value = opp;
         }
@@ -298,32 +294,27 @@ public final class PaperPlan {
     }
 
     /**
-     * 0.36.a6: AA's pillar out of a shaft: a plain walk to {@code e} (straight above) with placing on for this job only
-     * (no breaking), so Baritone pillars up with its throwaway blocks. The same ownership as "plan go": placing goes
-     * off again when the job ends (tick, SafetyNet backstop).
+     * 0.36.a6: AA's pillar out of a shaft: a plain walk to {@code e} (straight above) with Baritone's own travel settings (0.39.z8: no setting is turned on
+     * for it), so Baritone pillars up with its throwaway blocks.
      */
     String pillar(Commands c, int[] e, String from) {
         if (running) return "busy: a plan is being made";
         if (owned()) return "busy: a plan go is walking";
-        goBreak = false;
-        goPlace = true;
-        String s = c.jobs.startPlanGo(e, false, true, from, id -> { goJob = id; goJobObj = c.jobs.job; });
-        LOG.info("[entropybot] pillar: to {} (placing on), job {}: {}", Jobs.fmt(e), goJob, s);
+        String s = c.jobs.startPlanGo(e, from, id -> { goJob = id; goJobObj = c.jobs.job; });
+        LOG.info("[entropybot] pillar: to {} (Baritone's own travel settings), job {}: {}", Jobs.fmt(e), goJob, s);
         return s;
     }
 
-    /** aa-replan 2: tunnel up + pillar to {@code e} (straight over me): breaking and placing on for this job only. */
+    /** aa-replan 2: tunnel up + pillar to {@code e} (straight over me): with Baritone's own travel settings. */
     String tunnelUp(Commands c, int[] e, String from) {
         if (running) return "busy: a plan is being made";
         if (owned()) return "busy: a plan go is walking";
-        goBreak = true;
-        goPlace = true;
-        String s = c.jobs.startPlanGo(e, true, true, from, id -> { goJob = id; goJobObj = c.jobs.job; });
-        LOG.info("[entropybot] tunnel up: to {} (breaking and placing on), job {}: {}", Jobs.fmt(e), goJob, s);
+        String s = c.jobs.startPlanGo(e, from, id -> { goJob = id; goJobObj = c.jobs.job; });
+        LOG.info("[entropybot] tunnel up: to {} (Baritone's own travel settings), job {}: {}", Jobs.fmt(e), goJob, s);
         return s;
     }
 
-    /** "plan go": the last reachable plan, walked with its rules' breaking/placing on for this job only. */
+    /** "plan go": the last reachable plan, walked with Baritone's own travel settings (the plan was made with them). */
     String go(Commands c, LocalPlayer p, String from, boolean anyway) {
         // review 2: every check first; the rules change only for a walk that starts
         if (running) return "busy: a plan is being made (plan last when it ends)";
@@ -338,10 +329,7 @@ public final class PaperPlan {
             return "error: the last plan starts at " + Jobs.fmt(r.start()) + ", I am at " + Jobs.fmt(me) + " - next: plan path again from here";
         int[] e = r.cells().get(r.cells().size() - 1);
         if (!r.reachable() && !anyway) return "the last plan is partial: it ends at " + Jobs.fmt(e) + ", not at " + r.target() + " - next: plan go anyway (walks to its end), or plan path again";
-        boolean brk = r.rules().equals("break"), plc = brk || r.rules().equals("place");
-        goBreak = brk;
-        goPlace = plc;
-        String s = c.jobs.startPlanGo(e, brk, plc, from, id -> { goJob = id; goJobObj = c.jobs.job; });
+        String s = c.jobs.startPlanGo(e, from, id -> { goJob = id; goJobObj = c.jobs.job; });
         LOG.info("[entropybot] plan go: to {} ({}), job {}: {}", Jobs.fmt(e), r.rules(), goJob, s);
         return s;
     }

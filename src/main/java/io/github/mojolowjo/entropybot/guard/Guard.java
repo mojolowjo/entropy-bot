@@ -205,8 +205,7 @@ public final class Guard {
             return refuse(level, pos, "break", v);
         }
         pr.stats.ask(PolicyStats.SITE_CLICK);
-        // the exemption needs a running job (the same condition under which safeSettings/SafetyNet keep A* breaking on,
-        // so the plan and the click agree) and a terrain block (what the ledger can put back; logs and crops keep the fence)
+        // the exemption needs a running job and a terrain block (what the ledger can put back; logs and crops keep the fence)
         boolean jobRunning = false;
         try { jobRunning = io.github.mojolowjo.entropybot.Core.INSTANCE.commands.jobs.running(); } catch (Throwable caught) { Quiet.warn("Guard.vetoTravelBreak failed, carrying on with the fallback", caught); }
         boolean terrain = io.github.mojolowjo.entropybot.restore.RestoreRules.natural(BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).toString());

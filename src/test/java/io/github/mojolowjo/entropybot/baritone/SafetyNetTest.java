@@ -11,27 +11,11 @@ import static org.junit.jupiter.api.Assertions.*;
 class SafetyNetTest {
 
     @Test
-    void breakingOrPlacingGoesOffOnlyWhenNoJobOwnsIt() {
-        assertTrue(SafetyRules.shouldTurnOff(true, false, false, false), "a stray allowBreak (e.g. b set allowBreak true)");
-        assertTrue(SafetyRules.shouldTurnOff(false, true, false, false), "a stray allowPlace");
-        assertFalse(SafetyRules.shouldTurnOff(false, false, false, false), "nothing on: nothing to do");
-        assertFalse(SafetyRules.shouldTurnOff(true, false, true, false), "the mod's mine ... dig owns breaking");
-        assertFalse(SafetyRules.shouldTurnOff(false, true, false, true), "the mod's build owns placing");
-        assertFalse(SafetyRules.shouldTurnOff(true, true, true, false), "while a mine owns it, placing on too is left alone (as the bridge)");
-        assertFalse(SafetyRules.shouldTurnOff(true, true, false, true));
-    }
-
-    @Test
-    void baritoneIsCancelledOnlyWhenBusyWithNoJob() {
-        assertTrue(SafetyRules.cancelBaritone(false, false));
-        assertFalse(SafetyRules.cancelBaritone(true, false), "idle: nothing to cancel");
-        assertFalse(SafetyRules.cancelBaritone(false, true), "a job's walk goes on (only the settings go back)");
-    }
-
-    @Test
-    void theRestoreListIsTheBridges() {
-        assertEquals(List.of("allowBreak", "allowPlace", "allowInventory", "buildIgnoreExisting"), SafetyRules.RESTORE_FALSE);
-        assertEquals(List.of("allowBreakAnyway", "lavaCellCost"), SafetyRules.RESTORE_RESET);
+    void theRestoreListLeavesBreakingAndPlacingToTheForkProcesses() {
+        // 0.39.z8 (owner 2026-10-22, "remove the old job habit"): allowBreak / allowPlace / allowBreakAnyway are each
+        // fork process's own for its run; "stop" never flips them
+        assertEquals(List.of("allowInventory", "buildIgnoreExisting"), SafetyRules.RESTORE_FALSE);
+        assertEquals(List.of("lavaCellCost"), SafetyRules.RESTORE_RESET);
         assertEquals(List.of("backfill", "allowBreakNextToWater", "allowBreakNextToLava", "pathUnderWater"),SafetyRules.RESTORE_FALSE_IF_PRESENT);
     }
 

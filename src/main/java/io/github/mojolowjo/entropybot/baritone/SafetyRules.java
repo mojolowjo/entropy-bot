@@ -20,11 +20,13 @@ public final class SafetyRules {
     public static long netAt() { return Tuning.l("safetyRules.netAt"); }
 
     /**
-     * What {@code restore()} puts back, in this order (the bridge's restoreSafeSettings): the booleans to false,
-     * allowBreakAnyway to its default (empty), then the protected list and the FIXED_OFF settings.
+     * What {@code restore()} puts back, in this order (the bridge's restoreSafeSettings): the booleans to false, the
+     * resets to their defaults, then the protected list and the FIXED_OFF settings. 0.39.z8 (owner 2026-10-22, "remove
+     * the old job habit"): allowBreak, allowPlace and allowBreakAnyway are not here: each fork process owns them for its
+     * own run and puts them back at its end.
      */
-    public static final List<String> RESTORE_FALSE = List.of("allowBreak", "allowPlace", "allowInventory", "buildIgnoreExisting");
-    public static final List<String> RESTORE_RESET = List.of("allowBreakAnyway", "lavaCellCost");     // 0.39.s5: the reflex lava wade
+    public static final List<String> RESTORE_FALSE = List.of("allowInventory", "buildIgnoreExisting");
+    public static final List<String> RESTORE_RESET = List.of("lavaCellCost");     // 0.39.s5: the reflex lava wade
     public static final List<String> RESTORE_FALSE_IF_PRESENT = List.of("backfill", "allowBreakNextToWater", "allowBreakNextToLava", "pathUnderWater");   // 0.36.8: our fork's mine-job setting
 
     /** A Baritone command that saves settings.txt ("set", "setting", "settings" and their forms). */
@@ -40,16 +42,6 @@ public final class SafetyRules {
     }
 
     public static boolean netDue(long tick) { return tick % netEvery() == netAt(); }
-
-    /** Breaking or placing is on and no job of the mod owns it (Baritone's mine with breaking on, the builder). */
-    public static boolean shouldTurnOff(boolean allowBreak, boolean allowPlace, boolean breakingOwned, boolean placingOwned) {
-        return (allowBreak || allowPlace) && !breakingOwned && !placingOwned;
-    }
-
-    /** Baritone is also cancelled when it is busy with no job of the mod running (as the bridge: "no job and not idle"). */
-    public static boolean cancelBaritone(boolean baritoneIdle, boolean jobRunning) {
-        return !baritoneIdle && !jobRunning;
-    }
 
     /**
      * Runs a raw Baritone command; a command that saves settings.txt runs with the protected list reset to its

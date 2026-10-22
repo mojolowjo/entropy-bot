@@ -67,17 +67,15 @@ final class VeinMine {
             if (!level.getBlockState(q).isAir() && !kinds.contains(blk)) kinds.add(blk);
         }
         if (kinds.isEmpty()) return "no block of the vein is there to mine (" + label + ")";
-        try {
-            Jobs.safeSettings();
-            var s = baritone.api.BaritoneAPI.getSettings();
-            s.allowBreak.value = true;
-            s.allowBreakAnyway.value = new ArrayList<>(kinds);
-            io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE, "vein");
-        } catch (RuntimeException | LinkageError e) {
-            return "Baritone's mine settings: " + e;
-        }
+        // 0.39.z8 (owner 2026-10-22, "remove the old job habit"): no Baritone setting here; the fork's mine run owns
+        // breaking and placing for its run (mineWith) and puts them back at its end
+        io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE, "vein");
         // quantity 0: Baritone mines on; the vein is done when its cells are gone, and then the process is cancelled here
-        b.getMineProcess().mine(0, new BlockOptionalMetaLookup(kinds.toArray(new Block[0])));
+        try {
+            b.getMineProcess().mineWith(0, new BlockOptionalMetaLookup(kinds.toArray(new Block[0])), true);
+        } catch (LinkageError e) {
+            return "this Baritone has no mineWith (the stock jar? install the entropy fork): " + e;
+        }
         started = true;
         startTick = Core.INSTANCE.tick();
         active = this;
@@ -122,12 +120,12 @@ final class VeinMine {
         return Car.Status.running(label + ": " + gone + " of " + total);
     }
 
-    /** Ends Baritone's mine process and puts its settings back. */
+    /** Ends Baritone's mine process (it puts its own settings back) and the policy intent back to travel. */
     void stop() {
         try {
             IBaritone b = Jobs.baritone();
             if (b != null) b.getMineProcess().cancel();
-            Jobs.safeSettings();
+            io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "vein end");
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] vein: stopping {} failed: {}", label, e.toString());
         }

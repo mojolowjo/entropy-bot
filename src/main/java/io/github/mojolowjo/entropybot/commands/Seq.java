@@ -370,7 +370,6 @@ public final class Seq {
             // near: just get close (e.g. where it died), no need to touch the block
             BlockPos bp = new BlockPos(st.pos[0], st.pos[1], st.pos[2]);
             Goal goal = st.near ? new GoalNear(bp, 2) : st.exact ? new GoalBlock(bp) : new GoalGetToBlock(bp);
-            Jobs.safeSettings();
             j.goal = null;
             j.dest = st.pos;
             // rm-routes: the step's walk is one Baritone goal
@@ -619,7 +618,6 @@ public final class Seq {
                 IBaritone b = Jobs.baritone();
                 if (b == null) return "baritone not loaded";
                 Goal g = new GoalNear(BlockPos.containing(c.getX(), c.getY(), c.getZ()), 1);
-                Jobs.safeSettings();
                 b.getCustomGoalProcess().setGoalAndPath(g);
                 job().goalObj = g;
                 job().dest = new int[]{(int) Math.floor(c.getX()), (int) Math.floor(c.getY()), (int) Math.floor(c.getZ())};

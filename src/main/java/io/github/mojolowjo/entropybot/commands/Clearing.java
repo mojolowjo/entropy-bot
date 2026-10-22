@@ -239,10 +239,6 @@ public final class Clearing {
         Object schem;
     }
 
-    /** True while a mod job runs Baritone's builder (the bridge's safety net leaves placing on then). */
-    static volatile boolean placingOwned;
-
-    public static boolean placingOwned() { return placingOwned; }
 
     /** McClearWorld over the current level, swapped each tick (a respawn or a new level never leaves a stale one). */
     static final class LiveWorld implements ClearWorld {
@@ -433,7 +429,6 @@ public final class Clearing {
         IBaritone b = Jobs.baritone();
         if (b == null) return "error: baritone not loaded";
         Jobs.cancel(b);
-        Jobs.safeSettings();                // Baritone only walks: no breaking, no placing
         Minecraft mc = Minecraft.getInstance();
         if (mc.screen != null || Gui.open(p)) Gui.close(p);
         ClearBox zone = null;
@@ -1173,7 +1168,6 @@ public final class Clearing {
             // builder placements: Baritone's builder walks to a spot of its own choosing; the cell must be one I may go near
             String fence = seq.jobs.walkVerdict(pos[0], pos[1], pos[2]);
             if (fence != null) return Jobs.withAreaHint(fence + " (" + Jobs.fmt(pos) + ")");
-            Jobs.safeSettings();
             seq.setStatus(seq.label + " - placing a " + sid);
             ps.stage = "place";
         }
@@ -1294,13 +1288,11 @@ public final class Clearing {
 
     /** Baritone's builder off (the selection cleared, the look settings back); the zone's place lease stays for the rim. */
     static void stopBuilderPart(BuildState bs) {
-        placingOwned = false;
         IBaritone b = Jobs.baritone();
         if (b != null) {
             Jobs.cancel(b);
             try { b.getCommandManager().execute("sel clear"); } catch (Throwable caught) { Quiet.warn("Clearing.stopBuilderPart failed, carrying on with the fallback", caught); }
         }
-        Jobs.safeSettings();
         restoreLook(bs);
     }
 
@@ -1547,13 +1539,11 @@ public final class Clearing {
         if (bs.schem instanceof SchematicBuild.Run sr) sr.restore();
         restoreLook(bs);
         fallOff(bs);
-        placingOwned = false;
         IBaritone b = Jobs.baritone();
         if (b != null) {
             Jobs.cancel(b);
             try { b.getCommandManager().execute("sel clear"); } catch (Throwable caught) { Quiet.warn("Clearing.endBuild failed, carrying on with the fallback", caught); }
         }
-        Jobs.safeSettings();
         // B7d review: the build's own settings back too (the bridge's restoreSafeSettings reset all four)
         try {
             baritone.api.Settings s = BaritoneAPI.getSettings();
@@ -1649,14 +1639,12 @@ public final class Clearing {
         @Override public void walkBlock(int x, int y, int z) {
             IBaritone b = Jobs.baritone();
             if (b == null) return;
-            Jobs.safeSettings();
             b.getCustomGoalProcess().setGoalAndPath(new GoalBlock(new BlockPos(x, y, z)));
         }
 
         @Override public void walkNear(int x, int y, int z, int r) {
             IBaritone b = Jobs.baritone();
             if (b == null) return;
-            Jobs.safeSettings();
             b.getCustomGoalProcess().setGoalAndPath(new GoalNear(new BlockPos(x, y, z), r));
         }
 

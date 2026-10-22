@@ -81,7 +81,6 @@ final class RestoreRun {
         ended = true;
         if (placedMode && breakStarted) try { Minecraft.getInstance().gameMode.stopDestroyBlock(); } catch (RuntimeException caught) { Quiet.warn("RestoreRun.end failed, carrying on with the fallback", caught); }
         leases.releaseAll();
-        Jobs.safeSettings();
     }
 
     private void next() {
@@ -254,7 +253,6 @@ final class RestoreRun {
                     skip(e, "couldn't reach: no Baritone");
                     return false;
                 }
-                Jobs.safeSettings();
                 b.getCustomGoalProcess().setGoalAndPath(new baritone.api.pathing.goals.GoalGetToBlock(new BlockPos(e.x, e.y, e.z)));
                 stage = "walking";
                 stageTick = now;

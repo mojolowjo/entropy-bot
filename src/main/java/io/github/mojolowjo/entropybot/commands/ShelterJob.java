@@ -430,7 +430,6 @@ public final class ShelterJob {
                 ps.note = "error: couldn't step out of my shelter: no Baritone";
                 return false;
             }
-            Jobs.safeSettings();
             b.getCustomGoalProcess().setGoalAndPath(new baritone.api.pathing.goals.GoalBlock(to[0], to[1], to[2]));
         }
         return false;

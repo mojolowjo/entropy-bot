@@ -244,8 +244,6 @@ final class SchematicBuild {
             st.buildInLayers.value = true;
             st.layerOrder.value = false;
             st.layerHeight.value = 1;
-            st.allowPlace.value = true;
-            st.allowBreak.value = false;
             io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.BUILD, "build");
             st.buildIgnoreExisting.value = true;
             st.allowInventory.value = true;
@@ -262,7 +260,6 @@ final class SchematicBuild {
             b.getBuilderProcess().build(name, masked, new BlockPos(o[0], o[1], o[2]));
             bs.start = Core.INSTANCE.tick();
             bs.lastChange = bs.start;
-            Clearing.placingOwned = true;
             Seq.Step step = Clearing.clearStep(new ClearJob.Options().box(box).label(bs.status));
             step.kind = KIND;
             step.state = bs;

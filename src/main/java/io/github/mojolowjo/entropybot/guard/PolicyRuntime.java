@@ -166,32 +166,12 @@ public final class PolicyRuntime {
     /** Phase 1 is live: a cost hook runs and the switch is on. Without a hook the old rules hold (fail safe). */
     public boolean travelLive() { return LIVE && !"none".equals(hook); }
 
-    /**
-     * A walk may turn Baritone's breaking on: the policy is live, has a snapshot, and the outside rule set lets travel
-     * break at all (both connection presets do; the cost hook does the limiting, the click veto the floor).
-     */
-    public boolean travelMayBreak() {
-        Snapshot s = snapshot;
-        return travelLive() && s != null && s.outside().breakNatural() != BreakPolicy.Natural.NEVER;
-    }
+    // 0.39.z8 (owner 2026-10-22, "remove the old job habit"): travelMayBreak / travelOnlyBreaking / travelOnlyPlacing
+    // are deleted; nothing in the mod turns Baritone's breaking on or off (walks: Baritone's travel settings as shipped).
 
     /**
-     * Baritone's allowBreak is on only because of the travel policy (no build, dig or mine job owns it): for the route
-     * map (review R5) that is still a walking-only world when the fork hook runs, because its contexts are built under
-     * the NONE intent ({@link #withIntent}); the mixin fallback reads the live intent and cannot promise that.
-     */
-    public boolean travelOnlyBreaking() {
-        return travelMayBreak() && hook.startsWith("fork") && intent == Intent.TRAVEL;
-    }
-
-    /** The same for placing: allowPlace is on only because of the travel policy (no plan-go or build owns it). */
-    public boolean travelOnlyPlacing() {
-        return travelMayPlace() && hook.startsWith("fork") && intent == Intent.TRAVEL;
-    }
-
-    /**
-     * Owner's place rule (aa372): a walk may turn Baritone's placing on: the policy is live with a cost hook and has a
-     * snapshot. The cost hook prices every placement (x3 for travel, about nothing into a cell the bot dug itself, COST_INF
+     * Owner's place rule (aa372): the policy may let a walk place (the click veto and the scorer ask this): the policy
+     * is live with a cost hook and has a snapshot. The cost hook prices every placement (x3 for travel, about nothing into a cell the bot dug itself, COST_INF
      * where the rule set places nothing) and the click veto asks the same policy, so A* and the click agree.
      */
     public boolean travelMayPlace() {

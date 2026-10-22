@@ -482,7 +482,6 @@ final class FarmPlanting {
             r.tries.put(key.replace(" close", ""), 99);
             return "wait";
         }
-        Jobs.safeSettings();
         w.walk(new FarmRound.Walk(to[0], to[1], to[2], range));
         r.walkStart = now;
         return "wait";

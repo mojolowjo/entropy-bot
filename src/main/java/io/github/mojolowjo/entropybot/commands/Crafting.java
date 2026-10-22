@@ -1487,7 +1487,6 @@ final class Crafting {
                     s.splice(s.idx + 1, add);
                 }
             } else {
-                if (fx instanceof FarmRound.Walk) Jobs.safeSettings();
                 w.apply(fx);
             }
         }

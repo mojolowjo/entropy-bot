@@ -21,8 +21,8 @@ import java.util.Set;
  *   <li>The protected blocks ({@code Guard}'s floor: block entities and building blocks, never ores) go into Baritone's
  *       {@code blocksToDisallowBreaking} as Guava's hash-backed set view, so Baritone's own A* and "mine" never break
  *       them and the path search stays fast; put once the floor is ready and again every 200 ticks.</li>
- *   <li>Every 200 ticks: breaking or placing on with no job of the mod owning it goes off again (Baritone cancelled
- *       too when it is busy with no job), "turned breaking/placing back off".</li>
+ *   <li>0.39.z8 (owner 2026-10-22): breaking and placing are never flipped here; each fork process owns them for
+ *       its own run.</li>
  *   <li>{@link #restore()} for "stop"; {@link #execute} for raw Baritone commands (a "set" never saves the list).</li>
  * </ul>
  * FIXED_OFF stays in {@link BaritoneHook#enforceSettings} (one owner); restore() calls it too.
@@ -99,8 +99,8 @@ public final class SafetyNet {
     }
 
     /**
-     * Travel defaults: never break or place (the bridge's restoreSafeSettings), the protected list and the FIXED_OFF
-     * settings back. For "stop" (Commands.stopAll) and the net.
+     * The job leftovers off (SafetyRules' lists; not breaking / placing, the fork processes' own), the protected list
+     * and the FIXED_OFF settings back. For "stop" (Commands.stopAll).
      */
     @SuppressWarnings("unchecked")
     public void restore() {
@@ -132,54 +132,6 @@ public final class SafetyNet {
         return SafetyRules.executeGuarded(text, () -> resetProtected(s), () -> b.getCommandManager().execute(text), () -> {
             if (Guard.INSTANCE.floorReady()) putProtected(s);
         });
-    }
-
-    // ---- who owns breaking and placing ----
-
-    /** A mod job turned Baritone's breaking on and Baritone's mine really runs (S1: not during its walks or holds). */
-    static boolean breakingOwned(IBaritone b) {
-        if (builderBreakingOwned(b)) return true;
-        if (io.github.mojolowjo.entropybot.aa.moves.BaritoneCar.reflexOwns()) return true;           // reflex probe 0.39.s5: a reflex leg
-        if (io.github.mojolowjo.entropybot.commands.PaperPlan.ownsBreak()) return true;                      // 0.32.3: the fourth owner, a plan-go walk
-        if (io.github.mojolowjo.entropybot.commands.MineWater.walkDig()) return true;                        // 0.36.8: a mine job's walk to a known ore
-        try {
-            // mining plan phase 1: a running job's walk keeps breaking on under the policy's costs; idle = off again
-            if (io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayBreak() && Core.INSTANCE.commands.jobs.running()) return true;
-            var j = Core.INSTANCE.commands.jobs.job;
-            if (j == null || j.done || !j.ownsBreaking) return false;
-            return b != null && b.getMineProcess().isActive();
-        } catch (Throwable t) {
-            Quiet.warn("SafetyNet.breakingOwned failed, carrying on with the fallback", t);
-            return false;
-        }
-    }
-
-    /**
-     * 0.29.0: the third owner: a "dig ... via baritone" step runs Baritone's builder (its flag is up, a job runs and the
-     * builder process is really active). Its path digging needs allowBreak for the whole job.
-     */
-    static boolean builderBreakingOwned(IBaritone b) {
-        try {
-            if (!io.github.mojolowjo.entropybot.commands.BuilderDig.breaking()) return false;
-            var j = Core.INSTANCE.commands.jobs.job;
-            if (j == null || j.done) return false;
-            return b != null && b.getBuilderProcess().isActive();
-        } catch (Throwable t) {
-            Quiet.warn("SafetyNet.builderBreakingOwned failed, carrying on with the fallback", t);
-            return false;
-        }
-    }
-
-    /** A mod job runs Baritone's builder (build floor|walls|fill|shell). */
-    static boolean placingOwned() {
-        try {
-            if (io.github.mojolowjo.entropybot.commands.Clearing.placingOwned() || io.github.mojolowjo.entropybot.commands.PaperPlan.ownsPlace()) return true;
-            if (io.github.mojolowjo.entropybot.aa.moves.BaritoneCar.reflexOwns()) return true;       // reflex probe 0.39.s5: a reflex leg
-            // owner's place rule (aa372): a running job's walk keeps placing on under the policy's costs; idle = off again
-            var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
-            return pr.travelMayPlace() && pr.intent() == io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL && Core.INSTANCE.commands.jobs.running();
-        } catch (Throwable t) {
-            Quiet.warn("SafetyNet.placingOwned failed, carrying on with the fallback", t); return false; }
     }
 
     public static IBaritone primary() {
