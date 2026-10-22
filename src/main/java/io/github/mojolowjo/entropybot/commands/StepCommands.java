@@ -55,7 +55,6 @@ public final class StepCommands {
             case Step.Come k -> "come";
             case Step.Give k -> "give me " + k.item() + " " + k.n();
             case Step.Light k -> "light here " + k.radius();
-            case Step.Bootstrap k -> k.toolsOnly() ? "bootstrap tools" : "bootstrap";
             case Step.Fish k -> throw new IllegalStateException("a fish step has hands of its own (cast and reel on Baritone's look), no verb");
             case Step.KelpCut k -> throw new IllegalStateException("a kelp cut has hands of its own (Baritone's mine process), no verb");
             case Step.Kelp k -> throw new IllegalStateException("a compound step is expanded by Steps, never run by the hands");

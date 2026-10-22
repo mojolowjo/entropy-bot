@@ -96,14 +96,17 @@ public final class RungOptions {
     // ---- TOOLS: a stone pickaxe ----
 
     public static final String TOOLS_FACTS = "tools.facts";
-    /** Fixed work estimates (walk-blocks; a minute = Options.MINUTE): the whole bootstrap ~3.3 min, its tools part ~2.5. */
-    public static double bootstrapCost() { return Tuning.get("rungOptions.bootstrapCost"); }
-    public static double bootstrapToolsCost() { return Tuning.get("rungOptions.bootstrapToolsCost"); }
+    /** The tools need's wanted item: the stone pickaxe, made by the recursion of {@link NeedChain}. */
+    public static final String TOOLS_ITEM = "stone_pickaxe";
 
-    /** @param treesNear a log within 16 (the planner's "trees" fact; its goal plan needs them) */
-    public record ToolsFacts(int pickTier, boolean treesNear, boolean pickWanted, boolean swordWanted, int cobble, int sticks, int planks, boolean table) {
+    /** @param treesNear a log within 16 (the planner's "trees" fact; its goal plan needs them); world: what the chain starts from (null: not readable) */
+    public record ToolsFacts(int pickTier, boolean treesNear, boolean pickWanted, boolean swordWanted, int cobble, int sticks, int planks, boolean table, NeedChain.World world) {
+        public ToolsFacts(int pickTier, boolean treesNear, boolean pickWanted, boolean swordWanted, int cobble, int sticks, int planks, boolean table) {
+            this(pickTier, treesNear, pickWanted, swordWanted, cobble, sticks, planks, table, null);
+        }
+
         /** The pickaxe facts only (no sword wanted). */
-        public ToolsFacts(int pickTier, boolean treesNear) { this(pickTier, treesNear, true, false, 0, 0, 0, false); }
+        public ToolsFacts(int pickTier, boolean treesNear) { this(pickTier, treesNear, true, false, 0, 0, 0, false, null); }
 
         /** Round 4A N: a stone sword from the bag (2 cobblestone, a stick or 2 planks for one, a table known). */
         public boolean swordMats() { return cobble >= 2 && (sticks >= 1 || planks >= 2) && table; }
@@ -124,17 +127,22 @@ public final class RungOptions {
                         "a stone sword from the bag: craft " + Math.round(s) + " s", "sword only", m));
                 if (!f.pickWanted()) {
                     if (planned != null) add(rows, dropped, m, now, Options.typed("planner", "planner", planned, cost * Options.planUnit(), "the planner's stone tools (the sword in it)", "planner", true, m));
-                    dropped.add("bootstrap: the pickaxe is fine (the sword alone is wanted)");
+                    dropped.add("chain: the pickaxe is fine (the sword alone is wanted)");
                     return Options.Choice.of(rows, dropped, "no way to a sword");
                 }
             }
             // the planner's goal stone tools covers a chest's stock too (PlanFacts.addStock: fetch steps)
             if (planned == null) dropped.add("planner: " + (plannerWhy == null ? "no plan" : plannerWhy));
             else add(rows, dropped, m, now, Options.typed("planner", "planner", planned, cost * Options.planUnit(), "the planner's stone tools", "planner", true, m));
-            if (f.pickTier() >= 2) dropped.add("bootstrap tools: the stone tools exist (worn: the planner makes new ones)");
-            else add(rows, dropped, m, now, Options.typed("bootstrap tools", "bootstrap", List.of(new Step.Bootstrap(true)), bootstrapToolsCost(),
-                    "bootstrap up to the furnace (the rungs do the rest)", "bootstrap tools", m));
-            add(rows, dropped, m, now, Options.typed("bootstrap", "bootstrap", List.of(new Step.Bootstrap(false)), bootstrapCost(), "the whole bootstrap", "bootstrap", m));
+            // rm-bootstrap: the need resolved by the recipe data (NeedChain): the item's ingredients, a table, a seen source, else explore
+            if (f.world() == null) dropped.add("chain: no world facts (the senses are not ready)");
+            else if (f.pickTier() >= 2 && !f.pickWanted()) dropped.add("chain: the stone pickaxe exists");
+            else {
+                NeedChain.Chain ch = NeedChain.resolve(TOOLS_ITEM, 1, f.world());
+                if (!ch.ok()) dropped.add("chain " + TOOLS_ITEM + ": " + ch.missing());
+                else if (ch.steps().isEmpty()) dropped.add("chain: " + ch.why());
+                else add(rows, dropped, m, now, Options.typed("chain " + TOOLS_ITEM, "chain", ch.steps(), ch.cost(), ch.why(), "chain " + TOOLS_ITEM, m));
+            }
             return Options.Choice.of(rows, dropped, "no way to stone tools");
         }
 

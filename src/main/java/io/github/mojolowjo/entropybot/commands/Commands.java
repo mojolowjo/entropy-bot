@@ -209,7 +209,7 @@ public final class Commands implements Chains.Env {
 
     /** B7c: craft/smelt/get/need/recipe/kit/supplies/restock, farm and compact. */
     final Crafting crafting;
-    /** C4 + C5 (0.20.1): bootstrap, light, stock, junk, tool care. */
+    /** C4 + C5 (0.20.1): light, stock, junk, tool care. */
     final CampCommands camp = new CampCommands(this);
     /** B3: goal, plan, actions, actions.json, the brain's planner hook. */
     final GoalPlanning planning = new GoalPlanning(this);
@@ -1224,7 +1224,6 @@ public final class Commands implements Chains.Env {
         if (verb.equals("stock") && Texts.isStockTargetsForm(rest)) return Reply.now(camp.stock(player, rest));   // C4; else C2's view below
         if (verb.equals("sleep") && rest.trim().equalsIgnoreCase("status")) return Reply.now(SleepJob.status(player));
         if (verb.equals("restock") && rest.trim().equalsIgnoreCase("base")) return Reply.now(internal ? "error: restock base is a chain of its own - run it by itself" : camp.restockBase(player, from));
-        if (verb.equals("bootstrap")) return Reply.now(camp.bootstrap(player, from, internal, rest));
         if (verb.equals("house")) return Reply.now(camp.house(player, from, internal, rest));      // 0.28.2 (trial fix package 2 C)
         if (verb.equals("climb")) return Reply.now(internal ? "error: climb is a chain of its own - run it by itself" : DigCommands.climb(this, player, rest, from));   // 0.28.1
         // 0.24.3: the shelter's status/leave never wait for its job; "night status" shows the night safety

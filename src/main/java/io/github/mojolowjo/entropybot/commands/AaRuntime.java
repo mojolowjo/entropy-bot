@@ -687,7 +687,60 @@ public final class AaRuntime implements JobPort {
         int sticks = in.bag == null ? 0 : in.bag.getOrDefault("stick", 0);
         boolean pick = in.pickTier < 2 || (in.pickPct < Tuning.i("aaRuntime.wornPct") && in.pickaxes < 2);
         return new io.github.mojolowjo.entropybot.aa.RungOptions.ToolsFacts(in.pickTier, sensed.feas.trees, pick,
-                io.github.mojolowjo.entropybot.aa.brain.Costs.swordWanted(in.zombieSeen, in.armed), in.cobble, sticks, in.planks, in.tableKnown || in.tableInBag);
+                io.github.mojolowjo.entropybot.aa.brain.Costs.swordWanted(in.zombieSeen, in.armed), in.cobble, sticks, in.planks, in.tableKnown || in.tableInBag, needWorld());
+    }
+
+    /** rm-bootstrap: what NeedChain starts from: the bag, a table in reach, a free cell for one, the nearest seen tree and stone. */
+    io.github.mojolowjo.entropybot.aa.NeedChain.World needWorld() {
+        var in = bb.in;
+        var trees = woodFacts();
+        io.github.mojolowjo.entropybot.aa.NeedChain.Spot tree = null;
+        if (trees != null) for (var t : trees.trees()) {
+            if (t.deny() == null) { tree = new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(t.x(), t.y(), t.z(), t.dist(), null); break; }
+        }
+        final var treeSpot = tree;
+        io.github.mojolowjo.entropybot.aa.NeedChain.Spot[] stone = {null};
+        boolean[] scanned = {false};
+        return new io.github.mojolowjo.entropybot.aa.NeedChain.World(in.bag, in.tableKnown, in.chestCell, word -> {
+            if (word.equals(io.github.mojolowjo.entropybot.plan.PlanFacts.canon("oak_log"))) return treeSpot;
+            if (!io.github.mojolowjo.entropybot.aa.brain.ItemWorth.stoneLike(word.indexOf(':') < 0 ? "minecraft:" + word : word)) return null;
+            if (!scanned[0]) { scanned[0] = true; stone[0] = nearestStone(); }
+            return stone[0];
+        });
+    }
+
+    private long stoneAt = -1;
+    private io.github.mojolowjo.entropybot.aa.NeedChain.Spot stoneSpot;
+
+    /** The nearest loaded block the game data calls stone-like (ItemWorth.stoneLike) the policy lets me dig, within the scan; cached a few seconds. */
+    private io.github.mojolowjo.entropybot.aa.NeedChain.Spot nearestStone() {
+        long now = System.currentTimeMillis();
+        if (stoneAt >= 0 && now - stoneAt < Tuning.l("aaRuntime.stoneCacheMs")) return stoneSpot;
+        stoneAt = now;
+        stoneSpot = null;
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            LocalPlayer p = mc.player;
+            if (p == null || mc.level == null) return null;
+            int[] me = Jobs.here(p);
+            String adim = Storage.dim();
+            int r = Tuning.i("aaRuntime.stoneScanR"), up = Tuning.i("aaRuntime.stoneScanUp"), down = Tuning.i("aaRuntime.stoneScanDown");
+            net.minecraft.core.BlockPos.MutableBlockPos q = new net.minecraft.core.BlockPos.MutableBlockPos();
+            double best = Double.MAX_VALUE;
+            for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) for (int dy = -down; dy <= up; dy++) {
+                double d = Math.sqrt((double) dx * dx + (double) dy * dy + (double) dz * dz);
+                if (d >= best) continue;
+                q.set(me[0] + dx, me[1] + dy, me[2] + dz);
+                if (!mc.level.isLoaded(q)) continue;
+                String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(q).getBlock()).toString();
+                if (!io.github.mojolowjo.entropybot.aa.brain.ItemWorth.stoneLike(id) || io.github.mojolowjo.entropybot.aa.brain.MiningTiers.blockTierOf(id) < 1 || !c.workAllowed(adim, q.getX(), q.getY(), q.getZ())) continue;
+                best = d;
+                stoneSpot = new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(q.getX(), q.getY(), q.getZ(), d, id);
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] aa: stone scan: {}", e.toString());
+        }
+        return stoneSpot;
     }
 
     /** The nearest known iron positions the scorer weighs. */
@@ -1626,10 +1679,20 @@ public final class AaRuntime implements JobPort {
     /** The typed steps after the ore step, held while the return leg runs; the typed steps to go on with after an escape. */
     private List<io.github.mojolowjo.entropybot.aa.moves.Step> pendingReturnSteps, escapeResumeSteps;
     private String typedKey;
+    /** Rule 7: when the task's typed run started, the bag and the cell then (-1: none running). */
+    private long typedStartMs = -1;
+    private Map<String, Integer> typedStartBag = Map.of();
+    private int[] typedStartAt;
 
     /** Starts AA's typed steps; null when they run, else why not. */
     private String runTyped(String key, List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, String label) {
         typedKey = key;
+        if (typedStartMs < 0) {         // rule 7: the task's first start (a replan or an escape goes on with the same clock)
+            typedStartMs = System.currentTimeMillis();
+            typedStartBag = bb.in.bag == null ? Map.of() : new java.util.HashMap<>(bb.in.bag);
+            LocalPlayer sp = Minecraft.getInstance().player;
+            typedStartAt = sp == null ? null : Jobs.here(sp);
+        }
         String r = c.stepRun.start(key, steps, label);
         typedRun = true;
         typedEndSeen = r != null;
@@ -1808,6 +1871,7 @@ public final class AaRuntime implements JobPort {
             String e = lastEnd;
             lastEnd = null;
             current = -1;
+            e = fastEnd(e);
             // aa-prereq (aa391: "done - mining coal: got 0 of 32 - no coal ore known yet" in 3 s counted done): a task
             // that gained nothing of what it was sent for is a failure (Failures holds it), never a success
             if (e.startsWith("done") && io.github.mojolowjo.entropybot.aa.AaLadder.zeroGain(e)) {
@@ -1829,9 +1893,28 @@ public final class AaRuntime implements JobPort {
         return JobState.RUNNING;
     }
 
+    /** Rule 7: a typed run that ends "done" within failures.fastEndMs having changed nothing is a failure with its stage (FastEnd). */
+    private String fastEnd(String e) {
+        long start = typedStartMs;
+        typedStartMs = -1;
+        if (!typedRun || start < 0) return e;
+        double moved = 0;
+        LocalPlayer p = Minecraft.getInstance().player;
+        if (p != null && typedStartAt != null) {
+            int[] now = Jobs.here(p);
+            moved = Math.hypot(now[0] - typedStartAt[0], Math.hypot(now[1] - typedStartAt[1], now[2] - typedStartAt[2]));
+        }
+        String v = io.github.mojolowjo.entropybot.aa.brain.FastEnd.verdict(e, System.currentTimeMillis() - start, typedStartBag,
+                bb.in.bag == null ? Map.of() : bb.in.bag, moved, c.stepRun.steps.stepText());
+        if (v == null) return e;
+        LOG.info("[entropybot] aa: the task ended \"done\" at once with nothing changed - counted failed: {}", v);
+        return v;
+    }
+
     @Override public void cancel(long taskId, String why) {
         if (taskId != current) return;
         current = -1;
+        typedStartMs = -1;
         clearEscape();
         if (chainRunning()) c.chains.clear();
         if (typedRun) {

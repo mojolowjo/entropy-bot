@@ -2,7 +2,7 @@ package io.github.mojolowjo.entropybot.world;
 
 /**
  * 0.28.1 (trial fix A, docs/TRIAL_FIX_PLAN.md): the ground under a spot. In trial 1 the bot stood on a spruce top, and
- * bootstrap saved the camp, the base and the table spot 8 blocks up in the air after it chopped the tree. This rule
+ * the old camp chain saved the camp, the base and the table spot 8 blocks up in the air after it chopped the tree. This rule
  * walks a column down from a start height to the highest cell a player can stand on, skipping leaves, snow layers,
  * plants and (when the start is in a tree: the cell under it is a log or leaves) logs. Pure (JUnit: {@code TrialFixTest}).
  *

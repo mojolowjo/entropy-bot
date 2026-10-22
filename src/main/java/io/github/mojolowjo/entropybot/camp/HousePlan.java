@@ -272,7 +272,7 @@ public final class HousePlan {
      */
     public static String chooseBlock(String asked, Map<String, Integer> inv, Map<String, Integer> placed) {
         if ((asked == null || asked.isBlank()) && placed != null && !placed.isEmpty()) {
-            // 0.30.8 (trial 10: "needs about 168 visualworkbench:minecraft/crafting_table"): the bootstrap's table inside
+            // 0.30.8 (trial 10: "needs about 168 visualworkbench:minecraft/crafting_table"): the old camp chain's table inside
             // the area was the only placed block counted; stations and non-building blocks never decide the house block
             Map<String, Integer> walls = new java.util.HashMap<>();
             for (Map.Entry<String, Integer> e : placed.entrySet()) {

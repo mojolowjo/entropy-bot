@@ -14,9 +14,6 @@ public final class AaLadder {
 
     public static final String SHELTER_FACT = "shelterBuilt";
 
-    /** The from-nothing job's label (Step.Bootstrap: fells trees, table, wooden then stone tools, furnace, chest, charcoal, torches, base, camp). */
-    public static final String BOOTSTRAP = new io.github.mojolowjo.entropybot.aa.moves.Step.Bootstrap(false).text();
-
     /** The climb's label (Step.Climb). */
     public static final String CLIMB = new io.github.mojolowjo.entropybot.aa.moves.Step.Climb().text();
 

@@ -38,6 +38,11 @@ final class TuningDefs {
         Tuning.def("aaRuntime.foodDy", 6, "rm-constants 0.39.u2 (was AaRuntime.FOOD_DY)", "the food dy of AaRuntime");
         Tuning.def("aaRuntime.drainWindowMs", 5 * 60_000, "rm-constants 0.39.u2 (was AaRuntime.DRAIN_WINDOW_MS)", "A sample closes after this long at most (a long task gives several)");
         Tuning.def("aaRuntime.stairRead", 16, "rm-constants 0.39.u2 (was AaRuntime.STAIR_READ)", "AA_ROUND3 4: the staircase steps down whose cells are read per heading (the pick-time budget)");
+        Tuning.def("aaRuntime.stoneCacheMs", 3000, "rm-bootstrap 0.39.v1", "milliseconds the nearest-stone scan of the need chain is reused");
+        Tuning.def("aaRuntime.stoneScanR", 16, "rm-bootstrap 0.39.v1", "blocks round the bot the need chain looks for stone");
+        Tuning.def("aaRuntime.stoneScanUp", 4, "rm-bootstrap 0.39.v1", "levels above the bot the stone scan covers");
+        Tuning.def("aaRuntime.stoneScanDown", 8, "rm-bootstrap 0.39.v1", "levels below the bot the stone scan covers");
+        Tuning.def("failures.fastEndMs", 1000, "rm-bootstrap 0.39.v1", "a job that ends done within this many ms changing nothing is a failure (rule 7)");
         Tuning.def("aaRuntime.skyR", 24, "rm-constants 0.39.u2 (was AaRuntime.SKY_R)", "The open-sky cell search radius (columns), S2");
         Tuning.def("aaRuntime.ironOres", 8, "rm-constants 0.39.u2 (was AaRuntime.IRON_ORES)", "The nearest known iron positions the scorer weighs");
         Tuning.def("aaRuntime.lookTicksDefault", 10, "rm-constants 0.39.u2 (was AaRuntime.LOOK_TICKS_DEFAULT)", "Baritone's own default is 5");
@@ -98,11 +103,9 @@ final class TuningDefs {
         Tuning.def("bedSpot.far", 10, "rm-constants 0.39.u2 (was BedSpot.FAR)", "How far from the anchor a bed may stand");
         // blueprint
         Tuning.def("blueprint.maxFails", 3, "rm-constants 0.39.u2 (was Blueprint.MAX_FAILS)", "Largest schematic AA takes (cells, air included)");
-        // bootstrapPlan
-        Tuning.def("bootstrapPlan.quarryLen", 8, "rm-constants 0.39.u2 (was BootstrapPlan.QUARRY_LEN)", "Columns of the staircase quarry");
-        Tuning.def("bootstrapPlan.torches", 16, "rm-constants 0.39.u2 (was BootstrapPlan.TORCHES)", "the torches of BootstrapPlan");
-        Tuning.def("bootstrapPlan.near", 8, "rm-constants 0.39.u2 (was BootstrapPlan.NEAR)", "the near of BootstrapPlan");
-        Tuning.def("bootstrapPlan.headroom", 3, "rm-constants 0.39.u2 (was BootstrapPlan.HEADROOM)", "Owner's rule (0.36.5)");
+        Tuning.def("needChain.exploreReturn", 0.5, "rm-bootstrap 0.39.v1", "share of the explore time the walk back costs again (the explore way's return leg)");
+        // campCommands (the station search radius)
+        Tuning.def("campCommands.near", 8, "rm-bootstrap 0.39.v1 (was bootstrapPlan.near)", "blocks round the bot a crafting table, furnace or chest counts as near");
         // brain
         Tuning.def("brain.minRunMs", 60_000, "rm-constants 0.39.u2 (was Brain.MIN_RUN_MS)", "the min run ms of Brain");
         Tuning.def("brain.stuckMs", 180_000, "rm-constants 0.39.u2 (was Brain.STUCK_MS)", "the stuck ms of Brain");
@@ -374,7 +377,6 @@ final class TuningDefs {
         Tuning.def("foodOptions.herdMinConf", 0.05, "rm-constants 0.39.u2 (was FoodOptions.HERD_MIN_CONF)", "Herds this far or more are not offered (a round trip past the horizon)");
         Tuning.def("foodOptions.eatCost", 2, "rm-constants 0.39.u2 (was FoodOptions.EAT_COST)", "the eat cost of FoodOptions");
         // foodPlan
-        Tuning.def("foodPlan.want", 6, "rm-constants 0.39.u2 (was FoodPlan.WANT)", "Food items wanted in the bag at the end of bootstrap");
         Tuning.def("foodPlan.low", 10, "rm-constants 0.39.u2 (was FoodPlan.LOW)", "Below this food level (of 20), check lists food first");
         // furnaceJobs
         Tuning.def("furnaceJobs.smeltMs", 10_000, "rm-constants 0.39.u2 (was FurnaceJobs.SMELT_MS)", "A vanilla furnace: 10 s an item");
@@ -567,7 +569,6 @@ final class TuningDefs {
         Tuning.def("planner.maxNodes", 2000, "rm-constants 0.39.u2 (was Planner.MAX_NODES)", "the max nodes of Planner");
         Tuning.def("planner.maxSteps", 24, "rm-constants 0.39.u2 (was Planner.MAX_STEPS)", "the max steps of Planner");
         Tuning.def("planner.budgetMs", 200, "rm-constants 0.39.u2 (was Planner.BUDGET_MS)", "the budget ms of Planner");
-        Tuning.def("planner.quarryGives", 40, "rm-constants 0.39.u2 (was Planner.QUARRY_GIVES)", "What one quarry (bootstrap's 8 staircase columns) is counted to give");
         Tuning.def("planner.shelterBlocks", 32, "rm-constants 0.39.u2 (was Planner.SHELTER_BLOCKS)", "the shelter blocks of Planner");
         // policyStats
         Tuning.def("policyStats.differFull", 5, "rm-constants 0.39.u2 (was PolicyStats.DIFFER_FULL)", "How many 'would differ' lines go to the log in full before the rate limit (one per LOG_EVERY_MS) applies");
@@ -642,8 +643,6 @@ final class TuningDefs {
         Tuning.def("rungOptions.pillarBlock", 1, "rm-constants 0.39.u2 (was RungOptions.PILLAR_BLOCK)", "the pillar block of RungOptions");
         Tuning.def("rungOptions.pillarFix", 5, "rm-constants 0.39.u2 (was RungOptions.PILLAR_FIX)", "the pillar fix of RungOptions");
         Tuning.def("rungOptions.skyWalk", 2, "rm-constants 0.39.u2 (was RungOptions.SKY_WALK)", "the sky walk of RungOptions");
-        Tuning.def("rungOptions.bootstrapCost", 200, "rm-constants 0.39.u2 (was RungOptions.BOOTSTRAP_COST)", "Fixed work estimates");
-        Tuning.def("rungOptions.bootstrapToolsCost", 150, "rm-constants 0.39.u2 (was RungOptions.BOOTSTRAP_TOOLS_COST)", "Fixed work estimates");
         // safetyRules
         Tuning.def("safetyRules.protectEvery", 200, "rm-constants 0.39.u2 (was SafetyRules.PROTECT_EVERY)", "The protected list goes back into Baritone this often (and once as soon as the guard's floor is ready)");
         Tuning.def("safetyRules.netEvery", 200, "rm-constants 0.39.u2 (was SafetyRules.NET_EVERY)", "Breaking/placing with nobody owning it is turned off at this tick of every 200 (the bridge's 10 s net)");
@@ -861,7 +860,6 @@ final class TuningDefs {
         Tuning.def("aaTree.airUrgent", 100, "rm-constants 0.39.u2 (inline literal in AaTree)", "air ticks under which the air reflex is urgent");
         Tuning.def("aaTree.drownHealth", 8, "rm-constants 0.39.u2 (inline literal in AaTree)", "health at or under which short air is drowning");
         Tuning.def("aaTree.pauseWindowMs", 60_000, "rm-constants 0.39.u2 (inline literal in AaTree)", "milliseconds a reflex pause counts toward the paused sum");
-        Tuning.def("bootstrapPlan.cobbleSpare", 4, "rm-constants 0.39.u2 (inline literal in BootstrapPlan)", "cobblestone gathered beyond what the plan needs");
         Tuning.def("breakPolicy.diveRiskK", 4, "rm-constants 0.39.u2 (inline literal in BreakPolicy)", "weight of the dive risk squared in the break price");
         Tuning.def("buildCount.fractionDiv", 10L, "rm-constants 0.39.u2 (inline literal in BuildCount)", "a build counts as done when it holds at least 1/this of what it needs");
         Tuning.def("caveRules.lowFood", 8, "rm-constants 0.39.u2 (inline literal in CaveRules)", "food under which a cave trip is not started without food in the bag");

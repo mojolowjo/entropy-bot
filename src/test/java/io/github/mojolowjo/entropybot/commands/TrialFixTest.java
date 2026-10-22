@@ -1,6 +1,5 @@
 package io.github.mojolowjo.entropybot.commands;
 
-import io.github.mojolowjo.entropybot.camp.BootstrapPlan;
 import io.github.mojolowjo.entropybot.camp.BuildCount;
 import io.github.mojolowjo.entropybot.camp.JunkRules;
 import io.github.mojolowjo.entropybot.clear.Tools;
@@ -244,22 +243,10 @@ class TrialFixTest {
     // ---- D: shovel ----
 
     @Test
-    void snowBreaksByHandAndBootstrapMakesAShovelInSnow() {
+    void snowBreaksByHandAndAShovelIsNamed() {
         assertTrue(Tools.okWithout(true, "snow_block"));
         assertTrue(Tools.okWithout(true, "minecraft:snow"));
         assertFalse(Tools.okWithout(true, "diamond_ore"));
         assertEquals("stopped: snow_block needs a shovel - next: craft wooden_shovel 1", Tools.shovelStop("minecraft:snow_block"));
-        int[] f = {0, 64, 0};
-        BootstrapPlan.Plan snowy = BootstrapPlan.plan(new BootstrapPlan.Facts(Map.of(), false, false, false, false,
-                f, new int[]{-2, 64, 0}, new int[]{-2, 64, 1}, new int[]{-2, 64, -1}, new int[]{1, 0}, true));
-        List<String> s = snowy.steps();
-        int place = s.indexOf("place crafting_table -2 64 0"), shovel = s.indexOf("craft wooden_shovel 1");
-        assertTrue(place >= 0 && shovel == place + 1, s.toString());
-        BootstrapPlan.Plan plain = BootstrapPlan.plan(new BootstrapPlan.Facts(Map.of(), false, false, false, false,
-                f, new int[]{-2, 64, 0}, new int[]{-2, 64, 1}, new int[]{-2, 64, -1}, new int[]{1, 0}));
-        assertFalse(plain.steps().contains("craft wooden_shovel 1"));
-        BootstrapPlan.Plan has = BootstrapPlan.plan(new BootstrapPlan.Facts(Map.of("minecraft:wooden_shovel", 1), false, false, false, false,
-                f, new int[]{-2, 64, 0}, new int[]{-2, 64, 1}, new int[]{-2, 64, -1}, new int[]{1, 0}, true));
-        assertFalse(has.steps().contains("craft wooden_shovel 1"));
     }
 }

@@ -33,8 +33,7 @@ import java.util.Set;
  * B3, the game side of the planner (docs/BRAIN_PLAN.md 6): {@code goal <text>}, {@code goal show}, {@code plan <text>},
  * {@code actions [verb]}, the brain's hook for a goal with no chain, and {@code entropybot/actions.json} (the action table
  * plus a state summary, rewritten when the summary changes, checked every 5 s). The facts come from the bag, the stock
- * view, the places and a block scan around the bot (logs, stone, ores within 16); the free spots and the quarry's
- * direction as bootstrap finds them. Plans are saved as routines {@code goal_<name>} under the routine rules
+ * view, the places and a block scan around the bot (logs, stone, ores within 16); the free spots. Plans are saved as routines {@code goal_<name>} under the routine rules
  * ({@link RoutineRule}); the texts the planner saved are kept in commands.json "plans" so an owner-edited routine is
  * never overwritten.
  *
@@ -75,7 +74,6 @@ final class GoalPlanning {
         f.feet = feet;
         if (CampCommands.near(lv, feet, "crafting_table")) f.flag("table");
         if (CampCommands.near(lv, feet, "furnace")) f.flag("furnace");
-        f.dir = CampCommands.quarryDir(lv, feet);
         List<int[]> free = CampCommands.freeRing(lv, feet, f.dir);
         if (free.size() < 2) {
             // 0.36.4 (aa40c: at the top of a climb no cell by the feet was free for 30 min): the nearest standable cell
@@ -90,7 +88,6 @@ final class GoalPlanning {
         }
         if (free.size() > 0) { f.table = free.get(0); f.flag("spot:table"); }
         if (free.size() > 1) { f.furnace = free.get(1); f.flag("spot:furnace"); }
-        f.flag("quarry");
         scan(lv, feet, f);
         JsonObject m = c.minePlace();
         if (m != null && m.has("dir")) f.flag("mine");

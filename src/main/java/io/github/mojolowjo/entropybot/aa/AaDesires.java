@@ -173,7 +173,7 @@ public final class AaDesires {
                 // aa-night2 P0 2: a stone sword too once a zombie was seen (the sword-only row, or the planner's goal)
                 bb -> bb.in.pickTier < t("tools.stoneTier") || (bb.in.pickPct < t("tools.wearPct") && bb.in.pickaxes < t("tools.spares")) || io.github.mojolowjo.entropybot.aa.brain.Costs.swordWanted(bb.in.zombieSeen, bb.in.armed),
                 bb -> null, bb -> plan("stone tools"), new Options.Picker<>("TOOLS", RungOptions.TOOLS_FACTS, RungOptions.ToolsFacts.class, new RungOptions.Tools())
-                        .withoutFacts((b, planned) -> b.in.pickTier == 0 ? noFacts("bootstrap", List.of(new Step.Bootstrap(false))) : plannerRow(planned))).surface();      // trees and stone at hand up there: under ground the climb is its first row
+                        .withoutFacts((b, planned) -> plannerRow(planned))).surface();      // trees and stone at hand up there: under ground the climb is its first row
         Need hunger = new Need("needs.food", TaskKind.FOOD,
                 bb -> bb.in.hungerDrains && (food.update(bb.in.food) | foodStockLow(bb)),
                 bb -> null, bb -> plan("food 8"), new Options.Picker<>("FOOD", FoodOptions.FACTS, FoodOptions.FoodFacts.class, new FoodOptions.Food()));

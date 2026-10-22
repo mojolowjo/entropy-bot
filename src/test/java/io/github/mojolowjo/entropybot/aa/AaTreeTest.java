@@ -41,7 +41,7 @@ class AaTreeTest {
         // AREAS (0.39.2): no area rung - the world is open, AA works where it stands
         freshStart();
         assertEquals(Status.RUNNING, tree.tick(bb));
-        assertEquals(AaLadder.BOOTSTRAP, lastChain());
+        assertFalse(port.started.isEmpty(), "a task was started");
     }
 
     /** One pickaxe of this tier, fresh. */
@@ -66,7 +66,7 @@ class AaTreeTest {
     void theLadderRunsTheFirstUnmetRungAndCommitsToIt() {
         freshStart();
         assertEquals(Status.RUNNING, tree.tick(bb));
-        assertEquals(AaLadder.BOOTSTRAP, lastChain(), "no pickaxe at all: the from-nothing job");
+        assertFalse(port.started.isEmpty(), "no pickaxe at all: the tools need starts a task");
         assertEquals("needs", tree.driver());
         assertEquals(TaskKind.TOOLS, bb.task().kind);
         // the bag changes meanwhile: no re-choice
@@ -192,7 +192,7 @@ class AaTreeTest {
         assertFalse(bb.task().paused());
         assertEquals(1, port.resumed);
         assertEquals(0, tracer.counts.switches);
-        assertEquals(AaLadder.BOOTSTRAP, bb.task().spec().chain(), "the same task goes on");
+        assertEquals(lastChain(), bb.task().spec().chain(), "the same task goes on");
     }
 
     @Test

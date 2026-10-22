@@ -8,7 +8,6 @@ import io.github.mojolowjo.entropybot.aa.core.FakePort;
 import io.github.mojolowjo.entropybot.aa.core.Status;
 import io.github.mojolowjo.entropybot.aa.core.TaskKind;
 import io.github.mojolowjo.entropybot.aa.core.Tracer;
-import io.github.mojolowjo.entropybot.camp.BootstrapPlan;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -16,7 +15,7 @@ import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** S2 (MINING_PLAN 11): the surface and tools option sets, bootstrap tools, a failed tail after the need is met. */
+/** S2 (MINING_PLAN 11): the surface and tools option sets, the tools set, a failed tail after the need is met. */
 class RungOptionsTest {
     final Clock.Fake clock = new Clock.Fake(10_000_000);
     final FakePort port = new FakePort();
@@ -39,32 +38,38 @@ class RungOptionsTest {
     }
 
     @Test
-    void toolsPrefersBootstrapToolsUnlessThePlanIsCheaper() {
-        Options.Choice c = new RungOptions.Tools().choose(new ToolsFacts(0, false), m, 0, null, 0, "missing trees", null);
-        assertEquals("bootstrap tools", c.best().command());
-        assertTrue(c.why().contains("planner: missing trees"), c.why());
-        c = new RungOptions.Tools().choose(new ToolsFacts(1, true), m, 0, io.github.mojolowjo.entropybot.aa.TS.s("cut 3 logs then craft stone_pickaxe 1"), 12, null, null);
-        assertEquals("planner", c.best().id(), "60 < 150");
-        m.failed("bootstrap tools", "stopped at step 3 (chop 6): no trees in my areas", 0);
-        c = new RungOptions.Tools().choose(new ToolsFacts(0, false), m, 1, null, 0, "x", null);
-        assertEquals("bootstrap", c.best().command());
-        assertTrue(new RungOptions.Tools().switchable("stopped at step 9 (scan base): no chests within 16"));
-        assertFalse(new RungOptions.Tools().switchable("stopped: your stop"));
+    void toolsFromNothingIsTheChainRowNotAFixedJob() {
+        io.github.mojolowjo.entropybot.aa.brain.TestData.planner().install();
+        try {
+            NeedChain.World w = new NeedChain.World(java.util.Map.of(), false, new int[]{1, 64, 1},
+                    word -> word.equals("log") ? new NeedChain.Spot(30, 64, 0, 30, null) : null);
+            Options.Choice c = new RungOptions.Tools().choose(new ToolsFacts(0, false, true, false, 0, 0, 0, false, w), m, 0, null, 0, "missing cobblestone", null);
+            assertEquals("chain stone_pickaxe", c.best().id(), c.why());
+            assertTrue(c.best().typed());
+            assertTrue(c.best().why().contains("tree seen 30 m"), c.best().why());
+            assertTrue(c.why().contains("planner: missing cobblestone"), c.why());
+        } finally {
+            io.github.mojolowjo.entropybot.aa.brain.TestData.clear();
+        }
     }
 
     @Test
-    void bootstrapToolsStopsAfterTheFurnace() {
-        List<String> steps = List.of("setbase 0 64 0", "chop 6", "craft crafting_table 1", "place crafting_table 1 64 0", "craft stone_pickaxe 1",
-                "craft furnace 1", "goto 0 64 0", "place furnace 2 64 0", "craft chest 1", "place chest 3 64 0", "gather charcoal 2", "scan base");
-        assertEquals(steps.subList(0, 8), BootstrapPlan.cutAfterFurnace(steps));
-        assertEquals(List.of("chop 6", "craft stone_pickaxe 1"), BootstrapPlan.cutAfterFurnace(List.of("chop 6", "craft stone_pickaxe 1", "craft chest 1")));
-        assertTrue(BootstrapPlan.cutAfterFurnace(List.of("craft chest 1", "scan base")).isEmpty());
+    void aFailedChainIsHeldUnderItsKeyAndTheNextPickShowsWhy() {
+        io.github.mojolowjo.entropybot.aa.brain.TestData.planner().install();
+        try {
+            NeedChain.World w = new NeedChain.World(java.util.Map.of(), false, new int[]{1, 64, 1}, word -> null);
+            m.failed("chain stone_pickaxe", "stopped at step 1 (explore 5): timeout", 0);
+            Options.Choice c = new RungOptions.Tools().choose(new ToolsFacts(0, false, true, false, 0, 0, 0, false, w), m, 1, null, 0, "x", null);
+            assertNull(c.best());
+            assertTrue(c.why().contains("chain stone_pickaxe: "), c.why());
+        } finally {
+            io.github.mojolowjo.entropybot.aa.brain.TestData.clear();
+        }
     }
-
     @Test
     void aFailedTailAfterTheNeedIsMetCountsAsDone() {
         bb.in.pickTier = 0;
-        Need r = new Need("needs.tools", TaskKind.TOOLS, b -> b.in.pickTier < 2, b -> null, b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Bootstrap(false)));
+        Need r = new Need("needs.tools", TaskKind.TOOLS, b -> b.in.pickTier < 2, b -> null, b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Explore(1)));
         assertEquals(Status.RUNNING, r.tick(bb));
         bb.in.pickTier = 2;
         port.fail(1, "stopped at step 12 (scan base): no chests within 16");

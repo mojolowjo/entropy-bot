@@ -186,8 +186,6 @@ public final class VerbTable {
                 "craft a rod when I carry 3 sticks + 2 string, cast at a water patch near me, reel in on the bite; stops at n fish (cod, salmon, tropical fish; default 4), the minutes, or stop; then cook the catch (cook cod n)",
                 "fish 4|fish 5m", "cook");
         v("camp", "", "brain", O, "camp here", "a camp for a night or two: area camp (24 round, neutral), place camp with a bed marker, torches, my bed when I carry one; not a base", "camp here", "sleep");
-        v("bootstrap", "", "brain", O, "bootstrap | bootstrap tools | bootstrap status", "a camp from nothing: cut, table, wooden then stone tools, furnace, chest, charcoal, torches, base and camp placed (tools: stop after the furnace)",
-                "bootstrap|bootstrap tools|bootstrap status", "places");
         v("restore", "", "brain", O, "restore [status] | restore now [r] | restore forget <n>|all confirm | restore ignore x y z | restore mode auto|manual|off",
                 "blocks I broke on the way (mine ... dig tunnels, digging out of a stuck spot) and put back; build hints to protect",
                 "restore status|restore now|restore ignore 10 64 -20", "status");

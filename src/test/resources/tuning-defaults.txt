@@ -48,6 +48,10 @@ aaRuntime.slowLogMs	10000.0
 aaRuntime.snapshotMs	1000.0
 aaRuntime.stairRead	16.0
 aaRuntime.statsSaveMs	60000.0
+aaRuntime.stoneCacheMs	3000.0
+aaRuntime.stoneScanDown	8.0
+aaRuntime.stoneScanR	16.0
+aaRuntime.stoneScanUp	4.0
 aaRuntime.threatMemoMs	1000.0
 aaRuntime.torchDy	4.0
 aaRuntime.torchLight	10.0
@@ -124,11 +128,6 @@ bedSpot.near	4.0
 bedSpot.offCamp	1.5
 blockedTop	8.0
 blueprint.maxFails	3.0
-bootstrapPlan.cobbleSpare	4.0
-bootstrapPlan.headroom	3.0
-bootstrapPlan.near	8.0
-bootstrapPlan.quarryLen	8.0
-bootstrapPlan.torches	16.0
 brain.cdBaseMs	120000.0
 brain.cdMaxMs	960000.0
 brain.fastStuckMs	40000.0
@@ -167,6 +166,7 @@ builderDig.outsideCap	20000.0
 builderDig.outsideNear	2.0
 builderReport.stallSeconds	60.0
 campCommands.careRetryMs	600000.0
+campCommands.near	8.0
 capExempt	90.0
 caveRules.free	4.0
 caveRules.fromEntrance	160.0
@@ -395,6 +395,7 @@ engineProcess.errorsOff	5.0
 escort.feedDist	5.0
 escort.fightDist	4.0
 escort.stepTicks	40.0
+escort.throwLookTicks	3.0
 escort.warnMargin	8.0
 escortRules.aimDeg	35.0
 escortRules.feedAt	6.0
@@ -428,6 +429,7 @@ exploreWords.maxMinutes	30.0
 exploreWords.rings	24.0
 failures.cdBaseMs	120000.0
 failures.cdMaxMs	960000.0
+failures.fastEndMs	1000.0
 failures.moved	16.0
 failures.retryMaxMs	3600000.0
 failures.retryMs	600000.0
@@ -451,8 +453,15 @@ fishRules.maxMinutes	30.0
 fishRules.minCast	3.0
 fishRules.range	16.0
 fishRules.recastDelay	15.0
+fishing.aimTicks	5.0
+fishing.castRest	10.0
+fishing.handRetry	20.0
 fishing.idleEnd	1200.0
+fishing.idleRecheck	100.0
 fishing.maxWalks	4.0
+fishing.scanDown	4.0
+fishing.scanUp	2.0
+fishing.walkTicks	60.0
 fleeHeading.clear	2.5
 floorFill.cacheH	3.0
 floorFill.cacheR	2.0
@@ -471,6 +480,8 @@ floorFill.tries	3.0
 floorSteps.beatTicks	20.0
 floorSteps.maxRounds	4.0
 floorSteps.settleTicks	4.0
+floorSteps.throwLookDist	8.0
+floorSteps.throwLookUp	1.4
 flow	0.9
 foodModel.handMean	0.4
 foodModel.horizonMin	60.0
@@ -494,7 +505,6 @@ foodOptions.seedsEnough	4.0
 foodOptions.wheatBucketMin	7.0
 foodOptions.wheatFieldMin	6.0
 foodPlan.low	10.0
-foodPlan.want	6.0
 freeSpots.maxRing	3.0
 furnaceJobs.busyRounds	3.0
 furnaceJobs.busyWaitTicks	1200.0
@@ -646,6 +656,7 @@ nearZone.minR	4.0
 nearZone.unknownNoteMs	600000.0
 nearZone.yHalf	16.0
 need.defaultScore	30.0
+needChain.exploreReturn	0.5
 news.damage	3.0
 news.death	4.0
 news.detour	2.0
@@ -693,7 +704,6 @@ planner.budgetMs	200.0
 planner.gapMs	5000.0
 planner.maxNodes	2000.0
 planner.maxSteps	24.0
-planner.quarryGives	40.0
 planner.shelterBlocks	32.0
 plannerHandS	60.0
 plannerHoldS	120.0
@@ -798,8 +808,6 @@ rimPlan.layerCapTicks	1800.0
 rimPlan.maxTries	2.0
 run.weight	2.0
 runLedger.lowFood	6.0
-rungOptions.bootstrapCost	200.0
-rungOptions.bootstrapToolsCost	150.0
 rungOptions.climbBlock	3.0
 rungOptions.climbFix	10.0
 rungOptions.nothingSky	8.0
@@ -916,8 +924,11 @@ thing.learnMin	25.0
 threatFacts.lit	8.0
 threatFacts.litMaxDist	24.0
 threatFacts.rangedRange	16.0
+threatFacts.shooterHit	3.0
 threatFacts.shoreReach	32.0
 threatFacts.sprintFood	6.0
+threatFacts.unknownHealth	20.0
+threatFacts.unknownHit	5.0
 threatRules.close	3.0
 threatRules.closeAny	4.0
 threatRules.closingStep	1.0
@@ -1019,16 +1030,3 @@ worth.role.shovel	0.3
 worth.speedPow	0.25
 worth.toolK	1.15
 worth.weaponK	0.09
-escort.throwLookTicks	3.0
-threatFacts.unknownHit	5.0
-floorSteps.throwLookDist	8.0
-threatFacts.shooterHit	3.0
-floorSteps.throwLookUp	1.4
-threatFacts.unknownHealth	20.0
-fishing.walkTicks	60.0
-fishing.idleRecheck	100.0
-fishing.handRetry	20.0
-fishing.aimTicks	5.0
-fishing.castRest	10.0
-fishing.scanDown	4.0
-fishing.scanUp	2.0

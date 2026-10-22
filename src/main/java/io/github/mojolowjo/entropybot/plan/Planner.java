@@ -17,7 +17,7 @@ import java.util.Set;
  * B3 (docs/BRAIN_PLAN.md 6, BRAIN_LOOP "owner's direction"): a bounded GOAP-style search that turns a goal (items to
  * have, facts to make true) into a chain of existing verbs when nobody wrote a chain for it. It searches backwards
  * from the goal: each open need is met from the bag (or what an earlier step left over), or by one of the actions of
- * {@link ActionTable} that gives it (fetch, cut, craft, place, smelt, mine, quarry, gather, build), whose own inputs
+ * {@link ActionTable} that gives it (fetch, cut, craft, place, smelt, mine, gather, build), whose own inputs
  * and preconditions become new needs. A* over the summed action costs (heuristic: the open needs), at most
  * {@link #MAX_NODES} nodes, {@link #MAX_STEPS} steps and {@link #BUDGET_MS} ms. Steps keep their dependencies (the step
  * that makes a thing runs before the step that uses it) and come out in that order. World facts no action gives
@@ -31,8 +31,6 @@ public final class Planner {
     public static int maxNodesV() { return Tuning.i("planner.maxNodes"); }
     public static int maxStepsV() { return Tuning.i("planner.maxSteps"); }
     public static long budgetMsV() { return Tuning.l("planner.budgetMs"); }
-    /** What one quarry (bootstrap's 8 staircase columns) is counted to give. */
-    public static int quarryGives() { return Tuning.i("planner.quarryGives"); }
     public static int shelterBlocks() { return Tuning.i("planner.shelterBlocks"); }
 
     /** One thing the goal wants: an item count or a fact (flag). */
@@ -142,8 +140,7 @@ public final class Planner {
     static final Map<String, String> WORLD = new LinkedHashMap<>();
     static {
         WORLD.put("trees", "a tree seen near me (a farther one is a priced wood way)");
-        WORLD.put("stone", "stone under me to quarry (go to stony ground, or put cobblestone in a chest)");
-        WORLD.put("quarry", "solid ground beside me to quarry");
+        WORLD.put("stone", "stone seen near me to gather (go to stony ground, or put cobblestone in a chest)");
         WORLD.put("spot:table", "a free spot next to me for the crafting table (goto a flat, open spot)");
         WORLD.put("spot:furnace", "a free spot next to me for the furnace (goto a flat, open spot)");
     }
@@ -384,17 +381,13 @@ public final class Planner {
                 }
             } else why.add("nowhere to mine " + fam + " (place mine north, an ore in view, or a known cave)");
         }
-        // quarry (cobblestone)
+        // gather cobblestone: Baritone's MineProcess on the stone seen (a pickaxe in the bag first)
         if (x.equals("cobblestone")) {
             if (!n.flags.containsKey("stone")) why.add("no " + WORLD.get("stone"));
-            else if (!n.flags.containsKey("quarry")) why.add("no " + WORLD.get("quarry"));
-            else if (n.find("quarry") >= 0) why.add("one quarry per plan (" + quarryGives() + " cobblestone)");
             else {
                 Node k = child(n);
-                int s = addStep(k, r, "quarry", x, "quarry", quarryGives(), 25, 0, false);
+                int s = addStep(k, r, "gather", x, "gather:" + x, d, 20, 2, true);
                 if (s >= 0) {
-                    if (d > quarryGives()) k.open.addFirst(new Req(x, d - quarryGives(), false, r.forStep()));
-                    else give(k, x, s, quarryGives() - d);
                     k.open.addFirst(new Req("pick1", 1, true, s));
                     out.add(k);
                 }
@@ -504,7 +497,6 @@ public final class Planner {
                         default -> "mine strip " + fam + " " + s.amount;
                     };
                 }
-                case "quarry" -> String.join(" then ", io.github.mojolowjo.entropybot.camp.BootstrapPlan.quarrySteps(f.feet, f.dir));
                 case "gather" -> "gather " + word(s.item) + " " + s.amount;
                 case "build" -> "shelter";       // 0.24.3: the shelter verb builds from any planks, cobblestone or dirt it carries
                 default -> s.action + " " + s.item + " " + s.amount;
@@ -530,7 +522,7 @@ public final class Planner {
     static String xyz(int[] p) { return p == null ? "? ? ?" : p[0] + " " + p[1] + " " + p[2]; }
 
     /** Every action id the planner can choose (the document lists them). */
-    public static final List<String> ACTIONS = List.of("fetch", "cut", "craft", "place", "smelt", "mine", "quarry", "gather", "build");
+    public static final List<String> ACTIONS = List.of("fetch", "cut", "craft", "place", "smelt", "mine", "gather", "build");
 
     /** For tests: the set of action ids a result used. */
     public static Set<String> used(Result r) {

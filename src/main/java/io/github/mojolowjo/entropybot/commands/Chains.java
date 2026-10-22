@@ -370,7 +370,7 @@ public final class Chains {
 
     /** Every 5 ticks: starts the next step once the last one has finished. */
     /**
-     * 0.24.3: a step that is a chain of its own (bootstrap) puts its steps right after itself in the running chain.
+     * 0.24.3: a step that is a chain of its own (house) puts its steps right after itself in the running chain.
      * Null when done, else why not (no chain, too many steps).
      */
     public String spliceNext(String text) {

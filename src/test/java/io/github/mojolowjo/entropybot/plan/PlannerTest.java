@@ -15,7 +15,7 @@ class PlannerTest {
 
     /** A fresh spot with trees, free cells for the table and furnace, and the quarry's ground. */
     static PlanFacts forest() {
-        PlanFacts f = new PlanFacts().flag("trees", "spot:table", "spot:furnace", "quarry");
+        PlanFacts f = new PlanFacts().flag("trees", "spot:table", "spot:furnace");
         f.feet = new int[]{10, 64, 10};
         f.table = new int[]{8, 64, 10};
         f.furnace = new int[]{8, 64, 12};
@@ -79,9 +79,9 @@ class PlannerTest {
         PlanFacts f = forest().flag("stone");
         Planner.Result r = Planner.plan(f, GoalGrammar.parse("furnace", null).needs());
         assertTrue(r.ok(), r.missing());
-        assertTrue(index(r, "craft wooden_pickaxe 1") >= 0 && index(r, "dig ") > index(r, "craft wooden_pickaxe"), r.costed());
+        assertTrue(index(r, "craft wooden_pickaxe 1") >= 0 && index(r, "gather cobblestone") > index(r, "craft wooden_pickaxe"), r.costed());
         assertTrue(index(r, "goto 10 64 10 then place furnace 8 64 12") > index(r, "craft furnace 1"), r.costed());
-        assertTrue(Planner.used(r).containsAll(List.of("cut", "craft", "place", "quarry")));
+        assertTrue(Planner.used(r).containsAll(List.of("cut", "craft", "place", "gather")));
     }
 
     @Test

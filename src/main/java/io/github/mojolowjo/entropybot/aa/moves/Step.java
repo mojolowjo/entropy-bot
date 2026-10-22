@@ -237,11 +237,6 @@ public sealed interface Step {
         public String text() { return "light here " + radius; }
     }
 
-    /** The bootstrap (its tools part only when {@code toolsOnly}). */
-    record Bootstrap(boolean toolsOnly) implements Step {
-        public String text() { return toolsOnly ? "bootstrap tools" : "bootstrap"; }
-    }
-
     /**
      * Fish at the nearest water: the rod's cast and reel are item inputs on Baritone's look, the walk to the water is a
      * Baritone goal; until {@code n} fish are in the bag ({@code n} 0: for {@code minutes}). A rod must be in the bag (the

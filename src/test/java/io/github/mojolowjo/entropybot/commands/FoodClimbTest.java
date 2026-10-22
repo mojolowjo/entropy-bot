@@ -13,48 +13,6 @@ import static org.junit.jupiter.api.Assertions.*;
 class FoodClimbTest {
 
     @Test
-    void bootstrapEndsWithTheFoodStep() {
-        List<String> s = FoodPlan.withFood(List.of("chop 6", "scan base"));
-        assertEquals(List.of("chop 6", "scan base", "bootstrap food"), s);
-        assertEquals(List.of("bootstrap food"), FoodPlan.withFood(List.of()));
-    }
-
-    @Test
-    void enoughFoodDoesNothing() {
-        FoodPlan.Decision d = FoodPlan.decide(Map.of("minecraft:bread", 6), true, Map.of("cow", 3));
-        assertTrue(d.steps().isEmpty());
-        assertTrue(d.text().startsWith("ok: food: I carry 6"));
-    }
-
-    @Test
-    void huntsTheBestAnimalThenCooks() {
-        FoodPlan.Decision d = FoodPlan.decide(Map.of(), true, Map.of("chicken", 5, "cow", 3));
-        assertEquals(List.of("hunt 6 cow", "cook beef 6"), d.steps());
-        assertTrue(d.text().startsWith("ok: "));
-        assertFalse(Texts.stepFailed(d.text()));
-        FoodPlan.Decision one = FoodPlan.decide(Map.of("minecraft:beef", 2), true, Map.of("pig", 1));
-        assertEquals(List.of("hunt 2 pig", "cook porkchop 2", "cook beef 2"), one.steps());
-    }
-
-    @Test
-    void huntingOffNeverTurnsItOn() {
-        FoodPlan.Decision d = FoodPlan.decide(Map.of(), false, Map.of("cow", 2));
-        assertTrue(d.steps().isEmpty());
-        assertTrue(d.text().contains("hunting is off - next: hunting on then hunt 6 cow"), d.text());
-        assertFalse(Texts.stepFailed(d.text()));
-    }
-
-    @Test
-    void noAnimalsSaysSo() {
-        FoodPlan.Decision d = FoodPlan.decide(Map.of("minecraft:apple", 1), true, Map.of());
-        assertTrue(d.steps().isEmpty());
-        assertTrue(d.text().contains("no animals within 32 - next: hunt 5 when you see some"), d.text());
-        assertFalse(Texts.stepFailed(d.text()));
-        FoodPlan.Decision raw = FoodPlan.decide(Map.of("minecraft:mutton", 3), true, Map.of());
-        assertEquals(List.of("cook mutton 3"), raw.steps());
-    }
-
-    @Test
     void rawChickenIsNotFood() {
         assertEquals(0, FoodPlan.count(Map.of("minecraft:chicken", 4)));
         assertEquals(5, FoodPlan.count(Map.of("minecraft:cooked_chicken", 2, "minecraft:bread", 3, "minecraft:stone", 9)));
@@ -149,10 +107,6 @@ class FoodClimbTest {
     @Test
     void rawMeatIsCookedNotEaten() {
         assertEquals(0, FoodPlan.count(Map.of("minecraft:beef", 6)));
-        FoodPlan.Decision d = FoodPlan.decide(Map.of("minecraft:beef", 6), false, Map.of());
-        assertEquals(List.of("cook beef 6"), d.steps());
-        FoodPlan.Decision on = FoodPlan.decide(Map.of("minecraft:beef", 6), true, Map.of("cow", 4));
-        assertEquals(List.of("cook beef 6"), on.steps(), "enough raw: no hunt");
         String[] h = FoodPlan.checkFinding(5, Map.of("minecraft:beef", 6), true, Map.of());
         assertEquals("cook beef 6", h[2]);
         assertNotEquals("eat", h[2]);

@@ -8,23 +8,11 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 0.30.5 (trial 9, finding 3: the run ended at food 5/20 with nothing to eat): the food rules. Pure Java (JUnit).
- *
- * <p>{@code bootstrap} ends with the step {@link #STEP} ("bootstrap food"): with fewer than {@link #WANT} food items
- * in the bag it hunts the allowed animals within 32 and cooks the meat. Hunting is the owner's setting (off by
- * default, it kills animals), so the step never turns it on: it says "hunting is off - next: hunting on". The hunt
- * and the cook are plain chain steps (rm-execution: a failed one ends the chain with its stage and reason).
- * {@link #checkFinding} is the first {@code check} item when food is low.
- *
- * <p>Loader notes: none (no game classes). The game side is {@code commands.CampCommands.bootstrapFood}.
+ * The food rules (the food check's first item, ready and raw food by the game's FOOD data, the water food ways). Pure Java (JUnit).
  */
 public final class FoodPlan {
     private FoodPlan() {}
 
-    /** The bootstrap chain's last step. */
-    public static final String STEP = "bootstrap food";
-    /** Food items wanted in the bag at the end of bootstrap. */
-    public static int want() { return Tuning.i("foodPlan.want"); }
     /** Below this food level (of 20), check lists food first. */
     public static int low() { return Tuning.i("foodPlan.low"); }
 
@@ -81,53 +69,6 @@ public final class FoodPlan {
         if (near == null) return null;
         for (String k : order()) if (near.getOrDefault(k, 0) > 0) return k;
         return null;
-    }
-
-    /** What the food step does: steps to splice (may be empty) and the line it says. */
-    public record Decision(List<String> steps, String text) {}
-
-    /**
-     * The food step. inv: the bag; huntingOn: the owner's setting; near: allowed animals within 32 (short kind -> count).
-     * The text always starts "ok: " (the step never fails the chain) and says what comes next.
-     */
-    public static Decision decide(Map<String, Integer> inv, boolean huntingOn, Map<String, Integer> near) {
-        int have = count(inv);
-        if (have >= want()) return new Decision(List.of(), "ok: food: I carry " + have + " food - nothing to do");
-        int need = Math.max(3, want() - have);
-        Map<String, Integer> raw = raw(inv);
-        List<String> steps = new ArrayList<>();
-        String kind = pick(near);
-        int rawN = 0;
-        for (int v : raw.values()) rawN += v;
-        if (rawN >= need) {                                       // enough raw meat: cook it, no hunt
-            for (Map.Entry<String, Integer> e : raw.entrySet()) steps.add("cook " + e.getKey() + " " + e.getValue());
-            return new Decision(steps, "ok: food: I carry " + have + " food and " + rawN + " raw - cooking it");
-        }
-        if (!huntingOn) {
-            for (Map.Entry<String, Integer> e : raw.entrySet()) steps.add("cook " + e.getKey() + " " + e.getValue());
-            String a = kind == null ? "cow" : kind;
-            return new Decision(steps, "ok: food skipped: I carry " + have + " food and hunting is off"
-                    + (steps.isEmpty() ? "" : " (cooking the raw meat I have)") + " - next: hunting on then hunt " + need + " " + a + " (then cook " + meat(a) + " " + need + ")");
-        }
-        if (kind == null) {
-            for (Map.Entry<String, Integer> e : raw.entrySet()) steps.add("cook " + e.getKey() + " " + e.getValue());
-            return new Decision(steps, "ok: food: I carry " + have + " food and see no animals within 32"
-                    + (steps.isEmpty() ? "" : " (cooking the raw meat I have)") + " - next: hunt " + need + " when you see some");
-        }
-        String meat = meat(kind);
-        int n = Math.min(need, Math.max(1, near.get(kind) * 2));   // a cow drops 1-3: two per animal seen at most
-        steps.add("hunt " + n + " " + kind);
-        int cook = n + raw.getOrDefault(meat, 0);
-        steps.add("cook " + meat + " " + cook);
-        for (Map.Entry<String, Integer> e : raw.entrySet()) if (!e.getKey().equals(meat)) steps.add("cook " + e.getKey() + " " + e.getValue());
-        return new Decision(steps, "ok: food: I carry " + have + " food - hunting " + n + " " + kind + " (" + near.get(kind) + " within 32), then cook " + meat + " " + cook);
-    }
-
-    /** The bootstrap chain with its food step at the end (always: a camp that has everything still checks food). */
-    public static List<String> withFood(List<String> steps) {
-        List<String> out = new ArrayList<>(steps);
-        out.add(STEP);
-        return out;
     }
 
     /**

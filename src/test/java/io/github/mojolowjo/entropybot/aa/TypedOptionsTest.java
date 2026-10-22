@@ -101,7 +101,7 @@ class TypedOptionsTest {
         allTyped(WayUp.choose(f, new Options.OptionMemory(), 0));
         Options.Choice tools = new RungOptions.Tools().choose(new RungOptions.ToolsFacts(1, true), new Options.OptionMemory(), 0, TS.s("cut 3 logs then craft stone_pickaxe 1"), 12, null, null);
         allTyped(tools);
-        assertTrue(tools.ranked().stream().anyMatch(o -> o.steps().equals(List.of(new Step.Bootstrap(false)))));
+        assertTrue(tools.ranked().stream().anyMatch(o -> o.id().equals("planner")));
     }
 
     @Test

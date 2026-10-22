@@ -10,8 +10,8 @@ import java.util.Set;
  * ({@link #canon}: any log is "log", any planks "planks", coal and charcoal "fuel", edible items "food"); flags: what is
  * true in the world now ({@code table}, {@code furnace} within reach, {@code pick1..4} the best pickaxe tier carried,
  * {@code trees}, {@code stone}, {@code mine}, {@code cave}, {@code ore:<family>} seen near, {@code spot:table},
- * {@code spot:furnace}, {@code quarry}); feet, table, furnace: the bot's spot and free cells next to it (for the place
- * steps, as bootstrap does); dir: the quarry's direction. Pure: JUnit builds fake ones.
+ * {@code spot:furnace}); feet, table, furnace: the bot's spot and free cells next to it (for the place
+ * steps); dir: which side of the bot the free cells avoid. Pure: JUnit builds fake ones.
  */
 public final class PlanFacts {
     public final Map<String, Integer> bag = new LinkedHashMap<>();

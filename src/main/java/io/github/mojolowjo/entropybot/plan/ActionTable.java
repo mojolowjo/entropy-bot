@@ -42,7 +42,6 @@ public final class ActionTable {
         a("place", "place <block> x y z", "block, a free spot in reach", "have(block, 1); the spot the policy allows", "the block stands there (table/furnace near)", "3", true, true);
         a("smelt", "smelt <item> [n] then smelt collect all", "item, n", "a furnace near; the raw item; fuel (1 per 8)", "have(item, n)", "6 + 1 per item", true, true);
         a("mine", "mine strip <ore> [n] | mine <ore>_ore [n] | mine cave <ore> [n]", "ore family, n", "a pickaxe of the ore's tier; a marked mine, an ore in view, or a known cave", "have(ore drop, n)", "10 + 3 per item", true, true);
-        a("quarry", "dig x1 y1 z1 x2 y2 z2 (8 staircase columns, as bootstrap)", "the bot's spot", "a pickaxe; stone under me; the policy allows the dig", "have(cobblestone, ~40)", "25", true, true);
         a("gather", "gather <item|kind> [n]", "item, n", "the gather verb's sources (storage, craft, smelt, mine, cut, farm)", "have(item, n)", "20 + 2 per item", true, true);
         a("build", "shelter", "a block kind", "have(block, 32)", "shelter around me", "10", true, true);
         a("light", "light here <r> | light x1 z1 x2 z2", "an area", "torches (it fetches or crafts them)", "torches every 6 blocks", "10 + per torch", true, false);
@@ -71,7 +70,7 @@ public final class ActionTable {
         v("a:place", "place");
         v("a:smelt", "smelt", "cook");
         v("a:mine", "mine");
-        v("a:quarry", "dig");
+        v("a:gather", "dig");
         v("a:gather", "gather");
         v("a:build", "build");
         v("a:light", "light");
@@ -91,7 +90,7 @@ public final class ActionTable {
         v("n:a setting or a note, not a step toward a thing", "marker", "need", "supplies", "junk", "defence", "tools", "hotbar", "brain", "idle", "done", "routine",
                 "rule", "trust", "untrust", "allow", "deny", "restart", "surface", "sense", "blind", "path", "server", "confirm", "goal", "dayplan", "ai", "aa");
         v("n:runs until stopped or another order (no end state)", "follow", "defend", "guard", "escort", "assist", "dismiss", "carry", "repeat", "explore", "scout", "hold");
-        v("n:a whole job of its own (it plans itself)", "restock", "bootstrap", "climb", "house", "farm", "compact", "infuse", "upgrade", "pots", "rs", "scan", "restore", "find");
+        v("n:a whole job of its own (it plans itself)", "restock", "climb", "house", "farm", "compact", "infuse", "upgrade", "pots", "rs", "scan", "restore", "find");
         v("n:moves items away or to a player (never a step toward having them)", "give", "drop", "wear");
         v("n:recovery after a death", "death", "corpse", "resume");
         v("n:chat, waiting or debugging", "night", "hunting", "say", "spawn", "wait", "stop", "debug");

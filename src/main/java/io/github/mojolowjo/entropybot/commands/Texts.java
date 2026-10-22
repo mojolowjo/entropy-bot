@@ -19,7 +19,7 @@ public final class Texts {
     public static final List<String> BUILTIN_VERBS = List.of("place", "marker", "places", "area", "fence", "need", "needs", "goal", "goals", "have", "stock", "get",
             "supplies", "deposit", "mine", "dig", "build", "cut", "gather", "light", "junk", "defence", "defend", "guard", "escort", "assist", "dismiss", "attack", "queue", "status", "inv",
             "stop", "routine", "routines", "rule", "rules", "repeat", "wait", "confirm", "check", "summary", "kinds", "tools", "hotbar", "explore", "find", "done", "free", "sleep",
-            "camp", "bootstrap", "climb", "house", "restore", "come", "follow", "goto", "go", "home", "open", "take", "put", "close", "drop", "wear", "scan", "rs", "pots", "craft", "kit", "recipe",
+            "camp", "climb", "house", "restore", "come", "follow", "goto", "go", "home", "open", "take", "put", "close", "drop", "wear", "scan", "rs", "pots", "craft", "kit", "recipe",
             "smelt", "cook", "eat", "burrow", "flee", "pillar", "farm", "compact", "upgrade", "help", "allow", "deny", "restart", "surface", "sense", "path", "server", "debug",
             "why", "look", "reply", "brain", "idle", "dayplan", "plan", "actions", "deaths", "death", "corpse", "give", "restock", "say", "spawn", "trust", "untrust", "shelter", "hunt", "hunting", "fish", "blind", "ai", "aa");
 
@@ -54,7 +54,7 @@ public final class Texts {
 
     /**
      * 0.28.1 (trial fix B): the policy verbs (area, fence, protect, unprotect, guard) answer at once - unless the text is a
-     * chain ("area here 48 camp then bootstrap"), which goes to the chain runner first so "then" never reads as an area type.
+     * chain ("area here 48 camp then house house"), which goes to the chain runner first so "then" never reads as an area type.
      */
     public static boolean isPolicyVerbAlone(String verb, String raw) {
         if (verb == null) return false;

@@ -9,7 +9,6 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
-import io.github.mojolowjo.entropybot.camp.BootstrapPlan;
 import io.github.mojolowjo.entropybot.camp.JunkRules;
 import io.github.mojolowjo.entropybot.camp.LightGrid;
 import io.github.mojolowjo.entropybot.camp.StockRules;
@@ -36,7 +35,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * C4 + C5 (0.20.1, branch comp-c4): the game side of {@code bootstrap}, {@code light}, {@code stock} / {@code restock
+ * C4 + C5 (0.20.1, branch comp-c4): the game side of {@code light}, {@code stock} / {@code restock
  * base} / {@code gather ... to base}, {@code junk} (and the mid-job junk drop) and tool care. The rules are pure in
  * {@code camp.*} (JUnit); this class reads the world and the bag and starts chains or Seq jobs made of steps that
  * already exist (chop, craft, place, dig, gather, deposit, get), so every step reports on its own and a failed one
@@ -56,126 +55,9 @@ final class CampCommands {
     final Map<String, String> careStuck = new LinkedHashMap<>();
     static long careRetryMs() { return Tuning.l("campCommands.careRetryMs"); }
 
-    private String lastRun;
     CampCommands(Commands c) { this.c = c; }
 
     private JsonObject brain() { return c.brainData(); }
-
-    // ---------------------------------------------------------------- bootstrap
-
-    String bootstrap(LocalPlayer p, String from, boolean internal, String rest) {
-        boolean status = rest != null && rest.trim().equalsIgnoreCase("status");
-        if (rest != null && rest.trim().equalsIgnoreCase("food")) return bootstrapFood(p, from, internal);   // 0.30.5
-        // S2 (MINING_PLAN 16 Q1): "bootstrap tools" stops after the furnace (AA's tools rung; its rungs do the rest)
-        boolean toolsOnly = rest != null && rest.trim().equalsIgnoreCase("tools");
-        if (rest != null && !rest.isBlank() && !status && !toolsOnly) return "usage: bootstrap | bootstrap tools | bootstrap status | bootstrap food";
-        String self = toolsOnly ? "bootstrap tools" : "bootstrap";
-        // 0.24.3: inside a chain its steps go right after it (the chain "bootstrap then gather ..." stopped silently)
-        boolean splice = !status && c.chainsRef().running() && internal;
-        if (!status && !splice && c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
-        if (!status && c.jobs.running() && !c.jobs.walking()) return "busy: " + c.jobs.job.status + " (pm \"stop\" first)";
-        Minecraft mc = Minecraft.getInstance();
-        ClientLevel lv = mc.level;
-        int[] here = Jobs.here(p);
-        // 0.28.1 (trial fix A): the camp goes on the ground under me (trial 1: on a spruce top, 8 up in the air once it was chopped)
-        int[] feet = Jobs.groundUnder(lv, here[0], here[1], here[2]);
-        if (feet[1] != here[1]) LOG.info("[entropybot] bootstrap: standing at {}, the camp goes on the ground at {}", Jobs.fmt(here), Jobs.fmt(feet));
-        String dim = Guard.dimOf(lv);
-        // AREAS: the world is open; only a keep-out / no-break spot refuses the camp
-        String blocked = c.policy.blockedText(dim, feet[0], feet[2]);
-        if (!status && blocked != null) return "error: this spot is " + blocked + ", so I may not dig or place here";
-        boolean tableNear = near(lv, feet, "crafting_table"), furnaceNear = near(lv, feet, "furnace"), chestNear = near(lv, feet, "chest") || near(lv, feet, "barrel");
-        int[] dir = quarryDir(lv, feet);
-        List<int[]> free = new ArrayList<>(freeRing(lv, feet, dir));
-        List<String> pre = new ArrayList<>();
-        if (free.size() < 3) {
-            // make spots: clear leaves or plants next to me (natural blocks, a dig of one cell and the one above)
-            for (int[] cl : io.github.mojolowjo.entropybot.camp.FreeSpots.toClear(feet, x -> clearable(lv, x), 3 - free.size())) {
-                pre.add("dig " + cl[0] + " " + cl[1] + " " + cl[2] + " " + cl[0] + " " + (cl[1] + 1) + " " + cl[2]);
-                free.add(cl);
-            }
-        }
-        if (free.isEmpty() && !status) {
-            int[] spot = flatSpotNear(lv, feet, dir);
-            if (spot == null) return Hints.next("error: no free spot for the crafting table within 16 blocks (every cell around me is solid or water)", "goto a flat, open spot, then " + self);
-            String text = "goto " + Jobs.fmt(spot) + " then " + self;
-            LOG.info("[entropybot] bootstrap: no room at {}, moving to {}", Jobs.fmt(feet), Jobs.fmt(spot));
-            if (splice) {
-                String err = c.chainsRef().spliceNext(text);
-                return err == null ? "ok: no room for a camp here - walking to " + Jobs.fmt(spot) + " first" : "error: " + err;
-            }
-            return c.chainsRef().startChain(from, self, text, 1);
-        }
-        int[] table = free.size() > 0 ? free.get(0) : null, furnace = free.size() > 1 ? free.get(1) : null, chest = free.size() > 2 ? free.get(2) : null;
-        boolean campMarked = Core.INSTANCE.knowledge.places().containsKey("camp");
-        // 0.28.1 (trial fix D): a snow layer on a spot is dug first (trial 1: the table "couldn't go" on snow); snow near = snowy
-        for (int[] s : new int[][]{tableNear ? null : table, furnaceNear ? null : furnace, chestNear ? null : chest}) {
-            if (s != null && lv.getBlockState(new BlockPos(s[0], s[1], s[2])).is(net.minecraft.world.level.block.Blocks.SNOW))
-                pre.add("dig " + s[0] + " " + s[1] + " " + s[2] + " " + s[0] + " " + s[1] + " " + s[2]);
-        }
-        boolean snowy = snowNear(lv, feet);
-        boolean quarryBlocked = quarryBlocked(lv, feet, dir);
-        LOG.info("[entropybot] bootstrap: {}", BootstrapPlan.planLine(feet, dir));
-        if (quarryBlocked) LOG.info("[entropybot] bootstrap: ice, snow or water in the staircase quarry at {} - the stone step uses gather cobblestone", Jobs.fmt(feet));
-        BootstrapPlan.Plan plan = BootstrapPlan.plan(new BootstrapPlan.Facts(Gui.inventory(p), tableNear, furnaceNear, chestNear, campMarked,
-                feet, table, furnace, chest, dir, snowy, quarryBlocked));
-        if (plan.err() != null) return plan.err();
-        List<String> all = new ArrayList<>(pre);
-        if (toolsOnly) {
-            all.addAll(BootstrapPlan.cutAfterFurnace(plan.steps()));
-            if (all.isEmpty()) return "ok: bootstrap tools: the table, the stone tools and the furnace are there already";
-        } else all.addAll(io.github.mojolowjo.entropybot.camp.FoodPlan.withFood(plan.steps()));      // 0.30.5: the food step last, always
-        if (status) return "bootstrap here would run " + plan.summary() + ": " + String.join(" > ", all);
-        LOG.info("[entropybot] bootstrap at {}: {}", Jobs.fmt(feet), String.join(" > ", all));
-        if (splice) {
-            String err = c.chainsRef().spliceNext(String.join(" then ", all));
-            lastRun = (err == null ? "started (in a chain) " : "refused: ") + plan.summary();
-            return err == null ? "ok: bootstrap (" + plan.summary() + "): " + all.size() + " steps next in this chain" : "error: bootstrap: " + err;
-        }
-        String r = c.chainsRef().startChain(from, "bootstrap", String.join(" then ", all), 1);
-        lastRun = (r.startsWith("started") ? "started " : "refused: ") + plan.summary();
-        return r.startsWith("started") ? "started: bootstrap (" + plan.summary() + ") - each step reports; a failed one says what is missing" : r;
-    }
-
-    /**
-     * 0.30.5 (trial 9, finding 3): "bootstrap food", the bootstrap chain's last step (FoodPlan). Never fails: the hunt
-     * and the cook go in as soft steps. In a chain they go right after it; alone it starts a chain of its own.
-     */
-    String bootstrapFood(LocalPlayer p, String from, boolean internal) {
-        io.github.mojolowjo.entropybot.camp.FoodPlan.Decision d;
-        try {
-            d = io.github.mojolowjo.entropybot.camp.FoodPlan.decide(Gui.inventory(p), c.stepRun.on(), c.stepRun.animalsNear(p));
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] bootstrap food: {}", e.toString());
-            return "ok: food skipped: couldn't look for food (" + e + ") - next: hunt 4 cow when you see some";
-        }
-        LOG.info("[entropybot] bootstrap food: {} {}", d.text(), d.steps());
-        if (d.steps().isEmpty()) return d.text();
-        String text = String.join(" then ", d.steps());
-        if (internal && c.chainsRef().running()) {
-            String err = c.chainsRef().spliceNext(text);
-            return err == null ? d.text() : "ok: food skipped: " + err + " - next: hunt 4 cow";
-        }
-        if (c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
-        String r = c.chainsRef().startChain(from, "bootstrap food", text, 1);
-        return r.startsWith("started") ? "started: " + d.text().replaceFirst("^ok: ", "") : r;
-    }
-
-    /** 0.28.2 (B3): ice, snow or water in a cell of the staircase quarry's dig boxes (BootstrapPlan.quarrySteps). */
-    static boolean quarryBlocked(ClientLevel lv, int[] feet, int[] dir) {
-        int dx = dir[0], dz = dir[1], px = dz != 0 ? 1 : 0, pz = dx != 0 ? 1 : 0;
-        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
-        for (int i = 1; i <= BootstrapPlan.quarryLen(); i++) {
-            int cx = feet[0] + dx * (i + 1), cz = feet[2] + dz * (i + 1);
-            for (int a = -1; a <= 1; a++) for (int y = BootstrapPlan.stepBottom(feet[1], i); y <= BootstrapPlan.stepTop(feet[1], i); y++) {
-                m.set(cx + px * a, y, cz + pz * a);
-                if (!lv.isLoaded(m)) continue;
-                BlockState st = lv.getBlockState(m);
-                if (!st.getFluidState().isEmpty() || st.is(net.minecraft.tags.BlockTags.ICE) || st.is(net.minecraft.tags.BlockTags.SNOW)) return true;
-            }
-        }
-        return false;
-    }
 
     // ---------------------------------------------------------------- house (0.28.2, trial fix package 2 C)
 
@@ -371,26 +253,14 @@ final class CampCommands {
         return false;
     }
 
-    /** A block whose id contains the word within BootstrapPlan.NEAR blocks (a few levels up and down). */
+    /** A block whose id contains the word within campCommands.near blocks (a few levels up and down). */
     static boolean near(ClientLevel lv, int[] c, String word) {
-        int r = BootstrapPlan.near();
+        int r = Tuning.i("campCommands.near");
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
         for (int dx = -r; dx <= r; dx++) for (int dy = -3; dy <= 3; dy++) for (int dz = -r; dz <= r; dz++) {
             m.set(c[0] + dx, c[1] + dy, c[2] + dz);
             String id = lv.getBlockState(m).getBlock().getDescriptionId();
             if (id.endsWith("." + word) || id.endsWith("_" + word) && !id.contains("ender_chest")) return true;
-        }
-        return false;
-    }
-
-    /** 0.28.1: snow, a snow block or powder snow within 3 blocks of the camp's feet (that level and the one under it). */
-    static boolean snowNear(ClientLevel lv, int[] f) {
-        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
-        for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) for (int dy = -1; dy <= 0; dy++) {
-            m.set(f[0] + dx, f[1] + dy, f[2] + dz);
-            BlockState st = lv.getBlockState(m);
-            if (st.is(net.minecraft.world.level.block.Blocks.SNOW) || st.is(net.minecraft.world.level.block.Blocks.SNOW_BLOCK)
-                    || st.is(net.minecraft.world.level.block.Blocks.POWDER_SNOW)) return true;
         }
         return false;
     }
@@ -402,24 +272,9 @@ final class CampCommands {
                 && lv.getFluidState(b.below()).isEmpty();
     }
 
-    /** The quarry's direction: the first of east, south, west, north whose 10 columns stand on dry, solid ground. */
-    static int[] quarryDir(ClientLevel lv, int[] f) {
-        int[][] dirs = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
-        for (int[] d : dirs) {
-            boolean ok = true;
-            for (int i = 2; i <= BootstrapPlan.quarryLen() + 1 && ok; i++) {
-                BlockPos g = new BlockPos(f[0] + d[0] * i, f[1] - 1, f[2] + d[1] * i);
-                BlockState st = lv.getBlockState(g);
-                ok = !st.isAir() && lv.getFluidState(g).isEmpty() && lv.getFluidState(g.above()).isEmpty() && !st.hasBlockEntity();
-            }
-            if (ok) return d;
-        }
-        return dirs[0];
-    }
-
-    /** Free cells 2 away from the bot (feet level), on the side away from the quarry, nearest the bot's back first. */
+    /** Free cells 2 away from the bot (feet level), on the side away from dir, nearest the bot's back first. */
     static List<int[]> freeRing(ClientLevel lv, int[] f, int[] dir) {
-        // 0.24.3: rings 1-3 (a 3x3 pit has only ring 1), air above each, the quarry's side last (FreeSpots)
+        // 0.24.3: rings 1-3 (a 3x3 pit has only ring 1), air above each, dir's side last (FreeSpots)
         return io.github.mojolowjo.entropybot.camp.FreeSpots.find(f, dir, c -> placeable(lv, new BlockPos(c[0], c[1], c[2])),
                 c -> lv.getBlockState(new BlockPos(c[0], c[1] + 1, c[2])).canBeReplaced());
     }

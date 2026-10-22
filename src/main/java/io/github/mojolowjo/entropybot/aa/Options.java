@@ -290,7 +290,7 @@ public final class Options {
 
         private java.util.function.BiFunction<Blackboard, List<io.github.mojolowjo.entropybot.aa.moves.Step>, Option> noFacts = (b, planned) -> planned == null ? null : new Option("planner", "planner", planned, 0, "no facts: the planner's routine as it is", "planner", true);
 
-        /** What runs without facts (default: the planner's routine as it is; null: nothing); the TOOLS rung keeps its old bootstrap-at-tier-0. */
+        /** What runs without facts (default: the planner's routine as it is; null: nothing). */
         public Picker<F> withoutFacts(java.util.function.BiFunction<Blackboard, List<io.github.mojolowjo.entropybot.aa.moves.Step>, Option> f) {
             noFacts = f;
             return this;
