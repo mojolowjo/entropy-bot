@@ -199,7 +199,7 @@ class SelfCheckTest {
         SelfCheck.Idle r = SelfCheck.idle(Set.of(), f, Set.of("iron_pickaxe"), 20, 999 * MIN, -1);
         assertTrue(r.whisper().startsWith("self-check: my iron_pickaxe is nearly broken"), r.whisper());
         assertFalse(r.whisper().contains("bow"));
-        assertTrue(SelfCheck.idleWorthy(new SelfCheck.Finding("toolcare:minecraft:iron_pickaxe", "x", null), Set.of("iron_pickaxe")));
+        assertTrue(SelfCheck.idleWorthy(new SelfCheck.Finding("tool:minecraft:iron_pickaxe", "x", null), Set.of("iron_pickaxe")));
         assertFalse(SelfCheck.idleWorthy(new SelfCheck.Finding("ironpick", "x", null), Set.of("iron_pickaxe")), "the iron pickaxe advice is check-only");
         assertFalse(SelfCheck.idleWorthy(new SelfCheck.Finding("areas", "x", null), Set.of()));
         assertFalse(SelfCheck.idleWorthy(new SelfCheck.Finding("nearzone", "x", null), Set.of()));

@@ -23,8 +23,8 @@ class VerbTableTest {
     void coversEveryBuiltinVerb() {
         for (String v : Texts.BUILTIN_VERBS) assertNotNull(VerbTable.of(v), "not in the verb table: " + v);
         for (String v : List.of("debug", "check", "confirm", "cut", "dismiss")) assertNotNull(VerbTable.of(v), v);
-        assertTrue(VerbTable.of("dig").usage().contains("[floor [block]]"), "dig's floor option");
-        assertTrue(VerbTable.of("dig").usage().contains("[water [large]]"), "dig's water option (water plan)");
+        assertTrue(VerbTable.of("dig").usage().contains("[via engine]"), "dig's via engine option");
+        assertFalse(VerbTable.of("dig").usage().contains("floor") || VerbTable.of("dig").usage().contains("water") || VerbTable.of("dig").usage().contains("junk drop"), "the floor, water and junk words are gone");
         assertNull(VerbTable.of("?"), "V1b: no aliases but done|free, routine|routines, rule|rules");
         assertEquals("routine", VerbTable.of("ROUTINES").name());
     }

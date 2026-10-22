@@ -72,7 +72,6 @@ class V1bThreeTest {
         assertTrue(NeedWords.goal("light nowhere", n -> false).error().contains("no area called nowhere"));
         assertTrue(NeedWords.goal("build a castle", n -> true).error().startsWith("I can't plan that yet"));
         assertTrue(NeedWords.liftsRelease("come"));
-        assertTrue(NeedWords.liftsRelease("escort"));
         assertFalse(NeedWords.liftsRelease("status"), "looking doesn't take it back");
         assertEquals(Boolean.FALSE, NeedWords.sleepAuto("auto off"));
         assertNull(NeedWords.sleepAuto("status"));
@@ -86,8 +85,6 @@ class V1bThreeTest {
         assertEquals("that is now mine strip 3 16", OldWords.removedAnswer("stripmine", "3 16", "stripmine 3 16"));
         assertEquals("that is now cut 16", OldWords.removedAnswer("chop", "16", "chop 16"));
         assertEquals("that is now go base", OldWords.removedAnswer("base", "", "base"));
-        assertEquals("that is now dismiss", OldWords.removedAnswer("escort", "off", "escort off"));
-        assertNull(OldWords.removedAnswer("escort", "me", "escort me"));
         assertTrue(OldWords.removedAnswer("defend", "on", "defend on").startsWith("that is now defence on"));
         assertNull(OldWords.removedAnswer("defend", "", "defend"), "defend alone is the new job");
         assertEquals("that is now tools mode cheapest", OldWords.removedAnswer("tools", "ores cheapest", "tools ores cheapest"));
@@ -104,12 +101,11 @@ class V1bThreeTest {
         for (String w : OldWords.REMOVED) assertNull(VerbTable.of(w), "removed but still in the table: " + w);
         for (String w : Texts.BUILTIN_VERBS) assertNotNull(VerbTable.of(w), "surface word not in the table: " + w);
         for (VerbTable.Verb v : VerbTable.all()) assertTrue(Texts.BUILTIN_VERBS.contains(v.name()), "table verb not in the surface list: " + v.name());
-        for (String w : List.of("cut", "attack", "escort", "dismiss", "done", "free", "defence", "defend", "guard", "queue", "kinds", "tools", "needs", "goal", "goals",
+        for (String w : List.of("cut", "attack", "dismiss", "done", "free", "defence", "defend", "guard", "queue", "kinds", "tools", "needs", "goal", "goals",
                 "camp", "marker", "place", "places", "explore", "find")) assertNotNull(VerbTable.of(w), w);
         // guests: the list the owner gave
         for (String g : List.of("status", "inv", "help", "queue", "places", "have", "come", "follow", "goto", "stop", "dismiss")) assertNull(Texts.guestRefusal(g, "", g, "o"), g);
         assertNull(Texts.guestRefusal("find", "chest", "find chest", "o"));
-        assertNull(Texts.guestRefusal("escort", "me", "escort me", "o"));
         assertNull(Texts.guestRefusal("area", "list", "area list", "o"));
         assertNull(Texts.guestRefusal("fence", "", "fence", "o"));
         for (String g : List.of("stock", "recipe", "routines", "rules")) assertNotNull(Texts.guestRefusal(g, "", g, "o"), g);

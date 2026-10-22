@@ -65,7 +65,7 @@ class WaterLockTest {
         String msg = d.clear(dig(true));
         assertTrue(msg.startsWith("blocked by water at 0 50 "), msg);
         assertTrue(msg.contains(ClearEngine.CUT_OFF), msg);
-        assertTrue(ClearEngine.blockedByLiquid(msg), "the water plan takes it (WaterSteps.wants)");
+        assertTrue(ClearEngine.blockedByLiquid(msg), "a chain stops on it");
         assertFalse(msg.contains("stuck"), msg);
         assertEquals("stone", w.get(10, 50, 0), "nothing broken past the water");
     }
@@ -97,22 +97,15 @@ class WaterLockTest {
     }
 
     @Test
-    void theLockStartsThePlugCaseAndTheDigGoesOnAfterIt() {
+    void theLockNamesTheCellAndTheDigGoesOnAfterAPlug() {
         FakeWorld w = tunnel();
         ClearDriver d = driver(w);
         ClearJob job = ClearJob.start(dig(true), null, d.ores);
         String msg = d.run(job);
         assertTrue(msg.startsWith("blocked by water"), msg);
         Pos at = ClearEngine.liquidBlock(w, job);
-        assertNotNull(at, "WaterSteps starts from this cell");
+        assertNotNull(at, "the lock names this cell");
         assertEquals(job.waterLock, at);
-        WaterPlan.Round r = WaterPlan.round(new WaterPlan.Inputs(w, BOX, d.bot(), at, false, null, null,
-                Map.of("minecraft:cobbled_deepslate", 200)));
-        assertNull(r.blocked(), r.what());
-        assertEquals(WaterScan.Kind.FLOWING_IN, r.kind());
-        assertEquals(List.of(new Pos(1, 50, 2)), r.placements().stream().map(WaterPlan.Placement::cell).toList(), "the entry only");
-        assertTrue(r.drain());
-        WaterPlan.Placement p = r.placements().get(0);
         // the seal goes in, the rest drains (no source feeds it any more); the dig again finishes
         w.set(1, 50, 2, "cobbled_deepslate");
         for (int x = 0; x <= 2; x++) for (int z = -1; z <= 1; z++) w.set(x, 50, z, "air");

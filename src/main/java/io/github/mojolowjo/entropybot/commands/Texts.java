@@ -17,7 +17,7 @@ public final class Texts {
 
     /** Every command word of the surface (V1b: docs/VOCABULARY.md and nothing else); routine names can't use these nor {@link OldWords#REMOVED}. */
     public static final List<String> BUILTIN_VERBS = List.of("place", "marker", "places", "area", "fence", "need", "needs", "goal", "goals", "have", "stock", "get",
-            "supplies", "deposit", "mine", "dig", "build", "cut", "gather", "light", "junk", "defence", "defend", "guard", "escort", "assist", "dismiss", "attack", "queue", "status", "inv",
+            "supplies", "deposit", "mine", "dig", "build", "cut", "gather", "light", "junk", "defence", "defend", "guard", "assist", "dismiss", "attack", "queue", "status", "inv",
             "stop", "routine", "routines", "rule", "rules", "repeat", "wait", "confirm", "check", "summary", "kinds", "tools", "hotbar", "explore", "find", "done", "free", "sleep",
             "camp", "climb", "house", "restore", "come", "follow", "goto", "go", "home", "open", "take", "put", "close", "drop", "wear", "scan", "rs", "pots", "craft", "kit", "recipe",
             "smelt", "cook", "eat", "burrow", "flee", "pillar", "farm", "compact", "upgrade", "help", "allow", "deny", "restart", "surface", "sense", "path", "server", "debug",
@@ -78,20 +78,12 @@ public final class Texts {
     }
 
     /** Null when an allowed player who isn't the owner may run this, else the refusal. */
-    /** 0.21.0: "stock targets|set|clear ..." is C4's base-chest targets; "stock" alone or "stock <filter>" is C2's shared view. */
-    public static boolean isStockTargetsForm(String rest) {
-        String r = rest == null ? "" : rest.trim().toLowerCase();
-        return r.matches("^(targets|set|clear)(\\s.*)?$");
-    }
-
     public static String guestRefusal(String verb, String rest, String raw, String owner) {
         String r = rest == null ? "" : rest.trim().toLowerCase();
         if (splitChain(raw).size() > 1) return "sorry, only " + owner + " can start chains";
-        if (verb.equals("stock") && isStockTargetsForm(r)) return "sorry, stock targets|set|clear are " + owner + "'s - you can use stock [filter]";
         if (GUEST_VERBS.contains(verb)) return null;
         if (verb.equals("guard") && (r.isEmpty() || r.equals("vetoes"))) return OldWords.hint(verb, r);       // V1a: the cut word, its new form
         if (verb.equals("fence") && (r.isEmpty() || r.equals("vetoes") || r.equals("status") || r.equals("rules") || r.startsWith("why "))) return null;
-        if (verb.equals("escort") && r.matches("^(|status|me(\\s+\\d+)?)$")) return null;     // C7: guests escort only themselves
         if (verb.equals("area") && r.equals("list")) return null;
         if (verb.equals("deaths") && r.isEmpty()) return null;
         return "sorry, only " + owner + " can use \"" + verb + "\". You can use: " + HelpCommand.guestList();

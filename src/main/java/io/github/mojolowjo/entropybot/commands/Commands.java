@@ -101,9 +101,9 @@ public final class Commands implements Chains.Env {
     /** V1b: places/markers, queue, kinds, cut, the fighting jobs, explore/find, needs/goals (game side of vocab/). */
     final VocabCommands vocab = new VocabCommands(this);
 
-    /** V1b: something holds the bot in place for good (an escort, defend, guard): the queue waits. */
+    /** V1b: something holds the bot in place for good (defend, guard, assist): the queue waits. */
     boolean heldInPlace() {
-        return core.reflexes.escort.active() || vocab.hold != null || assist.on();     // 0.24.2: assist holds it too
+        return vocab.hold != null || assist.on();     // 0.24.2: assist holds it too
     }
 
     /** V1b: the point-of-interest kinds find walks for (the POI scanner's own words, plus cave). */
@@ -209,7 +209,7 @@ public final class Commands implements Chains.Env {
 
     /** B7c: craft/smelt/get/need/recipe/kit/supplies/restock, farm and compact. */
     final Crafting crafting;
-    /** C4 + C5 (0.20.1): light, stock, junk, tool care. */
+    /** C4 + C5 (0.20.1): house, light, junk. */
     final CampCommands camp = new CampCommands(this);
     /** B3: goal, plan, actions, actions.json, the brain's planner hook. */
     final GoalPlanning planning = new GoalPlanning(this);
@@ -269,18 +269,9 @@ public final class Commands implements Chains.Env {
 
     JsonStore[] stores() { return new JsonStore[]{pmStore, brainStore, areaStore}; }
 
-    // ---- package D: furnace pickups ----
+    // ---- package D: furnace notes ----
 
-    /** A "stop" holds the pickups this long (like the autominer's hold). */
-    static long pickupHoldMs() { return Tuning.l("commands.pickupHoldMs"); }
-    private long lastStop = -1;
-
-    private boolean pickupHeld(long now) { return lastStop > 0 && now - lastStop < pickupHoldMs(); }
-
-    /** Package D: the furnace pickup the idle tick runs. */
-    static final String PICKUP_STEP = "smelt collect due";
-
-    /** Every second: forget furnace jobs long past due (the owner hears it), and pick up due output while the bot is idle. */
+    /** Every second: the one-time area migration whisper, and forget furnace jobs long past due (the owner hears it). */
     private void furnaceTick(LocalPlayer player, long tick) {
         String mig = areaMigrationNote;                 // V1a: the one-time migration whisper
         if (mig != null && tick > 200) {
@@ -295,29 +286,6 @@ public final class Commands implements Chains.Env {
             LOG.info("[entropybot] {}", t);
             whisper(owner(), t);
         }
-        if (fj.due(now, Storage.dim()).isEmpty() || pickupHeld(now)) return;
-        if (jobs.running() || requests.busy() || chains.running() || stepRun.running() || core.reflexes.hold() || player.isDeadOrDying()) return;
-        if (!pickupFromHere(player, now)) return;
-        Reply r = handle(owner(), PICKUP_STEP, false, true, pmListener(owner()));     // auto: never cancels the owner's pending confirm
-        LOG.info("[entropybot] furnace pickup: {}", r.text());
-    }
-
-    /** Blocks from the base within which the bot picks furnace output up by itself. */
-    static int pickupNearBase() { return Tuning.i("commands.pickupNearBase"); }
-
-    /**
-     * An idle pickup only when the bot is near the base or in one of the owner's typed places (home facts), and wasn't sent somewhere (come, goto,
-     * follow, go) in the last 10 minutes: the owner's errand comes first.
-     */
-    private boolean pickupFromHere(LocalPlayer player, long now) {
-        if (jobs.lastTravelAt > 0 && now - jobs.lastTravelAt < pickupHoldMs()) return false;
-        int[] me = Jobs.here(player);
-        JsonObject b = core.knowledge.places().get("base");
-        if (b != null && Jobs.dimOf(b).equals(Storage.dim())) {
-            int[] bp = Jobs.pos(b);
-            if (Math.abs(me[0] - bp[0]) <= pickupNearBase() && Math.abs(me[2] - bp[2]) <= pickupNearBase() && Math.abs(me[1] - bp[1]) <= 24) return true;
-        }
-        return core.guard.core.policy().areaAt(Storage.dim(), me[0], me[1], me[2]) != null;
     }
 
     /** Only the owner's "supplies set|clear" (PM, dashboard, bridge) calls this: it also notes the ids as the owner's. */
@@ -423,7 +391,7 @@ public final class Commands implements Chains.Env {
     /** "tools" | "tools mode best|cheapest|stone" (V1b; "tools ores ..." answers its new form in OldWords). */
     String toolsCommand(String rest) {
         String t = rest == null ? "" : rest.trim();
-        if (t.isEmpty()) return io.github.mojolowjo.entropybot.vocab.ToolMode.text(toolMode()) + "\n" + camp.toolsText(Minecraft.getInstance().player);
+        if (t.isEmpty()) return io.github.mojolowjo.entropybot.vocab.ToolMode.text(toolMode());
         String m = io.github.mojolowjo.entropybot.vocab.ToolMode.parse(t);
         if (m == null) return io.github.mojolowjo.entropybot.vocab.ToolMode.USAGE;
         brainStore.data().addProperty("toolMode", m);
@@ -707,19 +675,6 @@ public final class Commands implements Chains.Env {
             stepRun.tick();                                                                          // rm-execution: the typed steps (AA's and the owner's verbs)
             if (tick % 5 == 2 && worldTicks > 400 && aaRuntime != null) { try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(io.github.mojolowjo.entropybot.aa.door.Driver.AA)) { aaRuntime.tick(tick); } }             // 0.36.0: AA at 4 Hz, never throws
         if (worldTicks > 400) planning.tick(tick);                                                  // B3: actions.json when the state changed (every 5 s), never throws
-            if (tick % 40 == 21) {
-                try { camp.junkTick(player); } catch (RuntimeException e) { LOG.warn("[entropybot] junk: {}", e.toString()); }      // C5
-            }
-            if (tick % 100 == 65 && worldTicks > 600) {
-                try {
-                    boolean pause = !jobs.running() && !chains.running() && !requests.busy() && !core.reflexes.hold() && !stepRun.running();
-                    camp.toolCareTick(player, pause);
-                    String busy = jobs.running() ? "job" : chains.running() ? "chain" : requests.busy() ? "request" : core.reflexes.hold() ? "reflex" : stepRun.running() ? "steps" : null;
-                    camp.armorCareTick(player, busy);     // 0.23.6 armour care
-                } catch (RuntimeException e) {
-                    LOG.warn("[entropybot] tool care: {}", e.toString());
-                }
-            }
             // B7e N: the idle self-check (whispers only what changed, at most every 30 min)
             if (tick % 200 == 77 && worldTicks > 1200) selfCheck.idleTick(player, !jobs.running() && !chains.running() && !requests.busy(), System.currentTimeMillis());
             if (tick % 25 == 0) sendOutbox(player);
@@ -755,16 +710,11 @@ public final class Commands implements Chains.Env {
                 try {
                     furnaceTick(player, tick);
                 } catch (RuntimeException e) {
-                    LOG.warn("[entropybot] furnace pickup: {}", e.toString());
+                    LOG.warn("[entropybot] furnace notes: {}", e.toString());
                 }
             }
             if (tick % 20 == 7) nearTick(mc, player);         // 0.21.2: the near-me zone follows the owner
-            if (tick % 20 == 12 && !aaOn()) {                   // 0.36.1: escort and assist are off under AA (aa on ends them)
-                try {
-                    escortTick();
-                } catch (RuntimeException e) {
-                    LOG.warn("[entropybot] escort: {}", e.toString());
-                }
+            if (tick % 20 == 12 && !aaOn()) {                   // 0.36.1: assist is off under AA (aa on ends it)
                 try {
                     assist.tick(player);                     // 0.24.2
                 } catch (RuntimeException e) {
@@ -1003,12 +953,12 @@ public final class Commands implements Chains.Env {
     /** Runs one command line. internal: a step of the running chain. */
     public Reply handle(String from, String message, boolean internal, Listener l) { return handle(from, message, internal, false, l); }
 
-    /** auto: a line the bot sends itself (furnace pickup, corpse fetch): it skips the confirm gate, so it never cancels the owner's question. */
+    /** auto: a line the bot sends itself (corpse fetch): it skips the confirm gate, so it never cancels the owner's question. */
     Reply handle(String from, String message, boolean internal, boolean auto, Listener l) {
         // AA_CLEANUP 2: who is asking. The AI operator calls as the owner with internal=false; AiRuntime.calling() tells it apart.
         io.github.mojolowjo.entropybot.aa.door.Driver d = io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.calling() ? io.github.mojolowjo.entropybot.aa.door.Driver.AI
                 : io.github.mojolowjo.entropybot.aa.door.Door.current() != null ? io.github.mojolowjo.entropybot.aa.door.Door.current()
-                : !internal && from != null && from.equalsIgnoreCase(owner()) ? io.github.mojolowjo.entropybot.aa.door.Driver.OWNER : io.github.mojolowjo.entropybot.aa.door.Driver.OTHER;     // auto too: furnace pickup, camp steps
+                : !internal && from != null && from.equalsIgnoreCase(owner()) ? io.github.mojolowjo.entropybot.aa.door.Driver.OWNER : io.github.mojolowjo.entropybot.aa.door.Driver.OTHER;     // auto too: camp steps
         if (d == io.github.mojolowjo.entropybot.aa.door.Driver.AI && aaOn() && !io.github.mojolowjo.entropybot.aa.door.Door.aiMayUnderAa(message)) {
             io.github.mojolowjo.entropybot.aa.door.Door.refuse(d, Texts.verbAndRest(message)[0]);
             return Reply.now("error: refused: aa is on, the AI may only say \"aa want ...\" or \"aa drop ...\"");
@@ -1089,7 +1039,7 @@ public final class Commands implements Chains.Env {
             return handle(from, rest, internal, true, l);
         }
         if (verb.equals("debug")) return Reply.now(DebugVerbs.handle(core, rest, DebugRules.Source.PM, isOwner, owner()));
-        // V1b: the owner's direct order lifts "done" (come, escort or any job)
+        // V1b: the owner's direct order lifts "done" (come or any job)
         if (isOwner && !internal && !auto) vocab.unrelease(verb);
         if (verb.equals("done") || verb.equals("free")) return Reply.now(vocab.release());
         if (verb.equals("needs")) return Reply.now(removedVerb("needs"));      // AA_CLEANUP 3
@@ -1167,8 +1117,6 @@ public final class Commands implements Chains.Env {
             if (jobs.running()) jobs.finish("stopped: guard");
             return Reply.now(vocab.guard(from, rest, player));
         }
-        if (verb.equals("escort") && aaOn() && !rest.trim().toLowerCase().matches("^(off|stop|status)$")) return Reply.now("aa is on - escort is off while AA runs (aa off first)");   // 0.36.0
-        if (verb.equals("escort")) return Reply.now(escortCommand(from, rest.isBlank() ? "me" : rest, player));          // C7; V1b: escort alone = the sender (the owner)
         if (verb.equals("attack")) return Reply.now(vocab.attack(from, rest, player));     // V1b: the attack rules (C1's point key sends attack target <id>)
         if (verb.equals("routine") || verb.equals("routines")) return Reply.now(chains.routineCommand(rest));
         if (verb.equals("rule") || verb.equals("rules")) return Reply.now(chains.ruleCommand(verb.equals("rules") ? "list" : rest));
@@ -1223,9 +1171,7 @@ public final class Commands implements Chains.Env {
         }
         // C4 + C5: settings and the verbs that start chains of their own
         if (verb.equals("junk")) return Reply.now(camp.junk(rest));
-        if (verb.equals("stock") && Texts.isStockTargetsForm(rest)) return Reply.now(camp.stock(player, rest));   // C4; else C2's view below
         if (verb.equals("sleep") && rest.trim().equalsIgnoreCase("status")) return Reply.now(SleepJob.status(player));
-        if (verb.equals("restock") && rest.trim().equalsIgnoreCase("base")) return Reply.now(internal ? "error: restock base is a chain of its own - run it by itself" : camp.restockBase(player, from));
         if (verb.equals("house")) return Reply.now(camp.house(player, from, internal, rest));      // 0.28.2 (trial fix package 2 C)
         if (verb.equals("climb")) return Reply.now(internal ? "error: climb is a chain of its own - run it by itself" : DigCommands.climb(this, player, rest, from));   // 0.28.1
         // 0.24.3: the shelter's status/leave never wait for its job; "night status" shows the night safety
@@ -1233,13 +1179,6 @@ public final class Commands implements Chains.Env {
         if (verb.equals("night")) {
             if (!rest.trim().isEmpty() && !rest.trim().equalsIgnoreCase("status")) return Reply.now("usage: night status");
             return Reply.now(removedVerb("night status"));      // AA_CLEANUP 3: the night safety score lived in the old brain
-        }
-        if (verb.equals("gather") && io.github.mojolowjo.entropybot.camp.StockRules.toBase(rest) != null) {
-            String g = io.github.mojolowjo.entropybot.camp.StockRules.toBase(rest);
-            if (internal) return Reply.now("error: \"gather ... to base\" is a chain of its own - in a chain write: gather " + g + " then deposit <item>");
-            if (chains.running()) return Reply.now("busy: " + chains.chainStatus() + " (pm \"stop\" first)");
-            String item = Texts.words(g).isEmpty() ? "" : Texts.words(g).get(0);
-            return Reply.now(chains.startChain(from, "gather to base", "gather " + g + " then deposit " + item, 1));
         }
         // memory lookups and edits never interrupt a job
         if (verb.matches("^(mark|setbase|sethome|forget)$")) return Reply.now(placeCommand(verb, rest, from, player));
@@ -1453,7 +1392,7 @@ public final class Commands implements Chains.Env {
                 case "wear", "equip" -> { return Gui.wearArmor(player); }
             case "where" -> { return storage.where(player, rest); }
             case "have" -> { return storage.have(player, rest); }
-            case "stock" -> { return Texts.isStockTargetsForm(rest) ? camp.stock(player, rest) : storage.stockList(player, rest); }
+            case "stock" -> { return storage.stockList(player, rest); }
             case "trust", "untrust" -> { return storage.trust(verb, rest); }
             // B7c: crafting, the furnace, fetching, the farm round and compact
             case "craft" -> { return crafting.craft(player, rest, null); }
@@ -1745,13 +1684,11 @@ public final class Commands implements Chains.Env {
     }
 
     String stopAll() {
-        lastStop = System.currentTimeMillis();         // package D: no furnace pickup for a while after "stop"
         String routine = chains.clear();
         String stepped = stepRun.stop("stopped by \"stop\"");
         if (routine == null && stepped != null) routine = stepped;
         jobs.followWatch = null;
         jobs.followFix = null;
-        core.reflexes.escort.stop("stopped by \"stop\"");     // C7
         assist.forget();                                         // 0.24.2
         vocab.endHold("stop");                                   // V1b
         core.reflexes.stopAttack();
@@ -1768,55 +1705,20 @@ public final class Commands implements Chains.Env {
         return "ok: stopped everything" + (routine != null ? " (including " + routine + ")" : "") + ", breaking off";
     }
 
-    // ---- C7: escort me|<player> (follow + fight for them; Reflexes/Escort do the fighting) ----
-
-    /** "escort me [r]" (the sender), "escort <player> [r]" (owner), "escort off", "escort status". */
-    String escortCommand(String from, String rest, LocalPlayer player) {
-        io.github.mojolowjo.entropybot.engine.Escort e = core.reflexes.escort;
-        io.github.mojolowjo.entropybot.engine.EscortRules.Cmd c = io.github.mojolowjo.entropybot.engine.EscortRules.parse(rest);
-        boolean isOwner = from.equalsIgnoreCase(owner());
-        switch (c.word()) {
-            case "status" -> { return e.statusText(); }
-            case "error" -> { return c.error(); }
-            case "off" -> {
-                if (!e.active()) return "ok: not escorting anyone";
-                if (!isOwner && !from.equalsIgnoreCase(e.name())) return "sorry, only " + owner() + " or " + e.name() + " can end this escort";
-                String t = e.stop("stopped by " + from);
-                endEscortFollow();
-                return "ok: " + t;
-            }
-            default -> {
-                String name = c.word().equals("me") ? from : c.name();
-                if (!isOwner && !name.equalsIgnoreCase(from)) return "sorry, only " + owner() + " can have me escort someone else (escort me works)";
-                if (name.equalsIgnoreCase(player.getGameProfile().getName())) return "error: I can't escort myself";
-                if (!core.reflexes.defence()) return Hints.next("error: self-defence is off, so I couldn't fight for you", "defence on");
-                if (e.active() && !isOwner && !from.equalsIgnoreCase(e.name())) return "busy: I'm escorting " + e.name() + " (only " + owner() + " can change that)";
-                String busy = chainBusyText() != null ? chainBusyText() : jobBusyText();
-                if (busy != null) return busy;
-                String r = modJob("follow", name, from, player);
-                if (!r.startsWith("ok")) return r;
-                e.setVitals(n -> ownerFix.vitals(n));
-                e.start(name, from, c.radius());
-                return "ok: escorting " + name + ": I follow and fight monsters within " + c.radius() + " blocks of " + (name.equalsIgnoreCase(from) ? "you" : name)
-                        + " (dismiss or stop ends it)";
-            }
-        }
-    }
-
-    /** Ends the follow the escort started (only that one). */
-    void endEscortFollow() {
+    /** Ends a running follow of the owner (assist's: a job of its own takes over the walking, or assist ends). */
+    void endFollow() {
         // a follow job is "done" at once (it never arrives); Baritone's follow process (or the companion walk) carries it
         if (jobs.job == null || jobs.job.label == null || !jobs.job.label.startsWith("following") || (jobs.running() && !jobs.walking())) return;
         jobs.followWatch = null;
         jobs.followFix = null;
-        if (jobs.running()) jobs.finish("stopped: escort off");
+        if (jobs.running()) jobs.finish("stopped: follow off");
         IBaritone mb = Jobs.baritone();
         if (mb != null) io.github.mojolowjo.entropybot.baritone.SafetyNet.cancel(mb);
     }
 
     boolean stillFollowingPub() { return stillFollowing(); }
 
-    /** Baritone's follow is still on, or the companion-position walk is. */
+    /** Baritone's follow is still on, or the companion-position walk is (assist asks). */
     private boolean stillFollowing() {
         if (jobs.followFix != null) return true;
         IBaritone mb = Jobs.baritone();
@@ -1824,21 +1726,8 @@ public final class Commands implements Chains.Env {
             return mb != null && mb.getFollowProcess().isActive();
         } catch (RuntimeException e) {
             Quiet.warn("Commands.stillFollowing failed, carrying on with the fallback", e);
-            return true;        // can't tell: keep the escort rather than drop it on a hiccup
+            return true;        // can't tell: keep following rather than drop it on a hiccup
         }
-    }
-
-    /** Every second: the escort ends with its follow (a retreat, another job, the fence); its whispers go out. */
-    private void escortTick() {
-        io.github.mojolowjo.entropybot.engine.Escort e = core.reflexes.escort;
-        for (io.github.mojolowjo.entropybot.engine.Escort.Whisper w : e.takeWhispers()) whisper(w.to(), w.text());
-        if (!e.active() || core.reflexes.hold()) return;
-        Jobs.Job j = jobs.job;
-        boolean mine = j != null && j.label != null && j.label.equalsIgnoreCase("following " + e.name());
-        if (mine && stillFollowing()) return;
-        String who = e.name();
-        String t = e.stop("the follow ended");
-        if (t != null) whisper(who, t);
     }
 
     String setDefence(String text) {
@@ -2278,7 +2167,6 @@ public final class Commands implements Chains.Env {
             }
             case "eat" -> { return Reply.now(core.reflexes.eat()); }
             case "defend" -> { return Reply.now(setDefence(text)); }
-            case "escort" -> { return Reply.now(escortCommand(owner(), text, player)); }
             case "area", "fence", "protect", "unprotect", "guard" -> {
                 return Reply.now(policy.command(type, text, true, owner(), hereOf(mc, from), posOf(mc, player)));
             }

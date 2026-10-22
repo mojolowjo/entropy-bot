@@ -21,9 +21,8 @@ import java.nio.file.Path;
  * settles the owner's activity and does its part: chopping = the half-cut trees near their last log, else {@code cut};
  * mining = that kind within 12 of their last block ({@code dig} box by box: natural blocks, the policy
  * as for any dig); farming = a farm round when the farm place is within 16 of them; building = stay close and
- * {@code give} the block they place when they run low; fighting = the escort; idle = follow and {@code carry all}.
- * Between jobs, and when the owner is idle for 60 s or there is no fresh report, it escorts (follow + fight what
- * threatens either). Its jobs run as the quiet chain "assist". Never throws out of tick (Commands catches too).
+ * {@code give} the block they place when they run low; fighting and idle = follow.
+ * Between jobs, and when the owner is idle for 60 s or there is no fresh report, it follows. Its jobs run as the quiet chain "assist". Never throws out of tick (Commands catches too).
  * Loader notes: vanilla client classes only (the level's block states, the registry).
  */
 final class Assist {
@@ -67,7 +66,7 @@ final class Assist {
         AssistRules.Report r = readReport();
         boolean fresh = r != null && System.currentTimeMillis() - r.received() <= AssistRules.freshMs();
         LOG.info("[entropybot] assist on for {}", from);
-        return "ok: assisting you - I follow you, fight what threatens either of us and do what you do (chop, mine, farm; I hand you blocks while you build)"
+        return "ok: assisting you - I follow you and do what you do (chop, mine, farm; I hand you blocks while you build)"
                 + (fresh ? "" : " - no fresh report from your companion mod yet, so for now I only follow")
                 + "; assist off, dismiss or stop ends it";
     }
@@ -78,17 +77,14 @@ final class Assist {
         on = false;
     }
 
-    /** assist off / dismiss: its chain, its escort or carry end; the bot stays. */
+    /** assist off / dismiss: its chain ends; the bot stays. */
     void end(LocalPlayer p) {
         on = false;
         if (ourChain()) {
             c.chains.clear();
             if (c.jobs.running()) c.jobs.finish("stopped: assist off");
         }
-        if (c.core().reflexes.escort.active()) {
-            c.core().reflexes.escort.stop("assist off");
-            c.endEscortFollow();
-        }
+        c.endFollow();
         LOG.info("[entropybot] assist off");
     }
 
@@ -221,7 +217,7 @@ final class Assist {
             follow(p);
             return;
         }
-        quietEscortOff();
+        c.endFollow();                      // a job of assist's own takes over the walking
         String s = c.chains.startChain(c.owner(), CHAIN, chain, 1);
         lastKey = chain;
         lastStart = now;
@@ -235,24 +231,13 @@ final class Assist {
         }
     }
 
-    /** The escort (follow + fight for the owner), or a plain follow when self-defence is off. Never twice. */
+    /** A plain follow of the owner. Never twice. */
     private void follow(LocalPlayer p) {
-        if (c.core().reflexes.escort.active()) return;
         if (c.chains.running() || (c.jobs.running() && !c.jobs.walking()) || c.core().reflexes.hold()) return;
         Jobs.Job j = c.jobs.job;
         if (j != null && j.label != null && j.label.equalsIgnoreCase("following " + c.owner()) && c.stillFollowingPub()) return;
-        String r = c.escortCommand(c.owner(), "me", p);
-        if (!r.startsWith("ok")) {
-            String f = c.modJob("follow", "", c.owner(), p);
-            LOG.info("[entropybot] assist: escort {}; follow {}", r, f);
-        }
-    }
-
-    /** Ends the escort without its "follow ended" whisper: a job of assist's own takes over the walking. */
-    private void quietEscortOff() {
-        if (!c.core().reflexes.escort.active()) return;
-        c.core().reflexes.escort.stop("assist: a job");
-        c.endEscortFollow();
+        String f = c.modJob("follow", "", c.owner(), p);
+        LOG.info("[entropybot] assist: follow {}", f);
     }
 
     private static double dist(LocalPlayer p, int x, int z) { return Math.hypot(p.getX() - x, p.getZ() - z); }

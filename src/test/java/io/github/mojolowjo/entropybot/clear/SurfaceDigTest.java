@@ -9,26 +9,8 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 0.19.5: RelCoord, the surface dig's block list and the dig words for the new forms. */
+/** 0.19.5: the surface dig's block list and the dig words for the new forms. */
 class SurfaceDigTest {
-    // ---- RelCoord ----
-
-    @Test
-    void relCoord() {
-        assertEquals(64, RelCoord.parse("~", 64));
-        assertEquals(59, RelCoord.parse("~-5", 64));
-        assertEquals(67, RelCoord.parse("~+3", 64));
-        assertEquals(67, RelCoord.parse("~3", 64));
-        assertEquals(-12, RelCoord.parse("-12", 64));
-        assertEquals(7, RelCoord.parse("7", 64));
-        assertNull(RelCoord.parse("~x", 0));
-        assertNull(RelCoord.parse("~~", 0));
-        assertNull(RelCoord.parse("~++1", 0));
-        assertNull(RelCoord.parse("abc", 0));
-        assertNull(RelCoord.parse("", 0));
-        assertNull(RelCoord.parse(null, 0));
-    }
-
     // ---- the block list ----
 
     /** A fake world: GROUND up to a height per column, extra blocks by key. */
@@ -124,32 +106,21 @@ class SurfaceDigTest {
 
     @Test
     void surfaceFormWithTrailingWords() {
-        DigArgs a = DigArgs.parse("1 2 3 4 -3 ores", new int[] {0, 0, 0});
+        DigArgs a = DigArgs.parse("1 2 3 4 -3 ores");
         assertNotNull(a);
         assertTrue(a.surfaceForm());
         assertEquals("down", a.surface());
         assertEquals(3, a.depth());
         assertTrue(a.ores());
         assertArrayEquals(new int[] {1, 2, 3, 4}, a.n());
-        DigArgs b = DigArgs.parse("~-8 ~-8 ~8 ~8 +10 junk drop water large", new int[] {100, 64, -50});
+        DigArgs b = DigArgs.parse("-8 -8 8 8 +10");
         assertNotNull(b);
         assertEquals("up", b.surface());
-        assertArrayEquals(new int[] {92, -58, 108, -42}, b.n());
-        assertTrue(b.junkDrop() && b.water() && b.large());
-        assertEquals(64, DigArgs.parse("0 0 1 1 -200", null).depth());
-        assertNull(DigArgs.parse("0 0 1 1 -x", null));
-        assertNull(DigArgs.parse("0 0 1 1", null));
-        assertNull(DigArgs.parse("0 0 1 1 sideways 3", null));
+        assertArrayEquals(new int[] {-8, -8, 8, 8}, b.n());
+        assertEquals(64, DigArgs.parse("0 0 1 1 -200").depth());
+        assertNull(DigArgs.parse("0 0 1 1 -x"));
+        assertNull(DigArgs.parse("0 0 1 1"));
+        assertNull(DigArgs.parse("0 0 1 1 sideways 3"));
     }
 
-    @Test
-    void boxFormWithTilde() {
-        DigArgs a = DigArgs.parse("~-2 ~ ~-2 ~2 ~-5 ~2 ores", new int[] {10, 64, 20});
-        assertNotNull(a);
-        assertFalse(a.surfaceForm());
-        assertArrayEquals(new int[] {8, 64, 18, 12, 59, 22}, a.n());
-        assertTrue(a.ores());
-        assertArrayEquals(new int[] {1, 2, 3, 4, 5, 6}, DigArgs.parse("1 2 3 4 5 6").n());
-        assertNull(DigArgs.parse("~a 1 2 3 4 5", null));
-    }
 }

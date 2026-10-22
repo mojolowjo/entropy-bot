@@ -859,17 +859,12 @@ public final class AaRuntime implements JobPort {
         offReason = null;
         heldUntil = 0;
         c.saved();
-        // 0.36.1 (review 1): assist and escort end now (their ticks are off under AA; they could start and cancel jobs)
+        // 0.36.1 (review 1): assist ends now (its tick is off under AA; it could start and cancel jobs)
         String ended = "";
         LocalPlayer p = Minecraft.getInstance().player;
         if (c.assist.on() && p != null) {
             c.assist.end(p);
             ended += "; assist ended";
-        }
-        if (Core.INSTANCE.reflexes.escort.active()) {
-            Core.INSTANCE.reflexes.escort.stop("aa on");
-            c.endEscortFollow();
-            ended += "; escort ended";
         }
         int queued = c.vocab.queued.size();
         if (queued > 0) ended += "; " + queued + " queued task(s) run as your orders when my slot is free";

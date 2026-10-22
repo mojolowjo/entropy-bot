@@ -131,9 +131,8 @@ final class DigCommands {
     // ---- dig ----
 
     /**
-     * "dig x1 y1 z1 x2 y2 z2 [force] [ores] [floor [block]] [junk drop]": any box, the careful way (ores listed; "ores"
-     * mines them; "force" building blocks too; B7e F: "floor" fills the layer under it afterwards, "junk drop" throws
-     * plain junk away when the bag is full instead of a base trip).
+     * "dig x1 y1 z1 x2 y2 z2 [force] [ores]": any box, the careful way (ores listed; "ores"
+     * mines them; "force" building blocks too).
      */
     /** 0.28.1 (trial fix C): one cell for ClimbPlan (vanilla BlockState only). */
     static ClimbPlan.Kind climbCell(net.minecraft.world.level.Level lv, int x, int y, int z) {
@@ -346,25 +345,15 @@ final class DigCommands {
     }
 
     static String dig(Commands c, LocalPlayer p, String rest, String from) {
-        int[] feet = {(int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ())};
         if (rest != null && rest.trim().toLowerCase().startsWith("stairs")) return stairs(c, p, rest.trim().substring(6).trim(), from);     // 0.24.4
         String areaName = ConfirmGate.digArea(Texts.words(rest == null ? "" : rest.trim().toLowerCase()));
         if (areaName != null) return digArea(c, p, areaName, rest, from);
-        DigArgs a = DigArgs.parse(rest, feet);
+        DigArgs a = DigArgs.parse(rest);
         if (a == null) return DIG_USAGE;
-        // 0.30.0 (P2): Baritone's builder is the default (box, surface form, area); "via engine" the old path; a floor dig
-        // stays on the engine (the fill follows its clear)
-        if (a.viaBaritone() && a.floor()) return "error: floor doesn't work with via baritone yet - dig the box first, then the floor (dig ... floor uses my own engine)";
+        // 0.30.0 (P2): Baritone's builder is the default (box, surface form, area); "via engine" the old path
         if (a.surfaceForm()) return digSurface(c, p, a, rest, from);
         int[] n = a.n();
         boolean force = a.force(), ores = a.ores();
-        String floorId = null;
-        if (a.floor() && a.floorBlock() != null) {
-            floorId = c.crafting.planner.resolveItem(a.floorBlock(), Gui.inventory(p));
-            if (floorId == null) floorId = GuiCore.normId(a.floorBlock());
-            String bad = FloorSteps.floorBlockProblem(floorId);
-            if (bad != null) return "error: I won't make a floor of " + GuiCore.shortId(floorId) + " - " + bad;
-        }
         ClearBox box = ClearBox.of(n[0], n[1], n[2], n[3], n[4], n[5]);
         if (box.volume() > Tuning.i("digCommands.maxBox")) return "error: that box is too big (20000 blocks max)";
         if (force && box.volume() > Tuning.i("digCommands.forceBox")) return "error: dig ... force is for small boxes (64 blocks max)";
@@ -379,12 +368,9 @@ final class DigCommands {
             for (var ar : Core.INSTANCE.guard.core.policy().protect) names.add(ar.name == null ? "?" : ar.name);
             return "error: that box touches a keep-out or no-break area (" + (names.isEmpty() ? "none set" : String.join(", ", names)) + ")";
         }
-        String label = "digging " + n[0] + " " + n[1] + " " + n[2] + " to " + n[3] + " " + n[4] + " " + n[5] + (force ? " (force)" : "") + (ores ? " (ores too)" : "")
-                + (a.floor() ? " (floor" + (floorId != null ? " of " + GuiCore.shortId(floorId) : "") + ")" : "") + (a.junkDrop() ? " (junk drop)" : "")
-                + (a.water() ? " (water" + (a.large() ? ", large" : "") + ")" : "");
-        ClearJob.Options o = new ClearJob.Options().box(box).force(force).collect(ores).label(label).junkDrop(a.junkDrop()).explainSpots(true)
-                .liquidBlocks(true)           // water plan item 1: water or lava in the way ends it as "blocked by ..."
-                .water(a.water(), a.large()).line("dig " + rest.trim());
+        String label = "digging " + n[0] + " " + n[1] + " " + n[2] + " to " + n[3] + " " + n[4] + " " + n[5] + (force ? " (force)" : "") + (ores ? " (ores too)" : "");
+        ClearJob.Options o = new ClearJob.Options().box(box).force(force).collect(ores).label(label).explainSpots(true)
+                .liquidBlocks(true);           // water or lava in the way ends it as "blocked by ..."
         // 0.29.0 (P1): Baritone's builder breaks the box, the same rules as its mask (BuilderDig, clear/BaritoneMask);
         // 0.30.0 (P2): the default, "via engine" for the old path
         // 0.33.0 (A3): a force dig over a station of mine goes through my engine (Baritone's builder keeps every block
@@ -398,8 +384,6 @@ final class DigCommands {
             c.whisper(c.owner(), "dig " + label + ": " + keep);
         }
         if (a.builder() && !ownStation) return BuilderDig.start(c, p, o.viaBaritone(true), restockSteps(c, p, box.volume()));
-        // B7e F: a floor dig stays on the walkway (it never stands in the cave it bridges; the fill's next round digs on)
-        if (a.floor()) o.floor(true, floorId).minStandY(box.y1());
         return startClear(c, p, o, restockSteps(c, p, box.volume()));
     }
 
@@ -442,7 +426,7 @@ final class DigCommands {
     }
 
     /**
-     * V1a: "dig &lt;area&gt; [ores] [junk drop] [water [large]]": the whole box of a named area, the careful way. In a destroy
+     * V1a: "dig &lt;area&gt; [ores]": the whole box of a named area, the careful way. In a destroy
      * area and from the owner, built blocks go too (a destroy lease; block entities never). A safe area refuses.
      */
     static String digArea(Commands c, LocalPlayer p, String name, String rest, String from) {
@@ -459,7 +443,7 @@ final class DigCommands {
             line.append(PolicyCommands.n(b0, "x1")).append(' ').append(PolicyCommands.n(b0, "z1")).append(' ').append(PolicyCommands.n(b0, "x2")).append(' ')
                     .append(PolicyCommands.n(b0, "z2")).append(' ').append(sn);
             for (String w : ws.subList(1, ws.size())) if (!w.equals(sn) && !w.equals("confirm")) line.append(' ').append(w);
-            DigArgs a = DigArgs.parse(line.toString(), null);
+            DigArgs a = DigArgs.parse(line.toString());
             if (a == null) return DIG_USAGE;
             return digSurface(c, p, a, line.toString(), from);
         }
@@ -470,17 +454,17 @@ final class DigCommands {
         io.github.mojolowjo.entropybot.guard.AreaType t = PolicyCommands.typeOf(b);
         if (t == io.github.mojolowjo.entropybot.guard.AreaType.NO_BREAK) return "error: " + name + " is a no-break area - I never dig there";
         List<String> words = Texts.words(rest.trim().toLowerCase());
-        boolean ores = words.contains("ores"), junk = words.contains("junk") && words.contains("drop"), water = words.contains("water") || words.contains("large"), large = words.contains("large");
+        boolean ores = words.contains("ores");
         ClearBox box = ClearBox.of(n[0], n[1], n[2], n[3], n[4], n[5]);
         if (box.volume() > Tuning.i("digCommands.maxBox")) return "error: " + name + " is too big to dig in one go (" + box.volume() + " blocks, 20000 max)";
         boolean owner = from == null || from.equalsIgnoreCase(c.owner());
         boolean destroy = io.github.mojolowjo.entropybot.guard.AreaTypeRules.breakBuilt(t, owner);
         String label = "digging " + name + " (" + t.word() + ", " + box.volume() + " blocks)" + (destroy ? " (built blocks too)" : "") + (ores ? " (ores too)" : "");
-        ClearJob.Options o = new ClearJob.Options().box(box).collect(ores).label(label).junkDrop(junk).liquidBlocks(true).water(water, large).line("dig " + rest.trim());
+        ClearJob.Options o = new ClearJob.Options().box(box).collect(ores).label(label).liquidBlocks(true);
         if (destroy) o.destroyArea(name);
         // 0.30.0 (P2): Baritone's builder unless "via engine"; a destroy dig (built blocks too, a destroy lease) stays on
         // the engine: the builder's mask keeps built blocks and takes a plain break lease
-        boolean builder = DigArgs.useBuilder(words.contains("engine"), false) && !destroy;
+        boolean builder = DigArgs.useBuilder(words.contains("engine")) && !destroy;
         LOG.info("[entropybot] dig {}: {} area, destroy lease {}, {}", name, t.word(), destroy, builder ? "via baritone" : "via engine");
         if (builder) return BuilderDig.start(c, p, o.viaBaritone(true), restockSteps(c, p, box.volume()));
         return startClear(c, p, o, restockSteps(c, p, box.volume()));
@@ -492,7 +476,6 @@ final class DigCommands {
      * protected blocks, never next to water or lava, the ores rule, the policy and leases, base trips).
      */
     static String digSurface(Commands c, LocalPlayer p, DigArgs a, String rest, String from) {
-        if (a.floor()) return "error: floor works with a box dig only (dig x1 y1 z1 x2 y2 z2 floor)";
         boolean force = a.force(), ores = a.ores(), up = a.surface().equals("up");
         int[] n = a.n();
         net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
@@ -523,10 +506,9 @@ final class DigCommands {
         }
         String label = "digging " + n[0] + " " + n[1] + " to " + n[2] + " " + n[3] + ", " + plan.blocks().size() + " blocks"
                 + " (from the surface, " + a.surface() + " " + a.depth() + ", " + plan.columns() + " columns)"
-                + (force ? " (force)" : "") + (ores ? " (ores too)" : "") + (a.junkDrop() ? " (junk drop)" : "")
-                + (a.water() ? " (water" + (a.large() ? ", large" : "") + ")" : "");
-        ClearJob.Options o = new ClearJob.Options().only(plan.blocks()).force(force).collect(ores).label(label).junkDrop(a.junkDrop())
-                .liquidBlocks(true).water(a.water(), a.large()).line("dig " + rest.trim());
+                + (force ? " (force)" : "") + (ores ? " (ores too)" : "");
+        ClearJob.Options o = new ClearJob.Options().only(plan.blocks()).force(force).collect(ores).label(label)
+                .liquidBlocks(true);
         // 0.30.0 (P2): the per-column list through Baritone's builder (an only list), unless "via engine"
         if (a.builder()) return BuilderDig.start(c, p, o.viaBaritone(true), restockSteps(c, p, plan.blocks().size()));
         return startClear(c, p, o, restockSteps(c, p, plan.blocks().size()));
@@ -558,15 +540,12 @@ final class DigCommands {
 
     /** startClear for a verb: the leases now (a refusal is the reply), the job in the mod's slot, "started: ...". */
     static String startClear(Commands c, LocalPlayer p, ClearJob.Options o, List<Seq.Step> before) {
-        // B7e F: a floor dig's clear hands its report to the fill after it, which ends the job
-        Seq.Step st = o.floor ? Clearing.clearStep(o) : Clearing.finishingClearStep(o);
+        Seq.Step st = Clearing.finishingClearStep(o);
         String err = Clearing.prepare(st, p, c);
         if (err != null) return err;
         Clearing.ClearState s = (Clearing.ClearState) st.state;
         List<Seq.Step> steps = new ArrayList<>();
         Seq seq = new Seq(c.jobs, c.storage, s.job.label, List.of(), "always");
-        // first back up onto the walkway when it stands in the cave (a restock trip or the clear can't start from there)
-        if (o.floor) steps.add(FloorSteps.floorStep(o, null, true));
         if (before != null && !before.isEmpty()) {
             List<Seq.Step> pre = new ArrayList<>(before);
             // the pickaxe craft wants a table: put one down here when the nearest is far (18a)
@@ -583,7 +562,6 @@ final class DigCommands {
             s.tripKind = "restock";
         }
         steps.add(st);
-        if (o.floor) steps.add(FloorSteps.floorStep(o, st, false));
         seq.splice(0, steps);
         c.jobs.startSeq(seq, "always");
         try {                                       // P1: someone's build next to the dig? (a whisper, never a box)

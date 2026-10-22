@@ -1,6 +1,5 @@
 package io.github.mojolowjo.entropybot.aa;
 
-import io.github.mojolowjo.entropybot.camp.ArmorCareRules;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -15,12 +14,4 @@ class PrereqTest {
         assertFalse(AaLadder.zeroGain(null));
     }
 
-    @Test void armourCraftGetsTableWoodFirst() {
-        String cmd = "craft leather_helmet 1 then wear";
-        assertEquals("cut 4 then " + cmd, ArmorCareRules.withTablePrereq(cmd, false, Map.of("leather", 5)));
-        assertEquals(cmd, ArmorCareRules.withTablePrereq(cmd, true, Map.of("leather", 5)));
-        assertEquals(cmd, ArmorCareRules.withTablePrereq(cmd, false, Map.of("leather", 5, "oak_log", 1)));
-        assertEquals(cmd, ArmorCareRules.withTablePrereq(cmd, false, Map.of("crafting_table", 1)));
-        assertEquals("get iron_helmet 1 then wear", ArmorCareRules.withTablePrereq("get iron_helmet 1 then wear", false, Map.of()));
-    }
 }

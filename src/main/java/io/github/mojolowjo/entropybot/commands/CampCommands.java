@@ -11,9 +11,6 @@ import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.camp.JunkRules;
 import io.github.mojolowjo.entropybot.camp.LightGrid;
-import io.github.mojolowjo.entropybot.camp.StockRules;
-import io.github.mojolowjo.entropybot.camp.ToolCareRules;
-import io.github.mojolowjo.entropybot.camp.ArmorCareRules;
 import io.github.mojolowjo.entropybot.guard.Guard;
 import io.github.mojolowjo.entropybot.guard.GuardCore;
 import io.github.mojolowjo.entropybot.gui.Gui;
@@ -35,8 +32,8 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * C4 + C5 (0.20.1, branch comp-c4): the game side of {@code light}, {@code stock} / {@code restock
- * base} / {@code gather ... to base}, {@code junk} (and the mid-job junk drop) and tool care. The rules are pure in
+ * C4 + C5 (0.20.1, branch comp-c4): the game side of {@code house}, {@code light} and {@code junk} (the list AA's bag
+ * options read; no timer drops anything by itself). The rules are pure in
  * {@code camp.*} (JUnit); this class reads the world and the bag and starts chains or Seq jobs made of steps that
  * already exist (chop, craft, place, dig, gather, deposit, get), so every step reports on its own and a failed one
  * says what is missing.
@@ -48,12 +45,6 @@ import java.util.Set;
 final class CampCommands {
     private static final Logger LOG = LogUtils.getLogger();
     private final Commands c;
-    /** Tool care: kind -> id carried at the last look (a kind gone since = broken), and when each kind was last tried. */
-    private Map<String, String> toolsBefore = new LinkedHashMap<>();
-    private final Map<String, Long> careTried = new LinkedHashMap<>();
-    /** Tool care: kinds nearly broken that nothing could replace (for "check"). */
-    final Map<String, String> careStuck = new LinkedHashMap<>();
-    static long careRetryMs() { return Tuning.l("campCommands.careRetryMs"); }
 
     CampCommands(Commands c) { this.c = c; }
 
@@ -456,62 +447,6 @@ final class CampCommands {
         return "next";
     }
 
-    // ---------------------------------------------------------------- stock
-
-    Map<String, Integer> stockWant() {
-        Map<String, Integer> out = new LinkedHashMap<>();
-        JsonObject b = brain();
-        if (b.has("stockTargets") && b.get("stockTargets").isJsonObject()) for (Map.Entry<String, JsonElement> e : b.getAsJsonObject("stockTargets").entrySet()) {
-            try { out.put(e.getKey(), e.getValue().getAsInt()); } catch (RuntimeException caught) { Quiet.warn("CampCommands.stockWant failed, carrying on with the fallback", caught); }
-        }
-        return out;
-    }
-
-    Map<String, Integer> baseHave(LocalPlayer p) {
-        Map<String, Integer> out = new LinkedHashMap<>();
-        for (StorageRules.Chest ch : c.storage.baseChests(p, true)) ch.items().forEach((k, v) -> out.merge(k, v, Integer::sum));
-        return out;
-    }
-
-    String stock(LocalPlayer p, String rest) {
-        String t = rest == null ? "" : rest.trim();
-        List<String> w = Texts.words(t.toLowerCase());
-        Map<String, Integer> want = stockWant();
-        if (!w.isEmpty() && w.get(0).equals("set")) {
-            if (w.size() != 3 || !w.get(2).matches("^\\d{1,5}$")) return StockRules.USAGE;
-            String id = c.crafting.planner.resolveItem(w.get(1), Gui.inventory(p));
-            if (id == null) id = JunkRules.full(w.get(1));
-            if (!Storage.itemExists(id)) return "error: I don't know an item called " + w.get(1) + " - next: find or recipe the exact id";
-            if (!want.containsKey(id) && want.size() >= StockRules.maxItems()) return "error: I keep at most " + StockRules.maxItems() + " stock targets - stock clear <item> first";
-            int n = Integer.parseInt(w.get(2));
-            if (n == 0) want.remove(id);
-            else want.put(id, n);
-        } else if (!w.isEmpty() && w.get(0).equals("clear")) {
-            if (w.size() != 2) return StockRules.USAGE;
-            if (w.get(1).equals("all")) want.clear();
-            else if (want.remove(JunkRules.full(w.get(1))) == null) return "no stock target for " + w.get(1);
-        } else if (!w.isEmpty() && !w.get(0).equals("targets")) {
-            return StockRules.USAGE;
-        }
-        if (!w.isEmpty() && !w.get(0).equals("targets")) {
-            JsonObject o = new JsonObject();
-            want.forEach(o::addProperty);
-            brain().add("stockTargets", o);
-            c.saved();
-        }
-        return StockRules.text(want, baseHave(p));
-    }
-
-    String restockBase(LocalPlayer p, String from) {
-        Map<String, Integer> want = stockWant();
-        if (want.isEmpty()) return "error: no stock targets - next: stock set torch 64";
-        if (c.storage.baseChests(p, true).isEmpty()) return Hints.next("error: I know no base chests", "scan base");
-        Map<String, Integer> sh = StockRules.shortOf(want, baseHave(p));
-        if (sh.isEmpty()) return "ok: the base chests hold all of the stock (" + StockRules.text(want, baseHave(p)).replaceFirst("^stock[^:]*: ", "") + ")";
-        if (c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
-        return c.chainsRef().startChain(from, "restock base", StockRules.chain(sh), 1);
-    }
-
     // ---------------------------------------------------------------- junk
 
     Set<String> junkList() {
@@ -567,223 +502,12 @@ final class CampCommands {
         }
     }
 
-    /** Every 40 ticks: a job (not a walk) running with the bag nearly full: drop the junk (mode drop). */
-    void junkTick(LocalPlayer p) {
-        if (!c.jobs.running() || c.jobs.walking() || Core.INSTANCE.reflexes.hold()) return;
-        if (!"drop".equals(junkMode()) || Gui.open(p) || Minecraft.getInstance().screen != null) return;
-        if (c.freeSlots() > JunkRules.low()) return;
-        // never litter at the owner's feet: with them within 8 blocks the junk waits (the deposit takes it)
-        net.minecraft.world.entity.player.Player owner = Jobs.findPlayer(c.owner());
-        if (owner != null && owner != p && owner.distanceTo(p) < 8) return;
-        Jobs.Job j = c.jobs.job;
-        Map<String, Integer> plan = junkPlan(p, j.label + " " + j.status);
-        if (plan.isEmpty()) return;
-        int n = 0;
-        for (Map.Entry<String, Integer> e : plan.entrySet()) {
-            String r = io.github.mojolowjo.entropybot.gui.GuiCore.drop(new McMenu(p), e.getKey() + " " + e.getValue());
-            if (r.startsWith("ok: dropped")) n += e.getValue();
-            else LOG.warn("[entropybot] junk drop {}: {}", e.getKey(), r);
-        }
-        j.junkDropped += n;
-        LOG.info("[entropybot] junk: bag nearly full mid-job, dropped {} ({})", n, plan);
-    }
-
-
-    Map<String, Integer> junkPlan(LocalPlayer p, String collecting) {
-        List<StorageRules.Held> held = Storage.held(p);
-        Map<String, Integer> dep = StorageRules.depositables(held, null, true, null, c.storage.keeps());
-        // 0.28.1: a running or queued build/shelter keeps its blocks (the trial's house cobblestone went over the side)
-        List<String> texts = new ArrayList<>();
-        texts.add(collecting);
-        if (c.jobs.job != null && !c.jobs.job.done) texts.add(c.jobs.job.type + " " + c.jobs.job.label);
-        texts.addAll(c.chainsRef().restSteps());
-        return JunkRules.plan(junkList(), dep, Gui.inventory(p), collecting, JunkRules.wanted(texts));
-    }
 
     /** Junk mode chest: the junk items of a deposit go to the chest marked "junk" (its pos), or null. */
     int[] junkChest() {
         if (!"chest".equals(junkMode())) return null;
         JsonObject pl = Core.INSTANCE.knowledge.places().get("junk");
         return pl == null ? null : Jobs.pos(pl);
-    }
-
-    // ---------------------------------------------------------------- tool care
-
-    List<ToolCareRules.Tool> tools(LocalPlayer p) {
-        List<ToolCareRules.Tool> out = new ArrayList<>();
-        for (int i = 0; i < p.getInventory().getContainerSize(); i++) {
-            ItemStack st = p.getInventory().getItem(i);
-            if (!st.isEmpty() && st.isDamageableItem() && st.getMaxDamage() > 0) {
-                out.add(new ToolCareRules.Tool(Gui.itemId(st), st.getMaxDamage() - st.getDamageValue(), st.getMaxDamage()));
-            }
-        }
-        return out;
-    }
-
-    String toolsText(LocalPlayer p) {
-        return p == null ? "" : ToolCareRules.text(tools(p)) + "\n" + ArmorCareRules.text(armor(p))
-                + "\n" + ArmorCareRules.orderText(ironFirst());
-    }
-
-    /** 0.25.1 gear.ironFirst (a brain setting; defaults until the brain loaded them). */
-    static boolean ironFirst() {
-        return true;      // AA_CLEANUP 3: was BrainConfig gear.ironFirst (default 1)
-    }
-
-    /** Every 100 ticks; at a pause (no job, chain or request, no reflex) a worn or broken tool is replaced. */
-    void toolCareTick(LocalPlayer p, boolean idle) {
-        List<ToolCareRules.Tool> tl = tools(p);
-        Map<String, String> needs = ToolCareRules.needs(tl, toolsBefore);
-        Map<String, String> now = ToolCareRules.carried(tl);
-        // a broken kind stays "before" until replaced (so the next pause still sees it)
-        for (Map.Entry<String, String> e : needs.entrySet()) now.putIfAbsent(e.getKey(), e.getValue());
-        careStuck.keySet().removeIf(k -> !k.startsWith("armor:") && !needs.containsKey(k));
-        if (!idle || needs.isEmpty()) {
-            toolsBefore = now;
-            return;
-        }
-        long ms = System.currentTimeMillis();
-        for (Map.Entry<String, String> e : needs.entrySet()) {
-            String kind = e.getKey();
-            if (ms - careTried.getOrDefault(kind, 0L) < careRetryMs()) continue;
-            careTried.put(kind, ms);
-            Set<String> stored = new LinkedHashSet<>();
-            Map<String, Integer> have = new LinkedHashMap<>(Gui.inventory(p));
-            for (Crafting.Source s : c.crafting.storageSources(p)) {
-                stored.addAll(s.items().keySet());
-                s.items().forEach((k, v) -> have.merge(k, v, Integer::sum));
-            }
-            String cmd = ToolCareRules.replacement(kind, e.getValue(), stored, have);
-            if (cmd == null) {
-                careStuck.put(kind, e.getValue());
-                LOG.info("[entropybot] tool care: my {} is worn or broken and nothing can replace it", e.getValue());
-                toolsBefore = now;
-                return;
-            }
-            careStuck.remove(kind);
-            LOG.info("[entropybot] tool care: {} worn or broken -> {}", e.getValue(), cmd);
-            Chains.Reply r = c.handle(c.owner(), cmd, false, true, null);
-            LOG.info("[entropybot] tool care: {} -> {}", cmd, r.text());
-            if (r.text() != null && r.text().startsWith("started")) {
-                now.remove(kind);           // the new one shows up when the job ends
-                toolsBefore = now;
-                return;                     // one at a time
-            }
-        }
-        toolsBefore = now;
-    }
-
-    // ---------------------------------------------------------------- armour care (0.23.6)
-
-    /** The four worn slots (empty ones as a Piece with id null). */
-    static List<ArmorCareRules.Piece> armor(LocalPlayer p) {
-        List<ArmorCareRules.Piece> out = new ArrayList<>();
-        for (int i = 0; i < 4; i++) {
-            String slot = ArmorCareRules.SLOTS.get(3 - i);          // armor list: 0 boots .. 3 helmet
-            ItemStack st = p.getInventory().armor.get(i);
-            out.add(st.isEmpty() ? new ArmorCareRules.Piece(slot, null, 0, 0)
-                    : new ArmorCareRules.Piece(slot, Gui.itemId(st), st.getMaxDamage() - st.getDamageValue(), st.getMaxDamage()));
-        }
-        return out;
-    }
-
-    /** Armour pieces in the bag (not worn). */
-    static List<ArmorCareRules.Piece> armorInBag(LocalPlayer p) {
-        List<ArmorCareRules.Piece> out = new ArrayList<>();
-        for (int i = 0; i < 36; i++) {
-            ItemStack st = p.getInventory().getItem(i);
-            if (st.isEmpty()) continue;
-            String id = Gui.itemId(st);
-            String slot = ArmorCareRules.slot(id);
-            if (slot != null) out.add(new ArmorCareRules.Piece(slot, id, st.getMaxDamage() - st.getDamageValue(), st.getMaxDamage()));
-        }
-        return out;
-    }
-
-    private Set<String> armorBefore = new LinkedHashSet<>();
-
-    /**
-     * At a pause, after tool care: a worn or missing piece is fetched or crafted and worn ("... then wear"); a good spare
-     * in the bag is just put on. One at a time, each slot retried every 10 minutes. True when it started something.
-     */
-    private long armorBusyLog;
-
-    /** A crafting table within r blocks (6 up and down) of the player. */
-    static boolean tableWithin(LocalPlayer p, int r) {
-        var lv = Minecraft.getInstance().level;
-        if (lv == null) return false;
-        net.minecraft.core.BlockPos c = p.blockPosition();
-        net.minecraft.core.BlockPos.MutableBlockPos m = new net.minecraft.core.BlockPos.MutableBlockPos();
-        for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) for (int dy = -6; dy <= 6; dy++) {
-            m.set(c.getX() + dx, c.getY() + dy, c.getZ() + dz);
-            if (lv.isLoaded(m) && lv.getBlockState(m).is(net.minecraft.world.level.block.Blocks.CRAFTING_TABLE)) return true;
-        }
-        return false;
-    }
-
-    boolean armorCareTick(LocalPlayer p, String busy) {
-        List<ArmorCareRules.Piece> on = armor(p), bag = armorInBag(p);
-        Set<String> filled = new LinkedHashSet<>();
-        for (ArmorCareRules.Piece a : on) if (!a.empty()) filled.add(a.slot());
-        Set<String> before = armorBefore;
-        armorBefore = filled;
-        if (busy != null) {
-            if (ArmorCareRules.lowest(on) != null && System.currentTimeMillis() - armorBusyLog > 60_000) {
-                armorBusyLog = System.currentTimeMillis();
-                LOG.info("[entropybot] armour care: {} - waiting for a pause (busy: {})", ArmorCareRules.lowest(on), busy);
-            }
-            return false;
-        }
-        // a good spare for a worn or empty slot: wear swaps it in
-        for (ArmorCareRules.Piece a : on) {
-            if ((a.empty() || a.worn()) && ArmorCareRules.spare(a.slot(), bag) != null && Minecraft.getInstance().screen == null) {
-                String r = Gui.wearArmor(p);
-                LOG.info("[entropybot] armour care: wear -> {}", r);
-                if (r.startsWith("ok")) return true;
-            }
-        }
-        boolean ironFirst = ironFirst();
-        Map<String, String> needs = ArmorCareRules.ordered(ArmorCareRules.needs(on, bag), ironFirst);      // 0.25.1
-        careStuck.keySet().removeIf(k -> k.startsWith("armor:") && !needs.containsKey(k.substring(6)));
-        long ms = System.currentTimeMillis();
-        Set<String> stored = null;
-        Map<String, Integer> have = null;
-        for (Map.Entry<String, String> e : needs.entrySet()) {
-            String slot = e.getKey();
-            if (ms - careTried.getOrDefault("armor:" + slot, 0L) < careRetryMs()) continue;
-            careTried.put("armor:" + slot, ms);
-            if (stored == null) {
-                stored = new LinkedHashSet<>();
-                have = new LinkedHashMap<>(Gui.inventory(p));
-                for (Crafting.Source s : c.crafting.storageSources(p)) {
-                    stored.addAll(s.items().keySet());
-                    final Map<String, Integer> h = have;
-                    s.items().forEach((k, v) -> h.merge(k, v, Integer::sum));
-                }
-            }
-            String cmd = ArmorCareRules.replacement(slot, e.getValue(), stored, ArmorCareRules.spendable(slot, on, have, ironFirst));
-            if (cmd == null) {
-                // a worn piece, or one that broke since the last look: a check line; a slot never filled stays quiet
-                if (e.getValue() != null || before.contains(slot)) careStuck.put("armor:" + slot, e.getValue() == null ? slot : e.getValue());
-                continue;
-            }
-            careStuck.remove("armor:" + slot);
-            String pre = ArmorCareRules.withTablePrereq(cmd, tableWithin(p, 12), Gui.inventory(p));
-            if (!pre.equals(cmd)) LOG.info("[entropybot] armour care: prerequisite for {}: no crafting table within 12, none in the bag, no wood for one -> cut 4 logs first (~30 s), the craft makes the table", cmd);
-            cmd = pre;
-            LOG.info("[entropybot] armour care: {} {} -> {}", slot, e.getValue() == null ? "missing" : e.getValue() + " worn", cmd);
-            Chains.Reply r = c.handle(c.owner(), cmd, false, true, null);
-            LOG.info("[entropybot] armour care: {} -> {}", cmd, r.text());
-            if (r.text() == null || !r.text().startsWith("error")) return true;      // one at a time
-        }
-        return false;
-    }
-
-    /** "check": tools that are nearly broken and that nothing can replace. */
-    List<String> careFindings() {
-        List<String> out = new ArrayList<>();
-        careStuck.forEach((k, id) -> out.add(StockRules.shortId(id)));
-        return out;
     }
 }
 

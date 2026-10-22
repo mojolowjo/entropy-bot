@@ -31,8 +31,6 @@ public final class BrainState {
     public float pickSpeed = 4f;
     /** aa-times: the game's seconds per stone block with the best pickaxe / by hand (GameTimesLive), -1 not read. */
     public double digStoneS = -1, handStoneS = -1;
-    /** 0.23.6: the first worn armour piece ("my iron_chestplate is at 6 %"), or null. */
-    public String armorWorn;
     /** 0.24.3: armour and weapon tier (0-3; harmless defaults: diamond), deaths in the last day, the level's day time
      *  (-1 unknown), a bed within reach, the camp place (null: none). */
     public int armourTier = 3, weaponTier = 3, deathsDay;

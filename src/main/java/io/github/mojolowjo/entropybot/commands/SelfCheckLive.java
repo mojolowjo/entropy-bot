@@ -67,9 +67,6 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         } catch (RuntimeException e) {
             f.add(0, new SelfCheck.Finding("hungercheck", "couldn't check my food: " + e, "status"));
         }
-        // C5 tool care: a worn or broken tool that nothing could replace
-        for (String id : c.camp.careFindings()) f.add(new SelfCheck.Finding("toolcare:" + id, "my " + id + " is nearly broken or gone, and nothing can replace it (none in the chests, nothing to craft one from)",
-                "put a " + id + " (or its materials) in the base chests"));
         // 0.24.1: a job that would have sent /home or /sethome with server commands off (walked instead)
         int sci = 0;
         for (String line : io.github.mojolowjo.entropybot.move.ServerCmds.checkLines()) f.add(new SelfCheck.Finding("servercmd" + (sci++), line, "server commands on (only if the server allows /home)"));

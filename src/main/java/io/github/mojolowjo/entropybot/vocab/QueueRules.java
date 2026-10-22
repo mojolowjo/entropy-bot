@@ -6,15 +6,15 @@ import java.util.Set;
 
 /**
  * V1b (VOCABULARY 5): {@code queue <task>} queues a task after the current one. Only tasks with a finish may be queued
- * (building, crafting, mining, gathering...): {@code follow}, {@code escort}, {@code defend}, {@code guard},
+ * (building, crafting, mining, gathering...): {@code follow}, {@code defend}, {@code guard},
  * {@code repeat forever} never ends, so they are refused with the reason. A queued
- * task waits while an escort, defend or guard runs (until {@code dismiss} or {@code stop}). Pure.
+ * task waits while a defend or guard runs (until {@code dismiss} or {@code stop}). Pure.
  */
 public final class QueueRules {
     private QueueRules() {}
 
     public static final int MAX = 10; // structural
-    static final Set<String> ENDLESS = Set.of("follow", "escort", "defend", "guard");
+    static final Set<String> ENDLESS = Set.of("follow", "defend", "guard");
     /** Answers, not tasks: nothing to wait for. */
     static final Set<String> INSTANT = Set.of("status", "inv", "help", "queue", "places", "have", "stock", "needs", "goals", "kinds", "stop", "dismiss", "confirm", "check", "summary");
 
@@ -35,7 +35,7 @@ public final class QueueRules {
         return null;
     }
 
-    /** May the next queued task start? Nothing runs, and no escort/defend/guard holds the bot. */
+    /** May the next queued task start? Nothing runs, and no defend/guard holds the bot. */
     public static boolean mayStart(boolean busy, boolean holding) {
         return !busy && !holding;
     }

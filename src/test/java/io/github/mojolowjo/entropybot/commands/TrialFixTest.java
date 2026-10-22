@@ -1,7 +1,6 @@
 package io.github.mojolowjo.entropybot.commands;
 
 import io.github.mojolowjo.entropybot.camp.BuildCount;
-import io.github.mojolowjo.entropybot.camp.JunkRules;
 import io.github.mojolowjo.entropybot.clear.Tools;
 import io.github.mojolowjo.entropybot.guard.AreaType;
 import io.github.mojolowjo.entropybot.world.SurfaceRule;
@@ -137,26 +136,6 @@ class TrialFixTest {
         m.put(9, Cell.LEAVES);
         assertFalse(SurfaceRule.inAir(col(m), 10), "on leaves Baritone can stand");
         assertEquals("the mark was in the air, walking to the ground at 1 2 3", SurfaceRule.airNote(1, 2, 3));
-    }
-
-    // ---- F: junk ----
-
-    @Test
-    void snowballsAreJunkAndBuildBlocksStayWhileWanted() {
-        Set<String> junk = Set.of("minecraft:cobblestone", "minecraft:snowball", "minecraft:dirt");
-        Map<String, Integer> dep = Map.of("minecraft:cobblestone", 64, "minecraft:snowball", 0, "minecraft:dirt", 0);
-        Map<String, Integer> inv = Map.of("minecraft:cobblestone", 170, "minecraft:snowball", 63, "minecraft:dirt", 20);
-        Map<String, Integer> none = JunkRules.plan(junk, dep, inv, "", JunkRules.wanted(List.of("chopping 6")));
-        assertEquals(106, none.get("minecraft:cobblestone"));
-        assertEquals(63, none.get("minecraft:snowball"));
-        Set<String> want = JunkRules.wanted(List.of("building shell of cobblestone", "build roof cobblestone house"));
-        assertTrue(want.contains("minecraft:cobblestone"));
-        Map<String, Integer> keep = JunkRules.plan(junk, dep, inv, "", want);
-        assertNull(keep.get("minecraft:cobblestone"), "a build keeps its cobblestone");
-        assertNull(keep.get("minecraft:dirt"));
-        assertEquals(63, keep.get("minecraft:snowball"));
-        assertTrue(JunkRules.wanted(List.of("shelter")).contains("*placeable"));
-        assertTrue(JunkRules.wanted(null).isEmpty());
     }
 
     // ---- G: build counts ----

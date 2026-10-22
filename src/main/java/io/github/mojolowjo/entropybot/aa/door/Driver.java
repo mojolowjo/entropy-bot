@@ -16,7 +16,7 @@ public enum Driver {
     RULE,
     /** The AI operator (AiRuntime); under AA it may only say "aa want" / "aa drop". */
     AI,
-    /** Anything else: timers (stairs, kept table, furnace pickup, defend hold), side machines, guests, unknown callers. */
+    /** Anything else: timers (stairs, kept table, defend hold), side machines, guests, unknown callers. */
     OTHER;
 
     /** True when this driver may start or stop a job while AA is on. */

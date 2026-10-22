@@ -11,7 +11,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** C4 + C5 (0.20.1): tool tiers, day/night triggers, the light grid, stock math, junk rules, tool care. */
+/** C4 + C5 (0.20.1): tool tiers, day/night triggers, the light grid, junk rules. */
 @org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class CampRulesTest {
     @Test
@@ -61,20 +61,6 @@ class CampRulesTest {
     }
 
     @Test
-    void stockMath() {
-        Map<String, Integer> want = new LinkedHashMap<>();
-        want.put("minecraft:torch", 64);
-        want.put("minecraft:bread", 16);
-        Map<String, Integer> have = Map.of("minecraft:torch", 70, "minecraft:bread", 4);
-        assertEquals(Map.of("minecraft:bread", 12), StockRules.shortOf(want, have));
-        assertEquals("gather bread 12 then deposit bread", StockRules.chain(StockRules.shortOf(want, have)));
-        assertTrue(StockRules.text(want, have).contains("torch 70/64, bread 4/16 - 1 short; next: restock base"));
-        assertTrue(StockRules.text(Map.of(), have).startsWith("no stock targets"));
-        assertEquals("cobblestone 64", StockRules.toBase("cobblestone 64 to base"));
-        assertNull(StockRules.toBase("cobblestone 64"));
-    }
-
-    @Test
     void junkRules() {
         Set<String> junk = new LinkedHashSet<>(List.of("minecraft:dirt", "minecraft:cobblestone", "minecraft:gravel"));
         assertFalse(junk.contains("minecraft:string"), "string is kept");
@@ -83,41 +69,7 @@ class CampRulesTest {
         assertTrue(j2.contains("minecraft:sand"));
         assertEquals(List.of("diamond_pickaxe", "iron_ore", "torch"), refused);
         assertFalse(JunkRules.remove(j2, List.of("dirt")).contains("minecraft:dirt"));
-        // depositables says how many stay (cobblestone keeps 64)
-        Map<String, Integer> dep = new LinkedHashMap<>();
-        dep.put("minecraft:dirt", 0);
-        dep.put("minecraft:cobblestone", 64);
-        dep.put("minecraft:sand", 0);
-        dep.put("minecraft:gravel", 0);
-        Map<String, Integer> inv = Map.of("minecraft:dirt", 128, "minecraft:cobblestone", 100, "minecraft:sand", 30, "minecraft:gravel", 20);
-        Map<String, Integer> plan = JunkRules.plan(junk, dep, inv, "mining gravel 20");
-        assertEquals(Map.of("minecraft:dirt", 128, "minecraft:cobblestone", 36, "minecraft:sand", 30), plan, "gravel is what the job collects; sand is junk by the data (stone-like), listed or not");
-        assertEquals(194, JunkRules.total(plan));
         assertTrue(JunkRules.listText(junk, "drop").contains("dirt"));
     }
 
-    @Test
-    void toolCare() {
-        List<ToolCareRules.Tool> tools = List.of(new ToolCareRules.Tool("minecraft:stone_sword", 5, 131), new ToolCareRules.Tool("minecraft:iron_axe", 200, 250),
-                new ToolCareRules.Tool("minecraft:stone_pickaxe", 3, 131));
-        Map<String, String> n = ToolCareRules.needs(tools, Map.of());
-        assertEquals(Map.of("sword", "minecraft:stone_sword"), n, "pickaxes have their own rule");
-        // a second, good sword: nothing to do
-        List<ToolCareRules.Tool> two = new ArrayList<>(tools);
-        two.add(new ToolCareRules.Tool("minecraft:wooden_sword", 50, 59));
-        assertTrue(ToolCareRules.needs(two, Map.of()).isEmpty());
-        // the shovel broke (carried before, gone now)
-        assertEquals("minecraft:stone_shovel", ToolCareRules.needs(tools, Map.of("shovel", "minecraft:stone_shovel")).get("shovel"));
-        assertEquals("shovel", ToolCareRules.kind("minecraft:iron_shovel"));
-        assertEquals("pickaxe", ToolCareRules.kind("minecraft:iron_pickaxe"));
-        assertEquals("shield", ToolCareRules.kind("minecraft:shield"));
-        // the replacement
-        assertEquals("get stone_sword 1", ToolCareRules.replacement("sword", "minecraft:stone_sword", Set.of("minecraft:stone_sword"), Map.of()));
-        assertEquals("craft stone_sword 1", ToolCareRules.replacement("sword", "minecraft:stone_sword", Set.of(), Map.of("minecraft:cobblestone", 5, "minecraft:stick", 4)));
-        assertEquals("craft iron_axe 1", ToolCareRules.replacement("axe", "minecraft:iron_axe", Set.of(), Map.of("minecraft:iron_ingot", 3, "minecraft:oak_planks", 4, "minecraft:cobblestone", 9)));
-        assertEquals("craft stone_axe 1", ToolCareRules.replacement("axe", "minecraft:stone_axe", Set.of(), Map.of("minecraft:iron_ingot", 3, "minecraft:oak_planks", 4, "minecraft:cobblestone", 9)));
-        assertNull(ToolCareRules.replacement("sword", "minecraft:stone_sword", Set.of(), Map.of()), "nothing to make one from");
-        assertEquals("craft shield 1", ToolCareRules.replacement("shield", "minecraft:shield", Set.of(), Map.of("minecraft:iron_ingot", 1, "minecraft:oak_log", 2)));
-        assertTrue(ToolCareRules.text(tools).contains("stone_sword 5/131 (worn)"));
-    }
 }

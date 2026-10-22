@@ -105,7 +105,6 @@ public final class SenseRuntime {
         // aa-times: the game's own seconds per stone block (GameTimesLive: Efficiency, Haste, water, off the ground)
         s.digStoneS = picks > 0 ? GameTimesLive.bestPickaxeStoneSeconds(p) : -1;
         s.handStoneS = GameTimesLive.stoneSeconds(p, ItemStack.EMPTY);
-        s.armorWorn = io.github.mojolowjo.entropybot.camp.ArmorCareRules.lowest(CampCommands.armor(p));
         // the stage (the stock view, every 30 s)
         if (stockAt < 0 || s.now - stockAt > 30_000) {
             stockAt = s.now;
@@ -144,7 +143,7 @@ public final class SenseRuntime {
         // 0.24.3: armour, weapon, deaths today, time, a bed near, the camp
         try {
             java.util.List<String> worn = new java.util.ArrayList<>();
-            for (var pc : CampCommands.armor(p)) if (pc.id() != null) worn.add(pc.id());
+            for (ItemStack worn1 : p.getInventory().armor) if (!worn1.isEmpty()) worn.add(Commands.itemId(worn1));      // the four worn slots (moved here from CampCommands.armor)
             s.armourTier = io.github.mojolowjo.entropybot.sense.Gear.armourTier(worn);
             int wt = 0;
             for (int i = 0; i < 36; i++) {
