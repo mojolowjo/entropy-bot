@@ -58,6 +58,7 @@ public final class PlanLines {
                 }
                 case "explore" -> {
                     if (w.length == 2) return new Step.Explore(i(w[1]));
+                    if (w.length == 4 && w[2].equals("until")) return new Step.Explore(i(w[1]), w[3]);     // live-facts
                 }
                 case "drop" -> {
                     if (w.length == 3) return new Step.DropJunk(w[1], i(w[2]));

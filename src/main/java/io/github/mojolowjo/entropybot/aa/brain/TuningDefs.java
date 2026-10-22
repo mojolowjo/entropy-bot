@@ -38,10 +38,6 @@ final class TuningDefs {
         Tuning.def("aaRuntime.foodDy", 6, "rm-constants 0.39.u2 (was AaRuntime.FOOD_DY)", "the food dy of AaRuntime");
         Tuning.def("aaRuntime.drainWindowMs", 5 * 60_000, "rm-constants 0.39.u2 (was AaRuntime.DRAIN_WINDOW_MS)", "A sample closes after this long at most (a long task gives several)");
         Tuning.def("aaRuntime.stairRead", 16, "rm-constants 0.39.u2 (was AaRuntime.STAIR_READ)", "AA_ROUND3 4: the staircase steps down whose cells are read per heading (the pick-time budget)");
-        Tuning.def("aaRuntime.stoneCacheMs", 3000, "rm-bootstrap 0.39.v1", "milliseconds the nearest-stone scan of the need chain is reused");
-        Tuning.def("aaRuntime.stoneScanR", 16, "rm-bootstrap 0.39.v1", "blocks round the bot the need chain looks for stone");
-        Tuning.def("aaRuntime.stoneScanUp", 4, "rm-bootstrap 0.39.v1", "levels above the bot the stone scan covers");
-        Tuning.def("aaRuntime.stoneScanDown", 8, "rm-bootstrap 0.39.v1", "levels below the bot the stone scan covers");
         Tuning.def("failures.fastEndMs", 1000, "rm-bootstrap 0.39.v1", "a job that ends done within this many ms changing nothing is a failure (rule 7)");
         Tuning.def("aaRuntime.skyR", 24, "rm-constants 0.39.u2 (was AaRuntime.SKY_R)", "The open-sky cell search radius (columns), S2");
         Tuning.def("aaRuntime.ironOres", 8, "rm-constants 0.39.u2 (was AaRuntime.IRON_ORES)", "The nearest known iron positions the scorer weighs");

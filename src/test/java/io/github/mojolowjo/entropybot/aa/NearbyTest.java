@@ -30,7 +30,9 @@ class NearbyTest {
 
     record Fake(List<int[]> logs, List<int[]> stones, Predicate<int[]> leaves, Predicate<int[]> allowed, Map<String, String> ids) implements Nearby.Scan {
         @Override public List<int[]> logs(int radius) { return logs; }
-        @Override public List<int[]> stones(int radius) { return stones; }
+        @Override public List<int[]> find(java.util.Set<String> blocks, int radius) { return stones; }
+        @Override public boolean isLog(String block) { return block.endsWith("_log"); }
+        @Override public boolean fairOk(int x, int y, int z) { return true; }
         @Override public boolean leavesNear(int x, int y, int z, int reach) { return leaves.test(new int[]{x, y, z}); }
         @Override public boolean allowed(int x, int y, int z) { return allowed.test(new int[]{x, y, z}); }
         @Override public String blockAt(int x, int y, int z) { return ids.getOrDefault(x + " " + y + " " + z, "minecraft:stone"); }
@@ -58,23 +60,23 @@ class NearbyTest {
     }
 
     @Test
-    void theNearestDiggableStoneIsTakenAndItsTierBlockIsKept() {
+    void theNearestBlockOfTheSetIMayDigIsTakenAndItsBlockIsKept() {
         var s = new Fake(List.of(), List.of(new int[]{20, 60, 0}, new int[]{5, 60, 0}, new int[]{7, 60, 0}), p -> true, p -> p[0] != 5,
                 Map.of("7 60 0", "minecraft:stone"));
-        Spot r = Nearby.stone(s, ME, () -> null);
+        Spot r = Nearby.nearest(s, ME, java.util.Set.of("minecraft:stone"), () -> null);
         assertEquals(7, r.x(), "the nearer cell at 5 is not mine to dig");
         assertEquals("minecraft:stone", r.block());
     }
 
     @Test
-    void aBlockThatNeedsNoPickaxeTierIsNoStone() {
+    void aCellWhoseBlockIsNotInTheSetIsSkipped() {
         var s = new Fake(List.of(), List.of(new int[]{4, 60, 0}), p -> true, p -> true, Map.of("4 60 0", "minecraft:dirt"));
-        assertSame(SIGHTED, Nearby.stone(s, ME, () -> SIGHTED));
+        assertSame(SIGHTED, Nearby.nearest(s, ME, java.util.Set.of("minecraft:stone"), () -> SIGHTED));
     }
 
     @Test
     void noBaritoneScanIsTheFallbackAlone() {
         assertSame(SIGHTED, Nearby.log(null, ME, () -> SIGHTED));
-        assertNull(Nearby.stone(null, ME, null));
+        assertNull(Nearby.nearest(null, ME, java.util.Set.of("minecraft:stone"), null));
     }
 }

@@ -16,6 +16,22 @@ import java.util.function.Predicate;
 public final class ExploreRules {
     private ExploreRules() {}
 
+    /** live-facts: the pickaxe tier I carry ({@code have}) meets the block's ({@code need}, MiningTiers; an unknown tier, below 0, is not met). */
+    public static boolean toolMeets(int need, int have) { return need >= 0 && need <= have; }
+
+    /**
+     * live-facts: a chain's explore for a missing source ends the moment the source is known: the one Nearby fact
+     * ({@code source}: AaRuntime.nearestSource, Baritone's scan or a sighting) answers for the word. The end text, or null
+     * while nothing is known (or no word was given). The chain is then priced again by the need that runs it.
+     */
+    public static String untilFound(String word, java.util.function.Function<String, io.github.mojolowjo.entropybot.aa.NeedChain.Spot> source) {
+        if (word == null || source == null) return null;
+        var s = source.apply(word);
+        if (s == null) return null;
+        return "a source of " + word + " is known: " + (s.block() == null ? "" : s.block().replaceFirst("^minecraft:", "") + " ")
+                + "at " + s.x() + " " + s.y() + " " + s.z() + " (" + Math.round(s.dist()) + " away); the chain is priced again";
+    }
+
     public static int seen() { return Tuning.i("exploreRules.seen"); }
     public static int rings() { return Tuning.i("exploreRules.rings"); }
     public static int defaultMinutes() { return Tuning.i("exploreRules.defaultMinutes"); }

@@ -471,7 +471,7 @@ public final class NeedChain {
 
     /** The leaf when no way stands: look for the item's source. It has no price. */
     private static String exploreLeaf(Ctx c, String word, String reason) {
-        c.steps.add(new Step.Explore(exploreMinutes()));
+        c.steps.add(new Step.Explore(exploreMinutes(), word));      // live-facts: it ends once a source of the word is known
         c.stuck = true;
         if (c.unknown == null) c.unknown = word;
         return "explore (" + reason + ")";

@@ -1,12 +1,15 @@
 package io.github.mojolowjo.entropybot.aa;
 
 import io.github.mojolowjo.entropybot.aa.NeedChain.Spot;
-import io.github.mojolowjo.entropybot.aa.brain.MiningTiers;
+import io.github.mojolowjo.entropybot.aa.brain.LootBook;
 import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
@@ -16,9 +19,11 @@ import java.util.function.Supplier;
  * <ul>
  * <li>{@link #log}: the nearest log block (any block the game tags as logs) that has leaves (any block tagged leaves) within
  *     {@code nearby.leafReach} blocks above or beside it, i.e. a tree and not a stack of logs in a build.</li>
- * <li>{@link #stone}: the nearest stone-like block (the game's data, {@link MiningTiers}) the bot may dig.</li>
+ * <li>{@link #nearest}: live-facts (0.39.y3): the nearest of any block set (NeedChain's source of any item: {@link #sourceBlocks}
+ *     from the game's loot data plus the item's own block); a block tagged logs only as a tree (the {@link #log} rule), an ore
+ *     cell only under the fair-play rule ({@link Scan#fairOk}), the policy allowing.</li>
  * </ul>
- * Pure (JUnit: NearbyTest); the live {@link Scan} is {@code commands.NearbyLive}. Loader notes: Baritone API only.
+ * Pure (JUnit: NearbyTest, NeedLiveFactsTest); the live {@link Scan} is {@code commands.NearbyLive}. Loader notes: Baritone API only.
  */
 public final class Nearby {
     private Nearby() {}
@@ -27,14 +32,50 @@ public final class Nearby {
     public interface Scan {
         /** Log blocks (tagged logs) within {@code radius}, as {x, y, z}. */
         List<int[]> logs(int radius);
-        /** Stone-like blocks within {@code radius}, as {x, y, z}. */
-        List<int[]> stones(int radius);
+        /** Blocks of any of the ids within {@code radius}, as {x, y, z}. */
+        List<int[]> find(Set<String> blocks, int radius);
+        /** The game tags the block as logs. */
+        boolean isLog(String block);
+        /** The fair-play rule at the cell: an ore cell counts only when seen (aa fair on); any other cell: true. */
+        boolean fairOk(int x, int y, int z);
         /** A block tagged leaves within {@code reach} blocks beside or above the cell. */
         boolean leavesNear(int x, int y, int z, int reach);
         /** The policy lets me work at the cell. */
         boolean allowed(int x, int y, int z);
         /** The block id at the cell. */
         String blockAt(int x, int y, int z);
+    }
+
+    /**
+     * live-facts: the blocks that give a planner word: for every item the word stands for ({@code itemsOf}), the blocks the
+     * game's loot data says drop it, then the item's own block ({@code ownBlock}, null: none), the same pairing the collect
+     * step uses. Empty: no block gives it (a mob drop, an unknown item).
+     */
+    public static Set<String> sourceBlocks(String word, LootBook book, Function<String, List<String>> itemsOf, Function<String, String> ownBlock) {
+        Set<String> out = new LinkedHashSet<>();
+        List<String> items = itemsOf == null ? null : itemsOf.apply(word);
+        if (items == null) return out;
+        for (String item : items) {
+            if (book != null) out.addAll(book.blocksDropping(item));
+            String own = ownBlock == null ? null : ownBlock.apply(item);
+            if (own != null) out.add(own);
+        }
+        return out;
+    }
+
+    /** The nearest block of the set I may work at by Baritone's scan (a log only with leaves by it, an ore only if fair), else the fallback; null: none. */
+    public static Spot nearest(Scan s, int[] me, Set<String> blocks, Supplier<Spot> fallback) {
+        if (s != null && blocks != null && !blocks.isEmpty()) {
+            int checked = 0;
+            for (int[] p : sorted(s.find(blocks, scanR()), me)) {
+                if (checked++ >= maxChecks()) break;
+                String id = s.blockAt(p[0], p[1], p[2]);
+                if (id == null || !blocks.contains(id) || !s.allowed(p[0], p[1], p[2]) || !s.fairOk(p[0], p[1], p[2])) continue;
+                if (s.isLog(id) && !s.leavesNear(p[0], p[1], p[2], leafReach())) continue;
+                return new Spot(p[0], p[1], p[2], dist(p, me), id);
+            }
+        }
+        return fallback == null ? null : fallback.get();
     }
 
     public static int scanR() { return Tuning.i("nearby.scanR"); }
@@ -49,20 +90,6 @@ public final class Nearby {
                 if (checked++ >= maxChecks()) break;
                 if (!s.allowed(p[0], p[1], p[2]) || !s.leavesNear(p[0], p[1], p[2], leafReach())) continue;
                 return new Spot(p[0], p[1], p[2], dist(p, me), s.blockAt(p[0], p[1], p[2]));
-            }
-        }
-        return fallback == null ? null : fallback.get();
-    }
-
-    /** The nearest stone-like block I may dig by Baritone's scan, else the fallback; null: none. */
-    public static Spot stone(Scan s, int[] me, Supplier<Spot> fallback) {
-        if (s != null) {
-            int checked = 0;
-            for (int[] p : sorted(s.stones(scanR()), me)) {
-                if (checked++ >= maxChecks()) break;
-                String id = s.blockAt(p[0], p[1], p[2]);
-                if (id == null || MiningTiers.blockTierOf(id) < 1 || !s.allowed(p[0], p[1], p[2])) continue;
-                return new Spot(p[0], p[1], p[2], dist(p, me), id);
             }
         }
         return fallback == null ? null : fallback.get();

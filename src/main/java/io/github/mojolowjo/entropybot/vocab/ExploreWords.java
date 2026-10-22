@@ -25,22 +25,27 @@ public final class ExploreWords {
     public static final List<String> DIRS = List.of("north", "south", "east", "west");
 
     /** dir: null = any way; minutes 1-30. error: the usage. */
-    public record Args(String dir, int minutes, String error, boolean gather) {
+    /** live-facts: {@code until}: a planner word whose source, once known, ends the walk (null: none). */
+    public record Args(String dir, int minutes, String error, boolean gather, String until) {
+        public Args(String dir, int minutes, String error, boolean gather) { this(dir, minutes, error, gather, null); }
         public Args(String dir, int minutes, String error) { this(dir, minutes, error, true); }
     }
 
     public static Args parse(String rest, int defMinutes) {
-        String dir = null;
+        String dir = null, until = null;
         int min = defMinutes;
         String[] g = gatherOff(rest);
         boolean gather = g[1] == null;
-        for (String w : g[0].toLowerCase(Locale.ROOT).split("\\s+")) {
+        String[] ws = g[0].toLowerCase(Locale.ROOT).split("\\s+");
+        for (int i = 0; i < ws.length; i++) {
+            String w = ws[i];
             if (w.isEmpty()) continue;
             if (DIRS.contains(w) && dir == null) dir = w;
             else if (w.matches("^\\d{1,3}m?$")) min = Math.max(1, Math.min(maxMinutes(), Integer.parseInt(w.replace("m", ""))));
-            else return new Args(null, 0, "usage: explore [north|south|east|west] [minutes] [gather off]");
+            else if (w.equals("until") && i + 1 < ws.length && until == null) until = ws[++i];
+            else return new Args(null, 0, "usage: explore [north|south|east|west] [minutes] [until <item>] [gather off]");
         }
-        return new Args(dir, min, null, gather);
+        return new Args(dir, min, null, gather, until);
     }
 
     /** Chunk steps for a direction: north = -z, south = +z, west = -x, east = +x. */

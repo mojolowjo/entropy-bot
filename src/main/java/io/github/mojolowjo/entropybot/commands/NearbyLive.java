@@ -5,8 +5,6 @@ import baritone.api.BaritoneAPI;
 import baritone.api.utils.BlockOptionalMetaLookup;
 import io.github.mojolowjo.entropybot.aa.Nearby;
 import io.github.mojolowjo.entropybot.aa.NeedChain.Spot;
-import io.github.mojolowjo.entropybot.aa.brain.ItemWorth;
-import io.github.mojolowjo.entropybot.aa.brain.MiningTiers;
 import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -23,18 +21,18 @@ import java.util.function.Supplier;
 
 /**
  * simple-tools (0.39.w1): the live side of {@link Nearby}: Baritone's cached world scan (the one its mine process uses) for the
- * nearest tree log and the nearest diggable stone, the level for the leaves and the block id, the policy for what I may touch.
- * The fallbacks (AA's sightings, the loaded-block stone scan) are passed in by the caller. Results are reused for
+ * nearest tree log and the nearest block of any set (live-facts), the level for the leaves and the block id, the policy for what I may touch.
+ * The fallbacks (AA's sightings, the ore index) are passed in by the caller. Results are reused for
  * {@code nearby.cacheMs} while the bot stays within {@code nearby.cacheMove} blocks. Client thread only.
  */
 final class NearbyLive {
     private static final Logger LOG = LoggerFactory.getLogger("entropybot");
 
     private final Commands c;
-    private List<Block> logBlocks, stoneBlocks;
-    private long logAt = -1, stoneAt = -1;
-    private int[] logMe, stoneMe;
-    private Spot logSpot, stoneSpot;
+    private List<Block> logBlocks;
+    private long logAt = -1;
+    private int[] logMe;
+    private Spot logSpot;
     private String lastFrom = "none";
 
     NearbyLive(Commands c) { this.c = c; }
@@ -56,16 +54,20 @@ final class NearbyLive {
         return logSpot;
     }
 
-    /** The nearest diggable stone, Baritone first, else {@code fallback}. */
-    Spot stone(Supplier<Spot> fallback) {
+    private record Cached(long at, int[] me, Spot spot) {}
+    private final java.util.Map<java.util.Set<String>, Cached> sets = new java.util.HashMap<>();
+
+    /** live-facts: the nearest block of the set (Nearby.nearest), Baritone first, else {@code fallback}; cached per set as the log answer is. */
+    Spot nearest(java.util.Set<String> blocks, Supplier<Spot> fallback) {
         long now = System.currentTimeMillis();
         int[] me = here();
         if (me == null) return fallback == null ? null : fallback.get();
-        if (stoneAt >= 0 && now - stoneAt < Tuning.l("nearby.cacheMs") && close(me, stoneMe)) return stoneSpot;
-        stoneAt = now;
-        stoneMe = me;
-        stoneSpot = Nearby.stone(scan(), me, fallback);
-        return stoneSpot;
+        Cached k = sets.get(blocks);
+        if (k != null && now - k.at() < Tuning.l("nearby.cacheMs") && close(me, k.me())) return k.spot();
+        sets.values().removeIf(e -> now - e.at() >= Tuning.l("nearby.cacheMs"));
+        Spot s = Nearby.nearest(scan(), me, blocks, fallback);
+        sets.put(java.util.Set.copyOf(blocks), new Cached(now, me, s));
+        return s;
     }
 
     private static boolean close(int[] a, int[] b) {
@@ -88,16 +90,10 @@ final class NearbyLive {
         return logBlocks;
     }
 
-    private List<Block> stoneBlocks() {
-        if (stoneBlocks == null) {
-            List<Block> l = new ArrayList<>();
-            for (Block b : BuiltInRegistries.BLOCK) {
-                String id = BuiltInRegistries.BLOCK.getKey(b).toString();
-                if (ItemWorth.stoneLike(id) && MiningTiers.blockTierOf(id) >= 1) l.add(b);
-            }
-            stoneBlocks = l;
-        }
-        return stoneBlocks;
+    private static List<Block> blocksOf(java.util.Set<String> ids) {
+        List<Block> l = new ArrayList<>();
+        for (String id : ids) BuiltInRegistries.BLOCK.getOptional(net.minecraft.resources.ResourceLocation.tryParse(id)).ifPresent(l::add);
+        return l;
     }
 
     private List<int[]> scanFor(List<Block> blocks, int radius) {
@@ -119,7 +115,18 @@ final class NearbyLive {
         String adim = Storage.dim();
         return new Nearby.Scan() {
             @Override public List<int[]> logs(int radius) { return scanFor(logBlocks(), radius); }
-            @Override public List<int[]> stones(int radius) { return scanFor(stoneBlocks(), radius); }
+            @Override public List<int[]> find(java.util.Set<String> blocks, int radius) { return scanFor(blocksOf(blocks), radius); }
+            @Override public boolean isLog(String block) {
+                return BuiltInRegistries.BLOCK.getOptional(net.minecraft.resources.ResourceLocation.tryParse(block)).map(b -> b.defaultBlockState().is(BlockTags.LOGS)).orElse(false);
+            }
+            @Override public boolean fairOk(int x, int y, int z) {
+                BlockPos q = new BlockPos(x, y, z);
+                if (!mc.level.isLoaded(q)) return false;
+                var st = mc.level.getBlockState(q);
+                boolean ore = io.github.mojolowjo.entropybot.strip.OreSpec.oreId(BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString())
+                        || st.is(net.neoforged.neoforge.common.Tags.Blocks.ORES);      // the ore pass's own test (McChunkReader)
+                return !ore || Mining.fairOk(adim, x, y, z);
+            }
             @Override public boolean leavesNear(int x, int y, int z, int reach) {
                 BlockPos.MutableBlockPos q = new BlockPos.MutableBlockPos();
                 for (int dx = -reach; dx <= reach; dx++) for (int dz = -reach; dz <= reach; dz++) for (int dy = 0; dy <= reach; dy++) {

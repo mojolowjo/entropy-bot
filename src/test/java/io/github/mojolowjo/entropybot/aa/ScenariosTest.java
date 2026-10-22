@@ -75,7 +75,7 @@ class ScenariosTest {
         Chain c = NeedChain.resolve("log", 1, w(Map.of(), false, false, Map.of()));
         assertTrue(c.ok(), "never a no way: " + c.why());
         assertTrue(c.explore(), c.why());
-        assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes())), c.steps());
+        assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes(), "log")), c.steps());
         assertTrue(c.why().startsWith("log <- explore ("), c.why());
         assertFalse(c.why().matches("(?s).*\\d+(\\.\\d+)? s\\b.*"), "no price in the why line: " + c.why());
         assertFalse(c.why().contains("no way"), c.why());

@@ -34,7 +34,7 @@ public final class WorldState {
             "restore", "knownair", "seenfaces", "commands-world", "corpses", "trail");
     /** 0.31.0: commands.json's world-bound keys (they live in the world's commands-world.json). */
     public static final Set<String> COMMANDS_WORLD_KEYS = Set.of("home", "mine", "mines", "minesMoved", "deaths", "lastDeath",
-            "parked", "zone", "farm", "furnaces", "released", "releasedAt", "run");
+            "parked", "zone", "farm", "furnaces", "released", "releasedAt", "run", "aaSwitch");     // live-facts: AA's on/off is the world's (aa.AaSwitch)
     public static final String COMMANDS_WORLD = "commands-world.json";
 
     /** Folders that are the world's. */

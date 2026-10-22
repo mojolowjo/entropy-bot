@@ -533,6 +533,7 @@ public final class Commands implements Chains.Env {
         StringBuilder sb = new StringBuilder();
         sb.append(areaStore.load(files)).append("; ").append(RestoreLive.INSTANCE.load(this, files));
         sb.append("; ").append(brainStore.loadWorldPart(files));               // 0.31.0: home, deaths, mines... of this world
+        if (aaRuntime != null) sb.append("; ").append(aaRuntime.worldLoaded());   // live-facts: AA's switch is this world's
         sb.append(migrateAreas(files));
         policy = new PolicyCommands(areaStore.data(), new GuardView(), () -> areaStore.changed(core.tick()));
         policy.setCandidateSource(this::safeCandidates);                       // AREAS: candidates ride along as no-break

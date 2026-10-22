@@ -155,9 +155,13 @@ public sealed interface Step {
         public String text() { return "find cave " + minutes; }
     }
 
-    /** Walk new land for {@code minutes} (the explore verb: Baritone's explore goal), the want's way. */
-    record Explore(int minutes) implements Step {
-        public String text() { return "explore " + minutes; }
+    /**
+     * Walk new land for {@code minutes} (the explore verb: Baritone's explore goal), the want's way. live-facts: {@code until}
+     * (a planner word, null: none) ends it the moment a source of that word is known (a chain's explore for a missing source).
+     */
+    record Explore(int minutes, String until) implements Step {
+        public Explore(int minutes) { this(minutes, null); }
+        public String text() { return "explore " + minutes + (until == null ? "" : " until " + until); }
     }
 
     // ---- rm-execution2: the kinds the remaining option sets and desires run ----

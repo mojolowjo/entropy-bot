@@ -59,7 +59,7 @@ class NeedChainTest {
         NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, seen(null, null)));
         assertTrue(c.ok(), "no tree seen is not infeasible: " + c.why());
         assertTrue(c.explore());
-        assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes())), c.steps());
+        assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes(), "log")), c.steps());
         assertTrue(c.why().contains("explore") && c.why().contains("no tree seen"), c.why());
         assertTrue(c.cost() > NeedChain.exploreMinutes() * Options.MINUTE, "the return leg is priced: " + c.cost());
     }
@@ -141,7 +141,7 @@ class NeedChainTest {
         NeedChain.Chain c = NeedChain.resolve("gadget", 1, new World(Map.of(), true, seen(TREE, STONE)));
         assertTrue(c.ok(), "no recipe and no source is an explore, not a 'no way': " + c.why());
         assertTrue(c.explore());
-        assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes())), c.steps());
+        assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes(), "mystery")), c.steps());
         assertTrue(c.why().contains("mystery") && c.why().contains("no recipe and no block I know drops mystery"), c.why());
     }
 
@@ -150,7 +150,7 @@ class NeedChainTest {
         NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, seen(null, STONE)));
         System.out.println("WHY-LINE " + c.why());
         assertTrue(c.ok() && c.explore(), c.why());
-        assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes())), c.steps());
+        assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes(), "log")), c.steps());
         assertTrue(c.why().startsWith("stone_pickaxe <- ") && c.why().contains("explore") && c.why().contains("no tree seen"), c.why());
     }
 

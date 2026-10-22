@@ -302,6 +302,16 @@ final class Mining {
                 io.github.mojolowjo.entropybot.memory.Limits.SENSE_KNOWN_R, 1, (x, y, z) -> commands.workAllowed(d, x, y, z) && fairOk(d, x, y, z)).isEmpty();
     }
 
+    /** live-facts: the nearest indexed cell of any of the block ids, the policy and aa fair allowing (NeedChain's sightings fallback); null: none or no index here. */
+    io.github.mojolowjo.entropybot.sense.OreIndex.Hit nearestIndexed(LocalPlayer p, java.util.Set<String> blocks) {
+        if (!indexReady() || p == null || blocks.isEmpty()) return null;
+        int[] me = Jobs.here(p);
+        String d = dim();
+        var hits = pass().nearest(d, blocks::contains, me[0], me[1], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_KNOWN_R, 1,
+                (x, y, z) -> commands.workAllowed(d, x, y, z) && fairOk(d, x, y, z));
+        return hits.isEmpty() ? null : hits.get(0);
+    }
+
     /** rm-mining: the fair-play filter for index reads (null: aa fair off, every indexed cell). */
     static io.github.mojolowjo.entropybot.sense.OreIndex.Allow fairAllow(String d) {
         io.github.mojolowjo.entropybot.sense.Seen s = pass().seen();
@@ -686,7 +696,9 @@ final class Mining {
     // ==== explore ====
 
     static final class ExRun {
-        long until, start, targetAt, scanAt, findAt = -1;
+        long until, start, targetAt, scanAt, findAt = -1, untilAt = -1;
+        /** live-facts: the planner word whose source, once known, ends the walk (a chain's explore); null: none. */
+        String untilSource;
         int chunks, sx, sz;
         /** 0.33.0: where the walk started (the report says how far it went). */
         int[] from;
@@ -722,7 +734,7 @@ final class Mining {
     String explore(LocalPlayer p, String rest) {
         io.github.mojolowjo.entropybot.vocab.ExploreWords.Args a = io.github.mojolowjo.entropybot.vocab.ExploreWords.parse(rest, io.github.mojolowjo.entropybot.vocab.ExploreWords.defaultMinutes());
         if (a.error() != null) return a.error();
-        return startExplore(p, a.dir(), a.minutes(), null, a.gather());
+        return startExplore(p, a.dir(), a.minutes(), null, a.gather(), a.until());
     }
 
     /** V1b: "find cave|<poi kind>|<biome> [minutes]": a known one answers at once; else explore until one turns up. */
@@ -738,10 +750,10 @@ final class Mining {
             }
             if (best != null) return "ok: I know a " + f.what() + ": #" + best.id() + " at " + best.x() + " " + best.y() + " " + best.z() + " (" + Math.round(Math.sqrt(bd)) + "m) - go poi " + best.id();
         }
-        return startExplore(p, null, f.minutes(), f, f.gather());
+        return startExplore(p, null, f.minutes(), f, f.gather(), null);
     }
 
-    private String startExplore(LocalPlayer p, String dir, int minutes, io.github.mojolowjo.entropybot.vocab.ExploreWords.Find find, boolean gather) {
+    private String startExplore(LocalPlayer p, String dir, int minutes, io.github.mojolowjo.entropybot.vocab.ExploreWords.Find find, boolean gather, String untilSource) {
         String busy = busyText();
         if (busy != null) return busy;
         try {
@@ -754,6 +766,7 @@ final class Mining {
         ex.start = now();
         ex.dir = dir;
         ex.find = find;
+        ex.untilSource = untilSource;
         int[] me = Jobs.here(p);
         ex.sx = me[0] >> 4;
         ex.sz = me[2] >> 4;
@@ -770,6 +783,9 @@ final class Mining {
         return r + (gather ? "" : " (no gathering while exploring)");
     }
 
+    /** live-facts: the first surface ore the last vein search passed for want of a pickaxe tier (said in the miss line), null none. */
+    private String veinPassed;
+
     /** 0.23.1: a gather while exploring: a tree (when short of logs) or an exposed ore vein; null = nothing. AREAS: anywhere not protected, keeping off bases seen. */
     private List<Seq.Step> gatherSteps(Seq s, ExRun ex, LocalPlayer p) {
         String d = dim();
@@ -780,9 +796,11 @@ final class Mining {
             for (int[] b : bases) if (Math.abs(c[0] - b[0]) <= 16 && Math.abs(c[2] - b[2]) <= 16) return false;
             return true;
         };
+        veinPassed = null;
         List<Pos> vein = surfaceVein(p, ok);
         if (vein.isEmpty()) {
-            if (ex.gatherMisses++ < 3) LOG.info("[entropybot] explore: nothing to take near {} {}", Jobs.here(p)[0], Jobs.here(p)[2]);
+            if (ex.gatherMisses++ < 3) LOG.info("[entropybot] explore: nothing to take near {} {}{}", Jobs.here(p)[0], Jobs.here(p)[2],
+                    veinPassed == null ? "" : " (passed ore I can't take with what I carry: " + veinPassed + ")");
             return null;
         }
         Pos f = vein.get(0);
@@ -793,10 +811,15 @@ final class Mining {
         return add;
     }
 
-    /** An ore within 8 blocks that touches open sky-lit air (a surface ore) and its vein (same block, joined, 8 at most). */
+    /**
+     * An ore within 8 blocks that touches open sky-lit air (a surface ore) and its vein (same block, joined, 8 at most).
+     * live-facts: only an ore the pickaxe I carry meets (the mining-tier data; an unknown tier is not met): no bare-handed ore.
+     */
     private List<Pos> surfaceVein(LocalPlayer p, java.util.function.Predicate<int[]> ok) {
         Level level = p.level();
         int[] me = Jobs.here(p);
+        int have = io.github.mojolowjo.entropybot.guard.PolicyRuntime.pickTier(p);
+        String passed = null;
         BlockPos.MutableBlockPos q = new BlockPos.MutableBlockPos();
         for (int r = 1; r <= 8; r++) for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) {
             if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue;
@@ -805,11 +828,18 @@ final class Mining {
                 if (!level.isLoaded(q)) continue;
                 BlockState st = level.getBlockState(q);
                 if (!st.is(Tags.Blocks.ORES) || !ok.test(new int[]{q.getX(), q.getY(), q.getZ()}) || !skyTouching(level, q)) continue;
+                String id = BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
+                int need = io.github.mojolowjo.entropybot.aa.brain.MiningTiers.blockTierOf(id);
+                if (!io.github.mojolowjo.entropybot.cave.ExploreRules.toolMeets(need, have)) {
+                    if (passed == null) passed = id + " (tier " + need + ", my pickaxe tier " + have + ")";
+                    continue;
+                }
                 List<Pos> vein = new ArrayList<>();
                 ArrayDequeHolder.fill(level, q.immutable(), st.getBlock(), ok, vein);
                 return vein;
             }
         }
+        veinPassed = passed;
         return List.of();
     }
 
@@ -976,6 +1006,18 @@ final class Mining {
         // the base place, night-weighted, within the horizon)
         // V1b find: stop when it turned up
         // AA_ROUND3 5 (live aa-seen2: the step runs on even ticks, so "% 20 == 5" never came): once a second by the clock
+        // live-facts: a chain's explore ends the moment the missing source is known (the one Nearby fact), checked once a second
+        if (ex.untilSource != null && done == null && (ex.untilAt < 0 || now() - ex.untilAt >= 20) && commands.aaRuntime != null) {  // structural: once a second in ticks
+            ex.untilAt = now();
+            String known = ExploreRules.untilFound(ex.untilSource, commands.aaRuntime::nearestSource);
+            if (known != null) {
+                LOG.info("[entropybot] explore: {}", known);
+                s.note = known + tookText(ex.took);
+                if (b != null) Jobs.cancel(b);
+                notes().flush();
+                return "next";
+            }
+        }
         if (ex.find != null && done == null && (ex.findAt < 0 || now() - ex.findAt >= 20)) {
             ex.findAt = now();
             try {

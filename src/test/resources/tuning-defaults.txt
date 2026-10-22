@@ -48,10 +48,6 @@ aaRuntime.slowLogMs	10000.0
 aaRuntime.snapshotMs	1000.0
 aaRuntime.stairRead	16.0
 aaRuntime.statsSaveMs	60000.0
-aaRuntime.stoneCacheMs	3000.0
-aaRuntime.stoneScanDown	8.0
-aaRuntime.stoneScanR	16.0
-aaRuntime.stoneScanUp	4.0
 aaRuntime.threatMemoMs	1000.0
 aaRuntime.torchDy	4.0
 aaRuntime.torchLight	10.0

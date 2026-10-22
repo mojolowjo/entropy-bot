@@ -93,7 +93,12 @@ public final class AaRuntime implements JobPort {
         this.bb = new Blackboard(System::currentTimeMillis, this, tracer);
         tracer.sink(this::appendDecision);
         JsonObject d = data();
-        if (d.has(AaLadder.SHELTER_FACT) && d.get(AaLadder.SHELTER_FACT).getAsBoolean()) AaLadder.noteShelter(bb);
+        var oldKeys = io.github.mojolowjo.entropybot.aa.AaSwitch.dropOldGlobal(d);      // live-facts: the switch moved into the world's part
+        if (!oldKeys.isEmpty()) {
+            LOG.info("[entropybot] aa: the old bot-wide switch keys {} dropped; on/off is per world now (starts off in each world)", oldKeys);
+            c.saved();
+        }
+        worldLoaded();
         bb.fact(IronOptions.FACTS, perTick(new io.github.mojolowjo.entropybot.aa.FactsMemo<>(0), timed("iron", this::ironFacts)));
         bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.SURFACE_FACTS, perTick(new io.github.mojolowjo.entropybot.aa.FactsMemo<>(0), timed("surface", this::surfaceFacts)));
         bb.fact(io.github.mojolowjo.entropybot.aa.CoalOptions.FACTS, (java.util.function.IntFunction<io.github.mojolowjo.entropybot.aa.CoalOptions.CoalFacts>) this::coalFacts);
@@ -679,69 +684,71 @@ public final class AaRuntime implements JobPort {
     /** The open-sky cell search radius (columns), S2. */
     static int skyR() { return Tuning.i("aaRuntime.skyR"); }
 
-    /** rm-bootstrap: what NeedChain starts from: the bag, a table in reach, the nearest seen tree, stone and coal ore. Null while the senses are not ready. */
+    /** rm-bootstrap: what NeedChain starts from: the bag, a table in reach, the nearest source of any word (live-facts: {@link #nearestSource}). Null while the senses are not ready. */
     io.github.mojolowjo.entropybot.aa.NeedChain.World needWorld() {
         if (sensed == null || sensed.feas == null) return null;
         var in = bb.in;
-        return new io.github.mojolowjo.entropybot.aa.NeedChain.World(in.bag, in.tableKnown, word -> {
-            if (word.equals(io.github.mojolowjo.entropybot.plan.PlanFacts.canon("oak_log"))) return nearbyLog();
-            if (word.equals(io.github.mojolowjo.entropybot.plan.PlanFacts.canon(io.github.mojolowjo.entropybot.aa.CoalOptions.FAMILY))) return nearestCoal();       // the planner's word for coal (fuel)
-            if (!io.github.mojolowjo.entropybot.aa.brain.ItemWorth.stoneLike(word.indexOf(':') < 0 ? "minecraft:" + word : word)) return null;
-            return c.nearby.stone(this::nearestStone);
-        });
+        return new io.github.mojolowjo.entropybot.aa.NeedChain.World(in.bag, in.tableKnown, this::nearestSource);
+    }
+
+    /** live-facts: planner word -> the item ids it stands for (PlanFacts.canon over the item registry), built once. */
+    private Map<String, List<String>> wordItems;
+
+    private List<String> itemsOf(String word) {
+        if (wordItems == null) {
+            Map<String, List<String>> m = new java.util.HashMap<>();
+            for (var e : net.minecraft.core.registries.BuiltInRegistries.ITEM.entrySet()) {
+                String id = e.getKey().location().toString();
+                m.computeIfAbsent(io.github.mojolowjo.entropybot.plan.PlanFacts.canon(id), k -> new ArrayList<>()).add(id);
+            }
+            wordItems = m;
+        }
+        return wordItems.getOrDefault(io.github.mojolowjo.entropybot.plan.PlanFacts.canon(word), List.of());
+    }
+
+    /** The item's own block id (the block it places), null when it places none. */
+    private static String ownBlock(String item) {
+        var it = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(net.minecraft.resources.ResourceLocation.tryParse(item)).orElse(null);
+        if (it == null) return null;
+        var b = net.minecraft.world.level.block.Block.byItem(it);
+        return b == net.minecraft.world.level.block.Blocks.AIR ? null : net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(b).toString();
+    }
+
+    /**
+     * live-facts: the nearest source of any planner word: the blocks the loot book says drop its items plus their own blocks
+     * (Nearby.sourceBlocks, the collect step's pairing), then the one Nearby fact (Baritone's scan; a log only as a tree, an ore
+     * only under the fair-play rule, the policy allowing); the fallback is AA's sightings: the trees for a log, the ore index else.
+     * Null: no block gives it, or none is known.
+     */
+    io.github.mojolowjo.entropybot.aa.NeedChain.Spot nearestSource(String word) {
+        java.util.Set<String> blocks = io.github.mojolowjo.entropybot.aa.Nearby.sourceBlocks(word, currentLootBook(), this::itemsOf, AaRuntime::ownBlock);
+        if (blocks.isEmpty()) return null;
+        boolean logs = false;
+        for (String b : blocks)
+            logs |= net.minecraft.core.registries.BuiltInRegistries.BLOCK.getOptional(net.minecraft.resources.ResourceLocation.tryParse(b))
+                    .map(x -> x.defaultBlockState().is(net.minecraft.tags.BlockTags.LOGS)).orElse(false);
+        final boolean tree = logs;
+        return c.nearby.nearest(blocks, () -> tree ? treeSighting() : indexedSighting(blocks));
+    }
+
+    /** The nearest tree AA's sightings know that I may cut (the tree fact's fallback). */
+    private io.github.mojolowjo.entropybot.aa.NeedChain.Spot treeSighting() {
+        var trees = woodFacts();
+        if (trees != null) for (var t : trees.trees()) {
+            if (t.deny() == null) return new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(t.x(), t.y(), t.z(), t.dist(), null);
+        }
+        return null;
+    }
+
+    /** The nearest cell of the blocks the ore index knows (the policy and aa fair allowing). */
+    private io.github.mojolowjo.entropybot.aa.NeedChain.Spot indexedSighting(java.util.Set<String> blocks) {
+        var h = Mining.get().nearestIndexed(Minecraft.getInstance().player, blocks);
+        return h == null ? null : new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(h.x(), h.y(), h.z(), Math.sqrt(h.d2()), h.id());
     }
 
     /** simple-tools: the one "tree nearby" fact: Baritone's scan first, AA's sightings (the policy allowing) as the fallback. */
     io.github.mojolowjo.entropybot.aa.NeedChain.Spot nearbyLog() {
-        return c.nearby.log(() -> {
-            var trees = woodFacts();
-            if (trees != null) for (var t : trees.trees()) {
-                if (t.deny() == null) return new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(t.x(), t.y(), t.z(), t.dist(), null);
-            }
-            return null;
-        });
-    }
-
-    /** The nearest coal ore seen that may be taken (the coal set's own ores), as a chain source; its block comes from the item's drop data. */
-    private io.github.mojolowjo.entropybot.aa.NeedChain.Spot nearestCoal() {
-        var f = coalFacts(1);
-        if (f == null) return null;
-        for (var o : f.ores()) if (o.deny() == null) return new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(o.x(), o.y(), o.z(), o.dist(), null);
-        return null;
-    }
-
-    private long stoneAt = -1;
-    private io.github.mojolowjo.entropybot.aa.NeedChain.Spot stoneSpot;
-
-    /** The nearest loaded block the game data calls stone-like (ItemWorth.stoneLike) the policy lets me dig, within the scan; cached a few seconds. */
-    private io.github.mojolowjo.entropybot.aa.NeedChain.Spot nearestStone() {
-        long now = System.currentTimeMillis();
-        if (stoneAt >= 0 && now - stoneAt < Tuning.l("aaRuntime.stoneCacheMs")) return stoneSpot;
-        stoneAt = now;
-        stoneSpot = null;
-        try {
-            Minecraft mc = Minecraft.getInstance();
-            LocalPlayer p = mc.player;
-            if (p == null || mc.level == null) return null;
-            int[] me = Jobs.here(p);
-            String adim = Storage.dim();
-            int r = Tuning.i("aaRuntime.stoneScanR"), up = Tuning.i("aaRuntime.stoneScanUp"), down = Tuning.i("aaRuntime.stoneScanDown");
-            net.minecraft.core.BlockPos.MutableBlockPos q = new net.minecraft.core.BlockPos.MutableBlockPos();
-            double best = Double.MAX_VALUE;
-            for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) for (int dy = -down; dy <= up; dy++) {
-                double d = Math.sqrt((double) dx * dx + (double) dy * dy + (double) dz * dz);
-                if (d >= best) continue;
-                q.set(me[0] + dx, me[1] + dy, me[2] + dz);
-                if (!mc.level.isLoaded(q)) continue;
-                String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(q).getBlock()).toString();
-                if (!io.github.mojolowjo.entropybot.aa.brain.ItemWorth.stoneLike(id) || io.github.mojolowjo.entropybot.aa.brain.MiningTiers.blockTierOf(id) < 1 || !c.workAllowed(adim, q.getX(), q.getY(), q.getZ())) continue;
-                best = d;
-                stoneSpot = new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(q.getX(), q.getY(), q.getZ(), d, id);
-            }
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] aa: stone scan: {}", e.toString());
-        }
-        return stoneSpot;
+        return c.nearby.log(this::treeSighting);
     }
 
     /** The nearest known iron positions the scorer weighs. */
@@ -868,7 +875,7 @@ public final class AaRuntime implements JobPort {
         }
     }
 
-    // ---- the switch (brainData "aa": {on, since, heldUntil, shelterBuilt}) ----
+    // ---- the switch: the world's (AaSwitch: on, since, heldUntil, shelterBuilt, only); brainData "aa": the bot-wide settings ----
 
     JsonObject data() {
         JsonObject root = c.brainData();
@@ -876,16 +883,36 @@ public final class AaRuntime implements JobPort {
         return root.getAsJsonObject("aa");
     }
 
-    public boolean on() {
-        JsonObject d = data();
-        return d.has("on") && d.get("on").getAsBoolean();
+    /** live-facts: this world's switch (commands.json's world part). */
+    private JsonObject sw() { return io.github.mojolowjo.entropybot.aa.AaSwitch.of(c.brainData()); }
+
+    public boolean on() { return io.github.mojolowjo.entropybot.aa.AaSwitch.on(sw()); }
+
+    /**
+     * live-facts: the world's part was (re)loaded: the hold, the shelter latch and {@code aa only} come from this world's switch;
+     * AA off here gives Baritone's look settings back. A line for the world log.
+     */
+    String worldLoaded() {
+        JsonObject s = sw();
+        heldUntil = io.github.mojolowjo.entropybot.aa.AaSwitch.heldUntil(s);
+        bb.fact(AaLadder.SHELTER_FACT, io.github.mojolowjo.entropybot.aa.AaSwitch.shelterBuilt(s) ? Boolean.TRUE : null);
+        io.github.mojolowjo.entropybot.aa.brain.Only.set(io.github.mojolowjo.entropybot.aa.AaSwitch.only(s));
+        offReason = null;
+        if (!on()) lookRestore();
+        String only = io.github.mojolowjo.entropybot.aa.brain.Only.statusText();
+        return "aa " + (on() ? "on" : "off") + " in this world" + (only == null ? "" : ", " + only);
+    }
+
+    /** aa only <need>|off: the watched need, saved in this world's switch. */
+    String only(String arg) {
+        String set = io.github.mojolowjo.entropybot.aa.brain.Only.set(arg == null || arg.isEmpty() ? null : arg);
+        io.github.mojolowjo.entropybot.aa.AaSwitch.only(sw(), set);
+        c.saved();
+        return set;
     }
 
     String turnOn() {
-        JsonObject d = data();
-        d.addProperty("on", true);
-        d.addProperty("since", System.currentTimeMillis());
-        d.remove("heldUntil");
+        io.github.mojolowjo.entropybot.aa.AaSwitch.turnOn(sw(), System.currentTimeMillis());
         offReason = null;
         heldUntil = 0;
         c.saved();
@@ -989,8 +1016,7 @@ public final class AaRuntime implements JobPort {
         slow.reset();                        // AA_STEP3 B
         io.github.mojolowjo.entropybot.clear.OreDetour.valuer = null;
         appendRun();
-        JsonObject d = data();
-        d.addProperty("on", false);
+        io.github.mojolowjo.entropybot.aa.AaSwitch.turnOff(sw());
         c.saved();
         String stopped = null;
         if (bb.task() != null) {
@@ -1017,7 +1043,7 @@ public final class AaRuntime implements JobPort {
         if (!on()) return "";
         if (bb.task() != null || tree.slot.runningChild() != null) tree.root.halt("the owner's stop");
         heldUntil = System.currentTimeMillis() + holdMs();
-        data().addProperty("heldUntil", heldUntil);
+        io.github.mojolowjo.entropybot.aa.AaSwitch.hold(sw(), heldUntil);
         c.saved();
         return "; aa waits " + holdMs() / 60000 + " min (aa on, or your next order, to go on now)";  // structural: milliseconds per minute
     }
@@ -1079,6 +1105,7 @@ public final class AaRuntime implements JobPort {
                 }
                 return;
             }
+            worldFacts(mc);                 // live-facts: the loot book is read once per world when AA starts ticking in it
             if (sensedTick < 0 || tick - sensedTick >= 10) {  // structural: periodic cadence in ticks (20 ticks = 1 s)
                 sensed = c.senses.sense();      // AA_CLEANUP 3: was BrainRuntime.sense()
                 sensedTick = tick;
@@ -1114,8 +1141,8 @@ public final class AaRuntime implements JobPort {
             // 0.36.2 (review 6): while danger drives, AA's chain starts no next step and no retry (the pause ended the
             // running one); held a little past AA's next tick, so it goes on by itself once the guard lets go
             if ("danger".equals(tree.driver()) && chainRunning()) c.chains.holdFor(10);
-            if (tree.ladder.last() == Status.SUCCESS && !data().has(AaLadder.SHELTER_FACT) && bb.flag(AaLadder.SHELTER_FACT)) {
-                data().addProperty(AaLadder.SHELTER_FACT, true);
+            if (tree.ladder.last() == Status.SUCCESS && !io.github.mojolowjo.entropybot.aa.AaSwitch.shelterBuilt(sw()) && bb.flag(AaLadder.SHELTER_FACT)) {
+                io.github.mojolowjo.entropybot.aa.AaSwitch.shelterBuilt(sw(), true);
                 c.saved();
             }
             if (s == Status.FAILURE && tracer.counts.ticks % 240 == 1) LOG.info("[entropybot] aa: nothing to do: {}", tree.root.reason());  // structural: periodic cadence in ticks (20 ticks = 1 s)
@@ -2722,6 +2749,19 @@ public final class AaRuntime implements JobPort {
         LOG.info("[entropybot] aa: resolver catalog: {} items, {} blocks, worldgen {}", items.size(), blocks.size(),
                 gen == null ? "none (multiplayer)" : gen.size() + " ore blocks");
         return catalog;
+    }
+
+    /** live-facts: the world the tick last read the catalog (and the loot book) for; a failed read is retried by the owner's aa want, not every tick. */
+    private String catalogTried;
+
+    /** live-facts: the first AA tick in a world (aa on, a world joined) reads the catalog and the loot book, so the collect step and NeedChain have it. */
+    private void worldFacts(Minecraft mc) {
+        String world = Core.INSTANCE.files() == null ? "" : Core.INSTANCE.files().worldRoot().toString();
+        if (world.equals(catalogTried)) return;
+        catalogTried = world;
+        catalog(mc);
+        var book = currentLootBook();
+        LOG.info("[entropybot] aa: loot book for this world: {}", book == null ? "none" : book.counts());     // a failed read says "read failed" here and warns above
     }
 
     /** rm-execution: the loot book read for this world (the collect step's blocks), or null before the first read. */

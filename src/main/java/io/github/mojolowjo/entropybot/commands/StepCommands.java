@@ -36,7 +36,7 @@ public final class StepCommands {
             case Step.Climb k -> "climb";
             case Step.Scan k -> k.base() ? "scan base" : "scan";
             case Step.FindCave k -> "find cave " + k.minutes();
-            case Step.Explore k -> "explore " + k.minutes();
+            case Step.Explore k -> "explore " + k.minutes() + (k.until() == null ? "" : " until " + k.until());
             case Step.Dig d -> "dig " + d.from()[0] + " " + d.from()[1] + " " + d.from()[2] + " " + d.to()[0] + " " + d.to()[1] + " " + d.to()[2]
                     + (d.ores() ? " ores" : "") + (d.viaEngine() ? " via engine" : "");
             case Step.MarkMine k -> "place mine " + (k.at() == null ? "" : k.at()[0] + " " + k.at()[1] + " " + k.at()[2] + " ") + k.dir();

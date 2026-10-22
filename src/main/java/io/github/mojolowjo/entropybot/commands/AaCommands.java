@@ -33,7 +33,7 @@ final class AaCommands {
             case "tree" -> { return aa.tree.mermaid() + (aa.on() ? "\n%% desires now: " + String.join(" | ", aa.brainLines(30)) + "\n%% " + aa.ideasLine() : ""); }
             case "worth" -> { return arg.isEmpty() ? "usage: aa worth <item> (e.g. aa worth iron_pickaxe): the terms its worth is derived from, or UNKNOWN" : io.github.mojolowjo.entropybot.aa.brain.ItemWorth.explain(arg.replace(" ", "_")); }     // AA_ROUND4 C
             case "only" -> {
-                String set = io.github.mojolowjo.entropybot.aa.brain.Only.set(arg.isEmpty() ? null : arg);
+                String set = aa.only(arg);           // live-facts: saved in this world's switch
                 return arg.isEmpty() ? (set == null ? "aa only: off (usage: aa only <need>|off, e.g. aa only torches)" : "only: " + set)
                         : set == null ? "aa only: off - every need and want is back" : "only: " + set + " - every other need and want is silent (danger, reflexes and your orders stay on); aa only off to end";
             }
