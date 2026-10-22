@@ -27,13 +27,12 @@ class BaritoneVerbTest {
     }
 
     @Test
-    void rawMineRefused() {
+    void rawMinePassesThrough() {
+        // 0.39.z2 (owner 2026-10-22): the raw door is the owner's test door into the car; mine included
         List<String> ran = new ArrayList<>();
-        assertEquals(BaritoneVerb.RAW_MINE, BaritoneVerb.reply("mine diamond_ore", true, "o", t -> ran.add(t)));
-        assertEquals(BaritoneVerb.RAW_MINE, BaritoneVerb.reply("#MINE 64 iron_ore", true, "o", t -> ran.add(t)));
-        assertTrue(ran.isEmpty());
-        BaritoneVerb.reply("minewalk", true, "o", t -> ran.add(t));
-        assertEquals(List.of("minewalk"), ran, "only the mine command itself");
+        BaritoneVerb.reply("mine diamond_ore", true, "o", t -> ran.add(t));
+        BaritoneVerb.reply("#MINE 64 iron_ore", true, "o", t -> ran.add(t));
+        assertEquals(List.of("mine diamond_ore", "MINE 64 iron_ore"), ran);
     }
 
     @Test
