@@ -139,7 +139,6 @@ class V1bOneTest {
     void queueAcceptance() {
         assertNull(QueueRules.refusal("craft torch 16"));
         assertNull(QueueRules.refusal("mine strip iron 16 then deposit"));
-        assertTrue(QueueRules.refusal("escort me").contains("never finishes"));
         assertTrue(QueueRules.refusal("follow").contains("never finishes"));
         assertTrue(QueueRules.refusal("defend").contains("never finishes"));
         assertTrue(QueueRules.refusal("guard base").contains("never finishes"));
@@ -147,7 +146,7 @@ class V1bOneTest {
         assertTrue(QueueRules.refusal("deposit then follow").contains("follow"), "a chain with an endless step");
         assertTrue(QueueRules.refusal("status").contains("answers at once"));
         assertTrue(QueueRules.refusal("").startsWith("usage"));
-        assertFalse(QueueRules.mayStart(false, true), "behind an escort it waits until dismiss");
+        assertFalse(QueueRules.mayStart(false, true), "behind a defend or guard it waits until dismiss");
         assertFalse(QueueRules.mayStart(true, false));
         assertTrue(QueueRules.mayStart(false, false));
         assertEquals("nothing running - queued: 1. craft torch 16, 2. deposit", QueueRules.show(null, List.of("craft torch 16", "deposit")));

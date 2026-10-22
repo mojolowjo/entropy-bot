@@ -93,8 +93,20 @@ final class Crafting {
     private String giveStep(Step st, LocalPlayer p) {
         String[] w = st.text.split(" ");
         io.github.mojolowjo.entropybot.aa.moves.JobHands.get().look(st.pos[0] + 0.5, st.pos[1] + 1.0, st.pos[2] + 0.5);
-        int thrown = io.github.mojolowjo.entropybot.engine.Escort.throwItems(p, w[0], Integer.parseInt(w[1]));
+        int thrown = throwItems(p, w[0], Integer.parseInt(w[1]));
         return thrown > 0 ? "next" : "error: give " + w[0] + ": nothing could be thrown";
+    }
+
+    private static final java.util.regex.Pattern DROPPED = java.util.regex.Pattern.compile("^ok: dropped (\\d+)");
+
+    /** Throws up to {@code n} of {@code item} (full id) with the inventory menu's THROW click. Returns how many went; 0 when none could (logged). */
+    static int throwItems(LocalPlayer p, String item, int n) {
+        if (n <= 0) return 0;
+        String res = io.github.mojolowjo.entropybot.gui.GuiCore.drop(new io.github.mojolowjo.entropybot.gui.McMenu(p), item + " " + n);
+        java.util.regex.Matcher m = DROPPED.matcher(res == null ? "" : res);
+        if (m.find()) return Integer.parseInt(m.group(1));
+        LOG.info("[entropybot] throw {} {}: {}", n, item, res);
+        return 0;
     }
 
     /** Package E: "upgrade &lt;essence&gt; [n]", the essence tiers in bag-sized rounds. */

@@ -71,9 +71,9 @@ public final class VerbTable {
                 "goal bed|goal iron 16|goal stone tools|goal show bed", "goals");
         v("goals", "", "stocking", O, "goals | goals clear <n>|all", "the goals waiting for the brain", "goals|goals clear 1", "goal <text>");
         v("have", "", "stocking", G, "have [item]", "what we have as a group (my bag, the chests, the RS network, your bag) and which chest has it", "have iron_ingot|have", "fetch <item> [n]");
-        v("stock", "", "stocking", O, "stock [filter] | stock targets | stock set <item> <n> | stock clear <item>|all",
-                "the group's totals, biggest first, and how fresh each source is; targets/set/clear: how much the base chests should hold",
-                "stock ingot|stock set torch 64|stock targets", "have <item>");
+        v("stock", "", "stocking", O, "stock [filter]",
+                "the group's totals, biggest first, and how fresh each source is",
+                "stock ingot|stock", "have <item>");
         v("get", "", "stocking", O, "get <item|kind> [n]", "fetch from the chests or the RS network", "get coal 16|get logs 32", "inv");
         v("supplies", "", "stocking", O, "supplies | supplies set <item n, ...> | supplies clear", "what I always carry (set replaces the whole list)",
                 "supplies set torch 32, bread 16, iron_pickaxe 1|supplies", "supplies");
@@ -116,20 +116,17 @@ public final class VerbTable {
                 "defend", "dismiss");
         v("guard", "", "fighting", O, "guard <area|place|marker>", "stay in that area (or within 8 of the place or marker) and fight what comes, until dismiss, stop or another order",
                 "guard base|guard farm gate", "dismiss");
-        v("escort", "", "fighting", P, "escort [player] [radius] | escort me [radius] | escort status",
-                "go with that player (you when not given) and fight monsters near them (radius 6, 2-16), stand between them and a creeper, throw food when they're hungry; until dismiss",
-                "escort|escort me 10|escort Steve", "dismiss", "escort me [radius], escort status");
         v("assist", "", "fighting", O, "assist | assist off | assist status",
-                "help you with what you do (your companion mod 0.3.1 tells me): follow you and fight what threatens either of us; chopping: the half-cut trees near your last log, else cut that kind; "
+                "help you with what you do (your companion mod 0.3.1 tells me): follow you; chopping: the half-cut trees near your last log, else cut that kind; "
                         + "mining: that ore or stone within 12 of your last block; farming: a farm round when the farm place is near you; building: hand you the block you place when you run low; "
-                        + "idle: follow and pick up drops (after 60 s idle: just follow); a new activity counts after 5 s; whispers only when it changes; off, dismiss or stop ends it; brain copy on|off is the same",
+                        + "idle: follow (after 60 s idle: just follow); a new activity counts after 5 s; whispers only when it changes; off, dismiss or stop ends it; brain copy on|off is the same",
                 "assist|assist status|assist off", "dismiss");
-        v("dismiss", "", "fighting", G, "dismiss", "end the escort (you, or the player I escort), assist and defend/guard (the owner)", "dismiss", "status");
+        v("dismiss", "", "fighting", G, "dismiss", "end assist and defend/guard (the owner)", "dismiss", "status");
         v("attack", "", "fighting", O, "attack <mob kind|player|entity id> [confirm] | attack nearest | attack target <id>",
                 "fight one mob: hostile goes; a passive one asks confirm unless you type its kind; a named one asks confirm (a name has letters, not just digits); a player never unless defence players on; never pets. Ends when it dies, leaves 24 blocks or after 30 s",
                 "attack zombie|attack nearest|attack 812 confirm", "defence");
         // ---- queue and status (VOCABULARY 5)
-        v("queue", "", "jobs", G, "queue | queue <task> | queue clear", "what runs and what waits; queue a task with a finish after the current one (never escort, follow, defend, guard, repeat forever; the owner)",
+        v("queue", "", "jobs", G, "queue | queue <task> | queue clear", "what runs and what waits; queue a task with a finish after the current one (never follow, defend, guard, repeat forever; the owner)",
                 "queue|queue craft torch 16", "status");
         v("status", "", "jobs", G, "status", "where I am, health, food, the job, deaths in the last hour and the game stage", "status", "inv");
         v("inv", "", "jobs", G, "inv", "what I carry", "inv", "deposit");
@@ -172,7 +169,7 @@ public final class VerbTable {
         v("plan", "", "brain", O, "plan <goal>", "a dry run of goal <goal>: the chain the planner finds with each step's cost, nothing runs (or what is missing)", "plan furnace|plan iron tools", "goal <goal>");
         v("actions", "", "brain", O, "actions | actions <verb>", "the action table: what each verb needs and gives, which ones the planner chains; all of it with the state is entropybot/actions.json (for a model)",
                 "actions|actions craft", "plan <goal>");
-        v("done", "free", "brain", O, "done | free", "I have nothing for you: do what you want (the brain may leave 32 blocks of you); your next order, come or escort takes it back", "done", "status");
+        v("done", "free", "brain", O, "done | free", "I have nothing for you: do what you want (the brain may leave 32 blocks of you); your next order or come takes it back", "done", "status");
         v("sleep", "", "brain", O, "sleep | sleep status | sleep auto on|off", "go to the nearest bed (or put mine down at night) and sleep until morning or stop; auto: go to bed when others sleep (the brain, default on)",
                 "sleep|sleep auto off", "status");
         v("shelter", "", "brain", O, "shelter | shelter 5m | shelter keep | shelter status | shelter leave",

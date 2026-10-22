@@ -87,9 +87,6 @@ public final class Reflexes {
     private long deniedAt;
     private long forceFleeUntil;
     private final List<String> whispers = new java.util.ArrayList<>();
-    /** C7: escort me|<player> (Commands starts the follow; this fights for them). */
-    public final Escort escort = new Escort();
-    private boolean escortFighting;
     /** AA_CLEANUP 4: the lava/fire reflex (Survival's fire part; the milk and potions went). */
     public final FireReflex fire;
     /** AA_CLEANUP 4: the danger moves AA's danger desire (or the owner) starts: flee, cover, pillar, burrow. */
@@ -271,7 +268,6 @@ public final class Reflexes {
         }
         o.addProperty("urgent", urgent);
         o.addProperty("noFood", noFood);
-        o.add("escort", escort.status());
         if (deniedDim != null) o.addProperty("deniedDim", deniedDim);
         o.addProperty("engine", engine.disabled() ? "off" : engine.mode().name().toLowerCase());
         try {
@@ -360,15 +356,6 @@ public final class Reflexes {
         if (creeperProbe && cr != null) LOG.info("[entropybot] creeper probe: tick {} creeper {} at {} | target {} {} | reflex {} | hp {}",
                 now, cr.e.getId(), Math.round(cr.d * 10) / 10.0, t == null ? "none" : t.id, t == null ? "" : Math.round(t.d * 10) / 10.0,  // structural: rounded to one decimal for the text
                 reflex, Math.round(hp));
-        // C7 escort: what threatens the guarded player comes first, unless something is at the bot's own throat
-        // (or the owner pointed at a target with `attack`, C1)
-        if (escort.active()) escort.watch(mc);
-        Entity ge = ft == null && defence && escort.active() ? escort.threat(mc, p) : null;
-        if (ge != null && (t == null || t.d > ReflexRules.reach() || t.e == ge)) {
-            escortFight(mc, p, threatOf(p, ge, hurt), hurt);
-            return;
-        }
-        if (reflex != Reflex.FIGHTING) escortFighting = false;
         // 0.23.2, the owner's creeper heuristic: a sprint runs to its end (7+ blocks); a creeper within 6 starts one
         // (already sprinting away = keep going, else one hit for the knockback, then sprint straight away)
         if ((cspr.active() || creeperLadderGoverns) && creeperSprintTick(mc, p)) return;     // 0.39.s8: the ladder goes on after the sprint
@@ -407,7 +394,6 @@ public final class Reflexes {
             eatStep(mc, p);
             return;
         }
-        if (escort.active()) escort.idle(mc, p, engine, now);
         if (now >= eatCooldownUntil && mc.screen == null && p.containerMenu == p.inventoryMenu &&
                 ((eatRequested && p.getFoodData().needsFood()) || ReflexRules.wantsMeal(p.getFoodData().getFoodLevel(), hp, bestNutrition(p)))) {
             startEating(mc, p);
@@ -690,40 +676,6 @@ public final class Reflexes {
             watchCreeperAt = now;
         }
         return now - watchCreeperAt <= Tuning.i("reflexes.watchCreeperTicks");
-    }
-
-    private Threat threatOf(LocalPlayer p, Entity e, boolean hurt) {
-        HostileRules.Kind k = Hostility.INSTANCE.kind(e, hurt);
-        return new Threat(e, p.distanceTo(e), BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath(), e instanceof Creeper, k);
-    }
-
-    /**
-     * C7: a fight for the escorted player (an owner verb; refused under AA). A creeper: the bot
-     * stands between it and the player and knocks it back; anything else is the ordinary fight (AA_CLEANUP 4: the retreat under 6 health went).
-     */
-    private void escortFight(Minecraft mc, LocalPlayer p, Threat t, boolean hurt) {
-        escort.interrupted();
-        if (reflex == Reflex.EATING) stopEating(mc, "interrupted by a " + t.id + " near " + escort.name());
-        if (!escortFighting) {
-            escortFighting = true;
-            escort.countFight();
-        }
-        target = t.id;
-        targetDist = t.d;
-        urgent = hurt || t.d < ReflexRules.urgent();
-        if (t.creeper) {
-            begin(Reflex.FIGHTING, mc, "guarding " + escort.name() + " from a creeper");
-            holdWeapon(mc, p);
-            look(t.e);
-            BlockPos ip = escort.interpose(mc, t.e);
-            if (ip != null && (now % 20 == 0 || engine.mode() != EngineProcess.Mode.OVERRIDE)) engine.override(new GoalNear(ip, 0));  // structural: periodic cadence in ticks (20 ticks = 1 s)
-            if (t.d <= ReflexRules.reach() && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {  // game fact: a swing at 90% attack strength or more is a full hit
-                mc.gameMode.attack(p, t.e);         // the knockback sends it away from the bot, which stands between
-                p.swing(InteractionHand.MAIN_HAND);
-            }
-            return;
-        }
-        fight(mc, p, t);
     }
 
     private void begin(Reflex r, Minecraft mc, String line) {

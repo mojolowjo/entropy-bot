@@ -8,7 +8,6 @@ import io.github.mojolowjo.entropybot.aa.StationOptions;
 import io.github.mojolowjo.entropybot.aa.WoodOptions;
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Inputs;
-import io.github.mojolowjo.entropybot.camp.JunkRules;
 
 import io.github.mojolowjo.entropybot.aa.AaDesires;
 import io.github.mojolowjo.entropybot.aa.brain.Brain;

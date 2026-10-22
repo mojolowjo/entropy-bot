@@ -67,7 +67,7 @@ public final class NeedWords {
         return new Goal(null, null, "I can't plan that yet - " + GOAL_USAGE);
     }
 
-    /** "done"/"free" (the owner's release) is lifted by the owner's next direct order, come or escort. */
+    /** "done"/"free" (the owner's release) is lifted by the owner's next direct order, or come. */
     public static boolean liftsRelease(String verb) {
         return !List.of("done", "free", "status", "inv", "help", "queue", "places", "have", "stock", "needs", "goals", "kinds", "check", "confirm", "sleep", "why", "brain", "idle", "dayplan").contains(verb);
     }

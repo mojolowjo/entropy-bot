@@ -74,8 +74,6 @@ public final class Jobs {
          * ownsBreaking: the job turned Baritone's breaking on (SafetyNet leaves it be while Baritone's mine runs).
          */
         public boolean holdOnFight, ownsBreaking;
-        /** C5: junk thrown away while this job ran (its end line says "dropped N junk"). */
-        public int junkDropped;
         public Runnable onHold, onEnd;
         /** rm-routes: a far walk asks Baritone for GoalXZ first; on arrival the walk sets its GoalBlock (finalGoal). */
         baritone.api.pathing.goals.Goal finalGoal;
@@ -344,7 +342,6 @@ public final class Jobs {
         if (j == null || j.done) return;
         msg = restoreGate(j, msg);
         if (msg == null) return;                          // P1: the job's blocks are put back first; finish comes again then
-        if (j.junkDropped > 0) msg = msg + "; dropped " + j.junkDropped + " junk";        // C5
         j.done = true;
         j.status = msg;
         if (j.onEnd != null) {
@@ -495,9 +492,6 @@ public final class Jobs {
      * goal: a Baritone command ("goto x y z", "goto x z", "follow player NAME"); dest: where it ends up (a /home
      * first when that is near home and far off), or null; reflex: no fence check.
      */
-    /** Package D: when the last errand walk (come, goto, follow, go, base) started (ms; 0 = none yet). */
-    long lastTravelAt;
-
     public String startTravel(String goal, String label, int[] dest, String destDim, boolean reflex) {
         if (!door("travel " + label)) return io.github.mojolowjo.entropybot.aa.door.Door.refusal("travel " + label);
         IBaritone b = baritone();
@@ -513,7 +507,6 @@ public final class Jobs {
             int[] spot = dest != null ? dest : FenceRules.goalSpot(goal, (int) Math.floor(p.getY()));
             String why = spot == null ? null : FenceRules.walkVerdict(io.github.mojolowjo.entropybot.api.BotAPI.check(Guard.dimOf(Minecraft.getInstance().level), spot[0], spot[1], spot[2], "go"));
             if (why != null) return FenceRules.gotoRefusal(why);
-            lastTravelAt = System.currentTimeMillis();     // package D: an errand (come, goto, go...) holds the furnace pickups
         }
         followWatch = null;
         followFix = null;

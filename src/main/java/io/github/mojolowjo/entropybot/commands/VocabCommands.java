@@ -216,17 +216,15 @@ final class VocabCommands {
         return t;
     }
 
-    /** "dismiss": from the owner, ends the escort and defend/guard; from the escorted player, their escort. */
+    /** "dismiss": from the owner, ends defend/guard. */
     String dismiss(String from, LocalPlayer p) {
         boolean owner = from.equalsIgnoreCase(c.owner());
-        io.github.mojolowjo.entropybot.engine.Escort e = Core.INSTANCE.reflexes.escort;
         List<String> done = new ArrayList<>();
-        if (e.active() && (owner || from.equalsIgnoreCase(e.name()))) done.add(c.escortCommand(from, "off", p).replaceFirst("^ok: ", ""));
         if (owner) {
             String h = endHold("dismissed");
             if (h != null) done.add(h);
         }
-        if (done.isEmpty()) return e.active() ? "sorry, only " + c.owner() + " or " + e.name() + " can end this escort" : "ok: nothing to dismiss (no escort, defend or guard)";
+        if (done.isEmpty()) return "ok: nothing to dismiss (no defend or guard)";
         return "ok: " + String.join("; ", done);
     }
 
@@ -432,7 +430,7 @@ final class VocabCommands {
         b.addProperty("released", true);
         b.addProperty("releasedAt", System.currentTimeMillis());
         c.saved();
-        return "ok: released - I may do what I want now (with brain on: further than 32 blocks from you); your next order, come or escort takes me back";
+        return "ok: released - I may do what I want now (with brain on: further than 32 blocks from you); your next order or come takes me back";
     }
 
     boolean released() {

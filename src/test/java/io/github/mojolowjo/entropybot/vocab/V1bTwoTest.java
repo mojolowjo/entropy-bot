@@ -75,9 +75,8 @@ class V1bTwoTest {
     }
 
     @Test
-    void guestsMayDismissAndEscortThemselves() {
+    void guestsMayDismiss() {
         assertNull(Texts.guestRefusal("dismiss", "", "dismiss", "owner"));
-        assertNull(Texts.guestRefusal("escort", "me", "escort me", "owner"));
         assertNotNull(Texts.guestRefusal("defend", "", "defend", "owner"));
         assertNotNull(Texts.guestRefusal("attack", "zombie", "attack zombie", "owner"));
     }

@@ -152,7 +152,6 @@ final class TuningDefs {
         // builderReport
         Tuning.def("builderReport.stallSeconds", 60, "rm-constants 0.39.u2 (was BuilderReport.STALL_SECONDS)", "the stall seconds of BuilderReport");
         // campCommands
-        Tuning.def("campCommands.careRetryMs", 10 * 60_000L, "rm-constants 0.39.u2 (was CampCommands.CARE_RETRY_MS)", "the care retry ms of CampCommands");
         // caveRules
         Tuning.def("caveRules.minutes", 30, "rm-constants 0.39.u2 (was CaveRules.MINUTES)", "the minutes of CaveRules");
         Tuning.def("caveRules.fromEntrance", 160, "rm-constants 0.39.u2 (was CaveRules.FROM_ENTRANCE)", "the from entrance of CaveRules");
@@ -196,8 +195,6 @@ final class TuningDefs {
         Tuning.def("coalOptions.furnaceMake", 15, "rm-constants 0.39.u2 (was CoalOptions.FURNACE_MAKE)", "the furnace make of CoalOptions");
         Tuning.def("coalOptions.digMax", 16, "rm-constants 0.39.u2 (was CoalOptions.DIG_MAX)", "the dig max of CoalOptions");
         // commands
-        Tuning.def("commands.pickupHoldMs", 10 * 60_000L, "rm-constants 0.39.u2 (was Commands.PICKUP_HOLD_MS)", "A 'stop' holds the pickups this long (like the autominer's hold)");
-        Tuning.def("commands.pickupNearBase", 48, "rm-constants 0.39.u2 (was Commands.PICKUP_NEAR_BASE)", "Blocks from the base within which the bot picks furnace output up by itself");
         Tuning.def("commands.memoryBlockMs", 20_000, "rm-constants 0.39.u2 (was Commands.MEMORY_BLOCK_MS)", "the memory block ms of Commands");
         Tuning.def("commands.mobsRadius", 32, "rm-constants 0.39.u2 (was Commands.MOBS_RADIUS)", "state.json 'mobs': radius, cap");
         Tuning.def("commands.mobsCap", 48, "rm-constants 0.39.u2 (was Commands.MOBS_CAP)", "the mobs cap of Commands");
@@ -292,18 +289,6 @@ final class TuningDefs {
         Tuning.def("drownRisk.defaultTier", 2, "rm-constants 0.39.u2 (was DrownRisk.DEFAULT_TIER)", "The tier assumed when unknown (a stone pickaxe)");
         Tuning.def("drownRisk.placeS", 0.5, "rm-constants 0.39.u2 (was DrownRisk.PLACE_S)", "Seconds to place one block (aim, click)");
         Tuning.def("drownRisk.surfaceScan", 32, "rm-constants 0.39.u2 (was DrownRisk.SURFACE_SCAN)", "The deepest water column counted per cell");
-        // escortRules
-        Tuning.def("escortRules.radius", 6, "rm-constants 0.39.u2 (was EscortRules.RADIUS)", "'escort me' fights what comes this close to the player");
-        Tuning.def("escortRules.radiusMax", 16, "rm-constants 0.39.u2 (was EscortRules.RADIUS_MAX)", "'escort me' fights what comes this close to the player");
-        Tuning.def("escortRules.standMin", 2, "rm-constants 0.39.u2 (was EscortRules.STAND_MIN)", "the bot's distance from the player");
-        Tuning.def("escortRules.standMax", 4, "rm-constants 0.39.u2 (was EscortRules.STAND_MAX)", "the bot's distance from the player");
-        Tuning.def("escortRules.standAt", 3, "rm-constants 0.39.u2 (was EscortRules.STAND_AT)", "the bot's distance from the player");
-        Tuning.def("escortRules.aimDeg", 35, "rm-constants 0.39.u2 (was EscortRules.AIM_DEG)", "head yaw within this of the player = 'looks at them'");
-        Tuning.def("escortRules.feedAt", 6, "rm-constants 0.39.u2 (was EscortRules.FEED_AT)", "the player's food at or below this");
-        Tuning.def("escortRules.keepFood", 8, "rm-constants 0.39.u2 (was EscortRules.KEEP_FOOD)", "the bot keeps this many food items for itself");
-        Tuning.def("escortRules.feedGive", 4, "rm-constants 0.39.u2 (was EscortRules.FEED_GIVE)", "the bot keeps this many food items for itself");
-        Tuning.def("escortRules.feedCooldownMs", 60_000, "rm-constants 0.39.u2 (was EscortRules.FEED_COOLDOWN_MS)", "the feed cooldown ms of EscortRules");
-        Tuning.def("escortRules.warnDist", 12, "rm-constants 0.39.u2 (was EscortRules.WARN_DIST)", "a creeper or skeleton this close to the player");
         // exploreRules
         Tuning.def("exploreRules.seen", 2, "rm-constants 0.39.u2 (was ExploreRules.SEEN)", "the seen of ExploreRules");
         Tuning.def("exploreRules.rings", 24, "rm-constants 0.39.u2 (was ExploreRules.RINGS)", "the rings of ExploreRules");
@@ -463,8 +448,6 @@ final class TuningDefs {
         Tuning.def("junkDrop.floorKeep", 64, "rm-constants 0.39.u2 (was JunkDrop.FLOOR_KEEP)", "What a floor dig keeps of its fill block");
         Tuning.def("junkDrop.thrownTicks", 20L * 120, "rm-constants 0.39.u2 (was JunkDrop.THROWN_TICKS)", "How long (ticks) and how near (blocks) the drops where it threw junk are left alone");
         Tuning.def("junkDrop.thrownNear", 6, "rm-constants 0.39.u2 (was JunkDrop.THROWN_NEAR)", "the thrown near of JunkDrop");
-        // junkRules
-        Tuning.def("junkRules.low", 4, "rm-constants 0.39.u2 (was JunkRules.LOW)", "the low of JunkRules");
         // kelpRules
         Tuning.def("kelpRules.defaultN", 8, "rm-constants 0.39.u2 (was KelpRules.DEFAULT_N)", "the default n of KelpRules");
         // kelping
@@ -721,8 +704,6 @@ final class TuningDefs {
         Tuning.def("stepTimes.climbS", 0.3, "rm-constants 0.39.u2 (was StepTimes.CLIMB_S)", "TIME_MODEL: path length = straight line x 1.3 when no plan exists yet");
         // steps
         Tuning.def("steps.maxExpansions", 16, "rm-constants 0.39.u2 (was Steps.MAX_EXPANSIONS)", "At most this many expansions (a plan in a plan) per run");
-        // stockRules
-        Tuning.def("stockRules.maxItems", 32, "rm-constants 0.39.u2 (was StockRules.MAX_ITEMS)", "the max items of StockRules");
         // storage
         Tuning.def("storage.guiSettle", 8, "rm-constants 0.39.u2 (was Storage.GUI_SETTLE)", "the gui settle of Storage");
         Tuning.def("storage.potsR", 16, "rm-constants 0.39.u2 (was Storage.POTS_R)", "the pots r of Storage");
@@ -770,8 +751,6 @@ final class TuningDefs {
         Tuning.def("threatRuntime.fullTicks", 100, "rm-constants 0.39.u2 (was ThreatRuntime.FULL_TICKS)", "the full ticks of ThreatRuntime");
         Tuning.def("threatRuntime.freshMs", 12_000, "rm-constants 0.39.u2 (was ThreatRuntime.FRESH_MS)", "the fresh ms of ThreatRuntime");
         Tuning.def("threatRuntime.overrunMs", 5, "rm-constants 0.39.u2 (was ThreatRuntime.OVERRUN_MS)", "the overrun ms of ThreatRuntime");
-        // toolCareRules
-        Tuning.def("toolCareRules.worn", 0.10, "rm-constants 0.39.u2 (was ToolCareRules.WORN)", "the worn of ToolCareRules");
         // toolWear
         Tuning.def("toolWear.craftS", 10, "rm-constants 0.39.u2 (was ToolWear.CRAFT_S)", "the craft s of ToolWear");
         Tuning.def("toolWear.gatherS", 120, "rm-constants 0.39.u2 (was ToolWear.GATHER_S)", "Review: with nothing to make one, a new pickaxe means gathering its materials first (~2 min), capped by its worth");
@@ -944,17 +923,11 @@ final class TuningDefs {
         Tuning.def("discovery.floorY", 58, "rm-constants 0.39.u2 (inline literal in Discovery)", "the lowest y (as -58) a discovery search digs to");
         Tuning.def("drownRisk.riskK", 4, "rm-constants 0.39.u2 (inline literal in DrownRisk)", "weight of the drown risk squared in the price");
         Tuning.def("engineProcess.errorsOff", 5, "rm-constants 0.39.u2 (inline literal in EngineProcess)", "errors after which the engine process switches itself off");
-        Tuning.def("escort.feedDist", 5, "rm-constants 0.39.u2 (inline literal in Escort)", "blocks within which the bot feeds the player");
         Tuning.def("floorSteps.throwLookDist", 8, "rm-final 0.39.u3", "blocks ahead of the bot the camera is aimed at for the junk throw");
         Tuning.def("floorSteps.throwLookUp", 1.4, "rm-final 0.39.u3", "blocks above eye level the throw aims (about 10 degrees up at 8 blocks)");
         Tuning.def("threatFacts.unknownHit", 5, "rm-final 0.39.u3 (was the table's default)", "raw damage per hit assumed for a mob kind the game data does not know");
         Tuning.def("threatFacts.shooterHit", 3, "rm-final 0.39.u3 (prior: no attribute exists)", "raw damage per shot assumed for a shooter: its arrow carries the damage, the game has no per-mob number (vanilla arrows hurt about 3 at Normal)");
         Tuning.def("threatFacts.unknownHealth", 20, "rm-final 0.39.u3 (was the table's default)", "health assumed for a mob kind the game data does not know (the player's own 20)");
-        Tuning.def("escort.throwLookTicks", 3, "rm-final 0.39.u3", "ticks the camera (Baritone's LookBehavior) gets to face the player before the food is thrown");
-        Tuning.def("escort.fightDist", 4, "rm-constants 0.39.u2 (inline literal in Escort)", "blocks within which an escort fights a mob");
-        Tuning.def("escort.stepTicks", 40, "rm-constants 0.39.u2 (inline literal in Escort)", "ticks a step lasts");
-        Tuning.def("escort.warnMargin", 8, "rm-constants 0.39.u2 (inline literal in Escort)", "blocks beyond the warning distance a mob is ignored");
-        Tuning.def("escortRules.standSlack", 1.5, "rm-constants 0.39.u2 (inline literal in EscortRules)", "blocks closest the bot stands to the player");
         Tuning.def("exploreRules.endedNear", 4, "rm-constants 0.39.u2 (inline literal in ExploreRules)", "blocks from the start within which an explore counts as having ended where it started");
         Tuning.def("fireReflex.pickUpAgainAt", 12, "rm-constants 0.39.u2 (inline literal in FireReflex)", "use tick at which it is picked up again");
         Tuning.def("fireReflex.pickUpAt", 4, "rm-constants 0.39.u2 (inline literal in FireReflex)", "use tick at which the water is picked up");

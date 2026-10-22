@@ -127,7 +127,7 @@ public final class SelfCheck {
     public static boolean idleWorthy(Finding f, Set<String> supplyIds) {
         String k = f.key();
         if (k.equals("bag") || k.equals("base") || k.equals("food")) return true;
-        String id = k.startsWith("tool:") ? k.substring(5) : k.startsWith("toolcare:") ? k.substring(9) : null;
+        String id = k.startsWith("tool:") ? k.substring(5) : null;
         return id != null && supplyIds != null && supplyIds.contains(Texts.shortId(id));
     }
 

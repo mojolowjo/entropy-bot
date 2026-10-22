@@ -155,7 +155,6 @@ public final class OldWords {
             case "chop" -> { return "that is now cut" + (r.isEmpty() ? " <n>" : sp); }
             case "defense" -> { return "that is now defence" + sp; }
             case "defend" -> { return r.isEmpty() ? null : "that is now defence" + sp + " (defend alone holds this spot)"; }
-            case "escort" -> { return lr.equals("off") ? "that is now dismiss" : null; }
             case "tools" -> {
                 if (lr.matches("^ores\\s+iron$")) return "that is now tools mode best (or tools mode stone)";
                 if (lr.matches("^ores\\s+cheapest$")) return "that is now tools mode cheapest";
