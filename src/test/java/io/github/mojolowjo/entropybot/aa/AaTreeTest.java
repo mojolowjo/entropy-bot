@@ -19,7 +19,7 @@ class AaTreeTest {
     final Tracer tracer = new Tracer();
     final Blackboard bb = new Blackboard(clock, port, tracer);
     final AaTree tree = AaTree.build(new AaScorer());
-    { TS.tools(bb); }
+    { TS.world(bb); }
 
     /** A fresh Peaceful start: nothing in the bag, nothing known. */
     void freshStart() {
@@ -67,9 +67,10 @@ class AaTreeTest {
     void theLadderRunsTheFirstUnmetRungAndCommitsToIt() {
         freshStart();
         assertEquals(Status.RUNNING, tree.tick(bb));
-        assertFalse(port.started.isEmpty(), "no pickaxe at all: the tools need starts a task");
+        assertFalse(port.started.isEmpty(), "no table at all: the table need starts a task (there is no tools need: a pickaxe comes with a dig)");
         assertEquals("needs", tree.driver());
-        assertEquals(TaskKind.TOOLS, bb.task().kind);
+        assertEquals(TaskKind.TABLE_FURNACE, bb.task().kind);
+        assertEquals("plan table", lastChain());
         // the bag changes meanwhile: no re-choice
         bb.in.torches = 0;
         pick(1);
@@ -78,32 +79,27 @@ class AaTreeTest {
         port.done(1, "done");
         assertEquals(Status.SUCCESS, tree.tick(bb));
         assertNull(bb.task());
-        pick(2);
-        tree.tick(bb);
-        assertEquals("plan table", lastChain());
-        port.done(2, "done");
-        tree.tick(bb);
         bb.in.tableKnown = true;
         tree.tick(bb);
         assertEquals("plan furnace", lastChain());
-        port.done(3, "done");
+        port.done(2, "done");
         tree.tick(bb);
         bb.in.furnaceKnown = true;
         tree.tick(bb);
         assertEquals("plan torch 16", lastChain());
-        port.done(4, "done");
+        port.done(3, "done");
         tree.tick(bb);
         bb.in.torches = 16;
         tree.tick(bb);
         // AA_ROUND2 4: Peaceful (danger 0): a base is worth 16 (Worth.base), so iron (70) comes first
         assertEquals("plan iron tools", lastChain(), "bed (no wool) and bag (no chests) are skipped with reasons");
-        port.done(5, "done");
+        port.done(4, "done");
         tree.tick(bb);
         pick(3);
         stocked();                                // Peaceful base (16): after the idle stock-ups
         tree.tick(bb);
         assertEquals("shelter", lastChain(), "no area: a shelter, not a house");
-        port.done(6, "done");
+        port.done(5, "done");
         assertEquals(Status.SUCCESS, tree.tick(bb));
         assertTrue(bb.flag(AaLadder.SHELTER_FACT), "the shelter is AA's own fact");
         assertTrue(tree.brain.whyLines(20).stream().anyMatch(l -> l.startsWith("needs.bed PROGRESS 0") && l.contains("parked: no wool source")), "parked, not scored: " + tree.brain.whyLines(20));
@@ -414,6 +410,6 @@ class AaTreeTest {
         String s = tracer.snapshot(clock.now(), true, tree.driver(), bb.taskJson(clock.now()), bb.in);
         assertTrue(s.contains("{\"id\":\"root\",\"s\":\"RUNNING\"}"), s);
         assertTrue(s.contains("{\"id\":\"danger\",\"s\":\"FAILURE\"}"), s);
-        assertTrue(s.contains("{\"id\":\"needs.tools\",\"s\":\"RUNNING\"}"), s);
+        assertTrue(s.contains("{\"id\":\"needs.tableFurnace\",\"s\":\"RUNNING\"}"), s);
     }
 }

@@ -60,9 +60,14 @@ public final class Thing {
      * Otherwise one item/block id. {@code err} set = nothing found (the rest null).
      */
     public record Result(String word, String key, boolean ore, List<String> ids, List<String> counts, int tier,
-                         Where where, String note, String err) {
+                         Where where, String note, String err, boolean group) {
+        public Result(String word, String key, boolean ore, List<String> ids, List<String> counts, int tier, Where where, String note, String err) {
+            this(word, key, ore, ids, counts, tier, where, note, err, false);
+        }
+
         public String text() {
             if (err != null) return err;
+            if (group) return key + ": " + note;
             List<String> s = new ArrayList<>();
             for (String id : ids) s.add(shortId(id));
             return key + " (" + String.join(", ", s) + "): " + tierName(tier) + (where == null ? "" : "; " + where.text())
@@ -73,6 +78,8 @@ public final class Thing {
     public static Result resolve(String word, Catalog c) {
         String w = norm(word);
         if (w.isEmpty()) return err(word, "want what? e.g. aa want iron_ore 8");
+        List<String> grouped = ToolGroup.items(w);          // ruling (b): "stone tools" is every tool of that material, one job
+        if (!grouped.isEmpty()) return group(word, w, grouped);
         List<String> ores = new ArrayList<>();
         for (String b : c.blocks()) if (OreSpec.oreId(b)) ores.add(b);
         String id = w.contains(":") ? w : "minecraft:" + w;
@@ -140,6 +147,14 @@ public final class Thing {
     private static Result item(String word, String id, Catalog c, String note) {
         int tier = c.tiers().getOrDefault(id, 0);
         return new Result(word, shortId(id), false, List.of(id), List.of(path(id)), tier, null, note, null);
+    }
+
+    private static Result group(String word, String key, List<String> ids) {
+        List<String> counts = new ArrayList<>();
+        for (String id : ids) counts.add(path(id));
+        List<String> s = new ArrayList<>();
+        for (String id : ids) s.add(shortId(id));
+        return new Result(word, key, false, ids, counts, 0, null, ids.size() + " items, one job: " + String.join(", ", s), null, true);
     }
 
     private static Result err(String word, String why) {

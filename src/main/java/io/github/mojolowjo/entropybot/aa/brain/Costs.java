@@ -110,60 +110,7 @@ public final class Costs {
         return new Sprint(conserve, SAVED_S_PER_M, cost, scarcity, terms);
     }
 
-    // ---- 5: tools ----
-
-    /**
-     * The tool upkeep's value: no pickaxe 55 + 30 x the share of the next desires it blocks; wooden 55 + 20 x that share;
-     * stone or better 40 + the wear curve. No cap: the anti-flicker is {@link ToolSmoother}.
-     * @param blocked 0..1, how much of what comes next needs the better pickaxe
-     */
-    public static double tools(int pickTier, int pickPct, double blocked) {
-        double b = Math.max(0, Math.min(1, blocked));
-        if (pickTier == 0) return Tuning.get("tools.base") + Tuning.get("tools.blockedW0") * b;
-        if (pickTier < Tuning.get("tools.stoneTier")) return Tuning.get("tools.base") + Tuning.get("tools.blockedW1") * b;
-        return Tuning.get("tools.keepBase") + Curves.upkeep(Tuning.get("tools.wearSpan"), pickPct, Tuning.get("tools.wearPct"));
-    }
-
-    /**
-     * aa-night2 P0 2 (normal run: 11 zombie deaths "fighting zombie" with a pickaxe): once a zombie was seen, no weapon
-     * with hit 4+ is a tools need of its own worth {@link #SWORD}, added to the pickaxe's.
-     */
-    public static double swordV() { return Tuning.get("swordValue"); }
-
-    public static boolean swordWanted(boolean zombieSeen, boolean armed) { return zombieSeen && !armed; }
-
-    public static double sword(boolean zombieSeen, boolean armed) { return swordWanted(zombieSeen, armed) ? Tuning.get("swordValue") : 0; }
-
-    /** The share of the next steps a missing (tier 0) or wooden (tier 1) pickaxe blocks: stone/iron/furnace/coal. */
-    public static double blocked(int pickTier, boolean furnace, int coal, int torches, boolean ownerOreGoal) {
-        int n = 0, of = (int) Tuning.get("tools.blockedOf");
-        if (!furnace) n++;                              // cobble for the furnace
-        if (pickTier < Tuning.get("tools.stoneTier")) n++;                          // iron needs a stone pickaxe
-        if (coal == 0 && torches < Tuning.get("torch.target")) n++;             // coal for torches
-        if (ownerOreGoal) n++;
-        if (pickTier == 1) n = Math.max(0, n - (furnace ? 0 : 1));      // a wooden pickaxe mines cobble already
-        return (double) n / of;
-    }
-
-    /**
-     * The blocked share from the mining data: the top ideas the tier cannot mine; an open owner goal that needs ore while
-     * the pickaxe is under stone counts as one more blocked item.
-     */
-    public static double blocked(MiningTiers.Result r, int pickTier, boolean ownerOreGoal) {
-        int add = ownerOreGoal && pickTier < Tuning.get("tools.stoneTier") ? 1 : 0;
-        int of = r.of() + add;
-        return of <= 0 ? 0 : (r.share() * r.of() + add) / of;       // review p2: the weighted share
-    }
-
-    public static String toolsTerms(int pickTier, int pickPct, double blocked, String why) {
-        return toolsTerms(pickTier, pickPct, blocked) + "; " + why;
-    }
-
-    public static String toolsTerms(int pickTier, int pickPct, double blocked) {
-        return "pickaxe tier " + pickTier + (pickTier >= 2 ? " at " + pickPct + "%" : ", blocks " + Math.round(blocked * 100) + "% of what is next")  // structural: percent
-                + " -> " + Math.round(tools(pickTier, pickPct, blocked));
-    }
-
+    // ---- 5: the pickaxe tier ----
     /**
      * Anti-flicker for the pickaxe count: a drop counts only once it held {@link #HOLD_MS} (a craft moves the tool
      * through the grid); a rise counts at once.

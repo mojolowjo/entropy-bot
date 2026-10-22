@@ -204,12 +204,12 @@ class DangerStep2Test {
         normalNight(HERE);
         Desire bed = siteDesire("needs.bed", 70, Site.at(40, 64, 40));          // a sheep in the open
         Desire mine = siteDesire("needs.iron", 40, Site.at(5, 30, 5));          // an UNDER option
-        Desire tools = siteDesire("needs.tools", Costs.tools(0, 0, 1), Site.at(3, 64, 3));
-        Brain br = new Brain("brain", "t", bed, mine, tools, AaDesires.danger());
+        Desire upkeep = siteDesire("needs.torches", 85, Site.at(3, 64, 3));       // an upkeep desire over the urgent line, at the surface
+        Brain br = new Brain("brain", "t", bed, mine, upkeep, AaDesires.danger());
         var s = br.scoreAll(bb);
         assertEquals(35, s.get(0).score(), 1e-9, "the surface sheep hunt is halved at danger 1: " + s.get(0).parts());
         assertEquals(60, s.get(1).score(), 1e-9, "under ground: x 1.5 " + s.get(1).parts());
-        assertTrue(s.get(2).score() < s.get(3).score(), "tools at tier 0 at the surface score under danger: " + s.get(2).parts());
+        assertTrue(s.get(2).score() < s.get(3).score(), "an upkeep at the surface scores under danger: " + s.get(2).parts());
         assertTrue(s.get(3).rank() > s.get(0).rank(), "danger beats the sheep hunt");
         // the stone game: deep under ground the night need is off; the mining goes on
         bb.in.underDepth = 20;

@@ -96,12 +96,9 @@ class TypedOptionsTest {
     }
 
     @Test
-    void wayUpAndToolsRowsAreTyped() {
+    void wayUpRowsAreTyped() {
         var f = new RungOptions.SurfaceFacts(10, ME, true, 20, true, true, new int[]{20, 70, 5}, 25, false);
         allTyped(WayUp.choose(f, new Options.OptionMemory(), 0));
-        Options.Choice tools = new RungOptions.Tools().choose(new RungOptions.ToolsFacts(1, true, true, false, 0, 0, 0, false, new NeedChain.World(java.util.Map.of(), false, w -> null)), new Options.OptionMemory(), 0, null, 0, null, null);
-        allTyped(tools);
-        assertTrue(tools.ranked().stream().anyMatch(o -> o.id().equals("chain stone_pickaxe")));
     }
 
     @Test

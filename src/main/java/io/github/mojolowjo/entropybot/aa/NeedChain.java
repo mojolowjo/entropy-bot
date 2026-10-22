@@ -34,7 +34,7 @@ import java.util.function.Supplier;
  * <li>Explore is not a priced way. A way that ends where nothing is known to give the item ("no known source") never competes
  *     with one that does not; when no way is left the chain's step is the explore for that block, with no price.</li>
  * </ul>
- * Pure (JUnit: NeedChainTest, ScenariosTest). Loader notes: none (the facts come from {@code AaRuntime.toolsFacts}).
+ * Pure (JUnit: NeedChainTest, ScenariosTest). Loader notes: none (the facts come from {@code AaRuntime.needWorld}).
  */
 public final class NeedChain {
     private NeedChain() {}
@@ -158,12 +158,55 @@ public final class NeedChain {
         Ctx c = new Ctx(w);
         String word = PlanFacts.canon(item);
         String phrase = obtain(c, word, n);
+        return finish(c, item, phrase == null ? item + " is in the bag" : item + " <- " + phrase);
+    }
+
+    /** Blackboard fact: a {@code Supplier<World>} the adapter installs (what the chains start from); the needs and the owner's goals read it. */
+    public static final String WORLD_FACT = "aa.needWorld";
+
+    /**
+     * A group of items as one job (one table, one trip to the stone; one simulated bag, so planks and sticks are counted once):
+     * {@code n} of each member, made in the given order on the same context. A member that cannot be made at all is dropped
+     * with its reason; a member that ends in an explore (something it needs is not known anywhere) is dropped too when another
+     * member stands without one. When every member ends in an explore the chain is the first one's, ending in that explore.
+     */
+    public static Chain resolveAll(String group, List<String> items, int n, World w) {
+        Ctx c = new Ctx(w);
+        List<String> phrases = new ArrayList<>(), waiting = new ArrayList<>();
+        Map<String, String> unknown = new LinkedHashMap<>();
+        for (String item : items) {
+            String word = PlanFacts.canon(item);
+            if (PlanRecipes.of(word) == null) { drop(c, item, "no recipe"); continue; }
+            Ctx.Snap before = c.snap();
+            String p = obtain(c, word, n);
+            if (c.fail != null) { String why = c.fail; c.restore(before); drop(c, item, why); continue; }
+            if (c.stuck) { unknown.put(item, c.unknown); c.restore(before); continue; }
+            phrases.add(p == null ? item + " is in the bag" : item + " <- " + p);
+        }
+        if (phrases.isEmpty() && !unknown.isEmpty()) {          // nothing stands without an explore: the first member's chain ends in it
+            String first = unknown.keySet().iterator().next();
+            phrases.add(first + " <- " + obtain(c, PlanFacts.canon(first), n));
+            for (String other : unknown.keySet()) if (!other.equals(first)) waiting.add(other);
+            for (String other : waiting) drop(c, other, "not priced: " + first + " ends in an explore");
+        } else {
+            for (var e : unknown.entrySet()) drop(c, e.getKey(), "no known source for " + e.getValue());
+        }
+        return finish(c, group, phrases.isEmpty() ? group + ": nothing to make" : group + " <- " + String.join("; ", phrases));
+    }
+
+    /** The cheapest pickaxe of at least {@code tier} (the game's pickaxes tag) as a chain of its own: what a dig of a block that asks for that tier pulls in. */
+    public static Chain resolveTool(int tier, World w) {
+        Ctx c = new Ctx(w);
+        String phrase = tier > c.pickTier ? cheapestPickaxe(c, tier) : null;
+        return finish(c, "pickaxe", phrase == null ? "a pickaxe of tier " + tier + " is in the bag" : "pickaxe <- " + phrase);
+    }
+
+    private static Chain finish(Ctx c, String name, String head) {
         double cost = Unit.blocks(c.seconds);
         // an explore has no price in the chain; the scorer still needs a number to weigh the whole row, so the row's cost carries the explore leg
         if (c.stuck) cost += exploreMinutes() * Options.MINUTE * (1 + exploreReturn());
         String drops = c.dropped.isEmpty() ? "" : " | dropped: " + String.join("; ", c.dropped);
-        if (c.fail != null) return new Chain(List.copyOf(c.steps), cost, item + ": " + c.fail + drops, false, c.fail, List.copyOf(c.dropped));
-        String head = phrase == null ? item + " is in the bag" : item + " <- " + phrase;
+        if (c.fail != null) return new Chain(List.copyOf(c.steps), cost, name + ": " + c.fail + drops, false, c.fail, List.copyOf(c.dropped));
         String why = head + (c.stuck ? "" : ": " + s(c.seconds)) + drops;
         return new Chain(List.copyOf(c.steps), cost, why, c.stuck, null, List.copyOf(c.dropped));
     }
@@ -207,17 +250,24 @@ public final class NeedChain {
             // to the way that asked for it (it is listed there); a loop back to this very item, or any other failure, is listed here
             boolean up = self != null && trials.stream().allMatch(t -> t.loopOn() != null && !t.loopOn().equals(self));
             if (up) { c.fail = trials.get(0).fail(); c.loopOn = trials.get(0).loopOn(); }
-            else for (Trial t : trials) c.dropped.add(t.alt().label + ": " + t.fail());
+            else for (Trial t : trials) drop(c, t.alt().label, t.fail());
             return null;
         }
         c.restore(win.after());
         for (Trial t : trials) {
             if (t == win) continue;
-            if (t.fail() != null) c.dropped.add(t.alt().label + ": " + t.fail());
-            else if (t.stuck()) { if (!win.stuck()) c.dropped.add(t.alt().label + ": no known source for " + t.unknown()); }
-            else c.dropped.add(t.alt().label + ": " + s(t.seconds()) + " (dearer than " + win.alt().label + (t.seconds() > horizonS ? ", past the horizon" : "") + ")");
+            if (t.fail() != null) drop(c, t.alt().label, t.fail());
+            else if (t.stuck()) { if (!win.stuck()) drop(c, t.alt().label, "no known source for " + t.unknown()); }
+            else drop(c, t.alt().label, s(t.seconds()) + " (dearer than " + win.alt().label + (t.seconds() > horizonS ? ", past the horizon" : "") + ")");
         }
         return win;
+    }
+
+    /** The dropped list names each losing candidate once: the same requirement is asked again per batch, the label is listed the first time only. */
+    private static void drop(Ctx c, String label, String why) {
+        String head = label + ": ";
+        for (String d : c.dropped) if (d.startsWith(head)) return;
+        c.dropped.add(head + why);
     }
 
     /**
@@ -401,7 +451,7 @@ public final class NeedChain {
     /** The block whose hardness prices the break: a log's own block, an ore item's ore, else the item's block. */
     private static String breakBlock(String word, Spot sp, boolean log) {
         if (log) return sp.block();
-        String ore = ItemWorth.oreDropping(word.indexOf(':') < 0 ? "minecraft:" + word : word);
+        String ore = PlanRecipes.oreBlock(word);
         return ore != null ? ore : (word.indexOf(':') < 0 ? "minecraft:" + word : word);
     }
 

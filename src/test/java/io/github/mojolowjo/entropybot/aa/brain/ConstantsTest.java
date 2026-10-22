@@ -12,19 +12,18 @@ class ConstantsTest {
     private static final Map<String, Double> OLD = Map.ofEntries(
             Map.entry("urgent", 75.0), Map.entry("margin", 15.0), Map.entry("capExempt", 90.0), Map.entry("trumpFood", 4.0),
             Map.entry("shelterMax", 99.0), Map.entry("shelterAt1", 85.0), Map.entry("torchCut", 0.05), Map.entry("lightFloor", 0.7),
-            Map.entry("swordValue", 25.0), Map.entry("stashMax", 74.0), Map.entry("diedS", 60.0), Map.entry("dawnClimb", 45.0),
+            Map.entry("stashMax", 74.0), Map.entry("diedS", 60.0), Map.entry("dawnClimb", 45.0),
             Map.entry("respawnS", 5.0), Map.entry("healTo", 16.0), Map.entry("hideDayUnder", 10.0), Map.entry("pointS", 6.0),
             Map.entry("sourceFactor", 0.2), Map.entry("flow", 0.9), Map.entry("stationBase", 40.0), Map.entry("stationShare", 40.0),
             Map.entry("chestMin", 35.0), Map.entry("hidePerHp", 7.0), Map.entry("slowPauseS", 20.0), Map.entry("pausedRepriceS", 10.0),
             Map.entry("bag.enter", 3.0), Map.entry("bag.leave", 10.0), Map.entry("band.torchOn", 8.0), Map.entry("band.torchOff", 16.0),
-            Map.entry("band.foodOn", 10.0), Map.entry("band.foodOff", 18.0), Map.entry("torch.target", 16.0), Map.entry("tools.stoneTier", 2.0),
-            Map.entry("tools.wearPct", 15.0), Map.entry("tools.spares", 2.0), Map.entry("torch.base", 30.0), Map.entry("torch.span", 30.0),
+            Map.entry("band.foodOn", 10.0), Map.entry("band.foodOff", 18.0), Map.entry("torch.target", 16.0),
+            Map.entry("torch.base", 30.0), Map.entry("torch.span", 30.0),
             Map.entry("bag.base", 20.0), Map.entry("bag.span", 60.0), Map.entry("cost.station", 60.0), Map.entry("cost.spareTable", 10.0),
             Map.entry("cost.base", 240.0), Map.entry("cost.bed", 120.0), Map.entry("cost.iron", 600.0), Map.entry("need.defaultScore", 30.0),
             Map.entry("sprint.drainFloor", 0.25), Map.entry("quarry.radius", 48.0), Map.entry("quarry.cacheMs", 10000.0),
             Map.entry("quarry.digK", 1.5), Map.entry("run.weight", 2.0), Map.entry("planner.gapMs", 5000.0),
-            Map.entry("tools.base", 55.0), Map.entry("tools.blockedW0", 30.0), Map.entry("tools.blockedW1", 20.0), Map.entry("tools.blockedOf", 4.0),
-            Map.entry("tools.keepBase", 40.0), Map.entry("tools.wearSpan", 30.0), Map.entry("mine.maxMin", 20.0), Map.entry("mine.stallS", 60.0));
+            Map.entry("mine.maxMin", 20.0), Map.entry("mine.stallS", 60.0));
 
     @Test void everyMovedConstantIsRegisteredWithItsOldDefault() {
         Tuning.reset();
@@ -63,7 +62,6 @@ class ConstantsTest {
         assertEquals(4, Brain.trumpFood());
         assertEquals(99, Costs.shelterMax(), 0);
         assertEquals(85, Costs.shelterAt1(), 0);
-        assertEquals(25, Costs.swordV(), 0);
         assertEquals(60, Kit.diedS(), 0);
         assertEquals(74, Kit.stashMax(), 0);
         assertEquals(0.9, Curves.flow(), 0);

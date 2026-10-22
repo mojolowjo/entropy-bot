@@ -84,6 +84,15 @@ public final class PlanRecipes {
         return null;
     }
 
+    /** The ore block that drops the word or one of the items it stands for (fuel: the coal ore), or null: no ore block of the game drops it. */
+    public static String oreBlock(String item) {
+        for (String id : idsFor(item)) {
+            String block = ItemWorth.oreDropping(id);
+            if (block != null) return block;
+        }
+        return null;
+    }
+
     /** The ore that drops the word (raw_iron: iron, pickaxe tier 2; fuel: coal, tier 1), or null: no ore of the game drops it. */
     public static Ore ore(String item) {
         for (String id : idsFor(item)) {

@@ -46,13 +46,6 @@ class NightTwoTest {
 
 
     @Test
-    void swordOnceAZombieWasSeen() {
-        assertEquals(0, Costs.sword(false, false));
-        assertEquals(Costs.swordV(), Costs.sword(true, false));
-        assertEquals(0, Costs.sword(true, true));
-    }
-
-    @Test
     void aBuildSpendingBlocksIsProgress() {
         assertTrue(BuildProgress.counts(TaskKind.BASE_BED));
         assertFalse(BuildProgress.counts(TaskKind.DEPOSIT));

@@ -238,6 +238,15 @@ public final class CoalOptions {
                                 r.why() + " " + Math.round(r.total()) + " + " + craftWhy, "coal " + r.memoryKey(), false, null, r.site()));
                     for (String d : c.dropped()) dropped.add("coal " + d);
                 }
+                // ruling (a): no tools need; the dig of the coal ore pulls in the lowest pickaxe its block asks for (the recipe data, NeedChain)
+                var world = io.github.mojolowjo.entropybot.aa.brain.Goals.world(bb);
+                if (world == null) dropped.add("chain torch: no world facts (the senses are not ready)");
+                else {
+                    NeedChain.Chain ch = NeedChain.resolve("torch", want, world);
+                    if (!ch.ok()) dropped.add("chain torch: " + ch.missing());
+                    else if (ch.explore()) dropped.add("chain torch: something it needs is not seen yet (the planner row looks for it)");
+                    else if (!ch.steps().isEmpty()) add(rows, dropped, now, Options.typed("chain torch", "chain", ch.steps(), ch.cost(), ch.why(), "chain torch", memory));
+                }
             }
             if (planned != null) add(rows, dropped, now, new Options.Option("planner", "planner", planned, plannedCost * Options.planUnit(),
                     "the planner's torch " + target() + ": plan cost " + Math.round(plannedCost) + " x planUnit " + Options.planUnit(), "planner", true));

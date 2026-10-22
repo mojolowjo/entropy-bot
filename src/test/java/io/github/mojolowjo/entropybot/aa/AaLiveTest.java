@@ -23,7 +23,7 @@ class AaLiveTest {
     final FakePort port = new FakePort();
     final Blackboard bb = new Blackboard(clock, port, new Tracer());
     final AaTree tree = AaTree.build(new AaScorer());
-    { TS.tools(bb); }
+    { TS.world(bb); }
 
     static void ids(JsonObject n, List<String> out) {
         out.add(n.get("id").getAsString());
@@ -45,15 +45,15 @@ class AaLiveTest {
 
     @Test
     void aRunningTickLightsThePathAndRanksTheDesires() {
-        bb.in.pickTier = 0;                                            // a fresh world: the tools Need runs (bootstrap)
+        bb.in.pickTier = 0;                                            // a fresh world: the table Need runs first (bootstrap)
         assertEquals(Status.RUNNING, tree.tick(bb));
         JsonObject o = AaLive.json(tree, bb, true, 5);
         JsonArray path = o.getAsJsonArray("path");
         List<String> p = new ArrayList<>();
         for (JsonElement e : path) p.add(e.getAsString());
         assertEquals(List.of("root", "slot"), p.subList(0, 2));
-        assertTrue(p.contains("needs.tools"), p.toString());
-        assertEquals("needs.tools", o.get("running").getAsString());
+        assertTrue(p.contains("needs.tableFurnace"), p.toString());
+        assertEquals("needs.tableFurnace", o.get("running").getAsString());
         JsonArray ds = o.getAsJsonArray("desires");
         assertEquals(tree.brain.desires().size(), ds.size());
         double prev = Double.MAX_VALUE;
@@ -69,7 +69,7 @@ class AaLiveTest {
         // the task started: one decision line in the switches
         assertEquals(1, o.getAsJsonArray("switches").size());
         assertTrue(o.getAsJsonArray("switches").get(0).getAsJsonObject().has("chain"));
-        assertEquals("RUNNING", find(o.getAsJsonObject("tree"), "needs.tools").get("s").getAsString());
+        assertEquals("RUNNING", find(o.getAsJsonObject("tree"), "needs.tableFurnace").get("s").getAsString());
     }
 
     @Test
@@ -80,7 +80,7 @@ class AaLiveTest {
         JsonArray pk = AaLive.json(tree, bb, true, 5).getAsJsonArray("picks");
         assertEquals(1, pk.size());
         JsonObject p = pk.get(0).getAsJsonObject();
-        assertEquals("needs.tools", p.get("desire").getAsString());
+        assertEquals("needs.tableFurnace", p.get("desire").getAsString());
         assertEquals(clock.now(), p.get("t").getAsLong());
         assertTrue(p.get("score").getAsDouble() > 0);
         assertTrue(p.has("option"));

@@ -37,16 +37,6 @@ class CostsTest {
     }
 
     @Test
-    void toolsValueFromWhatTheyBlockNoCap() {
-        double all = Costs.blocked(0, false, 0, 0, true);
-        assertEquals(1, all, 1e-9);
-        assertEquals(85, Costs.tools(0, 0, all), 1e-9, "no pickaxe blocking everything: over the urgent line");
-        assertTrue(Costs.tools(0, 0, Costs.blocked(0, true, 5, 16, false)) < Brain.urgentV(), "only iron waits: not urgent");
-        assertTrue(Costs.blocked(1, false, 5, 16, false) < Costs.blocked(0, false, 5, 16, false), "a wooden pickaxe mines cobble");
-        assertEquals(40, Costs.tools(3, 100, 0), 1e-9);
-    }
-
-    @Test
     void toolSmootherHoldsADropOnly() {
         Costs.ToolSmoother s = new Costs.ToolSmoother();
         assertEquals(2, s.update(2, 0));

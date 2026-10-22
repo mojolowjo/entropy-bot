@@ -34,7 +34,6 @@ public final class Personality {
         def("tidy", 10, 0, 100, "want: put loot away in the base chests");
         def("help", 20, 0, 37, "help the owner when near and busy (B6; x2 for monsters near them, under 75)");
         def("food", 1, 0.5, 2, "upkeep factor");
-        def("tools", 1, 0.5, 2, "upkeep factor (tools stay under 75)");
         def("torches", 1, 0.5, 2, "upkeep factor");
         def("bag", 1, 0.5, 2, "upkeep factor");
         def("sleep", 60, 0, 74, "night: go to bed (bed known, rises from dusk)");

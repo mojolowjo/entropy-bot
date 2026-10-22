@@ -12,7 +12,7 @@ import java.util.function.Supplier;
 /**
  * simple-tools (0.39.w1): the one answer to "what is nearby". Baritone is asked first, through the same cached world scan its
  * mine process uses ({@code IWorldScanner.scanChunkRadius}); AA's own sightings are only the fallback when that scan finds
- * nothing. {@link NeedChain}, {@link RungOptions.Tools} and the planner's "a tree seen" all read this fact and no other.
+ * nothing. {@link NeedChain} and the planner's "a tree seen" all read this fact and no other.
  * <ul>
  * <li>{@link #log}: the nearest log block (any block the game tags as logs) that has leaves (any block tagged leaves) within
  *     {@code nearby.leafReach} blocks above or beside it, i.e. a tree and not a stack of logs in a build.</li>

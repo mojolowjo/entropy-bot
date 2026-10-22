@@ -858,7 +858,6 @@ final class TuningDefs {
         Tuning.def("aaRuntime.torchR", 16, "rm-constants 0.39.u2 (inline literal in AaRuntime)", "blocks round the bot searched for torches");
         Tuning.def("aaRuntime.treeEveryMs", 60_000, "rm-constants 0.39.u2 (inline literal in AaRuntime)", "milliseconds between two checks of the tech tree");
         Tuning.def("aaRuntime.waterNear", 12, "rm-constants 0.39.u2 (inline literal in AaRuntime)", "blocks within which water counts as near");
-        Tuning.def("aaRuntime.wornPct", 15, "rm-constants 0.39.u2 (inline literal in AaRuntime)", "pickaxe durability percent under which a single pickaxe is worn");
         Tuning.def("aaRuntime.writeErrorMs", 60_000, "rm-constants 0.39.u2 (inline literal in AaRuntime)", "milliseconds between two logs of a write error");
         Tuning.def("aaScorer.bagBandWidth", 6, "rm-constants 0.39.u2 (inline literal in AaScorer)", "free slots between the bag need switching on and off");
         Tuning.def("aaTree.airShort", 300, "rm-constants 0.39.u2 (inline literal in AaTree)", "air ticks under which air counts as short (a full breath is 300)");

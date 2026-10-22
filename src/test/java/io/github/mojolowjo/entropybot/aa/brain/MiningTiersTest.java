@@ -2,147 +2,14 @@ package io.github.mojolowjo.entropybot.aa.brain;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** AA_ROUND4 C: Costs.blocked from the mining tiers of the blocks (tag data) and the recipes, no names in the code. */
+/** The tiers of tools and blocks come from the game's data (the TOOL component, the tags); no name list, no switch. */
 class MiningTiersTest {
-    /** Block tiers as the tags would give them: cobble needs wooden (1), iron ore stone (2), diamond ore iron (3), obsidian diamond (4). */
-    final Map<String, Integer> blocks = new HashMap<>(Map.of(
-            "minecraft:cobblestone", 1, "minecraft:iron_ore", 2, "minecraft:diamond_ore", 3, "minecraft:obsidian", 4,
-            "ruby:ruby_ore", 3, "minecraft:oak_log", 0, "minecraft:dirt", 0));
-    /** What blocks drop: topaz from a tier-3 block, coal from a tier-1 block (no recipe makes either). */
-    final Map<String, Integer> drops = new HashMap<>(Map.of("gem:topaz", 3, "minecraft:coal", 1, "tier:far_ore", 5));
-    final MiningTiers.Source src = new MiningTiers.Source() {
-        public int blockTier(String id) { return blocks.getOrDefault(id, -1); }
-        public int dropTier(String id) { return drops.getOrDefault(id, -1); }
-    };
-    static final Set<String> STICK = Set.of("minecraft:stick");
-
-    static TechTree.Recipe r(String out, String... ins) {
-        List<Set<String>> slots = new ArrayList<>();
-        for (String i : ins) slots.add(Set.of(i));
-        return new TechTree.Recipe(out, slots);
-    }
-
-    final TechTree tree = new TechTree(List.of(
-            r("minecraft:stick", "minecraft:oak_log"),
-            r("minecraft:stone_pickaxe", "minecraft:cobblestone", "minecraft:stick"),
-            r("minecraft:iron_ingot", "minecraft:iron_ore"),
-            r("minecraft:iron_pickaxe", "minecraft:iron_ingot", "minecraft:stick"),
-            r("minecraft:diamond", "minecraft:diamond_ore"),
-            r("minecraft:diamond_pickaxe", "minecraft:diamond", "minecraft:stick"),
-            r("minecraft:obsidian_lamp", "minecraft:obsidian"),
-            r("ruby:ruby", "ruby:ruby_ore"),
-            r("ruby:ruby_sword", "ruby:ruby", "minecraft:stick"),
-            r("minecraft:dirt_brick", "minecraft:dirt"),
-            r("gem:topaz_helmet", "gem:topaz"),
-            r("minecraft:torch", "minecraft:coal", "minecraft:stick"),
-            r("tier:far_tool", "tier:far_ore")));
-
-    MiningTiers.Result at(int pick) { return MiningTiers.blocked(tree, src, STICK, pick, 50); }
-
-    @Test void needsComeFromTheBlocksAndTheRecipes() {
-        Map<String, Integer> n = MiningTiers.needs(tree, src);
-        assertEquals(1, n.get("minecraft:stone_pickaxe"));
-        assertEquals(2, n.get("minecraft:iron_pickaxe"));      // iron ore needs a stone pickaxe
-        assertEquals(3, n.get("minecraft:diamond_pickaxe"));   // diamond ore needs an iron pickaxe
-        assertEquals(4, n.get("minecraft:obsidian_lamp"));
-        assertEquals(0, n.get("minecraft:stick"));
-    }
-
-    @Test void stonePickBlocksIronTierIdeasIronPickDoesNot() {
-        var stone = at(2);
-        assertTrue(stone.names().contains("diamond"), stone.names().toString());
-        assertTrue(stone.names().contains("obsidian_lamp"));
-        assertFalse(stone.names().contains("iron_ingot"));
-        var iron = at(3);
-        assertFalse(iron.names().contains("diamond"), iron.names().toString());
-        assertTrue(iron.names().contains("obsidian_lamp"));      // a diamond pickaxe still holds obsidian back
-        assertTrue(iron.share() < stone.share());
-        assertEquals(0, at(5).blocked());
-    }
-
-    @Test void aModdedBlockWithTheTagCounts() {
-        assertTrue(at(2).names().contains("ruby:ruby"));
-        assertFalse(at(3).names().contains("ruby:ruby"));
-    }
-
-    @Test void aBlockWithNoTagIsNotBlocked() {
-        assertFalse(at(0).names().contains("dirt_brick"));
-        assertFalse(at(0).names().contains("stick"));
-        assertTrue(at(0).names().contains("stone_pickaxe"));     // cobblestone needs a wooden pickaxe at least
-        assertFalse(at(1).names().contains("stone_pickaxe"));
-    }
-
-    @Test void theTermsNameTheCountAndTheIdeas() {
-        var r = at(2);
-        assertTrue(r.terms().startsWith(r.blocked() + " of " + r.of() + " pickaxe-bound"), r.terms());
-        assertTrue(r.share() <= (double) r.blocked() / r.of() + 1e-9);      // weighted by tier distance, at most the plain part
-    }
-
-    @Test void ownerOreGoalCountsOnlyUnderStone() {
-        var r = at(1);
-        assertTrue(Costs.blocked(r, 1, true) > r.share());
-        assertEquals(Costs.blocked(at(3), 3, true), at(3).share(), 1e-9);
-    }
-
-    @Test void itemsDroppedByABlockNeedThatBlocksTier() {
-        assertEquals(3, MiningTiers.needs(tree, src).get("gem:topaz_helmet"));
-        assertTrue(at(2).names().contains("gem:topaz_helmet") || at(2).names().contains("topaz_helmet") || !tree.top(STICK, 50).stream().anyMatch(i -> i.item().equals("gem:topaz_helmet")));
-        assertEquals(1, MiningTiers.needs(tree, src).get("minecraft:torch"));
-    }
-
-    @Test void noPickaxeIsTierZeroAndNeverNegative() {
-        assertEquals(MiningTiers.blocked(tree, src, STICK, 0, 50).blocked(), MiningTiers.blocked(tree, src, STICK, -3, 50).blocked());
-        assertTrue(at(0).names().contains("iron_ingot"));
-    }
-
     @Test void aModdedTierAboveDiamondIsReadFromItsOwnTags() {
         assertEquals(List.of(1, 1, 2, 3, 4, 5), MiningTiers.rankTiers(List.of(10, 10, 6, 3, 1, 0)));
-        assertTrue(MiningTiers.blocked(tree, src, STICK, 4, 50).names().contains("tier:far_tool"));
-        assertFalse(MiningTiers.blocked(tree, src, STICK, 5, 50).names().contains("tier:far_tool"));
-    }
-
-    /** regression o1: the top ideas of a fresh start are wood things; the waves still reach the pickaxe-bound ones. */
-    @Test void aFreshStartWhoseTopIdeasAreWoodStillCountsThePickaxeBound() {
-        TechTree wood = new TechTree(List.of(
-                r("minecraft:oak_planks", "minecraft:oak_log"), r("minecraft:stick", "minecraft:oak_planks"),
-                r("minecraft:crafting_table", "minecraft:oak_planks"), r("minecraft:wooden_pickaxe", "minecraft:oak_planks", "minecraft:stick"),
-                r("minecraft:stone_pickaxe", "minecraft:cobblestone", "minecraft:stick"), r("minecraft:furnace", "minecraft:cobblestone"),
-                r("minecraft:iron_ingot", "minecraft:iron_ore"), r("minecraft:torch", "minecraft:coal", "minecraft:stick")));
-        var fresh = MiningTiers.blocked(wood, src, Set.of(), 0, 1);
-        assertTrue(fresh.of() > 0 && fresh.share() > 0.6, fresh.terms());
-        var wooden = MiningTiers.blocked(wood, src, Set.of("minecraft:wooden_pickaxe"), 1, 1);
-        assertTrue(wooden.share() < fresh.share(), wooden.terms());
-        // review p2: with stone tools had, tools falls under the food stock and the torches
-        double stoneTools = Costs.tools(2, 100, Costs.blocked(MiningTiers.blocked(wood, src, Set.of("minecraft:stone_pickaxe"), 2, 1), 2, false));
-        assertTrue(stoneTools < 60 && stoneTools < Costs.torchScore(0), "tools at stone " + stoneTools);
-        assertTrue(Costs.tools(0, 0, Costs.blocked(fresh, 0, false)) > 60);
-        var stone = MiningTiers.blocked(wood, src, Set.of("minecraft:stick", "minecraft:stone_pickaxe"), 2, 1);
-        assertTrue(stone.share() < fresh.share(), stone.terms());
-    }
-
-    /** review p2: the cache keys on the tier and the pickaxe-bound part of the bag: a log picked up keeps the result. */
-    @Test void theCacheKeysOnThePickaxeBoundBag() {
-        var a = MiningTiers.blocked(tree, src, Set.of("minecraft:stick"), 1, 8);
-        assertSame(a, MiningTiers.blocked(tree, src, Set.of("minecraft:stick", "minecraft:oak_log"), 1, 8));
-        assertNotSame(a, MiningTiers.blocked(tree, src, Set.of("minecraft:stick", "minecraft:iron_ingot"), 1, 8));
-        assertNotSame(a, MiningTiers.blocked(tree, src, Set.of("minecraft:stick"), 2, 8));
-    }
-
-    @Test void freshVersusStoneToolsAgainstTheOldTable() {
-        double fresh = Costs.blocked(MiningTiers.blocked(tree, src, STICK, 0, 8), 0, false);
-        double stone = Costs.blocked(MiningTiers.blocked(tree, src, Set.of("minecraft:stick", "minecraft:stone_pickaxe", "minecraft:cobblestone"), 2, 8), 2, false);
-        double oldFresh = Costs.blocked(0, false, 0, 0, false), oldStone = Costs.blocked(2, true, 5, 16, false);
-        assertTrue(fresh > 0.4, "fresh " + fresh + " (old table " + oldFresh + ")");
-        assertTrue(Costs.tools(0, 0, fresh) > 60, "fresh tools " + Costs.tools(0, 0, fresh) + " must beat the food stock 60");
-        assertTrue(stone < fresh, "stone " + stone + " fresh " + fresh + " (old table " + oldStone + ")");
     }
 
     /** rm-names: a fake ore with a modded tier and a fake tool: tiers come from the data, no switch, no name. */

@@ -34,17 +34,17 @@ import java.util.function.ToDoubleFunction;
  *
  * <p>B2 scores (0..100; a met rung -1; the owner's {@code aa do} 100):
  * <ul>
- * <li>UPKEEP: tools (aa-costs: no pickaxe 55 + 30 x blocked share, wooden 55 + 20 x it, worn 40 + curve; no cap), food {@code 175 x shortfall^2} of 18 (aa-food:
+ * <li>UPKEEP: (no tools need: a pickaxe is made only when a chain's dig asks for one, NeedChain), food {@code 175 x shortfall^2} of 18 (aa-food:
  *     10 -> 35, 6 -> 78 urgent, 4 -> 100) or its stock score (25..60) under the stock target, parked with no source, torches 30 + {@code 30 x shortfall^2} of 16, bag 20 + {@code 60 x shortfall^2} of 10 free.
  *     A pickaxe count that flickers in a craft must not break a running task: the adapter smooths the tier (Costs.ToolSmoother).</li>
  * <li>PROGRESS (value, hand cost s; the brain applies P and cost): table/furnace 70/60, spare table 50/10, base 55/240,
- *     bed 45/120, iron 40 + 30 x the tech tree's iron share / 600. Iron gives its value to tools while it has no stone
- *     pickaxe; torches to table/furnace while no table is known; ideas to iron while under an iron pickaxe.</li>
+ *     bed 45/120, iron 40 + 30 x the tech tree's iron share / 600. Torches give their value to table/furnace while no
+ *     table is known; ideas to iron while under an iron pickaxe.</li>
  * <li>Idle options: their {@link AaScorer} deficit x {@link #IDLE_SCALE} (25 at most): below iron while iron runs well,
  *     above it after two failures in a row (P 0.5).</li>
  * <li>ideas (2.8): the best thing the recipes say can be made now, from an iron pickaxe on: value 30 x its share.</li>
  * </ul>
- * With these numbers a Peaceful fresh world runs in the ladder's order (tools, table/furnace, torches, base, iron).
+ * With these numbers a Peaceful fresh world runs in the ladder's order (table/furnace, torches, base, iron).
  */
 public final class AaDesires {
     private AaDesires() {}
@@ -62,46 +62,6 @@ public final class AaDesires {
         if (r.id.equals(man.doRung)) return 100;
         if (man.skipped(r.id)) return -1;
         return r.unmet(bb) ? Math.min(rungMax(), f.applyAsDouble(bb)) : -1;      // AA_ROUND4 B2: TOOLS_MAX went; no rung reaches the owner's 100
-    }
-
-    /**
-     * aa-costs (was: no pickaxe 74, wooden 65, capped under 75): the tool's real value, what it blocks next
-     * (Costs.tools); the anti-flicker is the adapter's smoothed pickaxe tier (Costs.ToolSmoother), not a cap.
-     */
-    private static volatile String lastToolsWhy;
-
-    static double tools(Blackboard bb) {
-        double blocked;
-        String why;
-        TechTree tt = tree(bb);
-        var tiers = io.github.mojolowjo.entropybot.aa.brain.MiningTiers.source();
-        if (tt != null && tiers != null) {           // AA_ROUND4 C: from the tags and the recipes
-            var r = io.github.mojolowjo.entropybot.aa.brain.MiningTiers.blocked(tt, tiers, have(bb), bb.in.pickTier,
-                    (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("blockedTop"));
-            blocked = io.github.mojolowjo.entropybot.aa.brain.Costs.blocked(r, bb.in.pickTier, ownerOreGoal(bb));
-            why = r.terms();
-            if (!why.equals(lastToolsWhy)) {            // regression o1: the share's terms in the log when they change
-                lastToolsWhy = why;
-                org.slf4j.LoggerFactory.getLogger(AaDesires.class).info("[entropybot] aa: tools blocked share {}: {}", Math.round(blocked * 100), why);  // structural: percent
-            }
-        } else {                                     // no recipe graph or mining tags read yet: the old table, said so
-            blocked = io.github.mojolowjo.entropybot.aa.brain.Costs.blocked(bb.in.pickTier, bb.in.furnaceKnown || bb.in.furnaceInBag,
-                    bb.in.coal, bb.in.torches, ownerOreGoal(bb));
-            why = "blocked share from the fallback table (" + (tt == null ? "no recipe graph" : "no mining tags") + " yet)";
-        }
-        double sword = io.github.mojolowjo.entropybot.aa.brain.Costs.sword(bb.in.zombieSeen, bb.in.armed);
-        io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "tools", io.github.mojolowjo.entropybot.aa.brain.Costs.toolsTerms(bb.in.pickTier, bb.in.pickPct, blocked, why)
-                + (sword > 0 ? ", + " + Math.round(sword) + " no weapon (a zombie seen)" : ""));
-        // the pickaxe's worth only while it is wanted (a stone pickaxe at 100%: the sword alone)
-        boolean pickWanted = bb.in.pickTier < t("tools.stoneTier") || (bb.in.pickPct < t("tools.wearPct") && bb.in.pickaxes < t("tools.spares"));
-        return (pickWanted ? io.github.mojolowjo.entropybot.aa.brain.Costs.tools(bb.in.pickTier, bb.in.pickPct, blocked) : Tuning.get("need.defaultScore")) + sword;
-    }
-
-    /** An owner goal that needs a pickaxe is open. */
-    static boolean ownerOreGoal(Blackboard bb) {
-        if (!(bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.FACT) instanceof List<?>)) return false;
-        for (var g : io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb)) if (g.r.ore() || g.r.tier() >= 1) return true;
-        return false;
     }
 
     @SuppressWarnings("unchecked")
@@ -164,10 +124,6 @@ public final class AaDesires {
     public static List<Need> needs() {
         io.github.mojolowjo.entropybot.aa.core.Band torches = new io.github.mojolowjo.entropybot.aa.core.Band(t("band.torchOn"), t("band.torchOff")),
                 bag = new io.github.mojolowjo.entropybot.aa.core.Band(t("bag.enter"), t("bag.leave")), food = new io.github.mojolowjo.entropybot.aa.core.Band(t("band.foodOn"), t("band.foodOff"));
-        Need tools = new Need("needs.tools", TaskKind.TOOLS,
-                // aa-night2 P0 2: a stone sword too once a zombie was seen (the sword-only row, or the planner's goal)
-                bb -> bb.in.pickTier < t("tools.stoneTier") || (bb.in.pickPct < t("tools.wearPct") && bb.in.pickaxes < t("tools.spares")) || io.github.mojolowjo.entropybot.aa.brain.Costs.swordWanted(bb.in.zombieSeen, bb.in.armed),
-                bb -> null, bb -> List.of(new Step.Craft(RungOptions.TOOLS_ITEM, 1)), new Options.Picker<>("TOOLS", RungOptions.TOOLS_FACTS, RungOptions.ToolsFacts.class, new RungOptions.Tools())).surface();      // trees and stone at hand up there: under ground the climb is its first row
         Need hunger = new Need("needs.food", TaskKind.FOOD,
                 bb -> bb.in.hungerDrains && (food.update(bb.in.food) | foodStockLow(bb)),
                 bb -> null, bb -> plan("food 8"), new Options.Picker<>("FOOD", FoodOptions.FACTS, FoodOptions.FoodFacts.class, new FoodOptions.Food()));
@@ -206,13 +162,13 @@ public final class AaDesires {
         // 0.36.a8 (MINING_PLAN 3.6): the option scorer chooses how the planner's ore and smelt steps run (IronOptions)
         Need iron = new Need("needs.iron", TaskKind.IRON,
                 bb -> bb.in.pickTier < 3,  // game fact: pickaxe tier scale: wood 1, stone 2, iron 3, diamond 4
-                bb -> bb.in.pickTier >= 2 ? null : "no stone pickaxe yet (needs.tools first)",
+                bb -> null,
                 bb -> plan("iron tools"), new IronOptions.Picker());
         // review 4A-N (1): the dawn climb out of the night stairs is a need of its own, priced by WayUp's ways (no gate)
         Need dawn = new Need(DAWN_ID, TaskKind.TABLE_FURNACE, bb -> NightWork.climbAtDawn(bb, AaLadder.surfaceDepth()), bb -> null, bb -> List.of(new Step.Climb()),
                 new Options.Picker<>("SURFACE", RungOptions.SURFACE_FACTS, RungOptions.SurfaceFacts.class, new RungOptions.Surface())
                         .withoutFacts((b, planned) -> noFacts("climb", List.of(new Step.Climb()))));
-        return List.of(tools, hunger, tableFurnace, spare, torch, base, bed, deposit, iron, dawn);
+        return List.of(hunger, tableFurnace, spare, torch, base, bed, deposit, iron, dawn);
     }
 
     /** AA_ROUND3 5: the best sheep herd remembered and not in view ({x, z, dist, conf%}; LootBook.HERDS_FACT), or null. */
@@ -224,7 +180,6 @@ public final class AaDesires {
     /** Round 4A N: a need as a desire (its score, value-flow prerequisite, feasibility, live cost, probe and site). */
     public static Desire need(Need r) {
         Desire d = switch (r.id) {
-            case "needs.tools" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> factor(b, "tools") * tools(b)));
             case "needs.food" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, AaDesires::foodScore)).infeasible(AaDesires::foodInfeasible);
             case "needs.torches" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(Tuning.get("torch.base") + Curves.upkeep(Tuning.get("torch.span"), b.in.torches, t("torch.target")), factor(b, "torches"))))
                     .prereq(b -> b.in.tableKnown || b.in.tableInBag ? null : "needs.tableFurnace");
@@ -235,7 +190,7 @@ public final class AaDesires {
             case "needs.bed" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Worth.bed(bedDanger(b)))).cost(Tuning.get("cost.bed")).exposure(Desire.Exposure.SURFACE)
                     .infeasible(AaDesires::bedInfeasible);
             case "needs.iron" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, AaDesires::ironValue)).cost(Tuning.get("cost.iron"))
-                    .prereq(b -> b.in.pickTier < t("tools.stoneTier") ? "needs.tools" : null).exposure(Desire.Exposure.UNDER);
+                    .exposure(Desire.Exposure.UNDER);
             case DAWN_ID -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> Tuning.get("dawnClimb")));
             default -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Tuning.get("need.defaultScore")));
         };

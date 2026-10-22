@@ -98,7 +98,7 @@ public final class AaRuntime implements JobPort {
         bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.SURFACE_FACTS, perTick(new io.github.mojolowjo.entropybot.aa.FactsMemo<>(0), timed("surface", this::surfaceFacts)));
         bb.fact(io.github.mojolowjo.entropybot.aa.CoalOptions.FACTS, (java.util.function.IntFunction<io.github.mojolowjo.entropybot.aa.CoalOptions.CoalFacts>) this::coalFacts);
         bb.fact(io.github.mojolowjo.entropybot.aa.WoodOptions.FACTS,(java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.WoodOptions.WoodFacts>) this::woodFacts);
-        bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.TOOLS_FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.RungOptions.ToolsFacts>) this::toolsFacts);
+        bb.fact(io.github.mojolowjo.entropybot.aa.NeedChain.WORLD_FACT, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.NeedChain.World>) this::needWorld);
         bb.fact(io.github.mojolowjo.entropybot.aa.FoodOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts>) this::foodFacts);
         bb.fact(io.github.mojolowjo.entropybot.aa.BedOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.BedOptions.BedFacts>) this::bedFacts);     // round 4 fix 4
         NeedFacts.install(bb, this);          // round 4A N wiring: the station, bed, base and bag facts (O's sets)
@@ -679,22 +679,13 @@ public final class AaRuntime implements JobPort {
     /** The open-sky cell search radius (columns), S2. */
     static int skyR() { return Tuning.i("aaRuntime.skyR"); }
 
-    /** S2: the TOOLS rung's facts (the pickaxe tier, trees within 16 as the planner sees them). */
-    io.github.mojolowjo.entropybot.aa.RungOptions.ToolsFacts toolsFacts() {
-        if (sensed == null || sensed.feas == null) return null;
-        var in = bb.in;
-        // round 4A N: the sword-only row reads the bag (sticks from the bag map, the rest from the inputs)
-        int sticks = in.bag == null ? 0 : in.bag.getOrDefault("stick", 0);
-        boolean pick = in.pickTier < 2 || (in.pickPct < Tuning.i("aaRuntime.wornPct") && in.pickaxes < 2);
-        return new io.github.mojolowjo.entropybot.aa.RungOptions.ToolsFacts(in.pickTier, nearbyLog() != null, pick,
-                io.github.mojolowjo.entropybot.aa.brain.Costs.swordWanted(in.zombieSeen, in.armed), in.cobble, sticks, in.planks, in.tableKnown || in.tableInBag, needWorld());
-    }
-
-    /** rm-bootstrap: what NeedChain starts from: the bag, a table in reach, the nearest seen tree and stone. */
+    /** rm-bootstrap: what NeedChain starts from: the bag, a table in reach, the nearest seen tree, stone and coal ore. Null while the senses are not ready. */
     io.github.mojolowjo.entropybot.aa.NeedChain.World needWorld() {
+        if (sensed == null || sensed.feas == null) return null;
         var in = bb.in;
         return new io.github.mojolowjo.entropybot.aa.NeedChain.World(in.bag, in.tableKnown, word -> {
             if (word.equals(io.github.mojolowjo.entropybot.plan.PlanFacts.canon("oak_log"))) return nearbyLog();
+            if (word.equals(io.github.mojolowjo.entropybot.plan.PlanFacts.canon(io.github.mojolowjo.entropybot.aa.CoalOptions.FAMILY))) return nearestCoal();       // the planner's word for coal (fuel)
             if (!io.github.mojolowjo.entropybot.aa.brain.ItemWorth.stoneLike(word.indexOf(':') < 0 ? "minecraft:" + word : word)) return null;
             return c.nearby.stone(this::nearestStone);
         });
@@ -709,6 +700,14 @@ public final class AaRuntime implements JobPort {
             }
             return null;
         });
+    }
+
+    /** The nearest coal ore seen that may be taken (the coal set's own ores), as a chain source; its block comes from the item's drop data. */
+    private io.github.mojolowjo.entropybot.aa.NeedChain.Spot nearestCoal() {
+        var f = coalFacts(1);
+        if (f == null) return null;
+        for (var o : f.ores()) if (o.deny() == null) return new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(o.x(), o.y(), o.z(), o.dist(), null);
+        return null;
     }
 
     private long stoneAt = -1;
@@ -3112,7 +3111,7 @@ public final class AaRuntime implements JobPort {
         var g = io.github.mojolowjo.entropybot.aa.brain.Goals.add(bb, r, a.n(), a.prio(), now);
         lootCtx();
         String lootLine = "";
-        if (!r.ore() && bb.fact(io.github.mojolowjo.entropybot.aa.brain.LootBook.FACT) instanceof io.github.mojolowjo.entropybot.aa.brain.LootBook book) {
+        if (!r.ore() && !r.group() && bb.fact(io.github.mojolowjo.entropybot.aa.brain.LootBook.FACT) instanceof io.github.mojolowjo.entropybot.aa.brain.LootBook book) {
             String from = book.sourcesText(r.ids().get(0), 3);
             var lp = io.github.mojolowjo.entropybot.aa.brain.Goals.loot(bb, g, g.n);
             lootLine = from != null ? "; " + from + (lp != null && lp.text() != null ? " - " + lp.text() : "")

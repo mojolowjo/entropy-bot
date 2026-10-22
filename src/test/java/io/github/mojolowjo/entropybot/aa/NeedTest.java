@@ -60,10 +60,8 @@ class NeedTest {
     }
 
     @Test
-    void toolsUnderGroundPriceTheClimbAsTheirFirstRow() {
-        Need tools = AaDesires.needs().stream().filter(x -> x.id.equals("needs.tools")).findFirst().orElseThrow();
-        TS.tools(bb);
-        bb.in.pickTier = 0;
+    void aSurfaceNeedUnderGroundPricesTheClimbAsItsFirstRow() {
+        Need tools = new Need("needs.table", TaskKind.TABLE_FURNACE, b -> true, b -> null, b -> TS.plan("table")).surface();       // trees and stone at hand up there
         bb.in.underDepth = 10;
         assertEquals(Status.RUNNING, tools.tick(bb));
         assertEquals(AaLadder.CLIMB, port.started.get(0).chain());
@@ -102,7 +100,7 @@ class NeedTest {
     void aSearchingPlannerAndCutPlusPlannerAreRows() {
         double hand = Tuning.get("plannerHandS"), pen = Tuning.get("searchPenalty");
         Options.OptionMemory m = new Options.OptionMemory();
-        Options.Choice tools = new RungOptions.Tools().choose(new RungOptions.ToolsFacts(1, false), m, 0, null, 0, "still searching", null);
+        Options.Choice tools = Options.Choice.of(new java.util.ArrayList<>(), new java.util.ArrayList<>(), "no way to stone tools");
         Ways.Plan searching = new Ways.Plan("goal stone tools", JobPort.PlanState.SEARCHING, null, 0, "still searching (3 s)", 3000, null);
         Options.Choice c = Ways.withPlan(tools, searching, new Ways.State(), m, 0);
         assertNotNull(c.best(), c.why());

@@ -80,6 +80,11 @@ public final class Goals {
 
     /** How many the bag holds now (bag: path -> count). */
     public static int have(Map<String, Integer> bag, Goal g) {
+        if (g.r.group()) {          // a group is done when every member is had: the fewest of them
+            int low = Integer.MAX_VALUE;
+            for (String c : g.r.counts()) low = Math.min(low, bag.getOrDefault(c, 0));
+            return low == Integer.MAX_VALUE ? 0 : low;
+        }
         int s = 0;
         for (String c : g.r.counts()) s += bag.getOrDefault(c, 0);
         return s;
@@ -100,11 +105,16 @@ public final class Goals {
         return null;
     }
 
-    /** The desire that supplies the missing pickaxe (value flows to it, 2.2), else null. */
+    /** The desire that supplies the missing pickaxe (value flows to it, 2.2), else null. Below iron the goal's own steps make the pickaxe ({@link #steps}). */
     public static String prereq(Blackboard bb, Goal g) {
         if (g.r.tier() >= 3 && bb.in.pickTier < 3) return "needs.iron";  // game fact: pickaxe tier scale: wood 1, stone 2, iron 3, diamond 4
-        if (g.r.tier() >= 1 && bb.in.pickTier < Math.max(1, g.r.tier())) return "needs.tools";
         return null;
+    }
+
+    /** What the chains start from (the adapter's {@link NeedChain#WORLD_FACT}), null: not readable yet. */
+    public static io.github.mojolowjo.entropybot.aa.NeedChain.World world(Blackboard bb) {
+        return bb.fact(io.github.mojolowjo.entropybot.aa.NeedChain.WORLD_FACT) instanceof java.util.function.Supplier<?> s
+                && s.get() instanceof io.github.mojolowjo.entropybot.aa.NeedChain.World w ? w : null;
     }
 
     /**
@@ -114,7 +124,17 @@ public final class Goals {
      */
     public static List<Step> steps(Blackboard bb, Goal g) {
         int left = g.n - have(bb.in.bag, g);
-        if (left <= 0 || bb.in.pickTier < g.r.tier()) return null;
+        if (left <= 0) return null;
+        var world = world(bb);
+        if (g.r.group()) {          // ruling (b): the whole group is one job, one chain (one table, one trip, a simulated bag)
+            var ch = world == null ? null : io.github.mojolowjo.entropybot.aa.NeedChain.resolveAll(g.r.key(), g.r.ids(), g.n, world);
+            return ch == null || !ch.ok() || ch.steps().isEmpty() ? null : ch.steps();
+        }
+        if (bb.in.pickTier < g.r.tier()) {          // ruling (a): the dig makes the lowest pickaxe its block asks for (iron and up: the iron need)
+            if (g.r.tier() >= 3 || world == null) return null;       // game fact: pickaxe tier scale: wood 1, stone 2, iron 3, diamond 4
+            var ch = io.github.mojolowjo.entropybot.aa.NeedChain.resolveTool(g.r.tier(), world);
+            return !ch.ok() || ch.steps().isEmpty() ? null : ch.steps();
+        }
         if (!g.r.ore()) {
             LootBook.Plan lp = loot(bb, g, left);
             return List.of(lp != null && lp.step() != null ? lp.step() : new Step.Plan(g.r.key() + " " + left));

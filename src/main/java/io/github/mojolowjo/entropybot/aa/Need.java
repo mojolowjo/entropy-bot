@@ -17,7 +17,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
- * Round 4A N (AA_ROUND4 A1): one basic need (tools, food, station, torches, base, bed, bag, iron). It ticks one way:
+ * Round 4A N (AA_ROUND4 A1): one basic need (food, station, torches, base, bed, bag, iron). It ticks one way:
  * facts -> its option set's choice (with the {@link Ways} rows: the planner, cut N + planner, the climb as a priced first
  * step) -> the best row's chain -> {@link RunJob}. No planner-first, no fixed waits, no own cooldown: the brain's
  * {@link Failures} is the one memory (a failed row is held by its key; a need with no runnable row fails with every

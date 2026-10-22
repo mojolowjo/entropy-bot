@@ -27,8 +27,8 @@ public final class AaManual {
     /** How long an ask waits for {@code aa pick} before AA takes its own first choice. */
     public static long askMs() { return Tuning.l("aaManual.askMs"); }
 
-    /** The rungs by their short name ("tools", "surface"...) as {@code aa do/skip} take them. */
-    public static final List<String> NEEDS = List.of("tools", "food", "tableFurnace", "spareTable", "torches", "base", "bed", "bag", "iron");
+    /** The rungs by their short name ("food", "torches"...) as {@code aa do/skip} take them. */
+    public static final List<String> NEEDS = List.of("food", "tableFurnace", "spareTable", "torches", "base", "bed", "bag", "iron");
 
     /** One option as the ask shows it. */
     public record Row(String label, String command) {}
@@ -59,7 +59,7 @@ public final class AaManual {
         return m;
     }
 
-    /** "tools" / "needs.tools" / "TOOLS" -> "needs.tools"; null when no rung has that name. */
+    /** "torches" / "needs.torches" / "TORCHES" -> "needs.torches"; null when no rung has that name. */
     public static String rungId(String need) {
         if (need == null) return null;
         String t = need.trim().toLowerCase(Locale.ROOT);
@@ -71,7 +71,6 @@ public final class AaManual {
             case "spare", "spare_table" -> "needs.spareTable";
             case "torch" -> "needs.torches";
             case "deposit", "chest" -> "needs.bag";
-            case "pickaxe", "stone" -> "needs.tools";
             case "shelter", "house" -> "needs.base";
             default -> null;
         };

@@ -13,7 +13,7 @@ public final class Only {
 
     private static volatile String need;
 
-    /** The need being watched ("tools"), null: off. */
+    /** The need being watched ("torches"), null: off. */
     public static String need() { return need; }
 
     /** Sets (null or "off" clears) the watched need; returns the need now set. */
@@ -23,7 +23,7 @@ public final class Only {
         return need;
     }
 
-    /** True when {@code id} is the watched need: its full id ("needs.tools"), its last word ("tools"), or the id after "needs.". */
+    /** True when {@code id} is the watched need: its full id ("needs.torches"), its last word ("torches"), or the id after "needs.". */
     public static boolean is(String id) {
         String n = need;
         return n != null && (id.equals(n) || id.equals("needs." + n) || id.endsWith("." + n));
@@ -42,6 +42,6 @@ public final class Only {
         return score * factor(id, kind);
     }
 
-    /** The line for {@code aa status}: "only: tools", or null when off. */
+    /** The line for {@code aa status}: "only: torches", or null when off. */
     public static String statusText() { return need == null ? null : "only: " + need; }
 }

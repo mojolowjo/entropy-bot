@@ -67,8 +67,6 @@ public final class Tuning {
         def("shelterAt1", 85, "aa-costs", "the full-night shelter's score at night danger 1 (the one anchor)");
         def("torchCut", 0.05, "AA_ROUND4 B2", "each torch within 16 cuts the night danger by this share");
         def("lightFloor", 0.7, "AA_ROUND4 B2", "the most the torches may cut the night danger to");
-        def("swordValue", 25, "aa-night2 P0 2", "a weapon's worth once a zombie was seen, added to the tools need");
-        def("blockedTop", 8, "AA_ROUND4 C", "how many of the tech tree's top ideas the pickaxe tier is checked against (Costs.blocked)");
         def("chestMin", 35, "aa-kit camp", "the camp chest's least worth");
         def("hidePerHp", 7, "aa-night2 P0 1", "the hide's score per missing health point x the night danger");
         def("danger.hpS", 6, "AA_CLEANUP 4", "seconds one health point is worth at full health (regen + food), the cost_of_hp curve's low end");
@@ -114,16 +112,7 @@ public final class Tuning {
         def("band.torchOff", 16, "aa-brain 1", "the torches need switches off at this many torches");
         def("band.foodOn", 10, "aa-brain 1", "the food need switches on under this much food energy");
         def("band.foodOff", 18, "aa-brain 1", "the food need switches off at this much food energy");
-        def("tools.base", 55, "aa-costs", "the tools need's score when the pickaxe is missing or wooden (before the blocked share)");
-        def("tools.blockedW0", 30, "aa-costs", "added to tools.base x the share of next steps blocked when there is no pickaxe");
-        def("tools.blockedW1", 20, "aa-costs", "added to tools.base x the share of next steps blocked when the pickaxe is wooden");
-        def("tools.blockedOf", 4, "aa-costs", "how many next steps (furnace, iron, coal, owner ore) the blocked share is counted out of");
-        def("tools.keepBase", 40, "aa-costs", "the tools need's score floor with a stone or better pickaxe, before its wear curve");
-        def("tools.wearSpan", 30, "aa-costs", "the wear curve's span for a stone or better pickaxe (worn out adds this)");
         def("torch.target", 16, "aa-night2 P0 1", "torches the coal and craft rows stock up to");
-        def("tools.stoneTier", 2, "aa-costs", "the pickaxe tier (kit scale: wood 1, stone 2) from which iron, furnace and coal work is not blocked");
-        def("tools.wearPct", 15, "aa-night2 P0 1", "pickaxe durability percent under which a single pickaxe counts as worn out");
-        def("tools.spares", 2, "aa-night2 P0 1", "pickaxes in the bag from which a worn one needs no new tools need");
         def("torch.base", 30, "aa-costs", "the torches need's score floor before its upkeep curve");
         def("torch.span", 30, "aa-costs", "the torches need's upkeep curve span (empty bag adds this)");
         def("bag.base", 20, "aa-costs", "the bag need's score floor before its upkeep curve");

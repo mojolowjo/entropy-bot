@@ -120,7 +120,7 @@ class BrainB4Test {
 
         bb.in.pickTier = 1;
         assertNull(io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g)), "a stone pickaxe first");
-        assertEquals("needs.tools", Goals.prereq(bb, g));
+        assertNull(Goals.prereq(bb, g), "no tools need: the goal's own steps make the pickaxe (ToolsChainsTest)");
         bb.in.pickTier = 2;
         assertEquals("mine strip iron 5", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g)));
         bb.fact(Goals.KNOWN_FACT, Map.of("iron", 12));

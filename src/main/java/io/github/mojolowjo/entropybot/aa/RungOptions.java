@@ -12,8 +12,8 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
- * S2 (MINING_PLAN 11): the SURFACE and TOOLS rungs' option sets on the {@link Options} framework. Pure (JUnit:
- * RungOptionsTest); the facts come from the adapter ({@code AaRuntime.surfaceFacts / toolsFacts}).
+ * S2 (MINING_PLAN 11): the SURFACE rung's option set on the {@link Options} framework (the TOOLS rung went in 0.39.y1: a pickaxe
+ * is made only by a chain's dig, {@link NeedChain}). Pure (JUnit: RungOptionsTest); the facts come from the adapter ({@code AaRuntime.surfaceFacts}).
  */
 public final class RungOptions {
     private RungOptions() {}
@@ -90,61 +90,6 @@ public final class RungOptions {
         @Override public boolean switchable(String end) {
             if (end == null || Options.ownerOrDanger(end)) return false;
             return Failures.classify(end) != null || SURFACE_END.matcher(end.toLowerCase(Locale.ROOT)).find();
-        }
-    }
-
-    // ---- TOOLS: a stone pickaxe ----
-
-    public static final String TOOLS_FACTS = "tools.facts";
-    /** The tools need's wanted item: the stone pickaxe, made by the recursion of {@link NeedChain}. */
-    public static final String TOOLS_ITEM = "stone_pickaxe";
-
-    /** @param treesNear a log within 16 (the planner's "trees" fact; its goal plan needs them); world: what the chain starts from (null: not readable) */
-    public record ToolsFacts(int pickTier, boolean treesNear, boolean pickWanted, boolean swordWanted, int cobble, int sticks, int planks, boolean table, NeedChain.World world) {
-        public ToolsFacts(int pickTier, boolean treesNear, boolean pickWanted, boolean swordWanted, int cobble, int sticks, int planks, boolean table) {
-            this(pickTier, treesNear, pickWanted, swordWanted, cobble, sticks, planks, table, null);
-        }
-
-        /** The pickaxe facts only (no sword wanted). */
-        public ToolsFacts(int pickTier, boolean treesNear) { this(pickTier, treesNear, true, false, 0, 0, 0, false, null); }
-
-        /** Round 4A N: a stone sword from the bag (2 cobblestone, a stick or 2 planks for one, a table known). */
-        public boolean swordMats() { return cobble >= 2 && (sticks >= 1 || planks >= 2) && table; }
-    }
-
-    private static final Pattern TOOLS_END = Pattern.compile("no chests|scan base|no trees|chopped nothing|no path|no progress|timeout|stuck|couldn't|can't|missing");
-
-    public static final class Tools implements Options.OptionSet<ToolsFacts> {
-        @Override public Options.Choice choose(ToolsFacts f, Options.OptionMemory m, long now, List<Step> planned, double cost, String plannerWhy, String afterFail) {
-            List<Options.Option> rows = new ArrayList<>();
-            List<String> dropped = new ArrayList<>();
-            // round 4A N: the sword alone when the pickaxe is fine (a zombie seen, no weapon): one craft from the bag
-            if (f.swordWanted()) {
-                double s = io.github.mojolowjo.entropybot.aa.brain.ToolWear.craftSV();
-                if (!f.swordMats()) dropped.add("sword only: no 2 cobblestone + a stick + a table (" + f.cobble() + " cobblestone, " + f.sticks() + " sticks, "
-                        + f.planks() + " planks, table " + f.table() + "); the planner's goal makes one");
-                else add(rows, dropped, m, now, Options.typed("sword only", "craft", List.of(new Step.Craft("stone_sword", 1)), io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(s),
-                        "a stone sword from the bag: craft " + Math.round(s) + " s", "sword only", m));
-                if (!f.pickWanted()) {
-                    dropped.add("chain: the pickaxe is fine (the sword alone is wanted)");
-                    return Options.Choice.of(rows, dropped, "no way to a sword");
-                }
-            }
-            // the one way to tools: the need resolved by the recipe data (NeedChain): the item's ingredients, a table (an item like any other), a seen source, else explore
-            if (f.world() == null) dropped.add("chain: no world facts (the senses are not ready)");
-            else if (f.pickTier() >= 2 && !f.pickWanted()) dropped.add("chain: the stone pickaxe exists");
-            else {
-                NeedChain.Chain ch = NeedChain.resolve(TOOLS_ITEM, 1, f.world());
-                if (!ch.ok()) dropped.add("chain " + TOOLS_ITEM + ": " + ch.missing());
-                else if (ch.steps().isEmpty()) dropped.add("chain: " + ch.why());
-                else add(rows, dropped, m, now, Options.typed("chain " + TOOLS_ITEM, "chain", ch.steps(), ch.cost(), ch.why(), "chain " + TOOLS_ITEM, m));
-            }
-            return Options.Choice.of(rows, dropped, "no way to stone tools");
-        }
-
-        @Override public boolean switchable(String end) {
-            if (end == null || Options.ownerOrDanger(end)) return false;
-            return Failures.classify(end) != null || TOOLS_END.matcher(end.toLowerCase(Locale.ROOT)).find();
         }
     }
 
