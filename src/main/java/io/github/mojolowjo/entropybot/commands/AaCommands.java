@@ -10,7 +10,7 @@ import java.util.List;
 final class AaCommands {
     private AaCommands() {}
 
-    static final String USAGE = "usage: aa on|off|status|why|tree | aa ask on|off | aa pick <n> | aa do <need>|none | aa skip <need>|none | aa use <option>";
+    static final String USAGE = "usage: aa on|off|status|why|tree|stats | aa like [<key> <n>] | aa tune [<name> <n>] | aa worth <item> | aa want <thing> [n] [high|low] | aa drop <thing>|all | aa only <need>|off | aa goals | aa build <name> here|at <x y z> [high|low] | aa ore [info] [<thing>] | aa ask on|off | aa pick <n> | aa do <need>|none | aa skip <need>|none | aa use <option> | aa replan on|off | aa look [smooth <ticks>] | aa horizon [seconds] | aa fair [on|off] | aa litter | aa slow [on|off|step] | aa go | aa predict";
 
     static String handle(Commands c, String rest) {
         AaRuntime aa = c.aaRuntime;
@@ -21,16 +21,38 @@ final class AaCommands {
             case "on" -> { return aa.turnOn(); }
             case "off" -> { return aa.turnOff("aa off"); }
             case "", "status" -> {
-                return aa.statusLine() + "\n" + aa.counts() + (aa.on() ? "\nladder: " + aa.ladderLine() + "\n" + aa.optionStatus() : "");
+                return aa.statusLine() + aa.tuningLine() + "\n" + aa.counts() + (aa.on() ? "\n" + aa.brainCounters() + "\ndesires: " + String.join(" | ", aa.brainLines(5)) + "\n" + aa.goalsLine() + "\n" + aa.wantsLine() + "\nrungs: " + aa.ladderLine() + "\n" + aa.optionStatus() : "");
             }
             case "why" -> {
                 List<String> d = aa.decisions();
-                String opts = aa.on() ? "\n" + String.join("\n", aa.optionLines()) : "";
-                if (d.isEmpty()) return "aa why: no decisions yet" + (aa.on() ? " (ladder: " + aa.ladderLine() + ")" + opts : " (aa is off)");
+                String opts = aa.on() ? "\ndesires (top 5):\n" + String.join("\n", aa.brainLines(5)) + "\n" + aa.wantsLine() + "\n" + aa.ideasLine() + "\n" + String.join("\n", aa.optionLines()) : "";
+                if (d.isEmpty()) return "aa why: no decisions yet" + (aa.on() ? " (rungs: " + aa.ladderLine() + ")" + opts : " (aa is off)");
                 List<String> last = d.subList(Math.max(0, d.size() - 10), d.size());
-                return "aa why (last " + last.size() + " of " + d.size() + "):\n" + String.join("\n", last) + (aa.on() ? "\nladder: " + aa.ladderLine() : "") + opts;
+                return "aa why (last " + last.size() + " of " + d.size() + "):\n" + String.join("\n", last) + (aa.on() ? "\nrungs: " + aa.ladderLine() : "") + opts;
             }
-            case "tree" -> { return aa.tree.mermaid(); }
+            case "tree" -> { return aa.tree.mermaid() + (aa.on() ? "\n%% desires now: " + String.join(" | ", aa.brainLines(30)) + "\n%% " + aa.ideasLine() : ""); }
+            case "worth" -> { return arg.isEmpty() ? "usage: aa worth <item> (e.g. aa worth iron_pickaxe): the terms its worth is derived from, or UNKNOWN" : io.github.mojolowjo.entropybot.aa.brain.ItemWorth.explain(arg.replace(" ", "_")); }     // AA_ROUND4 C
+            case "only" -> {
+                String set = aa.only(arg);           // live-facts: saved in this world's switch
+                return arg.isEmpty() ? (set == null ? "aa only: off (usage: aa only <need>|off, e.g. aa only torches)" : "only: " + set)
+                        : set == null ? "aa only: off - every need and want is back" : "only: " + set + " - every other need and want is silent (danger, reflexes and your orders stay on); aa only off to end";
+            }
+            case "stats" -> { return aa.statsText(); }
+            case "litter" -> { return RestoreLive.INSTANCE.litterText(); }
+            case "like" -> { return aa.like(arg); }
+            case "tune" -> { return aa.tune(arg == null || arg.isBlank() ? new String[0] : arg.trim().split("\\s+")); }     // AA_ROUND4 B3
+            case "want" -> { return aa.want(arg); }
+            case "drop" -> { return aa.drop(arg); }
+            case "goals" -> { return aa.goalsText(); }
+            case "ore" -> { return aa.oreInfo(arg); }
+            case "replan" -> { return aa.replan(arg); }
+            case "look" -> { return aa.look(arg); }
+            case "horizon" -> { return aa.horizon(arg); }
+            case "fair" -> { return aa.fair(arg); }
+            case "build" -> { return aa.build(arg); }
+            case "slow" -> { return aa.slow.command(arg); }          // AA_STEP3 B
+            case "go" -> { return aa.slow.go(); }
+            case "predict" -> { return aa.slow.predict(); }
             case "ask", "pick", "do", "skip", "use" -> {
                 if (!aa.on()) return "aa is off (aa on first)";
                 return aa.manual(verb, arg);

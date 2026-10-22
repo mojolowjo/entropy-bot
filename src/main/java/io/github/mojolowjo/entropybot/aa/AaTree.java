@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.aa.core.Band;
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Condition;
@@ -26,24 +28,42 @@ import java.util.List;
  * {@link #mermaid()} exports the static tree for the docs; node ids are stable for the snapshot.
  */
 public final class AaTree {
-    public static final long CALM_MS = 3000, AIR_HOLD_MS = 30_000;
+    public static long calmMs() { return Tuning.l("aaTree.calmMs"); }
+    public static long airHoldMs() { return Tuning.l("aaTree.airHoldMs"); }
     /** S1: the spot was lit this night. */
     public static final String LIT_FACT = "litTonight";
     private long airSince = -1;
+    /** AA_STEP3 A5: the paused time per guard tick over the last minute ({at, ms}), its sum, and the yield after a "paused too long". */
+    private final java.util.ArrayDeque<long[]> pauseLog = new java.util.ArrayDeque<>();
+    private long pausedSum, lastGuardAt = -1;
+    private boolean airYield;
+
+    private void pausedMs(long now, boolean paused) {
+        long dt = lastGuardAt < 0 ? 0 : Math.max(0, Math.min(5_000, now - lastGuardAt));
+        lastGuardAt = now;
+        if (paused && dt > 0) {
+            pauseLog.addLast(new long[]{now, dt});
+            pausedSum += dt;
+        }
+        while (!pauseLog.isEmpty() && now - pauseLog.peekFirst()[0] > Tuning.i("aaTree.pauseWindowMs")) pausedSum -= pauseLog.pollFirst()[1];
+    }
 
     public final GuardSelector root;
     public final MemoryFallback slot;
-    public final Node danger, ladder;
-    public final UtilitySelector idle;
-    public final Band.CalmLatch dangerLatch = new Band.CalmLatch(CALM_MS);
+    public final Node danger;
+    /** BRAIN_PLAN B1: the scored desire list (the ladder's rungs and the idle options); {@code ladder} is the same node. */
+    public final io.github.mojolowjo.entropybot.aa.brain.Brain brain, ladder;
+    public final Band.CalmLatch dangerLatch = new Band.CalmLatch(calmMs());
     private String dangerWhy = "";
 
-    private AaTree(GuardSelector root, MemoryFallback slot, Node danger, Node ladder, UtilitySelector idle) {
+    private AaTree(GuardSelector root, MemoryFallback slot, Node danger, io.github.mojolowjo.entropybot.aa.brain.Brain brain) {
         this.root = root;
         this.slot = slot;
         this.danger = danger;
-        this.ladder = ladder;
-        this.idle = idle;
+        this.brain = brain;
+        brain.optionOf = d -> d.node instanceof io.github.mojolowjo.entropybot.aa.brain.Brain in ? (in.runningDesire() == null ? null : in.runningDesire().id)
+                : d.node instanceof Need n && n.picker() != null ? n.picker().chosenId() : null;
+        this.ladder = brain;
     }
 
     /** A leaf that only observes: RUNNING while its condition holds (the reflexes do the moving). */
@@ -55,29 +75,56 @@ public final class AaTree {
 
     public static AaTree build(Scorer scorer) {
         AaTree[] self = new AaTree[1];
-        // [1] DANGER: the guard with the band (enter at once, leave after 3 s calm with health >= 12 and air full)
+        // [1] DANGER: the guard with the band (enter at once, leave after 3 s calm). Round 4 (owner 2026-10-20: "AA should
+        // be making all decisions so remove the danger guard"): hostiles never pause the slot any more - the danger desire
+        // prices fight/flee/cover/home/dig-in/pillar against staying (DangerOptions) and competes by score; the hit
+        // response runs under the slot as a reflex. Only the true reflexes that move the bot regardless still pause it:
+        // drowning (air), lava or fire, and the creeper sprint.
         Condition dangerGuard = new Condition("danger", "danger", bb -> {
             AaTree t = self[0];
             // 0.36.4 (aa40d/e: under a water ceiling the air stayed short and AA's job sat paused 10+ min, nothing moving
             // the bot): air alone holds the guard at most AIR_HOLD_MS; then the job resumes (its walk gets the bot out),
             // and real drowning still comes back through health <= 8
             long now0 = bb.clock.now();
-            boolean airShort = bb.in.air < 300;
-            if (!airShort) t.airSince = -1;
-            else if (t.airSince < 0) t.airSince = now0;
-            boolean airCounts = airShort && now0 - t.airSince < AIR_HOLD_MS;
-            boolean urgent = bb.in.danger >= 2 || bb.in.health <= 8 || (airCounts && bb.in.air < 100) || bb.in.inLavaOrFire || bb.in.creeperClose;
-            boolean notCalm = t.dangerLatch.active() && (bb.in.health < 12 || airCounts || bb.in.danger > 0);
+            boolean airShort = bb.in.air < Tuning.i("aaTree.airShort");
+            if (!airShort) {
+                t.airSince = -1;
+                t.airYield = false;
+            } else if (t.airSince < 0) t.airSince = now0;
+            // AA_STEP3 A5 (step2-watch: "danger.job(wait 60) PAUSED 1656s by danger | danger: drowning, health 4", the air
+            // reflex every 8 s, AA never re-priced): a job paused by a reflex more than Tuning pausedRepriceS within a
+            // minute ends ("paused too long: <reflex>"); the air guard then yields to the brain until the air is full, so
+            // it picks again with the fresh facts, and the spot is a fact (WATER_HERE_FACT: a wait here sinks)
+            // review 0.39.a4 6: only the air reflex's pause counts (lava, fire and the creeper sprint are short and real)
+            t.pausedMs(now0, t.root != null && t.root.hasPaused() && airShort && !bb.in.inLavaOrFire && !bb.in.creeperClose);
+            double limitMs = io.github.mojolowjo.entropybot.aa.brain.Tuning.get("pausedRepriceS") * 1000;
+            if (airShort && !t.airYield && t.root != null && t.root.hasPaused() && t.pausedSum > limitMs) {
+                String why = "paused too long: " + t.dangerWhy + " (" + t.pausedSum / 1000 + " s paused in the last 60 s, over pausedRepriceS "  // structural: milliseconds per second
+                        + Math.round(limitMs / 1000) + "): the job ends, the brain picks again";  // structural: milliseconds per second
+                bb.port.log(why);
+                bb.tracer.event(why);
+                t.root.endPaused(why);
+                if (bb.in.pos != null) bb.fact(AaDesires.WATER_HERE_FACT, new long[]{bb.in.pos[0], bb.in.pos[1], bb.in.pos[2], now0});
+                t.airYield = true;
+                t.pauseLog.clear();
+                t.pausedSum = 0;
+            }
+            if (t.airYield) airShort = false;      // the air reflex still moves the bot; AA's slot is no longer held for it
+            boolean airCounts = airShort && now0 - t.airSince < airHoldMs();
+            // AA_CLEANUP 4: low health alone is no reflex any more (no retreat rule): the danger desire and the hide price it;
+            // drowning at low health still is (air short and health <= 8)
+            boolean drown = airShort && bb.in.health <= Tuning.i("aaTree.drownHealth");
+            boolean urgent = drown || (airCounts && bb.in.air < Tuning.i("aaTree.airUrgent")) || bb.in.inLavaOrFire || bb.in.creeperClose;
+            boolean notCalm = t.dangerLatch.active() && (airCounts || drown || bb.in.creeperClose);
             boolean on = t.dangerLatch.update(urgent || notCalm, bb.clock.now());
-            if (on) t.dangerWhy = bb.in.air < 100 ? "drowning" : bb.in.inLavaOrFire ? "lava or fire" : bb.in.health <= 8 ? "low health " + Math.round(bb.in.health)
-                    : bb.in.creeperClose ? "creeper close" : bb.in.danger >= 2 ? bb.in.dangerWhy : "calming down";
+            if (on) t.dangerWhy = bb.in.air < Tuning.i("aaTree.airUrgent") ? "drowning" : bb.in.inLavaOrFire ? "lava or fire" : drown ? "drowning, health " + Math.round(bb.in.health)
+                    : bb.in.creeperClose ? "creeper close" : "calming down";
             return on;
         });
         Node dangerBranch = new Fallback("danger.reflex", "the reflex that moves",
-                new Seq("danger.air", "drowning", new Condition("danger.air?", "air < 100", bb -> bb.in.air < 100), observe("danger.air.reflex", "air reflex")),
+                new Seq("danger.air", "drowning", new Condition("danger.air?", "air < 100", bb -> bb.in.air < Tuning.i("aaTree.airUrgent")), observe("danger.air.reflex", "air reflex")),
                 new Seq("danger.lava", "lava or fire", new Condition("danger.lava?", "in lava or fire", bb -> bb.in.inLavaOrFire), observe("danger.lava.reflex", "escape reflex")),
-                new Seq("danger.health", "low health", new Condition("danger.health?", "health <= 8", bb -> bb.in.health <= 8), observe("danger.health.reflex", "retreat reflex")),
-                new Seq("danger.hostile", "hostile or creeper", new Condition("danger.hostile?", "fight/flee or creeper", bb -> bb.in.danger >= 2 || bb.in.creeperClose), observe("danger.hostile.reflex", "fight/flee reflex")),
+                new Seq("danger.creeper", "creeper", new Condition("danger.creeper?", "creeper close", bb -> bb.in.creeperClose), observe("danger.creeper.reflex", "creeper sprint")),
                 observe("danger.calm", "calming down"));
         // [2a] the owner's order: adopted while a job that is not AA's runs
         Node owner = new Node("owner", "the owner's order (a job of the owner's runs)") {
@@ -94,7 +141,7 @@ public final class AaTree {
                 }
                 if (bb.in.otherJob != null) return Status.RUNNING;
                 bb.tracer.outcome(bb.clock.now(), "done");
-                bb.port.log("owner's job ended after " + (bb.clock.now() - since) / 1000 + "s: " + seen);
+                bb.port.log("owner's job ended after " + (bb.clock.now() - since) / 1000 + "s: " + seen);  // structural: milliseconds per second
                 seen = null;
                 return Status.SUCCESS;
             }
@@ -106,42 +153,85 @@ public final class AaTree {
             Request r = bb.take("ai");
             if (r == null) return null;
             bb.pendingReason("ai: " + r.reason());
-            return new JobPort.TaskSpec(TaskKind.AI, r.chain(), "ai", r.priority(), JobPort.TaskSpec.TIMEOUT_MS, JobPort.TaskSpec.NO_PROGRESS_MS);
+            return new JobPort.TaskSpec(TaskKind.AI, r.chain(), "ai", r.priority(), JobPort.TaskSpec.timeoutMsV(), JobPort.TaskSpec.noProgressMsV());
         });
         Node ai = new Seq("ai", "an AI request", new Condition("ai?", "an AI request waits", bb -> bb.peek("ai") != null), aiJob);
-        // [2c] the ladder, [2d] idle
-        Node ladder = AaLadder.build();
-        UtilitySelector idle = new UtilitySelector("idle", "idle", scorer, UtilitySelector.BONUS,
+        // [2c] BRAIN_PLAN B1: one scored list (the ladder's rungs and the idle options as desires)
+        List<java.util.Map.Entry<TaskKind, Node>> idle = List.of(
                 // 0.36.2 (40-min run: STOCK_WOOD restarted 0.25 s after each failure, 17 times): a failed idle task
                 // cools down like a rung (2 min doubling); planning and busy refusals do not count
                 // S1 (MINING_PLAN 12): the owner's targets; a planner-null option cools down 30 s (Cooldown.NO_RUN_MS) so the
                 // next option gets its turn (the probe's hypothesis: STOCK_WOOD failing "nothing to run" every tick)
-                new UtilitySelector.Option(TaskKind.STOCK_WOOD, idleCd("idle.wood.cd", goal("idle.wood", TaskKind.STOCK_WOOD, "goal wood " + AaScorer.WOOD_HI))),
-                new UtilitySelector.Option(TaskKind.STOCK_STONE, idleCd("idle.stone.cd", goal("idle.stone", TaskKind.STOCK_STONE, "goal cobblestone " + AaScorer.STONE_HI))),
-                new UtilitySelector.Option(TaskKind.STOCK_COAL, idleCd("idle.coal.cd", goal("idle.coal", TaskKind.STOCK_COAL, "goal coal " + AaScorer.COAL_HI))),
-                new UtilitySelector.Option(TaskKind.STOCK_IRON, idleCd("idle.iron.cd", goal("idle.iron", TaskKind.STOCK_IRON, "goal iron " + AaScorer.IRON_HI))),
-                new UtilitySelector.Option(TaskKind.STOCK_TORCHES, idleCd("idle.torches.cd", goal("idle.torches", TaskKind.STOCK_TORCHES, "goal torch " + AaScorer.TORCH_HI))),
-                new UtilitySelector.Option(TaskKind.DEPOSIT, idleCd("idle.deposit.cd", RunJob.of("idle.deposit", TaskKind.DEPOSIT, "deposit", "idle"))),
-                new UtilitySelector.Option(TaskKind.LIGHT, idleCd("idle.light.cd", oncePerNight(RunJob.of("idle.light", TaskKind.LIGHT, "light here 8", "idle")))),
-                new UtilitySelector.Option(TaskKind.WAIT, new Cooldown("idle.wait.cd", RunJob.of("idle.wait", TaskKind.WAIT, "wait 60", "idle")).ranOnly()));
-        MemoryFallback slot = new MemoryFallback("slot", "the task slot", owner, ai, ladder, idle);
+                // one-planner: each stock-up is "I need N of X" (an item or the game's tag) through the chain
+                java.util.Map.entry(TaskKind.STOCK_WOOD, (Node) idleCd("idle.wood.cd", goal("idle.wood", TaskKind.STOCK_WOOD, LOGS, AaScorer.woodHi()))),
+                java.util.Map.entry(TaskKind.STOCK_STONE, (Node) idleCd("idle.stone.cd", underGoal("idle.stone", TaskKind.STOCK_STONE, STONE, AaScorer.stoneHi()))),
+                java.util.Map.entry(TaskKind.STOCK_COAL, (Node) idleCd("idle.coal.cd", underGoal("idle.coal", TaskKind.STOCK_COAL, COALS, AaScorer.coalHi()))),
+                java.util.Map.entry(TaskKind.STOCK_IRON, (Node) idleCd("idle.iron.cd", underGoal("idle.iron", TaskKind.STOCK_IRON, IRON, AaScorer.ironHi()))),
+                java.util.Map.entry(TaskKind.STOCK_TORCHES, (Node) idleCd("idle.torches.cd", goal("idle.torches", TaskKind.STOCK_TORCHES, AaDesires.TORCH, AaScorer.torchHi()))),
+                java.util.Map.entry(TaskKind.DEPOSIT, (Node) idleCd("idle.deposit.cd", RunJob.of("idle.deposit", TaskKind.DEPOSIT, List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Deposit()), "idle"))),
+                java.util.Map.entry(TaskKind.LIGHT, (Node) idleCd("idle.light.cd", oncePerNight(RunJob.of("idle.light", TaskKind.LIGHT, List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Light(io.github.mojolowjo.entropybot.aa.brain.Help.lightR())), "idle")))),
+                java.util.Map.entry(TaskKind.WAIT, (Node) new RunJob("idle.wait", TaskKind.WAIT, bb -> JobPort.TaskSpec.steps(TaskKind.WAIT, List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Wait((int) io.github.mojolowjo.entropybot.aa.brain.Brain.waitSeconds(bb.clock.now(),
+                        bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.NEXT_LAPSE_FACT) instanceof Long l ? l : 0))), "idle"))));
+        io.github.mojolowjo.entropybot.aa.brain.Brain brain = AaDesires.build(AaDesires.needs(), idle, scorer);
+        MemoryFallback slot = new MemoryFallback("slot", "the task slot", owner, ai, brain);
         GuardSelector root = new GuardSelector("root", "AA",
                 new GuardSelector.Branch(dangerGuard, dangerBranch),
                 new GuardSelector.Branch(new Condition("slot?", "always", bb -> true), slot));
-        self[0] = new AaTree(root, slot, dangerBranch, ladder, idle);
+        self[0] = new AaTree(root, slot, dangerBranch, brain);
         return self[0];
     }
 
-    /** An idle goal through the planner (none or still searching: the option fails this tick and cools down 30 s). */
-    private static RunJob goal(String id, TaskKind kind, String text) {
-        return new RunJob(id, kind, bb -> {
-            String chain = bb.port.resolve(text);
-            return chain == null ? null : JobPort.TaskSpec.of(kind, chain, "idle");
-        });
+    /** The stock-ups' targets: the game's tags (logs, the stone tool materials, the coals, the iron ingots) and the torch. */
+    static final String LOGS = "#minecraft:logs", STONE = "#minecraft:stone_tool_materials", COALS = "#minecraft:coals", IRON = "#c:ingots/iron";
+
+    /** An idle stock-up through the chain (no chain: the option fails this tick and cools down 30 s). */
+    private static RunJob goal(String id, TaskKind kind, String what, int n) {
+        return new RunJob(id, kind, bb -> chainTask(bb, kind, what, n, "idle"));
     }
 
-    /** S1: an idle option's cooldown: 2 min doubling after a task that ran and failed, 30 s after one that never ran. */
-    static Cooldown idleCd(String id, Node child) { return new Cooldown(id, child).ranOnly(Cooldown.NO_RUN_MS).restAfterSuccess(Cooldown.NO_RUN_MS); }
+    /**
+     * one-planner: "I need {@code n} of {@code what}" as a task of one {@link io.github.mojolowjo.entropybot.aa.moves.Step.Obtain}
+     * (the chain is priced again when the step runs), once a chain stands now; null with the reason pending otherwise.
+     */
+    static JobPort.TaskSpec chainTask(Blackboard bb, TaskKind kind, String what, int n, String source) {
+        var w = io.github.mojolowjo.entropybot.aa.brain.Goals.world(bb);
+        if (w == null) {
+            bb.pendingReason(source + " " + what + ": no facts for the chain yet");
+            return null;
+        }
+        NeedChain.Chain c = NeedChain.resolve(what, n, w);
+        if (!c.ok() || c.steps().isEmpty()) {
+            bb.pendingReason(source + " " + what + ": " + (c.ok() ? "in the bag" : c.why()));
+            return null;
+        }
+        return JobPort.TaskSpec.steps(kind, List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain(what, n)), source);
+    }
+
+    /**
+     * S1: an idle option's cooldown: 2 min doubling after a task that ran and failed, 30 s after one that never ran.
+     * AA_ROUND2 3: the brain holds it now (Desire.cools over Failures); the node is the bare job.
+     */
+    static Node idleCd(String id, Node child) { return child; }
+
+    /**
+     * AA_ROUND2 4 (was the night.work desire at 78): a mining stock-up's UNDER option. Sheltered at a hostile night with
+     * night work to do (NightWork.pick: smelt, craft, else a shaft and stairs from the shell floor), that runs instead
+     * of the chain: the work is cheaper under ground, the brain's exposure factor says so.
+     */
+    private static RunJob underGoal(String id, TaskKind kind, String what, int n) {
+        return new RunJob(id, kind, bb -> {
+            if (io.github.mojolowjo.entropybot.aa.brain.NightWork.active(bb)) {
+                var w = io.github.mojolowjo.entropybot.aa.brain.NightWork.pick(bb.in);
+                if (w != io.github.mojolowjo.entropybot.aa.brain.NightWork.Work.NONE) {
+                    int[] p = bb.in.pos == null ? new int[3] : bb.in.pos;
+                    io.github.mojolowjo.entropybot.aa.brain.NightWork.noteDug(bb, w);
+                    return JobPort.TaskSpec.steps(kind, io.github.mojolowjo.entropybot.aa.brain.NightWork.steps(bb.in, w, p[0], p[1], p[2], 1, 0),
+                            "night", JobPort.TaskSpec.timeoutMsV(), AaDesires.shelterPatienceMs());
+                }
+            }
+            return chainTask(bb, kind, what, n, "idle");
+        });
+    }
 
     /** S1: lighting the spot runs once per night (a SUCCESS holds it until the day). */
     static Node oncePerNight(Node child) {
@@ -163,7 +253,7 @@ public final class AaTree {
         if (!bb.in.night) bb.fact(LIT_FACT, null);         // review: reset by the tree each day (the node is not ticked by day)
         bb.in.litTonight = bb.flag(LIT_FACT);
         Status s = root.tick(bb);
-        for (Rung r : AaLadder.rungs(ladder)) if (r.id.equals("needs.base") && r.last() == Status.SUCCESS && bb.in.areaName == null) AaLadder.noteShelter(bb);
+        for (Need r : Need.all(ladder)) if (r.id.equals("needs.base") && r.last() == Status.SUCCESS && bb.in.basePlace == null) AaLadder.noteShelter(bb);
         bb.tracer.counts.ticks++;
         return s;
     }
@@ -173,6 +263,11 @@ public final class AaTree {
         if (root.active() == 0) return "danger";
         Node r = slot.runningChild();
         if (r == null) return "none";
+        // BRAIN_PLAN B1: the brain drives as "needs" (a rung) or "idle" (an idle option), as the ladder and idle did
+        if (r == brain) {
+            var d = brain.runningDesire();
+            return d == null ? "none" : d.id.startsWith("needs.") ? "needs" : "idle";
+        }
         return r.id;
     }
 

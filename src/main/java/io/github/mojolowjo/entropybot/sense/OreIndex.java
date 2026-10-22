@@ -14,14 +14,14 @@ import java.util.function.Predicate;
 
 /**
  * 0.28.0: the summaries the pass keeps, per dimension, and the ore queries over them: the nearest positions of some ore
- * ids (inside the areas and outside a protect margin: the caller's {@link Allow}), totals per family within r, the chunks
+ * ids (the policy allowing and outside a protect margin: the caller's {@link Allow}), totals per family within r, the chunks
  * seen. Past {@link #max} summaries in a dimension the oldest seen leave memory (a stale one first; files stay). Summaries
  * loaded from files are stale until the chunk is read again ({@link #loadStale}).
  *
  * <p>Plain Java, JUnit, game thread only. Loader notes: none.
  */
 public final class OreIndex {
-    /** May the bot go for ore at x y z? (areas, protect margin, the guard: the game side's rules.) */
+    /** May the bot go for ore at x y z? (the policy, protect margin, the guard: the game side's rules.) */
     public interface Allow {
         boolean test(int x, int y, int z);
     }
@@ -182,20 +182,28 @@ public final class OreIndex {
         Map<Long, ChunkSummary> m = dims.get(d);
         if (m == null || n <= 0) return hits;
         long r2 = (long) r * r;
+        // AA_ROUND3 4 (the 33 ms pick): the id test once per id, the cheap filters first, then the caller's allow (areas,
+        // protect, guard, seen: the dear part) only in distance order until n are found
+        Map<String, Boolean> ids = new java.util.HashMap<>();
         for (ChunkSummary s : m.values()) {
             if (!chunkNear(s, x, z, r)) continue;
             for (Map.Entry<String, ChunkSummary.Group> e : s.ores.entrySet()) {
                 for (ChunkSummary.Spot sp : e.getValue().spots) {
-                    if (!idOk.test(sp.id())) continue;
                     long dx = sp.x() - x, dy = sp.y() - y, dz = sp.z() - z, d2 = dx * dx + dy * dy + dz * dz;
                     if (d2 > r2) continue;
-                    if (allow != null && !allow.test(sp.x(), sp.y(), sp.z())) continue;
+                    if (!ids.computeIfAbsent(sp.id(), idOk::test)) continue;
                     hits.add(new Hit(sp.x(), sp.y(), sp.z(), sp.id(), e.getKey(), d2, s.stale));
                 }
             }
         }
         hits.sort(Comparator.comparingLong(Hit::d2).thenComparingInt(Hit::y).thenComparingInt(Hit::x).thenComparingInt(Hit::z));
-        return hits.size() > n ? new ArrayList<>(hits.subList(0, n)) : hits;
+        if (allow == null) return hits.size() > n ? new ArrayList<>(hits.subList(0, n)) : hits;
+        List<Hit> out = new ArrayList<>(Math.min(n, hits.size()));
+        for (Hit h : hits) {
+            if (out.size() >= n) break;
+            if (allow.test(h.x(), h.y(), h.z())) out.add(h);
+        }
+        return out;
     }
 
     /** Family -> exact count in the chunks within r (flat) of x z; chunks: those chunks whose (x z) allow takes, by centre. */
@@ -217,7 +225,23 @@ public final class OreIndex {
      * 0.28.0 fix: family -> positions within r (3D) of x y z, counted from the listed positions (never whole-chunk sums);
      * capped when a chunk in reach holds more of that family than it lists.
      */
-    public Map<String, Count> within(String d, int x, int y, int z, int r) {
+    public Map<String, Count> within(String d, int x, int y, int z, int r) { return within(d, x, y, z, r, null); }
+
+    /**
+     * rm-mining (fair play): the cells a line or a pick may name. Under {@code aa fair} only the cells {@code seen} takes
+     * (Seen/Sightings: ore the bot has looked at); off, every indexed cell (null = no filter). The chunk pass still learns
+     * every cell for OreStats density (statistics, not targeting).
+     */
+    public static Allow fairPlay(boolean fair, Allow seen) {
+        if (!fair) return null;
+        return seen == null ? (x, y, z) -> false : seen;
+    }
+
+    /**
+     * As {@link #within(String, int, int, int, int)}, only the positions {@code allow} takes (null: all). With a filter
+     * the count is never "capped": a capped chunk's unlisted cells were never seen, so no line may hint at them.
+     */
+    public Map<String, Count> within(String d, int x, int y, int z, int r, Allow allow) {
         Map<String, int[]> acc = new TreeMap<>();
         Map<Long, ChunkSummary> m = dims.get(d);
         if (m != null) {
@@ -228,9 +252,9 @@ public final class OreIndex {
                     int in = 0;
                     for (ChunkSummary.Spot sp : e.getValue().spots) {
                         long dx = sp.x() - x, dy = sp.y() - y, dz = sp.z() - z;
-                        if (dx * dx + dy * dy + dz * dz <= r2) in++;
+                        if (dx * dx + dy * dy + dz * dz <= r2 && (allow == null || allow.test(sp.x(), sp.y(), sp.z()))) in++;
                     }
-                    boolean cut = e.getValue().n > e.getValue().spots.size();
+                    boolean cut = allow == null && e.getValue().n > e.getValue().spots.size();
                     if (in == 0 && !cut) continue;
                     int[] a = acc.computeIfAbsent(e.getKey(), k -> new int[2]);
                     a[0] += in;

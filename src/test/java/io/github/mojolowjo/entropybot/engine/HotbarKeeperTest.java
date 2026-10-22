@@ -10,6 +10,7 @@ import java.util.TreeMap;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Package B round 2: when the hotbar keeper swaps (idle, at a job's start, a refill mid-job) and when it never does. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class HotbarKeeperTest {
     static final Map<Integer, String> LAYOUT = new TreeMap<>(Map.of(1, "pickaxe", 2, "sword", 3, "food", 4, "torch"));
 
@@ -65,8 +66,8 @@ class HotbarKeeperTest {
     @Test
     void idleKeepsTheRoundOneRules() {
         Bot b = kit();
-        assertEquals(0, b.run(0, HotbarKeeper.IDLE_TICKS - 1), "nothing before 2 s of quiet");
-        assertEquals(4, b.run(HotbarKeeper.IDLE_TICKS, 200), "then the four laid-out slots, one swap at a time");
+        assertEquals(0, b.run(0, HotbarKeeper.idleTicks() - 1), "nothing before 2 s of quiet");
+        assertEquals(4, b.run(HotbarKeeper.idleTicks(), 200), "then the four laid-out slots, one swap at a time");
         assertEquals(List.of("40:idle", "50:idle", "60:idle", "70:idle"), b.moves, "at least 10 ticks apart");
         assertEquals("stone_pickaxe iron_sword bread torch", b.at(0) + " " + b.at(1) + " " + b.at(2) + " " + b.at(3));
         // a swing while idle restarts the quiet
@@ -75,8 +76,8 @@ class HotbarKeeperTest {
         c.swinging = true;
         c.look(31);
         c.swinging = false;
-        assertEquals(0, c.run(32, 31 + HotbarKeeper.IDLE_TICKS - 1));
-        assertNotNull(c.look(31 + HotbarKeeper.IDLE_TICKS));
+        assertEquals(0, c.run(32, 31 + HotbarKeeper.idleTicks() - 1));
+        assertNotNull(c.look(31 + HotbarKeeper.idleTicks()));
     }
 
     @Test
@@ -87,11 +88,11 @@ class HotbarKeeperTest {
         assertEquals(4, b.run(0, 60), "the whole layout in the job's first seconds, though the job is busy");
         assertEquals(List.of("0:job start", "10:job start", "20:job start", "30:job start"), b.moves);
         assertEquals("stone_pickaxe", b.at(0), "the mine starts with its pickaxe in the pickaxe slot");
-        assertEquals(0, b.run(61, HotbarKeeper.START_TICKS - 1), "the layout is in place");
+        assertEquals(0, b.run(61, HotbarKeeper.startTicks() - 1), "the layout is in place");
         // later in the same job a wrong slot is left alone (no window, nothing emptied)
         b.slots.remove(1);
         b.put(1, "minecraft:gravel", 4).put(20, "minecraft:stone_sword", 1);
-        assertEquals(0, b.run(HotbarKeeper.START_TICKS, 400), "mid-job, only an emptied slot is refilled");
+        assertEquals(0, b.run(HotbarKeeper.startTicks(), 400), "mid-job, only an emptied slot is refilled");
         // the next job opens a new window
         b.job = "bridge:mine#8";
         b.slots.remove(13);
@@ -116,9 +117,9 @@ class HotbarKeeperTest {
         late.busy = true;
         late.job = "mod-seq";
         late.menu = true;
-        late.run(0, HotbarKeeper.START_TICKS);
+        late.run(0, HotbarKeeper.startTicks());
         late.menu = false;
-        assertEquals(0, late.run(HotbarKeeper.START_TICKS + 1, 600), "after 10 s the window is over: the rest waits for idle");
+        assertEquals(0, late.run(HotbarKeeper.startTicks() + 1, 600), "after 10 s the window is over: the rest waits for idle");
     }
 
     @Test
@@ -309,9 +310,9 @@ class HotbarKeeperTest {
         b.put(20, "minecraft:torch", 16);         // fetched from a chest mid-job
         assertEquals(1, b.run(51, 120));
         assertEquals("torch", b.at(3), "brought while the window is open");
-        b.run(121, HotbarKeeper.START_TICKS - 1);
+        b.run(121, HotbarKeeper.startTicks() - 1);
         b.put(21, "minecraft:bread", 4);           // after the window: waits for idle
-        assertEquals(0, b.run(HotbarKeeper.START_TICKS, 400));
+        assertEquals(0, b.run(HotbarKeeper.startTicks(), 400));
         assertEquals("-", b.at(2));
     }
 }

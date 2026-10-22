@@ -46,7 +46,7 @@ class GuardCoreTest {
         GuardCore.TravelCheck t = g.checkTravelBreak(OW, 500, 60, 500, PLAIN, s, BreakPolicy.BlockFacts.STONE, BreakPolicy.Where.DRY);
         assertTrue(t.allowed());
         assertNotNull(t.travel());
-        assertEquals("outside every area", t.guard().reason());
+        assertEquals("no lease here", t.guard().reason());
         // inside an area with no lease: the same
         assertTrue(g.checkTravelBreak(OW, 0, 60, 300, PLAIN, s, BreakPolicy.BlockFacts.STONE, BreakPolicy.Where.DRY).allowed());
         // the floor stays the floor
@@ -74,11 +74,10 @@ class GuardCoreTest {
         GuardCore.TravelCheck t = g.checkPolicyPlace(OW, 500, 60, 500, air, s, dug, BreakPolicy.Where.DRY, BreakPolicy.Intent.TRAVEL);
         assertTrue(t.allowed());
         assertEquals("travel+refill", t.travel().rule());
-        assertEquals("outside every area", t.guard().reason());
-        // the same cell, not dug: the rule set places nothing but torches outside, so the click is refused
+        assertEquals("no place lease here", t.guard().reason());
+        // the same cell, not dug: 0.39.s8 owner, anything is placed outside (priced travel x3)
         GuardCore.TravelCheck fresh = g.checkPolicyPlace(OW, 500, 60, 500, air, s, BreakPolicy.BlockFacts.STONE, BreakPolicy.Where.DRY, BreakPolicy.Intent.TRAVEL);
-        assertFalse(fresh.allowed());
-        assertEquals("nothing but torches placed in outside (singleplayer, lenient)", fresh.travel().reason());
+        assertTrue(fresh.allowed());
         // under a mine walk the same refill passes; a protect box stays floor and the policy is not asked
         assertTrue(g.checkPolicyPlace(OW, 500, 60, 500, air, s, dug, BreakPolicy.Where.DRY, BreakPolicy.Intent.MINE).allowed());
         GuardCore.TravelCheck box = g.checkPolicyPlace(OW, -20, 60, 180, air, s, dug, BreakPolicy.Where.DRY, BreakPolicy.Intent.TRAVEL);
@@ -103,13 +102,16 @@ class GuardCoreTest {
     }
 
     @Test
-    void failsClosedWithNoPolicy() {
+    void openWorldWithNoPolicy() {
+        // AREAS: no area = open; the lease rule and the floor still hold
         GuardCore g = strict();
         GuardCore.Verdict v = g.check(OW, 0, 16, 300, "break", PLAIN);
         assertFalse(v.allowed());
-        assertEquals("no areas set", v.reason());
-        assertFalse(g.checkBoxes(OW, 0, 16, 300, "go").allowed());
-        assertTrue(g.lease("tok", "dig", new Box(null, OW, 0, 10, 0, 1, 11, 1), false, false).startsWith("error: no areas"));
+        assertEquals("no lease here", v.reason());
+        assertTrue(g.checkBoxes(OW, 0, 16, 300, "go").allowed());
+        assertTrue(g.lease("tok", "dig", new Box(null, OW, 0, 10, 0, 1, 11, 1), false, false).startsWith("L"));
+        assertTrue(g.check(OW, 0, 10, 0, "break", PLAIN).allowed());
+        assertFalse(g.check(OW, 0, 10, 0, "break", CHEST).allowed());
     }
 
     @Test
@@ -119,8 +121,8 @@ class GuardCoreTest {
         assertEquals("block entity (a chest, machine, bed...)", g.check(OW, -45, 16, 396, "break", CHEST).reason());
         assertEquals("built block", g.check(OW, -45, 16, 396, "break", PLANKS).reason());
         assertTrue(g.check(OW, -45, 16, 396, "break", PLANKS).floor());
-        assertEquals("in base (safe)", g.check(OW, -26, 53, 187, "break", PLAIN).reason());
-        assertEquals("in base (safe)", g.check(OW, -26, 53, 187, "place", PLAIN).reason());
+        assertEquals("in base (no-break)", g.check(OW, -26, 53, 187, "break", PLAIN).reason());
+        assertEquals("in base (no-break)", g.check(OW, -26, 53, 187, "place", PLAIN).reason());
         assertTrue(g.checkBoxes(OW, -26, 53, 187, "go").allowed(), "walking through a protect box is fine");
         assertEquals("no break in minecraft:the_nether", g.check("minecraft:the_nether", 0, 64, 0, "break", PLAIN).reason());
         assertFalse(g.checkBoxes("minecraft:the_end", 0, 64, 0, "go").allowed());
@@ -143,9 +145,10 @@ class GuardCoreTest {
     }
 
     @Test
-    void leasesAreBoundedAndInsideAreas() {
+    void leasesAreBoundedAndOffTheProtectedAreas() {
         GuardCore g = withPolicy();
-        assertTrue(g.lease("tok", "dig", new Box(null, OW, 300, 60, 0, 301, 61, 1), false, false).startsWith("error: that box is not inside"));
+        assertTrue(g.lease("tok", "dig", new Box(null, OW, 300, 60, 0, 301, 61, 1), false, false).startsWith("L"), "AREAS: outside every area is fine");
+        assertEquals("error: that box touches base (no-break)", g.lease("tok", "dig", new Box(null, OW, -41, 60, 169, -40, 61, 170), false, false));
         assertTrue(g.lease("tok", "dig", new Box(null, "minecraft:the_nether", 0, 60, 0, 1, 61, 1), false, false).startsWith("error: no digging in"));
         assertTrue(g.lease("tok", "dig", new Box(null, OW, 0, 0, 0, 20, 20, 20), false, false).contains("the most a lease may cover is 4096"));
         assertTrue(g.lease("tok", "dig", new Box(null, OW, 0, 0, 0, 15, 15, 15), false, false).startsWith("L"), "4096 blocks is fine");
@@ -182,15 +185,18 @@ class GuardCoreTest {
     }
 
     @Test
-    void policyChangeEndsLeasesThatFallOutside() {
+    void policyChangeEndsLeasesThatFallIntoAProtectedArea() {
         GuardCore g = withPolicy();
         String id = lease(g, false);
         assertEquals(1, g.leases().size());
         String r = g.setPolicy(Policy.parse("{\"areas\":[{\"name\":\"home\",\"x1\":-60,\"z1\":150,\"x2\":0,\"z2\":220}]}"));
-        assertTrue(r.contains("ended 1 leases"), r);
+        assertFalse(r.contains("ended"), "AREAS: a lease outside every area stays: " + r);
+        assertEquals(1, g.leases().size());
+        r = g.setPolicy(Policy.parse("{\"areas\":[{\"name\":\"shrine\",\"type\":\"no-break\",\"x1\":-50,\"y1\":10,\"z1\":390,\"x2\":-40,\"y2\":20,\"z2\":400}]}"));
+        assertTrue(r.contains("ended 1 leases now in a protected area"), r);
         assertTrue(g.leases().isEmpty());
-        assertEquals("outside every area", g.check(OW, -45, 16, 396, "break", PLAIN).reason());
-        assertFalse(g.checkBoxes(OW, -45, 16, 396, "go").allowed());
+        assertEquals("in shrine (no-break)", g.check(OW, -45, 16, 396, "break", PLAIN).reason());
+        assertTrue(g.checkBoxes(OW, -45, 16, 396, "go").allowed(), "a no-break area is walked through");
         assertTrue(g.checkBoxes(OW, -26, 53, 187, "go").allowed());
         assertNull(g.leases().get(id));
     }

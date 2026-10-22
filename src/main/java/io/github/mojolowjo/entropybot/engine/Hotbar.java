@@ -27,7 +27,7 @@ public final class Hotbar {
     private static volatile Map<Integer, String> layout = Map.of();
     private static volatile String toolOres = "best";
     /** Ticks of quiet before the first idle swap (HotbarKeeper's). */
-    public static final int IDLE_TICKS = HotbarKeeper.IDLE_TICKS;
+    public static int idleTicks() { return HotbarKeeper.idleTicks(); }
 
     /** V1b: mode = the tools mode (best|cheapest|stone), handed to the engines as their tool policy. */
     public static void set(Map<Integer, String> l, String mode) {
@@ -42,7 +42,7 @@ public final class Hotbar {
     /** The 36 bag slots as the rules see them (food scored as for eating at full health). */
     public static List<HotbarRules.Item> items(LocalPlayer p) {
         List<HotbarRules.Item> out = new ArrayList<>();
-        for (int i = 0; i < 36; i++) {
+        for (int i = 0; i < 36; i++) {  // game fact: the player inventory has 36 slots (hotbar is slots 0-8)
             ItemStack s = p.getInventory().getItem(i);
             if (s.isEmpty()) continue;
             out.add(new HotbarRules.Item(i, Gui.itemId(s), s.getCount(), Reflexes.foodScore(s, 20f)));
@@ -51,7 +51,7 @@ public final class Hotbar {
     }
 
     /** Inventory index (0-8 hotbar, 9-35 bag) -> its slot in the player's inventory menu. */
-    static int menuSlot(int index) { return index < 9 ? 36 + index : index; }
+    static int menuSlot(int index) { return index < 9 ? 36 + index : index; }  // game fact: menu slots: hotbar slots 0-8 are menu slots 36-44
 
     /**
      * Puts bag slot {@code index} in the hand, into its laid-out hotbar slot when the layout has one (HotbarRules.
@@ -95,7 +95,7 @@ public final class Hotbar {
         for (HotbarRules.Item it : inv) if (it.slot() == s.from()) id = it.id();
         gm.handleInventoryMouseClick(p.inventoryMenu.containerId, menuSlot(s.from()), s.to(), ClickType.SWAP, p);
         p.getInventory().selected = m.select();
-        return "moved " + id.replaceFirst("^minecraft:", "") + " from slot " + (s.from() < 9 ? "hotbar " + (s.from() + 1) : s.from())
+        return "moved " + id.replaceFirst("^minecraft:", "") + " from slot " + (s.from() < 9 ? "hotbar " + (s.from() + 1) : s.from())  // game fact: the hotbar is inventory slots 0-8
                 + " to hotbar slot " + (s.to() + 1) + " (" + m.why() + ")";
     }
 

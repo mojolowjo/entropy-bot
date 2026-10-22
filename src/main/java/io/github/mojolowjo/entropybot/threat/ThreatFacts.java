@@ -1,0 +1,151 @@
+package io.github.mojolowjo.entropybot.threat;
+
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * AA_CLEANUP 4: the threat model as facts for AA's danger desire (it was FightOrFlee's hand verdicts). What is near
+ * (each foe's kind, distance, how it moves, its damage per second after the bot's armour from {@link MobDamage} when
+ * measured, else the vanilla table), the bot (health, armour, weapon, food) and which ways out exist here (a flee
+ * heading, the base, a cover cell, a dig-down or wall niche, a pillar). No decisions: {@code aa.DangerOptions} prices
+ * the ways. Creepers are kept out (the creeper flee is a reflex). Pure; loader notes: none (the game side fills it,
+ * {@code engine.DangerMoves#facts}).
+ */
+public record ThreatFacts(Me me, List<Foe> foes, Ways ways) {
+
+    /** health incl. absorption, max health, armour points, weapon hit (Hostility.weaponHit), food bar. */
+    public record Me(double health, double maxHealth, int armor, double weaponHit, int food) {}
+
+    /**
+     * One foe. dps: damage per second it deals when it can hit (after armour); hp its health; speed blocks/s; reach the
+     * distance it hits from (melee 2, ranged {@link #RANGED_RANGE}).
+     */
+    public record Foe(String kind, double dist, ThreatRules.Move move, double dps, double hp, double speed, double reach, String basis) {
+        public boolean ranged() { return move == ThreatRules.Move.RANGED; }
+
+        public boolean flies() { return move == ThreatRules.Move.FLY; }
+
+        /** Seconds until it can hit the bot from where it is (0 = now). */
+        public double reachT() { return Math.max(0, dist - reach) / Math.max(0.1, speed); }
+    }
+
+    /**
+     * The ways out here. fleeRun: the run length of the least-threat heading (0 = cornered); baseDist: walk to the
+     * base (-1 none in reach); digIn: a dig-down or a wall niche fits here; pillarBlocks/headRoom: throwaway blocks and
+     * free cells over the head. AA_STEP2 1 (the night ways, filled even with no foe near): burrow, the fork's
+     * BurrowProcess says "burrow here" is possible; niche, it says "dig in here" is (rm-threat: the fork answers, not mod
+     * code); burrowNo / nicheNo: the fork's no (stage, block, reason) for aa why, null when possible or not asked. The
+     * shell's blocks come from the bag (AaDesires.shellBlocks).
+     */
+    public record Ways(int fleeRun, double baseDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround,
+                       boolean burrow, boolean niche, boolean inWater, int waterColumn, int headDepth, int[] shoreCell, double shoreDist,
+                       boolean waterNear, String burrowNo, String nicheNo) {
+        public static final Ways NONE = new Ways(0, -1, false, 0, 0, true);
+
+        /**
+         * Backbone step 2 (owner: water is parked): waterNear = water in or beside the feet or head cell. The burrow, the
+         * dig-in and both pillars are then impossible (their cell is in or beside water); the swim to the shore stays.
+         * The 13-value shape (tests, older callers) has no such fact (false) and no fork reasons.
+         */
+        public Ways(int fleeRun, double baseDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround,
+                    boolean burrow, boolean niche, boolean inWater, int waterColumn, int headDepth, int[] shoreCell, double shoreDist) {
+            this(fleeRun, baseDist, digIn, pillarBlocks, headRoom, onGround, burrow, niche, inWater, waterColumn, headDepth,
+                    shoreCell, shoreDist, false, null, null);
+        }
+
+        /**
+         * AA_STEP2 1 shape (no water facts). AA_STEP3 A3/A4 add: inWater (the feet in water), waterColumn (water cells from
+         * the floor under me up to the surface, 0 = not in water or no floor within reach), headDepth (water cells over the
+         * head: the swim up to air), shoreCell / shoreDist (the nearest dry standing cell within {@link #SHORE_REACH}, null / -1 none).
+         */
+        public Ways(int fleeRun, double baseDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround,
+                    boolean burrow, boolean niche) {
+            this(fleeRun, baseDist, digIn, pillarBlocks, headRoom, onGround, burrow, niche, false, 0, 0, null, -1);
+        }
+
+        /** AA_STEP2 1: the ways before the night ways were split (digIn stands for both the floor and the wall). */
+        public Ways(int fleeRun, double baseDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround) {
+            this(fleeRun, baseDist, digIn, pillarBlocks, headRoom, onGround, digIn, digIn);
+        }
+    }
+
+    /** AA_STEP3 A4: how far the shore scan looks (blocks, horizontally). */
+    public static int shoreReach() { return Tuning.i("threatFacts.shoreReach"); }
+
+    public static final ThreatFacts CALM = new ThreatFacts(new Me(20, 20, 0, 1, 20), List.of(), Ways.NONE);
+
+    public boolean calm() { return foes == null || foes.isEmpty(); }
+
+    // ---- the mob model (from FightOrFlee, AA_CLEANUP 4) ----
+
+    /** Light this high is lit (spawning stops); the lit-spot search reaches this far (ThreatRuntime). */
+    public static int lit() { return Tuning.i("threatFacts.lit"); }
+    public static int litMaxDist() { return Tuning.i("threatFacts.litMaxDist"); }
+    /** A weapon hit at least this (a wooden sword) counts as armed. */
+    public static double armed() { return Tuning.get("danger.fightHit"); }
+    /** A melee mob hits once a second; a ranged one every 2 s from up to RANGED_RANGE. */
+    public static final double HIT_EVERY_S = 1.0; // game fact: a melee mob hits about once a second
+    public static final double SHOT_EVERY_S = 2.0; // game fact: a skeleton shoots about once every 2 seconds
+    public static double rangedRange() { return Tuning.get("threatFacts.rangedRange"); }
+    public static final double MELEE_REACH = 2; // game fact: a melee mob attacks from about 2 blocks
+
+    /** Damage after armour (vanilla, no toughness). */
+    public static double taken(double d, int armor) {
+        double a = Math.min(20, Math.max(armor / 5.0, armor - d / 2.0));  // game fact: armour: each point cuts 4% (1/25) up to 80%, at least a fifth of the points
+        return d * (1 - a / 25.0);  // game fact: armour: each point cuts 4% (1/25) up to 80%
+    }
+
+    /** Blocks per second (vanilla-ish): walkers 2.3, spiders 3, fliers 4, the rest 2.5. */
+    public static double speedOf(ThreatRules.Move m) {
+        return switch (m) {
+            case SPIDER -> 3.0;
+            case FLY -> 4.0;
+            case RANGED -> 2.3;
+            default -> 2.3;
+        };
+    }
+
+    /** One foe from its kind: measured damage per hit (3+ samples) or the table, after armour. Pure. */
+    public static Foe foe(String kind, double dist, int armor, MobDamage seen) {
+        String k = ThreatRules.path(kind);
+        ThreatRules.Move mv = ThreatRules.moveOf(kind);
+        var mob = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.mob(kind);       // the game's attributes (health, attack damage)
+        double obs = seen == null ? Double.NaN : seen.observed(kind);
+        double hit;
+        String basis;
+        if (!Double.isNaN(obs)) {
+            hit = obs;
+            basis = "observed " + ThreatRules.fmt(Math.round(obs * 10) / 10.0) + "/hit";  // structural: rounded to one decimal for the text
+        } else {
+            // a shooter has no attack-damage attribute (its arrow carries the damage): the game has no number, so a prior
+            boolean noAttr = mob == null || Double.isNaN(mob.damage());
+            hit = taken(mob == null ? Tuning.get("threatFacts.unknownHit") : noAttr ? Tuning.get("threatFacts.shooterHit") : mob.damage(), armor);
+            basis = (mob == null ? "unknown kind, assumed " : noAttr ? "shooter prior " : "game attribute ") + ThreatRules.fmt(Math.round(hit * 10) / 10.0) + "/hit";  // structural: rounded to one decimal for the text
+        }
+        boolean ranged = mv == ThreatRules.Move.RANGED;
+        double dps = hit / (ranged ? SHOT_EVERY_S : HIT_EVERY_S);
+        return new Foe(k, dist, mv, dps, mob == null || Double.isNaN(mob.health()) ? Tuning.get("threatFacts.unknownHealth") : mob.health(), speedOf(mv), ranged ? rangedRange() : MELEE_REACH, basis);
+    }
+
+    /** 0.23.2: sprint whenever a run moves (vanilla needs food above 6). */
+    public static boolean sprint(boolean moving, int food) { return moving && food > Tuning.i("threatFacts.sprintFood"); }
+
+    /** The bot's walking pace (a Baritone path), blocks per second on the flat. */
+    public static final double WALK = 4.3; // game fact: walking speed in blocks per second (about 4.3)
+
+    /** The bot's run speed: sprint 5.6 with food above 6, else walk 4.3. */
+    public static double runSpeed(int food) { return food > Tuning.i("threatFacts.sprintFood") ? 5.6 : WALK; }
+
+    /** "zombie 3.0 (table 3/hit), skeleton 12.0 (...)" for aa why. */
+    public String foesText() {
+        if (calm()) return "none";
+        StringBuilder b = new StringBuilder();
+        for (Foe f : foes) {
+            if (b.length() > 0) b.append(", ");
+            b.append(f.kind()).append(' ').append(ThreatRules.fmt(Math.round(f.dist() * 10) / 10.0)).append(" (").append(f.basis()).append(')');  // structural: rounded to one decimal for the text
+        }
+        return b.toString();
+    }
+}

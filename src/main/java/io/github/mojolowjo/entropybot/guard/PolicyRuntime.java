@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.guard;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.guard.BreakPolicy.Action;
 import io.github.mojolowjo.entropybot.guard.BreakPolicy.BlockFacts;
@@ -76,13 +78,41 @@ public final class PolicyRuntime {
 
     // ---- the snapshot ----
 
+    /** AREAS review 1: the areas policy and the bot's dimension as of the last tick (the built-near rule, any thread). */
+    private volatile Policy areasNow;
+    private volatile String dimNow;
+
+    /**
+     * AREAS review 1 (BuiltNear): a natural-looking block in the open world (no typed area) counts as built when a built block or a
+     * block entity stands within reach of it (an unlabelled cobble hut, a village). Any thread (array reads on {@code at}).
+     */
+    public boolean builtNear(StateAt at, int x, int y, int z, boolean ore) {
+        Policy p = areasNow;
+        String dim = dimNow;
+        if (p == null || dim == null || p.typeAt(dim, x, y, z) != null) return false;
+        Guard g = Guard.INSTANCE;
+        BuiltNear.Look look = (lx, ly, lz) -> {
+            BlockState s = at.at(lx, ly, lz);
+            if (s == null) return -1;
+            return (s.hasBlockEntity() && !io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(BuiltInRegistries.BLOCK.getKey(s.getBlock()).toString()))
+                    || (g.isProtectedBlock(s.getBlock()) && !OwnPlaced.at(lx, ly, lz)) ? 1 : 0;     // rm-mining: my own placement makes nothing built
+        };
+        return BuiltNear.counts(false, ore, true, look, x, y, z);
+    }
+
     /** Client tick: the connection kind and the guard's policy into the snapshot when either changed. Never throws. */
     public void tick(Minecraft mc, GuardCore core) {
         try {
             boolean mp = mc != null && !mc.hasSingleplayerServer();      // a LAN host counts as singleplayer, a LAN guest as a server
             var pl = mc == null ? null : mc.player;
-            inWater = pl != null && pl.isInWater();
+            boolean wet = pl != null && pl.isInWater();
+            // review: one snapshot, one volatile write (the pathfinder thread never sees a torn mix)
+            body = new Where(wet, 0, pl == null ? 300 : pl.getAirSupply(),
+                    pl == null || !wet ? 0 : waterAbove(pl.level(), pl.blockPosition()), pl == null ? Integer.MIN_VALUE : pl.blockPosition().getY(), pl == null ? DrownRisk.defaultTier() : pickTier(pl));
+            inWater = wet;
             Policy p = core.policy();
+            areasNow = p;                                                   // AREAS review 1: for the built-near rule
+            if (pl != null) dimNow = Guard.dimOf(pl.level());
             if (snapshot == null || p != snapshotOf || mp != multiplayer) {
                 multiplayer = mp;
                 snapshotOf = p;
@@ -99,6 +129,9 @@ public final class PolicyRuntime {
     // ---- the intent ----
 
     public Intent intent() { return intent; }
+
+    /** Who set the intent (the status line's "(by)"). */
+    public String intentBy() { return intentBy; }
 
     /** The intent for a cost calculation on this thread: a scoped one (route map) wins, else the job's. */
     public Intent intentNow() {
@@ -148,12 +181,12 @@ public final class PolicyRuntime {
      * the NONE intent ({@link #withIntent}); the mixin fallback reads the live intent and cannot promise that.
      */
     public boolean travelOnlyBreaking() {
-        return travelMayBreak() && "fork".equals(hook) && intent == Intent.TRAVEL;
+        return travelMayBreak() && hook.startsWith("fork") && intent == Intent.TRAVEL;
     }
 
     /** The same for placing: allowPlace is on only because of the travel policy (no plan-go or build owns it). */
     public boolean travelOnlyPlacing() {
-        return travelMayPlace() && "fork".equals(hook) && intent == Intent.TRAVEL;
+        return travelMayPlace() && hook.startsWith("fork") && intent == Intent.TRAVEL;
     }
 
     /**
@@ -170,7 +203,7 @@ public final class PolicyRuntime {
     /** Keys "dim x y z" of cells the bot broke itself (the ledger at load, every job break since). Read on the pathfinder thread. */
     private final java.util.Set<String> dug = java.util.concurrent.ConcurrentHashMap.newKeySet();
     /** More than this and the set starts over from the ledger (a bound, not a policy; the ledger itself is capped). */
-    static final int DUG_CAP = 8192;
+    static final int DUG_CAP = 8192; // structural
 
     /** A new world's ledger: the dug set starts over with its entries' keys (null: nothing). */
     public void resetDug(java.util.Collection<String> keys) {
@@ -223,8 +256,9 @@ public final class PolicyRuntime {
             id = BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
             be = !io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(id);
         }
-        boolean built = g.isProtectedBlock(st.getBlock());
         boolean ore = st.is(Tags.Blocks.ORES);
+        // rm-mining: a block the bot placed itself is its own, never a built block (OwnPlaced, the restore ledger)
+        boolean built = OwnPlaced.built(g.isProtectedBlock(st.getBlock()) || (!be && !st.isAir() && builtNear(at, x, y, z, ore)), x, y, z);     // AREAS review 1
         boolean unbreakable = st.getBlock().defaultDestroyTime() < 0;
         // in the cell: a pure liquid block only (kelp, seagrass and waterlogged stairs are broken like any block)
         Fluid in = st.getBlock() instanceof LiquidBlock ? fluidOf(st) : Fluid.NONE;
@@ -255,10 +289,46 @@ public final class PolicyRuntime {
 
     /** Where the bot is, as of the last client tick (the pathfinder thread never touches the player). */
     public Where where() {
-        return new Where(inWater, travelBreaks(currentJob));
+        return body.withBreaks(travelBreaks(currentJob));
     }
 
     private volatile boolean inWater;
+    private volatile Where body = new Where(false, 0, 300, 0, Integer.MIN_VALUE);
+
+    /** aa-costs (director): the best pickaxe tier in the bag (DrownRisk's dig time), 0 none. */
+    public static int pickTier(net.minecraft.world.entity.player.Player pl) {
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        for (var st : pl.getInventory().items)
+            if (!st.isEmpty()) ids.add(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString());
+        return DrownRisk.pickTier(ids);
+    }
+
+    /** aa-costs (DrownRisk): water cells from the feet up (at most 32), the swim back to air. */
+    public static int waterAbove(net.minecraft.world.level.Level lv, net.minecraft.core.BlockPos feet) {
+        int n = 0;
+        var m = feet.mutable();
+        while (n < Tuning.i("policyRuntime.waterColumnMax") && fluidOf(lv.getBlockState(m)) == Fluid.WATER) {
+            n++;
+            m.move(0, 1, 0);
+        }
+        // aa-water (live water1, drowned): a flooded cave's water ends at a stone ceiling, not at air: no straight
+        // swim up to breathe there, so it counts as the deepest
+        return n > 0 && lv.getBlockState(m).isCollisionShapeFullBlock(lv, m) ? DrownRisk.surfaceScan() : n;      // a lily pad or thin cap is not a ceiling
+    }
+
+    /** aa-water (pathfinder thread safe): water cells from (x, y, z) up through the snapshot (at most DrownRisk.SURFACE_SCAN). */
+    public static int waterColumn(StateAt at, int x, int y, int z) {
+        int n = 0;
+        while (n < DrownRisk.surfaceScan()) {
+            BlockState st = at.at(x, y + n, z);
+            if (st == null || fluidOf(st) != Fluid.WATER) {
+                if (n > 0 && (st == null || st.isSolid())) return DrownRisk.surfaceScan();     // a ceiling (or unknown: fail closed), not air
+                break;
+            }
+            n++;
+        }
+        return n;
+    }
 
     // ---- asks ----
 
@@ -275,7 +345,7 @@ public final class PolicyRuntime {
             return v;
         } catch (Throwable t) {
             stats.error(site + ": " + t);
-            if (stats.errors() <= 5) LOG.warn("[entropybot] rules: policy error at {}: {}", site, t.toString());
+            if (stats.errors() <= 5) LOG.warn("[entropybot] rules: policy error at {}: {}", site, t.toString());  // structural: log throttle: only the first few errors are logged
             return new BreakPolicy.Verdict(false, Double.POSITIVE_INFINITY, "policy error: " + t.getClass().getSimpleName(), false, "error");
         }
     }
@@ -339,7 +409,7 @@ public final class PolicyRuntime {
     public void logOverride(String site, String what, int x, int y, int z, BreakPolicy.Verdict v, String todayReason) {
         stats.travelOverride(site);
         long now = System.currentTimeMillis();
-        if (overrideLogged < 5 || now - lastOverrideLogMs >= PolicyStats.LOG_EVERY_MS) {
+        if (overrideLogged < 5 || now - lastOverrideLogMs >= PolicyStats.LOG_EVERY_MS) {  // structural: log throttle: only the first few errors are logged
             overrideLogged++;
             lastOverrideLogMs = now;
             LOG.info("[entropybot] rules: {} at {} {} {} ({}; the fence alone said: {})", what, x, y, z, v.text(), todayReason);
@@ -358,18 +428,21 @@ public final class PolicyRuntime {
         if (s == null) sb.append(" | no snapshot yet");
         else sb.append(" | outside: ").append(s.outside().describe()).append(" | areas ").append(s.policy().areas.size()).append(", protect ").append(s.policy().protect.size())
                 .append(" | travel cap ").append(s.travelCap()).append(" (this walk: ").append(travelBreaks).append(")")
-                .append(" | dug cells ").append(dug.size()).append(" (refill x").append(BreakPolicy.fmt(BreakPolicy.Costs.REFILL)).append(")");
+                .append(" | dug cells ").append(dug.size()).append(" (refill x").append(BreakPolicy.fmt(BreakPolicy.Costs.refill())).append(")");
         sb.append(" | ").append(stats.summary());
         return sb.toString();
     }
 
     public String hookText() {
         return switch (hook) {
-            case "fork" -> "fork hook";
-            case "mixin" -> "mixin fallback";
+            case "fork" -> "fork hook (keep-out pathed around, danger x" + fmtMult(io.github.mojolowjo.entropybot.baritone.CostAdvisorHook.dangerMultiplier()) + ")";
+            case "fork-nomove" -> "fork hook (NO move hook: this Baritone is older than 0.39 - keep-out is command-level only, danger costs nothing)";
+            case "mixin" -> "mixin fallback (no move hook: keep-out is command-level only, danger costs nothing)";
             default -> "NOT running - Baritone's own rules only";
         };
     }
+
+    private static String fmtMult(double m) { return m == Math.rint(m) ? String.valueOf((long) m) : String.valueOf(m); }
 
     /** "fence why x y z [break|place] [intent]": the verdict for one cell with the rule that decided (client thread). */
     public String why(Level level, String dim, int x, int y, int z, Action action, Intent in) {

@@ -38,8 +38,8 @@ class DigWhyTest {
 
     @Test
     void fenceAndGuard() {
-        assertTrue(DigWhy.reason(null, 0, 2, NONE, Map.of("1 1 1", "the guard refused the lease"), List.of(), NONE, Map.of()).startsWith("the fence refused 1 1 1 (outside my areas)"));
-        assertTrue(DigWhy.reason("stopped: the guard refused: outside", 0, 2, NONE, NONE, List.of(), NONE, Map.of()).startsWith("next: area list"));
+        assertTrue(DigWhy.reason(null, 0, 2, NONE, Map.of("1 1 1", "the guard refused the lease"), List.of(), NONE, Map.of()).startsWith("the fence refused 1 1 1 (the guard refused the lease) - next: fence check 1 1 1"));
+        assertTrue(DigWhy.reason("stopped: the guard refused: outside", 0, 2, NONE, NONE, List.of(), NONE, Map.of()).startsWith("next: fence check"));
     }
 
     @Test

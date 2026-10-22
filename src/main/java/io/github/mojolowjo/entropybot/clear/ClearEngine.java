@@ -1,5 +1,9 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import io.github.mojolowjo.entropybot.Quiet;
+
 import io.github.mojolowjo.entropybot.clear.ClearWorld.Face;
 import io.github.mojolowjo.entropybot.clear.ClearWorld.Hit;
 
@@ -49,7 +53,7 @@ public final class ClearEngine {
     static void noteProtected(ClearJob job, ClearWorld w, int x, int y, int z) {
         String k = Pos.key(x, y, z);
         if (job == null || job.protectedLeft.containsKey(k)) return;
-        if (job.protectedCount >= 200 || w.noCollision(x, y, z)) return;
+        if (job.protectedCount >= Tuning.i("clearEngine.protectedCap") || w.noCollision(x, y, z)) return;
         job.protectedLeft.put(k, w.name(x, y, z));
         job.protectedCount++;
     }
@@ -79,14 +83,14 @@ public final class ClearEngine {
         for (int[] f : SIDES6) {
             if ((ex - cx) * f[0] + (ey - cy) * f[1] + (ez - cz) * f[2] <= 0.5) continue;
             if (w.fullBlock(x + f[0], y + f[1], z + f[2])) continue;
-            pts.add(new double[] { cx + f[0] * 0.45, cy + f[1] * 0.45, cz + f[2] * 0.45 });
+            pts.add(new double[] { cx + f[0] * 0.45, cy + f[1] * 0.45, cz + f[2] * 0.45 });  // structural: sample points inside a block face (0.45 in, 0.06 and 0.94 of the height)
         }
         if (pts.isEmpty()) return null;
         pts.add(0, new double[] { cx, cy, cz });
         // 0.28.3: thin blocks (a snow layer, a carpet, a slab) fill only the bottom or top of their cell: a ray at the
         // centre passes through air and hits the block beyond ("no sight" x24 in a snow dip). Aim low and high too.
-        pts.add(new double[] { cx, y + 0.06, cz });
-        pts.add(new double[] { cx, y + 0.94, cz });
+        pts.add(new double[] { cx, y + 0.06, cz });  // structural: sample points inside a block face (0.45 in, 0.06 and 0.94 of the height)
+        pts.add(new double[] { cx, y + 0.94, cz });  // structural: sample points inside a block face (0.45 in, 0.06 and 0.94 of the height)
         for (double[] p : pts) {
             Hit hit = w.clip(ex, ey, ez, p[0], p[1], p[2]);
             if (hit == null) continue;
@@ -131,8 +135,8 @@ public final class ClearEngine {
     public static Hazard breakHazard(ClearWorld w, Bot bot, ClearJob job, int x, int y, int z) {
         if (liquidForbids(w, job, x, y, z)) return Hazard.perm(NEXT_TO_LIQUID);
         double px = bot.x(), pz = bot.z();
-        int supY = floor(bot.y() - 0.01);
-        if (x < floor(px - 0.3) || x > floor(px + 0.3) || z < floor(pz - 0.3) || z > floor(pz + 0.3)) return null;
+        int supY = floor(bot.y() - 0.01);  // structural: epsilon: standing check
+        if (x < floor(px - 0.3) || x > floor(px + 0.3) || z < floor(pz - 0.3) || z > floor(pz + 0.3)) return null;  // game fact: the player hitbox is 0.6 wide (0.3 each side)
         if (y == supY && w.noCollision(x, y - 1, z)) return Hazard.temp("I'm standing on it");
         // a vein clear stays on the walkway (minStandY): breaking its own floor would drop it below
         if (y == supY && job != null && job.minStandY != null && supY < job.minStandY) return Hazard.temp("I'd drop below the walkway");
@@ -145,7 +149,7 @@ public final class ClearEngine {
     /** clearFailed: given up on for now (4 tries, or tried within the last 10 blocks broken). */
     public static boolean clearFailed(ClearJob job, String key) {
         ClearJob.Fail f = job.fails.get(key);
-        return f != null && (f.n >= 4 || job.broken - f.at < 10);
+        return f != null && (f.n >= Tuning.i("clearEngine.failTries") || job.broken - f.at < Tuning.i("clearEngine.failWindow"));
     }
 
     /** failTarget: one more failed try at a block. */
@@ -166,7 +170,7 @@ public final class ClearEngine {
         job.retried = true;
         boolean any = false;
         for (Iterator<Map.Entry<String, ClearJob.Fail>> it = job.fails.entrySet().iterator(); it.hasNext();) {
-            if (it.next().getValue().n < 4) {
+            if (it.next().getValue().n < Tuning.i("clearEngine.failTries")) {
                 it.remove();
                 any = true;
             }
@@ -175,7 +179,7 @@ public final class ClearEngine {
     }
 
     /** clearPlan gives up after this many failed tries in a row. */
-    public static final int MAX_CONSEC_FAILS = 8;
+    public static int maxConsecFails() { return Tuning.i("clearEngine.maxConsecFails"); }
     public static final String STUCK = "stopped: stuck - 8 tries in a row where I couldn't reach anything";
 
     // ---- the next block from where it stands ----
@@ -194,9 +198,9 @@ public final class ClearEngine {
     public static Target pickReachable(ClearWorld w, Bot bot, ClearJob job) {
         ClearBox box = job.box;
         double ex = bot.x(), ey = bot.eyeY(), ez = bot.z(), r = CLEAR_REACH;
-        int supY = floor(bot.y() - 0.01);
-        int fx0 = floor(bot.x() - 0.3), fx1 = floor(bot.x() + 0.3);
-        int fz0 = floor(bot.z() - 0.3), fz1 = floor(bot.z() + 0.3);
+        int supY = floor(bot.y() - 0.01);  // structural: epsilon: standing check
+        int fx0 = floor(bot.x() - 0.3), fx1 = floor(bot.x() + 0.3);  // game fact: the player hitbox is 0.6 wide (0.3 each side)
+        int fz0 = floor(bot.z() - 0.3), fz1 = floor(bot.z() + 0.3);  // game fact: the player hitbox is 0.6 wide (0.3 each side)
         List<Target> cands = new ArrayList<>();
         for (int x = Math.max(box.x1(), floor(ex - r)); x <= Math.min(box.x2(), floor(ex + r)); x++) {
             for (int y = Math.max(box.y1(), floor(ey - r)); y <= Math.min(box.y2(), floor(ey + r)); y++) {
@@ -243,14 +247,14 @@ public final class ClearEngine {
 
     /** beginBreak: a block that takes more than 600 ticks (30 s) with the tool in hand is skipped. */
     public static boolean tooSlowToBreak(double progressPerTick) {
-        return !(progressPerTick > 0) || 1 / progressPerTick > 600;
+        return !(progressPerTick > 0) || 1 / progressPerTick > Tuning.i("clearEngine.maxBreakTicks");
     }
 
     public static final String TOO_SLOW = "takes too long to break";
 
     /** beginBreak's tick budget for one block (it fails the target after that). */
     public static int breakLimit(double progressPerTick) {
-        return (int) Math.ceil(1 / progressPerTick) + 30;
+        return (int) Math.ceil(1 / progressPerTick) + Tuning.i("clearEngine.breakSlack");
     }
 
     public static final String NEVER_FINISHED = "breaking it never finished";
@@ -273,7 +277,7 @@ public final class ClearEngine {
     public static boolean onBroken(ClearJob job, Pos t, boolean falling, String oreId) {
         java.util.function.Consumer<Pos> sink = brokenSink;
         if (sink != null) {
-            try { sink.accept(t); } catch (RuntimeException ignored) {}   // camera v2's known air: never stops a dig
+            try { sink.accept(t); } catch (RuntimeException caught) { Quiet.warn("ClearEngine.onBroken failed, carrying on with the fallback", caught); }   // camera v2's known air: never stops a dig
         }
         String key = t.key();
         job.broken++;
@@ -285,9 +289,9 @@ public final class ClearEngine {
         }
         if (!falling) {
             int n = job.brokenKeys.merge(key, 1, Integer::sum);
-            if (n >= 3) job.skip.put(key, "the server keeps putting it back");
+            if (n >= Tuning.i("clearEngine.putBackTries")) job.skip.put(key, "the server keeps putting it back");
         }
-        return job.broken % 250 == 0;
+        return job.broken % Tuning.i("clearEngine.reportEvery") == 0;
     }
 
     public static String milestoneText(ClearJob job) {
@@ -308,7 +312,7 @@ public final class ClearEngine {
         }
         for (int i = 0; i < job.torches.size(); i++) {
             Pos t = job.torches.get(i);
-            if (eyeDistSq(bot.x(), bot.eyeY(), bot.z(), t.x(), t.y(), t.z()) > 16) continue;
+            if (eyeDistSq(bot.x(), bot.eyeY(), bot.z(), t.x(), t.y(), t.z()) > Tuning.i("clearEngine.sightDistSq")) continue;
             if (!w.air(t.x(), t.y(), t.z())) continue;          // not dug out yet (or already lit)
             job.torches.remove(i);
             if (w.blockLight(t.x(), t.y(), t.z()) > 1) {
@@ -329,7 +333,7 @@ public final class ClearEngine {
                 for (int z = box.z1() - 1; z <= box.z2() + 1; z++) {
                     if (w.air(x, y, z) || !w.ore(x, y, z)) continue;
                     boolean exposed = false;
-                    for (int n = 0; n < 6 && !exposed; n++) exposed = w.air(x + SIDES6[n][0], y + SIDES6[n][1], z + SIDES6[n][2]);
+                    for (int n = 0; n < 6 && !exposed; n++) exposed = w.air(x + SIDES6[n][0], y + SIDES6[n][1], z + SIDES6[n][2]);  // game fact: a block has 6 sides
                     if (exposed) noteOre(job, w, x, y, z);
                 }
             }
@@ -399,17 +403,17 @@ public final class ClearEngine {
         List<String> examples = new ArrayList<>();
         for (Map.Entry<String, String> e : job.skip.entrySet()) {
             Pos p = Pos.parse(e.getKey());
-            if (examples.size() < 3 && clearable(w, job, p.x(), p.y(), p.z())) examples.add(e.getKey() + " " + e.getValue());
+            if (examples.size() < 3 && clearable(w, job, p.x(), p.y(), p.z())) examples.add(e.getKey() + " " + e.getValue());  // structural: display: how many items a text lists
         }
         for (Map.Entry<String, ClearJob.Fail> e : job.fails.entrySet()) {
             Pos p = Pos.parse(e.getKey());
-            if (examples.size() < 3 && !job.skip.containsKey(e.getKey()) && clearable(w, job, p.x(), p.y(), p.z())) {
+            if (examples.size() < 3 && !job.skip.containsKey(e.getKey()) && clearable(w, job, p.x(), p.y(), p.z())) {  // structural: display: how many items a text lists
                 examples.add(e.getKey() + " " + e.getValue().why);
             }
         }
         for (String k : job.noSpot) {
             Pos p = Pos.parse(k);
-            if (examples.size() < 3 && !job.skip.containsKey(k) && !job.fails.containsKey(k) && clearable(w, job, p.x(), p.y(), p.z())) {
+            if (examples.size() < 3 && !job.skip.containsKey(k) && !job.fails.containsKey(k) && clearable(w, job, p.x(), p.y(), p.z())) {  // structural: display: how many items a text lists
                 examples.add(k + " out of reach (nowhere to stand close enough" + (!job.explainSpots || job.noSpotWhy.isEmpty() ? "" : "; spots turned down: " + job.noSpotWhy) + ")");
             }
         }
@@ -439,7 +443,7 @@ public final class ClearEngine {
         if (ores != 0) msg.append("; ").append(ores).append(" ores left in place for you (PM \"ores\")");
         if (job.protectedCount != 0) {
             Map.Entry<String, String> first = job.protectedLeft.entrySet().iterator().next();
-            msg.append("; left ").append(job.protectedCount).append(job.protectedCount >= 200 ? "+" : "")
+            msg.append("; left ").append(job.protectedCount).append(job.protectedCount >= Tuning.i("clearEngine.protectedCap") ? "+" : "")
                .append(" built block").append(job.protectedCount == 1 ? "" : "s")
                .append(" alone (e.g. ").append(first.getKey()).append(" ").append(first.getValue()).append(")");
         }
@@ -461,7 +465,8 @@ public final class ClearEngine {
                         names.put(key, n);
                     }
                 }
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException caught) {
+            Quiet.warn("ClearEngine.finishMessage failed, carrying on with the fallback", caught);
             }
             String why = DigWhy.reason(prefix, job.broken, left, job.skip, fw, job.noSpot, job.protectedLeft, names);
             if (why != null) msg.append(" - ").append(why);

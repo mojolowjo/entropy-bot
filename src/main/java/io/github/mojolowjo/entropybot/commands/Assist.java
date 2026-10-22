@@ -1,11 +1,12 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.assist.AssistRules;
 import io.github.mojolowjo.entropybot.assist.AssistRules.Act;
-import io.github.mojolowjo.entropybot.mule.MuleRules;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -18,11 +19,10 @@ import java.nio.file.Path;
 /**
  * 0.24.2 {@code assist}: the game side of {@link AssistRules}. Once a second (Commands' tick) it reads owner.json,
  * settles the owner's activity and does its part: chopping = the half-cut trees near their last log, else {@code cut};
- * mining = that kind within 12 of their last block ({@code dig} box by box: natural blocks, the areas and the near-me
- * zone as for any dig); farming = a farm round when the farm place is within 16 of them; building = stay close and
- * {@code give} the block they place when they run low; fighting = the escort; idle = follow and {@code carry all}.
- * Between jobs, and when the owner is idle for 60 s or there is no fresh report, it escorts (follow + fight what
- * threatens either). Its jobs run as the quiet chain "assist". Never throws out of tick (Commands catches too).
+ * mining = that kind within 12 of their last block ({@code dig} box by box: natural blocks, the policy
+ * as for any dig); farming = a farm round when the farm place is within 16 of them; building = stay close and
+ * {@code give} the block they place when they run low; fighting and idle = follow.
+ * Between jobs, and when the owner is idle for 60 s or there is no fresh report, it follows. Its jobs run as the quiet chain "assist". Never throws out of tick (Commands catches too).
  * Loader notes: vanilla client classes only (the level's block states, the registry).
  */
 final class Assist {
@@ -34,7 +34,7 @@ final class Assist {
     private AssistRules.Switcher sw = new AssistRules.Switcher();
     private AssistRules.Switcher.Phase phase;
     private AssistRules.Report report;
-    private long reportMtime = Long.MIN_VALUE, lastGive = Long.MIN_VALUE / 2, lastStart = Long.MIN_VALUE / 2;
+    private long reportMtime = Long.MIN_VALUE, lastStart = Long.MIN_VALUE / 2;
     private String lastKey, doing = "starting", chainAct;
 
     Assist(Commands c) { this.c = c; }
@@ -56,7 +56,6 @@ final class Assist {
         if (on) return statusText();
         if (c.chains.running()) return "busy: " + c.chains.chainStatus() + " (stop first)";
         if (c.jobs.running() && !c.jobs.walking()) return "busy: " + c.jobs.job.status + " (stop first)";
-        if (c.mule.running()) return "busy: " + c.mule.statusText() + " (stop first)";
         on = true;
         sw = new AssistRules.Switcher();
         phase = null;
@@ -65,9 +64,9 @@ final class Assist {
         doing = "following you";
         follow(p);
         AssistRules.Report r = readReport();
-        boolean fresh = r != null && System.currentTimeMillis() - r.received() <= AssistRules.FRESH_MS;
+        boolean fresh = r != null && System.currentTimeMillis() - r.received() <= AssistRules.freshMs();
         LOG.info("[entropybot] assist on for {}", from);
-        return "ok: assisting you - I follow you, fight what threatens either of us and do what you do (chop, mine, farm; I hand you blocks while you build)"
+        return "ok: assisting you - I follow you and do what you do (chop, mine, farm; I hand you blocks while you build)"
                 + (fresh ? "" : " - no fresh report from your companion mod yet, so for now I only follow")
                 + "; assist off, dismiss or stop ends it";
     }
@@ -78,18 +77,14 @@ final class Assist {
         on = false;
     }
 
-    /** assist off / dismiss: its chain, its escort or carry end; the bot stays. */
+    /** assist off / dismiss: its chain ends; the bot stays. */
     void end(LocalPlayer p) {
         on = false;
         if (ourChain()) {
             c.chains.clear();
             if (c.jobs.running()) c.jobs.finish("stopped: assist off");
         }
-        if (c.core().reflexes.escort.active()) {
-            c.core().reflexes.escort.stop("assist off");
-            c.endEscortFollow();
-        }
-        if (c.mule.carrying()) c.mule.stop("assist off");
+        c.endFollow();
         LOG.info("[entropybot] assist off");
     }
 
@@ -120,7 +115,7 @@ final class Assist {
         AssistRules.Report r = readReport();
         String owner = c.owner();
         String dim = p.level().dimension().location().toString();
-        boolean fresh = r != null && r.name().equalsIgnoreCase(owner) && now - r.received() <= AssistRules.FRESH_MS && r.dim().equals(dim);
+        boolean fresh = r != null && r.name().equalsIgnoreCase(owner) && now - r.received() <= AssistRules.freshMs() && r.dim().equals(dim);
         if (!fresh) {
             if (ourChain()) return;                 // the job carries on; the report may come back
             doing = "following you (no fresh report from your companion mod)";
@@ -147,7 +142,6 @@ final class Assist {
             if (c.jobs.running()) c.jobs.finish("stopped: assist switched to " + ph.act().word());
             chainAct = null;
         }
-        if (c.mule.running() && !c.mule.carrying()) return;     // a hand-over is under way
         if (!ph.mirroring()) {
             doing = "following you";
             follow(p);
@@ -179,7 +173,7 @@ final class Assist {
             return;
         }
         String chain = AssistRules.chain(AssistRules.halfCutTrees(world(p), b.x(), b.y(), b.z(), b.id()), false);
-        if (chain == null && dist(p, r.x(), r.z()) <= AssistRules.CHOP_R) chain = "cut 16 " + AssistRules.path(b.id());
+        if (chain == null && dist(p, r.x(), r.z()) <= AssistRules.chopR()) chain = "cut 16 " + AssistRules.path(b.id());
         start(p, chain, Act.CHOPPING, "cutting " + AssistRules.path(b.id()), now);
     }
 
@@ -196,10 +190,10 @@ final class Assist {
 
     private void farm(LocalPlayer p, AssistRules.Report r, long now) {
         JsonObject f = Core.INSTANCE.knowledge.places().get("farm");
-        int[] at = f == null ? null : BrainRuntime.xyz(f);
-        boolean near = at != null && Math.hypot(at[0] - r.x(), at[2] - r.z()) <= AssistRules.FARM_R;
+        int[] at = f == null ? null : SenseRuntime.xyz(f);
+        boolean near = at != null && Math.hypot(at[0] - r.x(), at[2] - r.z()) <= AssistRules.farmR();
         if (!near) {
-            doing = "following you (no farm place within " + AssistRules.FARM_R + " of you: place farm marks one)";
+            doing = "following you (no farm place within " + AssistRules.farmR() + " of you: place farm marks one)";
             follow(p);
             return;
         }
@@ -207,45 +201,23 @@ final class Assist {
     }
 
     private void build(LocalPlayer p, AssistRules.Report r, long now) {
-        AssistRules.Ev pl = r.placed();
-        if (pl != null && !c.mule.running()) {
-            MuleRules.Giveable g = MuleRules.giveable(Storage.held(p), pl.id(), c.storage.keeps());
-            int n = AssistRules.give(pl, g.n(), lastGive, now);
-            if (n > 0) {
-                lastGive = now;
-                quietEscortOff();
-                if (c.mule.carrying()) c.mule.stop("assist: a hand-over");
-                Chains.Reply rep = c.mule.command("give", c.owner(), "me " + pl.id() + " " + n, "give me " + pl.id() + " " + n, null, p);
-                doing = "handing you " + n + " " + AssistRules.path(pl.id());
-                LOG.info("[entropybot] assist give: {}", rep.text());
-                return;
-            }
-        }
         doing = "staying close while you build";
         follow(p);
     }
 
     private void carry(LocalPlayer p) {
-        doing = "following you and picking up drops";
-        if (c.mule.carrying()) return;
-        if (c.jobs.running() && !c.jobs.walking()) return;
-        quietEscortOff();
-        Chains.Reply rep = c.mule.command("carry", c.owner(), "all", "carry all", null, p);
-        if (rep.text() == null || !rep.text().startsWith("ok")) {
-            LOG.info("[entropybot] assist carry: {}", rep.text());
-            follow(p);
-        }
+        doing = "following you";
+        follow(p);
     }
 
     /** Starts the chain for an activity (the same chain not again within a minute), else follows. */
     private void start(LocalPlayer p, String chain, Act a, String what, long now) {
-        if (chain == null || (chain.equals(lastKey) && now - lastStart < AssistRules.RETRY_MS) || (c.jobs.running() && !c.jobs.walking())) {
+        if (chain == null || (chain.equals(lastKey) && now - lastStart < AssistRules.retryMs()) || (c.jobs.running() && !c.jobs.walking())) {
             doing = "following you (" + (chain == null ? "nothing to " + a.word() + " near you" : "done " + what + " there") + ")";
             follow(p);
             return;
         }
-        quietEscortOff();
-        if (c.mule.carrying()) c.mule.stop("assist: " + what);
+        c.endFollow();                      // a job of assist's own takes over the walking
         String s = c.chains.startChain(c.owner(), CHAIN, chain, 1);
         lastKey = chain;
         lastStart = now;
@@ -259,28 +231,19 @@ final class Assist {
         }
     }
 
-    /** The escort (follow + fight for the owner), or a plain follow when self-defence is off. Never twice. */
+    /** A plain follow of the owner. Never twice. */
     private void follow(LocalPlayer p) {
-        if (c.mule.carrying()) c.mule.stop("assist: following");
-        if (c.core().reflexes.escort.active()) return;
-        if (c.chains.running() || c.mule.running() || (c.jobs.running() && !c.jobs.walking()) || c.core().reflexes.hold()) return;
+        if (c.chains.running() || (c.jobs.running() && !c.jobs.walking()) || c.core().reflexes.hold()) return;
         Jobs.Job j = c.jobs.job;
         if (j != null && j.label != null && j.label.equalsIgnoreCase("following " + c.owner()) && c.stillFollowingPub()) return;
-        String r = c.escortCommand(c.owner(), "me", p);
-        if (!r.startsWith("ok")) {
-            String f = c.modJob("follow", "", c.owner(), p);
-            LOG.info("[entropybot] assist: escort {}; follow {}", r, f);
-        }
-    }
-
-    /** Ends the escort without its "follow ended" whisper: a job of assist's own takes over the walking. */
-    private void quietEscortOff() {
-        if (!c.core().reflexes.escort.active()) return;
-        c.core().reflexes.escort.stop("assist: a job");
-        c.endEscortFollow();
+        String f = c.modJob("follow", "", c.owner(), p);
+        LOG.info("[entropybot] assist: follow {}", f);
     }
 
     private static double dist(LocalPlayer p, int x, int z) { return Math.hypot(p.getX() - x, p.getZ() - z); }
+
+    /** B6: the companion report for AA's help desire (the last one read; null none). */
+    AssistRules.Report report() { return readReport(); }
 
     private AssistRules.Report readReport() {
         try {
@@ -294,6 +257,7 @@ final class Assist {
                 if (r != null) report = r;
             }
         } catch (Exception e) {
+            Quiet.warn("Assist.readReport failed, carrying on with the fallback", e);
             // caught mid-replace: the next second reads again
         }
         return report;

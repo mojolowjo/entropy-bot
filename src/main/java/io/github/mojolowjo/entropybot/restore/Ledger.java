@@ -1,5 +1,9 @@
 package io.github.mojolowjo.entropybot.restore;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -18,9 +22,10 @@ import java.util.Map;
  * oldest go, and {@link #takeNote} says how many. Loader-neutral: JUnit drives it; the JSON is restore.json's "entries".
  */
 public final class Ledger {
-    public static final int CAP = 2000;
+    public static final int CAP = 2000; // structural
     /** A pending break is looked at after this many ticks, and dropped when the cell is still full after the max. */
-    public static final long CONFIRM_AFTER = 5, CONFIRM_MAX = 40;
+    public static long confirmAfter() { return Tuning.l("ledger.confirmAfter"); }
+    public static long confirmMax() { return Tuning.l("ledger.confirmMax"); }
 
     public static final String PATH = "path", ESCAPE = "escape", REACH = "reach";
 
@@ -142,6 +147,15 @@ public final class Ledger {
         return n;
     }
 
+    /** rm-mining: the cell holds a block the bot placed itself (an entry noted {@code built: ...}): its own, never a built block. */
+    public synchronized boolean placedByMe(String dim, int x, int y, int z) {
+        Entry e = at(dim, x, y, z);
+        return e != null && placed(e.why);
+    }
+
+    /** The ledger note of a placement of mine ("built: station", "built: placed", "built: litter", "built: shelter"...). */
+    public static boolean placed(String why) { return why != null && why.startsWith("built:"); }
+
     public synchronized Entry at(String dim, int x, int y, int z) {
         for (Entry e : list) if (e.x == x && e.y == y && e.z == z && e.dim.equals(dim)) return e;
         return null;
@@ -157,10 +171,21 @@ public final class Ledger {
         Entry e = new Entry(nextSeq++, x, y, z, dim, block, state, items, why, job, jobLabel, reason, tick, at, true);
         list.add(e);
         while (list.size() > cap) {
-            list.remove(0);
+            // aa-litter: scaffold notes go first, so a long bridge never pushes out broken terrain that restore now still needs
+            int victim = 0;
+            for (int i = 0; i < list.size(); i++) if (PlacedPlan.litter(list.get(i))) { victim = i; break; }
+            list.remove(victim);
             droppedByCap++;
         }
         return e;
+    }
+
+    /** aa-litter: the entry with another note (why/reason), same seq and place in the list, confirmed. False when it is gone. */
+    public synchronized boolean rewrite(Entry old, String why, String reason) {
+        int i = list.indexOf(old);
+        if (i < 0) return false;
+        list.set(i, new Entry(old.seq, old.x, old.y, old.z, old.dim, old.block, old.state, old.items, why, old.job, old.jobLabel, reason, old.tick, old.at, false));
+        return true;
     }
 
     /** The cap's note since the last call ("dropped 3 oldest ..."), else null. */
@@ -183,7 +208,7 @@ public final class Ledger {
         int changed = 0;
         for (var it = list.iterator(); it.hasNext(); ) {
             Entry e = it.next();
-            if (now - e.tick < CONFIRM_AFTER) continue;
+            if (now - e.tick < confirmAfter()) continue;
             // 0.33.0 (A3, live: the station's "built:" note was dropped within minutes as "the server kept the block"):
             // a block I placed is noted (confirmed, so it is saved) while it stands; once its cell is empty (picked up,
             // broken) the note goes: there is nothing to put back
@@ -203,7 +228,7 @@ public final class Ledger {
             if (c == Cell.EMPTY) {
                 e.pending = false;
                 changed++;
-            } else if (now - e.tick >= CONFIRM_MAX) {
+            } else if (now - e.tick >= confirmMax()) {
                 it.remove();                               // the server kept the block (or it never loaded): nothing to put back
                 changed++;
             }
@@ -265,6 +290,7 @@ public final class Ledger {
                     l.list.add(e);
                     l.nextSeq = Math.max(l.nextSeq, e.seq + 1);
                 } catch (RuntimeException ex) {
+            Quiet.warn("Ledger.fromJson failed, carrying on with the fallback", ex);
                     bad++;
                 }
             }

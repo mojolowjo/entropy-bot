@@ -1,0 +1,59 @@
+package io.github.mojolowjo.entropybot.guard;
+
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+/**
+ * AREAS (0.39.3, AREAS_PLAN 3): the price of a Baritone move by the labelled places, for the fork's
+ * {@code CostAdvisor.moveMultiplier} (baritone/CostAdvisorHook). Pure (JUnit: MoveRulesTest); lock-free on an
+ * immutable policy snapshot; the hot A* loop early-outs when no keep-out or danger box exists.
+ */
+public final class MoveRules {
+    private MoveRules() {}
+
+    /** Baritone's COST_INF (ActionCosts.COST_INF), copied so this class stays free of Baritone types. */
+    public static final double COST_INF = 1000000.0; // structural
+    /** The owner's default (AREAS_PLAN 10.7): a move inside a danger area costs this much more. */
+    public static double defaultDanger() { return Tuning.get("moveRules.defaultDanger"); }
+
+    /** Bounds 1..64 (1 = a danger area costs nothing extra): the value when in bounds, else {@code was}. */
+    public static double danger(double m, double was) {
+        return !Double.isNaN(m) && m >= 1 && m <= 64 ? m : was;  // structural: a walk distance setting range 1..64
+    }
+
+    /**
+     * The multiplier on a move whose feet end at x y z: {@code COST_INF} inside a keep-out box (feet or head cell),
+     * {@code dangerMult} inside a danger box, NaN (no opinion) elsewhere. {@code at} = the bot's cell when the
+     * calculation began: a bot already inside a keep-out box (the owner drew it around it) gets that box priced like
+     * danger instead of impassable, so it walks out by the shortest way and never plans a goal inside.
+     */
+    public static double moveMultiplier(Policy p, String dim, int[] at, int x, int y, int z, double dangerMult) {
+        if (p == null || dim == null) return Double.NaN;
+        if (p.keepOut.isEmpty() && p.danger.isEmpty()) return Double.NaN;
+        double dear = Math.max(1, dangerMult);
+        Box ko = p.keepOutAt(dim, x, y, z);
+        if (ko == null) ko = p.keepOutAt(dim, x, y + 1, z);
+        if (ko != null) {
+            boolean startedInside = at != null && at.length >= 3 && (ko.contains(dim, at[0], at[1], at[2]) || ko.contains(dim, at[0], at[1] + 1, at[2]));  // structural: a position has 3 coordinates
+            // review 2: only the way out is dear - cells within the start's distance to the box's edge (plus the slack), the
+            // rest of the box stays impassable, so the bot leaves by the nearest side and never crosses the box
+            return startedInside && wayOut(ko, at, x, y, z) ? dear : COST_INF;
+        }
+        return p.dangerAt(dim, x, y, z) != null ? dear : Double.NaN;
+    }
+
+    /** Slack beyond the shortest way out a cell may lie and still be walked (round obstacles). */
+    public static int outSlack() { return Tuning.i("moveRules.outSlack"); }
+
+    /** The cell lies within (the start's blocks to the nearest edge + slack) of the start: part of a way out. */
+    static boolean wayOut(Box ko, int[] at, int x, int y, int z) {
+        int toEdge = edgeGap(ko, at[0], at[2]);
+        int d = Math.max(Math.abs(x - at[0]), Math.abs(z - at[2]));
+        return d <= toEdge + outSlack();
+    }
+
+    /** Blocks from the column to the nearest x/z edge of the box, 0 on the edge (inside). */
+    static int edgeGap(Box b, int x, int z) {
+        if (b.round) return Math.max(0, b.r - (int) Math.ceil(Math.hypot(x - b.cx, z - b.cz)));
+        return Math.max(0, Math.min(Math.min(x - b.x1, b.x2 - x), Math.min(z - b.z1, b.z2 - z)));
+    }
+}

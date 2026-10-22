@@ -1,5 +1,6 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.aa.brain.ItemWorth;
 import io.github.mojolowjo.entropybot.clear.Tools;
 
 import java.util.ArrayList;
@@ -52,9 +53,11 @@ public final class HotbarRules {
         return switch (spec) {
             case "pickaxe", "sword", "axe", "shovel", "hoe" -> true;
             case "food", "torch" -> false;
-            default -> spec.matches(".*_(pickaxe|sword|axe|shovel|hoe)$");
+            default -> role(spec) != ItemWorth.Role.OTHER;
         };
     }
+
+    private static ItemWorth.Role role(String id) { return ItemWorth.facts(id).role(); }
 
     static String path(String id) { return id.substring(id.indexOf(':') + 1); }
 
@@ -62,13 +65,14 @@ public final class HotbarRules {
     public static boolean matches(String spec, String id, int food) {
         if (spec == null || id == null || id.isEmpty() || id.equals("minecraft:air")) return false;
         return switch (spec) {
-            case "pickaxe" -> id.endsWith("_pickaxe");
-            case "sword" -> id.endsWith("_sword");
-            case "axe" -> id.endsWith("_axe");          // "_pickaxe" ends in "kaxe", not "_axe"
-            case "shovel" -> id.endsWith("_shovel");
-            case "hoe" -> id.endsWith("_hoe");
+            // the owner's words; what each one is comes from the game (the item's tool tags and components, its light)
+            case "pickaxe" -> role(id) == ItemWorth.Role.PICKAXE;
+            case "sword" -> role(id) == ItemWorth.Role.WEAPON;
+            case "axe" -> role(id) == ItemWorth.Role.AXE;
+            case "shovel" -> role(id) == ItemWorth.Role.SHOVEL;
+            case "hoe" -> role(id) == ItemWorth.Role.HOE;
             case "food" -> food >= 0;
-            case "torch" -> path(id).equals("torch") || path(id).equals("soul_torch");
+            case "torch" -> ItemWorth.lightSource(id);
             default -> id.equals(spec);
         };
     }
@@ -136,9 +140,9 @@ public final class HotbarRules {
     /** How good an item is for a slot of that spec (higher is better); pickaxes and other tools: the cheapest, as the clear uses them. */
     static long rank(String spec, Item it) {
         return switch (spec) {
-            case "sword" -> Tools.toolTier(it.id()) * 1000L;
-            case "pickaxe", "axe", "shovel", "hoe" -> (10 - Tools.toolTier(it.id())) * 1000L;
-            case "food" -> it.food() * 1000L + it.count();
+            case "sword" -> Tools.toolTier(it.id()) * 1000L;  // structural: milliseconds per second
+            case "pickaxe", "axe", "shovel", "hoe" -> (10 - Tools.toolTier(it.id())) * 1000L;  // structural: a tool sorts by tier: higher tiers earlier (10 minus the tier, per 1000)
+            case "food" -> it.food() * 1000L + it.count();  // structural: milliseconds per second
             default -> it.count();
         };
     }
@@ -182,7 +186,7 @@ public final class HotbarRules {
             Item best = null;
             for (Item it : inv) {
                 if (it == null || it.id() == null || it.count() <= 0 || !matches(spec, it.id(), it.food())) continue;
-                if (it.slot() < 9 && ok[it.slot()]) continue;          // it belongs where it is
+                if (it.slot() < 9 && ok[it.slot()]) continue;          // it belongs where it is  // game fact: the hotbar is inventory slots 0-8
                 if (best == null || rank(spec, it) > rank(spec, best)) best = it;
             }
             if (best != null) return new Swap(best.slot(), k - 1);
@@ -216,10 +220,10 @@ public final class HotbarRules {
             int l = layoutSlot(layout, it.id(), it.food(), index);
             if (l >= 0) return l;
         }
-        if (index < 9) return index;
+        if (index < 9) return index;  // game fact: the hotbar is inventory slots 0-8
         if (!layout.containsKey(selected + 1)) return selected;
-        for (int s = 0; s < 9; s++) if (!layout.containsKey(s + 1) && at(inv, s) == null) return s;
-        for (int s = 0; s < 9; s++) if (!layout.containsKey(s + 1)) return s;
+        for (int s = 0; s < 9; s++) if (!layout.containsKey(s + 1) && at(inv, s) == null) return s;  // game fact: the hotbar is inventory slots 0-8
+        for (int s = 0; s < 9; s++) if (!layout.containsKey(s + 1)) return s;  // game fact: the hotbar is inventory slots 0-8
         return selected;
     }
 
@@ -237,7 +241,7 @@ public final class HotbarRules {
             if (pick == null) {
                 for (Item it : inv) {
                     if (it == null || it.id() == null || it.count() <= 0 || !matches(spec, it.id(), it.food()) || used.contains(it.slot())) continue;
-                    if (it.slot() < 9 && ok[it.slot()]) continue;
+                    if (it.slot() < 9 && ok[it.slot()]) continue;  // game fact: the hotbar is inventory slots 0-8
                     if (pick == null || rank(spec, it) > rank(spec, pick)) pick = it;
                 }
             }

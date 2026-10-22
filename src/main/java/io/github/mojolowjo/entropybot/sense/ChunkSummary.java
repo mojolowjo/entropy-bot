@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.sense;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.memory.Limits;
 
 import java.util.ArrayList;
@@ -18,9 +20,9 @@ import java.util.TreeMap;
  * <p>Plain Java (no game classes), JUnit. Loader notes: none. Game thread only (no locking).
  */
 public final class ChunkSummary {
-    public static final int NO_TOP = Integer.MIN_VALUE;
+    public static final int NO_TOP = Integer.MIN_VALUE; // structural
     /** Lava sources in one section that make a "lava lake" (as PoiScanner had it). */
-    public static final int LAVA_LAKE = 12;
+    public static int lavaLake() { return Tuning.i("chunkSummary.lavaLake"); }
     public static final String LAVA_LAKE_KIND = "lava lake";
 
     public final String dim;
@@ -59,6 +61,15 @@ public final class ChunkSummary {
             if (spots.size() < Limits.SENSE_SPOTS) spots.add(s);
         }
 
+        /** Spots a patch may list beyond the cap: an ore that appears (placed, uncovered) is wanted even in a full chunk. */
+        public static final int PATCH_EXTRA = 32; // structural
+
+        /** A patch's add: listed past the cap too (up to {@link #PATCH_EXTRA} more; a full read lists the cap again). */
+        public void addPatched(Spot s) {
+            n++;
+            if (spots.size() < Limits.SENSE_SPOTS + PATCH_EXTRA) spots.add(s);
+        }
+
         public Removed remove(int x, int y, int z) {
             for (int i = 0; i < spots.size(); i++) {
                 if (spots.get(i).at(x, y, z)) {
@@ -95,7 +106,7 @@ public final class ChunkSummary {
     /** The lava lakes: one spot per section with LAVA_LAKE or more sources. */
     public List<Spot> lavaLakes() {
         List<Spot> out = new ArrayList<>();
-        for (int[] v : lava.values()) if (v[0] >= LAVA_LAKE) out.add(new Spot(v[1], v[2], v[3], "minecraft:lava"));
+        for (int[] v : lava.values()) if (v[0] >= lavaLake()) out.add(new Spot(v[1], v[2], v[3], "minecraft:lava"));
         return out;
     }
 

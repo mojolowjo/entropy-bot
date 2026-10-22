@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -28,7 +30,9 @@ import java.util.TreeSet;
  */
 public final class HotbarKeeper {
     /** Ticks of quiet before an idle swap; ticks between two swaps; how long after a job starts the layout is applied. */
-    public static final int IDLE_TICKS = 40, GAP = 10, START_TICKS = 200;
+    public static int idleTicks() { return Tuning.i("hotbarKeeper.idleTicks"); }
+    public static int gap() { return Tuning.i("hotbarKeeper.gap"); }
+    public static int startTicks() { return Tuning.i("hotbarKeeper.startTicks"); }
 
     /**
      * One look at the bot. busy: a job other than a walk or a wait, or a reflex (reflex: one of the reflexes holds the
@@ -44,7 +48,7 @@ public final class HotbarKeeper {
     /** The swap to make, the selected slot afterwards, and why ("idle", "job start", "refill"). */
     public record Move(HotbarRules.Swap swap, int select, String why) {}
 
-    private static final long NEVER = Long.MIN_VALUE / 2;
+    private static final long NEVER = Long.MIN_VALUE / 2; // structural
     private long quietSince, lastSwap = NEVER, startUntil = NEVER;
     private Object lastJob;
     private Map<Integer, String> lastLayout = Map.of();
@@ -73,7 +77,7 @@ public final class HotbarKeeper {
         }
         // a new job opens the start window (for its whole length); no job (or a walk) closes it
         if (l.job() == null) startUntil = NEVER;
-        else if (!l.job().equals(lastJob)) startUntil = t + START_TICKS;
+        else if (!l.job().equals(lastJob)) startUntil = t + startTicks();
         lastJob = l.job();
         if (!l.busy()) refill.clear();           // idle: the whole layout comes back after the quiet
         if (l.blocked() || l.inv() == null) {
@@ -97,14 +101,14 @@ public final class HotbarKeeper {
                 quietSince = t;
                 return null;
             }
-            if (t - quietSince < IDLE_TICKS || t - lastSwap < GAP) return null;
+            if (t - quietSince < idleTicks() || t - lastSwap < gap()) return null;
             HotbarRules.Swap s = HotbarRules.plan(layout, l.inv());
             if (s == null) return null;
             lastSwap = t;
             return new Move(s, l.selected(), "idle");
         }
         quietSince = t;
-        if (l.reflex() || t - lastSwap < GAP) return null;
+        if (l.reflex() || t - lastSwap < gap()) return null;
         // the selected slot holding something is the job's (it put that item in the hand): never swapped away mid-job
         int held = HotbarRules.at(l.inv(), l.selected()) != null ? l.selected() + 1 : -1;
         HotbarRules.Swap s = null;

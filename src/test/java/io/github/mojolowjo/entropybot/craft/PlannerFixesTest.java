@@ -207,7 +207,7 @@ class PlannerFixesTest {
         Plan plan = p.plan("x:l0_0", 1, big);
         long ms = (System.nanoTime() - t0) / 1_000_000;
         assertEquals(CraftPlanner.tooDeep("x:l0_0"), plan.error());
-        System.out.println("[package D] a search with no end gave up after " + CraftPlanner.BUDGET + " tries in " + ms + " ms (1000 kinds counted)");
+        System.out.println("[package D] a search with no end gave up after " + CraftPlanner.budget() + " tries in " + ms + " ms (1000 kinds counted)");
         assertTrue(ms < 3000, "gave up in " + ms + " ms");
     }
 }

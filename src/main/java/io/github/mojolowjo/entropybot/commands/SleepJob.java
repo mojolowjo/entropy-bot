@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.camp.DayNight;
 import io.github.mojolowjo.entropybot.gui.Gui;
@@ -26,14 +28,14 @@ import java.util.Map;
  * click reports the server's own message ({@code could not sleep: You may not rest now; there are monsters nearby}),
  * caught from the chat event ({@link #noteChat}).
  *
- * <p>Loader notes: the bed click is vanilla {@code MultiPlayerGameMode.useItemOn} (Jobs.useBlock); waking is the vanilla
+ * <p>Loader notes: the bed click is vanilla {@code MultiPlayerGameMode.useItemOn} (Baritone's job hands); waking is the vanilla
  * {@code ServerboundPlayerCommandPacket STOP_SLEEPING}; the refusal text comes from NeoForge's
  * {@code ClientChatReceivedEvent} (system/overlay messages; Fabric: {@code ClientReceiveMessageEvents.GAME}).
  */
 public final class SleepJob {
     private static final Logger LOG = LogUtils.getLogger();
-    static final long MAX_TICKS = 15 * 60 * 20;
-    static final int SEARCH = 24;
+    static long maxTicks() { return Tuning.l("sleepJob.maxTicks"); }
+    static int search() { return Tuning.i("sleepJob.search"); }
 
     private SleepJob() {}
 
@@ -63,11 +65,11 @@ public final class SleepJob {
 
     static String status(LocalPlayer p) {
         ClientLevel lv = Minecraft.getInstance().level;
-        String bed = Jobs.findBlock(p, "_bed " + SEARCH);
+        int[] bed = io.github.mojolowjo.entropybot.aa.BedSpot.foundAt(Jobs.findBlock(p, "_bed " + search()));
         String carried = carriedBed(p);
         return "sleep: it is " + DayNight.clock(lv.getDayTime()) + (night(lv) ? " (night: beds work)" : " (day: beds don't work)")
-                + (p.isSleeping() ? ", I am in bed" : "") + "; " + (bed.startsWith("found") ? "nearest bed at " + bed.split(" ")[1] + " " + bed.split(" ")[2] + " " + bed.split(" ")[3]
-                : "no bed within " + SEARCH) + (carried != null ? "; I carry a " + carried.replace("minecraft:", "") : "")
+                + (p.isSleeping() ? ", I am in bed" : "") + "; " + (bed != null ? "nearest bed at " + bed[0] + " " + bed[1] + " " + bed[2]
+                : "no bed within " + search()) + (carried != null ? "; I carry a " + carried.replace("minecraft:", "") : "")
                 + " - rule when night do sleep sleeps every night";
     }
 
@@ -85,20 +87,25 @@ public final class SleepJob {
         if (!night(lv)) return Hints.next("error: could not sleep: it is day (" + DayNight.clock(lv.getDayTime()) + ")", "rule when night do sleep (I sleep every night by myself)");
         List<Seq.Step> steps = new ArrayList<>();
         int[] bed;
-        String f = Jobs.findBlock(p, "_bed " + SEARCH);
+        String f = Jobs.findBlock(p, "_bed " + search());
         String placed = null;
-        if (f.startsWith("found")) {
-            String[] w = f.split(" ");
-            bed = new int[]{Integer.parseInt(w[1]), Integer.parseInt(w[2]), Integer.parseInt(w[3])};
+        int[] found = io.github.mojolowjo.entropybot.aa.BedSpot.foundAt(f);      // round 4 fix 3: the far form too ("found white_bed at x y z, N blocks")
+        if (found != null) {
+            bed = found;
         } else {
             String id = carriedBed(p);
-            if (id == null) return Hints.next("error: no bed within " + SEARCH + " blocks and I carry none", "give me a bed (or craft white_bed 1: 3 wool + 3 planks), then sleep");
-            bed = bedSpot(lv, Jobs.here(p));
-            if (bed == null) return Hints.next("error: no room for my bed next to me (2 free blocks in a row on solid ground)", "goto an open spot, then sleep");
+            if (id == null) return Hints.next("error: no bed within " + search() + " blocks and I carry none", "give me a bed (or craft white_bed 1: 3 wool + 3 planks), then sleep");
+            noteRefused(lv);
+            io.github.mojolowjo.entropybot.aa.BedSpot.Spot spot = bedSpot(c, lv, Jobs.here(p));
+            if (spot == null) return Hints.next("error: no room for my bed within " + io.github.mojolowjo.entropybot.aa.BedSpot.far()
+                    + " blocks (2 free blocks in a row on solid ground the policy allows; " + REFUSED.size() + " cells refused)", "goto an open spot, then sleep");
+            bed = spot.cell();
+            tried = spot.key();
+            LOG.info("[entropybot] sleep: bed cell {}: {}", spot.key(), spot.why());
             steps.add(Clearing.placeStep(bed, id));
             placed = id;
         }
-        String why = c.jobs.goalAllowed(bed[0], bed[1], bed[2]);
+        String why = c.jobs.walkVerdict(bed[0], bed[1], bed[2]);
         if (why != null) return Jobs.withAreaHint(why);
         steps.add(Seq.Step.walk(bed, true));
         Seq.Step s = new Seq.Step("sleep");
@@ -116,14 +123,36 @@ public final class SleepJob {
         return r;
     }
 
-    /** A cell next to the bot with the next one in the same direction free too (the bed's foot and head). */
-    static int[] bedSpot(ClientLevel lv, int[] f) {
-        int[][] dirs = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
-        for (int[] d : dirs) {
-            BlockPos a = new BlockPos(f[0] + d[0], f[1], f[2] + d[1]), b = new BlockPos(f[0] + 2 * d[0], f[1], f[2] + 2 * d[1]);
-            if (CampCommands.placeable(lv, a) && CampCommands.placeable(lv, b) && lv.getBlockState(a.above()).isAir()) return new int[]{a.getX(), a.getY(), a.getZ()};
+    /** aa-r2fix: cells the game refused a bed at (foot "x y z"); the next sleep skips them. */
+    private static final java.util.Set<String> REFUSED = new java.util.LinkedHashSet<>();
+    /** The cell the last bed was put down at, until a later call finds a bed there or marks it refused. */
+    private static String tried;
+
+    /** A bed put down at the last tried cell that is not there now was refused: remembered, never chosen again. */
+    static void noteRefused(ClientLevel lv) {
+        if (tried == null) return;
+        String[] w = tried.split(" ");
+        if (!lv.getBlockState(new BlockPos(Integer.parseInt(w[0]), Integer.parseInt(w[1]), Integer.parseInt(w[2]))).is(net.minecraft.tags.BlockTags.BEDS)) {
+            REFUSED.add(tried);
+            while (REFUSED.size() > 64) REFUSED.remove(REFUSED.iterator().next());
         }
-        return null;
+        tried = null;
+    }
+
+    /**
+     * aa-r2fix: the bed's cell, chosen like the chest's (BedSpot): a free 2-cell footprint on solid ground the policy allows, near the
+     * table or chest, by cost; refused cells skipped; none near the camp: the wider ring (the bed goes down elsewhere).
+     */
+    static io.github.mojolowjo.entropybot.aa.BedSpot.Spot bedSpot(Commands c, ClientLevel lv, int[] me) {
+        int[] table = Crafting.findBlockAround(me, "crafting_table", 8, 3), chest = Crafting.findBlockAround(me, "chest", 8, 3);
+        int[] near = table != null ? table : chest != null ? chest : me;
+        int[] anchor = {near[0], me[1], near[2]};
+        return io.github.mojolowjo.entropybot.aa.BedSpot.choose(anchor, table, chest, me,
+                cc -> {
+                    BlockPos b = new BlockPos(cc[0], cc[1], cc[2]);
+                    return lv.isLoaded(b) && CampCommands.placeable(lv, b) && lv.getBlockState(b.above()).canBeReplaced();
+                },
+                cc -> c.jobs.walkVerdict(cc[0], cc[1], cc[2]) == null, REFUSED);
     }
 
     static void wake() {
@@ -151,8 +180,9 @@ public final class SleepJob {
                     s.jobs.finish("error: could not sleep: it is day (" + DayNight.clock(lv.getDayTime()) + ") - next: rule when night do sleep");
                     return "wait";
                 }
-                String r = Jobs.useBlock(p, Jobs.fmt(st.pos));
-                if (!r.startsWith("ok")) return "couldn't click the bed at " + Jobs.fmt(st.pos) + ": " + r.replaceFirst("^error: ", "");
+                var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().use(st.pos, "the bed");
+                if (r.running()) return "wait";
+                if (r.failed()) return "couldn't click the bed at " + Jobs.fmt(st.pos) + ": " + r.why();
                 ps.stage = "check";
                 ps.at = now;
                 return "wait";
@@ -176,7 +206,7 @@ public final class SleepJob {
                             : "ok: slept until morning (" + DayNight.clock(lv.getDayTime()) + ")");
                     return "wait";
                 }
-                if (now - ps.at > MAX_TICKS) {
+                if (now - ps.at > maxTicks()) {
                     wake();
                     s.jobs.finish("ok: stayed in bed 15 min, it is " + DayNight.clock(lv.getDayTime()) + " (the night passes faster the more players sleep)");
                 }

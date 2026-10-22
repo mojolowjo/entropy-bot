@@ -24,9 +24,9 @@ import java.util.function.Supplier;
  * Plain Java.
  */
 public final class AiLog {
-    static final long ROTATE_BYTES = 2L * 1024 * 1024;
-    static final int FILES = 3;
-    static final int MEMORY = 200;
+    static final long ROTATE_BYTES = 2L * 1024 * 1024; // structural
+    static final int FILES = 3; // structural
+    static final int MEMORY = 200; // structural
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     private final Path dir;

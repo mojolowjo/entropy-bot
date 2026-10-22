@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.baritone;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 /**
  * Which modded blocks Baritone must not plan to walk through (owner's report 2026-10-03: the bot got stuck against the
  * Mystical Agriculture infusion pedestals). Baritone falls back to {@code isPathfindable(LAND)} for blocks it doesn't
@@ -11,7 +13,7 @@ public final class ModdedSolids {
     private ModdedSolids() {}
 
     /** Collision shapes up to this high (carpets, plates, modded farmland edges) stay walk-through. */
-    public static final double LOW = 0.2;
+    public static double low() { return Tuning.get("moddedSolids.low"); }
 
     /**
      * True when Baritone's "yes, walk through" must become "no": the block is from a mod, it isn't a door, gate or
@@ -19,6 +21,6 @@ public final class ModdedSolids {
      */
     public static boolean solid(String namespace, boolean opens, boolean shapeEmpty, double shapeMaxY) {
         if (namespace == null || namespace.equals("minecraft") || opens || shapeEmpty) return false;
-        return shapeMaxY > LOW;
+        return shapeMaxY > low();
     }
 }

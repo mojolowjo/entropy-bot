@@ -1,5 +1,9 @@
 package io.github.mojolowjo.entropybot.guard;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.events.EventRing;
@@ -64,7 +68,7 @@ public final class Guard {
     private volatile Set<Block> protectedBlocks;   // null until built on the client thread
     private volatile int blockEntityCount, namedCount;
     private EventRing events;
-    private long lastAstarLogTick = -1000;
+    private long lastAstarLogTick = -1000;  // structural: a time long ago (sentinel)
 
     private Guard() {}
 
@@ -93,7 +97,7 @@ public final class Guard {
                 if (io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(BuiltInRegistries.BLOCK.getKey(b).toString())) continue;    // P3: a tree's log
                 if (st.hasBlockEntity()) { set.add(b); be++; }
                 else if (PROTECT_RE.matcher(BuiltInRegistries.BLOCK.getKey(b).toString()).find()) { set.add(b); named++; }
-            } catch (RuntimeException ignored) {}
+            } catch (RuntimeException caught) { Quiet.warn("Guard.ensureProtectedBlocks failed, carrying on with the fallback", caught); }
         }
         blockEntityCount = be;
         namedCount = named;
@@ -112,9 +116,21 @@ public final class Guard {
         BlockState st = level.getBlockState(pos);
         String bid = BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
         boolean be = st.hasBlockEntity() && !io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(bid)
-                // 0.33.0 (A3): my own station inside my areas is a built block here (a force lease may take it), not floor
+                // 0.33.0 (A3): my own station (the ledger says so) is a built block here (a force lease may take it), not floor
                 && !(io.github.mojolowjo.entropybot.clear.OwnStations.station(bid) && io.github.mojolowjo.entropybot.clear.OwnStations.mineAt(pos.getX(), pos.getY(), pos.getZ()));
-        return GuardCore.BlockInfo.of(true, be, s.contains(st.getBlock()));
+        boolean built = OwnPlaced.built(s.contains(st.getBlock()), pos.getX(), pos.getY(), pos.getZ());     // rm-mining: my own placement is mine
+        // AREAS review 1 (BuiltNear): off the owner's typed places (home facts: their own work is theirs to dig) a natural
+        // block beside a built one or a block entity is built too
+        if (!built && !be && !st.isAir() && core.policy().typeAt(dimOf(level), pos.getX(), pos.getY(), pos.getZ()) == null) {
+            BuiltNear.Look look = (x, y, z) -> {
+                BlockPos q = new BlockPos(x, y, z);
+                if (!level.isLoaded(q)) return -1;
+                BlockState t = level.getBlockState(q);
+                return (t.hasBlockEntity() && !io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(BuiltInRegistries.BLOCK.getKey(t.getBlock()).toString())) || (s.contains(t.getBlock()) && !OwnPlaced.at(x, y, z)) ? 1 : 0;
+            };
+            built = BuiltNear.counts(false, st.is(net.neoforged.neoforge.common.Tags.Blocks.ORES), true, look, pos.getX(), pos.getY(), pos.getZ());
+        }
+        return GuardCore.BlockInfo.of(true, be, built);
     }
 
     public static String dimOf(Level level) {
@@ -176,7 +192,7 @@ public final class Guard {
 
     /**
      * Mining plan phase 1: a break while a walk runs (TRAVEL intent). The floor and the fence's boxes as before; where
-     * only a box rule would refuse (outside every area, no lease), the policy decides (GuardCore.checkTravelBreak). A
+     * only a box rule would refuse (no lease), the policy decides (GuardCore.checkTravelBreak). A
      * break let through is a travel break: counted toward the cap and handed to the restore ledger as a path break.
      */
     private boolean vetoTravelBreak(Level level, BlockPos pos, String dim, PolicyRuntime pr) {
@@ -192,7 +208,7 @@ public final class Guard {
         // the exemption needs a running job (the same condition under which safeSettings/SafetyNet keep A* breaking on,
         // so the plan and the click agree) and a terrain block (what the ledger can put back; logs and crops keep the fence)
         boolean jobRunning = false;
-        try { jobRunning = io.github.mojolowjo.entropybot.Core.INSTANCE.commands.jobs.running(); } catch (Throwable ignored) {}
+        try { jobRunning = io.github.mojolowjo.entropybot.Core.INSTANCE.commands.jobs.running(); } catch (Throwable caught) { Quiet.warn("Guard.vetoTravelBreak failed, carrying on with the fallback", caught); }
         boolean terrain = io.github.mojolowjo.entropybot.restore.RestoreRules.natural(BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).toString());
         if (t.travel().allowed() && jobRunning && terrain) {
             pr.logTravelOverride(PolicyStats.SITE_CLICK, x, y, z, t.travel(), v.reason());
@@ -222,11 +238,21 @@ public final class Guard {
     /** Every block placement (BlockItem.place) and every liquid, fire, egg or entity put down. True = refuse. */
     public boolean vetoPlace(Level level, BlockPos pos) { return vetoPlace(level, pos, false); }
 
-    /** 0.23.1: torch = the item put down is a torch (roaming outside the areas places nothing else). */
+    /**
+     * Review 0.39.a4 2: the area rule for a placement asked ahead (a scan, the danger ways' shore cell): no event, no
+     * log, no policy lease. True = the policy refuses it (a keep-out / no-break area, the floor).
+     */
+    public boolean placeRefused(Level level, BlockPos pos) {
+        if (level == null || !level.isLoaded(pos)) return false;
+        var st = level.getBlockState(pos);
+        boolean airOrWater = st.isAir() || (st.getFluidState().is(net.minecraft.tags.FluidTags.WATER) && st.canBeReplaced());
+        return !core.check(dimOf(level), pos.getX(), pos.getY(), pos.getZ(), "place", GuardCore.BlockInfo.placing(airOrWater, false)).allowed();
+    }
+    /** 0.23.1: torch = the item put down is a torch. */
     public boolean vetoPlace(Level level, BlockPos pos, boolean torch) {
         if (level == null) level = Minecraft.getInstance().level;
         if (level == null) return false;
-        // water plan: a seal lease (just outside the areas) only fills air or water
+        // water plan: a seal lease only fills air or water
         GuardCore.BlockInfo info = GuardCore.BlockInfo.PLAIN;
         if (level.isLoaded(pos)) {
             var st = level.getBlockState(pos);
@@ -257,7 +283,7 @@ public final class Guard {
         }
         pr.stats.ask(PolicyStats.SITE_CLICK);
         boolean jobRunning = false;
-        try { jobRunning = io.github.mojolowjo.entropybot.Core.INSTANCE.commands.jobs.running(); } catch (Throwable ignored) {}
+        try { jobRunning = io.github.mojolowjo.entropybot.Core.INSTANCE.commands.jobs.running(); } catch (Throwable caught) { Quiet.warn("Guard.vetoPolicyPlace failed, carrying on with the fallback", caught); }
         if (t.travel().allowed() && jobRunning) {
             pr.logOverride(PolicyStats.SITE_CLICK, in.name().toLowerCase(java.util.Locale.ROOT) + " may place", x, y, z, t.travel(), v.reason());
             return false;
@@ -377,7 +403,7 @@ public final class Guard {
         if (!v.allowed()) return true;
         if (v.wouldVeto()) {
             long t = core.tick();
-            if (t - lastAstarLogTick >= 100) {
+            if (t - lastAstarLogTick >= Tuning.i("guard.astarLogTicks")) {
                 lastAstarLogTick = t;
                 EventRing ring = events;
                 if (ring != null) ring.push("guard", "A* would refuse breaking at " + x + " " + y + " " + z + ": " + v.reason(), null);

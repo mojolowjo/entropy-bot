@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.cave;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -16,7 +18,10 @@ import java.util.function.Predicate;
  * Java over a {@link World}, so JUnit can drive it with a made-up cave.
  */
 public final class CaveSearch {
-    public static final int MAX_NODES = 12000, MAX_REACH = 48, MAX_ORES = 24, MIN_FRONTIER = 6;
+    public static int maxNodes() { return Tuning.i("caveSearch.maxNodes"); }
+    public static int maxReach() { return Tuning.i("caveSearch.maxReach"); }
+    public static int maxOres() { return Tuning.i("caveSearch.maxOres"); }
+    public static int minFrontier() { return Tuning.i("caveSearch.minFrontier"); }
 
     /** What the search needs to know about a cell. */
     public interface World {
@@ -83,11 +88,11 @@ public final class CaveSearch {
         Cell frontier = null;
         int[][] sides = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
         int[][] around = { { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 }, { 0, 0, 1 }, { 0, 0, -1 } };
-        while (!queue.isEmpty() && dist.size() < MAX_NODES) {
+        while (!queue.isEmpty() && dist.size() < maxNodes()) {
             int[] c = queue.poll();
             int x = c[0], y = c[1], z = c[2], d = dist.get(key(x, y, z));
             // ores next to the feet or head cell
-            if (ores.size() < MAX_ORES) {
+            if (ores.size() < maxOres()) {
                 for (int h = 0; h <= 1; h++) {
                     for (int[] a : around) {
                         int ox = x + a[0], oy = y + h + a[1], oz = z + a[2];
@@ -101,11 +106,11 @@ public final class CaveSearch {
                 }
             }
             // the frontier: dark, under ground, not visited, a few steps away, away from liquids
-            if (frontier == null && d >= MIN_FRONTIER && !visited.contains(coarse(x, y, z)) && w.blockLight(x, y, z) == 0
+            if (frontier == null && d >= minFrontier() && !visited.contains(coarse(x, y, z)) && w.blockLight(x, y, z) == 0
                     && w.skyLight(x, y, z) == 0 && !nearLiquid(w, x, y, z) && (off == null || !off.test(x, y, z))) {
                 frontier = new Cell(x, y, z, d);
             }
-            if (d >= MAX_REACH * 2) continue;
+            if (d >= maxReach() * 2) continue;
             for (int[] s : sides) {
                 int nx = x + s[0], nz = z + s[1];
                 if (Math.abs(nx - ex) > maxFromEntrance || Math.abs(nz - ez) > maxFromEntrance) continue;
@@ -114,7 +119,7 @@ public final class CaveSearch {
                 if (standable(w, nx, y, nz)) ny = y;
                 else if (w.open(x, y + 2, z) && standable(w, nx, y + 1, nz)) ny = y + 1;
                 else if (w.open(nx, y, nz) && w.open(nx, y + 1, nz)) {
-                    for (int drop = 1; drop <= 3; drop++) {
+                    for (int drop = 1; drop <= Tuning.i("caveSearch.maxDrop"); drop++) {
                         if (standable(w, nx, y - drop, nz)) { ny = y - drop; break; }
                         if (!w.open(nx, y - drop, nz)) break;
                     }

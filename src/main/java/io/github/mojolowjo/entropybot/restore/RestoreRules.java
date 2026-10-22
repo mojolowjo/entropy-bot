@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.restore;
 
+import io.github.mojolowjo.entropybot.aa.brain.ItemWorth;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -14,66 +16,52 @@ public final class RestoreRules {
 
     public static final String COBBLE = "minecraft:cobblestone";
 
-    /** Stone-like terrain: its own item first, cobblestone when the bot has none. */
-    static final Set<String> STONY = Set.of("stone", "cobblestone", "deepslate", "cobbled_deepslate", "tuff", "calcite", "andesite", "diorite",
-            "granite", "sandstone", "red_sandstone", "dripstone_block", "blackstone", "basalt", "smooth_basalt", "netherrack", "end_stone",
-            "terracotta");
-
-    /** Soft terrain: its own item (or dirt). */
-    static final Set<String> SOFT = Set.of("dirt", "coarse_dirt", "rooted_dirt", "grass_block", "podzol", "mycelium", "mud", "clay", "sand",
-            "red_sand", "gravel", "soul_sand", "soul_soil", "moss_block");
-
     public static String shortId(String id) { return id == null ? "" : id.replaceFirst("^minecraft:", ""); }
 
-    /** Coloured terrain terracotta (never the glazed kind, which is built). */
-    static boolean terracotta(String s) { return s.endsWith("_terracotta") && !s.endsWith("glazed_terracotta"); }
+    private static String full(String id) { return id.contains(":") ? id : "minecraft:" + id; }
 
-    public static boolean natural(String blockId) {
-        if (blockId == null || (blockId.contains(":") && !blockId.startsWith("minecraft:"))) return false;
-        String s = shortId(blockId);
-        return STONY.contains(s) || SOFT.contains(s) || terracotta(s);
+    /** The stone a stone tool or a furnace takes: the stone tool materials and the overworld base stone. */
+    static boolean stoneFamily(String id) { return ItemWorth.hasTag(id, "stone_tool_materials") || ItemWorth.hasTag(id, "base_stone_overworld"); }
+
+    /** Soft terrain by the game's tags: dirt, sand, mud, clay and their kin. */
+    static boolean soft(String id) {
+        for (String t : List.of("dirt", "sand", "mud", "mineable/shovel")) if (ItemWorth.hasTag(id, t) && !ItemWorth.hasTag(id, "c:ores")) return true;
+        return false;
     }
 
-    /** The items that fill the hole, best first; empty for a block that is never put back. */
+    /** Terrain: stone-like blocks (base-stone tags, soft pickaxe blocks), soft blocks, terracotta (the terracotta tag, never the glazed kind: it is built). */
+    public static boolean natural(String blockId) {
+        if (blockId == null || (blockId.contains(":") && !blockId.startsWith("minecraft:"))) return false;
+        String id = full(blockId);
+        return ItemWorth.stoneLike(id) || soft(id) || ItemWorth.hasTag(id, "terracotta");
+    }
+
+    /** The items that fill the hole, best first: the block's own item, then the cheap stone (stone-like) or dirt (soft) the bot most likely carries; empty for a block never put back. */
     public static List<String> itemsFor(String blockId) {
         List<String> out = new ArrayList<>();
         if (!natural(blockId)) return out;
-        String s = shortId(blockId);
-        switch (s) {
-            case "stone" -> out.add(COBBLE);
-            case "deepslate" -> { out.add("minecraft:cobbled_deepslate"); out.add(COBBLE); }
-            case "grass_block", "podzol", "mycelium", "clay" -> out.add("minecraft:dirt");
-            case "mud", "moss_block" -> { out.add("minecraft:" + s); out.add("minecraft:dirt"); }
-            default -> {
-                out.add("minecraft:" + s);
-                if (STONY.contains(s) || terracotta(s)) {
-                    if (!s.equals("cobblestone")) out.add(COBBLE);
-                }
-            }
-        }
+        String id = full(blockId);
+        out.add(id);
+        if (ItemWorth.stoneLike(id) || ItemWorth.hasTag(id, "terracotta")) { for (String m : ItemWorth.withTag("stone_tool_materials")) if (!out.contains(m)) out.add(m); }
+        else for (String m : ItemWorth.withTag("dirt")) { if (!out.contains(m) && ItemWorth.stoneLike(m)) { out.add(m); break; } }
         return out;
     }
 
-    /** 0.24.4: stone a stone tool or a furnace takes (the stone_tool_materials family) and plain dirt. */
-    static final Set<String> TOOL_STONE = Set.of("stone", "cobblestone", "deepslate", "cobbled_deepslate", "blackstone");
-    static final Set<String> DIRT = Set.of("dirt", "grass_block", "coarse_dirt", "rooted_dirt", "podzol", "mycelium");
-
     /**
      * 0.24.4 restore keeps purpose blocks: while a job gathers a terrain block (target: cobblestone for a pickaxe, dirt),
-     * a broken block of the same family is the job's purpose, never re-placed (live: the ledger put back the cobblestone
-     * the bot had dug to craft a pickaxe). An ore target keeps every other break a path break.
+     * a broken block of the same family is the job's purpose, never re-placed. Families: the stone tool materials; the
+     * game's dirt tag. An ore target keeps every other break a path break.
      */
     public static boolean purposeBreak(String targetId, String brokenId) {
         if (targetId == null || brokenId == null) return false;
-        String t = shortId(targetId), b = shortId(brokenId);
-        if (t.equals(b)) return true;
+        if (shortId(targetId).equals(shortId(brokenId))) return true;
         if (!natural(targetId) || !natural(brokenId)) return false;
-        return (TOOL_STONE.contains(t) && TOOL_STONE.contains(b)) || (DIRT.contains(t) && DIRT.contains(b));
+        String t = full(targetId), b = full(brokenId);
+        return (stoneFamily(t) && stoneFamily(b)) || (ItemWorth.hasTag(t, "dirt") && ItemWorth.hasTag(b, "dirt"));
     }
-
     /** Why a broken block is never put back: "an ore" or "not terrain"; null when it is restorable. */
     public static String whyNot(String blockId, boolean ore) {
-        if (ore || shortId(blockId).endsWith("_ore") || shortId(blockId).equals("ancient_debris")) return "an ore";
+        if (ore || (blockId != null && ItemWorth.hasTag(full(blockId), "c:ores"))) return "an ore";
         return natural(blockId) ? null : "not terrain";
     }
 

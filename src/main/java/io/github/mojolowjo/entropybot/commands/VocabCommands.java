@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -53,6 +55,7 @@ final class VocabCommands {
             if (rl == null || !BuiltInRegistries.ITEM.containsKey(rl)) return false;
             return BuiltInRegistries.ITEM.get(rl) instanceof net.minecraft.world.item.BlockItem;
         } catch (RuntimeException e) {
+            Quiet.warn("VocabCommands.isBlockItem failed, carrying on with the fallback", e);
             return false;
         }
     }
@@ -169,7 +172,7 @@ final class VocabCommands {
         String busy = c.chainBusyTextPub();
         if (busy != null) return busy;
         int[] me = Jobs.here(p);
-        hold = new Hold("defending " + me[0] + " " + me[1] + " " + me[2], Guard.dimOf(p.level()), me[0], me[1], me[2], io.github.mojolowjo.entropybot.vocab.HoldRules.DEFEND_R, null, from);
+        hold = new Hold("defending " + me[0] + " " + me[1] + " " + me[2], Guard.dimOf(p.level()), me[0], me[1], me[2], io.github.mojolowjo.entropybot.vocab.HoldRules.defendR(), null, from);
         LOG.info("[entropybot] {}", hold.what());
         return "ok: defending this spot (" + me[0] + " " + me[1] + " " + me[2] + "): I stay within " + hold.r() + " blocks and fight what comes - dismiss or stop ends it";
     }
@@ -193,9 +196,9 @@ final class VocabCommands {
             String[] err = new String[1];
             PlaceWords.Spot s = PlaceWords.resolveGo(placeList(), n, null, err);
             if (s == null) return "error: I have no area, place or marker called " + n + " (area list, places)";
-            hold = new Hold("guarding " + s.name(), dim, s.x(), s.y(), s.z(), io.github.mojolowjo.entropybot.vocab.HoldRules.GUARD_R, null, from);
+            hold = new Hold("guarding " + s.name(), dim, s.x(), s.y(), s.z(), io.github.mojolowjo.entropybot.vocab.HoldRules.guardR(), null, from);
         }
-        String why = c.jobs.goalAllowed(hold.x(), hold.y(), hold.z());
+        String why = c.jobs.walkVerdict(hold.x(), hold.y(), hold.z());
         if (why != null && !from.equalsIgnoreCase(c.owner())) {
             hold = null;
             return FenceRules.gotoRefusal(why);
@@ -213,17 +216,15 @@ final class VocabCommands {
         return t;
     }
 
-    /** "dismiss": from the owner, ends the escort and defend/guard; from the escorted player, their escort. */
+    /** "dismiss": from the owner, ends defend/guard. */
     String dismiss(String from, LocalPlayer p) {
         boolean owner = from.equalsIgnoreCase(c.owner());
-        io.github.mojolowjo.entropybot.engine.Escort e = Core.INSTANCE.reflexes.escort;
         List<String> done = new ArrayList<>();
-        if (e.active() && (owner || from.equalsIgnoreCase(e.name()))) done.add(c.escortCommand(from, "off", p).replaceFirst("^ok: ", ""));
         if (owner) {
             String h = endHold("dismissed");
             if (h != null) done.add(h);
         }
-        if (done.isEmpty()) return e.active() ? "sorry, only " + c.owner() + " or " + e.name() + " can end this escort" : "ok: nothing to dismiss (no escort, defend or guard)";
+        if (done.isEmpty()) return "ok: nothing to dismiss (no defend or guard)";
         return "ok: " + String.join("; ", done);
     }
 
@@ -337,6 +338,7 @@ final class VocabCommands {
             for (String k : expand(id)) sum += t.getOrDefault(k, 0);
             return sum;
         } catch (RuntimeException e) {
+            Quiet.warn("VocabCommands.have failed, carrying on with the fallback", e);
             return 0;
         }
     }
@@ -394,7 +396,7 @@ final class VocabCommands {
                     c.saved();
                     return;
                 }
-            } catch (RuntimeException ignored) {}
+            } catch (RuntimeException caught) { Quiet.warn("VocabCommands.goalDone failed, carrying on with the fallback", caught); }
         }
     }
 
@@ -406,13 +408,11 @@ final class VocabCommands {
         if (w.size() == 2 && w.get(0).equals("clear")) {
             if (w.get(1).equals("all")) {
                 b.add("goals", new JsonArray());
-                io.github.mojolowjo.entropybot.brain.Brain.forgetGoalParks(b, null);       // 0.23.1: no park outlives the goals
                 c.saved();
                 return "ok: no goals";
             }
             if (!w.get(1).matches("^\\d{1,2}$") || Integer.parseInt(w.get(1)) < 1 || Integer.parseInt(w.get(1)) > goals.size()) return "error: no goal " + w.get(1) + " (goals lists them)";
             JsonElement gone = goals.remove(Integer.parseInt(w.get(1)) - 1);
-            try { io.github.mojolowjo.entropybot.brain.Brain.forgetGoalParks(b, gone.getAsJsonObject().get("text").getAsString()); } catch (RuntimeException ignored) {}
             b.add("goals", goals);
             c.saved();
             return "ok: goal " + w.get(1) + " cleared";
@@ -430,7 +430,7 @@ final class VocabCommands {
         b.addProperty("released", true);
         b.addProperty("releasedAt", System.currentTimeMillis());
         c.saved();
-        return "ok: released - I may do what I want now (with brain on: further than 32 blocks from you); your next order, come or escort takes me back";
+        return "ok: released - I may do what I want now (with brain on: further than 32 blocks from you); your next order or come takes me back";
     }
 
     boolean released() {
@@ -497,9 +497,7 @@ final class VocabCommands {
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] status stage: {}", e.toString());
         }
-        String brain = null;
-        try { brain = c.brainRuntime == null ? null : c.brainRuntime.brain.statusPart(); } catch (RuntimeException e) { LOG.warn("[entropybot] status brain: {}", e.toString()); }
-        return GameStage.statusPart(deaths, stage, brain);
+        return GameStage.statusPart(deaths, stage, null);      // AA_CLEANUP 3: no old brain part
     }
 
     // ---- queue ----
@@ -546,6 +544,7 @@ final class VocabCommands {
             return rl != null && BuiltInRegistries.ITEM.containsKey(rl)
                     && BuiltInRegistries.ITEM.get(rl).components().has(net.minecraft.core.component.DataComponents.FOOD);
         } catch (RuntimeException e) {
+            Quiet.warn("VocabCommands.isFood failed, carrying on with the fallback", e);
             return false;
         }
     }
@@ -628,35 +627,17 @@ final class VocabCommands {
         if (w.isEmpty() || !Kinds.isKind(w.get(0))) return null;
         List<String> ids = expand(w.get(0).toLowerCase(Locale.ROOT));
         Map<String, Integer> stock = null;
-        try { stock = fullStock(p); } catch (RuntimeException ignored) {}
+        try { stock = fullStock(p); } catch (RuntimeException caught) { Quiet.warn("VocabCommands.oneOfKind failed, carrying on with the fallback", caught); }
         String kind = w.get(0).toLowerCase(Locale.ROOT);
         String id;
         if (kind.equals("food")) {
-            // 0.24.3: stock first, then plain foods, a modded food only when its whole plan resolves
-            io.github.mojolowjo.entropybot.gather.GatherPlan.World gw;
-            try { gw = c.gathering.world(p); } catch (RuntimeException e) { gw = null; LOG.warn("[entropybot] food choice: no gather view", e); }
-            final io.github.mojolowjo.entropybot.gather.GatherPlan.World fw = gw;
+            // 0.24.3: stock first, then plain foods (rm-execution: the gather planner is gone; a modded food comes from stock)
             boolean farm;
-            try { farm = io.github.mojolowjo.entropybot.Core.INSTANCE.knowledge.places().get("farm") != null; } catch (RuntimeException e) { farm = false; }
-            // 0.27.3 (d6): a modded food counts only when its plan for the wanted count mines at most Kinds.MAX_FOOD_MINING blocks
-            int want = w.size() >= 2 && w.get(1).matches("\\d{1,5}") ? Integer.parseInt(w.get(1)) : 1;
-            List<String> skippedFood = new ArrayList<>();
-            id = Kinds.pickFood(ids, stock, farm, c.hunting.on(), x -> {
-                if (fw == null || !io.github.mojolowjo.entropybot.gather.GatherPlan.resolves(x, want, fw)) return false;
-                int mined = io.github.mojolowjo.entropybot.gather.GatherPlan.miningBlocks(x, want, fw);
-                if (mined > Kinds.MAX_FOOD_MINING) {
-                    skippedFood.add(Texts.shortId(x) + " (its plan mines " + mined + " blocks, over " + Kinds.MAX_FOOD_MINING + ")");
-                    return false;
-                }
-                return true;
-            });
-            if (!skippedFood.isEmpty()) {
-                lastFoodSkip = "food choice skipped " + String.join(", ", skippedFood);
-                LOG.info("[entropybot] {}", lastFoodSkip);
-            }
+            try { farm = io.github.mojolowjo.entropybot.Core.INSTANCE.knowledge.places().get("farm") != null; } catch (RuntimeException e) {
+            Quiet.warn("VocabCommands.oneOfKind failed, carrying on with the fallback", e); farm = false; }
+            id = Kinds.pickFood(ids, stock, farm, c.stepRun.on(), null);
             if (id == null) {
-                err[0] = "error: no way to get food: none in storage, and no food I know how to make (bread needs wheat: a farm)"
-                        + (skippedFood.isEmpty() ? "" : "; skipped " + String.join(", ", skippedFood)) + " - put some food in the base chests";
+                err[0] = "error: no way to get food: none in storage, and no food I know how to make (bread needs wheat: a farm) - put some food in the base chests";
                 return null;
             }
         } else id = Kinds.pick(ids, stock);
@@ -674,7 +655,7 @@ final class VocabCommands {
         if (w.isEmpty()) return null;
         if (w.get(0).equals("logs") || w.get(0).equals("wood")) {
             String n = w.size() > 1 && w.get(1).matches("^\\d+$") ? w.get(1) : "16";
-            redirect[0] = "cut " + n + " logs";
+            redirect[0] = "cut " + n;
             return null;
         }
         if ((w.get(0).equals("strip") || w.get(0).equals("cave")) && w.size() > 1 && w.get(1).equals("ores")) {
@@ -690,21 +671,5 @@ final class VocabCommands {
             return null;
         }
         return null;
-    }
-
-    /** "cut <n> [logs|wood|<log id or type>]" | "cut trees <n> [type]" | "cut status": the chop engine's line. */
-    String cutLine(String rest) {
-        List<String> w = Texts.words(rest == null ? "" : rest.toLowerCase(Locale.ROOT));
-        int i = w.indexOf("logs") >= 0 ? w.indexOf("logs") : w.indexOf("wood");
-        if (i >= 0) {
-            Kinds.Rule r = rule("logs");
-            if (r.exclude().isEmpty()) w.remove(i);
-            else {
-                List<String> ex = new ArrayList<>();
-                for (String s : r.exclude()) ex.add(s.substring(s.indexOf(':') + 1));
-                w.set(i, io.github.mojolowjo.entropybot.chop.ChopRules.EXCEPT + String.join(".", ex));
-            }
-        }
-        return String.join(" ", w);
     }
 }

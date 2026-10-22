@@ -38,10 +38,10 @@ class BreakPolicyTest {
 
     @Test
     void ruleSetFollowsTheAreaAndTheConnection() {
-        assertSame(RuleSet.MAIN, SP.ruleSetAt(OW, 0, 60, 0));
-        assertSame(RuleSet.NEUTRAL, SP.ruleSetAt(OW, 120, 60, 120));
+        assertSame(RuleSet.BASE, SP.ruleSetAt(OW, 0, 60, 0));
+        assertSame(RuleSet.WORK, SP.ruleSetAt(OW, 120, 60, 120));
         assertSame(RuleSet.DESTROY, SP.ruleSetAt(OW, 220, 60, 220));
-        assertSame(RuleSet.SAFE, SP.ruleSetAt(OW, 305, 60, 305), "a protect box is safe");
+        assertSame(RuleSet.NO_BREAK, SP.ruleSetAt(OW, 305, 60, 305), "a protect box is safe");
         assertSame(RuleSet.OUTSIDE_SINGLEPLAYER, SP.ruleSetAt(OW, 1000, 60, 1000));
         assertSame(RuleSet.OUTSIDE_MULTIPLAYER, MP.ruleSetAt(OW, 1000, 60, 1000), "a server starts expensive outside, no toggle");
         assertSame(RuleSet.OUTSIDE_SINGLEPLAYER, SP.ruleSetAt(OW, 0, 95, 0), "above the camp box = outside");
@@ -49,16 +49,16 @@ class BreakPolicyTest {
 
     @Test
     void presetsMatchTheTable() {
-        assertEquals(BreakPolicy.Natural.NEVER, RuleSet.SAFE.breakNatural());
-        assertFalse(RuleSet.MAIN.useResources(), "ores and logs in the camp stay (owner's default)");
-        assertEquals(BreakPolicy.Natural.TRAVEL_EXPENSIVE, RuleSet.MAIN.breakNatural());
-        assertTrue(RuleSet.NEUTRAL.useResources());
+        assertEquals(BreakPolicy.Natural.NEVER, RuleSet.NO_BREAK.breakNatural());
+        assertFalse(RuleSet.BASE.useResources(), "ores and logs in the camp stay (owner's default)");
+        assertEquals(BreakPolicy.Natural.TRAVEL_EXPENSIVE, RuleSet.BASE.breakNatural());
+        assertTrue(RuleSet.WORK.useResources());
         assertFalse(RuleSet.DESTROY.restore());
         assertEquals(6, RuleSet.OUTSIDE_SINGLEPLAYER.travelMultiplier(), "travel x6");
         assertEquals(10, RuleSet.OUTSIDE_MULTIPLAYER.travelMultiplier());
-        assertEquals(24, BreakPolicy.Costs.TRAVEL_CAP);
+        assertEquals(24, BreakPolicy.Costs.travelCapV());
         assertNull(RuleSet.preset(null));
-        assertTrue(RuleSet.NEUTRAL.describe().startsWith("neutral: natural lenient, resources yes"));
+        assertTrue(RuleSet.WORK.describe().startsWith("work: natural lenient, resources yes"));
     }
 
     // ---- the floor
@@ -158,7 +158,7 @@ class BreakPolicyTest {
     void campKeepsItsResources() {
         Verdict v = brk(SP, Intent.MINE, 0, 60, 0, BlockFacts.STONE.withOre(true));
         assertFalse(v.allowed());
-        assertEquals("no resources taken in main", v.reason());
+        assertEquals("no resources taken in base", v.reason());
         assertEquals("resources", v.rule());
         assertTrue(brk(SP, Intent.MINE, 0, 60, 0, BlockFacts.STONE).allowed(), "stone in the camp may be mined");
         assertTrue(brk(SP, Intent.TRAVEL, 0, 60, 0, BlockFacts.STONE.withOre(true)).allowed(), "travel through an ore is a travel break, not a resource taken");
@@ -191,8 +191,24 @@ class BreakPolicyTest {
     // ---- PLACE
 
     @Test
+    void outsidePlacesUnderEveryIntent() {
+        // 0.39.s8 owner: "Place anything outside": every real intent may place outside (SP and MP); keep-out and
+        // no-break (a protect box) still deny
+        for (Intent in : Intent.values()) {
+            if (in == Intent.NONE) continue;    // walking only: a route-map context, not an intent to act
+            assertTrue(place(SP, in, 1000, 60, 1000, BlockFacts.STONE).allowed(), "SP outside " + in);
+            assertTrue(place(MP, in, 1000, 60, 1000, BlockFacts.STONE).allowed(), "MP outside " + in);
+            assertFalse(place(SP, in, 305, 60, 305, BlockFacts.STONE).allowed(), "no-break box " + in);
+        }
+        assertEquals(BreakPolicy.PlaceRule.NEVER, RuleSet.KEEP_OUT.place());
+        assertEquals(BreakPolicy.PlaceRule.NEVER, RuleSet.NO_BREAK.place());
+    }
+
+    @Test
     void placing() {
-        assertEquals("nothing but torches placed in outside (singleplayer, lenient)", place(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE).reason());
+        // 0.39.s8 owner: "Place anything outside": a new block outside is allowed, priced (travel x3)
+        assertTrue(place(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE).allowed());
+        assertTrue(place(SP, Intent.DIG_OUT, 1000, 60, 1000, BlockFacts.STONE).allowed());
         Verdict torch = place(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE.withTorch(true));
         assertTrue(torch.allowed());
         assertEquals(3, torch.multiplier(), "travel places dearly");
@@ -212,19 +228,19 @@ class BreakPolicyTest {
         BlockFacts dug = BlockFacts.STONE.withDug(true);
         Verdict out = place(SP, Intent.TRAVEL, 1000, 60, 1000, dug);
         assertTrue(out.allowed(), "outside every area a refill passes the torches-only rule");
-        assertEquals(BreakPolicy.Costs.REFILL, out.multiplier());
+        assertEquals(BreakPolicy.Costs.refill(), out.multiplier());
         assertEquals("travel+refill", out.rule());
-        assertEquals(BreakPolicy.Costs.REFILL, place(SP, Intent.MINE, 120, 60, 120, dug).multiplier());
+        assertEquals(BreakPolicy.Costs.refill(), place(SP, Intent.MINE, 120, 60, 120, dug).multiplier());
         assertEquals("dig_out+refill", place(SP, Intent.DIG_OUT, 1000, 60, 1000, dug).rule());
         assertEquals("build+refill", place(MP, Intent.BUILD, 1000, 60, 1000, dug).rule(), "on a server too");
-        assertTrue(BreakPolicy.Costs.REFILL < 0.1 && BreakPolicy.Costs.REFILL > 0, "near zero, never zero (A* still needs an order)");
+        assertTrue(BreakPolicy.Costs.refill() < 0.1 && BreakPolicy.Costs.refill() > 0, "near zero, never zero (A* still needs an order)");
         // the floor stays the floor
         assertEquals("next to lava", place(SP, Intent.TRAVEL, 1000, 60, 1000, dug.withBelow(Fluid.LAVA)).reason());
         assertTrue(place(SP, Intent.TRAVEL, 305, 60, 305, dug).floor(), "a protect box: nothing placed, dug or not");
         assertEquals("walking only", place(SP, Intent.NONE, 1000, 60, 1000, dug).reason());
-        // a new block in travel still costs x3 (torch) or is refused (anything else, outside)
+        // a new block in travel costs x3, torch or not (0.39.s8: anything outside)
         assertEquals(3, place(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE.withTorch(true)).multiplier());
-        assertFalse(place(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE).allowed());
+        assertEquals(3, place(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE).multiplier());
         assertFalse(BlockFacts.STONE.dugByMe(), "the 12-argument facts are not dug");
     }
 
@@ -236,10 +252,10 @@ class BreakPolicyTest {
         Verdict safe = BreakPolicy.boxes(SP, Intent.TRAVEL, OW, 305, 60, 305);
         assertFalse(safe.allowed());
         assertTrue(safe.floor());
-        assertEquals("in shrine (safe)", safe.reason());
+        assertEquals("in shrine (no-break)", safe.reason());
         assertFalse(BreakPolicy.boxes(null, Intent.TRAVEL, OW, 0, 0, 0).allowed());
         // a safe area is a protect box in the parsed policy: floor, named
-        assertEquals("in s (safe)", BreakPolicy.boxes(Snapshot.of(Policy.parse("{\"areas\":[{\"name\":\"s\",\"type\":\"safe\",\"x1\":0,\"z1\":0,\"x2\":9,\"z2\":9}]}"), false),
+        assertEquals("in s (no-break)", BreakPolicy.boxes(Snapshot.of(Policy.parse("{\"areas\":[{\"name\":\"s\",\"type\":\"safe\",\"x1\":0,\"z1\":0,\"x2\":9,\"z2\":9}]}"), false),
                 Intent.MINE, OW, 5, 60, 5).reason());
         // a rule set that never breaks (phase 3's nobreak) denies as a rule, not the floor
         Snapshot nb = new Snapshot(Policy.EMPTY, RuleSet.NOBREAK, false, 24);

@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * are the bridge's, word for word: the same ones ClearRunTest and StripTest get from ClearDriver's stand-in. Plus the
  * leases ({@link LeaseSet}), the placing rules and the table decision ({@link PlaceRules}), and the honest end reasons.
  */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class ClearRunLoopTest {
     static RunDriver hill(boolean bumpy, int pickDur) {
         return new RunDriver(SimWorlds.hill(bumpy), SimWorlds.home()).simInventory(pickDur);
@@ -68,6 +69,16 @@ class ClearRunLoopTest {
                 "minecraft:stone_pickaxe 3 -> started: crafting minecraft:stone_pickaxe 3"), d.crafts);
         assertEquals(8, d.toolBreaks);
         assertTrue(msg.startsWith("stopped: out of pickaxes (stone needs one) - broke "), msg);
+    }
+
+    @Test
+    void step3Review1_theRunWaitsWhileBaritoneStillPlaces() {
+        RunDriver d = new RunDriver(new FakeWorld(), Bot.at(0.5, 53, 0.5));
+        d.items[0] = new ClearDriver.Item("minecraft:iron_pickaxe", 6, 1000);
+        d.busyTicks = 5;
+        String msg = d.clear(new ClearJob.Options().box(ClearBox.of(-1, 52, -1, 1, 52, 1)).label("digging the floor"));
+        assertEquals("ok: done digging the floor - broke 9 blocks", msg);
+        assertEquals(5, d.busySeen, "five ticks of waiting before the run went on");
     }
 
     @Test
@@ -239,7 +250,7 @@ class ClearRunLoopTest {
         LeaseSet l = new LeaseSet(g, "tok", "minecraft:overworld", null);
         ClearBox box = ClearBox.of(0, 38, 112, 15, 54, 127);
         assertEquals(4352, box.volume());
-        assertEquals(2, PlaceRules.leaseSlices(box, PlaceRules.LEASE_MAX).size());
+        assertEquals(2, PlaceRules.leaseSlices(box, PlaceRules.leaseMax()).size());
         assertNull(l.take("digging 0 38 112 to 15 54 127", box, false, false));
         assertEquals(2, l.ids.size());
         assertEquals(2, g.leases().size());
@@ -257,13 +268,18 @@ class ClearRunLoopTest {
     @Test
     void strictRefusalIsTheErrorLogModeGoesOn() {
         LeaseSet strict = new LeaseSet(guard(true), "tok", "minecraft:overworld", null);
-        assertEquals("error: the guard refused: that box is not inside one of my areas - area here 48 work neutral",
-                strict.take("digging", ClearBox.of(1000, 50, 1000, 1001, 51, 1001), false, false));
-        assertTrue(strict.ids.isEmpty());
+        assertNull(strict.take("digging", ClearBox.of(1000, 50, 1000, 1001, 51, 1001), false, false), "AREAS: the world is open, a lease anywhere");
+        GuardCore kg = new GuardCore();
+        kg.setPolicy(new Policy(List.of(), List.of(new Box("keep", "minecraft:overworld", -40, 45, 170, -10, 80, 200))));
+        kg.setMode(GuardCore.Mode.STRICT);
+        assertEquals("error: the guard refused: that box touches keep (no-break)",
+                new LeaseSet(kg, "tok", "minecraft:overworld", null).take("digging", ClearBox.of(-20, 50, 180, -19, 51, 181), false, false));
+        assertEquals(1, strict.ids.size(), "the open-world lease was taken");
         List<String> logged = new ArrayList<>();
-        LeaseSet log = new LeaseSet(guard(false), "tok", "minecraft:overworld", logged::add);
-        assertNull(log.take("digging", ClearBox.of(1000, 50, 1000, 1001, 51, 1001), false, false));
-        assertNull(log.take("digging again", ClearBox.of(1000, 50, 1000, 1001, 51, 1001), false, false));
+        kg.setMode(GuardCore.Mode.LOG);
+        LeaseSet log = new LeaseSet(kg, "tok", "minecraft:overworld", logged::add);
+        assertNull(log.take("digging", ClearBox.of(-20, 50, 180, -19, 51, 181), false, false));
+        assertNull(log.take("digging again", ClearBox.of(-20, 50, 180, -19, 51, 181), false, false));
         assertEquals(1, logged.stream().filter(s -> s.startsWith("lease refused")).count(), "logged once");
         // a force lease is one box of 64 at most, never sliced
         LeaseSet f = new LeaseSet(guard(true), "tok", "minecraft:overworld", null);
@@ -290,28 +306,8 @@ class ClearRunLoopTest {
     // ---- placing ----
 
     @Test
-    void placeSideFloorFirstNeverAChestOrATable() {
-        FakeWorld w = new FakeWorld();            // stone up to 52
-        Bot b = Bot.at(0.5, 53, 0.5);
-        PlaceRules.Side s = PlaceRules.placeSide(w, 2, 53, 0, b.x(), b.eyeY(), b.z());
-        assertEquals(ClearWorld.Face.UP, s.face(), "the floor first");
-        w.set(2, 52, 0, "chest");
-        w.set(3, 53, 0, "crafting_table");
-        w.set(1, 53, 0, "stone");
-        s = PlaceRules.placeSide(w, 2, 53, 0, b.x(), b.eyeY(), b.z());
-        assertEquals(new PlaceRules.Side(-1, 0, 0, ClearWorld.Face.EAST), s, "not the chest under it, not the table: the stone beside it");
-        assertNull(PlaceRules.placeSide(w, 20, 53, 0, b.x(), b.eyeY(), b.z()), "out of reach");
-    }
-
-    @Test
-    void standSpotNeverPutsTheBodyInTheCell() {
-        FakeWorld w = new FakeWorld();
-        Bot far = Bot.at(10.5, 53, 0.5);
+    void bodyInIsTheFeetAndHeadCells() {
         Pos cell = new Pos(0, 53, 0);
-        ClearGrid.Spot s = PlaceRules.standFor(w, cell, far);
-        assertNotNull(s);
-        assertFalse(PlaceRules.bodyIn(s.x(), s.y(), s.z(), cell));
-        assertNotNull(PlaceRules.placeSide(w, 0, 53, 0, s.eyeX(), s.eyeY(), s.eyeZ()));
         assertTrue(PlaceRules.bodyIn(0, 53, 0, cell) && PlaceRules.bodyIn(0, 52, 0, cell) && !PlaceRules.bodyIn(0, 54, 0, cell));
     }
 

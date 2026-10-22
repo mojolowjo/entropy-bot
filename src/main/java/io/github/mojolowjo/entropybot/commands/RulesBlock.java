@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
@@ -56,7 +58,8 @@ public final class RulesBlock {
                 if (last < today) return today;                    // due today (or now, when it is past and hasn't run)
                 return day.plusDays(1).plusHours(Integer.parseInt(hm[0])).plusMinutes(Integer.parseInt(hm[1])).toInstant().toEpochMilli();
             }
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException caught) {
+            Quiet.warn("RulesBlock.next failed, carrying on with the fallback", caught);
             // a hand-edited rule: no time
         }
         return null;
@@ -70,6 +73,7 @@ public final class RulesBlock {
         try {
             return o.has(k) && o.get(k).isJsonPrimitive() ? o.get(k).getAsLong() : 0;
         } catch (RuntimeException e) {
+            Quiet.warn("RulesBlock.num failed, carrying on with the fallback", e);
             return 0;
         }
     }

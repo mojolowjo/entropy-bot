@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.storage;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -65,7 +67,8 @@ public final class Stock {
                 s.chestCount++;
                 s.chestsSeen = Math.max(s.chestsSeen, StorageRules.seen(n));
                 String name;
-                try { name = StorageRules.chestLabel(c.getKey(), places == null ? Map.of() : places, n); } catch (RuntimeException e) { name = null; }
+                try { name = StorageRules.chestLabel(c.getKey(), places == null ? Map.of() : places, n); } catch (RuntimeException e) {
+            Quiet.warn("Stock.build failed, carrying on with the fallback", e); name = null; }
                 for (Map.Entry<String, Integer> e : it.entrySet()) {
                     if (e.getValue() <= 0) continue;
                     s.chests.computeIfAbsent(id(e.getKey()), k -> new ArrayList<>()).add(new At(c.getKey(), name == null ? "" : name, e.getValue()));
@@ -101,6 +104,7 @@ public final class Stock {
                 add(owner, id(it.get("id").getAsString()), it.get("count").getAsInt());
             }
         } catch (RuntimeException e) {
+            Quiet.warn("Stock.readOwner failed, carrying on with the fallback", e);
             ownerData = false;
             owner.clear();
         }

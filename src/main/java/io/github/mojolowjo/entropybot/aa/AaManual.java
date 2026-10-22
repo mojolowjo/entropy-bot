@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 
 import java.util.ArrayList;
@@ -23,10 +25,10 @@ import java.util.Set;
 public final class AaManual {
     public static final String FACT = "aa.manual";
     /** How long an ask waits for {@code aa pick} before AA takes its own first choice. */
-    public static final long ASK_MS = 60_000;
+    public static long askMs() { return Tuning.l("aaManual.askMs"); }
 
-    /** The rungs by their short name ("tools", "surface"...) as {@code aa do/skip} take them. */
-    public static final List<String> NEEDS = List.of("area", "woodArea", "tools", "surface", "food", "tableFurnace", "spareTable", "torches", "base", "bed", "bag", "iron");
+    /** The rungs by their short name ("food", "torches"...) as {@code aa do/skip} take them. */
+    public static final List<String> NEEDS = List.of("food", "tableFurnace", "spareTable", "torches", "base", "bed", "bag", "iron");
 
     /** One option as the ask shows it. */
     public record Row(String label, String command) {}
@@ -44,7 +46,7 @@ public final class AaManual {
     public String doRung;
     /** When aa do was given (-1 unknown); a do the rung never reaches is dropped after {@link #DO_MAX_MS}. */
     public long doSince = -1;
-    public static final long DO_MAX_MS = 10 * 60_000;
+    public static long doMaxMs() { return Tuning.l("aaManual.doMaxMs"); }
     public final Set<String> skipped = new LinkedHashSet<>();
     public int ownerPicks, differs;
     public String lastDiffer;
@@ -57,7 +59,7 @@ public final class AaManual {
         return m;
     }
 
-    /** "tools" / "needs.tools" / "TOOLS" -> "needs.tools"; null when no rung has that name. */
+    /** "torches" / "needs.torches" / "TORCHES" -> "needs.torches"; null when no rung has that name. */
     public static String rungId(String need) {
         if (need == null) return null;
         String t = need.trim().toLowerCase(Locale.ROOT);
@@ -67,11 +69,8 @@ public final class AaManual {
         return switch (t) {
             case "table", "furnace", "table_furnace", "tablefurnace" -> "needs.tableFurnace";
             case "spare", "spare_table" -> "needs.spareTable";
-            case "wood", "trees", "wood_area" -> "needs.woodArea";
-            case "climb", "up" -> "needs.surface";
             case "torch" -> "needs.torches";
             case "deposit", "chest" -> "needs.bag";
-            case "pickaxe", "stone" -> "needs.tools";
             case "shelter", "house" -> "needs.base";
             default -> null;
         };
@@ -89,7 +88,7 @@ public final class AaManual {
         if (pending == null || !pending.rung().equals(rung)) {
             pending = new Ask(rung, List.copyOf(rows), now);
             pick = 0;
-            log.accept("ask: " + rung.substring(rung.indexOf('.') + 1) + " waits for aa pick (" + ASK_MS / 1000 + " s, then my first): " + rowsText(rows));
+            log.accept("ask: " + rung.substring(rung.indexOf('.') + 1) + " waits for aa pick (" + askMs() / 1000 + " s, then my first): " + rowsText(rows));  // structural: milliseconds per second
             return null;
         }
         List<Row> r = pending.rows();
@@ -105,8 +104,8 @@ public final class AaManual {
             pick = 0;
             return chosen.command();
         }
-        if (now - pending.since() >= ASK_MS) {
-            log.accept("ask: " + rung + ": no pick in " + ASK_MS / 1000 + " s - my first choice (" + r.get(0).label() + ")");
+        if (now - pending.since() >= askMs()) {
+            log.accept("ask: " + rung + ": no pick in " + askMs() / 1000 + " s - my first choice (" + r.get(0).label() + ")");  // structural: milliseconds per second
             pending = null;
             pick = 0;
             return r.get(0).command();
@@ -145,14 +144,14 @@ public final class AaManual {
 
     public static String rowsText(List<Row> rows) {
         List<String> out = new ArrayList<>();
-        for (int i = 0; i < rows.size() && i < 9; i++) out.add((i + 1) + ") " + rows.get(i).label());
+        for (int i = 0; i < rows.size() && i < 9; i++) out.add((i + 1) + ") " + rows.get(i).label());  // structural: display: how many items a text lists
         return String.join("  ", out);
     }
 
     /** For aa status. */
     public String describe(long now) {
         StringBuilder b = new StringBuilder("manual: ask ").append(ask ? "on" : "off");
-        if (pending != null) b.append(" (").append(pending.rung()).append(" waits ").append(Math.max(0, (ASK_MS - (now - pending.since())) / 1000))
+        if (pending != null) b.append(" (").append(pending.rung()).append(" waits ").append(Math.max(0, (askMs() - (now - pending.since())) / 1000))  // structural: milliseconds per second
                 .append(" s for aa pick: ").append(rowsText(pending.rows())).append(')');
         if (doRung != null) b.append("; aa do ").append(doRung);
         if (!skipped.isEmpty()) b.append("; skipped ").append(String.join(", ", skipped));

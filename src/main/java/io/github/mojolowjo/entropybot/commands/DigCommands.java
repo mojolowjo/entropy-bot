@@ -1,5 +1,9 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import io.github.mojolowjo.entropybot.Quiet;
+
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -127,9 +131,8 @@ final class DigCommands {
     // ---- dig ----
 
     /**
-     * "dig x1 y1 z1 x2 y2 z2 [force] [ores] [floor [block]] [junk drop]": any box, the careful way (ores listed; "ores"
-     * mines them; "force" building blocks too; B7e F: "floor" fills the layer under it afterwards, "junk drop" throws
-     * plain junk away when the bag is full instead of a base trip).
+     * "dig x1 y1 z1 x2 y2 z2 [force] [ores]": any box, the careful way (ores listed; "ores"
+     * mines them; "force" building blocks too).
      */
     /** 0.28.1 (trial fix C): one cell for ClimbPlan (vanilla BlockState only). */
     static ClimbPlan.Kind climbCell(net.minecraft.world.level.Level lv, int x, int y, int z) {
@@ -203,7 +206,7 @@ final class DigCommands {
                 // 0.28.3 (trial 3, Haiku: a natural dip after a walk, "no side is my own wall"): a natural block that is
                 // not protected (no block entity, not a building block) may go too; built blocks only when they are mine
                 ClimbPlan.Own own = (ox, oy, oz) -> shelter.contains(ox + " " + oy + " " + oz) || RestoreLive.INSTANCE.builtByMe(ox, oy, oz)
-                        || inMainArea(c, g.policy().areaAt(dim, ox, oy, oz))
+                        || atBase(c, g.policy().areaAt(dim, ox, oy, oz))
                         || !Core.INSTANCE.guard.isProtectedBlock(lv.getBlockState(new net.minecraft.core.BlockPos(ox, oy, oz)).getBlock());
                 out = ClimbPlan.walledIn((cx, cy, cz) -> climbCell(lv, cx, cy, cz), own, x, y, z, doorSide(c, x, z));
             } catch (RuntimeException e) {
@@ -303,11 +306,11 @@ final class DigCommands {
         return net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath();
     }
 
-    /** 0.28.2 (D): a box of the guard's policy that is one of my main areas. */
-    static boolean inMainArea(Commands c, io.github.mojolowjo.entropybot.guard.Box ar) {
+    /** 0.28.2 (D): a box of the guard's policy that is the owner's base place (a home fact). */
+    static boolean atBase(Commands c, io.github.mojolowjo.entropybot.guard.Box ar) {
         if (ar == null || ar.name == null) return false;
         JsonObject ab = c.policyArea(ar.name);
-        return ab != null && PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.MAIN;
+        return ab != null && PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.BASE;
     }
 
     /** 0.28.2 (D): the side toward the camp mark (a house's door faces it), else south. */
@@ -325,108 +328,49 @@ final class DigCommands {
         String[] w = rest.toLowerCase().split("\\s+");
         if (w.length >= 1 && w[0].equals("up")) {      // 0.27.3: "dig stairs up <dir> <n>"
             int[] u = w.length >= 2 ? StairPlan.dir(w[1]) : null;
-            if (u == null || w.length < 3 || !w[2].matches("\\d+")) return "usage: dig stairs up north|south|east|west <n> (n steps up, at most " + StairPlan.MAX + ")";
+            if (u == null || w.length < 3 || !w[2].matches("\\d+")) return "usage: dig stairs up north|south|east|west <n> (n steps up, at most " + StairPlan.maxV() + ")";  // structural: argument count of the dig stairs command
             int n = Integer.parseInt(w[2]);
-            if (n < 1 || n > StairPlan.MAX) return "error: dig stairs up takes 1 to " + StairPlan.MAX + " steps";
+            if (n < 1 || n > StairPlan.maxV()) return "error: dig stairs up takes 1 to " + StairPlan.maxV() + " steps";
             if (c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
             return c.chainsRef().startChain(from, "dig stairs up", String.join(" then ", StairPlan.upSteps(p.getBlockX(), p.getBlockY(), p.getBlockZ(), u[0], u[1], n)), 1);
         }
         int[] d = w.length >= 1 ? StairPlan.dir(w[0]) : null;
-        if (d == null || w.length < 2 || !w[1].matches("\\d+")) return "usage: dig stairs north|south|east|west <n> (n steps down, at most " + StairPlan.MAX + ")";
+        if (d == null || w.length < 2 || !w[1].matches("\\d+")) return "usage: dig stairs north|south|east|west <n> (n steps down, at most " + StairPlan.maxV() + ")";
         int n = Integer.parseInt(w[1]);
-        if (n < 1 || n > StairPlan.MAX) return "error: dig stairs takes 1 to " + StairPlan.MAX + " steps (a longer one: run it again from the bottom)";
+        if (n < 1 || n > StairPlan.maxV()) return "error: dig stairs takes 1 to " + StairPlan.maxV() + " steps (a longer one: run it again from the bottom)";
         int x = p.getBlockX(), y = p.getBlockY(), z = p.getBlockZ();
         if (c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
         String text = String.join(" then ", StairPlan.steps(x, y, z, d[0], d[1], n));
         return c.chainsRef().startChain(from, "dig stairs", text, 1);
     }
 
-    /** 0.28.2 (B1): one cell for StonePit (vanilla BlockState and tags only). */
-    static io.github.mojolowjo.entropybot.gather.StonePit.Cell stoneCell(net.minecraft.world.level.Level lv, int x, int y, int z) {
-        net.minecraft.core.BlockPos bp = new net.minecraft.core.BlockPos(x, y, z);
-        if (!lv.isLoaded(bp)) return io.github.mojolowjo.entropybot.gather.StonePit.Cell.HARD;
-        var st = lv.getBlockState(bp);
-        if (!st.getFluidState().isEmpty()) return io.github.mojolowjo.entropybot.gather.StonePit.Cell.LIQUID;
-        if (st.hasBlockEntity() || st.getDestroySpeed(lv, bp) < 0) return io.github.mojolowjo.entropybot.gather.StonePit.Cell.HARD;
-        if (st.getCollisionShape(lv, bp).isEmpty()) return io.github.mojolowjo.entropybot.gather.StonePit.Cell.AIR;
-        if (st.is(net.minecraft.tags.BlockTags.BASE_STONE_OVERWORLD) || st.is(net.minecraft.world.level.block.Blocks.COBBLESTONE)) return io.github.mojolowjo.entropybot.gather.StonePit.Cell.STONE;
-        return io.github.mojolowjo.entropybot.gather.StonePit.Cell.SOFT;
-    }
-
-    /**
-     * 0.28.2 (B1, trial fix package 2) "dig stone [n]": gather's cobblestone source. A walkable staircase quarry (StonePit)
-     * from my feet, long enough for n stone; one careful clear of exactly those cells (the areas, leases, tools, base
-     * trips and water rules apply), so I walk back up my own steps. Never inside a main area (the house goes there).
-     */
-    static String stoneQuarry(Commands c, LocalPlayer p, String rest, String from, boolean via) {
-        int n = rest.isEmpty() ? 64 : Math.max(1, Math.min(256, Integer.parseInt(rest)));
-        net.minecraft.world.level.Level lv = p.level();
-        int[] here = Jobs.here(p);
-        int[] feet = Jobs.groundUnder((net.minecraft.client.multiplayer.ClientLevel) lv, here[0], here[1], here[2]);
-        int[] dir = CampCommands.quarryDir((net.minecraft.client.multiplayer.ClientLevel) lv, feet);
-        var plan = io.github.mojolowjo.entropybot.gather.StonePit.plan((x, y, z) -> stoneCell(lv, x, y, z), feet, dir, n);
-        if (plan.err() != null) return plan.err();
-        String dim = Storage.dim();
-        var g = Core.INSTANCE.guard.core;
-        for (int[] cell : plan.cells()) {
-            var ar = g.policy().areaAt(dim, cell[0], cell[1], cell[2]);
-            if (ar == null || ar.name == null) continue;
-            JsonObject ab = c.policyArea(ar.name);
-            if (ab != null && PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.MAIN)
-                return "error: the quarry would dig into the main area " + ar.name + " (the house goes there) - next: goto a spot outside it, then gather cobblestone " + n;
-        }
-        String label = "quarrying stone for " + n + " cobblestone (" + io.github.mojolowjo.entropybot.gather.StonePit.note(plan, dir, n) + ")";
-        LOG.info("[entropybot] dig stone {} at {}: {} cells, {} stone, {} columns, {}", n, Jobs.fmt(feet), plan.cells().size(), plan.stone(), plan.columns(),
-                via ? "via baritone" : "via engine");
-        // 0.30.0 (P2): the same cells, broken by Baritone's builder (only those cells: the staircase keeps its shape)
-        ClearJob.Options o = io.github.mojolowjo.entropybot.gather.StonePit.options(plan, n, label, via);
-        List<Seq.Step> before = restockSteps(c, p, plan.cells().size());
-        if (via) return BuilderDig.start(c, p, o, before, io.github.mojolowjo.entropybot.gather.StonePit.COUNTED);
-        return startClear(c, p, o, before);
-    }
-
     static String dig(Commands c, LocalPlayer p, String rest, String from) {
-        int[] feet = {(int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ())};
         if (rest != null && rest.trim().toLowerCase().startsWith("stairs")) return stairs(c, p, rest.trim().substring(6).trim(), from);     // 0.24.4
-        DigArgs.Stone sw = DigArgs.stone(rest);                // 0.28.2; 0.30.0: [via baritone|via engine]
-        if (sw != null) return stoneQuarry(c, p, String.valueOf(sw.n()), from, DigArgs.useBuilder(sw.viaEngine(), false));
         String areaName = ConfirmGate.digArea(Texts.words(rest == null ? "" : rest.trim().toLowerCase()));
         if (areaName != null) return digArea(c, p, areaName, rest, from);
-        DigArgs a = DigArgs.parse(rest, feet);
+        DigArgs a = DigArgs.parse(rest);
         if (a == null) return DIG_USAGE;
-        // 0.30.0 (P2): Baritone's builder is the default (box, surface form, area); "via engine" the old path; a floor dig
-        // stays on the engine (the fill follows its clear)
-        if (a.viaBaritone() && a.floor()) return "error: floor doesn't work with via baritone yet - dig the box first, then the floor (dig ... floor uses my own engine)";
+        // 0.30.0 (P2): Baritone's builder is the default (box, surface form, area); "via engine" the old path
         if (a.surfaceForm()) return digSurface(c, p, a, rest, from);
         int[] n = a.n();
         boolean force = a.force(), ores = a.ores();
-        String floorId = null;
-        if (a.floor() && a.floorBlock() != null) {
-            floorId = c.crafting.planner.resolveItem(a.floorBlock(), Gui.inventory(p));
-            if (floorId == null) floorId = GuiCore.normId(a.floorBlock());
-            String bad = FloorSteps.floorBlockProblem(floorId);
-            if (bad != null) return "error: I won't make a floor of " + GuiCore.shortId(floorId) + " - " + bad;
-        }
         ClearBox box = ClearBox.of(n[0], n[1], n[2], n[3], n[4], n[5]);
-        if (box.volume() > 20000) return "error: that box is too big (20000 blocks max)";
-        if (force && box.volume() > 64) return "error: dig ... force is for small boxes (64 blocks max)";
+        if (box.volume() > Tuning.i("digCommands.maxBox")) return "error: that box is too big (20000 blocks max)";
+        if (force && box.volume() > Tuning.i("digCommands.forceBox")) return "error: dig ... force is for small boxes (64 blocks max)";
         // force is the owner's (guests never get dig at all; this is the second lock)
         if (force && (from == null || !from.equalsIgnoreCase(c.owner()))) return "only " + c.owner() + " can dig ... force";
         // V1a: a dig box that touches a safe area is refused whole, not block by block
         var safe = Core.INSTANCE.guard.core.policy().safeTouching(new io.github.mojolowjo.entropybot.guard.Box("dig", Storage.dim(), box.x1(), box.y1(), box.z1(), box.x2(), box.y2(), box.z2()));
-        if (safe != null) return "error: that box touches " + (safe.name == null ? "a safe area" : safe.name) + " (safe) - nothing in a safe area is dug; make the box smaller";
-        // a dig box has to lie inside an area: in strict mode the lease says so, in log mode this gate does
-        if (Core.INSTANCE.guard.core.mode() != io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT && !Clearing.boxInAreas(box)) {
+        if (safe != null) return "error: that box touches " + (safe.name == null ? "a protected area" : safe.name) + " (" + safe.type.word() + ") - nothing in a " + safe.type.word() + " area is dug; make the box smaller";
+        // a dig box may not touch a keep-out / no-break area: in strict mode the lease says so, in log mode this gate does
+        if (Core.INSTANCE.guard.core.mode() != io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT && !Clearing.boxAllowed(box)) {
             List<String> names = new ArrayList<>();
-            for (var ar : Core.INSTANCE.guard.core.policy().areas) names.add(ar.name == null ? "?" : ar.name);
-            return "error: that box is not inside one of my areas (" + (names.isEmpty() ? "none set" : String.join(", ", names)) + ") - " + PolicyCommands.AREA_HINT;
+            for (var ar : Core.INSTANCE.guard.core.policy().protect) names.add(ar.name == null ? "?" : ar.name);
+            return "error: that box touches a keep-out or no-break area (" + (names.isEmpty() ? "none set" : String.join(", ", names)) + ")";
         }
-        String label = "digging " + n[0] + " " + n[1] + " " + n[2] + " to " + n[3] + " " + n[4] + " " + n[5] + (force ? " (force)" : "") + (ores ? " (ores too)" : "")
-                + (a.floor() ? " (floor" + (floorId != null ? " of " + GuiCore.shortId(floorId) : "") + ")" : "") + (a.junkDrop() ? " (junk drop)" : "")
-                + (a.water() ? " (water" + (a.large() ? ", large" : "") + ")" : "");
-        ClearJob.Options o = new ClearJob.Options().box(box).force(force).collect(ores).label(label).junkDrop(a.junkDrop()).explainSpots(true)
-                .liquidBlocks(true)           // water plan item 1: water or lava in the way ends it as "blocked by ..."
-                .water(a.water(), a.large()).line("dig " + rest.trim());
+        String label = "digging " + n[0] + " " + n[1] + " " + n[2] + " to " + n[3] + " " + n[4] + " " + n[5] + (force ? " (force)" : "") + (ores ? " (ores too)" : "");
+        ClearJob.Options o = new ClearJob.Options().box(box).force(force).collect(ores).label(label).explainSpots(true)
+                .liquidBlocks(true);           // water or lava in the way ends it as "blocked by ..."
         // 0.29.0 (P1): Baritone's builder breaks the box, the same rules as its mask (BuilderDig, clear/BaritoneMask);
         // 0.30.0 (P2): the default, "via engine" for the old path
         // 0.33.0 (A3): a force dig over a station of mine goes through my engine (Baritone's builder keeps every block
@@ -440,12 +384,10 @@ final class DigCommands {
             c.whisper(c.owner(), "dig " + label + ": " + keep);
         }
         if (a.builder() && !ownStation) return BuilderDig.start(c, p, o.viaBaritone(true), restockSteps(c, p, box.volume()));
-        // B7e F: a floor dig stays on the walkway (it never stands in the cave it bridges; the fill's next round digs on)
-        if (a.floor()) o.floor(true, floorId).minStandY(box.y1());
         return startClear(c, p, o, restockSteps(c, p, box.volume()));
     }
 
-    /** 0.33.0 (A3): the box holds a station I placed myself inside my areas (OwnStations). */
+    /** 0.33.0 (A3): the box holds a station I placed myself (OwnStations: the ledger). */
     static boolean hasOwnStation(LocalPlayer p, ClearBox box) {
         // 0.33.0 review: only my recorded station cells in the box are read, not every cell of a large box
         net.minecraft.world.level.Level lv = p.level();
@@ -461,7 +403,7 @@ final class DigCommands {
         List<String> why = new ArrayList<>();
         for (int[] q : io.github.mojolowjo.entropybot.clear.OwnStations.cellsIn(box.x1(), box.y1(), box.z1(), box.x2(), box.y2(), box.z2())) {
             String w = io.github.mojolowjo.entropybot.clear.OwnStations.whyNot(q[0], q[1], q[2]);
-            if (w != null && !w.startsWith("no station") && why.size() < 3) why.add("left " + w);
+            if (w != null && !w.startsWith("no station") && why.size() < 3) why.add("left " + w);  // structural: display: how many items a text lists
         }
         return why.isEmpty() ? null : String.join("; ", why);
     }
@@ -484,14 +426,14 @@ final class DigCommands {
     }
 
     /**
-     * V1a: "dig &lt;area&gt; [ores] [junk drop] [water [large]]": the whole box of a named area, the careful way. In a destroy
+     * V1a: "dig &lt;area&gt; [ores]": the whole box of a named area, the careful way. In a destroy
      * area and from the owner, built blocks go too (a destroy lease; block entities never). A safe area refuses.
      */
     static String digArea(Commands c, LocalPlayer p, String name, String rest, String from) {
         List<String> ws = Texts.words(rest.trim().toLowerCase());
         JsonObject b0 = c.policyArea(name);
         String no = io.github.mojolowjo.entropybot.vocab.DigForms.areaProblem(name, b0 != null, b0 != null && b0.has("round"), b0 != null && !PolicyCommands.hasY(b0),
-                b0 != null && PolicyCommands.typeOf(b0) == io.github.mojolowjo.entropybot.guard.AreaType.SAFE, ws);
+                b0 != null && PolicyCommands.typeOf(b0) == io.github.mojolowjo.entropybot.guard.AreaType.NO_BREAK, ws);
         if (no != null) return no;
         // V1b: "dig <area> -N|+N": the area's x z, N down or up from the surface (an all-heights area needs it)
         String sn = io.github.mojolowjo.entropybot.vocab.DigForms.signed(ws);
@@ -501,7 +443,7 @@ final class DigCommands {
             line.append(PolicyCommands.n(b0, "x1")).append(' ').append(PolicyCommands.n(b0, "z1")).append(' ').append(PolicyCommands.n(b0, "x2")).append(' ')
                     .append(PolicyCommands.n(b0, "z2")).append(' ').append(sn);
             for (String w : ws.subList(1, ws.size())) if (!w.equals(sn) && !w.equals("confirm")) line.append(' ').append(w);
-            DigArgs a = DigArgs.parse(line.toString(), null);
+            DigArgs a = DigArgs.parse(line.toString());
             if (a == null) return DIG_USAGE;
             return digSurface(c, p, a, line.toString(), from);
         }
@@ -510,19 +452,19 @@ final class DigCommands {
         if (n == null) return err[0];
         JsonObject b = c.policyArea(name);
         io.github.mojolowjo.entropybot.guard.AreaType t = PolicyCommands.typeOf(b);
-        if (t == io.github.mojolowjo.entropybot.guard.AreaType.SAFE) return "error: " + name + " is a safe area - I never dig there";
+        if (t == io.github.mojolowjo.entropybot.guard.AreaType.NO_BREAK) return "error: " + name + " is a no-break area - I never dig there";
         List<String> words = Texts.words(rest.trim().toLowerCase());
-        boolean ores = words.contains("ores"), junk = words.contains("junk") && words.contains("drop"), water = words.contains("water") || words.contains("large"), large = words.contains("large");
+        boolean ores = words.contains("ores");
         ClearBox box = ClearBox.of(n[0], n[1], n[2], n[3], n[4], n[5]);
-        if (box.volume() > 20000) return "error: " + name + " is too big to dig in one go (" + box.volume() + " blocks, 20000 max)";
+        if (box.volume() > Tuning.i("digCommands.maxBox")) return "error: " + name + " is too big to dig in one go (" + box.volume() + " blocks, 20000 max)";
         boolean owner = from == null || from.equalsIgnoreCase(c.owner());
         boolean destroy = io.github.mojolowjo.entropybot.guard.AreaTypeRules.breakBuilt(t, owner);
         String label = "digging " + name + " (" + t.word() + ", " + box.volume() + " blocks)" + (destroy ? " (built blocks too)" : "") + (ores ? " (ores too)" : "");
-        ClearJob.Options o = new ClearJob.Options().box(box).collect(ores).label(label).junkDrop(junk).liquidBlocks(true).water(water, large).line("dig " + rest.trim());
+        ClearJob.Options o = new ClearJob.Options().box(box).collect(ores).label(label).liquidBlocks(true);
         if (destroy) o.destroyArea(name);
         // 0.30.0 (P2): Baritone's builder unless "via engine"; a destroy dig (built blocks too, a destroy lease) stays on
         // the engine: the builder's mask keeps built blocks and takes a plain break lease
-        boolean builder = DigArgs.useBuilder(words.contains("engine"), false) && !destroy;
+        boolean builder = DigArgs.useBuilder(words.contains("engine")) && !destroy;
         LOG.info("[entropybot] dig {}: {} area, destroy lease {}, {}", name, t.word(), destroy, builder ? "via baritone" : "via engine");
         if (builder) return BuilderDig.start(c, p, o.viaBaritone(true), restockSteps(c, p, box.volume()));
         return startClear(c, p, o, restockSteps(c, p, box.volume()));
@@ -531,10 +473,9 @@ final class DigCommands {
     /**
      * 0.19.5: "dig x1 z1 x2 z2 down|up N [words]": the per-column list from the surface ({@link SurfaceDig}), built once
      * from the client level, then the same careful clear as a box (Options.only: reach, sight, never containers or
-     * protected blocks, never next to water or lava, the ores rule, the areas and leases, base trips).
+     * protected blocks, never next to water or lava, the ores rule, the policy and leases, base trips).
      */
     static String digSurface(Commands c, LocalPlayer p, DigArgs a, String rest, String from) {
-        if (a.floor()) return "error: floor works with a box dig only (dig x1 y1 z1 x2 y2 z2 floor)";
         boolean force = a.force(), ores = a.ores(), up = a.surface().equals("up");
         int[] n = a.n();
         net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
@@ -556,19 +497,18 @@ final class DigCommands {
         if (plan.error() != null) return plan.error();
         if (plan.blocks().isEmpty()) return "ok: nothing to dig there (" + plan.columns() + " columns" + (plan.noSurface() > 0 ? ", " + plan.noSurface() + " not loaded or empty" : "") + ")";
         ClearBox box = SurfaceDig.bounds(plan.blocks());
-        if (force && plan.blocks().size() > 64) return "error: dig ... force is for small digs (64 blocks max)";
+        if (force && plan.blocks().size() > Tuning.i("digCommands.forceBox")) return "error: dig ... force is for small digs (64 blocks max)";
         if (force && (from == null || !from.equalsIgnoreCase(c.owner()))) return "only " + c.owner() + " can dig ... force";
-        if (Core.INSTANCE.guard.core.mode() != io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT && !Clearing.boxInAreas(box)) {
+        if (Core.INSTANCE.guard.core.mode() != io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT && !Clearing.boxAllowed(box)) {
             List<String> names = new ArrayList<>();
-            for (var ar : Core.INSTANCE.guard.core.policy().areas) names.add(ar.name == null ? "?" : ar.name);
-            return "error: that rectangle is not inside one of my areas (" + (names.isEmpty() ? "none set" : String.join(", ", names)) + ") - " + PolicyCommands.AREA_HINT;
+            for (var ar : Core.INSTANCE.guard.core.policy().protect) names.add(ar.name == null ? "?" : ar.name);
+            return "error: that rectangle touches a keep-out or no-break area (" + (names.isEmpty() ? "none set" : String.join(", ", names)) + ")";
         }
         String label = "digging " + n[0] + " " + n[1] + " to " + n[2] + " " + n[3] + ", " + plan.blocks().size() + " blocks"
                 + " (from the surface, " + a.surface() + " " + a.depth() + ", " + plan.columns() + " columns)"
-                + (force ? " (force)" : "") + (ores ? " (ores too)" : "") + (a.junkDrop() ? " (junk drop)" : "")
-                + (a.water() ? " (water" + (a.large() ? ", large" : "") + ")" : "");
-        ClearJob.Options o = new ClearJob.Options().only(plan.blocks()).force(force).collect(ores).label(label).junkDrop(a.junkDrop())
-                .liquidBlocks(true).water(a.water(), a.large()).line("dig " + rest.trim());
+                + (force ? " (force)" : "") + (ores ? " (ores too)" : "");
+        ClearJob.Options o = new ClearJob.Options().only(plan.blocks()).force(force).collect(ores).label(label)
+                .liquidBlocks(true);
         // 0.30.0 (P2): the per-column list through Baritone's builder (an only list), unless "via engine"
         if (a.builder()) return BuilderDig.start(c, p, o.viaBaritone(true), restockSteps(c, p, plan.blocks().size()));
         return startClear(c, p, o, restockSteps(c, p, plan.blocks().size()));
@@ -600,15 +540,12 @@ final class DigCommands {
 
     /** startClear for a verb: the leases now (a refusal is the reply), the job in the mod's slot, "started: ...". */
     static String startClear(Commands c, LocalPlayer p, ClearJob.Options o, List<Seq.Step> before) {
-        // B7e F: a floor dig's clear hands its report to the fill after it, which ends the job
-        Seq.Step st = o.floor ? Clearing.clearStep(o) : Clearing.finishingClearStep(o);
+        Seq.Step st = Clearing.finishingClearStep(o);
         String err = Clearing.prepare(st, p, c);
         if (err != null) return err;
         Clearing.ClearState s = (Clearing.ClearState) st.state;
         List<Seq.Step> steps = new ArrayList<>();
         Seq seq = new Seq(c.jobs, c.storage, s.job.label, List.of(), "always");
-        // first back up onto the walkway when it stands in the cave (a restock trip or the clear can't start from there)
-        if (o.floor) steps.add(FloorSteps.floorStep(o, null, true));
         if (before != null && !before.isEmpty()) {
             List<Seq.Step> pre = new ArrayList<>(before);
             // the pickaxe craft wants a table: put one down here when the nearest is far (18a)
@@ -625,13 +562,12 @@ final class DigCommands {
             s.tripKind = "restock";
         }
         steps.add(st);
-        if (o.floor) steps.add(FloorSteps.floorStep(o, st, false));
         seq.splice(0, steps);
         c.jobs.startSeq(seq, "always");
         try {                                       // P1: someone's build next to the dig? (a whisper, never a box)
             io.github.mojolowjo.entropybot.clear.ClearBox bb = s.job.breakLeaseBox();
             RestoreLive.INSTANCE.scanBuilds(p, new int[]{(bb.x1() + bb.x2()) / 2, (bb.y1() + bb.y2()) / 2, (bb.z1() + bb.z2()) / 2});
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException caught) { Quiet.warn("DigCommands.startClear failed, carrying on with the fallback", caught); }
         c.jobs.job.holdOnFight = true;             // the bridge never ended a clear for a fight: a reflex holds it
         seq.setStatus(s.job.status("starting"));
         JsonObject z = o.box == null && o.only == null ? zone(c) : null;
@@ -644,13 +580,14 @@ final class DigCommands {
     static String build(Commands c, LocalPlayer p, String rest, String from) {
         String[] parts = rest == null ? new String[0] : rest.trim().split("\\s+");
         String shape = parts.length > 0 ? parts[0].toLowerCase() : "";
+        if (shape.equals("schematic")) return SchematicBuild.start(c, p, parts);       // B7 (BRAIN_PLAN 2.12)
         Map<String, String> ops = Map.of("floor", "fill", "roof", "fill", "fill", "fill", "walls", "walls", "shell", "shell", "clear", "cleararea", "under", "fill");
         if (!ops.containsKey(shape)) return BUILD_USAGE;
         // V1a: the zone is an area now, named last: "build floor cobblestone <area>", "build clear <area>"
         int need = shape.equals("clear") ? 2 : 3;
         // 0.30.2: "build walls <block> <area> door x z": the door's two cells (the floor + 1 and + 2) stay open
         int[] doorXz = null;
-        if (!shape.equals("clear") && parts.length == need + 3 && parts[need].equalsIgnoreCase("door")
+        if (!shape.equals("clear") && parts.length == need + 3 && parts[need].equalsIgnoreCase("door")  // structural: argument count of the place command
                 && parts[need + 1].matches("-?\\d+") && parts[need + 2].matches("-?\\d+")) {
             doorXz = new int[]{Integer.parseInt(parts[need + 1]), Integer.parseInt(parts[need + 2])};
             parts = java.util.Arrays.copyOf(parts, need);
@@ -660,14 +597,14 @@ final class DigCommands {
         String[] err = new String[1];
         int[] an = areaBox(c, areaName, err);
         if (an == null) return err[0];
-        if (PolicyCommands.typeOf(c.policyArea(areaName)) == io.github.mojolowjo.entropybot.guard.AreaType.SAFE) return "error: " + areaName + " is a safe area - I never build or dig there";
+        if (PolicyCommands.typeOf(c.policyArea(areaName)) == io.github.mojolowjo.entropybot.guard.AreaType.NO_BREAK) return "error: " + areaName + " is a no-break area - I never build or dig there";
         JsonObject z = new JsonObject();
         z.addProperty("dim", Storage.dim());
         z.addProperty("x1", an[0]); z.addProperty("y1", an[1]); z.addProperty("z1", an[2]);
         z.addProperty("x2", an[3]); z.addProperty("y2", an[4]); z.addProperty("z2", an[5]);
         if (shape.equals("clear")) {
             ClearBox cb = ClearBox.of(an[0], an[1], an[2], an[3], an[4], an[5]);
-            if (cb.volume() > 20000) return "error: " + areaName + " is too big to clear in one go (20000 blocks max)";
+            if (cb.volume() > Tuning.i("digCommands.maxBox")) return "error: " + areaName + " is too big to clear in one go (20000 blocks max)";
             return startClear(c, p, new ClearJob.Options().box(cb).label("clearing " + areaName), List.of());
         }
         Map<String, Integer> counts = Gui.inventory(p);
@@ -767,7 +704,7 @@ final class DigCommands {
     /** "place <block> x y z": at once when it is in reach (as the bridge), else a job that walks into reach first. */
     static String place(Commands c, LocalPlayer p, String rest, String from) {
         String[] pp = rest == null ? new String[0] : rest.trim().split("\\s+");
-        if (pp.length != 4) return PLACE_USAGE;
+        if (pp.length != 4) return PLACE_USAGE;  // structural: argument count of the place command
         int x, y, z;
         try {
             x = Integer.parseInt(pp[1]);
@@ -782,7 +719,9 @@ final class DigCommands {
         // 0.30.7 (live): a mob in the cell: the place job waits for it (10 s) instead of the instant click's error
         String inWay = PlaceRules.free(w, x, y, z) ? Clearing.entityInWay(p, x, y, z) : null;
         boolean mobWait = inWay != null && inWay.endsWith("(waiting)");
-        if (!mobWait && (PlaceRules.placeSide(w, x, y, z, p.getX(), p.getEyeY(), p.getZ()) != null || !PlaceRules.free(w, x, y, z))) {
+        // backbone step 3: the click is Baritone's and takes a few ticks, so the lease must outlive this call: only a
+        // filled cell answers at once; every placement runs as the place step (it holds the lease until the block is there)
+        if (!mobWait && !PlaceRules.free(w, x, y, z)) {
             io.github.mojolowjo.entropybot.clear.LeaseSet leases = Clearing.newLeases();
             try {
                 return Clearing.placeAt(p, id, x, y, z, leases);

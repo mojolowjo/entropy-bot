@@ -12,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * "lowtools") and the dig checks of the "safety" scenario. The expected reports are the bridge's own, taken from
  * runs of test/sim.js.
  */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class ClearRunTest {
     static final Set<String> NEXT_TO_WATER = Set.of("-6 55 145", "-5 54 145", "-5 55 144", "-5 55 146", "-4 55 145");
 
@@ -131,7 +132,7 @@ class ClearRunTest {
     void aSoftJobGivesUpWithoutFailing() {
         // nothing reachable: 8 failed tries in a row would stop a normal clear; a soft one reports "ok: gave up"
         ClearJob j = ClearJob.start(new ClearJob.Options().box(ClearBox.of(0, 52, 0, 0, 52, 0)).soft(true).label("mining 1 ore blocks next to branch 9"), null, null);
-        j.consecFails = ClearEngine.MAX_CONSEC_FAILS;
+        j.consecFails = ClearEngine.maxConsecFails();
         assertEquals("ok: gave up mining 1 ore blocks next to branch 9 (stuck - 8 tries in a row where I couldn't reach anything) - broke 0 blocks",
                 ClearEngine.finishMessage(new FakeWorld(), j, ClearEngine.STUCK));
     }

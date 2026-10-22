@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.craft;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -20,17 +22,17 @@ public final class CraftJob {
     private CraftJob() {}
 
     /** The bridge's crafts per grid fill: one. The mod's craft step fills a whole batch since package G ({@link GridLoop}). */
-    public static final int CRAFTS_PER_FILL = 1;
+    public static int craftsPerFill() { return Tuning.i("craftJob.craftsPerFill"); }
     /** Ticks to wait for the result slot after a fill before giving up ("the grid did not make ..."). */
-    public static final int RESULT_WAIT_TICKS = 30;
+    public static int resultWaitTicks() { return Tuning.i("craftJob.resultWaitTicks"); }
     /** Ticks the walk to a table runs at least before the bot checks Baritone is idle. */
-    public static final int TABLE_WALK_MIN_TICKS = 40;
+    public static int tableWalkMinTicks() { return Tuning.i("craftJob.tableWalkMinTicks"); }
     /** Ticks to wait for the table's screen to open. */
-    public static final int TABLE_OPEN_TICKS = 60;
+    public static int tableOpenTicks() { return Tuning.i("craftJob.tableOpenTicks"); }
     /** A vanilla furnace: 10 s an item. */
-    public static final int SMELT_TICKS = 200;
+    public static int smeltTicks() { return Tuning.i("craftJob.smeltTicks"); }
     /** Collect rounds at a furnace before "made only N of M". */
-    public static final int SMELT_CHECK_TRIES = 4;
+    public static int smeltCheckTries() { return Tuning.i("craftJob.smeltCheckTries"); }
 
     // ---------------------------------------------------------------------------------------------------------------
     // the crafting job
@@ -52,7 +54,7 @@ public final class CraftJob {
 
     /** made after taking one result. */
     public static int madeAfterTake(int made, int outCount) {
-        return made + outCount * CRAFTS_PER_FILL;
+        return made + outCount * craftsPerFill();
     }
 
     /** The step is done once this much is made. */
@@ -158,7 +160,7 @@ public final class CraftJob {
 
     /** How long to wait for {@code n} items in a furnace (plus 2 s). */
     public static int smeltWaitTicks(int n) {
-        return n * SMELT_TICKS + 40;
+        return n * smeltTicks() + 40;
     }
 
     /** The status while waiting: "&lt;label&gt; - waiting for the furnace (iron_ingot, 12 s)". */
@@ -177,12 +179,12 @@ public final class CraftJob {
     /** {@code tries}: 1 at the first check after the wait, +1 for each retry (the bridge's st.tries). */
     public static SmeltCheck smeltCheck(int have, int want, int tries) {
         if (have >= want) return SmeltCheck.DONE;
-        return tries >= SMELT_CHECK_TRIES ? SmeltCheck.GIVE_UP : SmeltCheck.RETRY;
+        return tries >= smeltCheckTries() ? SmeltCheck.GIVE_UP : SmeltCheck.RETRY;
     }
 
     /** The wait before collecting the rest. */
     public static int smeltRetryTicks(int have, int want) {
-        return (want - have) * SMELT_TICKS + 40;
+        return (want - have) * smeltTicks() + 40;
     }
 
     /** The job's note after a plan with furnace steps. */

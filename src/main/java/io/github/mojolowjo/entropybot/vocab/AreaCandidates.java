@@ -1,5 +1,9 @@
 package io.github.mojolowjo.entropybot.vocab;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
@@ -14,7 +18,9 @@ public final class AreaCandidates {
     private AreaCandidates() {}
 
     /** How far round a candidate the safe area reaches (the 16 blocks explore keeps off), and down/up. */
-    public static final int R = 16, DOWN = 8, UP = 16;
+    public static int r() { return Tuning.i("areaCandidates.r"); }
+    public static int down() { return Tuning.i("areaCandidates.down"); }
+    public static int up() { return Tuning.i("areaCandidates.up"); }
 
     public static final String USAGE = "usage: area candidates | area candidates accept <n> [name] | area candidates reject <n>|all";
 
@@ -23,8 +29,8 @@ public final class AreaCandidates {
 
     /** "1. 120 64 -300 (overworld): 9 built, 2 block entities, named mob" lines, or the empty answer. */
     public static String list(JsonArray l) {
-        if (l == null || l.isEmpty()) return "no safe-area candidates (explore and find note someone's base here when they meet one)";
-        StringBuilder sb = new StringBuilder("safe-area candidates (area candidates accept <n> [name] | reject <n>): ");
+        if (l == null || l.isEmpty()) return "no no-break candidates (explore and find note someone's base here when they meet one)";
+        StringBuilder sb = new StringBuilder("no-break candidates, treated as no-break until rejected (area candidates accept <n> [name] | reject <n>): ");
         for (int i = 0; i < l.size(); i++) {
             JsonObject o = l.get(i).getAsJsonObject();
             if (i > 0) sb.append("; ");
@@ -54,10 +60,11 @@ public final class AreaCandidates {
         JsonObject o = l.get(n - 1).getAsJsonObject();
         String name = w.size() == 3 ? w.get(2) : "found" + n;
         int x = i(o, "x"), y = i(o, "y"), z = i(o, "z");
-        return new Plan(null, (x - R) + " " + (z - R) + " " + (x + R) + " " + (z + R) + " " + name + " safe " + (y - DOWN) + " " + (y + UP), n - 1);
+        return new Plan(null, (x - r()) + " " + (z - r()) + " " + (x + r()) + " " + (z + r()) + " " + name + " no-break " + (y - down()) + " " + (y + up()), n - 1);
     }
 
     private static int i(JsonObject o, String k) {
-        try { return o.get(k).getAsInt(); } catch (RuntimeException e) { return 0; }
+        try { return o.get(k).getAsInt(); } catch (RuntimeException e) {
+            Quiet.warn("AreaCandidates.i failed, carrying on with the fallback", e); return 0; }
     }
 }

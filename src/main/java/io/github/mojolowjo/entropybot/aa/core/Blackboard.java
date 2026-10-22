@@ -76,10 +76,18 @@ public final class Blackboard {
     /** The reason the next start will log (a chooser sets it just before ticking its RunJob). */
     public void pendingReason(String r) { pendingReason = r; }
 
+    /** BRAIN_PLAN B1: the brain's pick note ("brain: needs.iron 40 (...)"), put in front of the next start's reason. */
+    public void pickNote(String n) { pickNote = n; }
+
+    private String pickNote;
+
     String pendingReason() {
         String r = pendingReason;
         pendingReason = null;
-        return r == null ? "chosen" : r;
+        String n = pickNote;
+        pickNote = null;
+        String base = r == null ? "chosen" : r;
+        return n == null ? base : n + " | " + base;
     }
 
     void taskStarted(RunJob leaf, JobPort.TaskSpec spec, long id) {

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.view;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -9,8 +11,13 @@ import java.util.List;
  * night/day, a chain's detour. Highest priority first, the same text once. Plain Java. Loader API: none.
  */
 public final class News {
-    public static final int DEATH = 4, DAMAGE = 3, TOOL = 3, DETOUR = 2, HOSTILE = 2, TIME = 1;
-    static final int CAP = 20;
+    public static int death() { return Tuning.i("news.death"); }
+    public static int damage() { return Tuning.i("news.damage"); }
+    public static int tool() { return Tuning.i("news.tool"); }
+    public static int detour() { return Tuning.i("news.detour"); }
+    public static int hostile() { return Tuning.i("news.hostile"); }
+    public static int time() { return Tuning.i("news.time"); }
+    static final int CAP = 20; // structural
     /** The bot's one news buffer (plain Java, so the chain runner can push to it). */
     public static final News GLOBAL = new News();
 

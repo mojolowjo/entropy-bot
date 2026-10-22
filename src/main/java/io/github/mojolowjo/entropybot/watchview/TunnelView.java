@@ -49,9 +49,11 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class TunnelView {
     public static final TunnelView INSTANCE = new TunnelView();
     public static final String FILE = "knownair.bin";
-    static final int SIGHT_CAVE = 6, SIGHT_ELSEWHERE = 2, SIGHT_MAX = 400;
-    static final double DEFAULT_HEIGHT = 4;
-    static final long SAVE_EVERY_TICKS = 6000;
+    static final int SIGHT_CAVE = 6; // structural
+    static final int SIGHT_ELSEWHERE = 2; // structural
+    static final int SIGHT_MAX = 400; // structural
+    static final double DEFAULT_HEIGHT = 4; // structural
+    static final long SAVE_EVERY_TICKS = 6000; // structural
 
     private final KnownAir known = new KnownAir();
     private final TunnelMesh mesh = new TunnelMesh();
@@ -281,8 +283,8 @@ public final class TunnelView {
             known.clear();
             try {
                 Files.move(file, root.resolve("knownair.broken.bin"), StandardCopyOption.REPLACE_EXISTING);
-            } catch (Exception ignored) {
-            }
+            } catch (Exception ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+}
             fileNote = FILE + ": broken (" + e.getMessage() + "), set aside, starting empty";
         }
     }
@@ -579,8 +581,8 @@ public final class TunnelView {
             try {
                 Minecraft.getInstance().execute(mesh::close);
                 WatchCamera.INSTANCE.tunnelStopped();
-            } catch (Throwable ignored) {
-            }
+            } catch (Throwable ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+}
         }
     }
 

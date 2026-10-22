@@ -55,13 +55,17 @@ import java.util.zip.GZIPOutputStream;
  * incidents); while today's files alone are over the cap the changes and trail are kept in memory only.
  */
 public final class RecStore {
-    public static final long DEFAULT_CAP = 200L << 20;          // 200 MB, everything under recorder/
-    public static final int MAX_INCIDENTS = 200;
-    static final int MEM_CHANGES = 50_000, MEM_TRAIL = 50_000, PENDING = 50_000, BASE_CACHE = 24;
-    static final int MAX_READ = 500_000;                         // lines a single read collects at most
-    static final long SEEN_SLACK_MS = 5_000;
+    public static final long DEFAULT_CAP = 200L << 20; // structural  // 200 MB, everything under recorder/
+    public static final int MAX_INCIDENTS = 200; // structural
+    static final int MEM_CHANGES = 50_000; // structural
+    static final int MEM_TRAIL = 50_000; // structural
+    static final int PENDING = 50_000; // structural
+    static final int BASE_CACHE = 24; // structural
+    static final int MAX_READ = 500_000; // structural  // lines a single read collects at most
+    static final long SEEN_SLACK_MS = 5_000; // structural
     /** Day-file bytes one read may go through: on the game thread (the debug verbs run there) and elsewhere. */
-    static final long QUICK_BYTES = 4L << 20, FULL_BYTES = 64L << 20;
+    static final long QUICK_BYTES = 4L << 20; // structural
+    static final long FULL_BYTES = 64L << 20; // structural
     static final String TOO_OLD = "older changes not read (too old for a quick read)";
 
     private final Path root;
@@ -280,7 +284,8 @@ public final class RecStore {
                 if (!Files.isRegularFile(p)) continue;
                 try {
                     out.add(new FileInfo(p, root.relativize(p).toString().replace('\\', '/'), Files.size(p), Files.getLastModifiedTime(p).toMillis()));
-                } catch (IOException ignored) {}
+                } catch (IOException ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+}
             }
         }
         return out;
@@ -436,7 +441,8 @@ public final class RecStore {
                     if (++n > MAX_READ) return true;
                     each.accept(line);
                 }
-            } catch (IOException | RuntimeException ignored) {}
+            } catch (IOException | RuntimeException ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+}
         }
         return cut;
     }
@@ -470,7 +476,8 @@ public final class RecStore {
             }
         } catch (IOException e) {
             lastError = "baseline: " + e.getMessage();
-            try { Files.deleteIfExists(tmp); } catch (IOException ignored) {}
+            try { Files.deleteIfExists(tmp); } catch (IOException ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+}
         }
     }
 

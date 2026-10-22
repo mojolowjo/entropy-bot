@@ -1,5 +1,9 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.camp.DayNight;
 import io.github.mojolowjo.entropybot.camp.ShelterPlan;
@@ -32,7 +36,10 @@ import java.util.Set;
  */
 public final class ShelterJob {
     private static final Logger LOG = LogUtils.getLogger();
-    static final long PLACE_TICKS = 6, BREAK_TICKS = 800, OUT_TICKS = 60, MAX_WAIT = 20 * 60 * 20;
+    static long placeTicks() { return Tuning.l("shelterJob.placeTicks"); }
+    static long breakTicks() { return Tuning.l("shelterJob.breakTicks"); }
+    static long outTicks() { return Tuning.l("shelterJob.outTicks"); }
+    static long maxWait() { return Tuning.l("shelterJob.maxWait"); }  // backbone step 3: OUT 3 -> 10 s (Baritone plans the step first)
 
     private ShelterJob() {}
 
@@ -41,10 +48,11 @@ public final class ShelterJob {
         int[] feet;
         String block;
         long timer = -1, keep, startedAt, stageAt, lastAct;
+        long lastTime = -1, torchSince = -1;
         boolean sawNight, leave, torchDone, recovered;
         List<int[]> todo = new ArrayList<>();
         final Set<String> own = new HashSet<>();
-        /** 0.27.3 (d3): natural shell cells the dig rules allow (underground inside the areas): a way out with one own cell. */
+        /** 0.27.3 (d3): natural shell cells the dig rules allow (underground, the policy allowing): a way out with one own cell. */
         final Set<String> dig = new HashSet<>();
         int[][] exit;
         int idx;
@@ -59,6 +67,13 @@ public final class ShelterJob {
     }
 
     static volatile State current;
+
+    /** nightwork: true when a shelter of mine waits (WAIT stage) and me (block x, y, z) stands in its cell. */
+    static boolean waitingAt(int[] me) {
+        State s = current;
+        return s != null && me != null && s.feet != null && s.stage == ShelterPlan.Stage.WAIT
+                && Math.abs(me[0] - s.feet[0]) <= 1 && Math.abs(me[2] - s.feet[2]) <= 1 && Math.abs(me[1] - s.feet[1]) <= 1;
+    }
 
     static String status() {
         State s = current;
@@ -155,10 +170,8 @@ public final class ShelterJob {
     }
 
     private static void end(State s) {
-        try { s.leases.releaseAll(); } catch (RuntimeException ignored) {}
-        Minecraft mc = Minecraft.getInstance();
-        try { mc.options.keyUp.setDown(false); } catch (RuntimeException ignored) {}
-        try { if (mc.gameMode != null) mc.gameMode.stopDestroyBlock(); } catch (RuntimeException ignored) {}
+        try { s.leases.releaseAll(); } catch (RuntimeException caught) { Quiet.warn("ShelterJob.end failed, carrying on with the fallback", caught); }
+        io.github.mojolowjo.entropybot.aa.moves.JobHands.get().stop("the shelter ended");
         if (current == s) current = null;
     }
 
@@ -174,7 +187,13 @@ public final class ShelterJob {
         ClientLevel lv = Minecraft.getInstance().level;
         long now = s.now();
         boolean night = SleepJob.night(lv);
+        long dt = lv.getDayTime();
         if (night) ps.sawNight = true;
+        else if (ShelterPlan.jumped(ps.lastTime, dt) && !ps.sawNight) {      // day-check: a command (or sleeping) made it day
+            LOG.info("[entropybot] shelter: the day time jumped {} -> {}: it is day", ps.lastTime, dt);
+            ps.sawNight = true;
+        }
+        ps.lastTime = dt;
         if (now % 20 == 0) ps.leases.beat();
         try {
             boolean done = switch (ps.stage) {
@@ -193,7 +212,7 @@ public final class ShelterJob {
                 return "wait";
             }
             boolean timerUp = ps.timer > 0 && Core0.tick() - ps.startedAt >= ps.timer;
-            boolean tooLong = ps.timer <= 0 && Core0.tick() - ps.startedAt >= MAX_WAIT && !night && ps.stage == ShelterPlan.Stage.WAIT;
+            boolean tooLong = ps.timer <= 0 && Core0.tick() - ps.startedAt >= maxWait() && !night && ps.stage == ShelterPlan.Stage.WAIT;
             ShelterPlan.Stage n = ShelterPlan.next(ps.stage, night, ps.sawNight, ps.timer > 0, timerUp, ps.leave || tooLong, done, ps.keep == 1);
             if (n != ps.stage) {
                 LOG.info("[entropybot] shelter: {} -> {}", ps.stage, n);
@@ -201,7 +220,7 @@ public final class ShelterJob {
                 if (n == ShelterPlan.Stage.OPEN) {
                     ps.exit = ShelterPlan.exit(ps.feet, ps.own, x -> ps.dig.contains(ShelterPlan.key(x)));      // 0.27.3: one own + one natural cell too
                     if (ps.exit == null) {
-                        s.jobs.finish("error: my shelter has no wall of my own to open (all its sides were there before) - next: a goto (underground inside my areas I dig a staircase up), or dig me out by hand");
+                        s.jobs.finish("error: my shelter has no wall of my own to open (all its sides were there before) - next: a goto (underground I dig a staircase up), or dig me out by hand");
                         return "wait";
                     }
                     ps.idx = 0;
@@ -222,7 +241,7 @@ public final class ShelterJob {
     }
 
     private static boolean build(Seq s, State ps, LocalPlayer p, ClientLevel lv, long now) {
-        if (now - ps.lastAct < PLACE_TICKS) return false;
+        if (now - ps.lastAct < placeTicks()) return false;
         ps.lastAct = now;
         while (ps.idx < ps.todo.size() && solid(lv, ps.todo.get(ps.idx))) {
             ps.own.add(ShelterPlan.key(ps.todo.get(ps.idx)));
@@ -231,9 +250,18 @@ public final class ShelterJob {
         if (ps.idx >= ps.todo.size() && !ps.skipped.isEmpty()) return retrySkipped(ps, lv, p, now);
         if (ps.idx >= ps.todo.size()) {
             if (!ps.torchDone) {
-                ps.torchDone = true;
-                if (Gui.inventory(p).getOrDefault("minecraft:torch", 0) > 0) {
-                    String r = Clearing.placeAt(p, "minecraft:torch", ps.feet[0], ps.feet[1] + 1, ps.feet[2], ps.leases);
+                // step 3 review 1: Baritone's click takes ticks: done only when the cell holds the torch (or it failed / 10 s)
+                int[] tc = {ps.feet[0], ps.feet[1] + 1, ps.feet[2]};
+                if (ps.torchSince < 0) ps.torchSince = now;
+                boolean there = Clearing.blockId(tc).endsWith("torch");
+                if (there || Gui.inventory(p).getOrDefault("minecraft:torch", 0) <= 0 || now - ps.torchSince > 200) {
+                    ps.torchDone = true;
+                    LOG.info("[entropybot] shelter: torch inside: {}", there ? "placed" : "none placed (" + (now - ps.torchSince > 200 ? "10 s passed" : "no torch") + ")");
+                    return false;
+                }
+                String r = Clearing.placeAt(p, "minecraft:torch", tc[0], tc[1], tc[2], ps.leases);
+                if (r.startsWith("error")) {
+                    ps.torchDone = true;
                     LOG.info("[entropybot] shelter: torch inside: {}", r);
                 }
                 return false;
@@ -259,8 +287,8 @@ public final class ShelterJob {
     }
 
     /** 0.27.4: ticks between the passes over the skipped cells (3 s), and the passes after the first (3). */
-    static final long SKIP_TICKS = 60;
-    static final int SKIP_ROUNDS = 3;
+    static long skipTicks() { return Tuning.l("shelterJob.skipTicks"); }
+    static int skipRounds() { return Tuning.i("shelterJob.skipRounds"); }
 
     /**
      * 0.27.4: after the other cells, the skipped ones again (a pause first). Still taken after SKIP_ROUNDS passes: the
@@ -268,20 +296,20 @@ public final class ShelterJob {
      */
     private static boolean retrySkipped(State ps, ClientLevel lv, LocalPlayer p, long now) {
         if (ps.skipAt < 0) ps.skipAt = now;
-        if (now - ps.skipAt < SKIP_TICKS) return false;
+        if (now - ps.skipAt < skipTicks()) return false;
         ps.skipAt = -1;
-        if (ps.skipRounds >= SKIP_ROUNDS) {
+        if (ps.skipRounds >= skipRounds()) {
             int[] first = ps.skipped.get(0);
             String taken = entityIn(lv, p, first);
             if (taken != null) {
                 ps.note = "error: couldn't build my shelter at " + Jobs.fmt(first) + ": the cell " + Jobs.fmt(first) + " is taken by " + taken
-                        + " (still there after " + SKIP_ROUNDS + " tries)";
+                        + " (still there after " + skipRounds() + " tries)";
                 return false;
             }
             // free now: the last pass places it (a refusal there names the guard or the face)
         }
         ps.skipRounds++;
-        LOG.info("[entropybot] shelter: retrying {} skipped cell(s), round {}/{}", ps.skipped.size(), ps.skipRounds, SKIP_ROUNDS);
+        LOG.info("[entropybot] shelter: retrying {} skipped cell(s), round {}/{}", ps.skipped.size(), ps.skipRounds, skipRounds());
         ps.todo = new ArrayList<>(ps.skipped);
         ps.skipped = new ArrayList<>();
         ps.idx = 0;
@@ -344,7 +372,7 @@ public final class ShelterJob {
             ps.note = "error: the block at " + Jobs.fmt(c) + " isn't mine - I only open my own shelter";
             return false;
         }
-        if (now - ps.stageAt > BREAK_TICKS) {
+        if (now - ps.stageAt > breakTicks()) {
             ps.note = "error: my shelter wall at " + Jobs.fmt(c) + " didn't break in 40 s (no tool for it?)";
             return false;
         }
@@ -358,15 +386,10 @@ public final class ShelterJob {
                 return false;
             }
         }
-        Vec3 center = Vec3.atCenterOf(bp);
-        p.lookAt(EntityAnchorArgument.Anchor.EYES, center);
-        Vec3 eye = p.getEyePosition();
-        Direction face = Direction.getNearest((float) (eye.x - center.x), (float) (eye.y - center.y), (float) (eye.z - center.z));
-        if (ps.hit == null || ps.hit != c) {
-            mc.gameMode.startDestroyBlock(bp, face);
-            ps.hit = c;
-        } else mc.gameMode.continueDestroyBlock(bp, face);
-        p.swing(InteractionHand.MAIN_HAND);
+        // backbone step 3 ("Baritone is the car"): Baritone's look, click and tool break the wall (JobHands)
+        ps.hit = c;
+        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().dig(c, (int) breakTicks(), "opening my shelter");
+        if (r.failed()) ps.note = "error: couldn't open my shelter at " + Jobs.fmt(c) + ": " + r.why();
         return false;
     }
 
@@ -377,35 +400,44 @@ public final class ShelterJob {
         int bestTier = -1;
         for (String id : Gui.inventory(p).keySet()) {
             if (!id.endsWith(kind) || (kind.equals("_axe") && id.endsWith("_pickaxe"))) continue;
-            int t = io.github.mojolowjo.entropybot.brain.NightSafety.tierOf(id);
+            int t = io.github.mojolowjo.entropybot.sense.Gear.tierOf(id);
             if (t > bestTier) { best = id; bestTier = t; }
         }
         if (best != null) Clearing.holdItem(p, best);
     }
 
     private static boolean out(State ps, LocalPlayer p, ClientLevel lv, long now) {
-        Minecraft mc = Minecraft.getInstance();
         int[] to = ps.exit[2];
         int[] me = Jobs.here(p);
         boolean outside = me[0] != ps.feet[0] || me[2] != ps.feet[2];
+        var b = Jobs.baritone();
         if (outside && Math.abs(p.getX() - (ps.exit[0][0] + 0.5)) + Math.abs(p.getZ() - (ps.exit[0][2] + 0.5)) > 0.9) {
-            mc.options.keyUp.setDown(false);
+            if (b != null) b.getCustomGoalProcess().setGoal(null);
             ps.idx = 0;
             ps.stageAt = now;
             return true;
         }
-        if (now - ps.stageAt > OUT_TICKS) {
-            mc.options.keyUp.setDown(false);
-            ps.note = "error: couldn't step out of my shelter (the way out at " + Jobs.fmt(ps.exit[0]) + " is open)";
+        if (now - ps.stageAt > outTicks()) {
+            if (b != null) b.getCustomGoalProcess().setGoal(null);
+            ps.note = "error: couldn't step out of my shelter (the way out at " + Jobs.fmt(ps.exit[0]) + " is open; Baritone didn't take me to " + Jobs.fmt(to)
+                    + " in " + outTicks() / 20 + " s, I am at " + Jobs.fmt(me) + ")";
             return false;
         }
-        p.lookAt(EntityAnchorArgument.Anchor.EYES, new Vec3(to[0] + 0.5, p.getEyeY(), to[2] + 0.5));
-        mc.options.keyUp.setDown(true);
+        // backbone step 3 ("Baritone is the car"): the step out is a GoalBlock, not the forward key and a camera
+        if (ps.hit != to) {
+            ps.hit = to;
+            if (b == null) {
+                ps.note = "error: couldn't step out of my shelter: no Baritone";
+                return false;
+            }
+            Jobs.safeSettings();
+            b.getCustomGoalProcess().setGoalAndPath(new baritone.api.pathing.goals.GoalBlock(to[0], to[1], to[2]));
+        }
         return false;
     }
 
     private static boolean close(State ps, LocalPlayer p, ClientLevel lv, long now) {
-        if (now - ps.lastAct < PLACE_TICKS) return false;
+        if (now - ps.lastAct < placeTicks()) return false;
         ps.lastAct = now;
         if (ps.idx >= 2) return true;
         int[] c = ps.exit[ps.idx];                // the feet cell first (on the ground), then the head cell on it
@@ -515,11 +547,11 @@ public final class ShelterJob {
         }
     }
 
-    /** 0.27.3 (d3): a natural shell cell the dig rules allow: underground (no sky over the head) inside the areas, natural, no container, no fluid next to it. */
+    /** 0.27.3 (d3): a natural shell cell the dig rules allow: underground (no sky over the head), the policy allowing, natural, no container, no fluid next to it. */
     static boolean mayDig(Commands c, ClientLevel lv, int[] f, int[] cell) {
         try {
             BlockPos bp = new BlockPos(cell[0], cell[1], cell[2]);
-            if (lv.canSeeSky(new BlockPos(f[0], f[1] + 1, f[2])) || !c.inAreas(Storage.dim(), cell[0], cell[2])) return false;
+            if (lv.canSeeSky(new BlockPos(f[0], f[1] + 1, f[2])) || !c.workAllowed(Storage.dim(), cell[0], cell[2])) return false;
             if (Jobs.houseCell(Storage.dim(), cell[0], cell[1], cell[2])) return false;       // 0.30.6
             var st = lv.getBlockState(bp);
             String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();

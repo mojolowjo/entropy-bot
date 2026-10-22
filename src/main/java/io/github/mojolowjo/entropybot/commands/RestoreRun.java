@@ -1,5 +1,9 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import io.github.mojolowjo.entropybot.Quiet;
+
 import baritone.api.IBaritone;
 import baritone.api.pathing.goals.GoalBlock;
 import com.mojang.logging.LogUtils;
@@ -10,6 +14,7 @@ import io.github.mojolowjo.entropybot.clear.PlaceRules;
 import io.github.mojolowjo.entropybot.clear.Pos;
 import io.github.mojolowjo.entropybot.gui.Gui;
 import io.github.mojolowjo.entropybot.restore.Ledger;
+import io.github.mojolowjo.entropybot.restore.PlacedPlan;
 import io.github.mojolowjo.entropybot.restore.RestorePlan;
 import io.github.mojolowjo.entropybot.restore.RestoreRules;
 import net.minecraft.client.Minecraft;
@@ -34,26 +39,36 @@ import java.util.Map;
  */
 final class RestoreRun {
     private static final Logger LOG = LogUtils.getLogger();
-    static final long WALK_MAX = 20 * 60, CHECK_TICKS = 6;
+    static long walkMax() { return Tuning.l("restoreRun.walkMax"); }
+    static long checkTicks() { return Tuning.l("restoreRun.checkTicks"); }
 
     final List<RestorePlan.Action> queue;
     final List<RestorePlan.Left> left = new ArrayList<>();
     final LeaseSet leases = Clearing.newLeases();
-    int placed, placedEscape, idx, tries;
+    int placed, idx, tries;
     String stage, item;
     long stageTick;
     boolean ended;
 
+    /** aa-litter: "restore placed" takes down the scaffold the bot left (breaks instead of places); {@code placed} counts breaks. */
+    final boolean placedMode;
+    boolean breakStarted;
+
     RestoreRun(RestorePlan.Plan plan) {
+        this(plan, false);
+    }
+
+    RestoreRun(RestorePlan.Plan plan, boolean placedMode) {
         queue = new ArrayList<>(plan.actions());
         left.addAll(plan.left());
+        this.placedMode = placedMode;
     }
 
     boolean empty() { return queue.isEmpty(); }
 
     int total() { return queue.size(); }
 
-    String summary() { return RestorePlan.summary(placed, left); }
+    String summary() { return placedMode ? PlacedPlan.summary(placed, left) : RestorePlan.summary(placed, left); }
 
     /** The rest of the queue is not done (a stop, a fight that ended the job): each a Left with why. */
     void stopRest(String why) {
@@ -64,6 +79,7 @@ final class RestoreRun {
     void end() {
         if (ended) return;
         ended = true;
+        if (placedMode && breakStarted) try { Minecraft.getInstance().gameMode.stopDestroyBlock(); } catch (RuntimeException caught) { Quiet.warn("RestoreRun.end failed, carrying on with the fallback", caught); }
         leases.releaseAll();
         Jobs.safeSettings();
     }
@@ -80,12 +96,18 @@ final class RestoreRun {
         LOG.info("[entropybot] restore: left {} {} {} ({})", e.x, e.y, e.z, why);
         IBaritone b = Jobs.baritone();
         if (b != null && "walking".equals(stage)) Jobs.cancel(b);
+        if (placedMode) {
+            if (breakStarted) try { Minecraft.getInstance().gameMode.stopDestroyBlock(); } catch (RuntimeException caught) { Quiet.warn("RestoreRun.skip failed, carrying on with the fallback", caught); }
+            breakStarted = false;
+            leases.releaseAll();
+        }
         next();
     }
 
     /** One tick; true once every cell had its turn. */
     boolean step(LocalPlayer p, long now) {
         if (idx >= queue.size()) return true;
+        if (placedMode) return stepPlaced(p, now);
         RestorePlan.Action a = queue.get(idx);
         Ledger.Entry e = a.entry();
         Minecraft mc = Minecraft.getInstance();
@@ -118,43 +140,10 @@ final class RestoreRun {
                 skip(e, "no " + RestoreRules.shortId(e.items.get(e.items.size() - 1)));
                 return false;
             }
-            Clearing.LiveWorld w = new Clearing.LiveWorld();
-            w.set(p);
-            boolean botInCell = p.getBoundingBox().intersects(new AABB(pos));
-            boolean reach = !botInCell && p.getEyePosition().distanceTo(pos.getCenter()) <= 4.5
-                    && PlaceRules.placeSide(w, e.x, e.y, e.z, p.getX(), p.getEyeY(), p.getZ()) != null;
-            if (reach) {
-                stage = "place";
-            } else {
-                ClearGrid.Spot spot = PlaceRules.standFor(w, new Pos(e.x, e.y, e.z), McClearWorld.botOf(p), null);
-                IBaritone b = Jobs.baritone();
-                if (spot == null || b == null || (spot.x() == e.x && spot.z() == e.z && (spot.y() == e.y || spot.y() + 1 == e.y))) {
-                    skip(e, "couldn't reach");
-                    return false;
-                }
-                Jobs.safeSettings();
-                b.getCustomGoalProcess().setGoalAndPath(new GoalBlock(new BlockPos(spot.x(), spot.y(), spot.z())));
-                stage = "walking";
-                stageTick = now;
-                return false;
-            }
+            // builder placements: the put-back is a one-block schematic; Baritone's builder walks, picks the face, clicks
+            stage = "place";
         }
         switch (stage) {
-            case "walking" -> {
-                if (now - stageTick < 20) return false;
-                IBaritone b = Jobs.baritone();
-                if (b != null && !Jobs.idle(b)) {
-                    if (now - stageTick > WALK_MAX) skip(e, "couldn't reach");
-                    return false;
-                }
-                tries++;
-                if (tries > 2) {
-                    skip(e, "couldn't reach");
-                    return false;
-                }
-                stage = null;                                // look again from where the walk ended
-                return false;
-            }
             case "retry" -> {
                 if (now - stageTick >= 10) stage = "place";
                 return false;
@@ -185,14 +174,16 @@ final class RestoreRun {
                 return false;
             }
             case "check" -> {
-                if (now - stageTick < CHECK_TICKS) return false;
+                if (now - stageTick < checkTicks()) return false;
+                if (Clearing.placing(e.x, e.y, e.z) && now - stageTick < io.github.mojolowjo.entropybot.aa.moves.JobHands.waitTicks()) return false;     // the builder still walks / places
                 if (!level.getBlockState(pos).canBeReplaced()) {
                     done(e);
                     return false;
                 }
                 tries++;
                 if (tries >= 3) {
-                    skip(e, "couldn't place: it didn't stay");
+                    String last = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().lastFailure(e.x, e.y, e.z);
+                    skip(e, "couldn't place: it didn't stay" + (last == null ? "" : "; Baritone: " + last));
                     return false;
                 }
                 stage = "place";
@@ -205,9 +196,107 @@ final class RestoreRun {
         }
     }
 
+    /** Seconds (ticks) one scaffold block may take to break. */
+    static long breakMax() { return Tuning.l("restoreRun.breakMax"); }
+
+    /**
+     * aa-litter: one tick of taking a placed block down. Gone already = dropped from the ledger; out of reach = walk to
+     * a standing spot (the placing logic's); then the best tool, a one-cell force lease (the guard's break check runs in
+     * startDestroyBlock), look, click until it is air. Every block not taken down is a Left with its reason.
+     */
+    private boolean stepPlaced(LocalPlayer p, long now) {
+        Ledger.Entry e = queue.get(idx).entry();
+        Minecraft mc = Minecraft.getInstance();
+        Level level = mc.level;
+        BlockPos pos = new BlockPos(e.x, e.y, e.z);
+        if (!level.isLoaded(pos)) {
+            skip(e, "too far");
+            return false;
+        }
+        BlockState st = level.getBlockState(pos);
+        if (st.isAir() || st.canBeReplaced()) {
+            if (breakStarted) placed++;                                      // my click took it down
+            RestoreLive.INSTANCE.drop(e);
+            breakStarted = false;
+            leases.releaseAll();
+            next();
+            return false;
+        }
+        if (stage == null && !net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString().equals(e.block)) {
+            RestoreLive.INSTANCE.drop(e);                      // not the block I placed (the placement failed, or someone built there): not mine to break
+            next();
+            return false;
+        }
+        if (stage == null) {
+            Clearing.LiveWorld w = new Clearing.LiveWorld();
+            w.set(p);
+            boolean reach = !p.getBoundingBox().intersects(new AABB(pos)) && p.getEyePosition().distanceTo(pos.getCenter()) <= 4.5;
+            if (reach) {
+                String le = leases.take("restore placed " + e.x + " " + e.y + " " + e.z, new io.github.mojolowjo.entropybot.clear.ClearBox(e.x, e.y, e.z, e.x, e.y, e.z), false, true);
+                if (le != null) {
+                    skip(e, "couldn't break: " + le.replaceFirst("^error: ", ""));
+                    return false;
+                }
+                try {
+                    var cw = w.cur;
+                    int i = io.github.mojolowjo.entropybot.clear.Tools.choose(cw.toolSlots(p, e.x, e.y, e.z), cw.needsCorrectTool(e.x, e.y, e.z), false, io.github.mojolowjo.entropybot.engine.Hotbar.toolOres());
+                    if (i >= 0) io.github.mojolowjo.entropybot.engine.Hotbar.toHand(mc, p, i);
+                } catch (RuntimeException ex) {
+                    LOG.debug("[entropybot] restore placed: tool pick failed: {}", ex.toString());
+                }
+                stage = "break";
+                stageTick = now;
+                breakStarted = false;
+            } else {
+                // Baritone picks the spot: a goal next to the block (GoalGetToBlock), no stand chooser here
+                IBaritone b = Jobs.baritone();
+                if (b == null) {
+                    skip(e, "couldn't reach: no Baritone");
+                    return false;
+                }
+                Jobs.safeSettings();
+                b.getCustomGoalProcess().setGoalAndPath(new baritone.api.pathing.goals.GoalGetToBlock(new BlockPos(e.x, e.y, e.z)));
+                stage = "walking";
+                stageTick = now;
+                return false;
+            }
+        }
+        switch (stage) {
+            case "walking" -> {
+                if (now - stageTick < 20) return false;
+                IBaritone b = Jobs.baritone();
+                if (b != null && !Jobs.idle(b)) {
+                    if (now - stageTick > walkMax()) skip(e, "couldn't reach");
+                    return false;
+                }
+                tries++;
+                if (tries > 2) {
+                    skip(e, "couldn't reach");
+                    return false;
+                }
+                stage = null;
+                return false;
+            }
+            case "break" -> {
+                if (now - stageTick > breakMax()) {
+                    skip(e, "couldn't break: it didn't break in 10 s");
+                    return false;
+                }
+                // backbone step 3 ("Baritone is the car"): Baritone's look, click and tool take it down (JobHands)
+                breakStarted = true;
+                var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().dig(new int[]{e.x, e.y, e.z}, (int) breakMax(), "restore placed " + e.x + " " + e.y + " " + e.z);
+                if (r.failed()) skip(e, "couldn't break: " + r.why());
+                return false;
+            }
+            default -> {
+                stage = null;
+                return false;
+            }
+        }
+    }
+
     private void done(Ledger.Entry e) {
         placed++;
-        if (Ledger.ESCAPE.equals(e.reason)) placedEscape++;
         RestoreLive.INSTANCE.drop(e);
         next();
     }

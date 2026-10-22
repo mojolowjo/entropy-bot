@@ -26,7 +26,7 @@ public final class GuiCore {
     public static final List<String> ALL_ROLES = List.of("storage", "input", "output", "fuel", "special");
     /** Package F: slots that take only certain items (SlotRules): a named item reaches them, "all" never does. */
     public static final String SPECIAL = "special";
-    public static final int ALL = Integer.MAX_VALUE;
+    public static final int ALL = Integer.MAX_VALUE; // structural
 
     /** The container-side slots by role: input, fuel, output, storage, special, other (slot indexes in order). */
     public static Map<String, List<Integer>> roles(GuiMenu m) {

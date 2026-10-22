@@ -14,8 +14,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** V1b-4 (0.22.2): the companion and brain verbs back on the surface, camp here's free name, area candidates. */
 class V1bFourTest {
-    static final List<String> RESTORED = List.of("why", "deaths", "resume", "death", "corpse", "hold", "give", "carry", "unload", "restock",
-            "say", "twerk", "spawn", "trust", "untrust");
+    static final List<String> RESTORED = List.of("why", "deaths", "death", "corpse", "restock",
+            "say", "spawn", "trust", "untrust");
 
     @Test
     void restoredVerbsAreOnTheSurface() {
@@ -25,24 +25,18 @@ class V1bFourTest {
             assertFalse(OldWords.DEBUG_VERBS.contains(v), v + " is no debug verb now");
             assertNull(OldWords.removedAnswer(v, "", v), v + " runs, no hint");
         }
-        assertEquals("stocking", VerbTable.of("hold").section());
         assertEquals("jobs", VerbTable.of("why").section());
         assertEquals("chests", VerbTable.of("trust").section());
         assertEquals("moving", VerbTable.of("corpse").section());
-        assertNull(OldWords.removedAnswer("hold", "this", "hold this"));
-        assertNull(OldWords.removedAnswer("give", "me dirt 4", "give me dirt 4"));
         assertEquals("that is now spawn", OldWords.removedAnswer("bed", "", "bed"));
-        for (String v : List.of("b", "memory", "watch", "recorder", "mouse", "route", "autominer", "reconnect", "use", "caves", "ores", "poi"))
+        for (String v : List.of("b", "memory", "watch", "recorder", "mouse", "autominer", "reconnect", "caves", "ores", "poi"))
             assertTrue(OldWords.DEBUG_VERBS.contains(v), v + " stays under debug");
-        assertFalse(VerbTable.of("debug").usage().contains("hold"), "debug no longer lists hold");
     }
 
     @Test
-    void guestsKeepHoldWhyAndDeaths() {
-        assertNull(Texts.guestRefusal("hold", "this", "hold this", "o"));
+    void guestsKeepWhyAndDeaths() {
         assertNull(Texts.guestRefusal("why", "", "why", "o"));
         assertNull(Texts.guestRefusal("deaths", "", "deaths", "o"));
-        assertNotNull(Texts.guestRefusal("give", "me dirt 4", "give me dirt 4", "o"));
         assertNotNull(Texts.guestRefusal("deaths", "policy off", "deaths policy off", "o"));
     }
 
@@ -57,7 +51,7 @@ class V1bFourTest {
     @Test
     void areaCandidates() {
         JsonArray l = new JsonArray();
-        assertTrue(AreaCandidates.list(l).startsWith("no safe-area candidates"));
+        assertTrue(AreaCandidates.list(l).startsWith("no no-break candidates"));
         JsonObject o = new JsonObject();
         o.addProperty("dim", "minecraft:overworld");
         o.addProperty("x", 100);
@@ -69,9 +63,9 @@ class V1bFourTest {
         l.add(o);
         assertTrue(AreaCandidates.list(l).contains("1. 100 64 -20 (overworld): 9 built, 2 block entities, a named mob"), AreaCandidates.list(l));
         var a = AreaCandidates.plan(l, List.of("accept", "1", "alex"));
-        assertEquals("84 -36 116 -4 alex safe 56 80", a.areaCommand());
+        assertEquals("84 -36 116 -4 alex no-break 56 80", a.areaCommand());
         assertEquals(0, a.remove());
-        assertEquals("84 -36 116 -4 found1 safe 56 80", AreaCandidates.plan(l, List.of("accept", "1")).areaCommand());
+        assertEquals("84 -36 116 -4 found1 no-break 56 80", AreaCandidates.plan(l, List.of("accept", "1")).areaCommand());
         var r = AreaCandidates.plan(l, List.of("reject", "1"));
         assertNull(r.areaCommand());
         assertEquals(0, r.remove());

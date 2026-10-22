@@ -1,35 +1,31 @@
 package io.github.mojolowjo.entropybot.commands;
 
 import com.google.gson.JsonObject;
-import io.github.mojolowjo.entropybot.move.EdgePenalties;
-import io.github.mojolowjo.entropybot.move.MovePackage;
 import io.github.mojolowjo.entropybot.move.ServerCmds;
 import net.minecraft.client.player.LocalPlayer;
 
 /**
- * 0.23.3: {@code path} / {@code path status}: the movement package's counters (command-to-first-move, chain gaps, legs,
- * fails, penalised edges, ready paths, the active profile); {@code path assist on|off|status}: the long-route process
- * for far walks (default on; off = plain Baritone goto, stored in commands.json's route settings);
- * {@code path penalties clear}: forget the edge penalties. Never busy.
+ * {@code path maxWalk [blocks]}: the longest straight walk accepted (stored in commands.json's route settings);
+ * {@code server commands [on|off|status]}. rm-routes: the movement package's status, path assist and edge penalties
+ * went with the long-route process (a walk is one Baritone goal). Never busy.
  */
 final class PathCommand {
     private PathCommand() {}
 
+    /** The stored settings onto the runtime (at load and on every change). Never throws; a failure is logged. */
+    static void syncRuntime(Commands c) {
+        try {
+            JsonObject r = c.routeSettings();
+            ServerCmds.setOn(r.has("serverCommands") && r.get("serverCommands").getAsBoolean());     // 0.24.1, default off
+            ServerCmds.setMaxWalk(r.has("maxWalk") ? r.get("maxWalk").getAsInt() : ServerCmds.maxWalkDefault());
+        } catch (RuntimeException t) {
+            com.mojang.logging.LogUtils.getLogger().warn("[entropybot] path settings: not applied at the load stage: {}", t.toString());
+        }
+    }
+
     static String run(Commands c, LocalPlayer p, String rest) {
         String r = rest == null ? "" : rest.trim().toLowerCase(java.util.Locale.ROOT);
-        MovePackage mp = MovePackage.INSTANCE;
-        if (r.isEmpty() || r.equals("status")) return "ok: " + mp.status(p);
-        if (r.equals("assist") || r.equals("assist status")) return "ok: path assist " + (mp.assist() ? "on" : "off")
-                + " (walks over 48 blocks or 10 levels go through the long-route process)";
-        if (r.equals("assist on") || r.equals("assist off")) {
-            boolean on = r.endsWith("on");
-            JsonObject s = c.routeSettings().deepCopy();
-            s.addProperty("assist", on);
-            c.setRouteSettings(s);
-            mp.setAssist(on);
-            return "ok: path assist " + (on ? "on: far walks go leg by leg through the long-route process" : "off: far walks are plain Baritone gotos");
-        }
-        if (r.equals("maxwalk") || r.equals("maxwalk status")) return "ok: path maxWalk " + ServerCmds.maxWalk() + " (a walk further than that, straight, is refused)";
+        if (r.isEmpty() || r.equals("maxwalk") || r.equals("maxwalk status")) return "ok: path maxWalk " + ServerCmds.maxWalk() + " (a walk further than that, straight, is refused)";
         if (r.startsWith("maxwalk ")) {
             int n;
             try {
@@ -44,12 +40,7 @@ final class PathCommand {
             ServerCmds.setMaxWalk(n);
             return "ok: path maxWalk " + n + ": walks further than that are refused";
         }
-        if (r.equals("penalties clear")) {
-            EdgePenalties.GLOBAL.clear();
-            mp.savePenalties();
-            return "ok: forgot the route edge penalties";
-        }
-        return "error: path [status] | path assist on|off|status | path maxWalk <blocks> | path penalties clear";
+        return "error: path maxWalk [<blocks>]";
     }
 
     /** 0.24.1: {@code server commands [on|off|status]} (default off; stored in commands.json's route settings). */

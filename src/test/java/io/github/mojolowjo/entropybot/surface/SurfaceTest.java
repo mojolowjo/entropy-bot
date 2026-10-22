@@ -10,10 +10,11 @@ import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class SurfaceTest {
     private static final Predicate<String> NO_TAGS = t -> false;
 
-    private static int fam(String id) { return SurfaceFamily.of(id, NO_TAGS); }
+    private static int fam(String id) { return SurfaceFamily.of(id, t -> io.github.mojolowjo.entropybot.aa.brain.ItemWorth.hasTag(id.contains(":") ? id : "minecraft:" + id, t)); }
 
     @Test
     void familiesByIdAndOrder() {

@@ -7,7 +7,7 @@ public final class ClearRules {
     private ClearRules() {}
 
     /** Eye to block centre. Vanilla's reach; the server allows ~5.5 to the block's edge. */
-    public static final double CLEAR_REACH = 4.5;
+    public static final double CLEAR_REACH = 4.5; // game fact: survival block interaction range 4.5
 
     /** Cells the walking map treats as neither open nor solid (never walked through or stood on). */
     public static final Pattern HAZARD_RE = Pattern.compile("lava|fire|magma|cobweb|sweet_berry|powder_snow|cactus|wither_rose");
@@ -40,7 +40,7 @@ public final class ClearRules {
             "_crop$", "farmland$"));
 
     /** A collision shape no taller than a carpet is walked over, not a wall (moss carpet, rails). */
-    public static final double THIN = 0.1875;
+    public static final double THIN = 0.1875; // game fact: a thin block (3 pixels) is 0.1875 high
 
     /** "minecraft:stone" -> "stone"; "oritech:nickel_ore" stays. */
     public static String blockName(String id) {

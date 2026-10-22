@@ -1,0 +1,219 @@
+package io.github.mojolowjo.entropybot.aa;
+
+import io.github.mojolowjo.entropybot.aa.brain.Brain;
+import io.github.mojolowjo.entropybot.aa.brain.Costs;
+import io.github.mojolowjo.entropybot.aa.brain.Desire;
+import io.github.mojolowjo.entropybot.aa.brain.Failures;
+import io.github.mojolowjo.entropybot.aa.brain.Site;
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+import io.github.mojolowjo.entropybot.aa.core.Blackboard;
+import io.github.mojolowjo.entropybot.aa.core.Clock;
+import io.github.mojolowjo.entropybot.aa.core.FakePort;
+import io.github.mojolowjo.entropybot.aa.core.RunJob;
+import io.github.mojolowjo.entropybot.aa.core.TaskKind;
+import io.github.mojolowjo.entropybot.aa.core.Tracer;
+import io.github.mojolowjo.entropybot.threat.ThreatFacts;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.function.Supplier;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/** AA_STEP2: one danger desire with priced ways, the night by place, the cap guard. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
+class DangerStep2Test {
+    final Clock.Fake clock = new Clock.Fake(10_000_000);
+    final FakePort port = new FakePort();
+    final Blackboard bb = new Blackboard(clock, port, new Tracer());
+
+    /** No foes; a diggable floor, a wall, 12 blocks for a pillar, head room 3. */
+    static final ThreatFacts.Ways HERE = new ThreatFacts.Ways(0, -1, true, 12, 3, true, true, true);
+
+    void normalNight(ThreatFacts.Ways w, ThreatFacts.Foe... foes) {
+        bb.in.dayTime = 18000;
+        bb.in.hungerDrains = true;
+        bb.in.difficulty = 2;
+        bb.in.pos = new int[]{0, 64, 0};
+        bb.fact(Brain.SURFACE_Y_FACT, (java.util.function.IntBinaryOperator) (x, z) -> 64);
+        ThreatFacts f = new ThreatFacts(ThreatFacts.CALM.me(), List.of(foes), w);
+        bb.fact(AaDesires.THREAT_FACT, (Supplier<ThreatFacts>) () -> f);
+    }
+
+    @AfterEach
+    void defaults() { Tuning.reset(); }
+
+    @Test
+    void aNormalNightAtTheSurfacePricesTheWaysAndPicksOne() {
+        normalNight(HERE);
+        bb.in.bag = java.util.Map.of("dirt", 20);
+        DangerOptions.Choice c = AaDesires.dangerChoice(bb);
+        assertEquals(85, c.score(), 1e-9, "Normal night, danger 1: 85 x 1 " + c.terms());
+        assertTrue(c.terms().contains("box") && c.terms().contains("burrow") && c.terms().contains("flee home"), c.terms());
+        assertNotNull(c.chain(), c.terms());
+        assertNotEquals(DangerOptions.Way.BOX, c.best().way(), "dug in (seconds) is cheaper than a 20 s box: " + c.terms());
+        // no blocks for the box: it is not possible, and says why
+        bb.in.bag = java.util.Map.of();
+        assertTrue(AaDesires.dangerChoice(bb).terms().contains("needs 12 blocks, 0 in the bag"));
+        // in my shell: wait it out, the need keeps scoring so surface work does not lure the bot out
+        bb.in.sheltered = true;
+        DangerOptions.Choice in = AaDesires.dangerChoice(bb);
+        assertEquals(DangerOptions.Way.WAIT, in.best().way());
+        assertEquals("wait 60", in.chain());
+        // Peaceful: nothing
+        bb.in.hungerDrains = false;
+        assertEquals(-1, AaDesires.dangerScore(bb));
+    }
+
+    @Test
+    void aFailedWayIsHeldTheOthersStayOpen() {
+        normalNight(new ThreatFacts.Ways(0, -1, false, 0, 0, true, true, false));
+        bb.in.bag = java.util.Map.of("cobblestone", 30);
+        Tuning.set("danger.boxS", 2);            // the box is the cheapest here
+        Failures fs = new Failures();
+        bb.fact(Brain.FAILURES_FACT, fs);
+        assertEquals(DangerOptions.Way.BOX, AaDesires.dangerChoice(bb).best().way());
+        fs.failed(AaDesires.DANGER_ID, "box", "I need 12 planks", clock.now(), bb.in);
+        DangerOptions.Choice c = AaDesires.dangerChoice(bb);
+        assertEquals(DangerOptions.Way.BURROW, c.best().way(), "a failed box: burrow runs " + c.terms());
+        assertTrue(c.terms().contains("box held"), c.terms());
+        assertEquals(85, c.score(), 1e-9, "the night is not silenced by the failed box");
+        fs.failed(AaDesires.DANGER_ID, "burrow", "no ground", clock.now(), bb.in);
+        DangerOptions.Choice none = AaDesires.dangerChoice(bb);
+        assertEquals(85, none.score(), "review 2: the night still has an answer " + none.terms());
+        assertEquals(DangerOptions.Way.WAIT, none.best().way(), "the open-air fallback, never held: " + none.terms());
+        assertEquals(60_000, AaDesires.holdMs(0, 3), "nothing else open: a short hold");
+        assertEquals(Failures.retryMs() * 2, AaDesires.holdMs(1, 2));
+        clock.advance(Failures.retryMs() + 1);
+        assertEquals(DangerOptions.Way.BOX, AaDesires.dangerChoice(bb).best().way(), "the hold runs out");
+    }
+
+    @Test
+    void theFoesComeFirstWhenTheyCostMoreThanTheNight() {
+        // a zombie on me at 6 hp with bare hands: its ways (flee, dig in) beat the night's 85 at 99
+        bb.in.health = 6;
+        normalNight(new ThreatFacts.Ways(16, -1, true, 0, 3, true, true, true));
+        ThreatFacts f = new ThreatFacts(new ThreatFacts.Me(6, 20, 0, 1, 20), List.of(ThreatFacts.foe("minecraft:zombie", 2, 0, null)),
+                new ThreatFacts.Ways(16, -1, true, 0, 3, true, true, true));
+        bb.fact(AaDesires.THREAT_FACT, (Supplier<ThreatFacts>) () -> f);
+        DangerOptions.Choice c = AaDesires.dangerChoice(bb);
+        assertTrue(c.score() >= Brain.urgentV(), c.terms());
+        assertNotNull(c.chain());
+    }
+
+    @Test
+    void fightOnlyArmedWithTheExchangeInMyFavourAndNeverAtAShooterOutOfReach() {
+        ThreatFacts.Ways open = new ThreatFacts.Ways(16, -1, false, 0, 3, true);
+        DangerOptions.Choice fist = DangerOptions.choose(new ThreatFacts(new ThreatFacts.Me(20, 20, 0, 1, 20), List.of(ThreatFacts.foe("minecraft:zombie", 3, 0, null)), open));
+        assertFalse(fist.all().stream().filter(p -> p.way() == DangerOptions.Way.FIGHT).findFirst().orElseThrow().possible(), fist.terms());
+        DangerOptions.Choice sk = DangerOptions.choose(new ThreatFacts(new ThreatFacts.Me(20, 20, 0, 7, 20), List.of(ThreatFacts.foe("minecraft:skeleton", 12, 0, null)), open));
+        assertFalse(sk.all().stream().filter(p -> p.way() == DangerOptions.Way.FIGHT).findFirst().orElseThrow().possible(), sk.terms());
+        DangerOptions.Choice sword = DangerOptions.choose(new ThreatFacts(new ThreatFacts.Me(20, 20, 0, 7, 20), List.of(ThreatFacts.foe("minecraft:zombie", 3, 0, null)), open));
+        assertTrue(sword.all().stream().filter(p -> p.way() == DangerOptions.Way.FIGHT).findFirst().orElseThrow().possible(), sword.terms());
+        Tuning.set("danger.fightHit", 8);
+        DangerOptions.Choice tuned = DangerOptions.choose(new ThreatFacts(new ThreatFacts.Me(20, 20, 0, 7, 20), List.of(ThreatFacts.foe("minecraft:zombie", 3, 0, null)), open));
+        assertFalse(tuned.all().stream().filter(p -> p.way() == DangerOptions.Way.FIGHT).findFirst().orElseThrow().possible(), "Tuning danger.fightHit");
+    }
+
+    @Test
+    void twoDesiresAtTheCapCannotAlternate() {
+        double[] v = {99, -1};
+        Brain br = new Brain("brain", "t",
+                new Desire("a", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("do a", 1)), "brain"), b -> v[0]).trumps(),
+                new Desire("b", Desire.Kind.UPKEEP, RunJob.of("b.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("do b", 1)), "brain"), b -> v[1]).overTrumps());
+        bb.in.food = 20;
+        br.tick(bb);
+        assertEquals("obtain 1 do a", port.started.get(port.started.size() - 1).chain());
+        v[1] = 99;
+        for (int i = 0; i < 5; i++) {
+            clock.advance(3_000);
+            br.tick(bb);
+        }
+        assertEquals(1, port.started.size(), "99 vs 99: the margin holds at the cap, no switch");
+    }
+
+    @Test
+    void review1FoodUnder4AndTheOwnersOrderStillBeatADangerAt99() {
+        double[] v = {99, -1};
+        Brain br = new Brain("brain", "t",
+                new Desire("danger", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("do danger", 1)), "brain"), b -> v[0]).overTrumps(),
+                new Desire("needs.food", Desire.Kind.UPKEEP, RunJob.of("f.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("do food", 1)), "brain"), b -> v[1]));
+        bb.in.food = 10;
+        br.tick(bb);
+        assertEquals("obtain 1 do danger", port.started.get(port.started.size() - 1).chain());
+        v[1] = 80;
+        clock.advance(3_000);
+        br.tick(bb);
+        assertEquals("obtain 1 do danger", port.started.get(port.started.size() - 1).chain(), "food 10: danger keeps the slot");
+        bb.in.food = 2;
+        clock.advance(3_000);
+        br.tick(bb);
+        br.tick(bb);
+        assertEquals("obtain 1 do food", port.started.get(port.started.size() - 1).chain(), "food under 4 beats the danger at 99 " + port.log);
+    }
+
+    @Test
+    void review3ARefusedStartHoldsNothingReview4ASealedHoleIsStayedIn() {
+        normalNight(HERE);
+        Failures fs = new Failures();
+        bb.fact(Brain.FAILURES_FACT, fs);
+        Desire d = AaDesires.danger();
+        port.refuse = "busy: putting back 1 block";
+        d.node.tick(bb);
+        assertEquals(0, fs.size(), "never ran: no hold " + port.log);
+        port.refuse = null;
+        d.node.tick(bb);
+        DangerOptions.Way w = (DangerOptions.Way) bb.fact(AaDesires.WAY_FACT);
+        assertTrue(AaDesires.SEALS.contains(w), "a dig-in way: " + w);
+        port.done(port.nextId - 1, "done");
+        d.node.tick(bb);
+        assertNotNull(bb.fact(AaDesires.SEALED_FACT));
+        DangerOptions.Choice c = AaDesires.dangerChoice(bb);
+        assertEquals(DangerOptions.Way.WAIT, c.best().way(), "sealed in: stay " + c.terms());
+        assertEquals("wait 60", c.chain());
+        bb.in.pos = new int[]{10, 64, 0};
+        assertNotEquals(DangerOptions.Way.WAIT, AaDesires.dangerChoice(bb).best().way(), "moved away: not sealed");
+        assertNull(bb.fact(AaDesires.SEALED_FACT));
+    }
+
+    /** Backbone step 2 review 5: a failed danger move fails the chain AND holds that way; the re-pick takes another. */
+    @Test
+    void aFailedDangerMoveFailsTheChainAndHoldsItsWay() {
+        normalNight(HERE);
+        Failures fs = new Failures();
+        bb.fact(Brain.FAILURES_FACT, fs);
+        Desire d = AaDesires.danger();
+        d.node.tick(bb);
+        DangerOptions.Way w = (DangerOptions.Way) bb.fact(AaDesires.WAY_FACT);
+        assertNotNull(w, port.log.toString());
+        bb.fact(AaDesires.MOVE_FAILED_FACT, "burrow: gave up at burrow 2 down: dig 1/2 (grass_block): not broken in 10 s");
+        assertEquals(io.github.mojolowjo.entropybot.aa.core.Status.FAILURE, d.node.tick(bb));
+        assertNull(bb.fact(AaDesires.MOVE_FAILED_FACT), "taken once");
+        assertNotNull(fs.held(AaDesires.DANGER_ID, w.key(), clock.now()), "the failed way is held: " + port.log);
+        assertNotEquals(w, AaDesires.dangerChoice(bb).best().way(), "the re-pick takes another way");
+        assertTrue(port.log.stream().anyMatch(l -> l.contains("failed") && l.contains("danger move burrow")), port.log.toString());
+    }
+
+    Desire siteDesire(String id, double v, Site s) {
+        return new Desire(id, Desire.Kind.UPKEEP, RunJob.of(id + ".job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("do " + id, 1)), "brain"), b -> v).cost(0).site(b -> s);
+    }
+
+    @Test
+    void theWoodGameSheepHuntAtNightLosesToDangerTheStoneGameMiningKeepsItsBonus() {
+        normalNight(HERE);
+        Desire bed = siteDesire("needs.bed", 70, Site.at(40, 64, 40));          // a sheep in the open
+        Desire mine = siteDesire("needs.iron", 40, Site.at(5, 30, 5));          // an UNDER option
+        Desire upkeep = siteDesire("needs.torches", 85, Site.at(3, 64, 3));       // an upkeep desire over the urgent line, at the surface
+        Brain br = new Brain("brain", "t", bed, mine, upkeep, AaDesires.danger());
+        var s = br.scoreAll(bb);
+        assertEquals(35, s.get(0).score(), 1e-9, "the surface sheep hunt is halved at danger 1: " + s.get(0).parts());
+        assertEquals(60, s.get(1).score(), 1e-9, "under ground: x 1.5 " + s.get(1).parts());
+        assertTrue(s.get(2).score() < s.get(3).score(), "an upkeep at the surface scores under danger: " + s.get(2).parts());
+        assertTrue(s.get(3).rank() > s.get(0).rank(), "danger beats the sheep hunt");
+        // the stone game: deep under ground the night need is off; the mining goes on
+        bb.in.underDepth = 20;
+        bb.in.pos = new int[]{5, 30, 5};
+        assertEquals(-1, AaDesires.dangerScore(bb), "under ground at night: no danger need");
+    }
+}

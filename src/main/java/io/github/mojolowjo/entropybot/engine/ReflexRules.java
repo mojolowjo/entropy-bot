@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.Set;
 
 /**
@@ -9,27 +11,22 @@ import java.util.Set;
 public final class ReflexRules {
     private ReflexRules() {}
 
-    /** Never eaten: they poison, cause hunger, or teleport. */
-    public static final Set<String> FOOD_BLACKLIST = Set.of(
-            "minecraft:rotten_flesh", "minecraft:spider_eye", "minecraft:chorus_fruit", "minecraft:pufferfish",
-            "minecraft:poisonous_potato", "minecraft:suspicious_stew");
-    /** Only eaten below 6 hearts. */
-    public static final Set<String> GOLDEN = Set.of("minecraft:golden_apple", "minecraft:enchanted_golden_apple");
+    /** Never eaten: they poison, cause hunger or teleport (the game's FOOD effects and the teleporting item class: ItemWorth.junkFood). Foods with a good effect (golden apples) are only eaten below 6 hearts (ItemWorth.effectFood). */
 
-    public static final int EAT_FOOD = 14;          // eat at this food level or below
-    public static final int EAT_FOOD_HURT = 18;     // ... or below this while hurt (natural healing needs 18)
-    public static final float GOLDEN_BELOW = 12f;   // health under 6 hearts
-    public static final float RETREAT_AT = 6f;      // health at or below: get away
-    public static final int LOOK = 8;               // monsters within this many blocks count
-    public static final int LOOK_HURT = 24;         // ... or this many after a hit
-    public static final int HURT_TICKS = 100;       // "after a hit" lasts this long
+    public static int eatFood() { return Tuning.i("reflexRules.eatFood"); }  // eat at this food level or below
+    public static final int EAT_FOOD_HURT = 18; // game fact: natural regeneration needs food level 18  // ... or below this while hurt (natural healing needs 18)
+    public static float goldenBelow() { return (float) Tuning.get("reflexRules.goldenBelow"); }  // health under 6 hearts
+    public static float retreatAt() { return (float) Tuning.get("reflexRules.retreatAt"); }  // health at or below: get away
+    public static int look() { return Tuning.i("reflexRules.look"); }  // monsters within this many blocks count
+    public static int lookHurt() { return Tuning.i("reflexRules.lookHurt"); }  // ... or this many after a hit
+    public static int hurtTicks() { return Tuning.i("reflexRules.hurtTicks"); }  // "after a hit" lasts this long
     /**
      * 0.33.1: the air reflex. Head under water: swim up when nothing else drives the bot (a stopped job left it sinking
      * in the ocean and it drowned, 0.33.0 agent C), and always once the air is below a third, whoever drives.
      */
     public static boolean swimUp(boolean eyesInWater, int air, int maxAir, boolean somethingDrives) {
         if (!eyesInWater) return false;
-        if (air * 3 < maxAir) return true;
+        if (air * Tuning.i("reflexRules.airDiv") < maxAir) return true;
         return !somethingDrives;
     }
 
@@ -46,14 +43,15 @@ public final class ReflexRules {
         if (tookOver && inWater && air < maxAir) return Air.TAKEOVER;
         if (!eyesInWater) return Air.NONE;
         if (!somethingDrives) return Air.SWIM;
-        return air * 3 < maxAir ? Air.TAKEOVER : Air.DEFER;
+        return air * Tuning.i("reflexRules.airDiv") < maxAir ? Air.TAKEOVER : Air.DEFER;
     }
 
     /** 0.34.3: a dry cell to stand on (solid ground under it, feet and head free of blocks and fluid). */
     public interface Dry { boolean standable(int x, int y, int z); }
 
     /** 0.34.3: how far the swim to the shore looks, and how far up or down from the water line. */
-    public static final int SHORE_RADIUS = 32, SHORE_DY = 4;
+    public static int shoreRadius() { return Tuning.i("reflexRules.shoreRadius"); }
+    public static int shoreDy() { return Tuning.i("reflexRules.shoreDy"); }
 
     /**
      * 0.34.3 (the bot trod water forever where the air reflex surfaced it): the nearest dry standable cell, ring by ring
@@ -66,8 +64,8 @@ public final class ReflexRules {
             for (int dx = -r; dx <= r; dx++) {
                 for (int dz = -r; dz <= r; dz++) {
                     if (Math.abs(dx) != r && Math.abs(dz) != r) continue;       // the ring only
-                    for (int dy = 0; dy <= SHORE_DY; dy = dy <= 0 ? -dy + 1 : -dy) {
-                        if (dy < -SHORE_DY) break;
+                    for (int dy = 0; dy <= shoreDy(); dy = dy <= 0 ? -dy + 1 : -dy) {
+                        if (dy < -shoreDy()) break;
                         if (!dry.standable(x + dx, y + dy, z + dz)) continue;
                         double d = dx * dx + dz * dz + dy * dy * 0.5;
                         if (d < bestD) { bestD = d; best = new int[]{x + dx, y + dy, z + dz}; }
@@ -80,14 +78,29 @@ public final class ReflexRules {
         return null;
     }
 
-    public static final double REACH = 2.8;         // attack from this close
-    public static final double CREEPER_RUN = 6;     // run from a creeper this close
-    public static final int CREEPER_RUN_TO = 12;    // ... to a spot this far away
-    public static final double URGENT = 5;          // a monster this close stops a bridge job (as the bridge did)
+    public static double reach() { return Tuning.get("reflexRules.reach"); }  // attack from this close
+    /** Run from a creeper this close (Tuning reflex.creeper.run). */
+    public static double creeperRun() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.creeper.run"); }
+    /** ... to this far away (Tuning reflex.creeper.runTo). */
+    public static int creeperRunTo() { return (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.creeper.runTo"); }
+    public static double urgent() { return Tuning.get("reflexRules.urgent"); }  // a monster this close stops a bridge job (as the bridge did)
 
     /** Worth eating now: food 14 or less, or below 18 while hurt. */
     public static boolean wantsMeal(int food, float health) {
-        return food <= EAT_FOOD || (food < EAT_FOOD_HURT && health < EAT_FOOD_HURT);
+        return food <= eatFood() || (food < EAT_FOOD_HURT && health < EAT_FOOD_HURT);
+    }
+
+    /** aa-food: at or below this the bar is urgent: eat whatever the bag has. */
+    public static int eatUrgent() { return Tuning.i("reflexRules.eatUrgent"); }
+
+    /**
+     * aa-food (owner): no waste. With food in the bag ({@code bestNutrition} > 0, the best food's nutrition): eat once the
+     * bar is down by at least what it restores, at {@link #EAT_URGENT} or under, or below 18 while hurt (healing needs
+     * 18). Without food the old rule (14) stands, so the food run still starts in time.
+     */
+    public static boolean wantsMeal(int food, float health, int bestNutrition) {
+        if (bestNutrition <= 0) return wantsMeal(food, health);
+        return food <= eatUrgent() || 20 - food >= bestNutrition || (food < EAT_FOOD_HURT && health < EAT_FOOD_HURT);  // game fact: the food bar is 20 points
     }
 
     /**
@@ -95,15 +108,15 @@ public final class ReflexRules {
      * nausea...), which also catches modded foods the blacklist doesn't name.
      */
     public static int foodScore(String id, int nutrition, float saturation, boolean harmful, float health) {
-        if (id == null || FOOD_BLACKLIST.contains(id) || harmful) return -1;
-        if (GOLDEN.contains(id) && health >= GOLDEN_BELOW) return -1;
+        if (id == null || io.github.mojolowjo.entropybot.aa.brain.ItemWorth.junkFood(id) || harmful) return -1;
+        if (io.github.mojolowjo.entropybot.aa.brain.ItemWorth.effectFood(id) && health >= goldenBelow()) return -1;
         if (nutrition <= 0) return -1;
-        return nutrition * 10 + Math.round(saturation * 10);
+        return nutrition * 10 + Math.round(saturation * 10);  // structural: ranking: nutrition and saturation in tenths
     }
 
     /** How far monsters count: 8 blocks, 24 right after a hit. */
     public static int lookRadius(boolean recentlyHurt) {
-        return recentlyHurt ? LOOK_HURT : LOOK;
+        return recentlyHurt ? lookHurt() : look();
     }
 
     /**
@@ -112,7 +125,7 @@ public final class ReflexRules {
      */
     public static boolean counts(double dist, boolean recentlyHurt, boolean seen) {
         if (dist > lookRadius(recentlyHurt)) return false;
-        return recentlyHurt || dist <= 2.5 || seen;
+        return recentlyHurt || dist <= Tuning.get("reflexRules.seenDist") || seen;
     }
 
     /** A spot dist blocks straight away from the threat: {x, z}. */

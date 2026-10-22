@@ -148,7 +148,7 @@ public final class CraftTexts {
 
     public static final String GET_USAGE = "error: usage get <item> [n]";
     /** get's count without one: a stack. */
-    public static final int GET_DEFAULT = 64;
+    public static final int GET_DEFAULT = 64; // structural
 
     public static String getNone(String item, boolean rsKnown) {
         return "error: none of my chests" + (rsKnown ? " or the RS network" : "") + " has " + shortId(item) + " (as far as I know - \"scan base\" / \"rs\")";

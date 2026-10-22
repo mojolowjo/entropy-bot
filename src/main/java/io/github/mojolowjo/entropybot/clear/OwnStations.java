@@ -1,43 +1,36 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import java.util.Set;
 
 /**
  * 0.33.0 (A3, Haiku run item 6: "own crafting table can't be broken even with force"): a station (crafting table,
- * furnace, chest...) that the bot placed itself, inside its own areas, may be picked up again by a {@code force} dig.
+ * furnace, chest...) that the bot placed itself (the ledger says so) may be picked up again by a {@code force} dig.
  * Every other block entity stays protected. Pure apart from the {@link #mine} hook, which the game side sets (the
- * restore ledger's "built: station" entries plus the areas test). Loader notes: none.
+ * restore ledger's "built: station" entries). Loader notes: none.
  */
 public final class OwnStations {
     private OwnStations() {}
-
-    /** The stations the bot places and may pick up again (ids without the namespace). */
-    public static final Set<String> STATIONS = Set.of("crafting_table", "furnace", "blast_furnace", "smoker", "chest", "barrel",
-            "trapped_chest", "smithing_table", "stonecutter", "cartography_table", "fletching_table", "loom", "anvil");
 
     public interface Mine {
         boolean at(int x, int y, int z);
     }
 
-    /** Set by the game side: the cell holds a station I placed myself (ledger), inside my areas. Null: none. */
+    /** Set by the game side: the cell holds a station I placed myself (ledger). Null: none. */
     public static volatile Mine mine;
 
+    /** A workstation or container block of the game (it opens a menu: ItemWorth's station), vanilla ids only. */
     public static boolean station(String id) {
         if (id == null) return false;
         String s = id.toLowerCase();
-        int c = s.indexOf(':');
-        if (c >= 0) {
-            if (!s.startsWith("minecraft:")) return false;
-            s = s.substring(c + 1);
-        }
-        return STATIONS.contains(s);
+        if (s.indexOf(':') >= 0 && !s.startsWith("minecraft:")) return false;
+        return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.station(s);
     }
 
-    /** 0.33.0 review: the stations that hold items; one is picked up only when it is known to be empty. */
-    public static final Set<String> CONTAINERS = Set.of("chest", "trapped_chest", "barrel", "furnace", "blast_furnace", "smoker");
-
+    /** 0.33.0 review: the stations that hold items (the game's Container block entities); one is picked up only when it is known to be empty. */
     public static boolean container(String id) {
-        return id != null && CONTAINERS.contains(id.toLowerCase().replaceFirst("^minecraft:", ""));
+        return id != null && io.github.mojolowjo.entropybot.aa.brain.ItemWorth.container(id.toLowerCase());
     }
 
     /**
@@ -57,6 +50,22 @@ public final class OwnStations {
             if (contents > 0) return "the " + nowKind + " at " + at + " holds " + contents + " items: take them first (take all " + at + ")";
         }
         return null;
+    }
+
+    /**
+     * The contents count a container's pickup check goes by: the chest note's count when it was read after the placement,
+     * else 0 when the bot itself emptied the machine (a furnace it took everything out of; those are not kept as chest
+     * notes) at or after the placement, else null (unknown). Pure.
+     * The newer of the two reads wins.
+     * @param noteCount the note's count when its read is newer than the placement, else null
+     * @param noteSeen  when that note was read (ms)
+     * @param emptiedAt when the bot emptied it (ms), or null
+     * @param placedAt  when it was placed (ms)
+     */
+    public static Integer contentsKnown(Integer noteCount, long noteSeen, Long emptiedAt, long placedAt) {
+        boolean emptied = emptiedAt != null && emptiedAt >= placedAt;
+        if (noteCount != null && (!emptied || noteSeen > emptiedAt)) return noteCount;
+        return emptied ? 0 : null;
     }
 
     /** Set by the game side: my recorded station cells inside the box x1 y1 z1 x2 y2 z2 (never the whole box read). */
@@ -80,6 +89,7 @@ public final class OwnStations {
         try {
             return c.in(x1, y1, z1, x2, y2, z2);
         } catch (RuntimeException e) {
+            Quiet.warn("OwnStations.cellsIn failed, carrying on with the fallback", e);
             return java.util.List.of();
         }
     }
@@ -102,6 +112,7 @@ public final class OwnStations {
         try {
             return m.at(x, y, z);
         } catch (RuntimeException e) {
+            Quiet.warn("OwnStations.mineAt failed, carrying on with the fallback", e);
             return false;
         }
     }

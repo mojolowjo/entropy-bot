@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -7,410 +9,77 @@ import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.gui.Gui;
 import io.github.mojolowjo.entropybot.plan.ActionTable;
-import io.github.mojolowjo.entropybot.plan.AsyncPlanner;
-import io.github.mojolowjo.entropybot.plan.GoalGrammar;
-import io.github.mojolowjo.entropybot.plan.PlanFacts;
-import io.github.mojolowjo.entropybot.plan.Planner;
-import io.github.mojolowjo.entropybot.plan.RoutineRule;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.component.DataComponents;
-import net.minecraft.world.item.ItemStack;
 import org.slf4j.Logger;
 
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 
 /**
- * B3, the game side of the planner (docs/BRAIN_PLAN.md 6): {@code goal <text>}, {@code goal show}, {@code plan <text>},
- * {@code actions [verb]}, the brain's hook for a goal with no chain, and {@code entropybot/actions.json} (the action table
- * plus a state summary, rewritten when the summary changes, checked every 5 s). The facts come from the bag, the stock
- * view, the places and a block scan around the bot (logs, stone, ores within 16); the free spots and the quarry's
- * direction as bootstrap finds them. Plans are saved as routines {@code goal_<name>} under the routine rules
- * ({@link RoutineRule}); the texts the planner saved are kept in commands.json "plans" so an owner-edited routine is
- * never overwritten.
- *
- * <p>Loader notes: vanilla client getters only (ClientLevel.getBlockState, ItemStack DataComponents.FOOD); the facts are
- * read on the client thread; the search (200 ms / 2000 nodes) runs on a worker (0.23.1, {@link AsyncPlanner}), its answer a whisper. Errors: every entry point
- * catches and answers "error: plan: ..." and logs once; a failed actions.json write is counted.
+ * one-planner: the old goal planner is gone (AA's chain, {@code NeedChain}, is the one planner). What stays here: the
+ * {@code goal <item> [n]} verb (the owner's order through the chain, as {@code aa want}), the {@code plan <item> [n]} dry
+ * run (the chain line, nothing runs), {@code actions [verb]} and {@code entropybot/actions.json} (the action table plus a
+ * state summary, rewritten when the summary changes, checked every 5 s), and the "a tree seen" fact. Loader notes: vanilla
+ * client getters only. Errors: every entry point catches and answers "error: ..." and logs once; a failed actions.json
+ * write is counted.
  */
 final class GoalPlanning {
     private static final Logger LOG = LogUtils.getLogger();
     private final Commands c;
     private String lastActions;
     private long actionsErrors;
-    int plans, failures;
-    long lastMs, lastNodes;
-    private final Map<String, Object[]> hookCache = new HashMap<>();
-
     GoalPlanning(Commands c) {
         this.c = c;
         List<String> bad = ActionTable.selfTest();
         if (!bad.isEmpty()) LOG.warn("[entropybot] plan: the action table's self-test failed: {}", bad);
     }
 
-    // ---- the facts ----
-
-    PlanFacts facts(LocalPlayer p) {
-        PlanFacts f = new PlanFacts();
-        if (Core.INSTANCE.files() != null) io.github.mojolowjo.entropybot.chop.Unreachable.world(Core.INSTANCE.files().worldRoot().toString());
-        Map<String, Integer> inv = Gui.inventory(p);
-        Set<String> food = new HashSet<>();
-        for (int i = 0; i < p.getInventory().getContainerSize(); i++) {
-            ItemStack st = p.getInventory().getItem(i);
-            if (!st.isEmpty() && st.has(DataComponents.FOOD)) food.add(Commands.itemId(st));
-        }
-        f.addBag(inv, food);
-        try { f.addStock(minus(c.storage.stock(p).totals(), inv), food); } catch (RuntimeException e) { LOG.warn("[entropybot] plan: stock: {}", e.toString()); }
-        ClientLevel lv = Minecraft.getInstance().level;
-        int[] feet = Jobs.here(p);
-        f.feet = feet;
-        if (CampCommands.near(lv, feet, "crafting_table")) f.flag("table");
-        if (CampCommands.near(lv, feet, "furnace")) f.flag("furnace");
-        f.dir = CampCommands.quarryDir(lv, feet);
-        List<int[]> free = CampCommands.freeRing(lv, feet, f.dir);
-        if (free.size() < 2) {
-            // 0.36.4 (aa40c: at the top of a climb no cell by the feet was free for 30 min): the nearest standable cell
-            // inside my areas with two free cells by it, within 6 first, then 24; the place steps walk there first
-            int[] s = openSpot(lv, feet, f.dir, 6, 1);
-            if (s == null) s = openSpot(lv, feet, f.dir, 24, 2);
-            if (s != null) {
-                LOG.info("[entropybot] plan: no free spot by my feet at {} - using {} {} {} (the place steps walk there first)", Jobs.fmt(feet), s[0], s[1], s[2]);
-                f.feet = s;
-                free = CampCommands.freeRing(lv, s, f.dir);
-            }
-        }
-        if (free.size() > 0) { f.table = free.get(0); f.flag("spot:table"); }
-        if (free.size() > 1) { f.furnace = free.get(1); f.flag("spot:furnace"); }
-        f.flag("quarry");
-        scan(lv, feet, f);
-        JsonObject m = c.minePlace();
-        if (m != null && m.has("dir")) f.flag("mine");
-        return f;
+    /** simple-tools: "a tree seen" is the one Nearby fact (Baritone's scan, then the sightings), not a block scan of its own. */
+    boolean treeSeen() {
+        return (c.aaRuntime != null ? c.aaRuntime.nearbyLog() : c.nearby.log(null)) != null;
     }
 
-    /**
-     * The stock view counts the bag too: only the rest is "in storage". 0.36.2: the stock's ids are short ("oak_log"),
-     * the bag's namespaced ("minecraft:oak_log"): both are compared short, else nothing was taken off and the planner
-     * planned "get coal 1" / "get planks 3" for what the bag already held (aa-v0 open point h).
-     */
-    /** 0.36.4: the nearest cell within r (step) where the bot can stand, sky open, inside my areas, 2+ free cells by it. */
-    private int[] openSpot(ClientLevel lv, int[] f, int[] dir, int r, int step) {
-        String dim = Storage.dim();
-        int[] best = null;
-        long bestD = Long.MAX_VALUE;
-        for (int dx = -r; dx <= r; dx += step) for (int dz = -r; dz <= r; dz += step) for (int dy = -4; dy <= 4; dy++) {
-            long d = (long) dx * dx + (long) dz * dz + (long) dy * dy;
-            if (d == 0 || d >= bestD) continue;
-            int[] cell = {f[0] + dx, f[1] + dy, f[2] + dz};
-            BlockPos b = new BlockPos(cell[0], cell[1], cell[2]);
-            if (!c.inAreas(dim, cell[0], cell[2]) || !lv.isLoaded(b)) continue;
-            if (!CampCommands.placeable(lv, b) || !lv.getBlockState(b.above()).canBeReplaced() || !lv.canSeeSky(b.above())) continue;
-            if (CampCommands.freeRing(lv, cell, dir).size() < 2) continue;
-            best = cell;
-            bestD = d;
-        }
-        return best;
-    }
+    String actions(String rest) { return ActionTable.shortText(rest); }
 
-    static Map<String, Integer> minus(Map<String, Integer> totals, Map<String, Integer> bag) { return PlanFacts.minusBag(totals, bag); }
+    // ---- the verbs: the chain ----
 
-    /** Logs, stone and ores within 16 blocks (8 up and down): the trees, stone and ore:<family> facts. */
-    static void scan(ClientLevel lv, int[] c, PlanFacts f) {
-        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
-        boolean stoneBelow = false;
-        long now = System.currentTimeMillis();
-        for (int dx = -16; dx <= 16; dx++) for (int dz = -16; dz <= 16; dz++) for (int dy = -8; dy <= 8; dy++) {
-            m.set(c[0] + dx, c[1] + dy, c[2] + dz);
-            if (!lv.isLoaded(m)) continue;
-            String id = lv.getBlockState(m).getBlock().getDescriptionId();
-            if (id.endsWith("_log") || id.endsWith("_stem")) {
-                // 0.36.3: a trunk the chopper could not get at is no tree for the plan
-                if (!io.github.mojolowjo.entropybot.chop.Unreachable.blocked(c[0] + dx, c[2] + dz, now)) f.flag("trees");
-            }
-            else if (id.endsWith("_ore")) {
-                String fam = id.substring(id.lastIndexOf('.') + 1).replaceFirst("^deepslate_", "").replaceFirst("_ore$", "");
-                f.flag("ore:" + fam);
-            } else if (dy < 0 && Math.abs(dx) <= 10 && Math.abs(dz) <= 10 && (id.endsWith(".stone") || id.endsWith(".deepslate") || id.endsWith(".andesite")
-                    || id.endsWith(".diorite") || id.endsWith(".granite") || id.endsWith(".tuff"))) stoneBelow = true;
-        }
-        if (stoneBelow) f.flag("stone");
-    }
-
-    // ---- the verbs ----
-
-    JsonObject plansStore() {
-        JsonObject b = c.brainData();
-        if (!b.has("plans") || !b.get("plans").isJsonObject()) b.add("plans", new JsonObject());
-        return b.getAsJsonObject("plans");
-    }
-
-    /** "plan <goal>": the dry run. */
-    String plan(String to, LocalPlayer p, String rest) {
-        try {
-            GoalGrammar.Goal g = GoalGrammar.parse(rest, n -> c.policyArea(n) != null);
-            if (g.error() != null) return g.error().replace("goal ", "plan ").replace("usage: plan camp", "usage: plan camp");
-            if (g.chain() != null) return "plan " + g.text() + ": a ready chain, no search: " + g.chain();
-            String existing = routineText(g.routine());
-            if (RoutineRule.decide(existing, plannedText(g.routine())) == RoutineRule.Decision.KEEP)
-                return "plan " + g.text() + ": your routine " + g.routine() + " is the ready chain: " + String.join(" > ", Texts.splitChain(existing)) + " (routine delete " + g.routine() + " to plan afresh)";
-            boolean started = searchAsync(p, g, "plan:" + g.text(), r -> {
-                String text;
-                if (r == null) text = "error: plan " + g.text() + ": the search failed (see the log)";
-                else if (!r.ok()) text = failText(g, r);
-                else if (r.steps().isEmpty()) text = "plan " + g.text() + ": nothing to do - I already have it";
-                else text = "plan " + g.text() + " (dry run, " + r.steps().size() + " steps, cost " + r.cost() + ", " + r.nodes() + " nodes, " + r.ms() + " ms): " + r.costed();
-                c.whisper(to, text);
-            });
-            return started ? "planning " + g.text() + " - the plan comes as the next whisper" : "error: already planning " + g.text() + " - the answer comes as a whisper";
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] plan: {}", e.toString());
-            return "error: plan: " + e;
-        }
-    }
-
-    /** 0.23.1: the searches run on a worker; their results come back on the client thread through {@link #drainSearches}. */
-    final AsyncPlanner async = new AsyncPlanner();
-
-    /**
-     * Gathers the facts here (client thread), searches on the worker, and calls then (client thread, from the tick) with the
-     * result, or null when the search threw. False when the same key is still being searched.
-     */
-    boolean searchAsync(LocalPlayer p, GoalGrammar.Goal g, String key, java.util.function.Consumer<Planner.Result> then) {
-        PlanFacts f = facts(p);
-        return async.submit(key, () -> Planner.plan(f, g.needs()), d -> {
-            Planner.Result r = d.result();
-            if (r == null) {
-                failures++;
-                LOG.warn("[entropybot] plan: {} -> the search threw: {}", g.text(), d.error());
-            } else {
-                plans++;
-                lastMs = r.ms();
-                lastNodes = r.nodes();
-                if (!r.ok()) failures++;
-                LOG.info("[entropybot] plan: {} -> {} ({} nodes, {} ms on the worker; {})", g.text(), r.ok() ? r.chain() : r.missing() != null ? "missing " + r.missing() : r.error(), r.nodes(), r.ms(), f.summary());
-            }
-            then.accept(r);
-        });
-    }
-
-    /**
-     * 0.26.2: the brain's feasibility sub-plan (n of item, at most maxSteps steps, half the node budget). The facts are read
-     * here (client thread), the search runs on the worker; then gets {chain, null} or {null, why} on the client thread.
-     * False when the same item is still being planned.
-     */
-    boolean subgoal(LocalPlayer p, String item, int n, int maxSteps, java.util.function.Consumer<String[]> then) {
-        PlanFacts f = facts(p);
-        List<Planner.Need> needs = List.of(Planner.Need.item(item, Math.max(1, n)));
-        return async.submit("subgoal:" + item, () -> Planner.plan(f, needs, Planner.MAX_NODES / 2, Planner.BUDGET_MS / 2, maxSteps), d -> {
-            Planner.Result r = d.result();
-            String[] out;
-            if (r == null) out = new String[]{null, "the search threw: " + d.error()};
-            else if (r.ok() && !r.steps().isEmpty()) out = new String[]{r.chain(), null};
-            else if (r.ok()) out = new String[]{null, "nothing to do - I have it"};
-            else out = new String[]{null, r.error() != null ? r.error() : "missing " + r.missing()};
-            LOG.info("[entropybot] plan: brain sub-plan {} {} -> {}", n, item, out[0] != null ? out[0] : out[1]);
-            then.accept(out);
-        });
-    }
-
-    /**
-     * 0.26.3: the day plan's dry run of {@code goal <form>}: a ready chain (camp, light) or an owner-kept goal_ routine at
-     * once, else the search on the worker. then gets {chain, null}, {"", why} (nothing to do) or {null, why} (no plan).
-     * False when the same goal is still being planned.
-     */
-    boolean dayRun(LocalPlayer p, String goal, java.util.function.Consumer<String[]> then) {
-        GoalGrammar.Goal g = GoalGrammar.parse(goal, n -> c.policyArea(n) != null);
-        if (g.error() != null) { then.accept(new String[]{null, g.error().replaceFirst("^error: ", "")}); return true; }
-        if (g.chain() != null) { then.accept(new String[]{g.chain(), null}); return true; }
-        String existing = routineText(g.routine());
-        if (existing != null && RoutineRule.decide(existing, plannedText(g.routine())) == RoutineRule.Decision.KEEP) {
-            then.accept(new String[]{g.routine(), null});      // your edited routine is the ready chain
-            return true;
-        }
-        return searchAsync(p, g, "day:" + g.text(), r -> {
-            if (r == null) then.accept(new String[]{null, "the search threw (see the log)"});
-            else if (!r.ok()) then.accept(new String[]{null, r.error() != null ? r.error() : "missing " + r.missing()});
-            else if (r.steps().isEmpty()) then.accept(new String[]{"", "I already have it"});
-            else then.accept(new String[]{r.chain(), null});
-        });
-    }
-
-    /** From the client tick: the finished searches' callbacks. Never throws. */
-    void drainSearches() {
-        try { async.drain(); } catch (RuntimeException e) { LOG.warn("[entropybot] plan: drain: {}", e.toString()); }
-    }
-
-    static String failText(GoalGrammar.Goal g, Planner.Result r) {
-        if (r.error() != null) return "error: no plan for " + g.text() + ": " + r.error() + " - try a smaller goal";
-        return "error: no plan for " + g.text() + ": missing " + r.missing();
-    }
-
-    String routineText(String name) {
-        JsonObject r = c.chainsRef().routines();
-        return r.has(name) ? r.get(name).getAsString() : null;
-    }
-
-    String plannedText(String name) {
-        JsonObject pl = plansStore();
-        return pl.has(name) && pl.get(name).isJsonObject() && pl.getAsJsonObject(name).has("chain") ? pl.getAsJsonObject(name).get("chain").getAsString() : null;
-    }
-
-    /** "goal <text>" | "goal show [name]". */
+    /** "goal <item|group> [n] [high|low]": the owner's order through the chain (the same as aa want). */
     String goal(String from, LocalPlayer p, String rest) {
         try {
-            String t = rest == null ? "" : rest.trim().toLowerCase(Locale.ROOT);
-            if (t.equals("show") || t.startsWith("show ")) return show(t.substring(4).trim());
-            GoalGrammar.Goal g = GoalGrammar.parse(t, n -> c.policyArea(n) != null);
-            if (g.error() != null) return g.error();
-            if (g.chain() != null) return c.vocab.noteGoal(g.text(), g.chain());
-            String name = g.routine();
-            String existing = routineText(name);
-            RoutineRule.Decision d = RoutineRule.decide(existing, plannedText(name));
-            if (d == RoutineRule.Decision.KEEP)
-                return runOrNote(from, g, name, "goal " + g.text() + ": your routine " + name + " is the ready chain (" + String.join(" > ", Texts.splitChain(existing)) + ")");
-            // 0.23.1: the search runs on the worker; the answer is the next whisper (and the routine starts then)
-            boolean started = searchAsync(p, g, "goal:" + g.text(), r -> {
-                String text;
-                try { text = planned(from, g, name, d, r); } catch (RuntimeException e) {
-                    LOG.warn("[entropybot] goal: {}", e.toString());
-                    text = "error: goal: " + e;
-                }
-                c.whisper(from, text.replaceFirst("^ok: ", ""));
-            });
-            return started ? "planning goal " + g.text() + " - the plan comes as the next whisper" : "error: already planning goal " + g.text() + " - the answer comes as a whisper";
+            if (c.aaRuntime == null) return "error: goal: aa is not loaded";
+            return c.aaRuntime.want(rest).replaceFirst("^aa want: ", "goal: ");
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] goal: {}", e.toString());
             return "error: goal: " + e;
         }
     }
 
-    /** The goal's search came back (client thread): save the routine, then run it or note the goal. */
-    private String planned(String from, GoalGrammar.Goal g, String name, RoutineRule.Decision d, Planner.Result r) {
-        if (r == null) return "error: goal " + g.text() + ": the search failed (see the log)";
-        if (!r.ok()) return failText(g, r);
-        if (r.steps().isEmpty()) return "ok: goal " + g.text() + ": I already have it";
-        String body = r.chain();
-        String saved = c.chainsRef().routineCommand("save " + name + " " + body);
-        if (!saved.startsWith("saved")) return "error: goal " + g.text() + ": found a plan but couldn't save it (" + saved + "): " + r.costed();
-        JsonObject rec = new JsonObject();
-        rec.addProperty("goal", g.text());
-        rec.addProperty("chain", body);
-        rec.addProperty("cost", r.cost());
-        rec.addProperty("at", System.currentTimeMillis());
-        plansStore().add(name, rec);
-        c.brainData().addProperty("lastPlan", name);
-        c.saved();
-        return runOrNote(from, g, name, "goal " + g.text() + ": planned " + r.steps().size() + " steps (cost " + r.cost() + ")" + (d == RoutineRule.Decision.OVERWRITE ? ", the old plan replaced" : "")
-                + ", saved as routine " + name + ": " + String.join(" > ", Texts.splitChain(body)));
-    }
-
-    /** Runs the goal's routine now when nothing runs, else the brain takes it up later. */
-    private String runOrNote(String from, GoalGrammar.Goal g, String name, String head) {
-        if (!c.chainsRef().running() && !c.jobs.running()) {
-            String s = c.chainsRef().startChain(from, name, name, 1);
-            return head + (s.startsWith("started") ? " - running it now" : " - " + s);
-        }
-        return head + " - " + c.vocab.noteGoal(g.text(), name).replaceFirst("^ok: ", "");
-    }
-
-    String show(String name) {
-        String n = name.isEmpty() ? (c.brainData().has("lastPlan") ? c.brainData().get("lastPlan").getAsString() : null) : name;
-        if (n == null) return "no plan yet - goal <form> (" + GoalGrammar.FORMS + ")";
-        if (!n.startsWith("goal_")) n = GoalGrammar.routineName(n.replace(' ', '_'));
-        String text = routineText(n);
-        if (text == null) return "I have no routine " + n + " (goal <form> plans one; routines lists them)";
-        JsonObject pl = plansStore();
-        String meta = pl.has(n) && pl.get(n).isJsonObject() ? " (planned for goal " + pl.getAsJsonObject(n).get("goal").getAsString() + ", cost " + pl.getAsJsonObject(n).get("cost").getAsInt()
-                + (text.trim().equals(plannedText(n)) ? "" : "; edited since: yours now") + ")" : " (yours)";
-        return n + meta + ": " + String.join(" > ", Texts.splitChain(text));
-    }
-
-    /**
-     * The brain's hook (BRAIN_PLAN 6.1 "needs with no ready chain go to the planner"): a chain for a goal text, the
-     * routine when one is ready, else a fresh plan saved as the routine. Cached 60 s per text; null when no plan.
-     */
-    String chainFor(String goalText) {
+    /** "plan <item|group> [n]": the chain's dry run (its line with the seconds and the dropped ways; nothing runs). */
+    String plan(String to, LocalPlayer p, String rest) {
         try {
-            Object[] hit = hookCache.get(goalText);
-            long now = System.currentTimeMillis();
-            // 0.36.2: a cached routine name that was deleted since (AA drops a stale, infeasible one) is planned afresh
-            if (hit != null && now - (Long) hit[0] < 60_000 && (hit[1] == null || !((String) hit[1]).startsWith("goal_") || routineText((String) hit[1]) != null)) return (String) hit[1];
-            String chain = null;
-            LocalPlayer p = Minecraft.getInstance().player;
-            GoalGrammar.Goal g = GoalGrammar.parse(goalText, n -> c.policyArea(n) != null);
-            if (p != null && g.error() == null) {
-                if (g.chain() != null) chain = g.chain();
-                else if (routineText(g.routine()) != null && RoutineRule.decide(routineText(g.routine()), plannedText(g.routine())) == RoutineRule.Decision.KEEP) chain = g.routine();
-                else {
-                    // 0.23.1: on the worker; null now, the routine (cached) once the search came back
-                    searchAsync(p, g, "hook:" + goalText, r -> {
-                        String ch = null;
-                        if (r != null && r.ok() && !r.steps().isEmpty() && c.chainsRef().routineCommand("save " + g.routine() + " " + r.chain()).startsWith("saved")) {
-                            JsonObject rec = new JsonObject();
-                            rec.addProperty("goal", g.text());
-                            rec.addProperty("chain", r.chain());
-                            rec.addProperty("cost", r.cost());
-                            rec.addProperty("at", System.currentTimeMillis());
-                            plansStore().add(g.routine(), rec);
-                            c.saved();
-                            ch = g.routine();
-                        }
-                        // S0 (MINING_PLAN 10.1): why there is no chain, for AA's NONE
-                        String why = ch != null ? null : r == null ? "the search threw" : !r.ok() ? (r.missing() != null ? "missing " + r.missing() : String.valueOf(r.error()))
-                                : r.steps().isEmpty() ? "nothing to do - I have it" : "the plan could not be saved";
-                        hookCache.put(goalText, new Object[]{System.currentTimeMillis(), ch, why});
-                    });
-                    return null;
-                }
-            }
-            hookCache.put(goalText, new Object[]{now, chain, chain != null ? null : p == null ? "not in a world" : g.error()});
-            return chain;
+            var a = io.github.mojolowjo.entropybot.aa.brain.Goals.parse(rest);
+            if (a.err() != null) return a.err().replace("aa want", "plan");
+            if (c.aaRuntime == null) return "error: plan: aa is not loaded";
+            var w = c.aaRuntime.needWorld();
+            if (w == null) return "plan: no facts for the chain yet (the senses are not ready)";
+            int n = a.n() > 0 ? a.n() : 1;
+            List<String> group = io.github.mojolowjo.entropybot.aa.brain.ToolGroup.items(a.word());
+            var ch = group.isEmpty() ? io.github.mojolowjo.entropybot.aa.NeedChain.resolve(a.word(), n, w)
+                    : io.github.mojolowjo.entropybot.aa.NeedChain.resolveAll(a.word(), group, n, w);
+            return "plan " + a.word() + " " + n + " (dry run, nothing runs): " + ch.why();
         } catch (RuntimeException e) {
-            LOG.warn("[entropybot] plan: brain hook: {}", e.toString());
-            return null;
+            LOG.warn("[entropybot] plan: {}", e.toString());
+            return "error: plan: " + e;
         }
     }
-
-    /**
-     * S0 (MINING_PLAN 10.1): {@link #chainFor} with its state: READY (the chain and the planner's cost from the plans
-     * store, 0 when unknown), NONE (a fresh "no plan" answer in the cache, with why), else SEARCHING (the worker runs).
-     */
-    io.github.mojolowjo.entropybot.aa.core.JobPort.Resolved chainState(String goalText) {
-        String ch = chainFor(goalText);
-        if (ch != null) {
-            double cost = 0;
-            try {
-                JsonObject pl = plansStore();
-                if (pl.has(ch) && pl.get(ch).isJsonObject() && pl.getAsJsonObject(ch).has("cost")) cost = pl.getAsJsonObject(ch).get("cost").getAsDouble();
-            } catch (RuntimeException ignored) {
-                // the cost is a ranking hint only; 0 when the store cannot say
-            }
-            return io.github.mojolowjo.entropybot.aa.core.JobPort.Resolved.ready(ch, cost);
-        }
-        Object[] hit = hookCache.get(goalText);
-        if (hit != null && System.currentTimeMillis() - (Long) hit[0] < 60_000 && hit[1] == null)
-            return io.github.mojolowjo.entropybot.aa.core.JobPort.Resolved.none(hit.length > 2 ? (String) hit[2] : null);
-        return io.github.mojolowjo.entropybot.aa.core.JobPort.Resolved.searching();
-    }
-
-    String actions(String rest) { return ActionTable.shortText(rest); }
-
-    /** "plan: N plans, M failed, last N nodes in M ms" for status/debug. */
-    String counters() { return "plans " + plans + ", failed " + failures + ", last " + lastNodes + " nodes in " + lastMs + " ms"; }
 
     // ---- actions.json ----
 
-    /** The state summary a model needs with the table: stage, bag, needs, goals, areas, places, the brain's last why, the job. */
+    /** The state summary a model needs with the table: stage, bag, needs, goals, areas, places, the job. */
     JsonObject stateSummary(LocalPlayer p) {
         JsonObject s = new JsonObject();
-        s.addProperty("stage", c.brainRuntime != null ? c.brainRuntime.stage() : "?");
+        s.addProperty("stage", c.senses != null ? c.senses.stage() : "?");
         JsonObject bag = new JsonObject();
         Map<String, Integer> inv = Gui.inventory(p);
         int k = 0;
@@ -426,20 +95,20 @@ final class GoalPlanning {
         if (b.has("needs")) s.add("needs", b.get("needs").deepCopy());
         JsonArray goals = new JsonArray();
         if (b.has("goals") && b.get("goals").isJsonArray()) for (JsonElement e : b.getAsJsonArray("goals")) {
-            try { goals.add(e.getAsJsonObject().get("text").getAsString()); } catch (RuntimeException ignored) {}
+            try { goals.add(e.getAsJsonObject().get("text").getAsString()); } catch (RuntimeException caught) { Quiet.warn("GoalPlanning.stateSummary failed, carrying on with the fallback", caught); }
         }
         s.add("goals", goals);
         JsonArray areas = new JsonArray();
         try {
-            for (JsonElement e : c.effectiveAreas()) {
+            for (JsonElement e : c.places()) {
                 JsonObject a = e.getAsJsonObject();
                 areas.add((a.has("name") ? a.get("name").getAsString() : "box") + (a.has("type") ? " " + a.get("type").getAsString() : ""));
             }
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException caught) { Quiet.warn("GoalPlanning.stateSummary failed, carrying on with the fallback", caught); }
         s.add("areas", areas);
         JsonObject places = new JsonObject();
         for (Map.Entry<String, JsonObject> e : Core.INSTANCE.knowledge.places().entrySet()) {
-            int[] xyz = BrainRuntime.xyz(e.getValue());
+            int[] xyz = SenseRuntime.xyz(e.getValue());
             if (xyz != null) places.addProperty(e.getKey(), xyz[0] + " " + xyz[1] + " " + xyz[2]);
         }
         s.add("places", places);
@@ -448,11 +117,6 @@ final class GoalPlanning {
         s.add("routines", routines);
         String job = c.chainsRef().running() ? c.chainsRef().chainStatus() : c.jobs.running() ? c.jobs.job.status : null;
         s.addProperty("job", job == null ? "idle" : job);
-        if (c.brainRuntime != null) {
-            String why = c.brainRuntime.brain.why();
-            s.addProperty("brain", c.brainRuntime.brain.on() ? "on" : "off");
-            s.addProperty("why", why.length() > 600 ? why.substring(0, 600) + "..." : why);
-        }
         return s;
     }
 

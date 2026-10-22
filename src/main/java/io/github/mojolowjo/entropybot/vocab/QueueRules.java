@@ -6,15 +6,15 @@ import java.util.Set;
 
 /**
  * V1b (VOCABULARY 5): {@code queue <task>} queues a task after the current one. Only tasks with a finish may be queued
- * (building, crafting, mining, gathering...): {@code follow}, {@code escort}, {@code defend}, {@code guard},
- * {@code repeat forever} and a {@code twerk} without seconds never end, so they are refused with the reason. A queued
- * task waits while an escort, defend or guard runs (until {@code dismiss} or {@code stop}). Pure.
+ * (building, crafting, mining, gathering...): {@code follow}, {@code defend}, {@code guard},
+ * {@code repeat forever} never ends, so they are refused with the reason. A queued
+ * task waits while a defend or guard runs (until {@code dismiss} or {@code stop}). Pure.
  */
 public final class QueueRules {
     private QueueRules() {}
 
-    public static final int MAX = 10;
-    static final Set<String> ENDLESS = Set.of("follow", "escort", "defend", "guard");
+    public static final int MAX = 10; // structural
+    static final Set<String> ENDLESS = Set.of("follow", "defend", "guard");
     /** Answers, not tasks: nothing to wait for. */
     static final Set<String> INSTANT = Set.of("status", "inv", "help", "queue", "places", "have", "stock", "needs", "goals", "kinds", "stop", "dismiss", "confirm", "check", "summary");
 
@@ -28,14 +28,14 @@ public final class QueueRules {
             if (ENDLESS.contains(v))
                 return "error: " + v + " can't be queued - it never finishes; queue after it: start it, then queue <task>";
             if (v.equals("repeat") && w.size() > 1 && w.get(1).equals("forever")) return "error: repeat forever can't be queued - it never finishes";
-            if (v.equals("debug") && w.size() > 1 && (w.get(1).equals("watch") || w.get(1).equals("twerk") && w.size() == 2))
+            if (v.equals("debug") && w.size() > 1 && w.get(1).equals("watch"))
                 return "error: " + w.get(1) + " can't be queued - it never finishes";
             if (INSTANT.contains(v)) return "error: " + v + " answers at once - just say it";
         }
         return null;
     }
 
-    /** May the next queued task start? Nothing runs, and no escort/defend/guard holds the bot. */
+    /** May the next queued task start? Nothing runs, and no defend/guard holds the bot. */
     public static boolean mayStart(boolean busy, boolean holding) {
         return !busy && !holding;
     }

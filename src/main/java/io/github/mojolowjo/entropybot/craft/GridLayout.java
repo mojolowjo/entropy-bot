@@ -22,9 +22,9 @@ public final class GridLayout {
     private GridLayout() {}
 
     /** The inventory's grid. */
-    public static final int INVENTORY = 2;
+    public static final int INVENTORY = 2; // game fact: crafting grid side: 2x2 in the inventory, 3x3 at a table
     /** A crafting table's grid. */
-    public static final int TABLE = 3;
+    public static final int TABLE = 3; // game fact: crafting grid side: 2x2 in the inventory, 3x3 at a table
 
     /**
      * Grid slot -> item id, or {@code error} = why it can't be laid out: "&lt;item&gt; needs a crafting table" (too big

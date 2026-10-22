@@ -1,11 +1,12 @@
 package io.github.mojolowjo.entropybot.sense;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.commands.SelfCheck;
 import io.github.mojolowjo.entropybot.guard.Guard;
 import io.github.mojolowjo.entropybot.memory.Limits;
-import io.github.mojolowjo.entropybot.poi.PoiScanner;
 import io.github.mojolowjo.entropybot.poi.Pois;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -35,8 +36,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * read once when it arrives (first load or resend; {@link McChunkReader}, palette-gated), kept as a {@link ChunkSummary}
  * in the {@link OreIndex}, and patched per block from the mod's existing block hook. A full read happens again only on a
  * resend or when a patch had to be dropped ({@link PassSchedule}'s missed rule); once a minute one loaded chunk is read
- * again and compared with its patched summary (the self-audit). The readers: points of interest ({@link PoiScanner#found},
- * {@link Pois#gone}), the terrain map (whole chunks on a read, columns on a patch), the surface export (columns), and the
+ * again and compared with its patched summary (the self-audit). The readers: points of interest (on demand only,
+ * {@link #refreshPois}), the terrain map (whole chunks on a read, columns on a patch), the surface export (columns), and the
  * ore index the jobs ask ("mine", gather, the brain, the cave job, "ores known"). Summaries are written to
  * {@code entropybot/sense/<dim>/<cx>.<cz>.json} ({@link SummaryFiles}) and loaded back stale at the next start.
  *
@@ -60,8 +61,9 @@ public final class ChunkPass {
     private static final Logger LOG = LogUtils.getLogger();
     public static final ChunkPass INSTANCE = new ChunkPass();
     /** Chunks a tick may take from the schedule (the time budget usually stops sooner). */
-    static final int PER_TICK = 8;
-    static final long AUDIT_EVERY_MS = 60_000, LOG_EVERY_MS = 60_000;
+    static final int PER_TICK = 8; // structural
+    static final long AUDIT_EVERY_MS = 60_000; // structural
+    static final long LOG_EVERY_MS = 60_000; // structural
 
     private final PassSchedule schedule = new PassSchedule();
     private final OreIndex index = new OreIndex();
@@ -74,10 +76,11 @@ public final class ChunkPass {
     private final ConcurrentLinkedQueue<String> failedWrites = new ConcurrentLinkedQueue<>();
     private ExecutorService worker;
     private String dim;
-    private long startMs, lastAuditMs, auditCursor;
+    private long startMs, lastAuditMs, auditCursor, nearCursor;
 
     // counters (sense status)
     private long heard, patches, beforeRead, dropUnsure, dropError, readsLoad, readsResend, readsMissed, readsRetry, readErrors;
+    private long nearAudits, nearFixes, oreHeard;
     private long audits, disagreements, errors, lastErrLogMs, lastAuditLogMs, filesBroken, filesLoadedCount;
     private final ArrayDeque<Long> disagreeAt = new ArrayDeque<>();
     private String lastError, lastDisagreement, filesNote = "not loaded yet";
@@ -91,6 +94,22 @@ public final class ChunkPass {
     private ChunkPass() {}
 
     public OreIndex index() { return index; }
+
+    private final SeenRuntime seenRt = new SeenRuntime();
+
+    private final SightingsRuntime sightRt = new SightingsRuntime();
+
+    /** AA_ROUND3 3/5: the seen ore cells of this world (Sightings kind ORE, sightings.json); null before the world files are known. */
+    public Seen seen() {
+        Sightings s = sightings();
+        return s == null ? null : s.ore();
+    }
+
+    /** sense status: the seen-ore line. */
+    public String seenStatus() {
+        Seen s = seen();
+        return "seen ore: " + (s == null || dim == null ? "no world" : s.size(dim) + " cells here") + ", " + seenRt.status() + ", fair " + (Seen.fair() ? "on" : "off");
+    }
 
     /** Has the pass read at least one chunk in this dimension (the index can answer)? */
     public boolean ready() { return dim != null && readsLoad + readsResend > 0; }
@@ -137,12 +156,17 @@ public final class ChunkPass {
             int cx = x >> 4, cz = z >> 4;
             long k = ChunkSummary.key(cx, cz);
             ChunkSummary s = index.get(dim, cx, cz);
+            SummaryBuilder.Cls cf = reader.cls(from), ct = reader.cls(to);
+            if (ct.family() != null) oreHeard++;       // an ore block appeared (sense status counts them: the hook is alive)
+            if (cf.family() != null && ct.family() == null) {           // AA_ROUND3 3: a mined ore leaves the seen cells
+                Seen sn = seen();
+                if (sn != null) sn.mined(dim, x, y, z);
+            }
             if (s == null || !live.contains(k)) {
                 beforeRead++;              // its read is pending (or it is not loaded): the read covers this change
                 if (!schedule.isPending(cx, cz)) schedule.missed(cx, cz, System.currentTimeMillis());
                 return;
             }
-            SummaryBuilder.Cls cf = reader.cls(from), ct = reader.cls(to);
             boolean nearTop = ColumnPatch.nearTop(s.tops, x, y, z);
             if (cf.none() && ct.none() && !nearTop) return;           // nothing the summary holds: O(1) and done
             LevelChunk chunk = level.getChunkSource().getChunk(cx, cz, false);
@@ -157,13 +181,12 @@ public final class ChunkPass {
             }
             if (nearTop) mapColumn(x, z);
             if (!out.isEmpty()) {
-                apply(s, out, false);
                 dirty.mark(SummaryFiles.Dirty.key(dim, cx, cz), now);
             }
         } catch (Throwable t) {
             dropError++;
             error("block change", t);
-            try { schedule.missed(x >> 4, z >> 4, System.currentTimeMillis()); } catch (Throwable ignored) {}
+            try { schedule.missed(x >> 4, z >> 4, System.currentTimeMillis()); } catch (Throwable caught) { Quiet.warn("ChunkPass.blockChanged failed, carrying on with the fallback", caught); }
         }
     }
 
@@ -199,7 +222,16 @@ public final class ChunkPass {
                 lastAuditMs = now;
                 audit(level, now);
             }
+            if (tick % NearAudit.EVERY_TICKS == 5 && System.nanoTime() - t0 < Limits.SENSE_BUDGET_NS / 2) nearAudit(level, p, now);
             if (tick % 20 == 3) writeDue(now, false);
+            if (tick % 1200 == 5) saveStats();
+            try {
+                Sightings sg = sightings();
+                if (sg != null && dim != null) seenRt.tick(level, mc.player, index, sg.ore(), dim, tick, now);
+                if (sg != null && dim != null) sightRt.tick(level, mc.player, sg, dim, seenRt.budget, tick, now);
+            } catch (Throwable t) {
+                error("seen", t);
+            }
         } catch (Throwable t) {
             error("tick", t);
         } finally {
@@ -250,6 +282,11 @@ public final class ChunkPass {
      */
     public void worldChanged() {
         try {
+            saveStats();                                  // leftWorld may have run already (then it is clean); the old root is still set
+            stats = null;
+            statsRoot = null;
+            sightings = null;
+            sightRoot = null;
             gen.incrementAndGet();
             schedule.clear();
             live.clear();
@@ -271,12 +308,125 @@ public final class ChunkPass {
     public void leftWorld() {
         try {
             writeDue(System.currentTimeMillis(), true);
+            saveStats();
             schedule.clear();
             live.clear();
             index.markAllStale();
             dim = null;
         } catch (Throwable t) {
             error("leave", t);
+        }
+    }
+
+    // ---- ore stats (B5): where each ore family turns up, per world (entropybot/.../ore-stats.json) ----
+
+    private OreStats stats;
+    private String statsRoot;
+
+    /** The learned ore heights of the current world (loaded from its file on first use); null before the files exist. Never throws. */
+    public OreStats stats() {
+        try {
+            Path root = root();
+            if (root == null) return stats;
+            String r = root.toString();
+            if (stats != null && r.equals(statsRoot)) return stats;
+            if (stats != null) saveStats();               // a different world root: keep the old one's counts
+            Path f = root.resolve("ore-stats.json");
+            int[] skipped = new int[1];
+            if (java.nio.file.Files.isRegularFile(f)) {
+                stats = OreStats.fromJson(java.nio.file.Files.readString(f), skipped);
+                if (skipped[0] > 0) LOG.warn("[entropybot] sense: ore-stats.json had {} unreadable part(s), skipped", skipped[0]);
+            } else {
+                stats = new OreStats();
+            }
+            statsRoot = r;
+            return stats;
+        } catch (Throwable t) {
+            error("ore stats load", t);
+            if (stats == null) stats = new OreStats();    // count in memory at least; the file is not overwritten unseen (see saveStats)
+            return stats;
+        }
+    }
+
+    // ---- sightings (AA_ROUND3 5): ore cells, caves and animals the bot has seen, per world (sightings.json) ----
+
+    private Sightings sightings;
+    private String sightRoot;
+
+    /** The current world's sightings (loaded on first use; an older ore-stats.json "seen" part is carried over once). Never throws. */
+    public Sightings sightings() {
+        try {
+            Path root = root();
+            if (root == null) return sightings;
+            String r = root.toString();
+            if (sightings != null && r.equals(sightRoot)) return sightings;
+            if (sightings != null) saveSightings();
+            Path f = root.resolve("sightings.json");
+            int[] skipped = new int[1];
+            if (java.nio.file.Files.isRegularFile(f)) {
+                sightings = Sightings.fromJson(java.nio.file.Files.readString(f), skipped);
+                if (skipped[0] > 0) LOG.warn("[entropybot] sense: sightings.json had {} unreadable part(s), skipped", skipped[0]);
+            } else {
+                OreStats st = stats();
+                Seen old = st == null ? null : st.legacySeen();
+                sightings = new Sightings(old);
+                if (old != null) LOG.info("[entropybot] sense: sightings.json: the seen ore cells carried over from ore-stats.json");
+            }
+            sightRoot = r;
+            return sightings;
+        } catch (Throwable t) {
+            error("sightings load", t);
+            if (sightings == null) sightings = new Sightings();
+            return sightings;
+        }
+    }
+
+    /** aa fair / aa sightings: the sightings line. */
+    public String sightingsText() {
+        Sightings s = sightings();
+        var mc = Minecraft.getInstance();
+        return s == null || dim == null ? "sightings: no world" : s.text(dim, mc.level == null ? 0 : mc.level.getGameTime() * 50) + " | " + sightRt.status();
+    }
+
+    private void saveSightings() {
+        try {
+            Sightings sg = sightings;
+            io.github.mojolowjo.entropybot.io.BotFiles files = Core.INSTANCE.files();
+            if (sg == null || files == null || sightRoot == null || !sg.dirty()) return;
+            if (!sightRoot.equals(files.worldRoot().toString())) return;
+            String json = sg.snapshot();
+            Path target = files.worldRoot().resolve("sightings.json");
+            worker().execute(() -> {
+                try {
+                    files.writeAtomic(target, json);
+                } catch (Throwable t) {
+                    LOG.warn("[entropybot] sense: couldn't write {}: {}", target.getFileName(), t.toString());
+                }
+            });
+        } catch (Throwable t) {
+            error("sightings save", t);
+        }
+    }
+
+    private void saveStats() {
+        saveSightings();
+        try {
+            OreStats st = stats;
+            io.github.mojolowjo.entropybot.io.BotFiles files = Core.INSTANCE.files();
+            if (st == null || files == null || statsRoot == null || !st.dirty()) return;
+            if (!statsRoot.equals(files.worldRoot().toString())) return;
+            String json = st.toJson();
+            st.saved();
+            Path target = files.worldRoot().resolve("ore-stats.json");
+            worker().execute(() -> {
+                try {
+                    files.writeAtomic(target, json);
+                } catch (Throwable t) {
+                    LOG.warn("[entropybot] sense: couldn't write {}: {}", target.getFileName(), t.toString());
+                }
+            });
+        } catch (Throwable t) {
+            error("ore stats save", t);
         }
     }
 
@@ -306,7 +456,12 @@ public final class ChunkPass {
         List<ChunkDiff.Change> changes = ChunkDiff.between(old, fresh);
         index.put(fresh);
         live.add(k);
-        apply(fresh, changes, true);
+        try {
+            OreStats st = stats();
+            if (st != null) st.addChunk(fresh);
+        } catch (Throwable t) {
+            error("ore stats", t);
+        }
         mapChunk(it.cx(), it.cz());
         if (old == null || old.stale || !changes.isEmpty()) dirty.mark(SummaryFiles.Dirty.key(dim, it.cx(), it.cz()), now);
     }
@@ -317,57 +472,81 @@ public final class ChunkPass {
         if (keys.isEmpty()) return;
         keys.sort(Long::compare);
         long k = keys.get((int) (auditCursor++ % keys.size()));
-        int cx = ChunkSummary.cx(k), cz = ChunkSummary.cz(k);
+        auditChunk(level, ChunkSummary.cx(k), ChunkSummary.cz(k), now, false);
+    }
+
+    /**
+     * 0.36.a9 (to-do vanilla 1b): the 3 x 3 chunks round the bot are read again in turn, one every
+     * {@link NearAudit#EVERY_TICKS} ticks, and compared with their patched summaries: a new or uncovered ore the patch path
+     * missed reaches the ore index within seconds (the minute-long round over every loaded chunk took far longer). A
+     * disagreement here means a patch did not take; it is counted and logged ("sense status": near fixes).
+     */
+    private void nearAudit(ClientLevel level, BlockPos p, long now) {
+        int[] c = NearAudit.pick(p.getX() >> 4, p.getZ() >> 4, nearCursor++);
+        auditChunk(level, c[0], c[1], now, true);
+    }
+
+    private void auditChunk(ClientLevel level, int cx, int cz, long now, boolean near) {
         LevelChunk chunk = level.getChunkSource().getChunk(cx, cz, false);
         ChunkSummary s = index.get(dim, cx, cz);
-        if (chunk == null || s == null || schedule.isPending(cx, cz)) return;
+        if (chunk == null || s == null || !live.contains(ChunkSummary.key(cx, cz)) || schedule.isPending(cx, cz)) return;
         ChunkSummary fresh = reader.read(dim, chunk, now);
-        audits++;
+        if (near) nearAudits++;
+        else audits++;
         List<String> diff = ChunkDiff.disagreements(s, fresh);
         if (diff.isEmpty()) return;
-        disagreements++;
+        if (near) nearFixes++;
+        else disagreements++;
         disagreeAt.add(now);
         while (!disagreeAt.isEmpty() && now - disagreeAt.peekFirst() > 3_600_000) disagreeAt.pollFirst();
-        lastDisagreement = "chunk " + cx + " " + cz + ": " + String.join(", ", diff);
+        lastDisagreement = (near ? "near " : "") + "chunk " + cx + " " + cz + ": " + String.join(", ", diff);
         if (now - lastAuditLogMs >= LOG_EVERY_MS) {
             lastAuditLogMs = now;
-            LOG.warn("[entropybot] sense: self-audit disagreement #{} at {} - summary replaced", disagreements, lastDisagreement);
+            LOG.warn("[entropybot] sense: {} disagreement #{} at {} - summary replaced",
+                    near ? "near-bot check" : "self-audit", near ? nearFixes : disagreements, lastDisagreement);
         }
         List<ChunkDiff.Change> changes = ChunkDiff.between(s, fresh);
         index.put(fresh);
-        apply(fresh, changes, false);
         dirty.mark(SummaryFiles.Dirty.key(dim, cx, cz), now);
     }
 
     // ---- readers ------------------------------------------------------------------------------------------------------
 
-    /** POI adds and removals to pois.json; a full read also refreshes every POI it holds (one per kind per section). */
-    private void apply(ChunkSummary s, List<ChunkDiff.Change> changes, boolean fullRead) {
+    /**
+     * rm-mining (sense noise: 309 "found a ..." lines in 15 min, one per POI block as chunks arrived): the pass no longer
+     * writes points of interest on every chunk read. pois.json is brought up to date on demand, when a reader asks (the
+     * "poi" verb, "go poi"): the index's POI spots within r of x z are noted (one per kind per section, merged as before)
+     * and the noted points of this dimension within r whose kind the index no longer has near them are dropped. One
+     * summary line. Client thread.
+     */
+    public String refreshPois(Pois pois, String d, int x, int z, int r) {
         Core core = Core.INSTANCE;
-        long tick = core.tick();
+        long tick = core.tick(), nowMs = System.currentTimeMillis();
+        int added = 0, gone = 0;
         try {
-            if (fullRead) {
+            for (ChunkSummary s : index.all(d)) {
+                if (Math.abs((s.cx << 4) + 8 - x) > r + 8 || Math.abs((s.cz << 4) + 8 - z) > r + 8) continue;
                 for (Map.Entry<String, ChunkSummary.Group> e : ChunkDiff.withLakes(s).entrySet()) {
                     Set<Integer> secs = new HashSet<>();
                     for (ChunkSummary.Spot sp : e.getValue().spots)
-                        if (secs.add(sp.y() >> 4)) PoiScanner.found(core.pois, core.events, e.getKey(), sp.x(), sp.y(), sp.z(), s.dim, tick);
+                        if (secs.add(sp.y() >> 4) && pois.saw(e.getKey(), sp.x(), sp.y(), sp.z(), d, nowMs, tick, null) != null) added++;
                 }
             }
-            for (ChunkDiff.Change c : changes) {
-                if (c.type() == ChunkDiff.Type.POI_ADD && !fullRead) PoiScanner.found(core.pois, core.events, c.key(), c.x(), c.y(), c.z(), s.dim, tick);
-                else if (c.type() == ChunkDiff.Type.POI_REMOVE) {
-                    Pois.Poi g = core.pois.gone(c.key(), c.x(), c.y(), c.z(), s.dim, tick,
-                            p -> index.poiNear(s.dim, p.kind(), p.x(), p.y(), p.z(), Pois.MERGE));
-                    if (g != null) {
-                        String line = "the " + g.kind() + " at " + g.x() + " " + g.y() + " " + g.z() + " is gone (poi " + g.id() + ")";
-                        core.events.push("poi", line, null);
-                        LOG.info("[entropybot] {}", line);
-                    }
-                }
+            for (com.google.gson.JsonElement el : pois.toJson().getAsJsonArray("pois")) {
+                com.google.gson.JsonObject p = el.getAsJsonObject();
+                if (!d.equals(p.get("dim").getAsString())) continue;
+                int px = p.get("x").getAsInt(), py = p.get("y").getAsInt(), pz = p.get("z").getAsInt();
+                if (Math.abs(px - x) > r || Math.abs(pz - z) > r || index.get(d, px >> 4, pz >> 4) == null) continue;     // unknown chunk: kept
+                String kind = p.get("kind").getAsString();
+                if (!index.poiNear(d, kind, px, py, pz, Pois.MERGE) && pois.gone(kind, px, py, pz, d, tick, null) != null) gone++;
             }
-        } catch (Throwable t) {
-            error("poi reader", t);
+        } catch (RuntimeException t) {
+            error("poi refresh", t);
+            return "the points of interest could not be refreshed: " + t;
         }
+        String line = "points of interest within " + r + ": " + added + " new, " + gone + " gone (from the chunk index)";
+        if (added + gone > 0) LOG.info("[entropybot] {}", line);
+        return line;
     }
 
     private void mapChunk(int cx, int cz) {
@@ -426,6 +605,7 @@ public final class ChunkPass {
             try {
                 s = index.get(p[0], Integer.parseInt(p[1]), Integer.parseInt(p[2]));
             } catch (RuntimeException e) {
+            Quiet.warn("ChunkPass.writeDue failed, carrying on with the fallback", e);
                 continue;
             }
             if (s == null) continue;                  // left memory: its file has the last written state
@@ -527,6 +707,7 @@ public final class ChunkPass {
         sb.append(" | ").append(schedule.loadedCount()).append(" chunks loaded, ").append(live.size()).append(" read, ").append(schedule.pending()).append(" pending");
         sb.append(" | patches ").append(patches).append(" applied, dropped: ").append(dropUnsure).append(" unsure (rescanned), ")
                 .append(dropError).append(" errors; ").append(beforeRead).append(" before the chunk's read (the read covers them)");
+        sb.append(" | ").append(seenStatus());
         sb.append(" | missed marks ").append(schedule.missedMarks).append(" (+").append(schedule.missedDeduped).append(" deduped)");
         sb.append(String.format(Locale.ROOT, " | tick %.3f ms last, %.3f max, %.3f avg (1 min); max (join) %.1f ms (the first 10 s: first reads, not a steady cost)",
                 lastNs / 1e6, maxNs / 1e6, avgMs(), joinMaxNs / 1e6));
@@ -539,6 +720,8 @@ public final class ChunkPass {
         sb.append(" | files: ").append(written.get()).append(" written, ").append(dirty.pending()).append(" waiting, ").append(filesLoadedCount).append(" loaded (")
                 .append(filesNote).append(")").append(filesBroken > 0 ? ", " + filesBroken + " broken skipped" : "");
         if (lastWriteError != null) sb.append(", last write error ").append(lastWriteError).append(" (").append(writeErrors.get()).append(")");
+        sb.append(" | ore blocks heard appear ").append(oreHeard);
+        sb.append(" | near-bot check ").append(nearAudits).append(" reads, ").append(nearFixes).append(" fixes (a fix = a patch that did not take)");
         sb.append(" | self-audit ").append(audits).append(" chunks, ").append(disagreements).append(" disagreements");
         if (lastDisagreement != null) sb.append(" (last: ").append(lastDisagreement).append(")");
         if (lastError != null) sb.append(" | errors ").append(errors).append(", last ").append(lastError);

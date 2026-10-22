@@ -13,9 +13,15 @@ import java.util.List;
 public final class AiScreenText {
     private AiScreenText() {}
 
-    public static final int COLUMN = 300, CHAR_PX = 6, LINE_PX = 10, MIN_W = 427, MIN_H = 240;
+    public static final int COLUMN = 300; // structural
+    public static final int CHAR_PX = 6; // structural
+    public static final int LINE_PX = 10; // structural
+    public static final int MIN_W = 427; // structural
+    public static final int MIN_H = 240; // structural
     /** Top of the text area under the widget rows, and the top of the bottom buttons (from the screen's bottom). */
-    public static final int TEXT_TOP_P1 = 120, TEXT_TOP_P2 = 128, BUTTONS_FROM_BOTTOM = 52;
+    public static final int TEXT_TOP_P1 = 120; // structural
+    public static final int TEXT_TOP_P2 = 128; // structural
+    public static final int BUTTONS_FROM_BOTTOM = 52; // structural
 
     // page 1: connection
     public static final String TITLE_1 = "AI operator (1/2): connection";

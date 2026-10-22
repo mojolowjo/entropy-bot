@@ -22,10 +22,11 @@ import java.util.Map;
  * {@code entropybot/knownair.bin} (about 8 bytes a cell, at most ~0.8 MB: cheap). Thread-safe; pure Java.
  */
 public final class KnownAir {
-    public static final int REGION_SHIFT = 8;
-    public static final int MAX_PER_REGION = 30_000, MAX_TOTAL = 100_000;
-    static final int MAGIC = 0x45424B41;             // "EBKA"
-    static final int FORMAT = 1;
+    public static final int REGION_SHIFT = 8; // structural
+    public static final int MAX_PER_REGION = 30_000; // structural
+    public static final int MAX_TOTAL = 100_000; // structural
+    static final int MAGIC = 0x45424B41; // structural  // "EBKA"
+    static final int FORMAT = 1; // structural
 
     private final int maxPerRegion, maxTotal;
     /** dim -> region key -> cell key -> sequence number (insertion order = age). */

@@ -10,9 +10,9 @@ import java.util.ArrayDeque;
  */
 public final class SeenRule {
     /** A face seen only at light 0 is recorded only this close (the player would see it dimly near, black far). */
-    public static final double DARK_RANGE = 8;
-    public static final int ERRORS_TO_STOP = 20;
-    public static final long ERROR_WINDOW_MS = 60_000;
+    public static final double DARK_RANGE = 8; // structural
+    public static final int ERRORS_TO_STOP = 20; // structural
+    public static final long ERROR_WINDOW_MS = 60_000; // structural
 
     private SeenRule() {}
 
@@ -23,7 +23,9 @@ public final class SeenRule {
     }
 
     /** Where a seen face goes (0.16.1): nowhere, the saved store, or the in-memory surface store. */
-    public static final int NONE = 0, SAVED = 1, SURFACE = 2;
+    public static final int NONE = 0; // structural
+    public static final int SAVED = 1; // structural
+    public static final int SURFACE = 2; // structural
 
     /**
      * 0.16.1 (owner, 2026-10-04: "on the surface show faces"): a face whose air side sees the sky goes to the surface

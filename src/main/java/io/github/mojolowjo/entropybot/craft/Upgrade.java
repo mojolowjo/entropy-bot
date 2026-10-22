@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.craft;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -21,11 +23,11 @@ public final class Upgrade {
     /** The tiers, lowest first ("insanium" only exists with Mystical Agradditions). */
     public static final List<String> TIERS = List.of("inferium", "prudentium", "tertium", "imperium", "supremium", "insanium");
     /** At most this many in one "upgrade" (the planner caps counts anyway; this keeps a typo from planning for minutes). */
-    public static final int MAX_N = 4096;
+    public static final int MAX_N = 4096; // structural
     /** A stack of essence, and of essence blocks. */
-    public static final int STACK = 64;
+    public static final int STACK = 64; // game fact: a stack is 64 items
     /** Bag slots kept free in a round besides what the round needs (a pickup, a stray drop). */
-    public static final int MARGIN = 1;
+    public static int margin() { return Tuning.i("upgrade.margin"); }
 
     public static final String USAGE = "usage: upgrade <essence> [n] - e.g. upgrade imperium 4 (makes 4 imperium_essence from the tiers below "
             + "in my bag, chests and RS network; the infusion crystal is kept). Tiers: prudentium, tertium, imperium, supremium";
@@ -95,7 +97,7 @@ public final class Upgrade {
      * made), and {@link #MARGIN}. {@code fetched} = what the round takes from the chests and the RS network.
      */
     public static int roundSlots(Map<String, Integer> fetched, List<Integer> craftOutputs) {
-        long s = MARGIN;
+        long s = margin();
         for (int v : fetched.values()) if (v > 0) s += (v + STACK - 1) / STACK;
         for (int v : craftOutputs) if (v > 0) s += (v + STACK - 1) / STACK;
         return (int) Math.min(Integer.MAX_VALUE, s);

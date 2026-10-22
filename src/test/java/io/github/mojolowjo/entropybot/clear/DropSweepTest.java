@@ -49,8 +49,8 @@ class DropSweepTest {
         DropSweep s = new DropSweep(BOX, 0);
         List<Item> seen = List.of(new Item("x", 1, 50, 1, 2));
         s.tick(0, seen, false, false);
-        assertEquals(Kind.WAIT, s.tick(DropSweep.WALK_TICKS - 1, seen, true, false).kind());
-        assertEquals(Kind.DONE, s.tick(DropSweep.WALK_TICKS, seen, true, false).kind());
+        assertEquals(Kind.WAIT, s.tick(DropSweep.walkTicks() - 1, seen, true, false).kind());
+        assertEquals(Kind.DONE, s.tick(DropSweep.walkTicks(), seen, true, false).kind());
     }
 
     @Test
@@ -66,7 +66,7 @@ class DropSweepTest {
             if (a.kind() == Kind.WALK) walks++;
             t += 1;
         }
-        assertEquals(DropSweep.MAX_WALKS, walks);
+        assertEquals(DropSweep.maxWalks(), walks);
         assertTrue(s.capped);
         assertEquals(5, s.left);
         assertEquals("picked up 18 items, left 5 drops", s.note(18));
@@ -77,7 +77,7 @@ class DropSweepTest {
         DropSweep s = new DropSweep(BOX, 100);
         List<Item> seen = List.of(new Item("a", 1, 50, 1, 1), new Item("b", 2, 50, 1, 2));
         s.tick(100, seen, false, true);
-        var a = s.tick(100 + DropSweep.MAX_TICKS, seen, false, true);
+        var a = s.tick(100 + DropSweep.maxTicks(), seen, false, true);
         assertEquals(Kind.DONE, a.kind());
         assertTrue(s.capped);
         assertEquals(1, s.left);

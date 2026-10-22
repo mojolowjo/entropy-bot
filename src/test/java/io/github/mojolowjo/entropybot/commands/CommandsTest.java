@@ -188,13 +188,12 @@ class CommandsTest {
         @Override public JsonObject supplies() { return supplies; }
         @Override public String orePrefer() { return null; }
         @Override public JsonObject minePlace() { return mine; }
-        @Override public boolean inAreas(String dim, int x, int z) { return true; }
+        @Override public boolean workAllowed(String dim, int x, int z) { return true; }
         @Override public String dim() { return "minecraft:overworld"; }
         @Override public void saved() {}
         int[] pos;                                            // (wave 1) where the bot stands; null = unknown
         @Override public int[] pos() { return pos; }
-        int furnaceDue;                                       // (package D) how many step boundaries see a furnace due
-        @Override public boolean furnaceDue() { return furnaceDue > 0 && furnaceDue-- > 0; }
+
 
         void run(int ticks) {
             for (int i = 0; i < ticks; i++) {
@@ -252,24 +251,17 @@ class CommandsTest {
     }
 
     @Test
-    void aFailedStepEndsTheChainAndAFightIsRetried() {
+    void aFailedStepEndsTheChainAndAFightIsNotRetried() {
         Fake f = fake(new JsonObject());
         f.chains.startChain("owner", "chain", "goto 1 2 3 then places", 1);
         f.replies.add("ok: going");
         f.run(5);
         f.link.done(f.takeNext().id, "stopped: attacked by zombie");
         f.run(5);
-        assertTrue(f.chains.running(), "a fight is retried");
-        f.fighting = true;
-        f.run(400);
-        assertEquals(1, f.ran.size(), "not while fighting");
-        f.replies.add("error: no path to 1 2 3");
-        f.fighting = false;
-        f.run(10);
-        assertEquals(2, f.ran.size(), "then the same step again");
-        f.run(10);
-        assertFalse(f.chains.running());
-        assertEquals("chain: stopped at step 1 (goto 1 2 3): no path to 1 2 3", f.whispers.get(f.whispers.size() - 1));
+        // rm-execution (rule 7): no retry of its own: a step cut short ends the chain with its stage and reason
+        assertFalse(f.chains.running(), "no retry");
+        assertEquals(1, f.ran.size(), "the step ran once");
+        assertEquals("chain: stopped at step 1 (goto 1 2 3): stopped: attacked by zombie", f.whispers.get(f.whispers.size() - 1));
     }
 
     @Test
@@ -356,9 +348,9 @@ class CommandsTest {
         f.run(5);
         assertEquals("farm", f.ran.get(f.ran.size() - 1), "the step the death cut short runs again");
         for (int i = 0; i < 4; i++) f.chains.noteDeath();
-        assertTrue(f.chains.parked());
-        assertTrue(f.chains.deathsCommand("").contains("PARKED"));
-        assertTrue(f.chains.resumeCommand().startsWith("ok: back to work"));
+        // rm-execution: no parking after 5 deaths (DEATHS_PARK is gone): the deaths are counted, nothing is held
+        assertTrue(f.chains.deathsCommand("").startsWith("5 deaths in the last hour"), f.chains.deathsCommand(""));
+        assertFalse(f.chains.deathsCommand("").contains("PARKED"));
     }
 
     @Test
@@ -396,24 +388,6 @@ class CommandsTest {
         assertEquals("rule #2", f.chains.name());
     }
 
-    @Test
-    void theAutominerDecidesAndSaysWhy() {
-        JsonObject mem = new JsonObject();
-        Fake f = fake(mem);
-        assertTrue(f.chains.autominerCommand("on").startsWith("ok: autominer on"));
-        f.free = 2;
-        f.tick = 1000;
-        f.chains.autominerTick();
-        assertEquals("autominer", f.chains.name());
-        assertTrue(f.chains.whyCommand().contains("deposit because my bag is nearly full (2 free slots)"));
-        f.chains.clear();
-        f.free = 20;
-        f.mine = JsonParser.parseString("{\"x\":5,\"y\":-54,\"z\":5,\"dir\":\"west\"}").getAsJsonObject();
-        f.tick += 300;
-        f.chains.autominerTick();
-        assertTrue(f.chains.whyCommand().contains("mine strip any 32 because my mine at 5 -54 5 is ready"), f.chains.whyCommand());
-    }
-
     // ---- the policy verbs ----
 
     static final class FakeGuard implements PolicyCommands.Guard {
@@ -437,15 +411,15 @@ class CommandsTest {
         FakeGuard g = new FakeGuard();
         PolicyCommands pc = new PolicyCommands(p, g, () -> {});
         PolicyCommands.Pos here = new PolicyCommands.Pos(10, 64, 20, "minecraft:overworld");
-        assertEquals("no areas set - area here 48 work neutral", pc.command("area", "list", true, "owner", here, here));
-        assertEquals("ok: area home (neutral, white: -20 -10 to 40 50) added | mod: ok: 1 areas", pc.command("area", "here 30 home", true, "owner", here, here));
-        assertTrue(pc.inAreas("minecraft:overworld", 0, 0));
-        assertFalse(pc.inAreas("minecraft:overworld", 100, 0));
+        assertTrue(pc.command("area", "list", true, "owner", here, here).startsWith("no areas set - the world is open"));
+        assertEquals("ok: area home (work, white: -20 -10 to 40 50) added | mod: ok: 1 areas", pc.command("area", "here 30 home", true, "owner", here, here));
+        assertTrue(pc.workAllowed("minecraft:overworld", 0, 0));
+        assertTrue(pc.workAllowed("minecraft:overworld", 100, 0), "AREAS: open outside the areas too");
         assertEquals("only owner can change where I may go and dig", pc.command("area", "here 3 x", false, "owner", here, here));
         assertTrue(pc.command("area", "show home", false, "owner", here, here).contains("edges: west 30, east 30"));
-        assertEquals("ok: area base (safe, green: 0 10 to 20 30, y 56..80) added | mod: ok: 1 areas", pc.command("area", "here 10 base safe", true, "owner", here, here));
+        assertEquals("ok: area base (no-break, green: 0 10 to 20 30, y 56..80) added (safe = no-break now) | mod: ok: 1 areas", pc.command("area", "here 10 base safe", true, "owner", here, here));
         assertEquals(1, g.last.getAsJsonArray("protect").size(), "a safe area is the guard's protect box");
-        assertEquals("safe", g.last.getAsJsonArray("protect").get(0).getAsJsonObject().get("type").getAsString());
+        assertEquals("no-break", g.last.getAsJsonArray("protect").get(0).getAsJsonObject().get("type").getAsString());
         assertTrue(pc.command("fence", "mode strict", true, "owner", here, here).endsWith("| mod: ok: guard mode strict"));
         assertTrue(g.strict);
         assertTrue(pc.command("fence", "mode log", true, "owner", here, here).startsWith("say \"fence mode log confirm\""));
@@ -453,8 +427,8 @@ class CommandsTest {
         assertTrue(pc.command("area", "del home confirm", true, "owner", here, here).startsWith("ok: area home deleted"));
         assertEquals(new JsonArray(), g.last.getAsJsonArray("areas"));
         assertTrue(pc.command("fence", "", true, "owner", here, here).startsWith("fence: mod not loaded"));
-        assertEquals("ok (in base, safe)", pc.command("fence", "check 10 64 20 go", true, "owner", here, here));
-        assertEquals("ok (outside every area)", pc.command("fence", "check 500 64 20 go", true, "owner", here, here));
+        assertEquals("ok (in base, no-break)", pc.command("fence", "check 10 64 20 go", true, "owner", here, here));
+        assertEquals("ok (no area)", pc.command("fence", "check 500 64 20 go", true, "owner", here, here));
     }
 
     /** V1a: the new area forms, change, del, and the types. */
@@ -464,26 +438,26 @@ class CommandsTest {
         FakeGuard g = new FakeGuard();
         PolicyCommands pc = new PolicyCommands(p, g, () -> {});
         PolicyCommands.Pos here = new PolicyCommands.Pos(10, 64, 20, "minecraft:overworld");
-        assertEquals("ok: area pit (destroy, red: 0 0 to 30 30, y 40..70) added | mod: ok: 1 areas", pc.command("area", "0 0 30 30 pit destroy 40 70", true, "owner", here, here));
-        assertEquals("ok: area yard (neutral, white: -5 -5 to 5 5) added | mod: ok: 2 areas", pc.command("area", "-5 -5 5 5 yard", true, "owner", here, here));
+        assertEquals("ok: area pit (destroy, dark red: 0 0 to 30 30, y 40..70) added | mod: ok: 1 areas", pc.command("area", "0 0 30 30 pit destroy 40 70", true, "owner", here, here));
+        assertEquals("ok: area yard (work, white: -5 -5 to 5 5) added | mod: ok: 2 areas", pc.command("area", "-5 -5 5 5 yard", true, "owner", here, here));
         assertTrue(pc.command("area", "here 8 house safe 2 3", true, "owner", here, here).contains("y 62..67"));
         assertEquals(AreaTypeOf("destroy"), p.getAsJsonArray("areas").get(0).getAsJsonObject().get("type").getAsString());
-        assertEquals("ok: area pit is now main (blue) | mod: ok: 2 areas", pc.command("area", "change type pit main", true, "owner", here, here));
-        assertTrue(pc.command("area", "change type yard safe", true, "owner", here, here).startsWith("ok: area yard is now safe (green)"));
+        assertEquals("ok: area pit is now base (blue) (main = base now) | mod: ok: 2 areas", pc.command("area", "change type pit main", true, "owner", here, here));
+        assertTrue(pc.command("area", "change type yard safe", true, "owner", here, here).startsWith("ok: area yard is now no-break (green)"));
         assertEquals(2, p.getAsJsonArray("protect").size(), "yard moved to the safe list");
         assertTrue(pc.command("area", "change type yard neutral", true, "owner", here, here).startsWith("ok"));
         assertFalse(pc.findArea("yard").has("type"), "neutral is the default: no type field");
         assertTrue(pc.command("area", "change name yard garden", true, "owner", here, here).startsWith("ok: area yard is now called garden"));
         assertNotNull(pc.findArea("garden"));
         assertEquals("error: there is an area called pit already", pc.command("area", "change name garden pit", true, "owner", here, here));
-        assertEquals("error: type must be neutral, destroy, main or safe", pc.command("area", "change type pit red", true, "owner", here, here));
-        assertEquals("error: type must be neutral, destroy, main or safe", pc.command("area", "here 5 x purple", true, "owner", here, here));
+        assertEquals(io.github.mojolowjo.entropybot.guard.AreaType.BAD, pc.command("area", "change type pit red", true, "owner", here, here));
+        assertEquals(io.github.mojolowjo.entropybot.guard.AreaType.BAD, pc.command("area", "here 5 x purple", true, "owner", here, here));
         assertTrue(pc.command("area", "here 5 safe", true, "owner", here, here).startsWith("error: \"safe\" is one of my area words"));
         assertTrue(pc.command("area", "1 2 3 4", true, "owner", here, here).startsWith("usage: area here <r> <name>"));
-        assertTrue(pc.command("area", "1 2 3 4 n main 5", true, "owner", here, here).startsWith("usage: area x z x2 z2 <name> [type] [y1 y2]"));
+        assertTrue(pc.command("area", "1 2 3 4 n main 5", true, "owner", here, here).startsWith("usage: area x z x2 z2 <name> [meaning] [y1 y2]"));
         String list = pc.command("area", "list", false, "owner", here, here);
-        assertTrue(list.contains("pit (main, blue: 0 0 to 30 30, y 40..70)") && list.contains("house (safe, green:"), list);
-        assertTrue(pc.command("area", "show pit", false, "owner", here, here).startsWith("pit (main, blue:"));
+        assertTrue(list.contains("pit (base, blue: 0 0 to 30 30, y 40..70)") && list.contains("house (no-break, green:"), list);
+        assertTrue(pc.command("area", "show pit", false, "owner", here, here).startsWith("pit (base, blue:"));
     }
 
     private static String AreaTypeOf(String s) { return s; }
@@ -499,10 +473,10 @@ class CommandsTest {
         assertEquals("that is now area here 20 base", pc.command("area", "add base here 20", true, "owner", here, here));
         assertEquals("that is now area 1 2 3 4 c", pc.command("area", "add c 1 2 3 4", true, "owner", here, here));
         assertEquals("that is now area 1 2 3 4 c 5 6", pc.command("area", "add c 1 2 3 4 5 6", true, "owner", here, here));
-        assertEquals("that is now area here 8 keep safe 8 16", pc.command("area", "protect keep 8", true, "owner", here, here));
-        assertEquals("that is now area here 8 keep safe 4 2", pc.command("area", "protect keep 8 4 2", true, "owner", here, here));
-        assertEquals("that is now area 1 3 4 6 box safe 2 5", pc.command("protect", "box 1 2 3 4 5 6", true, "owner", here, here));
-        assertEquals("that is now area here 10 x safe 8 16", pc.command("protect", "x here 10", true, "owner", here, here));
+        assertEquals("that is now area here 8 keep no-break 8 16", pc.command("area", "protect keep 8", true, "owner", here, here));
+        assertEquals("that is now area here 8 keep no-break 4 2", pc.command("area", "protect keep 8 4 2", true, "owner", here, here));
+        assertEquals("that is now area 1 3 4 6 box no-break 2 5", pc.command("protect", "box 1 2 3 4 5 6", true, "owner", here, here));
+        assertEquals("that is now area here 10 x no-break 8 16", pc.command("protect", "x here 10", true, "owner", here, here));
         assertEquals("that is now area list", pc.command("protect", "", true, "owner", here, here));
         assertEquals("that is now area del box confirm", pc.command("unprotect", "box confirm", true, "owner", here, here));
         assertEquals("that is now area del home", pc.command("area", "remove home", true, "owner", here, here));
@@ -544,10 +518,10 @@ class CommandsTest {
         NearGuard g = new NearGuard();
         PolicyCommands pc = new PolicyCommands(p, g, () -> {});
         PolicyCommands.Pos here = new PolicyCommands.Pos(10, 64, 20, "minecraft:overworld");
-        assertEquals("ok: area base (neutral, white: -6 4 to 26 36) added | mod: ok", pc.command("area", "here 16 base", true, "owner", here, here));
-        assertEquals("ok: area base (neutral, white: -10 0 to 30 40) replaced | mod: ok", pc.command("area", "here 20 base", true, "owner", here, here));
-        assertEquals("ok: area keep (safe, green: 2 12 to 18 28, y 56..80) added | mod: ok", pc.command("area", "here 8 keep safe", true, "owner", here, here));
-        assertEquals("ok: area keep (safe, green: 2 12 to 18 28, y 60..66) replaced | mod: ok", pc.command("area", "here 8 keep safe 4 2", true, "owner", here, here));
+        assertEquals("ok: area base (work, white: -6 4 to 26 36) added | mod: ok", pc.command("area", "here 16 base", true, "owner", here, here));
+        assertEquals("ok: area base (work, white: -10 0 to 30 40) replaced | mod: ok", pc.command("area", "here 20 base", true, "owner", here, here));
+        assertEquals("ok: area keep (no-break, green: 2 12 to 18 28, y 56..80) added (safe = no-break now) | mod: ok", pc.command("area", "here 8 keep safe", true, "owner", here, here));
+        assertEquals("ok: area keep (no-break, green: 2 12 to 18 28, y 60..66) replaced (safe = no-break now) | mod: ok", pc.command("area", "here 8 keep safe 4 2", true, "owner", here, here));
         assertEquals("only owner can change where I may go and dig", pc.command("area", "here 5 x", false, "owner", here, here));
         // a name that is one of the words
         assertTrue(pc.command("area", "here 5 near", true, "owner", here, here).startsWith("error: \"near\" is one of my area words"));
@@ -581,22 +555,16 @@ class CommandsTest {
         assertTrue(g.on);
         assertTrue(saves[0] >= 3, "every change saves areas.json");
         assertTrue(pc.command("area", "near sideways", true, "owner", here, here).startsWith("usage: area near"));
-        // the zone counts in inAreas and effectiveAreas, never in areas() (areas.json)
-        assertFalse(pc.inAreas("minecraft:overworld", 100, 100));
-        g.near = PolicyCommands.makeBox("near-me", "minecraft:overworld", 84, 84, 116, 116, 48, 80);
-        assertTrue(pc.inAreas("minecraft:overworld", 100, 100));
-        assertEquals(1, pc.effectiveAreas().size());
-        assertEquals(0, pc.areas().size());
-        assertEquals(0, FenceRules.areaGap(pc.effectiveAreas(), 100, 64, 100, "minecraft:overworld"));
-        assertEquals(17, FenceRules.areaGap(pc.effectiveAreas(), 100, 97, 100, "minecraft:overworld"), "the zone's height counts");
-        // the real zone is a circle: the JSON checks use it too
+        // AREAS: the zone is a fact, never a permission: inAreas is true everywhere but a keep-out / no-break column
+        assertTrue(pc.workAllowed("minecraft:overworld", 100, 100), "the world is open");
         g.near = io.github.mojolowjo.entropybot.guard.NearZone.boxAt("minecraft:overworld", 100, 64, 100, 16).toJson();
-        assertTrue(pc.inAreas("minecraft:overworld", 116, 100), "r");
-        assertFalse(pc.inAreas("minecraft:overworld", 117, 100), "r + 1");
-        assertFalse(pc.inAreas("minecraft:overworld", 114, 114), "the square's corner area");
-        assertEquals(0, FenceRules.areaGap(pc.effectiveAreas(), 111, 64, 111, "minecraft:overworld"));
-        assertEquals(4, FenceRules.areaGap(pc.effectiveAreas(), 114, 64, 114, "minecraft:overworld"));
+        assertEquals(0, pc.places().size(), "the zone is no area");
+        assertTrue(pc.workAllowed("minecraft:overworld", 117, 100), "outside the zone: still open");
         assertEquals("a circle of 16 around 100 100, y 48..80", PolicyCommands.boxText(g.near));
+        pc.command("area", "here 4 hole keep-out", true, "owner", here, here);
+        assertFalse(pc.workAllowed("minecraft:overworld", here.x(), here.z()));
+        assertEquals("in hole (keep-out)", pc.blockedText("minecraft:overworld", here.x(), here.z()));
+        assertNull(pc.blockedText("minecraft:overworld", here.x() + 5, here.z()));
         // a broken near entry falls back to the defaults
         p.add("near", new com.google.gson.JsonPrimitive("x"));
         assertTrue(pc.nearOn());

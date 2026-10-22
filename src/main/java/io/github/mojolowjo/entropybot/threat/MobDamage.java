@@ -1,5 +1,9 @@
 package io.github.mojolowjo.entropybot.threat;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import java.util.LinkedHashMap;
@@ -13,8 +17,8 @@ import java.util.Map;
  */
 public final class MobDamage {
     public static final MobDamage INSTANCE = new MobDamage();
-    public static final double ALPHA = 0.3;
-    public static final int MIN_SAMPLES = 3;
+    public static double alpha() { return Tuning.get("mobDamage.alpha"); }
+    public static int minSamples() { return Tuning.i("mobDamage.minSamples"); }
 
     private final Map<String, double[]> m = new LinkedHashMap<>();
     private boolean dirty;
@@ -22,11 +26,11 @@ public final class MobDamage {
     static String key(String kind) { return kind == null ? "" : kind.replaceFirst("^minecraft:", ""); }
 
     public synchronized void add(String kind, double amount) {
-        if (!(amount > 0) || amount > 100) return;
+        if (!(amount > 0) || amount > Tuning.i("mobDamage.maxHit")) return;
         double[] s = m.get(key(kind));
         if (s == null) m.put(key(kind), new double[]{amount, 1});
         else {
-            s[0] = s[1] < 1 ? amount : s[0] + ALPHA * (amount - s[0]);
+            s[0] = s[1] < 1 ? amount : s[0] + alpha() * (amount - s[0]);
             s[1]++;
         }
         dirty = true;
@@ -41,7 +45,7 @@ public final class MobDamage {
     /** The average when there are enough samples, else NaN. */
     public double observed(String kind) {
         double[] s = get(kind);
-        return s != null && s[1] >= MIN_SAMPLES ? s[0] : Double.NaN;
+        return s != null && s[1] >= minSamples() ? s[0] : Double.NaN;
     }
 
     public synchronized boolean takeDirty() {
@@ -54,7 +58,7 @@ public final class MobDamage {
         JsonObject o = new JsonObject();
         for (Map.Entry<String, double[]> e : m.entrySet()) {
             JsonObject x = new JsonObject();
-            x.addProperty("avg", Math.round(e.getValue()[0] * 100) / 100.0);
+            x.addProperty("avg", Math.round(e.getValue()[0] * 100) / 100.0);  // structural: percent
             x.addProperty("n", (long) e.getValue()[1]);
             o.add(e.getKey(), x);
         }
@@ -68,7 +72,8 @@ public final class MobDamage {
             try {
                 JsonObject x = e.getValue().getAsJsonObject();
                 m.put(key(e.getKey()), new double[]{x.get("avg").getAsDouble(), x.get("n").getAsDouble()});
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException caught) {
+            Quiet.warn("MobDamage.load failed, carrying on with the fallback", caught);
                 // a broken entry is skipped
             }
         }

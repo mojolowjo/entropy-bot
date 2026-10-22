@@ -45,9 +45,9 @@ class TpRulesTest {
         assertFalse(TpRules.worth(null, null, BASE, null, new int[]{60, 53, 167}, OW, 10_000, -100_000), "no home known");
         assertFalse(TpRules.worth(HOME, OW, null, null, new int[]{60, 53, 167}, OW, 10_000, -100_000), "no destination");
         assertFalse(TpRules.worth(HOME, OW, BASE, null, new int[]{60, 53, 167}, OW, 10_000, 10_000 - 100), "a /home that didn't move me 5 s ago");
-        assertFalse(TpRules.worth(HOME, OW, BASE, null, new int[]{60, 53, 167}, OW, 10_000, 10_000 - TpRules.RETRY_TICKS + 1), "not within the minute");
-        assertTrue(TpRules.worth(HOME, OW, BASE, null, new int[]{60, 53, 167}, OW, 10_000, 10_000 - TpRules.RETRY_TICKS), "a minute later: tries again");
-        assertEquals(1200, TpRules.RETRY_TICKS);
+        assertFalse(TpRules.worth(HOME, OW, BASE, null, new int[]{60, 53, 167}, OW, 10_000, 10_000 - TpRules.retryTicks() + 1), "not within the minute");
+        assertTrue(TpRules.worth(HOME, OW, BASE, null, new int[]{60, 53, 167}, OW, 10_000, 10_000 - TpRules.retryTicks()), "a minute later: tries again");
+        assertEquals(1200, TpRules.retryTicks());
     }
 
     @Test
@@ -57,7 +57,7 @@ class TpRulesTest {
         assertEquals("ok", TpRules.result(at, NETHER, at, OW, 100, 105), "another dimension counts as a jump");
         assertEquals("ok", TpRules.result(at, OW, new int[]{69, 53, 167}, OW, 100, 105), "9 blocks is a jump");
         assertNull(TpRules.result(at, OW, new int[]{68, 53, 167}, OW, 100, 105), "8 blocks (a step or two of walking) is not");
-        assertNull(TpRules.result(at, OW, at, OW, 100, 100 + TpRules.WAIT_TICKS - 1), "still waiting (a server warm-up)");
-        assertEquals("failed", TpRules.result(at, OW, at, OW, 100, 100 + TpRules.WAIT_TICKS), "10 s and no move: /home did nothing");
+        assertNull(TpRules.result(at, OW, at, OW, 100, 100 + TpRules.waitTicks() - 1), "still waiting (a server warm-up)");
+        assertEquals("failed", TpRules.result(at, OW, at, OW, 100, 100 + TpRules.waitTicks()), "10 s and no move: /home did nothing");
     }
 }

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -19,7 +21,7 @@ public final class WatchSettings {
     /** The values; the defaults are distance 4, tunnel height 4, dollhouse on, steer on, turn on at 45 degrees a second. */
     public record Values(float distance, double height, boolean dollhouse, boolean steer, boolean turn, float turnRate,
                          String cutMode, double coneRadius, double outlineMargin, double shadowMargin) {
-        public static final Values DEFAULTS = new Values(4f, 4, true, true, true, SteerRules.TURN_RATE_DEFAULT);
+        public static final Values DEFAULTS = new Values(4f, 4, true, true, true, SteerRules.turnRateDefault());
 
         /** The values before the cut modes (0.19.0): the cut at its defaults (shadow, margin 0.5; cone radius 2.5; outline margin 0.6). */
         public Values(float distance, double height, boolean dollhouse, boolean steer, boolean turn, float turnRate) {
@@ -32,7 +34,7 @@ public final class WatchSettings {
 
         /** The values before watch turn (2026-10-05): the turn at its defaults. */
         public Values(float distance, double height, boolean dollhouse, boolean steer) {
-            this(distance, height, dollhouse, steer, true, SteerRules.TURN_RATE_DEFAULT);
+            this(distance, height, dollhouse, steer, true, SteerRules.turnRateDefault());
         }
     }
 
@@ -63,29 +65,33 @@ public final class WatchSettings {
         try {
             if (o.has("distance")) {
                 float v = o.get("distance").getAsFloat();
-                if (v >= 1f && v <= 8f) distance = v;
+                if (v >= 1f && v <= 8f) distance = v;  // structural: camera distance setting range 1..8
                 else bad.append(" distance ").append(v).append(" (1-8)");
             }
         } catch (RuntimeException e) {
+            Quiet.warn("WatchSettings.parse failed, carrying on with the fallback", e);
             bad.append(" distance");
         }
         try {
             if (o.has("tunnelHeight")) {
                 double v = o.get("tunnelHeight").getAsDouble();
-                if (v >= 1 && v <= 40) height = v;
+                if (v >= 1 && v <= 40) height = v;  // structural: camera height setting range 1..40
                 else bad.append(" tunnelHeight ").append(v).append(" (1-40)");
             }
         } catch (RuntimeException e) {
+            Quiet.warn("WatchSettings.parse failed, carrying on with the fallback", e);
             bad.append(" tunnelHeight");
         }
         try {
             if (o.has("dollhouse")) dollhouse = bool(o.get("dollhouse"));
         } catch (RuntimeException e) {
+            Quiet.warn("WatchSettings.parse failed, carrying on with the fallback", e);
             bad.append(" dollhouse");
         }
         try {
             if (o.has("steer")) steer = bool(o.get("steer"));
         } catch (RuntimeException e) {
+            Quiet.warn("WatchSettings.parse failed, carrying on with the fallback", e);
             bad.append(" steer");
         }
         boolean turn = d.turn();
@@ -93,15 +99,17 @@ public final class WatchSettings {
         try {
             if (o.has("turn")) turn = bool(o.get("turn"));
         } catch (RuntimeException e) {
+            Quiet.warn("WatchSettings.parse failed, carrying on with the fallback", e);
             bad.append(" turn");
         }
         try {
             if (o.has("turnRate")) {
                 float v = o.get("turnRate").getAsFloat();
-                if (v >= SteerRules.TURN_RATE_MIN && v <= SteerRules.TURN_RATE_MAX) turnRate = v;
+                if (v >= SteerRules.turnRateMin() && v <= SteerRules.turnRateMax()) turnRate = v;
                 else bad.append(" turnRate ").append(v).append(" (5-180)");
             }
         } catch (RuntimeException e) {
+            Quiet.warn("WatchSettings.parse failed, carrying on with the fallback", e);
             bad.append(" turnRate");
         }
         String cutMode = d.cutMode();
@@ -113,6 +121,7 @@ public final class WatchSettings {
                 else bad.append(" cutMode ").append(m).append(" (shadow|cone|outline)");
             }
         } catch (RuntimeException e) {
+            Quiet.warn("WatchSettings.parse failed, carrying on with the fallback", e);
             bad.append(" cutMode");
         }
         try {
@@ -122,6 +131,7 @@ public final class WatchSettings {
                 else bad.append(" coneRadius ").append(v).append(" (1-6)");
             }
         } catch (RuntimeException e) {
+            Quiet.warn("WatchSettings.parse failed, carrying on with the fallback", e);
             bad.append(" coneRadius");
         }
         try {
@@ -131,6 +141,7 @@ public final class WatchSettings {
                 else bad.append(" outlineMargin ").append(v).append(" (0-3)");
             }
         } catch (RuntimeException e) {
+            Quiet.warn("WatchSettings.parse failed, carrying on with the fallback", e);
             bad.append(" outlineMargin");
         }
         try {
@@ -140,6 +151,7 @@ public final class WatchSettings {
                 else bad.append(" shadowMargin ").append(v).append(" (0-2)");
             }
         } catch (RuntimeException e) {
+            Quiet.warn("WatchSettings.parse failed, carrying on with the fallback", e);
             bad.append(" shadowMargin");
         }
         Values v = new Values(distance, height, dollhouse, steer, turn, turnRate, cutMode, coneRadius, outlineMargin, shadowMargin);

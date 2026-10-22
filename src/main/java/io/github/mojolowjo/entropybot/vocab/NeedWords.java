@@ -14,7 +14,8 @@ import java.util.Map;
 public final class NeedWords {
     private NeedWords() {}
 
-    public static final int MAX_NEEDS = 32, MAX_GOALS = 10;
+    public static final int MAX_NEEDS = 32; // structural
+    public static final int MAX_GOALS = 10; // structural
 
     /** "need <item> <n>": {item, n}; null when there is no count (the old "what does it take" answer). */
     public static String[] standing(String rest) {
@@ -66,7 +67,7 @@ public final class NeedWords {
         return new Goal(null, null, "I can't plan that yet - " + GOAL_USAGE);
     }
 
-    /** "done"/"free" (the owner's release) is lifted by the owner's next direct order, come or escort. */
+    /** "done"/"free" (the owner's release) is lifted by the owner's next direct order, or come. */
     public static boolean liftsRelease(String verb) {
         return !List.of("done", "free", "status", "inv", "help", "queue", "places", "have", "stock", "needs", "goals", "kinds", "check", "confirm", "sleep", "why", "brain", "idle", "dayplan").contains(verb);
     }

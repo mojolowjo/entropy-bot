@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import io.github.mojolowjo.entropybot.Core;
@@ -80,18 +82,6 @@ public final class DebugVerbs {
         // the recorder's own verbs work without a world (its data is on disk)
         switch (verb) {
             case "trail" -> {
-                // 0.32.2 (P2): "debug trail walked [n]": the walked trail of this world (the newest n points)
-                if (w.size() >= 2 && w.get(1).equalsIgnoreCase("walked")) {
-                    var tr = io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.trail();
-                    var pts = tr.points();
-                    int n = w.size() >= 3 ? Math.max(1, Math.min(60, Integer.parseInt(w.get(2)))) : 12;
-                    StringBuilder sb = new StringBuilder(tr.counters()).append("; newest first:");
-                    for (int i = pts.size() - 1; i >= 0 && i >= pts.size() - n; i--) {
-                        var q = pts.get(i);
-                        sb.append(" ").append(q.x()).append(",").append(q.y()).append(",").append(q.z()).append(q.sky() ? "" : "u");
-                    }
-                    return sb.append(" (u = under ground)").toString();
-                }
                 return trail(rec, w, now, zone);
             }
             case "incident", "incidents" -> { return incident(rec, w, now, zone); }
@@ -103,7 +93,7 @@ public final class DebugVerbs {
                 return "ok: creeper probe " + (on ? "on: a log line each tick a creeper is within 10" : "off");
             }
             case "events" -> {
-                int n = DebugRules.optInt(w, 1, DebugRules.EVENTS_DEFAULT, 1, DebugRules.EVENTS_MAX, "usage: debug events [n]");
+                int n = DebugRules.optInt(w, 1, DebugRules.eventsDefault(), 1, DebugRules.eventsMax(), "usage: debug events [n]");
                 return core.events.since(Math.max(0, core.events.lastSeq() - n), n);
             }
             case "baritone" -> { return baritone(); }
@@ -112,7 +102,6 @@ public final class DebugVerbs {
                 return "last hits (oldest first): " + io.github.mojolowjo.entropybot.threat.HitLog.text(io.github.mojolowjo.entropybot.threat.HitLog.INSTANCE.last(n), zone)
                         + "\nmeasured per hit: " + io.github.mojolowjo.entropybot.threat.MobDamage.INSTANCE.toJson();
             }
-            case "motor" -> { return io.github.mojolowjo.entropybot.motor.Motor.INSTANCE.debug(); }     // 0.27.0
             case "threats", "threat" -> {
                 if (w.size() >= 4) { int[] c = DebugRules.ints(w, 1, 3, "usage: debug threats [x y z]"); return io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.probe(c[0], c[1], c[2]); }
                 return io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.debug();
@@ -166,7 +155,7 @@ public final class DebugVerbs {
             boolean enemy = e instanceof net.minecraft.world.entity.monster.Enemy;
             boolean neutral = e instanceof net.minecraft.world.entity.NeutralMob;
             boolean los = false;
-            try { los = p.hasLineOfSight(e); } catch (RuntimeException ignored) {}
+            try { los = p.hasLineOfSight(e); } catch (RuntimeException caught) { Quiet.warn("DebugVerbs.mobs failed, carrying on with the fallback", caught); }
             String verdict;
             var kind = host.kind(e, hurt);
             if (!le.isAlive()) verdict = "dead";
@@ -276,6 +265,7 @@ public final class DebugVerbs {
                 try {
                     v = baritone.api.utils.SettingsUtil.settingValueToString(st);
                 } catch (RuntimeException e) {
+            Quiet.warn("DebugVerbs.baritone failed, carrying on with the fallback", e);
                     v = String.valueOf(st.value);
                 }
                 if (v.length() > 120) v = v.substring(0, 117) + "...";
@@ -304,11 +294,11 @@ public final class DebugVerbs {
     static String changes(ClientLevel level, Recorder rec, List<String> w, long now, ZoneId zone) {
         String usage = "usage: debug changes x y z [r] [since <time>]";
         int[] c = DebugRules.ints(w, 1, 3, usage);
-        int r = DebugRules.CHANGES_R_DEFAULT;
-        if (w.size() > 4 && !w.get(4).equalsIgnoreCase("since")) r = DebugRules.optInt(w, 4, DebugRules.CHANGES_R_DEFAULT, 0, DebugRules.CHANGES_R_MAX, usage);
+        int r = DebugRules.changesRDefault();
+        if (w.size() > 4 && !w.get(4).equalsIgnoreCase("since")) r = DebugRules.optInt(w, 4, DebugRules.changesRDefault(), 0, DebugRules.changesRMax(), usage);
         String sinceWord = DebugRules.after(w, "since");
         long since = sinceWord == null ? 0 : DebugRules.time(sinceWord, now, zone);
-        List<Recorder.Change> list = rec.changes(Guard.dimOf(level), c[0], c[1], c[2], r, since, DebugRules.CHANGES_MAX);
+        List<Recorder.Change> list = rec.changes(Guard.dimOf(level), c[0], c[1], c[2], r, since, DebugRules.changesMax());
         String where = "within " + r + " of " + c[0] + " " + c[1] + " " + c[2] + (sinceWord == null ? "" : " since " + DebugRules.timeText(since, now, zone));
         if (list == null || list.isEmpty()) return "no changes recorded " + where + (rec.enabled() ? "" : " (" + rec.summary() + ")");
         List<String> out = new ArrayList<>();
@@ -319,8 +309,8 @@ public final class DebugVerbs {
     }
 
     static String trail(Recorder rec, List<String> w, long now, ZoneId zone) {
-        int min = DebugRules.optInt(w, 1, DebugRules.TRAIL_MINUTES_DEFAULT, 1, DebugRules.TRAIL_MINUTES_MAX, "usage: debug trail [minutes]");
-        List<Recorder.TrailPoint> list = rec.trail(now - min * 60_000L, DebugRules.TRAIL_MAX);
+        int min = DebugRules.optInt(w, 1, DebugRules.trailMinutesDefault(), 1, DebugRules.trailMinutesMax(), "usage: debug trail [minutes]");
+        List<Recorder.TrailPoint> list = rec.trail(now - min * 60_000L, DebugRules.trailMax());
         if (list == null || list.isEmpty()) return "no trail in the last " + min + " minutes" + (rec.enabled() ? "" : " (" + rec.summary() + ")");
         List<String> out = new ArrayList<>();
         for (Recorder.TrailPoint t : list) {
@@ -335,7 +325,7 @@ public final class DebugVerbs {
             String text = rec.incident(n);
             return text != null ? text : "no incident " + n + (rec.enabled() ? " (debug incident lists them)" : " (" + rec.summary() + ")");
         }
-        List<Recorder.Incident> list = rec.incidents(DebugRules.INCIDENTS_LIST);
+        List<Recorder.Incident> list = rec.incidents(DebugRules.incidentsList());
         if (list == null || list.isEmpty()) return "no incidents kept" + (rec.enabled() ? "" : " (" + rec.summary() + ")");
         List<String> out = new ArrayList<>();
         for (Recorder.Incident i : list) out.add("#" + i.n() + " " + DebugRules.timeText(i.atMs(), now, zone) + " " + i.reason() + " (" + i.file() + ")");

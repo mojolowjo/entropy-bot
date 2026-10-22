@@ -11,6 +11,7 @@ import java.util.TreeMap;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class StorageRulesTest {
     static StorageRules.Held h(String id, int n) { return new StorageRules.Held(id, n, false); }
 

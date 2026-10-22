@@ -7,9 +7,10 @@ package io.github.mojolowjo.entropybot.watchview;
  * Pure (JUnit: MeshRuleTest).
  */
 public final class MeshRule {
-    public static final long MIN_GAP_MS = 400, REFRESH_MS = 10_000;
-    public static final int MOVED_BLOCKS = 12;
-    public static final int MAX_FACES = 60_000;
+    public static final long MIN_GAP_MS = 400; // structural
+    public static final long REFRESH_MS = 10_000; // structural
+    public static final int MOVED_BLOCKS = 12; // structural
+    public static final int MAX_FACES = 60_000; // structural
 
     private MeshRule() {}
 
@@ -23,7 +24,7 @@ public final class MeshRule {
     }
 
     /** Seen faces stream in while the bot looks around a cave: a rebuild for them alone waits at least this long. */
-    public static final long SEEN_GAP_MS = 2000;
+    public static final long SEEN_GAP_MS = 2000; // structural
 
     /**
      * 0.16.0: also rebuild when the seen-face store changed (at most every {@link #SEEN_GAP_MS}) or the cyan tint was

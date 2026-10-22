@@ -98,7 +98,7 @@ public final class Core {
     private boolean keyPending;
     private int keyWait;
     /** review 2: ticks a join waits for the world's key before it falls back to worlds/unknown (5 s). */
-    static final int KEY_WAIT_TICKS = 100;
+    static final int KEY_WAIT_TICKS = 100; // structural
 
     /** False while the key is not known yet (the caller tries again next tick). */
     private boolean enterWorld(Minecraft mc, BotFiles f, boolean first) {
@@ -144,8 +144,6 @@ public final class Core {
         commands.flushWorld();
         io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.save(true);
         io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.save(true);
-        io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.savePenalties();
-        io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.save();
         if (terrain != null) terrain.flushAll();
     }
 
@@ -159,8 +157,6 @@ public final class Core {
         io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.load(f.worldRoot());
         LOG.info("[entropybot] world: {}; {}", io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.fileNote(),
                 io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.fileNote());
-        io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.loadPenalties(f.worldRoot());
-        LOG.info("[entropybot] world: {}", io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.load(f.worldRoot()));
         terrain = new io.github.mojolowjo.entropybot.map.TerrainMap(f.worldRoot().resolve("map"));
         io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.worldChanged();
         LOG.info("[entropybot] world: commands: {}", commands.reloadWorld(f));
@@ -212,9 +208,7 @@ public final class Core {
                 if (inWorld) io.github.mojolowjo.entropybot.watchview.SkyScanner.INSTANCE.leftWorld();   // 0.17.1: the surface scan forgotten
                 if (inWorld) io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.leftWorld();         // 0.28.0: summaries written, all stale
                 if (inWorld) io.github.mojolowjo.entropybot.surface.SurfaceExport.INSTANCE.leftWorld();   // 0.19.3: the surface export's files wiped
-                if (inWorld) io.github.mojolowjo.entropybot.routing.RouteRuntime.INSTANCE.leftWorld();   // routing R2: stop + save
-                if (inWorld) io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.savePenalties();
-                if (inWorld) io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.save();             // 0.32.2
+                if (inWorld) io.github.mojolowjo.entropybot.aa.moves.JobHands.leftWorld();      // backbone step 3 review 4
                 if (inWorld) io.github.mojolowjo.entropybot.commands.PaperPlan.INSTANCE.reset("left the world");     // review 3         // 0.23.3: edge penalties saved
                 inWorld = false;
                 return;
@@ -237,18 +231,15 @@ public final class Core {
                 LOG.info("[entropybot] mine notes: {}", mineNotes.load(files, new BotFiles(mc.gameDirectory.toPath().resolve("kubejs/bridge"))));
                 // S1: and when the game quits from inside a world (no tick runs after that)
                 Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                    try { mineNotes.flush(); } catch (Throwable ignored) {}
-                    try { io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.saveNow(); } catch (Throwable ignored) {}
-                    try { io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.save(true); } catch (Throwable ignored) {}
-                    try { io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.save(true); } catch (Throwable ignored) {}
+                    try { mineNotes.flush(); } catch (Throwable caught) { Quiet.warn("Core.onClientTick failed, carrying on with the fallback", caught); }
+                    try { io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.save(true); } catch (Throwable caught) { Quiet.warn("Core.onClientTick failed, carrying on with the fallback", caught); }
+                    try { io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.save(true); } catch (Throwable caught) { Quiet.warn("Core.onClientTick failed, carrying on with the fallback", caught); }
                 }, "entropybot-mine-notes"));
                 io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.load(files.worldRoot());
                 LOG.info("[entropybot] watch tunnel: {}", io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.fileNote());
                 io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.load(files.worldRoot());
                 LOG.info("[entropybot] watch seen: {}", io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.fileNote());
-                LOG.info("[entropybot] trail: {}", io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.load(files.worldRoot()));     // 0.32.2
                 LOG.info("[entropybot] commands: {}", commands.init(mc, files));
-                io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.loadPenalties(files.worldRoot());       // 0.23.3
                 terrain = new io.github.mojolowjo.entropybot.map.TerrainMap(files.worldRoot().resolve("map"));
                 recorder = new io.github.mojolowjo.entropybot.recorder.FlightRecorder(files.root().resolve("recorder"), events);   // B7e E5
                 ready = true;
@@ -265,7 +256,7 @@ public final class Core {
                 advisorInstalled = true;
                 io.github.mojolowjo.entropybot.baritone.CostAdvisorHook.install();
             }
-            reflexes.tick(tick);
+            try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(io.github.mojolowjo.entropybot.aa.door.Driver.REFLEX)) { reflexes.tick(tick); }     // AA_CLEANUP 2
             if (tick % 20 == 7) io.github.mojolowjo.entropybot.summary.SummaryRuntime.INSTANCE.tick(mc, mc.player, files, s -> commands.whisper(commands.owner(), s));     // 0.23.6
             knowledge.flushIfDue(tick);
             if (tick % 20 == 0) writeStock();                                   // C2: stock.json for the dashboard
@@ -296,7 +287,7 @@ public final class Core {
             }
             io.github.mojolowjo.entropybot.baritone.SafetyNet.INSTANCE.tick(tick);
             io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.tick(mc, guard.core);     // mining plan: the rule snapshot (never throws)
-            try { io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setCurrentJob(commands.jobs.running() ? commands.jobs.job.id : -1); } catch (Throwable ignored) {}
+            try { io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setCurrentJob(commands.jobs.running() ? commands.jobs.job.id : -1); } catch (Throwable caught) { Quiet.warn("Core.onClientTick failed, carrying on with the fallback", caught); }
             if (tick % 100 == 50) io.github.mojolowjo.entropybot.commands.Clearing.fallWatch(commands.jobs.running());     // 0.31.1 review 1
             io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.tick(tick, commands.jobs.running(), reflexes.hold());
             io.github.mojolowjo.entropybot.engine.WatchCamera.INSTANCE.tick();
@@ -305,9 +296,7 @@ public final class Core {
             io.github.mojolowjo.entropybot.watchview.SkyScanner.INSTANCE.tick(tick);      // 0.17.1: the tunnel view's surface scan (never throws)
             io.github.mojolowjo.entropybot.surface.SurfaceExport.INSTANCE.tick();      // 0.19.3: the surface export for the dashboard (never throws)
             if (tick % 10 == 4) io.github.mojolowjo.entropybot.commands.PaperPlan.INSTANCE.tick();        // 0.32.3: plan go ends -> settings back
-            io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.tick(tick);                  // 0.32.2: the walked trail (never throws)
-            io.github.mojolowjo.entropybot.routing.RouteRuntime.INSTANCE.tick(tick);     // routing R2: the map builder (never throws)
-            if (mc.player != null) commands.jobs.movementTick(mc.player);                 // 0.23.3: the movement package (never throws)
+            if (mc.player != null) io.github.mojolowjo.entropybot.aa.moves.SprintRule.tick(reflexes.reflex() == io.github.mojolowjo.entropybot.engine.Reflexes.Reflex.FLEEING);   // rm-routes: hunger conserve -> Baritone allowSprint
         } catch (Throwable t) {
             errors++;
             if (errors <= 5 || errors % 1200 == 0) LOG.error("[entropybot] tick error #{}: {}", errors, t.toString());
@@ -347,8 +336,7 @@ public final class Core {
         if (terrain != null) a.add("terrain");
         if (baritone.engineRegistered() && !engine.disabled()) a.add("engine");
         if (baritone.hooked()) a.add("settings:fixed");
-        try { if (baritone.hooked() && io.github.mojolowjo.entropybot.commands.BuilderDig.checkLine().equals("builder: ok")) a.add("builder"); } catch (Throwable ignored) {}
-        if (io.github.mojolowjo.entropybot.routing.RouteRuntime.INSTANCE.available()) a.add("route:map");
+        try { if (baritone.hooked() && io.github.mojolowjo.entropybot.commands.BuilderDig.checkLine().equals("builder: ok")) a.add("builder"); } catch (Throwable caught) { Quiet.warn("Core.features failed, carrying on with the fallback", caught); }
         return a;
     }
 

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.cave;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -14,10 +16,29 @@ import java.util.function.Predicate;
 public final class ExploreRules {
     private ExploreRules() {}
 
-    public static final int SEEN = 2, RINGS = 24, DEFAULT_MINUTES = 5, MAX_MINUTES = 30;
+    /** live-facts: the pickaxe tier I carry ({@code have}) meets the block's ({@code need}, MiningTiers; an unknown tier, below 0, is not met). */
+    public static boolean toolMeets(int need, int have) { return need >= 0 && need <= have; }
+
+    /**
+     * live-facts: a chain's explore for a missing source ends the moment the source is known: the one Nearby fact
+     * ({@code source}: AaRuntime.knownSource: a block by Baritone's scan or a sighting, or an animal whose loot drops it) answers for the item. The end text, or null
+     * while nothing is known (or no word was given). The chain is then priced again by the need that runs it.
+     */
+    public static String untilFound(String word, java.util.function.Function<String, io.github.mojolowjo.entropybot.aa.NeedChain.Spot> source) {
+        if (word == null || source == null) return null;
+        var s = source.apply(word);
+        if (s == null) return null;
+        return "a source of " + word + " is known: " + (s.block() == null ? "" : s.block().replaceFirst("^minecraft:", "") + " ")
+                + "at " + s.x() + " " + s.y() + " " + s.z() + " (" + Math.round(s.dist()) + " away); the chain is priced again";
+    }
+
+    public static int seen() { return Tuning.i("exploreRules.seen"); }
+    public static int rings() { return Tuning.i("exploreRules.rings"); }
+    public static int defaultMinutes() { return Tuning.i("exploreRules.defaultMinutes"); }
+    public static int maxMinutes() { return Tuning.i("exploreRules.maxMinutes"); }
     /** A walk to a chunk: until Baritone is done or this many ticks (90 s); further than ARRIVED off = gave up on it. */
-    public static final long WALK_TICKS = 20 * 90;
-    public static final int ARRIVED = 24;
+    public static long walkTicks() { return Tuning.l("exploreRules.walkTicks"); }
+    public static int arrivedV() { return Tuning.i("exploreRules.arrived"); }
 
     public static String key(String dim, int cx, int cz) {
         return dim + " " + cx + " " + cz;
@@ -28,24 +49,24 @@ public final class ExploreRules {
         String t = text == null ? "" : text.trim().toLowerCase();
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("^(\\d+)").matcher(t);
         int n = m.find() ? Integer.parseInt(m.group(1)) : 0;
-        if (n == 0) n = DEFAULT_MINUTES;
-        return Math.min(Math.max(n, 1), MAX_MINUTES);
+        if (n == 0) n = defaultMinutes();
+        return Math.min(Math.max(n, 1), maxMinutes());
     }
 
     /** The chunk keys within SEEN chunks of block x z (the bridge's exploreMark's set). */
     public static List<String> around(String dim, int x, int z) {
         List<String> out = new ArrayList<>();
         int cx = x >> 4, cz = z >> 4;
-        for (int dx = -SEEN; dx <= SEEN; dx++) for (int dz = -SEEN; dz <= SEEN; dz++) out.add(key(dim, cx + dx, cz + dz));
+        for (int dx = -seen(); dx <= seen(); dx++) for (int dz = -seen(); dz <= seen(); dz++) out.add(key(dim, cx + dx, cz + dz));
         return out;
     }
 
     /** What the target search needs from the world. */
     public interface Land {
         boolean explored(String key);
-        /** Inside the owner's areas (x and z only). */
-        boolean inside(int x, int z);
-        /** The guard refuses walking to x y z (a portal nearby, outside the fence...). */
+        /** The policy allows work in the column x z (no keep-out / no-break area there). */
+        boolean allowed(int x, int z);
+        /** The guard refuses walking to x y z (a portal nearby, a keep-out area...). */
         boolean refused(int x, int y, int z);
         /** A chunk the guard refused: never again (memory.explored). */
         void markRefused(String key);
@@ -55,18 +76,18 @@ public final class ExploreRules {
     public record Target(int x, int z) {}
 
     /**
-     * The nearest unexplored chunk centre inside the areas from block x y z (the bridge's exploreTarget); skip: a job's
+     * The nearest unexplored chunk centre the policy allows from block x y z (the bridge's exploreTarget); skip: a job's
      * own chunks to pass over too (never written to the explored notes); null when there is none.
      */
     public static Target target(String dim, int x, int y, int z, Land land, Set<String> skip) {
         int cx = x >> 4, cz = z >> 4;
-        for (int r = 1; r <= RINGS; r++) {
+        for (int r = 1; r <= rings(); r++) {
             for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) {
                 if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue;
                 String k = key(dim, cx + dx, cz + dz);
                 if (land.explored(k) || (skip != null && skip.contains(k))) continue;
-                int tx = ((cx + dx) << 4) + 8, tz = ((cz + dz) << 4) + 8;
-                if (!land.inside(tx, tz)) continue;
+                int tx = ((cx + dx) << 4) + 8, tz = ((cz + dz) << 4) + 8;  // game fact: the centre of a chunk is 8 blocks in (a chunk is 16 wide)
+                if (!land.allowed(tx, tz)) continue;
                 if (land.refused(tx, y, tz)) {
                     land.markRefused(k);
                     continue;
@@ -79,12 +100,13 @@ public final class ExploreRules {
 
     /** Arrived near a chunk target (within ARRIVED blocks, x + z)? */
     public static boolean arrived(int x, int z, Target t) {
-        return Math.abs(x - t.x()) + Math.abs(z - t.z()) <= ARRIVED;
+        return Math.abs(x - t.x()) + Math.abs(z - t.z()) <= arrivedV();
     }
 
     /** 0.33.1: new chunks walked between two gathers; the share of the run gathering may take; no gather this near the end. */
-    public static final int GATHER_GAP_CHUNKS = 2, GATHER_SHARE = 3;
-    public static final long GATHER_END_TICKS = 600;
+    public static int gatherGapChunks() { return Tuning.i("exploreRules.gatherGapChunks"); }
+    public static int gatherShare() { return Tuning.i("exploreRules.gatherShare"); }
+    public static long gatherEndTicks() { return Tuning.l("exploreRules.gatherEndTicks"); }
 
     /**
      * 0.33.1: may explore stop for a gather now? Gathering is a side effect of the walk, never the walk itself: only
@@ -92,9 +114,9 @@ public final class ExploreRules {
      * 1/GATHER_SHARE of the run so far, and not in the run's last 30 s.
      */
     public static boolean gatherAllowed(long elapsed, long remaining, long gatherTicks, int chunks, int chunksAtLastGather) {
-        if (remaining < GATHER_END_TICKS) return false;
-        if (chunks - chunksAtLastGather < GATHER_GAP_CHUNKS) return false;
-        return gatherTicks * GATHER_SHARE <= elapsed;
+        if (remaining < gatherEndTicks()) return false;
+        if (chunks - chunksAtLastGather < gatherGapChunks()) return false;
+        return gatherTicks * gatherShare() <= elapsed;
     }
 
     /** A point of interest for the report. */
@@ -113,7 +135,7 @@ public final class ExploreRules {
      * "; went 225 blocks west, ended at -268 63 117" right after the time, before the finds (a cut reply keeps it).
      */
     public static String note(int chunks, long ticks, String why, List<Poi> fresh, int[] from, int[] to) {
-        StringBuilder sb = new StringBuilder("explored " + chunks + " chunks in " + Math.round(ticks / 1200.0) + " min (" + why + ")");
+        StringBuilder sb = new StringBuilder("explored " + chunks + " chunks in " + Math.round(ticks / 1200.0) + " min (" + why + ")");  // game fact: 1200 ticks in a minute
         if (from != null && to != null) sb.append("; ").append(travel(from, to));
         if (fresh.isEmpty()) return sb.append("; nothing new to note").toString();
         List<String> parts = new ArrayList<>();
@@ -122,7 +144,7 @@ public final class ExploreRules {
             parts.add(p.kind() + " at " + p.x() + " " + p.y() + " " + p.z());
         }
         sb.append("; new: ").append(String.join(", ", parts));
-        if (fresh.size() > 6) sb.append(" (+").append(fresh.size() - 6).append(" more, \"poi\")");
+        if (fresh.size() > 6) sb.append(" (+").append(fresh.size() - 6).append(" more, \"poi\")");  // structural: display: how many items a text lists
         return sb.toString();
     }
 
@@ -131,12 +153,10 @@ public final class ExploreRules {
         int dx = to[0] - from[0], dz = to[2] - from[2];
         long d = Math.round(Math.sqrt((double) dx * dx + (double) dz * dz));
         String at = "ended at " + to[0] + " " + to[1] + " " + to[2];
-        if (d < 4) return "ended where I started, at " + to[0] + " " + to[1] + " " + to[2];
+        if (d < Tuning.i("exploreRules.endedNear")) return "ended where I started, at " + to[0] + " " + to[1] + " " + to[2];
         String[] names = {"east", "southeast", "south", "southwest", "west", "northwest", "north", "northeast"};
         double deg = Math.toDegrees(Math.atan2(dz, dx));                 // +z is south in Minecraft
-        int i = (int) Math.floorMod(Math.round(deg / 45.0), 8L);
+        int i = (int) Math.floorMod(Math.round(deg / 45.0), 8L);  // structural: compass: 8 points of 45 degrees
         return "went " + d + " blocks " + names[i] + ", " + at;
     }
-
-    public static final String NO_AREAS = "error: I explore only inside my areas, and there are none - ";
 }

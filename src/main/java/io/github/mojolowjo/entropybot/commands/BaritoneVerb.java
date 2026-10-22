@@ -29,9 +29,8 @@ public final class BaritoneVerb {
         String t = text == null ? "" : text.trim();
         if (t.startsWith("#")) t = t.substring(1).trim();
         if (t.isEmpty()) return USAGE;
-        // 0.34.3: Baritone's own #mine has no stuck/no-progress watchdog, no areas, protect boxes or built-block rules;
-        // the mod's mine has all of them, so the raw form is refused with the way to it
-        if (t.toLowerCase(java.util.Locale.ROOT).matches("^mine(\\s.*)?$")) return RAW_MINE;
+        // 0.39.z2 (owner 2026-10-22): raw Baritone commands, mine included, pass through as typed: the owner's test
+        // door into the car; AA stays the only driver (aa off first)
         try {
             return execute.test(t) ? "ok (check chat for Baritone errors)" : "error: baritone rejected command";
         } catch (IllegalStateException e) {

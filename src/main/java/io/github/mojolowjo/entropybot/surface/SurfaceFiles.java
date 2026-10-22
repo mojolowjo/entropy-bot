@@ -16,7 +16,7 @@ import java.nio.file.Path;
  */
 public final class SurfaceFiles {
     /** Bytes read from the head of a file: v, dim (64 at most), cx, cz, t and src all fit. */
-    public static final int HEAD = 256;
+    public static final int HEAD = 256; // structural
 
     private SurfaceFiles() {}
 

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.clear.BaritoneMask.Leftover;
 import io.github.mojolowjo.entropybot.clear.BaritoneMask.Verdict;
 
@@ -26,7 +28,7 @@ public final class BuilderReport {
         STALLED
     }
 
-    public static final int STALL_SECONDS = 60;
+    public static int stallSeconds() { return Tuning.i("builderReport.stallSeconds"); }
 
     /**
      * The step's per-tick watch: null while the builder works, else how it ended. active/paused: Baritone's builder
@@ -36,7 +38,7 @@ public final class BuilderReport {
     public static End watch(boolean active, boolean paused, long ticksSinceChange) {
         if (!active) return End.IDLE;
         if (paused) return End.PAUSED;
-        if (ticksSinceChange >= STALL_SECONDS * 20L) return End.STALLED;
+        if (ticksSinceChange >= stallSeconds() * 20L) return End.STALLED;  // game fact: 20 game ticks per second
         return null;
     }
 
@@ -102,7 +104,7 @@ public final class BuilderReport {
     static String why(End end) {
         return switch (end) {
             case PAUSED -> "Baritone found no way to reach the rest";
-            case STALLED -> "no block broken for " + STALL_SECONDS + " s";
+            case STALLED -> "no block broken for " + stallSeconds() + " s";
             default -> "it stopped";
         };
     }

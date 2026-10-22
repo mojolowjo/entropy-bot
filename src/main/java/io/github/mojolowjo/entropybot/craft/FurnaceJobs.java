@@ -1,5 +1,9 @@
 package io.github.mojolowjo.entropybot.craft;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -21,18 +25,18 @@ import static io.github.mojolowjo.entropybot.craft.CraftPlanner.shortId;
  */
 public final class FurnaceJobs {
     /** A vanilla furnace: 10 s an item. */
-    public static final long SMELT_MS = 10_000;
+    public static long smeltMs() { return Tuning.l("furnaceJobs.smeltMs"); }
     /** Added to a job's due time (the first item lights the furnace, the server's tick rate). */
-    public static final long SLACK_MS = 2_000;
+    public static long slackMs() { return Tuning.l("furnaceJobs.slackMs"); }
     /** A job is forgotten this long after it was due (package H's proposal), counted from this session's start at the earliest. */
-    public static final long EXPIRE_MS = 30 * 60_000L;
+    public static long expireMs() { return Tuning.l("furnaceJobs.expireMs"); }
     /** A pickup that couldn't run (busy, failed) is tried again after this. */
-    public static final long RETRY_MS = 5 * 60_000L;
+    public static long retryMs() { return Tuning.l("furnaceJobs.retryMs"); }
     /** Past its due time, no new output for this long while input is left: the furnace has stopped (no fuel?). */
-    public static final long STALL_MS = 60_000;
+    public static long stallMs() { return Tuning.l("furnaceJobs.stallMs"); }
     /** Every furnace busy: look again after this many ticks (a minute), at most {@link #BUSY_ROUNDS} times. */
-    public static final int BUSY_WAIT_TICKS = 1200;
-    public static final int BUSY_ROUNDS = 3;
+    public static int busyWaitTicks() { return Tuning.i("furnaceJobs.busyWaitTicks"); }
+    public static int busyRounds() { return Tuning.i("furnaceJobs.busyRounds"); }
     /** Kinds: the "smelt" verb's own target (kept in the bag), or a craft plan's intermediate (put away when nobody needs it). */
     public static final String SMELT = "smelt", CRAFT = "craft";
 
@@ -100,6 +104,7 @@ public final class FurnaceJobs {
                 j.stalled = o.has("stalled") && o.get("stalled").getAsBoolean();
                 return j;
             } catch (RuntimeException e) {
+            Quiet.warn("FurnaceJobs.fromJson failed, carrying on with the fallback", e);
                 return null;
             }
         }
@@ -153,7 +158,8 @@ public final class FurnaceJobs {
                         JsonArray p = l.getAsJsonArray("pos");
                         leftovers.add(new Leftover(new int[]{p.get(0).getAsInt(), p.get(1).getAsInt(), p.get(2).getAsInt()}, str(l, "dim", "minecraft:overworld"),
                                 l.get("item").getAsString(), num(l, "count")));
-                    } catch (RuntimeException ignored) {
+                    } catch (RuntimeException caught) {
+            Quiet.warn("FurnaceJobs.FurnaceJobs failed, carrying on with the fallback", caught);
                         // a broken entry: skipped
                     }
                 }
@@ -205,7 +211,7 @@ public final class FurnaceJobs {
 
     /** The due time of {@code n} items started at {@code now}. */
     public static long dueAt(long now, int n) {
-        return now + n * SMELT_MS + SLACK_MS;
+        return now + n * smeltMs() + slackMs();
     }
 
     /** Remembers the smelt just put into the furnace at {@code pos}; null when {@link #full()} (or that furnace has one). */
@@ -291,7 +297,7 @@ public final class FurnaceJobs {
 
     /** A pickup for these jobs didn't happen now: not again before {@link #RETRY_MS}. */
     public void later(List<Job> js, long now) {
-        later(js, now, RETRY_MS);
+        later(js, now, retryMs());
     }
 
     /** Not again before {@code now + ms} (a bag that was full: half an hour). */
@@ -313,7 +319,7 @@ public final class FurnaceJobs {
      */
     public List<Job> expire(long now, long sessionStart) {
         List<Job> gone = new ArrayList<>();
-        for (Job j : jobs) if (now > Math.max(j.dueAt, sessionStart) + EXPIRE_MS) gone.add(j);
+        for (Job j : jobs) if (now > Math.max(j.dueAt, sessionStart) + expireMs()) gone.add(j);
         if (!gone.isEmpty()) {
             jobs.removeAll(gone);
             for (Job j : gone) noteLeftover(j);
@@ -368,7 +374,7 @@ public final class FurnaceJobs {
     public record PutCheck(Put put, String why) {}
 
     /** Most a foreign fuel may smelt before the bot tops up with its own (16 items = 160 s of burning to wait out). */
-    public static final double FOREIGN_FUEL_SMALL = 16;
+    public static double foreignFuelSmall() { return Tuning.get("furnaceJobs.foreignFuelSmall"); }
 
     /** Items one piece of {@code id} smelts (vanilla burn times / 200 ticks); 1 for an unknown fuel. */
     public static double smeltsPer(String id) {
@@ -403,7 +409,7 @@ public final class FurnaceJobs {
         double covers = smeltsPer(s.fuel()) * s.fuelN();
         String held = s.fuelN() + " " + shortId(s.fuel());
         if (covers >= n) return new PutCheck(Put.FUEL_AS_IS, "its fuel slot holds " + held + ", enough for " + n);
-        if (covers <= FOREIGN_FUEL_SMALL) return new PutCheck(Put.FUEL_BURN_FIRST, "its fuel slot holds " + held + ", burning that first");
+        if (covers <= foreignFuelSmall()) return new PutCheck(Put.FUEL_BURN_FIRST, "its fuel slot holds " + held + ", burning that first");
         return new PutCheck(Put.BUSY, "its fuel slot holds " + held + ", not my " + (fuel == null ? "fuel" : shortId(fuel)));
     }
 
@@ -472,7 +478,7 @@ public final class FurnaceJobs {
         if (outN > 0) return new Collect(Next.TAKE, Math.min(outN, Math.min(j.remaining(), target - took)), null);
         boolean ourIn = inN > 0;
         if (ourIn) {
-            if (now > j.dueAt + STALL_MS && now - lastProgressAt > STALL_MS) {
+            if (now > j.dueAt + stallMs() && now - lastProgressAt > stallMs()) {
                 return new Collect(Next.STALLED, 0, "it stopped with " + s.inputN() + " " + shortId(j.input) + " left to smelt (out of fuel?)");
             }
             return new Collect(Next.WAIT, 0, null);

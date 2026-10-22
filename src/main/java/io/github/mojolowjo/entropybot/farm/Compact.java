@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.farm;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.craft.Crafter;
 
 import java.util.ArrayList;
@@ -16,9 +18,9 @@ import java.util.Map;
 public final class Compact {
     private Compact() {}
 
-    public static final int COMPACT_R = 6;
+    public static int compactR() { return Tuning.i("compact.compactR"); }
     /** Free slots kept for the crafted blocks. */
-    public static final int COMPACT_SPARE = 2;
+    public static int compactSpare() { return Tuning.i("compact.compactSpare"); }
 
     /** An item and its block: {@code per} of {@code item} craft into one {@code block}. */
     public record Pair(String item, String block, int per) {}
@@ -148,7 +150,7 @@ public final class Compact {
         public Result here(List<int[]> found, int[] me, String centerLabel) {
             List<int[]> list = new ArrayList<>(found);
             list.sort((a, b) -> Long.compare(FarmRules.distSq(a, me), FarmRules.distSq(b, me)));
-            if (list.isEmpty()) return Result.of("no chests or barrels within " + COMPACT_R + " blocks of " + centerLabel);
+            if (list.isEmpty()) return Result.of("no chests or barrels within " + compactR() + " blocks of " + centerLabel);
             List<PlanStep> add = new ArrayList<>();
             for (int i = 0; i < list.size() && i < 30; i++) {
                 add.add(PlanStep.walk(list.get(i), false));
@@ -174,11 +176,11 @@ public final class Compact {
             }
             // the item fills part stacks and all but COMPACT_SPARE empty slots; the blocks need part stacks or those spare slots
             BagSpace si = bagSpace(bag, pair.item()), sb = bagSpace(bag, pair.block());
-            long room = Math.min((long) si.stacks() + (long) Math.max(0, si.empty() - COMPACT_SPARE) * si.max(),
-                    ((long) sb.stacks() + (long) Math.min(si.empty(), COMPACT_SPARE) * sb.max()) * pair.per());
+            long room = Math.min((long) si.stacks() + (long) Math.max(0, si.empty() - compactSpare()) * si.max(),
+                    ((long) sb.stacks() + (long) Math.min(si.empty(), compactSpare()) * sb.max()) * pair.per());
             int batch = (int) (Math.min(have, room) / pair.per()) * pair.per();
             if (batch < pair.per()) {
-                return Result.of("my inventory is too full to carry " + pair.per() + " " + bareId(pair.item()) + " (I keep " + COMPACT_SPARE + " slots free for the blocks)");
+                return Result.of("my inventory is too full to carry " + pair.per() + " " + bareId(pair.item()) + " (I keep " + compactSpare() + " slots free for the blocks)");
             }
             int n = batch / pair.per();
             int keep = 0;                                   // blocks the bot had already stay with it

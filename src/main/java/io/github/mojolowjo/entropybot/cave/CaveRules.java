@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.cave;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -16,9 +18,16 @@ import java.util.regex.Pattern;
 public final class CaveRules {
     private CaveRules() {}
 
-    public static final int MINUTES = 30, FROM_ENTRANCE = 160, FREE = 4, MOVES = 3, MISSES = 4, VEIN_CELLS = 8, VEIN_REACH = 16, VEIN_SPREAD = 4;
+    public static int minutesV() { return Tuning.i("caveRules.minutes"); }
+    public static int fromEntrance() { return Tuning.i("caveRules.fromEntrance"); }
+    public static int free() { return Tuning.i("caveRules.free"); }
+    public static int moves() { return Tuning.i("caveRules.moves"); }
+    public static int misses() { return Tuning.i("caveRules.misses"); }
+    public static int veinCells() { return Tuning.i("caveRules.veinCells"); }
+    public static int veinReach() { return Tuning.i("caveRules.veinReach"); }
+    public static int veinSpread() { return Tuning.i("caveRules.veinSpread"); }
     /** The walk to a frontier: until Baritone is done or this many ticks (60 s). */
-    public static final long WALK_TICKS = 1200;
+    public static long walkTicks() { return Tuning.l("caveRules.walkTicks"); }
     static final Pattern FOOD = Pattern.compile("bread|cooked|apple|carrot|potato|stew|berries|melon|pie|cookie");
 
     /** How the bot is doing: a reason to stop caving, or null (the bridge's caveStop). */
@@ -26,11 +35,11 @@ public final class CaveRules {
                                     Map<String, Integer> inv) {
         if (target > 0 && got >= target) return "that makes " + spec.word(target);
         if (now > until) return "the time is up";
-        if (bagRoom <= FREE) return "my bag is nearly full";
-        if (health < 10) return "my health is low (" + Math.round(health) + ")";
+        if (bagRoom <= free()) return "my bag is nearly full";
+        if (health < Tuning.i("caveRules.lowHealth")) return "my health is low (" + Math.round(health) + ")";
         int edible = 0;
         for (Map.Entry<String, Integer> e : inv.entrySet()) if (FOOD.matcher(e.getKey()).find()) edible += e.getValue();
-        if (food < 8 && edible == 0) return "I am hungry and carry no food";
+        if (food < Tuning.i("caveRules.lowFood") && edible == 0) return "I am hungry and carry no food";
         return null;
     }
 
@@ -46,7 +55,7 @@ public final class CaveRules {
      *
      * @param ores    the search's ores, nearest first
      * @param tried   "x y z" -> tries (updated)
-     * @param refused the guard refuses walking to it (goalAllowed != null)
+     * @param refused the guard refuses walking to it (walkVerdict != null)
      * @param canMine a pickaxe in the bag gets its drops
      * @param tooHard short ids left for a better pickaxe (updated)
      */
@@ -54,12 +63,12 @@ public final class CaveRules {
                                                 Predicate<CaveSearch.Ore> canMine, Set<String> tooHard) {
         List<CaveSearch.Ore> cells = new ArrayList<>();
         CaveSearch.Ore first = null;
-        for (int i = 0; i < ores.size() && cells.size() < VEIN_CELLS; i++) {
+        for (int i = 0; i < ores.size() && cells.size() < veinCells(); i++) {
             CaveSearch.Ore o = ores.get(i);
             String n = o.x() + " " + o.y() + " " + o.z();
             if (tried.getOrDefault(n, 0) >= 2 || refused.test(o)) continue;
-            if (first == null && o.dist() > VEIN_REACH) break;
-            if (first != null && Math.max(Math.abs(o.x() - first.x()), Math.max(Math.abs(o.y() - first.y()), Math.abs(o.z() - first.z()))) > VEIN_SPREAD) continue;
+            if (first == null && o.dist() > veinReach()) break;
+            if (first != null && Math.max(Math.abs(o.x() - first.x()), Math.max(Math.abs(o.y() - first.y()), Math.abs(o.z() - first.z()))) > veinSpread()) continue;
             if (!canMine.test(o)) {
                 tooHard.add(o.id().replaceFirst("^minecraft:", ""));
                 tried.put(n, 2);
@@ -133,14 +142,14 @@ public final class CaveRules {
      * margin of one: the nearest such box, else null. The cave never targets those (the guard would refuse the breaks).
      */
     public static MineRules.Near offLimits(List<io.github.mojolowjo.entropybot.guard.Box> protect, String dim, int x, int y, int z) {
-        return MineRules.protectNear(protect, dim, x, y, z, MineRules.PROTECT_MARGIN);
+        return MineRules.protectNear(protect, dim, x, y, z, MineRules.protectMargin());
     }
 
     /** S1: why a cave is no place to cave ("cave_2 lies inside the protected base"). */
     public static String protectedCaveText(String cave, MineRules.Near n) {
         String name = n.box().name != null ? n.box().name : "box";
         return n.gap() == 0 ? cave + " lies inside the protected " + name
-                : cave + " lies " + n.gap() + " blocks from the protected " + name + " (I keep " + MineRules.PROTECT_MARGIN + " away)";
+                : cave + " lies " + n.gap() + " blocks from the protected " + name + " (I keep " + MineRules.protectMargin() + " away)";
     }
 
     /** The names noted in noCaveAt ("cave_2 (x y z)") -> the cave names, for {@link #nearestKnown}'s closed set. */

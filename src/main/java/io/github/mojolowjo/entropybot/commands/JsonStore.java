@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -11,7 +13,8 @@ import io.github.mojolowjo.entropybot.io.BotFiles;
  * backup every few minutes, a broken file set aside (never overwritten) and its backup loaded instead.
  */
 public final class JsonStore {
-    static final long FLUSH_AFTER = 20, BACKUP_EVERY = 6000;
+    static final long FLUSH_AFTER = 20; // structural
+    static final long BACKUP_EVERY = 6000; // structural
 
     private final String name;
     private JsonObject data = new JsonObject();
@@ -137,6 +140,7 @@ public final class JsonStore {
             JsonElement e = JsonParser.parseString(text);
             return e.isJsonObject() ? e.getAsJsonObject() : null;
         } catch (RuntimeException e) {
+            Quiet.warn("JsonStore.parse failed, carrying on with the fallback", e);
             return null;
         }
     }

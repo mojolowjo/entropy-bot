@@ -1,5 +1,9 @@
 package io.github.mojolowjo.entropybot.cave;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import io.github.mojolowjo.entropybot.Quiet;
+
 import io.github.mojolowjo.entropybot.clear.Tools;
 import io.github.mojolowjo.entropybot.guard.Box;
 
@@ -10,7 +14,7 @@ import java.util.regex.Pattern;
 
 /**
  * The Baritone mine job's rules ("mine &lt;ore&gt; [n] [dig]"; the bridge's startMine and package A wave 1: protectNear,
- * boxMinus, mineLeases, minePickSlot, mineCount, mineTrail/mineLegs and the texts), game-free so JUnit drives them.
+ * boxMinus, mineLeases, minePickSlot, mineCount and the texts; rm-mining: the per-ore step's command and its Failures cell key), game-free so JUnit drives them.
  */
 public final class MineRules {
     private MineRules() {}
@@ -47,7 +51,7 @@ public final class MineRules {
                 out.add(Box.fromJson(e.getAsJsonObject(), defaultDim));
             } catch (RuntimeException ex) {
                 String name = "";
-                try { if (e.isJsonObject() && e.getAsJsonObject().has("name")) name = " \"" + e.getAsJsonObject().get("name").getAsString() + "\""; } catch (RuntimeException ignored) {}
+                try { if (e.isJsonObject() && e.getAsJsonObject().has("name")) name = " \"" + e.getAsJsonObject().get("name").getAsString() + "\""; } catch (RuntimeException caught) { Quiet.warn("MineRules.policyBoxes failed, carrying on with the fallback", caught); }
                 throw new BadPolicy("box " + i + name + " in the guard policy's " + key + " list is malformed (" + ex.getMessage() + ")");
             }
         }
@@ -62,19 +66,28 @@ public final class MineRules {
     /** Plain "mine" takes ores (the c:ores tag) and these loose natural blocks only. */
     public static final Pattern EXTRA = Pattern.compile("^minecraft:(sand|red_sand|gravel|clay|short_grass|tall_grass|fern|large_fern)$");
     public static final Pattern BLOCK_ID = Pattern.compile("^[a-z0-9_.-]+:[a-z0-9_./-]+$");
-    public static final long MAX_TICKS = 20L * 60 * 20, STALL_TICKS = 20L * 60;
-    public static final int PROTECT_MARGIN = 16, SEEKS = 3, RETURN_R = 8, TRAIL_STEP = 12, LEG = 40, TRAIL_MAX = 300, TOOL_TRIPS = 2;
-    /** The walks: to new land 90 s, back to the spot 120 s; at least 40 ticks before "arrived" counts. */
-    public static final long SEEK_TICKS = 20 * 90, RETURN_TICKS = 20 * 120;
+    /** The job's time limit and the no-progress stop, in ticks (aa/brain/Tuning: mine.maxMin, mine.stallS). */
+    public static long maxTicks() { return (long) (20 * 60 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("mine.maxMin")); }
+
+    public static long stallTicks() { return (long) (20 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("mine.stallS")); }
+
+    /** Policy: the distance Baritone's free mine keeps from protect boxes (the guard's no-break). */
+    public static int protectMargin() { return Tuning.i("mineRules.protectMargin"); }
     /** A lease covers at most this many blocks (GuardCore.MAX_LEASE_VOLUME): bigger boxes are sliced. */
-    public static final long LEASE_MAX = 4096;
-    static final Map<String, Integer> DROPS_PER = Map.of("redstone", 4, "lapis", 4, "copper", 3);
-    public static final Map<String, Integer> PICK_TIER = Map.of("stone", 2, "iron", 4, "diamond", 5);
+    public static long leaseMax() { return Tuning.l("mineRules.leaseMax"); }
+    /** The pickaxe tier a need asks of the tool, from the block tags (MiningTiers.needTier): the one scale; the caller's default is for an unreadable need and is replaced by tools.unknownNeedTier. */
+    public static final NeedTiers PICK_TIER = new NeedTiers();
+
+    public static final class NeedTiers {
+        public int getOrDefault(String need, int unused) { return io.github.mojolowjo.entropybot.aa.brain.MiningTiers.needTier(need); }
+    }
 
     /** "mine iron_ore 10 dig": the block id (normalised), the count (1 without), dig. */
     public record Args(String id, String word, int count, boolean dig) {}
 
     public static Args args(String text) {
+        At at = parseAt(text);
+        if (at != null && at.error() == null) text = at.plain();
         String[] p = String.valueOf(text).trim().split("\\s+");
         String w = p[0].toLowerCase();
         String id = w.contains(":") ? w : "minecraft:" + w;
@@ -84,28 +97,84 @@ public final class MineRules {
         return new Args(id, p[0], count, dig);
     }
 
+    // ---- AA round 2 item 5: "mine <ore> [n] at x y z [dig|walk]", one named target and its vein ----
+
+    /**
+     * The at form: the ore word, the count (1 without; shown only, the job mines the target's vein), the cell, dig (walk
+     * without the word). {@code error} set (the rest unset) when the text has "at" but is not this form.
+     */
+    public record At(String word, int count, int x, int y, int z, boolean dig, String error) {
+        /** The plain mine text for the rest of the job ("iron 1 dig"). */
+        public String plain() { return word + " " + count + (dig ? " dig" : ""); }
+
+        public String cell() { return x + " " + y + " " + z; }
+    }
+
+    public static final String AT_FORM = "mine <ore> 1 at x y z dig|walk";
+    private static final Pattern AT = Pattern.compile("^(\\S+)(?:\\s+(\\d+))?\\s+at\\s+(-?\\d+)\\s+(-?\\d+)\\s+(-?\\d+)(?:\\s+(dig|walk))?$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern HAS_AT = Pattern.compile("(?i)(^|\\s)at(\\s|$)");
+
+    /** The at form of the text after "mine", or null when it has no "at" word (or is "mine cave/strip ..."). Pure. */
+    public static At parseAt(String text) {
+        String t = String.valueOf(text).trim();
+        if (!HAS_AT.matcher(t).find() || t.matches("(?i)^(cave|strip)\\b.*")) return null;
+        java.util.regex.Matcher m = AT.matcher(t);
+        if (!m.matches()) return new At(null, 0, 0, 0, 0, false, "error: the at form is \"" + AT_FORM + "\"");
+        int n = m.group(2) == null ? 1 : safeInt(m.group(2));
+        if (n < 1) return new At(null, 0, 0, 0, 0, false, "error: the count must be 1 or more (\"" + AT_FORM + "\")");
+        try {
+            return new At(m.group(1).toLowerCase(), n, Integer.parseInt(m.group(3)), Integer.parseInt(m.group(4)), Integer.parseInt(m.group(5)),
+                    "dig".equalsIgnoreCase(m.group(6)), null);
+        } catch (NumberFormatException e) {
+            return new At(null, 0, 0, 0, 0, false, "error: a coordinate is out of range (\"" + AT_FORM + "\")");
+        }
+    }
+
+    /** The at form's vein: at most this many cells, the target included. */
+    public static int atVein() { return Tuning.i("mineRules.atVein"); }
+
+    /** The vein from start: start, then face-touching cells {@code sameOre} accepts, breadth first, at most max. Pure. */
+    public static List<int[]> vein(int[] start, java.util.function.Predicate<int[]> sameOre, int max) {
+        List<int[]> out = new ArrayList<>();
+        java.util.ArrayDeque<int[]> todo = new java.util.ArrayDeque<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        todo.add(start.clone());
+        seen.add(start[0] + " " + start[1] + " " + start[2]);
+        int[][] sides = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+        while (!todo.isEmpty() && out.size() < max) {
+            int[] c = todo.poll();
+            out.add(c);
+            for (int[] d : sides) {
+                int[] n = {c[0] + d[0], c[1] + d[1], c[2] + d[2]};
+                if (seen.add(n[0] + " " + n[1] + " " + n[2]) && sameOre.test(n)) todo.add(n);
+            }
+        }
+        return out;
+    }
+
+    /** The at job's end: "done: mined 3 iron at 1 2 3" (+ gains). */
+    public static String atDoneText(int n, String family, String cell, String gains) {
+        return "done: mined " + n + " " + family + " at " + cell + gains;
+    }
+
+    /** The at job's failure; the words keep it a mining end AA may switch on ("couldn't get to"). */
+    public static String atFailText(String id, String cell, String why, String gains) {
+        return "stopped: couldn't get to the " + shortId(id) + " at " + cell + " (" + why + ")" + gains;
+    }
+
     public static String notABlock(String word) { return "error: \"" + word + "\" is not a block id"; }
 
     public static String notAnOre(String id) {
         return "error: \"mine\" only takes ores (and sand, gravel, clay, grass): " + shortId(id) + " could be part of a build. \"dig x1 y1 z1 x2 y2 z2\" clears a box";
     }
 
-    /** The areas' names for the refusal outside them: "my areas (map, home)" / "my areas (none set - hint)". */
-    public static String areasText(List<String> names, String hint) {
-        return "my areas (" + (names.isEmpty() ? "none set - " + hint : String.join(", ", names)) + ")";
-    }
-
-    public static String outsideAreas(List<String> names, String hint) {
-        return "error: I only \"mine\" inside " + areasText(names, hint) + "; elsewhere use stripmine";
-    }
-
     public static String shortId(String id) { return String.valueOf(id).replaceFirst("^minecraft:", ""); }
 
     public static String anA(String w) { return (w.matches("(?i)^[aeiou].*") ? "an " : "a ") + w; }
 
-    /** The status while mining: "mining 4 minecraft:iron_ore (exposed only)" (+ " - look 2" after a walk to new land). */
-    public static String status(int count, String id, boolean dig, int seeks) {
-        return "mining " + count + " " + id + (dig ? " (digging allowed)" : " (exposed only)") + (seeks > 0 ? " - look " + (seeks + 1) : "");
+    /** The status while mining: "mining 4 minecraft:iron_ore (exposed only)". */
+    public static String status(int count, String id, boolean dig) {
+        return "mining " + count + " " + id + (dig ? " (digging allowed)" : " (exposed only)");
     }
 
     // ---- the protect boxes (wave 1 item 8): Baritone's mine digs where it likes ----
@@ -133,7 +202,7 @@ public final class MineRules {
     public static String protectNearText(Near n) {
         String name = n.box().name != null ? n.box().name : "box";
         return "I won't mine here: " + (n.gap() == 0 ? "I am inside the protected " + name : "the protected " + name + " is " + n.gap() + " blocks away")
-                + " (Baritone's mine digs where it likes, so I keep " + PROTECT_MARGIN + " blocks away from protect boxes)";
+                + " (Baritone's mine digs where it likes, so I keep " + protectMargin() + " blocks away from protect boxes)";
     }
 
     // ---- the leases: 32 x 33 x 32 around the bot, clipped to the areas, minus the protect boxes, sliced ----
@@ -177,31 +246,25 @@ public final class MineRules {
 
     /** The mine job's box around the bot (32 x 33 x 32): {x1, y1, z1, x2, y2, z2}. */
     public static int[] mineBox(int x, int y, int z) {
-        return new int[]{x - 16, y - 16, z - 16, x + 15, y + 16, z + 15};
+        return new int[]{x - 16, y - 16, z - 16, x + 15, y + 16, z + 15};  // structural: a 32-block box round the vein (16 each side)
     }
 
     /**
-     * The lease boxes for box b (the bridge's takeLeaseClipped with minusProtect): the part inside each area of this
-     * dimension, minus every protect box, sliced. Null when no area of this dimension overlaps the box at all.
+     * The lease boxes for box b (the bridge's takeLeaseClipped with minusProtect): AREAS (0.39.0) the world is open, so
+     * the whole box minus every protect box (keep-out, no-break) of this dimension, sliced; {@code areas} is unused.
+     * Null when nothing is left (the box lies wholly in protected areas).
      */
     public static List<int[]> leaseBoxes(int[] b, List<Box> areas, List<Box> protect, String dim) {
         List<int[]> out = new ArrayList<>();
-        boolean any = false;
-        for (Box a : areas) {
-            if (!a.dim.equals(dim)) continue;
-            // 0.21.2: Box.clip knows the shape (a round near-me zone gives strips that each lie inside its circle)
-            List<int[]> parts = new ArrayList<>(a.clip(b));
-            if (parts.isEmpty()) continue;
-            any = true;
-            for (Box p : protect) {
-                if (!p.dim.equals(dim)) continue;
-                List<int[]> q = new ArrayList<>();
-                for (int[] x : parts) q.addAll(minus(x, p));
-                parts = q;
-            }
-            for (int[] part : parts) out.addAll(slices(part, LEASE_MAX));
+        List<int[]> parts = new ArrayList<>(List.of(b.clone()));
+        for (Box p : protect) {
+            if (!p.dim.equals(dim)) continue;
+            List<int[]> q = new ArrayList<>();
+            for (int[] x : parts) q.addAll(minus(x, p));
+            parts = q;
         }
-        return any ? out : null;
+        for (int[] part : parts) out.addAll(slices(part, leaseMax()));
+        return out.isEmpty() ? null : out;
     }
 
     // ---- the pickaxe ----
@@ -244,7 +307,7 @@ public final class MineRules {
             if (!pickOk(s, requiresCorrectTool, need)) continue;
             int t = Tools.toolTier(s.id());
             if (t < bestT) { best = s.index(); bestT = t; }
-            if (ores && t >= Tools.ORE_TIER && t < ironT) { iron = s.index(); ironT = t; }
+            if (ores && t >= Tools.oreTier() && t < ironT) { iron = s.index(); ironT = t; }
         }
         return iron >= 0 ? iron : best;
     }
@@ -268,18 +331,25 @@ public final class MineRules {
 
     // ---- the count ----
 
-    /** How many of the target it mined, from what it picked up: the block, its raw ore, its drop (redstone and lapis drop ~4). */
-    public static int count(String target, Map<String, Integer> gained) {
-        String path = target.replaceFirst("^.*:", "");
-        String base = path.replaceFirst("^(deepslate|nether)_", "").replaceFirst("_ore$", "");
-        int n = 0;
-        for (Map.Entry<String, Integer> e : gained.entrySet()) {
-            String k = e.getKey(), nm = k.replaceFirst("^.*:", "");
-            if (k.equals(target) || nm.equals("raw_" + base) || nm.equals(base) || nm.equals(base + "_lazuli")) n += e.getValue();
+    /**
+     * How many of the target it mined, from what it picked up: the block itself and what its loot table drops, divided by the
+     * expected drops a block gives (the game's loot table: redstone about 4.5 a block). Without a loot book (no loot tables
+     * on a multiplayer client) every pickup counts as one block, and the book's origin says so wherever it is shown.
+     */
+    public static int count(String target, Map<String, Integer> gained, io.github.mojolowjo.entropybot.aa.brain.LootBook book) {
+        java.util.Set<String> drops = new java.util.HashSet<>();
+        double per = 0;
+        if (book != null) {
+            for (var s : book.blockDrops(target)) {
+                if (s.item().equals(target)) continue;
+                drops.add(s.item());
+                per += s.per() * s.chance();
+            }
         }
-        return n / DROPS_PER.getOrDefault(base, 1);
+        double n = 0;
+        for (Map.Entry<String, Integer> e : gained.entrySet()) if (e.getKey().equals(target) || drops.contains(e.getKey())) n += e.getValue();
+        return (int) (per > 1 ? n / per : n);
     }
-
     /** What the bag gained since before (countsDiff's gained). */
     public static Map<String, Integer> gained(Map<String, Integer> before, Map<String, Integer> after) {
         Map<String, Integer> out = new java.util.LinkedHashMap<>();
@@ -297,49 +367,8 @@ public final class MineRules {
         l.sort((a, b) -> b.getValue() - a.getValue());
         List<String> out = new ArrayList<>();
         for (int i = 0; i < Math.min(4, l.size()); i++) out.add(l.get(i).getValue() + " " + shortId(l.get(i).getKey()));
-        if (l.size() > 4) out.add("+" + (l.size() - 4) + " more");
+        if (l.size() > 4) out.add("+" + (l.size() - 4) + " more");  // structural: display: how many items a text lists
         return " - got " + String.join(", ", out);
-    }
-
-    // ---- the way back (review fix 3) ----
-
-    static long d2(int[] a, int[] b) {
-        long dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
-        return dx * dx + dy * dy + dz * dz;
-    }
-
-    /** A point every TRAIL_STEP blocks while it mines (the first point, where it was asked to mine, stays). */
-    public static void trail(List<int[]> trail, int[] me) {
-        if (d2(me, trail.get(trail.size() - 1)) < (long) TRAIL_STEP * TRAIL_STEP) return;
-        trail.add(me.clone());
-        if (trail.size() > TRAIL_MAX) trail.remove(1);
-    }
-
-    /** The legs from me back to the anchor: straight there when close, else along the trail from its point nearest me. */
-    public static List<int[]> legs(List<int[]> trail, int[] anchor, int[] me) {
-        List<int[]> legs = new ArrayList<>();
-        long leg2 = (long) LEG * LEG;
-        if (d2(me, anchor) <= leg2 || trail == null || trail.isEmpty()) {
-            legs.add(anchor.clone());
-            return legs;
-        }
-        int best = 0;
-        long bestD = Long.MAX_VALUE;
-        for (int i = 0; i < trail.size(); i++) {
-            long d = d2(me, trail.get(i));
-            if (d < bestD) { bestD = d; best = i; }
-        }
-        int[] last = me;
-        long step2 = (long) (LEG - 10) * (LEG - 10);
-        for (int i = best; i < trail.size(); i++) {
-            if (d2(trail.get(i), anchor) <= leg2) break;
-            if (i == best || d2(trail.get(i), last) >= step2) {
-                legs.add(trail.get(i));
-                last = trail.get(i);
-            }
-        }
-        legs.add(anchor.clone());
-        return legs;
     }
 
     // ---- the ends ----
@@ -353,47 +382,47 @@ public final class MineRules {
     }
 
     public static String stalledText(String target, String at, String gains) {
-        return "stopped: no progress for a minute mining " + shortId(target) + " at " + at + ", twice" + gains;
+        return "stopped: stall: no progress for " + stallTicks() / 20 + " s mining " + shortId(target) + " at " + at + gains;  // game fact: 20 game ticks per second
     }
 
-    public static String noPickLeftText(String target, int trips, String gains) {
-        return "stopped: I have no pickaxe left that can mine " + shortId(target) + " (fetched or made " + trips + " already)" + gains;
+    public static String noPickText(String target, String gains) {
+        return "stopped: tool: I have no pickaxe left that can mine " + shortId(target) + gains;
     }
 
-    public static String stuckBackText(String target, String anchor, String me, String leg, String gains) {
-        return "stopped: I couldn't get back to where I was mining " + shortId(target) + " (" + anchor + ") - stuck at " + me + " on the way to " + leg + gains;
-    }
-
-    public static String leftAreasText(String at) { return "I left my areas at " + at; }
-
-    public static String timeUpText() { return "time is up (" + MAX_TICKS / 1200 + " min)"; }
+    public static String timeUpText() { return "time is up (" + maxTicks() / 1200 + " min)"; }  // game fact: 1200 ticks in a minute
 
     /** Digits as an int, capped (a 10-digit count would overflow parseInt). */
     static int safeInt(String s) {
-        return s.length() > 9 ? 999_999_999 : Integer.parseInt(s);
+        return s.length() > 9 ? 999_999_999 : Integer.parseInt(s);  // structural: an int parse guard: a number over 9 digits is capped
     }
 
-    /**
-     * 0.36.8 (owner's rule 2026-10-18): skip a known ore as a target when I'm in water and it lies two or more below me
-     * without water touching it (reaching it means digging down through solid blocks with no air). Pure.
-     */
-    public static boolean waterDownSkip(boolean inWater, int meY, int oreY, boolean oreTouchesWater) {
-        return inWater && oreY <= meY - 2 && !oreTouchesWater;
+    // ---- rm-mining: the per-ore step and its failures (the old known-target list, its 5 tries and water skips are gone) ----
+
+    /** The Failures desire a failed ore cell is charged under (a prefix no AA desire uses). */
+    public static final String CELL_DESIRE = "site.mine";
+
+    private static volatile io.github.mojolowjo.entropybot.aa.brain.Failures failures = new io.github.mojolowjo.entropybot.aa.brain.Failures();
+
+    /** The AA brain's failure record (so aa why shows the holds); a private one until bound. */
+    public static void bind(io.github.mojolowjo.entropybot.aa.brain.Failures f) { if (f != null) failures = f; }
+
+    public static io.github.mojolowjo.entropybot.aa.brain.Failures failures() { return failures; }
+
+    /** The cell key: "iron 10 -20 30". */
+    public static String cellKey(String family, int x, int y, int z) { return family + " " + x + " " + y + " " + z; }
+
+    /** A per-ore step that failed: charged under its cell with the stage and the reason; never retried in place. */
+    public static io.github.mojolowjo.entropybot.aa.brain.Failures.Rec charge(String family, int[] cell, String stage, String reason, long nowMs) {
+        return failures.failed(CELL_DESIRE, cellKey(family, cell[0], cell[1], cell[2]), stage + ": " + reason, nowMs, null);
     }
 
-    /**
-     * 0.36.a3 (aa370: the walk to a cave ore 15 below dug down from the pool and ran out of air): the walk is digging
-     * down from in the water - in water, breaking a block below the feet. Pure.
-     */
-    public static boolean waterDigDown(boolean inWater, boolean breaking, int breakY, int feetY) {
-        return inWater && breaking && breakY < feetY;
+    /** The cell is held (it failed and its hold has not lapsed): no pick takes it. */
+    public static boolean held(String family, int x, int y, int z, long nowMs) {
+        return failures.blocked(CELL_DESIRE, cellKey(family, x, y, z), nowMs);
     }
 
-    /** 0.36.a3: how long (ticks) a known ore dropped for the water stays out of the pick; then it is a candidate again. */
-    public static final long WATER_SKIP_TICKS = 1200;
-
-    /** 0.36.a3: a timed skip still holds (until: the tick it ends, null: none). Pure. */
-    public static boolean skipHolds(Long until, long now) {
-        return until != null && now < until;
+    /** The per-ore step's command: "mine iron_ore 1 at 10 -20 30 dig" (walk without dig); parseAt reads it back. */
+    public static String perOre(String ore, int[] cell, boolean dig) {
+        return "mine " + shortId(ore) + " 1 at " + cell[0] + " " + cell[1] + " " + cell[2] + (dig ? " dig" : " walk");
     }
 }

@@ -47,7 +47,7 @@ class CreeperSprintTest {
         assertEquals("it is gone", s.endWhy());
         s.start(100, 7, false, false, 0, 0, 1, 0);
         assertEquals(CreeperSprint.Act.SPRINT, s.step(150, 4));
-        assertEquals(CreeperSprint.Act.DONE, s.step(100 + CreeperSprint.MAX_TICKS, 4));
+        assertEquals(CreeperSprint.Act.DONE, s.step(100 + CreeperSprint.maxTicks(), 4));
         assertEquals(CreeperSprint.Act.DONE, s.step(300, 4), "inactive stays done");
     }
 
@@ -70,7 +70,7 @@ class CreeperSprintTest {
         assertEquals(CreeperSprint.Act.DONE, s.step(10, 7.2));
         assertTrue(s.watching(20, 7), "hold still and watch it");
         assertFalse(s.watching(20, 8), "another creeper");
-        assertFalse(s.watching(10 + CreeperSprint.WATCH_TICKS, 7), "watched long enough");
+        assertFalse(s.watching(10 + CreeperSprint.watchTicks(), 7), "watched long enough");
         s.start(30, 7, false, false, 0, 0, 1, 0);         // it came back within 3 s
         assertEquals(12, s.safe());
         assertEquals(CreeperSprint.Act.SPRINT, s.step(40, 8), "7 isn't far enough now");
@@ -78,15 +78,7 @@ class CreeperSprintTest {
         s.start(60, 7, false, false, 0, 0, 1, 0);
         assertEquals(17, s.safe());
         s.step(70, 17.5);
-        s.start(70 + CreeperSprint.CHASE_TICKS, 7, false, false, 0, 0, 1, 0);
+        s.start(70 + CreeperSprint.chaseTicks(), 7, false, false, 0, 0, 1, 0);
         assertEquals(7, s.safe(), "a while later: back to 7");
-    }
-
-    @Test
-    void duelAfterTheSprint() {
-        assertTrue(CreeperSprint.duelAfter(CreeperRules.Mode.BOW, false), "bow: always re-evaluated as a duel");
-        assertFalse(CreeperSprint.duelAfter(CreeperRules.Mode.MELEE, false), "melee = hit-then-sprint by default");
-        assertTrue(CreeperSprint.duelAfter(CreeperRules.Mode.MELEE, true), "melee with a big margin");
-        assertFalse(CreeperSprint.duelAfter(CreeperRules.Mode.FLEE, true));
     }
 }

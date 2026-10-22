@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
@@ -104,6 +106,7 @@ public final class StripMine {
         try {
             return Files.exists(bridgeFile("memory.json"));
         } catch (Exception e) {
+            Quiet.warn("StripMine.memoryJsonExists failed, carrying on with the fallback", e);
             return true;
         }
     }
@@ -115,6 +118,7 @@ public final class StripMine {
             if (!Files.exists(p)) return null;
             return JsonStore.parse(Files.readString(p, StandardCharsets.UTF_8));
         } catch (Exception e) {
+            Quiet.warn("StripMine.readMemoryJson failed, carrying on with the fallback", e);
             return null;
         }
     }
@@ -152,30 +156,22 @@ public final class StripMine {
         if (n > 0) LOG.info("[entropybot] strip mine: dropped the oldest {} old mine notes (over the limit)", n);
     }
 
-    // ---- the areas (where ores are mined, what a strip dig may lease) ----
+    // ---- the policy (what a strip dig may lease) ----
 
     private static Policy policy() { return Guard.INSTANCE.core.policy(); }
 
-    /** inMapArea with the mod: one area's x/z range holds x z (y is ignored here). */
-    boolean inArea(String dim, int x, int z) {
-        for (Box a : policy().areas) if (a.dim.equals(dim) && a.columnIn(x, z)) return true;
-        return false;
+    /** AREAS: x z lies in no keep-out / no-break column (the world is open). */
+    boolean workAllowed(String dim, int x, int z) {
+        return policy().protectColumn(dim, x, z) == null;
     }
 
-    /** boxInMapArea: one area's x/z range holds the whole box. */
-    boolean boxInArea(String dim, ClearBox b) {
-        for (Box a : policy().areas) if (a.dim.equals(dim) && a.columnsInside(b.x1(), b.z1(), b.x2(), b.z2())) return true;
-        return false;
-    }
-
-    String areaText() {
-        List<String> names = new ArrayList<>();
-        for (Box a : policy().areas) names.add(a.name != null ? a.name : "box");
-        return StripTexts.areaText(names);
+    /** AREAS: the box touches no keep-out / no-break area. */
+    boolean boxAllowed(String dim, ClearBox b) {
+        return policy().safeTouching(new Box(null, dim, b.x1(), b.y1(), b.z1(), b.x2(), b.y2(), b.z2())) == null;
     }
 
     /**
-     * Would the guard refuse this dig's lease (strict mode: the box, and the torch shell, must lie inside an area)? Its
+     * Would the guard refuse this dig's lease (strict mode: the box and the torch shell need its lease)? Its
      * reason, or null. The clear would end the errand on that refusal; asked first, the run turns or skips instead.
      */
     String areaRefusal(LocalPlayer p, ClearBox b, boolean torches) {
@@ -186,15 +182,7 @@ public final class StripMine {
         // the corridor or skips the branch instead of digging into the guard's refusals
         String prot = StripRules.protectRefusal(pol.protect, dim, b, torches);
         if (prot != null) return prot;
-        if (g.mode() != GuardCore.Mode.STRICT) return null;
-        List<ClearBox> boxes = new ArrayList<>(List.of(b));
-        if (torches) boxes.add(b.grow(1));
-        for (ClearBox x : boxes) {
-            if (!pol.areaCovers(new Box(null, dim, x.x1(), x.y1(), x.z1(), x.x2(), x.y2(), x.z2()))) {
-                return pol.areas.isEmpty() ? "no areas set" : "that box is not inside one of my areas";
-            }
-        }
-        return null;
+        return null;                                   // AREAS: the world is open; only the protect boxes above refuse
     }
 
     // ---- ore lists ----
@@ -308,7 +296,7 @@ public final class StripMine {
                     boolean c = p1.equals("collect");
                     note.addProperty("collectOres", c);
                     saved();
-                    return StripTexts.oresSet(c, areaText());
+                    return StripTexts.oresSet(c);
                 }
                 return StripTexts.oresMode(wantCollect);
             }
@@ -328,9 +316,7 @@ public final class StripMine {
             if (bad != null) return StripTexts.badEntrance(mineName, g.start(), bad);
         }
         int branches = Math.min(Math.max(leadInt(p0, 1), 1), 10), length = Math.min(Math.max(leadInt(p1, 12), 4), 32);
-        String areaDim = mdim != null ? mdim : dim(p);
-        StripPlan.Run plan = StripPlan.run(g, note, branches, length, wantCollect, b -> boxInArea(areaDim, b), Jobs.here(p));
-        if (spec != null && !inArea(areaDim, g.x, g.z)) return StripTexts.outsideAreas(mineName, g.start(), areaText());
+        StripPlan.Run plan = StripPlan.run(g, note, branches, length, wantCollect, Jobs.here(p));
         StripSteps.Run run = new StripSteps.Run(mineName, spec, target, g.key());
         List<Seq.Step> steps = StripSteps.toSteps(plan.items(), run);
         String label = plan.label();
@@ -339,7 +325,7 @@ public final class StripMine {
             nx.length = length;
             steps.add(StripSteps.make("stripnext", nx));
             label = StripTexts.stripJobLabel(spec, target, mineName);
-            run.deadline = core.tick() + StripRules.MAX_TICKS;
+            run.deadline = core.tick() + StripRules.maxTicks();
         }
         Jobs jobs = commands().jobs;
         return jobs.startSeq(new Seq(jobs, storage(), label, steps, "always"), "always");
@@ -365,7 +351,7 @@ public final class StripMine {
         Jobs jobs = commands().jobs;
         boolean fence = commands().fenceOn();
         StripRules.Turn t = StripRules.chooseTurn(StripRules.turnOptions(g, MineBook.k(old), only),
-                o -> StripRules.mineSpotCheck(w, o.pos(), o.dir(), q -> jobs.goalAllowed(q.x(), q.y(), q.z()),
+                o -> StripRules.mineSpotCheck(w, o.pos(), o.dir(), q -> jobs.walkVerdict(q.x(), q.y(), q.z()),
                         (x, y, z) -> io.github.mojolowjo.entropybot.api.BotAPI.check(dim, x, y, z, "break"), fence));
         if (t.err() != null) return new TurnResult(null, t.err());
         JsonObject pl = new JsonObject();

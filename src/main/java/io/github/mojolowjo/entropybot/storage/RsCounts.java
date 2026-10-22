@@ -14,9 +14,10 @@ public final class RsCounts {
     private RsCounts() {}
 
     /** Bursts without progress after which a move ends with what it got. */
-    public static final int QUIET_END = 3;
+    public static final int QUIET_END = 3; // structural
     /** Single extracts per burst, and single inserts per part stack. */
-    public static final int SINGLES_PER_BURST = 16, INSERTS_PER_PART = 64;
+    public static final int SINGLES_PER_BURST = 16; // structural
+    public static final int INSERTS_PER_PART = 64; // structural
 
     /** What a take aims for: want (the count, or one stack when none was given), and what the network had when short. */
     public record Take(int want, Integer had) {}

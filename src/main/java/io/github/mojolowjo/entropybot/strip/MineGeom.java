@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.strip;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.clear.ClearBox;
 import io.github.mojolowjo.entropybot.clear.Pos;
 
@@ -24,7 +26,9 @@ public final class MineGeom {
     }
 
     /** A run that starts further than this from its first box (or LEG_LEVELS levels off) walks there in legs. */
-    public static final int LEG_FAR = 48, LEG_LEVELS = 10, LEG_LEN = 40;
+    public static int legFar() { return Tuning.i("mineGeom.legFar"); }
+    public static int legLevels() { return Tuning.i("mineGeom.legLevels"); }
+    public static int legLen() { return Tuning.i("mineGeom.legLen"); }
 
     public final int x, y, z;
     public final String dir;
@@ -57,7 +61,7 @@ public final class MineGeom {
     /** side 1 = left, -1 = right. */
     public ClearBox branch(int k, int side, int length) { return box(cell(3 * k, side), cell(3 * k, side * length), 2); }
 
-    /** The x/z bounds of branch k's three boxes (collecting needs all of it inside the areas). */
+    /** The x/z bounds of branch k's three boxes . */
     public ClearBox union(int k, int length) {
         ClearBox c = corridor(k), l = branch(k, 1, length), r = branch(k, -1, length);
         return new ClearBox(Math.min(c.x1(), Math.min(l.x1(), r.x1())), c.y1(), Math.min(c.z1(), Math.min(l.z1(), r.z1())),
@@ -103,10 +107,10 @@ public final class MineGeom {
         List<Leg> out = new ArrayList<>();
         Pos a = cell(3 * k - 2, 0), b = cell(3 * k, 0);
         ClearBox first = new ClearBox(Math.min(a.x(), b.x()), y, Math.min(a.z(), b.z()), Math.max(a.x(), b.x()), y + 1, Math.max(a.z(), b.z()));
-        if (first.distTo(me[0], me[1], me[2]) <= LEG_FAR && Math.abs(me[1] - y) <= LEG_LEVELS) return out;
+        if (first.distTo(me[0], me[1], me[2]) <= legFar() && Math.abs(me[1] - y) <= legLevels()) return out;
         out.add(new Leg(start(), 8, 2, "the mine entrance"));
         int end = 3 * k - 3;
-        for (int i = LEG_LEN; i < end; i += LEG_LEN) out.add(new Leg(cell(i, 0), 8, 2, "the corridor end"));
+        for (int i = legLen(); i < end; i += legLen()) out.add(new Leg(cell(i, 0), 8, 2, "the corridor end"));
         if (end > 0) out.add(new Leg(cell(end, 0), 6, 2, "the corridor end"));
         return out;
     }

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.threat;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.Arrays;
 
 /**
@@ -107,7 +109,7 @@ public final class ReachGrid {
             if (code(ax, by, az) == TALL) return false;             // a fence or wall is 1.5 high: no jump
             return pass(code(bx, by + 2, bz));                       // room to jump
         }
-        if (dy < 0 && dy >= -3) {
+        if (dy < 0 && dy >= -Tuning.i("reachGrid.dropMax")) {
             for (int y = ay + 2; y <= by + 1; y++) if (!pass(code(ax, y, az))) return false;   // the column it drops down
             return true;
         }
@@ -122,7 +124,7 @@ public final class ReachGrid {
         if (vertical) return dy == 1 || dy == -1;
         if (dy == 0) return true;
         if (dy == 1) return pass(code(bx, by + 1, bz));
-        if (dy < 0 && dy >= -3) {
+        if (dy < 0 && dy >= -Tuning.i("reachGrid.dropMax")) {
             for (int y = ay + 1; y <= by; y++) if (!pass(code(ax, y, az))) return false;
             return true;
         }
@@ -152,9 +154,9 @@ public final class ReachGrid {
             int a = queue[head++];
             int ay = a / layer, az = (a % layer) / sx, ax = a % sx;
             int nd = dist[a] + 1;
-            for (int k = 0; k < 4; k++) {
+            for (int k = 0; k < 4; k++) {  // game fact: a block has 4 horizontal sides
                 int bxx = ax + DX[k], bzz = az + DZ[k];
-                for (int dy = -1; dy <= 3; dy++) {
+                for (int dy = -1; dy <= Tuning.i("reachGrid.climbMax"); dy++) {
                     int byy = ay + dy;
                     if (!in(bxx, byy, bzz)) continue;
                     int b = idx(bxx, byy, bzz);

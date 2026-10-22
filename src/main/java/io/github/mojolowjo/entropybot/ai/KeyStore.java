@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.ai;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -60,6 +62,7 @@ public final class KeyStore {
             JsonElement e = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8));
             return e.isJsonObject() ? e.getAsJsonObject() : new JsonObject();
         } catch (IOException | RuntimeException e) {
+            Quiet.warn("KeyStore.read failed, carrying on with the fallback", e);
             return new JsonObject();
         }
     }

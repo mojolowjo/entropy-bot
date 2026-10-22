@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.craft;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 /**
  * 0.28.2 (trial fix package 2, A): a craft that needs a crafting table (or a smelt that needs a furnace) and has none it
  * can reach puts down the one it carries (or makes a table from its wood first). The craft's own table is always picked
@@ -12,9 +14,9 @@ public final class OwnTable {
     private OwnTable() {}
 
     /** A table this far (eye to block) or nearer is used as it is. */
-    public static final double REACH_NEAR = 12;
+    public static double reachNear() { return Tuning.get("ownTable.reachNear"); }
     /** A table this many blocks or more below the bot's feet sits in a pit (trial 2: "couldn't get close"). */
-    public static final int PIT_DEPTH = 3;
+    public static int pitDepth() { return Tuning.i("ownTable.pitDepth"); }
 
     public enum Choice {
         /** a reachable table near: walk there and craft (as before) */
@@ -44,7 +46,7 @@ public final class OwnTable {
 
     /** Near enough and not down in a pit. */
     public static boolean reachable(Double dist, int dy) {
-        return dist != null && dist <= REACH_NEAR && dy > -PIT_DEPTH;
+        return dist != null && dist <= reachNear() && dy > -pitDepth();
     }
 
     /**
@@ -58,6 +60,59 @@ public final class OwnTable {
         if (craftFailed || nextStep == null) return false;
         String t = nextStep.trim().toLowerCase(java.util.Locale.ROOT);
         return t.startsWith("craft ") && needsTable.test(nextStep.trim());
+    }
+
+    // ---- aa-costs (item 7; was: always taken back unless the next step crafts) ----
+
+    public enum End { KEEP_FOR_NEXT, LEAVE_AT_CAMP, TAKE }
+
+    /** Seconds: pick it up, place it again, remake one (planks / no planks), a stray block left in the world, a table at a camp without one. */
+    public static double pickS() { return Tuning.get("ownTable.pickS"); }
+    public static double placeS() { return Tuning.get("ownTable.placeS"); }
+    public static double remakeS() { return Tuning.get("ownTable.remakeS"); }
+    public static double remakeNoneS() { return Tuning.get("ownTable.remakeNoneS"); }
+    public static double litterS() { return Tuning.get("ownTable.litterS"); }
+    public static double campValueS() { return Tuning.get("ownTable.campValueS"); }
+
+    /** Taking it back: the pickup, plus placing it again when the next step crafts at a table. */
+    public static double takeCost(boolean nextNeedsTable) { return pickS() + (nextNeedsTable ? placeS() : 0); }
+
+    /**
+     * Leaving it: nothing now when the next step uses it (it is taken after that); else the table lost (remade later)
+     * and a stray block, less its value as the camp's table (near the camp or base, none there yet).
+     */
+    public static double leaveCost(boolean nextNeedsTable, boolean nearCamp, boolean campHasTable, boolean canRemake) {
+        if (nextNeedsTable) return 0;
+        return (canRemake ? remakeS() : remakeNoneS()) + litterS() - (nearCamp && !campHasTable ? campValueS() : 0);
+    }
+
+    /** The cheaper end; a failed craft always takes it back (the chain stops, nothing uses it). */
+    public static End decide(boolean craftFailed, boolean nextNeedsTable, boolean nearCamp, boolean campHasTable, boolean canRemake) {
+        if (craftFailed) return End.TAKE;
+        double take = takeCost(nextNeedsTable), leave = leaveCost(nextNeedsTable, nearCamp, campHasTable, canRemake);
+        if (leave >= take) return End.TAKE;
+        return nextNeedsTable ? End.KEEP_FOR_NEXT : End.LEAVE_AT_CAMP;
+    }
+
+    /** A table left at the camp is registered as the camp's (AA's tableAtCamp latch), so no second one is crafted. */
+    public static boolean registersAsCamp(End e) { return e == End.LEAVE_AT_CAMP; }
+
+    private static volatile boolean campTableLeft;
+
+    /** Clearing: the table was left as the camp's. */
+    public static void noteCampTable() { campTableLeft = true; }
+
+    /** AA's fill: true once after a table was left at the camp (feeds the tableAtCamp latch). */
+    public static boolean takeCampTable() {
+        boolean v = campTableLeft;
+        campTableLeft = false;
+        return v;
+    }
+
+    public static String terms(boolean craftFailed, boolean nextNeedsTable, boolean nearCamp, boolean campHasTable, boolean canRemake) {
+        return "take " + Math.round(takeCost(nextNeedsTable)) + " s vs leave " + Math.round(leaveCost(nextNeedsTable, nearCamp, campHasTable, canRemake)) + " s"
+                + (nextNeedsTable ? " (next step crafts)" : "") + (nearCamp ? campHasTable ? " (camp has a table)" : " (camp without a table)" : "")
+                + (craftFailed ? " (craft failed)" : "") + " -> " + decide(craftFailed, nextNeedsTable, nearCamp, campHasTable, canRemake).name().toLowerCase(java.util.Locale.ROOT);
     }
 
     /** A kept table is taken back as soon as nothing runs (the chain stopped or was preempted), or by the next craft that does not use it. */
@@ -89,8 +144,4 @@ public final class OwnTable {
         };
     }
 
-    /** The smelt's note when it put its own furnace down (the furnace stays: it holds the job). */
-    public static String furnacePlaced(String pos) {
-        return "put my furnace down at " + pos + " (it stays there)";
-    }
 }

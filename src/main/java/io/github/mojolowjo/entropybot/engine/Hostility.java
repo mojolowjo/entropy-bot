@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -74,7 +76,7 @@ public final class Hostility {
             Entity a = src.getEntity();
             boolean record = HostileRules.recordAttacker(a != null, a == p, a instanceof LivingEntity, a instanceof Player);
             if (!record) return false;
-            if (hitBy.size() >= HostileRules.MAX_ATTACKERS && !hitBy.containsKey(a.getId())) {
+            if (hitBy.size() >= HostileRules.maxAttackers() && !hitBy.containsKey(a.getId())) {
                 Integer oldest = null;
                 for (Map.Entry<Integer, Long> e : hitBy.entrySet()) if (oldest == null || e.getValue() < hitBy.get(oldest)) oldest = e.getKey();
                 hitBy.remove(oldest);
@@ -83,6 +85,7 @@ public final class Hostility {
             lastAttacker = idOf(a);
             return true;
         } catch (RuntimeException e) {
+            Quiet.warn("Hostility.observe failed, carrying on with the fallback", e);
             return false;
         }
     }
@@ -103,7 +106,8 @@ public final class Hostility {
         boolean owned = false;
         try {
             owned = e instanceof OwnableEntity o && o.getOwnerUUID() != null;
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException caught) {
+            Quiet.warn("Hostility.protectedMob failed, carrying on with the fallback", caught);
             owned = true;       // can't tell: treat as a pet
         }
         return HostileRules.protectedMob(e instanceof Player, tame, owned);
@@ -129,6 +133,7 @@ public final class Hostility {
         try {
             owned = e instanceof OwnableEntity o && o.getOwnerUUID() != null;
         } catch (RuntimeException ex) {
+            Quiet.warn("Hostility.kind failed, carrying on with the fallback", ex);
             owned = true;
         }
         return HostileRules.classify(e instanceof Player, tame, owned, onList(e), e instanceof Enemy, e instanceof NeutralMob,
@@ -144,7 +149,7 @@ public final class Hostility {
     public static double weaponHit(net.minecraft.client.player.LocalPlayer p) {
         var inv = p.getInventory();
         double best = 1;
-        for (int i = 0; i < 36; i++) {
+        for (int i = 0; i < 36; i++) {  // game fact: the player inventory has 36 slots (hotbar is slots 0-8)
             ItemStack s = inv.getItem(i);
             if (!(s.getItem() instanceof SwordItem) && !(s.getItem() instanceof AxeItem)) continue;
             double[] add = {0};

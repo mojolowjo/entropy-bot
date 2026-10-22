@@ -17,19 +17,40 @@ public final class SurfaceFamily {
             "ice", "log", "leaves", "planks", "ore", "clay", "mud", "path", "farmland", "bedrock", "netherrack", "end_stone", "glass", "wool",
             "terracotta", "concrete", "moss", "mushroom", "crop");
 
-    public static final int OTHER = 0, GRASS = 1, DIRT = 2, STONE = 3, DEEPSLATE = 4, SAND = 5, GRAVEL = 6, WATER = 7, LAVA = 8, SNOW = 9, ICE = 10,
-            LOG = 11, LEAVES = 12, PLANKS = 13, ORE = 14, CLAY = 15, MUD = 16, PATH = 17, FARMLAND = 18, BEDROCK = 19, NETHERRACK = 20, END_STONE = 21,
-            GLASS = 22, WOOL = 23, TERRACOTTA = 24, CONCRETE = 25, MOSS = 26, MUSHROOM = 27, CROP = 28;
+    public static final int OTHER = 0; // structural
+    public static final int GRASS = 1; // structural
+    public static final int DIRT = 2; // structural
+    public static final int STONE = 3; // structural
+    public static final int DEEPSLATE = 4; // structural
+    public static final int SAND = 5; // structural
+    public static final int GRAVEL = 6; // structural
+    public static final int WATER = 7; // structural
+    public static final int LAVA = 8; // structural
+    public static final int SNOW = 9; // structural
+    public static final int ICE = 10; // structural
+    public static final int LOG = 11; // structural
+    public static final int LEAVES = 12; // structural
+    public static final int PLANKS = 13; // structural
+    public static final int ORE = 14; // structural
+    public static final int CLAY = 15; // structural
+    public static final int MUD = 16; // structural
+    public static final int PATH = 17; // structural
+    public static final int FARMLAND = 18; // structural
+    public static final int BEDROCK = 19; // structural
+    public static final int NETHERRACK = 20; // structural
+    public static final int END_STONE = 21; // structural
+    public static final int GLASS = 22; // structural
+    public static final int WOOL = 23; // structural
+    public static final int TERRACOTTA = 24; // structural
+    public static final int CONCRETE = 25; // structural
+    public static final int MOSS = 26; // structural
+    public static final int MUSHROOM = 27; // structural
+    public static final int CROP = 28; // structural
 
     /** The tag paths the predicate is asked about. */
     public static final List<String> TAGS = List.of("logs", "leaves", "sand", "dirt", "base_stone_overworld", "wool", "planks", "crops");
 
     private static final Set<String> WATERS = Set.of("water", "bubble_column", "seagrass", "tall_seagrass", "kelp", "kelp_plant");
-    private static final Set<String> CROPS = Set.of("wheat", "carrots", "potatoes", "beetroots", "melon_stem", "pumpkin_stem", "torchflower_crop",
-            "pitcher_crop", "nether_wart", "sweet_berry_bush", "cocoa");
-    private static final Set<String> STONES = Set.of("stone", "granite", "diorite", "andesite", "tuff", "calcite", "cobblestone", "mossy_cobblestone",
-            "smooth_stone", "dripstone_block", "basalt", "smooth_basalt", "blackstone", "obsidian");
-    private static final Set<String> DIRTS = Set.of("dirt", "coarse_dirt", "rooted_dirt", "podzol", "mycelium");
 
     private SurfaceFamily() {}
 
@@ -48,7 +69,7 @@ public final class SurfaceFamily {
         if (WATERS.contains(p)) return WATER;
         if (p.equals("lava")) return LAVA;
         if (p.contains("_ore") || p.equals("ancient_debris")) return ORE;
-        if (t.test("logs") || p.endsWith("_log") || p.endsWith("_wood") || p.endsWith("_stem") && !p.contains("mushroom") && !CROPS.contains(p)
+        if (t.test("logs") || p.endsWith("_log") || p.endsWith("_wood") || p.endsWith("_stem") && !p.contains("mushroom") && !t.test("crops")
                 || p.endsWith("_hyphae")) return LOG;
         if (t.test("leaves") || p.endsWith("_leaves")) return LEAVES;
         if (p.equals("grass_block")) return GRASS;
@@ -65,14 +86,14 @@ public final class SurfaceFamily {
         if (p.contains("glass")) return GLASS;
         if (t.test("wool") || p.endsWith("_wool")) return WOOL;
         if (t.test("planks") || p.endsWith("_planks")) return PLANKS;
-        if (t.test("crops") || CROPS.contains(p)) return CROP;
+        if (t.test("crops")) return CROP;
         if (p.equals("gravel")) return GRAVEL;
         if (t.test("sand") || p.endsWith("sand") || p.endsWith("sandstone")) return SAND;
         if (p.contains("deepslate")) return DEEPSLATE;
         if (p.equals("netherrack")) return NETHERRACK;
         if (p.startsWith("end_stone")) return END_STONE;
-        if (t.test("dirt") || DIRTS.contains(p)) return DIRT;
-        if (t.test("base_stone_overworld") || STONES.contains(p)) return STONE;
+        if (t.test("dirt")) return DIRT;
+        if (t.test("base_stone_overworld")) return STONE;
         return OTHER;
     }
 }

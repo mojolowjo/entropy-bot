@@ -64,7 +64,7 @@ class FarmTest {
         assertTrue(r.text().startsWith("ok: farm compacting is now off"), r.text());
         farm = r.save();
 
-        // round 1: cobblestone in hand and a sword in the bag; out of reach for the twerk at first. One drop floats in
+        // round 1: cobblestone in hand and a sword in the bag; far from the crops. One drop floats in
         // the water hole in the middle, one in a puddle 4 east of the farm, and the crops' drops land late
         w.give(1, "minecraft:cobblestone", 20);
         w.give(20, "minecraft:iron_sword", 1);
@@ -72,13 +72,13 @@ class FarmTest {
         w.drop(ESS, FX + 0.5, 52.9, FZ + 0.5, 1);
         w.set(FX + 4, 52, FZ, "minecraft:water");
         w.drop(ESS, FX + 4.5, 52.9, FZ + 0.5, 1);
+        ripen(w);                       // the round harvests what is ripe and leaves the rest to grow
         FarmSim sim = new FarmSim(w, crafter);
         sim.lateDrops = 30;
         r = FarmCommand.handle("", farm, w);
         assertNull(r.text());
         String st1 = sim.run(r.start(), 6000);
         assertTrue(st1.startsWith("ok: done farming"), st1);
-        assertTrue(sim.twerkTicks > 0 && sim.twerkOut == 0, "it twerked only where Squat Grow reaches every crop: " + sim.twerkTicks + "/" + sim.twerkOut);
         assertTrue(st1.contains("harvested 8 crops") && allAges(w, 0), "all 8 harvested and replanted: " + st1);
         assertTrue(sim.clicks.size() >= 8);
         for (Object[] c : sim.clicks) {
@@ -88,7 +88,6 @@ class FarmTest {
         assertTrue(w.live.stream().noneMatch(d -> d.alive), "the drops were picked up");
         assertTrue(w.count(ESS) > 0 && gainedIn(st1) == w.count(ESS), st1 + " / " + w.count(ESS));
         assertTrue(farmIntact(w) && sim.placed.isEmpty(), "the farm is intact, nothing placed");
-        assertTrue(st1.contains("(twerked "), st1);
 
         // round 2: no sword, cobblestone in hand; compacting into blocks
         for (int i = 0; i < 36; i++) if (w.ids[i].endsWith("_sword")) w.give(i, "", 0);
@@ -161,7 +160,7 @@ class FarmTest {
         assertEquals("block", r.save().compact());
         assertEquals("farming", r.start().label());
         // the bot stands 4 from the spot: no walk first; 6 away: walk near it first
-        assertEquals(List.of("farmgrow", "farmharvest", "farmgather", "farmcompact", "farmdone", "farmdeposit"),
+        assertEquals(List.of("farmscan", "farmharvest", "farmgather", "farmcompact", "farmdone", "farmdeposit"),
                 r.start().steps().stream().map(PlanStep::type).toList());
         w.at(FX + 0.5, 53, FZ + 6.5);
         List<PlanStep> steps = FarmCommand.handle("", f, w).start().steps();
@@ -211,34 +210,6 @@ class FarmTest {
         w.crop(7, 53, 0, 1);
         w.crop(0, 56, 1, 1);
         assertEquals(3, FarmRules.farmCrops(w, new int[]{0, 53, 0}).size());
-    }
-
-    @Test
-    void squatReachAndStandSpot() {
-        List<int[]> crops = new ArrayList<>();
-        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) if (dx != 0 || dz != 0) crops.add(new int[]{FX + dx, 53, FZ + dz});
-        assertEquals(8, FarmRules.squatReach(new int[]{FX, 53, FZ + 2}, crops));
-        assertEquals(3, FarmRules.squatReach(new int[]{FX, 53, FZ + 4}, crops));
-        assertTrue(FarmRules.inSquatRange(new int[]{FX + 2, 54, FZ}, crops));
-        assertFalse(FarmRules.inSquatRange(new int[]{FX + 3, 53, FZ}, crops));
-
-        FakeWorld w = farmWorld();
-        FarmRules.Stand s = FarmRules.farmStandSpot(w, crops);
-        // reaches all 8, not on a crop, nearest to the bot (4 south)
-        assertEquals(8, s.n());
-        assertEquals(0, s.onCrop());
-        assertEquals("45 53 202", s.fmt());
-        // walls everywhere off the farm: the only free cells reaching all are the crops' own
-        FakeWorld walled = farmWorld();
-        for (int x = FX - 5; x <= FX + 5; x++) for (int z = FZ - 5; z <= FZ + 5; z++) {
-            if (Math.abs(x - FX) <= 1 && Math.abs(z - FZ) <= 1) continue;
-            walled.set(x, 53, z, "minecraft:stone");
-            walled.set(x, 54, z, "minecraft:stone");
-        }
-        s = FarmRules.farmStandSpot(walled, crops);
-        assertEquals(1, s.onCrop());
-        assertEquals("45 53 201", s.fmt(), "the crop cell nearest the bot");
-        assertEquals(8, s.n());
     }
 
     @Test
@@ -294,12 +265,12 @@ class FarmTest {
 
     @Test
     void reportTexts() {
-        assertEquals("harvested 8 crops (twerked 12 s), +14 inferium essence", FarmRound.report(8, 12, 0, false, 14, 0, 0, false, 0));
-        assertEquals("harvested 6 crops (twerked 60 s), 2 still growing (I couldn't stand in reach of them all), +9 inferium essence; made 1 inferium block; 3 drops I couldn't reach",
-                FarmRound.report(6, 60, 2, true, 9, 1, 0, false, 3));
+        assertEquals("harvested 8 crops, +14 inferium essence", FarmRound.report(8, 0, 14, 0, 0, false, 0));
+        assertEquals("harvested 6 crops, 2 still growing, +9 inferium essence; made 1 inferium block; 3 drops I couldn't reach",
+                FarmRound.report(6, 2, 9, 1, 0, false, 3));
         assertEquals("harvested 8 crops, +40 inferium essence; made 4 inferium blocks; made 1 prudentium essence; my inventory is full, so some drops stay on the ground",
-                FarmRound.report(8, 0, 0, false, 40, 4, 1, true, 5));
-        assertEquals("harvested 0 crops, 3 still growing, +0 inferium essence", FarmRound.report(0, 0, 3, false, 0, 0, 0, false, 0));
+                FarmRound.report(8, 0, 40, 4, 1, true, 5));
+        assertEquals("harvested 0 crops, 3 still growing, +0 inferium essence", FarmRound.report(0, 3, 0, 0, 0, false, 0));
     }
 
     @Test
@@ -339,73 +310,43 @@ class FarmTest {
     }
 
     @Test
-    void growWithoutCropsAndTimeout() {
+    void scanWithoutCropsAndWithUnripeOnes() {
         FakeWorld w = new FakeWorld();
         w.at(0.5, 53, 0.5);
         FarmRound round = new FarmRound(new FarmSpot(0, 53, 0, null, null), "farming", w.inventory());
-        assertEquals("no crops at the farm (0 53 0) - PM \"farm here\" next to them", round.step("farmgrow", w, 0, 0).result());
+        assertEquals("no crops at the farm (0 53 0) - PM \"farm here\" next to them", round.step("farmscan", w, 0, 0).result());
 
-        // crops that never grow: it twerks 60 s, then moves on and says how many are still growing
+        // crops that are still growing are counted and left to grow: no crouching, no walking
         FakeWorld g = farmWorld();
         g.at(FX + 0.5, 53, FZ + 2.5);
         round = new FarmRound(new FarmSpot(FX, 53, FZ, null, "off"), "farming", g.inventory());
-        FarmRound.Tick t = round.step("farmgrow", g, 0, 0);
-        assertEquals("wait", t.result());
-        assertEquals("farming - twerking so they grow (3/8 ripe)", t.status());
-        t = round.step("farmgrow", g, 1199, 1199);
-        assertEquals("wait", t.result());
-        t = round.step("farmgrow", g, 1200, 1200);
+        FarmRound.Tick t = round.step("farmscan", g, 0, 0);
         assertEquals("next", t.result());
-        assertEquals(List.of(new FarmRound.Sneak(false)), t.effects());
-        assertEquals(60, round.grewS);
+        assertTrue(t.effects().isEmpty());
         assertEquals(5, round.unripe);
     }
 
     @Test
-    void growTwerksAtASecondSpotForCropsOutOfReach() {
-        // the owner (2026-10-03): one spot doesn't reach the whole farm; crops 12 apart need two spots
-        FakeWorld w = new FakeWorld();
-        w.crop(0, 53, 0, 0);
-        w.crop(12, 53, 0, 0);
-        w.at(0.5, 53, 1.5);
-        FarmRound round = new FarmRound(new FarmSpot(6, 53, 0, null, "off"), "farming", w.inventory());
-        assertEquals("wait", round.step("farmgrow", w, 0, 0).result());          // twerks here first (reaches one)
-        FarmRound.Tick t = round.step("farmgrow", w, 1200, 1200);
-        assertEquals("wait", t.result());
-        FarmRound.Walk walk = (FarmRound.Walk) t.effects().stream().filter(e -> e instanceof FarmRound.Walk).findFirst().orElseThrow();
-        assertTrue(Math.abs(walk.x() - 12) <= FarmRules.SQUAT_R, "the second spot reaches the far crop: " + walk);
-        assertTrue(t.status().contains("2 still growing"), t.status());
-        w.at(walk.x() + 0.5, walk.y(), walk.z() + 0.5);
-        assertEquals("wait", round.step("farmgrow", w, 1220, 1220).result());   // arrived: twerks there
-        t = round.step("farmgrow", w, 2420, 2420);
-        assertEquals("next", t.result());
-        assertEquals(120, round.grewS);
-        assertEquals(2, round.unripe);
-        assertFalse(round.outOfRange, "both crops were in reach of a spot");
-    }
-
-    @Test
-    void harvestWalksToFarCropsAndStopsAfterThreeClicks() {
+    void harvestAsksOneRequestAtATimeAndStopsAfterThreeClicks() {
         FakeWorld w = farmWorld();
         ripen(w);
-        w.at(FX + 0.5, 53, FZ + 7.5);                                   // too far to reach any
+        w.at(FX + 0.5, 53, FZ + 7.5);                                   // far away: Baritone's hands walk there themselves
         FarmRound round = new FarmRound(new FarmSpot(FX, 53, FZ, null, "off"), "farming", w.inventory());
-        assertEquals("next", round.step("farmgrow", w, 0, 0).result());   // all ripe: no twerk
+        assertEquals("next", round.step("farmscan", w, 0, 0).result());   // all ripe
+        // Baritone's hands have a request running: the round asks for nothing more
+        w.hands = true;
         FarmRound.Tick t = round.step("farmharvest", w, 0, 10);
         assertEquals("wait", t.result());
-        assertTrue(t.effects().contains(new FarmRound.Walk(45, 53, 201, 1)), "next to the nearest crop: " + t.effects());
-        // while walking (Baritone busy) it waits, then clicks once it is close
-        w.pathing = true;
-        assertTrue(round.step("farmharvest", w, 100, 110).effects().stream().noneMatch(e -> e instanceof FarmRound.Use));
-        w.pathing = false;
-        w.at(FX + 0.5, 53, FZ + 2.5);
-        t = round.step("farmharvest", w, 102, 112);
+        assertTrue(t.effects().isEmpty(), "one request at a time: " + t.effects());
+        w.hands = false;
+        t = round.step("farmharvest", w, 2, 12);
         FarmRound.Use u = (FarmRound.Use) t.effects().stream().filter(e -> e instanceof FarmRound.Use).findFirst().orElseThrow();
+        assertTrue(t.effects().stream().noneMatch(e -> e instanceof FarmRound.Walk), "no walk of the round's own: " + t.effects());
         assertEquals(FarmRules.Hand.HELD, u.hand());
         assertEquals("farming - harvesting (1)", t.status());
         // a crop that stays ripe gets 3 clicks (20 ticks apart), then it is left alone
         int clicksOnIt = 1;
-        for (long tick = 114; tick < 400; tick += 2) {
+        for (long tick = 14; tick < 400; tick += 2) {
             t = round.step("farmharvest", w, tick - 10, tick);
             for (FarmRound.Effect e : t.effects()) if (e instanceof FarmRound.Use v && v.x() == u.x() && v.z() == u.z()) clicksOnIt++;
             if (t.result().equals("next")) break;
@@ -414,7 +355,6 @@ class FarmTest {
         assertEquals("next", t.result(), "nothing harvestable left");
         assertEquals(8, round.harvested(), "each crop counts once");
     }
-
     @Test
     void gatherFullBag() {
         FakeWorld w = farmWorld();

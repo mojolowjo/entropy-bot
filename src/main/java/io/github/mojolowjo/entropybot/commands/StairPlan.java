@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -14,7 +16,10 @@ import java.util.List;
 public final class StairPlan {
     private StairPlan() {}
 
-    public static final int MAX = 40, TORCH_EVERY = 6, SHAFT_DROP = 3, SHAFT_SCAN = 64;
+    public static int maxV() { return Tuning.i("stairPlan.max"); }
+    public static int torchEvery() { return Tuning.i("stairPlan.torchEvery"); }
+    public static int shaftDrop() { return Tuning.i("stairPlan.shaftDrop"); }
+    public static int shaftScan() { return Tuning.i("stairPlan.shaftScan"); }
 
     /**
      * 0.30.0 (P2): the dig steps of a staircase (down, up, climb) stay on my own engine: each is a 2-3 block cut next to
@@ -56,7 +61,7 @@ public final class StairPlan {
     /** The torch spots: every 6th step, in the step before's feet cell (its floor is the cut's floor). */
     public static List<int[]> torches(int x, int y, int z, int dx, int dz, int n) {
         List<int[]> out = new ArrayList<>();
-        for (int i = TORCH_EVERY; i <= n; i += TORCH_EVERY) out.add(new int[]{x + dx * (i - 1), y - (i - 1), z + dz * (i - 1)});
+        for (int i = torchEvery(); i <= n; i += torchEvery()) out.add(new int[]{x + dx * (i - 1), y - (i - 1), z + dz * (i - 1)});
         return out;
     }
 
@@ -67,7 +72,7 @@ public final class StairPlan {
             int cx = x + dx * i, cz = z + dz * i;
             out.add("dig " + cx + " " + (y - i) + " " + cz + " " + cx + " " + (y - i + 2) + " " + cz + ORES + VIA_ENGINE);
             out.add("goto " + cx + " " + (y - i) + " " + cz);
-            if (i % TORCH_EVERY == 0) out.add("place torch " + (x + dx * (i - 1)) + " " + (y - i + 1) + " " + (z + dz * (i - 1)));
+            if (i % torchEvery() == 0) out.add("place torch " + (x + dx * (i - 1)) + " " + (y - i + 1) + " " + (z + dz * (i - 1)));
         }
         return out;
     }
@@ -87,53 +92,23 @@ public final class StairPlan {
         return out;
     }
 
-    /** 0.30.7: a cell test for {@link #withForce}. */
-    public interface CellTest {
-        boolean test(int x, int y, int z);
-    }
-
-    /**
-     * 0.30.7 (review of package 8 item 3): the stair side may now run through placed blocks in my own areas
-     * (Jobs.digOutAny); the dig refuses built blocks without force, so every "dig x1 y1 z1 x2 y2 z2 ..." step whose box
-     * holds a cell with needsForce gets " force" (once). Other steps are kept as they are.
-     */
-    public static List<String> withForce(List<String> steps, CellTest needsForce) {
-        List<String> out = new ArrayList<>();
-        for (String s : steps) {
-            String[] w = s.split(" ");
-            boolean add = false;
-            if (w.length >= 7 && w[0].equals("dig") && !s.endsWith(" force")) {
-                try {
-                    int x1 = Integer.parseInt(w[1]), y1 = Integer.parseInt(w[2]), z1 = Integer.parseInt(w[3]);
-                    int x2 = Integer.parseInt(w[4]), y2 = Integer.parseInt(w[5]), z2 = Integer.parseInt(w[6]);
-                    for (int x = x1; x <= x2 && !add; x++) for (int y = y1; y <= y2 && !add; y++) for (int z = z1; z <= z2 && !add; z++)
-                        add = needsForce.test(x, y, z);
-                } catch (NumberFormatException ignored) {
-                    // not a box: leave the step as it is
-                }
-            }
-            out.add(add ? s + " force" : s);
-        }
-        return out;
-    }
-
     /** 0.27.3: the steps up from feet y to the surface (open sky from surface up), at most MAX; 0 when not below it. */
     public static int upCount(int y, int surface) {
-        return Math.max(0, Math.min(MAX, surface - y));
+        return Math.max(0, Math.min(maxV(), surface - y));
     }
 
     /** A vertical hole above (x, y, z): {rimX, rimY, rimZ, dx, dz, drop} with (dx, dz) from the hole to the rim, or null. */
     public static int[] shaft(Cells c, int x, int y, int z) {
         if (!c.free(x, y, z) || !c.free(x, y + 1, z)) return null;
         int[][] d = {{0, -1}, {0, 1}, {1, 0}, {-1, 0}};
-        for (int yy = y + 1; yy <= y + SHAFT_SCAN; yy++) {
+        for (int yy = y + 1; yy <= y + shaftScan(); yy++) {
             if (!c.free(x, yy, z)) return null;                         // a roof: no open shaft
             for (int[] k : d) {
                 int nx = x + k[0], nz = z + k[1];
                 // a walkable rim cell: free feet and head, something under it
                 if (c.free(nx, yy, nz) && c.free(nx, yy + 1, nz) && !c.free(nx, yy - 1, nz)) {
                     int drop = yy - y;
-                    return drop > SHAFT_DROP ? new int[]{nx, yy, nz, k[0], k[1], drop} : null;
+                    return drop > shaftDrop() ? new int[]{nx, yy, nz, k[0], k[1], drop} : null;
                 }
             }
         }
@@ -145,7 +120,7 @@ public final class StairPlan {
      * then a 2-high tunnel back along the bottom to the hole's column.
      */
     public static List<String> down(int[] rim, int hx, int hy, int hz) {
-        int n = Math.min(MAX, rim[5]);
+        int n = Math.min(maxV(), rim[5]);
         int sx = rim[0], sy = rim[1], sz = rim[2], dx = rim[3], dz = rim[4];
         List<String> out = new ArrayList<>();
         out.add("goto " + sx + " " + sy + " " + sz);

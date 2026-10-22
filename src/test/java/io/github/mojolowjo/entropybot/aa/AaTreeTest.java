@@ -8,6 +8,8 @@ import io.github.mojolowjo.entropybot.aa.core.Request;
 import io.github.mojolowjo.entropybot.aa.core.Status;
 import io.github.mojolowjo.entropybot.aa.core.TaskKind;
 import io.github.mojolowjo.entropybot.aa.core.Tracer;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -19,6 +21,22 @@ class AaTreeTest {
     final Tracer tracer = new Tracer();
     final Blackboard bb = new Blackboard(clock, port, tracer);
     final AaTree tree = AaTree.build(new AaScorer());
+
+    /** one-planner: the needs' chains need the game's data and a world: a tree, stone, coal and iron ore known around. */
+    @BeforeEach
+    void world() {
+        var d = io.github.mojolowjo.entropybot.aa.brain.TestData.planner();
+        for (String m : java.util.List.of("wooden", "stone", "iron")) d.tag(m + "_pickaxe", "minecraft:pickaxes");
+        d.install();
+        java.util.Map<String, NeedChain.Spot> spots = java.util.Map.of("minecraft:oak_log", new NeedChain.Spot(10, 64, 0, 10, "minecraft:oak_log", 64),
+                "minecraft:cobblestone", new NeedChain.Spot(0, 60, 16, 16, "minecraft:stone", 200), "minecraft:coal", new NeedChain.Spot(0, 40, 20, 20, "minecraft:coal_ore", 40),
+                "minecraft:raw_iron", new NeedChain.Spot(0, 30, 20, 25, "minecraft:iron_ore", 40));
+        bb.fact(NeedChain.WORLD_FACT, (java.util.function.Supplier<NeedChain.World>) () -> new NeedChain.World(bb.in.bag, bb.in.tableKnown, bb.in.furnaceKnown,
+                item -> spots.containsKey(item) ? java.util.List.of(spots.get(item)) : java.util.List.of(), null, null, null, 0));
+    }
+
+    @AfterEach
+    void clear() { io.github.mojolowjo.entropybot.aa.brain.TestData.clear(); }
 
     /** A fresh Peaceful start: nothing in the bag, nothing known. */
     void freshStart() {
@@ -32,22 +50,16 @@ class AaTreeTest {
         bb.in.baseChests = false;
         bb.in.freeSlots = 36;
         bb.in.wool = 0;
-        bb.in.areaName = null;
-        bb.in.areaKnown = true;
+        bb.in.basePlace = null;
         bb.in.hungerDrains = false;
     }
 
     @Test
-    void aFreshWorldGetsAnAreaFirst() {
+    void aFreshWorldStartsWorkAtOnce() {
+        // AREAS (0.39.2): no area rung - the world is open, AA works where it stands
         freshStart();
-        bb.in.areaKnown = false;
         assertEquals(Status.RUNNING, tree.tick(bb));
-        assertEquals(AaLadder.AREA_COMMAND, lastChain());
-        port.done(1, "done");
-        tree.tick(bb);
-        bb.in.areaKnown = true;
-        tree.tick(bb);
-        assertEquals(AaLadder.BOOTSTRAP, lastChain());
+        assertFalse(port.started.isEmpty(), "a task was started");
     }
 
     /** One pickaxe of this tier, fresh. */
@@ -57,15 +69,25 @@ class AaTreeTest {
         bb.in.pickPct = 100;
     }
 
+    /** AA_ROUND2 4: every idle stock band met (a Peaceful base, worth 16, comes after them). */
+    void stocked() {
+        bb.in.wood = AaScorer.woodHi();
+        bb.in.cobble = AaScorer.stoneHi();
+        bb.in.coal = AaScorer.coalHi();
+        bb.in.ironIngots = AaScorer.ironHi();
+        bb.in.torches = AaScorer.torchHi();
+    }
+
     String lastChain() { return port.started.get(port.started.size() - 1).chain(); }
 
     @Test
     void theLadderRunsTheFirstUnmetRungAndCommitsToIt() {
         freshStart();
         assertEquals(Status.RUNNING, tree.tick(bb));
-        assertEquals(AaLadder.BOOTSTRAP, lastChain(), "no pickaxe at all: the from-nothing job");
+        assertFalse(port.started.isEmpty(), "no table at all: the table need starts a task (there is no tools need: a pickaxe comes with a dig)");
         assertEquals("needs", tree.driver());
-        assertEquals(TaskKind.TOOLS, bb.task().kind);
+        assertEquals(TaskKind.TABLE_FURNACE, bb.task().kind);
+        assertTrue(lastChain().endsWith("craft crafting_table 1"), lastChain());
         // the bag changes meanwhile: no re-choice
         bb.in.torches = 0;
         pick(1);
@@ -74,56 +96,48 @@ class AaTreeTest {
         port.done(1, "done");
         assertEquals(Status.SUCCESS, tree.tick(bb));
         assertNull(bb.task());
-        // a wooden pickaxe now: the tools rung is still unmet; S2: its goal text stays "goal stone tools" (the options
-        // choose bootstrap or the plan), so the settle time passes first
-        clock.advance(Rung.SETTLE_MS + 1);
-        assertEquals(Status.RUNNING, tree.tick(bb));
-        assertEquals("goal stone tools", lastChain());
-        port.done(2, "done");
-        tree.tick(bb);
-        pick(2);
-        tree.tick(bb);
-        assertEquals("goal table", lastChain());
-        port.done(3, "done");
-        tree.tick(bb);
         bb.in.tableKnown = true;
         tree.tick(bb);
-        assertEquals("goal furnace", lastChain());
-        port.done(4, "done");
+        assertTrue(lastChain().endsWith("craft furnace 1"), lastChain());
+        port.done(2, "done");
         tree.tick(bb);
         bb.in.furnaceKnown = true;
         tree.tick(bb);
-        assertEquals("goal torch 16", lastChain());
-        port.done(5, "done");
+        assertTrue(lastChain().endsWith("craft torch 16"), lastChain());
+        port.done(3, "done");
         tree.tick(bb);
         bb.in.torches = 16;
         tree.tick(bb);
-        assertEquals("goal shelter", lastChain(), "no area: a shelter, not a house");
-        port.done(6, "done");
+        // AA_ROUND2 4: Peaceful (danger 0): a base is worth 16 (Worth.base), so iron (70) comes first
+        assertTrue(lastChain().endsWith("craft iron_pickaxe 1"), "bed (no wool) and bag (no chests) are skipped with reasons: " + lastChain());
+        port.done(4, "done");
+        tree.tick(bb);
+        pick(3);
+        stocked();                                // Peaceful base (16): after the idle stock-ups
+        tree.tick(bb);
+        assertEquals("shelter", lastChain(), "no area: a shelter, not a house");
+        port.done(5, "done");
         assertEquals(Status.SUCCESS, tree.tick(bb));
         assertTrue(bb.flag(AaLadder.SHELTER_FACT), "the shelter is AA's own fact");
-        tree.tick(bb);
-        assertEquals("goal iron tools", lastChain(), "bed (no wool) and bag (no chests) are skipped with reasons");
-        String reasons = String.join(" | ", reasons());
-        assertTrue(reasons.contains("BASE_BED skipped: no wool for a bed (0/3"), reasons);
-        assertTrue(reasons.contains("BAG met"), reasons);
+        assertTrue(tree.brain.whyLines(20).stream().anyMatch(l -> l.startsWith("needs.bed PROGRESS 0") && l.contains("parked: no wool source")), "parked, not scored: " + tree.brain.whyLines(20));
+        assertTrue(tree.brain.whyLines(20).stream().anyMatch(l -> l.startsWith("needs.bag UPKEEP -1")), "BRAIN B1: a met Need scores -1: " + tree.brain.whyLines(20));
         assertEquals(0, tracer.counts.switches, "no task replaced another");
         assertEquals(0, tracer.counts.pointless);
     }
 
     java.util.List<String> reasons() {
         java.util.List<String> out = new java.util.ArrayList<>();
-        for (Rung r : AaLadder.rungs(tree.ladder)) out.add(r.last() == Status.FAILURE ? r.reason() : r.id + " " + r.last());
+        for (Need r : Need.all(tree.ladder)) out.add(r.last() == Status.FAILURE ? r.reason() : r.id + " " + r.last());
         return out;
     }
 
     @Test
     void housePrefersAnAreaAndTheBagRungNeedsChests() {
         freshStart();
-        pick(2);
+        pick(3);                                  // AA_ROUND2 4: Peaceful base (16) comes after iron
+        stocked();
         bb.in.tableKnown = bb.in.furnaceKnown = true;
-        bb.in.torches = 16;
-        bb.in.areaName = "main";
+        bb.in.basePlace = "main";
         tree.tick(bb);
         assertEquals("house main", lastChain());
         port.done(1, "done");
@@ -131,18 +145,17 @@ class AaTreeTest {
         bb.in.baseKnown = true;
         bb.in.freeSlots = 2;
         tree.tick(bb);
-        assertEquals("goal iron tools", lastChain(), "the bag rung is skipped without base chests");
-        assertTrue(String.join("|", reasons()).contains("BAG skipped: no base chests scanned (scan base)"), reasons().toString());
-        port.done(2, "done");
+        assertTrue(String.join("|", reasons()).contains("BAG: no way can run"), reasons().toString());
+        if (bb.task() != null) port.done(port.started.size(), "done");
         tree.tick(bb);
         bb.in.baseChests = true;
-        pick(3);
+        clock.advance(75_000L + 1);
         tree.tick(bb);
         assertEquals("deposit", lastChain());
-        port.done(3, "done");
+        port.done(port.started.size(), "done");
         tree.tick(bb);
         bb.in.freeSlots = 8;
-        clock.advance(Rung.SETTLE_MS + 1);
+        clock.advance(75_000L + 1);
         tree.tick(bb);
         assertEquals("deposit", lastChain(), "still under the leave threshold (10): the bag band stays on");
     }
@@ -157,12 +170,12 @@ class AaTreeTest {
         bb.in.food = 5;
         tree.tick(bb);
         assertEquals("idle", tree.driver(), "Peaceful: no food rung");
-        assertEquals("goal wood 64", lastChain());
+        assertEquals("obtain 64 #minecraft:logs", lastChain());
         port.done(1, "done");
         tree.tick(bb);
         bb.in.hungerDrains = true;
         tree.tick(bb);
-        assertEquals("goal food 8", lastChain());
+        assertEquals(TaskKind.FOOD, bb.task().kind, lastChain());
     }
 
     @Test
@@ -186,7 +199,7 @@ class AaTreeTest {
         assertFalse(bb.task().paused());
         assertEquals(1, port.resumed);
         assertEquals(0, tracer.counts.switches);
-        assertEquals(AaLadder.BOOTSTRAP, bb.task().spec().chain(), "the same task goes on");
+        assertEquals(lastChain(), bb.task().spec().chain(), "the same task goes on");
     }
 
     @Test
@@ -254,31 +267,6 @@ class AaTreeTest {
     }
 
     @Test
-    void aGoalStillPlanningIsWaitedForThenSkipped() {
-        freshStart();
-        pick(1);
-        port.resolveTo = null;
-        assertEquals(Status.RUNNING, tree.tick(bb), "the slot waits on the rung that plans");
-        assertEquals("needs>planning TOOLS: goal stone tools (0s)", tree.driver() + ">" + bb.taskText(clock.now()));
-        assertEquals(0, port.started.size());
-        Rung tools = AaLadder.rungs(tree.ladder).stream().filter(r -> r.id.equals("needs.tools")).findFirst().orElseThrow();
-        for (int i = 0; i < Rung.PLAN_WAIT_MS / 1000; i++) {
-            clock.advance(1000);
-            assertEquals(Status.RUNNING, tools.tick(bb));
-        }
-        clock.advance(1);
-        assertEquals(Status.FAILURE, tools.tick(bb));
-        assertTrue(tools.reason().contains("TOOLS skipped: no plan for goal stone tools"), tools.reason());
-        assertEquals("no task", bb.taskText(clock.now()));
-        port.resolveTo = "goal_stone_tools";
-        tools.tick(bb);
-        assertTrue(tools.reason().contains("TOOLS skipped: no plan"), "skipped for a while even though a plan exists now");
-        clock.advance(2 * 60_000 + 1);
-        assertEquals(Status.RUNNING, tools.tick(bb));
-        assertEquals("goal_stone_tools", lastChain(), "the planner's routine is what runs");
-    }
-
-    @Test
     void aRefusedStartCoolsDownAndIdleHasInertia() {
         freshStart();
         pick(3);
@@ -289,15 +277,37 @@ class AaTreeTest {
         assertTrue(tree.root.reason().contains("busy: a hunt runs"), tree.root.reason());
         port.refuse = null;
         tree.tick(bb);
-        assertEquals("goal cobblestone 64", lastChain(), "S1: the refused option cools down 30 s, the next one runs at once");
+        assertEquals("obtain 64 #minecraft:stone_tool_materials", lastChain(), "S1: the refused option cools down 30 s, the next one runs at once");
         port.done(1, "done");
         tree.tick(bb);
-        clock.advance(Cooldown.NO_RUN_MS + 1);
+        clock.advance(Cooldown.noRunMsV() + 1);
         tree.tick(bb);            // wood 100 vs stone 100 + 15 inertia
-        assertEquals("goal cobblestone 64", lastChain());
+        assertEquals("obtain 64 #minecraft:stone_tool_materials", lastChain());
     }
 
     /** 0.36.4 (aa40d): short air alone holds the danger guard at most 30 s; then the task runs again. */
+    /** Round 4 (owner): a fight or flee reflex is no pause any more; the danger desire prices it, the slot runs on. */
+    @Test
+    void hostilesNeverPauseTheSlotOnlyTheTrueReflexesDo() {
+        freshStart();
+        tree.tick(bb);
+        bb.in.danger = 2;
+        bb.in.dangerWhy = "fighting";
+        tree.tick(bb);
+        assertEquals("needs", tree.driver(), "a hit response runs under the slot");
+        assertFalse(bb.task().paused());
+        assertEquals("calm", tree.dangerWhy());
+        bb.in.danger = 0;
+        bb.in.creeperClose = true;
+        tree.tick(bb);
+        assertEquals("danger", tree.driver(), "the creeper sprint still pauses");
+        assertEquals("creeper close", tree.dangerWhy());
+        bb.in.creeperClose = false;
+        clock.advance(3100);
+        tree.tick(bb);
+        assertEquals("needs", tree.driver());
+    }
+
     @Test
     void shortAirAloneDoesNotHoldTheTaskForever() {
         freshStart();
@@ -317,32 +327,17 @@ class AaTreeTest {
 
     /** 0.36.3 (aa40b): in the quarry hole with no table, the ladder climbs first; at the surface it plans the table. */
     @Test
-    void underGroundWithNoTableClimbsFirst() {
+    void underGroundWithNoTableNeedsNoGate() {
         freshStart();
         pick(2);
         bb.in.torches = 16;
         bb.in.underDepth = 9;
         tree.tick(bb);
-        assertEquals(AaLadder.CLIMB, lastChain());
-        port.done(1, "done");
-        tree.tick(bb);
-        bb.in.underDepth = 0;
-        tree.tick(bb);
-        assertEquals("goal table", lastChain());
+        // round 4A N: no surface gate; placing needs no open sky, a gather row prices its own climb (StationOptions)
+        assertTrue(lastChain().endsWith("craft crafting_table 1"), lastChain());
     }
 
-    /** 0.36.3: no reachable tree: the woodArea rung runs the area command the adapter found. */
-    @Test
-    void noReachableTreeMakesATreeArea() {
-        freshStart();
-        pick(3);
-        bb.in.tableKnown = bb.in.furnaceKnown = bb.in.baseKnown = true;
-        bb.in.torches = 16;
-        bb.fact(AaLadder.TREE_AREA_FACT, "area 0 0 40 40 trees1 work neutral");
-        tree.tick(bb);
-        assertEquals("area 0 0 40 40 trees1 work neutral", lastChain());
-    }
-
+    /** 0.36.3: no reachable tree: the woodArea Need runs the area command the adapter found. */
     /** 0.36.3 (Peaceful, no wool): a shelter is the base, the bed is skipped, IRON gets its turn. */
     @Test
     void noWoolStillReachesIron() {
@@ -352,7 +347,7 @@ class AaTreeTest {
         bb.in.torches = 16;
         AaLadder.noteShelter(bb);
         tree.tick(bb);
-        assertEquals("goal iron tools", lastChain());
+        assertTrue(lastChain().endsWith("craft iron_pickaxe 1"), lastChain());
     }
 
     /** 0.36.2, the 40-minute run: a failed idle task cools down; the next idle option runs meanwhile. */
@@ -363,34 +358,33 @@ class AaTreeTest {
         bb.in.tableKnown = bb.in.furnaceKnown = bb.in.baseKnown = true;
         bb.in.torches = 16;
         tree.tick(bb);
-        assertEquals("goal wood 64", lastChain());
+        assertEquals("obtain 64 #minecraft:logs", lastChain());
         port.fail(1, "error: chopped nothing");
         tree.tick(bb);
         clock.advance(250);
         tree.tick(bb);
-        assertNotEquals("goal wood 64", lastChain(), "no restart 0.25 s after the failure");
+        assertNotEquals("obtain 64 #minecraft:logs", lastChain(), "no restart 0.25 s after the failure");
         assertEquals(2, port.started.size());
     }
 
-    /** Live 2026-10-18: an earlier rung that starts planning while a lower rung's job runs must not cancel the job. */
+    /** Live 2026-10-18: an earlier Need that starts planning while a lower rung's job runs must not cancel the job. */
     @Test
     void anEarlierRungPlanningNeverOutranksARunningJob() {
         freshStart();
         pick(2);
         bb.in.tableKnown = bb.in.furnaceKnown = true;
         tree.tick(bb);
-        assertEquals("goal torch 16", lastChain());
-        bb.in.furnaceKnown = false;          // the furnace rung becomes unmet (and would plan) while torches run
-        port.resolveTo = null;
+        assertTrue(lastChain().endsWith("craft torch 16"), lastChain());
+        bb.in.furnaceKnown = false;          // the furnace Need becomes unmet (and would plan) while torches run
         for (int i = 0; i < 5; i++) assertEquals(Status.RUNNING, tree.tick(bb));
-        assertEquals("goal torch 16", bb.task().spec().chain(), "the torches job still runs");
+        assertTrue(bb.task().spec().chain().endsWith("craft torch 16"), "the torches job still runs");
         assertEquals(0, port.cancelled.size());
         assertEquals(0, tracer.counts.switches);
-        port.resolveTo = "*";
         port.done(1, "done");
+        bb.in.torches = 16;                  // round 4A N: no settle hole; the torches are made
         tree.tick(bb);
         tree.tick(bb);
-        assertEquals("goal furnace", lastChain(), "then the furnace rung gets its turn");
+        assertTrue(lastChain().endsWith("craft furnace 1"), "then the furnace Need gets its turn: " + lastChain());
     }
 
     @Test
@@ -398,13 +392,13 @@ class AaTreeTest {
         String m = tree.mermaid();
         assertTrue(m.startsWith("graph TD\n"));
         assertTrue(m.contains("root --> slot"), m);
-        assertTrue(m.contains("needs --> needs_torches"), m);
+        assertTrue(m.contains("brain --> needs_torches"), m);
         assertTrue(tree.nodes().size() > 25, "nodes: " + tree.nodes().size());
         freshStart();
         tree.tick(bb);
         String s = tracer.snapshot(clock.now(), true, tree.driver(), bb.taskJson(clock.now()), bb.in);
         assertTrue(s.contains("{\"id\":\"root\",\"s\":\"RUNNING\"}"), s);
         assertTrue(s.contains("{\"id\":\"danger\",\"s\":\"FAILURE\"}"), s);
-        assertTrue(s.contains("{\"id\":\"needs.tools\",\"s\":\"RUNNING\"}"), s);
+        assertTrue(s.contains("{\"id\":\"needs.tableFurnace\",\"s\":\"RUNNING\"}"), s);
     }
 }

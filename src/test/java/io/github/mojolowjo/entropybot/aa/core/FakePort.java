@@ -8,8 +8,8 @@ import java.util.Map;
 /** A JobPort for the tests: the test moves the task along (done, fail, gone, progress) by hand. */
 public final class FakePort implements JobPort {
     public long nextId = 1;
-    /** A refusal for every start (null = starts); resolve's answer: "*" = the text itself, null = still planning, else the chain. */
-    public String refuse, resolveTo = "*";
+    /** A refusal for every start (null = starts). */
+    public String refuse;
     public String lastRefusal;
     public final Map<Long, JobState> states = new HashMap<>();
     public final Map<Long, Long> progress = new HashMap<>();
@@ -42,18 +42,11 @@ public final class FakePort implements JobPort {
 
     @Override public void resume(long taskId) { resumed++; }
 
-    @Override public String resolve(String chain) { return "*".equals(resolveTo) ? chain : resolveTo; }
-
-    /** Non-null: the planner answers NONE with this reason. */
-    public String noPlan;
-    public double planCost;
-    public int resolveCalls;
-
-    @Override public Resolved resolveState(String text) {
-        resolveCalls++;
-        if (noPlan != null) return Resolved.none(noPlan);
-        String c = resolve(text);
-        return c == null ? Resolved.searching() : Resolved.ready(c, planCost);
+    /** The routine's text as typed steps (test helper; null: a line has no typed step). */
+    public static List<io.github.mojolowjo.entropybot.aa.moves.Step> steps(String routine) {
+        List<String> lines = new ArrayList<>();
+        for (String s : routine.split("\\s+then\\s+")) if (!s.isBlank()) lines.add(s.trim());
+        return io.github.mojolowjo.entropybot.commands.PlanLines.of(lines, null);
     }
 
     @Override public long progress(long taskId) { return progress.getOrDefault(taskId, 0L); }
@@ -65,6 +58,9 @@ public final class FakePort implements JobPort {
     public void done(long id, String text) { states.put(id, JobState.done(text)); }
 
     public void fail(long id, String text) { states.put(id, JobState.failed(text)); }
+
+    /** chop D: a run that failed at a typed step (the step's source is charged). */
+    public void fail(long id, String text, io.github.mojolowjo.entropybot.aa.moves.Step step) { states.put(id, JobState.failed(text, step)); }
 
     public void gone(long id, String who) { states.put(id, JobState.gone(who)); }
 

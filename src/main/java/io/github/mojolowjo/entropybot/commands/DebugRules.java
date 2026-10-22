@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
@@ -27,15 +29,20 @@ public final class DebugRules {
     /** Where a command came from: a PM (in-game chat), or this laptop (the fast channel, cmd.json: bridge.ps1, the dashboard). */
     public enum Source { PM, LOCAL }
 
-    public static final int MAX_CELLS = 4096;
-    public static final int EVENTS_DEFAULT = 20, EVENTS_MAX = 300;
-    public static final int CHANGES_R_DEFAULT = 8, CHANGES_R_MAX = 64, CHANGES_MAX = 50;
-    public static final int TRAIL_MINUTES_DEFAULT = 10, TRAIL_MINUTES_MAX = 24 * 60, TRAIL_MAX = 200;
-    public static final int INCIDENTS_LIST = 10;
+    public static int maxCells() { return Tuning.i("debugRules.maxCells"); }
+    public static int eventsDefault() { return Tuning.i("debugRules.eventsDefault"); }
+    public static int eventsMax() { return Tuning.i("debugRules.eventsMax"); }
+    public static int changesRDefault() { return Tuning.i("debugRules.changesRDefault"); }
+    public static int changesRMax() { return Tuning.i("debugRules.changesRMax"); }
+    public static int changesMax() { return Tuning.i("debugRules.changesMax"); }
+    public static int trailMinutesDefault() { return Tuning.i("debugRules.trailMinutesDefault"); }
+    public static int trailMinutesMax() { return Tuning.i("debugRules.trailMinutesMax"); }
+    public static int trailMax() { return Tuning.i("debugRules.trailMax"); }
+    public static int incidentsList() { return Tuning.i("debugRules.incidentsList"); }
 
     public static final String PM_REFUSAL = "debug only from the laptop or the dashboard (bridge.ps1 do debug ..., or the dashboard's command box)";
 
-    public static final String LIST = "debug (read-only): gui | inv | block x y z | blocks x1 y1 z1 x2 y2 z2 [at <time>] (" + MAX_CELLS
+    public static final String LIST = "debug (read-only): gui | inv | block x y z | blocks x1 y1 z1 x2 y2 z2 [at <time>] (" + maxCells()
             + " blocks at most) | baritone | events [n] | guard x y z | changes x y z [r] [since <time>] | trail [minutes] | incident [n] | mobs [radius] | hits [n]"
             + " - times: HH:mm (today), -10m, -2h, or epoch ms";
 
@@ -91,7 +98,7 @@ public final class DebugRules {
         /** Counted in long from the corners (an int dx overflows for a box across the whole int range). */
         public long cells() {
             long a = (long) x2 - x1 + 1, b = (long) y2 - y1 + 1, c = (long) z2 - z1 + 1;
-            if (a > MAX_CELLS || b > MAX_CELLS || c > MAX_CELLS) return Long.MAX_VALUE;
+            if (a > maxCells() || b > maxCells() || c > maxCells()) return Long.MAX_VALUE;
             return a * b * c;
         }
 
@@ -99,13 +106,13 @@ public final class DebugRules {
         public int index(int x, int y, int z) { return ((y - y1) * dz() + (z - z1)) * dx() + (x - x1); }
     }
 
-    public static final String BLOCKS_USAGE = "usage: debug blocks x1 y1 z1 x2 y2 z2 [at <time>] (" + MAX_CELLS + " blocks at most)";
+    public static final String BLOCKS_USAGE = "usage: debug blocks x1 y1 z1 x2 y2 z2 [at <time>] (" + maxCells() + " blocks at most)";
 
     /** "x1 y1 z1 x2 y2 z2" from w[1..]: the box, refused over 4096 cells. */
     public static Box box(List<String> w) {
         Box b = Box.of(ints(w, 1, 6, BLOCKS_USAGE));
-        if (b.cells() > MAX_CELLS) {
-            throw new IllegalArgumentException("that box has " + b.cells() + " blocks (" + b.dx() + " x " + b.dy() + " x " + b.dz() + "); " + MAX_CELLS + " at most, e.g. 16 x 16 x 16");
+        if (b.cells() > maxCells()) {
+            throw new IllegalArgumentException("that box has " + b.cells() + " blocks (" + b.dx() + " x " + b.dy() + " x " + b.dz() + "); " + maxCells() + " at most, e.g. 16 x 16 x 16");
         }
         return b;
     }

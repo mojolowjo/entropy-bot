@@ -17,6 +17,28 @@ final class SmeltTexts {
     static final String AUTO = "due";
 
     /** The smelt verb's label when the job ends once the furnace runs: "ok: done starting the furnace for 40 iron_ingot; ...". */
+    /**
+     * AA_ROUND3 2: "smelt <item> [n] [here] [nowait]": the words in any order at the end. {@code nowait} loads the furnace
+     * and leaves (the job is remembered; the pickup or {@code smelt collect} takes the output), whatever the smelt mode.
+     */
+    record Form(String text, boolean here, boolean nowait) {}
+
+    static Form form(String text) {
+        String t = text == null ? "" : text.trim();
+        boolean here = false, nowait = false;
+        while (true) {
+            String l = t.toLowerCase(java.util.Locale.ROOT);
+            if (l.endsWith(" here") || l.equals("here")) { here = true; t = t.substring(0, Math.max(0, t.length() - 4)).trim(); }
+            else if (l.endsWith(" nowait") || l.equals("nowait")) { nowait = true; t = t.substring(0, Math.max(0, t.length() - 6)).trim(); }
+            else return new Form(t, here, nowait);
+        }
+    }
+
+    /** The end label of a nowait smelt: the furnace runs, the bot has left. */
+    static String nowaitLabel(boolean fetches, String label) {
+        return (fetches ? "fetching and " : "") + "loading the furnace for " + label + " (nowait: I leave it running)";
+    }
+
     static String startLabel(boolean fetches, String label) {
         return (fetches ? "getting materials, then " : "") + "starting the furnace for " + label;
     }

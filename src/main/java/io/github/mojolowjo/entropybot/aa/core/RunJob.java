@@ -22,9 +22,9 @@ public final class RunJob extends Node {
         this.spec = spec;
     }
 
-    /** A fixed chain. */
-    public static RunJob of(String id, TaskKind kind, String chain, String source) {
-        return new RunJob(id, kind, bb -> JobPort.TaskSpec.of(kind, chain, source));
+    /** rm-execution2: fixed typed steps. */
+    public static RunJob of(String id, TaskKind kind, java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, String source) {
+        return new RunJob(id, kind, bb -> JobPort.TaskSpec.steps(kind, steps, source));
     }
 
     @Override protected Status run(Blackboard bb) {
@@ -32,17 +32,22 @@ public final class RunJob extends Node {
         if (taskId < 0) {
             JobPort.TaskSpec t = spec.apply(bb);
             if (t == null) return fail("nothing to run");
+            // AREAS (0.39.2): no return leg any more (WayBack is gone); the way back to the base is a soft cost (AreaFacts.awayS)
             long id = bb.port.start(t);
             if (id < 0) {
                 String r = bb.port.lastRefusal();
                 bb.port.log("refused " + t.kind() + " \"" + t.chain() + "\": " + r);
                 bb.tracer.decision(now, t.source(), t.kind(), t.chain(), "refused: " + r);
+                // aa-switch2 (r2-iron: 17 of 19 pointless): a refused start never ran; its end line keeps the next start from
+                // counting as a switch that replaced it live
+                bb.tracer.outcome(now, "refused: " + r);
                 // S0 (MINING_PLAN 10.2): a scorer that names a command which does not exist is a build bug, never silent
                 if (r != null && r.toLowerCase(java.util.Locale.ROOT).contains("unknown")) bb.port.incident("aa unknown command " + t.kind() + " \"" + t.chain() + "\": " + r);
                 return fail(r == null ? "refused" : r);
             }
             taskId = id;
             running = t;
+            failedStep = null;
             source = t.source();
             startedAt = lastProgressAt = now;
             lastProgress = bb.port.progress(id);
@@ -55,7 +60,7 @@ public final class RunJob extends Node {
         JobPort.JobState st = bb.port.poll(taskId);
         switch (st.state()) {
             case DONE -> {
-                bb.port.log("done " + running.kind() + " in " + (now - startedAt) / 1000 + "s" + (st.text() == null ? "" : ": " + st.text()));
+                bb.port.log("done " + running.kind() + " in " + (now - startedAt) / 1000 + "s" + (st.text() == null ? "" : ": " + st.text()));  // structural: milliseconds per second
                 bb.tracer.outcome(now, "done");
                 return end(bb, Status.SUCCESS, null);
             }
@@ -63,6 +68,7 @@ public final class RunJob extends Node {
                 bb.port.log("failed " + running.kind() + ": " + st.text());
                 bb.tracer.outcome(now, "failed: " + st.text());
                 bb.tracer.counts.fails++;
+                failedStep = st.step();
                 return end(bb, Status.FAILURE, st.text());
             }
             case GONE -> {
@@ -80,16 +86,16 @@ public final class RunJob extends Node {
             lastProgressAt = now;
         }
         if (now - startedAt > running.timeoutMs()) {
-            String why = "timeout after " + (now - startedAt) / 1000 + "s";
+            String why = "timeout after " + (now - startedAt) / 1000 + "s";  // structural: milliseconds per second
             bb.port.cancel(taskId, why);
-            bb.port.log("timeout " + running.kind() + " after " + (now - startedAt) / 1000 + "s");
+            bb.port.log("timeout " + running.kind() + " after " + (now - startedAt) / 1000 + "s");  // structural: milliseconds per second
             bb.port.incident("aa timeout " + running.kind() + " \"" + running.chain() + "\"");
             bb.tracer.outcome(now, "timeout");
             bb.tracer.counts.fails++;
             return end(bb, Status.FAILURE, "timeout");
         }
         if (now - lastProgressAt > running.noProgressMs()) {
-            long s = (now - lastProgressAt) / 1000;
+            long s = (now - lastProgressAt) / 1000;  // structural: milliseconds per second
             bb.port.cancel(taskId, "no progress " + s + "s");
             bb.port.log("stuck " + running.kind() + ": no progress " + s + "s");
             bb.port.incident("aa stuck " + running.kind() + " \"" + running.chain() + "\": no progress " + s + "s");
@@ -116,6 +122,20 @@ public final class RunJob extends Node {
         end(bb(), Status.SUCCESS, null);
     }
 
+    /**
+     * Backbone step 2 (step3-watch: a failed burrow, then "wait 120" in the open): the running task is cancelled and the
+     * leaf FAILS with {@code why} (counted as a failure, unlike {@link #halt}). Idle: FAILURE(why) too.
+     */
+    public Status failNow(String why) {
+        if (taskId < 0) return fail(why);
+        Blackboard bb = bb();
+        bb.port.cancel(taskId, why);
+        bb.port.log("failed " + running.kind() + ": " + why);
+        bb.tracer.outcome(bb.clock.now(), "failed: " + why);
+        bb.tracer.counts.fails++;
+        return end(bb, Status.FAILURE, why);
+    }
+
     @Override public void pause(String why) {
         if (taskId < 0 || pausedAt >= 0) return;
         pausedAt = bb().clock.now();
@@ -138,6 +158,11 @@ public final class RunJob extends Node {
         return board;
     }
 
+    /** chop D: the typed step the last FAILED task stopped at (null: none known, or it did not fail at a step). */
+    private io.github.mojolowjo.entropybot.aa.moves.Step failedStep;
+
+    public io.github.mojolowjo.entropybot.aa.moves.Step failedStep() { return failedStep; }
+
     public boolean running() { return taskId >= 0; }
 
     public long taskId() { return taskId; }
@@ -149,7 +174,7 @@ public final class RunJob extends Node {
     public String source() { return source; }
 
     /** Seconds since the start (0 when idle). */
-    public long ageS(long now) { return taskId < 0 ? 0 : (now - startedAt) / 1000; }
+    public long ageS(long now) { return taskId < 0 ? 0 : (now - startedAt) / 1000; }  // structural: milliseconds per second
 
     public long progressValue() { return lastProgress; }
 }

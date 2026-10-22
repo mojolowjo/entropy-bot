@@ -1,5 +1,9 @@
 package io.github.mojolowjo.entropybot.cave;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -25,8 +29,10 @@ import java.util.Set;
  */
 public final class MineNotes {
     public static final String ORES = "ores.json", EXPLORED = "explored.json";
-    public static final int MAX_ORES = 1000, MAX_EXPLORED = 5000, EXPLORED_TO = 4500;
-    static final long FLUSH_AFTER = 100;
+    public static final int MAX_ORES = 1000; // structural
+    public static final int MAX_EXPLORED = 5000; // structural
+    public static final int EXPLORED_TO = 4500; // structural
+    static final long FLUSH_AFTER = 100; // structural
 
     private final Map<String, JsonObject> ores = new LinkedHashMap<>();
     private final Set<String> explored = new LinkedHashSet<>();
@@ -54,7 +60,7 @@ public final class MineNotes {
                 if (memory != null) break;
                 String m = bridge.readJson(name);
                 if (m != null && !m.startsWith("error")) {
-                    try { memory = JsonParser.parseString(m).getAsJsonObject(); } catch (RuntimeException ignored) {}
+                    try { memory = JsonParser.parseString(m).getAsJsonObject(); } catch (RuntimeException caught) { Quiet.warn("MineNotes.load failed, carrying on with the fallback", caught); }
                 }
             }
         }
@@ -229,7 +235,8 @@ public final class MineNotes {
     }
 
     static long seen(JsonObject o) {
-        try { return o.has("seen") ? o.get("seen").getAsLong() : 0; } catch (RuntimeException e) { return 0; }
+        try { return o.has("seen") ? o.get("seen").getAsLong() : 0; } catch (RuntimeException e) {
+            Quiet.warn("MineNotes.seen failed, carrying on with the fallback", e); return 0; }
     }
 
     private void touchOres() { if (oresDirty < 0) oresDirty = lastTick; }
@@ -251,7 +258,7 @@ public final class MineNotes {
     }
 
     /** S1: after a failed write the next try waits FLUSH_AFTER, doubling per failure, at most RETRY_MAX ticks (5 min). */
-    static final long RETRY_MAX = 6000;
+    static long retryMax() { return Tuning.l("mineNotes.retryMax"); }
     private long oresRetryAt, exploredRetryAt;
     private int oresFails, exploredFails;
     /** The last write error, once, for the log (null when none). */
@@ -270,7 +277,7 @@ public final class MineNotes {
             } else {
                 oresFails++;
                 oresRetryAt = tick + backoff(oresFails);
-                writeError = ORES + ": " + r + " (next try in " + backoff(oresFails) / 20 + " s)";
+                writeError = ORES + ": " + r + " (next try in " + backoff(oresFails) / 20 + " s)";  // game fact: 20 game ticks per second
             }
         }
         if (exploredDirty >= 0 && !exploredLocked && tick - exploredDirty >= FLUSH_AFTER && tick >= exploredRetryAt) {
@@ -282,13 +289,13 @@ public final class MineNotes {
             } else {
                 exploredFails++;
                 exploredRetryAt = tick + backoff(exploredFails);
-                writeError = EXPLORED + ": " + r + " (next try in " + backoff(exploredFails) / 20 + " s)";
+                writeError = EXPLORED + ": " + r + " (next try in " + backoff(exploredFails) / 20 + " s)";  // game fact: 20 game ticks per second
             }
         }
     }
 
     static long backoff(int fails) {
-        return Math.min(RETRY_MAX, FLUSH_AFTER << Math.min(Math.max(fails - 1, 0), 10));
+        return Math.min(retryMax(), FLUSH_AFTER << Math.min(Math.max(fails - 1, 0), 10));
     }
 
     /** The tick before which no write of ores.json is tried again (0: none pending). For the tests. */

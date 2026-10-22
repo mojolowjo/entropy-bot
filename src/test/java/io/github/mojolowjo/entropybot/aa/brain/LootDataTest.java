@@ -1,0 +1,135 @@
+package io.github.mojolowjo.entropybot.aa.brain;
+
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
+import io.github.mojolowjo.entropybot.aa.core.Blackboard;
+import io.github.mojolowjo.entropybot.aa.core.Clock;
+import io.github.mojolowjo.entropybot.aa.core.FakePort;
+import io.github.mojolowjo.entropybot.aa.core.Tracer;
+
+import org.junit.jupiter.api.Test;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/** BRAIN_PLAN "knowledge from the game at load": the loot JSON parser, the book's plan and the hunt-for rules. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
+class LootDataTest {
+    static JsonElement j(String s) { return JsonParser.parseString(s.replace('\'', '"')); }
+
+    // vanilla 1.21 gravel: silk touch -> gravel, else flint at table_bonus 10%, else gravel
+    static final String GRAVEL = "{'type':'minecraft:block','pools':[{'rolls':1,'entries':[{'type':'minecraft:alternatives','children':["
+            + "{'type':'minecraft:item','name':'minecraft:gravel','conditions':[{'condition':'minecraft:match_tool','predicate':{}}]},"
+            + "{'type':'minecraft:alternatives','children':[{'type':'minecraft:item','name':'minecraft:flint','conditions':[{'condition':'minecraft:table_bonus','enchantment':'minecraft:fortune','chances':[0.1,0.14,0.25,1.0]}]},"
+            + "{'type':'minecraft:item','name':'minecraft:gravel'}]}]}]}]}";
+    static final String COW = "{'pools':[{'rolls':1,'entries':[{'type':'minecraft:item','name':'minecraft:leather','functions':[{'function':'minecraft:set_count','count':{'type':'minecraft:uniform','min':0,'max':2}}]}]},"
+            + "{'rolls':1,'entries':[{'type':'minecraft:item','name':'minecraft:beef','functions':[{'function':'minecraft:set_count','count':{'type':'minecraft:uniform','min':1,'max':3}}]}]}]}";
+    static final String ZOMBIE = "{'pools':[{'rolls':1,'entries':[{'type':'minecraft:item','name':'minecraft:rotten_flesh','functions':[{'function':'minecraft:set_count','count':{'type':'minecraft:uniform','min':0,'max':2}}]}]},"
+            + "{'rolls':1,'conditions':[{'condition':'minecraft:killed_by_player'},{'condition':'minecraft:random_chance_with_enchanted_bonus','unenchanted_chance':0.025}],"
+            + "'entries':[{'type':'minecraft:item','name':'minecraft:iron_ingot'}]}]}";
+    static final String CHEST = "{'pools':[{'rolls':{'type':'minecraft:uniform','min':2,'max':4},'entries':["
+            + "{'type':'minecraft:item','weight':3,'name':'minecraft:diamond'},{'type':'minecraft:item','weight':1,'name':'minecraft:saddle'},"
+            + "{'type':'minecraft:loot_table','value':'minecraft:chests/shared'}]}]}";
+    static final String SHARED = "{'pools':[{'rolls':1,'entries':[{'type':'minecraft:item','name':'minecraft:bread','functions':[{'function':'minecraft:set_count','count':4}]}]}]}";
+
+    @Test
+    void parsesBlockMobAndChestTablesWithChanceAndCounts() {
+        Map<String, double[]> g = LootBook.parse(j(GRAVEL), null);
+        assertEquals(0.1, g.get("minecraft:flint")[0], 1e-6, "flint 10%, silk touch skipped");
+        assertEquals(0.9, g.get("minecraft:gravel")[0], 1e-6, "gravel the other 90%");
+
+        Map<String, double[]> cow = LootBook.parse(j(COW), null);
+        assertEquals(1.0, cow.get("minecraft:leather")[0], 1e-6);
+        assertEquals(2.0, cow.get("minecraft:beef")[0], 1e-6);
+        assertEquals(0, cow.get("minecraft:beef")[2], "any kill drops beef");
+
+        Map<String, double[]> z = LootBook.parse(j(ZOMBIE), null);
+        assertEquals(0.025, z.get("minecraft:iron_ingot")[0], 1e-6);
+        assertEquals(1, z.get("minecraft:iron_ingot")[2], "player kill only");
+
+        Map<String, double[]> c = LootBook.parse(j(CHEST), id -> id.equals("minecraft:chests/shared") ? j(SHARED) : null);
+        assertEquals(3 * 0.6, c.get("minecraft:diamond")[0], 1e-6, "3 rolls x 3/5");
+        assertEquals(3 * 0.2 * 4, c.get("minecraft:bread")[0], 1e-6, "nested table: 3 rolls x 1/5 x 4");
+        assertNull(LootBook.parse(j(CHEST), id -> j(CHEST)).get("minecraft:nothing"), "a self-referencing table ends");
+    }
+
+    static LootBook book() {
+        List<LootBook.Source> all = new ArrayList<>();
+        all.addAll(LootBook.sources(LootBook.Kind.BLOCK, "minecraft:gravel", LootBook.parse(j(GRAVEL), null)));
+        all.addAll(LootBook.sources(LootBook.Kind.MOB, "minecraft:cow", LootBook.parse(j(COW), null)));
+        all.addAll(LootBook.sources(LootBook.Kind.MOB, "minecraft:zombie", LootBook.parse(j(ZOMBIE), null)));
+        all.addAll(LootBook.sources(LootBook.Kind.MOB, "minecraft:spider", Map.of("minecraft:string", new double[]{1, 1, 0})));
+        all.add(new LootBook.Source(LootBook.Kind.TRADE, "minecraft:cleric", "minecraft:ender_pearl", 1, 1, false, "5 emerald"));
+        return new LootBook(all, "test");
+    }
+
+    static LootBook.Ctx ctx(boolean hunting, Set<String> allowed, boolean armed) {
+        return new LootBook.Ctx(hunting, Set.of("minecraft:cow"), allowed, b -> b.equals("minecraft:gravel"), armed);
+    }
+
+    /** AA_ROUND3 5: a herd seen earlier (not in view): the hunt goes to its place; the vanilla table on a server. */
+    @Test
+    void planHuntsAtASeenHerd() {
+        LootBook b = book();
+        LootBook.Plan p = b.plan("leather", 3, 3, ctx(true, Set.of(), false), false, Map.of("minecraft:cow", new int[]{80, -20, 90, 50}));
+        assertEquals("hunt 3 cow for leather 3 at 80 -20", p.command());
+        assertTrue(p.text().contains("confidence 0.50"), p.text());
+        assertEquals("hunt 3 cow for leather 3", b.plan("leather", 3, 3, ctx(true, Set.of(), false), false, Map.of()).command(), "none seen: the plain hunt");
+        assertEquals("mine gravel 30", b.plan("flint", 3, 3, ctx(true, Set.of(), false), false, Map.of("minecraft:cow", new int[]{1, 2, 3, 4})).command());
+        LootBook v = LootBook.vanilla();
+        assertTrue(v.isEmpty(), "no vanilla drop table is hard-coded: a client with no loot tables knows nothing");
+        assertTrue(v.origin.contains("no loot tables"), v.origin);
+        assertNull(v.plan("leather", 2, 3, ctx(true, Set.of(), false), false).command());
+    }
+
+    @Test
+    void planBreaksKillsOrSaysWhyNot() {
+        LootBook b = book();
+        assertEquals("mine gravel 30", b.plan("flint", 3, ctx(false, Set.of(), false), false).command(), "break gravel for flint");
+        assertEquals("hunt 3 cow for leather 3", b.plan("leather", 3, ctx(true, Set.of(), false), false).command());
+        assertTrue(b.plan("leather", 3, ctx(false, Set.of(), false), false).text().contains("hunting is off"));
+        LootBook.Plan s = b.plan("string", 2, ctx(true, Set.of(), true), true);
+        assertNull(s.command(), "a hostile mob the owner did not allow");
+        assertTrue(s.text().contains("animals kind"), s.text());
+        assertTrue(b.plan("string", 2, ctx(true, Set.of("minecraft:spider"), false), false).text().contains("fight rules"));
+        assertEquals("hunt 2 spider for string 2", b.plan("string", 2, ctx(true, Set.of("minecraft:spider"), true), true).command());
+        LootBook.Plan pearl = b.plan("ender_pearl", 1, ctx(true, Set.of(), true), true);
+        assertNull(pearl.command());
+        assertTrue(pearl.text().contains("cleric"), pearl.text());
+        assertTrue(b.sourcesText("flint", 3).contains("break gravel (10%)"), b.sourcesText("flint", 3));
+        assertNull(b.plan("dirt", 1, ctx(true, Set.of(), true), true).text(), "nothing known");
+    }
+
+    @Test
+    void theGoalsChainReadsTheLootDataBlocksAndMobs() {
+        Blackboard bb = new Blackboard(new Clock.Fake(1_000), new FakePort(), new Tracer());
+        Thing.Catalog cat = new Thing.Catalog(List.of("minecraft:flint", "minecraft:leather"), List.of("minecraft:gravel"), Map.of(), Map.of(), null);
+        var gravel = new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(5, 64, 0, 5, "minecraft:gravel", 64);
+        var cow = new io.github.mojolowjo.entropybot.aa.NeedChain.Mob("minecraft:cow", 12, 64, 0, 12);
+        bb.fact(io.github.mojolowjo.entropybot.aa.NeedChain.WORLD_FACT, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.NeedChain.World>) () ->
+                new io.github.mojolowjo.entropybot.aa.NeedChain.World(bb.in.bag, false, w -> w.equals("minecraft:flint") ? gravel : null)
+                        .withMobs(t -> t.equals("minecraft:cow") ? List.of(cow) : List.of(), book()));
+        Goals.Goal flint = Goals.add(bb, Thing.resolve("flint", cat), 3, 0, 0);
+        List<io.github.mojolowjo.entropybot.aa.moves.Step> fs = Goals.steps(bb, flint);
+        assertTrue(fs.get(fs.size() - 1) instanceof io.github.mojolowjo.entropybot.aa.moves.Step.Collect k && k.item().equals("flint"), "the gravel the loot data names: " + fs);
+        Goals.Goal leather = Goals.add(bb, Thing.resolve("leather", cat), 2, 0, 0);
+        List<io.github.mojolowjo.entropybot.aa.moves.Step> ls = Goals.steps(bb, leather);
+        assertTrue(ls.get(0) instanceof io.github.mojolowjo.entropybot.aa.moves.Step.HuntAt h && h.type().equals("minecraft:cow") && h.forItem().equals("leather"), "a known cow, the mob drop: " + ls);
+        assertFalse(Goals.line(bb, leather, "70").contains("chests"), "no chest-loot talk: " + Goals.line(bb, leather, "70"));
+    }
+
+    @Test
+    void huntForIsATypedHuntStep() {
+        // rm-execution: the loot plan's "hunt k mob for item n" is a typed step (the protections are the step's game side)
+        var s = io.github.mojolowjo.entropybot.commands.PlanLines.one("hunt 3 spider for string 6");
+        assertEquals(new io.github.mojolowjo.entropybot.aa.moves.Step.HuntAt("minecraft:spider", 3, null, "string", 6).text(), s.text());
+        var at = (io.github.mojolowjo.entropybot.aa.moves.Step.HuntAt) io.github.mojolowjo.entropybot.commands.PlanLines.one("hunt 1 cow for leather 2 at 10 -20");
+        assertArrayEquals(new int[]{10, -20}, at.at());
+        assertNull(io.github.mojolowjo.entropybot.commands.PlanLines.one("hunt 3 cow leather"));
+        assertNull(io.github.mojolowjo.entropybot.commands.PlanLines.one("hunt x cow"));
+    }
+}

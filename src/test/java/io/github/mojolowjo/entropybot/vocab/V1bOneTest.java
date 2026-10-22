@@ -13,6 +13,7 @@ import java.util.TreeSet;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** V1b-1 (0.22.2): kinds, tools mode, dig +N/-N, places and markers, the queue, the game stage. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class V1bOneTest {
     static final List<String> IDS = List.of("minecraft:oak_log", "minecraft:cherry_log", "minecraft:stripped_oak_log", "minecraft:crimson_stem",
             "minecraft:oak_planks", "minecraft:iron_ore", "minecraft:deepslate_iron_ore", "minecraft:ancient_debris", "minecraft:stone",
@@ -45,10 +46,7 @@ class V1bOneTest {
         assertEquals("minecraft:oak_log", Kinds.pick(List.of("minecraft:cherry_log", "minecraft:oak_log"), Map.of("minecraft:oak_log", 5)));
         assertEquals("minecraft:cherry_log", Kinds.pick(List.of("minecraft:cherry_log", "minecraft:oak_log"), Map.of()));
         assertNull(Kinds.pick(List.of(), Map.of()));
-        // cut ... logs with cherry excluded: the chop filter
-        assertFalse(io.github.mojolowjo.entropybot.chop.ChopRules.matches("except:cherry_log.pale_oak_log", "minecraft:cherry_log"));
-        assertTrue(io.github.mojolowjo.entropybot.chop.ChopRules.matches("except:cherry_log", "minecraft:birch_log"));
-        assertEquals("except:cherry_log", io.github.mojolowjo.entropybot.chop.ChopRules.parse("16 except:cherry_log").type());
+
     }
 
     @Test
@@ -80,18 +78,18 @@ class V1bOneTest {
 
     @Test
     void digSignedForms() {
-        DigArgs a = DigArgs.parse("0 0 10 10 -3", null);
+        DigArgs a = DigArgs.parse("0 0 10 10 -3");
         assertTrue(a.surfaceForm());
         assertEquals("down", a.surface());
         assertEquals(3, a.depth());
-        DigArgs up = DigArgs.parse("0 0 10 10 +5 ores", null);
+        DigArgs up = DigArgs.parse("0 0 10 10 +5 ores");
         assertEquals("up", up.surface());
         assertTrue(up.ores());
-        DigArgs box = DigArgs.parse("0 60 0 10 -3 10", null);
+        DigArgs box = DigArgs.parse("0 60 0 10 -3 10");
         assertFalse(box.surfaceForm(), "-3 followed by a coordinate is a box's y2");
-        assertNull(DigArgs.parse("0 0 10 10 down 3", null), "the old words are gone");
+        assertNull(DigArgs.parse("0 0 10 10 down 3"), "the old words are gone");
         assertEquals("dig 0 0 10 10 -3 ores", DigArgs.oldSurfaceHint("0 0 10 10 down 3 ores"));
-        assertEquals("dig ~-8 ~-8 ~8 ~8 +10", DigArgs.oldSurfaceHint("~-8 ~-8 ~8 ~8 up 10"));
+        assertEquals("dig -8 -8 8 8 +10", DigArgs.oldSurfaceHint("-8 -8 8 8 up 10"));
         assertNull(DigArgs.oldSurfaceHint("0 60 0 10 64 10"));
         assertEquals("that is now dig 0 0 10 10 -3", io.github.mojolowjo.entropybot.commands.OldWords.removedAnswer("dig", "0 0 10 10 down 3", "dig 0 0 10 10 down 3"));
         // dig <area>: heights before the question
@@ -100,7 +98,7 @@ class V1bOneTest {
         assertNull(DigForms.areaProblem("pit", true, false, true, false, List.of("pit", "-3")));
         assertNull(DigForms.areaProblem("pit", true, false, false, false, List.of("pit", "ores")));
         assertTrue(DigForms.areaProblem("pit", false, false, false, false, w).startsWith("error: I have no area called pit"));
-        assertTrue(DigForms.areaProblem("house", true, false, false, true, List.of("house")).contains("safe area"));
+        assertTrue(DigForms.areaProblem("house", true, false, false, true, List.of("house")).contains("no-break area"));
         assertTrue(DigForms.areaProblem("pit", true, false, false, false, List.of("pit", "deep")).startsWith("usage"));
         assertEquals("-3", DigForms.signed(List.of("pit", "-3", "ores")));
     }
@@ -141,7 +139,6 @@ class V1bOneTest {
     void queueAcceptance() {
         assertNull(QueueRules.refusal("craft torch 16"));
         assertNull(QueueRules.refusal("mine strip iron 16 then deposit"));
-        assertTrue(QueueRules.refusal("escort me").contains("never finishes"));
         assertTrue(QueueRules.refusal("follow").contains("never finishes"));
         assertTrue(QueueRules.refusal("defend").contains("never finishes"));
         assertTrue(QueueRules.refusal("guard base").contains("never finishes"));
@@ -149,7 +146,7 @@ class V1bOneTest {
         assertTrue(QueueRules.refusal("deposit then follow").contains("follow"), "a chain with an endless step");
         assertTrue(QueueRules.refusal("status").contains("answers at once"));
         assertTrue(QueueRules.refusal("").startsWith("usage"));
-        assertFalse(QueueRules.mayStart(false, true), "behind an escort it waits until dismiss");
+        assertFalse(QueueRules.mayStart(false, true), "behind a defend or guard it waits until dismiss");
         assertFalse(QueueRules.mayStart(true, false));
         assertTrue(QueueRules.mayStart(false, false));
         assertEquals("nothing running - queued: 1. craft torch 16, 2. deposit", QueueRules.show(null, List.of("craft torch 16", "deposit")));

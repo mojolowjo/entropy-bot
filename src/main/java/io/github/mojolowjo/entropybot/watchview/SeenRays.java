@@ -23,8 +23,16 @@ package io.github.mojolowjo.entropybot.watchview;
  * Only faces a ray actually reached are recorded, so nothing behind an opaque face is ever reported (no x-ray).
  */
 public final class SeenRays {
-    public static final int PASS = 0, WATER = 1, STOP = 2, HIT = 3, SHAPE = 4, PARTIAL = 5, GLASS = 6, GLASS_PARTIAL = 7;
-    public static final int MAX_WATER = 4, MAX_GLASS = 4;
+    public static final int PASS = 0; // structural
+    public static final int WATER = 1; // structural
+    public static final int STOP = 2; // structural
+    public static final int HIT = 3; // structural
+    public static final int SHAPE = 4; // structural
+    public static final int PARTIAL = 5; // structural
+    public static final int GLASS = 6; // structural
+    public static final int GLASS_PARTIAL = 7; // structural
+    public static final int MAX_WATER = 4; // structural
+    public static final int MAX_GLASS = 4; // structural
 
     public interface Cells {
         int cell(int x, int y, int z);

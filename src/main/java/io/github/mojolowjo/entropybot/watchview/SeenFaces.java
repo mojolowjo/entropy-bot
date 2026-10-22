@@ -19,9 +19,10 @@ import java.util.Map;
  * counts as new). Persisted to {@code entropybot/seenfaces.bin} (10 bytes a block, at most ~2 MB). Thread-safe; pure.
  */
 public final class SeenFaces {
-    public static final int MAX_PER_REGION = 60_000, MAX_TOTAL = 200_000;
-    static final int MAGIC = 0x45425346;             // "EBSF"
-    static final int FORMAT = 1;
+    public static final int MAX_PER_REGION = 60_000; // structural
+    public static final int MAX_TOTAL = 200_000; // structural
+    static final int MAGIC = 0x45425346; // structural  // "EBSF"
+    static final int FORMAT = 1; // structural
 
     /** A stored block: its key ({@link CellKey}), the mask of seen sides (bit = Shell.OFF index) and the brightest light. */
     public record Entry(long key, int mask, int light) {}

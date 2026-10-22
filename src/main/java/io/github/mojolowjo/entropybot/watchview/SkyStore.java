@@ -23,7 +23,7 @@ import java.util.Map;
  * Memory: 9 bytes a face here (~5.4 MB at the cap), 96 bytes a face in the GPU buffers (~58 MB at the cap).
  */
 public final class SkyStore {
-    public static final int MAX_FACES = 600_000;
+    public static final int MAX_FACES = 600_000; // structural
 
     /** One chunk's result. faces: sorted {@link #faceKey}s; light[i] belongs to faces[i]; floors[lz * 16 + lx]. */
     public record Chunk(int cx, int cz, long[] faces, byte[] light, int[] floors, long version) {

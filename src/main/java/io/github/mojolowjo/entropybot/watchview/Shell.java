@@ -13,7 +13,9 @@ import java.util.List;
  */
 public final class Shell {
     /** What a cell is: open (air, a torch, water...), a solid full block, or not known (chunk not loaded). */
-    public static final int OPEN = 0, SOLID = 1, UNKNOWN = 2;
+    public static final int OPEN = 0; // structural
+    public static final int SOLID = 1; // structural
+    public static final int UNKNOWN = 2; // structural
 
     /** Directions in Minecraft's order (Direction.get3DDataValue): down, up, north (-z), south (+z), west (-x), east (+x). */
     public static final int[][] OFF = {{0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}};

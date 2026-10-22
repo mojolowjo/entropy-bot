@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.guard;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -25,8 +27,8 @@ public final class PolicyStats {
     private final LongAdder differLogged = new LongAdder();
 
     /** How many "would differ" lines go to the log in full before the rate limit (one per LOG_EVERY_MS) applies. */
-    public static final int DIFFER_FULL = 5;
-    public static final long LOG_EVERY_MS = 10_000;
+    public static int differFull() { return Tuning.i("policyStats.differFull"); }
+    public static final long LOG_EVERY_MS = 10_000; // structural
 
     public void ask(String site) { bump(asks, site); }
 
@@ -47,7 +49,7 @@ public final class PolicyStats {
     /** The rate limit alone (the caller builds the line only when this says yes). */
     public boolean mayLog(long nowMs) {
         long n = differLogged.sum();
-        if (n < DIFFER_FULL || nowMs - lastDifferMs >= LOG_EVERY_MS) {
+        if (n < differFull() || nowMs - lastDifferMs >= LOG_EVERY_MS) {
             differLogged.increment();
             lastDifferMs = nowMs;
             return true;
@@ -98,7 +100,7 @@ public final class PolicyStats {
     }
 
     /** Keys carry reason text; a run that invents new reasons (exception text) stops at this many and counts "other". */
-    static final int MAX_KEYS = 200;
+    static final int MAX_KEYS = 200; // structural
 
     private static void bump(Map<String, LongAdder> m, String key) {
         LongAdder a = m.get(key);

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.strip;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.clear.ClearBox;
 import io.github.mojolowjo.entropybot.clear.ClearEngine;
 import io.github.mojolowjo.entropybot.clear.ClearJob;
@@ -25,19 +27,15 @@ import java.util.regex.Pattern;
 public final class StripRules {
     private StripRules() {}
 
-    public static final int TURN_ALONG = 8, BASE_TRIP_MIN = 64, BASE_TRIP_FREE = 4, MAX_RUNS = 30;
+    public static int turnAlong() { return Tuning.i("stripRules.turnAlong"); }
+    public static int baseTripMin() { return Tuning.i("stripRules.baseTripMin"); }
+    public static int baseTripFree() { return Tuning.i("stripRules.baseTripFree"); }
+    public static int maxRuns() { return Tuning.i("stripRules.maxRuns"); }
     /** "mine strip" starts no new run after an hour. */
-    public static final long MAX_TICKS = 20L * 60 * 60;
+    public static long maxTicks() { return Tuning.l("stripRules.maxTicks"); }
 
-    /** The pickaxe tier a block needs: stone 2, iron 4, diamond 5 (the clear's toolTier scale). */
-    public static int pickTier(String need) {
-        return switch (need == null ? "" : need) {
-            case "stone" -> 2;
-            case "iron" -> 4;
-            case "diamond" -> 5;
-            default -> 4;
-        };
-    }
+    /** The pickaxe tier a block needs, from the block tags on the one scale (MiningTiers.needTier). */
+    public static int pickTier(String need) { return io.github.mojolowjo.entropybot.aa.brain.MiningTiers.needTier(need); }
 
     /** What stops a corridor: kind (tool, liquid, protected, unbreakable, stuck), the "blocked:..." text, and the tool tier it needs. */
     public record Block(String kind, String text, String need) {}
@@ -132,7 +130,7 @@ public final class StripRules {
      */
     public static int scanFrom(MineGeom g, int[] me, int to) {
         if (me == null) return 0;
-        if (Math.abs(g.side(me)) > 20 || Math.abs(me[1] - g.y) > MineGeom.LEG_LEVELS) return 0;
+        if (Math.abs(g.side(me)) > 20 || Math.abs(me[1] - g.y) > MineGeom.legLevels()) return 0;
         return Math.max(0, Math.min(to, g.along(me)));
     }
 
@@ -174,13 +172,13 @@ public final class StripRules {
 
     /**
      * mineSpotCheck: null when a mine may start at p going dir: a loaded spot I can stand in, the fence lets me walk
-     * there (goalAllowed: null or the reason), and the first 3 cells of its corridor hold nothing a corridor stops at
+     * there (walkVerdict: null or the reason), and the first 3 cells of its corridor hold nothing a corridor stops at
      * (water or lava by them, a container or built block, bedrock), and the guard would let me dig them.
      */
-    public static String mineSpotCheck(StripWorld w, Pos p, String dir, Function<Pos, String> goalAllowed, GuardCheck guard, boolean fenceOn) {
+    public static String mineSpotCheck(StripWorld w, Pos p, String dir, Function<Pos, String> walkVerdict, GuardCheck guard, boolean fenceOn) {
         if (!w.loaded(p.x(), p.y(), p.z())) return "I can't see " + p.key() + " from here";
         String r = standCheck(w, p);
-        if (r == null) r = goalAllowed.apply(p);
+        if (r == null) r = walkVerdict.apply(p);
         if (r != null) return r;
         int[] f = MineGeom.DIRS.get(dir);
         for (int i = 1; i <= 3; i++) {
@@ -218,10 +216,10 @@ public final class StripRules {
         if (!"right".equals(only)) out.add(new TurnOption(g.cell(e, 0), left));
         if (!"left".equals(only)) out.add(new TurnOption(g.cell(e, 0), right));
         if (only == null && k > 1) {
-            out.add(new TurnOption(g.cell(e, TURN_ALONG), g.dir));
-            out.add(new TurnOption(g.cell(e, TURN_ALONG), left));
-            out.add(new TurnOption(g.cell(e, -TURN_ALONG), g.dir));
-            out.add(new TurnOption(g.cell(e, -TURN_ALONG), right));
+            out.add(new TurnOption(g.cell(e, turnAlong()), g.dir));
+            out.add(new TurnOption(g.cell(e, turnAlong()), left));
+            out.add(new TurnOption(g.cell(e, -turnAlong()), g.dir));
+            out.add(new TurnOption(g.cell(e, -turnAlong()), right));
         }
         return out;
     }
@@ -313,9 +311,9 @@ public final class StripRules {
         return Action.TURN;
     }
 
-    /** "branch 7 right skipped (outside my areas)". */
-    public static String skipText(int k, String part, String kind, String why) {
-        return "branch " + k + " " + part + " skipped (" + (kind.equals("area") ? "outside my areas" : why) + ")";
+    /** "branch 7 right skipped (in pit (keep-out))": the reason as the guard or the dig named it. */
+    public static String skipText(int k, String part, String why) {
+        return "branch " + k + " " + part + " skipped (" + why + ")";
     }
 
     // ---- the trip to the base ----
@@ -327,7 +325,7 @@ public final class StripRules {
     public static boolean baseTrip(Map<String, Integer> keep, Map<String, Integer> have, int bagRoom) {
         int vals = 0;
         for (Map.Entry<String, Integer> e : keep.entrySet()) vals += have.getOrDefault(e.getKey(), 0) - e.getValue();
-        return vals > 0 && (vals >= BASE_TRIP_MIN || bagRoom <= BASE_TRIP_FREE);
+        return vals > 0 && (vals >= baseTripMin() || bagRoom <= baseTripFree());
     }
 
     /** bagRoom: slots that are free or hold only junk the next dump empties (junk = depositables with the valuables kept, {id: keep}). */

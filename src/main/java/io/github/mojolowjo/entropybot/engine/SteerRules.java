@@ -1,5 +1,9 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import io.github.mojolowjo.entropybot.Quiet;
+
 /**
  * {@code watch steer} (TLL 32b, docs/CAMERA_PLAN.md "Steer"): the pure rules of the camera-relative movement keys. In
  * our own third-person watch views W moves the bot away from the camera, S towards it, A/D to the camera's left/right.
@@ -62,7 +66,7 @@ public final class SteerRules {
 
     /** Rounding noise (cos 90 = 6e-17) to a clean 0, so "no forward impulse" stays exactly that. */
     private static float clean(float v) {
-        return Math.abs(v) < 1e-6f ? 0f : v;
+        return Math.abs(v) < 1e-6f ? 0f : v;  // structural: epsilon
     }
 
     /**
@@ -75,7 +79,7 @@ public final class SteerRules {
     }
 
     /** How long after the last remapped tick the human counts as driving (the views hold their yaw meanwhile). */
-    public static final long DRIVING_MS = 1000;
+    public static long drivingMs() { return Tuning.l("steerRules.drivingMs"); }
 
     /**
      * The view's next yaw. While the human drives, the walk-following must stop: it would turn the camera towards the
@@ -91,16 +95,19 @@ public final class SteerRules {
     // ---- watch turn (owner, 2026-10-05: "Roblox style": A/D strafe AND turn the camera; the arrow keys only turn) ----
 
     /** Degrees per second: the default and the range of {@code watch turn rate N}. */
-    public static final float TURN_RATE_DEFAULT = 45f, TURN_RATE_MIN = 5f, TURN_RATE_MAX = 180f;
+    public static float turnRateDefault() { return (float) Tuning.get("steerRules.turnRateDefault"); }
+    public static float turnRateMin() { return (float) Tuning.get("steerRules.turnRateMin"); }
+    public static float turnRateMax() { return (float) Tuning.get("steerRules.turnRateMax"); }
     /** One client tick in seconds. The turn is stepped per tick, like the movement, so a held D walks the same circle at any frame rate. */
-    public static final float TICK_SECONDS = 0.05f;
+    public static final float TICK_SECONDS = 0.05f; // game fact: one game tick is 0.05 seconds
 
     /** Pure: the rate asked for, or -1 when the text is not a number in 5-180. */
     public static float parseTurnRate(String s) {
         try {
             float r = Float.parseFloat(s.trim());
-            return r >= TURN_RATE_MIN && r <= TURN_RATE_MAX ? r : -1f;
+            return r >= turnRateMin() && r <= turnRateMax() ? r : -1f;
         } catch (RuntimeException e) {
+            Quiet.warn("SteerRules.parseTurnRate failed, carrying on with the fallback", e);
             return -1f;
         }
     }
@@ -116,9 +123,9 @@ public final class SteerRules {
 
     /** Pure: a yaw wrapped into [-180, 180), so a long turn never grows the number (float precision). */
     public static float wrap(float yaw) {
-        float y = (yaw + 180f) % 360f;
-        if (y < 0f) y += 360f;
-        return y - 180f;
+        float y = (yaw + 180f) % 360f;  // structural: degrees
+        if (y < 0f) y += 360f;  // structural: degrees
+        return y - 180f;  // structural: degrees
     }
 
     /**
@@ -185,13 +192,15 @@ public final class SteerRules {
      * every 100th; 20 errors within a minute turn steer off for the session. Not thread-safe (client thread only).
      */
     public static final class ErrorGate {
-        public static final int FULL = 5, EVERY = 100, TRIP = 20;
-        public static final long WINDOW_MS = 60_000;
+        public static int full() { return Tuning.i("steerRules.full"); }
+        public static int every() { return Tuning.i("steerRules.every"); }
+        public static int trip() { return Tuning.i("steerRules.trip"); }
+        public static long windowMs() { return Tuning.l("steerRules.windowMs"); }
 
         public enum Action { LOG_FULL, LOG_SUMMARY, QUIET }
 
         private long total;
-        private final long[] recent = new long[TRIP];
+        private final long[] recent = new long[trip()];
         private int next, filled;
         private boolean tripped;
 
@@ -199,12 +208,12 @@ public final class SteerRules {
         public Action record(long nowMs) {
             total++;
             recent[next] = nowMs;
-            next = (next + 1) % TRIP;
-            if (filled < TRIP) filled++;
+            next = (next + 1) % trip();
+            if (filled < trip()) filled++;
             // the oldest of the last 20 is where next points once the ring is full
-            if (filled == TRIP && nowMs - recent[next] <= WINDOW_MS) tripped = true;
-            if (total <= FULL) return Action.LOG_FULL;
-            return total % EVERY == 0 ? Action.LOG_SUMMARY : Action.QUIET;
+            if (filled == trip() && nowMs - recent[next] <= windowMs()) tripped = true;
+            if (total <= full()) return Action.LOG_FULL;
+            return total % every() == 0 ? Action.LOG_SUMMARY : Action.QUIET;
         }
 
         /** 20 errors within a minute have been seen. */

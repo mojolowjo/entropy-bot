@@ -1,16 +1,16 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
-import io.github.mojolowjo.entropybot.camp.BootstrapPlan;
 import io.github.mojolowjo.entropybot.camp.JunkRules;
 import io.github.mojolowjo.entropybot.camp.LightGrid;
-import io.github.mojolowjo.entropybot.camp.StockRules;
-import io.github.mojolowjo.entropybot.camp.ToolCareRules;
-import io.github.mojolowjo.entropybot.camp.ArmorCareRules;
 import io.github.mojolowjo.entropybot.guard.Guard;
 import io.github.mojolowjo.entropybot.guard.GuardCore;
 import io.github.mojolowjo.entropybot.gui.Gui;
@@ -32,8 +32,8 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * C4 + C5 (0.20.1, branch comp-c4): the game side of {@code bootstrap}, {@code light}, {@code stock} / {@code restock
- * base} / {@code gather ... to base}, {@code junk} (and the mid-job junk drop) and tool care. The rules are pure in
+ * C4 + C5 (0.20.1, branch comp-c4): the game side of {@code house}, {@code light} and {@code junk} (the list AA's bag
+ * options read; no timer drops anything by itself). The rules are pure in
  * {@code camp.*} (JUnit); this class reads the world and the bag and starts chains or Seq jobs made of steps that
  * already exist (chop, craft, place, dig, gather, deposit, get), so every step reports on its own and a failed one
  * says what is missing.
@@ -45,135 +45,10 @@ import java.util.Set;
 final class CampCommands {
     private static final Logger LOG = LogUtils.getLogger();
     private final Commands c;
-    /** Tool care: kind -> id carried at the last look (a kind gone since = broken), and when each kind was last tried. */
-    private Map<String, String> toolsBefore = new LinkedHashMap<>();
-    private final Map<String, Long> careTried = new LinkedHashMap<>();
-    /** Tool care: kinds nearly broken that nothing could replace (for "check"). */
-    final Map<String, String> careStuck = new LinkedHashMap<>();
-    static final long CARE_RETRY_MS = 10 * 60_000L;
 
-    private String lastRun;
     CampCommands(Commands c) { this.c = c; }
 
     private JsonObject brain() { return c.brainData(); }
-
-    // ---------------------------------------------------------------- bootstrap
-
-    String bootstrap(LocalPlayer p, String from, boolean internal, String rest) {
-        boolean status = rest != null && rest.trim().equalsIgnoreCase("status");
-        if (rest != null && rest.trim().equalsIgnoreCase("food")) return bootstrapFood(p, from, internal);   // 0.30.5
-        // S2 (MINING_PLAN 16 Q1): "bootstrap tools" stops after the furnace (AA's tools rung; its rungs do the rest)
-        boolean toolsOnly = rest != null && rest.trim().equalsIgnoreCase("tools");
-        if (rest != null && !rest.isBlank() && !status && !toolsOnly) return "usage: bootstrap | bootstrap tools | bootstrap status | bootstrap food";
-        String self = toolsOnly ? "bootstrap tools" : "bootstrap";
-        // 0.24.3: inside a chain its steps go right after it (the chain "bootstrap then gather ..." stopped silently)
-        boolean splice = !status && c.chainsRef().running() && internal;
-        if (!status && !splice && c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
-        if (!status && c.jobs.running() && !c.jobs.walking()) return "busy: " + c.jobs.job.status + " (pm \"stop\" first)";
-        Minecraft mc = Minecraft.getInstance();
-        ClientLevel lv = mc.level;
-        int[] here = Jobs.here(p);
-        // 0.28.1 (trial fix A): the camp goes on the ground under me (trial 1: on a spruce top, 8 up in the air once it was chopped)
-        int[] feet = Jobs.groundUnder(lv, here[0], here[1], here[2]);
-        if (feet[1] != here[1]) LOG.info("[entropybot] bootstrap: standing at {}, the camp goes on the ground at {}", Jobs.fmt(here), Jobs.fmt(feet));
-        String dim = Guard.dimOf(lv);
-        // the fence: the camp's digs and placements need leases inside an area (strict mode)
-        boolean strict = Core.INSTANCE.guard.core.mode() == GuardCore.Mode.STRICT;
-        if (!status && strict && c.areaGap(feet[0], feet[1], feet[2], dim) > 0) {
-            return Hints.next("error: this spot is outside my work areas, so I may not dig or place here", "area here 48 camp neutral then " + self);
-        }
-        boolean tableNear = near(lv, feet, "crafting_table"), furnaceNear = near(lv, feet, "furnace"), chestNear = near(lv, feet, "chest") || near(lv, feet, "barrel");
-        int[] dir = quarryDir(lv, feet);
-        List<int[]> free = new ArrayList<>(freeRing(lv, feet, dir));
-        List<String> pre = new ArrayList<>();
-        if (free.size() < 3) {
-            // make spots: clear leaves or plants next to me (natural blocks, a dig of one cell and the one above)
-            for (int[] cl : io.github.mojolowjo.entropybot.camp.FreeSpots.toClear(feet, x -> clearable(lv, x), 3 - free.size())) {
-                pre.add("dig " + cl[0] + " " + cl[1] + " " + cl[2] + " " + cl[0] + " " + (cl[1] + 1) + " " + cl[2]);
-                free.add(cl);
-            }
-        }
-        if (free.isEmpty() && !status) {
-            int[] spot = flatSpotNear(lv, feet, dir);
-            if (spot == null) return Hints.next("error: no free spot for the crafting table within 16 blocks (every cell around me is solid or water)", "goto a flat, open spot, then " + self);
-            String text = "goto " + Jobs.fmt(spot) + " then " + self;
-            LOG.info("[entropybot] bootstrap: no room at {}, moving to {}", Jobs.fmt(feet), Jobs.fmt(spot));
-            if (splice) {
-                String err = c.chainsRef().spliceNext(text);
-                return err == null ? "ok: no room for a camp here - walking to " + Jobs.fmt(spot) + " first" : "error: " + err;
-            }
-            return c.chainsRef().startChain(from, self, text, 1);
-        }
-        int[] table = free.size() > 0 ? free.get(0) : null, furnace = free.size() > 1 ? free.get(1) : null, chest = free.size() > 2 ? free.get(2) : null;
-        boolean campMarked = Core.INSTANCE.knowledge.places().containsKey("camp");
-        // 0.28.1 (trial fix D): a snow layer on a spot is dug first (trial 1: the table "couldn't go" on snow); snow near = snowy
-        for (int[] s : new int[][]{tableNear ? null : table, furnaceNear ? null : furnace, chestNear ? null : chest}) {
-            if (s != null && lv.getBlockState(new BlockPos(s[0], s[1], s[2])).is(net.minecraft.world.level.block.Blocks.SNOW))
-                pre.add("dig " + s[0] + " " + s[1] + " " + s[2] + " " + s[0] + " " + s[1] + " " + s[2]);
-        }
-        boolean snowy = snowNear(lv, feet);
-        boolean quarryBlocked = quarryBlocked(lv, feet, dir);
-        LOG.info("[entropybot] bootstrap: {}", BootstrapPlan.planLine(feet, dir));
-        if (quarryBlocked) LOG.info("[entropybot] bootstrap: ice, snow or water in the staircase quarry at {} - the stone step uses gather cobblestone", Jobs.fmt(feet));
-        BootstrapPlan.Plan plan = BootstrapPlan.plan(new BootstrapPlan.Facts(Gui.inventory(p), tableNear, furnaceNear, chestNear, campMarked,
-                feet, table, furnace, chest, dir, snowy, quarryBlocked));
-        if (plan.err() != null) return plan.err();
-        List<String> all = new ArrayList<>(pre);
-        if (toolsOnly) {
-            all.addAll(BootstrapPlan.cutAfterFurnace(plan.steps()));
-            if (all.isEmpty()) return "ok: bootstrap tools: the table, the stone tools and the furnace are there already";
-        } else all.addAll(io.github.mojolowjo.entropybot.camp.FoodPlan.withFood(plan.steps()));      // 0.30.5: the food step last, always
-        if (status) return "bootstrap here would run " + plan.summary() + ": " + String.join(" > ", all);
-        LOG.info("[entropybot] bootstrap at {}: {}", Jobs.fmt(feet), String.join(" > ", all));
-        if (splice) {
-            String err = c.chainsRef().spliceNext(String.join(" then ", all));
-            lastRun = (err == null ? "started (in a chain) " : "refused: ") + plan.summary();
-            return err == null ? "ok: bootstrap (" + plan.summary() + "): " + all.size() + " steps next in this chain" : "error: bootstrap: " + err;
-        }
-        String r = c.chainsRef().startChain(from, "bootstrap", String.join(" then ", all), 1);
-        lastRun = (r.startsWith("started") ? "started " : "refused: ") + plan.summary();
-        return r.startsWith("started") ? "started: bootstrap (" + plan.summary() + ") - each step reports; a failed one says what is missing" : r;
-    }
-
-    /**
-     * 0.30.5 (trial 9, finding 3): "bootstrap food", the bootstrap chain's last step (FoodPlan). Never fails: the hunt
-     * and the cook go in as soft steps. In a chain they go right after it; alone it starts a chain of its own.
-     */
-    String bootstrapFood(LocalPlayer p, String from, boolean internal) {
-        io.github.mojolowjo.entropybot.camp.FoodPlan.Decision d;
-        try {
-            d = io.github.mojolowjo.entropybot.camp.FoodPlan.decide(Gui.inventory(p), c.hunting.on(), c.hunting.animalsNear(p));
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] bootstrap food: {}", e.toString());
-            return "ok: food skipped: couldn't look for food (" + e + ") - next: hunt 4 cow when you see some";
-        }
-        LOG.info("[entropybot] bootstrap food: {} {}", d.text(), d.steps());
-        if (d.steps().isEmpty()) return d.text();
-        String text = String.join(" then ", d.steps());
-        if (internal && c.chainsRef().running()) {
-            String err = c.chainsRef().spliceNext(text);
-            return err == null ? d.text() : "ok: food skipped: " + err + " - next: hunt 4 cow";
-        }
-        if (c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
-        String r = c.chainsRef().startChain(from, "bootstrap food", text, 1);
-        return r.startsWith("started") ? "started: " + d.text().replaceFirst("^ok: ", "") : r;
-    }
-
-    /** 0.28.2 (B3): ice, snow or water in a cell of the staircase quarry's dig boxes (BootstrapPlan.quarrySteps). */
-    static boolean quarryBlocked(ClientLevel lv, int[] feet, int[] dir) {
-        int dx = dir[0], dz = dir[1], px = dz != 0 ? 1 : 0, pz = dx != 0 ? 1 : 0;
-        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
-        for (int i = 1; i <= BootstrapPlan.QUARRY_LEN; i++) {
-            int cx = feet[0] + dx * (i + 1), cz = feet[2] + dz * (i + 1);
-            for (int a = -1; a <= 1; a++) for (int y = BootstrapPlan.stepBottom(feet[1], i); y <= BootstrapPlan.stepTop(feet[1], i); y++) {
-                m.set(cx + px * a, y, cz + pz * a);
-                if (!lv.isLoaded(m)) continue;
-                BlockState st = lv.getBlockState(m);
-                if (!st.getFluidState().isEmpty() || st.is(net.minecraft.tags.BlockTags.ICE) || st.is(net.minecraft.tags.BlockTags.SNOW)) return true;
-            }
-        }
-        return false;
-    }
 
     // ---------------------------------------------------------------- house (0.28.2, trial fix package 2 C)
 
@@ -187,7 +62,7 @@ final class CampCommands {
         String area = w.get(0);
         JsonObject ab = c.policyArea(area);
         if (ab == null) return "error: I have no area called " + area + " - next: area x z x2 z2 " + area + " main y1 y2";
-        if (PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.SAFE) return "error: " + area + " is a safe area - I never build there";
+        if (PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.NO_BREAK) return "error: " + area + " is a no-break area - I never build there";
         String[] err = new String[1];
         int[] box = DigCommands.areaBox(c, area, err);
         // 0.30.4 (trial 9, open terrain): an area without heights gets them from the ground: the floor at the lowest
@@ -197,7 +72,7 @@ final class CampCommands {
         if (box == null && err[0] != null && err[0].contains("covers every height") && !ab.has("round") && Minecraft.getInstance().level != null) {
             int ax1 = Math.min(PolicyCommands.n(ab, "x1"), PolicyCommands.n(ab, "x2")), ax2 = Math.max(PolicyCommands.n(ab, "x1"), PolicyCommands.n(ab, "x2"));
             int az1 = Math.min(PolicyCommands.n(ab, "z1"), PolicyCommands.n(ab, "z2")), az2 = Math.max(PolicyCommands.n(ab, "z1"), PolicyCommands.n(ab, "z2"));
-            if (ax2 - ax1 + 1 < io.github.mojolowjo.entropybot.camp.HousePlan.MIN_SIDE || az2 - az1 + 1 < io.github.mojolowjo.entropybot.camp.HousePlan.MIN_SIDE)
+            if (ax2 - ax1 + 1 < io.github.mojolowjo.entropybot.camp.HousePlan.minSide() || az2 - az1 + 1 < io.github.mojolowjo.entropybot.camp.HousePlan.minSide())
                 return io.github.mojolowjo.entropybot.camp.HousePlan.TOO_SMALL;
             if ((long) (ax2 - ax1 + 1) * (az2 - az1 + 1) > 4096) return io.github.mojolowjo.entropybot.camp.HouseGround.TOO_LARGE;
             int[] tops = surfaceTops(Minecraft.getInstance().level, ax1, az1, ax2, az2);
@@ -207,7 +82,7 @@ final class CampCommands {
             for (int t : tops) if (t == io.github.mojolowjo.entropybot.camp.HouseGround.NONE) { fy = t; break; }
             if (fy == io.github.mojolowjo.entropybot.camp.HouseGround.NONE)
                 return "error: I can't see the ground of " + area + " (not loaded) - next: goto " + (ax1 + ax2) / 2 + " ~ " + (az1 + az2) / 2 + ", then house " + area;
-            int fy2 = fy + io.github.mojolowjo.entropybot.camp.HouseGround.HEIGHT - 1;
+            int fy2 = fy + io.github.mojolowjo.entropybot.camp.HouseGround.height() - 1;
             autoY = new int[]{fy, fy2};
             LOG.info("[entropybot] house {}: no heights given, floor at y {} (lowest surface), y {}..{}", area, fy, fy, fy2);
             floorNote = "floor at y " + fy + " (the lowest ground in " + area + ", 5 high), ";
@@ -297,6 +172,7 @@ final class CampCommands {
                                     && pol.protectAt(dim, x, y, z) == null && pol.protectAt(dim, x, y + 1, z) == null
                                     && !lw.blockEntity(x, y, z) && !lw.blockEntity(x, y + 1, z);
                         } catch (RuntimeException ex) {
+            Quiet.warn("CampCommands.house failed, carrying on with the fallback", ex);
                             return false;
                         }
                     }
@@ -368,26 +244,14 @@ final class CampCommands {
         return false;
     }
 
-    /** A block whose id contains the word within BootstrapPlan.NEAR blocks (a few levels up and down). */
+    /** A block whose id contains the word within campCommands.near blocks (a few levels up and down). */
     static boolean near(ClientLevel lv, int[] c, String word) {
-        int r = BootstrapPlan.NEAR;
+        int r = Tuning.i("campCommands.near");
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
         for (int dx = -r; dx <= r; dx++) for (int dy = -3; dy <= 3; dy++) for (int dz = -r; dz <= r; dz++) {
             m.set(c[0] + dx, c[1] + dy, c[2] + dz);
             String id = lv.getBlockState(m).getBlock().getDescriptionId();
             if (id.endsWith("." + word) || id.endsWith("_" + word) && !id.contains("ender_chest")) return true;
-        }
-        return false;
-    }
-
-    /** 0.28.1: snow, a snow block or powder snow within 3 blocks of the camp's feet (that level and the one under it). */
-    static boolean snowNear(ClientLevel lv, int[] f) {
-        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
-        for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) for (int dy = -1; dy <= 0; dy++) {
-            m.set(f[0] + dx, f[1] + dy, f[2] + dz);
-            BlockState st = lv.getBlockState(m);
-            if (st.is(net.minecraft.world.level.block.Blocks.SNOW) || st.is(net.minecraft.world.level.block.Blocks.SNOW_BLOCK)
-                    || st.is(net.minecraft.world.level.block.Blocks.POWDER_SNOW)) return true;
         }
         return false;
     }
@@ -399,24 +263,9 @@ final class CampCommands {
                 && lv.getFluidState(b.below()).isEmpty();
     }
 
-    /** The quarry's direction: the first of east, south, west, north whose 10 columns stand on dry, solid ground. */
-    static int[] quarryDir(ClientLevel lv, int[] f) {
-        int[][] dirs = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
-        for (int[] d : dirs) {
-            boolean ok = true;
-            for (int i = 2; i <= BootstrapPlan.QUARRY_LEN + 1 && ok; i++) {
-                BlockPos g = new BlockPos(f[0] + d[0] * i, f[1] - 1, f[2] + d[1] * i);
-                BlockState st = lv.getBlockState(g);
-                ok = !st.isAir() && lv.getFluidState(g).isEmpty() && lv.getFluidState(g.above()).isEmpty() && !st.hasBlockEntity();
-            }
-            if (ok) return d;
-        }
-        return dirs[0];
-    }
-
-    /** Free cells 2 away from the bot (feet level), on the side away from the quarry, nearest the bot's back first. */
+    /** Free cells 2 away from the bot (feet level), on the side away from dir, nearest the bot's back first. */
     static List<int[]> freeRing(ClientLevel lv, int[] f, int[] dir) {
-        // 0.24.3: rings 1-3 (a 3x3 pit has only ring 1), air above each, the quarry's side last (FreeSpots)
+        // 0.24.3: rings 1-3 (a 3x3 pit has only ring 1), air above each, dir's side last (FreeSpots)
         return io.github.mojolowjo.entropybot.camp.FreeSpots.find(f, dir, c -> placeable(lv, new BlockPos(c[0], c[1], c[2])),
                 c -> lv.getBlockState(new BlockPos(c[0], c[1] + 1, c[2])).canBeReplaced());
     }
@@ -459,10 +308,10 @@ final class CampCommands {
         if (box == null) return Chains.Reply.now(LightGrid.USAGE);
         String dim = Guard.dimOf(lv);
         List<int[]> spots = new ArrayList<>();
-        int water = 0, air = 0, outside = 0, lit = 0;
+        int water = 0, air = 0, refused = 0, lit = 0;
         for (int[] s : LightGrid.spots(box[0], box[1], box[2], box[3])) {
-            if (c.fenceOn() && !c.inAreas(dim, s[0], s[1])) {
-                outside++;
+            if (!c.workAllowed(dim, s[0], s[1])) {
+                refused++;
                 continue;
             }
             int[] g = ground(lv, s[0], me[1], s[1]);
@@ -483,9 +332,9 @@ final class CampCommands {
         List<String> why = new ArrayList<>();
         if (water > 0) why.add(water + " water");
         if (air > 0) why.add(air + " no ground");
-        if (outside > 0) why.add(outside + " outside my areas");
+        if (refused > 0) why.add(refused + " refused by a keep-out / no-break area");
         if (lit > 0) why.add(lit + " lit already");
-        int skipped = water + air + outside + lit;
+        int skipped = water + air + refused + lit;
         if (spots.isEmpty()) return Chains.Reply.now("ok: " + LightGrid.report(0, skipped, String.join(", ", why)));
         Map<String, Integer> bag = Gui.inventory(p);
         int have = bag.getOrDefault("minecraft:torch", 0);
@@ -496,12 +345,12 @@ final class CampCommands {
         if (have < spots.size()) {
             if (c.jobs.running() && !c.jobs.walking()) return Chains.Reply.now("busy: " + c.jobs.job.status + " (pm \"stop\" first)");
             int stored = 0, fuel = bag.getOrDefault("minecraft:coal", 0) + bag.getOrDefault("minecraft:charcoal", 0), logs = 0;
-            for (Map.Entry<String, Integer> e : bag.entrySet()) if (Chopping.isLogItem(e.getKey())) logs += e.getValue();
+            for (Map.Entry<String, Integer> e : bag.entrySet()) if (StepRun.isLogItem(e.getKey())) logs += e.getValue();
             List<Crafting.Source> src = c.crafting.storageSources(p);
             for (Crafting.Source s : src) {
                 stored += s.items().getOrDefault("minecraft:torch", 0);
                 fuel += s.items().getOrDefault("minecraft:coal", 0) + s.items().getOrDefault("minecraft:charcoal", 0);
-                for (Map.Entry<String, Integer> e : s.items().entrySet()) if (Chopping.isLogItem(e.getKey())) logs += e.getValue();
+                for (Map.Entry<String, Integer> e : s.items().entrySet()) if (StepRun.isLogItem(e.getKey())) logs += e.getValue();
             }
             LightGrid.Supply sup = LightGrid.supply(have, spots.size(), stored, fuel, logs, near(lv, me, "furnace"));
             LOG.info("[entropybot] light: {} torches for {} spots: {} ({} stored, {} coal/charcoal, {} logs)", have, spots.size(), sup.source(), stored, fuel, logs);
@@ -546,7 +395,7 @@ final class CampCommands {
             order.add(at);
         }
         List<Seq.Step> steps = new ArrayList<>(before);
-        for (int[] s : order) steps.add(Clearing.placeStep(s, "minecraft:torch", null, true));
+        for (int[] s : order) steps.add(Clearing.placeStep(s, "minecraft:torch", true));
         Seq.Step note = new Seq.Step("lightnote");
         note.items = new LinkedHashMap<>();
         note.n = skipped;
@@ -598,67 +447,11 @@ final class CampCommands {
         return "next";
     }
 
-    // ---------------------------------------------------------------- stock
-
-    Map<String, Integer> stockWant() {
-        Map<String, Integer> out = new LinkedHashMap<>();
-        JsonObject b = brain();
-        if (b.has("stockTargets") && b.get("stockTargets").isJsonObject()) for (Map.Entry<String, JsonElement> e : b.getAsJsonObject("stockTargets").entrySet()) {
-            try { out.put(e.getKey(), e.getValue().getAsInt()); } catch (RuntimeException ignored) {}
-        }
-        return out;
-    }
-
-    Map<String, Integer> baseHave(LocalPlayer p) {
-        Map<String, Integer> out = new LinkedHashMap<>();
-        for (StorageRules.Chest ch : c.storage.baseChests(p, true)) ch.items().forEach((k, v) -> out.merge(k, v, Integer::sum));
-        return out;
-    }
-
-    String stock(LocalPlayer p, String rest) {
-        String t = rest == null ? "" : rest.trim();
-        List<String> w = Texts.words(t.toLowerCase());
-        Map<String, Integer> want = stockWant();
-        if (!w.isEmpty() && w.get(0).equals("set")) {
-            if (w.size() != 3 || !w.get(2).matches("^\\d{1,5}$")) return StockRules.USAGE;
-            String id = c.crafting.planner.resolveItem(w.get(1), Gui.inventory(p));
-            if (id == null) id = JunkRules.full(w.get(1));
-            if (!Storage.itemExists(id)) return "error: I don't know an item called " + w.get(1) + " - next: find or recipe the exact id";
-            if (!want.containsKey(id) && want.size() >= StockRules.MAX_ITEMS) return "error: I keep at most " + StockRules.MAX_ITEMS + " stock targets - stock clear <item> first";
-            int n = Integer.parseInt(w.get(2));
-            if (n == 0) want.remove(id);
-            else want.put(id, n);
-        } else if (!w.isEmpty() && w.get(0).equals("clear")) {
-            if (w.size() != 2) return StockRules.USAGE;
-            if (w.get(1).equals("all")) want.clear();
-            else if (want.remove(JunkRules.full(w.get(1))) == null) return "no stock target for " + w.get(1);
-        } else if (!w.isEmpty() && !w.get(0).equals("targets")) {
-            return StockRules.USAGE;
-        }
-        if (!w.isEmpty() && !w.get(0).equals("targets")) {
-            JsonObject o = new JsonObject();
-            want.forEach(o::addProperty);
-            brain().add("stockTargets", o);
-            c.saved();
-        }
-        return StockRules.text(want, baseHave(p));
-    }
-
-    String restockBase(LocalPlayer p, String from) {
-        Map<String, Integer> want = stockWant();
-        if (want.isEmpty()) return "error: no stock targets - next: stock set torch 64";
-        if (c.storage.baseChests(p, true).isEmpty()) return Hints.next("error: I know no base chests", "scan base");
-        Map<String, Integer> sh = StockRules.shortOf(want, baseHave(p));
-        if (sh.isEmpty()) return "ok: the base chests hold all of the stock (" + StockRules.text(want, baseHave(p)).replaceFirst("^stock[^:]*: ", "") + ")";
-        if (c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
-        return c.chainsRef().startChain(from, "restock base", StockRules.chain(sh), 1);
-    }
-
     // ---------------------------------------------------------------- junk
 
     Set<String> junkList() {
         JsonObject b = brain();
-        if (!b.has("junk") || !b.get("junk").isJsonArray()) return new LinkedHashSet<>(JunkRules.DEFAULT);
+        if (!b.has("junk") || !b.get("junk").isJsonArray()) return new LinkedHashSet<>();
         Set<String> out = new LinkedHashSet<>();
         for (JsonElement e : b.getAsJsonArray("junk")) out.add(e.getAsString());
         return out;
@@ -694,7 +487,7 @@ final class CampCommands {
                 return "ok: " + JunkRules.listText(junkList(), junkMode());
             }
             case "default" -> {
-                saveJunk(new LinkedHashSet<>(JunkRules.DEFAULT));
+                saveJunk(new LinkedHashSet<>());
                 return "ok: " + JunkRules.listText(junkList(), junkMode());
             }
             case "mode" -> {
@@ -709,38 +502,6 @@ final class CampCommands {
         }
     }
 
-    /** Every 40 ticks: a job (not a walk) running with the bag nearly full: drop the junk (mode drop). */
-    void junkTick(LocalPlayer p) {
-        if (!c.jobs.running() || c.jobs.walking() || Core.INSTANCE.reflexes.hold()) return;
-        if (!"drop".equals(junkMode()) || Gui.open(p) || Minecraft.getInstance().screen != null) return;
-        if (c.freeSlots() > JunkRules.LOW) return;
-        // never litter at the owner's feet: with them within 8 blocks the junk waits (the deposit takes it)
-        net.minecraft.world.entity.player.Player owner = Jobs.findPlayer(c.owner());
-        if (owner != null && owner != p && owner.distanceTo(p) < 8) return;
-        Jobs.Job j = c.jobs.job;
-        Map<String, Integer> plan = junkPlan(p, j.label + " " + j.status);
-        if (plan.isEmpty()) return;
-        int n = 0;
-        for (Map.Entry<String, Integer> e : plan.entrySet()) {
-            String r = io.github.mojolowjo.entropybot.gui.GuiCore.drop(new McMenu(p), e.getKey() + " " + e.getValue());
-            if (r.startsWith("ok: dropped")) n += e.getValue();
-            else LOG.warn("[entropybot] junk drop {}: {}", e.getKey(), r);
-        }
-        j.junkDropped += n;
-        LOG.info("[entropybot] junk: bag nearly full mid-job, dropped {} ({})", n, plan);
-    }
-
-
-    Map<String, Integer> junkPlan(LocalPlayer p, String collecting) {
-        List<StorageRules.Held> held = Storage.held(p);
-        Map<String, Integer> dep = StorageRules.depositables(held, null, true, null, c.storage.keeps());
-        // 0.28.1: a running or queued build/shelter keeps its blocks (the trial's house cobblestone went over the side)
-        List<String> texts = new ArrayList<>();
-        texts.add(collecting);
-        if (c.jobs.job != null && !c.jobs.job.done) texts.add(c.jobs.job.type + " " + c.jobs.job.label);
-        texts.addAll(c.chainsRef().restSteps());
-        return JunkRules.plan(junkList(), dep, Gui.inventory(p), collecting, JunkRules.wanted(texts));
-    }
 
     /** Junk mode chest: the junk items of a deposit go to the chest marked "junk" (its pos), or null. */
     int[] junkChest() {
@@ -748,167 +509,5 @@ final class CampCommands {
         JsonObject pl = Core.INSTANCE.knowledge.places().get("junk");
         return pl == null ? null : Jobs.pos(pl);
     }
-
-    // ---------------------------------------------------------------- tool care
-
-    List<ToolCareRules.Tool> tools(LocalPlayer p) {
-        List<ToolCareRules.Tool> out = new ArrayList<>();
-        for (int i = 0; i < p.getInventory().getContainerSize(); i++) {
-            ItemStack st = p.getInventory().getItem(i);
-            if (!st.isEmpty() && st.isDamageableItem() && st.getMaxDamage() > 0) {
-                out.add(new ToolCareRules.Tool(Gui.itemId(st), st.getMaxDamage() - st.getDamageValue(), st.getMaxDamage()));
-            }
-        }
-        return out;
-    }
-
-    String toolsText(LocalPlayer p) {
-        return p == null ? "" : ToolCareRules.text(tools(p)) + "\n" + ArmorCareRules.text(armor(p))
-                + "\n" + ArmorCareRules.orderText(ironFirst());
-    }
-
-    /** 0.25.1 gear.ironFirst (a brain setting; defaults until the brain loaded them). */
-    static boolean ironFirst() {
-        try { return io.github.mojolowjo.entropybot.brain.BrainConfig.current().on("gear.ironFirst"); } catch (RuntimeException e) { return true; }
-    }
-
-    /** Every 100 ticks; at a pause (no job, chain or request, no reflex) a worn or broken tool is replaced. */
-    void toolCareTick(LocalPlayer p, boolean idle) {
-        List<ToolCareRules.Tool> tl = tools(p);
-        Map<String, String> needs = ToolCareRules.needs(tl, toolsBefore);
-        Map<String, String> now = ToolCareRules.carried(tl);
-        // a broken kind stays "before" until replaced (so the next pause still sees it)
-        for (Map.Entry<String, String> e : needs.entrySet()) now.putIfAbsent(e.getKey(), e.getValue());
-        careStuck.keySet().removeIf(k -> !k.startsWith("armor:") && !needs.containsKey(k));
-        if (!idle || needs.isEmpty()) {
-            toolsBefore = now;
-            return;
-        }
-        long ms = System.currentTimeMillis();
-        for (Map.Entry<String, String> e : needs.entrySet()) {
-            String kind = e.getKey();
-            if (ms - careTried.getOrDefault(kind, 0L) < CARE_RETRY_MS) continue;
-            careTried.put(kind, ms);
-            Set<String> stored = new LinkedHashSet<>();
-            Map<String, Integer> have = new LinkedHashMap<>(Gui.inventory(p));
-            for (Crafting.Source s : c.crafting.storageSources(p)) {
-                stored.addAll(s.items().keySet());
-                s.items().forEach((k, v) -> have.merge(k, v, Integer::sum));
-            }
-            String cmd = ToolCareRules.replacement(kind, e.getValue(), stored, have);
-            if (cmd == null) {
-                careStuck.put(kind, e.getValue());
-                LOG.info("[entropybot] tool care: my {} is worn or broken and nothing can replace it", e.getValue());
-                toolsBefore = now;
-                return;
-            }
-            careStuck.remove(kind);
-            LOG.info("[entropybot] tool care: {} worn or broken -> {}", e.getValue(), cmd);
-            Chains.Reply r = c.handle(c.owner(), cmd, false, true, null);
-            LOG.info("[entropybot] tool care: {} -> {}", cmd, r.text());
-            if (r.text() != null && r.text().startsWith("started")) {
-                now.remove(kind);           // the new one shows up when the job ends
-                toolsBefore = now;
-                return;                     // one at a time
-            }
-        }
-        toolsBefore = now;
-    }
-
-    // ---------------------------------------------------------------- armour care (0.23.6)
-
-    /** The four worn slots (empty ones as a Piece with id null). */
-    static List<ArmorCareRules.Piece> armor(LocalPlayer p) {
-        List<ArmorCareRules.Piece> out = new ArrayList<>();
-        for (int i = 0; i < 4; i++) {
-            String slot = ArmorCareRules.SLOTS.get(3 - i);          // armor list: 0 boots .. 3 helmet
-            ItemStack st = p.getInventory().armor.get(i);
-            out.add(st.isEmpty() ? new ArmorCareRules.Piece(slot, null, 0, 0)
-                    : new ArmorCareRules.Piece(slot, Gui.itemId(st), st.getMaxDamage() - st.getDamageValue(), st.getMaxDamage()));
-        }
-        return out;
-    }
-
-    /** Armour pieces in the bag (not worn). */
-    static List<ArmorCareRules.Piece> armorInBag(LocalPlayer p) {
-        List<ArmorCareRules.Piece> out = new ArrayList<>();
-        for (int i = 0; i < 36; i++) {
-            ItemStack st = p.getInventory().getItem(i);
-            if (st.isEmpty()) continue;
-            String id = Gui.itemId(st);
-            String slot = ArmorCareRules.slot(id);
-            if (slot != null) out.add(new ArmorCareRules.Piece(slot, id, st.getMaxDamage() - st.getDamageValue(), st.getMaxDamage()));
-        }
-        return out;
-    }
-
-    private Set<String> armorBefore = new LinkedHashSet<>();
-
-    /**
-     * At a pause, after tool care: a worn or missing piece is fetched or crafted and worn ("... then wear"); a good spare
-     * in the bag is just put on. One at a time, each slot retried every 10 minutes. True when it started something.
-     */
-    private long armorBusyLog;
-
-    boolean armorCareTick(LocalPlayer p, String busy) {
-        List<ArmorCareRules.Piece> on = armor(p), bag = armorInBag(p);
-        Set<String> filled = new LinkedHashSet<>();
-        for (ArmorCareRules.Piece a : on) if (!a.empty()) filled.add(a.slot());
-        Set<String> before = armorBefore;
-        armorBefore = filled;
-        if (busy != null) {
-            if (ArmorCareRules.lowest(on) != null && System.currentTimeMillis() - armorBusyLog > 60_000) {
-                armorBusyLog = System.currentTimeMillis();
-                LOG.info("[entropybot] armour care: {} - waiting for a pause (busy: {})", ArmorCareRules.lowest(on), busy);
-            }
-            return false;
-        }
-        // a good spare for a worn or empty slot: wear swaps it in
-        for (ArmorCareRules.Piece a : on) {
-            if ((a.empty() || a.worn()) && ArmorCareRules.spare(a.slot(), bag) != null && Minecraft.getInstance().screen == null) {
-                String r = Gui.wearArmor(p);
-                LOG.info("[entropybot] armour care: wear -> {}", r);
-                if (r.startsWith("ok")) return true;
-            }
-        }
-        boolean ironFirst = ironFirst();
-        Map<String, String> needs = ArmorCareRules.ordered(ArmorCareRules.needs(on, bag), ironFirst);      // 0.25.1
-        careStuck.keySet().removeIf(k -> k.startsWith("armor:") && !needs.containsKey(k.substring(6)));
-        long ms = System.currentTimeMillis();
-        Set<String> stored = null;
-        Map<String, Integer> have = null;
-        for (Map.Entry<String, String> e : needs.entrySet()) {
-            String slot = e.getKey();
-            if (ms - careTried.getOrDefault("armor:" + slot, 0L) < CARE_RETRY_MS) continue;
-            careTried.put("armor:" + slot, ms);
-            if (stored == null) {
-                stored = new LinkedHashSet<>();
-                have = new LinkedHashMap<>(Gui.inventory(p));
-                for (Crafting.Source s : c.crafting.storageSources(p)) {
-                    stored.addAll(s.items().keySet());
-                    final Map<String, Integer> h = have;
-                    s.items().forEach((k, v) -> h.merge(k, v, Integer::sum));
-                }
-            }
-            String cmd = ArmorCareRules.replacement(slot, e.getValue(), stored, ArmorCareRules.spendable(slot, on, have, ironFirst));
-            if (cmd == null) {
-                // a worn piece, or one that broke since the last look: a check line; a slot never filled stays quiet
-                if (e.getValue() != null || before.contains(slot)) careStuck.put("armor:" + slot, e.getValue() == null ? slot : e.getValue());
-                continue;
-            }
-            careStuck.remove("armor:" + slot);
-            LOG.info("[entropybot] armour care: {} {} -> {}", slot, e.getValue() == null ? "missing" : e.getValue() + " worn", cmd);
-            Chains.Reply r = c.handle(c.owner(), cmd, false, true, null);
-            LOG.info("[entropybot] armour care: {} -> {}", cmd, r.text());
-            if (r.text() == null || !r.text().startsWith("error")) return true;      // one at a time
-        }
-        return false;
-    }
-
-    /** "check": tools that are nearly broken and that nothing can replace. */
-    List<String> careFindings() {
-        List<String> out = new ArrayList<>();
-        careStuck.forEach((k, id) -> out.add(StockRules.shortId(id)));
-        return out;
-    }
 }
+

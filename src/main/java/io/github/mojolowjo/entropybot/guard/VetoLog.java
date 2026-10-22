@@ -7,7 +7,7 @@ import java.util.ArrayDeque;
 
 /** The last vetoes (and, in log mode, would-be vetoes), newest last. */
 public final class VetoLog {
-    public static final int CAPACITY = 50;
+    public static final int CAPACITY = 50; // structural
 
     private final ArrayDeque<JsonObject> entries = new ArrayDeque<>();
     private long vetoes, wouldVetoes;

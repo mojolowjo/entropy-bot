@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.api;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.guard.GuardCore;
 import io.github.mojolowjo.entropybot.io.BotFiles;
@@ -17,22 +19,26 @@ public final class BotAPI {
 
     /** The mod's version, e.g. "0.1.0". */
     public static String version() {
-        try { return core().version(); } catch (Throwable t) { return "unknown"; }
+        try { return core().version(); } catch (Throwable t) {
+            Quiet.warn("BotAPI.version failed, carrying on with the fallback", t); return "unknown"; }
     }
 
     /** JSON array of what works right now: "files", "events", "guard:strict|log", "guard:click", "guard:place", "guard:astar"... */
     public static String features() {
-        try { return core().features().toString(); } catch (Throwable t) { return "[]"; }
+        try { return core().features().toString(); } catch (Throwable t) {
+            Quiet.warn("BotAPI.features failed, carrying on with the fallback", t); return "[]"; }
     }
 
     /** Events with seq greater than afterSeq, oldest first, at most max (0 = all), as a JSON array. */
     public static String events(long afterSeq, int max) {
-        try { return core().events.since(afterSeq, max); } catch (Throwable t) { return "[]"; }
+        try { return core().events.since(afterSeq, max); } catch (Throwable t) {
+            Quiet.warn("BotAPI.events failed, carrying on with the fallback", t); return "[]"; }
     }
 
     /** The newest event's seq (0 when none yet). */
     public static long lastSeq() {
-        try { return core().events.lastSeq(); } catch (Throwable t) { return 0; }
+        try { return core().events.lastSeq(); } catch (Throwable t) {
+            Quiet.warn("BotAPI.lastSeq failed, carrying on with the fallback", t); return 0; }
     }
 
     /** The guard's status as JSON: mode, floor size, areas, protect boxes, leases, counts, which hooks apply. */
@@ -64,7 +70,8 @@ public final class BotAPI {
 
     /** The last vetoes (and would-be vetoes in log mode), newest last, as a JSON array. */
     public static String vetoes(int max) {
-        try { return core().guard.core.log().recent(max); } catch (Throwable t) { return "[]"; }
+        try { return core().guard.core.log().recent(max); } catch (Throwable t) {
+            Quiet.warn("BotAPI.vetoes failed, carrying on with the fallback", t); return "[]"; }
     }
 
     /** Writes JSON atomically under the bot's folder: "ok: N bytes" or "error: ...". */
@@ -89,7 +96,8 @@ public final class BotAPI {
 
     /** True while a reflex (eating, fighting, fleeing, retreating) runs and every job should hold still. */
     public static boolean hold() {
-        try { return core().reflexes.hold(); } catch (Throwable t) { return false; }
+        try { return core().reflexes.hold(); } catch (Throwable t) {
+            Quiet.warn("BotAPI.hold failed, carrying on with the fallback", t); return false; }
     }
 
     /**

@@ -1,5 +1,9 @@
 package io.github.mojolowjo.entropybot.threat;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
 import net.minecraft.client.player.LocalPlayer;
@@ -40,7 +44,7 @@ public final class HitWatch {
             }
             float hp = p.getHealth() + p.getAbsorptionAmount();
             boolean dead = p.isDeadOrDying();
-            if (last >= 0 && hp < last - 0.01f) {
+            if (last >= 0 && hp < last - 0.01f) {  // structural: epsilon: a health drop
                 DamageSource src = p.getLastDamageSource();
                 Entity by = src != null ? src.getEntity() : null;
                 if (by == null && src == null) by = p.getLastHurtByMob();
@@ -52,7 +56,8 @@ public final class HitWatch {
                 try {
                     var j = Core.INSTANCE.commands.jobs.job;
                     job = j != null && !j.done ? j.type + " " + j.label : null;
-                } catch (RuntimeException ignored) {
+                } catch (RuntimeException caught) {
+            Quiet.warn("HitWatch.observe failed, carrying on with the fallback", caught);
                     // no job
                 }
                 HitLog.Hit h = new HitLog.Hit(System.currentTimeMillis(), type, id, name, amt, Math.max(0, hp), p.getBlockX(), p.getBlockY(), p.getBlockZ(), job);
@@ -67,7 +72,7 @@ public final class HitWatch {
             } else if (!dead) deathTaken = false;
             last = dead ? 0 : hp;
             long now = System.currentTimeMillis();
-            if (now - savedAt > 10_000 && MobDamage.INSTANCE.takeDirty()) {
+            if (now - savedAt > Tuning.i("hitWatch.saveEveryMs") && MobDamage.INSTANCE.takeDirty()) {
                 savedAt = now;
                 var f = Core.INSTANCE.files();
                 if (f != null) {
@@ -76,7 +81,7 @@ public final class HitWatch {
                 }
             }
         } catch (RuntimeException e) {
-            if (errors++ < 5) LOG.warn("[entropybot] hits: {}", e.toString());
+            if (errors++ < 5) LOG.warn("[entropybot] hits: {}", e.toString());  // structural: log throttle: only the first few errors are logged
         }
     }
 

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.blind;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.commands.SelfCheck;
 import net.minecraft.client.Minecraft;
@@ -58,6 +60,7 @@ public final class BotConfigScreen extends Screen {
             File g = Minecraft.getInstance().gameDirectory;
             return g == null ? null : g.toPath().resolve("entropybot");
         } catch (RuntimeException e) {
+            Quiet.warn("BotConfigScreen.botDir failed, carrying on with the fallback", e);
             return null;
         }
     }

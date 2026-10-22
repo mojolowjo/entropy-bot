@@ -1,5 +1,9 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import io.github.mojolowjo.entropybot.Quiet;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -66,7 +70,7 @@ import org.slf4j.Logger;
  * at {@code step.pos} (walking into reach first, taking a place lease, never breaking anything) and returns "next", or
  * an error text.
  *
- * <p>D1's additions (2026-10-03): {@link #placeStep(int[], String, int[], boolean)} (a stand spot and optional, the
+ * <p>D1's additions (2026-10-03): {@link #placeStep(int[], String, boolean)} (optional, the
  * strip mine's hole fills), {@link #oreTally()} / {@link #talliedSince} (the bridge's global oreTally, for "mine ...
  * until N ores"), {@link #oreBook()} (the ores listed for players, in the knowledge files), {@link #placeAt} (the
  * bridge's placeAt). The game-free run is {@link ClearRun}; the rules for placing and the table are {@link PlaceRules}.
@@ -100,10 +104,9 @@ public final class Clearing {
      * D1: a placement from a given stand spot (null: wherever reaches, walking there when nothing does); optional: a
      * placement that can't be done (no item, nothing to click, it didn't stay) is skipped instead of failing the job.
      */
-    public static Seq.Step placeStep(int[] pos, String item, int[] from, boolean optional) {
+    public static Seq.Step placeStep(int[] pos, String item, boolean optional) {
         Seq.Step s = placeStep(pos, item);
         PlaceState ps = new PlaceState();
-        ps.from = from;
         ps.optional = optional;
         s.optional = optional;
         s.state = ps;
@@ -177,24 +180,19 @@ public final class Clearing {
         boolean inTrip;
         String tripKind, caught;
         boolean caughtSet;
-        long lastBeat = -1000;
+        long lastBeat = -1000;  // structural: a time long ago (sentinel)
         /** the job's label for the trips' whispers, the requester */
         String note;
         /** table pickups a failed trip took out of the Seq (B7d review 3): the job's end names a table still there */
         final List<Seq.Step> tablesLeft = new ArrayList<>();
-        /** B7e F: where the bot stood (x, z) when the clear began: "junk drop" throws toward it (the dug side) */
-        double[] start;
     }
 
     /** A placeblock step's state. */
     static final class PlaceState {
-        int[] from;
         boolean optional, clicked;
         String stage;
         long stageTick;
         int tries;
-        /** 0.30.6: walks to a fresh stand spot after a "nothing in reach" click (once) */
-        int walks;
         /** 0.30.7: the tick a mob was first found in the cell (-1: none); it is waited for PlaceRules.MOB_WAIT_TICKS */
         long mobSince = -1;
         /** 0.30.7 (review): the entity that wait is for (a new one starts its own wait) */
@@ -202,8 +200,6 @@ public final class Clearing {
         LeaseSet leases;
         /** the table pickup to arm once the table really went down (18a) */
         Seq.Step pickup;
-        /** water plan: a block sealing water off at the edge of this dig box (a seal lease when the cell is outside the areas) */
-        ClearBox seal;
     }
 
     /** A Baritone build step's state (build floor|walls|fill|shell). */
@@ -239,6 +235,8 @@ public final class Clearing {
         long lastFeet = Long.MIN_VALUE, stillSince;
         // 0.30.2 (trial 8 snow): a refused click into a cell holding a no-collision block (a snow layer) breaks it first
         boolean clearing, clearStarted;
+        /** B7: a schematic build's own state (SchematicBuild.Run), else null. */
+        Object schem;
     }
 
     /** True while a mod job runs Baritone's builder (the bridge's safety net leaves placing on then). */
@@ -281,6 +279,7 @@ public final class Clearing {
             List<Block> l = BaritoneAPI.getSettings().blocksToAvoidBreaking.value;
             return l == null || l.isEmpty() ? null : l::contains;
         } catch (Throwable t) {
+            Quiet.warn("Clearing.avoidPredicate failed, carrying on with the fallback", t);
             return null;
         }
     }
@@ -289,7 +288,7 @@ public final class Clearing {
 
     /** Seq.everyTick: a clear breaks every tick. */
     static boolean everyTick(Seq.Step st) {
-        return st.type.equals("clear") && !KIND_BUILD.equals(st.kind);
+        return st.type.equals("clear") && !KIND_BUILD.equals(st.kind) && !SchematicBuild.KIND.equals(st.kind);
     }
 
     /**
@@ -316,7 +315,7 @@ public final class Clearing {
                 if (g.state instanceof ClearState gs && !gs.done) {
                     gs.done = true;
                     if (gs.run != null && p != null) {
-                        try { gs.run.stop(new McBody(seq, gs, p)); } catch (RuntimeException ignored) {}
+                        try { gs.run.stop(new McBody(seq, gs, p)); } catch (RuntimeException caught) { Quiet.warn("Clearing.caught failed, carrying on with the fallback", caught); }
                     }
                     gs.leases.releaseAll();
                 }
@@ -349,7 +348,7 @@ public final class Clearing {
             if (st.state instanceof ClearState s && !s.done) {
                 s.done = true;
                 if (s.run != null && p != null) {
-                    try { s.run.stop(new McBody(seq, s, p)); } catch (RuntimeException ignored) {}
+                    try { s.run.stop(new McBody(seq, s, p)); } catch (RuntimeException caught) { Quiet.warn("Clearing.ended failed, carrying on with the fallback", caught); }
                 }
                 if (s.job != null) addTally(s.job.oreTally);
                 s.leases.releaseAll();
@@ -361,26 +360,36 @@ public final class Clearing {
                 endBuild(bs);
             } else if (st.state instanceof BuilderDig.State ds) {
                 BuilderDig.ended(ds);                   // 0.29.0: the builder off, its settings back, its leases
-            } else if (st.state instanceof FloorSteps.FloorState fs) {
-                FloorSteps.ended(fs);                   // B7e F: the fill's place leases
             }
             if (st.state instanceof ClearState s) tables.addAll(s.tablesLeft);
             if (armedPickup(st)) tables.add(st);
         }
-        Set<String> left = new LinkedHashSet<>();
+        Set<String> left = new LinkedHashSet<>(), leftFurnaces = new LinkedHashSet<>();
         for (Seq.Step t : tables) {
             if (t.pos == null) continue;
             String id = blockId(t.pos);
             t.got = null;                            // disarmed: nothing picks it up after the job
             // gone (picked up, broken by someone) or something else now: not ours to mention
-            if (id != null && !PlaceRules.TABLE_ID.equals(id)) continue;
+            if (id != null && !PlaceRules.pickupBlock(t.id).equals(id)) continue;
+            if (PlaceRules.FURNACE_ID.equals(t.id)) {
+                leftFurnaces.add(Jobs.fmt(t.pos));
+                continue;
+            }
             left.add(Jobs.fmt(t.pos));
             if (WHY_OWN_TABLE.equals(t.why)) LEFT_OWN_TABLES.add(Jobs.fmt(t.pos));       // 0.28.2: a check finding
         }
-        if (left.isEmpty()) return msg;
-        String where = String.join(", ", left);
-        LOG.info("[entropybot] clear: the job ended ({}) and left my crafting table at {}", msg, where);
-        return msg + " - left my crafting table at " + where;
+        String out = msg;
+        if (!left.isEmpty()) {
+            String where = String.join(", ", left);
+            LOG.info("[entropybot] clear: the job ended ({}) and left my crafting table at {}", msg, where);
+            out = out + " - left my crafting table at " + where;
+        }
+        if (!leftFurnaces.isEmpty()) {
+            String where = String.join(", ", leftFurnaces);
+            LOG.info("[entropybot] clear: the job ended ({}) and left my furnace at {}", msg, where);
+            out = out + " - left my furnace at " + where;
+        }
+        return out;
     }
 
     private static String join(String a, String b) {
@@ -408,10 +417,8 @@ public final class Clearing {
     static String step(Seq seq, Seq.Step st, LocalPlayer p, long elapsed) {
         if (st.type.equals("placeblock")) return placeRun(seq, st, p, elapsed);
         if (KIND_BUILD.equals(st.kind)) return buildRun(seq, st, p, elapsed);
-        if (FloorSteps.KIND_FLOOR.equals(st.kind)) return FloorSteps.floorRun(seq, st, p);       // B7e F
-        if (FloorSteps.KIND_JUNK.equals(st.kind)) return FloorSteps.junkRun(seq, st, p);
-        if (WaterSteps.KIND_WATER.equals(st.kind)) return WaterSteps.waterRun(seq, st, p);          // water plan
-        if (WaterSteps.KIND_DRAIN.equals(st.kind)) return WaterSteps.drainRun(seq, st, p);
+        if (SchematicBuild.KIND.equals(st.kind))                                                       // B7 (2.12)
+            return st.state instanceof BuildState sb ? SchematicBuild.run(seq, sb, p) : "the schematic build was not set up";
         if (BuilderDig.KIND.equals(st.kind)) return BuilderDig.run(seq, st, p);                  // 0.29.0: dig ... via baritone
         return clearRun(seq, st, p);
     }
@@ -436,7 +443,6 @@ public final class Clearing {
         }
         ClearState s = st.state instanceof ClearState cs ? cs : new ClearState();
         s.world.set(p);
-        if (s.start == null) s.start = new double[]{p.getX(), p.getZ()};
         s.ores = new KnowledgeOres();
         s.job = ClearJob.start(opts, zone, s.ores);
         s.job.standOk = standCheck(c);
@@ -508,7 +514,7 @@ public final class Clearing {
             return "wait";
         }
         long now = seq.now();
-        if (now - s.lastBeat >= 20) {
+        if (now - s.lastBeat >= Tuning.i("clearing.beatTicks")) {
             s.lastBeat = now;
             String le = checkLeases(s, true);
             if (le != null) return finish(seq, st, s, body, ClearEngine.finishMessage(s.world, s.job, "stopped: " + le.replaceFirst("^error: ", "")));
@@ -533,25 +539,18 @@ public final class Clearing {
         s.leases.releaseAll();
         addTally(s.job.oreTally);
         int left = s.job.lastScanLeft != null ? s.job.lastScanLeft : 0;
-        // water plan: "dig ... water" stopped by water: a water round comes next (it ends the job itself when it can't)
-        if (WaterSteps.wants(st, msg)) {
-            st.cleared = new Outcome(false, s.job.broken, left, new LinkedHashMap<>(s.job.oreTally), new ArrayList<>(s.ores.noted), msg);
-            LOG.info("[entropybot] clear: {} - looking at the water", msg);
-            seq.splice(seq.idx + 1, List.of(WaterSteps.step(st, s.job)));
-            return "next";
-        }
-        msg = WaterSteps.endText(st, s.job, msg);
         boolean ok = msg.startsWith("ok");
         st.cleared = new Outcome(ok, s.job.broken, left, new LinkedHashMap<>(s.job.oreTally), new ArrayList<>(s.ores.noted), msg);
         LOG.info("[entropybot] clear: {}", msg);
         if (KIND_TABLE.equals(st.kind)) {
             // picked up (or gone): disarmed; still standing there: stays armed, so the job's end names it
             String id = blockId(st.pos);
-            if (id != null && !PlaceRules.TABLE_ID.equals(id)) {
+            String want = PlaceRules.pickupBlock(st.id), name = PlaceRules.pickupName(want);
+            if (id != null && !want.equals(id)) {
                 if (WHY_OWN_TABLE.equals(st.why) && st.got != null) seq.note = join(seq.note, io.github.mojolowjo.entropybot.craft.OwnTable.takenBack(Jobs.fmt(st.pos)));
                 st.got = null;
             } else if (armedPickup(st)) {
-                LOG.info("[entropybot] clear: couldn't pick up my crafting table at {}", Jobs.fmt(st.pos));
+                LOG.info("[entropybot] clear: couldn't pick up my {} at {}", name, Jobs.fmt(st.pos));
                 if (WHY_OWN_TABLE.equals(st.why)) {
                     LEFT_OWN_TABLES.add(Jobs.fmt(st.pos));
                     seq.note = join(seq.note, io.github.mojolowjo.entropybot.craft.OwnTable.leftAt(Jobs.fmt(st.pos)));
@@ -618,7 +617,7 @@ public final class Clearing {
         for (String id : inv.keySet()) wood |= PlaceRules.wood(id);
         PlaceRules.TableChoice choice = PlaceRules.tableChoice(dist, carries, wood);
         if (choice == PlaceRules.TableChoice.USE_NEAR || choice == PlaceRules.TableChoice.WALK_FAR) return null;
-        // T2: only where the guard lets it place (inside an area, outside protect boxes, with the fence on) and at the
+        // T2: only where the guard lets it place (no keep-out / no-break box, with the fence on) and at the
         // side of the walkway; the pickup below takes it back after the craft
         Pos spot = PlaceRules.tableSpot(s.world, McClearWorld.botOf(p), s.job.box, Clearing::placeCellAllowed);
         if (spot == null) {
@@ -628,7 +627,7 @@ public final class Clearing {
         Seq.Step craft = new Seq.Step("craftitem");
         craft.text = craftText;
         List<Seq.Step> out = tableAround(spot, choice == PlaceRules.TableChoice.CRAFT_AND_PLACE, List.of(craft), null);
-        LOG.info("[entropybot] clear: no crafting table within {} blocks - putting one down at {} ({})", PlaceRules.TABLE_NEAR, spot.key(), choice);
+        LOG.info("[entropybot] clear: no crafting table within {} blocks - putting one down at {} ({})", PlaceRules.tableNear(), spot.key(), choice);
         return out;
     }
 
@@ -649,7 +648,7 @@ public final class Clearing {
         }
         int[] at = {spot.x(), spot.y(), spot.z()};
         Seq.Step pickup = pickupStep(spot, why);
-        Seq.Step place = placeStep(at, "minecraft:crafting_table", null, false);
+        Seq.Step place = placeStep(at, "minecraft:crafting_table", false);
         ((PlaceState) place.state).pickup = pickup;
         out.add(place);
         out.addAll(middle);
@@ -659,16 +658,26 @@ public final class Clearing {
 
     /** The armed-on-place pickup of the table at spot. */
     private static Seq.Step pickupStep(Pos spot, String why) {
-        // force (a table is a built block), but only exactly a crafting table and only while armed, on every attempt
+        return pickupStep(spot, why, PlaceRules.TABLE_ID);
+    }
+
+    /**
+     * The armed-on-place pickup of a station of mine at spot: force (a station is a built block), but only exactly
+     * {@code block} and only while armed, on every attempt. The step's {@code id} says which block ({@link PlaceRules#pickupBlock}).
+     */
+    private static Seq.Step pickupStep(Pos spot, String why, String block) {
+        boolean table = PlaceRules.TABLE_ID.equals(block);
         ClearJob.Options po = new ClearJob.Options().only(List.of(spot)).force(true).soft(true).keepOres(false)
-                .label(PlaceRules.pickupLabel(spot)).exactId(PlaceRules.TABLE_ID);
+                .label(table ? PlaceRules.pickupLabel(spot) : PlaceRules.furnacePickupLabel(spot)).exactId(block);
         Seq.Step pickup = clearStep(po);
         po.armed(() -> armedPickup(pickup));
         pickup.kind = KIND_TABLE;
         pickup.pos = new int[]{spot.x(), spot.y(), spot.z()};
         pickup.why = why;
+        pickup.id = table ? null : block;
         return pickup;
     }
+
 
     /** A craft's own table left standing for the next back-to-back craft (x y z), or null. */
     static int[] keptOwnTable;
@@ -702,16 +711,54 @@ public final class Clearing {
         Chains ch = seq.jobs.core().commands.chainsRef();
         String next = ch == null ? null : ch.nextStep();
         Crafting crafting = seq.storage.crafting;
-        boolean keep = io.github.mojolowjo.entropybot.craft.OwnTable.keepForNext(seq.afterPickupError != null, next,
-                t -> crafting.craftWantsTable(p, t));
-        if (keep) {
-            keptOwnTable = st.pos;
-            LEFT_OWN_TABLES.add(Jobs.fmt(st.pos));      // safety net: named by check if the chain never gets back to it
-            LOG.info("[entropybot] craft: {} at {}", io.github.mojolowjo.entropybot.craft.OwnTable.KEPT_LOG, Jobs.fmt(st.pos));
-        } else {
-            LOG.info("[entropybot] craft: {}", io.github.mojolowjo.entropybot.craft.OwnTable.PICKED_LOG);
+        boolean failed = seq.afterPickupError != null;
+        boolean nextCrafts = io.github.mojolowjo.entropybot.craft.OwnTable.keepForNext(false, next, t -> crafting.craftWantsTable(p, t));
+        // aa-costs: pick-up + re-place against leaving it (the camp/base context gives leaving a value)
+        boolean nearCamp = false, campHasTable = false;
+        int[] at = st.pos;
+        try {
+            for (String mark : new String[]{"camp", "base"}) {
+                com.google.gson.JsonObject o = Core.INSTANCE.knowledge.places().get(mark);
+                if (o == null || !o.has("x") || at == null || !Jobs.dimOf(o).equals(Storage.dim())) continue;
+                int[] cp = Jobs.pos(o);
+                if (Jobs.distSq(cp, at) > (double) io.github.mojolowjo.entropybot.aa.AaLadder.campR() * io.github.mojolowjo.entropybot.aa.AaLadder.campR()) continue;
+                nearCamp = true;
+                campHasTable |= otherTableNear(p.level(), cp, at);
+            }
+        } catch (RuntimeException e) {
+            LOG.debug("[entropybot] craft: table end: no camp view: {}", e.toString());
         }
-        return keep;
+        Map<String, Integer> inv = Gui.inventory(p);
+        int planks = 0;
+        for (var e : inv.entrySet()) if (e.getKey().endsWith("_planks") || e.getKey().endsWith("_log")) planks += e.getValue();
+        boolean remake = planks >= 4 || inv.getOrDefault("minecraft:crafting_table", 0) > 0;  // game fact: a crafting table takes 4 planks
+        var end = io.github.mojolowjo.entropybot.craft.OwnTable.decide(failed, nextCrafts, nearCamp, campHasTable, remake);
+        String terms = io.github.mojolowjo.entropybot.craft.OwnTable.terms(failed, nextCrafts, nearCamp, campHasTable, remake);
+        switch (end) {
+            case KEEP_FOR_NEXT -> {
+                keptOwnTable = st.pos;
+                LEFT_OWN_TABLES.add(Jobs.fmt(st.pos));      // safety net: named by check if the chain never gets back to it
+                LOG.info("[entropybot] craft: {} at {} ({})", io.github.mojolowjo.entropybot.craft.OwnTable.KEPT_LOG, Jobs.fmt(st.pos), terms);
+            }
+            case LEAVE_AT_CAMP -> {
+                io.github.mojolowjo.entropybot.craft.OwnTable.noteCampTable();     // director: registered as the camp's table
+                LOG.info("[entropybot] craft: table left at {} as the camp's ({})", Jobs.fmt(st.pos), terms);
+            }
+            default -> LOG.info("[entropybot] craft: {} ({})", io.github.mojolowjo.entropybot.craft.OwnTable.PICKED_LOG, terms);
+        }
+        return end != io.github.mojolowjo.entropybot.craft.OwnTable.End.TAKE;
+    }
+
+    /** aa-costs: a crafting table other than {@code own} within the camp radius of {@code camp} (y +-3). */
+    private static boolean otherTableNear(net.minecraft.world.level.Level lv, int[] camp, int[] own) {
+        int r = io.github.mojolowjo.entropybot.aa.AaLadder.campR();
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+        for (int dx = -r; dx <= r; dx++) for (int dy = -Tuning.i("clearing.findDy"); dy <= Tuning.i("clearing.findDy"); dy++) for (int dz = -r; dz <= r; dz++) {
+            m.set(camp[0] + dx, camp[1] + dy, camp[2] + dz);
+            if (own != null && m.getX() == own[0] && m.getY() == own[1] && m.getZ() == own[2]) continue;
+            if (lv.isLoaded(m) && lv.getBlockState(m).is(net.minecraft.world.level.block.Blocks.CRAFTING_TABLE)) return true;
+        }
+        return false;
     }
 
     /**
@@ -732,7 +779,7 @@ public final class Clearing {
             return out;
         }
         Double dist = known == null ? null : p.getEyePosition().distanceTo(new Vec3(known[0] + 0.5, known[1] + 0.5, known[2] + 0.5));
-        int dy = known == null ? 0 : known[1] - (int) Math.floor(p.getY() + 0.01);
+        int dy = known == null ? 0 : known[1] - (int) Math.floor(p.getY() + 0.01);  // structural: epsilon: standing check
         Map<String, Integer> inv = Gui.inventory(p);
         boolean carries = inv.getOrDefault(PlaceRules.TABLE_ID, 0) > 0, wood = false;
         for (String id : inv.keySet()) wood |= PlaceRules.wood(id);
@@ -793,12 +840,12 @@ public final class Clearing {
         return false;
     }
 
-    /** T3: with the fence on, stand spots and drops only inside an area of this dimension (the guard's policy, read live); else null. */
+    /** T3: with the fence on, stand spots and drops only where the policy allows (no keep-out / no-break box, read live); else null. */
     static ClearJob.StandCheck standCheck(Commands c) {
         if (!c.fenceOn()) return null;
         String dim = Minecraft.getInstance().level != null ? Storage.dim() : "minecraft:overworld";
         GuardCore g = Core.INSTANCE.guard.core;
-        return (x, y, z) -> g.policy().areaAt(dim, x, y, z) != null;
+        return (x, y, z) -> GuardCore.cellLeasable(g.policy(), dim, x, y, z);
     }
 
     /** T2: the guard's box rules would let a place lease cover this cell (strict mode; log mode: always). */
@@ -810,7 +857,7 @@ public final class Clearing {
     }
 
     /**
-     * B7e F: a floor cell or a cave step the fill may place: inside an area and outside protect boxes in every guard mode
+     * B7e F: a floor cell or a cave step the fill may place: outside keep-out / no-break boxes in every guard mode
      * (log mode only records, so this is the fill's own fence).
      */
     static boolean floorCellAllowed(Pos c) {
@@ -821,7 +868,7 @@ public final class Clearing {
 
     /** The pickup only takes the table it put down (the place step armed it) and only while it is still a crafting table. */
     static boolean tablePickupWanted(Seq.Step st, LocalPlayer p) {
-        return st.pos != null && PlaceRules.pickupMayBreak(armedPickup(st), blockId(st.pos));
+        return st.pos != null && PlaceRules.pickupMayBreak(armedPickup(st), blockId(st.pos), PlaceRules.pickupBlock(st.id));
     }
 
     /**
@@ -829,23 +876,17 @@ public final class Clearing {
      * or already open: it was broken and the drop is being picked up), else why it is dropped.
      */
     static String pickupLost(Seq.Step st) {
-        if (!armedPickup(st)) return "no crafting table of mine to pick up at " + Jobs.fmt(st.pos);
+        String want = PlaceRules.pickupBlock(st.id), name = PlaceRules.pickupName(want);
+        if (!armedPickup(st)) return "no " + name + " of mine to pick up at " + Jobs.fmt(st.pos);
         String id = blockId(st.pos);
-        if (id == null || PlaceRules.TABLE_ID.equals(id)) return null;
+        if (id == null || want.equals(id)) return null;
         var level = Minecraft.getInstance().level;
         if (level.getBlockState(new BlockPos(st.pos[0], st.pos[1], st.pos[2])).isAir()) return null;
-        return "the block at " + Jobs.fmt(st.pos) + " is " + id + " now, not my crafting table - left it alone";
+        return "the block at " + Jobs.fmt(st.pos) + " is " + id + " now, not my " + name + " - left it alone";
     }
 
     /** The bag is full: the base chests (or the clear's dump chests), valuables kept when collecting. */
     private static String depositTrip(Seq seq, Seq.Step st, ClearState s, McBody body, LocalPlayer p, ClearRun.Out out) {
-        if (s.job.junkDrop) {
-            // B7e F: far from the base: throw the plain junk away here and dig on (no /home trip)
-            splice(seq, s, List.of(FloorSteps.junkStep(s.job, s.start)), "deposit");
-            s.run.tripStarted(ClearRun.Kind.DEPOSIT);
-            LOG.info("[entropybot] clear: inventory full, throwing junk blocks away");
-            return "wait";
-        }
         List<Seq.Step> steps = depositSteps(seq.storage, p, s.job);
         if (steps == null) {
             s.run.depositNotStarted();
@@ -936,7 +977,7 @@ public final class Clearing {
     static boolean holdItem(LocalPlayer p, String id) {
         var inv = p.getInventory();
         if (Gui.itemId(inv.getItem(inv.selected)).equals(id)) return true;
-        for (int i = 0; i < 36; i++) {
+        for (int i = 0; i < 36; i++) {  // game fact: the player inventory has 36 slots (hotbar is slots 0-8)
             if (inv.getItem(i).isEmpty() || !Gui.itemId(inv.getItem(i)).equals(id)) continue;
             Hotbar.toHand(Minecraft.getInstance(), p, i);
             return true;
@@ -951,39 +992,27 @@ public final class Clearing {
             if (rl == null) return true;
             return net.minecraft.core.registries.BuiltInRegistries.ITEM.get(rl) instanceof net.minecraft.world.item.BlockItem;
         } catch (RuntimeException e) {
+            Quiet.warn("Clearing.isBlockItem failed, carrying on with the fallback", e);
             return true;
         }
     }
 
     /**
-     * placeAt: puts block item {@code id} into the empty cell x y z by clicking a solid neighbour (the floor first,
-     * then the walls, then the ceiling), never a chest or a table. The place lease covers what the guard checks (T1:
+     * placeAt: puts block item {@code id} into the empty cell x y z through Baritone's builder (a one-block schematic;
+     * Baritone picks the stand spot, the face and the click). The place lease covers what the guard checks (T1:
      * the cell; for a bucket also the clicked block) and goes into {@code leases} (once per box). "ok: ..." or "error: ...".
      */
     public static String placeAt(LocalPlayer p, String id, int x, int y, int z, LeaseSet leases) {
         return placeAt(p, id, x, y, z, leases, null);
     }
 
-    /** As above; seal: the dig box a water seal belongs to (its lease may lie just outside the areas, LeaseSet.sealLease). */
+    /** As above; seal: the dig box a water seal belongs to (its seal lease, LeaseSet.sealLease). */
     static String placeAt(LocalPlayer p, String id, int x, int y, int z, LeaseSet leases, ClearBox seal) {
         return placeAt(p, id, x, y, z, leases, seal, false);
     }
 
     /** restore (P1): the cell is one the bot broke itself; its lease is LeaseSet.restoreLease (any mode, never a protect box). */
     static String placeAt(LocalPlayer p, String id, int x, int y, int z, LeaseSet leases, ClearBox seal, boolean restore) {
-        return placeAt(p, id, x, y, z, leases, seal, restore, null);
-    }
-
-    /**
-     * 0.30.2 (package 5): place against the given neighbour (side: the offset from the cell to the clicked block; the
-     * clicked face is side.face(), the anchor's face that borders the cell, so the block goes into x y z). The lease
-     * logic is placeAt's. The anchor must still be clickable and its face in reach.
-     */
-    public static String placeAgainst(LocalPlayer p, String id, int x, int y, int z, PlaceRules.Side side, LeaseSet leases) {
-        return placeAt(p, id, x, y, z, leases, null, false, side);
-    }
-
-    private static String placeAt(LocalPlayer p, String id, int x, int y, int z, LeaseSet leases, ClearBox seal, boolean restore, PlaceRules.Side forced) {
         Minecraft mc = Minecraft.getInstance();
         BlockPos pos = new BlockPos(x, y, z);
         BlockState target = mc.level.getBlockState(pos);
@@ -992,42 +1021,43 @@ public final class Clearing {
         }
         String inWay = entityInWay(p, x, y, z);
         if (inWay != null) return inWay;
-        LiveWorld w = new LiveWorld();
-        w.set(p);
-        PlaceRules.Side s = forced == null ? PlaceRules.placeSide(w, x, y, z, p.getX(), p.getEyeY(), p.getZ())
-                : PlaceRules.clickable(w, x + forced.dx(), y + forced.dy(), z + forced.dz())
-                        && io.github.mojolowjo.entropybot.clear.RimPlan.clickableFrom(w, new Pos(x, y, z), forced, p.getX(), p.getEyeY(), p.getZ())
-                        ? forced : null;
-        if (s == null) return "error: nothing in reach to place " + GuiCore.shortId(id) + " against at " + x + " " + y + " " + z;
-        // T1: lease only what the guard checks for this item (a block item: the cell; a bucket: the clicked block too)
+        // builder placements: the block items only (the builder places blocks; a bucket / seed / hoe is a click)
+        if (!isBlockItem(id)) return "error: " + GuiCore.shortId(id) + " is not a block: the builder can't place it at " + x + " " + y + " " + z;
+        // T1: lease the cell the guard checks
         String le = restore ? leases.restoreLease(x, y, z, "putting back " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z))
-                : seal != null && isBlockItem(id)
+                : seal != null
                 ? leases.sealLease(x, y, z, seal, "sealing water with " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z))
-                : leases.placeLease(PlaceRules.placeLeaseBox(x, y, z, s, isBlockItem(id)), "placing " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z));
+                : leases.placeLease(PlaceRules.placeLeaseBox(x, y, z), "placing " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z));
         if (le != null) return le;
-        if (!holdItem(p, id)) return "error: I have no " + GuiCore.shortId(id);
-        Vec3 hit = new Vec3(x + 0.5 + s.dx() * 0.5, y + 0.5 + s.dy() * 0.5, z + 0.5 + s.dz() * 0.5);
-        try { p.lookAt(EntityAnchorArgument.Anchor.EYES, hit); } catch (RuntimeException ignored) {}
-        InteractionResult r = mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND,
-                new BlockHitResult(hit, McClearWorld.direction(s.face()), pos.offset(s.dx(), s.dy(), s.dz()), false));
-        p.swing(InteractionHand.MAIN_HAND);
-        // 0.23.1: the game refusing the placement (no room for a bed's other half, the guard) is an error, not "ok: FAIL"
-        if (r == InteractionResult.FAIL) return "error: the game refused placing " + GuiCore.shortId(id) + " at " + x + " " + y + " " + z + " (no room for it, or the guard said no)";
-        // 0.33.0 (A3): a station I place is noted as mine (ledger "built: station"), so I may pick it up again later
-        if (r.consumesAction() && !restore && io.github.mojolowjo.entropybot.clear.OwnStations.station(id)) {
+        if (Gui.inventory(p).getOrDefault(id, 0) <= 0) return "error: I have no " + GuiCore.shortId(id) + " in the bag";
+        // builder placements ("Baritone decides where to stand, where to look and what to click"): a one-block schematic
+        // for Baritone's BuilderProcess (fork buildLeg); the guard checks its click in useItemOn as before.
+        // Asynchronous: "ok: placing" while it runs (callers check the cell later, Clearing.placing holds their tries),
+        // "error: gave up at <stage>: <why>; guard ..." once when Baritone failed.
+        boolean station = !restore && io.github.mojolowjo.entropybot.clear.OwnStations.station(id);
+        Runnable noted = !station ? null : () -> {
+            // 0.33.0 (A3): a station I place is noted as mine (ledger "built: station"), so I may pick it up again later
             try {
                 RestoreLive.INSTANCE.noteBuilt(java.util.List.of(new int[]{x, y, z}), id, "built: station");
             } catch (RuntimeException e) {
                 LOG.warn("[entropybot] place: couldn't note {} at {} {} {} as mine: {}", id, x, y, z, e.toString());
             }
-        }
-        return "ok: " + r;
+        };
+        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().build(new int[]{x, y, z}, id, (int) (20 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("hands.buildS")), "placing " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z), noted);
+        // 0.23.1: the game refusing the placement (no room for a bed's other half, the guard) is an error, not "ok: FAIL"
+        if (r.failed()) return "error: the game refused placing " + GuiCore.shortId(id) + " at " + x + " " + y + " " + z + " (" + r.why() + ")";
+        return r.done() ? "ok: placed" : "ok: placing (" + r.why() + ")";
+    }
+
+    /** Backbone step 3: Baritone is still placing into / breaking cell x y z for a job (a check must not count a try yet). */
+    public static boolean placing(int x, int y, int z) {
+        return io.github.mojolowjo.entropybot.aa.moves.JobHands.get().busy(x, y, z);
     }
 
     /**
      * 0.30.7 (live, shed3: the bot's corpse in the furnace cell, three "the game refused" tries): the first entity that
      * blocks building in cell x y z (not the bot, not item drops), as PlaceRules.entityText; null when free. Vanilla:
-     * Level.getEntities(Entity, AABB), Entity.blocksBuilding, BuiltInRegistries.ENTITY_TYPE (loader-neutral); the
+     * Level.getEntities(Entity, AABB), Entity.blocksBuilding, net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE (loader-neutral); the
      * corpse's owner via Storage.ownsCorpse (reflection on the Corpse mod).
      */
     /** 0.30.7 (review): the entity entityInWay named last (game thread only), and the corpse it logged last. */
@@ -1095,17 +1125,44 @@ public final class Clearing {
         return r;
     }
 
+    /** 0.39.p3 (table placement probe): one line per place tick; off by default (the system property turns it on). */
+    static boolean placeDebug = Boolean.getBoolean("entropybot.placeDebug");
+    private static String lastPlaceBlock;
+
+    private static void placeDebugLine(PlaceState ps, int[] pos, LocalPlayer p) {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            BlockPos cell = new BlockPos(pos[0], pos[1], pos[2]);
+            String here = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(cell).getBlock()).getPath();
+            String vanished = lastPlaceBlock != null && !lastPlaceBlock.equals(here) ? " (was " + lastPlaceBlock + ")" : "";
+            lastPlaceBlock = here;
+            String face = "feet " + Jobs.fmt(Jobs.here(p)) + String.format(" look %.0f/%.0f", p.getYRot(), p.getXRot());
+            var b = Jobs.baritone();
+            String proc = b == null ? "-" : b.getPathingControlManager().mostRecentInControl().map(x -> x.displayName()).orElse("none");
+            LOG.info("[entropybot] place debug: stage {} try {} cell {} = {}{} face {} | slot {} {} | crosshair {} | baritone {} busy {} | last {}",
+                    ps.stage, ps.tries, Jobs.fmt(pos), here, vanished, face, p.getInventory().selected,
+                    net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(p.getMainHandItem().getItem()).getPath(),
+                    mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult h && h.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK
+                            ? Jobs.fmt(new int[]{h.getBlockPos().getX(), h.getBlockPos().getY(), h.getBlockPos().getZ()}) + " " + h.getDirection().getName() : "none",
+                    proc, placing(pos[0], pos[1], pos[2]), io.github.mojolowjo.entropybot.aa.moves.JobHands.get().lastFailure(pos[0], pos[1], pos[2]));
+        } catch (RuntimeException e) {
+            LOG.info("[entropybot] place debug: {}", e.toString());
+        }
+    }
+
     private static String placeTick(Seq seq, Seq.Step st, PlaceState ps, LocalPlayer p, String id, String sid, long elapsed) {
         int[] pos = st.pos;
         long now = seq.now();
+        if (placeDebug) placeDebugLine(ps, pos, p);
         if (isThere(pos, id)) {
             if (ps.pickup != null) {
                 // B7d review 4b: armed only after our own click on a free cell, with exactly a crafting table there now
-                if (PlaceRules.armsTable(ps.clicked, blockId(pos))) {
+                String what = PlaceRules.pickupName(PlaceRules.pickupBlock(ps.pickup.id));
+                if (PlaceRules.armsStation(ps.clicked, blockId(pos), PlaceRules.pickupBlock(ps.pickup.id))) {
                     ps.pickup.got = KIND_PLACED_TABLE;      // it went down: the pickup may take it
-                    LOG.info("[entropybot] place: my crafting table is down at {}", Jobs.fmt(pos));
+                    LOG.info("[entropybot] place: my {} is down at {}", what, Jobs.fmt(pos));
                 } else {
-                    LOG.info("[entropybot] place: a table at {} I didn't just put down - I won't pick it up", Jobs.fmt(pos));
+                    LOG.info("[entropybot] place: a {} at {} I didn't just put down - I won't pick it up", what, Jobs.fmt(pos));
                 }
             }
             return "next";
@@ -1113,43 +1170,21 @@ public final class Clearing {
         if (ps.stage == null) {
             ps.tries = 0;
             if (Gui.inventory(p).getOrDefault(id, 0) <= 0) return ps.optional ? "next" : "I have no " + sid + " to place";
-            IBaritone b = Jobs.baritone();
-            int[] stand = ps.from;
-            if (stand == null) {
-                LiveWorld w = new LiveWorld();
-                w.set(p);
-                if (PlaceRules.placeSide(w, pos[0], pos[1], pos[2], p.getX(), p.getEyeY(), p.getZ()) == null) {
-                    var spot = PlaceRules.standFor(w, new Pos(pos[0], pos[1], pos[2]), McClearWorld.botOf(p), standCheck(seq.jobs.core().commands));
-                    if (spot == null) return ps.optional ? "next" : "nowhere to stand within reach of " + Jobs.fmt(pos) + " to place the " + sid;
-                    stand = new int[]{spot.x(), spot.y(), spot.z()};
-                }
-            }
-            if (stand != null && b != null) {
-                String fence = seq.jobs.goalAllowed(stand[0], stand[1], stand[2]);
-                if (fence != null) return Jobs.withAreaHint(fence + " (" + Jobs.fmt(stand) + ")");
-                Jobs.safeSettings();
-                b.getCustomGoalProcess().setGoalAndPath(new GoalBlock(new BlockPos(stand[0], stand[1], stand[2])));
-                ps.stage = "walking";
-                ps.stageTick = now;
-                seq.setStatus(seq.label + " - going to place a " + sid);
-                return "wait";
-            }
-            ps.stage = "place";
-        }
-        if (ps.stage.equals("walking")) {
-            if (now - ps.stageTick < 20) return "wait";
-            IBaritone b = Jobs.baritone();
-            if (b != null && !Jobs.idle(b)) return now - ps.stageTick > 20 * 60 ? "took too long walking to place the " + sid + " at " + Jobs.fmt(pos) : "wait";
+            // builder placements: Baritone's builder walks to a spot of its own choosing; the cell must be one I may go near
+            String fence = seq.jobs.walkVerdict(pos[0], pos[1], pos[2]);
+            if (fence != null) return Jobs.withAreaHint(fence + " (" + Jobs.fmt(pos) + ")");
+            Jobs.safeSettings();
+            seq.setStatus(seq.label + " - placing a " + sid);
             ps.stage = "place";
         }
         if (ps.stage.equals("retry")) {
-            if (now - ps.stageTick < 10) return "wait";
+            if (now - ps.stageTick < Tuning.i("clearing.stageWaitTicks")) return "wait";
             ps.stage = "place";
         }
         if (ps.stage.equals("place")) {
             // 4b: only a click into a cell that was free just before it makes the block ours
             boolean freeBefore = Minecraft.getInstance().level.getBlockState(new BlockPos(pos[0], pos[1], pos[2])).canBeReplaced();
-            String r = placeAt(p, id, pos[0], pos[1], pos[2], ps.leases, ps.seal);
+            String r = placeAt(p, id, pos[0], pos[1], pos[2], ps.leases, null);
             // 28c: a later try finding the block already there (it showed up after the 6-tick wait) must not undo our first click
             ps.clicked = ps.clicked || PlaceRules.ourClick(freeBefore, r);
             if (!r.endsWith("(waiting)")) ps.mobSince = -1;          // review: the wait is per entity in the way, from its first sight
@@ -1163,7 +1198,7 @@ public final class Clearing {
                         if (ps.mobSince < 0 || who != null && !who.equals(ps.mobId)) {
                             ps.mobSince = now;
                             ps.mobId = who;
-                            LOG.info("[entropybot] place: {} - waiting up to {} s", r, PlaceRules.waitTicks(r) / 20);
+                            LOG.info("[entropybot] place: {} - waiting up to {} s", r, PlaceRules.waitTicks(r) / 20);  // game fact: 20 game ticks per second
                         }
                         if (now - ps.mobSince < PlaceRules.waitTicks(r)) {
                             seq.setStatus(seq.label + " - " + r.replaceFirst("^error: ", ""));
@@ -1175,19 +1210,9 @@ public final class Clearing {
                     }
                     return ps.optional ? "next" : "couldn't place the " + sid + " at " + Jobs.fmt(pos) + ": " + r.replaceFirst("^error: ", "");
                 }
-                // 0.30.6 (live, shed2: "place chest" right after the door dig, the bot still outside): nothing in reach
-                // from where the walk ended (or from where the bot stood when the step began and then moved on): walk to
-                // a stand spot picked afresh, once, before the three tries count
-                if (r.contains("nothing in reach") && ps.walks < 1) {
-                    ps.walks++;
-                    ps.stage = null;
-                    ps.from = null;
-                    LOG.info("[entropybot] place: {} at {} - nothing in reach from {}: walking to a stand spot", sid, Jobs.fmt(pos), Jobs.fmt(Jobs.here(p)));
-                    return "wait";
-                }
                 // a placement that fails 3 times ends the step and says why (it never stands there for good)
                 ps.tries++;
-                if (ps.tries >= 3) return ps.optional ? "next" : "couldn't place the " + sid + " at " + Jobs.fmt(pos) + ": " + r.replaceFirst("^error: ", "");
+                if (ps.tries >= Tuning.i("clearing.placeTries")) return ps.optional ? "next" : "couldn't place the " + sid + " at " + Jobs.fmt(pos) + ": " + r.replaceFirst("^error: ", "");
                 ps.stage = "retry";
                 ps.stageTick = now;
                 return "wait";
@@ -1196,10 +1221,13 @@ public final class Clearing {
             ps.stageTick = now;
             return "wait";
         }
-        // placed blocks show up a tick or two later; try up to 3 times
-        if (now - ps.stageTick < 6) return "wait";
+        // placed blocks show up a tick or two later; try up to 3 times (backbone step 3: not while Baritone still places)
+        if (now - ps.stageTick < Tuning.i("clearing.placeWaitTicks") || placing(pos[0], pos[1], pos[2]) && now - ps.stageTick < io.github.mojolowjo.entropybot.aa.moves.JobHands.waitTicks()) return "wait";
         ps.tries++;
-        if (ps.tries >= 3) return ps.optional ? "next" : "couldn't place the " + sid + " at " + Jobs.fmt(pos) + ": it didn't stay there (3 tries)";
+        if (ps.tries >= Tuning.i("clearing.placeTries")) {
+            String last = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().lastFailure(pos[0], pos[1], pos[2]);
+            return ps.optional ? "next" : "couldn't place the " + sid + " at " + Jobs.fmt(pos) + ": it didn't stay there (3 tries)" + (last == null ? "" : "; Baritone: " + last);
+        }
         ps.stage = "place";
         return "wait";
     }
@@ -1211,7 +1239,7 @@ public final class Clearing {
         if (!(st.state instanceof BuildState bs)) return "the build was not set up";
         if (bs.done) return "next";
         long now = seq.now();
-        if (now % 20 == 0) bs.leases.beat();
+        if (now % 20 == 0) bs.leases.beat();  // structural: periodic cadence in ticks (20 ticks = 1 s)
         // B7d review 7: a reflex hold longer than 100 ticks lets the guard drop the zone's place lease: take it again at
         // once (as the clear step does), or every Baritone placement after the hold is vetoed
         String le = bs.leases.ensure();
@@ -1221,13 +1249,13 @@ public final class Clearing {
             return "wait";
         }
         if (bs.rim) return rimTick(seq, bs, p, now);
-        if (now - bs.start < 60 || now % 20 != 0) return "wait";
+        if (now - bs.start < Tuning.i("clearing.startWaitTicks") || now % 20 != 0) return "wait";
         IBaritone b = Jobs.baritone();
         // 0.30.1: the dig step's watch: no cell placed for 60 s, or the builder paused itself = Baritone's part is over
         LiveWorld w = new LiveWorld();
         w.set(p);
         int miss = io.github.mojolowjo.entropybot.clear.RimPlan.missing(w, bs.cells).size();
-        if (!bs.clockOn && (miss < bs.lastMissing || bs.box == null || bs.box.distTo(p.getX(), p.getY(), p.getZ()) <= 8)) {
+        if (!bs.clockOn && (miss < bs.lastMissing || bs.box == null || bs.box.distTo(p.getX(), p.getY(), p.getZ()) <= Tuning.i("clearing.nearBox"))) {
             bs.clockOn = true;
             bs.lastChange = now;
         }
@@ -1247,7 +1275,7 @@ public final class Clearing {
         if (e == null && b != null && bs.clockOn) {
             try {
                 var pb = b.getPathingBehavior();
-                if (b.getBuilderProcess().isActive() && !pb.isPathing() && pb.getGoal() != null && now - bs.stillSince >= 200) {
+                if (b.getBuilderProcess().isActive() && !pb.isPathing() && pb.getGoal() != null && now - bs.stillSince >= Tuning.i("clearing.stillTicks")) {
                     LOG.info("[entropybot] build: Baritone has goals but no path and I stood still 10 s - placing the rest myself");
                     e = io.github.mojolowjo.entropybot.clear.BuilderReport.End.STALLED;
                 }
@@ -1270,7 +1298,7 @@ public final class Clearing {
         IBaritone b = Jobs.baritone();
         if (b != null) {
             Jobs.cancel(b);
-            try { b.getCommandManager().execute("sel clear"); } catch (Throwable ignored) {}
+            try { b.getCommandManager().execute("sel clear"); } catch (Throwable caught) { Quiet.warn("Clearing.stopBuilderPart failed, carrying on with the fallback", caught); }
         }
         Jobs.safeSettings();
         restoreLook(bs);
@@ -1294,14 +1322,14 @@ public final class Clearing {
     }
 
     /** 0.30.4 (live: the bot left on a wall top 4 above the floor, Baritone's limit 3): a build may drop 4 (half a heart). */
-    static final int BUILD_FALL = 4;
+    static int buildFall() { return Tuning.i("clearing.buildFall"); }
 
     static void fallOn(BuildState bs) {
         try {
             baritone.api.Settings s = BaritoneAPI.getSettings();
             if (bs.savedFall == null) bs.savedFall = s.maxFallHeightNoWater.value;
             if (FALL_BASE == null) FALL_BASE = bs.savedFall;
-            s.maxFallHeightNoWater.value = Math.max(bs.savedFall, BUILD_FALL);
+            s.maxFallHeightNoWater.value = Math.max(bs.savedFall, buildFall());
         } catch (Throwable t) {
             LOG.warn("[entropybot] build: couldn't raise the fall height: {}", t.toString());
         }
@@ -1354,7 +1382,7 @@ public final class Clearing {
     private static String rimTick(Seq seq, BuildState bs, LocalPlayer p, long now) {
         LiveWorld w = new LiveWorld();
         w.set(p);
-        boolean recount = bs.missing == null || bs.stage.equals("pick") || bs.stage.equals("check") || now - bs.missingAt >= 20;
+        boolean recount = bs.missing == null || bs.stage.equals("pick") || bs.stage.equals("check") || now - bs.missingAt >= Tuning.i("clearing.recountTicks");
         if (recount) {
             bs.missing = io.github.mojolowjo.entropybot.clear.RimPlan.missing(w, bs.cells);
             bs.missingAt = now;
@@ -1365,7 +1393,7 @@ public final class Clearing {
         int baritonePlaced = Math.max(0, bs.startMissing - missing.size() - bs.mine);
         if (missing.isEmpty()) return rimEnd(seq, bs, io.github.mojolowjo.entropybot.clear.RimPlan.doneText(bs.shape, blk, baritonePlaced, bs.mine));
         // review 3: 90 s without a placement of mine ends it, in every stage (a walk that never ends too)
-        if (now - bs.layerStart > io.github.mojolowjo.entropybot.clear.RimPlan.LAYER_CAP_TICKS) {
+        if (now - bs.layerStart > io.github.mojolowjo.entropybot.clear.RimPlan.layerCapTicks()) {
             IBaritone wb = Jobs.baritone();
             if (wb != null && !Jobs.idle(wb)) Jobs.cancel(wb);
             return rimStop(seq, bs, w, missing, baritonePlaced, null);
@@ -1396,31 +1424,8 @@ public final class Clearing {
                     return "wait";
                 }
                 seq.setStatus(bs.status + " - placing the rest myself (" + missing.size() + " left)");
-                // 0.31.0: the pick in the log (cell, stance, face, from where), for "nowhere to stand" reports
-                LOG.info("[entropybot] build rim: pick {} stand {} side {} (try {}) from {} {} {}", pk.cell().key(), pk.stand() == null ? "here" : pk.stand().key(),
-                        pk.side(), bs.tries.getOrDefault(pk.cell(), 0) + 1, String.format("%.1f", p.getX()), String.format("%.1f", p.getY()), String.format("%.1f", p.getZ()));
-                if (pk.stand() == null) {
-                    bs.stage = "place";
-                    return "wait";
-                }
-                Pos s = pk.stand();
-                String fence = seq.jobs.goalAllowed(s.x(), s.y(), s.z());
-                IBaritone b = Jobs.baritone();
-                if (fence != null || b == null) {
-                    giveUpCell(bs, pk.cell(), io.github.mojolowjo.entropybot.clear.RimPlan.Why.NO_STAND);
-                    return "wait";
-                }
-                Jobs.safeSettings();
-                b.getCustomGoalProcess().setGoalAndPath(new GoalBlock(new BlockPos(s.x(), s.y(), s.z())));
-                bs.stage = "walking";
-                bs.stageTick = now;
-                return "wait";
-            }
-            case "walking" -> {
-                if (now - bs.stageTick < 20) return "wait";
-                IBaritone b = Jobs.baritone();
-                if (b != null && !Jobs.idle(b) && now - bs.stageTick < 30 * 20) return "wait";
-                if (b != null && !Jobs.idle(b)) Jobs.cancel(b);
+                // builder placements: the cell only; Baritone's builder walks to its own spot and face
+                LOG.info("[entropybot] build rim: pick {} (try {})", pk.cell().key(), bs.tries.getOrDefault(pk.cell(), 0) + 1);
                 bs.stage = "place";
                 return "wait";
             }
@@ -1431,16 +1436,13 @@ public final class Clearing {
                     return "wait";
                 }
                 String r;
-                try {
+                // step 3 review 6: a cover in the cell (snow layer, grass) goes first, before any click (the click is Baritone's and slow)
+                boolean coverFirst = !bs.clearing && !w.air(c.x(), c.y(), c.z()) && io.github.mojolowjo.entropybot.clear.RimPlan.replaceable(w, c.x(), c.y(), c.z());
+                if (coverFirst) r = "error: a cover in the cell";
+                else try {
                     String pid = bs.placeId != null ? bs.placeId : bs.id;
-                    // the side stance clicks its anchor's face (seen from the feet cell); the top stance lets placeAt pick
-                    PlaceRules.Side side = bs.pick.side();
-                    if (side != null) {
-                        PlaceRules.Side seen = io.github.mojolowjo.entropybot.clear.RimPlan.seenFrom(w, c, p.getX(), p.getEyeY(), p.getZ());
-                        if (seen != null) side = seen;
-                    }
-                    r = side != null ? placeAgainst(p, pid, c.x(), c.y(), c.z(), side, bs.leases)
-                            : placeAt(p, pid, c.x(), c.y(), c.z(), bs.leases);
+                    // builder placements: Baritone's builder picks the face (and the spot) for the rim cell too
+                    r = placeAt(p, pid, c.x(), c.y(), c.z(), bs.leases);
                 } catch (RuntimeException ex) {
                     r = "error: " + ex;
                 }
@@ -1478,26 +1480,25 @@ public final class Clearing {
             case "clearcell" -> {
                 Pos c = bs.pick.cell();
                 Minecraft mc = Minecraft.getInstance();
-                if (w.air(c.x(), c.y(), c.z()) || now - bs.stageTick > 5 * 20) {   // gone (or 5 s): place again
-                    try { mc.gameMode.stopDestroyBlock(); } catch (RuntimeException ignored) {}
+                var hands = io.github.mojolowjo.entropybot.aa.moves.JobHands.get();
+                if (w.air(c.x(), c.y(), c.z()) || now - bs.stageTick > Tuning.i("clearing.placeAgainS") * 20) {   // gone (or 5 s): place again
+                    hands.stop("the cell is clear");
                     bs.stage = "place";
                     return "wait";
                 }
-                BlockPos bp = new BlockPos(c.x(), c.y(), c.z());
-                Vec3 centre = Vec3.atCenterOf(bp);
-                try { p.lookAt(EntityAnchorArgument.Anchor.EYES, centre); } catch (RuntimeException ignored) {}
-                Vec3 eye = p.getEyePosition();
-                net.minecraft.core.Direction face = net.minecraft.core.Direction.getNearest((float) (eye.x - centre.x), (float) (eye.y - centre.y), (float) (eye.z - centre.z));
-                if (!bs.clearStarted) {
-                    mc.gameMode.startDestroyBlock(bp, face);
-                    bs.clearStarted = true;
-                } else mc.gameMode.continueDestroyBlock(bp, face);
-                p.swing(InteractionHand.MAIN_HAND);
+                // backbone step 3 ("Baritone is the car"): Baritone's look and click break what is in the cell
+                bs.clearStarted = true;
+                var hr = hands.dig(new int[]{c.x(), c.y(), c.z()}, Tuning.i("clearing.digS") * 20, "clearing " + c.key() + " for " + blk);
+                if (hr.failed()) {
+                    LOG.info("[entropybot] build rim: clearing {} for {}: {} - placing again", c.key(), blk, hr.why());
+                    bs.stage = "place";
+                }
                 return "wait";
             }
             default -> {                                            // check: placed blocks show up a tick or two later
-                if (now - bs.stageTick < 6) return "wait";
+                if (now - bs.stageTick < Tuning.i("clearing.placeWaitTicks")) return "wait";
                 Pos c = bs.pick.cell();
+                if (placing(c.x(), c.y(), c.z()) && now - bs.stageTick < 20 * Tuning.i("clearing.baritonePlaceS")) return "wait";       // backbone step 3: Baritone still places
                 if (PlaceRules.free(w, c.x(), c.y(), c.z())) triedCell(bs, c, io.github.mojolowjo.entropybot.clear.RimPlan.Why.TRIES);
                 else {
                     if (!bs.pick.filler()) bs.mine++;
@@ -1515,7 +1516,7 @@ public final class Clearing {
     }
 
     private static void giveUpCell(BuildState bs, Pos c, io.github.mojolowjo.entropybot.clear.RimPlan.Why why) {
-        bs.tries.put(c, io.github.mojolowjo.entropybot.clear.RimPlan.MAX_TRIES);
+        bs.tries.put(c, io.github.mojolowjo.entropybot.clear.RimPlan.maxTries());
         bs.gaveUp.put(c, why);
     }
 
@@ -1533,7 +1534,7 @@ public final class Clearing {
 
     private static String rimEnd(Seq seq, BuildState bs, String text) {
         if (bs.clearing) {                                   // review a: never leave a half-broken cover clicked
-            try { Minecraft.getInstance().gameMode.stopDestroyBlock(); } catch (RuntimeException ignored) {}
+            try { Minecraft.getInstance().gameMode.stopDestroyBlock(); } catch (RuntimeException caught) { Quiet.warn("Clearing.rimEnd failed, carrying on with the fallback", caught); }
             bs.clearing = false;
         }
         endBuild(bs);
@@ -1543,13 +1544,14 @@ public final class Clearing {
 
     static void endBuild(BuildState bs) {
         bs.done = true;
+        if (bs.schem instanceof SchematicBuild.Run sr) sr.restore();
         restoreLook(bs);
         fallOff(bs);
         placingOwned = false;
         IBaritone b = Jobs.baritone();
         if (b != null) {
             Jobs.cancel(b);
-            try { b.getCommandManager().execute("sel clear"); } catch (Throwable ignored) {}
+            try { b.getCommandManager().execute("sel clear"); } catch (Throwable caught) { Quiet.warn("Clearing.endBuild failed, carrying on with the fallback", caught); }
         }
         Jobs.safeSettings();
         // B7d review: the build's own settings back too (the bridge's restoreSafeSettings reset all four)
@@ -1557,7 +1559,7 @@ public final class Clearing {
             baritone.api.Settings s = BaritoneAPI.getSettings();
             s.allowInventory.value = false;
             s.buildIgnoreExisting.value = false;
-        } catch (Throwable ignored) {}
+        } catch (Throwable caught) { Quiet.warn("Clearing.endBuild failed, carrying on with the fallback", caught); }
         bs.leases.releaseAll();
     }
 
@@ -1595,7 +1597,7 @@ public final class Clearing {
         }
 
         @Override public boolean hasPickaxe() {
-            for (int i = 0; i < 36; i++) {
+            for (int i = 0; i < 36; i++) {  // game fact: the player inventory has 36 slots (hotbar is slots 0-8)
                 if (!p.getInventory().getItem(i).isEmpty() && Tools.isPickaxe(Gui.itemId(p.getInventory().getItem(i)))) return true;
             }
             return false;
@@ -1615,7 +1617,8 @@ public final class Clearing {
         @Override public void hit(Pos t, ClearEngine.Sight sight, boolean first) {
             IPlayerController pc = pc();
             if (pc == null) return;
-            try { p.lookAt(EntityAnchorArgument.Anchor.EYES, new Vec3(sight.x(), sight.y(), sight.z())); } catch (RuntimeException ignored) {}
+            // backbone step 3: the camera through Baritone's LookBehavior (one owner); the click below is by position
+            io.github.mojolowjo.entropybot.aa.moves.JobHands.get().look(sight.x(), sight.y(), sight.z());
             var dir = McClearWorld.direction(sight.face());
             if (first) {
                 pc.syncHeldItem();
@@ -1634,12 +1637,14 @@ public final class Clearing {
             try {
                 pc.setHittingBlock(true);
                 pc.resetBlockRemoving();
-            } catch (RuntimeException ignored) {}
+            } catch (RuntimeException caught) { Quiet.warn("Clearing.pc failed, carrying on with the fallback", caught); }
         }
 
         @Override public boolean haveTorches() { return Gui.inventory(p).getOrDefault("minecraft:torch", 0) > 0; }
 
         @Override public String placeTorch(Pos t) { return placeAt(p, "minecraft:torch", t.x(), t.y(), t.z(), s.leases); }
+
+        @Override public boolean handsBusy() { return !io.github.mojolowjo.entropybot.aa.moves.JobHands.get().idle(); }
 
         @Override public void walkBlock(int x, int y, int z) {
             IBaritone b = Jobs.baritone();
@@ -1669,13 +1674,11 @@ public final class Clearing {
             List<ClearRun.Drop> out = new ArrayList<>();
             for (Entity e : mc.level.entitiesForRendering()) {
                 if (!(e instanceof ItemEntity) || !e.isAlive()) continue;
-                int x = (int) Math.floor(e.getX()), y = (int) Math.floor(e.getY() + 0.01), z = (int) Math.floor(e.getZ());
-                // near the box, not down a hole under the walkway, and (T3) never outside the areas with the fence on
+                int x = (int) Math.floor(e.getX()), y = (int) Math.floor(e.getY() + 0.01), z = (int) Math.floor(e.getZ());  // structural: epsilon: standing check
+                // near the box, not down a hole under the walkway, and (T3) never where the policy refuses with the fence on
                 if (!job.dropWanted(x, y, z)) continue;
-                // B7e F: with "junk drop", junk drops stay where they lie (but the floor's block while it has few)
-                if (job.junkDrop && !io.github.mojolowjo.entropybot.clear.JunkDrop.chase(Gui.itemId(((ItemEntity) e).getItem()), job, inv(), x, y, z, seq.now())) continue;
                 double d = e.distanceTo(p);
-                if (d > 1.2 && d < 8) out.add(new ClearRun.Drop(String.valueOf(e.getId()), x, y, z, d));
+                if (d > Tuning.get("clearing.dropMin") && d < Tuning.i("clearing.dropMax")) out.add(new ClearRun.Drop(String.valueOf(e.getId()), x, y, z, d));
             }
             out.sort((a, b) -> Double.compare(a.d(), b.d()));
             return out;
@@ -1693,6 +1696,7 @@ public final class Clearing {
                 Entity e = mc.level.getEntity(Integer.parseInt(d.id()));
                 return e instanceof ItemEntity ie ? ie : null;
             } catch (RuntimeException ex) {
+            Quiet.warn("Clearing.drop failed, carrying on with the fallback", ex);
                 return null;
             }
         }
@@ -1732,13 +1736,9 @@ public final class Clearing {
         @Override public void log(String text) { LOG.info("[entropybot] clear: {}", text); }
     }
 
-    /** The dimension check for a box the verbs are given: the guard's notion of "inside one of my areas" (x/z). */
-    static boolean boxInAreas(ClearBox b) {
+    /** The dimension check for a box the verbs are given: AREAS, the box touches no keep-out / no-break area (x/z/y). */
+    static boolean boxAllowed(ClearBox b) {
         var pol = Core.INSTANCE.guard.core.policy();
-        String dim = Storage.dim();
-        for (var a : pol.areas) {
-            if (a.dim.equals(dim) && a.columnsInside(b.x1(), b.z1(), b.x2(), b.z2())) return true;     // a round area: its circle
-        }
-        return false;
+        return pol.safeTouching(new io.github.mojolowjo.entropybot.guard.Box("box", Storage.dim(), b.x1(), b.y1(), b.z1(), b.x2(), b.y2(), b.z2())) == null;
     }
 }

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -20,7 +22,7 @@ public final class PlaceRules {
             new Side(0, 0, 1, ClearWorld.Face.NORTH), new Side(0, 0, -1, ClearWorld.Face.SOUTH), new Side(0, 1, 0, ClearWorld.Face.DOWN));
 
     /** Reach from the eye to the clicked point (placeAt's 4.5). */
-    public static final double PLACE_REACH = 4.5;
+    public static final double PLACE_REACH = 4.5; // game fact: survival block interaction range 4.5
 
     /** A neighbour may be clicked: a full block, no block entity, nothing that opens on a click (tables, benches). */
     public static boolean clickable(ClearWorld w, int x, int y, int z) {
@@ -36,74 +38,15 @@ public final class PlaceRules {
         return w.air(x, y, z) || (w.noCollision(x, y, z) && !w.fluid(x, y, z) && !w.blockEntity(x, y, z));
     }
 
-    /** placeAt's choice: the first neighbour (in SIDES order) to click from an eye at ex ey ez, or null (nothing in reach). */
-    public static Side placeSide(ClearWorld w, int x, int y, int z, double ex, double ey, double ez) {
-        return placeSide(w, x, y, z, ex, ey, ez, PLACE_REACH);
-    }
-
-    /**
-     * 0.20.1 (C4 live test): a stand spot is chosen with this shorter reach, because Baritone ends a walk anywhere on the
-     * goal block (seen live: 0.2 off the centre), and a spot right at 4.5 then failed "nothing in reach" after the walk.
-     */
-    public static final double STAND_REACH = 4.0;
-
-    /** placeSide with the given reach. */
-    public static Side placeSide(ClearWorld w, int x, int y, int z, double ex, double ey, double ez, double reach) {
-        for (Side s : SIDES) {
-            if (!clickable(w, x + s.dx(), y + s.dy(), z + s.dz())) continue;
-            double hx = x + 0.5 + s.dx() * 0.5, hy = y + 0.5 + s.dy() * 0.5, hz = z + 0.5 + s.dz() * 0.5;
-            double dx = hx - ex, dy = hy - ey, dz = hz - ez;
-            if (dx * dx + dy * dy + dz * dz > reach * reach) continue;
-            return s;
-        }
-        return null;
-    }
-
     /** Standing with the feet at sx sy sz would put the bot's body in the cell (it can't place a block into itself). */
     public static boolean bodyIn(int sx, int sy, int sz, Pos cell) {
         return sx == cell.x() && sz == cell.z() && (sy == cell.y() || sy + 1 == cell.y());
     }
 
-    /**
-     * Where to walk so the cell can be placed: the reachable stand spot (fewest steps, ClearGrid.walkDistances) from
-     * which a neighbour is in reach, never one whose body would be in the cell; spots it can't walk to count after the
-     * others (Baritone may find a way). Null when there is none within 5 blocks.
-     */
-    public static ClearGrid.Spot standFor(ClearWorld w, Pos cell, Bot bot) {
-        return standFor(w, cell, bot, null);
-    }
-
-    /** T3: as above, only spots {@code ok} accepts (the owner's areas while the fence is on; null: any). */
-    public static ClearGrid.Spot standFor(ClearWorld w, Pos cell, Bot bot, ClearJob.StandCheck ok) {
-        ClearBox box = new ClearBox(cell.x(), cell.y(), cell.z(), cell.x(), cell.y(), cell.z());
-        ClearGrid g = ClearGrid.build(w, box, bot, null);
-        int[] dist = g.walkDistances(bot);
-        ClearGrid.Spot best = null;
-        for (int x = cell.x() - 4; x <= cell.x() + 4; x++) {
-            for (int z = cell.z() - 4; z <= cell.z() + 4; z++) {
-                for (int y = cell.y() - 4; y <= cell.y() + 3; y++) {
-                    if (bodyIn(x, y, z, cell)) continue;
-                    if (ok != null && !ok.ok(x, y, z)) continue;
-                    int i = g.idx(x, y, z);
-                    if (i < 0) continue;
-                    double cost;
-                    if (dist[i] >= 0) cost = dist[i];
-                    else if (g.stand(x, y, z)) cost = 1000 + Math.sqrt((x - bot.x()) * (x - bot.x()) + (y - bot.y()) * (y - bot.y()) + (z - bot.z()) * (z - bot.z()));
-                    else continue;
-                    if (best != null && cost >= best.cost()) continue;
-                    double ex = x + 0.5, ey = y + Bot.EYE, ez = z + 0.5;
-                    if (placeSide(w, cell.x(), cell.y(), cell.z(), ex, ey, ez, STAND_REACH) == null) continue;
-                    best = new ClearGrid.Spot(x, y, z, cost, ex, ey, ez);
-                }
-            }
-        }
-        return best;
-    }
-
     // ---- the bot's own crafting table (TO-LOOK-AT-LATER 18a) ----
 
     /** How far a table may be for the pickaxe craft to walk to it rather than put one down. */
-    public static final int TABLE_NEAR = 24;
+    public static int tableNear() { return Tuning.i("placeRules.tableNear"); }
 
     /** What to do for a pickaxe craft that needs a table. */
     public enum TableChoice {
@@ -123,7 +66,7 @@ public final class PlaceRules {
      * @param hasWood the bot carries logs or planks (4 planks make a table)
      */
     public static TableChoice tableChoice(Double tableDist, boolean carriesTable, boolean hasWood) {
-        if (tableDist != null && tableDist <= TABLE_NEAR) return TableChoice.USE_NEAR;
+        if (tableDist != null && tableDist <= tableNear()) return TableChoice.USE_NEAR;
         if (carriesTable) return TableChoice.PLACE_CARRIED;
         if (hasWood) return TableChoice.CRAFT_AND_PLACE;
         return TableChoice.WALK_FAR;
@@ -150,7 +93,7 @@ public final class PlaceRules {
      * first; ties go by the order above.
      */
     public static Pos tableSpot(ClearWorld w, Bot bot, ClearBox avoid, java.util.function.Predicate<Pos> allowed) {
-        int bx = (int) Math.floor(bot.x()), by = (int) Math.floor(bot.y() + 0.01), bz = (int) Math.floor(bot.z());
+        int bx = (int) Math.floor(bot.x()), by = (int) Math.floor(bot.y() + 0.01), bz = (int) Math.floor(bot.z());  // structural: epsilon: standing check
         int[][] offs = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 }, { 1, 1 }, { 1, -1 }, { -1, 1 }, { -1, -1 },
                 { 2, 0 }, { -2, 0 }, { 0, 2 }, { 0, -2 } };
         Pos best = null;
@@ -158,11 +101,11 @@ public final class PlaceRules {
         for (int[] o : offs) {
             int x = bx + o[0], z = bz + o[1];
             // the bot's own body: its feet cell may overlap a neighbour when it stands near an edge
-            if (Math.abs(x + 0.5 - bot.x()) < 0.8 && Math.abs(z + 0.5 - bot.z()) < 0.8) continue;
+            if (Math.abs(x + 0.5 - bot.x()) < Tuning.get("placeRules.selfClear") && Math.abs(z + 0.5 - bot.z()) < Tuning.get("placeRules.selfClear")) continue;
             if (!free(w, x, by, z) || !clickable(w, x, by - 1, z) || ClearEngine.nextToLiquid(w, x, by, z)) continue;
             Pos p = new Pos(x, by, z);
             if (allowed != null && !allowed.test(p)) continue;
-            int score = (avoid != null && avoid.contains(x, by, z) ? 10 : 0) + (3 - Math.min(3, wallSides(w, x, by, z)));
+            int score = (avoid != null && avoid.contains(x, by, z) ? Tuning.i("placeRules.avoidPenalty") : 0) + (3 - Math.min(3, wallSides(w, x, by, z)));
             if (score < bestScore) {
                 bestScore = score;
                 best = p;
@@ -194,13 +137,13 @@ public final class PlaceRules {
     public enum InWay { MY_CORPSE, MY_EMPTY_CORPSE, MOB, OTHER }
 
     /** 0.30.7: a mob in the cell is waited for this long (ticks, 10 s) before the place step gives up. */
-    public static final long MOB_WAIT_TICKS = 200;
+    public static long mobWaitTicks() { return Tuning.l("placeRules.mobWaitTicks"); }
     /** 0.30.7 (live probe): an emptied corpse the client still lists is waited for this long (90 s; it went in 10-50 s). */
-    public static final long EMPTY_CORPSE_WAIT_TICKS = 1800;
+    public static long emptyCorpseWaitTicks() { return Tuning.l("placeRules.emptyCorpseWaitTicks"); }
 
     /** 0.30.7: how long a waiting text (entityText "... (waiting)") is waited for. */
     public static long waitTicks(String entityText) {
-        return entityText != null && entityText.startsWith("error: my emptied corpse") ? EMPTY_CORPSE_WAIT_TICKS : MOB_WAIT_TICKS;
+        return entityText != null && entityText.startsWith("error: my emptied corpse") ? emptyCorpseWaitTicks() : mobWaitTicks();
     }
 
     /** 0.30.7: the kind of an entity in the way (type id like "corpse:corpse"; mine: owned by the bot; living: a mob). */
@@ -234,7 +177,7 @@ public final class PlaceRules {
 
     /** 0.30.7: the place step's end after waiting (waitTicks) for what did not move. what: "a cow". */
     public static String mobStayedText(String what, int x, int y, int z) {
-        long s = (what.startsWith("my emptied corpse") ? EMPTY_CORPSE_WAIT_TICKS : MOB_WAIT_TICKS) / 20;
+        long s = (what.startsWith("my emptied corpse") ? emptyCorpseWaitTicks() : mobWaitTicks()) / 20;  // game fact: 20 game ticks per second
         return what + " stayed in the way at " + x + " " + y + " " + z + " for " + s + " s - next: place again when it has moved";
     }
 
@@ -256,6 +199,34 @@ public final class PlaceRules {
         return armed && TABLE_ID.equals(id);
     }
 
+    /** The only block the furnace pickup ever breaks (a furnace "smelt ... here" put down itself). */
+    public static final String FURNACE_ID = "minecraft:furnace";
+
+    /** The label of the clear that takes my own furnace back. */
+    public static String furnacePickupLabel(Pos p) {
+        return "picking up my furnace at " + p.key();
+    }
+
+    /** The pickup block of a pickup step: its own id, the crafting table when none is set. */
+    public static String pickupBlock(String stepId) {
+        return stepId != null ? stepId : TABLE_ID;
+    }
+
+    /** "crafting table" / "furnace": what a pickup of this block id is called in notes. */
+    public static String pickupName(String blockId) {
+        return FURNACE_ID.equals(blockId) ? "furnace" : "crafting table";
+    }
+
+    /** Like {@link #armsTable} for any station: our own click on a free cell, exactly the expected block there afterwards. */
+    public static boolean armsStation(boolean ourClick, String idAfter, String expected) {
+        return ourClick && expected != null && expected.equals(idAfter);
+    }
+
+    /** Like {@link #pickupMayBreak} for any station: armed, and the block is exactly the expected one. */
+    public static boolean pickupMayBreak(boolean armed, String id, String expected) {
+        return armed && expected != null && expected.equals(id);
+    }
+
     /**
      * B7d review 3: a trip step failed and the steps from it up to the clear go. {@code removed.get(0)} is the step that
      * failed; the armed table pickups among the others stay (in order), so the bot still takes its table back.
@@ -271,7 +242,8 @@ public final class PlaceRules {
     // ---- leases ----
 
     /** The most one lease may cover (GuardCore.MAX_LEASE_VOLUME), and a force lease (MAX_FORCE_VOLUME). */
-    public static final long LEASE_MAX = 4096, FORCE_MAX = 64;
+    public static long leaseMax() { return Tuning.l("placeRules.leaseMax"); }
+    public static long forceMax() { return Tuning.l("placeRules.forceMax"); }
 
     /** leaseSlices: a box cut in halves along its longest side until each part fits in one lease. */
     public static List<ClearBox> leaseSlices(ClearBox b, long max) {
@@ -327,13 +299,13 @@ public final class PlaceRules {
     // ---- 18c: pickaxes before a big dig ----
 
     /** A dig bigger than this restocks its stone pickaxes first. */
-    public static final long BIG_DIG = 300;
-    public static final int STONE_PICKS_DEFAULT = 3;
+    public static long bigDig() { return Tuning.l("placeRules.bigDig"); }
+    public static int stonePicksDefault() { return Tuning.i("placeRules.stonePicksDefault"); }
 
     /** How many stone pickaxes to top up to before a dig of this volume: 0 = none (small dig, or enough already). */
     public static int picksToRestock(long volume, int have, Integer supplies) {
-        if (volume <= BIG_DIG) return 0;
-        int want = supplies != null && supplies > 0 ? supplies : STONE_PICKS_DEFAULT;
+        if (volume <= bigDig()) return 0;
+        int want = supplies != null && supplies > 0 ? supplies : stonePicksDefault();
         return have >= want ? 0 : want;
     }
 }

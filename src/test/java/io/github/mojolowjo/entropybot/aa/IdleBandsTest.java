@@ -43,28 +43,27 @@ class IdleBandsTest {
         assertEquals(-1, s.score(in)[TaskKind.STOCK_IRON.ordinal()], "no stone pickaxe: no iron");
         in.night = true;
         in.torches = 8;
-        assertEquals(AaScorer.LIGHT_SCORE, s.score(in)[TaskKind.LIGHT.ordinal()]);
+        assertEquals(AaScorer.lightScore(), s.score(in)[TaskKind.LIGHT.ordinal()]);
     }
 
     @Test
     void aPlannerNullOptionGivesTheNextOneItsTurn() {
         AaTree tree = AaTree.build(new AaScorer());
-        bb.in.pickTier = 2;            // every rung met
+        bb.in.pickTier = 2;            // every Need met
         bb.in.pickaxes = 1;
         bb.in.pickPct = 100;
-        bb.in.areaKnown = bb.in.tableKnown = bb.in.furnaceKnown = bb.in.baseKnown = bb.in.tableInBag = true;
+        bb.in.tableKnown = bb.in.furnaceKnown = bb.in.baseKnown = bb.in.tableInBag = true;
         bb.in.torches = 64;
         bb.in.coal = 32;
         bb.in.cobble = 0;
         bb.in.pickTier = 3;
-        port.resolveTo = null;         // the planner never has a chain: the old idle starved here
         for (int i = 0; i < 12; i++) tree.tick(bb);
-        assertTrue(port.started.stream().anyMatch(t -> t.chain().equals("wait 60")), "the floor runs instead of the same option failing every tick: " + port.log);
+        assertTrue(port.started.stream().anyMatch(t -> t.chain().startsWith("wait ")), "the floor runs instead of the same option failing every tick: " + port.log);
     }
 
     @Test
     void lightingRunsOncePerNight() {
-        var light = AaTree.oncePerNight(io.github.mojolowjo.entropybot.aa.core.RunJob.of("l", TaskKind.LIGHT, "light here 8", "idle"));
+        var light = AaTree.oncePerNight(io.github.mojolowjo.entropybot.aa.core.RunJob.of("l", TaskKind.LIGHT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("light here 8", 1)), "idle"));
         bb.in.night = true;
         assertEquals(Status.RUNNING, light.tick(bb));
         port.done(1, "done");
@@ -75,6 +74,6 @@ class IdleBandsTest {
         assertFalse(bb.in.litTonight);
         bb.in.night = true;
         assertEquals(Status.RUNNING, light.tick(bb), "the next night lights again");
-        assertTrue(Cooldown.NO_RUN_MS <= 30_000);
+        assertTrue(Cooldown.noRunMsV() <= 30_000);
     }
 }

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.mixin;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import io.github.mojolowjo.entropybot.guard.Guard;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.BlockItem;
@@ -23,7 +25,9 @@ public abstract class GuardMixinBlockItem {
         try {
             Level level = context.getLevel();
             if (!level.isClientSide()) return;
-            if (Guard.INSTANCE.vetoPlace(level, context.getClickedPos(), net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(context.getItemInHand().getItem()).getPath().endsWith("torch"))) cir.setReturnValue(InteractionResult.FAIL);
-        } catch (Throwable ignored) {}
+            String path = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(context.getItemInHand().getItem()).getPath();
+            if (Guard.INSTANCE.vetoPlace(level, context.getClickedPos(), path.endsWith("torch"))) cir.setReturnValue(InteractionResult.FAIL);
+            else io.github.mojolowjo.entropybot.commands.RestoreLive.INSTANCE.notePlaced(context.getClickedPos(), path);      // aa-litter + rm-mining: my placements are noted as mine
+        } catch (Throwable caught) { Quiet.warn("GuardMixinBlockItem.? failed, carrying on with the fallback", caught); }
     }
 }

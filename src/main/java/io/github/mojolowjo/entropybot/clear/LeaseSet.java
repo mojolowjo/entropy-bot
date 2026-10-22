@@ -46,14 +46,14 @@ public final class LeaseSet {
     }
 
     private String takeQuiet(String task, ClearBox b, boolean place, boolean force) {
-        List<ClearBox> slices = force ? List.of(b) : PlaceRules.leaseSlices(b, PlaceRules.LEASE_MAX);
+        List<ClearBox> slices = force ? List.of(b) : PlaceRules.leaseSlices(b, PlaceRules.leaseMax());
         List<String> got = new ArrayList<>();
         for (ClearBox sl : slices) {
             String r = core.lease(owner, task, box(task, sl), place, force);
             if (r.startsWith("error")) {
                 for (String id : got) core.release(id);
                 String why = r.replaceFirst("^error: ", "");
-                if (core.mode() == GuardCore.Mode.STRICT) return "error: the guard refused: " + why + " - " + AREA_HINT;
+                if (core.mode() == GuardCore.Mode.STRICT) return "error: the guard refused: " + why;
                 if (!warned) log.accept("lease refused (log mode): " + why + " (" + task + ")");
                 warned = true;
                 return null;
@@ -72,7 +72,7 @@ public final class LeaseSet {
      */
     public String takeDestroy(String task, ClearBox b, String area) {
         List<String> got = new ArrayList<>();
-        for (ClearBox sl : PlaceRules.leaseSlices(b, PlaceRules.LEASE_MAX)) {
+        for (ClearBox sl : PlaceRules.leaseSlices(b, PlaceRules.leaseMax())) {
             String r = core.destroyLease(owner, task, box(task, sl), area, true);
             if (r.startsWith("error")) {
                 for (String id : got) core.release(id);
@@ -174,7 +174,7 @@ public final class LeaseSet {
         List<Object[]> again = new ArrayList<>(taken);
         taken.clear();
         for (Object[] t : again) {
-            String r = t.length > 4 ? takeDestroy((String) t[0], (ClearBox) t[1], (String) t[4])
+            String r = t.length > 4 ? takeDestroy((String) t[0], (ClearBox) t[1], (String) t[4])  // structural: a lease tuple has an optional 5th field
                     : take((String) t[0], (ClearBox) t[1], (Boolean) t[2], (Boolean) t[3]);
             if (r != null) {
                 releaseAll();

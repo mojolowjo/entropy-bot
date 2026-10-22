@@ -14,7 +14,7 @@ import java.util.Map;
  * core needs no Gson; the adapter writes the files.
  */
 public final class Tracer {
-    public static final int KEEP_DECISIONS = 200;
+    public static final int KEEP_DECISIONS = 200; // structural
 
     public static final class Counts {
         public long switches, pointless, preempts, fails, lost, ticks, tickUs;
@@ -74,7 +74,9 @@ public final class Tracer {
 
     /** AA_PLAN 10: a switch replaced a live task; justified only by danger, the owner's order or aa off. */
     public static boolean justified(String why) {
-        return why != null && (why.startsWith("danger") || why.startsWith("preempted by owner") || why.startsWith("aa off") || why.startsWith("the owner's stop"));
+        // BRAIN_PLAN B1: the brain's urgent-upkeep interrupt and the stuck watchdog's halt are deliberate, never pointless
+        // aa-gate: a desire whose own check is met ("done:") and the shelter's planned hand-over to night work ("sheltered:") are deliberate too
+        return why != null && (why.startsWith("done:") || why.startsWith("sheltered:") || why.startsWith("danger") || why.startsWith("urgent:") || why.startsWith("stuck:") || why.startsWith("preempted by owner") || why.startsWith("aa off") || why.startsWith("the owner's stop"));
     }
 
     private void countSwitch(long now, String why, String text) {
@@ -95,8 +97,8 @@ public final class Tracer {
     /** "2m ago: done TOOLS" or "never". */
     public String lastSwitchText(long now) {
         if (lastSwitchAt < 0) return "never";
-        long s = (now - lastSwitchAt) / 1000;
-        return (s < 120 ? s + "s" : s / 60 + "m") + " ago: " + lastSwitch;
+        long s = (now - lastSwitchAt) / 1000;  // structural: milliseconds per second
+        return (s < 120 ? s + "s" : s / 60 + "m") + " ago: " + lastSwitch;  // structural: display: seconds under 2 minutes, then minutes
     }
 
     /** The snapshot JSON (AA_PLAN 6), with the caller's header fields and the inputs block. */
@@ -113,7 +115,7 @@ public final class Tracer {
         float[] v = in.vector();
         for (int i = 0; i < v.length; i++) {
             if (i > 0) b.append(',');
-            b.append(q(Inputs.NAMES[i])).append(':').append(Math.round(v[i] * 1000) / 1000.0);
+            b.append(q(Inputs.NAMES[i])).append(':').append(Math.round(v[i] * 1000) / 1000.0);  // structural: milliseconds per second
         }
         b.append("},\"counts\":{\"switches\":").append(counts.switches).append(",\"pointless\":").append(counts.pointless)
                 .append(",\"preempts\":").append(counts.preempts).append(",\"fails\":").append(counts.fails).append(",\"lost\":").append(counts.lost)

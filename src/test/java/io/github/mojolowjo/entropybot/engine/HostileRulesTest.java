@@ -59,11 +59,11 @@ class HostileRulesTest {
     }
 
     @Test
-    void theSpiderLungerCountsOnlyThroughTheList() {
+    void aModMobThatIsNoEnemyCountsOnlyThroughTheList() {
         Mob lunger = Mob.of("arphex:spider_lunger");        // a TamableAnimal, not an Enemy
         assertEquals(Kind.NOT_HOSTILE, new World().kind(lunger));
         assertFalse(new World().kind(lunger).counts());
-        World w = new World(HostileRules.DEFAULTS.toArray(new String[0]));
+        World w = new World("arphex:spider_lunger");
         assertEquals(Kind.HOSTILE_LIST, w.kind(lunger));
         assertTrue(w.kind(lunger).counts());
         assertEquals(Kind.NOT_HOSTILE, w.kind(Mob.of("arphex:spider_jump")), "spider_jump is not seeded");
@@ -95,15 +95,15 @@ class HostileRulesTest {
         w.now = 1000;
         w.hit(goat);
         assertEquals(Kind.RETALIATION, w.kind(goat));
-        w.now = 1000 + HostileRules.RETALIATE_TICKS - 1;
+        w.now = 1000 + HostileRules.retaliateTicks() - 1;
         assertEquals(Kind.RETALIATION, w.kind(goat));
-        w.now = 1000 + HostileRules.RETALIATE_TICKS;
+        w.now = 1000 + HostileRules.retaliateTicks();
         w.hurt = false;
         assertEquals(Kind.NOT_HOSTILE, w.kind(goat), "dropped after the window");
         // a new hit starts it again
         w.hit(goat);
         assertEquals(Kind.RETALIATION, w.kind(goat));
-        assertEquals(100, HostileRules.RETALIATE_TICKS);
+        assertEquals(100, HostileRules.retaliateTicks());
     }
 
     @Test
@@ -160,7 +160,7 @@ class HostileRulesTest {
         HostileRules.Parsed none = HostileRules.parse(null);
         assertEquals(HostileRules.DEFAULTS, none.ids());
         assertFalse(none.failed());
-        assertEquals(List.of("arphex:spider_lunger"), HostileRules.DEFAULTS);
+        assertEquals(List.of(), HostileRules.DEFAULTS, "no mod mob is seeded: the owner adds it");
         List<String> ids = List.of("arphex:spider_lunger", "arphex:spider_jump");
         HostileRules.Parsed back = HostileRules.parse(HostileRules.toJson(ids));
         assertEquals(ids, back.ids());
@@ -185,7 +185,7 @@ class HostileRulesTest {
         List<String> many = new ArrayList<>();
         for (int i = 0; i < 120; i++) many.add("mod:mob_" + i);
         HostileRules.Parsed p = HostileRules.parse(HostileRules.toJson(many));
-        assertEquals(HostileRules.CAP, p.ids().size());
+        assertEquals(HostileRules.cap(), p.ids().size());
         assertTrue(p.note().contains("over 100"), p.note());
     }
 
@@ -193,7 +193,7 @@ class HostileRulesTest {
 
     @Test
     void listAddRemove() {
-        List<String> cur = HostileRules.DEFAULTS;
+        List<String> cur = List.of("arphex:spider_lunger");
         HostileRules.Result r = HostileRules.command("", cur, REGISTRY::contains);
         assertNull(r.changed());
         assertTrue(r.text().contains("arphex:spider_lunger"), r.text());
@@ -230,7 +230,7 @@ class HostileRulesTest {
     @Test
     void addStopsAtTheCap() {
         List<String> full = new ArrayList<>();
-        for (int i = 0; i < HostileRules.CAP; i++) full.add("mod:mob_" + i);
+        for (int i = 0; i < HostileRules.cap(); i++) full.add("mod:mob_" + i);
         HostileRules.Result r = HostileRules.command("add zombie", full, REGISTRY::contains);
         assertNull(r.changed());
         assertTrue(r.text().contains("I keep at most 100"), r.text());

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.view;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -14,7 +16,8 @@ import java.util.Set;
  * item id with that little left is nowhere else); a "low" note is given once per item until it is repaired or swapped.
  */
 public final class ToolWear {
-    public static final int LOW_PCT = 5, NEAR_LEFT = 3;
+    public static int lowPct() { return Tuning.i("toolWear.lowPct"); }
+    public static int nearLeft() { return Tuning.i("toolWear.nearLeft"); }
 
     /** One damageable item in a slot: id (path, e.g. "iron_pickaxe"), uses left, the item's max. */
     public record Worn(String id, int left, int max) {}
@@ -27,7 +30,7 @@ public final class ToolWear {
         List<String> out = new ArrayList<>();
         for (var e : last.entrySet()) {
             Worn was = e.getValue(), is = now.get(e.getKey());
-            if (was.left() > NEAR_LEFT || (is != null && is.id().equals(was.id()))) continue;
+            if (was.left() > nearLeft() || (is != null && is.id().equals(was.id()))) continue;
             boolean moved = false;
             for (Worn w : now.values()) if (w.id().equals(was.id()) && w.left() <= was.left()) { moved = true; break; }
             if (!moved) { out.add(name(was.id()) + " broke"); warned.remove(key(e.getKey(), was.id())); }
@@ -37,7 +40,7 @@ public final class ToolWear {
             Worn w = e.getValue();
             if (w.max() <= 0) continue;
             String k = key(e.getKey(), w.id());
-            if (w.left() * 100 < LOW_PCT * w.max()) {
+            if (w.left() * 100 < lowPct() * w.max()) {
                 keep.add(k);
                 if (warned.add(k)) out.add(name(w.id()) + " about to break (" + w.left() + " uses left)");
             }

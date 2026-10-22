@@ -25,8 +25,16 @@ package io.github.mojolowjo.entropybot.watchview;
  */
 public final class SkyScan {
     /** What a cell is for the scan. */
-    public static final int AIR = 0, PLANT = 1, WATER = 2, GLASS = 3, LEAVES = 4, SOLID = 5, SHAPE = 6, PARTIAL = 7, UNLOADED = 8;
-    public static final int MAX_WATER = SeenRays.MAX_WATER;
+    public static final int AIR = 0; // structural
+    public static final int PLANT = 1; // structural
+    public static final int WATER = 2; // structural
+    public static final int GLASS = 3; // structural
+    public static final int LEAVES = 4; // structural
+    public static final int SOLID = 5; // structural
+    public static final int SHAPE = 6; // structural
+    public static final int PARTIAL = 7; // structural
+    public static final int UNLOADED = 8; // structural
+    public static final int MAX_WATER = SeenRays.MAX_WATER; // structural
 
     public interface World {
         /** The cell's kind (constants above). */

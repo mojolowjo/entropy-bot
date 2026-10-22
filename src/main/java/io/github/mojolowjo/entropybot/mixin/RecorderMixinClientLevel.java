@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.mixin;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import io.github.mojolowjo.entropybot.recorder.FlightRecorder;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.multiplayer.prediction.BlockStatePredictionHandler;
@@ -53,7 +55,7 @@ public abstract class RecorderMixinClientLevel {
         BlockState old = FlightRecorder.popOld();
         if (old == null || !Boolean.TRUE.equals(cir.getReturnValue())) return;
         boolean byBot = false;
-        try { byBot = blockStatePredictionHandler.isPredicting(); } catch (Throwable ignored) {}
+        try { byBot = blockStatePredictionHandler.isPredicting(); } catch (Throwable caught) { Quiet.warn("RecorderMixinClientLevel.? failed, carrying on with the fallback", caught); }
         FlightRecorder.blockChanged((ClientLevel) (Object) this, pos, old, state, byBot);
     }
 }

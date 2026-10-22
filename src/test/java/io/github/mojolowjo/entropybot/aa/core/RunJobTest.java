@@ -18,8 +18,8 @@ class RunJobTest {
     @Test
     void taskSpecLimitsAreAlwaysFinite() {
         JobPort.TaskSpec t = new JobPort.TaskSpec(TaskKind.WAIT, "wait 60", "idle", 1, Long.MAX_VALUE, 0);
-        assertEquals(JobPort.TaskSpec.TIMEOUT_MS, t.timeoutMs());
-        assertEquals(JobPort.TaskSpec.NO_PROGRESS_MS, t.noProgressMs());
+        assertEquals(JobPort.TaskSpec.timeoutMsV(), t.timeoutMs());
+        assertEquals(JobPort.TaskSpec.noProgressMsV(), t.noProgressMs());
         assertEquals(100_000, new JobPort.TaskSpec(TaskKind.WAIT, "x", "idle", 1, 100_000, -5).timeoutMs());
     }
 
@@ -30,7 +30,7 @@ class RunJobTest {
         assertEquals("busy: the owner's chain runs", job.reason());
         assertFalse(job.running());
         assertTrue(port.log.get(0).startsWith("refused TORCHES \"goal torch 16\": busy"), port.log.get(0));
-        assertEquals(1, tracer.decisions().size(), "a decision line even for a refusal");
+        assertEquals(2, tracer.decisions().size(), "a decision line even for a refusal, and its end line (aa-switch2)");
     }
 
     @Test
@@ -56,6 +56,17 @@ class RunJobTest {
         assertEquals("stopped at step 2 (smelt): no fuel", job.reason());
         assertEquals(1, tracer.counts.fails);
         assertEquals(0, tracer.counts.switches, "ends are no switches");
+    }
+
+    /** Backbone step 2: a failed danger move fails the chain (the "wait 120" after it never runs in the open). */
+    @Test
+    void failNowCancelsTheChainAsAFailure() {
+        assertEquals(Status.RUNNING, job.tick(bb));
+        assertEquals(Status.FAILURE, job.failNow("danger move burrow: gave up at burrow 2 down"));
+        assertFalse(job.running());
+        assertEquals("danger move burrow: gave up at burrow 2 down", job.reason());
+        assertEquals(1, tracer.counts.fails);
+        assertTrue(port.cancelled.get(0).endsWith("gave up at burrow 2 down"), port.cancelled.get(0));
     }
 
     @Test

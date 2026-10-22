@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.cave;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -21,8 +23,11 @@ import java.util.Set;
 public final class Caves {
     public static final String FILE = "caves.json";
     /** Package H: the cells of one cave, of all caves together, and the number of caves ({@code memory/Limits}). */
-    public static final int MAX_VISITED = Limits.CAVE_CELLS_EACH, MAX_CELLS = Limits.CAVE_CELLS, MAX_CAVES = Limits.CAVES, PICK_WITHIN = 64;
-    static final long FLUSH_AFTER = 100;
+    public static final int MAX_VISITED = Limits.CAVE_CELLS_EACH; // structural
+    public static final int MAX_CELLS = Limits.CAVE_CELLS; // structural
+    public static final int MAX_CAVES = Limits.CAVES; // structural
+    public static int pickWithin() { return Tuning.i("caves.pickWithin"); }
+    static final long FLUSH_AFTER = 100; // structural
 
     public static final class Cave {
         public final String name, dim;
@@ -135,7 +140,7 @@ public final class Caves {
         for (Cave c : caves.values()) {
             if (!c.dim.equals(dim) || !c.frontierLeft) continue;
             long d = (long) (c.ex - x) * (c.ex - x) + (long) (c.ey - y) * (c.ey - y) + (long) (c.ez - z) * (c.ez - z);
-            if (d <= (long) PICK_WITHIN * PICK_WITHIN && d < bestD) { bestD = d; best = c; }
+            if (d <= (long) pickWithin() * pickWithin() && d < bestD) { bestD = d; best = c; }
         }
         if (best != null) return best;
         String n;
@@ -192,7 +197,7 @@ public final class Caves {
     /** The bot is at x y z inside the cave: the coarse cells within 4 blocks count as explored. */
     public synchronized void visit(Cave c, int x, int y, int z, long nowMs, long tick) {
         int before = c.visited.size();
-        for (int dx = -4; dx <= 4; dx += 4) for (int dy = -4; dy <= 4; dy += 4) for (int dz = -4; dz <= 4; dz += 4) {
+        for (int dx = -Tuning.i("caves.probeStep"); dx <= Tuning.i("caves.probeStep"); dx += Tuning.i("caves.probeStep")) for (int dy = -Tuning.i("caves.probeStep"); dy <= Tuning.i("caves.probeStep"); dy += Tuning.i("caves.probeStep")) for (int dz = -Tuning.i("caves.probeStep"); dz <= Tuning.i("caves.probeStep"); dz += Tuning.i("caves.probeStep")) {
             if (c.visited.size() >= MAX_VISITED) break;
             c.visited.add(CaveSearch.coarse(x + dx, y + dy, z + dz));
         }

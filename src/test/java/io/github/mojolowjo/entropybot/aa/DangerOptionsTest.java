@@ -1,0 +1,148 @@
+package io.github.mojolowjo.entropybot.aa;
+
+import io.github.mojolowjo.entropybot.aa.brain.Brain;
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+import io.github.mojolowjo.entropybot.threat.ThreatFacts;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/** AA_CLEANUP 4: the danger desire's ways priced on the threat facts (by number, no rule). */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
+class DangerOptionsTest {
+    static final ThreatFacts.Ways OPEN = new ThreatFacts.Ways(16, -1, true, 0, 3, true);
+
+    static ThreatFacts.Me me(double hp, double weapon) { return new ThreatFacts.Me(hp, 20, 0, weapon, 20); }
+
+    static ThreatFacts facts(ThreatFacts.Me me, ThreatFacts.Ways w, ThreatFacts.Foe... foes) { return new ThreatFacts(me, List.of(foes), w); }
+
+    static ThreatFacts.Foe zombie(double dist) { return ThreatFacts.foe("minecraft:zombie", dist, 0, null); }
+
+    @AfterEach
+    void defaults() { Tuning.reset(); }
+
+    @Test
+    void aZombieAndAPickaxeAtTwelveHealthFleesOrDigsInByNumber() {
+        DangerOptions.Choice c = DangerOptions.choose(facts(me(12, 1), OPEN, zombie(3)));
+        assertTrue(c.best().way() == DangerOptions.Way.FLEE || c.best().way() == DangerOptions.Way.DIG_IN, c.terms());
+        assertTrue(c.score() >= Brain.urgentV(), "a likely death if it stays: urgent " + c.terms());
+        assertTrue(c.chain().startsWith("flee > wait") || c.chain().startsWith("burrow > wait"), c.chain());
+        // the same zombie, cornered with nowhere to dig: no way out; fighting saves too little over the hit response
+        DangerOptions.Choice cornered = DangerOptions.choose(facts(me(12, 1), ThreatFacts.Ways.NONE, zombie(3)));
+        assertEquals(-1, cornered.score(), cornered.terms());
+        assertNull(cornered.chain());
+    }
+
+    @Test
+    void aSwordAtFullHealthStaysAndTheHitResponseFights() {
+        DangerOptions.Choice c = DangerOptions.choose(facts(me(20, 7), OPEN, zombie(3)));
+        assertEquals(-1, c.score(), "no way saves enough over the hit response: " + c.terms());
+        assertNull(c.chain());
+    }
+
+    @Test
+    void lowHealthGoesHomeOnlyWhenTheChasersCannotFollowElsePillars() {
+        // round 4 fix 2: cornered (no flee heading), the base 40 away, a zombie far behind: home is worth it
+        ThreatFacts.Ways home = new ThreatFacts.Ways(0, 40, false, 0, 3, true);
+        DangerOptions.Choice c = DangerOptions.choose(facts(me(6, 1), home, zombie(15)));          // bare hands: no quick kill
+        assertEquals(DangerOptions.Way.HOME, c.best().way(), c.terms());
+        assertEquals("go base", c.chain());
+        assertTrue(c.score() >= Brain.urgentV(), "a likely death avoided: urgent " + c.terms());
+        // the same walk with the zombie 3 blocks behind: it follows the whole way (live: slain 14 s into "go base")
+        DangerOptions.Choice chased = DangerOptions.choose(facts(me(6, 1), home, zombie(3)));
+        assertNotEquals(DangerOptions.Way.HOME, chased.best().way(), chased.terms());
+        ThreatFacts.Ways pillar = new ThreatFacts.Ways(16, -1, false, 12, 3, true);
+        DangerOptions.Choice p = DangerOptions.choose(facts(me(6, 7), pillar, zombie(5)));
+        assertEquals(DangerOptions.Way.PILLAR, p.best().way(), p.terms());
+    }
+
+    @Test
+    void theWalkHomeCountsEveryChaserOverTheWholeWalk() {
+        double walkT = 40 / DangerOptions.homeSpeed();
+        double one = DangerOptions.pursuit(List.of(zombie(3)), walkT, DangerOptions.homeSpeed());
+        double two = DangerOptions.pursuit(List.of(zombie(3), zombie(4)), walkT, DangerOptions.homeSpeed());
+        assertTrue(one > 6, "a zombie 3 behind over a 15 s walk: more than 6 hp, " + one);
+        assertTrue(two > one * 1.8, "two chasers add up: " + two);
+        assertEquals(0, DangerOptions.pursuit(List.of(zombie(20)), walkT, DangerOptions.homeSpeed()), 1e-9, "a zombie 20 behind loses the bot");
+        assertTrue(DangerOptions.pursuit(List.of(zombie(3)), walkT, 5.6) < one, "a sprint shakes it off sooner than a walked path");
+        ThreatFacts.Foe sk = ThreatFacts.foe("minecraft:skeleton", 12, 0, null);
+        assertTrue(DangerOptions.pursuit(List.of(sk), walkT, DangerOptions.homeSpeed()) > 0, "a skeleton shoots until the bot is out of range");
+    }
+
+    @Test
+    void aPillarNeverWinsAgainstASkeleton() {
+        ThreatFacts.Foe sk = ThreatFacts.foe("minecraft:skeleton", 12, 0, null);
+        assertTrue(sk.ranged());
+        // a pillar is no cover from arrows, so it never wins against a skeleton (rm-threat: the cover way is gone)
+        ThreatFacts.Ways w = new ThreatFacts.Ways(16, -1, false, 12, 3, true);
+        DangerOptions.Choice n = DangerOptions.choose(facts(me(20, 7), w, sk));
+        assertNotEquals(DangerOptions.Way.PILLAR, n.best().way(), n.terms());
+    }
+
+    /** rm-threat: a Normal night on a dark empty field (no armour, full health, no torch, no mob in view). */
+    static DangerOptions.Need normalDarkField(int shellBlocks) {
+        double danger = io.github.mojolowjo.entropybot.aa.brain.Costs.nightDanger(2, 0, 20, 20, 0, 0);
+        return new DangerOptions.Need(io.github.mojolowjo.entropybot.aa.brain.Costs.shelterScore(danger), "night", danger, false, shellBlocks, false, false);
+    }
+
+    @Test
+    void theOpenWaitOnADarkFieldPricesTheNightDangerNotOnlyTheMobsInView() {
+        ThreatFacts.Me full = me(20, 1);
+        // a burrow possible, the bag without a box: the burrow beats the wait
+        ThreatFacts.Ways ground = new ThreatFacts.Ways(0, -1, true, 0, 3, true, true, false);
+        DangerOptions.Choice c = DangerOptions.choose(facts(full, ground), normalDarkField(0));
+        assertEquals(DangerOptions.Way.BURROW, c.best().way(), c.terms());
+        // no burrow (the fork said no), a box in the bag: the 20 s box beats the wait
+        ThreatFacts.Ways hard = new ThreatFacts.Ways(0, -1, false, 0, 3, true, false, false, false, 0, 0, null, -1, false,
+                "dig 1/3 at 0 62 0 (stone): not broken in 10 s with the best tool in the bag (Baritone's mining time 7.5 s)", "north: side east of 1 64 0 (air) is open");
+        DangerOptions.Choice b = DangerOptions.choose(facts(full, hard), normalDarkField(12));
+        assertEquals(DangerOptions.Way.BOX, b.best().way(), b.terms());
+        DangerOptions.Priced wait = null, box = null;
+        for (DangerOptions.Priced p : b.all()) { if (p.way() == DangerOptions.Way.WAIT) wait = p; if (p.way() == DangerOptions.Way.BOX) box = p; }
+        assertTrue(wait.costS() > box.costS(), "wait " + wait.costS() + " vs box " + box.costS());
+        assertTrue(wait.damage() > 0, "no mob in view, still the night's exposure: " + wait.why());
+        assertTrue(wait.why().contains("night danger 1.0 x 60 s"), wait.why());
+        assertTrue(b.terms().contains("the fork: dig 1/3 at 0 62 0 (stone)"), "the fork's no reaches aa why: " + b.terms());
+    }
+
+    @Test
+    void aCreeperStaysAReflex() {
+        DangerOptions.Choice c = DangerOptions.choose(facts(me(20, 1), OPEN, ThreatFacts.foe("minecraft:creeper", 3, 0, null)));
+        assertEquals(-1, c.score());
+        assertNull(c.chain());
+        assertTrue(c.terms().contains("reflex"), c.terms());
+        assertEquals(-1, DangerOptions.choose(ThreatFacts.CALM).score(), "calm: nothing");
+    }
+
+    @Test
+    void theMeasuredDamageReplacesTheTable() {
+        io.github.mojolowjo.entropybot.threat.MobDamage seen = new io.github.mojolowjo.entropybot.threat.MobDamage();
+        for (int i = 0; i < 3; i++) seen.add("minecraft:zombie", 6);
+        ThreatFacts.Foe f = ThreatFacts.foe("minecraft:zombie", 3, 0, seen);
+        assertEquals(6, f.dps(), 1e-9);
+        assertTrue(f.basis().startsWith("observed"), f.basis());
+        assertEquals(3, zombie(3).dps(), 1e-9, "vanilla table: 3 a hit, a hit a second");
+    }
+
+    @Test
+    void tuningMovesTheThreshold() {
+        DangerOptions.Choice at20 = DangerOptions.choose(facts(me(20, 1), OPEN, zombie(3)));
+        assertTrue(at20.score() > 0 && at20.score() < Brain.urgentV(), "full health, a pickaxe: worth a flee, not urgent " + at20.terms());
+        assertTrue(Tuning.set("danger.minS", 600).startsWith("ok"));
+        assertEquals(-1, DangerOptions.choose(facts(me(20, 1), OPEN, zombie(3))).score(), "tuned: not worth it");
+    }
+
+    @Test
+    void aRunningMoveHoldsTheDesireUntilItEnds() {
+        var bb = new io.github.mojolowjo.entropybot.aa.core.Blackboard(new io.github.mojolowjo.entropybot.aa.core.Clock.Fake(1_000_000),
+                new io.github.mojolowjo.entropybot.aa.core.FakePort(), new io.github.mojolowjo.entropybot.aa.core.Tracer());
+        bb.fact(AaDesires.THREAT_FACT, (java.util.function.Supplier<ThreatFacts>) () -> ThreatFacts.CALM);
+        bb.fact(AaDesires.MOVE_FACT, true);
+        assertFalse(AaDesires.dangerMet(bb), "a flee still running: not done though staying looks cheap now");
+        bb.fact(AaDesires.MOVE_FACT, false);
+        assertTrue(AaDesires.dangerMet(bb), "the move ended and nothing is priced: done");
+    }
+}

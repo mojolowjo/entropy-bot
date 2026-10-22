@@ -12,6 +12,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 0.24.2 assist: parsing, the action guess, the switch rule, the half-cut tree finder, the mining targets, the give rule. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class AssistRulesTest {
     static final long NOW = 2_000_000;
 
@@ -141,7 +142,7 @@ class AssistRulesTest {
         w.set(0, 62, 0, "minecraft:air");
         w.set(1, 62, 0, "minecraft:iron_ore");
         List<AssistRules.Box> b = AssistRules.mineTargets(w, 0, 62, 0, "minecraft:stone");
-        assertEquals(AssistRules.MINE_MAX, b.size());
+        assertEquals(AssistRules.mineMax(), b.size());
         for (AssistRules.Box x : b) {
             assertEquals("minecraft:stone", w.id(x.x1(), x.y1(), x.z1()));
             assertTrue(Math.abs(x.x1()) <= 12 && Math.abs(x.z1()) <= 12);

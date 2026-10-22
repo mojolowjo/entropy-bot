@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.fast;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpExchange;
@@ -47,6 +49,7 @@ import java.util.function.Consumer;
  *   <li>{@code GET /block?x=&y=&z=} and {@code GET /column?x=&z=} (P4, 0.19.10): one block or one surface column for the
  *       dashboard's map menu, answered on the game thread at the next tick (400 for bad numbers, 503 outside a world,
  *       504 after 5 s).</li>
+ *   <li>{@code GET /aa}: AA's live state for the dashboard's tree panel (AaLive), on the game thread; 503 outside a world.</li>
  *   <li>{@code GET /wait[?timeout=ms][&chain=0|1]}: a long poll that answers {idle: true, waitedMs} once the bot has
  *       been idle (no job, no chain unless chain=0, Baritone idle) for {@link #SETTLE_TICKS}
  *       ticks in a row, or {idle: false, timeout: true, busy: "chain night"} when the time runs out.</li>
@@ -58,13 +61,19 @@ import java.util.function.Consumer;
  */
 public final class FastServer {
     /** The default port (the dashboard is 8765). */
-    public static final int DEFAULT_PORT = 8766;
+    public static final int DEFAULT_PORT = 8766; // structural
     /** A key shorter than this is refused (the dashboard's is 32+ characters). */
-    public static final int MIN_KEY = 16;
+    public static final int MIN_KEY = 16; // structural
     /** Ticks the bot has to be idle in a row before a /wait answers (a job that is about to start has a moment). */
-    public static final int SETTLE_TICKS = 10;
-    public static final long CMD_TIMEOUT_MS = 10_000, CMD_TIMEOUT_MAX = 60_000, WAIT_TIMEOUT_MS = 120_000, WAIT_TIMEOUT_MAX = 3_600_000;
-    static final int MAX_BODY = 1 << 20, MAX_WAITERS = 4, TASKS_PER_TICK = 16, THREADS = 8;
+    public static final int SETTLE_TICKS = 10; // structural
+    public static final long CMD_TIMEOUT_MS = 10_000; // structural
+    public static final long CMD_TIMEOUT_MAX = 60_000; // structural
+    public static final long WAIT_TIMEOUT_MS = 120_000; // structural
+    public static final long WAIT_TIMEOUT_MAX = 3_600_000; // structural
+    static final int MAX_BODY = 1 << 20; // structural
+    static final int MAX_WAITERS = 4; // structural
+    static final int TASKS_PER_TICK = 16; // structural
+    static final int THREADS = 8; // structural
 
     /** What the game side does; every method is called on the game thread (from {@link #tick()}). */
     public interface Handler {
@@ -97,6 +106,9 @@ public final class FastServer {
 
         /** B3 GET /actions: the action table plus the state summary (actions.json's content, built now). Null: not in a world. */
         default JsonObject actions() { return null; }
+
+        /** GET /aa: AA's live tree, desires, options and switches (AaLive), built now. Null: not in a world. */
+        default JsonObject aa() { return null; }
     }
 
     /** Where the key lives: re-read when the file changes, so a new dashboard key works without a restart. */
@@ -119,6 +131,7 @@ public final class FastServer {
                     key = k.length() >= MIN_KEY ? k.getBytes(StandardCharsets.UTF_8) : null;
                 }
             } catch (IOException | RuntimeException e) {
+            Quiet.warn("FastServer.key failed, carrying on with the fallback", e);
                 seen = null;
                 key = null;
             }
@@ -184,7 +197,7 @@ public final class FastServer {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             // the starter may have started it already: never leave a listening socket behind
             if (s != null) {
-                try { s.stop(0); } catch (RuntimeException ignored) {}
+                try { s.stop(0); } catch (RuntimeException caught) { Quiet.warn("FastServer.start failed, carrying on with the fallback", caught); }
             }
             if (pool != null) pool.shutdownNow();
             pool = null;
@@ -325,10 +338,17 @@ public final class FastServer {
                     }
                     onGame(ex, handler::actions);
                 }
+                case "/aa" -> {
+                    if (!method.equals("GET")) {
+                        send(ex, 405, err("GET only"));
+                        return;
+                    }
+                    onGame(ex, handler::aa);
+                }
                 default -> send(ex, 404, err("unknown path " + path));
             }
         } catch (RuntimeException e) {
-            try { send(ex, 500, err(String.valueOf(e))); } catch (IOException | RuntimeException ignored) {}
+            try { send(ex, 500, err(String.valueOf(e))); } catch (IOException | RuntimeException caught) { Quiet.warn("FastServer.serve failed, carrying on with the fallback", caught); }
         }
     }
 
@@ -407,6 +427,7 @@ public final class FastServer {
         try {
             cmd = JsonParser.parseString(new String(body, StandardCharsets.UTF_8)).getAsJsonObject();
         } catch (RuntimeException e) {
+            Quiet.warn("FastServer.cmd failed, carrying on with the fallback", e);
             send(ex, 400, err("body is not a JSON object"));
             return;
         }
@@ -457,6 +478,7 @@ public final class FastServer {
             } catch (TimeoutException e) {
                 idle = false;
             } catch (Exception e) {
+            Quiet.warn("FastServer.waitIdle failed, carrying on with the fallback", e);
                 idle = false;
             }
             w.done.complete(false);            // a timed-out waiter is dropped at the next tick
@@ -552,7 +574,7 @@ public final class FastServer {
     }
 
     private static void drain(InputStream in) {
-        try { in.readNBytes(MAX_BODY); } catch (IOException ignored) {}
+        try { in.readNBytes(MAX_BODY); } catch (IOException caught) { Quiet.warn("FastServer.drain failed, carrying on with the fallback", caught); }
     }
 
     private static JsonObject err(String why) {

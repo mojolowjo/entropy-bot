@@ -22,7 +22,7 @@ import java.util.Deque;
 public final class UsageLedger {
     record Entry(long at, long tokens, double usd, int requests) {}
 
-    static final long HOUR_MS = 3_600_000L;
+    static final long HOUR_MS = 3_600_000L; // structural: milliseconds in an hour (unit)
 
     private final Path file;
     private final ZoneId zone;

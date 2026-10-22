@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.blind;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.commands.SelfCheck;
 import net.minecraft.client.Minecraft;
@@ -161,7 +163,7 @@ public final class BlindRuntime {
     private int restoreLeft;
     /** Ticks after a screen closed during which frames still draw (so the frozen frame shows no menu). */
     private int screenGrace;
-    static final int SCREEN_GRACE_TICKS = 3;
+    static final int SCREEN_GRACE_TICKS = 3; // structural
 
     private void restoreTitle(Minecraft mc) {
         titleSet = false;
@@ -204,7 +206,7 @@ public final class BlindRuntime {
         String saved = dir == null ? " (no entropybot folder yet: not saved)" : mode.save(dir);
         if (changed && !on) {
             asserted = false;
-            try { mc.noRender = false; } catch (Throwable ignored) {}
+            try { mc.noRender = false; } catch (Throwable caught) { Quiet.warn("BlindRuntime.set failed, carrying on with the fallback", caught); }
             resumeSound(mc);
             restoreLeft = 3;          // the restore runs in postTick (not here): never gated on a flag the title step may not have set
         }
@@ -227,7 +229,7 @@ public final class BlindRuntime {
 
     public String status() {
         int maxFps = -1;
-        try { maxFps = Minecraft.getInstance().options.framerateLimit().get(); } catch (Throwable ignored) {}
+        try { maxFps = Minecraft.getInstance().options.framerateLimit().get(); } catch (Throwable caught) { Quiet.warn("BlindRuntime.status failed, carrying on with the fallback", caught); }
         return mode.status(maxFps, System.currentTimeMillis());
     }
 

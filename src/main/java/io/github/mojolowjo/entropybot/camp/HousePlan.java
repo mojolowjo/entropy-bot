@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.camp;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -18,7 +20,8 @@ public final class HousePlan {
     private HousePlan() {}
 
     /** The smallest area: a 5x5 inside with 1-thick walls, floor and roof. */
-    public static final int MIN_SIDE = 7, MIN_HEIGHT = 5;
+    public static int minSide() { return Tuning.i("housePlan.minSide"); }
+    public static int minHeight() { return Tuning.i("housePlan.minHeight"); }
 
     public static final String TOO_SMALL = "error: a 5x5 inside needs a 7x7 area 5 high: area x z x2 z2 house main y1 y2 - next: that, then house house";
 
@@ -83,9 +86,9 @@ public final class HousePlan {
     /** standing key: the chosen block already stands in the house's shell (a rerun). */
     public static final String SHELL = "shell";
     /** A box dig over this many cells asks for confirm: the house splits it per layer instead. */
-    public static final int DIG_MAX = 1000;
+    public static int digMax() { return Tuning.i("housePlan.digMax"); }
     /** The house's own scan: the stations stand within 3 of the base mark at the inside centre. */
-    public static final int SCAN_RADIUS = 4;
+    public static int scanRadius() { return Tuning.i("housePlan.scanRadius"); }
 
     public static Plan plan(Facts f) {
         if (!f.hasHeights() || f.box() == null) return new Plan(List.of(), null, TOO_SMALL);
@@ -93,7 +96,7 @@ public final class HousePlan {
         int x1 = Math.min(b[0], b[3]), x2 = Math.max(b[0], b[3]);
         int y1 = Math.min(b[1], b[4]), y2 = Math.max(b[1], b[4]);
         int z1 = Math.min(b[2], b[5]), z2 = Math.max(b[2], b[5]);
-        if (x2 - x1 + 1 < MIN_SIDE || z2 - z1 + 1 < MIN_SIDE || y2 - y1 + 1 < MIN_HEIGHT) return new Plan(List.of(), null, TOO_SMALL);
+        if (x2 - x1 + 1 < minSide() || z2 - z1 + 1 < minSide() || y2 - y1 + 1 < minHeight()) return new Plan(List.of(), null, TOO_SMALL);
         String area = f.area(), blk = f.block();
         int cx = (x1 + x2) / 2, cz = (z1 + z2) / 2, iy = y1 + 1;
         // the door side: toward the camp, else south (+z)
@@ -136,7 +139,7 @@ public final class HousePlan {
         int[] door = doorXz(side, cx, cz, x1, z1, x2, z2);
         // the stations against the back wall (opposite the door), side by side at the middle
         int[][] st = new int[3][];
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 3; i++) {  // structural: fixed three-step loop over the wall layers
             int o = i - 1;
             st[i] = switch (side) {
                 case 'n' -> new int[]{cx + o, iy, z2 - 1};
@@ -174,7 +177,7 @@ public final class HousePlan {
         if (insideClear) skipped.add("dig");
         else if (dy2 >= dy1) {
             long vol = (long) (dx2 - dx1 + 1) * (dy2 - dy1 + 1) * (dz2 - dz1 + 1);
-            if (vol <= DIG_MAX) out.add("dig " + dx1 + " " + dy1 + " " + dz1 + " " + dx2 + " " + dy2 + " " + dz2);
+            if (vol <= digMax()) out.add("dig " + dx1 + " " + dy1 + " " + dz1 + " " + dx2 + " " + dy2 + " " + dz2);
             else for (int y = dy2; y >= dy1; y--) out.add("dig " + dx1 + " " + y + " " + dz1 + " " + dx2 + " " + y + " " + dz2);
         }
         if (rerun && f.floorForeign() != null) for (int[] c : f.floorForeign()) out.add("dig " + fmt(c) + " " + fmt(c));
@@ -196,7 +199,7 @@ public final class HousePlan {
         // through the door to the middle of the room first; every station is within 3 blocks of it
         out.add("goto " + cx + " " + iy + " " + cz);
         List<String> missing = new ArrayList<>();
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 3; i++) {  // structural: fixed three-step loop over the wall layers
             String s = STATIONS[i];
             if (Boolean.TRUE.equals(f.standing().get(s))) { if (pr != null) skipped.add(s); continue; }
             if (f.inv().getOrDefault("minecraft:" + s, 0) <= 0) {
@@ -208,7 +211,7 @@ public final class HousePlan {
         out.add("place base " + cx + " " + iy + " " + cz);
         out.add("place food " + fmt(st[0]));
         // 0.30.4 (live: a second house 13 blocks away): only the chests of this house, never a walk to another one's
-        out.add("scan base " + SCAN_RADIUS);
+        out.add("scan base " + scanRadius());
         boolean shellDone = floorDone && wallsDone && roofDone;            // 0.31.0 (4, live): no "gather 104" for a standing shell
         String summary = "house in " + area + ": " + out.size() + " steps, "
                 + (shellDone ? "the shell stands (no " + b6 + " needed)" : "needs about " + need + " " + b6 + " (you have " + have + ")"
@@ -269,7 +272,7 @@ public final class HousePlan {
      */
     public static String chooseBlock(String asked, Map<String, Integer> inv, Map<String, Integer> placed) {
         if ((asked == null || asked.isBlank()) && placed != null && !placed.isEmpty()) {
-            // 0.30.8 (trial 10: "needs about 168 visualworkbench:minecraft/crafting_table"): the bootstrap's table inside
+            // 0.30.8 (trial 10: "needs about 168 visualworkbench:minecraft/crafting_table"): the old camp chain's table inside
             // the area was the only placed block counted; stations and non-building blocks never decide the house block
             Map<String, Integer> walls = new java.util.HashMap<>();
             for (Map.Entry<String, Integer> e : placed.entrySet()) {

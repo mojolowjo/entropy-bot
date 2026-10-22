@@ -1,5 +1,9 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -31,7 +35,7 @@ import java.util.Set;
  */
 public final class SelfCheckLive implements ConfirmGate.Facts {
     private static final Logger LOG = LoggerFactory.getLogger("entropybot");
-    public static final long IDLE_EVERY_MS = 30 * 60_000L;
+    public static long idleEveryMs() { return Tuning.l("selfCheckLive.idleEveryMs"); }
 
     private final Commands c;
     private long lastIdleCheck;
@@ -57,25 +61,11 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         try {
             if (p != null) {
                 String[] h = io.github.mojolowjo.entropybot.camp.FoodPlan.checkFinding(p.getFoodData().getFoodLevel(),
-                        io.github.mojolowjo.entropybot.gui.Gui.inventory(p), c.hunting.on(), c.hunting.animalsNear(p));
+                        io.github.mojolowjo.entropybot.gui.Gui.inventory(p), c.stepRun.on(), c.stepRun.animalsNear(p));
                 if (h != null) f.add(0, new SelfCheck.Finding(h[0], h[1], h[2]));
             }
         } catch (RuntimeException e) {
             f.add(0, new SelfCheck.Finding("hungercheck", "couldn't check my food: " + e, "status"));
-        }
-        // C5 tool care: a worn or broken tool that nothing could replace
-        for (String id : c.camp.careFindings()) f.add(new SelfCheck.Finding("toolcare:" + id, "my " + id + " is nearly broken or gone, and nothing can replace it (none in the chests, nothing to craft one from)",
-                "put a " + id + " (or its materials) in the base chests"));
-        // 0.23.6: poison, wither or hunger in the last 30 min and no milk bucket
-        long noMilk = io.github.mojolowjo.entropybot.Core.INSTANCE.reflexes.survival.noMilkAt();
-        if (noMilk > 0 && System.currentTimeMillis() - noMilk < 30 * 60_000L) f.add(new SelfCheck.Finding("nomilk", "I had poison, wither or hunger and no milk bucket to drink",
-                "need milk_bucket 1"));
-        f.addAll(RouteCommand.findings(c));
-        try {
-            String sealed = io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.sealedFinding();      // 0.27.2
-            if (sealed != null) f.add(new SelfCheck.Finding("sealed", sealed, "path status"));
-        } catch (RuntimeException e) {
-            f.add(new SelfCheck.Finding("sealedcheck", "couldn't check the surface dig-outs: " + e, "path status"));
         }
         // 0.24.1: a job that would have sent /home or /sethome with server commands off (walked instead)
         int sci = 0;
@@ -107,16 +97,6 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
             f.add(new SelfCheck.Finding("threatcheck", "couldn't check the threat test: " + e, "debug threats"));
         }
         try {
-            for (String[] t : io.github.mojolowjo.entropybot.motor.Motor.INSTANCE.findings()) f.add(new SelfCheck.Finding(t[0], t[1], t[2]));   // 0.27.0
-        } catch (RuntimeException e) {
-            f.add(new SelfCheck.Finding("motorcheck", "couldn't check the motor: " + e, "debug motor"));
-        }
-        try {
-            if (c.brainRuntime != null) for (String[] t : c.brainRuntime.brain.findings()) f.add(new SelfCheck.Finding(t[0], t[1], t[2]));   // B1
-        } catch (RuntimeException e) {
-            f.add(new SelfCheck.Finding("braincheck", "couldn't check the brain: " + e, "brain status"));
-        }
-        try {
             if (c.aaRuntime != null) for (String[] t : c.aaRuntime.findings()) f.add(new SelfCheck.Finding(t[0], t[1], t[2]));   // 0.36.0 AA
         } catch (RuntimeException e) {
             f.add(new SelfCheck.Finding("aacheck", "couldn't check aa: " + e, "aa status"));
@@ -134,8 +114,6 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         } catch (RuntimeException e) {
             f.add(new SelfCheck.Finding("reconnectcheck", "couldn't check reconnect: " + e, "status"));
         }
-        String rl = c.respawn.checkLine();                  // 0.24.3: joined/respawned outside every area
-        if (rl != null) f.add(new SelfCheck.Finding("outside", rl, "area here 48 camp neutral then bootstrap"));
         try {                                               // 0.28.1 (trial fix C/A): a hole, a camp mark in the air
             net.minecraft.client.player.LocalPlayer me = net.minecraft.client.Minecraft.getInstance().player;
             if (me != null) {
@@ -144,7 +122,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
                 boolean sky = me.level().canSeeSky(new net.minecraft.core.BlockPos(x, y + 1, z));
                 Clearing.LiveWorld lw = new Clearing.LiveWorld();
                 lw.set(me);
-                if (ClimbPlan.inHole(y, surface, sky) && ClimbPlan.depth(y, surface) <= ClimbPlan.HINT_MAX
+                if (ClimbPlan.inHole(y, surface, sky) && ClimbPlan.depth(y, surface) <= ClimbPlan.hintMax()
                         && !ClimbPlan.indoors(lw, x, y, z, ClimbPlan.depth(y, surface))) f.add(new SelfCheck.Finding("hole", "I'm in a hole (rim " + ClimbPlan.depth(y, surface) + " above me)", "climb"));
                 com.google.gson.JsonObject camp = Core.INSTANCE.knowledge.places().get("camp");
                 if (camp != null && camp.has("x") && Jobs.dimOf(camp).equals(io.github.mojolowjo.entropybot.guard.Guard.dimOf(me.level()))) {
@@ -162,7 +140,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
                 for (Box a : Core.INSTANCE.guard.core.policy().areas) {
                     if (a.name == null) continue;
                     JsonObject ab = c.policyArea(a.name);
-                    if (ab == null || PolicyCommands.typeOf(ab) != io.github.mojolowjo.entropybot.guard.AreaType.MAIN) continue;
+                    if (ab == null || PolicyCommands.typeOf(ab) != io.github.mojolowjo.entropybot.guard.AreaType.BASE) continue;
                     String[] err = new String[1];
                     int[] b = DigCommands.areaBox(c, a.name, err);
                     if (b == null || Math.abs(b[3] - b[0]) + 1 < 7 || Math.abs(b[5] - b[2]) + 1 < 7 || Math.abs(b[4] - b[1]) + 1 < 5) continue;
@@ -209,7 +187,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
     public void idleTick(LocalPlayer p, boolean idle, long now) {
         // 0.21.2: look once a minute; the whisper itself is rate-limited to one per 30 min across restarts
         // (SelfCheck.idle and commands.json selfCheck.lastWhisper), one line, once per cause
-        if (!idle || p == null || now - lastIdleCheck < IDLE_LOOK_MS) return;
+        if (!idle || p == null || now - lastIdleCheck < idleLookMs()) return;
         if (!ownerOnline()) return;                       // nobody to tell: keep the keys, look again later
         lastIdleCheck = now;
         try {
@@ -234,7 +212,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
     }
 
     /** 0.21.2: the idle check looks this often (it whispers at most every {@link SelfCheck#WHISPER_EVERY_MS}). */
-    public static final long IDLE_LOOK_MS = 60_000L;
+    public static long idleLookMs() { return Tuning.l("selfCheckLive.idleLookMs"); }
     private long idleWhispers, idleErrors;
 
     /** When the last self-check whisper went out (commands.json selfCheck.lastWhisper), -1 = never. */
@@ -243,7 +221,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         try {
             if (b.has("selfCheck") && b.get("selfCheck").isJsonObject() && b.getAsJsonObject("selfCheck").has("lastWhisper"))
                 return b.getAsJsonObject("selfCheck").get("lastWhisper").getAsLong();
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException caught) { Quiet.warn("SelfCheckLive.lastWhisper failed, carrying on with the fallback", caught); }
         return -1;
     }
 
@@ -299,7 +277,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
             }
         }
         return new SelfCheck.State(g.mode() == GuardCore.Mode.STRICT, areas, base != null, baseChests, places.containsKey("food"), c.home() != null,
-                minePos, mineDir, mine == null ? null : mineGaveUp(), c.suppliesMap(), free, tools, ownerOnline(), companionAge(core));
+                minePos, mineDir, null, c.suppliesMap(), free, tools, ownerOnline(), companionAge(core));
     }
 
     /** Trusted container notes within 32 blocks of the base (as Storage.baseChests, without looking at the blocks). */
@@ -314,25 +292,9 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
             try {
                 int[] pos = {Integer.parseInt(q[0]), Integer.parseInt(q[1]), Integer.parseInt(q[2])};
                 if (Jobs.distSq(pos, center) <= 32 * 32) n++;
-            } catch (NumberFormatException ignored) {}
+            } catch (NumberFormatException caught) { Quiet.warn("SelfCheckLive.chestsNear failed, carrying on with the fallback", caught); }
         }
         return n;
-    }
-
-    /** The last strip run's end when it gave up (the autominer's log), else null. */
-    private String mineGaveUp() {
-        JsonObject b = c.brainData();
-        JsonObject a = b.has("autominer") && b.get("autominer").isJsonObject() ? b.getAsJsonObject("autominer") : null;
-        if (a == null || !a.has("log") || !a.get("log").isJsonArray()) return null;
-        JsonArray log = a.getAsJsonArray("log");
-        for (int i = log.size() - 1; i >= 0; i--) {
-            JsonObject e = log.get(i).getAsJsonObject();
-            String what = e.has("what") ? e.get("what").getAsString() : "";
-            if (!what.startsWith("mine strip")) continue;
-            if (!Chains.stripGaveUp(e)) return null;
-            return e.get("result").getAsString().replaceFirst("^stopped at step \\d+ \\([^)]*\\): ", "");
-        }
-        return null;
     }
 
     private boolean ownerOnline() {
@@ -351,6 +313,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
             OwnerFix.Fix fix = OwnerFix.parse(Files.readString(f));
             return fix == null ? -1 : Math.max(0, System.currentTimeMillis() - fix.received());
         } catch (Exception e) {
+            Quiet.warn("SelfCheckLive.companionAge failed, carrying on with the fallback", e);
             return -1;
         }
     }
@@ -377,7 +340,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         JsonObject b = c.policyArea(name);
         if (b == null) return io.github.mojolowjo.entropybot.vocab.DigForms.areaProblem(name, false, false, false, false, words);
         return io.github.mojolowjo.entropybot.vocab.DigForms.areaProblem(name, true, b.has("round"), !PolicyCommands.hasY(b),
-                PolicyCommands.typeOf(b) == io.github.mojolowjo.entropybot.guard.AreaType.SAFE, words);
+                PolicyCommands.typeOf(b) == io.github.mojolowjo.entropybot.guard.AreaType.NO_BREAK, words);
     }
 
     @Override

@@ -1,0 +1,111 @@
+package io.github.mojolowjo.entropybot.guard;
+
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import java.util.Locale;
+
+/**
+ * aa-costs (item 1; replaces "never dig down from in the water" and "skip an ore 2+ below while in water"): the
+ * drowning risk of digging down from in the water, from the air left, the blocks to dig, the water over me, the
+ * pickaxe and the time to dig. Need = digDown x {@link #digS} + (digDown + waterAbove) / {@link #SWIM_UP} (dig, then
+ * swim back up the flooded shaft), times the margin {@link #MARGIN}; risk = need / air seconds. Risk 1 or more cannot
+ * be done (no air to come back); under 1 it is a cost of {@link #K} x risk^2 walk-blocks. Pure (JUnit: DrownRiskTest).
+ */
+public final class DrownRisk {
+    private DrownRisk() {}
+
+    public static double swimUp() { return Tuning.get("drownRisk.swimUp"); }
+    public static double margin() { return Tuning.get("drownRisk.margin"); }
+    public static double k() { return Tuning.get("drownRisk.k"); }
+    /** Vanilla: breaking is 5x slower submerged (no Aqua Affinity) and 5x again off the ground; we count the 5x. */
+    public static double waterSlow() { return Tuning.get("drownRisk.waterSlow"); }
+    /** Seconds per stone block on dry ground by pickaxe tier (0 hand, 1 wood/gold, 2 stone, 3 iron, 4 diamond+), plus the drop. */
+    static final double[] DRY_S = {7.5, 1.15, 0.6, 0.4, 0.3};
+    public static double dropS() { return Tuning.get("drownRisk.dropS"); }
+    /** The tier assumed when unknown (a stone pickaxe). */
+    public static int defaultTier() { return Tuning.i("drownRisk.defaultTier"); }
+
+    /** Seconds to dig one block down while submerged with this pickaxe tier. */
+    /**
+     * wetbreak (owner, r4: "it still tries to path through leaf blocks while swimming"): any block broken from the water
+     * costs vanilla's slowdown, x{@link #WATER_SLOW} submerged and x{@link #WATER_SLOW} again when the water there is
+     * deep (the bot floats, off the ground). Baritone priced it as dry, so leaves in a lake looked free. 1 = dry.
+     */
+    public static double wetBreakMult(boolean waterBeside, boolean deep) {
+        if (!waterBeside) return 1;
+        return deep ? waterSlow() * waterSlow() : waterSlow();
+    }
+
+    public static double digS(int tier) { return DRY_S[Math.max(0, Math.min(4, tier))] * waterSlow() + dropS(); }
+
+    public static double needS(int digDown, int waterAbove, int tier) {
+        int d = Math.max(0, digDown);
+        return d * digS(tier) + (d + Math.max(0, waterAbove)) / swimUp();
+    }
+
+    public static double needS(int digDown, int waterAbove) { return needS(digDown, waterAbove, defaultTier()); }
+
+    /** need x margin / air seconds; air in ticks (300 full = 15 s). */
+    public static double risk(int digDown, int waterAbove, int air, int tier) {
+        double need = needS(digDown, waterAbove, tier) * margin();
+        double a = Math.max(0, air) / 20.0;  // game fact: air is counted in ticks, 20 per second
+        if (a <= 0) return need > 0 ? Double.POSITIVE_INFINITY : 0;
+        return need / a;
+    }
+
+    public static double risk(int digDown, int waterAbove, int air) { return risk(digDown, waterAbove, air, defaultTier()); }
+
+    public static boolean fatal(double risk) { return risk >= 1; }
+
+    /** Seconds to place one block (aim, click). */
+    public static double placeS() { return Tuning.get("drownRisk.placeS"); }
+    /** The deepest water column counted per cell (the A* scan stops here; deeper counts as this). */
+    public static int surfaceScan() { return Tuning.i("drownRisk.surfaceScan"); }
+
+    /**
+     * aa-water (to-do 1f): the risk of working one cell {@code depth} blocks below the water surface: the work there
+     * ({@code workS}: a dig {@link #digS}, a place {@link #PLACE_S}) plus the swim up from that depth, x {@link #MARGIN},
+     * over the air left. The cell's own depth counts, not my feet's (a deep flooded cave is costly from any cell in it).
+     */
+    public static double cellRisk(int depth, double workS, int air) {
+        double need = (Math.max(0, workS) + Math.max(0, depth) / swimUp()) * margin();
+        double a = Math.max(0, air) / 20.0;  // game fact: air is counted in ticks, 20 per second
+        if (a <= 0) return need > 0 ? Double.POSITIVE_INFINITY : 0;
+        return need / a;
+    }
+
+    /** A* break multiplier for a cell under water: 1 + 4 risk^2, infinite when fatal. */
+    public static double breakMult(int depth, int air, int tier) {
+        double r = cellRisk(depth, digS(tier), air);
+        return fatal(r) ? Double.POSITIVE_INFINITY : 1 + Tuning.i("drownRisk.riskK") * r * r;
+    }
+
+    /** A* place multiplier for a cell in water: 1 + 4 risk^2, infinite when fatal. */
+    public static double placeMult(int depth, int air) {
+        double r = cellRisk(depth, placeS(), air);
+        return fatal(r) ? Double.POSITIVE_INFINITY : 1 + Tuning.i("drownRisk.riskK") * r * r;
+    }
+
+    /** Walk-blocks: K x risk^2 under 1, infinite from 1. */
+    public static double cost(double risk) { return fatal(risk) ? Double.POSITIVE_INFINITY : k() * risk * risk; }
+
+    public static String terms(int digDown, int waterAbove, int air, int tier) {
+        double r = risk(digDown, waterAbove, air, tier);
+        return String.format(Locale.ROOT, "dig %d down under %d water (pickaxe tier %d, %.1f s/block): needs %.1f s x%.1f, air %.1f s, drown risk %s",
+                digDown, waterAbove, tier, digS(tier), needS(digDown, waterAbove, tier), margin(), Math.max(0, air) / 20.0,  // game fact: air is counted in ticks, 20 per second
+                Double.isInfinite(r) ? "max" : String.format(Locale.ROOT, "%.2f", r));
+    }
+
+    public static String terms(int digDown, int waterAbove, int air) { return terms(digDown, waterAbove, air, defaultTier()); }
+
+    /** The best pickaxe tier among item ids ("minecraft:stone_pickaxe" -> 2), 0 none. */
+    public static int pickTier(Iterable<String> itemIds) {
+        int t = 0;
+        for (String id : itemIds) {
+            if (id == null || !id.endsWith("_pickaxe")) continue;
+            int v = id.contains("netherite") || id.contains("diamond") ? 4 : id.contains("iron") ? 3 : id.contains("stone") ? 2 : 1;
+            t = Math.max(t, v);
+        }
+        return t;
+    }
+}

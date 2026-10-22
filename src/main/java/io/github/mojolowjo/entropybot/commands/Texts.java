@@ -13,27 +13,27 @@ public final class Texts {
     private Texts() {}
 
     /** V1b: what allowed players who aren't the owner may use (plus the read-only forms in {@link #guestRefusal}). */
-    public static final Set<String> GUEST_VERBS = Set.of("help", "", "status", "inv", "queue", "places", "have", "find", "come", "follow", "goto", "stop", "restart", "dismiss", "hold", "why");
+    public static final Set<String> GUEST_VERBS = Set.of("help", "", "status", "inv", "queue", "places", "have", "find", "come", "follow", "goto", "stop", "restart", "dismiss", "why");
 
     /** Every command word of the surface (V1b: docs/VOCABULARY.md and nothing else); routine names can't use these nor {@link OldWords#REMOVED}. */
-    public static final List<String> BUILTIN_VERBS = List.of("place", "marker", "places", "area", "fence", "fetch", "need", "needs", "goal", "goals", "have", "stock", "get",
-            "supplies", "deposit", "mine", "dig", "build", "cut", "gather", "light", "junk", "defence", "defend", "guard", "escort", "assist", "dismiss", "attack", "queue", "status", "inv",
-            "stop", "routine", "routines", "rule", "rules", "repeat", "wait", "confirm", "check", "summary", "kinds", "tools", "hotbar", "explore", "find", "scout", "done", "free", "sleep",
-            "camp", "bootstrap", "climb", "house", "restore", "come", "follow", "goto", "go", "home", "open", "take", "put", "close", "drop", "wear", "scan", "rs", "pots", "craft", "kit", "recipe",
-            "smelt", "cook", "eat", "farm", "compact", "infuse", "upgrade", "help", "allow", "deny", "restart", "surface", "sense", "path", "server", "debug",
-            "why", "look", "reply", "brain", "idle", "dayplan", "plan", "actions", "deaths", "resume", "death", "corpse", "hold", "give", "carry", "unload", "restock", "say", "twerk", "spawn", "trust", "untrust", "shelter", "hunt", "hunting", "blind", "ai", "aa");
+    public static final List<String> BUILTIN_VERBS = List.of("place", "marker", "places", "area", "fence", "need", "needs", "goal", "goals", "have", "stock", "get",
+            "supplies", "deposit", "mine", "dig", "build", "cut", "gather", "light", "junk", "defence", "defend", "guard", "assist", "dismiss", "attack", "queue", "status", "inv",
+            "stop", "routine", "routines", "rule", "rules", "repeat", "wait", "confirm", "check", "summary", "kinds", "tools", "hotbar", "explore", "find", "done", "free", "sleep",
+            "camp", "climb", "house", "restore", "come", "follow", "goto", "go", "home", "open", "take", "put", "close", "drop", "wear", "scan", "rs", "pots", "craft", "kit", "recipe",
+            "smelt", "cook", "eat", "burrow", "flee", "pillar", "farm", "compact", "upgrade", "help", "allow", "deny", "restart", "surface", "sense", "path", "server", "debug",
+            "why", "look", "reply", "brain", "idle", "dayplan", "plan", "actions", "deaths", "death", "corpse", "give", "restock", "say", "spawn", "trust", "untrust", "shelter", "hunt", "hunting", "fish", "blind", "ai", "aa");
 
     /**
      * The jobs the mod runs itself: walks since B7b part 1, the storage errands (and "go poi") since part 2, crafting,
      * the furnace, get/restock, the farm and compact since B7c (need/supplies/recipe are instant there).
      */
-    public static final Set<String> MOD_JOB_VERBS = Set.of("come", "follow", "goto", "spawn", "bed", "go", "base", "home", "wait", "twerk", "find",
+    public static final Set<String> MOD_JOB_VERBS = Set.of("come", "follow", "goto", "spawn", "bed", "go", "base", "home", "wait", "find",
             "open", "scan", "deposit", "corpse", "death", "rs", "pots",
-            "craft", "kit", "smelt", "get", "restock", "farm", "compact", "recipe", "need", "supplies", "infuse", "upgrade",
-            "dig", "build", "place", "stripmine", "mine", "explore", "route", "restore", "chop", "cook", "sleep", "scout", "cut", "shelter");
+            "craft", "kit", "smelt", "get", "restock", "farm", "compact", "recipe", "need", "supplies", "give", "upgrade",
+            "dig", "build", "place", "stripmine", "mine", "explore", "restore", "cook", "sleep", "cut", "shelter");
 
     /** The instant GUI verbs the mod does since B7b part 2 (no job). */
-    public static final Set<String> MOD_VERBS = Set.of("take", "put", "close", "drop", "use", "wear", "equip");
+    public static final Set<String> MOD_VERBS = Set.of("take", "put", "close", "drop", "wear", "equip");
 
 
     private static final Pattern CHAIN_SPLIT = Pattern.compile("\\s*;\\s*|\\s+then\\s+", Pattern.CASE_INSENSITIVE);
@@ -54,7 +54,7 @@ public final class Texts {
 
     /**
      * 0.28.1 (trial fix B): the policy verbs (area, fence, protect, unprotect, guard) answer at once - unless the text is a
-     * chain ("area here 48 camp then bootstrap"), which goes to the chain runner first so "then" never reads as an area type.
+     * chain ("area here 48 camp then house house"), which goes to the chain runner first so "then" never reads as an area type.
      */
     public static boolean isPolicyVerbAlone(String verb, String raw) {
         if (verb == null) return false;
@@ -78,20 +78,12 @@ public final class Texts {
     }
 
     /** Null when an allowed player who isn't the owner may run this, else the refusal. */
-    /** 0.21.0: "stock targets|set|clear ..." is C4's base-chest targets; "stock" alone or "stock <filter>" is C2's shared view. */
-    public static boolean isStockTargetsForm(String rest) {
-        String r = rest == null ? "" : rest.trim().toLowerCase();
-        return r.matches("^(targets|set|clear)(\\s.*)?$");
-    }
-
     public static String guestRefusal(String verb, String rest, String raw, String owner) {
         String r = rest == null ? "" : rest.trim().toLowerCase();
         if (splitChain(raw).size() > 1) return "sorry, only " + owner + " can start chains";
-        if (verb.equals("stock") && isStockTargetsForm(r)) return "sorry, stock targets|set|clear are " + owner + "'s - you can use stock [filter]";
         if (GUEST_VERBS.contains(verb)) return null;
         if (verb.equals("guard") && (r.isEmpty() || r.equals("vetoes"))) return OldWords.hint(verb, r);       // V1a: the cut word, its new form
         if (verb.equals("fence") && (r.isEmpty() || r.equals("vetoes") || r.equals("status") || r.equals("rules") || r.startsWith("why "))) return null;
-        if (verb.equals("escort") && r.matches("^(|status|me(\\s+\\d+)?)$")) return null;     // C7: guests escort only themselves
         if (verb.equals("area") && r.equals("list")) return null;
         if (verb.equals("deaths") && r.isEmpty()) return null;
         return "sorry, only " + owner + " can use \"" + verb + "\". You can use: " + HelpCommand.guestList();
@@ -103,7 +95,7 @@ public final class Texts {
     }
 
     /** B7e: a "debug" answer (a 4096-cell slice is ~15 KB) goes into the log cut to this many characters and its length. */
-    public static final int DEBUG_LOG_CHARS = 200;
+    public static final int DEBUG_LOG_CHARS = 200; // structural
 
     /** What the log line of a cmd.json answer shows: the answer, or for "debug" (a type or a pm) its start and length. */
     public static String cmdLogged(String type, String text, String result) {

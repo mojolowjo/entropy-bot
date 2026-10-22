@@ -15,15 +15,16 @@ import java.util.regex.Pattern;
  * Loader API: none.
  */
 public final class ReplyShaper {
-    public static final int BUDGET = 600;
-    static final int MAX_OPTIONS = 3, MAX_NEWS = 3;
+    public static final int BUDGET = 600; // structural
+    static final int MAX_OPTIONS = 3; // structural
+    static final int MAX_NEWS = 3; // structural
 
     /** Verbs whose answer is the information itself (shown whole). */
     static final Set<String> PASS = Set.of("why", "look", "help", "?", "debug", "check", "memory", "summary", "status",
             "reply", "area", "areas", "places", "have", "stock", "recipe", "actions", "goals", "plan", "goal", "brain",
-            "route", "pois", "poi", "caves", "ores", "allowed", "commands", "routines", "queue",
+            "pois", "poi", "caves", "ores", "allowed", "commands", "routines", "queue",
             // review 5: lists and coordinates are never cut
-            "where", "stripmine", "inv", "tools", "deaths", "death", "find", "scout", "hotbar", "supplies", "need", "gather");
+            "where", "stripmine", "inv", "tools", "deaths", "death", "find", "hotbar", "supplies", "need", "gather");
 
     private static final Pattern FAIL = Pattern.compile("^(error|stopped|failed|can't|couldn't|cannot|busy|sorry|no path|refused|blocked|usage:|unknown|i have no|i don't|i didn't|didn't|nothing to|not in a world)"
             + "|^\\S+: (stopped|error|failed|blocked)\\b|\\bblocked by (water|lava)\\b",

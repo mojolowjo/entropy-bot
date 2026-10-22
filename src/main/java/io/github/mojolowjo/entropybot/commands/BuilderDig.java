@@ -1,5 +1,9 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import io.github.mojolowjo.entropybot.Quiet;
+
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -33,8 +37,8 @@ import org.slf4j.Logger;
 /**
  * 0.29.0 (docs/DIG_VIA_BARITONE_PLAN.md, P1): {@code dig x1 y1 z1 x2 y2 z2 [...] via baritone}. Baritone's builder walks,
  * picks where to stand and breaks; the mod decides per cell what may go ({@link BaritoneMask}, the only filter: the
- * builder's click ignores Baritone's own protected lists), takes the guard's break lease, throws junk or makes a base trip
- * when the bag is full, runs the water round when asked, and writes the end report ({@link BuilderReport}).
+ * builder's click ignores Baritone's own protected lists), takes the guard's break lease, makes a base trip
+ * when the bag is full, and writes the end report ({@link BuilderReport}).
  *
  * <p>Baritone API only ({@code IBuilderProcess.build}, {@code MaskSchematic}, {@code FillSchematic}, {@code Settings}):
  * loader-neutral. Minecraft types: {@link BlockState}, {@link Blocks#AIR}, {@link BlockPos}. Error catching: the mask is
@@ -61,7 +65,7 @@ public final class BuilderDig {
     public static boolean breaking() { return breaking; }
 
     /** Restarts after the builder went idle while blocks were left and it had broken some since its last start (a hold). */
-    static final int MAX_RESTARTS = 5;
+    static int maxRestarts() { return Tuning.i("builderDig.maxRestarts"); }
 
     static final class Saved {
         boolean buildInLayers, layerOrder, breakFromAbove, remainWithExistingLookDirection;
@@ -93,7 +97,6 @@ public final class BuilderDig {
         long startTick, lastPoll, lastBeat = -1000, lastErrLog = -10000, loggedErrors, lastRefresh = -1000;
         int brokeAtPoll, brokeAtStart, restarts;
         boolean holdSeen;
-        double[] startXZ;
         Saved saved;
         /** the drop sweep running now (the builder is stopped meanwhile), what comes after it, the totals */
         io.github.mojolowjo.entropybot.clear.DropSweep sweep;
@@ -229,7 +232,6 @@ public final class BuilderDig {
         Jobs.cancel(b);
         Jobs.safeSettings();
         s.world.set(p);
-        s.startXZ = new double[]{p.getX(), p.getZ()};
         s.job = ClearJob.start(o, null, null);
         s.job.standOk = Clearing.standCheck(c);
         ClearBox box = s.job.box;
@@ -241,7 +243,7 @@ public final class BuilderDig {
             for (int x = box.x1(); x <= box.x2(); x++)
                 for (int y = box.y1(); y <= box.y2(); y++)
                     for (int z = box.z1(); z <= box.z2(); z++)
-                        if (denied || pol.protectAt(dim, x, y, z) != null || pol.typeAt(dim, x, y, z) == AreaType.SAFE) s.fenced.add(BaritoneMask.packed(x, y, z));
+                        if (denied || pol.protectAt(dim, x, y, z) != null || pol.typeAt(dim, x, y, z) == AreaType.NO_BREAK) s.fenced.add(BaritoneMask.packed(x, y, z));
         } catch (RuntimeException e) {
             return "error: couldn't read the guard's protect boxes: " + e;
         }
@@ -252,7 +254,7 @@ public final class BuilderDig {
                 BaritoneMask.onlyCells(o.only));
         s.startCells = Set.copyOf(s.mask.digCells(s.world));
         s.outside = solidAround(s.world, box);
-        s.outsideCapped = s.outside.size() >= OUTSIDE_CAP;
+        s.outsideCapped = s.outside.size() >= outsideCap();
         s.mask.refresh(s.world);
         s.leases = Clearing.newLeases();
         String le = s.leases.take(s.job.label, s.job.breakLeaseBox(), false, s.job.force);
@@ -359,7 +361,7 @@ public final class BuilderDig {
         if (b != null) {
             try {
                 if (b.getBuilderProcess().isActive()) b.getBuilderProcess().onLostControl();
-            } catch (Throwable ignored) {}
+            } catch (Throwable caught) { Quiet.warn("BuilderDig.stopBuilder failed, carrying on with the fallback", caught); }
             io.github.mojolowjo.entropybot.baritone.SafetyNet.cancel(b);
         }
         restoreSettings(s);
@@ -369,11 +371,11 @@ public final class BuilderDig {
     /** 0.34.3 (live: "broke 0 blocks" while cobblestone came in: Baritone broke its way in, outside the box; our own breaks send no change event). */
     static Set<Long> solidAround(Clearing.LiveWorld w, ClearBox b) {
         Set<Long> out = new HashSet<>();
-        for (int x = b.x1() - OUTSIDE_NEAR; x <= b.x2() + OUTSIDE_NEAR; x++)
-            for (int y = b.y1() - OUTSIDE_NEAR; y <= b.y2() + OUTSIDE_NEAR; y++)
-                for (int z = b.z1() - OUTSIDE_NEAR; z <= b.z2() + OUTSIDE_NEAR; z++) {
-                    if (b.contains(x, y, z) || out.size() >= OUTSIDE_CAP) continue;
-                    try { if (!w.air(x, y, z) && !w.fluid(x, y, z)) out.add(BaritoneMask.packed(x, y, z)); } catch (RuntimeException ignored) {}
+        for (int x = b.x1() - outsideNear(); x <= b.x2() + outsideNear(); x++)
+            for (int y = b.y1() - outsideNear(); y <= b.y2() + outsideNear(); y++)
+                for (int z = b.z1() - outsideNear(); z <= b.z2() + outsideNear(); z++) {
+                    if (b.contains(x, y, z) || out.size() >= outsideCap()) continue;
+                    try { if (!w.air(x, y, z) && !w.fluid(x, y, z)) out.add(BaritoneMask.packed(x, y, z)); } catch (RuntimeException caught) { Quiet.warn("BuilderDig.solidAround failed, carrying on with the fallback", caught); }
                 }
         return out;
     }
@@ -382,7 +384,7 @@ public final class BuilderDig {
         int n = 0;
         for (long k : cells) {
             int x = (int) (k >> 38), z = (int) ((k << 26) >> 38), y = (int) ((k << 52) >> 52);
-            try { if (w.air(x, y, z)) n++; } catch (RuntimeException ignored) {}
+            try { if (w.air(x, y, z)) n++; } catch (RuntimeException caught) { Quiet.warn("BuilderDig.goneOf failed, carrying on with the fallback", caught); }
         }
         return n;
     }
@@ -393,7 +395,7 @@ public final class BuilderDig {
             int x = (int) (k >> 38), z = (int) ((k << 26) >> 38), y = (int) ((k << 52) >> 52);
             try {
                 if (s.world.air(x, y, z) || s.world.fluid(x, y, z)) n++;
-            } catch (RuntimeException ignored) {}
+            } catch (RuntimeException caught) { Quiet.warn("BuilderDig.broke failed, carrying on with the fallback", caught); }
         }
         return n;
     }
@@ -461,7 +463,7 @@ public final class BuilderDig {
         String nt = toolMissing(s, p);
         if (nt != null) return toolEnd(seq, st, s, p, nt);
         seq.setStatus(s.job.label + ": broke " + b + " of " + s.startCells.size() + " (via baritone; " + s.mask.counters() + ")");
-        // the bag is full: the builder stops, junk is thrown or taken home, then it starts again
+        // the bag is full: the builder stops, the loot is taken home, then it starts again
         if (!s.noDeposit && p.getInventory().getFreeSlot() < 0) {
             // first what still fits (stacks with room), then the trip
             if (!s.sweptForTrip) return startSweep(seq, s, p, now, null, true);
@@ -478,7 +480,7 @@ public final class BuilderDig {
             // idle with blocks it may break still there: cancelled from outside (a fight hold), or it lost them; once it
             // broke something since its last start, it goes again (a few times)
             BaritoneMask.Leftover left = s.mask.leftover(s.world);
-            if (left.unreachable() > 0 && s.restarts < MAX_RESTARTS && (s.brokeAtPoll > s.brokeAtStart || s.holdSeen)) {
+            if (left.unreachable() > 0 && s.restarts < maxRestarts() && (s.brokeAtPoll > s.brokeAtStart || s.holdSeen)) {
                 s.restarts++;
                 s.holdSeen = false;
                 LOG.info("[entropybot] dig via baritone: the builder went idle with {} left, starting it again ({})", left.unreachable(), s.restarts);
@@ -511,7 +513,7 @@ public final class BuilderDig {
                     seen.put(n, bad);
                 }
                 if (bad) return n;
-            } catch (RuntimeException ignored) {}
+            } catch (RuntimeException caught) { Quiet.warn("BuilderDig.toolMissing failed, carrying on with the fallback", caught); }
         }
         return null;
     }
@@ -564,21 +566,16 @@ public final class BuilderDig {
         return end(seq, st, s, p, s.afterSweep, null);
     }
 
-    /** The drops the plain dig would chase (its dropWanted and junk-drop rules), in the sweep's area, with room in the bag. */
+    /** The drops the plain dig would chase (its dropWanted rule), in the sweep's area, with room in the bag. */
     private static List<io.github.mojolowjo.entropybot.clear.DropSweep.Item> seenDrops(State s, LocalPlayer p, long now) {
         List<io.github.mojolowjo.entropybot.clear.DropSweep.Item> out = new ArrayList<>();
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return out;
-        Map<String, Integer> inv = null;
         var pinv = p.getInventory();
         for (net.minecraft.world.entity.Entity e : mc.level.entitiesForRendering()) {
             if (!(e instanceof net.minecraft.world.entity.item.ItemEntity ie) || !e.isAlive()) continue;
             int x = (int) Math.floor(e.getX()), y = (int) Math.floor(e.getY() + 0.01), z = (int) Math.floor(e.getZ());
             if (!s.sweep.covers(x, y, z) || !s.job.dropWanted(x, y, z)) continue;
-            if (s.job.junkDrop) {
-                if (inv == null) inv = io.github.mojolowjo.entropybot.gui.Gui.inventory(p);
-                if (!io.github.mojolowjo.entropybot.clear.JunkDrop.chase(io.github.mojolowjo.entropybot.gui.Gui.itemId(ie.getItem()), s.job, inv, x, y, z, now)) continue;
-            }
             if (pinv.getFreeSlot() < 0 && pinv.getSlotWithRemainingSpace(ie.getItem()) < 0) continue;
             out.add(new io.github.mojolowjo.entropybot.clear.DropSweep.Item(String.valueOf(e.getId()), x, y, z, e.distanceTo(p)));
         }
@@ -590,6 +587,7 @@ public final class BuilderDig {
             var e = Minecraft.getInstance().level.getEntity(Integer.parseInt(id));
             return e instanceof net.minecraft.world.entity.item.ItemEntity ie && ie.isAlive() && !ie.isRemoved() ? ie : null;
         } catch (RuntimeException ex) {
+            Quiet.warn("BuilderDig.dropEntity failed, carrying on with the fallback", ex);
             return null;
         }
     }
@@ -686,7 +684,7 @@ public final class BuilderDig {
                         Object r = rf.get(t);
                         if (r instanceof baritone.api.utils.Rotation rot) target = String.format("%.1f/%.1f", rot.getYaw(), rot.getPitch());
                     }
-                } catch (Throwable ignored) {}
+                } catch (Throwable caught) { Quiet.warn("BuilderDig.probe failed, carrying on with the fallback", caught); }
             }
             String btr = "?";
             boolean bveto = false;
@@ -711,7 +709,7 @@ public final class BuilderDig {
                 java.lang.reflect.Field pf = net.minecraft.client.multiplayer.MultiPlayerGameMode.class.getDeclaredField("destroyProgress");
                 pf.setAccessible(true);
                 prog = String.format("%.2f", pf.getFloat(mc.gameMode));
-            } catch (Throwable ignored) {}
+            } catch (Throwable caught) { Quiet.warn("BuilderDig.probe failed, carrying on with the fallback", caught); }
             btr += " progress " + prog + " held " + p.getMainHandItem().getItem();
             Settings st = BaritoneAPI.getSettings();
             String line = String.format("yaw %.1f pitch %.1f feet %d %d %d ground %s target %s mcHit %s veto %s bHit %s bveto %s forcedLeft %s keyAttack %s destroying %s screen %s freeLook %s blockFreeLook %s anti %s",
@@ -742,21 +740,14 @@ public final class BuilderDig {
         return le;
     }
 
-    /** The bag is full: junk thrown here ("junk drop") or a base trip; the builder waits cancelled. */
+    /** The bag is full: a base trip; the builder waits cancelled. */
     private static String trip(Seq seq, State s, LocalPlayer p) {
-        List<Seq.Step> steps;
-        String kind;
-        if (s.job.junkDrop) {
-            steps = List.of(FloorSteps.junkStep(s.job, s.startXZ));
-            kind = "junk";
-        } else {
-            steps = Clearing.depositSteps(seq.storage, p, s.job);
-            kind = "deposit";
-            if (steps == null) {
-                s.noDeposit = true;
-                LOG.info("[entropybot] dig via baritone: inventory full and nothing to put away - drops stay on the ground");
-                return "wait";
-            }
+        List<Seq.Step> steps = Clearing.depositSteps(seq.storage, p, s.job);
+        String kind = "deposit";
+        if (steps == null) {
+            s.noDeposit = true;
+            LOG.info("[entropybot] dig via baritone: inventory full and nothing to put away - drops stay on the ground");
+            return "wait";
         }
         stopBuilder(s);
         s.sweptForTrip = false;                             // after this trip, the next full bag sweeps first again
@@ -773,7 +764,7 @@ public final class BuilderDig {
 
     /**
      * The end: builder cancelled, settings back, the leases released, the box re-scanned, the report. gave: how it ended
-     * (null: an error, text in {@code stop}). The water round comes next when the dig asked for water and water is left.
+     * (null: an error, text in {@code stop}).
      */
     private static String end(Seq seq, Seq.Step st, State s, LocalPlayer p, BuilderReport.End gave, String stop) {
         stopBuilder(s);
@@ -797,17 +788,11 @@ public final class BuilderDig {
         }
         if (s.toolStop != null && stop == null) {
             msg = BuilderReport.noTool(s.job.label, broke, s.toolStop);
-            // 0.33.1 (live: 10 cobblestone and sticks in the bag, the hint said "craft wooden_pickaxe 1"): the craft the bag allows
-            try {
-                String craft = io.github.mojolowjo.entropybot.gather.GatherRules.pickaxeCraft(io.github.mojolowjo.entropybot.gui.Gui.inventory(p));
-                if (craft != null && msg.contains(" - next: craft wooden_pickaxe 1")) msg = msg.replace(" - next: craft wooden_pickaxe 1", " - next: " + craft);
-            } catch (RuntimeException e) {
-                LOG.warn("[entropybot] dig via baritone: the pickaxe hint failed: {}", e.toString());
-            }
+
         }
         msg = BuilderReport.withWayIn(msg, goneOf(s.world, s.outside), s.outsideCapped);
         if (s.sweeps > 0) msg += "; " + io.github.mojolowjo.entropybot.clear.DropSweep.text(s.picked, s.dropsLeft);
-        if (s.countIds != null && s.countStart >= 0) msg += io.github.mojolowjo.entropybot.gather.StonePit.gotText(s.countStart, countOf(p, s.countIds));
+        if (s.countIds != null && s.countStart >= 0) msg += "; got " + Math.max(0, countOf(p, s.countIds) - s.countStart);
         s.job.broken = broke;
         if (left != null) s.job.skip.putAll(left.waterCells);
         int leftN = 0;
@@ -815,15 +800,8 @@ public final class BuilderDig {
         lastEnd = msg.length() > 160 ? msg.substring(0, 157) + "..." : msg;
         if (gave != null && BuilderReport.gaveUp(gave)) {
             LOG.info("[entropybot] dig via baritone: gave up ({}) in {}: {}", gave, s.job.box, msg);
-            try { Core.INSTANCE.events.push("job", "dig via baritone gave up: " + lastEnd, null); } catch (Throwable ignored) {}
+            try { Core.INSTANCE.events.push("job", "dig via baritone gave up: " + lastEnd, null); } catch (Throwable caught) { Quiet.warn("BuilderDig.end failed, carrying on with the fallback", caught); }
         }
-        if (WaterSteps.wants(st, msg)) {
-            st.cleared = new Clearing.Outcome(false, broke, leftN, new LinkedHashMap<>(), new ArrayList<>(), msg);
-            LOG.info("[entropybot] dig via baritone: {} - looking at the water", msg);
-            seq.splice(seq.idx + 1, List.of(WaterSteps.step(st, s.job)));
-            return "next";
-        }
-        msg = WaterSteps.endText(st, s.job, msg);
         st.cleared = new Clearing.Outcome(msg.startsWith("done") || msg.startsWith("ok"), broke, leftN, Map.of(), List.of(), msg);
         LOG.info("[entropybot] dig via baritone: {}", msg);
         seq.jobs.finish(msg);
@@ -870,8 +848,8 @@ public final class BuilderDig {
      * clock starts again, the snapshot is refreshed). Water flowing or gravel falling is no progress.
      */
     /** How far outside the box a break still counts as the way in. */
-    static final int OUTSIDE_NEAR = 2;
-    static final int OUTSIDE_CAP = 20000;
+    static int outsideNear() { return Tuning.i("builderDig.outsideNear"); }
+    static int outsideCap() { return Tuning.i("builderDig.outsideCap"); }
 
     public static void blockChanged(int x, int y, int z, boolean air) {
         State s = current;
@@ -879,6 +857,6 @@ public final class BuilderDig {
         if (!s.startCells.contains(BaritoneMask.packed(x, y, z))) return;
         s.events.incrementAndGet();
         s.dirty = true;
-        try { s.lastChange = Core.INSTANCE.tick(); } catch (Throwable ignored) {}
+        try { s.lastChange = Core.INSTANCE.tick(); } catch (Throwable caught) { Quiet.warn("BuilderDig.blockChanged failed, carrying on with the fallback", caught); }
     }
 }

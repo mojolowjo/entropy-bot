@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.io;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -32,7 +34,7 @@ public final class WorldState {
             "restore", "knownair", "seenfaces", "commands-world", "corpses", "trail");
     /** 0.31.0: commands.json's world-bound keys (they live in the world's commands-world.json). */
     public static final Set<String> COMMANDS_WORLD_KEYS = Set.of("home", "mine", "mines", "minesMoved", "deaths", "lastDeath",
-            "parked", "zone", "farm", "furnaces", "released", "releasedAt", "run");
+            "parked", "zone", "farm", "furnaces", "released", "releasedAt", "run", "aaSwitch");     // live-facts: AA's on/off is the world's (aa.AaSwitch)
     public static final String COMMANDS_WORLD = "commands-world.json";
 
     /** Folders that are the world's. */
@@ -88,7 +90,7 @@ public final class WorldState {
                 String k = key(true, null, Files.readString(f, StandardCharsets.UTF_8).lines().findFirst().orElse(""));
                 if (k != null) return k;
             }
-        } catch (IOException | RuntimeException ignored) {}
+        } catch (IOException | RuntimeException caught) { Quiet.warn("WorldState.mainKey failed, carrying on with the fallback", caught); }
         return null;
     }
 

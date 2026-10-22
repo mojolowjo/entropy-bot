@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -19,9 +21,9 @@ public final class ClimbPlan {
     private ClimbPlan() {}
 
     /** A hole this deep or more under the surface counts as "in a hole" (check, the walk's hint). */
-    public static final int HOLE = 3;
+    public static int hole() { return Tuning.i("climbPlan.hole"); }
     /** Deeper than this a failed walk gets no climb hint (a mine, not a pit). */
-    public static final int HINT_MAX = 24;
+    public static int hintMax() { return Tuning.i("climbPlan.hintMax"); }
 
     public enum Kind { OPEN, DIG, BLOCKED }
 
@@ -50,7 +52,7 @@ public final class ClimbPlan {
 
     /** In a hole: {@link #HOLE}+ under the surface, no open sky over the head. */
     public static boolean inHole(int feetY, int surfaceY, boolean sky) {
-        return !sky && depth(feetY, surfaceY) >= HOLE;
+        return !sky && depth(feetY, surfaceY) >= hole();
     }
 
     /**
@@ -97,7 +99,7 @@ public final class ClimbPlan {
      * (standable: feet and head open, a floor that is neither open nor fluid), cost = blocks to dig + blocks to walk.
      * A fluid floor under a step or a start is refused like a gap (it was let through as "not open" before).
      */
-    public static final int START_R = 4;
+    public static int startR() { return Tuning.i("climbPlan.startR"); }
 
     public static Plan plan(Cells c, Fluid fluid, int x, int y, int z, int surfaceY, boolean hasPickaxe) {
         int up0 = StairPlan.upCount(y, surfaceY);
@@ -107,7 +109,7 @@ public final class ClimbPlan {
         int[] bestStart = null;
         String firstWhy = null;
         for (int sy : new int[]{y, y + 1, y - 1})
-        for (int r = 0; r <= START_R; r++)
+        for (int r = 0; r <= startR(); r++)
         for (int sx = -r; sx <= r; sx++) for (int sz = -r; sz <= r; sz++) {
             if (Math.max(Math.abs(sx), Math.abs(sz)) != r) continue;   // ring by ring: nearer starts first on a tie
             int ox = x + sx, oz = z + sz;
@@ -140,7 +142,7 @@ public final class ClimbPlan {
             }
         }
         if (bestK < 0) return new Plan(List.of(), null, up0, 0, "error: no way up from " + x + " " + y + " " + z + " ("
-                + (firstWhy == null ? "every side is blocked" : firstWhy) + "; no other start within " + START_R
+                + (firstWhy == null ? "every side is blocked" : firstWhy) + "; no other start within " + startR()
                 + " blocks either) - next: dig stairs up <dir> <n> another way, or ask the owner");
         int digN = bestDig - bestStart[3];
         int sy = bestStart[1], up = StairPlan.upCount(sy, surfaceY);
@@ -159,7 +161,7 @@ public final class ClimbPlan {
         }
         return new Plan(steps, names[bestK], up, digN, null, new int[]{ox + d[0] * up, sy + up, oz + d[1] * up});
     }
-    /** 0.28.2 (D): a cell that is one of my own blocks (the restore/build ledger, my shelter) or inside my main area. */
+    /** 0.28.2 (D): a cell that is one of my own blocks (the restore/build ledger, my shelter) or in the owner's base place. */
     public interface Own { boolean at(int x, int y, int z); }
 
     /** The surface way out: the side, the cells to dig (feet and head), or why not. */
@@ -221,8 +223,4 @@ public final class ClimbPlan {
         return "climb " + p.up() + " up (a staircase " + p.dir() + ", " + p.dig() + " blocks to dig) to " + e[0] + " " + e[1] + " " + e[2];
     }
 
-    /** The hint a failed walk or dig gets when the bot ends in a hole. */
-    public static String holeHint(int depth) {
-        return "I'm in a hole (the rim is " + depth + " above me) - next: climb";
-    }
 }

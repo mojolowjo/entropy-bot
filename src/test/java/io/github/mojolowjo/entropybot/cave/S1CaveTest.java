@@ -98,7 +98,7 @@ class S1CaveTest {
         assertNull(n.takeWriteError(), "not tried again at once");
         n.flushIfDue(next);                                // tried again: fails again, waits twice as long
         assertEquals(next + 2 * MineNotes.FLUSH_AFTER, n.oresRetryAt());
-        assertEquals(MineNotes.RETRY_MAX, MineNotes.backoff(40));
+        assertEquals(MineNotes.retryMax(), MineNotes.backoff(40));
         // the folder goes: the next due try writes
         Files.delete(dir.resolve(MineNotes.ORES).resolve("x"));
         Files.delete(dir.resolve(MineNotes.ORES));

@@ -8,6 +8,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Package B: deposit never puts away the best-tier pickaxe, anything below its supplies count, nor what the hotbar layout names. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class DepositKeepsTest {
     static StorageRules.Held h(String id, int n, int slot) { return new StorageRules.Held(id, n, false, slot); }
 

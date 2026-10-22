@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -24,17 +26,17 @@ public final class HostileRules {
 
     public static final String FILE = "defence.json";
     /** At most this many ids on the list. */
-    public static final int CAP = 100;
-    /** Seeded when there is no file yet (the owner confirmed it hostile, 2026-10-05). */
-    public static final List<String> DEFAULTS = List.of("arphex:spider_lunger");
+    public static int cap() { return Tuning.i("hostileRules.cap"); }
+    /** Seeded when there is no file yet: nothing. The game says which mobs are hostile (the Enemy class); a pack mob that is not one is the owner's to add (defence hostile add <id>). */
+    public static final List<String> DEFAULTS = List.of();
     /** A mob that hit the bot counts as a threat for this long after its last hit (the "hurt" window). */
-    public static final int RETALIATE_TICKS = ReflexRules.HURT_TICKS;
+    public static int retaliateTicks() { return ReflexRules.hurtTicks(); }
     /** At most this many attackers are remembered at once (oldest dropped). */
-    public static final int MAX_ATTACKERS = 16;
+    public static int maxAttackers() { return Tuning.i("hostileRules.maxAttackers"); }
     /** A stranger with this much max health or more is fled from, not fought (the combat plan's boss bar, 2.1). */
-    public static final double STRONG_HP = 100;
+    public static double strongHp() { return Tuning.get("hostileRules.strongHp"); }
     /** ... or with this many times the bot's own weapon hit. */
-    public static final double STRONG_HITS = 10;
+    public static double strongHits() { return Tuning.get("hostileRules.strongHits"); }
 
     private static final Pattern ID = Pattern.compile("^[a-z0-9_.-]+:[a-z0-9_./-]+$");
 
@@ -96,7 +98,7 @@ public final class HostileRules {
 
     /** Still within the retaliation window: the last hit was less than {@link #RETALIATE_TICKS} ago. */
     public static boolean retaliating(Long lastHit, long now) {
-        return lastHit != null && now - lastHit >= 0 && now - lastHit < RETALIATE_TICKS;
+        return lastHit != null && now - lastHit >= 0 && now - lastHit < retaliateTicks();
     }
 
     /**
@@ -104,7 +106,7 @@ public final class HostileRules {
      * more, or 10 times the bot's own weapon hit or more. The bot then retreats as at low health.
      */
     public static boolean strong(double maxHealth, double weaponHit) {
-        return maxHealth >= STRONG_HP || maxHealth >= STRONG_HITS * Math.max(1, weaponHit);
+        return maxHealth >= strongHp() || maxHealth >= strongHits() * Math.max(1, weaponHit);
     }
 
     /** A typed id to the full form: lower case, "minecraft:" when no namespace; null when it can't be an id. */
@@ -139,8 +141,8 @@ public final class HostileRules {
         for (JsonElement e : o.getAsJsonArray("hostile")) {
             String id = e.isJsonPrimitive() && e.getAsJsonPrimitive().isString() ? normalize(e.getAsString()) : null;
             if (id == null) bad.add(String.valueOf(e));
-            else if (out.size() < CAP) out.add(id);
-            else bad.add(id + " (over " + CAP + ")");
+            else if (out.size() < cap()) out.add(id);
+            else bad.add(id + " (over " + cap() + ")");
         }
         return new Parsed(List.copyOf(out), bad.isEmpty() ? null : "ignored " + bad.size() + " bad entries: " + String.join(", ", bad), false);
     }
@@ -182,7 +184,7 @@ public final class HostileRules {
             if (add) {
                 if (next.contains(id)) notes.add(id + " is on the list already");
                 else if (!known.test(id)) notes.add("unknown entity id " + id + " (not in this game; debug mobs shows the ids nearby)");
-                else if (next.size() >= CAP) notes.add("not adding " + id + ": I keep at most " + CAP);
+                else if (next.size() >= cap()) notes.add("not adding " + id + ": I keep at most " + cap());
                 else {
                     next.add(id);
                     done.add(id);

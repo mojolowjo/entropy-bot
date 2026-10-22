@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.List;
 import java.util.Map;
 import java.util.function.IntPredicate;
@@ -27,16 +29,15 @@ public final class AaEscape {
     public record Choice(Way way, String why) {}
 
     /** At most this many escapes per task (a way out that keeps ending stuck fails the task as before). */
-    public static final int MAX_PER_TASK = 2;
+    public static int maxPerTask() { return Tuning.i("aaEscape.maxPerTask"); }
 
     /** Baritone's default acceptableThrowawayItems that a bag has (dirt, cobblestone, netherrack, stone). */
-    public static final List<String> THROWAWAY = List.of("cobblestone", "dirt", "netherrack", "stone");
 
     private static final Pattern STEP = Pattern.compile("^stopped at step (\\d+) \\(");
     private static final Pattern NO_PATH = Pattern.compile("no path to (-?\\d+) (-?\\d+) (-?\\d+)");
 
     /** How far up the hole scan looks for a way out sideways. */
-    public static final int HOLE_MAX_UP = 48;
+    public static int holeMaxUp() { return Tuning.i("aaEscape.holeMaxUp"); }
 
     public static boolean stuck(String chainEnd) {
         return chainEnd != null && chainEnd.contains("stuck under ground");
@@ -86,15 +87,40 @@ public final class AaEscape {
         return m.find() ? Integer.parseInt(m.group(1)) : -1;
     }
 
-    /** The chain from step n (1-based, the step that ended stuck: it did not get there) to the end; null if out of range. */
-    public static String resume(List<String> steps, int n) {
-        if (steps == null || n < 1 || n > steps.size()) return null;
-        return String.join(" then ", steps.subList(n - 1, steps.size()));
+    /**
+     * AA_STEP3 A3 (step2-watch: "no pillar (0 blocks)" with 16 oak planks in the bag): the danger moves place their own
+     * blocks (useItemOn, not Baritone's throwaway list), so planks count with the throwaway blocks.
+     */
+    public static boolean pillarBlock(String id) {
+        String k = id == null ? "" : id.replaceFirst("^minecraft:", "");
+        return io.github.mojolowjo.entropybot.aa.brain.Junk.placeable(k);
+    }
+
+    /** Review 0.39.a4 4: planks kept back from placing (a crafting table 4 + sticks 2), so a pillar or a box never eats the next craft. */
+    public static int plankReserve() { return Tuning.i("aaEscape.plankReserve"); }
+
+    static boolean plank(String k) { return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.plank(k); }
+
+    /** One count for every placing danger way (pillar, pillar out, box): {@link #pillarBlock} blocks, planks over {@link #PLANK_RESERVE}. */
+    public static int pillarBlocks(Map<String, Integer> bag) {
+        return placeable(bag == null ? java.util.List.of() : bag.entrySet().stream().map(e -> Map.entry(e.getKey(), e.getValue() == null ? 0 : e.getValue())).toList());
+    }
+
+    /** The same count over (id, count) pairs (the adapter's inventory slots). */
+    public static int placeable(Iterable<Map.Entry<String, Integer>> items) {
+        int other = 0, planks = 0;
+        for (var e : items) {
+            String k = e.getKey() == null ? "" : e.getKey().replaceFirst("^minecraft:", "");
+            if (!pillarBlock(k)) continue;
+            if (plank(k)) planks += Math.max(0, e.getValue());
+            else other += Math.max(0, e.getValue());
+        }
+        return other + Math.max(0, planks - plankReserve());
     }
 
     public static int throwaway(Map<String, Integer> bag) {
         int n = 0;
-        for (String k : THROWAWAY) n += bag.getOrDefault(k, 0);
+        for (var e : bag.entrySet()) if (io.github.mojolowjo.entropybot.aa.brain.Junk.is(e.getKey())) n += Math.max(0, e.getValue());
         return n;
     }
 
@@ -107,10 +133,16 @@ public final class AaEscape {
      */
     public static Choice choose(int depth, boolean shaftOpen, int throwaway, boolean pickaxe) {
         if (depth <= 0) return new Choice(Way.OUT, "not under ground any more");
-        if (shaftOpen && throwaway >= depth)
-            return new Choice(Way.PILLAR, "an open shaft straight up (" + depth + " to the surface), " + throwaway + " blocks to place");
-        String shaft = shaftOpen ? "a shaft up but only " + throwaway + " of " + depth + " blocks to place" : "no open shaft above";
-        if (pickaxe) return new Choice(Way.CLIMB, shaft + ": staircase up (3-high headroom)");
-        return new Choice(Way.NONE, shaft + " and no pickaxe for stairs; the trail back was walked already");
+        // AA_ROUND3 1: a thin call into the one way-up set (no trail/sky facts here: the walk already walked its trail)
+        var f = new RungOptions.SurfaceFacts(depth, new int[]{0, 0, 0}, shaftOpen, throwaway, true, pickaxe, null, -1, false);
+        Options.Choice c = WayUp.choose(f, new Options.OptionMemory(), 0);
+        if (c.best() == null) return new Choice(Way.NONE, c.why());
+        return new Choice("pillar".equals(c.best().id()) ? Way.PILLAR : Way.CLIMB, c.why());
+    }
+
+    /** The live escape: the whole WayUp choice over the adapter's facts (stairs per heading, tunnel, trail, sky). */
+    public static Options.Choice chooseAll(RungOptions.SurfaceFacts f, Options.OptionMemory m, long now) {
+        return WayUp.choose(f, m, now);
     }
 }
+

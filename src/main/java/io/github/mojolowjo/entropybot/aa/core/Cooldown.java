@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa.core;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.List;
 
 /**
@@ -8,7 +10,8 @@ import java.util.List;
  * while the child runs is an interruption, never a failure (the brain's conflict path 2; aa-lessons 11).
  */
 public final class Cooldown extends Node {
-    public static final long BASE_MS = 120_000, MAX_MS = 16 * 60_000;
+    public static long baseMsV() { return Tuning.l("cooldown.baseMs"); }
+    public static long maxMsV() { return Tuning.l("cooldown.maxMs"); }
     private final Node child;
     private final long baseMs, maxMs;
     private long until = -1, lastFailAt = -1;
@@ -16,7 +19,7 @@ public final class Cooldown extends Node {
     private String lastWhy;
     private boolean ranOnly, ran;
 
-    public Cooldown(String id, Node child) { this(id, child, BASE_MS, MAX_MS); }
+    public Cooldown(String id, Node child) { this(id, child, baseMsV(), maxMsV()); }
 
     public Cooldown(String id, Node child, long baseMs, long maxMs) {
         super(id, "cooldown " + child.id);
@@ -35,7 +38,7 @@ public final class Cooldown extends Node {
     }
 
     /** S1 (MINING_PLAN 12): the idle starvation fix: a child that fails without running waits this long (no doubling). */
-    public static final long NO_RUN_MS = 30_000;
+    public static long noRunMsV() { return Tuning.l("cooldown.noRunMs"); }
     private long noRunMs, restMs;
 
     /** S1 review: an idle task that ended done rests this long (a band its success did not clear never loops). */
@@ -56,7 +59,7 @@ public final class Cooldown extends Node {
 
     @Override protected Status run(Blackboard bb) {
         long now = bb.clock.now();
-        if (until > now) return fail("cooling down " + (until - now + 999) / 1000 + "s after: " + lastWhy);
+        if (until > now) return fail("cooling down " + (until - now + 999) / 1000 + "s after: " + lastWhy);  // structural: round up to whole seconds
         Status s = child.tick(bb);
         if (s == Status.RUNNING) ran = true;
         if (s == Status.SUCCESS) {

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -16,7 +18,8 @@ public final class Veins {
     private Veins() {}
 
     /** At most this many blocks per vein, and at most this far from the dug boxes. */
-    public static final int MAX_VEIN = 24, MAX_GAP = 4;
+    public static int maxVein() { return Tuning.i("veins.maxVein"); }
+    public static int maxGap() { return Tuning.i("veins.maxGap"); }
 
     /** Where ores may be mined: the owner's areas (the bridge's inMapArea, x and z only). */
     @FunctionalInterface
@@ -55,7 +58,7 @@ public final class Veins {
                         if (seen.contains(key) || !area.contains(x, z)) continue;
                         if (!veinBlock(w, x, y, z, wanted)) continue;
                         boolean exposed = false;
-                        for (int n = 0; n < 6 && !exposed; n++) {
+                        for (int n = 0; n < 6 && !exposed; n++) {  // game fact: a block has 6 sides
                             int[] s = ClearEngine.SIDES6[n];
                             exposed = w.noCollision(x + s[0], y + s[1], z + s[2]);
                         }
@@ -66,11 +69,11 @@ public final class Veins {
                         seen.add(key);
                         while (!queue.isEmpty()) {
                             Pos cur = queue.poll();
-                            if (vein.size() < MAX_VEIN) vein.add(cur);
+                            if (vein.size() < maxVein()) vein.add(cur);
                             for (int[] s : ClearEngine.SIDES6) {
                                 int nx = cur.x() + s[0], ny = cur.y() + s[1], nz = cur.z() + s[2];
                                 String nk = Pos.key(nx, ny, nz);
-                                if (seen.contains(nk) || boxGap(boxes, nx, ny, nz) > MAX_GAP || !area.contains(nx, nz)) continue;
+                                if (seen.contains(nk) || boxGap(boxes, nx, ny, nz) > maxGap() || !area.contains(nx, nz)) continue;
                                 if (!veinBlock(w, nx, ny, nz, wanted)) continue;
                                 seen.add(nk);
                                 queue.add(new Pos(nx, ny, nz));

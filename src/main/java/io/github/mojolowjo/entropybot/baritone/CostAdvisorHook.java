@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.baritone;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import baritone.pathing.movement.CalculationContext;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.guard.BreakPolicy;
@@ -29,18 +31,45 @@ import java.lang.reflect.Proxy;
  */
 public final class CostAdvisorHook {
     private static final Logger LOG = LogUtils.getLogger();
-    private static final double COST_INF = baritone.api.pathing.movement.ActionCosts.COST_INF;
+    private static final double COST_INF = baritone.api.pathing.movement.ActionCosts.COST_INF; // game fact: Baritone ActionCosts.COST_INF, the price of an impossible move
 
-    /** What one calculation holds fixed: captured on the thread that builds the context. */
-    public record Token(BreakPolicy.Snapshot snapshot, Intent intent, String dim, BreakPolicy.Where me) {}
+    /**
+     * What one calculation holds fixed: captured on the thread that builds the context. AREAS: the areas policy (its
+     * keep-out and danger boxes, an immutable snapshot) and the bot's cell at the start (a bot already inside a
+     * keep-out box walks out by the shortest way: that box is dear, not impassable, for this calculation).
+     */
+    public record Token(BreakPolicy.Snapshot snapshot, Intent intent, String dim, BreakPolicy.Where me,
+                        io.github.mojolowjo.entropybot.guard.Policy areas, int[] at) {
+        public Token(BreakPolicy.Snapshot snapshot, Intent intent, String dim, BreakPolicy.Where me) {
+            this(snapshot, intent, dim, me, null, null);
+        }
+    }
 
-    private static volatile boolean fork;
+    private static volatile boolean fork, moveHook;
+    /** AREAS (owner's default 10.7): the move multiplier inside a danger area; {@code fence danger <n>} sets it. */
+    private static volatile double dangerMultiplier = io.github.mojolowjo.entropybot.guard.MoveRules.defaultDanger();
 
     private CostAdvisorHook() {}
 
     public static boolean fork() { return fork; }
 
-    /** Once Baritone is loaded: the fork hook when this Baritone has it, else the mixin fallback. Returns the kind. */
+    /** AREAS: the fork's CostAdvisor has moveMultiplier (keep-out is pathed around); false = command-level keep-out only. */
+    public static boolean moveHook() { return moveHook; }
+
+    public static double dangerMultiplier() { return dangerMultiplier; }
+
+    /** Bounds 1..64 (1 = no cost); the old value when out of bounds. */
+    public static double setDangerMultiplier(double m) {
+        dangerMultiplier = io.github.mojolowjo.entropybot.guard.MoveRules.danger(m, dangerMultiplier);
+        return dangerMultiplier;
+    }
+
+    /**
+     * Once Baritone is loaded: the fork hook when this Baritone has it, else the mixin fallback. Returns the kind.
+     * Loader note: our Baritone fork's {@code CalculationContext.costAdvisor} (static, public) is found by reflection
+     * because the mod compiles against the stock jar; the Proxy answers whatever methods the fork's interface
+     * declares, so an older fork without {@code moveMultiplier} simply never asks (reported, never silent).
+     */
     public static String install() {
         PolicyRuntime pr = PolicyRuntime.INSTANCE;
         try {
@@ -50,8 +79,11 @@ public final class CostAdvisorHook {
             Object proxy = Proxy.newProxyInstance(iface.getClassLoader(), new Class<?>[]{iface}, h);
             f.set(null, proxy);
             fork = true;
-            pr.setHook("fork");
-            LOG.info("[entropybot] rules: cost advisor installed (fork hook)");
+            boolean mh;
+            try { iface.getMethod("moveMultiplier", Object.class, int.class, int.class, int.class); mh = true; } catch (NoSuchMethodException e) { mh = false; }
+            moveHook = mh;
+            pr.setHook(mh ? "fork" : "fork-nomove");
+            LOG.info("[entropybot] rules: cost advisor installed ({})", pr.hookText());
         } catch (NoSuchFieldException e) {
             fork = false;
             pr.setHook(MixinFlags.astarApplied ? "mixin" : "none");
@@ -72,6 +104,10 @@ public final class CostAdvisorHook {
                     return breakMultiplier(a[0], (Integer) a[1], (Integer) a[2], (Integer) a[3], (BlockState) a[4], stateAt(a[5]));
                 case "placeCost":
                     return placeCost(a[0], (Integer) a[1], (Integer) a[2], (Integer) a[3], (BlockState) a[4], stateAt(a[5]), (Double) a[6]);
+                case "moveMultiplier":
+                    return moveMultiplier(a[0], (Integer) a[1], (Integer) a[2], (Integer) a[3]);
+                case "pricesMoves":        // review 4: no keep-out or danger box = the A* loop never asks per node
+                    return a[0] instanceof Token tk && tk.areas() != null && !(tk.areas().keepOut.isEmpty() && tk.areas().danger.isEmpty());
                 case "toString": return "EntropyBot cost advisor";
                 case "hashCode": return System.identityHashCode(CostAdvisorHook.class);
                 case "equals": return a != null && a.length == 1 && a[0] != null && Proxy.isProxyClass(a[0].getClass());
@@ -92,11 +128,29 @@ public final class CostAdvisorHook {
     public static Token begin() {
         PolicyRuntime pr = PolicyRuntime.INSTANCE;
         String dim = null;
+        int[] at = null;
         try {
             var lv = Minecraft.getInstance().level;
             if (lv != null) dim = Guard.dimOf(lv);
-        } catch (Throwable ignored) {}
-        return new Token(pr.snapshot(), pr.intentNow(), dim, pr.where());
+            var p = Minecraft.getInstance().player;
+            if (p != null) at = new int[]{p.getBlockX(), p.getBlockY(), p.getBlockZ()};
+        } catch (Throwable caught) { Quiet.warn("CostAdvisorHook.begin failed, carrying on with the fallback", caught); }
+        io.github.mojolowjo.entropybot.guard.Policy areas = null;
+        try { areas = Guard.INSTANCE.core.policy(); } catch (Throwable caught) { Quiet.warn("CostAdvisorHook.begin failed, carrying on with the fallback", caught); }
+        return new Token(pr.snapshot(), pr.intentNow(), dim, pr.where(), areas, at);
+    }
+
+    /**
+     * AREAS (AREAS_PLAN 3): the multiplier on a move ending with the feet at x y z: COST_INF inside a keep-out box
+     * (feet or head cell), {@link #dangerMultiplier} inside a danger box, NaN elsewhere. A bot that starts inside a
+     * keep-out box (the owner drew it around it) gets that box priced like danger instead, so it walks out by the
+     * shortest way. Early-out when the policy holds no such boxes; lock-free (immutable snapshot in the token).
+     */
+    public static double moveMultiplier(Object token, int x, int y, int z) {
+        Token t = token instanceof Token tk ? tk : null;
+        if (t == null) return Double.NaN;
+        double m = io.github.mojolowjo.entropybot.guard.MoveRules.moveMultiplier(t.areas(), t.dim(), t.at(), x, y, z, dangerMultiplier);
+        return m >= io.github.mojolowjo.entropybot.guard.MoveRules.COST_INF ? COST_INF : m;
     }
 
     /**
@@ -117,23 +171,57 @@ public final class CostAdvisorHook {
         BreakPolicy.Where me = t != null ? t.me() : pr.where();
         if (in == null || in == Intent.NONE) return COST_INF;                     // walking only (the route map's context)
         if (dim == null || s == null) return in == Intent.TRAVEL ? COST_INF : Double.NaN;   // fail closed for travel
+        double wet = wetMult(at, x, y, z);                                        // wetbreak: 1 dry, 5 beside water, 25 deep
         switch (in) {
             case TRAVEL -> {
                 BreakPolicy.Verdict v = pr.judge(PolicyStats.SITE_ASTAR_COST, BreakPolicy.Action.BREAK, in, dim, x, y, z, pr.facts(at, x, y, z, false), me, s);
-                return v.allowed() ? v.multiplier() : COST_INF;
+                return v.allowed() ? v.multiplier() * wet : COST_INF;
             }
             case MINE -> {
                 // phase 1: mining keeps Baritone's rules, except the owner's: no digging down from in the water
                 pr.stats.ask(PolicyStats.SITE_ASTAR_COST);
                 BlockState up = at.at(x, y + 1, z);
                 if (up != null && PolicyRuntime.fluidOf(up) == BreakPolicy.Fluid.WATER) {
-                    pr.stats.deny(PolicyStats.SITE_ASTAR_COST, "digging down from in the water");
-                    return COST_INF;
+                    // aa-costs: in the water, the drowning risk of the cell (DrownRisk): no air to come back = never, else
+                    // a cost; from dry ground a cell under water stays forbidden (it floods the tunnel), as before
+                    // aa-water (1f): the risk from this cell's own depth below the water surface and the air now
+                    if (me == null || !me.inWater()) {
+                        pr.stats.deny(PolicyStats.SITE_ASTAR_COST, "digging down from in the water");
+                        return COST_INF;
+                    }
+                    int depth = 1 + PolicyRuntime.waterColumn(at, x, y + 1, z);
+                    double m = io.github.mojolowjo.entropybot.guard.DrownRisk.breakMult(depth, me.air(), me.pickTier());
+                    if (Double.isInfinite(m)) {
+                        pr.stats.deny(PolicyStats.SITE_ASTAR_COST, "digging down from in the water");
+                        return COST_INF;
+                    }
+                    return m;                                                // its own drowning price (no double count)
                 }
-                return Double.NaN;
+                return wet == 1 ? Double.NaN : wet;
             }
-            default -> { return Double.NaN; }                                         // DIG_OUT, BUILD, RESTORE: as today
+            default -> { return wet == 1 ? Double.NaN : wet; }                        // DIG_OUT, BUILD, RESTORE: as today, plus the water
         }
+    }
+
+    /**
+     * wetbreak: the water the bot breaks {@code x y z} from. Water beside or above the cell = the bot stands in it;
+     * deep = water under that water too (it floats). Never throws (no world = dry).
+     */
+    static double wetMult(PolicyRuntime.StateAt at, int x, int y, int z) {
+        try {
+            int[][] side = {{1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}, {0, 1, 0}};
+            for (int[] d : side) {
+                if (!water(at, x + d[0], y + d[1], z + d[2])) continue;
+                boolean deep = water(at, x + d[0], y + d[1] - 1, z + d[2]);
+                return io.github.mojolowjo.entropybot.guard.DrownRisk.wetBreakMult(true, deep);
+            }
+        } catch (RuntimeException caught) { Quiet.warn("CostAdvisorHook.wetMult failed, carrying on with the fallback", caught); }
+        return 1;
+    }
+
+    private static boolean water(PolicyRuntime.StateAt at, int x, int y, int z) {
+        BlockState b = at.at(x, y, z);
+        return b != null && PolicyRuntime.fluidOf(b) == BreakPolicy.Fluid.WATER;
     }
 
     /**
@@ -162,7 +250,13 @@ public final class CostAdvisorHook {
             BreakPolicy.Verdict v = BreakPolicy.judge(s, new BreakPolicy.Ask(BreakPolicy.Action.PLACE, in, dim, x, y, z, pr.placeFacts(at, dim, x, y, z), me));
             // the click veto (Guard.vetoPolicyPlace) asks the same policy with the same intent, so a deny here is a deny there
             if (!v.allowed()) { pr.stats.deny(PolicyStats.SITE_ASTAR_PLACE, v.reason()); return COST_INF; }
-            return baritoneCost * v.multiplier();
+            double wet = 1;
+            // aa-water (1f): placing into a water cell while I am in the water costs its drowning risk (cell depth, air now)
+            if (me != null && me.inWater() && current != null && PolicyRuntime.fluidOf(current) == BreakPolicy.Fluid.WATER) {
+                wet = io.github.mojolowjo.entropybot.guard.DrownRisk.placeMult(PolicyRuntime.waterColumn(at, x, y, z), me.air());
+                if (Double.isInfinite(wet)) { pr.stats.deny(PolicyStats.SITE_ASTAR_PLACE, "placing under water: no air to come back"); return COST_INF; }
+            }
+            return baritoneCost * v.multiplier() * wet;
         } catch (Throwable e) {
             // review: the mixin fallback swallows a throw (Baritone's cost would apply: fail open); travel fails closed
             pr.stats.error("advisor placeCost: " + e);

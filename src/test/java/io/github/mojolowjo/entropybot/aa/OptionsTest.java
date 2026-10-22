@@ -18,7 +18,7 @@ import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** S0 (MINING_PLAN 10, owner additions): the generic option picker, the planner tri-state, the manual driving, the idle probe. */
+/** S0 (MINING_PLAN 10, owner additions), one-planner: the generic option picker, the chain row, the manual driving, the idle probe. */
 class OptionsTest {
     final Clock.Fake clock = new Clock.Fake(10_000_000);
     final FakePort port = new FakePort();
@@ -26,18 +26,18 @@ class OptionsTest {
 
     record F(boolean alpha, boolean beta) {}
 
-    /** alpha 10, beta 20, the planner's chain at its cost x PLAN_UNIT. */
+    /** alpha 10, beta 20, the need's chain at its own price. */
     static final class TwoWays implements Options.OptionSet<F> {
-        @Override public Options.Choice choose(F f, Options.OptionMemory m, long now, String planned, double cost, String plannerWhy, String afterFail) {
+        @Override public Options.Choice choose(F f, Options.OptionMemory m, long now, List<io.github.mojolowjo.entropybot.aa.moves.Step> planned, double cost, String plannerWhy, String afterFail) {
             List<Options.Option> rows = new ArrayList<>();
             List<String> dropped = new ArrayList<>();
             if (f.alpha()) {
                 if (m.blocked("alpha", now)) dropped.add("alpha: " + m.reason("alpha"));
-                else rows.add(Options.scored("alpha", "alpha", "do alpha", 10, "cheap", "alpha", false, m));
+                else rows.add(Options.typed("alpha", "alpha", TS.plan("do alpha"), 10, "cheap", "alpha", m));
             }
-            if (f.beta()) rows.add(Options.scored("beta", "beta", "do beta", 20, "dear", "beta", false, m));
-            if (planned != null) rows.add(Options.scored("planner", "planner", planned, cost * Options.PLAN_UNIT, "the plan", "planner", true, m));
-            else dropped.add("planner: " + plannerWhy);
+            if (f.beta()) rows.add(Options.typed("beta", "beta", TS.plan("do beta"), 20, "dear", "beta", m));
+            if (planned != null) rows.add(Options.typed("chain", "chain", planned, cost, "the chain", "chain", true, m));
+            else dropped.add("chain: " + plannerWhy);
             return Options.Choice.of(rows, dropped, "no way");
         }
 
@@ -46,22 +46,20 @@ class OptionsTest {
 
     F facts = new F(true, true);
 
-    Rung rung(String goal) {
+    Need rung(String goal) {
         bb.fact("t.facts", (Supplier<F>) () -> facts);
-        port.planCost = 10;          // the planner's option: 50 walk-blocks
-        return new Rung("needs.tools", TaskKind.TOOLS, b -> true, b -> null, b -> goal, new Options.Picker<>("TOOLS", "t.facts", F.class, new TwoWays()));
+        return new Need("needs.tools", TaskKind.TOOLS, b -> true, b -> null, b -> TS.plan(goal.replaceFirst("^(goal|plan) ", "")), new Options.Picker<>("TOOLS", "t.facts", F.class, new TwoWays()));
     }
 
     @Test
     void theCheapestRunsAFailureSwitchesAndIsRemembered() {
-        Rung r = rung("goal x");
-        port.planCost = 10;          // 50 walk-blocks
+        Need r = rung("obtain 1 x");
         assertEquals(Status.RUNNING, r.tick(bb));
-        assertEquals("do alpha", port.started.get(0).chain());
-        assertTrue(r.options().startsWith("alpha 10 (cheap); then beta 20 (dear), planner 50"), r.options());
+        assertEquals("obtain 1 do alpha", port.started.get(0).chain());
+        assertTrue(r.options().startsWith("alpha 10 (cheap); then beta 20 (dear)"), r.options());
         port.fail(1, "no path to 1 2 3");
         assertEquals(Status.RUNNING, r.tick(bb), "switched at once");
-        assertEquals("do beta", port.started.get(1).chain());
+        assertEquals("obtain 1 do beta", port.started.get(1).chain());
         assertTrue(r.options().contains("dropped: alpha: no path to 1 2 3"), r.options());
         port.fail(2, "stopped: your stop");
         assertEquals(Status.FAILURE, r.tick(bb), "the owner's stop never switches");
@@ -69,42 +67,37 @@ class OptionsTest {
     }
 
     @Test
-    void noPlanIsAnsweredAtOnceNotAfter45s() {
-        Rung r = new Rung("needs.torches", TaskKind.TORCHES, b -> true, b -> null, b -> "goal torch 16");
-        port.noPlan = "missing 2 coal";
+    void noChainIsAnsweredAtOnceWithItsReason() {
+        Need r = new Need("needs.torches", TaskKind.TORCHES, b -> true, b -> null, b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("torch", 16)));
         assertEquals(Status.FAILURE, r.tick(bb), "the first tick, no wait");
-        assertTrue(r.reason().contains("no plan for goal torch 16: missing 2 coal"), r.reason());
-        assertTrue(String.join("|", port.log).contains("skipped at once"), port.log.toString());
-        // with a picker, NONE drops only the planner option
-        Rung p = rung("goal x");
+        assertTrue(r.reason().contains("chain: no facts for the chain yet"), r.reason());
+        assertTrue(String.join("|", port.log).contains("no way can run"), port.log.toString());
+        // with a picker, no chain drops only the chain row
+        Need p = rung("obtain 1 x");
         assertEquals(Status.RUNNING, p.tick(bb));
-        assertEquals("do alpha", port.started.get(0).chain());
-        assertTrue(p.options().contains("planner: no plan for goal x: missing 2 coal"), p.options());
+        assertEquals("obtain 1 do alpha", port.started.get(0).chain());
+        assertTrue(p.options().contains("chain: no facts for the chain yet"), p.options());
     }
 
+    /** Review 2 (2b): a done prerequisite (the climb) waits for the facts RUNNING (never a failure that hands the slot on). */
     @Test
-    void searchingIsWaitedForOnlyBrieflyWhenAnotherOptionCanRun() {
-        Rung r = rung("goal x");
-        port.resolveTo = null;          // the planner searches
+    void aDonePrerequisiteWaitsRunningNotFailing() {
+        Need r = new Need("needs.tools", TaskKind.TOOLS, b -> true, b -> null, b -> TS.plan("x"), new Options.Picker<>("TOOLS", "t.facts", F.class, new TwoWays())).surface();
+        bb.fact("t.facts", (Supplier<F>) () -> facts);
+        bb.in.underDepth = 10;
         assertEquals(Status.RUNNING, r.tick(bb));
-        assertTrue(port.started.isEmpty(), "the planner gets its peek");
-        clock.advance(Rung.PLAN_PEEK_MS + 1);
-        assertEquals(Status.RUNNING, r.tick(bb));
-        assertEquals("do alpha", port.started.get(0).chain(), "after the peek a planner-free option runs");
-        // no option at all: the full wait, then the skip
-        facts = new F(false, false);
-        Rung q = rung("goal y");
-        for (int i = 0; i < 4; i++) {
-            assertEquals(Status.RUNNING, q.tick(bb));
-            clock.advance(Rung.PLAN_PEEK_MS + 1);
-        }
-        clock.advance(Rung.PLAN_WAIT_MS);
-        assertEquals(Status.RUNNING, q.tick(bb), "the gap restarts the clock: still within the wait");
-        for (int i = 0; i < 20; i++) {
-            clock.advance(3000);
-            if (q.tick(bb) == Status.FAILURE) break;
-        }
-        assertTrue(q.reason().contains("still searched after 45s"), q.reason());
+        assertEquals(AaLadder.CLIMB, port.started.get(0).chain());
+        port.done(1, "done");
+        r.tick(bb);
+        clock.advance(1000);
+        assertEquals(Status.RUNNING, r.tick(bb), "the facts lag: the desire keeps the slot");
+        assertEquals(1, port.started.size(), "no task while it waits");
+        assertTrue(String.valueOf(bb.fact(Need.PLANNING_FACT)).contains(Need.WAIT_FACTS));
+        bb.in.underDepth = 0;            // the depth moved: the wait ends early
+        clock.advance(1000);
+        r.tick(bb);
+        assertEquals(2, port.started.size(), "the facts changed: the need's own row runs at once");
+        assertEquals("obtain 1 do alpha", port.started.get(1).chain());
     }
 
     @Test
@@ -129,16 +122,16 @@ class OptionsTest {
 
     @Test
     void askWaitsForThePickAndCountsADifferentChoice() {
-        Rung r = rung("goal x");
+        Need r = rung("obtain 1 x");
         AaManual man = AaManual.of(bb);
         man.ask = true;
         assertEquals(Status.RUNNING, r.tick(bb));
         assertTrue(port.started.isEmpty(), "waits for aa pick");
         assertNotNull(man.pending);
-        assertEquals("do beta", man.pending.rows().get(1).command());
+        assertEquals("obtain 1 do beta", man.pending.rows().get(1).command());
         man.pick = 2;
         assertEquals(Status.RUNNING, r.tick(bb));
-        assertEquals("do beta", port.started.get(0).chain());
+        assertEquals("obtain 1 do beta", port.started.get(0).chain());
         assertEquals(1, man.differs);
         // the owner's pick is the one a failure is charged to
         port.fail(1, "no path to 1 2 3");
@@ -148,19 +141,19 @@ class OptionsTest {
 
     @Test
     void askTimesOutToMyFirstChoice() {
-        Rung r = rung("goal x");
+        Need r = rung("obtain 1 x");
         AaManual.of(bb).ask = true;
         r.tick(bb);
-        clock.advance(AaManual.ASK_MS);
+        clock.advance(AaManual.askMs());
         r.tick(bb);
         r.tick(bb);
-        assertEquals("do alpha", port.started.get(0).chain());
+        assertEquals("obtain 1 do alpha", port.started.get(0).chain());
     }
 
     @Test
     void doRunsAMetRungNowAndSkipLeavesOneOut() {
-        Rung met = new Rung("needs.torches", TaskKind.TORCHES, b -> false, b -> null, b -> "craft torch 4");
-        Rung other = new Rung("needs.bag", TaskKind.BAG, b -> true, b -> null, b -> "deposit");
+        Need met = new Need("needs.torches", TaskKind.TORCHES, b -> false, b -> null, b -> TS.s("craft torch 4"));
+        Need other = new Need("needs.bag", TaskKind.BAG, b -> true, b -> null, b -> TS.s("deposit"));
         AaManual man = AaManual.of(bb);
         assertEquals("needs.torches", AaManual.rungId("torch"));
         man.doRung = "needs.torches";
@@ -177,26 +170,39 @@ class OptionsTest {
 
     @Test
     void useForcesARankedOption() {
-        Rung r = rung("goal x");
+        Need r = rung("obtain 1 x");
         AaManual man = AaManual.of(bb);
         man.use = "bet";
         assertEquals(Status.RUNNING, r.tick(bb));
-        assertEquals("do beta", port.started.get(0).chain());
+        assertEquals("obtain 1 do beta", port.started.get(0).chain());
         assertNull(man.use, "used once");
         assertEquals(1, man.differs);
         assertTrue(String.join("|", port.log).contains("owner pick differs"), port.log.toString());
     }
 
     @Test
-    void aFactsSupplierThatThrowsIsCountedAndThePlanRuns() {
+    void aFactsSupplierThatThrowsIsCountedAndTheChainRuns() {
         bb.fact("t.facts", (Supplier<F>) () -> { throw new IllegalStateException("boom"); });
+        bb.fact(NeedChain.WORLD_FACT, (Supplier<NeedChain.World>) () -> new NeedChain.World(java.util.Map.of(), false, w -> null));
         Options.Picker<F> p = new Options.Picker<>("TOOLS", "t.facts", F.class, new TwoWays());
-        Rung r = new Rung("needs.tools", TaskKind.TOOLS, b -> true, b -> null, b -> "goal x", p);
+        Need r = new Need("needs.tools", TaskKind.TOOLS, b -> true, b -> null, b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("x", 1)), p);
         assertEquals(Status.RUNNING, r.tick(bb));
-        assertEquals("goal x", port.started.get(0).chain(), "the planner's chain as it is");
+        assertTrue(port.started.get(0).chain().startsWith("explore"), "the chain as it is (nothing known gives x: explore): " + port.started.get(0).chain());
         assertEquals(1, p.counters.factErrors);
         assertTrue(p.factsFailedSince(clock.now() - 1));
         assertTrue(String.join("|", port.log).contains("TOOLS facts: java.lang.IllegalStateException: boom"), port.log.toString());
+    }
+
+    @Test
+    void aStuckHaltChargesTheRunningOptionForTheFullHold() {
+        bb.fact("t.facts", (Supplier<F>) () -> new F(true, true));
+        Options.Picker<F> p = new Options.Picker<>("TOOLS", "t.facts", F.class, new TwoWays());
+        assertEquals("obtain 1 do alpha", p.pick(bb, null));
+        p.stalled(bb, "stuck: needs.tools made no progress for 41s");
+        clock.advance(9 * 60_000);
+        assertEquals("obtain 1 do beta", p.pick(bb, null), "alpha is held 10 min after a stall");
+        clock.advance(2 * 60_000);
+        assertEquals("obtain 1 do alpha", p.pick(bb, null), "the hold ran out");
     }
 
     @Test
@@ -206,12 +212,13 @@ class OptionsTest {
             s[TaskKind.STOCK_WOOD.ordinal()] = 50;
             s[TaskKind.WAIT.ordinal()] = 10;
             return s;
-        }, UtilitySelector.BONUS,
+        }, UtilitySelector.bonusV(),
                 new UtilitySelector.Option(TaskKind.STOCK_WOOD, new Cooldown("w.cd", new RunJob("w", TaskKind.STOCK_WOOD, b -> null)).ranOnly()),
-                new UtilitySelector.Option(TaskKind.WAIT, new Cooldown("wait.cd", RunJob.of("wait", TaskKind.WAIT, "wait 60", "idle")).ranOnly()));
+                new UtilitySelector.Option(TaskKind.WAIT, new Cooldown("wait.cd", RunJob.of("wait", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("wait 60", 1)), "idle")).ranOnly()));
         idle.tick(bb);
         idle.tick(bb);
         long lines = port.log.stream().filter(l -> l.startsWith("idle picked STOCK_WOOD -> failed at once: nothing to run")).count();
         assertEquals(1, lines, "logged once, not per tick: " + port.log);
     }
 }
+

@@ -35,7 +35,7 @@ public final class OresList {
             String odim = o.has("dim") ? o.get("dim").getAsString() : "minecraft:overworld";
             if (!odim.equals(dim)) continue;
             String[] p = e.getKey().trim().split("\\s+");
-            if (p.length != 3) continue;
+            if (p.length != 3) continue;  // structural: a position has 3 coordinates
             int[] pos;
             try {
                 pos = new int[]{Integer.parseInt(p[0]), Integer.parseInt(p[1]), Integer.parseInt(p[2])};

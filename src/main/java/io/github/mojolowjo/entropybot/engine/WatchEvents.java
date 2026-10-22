@@ -39,6 +39,7 @@ public final class WatchEvents {
         NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, false, CalculateDetachedCameraDistanceEvent.class, WatchEvents::distance);
         NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, false, ViewportEvent.ComputeFov.class, WatchEvents::fov);
         NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, false, RenderLevelStageEvent.class, WatchEvents::stage);
+        NeoForge.EVENT_BUS.addListener(EventPriority.NORMAL, false, RenderLevelStageEvent.class, SlowRender::onStage);     // AA_STEP3 B: slow mode's route
         NeoForge.EVENT_BUS.addListener(EventPriority.HIGHEST, false, RenderFrameEvent.Pre.class, WatchEvents::framePre);
         NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, false, RenderFrameEvent.Post.class, WatchEvents::framePost);
         MixinFlags.watchApplied = true;          // "the watch hook is in": the listeners, since 0.15.2
@@ -105,7 +106,7 @@ public final class WatchEvents {
 
     private static void fail(String where, Throwable t) {
         errors++;
-        if (errors <= 5) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch camera ({}): ", where, t);
-        else if (errors % 1000 == 0) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch camera ({}): {} errors so far, last {}", where, errors, t.toString());
+        if (errors <= 5) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch camera ({}): ", where, t);  // structural: log throttle: only the first few errors are logged
+        else if (errors % 1000 == 0) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch camera ({}): {} errors so far, last {}", where, errors, t.toString());  // structural: log throttle: only the first few errors are logged
     }
 }

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -10,18 +12,20 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * "area ..." and "fence ..." (V1a, 0.22.0: areas with a type; the old protect/unprotect/guard words only answer with the
+ * "area ..." and "fence ..." (V1a, 0.22.0: areas with a type; AREAS 0.39.0: a type is a meaning, keep-out / no-break /
+ * base / storage / work / danger / destroy, plus a free note; the old protect/unprotect/guard words only answer with the
  * new form, {@link OldWords}). The policy lives in {@code areas.json}: {version: 2, areas:[{name,dim,x1,z1,x2,z2,y1?,y2?,
- * type?}], protect:[... type "safe"], strict, near}. The owner sees one list; the file keeps the safe areas apart (the
- * guard's lock-free protect check and every reader of "protect" stay as they were). Plain Java behind {@link Guard}.
+ * type?,note?}], protect:[... type "no-break" or "keep-out"], strict, near}. The owner sees one list; the file keeps the
+ * protected areas apart (the guard's lock-free protect check and every reader of "protect" stay as they were). Old words
+ * (neutral, safe, main) are read forever and answered with the new one once. Plain Java behind {@link Guard}.
  */
 public final class PolicyCommands {
-    /** V1a: the short form. */
-    public static final String AREA_HINT = "area here 48 work neutral";   // 0.35.2: a runnable hint (radius, name, type), no placeholders
+    /** V1a: the short form (AREAS: the world is open by default, so the hint only shows how an area is made). */
+    public static final String AREA_HINT = "area here 48 camp work";   // 0.35.2: a runnable hint (radius, name, meaning), no placeholders
     static final String NAME_RE = "^[a-z0-9_-]{1,24}$";
     static final String DEFAULT_DIM = "minecraft:overworld";
     /** areas.json's format: 2 = typed areas (V1a). */
-    public static final int VERSION = 2;
+    public static final int VERSION = 2; // structural
 
     /** A spot: block coordinates and dimension. */
     public record Pos(int x, int y, int z, String dim) {}
@@ -51,6 +55,12 @@ public final class PolicyCommands {
         /** Mining plan: "fence rules" (the policy snapshot, intent, hook, counters), or null without the mod. */
         default String rules() { return null; }
 
+        /** AREAS review 3: the guard's immutable policy snapshot (the candidate boxes included), for the hot checks; null without the mod. */
+        default io.github.mojolowjo.entropybot.guard.Policy policy() { return null; }
+
+        /** AREAS: the danger move multiplier (1..64); sets it when {@code set} is not NaN; the value in force. */
+        default double danger(double set) { return io.github.mojolowjo.entropybot.guard.MoveRules.defaultDanger(); }
+
         /** Mining plan: "fence why x y z [break|place] [travel|mine|dig_out|build]": the policy's verdict for one cell. */
         default String why(String dim, int x, int y, int z, String action, String intent) { return null; }
     }
@@ -58,7 +68,8 @@ public final class PolicyCommands {
     /** The words "area" takes as subcommands (and the old ones, so an old line never makes an area): no area name. */
     static final java.util.Set<String> AREA_WORDS = java.util.Set.of("list", "show", "add", "corner1", "corner2", "grow", "remove",
             "protect", "unprotect", "near", "here", "confirm", "on", "off", "status", "change", "del", "name", "type",
-            "neutral", "destroy", "main", "safe", "all", "me", "candidates",
+            "meaning", "note",                                                                      // AREAS (0.39.0)
+            "neutral", "destroy", "main", "safe", "keep-out", "no-break", "all", "me", "candidates",     // base, work, storage, danger stay usable as names
             "stone");     // 0.30.0: "dig stone [n]" is the quarry, so no area may be called stone
 
     private final JsonObject p;
@@ -72,74 +83,175 @@ public final class PolicyCommands {
         if (!p.has("areas") || !p.get("areas").isJsonArray()) p.add("areas", new JsonArray());
         if (!p.has("protect") || !p.get("protect").isJsonArray()) p.add("protect", new JsonArray());
         if (!p.has("strict")) p.addProperty("strict", false);
+        normalise();
         if (!p.has("near") || !p.get("near").isJsonObject()) {
             JsonObject n = new JsonObject();
             n.addProperty("on", true);
-            n.addProperty("r", io.github.mojolowjo.entropybot.guard.NearZone.DEFAULT_R);
+            n.addProperty("r", io.github.mojolowjo.entropybot.guard.NearZone.defaultR());
             p.add("near", n);
         }
     }
 
+    /**
+     * AREAS (0.39.0): old words in the file become the new ones (neutral -> work, written as no type; safe -> no-break;
+     * main -> base), and every entry sits in the list its meaning belongs to (keep-out and no-break in "protect", the
+     * rest in "areas"). Idempotent; the file is written at the next change.
+     */
+    private void normalise() {
+        JsonArray as = areas(), ps = protect();
+        List<JsonObject> all = new ArrayList<>();
+        for (JsonElement e : as) if (e.isJsonObject()) all.add(e.getAsJsonObject());
+        for (JsonElement e : ps) if (e.isJsonObject()) {
+            JsonObject b = e.getAsJsonObject();
+            if (!b.has("type")) b.addProperty("type", AreaType.NO_BREAK.word());       // review 6: an untyped protect box is no-break
+            all.add(b);
+        }
+        JsonArray na = new JsonArray(), np = new JsonArray();
+        for (JsonObject b : all) {
+            AreaType t = typeOf(b);
+            if (t == AreaType.WORK) b.remove("type");
+            else b.addProperty("type", t.word());
+            (io.github.mojolowjo.entropybot.guard.AreaTypeRules.protects(t) ? np : na).add(b);
+        }
+        p.add("areas", na);
+        p.add("protect", np);
+    }
+
     /** 0.21.2: the near-me zone is on (areas.json "near.on", default true). */
     public boolean nearOn() {
-        try { return p.getAsJsonObject("near").get("on").getAsBoolean(); } catch (RuntimeException e) { return true; }
+        try { return p.getAsJsonObject("near").get("on").getAsBoolean(); } catch (RuntimeException e) {
+            Quiet.warn("PolicyCommands.nearOn failed, carrying on with the fallback", e); return true; }
     }
 
     /** 0.21.2: the near-me radius (areas.json "near.r", default 16; out of bounds = the default). */
     public int nearR() {
         try {
             int r = p.getAsJsonObject("near").get("r").getAsInt();
-            return io.github.mojolowjo.entropybot.guard.NearZone.checkRadius(r) == null ? r : io.github.mojolowjo.entropybot.guard.NearZone.DEFAULT_R;
+            return io.github.mojolowjo.entropybot.guard.NearZone.checkRadius(r) == null ? r : io.github.mojolowjo.entropybot.guard.NearZone.defaultR();
         } catch (RuntimeException e) {
-            return io.github.mojolowjo.entropybot.guard.NearZone.DEFAULT_R;
+            Quiet.warn("PolicyCommands.nearR failed, carrying on with the fallback", e);
+            return io.github.mojolowjo.entropybot.guard.NearZone.defaultR();
         }
     }
 
-    /**
-     * 0.21.2: the areas plus the near-me zone when it is up: what the commands' own area checks read (inAreas, the
-     * position watch's gap, the miner's policy JSON). The guard has the same zone ({@code GuardCore.setNearZone}).
-     */
-    public JsonArray effectiveAreas() {
-        JsonObject n = guard.nearArea();
-        if (n == null) return areas();
-        JsonArray a = areas().deepCopy();
-        a.add(n);
-        return a;
+    /** The typed places (the labelled areas: home, camp, chest places and the rest; the near-me zone is a fact). */
+    public JsonArray places() {
+        return areas();
     }
 
-    /** The work areas (every type but safe). */
+    /** The labelled areas (every meaning but no-break and keep-out). */
     public JsonArray areas() { return p.getAsJsonArray("areas"); }
 
-    /** The safe areas (the old protect boxes). */
+    /** The no-break and keep-out areas (the old protect boxes). */
     public JsonArray protect() { return p.getAsJsonArray("protect"); }
 
     public boolean strict() { return p.has("strict") && p.get("strict").getAsBoolean(); }
 
-    /** {areas, protect} for the guard. */
+    /** AREAS (AREAS_PLAN 5, default 10.4): the base candidates explore/find noted (commands.json "safeCandidates"), read live. */
+    private java.util.function.Supplier<JsonArray> candidates = JsonArray::new;
+
+    public void setCandidateSource(java.util.function.Supplier<JsonArray> s) { candidates = s == null ? JsonArray::new : s; }
+
+    /**
+     * The candidates AA treats as no-break until the owner rejects them (AreaFacts.autoNoBreak: a named mob there or
+     * 2+ block entities), as protect entries named "found<n>" (the accept command's box shape). Never saved to
+     * areas.json; they ride along into the guard's policy and the blocker checks.
+     */
+    public JsonArray candidateBoxes() {
+        JsonArray out = new JsonArray();
+        JsonArray l;
+        try { l = candidates.get(); } catch (RuntimeException e) {
+            Quiet.warn("PolicyCommands.candidateBoxes failed, carrying on with the fallback", e); return out; }
+        if (l == null) return out;
+        for (int i = 0; i < l.size(); i++) {
+            if (!l.get(i).isJsonObject()) continue;
+            JsonObject o = l.get(i).getAsJsonObject();
+            boolean named = false;      // written as a count (ExploreWords.Scan.named) or a flag
+            if (o.has("named") && o.get("named").isJsonPrimitive()) {
+                var pn = o.get("named").getAsJsonPrimitive();
+                named = pn.isBoolean() ? pn.getAsBoolean() : pn.isNumber() && pn.getAsInt() > 0;
+            }
+            int ents = o.has("blockEntities") ? o.get("blockEntities").getAsInt() : 0;
+            int built = o.has("built") ? o.get("built").getAsInt() : 0;
+            String natural = o.has("natural") && o.get("natural").isJsonPrimitive() ? o.get("natural").getAsString() : null;
+            if (!io.github.mojolowjo.entropybot.aa.core.AreaFacts.autoNoBreak(named, ents, built, natural)) continue;
+            String dim = o.has("dim") ? o.get("dim").getAsString() : DEFAULT_DIM;
+            JsonObject b = io.github.mojolowjo.entropybot.aa.core.AreaFacts.candidateBox("found" + (i + 1), dim, n(o, "x"), n(o, "y"), n(o, "z"),
+                    io.github.mojolowjo.entropybot.vocab.AreaCandidates.r(), io.github.mojolowjo.entropybot.vocab.AreaCandidates.down(), io.github.mojolowjo.entropybot.vocab.AreaCandidates.up()).toJson();
+            b.addProperty("candidate", true);
+            if (findArea("found" + (i + 1)) == null) out.add(b);
+        }
+        return out;
+    }
+
+    /** {areas, protect} for the guard (AREAS: the no-break candidates ride along in protect). */
     public JsonObject guardPolicy() {
         JsonObject o = new JsonObject();
         o.add("areas", areas().deepCopy());
-        o.add("protect", protect().deepCopy());
+        JsonArray p = protect().deepCopy();
+        p.addAll(candidateBoxes());
+        o.add("protect", p);
         return o;
+    }
+
+    /** AREAS: the danger multiplier the owner set (areas.json "danger"), else the default. */
+    public double dangerMult() {
+        try { return p.has("danger") ? p.get("danger").getAsDouble() : io.github.mojolowjo.entropybot.guard.MoveRules.defaultDanger(); }
+        catch (RuntimeException e) {
+            Quiet.warn("PolicyCommands.dangerMult failed, carrying on with the fallback", e); return io.github.mojolowjo.entropybot.guard.MoveRules.defaultDanger(); }
     }
 
     /** Pushes the policy to the guard (at load). The two replies joined, or null. */
     public String apply() {
         guard.setNear(nearOn(), nearR());
+        guard.danger(dangerMult());
         String[] r = guard.apply(guardPolicy(), strict());
         return r == null ? null : r[0] + "; mode " + r[1];
     }
 
-    /** True when (x, z) lies inside an area of that dimension (heights aside), as the bridge's inMapArea. */
-    public boolean inAreas(String dim, int x, int z) {
-        for (JsonElement e : effectiveAreas()) {
+    /**
+     * The policy's work verdict: the bot may work in the column (x, z) of that dimension - true everywhere except in
+     * the footprint of a keep-out or no-break area (heights aside: a protected box binds its whole column here, the
+     * conservative reading). The world is open.
+     */
+    public boolean workAllowed(String dim, int x, int z) {
+        io.github.mojolowjo.entropybot.guard.Policy pol = guard.policy();        // review 3: the guard's snapshot, no JSON per call
+        if (pol != null) return pol.protectColumn(dim, x, z) == null;
+        return blocker(dim, x, z) == null;
+    }
+
+    /** AREAS review 8: the same with the height: a no-break box over a mine far below it does not block the mine. */
+    public boolean workAllowed(String dim, int x, int y, int z) {
+        io.github.mojolowjo.entropybot.guard.Policy pol = guard.policy();
+        if (pol != null) return pol.protectAt(dim, x, y, z) == null;
+        JsonObject b = blocker(dim, x, z);
+        return b == null || (hasY(b) && (y < n(b, "y1") || y > n(b, "y2")));
+    }
+
+    /** AREAS: the keep-out or no-break entry whose footprint holds the column (keep-out first), or null. */
+    public JsonObject blocker(String dim, int x, int z) {
+        io.github.mojolowjo.entropybot.guard.Policy pol = guard.policy();
+        if (pol != null) {
+            io.github.mojolowjo.entropybot.guard.Box b = pol.protectColumn(dim, x, z);
+            return b == null ? null : b.toJson();
+        }
+        JsonObject best = null;
+        JsonArray all = protect().deepCopy();
+        all.addAll(candidateBoxes());
+        for (JsonElement e : all) {
             JsonObject a = e.getAsJsonObject();
             if (!dimOf(a).equals(dim)) continue;
-            if (a.has("round")) {                                            // 0.21.2: the near-me circle (Box knows the shape)
-                if (io.github.mojolowjo.entropybot.guard.Box.fromJson(a, DEFAULT_DIM).columnIn(x, z)) return true;
-            } else if (x >= n(a, "x1") && x <= n(a, "x2") && z >= n(a, "z1") && z <= n(a, "z2")) return true;
+            boolean in = a.has("round") ? io.github.mojolowjo.entropybot.guard.Box.fromJson(a, DEFAULT_DIM).columnIn(x, z)
+                    : x >= n(a, "x1") && x <= n(a, "x2") && z >= n(a, "z1") && z <= n(a, "z2");
+            if (in && (best == null || typeOf(a).rank() < typeOf(best).rank())) best = a;
         }
-        return false;
+        return best;
+    }
+
+    /** AREAS: "in toms-house (no-break)" for the column, or null when nothing blocks it. For the verbs' refusals. */
+    public String blockedText(String dim, int x, int z) {
+        JsonObject b = blocker(dim, x, z);
+        return b == null ? null : "in " + nameOf(b) + " (" + typeOf(b).word() + ")";
     }
 
     /** V1a: an area of any type by name (case-insensitive), or null. */
@@ -160,7 +272,7 @@ public final class PolicyCommands {
 
     /** V1a: the type of an area entry (absent = neutral). */
     public static AreaType typeOf(JsonObject b) {
-        return AreaType.orNeutral(b.has("type") && b.get("type").isJsonPrimitive() ? b.get("type").getAsString() : null);
+        return AreaType.orWork(b.has("type") && b.get("type").isJsonPrimitive() ? b.get("type").getAsString() : null);
     }
 
     /** "-272 -64 to 223 431" (plus ", y 10..60" when the box has a height). */
@@ -172,10 +284,16 @@ public final class PolicyCommands {
         return n(b, "x1") + " " + n(b, "z1") + " to " + n(b, "x2") + " " + n(b, "z2") + (hasY(b) ? ", y " + n(b, "y1") + ".." + n(b, "y2") : "");
     }
 
-    /** "map (main, blue: -272 -64 to 223 431)". */
+    /** "map (base, blue: -272 -64 to 223 431)" plus the note when there is one: "... - note: tom's house". */
     static String areaText(JsonObject b) {
         AreaType t = typeOf(b);
-        return nameOf(b) + " (" + t.word() + ", " + t.colour + ": " + boxText(b) + ")";
+        String note = noteOf(b);
+        return nameOf(b) + " (" + t.word() + ", " + t.colour + ": " + boxText(b) + ")" + (note == null ? "" : " - note: " + note);
+    }
+
+    /** AREAS: the owner's note on an area entry, or null. */
+    public static String noteOf(JsonObject b) {
+        return b.has("note") && b.get("note").isJsonPrimitive() && !b.get("note").getAsString().isBlank() ? b.get("note").getAsString() : null;
     }
 
     static String nameOf(JsonObject b) {
@@ -258,12 +376,15 @@ public final class PolicyCommands {
     }
 
     /** One parsed "area" creation line. error != null: the answer. */
-    record NewArea(String name, AreaType type, int[] xz, Integer r, Integer y1, Integer y2, String error) {
-        static NewArea err(String e) { return new NewArea(null, null, null, null, null, null, e); }
+    record NewArea(String name, AreaType type, int[] xz, Integer r, Integer y1, Integer y2, String error, String typeWord) {
+        NewArea(String name, AreaType type, int[] xz, Integer r, Integer y1, Integer y2, String error) {
+            this(name, type, xz, r, y1, y2, error, null);
+        }
+        static NewArea err(String e) { return new NewArea(null, null, null, null, null, null, e, null); }
     }
 
-    static final String USAGE = "usage: area here <r> <name> [type] [down up] | area x z x2 z2 <name> [type] [y1 y2] | area change name <name> <new> "
-            + "| area change type <name> <type> | area del <name> confirm | area list | area show <name> | area near [<r>|on|off|status]  (types: neutral, destroy, main, safe)";
+    static final String USAGE = "usage: area here <r> <name> [meaning] [down up] | area x z x2 z2 <name> [meaning] [y1 y2] | area change name <name> <new> "
+            + "| area change meaning <name> <meaning> | area note <name> <text> | area del <name> confirm | area list | area show <name> | area near [<r>|on|off|status]  (meanings: " + AreaType.WORDS + ")";
 
     /**
      * Parses "here &lt;r&gt; &lt;name&gt; [type] [down up]" (r != null; y1/y2 = down/up) and "x z x2 z2 &lt;name&gt; [type]
@@ -277,7 +398,7 @@ public final class PolicyCommands {
         boolean yFromSix = false;
 
         if (!w.isEmpty() && w.get(0).equalsIgnoreCase("here")) {
-            if (w.size() < 3 || !w.get(1).matches("^\\d{1,4}$")) return NewArea.err("usage: area here <r> <name> [type] [down up]  (r = blocks each way, 1..2000)");
+            if (w.size() < 3 || !w.get(1).matches("^\\d{1,4}$")) return NewArea.err("usage: area here <r> <name> [meaning] [down up]  (r = blocks each way, 1..2000)");
             r = Integer.parseInt(w.get(1));
             if (r < 1 || r > 2000) return NewArea.err("error: r is 1..2000 blocks each way");
             i = 2;
@@ -307,14 +428,15 @@ public final class PolicyCommands {
         }
 
         if (!ints.isEmpty()) {
-            if (yFromSix) return NewArea.err(r != null ? "usage: area here <r> <name> [type] [down up]" : "usage: area x z x2 z2 <name> [type] [y1 y2]");
-            if (ints.size() != 2) return NewArea.err(r != null ? "usage: area here <r> <name> [type] [down up]" : "usage: area x z x2 z2 <name> [type] [y1 y2]");
+            if (yFromSix) return NewArea.err(r != null ? "usage: area here <r> <name> [meaning] [down up]" : "usage: area x z x2 z2 <name> [meaning] [y1 y2]");
+            if (ints.size() != 2) return NewArea.err(r != null ? "usage: area here <r> <name> [meaning] [down up]" : "usage: area x z x2 z2 <name> [meaning] [y1 y2]");
             y1 = ints.get(0);
             y2 = ints.get(1);
         }
 
         String name;
-        AreaType type = AreaType.NEUTRAL;
+        AreaType type = AreaType.WORK;
+        String typeWord = null;
         if (nonInts.size() == 1) {
             name = nonInts.get(0);
         } else if (nonInts.size() == 2) {
@@ -323,39 +445,48 @@ public final class PolicyCommands {
             if (t0 != null && t1 != null) {
                 name = nonInts.get(0);
                 type = t1;
+                typeWord = nonInts.get(1);
             } else if (t0 != null) {
                 type = t0;
+                typeWord = nonInts.get(0);
                 name = nonInts.get(1);
             } else if (t1 != null) {
                 type = t1;
+                typeWord = nonInts.get(1);
                 name = nonInts.get(0);
             } else {
                 return NewArea.err(AreaType.BAD);
             }
         } else {
-            return NewArea.err(r != null ? "usage: area here <r> <name> [type] [down up]" : "usage: area x z x2 z2 <name> [type] [y1 y2]");
+            return NewArea.err(r != null ? "usage: area here <r> <name> [meaning] [down up]" : "usage: area x z x2 z2 <name> [meaning] [y1 y2]");
         }
 
         String bad = badName(name);
         if (bad != null) return NewArea.err(bad);
         if (r != null && y1 != null && (y1 < 0 || y2 < 0)) return NewArea.err("error: down and up are blocks below and above you (0 or more)");
 
-        return new NewArea(name, type, xz, r, y1, y2, null);
+        return new NewArea(name, type, xz, r, y1, y2, null, typeWord);
     }
 
-    /** The area entry for a parsed line (here = the owner's spot or the bot's; a safe "here" area defaults to 8 down, 16 up). */
+    /** AREAS: " (safe = no-break now)" when the owner used an old word, else "". */
+    static String oldWordNote(String word) {
+        String nw = AreaType.oldWord(word);
+        return nw == null ? "" : " (" + word.toLowerCase() + " = " + nw + " now)";
+    }
+
+    /** The area entry for a parsed line (here = the owner's spot or the bot's; a no-break/keep-out "here" area defaults to 8 down, 16 up). */
     static JsonObject build(NewArea a, Pos here, Pos me) {
         JsonObject b;
         if (a.r() != null) {
             Integer lo = null, hi = null;
             if (a.y1() != null) { lo = here.y() - a.y1(); hi = here.y() + a.y2(); }
-            else if (a.type() == AreaType.SAFE) { lo = here.y() - 8; hi = here.y() + 16; }
+            else if (io.github.mojolowjo.entropybot.guard.AreaTypeRules.protects(a.type())) { lo = here.y() - 8; hi = here.y() + 16; }
             b = makeBox(a.name(), here.dim(), here.x() - a.r(), here.z() - a.r(), here.x() + a.r(), here.z() + a.r(), lo, hi);
         } else {
             int[] v = a.xz();
             b = makeBox(a.name(), me.dim(), v[0], v[1], v[2], v[3], a.y1(), a.y2());
         }
-        if (a.type() != AreaType.NEUTRAL) b.addProperty("type", a.type().word());
+        if (a.type() != AreaType.WORK) b.addProperty("type", a.type().word());
         return b;
     }
 
@@ -368,21 +499,21 @@ public final class PolicyCommands {
         return false;
     }
 
-    /** Puts an entry in the list its type belongs to (safe: protect). Null when fine, else the cap's error. */
+    /** Puts an entry in the list its meaning belongs to (no-break, keep-out: protect). Null when fine, else the cap's error. */
     private String put(JsonObject b) {
         String name = nameOf(b);
-        boolean safe = typeOf(b) == AreaType.SAFE;
+        boolean safe = io.github.mojolowjo.entropybot.guard.AreaTypeRules.protects(typeOf(b));
         JsonArray list = safe ? protect() : areas();
         boolean replacing = findArea(name) != null;
         int i = findBox(list, name);
-        String full = safe ? Limits.full(i >= 0, list.size(), Limits.PROTECT, "safe areas", "delete one first (area del <name> confirm)") : areasFull(list, i);
+        String full = safe ? Limits.full(i >= 0, list.size(), Limits.PROTECT, "no-break and keep-out areas", "delete one first (area del <name> confirm)") : areasFull(list, i);
         if (full != null) return full;
         if (replacing) removeNamed(name);
         list.add(b);
         return null;
     }
 
-    /** V1a: "fence check" names where the spot lies: " (in mine, destroy)" / " (outside every area)". */
+    /** V1a: "fence check" names where the spot lies: " (in mine, destroy)" / " (no area)". */
     String whereText(String dim, int x, int y, int z) {
         for (JsonArray l : List.of(protect(), areas())) {
             for (JsonElement e : l) {
@@ -391,19 +522,21 @@ public final class PolicyCommands {
             }
         }
         JsonObject n = guard.nearArea();
-        if (n != null && dimOf(n).equals(dim) && boxGap(n, x, y, z) == 0) return " (within " + nearR() + " blocks of you)";
-        return " (outside every area)";
+        if (n != null && dimOf(n).equals(dim) && boxGap(n, x, y, z) == 0) return " (no area; within " + nearR() + " blocks of you)";
+        return " (no area)";
     }
 
-    /** "area list": one list, every type, with the colour word. */
+    /** "area list": one list, every meaning, with the colour word and the note. */
     String listText() {
         String nearLine = guard.nearStatus();
         String tail = nearLine == null ? "" : " | " + nearLine;
-        if (areas().isEmpty() && protect().isEmpty()) return "no areas set - " + AREA_HINT + tail;
+        if (areas().isEmpty() && protect().isEmpty()) return "no areas set - the world is open (" + AREA_HINT + " labels a place; meanings: " + AreaType.WORDS + ")" + tail;
         List<String> out = new ArrayList<>();
         for (JsonElement e : areas()) out.add(areaText(e.getAsJsonObject()));
         for (JsonElement e : protect()) out.add(areaText(e.getAsJsonObject()));
-        return "areas: " + String.join(", ", out) + tail;
+        JsonArray cand = candidateBoxes();
+        String ct = cand.isEmpty() ? "" : " | candidates treated as no-break until rejected: " + cand.size() + " (area candidates)";
+        return "areas: " + String.join(", ", out) + ct + tail;
     }
 
     /**
@@ -429,8 +562,8 @@ public final class PolicyCommands {
                     p.getAsJsonObject("near").addProperty("on", arg.equals("on"));
                     guard.setNear(nearOn(), nearR());
                     saved.run();
-                    return "ok: near me " + arg + (arg.equals("on") ? " - I may work in a circle of " + nearR() + " blocks around you, wherever you are (safe areas and the safety rules still hold)"
-                            : " - only my areas count now");
+                    return "ok: near me " + arg + (arg.equals("on") ? " - AA treats a circle of " + nearR() + " blocks around you as a place it prefers in companion mode (a fact, never a permission)"
+                            : " - AA no longer prefers the spot around you");
                 }
                 Integer r = arg.matches("^\\d{1,4}$") ? Integer.valueOf(arg) : null;
                 String bad = r == null ? "usage: area near [<r>|on|off|status]" : io.github.mojolowjo.entropybot.guard.NearZone.checkRadius(r);
@@ -440,7 +573,7 @@ public final class PolicyCommands {
                 n.addProperty("on", true);
                 guard.setNear(true, r);
                 saved.run();
-                return "ok: near me " + r + " blocks (on) - I may work in a circle of " + r + " blocks around you (" + io.github.mojolowjo.entropybot.guard.NearZone.Y_HALF + " up and down)";
+                return "ok: near me " + r + " blocks (on) - AA prefers a circle of " + r + " blocks around you (" + io.github.mojolowjo.entropybot.guard.NearZone.yHalf() + " up and down) in companion mode; a fact, never a permission";
             }
             String name = parts.size() > 1 ? parts.get(1).toLowerCase() : "";
             if (sub.equals("show")) {
@@ -458,9 +591,20 @@ public final class PolicyCommands {
                 removeNamed(name);
                 return changed("ok: area " + name + " deleted", false);
             }
+            if (sub.equals("note")) {                                    // AREAS: a free note on an area
+                JsonObject b = findArea(name);
+                if (name.isEmpty()) return "usage: area note <name> <text> (an empty text clears it)";
+                if (b == null) return "I have no area called " + name + " (area list)";
+                String text = parts.size() > 2 ? String.join(" ", parts.subList(2, parts.size())).trim() : "";
+                if (text.length() > 200) return "error: a note is 200 characters at most";
+                if (text.isEmpty()) b.remove("note");
+                else b.addProperty("note", text);
+                return changed("ok: area " + name + (text.isEmpty() ? " - note cleared" : " - note: " + text), false);
+            }
             if (sub.equals("change")) {
                 String what = name;
-                if (parts.size() != 4 || !(what.equals("name") || what.equals("type"))) return "usage: area change name <name> <new name> | area change type <name> <type>";
+                if (what.equals("type")) what = "meaning";                 // AREAS: the old word keeps working
+                if (parts.size() != 4 || !(what.equals("name") || what.equals("meaning"))) return "usage: area change name <name> <new name> | area change meaning <name> <meaning>";
                 String target = parts.get(2).toLowerCase(), val = parts.get(3).toLowerCase();
                 JsonObject b = findArea(target);
                 if (b == null) return "I have no area called " + target + " (area list)";
@@ -474,7 +618,7 @@ public final class PolicyCommands {
                 AreaType t = AreaType.of(val);
                 if (t == null) return AreaType.BAD;
                 JsonObject nb = b.deepCopy();
-                if (t == AreaType.NEUTRAL) nb.remove("type");
+                if (t == AreaType.WORK) nb.remove("type");
                 else nb.addProperty("type", t.word());
                 removeNamed(target);
                 String full = put(nb);
@@ -482,16 +626,18 @@ public final class PolicyCommands {
                     put(b);
                     return full;
                 }
-                return changed("ok: area " + target + " is now " + t.word() + " (" + t.colour + ")", false);
+                return changed("ok: area " + target + " is now " + t.word() + " (" + t.colour + ")" + oldWordNote(val), false);
             }
             NewArea a = parseNew(parts);
             if (a.error() != null) return a.error();
             JsonObject b = build(a, here, me);
             if (io.github.mojolowjo.entropybot.guard.GuardCore.DENIED_DIMS.contains(dimOf(b))) return "error: no areas in " + dimOf(b);
             boolean existed = findArea(a.name()) != null;
+            if (existed) b.addProperty("note", noteOf(findArea(a.name())));          // a replaced box keeps its note
+            if (noteOf(b) == null) b.remove("note");
             String full = put(b);
             if (full != null) return full;
-            return changed("ok: area " + areaText(b) + (existed ? " replaced" : " added"), false);
+            return changed("ok: area " + areaText(b) + (existed ? " replaced" : " added") + (a.typeWord() == null ? "" : oldWordNote(a.typeWord())), false);
         }
         if (verb.equals("fence")) {
             if (sub.isEmpty() || sub.equals("status")) {
@@ -544,6 +690,16 @@ public final class PolicyCommands {
                 String r = guard.why(me.dim(), Integer.parseInt(parts.get(1)), Integer.parseInt(parts.get(2)), Integer.parseInt(parts.get(3)), action, intent);
                 return r == null ? "rules: mod not loaded" : r;
             }
+            if (sub.equals("danger")) {                                   // AREAS: the danger area's move multiplier
+                if (parts.size() < 2) return "fence danger: a move inside a danger area costs x" + fmtMult(guard.danger(Double.NaN)) + " (fence danger <1..64>)";
+                if (!isOwner) return notOwner;
+                double m;
+                try { m = Double.parseDouble(parts.get(1)); } catch (NumberFormatException e) { return "usage: fence danger <1..64>"; }
+                if (io.github.mojolowjo.entropybot.guard.MoveRules.danger(m, -1) < 0) return "error: the danger multiplier is 1..64";
+                p.addProperty("danger", m);
+                saved.run();
+                return "ok: a move inside a danger area costs x" + fmtMult(guard.danger(m)) + " now";
+            }
             if (!isOwner) return notOwner;
             if (sub.equals("check")) {
                 String m = parts.size() > 4 ? parts.get(4).toLowerCase() : "";
@@ -556,8 +712,8 @@ public final class PolicyCommands {
                 String m = parts.size() > 1 ? parts.get(1).toLowerCase() : "";
                 if (m.equals("strict")) {
                     p.addProperty("strict", true);
-                    return changed("ok: strict mode - the fence is on (" + (areas().isEmpty() ? "no work areas yet - " + AREA_HINT + "; walking stays free, digging and building only "
-                            + (nearOn() ? "within " + nearR() + " blocks of you" : "nowhere") : "areas: " + names(areas()) + (nearOn() ? ", plus " + nearR() + " blocks around you" : "")) + ")", true);
+                    return changed("ok: strict mode - the fence is on (the world is open; keep-out and no-break areas bind: "
+                            + (protect().isEmpty() ? "none set" : names(protect())) + ")", true);
                 }
                 if (m.equals("log")) {
                     if (parts.size() < 3 || !parts.get(2).equalsIgnoreCase("confirm")) {
@@ -568,10 +724,12 @@ public final class PolicyCommands {
                 }
                 return "usage: fence mode strict | fence mode log confirm";
             }
-            return "usage: fence | fence vetoes | fence check x y z break|place|go | fence mode strict | fence mode log confirm";
+            return "usage: fence | fence vetoes | fence check x y z break|place|go | fence mode strict | fence mode log confirm | fence rules | fence why x y z | fence danger [<n>]";
         }
         return "unknown command \"" + verb + "\"";
     }
+
+    static String fmtMult(double m) { return m == Math.rint(m) ? String.valueOf((long) m) : String.valueOf(m); }
 
     private static String names(JsonArray l) {
         List<String> out = new ArrayList<>();
@@ -580,6 +738,7 @@ public final class PolicyCommands {
     }
 
     private static long num(JsonObject o, String k) {
-        try { return o.has(k) ? (long) o.get(k).getAsDouble() : 0; } catch (RuntimeException e) { return 0; }
+        try { return o.has(k) ? (long) o.get(k).getAsDouble() : 0; } catch (RuntimeException e) {
+            Quiet.warn("PolicyCommands.num failed, carrying on with the fallback", e); return 0; }
     }
 }

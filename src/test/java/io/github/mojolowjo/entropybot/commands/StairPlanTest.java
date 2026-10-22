@@ -7,6 +7,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /** 0.24.4: the staircase cells and chain, the shaft test, and the restore ledger's purpose blocks. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class StairPlanTest {
     @Test
     void cellsAreThreeHighOneStepPerBlock() {
@@ -68,7 +69,7 @@ class StairPlanTest {
         assertTrue(RestoreRules.purposeBreak("minecraft:dirt", "minecraft:grass_block"));
         assertFalse(RestoreRules.purposeBreak("minecraft:stone", "minecraft:dirt"), "a path block of another kind is still put back");
         assertFalse(RestoreRules.purposeBreak("minecraft:iron_ore", "minecraft:stone"), "mine X dig: path blocks restored");
-        assertFalse(RestoreRules.purposeBreak("minecraft:stone", "minecraft:andesite"));
+        assertTrue(RestoreRules.purposeBreak("minecraft:stone", "minecraft:andesite"), "the base stone is one family by the tags");
         assertFalse(RestoreRules.purposeBreak(null, "minecraft:stone"));
     }
 }

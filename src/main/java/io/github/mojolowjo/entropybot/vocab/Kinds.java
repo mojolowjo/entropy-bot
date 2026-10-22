@@ -1,5 +1,9 @@
 package io.github.mojolowjo.entropybot.vocab;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import io.github.mojolowjo.entropybot.aa.brain.ItemWorth;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -20,9 +24,6 @@ public final class Kinds {
 
     public static final List<String> KINDS = List.of("logs", "wood", "ores", "stone", "food", "seeds", "animals");
 
-    static final Set<String> STONE = Set.of("minecraft:stone", "minecraft:cobblestone", "minecraft:deepslate", "minecraft:cobbled_deepslate",
-            "minecraft:andesite", "minecraft:diorite", "minecraft:granite", "minecraft:tuff", "minecraft:blackstone");
-
     public static boolean isKind(String word) {
         return word != null && KINDS.contains(word.trim().toLowerCase(Locale.ROOT));
     }
@@ -37,13 +38,13 @@ public final class Kinds {
     public static boolean byName(String kind, String id, Predicate<String> isFood) {
         String path = id.substring(id.indexOf(':') + 1);
         switch (kind) {
-            case "logs": return (path.endsWith("_log") || path.endsWith("_stem")) && !path.startsWith("stripped_");
-            case "wood": return path.endsWith("_planks");
-            case "ores": return path.endsWith("_ore") || path.equals("ancient_debris");
-            case "stone": return STONE.contains(id);
+            case "logs": return ItemWorth.hasTag(id, "logs") && !path.startsWith("stripped_");       // the game's tags, any mod
+            case "wood": return ItemWorth.hasTag(id, "planks");
+            case "ores": return ItemWorth.hasTag(id, "c:ores");
+            case "stone": return ItemWorth.stoneLike(id) && ItemWorth.valueOr(id, 1) >= io.github.mojolowjo.entropybot.aa.brain.Tuning.get("junk.maxWorth");       // stone-like and not soft (dirt, gravel)
             case "food": return isFood != null && isFood.test(id);
-            case "seeds": return path.endsWith("_seeds");
-            case "animals": return HuntRules.ANIMALS.contains(id);
+            case "seeds": return ItemWorth.hasTag(id, "villager_plantable_seeds");
+            case "animals": return ItemWorth.mobFood().containsKey(id);
             default: return false;
         }
     }
@@ -57,7 +58,7 @@ public final class Kinds {
     public static List<String> expand(String kind, Collection<String> ids, Predicate<String> isFood, Rule rule) {
         String k = kind.toLowerCase(Locale.ROOT);
         TreeSet<String> out = new TreeSet<>();
-        if (k.equals("animals")) out.addAll(HuntRules.ANIMALS);             // entities, not items: their own list
+        if (k.equals("animals")) out.addAll(ItemWorth.mobFood().keySet());   // entities, not items: the food mobs (loot data)
         for (String id : ids) if (byName(k, id, isFood)) out.add(id);
         if (rule != null) {
             out.addAll(rule.include());
@@ -111,13 +112,6 @@ public final class Kinds {
         return out;
     }
 
-    /** 0.24.3: the plain foods with a known source, in the order to try them (meat/fish: only with raw in storage). */
-    static final List<String> PLAIN_FOODS = List.of("minecraft:bread", "minecraft:baked_potato", "minecraft:potato", "minecraft:carrot",
-            "minecraft:cooked_beef", "minecraft:cooked_porkchop", "minecraft:cooked_mutton", "minecraft:cooked_chicken",
-            "minecraft:apple", "minecraft:cooked_cod", "minecraft:cooked_salmon");
-    static final Set<String> NEVER_FOOD = Set.of("minecraft:golden_carrot", "minecraft:golden_apple", "minecraft:enchanted_golden_apple",
-            "minecraft:rotten_flesh", "minecraft:spider_eye", "minecraft:poisonous_potato", "minecraft:pufferfish", "minecraft:suspicious_stew");
-
     /**
      * 0.24.3: the food kind's one id. In order: an edible the bag or storage already holds (the most); then the plain
      * foods (bread first; cooked meat or fish only when its raw form is in stock - hunting is off); then a modded food
@@ -136,15 +130,22 @@ public final class Kinds {
     }
 
     /** As above; hunting: hunting is on, so cooked beef (hunt cows, cook) comes after the crops and before modded foods. */
+    /** Plain foods, crops and bakes first, cooked ones after, each best (food worth) first, then by id. */
+    static List<String> plainFoods(Set<String> allowed) {
+        List<String> l = new ArrayList<>(allowed);
+        l.sort(java.util.Comparator.comparing((String id) -> ItemWorth.rawOf(id) != null).thenComparing(id -> -ItemWorth.food(id)).thenComparing(id -> id));
+        return l;
+    }
+
     /** 0.27.3 (d6): a food candidate whose plan mines more blocks than this is skipped (the reason goes to the log). */
-    public static final int MAX_FOOD_MINING = 256;
+    public static final int MAX_FOOD_MINING = 256; // structural
 
     /** 0.27.3 (d6): edible items that are potions, elixirs, essences or brews by name (modded drinks), never "food". */
     static final java.util.regex.Pattern NOT_FOOD_WORDS = java.util.regex.Pattern.compile("elixir|potion|essence|tonic|brew|draught|philter|flask|vial|serum|tincture");
 
     /** 0.27.3 (d6): real food: not on the never list and not a potion-like drink by its name. */
     public static boolean realFood(String id) {
-        return id != null && !NEVER_FOOD.contains(id) && !NOT_FOOD_WORDS.matcher(id.substring(id.indexOf(':') + 1)).find();
+        return id != null && !ItemWorth.junkFood(id) && !ItemWorth.effectFood(id) && !NOT_FOOD_WORDS.matcher(id.substring(id.indexOf(':') + 1)).find();
     }
 
     public static String pickFood(List<String> ids, Map<String, Integer> stock, Boolean farmKnown, boolean hunting, Predicate<String> resolves) {
@@ -157,19 +158,17 @@ public final class Kinds {
             if (n > bestN) { best = id; bestN = n; }
         }
         if (best != null) return best;
-        for (String id : PLAIN_FOODS) {
-            if (!allowed.contains(id)) continue;
-            String raw = id.startsWith("minecraft:cooked_") ? "minecraft:" + id.substring("minecraft:cooked_".length()) : null;
+        for (String id : plainFoods(allowed)) {
+            String raw = ItemWorth.rawOf(id);
             if (raw != null && (stock == null || stock.getOrDefault(raw, 0) <= 0)) continue;
-            if (id.equals("minecraft:apple")) continue;             // apples only from stock (step 1): no orchard source
+            if (raw == null && !ItemWorth.hasTag(id, "villager_plantable_seeds") && ItemWorth.firstIngredient(id) == null) continue;   // foraged food (an apple): only from stock (step 1), no source
             if (raw == null && (farmKnown != null && !farmKnown)) {
-                String crop = id.equals("minecraft:bread") ? "minecraft:wheat" : id.equals("minecraft:baked_potato") ? "minecraft:potato" : id;
+                String crop = ItemWorth.firstIngredient(id) != null ? ItemWorth.firstIngredient(id) : id;
                 if (stock == null || stock.getOrDefault(crop, 0) <= 0) continue;
             }
             return id;
         }
-        if (hunting) for (String id : List.of("minecraft:cooked_beef", "minecraft:cooked_porkchop", "minecraft:cooked_mutton", "minecraft:cooked_chicken"))
-            if (allowed.contains(id)) return id;
+        if (hunting) for (String id : plainFoods(allowed)) if (ItemWorth.rawOf(id) != null && ItemWorth.mobFood().containsValue(ItemWorth.rawOf(id))) return id;
         for (String id : allowed) {
             if (id.startsWith("minecraft:")) continue;
             if (resolves != null && resolves.test(id)) return id;

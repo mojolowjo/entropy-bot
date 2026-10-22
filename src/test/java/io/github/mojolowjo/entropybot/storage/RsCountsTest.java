@@ -8,6 +8,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** B7e: the sim's "storage" run (rs take / rs put) as pure tests: exact counts, a part stack, "put all" keeps. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class RsCountsTest {
     static final String COBBLE = "minecraft:cobblestone", DIRT = "minecraft:dirt", BREAD = "minecraft:bread";
 

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.ai.live;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.ai.AiLog;
 import io.github.mojolowjo.entropybot.ai.AiLoop;
@@ -78,6 +80,7 @@ public final class AiRuntime {
         try {
             return Minecraft.getInstance().gameDirectory.toPath().resolve("entropybot");
         } catch (RuntimeException e) {
+            Quiet.warn("AiRuntime.botDir failed, carrying on with the fallback", e);
             return null;
         }
     }
@@ -357,12 +360,7 @@ public final class AiRuntime {
                 if (arg.equalsIgnoreCase("all")) {
                     String aa = c.aaCancelAi();            // 0.36.0: with AA on, the AI's stop ends only the AI's own request, never the owner's or a need
                     if (aa != null) return "ok: AI stopped; " + aa + " (ai on or your next request starts the AI again)";
-                    calling = true;
-                    try {
-                        c.handle(c.owner(), "stop", false, null);
-                    } finally {
-                        calling = false;
-                    }
+                    c.handle(c.owner(), "stop", false, null);     // the owner's own "ai stop all": not gated as the AI
                     return "ok: AI stopped and the bot stopped (ai on or your next request starts the AI again)";
                 }
                 return "ok: AI stopped (the bot's job goes on; ai stop all stops both; ai on or your next request starts it again)";

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.plan;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import io.github.mojolowjo.entropybot.commands.VerbTable;
@@ -19,9 +21,9 @@ import java.util.Map;
 public final class ActionTable {
     private ActionTable() {}
 
-    public static final int VERSION = 1;
+    public static final int VERSION = 1; // structural
     /** The document's size budget without the state (BRAIN_PLAN 9: /api/actions under 30 KB). */
-    public static final int BUDGET = 30_000;
+    public static int budget() { return Tuning.i("actionTable.budget"); }
 
     /** One primitive. planner: the goal search may choose it. */
     public record ActionSpec(String id, String verb, String inputs, String pre, String eff, String cost, boolean finishes, String who, boolean planner) {}
@@ -33,14 +35,13 @@ public final class ActionTable {
     }
 
     static {
-        a("walk", "goto x y z | go <place> [marker] | come | home", "a spot, a place or the owner", "the spot inside my areas or the near-me zone (the fence)", "at(spot)", "1 per block", true, false);
+        a("walk", "goto x y z | go <place> [marker] | come | home", "a spot, a place or the owner", "the spot the policy allows (no keep-out area)", "at(spot)", "1 per block", true, false);
         a("fetch", "get <item|kind> [n]", "item, n", "the item in the chests or the RS network (stock)", "have(item, n)", "3", true, true);
-        a("cut", "cut <n> logs", "n", "trees in my areas", "have(log, n)", "3 + 2 per log", true, true);
+        a("cut", "cut <n> logs", "n", "a tree seen near me", "have(log, n)", "3 + 2 per log", true, true);
         a("craft", "craft <item> [n]", "item, n", "the recipe's inputs (the craft planner fetches and makes parts); a crafting table within 12 for 3x3 recipes", "have(item, n)", "2", true, true);
-        a("place", "place <block> x y z", "block, a free spot in reach", "have(block, 1); the spot inside my areas", "the block stands there (table/furnace near)", "3", true, true);
+        a("place", "place <block> x y z", "block, a free spot in reach", "have(block, 1); the spot the policy allows", "the block stands there (table/furnace near)", "3", true, true);
         a("smelt", "smelt <item> [n] then smelt collect all", "item, n", "a furnace near; the raw item; fuel (1 per 8)", "have(item, n)", "6 + 1 per item", true, true);
         a("mine", "mine strip <ore> [n] | mine <ore>_ore [n] | mine cave <ore> [n]", "ore family, n", "a pickaxe of the ore's tier; a marked mine, an ore in view, or a known cave", "have(ore drop, n)", "10 + 3 per item", true, true);
-        a("quarry", "dig x1 y1 z1 x2 y2 z2 (8 staircase columns, as bootstrap)", "the bot's spot", "a pickaxe; stone under me; inside my areas", "have(cobblestone, ~40)", "25", true, true);
         a("gather", "gather <item|kind> [n]", "item, n", "the gather verb's sources (storage, craft, smelt, mine, cut, farm)", "have(item, n)", "20 + 2 per item", true, true);
         a("build", "shelter", "a block kind", "have(block, 32)", "shelter around me", "10", true, true);
         a("light", "light here <r> | light x1 z1 x2 z2", "an area", "torches (it fetches or crafts them)", "torches every 6 blocks", "10 + per torch", true, false);
@@ -48,9 +49,10 @@ public final class ActionTable {
         a("deposit", "deposit [item ...]", "", "base chests scanned (scan base)", "free bag slots", "10", true, false);
         a("attack", "attack <mob kind|entity id>", "a mob", "the mob in sight; never players unless defence players on; never pets", "the mob dead or gone", "10", true, false);
         a("eat", "eat", "", "food in the bag", "food bar up", "1", true, false);
+        a("burrow", "burrow", "", "the fork's BurrowProcess says it can dig down here or into a wall beside me", "sealed in a hole 3 down or a niche", "5", true, false);
         a("chest", "open x y z | take <item> [n] | put <item> [n] | close", "a chest", "the chest trusted", "items moved", "3", true, false);
         a("area", "area here <r> <name> [type] [down up]", "radius, name", "owner", "an area where I may work", "1", true, false);
-        a("camp", "camp here", "", "inside my areas", "a camp place with a bed marker, torches", "20", true, false);
+        a("camp", "camp here", "", "the policy allows the spot", "a camp place with a bed marker, torches", "20", true, false);
     }
 
     /** Every VerbTable verb: the action it is ("a:<id>") or why the planner never uses it ("n:<why>"). */
@@ -68,16 +70,18 @@ public final class ActionTable {
         v("a:place", "place");
         v("a:smelt", "smelt", "cook");
         v("a:mine", "mine");
-        v("a:quarry", "dig");
+        v("a:gather", "dig");
         v("a:gather", "gather");
         v("a:build", "build");
         v("a:light", "light");
         v("a:sleep", "sleep");
         v("a:build", "shelter");
-        v("a:gather", "hunt");
+        v("a:gather", "hunt", "fish");
         v("a:deposit", "deposit", "unload");
         v("a:attack", "attack");
         v("a:eat", "eat");
+        v("a:burrow", "burrow");
+        v("n:a danger move (AA's danger desire prices and runs it; AA_CLEANUP 4)", "flee", "pillar");
         v("a:chest", "open", "take", "put", "close");
         v("a:area", "area");
         v("a:camp", "camp");
@@ -85,11 +89,11 @@ public final class ActionTable {
                 "kinds", "recipe", "help", "plan", "actions");
         v("n:a setting or a note, not a step toward a thing", "marker", "need", "supplies", "junk", "defence", "tools", "hotbar", "brain", "idle", "done", "routine",
                 "rule", "trust", "untrust", "allow", "deny", "restart", "surface", "sense", "blind", "path", "server", "confirm", "goal", "dayplan", "ai", "aa");
-        v("n:runs until stopped or another order (no end state)", "follow", "defend", "guard", "escort", "assist", "dismiss", "carry", "repeat", "explore", "scout", "hold");
-        v("n:a whole job of its own (it plans itself)", "restock", "bootstrap", "climb", "house", "farm", "compact", "infuse", "upgrade", "pots", "rs", "scan", "restore", "find");
+        v("n:runs until stopped or another order (no end state)", "follow", "defend", "guard", "assist", "dismiss", "carry", "repeat", "explore", "scout", "hold");
+        v("n:a whole job of its own (it plans itself)", "restock", "climb", "house", "farm", "compact", "infuse", "upgrade", "pots", "rs", "scan", "restore", "find");
         v("n:moves items away or to a player (never a step toward having them)", "give", "drop", "wear");
         v("n:recovery after a death", "death", "corpse", "resume");
-        v("n:chat, waiting or debugging", "night", "hunting", "say", "twerk", "spawn", "wait", "stop", "debug");
+        v("n:chat, waiting or debugging", "night", "hunting", "say", "spawn", "wait", "stop", "debug");
     }
 
     public static Map<String, ActionSpec> actions() { return java.util.Collections.unmodifiableMap(ACTIONS); }
@@ -99,7 +103,7 @@ public final class ActionTable {
 
     /**
      * The load check (BRAIN_PLAN 6.3): every VerbTable verb has a note, every "a:" note names an action, every planner
-     * action of {@link Planner#ACTIONS} is in the table. Returns the problems (empty = fine).
+     * action is in the table. Returns the problems (empty = fine).
      */
     public static List<String> selfTest() {
         List<String> bad = new ArrayList<>();
@@ -108,7 +112,6 @@ public final class ActionTable {
             if (n == null) bad.add("verb " + v.name() + " has no entry");
             else if (n.startsWith("a:") && !ACTIONS.containsKey(n.substring(2))) bad.add("verb " + v.name() + " names no action " + n);
         }
-        for (String a : Planner.ACTIONS) if (!ACTIONS.containsKey(a) || !ACTIONS.get(a).planner()) bad.add("planner action " + a + " not in the table");
         return bad;
     }
 
@@ -141,7 +144,7 @@ public final class ActionTable {
             verbs.add(a);
         }
         o.add("verbs", verbs);
-        o.addProperty("goals", GoalGrammar.FORMS);
+        o.addProperty("goals", "goal <item|group> [n]: the chain (have it, craft it, dig a known source, else explore); plan <item> [n]: its dry run");
         return o;
     }
 
@@ -159,7 +162,7 @@ public final class ActionTable {
             VerbTable.Verb v = VerbTable.of(w);
             ActionSpec a = ACTIONS.get(w);
             if (a == null && v != null && VERBS.getOrDefault(v.name(), "").startsWith("a:")) a = ACTIONS.get(VERBS.get(v.name()).substring(2));
-            if (a != null) return a.id() + ": " + a.verb() + " | needs: " + a.pre() + " | gives: " + a.eff() + " | cost " + a.cost() + (a.planner() ? " | the planner uses it" : "");
+            if (a != null) return a.id() + ": " + a.verb() + " | needs: " + a.pre() + " | gives: " + a.eff() + " | cost " + a.cost() + (a.planner() ? " | a chain step" : "");
             if (v != null) return v.name() + ": not planable (" + VERBS.getOrDefault(v.name(), "n:?").substring(2) + ")";
             return "no action or verb " + w + " - actions lists them";
         }
@@ -167,7 +170,7 @@ public final class ActionTable {
         for (ActionSpec a : ACTIONS.values()) if (a.planner()) p.add(a.id());
         List<String> o = new ArrayList<>();
         for (ActionSpec a : ACTIONS.values()) if (!a.planner()) o.add(a.id());
-        return "actions v" + VERSION + ": the planner chains " + String.join(", ", p) + "; also " + String.join(", ", o)
+        return "actions v" + VERSION + ": the chain's steps " + String.join(", ", p) + "; also " + String.join(", ", o)
                 + " - actions <verb> for one; the full table with the state is entropybot/actions.json (dashboard /api/actions)";
     }
 }

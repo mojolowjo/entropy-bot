@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -41,7 +43,7 @@ public final class ClearGrid {
     public static ClearGrid build(ClearWorld w, ClearBox box, Bot bot, ClearJob job, int side, int vert) {
         int px = floor(bot.x()), py = floor(bot.y()), pz = floor(bot.z());
         ClearGrid g = new ClearGrid(Math.min(box.x1() - side, px - 2), Math.max(box.x2() + side, px + 2),
-                Math.min(box.y1() - vert, py - 3), Math.max(box.y2() + vert, py + 3),
+                Math.min(box.y1() - vert, py - Tuning.i("clearGrid.vertSlack")), Math.max(box.y2() + vert, py + Tuning.i("clearGrid.vertSlack")),
                 Math.min(box.z1() - side, pz - 2), Math.max(box.z2() + side, pz + 2));
         int i = 0;
         for (int x = g.ax; x <= g.bx; x++) {
@@ -124,12 +126,12 @@ public final class ClearGrid {
     int[] walk(Bot bot, boolean throughWater, int[] parent) {
         int[] dist = new int[open.length];
         Arrays.fill(dist, -1);
-        int sx = floor(bot.x()), sy = floor(bot.y() + 0.01), sz = floor(bot.z());
+        int sx = floor(bot.x()), sy = floor(bot.y() + 0.01), sz = floor(bot.z());  // structural: epsilon: standing check
         int i = idx(sx, sy, sz);
         if (i < 0) return dist;
         if (parent != null) Arrays.fill(parent, -1);
         int[][] dirs = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
-        int[] queue = new int[open.length * 3];
+        int[] queue = new int[open.length * 3];  // structural: three ints per queued cell
         int head = 0, tail = 0;
         dist[i] = 0;
         queue[tail++] = sx; queue[tail++] = sy; queue[tail++] = sz;
@@ -145,7 +147,7 @@ public final class ClearGrid {
                 } else if (dry(cx, cy + 2, cz, throughWater) && standOn(nx, cy + 1, nz, throughWater)) {
                     ny = cy + 1;
                 } else if (dry(nx, cy, nz, throughWater) && dry(nx, cy + 1, nz, throughWater)) {
-                    for (int dy = 1; dy <= 3 && ny == null; dy++) {
+                    for (int dy = 1; dy <= Tuning.i("clearGrid.climbMax") && ny == null; dy++) {
                         if (!dry(nx, cy - dy, nz, throughWater)) break;
                         if (standOn(nx, cy - dy, nz, throughWater)) ny = cy - dy;
                     }
@@ -162,7 +164,7 @@ public final class ClearGrid {
     }
 
     /** How many sight checks {@link #waterLock} may spend. */
-    public static final int LOCK_BUDGET = 600;
+    public static int lockBudget() { return Tuning.i("clearGrid.lockBudget"); }
 
     /**
      * TLL 30: the water that cuts the bot off from the rest of the dig, or null. Null as soon as a spot it can walk to
@@ -176,7 +178,7 @@ public final class ClearGrid {
         int[] dry = g.walkDistances(bot);
         int[] parent = new int[g.open.length];
         int[] wet = g.walk(bot, true, parent);
-        double r = CLEAR_REACH - 0.3;
+        double r = CLEAR_REACH - Tuning.get("clearGrid.reachMargin");
         List<Pos> exposed = new ArrayList<>();
         for (Pos t : g.targets) {
             if (!job.wanted(t.key()) || job.skip.containsKey(t.key()) || !ClearEngine.clearable(w, job, t.x(), t.y(), t.z())
@@ -191,12 +193,12 @@ public final class ClearGrid {
         if (exposed.isEmpty()) return null;
         double bx = bot.x(), by = bot.y(), bz = bot.z();
         exposed.sort(Comparator.comparingDouble(t -> sq(t.x() + 0.5 - bx) + sq(t.y() + 0.5 - by) + sq(t.z() + 0.5 - bz)));
-        int budget = LOCK_BUDGET, wetSpot = -1;
-        for (int k = 0; k < exposed.size() && k < 60 && budget > 0; k++) {
+        int budget = lockBudget(), wetSpot = -1;
+        for (int k = 0; k < exposed.size() && k < Tuning.i("clearGrid.exposedCap") && budget > 0; k++) {
             Pos t = exposed.get(k);
-            for (int x = t.x() - 5; x <= t.x() + 5 && budget > 0; x++) {
-                for (int z = t.z() - 5; z <= t.z() + 5 && budget > 0; z++) {
-                    for (int y = t.y() - 5; y <= t.y() + 3 && budget > 0; y++) {
+            for (int x = t.x() - Tuning.i("clearGrid.standR"); x <= t.x() + Tuning.i("clearGrid.standR") && budget > 0; x++) {
+                for (int z = t.z() - Tuning.i("clearGrid.standR"); z <= t.z() + Tuning.i("clearGrid.standR") && budget > 0; z++) {
+                    for (int y = t.y() - Tuning.i("clearGrid.standR"); y <= t.y() + Tuning.i("clearGrid.standUp") && budget > 0; y++) {
                         int i = g.idx(x, y, z);
                         if (i < 0 || wet[i] < 0 || (dry[i] < 0 && wetSpot >= 0)) continue;
                         if (g.wet[i] || g.wet(x, y + 1, z) || !job.standAllowed(x, y, z)) continue;
@@ -235,12 +237,12 @@ public final class ClearGrid {
      * walkway (minStandY). Spends the job's sight budget (24 tries at most here).
      */
     public static Spot bestSpotFor(ClearWorld w, ClearGrid g, int[] dist, Pos t, Bot bot, ClearJob job) {
-        double r = CLEAR_REACH - 0.3;
+        double r = CLEAR_REACH - Tuning.get("clearGrid.reachMargin");
         boolean fallAbove = ClearRules.falling(w.name(t.x(), t.y() + 1, t.z()));
         List<Spot> cands = new ArrayList<>();
-        for (int x = t.x() - 5; x <= t.x() + 5; x++) {
-            for (int z = t.z() - 5; z <= t.z() + 5; z++) {
-                for (int y = t.y() - 5; y <= t.y() + 3; y++) {
+        for (int x = t.x() - Tuning.i("clearGrid.standR"); x <= t.x() + Tuning.i("clearGrid.standR"); x++) {
+            for (int z = t.z() - Tuning.i("clearGrid.standR"); z <= t.z() + Tuning.i("clearGrid.standR"); z++) {
+                for (int y = t.y() - Tuning.i("clearGrid.standR"); y <= t.y() + Tuning.i("clearGrid.standUp"); y++) {
                     // never stand on it, nor under it when sand/gravel sits on top
                     if (x == t.x() && z == t.z() && (y == t.y() + 1 || (fallAbove && y < t.y()))) continue;
                     // a vein clear stays on the walkway: from a hole 2 deep the bot can't climb back out
@@ -252,7 +254,7 @@ public final class ClearGrid {
                     int i = g.idx(x, y, z);
                     if (i < 0 || g.wet[i] || g.wet(x, y + 1, z)) { if (i >= 0) job.noSpotWhy.merge("wet", 1, Integer::sum); continue; }     // not standing in water
                     Integer bad = job.badSpots.get(Pos.key(x, y, z));
-                    if (bad != null && job.broken - bad < 10) continue;      // failed to get there recently
+                    if (bad != null && job.broken - bad < Tuning.i("clearGrid.badWindow")) continue;      // failed to get there recently
                     double d;
                     if (dist[i] >= 0) d = dist[i];
                     // F (2026-10-04): with the fence on, only spots it can walk to. Baritone's partial path toward a spot
@@ -263,7 +265,7 @@ public final class ClearGrid {
                     }
                     else if (g.stand(x, y, z)) {
                         double dx = x - bot.x(), dy = y - bot.y(), dz = z - bot.z();
-                        d = 1000 + Math.sqrt(dx * dx + dy * dy + dz * dz);
+                        d = Tuning.i("clearGrid.farPenalty") + Math.sqrt(dx * dx + dy * dy + dz * dz);
                     } else continue;
                     cands.add(new Spot(x, y, z, d, ex, ey, ez));
                 }
@@ -272,7 +274,7 @@ public final class ClearGrid {
         cands.sort(Comparator.comparingDouble(Spot::cost));
         // in tunnels the nearest spots often face rock, so try a good few; the plan-wide budget keeps a
         // hopeless plan from freezing the game
-        for (int i = 0; i < cands.size() && i < 24 && job.sightBudget > 0; i++) {
+        for (int i = 0; i < cands.size() && i < Tuning.i("clearGrid.candCap") && job.sightBudget > 0; i++) {
             job.sightBudget--;
             Spot s = cands.get(i);
             if (ClearEngine.sightOf(w, s.eyeX(), s.eyeY(), s.eyeZ(), t.x(), t.y(), t.z()) != null) return s;
@@ -281,10 +283,10 @@ public final class ClearGrid {
         // 0.33.0 (A1, live: escape stairs ended "no block could be started", "no sight=61" in a cave): the 24 cheapest
         // walk spots were cave cells facing rock, while the step's own stance (not walkable until dug) never got a try.
         // Then the spots nearest the block, up to 8 more.
-        if (cands.size() > 24) {
+        if (cands.size() > Tuning.i("clearGrid.candCap")) {
             List<Spot> near = new ArrayList<>(cands.subList(24, cands.size()));
             near.sort(Comparator.comparingDouble(s -> ClearEngine.eyeDistSq(s.eyeX(), s.eyeY(), s.eyeZ(), t.x(), t.y(), t.z())));
-            for (int i = 0; i < near.size() && i < 8 && job.sightBudget > 0; i++) {
+            for (int i = 0; i < near.size() && i < Tuning.i("clearGrid.nearCap") && job.sightBudget > 0; i++) {
                 job.sightBudget--;
                 Spot s = near.get(i);
                 if (ClearEngine.sightOf(w, s.eyeX(), s.eyeY(), s.eyeZ(), t.x(), t.y(), t.z()) != null) return s;
@@ -299,7 +301,7 @@ public final class ClearGrid {
     public record Plan(Pos target, Spot spot) {}
 
     /** planWalk's sight budget per plan. */
-    public static final int SIGHT_BUDGET = 400;
+    public static int sightBudget() { return Tuning.i("clearGrid.sightBudget"); }
 
     /**
      * planWalk: the exposed block with the nearest reachable spot (checks the nearest 40 blocks, more only if
@@ -309,7 +311,7 @@ public final class ClearGrid {
     public static Plan planWalk(ClearWorld w, Bot bot, ClearJob job) {
         ClearGrid g = build(w, job.box, bot, job);
         int[] dist = g.walkDistances(bot);
-        job.sightBudget = SIGHT_BUDGET;
+        job.sightBudget = sightBudget();
         job.lastScanLeft = g.targets.size();
         job.brokenAtScan = job.broken;
         double px = bot.x(), py = bot.y(), pz = bot.z();
@@ -319,7 +321,7 @@ public final class ClearGrid {
             String key = t.key();
             if (job.skip.containsKey(key) || ClearEngine.clearFailed(job, key)) continue;
             boolean exposed = false;
-            for (int n = 0; n < 6 && !exposed; n++) {
+            for (int n = 0; n < 6 && !exposed; n++) {  // game fact: a block has 6 sides
                 int[] s = ClearEngine.SIDES6[n];
                 if (!g.solid(t.x() + s[0], t.y() + s[1], t.z() + s[2])) exposed = true;
             }
@@ -334,7 +336,7 @@ public final class ClearGrid {
         Plan best = null;
         for (int i = 0; i < order.length; i++) {
             // F: past the nearest 40 only while nothing (or only a spot it can't walk to) was found
-            if ((best != null && i >= 40 && best.spot().cost() < 1000) || job.sightBudget <= 0) break;
+            if ((best != null && i >= Tuning.i("clearGrid.goodEnoughAt") && best.spot().cost() < Tuning.i("clearGrid.farPenalty")) || job.sightBudget <= 0) break;
             Pos t = list.get(order[i]);
             if (ClearEngine.liquidForbids(w, job, t.x(), t.y(), t.z())) {
                 job.skip.put(t.key(), ClearEngine.NEXT_TO_LIQUID);
@@ -348,7 +350,7 @@ public final class ClearGrid {
     }
 
     /** How many sight checks {@link #entryProblem} may spend. */
-    public static final int ENTRY_BUDGET = 600;
+    public static int entryBudget() { return Tuning.i("clearGrid.entryBudget"); }
 
     /**
      * S1: why a clear got stuck, in plain words, when the cause is that no spot the bot can walk to (without breaking or
@@ -360,7 +362,7 @@ public final class ClearGrid {
     public static String entryProblem(ClearWorld w, Bot bot, ClearJob job) {
         ClearGrid g = build(w, job.box, bot, null);
         int[] dist = g.walkDistances(bot);
-        double r = CLEAR_REACH - 0.3;
+        double r = CLEAR_REACH - Tuning.get("clearGrid.reachMargin");
         List<Pos> exposed = new ArrayList<>();
         for (Pos t : g.targets) {
             // the grid was built without the job (no notes): the job's own rules now
@@ -376,12 +378,12 @@ public final class ClearGrid {
         if (exposed.isEmpty()) return "";
         double bx = bot.x(), by = bot.y(), bz = bot.z();
         exposed.sort(Comparator.comparingDouble(t -> sq(t.x() + 0.5 - bx) + sq(t.y() + 0.5 - by) + sq(t.z() + 0.5 - bz)));
-        int budget = ENTRY_BUDGET;
-        for (int k = 0; k < exposed.size() && k < 60 && budget > 0; k++) {
+        int budget = entryBudget();
+        for (int k = 0; k < exposed.size() && k < Tuning.i("clearGrid.exposedCap") && budget > 0; k++) {
             Pos t = exposed.get(k);
-            for (int x = t.x() - 5; x <= t.x() + 5 && budget > 0; x++) {
-                for (int z = t.z() - 5; z <= t.z() + 5 && budget > 0; z++) {
-                    for (int y = t.y() - 5; y <= t.y() + 3 && budget > 0; y++) {
+            for (int x = t.x() - Tuning.i("clearGrid.standR"); x <= t.x() + Tuning.i("clearGrid.standR") && budget > 0; x++) {
+                for (int z = t.z() - Tuning.i("clearGrid.standR"); z <= t.z() + Tuning.i("clearGrid.standR") && budget > 0; z++) {
+                    for (int y = t.y() - Tuning.i("clearGrid.standR"); y <= t.y() + Tuning.i("clearGrid.standUp") && budget > 0; y++) {
                         int i = g.idx(x, y, z);
                         if (i < 0 || dist[i] < 0) continue;
                         double ex = x + 0.5, ey = y + Bot.EYE, ez = z + 0.5;
@@ -420,11 +422,11 @@ public final class ClearGrid {
                 if (d < nd) { nd = d; nx = sx + dir[0]; nz = sz + dir[1]; }
             }
             int h = 0;
-            while (h < 6 && g.solid(nx, sy + h, nz)) h++;
+            while (h < Tuning.i("clearGrid.scanH") && g.solid(nx, sy + h, nz)) h++;
             if (h >= 2) guess = " (a wall " + h + " high at " + Pos.key(nx, sy, nz) + "?)";
             else if (h == 0 && g.open(nx, sy, nz) && !g.solid(nx, sy - 1, nz)) {
                 int depth = 0;
-                while (depth < 6 && g.open(nx, sy - 1 - depth, nz)) depth++;
+                while (depth < Tuning.i("clearGrid.scanH") && g.open(nx, sy - 1 - depth, nz)) depth++;
                 if (depth >= 2) guess = " (a drop " + depth + " deep at " + Pos.key(nx, sy - 1, nz) + "?)";
             }
         }

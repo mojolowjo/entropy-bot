@@ -1,8 +1,6 @@
 package io.github.mojolowjo.entropybot.commands;
 
-import io.github.mojolowjo.entropybot.camp.BootstrapPlan;
 import io.github.mojolowjo.entropybot.camp.BuildCount;
-import io.github.mojolowjo.entropybot.camp.JunkRules;
 import io.github.mojolowjo.entropybot.clear.Tools;
 import io.github.mojolowjo.entropybot.guard.AreaType;
 import io.github.mojolowjo.entropybot.world.SurfaceRule;
@@ -17,6 +15,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 0.28.1: trial fix package 1 (docs/TRIAL_FIX_PLAN.md in the bridge repo), the pure rules. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class TrialFixTest {
 
     // ---- B: chains with area ----
@@ -39,7 +38,7 @@ class TrialFixTest {
     void anyOrderAfterCoordinates() {
         // Expected: x -1..5, z -5..1, name 'house', type main, y 83..87
         int[] expectedXz = new int[]{-1, -5, 5, 1};
-        AreaType expectedType = AreaType.MAIN;
+        AreaType expectedType = AreaType.BASE;
         String expectedName = "house";
         Integer expectedY1 = 83, expectedY2 = 87;
 
@@ -72,7 +71,7 @@ class TrialFixTest {
             PolicyCommands.NewArea a = PolicyCommands.parseNew(words);
             assertNull(a.error(), "no error for " + words + ": " + a.error());
             assertEquals("camp", a.name(), "name for " + words);
-            assertEquals(AreaType.NEUTRAL, a.type(), "type for " + words);
+            assertEquals(AreaType.WORK, a.type(), "type for " + words);
             assertNull(a.xz(), "xz for " + words);
             assertEquals(48, a.r(), "r for " + words);
             if (words.size() == 6) {
@@ -139,27 +138,6 @@ class TrialFixTest {
         assertEquals("the mark was in the air, walking to the ground at 1 2 3", SurfaceRule.airNote(1, 2, 3));
     }
 
-    // ---- F: junk ----
-
-    @Test
-    void snowballsAreJunkAndBuildBlocksStayWhileWanted() {
-        assertTrue(JunkRules.DEFAULT.contains("minecraft:snowball"));
-        Set<String> junk = Set.copyOf(JunkRules.DEFAULT);
-        Map<String, Integer> dep = Map.of("minecraft:cobblestone", 64, "minecraft:snowball", 0, "minecraft:dirt", 0);
-        Map<String, Integer> inv = Map.of("minecraft:cobblestone", 170, "minecraft:snowball", 63, "minecraft:dirt", 20);
-        Map<String, Integer> none = JunkRules.plan(junk, dep, inv, "", JunkRules.wanted(List.of("chopping 6")));
-        assertEquals(106, none.get("minecraft:cobblestone"));
-        assertEquals(63, none.get("minecraft:snowball"));
-        Set<String> want = JunkRules.wanted(List.of("building shell of cobblestone", "build roof cobblestone house"));
-        assertTrue(want.contains("minecraft:cobblestone"));
-        Map<String, Integer> keep = JunkRules.plan(junk, dep, inv, "", want);
-        assertNull(keep.get("minecraft:cobblestone"), "a build keeps its cobblestone");
-        assertNull(keep.get("minecraft:dirt"));
-        assertEquals(63, keep.get("minecraft:snowball"));
-        assertTrue(JunkRules.wanted(List.of("shelter")).contains("*_planks"));
-        assertTrue(JunkRules.wanted(null).isEmpty());
-    }
-
     // ---- G: build counts ----
 
     @Test
@@ -193,31 +171,6 @@ class TrialFixTest {
     /** Fake cells: solid (DIG) at or under y=9, OPEN above; extra cells by key "x y z". */
     private static ClimbPlan.Cells cells(Map<String, ClimbPlan.Kind> extra) {
         return (x, y, z) -> extra.getOrDefault(x + " " + y + " " + z, y <= 9 ? ClimbPlan.Kind.DIG : ClimbPlan.Kind.OPEN);
-    }
-
-    @Test
-    void climbOutOfAOneWideShaft() {
-        // the bot at 0 6 0 in a 1x1 shaft (0 6..9 0 open), surface feet at 10
-        Map<String, ClimbPlan.Kind> m = new HashMap<>();
-        for (int y = 6; y <= 9; y++) m.put("0 " + y + " 0", ClimbPlan.Kind.OPEN);
-        ClimbPlan.Plan p = ClimbPlan.plan(cells(m), 0, 6, 0, 10, true);
-        assertNull(p.err());
-        assertEquals(4, p.up());
-        assertEquals("north", p.dir(), "all sides equal: the first");
-        assertEquals("dig 0 7 -1 0 8 0 ores via engine", p.steps().get(0));
-        assertEquals("goto 0 7 -1", p.steps().get(1));
-        assertEquals("goto 0 10 -4", p.steps().get(p.steps().size() - 1));
-        assertEquals("climb 4 up (a staircase north, " + p.dig() + " blocks to dig) to 0 10 -4", ClimbPlan.startText(p));
-        // no pickaxe: the dig can't happen
-        ClimbPlan.Plan np = ClimbPlan.plan(cells(m), 0, 6, 0, 10, false);
-        assertTrue(np.err().startsWith("error: climbing 4 up needs "), np.err());
-        assertTrue(np.err().endsWith("next: craft wooden_pickaxe 1, then climb"));
-        // not in a hole
-        assertTrue(ClimbPlan.plan(cells(m), 0, 10, 0, 10, true).steps().isEmpty());
-        assertTrue(ClimbPlan.inHole(6, 10, false));
-        assertFalse(ClimbPlan.inHole(6, 10, true));
-        assertFalse(ClimbPlan.inHole(8, 10, false));
-        assertEquals("I'm in a hole (the rim is 4 above me) - next: climb", ClimbPlan.holeHint(4));
     }
 
     @Test
@@ -269,22 +222,10 @@ class TrialFixTest {
     // ---- D: shovel ----
 
     @Test
-    void snowBreaksByHandAndBootstrapMakesAShovelInSnow() {
+    void snowBreaksByHandAndAShovelIsNamed() {
         assertTrue(Tools.okWithout(true, "snow_block"));
         assertTrue(Tools.okWithout(true, "minecraft:snow"));
         assertFalse(Tools.okWithout(true, "diamond_ore"));
         assertEquals("stopped: snow_block needs a shovel - next: craft wooden_shovel 1", Tools.shovelStop("minecraft:snow_block"));
-        int[] f = {0, 64, 0};
-        BootstrapPlan.Plan snowy = BootstrapPlan.plan(new BootstrapPlan.Facts(Map.of(), false, false, false, false,
-                f, new int[]{-2, 64, 0}, new int[]{-2, 64, 1}, new int[]{-2, 64, -1}, new int[]{1, 0}, true));
-        List<String> s = snowy.steps();
-        int place = s.indexOf("place crafting_table -2 64 0"), shovel = s.indexOf("craft wooden_shovel 1");
-        assertTrue(place >= 0 && shovel == place + 1, s.toString());
-        BootstrapPlan.Plan plain = BootstrapPlan.plan(new BootstrapPlan.Facts(Map.of(), false, false, false, false,
-                f, new int[]{-2, 64, 0}, new int[]{-2, 64, 1}, new int[]{-2, 64, -1}, new int[]{1, 0}));
-        assertFalse(plain.steps().contains("craft wooden_shovel 1"));
-        BootstrapPlan.Plan has = BootstrapPlan.plan(new BootstrapPlan.Facts(Map.of("minecraft:wooden_shovel", 1), false, false, false, false,
-                f, new int[]{-2, 64, 0}, new int[]{-2, 64, 1}, new int[]{-2, 64, -1}, new int[]{1, 0}, true));
-        assertFalse(has.steps().contains("craft wooden_shovel 1"));
     }
 }

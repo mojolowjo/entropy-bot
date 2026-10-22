@@ -1,0 +1,153 @@
+package io.github.mojolowjo.entropybot.commands;
+
+import baritone.api.IBaritone;
+import baritone.api.BaritoneAPI;
+import baritone.api.utils.BlockOptionalMetaLookup;
+import io.github.mojolowjo.entropybot.aa.Nearby;
+import io.github.mojolowjo.entropybot.aa.NeedChain.Spot;
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.world.level.block.Block;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Supplier;
+
+/**
+ * simple-tools (0.39.w1): the live side of {@link Nearby}: Baritone's cached world scan (the one its mine process uses) for the
+ * nearest tree log and the nearest block of any set (live-facts), the level for the leaves and the block id, the policy for what I may touch.
+ * The fallbacks (AA's sightings, the ore index) are passed in by the caller. Results are reused for
+ * {@code nearby.cacheMs} while the bot stays within {@code nearby.cacheMove} blocks. Client thread only.
+ */
+final class NearbyLive {
+    private static final Logger LOG = LoggerFactory.getLogger("entropybot");
+
+    private final Commands c;
+    private List<Block> logBlocks;
+    private long logAt = -1;
+    private int[] logMe;
+    private Spot logSpot;
+    private String lastFrom = "none";
+
+    NearbyLive(Commands c) { this.c = c; }
+
+    /** Where the last answer came from: "baritone", "sightings" or "none" (for aa status / aa why). */
+    String lastFrom() { return lastFrom; }
+
+    /** The nearest tree log, Baritone first, else {@code fallback}. */
+    Spot log(Supplier<Spot> fallback) {
+        long now = System.currentTimeMillis();
+        int[] me = here();
+        if (me == null) return fallback == null ? null : fallback.get();
+        if (logAt >= 0 && now - logAt < Tuning.l("nearby.cacheMs") && close(me, logMe)) return logSpot;
+        logAt = now;
+        logMe = me;
+        boolean[] fell = {false};
+        logSpot = Nearby.log(scan(), me, () -> { fell[0] = true; return fallback == null ? null : fallback.get(); });
+        lastFrom = logSpot == null ? "none" : fell[0] ? "sightings" : "baritone";
+        return logSpot;
+    }
+
+    private record Cached(long at, int[] me, Spot spot) {}
+    private final java.util.Map<java.util.Set<String>, Cached> sets = new java.util.HashMap<>();
+
+    /** live-facts: the nearest block of the set (Nearby.nearest), Baritone first, else {@code fallback}; cached per set as the log answer is. */
+    Spot nearest(java.util.Set<String> blocks, Supplier<Spot> fallback) {
+        long now = System.currentTimeMillis();
+        int[] me = here();
+        if (me == null) return fallback == null ? null : fallback.get();
+        Cached k = sets.get(blocks);
+        if (k != null && now - k.at() < Tuning.l("nearby.cacheMs") && close(me, k.me())) return k.spot();
+        sets.values().removeIf(e -> now - e.at() >= Tuning.l("nearby.cacheMs"));
+        Spot s = Nearby.nearest(scan(), me, blocks, fallback);
+        sets.put(java.util.Set.copyOf(blocks), new Cached(now, me, s));
+        return s;
+    }
+
+    private static boolean close(int[] a, int[] b) {
+        if (b == null) return false;
+        double dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
+        return dx * dx + dy * dy + dz * dz <= Tuning.get("nearby.cacheMove") * Tuning.get("nearby.cacheMove");
+    }
+
+    private static int[] here() {
+        LocalPlayer p = Minecraft.getInstance().player;
+        return p == null || Minecraft.getInstance().level == null ? null : Jobs.here(p);
+    }
+
+    private List<Block> logBlocks() {
+        if (logBlocks == null) {
+            List<Block> l = new ArrayList<>();
+            for (Block b : BuiltInRegistries.BLOCK) if (b.defaultBlockState().is(BlockTags.LOGS)) l.add(b);
+            logBlocks = l;
+        }
+        return logBlocks;
+    }
+
+    private static List<Block> blocksOf(java.util.Set<String> ids) {
+        List<Block> l = new ArrayList<>();
+        for (String id : ids) BuiltInRegistries.BLOCK.getOptional(net.minecraft.resources.ResourceLocation.tryParse(id)).ifPresent(l::add);
+        return l;
+    }
+
+    private List<int[]> scanFor(List<Block> blocks, int radius) {
+        List<int[]> out = new ArrayList<>();
+        try {
+            IBaritone b = Jobs.baritone();
+            if (b == null || blocks.isEmpty()) return out;
+            var found = BaritoneAPI.getProvider().getWorldScanner().scanChunkRadius(b.getPlayerContext(), new BlockOptionalMetaLookup(blocks),
+                    Tuning.i("nearby.scanMax"), Tuning.i("nearby.scanY"), radius);
+            for (BlockPos q : found) out.add(new int[]{q.getX(), q.getY(), q.getZ()});
+        } catch (RuntimeException | LinkageError e) {
+            io.github.mojolowjo.entropybot.Quiet.warn("nearby: Baritone's world scan failed, the sightings answer instead", e);
+        }
+        return out;
+    }
+
+    private Nearby.Scan scan() {
+        Minecraft mc = Minecraft.getInstance();
+        String adim = Storage.dim();
+        return new Nearby.Scan() {
+            @Override public List<int[]> logs(int radius) { return scanFor(logBlocks(), radius); }
+            @Override public List<int[]> find(java.util.Set<String> blocks, int radius) { return scanFor(blocksOf(blocks), radius); }
+            @Override public boolean isLog(String block) {
+                return BuiltInRegistries.BLOCK.getOptional(net.minecraft.resources.ResourceLocation.tryParse(block)).map(b -> b.defaultBlockState().is(BlockTags.LOGS)).orElse(false);
+            }
+            @Override public boolean fairOk(int x, int y, int z) {
+                BlockPos q = new BlockPos(x, y, z);
+                if (!mc.level.isLoaded(q)) return false;
+                var st = mc.level.getBlockState(q);
+                boolean ore = io.github.mojolowjo.entropybot.strip.OreSpec.oreId(BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString())
+                        || st.is(net.neoforged.neoforge.common.Tags.Blocks.ORES);      // the ore pass's own test (McChunkReader)
+                return !ore || Mining.fairOk(adim, x, y, z);
+            }
+            @Override public boolean leavesNear(int x, int y, int z, int reach) {
+                BlockPos.MutableBlockPos q = new BlockPos.MutableBlockPos();
+                for (int dx = -reach; dx <= reach; dx++) for (int dz = -reach; dz <= reach; dz++) for (int dy = 0; dy <= reach; dy++) {
+                    q.set(x + dx, y + dy, z + dz);
+                    if (mc.level.isLoaded(q) && mc.level.getBlockState(q).is(BlockTags.LEAVES)) return true;
+                }
+                return false;
+            }
+            @Override public boolean allowed(int x, int y, int z) { return c.workAllowed(adim, x, y, z); }
+            @Override public int treeCap() {
+                try {
+                    return BaritoneAPI.getSettings().chopComponentMax.value;      // the fork's chop: one tree is at most this many logs
+                } catch (LinkageError e) {
+                    io.github.mojolowjo.entropybot.Quiet.warn("nearby: this Baritone has no chopComponentMax (not the Entropy fork), trees counted uncapped", e);
+                    return Nearby.Scan.super.treeCap();
+                }
+            }
+            @Override public String blockAt(int x, int y, int z) {
+                BlockPos q = new BlockPos(x, y, z);
+                return mc.level.isLoaded(q) ? BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(q).getBlock()).toString() : null;
+            }
+        };
+    }
+}

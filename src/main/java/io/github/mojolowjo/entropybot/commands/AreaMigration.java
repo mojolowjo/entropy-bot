@@ -62,7 +62,7 @@ public final class AreaMigration {
         JsonArray keep = new JsonArray();
         for (JsonElement e : as) {
             JsonObject b = e.getAsJsonObject();
-            if (PolicyCommands.typeOf(b) == AreaType.SAFE) { ps.add(b); continue; }
+            if (PolicyCommands.typeOf(b) == AreaType.NO_BREAK) { ps.add(b); continue; }
             keep.add(b);
         }
         areas.add("areas", keep);
@@ -91,14 +91,14 @@ public final class AreaMigration {
             JsonObject b = e.getAsJsonObject();
             AreaType t = PolicyCommands.typeOf(b);
             if (b == main && !b.has("type")) {
-                b.addProperty("type", AreaType.MAIN.word());
-                t = AreaType.MAIN;
-                lines.add("area " + PolicyCommands.nameOf(b) + " -> main (it holds the base)");
+                b.addProperty("type", AreaType.BASE.word());
+                t = AreaType.BASE;
+                lines.add("area " + PolicyCommands.nameOf(b) + " -> base (it holds the base)");
             } else if (!b.has("type")) {
-                lines.add("area " + PolicyCommands.nameOf(b) + " -> neutral");
+                lines.add("area " + PolicyCommands.nameOf(b) + " -> work");
             }
             switch (t) {
-                case MAIN -> nMain++;
+                case BASE -> nMain++;
                 case DESTROY -> nDestroy++;
                 default -> nNeutral++;
             }
@@ -115,9 +115,9 @@ public final class AreaMigration {
             if (names.contains(name.toLowerCase())) name = uniq(names, name + "_safe");
             names.add(name.toLowerCase());
             b.addProperty("name", name);
-            b.addProperty("type", AreaType.SAFE.word());
+            b.addProperty("type", AreaType.NO_BREAK.word());
             nSafe++;
-            lines.add("protect box " + (old == null ? "(no name)" : old) + " -> safe area " + name + " (" + PolicyCommands.boxText(b) + ")");
+            lines.add("protect box " + (old == null ? "(no name)" : old) + " -> no-break area " + name + " (" + PolicyCommands.boxText(b) + ")");
         }
         // the build zone (commands.json "zone", both corners) -> a destroy area
         if (brain != null && brain.has("zone") && brain.get("zone").isJsonObject() && zoneComplete(brain.getAsJsonObject("zone"))) {
@@ -160,7 +160,7 @@ public final class AreaMigration {
             }
         }
         areas.addProperty("version", PolicyCommands.VERSION);
-        String summary = "areas: moved to types: " + nNeutral + " neutral, " + nMain + " main, " + nDestroy + " destroy, " + nSafe + " safe";
+        String summary = "areas: moved to meanings: " + nNeutral + " work, " + nMain + " base, " + nDestroy + " destroy, " + nSafe + " no-break";
         return new Result(true, lines, summary);
     }
 

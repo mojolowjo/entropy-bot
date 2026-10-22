@@ -21,7 +21,7 @@ class RestoreArgsTest {
         assertEquals(RestoreArgs.Kind.STATUS, RestoreArgs.parse(" Status ").kind());
         RestoreArgs.Cmd now = RestoreArgs.parse("now");
         assertEquals(RestoreArgs.Kind.NOW, now.kind());
-        assertEquals(RestorePlan.NOW_DEFAULT, now.n());
+        assertEquals(RestorePlan.nowDefault(), now.n());
         assertEquals(12, RestoreArgs.parse("now 12").n());
         assertEquals(RestoreArgs.Kind.USAGE, RestoreArgs.parse("now 500").kind());
         assertTrue(RestoreArgs.parse("now 500").error().startsWith("error: the radius"));

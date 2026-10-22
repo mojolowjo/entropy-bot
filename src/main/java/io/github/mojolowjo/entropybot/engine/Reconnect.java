@@ -104,13 +104,13 @@ public final class Reconnect {
             }
             if (mc.screen instanceof ConnectScreen) {
                 statusText = "connecting to " + server + (tries > 0 ? " (try " + tries + ")" : "")
-                        + (attemptAt >= 0 ? ", " + (now - attemptAt) / 1000 + " s of " + connectTimeoutS : "");
+                        + (attemptAt >= 0 ? ", " + (now - attemptAt) / 1000 + " s of " + connectTimeoutS : "");  // structural: milliseconds per second
                 return;
             }
             if (outSince < 0) outSince = tick;
             if (firstOutMs < 0) firstOutMs = now;
             long waited = tick - outSince;
-            if (tick % 20 == 0) {
+            if (tick % 20 == 0) {  // structural: periodic cadence in ticks (20 ticks = 1 s)
                 long next = ReconnectRules.nextTryMs(waited, tries, recent, now, firstOutMs);
                 statusText = ReconnectRules.statusText(true, server, tries, next, ZoneId.systemDefault());
                 if (next < 0 && !gaveUpLogged) {
@@ -135,7 +135,7 @@ public final class Reconnect {
 
     // ---- 0.26.3: the connect timeout ----
 
-    private volatile int connectTimeoutS = ReconnectRules.TIMEOUT_DEFAULT_S;
+    private volatile int connectTimeoutS = ReconnectRules.timeoutDefaultS();
     /** Wall clock the current attempt began (-1: none in progress); the last timeout's text and time. */
     private long attemptAt = -1;
     private volatile String lastTimeout;
@@ -147,7 +147,7 @@ public final class Reconnect {
 
     /** check: "reconnect: the last connect attempt timed out after 60 s" within the last 24 h, else null. */
     public String lastTimeout() {
-        return lastTimeout != null && System.currentTimeMillis() - lastTimeoutAt < ReconnectRules.GIVE_UP_MS ? lastTimeout : null;
+        return lastTimeout != null && System.currentTimeMillis() - lastTimeoutAt < ReconnectRules.giveUpMs() ? lastTimeout : null;
     }
 
     /** The attempt is over without a world: back at the title, the server list or vanilla's "disconnected" screen. */

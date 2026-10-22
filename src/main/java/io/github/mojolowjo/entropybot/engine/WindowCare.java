@@ -34,9 +34,9 @@ public final class WindowCare {
     public static Set<Action> decide(long tick, boolean pauseOnLostFocus, boolean freeMouse, boolean windowActive, boolean mouseGrabbed,
                                      Screen screen, boolean jobRunning, boolean reflexActive) {
         Set<Action> out = EnumSet.noneOf(Action.class);
-        if (tick % 100 == 0 && pauseOnLostFocus) out.add(Action.PAUSE_ON_LOST_FOCUS_OFF);
+        if (tick % 100 == 0 && pauseOnLostFocus) out.add(Action.PAUSE_ON_LOST_FOCUS_OFF);  // structural: periodic cadence in ticks (20 ticks = 1 s)
         if (freeMouse && windowActive && mouseGrabbed) out.add(Action.RELEASE_MOUSE);
-        if (tick % 20 == 0) {
+        if (tick % 20 == 0) {  // structural: periodic cadence in ticks (20 ticks = 1 s)
             if (screen == Screen.PAUSE && !windowActive) out.add(Action.CLOSE_PAUSE);
             else if (screen == Screen.INVENTORY && !jobRunning && !reflexActive) out.add(Action.CLOSE_INVENTORY);
         }
@@ -66,7 +66,7 @@ public final class WindowCare {
             if (todo.contains(Action.CLOSE_PAUSE)) mc.setScreen(null);
             if (todo.contains(Action.CLOSE_INVENTORY) && mc.player != null) mc.player.closeContainer();
         } catch (Throwable t) {
-            if (errors++ < 5) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] window care: {}", t.toString());
+            if (errors++ < 5) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] window care: {}", t.toString());  // structural: log throttle: only the first few errors are logged
         }
     }
 }

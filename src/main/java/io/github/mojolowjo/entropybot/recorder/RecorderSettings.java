@@ -18,7 +18,11 @@ import java.util.Locale;
  */
 public final class RecorderSettings {
     public static final List<String> PRESETS = List.of("off", "light", "normal", "detailed", "max");
-    public static final int RANGE_MAX = 32, TRAIL_MAX = 200, SNAP_MIN = 2, SNAP_MAX = 32, KEEP_MAX = 720;
+    public static final int RANGE_MAX = 32; // structural
+    public static final int TRAIL_MAX = 200; // structural
+    public static final int SNAP_MIN = 2; // structural
+    public static final int SNAP_MAX = 32; // structural
+    public static final int KEEP_MAX = 720; // structural
 
     public String preset = "normal";
     public int range = 4, trailTicks = 20, snapshot = 8, keepHours = 48;
@@ -189,7 +193,8 @@ public final class RecorderSettings {
         try {
             JsonElement e = JsonParser.parseString(text);
             if (e.isJsonObject()) s.read(e.getAsJsonObject());
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+}
         return s;
     }
 

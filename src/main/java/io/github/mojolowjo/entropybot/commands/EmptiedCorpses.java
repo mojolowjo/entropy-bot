@@ -15,7 +15,7 @@ final class EmptiedCorpses {
     private EmptiedCorpses() {}
 
     static final String FILE = "corpses.json";
-    static final int MAX = 200;
+    static final int MAX = 200; // structural
     static final Set<UUID> SET = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static final ArrayDeque<UUID> ORDER = new ArrayDeque<>();
     /** review 6: marks not on disk yet (no folder, or the write failed): merged into the next load. */

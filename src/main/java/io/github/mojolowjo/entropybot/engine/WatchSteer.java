@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import io.github.mojolowjo.entropybot.commands.SelfCheck;
 import io.github.mojolowjo.entropybot.watchview.TunnelView;
 import net.minecraft.client.Minecraft;
@@ -49,7 +51,7 @@ public final class WatchSteer {
 
     /** The human drove with remapped keys in the last second: the views hold their yaw (SteerRules.nextYaw). */
     public boolean humanDriving() {
-        return lastAppliedMs != 0 && System.currentTimeMillis() - lastAppliedMs <= SteerRules.DRIVING_MS;
+        return lastAppliedMs != 0 && System.currentTimeMillis() - lastAppliedMs <= SteerRules.drivingMs();
     }
 
     public static void register(net.neoforged.bus.api.IEventBus modBus) {
@@ -62,7 +64,7 @@ public final class WatchSteer {
     // ---- watch turn (2026-10-05) ----------------------------------------------------------------------------------
 
     private volatile boolean turnOn = true;
-    private volatile float turnRate = SteerRules.TURN_RATE_DEFAULT;
+    private volatile float turnRate = SteerRules.turnRateDefault();
     private volatile net.minecraft.client.KeyMapping turnLeftKey, turnRightKey;
     private volatile String keysError;
     private long turnedTicks;
@@ -109,6 +111,7 @@ public final class WatchSteer {
             if (l == null || r == null) return "turn keys NOT registered" + (keysError == null ? "" : " (" + keysError + ")");
             return l.getTranslatedKeyMessage().getString() + "/" + r.getTranslatedKeyMessage().getString();
         } catch (Throwable t) {
+            Quiet.warn("WatchSteer.turnKeyNames failed, carrying on with the fallback", t);
             return "?";
         }
     }
@@ -161,7 +164,8 @@ public final class WatchSteer {
         boolean detached = false;
         try {
             detached = !Minecraft.getInstance().options.getCameraType().isFirstPerson();
-        } catch (Throwable ignored) {
+        } catch (Throwable caught) {
+            Quiet.warn("WatchSteer.state failed, carrying on with the fallback", caught);
         }
         return SteerRules.effective(master && offByErrors == null, WatchCamera.INSTANCE.on(), detached, TunnelView.INSTANCE.on());
     }
@@ -218,6 +222,7 @@ public final class WatchSteer {
             baritone.api.IBaritone b = baritone.api.BaritoneAPI.getProvider().getPrimaryBaritone();
             return b != null && !b.getPathingBehavior().isPathing() && b.getPathingControlManager().mostRecentInControl().isEmpty();
         } catch (Throwable t) {
+            Quiet.warn("WatchSteer.baritoneIdle failed, carrying on with the fallback", t);
             return false;
         }
     }
@@ -230,25 +235,29 @@ public final class WatchSteer {
             else if (a == SteerRules.ErrorGate.Action.LOG_SUMMARY)
                 com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch steer: {} errors so far, last {}", gate.total(), lastError);
             if (gate.tripped() && offByErrors == null) {
-                offByErrors = SteerRules.ErrorGate.TRIP + " errors within a minute, last " + lastError;
+                offByErrors = SteerRules.ErrorGate.trip() + " errors within a minute, last " + lastError;
                 String msg = "watch steer turned itself off: " + offByErrors + " (the keys work as normal; watch steer on tries again)";
                 com.mojang.logging.LogUtils.getLogger().error("[entropybot] {}", msg);
                 try {
                     io.github.mojolowjo.entropybot.Core.INSTANCE.events.push("job", msg, null);
-                } catch (Throwable ignored) {
+                } catch (Throwable caught) {
+            Quiet.warn("WatchSteer.fail failed, carrying on with the fallback", caught);
                 }
                 try {
                     Minecraft mc = Minecraft.getInstance();
                     mc.execute(() -> {
                         try {
                             mc.gui.getChat().addMessage(net.minecraft.network.chat.Component.literal("[Entropy Bot] " + msg));
-                        } catch (Throwable ignored) {
+                        } catch (Throwable caught) {
+            Quiet.warn("WatchSteer.fail failed, carrying on with the fallback", caught);
                         }
                     });
-                } catch (Throwable ignored) {
+                } catch (Throwable caught) {
+            Quiet.warn("WatchSteer.fail failed, carrying on with the fallback", caught);
                 }
             }
-        } catch (Throwable ignored) {
+        } catch (Throwable caught) {
+            Quiet.warn("WatchSteer.fail failed, carrying on with the fallback", caught);
             // the error path itself never throws into the input tick
         }
     }

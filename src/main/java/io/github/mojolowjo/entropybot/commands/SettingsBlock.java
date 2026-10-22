@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
@@ -62,7 +64,6 @@ public final class SettingsBlock {
         out.add("parked", parked == null ? JsonNull.INSTANCE : parked.deepCopy());
         out.addProperty("reconnect", live.reconnect());
         out.addProperty("defend", live.defend());
-        out.addProperty("creepers", io.github.mojolowjo.entropybot.engine.CreeperSetting.load(b).word());   // B7e C: flee|melee|bow
 
         JsonArray rs = new JsonArray();
         JsonObject routines = obj(b, "routines");
@@ -112,6 +113,7 @@ public final class SettingsBlock {
         try {
             return e == null || e.isJsonNull() ? dflt : e.getAsBoolean();
         } catch (RuntimeException x) {
+            Quiet.warn("SettingsBlock.bool failed, carrying on with the fallback", x);
             return dflt;
         }
     }
@@ -120,6 +122,7 @@ public final class SettingsBlock {
         try {
             return e == null || e.isJsonNull() ? 0 : e.getAsInt();
         } catch (RuntimeException x) {
+            Quiet.warn("SettingsBlock.intOf failed, carrying on with the fallback", x);
             return 0;
         }
     }
@@ -128,6 +131,7 @@ public final class SettingsBlock {
         try {
             return e == null || e.isJsonNull() ? 0 : e.getAsLong();
         } catch (RuntimeException x) {
+            Quiet.warn("SettingsBlock.longOf failed, carrying on with the fallback", x);
             return 0;
         }
     }

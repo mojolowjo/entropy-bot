@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.memory;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
@@ -29,72 +31,75 @@ public final class Limits {
      * Named places ("mark"): a new name past this is refused. The "places" answer is ~20 characters a place: 100 places
      * were 2 KB = 10 whispers (cut at {@link #WHISPER_PARTS}); 60 are ~6.
      */
-    public static final int PLACES = 60;
+    public static final int PLACES = 60; // structural
     /**
      * Chest notes: past this the oldest-seen note goes (never an untrusted one, never one within {@link #NEAR_PLACE} of
      * a marked place: the base's and the mine's chests). chests.json ~240 KB, its write ~9 ms at 500; 10-18 ms at 1000.
      */
-    public static final int CHESTS = 500;
+    public static final int CHESTS = 500; // structural
     /** Blocks (each axis) around a marked place whose chest notes are never pruned. */
-    public static final int NEAR_PLACE = 16;
+    public static final int NEAR_PLACE = 16; // structural
     /** Refined Storage readings (one per grid): past this the oldest goes. */
-    public static final int RS_READINGS = 8;
+    public static final int RS_READINGS = 8; // structural
     /** Caves: past this the oldest finished cave goes (then the oldest). */
-    public static final int CAVES = 64;
+    public static final int CAVES = 64; // structural
     /** Coarse cells of every cave together: caves.json is rewritten every 5 s while caving (~275 KB, ~8 ms at 20000; 550 KB, 16 ms at 40000). */
-    public static final int CAVE_CELLS = 20000;
+    public static final int CAVE_CELLS = 20000; // structural
     /** Cells of one cave: above what a search bounded to 48 blocks from the entrance can visit (~9000). */
-    public static final int CAVE_CELLS_EACH = 12000;
+    public static final int CAVE_CELLS_EACH = 12000; // structural
     /** Routines: a new name past this is refused (the list is ~3 whispers, state.json's settings ~13 KB at 100). */
-    public static final int ROUTINES = 100;
+    public static final int ROUTINES = 100; // structural
     /** Characters of one routine's or rule's commands. */
-    public static final int ROUTINE_TEXT = 1000;
+    public static final int ROUTINE_TEXT = 1000; // structural
     /** Rules: "rules" lists every rule whole, ~2 whispers per 10 rules. */
-    public static final int RULES = 20;
+    public static final int RULES = 20; // structural
     /** Steps of one chain after routines are expanded (3 levels of 20 would be 8000, a 62 KB "started" answer). */
-    public static final int CHAIN_STEPS = 100;
+    public static final int CHAIN_STEPS = 100; // structural
     /** Steps a "started"/"saved" answer names before "+N more". */
-    public static final int LIST_STEPS = 12;
+    public static final int LIST_STEPS = 12; // structural
     /** Areas and protect boxes: Baritone asks the guard for every node of a path (100k checks: 7 ms at 32+32, 19 ms at 128+128). */
-    public static final int AREAS = 32, PROTECT = 64;
+    public static final int AREAS = 32; // structural
+    public static final int PROTECT = 64; // structural
     /** Players on the allow list. */
-    public static final int ALLOWED = 20;
+    public static final int ALLOWED = 20; // structural
     /** Items in "supplies" (each is checked at every autominer decision and restock). */
-    public static final int SUPPLIES = 32;
+    public static final int SUPPLIES = 32; // structural
     /** Whispers one answer may take (~2000 characters, 12 s of chat); the rest is cut with a note. */
-    public static final int WHISPER_PARTS = 10;
+    public static final int WHISPER_PARTS = 10; // structural
     /** Whispers waiting to go out (75 s at one per 1.25 s; "help" alone is ~25); past this new ones are dropped. */
-    public static final int OUTBOX = 60;
+    public static final int OUTBOX = 60; // structural
     /** Older decisions in "why" (the latest is shown whole). */
-    public static final int WHY_OLDER = 160;
+    public static final int WHY_OLDER = 160; // structural
     /**
      * For package D (remembered furnace jobs, not built yet): one job per furnace the bot uses, at most 16 jobs, each
      * dropped 30 minutes after its output should have been collected (a few hundred bytes each in commands.json).
      */
-    public static final int FURNACE_JOBS = 16;
+    public static final int FURNACE_JOBS = 16; // structural
 
     /** B7d D1: ores listed for players (the bridge's LIMITS.ores); the oldest seen go past it. */
-    public static final int ORES = 1000;
+    public static final int ORES = 1000; // structural
 
     /**
      * 0.28.0 the chunk pass (sense/): chunk summaries kept in memory per dimension (the oldest seen leave memory past it;
      * their files under entropybot/sense stay and come back at the next load). ~1.5 KB each: 4096 are ~6 MB.
      */
-    public static final int SENSE_SUMMARIES = 4096;
+    public static final int SENSE_SUMMARIES = 4096; // structural
     /** Positions listed per ore family (and POI kind) per chunk; the count stays exact beyond it. */
-    public static final int SENSE_SPOTS = 64;
+    public static final int SENSE_SPOTS = 64; // structural
     /** A changed summary's file is written at most this often (ms). */
-    public static final long SENSE_WRITE_MS = 5000;
+    public static final long SENSE_WRITE_MS = 5000; // structural
     /** The pass's chunk reads per client tick: about this much time (ns); a patch is O(1) and not counted. */
-    public static final long SENSE_BUDGET_NS = 1_000_000;
+    public static final long SENSE_BUDGET_NS = 1_000_000; // structural
     /** "mine <ore>" asks the index this far round the bot (blocks); "iron known within 64" for gather and the brain. */
-    public static final int SENSE_MINE_R = 96, SENSE_KNOWN_R = 64;
+    public static final int SENSE_MINE_R = 96; // structural
+    public static final int SENSE_KNOWN_R = 64; // structural
 
     /** A chest note's "seen" (0 when missing or odd). */
     static long seen(JsonObject note) {
         try {
             return note != null && note.has("seen") ? note.get("seen").getAsLong() : 0;
         } catch (RuntimeException e) {
+            Quiet.warn("Limits.seen failed, carrying on with the fallback", e);
             return 0;
         }
     }
@@ -104,6 +109,7 @@ public final class Limits {
         try {
             return t != null && t.isJsonPrimitive() && !t.getAsBoolean();
         } catch (RuntimeException e) {
+            Quiet.warn("Limits.untrusted failed, carrying on with the fallback", e);
             return false;
         }
     }
@@ -158,7 +164,7 @@ public final class Limits {
                 if (!str(pl, "dim", "minecraft:overworld").equals(dim)) continue;
                 if (Math.abs(pl.get("x").getAsInt() - x) <= NEAR_PLACE && Math.abs(pl.get("y").getAsInt() - y) <= NEAR_PLACE
                         && Math.abs(pl.get("z").getAsInt() - z) <= NEAR_PLACE) return true;
-            } catch (RuntimeException ignored) {}
+            } catch (RuntimeException caught) { Quiet.warn("Limits.nearPlace failed, carrying on with the fallback", caught); }
         }
         return false;
     }
@@ -167,6 +173,7 @@ public final class Limits {
         try {
             return o != null && o.has(k) && o.get(k).isJsonPrimitive() ? o.get(k).getAsString() : dflt;
         } catch (RuntimeException e) {
+            Quiet.warn("Limits.str failed, carrying on with the fallback", e);
             return dflt;
         }
     }

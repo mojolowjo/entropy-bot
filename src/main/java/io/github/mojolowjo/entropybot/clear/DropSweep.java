@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -10,19 +12,19 @@ import java.util.Set;
  * 0.29.0: the drop sweep of a {@code dig ... via baritone}. Baritone's builder never walks over what it broke, so after it
  * (done, gave up) and before a full-bag trip the step walks over the drops lying in the box or one block around it,
  * nearest first, one walk at a time, each walk at most {@link #WALK_TICKS}, the whole sweep at most {@link #MAX_WALKS}
- * walks or {@link #MAX_TICKS} ticks. Which drops count (the junk-drop rule, the stand fence, room in the bag) the caller
- * decides as the plain dig does ({@link ClearJob#dropWanted}, {@link JunkDrop#chase}); this class picks the order and
+ * walks or {@link #MAX_TICKS} ticks. Which drops count (the stand fence, room in the bag) the caller
+ * decides as the plain dig does ({@link ClearJob#dropWanted}); this class picks the order and
  * keeps the cap. Game-free.
  */
 public final class DropSweep {
     /** A drop lying in the world: its entity id, its cell, its distance from the bot. */
     public record Item(String id, int x, int y, int z, double d) {}
 
-    public static final int MAX_WALKS = 20;
-    public static final long MAX_TICKS = 1200;          // 60 s
-    public static final long WALK_TICKS = 80;           // 4 s per drop
+    public static int maxWalks() { return Tuning.i("dropSweep.maxWalks"); }
+    public static long maxTicks() { return Tuning.l("dropSweep.maxTicks"); }  // 60 s
+    public static long walkTicks() { return Tuning.l("dropSweep.walkTicks"); }  // 4 s per drop
     /** a walk that went idle this early without the drop gone has given up */
-    public static final long IDLE_AFTER = 15;
+    public static long idleAfter() { return Tuning.l("dropSweep.idleAfter"); }
 
     public enum Kind { WALK, WAIT, DONE }
 
@@ -66,7 +68,7 @@ public final class DropSweep {
     public Action tick(long now, List<Item> seen, boolean currentAlive, boolean walkIdle) {
         if (current != null) {
             long el = now - currentStart;
-            if (currentAlive && el < WALK_TICKS && !(el > IDLE_AFTER && walkIdle)) return Action.WAIT;
+            if (currentAlive && el < walkTicks() && !(el > idleAfter() && walkIdle)) return Action.WAIT;
             current = null;
         }
         List<Item> w = wanted(seen);
@@ -74,7 +76,7 @@ public final class DropSweep {
             left = 0;
             return Action.DONE;
         }
-        if (walks >= MAX_WALKS || now - start >= MAX_TICKS) {
+        if (walks >= maxWalks() || now - start >= maxTicks()) {
             capped = true;
             left = w.size();
             return Action.DONE;

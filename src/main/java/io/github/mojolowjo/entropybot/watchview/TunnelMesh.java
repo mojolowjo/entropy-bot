@@ -47,11 +47,11 @@ import java.util.Set;
  * BufferBuilder, the block atlas, our core shaders ({@link CutShaders}) with vanilla's as the fallback.
  */
 final class TunnelMesh {
-    static final int ALPHA = 140;              // of 255: half transparent in the see-through mode (even = cut-out texture)
-    static final int ALPHA_SOLID = ALPHA + 1;  // odd = the texture is drawn solid (leaves with Fast graphics)
-    static final double INSET = 0.004;
+    static final int ALPHA = 140; // structural  // of 255: half transparent in the see-through mode (even = cut-out texture)
+    static final int ALPHA_SOLID = ALPHA + 1; // structural  // odd = the texture is drawn solid (leaves with Fast graphics)
+    static final double INSET = 0.004; // structural
     /** Time a frame may spend building chunk meshes (at least one is built when any is due). */
-    static final long CHUNK_BUILD_BUDGET_NS = 4_000_000;
+    static final long CHUNK_BUILD_BUDGET_NS = 4_000_000; // structural
 
     private VertexBuffer tex, flat;
     int texFaces, flatFaces, ox, oy, oz, seenDrawn, surfaceDrawn, shapedDrawn;
@@ -76,7 +76,7 @@ final class TunnelMesh {
         final int[] tint = {UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN};
     }
 
-    private static final int UNKNOWN = -2;
+    private static final int UNKNOWN = -2; // structural
     private final Map<BlockState, Look> looks = new HashMap<>();
     private final RandomSource random = RandomSource.create(42L);
 
@@ -140,7 +140,8 @@ final class TunnelMesh {
                 int[] lv = SkyScan.cornerShade(x - ox, y - oy, z - oz, side, c, centre,
                         (ax, ay, az) -> SkyScan.shades(SkyScanner.kind(level, tmp.set(ax + ox, ay + oy, az + oz))));
                 for (int i = 0; i < 4; i++) ao[i] = SkyScan.shadeFactor(lv[i]);
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+
                 // no corner shading for this face
             }
             TextureAtlasSprite sprite = null;

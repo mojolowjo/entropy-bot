@@ -74,7 +74,7 @@ public final class WatchProbe {
                 ps.translate(-cam.x, -cam.y, -cam.z);
                 MultiBufferSource.BufferSource buf = mc.renderBuffers().bufferSource();
                 VertexConsumer vc = buf.getBuffer(RenderType.lines());
-                LevelRenderer.renderLineBox(ps, vc, new AABB(p.x - size / 2, p.y, p.z - size / 2, p.x + size / 2, p.y + 1.8 + size / 4, p.z + size / 2), r, g, b, 1f);
+                LevelRenderer.renderLineBox(ps, vc, new AABB(p.x - size / 2, p.y, p.z - size / 2, p.x + size / 2, p.y + 1.8 + size / 4, p.z + size / 2), r, g, b, 1f);  // structural: debug box: the player is 1.8 tall
                 RenderSystem.disableDepthTest();
                 try {
                     buf.endBatch(RenderType.lines());
@@ -85,7 +85,7 @@ public final class WatchProbe {
                 ps.popPose();
             }
         } catch (Throwable e) {
-            if (errors++ < 5) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch probe: {}", e.toString());
+            if (errors++ < 5) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch probe: {}", e.toString());  // structural: log throttle: only the first few errors are logged
         }
     }
 }

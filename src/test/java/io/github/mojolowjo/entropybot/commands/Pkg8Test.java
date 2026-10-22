@@ -1,6 +1,5 @@
 package io.github.mojolowjo.entropybot.commands;
 
-import io.github.mojolowjo.entropybot.sense.KnownOre;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -9,12 +8,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** 0.30.7 (package 8): the corpse detour (item 1), the climb target (item 4), the empty ore index end (item 5). */
 class Pkg8Test {
-    @Test void corpseInWayAsksForTheFetch() {
-        assertTrue(Chains.corpseInWay("couldn't place the furnace at 34 131 23: my corpse is in the way at 34 131 23 - next: death"));
-        assertFalse(Chains.corpseInWay("couldn't place the furnace at 34 131 23: a boat is in the way at 34 131 23 - next: move it"));
-        assertFalse(Chains.corpseInWay(null));
-    }
-
     @Test void climbTargetCampThenBaseThenArea() {
         int[] camp = {1, 70, 2}, base = {5, 72, 5}, area = {9, 64, 9};
         assertEquals("the camp", ClimbFallback.target(camp, base, area, "arena").what());
@@ -40,31 +33,9 @@ class Pkg8Test {
         assertEquals("climb: my own way failed twice, digging stairs up toward the camp (15 blocks up, east)", ClimbFallback.startText(true, "east", 15));
     }
 
-    @Test void stairStepsThroughPlacedBlocksGetForce() {
-        List<String> steps = StairPlan.upSteps(0, 60, 0, 0, -1, 3);
-        // a placed block at 0 62 -2 (the second step's box: 0 62 -2 .. 0 63 -1)
-        List<String> out = StairPlan.withForce(steps, (x, y, z) -> x == 0 && y == 62 && z == -2);
-        assertEquals(steps.size(), out.size());
-        assertFalse(out.get(0).endsWith(" force"));
-        assertTrue(out.get(2).startsWith("dig ") && out.get(2).endsWith(" via engine force"));
-        assertFalse(out.get(4).endsWith(" force"));
-        assertTrue(out.get(1).startsWith("goto "), "goto steps unchanged");
-        List<String> own = new java.util.ArrayList<>(steps);
-        own.set(0, own.get(0) + " force");
-        assertEquals(own.get(0), StairPlan.withForce(own, (x, y, z) -> true).get(0), "never force twice");
-        assertEquals(List.of("dig a b"), StairPlan.withForce(List.of("dig a b"), (x, y, z) -> true));
-    }
-
     @Test void climbUnderTheTarget() {
         assertEquals("climb: my own way failed twice, digging stairs up north (7 blocks up; already under the base, going straight up)",
                 ClimbFallback.underText("the base", "north", 7));
     }
 
-    @Test void emptyIndexEnd() {
-        assertEquals("done: mining iron: got 0 of 5 - no iron ore known yet (walked 0 blocks) - next: sense (the chunk pass) or mine strip iron",
-                KnownOre.noneYetText("iron", 0, 5, 0, ""));
-        assertEquals("done: mining coal: got 1 of 5 - no coal ore known yet (walked 1 block), got 1 coal - next: sense (the chunk pass) or mine strip coal",
-                KnownOre.noneYetText("coal", 1, 5, 1, ", got 1 coal"));
-        assertEquals(32, KnownOre.NONE_WALK_CAP);
-    }
 }

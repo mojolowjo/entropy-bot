@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -12,8 +14,8 @@ import java.util.regex.Pattern;
  * <p>Pure (JUnit: {@code FoodClimbTest}). Loader notes: none.
  */
 public final class ClimbFallback {
-    public static final int NEAR = 8;
-    public static final int AFTER = 2;
+    public static int nearV() { return Tuning.i("climbFallback.near"); }
+    public static int after() { return Tuning.i("climbFallback.after"); }
 
     private int[] at;
     private int fails;
@@ -52,11 +54,11 @@ public final class ClimbFallback {
 
     static boolean near(int[] a, int[] b) {
         long dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
-        return dx * dx + dy * dy + dz * dz <= (long) NEAR * NEAR;
+        return dx * dx + dy * dy + dz * dz <= (long) nearV() * nearV();
     }
 
     /** Fall back to the plain staircase? */
-    public static boolean fallback(int fails) { return fails >= AFTER; }
+    public static boolean fallback(int fails) { return fails >= after(); }
 
     /** The side toward target (the longer horizontal axis; x wins a tie); null when no target or it is straight above. */
     public static String toward(int[] here, int[] target) {
@@ -70,7 +72,7 @@ public final class ClimbFallback {
     /** Steps up: to the higher of the target's y and the surface over me, 1..StairPlan.MAX. targetY: Integer.MIN_VALUE = none. */
     public static int stepsUp(int y, int targetY, int surfaceY) {
         int top = Math.max(targetY, surfaceY);
-        return Math.max(1, Math.min(StairPlan.MAX, top - y));
+        return Math.max(1, Math.min(StairPlan.maxV(), top - y));
     }
 
     /** The fallback's start line. */

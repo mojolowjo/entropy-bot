@@ -3,12 +3,11 @@ package io.github.mojolowjo.entropybot.clear;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 0.29.0: the "via baritone" words of dig. */
+/** The words of dig: via baritone | engine, force, ores; the water, junk and floor words are gone. */
 class DigArgsTest {
     @Test
     void viaBaritone() {
@@ -21,10 +20,8 @@ class DigArgsTest {
     @Test
     void baritoneAloneAndAnyOrderAndCase() {
         assertTrue(DigArgs.parse("0 83 -3 5 83 2 baritone").viaBaritone());
-        DigArgs a = DigArgs.parse("0 83 -3 5 83 2 VIA Baritone junk drop water ores");
+        DigArgs a = DigArgs.parse("0 83 -3 5 83 2 VIA Baritone ores");
         assertTrue(a.viaBaritone());
-        assertTrue(a.junkDrop());
-        assertTrue(a.water());
         assertTrue(a.ores());
         assertTrue(DigArgs.parse("0 83 -3 5 83 2 force via baritone").force());
     }
@@ -32,7 +29,6 @@ class DigArgsTest {
     @Test
     void plainDigIsNotVia() {
         assertFalse(DigArgs.parse("0 83 -3 5 83 2").viaBaritone());
-        assertFalse(DigArgs.parse("0 83 -3 5 83 2 junk drop").viaBaritone());
     }
 
     @Test
@@ -42,12 +38,13 @@ class DigArgsTest {
     }
 
     @Test
-    void floorBlockIsNotTakenFromTheViaWords() {
-        DigArgs a = DigArgs.parse("0 83 -3 5 83 2 floor via baritone");
-        assertTrue(a.floor());
-        assertNull(a.floorBlock());
-        assertTrue(a.viaBaritone());
-        assertEquals("dirt", DigArgs.parse("0 83 -3 5 83 2 floor dirt baritone").floorBlock());
+    void theRemovedWordsAreNoDig() {
+        assertNull(DigArgs.parse("0 83 -3 5 83 2 floor"));
+        assertNull(DigArgs.parse("0 83 -3 5 83 2 junk drop"));
+        assertNull(DigArgs.parse("0 83 -3 5 83 2 water"));
+        assertNull(DigArgs.parse("0 83 -3 5 83 2 water large"));
+        assertNull(DigArgs.parse("~ ~ ~ ~ ~ ~"), "no ~ coordinates");
+        assertTrue(DigArgs.USAGE.endsWith("[force] [ores] [via engine]"));
     }
 
     @Test
@@ -57,37 +54,18 @@ class DigArgsTest {
         assertTrue(a.viaBaritone(), "parsed; the verb refuses it for the surface form");
     }
 
-    // 0.30.0: "dig stone [n] [via baritone|via engine]"
-    @Test
-    void stoneWords() {
-        assertEquals(new DigArgs.Stone(64, false, false), DigArgs.stone("stone"));
-        assertEquals(new DigArgs.Stone(32, false, false), DigArgs.stone("stone 32"));
-        assertEquals(new DigArgs.Stone(256, false, false), DigArgs.stone("stone 999"));
-        assertEquals(new DigArgs.Stone(8, true, false), DigArgs.stone("stone 8 via baritone"));
-        assertEquals(new DigArgs.Stone(64, false, true), DigArgs.stone("stone via engine"));
-        assertEquals(new DigArgs.Stone(64, false, true), DigArgs.stone("Stone engine"));
-        assertNull(DigArgs.stone("stone foo"));
-        assertNull(DigArgs.stone("stone 8 via"));
-        assertNull(DigArgs.stone("stairs north 4"));
-        assertNull(DigArgs.stone("0 83 -3 5 83 2"));
-    }
-
-    // 0.30.0 (P2): the builder is the default; "via engine" the old path; floor stays on the engine
+    // 0.30.0 (P2): the builder is the default; "via engine" the old path
     @Test
     void builderIsTheDefault() {
         assertTrue(DigArgs.parse("0 83 -3 5 83 2").builder());
         assertTrue(DigArgs.parse("0 83 -3 5 83 2 via baritone").builder());
-        assertTrue(DigArgs.parse("0 83 -3 5 83 2 junk drop water").builder(), "water: builder, water round, builder");
         assertTrue(DigArgs.parse("0 0 5 5 -3").builder(), "the surface form too");
         assertFalse(DigArgs.parse("0 83 -3 5 83 2 via engine").builder());
         assertFalse(DigArgs.parse("0 83 -3 5 83 2 engine").builder());
         assertFalse(DigArgs.parse("0 0 5 5 -3 ores via engine").builder());
-        assertFalse(DigArgs.parse("0 83 -3 5 83 2 floor").builder(), "a floor dig stays on the engine");
-        assertFalse(DigArgs.parse("0 83 -3 5 83 2 floor via engine").builder());
         assertNull(DigArgs.parse("0 83 -3 5 83 2 via baritone via engine"), "one or the other");
         assertNull(DigArgs.parse("0 83 -3 5 83 2 via"));
-        assertEquals("dirt", DigArgs.parse("0 83 -3 5 83 2 floor dirt via engine").floorBlock());
-        assertTrue(DigArgs.useBuilder(false, false));
-        assertFalse(DigArgs.useBuilder(true, false));
-        assertFalse(DigArgs.useBuilder(false, true));
-    }}
+        assertTrue(DigArgs.useBuilder(false));
+        assertFalse(DigArgs.useBuilder(true));
+    }
+}

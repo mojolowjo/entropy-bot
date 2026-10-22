@@ -1,5 +1,9 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import io.github.mojolowjo.entropybot.Quiet;
+
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -16,20 +20,20 @@ public final class ReconnectRules {
     /** The first waits, in ticks: 1, 5, 15 minutes. */
     public static final long[] WAITS = { 1200, 6000, 18000 };
     /** T4: the wait after those, in ticks: 30 minutes. */
-    public static final long LATER_WAIT = 36000;
+    public static long laterWait() { return Tuning.l("reconnectRules.laterWait"); }
     /** T4: it stops trying this long after it first found itself out of a world. */
-    public static final long GIVE_UP_MS = 24L * 3_600_000L;
-    public static final int PER_HOUR = 3;
-    static final long HOUR_MS = 3_600_000L;
+    public static long giveUpMs() { return Tuning.l("reconnectRules.giveUpMs"); }
+    public static int perHour() { return Tuning.i("reconnectRules.perHour"); }
+    static final long HOUR_MS = 3_600_000L; // structural: milliseconds in an hour (unit)
 
     /** The wait (ticks) before try number {@code tries} (0-based). */
     public static long waitFor(int tries) {
-        return tries < WAITS.length ? WAITS[tries] : LATER_WAIT;
+        return tries < WAITS.length ? WAITS[tries] : laterWait();
     }
 
     /** The 24 hours since {@code firstOutMs} (-1: not out) are over. */
     public static boolean gaveUp(long nowMs, long firstOutMs) {
-        return firstOutMs >= 0 && nowMs - firstOutMs >= GIVE_UP_MS;
+        return firstOutMs >= 0 && nowMs - firstOutMs >= giveUpMs();
     }
 
     /**
@@ -39,7 +43,7 @@ public final class ReconnectRules {
     public static boolean due(long waited, int tries, ArrayDeque<Long> recent, long nowMs, long firstOutMs) {
         if (gaveUp(nowMs, firstOutMs) || waited < waitFor(tries)) return false;
         while (!recent.isEmpty() && nowMs - recent.peekFirst() > HOUR_MS) recent.pollFirst();
-        return recent.size() < PER_HOUR;
+        return recent.size() < perHour();
     }
 
     /**
@@ -48,7 +52,7 @@ public final class ReconnectRules {
      */
     public static long nextTryMs(long waited, int tries, ArrayDeque<Long> recent, long nowMs, long firstOutMs) {
         if (gaveUp(nowMs, firstOutMs)) return -1;
-        long at = nowMs + Math.max(0, waitFor(tries) - waited) * 50L;
+        long at = nowMs + Math.max(0, waitFor(tries) - waited) * 50L;  // game fact: a game tick is 50 ms
         int inHour = 0;
         Long oldest = null;
         for (Long t : recent) {
@@ -56,8 +60,8 @@ public final class ReconnectRules {
             inHour++;
             if (oldest == null) oldest = t;
         }
-        if (inHour >= PER_HOUR && oldest != null) at = Math.max(at, oldest + HOUR_MS + 1);
-        if (firstOutMs >= 0 && at >= firstOutMs + GIVE_UP_MS) return -1;
+        if (inHour >= perHour() && oldest != null) at = Math.max(at, oldest + HOUR_MS + 1);
+        if (firstOutMs >= 0 && at >= firstOutMs + giveUpMs()) return -1;
         return at;
     }
 
@@ -86,32 +90,36 @@ public final class ReconnectRules {
 
     /** commands.json key beside "reconnect". */
     public static final String TIMEOUT_KEY = "reconnect.connectTimeoutS";
-    public static final int TIMEOUT_DEFAULT_S = 60, TIMEOUT_MIN_S = 15, TIMEOUT_MAX_S = 600;
+    public static int timeoutDefaultS() { return Tuning.i("reconnectRules.timeoutDefaultS"); }
+    public static int timeoutMinS() { return Tuning.i("reconnectRules.timeoutMinS"); }
+    public static int timeoutMaxS() { return Tuning.i("reconnectRules.timeoutMaxS"); }
 
     /** Null when s is a valid timeout, else why not. */
     public static String timeoutRefusal(int s) {
-        return s < TIMEOUT_MIN_S || s > TIMEOUT_MAX_S ? "reconnect timeout takes " + TIMEOUT_MIN_S + " to " + TIMEOUT_MAX_S + " seconds, not " + s : null;
+        return s < timeoutMinS() || s > timeoutMaxS() ? "reconnect timeout takes " + timeoutMinS() + " to " + timeoutMaxS() + " seconds, not " + s : null;
     }
 
     /** The saved timeout from commands.json's object (missing, odd or out of range: the default). */
     public static int timeoutOf(com.google.gson.JsonObject o) {
         try {
-            if (o == null || !o.has(TIMEOUT_KEY)) return TIMEOUT_DEFAULT_S;
+            if (o == null || !o.has(TIMEOUT_KEY)) return timeoutDefaultS();
             int s = o.get(TIMEOUT_KEY).getAsInt();
-            return timeoutRefusal(s) == null ? s : TIMEOUT_DEFAULT_S;
+            return timeoutRefusal(s) == null ? s : timeoutDefaultS();
         } catch (RuntimeException e) {
-            return TIMEOUT_DEFAULT_S;
+            Quiet.warn("ReconnectRules.timeoutOf failed, carrying on with the fallback", e);
+            return timeoutDefaultS();
         }
     }
 
     /** The same, read from the file (outside a world, before Commands loaded it). */
     public static int savedTimeout(java.nio.file.Path commandsJson) {
         try {
-            if (!java.nio.file.Files.isRegularFile(commandsJson)) return TIMEOUT_DEFAULT_S;
+            if (!java.nio.file.Files.isRegularFile(commandsJson)) return timeoutDefaultS();
             com.google.gson.JsonElement e = com.google.gson.JsonParser.parseString(java.nio.file.Files.readString(commandsJson));
-            return e.isJsonObject() ? timeoutOf(e.getAsJsonObject()) : TIMEOUT_DEFAULT_S;
+            return e.isJsonObject() ? timeoutOf(e.getAsJsonObject()) : timeoutDefaultS();
         } catch (Exception ex) {
-            return TIMEOUT_DEFAULT_S;
+            Quiet.warn("ReconnectRules.savedTimeout failed, carrying on with the fallback", ex);
+            return timeoutDefaultS();
         }
     }
 
@@ -120,7 +128,7 @@ public final class ReconnectRules {
      * more after it began. In a world never.
      */
     public static boolean connectTimedOut(long attemptStartMs, long nowMs, int timeoutS, boolean inWorld) {
-        return attemptStartMs >= 0 && !inWorld && nowMs - attemptStartMs >= timeoutS * 1000L;
+        return attemptStartMs >= 0 && !inWorld && nowMs - attemptStartMs >= timeoutS * 1000L;  // structural: milliseconds per second
     }
 
     /** check's line for a timed-out attempt. */
@@ -135,6 +143,7 @@ public final class ReconnectRules {
             com.google.gson.JsonElement r = e.getAsJsonObject().get("reconnect");
             return r == null || !r.isJsonPrimitive() || r.getAsBoolean();
         } catch (Exception ex) {
+            Quiet.warn("ReconnectRules.savedFlag failed, carrying on with the fallback", ex);
             return true;
         }
     }

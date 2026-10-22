@@ -63,6 +63,6 @@ public final class MineGrammar {
 
     /** Digits as an int, capped (a 10-digit count would overflow parseInt). */
     static int safeInt(String s) {
-        return s.length() > 9 ? 999_999_999 : Integer.parseInt(s);
+        return s.length() > 9 ? 999_999_999 : Integer.parseInt(s);  // structural: an int parse guard: a number over 9 digits is capped
     }
 }

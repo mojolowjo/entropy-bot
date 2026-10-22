@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.storage;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.mojolowjo.entropybot.clear.Tools;
@@ -23,7 +25,10 @@ public final class StorageRules {
     /** What the bot keeps when it puts things away (tools, armor, pickaxe materials...). */
     public static final Pattern KEEP = Pattern.compile("_(pickaxe|axe|shovel|hoe|sword|helmet|chestplate|leggings|boots|planks|log)$|(^|:)(bow|crossbow|shield|torch|stick|crafting_table|chest|copper_ingot|iron_ingot)$");
     /** Kept up to about a stack: cobblestone for stone pickaxes, coal for torches. */
-    public static final Map<String, Integer> KEEP_COUNT = Map.of("minecraft:cobblestone", 64, "minecraft:coal", 16, "minecraft:charcoal", 16);
+    public static int keepCount(String id) {
+        var d = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.class;
+        return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.hasTag(id, "stone_tool_materials") ? 64 : io.github.mojolowjo.entropybot.aa.brain.ItemWorth.hasTag(id, "coals") ? 16 : 0;
+    }
     /** Ore drops and other valuables. */
     public static final Pattern VALUABLE = Pattern.compile("(^|:)(raw_[a-z_]+|[a-z_]+_raw|coal|diamond|emerald|redstone|lapis_lazuli|quartz)$|^mysticalagriculture:[a-z_]*(essence|shard)$");
     /** Blocks that count as storage: craft trips only take from these, "open" only remembers these. */
@@ -41,7 +46,7 @@ public final class StorageRules {
     }
 
     /**
-     * Package B's keep rules (2026-10-03), on top of KEEP/KEEP_COUNT and for named deposits too: the supplies (keep up
+     * Package B's keep rules (2026-10-03), on top of KEEP/keepCount and for named deposits too: the supplies (keep up
      * to their count), the hotbar layout (the stack each laid-out slot holds or will hold) and the pickaxes of the best
      * tier the bot carries. Either map may be empty.
      */
@@ -84,7 +89,7 @@ public final class StorageRules {
             counts.merge(h.id(), h.n(), Integer::sum);
             if (named ? want.stream().noneMatch(w -> w.test(h.id())) : (KEEP.matcher(h.id()).find() || h.food())) continue;
             if ((keepValuables && VALUABLE.matcher(h.id()).find()) || (only != null && !only.matcher(h.id()).find())) continue;
-            out.put(h.id(), Math.max(named ? 0 : KEEP_COUNT.getOrDefault(h.id(), 0), held.getOrDefault(h.id(), 0)));
+            out.put(h.id(), Math.max(named ? 0 : keepCount(h.id()), held.getOrDefault(h.id(), 0)));
         }
         // nothing to do for items it only has the "keep" amount of
         out.entrySet().removeIf(e -> counts.getOrDefault(e.getKey(), 0) <= e.getValue());
@@ -271,7 +276,8 @@ public final class StorageRules {
     }
 
     static long seen(JsonObject note) {
-        try { return note.has("seen") ? note.get("seen").getAsLong() : 0; } catch (RuntimeException e) { return 0; }
+        try { return note.has("seen") ? note.get("seen").getAsLong() : 0; } catch (RuntimeException e) {
+            Quiet.warn("StorageRules.seen failed, carrying on with the fallback", e); return 0; }
     }
 
     /** "where <item>": what the bot carries, what the RS network held at its last reading, then the chests (6 at most). */

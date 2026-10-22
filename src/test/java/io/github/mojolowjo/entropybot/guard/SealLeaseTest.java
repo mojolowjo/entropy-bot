@@ -64,8 +64,8 @@ class SealLeaseTest {
         // the ring, outside the 3-wide area: a seal next to a break lease of the dig's part beside it
         assertNull(ls.sealLease(350, -43, 856, dig, "seal"), "the ring's corner above and beside");
         assertTrue(g.check(OW, 350, -43, 856, "place", WATER).allowed());
-        assertFalse(g.check(OW, 350, -43, 856, "place", STONE).allowed());
-        assertTrue(ls.sealLease(350, -45, 858, dig, "seal").startsWith("error"), "two out: refused");
+        assertTrue(g.check(OW, 350, -43, 856, "place", STONE).allowed(), "AREAS: the ring cell is open, so it got a plain place lease, not a seal");
+        assertNull(ls.sealLease(350, -45, 858, dig, "seal"), "AREAS: two out is open too (a plain place lease)");
         ls.releaseAll();
         assertTrue(g.leases().isEmpty());
         assertFalse(g.check(OW, 350, -43, 856, "place", WATER).allowed(), "released");

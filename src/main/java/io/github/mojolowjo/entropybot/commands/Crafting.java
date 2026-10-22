@@ -1,5 +1,9 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.mojolowjo.entropybot.Core;
@@ -51,7 +55,7 @@ final class Crafting {
     private final Storage storage;
     final McRecipes recipes = new McRecipes();
     final CraftPlanner planner = new CraftPlanner(recipes);
-    /** Package E: infuse and upgrade (Mystical Agriculture). */
+    /** Package E: upgrade (Mystical Agriculture). */
     final Mystical mystical;
 
     Crafting(Core core, Commands commands, Jobs jobs, Storage storage) {
@@ -62,8 +66,48 @@ final class Crafting {
         this.mystical = new Mystical(this, core, commands, jobs, storage);
     }
 
-    /** Package E: "infuse &lt;seed&gt; [n]" on the infusion altar. */
-    String infuse(LocalPlayer p, String text) { return mystical.infuse(p, text); }
+    /**
+     * "give me &lt;item&gt; [n]": one Baritone walk to the asker (near their position), then the inventory THROW click
+     * toward them (an item action, no key presses). Only what the bag holds goes; none in the bag is an error.
+     */
+    String give(LocalPlayer p, String text, int[] at) {
+        String[] w = text.trim().split("\\s+");
+        if (w.length > 0 && w[0].equalsIgnoreCase("me")) w = java.util.Arrays.copyOfRange(w, 1, w.length);
+        if (w.length == 0 || w[0].isEmpty()) return "usage: give me <item> [n]";
+        int n = 1;
+        if (w.length > 1) {
+            try { n = Integer.parseInt(w[1]); } catch (NumberFormatException e) { return "usage: give me <item> [n]"; }
+        }
+        if (n < 1) return "usage: give me <item> [n]";
+        String id = io.github.mojolowjo.entropybot.gui.GuiCore.normId(w[0]);
+        int have = io.github.mojolowjo.entropybot.gui.Gui.inventory(p).getOrDefault(id, 0);
+        if (have <= 0) return "error: give " + w[0] + ": I have none in my bag";
+        int k = Math.min(n, have);
+        Step walk = Step.walk(at, true);
+        Step g = new Step("give");
+        g.text = id + " " + k;
+        g.pos = at;
+        return jobs.startSeq(new Seq(jobs, storage, "giving " + k + " " + w[0], List.of(walk, g), "always"), "always");
+    }
+
+    private String giveStep(Step st, LocalPlayer p) {
+        String[] w = st.text.split(" ");
+        io.github.mojolowjo.entropybot.aa.moves.JobHands.get().look(st.pos[0] + 0.5, st.pos[1] + 1.0, st.pos[2] + 0.5);
+        int thrown = throwItems(p, w[0], Integer.parseInt(w[1]));
+        return thrown > 0 ? "next" : "error: give " + w[0] + ": nothing could be thrown";
+    }
+
+    private static final java.util.regex.Pattern DROPPED = java.util.regex.Pattern.compile("^ok: dropped (\\d+)");
+
+    /** Throws up to {@code n} of {@code item} (full id) with the inventory menu's THROW click. Returns how many went; 0 when none could (logged). */
+    static int throwItems(LocalPlayer p, String item, int n) {
+        if (n <= 0) return 0;
+        String res = io.github.mojolowjo.entropybot.gui.GuiCore.drop(new io.github.mojolowjo.entropybot.gui.McMenu(p), item + " " + n);
+        java.util.regex.Matcher m = DROPPED.matcher(res == null ? "" : res);
+        if (m.find()) return Integer.parseInt(m.group(1));
+        LOG.info("[entropybot] throw {} {}: {}", n, item, res);
+        return 0;
+    }
 
     /** Package E: "upgrade &lt;essence&gt; [n]", the essence tiers in bag-sized rounds. */
     String upgrade(LocalPlayer p, String text) { return mystical.upgrade(p, text); }
@@ -254,6 +298,7 @@ final class Crafting {
             if (mc.level == null || !mc.level.isLoaded(bp) || !mc.level.getBlockState(bp).getBlock().getDescriptionId().contains("crafting_table")) return null;
             return t;
         } catch (RuntimeException e) {
+            Quiet.warn("Crafting.mineTable failed, carrying on with the fallback", e);
             return null;
         }
     }
@@ -291,7 +336,7 @@ final class Crafting {
 
     /** Within 16 of the base on each axis (the base's furnaces). */
     static boolean nearBase(int[] f, int[] b) {
-        return Math.abs(f[0] - b[0]) <= 16 && Math.abs(f[1] - b[1]) <= 16 && Math.abs(f[2] - b[2]) <= 16;
+        return Math.abs(f[0] - b[0]) <= Tuning.i("crafting.nearR") && Math.abs(f[1] - b[1]) <= Tuning.i("crafting.nearR") && Math.abs(f[2] - b[2]) <= Tuning.i("crafting.nearR");
     }
 
     /** The owner said "untrust x y z" for this block: the bot never uses it. */
@@ -390,43 +435,36 @@ final class Crafting {
     }
 
     /** How near a furnace must be to count as "here" ({@code smelt ... here}: else the one from the bag goes down next to me). */
-    static final int HERE_R = 6;
+    static int hereR() { return Tuning.i("crafting.hereR"); }
 
     /**
      * @param here 0.36.a8 (AA's iron scorer, smelting on the spot): a furnace further than {@link #HERE_R} from me is not
      *             used; the one in the bag goes down next to me and I wait there (wait mode), as when none is near
      */
     String planSteps(LocalPlayer p, List<Crafter.Step> plan, String label, List<Step> out, boolean collectTargets, String kind, boolean efficient, boolean here) {
+        return planSteps(p, plan, label, out, collectTargets, kind, efficient, here, false);
+    }
+
+    /** @param nowait AA_ROUND3 2: load and leave even with no base marked or a furnace here (the job is remembered) */
+    String planSteps(LocalPlayer p, List<Crafter.Step> plan, String label, List<Step> out, boolean collectTargets, String kind, boolean efficient, boolean here, boolean nowait) {
         // a job is only ever left running in a furnace at the base: no base marked -> stand by the furnace (wait mode)
-        if (efficient && (base() == null || here)) {
+        if (efficient && !nowait && (base() == null || here)) {
             efficient = false;
             collectTargets = true;
         }
-        boolean smelts = false, ownFurnace = false;
-        for (Crafter.Step s : plan) {
-            if (s instanceof Crafter.Smelt sm) {
-                smelts = true;
-                int[] nearF = here ? findBlockAround(Jobs.here(p), FURNACE, HERE_R, 3) : findFurnace(p);
-                if (efficient ? findFurnaces(p, true).isEmpty() : nearF == null) {
-                    // 0.28.2 (A): a furnace in the bag goes down next to me (and stays: it holds the job); wait mode there
-                    int[] spot = Gui.inventory(p).getOrDefault("minecraft:furnace", 0) > 0 && nearF == null ? ownFurnaceSpot(p) : null;
-                    if (ownFurnace) continue;
-                    if (spot == null && nearF != null && efficient) {
-                        efficient = false;                 // a furnace near me but not at the base: stand by it
-                        collectTargets = true;
-                        continue;
-                    }
-                    if (spot == null) return CraftJob.noFurnace(sm.item()) + (Gui.inventory(p).getOrDefault("minecraft:furnace", 0) > 0 ? " (no free spot next to me for mine)" : " - next: craft furnace 1");
-                    Step place = Clearing.placeStep(spot, "minecraft:furnace", null, false);
-                    out.add(place);
-                    Step note = new Step("ownfurnacenote");
-                    note.pos = spot;
-                    out.add(note);
-                    ownFurnace = true;
-                    efficient = false;
+        boolean smelts = false;
+        for (Crafter.Smelt sm : plan.stream().filter(s -> s instanceof Crafter.Smelt).map(s -> (Crafter.Smelt) s).toList()) {
+            smelts = true;
+            int[] nearF = here ? findBlockAround(Jobs.here(p), FURNACE, hereR(), 3) : findFurnace(p);
+            if (efficient ? findFurnaces(p, true).isEmpty() : nearF == null) {
+                if (nearF != null && efficient) {
+                    efficient = false;                 // a furnace near me but not at the base: stand by it
                     collectTargets = true;
-                    LOG.info("[entropybot] smelt: no furnace near me - putting mine down at {}", Jobs.fmt(spot));
+                    continue;
                 }
+                // rm-mining: the smelt places no furnace of its own (the old "no free spot next to me for mine" rule is gone):
+                // it takes a known / camp furnace or fails here, and AA's station option set places one through the builder
+                return CraftJob.noFurnace(sm.item()) + " (stage furnace: none known" + (here ? " within " + hereR() : "") + ") - next: place furnace x y z (the station set), then smelt again";
             }
         }
         for (FurnacePlan.Action a : FurnacePlan.order(plan, planner::recipe, efficient, collectTargets)) {
@@ -553,13 +591,6 @@ final class Crafting {
         return started.startsWith("started") ? started + tail : started;
     }
 
-    /** 0.28.2 (A): a free cell next to me for my own furnace (the table placer's spot rule), or null. */
-    private static int[] ownFurnaceSpot(LocalPlayer p) {
-        Clearing.LiveWorld w = new Clearing.LiveWorld();
-        w.set(p);
-        var spot = io.github.mojolowjo.entropybot.clear.PlaceRules.tableSpot(w, io.github.mojolowjo.entropybot.clear.McClearWorld.botOf(p), null, Clearing::placeCellAllowed);
-        return spot == null ? null : new int[]{spot.x(), spot.y(), spot.z()};
-    }
 
     /** Look-ahead for the own-table pickup: the craft text plans now and wants a 3x3 grid. */
     boolean craftWantsTable(LocalPlayer p, String text) {
@@ -569,6 +600,7 @@ final class Crafting {
             Prepared r = prepareCraft(p, t, null);
             return r.err() == null && needsTable(r.steps());
         } catch (RuntimeException e) {
+            Quiet.warn("Crafting.craftWantsTable failed, carrying on with the fallback", e);
             return false;
         }
     }
@@ -612,8 +644,10 @@ final class Crafting {
         if (t.startsWith("forget")) return SmeltTexts.forget(furnaces(), t.substring(6).trim());
         if (t.equals("collect") || t.startsWith("collect ")) return collect(p, t.substring(7).trim());
         // 0.36.a8: "smelt <item> [n] here": the furnace from my bag goes down next to me even when the camp's is known
-        boolean here = t.endsWith(" here");
-        if (here) text = text.trim().replaceFirst("(?i)\\s+here$", "");
+        // AA_ROUND3 2: "... nowait": load the furnace and leave (the job is remembered; collect later)
+        SmeltTexts.Form form = SmeltTexts.form(text);
+        boolean nowait = form.nowait(), here = form.here() && !nowait;      // nowait never takes its furnace back
+        text = form.text();
         CraftTexts.NameCount nc = CraftTexts.parseNameCount(text, 1);
         if (nc == null) return CraftTexts.SMELT_USAGE;
         Map<String, Integer> inv = Gui.inventory(p);
@@ -633,9 +667,10 @@ final class Crafting {
         }
         List<Step> steps = new ArrayList<>(trips.steps());
         // efficient (the default): the job ends once the furnace runs, the pickup collects it when it is due
-        boolean efficient = MODE_EFFICIENT.equals(smeltMode()) && !here;
-        String err = planSteps(p, plan.steps(), label, steps, !efficient, FurnaceJobs.SMELT, efficient, here);
+        boolean efficient = nowait || (MODE_EFFICIENT.equals(smeltMode()) && !here);
+        String err = planSteps(p, plan.steps(), label, steps, !efficient, FurnaceJobs.SMELT, efficient, here, nowait);
         if (err != null) return "error: " + err;
+        if (nowait) return startSeq(SmeltTexts.nowaitLabel(trips.used() > 0, label), steps, "always");
         // a job left running (efficient, a base marked) ends "ok: done starting the furnace for ...", not "done smelting"
         String seqLabel = efficient && base() != null ? SmeltTexts.startLabel(trips.used() > 0, label) : CraftTexts.smeltSeqLabel(trips.used() > 0, label);
         return startSeq(seqLabel, steps, "always");
@@ -663,7 +698,7 @@ final class Crafting {
         for (FurnaceJobs.Job j : auto ? fj.due(now, Storage.dim()) : fj.all()) {
             if (!j.dim.equals(Storage.dim()) || !(all || j.due(now))) continue;
             // the fence before any walk or /home
-            String why = jobs.goalAllowed(j.pos[0], j.pos[1], j.pos[2]);
+            String why = jobs.walkVerdict(j.pos[0], j.pos[1], j.pos[2]);
             if (why != null) {
                 fenced.add(j.where() + ": " + why);
                 continue;
@@ -755,7 +790,7 @@ final class Crafting {
         if (m.isEmpty()) return CraftTexts.KIT_USAGE;
         // pieces it carries or wears count as had
         Map<String, Integer> have = new LinkedHashMap<>(Gui.inventory(p));
-        for (int i = 5; i <= 8; i++) {
+        for (int i = 5; i <= 8; i++) {  // game fact: the crafting grid slots 5 to 8 are the 2x2 grid result row
             ItemStack s = p.inventoryMenu.getSlot(i).getItem();
             if (!s.isEmpty()) have.merge(Gui.itemId(s), 1, Integer::sum);
         }
@@ -781,7 +816,7 @@ final class Crafting {
         return io.github.mojolowjo.entropybot.farm.FarmSettings.fromJson(b.has("farm") && b.get("farm").isJsonObject() ? b.getAsJsonObject("farm") : null);
     }
 
-    /** P5: whether Harvest with Ease and Squat Grow are loaded (false when the mod list can't be read, logged). */
+    /** P5: whether Harvest with Ease is loaded (false when the mod list can't be read, logged). */
     static boolean modLoaded(String id) {
         try {
             return net.neoforged.fml.ModList.get().isLoaded(id);
@@ -792,10 +827,10 @@ final class Crafting {
     }
 
     io.github.mojolowjo.entropybot.farm.FarmSettings.Effective farmEffective() {
-        return farmSettings().resolve(modLoaded(io.github.mojolowjo.entropybot.farm.FarmSettings.HWE), modLoaded(io.github.mojolowjo.entropybot.farm.FarmSettings.SQUAT));
+        return farmSettings().resolve(modLoaded(io.github.mojolowjo.entropybot.farm.FarmSettings.HWE));
     }
 
-    /** "farm status": the mode and grow in effect and why, the farm, its crops by type and ripeness. */
+    /** "farm status": the mode in effect and why, the farm, its crops by type and ripeness. */
     String farmStatus(LocalPlayer p) {
         var fs = farmSettings();
         var eff = farmEffective();
@@ -824,7 +859,7 @@ final class Crafting {
 
     String farm(LocalPlayer p, String text) { return farm(p, text, null); }
 
-    /** "farm [here | compact ... | mode ... | grow ... | status | plant ...]". */
+    /** "farm [here | compact ... | mode ... | status | plant ...]". */
     String farm(LocalPlayer p, String text, String from) {
         String t = text == null ? "" : text.trim();
         String lt = t.toLowerCase(java.util.Locale.ROOT);
@@ -836,7 +871,7 @@ final class Crafting {
             commands.brainData().add("farm", ch.set().toJson());
             commands.saved();
             var eff = farmEffective();
-            return ch.reply() + " - in effect: " + eff.modeWord() + ", " + eff.growWord();
+            return ch.reply() + " - in effect: " + eff.modeWord();
         }
         FarmCommand.Reply r = FarmCommand.handle(text, farmSpot(), new McFarmWorld(p), farmEffective());
         if (r.save() != null) commands.putPlace("farm", r.save().toJson());
@@ -918,9 +953,6 @@ final class Crafting {
     String step(Seq s, Step st, LocalPlayer p, long elapsed) {
         switch (st.type) {
             case "craft": return craftStep(s, st, p);
-            case "ownfurnacenote":                         // 0.28.2 (A): the furnace went down; it stays (it holds the job)
-                addNote(s, OwnTable.furnacePlaced(Jobs.fmt(st.pos)));
-                return "next";
             case "craftitem": {
                 // hand over to a craft plan spliced in after this step; the sequence carries on when it ends
                 Prepared r = prepareCraft(p, st.text, null);
@@ -931,7 +963,7 @@ final class Crafting {
                 return "next";
             }
             case "wear":
-                if (elapsed < 10) return "wait";         // let the crafting screen close first
+                if (elapsed < Tuning.i("crafting.closeTicks")) return "wait";         // let the crafting screen close first
                 s.wore = Gui.wearArmor(p);
                 return "next";
             case "restocknote": {
@@ -1027,8 +1059,7 @@ final class Crafting {
             case "compactdone": return compactStep(s, st, p);
             // package E: Mystical Agriculture
             case "upgraderound": return mystical.upgradeRound(s, st, p);
-            case "altarfind": return mystical.altarFind(s, st, p);
-            case "infuse": return mystical.infuseStep(s, st, p);
+            case "give": return giveStep(st, p);
             default:
                 if (st.type.startsWith("farm") && s.farm != null) return farmStep(s, st, p, elapsed);
                 return "unknown step " + st.type;
@@ -1053,7 +1084,7 @@ final class Crafting {
         st.state = ps;
         if (ps.waitUntil >= 0) {
             if (now() < ps.waitUntil) {
-                s.setStatus(s.label + " - every furnace is busy, looking again in " + Math.max(1, (ps.waitUntil - now()) / 20) + " s");
+                s.setStatus(s.label + " - every furnace is busy, looking again in " + Math.max(1, (ps.waitUntil - now()) / 20) + " s");  // game fact: 20 game ticks per second
                 return "wait";
             }
             ps.waitUntil = -1;
@@ -1085,8 +1116,8 @@ final class Crafting {
                 s.stage = null;
                 return "wait";
             }
-            if (++ps.rounds > FurnaceJobs.BUSY_ROUNDS) return SmeltTexts.allBusy(cands.size(), ps.busy);
-            ps.waitUntil = now() + FurnaceJobs.BUSY_WAIT_TICKS;
+            if (++ps.rounds > FurnaceJobs.busyRounds()) return SmeltTexts.allBusy(cands.size(), ps.busy);
+            ps.waitUntil = now() + FurnaceJobs.busyWaitTicks();
             commands.log("furnaces busy (" + String.join("; ", ps.busy) + "): looking again in a minute");
             return "wait";
         }
@@ -1125,7 +1156,7 @@ final class Crafting {
     /** At the open furnace: busy (someone's smelting, or output nobody took) -> close it and pick another; else put input and fuel in. */
     private String smeltPut(Seq s, Step st, LocalPlayer p) {
         if (!Gui.open(p)) return "no container open";
-        if (now() - s.stepStart < 4) return "wait";            // let its slots arrive
+        if (now() - s.stepStart < Tuning.i("crafting.slotsTicks")) return "wait";            // let its slots arrive
         String bad = Gui.wrongScreen(p);
         if (bad != null) return bad;
         if (!furnaceMenu(p)) return "the block at " + Jobs.fmt(st.pos) + " opened a " + Gui.menuName(p).replaceFirst("Menu$", "") + ", not a furnace";
@@ -1176,7 +1207,7 @@ final class Crafting {
             Step burn = new Step("smeltfuelwait");
             burn.pos = st.pos;
             burn.smelt = st.smelt;
-            burn.ticks = (FurnaceJobs.burnSeconds(slots.fuel(), slots.fuelN()) + 20) * 20;
+            burn.ticks = (FurnaceJobs.burnSeconds(slots.fuel(), slots.fuelN()) + 20) * 20;  // game fact: 20 game ticks per second
             Step top = new Step("ops");
             top.pos = st.pos;
             top.ops = List.of(fuel);
@@ -1262,7 +1293,7 @@ final class Crafting {
     /** smelttake's state: taken so far, the last time more came out, a take waiting for the server. */
     static final class TakeState {
         int took, before = -1, asked, lastInput = -1;
-        long lastProgress = System.currentTimeMillis(), settleTick, lookTick = -100, reopenAt = -1;
+        long lastProgress = System.currentTimeMillis(), settleTick, lookTick = -100, reopenAt = -1;  // structural: a time long ago (sentinel)
     }
 
     /** The open furnace: take our output as it comes until the target is reached; wait, or say it is gone or stopped. */
@@ -1278,7 +1309,7 @@ final class Crafting {
         st.state = ts;
         if (ts.before >= 0) {
             // a take is on its way: count what really arrived
-            if (now() - ts.settleTick < Storage.GUI_SETTLE) return "wait";
+            if (now() - ts.settleTick < Storage.guiSettle()) return "wait";
             int got = Math.max(0, bag(p, j.item) - ts.before);
             ts.before = -1;
             if (got > 0) {
@@ -1294,7 +1325,7 @@ final class Crafting {
             } else if (ts.asked > 0) {
                 if (st.pickup) {
                     // a full bag: say so once, try again in half an hour (not every 5 minutes)
-                    fj.later(List.of(j), nowMs(), 30 * 60_000L);
+                    fj.later(List.of(j), nowMs(), Tuning.i("crafting.laterMin") * 60_000L);
                     addNote(s, "my inventory is full - left " + j.remaining() + " " + CraftPlanner.shortId(j.item) + " in the furnace at " + j.where());
                     return "next";
                 }
@@ -1314,7 +1345,7 @@ final class Crafting {
             s.stage = null;
             return "wait";
         }
-        if (now() - ts.lookTick < 10) return "wait";            // look twice a second
+        if (now() - ts.lookTick < Tuning.i("crafting.lookTicks")) return "wait";            // look twice a second
         ts.lookTick = now();
         if (!furnaceMenu(p)) return "the block at " + j.where() + " opened a " + Gui.menuName(p).replaceFirst("Menu$", "") + ", not a furnace";
         FurnaceJobs.Slots sl = furnaceSlots(p);
@@ -1391,7 +1422,7 @@ final class Crafting {
                 if (err == null) {
                     for (Step r : redo) {
                         if (r.type.equals("smeltpick")) r.redo = true;
-                        if (r.smeltKey >= 0) r.smeltKey += 1000 * (s.idx + 1);      // its own keys, apart from the plan's
+                        if (r.smeltKey >= 0) r.smeltKey += 1000 * (s.idx + 1);      // its own keys, apart from the plan's  // structural: milliseconds per second
                     }
                     redo.removeIf(r -> r.type.equals("smeltnote"));
                     add.addAll(redo);
@@ -1406,29 +1437,30 @@ final class Crafting {
 
     private String farmStep(Seq s, Step st, LocalPlayer p, long elapsed) {
         McFarmWorld w = new McFarmWorld(p);
+        if (st.type.equals("farmscan")) io.github.mojolowjo.entropybot.farm.FarmHands.clear("a new farm round");
         FarmRound.Tick t = s.farm.step(st.type, w, elapsed, now());
         io.github.mojolowjo.entropybot.clear.LeaseSet leases = farmLeases.get(s);
         if (leases != null) leases.beat();
         for (FarmRound.Effect fx : t.effects()) {
             if (fx instanceof FarmRound.Break br) {
                 // P5 vanilla: crops are on the guard's built-block list (the floor), so each ripe crop gets a one-cell
-                // force lease for its one click (the break is checked at once, in startDestroyBlock) and loses it after
+                // force lease for its one click (the break is checked by Baritone's hook) and loses it after
+                // (the lease is held until Baritone's hands have broken it, then let go)
                 io.github.mojolowjo.entropybot.clear.LeaseSet one = Clearing.newLeases();
-                try {
-                    String le = one.take("farm harvest " + br.x() + " " + br.y() + " " + br.z(),
-                            new io.github.mojolowjo.entropybot.clear.ClearBox(br.x(), br.y(), br.z(), br.x(), br.y(), br.z()), false, true);
-                    if (le != null) return le.replaceFirst("^error: ", "");
-                    w.apply(fx);
-                } finally {
+                String le = one.take("farm harvest " + br.x() + " " + br.y() + " " + br.z(),
+                        new io.github.mojolowjo.entropybot.clear.ClearBox(br.x(), br.y(), br.z(), br.x(), br.y(), br.z()), false, true);
+                if (le != null) {
                     one.releaseAll();
+                    return le.replaceFirst("^error: ", "");
                 }
+                w.breakBlock(br.x(), br.y(), br.z(), one::releaseAll);
             } else if (fx instanceof FarmRound.Plant) {
                 // P5 vanilla: a place lease over the farm's box (FARM_R + 1 around the spot, 3 up and down) for the seeds
                 if (leases == null) {
                     leases = Clearing.newLeases();
-                    int r = io.github.mojolowjo.entropybot.farm.FarmRules.FARM_R + 1;
+                    int r = io.github.mojolowjo.entropybot.farm.FarmRules.farmR() + 1;
                     FarmSpot f = s.farm.farm;
-                    io.github.mojolowjo.entropybot.clear.ClearBox b = new io.github.mojolowjo.entropybot.clear.ClearBox(f.x() - r, f.y() - 3, f.z() - r, f.x() + r, f.y() + 3, f.z() + r);
+                    io.github.mojolowjo.entropybot.clear.ClearBox b = new io.github.mojolowjo.entropybot.clear.ClearBox(f.x() - r, f.y() - Tuning.i("crafting.boxDy"), f.z() - r, f.x() + r, f.y() + Tuning.i("crafting.boxDy"), f.z() + r);
                     String le = leases.take("farm replant " + f.fmt(), b, true, false);
                     if (le != null) {
                         leases.releaseAll();
@@ -1439,7 +1471,7 @@ final class Crafting {
                 String le = leases.ensure();
                 if (le != null) return le.replaceFirst("^error: ", "");
                 FarmRound.Plant pl = (FarmRound.Plant) fx;
-                if (Clearing.holdItem(p, pl.item())) w.use(pl.x(), pl.y(), pl.z());
+                w.plant(pl.x(), pl.y(), pl.z(), pl.item());
             } else if (fx instanceof FarmRound.Craft c) {
                 Step cs = new Step("craftitem");
                 cs.text = c.item() + " " + c.n();
@@ -1459,12 +1491,13 @@ final class Crafting {
                 w.apply(fx);
             }
         }
+        io.github.mojolowjo.entropybot.farm.FarmHands.pump();       // Baritone's hands follow the round's one request at a time
+        if (!t.result().equals("wait") && !t.result().equals("next")) io.github.mojolowjo.entropybot.farm.FarmHands.clear("the farm round ended: " + t.result());
         if (t.status() != null) s.setStatus(t.status());
         if (t.note() != null) {
             s.note = t.note();
             lastFarmNote = t.note();
         }
-        if (!t.result().equals("wait")) Minecraft.getInstance().options.keyShift.setDown(false);
         // the vanilla round's leases end after the replant (or when the round fails)
         if (leases != null && ((!t.result().equals("wait") && !t.result().equals("next")) || (st.type.equals(FarmRound.REPLANT) && t.result().equals("next")))) {
             leases.releaseAll();
@@ -1481,7 +1514,7 @@ final class Crafting {
         switch (st.type) {
             case "compacthere": {
                 List<int[]> found = new ArrayList<>();
-                for (Storage.Found f : Storage.findContainers(st.pos, Compact.COMPACT_R)) if (Storage.isStorageBlock(f.pos())) found.add(f.pos());
+                for (Storage.Found f : Storage.findContainers(st.pos, Compact.compactR())) if (Storage.isStorageBlock(f.pos())) found.add(f.pos());
                 r = s.compact.here(found, Jobs.here(p), st.why);
                 break;
             }
@@ -1506,9 +1539,6 @@ final class Crafting {
             c.stage = null;
             if (c.loop != null) c.loop.interrupted();      // a batch in flight is still counted (never dropped)
         }
-        // package E: the altar looks again (what it placed is found again), unless it is crafting or taking the seed
-        if (st.state instanceof io.github.mojolowjo.entropybot.altar.AltarRun r) r.interrupted();
-        Minecraft.getInstance().options.keyShift.setDown(false);
     }
 
     // ---- the crafting grid (the bridge's stepCraft, with exact clicks instead of EMI's fill) ----
@@ -1563,17 +1593,20 @@ final class Crafting {
         if ("opentable".equals(c.stage)) {
             // walked to the table (the spliced walk step): right-click it and wait for its menu
             if (c.stageTick < 0) {
-                if (Gui.open(p) || Minecraft.getInstance().screen != null) Gui.close(p);
-                String r = Jobs.useBlock(p, Jobs.fmt(c.table));
-                if (!r.startsWith("ok")) return craftFail(s, st, CraftJob.couldNotOpenTable(r));
+                // 0.39.z7 (owner 2026-10-22, "every GUI interaction on purpose"): no blind close here. This branch
+                // runs every tick while the fork's click is in progress, and it closed the table the fork had just
+                // opened. A screen that is open is left to whoever opened it.
+                var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().use(c.table, "the crafting table");
+                if (r.running()) return "wait";
+                if (r.failed()) return craftFail(s, st, CraftJob.couldNotOpenTable(r.why()));
                 c.stageTick = now();
                 return "wait";
             }
-            if (gridSize(p) == 3) {
+            if (gridSize(p) == 3) {  // game fact: a crafting table has a 3x3 grid
                 c.stage = null;
                 return "wait";
             }
-            if (now() - c.stageTick <= 60) return "wait";
+            if (now() - c.stageTick <= Tuning.i("crafting.tableWaitTicks")) return "wait";
             // P2: this table answers clicks but never opens (see DEAD_TABLES): skip it from now on, try another once
             DEAD_TABLES.add(tableKey(c.table));
             int[] other = c.deadRetried ? null : findTable(p);
@@ -1581,7 +1614,7 @@ final class Crafting {
             c.deadRetried = true;
             c.table = other;
             c.stageTick = -1;
-            if (p.getEyePosition().distanceTo(new net.minecraft.world.phys.Vec3(other[0] + 0.5, other[1] + 0.5, other[2] + 0.5)) > 4.4) {
+            if (p.getEyePosition().distanceTo(new net.minecraft.world.phys.Vec3(other[0] + 0.5, other[1] + 0.5, other[2] + 0.5)) > 4.4) {  // game fact: survival interaction range 4.5 minus a margin
                 Step walk = Step.walk(other, false);
                 walk.why = "the crafting table at " + Jobs.fmt(other);
                 s.splice(s.idx, List.of(walk));
@@ -1599,8 +1632,7 @@ final class Crafting {
         }
         // fill: the right grid first
         if (size == 0) {
-            Gui.close(p);                          // a fight closed the table (or something else is open)
-            return "wait";
+            return "wait";                         // 0.39.z7: no grid open yet; no blind close of whatever screen is open
         }
         if ((step.needsTable() || !recipe.fits(2)) && size == 2) {
             if (c.triedTable && c.table == null) return craftFail(s, st, CraftJob.noTable(step.item()));
@@ -1610,7 +1642,7 @@ final class Crafting {
             c.table = t;
             c.stage = "opentable";
             c.stageTick = -1;
-            if (p.getEyePosition().distanceTo(new net.minecraft.world.phys.Vec3(t[0] + 0.5, t[1] + 0.5, t[2] + 0.5)) > 4.4) {
+            if (p.getEyePosition().distanceTo(new net.minecraft.world.phys.Vec3(t[0] + 0.5, t[1] + 0.5, t[2] + 0.5)) > 4.4) {  // game fact: survival interaction range 4.5 minus a margin
                 Step walk = Step.walk(t, false);
                 walk.why = "the crafting table at " + Jobs.fmt(t);
                 s.splice(s.idx, List.of(walk));
@@ -1649,7 +1681,7 @@ final class Crafting {
         c.ci++;
         c.made = 0;
         if (c.ci < st.crafts.size()) return "wait";
-        if (gridSize(p) == 3) Gui.close(p);
+        if (gridSize(p) == 3) Gui.close(p);  // game fact: a crafting table has a 3x3 grid
         if (st.direct) {
             jobs.finish(CraftJob.done(st.text));
             return "wait";
@@ -1665,6 +1697,7 @@ final class Crafting {
                 int n = stackOf(id).getMaxStackSize();
                 return n > 0 ? n : 64;
             } catch (RuntimeException e) {
+            Quiet.warn("Crafting.maxStack failed, carrying on with the fallback", e);
                 return 64;
             }
         }
@@ -1674,6 +1707,7 @@ final class Crafting {
             try {
                 return stackOf(id).hasCraftingRemainingItem();
             } catch (RuntimeException e) {
+            Quiet.warn("Crafting.remainder failed, carrying on with the fallback", e);
                 return false;
             }
         }
@@ -1687,6 +1721,7 @@ final class Crafting {
                 ItemStack rem = st.getCraftingRemainingItem();
                 return rem != null && !rem.isEmpty() && rem.getItem() == st.getItem();
             } catch (RuntimeException e) {
+            Quiet.warn("Crafting.catalyst failed, carrying on with the fallback", e);
                 return false;
             }
         }

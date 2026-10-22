@@ -12,7 +12,6 @@ public final class StripTexts {
 
     public static final String NO_MINE = "error: no mine marked - stand where it should start, face the way to dig, and say \"place mine\"";
     public static final String TURN_USAGE = "usage: stripmine turn left|right";
-    public static final String AREA_HINT = "area here 48 work neutral";   // 0.35.2: a runnable hint (radius, name, type), no placeholders
 
     public static String noMine(String name) {
         return name.equals("mine") ? NO_MINE
@@ -28,32 +27,23 @@ public final class StripTexts {
         for (Pos c : chests) cs.add(c.key());
         return "mine at " + g.x + " " + g.y + " " + g.z + " going " + g.dir + ": " + (MineBook.k(note) - 1) + " branch pairs dug"
                 + (MineBook.setup(note) ? ", chests at " + String.join(" and ", cs) : ", not set up yet")
-                + "; ores: " + (collect ? "collecting inside the mapped area" : "listing only");
+                + "; ores: " + (collect ? "collecting" : "listing only");
     }
 
-    /** "stripmine ores collect|list" (areaText: "my areas (map, home)"). */
-    public static String oresSet(boolean collect, String areaText) {
-        return "ok: " + (collect ? "I'll mine the ores I pass inside " + areaText + " and take them to the base; elsewhere they stay listed"
+    /** "stripmine ores collect|list". */
+    public static String oresSet(boolean collect) {
+        return "ok: " + (collect ? "I'll mine the ores I pass and take them to the base (a keep-out or no-break area keeps its ores)"
                 : "I'll leave ores in place and list them (PM \"ores\")") + " - from the next run on";
     }
 
     /** "stripmine ores". */
     public static String oresMode(boolean collect) {
-        return "ores: " + (collect ? "mined inside the mapped area and taken to the base (\"mine strip ores list\" to leave them)"
-                : "left in place and listed (\"mine strip ores collect\" to mine them inside the mapped area)");
-    }
-
-    /** mapAreaText with the mod: "my areas (a, b)" or "my areas (none set - area <name> <r>)". */
-    public static String areaText(List<String> names) {
-        return "my areas (" + (names.isEmpty() ? "none set - " + AREA_HINT : String.join(", ", names)) + ")";
+        return "ores: " + (collect ? "mined and taken to the base (\"mine strip ores list\" to leave them)"
+                : "left in place and listed (\"mine strip ores collect\" to mine them)");
     }
 
     public static String badEntrance(String mineName, Pos p, String why) {
         return "error: the " + mineName + " entrance " + p.key() + " is no place to start: " + why + " - mark it where I can stand";
-    }
-
-    public static String outsideAreas(String mineName, Pos p, String areaText) {
-        return "error: the mine " + mineName + " (" + p.key() + ") is outside " + areaText + ", where I mine no ores - " + AREA_HINT;
     }
 
     public static String stripJobLabel(OreSpec spec, int target, String mineName) {
@@ -69,7 +59,7 @@ public final class StripTexts {
     public static String stripStop(int target, int got, boolean timeUp, int runs) {
         if (target != 0 && got >= target) return "that makes " + target;
         if (timeUp) return "an hour is up";
-        if (runs >= StripRules.MAX_RUNS) return StripRules.MAX_RUNS + " runs";
+        if (runs >= StripRules.maxRuns()) return StripRules.maxRuns() + " runs";
         return null;
     }
 

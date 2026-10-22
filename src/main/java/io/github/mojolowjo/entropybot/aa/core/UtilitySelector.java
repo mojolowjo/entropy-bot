@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa.core;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -12,7 +14,7 @@ import java.util.List;
 public final class UtilitySelector extends Node {
     public record Option(TaskKind kind, Node child) {}
 
-    public static final double BONUS = 15;
+    public static double bonusV() { return Tuning.get("utilitySelector.bonus"); }
     private final List<Option> options;
     private final Scorer scorer;
     private final double bonus;
@@ -64,7 +66,7 @@ public final class UtilitySelector extends Node {
     }
 
     /** S0 (MINING_PLAN 12, the probe): one line per idle pick, a repeat at most once a minute. */
-    public static final long PROBE_MS = 60_000;
+    public static long probeMs() { return Tuning.l("utilitySelector.probeMs"); }
     private String probeLast;
     private long probeAt = -1;
 
@@ -72,7 +74,7 @@ public final class UtilitySelector extends Node {
         String line = "idle picked " + kind + " -> " + reason;
         String key = kind + " " + reason.replaceAll("\\d+", "#");
         long now = bb.clock.now();
-        if (key.equals(probeLast) && now - probeAt < PROBE_MS) return;
+        if (key.equals(probeLast) && now - probeAt < probeMs()) return;
         probeLast = key;
         probeAt = now;
         bb.port.log(line);

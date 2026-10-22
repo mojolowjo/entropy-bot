@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 /**
  * 0.23.2: the owner's creeper heuristic (2026-10-07), the state machine. On a creeper within {@link #START}: already
  * sprinting away = keep sprinting; standing (or walking anywhere else) = one melee hit when it is in reach (the
@@ -9,12 +11,12 @@ package io.github.mojolowjo.entropybot.engine;
 public final class CreeperSprint {
     public enum Act { HIT, SPRINT, DONE }
 
-    public static final double START = 6;
-    public static final double SAFE = 7;
-    public static final int MAX_TICKS = 100;
+    public static double startV() { return Tuning.get("creeperSprint.start"); }
+    public static final double SAFE = 7; // game fact: a creeper fuse cools beyond 7 blocks (SwellGoal distanceToSqr > 49)
+    public static int maxTicks() { return Tuning.i("creeperSprint.maxTicks"); }
     /** Blocks a tick that count as moving (a sprint is about 0.28). */
-    static final double MOVING = 0.15;
-    static final double AWAY_DOT = 0.5;
+    static double moving() { return Tuning.get("creeperSprint.moving"); }
+    static double awayDot() { return Tuning.get("creeperSprint.awayDot"); }
 
     private boolean active;
     private int creeperId = -1;
@@ -40,8 +42,8 @@ public final class CreeperSprint {
     /** Whether the bot is already sprinting away from the creeper: sprinting, moving, and heading within 60 degrees of away. */
     public static boolean sprintingAway(boolean sprinting, double vx, double vz, double awayX, double awayZ) {
         double v = Math.sqrt(vx * vx + vz * vz), a = Math.sqrt(awayX * awayX + awayZ * awayZ);
-        if (!sprinting || v < MOVING || a < 1e-6) return false;
-        return (vx * awayX + vz * awayZ) / (v * a) >= AWAY_DOT;
+        if (!sprinting || v < moving() || a < 1e-6) return false;  // structural: epsilon
+        return (vx * awayX + vz * awayZ) / (v * a) >= awayDot();
     }
 
     /**
@@ -49,8 +51,8 @@ public final class CreeperSprint {
      * flee; (vx, vz): the bot's motion; (escX, escZ): the chosen escape heading (unit). Returns the first act.
      */
     public Act start(long now, int id, boolean sprintingAway, boolean mayHit, double vx, double vz, double escX, double escZ) {
-        chain = id == lastId && now - lastEnd < CHASE_TICKS ? chain + 1 : 0;
-        safe = Math.min(SAFE + 5 * chain, 17);
+        chain = id == lastId && now - lastEnd < chaseTicks() ? chain + 1 : 0;
+        safe = Math.min(SAFE + Tuning.i("creeperSprint.safePerChain") * chain, Tuning.i("creeperSprint.safeMax"));
         active = true;
         creeperId = id;
         startTick = now;
@@ -72,10 +74,10 @@ public final class CreeperSprint {
     }
 
     /** After a sprint the bot holds still (no job walking it back) while the creeper is this close, for {@link #WATCH_TICKS}. */
-    public static final double WATCH = 10;
-    public static final int WATCH_TICKS = 100;
+    public static double watch() { return Tuning.get("creeperSprint.watch"); }
+    public static int watchTicks() { return Tuning.i("creeperSprint.watchTicks"); }
     /** A creeper that keeps coming within {@link #CHASE_TICKS} of the last sprint: each new sprint runs 5 further (at most 17). */
-    public static final int CHASE_TICKS = 60;
+    public static int chaseTicks() { return Tuning.i("creeperSprint.chaseTicks"); }
 
     private int lastId = -1, chain;
     private long lastEnd = Long.MIN_VALUE / 2;
@@ -86,15 +88,15 @@ public final class CreeperSprint {
     public double safe() { return safe; }
 
     /** Whether the bot just sprinted from this creeper (hold still and watch it, don't let the job walk it back). */
-    public boolean watching(long now, int id) { return !active && id == lastId && now - lastEnd < WATCH_TICKS; }
+    public boolean watching(long now, int id) { return !active && id == lastId && now - lastEnd < watchTicks(); }
 
     /** One tick while active: dist = the creeper's distance (NaN = gone). */
     public Act step(long now, double dist) {
         if (!active) return Act.DONE;
         endTick = now;
         if (Double.isNaN(dist)) return end("it is gone");
-        if (dist >= safe) return end("got " + Math.round(dist * 10) / 10.0 + " blocks away");
-        if (now - startTick >= MAX_TICKS) return end("gave up after " + MAX_TICKS / 20 + " s");
+        if (dist >= safe) return end("got " + Math.round(dist * 10) / 10.0 + " blocks away");  // structural: rounded to one decimal for the text
+        if (now - startTick >= maxTicks()) return end("gave up after " + maxTicks() / 20 + " s");  // game fact: 20 game ticks per second
         last = Act.SPRINT;
         return last;
     }
@@ -119,12 +121,4 @@ public final class CreeperSprint {
         return Act.DONE;
     }
 
-    /** Whether a creeper duel may follow the sprint: the bow setting always; melee only with a big margin; flee never. */
-    public static boolean duelAfter(CreeperRules.Mode mode, boolean bigMargin) {
-        return switch (mode) {
-            case BOW -> true;
-            case MELEE -> bigMargin;
-            case FLEE -> false;
-        };
-    }
 }

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.mixin;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import io.github.mojolowjo.entropybot.engine.Reconnect;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.quickplay.QuickPlay;
@@ -20,6 +22,6 @@ public abstract class ReconnectMixinQuickPlay {
     private static void entropybot$joinMultiplayer(Minecraft mc, String address, CallbackInfo ci) {
         try {
             if (address != null && !address.isBlank()) Reconnect.launchServer = address.trim();
-        } catch (Throwable ignored) {}
+        } catch (Throwable caught) { Quiet.warn("ReconnectMixinQuickPlay.? failed, carrying on with the fallback", caught); }
     }
 }

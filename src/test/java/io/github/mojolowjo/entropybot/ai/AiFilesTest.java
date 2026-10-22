@@ -97,11 +97,11 @@ class AiFilesTest {
         PromptBuilder compact = new PromptBuilder(PromptBuilder.bundledRules(), gate, false, "Bot", "boss");
         PromptBuilder full = new PromptBuilder(PromptBuilder.bundledRules(), gate, true, "Bot", "boss");
         assertNotNull(PromptBuilder.bundledRules(), "system.txt is in the jar");
-        assertTrue(compact.system().contains("\"Bot\" for its owner boss"));
+        assertTrue(compact.system().contains("\"Bot\" and its owner boss"));
         assertTrue(compact.system().length() / 4 < 3500, "compact about " + compact.system().length() / 4 + " tokens");
         assertTrue(full.system().length() / 4 < 9000, "full about " + full.system().length() / 4 + " tokens");
         for (String deny : List.of("\nrestart", "\nallow ", "\nconfirm", "\ngive ", "\ndebug ", "\nserver ")) assertFalse(compact.system().contains(deny), deny);
-        assertTrue(compact.system().contains("\nsay <text>"));
+        assertTrue(compact.system().contains("\naa want <thing>"));
         Deque<PromptBuilder.Turn> h = new ArrayDeque<>();
         for (int i = 0; i < 6; i++) h.add(new PromptBuilder.Turn("status", "x".repeat(400)));
         Provider.Request a = compact.build("g", "", "s1", h, 120, 0.2, Duration.ofSeconds(9));

@@ -7,6 +7,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** The tool choice (cheapest first) and noTool's ladder; the walking map, walk distances and spots (buildGrid ... planWalk). */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class ToolsGridTest {
     // ---- tools ----
 
@@ -14,13 +15,13 @@ class ToolsGridTest {
     void toolTiers() {
         assertEquals(1, Tools.toolTier("minecraft:wooden_pickaxe"));
         assertEquals(2, Tools.toolTier("minecraft:stone_pickaxe"));
-        assertEquals(3, Tools.toolTier("leafscopperbackport:copper_pickaxe"));
-        assertEquals(3, Tools.toolTier("minecraft:golden_shovel"));
-        assertEquals(4, Tools.toolTier("minecraft:iron_pickaxe"));
-        assertEquals(5, Tools.toolTier("minecraft:diamond_pickaxe"));
-        assertEquals(6, Tools.toolTier("minecraft:netherite_pickaxe"));
-        assertEquals(4, Tools.toolTier("mekanism:atomic_disassembler"), "unknown tools count as iron");
-        assertEquals(4, Tools.toolTier("minecraft:redstone_iron_x"), "only at the start of the name");
+        assertEquals(2, Tools.toolTier("leafscopperbackport:copper_pickaxe"), "the copper pickaxe's own data: as a stone one");
+        assertEquals(1, Tools.toolTier("minecraft:golden_shovel"), "gold digs like wood, whatever its speed");
+        assertEquals(3, Tools.toolTier("minecraft:iron_pickaxe"));
+        assertEquals(4, Tools.toolTier("minecraft:diamond_pickaxe"));
+        assertEquals(4, Tools.toolTier("minecraft:netherite_pickaxe"), "netherite digs like diamond");
+        assertEquals(0, Tools.toolTier("mekanism:atomic_disassembler"), "a tool with no data has no tier: unknown, not iron");
+        assertEquals(0, Tools.toolTier("minecraft:redstone_iron_x"), "a name tells nothing");
     }
 
     @Test
@@ -86,11 +87,11 @@ class ToolsGridTest {
     void toolPolicyIronForOresStoneForStone() {
         // package B: stone, iron and copper pickaxes; an ore under "iron" gets the iron one, stone the cheapest
         List<Tools.Slot> inv = List.of(new Tools.Slot(0, "minecraft:stone_pickaxe", true, 4), new Tools.Slot(1, "minecraft:iron_pickaxe", true, 6),
-                new Tools.Slot(2, "leafscopperbackport:copper_pickaxe", true, 5), new Tools.Slot(3, "minecraft:diamond_pickaxe", true, 8));
+                new Tools.Slot(2, "leafscopperbackport:copper_pickaxe", true, 4), new Tools.Slot(3, "minecraft:diamond_pickaxe", true, 8));
         assertEquals(1, Tools.choose(inv, true, true, "iron"), "coal ore: the iron pickaxe (not diamond, the cheapest of iron or better)");
         assertEquals(0, Tools.choose(inv, true, true, "cheapest"));
         assertEquals(0, Tools.choose(inv, true, false, "iron"), "stone: the stone pickaxe");
-        List<Tools.Slot> noIron = List.of(new Tools.Slot(0, "minecraft:stone_pickaxe", true, 4), new Tools.Slot(2, "leafscopperbackport:copper_pickaxe", true, 5));
+        List<Tools.Slot> noIron = List.of(new Tools.Slot(0, "minecraft:stone_pickaxe", true, 4), new Tools.Slot(2, "leafscopperbackport:copper_pickaxe", true, 4));
         assertEquals(0, Tools.choose(noIron, true, true, "iron"), "no iron pickaxe: the cheapest that does the job");
         List<Tools.Slot> diamondOre = List.of(new Tools.Slot(0, "minecraft:stone_pickaxe", false, 4), new Tools.Slot(1, "minecraft:iron_pickaxe", true, 6));
         assertEquals(1, Tools.choose(diamondOre, true, true, "cheapest"));
@@ -161,16 +162,16 @@ class ToolsGridTest {
         Bot bot = Bot.at(0.5, 53, 0.5);
         ClearGrid g = ClearGrid.build(w, box, bot, j);
         int[] d = g.walkDistances(bot);
-        j.sightBudget = ClearGrid.SIGHT_BUDGET;
+        j.sightBudget = ClearGrid.sightBudget();
         ClearGrid.Spot s = ClearGrid.bestSpotFor(w, g, d, t, bot, j);
         assertNotNull(s);
         assertFalse(s.x() == 4 && s.z() == 0 && s.y() == 53, "never on the block itself");
         assertEquals(53, s.y());
         assertTrue(s.cost() < 1000);
-        assertTrue(j.sightBudget < ClearGrid.SIGHT_BUDGET, "spends the sight budget");
+        assertTrue(j.sightBudget < ClearGrid.sightBudget(), "spends the sight budget");
         // a spot it failed to reach recently is avoided for 10 blocks
         j.badSpots.put(s.key(), 0);
-        j.sightBudget = ClearGrid.SIGHT_BUDGET;
+        j.sightBudget = ClearGrid.sightBudget();
         ClearGrid.Spot s2 = ClearGrid.bestSpotFor(w, g, d, t, bot, j);
         assertNotEquals(s.key(), s2.key());
         j.broken = 10;
@@ -198,7 +199,7 @@ class ToolsGridTest {
         Bot bot = Bot.at(3.5, 53, 3.5);
         ClearGrid g = ClearGrid.build(w, box, bot, j);
         int[] d = g.walkDistances(bot);
-        j.sightBudget = ClearGrid.SIGHT_BUDGET;
+        j.sightBudget = ClearGrid.sightBudget();
         ClearGrid.Spot s = ClearGrid.bestSpotFor(w, g, d, t, bot, j);
         assertNotNull(s, "the near spots find the pocket: " + j.noSpotWhy);
         assertEquals(new Pos(0, 51, 0), new Pos(s.x(), s.y(), s.z()));

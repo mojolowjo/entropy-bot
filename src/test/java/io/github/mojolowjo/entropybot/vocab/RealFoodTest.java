@@ -7,6 +7,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /** 0.27.3 (d6): the food kind is real food; a potion-like modded edible is never picked, a costly plan is skipped by the caller. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class RealFoodTest {
     static final String ELIXIR = "arphex:elixir_of_splintered_sanity";
 

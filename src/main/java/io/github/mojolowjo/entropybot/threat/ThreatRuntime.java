@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.threat;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import com.mojang.logging.LogUtils;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -40,18 +42,20 @@ public final class ThreatRuntime {
     private static final Logger LOG = LogUtils.getLogger();
     public static final ThreatRuntime INSTANCE = new ThreatRuntime();
 
-    public static final int R = 16, DOWN = 8, UP = 8;
-    static final int PERIOD = 20;
-    static final int FULL_TICKS = 100;
-    static final long FRESH_MS = 12_000;
-    static final double OVERRUN_MS = 5;
-    static final int RING = 32;
-    static final int WINDOW = 100;          // counters' rate window, ticks
+    public static int r() { return Tuning.i("threatRuntime.r"); }
+    public static int down() { return Tuning.i("threatRuntime.down"); }
+    public static int up() { return Tuning.i("threatRuntime.up"); }
+    static int period() { return Tuning.i("threatRuntime.period"); }
+    static int fullTicks() { return Tuning.i("threatRuntime.fullTicks"); }
+    static long freshMs() { return Tuning.l("threatRuntime.freshMs"); }
+    static double overrunMs() { return Tuning.get("threatRuntime.overrunMs"); }
+    static final int RING = 32; // structural
+    static final int WINDOW = 100; // structural  // counters' rate window, ticks
 
-    private final ReachCache cache = new ReachCache(2 * R + 1, DOWN + UP + 1, 2 * R + 1);
+    private final ReachCache cache = new ReachCache(2 * r() + 1, down() + up() + 1, 2 * r() + 1);
     private Level lastLevel;
     private boolean needFull = true;
-    private long lastFullTick = -100000, lastPeriod = -100000;
+    private long lastFullTick = -100000, lastPeriod = -100000;  // structural: a time long ago (sentinel)
     private volatile long lastFullMs;
     private volatile Map<Integer, ThreatRules.Decision> latest = Map.of();
     private final Map<Integer, Double> prevReach = new HashMap<>();
@@ -104,8 +108,8 @@ public final class ThreatRuntime {
                 firstSeen.clear();
             }
             Src src = new Src(level);
-            int ox = p.getBlockX() - R, oy = p.getBlockY() - DOWN, oz = p.getBlockZ() - R;
-            if (needFull || tick - lastFullTick >= FULL_TICKS) {
+            int ox = p.getBlockX() - r(), oy = p.getBlockY() - down(), oz = p.getBlockZ() - r();
+            if (needFull || tick - lastFullTick >= fullTicks()) {
                 cache.full(src, ox, oy, oz);
                 needFull = false;
                 lastFullTick = tick;
@@ -121,14 +125,14 @@ public final class ThreatRuntime {
             for (Entity e : mc.level.entitiesForRendering()) {
                 if (e == p || !(e instanceof LivingEntity le) || !le.isAlive()) continue;
                 double d = p.distanceTo(e);
-                if (d > ThreatRules.SAMPLE_RADIUS || !h.counts(e, hurt)) continue;
+                if (d > ThreatRules.sampleRadius() || !h.counts(e, hurt)) continue;
                 near.add(e);
                 if (!old.containsKey(e.getId())) fresh.add(e);
                 firstSeen.putIfAbsent(e.getId(), tick);
                 anySpider |= ThreatRules.moveOf(BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString()) == ThreatRules.Move.SPIDER;
             }
             mobsNear = near.size();
-            boolean period = tick - lastPeriod >= PERIOD;
+            boolean period = tick - lastPeriod >= period();
             if (near.isEmpty()) {
                 if (period) {
                     lastPeriod = tick;
@@ -167,7 +171,7 @@ public final class ThreatRuntime {
                 firstSeen.keySet().retainAll(out.keySet());
                 ReachGrid g = cache.grid();
                 int[] w = cache.walk();
-                litSpot = g == null || w == null ? null : g.nearestLit(w, FightOrFlee.LIT, FightOrFlee.LIT_MAX_DIST);
+                litSpot = g == null || w == null ? null : g.nearestLit(w, ThreatFacts.lit(), ThreatFacts.litMaxDist());
             }
             latest = out;
             broken = false;
@@ -198,7 +202,7 @@ public final class ThreatRuntime {
             return;
         }
         if (tick - winStart < WINDOW) return;
-        double s = (tick - winStart) / 20.0;
+        double s = (tick - winStart) / 20.0;  // game fact: 20 game ticks per second
         patchRate = (cache.patches - wPatches) / s;
         searchRate = (cache.searches - wSearches) / s;
         fullRate = (cache.fulls - wFulls) / s;
@@ -253,9 +257,9 @@ public final class ThreatRuntime {
         String id = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
         boolean aggressive = e instanceof Mob m && m.isAggressive();
         double dx = p.getX() - e.getX(), dz = p.getZ() - e.getZ();
-        float toBot = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
+        float toBot = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);  // structural: degrees
         double yawOff = Mth.wrapDegrees(toBot - e.getYHeadRot());
-        boolean seen = d <= 2.5 || (e instanceof LivingEntity le && le.hasLineOfSight(p));
+        boolean seen = d <= Tuning.get("threatRuntime.seenDist") || (e instanceof LivingEntity le && le.hasLineOfSight(p));
         return new ThreatRules.MobSample(e.getId(), id, d, aggressive, yawOff, seen, hitMe, -2, Double.NaN);
     }
 
@@ -263,7 +267,7 @@ public final class ThreatRuntime {
 
     /** The grid is fresh (a full copy within 12 s) and the last tick ran clean. */
     public boolean gridOk() {
-        return !broken && cache.grid() != null && System.currentTimeMillis() - lastFullMs <= FRESH_MS;
+        return !broken && cache.grid() != null && System.currentTimeMillis() - lastFullMs <= freshMs();
     }
 
     public ThreatRules.Decision decision(int entityId) { return latest.get(entityId); }
@@ -285,71 +289,6 @@ public final class ThreatRuntime {
     /** 0.23.6: the grid snapshot when fresh, else null (the fire reflex's water search, the run guard). */
     public ReachGrid grid() { return gridOk() ? cache.grid() : null; }
 
-    /**
-     * 0.23.6 run guard for a raw run along (dx, dz): go, turn or stop ({@link RunGuard}). Fire comes from the level (no
-     * collision box, so not in the grid). Without a fresh grid it says go (the old behaviour). Never throws.
-     */
-    public RunGuard.Verdict runGuard(LocalPlayer p, double dx, double dz) {
-        try {
-            // 0.36.7 (owner, aa366: stopped in a flooded cave): already in water, water ahead is no hazard - swim on
-            if (p.isInWater()) return new RunGuard.Verdict("go", dx, dz, "in water");
-            Level level = p.level();
-            BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
-            RunGuard.Fire fire = (x, y, z) -> level.getBlockState(m.set(x, y, z)).is(net.minecraft.tags.BlockTags.FIRE);
-            return RunGuard.decide(grid(), p.getX(), p.getBlockY(), p.getZ(), dx, dz, fire);
-        } catch (RuntimeException e) {
-            error("run guard", e);
-            return new RunGuard.Verdict("go", dx, dz, "error");
-        }
-    }
-
-    /** 0.23.2: the escape heading from a creeper, from the grid ({dirX, dirZ, run}; run -1 = no grid, straight away). */
-    public double[] escape(LocalPlayer p, Entity from) {
-        double ax = p.getX() - from.getX(), az = p.getZ() - from.getZ();
-        try {
-            return EscapeDir.choose(gridOk() ? cache.grid() : null, p.getBlockX(), p.getBlockY(), p.getBlockZ(), ax, az);
-        } catch (RuntimeException e) {
-            error("escape", e);
-            return EscapeDir.choose(null, 0, 0, 0, ax, az);
-        }
-    }
-
-    /** 0.24.4 dead-end rule: the check for the bot against this mob on the fresh grid, else null (no rule). Never throws. */
-    public DeadEnd.Check deadEnd(LocalPlayer p, Entity mob) {
-        try {
-            ReachGrid g = grid();
-            if (g == null || mob == null) return null;
-            return DeadEnd.check(g, p.getBlockX(), p.getBlockY(), p.getBlockZ(), mob.getBlockX(), mob.getBlockY(), mob.getBlockZ());
-        } catch (RuntimeException e) {
-            error("dead end", e);
-            return null;
-        }
-    }
-
-    /** 0.25.1 cover rule: a cell out of this mob's sight on the fresh grid, else null. Never throws. */
-    public Cover.Spot cover(LocalPlayer p, Entity mob) {
-        try {
-            ReachGrid g = grid();
-            if (g == null || mob == null) return null;
-            return Cover.find(g, p.getBlockX(), p.getBlockY(), p.getBlockZ(), mob.getX(), mob.getEyeY(), mob.getZ());
-        } catch (RuntimeException e) {
-            error("cover", e);
-            return null;
-        }
-    }
-
-    /** 0.25.1 high-ground rule: a cell above these mobs with one way up on the fresh grid, else null. Never throws. */
-    public HighGround.Spot highGround(LocalPlayer p, List<int[]> mobs) {
-        try {
-            ReachGrid g = grid();
-            if (g == null) return null;
-            return HighGround.find(g, p.getBlockX(), p.getBlockY(), p.getBlockZ(), mobs);
-        } catch (RuntimeException e) {
-            error("high ground", e);
-            return null;
-        }
-    }
-
     public void verdict(String line) {
         verdictLine = line;
         verdictAt = System.currentTimeMillis();
@@ -361,12 +300,7 @@ public final class ThreatRuntime {
     public synchronized String why() {
         StringBuilder b = new StringBuilder();
         b.append("threat test: ").append(gridOk() ? "grid ok" : "fallback (straight distance)");
-        if (verdictLine != null) b.append("\nlast verdict (").append((System.currentTimeMillis() - verdictAt) / 1000).append(" s ago): ").append(verdictLine);
-        try {
-            String m = io.github.mojolowjo.entropybot.motor.Motor.INSTANCE.whyLine();      // 0.27.0
-            if (m != null) b.append('\n').append(m);
-        } catch (RuntimeException ignored) {
-        }
+        if (verdictLine != null) b.append("\nlast verdict (").append((System.currentTimeMillis() - verdictAt) / 1000).append(" s ago): ").append(verdictLine);  // structural: milliseconds per second
         Map<Integer, ThreatRules.Decision> now = latest;
         if (!now.isEmpty() && gridOk()) {
             b.append("\nnow:");
@@ -397,7 +331,7 @@ public final class ThreatRuntime {
 
     /** "debug threats": the counters. */
     public String debug() {
-        return "threat test: " + (gridOk() ? "grid ok" : "fallback") + ", grid " + (2 * R + 1) + "x" + (DOWN + UP + 1) + "x" + (2 * R + 1)
+        return "threat test: " + (gridOk() ? "grid ok" : "fallback") + ", grid " + (2 * r() + 1) + "x" + (down() + up() + 1) + "x" + (2 * r() + 1)
                 + " | per second (last 5 s): patches " + r1(patchRate) + ", searches " + r1(searchRate) + ", slice copies " + r1(sliceRate)
                 + ", full refreshes " + r1(fullRate)
                 + " | last search " + r1(cache.lastSearchMs) + " ms | totals: patches " + cache.patches + ", searches " + cache.searches
@@ -405,16 +339,16 @@ public final class ThreatRuntime {
                 + " | new mobs: " + newMobReads + " answered by a read, " + newMobSearches + " bursts needed a search"
                 + " | mobs near " + mobsNear + " | counted " + counted + ", noted " + noted + " | errors " + errors
                 + (lastError != null ? " (last: " + lastError + ")" : "")
-                + " | last full copy " + (lastFullMs == 0 ? "never" : (System.currentTimeMillis() - lastFullMs) / 1000 + " s ago");
+                + " | last full copy " + (lastFullMs == 0 ? "never" : (System.currentTimeMillis() - lastFullMs) / 1000 + " s ago");  // structural: milliseconds per second
     }
 
-    static double r1(double d) { return Math.round(d * 100) / 100.0; }
+    static double r1(double d) { return Math.round(d * 100) / 100.0; }  // structural: percent
 
     /** For "check": {key, line, fix} findings. */
     public List<String[]> findings() {
         List<String[]> f = new ArrayList<>();
-        if (cache.lastSearchMs > OVERRUN_MS) f.add(new String[]{"threatslow", "the threat search took " + r1(cache.lastSearchMs) + " ms (over " + (int) OVERRUN_MS + ")", "debug threats"});
-        if (mobsNear > 0 && cache.fulls > 0 && System.currentTimeMillis() - lastFullMs > 15_000)
+        if (cache.lastSearchMs > overrunMs()) f.add(new String[]{"threatslow", "the threat search took " + r1(cache.lastSearchMs) + " ms (over " + (int) overrunMs() + ")", "debug threats"});
+        if (mobsNear > 0 && cache.fulls > 0 && System.currentTimeMillis() - lastFullMs > Tuning.i("threatRuntime.fullEveryMs"))
             f.add(new String[]{"threatworker", "the threat grid hasn't refreshed for 15 s with mobs near (the fight code uses straight distance)", "debug threats; the game log has [entropybot] threat lines"});
         return f;
     }
@@ -433,9 +367,9 @@ public final class ThreatRuntime {
         errors++;
         lastError = where + ": " + t;
         long now = System.currentTimeMillis();
-        if (errors <= 5 || now - lastErrorLog >= 60_000) {
+        if (errors <= Tuning.i("threatRuntime.errorsLogged") || now - lastErrorLog >= Tuning.i("threatRuntime.errorLogMs")) {
             lastErrorLog = now;
-            LOG.error("[entropybot] threat: {} error #{}: {}", where, errors, t.toString(), errors <= 5 ? t : null);
+            LOG.error("[entropybot] threat: {} error #{}: {}", where, errors, t.toString(), errors <= Tuning.i("threatRuntime.errorsLogged") ? t : null);
         }
     }
 }

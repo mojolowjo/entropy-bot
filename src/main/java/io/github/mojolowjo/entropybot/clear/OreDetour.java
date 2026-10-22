@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -10,7 +12,7 @@ import java.util.function.Predicate;
 /**
  * 0.25.1 ore detour (the owner's play, 2026-10-08: a one-minute stop on the way home = an ore seen nearby, grabbed):
  * at the start of a walk home, the nearest ore the bot can see (an exposed face: air or a see-through block beside it)
- * within {@code path.oreDetour} blocks, that its pickaxe can mine ({@code canMine}), inside the areas, and with no water,
+ * within {@code path.oreDetour} blocks, that its pickaxe can mine ({@code canMine}), the policy allowing, and with no water,
  * lava, sand or gravel next to any of its blocks; then its vein (joined face to face, the same rules) up to
  * {@link #CAP} blocks. The clear that mines it keeps the guard's leases and the careful-clear rules. Pure (JUnit on
  * FakeWorld); loader notes: none.
@@ -18,13 +20,27 @@ import java.util.function.Predicate;
 public final class OreDetour {
     private OreDetour() {}
 
-    public static final int CAP = 8, MAX_UP = 4;
+    public static int cap() { return Tuning.i("oreDetour.cap"); }
+    public static int maxUp() { return Tuning.i("oreDetour.maxUp"); }
+
+    /**
+     * small-3: value of one mined block of this ore id in seconds (AA sets it while on; null = the radius is the rule).
+     * With it, {@code path.oreDetour} is only the cap of the search; the detour is taken when value x blocks > its cost.
+     */
+    public static volatile java.util.function.ToDoubleFunction<String> valuer;
 
     /** The vein to mine (nearest block first), empty when none qualifies. r: the radius (0 = off). */
     public static List<Pos> pick(ClearWorld w, int bx, int by, int bz, int r, Predicate<String> canMine, Veins.Area area) {
+        return pick(w, bx, by, bz, r, canMine, area, null);
+    }
+
+    /** AA_ROUND3 3: a gate on the vein's first cell (aa fair: a cell I have seen); null = any. */
+    public interface First { boolean ok(int x, int y, int z); }
+
+    public static List<Pos> pick(ClearWorld w, int bx, int by, int bz, int r, Predicate<String> canMine, Veins.Area area, First firstOk) {
         List<Pos> out = new ArrayList<>();
         if (w == null || r <= 0) return out;
-        int up = Math.min(r, MAX_UP);
+        int up = Math.min(r, maxUp());
         Pos first = null;
         double best = Double.MAX_VALUE;
         for (int x = bx - r; x <= bx + r; x++) {
@@ -32,7 +48,7 @@ public final class OreDetour {
                 if (!area.contains(x, z)) continue;
                 for (int y = by - up; y <= by + up + 1; y++) {
                     double d = (x - bx) * (x - bx) + (y - by) * (y - by) + (z - bz) * (z - bz);
-                    if (d > (double) r * r || d >= best || !ok(w, x, y, z, canMine) || !exposed(w, x, y, z)) continue;
+                    if (d > (double) r * r || d >= best || !ok(w, x, y, z, canMine) || !exposed(w, x, y, z) || (firstOk != null && !firstOk.ok(x, y, z))) continue;
                     best = d;
                     first = new Pos(x, y, z);
                 }
@@ -43,7 +59,7 @@ public final class OreDetour {
         ArrayDeque<Pos> q = new ArrayDeque<>();
         q.add(first);
         seen.add(first.key());
-        while (!q.isEmpty() && out.size() < CAP) {
+        while (!q.isEmpty() && out.size() < cap()) {
             Pos c = q.poll();
             out.add(c);
             for (int[] s : ClearEngine.SIDES6) {

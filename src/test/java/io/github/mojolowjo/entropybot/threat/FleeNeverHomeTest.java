@@ -9,48 +9,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** 0.24.1: the live bug (phantoms at full health sent the bot /home to an old home 10M blocks off). */
 class FleeNeverHomeTest {
-    static FightOrFlee.Me me(double hp, int armor, double weapon, int light, int lit) {
-        return new FightOrFlee.Me(hp, 20, armor, weapon, light, lit, 6);
-    }
-
-    static List<FightOrFlee.Foe> many(String kind, int n) {
-        return IntStream.range(0, n).mapToObj(i -> new FightOrFlee.Foe(kind, 6, false)).toList();
-    }
-
-    @Test
-    void fliersAtFullHealthNeverRetreatHome() {
-        for (double hp : new double[]{20, 30, 12}) {
-            for (int weapon : new int[]{1, 7}) {
-                for (int lit : new int[]{-1, 10}) {
-                    for (int light : new int[]{0, 15}) {
-                        FightOrFlee.Result r = FightOrFlee.assess(me(hp, 0, weapon, light, lit), many("minecraft:phantom", 3));
-                        assertNotEquals(FightOrFlee.Verdict.HOME, r.verdict(), r.why());
-                        assertTrue(r.why().startsWith("fight") || r.why().startsWith("shelter"), r.why());
-                    }
-                }
-            }
-        }
-    }
-
-    @Test
-    void fliersLosingShelterWhenALitSpotIsKnownElseFight() {
-        FightOrFlee.Result s = FightOrFlee.assess(me(20, 0, 1, 0, 10), many("phantom", 3));
-        assertEquals(FightOrFlee.Verdict.SHELTER, s.verdict(), s.why());
-        assertTrue(s.why().contains("health 20") && s.why().contains("margin"), s.why());
-        FightOrFlee.Result f = FightOrFlee.assess(me(20, 0, 1, 0, -1), many("phantom", 3));
-        assertEquals(FightOrFlee.Verdict.FIGHT, f.verdict(), f.why());
-        assertEquals(FightOrFlee.Verdict.SHELTER, FightOrFlee.assess(me(20, 0, 1, 0, 8), many("skeleton", 4)).verdict(), "ranged too");
-        assertEquals(FightOrFlee.Verdict.FIGHT, FightOrFlee.assess(me(20, 0, 1, 0, 0), many("phantom", 3)).verdict(), "at the lit spot already: no 0-block shelter loop");
-        assertEquals(FightOrFlee.Verdict.FIGHT, FightOrFlee.assess(me(20, 0, 1, 15, 10), many("phantom", 3)).verdict(), "lit here: stay");
-    }
-
-    @Test
-    void lowHealthWithAZombieClosingRetreatsHome() {
-        FightOrFlee.Result r = FightOrFlee.assess(me(5, 0, 7, 15, 10), many("zombie", 1));
-        assertEquals(FightOrFlee.Verdict.HOME, r.verdict());
-        assertTrue(r.why().startsWith("retreat home"), r.why());
-        assertEquals(FightOrFlee.Verdict.HOME, FightOrFlee.assess(me(5, 0, 7, 15, 10), many("phantom", 1)).verdict(), "under 6: home even from fliers");
-    }
 
     @Test
     void homeTeleportOnlyUnderSixAndWithServerCommandsOn() {

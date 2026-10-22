@@ -59,7 +59,7 @@ import java.util.concurrent.Executors;
 public final class SurfaceExport {
     public static final SurfaceExport INSTANCE = new SurfaceExport();
     public static final String SETTINGS_FILE = "surface.json";
-    public static final long BUDGET_NS = 1_000_000;
+    public static final long BUDGET_NS = 1_000_000; // structural
 
     private static final org.slf4j.Logger LOG = com.mojang.logging.LogUtils.getLogger();
     private static final Map<String, TagKey<Block>> TAGS = Map.of("logs", BlockTags.LOGS, "leaves", BlockTags.LEAVES, "sand", BlockTags.SAND,
@@ -280,7 +280,8 @@ public final class SurfaceExport {
                 lastWriteAtMs = System.currentTimeMillis();
                 lastWriteNanos = System.nanoTime() - t0;
             } catch (Throwable e) {
-                try { Files.deleteIfExists(tmp); } catch (IOException ignored) {}
+                try { Files.deleteIfExists(tmp); } catch (IOException ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+}
                 writeFailed("write " + target.getFileName(), e);
             }
         });
@@ -458,15 +459,13 @@ public final class SurfaceExport {
                 (System.currentTimeMillis() - at) / 1000));
         Path d = dimDir;
         sb.append(" | folder ").append(d == null ? "(none: not in a world or off)" : d.toString());
-        // chunks-0.23.5: the companion's chunks in the folder (the dashboard writes them) and what the route map took in
+        // chunks-0.23.5: the companion's chunks in the folder (the dashboard writes them)
         try {
             int[] n = SurfaceFiles.count(d);
             sb.append(" | files: ").append(n[0]).append(" own, ").append(n[1]).append(" from the companion (kept at the last wipe ").append(companionKept).append(")");
         } catch (Throwable t) {
             sb.append(" | files: couldn't count (").append(t).append(")");
         }
-        String rl = io.github.mojolowjo.entropybot.routing.RouteRuntime.INSTANCE.companionLine();
-        sb.append(" | route map: ").append(rl == null ? "not started (companion chunks are read once it runs)" : rl);
         if (columnErrors > 0) sb.append(" | column errors ").append(columnErrors);
         if (lastWriteError != null) sb.append(" | last file error ").append(lastWriteError).append(" (").append(writeErrors).append(" errors)");
         if (moveFallbacks > 0) sb.append(" | ").append(moveFallbacks).append(" written in place (rename denied: a reader had the file open)");
