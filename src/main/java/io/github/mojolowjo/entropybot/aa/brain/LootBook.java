@@ -18,8 +18,9 @@ import java.util.function.Predicate;
 /**
  * BRAIN_PLAN "knowledge from the game at load": where an item comes from besides recipes and ores: mob drops, block
  * drops, structure chest loot and villager trades. The adapter reads the loot tables (encoded to JSON with the game's
- * own codec) and the trade lists once per world on the integrated server; on a multiplayer client it has none and
- * the book stays empty (said in the log and in {@code aa want}). Pure: the JSON parser, the index and the plan
+ * own codec) and the trade lists once per world on the integrated server; on a multiplayer client (loot-book-bg) it reads
+ * the loot-table JSON in the client's own game and mod jars ({@link LootFiles}), in the background after the join, with a
+ * cache per mod list. Pure: the JSON parser, the index and the plan
  * ("kill X for Y", "break X for Y") are JUnit-tested.
  *
  * <p>The numbers are expectations, not exact odds: per pool, rolls x (weight / total weight) x the random_chance
@@ -71,12 +72,37 @@ public final class LootBook {
         public String command() { return step == null ? null : step.text(); }
     }
 
+    /** loot-book-bg: the start of the reason a chain gives while the book is still being read ("waiting for the loot book (N of M)"). */
+    public static final String WAITING = "waiting for the loot book";
+
+    /**
+     * loot-book-bg: how far a background read is: tables done of the tables found, and where they come from ("from the jars",
+     * "integrated server", "from the cache"). Written by the reader thread, read by the game thread (status, the chain's reason).
+     */
+    public static final class Progress {
+        public final java.util.concurrent.atomic.AtomicInteger done = new java.util.concurrent.atomic.AtomicInteger(), total = new java.util.concurrent.atomic.AtomicInteger();
+        public volatile String from;
+
+        public Progress(String from) { this.from = from; }
+
+        public String text() { return done.get() + " of " + total.get(); }
+    }
+
     private final Map<String, List<Source>> byItem = new HashMap<>();
+    private final List<Source> all;
+    private final Progress progress;     // null: the book is read
     private int mobs, blocks, chests, trades;
     public final String origin;
 
-    public LootBook(List<Source> all, String origin) {
+    /** loot-book-bg: the book while a background read runs: empty, not ready; chains that would need it wait ({@link #waiting}). */
+    public static LootBook reading(Progress p) { return new LootBook(List.of(), p.from, p); }
+
+    public LootBook(List<Source> all, String origin) { this(all, origin, null); }
+
+    private LootBook(List<Source> all, String origin, Progress progress) {
         this.origin = origin;
+        this.progress = progress;
+        this.all = List.copyOf(all);
         for (Source s : all) {
             byItem.computeIfAbsent(TechTree.id(s.item()), k -> new ArrayList<>()).add(s);
             switch (s.kind()) {
@@ -92,8 +118,36 @@ public final class LootBook {
 
     public boolean isEmpty() { return byItem.isEmpty(); }
 
+    /** loot-book-bg: false while the background read runs (the book is a placeholder then). */
+    public boolean ready() { return progress == null; }
+
+    /** loot-book-bg: the chain's reason while the book is read: "waiting for the loot book (N of M)"; null once it is ready. */
+    public String waiting() { return progress == null ? null : WAITING + " (" + progress.text() + ")"; }
+
+    /** Every source in the book (the cache writes them). */
+    public List<Source> all() { return all; }
+
     public String counts() {
         return mobs + " mob drops, " + blocks + " block drops, " + chests + " chest items, " + trades + " trades (" + origin + ")";
+    }
+
+    /** loot-book-bg: the aa status line: "loot book: 108 mob drops, ... (jars: 3,104 tables, 2.1 s)" or "loot book: reading N of M tables (from the jars)". */
+    public String line() {
+        return progress == null ? "loot book: " + counts() : "loot book: reading " + progress.text() + " tables (" + progress.from + ")";
+    }
+
+    /**
+     * loot-book-bg: the owner's manual correction ({@code entropybot/lootbook-override.json}): for every item in {@code over}
+     * its sources replace the book's (an empty list removes them). The origin says how many items were overridden.
+     */
+    public LootBook withOverride(Map<String, List<Source>> over, String file) {
+        if (over == null || over.isEmpty()) return this;
+        Set<String> items = new HashSet<>();
+        for (String k : over.keySet()) items.add(TechTree.id(k));
+        List<Source> out = new ArrayList<>();
+        for (Source s : all) if (!items.contains(TechTree.id(s.item()))) out.add(s);
+        for (List<Source> l : over.values()) out.addAll(l);
+        return new LootBook(out, origin + "; " + items.size() + " items from " + file, progress);
     }
 
     /** What one block of the id drops: the BLOCK sources whose from is the block (item, expected count). */

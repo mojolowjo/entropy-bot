@@ -55,6 +55,27 @@ class NeedChainTest {
     }
 
     @Test
+    void aLootBookStillBeingReadMakesTheChainWaitNotExplore() {
+        io.github.mojolowjo.entropybot.aa.brain.LootBook.Progress p = new io.github.mojolowjo.entropybot.aa.brain.LootBook.Progress("from the jars");
+        p.total.set(3104);
+        p.done.set(812);
+        var reading = io.github.mojolowjo.entropybot.aa.brain.LootBook.reading(p);
+        Function<String, List<Spot>> none = w -> List.of();
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, false, none, null, reading, null, 0));
+        assertFalse(c.ok(), c.why());
+        assertTrue(c.waiting(), c.why());
+        assertEquals("waiting for the loot book (812 of 3104)", c.missing());
+        assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Explore), "no explore on a missing book: " + c.steps());
+        // a tree seen: the chain stands without the book where it can
+        NeedChain.Chain t = NeedChain.resolve("oak_planks", 4, new World(Map.of(), false, false, w -> w.equals("minecraft:oak_log") ? List.of(TREE) : List.of(), null, reading, null, 0));
+        assertTrue(t.ok() && !t.explore(), t.why());
+        // the book lands (ready, nothing in it): the same order is priced again and ends in its explore
+        var landed = new io.github.mojolowjo.entropybot.aa.brain.LootBook(List.of(), "jars: 3,104 tables, 2.1 s");
+        NeedChain.Chain again = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, false, none, null, landed, null, 0));
+        assertTrue(again.ok() && again.explore(), again.why());
+    }
+
+    @Test
     void nothingSeenIsTheExploreWayPricedForThatNeedNeverADrop() {
         NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, seen(null, null)));
         assertTrue(c.ok(), "no tree seen is not infeasible: " + c.why());

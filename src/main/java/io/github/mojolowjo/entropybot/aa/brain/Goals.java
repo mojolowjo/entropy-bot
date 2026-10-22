@@ -126,6 +126,12 @@ public final class Goals {
         Thing.Where w = g.r.where();
         if (w != null && w.dim() != null && !w.dim().equals(bb.in.dimension))
             return g.r.key() + " is only in " + Thing.dimName(w.dim()) + "; I don't travel there yet";
+        // loot-book-bg: while the book is read in the background, an order whose chain waits on it is held (not parked) with
+        // "waiting for the loot book (N of M)"; once the book is published the chain is priced again on the next pick
+        if (bb.fact(LootBook.FACT) instanceof LootBook book && !book.ready()) {
+            var ch = chain(bb, g);
+            if (ch != null && ch.waiting()) return ch.missing();
+        }
         return null;
     }
 
@@ -224,7 +230,7 @@ public final class Goals {
         String b = blocked(bb, g);
         var ch = b == null ? chain(bb, g) : null;
         return g.r.key() + " " + have(bb.in.bag, g) + "/" + g.n + (g.prio > 0 ? " high" : g.prio < 0 ? " low" : "") + ": " + scoreText
-                + (b != null ? " - parked: " + b : ch != null ? " - chain: " + ch.why() : " - no facts for the chain yet")
+                + (b != null ? (g.parked == null ? " - held: " : " - parked: ") + b :ch != null ? " - chain: " + ch.why() : " - no facts for the chain yet")
                 + " [" + g.r.text() + "]";
     }
 }

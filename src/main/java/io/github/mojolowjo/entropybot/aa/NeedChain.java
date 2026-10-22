@@ -135,6 +135,8 @@ public final class NeedChain {
     public record Chain(List<Step> steps, double cost, String why, boolean explore, String missing, List<String> dropped) {
         public Chain(List<Step> steps, double cost, String why, boolean explore, String missing) { this(steps, cost, why, explore, missing, List.of()); }
         public boolean ok() { return missing == null; }
+        /** loot-book-bg: no way stands only because the loot book is still being read: no park, no explore; priced again when it lands. */
+        public boolean waiting() { return missing != null && missing.startsWith(LootBook.WAITING); }
         /** The chain's price in seconds (the explore leg of an explore chain is in {@code cost}, not here). */
         public double seconds() { return Unit.seconds(cost); }
     }
@@ -396,12 +398,19 @@ public final class NeedChain {
         Ctx c = new Ctx(w);
         List<String> phrases = new ArrayList<>(), waiting = new ArrayList<>();
         Map<String, String> unknown = new LinkedHashMap<>();
+        String wait = null;          // loot-book-bg: a member that waits on the loot book
         for (String raw : items) {
             String item = id(raw);
             if (ItemWorth.recipes(item, ItemWorth.CRAFT).isEmpty() && ItemWorth.recipes(item, ItemWorth.SMELT).isEmpty()) { drop(c, item, "no recipe"); continue; }
             Ctx.Snap before = c.snap();
             String p = obtain(c, item, n);
-            if (c.fail != null) { String why = c.fail; c.restore(before); drop(c, item, why); continue; }
+            if (c.fail != null) {
+                String why = c.fail;
+                if (why.startsWith(LootBook.WAITING) && wait == null) wait = why;
+                c.restore(before);
+                drop(c, item, why);
+                continue;
+            }
             if (c.stuck) { unknown.put(item, c.unknown); c.restore(before); continue; }
             phrases.add(p == null ? item + " is in the bag" : item + " <- " + p);
         }
@@ -413,6 +422,7 @@ public final class NeedChain {
         } else {
             for (var e : unknown.entrySet()) drop(c, e.getKey(), "no known source for " + shw(e.getValue()));
         }
+        if (phrases.isEmpty() && wait != null) c.fail = wait;      // loot-book-bg: nothing stands yet because the book is read: the group waits
         return finish(c, group, phrases.isEmpty() ? group + ": nothing to make" : group + " <- " + String.join("; ", phrases));
     }
 
@@ -576,7 +586,8 @@ public final class NeedChain {
             Trial win = choose(c, alts, w.word);
             if (win != null) return new Got(win.alt().id != null ? win.alt().id : w.word, n, win.phrase());
             if (c.fail != null) return null;
-            return new Got(w.word, n, exploreLeaf(c, w.word, noSource(c, w.word)));
+            String leaf = exploreLeaf(c, w.word, noSource(c, w.word));
+            return c.fail != null ? null : new Got(w.word, n, leaf);
         } finally {
             c.path.remove(c.path.size() - 1);
         }
@@ -1145,7 +1156,10 @@ public final class NeedChain {
         }
         String how = (log ? "cut tree" : "dig " + shw(gives)) + " seen " + Math.round(first.dist()) + " m" + (pre == null ? "" : " with " + pre);
         if (firstWalk != null) how = noted(how, firstWalk);
-        if (remaining > 0) return how + " + " + exploreLeaf(c, word, "not enough " + shw(word) + " known");
+        if (remaining > 0) {
+            String leaf = exploreLeaf(c, word, "not enough " + shw(word) + " known");
+            return leaf == null ? null : how + " + " + leaf;
+        }
         return how;
     }
 
@@ -1223,6 +1237,12 @@ public final class NeedChain {
      * goal), then explores until a source is known.
      */
     private static String exploreLeaf(Ctx c, String word, String reason) {
+        // loot-book-bg: the book is still being read (a server join, in the background): the source may be in it, so no explore
+        // on a missing book; the way fails with the wait (null back, c.fail set) and the chain is priced again when it lands
+        if (c.w.loot() != null && !c.w.loot().ready()) {
+            c.fail = c.w.loot().waiting();
+            return null;
+        }
         int[] band = c.w.band().apply(word);
         if (band != null) c.steps.add(new Step.ToBand(band[0], band[1]));
         c.steps.add(new Step.Explore(exploreMinutes(), shw(word)));      // live-facts: it ends once a source of the need is known

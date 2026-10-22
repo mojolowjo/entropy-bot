@@ -2637,7 +2637,10 @@ public final class AaRuntime implements JobPort {
     /** The registries for the resolver, read once per world: ids, names (client language), pickaxe tiers, worldgen. */
     private io.github.mojolowjo.entropybot.aa.brain.Thing.Catalog catalog(Minecraft mc) {
         String world = Core.INSTANCE.files() == null ? "" : Core.INSTANCE.files().worldRoot().toString();
-        if (catalog != null && world.equals(catalogWorld)) return catalog;
+        if (catalog != null && world.equals(catalogWorld)) {
+            if (lootFailed) startLoot(mc);           // review: a failed loot read is tried again by the owner's aa want
+            return catalog;
+        }
         List<String> items = new ArrayList<>(), blocks = new ArrayList<>();
         Map<String, String> names = new java.util.HashMap<>();
         Map<String, Integer> tiers = new java.util.HashMap<>();
@@ -2660,18 +2663,21 @@ public final class AaRuntime implements JobPort {
             names.putIfAbsent(id, e.getValue().getName().getString().toLowerCase(java.util.Locale.ROOT));
         }
         Map<String, io.github.mojolowjo.entropybot.aa.brain.Thing.Gen> gen = worldgen(mc);
-        lootPassive = new java.util.HashSet<>();
-        var book = lootBook(mc, lootPassive);
-        bb.fact(io.github.mojolowjo.entropybot.aa.brain.LootBook.FACT, book);
-        // one-planner: an ore is any block whose loot drops the item (the loot data both ways), no family words
+        startLoot(mc);           // loot-book-bg: read in the background; the book is published when it is done
+        // one-planner: an ore is any block whose loot drops the item (the loot data both ways), no family words; the book
+        // read now (loot-book-bg: it lands after the catalog)
         java.util.function.Function<String, List<String>> dropsOf = b -> {
             List<String> out = new ArrayList<>();
-            for (var s : book.blockDrops(b)) if (!out.contains(s.item())) out.add(s.item());
+            var book = currentLootBook();
+            if (book != null) for (var s : book.blockDrops(b)) if (!out.contains(s.item())) out.add(s.item());
             return out;
         };
-        catalog = new io.github.mojolowjo.entropybot.aa.brain.Thing.Catalog(items, blocks, names, tiers, gen, dropsOf, book::blocksDropping);
+        java.util.function.Function<String, List<String>> dropping = i -> {
+            var book = currentLootBook();
+            return book == null ? List.of() : book.blocksDropping(i);
+        };
+        catalog = new io.github.mojolowjo.entropybot.aa.brain.Thing.Catalog(items, blocks, names, tiers, gen, dropsOf, dropping);
         catalogWorld = world;
-        if (book.origin.startsWith("read failed")) catalogWorld = null;      // review: try again on the next aa want
         LOG.info("[entropybot] aa: resolver catalog: {} items, {} blocks, worldgen {}", items.size(), blocks.size(),
                 gen == null ? "none (multiplayer)" : gen.size() + " ore blocks");
         return catalog;
@@ -2682,12 +2688,35 @@ public final class AaRuntime implements JobPort {
 
     /** live-facts: the first AA tick in a world (aa on, a world joined) reads the catalog and the loot book, so the collect step and NeedChain have it. */
     private void worldFacts(Minecraft mc) {
+        var landed = lootReader.poll();       // loot-book-bg: the background read is done: published here, on the game thread, in one step
+        if (landed != null) {
+            bb.fact(io.github.mojolowjo.entropybot.aa.brain.LootBook.FACT, landed);
+            lootFailed = landed.origin.startsWith("read failed");
+            LOG.info("[entropybot] aa: loot book for this world: {} - orders waiting on it are priced again", landed.counts());     // a failed read says "read failed" here and warns above
+        }
         String world = Core.INSTANCE.files() == null ? "" : Core.INSTANCE.files().worldRoot().toString();
         if (world.equals(catalogTried)) return;
         catalogTried = world;
         catalog(mc);
-        var book = currentLootBook();
-        LOG.info("[entropybot] aa: loot book for this world: {}", book == null ? "none" : book.counts());     // a failed read says "read failed" here and warns above
+    }
+
+    /** loot-book-bg: the background loot book read (after the join, never on the game thread). */
+    private final LootBookReader lootReader = new LootBookReader();
+    /** loot-book-bg: the last read failed: the owner's aa want starts it again. */
+    private boolean lootFailed;
+
+    /** loot-book-bg: starts the read for this world and publishes the not-ready placeholder (its progress for aa status and the chains' wait). */
+    private void startLoot(Minecraft mc) {
+        lootFailed = false;
+        var dir = Core.INSTANCE.files() == null ? null : Core.INSTANCE.files().root();
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.LootBook.FACT, lootReader.start(mc, dir));
+        lootPassive = lootReader.passive;
+    }
+
+    /** aa status: "loot book: 108 mob drops, ... (jars: 3,104 tables, 2.1 s)" or "loot book: reading N of M tables (from the jars)". */
+    String lootLine() {
+        var b = currentLootBook();
+        return b == null ? "loot book: not read yet (read at the first AA tick in a world)" : b.line();
     }
 
     /** rm-execution: the loot book read for this world (the collect step's blocks), or null before the first read. */
@@ -2743,99 +2772,6 @@ public final class AaRuntime implements JobPort {
         var m = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.mob(id);
         return m != null && (!Double.isNaN(m.damage()) || m.move() == io.github.mojolowjo.entropybot.aa.brain.ItemWorth.MobMove.RANGED);
     }
-    /**
-     * Loot data (BRAIN_PLAN "knowledge from the game at load"), singleplayer only: every mob's and block's loot table and
-     * the chests/ tables, encoded to JSON with LootTable.DIRECT_CODEC (registry ops) and parsed by the pure LootBook;
-     * the villager and wandering trader trade lists (VillagerTrades after NeoForge's trade events). A multiplayer
-     * client has no loot tables (server data): an empty book, said in the log and in aa want. One bad table or
-     * trade is skipped and counted, never fatal. Loader notes: vanilla API only (ReloadableServerRegistries,
-     * LootTable codec, VillagerTrades); Fabric has the same vanilla calls (its LootTableEvents only modify tables).
-     */
-    private static io.github.mojolowjo.entropybot.aa.brain.LootBook lootBook(Minecraft mc, java.util.Set<String> passive) {
-        var server = mc.getSingleplayerServer();
-        if (server == null) {
-            LOG.info("[entropybot] aa: loot data: the vanilla farm-animal table only (multiplayer client: loot tables stay on the server; modded drops unknown)");
-            return io.github.mojolowjo.entropybot.aa.brain.LootBook.vanilla();
-        }
-        long t0 = System.nanoTime();
-        List<io.github.mojolowjo.entropybot.aa.brain.LootBook.Source> all = new ArrayList<>();
-        int[] bad = {0};
-        try {
-            var ops = net.minecraft.resources.RegistryOps.create(com.mojang.serialization.JsonOps.INSTANCE, server.registryAccess());
-            var rr = server.reloadableRegistries();
-            Map<String, com.google.gson.JsonElement> cache = new java.util.HashMap<>();
-            java.util.function.Function<String, com.google.gson.JsonElement> lookup = id -> {
-                if (cache.containsKey(id)) return cache.get(id);
-                com.google.gson.JsonElement j = null;
-                try {
-                    var key = net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.LOOT_TABLE, net.minecraft.resources.ResourceLocation.parse(id));
-                    var t = rr.getLootTable(key);
-                    if (t != net.minecraft.world.level.storage.loot.LootTable.EMPTY)
-                        j = net.minecraft.world.level.storage.loot.LootTable.DIRECT_CODEC.encodeStart(ops, t).result().orElse(null);
-                    if (t != net.minecraft.world.level.storage.loot.LootTable.EMPTY && j == null) bad[0]++;
-                } catch (RuntimeException e) {
-                    bad[0]++;
-                }
-                cache.put(id, j);
-                return j;
-            };
-            for (var e : net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.entrySet()) {
-                var type = e.getValue();
-                if (type.getCategory() == net.minecraft.world.entity.MobCategory.MISC) continue;
-                String id = e.getKey().location().toString();
-                if (type.getCategory().isFriendly() && !fightsBack(id)) passive.add(id);   // review: neutral ones fight back
-                String table = type.getDefaultLootTable().location().toString();
-                var parsed = io.github.mojolowjo.entropybot.aa.brain.LootBook.parse(lookup.apply(table), lookup);
-                all.addAll(io.github.mojolowjo.entropybot.aa.brain.LootBook.sources(io.github.mojolowjo.entropybot.aa.brain.LootBook.Kind.MOB, id, parsed));
-            }
-            for (var e : net.minecraft.core.registries.BuiltInRegistries.BLOCK.entrySet()) {
-                var key = e.getValue().getLootTable();
-                if (key == null || key == net.minecraft.world.level.storage.loot.BuiltInLootTables.EMPTY) continue;
-                String id = e.getKey().location().toString();
-                var parsed = io.github.mojolowjo.entropybot.aa.brain.LootBook.parse(lookup.apply(key.location().toString()), lookup);
-                parsed.remove(id);                     // the block itself: gather/mine know it
-                all.addAll(io.github.mojolowjo.entropybot.aa.brain.LootBook.sources(io.github.mojolowjo.entropybot.aa.brain.LootBook.Kind.BLOCK, id, parsed));
-            }
-            for (var loc : rr.getKeys(net.minecraft.core.registries.Registries.LOOT_TABLE)) {
-                if (!loc.getPath().startsWith("chests/")) continue;
-                var parsed = io.github.mojolowjo.entropybot.aa.brain.LootBook.parse(lookup.apply(loc.toString()), lookup);
-                all.addAll(io.github.mojolowjo.entropybot.aa.brain.LootBook.sources(io.github.mojolowjo.entropybot.aa.brain.LootBook.Kind.CHEST, loc.toString(), parsed));
-            }
-            for (var pe : net.minecraft.world.entity.npc.VillagerTrades.TRADES.entrySet()) {
-                String prof = String.valueOf(net.minecraft.core.registries.BuiltInRegistries.VILLAGER_PROFESSION.getKey(pe.getKey()));
-                for (var lv : pe.getValue().values()) trades(all, prof, lv, bad);
-            }
-            for (var lv : net.minecraft.world.entity.npc.VillagerTrades.WANDERING_TRADER_TRADES.values()) trades(all, "minecraft:wandering_trader", lv, bad);
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] aa: loot data read failed ({}) - aa want uses recipes, ores and gather sources only", e.toString());
-            return io.github.mojolowjo.entropybot.aa.brain.LootBook.empty("read failed: " + e.getClass().getSimpleName());
-        }
-        var book = new io.github.mojolowjo.entropybot.aa.brain.LootBook(all, "read from the game at load");
-        LOG.info("[entropybot] aa: loot data: {}; {} tables/trades skipped; {} ms", book.counts(), bad[0], (System.nanoTime() - t0) / 1_000_000);  // structural: nanoseconds to milliseconds
-        return book;
-    }
-
-    /** One level's trade listings: each offer once (null trader: the ones that need a villager or a map throw and are skipped). */
-    private static void trades(List<io.github.mojolowjo.entropybot.aa.brain.LootBook.Source> all, String prof,
-                               net.minecraft.world.entity.npc.VillagerTrades.ItemListing[] lv, int[] bad) {
-        if (lv == null) return;
-        for (var l : lv) {
-            if (l == null || l instanceof net.minecraft.world.entity.npc.VillagerTrades.TreasureMapForEmeralds) continue;   // would search for a structure
-            try {
-                var o = l.getOffer(null, net.minecraft.util.RandomSource.create(7));
-                if (o == null || o.getResult().isEmpty()) continue;
-                var a = o.getCostA();
-                var b = o.getCostB();
-                String cost = a.getCount() + " " + net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(a.getItem()).getPath()
-                        + (b.isEmpty() ? "" : " + " + b.getCount() + " " + net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(b.getItem()).getPath());
-                all.add(new io.github.mojolowjo.entropybot.aa.brain.LootBook.Source(io.github.mojolowjo.entropybot.aa.brain.LootBook.Kind.TRADE, prof,
-                        net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(o.getResult().getItem()).toString(), o.getResult().getCount(), 1, false, cost));
-            } catch (RuntimeException e) {
-                bad[0]++;
-            }
-        }
-    }
-
     /** The loot plan's context: hunting on, passive mobs, the owner's animals kind, the mine verb's blocks, armed. */
     private void lootCtx() {
         boolean armed = false;       // a weapon in the bag that hits as hard as the danger model's armed bar (the game's attack-damage component)

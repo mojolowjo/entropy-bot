@@ -408,6 +408,7 @@ public final class AaDesires {
             var w = io.github.mojolowjo.entropybot.aa.brain.Goals.world(bb);
             if (w == null) return null;
             NeedChain.Chain c = NeedChain.resolve(p.item(), 1, w);
+            if (c.waiting()) return null;                  // loot-book-bg: the book is still read; the idea is not bad, priced again later
             if (!c.ok() || c.explore()) {                  // review: no chain that stands now: left out for this session, the next idea gets its turn
                 bad(bb).add(p.item());
                 bb.port.log("ideas: no chain for " + goalName(p.item()) + " - left out this session (" + c.why() + ")");
@@ -444,7 +445,8 @@ public final class AaDesires {
                 // orders-tier: a chain that does not stand parks the order with its reason (no retry every few seconds);
                 // no world facts yet or the order already met is no reason to park
                 var ch = io.github.mojolowjo.entropybot.aa.brain.Goals.chain(bb, g);
-                if (ch != null && io.github.mojolowjo.entropybot.aa.brain.Goals.have(bb.in.bag, g) < g.n && (!ch.ok() || ch.steps().isEmpty()))
+                // loot-book-bg: a chain that only waits on the loot book is no reason to park (it is priced again when the book lands)
+                if (ch != null && !ch.waiting() && io.github.mojolowjo.entropybot.aa.brain.Goals.have(bb.in.bag, g) < g.n && (!ch.ok() || ch.steps().isEmpty()))
                     io.github.mojolowjo.entropybot.aa.brain.Goals.park(bb, g, "no way to get it: " + ch.why());
                 return null;
             }
@@ -471,6 +473,7 @@ public final class AaDesires {
             if (s instanceof Step.Obtain o) {
                 var w = io.github.mojolowjo.entropybot.aa.brain.Goals.world(bb);
                 NeedChain.Chain c = w == null ? null : NeedChain.of(o, w);
+                if (c != null && c.waiting()) return null;                    // loot-book-bg: priced again when the book lands
                 if (c != null && !c.ok()) {                                    // review 1: skip it next pick; Baritone builds the rest
                     bb.port.log("aa build " + b.name + ": no chain for " + o.text() + " - building without it (" + c.why() + ")");
                     b.unresolved.add(o.what());
