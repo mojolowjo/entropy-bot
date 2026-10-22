@@ -50,7 +50,7 @@ class NeedChainTest {
         assertTrue(chop >= 0 && table > chop && wooden > table && stone > wooden && last > stone, s.toString());
         assertEquals(s.size() - 1, last, "the stone pickaxe is the last step");
         assertEquals(new Step.Walk(30, 64, 0, 0).x(), ((Step.Walk) s.get(chop - 1)).x(), "one Baritone goal at the seen tree before the cut");
-        assertTrue(c.why().startsWith("stone_pickaxe <- 3 cobblestone <- dig cobblestone seen 12 m"), c.why());
+        assertTrue(c.why().startsWith("stone_pickaxe <- craft: 3 cobblestone <- dig cobblestone seen 12 m"), c.why());
         assertTrue(c.why().contains("planks <- ") && c.why().contains("tree seen 30 m"), c.why());
         assertTrue(c.cost() > 0);
     }
@@ -197,10 +197,8 @@ class NeedChainTest {
         assertTrue(at(c.steps(), Step.Craft.class, "wooden_pickaxe") >= 0, c.steps().toString());
         assertEquals(-1, at(c.steps(), Step.Craft.class, "golden_pickaxe"), c.steps().toString());
         assertFalse(chainPart(c.why()).contains("gold"), c.why());
-        assertTrue(c.dropped().stream().anyMatch(x -> x.startsWith("golden_pickaxe: ") && x.contains("blocks (")), c.dropped().toString());
-        double gold = Double.parseDouble(c.dropped().stream().filter(x -> x.startsWith("golden_pickaxe: ")).findFirst().get().replaceAll("^golden_pickaxe: (\\d+) blocks.*$", "$1"));
-        assertTrue(c.cost() < gold, "cheaper than the gold branch (" + gold + "): " + c.cost());
-        assertTrue(c.dropped().stream().noneMatch(x -> x.startsWith("stone_pickaxe: ") && !x.contains("on the path")), "a higher tier is never taken: " + c.dropped());
+        assertTrue(c.dropped().stream().anyMatch(x -> x.startsWith("golden_pickaxe: ") && x.contains("no known source")), c.dropped().toString());   // SCENARIOS: an explore branch never competes, dropped unpriced
+        assertTrue(c.dropped().stream().noneMatch(x -> x.startsWith("stone_pickaxe: ") && !x.contains("loop")), "a higher tier is never taken: " + c.dropped());
     }
 
     @Test

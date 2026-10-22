@@ -1,5 +1,6 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.GameTimes;
 import io.github.mojolowjo.entropybot.aa.brain.ItemWorth;
 import io.github.mojolowjo.entropybot.aa.brain.MiningTiers;
 import io.github.mojolowjo.entropybot.aa.brain.Sequencer;
@@ -10,73 +11,94 @@ import io.github.mojolowjo.entropybot.plan.PlanFacts;
 import io.github.mojolowjo.entropybot.plan.PlanRecipes;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * rm-bootstrap: a need that wants an item, resolved by recursion over the game's recipe data ({@link PlanRecipes}, the
  * recipe manager's crafting recipes read through {@link ItemWorth}); no second planner, no fixed order, no name list.
- * <ol>
+ * SCENARIOS (0.39.x1): every price is in seconds (TIME_MODEL) and every requirement that has several ways prices each and takes
+ * the cheapest; the others go to the dropped list with their seconds.
+ * <ul>
  * <li>Have it: nothing to do.</li>
- * <li>Craftable: need its ingredients (recurse) and, for a 3x3 recipe, a crafting table in reach (recurse: one in the
- *     bag is placed, else the table is itself a craftable item made from planks, from logs); then the craft (a GUI job,
- *     Baritone has no crafting).</li>
- * <li>Else a block that drops it, seen (a {@link Spot}: a tree for any log, stone for a stone-like item; the {@link Nearby}
- *     fact): the walk there and Baritone's MineProcess (the existing cut and collect steps), after the pickaxe tier the
- *     block asks for (recurse).</li>
- * <li>Else nothing seen: the explore way, priced for that need with its return leg. The chain stops there (what comes
- *     after cannot be placed before something is seen); AA asks again when the explore ends.</li>
- * </ol>
- * simple-tools (0.39.w1): one bad branch never kills the chain. Every item has two branches, the craft and the source. A branch
- * that fails (the item is already on the path: a recipe loop; a pickaxe tier nothing can make; no cell for a table) or costs
- * more than the horizon is priced out with a named reason and the other branch is taken (the cheaper, when both stand). When
- * no branch is left, the leaf is the explore way for that item's source. So there is never a "no way"; {@link Chain#why}
- * prints the whole chain with every dropped branch for {@code aa why}. Pure (JUnit: NeedChainTest). Loader notes: none (the
- * facts come from {@code AaRuntime.toolsFacts}).
+ * <li>A way is a recipe (each distinct crafting recipe of the item: its ingredients, recursively, then the craft; a 3x3 recipe
+ *     needs a table in reach, itself an item), a furnace (the raw input, a furnace, fuel, 10 s an item), or a seen source (each
+ *     seen tree or ore/stone block: the walk, {@link GameTimes#breakSeconds} per block, after the pickaxe tier the block asks
+ *     for, itself the cheapest of the pickaxes tag).</li>
+ * <li>An item that is already on the path is a loop: that way is dropped.</li>
+ * <li>Explore is not a priced way. A way that ends where nothing is known to give the item ("no known source") never competes
+ *     with one that does not; when no way is left the chain's step is the explore for that block, with no price.</li>
+ * </ul>
+ * Pure (JUnit: NeedChainTest, ScenariosTest). Loader notes: none (the facts come from {@code AaRuntime.toolsFacts}).
  */
 public final class NeedChain {
     private NeedChain() {}
 
-    /** A seen source: a cell to walk to, the straight-line {@code dist}, the block's id when known (its pickaxe tier comes from it). */
-    public record Spot(int x, int y, int z, double dist, String block) {}
+    /** A seen source: a cell to walk to, the straight-line {@code dist}, the block's id when known (its pickaxe tier comes from it), how many blocks there are (0: not counted, as many as needed). */
+    public record Spot(int x, int y, int z, double dist, String block, int count) {
+        public Spot(int x, int y, int z, double dist, String block) { this(x, y, z, dist, block, 0); }
+        String key() { return x + "," + y + "," + z; }
+    }
 
     /**
-     * What the bot knows now. {@code bag}: item id -> count; {@code tableNear}: a crafting table within reach;
+     * What the bot knows now. {@code bag}: item id -> count; {@code tableNear} / {@code furnaceNear}: one within reach;
      * {@code tableCell}: a free cell to place one at (null none); {@code seen}: planner word ({@link PlanFacts#canon}) -> the
      * nearest source of it, null when none (a tree for "log", stone for a stone-like item; always {@link Nearby}'s answer);
-     * {@code horizonBlocks}: a branch dearer than this is priced out when another stands (0: the planning horizon).
+     * {@code seenAll}: every source seen for the word (null: just {@code seen}'s one); {@code horizonBlocks}: a way dearer than
+     * this is priced out when another stands (0: the planning horizon).
      */
-    public record World(Map<String, Integer> bag, boolean tableNear, int[] tableCell, java.util.function.Function<String, Spot> seen, double horizonBlocks) {
+    public record World(Map<String, Integer> bag, boolean tableNear, int[] tableCell, Function<String, Spot> seen, double horizonBlocks,
+                        Function<String, List<Spot>> seenAll, boolean furnaceNear) {
         public World {
             Map<String, Integer> b = new LinkedHashMap<>();
             if (bag != null) for (var e : bag.entrySet()) b.merge(e.getKey().indexOf(':') < 0 ? "minecraft:" + e.getKey() : e.getKey(), e.getValue(), Integer::sum);
             bag = Map.copyOf(b);
             tableCell = tableCell == null ? null : tableCell.clone();
-            seen = seen == null ? w -> null : seen;
+            Function<String, Spot> one = seen == null ? w -> null : seen;
+            seen = one;
+            if (seenAll == null) seenAll = w -> { Spot s = one.apply(w); return s == null ? List.of() : List.of(s); };
             if (horizonBlocks <= 0) horizonBlocks = Unit.blocks(Sequencer.defaultHorizonS());
         }
 
-        public World(Map<String, Integer> bag, boolean tableNear, int[] tableCell, java.util.function.Function<String, Spot> seen) {
-            this(bag, tableNear, tableCell, seen, 0);
+        public World(Map<String, Integer> bag, boolean tableNear, int[] tableCell, Function<String, Spot> seen, double horizonBlocks) {
+            this(bag, tableNear, tableCell, seen, horizonBlocks, null, false);
+        }
+
+        public World(Map<String, Integer> bag, boolean tableNear, int[] tableCell, Function<String, Spot> seen) {
+            this(bag, tableNear, tableCell, seen, 0, null, false);
         }
     }
 
     /**
      * @param steps   the typed steps, in run order (empty: nothing to do)
-     * @param cost    walk-blocks ({@link Unit}); {@code why}: the whole chain in one line, the dropped branches after it
-     * @param explore the chain ends with the explore way (something needed is not seen yet)
+     * @param cost    walk-blocks ({@link Unit}); {@code why}: the whole chain in one line, the dropped ways after it
+     * @param explore the chain ends with the explore way (something needed is not seen yet): it has no price in {@code why}
      * @param missing why there is no way at all (null: there is one; kept for callers, the recursion no longer sets it)
-     * @param dropped every branch priced out on the way, each with its reason
+     * @param dropped every way priced out on the way, each with its reason (seconds, or "no known source", or "loop")
      */
     public record Chain(List<Step> steps, double cost, String why, boolean explore, String missing, List<String> dropped) {
         public Chain(List<Step> steps, double cost, String why, boolean explore, String missing) { this(steps, cost, why, explore, missing, List.of()); }
         public boolean ok() { return missing == null; }
+        /** The chain's price in seconds (the explore leg of an explore chain is in {@code cost}, not here). */
+        public double seconds() { return Unit.seconds(cost); }
     }
 
     public static int exploreMinutes() { return io.github.mojolowjo.entropybot.aa.brain.Discovery.exploreMinutes(); }
     /** Share of the explore time the walk back costs again. */
     public static double exploreReturn() { return Tuning.get("needChain.exploreReturn"); }
+
+    /** Game fact: one fuel item (coal, charcoal) burns 1600 ticks, a smelt takes 200: eight items. */
+    private static final int ITEMS_PER_FUEL = 8; // game fact: coal burns 1600 ticks, a furnace takes 200 per item
+
+    /** TIME_MODEL: walk = straight line x 1.3 / walk speed, before Baritone has planned a path. */
+    static double walkS(double dist) { return dist * StepTimes.pathFactor() / Unit.walkBps(); }
+
+    static String s(double seconds) { return String.format(Locale.ROOT, "%.1f s", seconds); }
 
     // ---- the recursion ----
 
@@ -84,37 +106,51 @@ public final class NeedChain {
         final World w;
         final Map<String, Integer> bag = new LinkedHashMap<>();
         final List<Step> steps = new ArrayList<>();
-        final Map<String, Integer> leafAt = new LinkedHashMap<>();
+        final Map<String, Integer> leafAt = new LinkedHashMap<>();   // spot key -> index of its collect step
+        final Map<String, Integer> taken = new LinkedHashMap<>();    // spot key -> blocks taken from it
         final List<String> path = new ArrayList<>();
-        final List<String> dropped = new ArrayList<>();
-        double seconds;       // seconds of work (craft, place); walks are priced in blocks
-        double blocks;
-        boolean tableReady, stuck;
-        String fail;          // the branch being tried cannot be done: the reason
+        List<String> dropped = new ArrayList<>();
+        double seconds;       // everything priced so far, in seconds
+        double away;          // straight metres from the last new source to where the stations are (0: at them)
+        boolean tableReady, furnaceReady, stuck;
+        String fail;          // the way being tried cannot be done: the reason
+        String unknown;       // the first item nothing is known to give (the explore leaf's)
+        String loopOn;        // the item a loop failure came back to (set with fail)
+        String pickItem;      // the best pickaxe in hand or made
         int pickTier;
 
         Ctx(World w) {
             this.w = w;
             for (var e : w.bag().entrySet()) if (e.getValue() > 0) bag.merge(PlanFacts.canon(e.getKey()), e.getValue(), Integer::sum);
             tableReady = w.tableNear();
-            for (var e : w.bag().entrySet()) if (e.getValue() > 0) pickTier = Math.max(pickTier, PlanFacts.tier(PlanFacts.canon(e.getKey())));
+            furnaceReady = w.furnaceNear();
+            for (var e : w.bag().entrySet()) {
+                if (e.getValue() <= 0) continue;
+                int t = PlanFacts.tier(PlanFacts.canon(e.getKey()));
+                if (t > pickTier) { pickTier = t; pickItem = e.getKey(); }
+            }
         }
 
         boolean dead() { return stuck || fail != null; }
 
-        double total() { return Unit.blocks(seconds) + blocks; }
+        /** Everything a way changes, to put back when the way is dropped. */
+        record Snap(Map<String, Integer> bag, List<Step> steps, Map<String, Integer> leafAt, Map<String, Integer> taken, List<String> dropped,
+                    double seconds, double away, boolean tableReady, boolean furnaceReady, boolean stuck, String unknown, String pickItem, int pickTier) {}
 
-        /** Everything a branch changes, to put back when the branch is dropped (the dropped list stays). */
-        record Snap(Map<String, Integer> bag, List<Step> steps, Map<String, Integer> leafAt, double seconds, double blocks, boolean tableReady, boolean stuck, int pickTier) {}
-
-        Snap snap() { return new Snap(new LinkedHashMap<>(bag), new ArrayList<>(steps), new LinkedHashMap<>(leafAt), seconds, blocks, tableReady, stuck, pickTier); }
+        Snap snap() {
+            return new Snap(new LinkedHashMap<>(bag), new ArrayList<>(steps), new LinkedHashMap<>(leafAt), new LinkedHashMap<>(taken), new ArrayList<>(dropped),
+                    seconds, away, tableReady, furnaceReady, stuck, unknown, pickItem, pickTier);
+        }
 
         void restore(Snap s) {
             bag.clear(); bag.putAll(s.bag());
             steps.clear(); steps.addAll(s.steps());
             leafAt.clear(); leafAt.putAll(s.leafAt());
-            seconds = s.seconds(); blocks = s.blocks(); tableReady = s.tableReady(); stuck = s.stuck(); pickTier = s.pickTier();
-            fail = null;
+            taken.clear(); taken.putAll(s.taken());
+            dropped = new ArrayList<>(s.dropped());
+            seconds = s.seconds(); away = s.away(); tableReady = s.tableReady(); furnaceReady = s.furnaceReady(); stuck = s.stuck();
+            unknown = s.unknown(); pickItem = s.pickItem(); pickTier = s.pickTier();
+            fail = null; loopOn = null;
         }
     }
 
@@ -123,95 +159,107 @@ public final class NeedChain {
         Ctx c = new Ctx(w);
         String word = PlanFacts.canon(item);
         String phrase = obtain(c, word, n);
-        double cost = c.total();
+        double cost = Unit.blocks(c.seconds);
+        // an explore has no price in the chain; the scorer still needs a number to weigh the whole row, so the row's cost carries the explore leg
+        if (c.stuck) cost += exploreMinutes() * Options.MINUTE * (1 + exploreReturn());
         String drops = c.dropped.isEmpty() ? "" : " | dropped: " + String.join("; ", c.dropped);
         if (c.fail != null) return new Chain(List.copyOf(c.steps), cost, item + ": " + c.fail + drops, false, c.fail, List.copyOf(c.dropped));
-        String why = (phrase == null ? item + " is in the bag" : item + " <- " + phrase) + ": " + Math.round(Unit.seconds(cost)) + " s" + drops;
+        String head = phrase == null ? item + " is in the bag" : item + " <- " + phrase;
+        String why = head + (c.stuck ? "" : ": " + s(c.seconds)) + drops;
         return new Chain(List.copyOf(c.steps), cost, why, c.stuck, null, List.copyOf(c.dropped));
     }
 
+    /** One way to get a requirement: what runs it on the simulated bag, its name for the dropped list, and what breaks a tie. */
+    private static final class Alt {
+        final String label;
+        final Supplier<String> run;
+        String id;
+        int tier;
+        double work;
+        Alt(String label, Supplier<String> run) { this.label = label; this.run = run; }
+    }
+
+    private record Trial(Alt alt, String phrase, double seconds, boolean stuck, String fail, String loopOn, String unknown, Ctx.Snap after, int index) {}
+
     /**
-     * Makes {@code n} of {@code word} true in the simulated bag; returns the phrase of how ("3 cobblestone <- dig stone seen 12 m"),
-     * null when it was there. The craft branch first (when the game has a recipe and the item is not already on the path), then
-     * the source branch; a branch that fails or is over the horizon is dropped with its reason, the cheaper standing one is kept,
-     * and with none standing the leaf is the explore for the item's source.
+     * Prices every way on a snapshot (each put back), takes the cheapest that stands (no failure, no explore in it; past the
+     * horizon last), restores the winner's state and lists every other with its seconds, its loop or its "no known source".
+     * Null: no way stands and none ends in an explore (every failure is in the dropped list); the caller makes the explore leaf.
+     */
+    private static Trial choose(Ctx c, List<Alt> alts, String self) {
+        if (alts.isEmpty()) return null;
+        List<Trial> trials = new ArrayList<>();
+        for (int i = 0; i < alts.size(); i++) {
+            Ctx.Snap s0 = c.snap();
+            double base = c.seconds;
+            String p = alts.get(i).run.get();
+            trials.add(new Trial(alts.get(i), p, c.seconds - base, c.stuck, c.fail, c.loopOn, c.unknown, c.snap(), i));
+            c.restore(s0);
+        }
+        double horizonS = Unit.seconds(c.w.horizonBlocks());
+        Comparator<Trial> best = Comparator.<Trial>comparingInt(t -> t.stuck() ? 1 : 0)
+                .thenComparingInt(t -> t.seconds() > horizonS ? 1 : 0)
+                .thenComparingDouble(t -> t.stuck() ? 0 : t.seconds())
+                .thenComparingDouble(t -> t.alt().work).thenComparingInt(t -> t.alt().tier).thenComparingInt(Trial::index);
+        Trial win = null;
+        for (Trial t : trials) if (t.fail() == null && (win == null || best.compare(t, win) < 0)) win = t;
+        if (win == null) {
+            // every way failed by a loop back to an item above this one: this requirement is part of that loop, the failure goes up
+            // to the way that asked for it (it is listed there); a loop back to this very item, or any other failure, is listed here
+            boolean up = self != null && trials.stream().allMatch(t -> t.loopOn() != null && !t.loopOn().equals(self));
+            if (up) { c.fail = trials.get(0).fail(); c.loopOn = trials.get(0).loopOn(); }
+            else for (Trial t : trials) c.dropped.add(t.alt().label + ": " + t.fail());
+            return null;
+        }
+        c.restore(win.after());
+        for (Trial t : trials) {
+            if (t == win) continue;
+            if (t.fail() != null) c.dropped.add(t.alt().label + ": " + t.fail());
+            else if (t.stuck()) { if (!win.stuck()) c.dropped.add(t.alt().label + ": no known source for " + t.unknown()); }
+            else c.dropped.add(t.alt().label + ": " + s(t.seconds()) + " (dearer than " + win.alt().label + (t.seconds() > horizonS ? ", past the horizon" : "") + ")");
+        }
+        return win;
+    }
+
+    /**
+     * Makes {@code n} of {@code word} true in the simulated bag; returns the phrase of how ("craft 3 cobblestone <- dig cobblestone seen 12 m"),
+     * null when it was there. The ways: each recipe, the furnace, each seen source. None left: the explore leaf for it.
      */
     private static String obtain(Ctx c, String word, int n) {
         if (c.dead() || n <= 0) return null;
         int have = c.bag.getOrDefault(word, 0);
         if (have >= n) return null;
         int lack = n - have;
-        boolean onPath = c.path.contains(word);
-        PlanRecipes.Recipe rec = isLog(word) ? null : PlanRecipes.of(word);
-        if (onPath && rec != null) {
-            c.dropped.add("recipe branch of " + word + ": " + word + " needs itself (a recipe loop: " + String.join(" > ", c.path) + " > " + word + ")");
-            rec = null;
+        if (c.path.contains(word)) {
+            c.fail = "loop: " + word + " needs itself (a recipe loop: " + String.join(" > ", c.path) + " > " + word + ")";
+            c.loopOn = word;
+            return null;
         }
         c.path.add(word);
         try {
-            Ctx.Snap s0 = c.snap();
-            double base = c.total();
-            if (rec == null) return leaf(c, s0, word, lack);
-            String craftPhrase = craft(c, word, lack, rec);
-            String craftFail = c.fail;
-            double craftCost = c.total() - base;
-            boolean over = craftFail == null && craftCost > c.w.horizonBlocks();
-            if (craftFail == null && !over && !c.stuck) return craftPhrase;
-            // the recipe branch failed, is over the horizon or ends in an explore: price the source branch against it. A source
-            // is a branch only when one is seen; the explore leaf is what is left when no branch stands
-            if (c.w.seen().apply(word) == null) {
-                if (craftFail == null) return craftPhrase;
-                c.dropped.add("recipe branch of " + word + ": " + craftFail);
-                c.restore(s0);
-                return exploreLeaf(c, word, "no way to make " + word + " and none seen to dig or cut");
+            List<Alt> alts = new ArrayList<>();
+            if (!isLog(word)) {
+                for (PlanRecipes.Recipe r : PlanRecipes.allOf(word)) alts.add(new Alt(word + " from " + String.join("+", r.in().keySet()), () -> craft(c, word, lack, r)));
+                String raw = PlanRecipes.smelted(word);
+                if (raw != null) alts.add(new Alt("smelting " + word, () -> smelt(c, word, raw, lack)));
             }
-            Ctx.Snap sCraft = c.snap();
-            c.restore(s0);
-            String srcPhrase = source(c, word, lack);
-            String srcFail = c.fail;
-            double srcCost = c.total() - base;
-            boolean srcOver = srcFail == null && srcCost > c.w.horizonBlocks();
-            boolean craftStands = craftFail == null, srcStands = srcFail == null;
-            if (craftStands && (!srcStands || preferCraft(over, c.stuck, craftWasStuck(sCraft), craftCost, srcOver, srcCost))) {
-                if (srcStands) c.dropped.add("source of " + word + ": " + (c.stuck ? "ends in an explore" : "costs " + Math.round(srcCost) + " blocks") + ", the recipe is " + (over ? "dear" : "cheaper"));
-                else c.dropped.add("source of " + word + ": " + srcFail);
-                c.restore(sCraft);
-                return craftPhrase;
-            }
-            if (craftFail != null) c.dropped.add("recipe branch of " + word + ": " + craftFail);
-            else c.dropped.add("recipe branch of " + word + ": " + (over ? "costs " + Math.round(craftCost) + " blocks, past the horizon (" + Math.round(c.w.horizonBlocks()) + ")" : "ends in an explore") + ", the source is " + (srcStands ? "cheaper" : "the only way"));
-            if (srcFail != null) {
-                c.dropped.add("source of " + word + ": " + srcFail);
-                c.restore(s0);
-                return exploreLeaf(c, word, "no way found to " + word + " but to look for it");
-            }
-            return srcPhrase;
+            alts.addAll(sourceAlts(c, word, lack));
+            Trial w = choose(c, alts, word);
+            if (w != null) return w.phrase();
+            if (c.fail != null) return null;
+            return exploreLeaf(c, word, alts.isEmpty() ? noSource(word) : "no way found to " + word + " but to look for it");
         } finally {
             c.path.remove(c.path.size() - 1);
         }
     }
 
-    private static boolean craftWasStuck(Ctx.Snap s) { return s.stuck(); }
-
-    /** True when the craft branch is the one to keep over the source branch (both stand). */
-    private static boolean preferCraft(boolean craftOver, boolean srcStuck, boolean craftStuck, double craftCost, boolean srcOver, double srcCost) {
-        if (craftStuck != srcStuck) return !craftStuck;         // a branch that ends in an explore loses to one that does not
-        if (craftOver != srcOver) return !craftOver;
-        return craftCost <= srcCost;
-    }
-
-    /** No recipe (or it is dropped): the source branch alone; a failure there is the explore leaf. */
-    private static String leaf(Ctx c, Ctx.Snap s0, String word, int lack) {
-        String p = source(c, word, lack);
-        if (c.fail == null) return p;
-        String why = c.fail;
-        c.dropped.add("source of " + word + ": " + why);
-        c.restore(s0);
-        return exploreLeaf(c, word, "no way found to " + word + " but to look for it");
+    private static String noSource(String word) {
+        if (isLog(word)) return "no tree seen";
+        return !stoneLike(word) && PlanRecipes.of(word) == null && PlanRecipes.smelted(word) == null ? "no recipe and no block I know drops " + word : "no " + word + " source seen";
     }
 
     private static boolean rawUnseen(Ctx c, String word) {
-        return (isLog(word) || PlanRecipes.of(word) == null) && c.bag.getOrDefault(word, 0) <= 0 && c.w.seen().apply(word) == null;
+        return c.bag.getOrDefault(word, 0) <= 0 && (isLog(word) || (PlanRecipes.allOf(word).isEmpty() && PlanRecipes.smelted(word) == null)) && c.w.seenAll().apply(word).isEmpty();
     }
 
     private static boolean isLog(String word) { return word.equals("log"); }
@@ -221,122 +269,193 @@ public final class NeedChain {
         List<String> parts = new ArrayList<>();
         // what can be made or fetched first; a raw source nothing has seen yet last (its explore ends the chain, so it must not hide the rest)
         List<Map.Entry<String, Integer>> ins = new ArrayList<>(rec.in().entrySet());
-        ins.sort(java.util.Comparator.comparingInt((Map.Entry<String, Integer> e) -> rawUnseen(c, e.getKey()) ? 1 : 0));
+        ins.sort(Comparator.comparingInt((Map.Entry<String, Integer> e) -> rawUnseen(c, e.getKey()) ? 1 : 0));
         for (var e : ins) {
             int want = e.getValue() * batches;
             String p = obtain(c, e.getKey(), want);
             if (c.fail != null) return null;
-            parts.add(p == null ? want + " " + e.getKey() + " (in the bag)" : want + " " + e.getKey() + " <- " + p);
-            if (c.stuck) return String.join(" + ", parts);                 // something needed is not seen: the chain ends at the explore
+            parts.add(p == null ? want + " " + e.getKey() : want + " " + e.getKey() + " <- " + p);
+            if (c.stuck) return "craft: " + String.join(" + ", parts);                 // something needed is not known: the chain ends at the explore
             c.bag.merge(e.getKey(), -want, Integer::sum);
         }
         if (rec.table()) {
-            String t = table(c);
+            String t = station(c, "crafting_table", true);
             if (c.fail != null) return null;
             if (t != null) parts.add("table <- " + t);
-            if (c.stuck) return String.join(" + ", parts);
+            if (c.stuck) return "craft: " + String.join(" + ", parts);
+            walkBack(c);
         }
         c.steps.add(new Step.Craft(concrete(c, word), batches * rec.out()));
-        c.seconds += io.github.mojolowjo.entropybot.aa.brain.ToolWear.craftSV();
+        c.seconds += Price.craftS() * batches;
         c.bag.merge(word, batches * rec.out(), Integer::sum);
-        return parts.isEmpty() ? word : String.join(" + ", parts);
+        return "craft: " + String.join(" + ", parts);
     }
 
-    /** A crafting table in reach: the phrase of how it gets there, null when one already is. */
-    private static String table(Ctx c) {
-        if (c.tableReady) return null;
-        if (c.w.tableCell() == null) { c.fail = "no free cell to place a crafting table at"; return null; }
-        String made = obtain(c, "crafting_table", 1);
+    /** A furnace turns the raw input into the word: the input, a furnace in reach, fuel, 10 s an item, the walk back to the furnace. */
+    private static String smelt(Ctx c, String word, String raw, int lack) {
+        List<String> parts = new ArrayList<>();
+        String p = obtain(c, raw, lack);
+        if (c.fail != null) return null;
+        parts.add(p == null ? lack + " " + raw : lack + " " + raw + " <- " + p);
+        if (c.stuck) return "smelt " + String.join(" + ", parts);
+        c.bag.merge(raw, -lack, Integer::sum);
+        String f = station(c, "furnace", false);
+        if (c.fail != null) return null;
+        if (f != null) parts.add("furnace <- " + f);
+        if (c.stuck) return "smelt " + String.join(" + ", parts);
+        int fuel = (lack + ITEMS_PER_FUEL - 1) / ITEMS_PER_FUEL;
+        String fp = obtain(c, "fuel", fuel);
+        if (c.fail != null) return null;
+        if (fp != null) parts.add(fuel + " fuel <- " + fp);
+        if (c.stuck) return "smelt " + String.join(" + ", parts);
+        c.bag.merge("fuel", -fuel, Integer::sum);
+        walkBack(c);
+        c.steps.add(new Step.Smelt(concrete(c, word), lack, true));
+        c.seconds += lack * Tuning.get("craftJob.smeltTicks") / GameTimes.TPS;
+        c.bag.merge(word, lack, Integer::sum);
+        return "smelt " + String.join(" + ", parts);
+    }
+
+    /** A crafting table or furnace in reach: the phrase of how it gets there, null when one already is. */
+    private static String station(Ctx c, String item, boolean table) {
+        if (table ? c.tableReady : c.furnaceReady) return null;
+        if (c.w.tableCell() == null) { c.fail = "no free cell to place a " + item.replace('_', ' ') + " at"; return null; }
+        String made = obtain(c, item, 1);
         if (c.fail != null) return null;
         if (c.stuck) return made;
         int[] at = c.w.tableCell();
-        c.steps.add(Step.Build.one("crafting_table", at[0], at[1], at[2]));
+        c.steps.add(Step.Build.one(item, at[0], at[1], at[2]));
         c.seconds += Price.placeS();
-        c.bag.merge("crafting_table", -1, Integer::sum);
-        c.tableReady = true;
+        c.bag.merge(item, -1, Integer::sum);
+        if (table) c.tableReady = true; else c.furnaceReady = true;
+        c.away = 0;                                       // placed where the bot stands
         return made == null ? "in the bag, placed" : made + ", placed";
     }
 
-    /** A block that drops the word, seen (the Nearby fact): walk and mine; else the explore leaf. A failure (c.fail) is for the caller to price out. */
-    private static String source(Ctx c, String word, int lack) {
-        Spot s = c.w.seen().apply(word);
+    /** Back to the stations after a trip to a new source: the straight walk. */
+    private static void walkBack(Ctx c) {
+        if (c.away > 0) { c.seconds += walkS(c.away); c.away = 0; }
+    }
+
+    /** The ways a seen block gives the word: one per seen source (nearest others fill what it lacks). */
+    private static List<Alt> sourceAlts(Ctx c, String word, int lack) {
+        List<Spot> spots = new ArrayList<>(c.w.seenAll().apply(word));
+        spots.sort(Comparator.comparingDouble(Spot::dist));
+        List<Alt> alts = new ArrayList<>();
         boolean log = isLog(word);
-        if (s == null) return exploreLeaf(c, word, log ? "no tree seen" : !stoneLike(word) && PlanRecipes.of(word) == null ? "no recipe and no block I know drops " + word : "no " + word + " source seen");
-        // the pickaxe tier the block asks for, as a sub-need of its own
+        for (Spot first : spots) {
+            List<Spot> order = new ArrayList<>();
+            order.add(first);
+            for (Spot o : spots) if (o != first) order.add(o);
+            alts.add(new Alt((log ? "tree " : word + " ") + Math.round(first.dist()) + " m", () -> sourceFrom(c, word, lack, order)));
+        }
+        return alts;
+    }
+
+    /** Walk to the first spot (and on to the next while it has too few blocks) and break: after the pickaxe tier the block asks for. */
+    private static String sourceFrom(Ctx c, String word, int lack, List<Spot> order) {
+        boolean log = isLog(word);
+        Spot first = order.get(0);
         String pre = null;
-        int tier = s.block() == null ? 0 : Math.max(0, MiningTiers.blockTierOf(s.block()));
+        int tier = tierOf(word, first, log);
         if (tier > c.pickTier) {
             pre = cheapestPickaxe(c, tier);
             if (c.fail != null) return null;
-            if (c.stuck) return "dig " + word + " seen " + Math.round(s.dist()) + " m (after " + pre + ")";      // the pickaxe's own source is still to find: the chain ends at that explore
-            c.pickTier = tier;
+            if (c.stuck) return "dig " + word + " seen " + Math.round(first.dist()) + " m (after " + pre + ")";      // the pickaxe's own source is still to find: the chain ends at that explore
         }
-        Integer at = c.leafAt.get(word);
-        if (at != null) {
-            Step prev = c.steps.get(at);
-            c.steps.set(at, prev instanceof Step.ChopTree t ? new Step.ChopTree(t.at(), t.logs() + lack, t.log())
-                    : new Step.Collect(((Step.Collect) prev).item(), ((Step.Collect) prev).n() + lack));
-        } else {
-            c.leafAt.put(word, c.steps.size() + 1);
-            c.steps.add(new Step.Walk(s.x(), s.y(), s.z(), (int) Tuning.get("steps.walkNear")));
-            c.steps.add(log ? new Step.ChopTree(new int[]{s.x(), s.y(), s.z()}, lack, null) : new Step.Collect(word, lack));
-            c.blocks += 2 * s.dist();                    // there and back
+        int remaining = lack;
+        for (Spot sp : order) {
+            if (remaining <= 0) break;
+            int avail = sp.count() <= 0 ? remaining : sp.count() - c.taken.getOrDefault(sp.key(), 0);
+            int take = Math.min(avail, remaining);
+            if (take <= 0) continue;
+            Integer at = c.leafAt.get(sp.key());
+            if (at != null) {
+                Step prev = c.steps.get(at);
+                c.steps.set(at, prev instanceof Step.ChopTree t ? new Step.ChopTree(t.at(), t.logs() + take, t.log())
+                        : new Step.Collect(((Step.Collect) prev).item(), ((Step.Collect) prev).n() + take));
+            } else {
+                c.leafAt.put(sp.key(), c.steps.size() + 1);
+                c.steps.add(new Step.Walk(sp.x(), sp.y(), sp.z(), (int) Tuning.get("steps.walkNear")));
+                c.steps.add(log ? new Step.ChopTree(new int[]{sp.x(), sp.y(), sp.z()}, take, null) : new Step.Collect(word, take));
+                c.seconds += walkS(sp.dist());
+                c.away = sp.dist();
+            }
+            c.seconds += breakS(c, word, sp, log) * take;
+            c.taken.merge(sp.key(), take, Integer::sum);
+            c.bag.merge(word, take, Integer::sum);
+            remaining -= take;
         }
-        c.blocks += (log ? WoodOptions.cutLog() : CoalOptions.mineOre()) * lack;
-        c.bag.merge(word, lack, Integer::sum);
-        String how = (log ? "tree" : "dig " + word) + " seen " + Math.round(s.dist()) + " m";
-        return pre == null ? how : how + " (after " + pre + ")";
+        String how = (log ? "cut tree" : "dig " + word) + " seen " + Math.round(first.dist()) + " m" + (pre == null ? "" : " with " + pre);
+        if (remaining > 0) return how + " + " + exploreLeaf(c, word, "not enough " + word + " seen");
+        return how;
     }
 
-    /** The leaf when no branch stands: look for the item's source, priced with the walk back. */
+    /** The pickaxe tier the block asks for (0: none). */
+    private static int tierOf(String word, Spot sp, boolean log) {
+        if (log) return 0;
+        String b = sp.block() != null ? sp.block() : breakBlock(word, sp, false);
+        return b == null ? 0 : Math.max(0, MiningTiers.blockTierOf(b));
+    }
+
+    /** The block whose hardness prices the break: a log's own block, an ore item's ore, else the item's block. */
+    private static String breakBlock(String word, Spot sp, boolean log) {
+        if (log) return sp.block();
+        String ore = ItemWorth.oreDropping(word.indexOf(':') < 0 ? "minecraft:" + word : word);
+        return ore != null ? ore : (word.indexOf(':') < 0 ? "minecraft:" + word : word);
+    }
+
+    /**
+     * Seconds to break one block of the word's source with what is held, by the game's formula ({@link GameTimes#breakSeconds}:
+     * hardness x 30 / tool speed ticks, x 100 and no drop without the tool a block asks for). No hardness known: the tuned cut.
+     */
+    private static double breakS(Ctx c, String word, Spot sp, boolean log) {
+        String block = breakBlock(word, sp, log);
+        double hardness = block == null ? 0 : ItemWorth.facts(block).hardness();
+        if (hardness <= 0) return log ? WoodOptions.cutLog() : CoalOptions.mineOre();
+        int tier = tierOf(word, sp, log);
+        if (tier < 1) return GameTimes.breakSeconds(hardness, 1, true);
+        double speed = c.pickItem == null ? 1 : Math.max(1, ItemWorth.facts(c.pickItem).digSpeed());
+        return GameTimes.breakSeconds(hardness, speed, c.pickTier >= tier);
+    }
+
+    /** The leaf when no way stands: look for the item's source. It has no price. */
     private static String exploreLeaf(Ctx c, String word, String reason) {
-        int minutes = exploreMinutes();
-        c.steps.add(new Step.Explore(minutes));
-        c.blocks += minutes * Options.MINUTE * (1 + exploreReturn());
+        c.steps.add(new Step.Explore(exploreMinutes()));
         c.stuck = true;
-        return "explore " + minutes + " min (" + reason + ")";
+        if (c.unknown == null) c.unknown = word;
+        return "explore (" + reason + ")";
     }
 
     private static boolean stoneLike(String word) { return ItemWorth.stoneLike(word.indexOf(':') < 0 ? "minecraft:" + word : word); }
 
     /**
-     * A requirement several items meet (any pickaxe of at least {@code tier}, from the game's pickaxes tag): every candidate is
-     * priced in full, recursively (loops and dead branches priced out as everywhere), tried on a snapshot and put back; the
-     * cheapest is then done for real and each loser goes to the dropped list with its price and reason. Ties (chains that end at the same explore cost the same): the less raw work the recipe tree still holds (a loop holds infinite), then the lower tier.
-     * No candidate stands: c.fail. Returns the winner's phrase.
+     * A requirement several items meet (any pickaxe of at least {@code tier}, from the game's pickaxes tag): {@link #choose} prices
+     * each in full (loops and unknown sources dropped as everywhere); ties: the less raw work the recipe tree still holds (a loop
+     * holds infinite), then the lower tier. No candidate stands: c.fail. Returns the winner's phrase.
      */
     private static String cheapestPickaxe(Ctx c, int tier) {
-        record Trial(String id, int tier, double cost, double work, boolean stuck, String fail) {}
-        List<Trial> trials = new ArrayList<>();
-        for (String id : ItemWorth.withTag("pickaxes")) {
+        List<Alt> alts = new ArrayList<>();
+        List<String> ids = new ArrayList<>(ItemWorth.withTag("pickaxes"));
+        java.util.Collections.sort(ids);
+        for (String id : ids) {
             int t = MiningTiers.toolTier(id, "pickaxe");
             String cw = PlanFacts.canon(id);
             if (t < tier || PlanRecipes.of(cw) == null) continue;
-            if (c.path.contains(cw)) { c.dropped.add(cw + ": on the path already, a loop"); continue; }
-            Ctx.Snap s0 = c.snap();
-            int drops = c.dropped.size();
-            double base = c.total();
-            obtain(c, cw, 1);
-            trials.add(new Trial(cw, t, c.total() - base, rawWork(cw, new ArrayList<>()), c.stuck, c.fail));
-            c.restore(s0);
-            while (c.dropped.size() > drops) c.dropped.remove(c.dropped.size() - 1);
+            Alt a = new Alt(cw, () -> obtain(c, cw, 1));
+            a.id = id; a.tier = t; a.work = rawWork(cw, new ArrayList<>());
+            alts.add(a);
         }
-        Trial win = null;
-        for (Trial t : trials) {
-            if (t.fail() != null) continue;
-            if (win == null || t.cost() < win.cost() || (t.cost() == win.cost() && (t.work() < win.work() || (t.work() == win.work() && t.tier() < win.tier())))) win = t;
-        }
+        Trial win = choose(c, alts, null);
         if (win == null) {
-            for (Trial t : trials) c.dropped.add(t.id() + ": " + Math.round(t.cost()) + " blocks (" + t.fail() + ")");
-            c.fail = "no pickaxe of tier " + tier + " can be had to dig" + (trials.isEmpty() ? ": none in the game data can be crafted" : "");
+            c.fail = "no pickaxe of tier " + tier + " can be had to dig" + (alts.isEmpty() ? ": none in the game data can be crafted" : "");
             return null;
         }
-        for (Trial t : trials) {
-            if (t == win) continue;
-            c.dropped.add(t.id() + ": " + Math.round(t.cost()) + " blocks (" + (t.fail() != null ? t.fail() : (t.stuck() ? "ends in an explore, " : "") + "dearer than " + win.id()) + ")");
-        }
-        return obtain(c, win.id(), 1);
+        c.pickItem = win.alt().id;
+        c.pickTier = Math.max(c.pickTier, win.alt().tier);
+        return win.alt().label + " (<- " + win.phrase() + ")";
     }
+
     /** The raw items a word's whole recipe tree takes (recipe data only); a recipe loop is infinite work. Breaks the tie between chains that stop at the same explore. */
     private static double rawWork(String word, List<String> path) {
         if (path.contains(word)) return Double.POSITIVE_INFINITY;
@@ -348,6 +467,7 @@ public final class NeedChain {
         path.remove(path.size() - 1);
         return sum / rec.out();
     }
+
     /** The item a craft step names: planks are the kind the bag's logs make, else the word itself. */
     private static String concrete(Ctx c, String word) {
         String bare = word.indexOf(':') < 0 ? word : word.substring(word.indexOf(':') + 1);

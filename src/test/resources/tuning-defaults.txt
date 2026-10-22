@@ -874,9 +874,9 @@ stairPlan.shaftDrop	3.0
 stairPlan.shaftScan	64.0
 stairPlan.torchEvery	6.0
 stashMax	74.0
-station.craftS	0.5
+station.craftS	0.3
 station.near	48.0
-station.placeS	0.25
+station.placeS	0.15
 stationBase	40.0
 stationShare	40.0
 steerRules.drivingMs	1000.0

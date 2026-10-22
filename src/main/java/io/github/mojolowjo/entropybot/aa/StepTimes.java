@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
 /**
  * AA_STEP3 B (TIME_MODEL): the predicted seconds of each step of a way. A step the game's numbers can price alone is
  * "known": {@code goto x y z} = straight line x 1.3 / walk speed + 0.3 s per block climbed, {@code wait n} = n,
- * {@code craft} = 0.5, {@code place} = 0.25. The rest of the way's price (the option's total in seconds, which the option
+ * {@code craft} = 0.3, {@code place} = 0.15. The rest of the way's price (the option's total in seconds, which the option
  * set built from the same terms) is shared equally between the steps that cannot be priced alone, flagged unknown
  * ({@code known == false}); with no total they stay NaN. The prediction ledger then shows where this split is wrong.
  * Pure (JUnit: SlowModeTest). Loader notes: none.
@@ -24,8 +24,8 @@ public final class StepTimes {
     /** TIME_MODEL: path length = straight line x 1.3 when no plan exists yet. */
     public static double pathFactor() { return Tuning.get("stepTimes.pathFactor"); }
     public static double climbS() { return Tuning.get("stepTimes.climbS"); }
-    public static final double CRAFT_S = 0.5; // game fact: TIME_MODEL: a craft 0.5 s, a place 0.25 s
-    public static final double PLACE_S = 0.25; // game fact: TIME_MODEL: a craft 0.5 s, a place 0.25 s
+    public static final double CRAFT_S = 0.3; // game fact: TIME_MODEL: a craft 0.3 s, a place 0.15 s
+    public static final double PLACE_S = 0.15; // game fact: TIME_MODEL: a craft 0.3 s, a place 0.15 s
 
     /** One step with its predicted seconds (NaN: none) and whether the game's numbers priced it alone. */
     public record Est(String step, double seconds, boolean known) {}

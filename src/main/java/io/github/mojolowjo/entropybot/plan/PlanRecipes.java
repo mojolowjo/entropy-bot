@@ -50,6 +50,25 @@ public final class PlanRecipes {
         return null;
     }
 
+    /**
+     * Every distinct crafting recipe of the word (the same filter as {@link #of}: no furnace recipe, no packing that takes the item
+     * itself), so the chain can price each and take the cheapest. Empty: none.
+     */
+    public static List<Recipe> allOf(String item) {
+        List<Recipe> out = new java.util.ArrayList<>();
+        for (String id : idsFor(item)) {
+            String smelt = ItemWorth.smeltInput(id);
+            for (ItemWorth.Recipe r : ItemWorth.recipes(id)) {
+                if (r.inputs().isEmpty() || r.inputs().get(0).equals(smelt)) continue;
+                Map<String, Integer> in = counts(r);
+                if (in.containsKey(item)) continue;
+                Recipe rec = new Recipe(item, r.outCount(), in, ItemWorth.needsTable(id));
+                if (!out.contains(rec)) out.add(rec);
+            }
+        }
+        return out;
+    }
+
     private static Map<String, Integer> counts(ItemWorth.Recipe r) {
         Map<String, Integer> m = new LinkedHashMap<>();
         for (String in : r.inputs()) m.merge(PlanFacts.canon(in), 1, Integer::sum);

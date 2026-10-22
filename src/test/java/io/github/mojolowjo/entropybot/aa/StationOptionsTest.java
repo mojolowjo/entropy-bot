@@ -29,8 +29,8 @@ class StationOptionsTest {
     void materialsInTheBagCraftAndPlaceAtTheTimeModelsPrice() {
         Options.Choice c = StationOptions.choose(f(Kind.TABLE, false, false, -1, 4, 0, 0, 0, CELL, WOOD, false), new Options.OptionMemory(), 0, null, 0, "none");
         assertEquals("craft crafting_table 1 > place crafting_table 1 64 0", c.best().command());
-        assertEquals(0.75 * 4.317, c.best().cost(), 1e-6);
-        assertTrue(c.why().contains("craft 0.5 s + place 0.25 s"), c.why());
+        assertEquals(0.45 * 4.317, c.best().cost(), 1e-6);   // SCENARIOS: craft 0.3 s + place 0.15 s
+        assertTrue(c.why().contains("craft 0.3 s + place 0.15 s"), c.why());
         assertNotNull(c.best().site());
     }
 

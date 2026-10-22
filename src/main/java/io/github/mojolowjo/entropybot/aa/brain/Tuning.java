@@ -98,8 +98,8 @@ public final class Tuning {
         def("plannerHoldS", 120, "AA_ROUND4 A2", "seconds a planner row dropped for searching too long stays held (key planner <goal>)");
         def("settleMaxS", 75, "review 2 (2b)", "the most seconds a need waits for the facts after a prerequisite ended (bag or station facts change ends it sooner)");
         // AA_ROUND4A O: the station, base and bag option sets (TIME_MODEL craft 0.5 s, place 0.25 s)
-        def("station.craftS", 0.5, "AA_ROUND4A O", "seconds one craft takes (TIME_MODEL)");
-        def("station.placeS", 0.25, "AA_ROUND4A O", "seconds one place takes (TIME_MODEL)");
+        def("station.craftS", 0.3, "AA_ROUND4A O", "seconds one craft takes (TIME_MODEL)");
+        def("station.placeS", 0.15, "AA_ROUND4A O", "seconds one place takes (TIME_MODEL)");
         def("station.near", 48, "AA_ROUND4A O", "blocks within which a known station is walked to instead of made");
         def("base.distGuess", 16, "AA_ROUND4A O", "blocks a base is priced at when its distance is not sensed");
         def("climbPerBlockS", 1.5, "AA_ROUND4A O", "seconds per block of a climb out from under ground (dig + step)");
