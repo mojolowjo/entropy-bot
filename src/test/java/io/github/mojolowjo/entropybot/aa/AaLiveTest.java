@@ -23,7 +23,6 @@ class AaLiveTest {
     final FakePort port = new FakePort();
     final Blackboard bb = new Blackboard(clock, port, new Tracer());
     final AaTree tree = AaTree.build(new AaScorer());
-    { TS.world(bb); }
 
     static void ids(JsonObject n, List<String> out) {
         out.add(n.get("id").getAsString());

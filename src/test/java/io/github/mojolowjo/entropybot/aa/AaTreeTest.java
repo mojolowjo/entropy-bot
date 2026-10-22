@@ -19,7 +19,6 @@ class AaTreeTest {
     final Tracer tracer = new Tracer();
     final Blackboard bb = new Blackboard(clock, port, tracer);
     final AaTree tree = AaTree.build(new AaScorer());
-    { TS.world(bb); }
 
     /** A fresh Peaceful start: nothing in the bag, nothing known. */
     void freshStart() {

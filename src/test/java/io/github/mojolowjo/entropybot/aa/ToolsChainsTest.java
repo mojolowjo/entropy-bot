@@ -101,12 +101,12 @@ class ToolsChainsTest {
     }
 
     @Test
-    void aChainThatWouldExploreIsLeftToThePlannerRowAndSaidInTheDroppedList() {
+    void aChainThatEndsInAnExploreIsARowLikeAnyOtherAndCompetesOnItsPrice() {
         ScenariosTest.toolWorld();
         world(ScenariosTest.w(Map.of(), false, false, Map.of()));
         bb.in.coal = 0;
         Options.Choice c = new CoalOptions.Torches().choose(bb, null, 0, null);
-        assertTrue(c.ranked().stream().noneMatch(o -> o.id().equals("chain torch")), c.why());
-        assertTrue(c.dropped().stream().anyMatch(d -> d.startsWith("chain torch: something it needs is not seen yet")), c.dropped().toString());
+        Options.Option row = c.ranked().stream().filter(o -> o.id().equals("chain torch")).findFirst().orElseThrow(() -> new AssertionError(c.why()));
+        assertTrue(row.steps().stream().anyMatch(s -> s instanceof Step.Explore), row.steps().toString());
     }
 }

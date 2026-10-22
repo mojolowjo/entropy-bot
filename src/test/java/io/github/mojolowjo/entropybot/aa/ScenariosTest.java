@@ -296,5 +296,9 @@ class ScenariosTest {
         assertEquals(5, io.github.mojolowjo.entropybot.aa.brain.ToolGroup.items("iron_tools").size());
         assertTrue(io.github.mojolowjo.entropybot.aa.brain.ToolGroup.items("stone").isEmpty(), "not a group word");
         assertTrue(io.github.mojolowjo.entropybot.aa.brain.ToolGroup.items("unobtainium_tools").isEmpty());
+        // a modded stone-tier tool with another name is in "stone tools": the tier is read from its data, not its name
+        toolWorld().tool("moddium:rock_pick", io.github.mojolowjo.entropybot.aa.brain.ItemWorth.Role.PICKAXE, 4, 1, 131).tag("moddium:rock_pick", "minecraft:pickaxes").install();
+        assertTrue(io.github.mojolowjo.entropybot.aa.brain.ToolGroup.items("stone_tools").contains("moddium:rock_pick"));
+        assertFalse(io.github.mojolowjo.entropybot.aa.brain.ToolGroup.items("wood_tools").contains("moddium:rock_pick"));
     }
 }

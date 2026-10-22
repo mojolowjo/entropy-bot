@@ -3204,6 +3204,9 @@ public final class AaRuntime implements JobPort {
         try {
             var mt = MiningTierSource.read(Minecraft.getInstance().getSingleplayerServer());
             io.github.mojolowjo.entropybot.aa.brain.MiningTiers.use(mt);
+            List<io.github.mojolowjo.entropybot.aa.brain.ToolGroup.Tier> gameTiers = new ArrayList<>();       // the game's own tier enum: name, speed, attack bonus
+            for (net.minecraft.world.item.Tiers t : net.minecraft.world.item.Tiers.values()) gameTiers.add(new io.github.mojolowjo.entropybot.aa.brain.ToolGroup.Tier(t.name(), t.getSpeed(), t.getUses()));
+            io.github.mojolowjo.entropybot.aa.brain.ToolGroup.use(gameTiers);
             LOG.info("[entropybot] aa: mining tiers from data: {} pickaxes, {} blocks need a tool, drops {} ({} failed)", mt.pickaxes, mt.blocksNeedingTool, mt.dropsRead ? "read" : "not read (no integrated server)", mt.dropFailures);
         } catch (RuntimeException e) {
             if (!miningTiersWarned) LOG.warn("[entropybot] aa: mining tier data not read yet - the blocked share uses the old table, retrying every minute: {}", e.toString());

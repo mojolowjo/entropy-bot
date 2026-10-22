@@ -244,7 +244,6 @@ public final class CoalOptions {
                 else {
                     NeedChain.Chain ch = NeedChain.resolve("torch", want, world);
                     if (!ch.ok()) dropped.add("chain torch: " + ch.missing());
-                    else if (ch.explore()) dropped.add("chain torch: something it needs is not seen yet (the planner row looks for it)");
                     else if (!ch.steps().isEmpty()) add(rows, dropped, now, Options.typed("chain torch", "chain", ch.steps(), ch.cost(), ch.why(), "chain torch", memory));
                 }
             }
