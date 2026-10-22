@@ -214,7 +214,13 @@ public final class Tuning {
     /** Sets one; returns the reply line ("ok: ..." or "error: ..."). */
     public static String set(String name, double v) {
         Entry e = ALL.get(name);
+        if (e == null) {
+            // 0.39.z4 (owner 2026-10-22): the chat path lowercases the PM, so "gridLoop.settleMin" arrived as
+            // "gridloop.settlemin" and no camel-case name could be tuned; the name matches ignoring case
+            for (Entry c : ALL.values()) if (c.name().equalsIgnoreCase(name)) { e = c; break; }
+        }
         if (e == null) return "error: no tuning \"" + name + "\" - aa tune lists them";
+        name = e.name();
         if (Double.isNaN(v) || Double.isInfinite(v) || v < 0) return "error: " + name + " must be a number 0 or more";
         ALL.put(name, new Entry(e.name(), e.def(), v, e.run(), e.why()));
         return "ok: " + name + " " + fmt(v) + (v == e.def() ? " (the default)" : " (default " + fmt(e.def()) + ")");
