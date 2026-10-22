@@ -1593,7 +1593,9 @@ final class Crafting {
         if ("opentable".equals(c.stage)) {
             // walked to the table (the spliced walk step): right-click it and wait for its menu
             if (c.stageTick < 0) {
-                if (Gui.open(p) || Minecraft.getInstance().screen != null) Gui.close(p);
+                // 0.39.z7 (owner 2026-10-22, "every GUI interaction on purpose"): no blind close here. This branch
+                // runs every tick while the fork's click is in progress, and it closed the table the fork had just
+                // opened. A screen that is open is left to whoever opened it.
                 var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().use(c.table, "the crafting table");
                 if (r.running()) return "wait";
                 if (r.failed()) return craftFail(s, st, CraftJob.couldNotOpenTable(r.why()));
