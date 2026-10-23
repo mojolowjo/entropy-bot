@@ -755,6 +755,12 @@ public final class Commands implements Chains.Env {
         }
     }
 
+    /** 0.39.z28: "debug aa want x" is "aa debug want x": the aa line ("debug want x"), null when the debug is not an aa line. */
+    static String aaDebug(String rest) {
+        String[] vr = Texts.verbAndRest(rest == null ? "" : rest);
+        return vr[0].equalsIgnoreCase("aa") ? ("debug " + vr[1]).trim() : null;
+    }
+
     /** A PM's job: its end is whispered to the sender (the answer itself was whispered when it started). */
     private Listener pmListener(String to) {
         return notifyListener(to);
@@ -982,6 +988,7 @@ public final class Commands implements Chains.Env {
         if (verb.equals("look")) return Reply.now(io.github.mojolowjo.entropybot.view.ViewLive.look(player, rest));
         if (verb.equals("reply")) return Reply.now(replyCommand(rest));
         if (verb.equals("memory")) return Reply.now(MemoryCommand.command(core, this, rest));
+        if (verb.equals("debug") && aaDebug(rest) != null) return Reply.now(isOwner ? AaCommands.handle(this, aaDebug(rest)) : "sorry, only " + owner() + " can use aa");
         // V1b: the plumbing verbs live under debug ("debug autominer on" runs "autominer on" as before)
         if (verb.equals("debug") && OldWords.DEBUG_VERBS.contains(Texts.verbAndRest(rest)[0])) {
             if (!isOwner) return Reply.now("sorry, only " + owner() + " can use debug");
@@ -1910,11 +1917,12 @@ public final class Commands implements Chains.Env {
             case "recorder" -> { return Reply.now(io.github.mojolowjo.entropybot.recorder.RecorderCommand.handle(core.recorder, text, true, owner())); }
             case "baritone" -> { return Reply.now(BaritoneVerb.run(text, true, owner())); }
             case "mouse" -> { return Reply.now(io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.mouseCommand(text)); }
-            case "debug" -> { return Reply.now(DebugVerbs.handle(core, text, DebugRules.Source.LOCAL, true, owner())); }
+            case "debug" -> { return Reply.now(aaDebug(text) != null ? AaCommands.handle(this, aaDebug(text)) : DebugVerbs.handle(core, text, DebugRules.Source.LOCAL, true, owner())); }
             case "memory" -> { return Reply.now(MemoryCommand.command(core, this, text)); }
             case "pm" -> {
                 String[] dv = Texts.verbAndRest(text);
                 // the read-only debug verbs answer with the LOCAL source; "debug <plumbing verb>" (V1b) runs it through handle
+                if (dv[0].equals("debug") && aaDebug(dv[1]) != null) return Reply.now(AaCommands.handle(this, aaDebug(dv[1])));
                 if (dv[0].equals("debug") && !OldWords.DEBUG_VERBS.contains(Texts.verbAndRest(dv[1])[0]))
                     return Reply.now(DebugVerbs.handle(core, dv[1], DebugRules.Source.LOCAL, true, owner()));
                 Reply r = handle(owner(), text, false, notifyListener(owner()));

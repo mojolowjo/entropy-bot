@@ -30,6 +30,9 @@ final class AaCommands {
     static final List<String> GROUPS = List.of("orders", "areas and tags", "status", "tuning", "help");
     static final String AREAS = "areas and tags";
 
+    /** aa do / use (and their debug forms) while aa is off. */
+    static final String OFF = "aa is off (aa on first)";
+
     /** Longest meaning of one help line (owner 2026-10-23; the long text stays in docs/COMMANDS.md). */
     static final int MEANING_MAX = 100;    // structural: a chat line's length, not a tuning value
 
@@ -64,7 +67,7 @@ final class AaCommands {
         v("goals", (c, aa, vb, a) -> aa.goalsText(), f(O, "goals", "the orders waiting, in turn"));
         v("go", (c, aa, vb, a) -> aa.slow.go(), f(O, "go (the slow mode's next step)", "slow mode: run the next step"));
         v("skip|do|use|pick|ask", (c, aa, vb, a) -> {
-            if (!aa.on()) return "aa is off (aa on first)";
+            if (!aa.on()) return OFF;
             return aa.manual(vb, a);
         },
                 f(O, "skip <need>|none", "leave that need out this run (none: bring every skipped need back)"),
@@ -86,6 +89,8 @@ final class AaCommands {
             List<String> last = d.subList(Math.max(0, d.size() - 10), d.size());
             return "aa why (last " + last.size() + " of " + d.size() + "):\n" + String.join("\n", last) + (aa.on() ? "\nrungs: " + aa.ladderLine() : "") + StripStep.liveLine() + refusals + opts;
         }, f(S, "why", "the last 10 decisions, the rungs, the desires and options, the station lookups"));
+        v("debug", (c, aa, vb, a) -> aa.debug(a),          // 0.39.z28: /bot debug <aa line> is the same
+                f(S, "debug want|do|use ...", "the thinking of that line as a tree (ways, seconds, dropped), nothing moves"));
         v("tree", (c, aa, vb, a) -> aa.tree.mermaid() + (aa.on() ? "\n%% desires now: " + String.join(" | ", aa.brainLines(30)) + "\n%% " + aa.ideasLine() : ""),
                 f(S, "tree", "the behaviour tree as Mermaid, with the desires now"));
         v("predict", (c, aa, vb, a) -> aa.slow.predict(), f(S, "predict", "what the next step should take, before it runs"));

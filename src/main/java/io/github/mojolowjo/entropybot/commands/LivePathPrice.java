@@ -28,7 +28,11 @@ public final class LivePathPrice implements PathPrice {
     private LivePathPrice() {}
 
     @Override
-    public Walk toBlock(int x, int y, int z) {
+    public Walk toBlock(int x, int y, int z) { return price(x, y, z).walk(); }
+
+    /** 0.39.z28: the answer with the no-path reason (the chain's trace prints it; aa debug). */
+    @Override
+    public Answer price(int x, int y, int z) {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || !mc.isSameThread()) return none("the chain was priced off the game thread: Baritone's path cost runs on it only");
         IBaritone b = Jobs.baritone();
@@ -41,13 +45,13 @@ public final class LivePathPrice implements PathPrice {
         }
         if (a.noPath) {
             LOG.debug("[entropybot] path cost to {} {} {}: no path ({})", x, y, z, a.reason);
-            return null;
+            return new Answer(null, "no path: " + a.reason);
         }
-        return new Walk(a.ticks / io.github.mojolowjo.entropybot.aa.brain.GameTimes.TPS, !a.complete);
+        return new Answer(new Walk(a.ticks / io.github.mojolowjo.entropybot.aa.brain.GameTimes.TPS, !a.complete), null);
     }
 
-    private Walk none(String why) {
+    private Answer none(String why) {
         if (said.add(why)) LOG.warn("[entropybot] path cost: {}; walks are priced by the line x 1.3", why);
-        return null;
+        return new Answer(null, why);
     }
 }

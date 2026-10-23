@@ -101,7 +101,7 @@ public final class Steps {
             r = "error: " + e;
         }
         if (r != null) fail(r);
-        else why = stage() + " started";
+        else why = started(idx, steps);
     }
 
     /**
@@ -226,7 +226,13 @@ public final class Steps {
         why = "idle";
     }
 
-    private String stage() { return "step " + (idx + 1) + "/" + steps.size() + " " + steps.get(idx).text(); }
+    private String stage() { return stage(idx, steps); }
+
+    /** "step 1/6 craft oak_planks 3": how a run names its step (aa debug says the first step in these words). */
+    public static String stage(int idx, List<? extends Step> steps) { return "step " + (idx + 1) + "/" + steps.size() + " " + steps.get(idx).text(); }
+
+    /** The words a run logs when its step starts ("step 1/6 craft oak_planks 3 started"). */
+    public static String started(int idx, List<? extends Step> steps) { return stage(idx, steps) + " started"; }
 
     public Phase phase() { return phase; }
 

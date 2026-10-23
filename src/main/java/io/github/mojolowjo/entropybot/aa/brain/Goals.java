@@ -125,9 +125,14 @@ public final class Goals {
         return null;
     }
 
+    /** The goal {@link #add} would add, not in the list (aa debug prices it and drops it); the default n is 8 for an ore, 1 for an item. */
+    public static Goal draft(Thing.Result r, int n, int prio, long now) {
+        return new Goal(r, n > 0 ? n : r.ore() ? oreDefault() : 1, prio, now);
+    }
+
     /** Adds (or replaces) a goal; the default n is 8 for an ore, 1 for an item. */
     public static Goal add(Blackboard bb, Thing.Result r, int n, int prio, long now) {
-        Goal g = new Goal(r, n > 0 ? n : r.ore() ? oreDefault() : 1, prio, now);
+        Goal g = draft(r, n, prio, now);
         of(bb).removeIf(x -> x.r.key().equals(r.key()));
         of(bb).add(g);
         return g;

@@ -245,9 +245,82 @@ public final class NeedChain {
         }
     }
 
+    // ---- 0.39.z28 aa debug: the pricing recorded as a tree (read only: no price, way or pick reads it) ----
+
+    /**
+     * The planner's thinking while it prices one chain: every requirement's ways (each a node with what it priced inside it,
+     * its walks with the estimate kind, its breaks, its sources, its stations), each way's verdict in the chain's own words
+     * (the dropped reason the dropped list gets), and the explore "until" words with the ways that ended in them. Recorded
+     * only inside {@link #traced}; outside it the chain records nothing.
+     */
+    public static final class Trace {
+        /** One line of the tree and the lines under it. */
+        public static final class Node {
+            public final String text;
+            public final List<Node> kids = new ArrayList<>();
+            /** The way's verdict ("picked: 9.0 s", "dropped: loop ..."), null for a fact line. */
+            public String verdict;
+            final boolean way;
+            Node(String text, boolean way) { this.text = text; this.way = way; }
+        }
+
+        public final Node root = new Node("chain", false);
+        private final java.util.ArrayDeque<Node> open = new java.util.ArrayDeque<>();
+        /** Explore until word (as the step writes it) -> the ways that ended in exploring for it, in order. */
+        public final Map<String, Set<String>> untilFrom = new LinkedHashMap<>();
+
+        Trace() { open.push(root); }
+
+        void note(String s) { open.peek().kids.add(new Node(s, false)); }
+
+        Node push(String s, boolean way) {
+            Node n = new Node(s, way);
+            open.peek().kids.add(n);
+            open.push(n);
+            return n;
+        }
+
+        void pop() { if (open.size() > 1) open.pop(); }
+
+        /** The innermost way being priced ("the need" when none: the order's own requirement). */
+        String way() {
+            for (Node n : open) if (n.way) return n.text.substring("way ".length());
+            return "the need itself";
+        }
+
+        /** The tree as indented lines, two spaces a level, from {@code depth}. */
+        public List<String> lines(int depth) {
+            List<String> out = new ArrayList<>();
+            for (Node k : root.kids) lines(k, depth, out);
+            return out;
+        }
+
+        private static void lines(Node n, int depth, List<String> out) {
+            out.add("  ".repeat(depth) + n.text + (n.verdict == null ? "" : " -> " + n.verdict));
+            for (Node k : n.kids) lines(k, depth + 1, out);
+        }
+    }
+
+    private static final ThreadLocal<Trace> TRACE = new ThreadLocal<>();
+
+    /** The chain {@code run} prices, with its thinking recorded into {@code t} (aa debug). The chain is the same as without. */
+    public static Chain traced(Trace t, Supplier<Chain> run) {
+        Trace was = TRACE.get();
+        TRACE.set(t);
+        try {
+            return run.get();
+        } finally {
+            if (was == null) TRACE.remove(); else TRACE.set(was);
+        }
+    }
+
+    /** A new, empty trace for {@link #traced}. */
+    public static Trace trace() { return new Trace(); }
+
     // ---- the recursion ----
 
     private static final class Ctx {
+        final Trace trace = TRACE.get();
         final World w;
         final Map<String, Integer> bag = new LinkedHashMap<>();
         final List<Step> steps = new ArrayList<>();
@@ -281,6 +354,9 @@ public final class NeedChain {
         }
 
         boolean dead() { return stuck || fail != null; }
+
+        /** aa debug: a fact line under the way being priced (nothing outside a trace). */
+        void note(Supplier<String> s) { if (trace != null) trace.note(s.get()); }
 
         int have(String item) { return bag.getOrDefault(item, 0); }
 
@@ -490,16 +566,33 @@ public final class NeedChain {
         if (alts.isEmpty()) return null;
         distinctLabels(alts);
         List<Trial> trials = new ArrayList<>();
+        List<Trace.Node> nodes = new ArrayList<>();          // aa debug: each trial's node (empty outside a trace)
         int stepsAt = c.steps.size();
         int skipped = -1;
-        for (int i = 0; i < alts.size(); i++) {
-            if (c.trials > maxTrials() && trials.stream().anyMatch(t -> t.fail() == null && !t.stuck())) { skipped = i; break; }
-            Ctx.Snap s0 = c.snap();
-            double base = c.seconds;
-            c.trials++;
-            String p = alts.get(i).run.get();
-            trials.add(new Trial(alts.get(i), p, c.seconds - base, c.stuck, c.fail, c.loopOn, c.unknown, c.snap(), i));
-            c.restore(s0);
+        Trace.Node waysNode = c.trace == null ? null : c.trace.push("ways for " + (self == null ? "this requirement" : shw(self)) + " (" + alts.size() + ")", false);
+        try {
+            for (int i = 0; i < alts.size(); i++) {
+                if (c.trials > maxTrials() && trials.stream().anyMatch(t -> t.fail() == null && !t.stuck())) { skipped = i; break; }
+                Ctx.Snap s0 = c.snap();
+                double base = c.seconds;
+                c.trials++;
+                if (c.trace != null) nodes.add(c.trace.push("way " + alts.get(i).label, true));
+                String p;
+                try {
+                    p = alts.get(i).run.get();
+                } finally {
+                    if (c.trace != null) c.trace.pop();
+                }
+                trials.add(new Trial(alts.get(i), p, c.seconds - base, c.stuck, c.fail, c.loopOn, c.unknown, c.snap(), i));
+                if (c.trace != null) {
+                    Trial t = trials.get(trials.size() - 1);
+                    Trace.Node n = nodes.get(nodes.size() - 1);
+                    n.kids.add(new Trace.Node(t.fail() != null ? "fails: " + t.fail() : t.stuck() ? "ends in an explore (no price): " + p : "priced " + s(t.seconds()) + ": " + p, false));
+                }
+                c.restore(s0);
+            }
+        } finally {
+            if (c.trace != null) c.trace.pop();
         }
         double horizonS = Unit.seconds(c.w.horizonBlocks());
         Comparator<Trial> best = Comparator.<Trial>comparingInt(t -> t.stuck() ? 1 : 0)
@@ -514,23 +607,43 @@ public final class NeedChain {
             // (a loop back to an item still on the path above: one recipe circle through a member made in a tag's way is
             // listed at that tag, its item no longer on the path)
             boolean up = self != null && trials.stream().allMatch(t -> t.loopOn() != null && !t.loopOn().equals(self) && c.path.contains(t.loopOn()));
-            if (up) { c.fail = trials.get(0).fail(); c.loopOn = trials.get(0).loopOn(); }
-            else for (Trial t : trials) drop(c, t.alt().label, t.fail());
+            if (up) {
+                c.fail = trials.get(0).fail(); c.loopOn = trials.get(0).loopOn();
+                for (Trace.Node n : nodes) n.verdict = "fails up to the way that asked (a loop through " + shw(c.loopOn) + ")";
+            }
+            else for (Trial t : trials) { drop(c, t.alt().label, t.fail()); verdict(nodes, t, "dropped: " + t.fail()); }
             return null;
         }
         c.restore(win.after());
+        verdict(nodes, win, "picked" + (win.stuck() ? " (ends in an explore)" : ": " + s(win.seconds())));
         // dropped-audit (0.39.z16): every way not chosen is listed, a way ending in an explore too (it was left out when the
         // winner explored as well, or when it was a tag's or a group's member: the owner's charcoal vanished that way)
         for (Trial t : trials) {
             if (t == win) continue;
-            if (t.fail() != null) drop(c, t.alt().label, t.fail());
-            else if (t.stuck()) drop(c, t.alt().label, "no known source for " + shw(t.unknown()) + (win.stuck() ? " (the explore ends when one is known too)" : ""));
-            else if (t.alt().rate != null) drop(c, t.alt().label, s(t.seconds()) + String.format(Locale.ROOT, ", %.2f s a point with the eating (dearer a point than %s, %.2f)", t.alt().value(t.seconds()), win.alt().label, win.alt().value(win.seconds())));
-            else drop(c, t.alt().label, s(t.seconds()) + " (dearer than " + win.alt().label + (t.seconds() > horizonS ? ", past the horizon" : "") + ")");
+            String why;
+            if (t.fail() != null) why = t.fail();
+            else if (t.stuck()) why = "no known source for " + shw(t.unknown()) + (win.stuck() ? " (the explore ends when one is known too)" : "");
+            else if (t.alt().rate != null) why = s(t.seconds()) + String.format(Locale.ROOT, ", %.2f s a point with the eating (dearer a point than %s, %.2f)", t.alt().value(t.seconds()), win.alt().label, win.alt().value(win.seconds()));
+            else why = s(t.seconds()) + " (dearer than " + win.alt().label + (t.seconds() > horizonS ? ", past the horizon" : "") + ")";
+            drop(c, t.alt().label, why);
+            verdict(nodes, t, "dropped: " + why);
         }
-        if (skipped >= 0) for (int i = skipped; i < alts.size(); i++) drop(c, alts.get(i).label, "not priced (the search's bound: needChain.maxTrials, " + maxTrials() + " ways a chain)");
-        if (win.stuck()) widenExplore(c, stepsAt, trials);
+        if (skipped >= 0) for (int i = skipped; i < alts.size(); i++) {
+            String why = "not priced (the search's bound: needChain.maxTrials, " + maxTrials() + " ways a chain)";
+            drop(c, alts.get(i).label, why);
+            if (waysNode != null) {
+                Trace.Node n = new Trace.Node("way " + alts.get(i).label, true);
+                n.verdict = "dropped: " + why;
+                waysNode.kids.add(n);
+            }
+        }
+        if (win.stuck()) widenExplore(c, stepsAt, trials, win);
         return win;
+    }
+
+    /** aa debug: the trial's verdict on its node (nothing outside a trace). */
+    private static void verdict(List<Trace.Node> nodes, Trial t, String v) {
+        if (t.index() < nodes.size()) nodes.get(t.index()).verdict = v;
     }
 
     /**
@@ -538,11 +651,19 @@ public final class NeedChain {
      * ends when a source of ANY of them is known (their until words joined, the winner's first), so the chain is priced
      * again the moment a tree for charcoal or a coal ore turns up. The live check: {@code ExploreRules.untilFound} per word.
      */
-    private static void widenExplore(Ctx c, int base, List<Trial> trials) {
+    private static void widenExplore(Ctx c, int base, List<Trial> trials, Trial win) {
         Set<String> words = new LinkedHashSet<>();
         untilWords(c.steps, base, words);
         int own = words.size();
-        for (Trial t : trials) if (t.stuck() && t.fail() == null) untilWords(t.after().steps(), base, words);
+        if (c.trace != null) for (String w : words) c.trace.untilFrom.computeIfAbsent(w, k -> new LinkedHashSet<>()).add(win.alt().label);
+        for (Trial t : trials) if (t.stuck() && t.fail() == null) {
+            untilWords(t.after().steps(), base, words);
+            if (c.trace != null && t != win) {
+                Set<String> its = new LinkedHashSet<>();
+                untilWords(t.after().steps(), base, its);
+                for (String w : its) c.trace.untilFrom.computeIfAbsent(w, k -> new LinkedHashSet<>()).add(t.alt().label);
+            }
+        }
         if (words.size() == own) return;
         String until = String.join("|", words);
         for (int i = base; i < c.steps.size(); i++) if (c.steps.get(i) instanceof Step.Explore e && e.until() != null) c.steps.set(i, new Step.Explore(e.minutes(), until));
@@ -977,6 +1098,7 @@ public final class NeedChain {
         }
         c.steps.add(new Step.Craft(sh(item), batches * rec.outCount()));
         c.seconds += Price.craftS() * batches;
+        c.note(() -> "craft: " + sh(item) + " x" + batches * rec.outCount() + " (" + batches + " crafts): " + s(Price.craftS() * batches));
         c.bag.merge(item, batches * rec.outCount(), Integer::sum);
         return "craft: " + String.join(" + ", parts);
     }
@@ -1005,6 +1127,7 @@ public final class NeedChain {
         walkBack(c);
         c.steps.add(new Step.Smelt(sh(item), k * rec.outCount(), true));
         c.seconds += k * smeltTicks() / GameTimes.TPS;
+        c.note(() -> "smelt " + sh(item) + " x" + k * rec.outCount() + ": " + s(k * smeltTicks() / GameTimes.TPS));
         c.bag.merge(item, k * rec.outCount(), Integer::sum);
         return "smelt " + String.join(" + ", parts);
     }
@@ -1073,7 +1196,13 @@ public final class NeedChain {
     private static String station(Ctx c, String kind) {
         boolean table = ItemWorth.CRAFT.equals(kind);
         String label = table ? "table" : "furnace";
-        if (table ? c.tableReady : c.furnaceReady) return knownWalk(c, kind, table, label);
+        if (table ? c.tableReady : c.furnaceReady) {
+            boolean walkedBefore = table ? c.tableWalked : c.furnaceWalked;
+            String k = knownWalk(c, kind, table, label);
+            c.note(() -> "station " + label + ": " + (k != null ? "known, " + k : walkedBefore ? "known, walked to before in this chain" : "in reach"));
+            return k;
+        }
+        c.note(() -> "station " + label + ": none known: to make or take from the bag and place near me");
         String item = ItemWorth.stationOf(kind);
         if (item == null) { c.fail = "the game's data names no station for " + kind + " recipes"; return null; }
         String made = obtain(c, item, 1);
@@ -1081,6 +1210,7 @@ public final class NeedChain {
         if (c.stuck) return made == null ? null : label + " <- " + made;
         c.steps.add(new Step.PlaceNear(sh(item)));
         c.seconds += Price.placeS();
+        c.note(() -> "place " + sh(item) + " near me: " + s(Price.placeS()));
         c.bag.merge(item, -1, Integer::sum);
         if (table) { c.tableReady = true; c.tableWalked = true; } else { c.furnaceReady = true; c.furnaceWalked = true; }
         c.away = 0;                                       // placed near where the bot stands
@@ -1123,20 +1253,36 @@ public final class NeedChain {
      */
     private static Walked walk(Ctx c, int x, int y, int z, double dist) {
         PathPrice pp = c.w.path();
-        if (pp == null) return new Walked(walkS(dist), "");
+        if (pp == null) {
+            Walked out = new Walked(walkS(dist), "");
+            walkNote(c, x, y, z, dist, "line x " + StepTimes.pathFactor() + " (no path provider)", out);
+            return out;
+        }
         String key = x + "," + y + "," + z;
         Walked known = c.walks.get(key);
-        if (known != null) return known;
+        if (known != null) { walkNote(c, x, y, z, dist, "priced before in this pass", known); return known; }
         PathPrice.Walk a = null;
-        if (c.pathAsked < PathPrice.perChainMax()) {
+        String noAnswer = null;                           // aa debug: the provider's reason when it gave no walk
+        boolean asked = c.pathAsked < PathPrice.perChainMax();
+        if (asked) {
             c.pathAsked++;
-            a = pp.toBlock(x, y, z);
+            PathPrice.Answer ans = pp.price(x, y, z);
+            a = ans.walk();
+            noAnswer = ans.reason();
         }
-        Walked out = a == null || Double.isNaN(a.seconds()) || a.seconds() < 0
+        boolean line = a == null || Double.isNaN(a.seconds()) || a.seconds() < 0;
+        Walked out = line
                 ? new Walked(walkS(dist), "walk " + s(walkS(dist)) + " (line)")
                 : new Walked(a.seconds(), "walk " + (a.about() ? "about " : "") + s(a.seconds()) + " (path)");
         c.walks.put(key, out);
+        walkNote(c, x, y, z, dist, !line ? (a.about() ? "about: partial + heuristic (Baritone path)" : "Baritone path, complete")
+                : "line x " + StepTimes.pathFactor() + (asked ? " (no path answer from Baritone: " + (noAnswer != null ? noAnswer : "an unusable estimate") + ")" : " (pathCost.perChainMax queries used)"), out);
         return out;
+    }
+
+    /** aa debug: one walk's line (where, how far, the estimate's kind, its seconds). */
+    private static void walkNote(Ctx c, int x, int y, int z, double dist, String kind, Walked w) {
+        c.note(() -> "walk to " + x + " " + y + " " + z + " (" + Math.round(dist) + " m straight): " + kind + ", " + s(w.seconds()));
     }
 
     private static String noted(String phrase, Walked w) { return w.note().isEmpty() ? phrase : phrase + ", " + w.note(); }
@@ -1302,12 +1448,16 @@ public final class NeedChain {
                 // chop: no walk step before a block source (the cut/collect paths itself; the spot names the blocks and the price)
                 c.leafAt.put(sp.key(), c.steps.size());
                 c.steps.add(log ? new Step.ChopTree(new int[]{sp.x(), sp.y(), sp.z()}, wanted, null) : new Step.Collect(shw(gives), wanted));
+                c.note(() -> "source: known " + shw(blockOf(gives, sp)) + " at " + sp.x() + " " + sp.y() + " " + sp.z() + ", " + Math.round(sp.dist()) + " m" + (sp.count() > 0 ? ", " + sp.count() + " blocks" : ""));
                 Walked wk = walk(c, sp.x(), sp.y(), sp.z(), sp.dist());
                 if (firstWalk == null) firstWalk = wk;
                 c.seconds += wk.seconds();
                 c.away = wk.seconds();
             }
-            c.seconds += breakS(c, gives, sp) * take;
+            double each = breakS(c, gives, sp);
+            c.seconds += each * take;
+            final int took = take;
+            c.note(() -> "break " + shw(blockOf(gives, sp)) + " x" + took + ": tool " + (c.pickItem == null || tierOf(gives, sp) < 1 ? "hand" : sh(c.pickItem)) + ", " + s(each) + " each = " + s(each * took));
             c.taken.merge(sp.key(), take, Integer::sum);
             c.bag.merge(gives, got, Integer::sum);
             remaining -= got;
@@ -1406,7 +1556,12 @@ public final class NeedChain {
         c.steps.add(new Step.Explore(exploreMinutes(), shw(word)));      // live-facts: it ends once a source of the need is known
         c.stuck = true;
         if (c.unknown == null) c.unknown = word;
-        return "explore (" + reason + (band == null ? "" : "; it generates at Y " + band[0] + ".." + band[1] + ", going there first") + ")";
+        String out = "explore (" + reason + (band == null ? "" : "; it generates at Y " + band[0] + ".." + band[1] + ", going there first") + ")";
+        if (c.trace != null) {
+            c.trace.note("source: none known for " + shw(word) + ": " + out);
+            c.trace.untilFrom.computeIfAbsent(shw(word), k -> new LinkedHashSet<>()).add(c.trace.way());
+        }
+        return out;
     }
 
     /**

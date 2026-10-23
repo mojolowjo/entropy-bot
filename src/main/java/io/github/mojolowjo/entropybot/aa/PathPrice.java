@@ -16,6 +16,15 @@ public interface PathPrice {
     /** Baritone's price of the walk to stand by the block at x y z; null: no path answer within budget (the caller takes the line, said so). */
     Walk toBlock(int x, int y, int z);
 
+    /** 0.39.z28: one query's answer: the walk, or (walk null) why there is none, in the provider's words. */
+    record Answer(Walk walk, String reason) {}
+
+    /** {@link #toBlock} with the reason when there is no walk (aa debug prints it); a provider without reasons says so. */
+    default Answer price(int x, int y, int z) {
+        Walk w = toBlock(x, y, z);
+        return new Answer(w, w == null ? "this path provider gives no reason" : null);
+    }
+
     /** Milliseconds one query may take (the fork caps it). */
     static long budgetMs() { return (long) Tuning.get("pathCost.budgetMs"); }
 

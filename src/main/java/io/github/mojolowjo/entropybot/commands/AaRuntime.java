@@ -801,10 +801,15 @@ public final class AaRuntime implements JobPort {
         return null;
     }
 
+    /** AA's own needs/idle task running now (not the owner's, not the AI's), null: none (aa do/use stop it; aa debug says it). */
+    private Node ownTask() {
+        Node n = tree.slot.runningChild();
+        return n == null || n.id.equals("owner") || n.id.equals("ai") ? null : n;
+    }
+
     /** AA's own needs/idle task (not the owner's, not the AI's) is halted so the ladder chooses again now. */
     private boolean preemptOwnTask(String why) {
-        Node n = tree.slot.runningChild();
-        if (n == null || n.id.equals("owner") || n.id.equals("ai")) return false;
+        if (ownTask() == null) return false;
         tree.slot.preempt(why);
         LOG.info("[entropybot] aa: {}", why);
         return true;
@@ -833,7 +838,7 @@ public final class AaRuntime implements JobPort {
             case "do" -> {
                 if (a.equals("none")) { man.doRung = null; return "ok: aa do cleared"; }
                 String id = io.github.mojolowjo.entropybot.aa.AaManual.rungId(a);
-                if (id == null) return "usage: aa do <need>|none - needs: " + String.join(", ", io.github.mojolowjo.entropybot.aa.AaManual.NEEDS);
+                if (id == null) return doUsage();
                 man.doRung = id;
                 man.doSince = bb.clock.now();
                 man.skipped.remove(id);
@@ -854,7 +859,7 @@ public final class AaRuntime implements JobPort {
                 return "ok: " + id + " left out this run" + (pre ? " (its task stopped)" : "") + "; aa skip none brings it back";
             }
             case "use" -> {
-                if (a.isEmpty()) return "usage: aa use <option> (an option of the current rung, as aa why names it, e.g. pillar, smelt here)";
+                if (a.isEmpty()) return useUsage();
                 String rung = currentRung();
                 man.use = a.toLowerCase(java.util.Locale.ROOT);
                 man.useRung = rung;
@@ -863,7 +868,7 @@ public final class AaRuntime implements JobPort {
                 if (r != null && r.picker() == null) {
                     man.use = null;
                     man.useRung = null;
-                    return rung + " has one option (its plan): nothing to choose";
+                    return oneOption(rung);
                 }
                 boolean pre = rung != null && preemptOwnTask("aa use " + a + ": " + rung + " picks again");
                 return "ok: " + (rung == null ? "the next rung that picks" : rung) + " runs \"" + a + "\" if it is a ranked option" + (pre ? " (its task stopped, picking again)" : "")
@@ -2891,31 +2896,16 @@ public final class AaRuntime implements JobPort {
             for (String one : many) out.append(out.length() == 0 ? "" : "\n").append(one).append(": ").append(want(one));
             return out.toString();
         }
-        if (arg != null && arg.trim().equalsIgnoreCase("deposit")) return order("deposit", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Deposit()));
-        var a = io.github.mojolowjo.entropybot.aa.brain.Goals.parse(arg);
-        if (a.err() != null) return a.err();
-        String w = a.word();
-        String wantKey = switch (w) {
-            case "house", "build" -> "build";
-            case "explore", "tidy" -> w;
-            default -> null;
-        };
+        if (arg != null && arg.trim().equalsIgnoreCase("deposit")) return order("deposit", depositSteps());
+        WantAsk ask = wantAsk(arg);
+        if (ask.refusal() != null) return ask.refusal();
+        var a = ask.a();
+        var r = ask.r();
         long now = System.currentTimeMillis();
-        if (wantKey != null) {         // a want by name: bored now (it wins by its weight when nothing more urgent runs)
+        if (ask.wantKey() != null) {         // a want by name: bored now (it wins by its weight when nothing more urgent runs)
+            String wantKey = ask.wantKey();
             io.github.mojolowjo.entropybot.aa.brain.Wants.done(bb, "want." + wantKey, now - (long) (100 * io.github.mojolowjo.entropybot.aa.brain.Wants.DAY_MS));  // structural: percent
-            return "ok: want." + wantKey + " is bored now (weight " + io.github.mojolowjo.entropybot.aa.brain.Personality.fmt(io.github.mojolowjo.entropybot.aa.brain.Personality.of(bb).get(wantKey))
-                    + "; aa like " + wantKey + " <n> to raise it)"
-                    + (io.github.mojolowjo.entropybot.aa.brain.Only.orders() ? " - but orders only is on: wants are silent (aa needs on to let it run)" : "");
-        }
-        for (var d : tree.brain.desires())
-            if (d.id.equals("needs." + w)) return w + " is one of my needs: aa do " + w + " runs it now";
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null) return "error: no world";
-        var r = io.github.mojolowjo.entropybot.aa.brain.Thing.resolve(w, catalog(mc));
-        if (r.err() != null) {
-            for (var d : tree.brain.desires())       // review: an ore/item word wins; a need name only when nothing resolves
-                if (d.id.equals("needs." + w)) return w + " is one of my needs: aa do " + w + " runs it now";
-            return "aa want: " + r.err();
+            return "ok: " + wantBored(wantKey);
         }
         var g = io.github.mojolowjo.entropybot.aa.brain.Goals.add(bb, r, a.n(), a.prio(), now);
         tree.brain.failures.forget(g.id());           // orders-tier: aa want again clears a parked order and its old holds
@@ -2931,6 +2921,133 @@ public final class AaRuntime implements JobPort {
                 + Math.round(io.github.mojolowjo.entropybot.aa.brain.Goals.score(bb, g)) + "): " + r.text()
                 + lootLine + (blocked != null ? " - parked: " + blocked : "") + (on() ? "" : " (aa is off: aa on to work on it)");
     }
+
+    /** 0.39.z28: aa want's words read once for aa want and aa debug want (one copy of the refusals): a refusal, else the parts. */
+    record WantAsk(String refusal, io.github.mojolowjo.entropybot.aa.brain.Goals.Args a, io.github.mojolowjo.entropybot.aa.brain.Thing.Result r, String wantKey) {}
+
+    private WantAsk wantAsk(String arg) {
+        var a = io.github.mojolowjo.entropybot.aa.brain.Goals.parse(arg);
+        if (a.err() != null) return new WantAsk(a.err(), a, null, null);
+        String w = a.word();
+        String wantKey = switch (w) {
+            case "house", "build" -> "build";
+            case "explore", "tidy" -> w;
+            default -> null;
+        };
+        if (wantKey != null) return new WantAsk(null, a, null, wantKey);
+        for (var d : tree.brain.desires())
+            if (d.id.equals("needs." + w)) return new WantAsk(isNeed(w), a, null, null);
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return new WantAsk("error: no world", a, null, null);
+        var r = io.github.mojolowjo.entropybot.aa.brain.Thing.resolve(w, catalog(mc));
+        if (r.err() != null) {
+            for (var d : tree.brain.desires())       // review: an ore/item word wins; a need name only when nothing resolves
+                if (d.id.equals("needs." + w)) return new WantAsk(isNeed(w), a, null, null);
+            return new WantAsk("aa want: " + r.err(), a, null, null);
+        }
+        return new WantAsk(null, a, r, null);
+    }
+
+    private static String isNeed(String w) { return w + " is one of my needs: aa do " + w + " runs it now"; }
+
+    private String wantBored(String wantKey) {
+        return "want." + wantKey + " is bored now (weight " + io.github.mojolowjo.entropybot.aa.brain.Personality.fmt(io.github.mojolowjo.entropybot.aa.brain.Personality.of(bb).get(wantKey))
+                + "; aa like " + wantKey + " <n> to raise it)"
+                + (io.github.mojolowjo.entropybot.aa.brain.Only.orders() ? " - but orders only is on: wants are silent (aa needs on to let it run)" : "");
+    }
+
+    private static List<io.github.mojolowjo.entropybot.aa.moves.Step> depositSteps() { return List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Deposit()); }
+
+    // ---- 0.39.z28 aa debug <line>: the thinking of a want / do / use, printed, nothing written or started ----
+
+    /**
+     * aa debug (owner 2026-10-23): the verb's thinking without driving. It writes nothing: no Goals.add, no tree.brain.add,
+     * no failures.forget, no lootCtx / knownDue, no job, no Baritone goal or input, aa on/off unchanged. Other verbs: said.
+     */
+    String debug(String line) {
+        String t = line == null ? "" : line.trim();
+        if (t.isEmpty()) return "usage: aa debug <want ...|do <need>|use <option>> (the thinking, nothing moves)";
+        String verb = t.contains(" ") ? t.substring(0, t.indexOf(' ')) : t, arg = t.contains(" ") ? t.substring(t.indexOf(' ') + 1).trim() : "";
+        return switch (verb) {
+            case "want" -> debugWant(arg);
+            case "do", "use" -> on() ? debugManual(verb, arg) : AaCommands.OFF;
+            default -> "nothing to plan for " + verb;
+        };
+    }
+
+    private String debugWant(String arg) {
+        String dry = io.github.mojolowjo.entropybot.aa.DebugTree.DRY;
+        if (io.github.mojolowjo.entropybot.aa.brain.StripOrder.is(arg)) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.level == null || mc.player == null) return "error: no world";
+            String[] err = new String[1];
+            var s = StripStep.resolve(arg, mc.player, catalog(mc), err);
+            if (s == null) return "aa want: " + err[0];
+            io.github.mojolowjo.entropybot.aa.brain.StripOrder.Saved saved;
+            try {
+                saved = StripStep.load(s);
+            } catch (RuntimeException e) {
+                return "aa want: error: " + e.getMessage();
+            }
+            var loop = io.github.mojolowjo.entropybot.aa.brain.Goals.stripLoop(s);
+            return "aa debug want " + arg + " " + dry + "\norder: " + s.text() + " (" + s.ores().size() + " ore blocks; "
+                    + (saved == null || !saved.started() ? "fresh tunnel" : "resumes at " + saved.blocks() + " blocks dug from " + saved.x() + " " + saved.y() + " " + saved.z()) + ")"
+                    + "\n  no chain: a strip order is the fork's strip mine, its own loop"
+                    + "\n  first step: " + (loop == null || loop.isEmpty() ? "none" : io.github.mojolowjo.entropybot.aa.moves.Steps.started(0, loop) + " (of " + io.github.mojolowjo.entropybot.aa.moves.Step.label(loop) + ")");
+        }
+        List<String> many = AaCommands.wantList(arg);
+        if (many.size() > 1) {
+            StringBuilder out = new StringBuilder();
+            for (String one : many) out.append(out.length() == 0 ? "" : "\n").append(debugWant(one));
+            return out.toString();
+        }
+        if (arg != null && arg.trim().equalsIgnoreCase("deposit")) {
+            var steps = depositSteps();
+            return "aa debug want deposit " + dry + "\norder: deposit (" + io.github.mojolowjo.entropybot.aa.moves.Step.label(steps) + ")"
+                    + "\n  no chain: the chest is chosen when the step starts (its own rule on the chests known then)"
+                    + "\n  first step: " + io.github.mojolowjo.entropybot.aa.moves.Steps.started(0, steps);
+        }
+        WantAsk ask = wantAsk(arg);
+        if (ask.refusal() != null) return ask.refusal();
+        if (ask.wantKey() != null) return "aa debug want " + arg + " " + dry + "\nwould: " + wantBored(ask.wantKey()) + " (a want by name: no chain)";
+        long now = System.currentTimeMillis();
+        var g = io.github.mojolowjo.entropybot.aa.brain.Goals.draft(ask.r(), ask.a().n(), ask.a().prio(), now);
+        List<String> pick = new ArrayList<>();
+        pick.add("score: " + Math.round(io.github.mojolowjo.entropybot.aa.brain.Goals.score(bb, g)) + " (the order's own score, Goals.score)");
+        io.github.mojolowjo.entropybot.aa.brain.Brain.Scored best = null;
+        for (var s : tree.brain.lastScored()) if (best == null || s.score() > best.score()) best = s;
+        pick.add("brain's best now: " + (best == null ? "none scored yet" : best.d().id + " score " + Math.round(best.score()) + (best.skip() != null ? " (" + best.skip() + ")" : ""))
+                + "; the full rank of a draft order is not computed (it is not in the brain's list)");
+        List<String> stations = List.of(c.nearby.stationsLine(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT), c.nearby.stationsLine(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT));
+        return io.github.mojolowjo.entropybot.aa.DebugTree.order(bb, g, "want " + arg, this::sourceBlocksOf, pick, stations);
+    }
+
+    private String debugManual(String verb, String arg) {
+        String a = arg == null ? "" : arg.trim();
+        String head = "aa debug " + verb + " " + a + " " + io.github.mojolowjo.entropybot.aa.DebugTree.DRY + "\n";
+        var man = io.github.mojolowjo.entropybot.aa.AaManual.of(bb);
+        if (verb.equals("do")) {
+            if (a.equals("none")) return head + "would: clear aa do (now: " + (man.doRung == null ? "none" : man.doRung) + ")";
+            String id = io.github.mojolowjo.entropybot.aa.AaManual.rungId(a);
+            if (id == null) return doUsage();
+            Node n = ownTask();
+            return head + "would: " + id + " runs now; the other rungs wait until it ends" + (n != null ? "; my task " + n.id + " would stop" : "; no task of mine to stop")
+                    + (man.skipped.contains(id) ? "; it is skipped this run now and would come back" : "");
+        }
+        if (a.isEmpty()) return useUsage();
+        String rung = currentRung();
+        io.github.mojolowjo.entropybot.aa.Need r = null;
+        for (var x : io.github.mojolowjo.entropybot.aa.Need.all(tree.ladder)) if (x.id.equals(rung)) r = x;
+        if (r != null && r.picker() == null) return oneOption(rung);
+        return head + "would: " + (rung == null ? "the next rung that picks" : rung) + " run \"" + a.toLowerCase(java.util.Locale.ROOT) + "\" if it is a ranked option"
+                + (rung != null && ownTask() != null ? "; its task would stop and pick again" : "") + (r != null ? "; options now: " + r.options() : "");
+    }
+
+    private static String doUsage() { return "usage: aa do <need>|none - needs: " + String.join(", ", io.github.mojolowjo.entropybot.aa.AaManual.NEEDS); }
+
+    private static String useUsage() { return "usage: aa use <option> (an option of the current rung, as aa why names it, e.g. pillar, smelt here)"; }
+
+    private static String oneOption(String rung) { return rung + " has one option (its plan): nothing to choose"; }
 
     /**
      * The owner's one-shot order (aa scan, aa eat, aa restore, aa want deposit): its typed steps on the one step runner
