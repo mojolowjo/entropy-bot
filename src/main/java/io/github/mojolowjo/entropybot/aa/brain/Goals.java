@@ -220,6 +220,8 @@ public final class Goals {
     /** The goals reached now (removed from the list); the adapter drops their desires and tells the owner. */
     public static List<Goal> done(Blackboard bb) {
         List<Goal> out = new ArrayList<>();
+        // jobs (owner 2026-10-22): "the goal check waits until the current job is done, then checks/cancels"
+        if (JobBoundary.mid()) return out;
         for (Goal g : of(bb)) if (have(bb.in.bag, g) >= g.n) out.add(g);
         of(bb).removeAll(out);
         return out;

@@ -199,7 +199,8 @@ public final class Replan {
                 stepAt = lastAt = now;
                 return true;
             }
-            if (now - stepAt >= longStepMs() && now - lastAt >= everyMs()) {
+            // jobs (owner 2026-10-22): no 5 s re-score inside a block job / placement / use; only at its boundary
+            if (!io.github.mojolowjo.entropybot.aa.brain.JobBoundary.mid() && now - stepAt >= longStepMs() && now - lastAt >= everyMs()) {
                 lastAt = now;
                 return true;
             }

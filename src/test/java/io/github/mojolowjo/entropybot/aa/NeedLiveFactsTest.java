@@ -128,7 +128,7 @@ class NeedLiveFactsTest {
 
     @Test
     void theChainSourcesRawIronLiveFromTheOre() {
-        NeedChain.Chain c = NeedChain.resolve("raw_iron", 2, new NeedChain.World(Map.of("minecraft:stone_pickaxe", 1), false, SEEN));     // iron ore asks for a stone pickaxe
+        NeedChain.Chain c = NeedChain.resolve("raw_iron", 1, new NeedChain.World(Map.of("minecraft:stone_pickaxe", 1), false, SEEN));     // iron ore asks for a stone pickaxe; S26: the scan knows a 1-ore cluster
         assertFalse(c.explore(), c.why());
         boolean walk = false, collect = false;
         for (Step st : c.steps()) {

@@ -1276,13 +1276,18 @@ public final class NeedChain {
             int blocksWanted = (int) Math.ceil(remaining / per - 1e-9);  // structural: epsilon
             int avail = sp.count() <= 0 ? blocksWanted : sp.count() - c.taken.getOrDefault(sp.key(), 0);
             // S20 (owner 2026-10-22): the chop takes the whole tree (the fork's ChopTree), so a counted tree is priced and
-            // bagged by all its logs, the surplus to stock; the next tree only while the need is not covered
-            boolean whole = log && sp.count() > 0;
+            // bagged by all its logs, the surplus to stock; the next tree only while the need is not covered.
+            // S26 (owner 2026-10-22, "a cluster of coal ore is one job"): an ore cluster the scan counted is the same unit (the
+            // fork's component rule mines it whole); an uncounted spot (count 0) stays "as many blocks as needed"
+            boolean ore = !log && sp.block() != null && ItemWorth.hasTag(sp.block(), "c:ores");
+            boolean whole = (log || ore) && sp.count() > 0;
             int take = whole ? avail : Math.min(avail, blocksWanted);
             if (take <= 0) continue;
             int got = whole ? (int) Math.floor(take * per + 1e-9) : Math.min(remaining, (int) Math.floor(take * per + 1e-9));  // structural: epsilon
             if (got <= 0) got = Math.min(remaining, take);
-            int wanted = Math.min(remaining, got);                       // the step's number: what the need asks of this source
+            // the step's number: an ore cluster's yield (the job's count is the cluster's drops: a short pickup fails the
+            // job); a cut keeps the logs asked (S17: the chop takes the whole tree whatever the number); else what is asked
+            int wanted = ore && whole ? got : Math.min(remaining, got);
             Integer at = c.leafAt.get(sp.key());
             if (at != null) {
                 Step prev = c.steps.get(at);

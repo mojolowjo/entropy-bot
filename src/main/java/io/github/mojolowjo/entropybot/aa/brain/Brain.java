@@ -367,10 +367,13 @@ public final class Brain extends Node {
                 running = -1;
                 return choose(bb, now, cur);
             }
-            replanWhileRunning(bb, now);
+            // jobs (owner 2026-10-22): the replan, the goal-met and the reason-gone checks wait for a job boundary
+            boolean mid = JobBoundary.mid();
+            if (!mid) replanWhileRunning(bb, now);
             Status s = cur.node.tick(bb);
             if (bb.task() != null) taskSeen = true;
-            Scored mine = lastScored.size() > running ? lastScored.get(running) : null;
+            mid = JobBoundary.mid();
+            Scored mine = mid || lastScored.size() <= running ? null : lastScored.get(running);
             Boolean metNow = mine == null || s != Status.RUNNING ? null : cur.metNow(bb);
             // aa-switch2 (r2-iron: "night.sleep wanted -1" 0.5 s after its pick): a score <= 0 ends the task only after
             // ZERO_END_MS without a break, and never while the desire's own probe answer is held (a flicker); met = done at once
@@ -455,6 +458,8 @@ public final class Brain extends Node {
             boolean canUrge = s.d() != cur && s.skip() == null && s.score() < 100 && urgent(s.d(), s.own());  // structural: the score scale tops at 100 (the owner's aa do)
             if (!canUrge) s.d().urgentSince = -1;          // review: the grace starts afresh every time
             if (s.d() == cur || s.skip() != null || s.score() >= 100) continue;  // structural: the score scale tops at 100 (the owner's aa do)
+            // jobs (owner 2026-10-22): mid-job only danger (a trumping desire) and starving food interrupt; the rest waits for the boundary
+            if (JobBoundary.mid() && !s.d().trumps && !(s.d().id.equals("needs.food") && bb.in.food < Tuning.get("trumpFood"))) continue;
             // grace: an urgent challenger with a grace waits that long after it turned urgent (the running step finishes)
             if (canUrge) {
                 if (s.d().urgentSince < 0) s.d().urgentSince = now;

@@ -87,7 +87,7 @@ class ToolsChainsTest {
         assertNotNull(steps, "the dig makes its pickaxe");
         assertTrue(steps.contains(new Step.Craft("wooden_pickaxe", 1)), steps.toString());
         assertTrue(steps.contains(new Step.Craft("stone_pickaxe", 1)), "iron ore asks for stone: " + steps);
-        assertEquals(new Step.Collect("raw_iron", 8), steps.get(steps.size() - 1), "then the dig: " + steps);
+        assertEquals(new Step.Collect("raw_iron", 10), steps.get(steps.size() - 1), "then the dig (S26: the 10-ore cluster whole): " + steps);
         assertTrue(steps.stream().noneMatch(s -> s instanceof Step.Craft k && (k.item().startsWith("iron") || k.item().startsWith("golden"))), steps.toString());
         assertNull(Goals.prereq(bb, g), "no tools need to wait for");
     }

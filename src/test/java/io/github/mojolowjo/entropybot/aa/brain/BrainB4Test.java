@@ -119,6 +119,31 @@ class BrainB4Test {
         assertEquals(16, Thing.anchorY("absolute", 16, -64, 320));
     }
 
+    /** jobs (owner-watched 2026-10-22): a goal met halfway through a chop job: the job runs to its end, THEN the goal completes. */
+    @Test
+    void aGoalMetMidChopCompletesOnlyAtTheJobsEnd() {
+        Goals.Goal g = Goals.add(bb, Thing.resolve("iron_ore", cat(GEN)), 2, 0, clock.now());
+        var chop = new io.github.mojolowjo.entropybot.aa.moves.Step.Collect("raw_iron", 4);
+        assertTrue(JobBoundary.holds(chop));
+        assertFalse(JobBoundary.holds(new io.github.mojolowjo.entropybot.aa.moves.Step.Craft("torch", 4)), "a craft checks between batches");
+        try {
+            JobBoundary.enter(chop);
+            io.github.mojolowjo.entropybot.aa.Replan.Timer timer = new io.github.mojolowjo.entropybot.aa.Replan.Timer();
+            assertTrue(timer.due(chop.text(), 0), "the step's start is a boundary");
+            for (int got = 1; got <= 4; got++) {
+                bb.in.bag = Map.of("raw_iron", got);              // the count is met at 2, halfway
+                assertTrue(Goals.done(bb).isEmpty(), "mid-job: no goal check at " + got);
+                assertFalse(timer.due(chop.text(), 60_000L * got), "mid-job: no 5 s re-score");
+            }
+            assertEquals(1, Goals.of(bb).size(), "the goal is still there while the job runs");
+            JobBoundary.leave();                                  // the job ended: the boundary
+            assertEquals(1, Goals.done(bb).size());
+            assertEquals(g.r.key(), Goals.of(bb).isEmpty() ? g.r.key() : "not done");
+        } finally {
+            JobBoundary.leave();
+        }
+    }
+
     @Test
     void goalsParseScoreAndDone() {
         Goals.Args a = Goals.parse("iron ore 5 high");

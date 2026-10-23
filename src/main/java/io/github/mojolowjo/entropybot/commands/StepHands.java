@@ -64,6 +64,19 @@ public final class StepHands implements Steps.Hands {
 
     @Override public String start(Step s) {
         reset();
+        // jobs (owner 2026-10-22): a block job / placement / use holds the brain's goal and replan checks until it ends
+        String r = start0(s);
+        if (r == null) io.github.mojolowjo.entropybot.aa.brain.JobBoundary.enter(s);
+        return r;
+    }
+
+    @Override public Car.Status status(Step s) {
+        Car.Status st = status0(s);
+        if (st.state() != Car.State.RUNNING) io.github.mojolowjo.entropybot.aa.brain.JobBoundary.leave();
+        return st;
+    }
+
+    private String start0(Step s) {
         step = s;
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null) return "error: not in a world";
@@ -106,7 +119,7 @@ public final class StepHands implements Steps.Hands {
         }
     }
 
-    @Override public Car.Status status(Step s) {
+    private Car.Status status0(Step s) {
         if (s != step) return Car.Status.failed("not the running step");
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null) return Car.Status.failed("not in a world");
@@ -167,6 +180,7 @@ public final class StepHands implements Steps.Hands {
     }
 
     private void reset() {
+        io.github.mojolowjo.entropybot.aa.brain.JobBoundary.leave();
         step = null;
         fishing = null;
         vein = null;
@@ -393,17 +407,25 @@ public final class StepHands implements Steps.Hands {
         return mine(p, blocks, ids, k.n(), "collect " + k.n() + " " + k.item());
     }
 
-    /** chop B1: blocks the game tags as logs go to the fork's chop process (the whole tree); others to the mine process. */
+    /** chop B1: blocks the game tags as logs go to the fork's chop process (the whole tree); ores too (S26, {@link #allOres}); others to the mine process. */
     static boolean allLogs(List<Block> blocks) {
         for (Block b : blocks) if (!b.defaultBlockState().is(BlockTags.LOGS)) return false;
+        return !blocks.isEmpty();
+    }
+
+    /** S26: blocks the game tags as ores (c:ores): a cluster, mined whole by the fork's component rule. */
+    static boolean allOres(List<Block> blocks) {
+        for (Block b : blocks) if (!b.defaultBlockState().is(net.neoforged.neoforge.common.Tags.Blocks.ORES)) return false;
         return !blocks.isEmpty();
     }
 
     private String mine(LocalPlayer p, List<Block> blocks, List<String> ids, int n, String what) {
         IBaritone b = Jobs.baritone();
         if (b == null) return "error: baritone not loaded";
-        chopping = allLogs(blocks);
-        if (!chopping) {
+        // S26 (owner 2026-10-22): an ore cluster is one job like a tree: the fork's component rule (mineComponent) for logs and
+        // ores alike; any other block set (stone, sand...) stays on the stock mine process (a stone "component" is the hillside)
+        chopping = allLogs(blocks) || allOres(blocks);
+        if (!allLogs(blocks)) {
             // the tier guard (owner-watched 2026-10-22): never start a dig the bag's pickaxe cannot do; the step fails at once
             // and the chain re-prices with the pickaxe first. Blocks it cannot dig leave the filter.
             int have = 0;
@@ -434,7 +456,7 @@ public final class StepHands implements Steps.Hands {
         miningWhat = what;
         try {
             if (chopping) {
-                b.getChopProcess().chop(target, filter);
+                b.getChopProcess().mineComponent(target, filter);
                 if (!b.getChopProcess().isActive()) {          // it ended at its start (none in range): its own reason
                     endMining();
                     return "error: " + what + ": " + endOf(b.getChopProcess().lastEnd());

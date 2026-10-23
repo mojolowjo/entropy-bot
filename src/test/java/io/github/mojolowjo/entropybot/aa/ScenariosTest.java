@@ -784,6 +784,36 @@ class ScenariosTest {
         assertTrue(coalWay.startsWith("coal: 110.2 s (dearer than charcoal)"), coalWay);
     }
 
+    /**
+     * S26 (owner 2026-10-22, "a cluster of coal ore is one job; the job ends when all are mined and collected"): a wooden
+     * pickaxe in the bag, a 4 coal ore cluster 10 m, need 1 coal. The job is the whole cluster: walk 10 m 3.01 + 4 ore x 2.25
+     * = 9.0: 12.01 s; the collect step's count is 4 (the bag ends with 4 coal).
+     */
+    @Test
+    void s26_anOreClusterIsOneJobPricedWhole() {
+        world("wooden", "stone");
+        Spot coal = new Spot(0, 40, 10, 10, "minecraft:coal_ore", 4);
+        Chain c = NeedChain.resolve("coal", 1, w(Map.of("wooden_pickaxe", 1), false, false, Map.of("coal", List.of(coal))));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertEquals(12.01, c.seconds(), TOL, c.why());
+        assertEquals(List.of(new Step.Collect("coal", 4)), c.steps().stream().filter(s -> s instanceof Step.Collect).toList(), c.steps().toString());
+    }
+
+    /**
+     * jobs: a cut of a 10-log tree with want=1 is priced as the whole tree (the fork's chop takes it whole: the count goes to
+     * Baritone only between trees); the step keeps the logs asked (S17), so its end is done on the bag's gain.
+     */
+    @Test
+    void aCutOfATenLogTreeForOneLogIsTheWholeTree() {
+        world("wooden", "stone");
+        Chain c = NeedChain.resolve("oak_log", 1, w(Map.of(), false, false, Map.of("oak_log", List.of(tree(10, 10)))));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        Step.ChopTree t = (Step.ChopTree) c.steps().stream().filter(s -> s instanceof Step.ChopTree).findFirst().orElseThrow();
+        assertEquals(1, t.logs(), c.steps().toString());
+        assertEquals(1, c.steps().size(), "one cut, the whole tree: " + c.steps());
+        assertEquals(3.01 + 10 * 3.0, c.seconds(), TOL, c.why());
+    }
+
     /** path-cost: no path answer is the line, said "(line)"; a partial path is used and said "about"; past perChainMax the line. */
     @Test
     void aWalkWithNoPathIsTheLineAndSaysSoAndThePerChainBoundHolds() {

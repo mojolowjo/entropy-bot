@@ -36,6 +36,8 @@ public final class Nearby {
         List<int[]> find(Set<String> blocks, int radius);
         /** The game tags the block as logs. */
         boolean isLog(String block);
+        /** S26: the game tags the block as an ore (c:ores): its spot is a cluster, mined whole. */
+        default boolean isOre(String block) { return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.hasTag(block, "c:ores"); }
         /** The fair-play rule at the cell: an ore cell counts only when seen (aa fair on); any other cell: true. */
         boolean fairOk(int x, int y, int z);
         /** A block tagged leaves within {@code reach} blocks beside or above the cell. */
@@ -212,7 +214,8 @@ public final class Nearby {
                 String id = s.blockAt(p[0], p[1], p[2]);
                 if (id == null || !blocks.contains(id) || !s.allowed(p[0], p[1], p[2]) || !s.fairOk(p[0], p[1], p[2])) continue;
                 if (s.isLog(id) && !s.leavesNear(p[0], p[1], p[2], leafReach())) continue;
-                return new Spot(p[0], p[1], p[2], dist(p, me), id, s.isLog(id) ? treeLogs(s.logs(scanR()), p, s.treeCap()) : 0);
+                return new Spot(p[0], p[1], p[2], dist(p, me), id, s.isLog(id) ? treeLogs(s.logs(scanR()), p, s.treeCap())
+                        : s.isOre(id) ? clusterSize(s, blocks, p) : 0);
             }
         }
         return fallback == null ? null : fallback.get();
@@ -258,6 +261,17 @@ public final class Nearby {
             }
         }
         return n;
+    }
+
+    /**
+     * S26 (owner 2026-10-22, "a cluster of coal ore is one job; we know its block count from the scan"): an ore spot's cluster,
+     * the fork's component rule (ChopTree.component, 26 neighbours, cap chopComponentMax) over the scan's cells of the same
+     * block set that fair play lets me count. At least 1.
+     */
+    public static int clusterSize(Scan s, Set<String> blocks, int[] start) {
+        List<int[]> cells = new ArrayList<>();
+        for (int[] q : s.find(blocks, scanR())) if (s.fairOk(q[0], q[1], q[2])) cells.add(q);
+        return treeLogs(cells, start, s.treeCap());
     }
 
     private static String key(int x, int y, int z) { return x + "," + y + "," + z; }
