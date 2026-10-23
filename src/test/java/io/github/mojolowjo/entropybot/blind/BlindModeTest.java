@@ -153,22 +153,4 @@ class BlindModeTest {
         assertEquals(42, o.get("since").getAsLong());
         assertEquals(0, o.get("framesSkipped").getAsLong());
     }
-
-    @Test
-    void dashboardProject() {
-        String fj = "{\"keyFile\":\"C:\\\\bots\\\\minecraft-bot\\\\dashboard\\\\key.txt\",\"port\":8766}";
-        DashboardControl.Project p = DashboardControl.fromFastJson(fj, x -> true);
-        assertTrue(p.ok());
-        assertEquals(Path.of("C:\\bots\\minecraft-bot"), p.dir());
-        assertEquals(Path.of("C:\\bots\\minecraft-bot\\bridge.ps1"), p.script());
-        assertTrue(DashboardControl.fromFastJson(fj, x -> false).problem().startsWith("no bridge.ps1"));
-        assertEquals("fast.json has no keyFile", DashboardControl.fromFastJson("{}", x -> true).problem());
-        assertEquals("fast.json is not a JSON object", DashboardControl.fromFastJson("nope{", x -> true).problem());
-        assertTrue(DashboardControl.find(dir).problem().startsWith("no entropybot\\fast.json"));
-        assertEquals(List.of("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", p.script().toString(), "dashboard", "stop"),
-                DashboardControl.command(p.script(), true));
-        assertEquals("http://localhost:8765/?key=****", DashboardControl.maskedLink("localhost", 8765));
-        assertTrue(DashboardControl.statusLine(true, "localhost").contains("?key=****"));
-        assertTrue(DashboardControl.statusLine(false, "localhost").contains("not running"));
-    }
 }

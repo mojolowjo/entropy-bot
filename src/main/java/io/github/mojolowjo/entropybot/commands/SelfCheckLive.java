@@ -103,7 +103,6 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         }
         try {
             f.addAll(io.github.mojolowjo.entropybot.blind.BlindRuntime.INSTANCE.findings());   // 0.26.0 blind mode
-            f.addAll(io.github.mojolowjo.entropybot.blind.BotConfigScreen.findings());          // 0.26.0 the config screen's dashboard buttons
         } catch (RuntimeException e) {
             f.add(new SelfCheck.Finding("blindcheck", "couldn't check blind mode: " + e, "blind status"));
         }

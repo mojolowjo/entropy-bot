@@ -53,6 +53,7 @@ public final class StepRun {
         this.label = label;
         driver = io.github.mojolowjo.entropybot.aa.door.Door.current();
         req = null;
+        reportTo = null;
         Steps.Phase ph = steps.start(key, s, Core.INSTANCE.tick());
         LOG.info("[entropybot] steps: {} - {}", label, Step.label(s));
         return ph == Steps.Phase.FAILED ? "error: " + steps.why() : null;
@@ -74,13 +75,27 @@ public final class StepRun {
         req = null;
         boolean done = steps.phase() == Steps.Phase.DONE;
         if (r != null) c.requests.done(r.id, done ? "ok: " + label + " - " + why : "error: " + label + ": " + why, !done);
+        // 0.39.z24: an aa order's end is whispered to whoever gave it (one line) and logged
+        String to = reportTo;
+        reportTo = null;
+        if (to != null) {
+            var kind = io.github.mojolowjo.entropybot.screen.OrderEnd.kind(done, cancelling, why);
+            String line = io.github.mojolowjo.entropybot.screen.OrderEnd.line(label, kind, why);
+            LOG.info("[entropybot] order end to {}: {}", to, line);
+            c.whisperEnd(to, line, !done);
+        }
     }
+
+    /** 0.39.z24: who hears this run's end (an aa order: its sender); null = AA's own run, no whisper. */
+    String reportTo;
+    private boolean cancelling;
 
     /** Ends the run (the owner's stop, AA's switch, a death); its name or null when none ran. */
     String stop(String why) {
         if (!steps.running()) return null;
         steps.cancel(why);
-        ended();
+        cancelling = true;
+        try { ended(); } finally { cancelling = false; }
         return label;
     }
 

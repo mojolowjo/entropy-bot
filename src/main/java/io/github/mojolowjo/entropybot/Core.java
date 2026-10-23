@@ -256,7 +256,8 @@ public final class Core {
                 advisorInstalled = true;
                 io.github.mojolowjo.entropybot.baritone.CostAdvisorHook.install();
             }
-            try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(io.github.mojolowjo.entropybot.aa.door.Driver.REFLEX)) { reflexes.tick(tick); }     // AA_CLEANUP 2
+            boolean ownerDrives = io.github.mojolowjo.entropybot.screen.DriveRuntime.INSTANCE.on();     // 0.39.z24: I drive pauses reflexes and window care
+            if (!ownerDrives) try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(io.github.mojolowjo.entropybot.aa.door.Driver.REFLEX)) { reflexes.tick(tick); }     // AA_CLEANUP 2
             knowledge.flushIfDue(tick);
             if (tick % 20 == 0) writeStock();                                   // C2: stock.json for the dashboard
             // package H: what the caps dropped, in the log
@@ -288,7 +289,7 @@ public final class Core {
             io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.tick(mc, guard.core);     // mining plan: the rule snapshot (never throws)
             try { io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setCurrentJob(commands.jobs.running() ? commands.jobs.job.id : -1); } catch (Throwable caught) { Quiet.warn("Core.onClientTick failed, carrying on with the fallback", caught); }
             if (tick % 100 == 50) io.github.mojolowjo.entropybot.commands.Clearing.fallWatch(commands.jobs.running());     // 0.31.1 review 1
-            io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.tick(tick, commands.jobs.running(), reflexes.hold());
+            if (!ownerDrives) io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.tick(tick,commands.jobs.running(), reflexes.hold());
             io.github.mojolowjo.entropybot.engine.WatchCamera.INSTANCE.tick();
             io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.tick(tick);      // camera v2: known air (never throws)
             io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.tick(tick);     // watch seen: the visible-faces sampler (never throws)

@@ -927,6 +927,8 @@ public final class AaRuntime implements JobPort {
     }
 
     String turnOn() {
+        String driving = io.github.mojolowjo.entropybot.screen.DriveRuntime.INSTANCE.aaOnRefusal();     // 0.39.z24 I drive
+        if (driving != null) return driving;
         JsonObject s0 = sw();
         if (!io.github.mojolowjo.entropybot.aa.AaSwitch.hasMode(s0)) io.github.mojolowjo.entropybot.aa.AaSwitch.only(s0, io.github.mojolowjo.entropybot.aa.brain.Only.ORDERS);     // orders-tier: the default
         io.github.mojolowjo.entropybot.aa.brain.Only.set(io.github.mojolowjo.entropybot.aa.AaSwitch.mode(s0));
@@ -999,8 +1001,9 @@ public final class AaRuntime implements JobPort {
     }
 
     /** Puts freeLook back to the value from before AA (aa off, world left). */
-    void lookRestore() {
-        if (savedFreeLook == null) return;
+    String lookRestore() {
+        if (savedFreeLook == null) return null;
+        String problem = null;
         try {
             var st = baritone.api.BaritoneAPI.getSettings();
             st.freeLook.value = savedFreeLook;
@@ -1013,12 +1016,14 @@ public final class AaRuntime implements JobPort {
             LOG.info("[entropybot] aa: freeLook restored to {}, randomLooking {}/{} smoothLook {}", savedFreeLook, savedRandomLooking, savedRandomLooking113, savedSmoothLook);
         } catch (RuntimeException | LinkageError e) {
             LOG.warn("[entropybot] aa: freeLook not restored: {}", e.toString());
+            problem = "Baritone's look settings (freeLook, smoothLook, randomLooking) not restored: " + e;
         }
         savedFreeLook = null;
         savedRandomLooking = null;
         savedRandomLooking113 = null;
         savedSmoothLook = null;
         savedSmoothTicks = null;
+        return problem;
     }
 
     String turnOff(String why) {
@@ -2351,6 +2356,7 @@ public final class AaRuntime implements JobPort {
     /** "AA: slot>needs>...RUNNING 34s by needs | danger: calm | last switch 2m ago: done TOOLS" (AA_PLAN 6). */
     public String statusLine() {
         long now = System.currentTimeMillis();
+        if (io.github.mojolowjo.entropybot.screen.DriveRuntime.INSTANCE.on()) return "AA: off - owner drives (config screen: I drive off, then aa on)";     // 0.39.z24
         if (!on()) return "AA: off" + (offReason != null ? " (" + offReason + ")" : "");
         StringBuilder b = new StringBuilder("AA: ").append(io.github.mojolowjo.entropybot.aa.brain.Only.modeText()).append(" | ");     // orders-tier: the mode first
         if (now < heldUntil) b.append("held ").append((heldUntil - now + 59_999) / 60_000).append(" min after a stop");  // structural: round up to whole minutes
@@ -2931,6 +2937,7 @@ public final class AaRuntime implements JobPort {
     String order(String name, List<io.github.mojolowjo.entropybot.aa.moves.Step> steps) {
         String err = c.stepRun.start("owner " + name, steps, "aa " + name);
         if (err != null) return "aa " + name + ": " + err;
+        c.stepRun.reportTo = c.lastFrom != null ? c.lastFrom : c.owner();     // 0.39.z24: its end is whispered
         LOG.info("[entropybot] aa: owner order {}: {}", name, io.github.mojolowjo.entropybot.aa.moves.Step.label(steps));
         return "ok: aa " + name + " runs (" + io.github.mojolowjo.entropybot.aa.moves.Step.label(steps) + "; aa status shows it)";
     }

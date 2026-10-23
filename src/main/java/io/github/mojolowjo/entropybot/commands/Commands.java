@@ -760,8 +760,13 @@ public final class Commands implements Chains.Env {
             }
             ChatParse.Pm pm = ChatParse.parse(text, chatType, sender, signed, self, publicPrefix());
             if (pm == null) return;
-            if (!isAllowed(pm.from())) {
-                if (refused.add(pm.from().toLowerCase())) whisper(pm.from(), "Sorry, I only take orders from " + owner() + ".");
+            // 0.39.z24: only the config screen's allowed players may PM commands (empty = nobody; the keyboard always may)
+            var verdict = io.github.mojolowjo.entropybot.screen.AllowRule.pm(pm.from(), allowed(), refused);
+            if (verdict != io.github.mojolowjo.entropybot.screen.AllowRule.Verdict.ALLOW) {
+                if (verdict == io.github.mojolowjo.entropybot.screen.AllowRule.Verdict.REFUSE_SAY) {
+                    refused.add(pm.from().toLowerCase());
+                    whisper(pm.from(), io.github.mojolowjo.entropybot.screen.AllowRule.REFUSAL);
+                }
                 LOG.info("[entropybot] ignored pm from {}: {}", pm.from(), pm.body());
                 return;
             }
@@ -855,6 +860,7 @@ public final class Commands implements Chains.Env {
     boolean whisperSent(String to, String text) {
         // package H: the caps live in Outbox (one answer, the queue; one-line messages to the owner still get in)
         boolean all = true;
+        if (to != null && to.equalsIgnoreCase(owner())) io.github.mojolowjo.entropybot.screen.CommandBox.REPLIES.add(text);     // 0.39.z24 the command box
         for (String part : outbox.add(to, text, owner())) {
             all = false;
             LOG.info("[entropybot] whisper dropped (outbox full) to {}: {}", to, part);
@@ -899,10 +905,45 @@ public final class Commands implements Chains.Env {
         return out;
     }
 
+    /** 0.39.z24: the keyboard (lines queued under the owner's name: /bot, the command box, the fast port) or a player on the allowed list. */
     boolean isAllowed(String name) {
-        if (name.equalsIgnoreCase(owner())) return true;
-        for (String a : allowed()) if (a.equalsIgnoreCase(name)) return true;
-        return false;
+        return name.equalsIgnoreCase(owner()) || io.github.mojolowjo.entropybot.screen.AllowRule.onList(name, allowed());
+    }
+
+    /** 0.39.z24 the config screen's allowed players (pm.json "allowed"). */
+    public List<String> allowedList() { return allowed(); }
+
+    /** 0.39.z24 the config screen saves the list (at most Limits.ALLOWED names; the rest are dropped and said). */
+    public String setAllowed(List<String> names) {
+        JsonArray a = new JsonArray();
+        int max = io.github.mojolowjo.entropybot.memory.Limits.ALLOWED, dropped = 0;
+        for (String n : names) { if (a.size() < max) a.add(n); else dropped++; }
+        pmStore.data().add("allowed", a);
+        pmStore.changed(core.tick());
+        refused.clear();
+        LOG.info("[entropybot] allowed players set from the config screen: {}", a.size());
+        return "saved: " + io.github.mojolowjo.entropybot.screen.AllowRule.describe(allowed()) + (dropped > 0 ? " - " + dropped + " name(s) dropped, the list holds " + max : "");
+    }
+
+    /** Who sent the line being handled (an aa order's end is whispered to them). */
+    String lastFrom;
+
+    /** 0.39.z24 I drive: AA off in this world and its look settings back; a problem text or null. */
+    public String driveAaOff() {
+        if (aaRuntime == null) return "AA is not loaded (no world yet): nothing to switch off";
+        String look = aaRuntime.lookRestore();      // first: turnOff's own restore would find nothing left to report
+        if (aaRuntime.on()) aaRuntime.turnOff("owner drives");
+        return look;
+    }
+
+    /** 0.39.z24 I drive: every job, chain and step run stopped, Baritone cancelled; a problem text or null. */
+    public String driveStopAll() {
+        try {
+            stopAll();
+            return null;
+        } catch (RuntimeException e) {
+            return "stop everything failed: " + e;
+        }
     }
 
     // ---- the dispatcher (the bridge's handlePm) ----
@@ -949,7 +990,8 @@ public final class Commands implements Chains.Env {
         if (player == null) return Reply.now(null);
         String[] vr = Texts.verbAndRest(message);
         String verb = vr[0], rest = vr[1], raw = vr[2];
-        boolean isOwner = from.equalsIgnoreCase(owner());
+        boolean isOwner = isAllowed(from);       // 0.39.z24: the keyboard or a player on the allowed list
+        if (!internal && !auto) lastFrom = from;
         long tick = core.tick();
         if (!isOwner) {
             String r = Texts.guestRefusal(verb, rest, raw, owner());
@@ -1543,7 +1585,7 @@ public final class Commands implements Chains.Env {
     String allowCommand(String verb, String rest, boolean isOwner) {
         if (!isOwner) return "only " + owner() + " can change who I listen to";
         List<String> list = allowed();
-        if (verb.equals("allowed")) return "I take orders from: " + owner() + (list.isEmpty() ? "" : ", " + String.join(", ", list));
+        if (verb.equals("allowed")) return "I take orders from: " + io.github.mojolowjo.entropybot.screen.AllowRule.describe(list);
         if (!rest.matches("^\\w{3,16}$")) return "usage: " + verb + " <player name>";
         JsonArray kept = new JsonArray();
         for (String a : list) if (!a.equalsIgnoreCase(rest)) kept.add(a);

@@ -30,6 +30,9 @@ public final class WindowCare {
 
     public boolean freeMouse() { return freeMouse; }
 
+    /** 0.39.z24 "I drive" (config screen): false = vanilla cursor grab, true = the mod's free cursor. */
+    public void setFreeMouse(boolean free) { freeMouse = free; }
+
     /** What to do this tick. Pure. */
     public static Set<Action> decide(long tick, boolean pauseOnLostFocus, boolean freeMouse, boolean windowActive, boolean mouseGrabbed,
                                      Screen screen, boolean jobRunning, boolean reflexActive) {

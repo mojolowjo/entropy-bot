@@ -29,10 +29,10 @@ public final class EntropyBot {
             var j = Core.INSTANCE.commands.jobs.job;
             return j != null && Core.INSTANCE.commands.jobs.running() ? j.type : null;
         }, s -> Core.INSTANCE.commands.whisper(Core.INSTANCE.commands.owner(), s));
-        // 0.26.0 the config screen (NeoForge 21.1: IConfigScreenFactory registered as the mod's extension point;
+        // 0.39.z24 the config screen (NeoForge 21.1: IConfigScreenFactory registered as the mod's extension point;
         // loader-specific, the screen itself is a vanilla Screen)
         container.registerExtensionPoint(net.neoforged.neoforge.client.gui.IConfigScreenFactory.class,
-                (net.neoforged.neoforge.client.gui.IConfigScreenFactory) (mod, parent) -> new io.github.mojolowjo.entropybot.blind.BotConfigScreen(parent));
+                (net.neoforged.neoforge.client.gui.IConfigScreenFactory) (mod, parent) -> new io.github.mojolowjo.entropybot.screen.ConfigScreen(parent));
         NeoForge.EVENT_BUS.addListener(EntropyBot::onChat);
         // 0.35.2: /ai and /bot in the bot's own window (client commands: NeoForge RegisterClientCommandsEvent, never sent to the server)
         NeoForge.EVENT_BUS.addListener(net.neoforged.neoforge.client.event.RegisterClientCommandsEvent.class,
