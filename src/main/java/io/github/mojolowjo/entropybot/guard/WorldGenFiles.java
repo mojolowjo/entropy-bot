@@ -24,9 +24,9 @@ import java.util.TreeSet;
  * 0.39.z26 (2): the pure half of the world-gen block read (the structure fact's "crafted and not world-gen" leg). The block
  * ids world gen places, from the data the client's jars carry (the same data packs the loot book reads, JarPacks): every
  * block state's {@code "Name"} in {@code data/<ns>/worldgen/configured_feature/*.json} and
- * {@code data/<ns>/worldgen/noise_settings/*.json} (the same JSON the registries' codecs write), and every palette entry of
- * the structure templates {@code data/<ns>/structure/*.nbt} (villages, mineshafts, ...). Fossils and monster rooms are
- * placed by code, not data: their blocks are not in the set. Then the cache file (per mod list) and the owner's override
+ * {@code data/<ns>/worldgen/noise_settings/*.json} (the same JSON the registries' codecs write). 0.39.z26 (3): the structure
+ * templates ({@code data/<ns>/structure/*.nbt}) are not read: villages and fossils are built things, so their blocks stay
+ * structure blocks (STRUCTURE_BLOCKS.md). Then the cache file (per mod list) and the owner's override
  * file. No name of ours: every id comes from the files.
  */
 public final class WorldGenFiles {
@@ -34,11 +34,9 @@ public final class WorldGenFiles {
 
     /** The JSON folders under data/<ns>/ that hold block states world gen places. */
     public static final List<String> JSON_DIRS = List.of("worldgen/configured_feature", "worldgen/noise_settings");
-    /** The structure templates' folder under data/<ns>/. */
-    public static final String TEMPLATE_DIR = "structure";
     /** The owner's correction, in the entropybot folder: {"<block id>": true (world gen places it) | false (it does not)}. */
     public static final String OVERRIDE_FILE = "worldgen-override.json";
-    static final int CACHE_VERSION = 1;  // structural: the cache file's format version
+    static final int CACHE_VERSION = 2;  // structural: the cache file's format version (2: no template blocks)
 
     /** One file of the read: its id ("ns:path" under data/ns) and how to open it. */
     public interface Entry {
@@ -46,31 +44,17 @@ public final class WorldGenFiles {
         InputStream open() throws IOException;
     }
 
-    /** A structure template's palette block names from its file (the adapter: the game's NbtIo; pure here, no game classes). */
-    public interface Palette {
-        Collection<String> names(InputStream in) throws IOException;
-    }
-
     /** What one read made: the block ids, the files read, the files skipped and the first such error. */
     public record Read(Set<String> blocks, int files, int bad, String firstBad) {}
 
-    /** Reads the JSON entries (block-state names) and the template entries (palettes) into one set; a broken file is counted, never thrown. */
-    public static Read read(Collection<? extends Entry> json, Collection<? extends Entry> templates, Palette palette) {
+    /** Reads the JSON entries' block-state names into one set; a broken file is counted, never thrown. */
+    public static Read read(Collection<? extends Entry> json) {
         Set<String> names = new HashSet<>();
         int files = 0, bad = 0;
         String firstBad = null;
         for (Entry e : json) {
             try (InputStream in = e.open(); Reader r = new InputStreamReader(in, StandardCharsets.UTF_8)) {
                 collect(JsonParser.parseReader(r), names);
-                files++;
-            } catch (IOException | RuntimeException x) {
-                bad++;
-                if (firstBad == null) firstBad = e.id() + ": " + x;
-            }
-        }
-        for (Entry e : templates) {
-            try (InputStream in = e.open()) {
-                names.addAll(palette.names(in));
                 files++;
             } catch (IOException | RuntimeException x) {
                 bad++;

@@ -163,7 +163,7 @@ public final class StructureTable {
             onlyReg.removeAll(jarSet);
             onlyJar.removeAll(reg);
             if (onlyReg.isEmpty() && onlyJar.isEmpty()) LOG.info("[entropybot] structure facts: the server's world-gen registries agree with the jars ({} blocks)", reg.size());
-            else LOG.info("[entropybot] structure facts: registries vs jars differ (the jars stand; the registries hold no structure templates): {} only in the registries (first: {}), {} only in the jars (first: {})",
+            else LOG.info("[entropybot] structure facts: registries vs jars differ (the jars stand): {} only in the registries (first: {}), {} only in the jars (first: {})",
                     onlyReg.size(), onlyReg.isEmpty() ? "-" : onlyReg.first(), onlyJar.size(), onlyJar.isEmpty() ? "-" : onlyJar.first());
         } catch (RuntimeException e) {
             Quiet.warn("structure facts: the registry check failed (the jars' set stands)", e);

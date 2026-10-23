@@ -23,7 +23,7 @@ import java.util.Set;
  * {@code entropybot/worldgen-<hash>.json}, then the owner's {@code worldgen-override.json}. Rule 15: {@link #blocks} is null
  * until the read is done (not loaded), then a set (empty = the jars gave no world-gen data, said). A failed read is said
  * and gives the empty set (crafted blocks refused outside areas), never a silent open. Loader notes: vanilla data-pack API
- * (MultiPackResourceManager.listResources, NbtIo); Fabric: the same calls.
+ * (MultiPackResourceManager.listResources); Fabric: the same calls.
  */
 final class WorldGenReader {
     private static final Logger LOG = LogUtils.getLogger();
@@ -65,11 +65,10 @@ final class WorldGenReader {
                 String from = "cache";
                 if (r == null) {
                     from = "jars";
-                    List<WorldGenFiles.Entry> json = new ArrayList<>(), nbt = new ArrayList<>();
+                    List<WorldGenFiles.Entry> json = new ArrayList<>();
                     try (var rm = packs.open()) {
                         for (String d : WorldGenFiles.JSON_DIRS) add(rm.listResources(d, rl -> rl.getPath().endsWith(".json")), json);
-                        add(rm.listResources(WorldGenFiles.TEMPLATE_DIR, rl -> rl.getPath().endsWith(".nbt")), nbt);
-                        r = WorldGenFiles.read(json, nbt, WorldGenReader::palette);
+                        r = WorldGenFiles.read(json);
                     }
                     if (cache != null) {
                         try {
@@ -82,7 +81,7 @@ final class WorldGenReader {
                 }
                 none = r.blocks().isEmpty();
                 s = r.blocks();
-                LOG.info("[entropybot] structure facts: world gen places {} blocks (from the {}: {} packs, {} files, {} skipped{}; fossils and monster rooms are code, not in it); {} ms",
+                LOG.info("[entropybot] structure facts: world gen places {} blocks (from the {}: {} packs, {} files, {} skipped{}; configured features and noise settings only; structure templates are not read: villages and fossils are built things, their blocks stay structure blocks); {} ms",
                         s.size(), from, jars, r.files(), r.bad(), r.firstBad() == null ? "" : ", first: " + r.firstBad(), (System.nanoTime() - t0) / 1_000_000);  // structural: ns to ms
             } catch (RuntimeException | Error e) {
                 LOG.warn("[entropybot] structure facts: the world-gen read failed ({}) - crafted blocks are refused outside areas until the override file names them", e.toString());
@@ -96,23 +95,6 @@ final class WorldGenReader {
                 blocks = s;
             }
         });
-    }
-
-    /** A structure template's block names: its "palette", or each of its "palettes" (the vanilla template layout, the game's NbtIo). */
-    static List<String> palette(InputStream in) throws IOException {
-        var t = net.minecraft.nbt.NbtIo.readCompressed(in, net.minecraft.nbt.NbtAccounter.unlimitedHeap());
-        List<String> out = new ArrayList<>();
-        names(t.getList("palette", net.minecraft.nbt.Tag.TAG_COMPOUND), out);
-        var ps = t.getList("palettes", net.minecraft.nbt.Tag.TAG_LIST);
-        for (int i = 0; i < ps.size(); i++) names(ps.getList(i), out);
-        return out;
-    }
-
-    private static void names(net.minecraft.nbt.ListTag l, List<String> out) {
-        for (int i = 0; i < l.size(); i++) {
-            String n = l.getCompound(i).getString("Name");
-            if (!n.isEmpty()) out.add(n);
-        }
     }
 
     private static void add(Map<ResourceLocation, Resource> found, List<WorldGenFiles.Entry> out) {

@@ -116,30 +116,53 @@ class StructureBlocksTest {
 
     static byte[] utf8(String s) { return s.getBytes(java.nio.charset.StandardCharsets.UTF_8); }
 
-    /** An in-memory jar's world-gen files: two configured features, a noise setting and one structure template. */
+    /**
+     * A small in-memory jar laid out like vanilla's data (file names and block states as the vanilla configured features
+     * and overworld noise settings write them), plus a village house and a fossil template that must not be read. Every
+     * file under the read's own folders (WorldGenFiles.JSON_DIRS) is taken, as JarPacks' listResources gives them.
+     */
     static WorldGenFiles.Read jarRead() throws java.io.IOException {
-        var feature = entry("minecraft:worldgen/configured_feature/ore_rocks.json", utf8("{\"type\":\"minecraft:ore\",\"config\":{\"targets\":["
-                + "{\"state\":{\"Name\":\"minecraft:diorite\"}},{\"state\":{\"Name\":\"minecraft:andesite\"}},{\"state\":{\"Name\":\"minecraft:granite\"}}]}}"));
-        var patch = entry("minecraft:worldgen/configured_feature/patch.json", utf8("{\"config\":{\"state_provider\":{\"state\":{\"Name\":\"minecraft:coarse_dirt\",\"Properties\":{}}}}}"));
-        var noise = entry("minecraft:worldgen/noise_settings/overworld.json", utf8("{\"default_block\":{\"Name\":\"minecraft:stone\"}}"));
-        // the template's palette: the game's NbtIo is not on the test classpath, so the stand-in palette reader takes one name per line
-        var broken = entry("minecraft:worldgen/configured_feature/broken.json", utf8("{not json"));
-        WorldGenFiles.Palette lines = in -> List.of(new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).split("\n"));
-        return WorldGenFiles.read(List.of(feature, patch, noise, broken), List.of(entry("minecraft:structure/ruin.nbt", utf8("minecraft:mossy_cobblestone"))), lines);
+        Map<String, String> files = new java.util.LinkedHashMap<>();
+        for (String rock : List.of("diorite", "andesite", "granite"))
+            files.put("data/minecraft/worldgen/configured_feature/ore_" + rock + "_upper.json", "{\"type\":\"minecraft:ore\",\"config\":{\"discard_chance_on_air_exposure\":0.0,\"size\":64,\"targets\":["
+                    + "{\"state\":{\"Name\":\"minecraft:" + rock + "\"},\"target\":{\"predicate_type\":\"minecraft:tag_match\",\"tag\":\"minecraft:base_stone_overworld\"}}]}}");
+        files.put("data/minecraft/worldgen/configured_feature/forest_rock.json", "{\"type\":\"minecraft:forest_rock\",\"config\":{\"state\":{\"Name\":\"minecraft:mossy_cobblestone\"}}}");
+        files.put("data/minecraft/worldgen/noise_settings/overworld.json", "{\"default_block\":{\"Name\":\"minecraft:stone\"},\"default_fluid\":{\"Name\":\"minecraft:water\",\"Properties\":{\"level\":\"0\"}},"
+                + "\"surface_rule\":{\"type\":\"minecraft:sequence\",\"sequence\":[{\"type\":\"minecraft:condition\",\"if_true\":{\"type\":\"minecraft:biome\",\"biome_is\":[\"minecraft:wooded_badlands\"]},"
+                + "\"then_run\":{\"type\":\"minecraft:block\",\"result_state\":{\"Name\":\"minecraft:coarse_dirt\"}}},"
+                + "{\"type\":\"minecraft:block\",\"result_state\":{\"Name\":\"minecraft:grass_block\",\"Properties\":{\"snowy\":\"false\"}}}]}}");
+        files.put("data/minecraft/worldgen/configured_feature/broken.json", "{not json");
+        files.put("data/minecraft/structure/village/plains/houses/plains_small_house_1.nbt", "minecraft:oak_planks");
+        files.put("data/minecraft/structure/fossil/spine_1.nbt", "minecraft:bone_block");
+        var bytes = new java.io.ByteArrayOutputStream();
+        try (var zip = new java.util.zip.ZipOutputStream(bytes)) {
+            for (var e : files.entrySet()) { zip.putNextEntry(new java.util.zip.ZipEntry(e.getKey())); zip.write(utf8(e.getValue())); zip.closeEntry(); }
+        }
+        List<WorldGenFiles.Entry> json = new java.util.ArrayList<>();
+        try (var zip = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(bytes.toByteArray()))) {
+            for (java.util.zip.ZipEntry z; (z = zip.getNextEntry()) != null; ) {
+                String[] p = z.getName().split("/", 3);  // data / ns / path
+                if (!p[2].endsWith(".json")) continue;
+                for (String d : WorldGenFiles.JSON_DIRS) if (p[2].startsWith(d + "/")) json.add(entry(p[1] + ":" + p[2], zip.readAllBytes()));
+            }
+        }
+        return WorldGenFiles.read(json);
     }
 
     @Test
     void aServerClientWithTheJarSetDigsThroughCraftedTerrainButNotBuiltBlocks() throws Exception {
         WorldGenFiles.Read r = jarRead();
-        assertEquals(4, r.files(), "three JSON files and one template read");
+        assertEquals(5, r.files(), "the five world-gen JSON files read; the templates are not");
         assertEquals(1, r.bad(), "the broken file is counted, not thrown");
+        assertEquals(Set.of("minecraft:diorite", "minecraft:andesite", "minecraft:granite", "minecraft:mossy_cobblestone", "minecraft:stone",
+                "minecraft:water", "minecraft:coarse_dirt", "minecraft:grass_block"), r.blocks(), "the feature and noise JSON's block-state names, nothing from the templates");
         Set<String> gen = r.blocks();
         for (String b : List.of("diorite", "andesite", "granite", "coarse_dirt", "mossy_cobblestone"))
             assertEquals(Structure.NO, WorldGenFiles.fact(false, false, false, false, true, gen, "minecraft:" + b), b + ": crafted, but world gen places it");
         assertEquals(Structure.YES, WorldGenFiles.fact(false, false, false, false, true, gen, "minecraft:oak_planks"), "planks: crafted, not world-gen");
         assertEquals(Structure.YES, WorldGenFiles.fact(false, false, false, true, true, gen, "minecraft:crafting_table"), "a station");
         assertEquals(Structure.YES, WorldGenFiles.fact(true, false, false, false, false, gen, "minecraft:glass"), "glass: #impermeable");
-        assertEquals(Structure.YES, WorldGenFiles.fact(false, false, false, false, true, gen, "minecraft:bone_block"), "bone block: crafted, in no template of this jar (fossils are code)");
+        assertEquals(Structure.YES, WorldGenFiles.fact(false, false, false, false, true, gen, "minecraft:bone_block"), "bone block: crafted; the fossil template is a built thing, not read");
         String hash = "0123456789abcdef";
         assertEquals(gen, WorldGenFiles.fromCache(WorldGenFiles.toCache(hash, r), hash).blocks(), "the cache gives the same set back");
         assertThrows(IllegalArgumentException.class, () -> WorldGenFiles.fromCache(WorldGenFiles.toCache(hash, r), "fedcba9876543210"), "another mod list's cache is not used");
