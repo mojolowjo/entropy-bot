@@ -736,8 +736,23 @@ public final class Commands implements Chains.Env {
         } catch (RuntimeException e) {
             r = Reply.now("error: " + e);
         }
-        if (r.text() != null && !r.text().isEmpty())
+        if (r.text() != null && !r.text().isEmpty() && pm.local()) showLocal(r.text());
+        else if (r.text() != null && !r.text().isEmpty())
             whisper(pm.from(), pm.from().equalsIgnoreCase(owner()) ? shapeOut(Texts.verbAndRest(pm.body())[0], r.text()) : r.text().replaceFirst("^ok: ", ""), true);
+    }
+
+    /**
+     * 0.39.z27: a /bot line's answer, in full, to this window's own chat: one chat line per answer line, no cap, never the
+     * server. Loader API: vanilla {@code LocalPlayer.displayClientMessage(Component, false)} (adds to the client's chat
+     * HUD only; no packet), so Fabric is the same call. No player (left the world): the answer goes to the log, said.
+     */
+    void showLocal(String text) {
+        LocalPlayer p = Minecraft.getInstance().player;
+        io.github.mojolowjo.entropybot.screen.CommandBox.REPLIES.add(text);     // the command box shows the keyboard's answers too
+        for (String line : text.split("\n")) {
+            if (p != null) p.displayClientMessage(net.minecraft.network.chat.Component.literal(line), false);
+            else LOG.info("[entropybot] /bot answer with no player to show it: {}", line);
+        }
     }
 
     /** A PM's job: its end is whispered to the sender (the answer itself was whispered when it started). */
@@ -828,7 +843,7 @@ public final class Commands implements Chains.Env {
     public void localLine(String text) {
         if (text == null || text.isBlank()) return;
         synchronized (pmQueue) {
-            pmQueue.add(new ChatParse.Pm(owner(), text.trim(), true));
+            pmQueue.add(new ChatParse.Pm(owner(), text.trim(), true, true));
         }
     }
 

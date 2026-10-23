@@ -16,7 +16,8 @@ import java.util.concurrent.CompletableFuture;
 /**
  * 0.35.2: a command typed in the bot's own game window: {@code /bot <any bot command>}. It runs
  * exactly as a PM from the owner ({@code Commands.localLine}: same gate, same owner rights) and never reach the server.
- * Tab completes the verbs.
+ * Tab completes the verbs (0.39.z27: and the aa verbs after "aa ", the area sub-verbs after "area "). Its answer is shown
+ * in this window's chat in full ({@code Commands.showLocal}); a PM keeps the whisper.
  *
  * <p>Loader API: NeoForge's {@code RegisterClientCommandsEvent} (registered in EntropyBot); the tree is vanilla
  * Brigadier. Fabric: {@code ClientCommandRegistrationCallback} with {@code ClientCommandManager.literal/argument}
@@ -35,9 +36,10 @@ public final class LocalCommands {
 
     private static CompletableFuture<Suggestions> verbs(CommandContext<CommandSourceStack> c, SuggestionsBuilder b) {
         String typed = b.getRemaining().toLowerCase(Locale.ROOT);
-        if (typed.contains(" ")) return b.buildFuture();          // only the first word
-        for (VerbTable.Verb v : VerbTable.all()) if (v.name().startsWith(typed)) b.suggest(v.name());
-        return b.buildFuture();
+        int sp = typed.lastIndexOf(' ');
+        SuggestionsBuilder at = sp < 0 ? b : b.createOffset(b.getStart() + sp + 1);
+        for (String w : HelpCommand.completions(typed)) at.suggest(w);
+        return at.buildFuture();
     }
 
     private static int send(CommandContext<CommandSourceStack> c, String line) {

@@ -40,7 +40,21 @@ public final class HelpCommand {
     public static String index() {
         List<String> s = new ArrayList<>();
         for (int i = 0; i < VerbTable.SECTIONS.size(); i++) s.add((i + 1) + " " + VerbTable.SECTIONS.get(i));
-        return "help <page>: " + String.join(", ", s) + " | help <verb> (usage, examples, what next), help all | start with: status, check, come, aa help";
+        return "help <page>: " + String.join(", ", s) + " | help <verb> (usage, examples, what next), help all | start with: status, check, come, aa help"
+                + "\n" + verbList();
+    }
+
+    /** 0.39.z27: every owner verb with its one-line meaning, under its section's heading (VerbTable order). */
+    public static String verbList() {
+        List<String> out = new ArrayList<>();
+        for (String s : VerbTable.SECTIONS) {
+            List<String> rows = new ArrayList<>();
+            for (VerbTable.Verb v : VerbTable.section(s)) if (!deleted(v)) rows.add("  " + v.name() + " - " + VerbTable.meaning(v));
+            if (rows.isEmpty()) continue;
+            out.add(s + ":");
+            out.addAll(rows);
+        }
+        return String.join("\n", out);
     }
 
     /** One page: its verbs' usages, then the way on. */
@@ -126,4 +140,24 @@ public final class HelpCommand {
         if (v.who() == VerbTable.Who.PARTLY) return "you can use: " + v.guestForms() + " - " + v.what() + " (the rest is " + owner + "'s)";
         return detail(v, false);
     }
+
+    /**
+     * 0.39.z27: the words that complete the last word typed: the first word = the owner verbs (VerbTable), after "aa " the
+     * aa verbs (AaCommands' dispatch table), after "area " the area sub-verbs (VerbTable's area forms); nothing else.
+     * Pure (JUnit).
+     */
+    public static java.util.List<String> completions(String typed) {
+        String t = typed.toLowerCase(Locale.ROOT);
+        String[] w = t.split(" ", -1);
+        String last = w[w.length - 1];
+        java.util.List<String> pool = new java.util.ArrayList<>();
+        if (w.length == 1) for (VerbTable.Verb v : VerbTable.all()) pool.add(v.name());
+        else if (w.length == 2 && w[0].equals("aa")) pool.addAll(AaCommands.words());
+        else if (w.length == 2 && w[0].equals("area"))
+            for (VerbTable.Form f : VerbTable.of("area").forms()) { String sub = f.form().split(" ")[1]; if (sub.matches("[a-z]{2,}") && !pool.contains(sub)) pool.add(sub); }     // "x z x2 z2" is coordinates, not a word
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (String p : pool) if (p.startsWith(last)) out.add(p);
+        return out;
+    }
+
 }

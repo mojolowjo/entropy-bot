@@ -11,7 +11,10 @@ import java.util.regex.Pattern;
 public final class ChatParse {
     private ChatParse() {}
 
-    public record Pm(String from, String body, boolean verified) {}
+    /** local (0.39.z27): a line typed as /bot in this window; its answer goes to this window's chat in full. */
+    public record Pm(String from, String body, boolean verified, boolean local) {
+        public Pm(String from, String body, boolean verified) { this(from, body, verified, false); }
+    }
 
     private static final Pattern INCOMING_TAIL = Pattern.compile("whispers to you: (.*)$");
     private static final Pattern WHISPER = Pattern.compile("^(\\w{3,16}) whispers to you: (.*)$");

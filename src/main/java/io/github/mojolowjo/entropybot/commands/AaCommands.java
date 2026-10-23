@@ -13,8 +13,31 @@ import java.util.Map;
 final class AaCommands {
     private AaCommands() {}
 
-    /** One aa verb: its words (the first is the name), its form(s) for the help, its handler. */
-    record Verb(List<String> words, String form, Handler run) {}
+    /** One form of a verb for the help: its group (one of {@link #GROUPS}), the form, its one-line meaning. */
+    record Form(String group, String form, String meaning) {}
+
+    /** One aa verb: its words (the first is the name), its forms for the help, its handler. */
+    record Verb(List<String> words, List<Form> forms, Handler run) {
+        /** The old one-line form text ("a | b"). */
+        String form() {
+            List<String> f = new ArrayList<>();
+            for (Form x : forms) f.add(x.form());
+            return String.join(" | ", f);
+        }
+    }
+
+    /** 0.39.z27: the help's headings in order; "areas and tags" comes from VerbTable's area row (the owner verb). */
+    static final List<String> GROUPS = List.of("orders", "areas and tags", "status", "tuning", "help");
+    static final String AREAS = "areas and tags";
+
+    /** Longest meaning of one help line (owner 2026-10-23; the long text stays in docs/COMMANDS.md). */
+    static final int MEANING_MAX = 100;    // structural: a chat line's length, not a tuning value
+
+    private static Form f(String group, String form, String meaning) {
+        if (!GROUPS.contains(group) || group.equals(AREAS)) throw new IllegalStateException("aa form " + form + ": no group " + group);
+        if (meaning.length() > MEANING_MAX || meaning.contains("\n")) throw new IllegalStateException("aa form " + form + ": meaning over one line of " + MEANING_MAX);
+        return new Form(group, form, meaning);
+    }
 
     @FunctionalInterface
     interface Handler {
@@ -24,36 +47,36 @@ final class AaCommands {
     /** The dispatch table, in help order. */
     static final Map<String, Verb> TABLE = new LinkedHashMap<>();
 
-    private static void v(String words, String form, Handler h) {
-        Verb verb = new Verb(List.of(words.split("\\|")), form, h);
+    private static void v(String words, Handler h, Form... forms) {
+        Verb verb = new Verb(List.of(words.split("\\|")), List.of(forms), h);
         for (String w : verb.words()) if (TABLE.put(w, verb) != null) throw new IllegalStateException("aa " + w + " twice");
     }
 
     static {
-        v("on", "on", (c, aa, vb, a) -> aa.turnOn());
-        v("off", "off", (c, aa, vb, a) -> aa.turnOff("aa off"));
-        v("needs", "needs on|off", (c, aa, vb, a) -> aa.needs(a));             // orders-tier: saved per world
-        v("only", "only <need>|off", (c, aa, vb, a) -> {
-            String set = aa.only(a);           // live-facts: saved in this world's switch
-            return a.isEmpty() ? (set == null ? "aa only: off (usage: aa only <need>|off, e.g. aa only torches)" : "only: " + set)
-                    : set == null ? "aa only: off - every need and want is back" : "only: " + set + " - every other need and want is silent (danger, reflexes and your orders stay on); aa only off to end";
-        });
-        v("want", "want <item|group> [n] [high|low] | want <item> [n], <item> [n], ... [high|low] | want strip <ore[ amount]>[,...] [<feet y>] [<heading>] | want deposit", (c, aa, vb, a) -> aa.want(a));
-        v("scan", "scan (read the chests in reach)", (c, aa, vb, a) -> aa.order("scan", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Scan(false))));
-        v("eat", "eat (the best food in the bag)", (c, aa, vb, a) -> aa.order("eat", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Eat())));
-        v("restore", "restore [radius] (put back the blocks I broke)", (c, aa, vb, a) -> {
-            int r;
-            try { r = a.isEmpty() ? io.github.mojolowjo.entropybot.restore.RestorePlan.nowDefault() : Integer.parseInt(a); } catch (NumberFormatException e) { return "usage: aa restore [radius]"; }
-            return aa.order("restore", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.PutBack(r)));
-        });
-        v("goals", "goals", (c, aa, vb, a) -> aa.goalsText());
-        v("drop", "drop <item>|all", (c, aa, vb, a) -> aa.drop(a));
-        v("do|ask|pick|skip|use", "do <need>|none | skip <need>|none | ask on|off | pick <n> | use <option>", (c, aa, vb, a) -> {
+        String O = "orders", S = "status", T = "tuning";
+        // ---- orders
+        v("want", (c, aa, vb, a) -> aa.want(a),
+                f(O, "want <item|group> [n] [high|low]", "get that item or group (vanilla or modded, from the game's data); high|low = its priority"),
+                f(O, "want <item> [n], <item> [n], ... [high|low]", "several orders at once, done in list order"),
+                f(O, "want deposit", "put the bag's items away in the chests"),
+                f(O, "want strip <ore[ amount]>[,...] [<feet y>] [<heading>]", "dig a strip mine for those ores (at that feet height, that way)"));
+        v("drop", (c, aa, vb, a) -> aa.drop(a), f(O, "drop <item>|all", "drop that order, or every order"));
+        v("goals", (c, aa, vb, a) -> aa.goalsText(), f(O, "goals", "the orders waiting, in turn"));
+        v("go", (c, aa, vb, a) -> aa.slow.go(), f(O, "go (the slow mode's next step)", "slow mode: run the next step"));
+        v("skip|do|use|pick|ask", (c, aa, vb, a) -> {
             if (!aa.on()) return "aa is off (aa on first)";
             return aa.manual(vb, a);
-        });
-        v("go", "go (the slow mode's next step)", (c, aa, vb, a) -> aa.slow.go());
-        v("why", "why", (c, aa, vb, a) -> {
+        },
+                f(O, "skip <need>|none", "leave that need out this run (none: bring every skipped need back)"),
+                f(O, "do <need>|none", "run that need now, the others wait until it ends (none: clear it)"),
+                f(O, "use <option>", "the current need uses that option (as aa why names it)"),
+                f(O, "pick <n>", "answer the asking need: run its option n"),
+                f(O, "ask on|off", "before each task show my options and wait for aa pick"));
+        v("build", (c, aa, vb, a) -> aa.build(a), f(O, "build <name> here|at <x y z> [high|low]", "build that saved design here or there (its material list said)"));
+        // ---- status
+        v("status", (c, aa, vb, a) -> aa.statusLine() + StripStep.liveLine() + aa.tuningLine() + "\n" + aa.counts() + "\n" + aa.lootLine() + (aa.on() ? "\n" + aa.brainCounters() + "\ndesires: " + String.join(" | ", aa.brainLines(5)) + "\n" + aa.goalsLine() + "\n" + aa.wantsLine() + "\nrungs: " + aa.ladderLine() + "\n" + aa.optionStatus() : ""),
+                f(S, "status", "who drives, the counters, the desires, goals and wants, each rung's reason"));
+        v("why", (c, aa, vb, a) -> {
             List<String> d = aa.decisions();
             // STRUCTURE_BLOCKS: the station lookups this why reports, each with its own notes (skipped, priced); a way's
             // structure refusal is in that way's own option line (no global last state, 0.39.z26 fix 11)
@@ -62,24 +85,43 @@ final class AaCommands {
             if (d.isEmpty()) return "aa why: no decisions yet" + (aa.on() ? " (rungs: " + aa.ladderLine() + ")" + opts : " (aa is off)") + StripStep.liveLine() + refusals;
             List<String> last = d.subList(Math.max(0, d.size() - 10), d.size());
             return "aa why (last " + last.size() + " of " + d.size() + "):\n" + String.join("\n", last) + (aa.on() ? "\nrungs: " + aa.ladderLine() : "") + StripStep.liveLine() + refusals + opts;
-        });
-        v("status", "status", (c, aa, vb, a) -> aa.statusLine() + StripStep.liveLine() + aa.tuningLine() + "\n" + aa.counts() + "\n" + aa.lootLine() + (aa.on() ? "\n" + aa.brainCounters() + "\ndesires: " + String.join(" | ", aa.brainLines(5)) + "\n" + aa.goalsLine() + "\n" + aa.wantsLine() + "\nrungs: " + aa.ladderLine() + "\n" + aa.optionStatus() : ""));
-        v("tune", "tune [<group>|<name> [<n>]]", (c, aa, vb, a) -> aa.tune(a == null || a.isBlank() ? new String[0] : a.trim().split("\\s+")));     // AA_ROUND4 B3
-        v("forget", "forget stations", (c, aa, vb, a) -> a.equals("stations") ? c.nearby.forgetAllStations() : "usage: aa forget stations (drops every station record of mine in this world)");
-        v("fair", "fair on|off", (c, aa, vb, a) -> aa.fair(a));
-        v("like", "like [<key> <n>]", (c, aa, vb, a) -> aa.like(a));
-        v("worth", "worth <item>", (c, aa, vb, a) -> a.isEmpty() ? "usage: aa worth <item> (e.g. aa worth iron_pickaxe): the terms its worth is derived from, or UNKNOWN" : io.github.mojolowjo.entropybot.aa.brain.ItemWorth.explain(a.replace(" ", "_")));
-        v("build", "build <name> here|at <x y z> [high|low]", (c, aa, vb, a) -> aa.build(a));
-        v("ore", "ore [info] [<thing>]", (c, aa, vb, a) -> aa.oreInfo(a));
-        v("tree", "tree", (c, aa, vb, a) -> aa.tree.mermaid() + (aa.on() ? "\n%% desires now: " + String.join(" | ", aa.brainLines(30)) + "\n%% " + aa.ideasLine() : ""));
-        v("stats", "stats", (c, aa, vb, a) -> aa.statsText());
-        v("litter", "litter", (c, aa, vb, a) -> RestoreLive.INSTANCE.litterText());
-        v("replan", "replan on|off", (c, aa, vb, a) -> aa.replan(a));
-        v("look", "look [smooth <ticks>]", (c, aa, vb, a) -> aa.look(a));
-        v("horizon", "horizon [seconds]", (c, aa, vb, a) -> aa.horizon(a));
-        v("slow", "slow [on|off|step]", (c, aa, vb, a) -> aa.slow.command(a));          // AA_STEP3 B
-        v("predict", "predict", (c, aa, vb, a) -> aa.slow.predict());
-        v("help", "help", (c, aa, vb, a) -> help());
+        }, f(S, "why", "the last 10 decisions, the rungs, the desires and options, the station lookups"));
+        v("tree", (c, aa, vb, a) -> aa.tree.mermaid() + (aa.on() ? "\n%% desires now: " + String.join(" | ", aa.brainLines(30)) + "\n%% " + aa.ideasLine() : ""),
+                f(S, "tree", "the behaviour tree as Mermaid, with the desires now"));
+        v("predict", (c, aa, vb, a) -> aa.slow.predict(), f(S, "predict", "what the next step should take, before it runs"));
+        v("slow", (c, aa, vb, a) -> aa.slow.command(a), f(S, "slow [on|off|step]", "slow mode: one step at a time, each waiting for aa go"));          // AA_STEP3 B
+        v("only", (c, aa, vb, a) -> {
+            String set = aa.only(a);           // live-facts: saved in this world's switch
+            return a.isEmpty() ? (set == null ? "aa only: off (usage: aa only <need>|off, e.g. aa only torches)" : "only: " + set)
+                    : set == null ? "aa only: off - every need and want is back" : "only: " + set + " - every other need and want is silent (danger, reflexes and your orders stay on); aa only off to end";
+        }, f(S, "only <need>|off", "only that need runs (danger, reflexes and your orders stay on); off ends it"));
+        v("needs", (c, aa, vb, a) -> aa.needs(a), f(S, "needs on|off", "the bot's own needs on, or your orders only (saved per world)"));             // orders-tier: saved per world
+        v("forget", (c, aa, vb, a) -> a.equals("stations") ? c.nearby.forgetAllStations() : "usage: aa forget stations (drops every station record of mine in this world)",
+                f(S, "forget stations", "drop every station record of mine in this world"));
+        v("eat", (c, aa, vb, a) -> aa.order("eat", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Eat())), f(S, "eat (the best food in the bag)", "eat the best food in the bag"));
+        v("scan", (c, aa, vb, a) -> aa.order("scan", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Scan(false))), f(S, "scan (read the chests in reach)", "read the chests in reach"));
+        v("restore", (c, aa, vb, a) -> {
+            int r;
+            try { r = a.isEmpty() ? io.github.mojolowjo.entropybot.restore.RestorePlan.nowDefault() : Integer.parseInt(a); } catch (NumberFormatException e) { return "usage: aa restore [radius]"; }
+            return aa.order("restore", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.PutBack(r)));
+        }, f(S, "restore [radius] (put back the blocks I broke)", "put back the blocks I broke within that radius"));
+        v("worth", (c, aa, vb, a) -> a.isEmpty() ? "usage: aa worth <item> (e.g. aa worth iron_pickaxe): the terms its worth is derived from, or UNKNOWN" : io.github.mojolowjo.entropybot.aa.brain.ItemWorth.explain(a.replace(" ", "_")),
+                f(S, "worth <item>", "the terms an item's worth is derived from, or UNKNOWN"));
+        v("ore", (c, aa, vb, a) -> aa.oreInfo(a), f(S, "ore [info] [<thing>]", "the ore heights learned from the chunks seen"));
+        v("stats", (c, aa, vb, a) -> aa.statsText(), f(S, "stats", "AA's run statistics"));
+        v("litter", (c, aa, vb, a) -> RestoreLive.INSTANCE.litterText(), f(S, "litter", "the blocks I broke or placed that are still out of place"));
+        // ---- tuning
+        v("tune", (c, aa, vb, a) -> aa.tune(a == null || a.isBlank() ? new String[0] : a.trim().split("\\s+")),
+                f(T, "tune [<group>|<name> [<n>]]", "the tuning numbers: list a group, show or set one"));     // AA_ROUND4 B3
+        v("on", (c, aa, vb, a) -> aa.turnOn(), f(T, "on", "AA drives (saved, survives a restart)"));
+        v("off", (c, aa, vb, a) -> aa.turnOff("aa off"), f(T, "off", "AA stops driving"));
+        v("fair", (c, aa, vb, a) -> aa.fair(a), f(T, "fair on|off", "on: only ore I have seen counts; off: the whole chunk index"));
+        v("like", (c, aa, vb, a) -> aa.like(a), f(T, "like [<key> <n>]", "the personality (want weights, upkeep, sleep, margin): list or set one"));
+        v("replan", (c, aa, vb, a) -> aa.replan(a), f(T, "replan on|off", "whether a task is planned again when its facts change"));
+        v("look", (c, aa, vb, a) -> aa.look(a), f(T, "look [smooth <ticks>]", "how many ticks a head turn takes (saved)"));
+        v("horizon", (c, aa, vb, a) -> aa.horizon(a), f(T, "horizon [seconds]", "how far ahead the sequencer plans (saved)"));
+        // ---- help
+        v("help", (c, aa, vb, a) -> help(), f("help", "help", "this list"));
     }
 
     /**
@@ -112,12 +154,40 @@ final class AaCommands {
         return out;
     }
 
-    /** aa help (and the bare aa): every live form, from the dispatch table. */
-    static String help() {
+    /** Every form of the table, each once, in table order. */
+    static List<Form> allForms() {
+        List<Form> out = new ArrayList<>();
+        for (Verb v : TABLE.values()) for (Form x : v.forms()) if (!out.contains(x)) out.add(x);
+        return out;
+    }
+
+    /** One line of every form ("aa forms: aa on | aa off | ..."): the area of the owner's help page. */
+    static String formsLine() {
         List<String> f = new ArrayList<>();
-        for (String s : forms()) f.add("aa " + s.replace(" | ", " | aa "));
+        for (Form x : allForms()) f.add("aa " + x.form());
         return "aa forms: " + String.join(" | ", f);
     }
+
+    /**
+     * aa help (and the bare aa), 0.39.z27: every live form with its meaning, one line each, under the headings of
+     * {@link #GROUPS}; the area forms come from VerbTable's area row (one place each).
+     */
+    static String help() {
+        List<String> out = new ArrayList<>();
+        out.add("aa help: every aa form (docs/COMMANDS.md has the long text)");
+        for (String g : GROUPS) {
+            out.add(g + ":");
+            if (g.equals(AREAS)) {
+                for (VerbTable.Form x : VerbTable.of("area").forms()) out.add("  " + x.form() + " - " + x.meaning());
+                continue;
+            }
+            for (Form x : allForms()) if (x.group().equals(g)) out.add("  aa " + x.form() + " - " + x.meaning());
+        }
+        return String.join("\n", out);
+    }
+
+    /** /bot tab completion after "aa ": the verb words of the dispatch table. */
+    static List<String> words() { return List.copyOf(TABLE.keySet()); }
 
     /** The old USAGE name: the generated help. */
     static String usage() { return help(); }
@@ -127,7 +197,7 @@ final class AaCommands {
         if (t.isEmpty()) return help();
         String verb = t.contains(" ") ? t.substring(0, t.indexOf(' ')) : t, arg = t.contains(" ") ? t.substring(t.indexOf(' ') + 1).trim() : "";
         Verb v = TABLE.get(verb);
-        if (v == null) return "error: no aa form \"" + verb + "\" - " + help();
+        if (v == null) return "error: no aa form \"" + verb + "\" - " + formsLine();
         if (verb.equals("help")) return help();
         AaRuntime aa = c.aaRuntime;
         if (aa == null) return "error: aa isn't loaded yet (no world)";

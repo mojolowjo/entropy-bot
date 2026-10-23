@@ -23,7 +23,13 @@ public final class VerbTable {
      * command (null: none).
      */
     public record Verb(String name, List<String> aliases, String section, Who who, String usage, String what, List<String> examples,
-                       String next, String guestForms) {}
+                       String next, String guestForms, List<Form> forms) {}
+
+    /** 0.39.z27: one form of a verb with its one-line meaning (the area row has them: aa help's "areas and tags"). */
+    public record Form(String form, String meaning) {}
+
+    /** The longest one-line meaning in a help list (owner 2026-10-23). */
+    public static final int MEANING_MAX = AaCommands.MEANING_MAX;
 
     /** The sections of the guide, in page order ("help 1" .. "help N"). */
     public static final List<String> SECTIONS = List.of("space", "stocking", "digging", "fighting", "jobs", "materials", "exploring", "brain", "moving", "chests", "crafting", "other");
@@ -37,9 +43,23 @@ public final class VerbTable {
 
     /** aliases and examples: "|"-separated ("" = none). */
     private static void v(String name, String aliases, String section, Who who, String usage, String what, String examples, String next, String guestForms) {
+        v(name, aliases, section, who, usage, what, examples, next, guestForms, List.of());
+    }
+
+    /** A verb whose usage is its forms, each with a meaning (usage = the forms joined by " | "). */
+    private static void v(String name, String aliases, String section, Who who, List<Form> forms, String what, String examples, String next, String guestForms) {
+        List<String> u = new ArrayList<>();
+        for (Form f : forms) {
+            if (f.meaning().length() > MEANING_MAX || f.meaning().contains("\n")) throw new IllegalStateException(name + " form " + f.form() + ": meaning over one line");
+            u.add(f.form());
+        }
+        v(name, aliases, section, who, String.join(" | ", u), what, examples, next, guestForms, forms);
+    }
+
+    private static void v(String name, String aliases, String section, Who who, String usage, String what, String examples, String next, String guestForms, List<Form> forms) {
         List<String> al = aliases.isEmpty() ? List.of() : List.of(aliases.split("\\|"));
         List<String> ex = examples.isEmpty() ? List.of() : List.of(examples.split("\\|"));
-        Verb verb = new Verb(name, al, section, who, usage, what, ex, next, guestForms);
+        Verb verb = new Verb(name, al, section, who, usage, what, ex, next, guestForms, List.copyOf(forms));
         if (!SECTIONS.contains(section)) throw new IllegalStateException("no section " + section);
         if (BY_NAME.put(name, verb) != null) throw new IllegalStateException("twice: " + name);
         for (String w : words(verb)) if (BY_WORD.put(w, verb) != null) throw new IllegalStateException("twice: " + w);
@@ -50,9 +70,18 @@ public final class VerbTable {
         // ---- space: places, markers, areas (VOCABULARY 1)
         v("marker", "", "space", O, "marker <name> [of <place>] [x y z]", "a point under a place (default: the nearest place within 32), e.g. the furnace", "marker furnace|marker door of base", "go <place> <marker>");
         v("places", "", "space", G, "places | places forget <place|marker>", "the places I know, each with its markers (forget: the owner)", "places|places forget farm", "go <place> [marker]");
-        v("area", "", "space", P, "area here <r> <name> [type] [down up] | area x z x2 z2 <name> [type] [y1 y2] | area change name <name> <new> | area change type <name> <type> "
-                        + "| area tag <name> <tag...> | area untag <name> <tag...> "
-                        + "| area del <name> confirm | area list | area show <name> | area near [<r>|on|off|status] | area candidates [accept <n> [name] | reject <n>|all]",
+        v("area", "", "space", P, List.of(
+                        new Form("area here <r> <name> [type] [down up]", "an area around me, r blocks each way (type: neutral, destroy, main, safe)"),
+                        new Form("area x z x2 z2 <name> [type] [y1 y2]", "an area between two corners"),
+                        new Form("area change name <name> <new>", "rename an area"),
+                        new Form("area change type <name> <type>", "change an area's type"),
+                        new Form("area tag <name> <tag...>", "add tags: break-structures, use-stations"),
+                        new Form("area untag <name> <tag...>", "remove those tags"),
+                        new Form("area del <name> confirm", "delete an area"),
+                        new Form("area list", "the areas I know"),
+                        new Form("area show <name>", "show one area"),
+                        new Form("area near [<r>|on|off|status]", "the near-me zone (16 blocks around you, on by default)"),
+                        new Form("area candidates [accept <n> [name] | reject <n>|all]", "the bases explore found; accept makes one a safe area")),
                 "named areas with a type: neutral (white, the default: walk, dig natural blocks), destroy (red: dig <area> breaks built blocks too, never chests), "
                         + "main (blue: the base; built blocks never), safe (green: walk only, never dig or build: someone else's); here = around you (r blocks each way; safe: 8 below, 16 above), "
                         + "and the near-me zone (16 blocks around you, on by default; safe areas always win); candidates: the bases explore and find noted, accept makes one a safe area; "
@@ -113,7 +142,7 @@ public final class VerbTable {
         // ---- the brain's words (VOCABULARY 7, BRAIN_LOOP)
         v("brain", "", "brain", O, "brain on|off|status | brain copy on|off|status | brain get [key] | brain set <key> <value> | brain reset <key>|all|parks | brain tree [reload] | brain learned [job kind] | brain learned reset", "removed in 0.38.b7 (the old brain): AA does this (aa on, aa want <thing>)",
                 "brain on|brain status|brain copy on", "why");
-        v("aa", "", "brain", O, AaCommands.help().replaceFirst("^aa forms: ", ""),
+        v("aa", "", "brain", O, AaCommands.formsLine().replaceFirst("^aa forms: ", ""),
                 "the new brain (AA v0, docs/AA_PLAN.md): a behavior tree with fixed priorities, danger > your orders > AI requests > basic needs (stone tools, table and furnace, torches, base, bag, iron tools) > idle (wood, stone, wait), and one task at a time: a task runs to its end before AA chooses again; only danger pauses it and only your order replaces it (logged); status: who drives, the counters, each rung's reason; why: the last 10 decisions; tree: the tree as Mermaid; like: the personality (want weights build/explore/tidy, upkeep factors, sleep/shelter, night shift, margin) in entropybot/aa-personality.json, aa like build 30 sets one",
                 "aa on|aa status|aa why", "brain off");
         v("idle", "", "brain", O, "idle list | idle list set <items> | idle list reset", "removed in 0.38.b7 (the old brain): AA does this (aa on, aa want <thing>)",
@@ -162,6 +191,20 @@ public final class VerbTable {
     /** The verb for a word (its name or an alias, any case), or null. */
     public static Verb of(String word) {
         return word == null ? null : BY_WORD.get(word.trim().toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * 0.39.z27: a verb's one-line meaning for the help list: its what up to the first ": ", "; " or " (", at most
+     * {@link #MEANING_MAX} characters (cut at a word, "..." added).
+     */
+    public static String meaning(Verb v) {
+        String w = v.what();
+        int cut = w.length();
+        for (String s : List.of(": ", "; ", " (")) { int i = w.indexOf(s); if (i > 0 && i < cut) cut = i; }
+        w = w.substring(0, cut).trim();
+        if (w.length() <= MEANING_MAX) return w;
+        int sp = w.lastIndexOf(' ', MEANING_MAX - 3);
+        return w.substring(0, sp > 0 ? sp : MEANING_MAX - 3) + "...";
     }
 
     /** The name and every alias. */
