@@ -32,9 +32,4 @@ public final class OwnPlaced {
             return false;
         }
     }
-
-    /** The guard's "built block" fact: it looks built and the bot did not place it itself. */
-    public static boolean built(boolean looksBuilt, int x, int y, int z) {
-        return looksBuilt && !at(x, y, z);
-    }
 }

@@ -7,20 +7,17 @@ import baritone.api.IBaritone;
 import baritone.api.Settings;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
-import io.github.mojolowjo.entropybot.guard.Guard;
 import net.minecraft.world.level.block.Block;
 import org.slf4j.Logger;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
 /**
  * B7e (E1): the bridge's Baritone safety net, in the mod (rules in {@link SafetyRules}).
  * <ul>
- *   <li>The protected blocks ({@code Guard}'s floor: block entities and building blocks, never ores) go into Baritone's
- *       {@code blocksToDisallowBreaking} as Guava's hash-backed set view, so Baritone's own A* and "mine" never break
- *       them and the path search stays fast; put once the floor is ready and again every 200 ticks.</li>
+ *   <li>Owner's ruling 2026-10-23: no block TYPE is protected, so Baritone's {@code blocksToDisallowBreaking} is held
+ *       empty (it takes block types, never cells). The owner's marked keep-out / no-break cells reach Baritone through
+ *       the CostAdvisor hook (BreakPolicy.boxes); put once and again every 200 ticks, so a raw "set" cannot refill it.</li>
  *   <li>0.39.z8 (owner 2026-10-22): breaking and placing are never flipped here; each fork process owns them for
  *       its own run.</li>
  *   <li>{@link #restore()} for "stop"; {@link #execute} for raw Baritone commands (a "set" never saves the list).</li>
@@ -45,35 +42,25 @@ public final class SafetyNet {
     /** Once a client tick in a world (Core's tick). Never throws. */
     public void tick(long tick) {
         try {
-            if (!Guard.INSTANCE.floorReady()) return;
             Settings s = BaritoneAPI.getSettings();
             if (SafetyRules.protectedDue(tick, list != null)) putProtected(s);
             // 0.39.z2 (owner 2026-10-22, "AA is the only driver"): the 200-tick sweep that turned breaking/placing off
             // and cancelled Baritone with no mod job is deleted; AA's door is the one driver gate, the owner's raw
-            // Baritone commands are the owner's. The protected-block list (the policy's floor) stays.
+            // Baritone commands are the owner's. The empty protected list stays put.
         } catch (Throwable t) {
             if (errors++ < 5) LOG.warn("[entropybot] safety net: {}", t.toString());
         }
     }
 
-    /** The protected list into Baritone (built once from the guard's floor). */
+    /** The empty protected list into Baritone (owner 2026-10-23: no block type is protected; marked cells go via the cost hook). */
     @SuppressWarnings("unchecked")
     void putProtected(Settings s) {
         List<Block> l = list;
         if (l == null) {
-            Set<Block> set = Guard.INSTANCE.protectedBlocks();
-            if (set == null) return;
-            String k = "hash";
-            try {
-                l = com.google.common.collect.ImmutableSet.copyOf(set).asList();
-            } catch (Throwable t) {
-            Quiet.warn("SafetyNet.putProtected failed, carrying on with the fallback", t);
-                l = new ArrayList<>(set);
-                k = "list";
-            }
+            l = List.of();
             list = l;
-            kind = k;
-            LOG.info("[entropybot] {}", SafetyRules.kindLine(k, l.size()));
+            kind = "hash";
+            LOG.info("[entropybot] {}", SafetyRules.kindLine(kind, 0));
         }
         Settings.Setting<List<Block>> st = (Settings.Setting<List<Block>>) s.byLowerName.get("blockstodisallowbreaking");
         if (st != null && st.value != l) st.value = l;
@@ -113,7 +100,7 @@ public final class SafetyNet {
             }
             for (String name : SafetyRules.RESTORE_FALSE_IF_PRESENT) setFalse(s, name);
             io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "restore");
-            if (Guard.INSTANCE.floorReady()) putProtected(s);
+            putProtected(s);
             Core.INSTANCE.baritone.enforceSettings();
         } catch (Throwable t) {
             if (errors++ < 5) LOG.warn("[entropybot] safety net restore: {}", t.toString());
@@ -130,7 +117,7 @@ public final class SafetyNet {
     public boolean execute(IBaritone b, String text) {
         Settings s = BaritoneAPI.getSettings();
         return SafetyRules.executeGuarded(text, () -> resetProtected(s), () -> b.getCommandManager().execute(text), () -> {
-            if (Guard.INSTANCE.floorReady()) putProtected(s);
+            putProtected(s);
         });
     }
 

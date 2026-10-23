@@ -39,9 +39,9 @@ class AreaMigrationTest {
         assertTrue(r.ran());
         assertEquals(AREAS_V1.replace(" ", ""), written.get("areas.bak-0.22.0.json").replace(" ", ""), "the backup is the old file");
         assertTrue(written.containsKey("commands.bak-0.22.0.json"));
-        assertEquals("areas: moved to meanings: 2 work, 1 base, 1 destroy, 3 no-break", r.summary());
-        // map holds the base and is the smaller one: main; outside and tunnel neutral
-        assertEquals("base", PolicyCommands.typeOf(a.getAsJsonArray("areas").get(0).getAsJsonObject()).word());
+        assertEquals("areas: moved to meanings: 3 work, 0 base, 1 destroy, 3 no-break", r.summary());
+        // 0.39.z25: no area is made a base by itself; untyped = work
+        assertEquals(AreaType.WORK, PolicyCommands.typeOf(a.getAsJsonArray("areas").get(0).getAsJsonObject()));
         assertEquals(AreaType.WORK, PolicyCommands.typeOf(a.getAsJsonArray("areas").get(1).getAsJsonObject()));
         // every protect box is a safe area with its y range; the unnamed one is protect_1; "base" kept (no area had it)
         assertEquals(3, a.getAsJsonArray("protect").size(), "count before = after");
@@ -93,10 +93,10 @@ class AreaMigrationTest {
         JsonObject a = JsonParser.parseString("{\"areas\":[{\"name\":\"base\",\"x1\":0,\"z1\":0,\"x2\":5,\"z2\":5},{\"name\":\"big\",\"x1\":-50,\"z1\":-50,\"x2\":50,\"z2\":50}],"
                 + "\"protect\":[{\"name\":\"base\",\"x1\":0,\"y1\":0,\"z1\":0,\"x2\":1,\"y2\":1,\"z2\":1}]}").getAsJsonObject();
         AreaMigration.Result r = AreaMigration.migrate(a, Map.of(), null);
-        assertEquals("base", a.getAsJsonArray("areas").get(0).getAsJsonObject().get("type").getAsString(), "an area named base is base");
+        assertEquals(AreaType.WORK, PolicyCommands.typeOf(a.getAsJsonArray("areas").get(0).getAsJsonObject()), "an area named base is work like any other");
         assertFalse(a.getAsJsonArray("areas").get(1).getAsJsonObject().has("type"));
         assertEquals("base_safe", a.getAsJsonArray("protect").get(0).getAsJsonObject().get("name").getAsString());
-        assertEquals("areas: moved to meanings: 1 work, 1 base, 0 destroy, 1 no-break", r.summary());
+        assertEquals("areas: moved to meanings: 2 work, 0 base, 0 destroy, 1 no-break", r.summary());
     }
 
     @Test

@@ -64,14 +64,8 @@ final class TuningDefs {
         Tuning.def("aaTree.airHoldMs", 30_000, "rm-constants 0.39.u2 (was AaTree.AIR_HOLD_MS)", "the air hold ms of AaTree");
         // actionTable
         Tuning.def("actionTable.budget", 30_000, "rm-constants 0.39.u2 (was ActionTable.BUDGET)", "The document's size budget without the state");
-        // areaCandidates
-        Tuning.def("areaCandidates.r", 16, "rm-constants 0.39.u2 (was AreaCandidates.R)", "How far round a candidate the safe area reaches (the 16 blocks explore keeps off), and down/up");
-        Tuning.def("areaCandidates.down", 8, "rm-constants 0.39.u2 (was AreaCandidates.DOWN)", "How far round a candidate the safe area reaches (the 16 blocks explore keeps off), and down/up");
-        Tuning.def("areaCandidates.up", 16, "rm-constants 0.39.u2 (was AreaCandidates.UP)", "How far round a candidate the safe area reaches (the 16 blocks explore keeps off), and down/up");
         // areaFacts
         Tuning.def("areaFacts.awayWeight", 0.5, "rm-constants 0.39.u2 (was AreaFacts.AWAY_WEIGHT)", "the away weight of AreaFacts");
-        Tuning.def("areaFacts.manyEntities", 2, "rm-constants 0.39.u2 (was AreaFacts.MANY_ENTITIES)", "the many entities of AreaFacts");
-        Tuning.def("areaFacts.manyBuilt", 6, "rm-constants 0.39.u2 (was AreaFacts.MANY_BUILT)", "the many built of AreaFacts");
         // assistRules
         Tuning.def("assistRules.freshMs", 10_000, "rm-constants 0.39.u2 (was AssistRules.FRESH_MS)", "an older report is no report");
         Tuning.def("assistRules.recentMs", 10_000, "rm-constants 0.39.u2 (was AssistRules.RECENT_MS)", "a broke/placed counts this long");
@@ -293,8 +287,6 @@ final class TuningDefs {
         Tuning.def("exploreWords.maxMinutes", 30, "rm-constants 0.39.u2 (was ExploreWords.MAX_MINUTES)", "the max minutes of ExploreWords");
         Tuning.def("exploreWords.rings", 24, "rm-constants 0.39.u2 (was ExploreWords.RINGS)", "the rings of ExploreWords");
         Tuning.def("exploreWords.maxFromStart", 16, "rm-constants 0.39.u2 (was ExploreWords.MAX_FROM_START)", "How far (chunks, either axis) from where it started it goes, so the walk home stays short (256 blocks)");
-        Tuning.def("exploreWords.baseBuilt", 6, "rm-constants 0.39.u2 (was ExploreWords.BASE_BUILT)", "the base built of ExploreWords");
-        Tuning.def("exploreWords.baseR", 16, "rm-constants 0.39.u2 (was ExploreWords.BASE_R)", "the base r of ExploreWords");
         Tuning.def("exploreWords.caveAir", 40, "rm-constants 0.39.u2 (was ExploreWords.CAVE_AIR)", "A cave under the bot");
         // failures
         Tuning.def("failures.retryMs", 10 * 60_000, "rm-constants 0.39.u2 (was Failures.RETRY_MS)", "the retry ms of Failures");

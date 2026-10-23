@@ -78,31 +78,6 @@ public final class AreaFacts {
         return false;
     }
 
-    /**
-     * AREAS_PLAN 5 (owner's default 10.4): a candidate base explore/find noted is treated as no-break until the owner
-     * rejects it, when it is not plainly the bot's own: a named mob there, or {@code manyEntities} block entities or
-     * more. {@code built} alone (a few placed blocks) is not enough: the bot's own paths and torches look like that.
-     */
-    public static int manyEntities() { return Tuning.i("areaFacts.manyEntities"); }
-    public static int manyBuilt() { return Tuning.i("areaFacts.manyBuilt"); }
-
-    public static boolean autoNoBreak(boolean named, int blockEntities) {
-        return autoNoBreak(named, blockEntities, 0, null);
-    }
-
-    /**
-     * AREAS review 1: a village or another world structure ({@code natural} names it: bells, beds, workstations, doors,
-     * paths) and a cluster of {@link #MANY_BUILT} built blocks count too - a lone chest or a few torches do not.
-     */
-    public static boolean autoNoBreak(boolean named, int blockEntities, int built, String natural) {
-        return named || blockEntities >= manyEntities() || built >= manyBuilt() || natural != null;
-    }
-
-    /** The no-break box for a candidate at (x, y, z): R each way, DOWN below, UP above (the accept command's shape). */
-    public static Box candidateBox(String name, String dim, int x, int y, int z, int r, int down, int up) {
-        return new Box(name, dim, x - r, y - down, z - r, x + r, y + up, z + r).withType(AreaType.NO_BREAK).withNote("candidate: someone's base? (area candidates)");
-    }
-
     /** A short status line: "in base,work; base 12 blocks; near the owner". */
     public static String status(String here, double baseDist, boolean nearOwner) {
         StringBuilder b = new StringBuilder(here == null || here.isEmpty() ? "no area here" : "in " + here);

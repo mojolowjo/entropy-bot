@@ -203,11 +203,8 @@ final class DigCommands {
                 java.util.Set<String> shelter = ShelterJob.ownBlocks(c);
                 String dim = Storage.dim();
                 var g = Core.INSTANCE.guard.core;
-                // 0.28.3 (trial 3, Haiku: a natural dip after a walk, "no side is my own wall"): a natural block that is
-                // not protected (no block entity, not a building block) may go too; built blocks only when they are mine
-                ClimbPlan.Own own = (ox, oy, oz) -> shelter.contains(ox + " " + oy + " " + oz) || RestoreLive.INSTANCE.builtByMe(ox, oy, oz)
-                        || atBase(c, g.policy().areaAt(dim, ox, oy, oz))
-                        || !Core.INSTANCE.guard.isProtectedBlock(lv.getBlockState(new net.minecraft.core.BlockPos(ox, oy, oz)).getBlock());
+                // owner 2026-10-23: every wall may go (built or not) but one in a marked keep-out / no-break area
+                ClimbPlan.Own own = (ox, oy, oz) -> g.policy().protectAt(dim, ox, oy, oz) == null;
                 out = ClimbPlan.walledIn((cx, cy, cz) -> climbCell(lv, cx, cy, cz), own, x, y, z, doorSide(c, x, z));
             } catch (RuntimeException e) {
                 LOG.warn("[entropybot] climb: walled-in check at {} {} {}: {}", x, y, z, e.toString());

@@ -132,7 +132,7 @@ class NearZoneTest {
         g.near.update(OW, new int[]{200, 64, 200}, "view", 1000);
         assertNotNull(g.near.box());
         assertEquals(1, g.policy().areas.size(), "the zone never joins the policy");
-        assertTrue(g.status(0, false, false).getAsJsonObject("near").has("box"), "status still reports it");
+        assertTrue(g.status(false, false).getAsJsonObject("near").has("box"), "status still reports it");
         // the world is open with or without the zone: walking and leases work everywhere outside the protect boxes
         assertTrue(g.checkBoxes(OW, 230, 64, 200, "go").allowed(), "30 blocks from the owner, no area: fine");
         assertTrue(g.checkBoxes(OW, 1000, 64, 1000, "go").allowed());
@@ -156,8 +156,7 @@ class NearZoneTest {
         assertTrue(g.checkBoxes(OW, 0, 64, 0, "go").allowed(), "a no-break box is walked through");
         String id = g.lease("j", "t", new Box("t", OW, 10, 64, 10, 11, 65, 11), false, false);
         assertTrue(id.startsWith("L"));
-        assertFalse(g.check(OW, 10, 64, 10, "break", GuardCore.BlockInfo.of(true, true, false)).allowed(), "a chest in the zone");
-        assertFalse(g.check(OW, 10, 64, 10, "break", GuardCore.BlockInfo.of(true, false, true)).allowed(), "a built block in the zone");
+        assertTrue(g.check(OW, 10, 64, 10, "break", GuardCore.BlockInfo.of(true)).allowed(), "a chest under the lease: no floor");
         assertTrue(g.check(OW, 10, 64, 10, "break", GuardCore.BlockInfo.PLAIN).allowed());
         assertTrue(g.lease("j", "t", new Box("t", OW, 3, 64, 3, 6, 65, 6), false, false).startsWith("error: that box touches keep (no-break)"));
         assertFalse(g.checkBoxes("minecraft:the_nether", 0, 64, 0, "go").allowed());

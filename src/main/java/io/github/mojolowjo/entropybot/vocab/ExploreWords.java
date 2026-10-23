@@ -9,9 +9,7 @@ import java.util.function.Predicate;
 /**
  * V1b (VOCABULARY 6b): {@code explore [north|south|east|west] [minutes]} goes anywhere but a keep-out area and prefers chunks never
  * seen (not in explored.json); {@code find cave|<poi kind>|<structure>|<biome> [minutes]} walks until it finds one and
- * notes it as a point of interest ({@code find <block>} stays the nearby list). A cluster of built
- * blocks, any container or bed or sign, or a named mob within 16 is someone's base: keep off, never take, note it as a
- * {@code safe} candidate. Pure.
+ * notes it as a point of interest ({@code find <block>} stays the nearby list). Pure.
  */
 public final class ExploreWords {
     private ExploreWords() {}
@@ -93,31 +91,6 @@ public final class ExploreWords {
     /** 0.23.1: a chunk counts as seen when explored.json has it or the map has a painted tile there (null: not known yet = seen). */
     public static boolean seen(boolean explored, Boolean painted) {
         return explored || painted == null || painted;
-    }
-
-    // ---- base detection ----
-
-    public static int baseBuilt() { return Tuning.i("exploreWords.baseBuilt"); }
-    public static int baseR() { return Tuning.i("exploreWords.baseR"); }
-
-    /** What a scan within 16 blocks saw: built blocks (the floor's list), block entities (containers, beds, signs), named mobs. */
-    public record Scan(int built, int blockEntities, int named, String natural) {
-        public Scan(int built, int blockEntities, int named) { this(built, blockEntities, named, null); }
-    }
-
-    /**
-     * Someone's base: at least 6 built blocks, or any block entity, or a named mob. 0.33.0: not when the world's own
-     * structure explains all of it (natural: a village, a mineshaft... - {@link NaturalStructures}) and no mob is named.
-     */
-    public static boolean isBase(Scan s) {
-        if (s.natural() != null && s.named() == 0) return false;
-        return s.built() >= baseBuilt() || s.blockEntities() > 0 || s.named() > 0;
-    }
-
-    /** The log line / whisper for a base found while exploring. */
-    public static String baseNote(Scan s, int x, int y, int z) {
-        return "someone's base near " + x + " " + y + " " + z + " (" + s.built() + " built blocks, " + s.blockEntities() + " containers/beds/signs, " + s.named()
-                + " named mobs) - I keep 16 blocks off and take nothing; a safe-area candidate: area here 16 <name> safe";
     }
 
     /** 0.23.1: the report's tail for what explore/find took on the way: "; took 12 oak_log, 4 coal" ("" for nothing). */

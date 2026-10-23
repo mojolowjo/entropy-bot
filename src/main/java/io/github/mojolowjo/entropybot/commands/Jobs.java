@@ -170,20 +170,6 @@ public final class Jobs {
         return io.github.mojolowjo.entropybot.world.SurfaceRule.inAir(yy -> surfaceCell(level, x, yy, z), y);
     }
 
-    /**
-     * 0.30.6 (live, 0.30.4: a failed walk's dig-out opened the house's cobblestone wall): the cell belongs to a house in
-     * a main area (Policy.houseCell: the area box's shell, or my own block in its columns). Every dig-out and the
-     * shelter's own-wall exit leave it alone; the door is the way out. Never throws (false on any error).
-     */
-    static boolean houseCell(String dim, int x, int y, int z) {
-        try {
-            return io.github.mojolowjo.entropybot.Core.INSTANCE.guard.core.policy().houseCell(dim, x, y, z, RestoreLive.INSTANCE.builtByMe(x, y, z));
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] house cell check at {} {} {}: {}", x, y, z, e.toString());
-            return false;
-        }
-    }
-
     public boolean running() { return job != null && !job.done; }
 
     Core core() { return core; }

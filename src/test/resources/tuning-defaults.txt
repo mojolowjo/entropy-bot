@@ -79,12 +79,7 @@ aaTree.calmMs	3000.0
 aaTree.drownHealth	8.0
 aaTree.pauseWindowMs	60000.0
 actionTable.budget	30000.0
-areaCandidates.down	8.0
-areaCandidates.r	16.0
-areaCandidates.up	16.0
 areaFacts.awayWeight	0.5
-areaFacts.manyBuilt	6.0
-areaFacts.manyEntities	2.0
 assistRules.freshMs	10000.0
 assistRules.recentMs	10000.0
 bag.base	20.0
@@ -368,8 +363,6 @@ exploreRules.maxMinutes	30.0
 exploreRules.rings	24.0
 exploreRules.seen	2.0
 exploreRules.walkTicks	1800.0
-exploreWords.baseBuilt	6.0
-exploreWords.baseR	16.0
 exploreWords.caveAir	40.0
 exploreWords.defaultMinutes	5.0
 exploreWords.findMinutes	10.0

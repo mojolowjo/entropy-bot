@@ -20,16 +20,16 @@ class DigOutAnyTest {
     }
 
     @Test void neverOutsideSafeOrHouse() {
-        assertFalse(P.digOutAny(OW, 100, 64, 100, false), "outside every area");
+        assertTrue(P.digOutAny(OW, 100, 64, 100, false), "outside every area: the open world");
         assertFalse(P.digOutAny(OW, 11, 64, 11, false), "a safe area inside the neutral one");
-        assertFalse(P.digOutAny(OW, 0, 66, 3, false), "a house wall (the main area's shell; the arena covers it too)");
-        assertFalse(P.digOutAny(OW, 3, 70, 3, true), "my own block in a main area's columns");
-        assertFalse(P.digOutAny(OW, 43, 75, 3, false), "above the destroy area's height");
-        assertFalse(P.digOutAny("minecraft:the_nether", -5, 136, 9, false), "another dimension");
+        assertTrue(P.digOutAny(OW, 0, 66, 3, false), "a base area's shell: no house rule");
+        assertTrue(P.digOutAny(OW, 3, 70, 3, true), "my own block in a base area");
+        assertTrue(P.digOutAny(OW, 43, 75, 3, false), "above the destroy area: open world");
+        assertTrue(P.digOutAny("minecraft:the_nether", -5, 136, 9, false), "another dimension, no area there");
     }
 
     @Test void aMainAreaAloneAllowsNothingExtra() {
         Policy main = Policy.parse("{\"version\":2,\"areas\":[{\"name\":\"house\",\"type\":\"main\",\"x1\":0,\"z1\":0,\"x2\":6,\"z2\":6,\"y1\":64,\"y2\":68}],\"protect\":[]}");
-        assertFalse(main.digOutAny(OW, 3, 66, 3, false), "the room of a main area: not neutral/destroy");
+        assertTrue(main.digOutAny(OW, 3, 66, 3, false), "a base area forbids nothing by itself");
     }
 }

@@ -280,7 +280,7 @@ final class Crafting {
 
     /** The known stations of the recipe kind not refused (untrusted, or a dead table), nearest first; none; or not loaded. */
     StationFact knownStation(String kind) {
-        return commands.nearby.station(kind, at -> untrusted(at) || (!DEAD_TABLES.isEmpty() && DEAD_TABLES.contains(tableKey(at))));
+        return commands.nearby.station(kind, at -> untrusted(at) || keptOut(at) || (!DEAD_TABLES.isEmpty() && DEAD_TABLES.contains(tableKey(at))));
     }
 
     /** rule 15: the text of a not-loaded station fact ("stations: item data not loaded yet (...)"). */
@@ -372,7 +372,7 @@ final class Crafting {
                 if (!dup) out.add(new int[]{s.x(), s.y(), s.z()});
             }
         }
-        out.removeIf(f -> untrusted(f));
+        out.removeIf(f -> untrusted(f) || keptOut(f));
         out.sort(java.util.Comparator.comparingLong(f -> dist2(f, me)));
         return out;
     }
@@ -386,6 +386,15 @@ final class Crafting {
     private boolean untrusted(int[] f) {
         JsonObject c = core.knowledge.chests().get(Jobs.fmt(f));
         return c != null && c.has("trusted") && !c.get("trusted").getAsBoolean();
+    }
+
+    /**
+     * Owner's ruling 2026-10-23: any table or furnace is used, whoever placed it; the one area refusal is a station
+     * inside a marked keep-out area (the owner's "untrust x y z" above is the owner's own mark too).
+     */
+    private static boolean keptOut(int[] f) {
+        io.github.mojolowjo.entropybot.guard.Box b = io.github.mojolowjo.entropybot.guard.Guard.INSTANCE.core.policy().protectAt(Storage.dim(), f[0], f[1], f[2]);
+        return b != null && b.type == io.github.mojolowjo.entropybot.guard.AreaType.KEEP_OUT;
     }
 
     private static long dist2(int[] a, int[] b) {

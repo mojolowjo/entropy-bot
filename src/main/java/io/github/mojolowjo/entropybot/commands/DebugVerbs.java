@@ -222,7 +222,7 @@ public final class DebugVerbs {
         var fluid = level.getFluidState(pos);
         String liquid = Guard.liquidNextTo(level, c[0], c[1], c[2]);
         return at + ": " + st + " | block entity: " + beId
-                + " | protected: " + (Guard.INSTANCE.isProtectedBlock(st.getBlock()) ? "yes" : Guard.INSTANCE.floorReady() ? "no" : "unknown (floor not built)")
+                + " | protected: " + (Guard.INSTANCE.core.policy().protectAt(Guard.dimOf(level), c[0], c[1], c[2]) != null ? "yes (a marked area)" : "no")
                 + " | ore: " + (st.is(net.neoforged.neoforge.common.Tags.Blocks.ORES) ? "yes" : "no")
                 + " | fluid: " + (fluid.isEmpty() ? "none" : String.valueOf(BuiltInRegistries.FLUID.getKey(fluid.getType())))
                 + " | next to: " + (liquid == null ? "no lava or water" : liquid);

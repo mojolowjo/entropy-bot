@@ -29,25 +29,15 @@ class OwnPlacedTest {
         assertFalse(ledger.placedByMe("minecraft:the_nether", 1000, 60, 1000), "another dimension");
         OwnPlaced.cells = (x, y, z) -> ledger.placedByMe(OW, x, y, z);
 
-        // my table: the guard's built fact is off, so the bot may break it
-        boolean built = OwnPlaced.built(true, 1000, 60, 1000);
-        assertFalse(built);
-        BreakPolicy.Verdict mine = BreakPolicyTest.brk(BreakPolicyTest.SP, Intent.MINE, 1000, 60, 1000, BlockFacts.STONE.withBuilt(built));
-        assertNotEquals("built block", mine.reason());
-        assertTrue(mine.allowed(), "my own table outside every area: breakable (" + mine.reason() + ")");
-
-        // a stranger's planks next to it stay a built block (the floor)
-        boolean theirs = OwnPlaced.built(true, 1003, 60, 1000);
-        assertTrue(theirs);
-        assertEquals("built block", BreakPolicyTest.brk(BreakPolicyTest.SP, Intent.MINE, 1003, 60, 1000, BlockFacts.STONE.withBuilt(theirs)).reason());
+        assertTrue(OwnPlaced.at(1000, 60, 1000), "the ledger's own placement is mine");
+        assertFalse(OwnPlaced.at(1003, 60, 1000));
     }
 
     @Test
-    void aFailingHookKeepsTheFloor() {
+    void aFailingHookIsNotMine() {
         OwnPlaced.cells = (x, y, z) -> { throw new IllegalStateException("no world"); };
-        assertTrue(OwnPlaced.built(true, 0, 0, 0), "unknown: the floor stays");
+        assertFalse(OwnPlaced.at(0, 0, 0));
         OwnPlaced.cells = null;
-        assertTrue(OwnPlaced.built(true, 0, 0, 0));
-        assertFalse(OwnPlaced.built(false, 0, 0, 0));
+        assertFalse(OwnPlaced.at(0, 0, 0));
     }
 }

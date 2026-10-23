@@ -224,7 +224,6 @@ public final class Core {
                 files = new BotFiles(mc.gameDirectory.toPath().resolve(MODID));
                 if (!enterWorld(mc, files, true)) return;
                 keyPending = false;
-                guard.ensureProtectedBlocks();
                 LOG.info("[entropybot] knowledge: {}", knowledge.load(files));
                 LOG.info("[entropybot] points of interest: {}", pois.load(files));
                 LOG.info("[entropybot] caves: {}", caves.load(files));
@@ -243,8 +242,8 @@ public final class Core {
                 terrain = new io.github.mojolowjo.entropybot.map.TerrainMap(files.worldRoot().resolve("map"));
                 recorder = new io.github.mojolowjo.entropybot.recorder.FlightRecorder(files.root().resolve("recorder"), events);   // B7e E5
                 ready = true;
-                LOG.info("[entropybot] {} ready: guard {}, floor {}; mixins: click={} place={} astar={} watch={} camerapos={} restorehook={} (target present={}); folder {}",
-                        version(), guard.core.mode().name().toLowerCase(), guard.floorInfo(),
+                LOG.info("[entropybot] {} ready: guard {}; mixins: click={} place={} astar={} watch={} camerapos={} restorehook={} (target present={}); folder {}",
+                        version(), guard.core.mode().name().toLowerCase(),
                         MixinFlags.clickApplied, MixinFlags.placeApplied, MixinFlags.astarApplied, MixinFlags.watchApplied, MixinFlags.cameraPosApplied,
                         MixinFlags.restoreApplied, MixinFlags.astarTargetPresent, files.root());
                 LOG.info("[entropybot] rules: {} (the cost hook is installed once Baritone is hooked; see its own line, check, fence rules)",
@@ -341,8 +340,7 @@ public final class Core {
     }
 
     public JsonObject guardStatus() {
-        JsonObject o = guard.core.status(guard.floorSize(), MixinFlags.astarApplied, MixinFlags.clickApplied && MixinFlags.placeApplied);
-        o.addProperty("floorReady", guard.floorReady());
+        JsonObject o = guard.core.status(MixinFlags.astarApplied, MixinFlags.clickApplied && MixinFlags.placeApplied);
         o.addProperty("costHook", io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.hook());
         o.addProperty("baritoneHooked", baritone.hooked());
         if (baritone.lastError() != null) o.addProperty("baritoneError", baritone.lastError());

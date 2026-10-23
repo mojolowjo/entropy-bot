@@ -55,7 +55,7 @@ public final class PolicyCommands {
         /** Mining plan: "fence rules" (the policy snapshot, intent, hook, counters), or null without the mod. */
         default String rules() { return null; }
 
-        /** AREAS review 3: the guard's immutable policy snapshot (the candidate boxes included), for the hot checks; null without the mod. */
+        /** AREAS review 3: the guard's immutable policy snapshot (the marked areas), for the hot checks; null without the mod. */
         default io.github.mojolowjo.entropybot.guard.Policy policy() { return null; }
 
         /** AREAS: the danger move multiplier (1..64); sets it when {@code set} is not NaN; the value in force. */
@@ -69,7 +69,7 @@ public final class PolicyCommands {
     static final java.util.Set<String> AREA_WORDS = java.util.Set.of("list", "show", "add", "corner1", "corner2", "grow", "remove",
             "protect", "unprotect", "near", "here", "confirm", "on", "off", "status", "change", "del", "name", "type",
             "meaning", "note",                                                                      // AREAS (0.39.0)
-            "neutral", "destroy", "main", "safe", "keep-out", "no-break", "all", "me", "candidates",     // base, work, storage, danger stay usable as names
+            "neutral", "destroy", "main", "safe", "keep-out", "no-break", "all", "me",     // base, work, storage, danger stay usable as names
             "stone");     // 0.30.0: "dig stone [n]" is the quarry, so no area may be called stone
 
     private final JsonObject p;
@@ -147,50 +147,11 @@ public final class PolicyCommands {
 
     public boolean strict() { return p.has("strict") && p.get("strict").getAsBoolean(); }
 
-    /** AREAS (AREAS_PLAN 5, default 10.4): the base candidates explore/find noted (commands.json "safeCandidates"), read live. */
-    private java.util.function.Supplier<JsonArray> candidates = JsonArray::new;
-
-    public void setCandidateSource(java.util.function.Supplier<JsonArray> s) { candidates = s == null ? JsonArray::new : s; }
-
-    /**
-     * The candidates AA treats as no-break until the owner rejects them (AreaFacts.autoNoBreak: a named mob there or
-     * 2+ block entities), as protect entries named "found<n>" (the accept command's box shape). Never saved to
-     * areas.json; they ride along into the guard's policy and the blocker checks.
-     */
-    public JsonArray candidateBoxes() {
-        JsonArray out = new JsonArray();
-        JsonArray l;
-        try { l = candidates.get(); } catch (RuntimeException e) {
-            Quiet.warn("PolicyCommands.candidateBoxes failed, carrying on with the fallback", e); return out; }
-        if (l == null) return out;
-        for (int i = 0; i < l.size(); i++) {
-            if (!l.get(i).isJsonObject()) continue;
-            JsonObject o = l.get(i).getAsJsonObject();
-            boolean named = false;      // written as a count (ExploreWords.Scan.named) or a flag
-            if (o.has("named") && o.get("named").isJsonPrimitive()) {
-                var pn = o.get("named").getAsJsonPrimitive();
-                named = pn.isBoolean() ? pn.getAsBoolean() : pn.isNumber() && pn.getAsInt() > 0;
-            }
-            int ents = o.has("blockEntities") ? o.get("blockEntities").getAsInt() : 0;
-            int built = o.has("built") ? o.get("built").getAsInt() : 0;
-            String natural = o.has("natural") && o.get("natural").isJsonPrimitive() ? o.get("natural").getAsString() : null;
-            if (!io.github.mojolowjo.entropybot.aa.core.AreaFacts.autoNoBreak(named, ents, built, natural)) continue;
-            String dim = o.has("dim") ? o.get("dim").getAsString() : DEFAULT_DIM;
-            JsonObject b = io.github.mojolowjo.entropybot.aa.core.AreaFacts.candidateBox("found" + (i + 1), dim, n(o, "x"), n(o, "y"), n(o, "z"),
-                    io.github.mojolowjo.entropybot.vocab.AreaCandidates.r(), io.github.mojolowjo.entropybot.vocab.AreaCandidates.down(), io.github.mojolowjo.entropybot.vocab.AreaCandidates.up()).toJson();
-            b.addProperty("candidate", true);
-            if (findArea("found" + (i + 1)) == null) out.add(b);
-        }
-        return out;
-    }
-
-    /** {areas, protect} for the guard (AREAS: the no-break candidates ride along in protect). */
+    /** {areas, protect} for the guard: the owner's marked areas only (owner 2026-10-23: nothing is protected automatically). */
     public JsonObject guardPolicy() {
         JsonObject o = new JsonObject();
         o.add("areas", areas().deepCopy());
-        JsonArray p = protect().deepCopy();
-        p.addAll(candidateBoxes());
-        o.add("protect", p);
+        o.add("protect", protect().deepCopy());
         return o;
     }
 
@@ -236,9 +197,7 @@ public final class PolicyCommands {
             return b == null ? null : b.toJson();
         }
         JsonObject best = null;
-        JsonArray all = protect().deepCopy();
-        all.addAll(candidateBoxes());
-        for (JsonElement e : all) {
+        for (JsonElement e : protect()) {
             JsonObject a = e.getAsJsonObject();
             if (!dimOf(a).equals(dim)) continue;
             boolean in = a.has("round") ? io.github.mojolowjo.entropybot.guard.Box.fromJson(a, DEFAULT_DIM).columnIn(x, z)
@@ -534,9 +493,7 @@ public final class PolicyCommands {
         List<String> out = new ArrayList<>();
         for (JsonElement e : areas()) out.add(areaText(e.getAsJsonObject()));
         for (JsonElement e : protect()) out.add(areaText(e.getAsJsonObject()));
-        JsonArray cand = candidateBoxes();
-        String ct = cand.isEmpty() ? "" : " | candidates treated as no-break until rejected: " + cand.size() + " (area candidates)";
-        return "areas: " + String.join(", ", out) + ct + tail;
+        return "areas: " + String.join(", ", out) + tail;
     }
 
     /**

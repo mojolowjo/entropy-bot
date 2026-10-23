@@ -78,28 +78,6 @@ public final class PolicyRuntime {
 
     // ---- the snapshot ----
 
-    /** AREAS review 1: the areas policy and the bot's dimension as of the last tick (the built-near rule, any thread). */
-    private volatile Policy areasNow;
-    private volatile String dimNow;
-
-    /**
-     * AREAS review 1 (BuiltNear): a natural-looking block in the open world (no typed area) counts as built when a built block or a
-     * block entity stands within reach of it (an unlabelled cobble hut, a village). Any thread (array reads on {@code at}).
-     */
-    public boolean builtNear(StateAt at, int x, int y, int z, boolean ore) {
-        Policy p = areasNow;
-        String dim = dimNow;
-        if (p == null || dim == null || p.typeAt(dim, x, y, z) != null) return false;
-        Guard g = Guard.INSTANCE;
-        BuiltNear.Look look = (lx, ly, lz) -> {
-            BlockState s = at.at(lx, ly, lz);
-            if (s == null) return -1;
-            return (s.hasBlockEntity() && !io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(BuiltInRegistries.BLOCK.getKey(s.getBlock()).toString()))
-                    || (g.isProtectedBlock(s.getBlock()) && !OwnPlaced.at(lx, ly, lz)) ? 1 : 0;     // rm-mining: my own placement makes nothing built
-        };
-        return BuiltNear.counts(false, ore, true, look, x, y, z);
-    }
-
     /** Client tick: the connection kind and the guard's policy into the snapshot when either changed. Never throws. */
     public void tick(Minecraft mc, GuardCore core) {
         try {
@@ -111,8 +89,6 @@ public final class PolicyRuntime {
                     pl == null || !wet ? 0 : waterAbove(pl.level(), pl.blockPosition()), pl == null ? Integer.MIN_VALUE : pl.blockPosition().getY(), pl == null ? DrownRisk.defaultTier() : pickTier(pl));
             inWater = wet;
             Policy p = core.policy();
-            areasNow = p;                                                   // AREAS review 1: for the built-near rule
-            if (pl != null) dimNow = Guard.dimOf(pl.level());
             if (snapshot == null || p != snapshotOf || mp != multiplayer) {
                 multiplayer = mp;
                 snapshotOf = p;
@@ -228,17 +204,8 @@ public final class PolicyRuntime {
         if (!at.loaded(x, z)) return BlockFacts.UNKNOWN;
         BlockState st = at.at(x, y, z);
         if (st == null) return BlockFacts.UNKNOWN;
-        Guard g = Guard.INSTANCE;
-        if (!g.floorReady()) return BlockFacts.UNKNOWN;
-        String id = null;
-        boolean be = st.hasBlockEntity();
-        if (be) {
-            id = BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
-            be = !io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(id);
-        }
+        String id = null;     // owner 2026-10-23: no built / block-entity fact; only the marked areas refuse
         boolean ore = st.is(Tags.Blocks.ORES);
-        // rm-mining: a block the bot placed itself is its own, never a built block (OwnPlaced, the restore ledger)
-        boolean built = OwnPlaced.built(g.isProtectedBlock(st.getBlock()) || (!be && !st.isAir() && builtNear(at, x, y, z, ore)), x, y, z);     // AREAS review 1
         boolean unbreakable = st.getBlock().defaultDestroyTime() < 0;
         // in the cell: a pure liquid block only (kelp, seagrass and waterlogged stairs are broken like any block)
         Fluid in = st.getBlock() instanceof LiquidBlock ? fluidOf(st) : Fluid.NONE;
@@ -255,7 +222,7 @@ public final class PolicyRuntime {
             if (f == Fluid.LAVA) { sides = Fluid.LAVA; break; }
             if (f == Fluid.WATER) sides = Fluid.WATER;
         }
-        return new BlockFacts(true, id, be, built, ore, unbreakable, in, above, sides, below, falling, torch);
+        return new BlockFacts(true, id, ore, unbreakable, in, above, sides, below, falling, torch);
     }
 
     private static final int[][] SIDES = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
@@ -435,7 +402,7 @@ public final class PolicyRuntime {
         String id = f.loaded() && level != null ? BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).toString() : null;
         return "rules " + action.name().toLowerCase() + " " + in.name().toLowerCase() + " at " + x + " " + y + " " + z + ": " + v.text()
                 + " | rule set " + r.describe()
-                + " | block " + (f.loaded() ? id + (f.ore() ? " (ore)" : "") + (f.builtBlock() ? " (built)" : "") + (f.blockEntity() ? " (block entity)" : "")
+                + " | block " + (f.loaded() ? id + (f.ore() ? " (ore)" : "")
                 + ", in cell " + f.inCell().name().toLowerCase() + ", above " + f.above().name().toLowerCase() + (f.fallingAbove() ? " (falling)" : "")
                 + ", sides " + f.sides().name().toLowerCase() + (f.dugByMe() ? ", dug by me" : "") : "not loaded");
     }

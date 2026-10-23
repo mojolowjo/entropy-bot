@@ -38,18 +38,4 @@ class HouseShellTest {
     void roundBoxHasNoShell() {
         assertFalse(Box.round("near", OW, 0, 0, 5, 60, 70).onShell(OW, 5, 65, 0));
     }
-
-    @Test
-    void houseCellOnlyInMainAreas() {
-        assertTrue(P.houseCell(OW, 0, 66, 3, false));        // a wall of the house
-        assertFalse(P.houseCell(OW, 3, 66, 3, false));       // the room, natural block
-        assertTrue(P.houseCell(OW, 3, 66, 3, true));         // the room, my own block (a station)
-        assertTrue(P.houseCell(OW, 3, 60, 3, true));         // a pillar under the floor (my own, in the columns)
-        assertFalse(P.houseCell(OW, 3, 60, 3, false));       // natural stone under the house
-        assertFalse(P.houseCell(OW, 20, 100, 3, false));     // a heightless main area's edge: terrain, no shell
-        assertTrue(P.houseCell(OW, 20, 100, 3, true));       // ... but my own block there is the house
-        assertFalse(P.houseCell(OW, 40, 66, 3, false));      // a neutral area's edge
-        assertFalse(P.houseCell(OW, 40, 66, 3, true));       // my own block in a neutral area (a shelter): still mine to open
-        assertFalse(P.houseCell(OW, 99, 66, 99, true));      // outside every area
-    }
 }

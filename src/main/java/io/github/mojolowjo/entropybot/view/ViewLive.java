@@ -108,7 +108,7 @@ public final class ViewLive {
         if (st.is(BlockTags.LOGS) || st.is(BlockTags.LEAVES)) return 'T';
         if (lv.getBlockEntity(q) instanceof net.minecraft.world.Container) return 'C';
         if (st.getBlock() instanceof net.minecraft.world.level.block.DoorBlock) return 'D';
-        if (Guard.INSTANCE.isProtectedBlock(st.getBlock())) return 'W';
+        if (io.github.mojolowjo.entropybot.clear.ClearRules.builtId(BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString())) return 'W';     // a look only
         String id = BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath();
         if (id.contains("stone") || id.contains("deepslate") || id.endsWith("_ore") || id.contains("andesite") || id.contains("diorite")
                 || id.contains("granite") || id.contains("tuff") || id.equals("gravel")) return '#';

@@ -48,30 +48,4 @@ class V1bFourTest {
         assertNull(NeedWords.campName(n -> true));
     }
 
-    @Test
-    void areaCandidates() {
-        JsonArray l = new JsonArray();
-        assertTrue(AreaCandidates.list(l).startsWith("no no-break candidates"));
-        JsonObject o = new JsonObject();
-        o.addProperty("dim", "minecraft:overworld");
-        o.addProperty("x", 100);
-        o.addProperty("y", 64);
-        o.addProperty("z", -20);
-        o.addProperty("built", 9);
-        o.addProperty("blockEntities", 2);
-        o.addProperty("named", true);
-        l.add(o);
-        assertTrue(AreaCandidates.list(l).contains("1. 100 64 -20 (overworld): 9 built, 2 block entities, a named mob"), AreaCandidates.list(l));
-        var a = AreaCandidates.plan(l, List.of("accept", "1", "alex"));
-        assertEquals("84 -36 116 -4 alex no-break 56 80", a.areaCommand());
-        assertEquals(0, a.remove());
-        assertEquals("84 -36 116 -4 found1 no-break 56 80", AreaCandidates.plan(l, List.of("accept", "1")).areaCommand());
-        var r = AreaCandidates.plan(l, List.of("reject", "1"));
-        assertNull(r.areaCommand());
-        assertEquals(0, r.remove());
-        assertEquals(-2, AreaCandidates.plan(l, List.of("reject", "all")).remove());
-        assertTrue(AreaCandidates.plan(l, List.of("accept", "2")).text().startsWith("error: no candidate 2"));
-        assertEquals(AreaCandidates.USAGE, AreaCandidates.plan(l, List.of("take", "1")).text());
-        assertEquals(-1, AreaCandidates.plan(l, List.of()).remove());
-    }
 }

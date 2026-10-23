@@ -106,31 +106,14 @@ public final class Policy {
     }
 
     /**
-     * 0.30.6 (live, 0.30.4: the stuck dig-out opened a house's cobblestone wall): the cell is part of a house in a base
-     * area: on the area box's shell, or (ownBuilt) any cell in the area's columns the bot built itself (floor, pillars
-     * under it, stations). Such a cell is never a dig-out's way; the house's door is the way out.
-     */
-    public boolean houseCell(String dim, int x, int y, int z, boolean ownBuilt) {
-        for (Box b : areas) {
-            if (b.type != AreaType.BASE || !b.dim.equals(dim) || !b.columnIn(x, z)) continue;
-            if (ownBuilt || b.onShell(dim, x, y, z)) return true;
-        }
-        return false;
-    }
-
-    /**
      * 0.30.7 (owner's rule 2026-10-11; live: twice stuck in the respawn pit at 0 136 9 inside the neutral area "arena",
      * the surface dig-out refused): a dig-out (the stuck escape, the surface dig-out, the stair side) may break any
-     * block in this cell, placed ones and persistent leaves included: it lies in a work, storage, danger or destroy
-     * area, in no protect box, and is not a base area's house cell (houseCell). The caller still refuses containers,
+     * block in this cell, placed ones and persistent leaves included. Owner 2026-10-23: anywhere but a marked keep-out /
+     * no-break area (no house rule, no area needed). The caller still refuses containers,
      * blocks by water or lava, unbreakable and unloaded cells.
      */
     public boolean digOutAny(String dim, int x, int y, int z, boolean ownBuilt) {
-        if (protectAt(dim, x, y, z) != null || houseCell(dim, x, y, z, ownBuilt)) return false;
-        for (Box b : areas) {
-            if (b.type != AreaType.BASE && b.contains(dim, x, y, z)) return true;
-        }
-        return false;
+        return protectAt(dim, x, y, z) == null;
     }
 
     public Box protectAt(String dim, int x, int y, int z) {

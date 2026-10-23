@@ -36,15 +36,6 @@ class V1bThreeTest {
     }
 
     @Test
-    void baseDetection() {
-        assertFalse(ExploreWords.isBase(new ExploreWords.Scan(5, 0, 0)), "a few planks (a mineshaft bit) aren't a base");
-        assertTrue(ExploreWords.isBase(new ExploreWords.Scan(6, 0, 0)));
-        assertTrue(ExploreWords.isBase(new ExploreWords.Scan(0, 1, 0)), "any container, bed or sign");
-        assertTrue(ExploreWords.isBase(new ExploreWords.Scan(0, 0, 1)), "a named mob");
-        assertTrue(ExploreWords.baseNote(new ExploreWords.Scan(7, 2, 0), 1, 64, 2).contains("keep 16 blocks off and take nothing"));
-    }
-
-    @Test
     void findForms() {
         List<String> kinds = List.of("village", "mineshaft", "trial chamber");
         java.util.function.Predicate<String> biome = id -> id.equals("minecraft:cherry_grove");

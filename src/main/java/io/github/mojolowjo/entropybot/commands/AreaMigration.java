@@ -12,8 +12,8 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * V1a (0.22.0): areas.json version 1 -> 2, once. Every area -> neutral; the area named base/home, else the smallest one
- * holding the {@code base} place -> main; every protect box -> a safe area (same box and y range; protect_N when it had
+ * V1a (0.22.0): areas.json version 1 -> 2, once. Every untyped area -> work (owner 2026-10-23: none is made a base by itself);
+ * every protect box -> a safe area (same box and y range; protect_N when it had
  * no name, name_safe when an area already had its name); the build zone in commands.json -> a destroy area "zone"; old
  * verb forms in saved routines and rules rewritten ({@link OldWords}). The near-me settings, "strict" and everything
  * else in both files stay as they are. Pure: the caller backs the files up first and saves them after. Idempotent: a
@@ -68,33 +68,12 @@ public final class AreaMigration {
         areas.add("areas", keep);
         as = keep;
         for (JsonElement e : as) names.add(PolicyCommands.nameOf(e.getAsJsonObject()).toLowerCase());
-        // main: by name first, else the smallest area holding the base place
-        JsonObject main = null;
-        for (JsonElement e : as) {
-            String n = PolicyCommands.nameOf(e.getAsJsonObject()).toLowerCase();
-            if (n.equals("base") || n.equals("home")) { main = e.getAsJsonObject(); break; }
-        }
-        JsonObject base = places == null ? null : places.get("base");
-        if (main == null && base != null && base.has("x") && base.has("z")) {
-            int bx = base.get("x").getAsInt(), by = base.has("y") ? base.get("y").getAsInt() : 64, bz = base.get("z").getAsInt();
-            String bd = base.has("dim") ? base.get("dim").getAsString() : PolicyCommands.DEFAULT_DIM;
-            long best = Long.MAX_VALUE;
-            for (JsonElement e : as) {
-                JsonObject b = e.getAsJsonObject();
-                if (b.has("round") || !PolicyCommands.dimOf(b).equals(bd) || PolicyCommands.boxGap(b, bx, by, bz) > 0) continue;
-                long size = (long) (PolicyCommands.n(b, "x2") - PolicyCommands.n(b, "x1") + 1) * (PolicyCommands.n(b, "z2") - PolicyCommands.n(b, "z1") + 1);
-                if (size < best) { best = size; main = b; }
-            }
-        }
+        // owner 2026-10-23: no area is made a base by itself (its name or the base place inside it): untyped = work
         int nNeutral = 0, nMain = 0, nSafe = 0, nDestroy = 0;
         for (JsonElement e : as) {
             JsonObject b = e.getAsJsonObject();
             AreaType t = PolicyCommands.typeOf(b);
-            if (b == main && !b.has("type")) {
-                b.addProperty("type", AreaType.BASE.word());
-                t = AreaType.BASE;
-                lines.add("area " + PolicyCommands.nameOf(b) + " -> base (it holds the base)");
-            } else if (!b.has("type")) {
+            if (!b.has("type")) {
                 lines.add("area " + PolicyCommands.nameOf(b) + " -> work");
             }
             switch (t) {

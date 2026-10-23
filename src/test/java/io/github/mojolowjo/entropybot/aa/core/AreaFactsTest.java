@@ -54,23 +54,6 @@ class AreaFactsTest {
     }
 
     @Test
-    void candidatesAreNoBreakWhenNotPlainlyMine() {
-        assertTrue(AreaFacts.autoNoBreak(true, 0), "a named mob: someone's");
-        assertTrue(AreaFacts.autoNoBreak(false, 2), "two block entities");
-        assertFalse(AreaFacts.autoNoBreak(false, 1), "one chest could be mine");
-        assertFalse(AreaFacts.autoNoBreak(false, 0));
-        assertTrue(AreaFacts.autoNoBreak(false, 0, 6, null), "review 1: a cluster of 6 built blocks");
-        assertTrue(AreaFacts.autoNoBreak(false, 0, 0, "a village"), "review 1: a village (bells, beds, workstations, doors, paths)");
-        assertFalse(AreaFacts.autoNoBreak(false, 1, 5, null));
-        Box b = AreaFacts.candidateBox("found1", OW, 100, 64, -20, 16, 8, 16);
-        assertEquals(AreaType.NO_BREAK, b.type);
-        assertEquals(84, b.x1);
-        assertEquals(80, b.y2);
-        assertNotNull(b.note);
-        assertTrue(new Policy(java.util.List.of(), java.util.List.of(b)).protectAt(OW, 100, 64, -20) != null);
-    }
-
-    @Test
     void statusLine() {
         assertEquals("in base,work; base 3 blocks; near the owner", AreaFacts.status("base,work", 3.2, true));
         assertEquals("no area here; no base area", AreaFacts.status("", -1, false));

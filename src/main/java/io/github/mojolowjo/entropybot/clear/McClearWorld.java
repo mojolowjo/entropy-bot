@@ -98,8 +98,6 @@ public final class McClearWorld implements ClearWorld {
 
     @Override public boolean builtBlock(int x, int y, int z) {
         BlockState st = at(x, y, z);
-        Guard g = Guard.INSTANCE;
-        if (g.floorReady()) return g.isProtectedBlock(st.getBlock());
         return ClearRules.builtId(BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString());
     }
 

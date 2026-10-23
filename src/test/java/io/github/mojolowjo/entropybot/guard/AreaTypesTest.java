@@ -10,8 +10,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class AreaTypesTest {
     static final String OW = "minecraft:overworld";
     static final GuardCore.BlockInfo PLAIN = GuardCore.BlockInfo.PLAIN;
-    static final GuardCore.BlockInfo CHEST = GuardCore.BlockInfo.of(true, true, false);
-    static final GuardCore.BlockInfo PLANKS = GuardCore.BlockInfo.of(true, false, true);
+    static final GuardCore.BlockInfo CHEST = GuardCore.BlockInfo.of(true);  // no block-entity floor (0.39.z25)
+    static final GuardCore.BlockInfo PLANKS = GuardCore.BlockInfo.of(true);  // no built floor (0.39.z25)
 
     /** One area of each type side by side, x 0..9 / 20..29 / 40..49 / 60..69, z 0..9, y 60..70. */
     static final String POLICY = "{\"version\":2,\"areas\":["
@@ -199,8 +199,8 @@ class AreaTypesTest {
             String id = g.lease("tok", "dig", new Box(null, OW, x, 60, 0, x + 9, 70, 9), true, false);
             assertTrue(id.startsWith("L"), id);
             assertTrue(g.check(OW, x + 5, 65, 5, "break", PLAIN).allowed(), "natural at " + x);
-            assertFalse(g.check(OW, x + 5, 65, 5, "break", PLANKS).allowed(), "built blocks need a destroy lease at " + x);
-            assertFalse(g.check(OW, x + 5, 65, 5, "break", CHEST).allowed(), "containers never at " + x);
+            assertTrue(g.check(OW, x + 5, 65, 5, "break", PLANKS).allowed(), "no built floor at " + x);
+            assertTrue(g.check(OW, x + 5, 65, 5, "break", CHEST).allowed(), "no block-entity floor at " + x);
         }
     }
 
@@ -226,7 +226,7 @@ class AreaTypesTest {
         assertEquals("pit", g.leases().get(id).toJson().get("destroy").getAsString());
         assertTrue(g.check(OW, 25, 65, 5, "break", PLANKS).allowed(), "built blocks go under a destroy lease");
         assertTrue(g.check(OW, 25, 65, 5, "break", PLAIN).allowed());
-        assertFalse(g.check(OW, 25, 65, 5, "break", CHEST).allowed(), "never a container");
+        assertTrue(g.check(OW, 25, 65, 5, "break", CHEST).allowed(), "no block-entity floor");
         assertFalse(g.check(OW, 25, 65, 5, "place", PLAIN).allowed(), "a destroy lease only breaks");
         // the area changes type: a new policy keeps the lease box but a fresh destroy lease is refused
         g.release(id);

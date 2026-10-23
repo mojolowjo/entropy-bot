@@ -624,7 +624,7 @@ public final class RestoreLive {
         Minecraft mc = Minecraft.getInstance();
         Level level = mc.level;
         Guard g = Core.INSTANCE.guard;
-        if (level == null || c == null || !g.floorReady()) return null;
+        if (level == null || c == null) return null;
         String dim = Guard.dimOf(level);
         // the owner's own places (base, mine, farm...) are known to them: no hint there
         for (JsonObject pl : Core.INSTANCE.knowledge.places().values()) {
@@ -644,7 +644,7 @@ public final class RestoreLive {
                     if (!level.isLoaded(m)) continue;
                     BlockState st = level.getBlockState(m);
                     if (st.isAir()) continue;
-                    if (!g.isProtectedBlock(st.getBlock())) continue;
+                    if (!io.github.mojolowjo.entropybot.clear.ClearRules.builtId(BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString()) && !st.hasBlockEntity()) continue;     // a hint only
                     if (BuildSpotter.ownKind(BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString())) continue;
                     boolean covered = false;
                     for (Box b : protect) if (b.contains(dim, x, y, z)) { covered = true; break; }
@@ -661,19 +661,6 @@ public final class RestoreLive {
             return null;
         }
         if (h != null) {
-            // 0.33.0: mineshaft planks and fences, a village, a ruined portal... are the world's own, not a build: the game's structure data says
-            String natural = null;
-            StructureSource.install();
-            try {
-                natural = io.github.mojolowjo.entropybot.vocab.NaturalStructures.explains(dim, center[0], center[1], center[2], r);
-            } catch (RuntimeException ex) {
-                LOG.warn("[entropybot] natural structure check failed: {}", ex.toString());
-            }
-            if (natural != null) {
-                LOG.info("[entropybot] build scan near {}: {} (the world's own) - no hint; kinds {}", Jobs.fmt(center), natural, kinds);
-                return null;
-            }
-            if (!io.github.mojolowjo.entropybot.vocab.NaturalStructures.known()) LOG.info("[entropybot] build scan near {}: no structure data on a server, cannot say whether it is the world's own", Jobs.fmt(center));
             LOG.debug("[entropybot] build scan near {}: kinds {}", Jobs.fmt(center), kinds);
         }
         return h;

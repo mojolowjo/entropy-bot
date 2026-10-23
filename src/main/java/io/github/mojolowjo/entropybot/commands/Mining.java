@@ -694,7 +694,7 @@ final class Mining {
     // ==== explore ====
 
     static final class ExRun {
-        long until, start, targetAt, scanAt, findAt = -1, untilAt = -1;
+        long until, start, targetAt, findAt = -1, untilAt = -1;
         /** live-facts: the item whose source, once known, ends the walk (a chain's explore); null: none. */
         String untilSource;
         int chunks, sx, sz;
@@ -705,12 +705,10 @@ final class Mining {
         io.github.mojolowjo.entropybot.vocab.ExploreWords.Find find;
         String found;
         final Set<Integer> poiIds = new HashSet<>();
-        final Set<String> bases = new HashSet<>();
         ExploreRules.Target target;
-        /** 0.23.1: gathering on the way (explore ... gather off = false); the bot's spot; the bases seen. */
+        /** 0.23.1: gathering on the way (explore ... gather off = false); the bot's spot. */
         boolean gather = true;
         final int[] at = new int[3];
-        final List<int[]> baseSpots = new java.util.concurrent.CopyOnWriteArrayList<>();
         long gatherAt;
         int gathers, gatherMisses;
         /** 0.33.1: ticks spent gathering, the gather in progress's start (0: none), the chunk count at the last gather. */
@@ -726,8 +724,7 @@ final class Mining {
 
     /**
      * V1b: "explore [north|south|east|west] [minutes]": never-seen land (explored.json; never into a keep-out area),
-     * then home; someone's base out there is kept off and
-     * noted. The report names the new points of interest.
+     * then home. The report names the new points of interest.
      */
     String explore(LocalPlayer p, String rest) {
         io.github.mojolowjo.entropybot.vocab.ExploreWords.Args a = io.github.mojolowjo.entropybot.vocab.ExploreWords.parse(rest, io.github.mojolowjo.entropybot.vocab.ExploreWords.defaultMinutes());
@@ -784,14 +781,12 @@ final class Mining {
     /** live-facts: the first surface ore the last vein search passed for want of a pickaxe tier (said in the miss line), null none. */
     private String veinPassed;
 
-    /** 0.23.1: a gather while exploring: a tree (when short of logs) or an exposed ore vein; null = nothing. AREAS: anywhere not protected, keeping off bases seen. */
+    /** 0.23.1: a gather while exploring: a tree (when short of logs) or an exposed ore vein; null = nothing. AREAS: anywhere not protected. */
     private List<Seq.Step> gatherSteps(Seq s, ExRun ex, LocalPlayer p) {
         String d = dim();
         if (!ex.gather) return null;
-        final List<int[]> bases = ex.baseSpots;
         java.util.function.Predicate<int[]> ok = c -> {
             if (!commands.workAllowed(d, c[0], c[1], c[2])) return false;
-            for (int[] b : bases) if (Math.abs(c[0] - b[0]) <= 16 && Math.abs(c[2] - b[2]) <= 16) return false;
             return true;
         };
         veinPassed = null;
@@ -882,42 +877,6 @@ final class Mining {
         }
         ex.before = null;
         return "next";
-    }
-
-    /** V1b: a scan of 16 blocks round the bot (y -6..+6) for someone's base. */
-    private io.github.mojolowjo.entropybot.vocab.ExploreWords.Scan baseScan(LocalPlayer p) {
-        Level level = p.level();
-        int[] me = Jobs.here(p);
-        int built = 0, be = 0, named = 0, r = io.github.mojolowjo.entropybot.vocab.ExploreWords.baseR();
-        BlockPos.MutableBlockPos q = new BlockPos.MutableBlockPos();
-        io.github.mojolowjo.entropybot.guard.Guard g = io.github.mojolowjo.entropybot.guard.Guard.INSTANCE;
-        for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) for (int dy = -6; dy <= 6; dy++) {
-            q.set(me[0] + dx, me[1] + dy, me[2] + dz);
-            if (!level.isLoaded(q)) continue;
-            BlockState st = level.getBlockState(q);
-            if (st.isAir()) continue;
-            boolean prot = g.isProtectedBlock(st.getBlock());
-            if (level.getBlockEntity(q) != null) be++;
-            else if (prot) built++;
-        }
-        for (net.minecraft.world.entity.Entity e : level.getEntities(p, p.getBoundingBox().inflate(r))) {
-            if (!(e instanceof net.minecraft.world.entity.player.Player) && e.hasCustomName() && e.getCustomName() != null
-                    && io.github.mojolowjo.entropybot.vocab.AttackRules.isName(e.getCustomName().getString())) named++;
-        }
-        // 0.33.0: the world's own structures (a village's loot chests, beds, hay) are not someone's base: the game's structure data says
-        String natural = null;
-        StructureSource.install();
-        try {
-            natural = io.github.mojolowjo.entropybot.vocab.NaturalStructures.explains(dim(), me[0], me[1], me[2], r);
-        } catch (RuntimeException ex) {
-            LOG.warn("[entropybot] natural structure check failed: {}", ex.toString());
-        }
-        String data = io.github.mojolowjo.entropybot.vocab.NaturalStructures.known() ? "no world structure explains it" : "no structure data on a server: cannot say";
-        if (natural != null && (built >= io.github.mojolowjo.entropybot.vocab.ExploreWords.baseBuilt() || be > 0))
-            LOG.info("[entropybot] base scan: {} built, {} block entities near {} - {} (the world's own), not a base", built, be, Jobs.fmt(me), natural);
-        else if (built >= io.github.mojolowjo.entropybot.vocab.ExploreWords.baseBuilt() || be > 0)
-            LOG.info("[entropybot] base scan: {} built, {} block entities near {} - {}", built, be, Jobs.fmt(me), data);
-        return new io.github.mojolowjo.entropybot.vocab.ExploreWords.Scan(built, be, named, natural);
     }
 
     /** V1b find: dark air below the surface within 8 blocks (a cave under the bot). */
@@ -1030,44 +989,13 @@ final class Mining {
                 return "next";
             }
         }
-        // V1b: someone's base within 16: keep off (mark its chunks seen), note it once, walk elsewhere
-        if (done == null && now() - ex.scanAt >= 100) {
-            ex.scanAt = now();
-            try {
-                io.github.mojolowjo.entropybot.vocab.ExploreWords.Scan sc = baseScan(p);
-                // AREAS review 1: a village (the world's own structure) is no base to whisper about, but a candidate AA keeps off
-                boolean village = !io.github.mojolowjo.entropybot.vocab.ExploreWords.isBase(sc) && sc.natural() != null
-                        && (sc.built() >= io.github.mojolowjo.entropybot.vocab.ExploreWords.baseBuilt() || sc.blockEntities() > 0);
-                if (io.github.mojolowjo.entropybot.vocab.ExploreWords.isBase(sc) || village) {
-                    String key = (me[0] >> 5) + " " + (me[2] >> 5);
-                    List<String> around = new ArrayList<>();
-                    for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) around.add(ExploreRules.key(d, (me[0] >> 4) + dx, (me[2] >> 4) + dz));
-                    notes().markExplored(around);
-                    boolean known = false;
-                    for (int[] bs : ex.baseSpots) if (Math.abs(bs[0] - me[0]) <= 16 && Math.abs(bs[2] - me[2]) <= 16) { known = true; break; }
-                    if (!known) ex.baseSpots.add(me.clone());      // 0.23.1: roaming keeps 16 off it
-                    if (ex.bases.add(key)) {
-                        commands.noteSafeCandidate(d, me, sc);
-                        if (!village) {
-                            String note = io.github.mojolowjo.entropybot.vocab.ExploreWords.baseNote(sc, me[0], me[1], me[2]);
-                            LOG.info("[entropybot] explore: {}", note);
-                            commands.whisper(commands.owner(), note);
-                        } else LOG.info("[entropybot] explore: {} near {} - a no-break candidate until rejected", sc.natural(), Jobs.fmt(me));
-                    }
-                    ex.target = null;
-                    if (b != null) Jobs.cancel(b);
-                }
-            } catch (RuntimeException e) {
-                LOG.warn("[entropybot] explore base scan: {}", e.toString());
-            }
-        }
         // 0.23.1 (VOCABULARY 6b): off any base, take what keeps it going: a tree, an exposed ore vein
         // 0.33.1: only as a side effect of the walk (ExploreRules.gatherAllowed), so a short explore still walks
         if (done == null && ex.gather && ex.gathers < gatherMax() && now() - ex.gatherAt >= gatherEvery()
                 && ExploreRules.gatherAllowed(now() - ex.start, ex.until - now(), ex.gatherTicks, ex.chunks, ex.chunksAtGather)) {
             ex.gatherAt = now();
             try {
-                if (!io.github.mojolowjo.entropybot.vocab.ExploreWords.isBase(baseScan(p))) {
+                {     // owner 2026-10-23: no base detection; gather anywhere not marked
                     List<Seq.Step> add = gatherSteps(s, ex, p);
                     if (add != null) {
                         if (b != null) Jobs.cancel(b);

@@ -66,8 +66,6 @@ class BreakPolicyTest {
     @Test
     void floorHoldsForEveryIntent() {
         for (Intent in : new Intent[]{Intent.TRAVEL, Intent.MINE, Intent.DIG_OUT, Intent.BUILD}) {
-            assertEquals("block entity (a chest, machine, bed...)", brk(SP, in, 1000, 60, 1000, BlockFacts.STONE.withBlockEntity(true)).reason(), in.name());
-            assertEquals("built block", brk(SP, in, 1000, 60, 1000, BlockFacts.STONE.withBuilt(true)).reason(), in.name());
             assertEquals("unbreakable", brk(SP, in, 1000, 60, 1000, BlockFacts.STONE.withUnbreakable(true)).reason(), in.name());
             assertEquals("next to lava", brk(SP, in, 1000, 60, 1000, BlockFacts.STONE.withSides(Fluid.LAVA)).reason(), in.name());
             assertEquals("next to lava", brk(SP, in, 1000, 60, 1000, BlockFacts.STONE.withAbove(Fluid.LAVA)).reason(), in.name());
@@ -126,17 +124,6 @@ class BreakPolicyTest {
         assertFalse(at.allowed());
         assertEquals("travel break cap 24 reached on this walk", at.reason());
         assertTrue(brk(SP, Intent.MINE, 1000, 60, 1000, BlockFacts.STONE, new Where(false, 24)).allowed(), "the cap is travel's only");
-    }
-
-    @Test
-    void travelNeverThroughMyHouseWall() {
-        // a house: a main area 5x5x4 inside the camp; its shell is houseCell
-        Snapshot s = Snapshot.of(Policy.parse("{\"areas\":[{\"name\":\"house\",\"type\":\"main\",\"x1\":0,\"z1\":0,\"x2\":4,\"z2\":4,\"y1\":60,\"y2\":64}]}"), false);
-        Verdict wall = brk(s, Intent.TRAVEL, 0, 62, 2, BlockFacts.STONE);
-        assertFalse(wall.allowed());
-        assertEquals("house", wall.rule());
-        assertTrue(brk(s, Intent.BUILD, 0, 62, 2, BlockFacts.STONE).allowed(), "a build may open the wall");
-        assertTrue(brk(s, Intent.TRAVEL, 2, 62, 2, BlockFacts.STONE).allowed(), "inside the house, not the shell");
     }
 
     // ---- MINE
@@ -281,6 +268,5 @@ class BreakPolicyTest {
         assertEquals(Intent.TRAVEL, Intent.of("Travel"));
         assertNull(Intent.of("fly"));
         assertEquals("allowed x6 (travel)", brk(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE).text());
-        assertEquals("denied: built block (floor)", brk(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE.withBuilt(true)).text());
     }
 }

@@ -44,10 +44,8 @@ public final class GuardCore {
 
     /** What the guard knows about the block at a spot; supplied by the Minecraft side. */
     public interface BlockInfo {
-        /** False while the protected-block set is not built yet: then breaking is refused (fail closed). */
+        /** False when the block is not loaded: then breaking is refused (fail closed). */
         boolean known();
-        boolean hasBlockEntity();
-        boolean isProtectedBlock();
 
         /** Water plan: the cell holds only air or water (what a seal lease may fill); true when not known. */
         default boolean airOrWater() { return true; }
@@ -61,21 +59,17 @@ public final class GuardCore {
         static BlockInfo placing(boolean airOrWater, boolean torch) {
             return new BlockInfo() {
                 public boolean known() { return true; }
-                public boolean hasBlockEntity() { return false; }
-                public boolean isProtectedBlock() { return false; }
                 public boolean airOrWater() { return airOrWater; }
                 public boolean torch() { return torch; }
             };
         }
 
-        BlockInfo UNKNOWN = of(false, false, false);
-        BlockInfo PLAIN = of(true, false, false);
+        BlockInfo UNKNOWN = of(false);
+        BlockInfo PLAIN = of(true);
 
-        static BlockInfo of(boolean known, boolean blockEntity, boolean protectedBlock) {
+        static BlockInfo of(boolean known) {
             return new BlockInfo() {
                 public boolean known() { return known; }
-                public boolean hasBlockEntity() { return blockEntity; }
-                public boolean isProtectedBlock() { return protectedBlock; }
             };
         }
     }
@@ -287,14 +281,6 @@ public final class GuardCore {
         return null;
     }
 
-    /** A break-capable force or destroy lease covers this cell (any of them, whatever else covers it too). */
-    boolean forceLeaseAt(String dim, int x, int y, int z) {
-        for (Lease l : leases.values()) {
-            if (l.seal || !(l.force || l.destroy)) continue;
-            if (l.box.contains(dim, x, y, z)) return true;
-        }
-        return false;
-    }
 
     /**
      * The box rules only (denied dimensions, keep-out and no-break areas, leases): cheap, lock-free, safe on the
@@ -326,13 +312,8 @@ public final class GuardCore {
     /** Like {@link #check} but never logs: for dry runs ({@code guard check}). */
     public Verdict checkUnlogged(String dim, int x, int y, int z, String action, BlockInfo block) {
         if ("break".equals(action)) {
-            if (!block.known()) return Verdict.floor("protected blocks not loaded yet");
-            if (block.hasBlockEntity()) return Verdict.floor("block entity (a chest, machine, bed...)");
-            if (block.isProtectedBlock()) {
-                // 0.26.5: any covering force/destroy lease counts, not only the first lease found (the shelter's own place
-                // leases on its wall cells came first and hid the one-cell force lease: the wall never broke)
-                if (!forceLeaseAt(dim, x, y, z)) return Verdict.floor("built block");
-            }
+            if (!block.known()) return Verdict.floor("not loaded yet");
+            // owner 2026-10-23: no block-entity or built-block floor; only the marked keep-out / no-break areas refuse
         }
         if ("place".equals(action) && !block.airOrWater() && sealOnly(dim, x, y, z)) {
             return Verdict.floor("a seal only fills water or air");
@@ -413,10 +394,9 @@ public final class GuardCore {
         return answer + liquidNote(liquid);
     }
 
-    public JsonObject status(int floorBlocks, boolean astarApplied, boolean clickApplied) {
+    public JsonObject status(boolean astarApplied, boolean clickApplied) {
         JsonObject o = new JsonObject();
         o.addProperty("mode", mode.name().toLowerCase());
-        o.addProperty("floorBlocks", floorBlocks);
         o.add("deniedDims", toArray(DENIED_DIMS));
         o.add("areas", policy.toJson().getAsJsonArray("areas"));
         o.add("protect", policy.toJson().getAsJsonArray("protect"));

@@ -29,44 +29,18 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
-import net.neoforged.neoforge.common.Tags;
 import org.slf4j.Logger;
 
-import java.util.HashSet;
-import java.util.Set;
-import java.util.regex.Pattern;
 
 /**
- * The guard as the game sees it: the pure rules of {@link GuardCore} plus the protected-block set,
- * the dimension and block lookups, and the entry points the three Mixins call.
+ * The guard as the game sees it: the pure rules of {@link GuardCore} (the owner's marked areas) plus the dimension
+ * lookups and the entry points the three Mixins call.
  */
 public final class Guard {
     private static final Logger LOG = LogUtils.getLogger();
     public static final Guard INSTANCE = new Guard();
 
-    /**
-     * Building blocks that don't occur in the wild, by block id (the same list the KubeJS bridge
-     * uses). Ores are never on the list; blocks with a block entity are added by the registry walk.
-     */
-    static final Pattern PROTECT_RE = Pattern.compile(String.join("|",
-            "_planks$", "_stairs$", "_slab$", "_fence$", "_fence_gate$", "_door$", "_trapdoor$", "glass", "_pane$", "_wool$", "_carpet$",
-            ":bricks$", "_bricks$", "_wall$", "_button$", "_pressure_plate$", "_concrete$", "_concrete_powder$", "glazed_terracotta$",
-            ":(polished|chiseled|cut)_", ":smooth_(stone|sandstone|red_sandstone|quartz)", "_sapling$", ":potted_", ":flower_pot$", "candle",
-            ":(waxed_)?((exposed|weathered|oxidized)_)?(cut|chiseled)_", ":waxed_", ":stripped_", "_wood$", "_hyphae$", "_tiles$", "_froglight$",
-            ":(iron|gold|diamond|emerald|netherite|lapis|redstone|coal|copper)_block$",
-            ":(quartz_block|quartz_pillar|dark_prismarine|smithing_table|stonecutter|grindstone|loom|cartography_table|fletching_table|"
-                    + "composter|cauldron|water_cauldron|lava_cauldron|powder_snow_cauldron|anvil|chipped_anvil|damaged_anvil|lodestone|"
-                    + "respawn_anchor|lightning_rod|dried_kelp_block|honey_block|slime_block|packed_mud|nether_wart|copper_bulb|copper_grate)$",
-            ":(ladder|rail|powered_rail|detector_rail|activator_rail|torch|wall_torch|soul_torch|soul_wall_torch|redstone_torch|"
-                    + "redstone_wall_torch|lantern|soul_lantern|farmland|scaffolding|iron_bars|chain|lever|hay_block|bookshelf|crafting_table|"
-                    + "end_rod|sea_lantern|carved_pumpkin|jack_o_lantern|tnt|target|note_block|redstone_wire|repeater|piston|sticky_piston|"
-                    + "observer|redstone_lamp)$",
-            ":(wheat|carrots|potatoes|beetroots|melon_stem|pumpkin_stem|attached_melon_stem|attached_pumpkin_stem|cocoa|sweet_berry_bush)$",
-            "_crop$", "farmland$"));
-
     public final GuardCore core = new GuardCore();
-    private volatile Set<Block> protectedBlocks;   // null until built on the client thread
-    private volatile int blockEntityCount, namedCount;
     private EventRing events;
     private long lastAstarLogTick = -1000;  // structural: a time long ago (sentinel)
 
@@ -74,63 +48,13 @@ public final class Guard {
 
     public void attachEvents(EventRing ring) { this.events = ring; }
 
-    public boolean floorReady() { return protectedBlocks != null; }
-
-    public int floorSize() { Set<Block> s = protectedBlocks; return s == null ? 0 : s.size(); }
-
-    /** B7e (E1): the protected blocks (immutable; null until built), for Baritone's blocksToDisallowBreaking. */
-    public Set<Block> protectedBlocks() { return protectedBlocks; }
-
-    public String floorInfo() {
-        return floorReady() ? floorSize() + " blocks (" + blockEntityCount + " with a block entity, " + namedCount + " building blocks)" : "not built yet";
-    }
-
-    /** Builds the protected-block set from the registry. Client thread, once registries are complete. */
-    public void ensureProtectedBlocks() {
-        if (protectedBlocks != null) return;
-        Set<Block> set = new HashSet<>();
-        int be = 0, named = 0;
-        for (Block b : BuiltInRegistries.BLOCK) {
-            try {
-                BlockState st = b.defaultBlockState();
-                if (st.is(Tags.Blocks.ORES)) continue;
-                if (io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(BuiltInRegistries.BLOCK.getKey(b).toString())) continue;    // P3: a tree's log
-                if (st.hasBlockEntity()) { set.add(b); be++; }
-                else if (PROTECT_RE.matcher(BuiltInRegistries.BLOCK.getKey(b).toString()).find()) { set.add(b); named++; }
-            } catch (RuntimeException caught) { Quiet.warn("Guard.ensureProtectedBlocks failed, carrying on with the fallback", caught); }
-        }
-        blockEntityCount = be;
-        namedCount = named;
-        protectedBlocks = Set.copyOf(set);
-        LOG.info("[entropybot] protected blocks: {}", floorInfo());
-    }
-
-    public boolean isProtectedBlock(Block b) {
-        Set<Block> s = protectedBlocks;
-        return s != null && s.contains(b);
-    }
-
+    /**
+     * Owner's ruling 2026-10-23 ("I'd rather set an area it may NOT use"): no block is protected by what it is (no
+     * built-block list, no block-entity floor, no built-near rule). Only loaded or not is known here; the owner's marked
+     * keep-out / no-break areas are the one refusal ({@link GuardCore#checkBoxes}).
+     */
     public GuardCore.BlockInfo infoFor(Level level, BlockPos pos) {
-        Set<Block> s = protectedBlocks;
-        if (s == null || level == null) return GuardCore.BlockInfo.UNKNOWN;
-        BlockState st = level.getBlockState(pos);
-        String bid = BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
-        boolean be = st.hasBlockEntity() && !io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(bid)
-                // 0.33.0 (A3): my own station (the ledger says so) is a built block here (a force lease may take it), not floor
-                && !(io.github.mojolowjo.entropybot.clear.OwnStations.station(bid) && io.github.mojolowjo.entropybot.clear.OwnStations.mineAt(pos.getX(), pos.getY(), pos.getZ()));
-        boolean built = OwnPlaced.built(s.contains(st.getBlock()), pos.getX(), pos.getY(), pos.getZ());     // rm-mining: my own placement is mine
-        // AREAS review 1 (BuiltNear): off the owner's typed places (home facts: their own work is theirs to dig) a natural
-        // block beside a built one or a block entity is built too
-        if (!built && !be && !st.isAir() && core.policy().typeAt(dimOf(level), pos.getX(), pos.getY(), pos.getZ()) == null) {
-            BuiltNear.Look look = (x, y, z) -> {
-                BlockPos q = new BlockPos(x, y, z);
-                if (!level.isLoaded(q)) return -1;
-                BlockState t = level.getBlockState(q);
-                return (t.hasBlockEntity() && !io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(BuiltInRegistries.BLOCK.getKey(t.getBlock()).toString())) || (s.contains(t.getBlock()) && !OwnPlaced.at(x, y, z)) ? 1 : 0;
-            };
-            built = BuiltNear.counts(false, st.is(net.neoforged.neoforge.common.Tags.Blocks.ORES), true, look, pos.getX(), pos.getY(), pos.getZ());
-        }
-        return GuardCore.BlockInfo.of(true, be, built);
+        return GuardCore.BlockInfo.of(level != null && level.isLoaded(pos));
     }
 
     public static String dimOf(Level level) {

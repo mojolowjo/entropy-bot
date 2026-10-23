@@ -124,60 +124,6 @@ public final class Commands implements Chains.Env {
         return policy.command(verb, rest, from.equalsIgnoreCase(owner()), owner(), hereOf(mc, from), posOf(mc, p));
     }
 
-    /** AREAS: the candidates list as it stands (never null). */
-    JsonArray safeCandidates() {
-        JsonObject b = brainStore == null ? null : brainStore.data();
-        return b != null && b.has("safeCandidates") && b.get("safeCandidates").isJsonArray() ? b.getAsJsonArray("safeCandidates") : new JsonArray();
-    }
-
-    /**
-     * V1b: someone's base seen while exploring, kept as a no-break candidate (commands.json "safeCandidates", the last 20).
-     * AREAS: a candidate that is not plainly the bot's own is treated as no-break at once (the guard's policy is pushed
-     * again) until the owner rejects it; logged.
-     */
-    void noteSafeCandidate(String dim, int[] at, io.github.mojolowjo.entropybot.vocab.ExploreWords.Scan sc) {
-        JsonObject b = brainStore.data();
-        JsonArray list = b.has("safeCandidates") && b.get("safeCandidates").isJsonArray() ? b.getAsJsonArray("safeCandidates") : new JsonArray();
-        JsonObject o = new JsonObject();
-        o.addProperty("dim", dim);
-        o.addProperty("x", at[0]);
-        o.addProperty("y", at[1]);
-        o.addProperty("z", at[2]);
-        o.addProperty("built", sc.built());
-        o.addProperty("blockEntities", sc.blockEntities());
-        o.addProperty("named", sc.named());
-        if (sc.natural() != null) o.addProperty("natural", sc.natural());      // AREAS review 1: a village is a candidate too
-        o.addProperty("at", System.currentTimeMillis());
-        list.add(o);
-        while (list.size() > 20) list.remove(0);
-        b.add("safeCandidates", list);
-        saved();
-        if (io.github.mojolowjo.entropybot.aa.core.AreaFacts.autoNoBreak(sc.named() > 0, sc.blockEntities(), sc.built(), sc.natural()) && policy != null) {
-            LOG.info("[entropybot] area candidates: {} {} {} looks like someone's base ({} built, {} block entities{}) - treated as no-break until rejected: {}",
-                    at[0], at[1], at[2], sc.built(), sc.blockEntities(), sc.named() > 0 ? ", a named mob" : "", policy.apply());
-        }
-    }
-
-    /** V1b-4: area candidates [accept n [name] | reject n|all] over commands.json "safeCandidates". */
-    String areaCandidates(String words, String from, Minecraft mc, LocalPlayer p) {
-        JsonObject b = brainStore.data();
-        JsonArray list = b.has("safeCandidates") && b.get("safeCandidates").isJsonArray() ? b.getAsJsonArray("safeCandidates") : new JsonArray();
-        var plan = io.github.mojolowjo.entropybot.vocab.AreaCandidates.plan(list, Texts.words(words.trim()));
-        String out = plan.text();
-        if (plan.areaCommand() != null) {
-            out = policyCommand("area", plan.areaCommand(), from, mc, p);
-            if (!out.startsWith("ok")) return out;
-        }
-        if (plan.remove() == -2) b.add("safeCandidates", new JsonArray());
-        else if (plan.remove() >= 0) list.remove(plan.remove());
-        if (plan.remove() != -1) {
-            if (plan.remove() >= 0) b.add("safeCandidates", list);
-            saved();
-            if (policy != null && plan.areaCommand() == null) policy.apply();      // AREAS: a rejected candidate leaves the guard's policy
-        }
-        return out;
-    }
-
     /** V1b: a job, chain or gather run is going (the queue waits). */
     boolean busyForQueue() {
         return jobs.running() || (chains != null && chains.running()) || stepRun.running();
@@ -500,7 +446,6 @@ public final class Commands implements Chains.Env {
         if (aaRuntime != null) sb.append("; ").append(aaRuntime.worldLoaded());   // live-facts: AA's switch is this world's
         sb.append(migrateAreas(files));
         policy = new PolicyCommands(areaStore.data(), new GuardView(), () -> areaStore.changed(core.tick()));
-        policy.setCandidateSource(this::safeCandidates);                       // AREAS: candidates ride along as no-break
         sb.append("; policy: ").append(policy.apply());
         sb.append("; ").append(Storage.loadEmptied(files));
         pushPlaces();                                                          // 0.31.1: the reflexes' base/home at once
@@ -582,7 +527,6 @@ public final class Commands implements Chains.Env {
         sb.append("; hotbar ").append(HotbarRules.describe(hotbarLayout())).append(", tools mode ").append(toolMode());
         sb.append(migrateAreas(files));
         policy = new PolicyCommands(areaStore.data(), new GuardView(), () -> areaStore.changed(core.tick()));
-        policy.setCandidateSource(this::safeCandidates);                       // AREAS: candidates ride along as no-break
         chains = new Chains(this, brainStore.data());
         senses = new SenseRuntime(this);                        // AA_CLEANUP 3: the old brain is gone, its sense part stays
         io.github.mojolowjo.entropybot.aa.door.Door.wire(this::aaOn, s -> LOG.info("[entropybot] {}", s));     // AA_CLEANUP 2: the one door
@@ -1092,7 +1036,6 @@ public final class Commands implements Chains.Env {
         if (verb.equals("mine") && rest.trim().toLowerCase().matches("^strip\\s+(status|ores( collect| list)?)$"))      // V1b: stripmine's forms under mine strip
             return Reply.now("the old strip mine is gone: say aa want strip <ore|ore,ore|any> [<y>] [<heading>]");
         if (verb.equals("restart")) return Reply.now(restartCommand(from, rest));
-        if (verb.equals("area") && Texts.splitChain(raw).size() <= 1 && rest.trim().toLowerCase().matches("^candidates\\b.*")) return Reply.now(areaCandidates(rest.trim().substring(10), from, mc, player));
         if (Texts.isPolicyVerbAlone(verb, raw)) {     // 0.28.1: "area ... then ..." is a chain (falls through to the chain test below)
             return Reply.now(policy.command(verb, rest, isOwner, owner(), hereOf(mc, from), posOf(mc, player)));
         }
@@ -1911,8 +1854,8 @@ public final class Commands implements Chains.Env {
         o.addProperty("id", net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString());
         o.addProperty("container", level.getBlockEntity(pos) instanceof net.minecraft.world.Container);
         io.github.mojolowjo.entropybot.guard.Guard g = io.github.mojolowjo.entropybot.guard.Guard.INSTANCE;
-        boolean prot = g.isProtectedBlock(st.getBlock())
-                || g.core.policy().protectAt(io.github.mojolowjo.entropybot.guard.Guard.dimOf(level), x, y, z) != null;
+        boolean prot = g.core.policy()     // owner 2026-10-23: only a marked keep-out / no-break area protects
+               .protectAt(io.github.mojolowjo.entropybot.guard.Guard.dimOf(level), x, y, z) != null;
         o.addProperty("protected", prot);
         o.addProperty("family", io.github.mojolowjo.entropybot.surface.SurfaceFamily.FAMILIES.get(
                 io.github.mojolowjo.entropybot.surface.SurfaceExport.familyOfState(st)));

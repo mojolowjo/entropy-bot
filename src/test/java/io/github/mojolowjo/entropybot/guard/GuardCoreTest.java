@@ -7,8 +7,9 @@ import static org.junit.jupiter.api.Assertions.*;
 class GuardCoreTest {
     static final String OW = "minecraft:overworld";
     static final GuardCore.BlockInfo PLAIN = GuardCore.BlockInfo.PLAIN;
-    static final GuardCore.BlockInfo CHEST = GuardCore.BlockInfo.of(true, true, false);
-    static final GuardCore.BlockInfo PLANKS = GuardCore.BlockInfo.of(true, false, true);
+    /** Owner 2026-10-23: a chest or planks is just a loaded block to the guard (no built / block-entity floor). */
+    static final GuardCore.BlockInfo CHEST = GuardCore.BlockInfo.of(true);
+    static final GuardCore.BlockInfo PLANKS = GuardCore.BlockInfo.of(true);
 
     static final String POLICY = "{\"areas\":[{\"name\":\"map\",\"x1\":-272,\"z1\":-64,\"x2\":223,\"z2\":431}],"
             + "\"protect\":[{\"name\":\"base\",\"x1\":-40,\"y1\":45,\"z1\":170,\"x2\":-10,\"y2\":80,\"z2\":200}]}";
@@ -32,10 +33,10 @@ class GuardCoreTest {
         // 0.26.5 shelter bug: the wall cell's place lease came first and hid the one-cell force lease
         GuardCore g = withPolicy();
         assertFalse(g.lease("tok", "placing oak_planks", new Box(null, OW, -48, 68, -27, -48, 68, -27), true, false).startsWith("error"));
-        assertEquals("built block", g.check(OW, -48, 68, -27, "break", PLANKS).reason());
+        assertTrue(g.check(OW, -48, 68, -27, "break", PLANKS).allowed(), "the place lease covers it; no built floor");
         assertFalse(g.lease("tok", "opening my shelter", new Box(null, OW, -48, 68, -27, -48, 68, -27), false, true).startsWith("error"));
         assertTrue(g.check(OW, -48, 68, -27, "break", PLANKS).allowed());
-        assertFalse(g.check(OW, -48, 68, -27, "break", CHEST).allowed(), "block entities stay floor");
+        assertTrue(g.check(OW, -48, 68, -27, "break", CHEST).allowed(), "owner 2026-10-23: no block-entity floor");
     }
 
     @Test
@@ -49,10 +50,8 @@ class GuardCoreTest {
         assertEquals("no lease here", t.guard().reason());
         // inside an area with no lease: the same
         assertTrue(g.checkTravelBreak(OW, 0, 60, 300, PLAIN, s, BreakPolicy.BlockFacts.STONE, BreakPolicy.Where.DRY).allowed());
-        // the floor stays the floor
-        GuardCore.TravelCheck chest = g.checkTravelBreak(OW, 500, 60, 500, CHEST, s, BreakPolicy.BlockFacts.STONE, BreakPolicy.Where.DRY);
-        assertFalse(chest.allowed());
-        assertNull(chest.travel(), "the policy is not even asked");
+        // owner 2026-10-23: a chest outside every marked area goes through like stone
+        assertTrue(g.checkTravelBreak(OW, 500, 60, 500, CHEST, s, BreakPolicy.BlockFacts.STONE, BreakPolicy.Where.DRY).allowed());
         // the policy's own denies hold: digging down from in the water
         GuardCore.TravelCheck down = g.checkTravelBreak(OW, 500, 60, 500, PLAIN, s, BreakPolicy.BlockFacts.STONE.withAbove(BreakPolicy.Fluid.WATER), BreakPolicy.Where.WET);
         assertFalse(down.allowed());
@@ -92,7 +91,7 @@ class GuardCoreTest {
         assertEquals(GuardCore.Mode.LOG, GuardCore.DEFAULT_MODE);
         GuardCore.Verdict v = g.check(OW, 0, 16, 300, "break", PLAIN);
         assertTrue(v.allowed() && v.wouldVeto(), "log mode records instead of refusing");
-        assertFalse(g.check(OW, 0, 16, 300, "break", CHEST).allowed(), "the floor holds in log mode even with no policy");
+        assertTrue(g.check(OW, 0, 16, 300, "break", CHEST).allowed(), "owner 2026-10-23: no floor for a chest");
     }
 
     private String lease(GuardCore g, boolean place) {
@@ -111,23 +110,22 @@ class GuardCoreTest {
         assertTrue(g.checkBoxes(OW, 0, 16, 300, "go").allowed());
         assertTrue(g.lease("tok", "dig", new Box(null, OW, 0, 10, 0, 1, 11, 1), false, false).startsWith("L"));
         assertTrue(g.check(OW, 0, 10, 0, "break", PLAIN).allowed());
-        assertFalse(g.check(OW, 0, 10, 0, "break", CHEST).allowed());
+        assertTrue(g.check(OW, 0, 10, 0, "break", CHEST).allowed());
     }
 
     @Test
     void floorBeatsEverything() {
         GuardCore g = withPolicy();
         lease(g, true);
-        assertEquals("block entity (a chest, machine, bed...)", g.check(OW, -45, 16, 396, "break", CHEST).reason());
-        assertEquals("built block", g.check(OW, -45, 16, 396, "break", PLANKS).reason());
-        assertTrue(g.check(OW, -45, 16, 396, "break", PLANKS).floor());
+        assertTrue(g.check(OW, -45, 16, 396, "break", CHEST).allowed(), "owner 2026-10-23: a chest is no floor");
+        assertTrue(g.check(OW, -45, 16, 396, "break", PLANKS).allowed());
         assertEquals("in base (no-break)", g.check(OW, -26, 53, 187, "break", PLAIN).reason());
         assertEquals("in base (no-break)", g.check(OW, -26, 53, 187, "place", PLAIN).reason());
         assertTrue(g.checkBoxes(OW, -26, 53, 187, "go").allowed(), "walking through a protect box is fine");
         assertEquals("no break in minecraft:the_nether", g.check("minecraft:the_nether", 0, 64, 0, "break", PLAIN).reason());
         assertFalse(g.checkBoxes("minecraft:the_end", 0, 64, 0, "go").allowed());
         assertEquals(GuardCore.BlockInfo.UNKNOWN.known(), false);
-        assertEquals("protected blocks not loaded yet", g.check(OW, -45, 16, 396, "break", GuardCore.BlockInfo.UNKNOWN).reason());
+        assertEquals("not loaded yet", g.check(OW, -45, 16, 396, "break", GuardCore.BlockInfo.UNKNOWN).reason());
     }
 
     @Test
@@ -159,13 +157,13 @@ class GuardCoreTest {
     }
 
     @Test
-    void forceLeaseBreaksBuiltBlocksButNeverBlockEntities() {
+    void builtBlocksAndChestsNeedNoForceLease() {
         GuardCore g = withPolicy();
-        String id = g.lease("tok", "dig force", new Box(null, OW, -45, 16, 395, -44, 17, 398), false, true);
+        String id = g.lease("tok", "dig", new Box(null, OW, -45, 16, 395, -44, 17, 398), false, false);
         assertTrue(id.startsWith("L"), id);
         assertTrue(g.check(OW, -45, 16, 396, "break", PLANKS).allowed());
-        assertEquals("block entity (a chest, machine, bed...)", g.check(OW, -45, 16, 396, "break", CHEST).reason());
-        assertEquals("built block", g.check(OW, -45, 18, 396, "break", PLANKS).reason());  // outside the force box
+        assertTrue(g.check(OW, -45, 16, 396, "break", CHEST).allowed(), "owner 2026-10-23");
+        assertEquals("no lease here", g.check(OW, -45, 18, 396, "break", PLANKS).reason());  // outside the box: strict mode's lease rule only
     }
 
     @Test
@@ -176,11 +174,11 @@ class GuardCoreTest {
         assertTrue(v.allowed());
         assertTrue(v.wouldVeto());
         assertEquals("no lease here", v.reason());
-        assertFalse(g.check(OW, -45, 16, 396, "break", CHEST).allowed(), "a chest is still refused in log mode");
+        assertTrue(g.check(OW, -45, 16, 396, "break", CHEST).allowed(), "owner 2026-10-23: a chest is no floor");
         assertFalse(g.check(OW, -26, 53, 187, "break", PLAIN).allowed(), "a protect box is still refused in log mode");
         assertFalse(g.check("minecraft:the_nether", 0, 64, 0, "place", PLAIN).allowed(), "the Nether is still refused in log mode");
-        assertEquals(1, g.log().wouldVetoes());
-        assertEquals(3, g.log().vetoes());
+        assertEquals(2, g.log().wouldVetoes());
+        assertEquals(2, g.log().vetoes());
         assertTrue(g.log().recent(10).contains("\"enforced\":false"));
     }
 
@@ -234,9 +232,9 @@ class GuardCoreTest {
     @Test
     void statusIsJson() {
         GuardCore g = withPolicy();
-        String s = g.status(3548, true, true).toString();
+        String s = g.status(true, true).toString();
         assertTrue(s.contains("\"mode\":\"strict\""));
-        assertTrue(s.contains("\"floorBlocks\":3548"));
+        assertFalse(s.contains("floorBlocks"));
         assertTrue(s.contains("minecraft:the_end"));
     }
 

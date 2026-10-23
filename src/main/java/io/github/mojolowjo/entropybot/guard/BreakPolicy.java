@@ -40,9 +40,6 @@ public final class BreakPolicy {
     /** What travel and mining may do to natural blocks there. */
     public enum Natural { NEVER, TRAVEL_EXPENSIVE, LENIENT }
 
-    /** What may happen to built (placed) blocks there. Phase 1 applies the floor only (built = never without a lease). */
-    public enum Built { NEVER, OWN_ONLY, OWNER_DIG_ONLY, ANY }
-
     public enum PlaceRule { NEVER, TORCHES, LENIENT }
 
     /** The numbers of the cost table (3.3). Constants here, nowhere else. */
@@ -68,24 +65,24 @@ public final class BreakPolicy {
     }
 
     /** 3.2: the rules behind one box (or behind the open-world floor, where no typed area holds). */
-    public record RuleSet(String name, Natural breakNatural, boolean useResources, Built breakBuilt, PlaceRule place,
+    public record RuleSet(String name, Natural breakNatural, boolean useResources, PlaceRule place,
                           boolean restore, double travelMultiplier, double mineMultiplier) {
         // AREAS (0.39.0): the presets by meaning; keep-out shares no-break's (nothing breaks or is placed; the walk veto is
         // the guard's and the cost advisor's), storage and danger share work's (they are facts for AA, not break rules)
-        public static final RuleSet NO_BREAK = new RuleSet("no-break", Natural.NEVER, false, Built.NEVER, PlaceRule.NEVER, false, Costs.travel(), 1);
-        public static final RuleSet KEEP_OUT = new RuleSet("keep-out", Natural.NEVER, false, Built.NEVER, PlaceRule.NEVER, false, Costs.travel(), 1);
-        public static final RuleSet BASE = new RuleSet("base", Natural.TRAVEL_EXPENSIVE, false, Built.OWN_ONLY, PlaceRule.LENIENT, true, Costs.travelExpensive(), 1);
-        public static final RuleSet WORK = new RuleSet("work", Natural.LENIENT, true, Built.OWN_ONLY, PlaceRule.LENIENT, true, Costs.travel(), 1);
-        public static final RuleSet STORAGE = new RuleSet("storage", Natural.LENIENT, true, Built.OWN_ONLY, PlaceRule.LENIENT, true, Costs.travel(), 1);
-        public static final RuleSet DANGER = new RuleSet("danger", Natural.LENIENT, true, Built.OWN_ONLY, PlaceRule.LENIENT, true, Costs.travel(), 1);
-        public static final RuleSet DESTROY = new RuleSet("destroy", Natural.LENIENT, true, Built.OWNER_DIG_ONLY, PlaceRule.LENIENT, false, Costs.travel(), 1);
+        public static final RuleSet NO_BREAK = new RuleSet("no-break", Natural.NEVER, false, PlaceRule.NEVER, false, Costs.travel(), 1);
+        public static final RuleSet KEEP_OUT = new RuleSet("keep-out", Natural.NEVER, false, PlaceRule.NEVER, false, Costs.travel(), 1);
+        public static final RuleSet BASE = new RuleSet("base", Natural.TRAVEL_EXPENSIVE, false, PlaceRule.LENIENT, true, Costs.travelExpensive(), 1);
+        public static final RuleSet WORK = new RuleSet("work", Natural.LENIENT, true, PlaceRule.LENIENT, true, Costs.travel(), 1);
+        public static final RuleSet STORAGE = new RuleSet("storage", Natural.LENIENT, true, PlaceRule.LENIENT, true, Costs.travel(), 1);
+        public static final RuleSet DANGER = new RuleSet("danger", Natural.LENIENT, true, PlaceRule.LENIENT, true, Costs.travel(), 1);
+        public static final RuleSet DESTROY = new RuleSet("destroy", Natural.LENIENT, true, PlaceRule.LENIENT, false, Costs.travel(), 1);
         /** The open world (no typed area) in a singleplayer world (owner's note 2026-10-18: follows the connection, no toggle). */
-        public static final RuleSet OUTSIDE_SINGLEPLAYER = new RuleSet("outside (singleplayer, lenient)", Natural.LENIENT, true, Built.NEVER, PlaceRule.LENIENT, true, Costs.travel(), 1);      // 0.39.s8 owner: "Place anything outside"
+        public static final RuleSet OUTSIDE_SINGLEPLAYER = new RuleSet("outside (singleplayer, lenient)", Natural.LENIENT, true, PlaceRule.LENIENT, true, Costs.travel(), 1);      // 0.39.s8 owner: "Place anything outside"
         /** The open world (no typed area) on a server: natural ground still travelled through, but dearly; built blocks never. */
-        public static final RuleSet OUTSIDE_MULTIPLAYER = new RuleSet("outside (multiplayer, expensive)", Natural.TRAVEL_EXPENSIVE, true, Built.NEVER, PlaceRule.LENIENT, true, Costs.travelExpensive(), 1);      // 0.39.s8 owner: "Place anything outside"
+        public static final RuleSet OUTSIDE_MULTIPLAYER = new RuleSet("outside (multiplayer, expensive)", Natural.TRAVEL_EXPENSIVE, true, PlaceRule.LENIENT, true, Costs.travelExpensive(), 1);      // 0.39.s8 owner: "Place anything outside"
         /** Server presets for phase 3: walkable, torches allowed, nothing broken; and travel through dirt, no resources taken. */
-        public static final RuleSet NOBREAK = new RuleSet("nobreak", Natural.NEVER, false, Built.NEVER, PlaceRule.TORCHES, false, Costs.travel(), 1);
-        public static final RuleSet NORESOURCES = new RuleSet("noresources", Natural.LENIENT, false, Built.NEVER, PlaceRule.TORCHES, true, Costs.travel(), 1);
+        public static final RuleSet NOBREAK = new RuleSet("nobreak", Natural.NEVER, false, PlaceRule.TORCHES, false, Costs.travel(), 1);
+        public static final RuleSet NORESOURCES = new RuleSet("noresources", Natural.LENIENT, false, PlaceRule.TORCHES, true, Costs.travel(), 1);
 
         /** The preset of an area type; {@code null} (the open world, no typed area) = the snapshot's outside rule set, not this. */
         public static RuleSet preset(AreaType t) {
@@ -103,38 +100,36 @@ public final class BreakPolicy {
 
         public String describe() {
             return name + ": natural " + breakNatural.name().toLowerCase(Locale.ROOT) + ", resources " + (useResources ? "yes" : "no")
-                    + ", built " + breakBuilt.name().toLowerCase(Locale.ROOT) + ", place " + place.name().toLowerCase(Locale.ROOT)
+                    + ", place " + place.name().toLowerCase(Locale.ROOT)
                     + ", restore " + (restore ? "on" : "off") + ", travel x" + fmt(travelMultiplier) + ", mine x" + fmt(mineMultiplier);
         }
     }
 
     /**
-     * What the caller knows about the cell. {@code loaded} false = unknown: fail closed. {@code builtBlock} = in the
-     * guard's protected set (block types that never generate naturally); {@code torch} = the item being placed is a torch;
+     * What the caller knows about the cell. {@code loaded} false = unknown: fail closed. (owner 2026-10-23: no built or block-entity floor;
+     * only the owner's marked areas forbid) {@code torch} = the item being placed is a torch;
      * {@code dugByMe} = the bot itself broke this cell (the restore ledger or this job's breaks): a placement there is a refill.
      */
-    public record BlockFacts(boolean loaded, String id, boolean blockEntity, boolean builtBlock, boolean ore, boolean unbreakable,
+    public record BlockFacts(boolean loaded, String id, boolean ore, boolean unbreakable,
                              Fluid inCell, Fluid above, Fluid sides, Fluid below, boolean fallingAbove, boolean torch, boolean dugByMe) {
-        public BlockFacts(boolean loaded, String id, boolean blockEntity, boolean builtBlock, boolean ore, boolean unbreakable,
+        public BlockFacts(boolean loaded, String id, boolean ore, boolean unbreakable,
                           Fluid inCell, Fluid above, Fluid sides, Fluid below, boolean fallingAbove, boolean torch) {
-            this(loaded, id, blockEntity, builtBlock, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, false);
+            this(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, false);
         }
 
-        public static final BlockFacts UNKNOWN = new BlockFacts(false, null, false, false, false, false, Fluid.NONE, Fluid.NONE, Fluid.NONE, Fluid.NONE, false, false);
+        public static final BlockFacts UNKNOWN = new BlockFacts(false, null, false, false, Fluid.NONE, Fluid.NONE, Fluid.NONE, Fluid.NONE, false, false);
         /** Plain stone with nothing around it. */
-        public static final BlockFacts STONE = new BlockFacts(true, "minecraft:stone", false, false, false, false, Fluid.NONE, Fluid.NONE, Fluid.NONE, Fluid.NONE, false, false);
+        public static final BlockFacts STONE = new BlockFacts(true, "minecraft:stone", false, false, Fluid.NONE, Fluid.NONE, Fluid.NONE, Fluid.NONE, false, false);
 
-        public BlockFacts withAbove(Fluid f) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, unbreakable, inCell, f, sides, below, fallingAbove, torch, dugByMe); }
-        public BlockFacts withSides(Fluid f) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, unbreakable, inCell, above, f, below, fallingAbove, torch, dugByMe); }
-        public BlockFacts withBelow(Fluid f) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, unbreakable, inCell, above, sides, f, fallingAbove, torch, dugByMe); }
-        public BlockFacts withInCell(Fluid f) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, unbreakable, f, above, sides, below, fallingAbove, torch, dugByMe); }
-        public BlockFacts withOre(boolean o) { return new BlockFacts(loaded, id, blockEntity, builtBlock, o, unbreakable, inCell, above, sides, below, fallingAbove, torch, dugByMe); }
-        public BlockFacts withBuilt(boolean b) { return new BlockFacts(loaded, id, blockEntity, b, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, dugByMe); }
-        public BlockFacts withBlockEntity(boolean b) { return new BlockFacts(loaded, id, b, builtBlock, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, dugByMe); }
-        public BlockFacts withFallingAbove(boolean f) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, unbreakable, inCell, above, sides, below, f, torch, dugByMe); }
-        public BlockFacts withUnbreakable(boolean u) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, u, inCell, above, sides, below, fallingAbove, torch, dugByMe); }
-        public BlockFacts withTorch(boolean t) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, unbreakable, inCell, above, sides, below, fallingAbove, t, dugByMe); }
-        public BlockFacts withDug(boolean d) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, d); }
+        public BlockFacts withAbove(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, f, sides, below, fallingAbove, torch, dugByMe); }
+        public BlockFacts withSides(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, f, below, fallingAbove, torch, dugByMe); }
+        public BlockFacts withBelow(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, f, fallingAbove, torch, dugByMe); }
+        public BlockFacts withInCell(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, f, above, sides, below, fallingAbove, torch, dugByMe); }
+        public BlockFacts withOre(boolean o) { return new BlockFacts(loaded, id, o, unbreakable, inCell, above, sides, below, fallingAbove, torch, dugByMe); }
+        public BlockFacts withFallingAbove(boolean f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, f, torch, dugByMe); }
+        public BlockFacts withUnbreakable(boolean u) { return new BlockFacts(loaded, id, ore, u, inCell, above, sides, below, fallingAbove, torch, dugByMe); }
+        public BlockFacts withTorch(boolean t) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, t, dugByMe); }
+        public BlockFacts withDug(boolean d) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, d); }
     }
 
     /**
@@ -205,7 +200,6 @@ public final class BreakPolicy {
         if (GuardCore.DENIED_DIMS.contains(dim)) return Verdict.floor("no breaking in " + dim);
         Box pr = s.policy().protectAt(dim, x, y, z);
         if (pr != null) return Verdict.floor("in " + (pr.name == null ? "box" : pr.name) + " (" + pr.type.word() + ")");
-        if (intent != Intent.BUILD && s.policy().houseCell(dim, x, y, z, false)) return Verdict.deny("my house (the door is the way)", "house");
         RuleSet r = s.ruleSetAt(dim, x, y, z);
         if (r.breakNatural() == Natural.NEVER && intent != Intent.RESTORE) return Verdict.deny("nothing broken or placed in " + r.name(), "area");
         return Verdict.ok(1, "boxes");
@@ -225,8 +219,6 @@ public final class BreakPolicy {
 
     private static Verdict brk(Snapshot s, Ask a, BlockFacts f, Where me, RuleSet r) {
         // ---- the floor: every intent, every rule set
-        if (f.blockEntity()) return Verdict.floor("block entity (a chest, machine, bed...)");
-        if (f.builtBlock()) return Verdict.floor("built block");
         if (f.unbreakable()) return Verdict.floor("unbreakable");
         if (f.inCell() != Fluid.NONE) return Verdict.floor("a liquid is not broken");
         if (f.above() == Fluid.LAVA || f.sides() == Fluid.LAVA) return Verdict.floor("next to lava");
@@ -276,8 +268,6 @@ public final class BreakPolicy {
     private static Verdict place(Ask a, BlockFacts f, RuleSet r) {
         if (a.intent() == Intent.NONE) return Verdict.deny("walking only", "intent");
         if (f.inCell() == Fluid.LAVA || f.below() == Fluid.LAVA || f.above() == Fluid.LAVA || f.sides() == Fluid.LAVA) return Verdict.floor("next to lava");
-        if (f.blockEntity()) return Verdict.floor("block entity (a chest, machine, bed...)");
-        if (f.builtBlock()) return Verdict.floor("built block");
         if (a.intent() == Intent.RESTORE) {
             // the ledger fills only what it broke: air or water (the restore lease says the same)
             return Verdict.ok(1, "restore");
