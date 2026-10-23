@@ -72,6 +72,7 @@ public final class RestoreLive {
         io.github.mojolowjo.entropybot.clear.OwnStations.why = this::stationRefusal;
         io.github.mojolowjo.entropybot.clear.OwnStations.placed = this::stationsPlaced;   // station-memory 0.39.z14
         io.github.mojolowjo.entropybot.clear.OwnStations.forget = this::forgetStation;
+        io.github.mojolowjo.entropybot.clear.OwnStations.newWorld();                 // station-note: an unset hook warns once per world
         io.github.mojolowjo.entropybot.guard.OwnPlaced.cells = this::builtByMe;      // rm-mining: my placements are mine, never a built block
         readOnly = false;                    // 0.31.0 (c): loaded again for another world
         dirtySince = -1;
@@ -272,11 +273,24 @@ public final class RestoreLive {
         Minecraft mc = Minecraft.getInstance();
         List<io.github.mojolowjo.entropybot.clear.OwnStations.Placed> out = new ArrayList<>();
         if (mc.level == null || book == null) return out;
-        String dim = Guard.dimOf(mc.level);
-        for (io.github.mojolowjo.entropybot.restore.Ledger.Entry e : book.ledger.all()) {
-            if ("built: station".equals(e.why) && dim.equals(e.dim)) out.add(new io.github.mojolowjo.entropybot.clear.OwnStations.Placed(e.x, e.y, e.z, e.block));
-        }
+        for (io.github.mojolowjo.entropybot.restore.Ledger.Entry e : book.ledger.builtStations(Guard.dimOf(mc.level)))
+            out.add(new io.github.mojolowjo.entropybot.clear.OwnStations.Placed(e.x, e.y, e.z, e.block));
         return out;
+    }
+
+    /**
+     * station-note (0.39.z15): the chain's place-near step put a station at the cell: noted "built: station" as the place
+     * verb does (Clearing). A cell the ledger already holds keeps its first note: said in the log when that note is not a
+     * station of mine, never a quiet skip.
+     */
+    void noteStation(int[] cell, String block, String why) {
+        noteBuilt(List.of(cell), block, why);
+        Minecraft mc = Minecraft.getInstance();
+        String at = cell[0] + " " + cell[1] + " " + cell[2];
+        if (mc.level == null) { LOG.warn("[entropybot] stations: the {} at {} not noted: not in a world", block, at); return; }
+        io.github.mojolowjo.entropybot.restore.Ledger.Entry e = book.ledger.at(Guard.dimOf(mc.level), cell[0], cell[1], cell[2]);
+        if (e == null) LOG.warn("[entropybot] stations: the {} at {} not noted as mine: {}", block, at, readOnly ? loadNote : "the ledger did not take it");
+        else if (!why.equals(e.why)) LOG.warn("[entropybot] stations: the {} at {} not noted as mine: the ledger already holds that cell as \"{}\" ({})", block, at, e.why, e.block);
     }
 
     /** station-memory: the station record at the cell leaves the ledger (the bot arrived and it is gone); the log line. */

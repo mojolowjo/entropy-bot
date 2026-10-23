@@ -47,7 +47,30 @@ public final class Nearby {
         /** The most logs one chop takes as one tree (Baritone's chopComponentMax); unknown: no cap. */
         default int treeCap() { return Integer.MAX_VALUE; }  // structural: no cap known
         /** station-memory: the stations I placed myself (the ledger), any distance, loaded or not, as {x, y, z} with their block. */
-        default List<Mine> own() { return List.of(); }
+        default List<Mine> own() {
+            // the restore ledger's "built: station" entries through the OwnStations.placed hook (RestoreLive.load sets it;
+            // unset: OwnStations logs it once per world)
+            List<Mine> out = new ArrayList<>();
+            for (var m : io.github.mojolowjo.entropybot.clear.OwnStations.placed()) out.add(new Mine(m.x(), m.y(), m.z(), m.block()));
+            return out;
+        }
+    }
+
+    /**
+     * station-note (0.39.z15): the line of one station lookup: "stations: N of mine, M scanned within R, nearest &lt;block&gt;
+     * &lt;dist&gt; m at x y z", or "stations: none known". {@code spots} is {@link #stations}' answer; a spot is "mine" when
+     * {@code own} has its cell with a block of the set.
+     */
+    public static String stationsLine(List<Spot> spots, List<Mine> own, Set<String> blocks, int scanR) {
+        if (spots == null || spots.isEmpty()) return "stations: none known";
+        Set<String> mine = new java.util.HashSet<>();
+        if (own != null) for (Mine m : own) if (m != null && (blocks == null || blocks.contains(m.block()))) mine.add(key(m.x(), m.y(), m.z()));
+        int n = 0;
+        for (Spot s : spots) if (mine.contains(key(s.x(), s.y(), s.z()))) n++;
+        Spot a = spots.get(0);
+        String block = a.block() == null ? "?" : a.block().replaceFirst("^minecraft:", "");
+        return "stations: " + n + " of mine, " + (spots.size() - n) + " scanned within " + scanR + ", nearest " + block + " "
+                + Math.round(a.dist()) + " m at " + a.x() + " " + a.y() + " " + a.z();
     }
 
     /** station-memory: one of my placements as the ledger has it. */

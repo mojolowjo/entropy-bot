@@ -90,6 +90,12 @@ final class NearbyLive {
         return out;
     }
 
+    /** station-note (0.39.z15): the lookup's log line ({@link Nearby#stationsLine}) from the same station fact. */
+    String stationsLine(String kind) {
+        java.util.Set<String> blocks = stationBlocks(kind);
+        return Nearby.stationsLine(stations(kind), scan().own(), blocks, Nearby.scanR());
+    }
+
     /** The nearest known station of the kind that {@code skip} does not refuse; null: none known anywhere. */
     Spot station(String kind, java.util.function.Predicate<int[]> skip) {
         for (Spot s : stations(kind)) if (skip == null || !skip.test(new int[]{s.x(), s.y(), s.z()})) return s;
@@ -199,11 +205,6 @@ final class NearbyLive {
                     io.github.mojolowjo.entropybot.Quiet.warn("nearby: this Baritone has no chopComponentMax (not the Entropy fork), trees counted uncapped", e);
                     return Nearby.Scan.super.treeCap();
                 }
-            }
-            @Override public List<Nearby.Mine> own() {
-                List<Nearby.Mine> out = new ArrayList<>();
-                for (var m : io.github.mojolowjo.entropybot.clear.OwnStations.placed()) out.add(new Nearby.Mine(m.x(), m.y(), m.z(), m.block()));
-                return out;
             }
             @Override public String blockAt(int x, int y, int z) {
                 BlockPos q = new BlockPos(x, y, z);

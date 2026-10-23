@@ -17,7 +17,9 @@ public final class JobHands {
     static volatile java.util.function.Consumer<String> warn = System.err::println;
     public enum State { RUNNING, DONE, FAILED }
 
-    public record Result(State state, String why) {
+    /** {@code cell}: on DONE, the cell the fork worked on when it says (placeNear: the cell it chose), else null. */
+    public record Result(State state, String why, int[] cell) {
+        public Result(State state, String why) { this(state, why, null); }
         public boolean running() { return state == State.RUNNING; }
         public boolean done() { return state == State.DONE; }
         public boolean failed() { return state == State.FAILED; }
@@ -322,7 +324,7 @@ public final class JobHands {
                         yield finish(new Result(State.FAILED, "gave up at " + key + ": done, but its done step failed: " + e));
                     }
                 }
-                yield finish(new Result(State.DONE, why));
+                yield finish(new Result(State.DONE, why, s.cell()));
             }
             case FAILED -> {
                 if (s.lostControl()) {

@@ -18,6 +18,8 @@ public interface Car {
         public Status(State state, String why) { this(state, why, false, null); }
         public static Status running(String why) { return new Status(State.RUNNING, why); }
         public static Status done(String why) { return new Status(State.DONE, why); }
+        /** DONE with the cell the fork worked on (placeNear: the cell it chose). */
+        public static Status done(String why, int[] cell) { return new Status(State.DONE, why, false, cell); }
         public static Status failed(String why) { return new Status(State.FAILED, why); }
         public static Status failed(String why, int[] cell) { return new Status(State.FAILED, why, false, cell); }
         public static Status lost(String why) { return new Status(State.FAILED, why, true, null); }

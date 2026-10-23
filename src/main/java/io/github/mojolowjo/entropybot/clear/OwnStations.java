@@ -118,13 +118,35 @@ public final class OwnStations {
         String at(int x, int y, int z, String why);
     }
 
+    /** Set by commands.RestoreLive.load (the world's ledger): {@code OwnStations.placed = this::stationsPlaced}. */
     public static volatile Placements placed;
+    /** Set by commands.RestoreLive.load: {@code OwnStations.forget = this::forgetStation}. */
     public static volatile Forget forget;
 
-    /** Every station I placed in this dimension (empty when the hook is not set; a failure is logged, never silent). */
+    /** Where an unset hook's warning goes (the game's log; JUnit captures it). */
+    public static volatile java.util.function.Consumer<String> warn = Quiet::line;
+    private static volatile boolean warnedPlaced, warnedForget;
+
+    /** A world's ledger was loaded: an unset hook warns again (once per world). */
+    public static void newWorld() {
+        warnedPlaced = false;
+        warnedForget = false;
+    }
+
+    private static void unset(String which) {
+        try { warn.accept("station memory: the " + which + " hook is not set"); } catch (RuntimeException e) { Quiet.warn("OwnStations: the warning sink failed", e); }
+    }
+
+    /** Every station I placed in this dimension (the hook unset: logged once per world, then empty; a failure is logged, never silent). */
     public static java.util.List<Placed> placed() {
         Placements m = placed;
-        if (m == null) return java.util.List.of();
+        if (m == null) {
+            if (!warnedPlaced) {
+                warnedPlaced = true;
+                unset("placements");
+            }
+            return java.util.List.of();
+        }
         try {
             return m.all();
         } catch (RuntimeException e) {
@@ -139,13 +161,42 @@ public final class OwnStations {
      */
     public static String forget(int x, int y, int z, String why) {
         Forget f = forget;
-        if (f == null) return "no station records loaded: nothing to forget at " + x + " " + y + " " + z;
+        if (f == null) {
+            if (!warnedForget) {
+                warnedForget = true;
+                unset("forget");
+            }
+            return "no station records loaded: nothing to forget at " + x + " " + y + " " + z;
+        }
         try {
             return f.at(x, y, z, why);
         } catch (RuntimeException e) {
             Quiet.warn("OwnStations.forget failed at " + x + " " + y + " " + z, e);
             return "the station record at " + x + " " + y + " " + z + " could not be dropped: " + e;
         }
+    }
+
+    /** Notes a placement of mine in the ledger (the game side: RestoreLive.noteBuilt). */
+    public interface Noter {
+        void note(int[] cell, String blockId, String why);
+    }
+
+    /**
+     * station-note (0.39.z15): the chain's place-near step ended DONE with the cell the fork chose: a station or container
+     * is noted {@code built: station} (as the place verb does), any other block is left alone (null back). A station with
+     * no cell from the fork is a warning, never a quiet skip. Returns the log line, or null for a non-station.
+     */
+    public static String afterPlaceNear(String item, int[] cell, Noter noter) {
+        if (item == null) return null;
+        String path = item.toLowerCase().replaceFirst("^minecraft:", "");
+        if (!station(path) && !container(path)) return null;
+        if (cell == null) {
+            String line = "stations: placed a " + path + " but the fork gave no cell: not noted as mine";
+            warn.accept(line);
+            return line;
+        }
+        noter.note(cell.clone(), "minecraft:" + path, "built: station");
+        return "stations: noted my " + path + " at " + cell[0] + " " + cell[1] + " " + cell[2];
     }
 
     /** The cell holds a station of mine (never throws). */

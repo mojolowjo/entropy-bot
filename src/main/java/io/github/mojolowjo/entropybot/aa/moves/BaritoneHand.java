@@ -233,7 +233,7 @@ final class BaritoneHand implements JobHands.Hand {
         if (builder.legRun() != buildRun) return Car.Status.failed("another build leg took the builder (run " + builder.legRun() + ", mine " + buildRun + ")");
         int[] at = cellOf(builder.legCell());
         return switch (builder.legStatus()) {
-            case DONE -> Car.Status.done(builder.legWhy());
+            case DONE -> Car.Status.done(builder.legWhy(), at);      // placeNear: legCell is the chosen cell after DONE too
             case FAILED -> builder.legEnd() == baritone.api.process.LegEnd.LOST_CONTROL
                     ? Car.Status.lost("stage build: " + builder.legWhy())
                     : Car.Status.failed("stage build: " + builder.legWhy(), at);

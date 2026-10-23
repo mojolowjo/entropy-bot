@@ -156,6 +156,13 @@ public final class Ledger {
     /** The ledger note of a placement of mine ("built: station", "built: placed", "built: litter", "built: shelter"...). */
     public static boolean placed(String why) { return why != null && why.startsWith("built:"); }
 
+    /** station-memory: the stations I placed in the dimension (entries noted {@code built: station}), oldest first. */
+    public synchronized List<Entry> builtStations(String dim) {
+        List<Entry> out = new ArrayList<>();
+        for (Entry e : list) if ("built: station".equals(e.why) && e.dim.equals(dim)) out.add(e);
+        return out;
+    }
+
     public synchronized Entry at(String dim, int x, int y, int z) {
         for (Entry e : list) if (e.x == x && e.y == y && e.z == z && e.dim.equals(dim)) return e;
         return null;

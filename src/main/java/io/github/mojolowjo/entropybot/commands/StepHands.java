@@ -66,6 +66,7 @@ public final class StepHands implements Steps.Hands {
         step = s;
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null) return "error: not in a world";
+        stationsLine(s);
         try {
             return switch (s) {
                 case Step.Walk w -> walk(w);
@@ -84,6 +85,18 @@ public final class StepHands implements Steps.Hands {
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] steps: {} did not start: {}", s.text(), e.toString());
             return "error: " + s.text() + ": " + e;
+        }
+    }
+
+    /** station-note (0.39.z15): a craft / smelt step starts: one line of what the station memory knows (the station fact). */
+    private void stationsLine(Step s) {
+        String kind = s instanceof Step.Craft ? io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT
+                : s instanceof Step.Smelt ? io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT : null;
+        if (kind == null) return;
+        try {
+            LOG.info("[entropybot] {} ({})", c.nearby.stationsLine(kind), s.text());
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] stations: the lookup line for {} failed: {}", s.text(), e.toString());
         }
     }
 
@@ -496,7 +509,15 @@ public final class StepHands implements Steps.Hands {
 
     private Car.Status placeNearStatus(Step.PlaceNear n) {
         var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().placeNear(n.item(), Tuning.i("steps.placeNearR"), (int) (20 * Tuning.need("hands.buildS")), "steps");
-        if (r.done()) return Car.Status.done("ok: " + n.text());
+        if (r.done()) {
+            // station-note (0.39.z15): a station the chain placed is mine in the ledger ("built: station"), as the place verb notes it
+            String line = io.github.mojolowjo.entropybot.clear.OwnStations.afterPlaceNear(n.item(), r.cell(), RestoreLive.INSTANCE::noteStation);
+            if (line != null) {
+                LOG.info("[entropybot] {}", line);
+                c.nearby.forget();          // the cached station answers go: the new one is known now
+            }
+            return Car.Status.done("ok: " + n.text());
+        }
         if (r.failed()) return Car.Status.failed(r.why());
         return Car.Status.running(r.why());
     }
