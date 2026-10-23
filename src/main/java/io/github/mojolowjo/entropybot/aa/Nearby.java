@@ -54,6 +54,30 @@ public final class Nearby {
             for (var m : io.github.mojolowjo.entropybot.clear.OwnStations.placed()) out.add(new Mine(m.x(), m.y(), m.z(), m.block()));
             return out;
         }
+        /**
+         * station-stale (0.39.z18, rule 15): a station of mine in a loaded chunk holds another block now: its ledger record
+         * goes (the OwnStations.forget hook) and the line is logged. Returns the line.
+         */
+        default String forgetOwn(Mine m, String now) {
+            String line = forgotLine(m, now);
+            String r = io.github.mojolowjo.entropybot.clear.OwnStations.forget(m.x(), m.y(), m.z(), "the block there is " + now + " now");
+            io.github.mojolowjo.entropybot.Quiet.line(line + " (" + r + ")");
+            return line;
+        }
+    }
+
+    /** station-stale: "stations: forgot my crafting_table at x y z: the block there is &lt;id&gt; now". */
+    public static String forgotLine(Mine m, String now) {
+        return "stations: forgot my " + m.block().replaceFirst("^minecraft:", "") + " at " + m.x() + " " + m.y() + " " + m.z()
+                + ": the block there is " + now + " now";
+    }
+
+    /** station-stale: how many of my stations of the set sit in unloaded chunks (kept, not verified). */
+    public static int unverified(Scan s, Set<String> blocks) {
+        int n = 0;
+        if (s == null) return 0;
+        for (Mine m : s.own()) if (m != null && m.block() != null && (blocks == null || blocks.contains(m.block())) && s.blockAt(m.x(), m.y(), m.z()) == null) n++;
+        return n;
     }
 
     /**
@@ -118,6 +142,11 @@ public final class Nearby {
         for (Mine m : s.own()) {
             if (m == null || m.block() == null || !blocks.contains(m.block())) continue;
             int[] p = {m.x(), m.y(), m.z()};
+            String now = s.blockAt(p[0], p[1], p[2]);          // null: the chunk is not loaded (kept, unverified)
+            if (now != null && !now.equals(m.block())) {       // station-stale (0.39.z18): loaded and gone: dropped at lookup
+                s.forgetOwn(m, now);
+                continue;
+            }
             if (seen.add(key(p[0], p[1], p[2]))) out.add(new Spot(p[0], p[1], p[2], dist(p, me), m.block()));
         }
         for (int[] p : s.find(blocks, scanR())) {

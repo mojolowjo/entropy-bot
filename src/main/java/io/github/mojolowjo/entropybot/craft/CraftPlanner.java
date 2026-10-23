@@ -588,11 +588,36 @@ public final class CraftPlanner implements Crafter {
                 out.add(new Target(id, want));
                 continue;
             }
+            if (q.contains("|")) {                       // group-word (0.39.z18): "a|b|c" (a server's expanded tag): any member the bag can make
+                List<String> members = new ArrayList<>();
+                for (String g : q.split("\\|")) {
+                    String w = g.trim();
+                    if (w.isEmpty()) continue;
+                    if (w.startsWith("#")) {
+                        String tag = w.substring(1).indexOf(':') < 0 ? "minecraft:" + w.substring(1) : w.substring(1);
+                        for (String mm : src.tagMembers(tag)) if (!members.contains(mm)) members.add(mm);
+                    } else {
+                        String mm = w.indexOf(':') < 0 ? "minecraft:" + w : w;
+                        if (!members.contains(mm)) members.add(mm);
+                    }
+                }
+                String id = members.isEmpty() ? null : memberFromBag(members, want, counts);
+                if (id == null) return new Targets(List.of(), "no member of any of (" + groupShort(members) + ") can be made from what I have (" + members.size() + " members)");
+                out.add(new Target(id, want));
+                continue;
+            }
             String id = resolveItem(String.join("_", words), counts);
             if (id == null) return new Targets(List.of(), "I don't know an item called " + q);
             out.add(new Target(id, want));
         }
         return new Targets(List.copyOf(out), null);
+    }
+
+    /** group-word: the first members for a line ("oak_planks, spruce_planks, ..."). */
+    public static String groupShort(List<String> members) {
+        List<String> s = new ArrayList<>();
+        for (int i = 0; i < Math.min(3, members.size()); i++) s.add(members.get(i).replaceFirst("^minecraft:", ""));   // structural: a line, not a list
+        return String.join(", ", s) + (members.size() > 3 ? ", ..." : "");
     }
 
     /**

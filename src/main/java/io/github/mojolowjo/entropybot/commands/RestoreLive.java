@@ -309,6 +309,20 @@ public final class RestoreLive {
         return line;
     }
 
+    /** station-stale (0.39.z18), aa forget stations: every "built: station" record of this world (all dimensions) goes; the count, or why none. */
+    synchronized String forgetAllStations() {
+        if (book == null) return "not in a world: no station records to forget";
+        if (readOnly) return "the station records stay: " + loadNote;
+        int n = 0;
+        for (io.github.mojolowjo.entropybot.restore.Ledger.Entry e : book.ledger.all()) {
+            if (!"built: station".equals(e.why)) continue;
+            if (book.ledger.remove(e)) { n++; stationRemoved.remove(e.key()); }
+        }
+        if (n > 0) changed();
+        LOG.info("[entropybot] stations: aa forget stations dropped {} record(s) of mine", n);
+        return "forgot " + n + " station record(s) of mine in this world";
+    }
+
     /** 0.24.3: blocks the bot placed itself (a shelter): ledger entries never re-placed, its own spot for the build hint. */
     void noteBuilt(List<int[]> cells, String block, String why) {
         Minecraft mc = Minecraft.getInstance();

@@ -115,7 +115,7 @@ final class ItemWorthSource implements ItemWorth.Source {
                 List<String> o = new ArrayList<>();          // the ingredient's own items (the game expands its tags)
                 for (ItemStack it : items) { String iid = BuiltInRegistries.ITEM.getKey(it.getItem()).toString(); if (!o.contains(iid)) o.add(iid); }
                 opts.add(o);
-                needs.add(needWord(ing, o));
+                needs.add(needWord(ing, o, s.tagItems));
             }
             if (!ok || in.isEmpty()) continue;
             String kind = BuiltInRegistries.RECIPE_TYPE.getKey(r.getType()) == null ? "?" : BuiltInRegistries.RECIPE_TYPE.getKey(r.getType()).toString();
@@ -141,18 +141,21 @@ final class ItemWorthSource implements ItemWorth.Source {
     /**
      * TAG_NEEDS: the slot as the recipe gives it: one tag ({@code #ns:path}), one item, or its values joined by {@code |}
      * (several tags or items); a NeoForge custom ingredient (no values to read) is the items it lists.
+     * tag-recovery (0.39.z18): a server sends every tag expanded to item values (no TagValue): a slot of items only goes
+     * back to the item tag whose member set equals it ({@link ItemWorth#needWordOf}, over the client's tag index).
      */
-    static String needWord(net.minecraft.world.item.crafting.Ingredient ing, List<String> items) {
+    static String needWord(net.minecraft.world.item.crafting.Ingredient ing, List<String> items, Map<String, java.util.Set<String>> tagItems) {
         if (!ing.isCustom()) {
             List<String> parts = new ArrayList<>();
+            boolean tagged = false;
             for (var v : ing.getValues()) {
-                if (v instanceof net.minecraft.world.item.crafting.Ingredient.TagValue t) parts.add("#" + t.tag().location());
+                if (v instanceof net.minecraft.world.item.crafting.Ingredient.TagValue t) { parts.add("#" + t.tag().location()); tagged = true; }
                 else if (v instanceof net.minecraft.world.item.crafting.Ingredient.ItemValue iv) parts.add(BuiltInRegistries.ITEM.getKey(iv.item().getItem()).toString());
                 else { parts = null; break; }                // a value of another kind: the items it lists
             }
-            if (parts != null && !parts.isEmpty()) return String.join("|", parts);
+            if (parts != null && !parts.isEmpty()) return tagged ? String.join("|", parts) : ItemWorth.needWordOf(parts, tagItems);
         }
-        return String.join("|", items);
+        return ItemWorth.needWordOf(items, tagItems);
     }
 
     /** Mob -> its food drop from the loot tables (singleplayer server only: a client has none, said once by ItemWorth). */

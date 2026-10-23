@@ -258,6 +258,33 @@ class GridLoopTest {
         assertFalse(cp.parseCraftTargets("#planks 4", java.util.Map.of()).ok(), "no member can be made from an empty bag: said, not guessed");
     }
 
+    /** group-word (0.39.z18): a server's expanded list as the step's word is filled from any member, never "I don't know an item called a|b|c". */
+    @Test
+    void aGroupWordStepIsFilledFromAnyMemberInTheBag() {
+        FakeRecipes woods = new FakeRecipes()
+                .shapeless("minecraft:oak_planks", "oak_planks", 4, FakeRecipes.alts("oak_log"))
+                .shapeless("minecraft:birch_planks", "birch_planks", 4, FakeRecipes.alts("birch_log"))
+                .shaped("minecraft:crafting_table", "crafting_table", 1, new String[]{"##", "##"}, '#', FakeRecipes.alts("acacia_planks", "birch_planks", "oak_planks"));
+        woods.item("acacia_planks");
+        CraftPlanner cp = new CraftPlanner(woods);
+        String group = "minecraft:acacia_planks|minecraft:birch_planks|minecraft:oak_planks";
+        CraftPlanner.Targets tg = cp.parseCraftTargets(group + " 4", java.util.Map.of("minecraft:oak_log", 1));
+        assertTrue(tg.ok(), tg.error());
+        assertEquals(List.of(new CraftPlanner.Target("minecraft:oak_planks", 4)), tg.list());
+        CraftPlanner.Targets none = cp.parseCraftTargets(group + " 4", java.util.Map.of());
+        assertFalse(none.ok());
+        assertTrue(none.error().startsWith("no member of any of (acacia_planks, birch_planks, oak_planks)"), none.error());
+        // the table from 4 oak planks: the server-shaped cell (a list, no tag) takes them
+        Crafter.Plan p = cp.plan("minecraft:crafting_table", 1, new java.util.LinkedHashMap<>(java.util.Map.of("minecraft:oak_planks", 4)));
+        assertTrue(p.ok(), p.error());
+        RecipeData table = woods.recipe("minecraft:crafting_table");
+        Table t = new Table(3, table, 3).give("minecraft:oak_planks", 4);
+        GridLoop.Out[] o = new GridLoop.Out[1];
+        run(new GridLoop(table, 3, 1, 0), t, 400, o);
+        assertEquals(GridLoop.State.DONE, o[0].state(), o[0].error());
+        assertEquals(1, t.has("minecraft:crafting_table"));
+    }
+
     @Test
     void sixtyFourBlocksInOneBatch() {
         Table t = new Table(3, COMPACT, 3).give(ESS, 576);

@@ -30,6 +30,32 @@ import java.util.Set;
 public final class ItemWorth {
     private ItemWorth() {}
 
+    /**
+     * tag-recovery (0.39.z18): a recipe slot as a server sends it (its tag expanded to the member items) back to its tag: one
+     * item stays the item; several become "#tag" for the item tag of the game's index whose member set EQUALS them (a
+     * {@code minecraft:} tag first, then the shortest path, then by name); no tag matches: the "|"-joined group word.
+     * {@code tagItems}: tag id ("ns:path") -> its member item ids, the client's whole tag index.
+     */
+    public static String needWordOf(java.util.List<String> items, java.util.Map<String, ? extends java.util.Set<String>> tagItems) {
+        if (items == null || items.isEmpty()) return "";
+        if (items.size() == 1) return items.get(0);
+        java.util.Set<String> want = new java.util.HashSet<>(items);
+        String best = null;
+        if (tagItems != null) for (var e : tagItems.entrySet()) {
+            if (e.getValue() == null || !e.getValue().equals(want)) continue;
+            if (best == null || betterTag(e.getKey(), best)) best = e.getKey();
+        }
+        return best != null ? "#" + best : String.join("|", items);
+    }
+
+    private static boolean betterTag(String a, String b) {
+        boolean ma = a.startsWith("minecraft:"), mb = b.startsWith("minecraft:");
+        if (ma != mb) return ma;
+        int la = a.substring(a.indexOf(':') + 1).length(), lb = b.substring(b.indexOf(':') + 1).length();
+        if (la != lb) return la < lb;
+        return a.compareTo(b) < 0;
+    }
+
     /** What the game says about one item (zero = does not apply). {@code role}: what a digging tool digs (from the game's item tags), WEAPON, or OTHER. */
     public record Facts(Role role, double digSpeed, int digLevel, double durability, double defence, double toughness,
                         double attack, double nutrition, double saturation, double hardness, int light) {

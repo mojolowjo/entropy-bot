@@ -10,7 +10,7 @@ import java.util.List;
 final class AaCommands {
     private AaCommands() {}
 
-    static final String USAGE = "usage: aa on|off|status|why|tree|stats | aa like [<key> <n>] | aa tune [<name> <n>] | aa worth <item> | aa want <thing> [n] [high|low] | aa drop <thing>|all | aa needs on|off | aa only <need>|off | aa goals | aa build <name> here|at <x y z> [high|low] | aa ore [info] [<thing>] | aa ask on|off | aa pick <n> | aa do <need>|none | aa skip <need>|none | aa use <option> | aa replan on|off | aa look [smooth <ticks>] | aa horizon [seconds] | aa fair [on|off] | aa litter | aa slow [on|off|step] | aa go | aa predict";
+    static final String USAGE = "usage: aa on|off|status|why|tree|stats | aa like [<key> <n>] | aa tune [<name> <n>] | aa worth <item> | aa want <thing> [n] [high|low] | aa drop <thing>|all | aa forget stations | aa needs on|off | aa only <need>|off | aa goals | aa build <name> here|at <x y z> [high|low] | aa ore [info] [<thing>] | aa ask on|off | aa pick <n> | aa do <need>|none | aa skip <need>|none | aa use <option> | aa replan on|off | aa look [smooth <ticks>] | aa horizon [seconds] | aa fair [on|off] | aa litter | aa slow [on|off|step] | aa go | aa predict";
 
     static String handle(Commands c, String rest) {
         AaRuntime aa = c.aaRuntime;
@@ -44,6 +44,9 @@ final class AaCommands {
             case "tune" -> { return aa.tune(arg == null || arg.isBlank() ? new String[0] : arg.trim().split("\\s+")); }     // AA_ROUND4 B3
             case "want" -> { return aa.want(arg); }
             case "drop" -> { return aa.drop(arg); }
+            case "forget" -> {                                     // station-stale (0.39.z18): the owner's reset of my station memory
+                return arg.equals("stations") ? c.nearby.forgetAllStations() : "usage: aa forget stations (drops every station record of mine in this world)";
+            }
             case "goals" -> { return aa.goalsText(); }
             case "ore" -> { return aa.oreInfo(arg); }
             case "replan" -> { return aa.replan(arg); }

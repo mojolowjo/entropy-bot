@@ -87,7 +87,7 @@ class NearbyTest {
             @Override public boolean fairOk(int x, int y, int z) { return true; }
             @Override public boolean leavesNear(int x, int y, int z, int reach) { return true; }
             @Override public boolean allowed(int x, int y, int z) { return true; }
-            @Override public String blockAt(int x, int y, int z) { return f.blockAt(x, y, z); }
+            @Override public String blockAt(int x, int y, int z) { return x == 400 ? null : f.blockAt(x, y, z); }   // 400: not loaded
             @Override public List<Nearby.Mine> own() {
                 return List.of(new Nearby.Mine(20, 64, 0, "minecraft:crafting_table"), new Nearby.Mine(400, 64, 0, "minecraft:crafting_table"),
                         new Nearby.Mine(5, 64, 0, "minecraft:crafting_table"), new Nearby.Mine(2, 64, 0, "minecraft:furnace"));
@@ -96,6 +96,33 @@ class NearbyTest {
         List<Spot> l = Nearby.stations(s, ME, table);
         assertEquals(List.of(5, 20, 30, 400), l.stream().map(Spot::x).toList(), "the furnace is not a table; the cell both know is listed once");
         assertEquals(400.0, l.get(3).dist(), 1e-9, "a placement of mine 400 m away is still known");
+        assertEquals(1, Nearby.unverified(s, table));
+    }
+
+    /** station-stale (0.39.z18): a table of mine in a loaded chunk that holds air now is forgotten at lookup; an unloaded one stays. */
+    @Test
+    void aGoneTableInALoadedChunkIsForgottenAtLookup() {
+        java.util.Set<String> table = java.util.Set.of("minecraft:crafting_table");
+        List<String> forgot = new java.util.ArrayList<>();
+        Map<String, String> world = Map.of("-4 -60 14", "minecraft:air", "6 64 0", "minecraft:crafting_table");
+        var s = new Nearby.Scan() {
+            @Override public List<int[]> logs(int radius) { return List.of(); }
+            @Override public List<int[]> find(java.util.Set<String> blocks, int radius) { return List.of(); }
+            @Override public boolean isLog(String block) { return false; }
+            @Override public boolean fairOk(int x, int y, int z) { return true; }
+            @Override public boolean leavesNear(int x, int y, int z, int reach) { return false; }
+            @Override public boolean allowed(int x, int y, int z) { return true; }
+            @Override public String blockAt(int x, int y, int z) { return world.get(x + " " + y + " " + z); }
+            @Override public List<Nearby.Mine> own() {
+                return List.of(new Nearby.Mine(-4, -60, 14, "minecraft:crafting_table"), new Nearby.Mine(6, 64, 0, "minecraft:crafting_table"),
+                        new Nearby.Mine(900, 64, 0, "minecraft:crafting_table"));
+            }
+            @Override public String forgetOwn(Nearby.Mine m, String now) { String l = Nearby.forgotLine(m, now); forgot.add(l); return l; }
+        };
+        List<Spot> l = Nearby.stations(s, ME, table);
+        assertEquals(List.of(6, 900), l.stream().map(Spot::x).toList());
+        assertEquals(List.of("stations: forgot my crafting_table at -4 -60 14: the block there is minecraft:air now"), forgot);
+        assertEquals(1, Nearby.unverified(s, table), "the one 900 m off is kept, unverified");
     }
 
     @Test

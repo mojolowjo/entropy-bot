@@ -103,7 +103,16 @@ final class NearbyLive {
     String stationsLine(String kind) {
         StationBlocks.Answer blocks = stationBlocks(kind);
         java.util.Set<String> ids = blocks instanceof StationBlocks.Answer.Of o ? o.ids() : java.util.Set.of();
-        return Nearby.stationsLine(stations(kind), scan().own(), ids, Nearby.scanR());
+        Nearby.Scan sc = scan();
+        int unv = Nearby.unverified(sc, ids);                   // station-stale: records in unloaded chunks are kept, said here
+        return Nearby.stationsLine(stations(kind), sc.own(), ids, Nearby.scanR()) + (unv > 0 ? " (" + unv + " unverified: chunk not loaded)" : "");
+    }
+
+    /** station-stale (0.39.z18), the owner's reset: every station record of mine in this world goes; the line with the count. */
+    String forgetAllStations() {
+        String r = RestoreLive.INSTANCE.forgetAllStations();
+        forget();
+        return "aa forget stations: " + r;
     }
 
     /**
