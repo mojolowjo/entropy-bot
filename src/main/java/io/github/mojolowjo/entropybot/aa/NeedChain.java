@@ -45,8 +45,9 @@ import java.util.function.ToDoubleFunction;
  * TAG_NEEDS (owner 2026-10-22): a need is {@code N of <item>} or {@code N of #<tag>} (a recipe slot as the recipe gives it,
  * {@link ItemWorth.Recipe#needs}). A tag need stays a tag until a step must name a block or an item in the world: it is met
  * by any members in the bag summed (the game's tag index, {@link ItemWorth#isIn}); it is made by its members' recipes grouped
- * by what they need (one price per group, never per member; one-ingredient recipes of the same shape merge into one need,
- * {@code #planks <- #logs}); it is dug by its known sources grouped by the member they give (a tree is any log); the explore
+ * by what they need (one price per group, never per member; one-ingredient recipes of the same shape merge into one need
+ * only for the same word or words that are exactly one game tag, {@code #planks <- #logs}; different tags are different
+ * ways, {@code #coals}: charcoal and coal); it is dug by its known sources grouped by the member they give (a tree is any log); the explore
  * is for its whole source set. The member is whatever the leaf (the bag, the tree, the ore) yields.
  * An item already on the path is a loop: that way is dropped. A way that ends in an explore never competes with one that
  * does not. Every loser goes to the dropped list with its seconds or its reason. Rough prices (RULES 14): walk, break,
@@ -460,14 +461,14 @@ public final class NeedChain {
 
     /** One way to get a requirement: what runs it on the simulated bag, its name for the dropped list, and what breaks a tie. */
     private static final class Alt {
-        final String label;
+        String label;
+        /** The label when another way of the same requirement has the same short one ("coal from coal_block"); null: none. */
+        String longLabel;
         Supplier<String> run;
         /** The item the way yields (a tag need's member; set by the way itself when only its run knows it), null: the need word. */
         String id;
         int tier, rank;
         double work;
-        /** A member of a tag, the fuel table or a group: when it would need an explore and another member stands, it is not listed. */
-        boolean quiet;
         /** Seconds -> the number the ways compare by (null: the seconds). */
         java.util.function.DoubleUnaryOperator rate;
         Alt(String label, Supplier<String> run) { this.label = label; this.run = run; }
@@ -484,9 +485,12 @@ public final class NeedChain {
      */
     private static Trial choose(Ctx c, List<Alt> alts, String self) {
         if (alts.isEmpty()) return null;
+        distinctLabels(alts);
         List<Trial> trials = new ArrayList<>();
+        int stepsAt = c.steps.size();
+        int skipped = -1;
         for (int i = 0; i < alts.size(); i++) {
-            if (c.trials > maxTrials() && trials.stream().anyMatch(t -> t.fail() == null && !t.stuck())) break;
+            if (c.trials > maxTrials() && trials.stream().anyMatch(t -> t.fail() == null && !t.stuck())) { skipped = i; break; }
             Ctx.Snap s0 = c.snap();
             double base = c.seconds;
             c.trials++;
@@ -504,23 +508,64 @@ public final class NeedChain {
         if (win == null) {
             // every way failed by a loop back to an item above this one: this requirement is part of that loop, the failure goes up
             // to the way that asked for it (it is listed there); a loop back to this very item, or any other failure, is listed here
-            boolean up = self != null && trials.stream().allMatch(t -> t.loopOn() != null && !t.loopOn().equals(self));
+            // (a loop back to an item still on the path above: one recipe circle through a member made in a tag's way is
+            // listed at that tag, its item no longer on the path)
+            boolean up = self != null && trials.stream().allMatch(t -> t.loopOn() != null && !t.loopOn().equals(self) && c.path.contains(t.loopOn()));
             if (up) { c.fail = trials.get(0).fail(); c.loopOn = trials.get(0).loopOn(); }
             else for (Trial t : trials) drop(c, t.alt().label, t.fail());
             return null;
         }
         c.restore(win.after());
+        // dropped-audit (0.39.z16): every way not chosen is listed, a way ending in an explore too (it was left out when the
+        // winner explored as well, or when it was a tag's or a group's member: the owner's charcoal vanished that way)
         for (Trial t : trials) {
             if (t == win) continue;
             if (t.fail() != null) drop(c, t.alt().label, t.fail());
-            else if (t.stuck()) { if (!win.stuck() && !t.alt().quiet) drop(c, t.alt().label, "no known source for " + shw(t.unknown())); }
+            else if (t.stuck()) drop(c, t.alt().label, "no known source for " + shw(t.unknown()) + (win.stuck() ? " (the explore ends when one is known too)" : ""));
             else if (t.alt().rate != null) drop(c, t.alt().label, s(t.seconds()) + String.format(Locale.ROOT, ", %.2f s a point with the eating (dearer a point than %s, %.2f)", t.alt().value(t.seconds()), win.alt().label, win.alt().value(win.seconds())));
             else drop(c, t.alt().label, s(t.seconds()) + " (dearer than " + win.alt().label + (t.seconds() > horizonS ? ", past the horizon" : "") + ")");
         }
+        if (skipped >= 0) for (int i = skipped; i < alts.size(); i++) drop(c, alts.get(i).label, "not priced (the search's bound: needChain.maxTrials, " + maxTrials() + " ways a chain)");
+        if (win.stuck()) widenExplore(c, stepsAt, trials);
         return win;
     }
 
-    /** The dropped list names each losing candidate once: the same requirement is asked again per batch, the label is listed the first time only. */
+    /**
+     * explore-until (0.39.z16): the winner ends in an explore and so did other ways of the same requirement: its explore
+     * ends when a source of ANY of them is known (their until words joined, the winner's first), so the chain is priced
+     * again the moment a tree for charcoal or a coal ore turns up. The live check: {@code ExploreRules.untilFound} per word.
+     */
+    private static void widenExplore(Ctx c, int base, List<Trial> trials) {
+        Set<String> words = new LinkedHashSet<>();
+        untilWords(c.steps, base, words);
+        int own = words.size();
+        for (Trial t : trials) if (t.stuck() && t.fail() == null) untilWords(t.after().steps(), base, words);
+        if (words.size() == own) return;
+        String until = String.join("|", words);
+        for (int i = base; i < c.steps.size(); i++) if (c.steps.get(i) instanceof Step.Explore e && e.until() != null) c.steps.set(i, new Step.Explore(e.minutes(), until));
+    }
+
+    private static void untilWords(List<Step> steps, int from, Set<String> into) {
+        for (int i = Math.max(0, from); i < steps.size(); i++)
+            if (steps.get(i) instanceof Step.Explore e && e.until() != null) for (String p : e.until().split("\\|")) if (!p.isEmpty()) into.add(p);
+    }
+
+    /**
+     * dropped-audit: two ways of one requirement with the same label would be listed once (the dropped list's dedupe), so the
+     * second vanished: a way with a long label takes it when its short one is shared ("coal from coal_block" beside a "coal" dig).
+     */
+    private static void distinctLabels(List<Alt> alts) {
+        Map<String, Integer> n = new LinkedHashMap<>();
+        for (Alt a : alts) n.merge(a.label, 1, Integer::sum);
+        for (Alt a : alts) if (n.get(a.label) > 1 && a.longLabel != null) a.label = a.longLabel;
+        Map<String, Integer> seen = new LinkedHashMap<>();
+        for (Alt a : alts) {
+            int k = seen.merge(a.label, 1, Integer::sum);
+            if (k > 1) a.label = a.label + " (" + k + ")";       // still the same: numbered, never merged in the list
+        }
+    }
+
+    /** The dropped list names each losing candidate once:the same requirement is asked again per batch, the label is listed the first time only. */
     private static void drop(Ctx c, String label, String why) {
         String head = label + ": ";
         for (String d : c.dropped) if (d.startsWith(head)) return;
@@ -559,7 +604,6 @@ public final class NeedChain {
         for (String o : options) {
             Alt a = new Alt(sh(o), () -> obtain(c, o, n));
             a.id = o;
-            a.quiet = true;
             if (energy != null) {
                 double pts = Math.max(1e-9, n * energy.applyAsDouble(o));  // structural: epsilon
                 a.rate = sec -> (sec + n * EAT_S) / pts;
@@ -597,7 +641,6 @@ public final class NeedChain {
             for (Group g : groups(w, ItemWorth.SMELT)) alts.add(groupAlt(c, w, lack, g));
             alts.addAll(tagSourceAlts(c, w, lack));
             alts.addAll(tagHuntAlts(c, w, lack));
-            for (Alt a : alts) a.quiet = true;
             Trial win = choose(c, alts, w.word);
             if (win != null) return new Got(win.alt().id != null ? win.alt().id : w.word, n, win.phrase());
             if (c.fail != null) return null;
@@ -625,33 +668,49 @@ public final class NeedChain {
 
     /**
      * TAG_NEEDS rule 2: a tag need's members' recipes of {@code kind}, grouped by what they need (a recipe that takes a member
-     * of the tag itself, a dye-over, is no way to make it). One-ingredient recipes of the same shape are one group whose
-     * need is any of their ingredients ({@link #cover}: {@code #planks <- #logs}); others group by their exact need words.
+     * of the tag itself, a dye-over, is no way to make it). One-ingredient recipes of the same shape are one group only when
+     * they take the same word, or words that together are exactly one game tag ({@link #covers}: {@code #planks <- #logs});
+     * different tags are different ways ({@code #coals}: charcoal from #logs_that_burn, coal from #coal_ores); others group
+     * by their exact need words.
      */
     private static List<Group> groups(Want w, String kind) {
-        Map<String, List<ItemWorth.Recipe>> recs = new LinkedHashMap<>();
-        Map<String, List<String>> outs = new LinkedHashMap<>();
-        Map<String, Map<String, Integer>> slots = new LinkedHashMap<>();
-        Map<String, Set<String>> merged = new LinkedHashMap<>();
+        // pass 1: the one-ingredient recipes' words by shape (out count, pieces)
+        Map<String, Set<String>> shapeWords = new LinkedHashMap<>();
         for (String m : w.members()) {
             for (ItemWorth.Recipe r : ItemWorth.recipes(m, kind)) {
                 if (takesItself(w, r)) continue;
                 Map<String, Integer> sw = slotWords(r);
-                boolean one = sw.size() == 1;
-                String key = one ? r.outCount() + " x" + sw.values().iterator().next() : r.outCount() + " " + new TreeMap<>(sw);
+                if (sw.size() == 1) shapeWords.computeIfAbsent(r.outCount() + " x" + sw.values().iterator().next(), k -> new TreeSet<>()).add(sw.keySet().iterator().next());
+            }
+        }
+        // grouping-rule (0.39.z16, owner-watched: charcoal <- #logs_that_burn was joined with coal <- #coal_ores and vanished):
+        // one-ingredient recipes of one shape are one group only for the same word, or for words that together are exactly
+        // one game tag (the planks' logs: #logs); any other word is its own group, its own way, priced and shown
+        Map<String, Map<String, String>> coverOf = new LinkedHashMap<>();
+        for (var e : shapeWords.entrySet()) coverOf.put(e.getKey(), covers(e.getValue()));
+        Map<String, List<ItemWorth.Recipe>> recs = new LinkedHashMap<>();
+        Map<String, List<String>> outs = new LinkedHashMap<>();
+        Map<String, Map<String, Integer>> slots = new LinkedHashMap<>();
+        for (String m : w.members()) {
+            for (ItemWorth.Recipe r : ItemWorth.recipes(m, kind)) {
+                if (takesItself(w, r)) continue;
+                Map<String, Integer> sw = slotWords(r);
+                String key;
+                if (sw.size() == 1) {
+                    String shape = r.outCount() + " x" + sw.values().iterator().next();
+                    String need = coverOf.get(shape).get(sw.keySet().iterator().next());
+                    key = shape + " " + need;
+                    slots.putIfAbsent(key, Map.of(need, r.needs().size()));
+                } else {
+                    key = r.outCount() + " " + new TreeMap<>(sw);
+                    slots.putIfAbsent(key, sw);
+                }
                 recs.computeIfAbsent(key, k -> new ArrayList<>()).add(r);
                 outs.computeIfAbsent(key, k -> new ArrayList<>()).add(m);
-                if (one) merged.computeIfAbsent(key, k -> new TreeSet<>()).add(sw.keySet().iterator().next());
-                else slots.putIfAbsent(key, sw);
             }
         }
         List<Group> out = new ArrayList<>();
-        for (var e : recs.entrySet()) {
-            String key = e.getKey();
-            ItemWorth.Recipe first = e.getValue().get(0);
-            Map<String, Integer> sw = merged.containsKey(key) ? Map.of(cover(merged.get(key)), first.needs().size()) : slots.get(key);
-            out.add(new Group(kind, first.outCount(), e.getValue(), outs.get(key), sw));
-        }
+        for (var e : recs.entrySet()) out.add(new Group(kind, e.getValue().get(0).outCount(), e.getValue(), outs.get(e.getKey()), slots.get(e.getKey())));
         return out;
     }
 
@@ -662,17 +721,49 @@ public final class NeedChain {
     }
 
     /**
-     * The need "any of these words": one word as it is; several as the one game tag whose items are exactly theirs (the
-     * planks' log tags together are {@code #logs}), else all of them joined.
+     * The one need word for "any of these words": one word as it is; several as the one game tag whose items are exactly
+     * theirs (the planks' log tags together are {@code #logs}). Null: no one tag is exactly theirs (never joined with "|":
+     * unrelated words are separate needs).
      */
     static String cover(Set<String> words) {
         if (words.size() == 1) return words.iterator().next();
         Set<String> all = new TreeSet<>();
         for (String w : words) all.addAll(new Want(w).members());
-        if (all.isEmpty()) return word(String.join("|", words));
-        Set<String> hits = new TreeSet<>();
-        for (String t : ItemWorth.itemTagsOf(all.iterator().next())) if (ItemWorth.itemsIn(t).equals(all)) hits.add(t);
-        return hits.isEmpty() ? word(String.join("|", words)) : "#" + hits.iterator().next();
+        if (all.isEmpty()) return null;
+        for (String t : new TreeSet<>(ItemWorth.itemTagsOf(all.iterator().next()))) if (ItemWorth.itemsIn(t).equals(all)) return "#" + t;
+        return null;
+    }
+
+    /**
+     * grouping-rule: each word -> the need it is grouped under. Words whose members together are exactly one game tag
+     * (the largest such set first, ties by the tag's id) share that tag; every other word stands alone.
+     */
+    static Map<String, String> covers(Set<String> words) {
+        Map<String, String> out = new LinkedHashMap<>();
+        List<String> left = new ArrayList<>(words);
+        while (left.size() >= 2) {
+            String all = cover(new TreeSet<>(left));
+            if (all != null) { for (String w : left) out.put(w, all); left.clear(); break; }
+            Set<String> cands = new TreeSet<>();
+            for (String w : left) for (String m : new Want(w).members()) cands.addAll(ItemWorth.itemTagsOf(m));
+            String bestTag = null;
+            List<String> best = List.of();
+            for (String t : cands) {
+                Set<String> tm = ItemWorth.itemsIn(t);
+                List<String> in = new ArrayList<>();
+                Set<String> union = new TreeSet<>();
+                for (String w : left) {
+                    Set<String> ms = new Want(w).members();
+                    if (!ms.isEmpty() && tm.containsAll(ms)) { in.add(w); union.addAll(ms); }
+                }
+                if (in.size() >= 2 && union.equals(tm) && in.size() > best.size()) { bestTag = t; best = in; }
+            }
+            if (bestTag == null) break;
+            for (String w : best) out.put(w, "#" + bestTag);
+            left.removeAll(best);
+        }
+        for (String w : left) out.put(w, w);
+        return out;
     }
 
     /** A group as one way: one member made: that member's own recipe (the item way); several: {@link #makeGroup}. */
@@ -682,8 +773,11 @@ public final class NeedChain {
         if (made.size() == 1) {
             String out = made.iterator().next();
             ItemWorth.Recipe r = g.recs().get(0);
-            Alt a = new Alt(sh(out), () -> craft ? craft(c, out, lack, r) : smelt(c, out, lack, r));
+            // loop-guard (0.39.z16, owner-watched "coal <- coal_block <- coal"): the member made is on the path while its
+            // recipe is priced, as obtain puts it, so a recipe circle through it is a loop on both sides
+            Alt a = new Alt(sh(out), () -> asItem(c, out, () -> craft ? craft(c, out, lack, r) : smelt(c, out, lack, r)));
             a.id = out;
+            a.longLabel = (craft ? "" : "smelting ") + sh(out) + " from " + ingredients(r);
             return a;
         }
         List<String> needs = new ArrayList<>();
@@ -691,6 +785,21 @@ public final class NeedChain {
         Alt a = new Alt((craft ? "" : "smelting ") + shw(w.word) + " from " + String.join("+", needs), null);
         a.run = () -> makeGroup(c, w, lack, g, a);
         return a;
+    }
+
+    /** Runs {@code way} with {@code item} on the path (the loop guard of {@link #obtain}); the item already on it: the loop failure. */
+    private static String asItem(Ctx c, String item, Supplier<String> way) {
+        if (c.path.contains(item)) {
+            c.fail = "loop: " + sh(item) + " needs itself (a recipe loop: " + String.join(" > ", c.path.stream().map(NeedChain::shw).toList()) + " > " + sh(item) + ")";
+            c.loopOn = item;
+            return null;
+        }
+        c.path.add(item);
+        try {
+            return way.get();
+        } finally {
+            c.path.remove(c.path.size() - 1);
+        }
     }
 
     /**
@@ -927,7 +1036,6 @@ public final class NeedChain {
                 if (c.fail == null && !c.stuck) take(c, new Want(cw), count, g.id());
                 return "burn " + g.part();
             };
-            a.quiet = true;
             alts.add(a);
         }
         Trial win = choose(c, alts, null);
@@ -938,12 +1046,16 @@ public final class NeedChain {
         return win.phrase();
     }
 
-    /** A burn class as one need word: one item, or the tag its items are exactly ({@link #cover}), else all of them. */
+    /**
+     * A burn class as one need word: one item, or the tag its items are exactly ({@link #cover}), else the class's items
+     * themselves ("any of these items": the fuel table's own set of the same burn ticks, items only, never tags joined).
+     */
     private static String classWord(Set<String> items) {
         if (items.size() == 1) return word(items.iterator().next());
         Set<String> words = new TreeSet<>();
         for (String i : items) words.add(word(i));
-        return cover(words);
+        String tag = cover(words);
+        return tag != null ? tag : word(String.join("|", words));
     }
 
     /**

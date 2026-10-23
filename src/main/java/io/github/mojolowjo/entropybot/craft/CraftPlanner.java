@@ -675,7 +675,7 @@ public final class CraftPlanner implements Crafter {
             Map<String, Integer> need = new LinkedHashMap<>();
             for (List<String> cell : r.cells()) {
                 if (cell.isEmpty()) continue;
-                String key = cell.get(0) + (cell.size() > 1 ? " (or " + (cell.size() - 1) + " alternatives)" : "");
+                String key = cell.size() > 1 ? tagCell(cell) : cell.get(0);
                 need.merge(key, 1, Integer::sum);
             }
             List<String> parts = new ArrayList<>();
@@ -683,5 +683,24 @@ public final class CraftPlanner implements Crafter {
             lines.add("[" + r.type() + "] makes " + r.outCount() + ": " + String.join(", ", parts));
         }
         return String.join(" | ", lines);
+    }
+
+    /** How many members the recipe verb names after a tag's count. */
+    private static final int CELL_NAMES = 3; // structural: a short reply line
+
+    /**
+     * recipe-verb (0.39.z16): a cell of several items as the tag it is ("#minecraft:logs_that_burn (32: dark_oak_log,
+     * oak_log, spruce_log, ...)": the game's tag whose items are exactly the cell's, the count, the first few); no such
+     * tag known: "one of (2: coal, charcoal)".
+     */
+    static String tagCell(List<String> cell) {
+        java.util.Set<String> items = new java.util.TreeSet<>(cell);
+        String tag = null;
+        for (String t : new java.util.TreeSet<>(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.itemTagsOf(cell.get(0))))
+            if (io.github.mojolowjo.entropybot.aa.brain.ItemWorth.itemsIn(t).equals(items)) { tag = t; break; }
+        List<String> names = new ArrayList<>();
+        for (int i = 0; i < Math.min(CELL_NAMES, cell.size()); i++) names.add(shortId(cell.get(i)));
+        String list = cell.size() + ": " + String.join(", ", names) + (cell.size() > CELL_NAMES ? ", ..." : "");
+        return (tag != null ? "#" + tag : "one of") + " (" + list + ")";
     }
 }

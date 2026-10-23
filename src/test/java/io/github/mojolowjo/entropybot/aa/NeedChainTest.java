@@ -197,8 +197,10 @@ class NeedChainTest {
         NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, seen(null, STONE)));
         System.out.println("WHY-LINE " + c.why());
         assertTrue(c.ok() && c.explore(), c.why());
-        assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes(), "oak_log")), c.steps());
-        assertTrue(c.why().startsWith("stone_pickaxe <- ") && c.why().contains("explore") && c.why().contains("no oak_log source known"), c.why());
+        assertEquals(1, c.steps().size(), c.steps().toString());
+        // explore-until (0.39.z16): the chosen way's word first; the other pickaxes' unknown sources end it too (the iron one's raw iron)
+        assertEquals("oak_log", ((Step.Explore) c.steps().get(0)).until().split("\\|")[0], c.steps().toString());
+        assertTrue(c.why().startsWith("stone_pickaxe <- ")&& c.why().contains("explore") && c.why().contains("no oak_log source known"), c.why());
     }
 
     @Test

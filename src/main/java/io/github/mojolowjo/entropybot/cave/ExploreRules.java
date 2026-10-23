@@ -23,13 +23,19 @@ public final class ExploreRules {
      * live-facts: a chain's explore for a missing source ends the moment the source is known: the one Nearby fact
      * ({@code source}: AaRuntime.knownSource: a block by Baritone's scan or a sighting, or an animal whose loot drops it) answers for the item. The end text, or null
      * while nothing is known (or no word was given). The chain is then priced again by the need that runs it.
+     * explore-until (0.39.z16): {@code word} may be the whole source set of the need the explore was started for, its words
+     * joined by "|" ("#coal_ores|#logs_that_burn" for torch's coals): any one of them known ends it.
      */
     public static String untilFound(String word, java.util.function.Function<String, io.github.mojolowjo.entropybot.aa.NeedChain.Spot> source) {
         if (word == null || source == null) return null;
-        var s = source.apply(word);
-        if (s == null) return null;
-        return "a source of " + word + " is known: " + (s.block() == null ? "" : s.block().replaceFirst("^minecraft:", "") + " ")
-                + "at " + s.x() + " " + s.y() + " " + s.z() + " (" + Math.round(s.dist()) + " away); the chain is priced again";
+        for (String part : word.split("\\|")) {
+            if (part.isEmpty()) continue;
+            var s = source.apply(part);
+            if (s == null) continue;
+            return "a source of " + part + " is known: " + (s.block() == null ? "" : s.block().replaceFirst("^minecraft:", "") + " ")
+                    + "at " + s.x() + " " + s.y() + " " + s.z() + " (" + Math.round(s.dist()) + " away); the chain is priced again";
+        }
+        return null;
     }
 
     public static int seen() { return Tuning.i("exploreRules.seen"); }

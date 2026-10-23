@@ -284,9 +284,20 @@ class CraftPlannerTest {
 
     @Test
     void recipeInfo() {
-        assertEquals("[minecraft:crafting] makes 4: 1x minecraft:coal (or 1 alternatives), 1x minecraft:stick", p.recipeInfo("torch", counts()));
-        assertEquals("[minecraft:crafting] makes 4: 2x minecraft:oak_planks (or 1 alternatives)", p.recipeInfo("sticks please", counts()));
-        assertEquals("[minecraft:smelting] makes 1: 1x minecraft:sand (or 1 alternatives)", p.recipeInfo("glass", counts()));
+        io.github.mojolowjo.entropybot.aa.brain.TestData.clear();
+        assertEquals("[minecraft:crafting] makes 4: 1x one of (2: coal, charcoal), 1x minecraft:stick", p.recipeInfo("torch", counts()), "no tag index: the members");
+        assertTrue(p.recipeInfo("sticks please", counts()).startsWith("[minecraft:crafting] makes 4: 2x one of (2: oak_planks, "), p.recipeInfo("sticks please", counts()));
+        assertTrue(p.recipeInfo("glass", counts()).startsWith("[minecraft:smelting] makes 1: 1x one of (2: sand, "), p.recipeInfo("glass", counts()));
+        // recipe-verb (0.39.z16): a cell that is a game tag is named by its tag, its count and the first few members
+        new io.github.mojolowjo.entropybot.aa.brain.TestData().tag("coal", "minecraft:coals").tag("charcoal", "minecraft:coals").install();
+        try {
+            assertEquals("[minecraft:crafting] makes 4: 1x #minecraft:coals (2: coal, charcoal), 1x minecraft:stick", p.recipeInfo("torch", counts()));
+        } finally {
+            io.github.mojolowjo.entropybot.aa.brain.TestData.clear();
+        }
+        java.util.List<String> logs = new java.util.ArrayList<>();
+        for (int i = 0; i < 32; i++) logs.add("minecraft:log_" + i);
+        assertEquals("one of (32: log_0, log_1, log_2, ...)", CraftPlanner.tagCell(logs));
         assertEquals("[minecraft:crafting] makes 9: 1x minecraft:iron_block", p.recipeInfo("iron_ingot", counts()));
         assertEquals("none: no recipes for minecraft:bedrock", p.recipeInfo("bedrock", counts()));
         assertEquals("error: I don't know an item called unobtainium", p.recipeInfo("unobtainium", counts()));
