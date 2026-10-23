@@ -89,7 +89,7 @@ final class AaCommands {
             List<String> last = d.subList(Math.max(0, d.size() - 10), d.size());
             return "aa why (last " + last.size() + " of " + d.size() + "):\n" + String.join("\n", last) + (aa.on() ? "\nrungs: " + aa.ladderLine() : "") + StripStep.liveLine() + refusals + opts;
         }, f(S, "why", "the last 10 decisions, the rungs, the desires and options, the station lookups"));
-        v("debug", (c, aa, vb, a) -> aa.debug(a),          // 0.39.z28: /bot debug <aa line> is the same
+        v("debug", (c, aa, vb, a) -> aa.debugToLog(a),     // 0.39.z28: /bot debug <aa line> is the same; z29: the tree goes to aa-debug.log
                 f(S, "debug want|do|use ...", "the thinking of that line as a tree (ways, seconds, dropped), nothing moves"));
         v("tree", (c, aa, vb, a) -> aa.tree.mermaid() + (aa.on() ? "\n%% desires now: " + String.join(" | ", aa.brainLines(30)) + "\n%% " + aa.ideasLine() : ""),
                 f(S, "tree", "the behaviour tree as Mermaid, with the desires now"));

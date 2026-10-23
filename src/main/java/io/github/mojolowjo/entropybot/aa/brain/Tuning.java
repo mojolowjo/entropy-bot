@@ -55,6 +55,7 @@ public final class Tuning {
         def("shelterMax", 99, "aa-costs", "the most any shelter or hide scores");
         def("stashMax", 74, "aa-kit camp", "the most the stash desire scores");
         def("diedS", 60, "aa-kit camp", "seconds a death at the spot is worth in the recovery cost");
+        def("debug.logMaxMb", 5, "0.39.z29 owner 2026-10-23", "aa-debug.log at this many MB is renamed to aa-debug.1.log and a fresh file starts");
         def("dawnClimb", 45, "aa-night3", "the dawn climb to the surface scores this");
         def("respawnS", 5, "AA_STEP3 A", "seconds a respawn takes in the death cost");
         def("healTo", 16, "aa-night2 P0 1", "health the hide keeps going until");

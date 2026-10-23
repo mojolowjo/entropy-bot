@@ -2975,6 +2975,30 @@ public final class AaRuntime implements JobPort {
         };
     }
 
+    /** 0.39.z29: the debug tree into entropybot/aa-debug.log as one block; chat gets one line (or the write failure). */
+    String debugToLog(String line) {
+        String tree = debug(line);
+        String time = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        Path dir = Core.INSTANCE.files() == null ? null : Core.INSTANCE.files().root();
+        long max = (long) (io.github.mojolowjo.entropybot.aa.brain.Tuning.get("debug.logMaxMb") * 1024 * 1024);    // structural: MB to bytes
+        return io.github.mojolowjo.entropybot.aa.DebugLog.write(dir, max, time, worldName(), ("aa debug " + (line == null ? "" : line.trim())).trim(), tree);
+    }
+
+    /** The singleplayer world's folder name or the server's list name (not its address). */
+    private static String worldName() {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.hasSingleplayerServer() && mc.getSingleplayerServer() != null) {
+                Path p = mc.getSingleplayerServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).toAbsolutePath().normalize();
+                return p.getFileName() == null ? "singleplayer" : p.getFileName().toString();
+            }
+            var sd = mc.getCurrentServer();
+            return sd == null ? "no world" : sd.name;
+        } catch (RuntimeException e) {
+            return "world unknown (" + e + ")";
+        }
+    }
+
     private String debugWant(String arg) {
         String dry = io.github.mojolowjo.entropybot.aa.DebugTree.DRY;
         if (io.github.mojolowjo.entropybot.aa.brain.StripOrder.is(arg)) {

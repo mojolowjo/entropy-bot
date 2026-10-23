@@ -905,3 +905,4 @@ needs.ironTier	3.0
 pathCost.budgetMs	15.0
 pathCost.budgetS	300.0
 pathCost.perChainMax	12.0
+debug.logMaxMb	5.0
