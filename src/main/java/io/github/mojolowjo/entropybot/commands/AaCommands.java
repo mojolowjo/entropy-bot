@@ -55,8 +55,9 @@ final class AaCommands {
         v("go", "go (the slow mode's next step)", (c, aa, vb, a) -> aa.slow.go());
         v("why", "why", (c, aa, vb, a) -> {
             List<String> d = aa.decisions();
-            // STRUCTURE_BLOCKS: the structure refusals AA's ways met and the stations the last lookup skipped (and why)
-            String refusals = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.structureLine() + (io.github.mojolowjo.entropybot.aa.Nearby.skippedLine().isEmpty() ? "" : "\n" + io.github.mojolowjo.entropybot.aa.Nearby.skippedLine().substring(3));
+            // STRUCTURE_BLOCKS: the station lookups this why reports, each with its own notes (skipped, priced); a way's
+            // structure refusal is in that way's own option line (no global last state, 0.39.z26 fix 11)
+            String refusals = "\n" + c.nearby.stationsLine(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT) + "\n" + c.nearby.stationsLine(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT);
             String opts = aa.on() ? "\ndesires (top 5):\n" + String.join("\n", aa.brainLines(5)) + "\n" + aa.wantsLine() + "\n" + aa.ideasLine() + "\n" + String.join("\n", aa.optionLines()) : "";
             if (d.isEmpty()) return "aa why: no decisions yet" + (aa.on() ? " (rungs: " + aa.ladderLine() + ")" + opts : " (aa is off)") + StripStep.liveLine() + refusals;
             List<String> last = d.subList(Math.max(0, d.size() - 10), d.size());

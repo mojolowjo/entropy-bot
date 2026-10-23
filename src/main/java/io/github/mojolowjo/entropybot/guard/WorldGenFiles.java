@@ -72,6 +72,21 @@ public final class WorldGenFiles {
         return BreakPolicy.structureOf(true, tagged, oreOrLog, entity, station, crafted, gen == null ? null : gen.contains(id));
     }
 
+    /**
+     * One block's structure fact from its tags (StructureTable's tag keys {@code structureTags} / {@code neverTags} and
+     * {@code inTag}, the game's tag lookup of the block), the other game facts and the world-gen set; {@code unread}: a
+     * recipe making it could not be read (NOT_LOADED, never "not crafted"). StructureTable's whole per-block rule, so the
+     * tests run it over a fixture tag holder.
+     */
+    public static <T> BreakPolicy.Structure classify(java.util.List<T> structureTags, java.util.List<T> neverTags, java.util.function.Predicate<T> inTag,
+                                                     boolean entity, boolean station, boolean crafted, boolean unread, Set<String> gen, String id) {
+        if (unread) return BreakPolicy.Structure.NOT_LOADED;
+        boolean tagged = false, never = false;
+        for (T t : structureTags) if (inTag.test(t)) { tagged = true; break; }
+        for (T t : neverTags) if (inTag.test(t)) { never = true; break; }
+        return fact(tagged, never, entity, station, crafted, gen, id);
+    }
+
     /** Every block state's "Name" in the JSON. */
     public static void collect(JsonElement e, Set<String> names) {
         if (e == null) return;

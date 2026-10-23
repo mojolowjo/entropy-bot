@@ -144,7 +144,7 @@ public final class ShelterJob {
         s.sawNight = SleepJob.night(lv);
         s.leases = Clearing.newLeases();
         // a shelter it built before (the ledger's "built: shelter") is its own again
-        for (int[] cell : ShelterPlan.allCells(f)) if (ownBlocks(c).contains(ShelterPlan.key(cell)) || RestoreLive.INSTANCE.builtByMe(cell[0], cell[1], cell[2])) s.own.add(ShelterPlan.key(cell));
+        for (int[] cell : ShelterPlan.allCells(f)) if (ownBlocks(c).contains(ShelterPlan.key(cell)) || RestoreLive.INSTANCE.builtByMe(Storage.dim(), cell[0], cell[1], cell[2])) s.own.add(ShelterPlan.key(cell));
         if (s.block == null) s.block = ShelterPlan.material(bag, 2) != null ? ShelterPlan.material(bag, 2) : "minecraft:cobblestone";
         return launch(c, p, s, "sheltering at " + Jobs.fmt(f));
     }
@@ -472,7 +472,7 @@ public final class ShelterJob {
         Set<String> own = new HashSet<>();
         Set<String> stored = ownBlocks(c);
         for (int[] cell : ShelterPlan.allCells(f))
-            if ((stored.contains(ShelterPlan.key(cell)) || RestoreLive.INSTANCE.builtByMe(cell[0], cell[1], cell[2]))) own.add(ShelterPlan.key(cell));
+            if ((stored.contains(ShelterPlan.key(cell)) || RestoreLive.INSTANCE.builtByMe(Storage.dim(), cell[0], cell[1], cell[2]))) own.add(ShelterPlan.key(cell));
         return own;
     }
 

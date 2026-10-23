@@ -55,9 +55,7 @@ public final class Guard {
      */
     public GuardCore.BlockInfo infoFor(Level level, BlockPos pos) {
         boolean known = level != null && level.isLoaded(pos);
-        if (!known) return GuardCore.BlockInfo.UNKNOWN;
-        BreakPolicy.Structure s = StructureTable.of(level.getBlockState(pos).getBlock());
-        return GuardCore.BlockInfo.breaking(true, s, s == BreakPolicy.Structure.YES && OwnPlaced.at(pos.getX(), pos.getY(), pos.getZ()));
+        return GuardCore.BlockInfo.ofFacts(known, known ? PolicyRuntime.structureFacts(level, dimOf(level), pos) : BreakPolicy.StructureFacts.NOT_LOADED);
     }
 
     public static String dimOf(Level level) {
@@ -324,6 +322,13 @@ public final class Guard {
             if (!pv.allowed()) pr.stats.deny(PolicyStats.SITE_ASTAR_BOXES, pv.reason());
             return !pv.allowed();
         }
+        // STRUCTURE_BLOCKS (RULES 16): the same structure facts and BreakPolicy.structure the click asks (GuardCore's break
+        // branch); without the bsi the cell's facts are unknown here: not loaded, refused
+        BreakPolicy.Verdict sv = pr.structureVerdict(pr.snapshot(), dim, at, x, y, z);
+        if (!sv.allowed()) {
+            pr.stats.deny(PolicyStats.SITE_ASTAR_BOXES, sv.reason());
+            return true;
+        }
         GuardCore.Verdict v = core.checkBoxes(dim, x, y, z, "break");
         shadowAstar(dim, at, x, y, z, v);
         if (!v.allowed()) return true;
@@ -354,7 +359,7 @@ public final class Guard {
                 if (!pv.allowed()) pr.stats.deny(PolicyStats.SITE_ASTAR_BOXES, pv.reason());
                 pr.shadow(PolicyStats.SITE_ASTAR_BOXES, today, v.reason(), pv, in, x, y, z);
             } else {
-                BreakPolicy.BlockFacts f = pr.facts(at, x, y, z, false);
+                BreakPolicy.BlockFacts f = pr.facts(at, dim, x, y, z, false);
                 // isPossiblyProtected is asked for placements too (an air or water cell): no break verdict to compare there
                 if (f.loaded() && f.inCell() != BreakPolicy.Fluid.NONE) return;
                 pv = pr.judge(PolicyStats.SITE_ASTAR_COST, BreakPolicy.Action.BREAK, in, dim, x, y, z, f, pr.where());

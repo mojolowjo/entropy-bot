@@ -10,8 +10,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class AreaTypesTest {
     static final String OW = "minecraft:overworld";
     static final GuardCore.BlockInfo PLAIN = GuardCore.BlockInfo.PLAIN;
-    static final GuardCore.BlockInfo CHEST = GuardCore.BlockInfo.of(true);  // no block-entity floor (0.39.z25)
-    static final GuardCore.BlockInfo PLANKS = GuardCore.BlockInfo.of(true);  // no built floor (0.39.z25)
+    static final GuardCore.BlockInfo CHEST = GuardCore.BlockInfo.of(true, BreakPolicy.Structure.NO);  // no block-entity floor (0.39.z25)
+    static final GuardCore.BlockInfo PLANKS = GuardCore.BlockInfo.of(true, BreakPolicy.Structure.NO);  // no built floor (0.39.z25)
 
     /** One area of each type side by side, x 0..9 / 20..29 / 40..49 / 60..69, z 0..9, y 60..70. */
     static final String POLICY = "{\"version\":2,\"areas\":["

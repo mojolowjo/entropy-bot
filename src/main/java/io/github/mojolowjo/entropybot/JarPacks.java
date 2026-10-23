@@ -12,7 +12,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
  * The client's own jars as data packs (loot-book-bg 0.39.z13, shared since 0.39.z26 (2) with the world-gen read): the game
@@ -24,12 +26,16 @@ import java.util.concurrent.Executors;
  */
 public final class JarPacks {
     /** The one low-priority daemon thread for the jar reads (loot book, world-gen blocks). */
-    public static final ExecutorService POOL = Executors.newSingleThreadExecutor(r -> {
+    private static final ThreadPoolExecutor EXEC = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>(), r -> {
         Thread t = new Thread(r, "entropybot-jars");
         t.setDaemon(true);
         t.setPriority(Thread.MIN_PRIORITY);
         return t;
     });
+    public static final ExecutorService POOL = EXEC;
+
+    /** The jars thread runs or holds a job now (a new job waits behind it). */
+    public static boolean busy() { return EXEC.getActiveCount() > 0 || !EXEC.getQueue().isEmpty(); }
 
     private final PackRepository repo;
     /** Every selected pack and its children as "id@version" (the cache key's input). */

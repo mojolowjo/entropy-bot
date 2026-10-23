@@ -170,18 +170,19 @@ public final class CostAdvisorHook {
         BreakPolicy.Snapshot s = t != null ? t.snapshot() : pr.snapshot();
         BreakPolicy.Where me = t != null ? t.me() : pr.where();
         if (in == null || in == Intent.NONE) return COST_INF;                     // walking only (the route map's context)
-        if (dim == null || s == null) return in == Intent.TRAVEL ? COST_INF : Double.NaN;   // fail closed for travel
         // STRUCTURE_BLOCKS (RULES 16): every intent's path refuses the cell BreakPolicy refuses for a structure block
-        // (Baritone's blocksToDisallowBreaking stays empty: block types never refuse by themselves, this hook does per cell)
+        // (Baritone's blocksToDisallowBreaking stays empty: block types never refuse by themselves, this hook does per cell);
+        // a null snapshot refuses here too ("no snapshot", BreakPolicy.pathStructure), never NaN or open
         BreakPolicy.Verdict sv = pr.structureVerdict(s, dim, at, x, y, z);
         if (!sv.allowed()) {
             pr.stats.deny(PolicyStats.SITE_ASTAR_COST, sv.reason());
             return COST_INF;
         }
+        if (dim == null) return in == Intent.TRAVEL ? COST_INF : Double.NaN;      // fail closed for travel
         double wet = wetMult(at, x, y, z);                                        // wetbreak: 1 dry, 5 beside water, 25 deep
         switch (in) {
             case TRAVEL -> {
-                BreakPolicy.Verdict v = pr.judge(PolicyStats.SITE_ASTAR_COST, BreakPolicy.Action.BREAK, in, dim, x, y, z, pr.facts(at, x, y, z, false), me, s);
+                BreakPolicy.Verdict v = pr.judge(PolicyStats.SITE_ASTAR_COST, BreakPolicy.Action.BREAK, in, dim, x, y, z, pr.facts(at, dim, x, y, z, false), me, s);
                 return v.allowed() ? v.multiplier() * wet : COST_INF;
             }
             case MINE -> {

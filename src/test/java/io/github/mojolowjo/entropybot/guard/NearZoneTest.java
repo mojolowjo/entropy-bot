@@ -156,7 +156,7 @@ class NearZoneTest {
         assertTrue(g.checkBoxes(OW, 0, 64, 0, "go").allowed(), "a no-break box is walked through");
         String id = g.lease("j", "t", new Box("t", OW, 10, 64, 10, 11, 65, 11), false, false);
         assertTrue(id.startsWith("L"));
-        assertTrue(g.check(OW, 10, 64, 10, "break", GuardCore.BlockInfo.of(true)).allowed(), "a chest under the lease: no floor");
+        assertTrue(g.check(OW, 10, 64, 10, "break", GuardCore.BlockInfo.of(true, BreakPolicy.Structure.NO)).allowed(), "a chest under the lease: no floor");
         assertTrue(g.check(OW, 10, 64, 10, "break", GuardCore.BlockInfo.PLAIN).allowed());
         assertTrue(g.lease("j", "t", new Box("t", OW, 3, 64, 3, 6, 65, 6), false, false).startsWith("error: that box touches keep (no-break)"));
         assertFalse(g.checkBoxes("minecraft:the_nether", 0, 64, 0, "go").allowed());

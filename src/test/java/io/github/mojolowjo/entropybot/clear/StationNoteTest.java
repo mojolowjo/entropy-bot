@@ -31,6 +31,8 @@ class StationNoteTest {
     /** A scan that finds nothing; own() is the interface's default (the OwnStations.placed hook). */
     static Nearby.Scan emptyScan() {
         return new Nearby.Scan() {
+        @Override public io.github.mojolowjo.entropybot.guard.Policy stationPolicy() { return io.github.mojolowjo.entropybot.aa.TestStations.OPEN; }  // stated: the owner's area over the world
+        @Override public String stationDim() { return io.github.mojolowjo.entropybot.aa.TestStations.OW; }
             @Override public List<int[]> logs(int radius) { return List.of(); }
             @Override public List<int[]> find(Set<String> blocks, int radius) { return List.of(); }
             @Override public boolean isLog(String block) { return false; }

@@ -27,17 +27,18 @@ class OwnPlacedTest {
         assertTrue(ledger.placedByMe(OW, 1001, 60, 1000));
         assertFalse(ledger.placedByMe(OW, 1002, 60, 1000), "a cell I broke is not a block I placed");
         assertFalse(ledger.placedByMe("minecraft:the_nether", 1000, 60, 1000), "another dimension");
-        OwnPlaced.cells = (x, y, z) -> ledger.placedByMe(OW, x, y, z);
+        OwnPlaced.cells = ledger::placedByMe;
 
-        assertTrue(OwnPlaced.at(1000, 60, 1000), "the ledger's own placement is mine");
-        assertFalse(OwnPlaced.at(1003, 60, 1000));
+        assertTrue(OwnPlaced.at(OW, 1000, 60, 1000), "the ledger's own placement is mine");
+        assertFalse(OwnPlaced.at(OW, 1003, 60, 1000));
+        assertFalse(OwnPlaced.at("minecraft:the_nether", 1000, 60, 1000), "the caller's dimension decides");
     }
 
     @Test
     void aFailingHookIsNotMine() {
-        OwnPlaced.cells = (x, y, z) -> { throw new IllegalStateException("no world"); };
-        assertFalse(OwnPlaced.at(0, 0, 0));
+        OwnPlaced.cells = (d, x, y, z) -> { throw new IllegalStateException("no world"); };
+        assertFalse(OwnPlaced.at(OW, 0, 0, 0));
         OwnPlaced.cells = null;
-        assertFalse(OwnPlaced.at(0, 0, 0));
+        assertFalse(OwnPlaced.at(OW, 0, 0, 0));
     }
 }

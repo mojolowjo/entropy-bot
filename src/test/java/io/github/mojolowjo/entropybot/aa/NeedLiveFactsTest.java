@@ -41,6 +41,8 @@ class NeedLiveFactsTest {
     static final Map<String, String> CELLS = Map.of("10 64 0", "minecraft:iron_ore", "-20 64 0", "minecraft:spruce_log", "0 64 3", "minecraft:oak_log");
 
     static final Nearby.Scan SCAN = new Nearby.Scan() {
+        @Override public io.github.mojolowjo.entropybot.guard.Policy stationPolicy() { return io.github.mojolowjo.entropybot.aa.TestStations.OPEN; }  // stated: the owner's area over the world
+        @Override public String stationDim() { return io.github.mojolowjo.entropybot.aa.TestStations.OW; }
         @Override public List<int[]> logs(int radius) { return find(Set.of("minecraft:oak_log", "minecraft:spruce_log"), radius); }
         @Override public List<int[]> find(Set<String> blocks, int radius) {
             List<int[]> out = new ArrayList<>();
@@ -91,6 +93,8 @@ class NeedLiveFactsTest {
     void anExploreForCoalEndsWhenTheScanReportsCoalOre() {
         Map<String, String> cells = new java.util.HashMap<>();
         Nearby.Scan scan = new Nearby.Scan() {
+        @Override public io.github.mojolowjo.entropybot.guard.Policy stationPolicy() { return io.github.mojolowjo.entropybot.aa.TestStations.OPEN; }  // stated: the owner's area over the world
+        @Override public String stationDim() { return io.github.mojolowjo.entropybot.aa.TestStations.OW; }
             @Override public List<int[]> logs(int radius) { return List.of(); }
             @Override public List<int[]> find(Set<String> blocks, int radius) {
                 List<int[]> out = new ArrayList<>();

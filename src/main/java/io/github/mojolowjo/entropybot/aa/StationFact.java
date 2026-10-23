@@ -17,11 +17,15 @@ public sealed interface StationFact {
     record None(String why) implements StationFact {}
 
     /** The known stations, nearest first; never empty. */
-    record Known(List<Spot> spots) implements StationFact {
+    record Known(List<Spot> spots, List<String> notes) implements StationFact {
         public Known {
             if (spots == null || spots.isEmpty()) throw new IllegalArgumentException("a Known station fact holds at least one station");
             spots = List.copyOf(spots);
+            notes = notes == null ? List.of() : List.copyOf(notes);
         }
+
+        /** No lookup notes (a filtered or test answer). */
+        public Known(List<Spot> spots) { this(spots, List.of()); }
 
         public Spot nearest() { return spots.get(0); }
     }

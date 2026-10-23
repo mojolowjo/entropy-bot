@@ -102,36 +102,36 @@ public final class PolicyRuntime {
 
     // ---- STRUCTURE_BLOCKS: the structure fact of a cell, and the refusals AA's ways met (aa why) ----
 
-    /** The structure fact of the cell and whether I placed it (the ledger asked for a structure block only). Any thread. */
-    public BreakPolicy.Structure structureAt(StateAt at, int x, int y, int z) {
-        if (!at.loaded(x, z)) return BreakPolicy.Structure.NOT_LOADED;
-        BlockState st = at.at(x, y, z);
-        return st == null ? BreakPolicy.Structure.NOT_LOADED : StructureTable.of(st.getBlock());
+    /**
+     * The one reader of a cell's structure facts (the click's {@code Guard.infoFor}, the path cost, the block facts): the
+     * table's fact of the block and, for a structure block, the ledger of {@code dim} (the caller's, never mc.level); the
+     * pure half is {@link BreakPolicy#cellStructure}. Any thread.
+     */
+    public static BreakPolicy.StructureFacts structureFacts(StateAt at, String dim, int x, int y, int z) {
+        BlockState st = at == null || !at.loaded(x, z) ? null : at.at(x, y, z);
+        return BreakPolicy.cellStructure(st != null, st == null ? null : StructureTable.of(st.getBlock()), dim, x, y, z);
+    }
+
+    /** The same over a client level (client thread). */
+    public static BreakPolicy.StructureFacts structureFacts(Level level, String dim, BlockPos pos) {
+        if (level == null || !level.isLoaded(pos)) return BreakPolicy.StructureFacts.NOT_LOADED;
+        return structureFacts(levelAt(level), dim, pos.getX(), pos.getY(), pos.getZ());
+    }
+
+    private static StateAt levelAt(Level level) {
+        return (x, y, z) -> {
+            BlockPos p = new BlockPos(x, y, z);
+            return level.isLoaded(p) ? level.getBlockState(p) : null;
+        };
     }
 
     /** The path cost's structure verdict (CostAdvisorHook): BreakPolicy.structure for the cell. Any thread. */
     public BreakPolicy.Verdict structureVerdict(Snapshot s, String dim, StateAt at, int x, int y, int z) {
-        BreakPolicy.Structure sf = structureAt(at, x, y, z);
-        return BreakPolicy.structure(s == null ? null : s.policy(), dim, x, y, z, sf, sf == BreakPolicy.Structure.YES && OwnPlaced.at(x, y, z));
+        return BreakPolicy.pathStructure(s, dim, x, y, z, structureFacts(at, dim, x, y, z));
     }
 
-    private final java.util.ArrayDeque<String> structureNotes = new java.util.ArrayDeque<>();
-
-    /** A structure refusal an AA way price met (client thread asks): kept for aa why, the newest few. */
-    public void noteStructure(String line) {
-        synchronized (structureNotes) {
-            structureNotes.remove(line);
-            structureNotes.addLast(line);
-            while (structureNotes.size() > Tuning.i("policyRuntime.structureNotes")) structureNotes.removeFirst();
-        }
-    }
-
-    /** "structure refusals: ..." for aa why, or "" when none. */
-    public String structureLine() {
-        synchronized (structureNotes) {
-            return structureNotes.isEmpty() ? "" : "\nstructure refusals (newest last): " + String.join(" | ", structureNotes);
-        }
-    }
+    // 0.39.z26 fix (11): no global structure notes; each lookup returns its verdict's reason to its caller (the iron
+    // options' "deny", the corner's guard line), and aa why shows those with the lookup it reports
 
     /** The snapshot the pathfinder thread reads; null before the first tick in a world (every ask then denies). */
     public Snapshot snapshot() { return snapshot; }
@@ -215,18 +215,15 @@ public final class PolicyRuntime {
 
     /** The facts for a placement at the cell: {@link #facts} plus whether the bot dug the cell itself. */
     public BlockFacts placeFacts(StateAt at, String dim, int x, int y, int z) {
-        return facts(at, x, y, z, false).withDug(dug(dim, x, y, z));
+        return facts(at, dim, x, y, z, false).withDug(dug(dim, x, y, z));
     }
 
     // ---- the facts ----
 
-    /** Client thread: what the guard knows about the block at pos, from the level. Unknown when not loaded. */
+    /** Client thread: what the guard knows about the block at pos, from the level (its own dimension). Unknown when not loaded. */
     public BlockFacts facts(Level level, BlockPos pos, boolean torch) {
         if (level == null || !level.isLoaded(pos)) return BlockFacts.UNKNOWN;
-        return facts((x, y, z) -> {
-            BlockPos p = new BlockPos(x, y, z);
-            return level.isLoaded(p) ? level.getBlockState(p) : null;
-        }, pos.getX(), pos.getY(), pos.getZ(), torch);
+        return facts(levelAt(level), Guard.dimOf(level), pos.getX(), pos.getY(), pos.getZ(), torch);
     }
 
     /**
@@ -234,7 +231,7 @@ public final class PolicyRuntime {
      * column = unknown. The block id is looked up only for a block entity (the chopped-log exception) - this runs for
      * every break candidate of an A* search, so it stays a handful of array reads.
      */
-    public BlockFacts facts(StateAt at, int x, int y, int z, boolean torch) {
+    public BlockFacts facts(StateAt at, String dim, int x, int y, int z, boolean torch) {
         if (!at.loaded(x, z)) return BlockFacts.UNKNOWN;
         BlockState st = at.at(x, y, z);
         if (st == null) return BlockFacts.UNKNOWN;
@@ -257,9 +254,8 @@ public final class PolicyRuntime {
             if (f == Fluid.WATER) sides = Fluid.WATER;
         }
         // STRUCTURE_BLOCKS: the block's structure fact (StructureTable) and, for a structure block, whether I placed it
-        BreakPolicy.Structure sf = StructureTable.of(st.getBlock());
-        boolean mine = sf == BreakPolicy.Structure.YES && OwnPlaced.at(x, y, z);
-        return new BlockFacts(true, id, ore, unbreakable, in, above, sides, below, falling, torch, false, sf, mine);
+        BreakPolicy.StructureFacts sf = structureFacts(at, dim, x, y, z);
+        return new BlockFacts(true, id, ore, unbreakable, in, above, sides, below, falling, torch, false, sf.structure(), sf.placedByMe());
     }
 
     private static final int[][] SIDES = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
@@ -326,8 +322,6 @@ public final class PolicyRuntime {
         try {
             BreakPolicy.Verdict v = BreakPolicy.judge(s, new BreakPolicy.Ask(action, in, dim, x, y, z, f, me));
             if (!v.allowed()) stats.deny(site, v.reason());
-            // AA's way prices (sites "aa-..."): a structure refusal is shown in aa why
-            if (site != null && site.startsWith("aa-") && BreakPolicy.structureRefusal(v)) noteStructure(site + " " + x + " " + y + " " + z + ": " + v.reason());
             return v;
         } catch (Throwable t) {
             stats.error(site + ": " + t);

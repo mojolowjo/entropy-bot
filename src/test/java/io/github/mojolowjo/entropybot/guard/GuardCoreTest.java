@@ -8,8 +8,8 @@ class GuardCoreTest {
     static final String OW = "minecraft:overworld";
     static final GuardCore.BlockInfo PLAIN = GuardCore.BlockInfo.PLAIN;
     /** Owner 2026-10-23: a chest or planks is just a loaded block to the guard (no built / block-entity floor). */
-    static final GuardCore.BlockInfo CHEST = GuardCore.BlockInfo.of(true);
-    static final GuardCore.BlockInfo PLANKS = GuardCore.BlockInfo.of(true);
+    static final GuardCore.BlockInfo CHEST = GuardCore.BlockInfo.of(true, BreakPolicy.Structure.NO);
+    static final GuardCore.BlockInfo PLANKS = GuardCore.BlockInfo.of(true, BreakPolicy.Structure.NO);
 
     static final String POLICY = "{\"areas\":[{\"name\":\"map\",\"x1\":-272,\"z1\":-64,\"x2\":223,\"z2\":431}],"
             + "\"protect\":[{\"name\":\"base\",\"x1\":-40,\"y1\":45,\"z1\":170,\"x2\":-10,\"y2\":80,\"z2\":200}]}";

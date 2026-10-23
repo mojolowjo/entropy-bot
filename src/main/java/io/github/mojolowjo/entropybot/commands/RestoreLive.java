@@ -197,10 +197,9 @@ public final class RestoreLive {
     public Commands commands() { return c; }
 
     /** 0.24.3: the ledger says the bot built this cell itself (why starts "built:"). */
-    boolean builtByMe(int x, int y, int z) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null) return false;
-        return book.ledger.placedByMe(Guard.dimOf(mc.level), x, y, z);
+    boolean builtByMe(String dim, int x, int y, int z) {
+        // the caller's dimension (the pathfinder thread asks too: no mc.level read here)
+        return dim != null && book.ledger.placedByMe(dim, x, y, z);
     }
 
     /** 0.33.0 (A3): a station I placed myself (ledger "built: station") that may be picked up. */

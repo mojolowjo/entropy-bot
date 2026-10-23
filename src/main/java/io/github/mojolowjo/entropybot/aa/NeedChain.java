@@ -62,11 +62,14 @@ public final class NeedChain {
      * many blocks there are (0: not counted, as many as needed; a tree: its connected logs, all of which the chop takes), and
      * {@code gives}: the item it yields when a tag need asked for it (the loot data; null: the item asked for, or the block).
      */
-    public record Spot(int x, int y, int z, double dist, String block, int count, String gives) {
+    public record Spot(int x, int y, int z, double dist, String block, int count, String gives, double bonusS) {
+        public Spot(int x, int y, int z, double dist, String block, int count, String gives) { this(x, y, z, dist, block, count, gives, 0); }
         public Spot(int x, int y, int z, double dist, String block, int count) { this(x, y, z, dist, block, count, null); }
         public Spot(int x, int y, int z, double dist, String block) { this(x, y, z, dist, block, 0, null); }
         /** The same spot, yielding {@code item}. */
-        public Spot giving(String item) { return new Spot(x, y, z, dist, block, count, item); }
+        public Spot giving(String item) { return new Spot(x, y, z, dist, block, count, item, bonusS); }
+        /** STRUCTURE_BLOCKS: a station's price bonus in seconds (a use-stations area), taken off its walk in the option's cost. */
+        public Spot withBonus(double s) { return new Spot(x, y, z, dist, block, count, gives, s); }
         String key() { return x + "," + y + "," + z; }
     }
 
@@ -1095,9 +1098,11 @@ public final class NeedChain {
         if (at == null) return null;
         if (table) c.tableWalked = true; else c.furnaceWalked = true;
         Walked wk = walk(c, at.x(), at.y(), at.z(), at.dist());
-        c.seconds += Math.max(c.away, wk.seconds());
+        double walkS = Math.max(c.away, wk.seconds());
+        double bonus = Math.min(walkS, Math.max(0, at.bonusS()));       // a use-stations station: seconds off its walk (never below 0)
+        c.seconds += walkS - bonus;
         c.away = 0;
-        return noted("at the " + label + " " + Math.round(at.dist()) + " m", wk);
+        return noted("at the " + label + " " + Math.round(at.dist()) + " m" + (bonus > 0 ? " (" + io.github.mojolowjo.entropybot.guard.AreaTags.USE_STATIONS + " -" + Math.round(bonus) + " s)" : ""), wk);
     }
 
     /** Back to the stations after a trip to a new source: the same walk as the trip there (its path, or its line). */

@@ -54,7 +54,8 @@ public final class BotAPI {
             GuardCore.BlockInfo info = GuardCore.BlockInfo.PLAIN;
             var mc = net.minecraft.client.Minecraft.getInstance();
             boolean here = mc.level != null && dim.equals(io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level));
-            if (a.equals("break") && here) info = core().guard.infoFor(mc.level, new net.minecraft.core.BlockPos(x, y, z));
+            // a break asks the cell's block: another dimension or an unloaded cell has none here, so it is not loaded (never ok)
+            if (a.equals("break")) info = here ? core().guard.infoFor(mc.level, new net.minecraft.core.BlockPos(x, y, z)) : GuardCore.BlockInfo.UNKNOWN;
             // a walk that ends next to a portal could step in: part of the floor, so in every mode
             if (a.equals("go") && here) {
                 String portal = io.github.mojolowjo.entropybot.guard.Guard.portalNear(mc.level, x, y, z, 2);

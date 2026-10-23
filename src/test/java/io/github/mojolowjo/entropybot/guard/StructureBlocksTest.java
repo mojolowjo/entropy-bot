@@ -80,13 +80,126 @@ class StructureBlocksTest {
             @Override public boolean allowed(int x, int y, int z) { return true; }
             @Override public String blockAt(int x, int y, int z) { return world.get(x + " " + y + " " + z); }
             @Override public List<Nearby.Mine> own() { return List.of(new Nearby.Mine(110, 64, 10, "minecraft:furnace")); }
-            @Override public Verdict stationUse(int x, int y, int z, boolean mine) { return BreakPolicy.stationUse(p, OW, x, y, z, mine); }
+            // no stationUse override: the scan states the owner's policy, Scan.stationUse asks BreakPolicy itself
+            @Override public Policy stationPolicy() { return p; }
+            @Override public String stationDim() { return OW; }
         };
-        List<String> skipped = new java.util.ArrayList<>();
-        List<Spot> l = Nearby.stations(s, new int[]{0, 64, 0}, furnace, skipped);
-        assertEquals(List.of(110, 20), l.stream().map(Spot::x).toList(), "mine in yard first, then the one in camp; the wild one is gone");
-        assertEquals(1, skipped.size());
-        assertTrue(skipped.get(0).contains("3 64 -50") && skipped.get(0).contains("wild station"), skipped.get(0));
+        Nearby.Lookup l = Nearby.lookup(s, new int[]{0, 64, 0}, furnace);
+        assertEquals(List.of(110, 20), l.spots().stream().map(Spot::x).toList(), "mine in yard (use-stations bonus) first, then the one in camp; the wild one is gone");
+        assertEquals(1, l.skipped().size());
+        assertTrue(l.skipped().get(0).contains("3 64 -50") && l.skipped().get(0).contains("wild station"), l.skipped().get(0));
+        assertTrue(l.priced().get(0).startsWith("110 64 10: use-stations -"), "the bonus is said in the lookup's notes: " + l.priced());
+        assertEquals(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("nearby.useStationsS"), l.spots().get(0).bonusS(), 1e-9, "a price in seconds, from Tuning");
+    }
+
+    @Test
+    void aUseStationsStationFarAwayLosesToOneAtHand() {
+        // a furnace of mine in yard 500 blocks out (yard moved there) against one in camp at hand
+        Policy far = Policy.parse(POLICY.replace("\"x1\":100,\"z1\":0,\"x2\":120,\"z2\":20", "\"x1\":490,\"z1\":0,\"x2\":510,\"z2\":20"));
+        Map<String, String> world = Map.of("500 64 10", "minecraft:furnace", "5 64 5", "minecraft:furnace");
+        var s = new Nearby.Scan() {
+            @Override public List<int[]> logs(int radius) { return List.of(); }
+            @Override public List<int[]> find(Set<String> blocks, int radius) { return List.of(new int[]{5, 64, 5}); }
+            @Override public boolean isLog(String block) { return false; }
+            @Override public boolean fairOk(int x, int y, int z) { return true; }
+            @Override public boolean leavesNear(int x, int y, int z, int reach) { return false; }
+            @Override public boolean allowed(int x, int y, int z) { return true; }
+            @Override public String blockAt(int x, int y, int z) { return world.get(x + " " + y + " " + z); }
+            @Override public List<Nearby.Mine> own() { return List.of(new Nearby.Mine(500, 64, 10, "minecraft:furnace")); }
+            @Override public Policy stationPolicy() { return far; }
+            @Override public String stationDim() { return OW; }
+        };
+        Nearby.Lookup l = Nearby.lookup(s, new int[]{0, 64, 0}, Set.of("minecraft:furnace"));
+        assertEquals(List.of(5, 500), l.spots().stream().map(Spot::x).toList(), "the bonus is seconds off the walk, not a rank: 500 blocks lose");
+        assertEquals(1, l.priced().size(), "the far one still carries its bonus, said");
+    }
+
+    @Test
+    void aScanWithNoPolicyRefusesEveryStation() {
+        var s = new Nearby.Scan() {
+            @Override public List<int[]> logs(int radius) { return List.of(); }
+            @Override public List<int[]> find(Set<String> blocks, int radius) { return List.of(new int[]{1, 64, 1}); }
+            @Override public boolean isLog(String block) { return false; }
+            @Override public boolean fairOk(int x, int y, int z) { return true; }
+            @Override public boolean leavesNear(int x, int y, int z, int reach) { return false; }
+            @Override public boolean allowed(int x, int y, int z) { return true; }
+            @Override public String blockAt(int x, int y, int z) { return "minecraft:furnace"; }
+            @Override public List<Nearby.Mine> own() { return List.of(); }
+        };
+        Nearby.Lookup l = Nearby.lookup(s, new int[]{0, 64, 0}, Set.of("minecraft:furnace"));
+        assertTrue(l.spots().isEmpty());
+        assertTrue(l.skipped().get(0).endsWith("no policy"), l.skipped().toString());
+    }
+
+    // ---- 0.39.z26 fix round: the click, the path line and the facts reader through their real halves ----
+
+    static final Policy P = Policy.parse(POLICY);
+
+    /** The click: GuardCore's break branch with the guard's real policy and the facts the one reader gives (no withStructure shortcut). */
+    @Test
+    void theClicksStructureBranchAsksThePolicyWithTheReadersFacts() {
+        GuardCore g = new GuardCore();
+        g.setPolicy(P);
+        OwnPlaced.cells = (d, x, y, z) -> OW.equals(d) && x == 500 && y == 64 && z == 501;
+        try {
+            // Guard.infoFor's pure half: a structure block outside every area, not mine
+            GuardCore.BlockInfo wall = GuardCore.BlockInfo.ofFacts(true, BreakPolicy.cellStructure(true, Structure.YES, OW, 500, 64, 500));
+            assertEquals("structure block outside my areas", g.checkUnlogged(OW, 500, 64, 500, "break", wall).reason());
+            GuardCore.BlockInfo mine = GuardCore.BlockInfo.ofFacts(true, BreakPolicy.cellStructure(true, Structure.YES, OW, 500, 64, 501));
+            assertTrue(mine.placedByMe(), "the ledger of the caller's dimension");
+            assertTrue(g.checkUnlogged(OW, 500, 64, 501, "break", mine).allowed(), "placed by me: breaks anywhere");
+            GuardCore.BlockInfo nether = GuardCore.BlockInfo.ofFacts(true, BreakPolicy.cellStructure(true, Structure.YES, "minecraft:the_nether", 500, 64, 501));
+            assertFalse(nether.placedByMe(), "another dimension's cell is not my placement");
+            assertTrue(g.checkUnlogged(OW, 5, 64, 5, "break", wall).allowed(), "camp is tagged break-structures");
+            assertEquals("not loaded yet", g.checkUnlogged(OW, 5, 64, 5, "break", GuardCore.BlockInfo.ofFacts(false, null)).reason(), "infoFor of an unloaded cell");
+            assertEquals("not loaded yet", g.checkUnlogged(OW, 5, 64, 5, "break", GuardCore.BlockInfo.ofFacts(true, BreakPolicy.cellStructure(true, null, OW, 5, 64, 5))).reason(),
+                    "the table not built: not loaded");
+            assertTrue(g.checkUnlogged(OW, 500, 64, 500, "break", GuardCore.BlockInfo.ofFacts(true, BreakPolicy.cellStructure(true, Structure.NO, OW, 500, 64, 500))).allowed());
+        } finally {
+            OwnPlaced.cells = null;
+        }
+    }
+
+    /** CostAdvisorHook's structure line and the non-travel A* hook (BreakPolicy.pathStructure): no snapshot refuses. */
+    @Test
+    void thePathLineRefusesWithNoSnapshotAndAsksTheSameRule() {
+        Verdict none = BreakPolicy.pathStructure(null, OW, 0, 64, 0, BreakPolicy.cellStructure(true, Structure.NO, OW, 0, 64, 0));
+        assertFalse(none.allowed());
+        assertEquals("no snapshot", none.reason());
+        assertFalse(Double.isNaN(none.multiplier()));
+        assertEquals("structure block outside my areas", BreakPolicy.pathStructure(SP, OW, 500, 64, 500, BreakPolicy.cellStructure(true, Structure.YES, OW, 500, 64, 500)).reason());
+        assertTrue(BreakPolicy.pathStructure(SP, OW, 5, 64, 5, BreakPolicy.cellStructure(true, Structure.YES, OW, 5, 64, 5)).allowed());
+        assertEquals("not loaded yet", BreakPolicy.pathStructure(SP, OW, 5, 64, 5, BreakPolicy.cellStructure(false, Structure.NO, OW, 5, 64, 5)).reason());
+        assertTrue(BreakPolicy.structureRefusal(BreakPolicy.pathStructure(SP, OW, 500, 64, 500, new BreakPolicy.StructureFacts(Structure.YES, false))), "typed kind, not a string");
+    }
+
+    /** #planks through the table's own rule (WorldGenFiles.classify) over a fixture tag holder. */
+    @Test
+    void planksAreNeverStructureThroughTheTablesTagRule() throws Exception {
+        // the table's own never list (the unit tests have no game classes, so its source line is read): it must hold BlockTags.PLANKS
+        String src = java.nio.file.Files.readString(java.nio.file.Path.of("src/main/java/io/github/mojolowjo/entropybot/guard/StructureTable.java"));
+        var m = java.util.regex.Pattern.compile("NEVER_TAGS = List\\.of\\(([^)]*)\\)").matcher(src);
+        assertTrue(m.find(), "StructureTable keeps its NEVER_TAGS list");
+        for (String k : List.of("BlockTags.PLANKS", "BlockTags.LOGS", "Tags.Blocks.ORES")) assertTrue(m.group(1).contains(k), "NEVER_TAGS holds " + k + ": " + m.group(1));
+        assertTrue(src.contains("WorldGenFiles.classify(STRUCTURE_TAGS, NEVER_TAGS, s::is"), "the table classifies through the rule tested below");
+        // fixture: a small tag holder like the game's (planks.json, impermeable.json, stairs.json), the table's rule over it
+        Map<String, Set<String>> tags = Map.of("#planks", Set.of("oak_planks", "spruce_planks"), "#impermeable", Set.of("glass"), "#stairs", Set.of("oak_stairs"));
+        List<String> structure = List.of("#stairs", "#impermeable"), never = List.of("#ores", "#logs", "#planks");
+        java.util.function.Function<String, java.util.function.Predicate<String>> of = b -> t -> tags.getOrDefault(t, Set.of()).contains(b);
+        Set<String> gen = Set.of("stone");
+        assertEquals(Structure.NO, WorldGenFiles.classify(structure, never, of.apply("oak_planks"), false, false, true, false, gen, "oak_planks"), "crafted, never world gen, but #planks");
+        assertEquals(Structure.YES, WorldGenFiles.classify(structure, never, of.apply("oak_stairs"), false, false, true, false, gen, "oak_stairs"));
+        assertEquals(Structure.YES, WorldGenFiles.classify(structure, never, of.apply("glass"), false, false, false, false, gen, "glass"));
+        assertEquals(Structure.NOT_LOADED, WorldGenFiles.classify(structure, never, of.apply("oak_stairs"), false, false, true, true, gen, "oak_stairs"),
+                "a recipe of it could not be read: not loaded, never not crafted");
+    }
+
+    @Test
+    void badTagsInTheFileAreSaidNotDropped() {
+        Box b = Box.fromJson(com.google.gson.JsonParser.parseString("{\"name\":\"odd\",\"x1\":0,\"z1\":0,\"x2\":1,\"z2\":1,\"tags\":[\"use-stations\",3,{\"a\":1}]}").getAsJsonObject(), OW);
+        assertEquals(List.of("use-stations"), b.tags, "the words kept; the two others counted and said (Quiet)");
+        Box n = Box.fromJson(com.google.gson.JsonParser.parseString("{\"name\":\"odd2\",\"x1\":0,\"z1\":0,\"x2\":1,\"z2\":1,\"tags\":\"use-stations\"}").getAsJsonObject(), OW);
+        assertEquals(List.of(), n.tags);
     }
 
     @Test

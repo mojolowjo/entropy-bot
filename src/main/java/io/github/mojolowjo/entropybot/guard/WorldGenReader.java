@@ -21,8 +21,9 @@ import java.util.Set;
  * registries are not there, so the set comes from the client's own jars on singleplayer and on a server alike (one path):
  * the loot book's jar packs (JarPacks), read on the shared background thread after the join, cached per mod list in
  * {@code entropybot/worldgen-<hash>.json}, then the owner's {@code worldgen-override.json}. Rule 15: {@link #blocks} is null
- * until the read is done (not loaded), then a set (empty = the jars gave no world-gen data, said). A failed read is said
- * and gives the empty set (crafted blocks refused outside areas), never a silent open. Loader notes: vanilla data-pack API
+ * until the read is done (not loaded), then a set (empty = the jars gave no world-gen data, said). A failed read is its
+ * own state ({@link #failed}, the reason kept): the set stays null, so crafted blocks answer not loaded with that reason,
+ * never the empty set; the next join reads again. The writes that start a read share the lock with {@code gen}. Loader notes: vanilla data-pack API
  * (MultiPackResourceManager.listResources); Fabric: the same calls.
  */
 final class WorldGenReader {
@@ -37,21 +38,34 @@ final class WorldGenReader {
     static volatile int jars = -1;
     /** The jar read gave no world-gen file at all (before the override). */
     static volatile boolean noData;
+    /** FAILED: the read's reason (null: not failed); {@link #blocks} stays null (not loaded) and the next join reads again. */
+    static volatile String failed;
+    private static volatile boolean saidWaiting;
 
     /** Game thread, once per world: drops the old set and starts the read. dir: the entropybot folder (null: no cache, no override). */
     static void start(Path dir, String game) {
         int my;
-        synchronized (WorldGenReader.class) { my = ++gen; }
-        blocks = null;
-        jars = -1;
-        noData = false;
+        synchronized (WorldGenReader.class) {
+            my = ++gen;
+            blocks = null;
+            jars = -1;
+            noData = false;
+            failed = null;
+        }
+        if (JarPacks.busy() && !saidWaiting) {
+            saidWaiting = true;
+            LOG.info("[entropybot] structure facts: the world-gen read waits behind the loot book's read on the shared jars thread - crafted blocks answer not loaded until both are done");
+        }
         JarPacks.POOL.execute(() -> {
             Set<String> s;
-            boolean none = false;
+            boolean none;
             try {
                 long t0 = System.nanoTime();
                 var packs = JarPacks.select();
-                jars = packs.idVersions.size();
+                synchronized (WorldGenReader.class) {
+                    if (my != gen) return;            // a newer world started its own read
+                    jars = packs.idVersions.size();
+                }
                 String hash = LootFiles.hash(packs.idVersions, game);
                 Path cache = dir == null ? null : dir.resolve(WorldGenFiles.cacheName(hash));
                 WorldGenFiles.Read r = null;
@@ -84,9 +98,12 @@ final class WorldGenReader {
                 LOG.info("[entropybot] structure facts: world gen places {} blocks (from the {}: {} packs, {} files, {} skipped{}; configured features and noise settings only; structure templates are not read: villages and fossils are built things, their blocks stay structure blocks); {} ms",
                         s.size(), from, jars, r.files(), r.bad(), r.firstBad() == null ? "" : ", first: " + r.firstBad(), (System.nanoTime() - t0) / 1_000_000);  // structural: ns to ms
             } catch (RuntimeException | Error e) {
-                LOG.warn("[entropybot] structure facts: the world-gen read failed ({}) - crafted blocks are refused outside areas until the override file names them", e.toString());
-                s = Set.of();
-                none = true;
+                // its own state FAILED: crafted blocks answer not loaded with this reason (never the empty set); read again on the next join
+                LOG.warn("[entropybot] structure facts: the world-gen read failed ({}) - crafted blocks answer not loaded and are refused; it is read again on the next join", e.toString());
+                synchronized (WorldGenReader.class) {
+                    if (my == gen) failed = e.toString();
+                }
+                return;
             }
             s = override(s, dir);
             synchronized (WorldGenReader.class) {

@@ -69,20 +69,40 @@ public final class Nearby {
         /**
          * STRUCTURE_BLOCKS (RULES 16): may the station at the cell be used ({@code BreakPolicy.stationUse} over the owner's
          * areas): refused = no option (a wild one), allowed with the use-stations rule = ranked first. The live scan
-         * (NearbyLive) asks the guard's policy; this default (a scan with no policy, JUnit fakes) lets every station be used.
+         * (NearbyLive) states the guard's policy and its dimension. No default that allows (0.39.z26 fix 4): a scan with no
+         * policy refuses every station with the reason "no policy"; a scan never decides the rule itself.
          */
         default io.github.mojolowjo.entropybot.guard.BreakPolicy.Verdict stationUse(int x, int y, int z, boolean mine) {
-            return new io.github.mojolowjo.entropybot.guard.BreakPolicy.Verdict(true, 1, null, false, "station, a scan with no policy");
+            io.github.mojolowjo.entropybot.guard.Policy p = stationPolicy();
+            if (p == null) return new io.github.mojolowjo.entropybot.guard.BreakPolicy.Verdict(false, Double.POSITIVE_INFINITY, "no policy", false,
+                    io.github.mojolowjo.entropybot.guard.BreakPolicy.Kind.STATION.word, io.github.mojolowjo.entropybot.guard.BreakPolicy.Kind.STATION);
+            return io.github.mojolowjo.entropybot.guard.BreakPolicy.stationUse(p, stationDim(), x, y, z, mine);
+        }
+        /** The owner's areas the station rule reads (the guard's policy); null: none known, every station refused. */
+        default io.github.mojolowjo.entropybot.guard.Policy stationPolicy() { return null; }
+        /** The dimension the scan looks in (the policy's areas are per dimension). */
+        default String stationDim() { return null; }
+    }
+
+    /**
+     * One station lookup's answer (0.39.z26 fix 11: per lookup, returned to the caller, never a global last state): the
+     * usable stations by price, the skipped ones ("x y z: why") and the price notes ("x y z: use-stations -30 s").
+     */
+    public record Lookup(List<Spot> spots, List<String> skipped, List<String> priced) {
+        public Lookup { spots = List.copyOf(spots); skipped = List.copyOf(skipped); priced = List.copyOf(priced); }
+
+        /** The lookup's notes: "stations skipped: ...", "stations priced: ...". */
+        public List<String> notes() {
+            List<String> out = new ArrayList<>();
+            if (!skipped.isEmpty()) out.add("stations skipped: " + String.join("; ", skipped));
+            if (!priced.isEmpty()) out.add("stations priced: " + String.join("; ", priced));
+            return out;
         }
     }
 
-    /** The last station lookup's skipped stations ("x y z: why"), for aa why; empty when none was skipped. */
-    private static volatile List<String> lastSkipped = List.of();
-
-    /** " | stations skipped: ..." for aa why and the stations line, or "". */
-    public static String skippedLine() {
-        List<String> l = lastSkipped;
-        return l.isEmpty() ? "" : " | stations skipped: " + String.join("; ", l);
+    /** " | stations skipped: ... | stations priced: ..." of a lookup's notes, or "". */
+    public static String notesLine(List<String> notes) {
+        return notes == null || notes.isEmpty() ? "" : " | " + String.join(" | ", notes);
     }
 
     /** station-stale: "stations: forgot my crafting_table at x y z: the block there is &lt;id&gt; now". */
@@ -124,7 +144,7 @@ public final class Nearby {
         return switch (f) {
             case StationFact.NotLoaded n -> StationFact.NOT_LOADED_LINE + (NOT_LOADED.equals(n.why()) ? "" : " (" + n.why() + ")");
             case StationFact.None n -> "stations: none known" + (NONE_KNOWN.equals(n.why()) ? "" : " (" + n.why() + ")");
-            case StationFact.Known k -> stationsLine(k.spots(), own, blocks, scanR);
+            case StationFact.Known k -> stationsLine(k.spots(), own, blocks, scanR) + notesLine(k.notes());
         };
     }
 
@@ -139,9 +159,9 @@ public final class Nearby {
             case StationBlocks.Answer.NotLoaded n -> new StationFact.NotLoaded(n.why());
             case StationBlocks.Answer.None n -> new StationFact.None(n.why());
             case StationBlocks.Answer.Of o -> {
-                List<Spot> l = stations(s, me, o.ids());
-                yield l.isEmpty() ? new StationFact.None(lastSkipped.isEmpty() ? NONE_KNOWN : "every one known is refused:" + skippedLine().substring(" | stations skipped:".length()))
-                        : new StationFact.Known(l);
+                Lookup l = lookup(s, me, o.ids());
+                yield l.spots().isEmpty() ? new StationFact.None(l.skipped().isEmpty() ? NONE_KNOWN : "every one known is refused: " + String.join("; ", l.skipped()))
+                        : new StationFact.Known(l.spots(), l.notes());
             }
         };
     }
@@ -156,20 +176,19 @@ public final class Nearby {
      * dropped only when the bot arrives and finds it gone (the ledger record goes then), never for being far.
      */
     public static List<Spot> stations(Scan s, int[] me, Set<String> blocks) {
-        List<String> skipped = new ArrayList<>();
-        List<Spot> out = stations(s, me, blocks, skipped);
-        lastSkipped = List.copyOf(skipped);
-        return out;
+        return lookup(s, me, blocks).spots();
     }
 
     /**
      * The same, with STRUCTURE_BLOCKS' station rule ({@link Scan#stationUse}): a station the policy refuses (a wild one:
-     * not placed by me, outside every area of the owner's) is no option and goes into {@code skipped} as "x y z: why";
-     * a station in a use-stations area ranks before every other, then nearest first.
+     * not placed by me, outside every area of the owner's) is no option and goes into the lookup's skipped notes as
+     * "x y z: why"; a station in a use-stations area gets a price bonus ({@code nearby.useStationsS} seconds off its walk,
+     * {@link Spot#bonusS}; the station option's cost in NeedChain takes it), then the cheapest walk first: a price, not a sort.
      */
-    public static List<Spot> stations(Scan s, int[] me, Set<String> blocks, List<String> skipped) {
+    public static Lookup lookup(Scan s, int[] me, Set<String> blocks) {
         List<Spot> out = new ArrayList<>();
-        if (s == null || me == null || blocks == null || blocks.isEmpty()) return out;
+        List<String> skipped = new ArrayList<>(), priced = new ArrayList<>();
+        if (s == null || me == null || blocks == null || blocks.isEmpty()) return new Lookup(out, skipped, priced);
         Set<String> seen = new java.util.HashSet<>(), first = new java.util.HashSet<>();
         for (Mine m : s.own()) {
             if (m == null || m.block() == null || !blocks.contains(m.block())) continue;
@@ -181,17 +200,26 @@ public final class Nearby {
             }
             if (!seen.add(key(p[0], p[1], p[2]))) continue;
             if (!usable(s, p, true, first, skipped)) continue;
-            out.add(new Spot(p[0], p[1], p[2], dist(p, me), m.block()));
+            out.add(priced(new Spot(p[0], p[1], p[2], dist(p, me), m.block()), first, priced));
         }
         for (int[] p : s.find(blocks, scanR())) {
             if (!seen.add(key(p[0], p[1], p[2]))) continue;
             String id = s.blockAt(p[0], p[1], p[2]);
             if (id == null || !blocks.contains(id)) continue;
             if (!usable(s, p, false, first, skipped)) continue;
-            out.add(new Spot(p[0], p[1], p[2], dist(p, me), id));
+            out.add(priced(new Spot(p[0], p[1], p[2], dist(p, me), id), first, priced));
         }
-        out.sort(Comparator.comparing((Spot sp) -> !first.contains(key(sp.x(), sp.y(), sp.z()))).thenComparingDouble(Spot::dist));
-        return out;
+        out.sort(Comparator.comparingDouble((Spot sp) -> NeedChain.walkS(sp.dist()) - sp.bonusS()).thenComparingDouble(Spot::dist));
+        return new Lookup(out, skipped, priced);
+    }
+
+    /** A use-stations station's price bonus (Tuning nearby.useStationsS), said in the lookup's notes. */
+    private static Spot priced(Spot sp, Set<String> first, List<String> priced) {
+        if (!first.contains(key(sp.x(), sp.y(), sp.z()))) return sp;
+        double b = Tuning.get("nearby.useStationsS");
+        priced.add(sp.x() + " " + sp.y() + " " + sp.z() + ": " + io.github.mojolowjo.entropybot.guard.AreaTags.USE_STATIONS + " -" + Math.round(b)
+                + " s off the walk of " + Math.round(NeedChain.walkS(sp.dist())) + " s");
+        return sp.withBonus(b);
     }
 
     private static boolean usable(Scan s, int[] p, boolean mine, Set<String> first, List<String> skipped) {

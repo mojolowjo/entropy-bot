@@ -2,6 +2,7 @@ package io.github.mojolowjo.entropybot.guard;
 
 import com.google.gson.JsonElement;
 import com.mojang.logging.LogUtils;
+import io.github.mojolowjo.entropybot.JarPacks;
 import io.github.mojolowjo.entropybot.Quiet;
 import io.github.mojolowjo.entropybot.guard.BreakPolicy.Structure;
 import net.minecraft.client.Minecraft;
@@ -55,7 +56,7 @@ public final class StructureTable {
             BlockTags.WALL_SIGNS, BlockTags.ALL_HANGING_SIGNS, BlockTags.BANNERS, BlockTags.CANDLES, BlockTags.IMPERMEABLE,
             BlockTags.WOOL, BlockTags.RAILS, BlockTags.BUTTONS, BlockTags.PRESSURE_PLATES, BlockTags.FLOWER_POTS);
 
-    /** Never structure blocks (owner 2026-10-23): ores, logs and, for now, planks; the game's own tag keys. */
+    /** Never structure blocks (owner 2026-10-23): ores, logs and, for now, planks; the game's own tag keys (StructureBlocksTest checks this line). */
     private static final List<TagKey<Block>> NEVER_TAGS = List.of(Tags.Blocks.ORES, BlockTags.LOGS, BlockTags.PLANKS);
 
     private static volatile Map<Block, Structure> table;
@@ -64,7 +65,7 @@ public final class StructureTable {
     private static volatile boolean warnedNotLoaded;
     /** The world-gen set the table was built with (null: not loaded yet). */
     private static volatile Set<String> builtGen;
-    private static volatile boolean warnedGen, warnedNoData, checked;
+    private static volatile boolean warnedGen, warnedNoData, checked, warnedRecipes;
 
     /** The block's structure fact; NOT_LOADED while the table is not built (said once per world). Any thread. */
     public static Structure of(Block b) {
@@ -80,7 +81,9 @@ public final class StructureTable {
         if (s == Structure.NOT_LOADED && builtGen == null && !warnedGen) {
             warnedGen = true;
             int j = WorldGenReader.jars;
-            Quiet.line("structure facts: world-gen blocks not loaded yet (reading " + (j < 0 ? "the" : String.valueOf(j)) + " jars in the background) - crafted blocks are refused as not loaded yet until the read is done");
+            String failed = WorldGenReader.failed;
+            if (failed != null) Quiet.line("structure facts: the world-gen read failed (" + failed + ") - crafted blocks answer not loaded and are refused; it is read again on the next join");
+            else Quiet.line("structure facts: world-gen blocks not loaded yet (reading " + (j < 0 ? "the" : String.valueOf(j)) + " jars in the background) - crafted blocks are refused as not loaded yet until the read is done");
         }
         return s == null ? Structure.NOT_LOADED : s;
     }
@@ -98,7 +101,7 @@ public final class StructureTable {
             Set<String> gen = WorldGenReader.blocks;
             if (lv == builtFor && n == builtRecipes && gen == builtGen) return;
             if (lv != builtFor) {
-                table = null; warnedNotLoaded = false; warnedGen = false; checked = false; OwnPlaced.newWorld();
+                table = null; warnedNotLoaded = false; warnedGen = false; checked = false; warnedBuild = false; warnedRecipes = false; OwnPlaced.newWorld();
                 var files = io.github.mojolowjo.entropybot.Core.INSTANCE.files();
                 WorldGenReader.start(files == null ? null : files.root(), net.minecraft.SharedConstants.getCurrentVersion().getName());
                 gen = null;                           // the new world's read: not loaded until it is done
@@ -107,12 +110,24 @@ public final class StructureTable {
             builtRecipes = n;
             builtGen = gen;
             if (n == 0) return;                       // the recipes are not in yet: stays not loaded
+            table = null;                             // a failed build leaves it null: every block answers not loaded
             table = build(lv, gen);
-            if (gen != null && !checked) { checked = true; registryCheck(gen); }
+            if (gen != null && !checked) {            // 0.39.z26 fix (9): off the game tick, on the jars thread (it only logs)
+                checked = true;
+                var server = mc.getSingleplayerServer();
+                Set<String> jarSet = gen;
+                if (server != null) JarPacks.POOL.execute(() -> registryCheck(server, jarSet));
+            }
         } catch (RuntimeException e) {
-            Quiet.warn("structure facts: the table could not be built, every break stays refused as not loaded yet", e);
+            table = null;
+            if (!warnedBuild) {
+                warnedBuild = true;
+                Quiet.warn("structure facts: the table could not be built (" + e + ") - every block answers not loaded, every break stays refused", e);
+            }
         }
     }
+
+    private static volatile boolean warnedBuild;
 
     private static Map<Block, Structure> build(Level lv, Set<String> gen) {
         if (gen != null && WorldGenReader.noData && !warnedNoData) {
@@ -120,19 +135,31 @@ public final class StructureTable {
             Quiet.line("structure facts: no world-gen data in " + WorldGenReader.jars + " jars: crafted blocks are refused outside areas until the override file ("
                     + WorldGenFiles.OVERRIDE_FILE + ") names them");
         }
-        Set<Item> stations = new HashSet<>(), crafted = new HashSet<>();
+        Set<Item> stations = new HashSet<>(), crafted = new HashSet<>(), unread = new HashSet<>();
+        int failed = 0;
+        String firstFail = null;
         for (var h : lv.getRecipeManager().getRecipes()) {
             var r = h.value();
+            ItemStack out;
+            try {
+                out = r.getResultItem(lv.registryAccess());
+            } catch (RuntimeException e) {
+                // the result itself is unknown, so no block can be marked: the whole table stays not loaded (tick says it)
+                throw new IllegalStateException("recipe " + h.id() + ": its result could not be read (" + e + ")", e);
+            }
             try {
                 ItemStack sym = r.getToastSymbol();
                 if (sym != null && !sym.isEmpty()) stations.add(sym.getItem());
-                if (r.getType() == RecipeType.CRAFTING) {
-                    ItemStack out = r.getResultItem(lv.registryAccess());
-                    if (out != null && !out.isEmpty()) crafted.add(out.getItem());
-                }
+                if (r.getType() == RecipeType.CRAFTING && out != null && !out.isEmpty()) crafted.add(out.getItem());
             } catch (RuntimeException e) {
-                Quiet.warn("structure facts: a recipe could not be read, its result counts as not crafted", e);
+                failed++;                             // its result block answers not loaded, never "not crafted"
+                if (out != null && !out.isEmpty()) unread.add(out.getItem());
+                if (firstFail == null) firstFail = h.id() + ": " + e;
             }
+        }
+        if (failed > 0 && !warnedRecipes) {
+            warnedRecipes = true;
+            Quiet.line("structure facts: " + failed + " recipes could not be read (first: " + firstFail + ") - their result blocks answer not loaded, breaks of them are refused");
         }
         Map<Block, Structure> out = new IdentityHashMap<>();
         int yes = 0, tagged = 0, be = 0, st = 0, cr = 0;
@@ -140,13 +167,12 @@ public final class StructureTable {
             BlockState s = b.defaultBlockState();
             boolean t = false;
             for (TagKey<Block> k : STRUCTURE_TAGS) if (s.is(k)) { t = true; break; }
-            boolean oreOrLog = false;
-            for (TagKey<Block> k : NEVER_TAGS) if (s.is(k)) { oreOrLog = true; break; }
             boolean entity = b instanceof EntityBlock;
             Item it = b.asItem();
             boolean station = it != Items.AIR && stations.contains(it);
             boolean craft = it != Items.AIR && crafted.contains(it);
-            Structure v = WorldGenFiles.fact(t, oreOrLog, entity, station, craft, gen, BuiltInRegistries.BLOCK.getKey(b).toString());
+            Structure v = WorldGenFiles.classify(STRUCTURE_TAGS, NEVER_TAGS, s::is, entity, station, craft, it != Items.AIR && unread.contains(it), gen,
+                    BuiltInRegistries.BLOCK.getKey(b).toString());
             out.put(b, v);
             if (v == Structure.YES) {
                 yes++;
@@ -158,11 +184,13 @@ public final class StructureTable {
         return Collections.unmodifiableMap(out);
     }
 
-    /** Singleplayer only, once per world: the integrated server's registries against the jars' set; a difference is said, never used. */
-    private static void registryCheck(Set<String> jarSet) {
+    /**
+     * Singleplayer only, once per world, on {@link JarPacks#POOL} (never the game tick): the integrated server's registries
+     * against the jars' set; a difference is said, never used.
+     */
+    private static void registryCheck(net.minecraft.server.MinecraftServer server, Set<String> jarSet) {
         try {
-            Set<String> reg = registryBlocks();
-            if (reg == null) return;                  // a server's client: no registries to check against
+            Set<String> reg = registryBlocks(server);
             java.util.TreeSet<String> onlyReg = new java.util.TreeSet<>(reg), onlyJar = new java.util.TreeSet<>(jarSet);
             onlyReg.removeAll(jarSet);
             onlyJar.removeAll(reg);
@@ -175,9 +203,7 @@ public final class StructureTable {
     }
 
     /** The block ids the integrated server's registries place (configured features, the noise settings' surface rules), or null without one. */
-    private static Set<String> registryBlocks() {
-        var server = Minecraft.getInstance().getSingleplayerServer();
-        if (server == null) return null;
+    private static Set<String> registryBlocks(net.minecraft.server.MinecraftServer server) {
         var ra = server.registryAccess();
         var ops = RegistryOps.create(com.mojang.serialization.JsonOps.INSTANCE, ra);
         Set<String> names = new HashSet<>();

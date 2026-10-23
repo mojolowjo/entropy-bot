@@ -42,6 +42,8 @@ class StationRaceTest {
     /** A scan that finds nothing; the ledger (own()) is the fake one: my table 900 m away. */
     static Nearby.Scan ledgerScan(List<Nearby.Mine> mine) {
         return new Nearby.Scan() {
+        @Override public io.github.mojolowjo.entropybot.guard.Policy stationPolicy() { return io.github.mojolowjo.entropybot.aa.TestStations.OPEN; }  // stated: the owner's area over the world
+        @Override public String stationDim() { return io.github.mojolowjo.entropybot.aa.TestStations.OW; }
             @Override public List<int[]> logs(int radius) { return List.of(); }
             @Override public List<int[]> find(Set<String> blocks, int radius) { return List.of(); }
             @Override public boolean isLog(String block) { return false; }

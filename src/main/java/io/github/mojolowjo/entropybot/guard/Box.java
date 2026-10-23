@@ -201,8 +201,19 @@ public final class Box {
         AreaType type = AreaType.orWork(o.has("type") && o.get("type").isJsonPrimitive() ? o.get("type").getAsString() : null);
         String note = o.has("note") && o.get("note").isJsonPrimitive() ? o.get("note").getAsString() : null;      // AREAS
         java.util.List<String> tags = new java.util.ArrayList<>();       // STRUCTURE_BLOCKS: areas.json v2 "tags" (absent = none)
-        if (o.has("tags") && o.get("tags").isJsonArray())
-            for (var e : o.getAsJsonArray("tags")) if (e.isJsonPrimitive()) tags.add(e.getAsString());
+        if (o.has("tags") && !o.get("tags").isJsonNull()) {
+            String an = name == null ? "an unnamed area" : "area " + name;
+            if (!o.get("tags").isJsonArray()) {
+                io.github.mojolowjo.entropybot.Quiet.line("areas: " + an + ": \"tags\" is not a list (" + o.get("tags") + ") - read as no tags; fix areas.json");
+            } else {
+                int bad = 0;
+                for (var e : o.getAsJsonArray("tags")) {
+                    if (e.isJsonPrimitive() && e.getAsJsonPrimitive().isString()) tags.add(e.getAsString());
+                    else bad++;
+                }
+                if (bad > 0) io.github.mojolowjo.entropybot.Quiet.line("areas: " + an + ": " + bad + " tags are not words - skipped; fix areas.json");
+            }
+        }
         return fromJson0(o, dim, y1, y2, name).withType(type).withNote(note).withTags(tags);
     }
 

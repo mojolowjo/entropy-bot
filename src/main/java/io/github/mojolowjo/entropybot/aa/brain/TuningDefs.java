@@ -88,6 +88,7 @@ final class TuningDefs {
         Tuning.def("pathCost.perChainMax", 12, "path-cost 0.39.z12", "walk prices one chain may ask Baritone for (each spot once); past them the line x 1.3");
         Tuning.def("needChain.exploreReturn", 0.5, "rm-bootstrap 0.39.v1", "share of the explore time the walk back costs again (the explore way's return leg)");
         Tuning.def("nearby.scanR", 32, "simple-tools 0.39.w1", "blocks round the bot Baritone's world scan looks for the nearest tree log and stone (the radius its own mine process uses)");
+        Tuning.def("nearby.useStationsS", 30, "STRUCTURE_BLOCKS 0.39.z26 fix (5)", "seconds off a station's walk price when it stands in a use-stations area (a price, not a sort: a far one still loses to one at hand)");
         Tuning.def("nearby.scanMax", 64, "simple-tools 0.39.w1", "most blocks one Baritone world scan returns for the nearby fact");
         Tuning.def("nearby.scanY", 10, "simple-tools 0.39.w1", "the y-level threshold passed to Baritone's world scan (the one its mine process uses)");
         Tuning.def("nearby.maxChecks", 24, "simple-tools 0.39.w1", "scanned blocks checked (nearest first) for leaves, the policy and the tier before the nearby fact falls back to the sightings");
@@ -888,7 +889,6 @@ final class TuningDefs {
         Tuning.def("nightWork.torchesLow", 8, "rm-constants 0.39.u2 (inline literal in NightWork)", "torches under which the night work crafts more");
         Tuning.def("options.factErrorLogMs", 60_000, "rm-constants 0.39.u2 (inline literal in Options)", "milliseconds between two logs of the same facts error");
         Tuning.def("policyRuntime.waterColumnMax", 32, "rm-constants 0.39.u2 (inline literal in PolicyRuntime)", "blocks up a water column is followed");
-        Tuning.def("policyRuntime.structureNotes", 6, "STRUCTURE_BLOCKS 0.39.z26", "structure refusals of AA's way prices kept for aa why");
         Tuning.def("reachGrid.climbMax", 3, "rm-constants 0.39.u2 (inline literal in ReachGrid)", "blocks a step may climb");
         Tuning.def("reachGrid.dropMax", 3, "rm-constants 0.39.u2 (inline literal in ReachGrid)", "blocks a step may drop");
         Tuning.def("reflexNotes.lowHealth", 6, "rm-constants 0.39.u2 (inline literal in ReflexNotes)", "health at or under which the note says low health");

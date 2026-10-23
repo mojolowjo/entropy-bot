@@ -115,20 +115,10 @@ public final class BreakPolicy {
     public record BlockFacts(boolean loaded, String id, boolean ore, boolean unbreakable,
                              Fluid inCell, Fluid above, Fluid sides, Fluid below, boolean fallingAbove, boolean torch, boolean dugByMe,
                              Structure structure, boolean placedByMe) {
-        /** Without the structure facts: a loaded block is a plain one (tests, places that ask no break), an unknown one not loaded. */
-        public BlockFacts(boolean loaded, String id, boolean ore, boolean unbreakable,
-                          Fluid inCell, Fluid above, Fluid sides, Fluid below, boolean fallingAbove, boolean torch, boolean dugByMe) {
-            this(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, dugByMe, loaded ? Structure.NO : Structure.NOT_LOADED, false);
-        }
-
-        public BlockFacts(boolean loaded, String id, boolean ore, boolean unbreakable,
-                          Fluid inCell, Fluid above, Fluid sides, Fluid below, boolean fallingAbove, boolean torch) {
-            this(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, false);
-        }
-
-        public static final BlockFacts UNKNOWN = new BlockFacts(false, null, false, false, Fluid.NONE, Fluid.NONE, Fluid.NONE, Fluid.NONE, false, false);
-        /** Plain stone with nothing around it. */
-        public static final BlockFacts STONE = new BlockFacts(true, "minecraft:stone", false, false, Fluid.NONE, Fluid.NONE, Fluid.NONE, Fluid.NONE, false, false);
+        // 0.39.z26 fix (3, 12): no constructor defaults the structure fact; every facts value states it
+        public static final BlockFacts UNKNOWN = new BlockFacts(false, null, false, false, Fluid.NONE, Fluid.NONE, Fluid.NONE, Fluid.NONE, false, false, false, Structure.NOT_LOADED, false);
+        /** Plain stone with nothing around it: stated not a structure block. */
+        public static final BlockFacts STONE = new BlockFacts(true, "minecraft:stone", false, false, Fluid.NONE, Fluid.NONE, Fluid.NONE, Fluid.NONE, false, false, false, Structure.NO, false);
 
         public BlockFacts withAbove(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, f, sides, below, fallingAbove, torch, dugByMe, structure, placedByMe); }
         public BlockFacts withSides(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, f, below, fallingAbove, torch, dugByMe, structure, placedByMe); }
@@ -147,6 +137,13 @@ public final class BreakPolicy {
 
     /** The structure fact of a block (rule 15: loaded yes, loaded no, or not loaded; not loaded is never cached as no). */
     public enum Structure { NO, YES, NOT_LOADED }
+
+    /** The typed kind of a verdict the callers compare (0.39.z26 fix 11: never by the rule's string). */
+    public enum Kind {
+        OTHER("other"), STRUCTURE("structure"), STATION("station"), USE_STATIONS(AreaTags.USE_STATIONS);
+        public final String word;
+        Kind(String word) { this.word = word; }
+    }
 
     /** The refusal outside every area. */
     public static final String STRUCTURE_OUTSIDE = "structure block outside my areas";
@@ -183,12 +180,36 @@ public final class BreakPolicy {
         Box a = pol.innermostAreaAt(dim, x, y, z);
         String an = a == null ? null : a.name == null ? "box" : a.name;
         if (a != null && a.has(AreaTags.BREAK_STRUCTURES)) return Verdict.ok(1, "structure, " + an + " " + AreaTags.BREAK_STRUCTURES);
-        return Verdict.deny(a == null ? STRUCTURE_OUTSIDE : "structure block in " + an + " (no " + AreaTags.BREAK_STRUCTURES + " tag)", "structure");
+        return Verdict.deny(a == null ? STRUCTURE_OUTSIDE : "structure block in " + an + " (no " + AreaTags.BREAK_STRUCTURES + " tag)", Kind.STRUCTURE);
+    }
+
+    /** A cell's structure fact and whether I placed it (the ledger, asked for a structure block only). */
+    public record StructureFacts(Structure structure, boolean placedByMe) {
+        public static final StructureFacts NOT_LOADED = new StructureFacts(Structure.NOT_LOADED, false);
+    }
+
+    /**
+     * The pure half of the one structure-facts reader (PolicyRuntime.structureFacts): a cell not loaded (or a table not
+     * built: null) is NOT_LOADED; a structure block asks the ledger of the caller's {@code dim} ({@link OwnPlaced#at}).
+     */
+    public static StructureFacts cellStructure(boolean loaded, Structure s, String dim, int x, int y, int z) {
+        if (!loaded || s == null || s == Structure.NOT_LOADED) return StructureFacts.NOT_LOADED;
+        return new StructureFacts(s, s == Structure.YES && OwnPlaced.at(dim, x, y, z));
+    }
+
+    /**
+     * The path's structure ask (CostAdvisorHook, the non-travel A* hook in Guard): no snapshot refuses ("no snapshot",
+     * never NaN or open); else {@link #structure} with the cell's facts, the same the click asks.
+     */
+    public static Verdict pathStructure(Snapshot s, String dim, int x, int y, int z, StructureFacts f) {
+        if (s == null) return Verdict.floor("no snapshot");
+        StructureFacts sf = f == null ? StructureFacts.NOT_LOADED : f;
+        return structure(s.policy(), dim, x, y, z, sf.structure(), sf.placedByMe());
     }
 
     /** The verdict is a refusal of this rule (for the notes in aa why). */
     public static boolean structureRefusal(Verdict v) {
-        return v != null && !v.allowed() && "structure".equals(v.rule());
+        return v != null && !v.allowed() && v.kind() == Kind.STRUCTURE;
     }
 
     /**
@@ -199,17 +220,17 @@ public final class BreakPolicy {
     public static Verdict stationUse(Policy p, String dim, int x, int y, int z, boolean placedByMe) {
         Policy pol = p == null ? Policy.EMPTY : p;
         Box ko = pol.keepOutAt(dim, x, y, z);
-        if (ko != null) return Verdict.deny("in " + (ko.name == null ? "box" : ko.name) + " (keep-out)", "station");
+        if (ko != null) return Verdict.deny("in " + (ko.name == null ? "box" : ko.name) + " (keep-out)", Kind.STATION);
         Box a = pol.innermostAreaAt(dim, x, y, z);
-        if (a != null && a.has(AreaTags.USE_STATIONS)) return Verdict.ok(1, AreaTags.USE_STATIONS);
-        if (placedByMe) return Verdict.ok(1, "station, placed by me");
-        if (a != null || pol.protectAt(dim, x, y, z) != null) return Verdict.ok(1, "station, in my areas");
-        return Verdict.deny("wild station (not placed by me, outside my areas)", "station");
+        if (a != null && a.has(AreaTags.USE_STATIONS)) return Verdict.ok(1, AreaTags.USE_STATIONS, Kind.USE_STATIONS);
+        if (placedByMe) return Verdict.ok(1, "station, placed by me", Kind.STATION);
+        if (a != null || pol.protectAt(dim, x, y, z) != null) return Verdict.ok(1, "station, in my areas", Kind.STATION);
+        return Verdict.deny("wild station (not placed by me, outside my areas)", Kind.STATION);
     }
 
     /** The station sits in a use-stations area: it ranks before every other. */
     public static boolean stationPreferred(Verdict v) {
-        return v != null && v.allowed() && AreaTags.USE_STATIONS.equals(v.rule());
+        return v != null && v.allowed() && v.kind() == Kind.USE_STATIONS;
     }
 
     /**
@@ -243,8 +264,11 @@ public final class BreakPolicy {
      * {@code multiplier}: what Baritone's break (or place) cost is multiplied by when allowed (an ore under MINE is below
      * 1). {@code floor}: a deny no rule set can lift. {@code rule}: the rule that decided, for "fence why".
      */
-    public record Verdict(boolean allowed, double multiplier, String reason, boolean floor, String rule) {
+    public record Verdict(boolean allowed, double multiplier, String reason, boolean floor, String rule, Kind kind) {
+        public Verdict(boolean allowed, double multiplier, String reason, boolean floor, String rule) { this(allowed, multiplier, reason, floor, rule, Kind.OTHER); }
         static Verdict ok(double mult, String rule) { return new Verdict(true, mult, null, false, rule); }
+        static Verdict ok(double mult, String rule, Kind k) { return new Verdict(true, mult, null, false, rule, k); }
+        static Verdict deny(String reason, Kind k) { return new Verdict(false, Double.POSITIVE_INFINITY, reason, false, k.word, k); }
         static Verdict floor(String reason) { return new Verdict(false, Double.POSITIVE_INFINITY, reason, true, "floor"); }
         static Verdict deny(String reason, String rule) { return new Verdict(false, Double.POSITIVE_INFINITY, reason, false, rule); }
 

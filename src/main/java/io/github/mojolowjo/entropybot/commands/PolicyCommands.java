@@ -576,6 +576,9 @@ public final class PolicyCommands {
                 if (name.isEmpty() || parts.size() < 3) return use;
                 JsonObject b = findArea(name);
                 if (b == null) return "I have no area called " + name + " (area list)";
+                AreaType at = typeOf(b);
+                if (sub.equals("tag") && io.github.mojolowjo.entropybot.guard.AreaTypeRules.protects(at))
+                    return "a " + at.word() + " area takes no tags (it refuses everything)";
                 List<String> words = parts.subList(2, parts.size());
                 String bad = io.github.mojolowjo.entropybot.guard.AreaTags.unknown(words);
                 if (bad != null) return bad;

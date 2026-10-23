@@ -54,10 +54,10 @@ public final class GuardCore {
         default boolean torch() { return false; }
 
         /**
-         * STRUCTURE_BLOCKS: the block's structure fact (the game's data, StructureTable). The default is the plain block
-         * {@link #PLAIN} stands for; the Minecraft side ({@code Guard.infoFor}) always supplies the real fact.
+         * STRUCTURE_BLOCKS: the block's structure fact (the game's data, StructureTable). No default: every info states it
+         * ({@code Guard.infoFor} from the table, {@link #PLAIN} and each fake explicitly).
          */
-        default BreakPolicy.Structure structure() { return known() ? BreakPolicy.Structure.NO : BreakPolicy.Structure.NOT_LOADED; }
+        BreakPolicy.Structure structure();
 
         /** STRUCTURE_BLOCKS: the ledger says the bot placed this block (asked for a structure block only). */
         default boolean placedByMe() { return false; }
@@ -79,16 +79,25 @@ public final class GuardCore {
                 public boolean known() { return true; }
                 public boolean airOrWater() { return airOrWater; }
                 public boolean torch() { return torch; }
+                /** a placement asks no break: the cell's block is not a structure block being broken */
+                public BreakPolicy.Structure structure() { return BreakPolicy.Structure.NO; }
             };
         }
 
-        BlockInfo UNKNOWN = of(false);
-        BlockInfo PLAIN = of(true);
+        /** Not loaded: every break refused. */
+        BlockInfo UNKNOWN = of(false, BreakPolicy.Structure.NOT_LOADED);
+        /** A loaded plain block, stated: not a structure block. */
+        BlockInfo PLAIN = of(true, BreakPolicy.Structure.NO);
 
-        static BlockInfo of(boolean known) {
-            return new BlockInfo() {
-                public boolean known() { return known; }
-            };
+        static BlockInfo of(boolean known, BreakPolicy.Structure s) {
+            return breaking(known, s, false);
+        }
+
+        /** Guard.infoFor's pure half: not loaded = {@link #UNKNOWN}; else the cell's structure facts (PolicyRuntime.structureFacts). */
+        static BlockInfo ofFacts(boolean loaded, BreakPolicy.StructureFacts f) {
+            if (!loaded) return UNKNOWN;
+            BreakPolicy.StructureFacts sf = f == null ? BreakPolicy.StructureFacts.NOT_LOADED : f;
+            return breaking(true, sf.structure(), sf.placedByMe());
         }
     }
 

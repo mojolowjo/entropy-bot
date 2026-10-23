@@ -15,7 +15,7 @@ public final class OwnPlaced {
 
     /** The cell holds a block the bot placed itself (the current dimension's ledger). */
     public interface Cells {
-        boolean placedByMe(int x, int y, int z);
+        boolean placedByMe(String dim, int x, int y, int z);
     }
 
     /** Set by the game side (RestoreLive.load); null: nothing placed by me is known. */
@@ -26,8 +26,8 @@ public final class OwnPlaced {
     /** A new world: an unset hook warns again (StructureTable calls this per level). */
     public static void newWorld() { warned = false; }
 
-    /** Never throws: a failed read counts as "not mine" (the floor stays, the safe side). */
-    public static boolean at(int x, int y, int z) {
+    /** dim: the caller's dimension (no mc.level read here: the pathfinder thread asks too). Never throws: a failed read counts as "not mine" (the floor stays, the safe side). */
+    public static boolean at(String dim, int x, int y, int z) {
         Cells c = cells;
         if (c == null) {
             if (!warned) {          // hooks wired and loud: an unset hook is said once per world
@@ -37,7 +37,7 @@ public final class OwnPlaced {
             return false;
         }
         try {
-            return c.placedByMe(x, y, z);
+            return c.placedByMe(dim, x, y, z);
         } catch (RuntimeException e) {
             Quiet.warn("OwnPlaced.at failed, carrying on with the fallback", e);
             return false;

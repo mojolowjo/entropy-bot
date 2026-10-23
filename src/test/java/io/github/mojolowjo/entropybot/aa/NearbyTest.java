@@ -29,6 +29,8 @@ class NearbyTest {
     void clear() { TestData.clear(); }
 
     record Fake(List<int[]> logs, List<int[]> stones, Predicate<int[]> leaves, Predicate<int[]> allowed, Map<String, String> ids) implements Nearby.Scan {
+        @Override public io.github.mojolowjo.entropybot.guard.Policy stationPolicy() { return io.github.mojolowjo.entropybot.aa.TestStations.OPEN; }  // stated: the owner's area over the world
+        @Override public String stationDim() { return io.github.mojolowjo.entropybot.aa.TestStations.OW; }
         @Override public List<int[]> logs(int radius) { return logs; }
         @Override public List<int[]> find(java.util.Set<String> blocks, int radius) { return stones; }
         @Override public boolean isLog(String block) { return block.endsWith("_log"); }
@@ -81,6 +83,8 @@ class NearbyTest {
         var f = new Fake(List.of(), List.of(new int[]{30, 64, 0}, new int[]{5, 64, 0}), p -> true, p -> true,
                 Map.of("30 64 0", "minecraft:crafting_table", "5 64 0", "minecraft:crafting_table", "20 64 0", "minecraft:crafting_table"));
         var s = new Nearby.Scan() {
+        @Override public io.github.mojolowjo.entropybot.guard.Policy stationPolicy() { return io.github.mojolowjo.entropybot.aa.TestStations.OPEN; }  // stated: the owner's area over the world
+        @Override public String stationDim() { return io.github.mojolowjo.entropybot.aa.TestStations.OW; }
             @Override public List<int[]> logs(int radius) { return f.logs(radius); }
             @Override public List<int[]> find(java.util.Set<String> blocks, int radius) { return f.find(blocks, radius); }
             @Override public boolean isLog(String block) { return f.isLog(block); }
@@ -106,6 +110,8 @@ class NearbyTest {
         List<String> forgot = new java.util.ArrayList<>();
         Map<String, String> world = Map.of("-4 -60 14", "minecraft:air", "6 64 0", "minecraft:crafting_table");
         var s = new Nearby.Scan() {
+        @Override public io.github.mojolowjo.entropybot.guard.Policy stationPolicy() { return io.github.mojolowjo.entropybot.aa.TestStations.OPEN; }  // stated: the owner's area over the world
+        @Override public String stationDim() { return io.github.mojolowjo.entropybot.aa.TestStations.OW; }
             @Override public List<int[]> logs(int radius) { return List.of(); }
             @Override public List<int[]> find(java.util.Set<String> blocks, int radius) { return List.of(); }
             @Override public boolean isLog(String block) { return false; }
