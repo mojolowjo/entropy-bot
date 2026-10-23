@@ -159,7 +159,14 @@ class StructureBlocksTest {
         Set<String> gen = r.blocks();
         for (String b : List.of("diorite", "andesite", "granite", "coarse_dirt", "mossy_cobblestone"))
             assertEquals(Structure.NO, WorldGenFiles.fact(false, false, false, false, true, gen, "minecraft:" + b), b + ": crafted, but world gen places it");
-        assertEquals(Structure.YES, WorldGenFiles.fact(false, false, false, false, true, gen, "minecraft:oak_planks"), "planks: crafted, not world-gen");
+        // owner 2026-10-23: #minecraft:planks is never structure (StructureTable.NEVER_TAGS). The unit tests have no game jar,
+        // so this is the 1.21 game's data/minecraft/tags/block/planks.json as a test fixture (the mod reads the tag, not this).
+        List<String> planks = new java.util.ArrayList<>();
+        for (var v : com.google.gson.JsonParser.parseString("{\"values\":[\"minecraft:oak_planks\",\"minecraft:spruce_planks\",\"minecraft:birch_planks\","
+                + "\"minecraft:jungle_planks\",\"minecraft:acacia_planks\",\"minecraft:dark_oak_planks\",\"minecraft:crimson_planks\",\"minecraft:warped_planks\","
+                + "\"minecraft:mangrove_planks\",\"minecraft:bamboo_planks\",\"minecraft:cherry_planks\"]}").getAsJsonObject().getAsJsonArray("values")) planks.add(v.getAsString());
+        for (String p : planks)
+            assertEquals(Structure.NO, WorldGenFiles.fact(false, true, false, false, true, gen, p), p + ": in #planks, never structure");
         assertEquals(Structure.YES, WorldGenFiles.fact(false, false, false, true, true, gen, "minecraft:crafting_table"), "a station");
         assertEquals(Structure.YES, WorldGenFiles.fact(true, false, false, false, false, gen, "minecraft:glass"), "glass: #impermeable");
         assertEquals(Structure.YES, WorldGenFiles.fact(false, false, false, false, true, gen, "minecraft:bone_block"), "bone block: crafted; the fossil template is a built thing, not read");

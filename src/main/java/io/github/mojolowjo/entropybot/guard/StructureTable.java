@@ -35,7 +35,7 @@ import java.util.Set;
  * name of ours): the block tags the ruling names, a block entity, a recipe type's station (the recipes' toast symbol),
  * and "a crafting recipe makes it and world gen never places it" (the configured features and the noise settings'
  * surface rules and the structure templates' palettes, read from the client's jars by WorldGenReader on singleplayer and
- * on a server alike since 0.39.z26 (2); the integrated server's registries are only a check). Ores ({@code c:ores}) and logs ({@code #logs}) are
+ * on a server alike since 0.39.z26 (2); the integrated server's registries are only a check). Ores ({@code c:ores}), logs ({@code #logs}) and planks ({@code #planks}, owner 2026-10-23) are
  * never structure blocks.
  *
  * <p>Rule 15: before the client has a level with recipes (tags come in the configuration phase, before the recipes),
@@ -54,6 +54,9 @@ public final class StructureTable {
             BlockTags.TRAPDOORS, BlockTags.FENCES, BlockTags.FENCE_GATES, BlockTags.WALLS, BlockTags.BEDS, BlockTags.SIGNS,
             BlockTags.WALL_SIGNS, BlockTags.ALL_HANGING_SIGNS, BlockTags.BANNERS, BlockTags.CANDLES, BlockTags.IMPERMEABLE,
             BlockTags.WOOL, BlockTags.RAILS, BlockTags.BUTTONS, BlockTags.PRESSURE_PLATES, BlockTags.FLOWER_POTS);
+
+    /** Never structure blocks (owner 2026-10-23): ores, logs and, for now, planks; the game's own tag keys. */
+    private static final List<TagKey<Block>> NEVER_TAGS = List.of(Tags.Blocks.ORES, BlockTags.LOGS, BlockTags.PLANKS);
 
     private static volatile Map<Block, Structure> table;
     private static volatile Level builtFor;
@@ -137,7 +140,8 @@ public final class StructureTable {
             BlockState s = b.defaultBlockState();
             boolean t = false;
             for (TagKey<Block> k : STRUCTURE_TAGS) if (s.is(k)) { t = true; break; }
-            boolean oreOrLog = s.is(Tags.Blocks.ORES) || s.is(BlockTags.LOGS);
+            boolean oreOrLog = false;
+            for (TagKey<Block> k : NEVER_TAGS) if (s.is(k)) { oreOrLog = true; break; }
             boolean entity = b instanceof EntityBlock;
             Item it = b.asItem();
             boolean station = it != Items.AIR && stations.contains(it);
@@ -149,7 +153,7 @@ public final class StructureTable {
                 if (t) tagged++; else if (entity) be++; else if (station) st++; else cr++;
             }
         }
-        LOG.info("[entropybot] structure facts: {} of {} blocks are structure blocks ({} by tag, {} block entity, {} station, {} crafted and not world-gen); world gen: {}",
+        LOG.info("[entropybot] structure facts: {} of {} blocks are structure blocks ({} by tag, {} block entity, {} station, {} crafted and not world-gen; never: c:ores, #logs, #planks); world gen: {}",
                 yes, out.size(), tagged, be, st, cr, gen == null ? "not loaded yet (crafted blocks answer not loaded)" : gen.size() + " blocks placed (from the jars)");
         return Collections.unmodifiableMap(out);
     }
