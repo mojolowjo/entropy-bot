@@ -25,11 +25,10 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
- * The strip order's deposit leg (Step.Deposit with an order), {@link DepositRule} in the game. The chest: the nearest known
+ * The deposit job (Step.Deposit: the strip order's leg, or a plain deposit: aa want deposit, AA's bag option), {@link DepositRule} in the game. The chest: the nearest known
  * container ({@link NearbyLive#containers}, nearest by Baritone's path cost, {@link LivePathPrice}); none -> a chest from the
  * bag, else crafted (the craft job); a new one is placed near the tunnel start (walk there by the travel job, then the
  * fork's placeNear) and noted in the ledger as a station. Walk to it and open it by the fork's InteractProcess
@@ -45,7 +44,13 @@ final class DepositLeg {
 
     private final Commands c;
     private final Step.Deposit step;
-    private final Function<String, String> verb;       // StepHands.verb: one command, its own job (req reset by the caller)
+    /** The two jobs the leg starts (StepHands: the typed methods, never a verb line). */
+    interface Hands {
+        String craft(String item, int n);
+        String walk(int x, int y, int z);
+    }
+
+    private final Hands hands;
     private final Supplier<Car.Status> request;        // StepHands.requestStatus
     private Phase phase = Phase.CHOOSE;
     private int[] chest;
@@ -53,10 +58,10 @@ final class DepositLeg {
     private Map<String, Integer> before;
     private int putN;
 
-    DepositLeg(Commands c, Step.Deposit step, Function<String, String> verb, Supplier<Car.Status> request) {
+    DepositLeg(Commands c, Step.Deposit step, Hands hands, Supplier<Car.Status> request) {
         this.c = c;
         this.step = step;
-        this.verb = verb;
+        this.hands = hands;
         this.request = request;
     }
 
@@ -101,7 +106,7 @@ final class DepositLeg {
 
     /** null = started (or an instant end in {@code instant[0]}), else "error: ...". */
     String start(LocalPlayer p, String[] instant) {
-        if (StripStep.met(step.order())) { instant[0] = "ok: the strip order is met, nothing to deposit"; return null; }
+        if (step.order() != null && StripStep.met(step.order())) { instant[0] = "ok: the strip order is met, nothing to deposit"; return null; }
         if (DepositRule.toPut(bag(p)).isEmpty()) { instant[0] = "ok: deposit: nothing outside the kept set in the bag"; return null; }
         return null;
     }
@@ -152,7 +157,7 @@ final class DepositLeg {
             case KNOWN -> { chest = ch.at(); phase = Phase.USE; yield Car.Status.running("deposit: " + ch.why()); }
             case BAG -> goStart(p);
             case CRAFT -> {
-                String r = verb.apply("craft minecraft:chest 1");
+                String r = hands.craft("minecraft:chest", 1);
                 if (r != null) yield Car.Status.failed("deposit: no chest: " + r);
                 phase = Phase.CRAFT;
                 yield Car.Status.running("deposit: crafting a chest");
@@ -162,9 +167,9 @@ final class DepositLeg {
 
     /** The tunnel start (the strip's saved progress) for the new chest; no saved start: here. */
     private Car.Status goStart(LocalPlayer p) {
-        StripOrder.Saved s = StripStep.load(step.order());
+        StripOrder.Saved s = step.order() == null ? null : StripStep.load(step.order());
         if (s == null || !s.started()) { phase = Phase.PLACE; return Car.Status.running("deposit: no tunnel start saved, placing the chest here"); }
-        String r = verb.apply("goto " + s.x() + " " + s.y() + " " + s.z());
+        String r = hands.walk(s.x(), s.y(), s.z());
         if (r != null) return Car.Status.failed("deposit: to the tunnel start: " + r);
         phase = Phase.GO_START;
         return Car.Status.running("deposit: to the tunnel start " + s.x() + " " + s.y() + " " + s.z());
@@ -233,7 +238,7 @@ final class DepositLeg {
         putN = Math.max(0, total(before) - leftN);
         c.storage.rememberOpen(p);
         Gui.close(p);
-        try {
+        if (step.order() != null) try {
             StripStep.saveDeposits(step.order(), StripStep.deposits(step.order()).add(putN, chest));
         } catch (RuntimeException e) {
             return Car.Status.failed("deposit: " + putN + " items in, but the deposits were not saved: " + e.getMessage());

@@ -36,7 +36,7 @@ public final class EntropyBot {
         NeoForge.EVENT_BUS.addListener(EntropyBot::onChat);
         // 0.35.2: /ai and /bot in the bot's own window (client commands: NeoForge RegisterClientCommandsEvent, never sent to the server)
         NeoForge.EVENT_BUS.addListener(net.neoforged.neoforge.client.event.RegisterClientCommandsEvent.class,
-                e -> io.github.mojolowjo.entropybot.ai.live.LocalCommands.register(e.getDispatcher()));
+                e -> io.github.mojolowjo.entropybot.commands.LocalCommands.register(e.getDispatcher()));
         io.github.mojolowjo.entropybot.engine.WatchEvents.register();     // watch camera v1/v2 + the render-stage probe
         io.github.mojolowjo.entropybot.engine.WatchSteer.register(modBus);      // watch steer: camera-relative keys in the watch views (+ watch turn's keys)
         io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.init();  // camera v2: known air from every clear

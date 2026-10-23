@@ -1,4 +1,4 @@
-package io.github.mojolowjo.entropybot.ai.live;
+package io.github.mojolowjo.entropybot.commands;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -14,7 +14,7 @@ import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * 0.35.2: commands typed in the bot's own game window: {@code /ai <request>} and {@code /bot <any bot command>}. They run
+ * 0.35.2: a command typed in the bot's own game window: {@code /bot <any bot command>}. It runs
  * exactly as a PM from the owner ({@code Commands.localLine}: same gate, same owner rights) and never reach the server.
  * Tab completes the verbs.
  *
@@ -26,10 +26,6 @@ public final class LocalCommands {
     private LocalCommands() {}
 
     public static void register(CommandDispatcher<CommandSourceStack> d) {
-        d.register(net.minecraft.commands.Commands.literal("ai")
-                .executes(c -> send(c, "ai status"))
-                .then(net.minecraft.commands.Commands.argument("request", StringArgumentType.greedyString())
-                        .executes(c -> send(c, "ai " + StringArgumentType.getString(c, "request")))));
         d.register(net.minecraft.commands.Commands.literal("bot")
                 .executes(c -> send(c, "help"))
                 .then(net.minecraft.commands.Commands.argument("command", StringArgumentType.greedyString())

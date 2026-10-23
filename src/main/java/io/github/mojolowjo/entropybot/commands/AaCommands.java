@@ -38,7 +38,14 @@ final class AaCommands {
             return a.isEmpty() ? (set == null ? "aa only: off (usage: aa only <need>|off, e.g. aa only torches)" : "only: " + set)
                     : set == null ? "aa only: off - every need and want is back" : "only: " + set + " - every other need and want is silent (danger, reflexes and your orders stay on); aa only off to end";
         });
-        v("want", "want <item|group> [n] [high|low] | want strip <ore[ amount]>[,...] [<feet y>] [<heading>]", (c, aa, vb, a) -> aa.want(a));
+        v("want", "want <item|group> [n] [high|low] | want <item> [n], <item> [n], ... [high|low] | want strip <ore[ amount]>[,...] [<feet y>] [<heading>] | want deposit", (c, aa, vb, a) -> aa.want(a));
+        v("scan", "scan (read the chests in reach)", (c, aa, vb, a) -> aa.order("scan", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Scan(false))));
+        v("eat", "eat (the best food in the bag)", (c, aa, vb, a) -> aa.order("eat", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Eat())));
+        v("restore", "restore [radius] (put back the blocks I broke)", (c, aa, vb, a) -> {
+            int r;
+            try { r = a.isEmpty() ? io.github.mojolowjo.entropybot.restore.RestorePlan.nowDefault() : Integer.parseInt(a); } catch (NumberFormatException e) { return "usage: aa restore [radius]"; }
+            return aa.order("restore", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.PutBack(r)));
+        });
         v("goals", "goals", (c, aa, vb, a) -> aa.goalsText());
         v("drop", "drop <item>|all", (c, aa, vb, a) -> aa.drop(a));
         v("do|ask|pick|skip|use", "do <need>|none | skip <need>|none | ask on|off | pick <n> | use <option>", (c, aa, vb, a) -> {
@@ -70,6 +77,29 @@ final class AaCommands {
         v("slow", "slow [on|off|step]", (c, aa, vb, a) -> aa.slow.command(a));          // AA_STEP3 B
         v("predict", "predict", (c, aa, vb, a) -> aa.slow.predict());
         v("help", "help", (c, aa, vb, a) -> help());
+    }
+
+    /**
+     * aa want's list form: "torch 16, wooden_pickaxe, stone tools high" -> one order per part in list order, a trailing
+     * high|low applied to every part. A strip order (aa want strip ...) and a single order stay one part. Pure.
+     */
+    static List<String> wantList(String arg) {
+        String a = arg == null ? "" : arg.trim();
+        if (!a.contains(",") || a.toLowerCase().startsWith("strip ") || a.equalsIgnoreCase("strip")) return List.of(a);
+        String prio = null;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?i)\\s+(high|low)$").matcher(a);
+        if (m.find()) {
+            prio = m.group(1).toLowerCase();
+            a = a.substring(0, m.start()).trim();
+        }
+        List<String> out = new ArrayList<>();
+        for (String part : a.split(",")) {
+            String p = part.trim();
+            if (p.isEmpty()) continue;
+            if (prio != null && !p.toLowerCase().matches(".*\\s(high|low)$")) p = p + " " + prio;
+            out.add(p);
+        }
+        return out;
     }
 
     /** Every form of the table, each once, in table order. */

@@ -20,6 +20,7 @@ public final class Hints {
 
     /** An unknown word: the nearest known one when there is one, else help. */
     public static String unknown(String verb) {
+        if (verb != null && HelpCommand.DELETED.contains(verb.toLowerCase(java.util.Locale.ROOT))) return "error: " + HelpCommand.gone(verb.toLowerCase(java.util.Locale.ROOT));
         String s = VerbTable.suggest(verb);
         return "unknown command \"" + verb + "\" - " + (s != null ? "did you mean " + s + "? (help " + s + ")" : "next: help");
     }

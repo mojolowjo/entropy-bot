@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** V1b-4 (0.22.2): the companion and brain verbs back on the surface, camp here's free name, area candidates. */
 class V1bFourTest {
-    static final List<String> RESTORED = List.of("why", "deaths", "death", "corpse", "restock",
+    static final List<String> RESTORED = List.of("why", "deaths", "death", "corpse",
             "say", "spawn", "trust", "untrust");
 
     @Test

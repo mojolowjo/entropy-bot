@@ -30,8 +30,6 @@ class FenceTest {
         assertEquals("in pit (keep-out)", FenceRules.walkVerdict(r), "the floor: every mode");
         assertEquals("error: in pit (keep-out)", FenceRules.gotoRefusal("in pit (keep-out)"), "no area hint: the box names itself");
         assertEquals("you're in pit (keep-out) (60 150) - I don't go in there", FenceRules.comeRefusal("in pit (keep-out)", 60, 150));
-        assertEquals("mojolowjo is in pit (keep-out) (60 150) - I don't go in there", FenceRules.followRefusal("mojolowjo", "in pit (keep-out)", 60, 150));
-        assertEquals("stopped: mojolowjo went where I don't go, at 60 53 150", FenceRules.followLeft("mojolowjo", new int[]{60, 53, 150}));
     }
 
     @Test

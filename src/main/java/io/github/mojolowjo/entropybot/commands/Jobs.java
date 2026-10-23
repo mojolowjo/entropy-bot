@@ -91,16 +91,6 @@ public final class Jobs {
     public Job job;
     private long tpFailedAt = -100000, holdStart = -1;  // structural: a time long ago (sentinel)
     private Reflexes.Reflex reflexWas = Reflexes.Reflex.NONE;
-    /** A follow the fence keeps an eye on: {name, from}. */
-    String[] followWatch;
-    /**
-     * A follow of a player the bot cannot see, led by the position their companion mod sends (OwnerFix): {name, from}.
-     * The walk is a plain "goto" to that spot, issued again when they move; Baritone's own follow takes over when they
-     * come into view. Any other job or a stop clears it.
-     */
-    String[] followFix;
-    private int[] followFixGoal;
-    private long followFixAt;
 
     Jobs(Core core, Commands commands) {
         this.core = core;
@@ -203,8 +193,6 @@ public final class Jobs {
     /** A job made of steps (open, scan, deposit, corpse, rs, pots...): "started: <label>". */
     String startSeq(Seq s, String closeOnEnd) {
         if (!door("job " + s.label)) return io.github.mojolowjo.entropybot.aa.door.Door.refusal("job " + s.label);
-        followWatch = null;
-        followFix = null;
         Job j = new Job();
         j.type = "seq";
         j.startTick = core.tick();
@@ -345,8 +333,6 @@ public final class Jobs {
     /** "restore now": a job that only puts blocks back. */
     String startRestore(RestoreRun run, String label) {
         if (!door("restore " + label)) return io.github.mojolowjo.entropybot.aa.door.Door.refusal("restore " + label);
-        followWatch = null;
-        followFix = null;
         Job j = new Job();
         j.type = "restore";
         j.startTick = core.tick();
@@ -429,8 +415,6 @@ public final class Jobs {
             String why = spot == null ? null : FenceRules.walkVerdict(io.github.mojolowjo.entropybot.api.BotAPI.check(Guard.dimOf(Minecraft.getInstance().level), spot[0], spot[1], spot[2], "go"));
             if (why != null) return FenceRules.gotoRefusal(why);
         }
-        followWatch = null;
-        followFix = null;
         Job j = new Job();
         j.type = "travel";
         j.startTick = core.tick();
@@ -458,8 +442,7 @@ public final class Jobs {
      */
     private void launchTravel(LocalPlayer p, Job j, IBaritone b) {
         int[] d = travelDest(j);
-        boolean fixed = !j.reflex && d != null && j.goal != null && j.goal.startsWith("goto ")
-                && (j.label == null || !j.label.startsWith("following"));
+        boolean fixed = !j.reflex && d != null && j.goal != null && j.goal.startsWith("goto ");
         j.status = j.label;
         if (fixed) {
             baritone.api.pathing.goals.Goal block = new baritone.api.pathing.goals.GoalBlock(d[0], d[1], d[2]);
@@ -645,8 +628,6 @@ public final class Jobs {
         long now = core.tick();
         io.github.mojolowjo.entropybot.aa.moves.JobHands.get().tick();      // backbone step 3: the job hands follow Baritone
         reflexWatch(p);
-        if (now % 20 == 10) fenceWatch(p);  // structural: periodic cadence in ticks (20 ticks = 1 s)
-        if (now % 20 == 15) followFixTick(p);  // structural: periodic cadence in ticks (20 ticks = 1 s)
         if (!running()) return;
         if (core.reflexes.hold()) return;                // a reflex holds the job still
         Job j = job;
@@ -716,17 +697,16 @@ public final class Jobs {
         if (j.type.equals("travel")) {
             // Baritone goes idle without a no-path event when the goal can't be reached: the end position decides
             int[] d = travelDest(j), me = here(p);
-            boolean moving = j.label != null && j.label.startsWith("following");
-            if (!j.reflex && !moving && d != null && !WalkEnd.arrived(me, d)) {
+            if (!j.reflex && d != null && !WalkEnd.arrived(me, d)) {
                 finish(WalkEnd.shortResult(me, d) + " (walk: Baritone stopped short) - next: goto a spot next to it, or come get me");
                 return;
             }
-            int[] xz = d == null && j.xzOrder && !j.reflex && !moving ? travelXZ(j) : null;
+            int[] xz = d == null && j.xzOrder && !j.reflex ? travelXZ(j) : null;
             if (xz != null && !WalkEnd.arrivedXZ(me, xz)) {
                 finish(WalkEnd.shortResultXZ(me, xz) + " (walk: Baritone stopped short) - next: goto a spot next to it, or come get me");
                 return;
             }
-            String v = moving ? null : goalVerdict(p, j);
+            String v = goalVerdict(p, j);
             finish(v != null ? v : "ok: arrived near " + fmt(here(p)) + (j.tpNote != null ? " (" + j.tpNote + ")" : ""));
         } else {
             j.bedClick = true;
@@ -889,84 +869,6 @@ public final class Jobs {
         finish(msg);
         IBaritone b = baritone();
         if (b != null) cancel(b);
-    }
-
-    /**
-     * Every 20 ticks with the fence on: a follow ends when its player walks where the bot may not go. AREAS (0.39.0): the
-     * old position watch is gone - the world is open.
-     */
-    private void fenceWatch(LocalPlayer p) {
-        // review 5: no fenceOn gate - walkVerdict refuses a keep-out box (and a portal) in every mode, nothing else
-        if (followWatch != null) {
-            Player t = findPlayer(followWatch[0]);
-            if (t == null) return;
-            int[] tp = here(t);
-            String why = walkVerdict(tp[0], tp[1], tp[2]);
-            if (why != null) {
-                IBaritone b = baritone();
-                if (b != null) cancel(b);
-                commands.whisper(followWatch[1], FenceRules.followLeft(followWatch[0], tp));
-                LOG.info("[entropybot] follow stopped: {} went where I don't go, at {} ({})", followWatch[0], fmt(tp), why);
-                followWatch = null;
-            }
-        }
-    }
-
-    // ---- following a player the bot cannot see (the owner's companion mod) ----
-
-    /** "follow <name>" with the player out of view but a fresh position t: walk there and keep walking as it changes. */
-    String startFollowFix(String name, String from, int[] t) {
-        if (!door("follow")) return io.github.mojolowjo.entropybot.aa.door.Door.refusal("follow");
-        String r = followFixGo(name, from, t);
-        return r.startsWith("ok") ? r + " (by the position your game sends, until you're in view)" : r;
-    }
-
-    /** One walk to t, then the follow state again (startTravel clears it); like a follow, the job itself never "arrives". */
-    private String followFixGo(String name, String from, int[] t) {
-        String r = startTravel("goto " + fmt(t), "following " + name, null, null, false);
-        if (!r.startsWith("ok")) return r;
-        if (job != null) job.done = true;
-        followFix = new String[]{name, from};
-        followFixGoal = t;
-        followFixAt = System.currentTimeMillis();
-        return r;
-    }
-
-    private void stopFollowFix(String why) {
-        String from = followFix[1];
-        followFix = null;
-        IBaritone b = baritone();
-        if (b != null) cancel(b);
-        commands.whisper(from, why);
-        LOG.info("[entropybot] follow (companion position) ended: {}", why);
-    }
-
-    /** Once a second: hand over when the player is in view, stop when the position is stale, walk again when they moved 5+ blocks. */
-    private void followFixTick(LocalPlayer p) {
-        if (followFix == null) return;
-        if (running()) {                         // another job took over
-            followFix = null;
-            return;
-        }
-        if (core.reflexes.hold()) return;        // a fight or a meal: not now
-        String name = followFix[0], from = followFix[1];
-        if (findPlayer(name) != null) {          // in view: Baritone's own follow does it better
-            followFix = null;
-            commands.modJob("follow", name, from, p);
-            return;
-        }
-        int[] t = commands.ownerFixPos(name);
-        if (t == null) {
-            stopFollowFix("stopped: I lost track of you (no fresh position from your game, or you're in another dimension)");
-            return;
-        }
-        // re-aim only when the player moved a fair share of the way (5 blocks, or 1/8 of the distance when far): every
-        // new goal is a whole new Baritone search, and far away a few blocks change nothing about the way there
-        double far = Math.sqrt(distSq(t, here(p))) / 8;  // structural: a trip is checked in eighths of the distance
-        long moved = (long) Math.max(5, far);
-        if (System.currentTimeMillis() - followFixAt < Tuning.i("jobs.followFixMs") || distSq(t, followFixGoal) <= moved * moved) return;
-        String r = followFixGo(name, from, t);
-        if (!r.startsWith("ok")) stopFollowFix("stopped: " + r.replaceFirst("^error: ", ""));
     }
 
     // ---- blocks ----

@@ -63,16 +63,6 @@ public final class SleepJob {
         return lv.isThundering() || DayNight.night(lv.getDayTime());
     }
 
-    static String status(LocalPlayer p) {
-        ClientLevel lv = Minecraft.getInstance().level;
-        int[] bed = io.github.mojolowjo.entropybot.aa.BedSpot.foundAt(Jobs.findBlock(p, "_bed " + search()));
-        String carried = carriedBed(p);
-        return "sleep: it is " + DayNight.clock(lv.getDayTime()) + (night(lv) ? " (night: beds work)" : " (day: beds don't work)")
-                + (p.isSleeping() ? ", I am in bed" : "") + "; " + (bed != null ? "nearest bed at " + bed[0] + " " + bed[1] + " " + bed[2]
-                : "no bed within " + search()) + (carried != null ? "; I carry a " + carried.replace("minecraft:", "") : "")
-                + " - rule when night do sleep sleeps every night";
-    }
-
     static String carriedBed(LocalPlayer p) {
         for (Map.Entry<String, Integer> e : Gui.inventory(p).entrySet()) if (e.getKey().endsWith("_bed") && e.getValue() > 0) return e.getKey();
         return null;
@@ -80,7 +70,6 @@ public final class SleepJob {
 
     /** "sleep" / "sleep status". */
     static String start(Commands c, LocalPlayer p, String rest) {
-        if (rest != null && rest.trim().equalsIgnoreCase("status")) return status(p);
         if (rest != null && !rest.isBlank()) return "usage: sleep | sleep status";
         ClientLevel lv = Minecraft.getInstance().level;
         if (p.isSleeping()) return "ok: I am already in bed";

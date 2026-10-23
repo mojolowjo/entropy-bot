@@ -62,7 +62,6 @@ public final class HitWatch {
                 }
                 HitLog.Hit h = new HitLog.Hit(System.currentTimeMillis(), type, id, name, amt, Math.max(0, hp), p.getBlockX(), p.getBlockY(), p.getBlockZ(), job);
                 HitLog.INSTANCE.add(h);
-                io.github.mojolowjo.entropybot.summary.DaySummary.INSTANCE.damage(h.source(), amt);
                 // a mob's melee hit at full value (not the killing blow, which may be capped by the health left)
                 if (id != null && hp > 0 && src != null && src.getDirectEntity() == by) MobDamage.INSTANCE.add(id, amt);
             }

@@ -16,8 +16,8 @@ import java.util.List;
  * <li>follow at a distance: they are busy more than 16 away: come; 1 x weight.</li>
  * </ol>
  * An idle owner (or no report) halves every part but the fight. Never 75 or more: helping waits for the running task
- * (owner goals, {@code aa want}, stay the direct way). Off when the owner is offline, farther than 48, or {@code assist}
- * runs (the owner's own mode). Pure.
+ * (owner goals, {@code aa want}, stay the direct way). Off when the owner is offline or farther than 48.
+ * Pure.
  */
 public final class Help {
     private Help() {}
@@ -41,7 +41,6 @@ public final class Help {
     public static String off(Inputs in, double weight) {
         if (weight <= 0) return "help 0 in the personality";
         if (!in.ownerOnline) return "owner offline";
-        if (in.assistOn) return "assist runs";
         if (in.ownerDist < 0) return "owner not seen";
         if (in.ownerDist > far()) return "owner " + in.ownerDist + " away (over " + far() + ")";
         return null;

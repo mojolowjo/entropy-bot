@@ -231,16 +231,16 @@ class NodesTest {
 
     @Test
     void blackboardRequests() {
-        bb.post(new Request("ai", TaskKind.AI, "cut 8", 1, 0, clock.now() + 1000, "the AI asked"));
+        bb.post(new Request("rule", TaskKind.OWNER, "cut 8", 1, 0, clock.now() + 1000, "a rule asked"));
         bb.post(new Request("owner", TaskKind.OWNER, "goto 1 2 3", 2, 0, 0, "pm"));
-        assertEquals("cut 8", bb.peek("ai").chain());
+        assertEquals("cut 8", bb.peek("rule").chain());
         clock.advance(2000);
-        assertNull(bb.peek("ai"), "expired");
+        assertNull(bb.peek("rule"), "expired");
         assertEquals("goto 1 2 3", bb.take("owner").chain());
         assertNull(bb.take("owner"));
-        bb.post(new Request("ai", TaskKind.AI, "a", 1, 0, 0, ""));
-        bb.post(new Request("ai", TaskKind.AI, "b", 1, 0, 0, ""));
-        assertEquals(2, bb.drop("ai"));
+        bb.post(new Request("rule", TaskKind.OWNER, "a", 1, 0, 0, ""));
+        bb.post(new Request("rule", TaskKind.OWNER, "b", 1, 0, 0, ""));
+        assertEquals(2, bb.drop("rule"));
         assertTrue(bb.requests().isEmpty());
     }
 }

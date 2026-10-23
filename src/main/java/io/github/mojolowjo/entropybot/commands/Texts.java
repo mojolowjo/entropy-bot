@@ -13,27 +13,22 @@ public final class Texts {
     private Texts() {}
 
     /** V1b: what allowed players who aren't the owner may use (plus the read-only forms in {@link #guestRefusal}). */
-    public static final Set<String> GUEST_VERBS = Set.of("help", "", "status", "inv", "queue", "places", "have", "find", "come", "follow", "goto", "stop", "restart", "dismiss", "why");
+    public static final Set<String> GUEST_VERBS = Set.of("help", "", "status", "inv", "queue", "places", "have", "find", "restart", "dismiss", "why");
 
     /** Every command word of the surface (V1b: docs/VOCABULARY.md and nothing else); routine names can't use these nor {@link OldWords#REMOVED}. */
-    public static final List<String> BUILTIN_VERBS = List.of("place", "marker", "places", "area", "fence", "need", "needs", "goal", "goals", "have", "stock", "get",
-            "supplies", "deposit", "mine", "dig", "build", "cut", "gather", "light", "junk", "defence", "defend", "guard", "assist", "dismiss", "attack", "queue", "status", "inv",
-            "stop", "routine", "routines", "rule", "rules", "repeat", "wait", "confirm", "check", "summary", "kinds", "tools", "hotbar", "explore", "find", "done", "free", "sleep",
-            "camp", "climb", "house", "restore", "come", "follow", "goto", "go", "home", "open", "take", "put", "close", "drop", "wear", "scan", "rs", "pots", "craft", "kit", "recipe",
-            "smelt", "cook", "eat", "burrow", "flee", "pillar", "farm", "compact", "upgrade", "help", "allow", "deny", "restart", "surface", "sense", "path", "server", "debug",
-            "why", "look", "reply", "brain", "idle", "dayplan", "plan", "actions", "deaths", "death", "corpse", "give", "restock", "say", "spawn", "trust", "untrust", "shelter", "hunt", "hunting", "fish", "blind", "ai", "aa");
+    public static final List<String> BUILTIN_VERBS = List.of("marker", "places", "area", "fence", "needs", "goals", "have", "stock", "supplies", "mine", "junk", "defence", "defend", "guard",
+            "dismiss", "queue", "status", "inv", "routine", "routines", "rule", "rules", "confirm", "check", "kinds", "tools", "hotbar", "find", "done", "free", "camp", "home",
+            "wear", "kit", "recipe", "pillar", "help", "allow", "deny", "restart", "sense", "path", "server", "debug", "why", "look", "reply", "brain", "idle", "dayplan", "actions",
+            "deaths", "death", "corpse", "say", "spawn", "trust", "untrust", "blind", "aa");
 
     /**
      * The jobs the mod runs itself: walks since B7b part 1, the storage errands (and "go poi") since part 2, crafting,
      * the furnace, get/restock, the farm and compact since B7c (need/supplies/recipe are instant there).
      */
-    public static final Set<String> MOD_JOB_VERBS = Set.of("come", "follow", "goto", "spawn", "bed", "go", "base", "home", "wait", "find",
-            "open", "scan", "deposit", "corpse", "death", "rs", "pots",
-            "craft", "kit", "smelt", "get", "restock", "farm", "compact", "recipe", "need", "supplies", "give", "upgrade",
-            "dig", "build", "place", "stripmine", "mine", "explore", "restore", "cook", "sleep", "cut", "shelter");
+    public static final Set<String> MOD_JOB_VERBS = Set.of("spawn", "bed", "home", "find", "corpse", "death", "kit", "recipe", "supplies", "stripmine", "mine");
 
     /** The instant GUI verbs the mod does since B7b part 2 (no job). */
-    public static final Set<String> MOD_VERBS = Set.of("take", "put", "close", "drop", "wear", "equip");
+    public static final Set<String> MOD_VERBS = Set.of("wear", "equip");
 
 
     private static final Pattern CHAIN_SPLIT = Pattern.compile("\\s*;\\s*|\\s+then\\s+", Pattern.CASE_INSENSITIVE);
@@ -163,9 +158,4 @@ public final class Texts {
         return out;
     }
 
-    /** S1: "goto me" / "goto <the sender's own name>" means "come" (the owner typed it live, 2026-10-03). */
-    static boolean gotoMeansCome(String rest, String from) {
-        String r = rest == null ? "" : rest.trim();
-        return r.equalsIgnoreCase("me") || (from != null && !from.isEmpty() && r.equalsIgnoreCase(from));
-    }
 }

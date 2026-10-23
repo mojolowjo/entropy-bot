@@ -66,12 +66,6 @@ public final class AaSwitch {
     /** True when the world has a saved need choice ({@code aa on} writes the default, orders, only when it has none). */
     public static boolean hasMode(JsonObject sw) { return only(sw) != null; }
 
-    /** orders-tier: the AI translator's per-world switch ({@code ai on|off}); off when never set. */
-    public static final String AI = "ai";
-
-    public static boolean ai(JsonObject sw) { return sw.has(AI) && sw.get(AI).getAsBoolean(); }
-
-    public static void ai(JsonObject sw, boolean on) { sw.addProperty(AI, on); }
 
     /** Removes the old bot-wide switch keys from the "aa" settings object; the names removed (for the log line). */
     public static List<String> dropOldGlobal(JsonObject aa) {

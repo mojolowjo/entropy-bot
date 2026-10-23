@@ -42,7 +42,7 @@ class DoorTest {
         assertTrue(Door.allow(Driver.AA, "chain aa"));
         assertTrue(Door.allow(Driver.OWNER, "travel goto"));
         assertTrue(Door.allow(Driver.REFLEX, "x"));
-        for (Driver d : List.of(Driver.RULE, Driver.AI, Driver.OTHER)) assertFalse(Door.allow(d, "x"), d.name());
+        for (Driver d : List.of(Driver.RULE, Driver.OTHER)) assertFalse(Door.allow(d, "x"), d.name());
         assertEquals(1, Door.refused(Driver.RULE));
     }
 
@@ -91,8 +91,8 @@ class DoorTest {
     void textNamesEachDriver() {
         aa = true;
         Door.allow(Driver.RULE, "chain rule #2");
-        Door.allow(Driver.AI, "goto");
-        assertEquals("refused starts: rule 1 (last: chain rule #2), ai 1 (last: goto)", Door.text());
+        Door.allow(Driver.OTHER, "goto");
+        assertEquals("refused starts: rule 1 (last: chain rule #2), other 1 (last: goto)", Door.text());
     }
 
     @Test
@@ -108,16 +108,4 @@ class DoorTest {
         assertTrue(Door.allow(Driver.OTHER, "x"));
     }
 
-    @Test
-    void aiOnlyTranslatesUnderAa() {
-        assertTrue(Door.aiMayUnderAa("aa want 10 iron_ingot"));
-        assertTrue(Door.aiMayUnderAa("  AA   drop iron"));
-        assertTrue(Door.aiMayUnderAa("aa status"));
-        assertTrue(Door.aiMayUnderAa("status"));
-        assertFalse(Door.aiMayUnderAa("goto 1 2 3"));
-        assertFalse(Door.aiMayUnderAa("stop"));
-        assertFalse(Door.aiMayUnderAa("aa off"));
-        assertFalse(Door.aiMayUnderAa("aa wanted"));
-        assertFalse(Door.aiMayUnderAa(null));
-    }
 }

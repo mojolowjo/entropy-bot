@@ -75,19 +75,6 @@ final class TuningDefs {
         // assistRules
         Tuning.def("assistRules.freshMs", 10_000, "rm-constants 0.39.u2 (was AssistRules.FRESH_MS)", "an older report is no report");
         Tuning.def("assistRules.recentMs", 10_000, "rm-constants 0.39.u2 (was AssistRules.RECENT_MS)", "a broke/placed counts this long");
-        Tuning.def("assistRules.switchMs", 5_000, "rm-constants 0.39.u2 (was AssistRules.SWITCH_MS)", "a new activity must hold this long");
-        Tuning.def("assistRules.idleStopMs", 60_000, "rm-constants 0.39.u2 (was AssistRules.IDLE_STOP_MS)", "idle this long: no mirroring, just follow");
-        Tuning.def("assistRules.giveGapMs", 30_000, "rm-constants 0.39.u2 (was AssistRules.GIVE_GAP_MS)", "at most one hand-over in this time");
-        Tuning.def("assistRules.retryMs", 60_000, "rm-constants 0.39.u2 (was AssistRules.RETRY_MS)", "the same chain is not started again within this");
-        Tuning.def("assistRules.chopR", 16, "rm-constants 0.39.u2 (was AssistRules.CHOP_R)", "the same chain is not started again within this");
-        Tuning.def("assistRules.mineR", 12, "rm-constants 0.39.u2 (was AssistRules.MINE_R)", "the same chain is not started again within this");
-        Tuning.def("assistRules.treeR", 4, "rm-constants 0.39.u2 (was AssistRules.TREE_R)", "the same chain is not started again within this");
-        Tuning.def("assistRules.treeUp", 12, "rm-constants 0.39.u2 (was AssistRules.TREE_UP)", "the same chain is not started again within this");
-        Tuning.def("assistRules.giveLow", 16, "rm-constants 0.39.u2 (was AssistRules.GIVE_LOW)", "the give low of AssistRules");
-        Tuning.def("assistRules.giveMax", 32, "rm-constants 0.39.u2 (was AssistRules.GIVE_MAX)", "the give max of AssistRules");
-        Tuning.def("assistRules.mineMax", 8, "rm-constants 0.39.u2 (was AssistRules.MINE_MAX)", "the mine max of AssistRules");
-        Tuning.def("assistRules.treeMax", 4, "rm-constants 0.39.u2 (was AssistRules.TREE_MAX)", "the tree max of AssistRules");
-        Tuning.def("assistRules.farmR", 16, "rm-constants 0.39.u2 (was AssistRules.FARM_R)", "the farm r of AssistRules");
         // bedOptions
         // bedSpot
         Tuning.def("bedSpot.offCamp", 1.5, "rm-constants 0.39.u2 (was BedSpot.OFF_CAMP)", "Blocks of cost per block the bed lies away from being next to the table or chest");
@@ -514,9 +501,6 @@ final class TuningDefs {
         Tuning.def("ownerFix.maxAgeMs", 10_000, "rm-constants 0.39.u2 (was OwnerFix.MAX_AGE_MS)", "the max age ms of OwnerFix");
         Tuning.def("ownerFix.futureSlackMs", 2_000, "rm-constants 0.39.u2 (was OwnerFix.FUTURE_SLACK_MS)", "A fix 'from the future' (the clock was set back) is refused beyond this");
         // paperPlan
-        Tuning.def("paperPlan.primaryMs", 4000, "rm-constants 0.39.u2 (was PaperPlan.PRIMARY_MS)", "the primary ms of PaperPlan");
-        Tuning.def("paperPlan.failureMs", 20000, "rm-constants 0.39.u2 (was PaperPlan.FAILURE_MS)", "the failure ms of PaperPlan");
-        Tuning.def("paperPlan.surfaceR", 96, "rm-constants 0.39.u2 (was PaperPlan.SURFACE_R)", "the surface r of PaperPlan");
         // placeRules
         Tuning.def("placeRules.mobWaitTicks", 200, "rm-constants 0.39.u2 (was PlaceRules.MOB_WAIT_TICKS)", "0.30.7: a mob in the cell is waited for this long (ticks, 10 s) before the place step gives up");
         Tuning.def("placeRules.emptyCorpseWaitTicks", 1800, "rm-constants 0.39.u2 (was PlaceRules.EMPTY_CORPSE_WAIT_TICKS)", "0.30.7 (live probe): an emptied corpse the client still lists is waited for this long");

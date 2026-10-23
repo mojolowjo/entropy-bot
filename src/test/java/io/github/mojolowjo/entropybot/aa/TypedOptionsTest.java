@@ -27,11 +27,9 @@ class TypedOptionsTest {
         for (Step s : o.steps()) runnable(s);
     }
 
-    /** A step the game side runs: its command is a verb the bot knows (an Obtain / compound is expanded by Steps first). */
+    /** A step the game side runs: typed (StepHands calls its method; no verb text), with a line for the logs. */
     static void runnable(Step s) {
-        if (s instanceof Step.Obtain || s instanceof Step.ToBand || s instanceof Step.Compound || s instanceof Step.Fish || s instanceof Step.KelpCut) return;     // fishing and kelp cuts have hands of their own, no verb
-        String cmd = io.github.mojolowjo.entropybot.commands.StepCommands.command(s);
-        assertNotNull(io.github.mojolowjo.entropybot.commands.VerbTable.of(cmd.split("\\s+")[0]), "no verb for " + cmd);
+        assertFalse(s.text().isBlank(), "a step with no line: " + s);
     }
 
     static void allTyped(Options.Choice c) {

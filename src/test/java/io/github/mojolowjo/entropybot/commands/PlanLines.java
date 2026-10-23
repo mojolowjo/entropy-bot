@@ -12,6 +12,7 @@ import java.util.Locale;
  * Plan step); AA never reads or builds the routine's text. The owner's typed verbs (hunt) read their words here too. A
  * line with no typed step is named (the plan is NONE with it: no silent fallback). Pure (JUnit: TypedOptionsTest).
  */
+/** Tests only (moved out of the mod 0.39.z23: the mod never parses verb text into steps; the fixtures still write steps as text). */
 public final class PlanLines {
     private PlanLines() {}
 

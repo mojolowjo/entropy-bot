@@ -99,7 +99,7 @@ public final class Inputs {
     public boolean torchCoal() { return io.github.mojolowjo.entropybot.aa.brain.Costs.torchCoal(coal, torches, coalGoalScore, coalGoalN); }
 
     public String torchCoalTerms() { return io.github.mojolowjo.entropybot.aa.brain.Costs.coalTerms(coal, torches, coalGoalScore, coalGoalN); }
-    public boolean ownerOrderPending, aiRequestPending, menuOpen, parked, inWorld = true;
+    public boolean ownerOrderPending, menuOpen, parked, inWorld = true;
     /** Something not AA's runs (the owner's chain, a job, a gather...): its name, else null. */
     public String otherJob;
     /** The owner's base (or work) place a house fits (AaRuntime.houseFits; a home fact), else null; the food bar drains (not Peaceful). */
@@ -112,12 +112,12 @@ public final class Inputs {
      */
     public int ownerDist = -1, ownerHostiles;
     public String ownerAct, ownerPlaced;
-    public boolean ownerDark, assistOn;
+    public boolean ownerDark;
 
     public static final String[] NAMES = {
             "health", "food", "hurt", "danger", "creeper", "air", "lavaFire", "freeSlots", "foodItems", "torches", "wood",
             "cobble", "coal", "iron", "wool", "pickTier", "pickPct", "bed", "table", "furnace", "baseChests", "base",
-            "shelter", "baseArea", "night", "thunder", "underGround", "nearOwner", "ownerOnline", "ownerOrder", "aiRequest",
+            "shelter", "baseArea", "night", "thunder", "underGround", "nearOwner", "ownerOnline", "ownerOrder",
             "menu", "parked", "otherJob"};
 
     /** The inputs as a fixed vector, 0..1 (counts capped at 64, iron at 32). */
@@ -127,7 +127,7 @@ public final class Inputs {
                 b(inLavaOrFire), freeSlots / 36f, cap(foodItems), cap(torches), cap(wood), cap(cobble), cap(coal),  // game fact: feature scaling to 0..1: food 20, air 300 ticks, 36 inventory slots, 32 ingots, tier 4, 100 percent, a stack of 64
                 Math.min(32, ironIngots) / 32f, cap(wool), pickTier / 4f, pickPct / 100f, b(bedKnown || bedInBag),  // game fact: feature scaling to 0..1: food 20, air 300 ticks, 36 inventory slots, 32 ingots, tier 4, 100 percent, a stack of 64
                 b(tableKnown), b(furnaceKnown), b(baseChests), b(baseKnown), b(shelterBuilt), b(nearestBase != null), b(night),
-                b(thunder), b(underGround), b(nearOwner), b(ownerOnline), b(ownerOrderPending), b(aiRequestPending),
+                b(thunder), b(underGround), b(nearOwner), b(ownerOnline), b(ownerOrderPending),
                 b(menuOpen), b(parked), b(otherJob != null)};
     }
 

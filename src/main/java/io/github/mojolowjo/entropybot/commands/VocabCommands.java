@@ -154,13 +154,6 @@ final class VocabCommands {
         return "ok: marker " + m.name() + " of " + owner.name() + " at " + pos.x() + " " + pos.y() + " " + pos.z() + " (go " + owner.name() + " " + m.name() + ")";
     }
 
-    /** "go <place> <marker>" or "go <marker>": the spot, or an error in err[0] (null spot and null err: not a marker line). */
-    PlaceWords.Spot goSpot(String rest, String[] err) {
-        List<String> w = Texts.words(rest == null ? "" : rest.toLowerCase(Locale.ROOT));
-        if (w.isEmpty() || w.size() > 2) return null;
-        return PlaceWords.resolveGo(placeList(), w.get(0), w.size() == 2 ? w.get(1) : null, err);
-    }
-
     // ---- fighting: defend, guard, dismiss, attack, defence players (V1b-2) ----
 
     /** "defence players on|off" (owner only, never saved: off at every game start, decision 10). */
@@ -300,26 +293,6 @@ final class VocabCommands {
         return b.getAsJsonObject(key);
     }
 
-    /** "need <item> <n>": a standing need (the brain gathers toward it). Null: no count (the old answer runs). */
-    String needStanding(LocalPlayer p, String rest) {
-        String[] s = io.github.mojolowjo.entropybot.vocab.NeedWords.standing(rest);
-        if (s == null) return null;
-        String id = Kinds.isKind(s[0]) ? s[0] : Commands.resolveItemNamePub(s[0]);
-        if (id == null) return "error: I know no item called " + s[0];
-        JsonObject needs = obj("needs");
-        int n = Integer.parseInt(s[1]);
-        if (n == 0) {
-            needs.remove(id);
-            c.saved();
-            return "ok: no standing need for " + Texts.shortId(id) + " any more";
-        }
-        if (!needs.has(id) && needs.size() >= io.github.mojolowjo.entropybot.vocab.NeedWords.MAX_NEEDS)
-            return "error: I keep at most " + io.github.mojolowjo.entropybot.vocab.NeedWords.MAX_NEEDS + " needs - needs clear <item> first";
-        needs.addProperty(id, n);
-        c.saved();
-        return "ok: standing need " + Texts.shortId(id) + " " + n + " (have " + have(p, id) + ") - needs lists them";
-    }
-
     /** The stock view keyed by full ids (it keeps vanilla ids short). */
     private Map<String, Integer> fullStock(LocalPlayer p) {
         Map<String, Integer> out = new java.util.HashMap<>();
@@ -444,20 +417,6 @@ final class VocabCommands {
         c.brainData().addProperty("released", false);
         c.saved();
         LOG.info("[entropybot] release lifted by {}", verb);
-    }
-
-    /** "sleep auto on|off" (default on; the brain's night branch reads it), "sleep auto". Null: not that form. */
-    String sleepAuto(String rest) {
-        String r = rest == null ? "" : rest.trim().toLowerCase(Locale.ROOT);
-        Boolean v = io.github.mojolowjo.entropybot.vocab.NeedWords.sleepAuto(r);
-        JsonObject b = c.brainData();
-        if (v != null) {
-            b.addProperty("sleepAuto", v);
-            c.saved();
-            return "ok: sleep auto " + (v ? "on: I go to bed when others sleep (with brain on)" : "off: I only sleep when you say sleep");
-        }
-        if (r.equals("auto")) return "sleep auto is " + (!b.has("sleepAuto") || b.get("sleepAuto").getAsBoolean() ? "on" : "off") + " - sleep auto on|off";
-        return null;
     }
 
     /**
@@ -621,33 +580,6 @@ final class VocabCommands {
      */
     /** 0.27.3 (d6): the last food candidates skipped for too much mining (for why and the gather error), or null. */
     static volatile String lastFoodSkip;
-
-    String oneOfKind(LocalPlayer p, String rest, String[] err) {
-        List<String> w = Texts.words(rest == null ? "" : rest);
-        if (w.isEmpty() || !Kinds.isKind(w.get(0))) return null;
-        List<String> ids = expand(w.get(0).toLowerCase(Locale.ROOT));
-        Map<String, Integer> stock = null;
-        try { stock = fullStock(p); } catch (RuntimeException caught) { Quiet.warn("VocabCommands.oneOfKind failed, carrying on with the fallback", caught); }
-        String kind = w.get(0).toLowerCase(Locale.ROOT);
-        String id;
-        if (kind.equals("food")) {
-            // 0.24.3: stock first, then plain foods (rm-execution: the gather planner is gone; a modded food comes from stock)
-            boolean farm;
-            try { farm = io.github.mojolowjo.entropybot.Core.INSTANCE.knowledge.places().get("farm") != null; } catch (RuntimeException e) {
-            Quiet.warn("VocabCommands.oneOfKind failed, carrying on with the fallback", e); farm = false; }
-            id = Kinds.pickFood(ids, stock, farm, c.stepRun.on(), null);
-            if (id == null) {
-                err[0] = "error: no way to get food: none in storage, and no food I know how to make (bread needs wheat: a farm) - put some food in the base chests";
-                return null;
-            }
-        } else id = Kinds.pick(ids, stock);
-        if (id == null) {
-            err[0] = "error: the kind " + w.get(0) + " is empty (kinds " + w.get(0) + ")";
-            return null;
-        }
-        w.set(0, id);
-        return String.join(" ", w);
-    }
 
     /** "mine strip|cave ores ...": the ores kind as the ore list (with the exclusions); "mine logs" is cut. Null: unchanged. */
     String mineKinds(String rest, String[] redirect) {

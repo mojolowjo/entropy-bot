@@ -3,7 +3,6 @@ package io.github.mojolowjo.entropybot.recorder;
 import io.github.mojolowjo.entropybot.threat.HitLog;
 import io.github.mojolowjo.entropybot.threat.HitWatch;
 
-import io.github.mojolowjo.entropybot.summary.DaySummary;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -302,7 +301,6 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
     @Override
     public void jobEnded(String type, String label, String msg) {
         try {
-            DaySummary.INSTANCE.job(type, msg);      // 0.23.6 daily summary
             Minecraft mc = Minecraft.getInstance();
             LocalPlayer p = mc.player;
             if (p == null || mc.level == null || !on) return;

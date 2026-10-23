@@ -25,11 +25,6 @@ public final class FarmCommand {
      */
     public record Reply(String text, FarmSpot save, Start start) {}
 
-    /** "farm compact" and "farm here" are instant, even mid-job (the bridge answers them before the busy check). */
-    public static boolean instant(String rest) {
-        return rest != null && rest.trim().toLowerCase().matches("^(compact|here|mode|status)\\b.*");
-    }
-
     /**
      * @param text  what follows "farm"
      * @param known places.farm, or null

@@ -24,15 +24,6 @@ public final class Gui {
         else if (mc.screen != null) mc.setScreen(null);
     }
 
-    /** "close": the bridge's closeScreen. */
-    public static String closeVerb(LocalPlayer p) {
-        if (open(p) || Minecraft.getInstance().screen != null) {
-            close(p);
-            return "ok: closed";
-        }
-        return "ok: nothing open";
-    }
-
     public static String menuName(LocalPlayer p) { return p.containerMenu.getClass().getSimpleName(); }
 
     public static String screenName() {
@@ -117,5 +108,11 @@ public final class Gui {
     /** 0.23.6: a damageable item at 10 % of its uses or less. */
     static boolean worn(ItemStack st) {
         return st.isDamageableItem() && st.getMaxDamage() > 0 && st.getMaxDamage() - st.getDamageValue() <= st.getMaxDamage() * 0.10;
+    }
+
+    /** An item the game tags as a log (minecraft:logs). */
+    public static boolean isLogItem(String id) {
+        var it = BuiltInRegistries.ITEM.getOptional(net.minecraft.resources.ResourceLocation.tryParse(id)).orElse(null);
+        return it != null && it.builtInRegistryHolder().is(net.minecraft.tags.ItemTags.LOGS);
     }
 }

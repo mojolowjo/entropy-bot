@@ -53,8 +53,12 @@ public final class HelpCommand {
      * The owner's deleted verbs (2026-10-22, "aa only driver"): never in the help pages; help <verb> names the aa way. The
      * table keeps rows some of them still have as the AA steps' inner commands.
      */
-    public static final java.util.Set<String> DELETED = java.util.Set.of("stripmine", "chop", "dig", "clear", "hunt", "gather", "fish",
-            "place", "shelter", "house", "smelt", "use", "twerk", "scout", "mule", "altar", "summary", "world", "escort");
+    public static final java.util.Set<String> DELETED = java.util.Set.of("stripmine", "chop", "dig", "clear", "hunt", "hunting", "gather", "fish",
+            "place", "shelter", "house", "smelt", "use", "twerk", "scout", "mule", "altar", "summary", "world", "escort",
+            // owner 2026-10-23 ("AA is the only driver"): the old verbs and the AI operator
+            "deposit", "scan", "take", "put", "get", "give", "drop", "craft", "cook", "cut", "farm", "explore", "go", "goto", "come",
+            "follow", "flee", "climb", "burrow", "build", "light", "compact", "restock", "restore", "repeat", "wait", "sleep", "eat",
+            "attack", "upgrade", "pots", "rs", "goal", "plan", "need", "surface", "assist", "open", "close", "stop", "ai");
 
     static boolean deleted(VerbTable.Verb v) {
         for (String w : VerbTable.words(v)) if (DELETED.contains(w)) return true;
@@ -84,7 +88,7 @@ public final class HelpCommand {
 
     /** "help gather": the verb is gone; the owner drives through aa. */
     static String gone(String word) {
-        return "\"" + word + "\" was deleted: the owner drives through aa now (aa want <item|group> [n], aa want strip <ore> [<feet y>] [<heading>]) - aa help lists every form";
+        return "\"" + word + "\" was deleted: the owner drives through aa now (aa want <item|group> [n], aa want strip <ore> [<feet y>] [<heading>], aa want deposit, aa scan, aa eat, aa restore, aa off to stop) - aa help lists every form";
     }
 
     /** "I don't know ..." with the nearest word, if any. */

@@ -54,16 +54,6 @@ public final class FenceRules {
         return "you're " + why + " (" + x + " " + z + ") - I don't go in there";
     }
 
-    /** "follow" a player standing where the bot may not go. */
-    public static String followRefusal(String name, String why, int x, int z) {
-        return name + " is " + why + " (" + x + " " + z + ") - I don't go in there";
-    }
-
-    /** The whisper when a followed player walks into a keep-out area (the follow ends, Baritone is cancelled). */
-    public static String followLeft(String name, int[] at) {
-        return "stopped: " + name + " went where I don't go, at " + at[0] + " " + at[1] + " " + at[2];
-    }
-
     /** Cells between x y z and the nearest area of this dimension (0 = inside one); 999 with none. */
     public static int areaGap(JsonArray areas, int x, int y, int z, String dim) {
         int best = 999;

@@ -84,7 +84,7 @@ public final class AaRuntime implements JobPort {
     private long heldUntil, lastSnapshotAt, lastErrorAt, errorsThisMinute, minuteStart, errors;
     private String lastError, offReason;
     private int decisionLines;
-    private long aiRequests;
+
 
     AaRuntime(Commands c) {
         this.c = c;
@@ -934,13 +934,7 @@ public final class AaRuntime implements JobPort {
         offReason = null;
         heldUntil = 0;
         c.saved();
-        // 0.36.1 (review 1): assist ends now (its tick is off under AA; it could start and cancel jobs)
         String ended = "";
-        LocalPlayer p = Minecraft.getInstance().player;
-        if (c.assist.on() && p != null) {
-            c.assist.end(p);
-            ended += "; assist ended";
-        }
         int queued = c.vocab.queued.size();
         if (queued > 0) ended += "; " + queued + " queued task(s) run as your orders when my slot is free";
         ended += "; rules and routines are suspended while aa runs (only aa, your orders and true reflexes start jobs)";     // AA_CLEANUP 2
@@ -957,7 +951,7 @@ public final class AaRuntime implements JobPort {
         String mode = io.github.mojolowjo.entropybot.aa.brain.Only.modeText();
         return "ok: aa on, " + mode + (io.github.mojolowjo.entropybot.aa.brain.Only.orders()
                 ? " - danger > your orders (aa want, aa go, aa do); with no order I stand still; aa needs on for the needs" + ended
-                : " - danger > your orders > AI requests > basic needs > idle; one task at a time; aa status says who drives" + ended);
+                : " - danger > your orders > basic needs > idle; one task at a time; aa status says who drives" + ended);
     }
 
     /** small-3: seconds of value in one mined block of this ore (OreValue), from the tech tree and the open goals. */
@@ -1042,29 +1036,20 @@ public final class AaRuntime implements JobPort {
         if (chainRunning()) c.chains.clear();
         if (typedRun) c.stepRun.stop("aa off");
         typedRun = false;
-        // 0.36.5 (review 6): nothing of this run carries into the next aa on (queued AI requests, the last task's state)
-        int dropped = bb.drop("ai");
+        // 0.36.5 (review 6): nothing of this run carries into the next aa on (the last task's state)
         bb.fact(io.github.mojolowjo.entropybot.aa.AaManual.FACT, null);     // S0: ask/do/skip/use are per run
         clearEscape();
         current = -1;
         lastEnd = null;
         progress = 0;
         lastBag = -1;
-        LOG.info("[entropybot] aa: off ({}){}", why, dropped > 0 ? "; " + dropped + " AI request(s) dropped" : "");
+        LOG.info("[entropybot] aa: off ({})", why);
         return "ok: aa off" + (stopped != null ? " - stopped my task " + stopped : "") + "; your jobs run on";
     }
 
-    /** The owner's "stop": AA's task ends (justified), the slot waits 2 min or until the next owner order. */
-    String ownerStopped() {
-        if (!on()) return "";
-        if (bb.task() != null || tree.slot.runningChild() != null) tree.root.halt("the owner's stop");
-        heldUntil = System.currentTimeMillis() + holdMs();
-        io.github.mojolowjo.entropybot.aa.AaSwitch.hold(sw(), heldUntil);
-        c.saved();
-        return "; aa waits " + holdMs() / 60000 + " min (aa on, or your next order, to go on now)";  // structural: milliseconds per minute
-    }
 
-    /** AA's chain runs (the AI operator's request: the owner's vocabulary on the interpreter). */
+
+    /** AA's chain runs (the climb's own chain). */
     boolean chainRunning() { return c.chains.running() && CHAIN.equals(c.chains.name()); }
     /** The owner's order while AA's needs/idle task runs: the task is preempted (logged), the order runs (AA_PLAN 4). */
     void yieldToOwner(String verb) {
@@ -1075,22 +1060,7 @@ public final class AaRuntime implements JobPort {
         }
     }
 
-    /** The AI operator's job-starting command while AA's task runs: queued as a request (AA_PLAN 4). */
-    String postAi(String cmd) {
-        if (!on()) return null;
-        aiRequests++;
-        bb.post(new Request("ai", TaskKind.AI, cmd, 1, System.currentTimeMillis(), 0, "the AI asked: " + cmd));
-        LOG.info("[entropybot] aa: AI request #{} queued: {}", aiRequests, cmd);
-        return "queued as AI request #" + aiRequests + " (runs when my task ends; " + bb.requests().size() + " waiting)";
-    }
 
-    /** The AI's stop: its own queued requests go, and its running task (never the owner's or a need). */
-    String cancelAi() {
-        int n = bb.drop("ai");
-        boolean running = bb.task() != null && "ai".equals(bb.task().source());
-        if (running) tree.slot.preempt("the AI's stop");
-        return "ok: " + n + " AI request(s) dropped" + (running ? ", the AI's task stopped" : "");
-    }
 
     // ---- the tick ----
 
@@ -1338,7 +1308,6 @@ public final class AaRuntime implements JobPort {
         in.parked = s.parked;
         in.otherJob = otherJob();
         in.ownerOrderPending = in.otherJob != null;
-        in.aiRequestPending = bb.peek("ai") != null;
         fillOwner(in, s, p, mc);
     }
 
@@ -1353,7 +1322,6 @@ public final class AaRuntime implements JobPort {
         in.ownerAct = null;
         in.ownerPlaced = null;
         in.ownerDark = false;
-        in.assistOn = c.assist.on();
         if (mc.level == null) return;
         try {
             String owner = c.owner();
@@ -1369,7 +1337,7 @@ public final class AaRuntime implements JobPort {
                 in.ownerHostiles = mc.level.getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class,
                         new net.minecraft.world.phys.AABB(bp).inflate(12), net.minecraft.world.entity.LivingEntity::isAlive).size();
             }
-            io.github.mojolowjo.entropybot.assist.AssistRules.Report r = c.assist.report();
+            io.github.mojolowjo.entropybot.assist.AssistRules.Report r = c.ownerReport.report();
             long now = System.currentTimeMillis();
             if (r != null && owner != null && r.name().equalsIgnoreCase(owner) && now - r.received() <= io.github.mojolowjo.entropybot.assist.AssistRules.freshMs()
                     && r.dim().equals(mc.level.dimension().location().toString())) {
@@ -1548,19 +1516,8 @@ public final class AaRuntime implements JobPort {
             return current;
         }
         runningOpt = null;
-        // the AI operator's request is the owner's typed vocabulary (it turns loose talk into the owner's verbs): the interpreter
-        if (t.kind() != TaskKind.AI) {
-            refusal = "error: no typed steps for " + t.kind() + " \"" + t.chain() + "\" (AA runs typed steps only)";
-            return -1;
-        }
-        String r = c.chains.startChain(c.owner(), CHAIN, t.chain(), 1);
-        if (r == null || !r.startsWith("started")) {
-            refusal = r == null ? "error: no answer" : r;
-            return -1;
-        }
-        current = ++seq;
-        currentChain = t.chain();
-        return current;
+        refusal = "error: no typed steps for " + t.kind() + " \"" + t.chain() + "\" (AA runs typed steps only)";
+        return -1;
     }
 
     // ---- aa-replan: the stored return leg and the rolling re-score (aa/Replan) ----
@@ -2416,7 +2373,7 @@ public final class AaRuntime implements JobPort {
         return "switches " + k.switches + " (pointless " + k.pointless + "), preempts " + k.preempts + ", fails " + k.fails + ", lost " + k.lost
                 + ", ticks " + k.ticks + ", last tick " + k.tickUs + " us, errors " + errors + (lastError != null ? " (last: " + lastError + ")" : "")
                 + (writeErrors > 0 ? ", file write errors " + writeErrors : "")
-                + ", AI requests " + aiRequests + " (" + bb.requests().size() + " waiting)"
+                + ", owner requests " + bb.requests().size() + " waiting"
                 + ", " + io.github.mojolowjo.entropybot.aa.door.Door.text()     // AA_CLEANUP 2: the one door
                 + ", " + restoreLine();
     }
@@ -2920,6 +2877,13 @@ public final class AaRuntime implements JobPort {
     /** aa want <thing> [n] [high|low] (also the wants by name: house/build, explore, tidy). */
     String want(String arg) {
         if (io.github.mojolowjo.entropybot.aa.brain.StripOrder.is(arg)) return wantStrip(arg);
+        List<String> many = AaCommands.wantList(arg);
+        if (many.size() > 1) {
+            StringBuilder out = new StringBuilder();
+            for (String one : many) out.append(out.length() == 0 ? "" : "\n").append(one).append(": ").append(want(one));
+            return out.toString();
+        }
+        if (arg != null && arg.trim().equalsIgnoreCase("deposit")) return order("deposit", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Deposit()));
         var a = io.github.mojolowjo.entropybot.aa.brain.Goals.parse(arg);
         if (a.err() != null) return a.err();
         String w = a.word();
@@ -2958,6 +2922,17 @@ public final class AaRuntime implements JobPort {
         return "ok: goal " + r.key() + " x" + g.n + (g.prio > 0 ? " high" : g.prio < 0 ? " low" : "") + " (score "
                 + Math.round(io.github.mojolowjo.entropybot.aa.brain.Goals.score(bb, g)) + "): " + r.text()
                 + lootLine + (blocked != null ? " - parked: " + blocked : "") + (on() ? "" : " (aa is off: aa on to work on it)");
+    }
+
+    /**
+     * The owner's one-shot order (aa scan, aa eat, aa restore, aa want deposit): its typed steps on the one step runner
+     * (StepRun, the same hands as AA's options); busy while a run holds the runner.
+     */
+    String order(String name, List<io.github.mojolowjo.entropybot.aa.moves.Step> steps) {
+        String err = c.stepRun.start("owner " + name, steps, "aa " + name);
+        if (err != null) return "aa " + name + ": " + err;
+        LOG.info("[entropybot] aa: owner order {}: {}", name, io.github.mojolowjo.entropybot.aa.moves.Step.label(steps));
+        return "ok: aa " + name + " runs (" + io.github.mojolowjo.entropybot.aa.moves.Step.label(steps) + "; aa status shows it)";
     }
 
     /** aa want strip <ore|ore,ore|any> [<y>] [<heading>]: an owner order whose one step is the fork's strip mine. */

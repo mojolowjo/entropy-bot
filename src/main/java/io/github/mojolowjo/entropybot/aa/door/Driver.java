@@ -14,8 +14,6 @@ public enum Driver {
     REFLEX,
     /** The owner's rules and routines firing on a timer. */
     RULE,
-    /** The AI operator (AiRuntime); under AA it may only say "aa want" / "aa drop". */
-    AI,
     /** Anything else: timers (stairs, kept table, defend hold), side machines, guests, unknown callers. */
     OTHER;
 

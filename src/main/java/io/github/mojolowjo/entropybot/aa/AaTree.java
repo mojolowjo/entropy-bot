@@ -148,14 +148,7 @@ public final class AaTree {
 
             @Override public void halt(String why) { seen = null; }
         };
-        // [2b] an AI request from the board (queues, never preempts)
-        RunJob aiJob = new RunJob("ai.job", TaskKind.AI, bb -> {
-            Request r = bb.take("ai");
-            if (r == null) return null;
-            bb.pendingReason("ai: " + r.reason());
-            return new JobPort.TaskSpec(TaskKind.AI, r.chain(), "ai", r.priority(), JobPort.TaskSpec.timeoutMsV(), JobPort.TaskSpec.noProgressMsV());
-        });
-        Node ai = new Seq("ai", "an AI request", new Condition("ai?", "an AI request waits", bb -> bb.peek("ai") != null), aiJob);
+
         // [2c] BRAIN_PLAN B1: one scored list (the ladder's rungs and the idle options as desires)
         List<java.util.Map.Entry<TaskKind, Node>> idle = List.of(
                 // 0.36.2 (40-min run: STOCK_WOOD restarted 0.25 s after each failure, 17 times): a failed idle task
@@ -173,7 +166,7 @@ public final class AaTree {
                 java.util.Map.entry(TaskKind.WAIT, (Node) new RunJob("idle.wait", TaskKind.WAIT, bb -> JobPort.TaskSpec.steps(TaskKind.WAIT, List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Wait((int) io.github.mojolowjo.entropybot.aa.brain.Brain.waitSeconds(bb.clock.now(),
                         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.NEXT_LAPSE_FACT) instanceof Long l ? l : 0))), "idle"))));
         io.github.mojolowjo.entropybot.aa.brain.Brain brain = AaDesires.build(AaDesires.needs(), idle, scorer);
-        MemoryFallback slot = new MemoryFallback("slot", "the task slot", owner, ai, brain);
+        MemoryFallback slot = new MemoryFallback("slot", "the task slot", owner, brain);
         GuardSelector root = new GuardSelector("root", "AA",
                 new GuardSelector.Branch(dangerGuard, dangerBranch),
                 new GuardSelector.Branch(new Condition("slot?", "always", bb -> true), slot));
@@ -258,7 +251,7 @@ public final class AaTree {
         return s;
     }
 
-    /** Who drives: "danger", "owner", "ai", "needs", "idle" or "none". */
+    /** Who drives: "danger", "owner", "needs", "idle" or "none". */
     public String driver() {
         if (root.active() == 0) return "danger";
         Node r = slot.runningChild();
@@ -273,17 +266,10 @@ public final class AaTree {
 
     public String dangerWhy() { return dangerLatch.active() ? dangerWhy : "calm"; }
 
-    /**
-     * The owner's order may preempt a needs, idle or AI task (AA_PLAN 14 Q1 yes; 0.36.1 review 4: an AI task too, its
-     * request goes back to the front of the board); AI requests never preempt anything.
-     */
+    /** The owner's order may preempt a needs or idle task (AA_PLAN 14 Q1 yes). */
     public boolean preemptForOwner(Blackboard bb, String verb) {
         Node r = slot.runningChild();
         if (r == null || r.id.equals("owner")) return false;
-        if (r.id.equals("ai") && bb.task() != null && bb.task().spec() != null) {
-            JobPort.TaskSpec t = bb.task().spec();
-            bb.postFirst(new Request("ai", TaskKind.AI, t.chain(), t.priority(), bb.clock.now(), 0, "the AI asked (again after the owner's " + verb + "): " + t.chain()));
-        }
         slot.preempt("preempted by owner: " + verb);
         bb.tracer.counts.preempts++;
         bb.port.log("preempted for the owner's " + verb);

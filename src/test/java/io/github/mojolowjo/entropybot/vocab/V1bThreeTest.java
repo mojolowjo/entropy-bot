@@ -80,31 +80,26 @@ class V1bThreeTest {
     @Test
     void theHardCut() {
         // removed words answer with the new form, never run
-        assertEquals("that is now place farm", OldWords.removedAnswer("mark", "farm", "mark farm"));
-        assertEquals("that is now place base", OldWords.removedAnswer("setbase", "", "setbase"));
-        assertEquals("that is now mine strip 3 16", OldWords.removedAnswer("stripmine", "3 16", "stripmine 3 16"));
-        assertEquals("that is now cut 16", OldWords.removedAnswer("chop", "16", "chop 16"));
-        assertEquals("that is now go base", OldWords.removedAnswer("base", "", "base"));
+        for (String w : List.of("mark", "setbase", "chop", "base")) assertTrue(OldWords.removedAnswer(w, "", w).contains("was deleted"), w);
+        assertTrue(OldWords.removedAnswer("stripmine", "3 16", "stripmine 3 16").contains("aa want strip"));
         assertTrue(OldWords.removedAnswer("defend", "on", "defend on").startsWith("that is now defence on"));
         assertNull(OldWords.removedAnswer("defend", "", "defend"), "defend alone is the new job");
         assertEquals("that is now tools mode cheapest", OldWords.removedAnswer("tools", "ores cheapest", "tools ores cheapest"));
-        assertTrue(OldWords.removedAnswer("build", "clear yard", "build clear yard").startsWith("that is now dig yard"));
-        assertNull(OldWords.removedAnswer("build", "floor stone yard", "build floor stone yard"));
+
         assertEquals("removed in 0.22; use debug autominer on", OldWords.removedAnswer("autominer", "on", "autominer on"));
         assertEquals("removed in 0.22; use debug b set allowSprint true", OldWords.removedAnswer("baritone", "set allowSprint true", "baritone set allowSprint true"));
         assertEquals("that is now have iron", OldWords.removedAnswer("where", "iron", "where iron"));
-        assertTrue(OldWords.removedAnswer("deposit", "", "deposit then base").contains("go base"), "a chain with an old step");
-        assertTrue(OldWords.removedAnswer("repeat", "forever stripmine", "repeat forever stripmine").contains("mine strip"), "inside repeat");
-        assertTrue(OldWords.removedAnswer("routine", "save n chop 16 then deposit", "routine save n chop 16 then deposit").contains("cut 16"), "inside routine save");
+        assertTrue(OldWords.removedAnswer("deposit", "", "deposit then base").contains("was deleted"), "a chain with an old step");
+        assertTrue(OldWords.removedAnswer("routine", "save n chop 16 then deposit", "routine save n chop 16 then deposit").contains("was deleted"), "inside routine save");
         assertNull(OldWords.removedAnswer("routine", "save n cut 16 then deposit", "routine save n cut 16 then deposit"));
         // the surface: exactly the table, no removed word in it, every removed word reserved
         for (String w : OldWords.REMOVED) assertNull(VerbTable.of(w), "removed but still in the table: " + w);
         for (String w : Texts.BUILTIN_VERBS) assertNotNull(VerbTable.of(w), "surface word not in the table: " + w);
         for (VerbTable.Verb v : VerbTable.all()) assertTrue(Texts.BUILTIN_VERBS.contains(v.name()), "table verb not in the surface list: " + v.name());
-        for (String w : List.of("cut", "attack", "dismiss", "done", "free", "defence", "defend", "guard", "queue", "kinds", "tools", "needs", "goal", "goals",
-                "camp", "marker", "place", "places", "explore", "find")) assertNotNull(VerbTable.of(w), w);
+        for (String w : List.of("dismiss", "done", "free", "defence", "defend", "guard", "queue", "kinds", "tools", "needs", "goals",
+                "camp", "marker", "places", "find")) assertNotNull(VerbTable.of(w), w);
         // guests: the list the owner gave
-        for (String g : List.of("status", "inv", "help", "queue", "places", "have", "come", "follow", "goto", "stop", "dismiss")) assertNull(Texts.guestRefusal(g, "", g, "o"), g);
+        for (String g : List.of("status", "inv", "help", "queue", "places", "have", "dismiss")) assertNull(Texts.guestRefusal(g, "", g, "o"), g);
         assertNull(Texts.guestRefusal("find", "chest", "find chest", "o"));
         assertNull(Texts.guestRefusal("area", "list", "area list", "o"));
         assertNull(Texts.guestRefusal("fence", "", "fence", "o"));

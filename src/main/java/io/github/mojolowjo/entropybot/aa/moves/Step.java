@@ -423,6 +423,11 @@ public sealed interface Step {
         public String text() { return keep ? "restore keep pillar" : "restore placed " + radius; }
     }
 
+    /** Put back the blocks the ledger says I broke, within {@code radius} (the builder leg; the owner's aa restore). */
+    record PutBack(int radius) implements Step {
+        public String text() { return "put back broken blocks within " + radius; }
+    }
+
     // ---- the step list's lines ----
 
     /** The steps' lines joined by " > " (logs, {@code aa why}; an option's label). Never parsed back. */

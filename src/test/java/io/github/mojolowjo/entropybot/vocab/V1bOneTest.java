@@ -91,7 +91,7 @@ class V1bOneTest {
         assertEquals("dig 0 0 10 10 -3 ores", DigArgs.oldSurfaceHint("0 0 10 10 down 3 ores"));
         assertEquals("dig -8 -8 8 8 +10", DigArgs.oldSurfaceHint("-8 -8 8 8 up 10"));
         assertNull(DigArgs.oldSurfaceHint("0 60 0 10 64 10"));
-        assertEquals("that is now dig 0 0 10 10 -3", io.github.mojolowjo.entropybot.commands.OldWords.removedAnswer("dig", "0 0 10 10 down 3", "dig 0 0 10 10 down 3"));
+        assertTrue(io.github.mojolowjo.entropybot.commands.OldWords.removedAnswer("dig", "0 0 10 10 down 3", "dig 0 0 10 10 down 3").contains("was deleted"));
         // dig <area>: heights before the question
         List<String> w = List.of("pit");
         assertTrue(DigForms.areaProblem("pit", true, false, true, false, w).contains("covers all heights: add -N"));

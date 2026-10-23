@@ -35,22 +35,7 @@ public final class ActionTable {
     }
 
     static {
-        a("walk", "goto x y z | go <place> [marker] | come | home", "a spot, a place or the owner", "the spot the policy allows (no keep-out area)", "at(spot)", "1 per block", true, false);
-        a("fetch", "get <item|kind> [n]", "item, n", "the item in the chests or the RS network (stock)", "have(item, n)", "3", true, true);
-        a("cut", "cut <n> logs", "n", "a tree seen near me", "have(log, n)", "3 + 2 per log", true, true);
-        a("craft", "craft <item> [n]", "item, n", "the recipe's inputs (the craft planner fetches and makes parts); a crafting table within 12 for 3x3 recipes", "have(item, n)", "2", true, true);
-        a("place", "place <block> x y z", "block, a free spot in reach", "have(block, 1); the spot the policy allows", "the block stands there (table/furnace near)", "3", true, true);
-        a("smelt", "smelt <item> [n] then smelt collect all", "item, n", "a furnace near; the raw item; fuel (1 per 8)", "have(item, n)", "6 + 1 per item", true, true);
-        a("mine", "mine strip <ore> [n] | mine <ore>_ore [n] | mine cave <ore> [n]", "ore family, n", "a pickaxe of the ore's tier; a marked mine, an ore in view, or a known cave", "have(ore drop, n)", "10 + 3 per item", true, true);
-        a("gather", "gather <item|kind> [n]", "item, n", "the gather verb's sources (storage, craft, smelt, mine, cut, farm)", "have(item, n)", "20 + 2 per item", true, true);
-        a("build", "shelter", "a block kind", "have(block, 32)", "shelter around me", "10", true, true);
-        a("light", "light here <r> | light x1 z1 x2 z2", "an area", "torches (it fetches or crafts them)", "torches every 6 blocks", "10 + per torch", true, false);
-        a("sleep", "sleep", "", "night; a bed near or in my bag", "slept (morning)", "5", true, false);
-        a("deposit", "deposit [item ...]", "", "base chests scanned (scan base)", "free bag slots", "10", true, false);
-        a("attack", "attack <mob kind|entity id>", "a mob", "the mob in sight; never players unless defence players on; never pets", "the mob dead or gone", "10", true, false);
-        a("eat", "eat", "", "food in the bag", "food bar up", "1", true, false);
-        a("burrow", "burrow", "", "the fork's BurrowProcess says it can dig down here or into a wall beside me", "sealed in a hole 3 down or a niche", "5", true, false);
-        a("chest", "open x y z | take <item> [n] | put <item> [n] | close", "a chest", "the chest trusted", "items moved", "3", true, false);
+        a("mine", "mine <ore>_ore [n] | mine cave <ore> [n]", "ore family, n", "a pickaxe of the ore's tier; an ore in view, or a known cave", "have(ore drop, n)", "10 + 3 per item", true, true);
         a("area", "area here <r> <name> [type] [down up]", "radius, name", "owner", "an area where I may work", "1", true, false);
         a("camp", "camp here", "", "the policy allows the spot", "a camp place with a bed marker, torches", "20", true, false);
     }
@@ -63,37 +48,19 @@ public final class ActionTable {
     }
 
     static {
-        v("a:walk", "goto", "go", "come", "home");
-        v("a:fetch", "get", "fetch");
-        v("a:cut", "cut");
-        v("a:craft", "craft", "kit");
-        v("a:place", "place");
-        v("a:smelt", "smelt", "cook");
         v("a:mine", "mine");
-        v("a:gather", "dig");
-        v("a:gather", "gather");
-        v("a:build", "build");
-        v("a:light", "light");
-        v("a:sleep", "sleep");
-        v("a:build", "shelter");
-        v("a:gather", "hunt", "fish");
-        v("a:deposit", "deposit", "unload");
-        v("a:attack", "attack");
-        v("a:eat", "eat");
-        v("a:burrow", "burrow");
-        v("n:a danger move (AA's danger desire prices and runs it; AA_CLEANUP 4)", "flee", "pillar");
-        v("a:chest", "open", "take", "put", "close");
         v("a:area", "area");
         v("a:camp", "camp");
-        v("n:answers only (no change in the world)", "places", "fence", "needs", "goals", "have", "stock", "status", "inv", "queue", "why", "look", "reply", "check", "summary", "deaths",
-                "kinds", "recipe", "help", "plan", "actions");
-        v("n:a setting or a note, not a step toward a thing", "marker", "need", "supplies", "junk", "defence", "tools", "hotbar", "brain", "idle", "done", "routine",
-                "rule", "trust", "untrust", "allow", "deny", "restart", "surface", "sense", "blind", "path", "server", "confirm", "goal", "dayplan", "ai", "aa");
-        v("n:runs until stopped or another order (no end state)", "follow", "defend", "guard", "assist", "dismiss", "carry", "repeat", "explore", "scout", "hold");
-        v("n:a whole job of its own (it plans itself)", "restock", "climb", "house", "farm", "compact", "infuse", "upgrade", "pots", "rs", "scan", "restore", "find");
-        v("n:moves items away or to a player (never a step toward having them)", "give", "drop", "wear");
-        v("n:recovery after a death", "death", "corpse", "resume");
-        v("n:chat, waiting or debugging", "night", "hunting", "say", "spawn", "wait", "stop", "debug");
+        v("n:a danger move (AA's danger desire prices and runs it; AA_CLEANUP 4)", "pillar");
+        v("n:answers only (no change in the world)", "places", "fence", "needs", "goals", "have", "stock", "status", "inv", "queue", "why", "look", "reply", "check", "deaths",
+                "kinds", "recipe", "help", "actions", "home", "kit");
+        v("n:a setting or a note, not a step toward a thing", "marker", "supplies", "junk", "defence", "tools", "hotbar", "brain", "idle", "done", "routine",
+                "rule", "trust", "untrust", "allow", "deny", "restart", "sense", "blind", "path", "server", "confirm", "dayplan", "aa");
+        v("n:runs until stopped or another order (no end state)", "defend", "guard", "dismiss");
+        v("n:a whole job of its own (it plans itself)", "find");
+        v("n:moves items away or to a player (never a step toward having them)", "wear");
+        v("n:recovery after a death", "death", "corpse");
+        v("n:chat or debugging", "say", "spawn", "debug");
     }
 
     public static Map<String, ActionSpec> actions() { return java.util.Collections.unmodifiableMap(ACTIONS); }

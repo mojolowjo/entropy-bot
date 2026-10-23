@@ -143,16 +143,12 @@ public final class OldWords {
         if (v.equals("ores") && lr.matches("^known\\b.*")) return null;      // 0.28.0: "ores known [family] [r]" runs ("ores" alone stays under debug)
         if (DEBUG_VERBS.contains(v)) return "removed in 0.22; use debug " + v + sp;
         switch (v) {
-            case "dig" -> {
-                String t = translate(v, rest);
-                return t == null ? null : "that is now " + t;
-            }
-            case "mark" -> { return "that is now place" + (r.isEmpty() ? " <name>" : sp); }
-            case "setbase" -> { return "that is now place base" + sp; }
+            case "dig" -> { return HelpCommand.gone("dig"); }
+            case "mark", "setbase" -> { return HelpCommand.gone("place"); }
             case "forget" -> { return "that is now places forget" + (r.isEmpty() ? " <name>" : sp); }
-            case "base" -> { return "that is now go base"; }
-            case "stripmine" -> { return "that is now mine strip" + sp; }
-            case "chop" -> { return "that is now cut" + (r.isEmpty() ? " <n>" : sp); }
+            case "base" -> { return HelpCommand.gone("go"); }
+            case "stripmine" -> { return "the old strip mine is gone: say aa want strip <ore|ore,ore|any> [<y>] [<heading>]"; }
+            case "chop" -> { return HelpCommand.gone("cut"); }
             case "defense" -> { return "that is now defence" + sp; }
             case "defend" -> { return r.isEmpty() ? null : "that is now defence" + sp + " (defend alone holds this spot)"; }
             case "tools" -> {
@@ -161,7 +157,7 @@ public final class OldWords {
                 if (lr.startsWith("ores")) return "that is now tools mode best|cheapest|stone";
                 return null;
             }
-            case "build" -> { return lr.matches("^clear\\b.*") ? "that is now dig" + (lr.split("\\s+").length > 1 ? " " + r.split("\\s+")[1] : " <area>") + " (build only places now)" : null; }
+
             case "pos" -> { return "that is now status"; }
             case "inventory" -> { return "that is now inv"; }
             case "equip" -> { return "that is now wear"; }

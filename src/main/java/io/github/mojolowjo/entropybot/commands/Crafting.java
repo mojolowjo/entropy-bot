@@ -109,9 +109,6 @@ final class Crafting {
         return 0;
     }
 
-    /** Package E: "upgrade &lt;essence&gt; [n]", the essence tiers in bag-sized rounds. */
-    String upgrade(LocalPlayer p, String text) { return mystical.upgrade(p, text); }
-
     private long now() { return core.tick(); }
 
     private String startSeq(String label, List<Step> steps, String close) {
@@ -628,16 +625,7 @@ final class Crafting {
 
     String recipe(LocalPlayer p, String text) { return planner.recipeInfo(text, Gui.inventory(p)); }
 
-    String need(LocalPlayer p, String text) {
-        return CraftTexts.needReply(planner, text, Gui.inventory(p), totals(sources(p)), rsKnown());
-    }
-
     // ---- smelt / get ----
-
-    /** The "smelt" sub-verbs that answer at once (package D): jobs, mode, forget. */
-    static boolean smeltInstant(String rest) {
-        return SmeltTexts.instant(rest);
-    }
 
     String smelt(LocalPlayer p, String text) {
         String t = text == null ? "" : text.trim().toLowerCase(java.util.Locale.ROOT);
@@ -773,21 +761,6 @@ final class Crafting {
         return CraftTexts.suppliesReply(commands.suppliesMap(), inv);
     }
 
-    String restock(LocalPlayer p) {
-        List<Source> src = sources(p);
-        CraftTexts.Restock r = CraftTexts.restock(commands.suppliesMap(), Gui.inventory(p), totals(src));
-        if (r.reply() != null) return r.reply();
-        List<Step> steps = new ArrayList<>(takeTrips(src, new LinkedHashMap<>(r.take())).steps());
-        if (!r.craftText().isEmpty()) {
-            Step c = new Step("craftitem");
-            c.text = r.craftText();
-            c.optional = true;
-            steps.add(c);
-        }
-        steps.add(new Step("restocknote"));
-        return startSeq(r.label(), steps, "always");
-    }
-
     String kit(LocalPlayer p, String text) {
         String m = text == null ? "" : text.trim().toLowerCase();
         if (m.isEmpty()) return CraftTexts.KIT_USAGE;
@@ -884,35 +857,6 @@ final class Crafting {
         s.farm = st.round();
         String res = jobs.startSeq(s, "always");
         return res + (st.note() != null ? " (" + st.note() + ")" : "");
-    }
-
-    /** "compact <item> [here | place | x y z]". */
-    String compact(LocalPlayer p, String text, String from) {
-        String[] w = Compact.words(text);
-        if (w.length == 0) return Compact.USAGE;
-        String id = planner.resolveItem(w[0], Gui.inventory(p));
-        if (id == null) return Compact.unknownItem(w[0]);
-        Compact.Pair pair = Compact.pair(planner, id);
-        if (pair == null) return Compact.noPair(id);
-        int[] center;
-        String centerLabel;
-        if (w[1].isEmpty() || w[1].equals("here")) {
-            var pos = commands.resolvePos(Minecraft.getInstance(), "", from);
-            center = new int[]{pos.x(), pos.y(), pos.z()};
-            centerLabel = Jobs.fmt(center);
-        } else {
-            StorageRules.Spot spot = StorageRules.resolveSpot(w[1], core.knowledge.places(), Storage.dim());
-            if (spot.err() != null) return Compact.placeError(spot.err());
-            center = spot.pos();
-            centerLabel = spot.name() != null ? spot.name() : spot.fmt();
-        }
-        StationFact table = findTable(p);
-        if (table instanceof StationFact.NotLoaded n) return "error: compact: " + notLoadedText(n) + " - compact again once it is in";   // rule 15
-        if (!(table instanceof StationFact.Known) && findBlockAround(center, "crafting_table", 12, 6) == null) return Compact.NO_TABLE;
-        Compact.Start st = Compact.start(pair, center, centerLabel, Jobs.here(p));
-        Seq s = new Seq(jobs, storage, st.label(), toSteps(st.steps()), "always");
-        s.compact = st.run();
-        return jobs.startSeq(s, "always");
     }
 
     /** The farm and compact logic's game-free steps as Seq steps. */

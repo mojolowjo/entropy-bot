@@ -84,7 +84,7 @@ public final class StepHands implements Steps.Hands {
         try {
             // station-race (0.39.z17, rule 15): a craft / smelt whose station fact is not loaded yet waits for it (status:
             // running with the reason), exactly like the loot-book wait; it never plans, places or fails on "none" meanwhile
-            if (StepWait.kindOf(s) != null) return dataWait.start(s, c.nearby::stations, () -> verb(StepCommands.command(s)));
+            if (StepWait.kindOf(s) != null) return dataWait.start(s, c.nearby::stations, () -> direct(s));
             return switch (s) {
                 case Step.Walk w -> walk(w);
                 case Step.ChopTree t -> chop(p, t);
@@ -101,7 +101,8 @@ public final class StepHands implements Steps.Hands {
                 case Step.Mine m when m.how() == Step.Mine.How.STRIP -> mineStrip(p, m);   // an AA strip leg: the same fork process (the old verb is gone)
                 case Step.Deposit d when d.order() != null -> depositLeg(p, d);           // the strip order's deposit leg (DepositLeg)
                 case Step.StripBack k -> stripBack(p, k);
-                default -> verb(StepCommands.command(s));   // the item actions and the mine verb's steps: one command, its own job
+                case Step.Deposit d -> depositLeg(p, d);                                  // DepositLeg (the order's leg, or a plain deposit)
+                default -> direct(s);   // the item actions and the mine steps: the method, its own job
             };
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] steps: {} did not start: {}", s.text(), e.toString());
@@ -128,7 +129,7 @@ public final class StepHands implements Steps.Hands {
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null) return Car.Status.failed("not in a world");
         try {
-            if (dataWait.waiting()) return dataWait.tick(c.nearby::stations, () -> { stationsLine(s); return verb(StepCommands.command(s)); }, this::requestStatus);
+            if (dataWait.waiting()) return dataWait.tick(c.nearby::stations, () -> { stationsLine(s); return direct(s); }, this::requestStatus);
             return switch (s) {
                 case Step.ChopTree t -> mineStatus(p);
                 case Step.Collect k -> mineStatus(p);
@@ -247,7 +248,16 @@ public final class StepHands implements Steps.Hands {
     private DepositLeg deposit;
 
     private String depositLeg(LocalPlayer p, Step.Deposit d) {
-        deposit = new DepositLeg(c, d, cmd -> { req = null; instant = null; return verb(cmd); }, this::requestStatus);
+        deposit = new DepositLeg(c, d, new DepositLeg.Hands() {
+            @Override public String craft(String item, int n) {
+                req = null; instant = null;
+                return follow("craft " + item, () -> c.stepJob("craft " + item + " " + n, () -> c.crafting.craft(p, item + " " + n, null)));
+            }
+            @Override public String walk(int x, int y, int z) {
+                req = null; instant = null;
+                return follow("walk", () -> c.stepJob("walk " + x + " " + y + " " + z, () -> c.walkTo(p, x, y, z)));
+            }
+        }, this::requestStatus);
         String[] inst = new String[1];
         String r = deposit.start(p, inst);
         if (inst[0] != null) { instant = inst[0]; deposit = null; }
@@ -356,13 +366,84 @@ public final class StepHands implements Steps.Hands {
         return Car.Status.failed("climb: its chain went without an end (stopped by someone)");
     }
 
-    // ---- the item actions and the mine verb's steps: one command, its job's request ----
+    // ---- the item actions and the mine steps: the typed step calls its method (never a verb line), its job's request ----
 
-    private String verb(String text) {
+    /** An instant answer (no job). */
+    private static Chains.Reply now(String r) { return Chains.Reply.now(r); }
+
+    /** The typed step's method; a job's answer carries the job's request. */
+    private Chains.Reply call(Step s, LocalPlayer p) {
+        String me = c.owner();
+        return switch (s) {
+            case Step.Craft k -> c.stepJob(s.text(), () -> c.crafting.craft(p, k.item() + " " + k.n(), null));
+            case Step.Smelt k -> c.stepJob(s.text(), () -> c.crafting.smelt(p, k.item() + " " + k.n() + (k.here() ? " here" : "")));
+            case Step.Cook k -> {
+                String t = io.github.mojolowjo.entropybot.farm.Cooking.smeltText(k.item() + " " + k.n());
+                yield t == null ? now("error: " + s.text() + ": " + io.github.mojolowjo.entropybot.farm.Cooking.USAGE) : c.stepJob(s.text(), () -> c.crafting.smelt(p, t));
+            }
+            case Step.Fetch k -> c.stepJob(s.text(), () -> c.crafting.get(p, k.item() + " " + k.n()));
+            case Step.SmeltCollect k -> c.stepJob(s.text(), () -> c.crafting.smelt(p, "collect all"));
+            case Step.Scan k -> c.stepJob(s.text(), () -> c.storage.scan(p, k.base() ? "base" : ""));
+            case Step.Mine m -> c.stepJob(s.text(), () -> Mining.get().mine(p, switch (m.how()) {
+                case KNOWN -> m.family() + " " + m.n();
+                case DIG -> m.family() + " " + m.n() + " dig";
+                case CAVE -> "cave " + m.family() + " " + m.n();
+                case STRIP -> throw new IllegalStateException("a strip leg runs on the fork's strip (mineStrip)");
+            }, x -> null));
+            case Step.FindCave k -> c.stepJob(s.text(), () -> Mining.get().find(p, io.github.mojolowjo.entropybot.vocab.ExploreWords.find("cave " + k.minutes(), Commands.POI_KINDS, Commands::isBiome)));
+            case Step.Explore k -> c.stepJob(s.text(), () -> Mining.get().explore(p, k.minutes() + (k.until() == null ? "" : " until " + k.until())));
+            case Step.Dig d -> c.stepJob(s.text(), () -> DigCommands.dig(c, p, d.from()[0] + " " + d.from()[1] + " " + d.from()[2] + " " + d.to()[0] + " " + d.to()[1] + " " + d.to()[2]
+                    + (d.ores() ? " ores" : "") + (d.viaEngine() ? " via engine" : ""), me));
+            case Step.DigArea k -> c.stepJob(s.text(), () -> DigCommands.dig(c, p, k.box()[0] + " " + k.box()[1] + " " + k.box()[2] + " " + k.box()[3] + " +" + k.up(), me));
+            case Step.BuildSchematic k -> c.stepJob(s.text(), () -> DigCommands.build(c, p, "schematic " + k.name() + " " + k.x() + " " + k.y() + " " + k.z(), me));
+            case Step.MarkMine k -> mark(p, "mine " + (k.at() == null ? "" : k.at()[0] + " " + k.at()[1] + " " + k.at()[2] + " ") + k.dir());
+            case Step.MarkBase k -> mark(p, "base " + k.x() + " " + k.y() + " " + k.z());
+            case Step.MarkFarm k -> mark(p, "farm" + (k.at() == null ? "" : " " + k.at()[0] + " " + k.at()[1] + " " + k.at()[2]));
+            case Step.Restore k -> {
+                String t = k.keep() ? "keep pillar" : "placed " + k.radius();
+                yield io.github.mojolowjo.entropybot.restore.RestoreArgs.isJob(t) ? c.stepJob(s.text(), () -> RestoreLive.INSTANCE.startNow(p, t)) : now(RestoreLive.INSTANCE.command(p, t));
+            }
+            case Step.PutBack k -> c.stepJob(s.text(), () -> RestoreLive.INSTANCE.startNow(p, "now " + k.radius()));
+            case Step.DropJunk k -> now(Storage.drop(p, k.item() + " " + k.n()));
+            case Step.FarmPlant k -> c.stepJob(s.text(), () -> c.crafting.farm(p, "plant " + k.crop() + " here " + k.n(), me));
+            case Step.Shelter k -> c.stepJob(s.text(), () -> ShelterJob.start(c, p, "", true, me));
+            case Step.Sleep k -> c.stepJob(s.text(), () -> SleepJob.start(c, p, ""));
+            case Step.Wait k -> c.stepJob(s.text(), () -> c.jobs.startWait(String.valueOf(k.seconds())));
+            case Step.GoBase k -> c.stepJob(s.text(), () -> c.goBase(p));
+            case Step.Come k -> c.stepJob(s.text(), () -> c.comeTo(me, p));
+            case Step.Give k -> c.stepJob(s.text(), () -> {
+                PolicyCommands.Pos h = c.hereOf(Minecraft.getInstance(), me);
+                return c.crafting.give(p, "me " + k.item() + " " + k.n(), new int[]{h.x(), h.y(), h.z()});
+            });
+            case Step.Light k -> c.camp.light(p, "here " + k.radius(), me, true, s.text(), null);
+            case Step.House k -> now(c.camp.house(p, me, true, k.area()));
+            case Step.Burrow k -> now(Core.INSTANCE.reflexes.moves.burrow());
+            case Step.Flee k -> now(Core.INSTANCE.reflexes.moves.flee());
+            case Step.Pillar k -> now(Core.INSTANCE.reflexes.moves.pillar());
+            case Step.Attack k -> now(c.vocab.attack(me, "nearest", p));
+            case Step.Eat k -> now(Core.INSTANCE.reflexes.eat());
+            default -> throw new IllegalStateException(s.text() + " has hands of its own (StepHands.start0), no method here");
+        };
+    }
+
+    /** A place mark (place base|mine|farm ...): the instant place memory, else the place job. */
+    private Chains.Reply mark(LocalPlayer p, String rest) {
+        String pl = c.vocab.placeInstant(c.owner(), rest, p);
+        return pl != null ? now(pl) : c.stepJob("place " + rest, () -> DigCommands.place(c, p, rest, c.owner()));
+    }
+
+    /** The typed step's method runs in the driver's door scope; its job's request is followed (or its answer is the end). */
+    private String direct(Step s) {
+        LocalPlayer p = Minecraft.getInstance().player;
+        if (p == null) return "error: not in a world";
+        return follow(s.text(), () -> call(s, p));
+    }
+
+    private String follow(String text, java.util.function.Supplier<Chains.Reply> run) {
         Chains.Reply r;
         var d = io.github.mojolowjo.entropybot.aa.door.Door.current() == null ? io.github.mojolowjo.entropybot.aa.door.Driver.AA : io.github.mojolowjo.entropybot.aa.door.Door.current();
         try (var sc = io.github.mojolowjo.entropybot.aa.door.Door.scope(d)) {
-            r = c.handle(c.owner(), text, true, null);
+            r = run.get();
         }
         if (r == null) return "error: " + text + ": no answer";
         if (r.pending() != null) {
@@ -388,7 +469,9 @@ public final class StepHands implements Steps.Hands {
     // ---- walk: the travel job's one Baritone goal ----
 
     private String walk(Step.Walk w) {
-        String r = verb("goto " + w.x() + " " + w.y() + " " + w.z());
+        LocalPlayer p = Minecraft.getInstance().player;
+        if (p == null) return "error: not in a world";
+        String r = follow(w.text(), () -> c.stepJob(w.text(), () -> c.walkTo(p, w.x(), w.y(), w.z())));
         if (r != null) return r;
         if (c.jobs.running() && "travel".equals(c.jobs.job.type)) {
             walkJob = c.jobs.job;

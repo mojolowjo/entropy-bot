@@ -1096,7 +1096,6 @@ public final class Reflexes {
         if (deadTicks == 1) {
             if (reflex != Reflex.NONE) settle("died");
             moves.stop("died");
-            io.github.mojolowjo.entropybot.summary.DaySummary.INSTANCE.death();      // 0.23.6
             events.push("reflex", "died at " + p.getBlockX() + " " + p.getBlockY() + " " + p.getBlockZ(), null);
         }
         // respawn after 2 seconds, and again every 10 s if the first click didn't take

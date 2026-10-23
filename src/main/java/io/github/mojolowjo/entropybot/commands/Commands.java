@@ -72,11 +72,6 @@ public final class Commands implements Chains.Env {
     /** AA is on (it then owns the job slot; the brain, rules, assist, the supply rewrite step aside). */
     boolean aaOn() { return aaRuntime != null && aaRuntime.on(); }
 
-    /** The AI operator's job command while AA's task runs: queued as an AI request (the reply), or null when AA is off or idle. */
-    public String aaPostAi(String cmd) { return aaOn() && aaRuntime.chainRunning() ? aaRuntime.postAi(cmd) : null; }
-
-    /** The AI's stop with AA on: its own requests go (the text), else null (AA off: the old global stop). */
-    public String aaCancelAi() { return aaOn() ? aaRuntime.cancelAi() : null; }
     PolicyCommands policy;        // AREAS: the verbs read blockedText from it
     /** The kubejs/bridge folder: state.json out, cmd.json in. */
     private BotFiles stateFiles;
@@ -101,9 +96,9 @@ public final class Commands implements Chains.Env {
     /** V1b: places/markers, queue, kinds, cut, the fighting jobs, explore/find, needs/goals (game side of vocab/). */
     final VocabCommands vocab = new VocabCommands(this);
 
-    /** V1b: something holds the bot in place for good (defend, guard, assist): the queue waits. */
+    /** V1b: something holds the bot in place for good (defend, guard): the queue waits. */
     boolean heldInPlace() {
-        return vocab.hold != null || assist.on();     // 0.24.2: assist holds it too
+        return vocab.hold != null;
     }
 
     /** V1b: the point-of-interest kinds find walks for (the POI scanner's own words, plus cave). */
@@ -202,8 +197,8 @@ public final class Commands implements Chains.Env {
     final StepRun stepRun;
     /** Where it respawned (a home fact: no build hints there). */
     final io.github.mojolowjo.entropybot.camp.RespawnHomes respawn = new io.github.mojolowjo.entropybot.camp.RespawnHomes();
-    /** 0.24.2: assist (help the owner with what they are doing). */
-    final Assist assist = new Assist(this);
+    /** The owner's companion report (owner.json) for AA's help desire. */
+    final OwnerReport ownerReport = new OwnerReport();
 
     Core core() { return core; }
 
@@ -263,14 +258,6 @@ public final class Commands implements Chains.Env {
     /** The commands store's object (commands.json): supplies, routines, rules, run, and package D's furnace jobs and smelt mode. */
     JsonObject brainData() { return brainStore.data(); }
 
-    /** orders-tier (0.39.z9): the AI translator's switch of this world ({@code ai on|off}); off when never set. */
-    public boolean aiWorldOn() { return io.github.mojolowjo.entropybot.aa.AaSwitch.ai(io.github.mojolowjo.entropybot.aa.AaSwitch.of(brainData())); }
-
-    /** orders-tier: sets this world's AI translator switch and saves it. */
-    public void aiWorld(boolean on) {
-        io.github.mojolowjo.entropybot.aa.AaSwitch.ai(io.github.mojolowjo.entropybot.aa.AaSwitch.of(brainData()), on);
-        saved();
-    }
 
     /** B7e (E1): the three stores, for "memory". */
     /** commands.json written now (a crash before the debounced save would repeat an import). */
@@ -656,7 +643,6 @@ public final class Commands implements Chains.Env {
             if (dead && !wasDead) noteDeath(mc, player);
             wasDead = dead;
             if (tick % 5 == 0) processPms();
-            try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(io.github.mojolowjo.entropybot.aa.door.Driver.AI)) { io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.tick(this); }     // 0.35.0 the AI operator (never throws; HTTP is on its own thread)
             if (tick % 5 == 0) pollCommand(mc, tick);
             // 0.23.3: a chain whose step's job just ended goes on the next tick (no gap between walks), else every 5 ticks
             if (tick % 5 == 3 || (chains.running() && !jobs.running() && !requests.busy())) {
@@ -722,13 +708,6 @@ public final class Commands implements Chains.Env {
                 }
             }
             if (tick % 20 == 7) nearTick(mc, player);         // 0.21.2: the near-me zone follows the owner
-            if (tick % 20 == 12 && !aaOn()) {                   // 0.36.1: assist is off under AA (aa on ends it)
-                try {
-                    assist.tick(player);                     // 0.24.2
-                } catch (RuntimeException e) {
-                    LOG.warn("[entropybot] assist: {}", e.toString());
-                }
-            }
             if (tick % 20 == 13 && vocab.hold != null) {
                 try {
                     vocab.holdTick(player);                  // V1b: defend/guard walk back after a fight
@@ -802,18 +781,12 @@ public final class Commands implements Chains.Env {
         if (pm == null) return;
         LOG.info("[entropybot] pm from {}{}: {}", pm.from(), pm.verified() ? " (verified)" : " (name from the chat text)", pm.body());
         core.events.push("pm", pm.from() + ": " + pm.body(), null);
-        // 0.35.0: with the AI operator on, the owner's line that is no command is a request for it
-        boolean fromOwner = pm.from().equalsIgnoreCase(owner());
-        if (fromOwner && io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.ownerText(this, pm.body(), false)) return;
         Reply r;
         try {
             r = handle(pm.from(), pm.body(), false, pmListener(pm.from()));
         } catch (RuntimeException e) {
             r = Reply.now("error: " + e);
         }
-        // 0.35.0: "build a nice house" answers usage (nothing ran): a sentence of 3+ words goes to the AI instead
-        if (fromOwner && r.pending() == null && r.text() != null && r.text().startsWith("usage:") && Texts.words(pm.body()).size() >= 3
-                && io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.ownerText(this, pm.body(), true)) return;
         if (r.text() != null && !r.text().isEmpty())
             whisper(pm.from(), pm.from().equalsIgnoreCase(owner()) ? shapeOut(Texts.verbAndRest(pm.body())[0], r.text()) : r.text().replaceFirst("^ok: ", ""), true);
     }
@@ -836,10 +809,7 @@ public final class Commands implements Chains.Env {
     /** 0.33.0: a job's or chain's end: the shape takes failed from the job's own end status, not from the text. */
     @Override
     public void whisperEnd(String to, String text, boolean failed) {
-        if (to != null && to.equalsIgnoreCase(owner())) {
-            text = shapeOut(null, text, failed);
-            io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.endSeen(text);     // 0.35.2: a chain's end (ok or failed) wakes the AI with its text
-        }
+        if (to != null && to.equalsIgnoreCase(owner())) text = shapeOut(null, text, failed);
         whisper(to, text, true);
     }
 
@@ -901,18 +871,8 @@ public final class Commands implements Chains.Env {
         else player.displayClientMessage(net.minecraft.network.chat.Component.literal("[to " + m[0] + "] " + m[1]), false);
     }
 
-    // ---- 0.35.0 the AI operator's hooks (ai.live.AiRuntime) ----
-
-    /** A job, chain, gather or hunt run is on (the AI waits for its end). */
-    public boolean aiBusy() {
-        return requests.busy() || jobs.running() || (chains != null && chains.running()) || stepRun.running();
-    }
-
-    /** The reply shape the owner gets for this command line's answer (RESULT/HERE/NEW/OPTIONS). */
-    public String aiShape(String line, String text) { return shapeOut(line == null ? null : Texts.verbAndRest(line)[0], text); }
-
     /**
-     * 0.35.2: a line typed in the bot's own window (/bot, /ai): queued exactly like a PM from the owner (same gate,
+     * 0.35.2: a line typed in the bot's own window (/bot): queued exactly like a PM from the owner (same gate,
      * same owner rights, the answer shown in this window when the owner isn't online). Never sent to the server.
      */
     public void localLine(String text) {
@@ -920,17 +880,6 @@ public final class Commands implements Chains.Env {
         synchronized (pmQueue) {
             pmQueue.add(new ChatParse.Pm(owner(), text.trim(), true));
         }
-    }
-
-    /** A notice from the AI operator to the owner ("AI: ..."). */
-    public void aiNotice(String text) { whisper(owner(), "AI: " + text, true); }
-
-    /** The word starts a command (a verb, an alias, a removed word with its hint, a routine, the raw words): not a request for the AI. */
-    public boolean aiKnownWord(String word) {
-        if (word == null || word.isEmpty()) return true;
-        return VerbTable.of(word) != null || OldWords.REMOVED.contains(word) || Texts.MOD_VERBS.contains(word) || Texts.MOD_JOB_VERBS.contains(word)
-                || (chains != null && chains.isRoutine(word)) || java.util.Set.of("ai", "b", "baritone", "run", "stripmine", "autominer", "reconnect", "pos",
-                "inventory", "?", "defense", "allowed", "zone", "poi", "pois", "caves", "bed", "base").contains(word);
     }
 
     public String owner() {
@@ -963,14 +912,9 @@ public final class Commands implements Chains.Env {
 
     /** auto: a line the bot sends itself (corpse fetch): it skips the confirm gate, so it never cancels the owner's question. */
     Reply handle(String from, String message, boolean internal, boolean auto, Listener l) {
-        // AA_CLEANUP 2: who is asking. The AI operator calls as the owner with internal=false; AiRuntime.calling() tells it apart.
-        io.github.mojolowjo.entropybot.aa.door.Driver d = io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.calling() ? io.github.mojolowjo.entropybot.aa.door.Driver.AI
-                : io.github.mojolowjo.entropybot.aa.door.Door.current() != null ? io.github.mojolowjo.entropybot.aa.door.Door.current()
+        // AA_CLEANUP 2: who is asking
+        io.github.mojolowjo.entropybot.aa.door.Driver d = io.github.mojolowjo.entropybot.aa.door.Door.current() != null ? io.github.mojolowjo.entropybot.aa.door.Door.current()
                 : !internal && from != null && from.equalsIgnoreCase(owner()) ? io.github.mojolowjo.entropybot.aa.door.Driver.OWNER : io.github.mojolowjo.entropybot.aa.door.Driver.OTHER;     // auto too: camp steps
-        if (d == io.github.mojolowjo.entropybot.aa.door.Driver.AI && aaOn() && !io.github.mojolowjo.entropybot.aa.door.Door.aiMayUnderAa(message)) {
-            io.github.mojolowjo.entropybot.aa.door.Door.refuse(d, Texts.verbAndRest(message)[0]);
-            return Reply.now("error: refused: aa is on, the AI may only say \"aa want ...\" or \"aa drop ...\"");
-        }
         try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(d)) {
             return handleScoped(from, message, internal, auto, l);
         }
@@ -990,10 +934,9 @@ public final class Commands implements Chains.Env {
 
     private Reply handleScoped(String from, String message, boolean internal, boolean auto, Listener l) {
         Reply r = handleOnce(from, message, internal, auto, l);
-        // 0.36.0 AA (AA_PLAN 4, Q1): the owner's order preempts AA's needs/idle task (logged); an AI command never does
-        // (AiRuntime queues it instead, see AiRuntime.run)
+        // 0.36.0 AA (AA_PLAN 4, Q1): the owner's order preempts AA's needs/idle task (logged)
         if (!internal && !auto && r != null && r.pending() == null && r.text() != null && r.text().startsWith("busy: ") && aaRuntime != null
-                && aaRuntime.chainRunning() && from.equalsIgnoreCase(owner()) && !io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.calling()) {
+                && aaRuntime.chainRunning() && from.equalsIgnoreCase(owner())) {
             aaRuntime.yieldToOwner(Texts.verbAndRest(message)[0]);
             if (!aaRuntime.chainRunning()) r = handleOnce(from, message, internal, auto, l);
         }
@@ -1032,14 +975,11 @@ public final class Commands implements Chains.Env {
         if (verb.equals("check")) return Reply.now(selfCheck.command(player) + "\n" + io.github.mojolowjo.entropybot.view.ViewLive.SHAPER.counters() + "; " + io.github.mojolowjo.entropybot.view.ViewLive.NEWS.counters()
                 + (aaRuntime == null ? "" : "\n" + aaRuntime.statusLine() + "; " + aaRuntime.counts()));      // 0.36.0: AA's self-check line
         if (verb.equals("aa")) return Reply.now(isOwner ? AaCommands.handle(this, rest) : "sorry, only " + owner() + " can use aa");     // 0.36.0
-        // AA_STEP3 B: a bare "go" releases the plan slow mode holds (go <place> | go poi <n> stay the walking verb below)
-        if (verb.equals("go") && rest.isBlank() && aaRuntime != null) return Reply.now(isOwner ? aaRuntime.slow.go() : "sorry, only " + owner() + " can use go");
         // 0.32.0 (operator view): the last failure in full, the text map, the reply setting
         // review: "why" and "why cut" are the operator view's; "why brain" / "why threats" stay the brain's
         if (verb.equals("why") && (rest.isBlank() || rest.trim().equalsIgnoreCase("cut"))) return Reply.now(io.github.mojolowjo.entropybot.view.ViewLive.SHAPER.why(System.currentTimeMillis(), rest));
         if (verb.equals("look")) return Reply.now(io.github.mojolowjo.entropybot.view.ViewLive.look(player, rest));
         if (verb.equals("reply")) return Reply.now(replyCommand(rest));
-        if (verb.equals("summary")) return Reply.now(io.github.mojolowjo.entropybot.summary.SummaryRuntime.INSTANCE.now(core.files()));     // 0.23.6
         if (verb.equals("memory")) return Reply.now(MemoryCommand.command(core, this, rest));
         // V1b: the plumbing verbs live under debug ("debug autominer on" runs "autominer on" as before)
         if (verb.equals("debug") && OldWords.DEBUG_VERBS.contains(Texts.verbAndRest(rest)[0])) {
@@ -1051,23 +991,8 @@ public final class Commands implements Chains.Env {
         if (isOwner && !internal && !auto) vocab.unrelease(verb);
         if (verb.equals("done") || verb.equals("free")) return Reply.now(vocab.release());
         if (verb.equals("needs")) return Reply.now(removedVerb("needs"));      // AA_CLEANUP 3
-        if (verb.equals("goal")) return Reply.now(planning.goal(from, player, rest));         // one-planner: the order through the chain
-        // 0.32.3 (PATHS_PLAN P3): paper planning: plan path ... / plan go / plan last; the result is whispered when done
-        if (verb.equals("plan") && rest.trim().toLowerCase().matches("^(path\\b.*|go( anyway)?|last)$")) {
-            String to = from;
-            return Reply.now(PaperPlan.INSTANCE.command(this, player, rest, from, r -> whisper(to, r)));
-        }
-        if (verb.equals("plan")) return Reply.now(planning.plan(from, player, rest));
         if (verb.equals("actions")) return Reply.now(planning.actions(rest));
         if (verb.equals("goals")) return Reply.now(vocab.goals(rest));
-        if (verb.equals("need")) {
-            String st = vocab.needStanding(player, rest);
-            if (st != null) return Reply.now(st);
-        }
-        if (verb.equals("sleep")) {
-            String sa = vocab.sleepAuto(rest);
-            if (sa != null) return Reply.now(sa);
-        }
         if (verb.equals("camp")) {
             if (!rest.trim().equalsIgnoreCase("here")) return Reply.now("usage: camp here");
             String busy = chainBusyText() != null ? chainBusyText() : jobBusyText();
@@ -1076,24 +1001,14 @@ public final class Commands implements Chains.Env {
         }
         if (verb.equals("allow") && rest.isBlank()) return Reply.now(allowCommand("allowed", "", isOwner));
         if (verb.equals("places") && !isOwner && !rest.isBlank()) return Reply.now("sorry, only " + owner() + " can forget places");
-        if (verb.equals("ai")) return Reply.now(isOwner ? io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.command(this, rest)
-                : "sorry, only " + owner() + " can use ai");                                                        // 0.35.0: never busy
         if (verb.equals("blind")) return Reply.now(io.github.mojolowjo.entropybot.blind.BlindRuntime.INSTANCE.command(rest));          // 0.26.0: never busy
         if (verb.equals("watch")) return Reply.now(io.github.mojolowjo.entropybot.engine.WatchCamera.INSTANCE.command(rest));           // camera v1: never busy
         if (verb.equals("path")) return Reply.now(PathCommand.run(this, player, rest));
         if (verb.equals("server")) return Reply.now(PathCommand.server(this, rest, isOwner));      // 0.24.1: never busy          // 0.23.3: never busy
-        if (verb.equals("surface")) return Reply.now(io.github.mojolowjo.entropybot.surface.SurfaceExport.INSTANCE.command(rest));     // 0.19.3: never busy
         if (verb.equals("sense")) return Reply.now(io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.command(rest));          // 0.28.0: never busy
         if (verb.equals("mouse")) return Reply.now(io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.mouseCommand(rest));     // B7e E1: never busy
         if (verb.equals("status") || verb.equals("pos")) return Reply.now(statusLine(player));
         if (verb.equals("inv") || verb.equals("inventory")) return Reply.now(inventorySummary(player));
-        if (verb.equals("stop")) {
-            // 0.35.0: the owner's stop pauses the AI operator until the next request (the AI's own stop does not)
-            String aiNote = isOwner && !internal && !auto ? io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.ownerStopped() : "";
-            // 0.36.0: AA's task ends, the slot waits; 0.36.1: only the owner's own stop holds it (not the AI's, not a guest's)
-            String aaNote = aaRuntime != null && !internal && isOwner && !io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.calling() ? aaRuntime.ownerStopped() : "";
-            return Reply.now(stopAll() + aiNote + aaNote);
-        }
         if (verb.equals("defence") || verb.equals("defense")) {                     // V1b: the self-defence setting
             Boolean pl = io.github.mojolowjo.entropybot.vocab.AttackRules.playersSetting(rest);
             if (pl != null) {
@@ -1110,22 +1025,12 @@ public final class Commands implements Chains.Env {
             return Reply.now(vocab.defend(from, player));
         }
         if (verb.equals("defend")) return Reply.now(setDefence(rest));
-        if (verb.equals("dismiss")) {
-            if (assist.on() && isOwner) {                                            // 0.24.2: dismiss ends assist too
-                assist.end(player);
-                String d = vocab.dismiss(from, player);
-                return Reply.now("ok: assist ended" + (d.startsWith("ok: nothing") ? "" : "; " + d.replaceFirst("^ok: ", "")));
-            }
-            return Reply.now(vocab.dismiss(from, player));
-        }
-        if (verb.equals("assist") && aaOn() && !rest.trim().toLowerCase().matches("^(off|status)$")) return Reply.now("aa is on - assist is off while AA runs (aa off first)");   // 0.36.0
-        if (verb.equals("assist")) return Reply.now(assist.command(from, rest, player));     // 0.24.2
+        if (verb.equals("dismiss")) return Reply.now(vocab.dismiss(from, player));
         if (verb.equals("guard") && !io.github.mojolowjo.entropybot.vocab.HoldRules.fenceForm(rest)) {     // V1b: guard <area|place|marker>
             vocab.endHold("a new order");
             if (jobs.running()) jobs.finish("stopped: guard");
             return Reply.now(vocab.guard(from, rest, player));
         }
-        if (verb.equals("attack")) return Reply.now(vocab.attack(from, rest, player));     // V1b: the attack rules (C1's point key sends attack target <id>)
         if (verb.equals("routine") || verb.equals("routines")) return Reply.now(chains.routineCommand(rest));
         if (verb.equals("rule") || verb.equals("rules")) return Reply.now(chains.ruleCommand(verb.equals("rules") ? "list" : rest));
         // AA_CLEANUP 3: the old brain's verbs are gone; a clear reply, never "unknown"
@@ -1140,10 +1045,6 @@ public final class Commands implements Chains.Env {
         if (verb.equals("marker")) return Reply.now(vocab.marker(from, rest));
         if (verb.equals("places")) return Reply.now(vocab.places(rest));
         if (verb.equals("kinds")) return Reply.now(vocab.kinds(rest));
-        if (verb.equals("place") && Texts.splitChain(verb + " " + rest).size() <= 1) {     // 0.23.1: "place <block> x y z then ..." is a chain
-            String pl = vocab.placeInstant(from, rest, player);
-            if (pl != null) return Reply.now(pl);
-        }
         // B7d: the listed ores (D3) and the preferred ores (D2); the strip mine's status and ore mode never wait
         if (verb.equals("ores")) return Reply.now(rest.trim().toLowerCase().matches("^prefer\\b.*") ? "the old strip mine is gone: say aa want strip <ore|ore,ore|any> [<y>] [<heading>]" : Mining.get().ores(player, rest));
         if (verb.equals("mine") && rest.trim().toLowerCase().matches("^strip\\s+(status|ores( collect| list)?)$"))      // V1b: stripmine's forms under mine strip
@@ -1154,21 +1055,10 @@ public final class Commands implements Chains.Env {
             return Reply.now(policy.command(verb, rest, isOwner, owner(), hereOf(mc, from), posOf(mc, player)));
         }
         if (verb.equals("recorder")) return Reply.now(io.github.mojolowjo.entropybot.recorder.RecorderCommand.handle(core.recorder, rest, isOwner, owner()));     // B7e E5
-        // chains ("a then b"), routines by name, repeat and run (never from inside a chain)
-        if (verb.equals("repeat") || verb.equals("run") || chains.isRoutine(verb) || Texts.splitChain(raw).size() > 1) {
+        // chains ("a then b"), routines by name and run (never from inside a chain)
+        if (verb.equals("run") || chains.isRoutine(verb) || Texts.splitChain(raw).size() > 1) {
             if (internal) return Reply.now("error: a routine step cannot start another chain (routine names inside a chain are fine)");
-            if (chains.running()) return Reply.now("busy: " + chains.chainStatus() + " (pm \"stop\" first)");
-            if (verb.equals("repeat")) {
-                java.util.regex.Matcher m = java.util.regex.Pattern.compile("^(\\d+|forever)\\s+(.*)$", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(rest);
-                long rounds = Chains.FOREVER;
-                String what = rest;
-                if (m.find()) {
-                    rounds = m.group(1).equalsIgnoreCase("forever") ? Chains.FOREVER : Math.max(1, Long.parseLong(m.group(1)));
-                    what = m.group(2);
-                }
-                if (what.isEmpty()) return Reply.now("usage: repeat [times|forever] <routine or commands>");
-                return Reply.now(chains.startChain(from, chains.isRoutine(what) ? what.toLowerCase() : "repeat", what, rounds));
-            }
+            if (chains.running()) return Reply.now("busy: " + chains.chainStatus() + " (aa off first)");
             if (verb.equals("run")) {
                 if (!chains.isRoutine(rest)) return Reply.now("I have no routine called " + rest + " (PM \"routines\")");
                 return Reply.now(chains.startChain(from, rest.toLowerCase(), rest, 1));
@@ -1178,27 +1068,12 @@ public final class Commands implements Chains.Env {
         }
         // C4 + C5: settings and the verbs that start chains of their own
         if (verb.equals("junk")) return Reply.now(camp.junk(rest));
-        if (verb.equals("sleep") && rest.trim().equalsIgnoreCase("status")) return Reply.now(SleepJob.status(player));
-        if (verb.equals("house")) return Reply.now(camp.house(player, from, internal, rest));      // 0.28.2 (trial fix package 2 C)
-        if (verb.equals("climb")) return Reply.now(internal ? "error: climb is a chain of its own - run it by itself" : DigCommands.climb(this, player, rest, from));   // 0.28.1
-        // 0.24.3: the shelter's status/leave never wait for its job; "night status" shows the night safety
-        if (verb.equals("shelter") && rest.trim().toLowerCase().matches("^(status|leave)$")) return Reply.now(ShelterJob.start(this, player, rest, internal, from));
         if (verb.equals("night")) {
             if (!rest.trim().isEmpty() && !rest.trim().equalsIgnoreCase("status")) return Reply.now("usage: night status");
             return Reply.now(removedVerb("night status"));      // AA_CLEANUP 3: the night safety score lived in the old brain
         }
         // memory lookups and edits never interrupt a job
         if (verb.matches("^(mark|setbase|sethome|forget)$")) return Reply.now(placeCommand(verb, rest, from, player));
-        // V1b: the kind-words for the one-item verbs (get, fetch, need, gather): the kind's id with the most in stock
-        if (verb.matches("^(get|fetch|need|gather)$")) {
-            String[] kerr = new String[1];
-            String k = vocab.oneOfKind(player, rest, kerr);
-            if (kerr[0] != null) return Reply.now(kerr[0]);
-            if (k != null) {
-                rest = k;
-                raw = verb + " " + k;
-            }
-        }
         if (verb.equals("mine")) {
             String[] redirect = new String[1];
             String k = vocab.mineKinds(rest, redirect);
@@ -1217,15 +1092,11 @@ public final class Commands implements Chains.Env {
         if (verb.equals("poi") || verb.equals("pois")) return Reply.now(poiCommand(rest, player, isOwner));
         if (verb.equals("caves")) return Reply.now(cavesCommand(rest));
         // B7c: lookups and settings that never interrupt a job
-        if (verb.equals("need")) return Reply.now(crafting.need(player, rest) + (internal ? "" : io.github.mojolowjo.entropybot.vocab.NeedWords.COST_HINT));
         if (verb.equals("supplies")) return Reply.now(crafting.supplies(player, rest));
         if (verb.equals("recipe")) return Reply.now(crafting.recipe(player, rest));
-        if (verb.equals("smelt") && Crafting.smeltInstant(rest)) return Reply.now(crafting.smelt(player, rest));   // package D: smelt jobs|mode|forget never wait
         // package B: the hotbar layout and the tool policy (settings: instant, never "busy")
         if (verb.equals("hotbar")) return Reply.now(hotbarCommand(player, rest));
         if (verb.equals("tools")) return Reply.now(toolsCommand(rest));
-        // P1: restore status|forget|ignore|mode are instant; "restore now" is a job (below)
-        if (verb.equals("restore") && !io.github.mojolowjo.entropybot.restore.RestoreArgs.isJob(rest)) return Reply.now(RestoreLive.INSTANCE.command(player, rest));
         if (verb.equals("say")) {
             if (rest.isEmpty()) return Reply.now("say what?");
             String no = Texts.sayRefusal(rest, baritonePrefix());
@@ -1233,38 +1104,22 @@ public final class Commands implements Chains.Env {
             player.connection.sendChat(rest);
             return Reply.now(null);
         }
-        // eating never waits for a task: the reflex holds the task and it carries on afterwards
-        if (verb.equals("eat")) return Reply.now(core.reflexes.eat());
-        // aa-night3: the hide's way in (a reflex dig, like eating it needs no free task slot)
-        // AA_CLEANUP 4: the danger moves (AA's danger desire runs them as chain steps; the owner may type them): dig in, flee, cover, pillar
-        if (verb.equals("burrow")) return Reply.now(core.reflexes.moves.burrow());
-        if (verb.equals("flee")) return Reply.now(core.reflexes.moves.flee());
+        // AA_CLEANUP 4: the danger move pillar (AA's danger desire runs it as a chain step; the owner may type it)
         if (verb.equals("pillar")) return Reply.now(core.reflexes.moves.pillar());
         // a running routine owns the bot between its steps too
-        if (!internal && chains.running() && Texts.isBuiltin(verb) && !verb.equals("find") && !verb.equals("recipe") && !verb.equals("close")) {
+        if (!internal && chains.running() && Texts.isBuiltin(verb) && !verb.equals("find") && !verb.equals("recipe")) {
             return Reply.now("busy: " + chains.chainStatus() + " (pm \"stop\" first)");
         }
-        // P2: gather (its status and sources answer at once; a running gather owns the bot between its steps too)
-        if (verb.equals("gather") && io.github.mojolowjo.entropybot.vocab.KelpRules.isKelp(rest)) return stepRun.kelp(from, rest, raw, l);
-        if (verb.equals("fish")) return stepRun.fish(from, rest, raw, l, player);
-        if (verb.equals("hunting")) return Reply.now(stepRun.setting(rest));
-        // rm-execution: a running step list owns the bot between its steps (its own steps come back as internal)
-        if (!internal && stepRun.running() && Texts.isBuiltin(verb) && !verb.equals("find") && !verb.equals("recipe") && !verb.equals("close")) {
-            return Reply.now("busy: " + stepRun.status() + " (pm \"stop\" first)");
+        // rm-execution: a running step list owns the bot between its steps
+        if (!internal && stepRun.running() && Texts.isBuiltin(verb) && !verb.equals("find") && !verb.equals("recipe")) {
+            return Reply.now("busy: " + stepRun.status() + " (aa off first)");
         }
-        if (verb.equals("gather")) return stepRun.gather(from, rest, raw, l, player);
-        if (verb.equals("hunt")) return stepRun.hunt(from, rest, raw, l, player);
-        if (verb.equals("cut")) return stepRun.cut(from, rest, raw, l);
-        if (verb.equals("light")) return camp.light(player, rest, from, internal, raw, l);                // C4: torches on a grid
         if (verb.equals("allow") || verb.equals("deny") || verb.equals("allowed")) return Reply.now(allowCommand(verb, rest, isOwner));
         if (verb.equals("b") || verb.equals("baritone")) return Reply.now(BaritoneVerb.run(rest, isOwner, owner()));
         boolean known = Texts.MOD_JOB_VERBS.contains(verb) || Texts.MOD_VERBS.contains(verb);
         if (!known) return Reply.now(Hints.unknown(verb));
-        // farm settings are instant even mid-job
-        if (verb.equals("farm") && FarmCommand.instant(rest)) return Reply.now(crafting.farm(player, rest));
-
-        // everything below may replace a running walk, but not a running task (find, recipe and close never interrupt)
-        boolean quiet = verb.equals("find") || verb.equals("recipe") || verb.equals("close");
+        // everything below may replace a running walk, but not a running task (find and recipe never interrupt)
+        boolean quiet = verb.equals("find") || verb.equals("recipe");
         if (!quiet) {
             if (jobs.running() && !jobs.walking()) return Reply.now("busy: " + jobs.job.status + " (pm \"stop\" first)");
             if (!internal) vocab.endHold("a new order: " + verb);      // V1b: a direct order ends defend/guard
@@ -1282,100 +1137,11 @@ public final class Commands implements Chains.Env {
     private String jobBusyText() { return jobs.running() && !jobs.walking() ? "busy: " + jobs.job.status + " (pm \"stop\" first)" : null; }
 
 
-    /** The jobs the mod runs itself (B7b part 1): walks, the teleport home, the bed, wait, find. */
     String modJob(String verb, String rest, String from, LocalPlayer player) {
         switch (verb) {
-            case "come" -> {
-                Player target = Jobs.findPlayer(from);
-                // in view, else the position the owner's companion mod sent in the last 10 s (same dimension), else ask
-                int[] t = target != null ? Jobs.here(target) : ownerFixPos(from);
-                if (t == null) return "I can't see you from here (I'm at " + Jobs.fmt(Jobs.here(player)) + "). PM me: goto x y z";
-                String why = jobs.walkVerdict(t[0], t[1], t[2]);
-                if (why != null) return FenceRules.comeRefusal(why, t[0], t[2]);
-                return jobs.startTravel("goto " + Jobs.fmt(t), "coming to " + from, null, null, false);
-            }
-            case "follow" -> {
-                // the policy: the player may not stand in a keep-out area, and the watch stops the follow when they go in one
-                String name = rest.isEmpty() ? from : rest;
-                // not in view but the owner's companion mod sends a fresh position: walk to it, again as it moves
-                // (only for the sender themselves: another player can't make the bot walk to the owner)
-                if (name.equalsIgnoreCase(from) && Jobs.findPlayer(name) == null) {
-                    int[] fix = ownerFixPos(name);
-                    if (fix != null) return jobs.startFollowFix(name, from, fix);
-                }
-                Player target = Jobs.findPlayer(name);              // review 5: a keep-out box refuses in every mode, fence on or off
-                if (target != null) {
-                    int[] t = Jobs.here(target);
-                    String why = jobs.walkVerdict(t[0], t[1], t[2]);
-                    if (why != null) return FenceRules.followRefusal(name, why, t[0], t[2]);
-                }
-                String r = jobs.startTravel("follow player " + name, "following " + name, null, null, false);
-                if (r.startsWith("ok")) jobs.followWatch = new String[]{name, from};
-                if (jobs.job != null) jobs.job.done = true;        // a follow never "arrives"; nobody waits for it
-                return r;
-            }
-            case "goto" -> {
-                // S1: "goto me" (or the sender's own name) = "come" from that sender
-                if (Texts.gotoMeansCome(rest, from)) return modJob("come", "", from, player);
-                if (!rest.matches("^-?\\d+ -?\\d+ -?\\d+$") && !rest.matches("^-?\\d+ -?\\d+$")) return "usage: goto x y z  (or goto x z)";
-                String shaftNo = shaftRefusal(player, rest);     // 0.24.4
-                if (shaftNo != null) return shaftNo;
-                java.util.regex.Matcher gm = java.util.regex.Pattern.compile("^(-?\\d+) (-?\\d+) (-?\\d+)$").matcher(rest);
-                if (gm.find()) {                                  // 0.28.1 (trial fix A): a target in the air walks to the ground there
-                    int gx = Integer.parseInt(gm.group(1)), gy = Integer.parseInt(gm.group(2)), gz = Integer.parseInt(gm.group(3));
-                    if (Jobs.targetInAir(player.level(), gx, gy, gz)) {
-                        int[] g = Jobs.groundUnder(player.level(), gx, gy, gz);
-                        return Texts.withNote(jobs.startTravel("goto " + Jobs.fmt(g), "going to " + Jobs.fmt(g), null, null, false),
-                                io.github.mojolowjo.entropybot.world.SurfaceRule.airNote(g[0], g[1], g[2]));
-                    }
-                    String solidId = Jobs.solidAt(player.level(), gx, gy, gz);       // 0.31.0 (5): a target inside a block
-                    if (solidId != null) {
-                        int[] f = Jobs.freeSpotFor(player.level(), gx, gy, gz);
-                        String t = gx + " " + gy + " " + gz;
-                        if (f == null) {
-                            LOG.info("[entropybot] goto {}: inside {}, no free spot within {} blocks", t, solidId, WalkEnd.freeAround());
-                            return "error: " + t + " is inside " + solidId + " and there's no free spot within " + WalkEnd.freeAround()
-                                    + " blocks - next: goto a spot next to it";
-                        }
-                        LOG.info("[entropybot] goto {}: inside {}, going to {} instead", t, solidId, Jobs.fmt(f));
-                        String r = jobs.startTravel("goto " + Jobs.fmt(f), "going to " + Jobs.fmt(f), null, null, false);
-                        return r != null && r.startsWith("error") ? r : Texts.withNote(r, t + " is inside " + solidId + ": going to " + Jobs.fmt(f) + " instead");
-                    }
-                }
-                String gr = jobs.startTravel("goto " + rest, "going to " + rest, null, null, false);
-                // 0.33.1: the ended-short retrace/paper plans only for an order typed by the owner or operator, not a chain's leg
-                if (gr != null && gr.startsWith("ok") && jobs.job != null && !chainRunning() && rest.trim().matches("-?\\d+ -?\\d+"))
-                    jobs.job.xzOrder = true;
-                return gr;
-            }
             case "spawn", "bed" -> { return jobs.startSetSpawn(player); }
-            case "sleep" -> { return SleepJob.start(this, player, rest); }              // C4: in bed until morning
-            case "shelter" -> { return ShelterJob.start(this, player, rest, false, from); }   // 0.24.3: a shell around me until day
             case "home" -> { return jobs.startHome(player); }
-            case "go", "base" -> {
-                if (verb.equals("go") && rest.trim().toLowerCase().matches("^poi\\s+\\d+$")) return storage.goPoi(player, Integer.parseInt(rest.trim().split("\\s+")[1]));
-                String name = verb.equals("go") ? rest.toLowerCase() : "base";
-                JsonObject pos = core.knowledge.places().get(name);
-                if (pos == null && verb.equals("go")) {              // V1b: go <place> <marker> | go <marker>
-                    String[] gerr = new String[1];
-                    io.github.mojolowjo.entropybot.vocab.PlaceWords.Spot sp = vocab.goSpot(rest, gerr);
-                    if (sp != null) return jobs.startTravel("goto " + sp.x() + " " + sp.y() + " " + sp.z(), "going to " + sp.name(), new int[]{sp.x(), sp.y(), sp.z()},
-                            Guard.dimOf(player.level()), false);
-                    if (gerr[0] != null && gerr[0].startsWith("error")) return gerr[0];
-                }
-                if (pos == null) return "I have no place called " + name + " - next: " + Hints.placeFix(name);
-                String dim = Jobs.dimOf(pos);
-                int[] p = Jobs.pos(pos);
-                if (!dim.equals(Guard.dimOf(player.level())) && !jobs.tpWorth(player, p, dim)) return name + " is in " + dim;
-                if (dim.equals(Guard.dimOf(player.level())) && Jobs.targetInAir(player.level(), p[0], p[1], p[2])) {     // 0.28.1 (trial fix A)
-                    p = Jobs.groundUnder(player.level(), p[0], p[1], p[2]);
-                    return Texts.withNote(jobs.startTravel("goto " + Jobs.fmt(p), "going to " + name, p, dim, false), io.github.mojolowjo.entropybot.world.SurfaceRule.airNote(p[0], p[1], p[2]));
-                }
-                return jobs.startTravel("goto " + Jobs.fmt(p), "going to " + name, p, dim, false);
-            }
-            case "restore" -> { return RestoreLive.INSTANCE.startNow(player, rest); }              // P1: restore now [r]
-            case "wait" -> { return jobs.startWait(rest); }
-                case "find" -> {
+            case "find" -> {
                 // V1b: find cave|<poi kind>|<biome> walks (the owner); find <block> stays the nearby list
                 io.github.mojolowjo.entropybot.vocab.ExploreWords.Find f = io.github.mojolowjo.entropybot.vocab.ExploreWords.find(rest, POI_KINDS, Commands::isBiome);
                 if (f.kind() != io.github.mojolowjo.entropybot.vocab.ExploreWords.FindKind.BLOCK) {
@@ -1384,59 +1150,79 @@ public final class Commands implements Chains.Env {
                 }
                 return Jobs.findBlock(player, rest.isEmpty() ? "?" : rest);
             }
-            // B7b part 2: the GUI toolkit and the storage errands
-            case "open" -> { return storage.open(player, rest); }
-            case "scan" -> { return storage.scan(player, rest); }
-            case "deposit" -> { return storage.deposit(player, rest); }
             case "corpse" -> { return storage.corpse(); }
             case "death" -> { return storage.death(player); }
-            case "rs" -> { return storage.rs(player, rest); }
-            case "pots" -> { return storage.pots(player, rest); }
-            case "take" -> { return Storage.transfer(player, rest, false); }
-            case "put" -> { return Storage.transfer(player, rest, true); }
-            case "close" -> { return Gui.closeVerb(player); }
-            case "drop" -> { return Storage.drop(player, rest); }
-                case "wear", "equip" -> { return Gui.wearArmor(player); }
+            case "wear", "equip" -> { return Gui.wearArmor(player); }
             case "where" -> { return storage.where(player, rest); }
             case "have" -> { return storage.have(player, rest); }
             case "stock" -> { return storage.stockList(player, rest); }
             case "trust", "untrust" -> { return storage.trust(verb, rest); }
-            // B7c: crafting, the furnace, fetching, the farm round and compact
-            case "craft" -> { return crafting.craft(player, rest, null); }
             case "kit" -> { return crafting.kit(player, rest); }
-            case "smelt" -> { return crafting.smelt(player, rest); }
-            case "cook" -> {                                                       // P5: cook beef 8 = smelt cooked_beef 8
-                String t = io.github.mojolowjo.entropybot.farm.Cooking.smeltText(rest);
-                return t == null ? io.github.mojolowjo.entropybot.farm.Cooking.USAGE : crafting.smelt(player, t);
-            }
-            case "get" -> { return crafting.get(player, rest); }
-            case "restock" -> { return crafting.restock(player); }
-            case "farm" -> { return crafting.farm(player, rest, from); }
-            case "compact" -> { return crafting.compact(player, rest, from); }
-            // B7d: digging and mining (D1 dig/build/place, D2 the strip mine, D3 mine/caves/explore)
-            case "dig" -> { return DigCommands.dig(this, player, rest, from); }
-            case "build" -> { return DigCommands.build(this, player, rest, from); }
-            case "place" -> { return DigCommands.place(this, player, rest, from); }
             case "stripmine" -> { return ("the old strip mine is gone: say aa want strip <ore|ore,ore|any> [<y>] [<heading>]"); }
             case "mine" -> {
-                // V1b: "mine strip" alone, "mine strip <branches> [length]", reset, turn: the old stripmine forms
-                if (rest.trim().toLowerCase().matches("^strip(\\s+(reset|turn\\s+(left|right)|\\d+(\\s+\\d+)?))?$"))
-                    return ("the old strip mine is gone: say aa want strip <ore|ore,ore|any> [<y>] [<heading>]");
                 if (rest.trim().toLowerCase().matches("^strip\\b.*")) return ("the old strip mine is gone: say aa want strip <ore|ore,ore|any> [<y>] [<heading>]");
                 return Mining.get().mine(player, rest, s -> null);
             }
-            case "explore" -> { return Mining.get().explore(player, rest); }
-
-            case "give" -> {
-                PolicyCommands.Pos h = hereOf(Minecraft.getInstance(), from == null ? owner() : from);
-                return crafting.give(player, rest, new int[]{h.x(), h.y(), h.z()});
-            }
-            case "upgrade" -> { return crafting.upgrade(player, rest); }        // package E: the essence tiers
             case "recipe" -> { return crafting.recipe(player, rest); }
-            case "need" -> { return crafting.need(player, rest); }
             case "supplies" -> { return crafting.supplies(player, rest); }
             default -> { return Hints.unknown(verb); }
         }
+    }
+
+    /** A typed step's method as its own job (StepHands; no verb text): a task makes it busy, a walk is replaced, the job's request attached. */
+    Reply stepJob(String label, java.util.function.Supplier<String> body) {
+        if (jobs.running() && !jobs.walking()) return Reply.now("busy: " + jobs.job.status);
+        jobs.replaceWalk();
+        String r = body.get();
+        return new Reply(r, jobs.attach("step", owner(), label, r, null));
+    }
+
+    /** The walk to x y z (a target in the air: the ground there; inside a block: the nearest free spot), the travel job. */
+    String walkTo(LocalPlayer player, int gx, int gy, int gz) {
+        String at = gx + " " + gy + " " + gz;
+        String shaftNo = shaftRefusal(player, at);     // 0.24.4
+        if (shaftNo != null) return shaftNo;
+        if (Jobs.targetInAir(player.level(), gx, gy, gz)) {      // 0.28.1 (trial fix A): a target in the air walks to the ground there
+            int[] g = Jobs.groundUnder(player.level(), gx, gy, gz);
+            return Texts.withNote(jobs.startTravel("goto " + Jobs.fmt(g), "going to " + Jobs.fmt(g), null, null, false),
+                    io.github.mojolowjo.entropybot.world.SurfaceRule.airNote(g[0], g[1], g[2]));
+        }
+        String solidId = Jobs.solidAt(player.level(), gx, gy, gz);       // 0.31.0 (5): a target inside a block
+        if (solidId != null) {
+            int[] f = Jobs.freeSpotFor(player.level(), gx, gy, gz);
+            if (f == null) {
+                LOG.info("[entropybot] walk {}: inside {}, no free spot within {} blocks", at, solidId, WalkEnd.freeAround());
+                return "error: " + at + " is inside " + solidId + " and there's no free spot within " + WalkEnd.freeAround() + " blocks";
+            }
+            LOG.info("[entropybot] walk {}: inside {}, going to {} instead", at, solidId, Jobs.fmt(f));
+            String r = jobs.startTravel("goto " + Jobs.fmt(f), "going to " + Jobs.fmt(f), null, null, false);
+            return r != null && r.startsWith("error") ? r : Texts.withNote(r, at + " is inside " + solidId + ": going to " + Jobs.fmt(f) + " instead");
+        }
+        return jobs.startTravel("goto " + at, "going to " + at, null, null, false);
+    }
+
+    /** The walk to a player (in view, else the companion mod's fresh position), the travel job. */
+    String comeTo(String from, LocalPlayer player) {
+        Player target = Jobs.findPlayer(from);
+        int[] t = target != null ? Jobs.here(target) : ownerFixPos(from);
+        if (t == null) return "error: I can't see " + from + " from here (I'm at " + Jobs.fmt(Jobs.here(player)) + ")";
+        String why = jobs.walkVerdict(t[0], t[1], t[2]);
+        if (why != null) return FenceRules.comeRefusal(why, t[0], t[2]);
+        return jobs.startTravel("goto " + Jobs.fmt(t), "coming to " + from, null, null, false);
+    }
+
+    /** The walk to the base place (another dimension: the teleport when worth it), the travel job. */
+    String goBase(LocalPlayer player) {
+        JsonObject pos = core.knowledge.places().get("base");
+        if (pos == null) return "error: I have no place called base - next: " + Hints.placeFix("base");
+        String dim = Jobs.dimOf(pos);
+        int[] p = Jobs.pos(pos);
+        if (!dim.equals(Guard.dimOf(player.level())) && !jobs.tpWorth(player, p, dim)) return "error: base is in " + dim;
+        if (dim.equals(Guard.dimOf(player.level())) && Jobs.targetInAir(player.level(), p[0], p[1], p[2])) {     // 0.28.1 (trial fix A)
+            p = Jobs.groundUnder(player.level(), p[0], p[1], p[2]);
+            return Texts.withNote(jobs.startTravel("goto " + Jobs.fmt(p), "going to base", p, dim, false), io.github.mojolowjo.entropybot.world.SurfaceRule.airNote(p[0], p[1], p[2]));
+        }
+        return jobs.startTravel("goto " + Jobs.fmt(p), "going to base", p, dim, false);
     }
 
     // ---- places (B7b: the mod's knowledge store, places.json) ----
@@ -1694,9 +1480,6 @@ public final class Commands implements Chains.Env {
         String routine = chains.clear();
         String stepped = stepRun.stop("stopped by \"stop\"");
         if (routine == null && stepped != null) routine = stepped;
-        jobs.followWatch = null;
-        jobs.followFix = null;
-        assist.forget();                                         // 0.24.2
         vocab.endHold("stop");                                   // V1b
         core.reflexes.stopAttack();
         if (jobs.running()) jobs.finish("stopped");
@@ -1710,31 +1493,6 @@ public final class Commands implements Chains.Env {
         core.guard.core.releaseAll(core.token);
         core.reflexes.releaseUse();
         return "ok: stopped everything" + (routine != null ? " (including " + routine + ")" : "") + ", breaking off";
-    }
-
-    /** Ends a running follow of the owner (assist's: a job of its own takes over the walking, or assist ends). */
-    void endFollow() {
-        // a follow job is "done" at once (it never arrives); Baritone's follow process (or the companion walk) carries it
-        if (jobs.job == null || jobs.job.label == null || !jobs.job.label.startsWith("following") || (jobs.running() && !jobs.walking())) return;
-        jobs.followWatch = null;
-        jobs.followFix = null;
-        if (jobs.running()) jobs.finish("stopped: follow off");
-        IBaritone mb = Jobs.baritone();
-        if (mb != null) io.github.mojolowjo.entropybot.baritone.SafetyNet.cancel(mb);
-    }
-
-    boolean stillFollowingPub() { return stillFollowing(); }
-
-    /** Baritone's follow is still on, or the companion-position walk is (assist asks). */
-    private boolean stillFollowing() {
-        if (jobs.followFix != null) return true;
-        IBaritone mb = Jobs.baritone();
-        try {
-            return mb != null && mb.getFollowProcess().isActive();
-        } catch (RuntimeException e) {
-            Quiet.warn("Commands.stillFollowing failed, carrying on with the fallback", e);
-            return true;        // can't tell: keep following rather than drop it on a hiccup
-        }
     }
 
     String setDefence(String text) {
@@ -2125,7 +1883,7 @@ public final class Commands implements Chains.Env {
     private Reply runCommand(Minecraft mc, JsonObject cmd, String type, String text, String from, String notify, String id) {
         LocalPlayer player = mc.player;
         // B7e N: the big verbs sent as their own cmd types ask first too (a trailing "confirm" runs them at once)
-        if ((type.equals("dig") || type.equals("build") || type.equals("stripmine") || type.equals("area")) && (cmd == null || !cmd.has("confirmed"))) {
+        if ((type.equals("stripmine") || type.equals("area")) && (cmd == null || !cmd.has("confirmed"))) {
             ConfirmGate.Gate g = confirmGate.gate(owner(), type + " " + text, false, System.currentTimeMillis(), chainBusyText(), jobBusyText());
             if (g.reply() != null) return Reply.now(g.reply());
             String t = Texts.verbAndRest(g.line())[1];
@@ -2146,10 +1904,6 @@ public final class Commands implements Chains.Env {
                 if (!io.github.mojolowjo.entropybot.move.ServerCmds.on()) return Reply.now("error: server commands are off - I don't send /" + text.replaceFirst("^/", "").split(" ")[0] + " (server commands on)");
                 player.connection.sendCommand(text.replaceFirst("^/", ""));
                 return Reply.now("ok");
-            }
-            case "stop" -> {      // 0.35.1: the bridge's stop is the owner's stop: it pauses the AI operator too
-                String aiNote = io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.ownerStopped();
-                return Reply.now(stopAll() + aiNote);
             }
             // B7e E1: answered by the mod itself
             case "noop" -> { return Reply.now("ok"); }
@@ -2172,7 +1926,6 @@ public final class Commands implements Chains.Env {
                 player.connection.sendCommand("kubejs reload client-scripts");
                 return Reply.now("ok: reloading");
             }
-            case "eat" -> { return Reply.now(core.reflexes.eat()); }
             case "defend" -> { return Reply.now(setDefence(text)); }
             case "area", "fence", "protect", "unprotect", "guard" -> {
                 return Reply.now(policy.command(type, text, true, owner(), hereOf(mc, from), posOf(mc, player)));
@@ -2188,13 +1941,9 @@ public final class Commands implements Chains.Env {
             // B7b part 1: the places and the walks the mod does (cmd.from = whose spot "mark" uses, as before)
             case "mark", "setbase", "sethome", "forget", "places" -> { return Reply.now(placeCommand(type, text, from, player)); }
             // B7b part 2: the instant GUI and storage verbs never wait for a job (as the bridge's runCommand)
-            case "take", "put", "close", "drop", "wear", "equip", "where", "have", "stock", "trust", "untrust", "recipe", "need", "supplies" -> { return Reply.now(modJob(type, text, owner(), player)); }
-            case "spawn", "home", "base", "find", "go", "open", "scan", "deposit", "corpse", "death", "rs", "pots",
-                 "craft", "kit", "smelt", "get", "restock", "farm", "compact", "give", "upgrade",
-                 "dig", "build", "place", "stripmine", "mine", "explore" -> {
-                if (type.equals("farm") && FarmCommand.instant(text)) return Reply.now(crafting.farm(player, text));
+            case "wear", "equip", "where", "have", "stock", "trust", "untrust", "recipe", "supplies" -> { return Reply.now(modJob(type, text, owner(), player)); }
+            case "spawn", "home", "find", "corpse", "death", "kit", "stripmine", "mine" -> {
                 if (type.equals("stripmine")) return Reply.now("the old strip mine is gone: say aa want strip <ore|ore,ore|any> [<y>] [<heading>]");
-                if (type.equals("smelt") && Crafting.smeltInstant(text)) return Reply.now(crafting.smelt(player, text));
                 // as the bridge's runCommand: a task makes these busy (a walk is replaced; find never waits)
                 if (!type.equals("find")) {
                     if (jobs.running() && !jobs.walking()) return Reply.now("error: busy with \"" + jobs.job.status + "\" - send stop first");

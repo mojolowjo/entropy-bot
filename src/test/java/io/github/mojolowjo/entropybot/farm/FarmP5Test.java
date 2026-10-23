@@ -54,12 +54,6 @@ class FarmP5Test {
         assertTrue(st.startsWith("farm: mode vanilla"), st);
         assertTrue(st.contains("Harvest with Ease is not loaded"), st);
     }
-    @Test
-    void farmCommandSettingsAreInstant() {
-        for (String s : List.of("mode vanilla", "status", "here", "compact off")) assertTrue(FarmCommand.instant(s), s);
-        assertFalse(FarmCommand.instant("plant wheat here 4"));
-        assertFalse(FarmCommand.instant(""));
-    }
 
     // ---- farm plant: parsing, seeds ----
 

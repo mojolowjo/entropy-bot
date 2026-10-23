@@ -144,7 +144,6 @@ class FarmTest {
         assertEquals("prudentium", r.save().compact());
         assertEquals("block", FarmCommand.handle("compact blocks", f, w).save().compact());
         assertEquals("usage: farm [here | compact block|prudentium|off]", FarmCommand.handle("now", f, w).text());
-        assertTrue(FarmCommand.instant("compact off") && FarmCommand.instant("here") && !FarmCommand.instant("") && !FarmCommand.instant("hereabouts"));
 
         FakeWorld empty = new FakeWorld();
         empty.at(0.5, 53, 0.5);

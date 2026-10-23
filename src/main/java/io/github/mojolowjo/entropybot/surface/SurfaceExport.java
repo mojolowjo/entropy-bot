@@ -425,23 +425,6 @@ public final class SurfaceExport {
         }
     }
 
-    /** "surface" | "surface status" | "surface on" | "surface off". Never throws. */
-    public String command(String rest) {
-        try {
-            ensureLoaded();
-            String r = rest == null ? "" : rest.trim().toLowerCase(java.util.Locale.ROOT);
-            if (r.isEmpty() || r.equals("status")) return status();
-            if (r.equals("on") || r.equals("off")) {
-                on = r.equals("on");
-                String saved = save();
-                return "surface export " + (on ? "on: writing the loaded chunks' surface for the dashboard" : "off: files removed, nothing written") + saved;
-            }
-            return "surface | surface status | surface on|off";
-        } catch (Throwable t) {
-            return "error: surface: " + t;
-        }
-    }
-
     private String save() {
         io.github.mojolowjo.entropybot.io.BotFiles files = io.github.mojolowjo.entropybot.Core.INSTANCE.files();
         if (files == null) return " (not saved: not in a world yet)";

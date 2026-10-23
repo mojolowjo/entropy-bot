@@ -154,7 +154,6 @@ public final class SenseRuntime {
             }
             s.weaponTier = wt;
             s.shelterBlocks = io.github.mojolowjo.entropybot.camp.ShelterPlan.blocks(io.github.mojolowjo.entropybot.gui.Gui.inventory(p));
-            s.deathsDay = io.github.mojolowjo.entropybot.summary.DaySummary.INSTANCE.deaths();
             s.dayTime = dt;
             // 0.26.1 R6: by day too, capped: one bed search (r 24) a minute by day, every read at night
             if (s.night || s.now - bedAt > 60_000) {

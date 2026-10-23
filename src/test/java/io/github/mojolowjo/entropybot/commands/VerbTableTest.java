@@ -22,9 +22,7 @@ class VerbTableTest {
     @Test
     void coversEveryBuiltinVerb() {
         for (String v : Texts.BUILTIN_VERBS) assertNotNull(VerbTable.of(v), "not in the verb table: " + v);
-        for (String v : List.of("debug", "check", "confirm", "cut", "dismiss")) assertNotNull(VerbTable.of(v), v);
-        assertTrue(VerbTable.of("dig").usage().contains("[via engine]"), "dig's via engine option");
-        assertFalse(VerbTable.of("dig").usage().contains("floor") || VerbTable.of("dig").usage().contains("water") || VerbTable.of("dig").usage().contains("junk drop"), "the floor, water and junk words are gone");
+        for (String v : List.of("debug", "check", "confirm", "dismiss")) assertNotNull(VerbTable.of(v), v);
         assertNull(VerbTable.of("?"), "V1b: no aliases but done|free, routine|routines, rule|rules");
         assertEquals("routine", VerbTable.of("ROUTINES").name());
     }
@@ -99,7 +97,7 @@ class VerbTableTest {
             if (v.who() == VerbTable.Who.OWNER) assertFalse(items.contains(v.usage()), v.name());
         }
         assertEquals(g, HelpCommand.answer("2", false, OWNER), "guests have one page");
-        assertTrue(HelpCommand.answer("dig", false, OWNER).contains("only for mojolowjo"));
+        assertTrue(HelpCommand.answer("mine", false, OWNER).contains("only for mojolowjo"));
     }
 
     /** The table's who matches what Texts.guestRefusal really lets guests do. */
@@ -135,16 +133,15 @@ class VerbTableTest {
         for (String w : OldWords.REMOVED) {
             assertNull(VerbTable.of(w), "an old word in the verb table: " + w);
             String h = HelpCommand.answer(w, true, OWNER);
-            assertTrue(h.contains("is an old word") && (h.contains("that is now") || h.contains("removed in 0.22") || h.contains("is gone")), "help " + w + ": " + h);
+            assertTrue(h.contains("is an old word") && (h.contains("that is now") || h.contains("removed in 0.22") || h.contains("is gone") || h.contains("was deleted")), "help " + w + ": " + h);
         }
     }
 
     @Test
     void suggestions() {
         assertEquals("mine", VerbTable.suggest("minee"));
-        assertEquals("explore", VerbTable.suggest("explor"));
-        assertEquals("deposit", VerbTable.suggest("deposti"));
-        assertEquals("attack", VerbTable.suggest("attak"));
+        assertEquals("recipe", VerbTable.suggest("recip"));
+        assertEquals("supplies", VerbTable.suggest("supplise"));
         assertNull(VerbTable.suggest("mine"), "a known word needs no suggestion");
         assertNull(VerbTable.suggest("xyzzyq"));
         assertNull(VerbTable.suggest(""));

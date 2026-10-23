@@ -19,28 +19,15 @@ import java.util.TreeMap;
 /**
  * 0.24.2 {@code assist}: the bot helps the owner with what they are doing. The rules, pure: the companion 0.3.1 report
  * (owner.json: position, held, broke, placed, action), the activity guess (the report's own action when it sends one),
- * the switch rule (a new activity counts after 5 s; 60 s idle stops the mirroring, the follow stays), the half-cut tree
- * finder and the mining targets over a {@link World}, the give rule, the command words and the whispers. The game
- * side is {@code commands.Assist}. Loader notes: no Minecraft or loader types here.
+ * read by AA (OwnerReport, the help desire and the owner inputs). The old assist verb and its game side are
+ * gone (AA is the only driver).
+ * Loader notes: no Minecraft or loader types here.
  */
 public final class AssistRules {
     private AssistRules() {}
 
     public static long freshMs() { return Tuning.l("assistRules.freshMs"); }  // an older report is no report
     public static long recentMs() { return Tuning.l("assistRules.recentMs"); }  // a broke/placed counts this long
-    public static long switchMs() { return Tuning.l("assistRules.switchMs"); }  // a new activity must hold this long
-    public static long idleStopMs() { return Tuning.l("assistRules.idleStopMs"); }  // idle this long: no mirroring, just follow
-    public static long giveGapMs() { return Tuning.l("assistRules.giveGapMs"); }  // at most one hand-over in this time
-    public static long retryMs() { return Tuning.l("assistRules.retryMs"); }  // the same chain is not started again within this
-    public static int chopR() { return Tuning.i("assistRules.chopR"); }
-    public static int mineR() { return Tuning.i("assistRules.mineR"); }
-    public static int treeR() { return Tuning.i("assistRules.treeR"); }
-    public static int treeUp() { return Tuning.i("assistRules.treeUp"); }
-    public static int giveLow() { return Tuning.i("assistRules.giveLow"); }
-    public static int giveMax() { return Tuning.i("assistRules.giveMax"); }
-    public static int mineMax() { return Tuning.i("assistRules.mineMax"); }
-    public static int treeMax() { return Tuning.i("assistRules.treeMax"); }
-    public static int farmR() { return Tuning.i("assistRules.farmR"); }
 
     public enum Act {
         MINING, CHOPPING, FARMING, BUILDING, FIGHTING, IDLE;
@@ -131,191 +118,12 @@ public final class AssistRules {
         return Act.IDLE;
     }
 
-    /**
-     * The switch rule: the first activity counts at once; a different one only after it was seen for {@link #SWITCH_MS};
-     * idle for {@link #IDLE_STOP_MS} ends the mirroring (the bot only follows) until another activity counts.
-     */
-    public static final class Switcher {
-        private Act current, pending;
-        private long pendingSince, idleSince = -1;
-        private boolean mirroring = true;
-
-        /** act: what counts now; changed: the activity (or the mirroring) changed with this report. */
-        public record Phase(Act act, boolean changed, boolean mirroring) {}
-
-        public Phase update(Act seen, long now) {
-            boolean changed = false;
-            if (current == null) {
-                current = seen;
-                changed = true;
-            } else if (seen != current) {
-                if (pending != seen) {
-                    pending = seen;
-                    pendingSince = now;
-                }
-                if (now - pendingSince >= switchMs()) {
-                    current = seen;
-                    pending = null;
-                    changed = true;
-                }
-            } else {
-                pending = null;
-            }
-            if (current == Act.IDLE) {
-                if (idleSince < 0 || changed) idleSince = now;
-            } else {
-                idleSince = -1;
-            }
-            boolean m = !(current == Act.IDLE && now - idleSince >= idleStopMs());
-            if (m != mirroring) changed = true;
-            mirroring = m;
-            return new Phase(current, changed, mirroring);
-        }
-
-        public Act current() { return current; }
-    }
-
     // ==== the world ====
-
-    /** The block id at a spot; null when not loaded. */
-    public interface World {
-        String id(int x, int y, int z);
-    }
-
-    /** A dig box (inclusive). */
-    public record Box(int x1, int y1, int z1, int x2, int y2, int z2) {
-        public String dig(boolean ores) {
-            return "dig " + x1 + " " + y1 + " " + z1 + " " + x2 + " " + y2 + " " + z2 + (ores ? " ores" : "");
-        }
-    }
-
-    /**
-     * The half-cut trees near the owner's last broken log: columns of that log kind within {@link #TREE_R} of it (from
-     * 3 below to {@link #TREE_UP} above) whose top log has leaves next to or above it (a tree, not a log wall), nearest
-     * first, at most {@link #TREE_MAX}; each as the trunk's box.
-     */
-    public static List<Box> halfCutTrees(World w, int bx, int by, int bz, String logId) {
-        Map<Long, int[]> cols = new TreeMap<>();         // (x,z) -> {minY, maxY}
-        for (int x = bx - treeR(); x <= bx + treeR(); x++)
-            for (int z = bz - treeR(); z <= bz + treeR(); z++)
-                for (int y = by - 3; y <= by + treeUp(); y++) {
-                    if (!logId.equals(w.id(x, y, z))) continue;
-                    long k = ((long) x << 32) ^ (z & 0xffffffffL);
-                    int[] c = cols.computeIfAbsent(k, q -> new int[]{Integer.MAX_VALUE, Integer.MIN_VALUE});
-                    c[0] = Math.min(c[0], y);
-                    c[1] = Math.max(c[1], y);
-                }
-        List<int[]> found = new ArrayList<>();
-        for (Map.Entry<Long, int[]> e : cols.entrySet()) {
-            int x = (int) (e.getKey() >> 32), z = e.getKey().intValue();
-            int top = e.getValue()[1];
-            if (!leavesNear(w, x, top, z)) continue;
-            found.add(new int[]{x, e.getValue()[0], z, top});
-        }
-        found.sort(Comparator.comparingInt(c -> (c[0] - bx) * (c[0] - bx) + (c[2] - bz) * (c[2] - bz)));
-        List<Box> out = new ArrayList<>();
-        for (int[] c : found) {
-            if (out.size() >= treeMax()) break;
-            out.add(new Box(c[0], c[1], c[2], c[0], c[3], c[2]));
-        }
-        return out;
-    }
-
-    static boolean leavesNear(World w, int x, int top, int z) {
-        for (int dx = -1; dx <= 1; dx++)
-            for (int dz = -1; dz <= 1; dz++)
-                for (int dy = 0; dy <= 1; dy++)
-                    if (isLeaves(w.id(x + dx, top + dy, z + dz))) return true;
-        return false;
-    }
-
-    /**
-     * The blocks of the owner's kind to mine: that id within {@link #MINE_R} of their last broken block, each with air
-     * on a side (reachable from the hole they dug), nearest first, at most {@link #MINE_MAX}. Only ores and natural
-     * stone ({@link #mineable}); the dig itself still refuses built blocks and asks the policy.
-     */
-    public static List<Box> mineTargets(World w, int cx, int cy, int cz, String id) {
-        if (!mineable(id)) return List.of();
-        List<int[]> hits = new ArrayList<>();
-        int r = mineR();
-        for (int x = cx - r; x <= cx + r; x++)
-            for (int y = cy - r; y <= cy + r; y++)
-                for (int z = cz - r; z <= cz + r; z++) {
-                    long d = (long) (x - cx) * (x - cx) + (long) (y - cy) * (y - cy) + (long) (z - cz) * (z - cz);
-                    if (d > (long) r * r || !id.equals(w.id(x, y, z))) continue;
-                    if (isAir(w.id(x + 1, y, z)) || isAir(w.id(x - 1, y, z)) || isAir(w.id(x, y + 1, z)) || isAir(w.id(x, y - 1, z))
-                            || isAir(w.id(x, y, z + 1)) || isAir(w.id(x, y, z - 1)))
-                        hits.add(new int[]{x, y, z, (int) d});
-                }
-        hits.sort(Comparator.comparingInt((int[] h) -> h[3]).thenComparingInt(h -> -h[1]));
-        List<Box> out = new ArrayList<>();
-        for (int[] h : hits) {
-            if (out.size() >= mineMax()) break;
-            out.add(new Box(h[0], h[1], h[2], h[0], h[1], h[2]));
-        }
-        return out;
-    }
-
-    /** The chain for a list of boxes ("dig ... then dig ..."), or null for none. */
-    public static String chain(List<Box> boxes, boolean ores) {
-        if (boxes.isEmpty()) return null;
-        List<String> s = new ArrayList<>();
-        for (Box b : boxes) s.add(b.dig(ores));
-        return String.join(" then ", s);
-    }
 
     // ==== give ====
 
-    /**
-     * Building: how many of the placed block to hand the owner (0: none). Only for a block placed in the last
-     * {@link #RECENT_MS}, when the owner has fewer than {@link #GIVE_LOW} left (unknown counts as low), the bot may give
-     * some (giveable: what the C6 keep rules leave, MuleRules.giveable) and the last hand-over is {@link #GIVE_GAP_MS} old.
-     */
-    public static int give(Ev placed, int giveable, long lastGive, long now) {
-        if (placed == null || now - placed.at() > recentMs()) return 0;
-        if (placed.left() >= giveLow()) return 0;
-        if (giveable <= 0 || now - lastGive < giveGapMs()) return 0;
-        return Math.min(giveMax(), giveable);
-    }
-
     // ==== words ====
-
-    public enum Word { ON, OFF, STATUS, ERROR }
 
     public static final String USAGE = "usage: assist | assist off | assist status";
 
-    public static Word word(String rest) {
-        String t = rest == null ? "" : rest.trim().toLowerCase(Locale.ROOT);
-        return switch (t) {
-            case "", "on", "me" -> Word.ON;
-            case "off", "stop" -> Word.OFF;
-            case "status" -> Word.STATUS;
-            default -> Word.ERROR;
-        };
-    }
-
-    /** "brain copy on|off|status" (the B1 words) as assist's rest; null when it is not a copy form. */
-    public static String fromBrainCopy(String rest) {
-        String t = rest == null ? "" : rest.trim().toLowerCase(Locale.ROOT).replaceAll("\\s+", " ");
-        return switch (t) {
-            case "copy on" -> "";
-            case "copy off" -> "off";
-            case "copy", "copy status" -> "status";
-            default -> null;
-        };
-    }
-
-    /** The whisper on an activity change. what: the block it works on (null: none). */
-    public static String text(Act a, boolean mirroring, String what) {
-        if (!mirroring) return "assist: you look idle - I just follow you";
-        String w = what == null ? null : path(what).replaceFirst("_log$|_stem$", "");
-        return switch (a) {
-            case CHOPPING -> "assist: cutting " + (w == null ? "trees" : w) + " with you";
-            case MINING -> "assist: mining " + (w == null ? "with you" : w + " with you");
-            case FARMING -> "assist: farming with you";
-            case BUILDING -> "assist: staying close while you build" + (w == null ? "" : " - I hand you " + w + " when you run low");
-            case FIGHTING -> "assist: guarding you";
-            case IDLE -> "assist: following you and picking up drops";
-        };
-    }
 }

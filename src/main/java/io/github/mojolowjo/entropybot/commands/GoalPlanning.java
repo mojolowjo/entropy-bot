@@ -44,36 +44,6 @@ final class GoalPlanning {
 
     // ---- the verbs: the chain ----
 
-    /** "goal <item|group> [n] [high|low]": the owner's order through the chain (the same as aa want). */
-    String goal(String from, LocalPlayer p, String rest) {
-        try {
-            if (c.aaRuntime == null) return "error: goal: aa is not loaded";
-            return c.aaRuntime.want(rest).replaceFirst("^aa want: ", "goal: ");
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] goal: {}", e.toString());
-            return "error: goal: " + e;
-        }
-    }
-
-    /** "plan <item|group> [n]": the chain's dry run (its line with the seconds and the dropped ways; nothing runs). */
-    String plan(String to, LocalPlayer p, String rest) {
-        try {
-            var a = io.github.mojolowjo.entropybot.aa.brain.Goals.parse(rest);
-            if (a.err() != null) return a.err().replace("aa want", "plan");
-            if (c.aaRuntime == null) return "error: plan: aa is not loaded";
-            var w = c.aaRuntime.needWorld();
-            if (w == null) return "plan: no facts for the chain yet (the senses are not ready)";
-            int n = a.n() > 0 ? a.n() : 1;
-            List<String> group = io.github.mojolowjo.entropybot.aa.brain.ToolGroup.items(a.word());
-            var ch = group.isEmpty() ? io.github.mojolowjo.entropybot.aa.NeedChain.resolve(a.word(), n, w)
-                    : io.github.mojolowjo.entropybot.aa.NeedChain.resolveAll(a.word(), group, n, w);
-            return "plan " + a.word() + " " + n + " (dry run, nothing runs): " + ch.why();
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] plan: {}", e.toString());
-            return "error: plan: " + e;
-        }
-    }
-
     // ---- actions.json ----
 
     /** The state summary a model needs with the table: stage, bag, needs, goals, areas, places, the job. */

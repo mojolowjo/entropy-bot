@@ -271,25 +271,6 @@ public final class Storage {
 
     // ---- the verbs ----
 
-    /** "open <x y z | place>": walk there if it's out of reach, open it, remember what's inside; it stays open for take/put. */
-    String open(LocalPlayer p, String text) {
-        Spot spot = StorageRules.resolveSpot(text, places(), dim());
-        if (spot.err() != null) return spot.err();
-        List<Step> steps = new ArrayList<>();
-        if (p.getEyePosition().distanceTo(new Vec3(spot.x() + 0.5, spot.y() + 0.5, spot.z() + 0.5)) > 4.4) steps.add(Step.walk(spot.pos(), false));
-        steps.add(Step.open(spot.pos(), "auto"));
-        Step note = new Step("note");
-        note.kind = "open";
-        steps.add(note);
-        return startSeq("opening " + (spot.name() != null ? spot.name() + " (" + spot.fmt() + ")" : "the chest at " + spot.fmt()), steps, "fail");
-    }
-
-    /** "take ..." / "put ..." with a container open. */
-    static String transfer(LocalPlayer p, String text, boolean toContainer) {
-        if (!Gui.open(p)) return "error: nothing is open - PM \"open x y z\" first";
-        return GuiCore.transferVerb(new McMenu(p), text, toContainer, Gui.wrongScreen(p));
-    }
-
     /** "drop <item|all> [count|all]": inventory and hotbar only, never armor. */
     static String drop(LocalPlayer p, String text) {
         // the bot's own inventory menu (an open container's slot numbers would differ)
@@ -425,13 +406,6 @@ public final class Storage {
             steps.add(Step.close());
         }
         return new DepositSteps(steps, plan.label(), null);
-    }
-
-    /** "deposit [items]" (wave 1, item 5: from far away the base chests too; the walk teleports home first). */
-    String deposit(LocalPlayer p, String text) {
-        DepositSteps r = depositSteps(p, text, StorageRules.depositAtBase(places().get("base"), Jobs.here(p), dim()), null);
-        if (r.err() != null) return r.err();
-        return startSeq(r.label(), r.steps(), "always");
     }
 
     /** "trust" (list) / "trust|untrust x y z|<place>". */
@@ -710,37 +684,6 @@ public final class Storage {
         core.knowledge.noteRs(key, o, now());
     }
 
-    /** "rs [x y z|place]" (read the grid), "rs take <item> [n]", "rs put <item|all> [n]". */
-    String rs(LocalPlayer p, String text) {
-        Minecraft mc = Minecraft.getInstance();
-        String t = text == null ? "" : text.trim();
-        java.util.regex.Matcher mv = Pattern.compile("^(take|put)\\b\\s*(.*)$", Pattern.CASE_INSENSITIVE).matcher(t);
-        if (mv.find()) return rsMove(p, mv.group(1).toLowerCase(), mv.group(2));
-        java.util.regex.Matcher dk = Pattern.compile("^disks?\\b\\s*(.*)$", Pattern.CASE_INSENSITIVE).matcher(t);
-        if (dk.find()) return rsDisks(p, dk.group(1));
-        String grid = core.knowledge.rsGrid();
-        if (t.isEmpty()) {
-            // a grid is open already: read it now
-            Map<String, Integer> items = rsGridItems(p);
-            if (items != null) {
-                String key = grid != null ? grid : "the open grid";
-                rsRemember(key, items);
-                return "ok: " + StorageRules.rsSummary(key, items);
-            }
-            if (grid == null) return "error: where is the grid? rs x y z (once; I remember it)";
-            t = grid;
-        }
-        Spot spot = StorageRules.resolveSpot(t, places(), dim());
-        if (spot.err() != null) return spot.err().replace("open", "rs");
-        BlockPos bp = new BlockPos(spot.x(), spot.y(), spot.z());
-        if (!mc.level.getBlockState(bp).getBlock().getDescriptionId().contains("grid") && mc.level.isLoaded(bp)) {
-            return "error: the block at " + spot.fmt() + " is " + blockName(mc.level.getBlockState(bp)) + ", not a grid";
-        }
-        Step read = new Step("rsread");
-        read.key = spot.fmt();
-        return startSeq("reading the RS network at " + spot.label(), List.of(Step.walk(spot.pos(), false), Step.open(spot.pos(), "yes"), read, Step.close()), "always");
-    }
-
     // ---- Refined Storage disk drives (package F): which disks, and how full when the disk's tooltip says ----
 
     static int driveR() { return Tuning.i("storage.driveR"); }
@@ -990,25 +933,6 @@ public final class Storage {
 
     // ---- botany pots ----
 
-    /** "pots [chests|rs]": walk to the base, empty every botany pot within 16, put the haul into RS (or the base chests). */
-    String pots(LocalPlayer p, String text) {
-        String t = text == null ? "" : text.trim().toLowerCase();
-        if (!t.isEmpty() && !t.equals("chests") && !t.equals("rs")) return "error: usage pots [chests|rs]";
-        JsonObject base = places().get("base");
-        int[] me = Jobs.here(p);
-        int[] center = base != null && Jobs.dimOf(base).equals(dim()) ? Jobs.pos(base) : me;
-        List<Step> steps = new ArrayList<>();
-        if (Jobs.distSq(center, me) > 12 * 12) steps.add(Step.walk(center, true));
-        Step here = new Step("potshere");
-        here.center = new Spot(center[0], center[1], center[2], dim(), null, null);
-        here.to = t.equals("chests") || core.knowledge.rsGrid() == null ? "chests" : "rs";
-        steps.add(here);
-        steps.add(new Step("potsdone"));
-        Seq s = new Seq(jobs, this, "emptying the botany pots", steps, "always");
-        s.potsBefore = Gui.inventory(p);
-        return jobs.startSeq(s, "always");
-    }
-
     String potsStep(Seq s, Step st, LocalPlayer p) {
         Minecraft mc = Minecraft.getInstance();
         if (st.type.equals("potshere")) {
@@ -1077,22 +1001,4 @@ public final class Storage {
 
     // ---- points of interest ----
 
-    /** "go poi <id>": near it (a spawner or a portal is no place to stand on). */
-    String goPoi(LocalPlayer p, int id) {
-        JsonObject poi = null;
-        try {
-            String d = dim();       // rm-mining: refreshed from the chunk index on demand
-            if (d.equals(io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.dim()))
-                io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.refreshPois(core.pois, d, p.getBlockX(), p.getBlockZ(), io.github.mojolowjo.entropybot.memory.Limits.SENSE_KNOWN_R);
-            JsonArray list = JsonParser.parseString(core.pois.toJson().toString()).getAsJsonObject().getAsJsonArray("pois");
-            for (JsonElement e : list) if (e.getAsJsonObject().get("id").getAsInt() == id) poi = e.getAsJsonObject();
-        } catch (RuntimeException e) {
-            return "error: points of interest need the bot mod (0.4 or newer)";
-        }
-        if (poi == null) return "error: no poi " + id + " (\"poi\" lists them)";
-        String pd = poi.get("dim").getAsString();
-        if (!pd.equals(dim())) return "error: poi " + id + " is in " + pd;
-        int[] pos = Jobs.pos(poi);
-        return jobs.startSeq(new Seq(jobs, this, "going to poi " + id + " (" + poi.get("kind").getAsString() + " at " + Jobs.fmt(pos) + ")", List.of(Step.walk(pos, true)), null), null);
-    }
 }

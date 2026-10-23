@@ -35,11 +35,11 @@ class CommandsTest {
 
     @Test
     void guestsGetTheReadOnlySet() {
-        assertNull(Texts.guestRefusal("come", "", "come", "owner"));
+        assertNull(Texts.guestRefusal("status", "", "status", "owner"));
         assertNotNull(Texts.guestRefusal("routine", "show night", "routine show night", "owner"), "V1b: routines are the owner's");
         assertNull(Texts.guestRefusal("area", "list", "area list", "owner"));
         assertNotNull(Texts.guestRefusal("area", "add x here 5", "area add x here 5", "owner"));
-        assertEquals("sorry, only owner can start chains", Texts.guestRefusal("come", "", "come then stop", "owner"));
+        assertEquals("sorry, only owner can start chains", Texts.guestRefusal("status", "", "status then inv", "owner"));
         assertNotNull(Texts.guestRefusal("ores", "prefer iron", "ores prefer iron", "owner"));
         assertTrue(Texts.guestRefusal("dig", "1 2 3 4 5 6", "dig 1 2 3 4 5 6", "owner").startsWith("sorry, only owner can use \"dig\""));
     }
@@ -318,9 +318,9 @@ class CommandsTest {
     @Test
     void routinesExpandAndCannotTakeACommandName() {
         Fake f = fake(new JsonObject());
-        assertTrue(f.chains.routineCommand("save night places then wait 5").startsWith("saved routine night: places > wait 5"));
-        assertTrue(f.chains.routineCommand("save stop places").startsWith("error: \"stop\" is already a command"));
-        assertEquals("started: x - places > wait 5 > places", f.chains.startChain("owner", "x", "night then places", 1));
+        assertTrue(f.chains.routineCommand("save night places then inv").startsWith("saved routine night: places > inv"));
+        assertTrue(f.chains.routineCommand("save status places").startsWith("error: \"status\" is already a command"));
+        assertEquals("started: x - places > inv > places", f.chains.startChain("owner", "x", "night then places", 1));
         assertEquals("routines: night (routine show <name>)", f.chains.routineCommand(""));
     }
 

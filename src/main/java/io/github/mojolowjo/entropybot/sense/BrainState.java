@@ -33,7 +33,7 @@ public final class BrainState {
     public double digStoneS = -1, handStoneS = -1;
     /** 0.24.3: armour and weapon tier (0-3; harmless defaults: diamond), deaths in the last day, the level's day time
      *  (-1 unknown), a bed within reach, the camp place (null: none). */
-    public int armourTier = 3, weaponTier = 3, deathsDay;
+    public int armourTier = 3, weaponTier = 3;
     public long dayTime = -1;
     public boolean bedNear = true;
     public int[] campPos;

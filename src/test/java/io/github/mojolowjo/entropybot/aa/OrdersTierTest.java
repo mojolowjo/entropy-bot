@@ -85,9 +85,7 @@ class OrdersTierTest {
         assertEquals("needs on", Only.modeText());
         Only.set("torches");
         assertEquals("only: torches", Only.modeText());
-        assertFalse(AaSwitch.ai(sw), "the AI translator is off until ai on");
-        AaSwitch.ai(sw, true);
-        assertTrue(AaSwitch.ai(sw));
+
     }
 
     @Test
