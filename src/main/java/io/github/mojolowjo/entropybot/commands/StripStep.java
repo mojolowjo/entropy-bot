@@ -1,0 +1,205 @@
+package io.github.mojolowjo.entropybot.commands;
+
+import baritone.api.IBaritone;
+import baritone.api.process.IStripProcess;
+import baritone.api.utils.BlockOptionalMetaLookup;
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import io.github.mojolowjo.entropybot.Core;
+import io.github.mojolowjo.entropybot.aa.brain.StripOrder;
+import io.github.mojolowjo.entropybot.aa.brain.Thing;
+import io.github.mojolowjo.entropybot.aa.moves.Car;
+import io.github.mojolowjo.entropybot.aa.moves.Step;
+import io.github.mojolowjo.entropybot.cave.OreSpec;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * The strip order in the game: the words resolved against the game's data (ore tags, mining tiers, the catalog's
+ * worldgen band, the bag's best pickaxe), and the step's hands: the fork's StripProcess gets only the ore set, the Y and
+ * the heading; Baritone decides every stand, look and click. Its progress is saved per world (strip-progress.json, by
+ * the order's key) so the same order resumes from the tunnel end after any pause or a relaunch.
+ */
+final class StripStep {
+    private StripStep() {}
+
+    private static final Gson GSON = new Gson();
+
+    /** The ore blocks the game tags as ores (c:ores, *:*_ores): id -> mining tier (Thing.tier's scale). */
+    static Map<String, Integer> oreTiers() {
+        Map<String, Integer> out = new LinkedHashMap<>();
+        for (Block b : BuiltInRegistries.BLOCK) {
+            BlockState st = b.defaultBlockState();
+            boolean ore = st.is(net.neoforged.neoforge.common.Tags.Blocks.ORES)
+                    || st.getTags().anyMatch(t -> t.location().getPath().endsWith("_ores"));
+            if (!ore) continue;
+            int tier = Thing.tier(st.is(net.minecraft.tags.BlockTags.MINEABLE_WITH_PICKAXE), st.is(net.minecraft.tags.BlockTags.NEEDS_STONE_TOOL),
+                    st.is(net.minecraft.tags.BlockTags.NEEDS_IRON_TOOL), st.is(net.minecraft.tags.BlockTags.NEEDS_DIAMOND_TOOL));
+            out.put(BuiltInRegistries.BLOCK.getKey(b).toString(), Math.max(1, tier));
+        }
+        return out;
+    }
+
+    /** The order's words as a step, or the reason in {@code err[0]}. */
+    static Step.Strip resolve(String arg, LocalPlayer p, Thing.Catalog cat, String[] err) {
+        StripOrder.Args a = StripOrder.parse(arg);
+        if (a.err() != null) { err[0] = a.err(); return null; }
+        Map<String, Integer> tiers = oreTiers();
+        if (tiers.isEmpty()) { err[0] = "error: the game tags no block as an ore (c:ores)"; return null; }
+        List<String> ores;
+        if (a.any()) {
+            int pick = io.github.mojolowjo.entropybot.guard.PolicyRuntime.pickTier(p);
+            if (pick <= 0) { err[0] = "error: strip any: no pickaxe in the bag"; return null; }
+            ores = StripOrder.anyOres(tiers, pick);
+            if (ores.isEmpty()) { err[0] = "error: strip any: no ore my pickaxe can take"; return null; }
+        } else {
+            ores = StripOrder.namedOres(a.ores(), tiers.keySet(), OreSpec::family);
+            if (ores.size() == 1 && ores.get(0).startsWith("error:")) { err[0] = ores.get(0); return null; }
+        }
+        Map<String, Integer> amounts = new LinkedHashMap<>();
+        for (Map.Entry<String, Integer> e : a.amounts().entrySet()) amounts.merge(StripOrder.countKey(e.getKey(), OreSpec::family), e.getValue(), Integer::sum);
+        Integer y = a.y();
+        if (y == null && !a.any()) y = StripOrder.bandCentre(ores, cat == null ? null : cat.gen());
+        if (y == null) y = p.blockPosition().getY();          // "any", or no worldgen band read (multiplayer): here
+        String heading = a.heading() != null ? a.heading() : p.getDirection().getName();
+        return new Step.Strip(ores, amounts, y, heading, System.currentTimeMillis());
+    }
+
+    // ---- the saved progress (per world) ----
+
+    private static Path file() {
+        var f = Core.INSTANCE.files();
+        if (f == null) throw new IllegalStateException("no world files (not in a world)");
+        return f.worldRoot().resolve("strip-progress.json");
+    }
+
+    private static JsonObject readAll() {
+        try {
+            Path f = file();
+            if (!Files.exists(f)) return new JsonObject();
+            return JsonParser.parseString(Files.readString(f, StandardCharsets.UTF_8)).getAsJsonObject();
+        } catch (Exception e) {
+            throw new IllegalStateException("strip-progress.json unreadable: " + e, e);
+        }
+    }
+
+    /** The saved progress of this order, null none. */
+    static StripOrder.Saved load(Step.Strip s) {
+        JsonObject all = readAll();
+        return all.has(s.key()) ? GSON.fromJson(all.get(s.key()), StripOrder.Saved.class) : null;
+    }
+
+    private static void save(Step.Strip s, StripOrder.Saved p) {
+        JsonObject all = readAll();
+        if (p == null) all.remove(s.key());
+        else all.add(s.key(), GSON.toJsonTree(p));
+        try {
+            Files.writeString(file(), GSON.toJson(all), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new IllegalStateException("strip-progress.json not written: " + e, e);
+        }
+    }
+
+    static StripOrder.Saved of(IStripProcess.Progress p) {
+        return p == null ? null : new StripOrder.Saved(p.started(), p.x(), p.y(), p.z(), p.heading(), p.step(), p.length(), p.branches(), p.blocks(), p.clusters(), p.picked());
+    }
+
+    static IStripProcess.Progress of(StripOrder.Saved s) {
+        return s == null ? null : new IStripProcess.Progress(s.started(), s.x(), s.y(), s.z(), s.heading(), s.step(), s.length(), s.branches(), s.blocks(), s.clusters(), s.picked());
+    }
+
+    // ---- the step's hands ----
+
+    private static StripOrder.Saved lastSaved;
+
+    /** Starts the fork's strip, resumed from this order's saved progress; null = started, else "error: ...". */
+    static String start(Step.Strip s) {
+        IBaritone b = Jobs.baritone();
+        if (b == null) return "error: baritone not loaded";
+        Direction d = Direction.byName(s.heading());
+        if (d == null) return "error: no heading " + s.heading();
+        StripOrder.Saved from;
+        try {
+            from = load(s);
+        } catch (RuntimeException e) {
+            return "error: " + e.getMessage();
+        }
+        lastSaved = from;
+        b.getStripProcess().strip(new BlockOptionalMetaLookup(s.ores().toArray(String[]::new)), s.y(), d, of(from));
+        if (!b.getStripProcess().isActive()) return "error: the strip did not start: " + b.getStripProcess().lastEnd();
+        return null;
+    }
+
+    private static boolean bagFull(LocalPlayer p) {
+        return p != null && p.getInventory().getFreeSlot() < 0;
+    }
+
+    /**
+     * The step's status: the order's end rule first (amounts met, bag full), then the fork's own end; the progress is
+     * saved whenever it moved (and at every end; an order done by its amounts or the tunnel's end clears it).
+     */
+    static Car.Status status(Step.Strip s, boolean holding) {
+        IBaritone b = Jobs.baritone();
+        if (b == null) return Car.Status.failed("baritone not loaded");
+        var sp = b.getStripProcess();
+        StripOrder.Saved now = of(sp.progress());
+        try {
+            if (now != null && !now.equals(lastSaved)) {
+                save(s, now);
+                lastSaved = now;
+            }
+        } catch (RuntimeException e) {
+            if (sp.isActive()) sp.cancel();
+            return Car.Status.failed("strip: " + e.getMessage());
+        }
+        Map<String, Integer> picked = now == null ? Map.of() : now.picked();
+        if (sp.isActive()) {
+            Car.Status end = StripOrder.endRule(s.amounts(), picked, bagFull(Minecraft.getInstance().player));
+            if (end != null) {
+                sp.cancel();
+                if (end.state() == Car.State.DONE) finished(s, end.why().contains("bag full"));
+                return end;
+            }
+            return Car.Status.running(sp.status() + " - " + sp.why());
+        }
+        if (holding) return Car.Status.running(sp.status() + " - " + sp.why());
+        Car.Status st = StripOrder.endOf(sp.lastEnd(), sp.status());
+        if (st.state() == Car.State.DONE) finished(s, false);
+        return st;
+    }
+
+    /** The order is met: its goal done; the saved progress cleared unless the bag ended it (the tunnel goes on later). */
+    private static void finished(Step.Strip s, boolean keep) {
+        io.github.mojolowjo.entropybot.aa.brain.Goals.stripDone(s);
+        if (!keep) save(s, null);
+    }
+
+    /** aa why / aa status: the strip's line while it runs, else "". */
+    static String liveLine() {
+        IBaritone b = Jobs.baritone();
+        if (b == null || !b.getStripProcess().isActive()) return "";
+        return "\nstrip: " + b.getStripProcess().status() + " - " + b.getStripProcess().why();
+    }
+
+    static void cancel() {
+        IBaritone b = Jobs.baritone();
+        if (b != null && b.getStripProcess().isActive()) b.getStripProcess().cancel();
+    }
+
+    /** Wires aa goals' progress lookup (Goals.line) to the saved file. */
+    static void wire() {
+        io.github.mojolowjo.entropybot.aa.brain.Goals.stripProgress = StripStep::load;
+    }
+}

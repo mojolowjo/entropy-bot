@@ -40,6 +40,25 @@ public final class Goals {
 
         /** orders-tier (0.39.z9): why the order stopped (said once; aa want again or aa drop clears it), null: it goes on. */
         public volatile String parked;
+
+        /** The owner's strip order (aa want strip ...): its one step; null for an item goal. */
+        public Step.Strip strip;
+    }
+
+    /** The strip orders whose run ended done (their goals are met; a failed run parks its goal instead). */
+    private static final java.util.Set<Step.Strip> STRIPS_DONE = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** StepHands: the strip step ended done. */
+    public static void stripDone(Step.Strip s) { STRIPS_DONE.add(s); }
+
+    /** A strip order as a goal: key "strip", n 1, done when its run ended done. */
+    public static Goal addStrip(Blackboard bb, Step.Strip s, int prio, long now) {
+        Thing.Result r = new Thing.Result("strip", "strip", false, List.of(), List.of(), 0, null, s.text(), null);
+        Goal g = new Goal(r, 1, prio, now);
+        g.strip = s;
+        of(bb).removeIf(x -> x.r.key().equals("strip"));
+        of(bb).add(g);
+        return g;
     }
 
     /**
@@ -104,6 +123,8 @@ public final class Goals {
 
     /** How many the bag holds now (bag: path -> count). */
     public static int have(Map<String, Integer> bag, Goal g) {
+        if (g.strip != null) return STRIPS_DONE.contains(g.strip) ? g.n : 0;
+        if (g.strip != null) return STRIPS_DONE.contains(g.strip) ? g.n : 0;
         if (g.r.group()) {          // a group is done when every member is had: the fewest of them
             int low = Integer.MAX_VALUE;
             for (String c : g.r.counts()) low = Math.min(low, bag.getOrDefault(c, 0));
@@ -152,12 +173,14 @@ public final class Goals {
      */
     public static List<Step> steps(Blackboard bb, Goal g) {
         if (g.n - have(bb.in.bag, g) <= 0) return null;
+        if (g.strip != null) return List.of(g.strip);          // the strip order is its own one step (no chain)
         var ch = chain(bb, g);
         return ch == null || !ch.ok() || ch.steps().isEmpty() ? null : ch.steps();
     }
 
     /** The goal's chain on the world fact now (null: no world facts yet). */
     public static io.github.mojolowjo.entropybot.aa.NeedChain.Chain chain(Blackboard bb, Goal g) {
+        if (g.strip != null) return null;
         var world = world(bb);
         if (world == null) return null;
         if (g.r.group()) return io.github.mojolowjo.entropybot.aa.NeedChain.resolveAll(g.r.key(), g.r.ids(), g.n, world);
@@ -228,7 +251,22 @@ public final class Goals {
     }
 
     /** One aa goals line: "iron 2/8 high: score 90 - mine iron 6 dig | ...". */
+    /** The strip orders' saved progress (set by the game side, StripStep; the default says it is not wired). */
+    public static volatile java.util.function.Function<Step.Strip, StripOrder.Saved> stripProgress = s -> {
+        throw new IllegalStateException("strip progress lookup not wired");
+    };
+
     public static String line(Blackboard bb, Goal g, String scoreText) {
+        if (g.strip != null) {
+            StripOrder.Saved p;
+            try {
+                p = stripProgress.apply(g.strip);
+            } catch (RuntimeException e) {
+                return "strip: " + scoreText + " - progress unreadable: " + e.getMessage() + " [" + g.strip.text() + "]";
+            }
+            return StripOrder.goalLine(g.strip.heading(), g.strip.y(), g.strip.amounts(), p) + ": " + scoreText
+                    + (g.parked != null ? " - parked: " + g.parked : "") + " [" + g.strip.text() + "]";
+        }
         String b = blocked(bb, g);
         var ch = b == null ? chain(bb, g) : null;
         return g.r.key() + " " + have(bb.in.bag, g) + "/" + g.n + (g.prio > 0 ? " high" : g.prio < 0 ? " low" : "") + ": " + scoreText

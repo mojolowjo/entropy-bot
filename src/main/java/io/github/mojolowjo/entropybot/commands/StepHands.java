@@ -97,6 +97,8 @@ public final class StepHands implements Steps.Hands {
                 case Step.Fish fs -> fish(p, fs);
                 case Step.KelpCut k -> kelpCut(p, k);
                 case Step.MineAt m -> mineAt(p, m);
+                case Step.Strip st -> StripStep.start(st);              // the owner's strip order: the fork's StripProcess
+                case Step.Mine m when m.how() == Step.Mine.How.STRIP -> mineStrip(p, m);   // an AA strip leg: the same fork process (the old verb is gone)
                 default -> verb(StepCommands.command(s));   // the item actions and the mine verb's steps: one command, its own job
             };
         } catch (RuntimeException e) {
@@ -130,6 +132,8 @@ public final class StepHands implements Steps.Hands {
                 case Step.Collect k -> mineStatus(p);
                 case Step.KelpCut k -> mineStatus(p);
                 case Step.MineAt m -> veinStatus(p, m);
+                case Step.Strip st -> StripStep.status(st, Core.INSTANCE.reflexes.hold());
+                case Step.Mine m when m.how() == Step.Mine.How.STRIP && legStrip != null -> StripStep.status(legStrip, Core.INSTANCE.reflexes.hold());
                 case Step.Fish fs -> fishStatus(p);
                 case Step.HuntAt h -> huntStatus(p, h);
                 case Step.Build b -> buildStatus(b);
@@ -153,6 +157,8 @@ public final class StepHands implements Steps.Hands {
             }
             if (fishing != null) fishing.end();
             if (vein != null) vein.stop();
+            if (step instanceof Step.Strip || legStrip != null) StripStep.cancel();
+            legStrip = null;
             if (step instanceof Step.HuntAt) {
                 Core.INSTANCE.reflexes.stopAttack();
                 IBaritone b = Jobs.baritone();
@@ -230,6 +236,16 @@ public final class StepHands implements Steps.Hands {
     // ---- mine at: one ore cell and its vein over Baritone's MineProcess ----
 
     private VeinMine vein;
+
+    /** An AA strip leg (Step.Mine STRIP) as the fork's strip: the family's ore blocks at the feet's Y, the facing heading. */
+    private Step.Strip legStrip;
+
+    private String mineStrip(LocalPlayer p, Step.Mine m) {
+        String[] err = new String[1];
+        legStrip = StripStep.resolve("strip " + m.family(), p, null, err);
+        if (legStrip == null) return "error: " + err[0];
+        return StripStep.start(legStrip);
+    }
 
     private String mineAt(LocalPlayer p, Step.MineAt m) {
         var level = p.level();

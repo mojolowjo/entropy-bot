@@ -55,6 +55,32 @@ public sealed interface Step {
     }
 
     /**
+     * The owner's strip order: the fork's StripProcess on the ore block ids {@code ores} at Y {@code y} along
+     * {@code heading} (north/east/south/west); {@code serial}: the order's time (two orders alike are two runs).
+     */
+    record Strip(List<String> ores, java.util.Map<String, Integer> amounts, int y, String heading, long serial) implements Step {
+        public Strip {
+            ores = List.copyOf(ores);
+            amounts = java.util.Map.copyOf(amounts);
+        }
+
+        public String text() {
+            List<String> s = new ArrayList<>();
+            for (String o : ores) s.add(o.replaceFirst("^minecraft:", ""));
+            List<String> a = new ArrayList<>();
+            for (var e : new java.util.TreeMap<>(amounts).entrySet()) a.add(e.getKey() + " " + e.getValue());
+            return "strip " + String.join(",", s) + " at y " + y + " " + heading + (a.isEmpty() ? " until the bag is full" : " for " + String.join(", ", a));
+        }
+
+        /** The order's identity for its saved progress: the ore set, the Y, the heading (amounts and time left out). */
+        public String key() {
+            List<String> s = new ArrayList<>(ores);
+            s.sort(null);
+            return String.join(",", s) + "|" + y + "|" + heading;
+        }
+    }
+
+    /**
      * Hunt {@code n} of the animal {@code type} (an entity id) near {@code at} ({x, z}, null = in view): the walk is a
      * Baritone GoalNear on the animal, the strike stays the reflexes' input. {@code forItem}: the drop wanted (null = its
      * raw meat), {@code forCount} of it.

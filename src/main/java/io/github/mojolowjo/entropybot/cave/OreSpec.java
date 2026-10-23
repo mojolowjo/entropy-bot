@@ -93,4 +93,23 @@ public final class OreSpec {
         for (Map.Entry<String, Integer> e : tally.entrySet()) if (match(e.getKey()) >= 0) n += e.getValue();
         return n;
     }
+
+
+    /** The registry ids that count as ores here: "*_ore" and ancient debris. */
+    public static boolean oreId(String id) {
+        return id.endsWith("_ore") || id.endsWith(":ancient_debris");
+    }
+
+    /**
+     * 0.28.0: the family word of an ore id, the same words {@link #parse} takes: the id without "minecraft:", without the
+     * "deepslate_" prefix and the "_ore" suffix ("minecraft:deepslate_iron_ore" -> "iron", "oritech:nickel_ore" ->
+     * "oritech:nickel", "minecraft:ancient_debris" -> "ancient_debris"). Lapis stays "lapis".
+     */
+    public static String family(String id) {
+        if (id == null) return "?";
+        String ns = id.contains(":") ? id.substring(0, id.indexOf(':')) : "minecraft";
+        String p = id.contains(":") ? id.substring(id.indexOf(':') + 1) : id;
+        p = p.replaceFirst("^deepslate_", "").replaceFirst("_ore$", "");
+        return ns.equals("minecraft") ? p : ns + ":" + p;
+    }
 }

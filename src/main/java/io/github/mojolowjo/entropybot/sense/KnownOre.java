@@ -1,6 +1,6 @@
 package io.github.mojolowjo.entropybot.sense;
 
-import io.github.mojolowjo.entropybot.strip.OreSpec;
+import io.github.mojolowjo.entropybot.cave.OreSpec;
 
 import java.util.ArrayList;
 import java.util.List;

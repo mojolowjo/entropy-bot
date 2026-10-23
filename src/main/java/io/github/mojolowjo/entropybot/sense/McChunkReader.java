@@ -1,7 +1,7 @@
 package io.github.mojolowjo.entropybot.sense;
 
 import io.github.mojolowjo.entropybot.poi.PoiScanner;
-import io.github.mojolowjo.entropybot.strip.OreSpec;
+import io.github.mojolowjo.entropybot.cave.OreSpec;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;

@@ -281,7 +281,7 @@ final class Mining {
         }
         Map<String, io.github.mojolowjo.entropybot.sense.OreIndex.Hit> nearest = new HashMap<>();
         for (String f : within.keySet()) {
-            List<io.github.mojolowjo.entropybot.sense.OreIndex.Hit> h = pass().nearest(d, id -> io.github.mojolowjo.entropybot.strip.OreSpec.family(id).equals(f), me[0], me[1], me[2], r, 1, fair);
+            List<io.github.mojolowjo.entropybot.sense.OreIndex.Hit> h = pass().nearest(d, id -> io.github.mojolowjo.entropybot.cave.OreSpec.family(id).equals(f), me[0], me[1], me[2], r, 1, fair);
             if (!h.isEmpty()) nearest.put(f, h.get(0));
         }
         int stale = 0;

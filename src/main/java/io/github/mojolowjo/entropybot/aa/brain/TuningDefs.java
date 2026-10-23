@@ -464,10 +464,6 @@ final class TuningDefs {
         Tuning.def("litter.placeS", 0.6, "rm-constants 0.39.u2 (was Litter.PLACE_S)", "Seconds to place one scaffold block (jump, look, place)");
         Tuning.def("litter.reachUp", 5, "rm-constants 0.39.u2 (was Litter.REACH_UP)", "Standing on the ground the bot reaches this many blocks above its feet's level with the trunk in sight");
         Tuning.def("litter.logValueS", 4, "rm-constants 0.39.u2 (was Litter.LOG_VALUE_S)", "What a log is worth when it has to be found elsewhere (seconds)");
-        // mineGeom
-        Tuning.def("mineGeom.legFar", 48, "rm-constants 0.39.u2 (was MineGeom.LEG_FAR)", "A run that starts further than this from its first box (or LEG_LEVELS levels off) walks there in legs");
-        Tuning.def("mineGeom.legLevels", 10, "rm-constants 0.39.u2 (was MineGeom.LEG_LEVELS)", "A run that starts further than this from its first box (or LEG_LEVELS levels off) walks there in legs");
-        Tuning.def("mineGeom.legLen", 40, "rm-constants 0.39.u2 (was MineGeom.LEG_LEN)", "A run that starts further than this from its first box (or LEG_LEVELS levels off) walks there in legs");
         // mineNotes
         Tuning.def("mineNotes.retryMax", 6000, "rm-constants 0.39.u2 (was MineNotes.RETRY_MAX)", "S1: after a failed write the next try waits FLUSH_AFTER, doubling per failure, at most RETRY_MAX ticks (5 min)");
         // mineRules
@@ -686,12 +682,6 @@ final class TuningDefs {
         Tuning.def("storage.potsR", 16, "rm-constants 0.39.u2 (was Storage.POTS_R)", "the pots r of Storage");
         Tuning.def("storage.driveR", 16, "rm-constants 0.39.u2 (was Storage.DRIVE_R)", "the drive r of Storage");
         Tuning.def("storage.drivesMax", 4, "rm-constants 0.39.u2 (was Storage.DRIVES_MAX)", "the drives max of Storage");
-        // stripRules
-        Tuning.def("stripRules.turnAlong", 8, "rm-constants 0.39.u2 (was StripRules.TURN_ALONG)", "the turn along of StripRules");
-        Tuning.def("stripRules.baseTripMin", 64, "rm-constants 0.39.u2 (was StripRules.BASE_TRIP_MIN)", "the base trip min of StripRules");
-        Tuning.def("stripRules.baseTripFree", 4, "rm-constants 0.39.u2 (was StripRules.BASE_TRIP_FREE)", "the base trip free of StripRules");
-        Tuning.def("stripRules.maxRuns", 30, "rm-constants 0.39.u2 (was StripRules.MAX_RUNS)", "the max runs of StripRules");
-        Tuning.def("stripRules.maxTicks", 20L * 60 * 60, "rm-constants 0.39.u2 (was StripRules.MAX_TICKS)", "'mine strip' starts no new run after an hour");
         // summaryBuilder
         Tuning.def("summaryBuilder.mineshaftBelow", 45, "rm-constants 0.39.u2 (was SummaryBuilder.MINESHAFT_BELOW)", "the mineshaft below of SummaryBuilder");
         // survivalRules

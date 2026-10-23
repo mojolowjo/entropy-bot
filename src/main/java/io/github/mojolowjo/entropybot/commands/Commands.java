@@ -1145,10 +1145,9 @@ public final class Commands implements Chains.Env {
             if (pl != null) return Reply.now(pl);
         }
         // B7d: the listed ores (D3) and the preferred ores (D2); the strip mine's status and ore mode never wait
-        if (verb.equals("ores")) return Reply.now(rest.trim().toLowerCase().matches("^prefer\\b.*") ? StripMine.get().oresPrefer(rest) : Mining.get().ores(player, rest));
-        if (verb.equals("stripmine") && rest.trim().toLowerCase().matches("^(status|ores( collect| list)?)$")) return Reply.now(StripMine.get().command(player, rest));
+        if (verb.equals("ores")) return Reply.now(rest.trim().toLowerCase().matches("^prefer\\b.*") ? "the old strip mine is gone: say aa want strip <ore|ore,ore|any> [<y>] [<heading>]" : Mining.get().ores(player, rest));
         if (verb.equals("mine") && rest.trim().toLowerCase().matches("^strip\\s+(status|ores( collect| list)?)$"))      // V1b: stripmine's forms under mine strip
-            return Reply.now(StripMine.get().command(player, rest.trim().substring(5).trim()));
+            return Reply.now("the old strip mine is gone: say aa want strip <ore|ore,ore|any> [<y>] [<heading>]");
         if (verb.equals("restart")) return Reply.now(restartCommand(from, rest));
         if (verb.equals("area") && Texts.splitChain(raw).size() <= 1 && rest.trim().toLowerCase().matches("^candidates\\b.*")) return Reply.now(areaCandidates(rest.trim().substring(10), from, mc, player));
         if (Texts.isPolicyVerbAlone(verb, raw)) {     // 0.28.1: "area ... then ..." is a chain (falls through to the chain test below)
@@ -1418,12 +1417,12 @@ public final class Commands implements Chains.Env {
             case "dig" -> { return DigCommands.dig(this, player, rest, from); }
             case "build" -> { return DigCommands.build(this, player, rest, from); }
             case "place" -> { return DigCommands.place(this, player, rest, from); }
-            case "stripmine" -> { return StripMine.get().command(player, rest); }
+            case "stripmine" -> { return ("the old strip mine is gone: say aa want strip <ore|ore,ore|any> [<y>] [<heading>]"); }
             case "mine" -> {
                 // V1b: "mine strip" alone, "mine strip <branches> [length]", reset, turn: the old stripmine forms
                 if (rest.trim().toLowerCase().matches("^strip(\\s+(reset|turn\\s+(left|right)|\\d+(\\s+\\d+)?))?$"))
-                    return StripMine.get().command(player, rest.trim().substring(5).trim());
-                if (rest.trim().toLowerCase().matches("^strip\\b.*")) return StripMine.get().mineStrip(player, rest);
+                    return ("the old strip mine is gone: say aa want strip <ore|ore,ore|any> [<y>] [<heading>]");
+                if (rest.trim().toLowerCase().matches("^strip\\b.*")) return ("the old strip mine is gone: say aa want strip <ore|ore,ore|any> [<y>] [<heading>]");
                 return Mining.get().mine(player, rest, s -> null);
             }
             case "explore" -> { return Mining.get().explore(player, rest); }
@@ -2181,7 +2180,7 @@ public final class Commands implements Chains.Env {
             case "poi", "pois" -> { return Reply.now(poiCommand(text, player, true)); }
             case "caves" -> { return Reply.now(cavesCommand(text)); }
             // B7d: the listed/preferred ores and the zone never wait for a job
-            case "ores" -> { return Reply.now(text.trim().toLowerCase().matches("^prefer\\b.*") ? StripMine.get().oresPrefer(text) : Mining.get().ores(player, text)); }
+            case "ores" -> { return Reply.now(text.trim().toLowerCase().matches("^prefer\\b.*") ? "the old strip mine is gone: say aa want strip <ore|ore,ore|any> [<y>] [<heading>]" : Mining.get().ores(player, text)); }
             case "zone" -> { return Reply.now(OldWords.hint("zone", text)); }
             // package B: the hotbar layout and the tool policy (settings, never busy)
             case "hotbar" -> { return Reply.now(hotbarCommand(player, text)); }
@@ -2194,7 +2193,7 @@ public final class Commands implements Chains.Env {
                  "craft", "kit", "smelt", "get", "restock", "farm", "compact", "give", "upgrade",
                  "dig", "build", "place", "stripmine", "mine", "explore" -> {
                 if (type.equals("farm") && FarmCommand.instant(text)) return Reply.now(crafting.farm(player, text));
-                if (type.equals("stripmine") && text.trim().toLowerCase().matches("^(status|ores( collect| list)?)$")) return Reply.now(StripMine.get().command(player, text));
+                if (type.equals("stripmine")) return Reply.now("the old strip mine is gone: say aa want strip <ore|ore,ore|any> [<y>] [<heading>]");
                 if (type.equals("smelt") && Crafting.smeltInstant(text)) return Reply.now(crafting.smelt(player, text));
                 // as the bridge's runCommand: a task makes these busy (a walk is replaced; find never waits)
                 if (!type.equals("find")) {
@@ -2555,7 +2554,7 @@ public final class Commands implements Chains.Env {
     }
 
     /** B7d D2: the mod keeps it (commands.json). */
-    @Override public String orePrefer() { return StripMine.get().orePrefer(); }
+    @Override public String orePrefer() { return ""; } // the old strip mine's preference went with it (0.39.z21)
 
     @Override public JsonObject minePlace() { return core.knowledge.places().get("mine"); }
 

@@ -561,9 +561,6 @@ lootBook.minChance	0.01
 margin	15.0
 mine.maxMin	20.0
 mine.stallS	60.0
-mineGeom.legFar	48.0
-mineGeom.legLen	40.0
-mineGeom.legLevels	10.0
 mineNotes.retryMax	6000.0
 mineRules.atVein	8.0
 mineRules.leaseMax	4096.0
@@ -818,11 +815,6 @@ storage.driveR	16.0
 storage.drivesMax	4.0
 storage.guiSettle	8.0
 storage.potsR	16.0
-stripRules.baseTripFree	4.0
-stripRules.baseTripMin	64.0
-stripRules.maxRuns	30.0
-stripRules.maxTicks	72000.0
-stripRules.turnAlong	8.0
 summaryBuilder.mineshaftBelow	45.0
 survivalRules.healBelow	6.0
 survivalRules.healEveryTicks	600.0

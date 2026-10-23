@@ -2919,6 +2919,7 @@ public final class AaRuntime implements JobPort {
 
     /** aa want <thing> [n] [high|low] (also the wants by name: house/build, explore, tidy). */
     String want(String arg) {
+        if (io.github.mojolowjo.entropybot.aa.brain.StripOrder.is(arg)) return wantStrip(arg);
         var a = io.github.mojolowjo.entropybot.aa.brain.Goals.parse(arg);
         if (a.err() != null) return a.err();
         String w = a.word();
@@ -2957,6 +2958,29 @@ public final class AaRuntime implements JobPort {
         return "ok: goal " + r.key() + " x" + g.n + (g.prio > 0 ? " high" : g.prio < 0 ? " low" : "") + " (score "
                 + Math.round(io.github.mojolowjo.entropybot.aa.brain.Goals.score(bb, g)) + "): " + r.text()
                 + lootLine + (blocked != null ? " - parked: " + blocked : "") + (on() ? "" : " (aa is off: aa on to work on it)");
+    }
+
+    /** aa want strip <ore|ore,ore|any> [<y>] [<heading>]: an owner order whose one step is the fork's strip mine. */
+    private String wantStrip(String arg) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null) return "error: no world";
+        String[] err = new String[1];
+        var s = StripStep.resolve(arg, mc.player, catalog(mc), err);
+        if (s == null) return "aa want: " + err[0];
+        StripStep.wire();
+        String resume;
+        try {
+            var saved = StripStep.load(s);
+            resume = saved == null || !saved.started() ? "fresh tunnel" : "resumes at " + saved.blocks() + " blocks dug from " + saved.x() + " " + saved.y() + " " + saved.z();
+        } catch (RuntimeException e) {
+            return "aa want: error: " + e.getMessage();
+        }
+        var g =io.github.mojolowjo.entropybot.aa.brain.Goals.addStrip(bb, s, 0, System.currentTimeMillis());
+        tree.brain.failures.forget(g.id());
+        tree.brain.remove(g.id(), "aa want strip again");
+        tree.brain.add(io.github.mojolowjo.entropybot.aa.AaDesires.ownerGoal(g));
+        LOG.info("[entropybot] aa: owner goal {}", s.text());
+        return "ok: goal " + s.text() + " (" + s.ores().size() + " ore blocks; " + resume + "; aa drop strip to end it)" + (on() ? "" : " (aa is off: aa on to work on it)");
     }
 
     /** aa drop <thing|all>. */

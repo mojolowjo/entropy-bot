@@ -256,7 +256,7 @@ public final class Seq {
             case "shelter": return ShelterJob.step(this, st, p);                // 0.24.3: a shell around me until day
             case "lightnote": return CampCommands.lightNote(this, st);          // C4: the light job's end line       // B7d D1: dig, build, place
             default:
-                if (st.type.startsWith("strip")) return StripSteps.step(this, st, p, elapsed);             // B7d D2
+                if (st.type.startsWith("strip")) return "error: the old strip mine steps are gone (0.39.z21)";
 
                 if (st.type.startsWith("plant")) return FarmPlanting.get().step(this, st, p, elapsed);     // P5: farm plant
                 if (st.type.startsWith("cave") || st.type.startsWith("explore") || st.type.startsWith("mineore"))

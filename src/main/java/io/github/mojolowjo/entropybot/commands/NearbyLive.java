@@ -222,7 +222,7 @@ final class NearbyLive {
                 BlockPos q = new BlockPos(x, y, z);
                 if (!mc.level.isLoaded(q)) return false;
                 var st = mc.level.getBlockState(q);
-                boolean ore = io.github.mojolowjo.entropybot.strip.OreSpec.oreId(BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString())
+                boolean ore = io.github.mojolowjo.entropybot.cave.OreSpec.oreId(BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString())
                         || st.is(net.neoforged.neoforge.common.Tags.Blocks.ORES);      // the ore pass's own test (McChunkReader)
                 return !ore || Mining.fairOk(adim, x, y, z);
             }

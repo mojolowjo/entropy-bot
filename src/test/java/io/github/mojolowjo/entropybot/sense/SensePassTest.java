@@ -60,9 +60,9 @@ class SensePassTest {
 
     @Test
     void moddedOreFamiliesUseOreSpec() {
-        assertEquals("iron", io.github.mojolowjo.entropybot.strip.OreSpec.family("minecraft:deepslate_iron_ore"));
-        assertEquals("oritech:nickel", io.github.mojolowjo.entropybot.strip.OreSpec.family("oritech:nickel_ore"));
-        assertEquals("oritech:nickel", io.github.mojolowjo.entropybot.strip.OreSpec.family("oritech:deepslate_nickel_ore"));
-        assertEquals("ancient_debris", io.github.mojolowjo.entropybot.strip.OreSpec.family("minecraft:ancient_debris"));
+        assertEquals("iron", io.github.mojolowjo.entropybot.cave.OreSpec.family("minecraft:deepslate_iron_ore"));
+        assertEquals("oritech:nickel", io.github.mojolowjo.entropybot.cave.OreSpec.family("oritech:nickel_ore"));
+        assertEquals("oritech:nickel", io.github.mojolowjo.entropybot.cave.OreSpec.family("oritech:deepslate_nickel_ore"));
+        assertEquals("ancient_debris", io.github.mojolowjo.entropybot.cave.OreSpec.family("minecraft:ancient_debris"));
     }
 }

@@ -22,6 +22,7 @@ public final class StepCommands {
                 case CAVE -> "mine cave " + m.family() + " " + m.n();
                 case STRIP -> "mine strip " + m.family() + " " + m.n();
             };
+            case Step.Strip st -> st.text();             // hands of its own (StripStep); the text for the logs
             case Step.ChopTree t -> "cut " + t.logs() + (t.log() == null ? "" : " " + t.log());
             case Step.HuntAt h -> "hunt " + h.n() + " " + h.type();
             case Step.Build b -> "place " + b.items().get(0);

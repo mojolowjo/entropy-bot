@@ -8,7 +8,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import io.github.mojolowjo.entropybot.strip.OreSpec;
+import io.github.mojolowjo.entropybot.cave.OreSpec;
 
 import java.util.ArrayList;
 import java.util.HashMap;

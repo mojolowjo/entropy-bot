@@ -322,9 +322,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
     public String mine() {
         JsonObject m = Core.INSTANCE.knowledge.places().get("mine");
         if (m == null) return null;
-        JsonObject cur = StripMine.get().book().current();
-        return "the mine at " + Jobs.fmt(Jobs.pos(m)) + (m.has("dir") ? " " + m.get("dir").getAsString() : "")
-                + (cur != null ? " (next branch " + io.github.mojolowjo.entropybot.strip.MineBook.k(cur) + ")" : "");
+        return "the mine at " + Jobs.fmt(Jobs.pos(m)) + (m.has("dir") ? " " + m.get("dir").getAsString() : "");
     }
 
     @Override
