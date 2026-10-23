@@ -142,7 +142,8 @@ public final class JobHands {
      */
     public synchronized Result use(int[] on, String who) {
         String ks = "use " + c(on);
-        int t = (int) (20 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("hands.buildS"));
+        // owner 2026-10-22: no mod clock on the use; the fork's InteractProcess ends it (arrival, no path, stuck, gone)
+        int t = NO_CLOCK;
         if (key != null && ks.equals(key)) return request(ks, List.of(), List.of(), t, who, null, "place", null);
         if (key != null && !finished) return new Result(State.RUNNING, "waiting: my hands are busy with " + key + (this.who.isEmpty() ? "" : " for " + this.who));
         clear();
@@ -168,6 +169,9 @@ public final class JobHands {
     }
 
     private int[] useCell;
+
+    /** The use's timeout: none (a reflex pause resumes it whenever it ends). */
+    static final int NO_CLOCK = -1;   // structural: a marker, not a limit
 
     /**
      * Builder placements: put block item {@code item} into cell x y z as a one-block schematic leg (Baritone picks
@@ -332,6 +336,10 @@ public final class JobHands {
                     boolean reflex = false;
                     try { reflex = hand.reflexActive(); } catch (RuntimeException e) { warn.accept("[entropybot] job hands: reflex check for " + key + ": " + e); }
                     String k = key;
+                    if (reflex && timeout == NO_CLOCK) {
+                        Result r = start();
+                        yield r.failed() ? r : new Result(State.RUNNING, "paused by a reflex, resumed " + k + " after: " + why);
+                    }
                     if (reflex && clock.getAsLong() - startedMs <= (long) (io.github.mojolowjo.entropybot.aa.brain.Tuning.need("hands.reflexResume") * timeout * 50)) {
                         Result r = start();
                         yield r.failed() ? r : new Result(State.RUNNING, "paused by a reflex, resumed " + k + " after: " + why);

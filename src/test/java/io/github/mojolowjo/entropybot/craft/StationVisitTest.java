@@ -52,6 +52,24 @@ class StationVisitTest {
     static final int[] TABLE = {20, 64, 0};
 
     @Test
+    void aLongWalkWaitsAsLongAsTheForkSaysRunning() {
+        FakeHand hand = new FakeHand();
+        long[] ms = {0};
+        JobHands hands = new JobHands(hand, () -> ms[0]);
+        FakeMemory mem = new FakeMemory();
+        mem.known.add(TABLE);
+        for (int i = 0; i < 20 * 600; i++) {   // 10 minutes of walking, no mod clock ends it
+            ms[0] += 50;
+            assertEquals(StationVisit.Kind.WAIT, StationVisit.tick(hands, mem, CRAFT, TABLE, "crafting table").kind());
+        }
+        assertEquals(1, hand.used.size(), "one use, never restarted by a clock");
+        hand.status = Car.Status.failed("stuck 10 s short of the crafting_table at 20 64 0 (feet 0 64 0)");
+        StationVisit.Out o = StationVisit.tick(hands, mem, CRAFT, TABLE, "crafting table");
+        assertEquals(StationVisit.Kind.FAILED, o.kind());
+        assertTrue(o.why().contains("stuck 10 s short of the crafting_table"), o.why());
+    }
+
+    @Test
     void aKnownTableOutOfReachIsUsedFirstNeverANewOne() {
         FakeHand hand = new FakeHand();
         JobHands hands = new JobHands(hand);
