@@ -469,9 +469,7 @@ public final class StepHands implements Steps.Hands {
             if (b == null) return Car.Status.failed("baritone not loaded");
             if (b.getChopProcess().isActive() || Core.INSTANCE.reflexes.hold()) return Car.Status.running(miningWhat + ": " + got + " of " + want);
             endMining();
-            String end = endOf(b.getChopProcess().lastEnd());
-            if (got >= want) return Car.Status.done("ok: " + miningWhat + ": got " + got + " (" + end + ")");
-            return Car.Status.failed(miningWhat + ": " + end + " (got " + got + " of " + want + ")");
+            return ChopEnd.of(miningWhat, got, want, endOf(b.getChopProcess().lastEnd()));
         }
         if (got >= want) {
             if (b != null) b.getMineProcess().cancel();
