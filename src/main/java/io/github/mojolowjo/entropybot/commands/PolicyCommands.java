@@ -69,6 +69,7 @@ public final class PolicyCommands {
     static final java.util.Set<String> AREA_WORDS = java.util.Set.of("list", "show", "add", "corner1", "corner2", "grow", "remove",
             "protect", "unprotect", "near", "here", "confirm", "on", "off", "status", "change", "del", "name", "type",
             "meaning", "note",                                                                      // AREAS (0.39.0)
+            "tag", "untag",                                                                         // STRUCTURE_BLOCKS (0.39.z26)
             "neutral", "destroy", "main", "safe", "keep-out", "no-break", "all", "me",     // base, work, storage, danger stay usable as names
             "stone");     // 0.30.0: "dig stone [n]" is the quarry, so no area may be called stone
 
@@ -247,7 +248,19 @@ public final class PolicyCommands {
     static String areaText(JsonObject b) {
         AreaType t = typeOf(b);
         String note = noteOf(b);
-        return nameOf(b) + " (" + t.word() + ", " + t.colour + ": " + boxText(b) + ")" + (note == null ? "" : " - note: " + note);
+        List<String> tags = tagsOf(b);
+        return nameOf(b) + " (" + t.word() + ", " + t.colour + ": " + boxText(b) + ")" + (tags.isEmpty() ? "" : " [tags: " + String.join(", ", tags) + "]")
+                + (note == null ? "" : " - note: " + note);
+    }
+
+    /** STRUCTURE_BLOCKS: the tags of an area entry (areas.json v2 "tags"; absent = none), in their saved order. */
+    public static List<String> tagsOf(JsonObject b) {
+        List<String> out = new ArrayList<>();
+        if (b.has("tags") && b.get("tags").isJsonArray()) for (JsonElement e : b.getAsJsonArray("tags")) {
+            String n = e.isJsonPrimitive() ? io.github.mojolowjo.entropybot.guard.AreaTags.norm(e.getAsString()) : null;
+            if (n != null && !out.contains(n)) out.add(n);
+        }
+        return out;
     }
 
     /** AREAS: the owner's note on an area entry, or null. */
@@ -343,7 +356,7 @@ public final class PolicyCommands {
     }
 
     static final String USAGE = "usage: area here <r> <name> [meaning] [down up] | area x z x2 z2 <name> [meaning] [y1 y2] | area change name <name> <new> "
-            + "| area change meaning <name> <meaning> | area note <name> <text> | area del <name> confirm | area list | area show <name> | area near [<r>|on|off|status]  (meanings: " + AreaType.WORDS + ")";
+            + "| area change meaning <name> <meaning> | area note <name> <text> | area tag <name> <tag...> | area untag <name> <tag...> | area del <name> confirm | area list | area show <name> | area near [<r>|on|off|status]  (meanings: " + AreaType.WORDS + ")";
 
     /**
      * Parses "here &lt;r&gt; &lt;name&gt; [type] [down up]" (r != null; y1/y2 = down/up) and "x z x2 z2 &lt;name&gt; [type]
@@ -558,6 +571,24 @@ public final class PolicyCommands {
                 else b.addProperty("note", text);
                 return changed("ok: area " + name + (text.isEmpty() ? " - note cleared" : " - note: " + text), false);
             }
+            if (sub.equals("tag") || sub.equals("untag")) {               // STRUCTURE_BLOCKS: the owner's words on an area
+                String use = "usage: area tag <name> <tag...> | area untag <name> <tag...> (tags: " + String.join(", ", io.github.mojolowjo.entropybot.guard.AreaTags.KNOWN) + ")";
+                if (name.isEmpty() || parts.size() < 3) return use;
+                JsonObject b = findArea(name);
+                if (b == null) return "I have no area called " + name + " (area list)";
+                List<String> words = parts.subList(2, parts.size());
+                String bad = io.github.mojolowjo.entropybot.guard.AreaTags.unknown(words);
+                if (bad != null) return bad;
+                List<String> cur = tagsOf(b);
+                for (String w : words) {
+                    String n = io.github.mojolowjo.entropybot.guard.AreaTags.norm(w);
+                    if (sub.equals("tag")) { if (!cur.contains(n)) cur.add(n); } else cur.remove(n);
+                }
+                JsonArray ta = new JsonArray();
+                for (String t : cur) ta.add(t);
+                b.add("tags", ta);
+                return changed("ok: area " + name + " tags: " + (cur.isEmpty() ? "none" : String.join(", ", cur)), false);
+            }
             if (sub.equals("change")) {
                 String what = name;
                 if (what.equals("type")) what = "meaning";                 // AREAS: the old word keeps working
@@ -591,6 +622,7 @@ public final class PolicyCommands {
             if (io.github.mojolowjo.entropybot.guard.GuardCore.DENIED_DIMS.contains(dimOf(b))) return "error: no areas in " + dimOf(b);
             boolean existed = findArea(a.name()) != null;
             if (existed) b.addProperty("note", noteOf(findArea(a.name())));          // a replaced box keeps its note
+            if (existed && findArea(a.name()).has("tags")) b.add("tags", findArea(a.name()).get("tags").deepCopy());     // and its tags
             if (noteOf(b) == null) b.remove("note");
             String full = put(b);
             if (full != null) return full;

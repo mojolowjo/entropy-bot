@@ -49,12 +49,15 @@ public final class Guard {
     public void attachEvents(EventRing ring) { this.events = ring; }
 
     /**
-     * Owner's ruling 2026-10-23 ("I'd rather set an area it may NOT use"): no block is protected by what it is (no
-     * built-block list, no block-entity floor, no built-near rule). Only loaded or not is known here; the owner's marked
-     * keep-out / no-break areas are the one refusal ({@link GuardCore#checkBoxes}).
+     * The block at a click: loaded or not, and (STRUCTURE_BLOCKS, owner 2026-10-23) its structure fact from the game's
+     * data ({@link StructureTable}) with whether I placed it (the ledger, {@link OwnPlaced}). GuardCore's break branch asks
+     * BreakPolicy with these; the owner's marked keep-out / no-break areas refuse as before ({@link GuardCore#checkBoxes}).
      */
     public GuardCore.BlockInfo infoFor(Level level, BlockPos pos) {
-        return GuardCore.BlockInfo.of(level != null && level.isLoaded(pos));
+        boolean known = level != null && level.isLoaded(pos);
+        if (!known) return GuardCore.BlockInfo.UNKNOWN;
+        BreakPolicy.Structure s = StructureTable.of(level.getBlockState(pos).getBlock());
+        return GuardCore.BlockInfo.breaking(true, s, s == BreakPolicy.Structure.YES && OwnPlaced.at(pos.getX(), pos.getY(), pos.getZ()));
     }
 
     public static String dimOf(Level level) {

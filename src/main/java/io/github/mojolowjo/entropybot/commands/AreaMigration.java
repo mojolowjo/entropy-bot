@@ -138,6 +138,9 @@ public final class AreaMigration {
                 o.addProperty("text", nw);
             }
         }
+        // STRUCTURE_BLOCKS (0.39.z26): every area gets its tags list, empty (the owner adds them with area tag)
+        for (JsonArray l : List.of(areas.getAsJsonArray("areas"), areas.getAsJsonArray("protect")))
+            for (JsonElement e : l) if (e.isJsonObject() && !e.getAsJsonObject().has("tags")) e.getAsJsonObject().add("tags", new JsonArray());
         areas.addProperty("version", PolicyCommands.VERSION);
         String summary = "areas: moved to meanings: " + nNeutral + " work, " + nMain + " base, " + nDestroy + " destroy, " + nSafe + " no-break";
         return new Result(true, lines, summary);

@@ -888,6 +888,7 @@ final class TuningDefs {
         Tuning.def("nightWork.torchesLow", 8, "rm-constants 0.39.u2 (inline literal in NightWork)", "torches under which the night work crafts more");
         Tuning.def("options.factErrorLogMs", 60_000, "rm-constants 0.39.u2 (inline literal in Options)", "milliseconds between two logs of the same facts error");
         Tuning.def("policyRuntime.waterColumnMax", 32, "rm-constants 0.39.u2 (inline literal in PolicyRuntime)", "blocks up a water column is followed");
+        Tuning.def("policyRuntime.structureNotes", 6, "STRUCTURE_BLOCKS 0.39.z26", "structure refusals of AA's way prices kept for aa why");
         Tuning.def("reachGrid.climbMax", 3, "rm-constants 0.39.u2 (inline literal in ReachGrid)", "blocks a step may climb");
         Tuning.def("reachGrid.dropMax", 3, "rm-constants 0.39.u2 (inline literal in ReachGrid)", "blocks a step may drop");
         Tuning.def("reflexNotes.lowHealth", 6, "rm-constants 0.39.u2 (inline literal in ReflexNotes)", "health at or under which the note says low health");

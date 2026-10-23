@@ -97,6 +97,40 @@ public final class PolicyRuntime {
         } catch (Throwable t) {
             stats.error("tick: " + t);
         }
+        StructureTable.tick(mc);                // STRUCTURE_BLOCKS: the game's structure facts, once per world (never throws)
+    }
+
+    // ---- STRUCTURE_BLOCKS: the structure fact of a cell, and the refusals AA's ways met (aa why) ----
+
+    /** The structure fact of the cell and whether I placed it (the ledger asked for a structure block only). Any thread. */
+    public BreakPolicy.Structure structureAt(StateAt at, int x, int y, int z) {
+        if (!at.loaded(x, z)) return BreakPolicy.Structure.NOT_LOADED;
+        BlockState st = at.at(x, y, z);
+        return st == null ? BreakPolicy.Structure.NOT_LOADED : StructureTable.of(st.getBlock());
+    }
+
+    /** The path cost's structure verdict (CostAdvisorHook): BreakPolicy.structure for the cell. Any thread. */
+    public BreakPolicy.Verdict structureVerdict(Snapshot s, String dim, StateAt at, int x, int y, int z) {
+        BreakPolicy.Structure sf = structureAt(at, x, y, z);
+        return BreakPolicy.structure(s == null ? null : s.policy(), dim, x, y, z, sf, sf == BreakPolicy.Structure.YES && OwnPlaced.at(x, y, z));
+    }
+
+    private final java.util.ArrayDeque<String> structureNotes = new java.util.ArrayDeque<>();
+
+    /** A structure refusal an AA way price met (client thread asks): kept for aa why, the newest few. */
+    public void noteStructure(String line) {
+        synchronized (structureNotes) {
+            structureNotes.remove(line);
+            structureNotes.addLast(line);
+            while (structureNotes.size() > Tuning.i("policyRuntime.structureNotes")) structureNotes.removeFirst();
+        }
+    }
+
+    /** "structure refusals: ..." for aa why, or "" when none. */
+    public String structureLine() {
+        synchronized (structureNotes) {
+            return structureNotes.isEmpty() ? "" : "\nstructure refusals (newest last): " + String.join(" | ", structureNotes);
+        }
     }
 
     /** The snapshot the pathfinder thread reads; null before the first tick in a world (every ask then denies). */
@@ -222,7 +256,10 @@ public final class PolicyRuntime {
             if (f == Fluid.LAVA) { sides = Fluid.LAVA; break; }
             if (f == Fluid.WATER) sides = Fluid.WATER;
         }
-        return new BlockFacts(true, id, ore, unbreakable, in, above, sides, below, falling, torch);
+        // STRUCTURE_BLOCKS: the block's structure fact (StructureTable) and, for a structure block, whether I placed it
+        BreakPolicy.Structure sf = StructureTable.of(st.getBlock());
+        boolean mine = sf == BreakPolicy.Structure.YES && OwnPlaced.at(x, y, z);
+        return new BlockFacts(true, id, ore, unbreakable, in, above, sides, below, falling, torch, false, sf, mine);
     }
 
     private static final int[][] SIDES = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
@@ -289,6 +326,8 @@ public final class PolicyRuntime {
         try {
             BreakPolicy.Verdict v = BreakPolicy.judge(s, new BreakPolicy.Ask(action, in, dim, x, y, z, f, me));
             if (!v.allowed()) stats.deny(site, v.reason());
+            // AA's way prices (sites "aa-..."): a structure refusal is shown in aa why
+            if (site != null && site.startsWith("aa-") && BreakPolicy.structureRefusal(v)) noteStructure(site + " " + x + " " + y + " " + z + ": " + v.reason());
             return v;
         } catch (Throwable t) {
             stats.error(site + ": " + t);
@@ -404,6 +443,7 @@ public final class PolicyRuntime {
                 + " | rule set " + r.describe()
                 + " | block " + (f.loaded() ? id + (f.ore() ? " (ore)" : "")
                 + ", in cell " + f.inCell().name().toLowerCase() + ", above " + f.above().name().toLowerCase() + (f.fallingAbove() ? " (falling)" : "")
-                + ", sides " + f.sides().name().toLowerCase() + (f.dugByMe() ? ", dug by me" : "") : "not loaded");
+                + ", sides " + f.sides().name().toLowerCase() + (f.dugByMe() ? ", dug by me" : "")
+                + ", structure " + f.structure().name().toLowerCase().replace('_', ' ') + (f.placedByMe() ? " (placed by me)" : "") : "not loaded");
     }
 }

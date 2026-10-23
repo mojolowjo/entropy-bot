@@ -597,6 +597,7 @@ placeRules.mobWaitTicks	200.0
 placeRules.stonePicksDefault	3.0
 placedPlan.defaultRadius	24.0
 pointS	6.0
+policyRuntime.structureNotes	6.0
 policyRuntime.waterColumnMax	32.0
 policyStats.differFull	5.0
 predictions.last	20.0

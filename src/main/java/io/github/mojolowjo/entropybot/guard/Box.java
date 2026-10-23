@@ -26,6 +26,8 @@ public final class Box {
     public final AreaType type;
     /** AREAS: the owner's free note on the area (JSON "note"), or null. */
     public final String note;
+    /** STRUCTURE_BLOCKS (0.39.z26): the owner's tags on the area ({@link AreaTags}; JSON "tags", absent = none). Immutable. */
+    public final java.util.List<String> tags;
 
     public Box(String name, String dim, int x1, int y1, int z1, int x2, int y2, int z2) {
         this.name = name;
@@ -37,15 +39,29 @@ public final class Box {
         this.cx = 0; this.cz = 0; this.r = 0;
         this.type = AreaType.WORK;
         this.note = null;
+        this.tags = java.util.List.of();
     }
 
-    private Box(Box o, AreaType t, String note) {
+    private Box(Box o, AreaType t, String note) { this(o, t, note, o.tags); }
+
+    private Box(Box o, AreaType t, String note, java.util.List<String> tags) {
         this.name = o.name; this.dim = o.dim;
         this.x1 = o.x1; this.y1 = o.y1; this.z1 = o.z1; this.x2 = o.x2; this.y2 = o.y2; this.z2 = o.z2;
         this.round = o.round; this.cx = o.cx; this.cz = o.cz; this.r = o.r;
         this.type = t == null ? AreaType.WORK : t;
         this.note = note;
+        this.tags = tags == null ? java.util.List.of() : java.util.List.copyOf(tags);
     }
+
+    /** STRUCTURE_BLOCKS: this box with these tags (normalised, each once, in the given order). */
+    public Box withTags(java.util.Collection<String> t) {
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        if (t != null) for (String w : t) { String n = AreaTags.norm(w); if (n != null) out.add(n); }
+        return new Box(this, type, note, new java.util.ArrayList<>(out));
+    }
+
+    /** STRUCTURE_BLOCKS: the area carries the tag. */
+    public boolean has(String tag) { return tags.contains(tag); }
 
     /** This box with another meaning. */
     public Box withType(AreaType t) { return new Box(this, t, note); }
@@ -64,6 +80,7 @@ public final class Box {
         this.cx = cx; this.cz = cz; this.r = rr;
         this.type = AreaType.WORK;
         this.note = null;
+        this.tags = java.util.List.of();
     }
 
     /** A round area: horizontal distance to (cx, cz) at most r (block columns), y1..y2. */
@@ -183,7 +200,10 @@ public final class Box {
         String name = o.has("name") && !o.get("name").isJsonNull() ? o.get("name").getAsString() : null;
         AreaType type = AreaType.orWork(o.has("type") && o.get("type").isJsonPrimitive() ? o.get("type").getAsString() : null);
         String note = o.has("note") && o.get("note").isJsonPrimitive() ? o.get("note").getAsString() : null;      // AREAS
-        return fromJson0(o, dim, y1, y2, name).withType(type).withNote(note);
+        java.util.List<String> tags = new java.util.ArrayList<>();       // STRUCTURE_BLOCKS: areas.json v2 "tags" (absent = none)
+        if (o.has("tags") && o.get("tags").isJsonArray())
+            for (var e : o.getAsJsonArray("tags")) if (e.isJsonPrimitive()) tags.add(e.getAsString());
+        return fromJson0(o, dim, y1, y2, name).withType(type).withNote(note).withTags(tags);
     }
 
     private static Box fromJson0(JsonObject o, String dim, int y1, int y2, String name) {
@@ -203,6 +223,11 @@ public final class Box {
         if (!allY()) { o.addProperty("y1", y1); o.addProperty("y2", y2); }
         if (type != AreaType.WORK) o.addProperty("type", type.word());       // AREAS: written back as the new word
         if (note != null) o.addProperty("note", note);
+        if (!tags.isEmpty()) {
+            com.google.gson.JsonArray ta = new com.google.gson.JsonArray();
+            for (String t : tags) ta.add(t);
+            o.add("tags", ta);
+        }
         if (round) {
             JsonObject rd = new JsonObject();
             rd.addProperty("cx", cx);

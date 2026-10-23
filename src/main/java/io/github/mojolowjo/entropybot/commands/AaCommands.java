@@ -55,10 +55,12 @@ final class AaCommands {
         v("go", "go (the slow mode's next step)", (c, aa, vb, a) -> aa.slow.go());
         v("why", "why", (c, aa, vb, a) -> {
             List<String> d = aa.decisions();
+            // STRUCTURE_BLOCKS: the structure refusals AA's ways met and the stations the last lookup skipped (and why)
+            String refusals = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.structureLine() + (io.github.mojolowjo.entropybot.aa.Nearby.skippedLine().isEmpty() ? "" : "\n" + io.github.mojolowjo.entropybot.aa.Nearby.skippedLine().substring(3));
             String opts = aa.on() ? "\ndesires (top 5):\n" + String.join("\n", aa.brainLines(5)) + "\n" + aa.wantsLine() + "\n" + aa.ideasLine() + "\n" + String.join("\n", aa.optionLines()) : "";
-            if (d.isEmpty()) return "aa why: no decisions yet" + (aa.on() ? " (rungs: " + aa.ladderLine() + ")" + opts : " (aa is off)") + StripStep.liveLine();
+            if (d.isEmpty()) return "aa why: no decisions yet" + (aa.on() ? " (rungs: " + aa.ladderLine() + ")" + opts : " (aa is off)") + StripStep.liveLine() + refusals;
             List<String> last = d.subList(Math.max(0, d.size() - 10), d.size());
-            return "aa why (last " + last.size() + " of " + d.size() + "):\n" + String.join("\n", last) + (aa.on() ? "\nrungs: " + aa.ladderLine() : "") + StripStep.liveLine() + opts;
+            return "aa why (last " + last.size() + " of " + d.size() + "):\n" + String.join("\n", last) + (aa.on() ? "\nrungs: " + aa.ladderLine() : "") + StripStep.liveLine() + refusals + opts;
         });
         v("status", "status", (c, aa, vb, a) -> aa.statusLine() + StripStep.liveLine() + aa.tuningLine() + "\n" + aa.counts() + "\n" + aa.lootLine() + (aa.on() ? "\n" + aa.brainCounters() + "\ndesires: " + String.join(" | ", aa.brainLines(5)) + "\n" + aa.goalsLine() + "\n" + aa.wantsLine() + "\nrungs: " + aa.ladderLine() + "\n" + aa.optionStatus() : ""));
         v("tune", "tune [<group>|<name> [<n>]]", (c, aa, vb, a) -> aa.tune(a == null || a.isBlank() ? new String[0] : a.trim().split("\\s+")));     // AA_ROUND4 B3

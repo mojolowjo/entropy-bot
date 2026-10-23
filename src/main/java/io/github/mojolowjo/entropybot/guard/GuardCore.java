@@ -53,6 +53,24 @@ public final class GuardCore {
         /** 0.23.1: for a placement: the item put down is a torch (the only placement roaming allows). */
         default boolean torch() { return false; }
 
+        /**
+         * STRUCTURE_BLOCKS: the block's structure fact (the game's data, StructureTable). The default is the plain block
+         * {@link #PLAIN} stands for; the Minecraft side ({@code Guard.infoFor}) always supplies the real fact.
+         */
+        default BreakPolicy.Structure structure() { return known() ? BreakPolicy.Structure.NO : BreakPolicy.Structure.NOT_LOADED; }
+
+        /** STRUCTURE_BLOCKS: the ledger says the bot placed this block (asked for a structure block only). */
+        default boolean placedByMe() { return false; }
+
+        /** The Minecraft side's answer for a break click: loaded, the structure fact, placed by me. */
+        static BlockInfo breaking(boolean known, BreakPolicy.Structure s, boolean mine) {
+            return new BlockInfo() {
+                public boolean known() { return known; }
+                public BreakPolicy.Structure structure() { return s; }
+                public boolean placedByMe() { return mine; }
+            };
+        }
+
         /** For a placement: the cell holds only air or water, or not. */
         static BlockInfo placing(boolean airOrWater) { return placing(airOrWater, false); }
 
@@ -313,7 +331,10 @@ public final class GuardCore {
     public Verdict checkUnlogged(String dim, int x, int y, int z, String action, BlockInfo block) {
         if ("break".equals(action)) {
             if (!block.known()) return Verdict.floor("not loaded yet");
-            // owner 2026-10-23: no block-entity or built-block floor; only the marked keep-out / no-break areas refuse
+            // STRUCTURE_BLOCKS (owner 2026-10-23, RULES 16): BreakPolicy alone answers a structure block (placed by me,
+            // the innermost area's break-structures tag, keep-out / no-break); no lease lifts its refusal
+            BreakPolicy.Verdict sv = BreakPolicy.structure(policy, dim, x, y, z, block.structure(), block.placedByMe());
+            if (!sv.allowed()) return Verdict.floor(sv.reason());
         }
         if ("place".equals(action) && !block.airOrWater() && sealOnly(dim, x, y, z)) {
             return Verdict.floor("a seal only fills water or air");

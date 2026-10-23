@@ -125,7 +125,7 @@ final class NearbyLive {
         java.util.Set<String> ids = blocks instanceof StationBlocks.Answer.Of o ? o.ids() : java.util.Set.of();
         Nearby.Scan sc = scan();
         int unv = Nearby.unverified(sc, ids);                   // station-stale: records in unloaded chunks are kept, said here
-        return Nearby.stationsLine(stations(kind), sc.own(), ids, Nearby.scanR()) + (unv > 0 ? " (" + unv + " unverified: chunk not loaded)" : "");
+        return Nearby.stationsLine(stations(kind), sc.own(), ids, Nearby.scanR()) + (unv > 0 ? " (" + unv + " unverified: chunk not loaded)" : "") + Nearby.skippedLine();
     }
 
     /** station-stale (0.39.z18), the owner's reset: every station record of mine in this world goes; the line with the count. */
@@ -255,6 +255,11 @@ final class NearbyLive {
                 return false;
             }
             @Override public boolean allowed(int x, int y, int z) { return c.workAllowed(adim, x, y, z); }
+            @Override public io.github.mojolowjo.entropybot.guard.BreakPolicy.Verdict stationUse(int x, int y, int z, boolean mine) {
+                // STRUCTURE_BLOCKS: the owner's areas decide which stations are options (BreakPolicy.stationUse)
+                return io.github.mojolowjo.entropybot.guard.BreakPolicy.stationUse(io.github.mojolowjo.entropybot.guard.Guard.INSTANCE.core.policy(),
+                        io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level), x, y, z, mine);
+            }
             @Override public int treeCap() {
                 try {
                     return BaritoneAPI.getSettings().chopComponentMax.value;      // the fork's chop: one tree is at most this many logs

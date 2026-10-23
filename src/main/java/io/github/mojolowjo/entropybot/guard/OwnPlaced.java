@@ -21,10 +21,21 @@ public final class OwnPlaced {
     /** Set by the game side (RestoreLive.load); null: nothing placed by me is known. */
     public static volatile Cells cells;
 
+    private static volatile boolean warned;
+
+    /** A new world: an unset hook warns again (StructureTable calls this per level). */
+    public static void newWorld() { warned = false; }
+
     /** Never throws: a failed read counts as "not mine" (the floor stays, the safe side). */
     public static boolean at(int x, int y, int z) {
         Cells c = cells;
-        if (c == null) return false;
+        if (c == null) {
+            if (!warned) {          // hooks wired and loud: an unset hook is said once per world
+                warned = true;
+                Quiet.line("own placements: the OwnPlaced.cells hook is not set - structure blocks I placed count as not mine (refused outside my areas)");
+            }
+            return false;
+        }
         try {
             return c.placedByMe(x, y, z);
         } catch (RuntimeException e) {

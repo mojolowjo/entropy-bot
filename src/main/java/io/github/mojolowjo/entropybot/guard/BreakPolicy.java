@@ -109,9 +109,18 @@ public final class BreakPolicy {
      * What the caller knows about the cell. {@code loaded} false = unknown: fail closed. (owner 2026-10-23: no built or block-entity floor;
      * only the owner's marked areas forbid) {@code torch} = the item being placed is a torch;
      * {@code dugByMe} = the bot itself broke this cell (the restore ledger or this job's breaks): a placement there is a refill.
+     * STRUCTURE_BLOCKS (0.39.z26): {@code structure} = the block's structure fact from the game's data ({@link #structureOf});
+     * {@code placedByMe} = the ledger says the bot placed the block there (asked only for a structure block).
      */
     public record BlockFacts(boolean loaded, String id, boolean ore, boolean unbreakable,
-                             Fluid inCell, Fluid above, Fluid sides, Fluid below, boolean fallingAbove, boolean torch, boolean dugByMe) {
+                             Fluid inCell, Fluid above, Fluid sides, Fluid below, boolean fallingAbove, boolean torch, boolean dugByMe,
+                             Structure structure, boolean placedByMe) {
+        /** Without the structure facts: a loaded block is a plain one (tests, places that ask no break), an unknown one not loaded. */
+        public BlockFacts(boolean loaded, String id, boolean ore, boolean unbreakable,
+                          Fluid inCell, Fluid above, Fluid sides, Fluid below, boolean fallingAbove, boolean torch, boolean dugByMe) {
+            this(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, dugByMe, loaded ? Structure.NO : Structure.NOT_LOADED, false);
+        }
+
         public BlockFacts(boolean loaded, String id, boolean ore, boolean unbreakable,
                           Fluid inCell, Fluid above, Fluid sides, Fluid below, boolean fallingAbove, boolean torch) {
             this(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, false);
@@ -121,15 +130,85 @@ public final class BreakPolicy {
         /** Plain stone with nothing around it. */
         public static final BlockFacts STONE = new BlockFacts(true, "minecraft:stone", false, false, Fluid.NONE, Fluid.NONE, Fluid.NONE, Fluid.NONE, false, false);
 
-        public BlockFacts withAbove(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, f, sides, below, fallingAbove, torch, dugByMe); }
-        public BlockFacts withSides(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, f, below, fallingAbove, torch, dugByMe); }
-        public BlockFacts withBelow(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, f, fallingAbove, torch, dugByMe); }
-        public BlockFacts withInCell(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, f, above, sides, below, fallingAbove, torch, dugByMe); }
-        public BlockFacts withOre(boolean o) { return new BlockFacts(loaded, id, o, unbreakable, inCell, above, sides, below, fallingAbove, torch, dugByMe); }
-        public BlockFacts withFallingAbove(boolean f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, f, torch, dugByMe); }
-        public BlockFacts withUnbreakable(boolean u) { return new BlockFacts(loaded, id, ore, u, inCell, above, sides, below, fallingAbove, torch, dugByMe); }
-        public BlockFacts withTorch(boolean t) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, t, dugByMe); }
-        public BlockFacts withDug(boolean d) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, d); }
+        public BlockFacts withAbove(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, f, sides, below, fallingAbove, torch, dugByMe, structure, placedByMe); }
+        public BlockFacts withSides(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, f, below, fallingAbove, torch, dugByMe, structure, placedByMe); }
+        public BlockFacts withBelow(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, f, fallingAbove, torch, dugByMe, structure, placedByMe); }
+        public BlockFacts withInCell(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, f, above, sides, below, fallingAbove, torch, dugByMe, structure, placedByMe); }
+        public BlockFacts withOre(boolean o) { return new BlockFacts(loaded, id, o, unbreakable, inCell, above, sides, below, fallingAbove, torch, dugByMe, structure, placedByMe); }
+        public BlockFacts withFallingAbove(boolean f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, f, torch, dugByMe, structure, placedByMe); }
+        public BlockFacts withUnbreakable(boolean u) { return new BlockFacts(loaded, id, ore, u, inCell, above, sides, below, fallingAbove, torch, dugByMe, structure, placedByMe); }
+        public BlockFacts withTorch(boolean t) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, t, dugByMe, structure, placedByMe); }
+        public BlockFacts withDug(boolean d) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, d, structure, placedByMe); }
+        public BlockFacts withStructure(Structure s) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, dugByMe, s, placedByMe); }
+        public BlockFacts withPlacedByMe(boolean m) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, dugByMe, structure, m); }
+    }
+
+    // ---- STRUCTURE_BLOCKS.md (owner 2026-10-23, RULES 16): structure blocks and area tags ----
+
+    /** The structure fact of a block (rule 15: loaded yes, loaded no, or not loaded; not loaded is never cached as no). */
+    public enum Structure { NO, YES, NOT_LOADED }
+
+    /** The refusal outside every area. */
+    public static final String STRUCTURE_OUTSIDE = "structure block outside my areas";
+
+    /**
+     * The structure rule over the game's facts of one block (the game side reads them: StructureTable). Order: not loaded
+     * fails closed; an ore or a log is never a structure; a structure tag, a block entity or a recipe type's station is
+     * one; a block with a crafting recipe is one unless world gen places it ({@code worldGen} null = that data is not
+     * there, e.g. a server's client: fail closed, counted as a structure).
+     */
+    public static Structure structureOf(boolean loaded, boolean tagged, boolean oreOrLog, boolean blockEntity, boolean station,
+                                        boolean crafted, Boolean worldGen) {
+        if (!loaded) return Structure.NOT_LOADED;
+        if (oreOrLog) return Structure.NO;
+        if (tagged || blockEntity || station) return Structure.YES;
+        if (!crafted) return Structure.NO;
+        return Boolean.TRUE.equals(worldGen) ? Structure.NO : Structure.YES;
+    }
+
+    /**
+     * The one answer to "may this structure block be broken here": the click (GuardCore's break branch), the path cost
+     * (CostAdvisorHook) and AA's way prices (through {@link #judge}) all come here. Not a structure: open (the rest of the
+     * policy decides). Keep-out / no-break: refused. Placed by me: open. The innermost area's tags hold break-structures:
+     * open. Else refused with the reason.
+     */
+    public static Verdict structure(Policy p, String dim, int x, int y, int z, Structure s, boolean placedByMe) {
+        if (s == null || s == Structure.NOT_LOADED) return Verdict.floor("not loaded yet");
+        if (s == Structure.NO) return Verdict.ok(1, "not a structure");
+        Policy pol = p == null ? Policy.EMPTY : p;
+        Box pr = pol.protectAt(dim, x, y, z);
+        if (pr != null) return Verdict.floor("in " + (pr.name == null ? "box" : pr.name) + " (" + pr.type.word() + ")");
+        if (placedByMe) return Verdict.ok(1, "structure, placed by me");
+        Box a = pol.innermostAreaAt(dim, x, y, z);
+        String an = a == null ? null : a.name == null ? "box" : a.name;
+        if (a != null && a.has(AreaTags.BREAK_STRUCTURES)) return Verdict.ok(1, "structure, " + an + " " + AreaTags.BREAK_STRUCTURES);
+        return Verdict.deny(a == null ? STRUCTURE_OUTSIDE : "structure block in " + an + " (no " + AreaTags.BREAK_STRUCTURES + " tag)", "structure");
+    }
+
+    /** The verdict is a refusal of this rule (for the notes in aa why). */
+    public static boolean structureRefusal(Verdict v) {
+        return v != null && !v.allowed() && "structure".equals(v.rule());
+    }
+
+    /**
+     * Using a station (STRUCTURE_BLOCKS ruling 3 and 6): keep-out refused; placed by me: usable; the innermost area holds
+     * use-stations: usable and preferred ({@link #stationPreferred}); inside any of the owner's areas (no-break included:
+     * using is not breaking): usable; else a wild station: refused.
+     */
+    public static Verdict stationUse(Policy p, String dim, int x, int y, int z, boolean placedByMe) {
+        Policy pol = p == null ? Policy.EMPTY : p;
+        Box ko = pol.keepOutAt(dim, x, y, z);
+        if (ko != null) return Verdict.deny("in " + (ko.name == null ? "box" : ko.name) + " (keep-out)", "station");
+        Box a = pol.innermostAreaAt(dim, x, y, z);
+        if (a != null && a.has(AreaTags.USE_STATIONS)) return Verdict.ok(1, AreaTags.USE_STATIONS);
+        if (placedByMe) return Verdict.ok(1, "station, placed by me");
+        if (a != null || pol.protectAt(dim, x, y, z) != null) return Verdict.ok(1, "station, in my areas");
+        return Verdict.deny("wild station (not placed by me, outside my areas)", "station");
+    }
+
+    /** The station sits in a use-stations area: it ranks before every other. */
+    public static boolean stationPreferred(Verdict v) {
+        return v != null && v.allowed() && AreaTags.USE_STATIONS.equals(v.rule());
     }
 
     /**
@@ -213,6 +292,10 @@ public final class BreakPolicy {
         BlockFacts f = a.block();
         Where me = a.me() == null ? Where.DRY : a.me();
         if (!f.loaded()) return Verdict.floor("not loaded");
+        if (a.action() == Action.BREAK) {                 // STRUCTURE_BLOCKS: the structure rule before any price
+            Verdict sv = structure(s.policy(), a.dim(), a.x(), a.y(), a.z(), f.structure(), f.placedByMe());
+            if (!sv.allowed()) return sv;
+        }
         RuleSet r = s.ruleSetAt(a.dim(), a.x(), a.y(), a.z());
         return a.action() == Action.PLACE ? place(a, f, r) : brk(s, a, f, me, r);
     }

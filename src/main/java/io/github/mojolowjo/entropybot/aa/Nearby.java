@@ -66,6 +66,23 @@ public final class Nearby {
             io.github.mojolowjo.entropybot.Quiet.line(line + " (" + r + ")");
             return line;
         }
+        /**
+         * STRUCTURE_BLOCKS (RULES 16): may the station at the cell be used ({@code BreakPolicy.stationUse} over the owner's
+         * areas): refused = no option (a wild one), allowed with the use-stations rule = ranked first. The live scan
+         * (NearbyLive) asks the guard's policy; this default (a scan with no policy, JUnit fakes) lets every station be used.
+         */
+        default io.github.mojolowjo.entropybot.guard.BreakPolicy.Verdict stationUse(int x, int y, int z, boolean mine) {
+            return new io.github.mojolowjo.entropybot.guard.BreakPolicy.Verdict(true, 1, null, false, "station, a scan with no policy");
+        }
+    }
+
+    /** The last station lookup's skipped stations ("x y z: why"), for aa why; empty when none was skipped. */
+    private static volatile List<String> lastSkipped = List.of();
+
+    /** " | stations skipped: ..." for aa why and the stations line, or "". */
+    public static String skippedLine() {
+        List<String> l = lastSkipped;
+        return l.isEmpty() ? "" : " | stations skipped: " + String.join("; ", l);
     }
 
     /** station-stale: "stations: forgot my crafting_table at x y z: the block there is &lt;id&gt; now". */
@@ -123,7 +140,8 @@ public final class Nearby {
             case StationBlocks.Answer.None n -> new StationFact.None(n.why());
             case StationBlocks.Answer.Of o -> {
                 List<Spot> l = stations(s, me, o.ids());
-                yield l.isEmpty() ? new StationFact.None(NONE_KNOWN) : new StationFact.Known(l);
+                yield l.isEmpty() ? new StationFact.None(lastSkipped.isEmpty() ? NONE_KNOWN : "every one known is refused:" + skippedLine().substring(" | stations skipped:".length()))
+                        : new StationFact.Known(l);
             }
         };
     }
@@ -138,9 +156,21 @@ public final class Nearby {
      * dropped only when the bot arrives and finds it gone (the ledger record goes then), never for being far.
      */
     public static List<Spot> stations(Scan s, int[] me, Set<String> blocks) {
+        List<String> skipped = new ArrayList<>();
+        List<Spot> out = stations(s, me, blocks, skipped);
+        lastSkipped = List.copyOf(skipped);
+        return out;
+    }
+
+    /**
+     * The same, with STRUCTURE_BLOCKS' station rule ({@link Scan#stationUse}): a station the policy refuses (a wild one:
+     * not placed by me, outside every area of the owner's) is no option and goes into {@code skipped} as "x y z: why";
+     * a station in a use-stations area ranks before every other, then nearest first.
+     */
+    public static List<Spot> stations(Scan s, int[] me, Set<String> blocks, List<String> skipped) {
         List<Spot> out = new ArrayList<>();
         if (s == null || me == null || blocks == null || blocks.isEmpty()) return out;
-        Set<String> seen = new java.util.HashSet<>();
+        Set<String> seen = new java.util.HashSet<>(), first = new java.util.HashSet<>();
         for (Mine m : s.own()) {
             if (m == null || m.block() == null || !blocks.contains(m.block())) continue;
             int[] p = {m.x(), m.y(), m.z()};
@@ -149,16 +179,29 @@ public final class Nearby {
                 s.forgetOwn(m, now);
                 continue;
             }
-            if (seen.add(key(p[0], p[1], p[2]))) out.add(new Spot(p[0], p[1], p[2], dist(p, me), m.block()));
+            if (!seen.add(key(p[0], p[1], p[2]))) continue;
+            if (!usable(s, p, true, first, skipped)) continue;
+            out.add(new Spot(p[0], p[1], p[2], dist(p, me), m.block()));
         }
         for (int[] p : s.find(blocks, scanR())) {
             if (!seen.add(key(p[0], p[1], p[2]))) continue;
             String id = s.blockAt(p[0], p[1], p[2]);
             if (id == null || !blocks.contains(id)) continue;
+            if (!usable(s, p, false, first, skipped)) continue;
             out.add(new Spot(p[0], p[1], p[2], dist(p, me), id));
         }
-        out.sort(Comparator.comparingDouble(Spot::dist));
+        out.sort(Comparator.comparing((Spot sp) -> !first.contains(key(sp.x(), sp.y(), sp.z()))).thenComparingDouble(Spot::dist));
         return out;
+    }
+
+    private static boolean usable(Scan s, int[] p, boolean mine, Set<String> first, List<String> skipped) {
+        var v = s.stationUse(p[0], p[1], p[2], mine);
+        if (v == null || !v.allowed()) {
+            if (skipped != null) skipped.add(p[0] + " " + p[1] + " " + p[2] + ": " + (v == null ? "no station verdict" : v.reason()));
+            return false;
+        }
+        if (io.github.mojolowjo.entropybot.guard.BreakPolicy.stationPreferred(v)) first.add(key(p[0], p[1], p[2]));
+        return true;
     }
 
     /**
