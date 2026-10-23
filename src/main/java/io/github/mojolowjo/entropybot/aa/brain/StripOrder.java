@@ -98,10 +98,17 @@ public final class StripOrder {
             boolean met = true;
             for (Map.Entry<String, Integer> e : amounts.entrySet()) met &= picked.getOrDefault(e.getKey(), 0) >= e.getValue();
             if (met) return Car.Status.done("ok: strip: amounts met (" + counts(amounts, picked) + ")");
-            if (bagFull) return Car.Status.failed("strip: bag full (" + counts(amounts, picked) + ")");
-            return null;
         }
-        return bagFull ? Car.Status.done("ok: strip: bag full") : null;
+        // the deposit leg (owner 2026-10-22): a full bag ends this strip JOB done, the order goes on (deposit, back, resume)
+        return bagFull ? Car.Status.done(BAG_FULL + (amounts.isEmpty() && picked.isEmpty() ? "" : " (" + counts(amounts, picked) + ")")) : null;
+    }
+
+    /** The strip job's bag-full end (the order is not met: the deposit leg follows). */
+    public static final String BAG_FULL = "ok: strip: bag full";
+
+    /** The order is met by this end (amounts met, or the tunnel's full length): only those end the order. */
+    public static boolean orderMet(String doneText) {
+        return doneText != null && !doneText.startsWith(BAG_FULL);
     }
 
     /** "coal 18/32, iron 4/64" (the ores with an amount), then the others' picked counts. */
@@ -120,12 +127,17 @@ public final class StripOrder {
         }
     }
 
-    /** aa goals: "strip east y 16: 40 blocks dug, coal 18/32" (no progress yet: "not started"). */
+    /** aa goals: "strip east feet y -40: 120 blocks, coal 40/64, 1 deposit (36 items at x y z)" (no progress yet: "not started"). */
     public static String goalLine(String heading, int y, Map<String, Integer> amounts, Saved p) {
-        String head = "strip " + heading + " y " + y + ": ";
-        if (p == null) return head + "not started" + (amounts.isEmpty() ? "" : ", " + counts(amounts, Map.of()));
+        return goalLine(heading, y, amounts, p, DepositRule.Deposits.NONE);
+    }
+
+    public static String goalLine(String heading, int y, Map<String, Integer> amounts, Saved p, DepositRule.Deposits d) {
+        String head = "strip " + heading + " feet y " + y + ": ";
+        String dep = d == null || d.count() == 0 ? "" : ", " + d.line();
+        if (p == null) return head + "not started" + (amounts.isEmpty() ? "" : ", " + counts(amounts, Map.of())) + dep;
         String c = counts(amounts, p.picked());
-        return head + p.blocks() + " blocks dug" + (c.isEmpty() ? "" : ", " + c);
+        return head + p.blocks() + " blocks" + (c.isEmpty() ? "" : ", " + c) + dep;
     }
 
     /**
@@ -181,6 +193,7 @@ public final class StripOrder {
     public static Car.Status endOf(String forkEnd, String forkStatus) {
         if (forkEnd == null || forkEnd.isBlank()) return Car.Status.failed("strip: the fork's strip ended without a reason (" + forkStatus + ")");
         if (forkEnd.startsWith("done")) return Car.Status.done("ok: " + forkEnd);
+        if (forkEnd.startsWith("bag full")) return Car.Status.done(BAG_FULL + " (" + forkStatus + ")");
         if (forkEnd.equals("lost control")) return Car.Status.lost("strip: lost control (" + forkStatus + ")");
         return Car.Status.failed("strip: " + forkEnd + " (" + forkStatus + ")");
     }

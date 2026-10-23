@@ -64,12 +64,19 @@ class StripOrderTest {
         Map<String, Integer> amounts = Map.of("coal", 32);
         assertNull(StripOrder.endRule(amounts, Map.of("coal", 10), false));
         assertEquals(Car.State.DONE, StripOrder.endRule(amounts, Map.of("coal", 32), false).state());
-        assertEquals(Car.State.FAILED, StripOrder.endRule(amounts, Map.of("coal", 10), true).state(), "bag full short of an amount");
-        assertTrue(StripOrder.endRule(amounts, Map.of("coal", 10), true).why().contains("bag full"));
+        // the deposit leg: a full bag short of an amount ends the strip JOB done; the order is not met (deposit, back, resume)
+        Car.Status short1 = StripOrder.endRule(amounts, Map.of("coal", 10), true);
+        assertEquals(Car.State.DONE, short1.state(), "bag full short of an amount");
+        assertTrue(short1.why().contains("bag full"));
+        assertFalse(StripOrder.orderMet(short1.why()), "the order goes on");
+        assertTrue(StripOrder.orderMet(StripOrder.endRule(amounts, Map.of("coal", 32), false).why()));
+        assertEquals(Car.State.DONE, StripOrder.endOf("bag full", "strip east feet y -40: 3 blocks").state());
+        assertFalse(StripOrder.orderMet(StripOrder.endOf("bag full", "s").why()));
         assertNull(StripOrder.endRule(Map.of(), Map.of("coal", 99), false), "no amount: until the bag is full");
         Car.Status full = StripOrder.endRule(Map.of(), Map.of(), true);
         assertEquals(Car.State.DONE, full.state());
         assertTrue(full.why().contains("bag full"));
+        assertFalse(StripOrder.orderMet(full.why()), "no amounts: until the owner stops");
         // mixed: only the ores with an amount decide; the others are picked up as they come
         assertEquals(Car.State.DONE, StripOrder.endRule(Map.of("iron", 4), Map.of("iron", 4, "coal", 0), false).state());
         assertNull(StripOrder.endRule(Map.of("iron", 4, "gold", 2), Map.of("iron", 9), false));
@@ -86,8 +93,30 @@ class StripOrderTest {
         var saved = new StripOrder.Saved(true, 10, 16, -4, "east", 57, 12, 3, 40, 2, Map.of("coal", 18));
         var json = new com.google.gson.Gson().toJson(saved);
         assertEquals(saved, new com.google.gson.Gson().fromJson(json, StripOrder.Saved.class), "the saved record survives the file");
-        assertEquals("strip east y 16: 40 blocks dug, coal 18/32", StripOrder.goalLine("east", 16, Map.of("coal", 32), saved));
-        assertEquals("strip east y 16: not started, coal 0/32", StripOrder.goalLine("east", 16, Map.of("coal", 32), null));
+        assertEquals("strip east feet y 16: 40 blocks, coal 18/32", StripOrder.goalLine("east", 16, Map.of("coal", 32), saved));
+        assertEquals("strip east feet y 16: not started, coal 0/32", StripOrder.goalLine("east", 16, Map.of("coal", 32), null));
+    }
+
+    /** The loop: strip -> deposit -> back, jobs of one order; resume after a deposit from the same saved progress. */
+    @Test
+    void loopOrderAndResumeAfterADeposit() {
+        var s = new io.github.mojolowjo.entropybot.aa.moves.Step.Strip(List.of("minecraft:coal_ore"), Map.of("coal", 64), -40, "east", 1);
+        var loop = Goals.stripLoop(s);
+        assertEquals(3, loop.size());
+        assertSame(s, loop.get(0));
+        assertEquals(new io.github.mojolowjo.entropybot.aa.moves.Step.Deposit(s), loop.get(1));
+        assertEquals(new io.github.mojolowjo.entropybot.aa.moves.Step.StripBack(s), loop.get(2));
+        var d = DepositRule.Deposits.NONE.from(new int[]{130, -40, 5}).add(36, new int[]{10, -40, 5});
+        var json = new com.google.gson.Gson().toJson(d);
+        var back = new com.google.gson.Gson().fromJson(json, DepositRule.Deposits.class);
+        assertArrayEquals(new int[]{130, -40, 5}, back.back(), "the walk back's target survives a relaunch");
+        assertEquals("1 deposit (36 items at 10 -40 5)", back.line());
+        var saved = new StripOrder.Saved(true, 10, -40, 5, "east", 140, 120, 6, 120, 9, Map.of("coal", 40));
+        assertEquals("strip east feet y -40: 120 blocks, coal 40/64, 1 deposit (36 items at 10 -40 5)",
+                StripOrder.goalLine("east", -40, Map.of("coal", 64), saved, back));
+        // a relaunch: the same words make the same key, so the same progress and deposits are found
+        var again = new io.github.mojolowjo.entropybot.aa.moves.Step.Strip(List.of("minecraft:coal_ore"), Map.of("coal", 64), -40, "east", 99);
+        assertEquals(s.key(), again.key());
     }
     @Test
     void anyResolvesByTier() {

@@ -99,6 +99,8 @@ public final class StepHands implements Steps.Hands {
                 case Step.MineAt m -> mineAt(p, m);
                 case Step.Strip st -> StripStep.start(st);              // the owner's strip order: the fork's StripProcess
                 case Step.Mine m when m.how() == Step.Mine.How.STRIP -> mineStrip(p, m);   // an AA strip leg: the same fork process (the old verb is gone)
+                case Step.Deposit d when d.order() != null -> depositLeg(p, d);           // the strip order's deposit leg (DepositLeg)
+                case Step.StripBack k -> stripBack(p, k);
                 default -> verb(StepCommands.command(s));   // the item actions and the mine verb's steps: one command, its own job
             };
         } catch (RuntimeException e) {
@@ -135,6 +137,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.Strip st -> StripStep.status(st, Core.INSTANCE.reflexes.hold());
                 case Step.Mine m when m.how() == Step.Mine.How.STRIP && legStrip != null -> StripStep.status(legStrip, Core.INSTANCE.reflexes.hold());
                 case Step.Fish fs -> fishStatus(p);
+                case Step.Deposit d when deposit != null -> depositStatus(p);
                 case Step.HuntAt h -> huntStatus(p, h);
                 case Step.Build b -> buildStatus(b);
                 case Step.PlaceNear n -> placeNearStatus(n);
@@ -157,6 +160,11 @@ public final class StepHands implements Steps.Hands {
             }
             if (fishing != null) fishing.end();
             if (vein != null) vein.stop();
+            if (deposit != null) {
+                LocalPlayer dp = Minecraft.getInstance().player;
+                if (dp != null && Gui.open(dp)) Gui.close(dp);
+                io.github.mojolowjo.entropybot.aa.moves.JobHands.get().stop(why);
+            }
             if (step instanceof Step.Strip || legStrip != null) StripStep.cancel();
             legStrip = null;
             if (step instanceof Step.HuntAt) {
@@ -189,6 +197,7 @@ public final class StepHands implements Steps.Hands {
         io.github.mojolowjo.entropybot.aa.brain.JobBoundary.leave();
         step = null;
         fishing = null;
+        deposit = null;
         vein = null;
         req = null;
         instant = null;
@@ -231,6 +240,32 @@ public final class StepHands implements Steps.Hands {
         Car.Status st = fishing.tick(p);
         if (st.state() != Car.State.RUNNING) fishing = null;
         return st;
+    }
+
+    // ---- the strip order's deposit leg and walk back ----
+
+    private DepositLeg deposit;
+
+    private String depositLeg(LocalPlayer p, Step.Deposit d) {
+        deposit = new DepositLeg(c, d, cmd -> { req = null; instant = null; return verb(cmd); }, this::requestStatus);
+        String[] inst = new String[1];
+        String r = deposit.start(p, inst);
+        if (inst[0] != null) { instant = inst[0]; deposit = null; }
+        return r;
+    }
+
+    private Car.Status depositStatus(LocalPlayer p) {
+        Car.Status st = deposit.tick(p);
+        if (st.state() != Car.State.RUNNING) deposit = null;
+        return st;
+    }
+
+    /** The walk back to where the bag filled (the saved deposits' back cell): the travel job's one Baritone goal. */
+    private String stripBack(LocalPlayer p, Step.StripBack k) {
+        if (StripStep.met(k.order())) { instant = "ok: the strip order is met, no walk back"; return null; }
+        int[] back = StripStep.deposits(k.order()).back();
+        if (back == null) { instant = "ok: no tunnel end saved (the strip resumes from its saved step)"; return null; }
+        return walk(new Step.Walk(back[0], back[1], back[2], 0));
     }
 
     // ---- mine at: one ore cell and its vein over Baritone's MineProcess ----

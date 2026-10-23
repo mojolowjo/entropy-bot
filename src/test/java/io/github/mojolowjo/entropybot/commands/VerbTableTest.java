@@ -46,6 +46,10 @@ class VerbTableTest {
         for (VerbTable.Verb v : VerbTable.all()) words.addAll(VerbTable.words(v));
         for (String w : words) {
             VerbTable.Verb v = VerbTable.of(w);
+            if (v != null && HelpCommand.deleted(v)) {          // owner 2026-10-22: a deleted verb's help names the aa way
+                assertTrue(HelpCommand.answer(w, true, OWNER).contains("aa help") || OldWords.REMOVED.contains(w), w);
+                continue;
+            }
             String owner = HelpCommand.answer(w, true, OWNER);
             assertTrue(owner.startsWith(v.usage()), "owner help " + w + ": " + owner);
             assertTrue(owner.contains("e.g. " + v.examples().get(0)), w);
@@ -76,8 +80,9 @@ class VerbTableTest {
         assertTrue(HelpCommand.answer("123456789012", true, OWNER).startsWith("there are pages"));
         String all = HelpCommand.answer("all", true, OWNER);
         assertEquals(VerbTable.SECTIONS.size(), all.split("\n").length);
-        // every verb is on its page
+        // every verb is on its page (the owner's deleted verbs, 2026-10-22, are on none)
         for (VerbTable.Verb v : VerbTable.all()) {
+            if (HelpCommand.deleted(v)) continue;
             String p = HelpCommand.answer(String.valueOf(VerbTable.SECTIONS.indexOf(v.section()) + 1), true, OWNER);
             assertTrue(p.contains(v.usage()), v.name());
         }

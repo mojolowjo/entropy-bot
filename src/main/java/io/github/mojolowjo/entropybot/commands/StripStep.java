@@ -169,21 +169,57 @@ final class StripStep {
             Car.Status end = StripOrder.endRule(s.amounts(), picked, bagFull(Minecraft.getInstance().player));
             if (end != null) {
                 sp.cancel();
-                if (end.state() == Car.State.DONE) finished(s, end.why().contains("bag full"));
+                ended(s, end);
                 return end;
             }
             return Car.Status.running(sp.status() + " - " + sp.why());
         }
         if (holding) return Car.Status.running(sp.status() + " - " + sp.why());
         Car.Status st = StripOrder.endOf(sp.lastEnd(), sp.status());
-        if (st.state() == Car.State.DONE) finished(s, false);
+        ended(s, st);
         return st;
     }
 
-    /** The order is met: its goal done; the saved progress cleared unless the bag ended it (the tunnel goes on later). */
-    private static void finished(Step.Strip s, boolean keep) {
-        io.github.mojolowjo.entropybot.aa.brain.Goals.stripDone(s);
-        if (!keep) save(s, null);
+    /**
+     * A strip job ended: met (amounts, the tunnel's end) -> the order is done, its progress and deposits cleared; the bag
+     * full -> the progress kept and where the bag filled saved (the walk back's target); the deposit leg follows.
+     */
+    private static void ended(Step.Strip s, Car.Status st) {
+        if (st.state() != Car.State.DONE) return;
+        if (StripOrder.orderMet(st.why())) {
+            io.github.mojolowjo.entropybot.aa.brain.Goals.stripDone(s);
+            save(s, null);
+            saveDeposits(s, null);
+            return;
+        }
+        LocalPlayer p = Minecraft.getInstance().player;
+        if (p != null) saveDeposits(s, deposits(s).from(Jobs.here(p)));
+    }
+
+    // ---- the deposits (per world, beside the progress, key + "|deposits") ----
+
+    static io.github.mojolowjo.entropybot.aa.brain.DepositRule.Deposits deposits(Step.Strip s) {
+        JsonObject all = readAll();
+        String k = s.key() + "|deposits";
+        return all.has(k) ? GSON.fromJson(all.get(k), io.github.mojolowjo.entropybot.aa.brain.DepositRule.Deposits.class)
+                : io.github.mojolowjo.entropybot.aa.brain.DepositRule.Deposits.NONE;
+    }
+
+    static void saveDeposits(Step.Strip s, io.github.mojolowjo.entropybot.aa.brain.DepositRule.Deposits d) {
+        JsonObject all = readAll();
+        String k = s.key() + "|deposits";
+        if (d == null) all.remove(k);
+        else all.add(k, GSON.toJsonTree(d));
+        try {
+            Files.writeString(file(), GSON.toJson(all), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new IllegalStateException("strip-progress.json not written: " + e, e);
+        }
+    }
+
+    /** The order met (Goals' done list): StepHands' deposit leg and walk back pass. */
+    static boolean met(Step.Strip s) {
+        return io.github.mojolowjo.entropybot.aa.brain.Goals.stripMet(s);
     }
 
     /** aa why / aa status: the strip's line while it runs, else "". */
@@ -201,5 +237,6 @@ final class StripStep {
     /** Wires aa goals' progress lookup (Goals.line) to the saved file. */
     static void wire() {
         io.github.mojolowjo.entropybot.aa.brain.Goals.stripProgress = StripStep::load;
+        io.github.mojolowjo.entropybot.aa.brain.Goals.stripDeposits = StripStep::deposits;
     }
 }

@@ -30,6 +30,7 @@ public final class HelpCommand {
         int si = VerbTable.of(r) != null ? -1 : VerbTable.SECTIONS.indexOf(r);     // B1: "help brain" is the verb (its page: help 8)
         if (si >= 0) return page(si + 1);
         String word = r.split("\\s+")[0];
+        if (DELETED.contains(word) && !OldWords.REMOVED.contains(word)) return gone(word);
         VerbTable.Verb v = VerbTable.of(word);
         if (v == null) return unknownWord(word);
         return detail(v, true);
@@ -39,7 +40,7 @@ public final class HelpCommand {
     public static String index() {
         List<String> s = new ArrayList<>();
         for (int i = 0; i < VerbTable.SECTIONS.size(); i++) s.add((i + 1) + " " + VerbTable.SECTIONS.get(i));
-        return "help <page>: " + String.join(", ", s) + " | help <verb> (usage, examples, what next), help all | start with: status, check, come, help mine";
+        return "help <page>: " + String.join(", ", s) + " | help <verb> (usage, examples, what next), help all | start with: status, check, come, aa help";
     }
 
     /** One page: its verbs' usages, then the way on. */
@@ -48,10 +49,22 @@ public final class HelpCommand {
         return pageText(n) + "\n(help <verb> for examples; " + next + ")";
     }
 
+    /**
+     * The owner's deleted verbs (2026-10-22, "aa only driver"): never in the help pages; help <verb> names the aa way. The
+     * table keeps rows some of them still have as the AA steps' inner commands.
+     */
+    public static final java.util.Set<String> DELETED = java.util.Set.of("stripmine", "chop", "dig", "clear", "hunt", "gather", "fish",
+            "place", "shelter", "house", "smelt", "use", "twerk", "scout", "mule", "altar", "summary", "world", "escort");
+
+    static boolean deleted(VerbTable.Verb v) {
+        for (String w : VerbTable.words(v)) if (DELETED.contains(w)) return true;
+        return false;
+    }
+
     static String pageText(int n) {
         String s = VerbTable.SECTIONS.get(n - 1);
         List<String> parts = new ArrayList<>();
-        for (VerbTable.Verb v : VerbTable.section(s)) parts.add(v.usage());
+        for (VerbTable.Verb v : VerbTable.section(s)) if (!deleted(v)) parts.add(v.usage());
         return "help " + n + "/" + VerbTable.SECTIONS.size() + " " + s + ": " + String.join("; ", parts);
     }
 
@@ -67,6 +80,11 @@ public final class HelpCommand {
             else if (v.who() == VerbTable.Who.PARTLY) b.append(" [allowed players: ").append(v.guestForms()).append("]");
         }
         return b.toString();
+    }
+
+    /** "help gather": the verb is gone; the owner drives through aa. */
+    static String gone(String word) {
+        return "\"" + word + "\" was deleted: the owner drives through aa now (aa want <item|group> [n], aa want strip <ore> [<feet y>] [<heading>]) - aa help lists every form";
     }
 
     /** "I don't know ..." with the nearest word, if any. */
@@ -86,6 +104,7 @@ public final class HelpCommand {
     public static String guestList() {
         List<String> out = new ArrayList<>();
         for (VerbTable.Verb v : VerbTable.all()) {
+            if (deleted(v)) continue;
             if (v.who() == VerbTable.Who.GUEST) out.add(v.usage());
             else if (v.who() == VerbTable.Who.PARTLY) out.add(v.guestForms());
         }

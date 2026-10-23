@@ -69,7 +69,7 @@ public sealed interface Step {
             for (String o : ores) s.add(o.replaceFirst("^minecraft:", ""));
             List<String> a = new ArrayList<>();
             for (var e : new java.util.TreeMap<>(amounts).entrySet()) a.add(e.getKey() + " " + e.getValue());
-            return "strip " + String.join(",", s) + " at y " + y + " " + heading + (a.isEmpty() ? " until the bag is full" : " for " + String.join(", ", a));
+            return "strip " + String.join(",", s) + " at feet y " + y + " " + heading + (a.isEmpty() ? " until stopped" : " for " + String.join(", ", a));
         }
 
         /** The order's identity for its saved progress: the ore set, the Y, the heading (amounts and time left out). */
@@ -192,9 +192,20 @@ public sealed interface Step {
 
     // ---- rm-execution2: the kinds the remaining option sets and desires run ----
 
-    /** Put the bag's surplus into the base chests (a storage action). */
-    record Deposit() implements Step {
-        public String text() { return "deposit"; }
+    /**
+     * Put the bag's surplus into the base chests (a storage action); with {@code order} (the strip order's deposit leg,
+     * DepositRule): every bag item outside the kept set into the nearest known chest (or one from the bag / crafted, placed
+     * near the tunnel start), its own hands (StepHands' DepositLeg).
+     */
+    record Deposit(Strip order) implements Step {
+        public Deposit() { this(null); }
+
+        public String text() { return order == null ? "deposit" : "deposit the strip's finds"; }
+    }
+
+    /** The strip order's walk back to where its bag filled (the saved deposits' back cell), Baritone's goal. */
+    record StripBack(Strip order) implements Step {
+        public String text() { return "back to the tunnel"; }
     }
 
     /** Throw {@code n} of {@code item} away (junk by its item data, Junk.is). */

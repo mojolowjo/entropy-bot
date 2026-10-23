@@ -80,9 +80,9 @@ public final class VerbTable {
         v("deposit", "", "stocking", O, "deposit [item ...]", "put loot away in the base chests (keeps tools, armor, food, supplies)", "deposit|deposit cobblestone dirt", "inv");
         v("restock", "", "stocking", O, "restock", "top my supplies up: from storage first, the rest crafted", "restock", "supplies");
         // ---- digging (VOCABULARY 3)
-        v("mine", "", "digging", O, "mine strip [<ores>] [n] [at <mine>] | mine strip status|reset|turn left|right|ores collect|list | mine cave <ores> [n | <min>m] [at <cave>] | mine <ore> [n] [dig]",
-                "strip-mine at the mine (place mine north starts one; reset asks to confirm), go caving, or mine ores in view (dig: may dig to them); ores: iron,diamond or iron_ore or any or the kind ores; a strip mine needs room in its area: 17 blocks each side of the corridor (16-long branches + torches) and the corridor's length ahead, else it turns at the edge (blocked:area)",
-                "mine strip iron,diamond 16|mine strip|mine cave ores 20 10m|mine iron_ore 10", "deposit");
+        v("mine", "", "digging", O, "mine cave <ores> [n | <min>m] [at <cave>] | mine <ore> [n] [dig]",
+                "go caving, or mine ores in view (dig: may dig to them); ores: iron,diamond or iron_ore or any or the kind ores; a strip mine is aa want strip <ore> [<feet y>] [<heading>]",
+                "mine cave ores 20 10m|mine iron_ore 10", "aa want strip");
         v("dig", "", "digging", O, "dig <area> [-N|+N] [ores] [via engine] | dig x1 y1 z1 x2 y2 z2 [ores] [force] [via engine] | dig x1 z1 x2 z2 -N|+N [same words] | dig stairs north|south|east|west <n> | dig stairs up north|south|east|west <n> | dig stone [n] [via engine]",
                 "dig stone [n]: a walkable 3-wide staircase quarry from my feet down into the stone, long enough for n cobblestone (64), never into the base place (gather cobblestone uses it; says the cobblestone got); a dig that breaks nothing says why and what next (no pickaxe, nowhere to stand, the fence, a protected block, a block it gave up on); dig stairs <dir> <n>: a 1-wide walkable staircase n steps down from where I stand, a torch every 6 (also how death reaches a corpse down a shaft); dig stairs up <dir> <n>: n steps up (also how I leave a sealed pit underground); dig <area>: the box of an area with heights (an all-heights area needs -N or +N; asks to confirm; a destroy area loses built blocks too, never chests; never a safe area); "
                         + "a box the careful way (20000 blocks max; over 1000 asks to confirm; force: built blocks, 64 max); water or lava in the way "
@@ -159,7 +159,7 @@ public final class VerbTable {
         // ---- the brain's words (VOCABULARY 7, BRAIN_LOOP)
         v("brain", "", "brain", O, "brain on|off|status | brain copy on|off|status | brain get [key] | brain set <key> <value> | brain reset <key>|all|parks | brain tree [reload] | brain learned [job kind] | brain learned reset", "removed in 0.38.b7 (the old brain): AA does this (aa on, aa want <thing>)",
                 "brain on|brain status|brain copy on", "why");
-        v("aa", "", "brain", O, "aa on|off|status|why|tree|stats | aa only <need>|off | aa like [<key> <n>]",
+        v("aa", "", "brain", O, AaCommands.help().replaceFirst("^aa forms: ", ""),
                 "the new brain (AA v0, docs/AA_PLAN.md): a behavior tree with fixed priorities, danger > your orders > AI requests > basic needs (stone tools, table and furnace, torches, base, bag, iron tools) > idle (wood, stone, wait), and one task at a time: a task runs to its end before AA chooses again; only danger pauses it and only your order replaces it (logged); status: who drives, the counters, each rung's reason; why: the last 10 decisions; tree: the tree as Mermaid; like: the personality (want weights build/explore/tidy, upkeep factors, sleep/shelter, night shift, margin) in entropybot/aa-personality.json, aa like build 30 sets one",
                 "aa on|aa status|aa why", "brain off");
         v("idle", "", "brain", O, "idle list | idle list set <items> | idle list reset", "removed in 0.38.b7 (the old brain): AA does this (aa on, aa want <thing>)",

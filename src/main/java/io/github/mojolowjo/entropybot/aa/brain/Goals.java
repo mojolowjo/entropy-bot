@@ -51,6 +51,18 @@ public final class Goals {
     /** StepHands: the strip step ended done. */
     public static void stripDone(Step.Strip s) { STRIPS_DONE.add(s); }
 
+    /** The strip order is met (its run ended done by amounts or the tunnel's end). */
+    public static boolean stripMet(Step.Strip s) { return STRIPS_DONE.contains(s); }
+
+    /**
+     * The strip order's loop (owner 2026-10-22): the jobs of ONE order, the brain's checks at each job boundary: strip
+     * (resumed from the saved tunnel end) -> deposit (the bag full) -> walk back. The goal stays open until its amounts are
+     * met or the owner drops it (no amounts: until stopped); the next pick runs the same three again.
+     */
+    public static List<Step> stripLoop(Step.Strip s) {
+        return List.of(s, new Step.Deposit(s), new Step.StripBack(s));
+    }
+
     /** A strip order as a goal: key "strip", n 1, done when its run ended done. */
     public static Goal addStrip(Blackboard bb, Step.Strip s, int prio, long now) {
         Thing.Result r = new Thing.Result("strip", "strip", false, List.of(), List.of(), 0, null, s.text(), null);
@@ -173,7 +185,7 @@ public final class Goals {
      */
     public static List<Step> steps(Blackboard bb, Goal g) {
         if (g.n - have(bb.in.bag, g) <= 0) return null;
-        if (g.strip != null) return List.of(g.strip);          // the strip order is its own one step (no chain)
+        if (g.strip != null) return stripLoop(g.strip);        // the strip order's own loop (no chain)
         var ch = chain(bb, g);
         return ch == null || !ch.ok() || ch.steps().isEmpty() ? null : ch.steps();
     }
@@ -256,15 +268,22 @@ public final class Goals {
         throw new IllegalStateException("strip progress lookup not wired");
     };
 
+    /** The strip orders' saved deposits (set by the game side, StripStep). */
+    public static volatile java.util.function.Function<Step.Strip, DepositRule.Deposits> stripDeposits = s -> {
+        throw new IllegalStateException("strip deposits lookup not wired");
+    };
+
     public static String line(Blackboard bb, Goal g, String scoreText) {
         if (g.strip != null) {
             StripOrder.Saved p;
+            DepositRule.Deposits d;
             try {
                 p = stripProgress.apply(g.strip);
+                d = stripDeposits.apply(g.strip);
             } catch (RuntimeException e) {
                 return "strip: " + scoreText + " - progress unreadable: " + e.getMessage() + " [" + g.strip.text() + "]";
             }
-            return StripOrder.goalLine(g.strip.heading(), g.strip.y(), g.strip.amounts(), p) + ": " + scoreText
+            return StripOrder.goalLine(g.strip.heading(), g.strip.y(), g.strip.amounts(), p, d) + ": " + scoreText
                     + (g.parked != null ? " - parked: " + g.parked : "") + " [" + g.strip.text() + "]";
         }
         String b = blocked(bb, g);

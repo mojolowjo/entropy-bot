@@ -99,6 +99,26 @@ final class NearbyLive {
         return f;
     }
 
+    /**
+     * The deposit leg (owner 2026-10-22): the known containers as a station fact (the same three states and the same one
+     * lookup, {@link Nearby#stationFact}: my own placements at any distance, then Baritone's scan), nearest first. The
+     * blocks: the game's chest and barrel tags ({@code c:chests}, {@code c:barrels}) that the item data calls a container.
+     */
+    StationFact containers() {
+        if (!io.github.mojolowjo.entropybot.aa.brain.ItemWorth.hasData()) return new StationFact.NotLoaded("item data not loaded yet");
+        int[] me = here();
+        if (me == null) return new StationFact.NotLoaded("not in a world");
+        java.util.Set<String> ids = new java.util.LinkedHashSet<>();
+        for (var tag : List.of(net.neoforged.neoforge.common.Tags.Blocks.CHESTS, net.neoforged.neoforge.common.Tags.Blocks.BARRELS))
+            BuiltInRegistries.BLOCK.getTagOrEmpty(tag).forEach(h -> {
+                String id = BuiltInRegistries.BLOCK.getKey(h.value()).toString();
+                if (io.github.mojolowjo.entropybot.aa.brain.ItemWorth.container(id)) ids.add(id);
+            });
+        StationBlocks.Answer blocks = ids.isEmpty() ? new StationBlocks.Answer.None("the game tags no chest or barrel the item data calls a container")
+                : new StationBlocks.Answer.Of(ids);
+        return Nearby.stationFact(scan(), me, blocks);
+    }
+
     /** station-note (0.39.z15): the lookup's log line ({@link Nearby#stationsLine}) from the same station fact, in its three states. */
     String stationsLine(String kind) {
         StationBlocks.Answer blocks = stationBlocks(kind);

@@ -869,7 +869,7 @@ public final class AaRuntime implements JobPort {
                 return "ok: " + (rung == null ? "the next rung that picks" : rung) + " runs \"" + a + "\" if it is a ranked option" + (pre ? " (its task stopped, picking again)" : "")
                         + (r != null ? "; options now: " + r.options() : "");
             }
-            default -> { return AaCommands.USAGE; }
+            default -> { return AaCommands.help(); }
         }
     }
 

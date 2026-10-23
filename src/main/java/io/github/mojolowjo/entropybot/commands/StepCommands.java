@@ -42,7 +42,8 @@ public final class StepCommands {
                     + (d.ores() ? " ores" : "") + (d.viaEngine() ? " via engine" : "");
             case Step.MarkMine k -> "place mine " + (k.at() == null ? "" : k.at()[0] + " " + k.at()[1] + " " + k.at()[2] + " ") + k.dir();
             case Step.Restore k -> k.keep() ? "restore keep pillar" : "restore placed " + k.radius();
-            case Step.Deposit k -> "deposit";
+            case Step.Deposit k -> k.order() == null ? "deposit" : k.text();     // the strip's leg: hands of its own (DepositLeg)
+            case Step.StripBack k -> k.text();                                 // hands of its own (the travel job's goal)
             case Step.DropJunk k -> "drop " + k.item() + " " + k.n();
             case Step.PlaceNear k -> "place " + k.item();
             case Step.MarkBase k -> "place base " + k.x() + " " + k.y() + " " + k.z();
