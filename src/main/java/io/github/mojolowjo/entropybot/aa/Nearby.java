@@ -46,6 +46,36 @@ public final class Nearby {
         String blockAt(int x, int y, int z);
         /** The most logs one chop takes as one tree (Baritone's chopComponentMax); unknown: no cap. */
         default int treeCap() { return Integer.MAX_VALUE; }  // structural: no cap known
+        /** station-memory: the stations I placed myself (the ledger), any distance, loaded or not, as {x, y, z} with their block. */
+        default List<Mine> own() { return List.of(); }
+    }
+
+    /** station-memory: one of my placements as the ledger has it. */
+    public record Mine(int x, int y, int z, String block) {}
+
+    /**
+     * station-memory (0.39.z14, owner 2026-10-22: "it should walk to the crafting table it placed and make it there"): every
+     * known station of the block set, nearest first: my own placements (the ledger, at any distance; their recorded block)
+     * and every block of the set Baritone's world scan finds. One list, no distance limit on what I placed: a known station is
+     * dropped only when the bot arrives and finds it gone (the ledger record goes then), never for being far.
+     */
+    public static List<Spot> stations(Scan s, int[] me, Set<String> blocks) {
+        List<Spot> out = new ArrayList<>();
+        if (s == null || me == null || blocks == null || blocks.isEmpty()) return out;
+        Set<String> seen = new java.util.HashSet<>();
+        for (Mine m : s.own()) {
+            if (m == null || m.block() == null || !blocks.contains(m.block())) continue;
+            int[] p = {m.x(), m.y(), m.z()};
+            if (seen.add(key(p[0], p[1], p[2]))) out.add(new Spot(p[0], p[1], p[2], dist(p, me), m.block()));
+        }
+        for (int[] p : s.find(blocks, scanR())) {
+            if (!seen.add(key(p[0], p[1], p[2]))) continue;
+            String id = s.blockAt(p[0], p[1], p[2]);
+            if (id == null || !blocks.contains(id)) continue;
+            out.add(new Spot(p[0], p[1], p[2], dist(p, me), id));
+        }
+        out.sort(Comparator.comparingDouble(Spot::dist));
+        return out;
     }
 
     /**

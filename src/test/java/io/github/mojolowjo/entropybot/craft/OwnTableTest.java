@@ -24,27 +24,19 @@ class OwnTableTest {
     }
 
     @Test
-    void nearReachableTableIsUsed() {
+    void aKnownTableIsUsedWhereverItIs() {
+        // station-memory (owner 2026-10-22): near, far, low, with wood or a table in the bag: the known one, never a new one
         assertEquals(OwnTable.Choice.USE_KNOWN, OwnTable.choose(5.0, 0, true, true));
         assertEquals(OwnTable.Choice.USE_KNOWN, OwnTable.choose(12.0, -2, false, false));
+        assertEquals(OwnTable.Choice.USE_KNOWN, OwnTable.choose(6.0, -4, true, true));
+        assertEquals(OwnTable.Choice.USE_KNOWN, OwnTable.choose(20.0, 0, false, true));
+        assertEquals(OwnTable.Choice.USE_KNOWN, OwnTable.choose(300.0, 0, true, false));
     }
 
     @Test
-    void tableInAPitOrFarUsesTheCarriedOne() {
-        assertEquals(OwnTable.Choice.PLACE_CARRIED, OwnTable.choose(6.0, -4, true, true));
-        assertEquals(OwnTable.Choice.PLACE_CARRIED, OwnTable.choose(30.0, 0, true, false));
+    void noneKnownAnywhereMakesOrPlacesOne() {
         assertEquals(OwnTable.Choice.PLACE_CARRIED, OwnTable.choose(null, 0, true, false));
-    }
-
-    @Test
-    void woodMakesOne() {
         assertEquals(OwnTable.Choice.CRAFT_AND_PLACE, OwnTable.choose(null, 0, false, true));
-        assertEquals(OwnTable.Choice.CRAFT_AND_PLACE, OwnTable.choose(20.0, 0, false, true));
-    }
-
-    @Test
-    void nothingWalksOrRefuses() {
-        assertEquals(OwnTable.Choice.WALK_FAR, OwnTable.choose(20.0, 0, false, false));
         assertEquals(OwnTable.Choice.NONE, OwnTable.choose(null, 0, false, false));
     }
 

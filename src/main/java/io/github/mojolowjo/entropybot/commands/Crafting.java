@@ -271,51 +271,72 @@ final class Crafting {
         return b != null && Jobs.dimOf(b).equals(Storage.dim()) ? Jobs.pos(b) : null;
     }
 
-    /** A crafting table within 12 of the bot, else one near the base (the bridge's findTable; height counts double). */
+    /**
+     * station-memory (0.39.z14): the known crafting table: the nearest one of the station memory at ANY distance (my own
+     * placements and what Baritone's scan knows: NearbyLive.stations, the one fact), never an untrusted one nor one that
+     * answered no click (DEAD_TABLES). The craft step walks to it through InteractProcess. Null: none known anywhere.
+     */
     int[] findTable(LocalPlayer p) {
-        java.util.function.Predicate<int[]> dead = at -> !DEAD_TABLES.isEmpty() && DEAD_TABLES.contains(tableKey(at));
-        int[] me = Jobs.here(p), t = findBlockAround(me, "crafting_table", 12, 6, dead);
-        if (t != null) return t;
-        int[] b = base();
-        int[] bt = b != null ? findBlockAround(b, "crafting_table", 12, 6, dead) : null;
-        // S1 (D2 review): the strip mine's own table (commands.json's mine note) counts too, when it is still there
-        // (loaded and a crafting table) and nearer than the base's (the bridge's "a table near it, the mine's, or the base's")
-        int[] mt = mineTable();
-        if (mt != null && (bt == null || Jobs.distSq(me, mt) < Jobs.distSq(me, bt))) return mt;
-        return bt;
+        return knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT);
     }
 
-    /** S1: the strip mine's table if it is in this dimension, not untrusted, loaded and still a crafting table, else null. */
-    private int[] mineTable() {
-        try {
-            int[] t = StripMine.get().mineTable();
-            if (t == null || untrusted(t) || DEAD_TABLES.contains(tableKey(t))) return null;
-            JsonObject mine = core.knowledge.places().get("mine");
-            String mdim = mine != null && mine.has("dim") ? mine.get("dim").getAsString() : null;
-            if (mdim != null && !mdim.equals(Storage.dim())) return null;
+    /** The nearest known station of the recipe kind not refused (untrusted, or a dead table); null: none known anywhere. */
+    int[] knownStation(String kind) {
+        io.github.mojolowjo.entropybot.aa.NeedChain.Spot s = commands.nearby.station(kind, at -> untrusted(at) || (!DEAD_TABLES.isEmpty() && DEAD_TABLES.contains(tableKey(at))));
+        return s == null ? null : new int[]{s.x(), s.y(), s.z()};
+    }
+
+    /** station-memory: the step's view of the memory (StationVisit). */
+    final io.github.mojolowjo.entropybot.craft.StationVisit.Memory stationMemory = new io.github.mojolowjo.entropybot.craft.StationVisit.Memory() {
+        @Override public int[] nearest(String kind) { return knownStation(kind); }
+
+        @Override public Boolean isStation(String kind, int[] at) {
             Minecraft mc = Minecraft.getInstance();
-            BlockPos bp = new BlockPos(t[0], t[1], t[2]);
-            if (mc.level == null || !mc.level.isLoaded(bp) || !mc.level.getBlockState(bp).getBlock().getDescriptionId().contains("crafting_table")) return null;
-            return t;
-        } catch (RuntimeException e) {
-            Quiet.warn("Crafting.mineTable failed, carrying on with the fallback", e);
-            return null;
+            BlockPos bp = new BlockPos(at[0], at[1], at[2]);
+            if (mc.level == null || !mc.level.isLoaded(bp)) return null;
+            String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(bp).getBlock()).toString();
+            return commands.nearby.stationBlocks(kind).contains(id);
         }
+
+        @Override public void forget(String kind, int[] at, String why) {
+            String line = io.github.mojolowjo.entropybot.clear.OwnStations.forget(at[0], at[1], at[2], why);
+            commands.nearby.forget();
+            commands.log(why + " (" + line + ")");
+        }
+    };
+
+    /**
+     * station-memory: the bot is at {@code pos} and it is a known station of a recipe kind whose block is not there any more:
+     * forgotten (ledger record and cached answers), and the line "the furnace at x y z is gone" returned; else null.
+     */
+    String forgetIfGone(int[] pos) {
+        for (String kind : List.of(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT)) {
+            boolean known = false;
+            for (var s : commands.nearby.stations(kind)) known |= s.x() == pos[0] && s.y() == pos[1] && s.z() == pos[2];
+            if (!known || !Boolean.FALSE.equals(stationMemory.isStation(kind, pos))) continue;
+            String why = io.github.mojolowjo.entropybot.craft.StationVisit.gone(stationName(kind), pos);
+            stationMemory.forget(kind, pos, why);
+            return why;
+        }
+        return null;
+    }
+
+    /** The station's name for the lines ("crafting table", "furnace"): the station item the recipe data names. */
+    static String stationName(String kind) {
+        String item = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.stationOf(kind);
+        return item == null ? kind + " station" : CraftPlanner.shortId(item).replace('_', ' ');
     }
 
     static final String FURNACE = "block.minecraft.furnace";
 
-    /** The nearest furnace: near the bot, else near the base. */
+    /** station-memory: the known furnace, the nearest of the station memory at any distance (not untrusted); null: none known. */
     int[] findFurnace(LocalPlayer p) {
-        int[] t = findBlockAround(Jobs.here(p), FURNACE, 12, 6);
-        if (t != null) return t;
-        int[] b = base();
-        return b != null ? findBlockAround(b, FURNACE, 16, 6) : null;
+        return knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT);
     }
 
     /**
-     * Package D: every furnace within 12 of the bot and 16 of the base (loaded chunks), nearest to the bot first; never
-     * one the owner untrusted. {@code baseOnly}: only those within 16 of the base (a job left running is left there).
+     * Package D: every furnace within 12 of the bot and 16 of the base (loaded chunks), and every known one of the station
+     * memory (not baseOnly), nearest to the bot first; never one the owner untrusted. {@code baseOnly}: only those within 16 of the base (a job left running is left there).
      */
     List<int[]> findFurnaces(LocalPlayer p, boolean baseOnly) {
         int[] me = Jobs.here(p);
@@ -327,6 +348,14 @@ final class Crafting {
                 boolean dup = false;
                 for (int[] o : out) dup |= o[0] == f[0] && o[1] == f[1] && o[2] == f[2];
                 if (!dup) out.add(f);
+            }
+        }
+        // station-memory (0.39.z14): every known furnace at any distance (my placements, Baritone's scan) is a candidate too
+        if (!baseOnly) {
+            for (var s : commands.nearby.stations(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT)) {
+                boolean dup = false;
+                for (int[] o : out) dup |= o[0] == s.x() && o[1] == s.y() && o[2] == s.z();
+                if (!dup) out.add(new int[]{s.x(), s.y(), s.z()});
             }
         }
         out.removeIf(f -> untrusted(f));
@@ -1590,14 +1619,21 @@ final class Crafting {
         RecipeData recipe = planner.recipe(step.recipeId());
         if (recipe == null) return craftFail(s, st, "error: I don't know the recipe " + step.recipeId() + " any more");
         if ("opentable".equals(c.stage)) {
-            // walked to the table (the spliced walk step): right-click it and wait for its menu
+            // station-memory (0.39.z14): the known table wherever it is; the fork's InteractProcess walks within reach of it
+            // (Baritone picks the stand) and opens it. No walk step of ours, no "within reach" rule.
+            String kind = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT, name = stationName(kind);
             if (c.stageTick < 0) {
                 // 0.39.z7 (owner 2026-10-22, "every GUI interaction on purpose"): no blind close here. This branch
                 // runs every tick while the fork's click is in progress, and it closed the table the fork had just
                 // opened. A screen that is open is left to whoever opened it.
-                var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().use(c.table, "the crafting table");
-                if (r.running()) return "wait";
-                if (r.failed()) return craftFail(s, st, CraftJob.couldNotOpenTable(r.why()));
+                var v = io.github.mojolowjo.entropybot.craft.StationVisit.tick(io.github.mojolowjo.entropybot.aa.moves.JobHands.get(), stationMemory, kind, c.table, name);
+                switch (v.kind()) {
+                    case WAIT: return "wait";
+                    case GONE: return craftFail(s, st, "error: " + v.why() + " - the chain prices the table again");
+                    case FAILED: return craftFail(s, st, CraftJob.couldNotOpenTable(v.why()));
+                    case NONE: return craftFail(s, st, CraftJob.noTable(step.item()));
+                    default: break;
+                }
                 c.stageTick = now();
                 return "wait";
             }
@@ -1606,20 +1642,18 @@ final class Crafting {
                 return "wait";
             }
             if (now() - c.stageTick <= Tuning.i("crafting.tableWaitTicks")) return "wait";
-            // P2: this table answers clicks but never opens (see DEAD_TABLES): skip it from now on, try another once
+            if (Boolean.FALSE.equals(stationMemory.isStation(kind, c.table))) {
+                String why = io.github.mojolowjo.entropybot.craft.StationVisit.gone(name, c.table);
+                stationMemory.forget(kind, c.table, why);
+                return craftFail(s, st, "error: " + why + " - the chain prices the table again");
+            }
+            // P2: this table answers clicks but never opens (see DEAD_TABLES): skip it from now on, try the next known one once
             DEAD_TABLES.add(tableKey(c.table));
             int[] other = c.deadRetried ? null : findTable(p);
             if (other == null) return craftFail(s, st, CraftJob.tableDidNotOpen(Jobs.fmt(c.table), tableKey(c.table)));
             c.deadRetried = true;
             c.table = other;
-            c.stageTick = -1;
-            if (p.getEyePosition().distanceTo(new net.minecraft.world.phys.Vec3(other[0] + 0.5, other[1] + 0.5, other[2] + 0.5)) > 4.4) {  // game fact: survival interaction range 4.5 minus a margin
-                Step walk = Step.walk(other, false);
-                walk.why = "the crafting table at " + Jobs.fmt(other);
-                s.splice(s.idx, List.of(walk));
-                s.stage = null;
-                s.stepStart = now();
-            }
+            c.stageTick = -1;                       // the next tick's use walks to it
             return "wait";
         }
         int size = gridSize(p);
@@ -1640,14 +1674,9 @@ final class Crafting {
             c.triedTable = true;
             c.table = t;
             c.stage = "opentable";
-            c.stageTick = -1;
-            if (p.getEyePosition().distanceTo(new net.minecraft.world.phys.Vec3(t[0] + 0.5, t[1] + 0.5, t[2] + 0.5)) > 4.4) {  // game fact: survival interaction range 4.5 minus a margin
-                Step walk = Step.walk(t, false);
-                walk.why = "the crafting table at " + Jobs.fmt(t);
-                s.splice(s.idx, List.of(walk));
-                s.stage = null;
-                s.stepStart = now();
-            }
+            c.stageTick = -1;                       // station-memory: the use walks to it, however far
+            commands.log("crafting " + CraftPlanner.shortId(step.item()) + " at the " + stationName(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT) + " " + Jobs.fmt(t)
+                    + " (" + Math.round(Math.sqrt(Jobs.distSq(Jobs.here(p), t))) + " m)");
             return "wait";
         }
         // package G: a whole batch per fill, on ticks (GridLoop; Visual Workbench leftovers are cleared first). A loop

@@ -13,40 +13,33 @@ import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 public final class OwnTable {
     private OwnTable() {}
 
-    /** A table this far (eye to block) or nearer is used as it is. */
-    public static double reachNear() { return Tuning.get("ownTable.reachNear"); }
-    /** A table this many blocks or more below the bot's feet sits in a pit (trial 2: "couldn't get close"). */
-    public static int pitDepth() { return Tuning.i("ownTable.pitDepth"); }
-
     public enum Choice {
-        /** a reachable table near: walk there and craft (as before) */
+        /** a table known anywhere (the station memory): the craft walks there through Baritone and crafts */
         USE_KNOWN,
         /** put the table it carries down next to itself, craft, take it back */
         PLACE_CARRIED,
         /** craft a table from its wood (4 planks / 1 log) first, then as PLACE_CARRIED */
         CRAFT_AND_PLACE,
-        /** no table in the bag and no wood: walk to the far/low table anyway */
+        /** the known table is used but no spot was found for an own one (Clearing's fallback line) */
         WALK_FAR,
         /** no table anywhere and nothing to make one: the old "needs a crafting table" error */
         NONE
     }
 
     /**
-     * @param dist  eye distance to the table the craft would use (null: none known)
-     * @param dy    that table's y minus the bot's feet y (ignored when dist is null)
+     * station-memory (0.39.z14, owner 2026-10-22: "it should walk to the crafting table it placed and make it there"): a
+     * table known ANYWHERE is used (the craft step walks to it through Baritone's InteractProcess); a table of my own goes
+     * down only when none is known at all. Distance and height are no reason to make another.
+     * @param dist  eye distance to the known table (null: none known anywhere)
+     * @param dy    that table's y minus the bot's feet y (unused: Baritone picks the stand)
      * @param carries the bag holds a crafting_table
      * @param wood  the bag holds logs or planks
      */
     public static Choice choose(Double dist, int dy, boolean carries, boolean wood) {
-        if (reachable(dist, dy)) return Choice.USE_KNOWN;
+        if (dist != null) return Choice.USE_KNOWN;
         if (carries) return Choice.PLACE_CARRIED;
         if (wood) return Choice.CRAFT_AND_PLACE;
-        return dist != null ? Choice.WALK_FAR : Choice.NONE;
-    }
-
-    /** Near enough and not down in a pit. */
-    public static boolean reachable(Double dist, int dy) {
-        return dist != null && dist <= reachNear() && dy > -pitDepth();
+        return Choice.NONE;
     }
 
     /**

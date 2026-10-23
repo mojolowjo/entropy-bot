@@ -74,6 +74,30 @@ class NearbyTest {
         assertSame(SIGHTED, Nearby.nearest(s, ME, java.util.Set.of("minecraft:stone"), () -> SIGHTED));
     }
 
+    /** station-memory: my placements at any distance (loaded or not) and the scan's stations, one list, nearest first. */
+    @Test
+    void theStationMemoryIsMyPlacementsAndTheScanNearestFirst() {
+        java.util.Set<String> table = java.util.Set.of("minecraft:crafting_table");
+        var f = new Fake(List.of(), List.of(new int[]{30, 64, 0}, new int[]{5, 64, 0}), p -> true, p -> true,
+                Map.of("30 64 0", "minecraft:crafting_table", "5 64 0", "minecraft:crafting_table", "20 64 0", "minecraft:crafting_table"));
+        var s = new Nearby.Scan() {
+            @Override public List<int[]> logs(int radius) { return f.logs(radius); }
+            @Override public List<int[]> find(java.util.Set<String> blocks, int radius) { return f.find(blocks, radius); }
+            @Override public boolean isLog(String block) { return f.isLog(block); }
+            @Override public boolean fairOk(int x, int y, int z) { return true; }
+            @Override public boolean leavesNear(int x, int y, int z, int reach) { return true; }
+            @Override public boolean allowed(int x, int y, int z) { return true; }
+            @Override public String blockAt(int x, int y, int z) { return f.blockAt(x, y, z); }
+            @Override public List<Nearby.Mine> own() {
+                return List.of(new Nearby.Mine(20, 64, 0, "minecraft:crafting_table"), new Nearby.Mine(400, 64, 0, "minecraft:crafting_table"),
+                        new Nearby.Mine(5, 64, 0, "minecraft:crafting_table"), new Nearby.Mine(2, 64, 0, "minecraft:furnace"));
+            }
+        };
+        List<Spot> l = Nearby.stations(s, ME, table);
+        assertEquals(List.of(5, 20, 30, 400), l.stream().map(Spot::x).toList(), "the furnace is not a table; the cell both know is listed once");
+        assertEquals(400.0, l.get(3).dist(), 1e-9, "a placement of mine 400 m away is still known");
+    }
+
     @Test
     void noBaritoneScanIsTheFallbackAlone() {
         assertSame(SIGHTED, Nearby.log(null, ME, () -> SIGHTED));

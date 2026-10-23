@@ -70,6 +70,62 @@ final class NearbyLive {
         return s;
     }
 
+    private record Known(long at, int[] me, List<Spot> spots) {}
+    private final java.util.Map<String, Known> stations = new java.util.HashMap<>();
+
+    /**
+     * station-memory (0.39.z14): the known stations of a recipe kind (ItemWorth.CRAFT / SMELT), nearest first
+     * ({@link Nearby#stations}: my placements at any distance, then Baritone's scan); cached as the other answers are,
+     * dropped at once by {@link #forget}.
+     */
+    List<Spot> stations(String kind) {
+        long now = System.currentTimeMillis();
+        int[] me = here();
+        if (me == null) return List.of();
+        Known k = stations.get(kind);
+        if (k != null && now - k.at() < Tuning.l("nearby.cacheMs") && close(me, k.me())) return k.spots();
+        java.util.Set<String> blocks = stationBlocks(kind);
+        List<Spot> out = blocks.isEmpty() ? List.of() : List.copyOf(Nearby.stations(scan(), me, blocks));
+        stations.put(kind, new Known(now, me, out));
+        return out;
+    }
+
+    /** The nearest known station of the kind that {@code skip} does not refuse; null: none known anywhere. */
+    Spot station(String kind, java.util.function.Predicate<int[]> skip) {
+        for (Spot s : stations(kind)) if (skip == null || !skip.test(new int[]{s.x(), s.y(), s.z()})) return s;
+        return null;
+    }
+
+    /** The station at the cell is gone: the cached answers go (the ledger record is dropped by the caller). */
+    void forget() { stations.clear(); }
+
+    private final java.util.Map<String, java.util.Set<String>> stationBlocks = new java.util.HashMap<>();
+
+    /**
+     * The blocks that are a station of the kind: the station item's own block (the recipe data names the item) and every
+     * member of the game's workstation tags ({@code c:player_workstations/...}) that block is in (a modded table counts).
+     */
+    java.util.Set<String> stationBlocks(String kind) {
+        return stationBlocks.computeIfAbsent(kind, k -> {
+            java.util.Set<String> out = new java.util.LinkedHashSet<>();
+            String item = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.stationOf(k);
+            if (item == null) {
+                LOG.warn("[entropybot] stations: the game's data names no station for {} recipes", k);
+                return out;
+            }
+            var own = BuiltInRegistries.BLOCK.getOptional(net.minecraft.resources.ResourceLocation.tryParse(item));
+            if (own.isEmpty()) {
+                LOG.warn("[entropybot] stations: no block for the station item {}", item);
+                return out;
+            }
+            out.add(BuiltInRegistries.BLOCK.getKey(own.get()).toString());
+            own.get().builtInRegistryHolder().tags()
+                    .filter(t -> t.location().getNamespace().equals("c") && t.location().getPath().startsWith("player_workstations/"))
+                    .forEach(t -> BuiltInRegistries.BLOCK.getTagOrEmpty(t).forEach(h -> out.add(BuiltInRegistries.BLOCK.getKey(h.value()).toString())));
+            return out;
+        });
+    }
+
     private static boolean close(int[] a, int[] b) {
         if (b == null) return false;
         double dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
@@ -143,6 +199,11 @@ final class NearbyLive {
                     io.github.mojolowjo.entropybot.Quiet.warn("nearby: this Baritone has no chopComponentMax (not the Entropy fork), trees counted uncapped", e);
                     return Nearby.Scan.super.treeCap();
                 }
+            }
+            @Override public List<Nearby.Mine> own() {
+                List<Nearby.Mine> out = new ArrayList<>();
+                for (var m : io.github.mojolowjo.entropybot.clear.OwnStations.placed()) out.add(new Nearby.Mine(m.x(), m.y(), m.z(), m.block()));
+                return out;
             }
             @Override public String blockAt(int x, int y, int z) {
                 BlockPos q = new BlockPos(x, y, z);

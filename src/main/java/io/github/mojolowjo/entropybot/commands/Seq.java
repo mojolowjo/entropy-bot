@@ -443,6 +443,9 @@ public final class Seq {
             BlockPos bp = new BlockPos(st.pos[0], st.pos[1], st.pos[2]);
             // a right-click on a block with nothing to open would place the block in the hand
             if (!mc.level.getBlockState(bp).hasBlockEntity()) {
+                // station-memory (0.39.z14): arrived at a known station (the furnace a smelt walked to) and it is gone: forgotten
+                String gone = storage.crafting == null ? null : storage.crafting.forgetIfGone(st.pos);
+                if (gone != null) return gone;
                 return "there is no container at " + Jobs.fmt(st.pos) + " (it is " + Storage.blockName(mc.level.getBlockState(bp)) + ")";
             }
             var r = storage.use(st.pos);

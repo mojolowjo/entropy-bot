@@ -612,9 +612,7 @@ oreValue.dropS	60.0
 ownTable.campValueS	15.0
 ownTable.litterS	10.0
 ownTable.pickS	4.0
-ownTable.pitDepth	3.0
 ownTable.placeS	2.0
-ownTable.reachNear	12.0
 ownTable.remakeNoneS	60.0
 ownTable.remakeS	8.0
 ownerFix.futureSlackMs	2000.0

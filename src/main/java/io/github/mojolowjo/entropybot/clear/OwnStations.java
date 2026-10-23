@@ -105,6 +105,49 @@ public final class OwnStations {
         }
     }
 
+    /** station-memory (0.39.z14): one station I placed, as the ledger recorded it (this dimension). */
+    public record Placed(int x, int y, int z, String block) {}
+
+    /** Set by the game side: every station I placed in this dimension (the ledger's "built: station" entries). */
+    public interface Placements {
+        java.util.List<Placed> all();
+    }
+
+    /** Set by the game side: drop the station record at the cell from the ledger (it is gone); the line for the log. */
+    public interface Forget {
+        String at(int x, int y, int z, String why);
+    }
+
+    public static volatile Placements placed;
+    public static volatile Forget forget;
+
+    /** Every station I placed in this dimension (empty when the hook is not set; a failure is logged, never silent). */
+    public static java.util.List<Placed> placed() {
+        Placements m = placed;
+        if (m == null) return java.util.List.of();
+        try {
+            return m.all();
+        } catch (RuntimeException e) {
+            Quiet.warn("OwnStations.placed failed, the station memory has no placements of mine this time", e);
+            return java.util.List.of();
+        }
+    }
+
+    /**
+     * station-memory: the station at the cell is gone (the bot arrived and the block is not that station any more): its
+     * record leaves the memory. Returns the log line (what was dropped, or why nothing was).
+     */
+    public static String forget(int x, int y, int z, String why) {
+        Forget f = forget;
+        if (f == null) return "no station records loaded: nothing to forget at " + x + " " + y + " " + z;
+        try {
+            return f.at(x, y, z, why);
+        } catch (RuntimeException e) {
+            Quiet.warn("OwnStations.forget failed at " + x + " " + y + " " + z, e);
+            return "the station record at " + x + " " + y + " " + z + " could not be dropped: " + e;
+        }
+    }
+
     /** The cell holds a station of mine (never throws). */
     public static boolean mineAt(int x, int y, int z) {
         Mine m = mine;

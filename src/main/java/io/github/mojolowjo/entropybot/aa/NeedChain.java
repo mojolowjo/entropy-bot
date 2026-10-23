@@ -78,17 +78,26 @@ public final class NeedChain {
      * (for a tag: any member; nearest first not needed); {@code mobs}: entity id -> the animals of that kind known;
      * {@code loot}: the game's loot data (mob drops; null: none read); {@code band}: need word -> {minY, maxY} where the
      * blocks that drop it generate (the worldgen data; null: unknown); {@code horizonBlocks}: a way dearer than this is
-     * priced out when another stands (0: the planning horizon). Lookups are memoised per World.
+     * priced out when another stands (0: the planning horizon). {@code stationAt}: station-memory (0.39.z14): recipe kind
+     * (ItemWorth.CRAFT / SMELT) -> where the known station stands (the station memory's nearest, any distance; null: not
+     * known or no position): the chain prices the walk to it and says "at the table 20 m". Lookups are memoised per World.
      */
     public record World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
-                        Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path) {
+                        Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path,
+                        Function<String, Spot> stationAt) {
         /** No path provider: every walk is the straight line x 1.3 (and the line says nothing of it). */
         public World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
                      Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks) {
-            this(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, null);
+            this(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, null, null);
+        }
+
+        public World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
+                     Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path) {
+            this(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, null);
         }
 
         public World {
+            if (stationAt == null) stationAt = k -> null;
             Map<String, Integer> b = new LinkedHashMap<>();
             if (bag != null) for (var e : bag.entrySet()) b.merge(id(e.getKey()), e.getValue(), Integer::sum);
             bag = Map.copyOf(b);
@@ -111,17 +120,20 @@ public final class NeedChain {
             this(bag, tableNear, false, w -> { Spot s = seen == null ? null : seen.apply(w); return s == null ? List.of() : List.of(s); }, null, null, null, horizonBlocks);
         }
 
-        public World withMobs(Function<String, List<Mob>> m, LootBook l) { return new World(bag, tableNear, furnaceNear, seenAll, m, l, band, horizonBlocks, path); }
+        public World withMobs(Function<String, List<Mob>> m, LootBook l) { return new World(bag, tableNear, furnaceNear, seenAll, m, l, band, horizonBlocks, path, stationAt); }
 
-        public World withBand(Function<String, int[]> b) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, b, horizonBlocks, path); }
+        public World withBand(Function<String, int[]> b) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, b, horizonBlocks, path, stationAt); }
 
         /** path-cost: the walks priced by Baritone's planned path first (null: the line). */
-        public World withPath(PathPrice p) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, p); }
+        public World withPath(PathPrice p) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, p, stationAt); }
+
+        /** station-memory: where the known stations stand (recipe kind -> spot; null: no position known). */
+        public World withStations(Function<String, Spot> at) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, at); }
 
         /** chop: the same world less the sources {@code held} names (need word, spot): a failed source is out of the re-price. */
         public World without(java.util.function.BiPredicate<String, Spot> held) {
             Function<String, List<Spot>> sa = seenAll;
-            return new World(bag, tableNear, furnaceNear, w -> sa.apply(w).stream().filter(sp -> !held.test(word(w), sp)).toList(), mobs, loot, band, horizonBlocks, path);
+            return new World(bag, tableNear, furnaceNear, w -> sa.apply(w).stream().filter(sp -> !held.test(word(w), sp)).toList(), mobs, loot, band, horizonBlocks, path, stationAt);
         }
     }
 
@@ -244,6 +256,7 @@ public final class NeedChain {
         final Map<String, Walked> walks = new LinkedHashMap<>();   // path-cost: spot key -> its walk, one pricing pass (never restored)
         int pathAsked;        // path-cost: Baritone queries this pass (bounded by pathCost.perChainMax)
         boolean tableReady, furnaceReady, stuck;
+        boolean tableWalked, furnaceWalked;   // station-memory: the walk to the known station is priced (or the station was placed here)
         String fail;          // the way being tried cannot be done: the reason
         String unknown;       // the first need nothing is known to give (the explore leaf's)
         String loopOn;        // the need a loop failure came back to (set with fail)
@@ -269,11 +282,12 @@ public final class NeedChain {
 
         /** Everything a way changes, to put back when the way is dropped. */
         record Snap(Map<String, Integer> bag, List<Step> steps, Map<String, Integer> leafAt, Map<String, Integer> taken, List<String> dropped,
-                    double seconds, double away, boolean tableReady, boolean furnaceReady, boolean stuck, String unknown, String pickItem, int pickTier) {}
+                    double seconds, double away, boolean tableReady, boolean furnaceReady, boolean stuck, String unknown, String pickItem, int pickTier,
+                    boolean tableWalked, boolean furnaceWalked) {}
 
         Snap snap() {
             return new Snap(new LinkedHashMap<>(bag), new ArrayList<>(steps), new LinkedHashMap<>(leafAt), new LinkedHashMap<>(taken), new ArrayList<>(dropped),
-                    seconds, away, tableReady, furnaceReady, stuck, unknown, pickItem, pickTier);
+                    seconds, away, tableReady, furnaceReady, stuck, unknown, pickItem, pickTier, tableWalked, furnaceWalked);
         }
 
         void restore(Snap s) {
@@ -284,6 +298,7 @@ public final class NeedChain {
             dropped = new ArrayList<>(s.dropped());
             seconds = s.seconds(); away = s.away(); tableReady = s.tableReady(); furnaceReady = s.furnaceReady(); stuck = s.stuck();
             unknown = s.unknown(); pickItem = s.pickItem(); pickTier = s.pickTier();
+            tableWalked = s.tableWalked(); furnaceWalked = s.furnaceWalked();
             fail = null; loopOn = null;
         }
     }
@@ -706,14 +721,14 @@ public final class NeedChain {
             if (table) {
                 String t = station(c, ItemWorth.CRAFT);
                 if (c.fail != null) return null;
-                if (t != null) parts.add("table <- " + t);
+                if (t != null) parts.add(t);
                 if (c.stuck) return verb + String.join(" + ", parts);
                 walkBack(c);
             }
         } else {
             String f = station(c, ItemWorth.SMELT);
             if (c.fail != null) return null;
-            if (f != null) parts.add("furnace <- " + f);
+            if (f != null) parts.add(f);
             if (c.stuck) return verb + String.join(" + ", parts);
             String burn = burn(c, batches);
             if (c.fail != null) return null;
@@ -844,7 +859,7 @@ public final class NeedChain {
         if (ItemWorth.needsTable(item) || rec.inputs().size() > GRID_2X2) {
             String t = station(c, ItemWorth.CRAFT);
             if (c.fail != null) return null;
-            if (t != null) parts.add("table <- " + t);
+            if (t != null) parts.add(t);
             if (c.stuck) return "craft: " + String.join(" + ", parts);
             walkBack(c);
         }
@@ -869,7 +884,7 @@ public final class NeedChain {
         take(c, new Want(input), k, in.id());
         String f = station(c, ItemWorth.SMELT);
         if (c.fail != null) return null;
-        if (f != null) parts.add("furnace <- " + f);
+        if (f != null) parts.add(f);
         if (c.stuck) return "smelt " + String.join(" + ", parts);
         String burn = burn(c, k);
         if (c.fail != null) return null;
@@ -934,22 +949,43 @@ public final class NeedChain {
     /**
      * The station a recipe kind needs (the crafting table, the furnace: the game's recipe data names it) is an item like any
      * other: placed and known -> used (0 s); in the bag or made by the same recursion -> "place it near me" (Baritone's
-     * builder picks the cell; if it cannot, the step fails with its reason). Null when one already is in reach.
+     * builder picks the cell; if it cannot, the step fails with its reason). Returns the phrase part ("table <- in the bag,
+     * placed", "at the table 20 m"), null when the station is in reach with nothing to say.
+     * station-memory (0.39.z14): a known station with a position ({@link World#stationAt}) is used wherever it is: its walk
+     * is priced once (the walk from the last source or from here, the longer of the two) and the craft / smelt step's own
+     * use walks it (InteractProcess); a new one is made only when none is known.
      */
     private static String station(Ctx c, String kind) {
         boolean table = ItemWorth.CRAFT.equals(kind);
-        if (table ? c.tableReady : c.furnaceReady) return null;
+        String label = table ? "table" : "furnace";
+        if (table ? c.tableReady : c.furnaceReady) return knownWalk(c, kind, table, label);
         String item = ItemWorth.stationOf(kind);
         if (item == null) { c.fail = "the game's data names no station for " + kind + " recipes"; return null; }
         String made = obtain(c, item, 1);
         if (c.fail != null) return null;
-        if (c.stuck) return made;
+        if (c.stuck) return made == null ? null : label + " <- " + made;
         c.steps.add(new Step.PlaceNear(sh(item)));
         c.seconds += Price.placeS();
         c.bag.merge(item, -1, Integer::sum);
-        if (table) c.tableReady = true; else c.furnaceReady = true;
+        if (table) { c.tableReady = true; c.tableWalked = true; } else { c.furnaceReady = true; c.furnaceWalked = true; }
         c.away = 0;                                       // placed near where the bot stands
-        return made == null ? "in the bag, placed" : made + ", placed";
+        return label + " <- " + (made == null ? "in the bag, placed" : made + ", placed");
+    }
+
+    /**
+     * station-memory: the first use of a known station in this chain prices the walk to it: the longer of the walk back
+     * from the last source ({@code away}) and the walk from here to the station (its path, or its line); then the bot is
+     * at it ({@code away} 0). "at the table 20 m". Null: no position known, or already walked to in this chain.
+     */
+    private static String knownWalk(Ctx c, String kind, boolean table, String label) {
+        if (table ? c.tableWalked : c.furnaceWalked) return null;
+        Spot at = c.w.stationAt().apply(kind);
+        if (at == null) return null;
+        if (table) c.tableWalked = true; else c.furnaceWalked = true;
+        Walked wk = walk(c, at.x(), at.y(), at.z(), at.dist());
+        c.seconds += Math.max(c.away, wk.seconds());
+        c.away = 0;
+        return noted("at the " + label + " " + Math.round(at.dist()) + " m", wk);
     }
 
     /** Back to the stations after a trip to a new source: the same walk as the trip there (its path, or its line). */

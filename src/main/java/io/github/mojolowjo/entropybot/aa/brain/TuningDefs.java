@@ -514,8 +514,6 @@ final class TuningDefs {
         Tuning.def("oreValue.dropS", 60, "rm-constants 0.39.u2 (was OreValue.DROP_S)", "the drop s of OreValue");
         Tuning.def("oreValue.digS", 1.2, "rm-constants 0.39.u2 (was OreValue.DIG_S)", "Dig time per ore block with the right tool (s)");
         // ownTable
-        Tuning.def("ownTable.reachNear", 12, "rm-constants 0.39.u2 (was OwnTable.REACH_NEAR)", "A table this far (eye to block) or nearer is used as it is");
-        Tuning.def("ownTable.pitDepth", 3, "rm-constants 0.39.u2 (was OwnTable.PIT_DEPTH)", "A table this many blocks or more below the bot's feet sits in a pit");
         Tuning.def("ownTable.pickS", 4, "rm-constants 0.39.u2 (was OwnTable.PICK_S)", "Seconds: pick it up, place it again, remake one (planks / no planks), a stray block left in the world, a table at a camp without one");
         Tuning.def("ownTable.placeS", 2, "rm-constants 0.39.u2 (was OwnTable.PLACE_S)", "Seconds: pick it up, place it again, remake one (planks / no planks), a stray block left in the world, a table at a camp without one");
         Tuning.def("ownTable.remakeS", 8, "rm-constants 0.39.u2 (was OwnTable.REMAKE_S)", "Seconds: pick it up, place it again, remake one (planks / no planks), a stray block left in the world, a table at a camp without one");

@@ -70,6 +70,8 @@ public final class RestoreLive {
         io.github.mojolowjo.entropybot.clear.OwnStations.mine = this::stationOfMine;     // 0.33.0 (A3)
         io.github.mojolowjo.entropybot.clear.OwnStations.cells = this::stationCells;     // 0.33.0 review: recorded cells only
         io.github.mojolowjo.entropybot.clear.OwnStations.why = this::stationRefusal;
+        io.github.mojolowjo.entropybot.clear.OwnStations.placed = this::stationsPlaced;   // station-memory 0.39.z14
+        io.github.mojolowjo.entropybot.clear.OwnStations.forget = this::forgetStation;
         io.github.mojolowjo.entropybot.guard.OwnPlaced.cells = this::builtByMe;      // rm-mining: my placements are mine, never a built block
         readOnly = false;                    // 0.31.0 (c): loaded again for another world
         dirtySince = -1;
@@ -263,6 +265,34 @@ public final class RestoreLive {
             if (q[0] >= x1 && q[0] <= x2 && q[1] >= y1 && q[1] <= y2 && q[2] >= z1 && q[2] <= z2) out.add(q);
         }
         return out;
+    }
+
+    /** station-memory (0.39.z14): every station I placed in this dimension, with the block the ledger recorded. */
+    List<io.github.mojolowjo.entropybot.clear.OwnStations.Placed> stationsPlaced() {
+        Minecraft mc = Minecraft.getInstance();
+        List<io.github.mojolowjo.entropybot.clear.OwnStations.Placed> out = new ArrayList<>();
+        if (mc.level == null || book == null) return out;
+        String dim = Guard.dimOf(mc.level);
+        for (io.github.mojolowjo.entropybot.restore.Ledger.Entry e : book.ledger.all()) {
+            if ("built: station".equals(e.why) && dim.equals(e.dim)) out.add(new io.github.mojolowjo.entropybot.clear.OwnStations.Placed(e.x, e.y, e.z, e.block));
+        }
+        return out;
+    }
+
+    /** station-memory: the station record at the cell leaves the ledger (the bot arrived and it is gone); the log line. */
+    synchronized String forgetStation(int x, int y, int z, String why) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || book == null) return "not in a world: nothing forgotten at " + x + " " + y + " " + z;
+        String dim = Guard.dimOf(mc.level);
+        io.github.mojolowjo.entropybot.restore.Ledger.Entry e = book.ledger.at(dim, x, y, z);
+        if (e == null || !"built: station".equals(e.why)) return "no station of mine recorded at " + x + " " + y + " " + z + " (" + why + ")";
+        if (readOnly) return "the station record at " + x + " " + y + " " + z + " stays: " + loadNote;
+        if (!book.ledger.remove(e)) return "the station record at " + x + " " + y + " " + z + " was already gone";
+        stationRemoved.remove(dim + " " + x + " " + y + " " + z);
+        changed();
+        String line = "forgot my " + e.block + " at " + x + " " + y + " " + z + ": " + why;
+        LOG.info("[entropybot] stations: {}", line);
+        return line;
     }
 
     /** 0.24.3: blocks the bot placed itself (a shelter): ledger entries never re-placed, its own spot for the build hint. */

@@ -54,6 +54,32 @@ class NeedChainTest {
         assertTrue(c.cost() > 0);
     }
 
+    /** station-memory (owner 2026-10-22): the table I placed 20 m back is walked to and priced, never a second one. */
+    @Test
+    void aKnownTable20mAwayIsWalkedToAndPricedNeverMadeAgain() {
+        Map<String, Integer> bag = Map.of("minecraft:cobblestone", 8, "minecraft:oak_planks", 4);
+        Spot table = new Spot(20, 64, 0, 20, "minecraft:crafting_table");
+        World far = new World(bag, true, seen(null, null)).withStations(k -> io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT.equals(k) ? table : null);
+        NeedChain.Chain c = NeedChain.resolve("furnace", 1, far);
+        NeedChain.Chain here = NeedChain.resolve("furnace", 1, new World(bag, true, seen(null, null)));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertTrue(c.why().contains("at the table 20 m"), "the craft phrase names the walk: " + c.why());
+        assertEquals(here.seconds() + NeedChain.walkS(20), c.seconds(), 1e-6, "the price holds the 20 m walk to the table");
+        assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.PlaceNear), "no second table: " + c.steps());
+        assertEquals(List.of(new Step.Craft("furnace", 1)), c.steps(), "the craft step walks to the table itself (InteractProcess)");
+    }
+
+    /** station-memory: the table forgotten (gone on arrival) -> no table known: the same order is priced again and places one. */
+    @Test
+    void theTableForgottenRepricesTheChainWithANewOne() {
+        Map<String, Integer> bag = Map.of("minecraft:cobblestone", 8, "minecraft:oak_planks", 4);
+        NeedChain.Chain c = NeedChain.resolve("furnace", 1, new World(bag, false, seen(null, null)));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        int place = at(c.steps(), Step.PlaceNear.class, "crafting_table"), craft = at(c.steps(), Step.Craft.class, "furnace");
+        assertTrue(place >= 0 && craft > place, c.steps().toString());
+        assertFalse(c.why().contains("at the table"), c.why());
+    }
+
     @Test
     void aLootBookStillBeingReadMakesTheChainWaitNotExplore() {
         io.github.mojolowjo.entropybot.aa.brain.LootBook.Progress p = new io.github.mojolowjo.entropybot.aa.brain.LootBook.Progress("from the jars");
