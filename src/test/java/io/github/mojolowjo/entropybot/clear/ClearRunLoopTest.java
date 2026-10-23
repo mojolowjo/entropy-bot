@@ -311,41 +311,6 @@ class ClearRunLoopTest {
         assertTrue(PlaceRules.bodyIn(0, 53, 0, cell) && PlaceRules.bodyIn(0, 52, 0, cell) && !PlaceRules.bodyIn(0, 54, 0, cell));
     }
 
-    // ---- the bot's own crafting table (18a) ----
-
-    @Test
-    void tableChoice() {
-        assertEquals(PlaceRules.TableChoice.USE_NEAR, PlaceRules.tableChoice(12.0, false, false));
-        assertEquals(PlaceRules.TableChoice.USE_NEAR, PlaceRules.tableChoice(24.0, true, true));
-        // the owner's case: the nearest table 74 blocks away, 15 oak logs in the bag
-        assertEquals(PlaceRules.TableChoice.CRAFT_AND_PLACE, PlaceRules.tableChoice(74.3, false, true));
-        assertEquals(PlaceRules.TableChoice.PLACE_CARRIED, PlaceRules.tableChoice(74.3, true, true));
-        assertEquals(PlaceRules.TableChoice.CRAFT_AND_PLACE, PlaceRules.tableChoice(null, false, true));
-        assertEquals(PlaceRules.TableChoice.WALK_FAR, PlaceRules.tableChoice(74.3, false, false));
-        assertTrue(PlaceRules.wood("minecraft:oak_log") && PlaceRules.wood("minecraft:spruce_planks") && !PlaceRules.wood("minecraft:stick"));
-    }
-
-    @Test
-    void tableSpotNextToTheBotOutsideTheBox() {
-        FakeWorld w = new FakeWorld();
-        Bot b = Bot.at(0.5, 53, 0.5);
-        Pos p = PlaceRules.tableSpot(w, b, null);
-        assertEquals(new Pos(1, 53, 0), p, "a side, at its feet");
-        // the box covers x >= 1: a spot outside it
-        p = PlaceRules.tableSpot(w, b, ClearBox.of(1, 40, -5, 10, 60, 5));
-        assertEquals(new Pos(-1, 53, 0), p);
-        // never next to water
-        w.set(-1, 54, 0, "water");
-        p = PlaceRules.tableSpot(w, b, ClearBox.of(1, 40, -5, 10, 60, 5));
-        assertEquals(new Pos(0, 53, 1), p, "not the cell under the water");
-        // the bot on a 1x1 pillar: nothing to put it on -> none
-        FakeWorld air = new FakeWorld();
-        air.fill(-3, 3, 40, 60, -3, 3, "air");
-        air.set(0, 52, 0, "stone");
-        assertNull(PlaceRules.tableSpot(air, b, null));
-        assertEquals("picking up my crafting table at 1 53 0", PlaceRules.pickupLabel(new Pos(1, 53, 0)));
-    }
-
     @Test
     void picksBeforeABigDig() {
         assertEquals(0, PlaceRules.picksToRestock(300, 0, null), "small dig");

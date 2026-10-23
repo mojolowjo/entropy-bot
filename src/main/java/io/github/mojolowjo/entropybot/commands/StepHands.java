@@ -5,6 +5,7 @@ import baritone.api.pathing.goals.GoalNear;
 import baritone.api.utils.BlockOptionalMetaLookup;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
+import io.github.mojolowjo.entropybot.aa.moves.StepWait;
 import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 import io.github.mojolowjo.entropybot.aa.moves.Car;
 import io.github.mojolowjo.entropybot.aa.moves.Step;
@@ -68,6 +69,9 @@ public final class StepHands implements Steps.Hands {
         if (p == null) return "error: not in a world";
         stationsLine(s);
         try {
+            // station-race (0.39.z17, rule 15): a craft / smelt whose station fact is not loaded yet waits for it (status:
+            // running with the reason), exactly like the loot-book wait; it never plans, places or fails on "none" meanwhile
+            if (StepWait.kindOf(s) != null) return dataWait.start(s, c.nearby::stations, () -> verb(StepCommands.command(s)));
             return switch (s) {
                 case Step.Walk w -> walk(w);
                 case Step.ChopTree t -> chop(p, t);
@@ -88,10 +92,12 @@ public final class StepHands implements Steps.Hands {
         }
     }
 
+    /** station-race (0.39.z17): the craft / smelt step waits here while its station fact is not loaded (rule 15). */
+    private final StepWait dataWait = new StepWait();
+
     /** station-note (0.39.z15): a craft / smelt step starts: one line of what the station memory knows (the station fact). */
     private void stationsLine(Step s) {
-        String kind = s instanceof Step.Craft ? io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT
-                : s instanceof Step.Smelt ? io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT : null;
+        String kind = StepWait.kindOf(s);
         if (kind == null) return;
         try {
             LOG.info("[entropybot] {} ({})", c.nearby.stationsLine(kind), s.text());
@@ -105,6 +111,7 @@ public final class StepHands implements Steps.Hands {
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null) return Car.Status.failed("not in a world");
         try {
+            if (dataWait.waiting()) return dataWait.tick(c.nearby::stations, () -> { stationsLine(s); return verb(StepCommands.command(s)); }, this::requestStatus);
             return switch (s) {
                 case Step.ChopTree t -> mineStatus(p);
                 case Step.Collect k -> mineStatus(p);
@@ -179,6 +186,7 @@ public final class StepHands implements Steps.Hands {
         huntWhy = null;
         climbing = false;
         climbEnd = null;
+        dataWait.reset();
     }
 
     /** one-planner: the chain for an Obtain step, on the facts as it starts (AaRuntime.obtainSteps: NeedChain). */

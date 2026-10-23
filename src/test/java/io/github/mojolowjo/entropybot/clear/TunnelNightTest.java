@@ -67,20 +67,6 @@ class TunnelNightTest {
     }
 
     @Test
-    void theTableGoesAtTheSideOfTheWalkwayInsideTheArea() {
-        FakeWorld w = tunnel();
-        Bot bot = Bot.at(5.5, 53, 1.5);                              // the middle of the walkway
-        // the first cell in order (x+1, on the walkway's middle line) has no wall; the sides stand against the rock
-        assertEquals(0, PlaceRules.wallSides(w, 6, 53, 1));
-        assertEquals(1, PlaceRules.wallSides(w, 5, 53, 2));
-        assertEquals(new Pos(5, 53, 2), PlaceRules.tableSpot(w, bot, null), "at the side of the walkway");
-        // the fence: only cells inside the area (here: x <= 5 only)
-        Pos fenced = PlaceRules.tableSpot(w, bot, null, c -> c.x() <= 5);
-        assertTrue(fenced.x() <= 5 && fenced.z() != 1, "inside and at the side: " + fenced);
-        assertNull(PlaceRules.tableSpot(w, bot, null, c -> false), "nowhere allowed: none");
-    }
-
-    @Test
     void standSpotsAndDropsStayInsideTheAreasWithTheFenceOn() {
         ClearJob j = ClearJob.start(new ClearJob.Options().box(ClearBox.of(247, -46, 853, 310, -44, 855)), null, null);
         assertTrue(j.dropWanted(260, -48, 852), "the night: a drop 2 below the floor and 1 out was chased");

@@ -157,11 +157,19 @@ public final class ItemWorth {
         return s.fuels();
     }
 
-    /** one-planner: the station block item a recipe kind needs (null: unknown, said once). */
+    /**
+     * one-planner: the station block item a recipe kind needs (null: unknown, said once). rule 15: read before the item
+     * data is in, the note says "not loaded yet", never "no station known" ({@link io.github.mojolowjo.entropybot.aa.StationBlocks}
+     * keeps the two apart for the station lookups).
+     */
     public static String stationOf(String kind) {
         Source s = source;
-        String st = s == null ? null : s.stationOf(kind);
-        if (st == null) warnOnce("station:" + kind, "no station known for " + kind + " recipes");
+        if (s == null) {
+            warnOnce("station-notloaded:" + kind, "the station for " + kind + " recipes was asked before the item data was loaded (not loaded yet)");
+            return null;
+        }
+        String st = s.stationOf(kind);
+        if (st == null) warnOnce("station:" + kind + ":" + version, "no station known for " + kind + " recipes");
         return st;
     }
 
@@ -205,9 +213,14 @@ public final class ItemWorth {
     private static boolean cutFlag;
 
     /** The adapter sets the data (null: none yet); the cache is cleared. */
-    public static synchronized void use(Source s) { source = s; CACHE.clear(); }
+    public static synchronized void use(Source s) { source = s; CACHE.clear(); version++; }
 
     public static boolean hasData() { return source != null; }
+
+    private static volatile long version;
+
+    /** station-race (0.39.z17): bumped on every {@link #use} (a new world, a re-read): answers derived from the data are recomputed. */
+    public static long version() { return version; }
 
     static String path(String id) { int i = id.indexOf(':'); return i < 0 ? id : id.substring(i + 1); }
 

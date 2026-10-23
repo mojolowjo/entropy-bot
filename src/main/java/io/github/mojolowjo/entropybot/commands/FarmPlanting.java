@@ -209,7 +209,9 @@ final class FarmPlanting {
                 return "fetched a " + GuiShort.of(id);
             }
         }
-        int[] table = crafting.findTable(p);
+        io.github.mojolowjo.entropybot.aa.StationFact tf = crafting.findTable(p);
+        if (tf instanceof io.github.mojolowjo.entropybot.aa.StationFact.NotLoaded n) return "no hoe, and " + Crafting.notLoadedText(n);   // rule 15
+        int[] table = tf instanceof io.github.mojolowjo.entropybot.aa.StationFact.Known k ? Crafting.cell(k) : null;
         if (table == null || Jobs.distSq(table, Jobs.here(p)) > 48 * 48) return "no hoe, and no crafting table near me to make one";
         String lastErr = null;
         for (String text : List.of("minecraft:stone_hoe 1", "minecraft:wooden_hoe 1")) {

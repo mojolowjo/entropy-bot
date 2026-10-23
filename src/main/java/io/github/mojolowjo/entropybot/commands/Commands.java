@@ -667,7 +667,6 @@ public final class Commands implements Chains.Env {
                     chains.endChain("stopped: " + e);
                 }
             }
-            if (tick % 20 == 7 && !aaOn()) Clearing.keptTick(this);          // a kept craft table the chain never came back for (AA keeps its own)
             if (tick % 20 == 5 && !aaOn()) chains.deathTick(dead);     // 0.36.0: with AA on, AA re-chooses after a death (no chain resume)
             if (tick % 20 == 6) respawn.tick(dead, tick, Jobs.here(player));     // where it respawned (a home fact)
             if (!chains.resumeChecked() && worldTicks > 200) {

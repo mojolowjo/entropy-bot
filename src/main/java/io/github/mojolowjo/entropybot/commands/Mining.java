@@ -1888,7 +1888,12 @@ final class Mining {
             return "next";
         }
         if (t.mine() != null && t.need().equals("stone") && !t.crafted() && Gui.inventory(p).getOrDefault("minecraft:cobblestone", 0) >= 3) {
-            int[] tb = crafting.findTable(p);
+            io.github.mojolowjo.entropybot.aa.StationFact tf = crafting.findTable(p);
+            if (tf instanceof io.github.mojolowjo.entropybot.aa.StationFact.NotLoaded n) {      // rule 15: wait with the reason
+                s.setStatus(s.label + " - " + Crafting.notLoadedText(n));
+                return "wait";
+            }
+            int[] tb = tf instanceof io.github.mojolowjo.entropybot.aa.StationFact.Known k ? Crafting.cell(k) : null;
             if (tb != null && Jobs.distSq(tb, Jobs.here(p)) <= 48 * 48) {
                 Seq.Step c = new Seq.Step("craftitem");
                 c.text = "minecraft:stone_pickaxe 1";

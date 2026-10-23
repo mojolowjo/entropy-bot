@@ -17,7 +17,7 @@ import io.github.mojolowjo.entropybot.craft.FurnacePlan;
 import io.github.mojolowjo.entropybot.craft.GridLayout;
 import io.github.mojolowjo.entropybot.craft.GridLoop;
 import io.github.mojolowjo.entropybot.craft.McRecipes;
-import io.github.mojolowjo.entropybot.craft.OwnTable;
+import io.github.mojolowjo.entropybot.aa.StationFact;
 import io.github.mojolowjo.entropybot.craft.RecipeData;
 import io.github.mojolowjo.entropybot.farm.Compact;
 import io.github.mojolowjo.entropybot.farm.FarmCommand;
@@ -274,28 +274,43 @@ final class Crafting {
     /**
      * station-memory (0.39.z14): the known crafting table: the nearest one of the station memory at ANY distance (my own
      * placements and what Baritone's scan knows: NearbyLive.stations, the one fact), never an untrusted one nor one that
-     * answered no click (DEAD_TABLES). The craft step walks to it through InteractProcess. Null: none known anywhere.
+     * answered no click (DEAD_TABLES). The craft step walks to it through InteractProcess. rule 15: a three-state fact
+     * (StationFact): known, none known anywhere, or not loaded (the asker waits).
      */
-    int[] findTable(LocalPlayer p) {
+    StationFact findTable(LocalPlayer p) {
         return knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT);
     }
 
-    /** The nearest known station of the recipe kind not refused (untrusted, or a dead table); null: none known anywhere. */
-    int[] knownStation(String kind) {
-        io.github.mojolowjo.entropybot.aa.NeedChain.Spot s = commands.nearby.station(kind, at -> untrusted(at) || (!DEAD_TABLES.isEmpty() && DEAD_TABLES.contains(tableKey(at))));
-        return s == null ? null : new int[]{s.x(), s.y(), s.z()};
+    /** The known stations of the recipe kind not refused (untrusted, or a dead table), nearest first; none; or not loaded. */
+    StationFact knownStation(String kind) {
+        return commands.nearby.station(kind, at -> untrusted(at) || (!DEAD_TABLES.isEmpty() && DEAD_TABLES.contains(tableKey(at))));
+    }
+
+    /** rule 15: the text of a not-loaded station fact ("stations: item data not loaded yet (...)"). */
+    static String notLoadedText(StationFact.NotLoaded n) {
+        return StationFact.NOT_LOADED_LINE + " (" + n.why() + ")";
+    }
+
+    /** The cell of a known station ({x, y, z} of the nearest). */
+    static int[] cell(StationFact.Known k) {
+        var s = k.nearest();
+        return new int[]{s.x(), s.y(), s.z()};
     }
 
     /** station-memory: the step's view of the memory (StationVisit). */
     final io.github.mojolowjo.entropybot.craft.StationVisit.Memory stationMemory = new io.github.mojolowjo.entropybot.craft.StationVisit.Memory() {
-        @Override public int[] nearest(String kind) { return knownStation(kind); }
+        @Override public StationFact nearest(String kind) { return knownStation(kind); }
 
         @Override public Boolean isStation(String kind, int[] at) {
             Minecraft mc = Minecraft.getInstance();
             BlockPos bp = new BlockPos(at[0], at[1], at[2]);
             if (mc.level == null || !mc.level.isLoaded(bp)) return null;
             String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(bp).getBlock()).toString();
-            return commands.nearby.stationBlocks(kind).contains(id);
+            return switch (commands.nearby.stationBlocks(kind)) {
+                case io.github.mojolowjo.entropybot.aa.StationBlocks.Answer.Of o -> o.ids().contains(id);
+                case io.github.mojolowjo.entropybot.aa.StationBlocks.Answer.None n -> false;
+                case io.github.mojolowjo.entropybot.aa.StationBlocks.Answer.NotLoaded n -> null;     // rule 15: cannot tell yet
+            };
         }
 
         @Override public void forget(String kind, int[] at, String why) {
@@ -312,7 +327,8 @@ final class Crafting {
     String forgetIfGone(int[] pos) {
         for (String kind : List.of(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT)) {
             boolean known = false;
-            for (var s : commands.nearby.stations(kind)) known |= s.x() == pos[0] && s.y() == pos[1] && s.z() == pos[2];
+            if (commands.nearby.stations(kind) instanceof StationFact.Known k)      // rule 15: not loaded / none: nothing of mine to forget here
+                for (var s : k.spots()) known |= s.x() == pos[0] && s.y() == pos[1] && s.z() == pos[2];
             if (!known || !Boolean.FALSE.equals(stationMemory.isStation(kind, pos))) continue;
             String why = io.github.mojolowjo.entropybot.craft.StationVisit.gone(stationName(kind), pos);
             stationMemory.forget(kind, pos, why);
@@ -330,7 +346,7 @@ final class Crafting {
     static final String FURNACE = "block.minecraft.furnace";
 
     /** station-memory: the known furnace, the nearest of the station memory at any distance (not untrusted); null: none known. */
-    int[] findFurnace(LocalPlayer p) {
+    StationFact findFurnace(LocalPlayer p) {
         return knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT);
     }
 
@@ -351,8 +367,9 @@ final class Crafting {
             }
         }
         // station-memory (0.39.z14): every known furnace at any distance (my placements, Baritone's scan) is a candidate too
-        if (!baseOnly) {
-            for (var s : commands.nearby.stations(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT)) {
+        // rule 15: a not-loaded fact adds nothing here; the smeltpick step waits on it before it calls this (smeltPick)
+        if (!baseOnly && commands.nearby.stations(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT) instanceof StationFact.Known known) {
+            for (var s : known.spots()) {
                 boolean dup = false;
                 for (int[] o : out) dup |= o[0] == s.x() && o[1] == s.y() && o[2] == s.z();
                 if (!dup) out.add(new int[]{s.x(), s.y(), s.z()});
@@ -484,7 +501,14 @@ final class Crafting {
         boolean smelts = false;
         for (Crafter.Smelt sm : plan.stream().filter(s -> s instanceof Crafter.Smelt).map(s -> (Crafter.Smelt) s).toList()) {
             smelts = true;
-            int[] nearF = here ? findBlockAround(Jobs.here(p), FURNACE, hereR(), 3) : findFurnace(p);
+            int[] nearF;
+            if (here) nearF = findBlockAround(Jobs.here(p), FURNACE, hereR(), 3);
+            else {
+                StationFact ff = findFurnace(p);
+                // rule 15: not loaded is said, never read as "none known" (the AA step waits before it gets here: StepHands)
+                if (ff instanceof StationFact.NotLoaded n) return notLoadedText(n) + " - smelt again once it is in";
+                nearF = ff instanceof StationFact.Known k ? cell(k) : null;
+            }
             if (efficient ? findFurnaces(p, true).isEmpty() : nearF == null) {
                 if (nearF != null && efficient) {
                     efficient = false;                 // a furnace near me but not at the base: stand by it
@@ -595,61 +619,11 @@ final class Crafting {
         Prepared r = prepareCraft(p, text, extra);
         if (r.err() != null) return r.err();
         List<Step> steps = r.steps();
-        String tail = "";
-        // 0.28.2 (A): no reachable table but one in the bag (or wood): put it down here, craft, always take it back
-        if (needsTable(steps)) {
-            OwnTable.Choice[] ch = new OwnTable.Choice[1];
-            List<Step> plain = new ArrayList<>(steps);
-            for (Step s : plain) s.direct = false;
-            List<Step> own = Clearing.ownTableSteps(p, findTable(p), plain, ch);
-            if (own != null) {
-                steps = own;
-                tail = OwnTable.startNote(ch[0]);
-            } else {
-                for (Step s : plain) s.direct = r.direct() && s.type.equals("craft");
-                if (ch[0] == OwnTable.Choice.NONE) return craftNoTable(steps);
-            }
-        }
-        Step stray = Clearing.takeStrayKept();
-        if (stray != null) {
-            steps = new ArrayList<>(steps);
-            steps.add(0, stray);
-        }
+        // station-race (0.39.z17): the station rule is the only one. A craft that needs the table uses the known one wherever
+        // it is (the craft step walks there through the fork's interact) and fails with "none known" when there is none; a
+        // table is made only by AA's chain when none is known anywhere, and never picked up again as part of a craft.
         boolean opens = steps.stream().anyMatch(s -> s.type.equals("open") || s.type.equals("craft"));
-        String started = startSeq(r.label(), steps, opens ? "always" : "fail");
-        return started.startsWith("started") ? started + tail : started;
-    }
-
-
-    /** Look-ahead for the own-table pickup: the craft text plans now and wants a 3x3 grid. */
-    boolean craftWantsTable(LocalPlayer p, String text) {
-        try {
-            String t = text.trim();
-            if (t.regionMatches(true, 0, "craft ", 0, 6)) t = t.substring(6);
-            Prepared r = prepareCraft(p, t, null);
-            return r.err() == null && needsTable(r.steps());
-        } catch (RuntimeException e) {
-            Quiet.warn("Crafting.craftWantsTable failed, carrying on with the fallback", e);
-            return false;
-        }
-    }
-
-    /** 0.28.2: a plan whose crafting steps want a 3x3 grid. */
-    private boolean needsTable(List<Step> steps) {
-        for (Step s : steps) {
-            if (!s.type.equals("craft") || s.crafts == null) continue;
-            for (Crafter.Craft c : s.crafts) {
-                RecipeData rd = planner.recipe(c.recipeId());
-                if (c.needsTable() || (rd != null && !rd.fits(2))) return true;
-            }
-        }
-        return false;
-    }
-
-    /** No table anywhere and nothing to make one: the old error, with the next step. */
-    private String craftNoTable(List<Step> steps) {
-        for (Step s : steps) if (s.type.equals("craft") && s.crafts != null && !s.crafts.isEmpty()) return CraftJob.noTable(s.crafts.get(0).item()) + " - next: gather oak_log 4 (a log makes a table), then craft again";
-        return CraftJob.noTable("this");
+        return startSeq(r.label(), steps, opens ? "always" : "fail");
     }
 
     String recipe(LocalPlayer p, String text) { return planner.recipeInfo(text, Gui.inventory(p)); }
@@ -932,7 +906,9 @@ final class Crafting {
             center = spot.pos();
             centerLabel = spot.name() != null ? spot.name() : spot.fmt();
         }
-        if (findTable(p) == null && findBlockAround(center, "crafting_table", 12, 6) == null) return Compact.NO_TABLE;
+        StationFact table = findTable(p);
+        if (table instanceof StationFact.NotLoaded n) return "error: compact: " + notLoadedText(n) + " - compact again once it is in";   // rule 15
+        if (!(table instanceof StationFact.Known) && findBlockAround(center, "crafting_table", 12, 6) == null) return Compact.NO_TABLE;
         Compact.Start st = Compact.start(pair, center, centerLabel, Jobs.here(p));
         Seq s = new Seq(jobs, storage, st.label(), toSteps(st.steps()), "always");
         s.compact = st.run();
@@ -1121,6 +1097,10 @@ final class Crafting {
         }
         FurnaceJobs fj = furnaces();
         if (fj.full()) return FurnaceJobs.fullRefusal();
+        if (!st.near && findFurnace(p) instanceof StationFact.NotLoaded n) {         // rule 15: wait with the reason, never "none"
+            s.setStatus(s.label + " - " + notLoadedText(n));
+            return "wait";
+        }
         List<int[]> cands = findFurnaces(p, st.near);
         if (cands.isEmpty()) return CraftJob.noFurnace(st.smelt.item());
         int[] pick = null;
@@ -1649,8 +1629,9 @@ final class Crafting {
             }
             // P2: this table answers clicks but never opens (see DEAD_TABLES): skip it from now on, try the next known one once
             DEAD_TABLES.add(tableKey(c.table));
-            int[] other = c.deadRetried ? null : findTable(p);
-            if (other == null) return craftFail(s, st, CraftJob.tableDidNotOpen(Jobs.fmt(c.table), tableKey(c.table)));
+            StationFact next = c.deadRetried ? null : findTable(p);
+            if (!(next instanceof StationFact.Known nk)) return craftFail(s, st, CraftJob.tableDidNotOpen(Jobs.fmt(c.table), tableKey(c.table)));
+            int[] other = cell(nk);
             c.deadRetried = true;
             c.table = other;
             c.stageTick = -1;                       // the next tick's use walks to it
@@ -1669,8 +1650,17 @@ final class Crafting {
         }
         if ((step.needsTable() || !recipe.fits(2)) && size == 2) {
             if (c.triedTable && c.table == null) return craftFail(s, st, CraftJob.noTable(step.item()));
-            int[] t = c.table != null ? c.table : findTable(p);
-            if (t == null) return craftFail(s, st, CraftJob.noTable(step.item()));
+            int[] t = c.table;
+            if (t == null) {
+                switch (findTable(p)) {
+                    case StationFact.NotLoaded n -> {             // rule 15: wait with the reason; never a table of my own for it
+                        s.setStatus(CraftJob.startStatus(st.crafts) + " - " + notLoadedText(n));
+                        return "wait";
+                    }
+                    case StationFact.None n -> { return craftFail(s, st, CraftJob.noTable(step.item()) + ("none known".equals(n.why()) ? "" : " (" + n.why() + ")")); }
+                    case StationFact.Known k -> t = cell(k);
+                }
+            }
             c.triedTable = true;
             c.table = t;
             c.stage = "opentable";

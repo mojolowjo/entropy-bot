@@ -592,10 +592,9 @@ public final class AaRuntime implements JobPort {
 
     /** station-memory (0.39.z14): where the known station of the recipe kind stands (the craft step's own lookup); null: none. */
     io.github.mojolowjo.entropybot.aa.NeedChain.Spot stationAt(String kind) {
-        int[] at = c.crafting.knownStation(kind);
-        if (at == null) return null;
-        for (var s : c.nearby.stations(kind)) if (s.x() == at[0] && s.y() == at[1] && s.z() == at[2]) return s;
-        return null;
+        // rule 15: only a known station is a spot; not loaded means no item data, so the chain has no recipes to plan a
+        // craft from (ItemWorth empty); none is none
+        return c.crafting.knownStation(kind) instanceof io.github.mojolowjo.entropybot.aa.StationFact.Known k ? k.nearest() : null;
     }
 
     /** one-planner: the chain for an "I need N of X" step as it starts (the facts of that moment); no chain: why. */
@@ -1286,10 +1285,10 @@ public final class AaRuntime implements JobPort {
             double d = Math.sqrt(Jobs.distSq(s.botPos, m));
             camp = camp < 0 ? d : Math.min(camp, d);
         }
-        boolean tLatch = latch("tableAtCamp", s.feas.table || io.github.mojolowjo.entropybot.craft.OwnTable.takeCampTable(), camp), fLatch = latch("furnaceAtCamp", s.feas.furnace, camp);
+        boolean tLatch = latch("tableAtCamp", s.feas.table, camp), fLatch = latch("furnaceAtCamp", s.feas.furnace, camp);
         // station-memory (0.39.z14): a station known anywhere (my placements, Baritone's scan: one lookup) counts, however far
-        in.tableKnown = s.feas.table || tLatch || c.crafting.knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT) != null;
-        in.furnaceKnown = s.feas.furnace || fLatch || c.crafting.knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT) != null;
+        in.tableKnown = s.feas.table || tLatch || c.crafting.knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT) instanceof io.github.mojolowjo.entropybot.aa.StationFact.Known;
+        in.furnaceKnown = s.feas.furnace || fLatch || c.crafting.knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT) instanceof io.github.mojolowjo.entropybot.aa.StationFact.Known;
         in.tableInBag = io.github.mojolowjo.entropybot.aa.core.Inputs.has(bag, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.stationOf(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT));
         in.planks = io.github.mojolowjo.entropybot.aa.core.Inputs.tagged(bag, "minecraft:planks");
         in.furnaceInBag = io.github.mojolowjo.entropybot.aa.core.Inputs.has(bag, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.stationOf(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT));

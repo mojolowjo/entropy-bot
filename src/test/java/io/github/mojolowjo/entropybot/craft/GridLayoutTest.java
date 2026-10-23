@@ -81,13 +81,13 @@ class GridLayoutTest {
         assertEquals(CraftJob.FillFailed.GO_TO_TABLE, CraftJob.onFillFailed(true, false));
         assertEquals(CraftJob.FillFailed.GIVE_UP, CraftJob.onFillFailed(true, true));
         assertEquals(CraftJob.FillFailed.GIVE_UP, CraftJob.onFillFailed(false, false));
-        assertEquals("error: stone_pickaxe needs a crafting table and there is none near me or the base", CraftJob.noTable(m("stone_pickaxe")));
+        assertEquals("error: stone_pickaxe needs a crafting table and none is known anywhere (my placements, Baritone's scan)", CraftJob.noTable(m("stone_pickaxe")));
         assertEquals(440, CraftJob.smeltWaitTicks(2));
         assertEquals("crafting 2 glass - waiting for the furnace (glass, 17 s)", CraftJob.smeltWaitStatus("crafting 2 glass", m("glass"), 440, 100));
         assertEquals(CraftJob.SmeltCheck.RETRY, CraftJob.smeltCheck(1, 2, 1));
         assertEquals(CraftJob.SmeltCheck.GIVE_UP, CraftJob.smeltCheck(1, 2, 4));
         assertEquals(CraftJob.SmeltCheck.DONE, CraftJob.smeltCheck(2, 2, 4));
         assertEquals("the furnace at 1 2 3 made only 1 of 2 glass", CraftJob.furnaceShort("1 2 3", 1, 2, m("glass")));
-        assertEquals("error: can't craft 2 glass - smelting glass needs a furnace, and there is none near me or the base", CraftTexts.craftNoFurnace("2 glass", m("glass")));
+        assertEquals("error: can't craft 2 glass - smelting glass needs a furnace, and none is known anywhere (my placements, Baritone's scan)", CraftTexts.craftNoFurnace("2 glass", m("glass")));
     }
 }

@@ -514,12 +514,6 @@ final class TuningDefs {
         Tuning.def("oreValue.dropS", 60, "rm-constants 0.39.u2 (was OreValue.DROP_S)", "the drop s of OreValue");
         Tuning.def("oreValue.digS", 1.2, "rm-constants 0.39.u2 (was OreValue.DIG_S)", "Dig time per ore block with the right tool (s)");
         // ownTable
-        Tuning.def("ownTable.pickS", 4, "rm-constants 0.39.u2 (was OwnTable.PICK_S)", "Seconds: pick it up, place it again, remake one (planks / no planks), a stray block left in the world, a table at a camp without one");
-        Tuning.def("ownTable.placeS", 2, "rm-constants 0.39.u2 (was OwnTable.PLACE_S)", "Seconds: pick it up, place it again, remake one (planks / no planks), a stray block left in the world, a table at a camp without one");
-        Tuning.def("ownTable.remakeS", 8, "rm-constants 0.39.u2 (was OwnTable.REMAKE_S)", "Seconds: pick it up, place it again, remake one (planks / no planks), a stray block left in the world, a table at a camp without one");
-        Tuning.def("ownTable.remakeNoneS", 60, "rm-constants 0.39.u2 (was OwnTable.REMAKE_NONE_S)", "Seconds: pick it up, place it again, remake one (planks / no planks), a stray block left in the world, a table at a camp without one");
-        Tuning.def("ownTable.litterS", 10, "rm-constants 0.39.u2 (was OwnTable.LITTER_S)", "Seconds: pick it up, place it again, remake one (planks / no planks), a stray block left in the world, a table at a camp without one");
-        Tuning.def("ownTable.campValueS", 15, "rm-constants 0.39.u2 (was OwnTable.CAMP_VALUE_S)", "Seconds: pick it up, place it again, remake one (planks / no planks), a stray block left in the world, a table at a camp without one");
         // ownerFix
         Tuning.def("ownerFix.maxAgeMs", 10_000, "rm-constants 0.39.u2 (was OwnerFix.MAX_AGE_MS)", "the max age ms of OwnerFix");
         Tuning.def("ownerFix.futureSlackMs", 2_000, "rm-constants 0.39.u2 (was OwnerFix.FUTURE_SLACK_MS)", "A fix 'from the future' (the clock was set back) is refused beyond this");
@@ -528,7 +522,6 @@ final class TuningDefs {
         Tuning.def("paperPlan.failureMs", 20000, "rm-constants 0.39.u2 (was PaperPlan.FAILURE_MS)", "the failure ms of PaperPlan");
         Tuning.def("paperPlan.surfaceR", 96, "rm-constants 0.39.u2 (was PaperPlan.SURFACE_R)", "the surface r of PaperPlan");
         // placeRules
-        Tuning.def("placeRules.tableNear", 24, "rm-constants 0.39.u2 (was PlaceRules.TABLE_NEAR)", "How far a table may be for the pickaxe craft to walk to it rather than put one down");
         Tuning.def("placeRules.mobWaitTicks", 200, "rm-constants 0.39.u2 (was PlaceRules.MOB_WAIT_TICKS)", "0.30.7: a mob in the cell is waited for this long (ticks, 10 s) before the place step gives up");
         Tuning.def("placeRules.emptyCorpseWaitTicks", 1800, "rm-constants 0.39.u2 (was PlaceRules.EMPTY_CORPSE_WAIT_TICKS)", "0.30.7 (live probe): an emptied corpse the client still lists is waited for this long");
         Tuning.def("placeRules.leaseMax", 4096, "rm-constants 0.39.u2 (was PlaceRules.LEASE_MAX)", "The most one lease may cover (GuardCore.MAX_LEASE_VOLUME), and a force lease (MAX_FORCE_VOLUME)");
@@ -928,8 +921,6 @@ final class TuningDefs {
         Tuning.def("mobDamage.maxHit", 100, "rm-constants 0.39.u2 (inline literal in MobDamage)", "the most one hit may be worth before it is dropped as a glitch");
         Tuning.def("nightWork.torchesLow", 8, "rm-constants 0.39.u2 (inline literal in NightWork)", "torches under which the night work crafts more");
         Tuning.def("options.factErrorLogMs", 60_000, "rm-constants 0.39.u2 (inline literal in Options)", "milliseconds between two logs of the same facts error");
-        Tuning.def("placeRules.avoidPenalty", 10, "rm-constants 0.39.u2 (inline literal in PlaceRules)", "score taken off a cell inside the area to avoid");
-        Tuning.def("placeRules.selfClear", 0.8, "rm-constants 0.39.u2 (inline literal in PlaceRules)", "blocks from the bot centre within which a cell is not placed on");
         Tuning.def("policyRuntime.waterColumnMax", 32, "rm-constants 0.39.u2 (inline literal in PolicyRuntime)", "blocks up a water column is followed");
         Tuning.def("reachGrid.climbMax", 3, "rm-constants 0.39.u2 (inline literal in ReachGrid)", "blocks a step may climb");
         Tuning.def("reachGrid.dropMax", 3, "rm-constants 0.39.u2 (inline literal in ReachGrid)", "blocks a step may drop");

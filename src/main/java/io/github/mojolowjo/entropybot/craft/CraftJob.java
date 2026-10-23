@@ -91,7 +91,7 @@ public final class CraftJob {
     }
 
     public static String noTable(String item) {
-        return "error: " + shortId(item) + " needs a crafting table and there is none near me or the base";
+        return "error: " + shortId(item) + " needs a crafting table and none is known anywhere (my placements, Baritone's scan)";
     }
 
     public static String walkingToTable(String pos) {
@@ -155,7 +155,7 @@ public final class CraftJob {
 
     /** craftPlanSteps' error for a furnace step with no furnace near the bot or the base. */
     public static String noFurnace(String item) {
-        return "smelting " + shortId(item) + " needs a furnace, and there is none near me or the base";
+        return "smelting " + shortId(item) + " needs a furnace, and none is known anywhere (my placements, Baritone's scan)";
     }
 
     /** How long to wait for {@code n} items in a furnace (plus 2 s). */

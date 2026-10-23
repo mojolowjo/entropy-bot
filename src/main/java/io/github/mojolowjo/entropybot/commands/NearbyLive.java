@@ -5,6 +5,8 @@ import baritone.api.BaritoneAPI;
 import baritone.api.utils.BlockOptionalMetaLookup;
 import io.github.mojolowjo.entropybot.aa.Nearby;
 import io.github.mojolowjo.entropybot.aa.NeedChain.Spot;
+import io.github.mojolowjo.entropybot.aa.StationBlocks;
+import io.github.mojolowjo.entropybot.aa.StationFact;
 import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -70,66 +72,92 @@ final class NearbyLive {
         return s;
     }
 
-    private record Known(long at, int[] me, List<Spot> spots) {}
+    private record Known(long at, int[] me, long data, StationFact.Known fact) {}
     private final java.util.Map<String, Known> stations = new java.util.HashMap<>();
 
     /**
-     * station-memory (0.39.z14): the known stations of a recipe kind (ItemWorth.CRAFT / SMELT), nearest first
-     * ({@link Nearby#stations}: my placements at any distance, then Baritone's scan); cached as the other answers are,
-     * dropped at once by {@link #forget}.
+     * station-memory (0.39.z14), station-race (0.39.z17, rule 15): the station fact of a recipe kind (ItemWorth.CRAFT /
+     * SMELT): the known ones nearest first ({@link Nearby#stations}: my placements at any distance, then Baritone's scan),
+     * none, or NOT LOADED (the item data is not in yet). Only a known answer is cached (as the other answers are, and
+     * dropped at once by {@link #forget} or a new item data); not loaded and none are asked again every time.
      */
-    List<Spot> stations(String kind) {
+    StationFact stations(String kind) {
         long now = System.currentTimeMillis();
+        StationBlocks.Answer blocks = stationBlocks(kind);
+        if (blocks instanceof StationBlocks.Answer.NotLoaded n) {
+            notLoadedNote(kind, n.why());
+            return new StationFact.NotLoaded(n.why());
+        }
         int[] me = here();
-        if (me == null) return List.of();
+        if (me == null) return new StationFact.NotLoaded("not in a world");
+        long data = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.version();
         Known k = stations.get(kind);
-        if (k != null && now - k.at() < Tuning.l("nearby.cacheMs") && close(me, k.me())) return k.spots();
-        java.util.Set<String> blocks = stationBlocks(kind);
-        List<Spot> out = blocks.isEmpty() ? List.of() : List.copyOf(Nearby.stations(scan(), me, blocks));
-        stations.put(kind, new Known(now, me, out));
-        return out;
+        if (k != null && k.data() == data && now - k.at() < Tuning.l("nearby.cacheMs") && close(me, k.me())) return k.fact();
+        StationFact f = Nearby.stationFact(scan(), me, blocks);
+        if (f instanceof StationFact.Known kn) stations.put(kind, new Known(now, me, data, kn));
+        else stations.remove(kind);
+        return f;
     }
 
-    /** station-note (0.39.z15): the lookup's log line ({@link Nearby#stationsLine}) from the same station fact. */
+    /** station-note (0.39.z15): the lookup's log line ({@link Nearby#stationsLine}) from the same station fact, in its three states. */
     String stationsLine(String kind) {
-        java.util.Set<String> blocks = stationBlocks(kind);
-        return Nearby.stationsLine(stations(kind), scan().own(), blocks, Nearby.scanR());
+        StationBlocks.Answer blocks = stationBlocks(kind);
+        java.util.Set<String> ids = blocks instanceof StationBlocks.Answer.Of o ? o.ids() : java.util.Set.of();
+        return Nearby.stationsLine(stations(kind), scan().own(), ids, Nearby.scanR());
     }
 
-    /** The nearest known station of the kind that {@code skip} does not refuse; null: none known anywhere. */
-    Spot station(String kind, java.util.function.Predicate<int[]> skip) {
-        for (Spot s : stations(kind)) if (skip == null || !skip.test(new int[]{s.x(), s.y(), s.z()})) return s;
-        return null;
+    /**
+     * The nearest known station of the kind that {@code skip} does not refuse, as a fact: NOT LOADED passes through, a
+     * known list with every station refused is none.
+     */
+    StationFact station(String kind, java.util.function.Predicate<int[]> skip) {
+        return switch (stations(kind)) {
+            case StationFact.NotLoaded n -> n;
+            case StationFact.None n -> n;
+            case StationFact.Known k -> {
+                List<Spot> ok = new ArrayList<>();
+                for (Spot s : k.spots()) if (skip == null || !skip.test(new int[]{s.x(), s.y(), s.z()})) ok.add(s);
+                yield ok.isEmpty() ? new StationFact.None("every known one is refused (untrusted, or it never opened)") : new StationFact.Known(ok);
+            }
+        };
     }
 
     /** The station at the cell is gone: the cached answers go (the ledger record is dropped by the caller). */
     void forget() { stations.clear(); }
 
-    private final java.util.Map<String, java.util.Set<String>> stationBlocks = new java.util.HashMap<>();
+    private long notLoadedSaidAt = -1;
+
+    /** rule 15: a not-loaded lookup is logged, at most once a second (the waiting step asks every tick). */
+    private void notLoadedNote(String kind, String why) {
+        long now = System.currentTimeMillis();
+        if (notLoadedSaidAt >= 0 && now - notLoadedSaidAt < 1000) return;   // structural: once per second at most (the owner's log)
+        notLoadedSaidAt = now;
+        LOG.info("[entropybot] {} ({} for {})", StationFact.NOT_LOADED_LINE, why, kind);
+    }
 
     /**
      * The blocks that are a station of the kind: the station item's own block (the recipe data names the item) and every
      * member of the game's workstation tags ({@code c:player_workstations/...}) that block is in (a modded table counts).
+     * Three states ({@link StationBlocks}): not loaded is never cached.
      */
-    java.util.Set<String> stationBlocks(String kind) {
-        return stationBlocks.computeIfAbsent(kind, k -> {
-            java.util.Set<String> out = new java.util.LinkedHashSet<>();
-            String item = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.stationOf(k);
-            if (item == null) {
-                LOG.warn("[entropybot] stations: the game's data names no station for {} recipes", k);
-                return out;
-            }
-            var own = BuiltInRegistries.BLOCK.getOptional(net.minecraft.resources.ResourceLocation.tryParse(item));
-            if (own.isEmpty()) {
-                LOG.warn("[entropybot] stations: no block for the station item {}", item);
-                return out;
-            }
-            out.add(BuiltInRegistries.BLOCK.getKey(own.get()).toString());
-            own.get().builtInRegistryHolder().tags()
-                    .filter(t -> t.location().getNamespace().equals("c") && t.location().getPath().startsWith("player_workstations/"))
-                    .forEach(t -> BuiltInRegistries.BLOCK.getTagOrEmpty(t).forEach(h -> out.add(BuiltInRegistries.BLOCK.getKey(h.value()).toString())));
+    private final StationBlocks stationBlocks = new StationBlocks(NearbyLive::blocksOfStationItem);
+
+    StationBlocks.Answer stationBlocks(String kind) {
+        return stationBlocks.of(kind);
+    }
+
+    private static java.util.Set<String> blocksOfStationItem(String item) {
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        var own = BuiltInRegistries.BLOCK.getOptional(net.minecraft.resources.ResourceLocation.tryParse(item));
+        if (own.isEmpty()) {
+            LOG.warn("[entropybot] stations: no block for the station item {}", item);
             return out;
-        });
+        }
+        out.add(BuiltInRegistries.BLOCK.getKey(own.get()).toString());
+        own.get().builtInRegistryHolder().tags()
+                .filter(t -> t.location().getNamespace().equals("c") && t.location().getPath().startsWith("player_workstations/"))
+                .forEach(t -> BuiltInRegistries.BLOCK.getTagOrEmpty(t).forEach(h -> out.add(BuiltInRegistries.BLOCK.getKey(h.value()).toString())));
+        return out;
     }
 
     private static boolean close(int[] a, int[] b) {

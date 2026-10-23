@@ -1,6 +1,5 @@
 package io.github.mojolowjo.entropybot.clear;
 
-import io.github.mojolowjo.entropybot.craft.OwnTable;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;

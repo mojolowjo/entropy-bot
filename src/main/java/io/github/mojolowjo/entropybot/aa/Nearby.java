@@ -73,6 +73,35 @@ public final class Nearby {
                 + Math.round(a.dist()) + " m at " + a.x() + " " + a.y() + " " + a.z();
     }
 
+    /**
+     * station-race (0.39.z17, rule 15): the line of one lookup in each of its three states: "stations: item data not loaded
+     * yet", "stations: none known", or the {@link #stationsLine(List, List, Set, int)} line of the known ones.
+     */
+    public static String stationsLine(StationFact f, List<Mine> own, Set<String> blocks, int scanR) {
+        return switch (f) {
+            case StationFact.NotLoaded n -> StationFact.NOT_LOADED_LINE + (NOT_LOADED.equals(n.why()) ? "" : " (" + n.why() + ")");
+            case StationFact.None n -> "stations: none known" + (NONE_KNOWN.equals(n.why()) ? "" : " (" + n.why() + ")");
+            case StationFact.Known k -> stationsLine(k.spots(), own, blocks, scanR);
+        };
+    }
+
+    static final String NOT_LOADED = "item data not loaded yet", NONE_KNOWN = "none known";
+
+    /**
+     * station-race (0.39.z17, rule 15): the station fact of a kind from its block set: not loaded stays not loaded (no scan,
+     * no ledger read on an unknown set), none stays none, a set is looked up ({@link #stations}) and an empty result is none.
+     */
+    public static StationFact stationFact(Scan s, int[] me, StationBlocks.Answer blocks) {
+        return switch (blocks) {
+            case StationBlocks.Answer.NotLoaded n -> new StationFact.NotLoaded(n.why());
+            case StationBlocks.Answer.None n -> new StationFact.None(n.why());
+            case StationBlocks.Answer.Of o -> {
+                List<Spot> l = stations(s, me, o.ids());
+                yield l.isEmpty() ? new StationFact.None(NONE_KNOWN) : new StationFact.Known(l);
+            }
+        };
+    }
+
     /** station-memory: one of my placements as the ledger has it. */
     public record Mine(int x, int y, int z, String block) {}
 

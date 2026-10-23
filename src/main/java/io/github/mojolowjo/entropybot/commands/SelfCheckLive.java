@@ -153,14 +153,6 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         } catch (RuntimeException e) {
             f.add(new SelfCheck.Finding("housecheck", "couldn't check the house areas: " + e, "area list"));
         }
-        try {                                               // 0.28.2 (A): a craft's own table it couldn't take back
-            Clearing.leftOwnTableFindings();                // prunes the ones gone
-            for (String k : new ArrayList<>(Clearing.LEFT_OWN_TABLES)) {
-                f.add(new SelfCheck.Finding("owntable:" + k, "my crafting table is still at " + k, "dig " + k + " " + k));
-            }
-        } catch (RuntimeException e) {
-            f.add(new SelfCheck.Finding("owntablecheck", "couldn't check my own tables: " + e, "status"));
-        }
         try {
             f.addAll(BuilderDig.findings());               // 0.29.0: dig via baritone needs the builder
         } catch (RuntimeException e) {

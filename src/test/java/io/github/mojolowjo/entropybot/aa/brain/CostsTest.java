@@ -1,6 +1,5 @@
 package io.github.mojolowjo.entropybot.aa.brain;
 
-import io.github.mojolowjo.entropybot.craft.OwnTable;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -60,20 +59,4 @@ class CostsTest {
         assertTrue(Costs.shelterScore(10) <= Costs.shelterMax());
     }
 
-    @Test
-    void tableEndIsTheCheaperOne() {
-        assertEquals(OwnTable.End.KEEP_FOR_NEXT, OwnTable.decide(false, true, false, false, true), "the next step crafts");
-        assertEquals(OwnTable.End.TAKE, OwnTable.decide(false, false, false, false, true), "away from the camp: back in the bag");
-        assertEquals(OwnTable.End.LEAVE_AT_CAMP, OwnTable.decide(false, false, true, false, true), "at a camp without a table: it stays");
-        assertEquals(OwnTable.End.TAKE, OwnTable.decide(false, false, true, true, true), "the camp has one already");
-        assertEquals(OwnTable.End.TAKE, OwnTable.decide(false, false, true, false, false), "no wood to remake one: keep it");
-        assertEquals(OwnTable.End.TAKE, OwnTable.decide(true, true, true, false, true), "a failed craft");
-        assertTrue(OwnTable.terms(false, false, true, false, true).endsWith("leave_at_camp"));
-        assertTrue(OwnTable.registersAsCamp(OwnTable.End.LEAVE_AT_CAMP), "director: a table left at the camp counts as the camp's");
-        assertFalse(OwnTable.registersAsCamp(OwnTable.End.KEEP_FOR_NEXT));
-        OwnTable.takeCampTable();
-        OwnTable.noteCampTable();
-        assertTrue(OwnTable.takeCampTable(), "the latch is fed once");
-        assertFalse(OwnTable.takeCampTable());
-    }
 }

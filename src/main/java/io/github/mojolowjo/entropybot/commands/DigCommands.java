@@ -547,17 +547,8 @@ final class DigCommands {
         List<Seq.Step> steps = new ArrayList<>();
         Seq seq = new Seq(c.jobs, c.storage, s.job.label, List.of(), "always");
         if (before != null && !before.isEmpty()) {
-            List<Seq.Step> pre = new ArrayList<>(before);
-            // the pickaxe craft wants a table: put one down here when the nearest is far (18a)
-            Seq.Step last = pre.get(pre.size() - 1);
-            if (last.type.equals("craftitem")) {
-                List<Seq.Step> t = Clearing.tableTrip(seq, s, p, last.text);
-                if (t != null) {
-                    pre.remove(pre.size() - 1);
-                    pre.addAll(t);
-                }
-            }
-            steps.addAll(pre);
+            // station-race (0.39.z17): the pickaxe craft uses the known table wherever it is (no table of my own here)
+            steps.addAll(before);
             s.inTrip = true;
             s.tripKind = "restock";
         }

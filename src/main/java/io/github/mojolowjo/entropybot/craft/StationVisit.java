@@ -24,8 +24,8 @@ public final class StationVisit {
 
     /** The station memory as the step sees it (the live one is Crafting's, over NearbyLive and the ledger). */
     public interface Memory {
-        /** The nearest known station of the recipe kind, as {x, y, z}; null: none known anywhere. */
-        int[] nearest(String kind);
+        /** The known stations of the recipe kind (rule 15: known, none known anywhere, or not loaded). */
+        io.github.mojolowjo.entropybot.aa.StationFact nearest(String kind);
 
         /** TRUE: the block at the cell is a station of the kind; FALSE: something else is there; null: cannot tell (not loaded). */
         Boolean isStation(String kind, int[] at);

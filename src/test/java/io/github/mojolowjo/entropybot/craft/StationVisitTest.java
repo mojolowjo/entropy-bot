@@ -40,7 +40,8 @@ class StationVisitTest {
         Boolean there = true;
         final List<String> forgot = new ArrayList<>();
 
-        @Override public int[] nearest(String kind) { return known.isEmpty() ? null : known.get(0); }
+        @Override public io.github.mojolowjo.entropybot.aa.StationFact nearest(String kind) { return known.isEmpty() ? new io.github.mojolowjo.entropybot.aa.StationFact.None("none known") : new io.github.mojolowjo.entropybot.aa.StationFact.Known(java.util.List.of(new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(known.get(0)[0], known.get(0)[1], known.get(0)[2], 0, "minecraft:crafting_table"))); }
+        int[] cell() { return known.isEmpty() ? null : known.get(0); }
         @Override public Boolean isStation(String kind, int[] at) { return there; }
         @Override public void forget(String kind, int[] at, String why) {
             forgot.add(why);
@@ -57,8 +58,7 @@ class StationVisitTest {
         FakeMemory mem = new FakeMemory();
         mem.known.add(TABLE);
         // the craft verb's choice: a table known 20 m away is used, even with wood in the bag (never "craft a crafting_table")
-        assertEquals(OwnTable.Choice.USE_KNOWN, OwnTable.choose(20.0, 0, false, true));
-        StationVisit.Out o = StationVisit.tick(hands, mem, CRAFT, mem.nearest(CRAFT), "crafting table");
+        StationVisit.Out o = StationVisit.tick(hands, mem, CRAFT, mem.cell(), "crafting table");
         assertEquals(StationVisit.Kind.WAIT, o.kind(), o.why());
         assertEquals(1, hand.used.size(), "the step's first act is the use of the known table");
         assertArrayEquals(TABLE, hand.used.get(0));
@@ -83,7 +83,7 @@ class StationVisitTest {
         assertEquals(StationVisit.Kind.GONE, o.kind(), o.why());
         assertEquals("the crafting table at 20 64 0 is gone", o.why());
         assertEquals(List.of("the crafting table at 20 64 0 is gone"), mem.forgot);
-        assertNull(mem.nearest(CRAFT), "forgotten: the chain now knows no table and prices one (NeedChainTest)");
+        assertNull(mem.cell(), "forgotten: the chain now knows no table and prices one (NeedChainTest)");
     }
 
     @Test
@@ -98,7 +98,7 @@ class StationVisitTest {
         assertEquals(StationVisit.Kind.FAILED, o.kind());
         assertTrue(o.why().contains("not reached in 30 s"), o.why());
         assertTrue(mem.forgot.isEmpty(), "never forgotten for distance or a failed walk");
-        assertArrayEquals(TABLE, mem.nearest(CRAFT));
+        assertArrayEquals(TABLE, mem.cell());
         // can't tell (not loaded): kept as well
         mem.there = null;
         StationVisit.tick(hands, mem, CRAFT, TABLE, "crafting table");
@@ -110,10 +110,8 @@ class StationVisitTest {
     void noTableKnownAnywhereIsTheOnlyCaseThatMakesOne() {
         FakeHand hand = new FakeHand();
         FakeMemory mem = new FakeMemory();
-        StationVisit.Out o = StationVisit.tick(new JobHands(hand), mem, CRAFT, mem.nearest(CRAFT), "crafting table");
+        StationVisit.Out o = StationVisit.tick(new JobHands(hand), mem, CRAFT, mem.cell(), "crafting table");
         assertEquals(StationVisit.Kind.NONE, o.kind());
         assertTrue(hand.used.isEmpty());
-        assertEquals(OwnTable.Choice.CRAFT_AND_PLACE, OwnTable.choose(null, 0, false, true));
-        assertEquals(OwnTable.Choice.PLACE_CARRIED, OwnTable.choose(null, 0, true, true));
     }
 }
