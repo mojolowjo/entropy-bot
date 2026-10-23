@@ -154,8 +154,8 @@ public final class BreakPolicy {
     /**
      * The structure rule over the game's facts of one block (the game side reads them: StructureTable). Order: not loaded
      * fails closed; an ore or a log is never a structure; a structure tag, a block entity or a recipe type's station is
-     * one; a block with a crafting recipe is one unless world gen places it ({@code worldGen} null = that data is not
-     * there, e.g. a server's client: fail closed, counted as a structure).
+     * one; a block with a crafting recipe is one unless world gen places it ({@code worldGen} null = the world-gen set
+     * is not loaded yet: NOT_LOADED, refused and never cached as no; 0.39.z26 (2): the set comes from the client's jars).
      */
     public static Structure structureOf(boolean loaded, boolean tagged, boolean oreOrLog, boolean blockEntity, boolean station,
                                         boolean crafted, Boolean worldGen) {
@@ -163,7 +163,8 @@ public final class BreakPolicy {
         if (oreOrLog) return Structure.NO;
         if (tagged || blockEntity || station) return Structure.YES;
         if (!crafted) return Structure.NO;
-        return Boolean.TRUE.equals(worldGen) ? Structure.NO : Structure.YES;
+        if (worldGen == null) return Structure.NOT_LOADED;
+        return worldGen ? Structure.NO : Structure.YES;
     }
 
     /**

@@ -52,12 +52,7 @@ import java.util.concurrent.Executors;
  */
 final class LootBookReader {
     private static final Logger LOG = LogUtils.getLogger();
-    private static final ExecutorService POOL = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "entropybot-lootbook");
-        t.setDaemon(true);
-        t.setPriority(Thread.MIN_PRIORITY);
-        return t;
-    });
+    private static final ExecutorService POOL = io.github.mojolowjo.entropybot.JarPacks.POOL;   // shared with the world-gen read
 
     private int gen;               // the read now running (a newer world drops an older read's result)
     private LootBook done;         // guarded by this
@@ -159,15 +154,8 @@ final class LootBookReader {
 
     private static LootBook jars(Map<String, List<String>> blocks, Map<String, List<String>> mobs, LootBook.Progress p, Path dir, String game) {
         long t0 = System.nanoTime();
-        var repo = net.minecraft.server.packs.repository.ServerPacksSource.createVanillaTrustedRepository();
-        repo.reload();
-        List<String> sel = new ArrayList<>();
-        for (var pk : repo.getAvailablePacks())
-            if (pk.getPackSource().shouldAddAutomatically() && pk.getRequestedFeatures().isSubsetOf(net.minecraft.world.flag.FeatureFlags.DEFAULT_FLAGS)) sel.add(pk.getId());
-        repo.setSelected(sel);
-        Set<String> idv = new HashSet<>();
-        for (var pk : repo.getSelectedPacks())
-            pk.streamSelfAndChildren().forEach(x -> idv.add(x.getId() + "@" + x.location().knownPackInfo().map(net.minecraft.server.packs.repository.KnownPack::version).orElse("?")));
+        var packs = io.github.mojolowjo.entropybot.JarPacks.select();
+        Set<String> idv = packs.idVersions;
         String hash = LootFiles.hash(idv, game);
         Path cacheFile = dir == null ? null : dir.resolve(LootFiles.cacheName(hash));
         if (cacheFile != null && Files.isRegularFile(cacheFile)) {
@@ -187,7 +175,7 @@ final class LootBookReader {
         Map<String, JsonElement> tables = new HashMap<>();
         int bad = 0;
         String firstBad = null;
-        try (var rm = new net.minecraft.server.packs.resources.MultiPackResourceManager(net.minecraft.server.packs.PackType.SERVER_DATA, repo.openAllSelected())) {
+        try (var rm = packs.open()) {
             Map<String, net.minecraft.server.packs.resources.Resource> byId = new LinkedHashMap<>();
             for (int i = LootFiles.DIRS.size() - 1; i >= 0; i--)          // the older plural first: the 1.21 folder wins a clash
                 for (var e : rm.listResources(LootFiles.DIRS.get(i), rl -> rl.getPath().endsWith(".json")).entrySet()) {

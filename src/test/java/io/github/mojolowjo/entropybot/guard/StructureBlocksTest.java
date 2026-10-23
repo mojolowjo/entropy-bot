@@ -98,11 +98,69 @@ class StructureBlocksTest {
         assertEquals(Structure.YES, BreakPolicy.structureOf(true, false, false, false, true, false, Boolean.TRUE), "a station");
         assertEquals(Structure.YES, BreakPolicy.structureOf(true, false, false, false, false, true, Boolean.FALSE), "crafted, never placed by world gen");
         assertEquals(Structure.NO, BreakPolicy.structureOf(true, false, false, false, false, true, Boolean.TRUE), "crafted but world gen places it (diorite)");
-        assertEquals(Structure.YES, BreakPolicy.structureOf(true, false, false, false, false, true, null), "world gen unknown: fail closed");
+        assertEquals(Structure.NOT_LOADED, BreakPolicy.structureOf(true, false, false, false, false, true, null), "world gen not loaded yet: refused as not loaded");
         assertEquals(Structure.NO, BreakPolicy.structureOf(true, false, false, false, false, false, null), "not crafted: plain terrain");
         Verdict v = brk(500, 64, 500, BlockFacts.STONE.withStructure(Structure.NOT_LOADED));
         assertFalse(v.allowed());
         assertEquals("not loaded yet", v.reason());
+    }
+
+    // ---- 0.39.z26 (2): the world-gen set from the client's jars (a server's client has no world-gen registries) ----
+
+    static WorldGenFiles.Entry entry(String id, byte[] b) {
+        return new WorldGenFiles.Entry() {
+            @Override public String id() { return id; }
+            @Override public java.io.InputStream open() { return new java.io.ByteArrayInputStream(b); }
+        };
+    }
+
+    static byte[] utf8(String s) { return s.getBytes(java.nio.charset.StandardCharsets.UTF_8); }
+
+    /** An in-memory jar's world-gen files: two configured features, a noise setting and one structure template. */
+    static WorldGenFiles.Read jarRead() throws java.io.IOException {
+        var feature = entry("minecraft:worldgen/configured_feature/ore_rocks.json", utf8("{\"type\":\"minecraft:ore\",\"config\":{\"targets\":["
+                + "{\"state\":{\"Name\":\"minecraft:diorite\"}},{\"state\":{\"Name\":\"minecraft:andesite\"}},{\"state\":{\"Name\":\"minecraft:granite\"}}]}}"));
+        var patch = entry("minecraft:worldgen/configured_feature/patch.json", utf8("{\"config\":{\"state_provider\":{\"state\":{\"Name\":\"minecraft:coarse_dirt\",\"Properties\":{}}}}}"));
+        var noise = entry("minecraft:worldgen/noise_settings/overworld.json", utf8("{\"default_block\":{\"Name\":\"minecraft:stone\"}}"));
+        // the template's palette: the game's NbtIo is not on the test classpath, so the stand-in palette reader takes one name per line
+        var broken = entry("minecraft:worldgen/configured_feature/broken.json", utf8("{not json"));
+        WorldGenFiles.Palette lines = in -> List.of(new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).split("\n"));
+        return WorldGenFiles.read(List.of(feature, patch, noise, broken), List.of(entry("minecraft:structure/ruin.nbt", utf8("minecraft:mossy_cobblestone"))), lines);
+    }
+
+    @Test
+    void aServerClientWithTheJarSetDigsThroughCraftedTerrainButNotBuiltBlocks() throws Exception {
+        WorldGenFiles.Read r = jarRead();
+        assertEquals(4, r.files(), "three JSON files and one template read");
+        assertEquals(1, r.bad(), "the broken file is counted, not thrown");
+        Set<String> gen = r.blocks();
+        for (String b : List.of("diorite", "andesite", "granite", "coarse_dirt", "mossy_cobblestone"))
+            assertEquals(Structure.NO, WorldGenFiles.fact(false, false, false, false, true, gen, "minecraft:" + b), b + ": crafted, but world gen places it");
+        assertEquals(Structure.YES, WorldGenFiles.fact(false, false, false, false, true, gen, "minecraft:oak_planks"), "planks: crafted, not world-gen");
+        assertEquals(Structure.YES, WorldGenFiles.fact(false, false, false, true, true, gen, "minecraft:crafting_table"), "a station");
+        assertEquals(Structure.YES, WorldGenFiles.fact(true, false, false, false, false, gen, "minecraft:glass"), "glass: #impermeable");
+        assertEquals(Structure.YES, WorldGenFiles.fact(false, false, false, false, true, gen, "minecraft:bone_block"), "bone block: crafted, in no template of this jar (fossils are code)");
+        String hash = "0123456789abcdef";
+        assertEquals(gen, WorldGenFiles.fromCache(WorldGenFiles.toCache(hash, r), hash).blocks(), "the cache gives the same set back");
+        assertThrows(IllegalArgumentException.class, () -> WorldGenFiles.fromCache(WorldGenFiles.toCache(hash, r), "fedcba9876543210"), "another mod list's cache is not used");
+    }
+
+    @Test
+    void notLoadedRefusesAndCachesNothing() {
+        Structure s = WorldGenFiles.fact(false, false, false, false, true, null, "minecraft:diorite");
+        assertEquals(Structure.NOT_LOADED, s, "a crafted block before the read: not loaded, never no");
+        assertEquals("not loaded yet", brk(500, 64, 500, BlockFacts.STONE.withStructure(s)).reason());
+        assertEquals(Structure.NO, WorldGenFiles.fact(false, false, false, false, false, null, "minecraft:dirt"), "not crafted: no world-gen set needed");
+        assertEquals(Structure.YES, WorldGenFiles.fact(false, false, false, false, true, Set.of(), "minecraft:diorite"), "loaded and empty: crafted blocks refused");
+    }
+
+    @Test
+    void theOverrideFileAddsAndRemovesOneIdEach() throws Exception {
+        var o = WorldGenFiles.override("{\"minecraft:bone_block\": true, \"diorite\": false}");
+        Set<String> gen = WorldGenFiles.apply(jarRead().blocks(), o);
+        assertEquals(Structure.NO, WorldGenFiles.fact(false, false, false, false, true, gen, "minecraft:bone_block"), "added");
+        assertEquals(Structure.YES, WorldGenFiles.fact(false, false, false, false, true, gen, "minecraft:diorite"), "removed");
+        assertThrows(IllegalArgumentException.class, () -> WorldGenFiles.override("{\"minecraft:glass\": 1}"), "a broken entry is named, the file not used");
     }
 
     @Test
