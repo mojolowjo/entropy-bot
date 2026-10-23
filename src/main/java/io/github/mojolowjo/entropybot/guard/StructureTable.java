@@ -61,10 +61,10 @@ public final class StructureTable {
 
     private static volatile Map<Block, Structure> table;
     private static volatile Level builtFor;
-    private static volatile int builtRecipes = -1;
+    private static final TableRetry<Map<Block, Structure>> retry = new TableRetry<>();
     private static volatile boolean warnedNotLoaded;
     /** The world-gen set the table was built with (null: not loaded yet). */
-    private static volatile Set<String> builtGen;
+
     private static volatile boolean warnedGen, warnedNoData, checked, warnedRecipes;
 
     /** The block's structure fact; NOT_LOADED while the table is not built (said once per world). Any thread. */
@@ -78,7 +78,7 @@ public final class StructureTable {
             return Structure.NOT_LOADED;
         }
         Structure s = t.get(b);
-        if (s == Structure.NOT_LOADED && builtGen == null && !warnedGen) {
+        if (s == Structure.NOT_LOADED && retry.builtGen == null && !warnedGen) {
             warnedGen = true;
             int j = WorldGenReader.jars;
             String failed = WorldGenReader.failed;
@@ -94,24 +94,24 @@ public final class StructureTable {
         try {
             Level lv = mc == null ? null : mc.level;
             if (lv == null) {
-                if (builtFor != null || table != null) { table = null; builtFor = null; builtRecipes = -1; builtGen = null; warnedNotLoaded = false; warnedNoData = false; }
+                if (builtFor != null || table != null) { table = null; builtFor = null; retry.reset(); warnedNotLoaded = false; warnedNoData = false; }
                 return;
             }
             int n = lv.getRecipeManager().getRecipes().size();
             Set<String> gen = WorldGenReader.blocks;
-            if (lv == builtFor && n == builtRecipes && gen == builtGen) return;
+            if (lv == builtFor && retry.current(n, gen)) return;
             if (lv != builtFor) {
-                table = null; warnedNotLoaded = false; warnedGen = false; checked = false; warnedBuild = false; warnedRecipes = false; OwnPlaced.newWorld();
+                table = null; warnedNotLoaded = false; warnedGen = false; checked = false; retry.reset(); warnedRecipes = false; OwnPlaced.newWorld();
                 var files = io.github.mojolowjo.entropybot.Core.INSTANCE.files();
                 WorldGenReader.start(files == null ? null : files.root(), net.minecraft.SharedConstants.getCurrentVersion().getName());
                 gen = null;                           // the new world's read: not loaded until it is done
             }
             builtFor = lv;
-            builtRecipes = n;
-            builtGen = gen;
-            if (n == 0) return;                       // the recipes are not in yet: stays not loaded
-            table = null;                             // a failed build leaves it null: every block answers not loaded
-            table = build(lv, gen);
+            if (n == 0) return;                       // the recipes are not in yet: stays not loaded, asked again next tick
+            Set<String> g = gen;
+            boolean ok = retry.attempt(n, gen, () -> build(lv, g));
+            table = retry.value;
+            if (!ok) return;
             if (gen != null && !checked) {            // 0.39.z26 fix (9): off the game tick, on the jars thread (it only logs)
                 checked = true;
                 var server = mc.getSingleplayerServer();
@@ -120,14 +120,11 @@ public final class StructureTable {
             }
         } catch (RuntimeException e) {
             table = null;
-            if (!warnedBuild) {
-                warnedBuild = true;
-                Quiet.warn("structure facts: the table could not be built (" + e + ") - every block answers not loaded, every break stays refused", e);
+            if (retry.firstWarn()) {
+                Quiet.warn("structure facts: the table check failed (" + e + ") - every block answers not loaded; tried again next tick", e);
             }
         }
     }
-
-    private static volatile boolean warnedBuild;
 
     private static Map<Block, Structure> build(Level lv, Set<String> gen) {
         if (gen != null && WorldGenReader.noData && !warnedNoData) {

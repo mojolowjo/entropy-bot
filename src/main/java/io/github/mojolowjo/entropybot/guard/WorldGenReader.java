@@ -51,6 +51,7 @@ final class WorldGenReader {
             jars = -1;
             noData = false;
             failed = null;
+            saidWaiting = false;                  // said once per world
         }
         if (JarPacks.busy() && !saidWaiting) {
             saidWaiting = true;

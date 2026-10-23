@@ -1999,6 +1999,7 @@ public final class AaRuntime implements JobPort {
         var fl = io.github.mojolowjo.entropybot.guard.PolicyRuntime.fluidOf(st);
         boolean open = openCell(lv, x, y, z);
         double mult = 1;
+        String reason = null;
         boolean own = pr.dug(dim, x, y, z);
         if (!open && fl == io.github.mojolowjo.entropybot.guard.BreakPolicy.Fluid.NONE) {
             if (st.getDestroySpeed(lv, q) < 0) mult = Double.POSITIVE_INFINITY;            // bedrock and the like
@@ -2006,11 +2007,12 @@ public final class AaRuntime implements JobPort {
                 var f = pr.facts(lv, q, false).withDug(own);
                 var v = pr.judge("aa-wayup", io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.BREAK, io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.DIG_OUT, dim, x, y, z, f, pr.where());
                 mult = v.allowed() ? v.multiplier() : Double.POSITIVE_INFINITY;
+                if (!v.allowed()) reason = v.reason();           // 0.39.z26 (last) 4: the refusal's reason goes to aa why
             }
         }
         return new io.github.mojolowjo.entropybot.aa.Replan.Cell(open, own, mult,
                 fl == io.github.mojolowjo.entropybot.guard.BreakPolicy.Fluid.LAVA, fl == io.github.mojolowjo.entropybot.guard.BreakPolicy.Fluid.WATER,
-                st.getBlock() instanceof net.minecraft.world.level.block.FallingBlock);
+                st.getBlock() instanceof net.minecraft.world.level.block.FallingBlock, reason);
     }
 
     /**

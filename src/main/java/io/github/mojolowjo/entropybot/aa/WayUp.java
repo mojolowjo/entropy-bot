@@ -105,7 +105,7 @@ public final class WayUp {
             if (c.water()) haz += Replan.waterV();
             if (c.falling()) haz += Replan.fallingV();
             if (c.open() || c.water() || c.lava()) continue;
-            if (Double.isInfinite(c.mult()) || Double.isNaN(c.mult())) return new Ground(0, 0, 0, "a cell may not be broken");
+            if (Double.isInfinite(c.mult()) || Double.isNaN(c.mult())) return new Ground(0, 0, 0, c.refusal());
             brk += (c.ownDug() ? Replan.ownBreak() : Replan.foreignBreak()) * c.mult();
             breaks++;
         }

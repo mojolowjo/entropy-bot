@@ -324,6 +324,8 @@ public final class Guard {
         }
         // STRUCTURE_BLOCKS (RULES 16): the same structure facts and BreakPolicy.structure the click asks (GuardCore's break
         // branch); without the bsi the cell's facts are unknown here: not loaded, refused
+        // 0.39.z26 (last) 2: `at` is null only when the context's final bsi is null (never in a running world); the mixin's ask carries no break/place kind, so a null-`at` ask stays refused as not loaded
+        pr.stats.ask(PolicyStats.SITE_ASTAR_BOXES);
         BreakPolicy.Verdict sv = pr.structureVerdict(pr.snapshot(), dim, at, x, y, z);
         if (!sv.allowed()) {
             pr.stats.deny(PolicyStats.SITE_ASTAR_BOXES, sv.reason());

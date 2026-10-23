@@ -61,7 +61,10 @@ public final class Replan {
     public static double noBlock() { return Tuning.get("replan.noBlock"); }
 
     /** One cell of the column over the head, bottom up. {@code mult} = the BreakPolicy multiplier, infinite = denied. */
-    public record Cell(boolean open, boolean ownDug, double mult, boolean lava, boolean water, boolean falling) {
+    public record Cell(boolean open, boolean ownDug, double mult, boolean lava, boolean water, boolean falling, String reason) {
+        /** 0.39.z26 (last) 4: {@code reason} = the policy's refusal when mult is infinite (shown in aa why), else null. */
+        public Cell(boolean open, boolean ownDug, double mult, boolean lava, boolean water, boolean falling) { this(open, ownDug, mult, lava, water, falling, null); }
+        public String refusal() { return reason == null ? "a cell may not be broken" : "a cell may not be broken (" + reason + ")"; }
         public static Cell air() { return new Cell(true, false, 1, false, false, false); }
         public static Cell stone(boolean own) { return new Cell(false, own, 1, false, false, false); }
     }
@@ -80,7 +83,7 @@ public final class Replan {
             if (c.falling()) haz += fallingV();
             if (!c.open() && !c.water() && !c.lava()) {
                 double m = c.mult();
-                if (Double.isInfinite(m) || Double.isNaN(m)) { brk = Double.POSITIVE_INFINITY; notes.add("a cell may not be broken"); break; }
+                if (Double.isInfinite(m) || Double.isNaN(m)) { brk = Double.POSITIVE_INFINITY; notes.add(c.refusal()); break; }
                 brk += (c.ownDug() ? ownBreak() : foreignBreak()) * m;
                 breaks++;
                 if (c.ownDug()) own++;

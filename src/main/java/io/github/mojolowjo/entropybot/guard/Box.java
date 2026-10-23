@@ -214,6 +214,8 @@ public final class Box {
                 if (bad > 0) io.github.mojolowjo.entropybot.Quiet.line("areas: " + an + ": " + bad + " tags are not words - skipped; fix areas.json");
             }
         }
+        if (!tags.isEmpty() && (type == AreaType.KEEP_OUT || type == AreaType.NO_BREAK))      // 0.39.z26 (last) 5: kept, said once at load
+            io.github.mojolowjo.entropybot.Quiet.line("areas: " + (name == null ? "an unnamed area" : name) + " (" + type.word() + "): its " + tags.size() + " tags have no effect");
         return fromJson0(o, dim, y1, y2, name).withType(type).withNote(note).withTags(tags);
     }
 
