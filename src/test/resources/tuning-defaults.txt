@@ -944,4 +944,11 @@ station.takeNear	2.0
 station.takeReachM	6.0
 cave.exploreTowardM	128.0
 cave.floorMaxDepth	64.0
+cave.darkPocketCells	6.0
+cave.pocketReach	6.0
+cave.patternK	3.0
+cave.botLabelWeight	0.5
+cave.mergeM	8.0
+cave.slopeMin	1.0
+cave.depthMin	1.0
 replan.switchMarginS	10.0

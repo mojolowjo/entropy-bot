@@ -27,7 +27,7 @@ final class AaCommands {
     }
 
     /** 0.39.z27: the help's headings in order; "areas and tags" comes from VerbTable's area row (the owner verb). */
-    static final List<String> GROUPS = List.of("orders", "areas and tags", "stations", "status", "tuning", "help");
+    static final List<String> GROUPS = List.of("orders", "areas and tags", "stations", "caves", "status", "tuning", "help");
     static final String AREAS = "areas and tags";
 
     /** aa do / use (and their debug forms) while aa is off. */
@@ -76,6 +76,10 @@ final class AaCommands {
                 f(O, "pick <n>", "answer the asking need: run its option n"),
                 f(O, "ask on|off", "before each task show my options and wait for aa pick"));
         v("build", (c, aa, vb, a) -> aa.build(a), f(O, "build <name> here|at <x y z> [high|low]", "build that saved design here or there (its material list said)"));
+        // ---- caves (0.39.z50, S71: the owner labels spots; the cave rule comes from the labelled patterns)
+        v("cave", (c, aa, vb, a) -> CaveLabel.run(a),
+                f("caves", "cave yes|no|hill|cliff", "label the spot under the crosshair (or where I stand): a cave, not one, a hill, a cliff"),
+                f("caves", "cave list", "the labelled cave patterns and the cave rule derived from them"));
         // ---- status
         v("status", (c, aa, vb, a) -> aa.statusLine() + StripStep.liveLine() + aa.tuningLine() + "\n" + io.github.mojolowjo.entropybot.aa.MainStations.now().line() + "\n" + aa.counts() + "\n" + aa.cavesLine() + "\n" + aa.lootLine() + "\n" + aa.gameDataLine() + (aa.on() ? "\n" + aa.brainCounters() + "\ndesires: " + String.join(" | ", aa.brainLines(5)) + "\n" + aa.goalsLine() + "\n" + aa.wantsLine() + "\nrungs: " + aa.ladderLine() + "\n" + aa.optionStatus() : ""),
                 f(S, "status", "who drives, the counters, the desires, goals and wants, each rung's reason"));

@@ -355,6 +355,84 @@ public final class ChunkPass {
         }
     }
 
+    // ---- cave patterns (0.39.z50, S70): labelled spots, the world's cave-patterns.json and the global one ----
+
+    private CavePatterns patterns = new CavePatterns(), worldPatterns = new CavePatterns();
+    private String patRoot;
+    private long shapesVotedOut;
+
+    /** Shapes the patterns' vote turned down (sense status / aa cave list). */
+    public long shapesVotedOut() { return shapesVotedOut; }
+
+    /**
+     * The patterns that vote: the global file (every world's labels and the bundled 2026-10-24 seed, written there on first
+     * use); the world's own file keeps this world's labels. The rule line is said once per world. Never throws.
+     */
+    public CavePatterns patterns() {
+        try {
+            io.github.mojolowjo.entropybot.io.BotFiles files = Core.INSTANCE.files();
+            if (files == null) return patterns;
+            String r = files.worldRoot().toString();
+            if (r.equals(patRoot)) return patterns;
+            savePatterns();
+            CavePatterns g = new CavePatterns(), w = new CavePatterns();
+            int[] skipped = new int[1];
+            Path gf = files.root().resolve("cave-patterns.json"), wf = files.worldRoot().resolve("cave-patterns.json");
+            if (java.nio.file.Files.isRegularFile(gf)) g.read(java.nio.file.Files.readString(gf), skipped);
+            else {
+                g.read(CavePatterns.seed(), skipped);
+                files.writeAtomic(gf, g.toJson());
+                LOG.info("[entropybot] sense: cave-patterns.json: seeded with the {} labelled spots of 2026-10-24", g.size());
+            }
+            if (java.nio.file.Files.isRegularFile(wf)) w.read(java.nio.file.Files.readString(wf), skipped);
+            if (skipped[0] > 0) LOG.warn("[entropybot] sense: cave-patterns.json had {} unreadable part(s), skipped", skipped[0]);
+            g.saved();
+            w.saved();
+            patterns = g;
+            worldPatterns = w;
+            patRoot = r;
+            LOG.info("[entropybot] sense: {}", g.rule().line());
+        } catch (Throwable t) {
+            error("cave patterns load", t);
+            patRoot = null;
+        }
+        return patterns;
+    }
+
+    /** A labelled spot (aa cave, or the bot's own confirmation / drop): into the global and the world's file. Never throws. */
+    public void label(CavePatterns.Patch p) {
+        try {
+            patterns().add(p);
+            worldPatterns.add(p);
+            savePatterns();
+        } catch (Throwable t) {
+            error("cave label", t);
+        }
+    }
+
+    private void savePatterns() {
+        try {
+            io.github.mojolowjo.entropybot.io.BotFiles files = Core.INSTANCE.files();
+            if (files == null || patRoot == null || !patRoot.equals(files.worldRoot().toString())) return;
+            CavePatterns g = patterns, w = worldPatterns;
+            if (!g.dirty() && !w.dirty()) return;
+            String gj = g.toJson(), wj = w.toJson();
+            g.saved();
+            w.saved();
+            Path gf = files.root().resolve("cave-patterns.json"), wf = files.worldRoot().resolve("cave-patterns.json");
+            worker().execute(() -> {
+                try {
+                    files.writeAtomic(gf, gj);
+                    files.writeAtomic(wf, wj);
+                } catch (Throwable t) {
+                    LOG.warn("[entropybot] sense: couldn't write cave-patterns.json: {}", t.toString());
+                }
+            });
+        } catch (Throwable t) {
+            error("cave patterns save", t);
+        }
+    }
+
     // ---- sightings (AA_ROUND3 5): ore cells, caves and animals the bot has seen, per world (sightings.json) ----
 
     private Sightings sightings;
@@ -417,6 +495,7 @@ public final class ChunkPass {
 
     private void saveStats() {
         saveSightings();
+        savePatterns();
         try {
             OreStats st = stats;
             io.github.mojolowjo.entropybot.io.BotFiles files = Core.INSTANCE.files();
@@ -482,8 +561,17 @@ public final class ChunkPass {
                     q.set((it.cx() << 4) + lx, top[lx + 16 * lz] - 1, (it.cz() << 4) + lz);
                     water[lx + 16 * lz] = chunk.getBlockState(q).getFluidState().is(net.minecraft.tags.FluidTags.WATER);
                 }
-            CaveMouths.Shapes sh = CaveMouths.shapes(it.cx(), it.cz(), top, water);
-            mouths.put(it.cx(), it.cz(), sh.candidates());
+            // 0.39.z50: the rule the cave patterns give (Tuning defaults before any), then the patterns' vote on each
+            // shape's 9 x 9 surface patch (the heightmap only, rule 17): a shape the not-a-cave side wins is no candidate
+            CavePatterns pat = patterns();
+            CaveMouths.Shapes sh = CaveMouths.shapes(it.cx(), it.cz(), top, water, pat.rule());
+            List<CaveMouths.Candidate> kept = new ArrayList<>();
+            for (CaveMouths.Candidate cd : sh.candidates()) {
+                CavePatterns.Vote v = pat.vote(SightingsRuntime.patch(level, cd.x(), cd.z()), 0, 0, 0, false, null);
+                if (v.cave()) kept.add(new CaveMouths.Candidate(cd.x(), cd.y(), cd.z(), cd.shape(), cd.numbers() + (cd.numbers().isEmpty() ? "" : "; ") + v.line()));
+                else shapesVotedOut++;
+            }
+            mouths.put(it.cx(), it.cz(), kept);
             mouths.putFlooded(it.cx(), it.cz(), sh.flooded());
         } catch (Throwable t) {
             error("cave candidates", t);

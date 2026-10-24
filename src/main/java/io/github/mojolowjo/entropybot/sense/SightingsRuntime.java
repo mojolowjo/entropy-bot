@@ -124,42 +124,30 @@ public final class SightingsRuntime {
             boolean reached = r.getType() != HitResult.Type.BLOCK || eye.distanceTo(r.getLocation()) >= eye.distanceTo(tc) - 0.87;   // structural: half a cell's diagonal: the hit lies on the target cell or beyond
             String where = CaveMouths.where(c);
             if (!reached) { verdict(k, where + ": candidate, not yet - the ray stopped at " + r.getBlockPos().toShortString() + " before the low point"); continue; }
-            // 0.39.z48 (item 4, S64): the hole's own air column (rule 17's one exception): down from the candidate cell
-            // through air to the first non-air; the sky light at its lowest air cell and the one above; a water floor is a pond
-            int depth = Math.max(1, io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.floorMaxDepth"));
-            boolean[] air = new boolean[depth + 1];
-            boolean[] wet = new boolean[depth + 1];
-            int[] skyAt = new int[depth + 1];
-            int n = 0;
-            for (; n <= depth; n++) {
-                BlockPos q = target.below(n);
-                if (!level.isLoaded(q)) break;
-                var st = level.getBlockState(q);
-                air[n] = st.isAir();
-                wet[n] = st.getFluidState().is(net.minecraft.tags.FluidTags.WATER);
-                skyAt[n] = level.getBrightness(LightLayer.SKY, q);
-                if (!air[n]) { n++; break; }
-            }
-            if (n == 0) { verdict(k, where + ": not yet - its column is not loaded"); continue; }
-            String no = CaveMouths.floorVerdict(java.util.Arrays.copyOf(air, n), java.util.Arrays.copyOf(wet, n), java.util.Arrays.copyOf(skyAt, n));
-            int f = CaveMouths.floor(java.util.Arrays.copyOf(air, n));
-            // 0.39.z49 (owner's cave check): the hole's numbers on every candidate line (depth, sky there and one above, water)
-            int low = Math.max(0, f);
-            String hole = CaveMouths.holeNumbers(f, level.getBrightness(LightLayer.SKY, target.below(low)),
-                    level.getBrightness(LightLayer.SKY, target.below(low).above()), wet[low] || (low + 1 < n && wet[low + 1]));
+            // 0.39.z50 (S69): the hole walk DESCENDS: the lowest top in the cliff ring is the floor column, walked down from
+            // the rim through air to its first non-air cell (the hole's own air column, rule 17's exception); then the
+            // near-only pocket fill over the hole's own air from that floor cell (owner: "require a pocket, not a cell")
+            CavePatterns pat = ChunkPass.INSTANCE.patterns();
+            CavePatterns.Hole h = CavePatterns.walk(c.x(), c.z(), (x, z) -> top(level, x, z), cells(level));
+            int[] ws = patch(level, c.x(), c.z());
+            CavePatterns.Vote v = pat.vote(ws, h.depth(), h.pocket(), h.darkSky(), true, null);
+            String no = CavePatterns.verdict(h, pat.rule(), v);
+            String hole = h.numbers() + "; " + v.line();
             if (no != null) {
                 dropped.add(k);
                 cand.refuse(c.x(), c.y(), c.z());
                 String line = where + ": dropped - not a cave (" + no + "; " + hole + ")";
                 verdict(k, line);
                 LOG.info("[entropybot] sense: cave candidate {}", line);   // said once: the candidate is dropped
+                // z50 (S71): the bot's own drop is a labelled patch (weighted cave.botLabelWeight)
+                ChunkPass.INSTANCE.label(new CavePatterns.Patch(c.x(), c.y(), c.z(), h.water() ? "water" : "cliff", "bot", h.depth(), h.pocket(), h.darkSky(), ws, null));
                 continue;
             }
-            BlockPos dark = target.below(f);
             int d = (int) Math.round(Math.sqrt(eye.distanceToSqr(new Vec3(c.x() + 0.5, c.y() + 0.5, c.z() + 0.5))));
-            String ok = where + ": confirmed - air at " + dark.toShortString() + " under the surface, from " + d + " m (" + hole + ")";
+            String ok = where + ": confirmed - a dark pocket under the surface at " + h.fx() + " " + (h.floorY() + 1) + " " + h.fz() + ", from " + d + " m (" + hole + ")";
             verdict(k, ok);
             LOG.info("[entropybot] sense: cave candidate {}", ok);
+            ChunkPass.INSTANCE.label(new CavePatterns.Patch(c.x(), c.y(), c.z(), "cave", "bot", h.depth(), h.pocket(), h.darkSky(), ws, null));
             if (sg.sawMouth(dim, c.x(), c.y(), c.z(), d, now) != null) {
                 mouthsSeen++;
                 known = sg.mouths(dim, (int) eye.x, (int) eye.y, (int) eye.z);
@@ -168,6 +156,36 @@ public final class SightingsRuntime {
         }
     }
 
+    /** 0.39.z50: the WORLD_SURFACE top block Y of a column (Level.getHeight gives the first free Y). */
+    static int top(ClientLevel level, int x, int z) { return level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1; }
+
+    /**
+     * 0.39.z50: the 9 x 9 WORLD_SURFACE tops round x z, relative to the centre (the heightmap only, rule 17). A column of a
+     * chunk not loaded reads as the centre's height (no difference; the client has no height there).
+     */
+    public static int[] patch(ClientLevel level, int x, int z) {
+        int r = CavePatterns.R, n = CavePatterns.SIDE, c = top(level, x, z);
+        int[] out = new int[n * n];
+        for (int dz = -r; dz <= r; dz++)
+            for (int dx = -r; dx <= r; dx++)
+                out[(dz + r) * n + dx + r] = level.hasChunk((x + dx) >> 4, (z + dz) >> 4) ? top(level, x + dx, z + dz) - c : 0;
+        return out;
+    }
+
+    /** 0.39.z50: the hole walk's and the pocket fill's cells from the level (an unloaded cell is not air: the walk stops). */
+    public static CavePatterns.Cells cells(ClientLevel level) {
+        return new CavePatterns.Cells() {
+            public boolean air(int x, int y, int z) {
+                BlockPos q = new BlockPos(x, y, z);
+                return level.isLoaded(q) && level.getBlockState(q).isAir();
+            }
+            public boolean water(int x, int y, int z) {
+                BlockPos q = new BlockPos(x, y, z);
+                return level.isLoaded(q) && level.getBlockState(q).getFluidState().is(net.minecraft.tags.FluidTags.WATER);
+            }
+            public int sky(int x, int y, int z) { return level.getBrightness(LightLayer.SKY, new BlockPos(x, y, z)); }
+        };
+    }
     /** 0.39.z44 (rule 15, gone): standing by a known mouth whose cell is not air (filled, built over): it is forgotten. */
     private void mouthGone(ClientLevel level, LocalPlayer p, Sightings sg, String dim) {
         BlockPos b = p.blockPosition();

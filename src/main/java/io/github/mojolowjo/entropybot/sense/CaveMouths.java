@@ -66,7 +66,7 @@ public final class CaveMouths {
     /**
      * The candidate rule over one chunk's heights. {@code top[lx + 16 * lz]} = the WORLD_SURFACE top block Y of the column
      * (the cell over it is the first air). Edge columns compare with the columns inside the chunk only. Columns of one hole
-     * within {@link Sightings#merge()} are one candidate: the lowest.
+     * within {@code cave.mergeM} are one candidate: the lowest.
      */
     public static int slopeMaxStep() { return Tuning.i("cave.slopeMaxStep"); }
     public static int slopeLen() { return Tuning.i("cave.slopeLen"); }
@@ -86,9 +86,12 @@ public final class CaveMouths {
      * {@code cave.slopeMaxStep} lower, over {@code cave.slopeLen}+ columns, falling at least 1 in all) whose opposite side
      * rises {@code cave.cliffDrop}+ within 1-2 columns; a RAVINE is a column with such a rise on both sides of one line.
      * {@code top[lx + 16 * lz]} = the top block Y; edge columns compare with the chunk's own columns only. Columns of one
-     * place within {@link Sightings#merge()} are one candidate: the deepest drop first, then the lowest.
+     * place within {@code cave.mergeM} are one candidate (z50: the lowest point kept; was the deepest drop first, then the lowest).
      */
     public static List<Candidate> candidates(int cx, int cz, int[] top) { return shapes(cx, cz, top, null).candidates(); }
+
+    /** 0.39.z50: as {@link #shapes(int, int, int[], boolean[], CavePatterns.Rule)} with the Tuning defaults (no pattern yet). */
+    public static Shapes shapes(int cx, int cz, int[] top, boolean[] water) { return shapes(cx, cz, top, water, CavePatterns.defaults()); }
 
     /** 0.39.z48: one chunk's shapes: the candidates, and the same shapes over water ("flooded holes", noted, never targets). */
     public record Shapes(List<Candidate> candidates, List<Candidate> flooded) {}
@@ -98,11 +101,10 @@ public final class CaveMouths {
      * water column (its top block holds water; null: none known): a water column is never a candidate, its shape is kept as
      * a flooded hole (a fact for later, not a target).
      */
-    public static Shapes shapes(int cx, int cz, int[] top, boolean[] water) {
+    public static Shapes shapes(int cx, int cz, int[] top, boolean[] water, CavePatterns.Rule rule) {
         int[][] dirs = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
         List<Candidate> raw = new ArrayList<>();
         List<Candidate> flooded = new ArrayList<>();
-        List<Integer> drops = new ArrayList<>();
         for (int lz = 0; lz < 16; lz++)
             for (int lx = 0; lx < 16; lx++) {
                 int h = top[lx + 16 * lz];
@@ -110,13 +112,13 @@ public final class CaveMouths {
                 int drop = 0;
                 for (int[] d : dirs) {
                     int cliff = cliff(top, lx, lz, d[0], d[1], h);
-                    if (cliff < cliffDrop()) continue;
+                    if (cliff < rule.cliff()) continue;   // z50: the rule the cave patterns give (Tuning defaults before any)
                     int back = cliff(top, lx, lz, -d[0], -d[1], h);
                     int[] steps;
-                    if (back >= cliffDrop()) {
+                    if (back >= rule.cliff()) {
                         if (!"ravine".equals(shape) || Math.min(cliff, back) > drop) numbers = shapeNumbers("ravine", side(d[0], d[1]), cliff, side(-d[0], -d[1]), back, null);
                         shape = "ravine"; drop = Math.max(drop, Math.min(cliff, back));
-                    } else if ((steps = gentleSteps(top, lx, lz, -d[0], -d[1], h)) != null) {
+                    } else if ((steps = gentleSteps(top, lx, lz, -d[0], -d[1], h, rule.slope())) != null) {
                         if (shape == null) shape = "mouth";
                         if ("mouth".equals(shape) && cliff >= drop) numbers = shapeNumbers("mouth", side(d[0], d[1]), cliff, side(-d[0], -d[1]), back, steps);
                         drop = Math.max(drop, cliff);
@@ -128,27 +130,9 @@ public final class CaveMouths {
                     continue;
                 }
                 raw.add(new Candidate((cx << 4) + lx, h + 1, (cz << 4) + lz, shape, numbers));
-                drops.add(drop);
             }
-        List<Integer> order = new ArrayList<>();
-        for (int i = 0; i < raw.size(); i++) order.add(i);
-        final List<Candidate> found = raw;
-        order.sort((p, q) -> drops.get(p).equals(drops.get(q)) ? Integer.compare(found.get(p).y(), found.get(q).y()) : Integer.compare(drops.get(q), drops.get(p)));
-        List<Candidate> sorted = new ArrayList<>();
-        for (int i : order) sorted.add(found.get(i));
-        raw = sorted;
-        raw.sort((p, q) -> Integer.compare(p.y(), q.y()));
-        List<Candidate> out = new ArrayList<>();
-        long m2 = (long) Sightings.merge() * Sightings.merge();
-        for (Candidate c : raw) {
-            boolean near = false;
-            for (Candidate o : out) {
-                long dx = o.x() - c.x(), dz = o.z() - c.z();
-                if (dx * dx + dz * dz <= m2) { near = true; break; }
-            }
-            if (!near) out.add(c);
-        }
-        return new Shapes(out, flooded);
+        // z50 (owner: one feature = one candidate): within cave.mergeM one candidate, the lowest point kept
+        return new Shapes(CavePatterns.merge(raw), flooded);
     }
 
     /*
@@ -197,7 +181,7 @@ public final class CaveMouths {
     }
 
     /** Along (dx, dz) the ground rises gently for slopeLen columns: each step 0..slopeMaxStep, at least 1 in all. */
-    private static int[] gentleSteps(int[] top, int lx, int lz, int dx, int dz, int h) {
+    private static int[] gentleSteps(int[] top, int lx, int lz, int dx, int dz, int h, int minRise) {
         int prev = h;
         int[] steps = new int[slopeLen()];
         for (int k = 1; k <= slopeLen(); k++) {
@@ -208,7 +192,7 @@ public final class CaveMouths {
             steps[k - 1] = step;
             prev = top[x + 16 * z];
         }
-        return prev > h ? steps : null;
+        return prev - h >= Math.max(1, minRise) ? steps : null;   // structural 1: a slope rises
     }
 
     /**
@@ -278,8 +262,10 @@ public final class CaveMouths {
     public synchronized List<Candidate> near(double x, double y, double z, int r) {
         List<Candidate> out = new ArrayList<>();
         double r2 = (double) r * r;
-        for (List<Candidate> l : byChunk.values())
-            for (Candidate c : l) if (d2(c, x, y, z) <= r2 && !refused.contains(Seen.key(c.x(), c.y(), c.z()))) out.add(c);
+        List<Candidate> all = new ArrayList<>();
+        for (List<Candidate> l : byChunk.values()) all.addAll(l);
+        // z50: one feature across chunk borders is one candidate too (the lowest kept)
+        for (Candidate c : CavePatterns.merge(all)) if (d2(c, x, y, z) <= r2 && !refused.contains(Seen.key(c.x(), c.y(), c.z()))) out.add(c);
         out.sort((p, q) -> Double.compare(d2(p, x, y, z), d2(q, x, y, z)));
         return out;
     }

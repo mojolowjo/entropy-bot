@@ -959,6 +959,13 @@ final class TuningDefs {
         Tuning.def("replan.switchMarginS", 10, "0.39.z48 (runs I/J: 12-24 re-price job ends a run)", "a mid-job re-price switches the order's pick (at the next step boundary) only when the new way is cheaper by at least this many seconds");
         Tuning.def("cave.mouthRays", 4, "0.39.z44", "the rays a pass (every 10 ticks) the mouth candidates take first from the shared Seen budget");
         Tuning.def("cave.goneReach", 1.5, "0.39.z44 (rule 15)", "standing within this of a known mouth whose cell is not air forgets it");
+        Tuning.def("cave.darkPocketCells", 6, "0.39.z50 (owner 2026-10-24: require a pocket, not a cell)", "the dark air cells (sky light at most cave.maxSky) a mouth's pocket needs before any cave pattern exists");
+        Tuning.def("cave.pocketReach", 6, "0.39.z50 (owner)", "blocks from a hole's floor cell on each axis the pocket fill reads (the hole's own air)");
+        Tuning.def("cave.patternK", 3, "0.39.z50 (owner)", "the nearest labelled cave patterns that vote on a spot");
+        Tuning.def("cave.botLabelWeight", 0.5, "0.39.z50 (owner)", "the vote of a pattern the bot labelled (a confirmation or a drop); the owner's weigh 1");
+        Tuning.def("cave.mergeM", 8, "0.39.z50 (owner: one feature = one candidate)", "candidates within this many blocks merge into one, the lowest point kept");
+        Tuning.def("cave.slopeMin", 1, "0.39.z50 (the z46 rule's falling at least 1)", "a mouth's gentle side rises at least this before any cave pattern exists");
+        Tuning.def("cave.depthMin", 1, "0.39.z50", "a hole's depth (rim to its floor) at least this before any cave pattern exists");
         Tuning.def("cave.exploreMinutes", 10, "0.39.z44", "the minutes the mine-in-the-cave way explores a mouth for the ore at most");
         Tuning.def("worth.bedSpan", 60, "rm-constants 0.39.u2 (inline literal in Worth)", "the bed worth span (scaled by the night danger)");
     }
