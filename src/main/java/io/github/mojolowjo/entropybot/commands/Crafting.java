@@ -523,6 +523,7 @@ final class Crafting {
                 }
                 // rm-mining: the smelt places no furnace of its own (the old "no free spot next to me for mine" rule is gone):
                 // it takes a known / camp furnace or fails here, and AA's station option set places one through the builder
+                io.github.mojolowjo.entropybot.aa.moves.FactChange.station(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT, stationName(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT), null);
                 return CraftJob.noFurnace(sm.item()) + " (stage furnace: none known" + (here ? " within " + hereR() : "") + ") - next: place furnace x y z (the station set), then smelt again";
             }
         }
@@ -602,9 +603,15 @@ final class Crafting {
             String err = planSteps(p, r.steps(), label, steps);
             if (err != null) return Prepared.fail("error: can't craft " + label + " - " + err);
         } else {
-            if (src.isEmpty()) return Prepared.fail(CraftTexts.craftNoStorage(label, r.error()));
+            if (src.isEmpty()) {
+                io.github.mojolowjo.entropybot.aa.moves.FactChange.bag(label, r.error());      // 0.39.z30: the step's changed fact
+                return Prepared.fail(CraftTexts.craftNoStorage(label, r.error()));
+            }
             CraftPlanner.AllPlan r2 = planner.planAll(targets.list(), new LinkedHashMap<>(combined), combined);
-            if (!r2.ok()) return Prepared.fail(CraftTexts.craftEvenWithStorage(label, r2.error(), rsKnown()));
+            if (!r2.ok()) {
+                io.github.mojolowjo.entropybot.aa.moves.FactChange.bag(label, r2.error());
+                return Prepared.fail(CraftTexts.craftEvenWithStorage(label, r2.error(), rsKnown()));
+            }
             Trips trips = takeTrips(src, CraftTexts.fromStorage(combined, r2.counts(), inv, r2.catalysts()));
             used = trips.used();
             steps.addAll(trips.steps());
@@ -1055,7 +1062,10 @@ final class Crafting {
             return "wait";
         }
         List<int[]> cands = findFurnaces(p, st.near);
-        if (cands.isEmpty()) return CraftJob.noFurnace(st.smelt.item());
+        if (cands.isEmpty()) {
+            io.github.mojolowjo.entropybot.aa.moves.FactChange.station(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT, stationName(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT), null);
+            return CraftJob.noFurnace(st.smelt.item());
+        }
         int[] pick = null;
         for (int[] f : cands) {
             if (!ps.tried.contains(Jobs.fmt(f)) && fj.at(f, Storage.dim()) == null) {
@@ -1562,9 +1572,13 @@ final class Crafting {
                 var v = io.github.mojolowjo.entropybot.craft.StationVisit.tick(io.github.mojolowjo.entropybot.aa.moves.JobHands.get(), stationMemory, kind, c.table, name);
                 switch (v.kind()) {
                     case WAIT: return "wait";
-                    case GONE: return craftFail(s, st, "error: " + v.why() + " - the chain prices the table again");
+                    case GONE:
+                        io.github.mojolowjo.entropybot.aa.moves.FactChange.station(kind, name, Jobs.fmt(c.table));     // 0.39.z30: the step's changed fact
+                        return craftFail(s, st, "error: " + v.why() + " - the chain prices the table again");
                     case FAILED: return craftFail(s, st, CraftJob.couldNotOpenTable(v.why()));
-                    case NONE: return craftFail(s, st, CraftJob.noTable(step.item()));
+                    case NONE:
+                        io.github.mojolowjo.entropybot.aa.moves.FactChange.station(kind, name, null);
+                        return craftFail(s, st, CraftJob.noTable(step.item()));
                     default: break;
                 }
                 c.stageTick = now();
@@ -1578,6 +1592,7 @@ final class Crafting {
             if (Boolean.FALSE.equals(stationMemory.isStation(kind, c.table))) {
                 String why = io.github.mojolowjo.entropybot.craft.StationVisit.gone(name, c.table);
                 stationMemory.forget(kind, c.table, why);
+                io.github.mojolowjo.entropybot.aa.moves.FactChange.station(kind, name, Jobs.fmt(c.table));
                 return craftFail(s, st, "error: " + why + " - the chain prices the table again");
             }
             // P2: this table answers clicks but never opens (see DEAD_TABLES): skip it from now on, try the next known one once
@@ -1602,7 +1617,11 @@ final class Crafting {
             return "wait";                         // 0.39.z7: no grid open yet; no blind close of whatever screen is open
         }
         if ((step.needsTable() || !recipe.fits(2)) && size == 2) {
-            if (c.triedTable && c.table == null) return craftFail(s, st, CraftJob.noTable(step.item()));
+            String tk = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT;
+            if (c.triedTable && c.table == null) {
+                io.github.mojolowjo.entropybot.aa.moves.FactChange.station(tk, stationName(tk), null);     // 0.39.z30: the step's changed fact
+                return craftFail(s, st, CraftJob.noTable(step.item()));
+            }
             int[] t = c.table;
             if (t == null) {
                 switch (findTable(p)) {
@@ -1610,7 +1629,9 @@ final class Crafting {
                         s.setStatus(CraftJob.startStatus(st.crafts) + " - " + notLoadedText(n));
                         return "wait";
                     }
-                    case StationFact.None n -> { return craftFail(s, st, CraftJob.noTable(step.item()) + ("none known".equals(n.why()) ? "" : " (" + n.why() + ")")); }
+                    case StationFact.None n -> {
+                        io.github.mojolowjo.entropybot.aa.moves.FactChange.station(tk, stationName(tk), null);
+                        return craftFail(s, st, CraftJob.noTable(step.item()) + ("none known".equals(n.why()) ? "" : " (" + n.why() + ")")); }
                     case StationFact.Known k -> t = cell(k);
                 }
             }

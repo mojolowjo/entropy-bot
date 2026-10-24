@@ -654,6 +654,7 @@ final class TuningDefs {
         Tuning.def("stepTimes.climbS", 0.3, "rm-constants 0.39.u2 (was StepTimes.CLIMB_S)", "TIME_MODEL: path length = straight line x 1.3 when no plan exists yet");
         // steps
         Tuning.def("steps.maxExpansions", 16, "rm-constants 0.39.u2 (was Steps.MAX_EXPANSIONS)", "At most this many expansions (a plan in a plan) per run");
+        Tuning.def("replan.maxPerOrder", 3, "0.39.z30 (owner 2026-10-23)", "At most this many re-plans on a changed fact (a station gone, a source gone, an item missing) per order");
         // storage
         Tuning.def("storage.guiSettle", 8, "rm-constants 0.39.u2 (was Storage.GUI_SETTLE)", "the gui settle of Storage");
         Tuning.def("storage.potsR", 16, "rm-constants 0.39.u2 (was Storage.POTS_R)", "the pots r of Storage");

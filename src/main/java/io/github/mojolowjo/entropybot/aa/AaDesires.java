@@ -450,7 +450,9 @@ public final class AaDesires {
                     io.github.mojolowjo.entropybot.aa.brain.Goals.park(bb, g, "no way to get it: " + ch.why());
                 return null;
             }
-            return JobPort.TaskSpec.steps(TaskKind.EXPLORE, s, "owner goal");
+            // 0.39.z30: a step that fails on a changed fact re-plans the order through the same chain call
+            return JobPort.TaskSpec.steps(TaskKind.EXPLORE, s, "owner goal")
+                    .withReplan(new JobPort.TaskSpec.Replan(id, (failed, fact, why) -> io.github.mojolowjo.entropybot.aa.brain.Goals.replan(bb, g, failed, fact, why)));
         });
         Node node = AaTree.idleCd(id + ".cd", job);
         return new Desire(id, Desire.Kind.OWNER, node, bb -> io.github.mojolowjo.entropybot.aa.brain.Goals.score(bb, g))

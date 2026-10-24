@@ -12,7 +12,21 @@ public interface JobPort {
      * option's typed steps (aa/moves/Steps runs them; {@code chain} is then only their label); empty: a chain text.
      */
     record TaskSpec(TaskKind kind, String chain, String source, int priority, long timeoutMs, long noProgressMs,
-                    java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> steps) {
+                    java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, Replan replan) {
+        /**
+         * 0.39.z30: an order's re-plan on a changed fact: {@code desire} (Failures charges the changed fact under it) and the
+         * order's own planner.
+         */
+        public record Replan(String desire, io.github.mojolowjo.entropybot.aa.moves.Steps.Replanner planner) {}
+
+        public TaskSpec(TaskKind kind, String chain, String source, int priority, long timeoutMs, long noProgressMs,
+                        java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> steps) {
+            this(kind, chain, source, priority, timeoutMs, noProgressMs, steps, null);
+        }
+
+        /** The same task, re-planned by {@code r} when a step fails on a changed fact. */
+        public TaskSpec withReplan(Replan r) { return new TaskSpec(kind, chain, source, priority, timeoutMs, noProgressMs, steps, r); }
+
         public static long timeoutMsV() { return Tuning.l("jobPort.timeoutMs"); }
         public static long noProgressMsV() { return Tuning.l("jobPort.noProgressMs"); }
         public static long maxMs() { return Tuning.l("jobPort.maxMs"); }

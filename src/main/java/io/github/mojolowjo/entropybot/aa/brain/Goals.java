@@ -43,6 +43,37 @@ public final class Goals {
 
         /** The owner's strip order (aa want strip ...): its one step; null for an item goal. */
         public Step.Strip strip;
+
+        /** 0.39.z30: re-plans on a changed fact so far (aa want again sets it back to 0). */
+        public int replans;
+    }
+
+    /** 0.39.z30: at most this many re-plans on a changed fact per order (Tuning replan.maxPerOrder). */
+    public static int replanMax() { return Tuning.i("replan.maxPerOrder"); }
+
+    /**
+     * 0.39.z30 (owner 2026-10-23: a job whose fact changed re-plans and continues): the order's chain priced again on the
+     * facts of now - the same call the order's job makes ({@link #steps}) - after {@code failed} found {@code fact} changed.
+     * One line to the owner says it; the cap is said when reached; no way now: null steps with the chain's why (the run ends
+     * with the step's own reason). Nothing here knows which fact or item it is.
+     */
+    public static io.github.mojolowjo.entropybot.aa.moves.Steps.Routine replan(Blackboard bb, Goal g, Step failed,
+                                                                             io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact, String why) {
+        if (g.replans >= replanMax()) {
+            String line = g.r.key() + ": " + fact.text() + " - not re-planned: " + g.replans + " re-plans already (replan.maxPerOrder " + replanMax() + ")";
+            bb.port.log(line);
+            bb.port.tellOwner(line);
+            return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "re-planned " + g.replans + " times already (replan.maxPerOrder " + replanMax() + ")");
+        }
+        if (g.n - have(bb.in.bag, g) <= 0) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
+        var ch = chain(bb, g);
+        if (ch == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");
+        if (!ch.ok() || ch.steps().isEmpty()) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, ch.why());
+        g.replans++;
+        String line = g.r.key() + ": " + fact.text() + " - re-planned: " + ch.steps().get(0).text() + " first";
+        bb.port.log(line + " (after step " + failed.text() + ": " + why + "; chain: " + ch.why() + ")");
+        bb.port.tellOwner(line);
+        return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(ch.steps(), null);
     }
 
     /** The strip orders whose run ended done (their goals are met; a failed run parks its goal instead). */

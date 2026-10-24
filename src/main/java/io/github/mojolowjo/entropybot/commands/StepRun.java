@@ -48,13 +48,16 @@ public final class StepRun {
     boolean running() { return steps.running(); }
 
     /** Starts typed steps for {@code key} (Failures' key under AA); null when they run, else why not. */
-    String start(String key, List<Step> s, String label) {
+    String start(String key, List<Step> s, String label) { return start(key, s, label, null); }
+
+    /** 0.39.z30: as above, an order's run re-planned through {@code replan} when a step fails on a changed fact. */
+    String start(String key, List<Step> s, String label, Steps.Replanner replan) {
         if (steps.running()) return "busy: " + status();
         this.label = label;
         driver = io.github.mojolowjo.entropybot.aa.door.Door.current();
         req = null;
         reportTo = null;
-        Steps.Phase ph = steps.start(key, s, Core.INSTANCE.tick());
+        Steps.Phase ph = steps.start(key, s, Core.INSTANCE.tick(), replan);
         LOG.info("[entropybot] steps: {} - {}", label, Step.label(s));
         return ph == Steps.Phase.FAILED ? "error: " + steps.why() : null;
     }

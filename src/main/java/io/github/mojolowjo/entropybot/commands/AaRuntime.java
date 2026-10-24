@@ -594,7 +594,11 @@ public final class AaRuntime implements JobPort {
     io.github.mojolowjo.entropybot.aa.NeedChain.Spot stationAt(String kind) {
         // rule 15: only a known station is a spot; not loaded means no item data, so the chain has no recipes to plan a
         // craft from (ItemWorth empty); none is none
-        return c.crafting.knownStation(kind) instanceof io.github.mojolowjo.entropybot.aa.StationFact.Known k ? k.nearest() : null;
+        if (!(c.crafting.knownStation(kind) instanceof io.github.mojolowjo.entropybot.aa.StationFact.Known k)) return null;
+        var at = k.nearest();
+        // 0.39.z30, rule 15: a remembered station whose chunk is not loaded is "not loaded", not "known": priced as remembered, marked unverified
+        var lv = Minecraft.getInstance().level;
+        return lv != null && !lv.isLoaded(new net.minecraft.core.BlockPos(at.x(), at.y(), at.z())) ? at.notLoaded() : at;
     }
 
     /** one-planner: the chain for an "I need N of X" step as it starts (the facts of that moment); no chain: why. */
@@ -1267,8 +1271,9 @@ public final class AaRuntime implements JobPort {
         }
         boolean tLatch = latch("tableAtCamp", s.feas.table, camp), fLatch = latch("furnaceAtCamp", s.feas.furnace, camp);
         // station-memory (0.39.z14): a station known anywhere (my placements, Baritone's scan: one lookup) counts, however far
-        in.tableKnown = s.feas.table || tLatch || c.crafting.knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT) instanceof io.github.mojolowjo.entropybot.aa.StationFact.Known;
-        in.furnaceKnown = s.feas.furnace || fLatch || c.crafting.knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT) instanceof io.github.mojolowjo.entropybot.aa.StationFact.Known;
+        tableSeenOrLatched = s.feas.table || tLatch;
+        furnaceSeenOrLatched = s.feas.furnace || fLatch;
+        stationFactsNow(in);
         in.tableInBag = io.github.mojolowjo.entropybot.aa.core.Inputs.has(bag, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.stationOf(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT));
         in.planks = io.github.mojolowjo.entropybot.aa.core.Inputs.tagged(bag, "minecraft:planks");
         in.furnaceInBag = io.github.mojolowjo.entropybot.aa.core.Inputs.has(bag, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.stationOf(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT));
@@ -1510,6 +1515,7 @@ public final class AaRuntime implements JobPort {
         escapes = 0;
         runningOpt = null;
         returnDone = null;
+        taskReplan = t.replan();
         io.github.mojolowjo.entropybot.aa.Options.Option opt = optionFor(t.chain());
         // rm-execution2: every AA task runs on its typed steps (aa/moves/Steps over StepRun): Steps.run(option.steps)
         if (t.typed()) {
@@ -1636,6 +1642,30 @@ public final class AaRuntime implements JobPort {
     /** The typed steps after the ore step, held while the return leg runs; the typed steps to go on with after an escape. */
     private List<io.github.mojolowjo.entropybot.aa.moves.Step> pendingReturnSteps, escapeResumeSteps;
     private String typedKey;
+    /** The last sense's "a station in view or latched at the camp" part of tableKnown / furnaceKnown. */
+    private boolean tableSeenOrLatched, furnaceSeenOrLatched;
+
+    /**
+     * station-memory (0.39.z14): a station known anywhere (my placements, Baritone's scan: one lookup) counts, however far.
+     * 0.39.z30: also run right before a re-plan, so the chain reads the station memory of now, not of the last sense.
+     */
+    private void stationFactsNow(io.github.mojolowjo.entropybot.aa.core.Inputs in) {
+        in.tableKnown = tableSeenOrLatched || c.crafting.knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT) instanceof io.github.mojolowjo.entropybot.aa.StationFact.Known;
+        in.furnaceKnown = furnaceSeenOrLatched || c.crafting.knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT) instanceof io.github.mojolowjo.entropybot.aa.StationFact.Known;
+    }
+
+    /** 0.39.z30: a re-plan reads the facts of now: the senses again (the bag after the last step), the inputs filled from them. */
+    private void factsNow() {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer p = mc.player;
+        if (p == null) return;
+        sensed = c.senses.sense();
+        sensedTick = Core.INSTANCE.tick();
+        fill(bb.in, sensed, p, mc);
+    }
+
+    /** 0.39.z30: the running task's re-plan on a changed fact (an order's), null: none. */
+    private io.github.mojolowjo.entropybot.aa.core.JobPort.TaskSpec.Replan taskReplan;
     /** Rule 7: when the task's typed run started, the bag and the cell then (-1: none running). */
     private long typedStartMs = -1;
     private Map<String, Integer> typedStartBag = Map.of();
@@ -1650,7 +1680,14 @@ public final class AaRuntime implements JobPort {
             LocalPlayer sp = Minecraft.getInstance().player;
             typedStartAt = sp == null ? null : Jobs.here(sp);
         }
-        String r = c.stepRun.start(key, steps, label);
+        var rp = taskReplan;
+        // 0.39.z30: an order's step failing on a changed fact is charged in Failures under the order by the fact's key, then re-planned
+        io.github.mojolowjo.entropybot.aa.moves.Steps.Replanner replan = rp == null ? null : (failed, fact, why) -> {
+            tree.brain.failures.counted(rp.desire(), fact.key(), why);
+            factsNow();
+            return rp.planner().replan(failed, fact, why);
+        };
+        String r = c.stepRun.start(key, steps, label, replan);
         typedRun = true;
         typedEndSeen = r != null;
         if (r == null) slow.chainStarted();
@@ -2909,6 +2946,7 @@ public final class AaRuntime implements JobPort {
         }
         var g = io.github.mojolowjo.entropybot.aa.brain.Goals.add(bb, r, a.n(), a.prio(), now);
         tree.brain.failures.forget(g.id());           // orders-tier: aa want again clears a parked order and its old holds
+        g.replans = 0;                                // 0.39.z30: and its re-plan count
         lootCtx();
         // one-planner: the order is priced by the one chain now; the line says the chain or the explore it starts
         var ch = io.github.mojolowjo.entropybot.aa.brain.Goals.chain(bb, g);

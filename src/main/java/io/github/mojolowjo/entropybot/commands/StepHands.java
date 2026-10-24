@@ -297,8 +297,10 @@ public final class StepHands implements Steps.Hands {
         BlockPos q = new BlockPos(m.x(), m.y(), m.z());
         String fam = m.family();
         if (!level.isLoaded(q)) return "error: the ore cell " + m.x() + " " + m.y() + " " + m.z() + " is not loaded";
-        if (!io.github.mojolowjo.entropybot.sense.KnownOre.family(BuiltInRegistries.BLOCK.getKey(level.getBlockState(q).getBlock()).toString(), fam))
+        if (!io.github.mojolowjo.entropybot.sense.KnownOre.family(BuiltInRegistries.BLOCK.getKey(level.getBlockState(q).getBlock()).toString(), fam)) {
+            io.github.mojolowjo.entropybot.aa.moves.FactChange.source(fam + " ore", m.x() + " " + m.y() + " " + m.z());   // 0.39.z30: the step's changed fact
             return "error: no " + fam + " ore there any more (" + m.x() + " " + m.y() + " " + m.z() + ")";
+        }
         if (!m.dig() && !Mining.exposed(level, q)) return "error: the " + fam + " ore is buried, and this is the walk form (the dig form digs to it)";
         List<io.github.mojolowjo.entropybot.clear.Pos> cells = new ArrayList<>();
         for (int[] cell : io.github.mojolowjo.entropybot.cave.MineRules.vein(new int[]{m.x(), m.y(), m.z()}, n -> {

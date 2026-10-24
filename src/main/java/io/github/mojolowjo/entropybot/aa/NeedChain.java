@@ -62,14 +62,17 @@ public final class NeedChain {
      * many blocks there are (0: not counted, as many as needed; a tree: its connected logs, all of which the chop takes), and
      * {@code gives}: the item it yields when a tag need asked for it (the loot data; null: the item asked for, or the block).
      */
-    public record Spot(int x, int y, int z, double dist, String block, int count, String gives, double bonusS) {
+    public record Spot(int x, int y, int z, double dist, String block, int count, String gives, double bonusS, boolean unloaded) {
+        public Spot(int x, int y, int z, double dist, String block, int count, String gives, double bonusS) { this(x, y, z, dist, block, count, gives, bonusS, false); }
+        /** 0.39.z30, rule 15: a remembered station whose chunk is not loaded: priced as remembered, the plan says "unverified". */
+        public Spot notLoaded() { return new Spot(x, y, z, dist, block, count, gives, bonusS, true); }
         public Spot(int x, int y, int z, double dist, String block, int count, String gives) { this(x, y, z, dist, block, count, gives, 0); }
         public Spot(int x, int y, int z, double dist, String block, int count) { this(x, y, z, dist, block, count, null); }
         public Spot(int x, int y, int z, double dist, String block) { this(x, y, z, dist, block, 0, null); }
         /** The same spot, yielding {@code item}. */
-        public Spot giving(String item) { return new Spot(x, y, z, dist, block, count, item, bonusS); }
+        public Spot giving(String item) { return new Spot(x, y, z, dist, block, count, item, bonusS, unloaded); }
         /** STRUCTURE_BLOCKS: a station's price bonus in seconds (a use-stations area), taken off its walk in the option's cost. */
-        public Spot withBonus(double s) { return new Spot(x, y, z, dist, block, count, gives, s); }
+        public Spot withBonus(double s) { return new Spot(x, y, z, dist, block, count, gives, s, unloaded); }
         String key() { return x + "," + y + "," + z; }
     }
 
@@ -1193,13 +1196,16 @@ public final class NeedChain {
      * is priced once (the walk from the last source or from here, the longer of the two) and the craft / smelt step's own
      * use walks it (InteractProcess); a new one is made only when none is known.
      */
+    /** 0.39.z30: the mark on a step that uses a remembered station whose chunk is not loaded (aa why, aa debug). */
+    public static final String UNVERIFIED = "unverified: station not loaded";
+
     private static String station(Ctx c, String kind) {
         boolean table = ItemWorth.CRAFT.equals(kind);
         String label = table ? "table" : "furnace";
         if (table ? c.tableReady : c.furnaceReady) {
             boolean walkedBefore = table ? c.tableWalked : c.furnaceWalked;
             String k = knownWalk(c, kind, table, label);
-            c.note(() -> "station " + label + ": " + (k != null ? "known, " + k : walkedBefore ? "known, walked to before in this chain" : "in reach"));
+            c.note(() -> "station " + label + ": " + (k != null ? (k.contains(UNVERIFIED) ? "not loaded, remembered, " : "known, ") + k : walkedBefore ? "known, walked to before in this chain" : "in reach"));
             return k;
         }
         c.note(() -> "station " + label + ": none known: to make or take from the bag and place near me");
@@ -1232,7 +1238,10 @@ public final class NeedChain {
         double bonus = Math.min(walkS, Math.max(0, at.bonusS()));       // a use-stations station: seconds off its walk (never below 0)
         c.seconds += walkS - bonus;
         c.away = 0;
-        return noted("at the " + label + " " + Math.round(at.dist()) + " m" + (bonus > 0 ? " (" + io.github.mojolowjo.entropybot.guard.AreaTags.USE_STATIONS + " -" + Math.round(bonus) + " s)" : ""), wk);
+        // 0.39.z30, rule 15: a remembered station in a chunk not loaded is priced as remembered; the step verifies it on
+        // arrival (not the station: the fact becomes none and the order re-plans)
+        return noted("at the " + label + " " + Math.round(at.dist()) + " m" + (bonus > 0 ? " (" + io.github.mojolowjo.entropybot.guard.AreaTags.USE_STATIONS + " -" + Math.round(bonus) + " s)" : "")
+                + (at.unloaded() ? " (" + UNVERIFIED + ")" : ""), wk);
     }
 
     /** Back to the stations after a trip to a new source: the same walk as the trip there (its path, or its line). */

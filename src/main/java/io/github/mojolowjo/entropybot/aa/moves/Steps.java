@@ -31,7 +31,23 @@ public final class Steps {
          * says why there is none (no facts yet, no way at all).
          */
         default Routine routine(Step.Obtain p) { return new Routine(null, "no chain in these hands"); }
+
+        /** 0.39.z30: the fact the step that just failed found changed ({@link FactChange}), taken once; null: none. */
+        default FactChange.Fact lastFact() { return FactChange.take(); }
     }
+
+    /**
+     * 0.39.z30: the order's own planner, asked again when a step fails on a changed fact: the step list from here on the
+     * facts of now (the same planner call the order used), or null steps with why (no way now, or the cap).
+     */
+    public interface Replanner {
+        Routine replan(Step failed, FactChange.Fact fact, String why);
+    }
+
+    private Replanner replanner;
+    /** The step text and reason of the failure the last re-plan answered (the same step failing again stops the run). */
+    private String replannedStep, replannedWhy;
+
 
     /** The chain as typed steps, or null with why. */
     public record Routine(List<Step> steps, String why) {}
@@ -55,7 +71,10 @@ public final class Steps {
     }
 
     /** Starts {@code steps} for the option whose memory key is {@code key}; a running run is cancelled first. */
-    public Phase start(String key, List<Step> steps, long tick) {
+    public Phase start(String key, List<Step> steps, long tick) { return start(key, steps, tick, null); }
+
+    /** 0.39.z30: as {@link #start(String, List, long)}, re-planned through {@code replan} when a step fails on a changed fact. */
+    public Phase start(String key, List<Step> steps, long tick, Replanner replan) {
         if (phase == Phase.RUNNING) cancel("replaced by " + key);
         this.key = key;
         this.steps = List.copyOf(steps);
@@ -65,6 +84,9 @@ public final class Steps {
         lastStatus = null;
         paused = false;
         expansions = 0;
+        replanner = replan;
+        replannedStep = null;
+        replannedWhy = null;
         if (this.steps.isEmpty()) {
             phase = Phase.FAILED;
             why = "stopped at step 0 (nothing): no steps to run";
@@ -95,13 +117,53 @@ public final class Steps {
         }
         Step s = steps.get(idx);
         String r;
+        FactChange.clear();
         try {
             r = hands.start(s);
         } catch (RuntimeException e) {
             r = "error: " + e;
         }
-        if (r != null) fail(r);
+        if (r != null) failOrReplan(r);
         else why = started(idx, steps);
+    }
+
+    /**
+     * 0.39.z30 (owner 2026-10-23): a step that failed on a changed fact (its hands say which, typed) asks the run's
+     * {@link Replanner} for the steps from here on the facts of now and goes on with them; no fact, no replanner, no way
+     * now or the same step failing again after a re-plan: the run ends FAILED with the reason (both reasons for a repeat).
+     */
+    private void failOrReplan(String reason) {
+        FactChange.Fact fact;
+        try {
+            fact = hands.lastFact();
+        } catch (RuntimeException e) {
+            fact = null;
+            reason = reason + " (its changed fact could not be read: " + e + ")";
+        }
+        if (fact == null || replanner == null || idx < 0 || idx >= steps.size()) { fail(reason); return; }
+        Step failed = steps.get(idx);
+        String clean = reason.replaceFirst("^error: ", "");
+        if (failed.text().equals(replannedStep)) {
+            fail("re-planned after \"" + replannedWhy + "\" and the same step failed again: " + clean);
+            return;
+        }
+        Routine r;
+        try {
+            r = replanner.replan(failed, fact, clean);
+        } catch (RuntimeException e) {
+            r = new Routine(null, "the re-plan: " + e);
+        }
+        if (r == null || r.steps() == null || r.steps().isEmpty()) {
+            fail(reason + (r == null || r.why() == null ? "" : " (re-plan: " + r.why() + ")"));
+            return;
+        }
+        replannedStep = failed.text();
+        replannedWhy = clean;
+        List<Step> all = new java.util.ArrayList<>(steps.subList(0, idx));
+        all.addAll(r.steps());
+        steps = List.copyOf(all);
+        idx--;
+        next();
     }
 
     /**
@@ -177,7 +239,7 @@ public final class Steps {
         }
         if (st == null) st = Car.Status.failed("the hands gave no status");
         switch (st.state()) {
-            case FAILED -> fail(st.why() == null ? "the step ended failed without a reason from its hands" : st.why());
+            case FAILED -> failOrReplan(st.why() == null ? "the step ended failed without a reason from its hands" : st.why());
             case DONE -> {
                 lastStatus = st.why();
                 next();
