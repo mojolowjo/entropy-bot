@@ -124,22 +124,34 @@ public final class SightingsRuntime {
             boolean reached = r.getType() != HitResult.Type.BLOCK || eye.distanceTo(r.getLocation()) >= eye.distanceTo(tc) - 0.87;   // structural: half a cell's diagonal: the hit lies on the target cell or beyond
             String where = c.x() + " " + c.y() + " " + c.z() + " (" + c.shape() + ")";
             if (!reached) { verdict(k, where + ": not yet - the ray stopped at " + r.getBlockPos().toShortString() + " before the low point"); continue; }
-            BlockPos dark = null;
-            int seenSky = -1;
-            for (BlockPos q : new BlockPos[]{target.below(), target.east(), target.west(), target.south(), target.north()}) {
-                if (!level.isLoaded(q) || !level.getBlockState(q).isAir()) continue;
-                int sky = level.getBrightness(LightLayer.SKY, q);
-                boolean under = q.getY() < level.getHeight(Heightmap.Types.WORLD_SURFACE, q.getX(), q.getZ());
-                if (CaveMouths.goesUnder(true, under, true, sky, false, 0)) { dark = q; break; }
-                seenSky = Math.max(seenSky, sky);
+            // 0.39.z48 (item 4, S64): the hole's own air column (rule 17's one exception): down from the candidate cell
+            // through air to the first non-air; the sky light at its lowest air cell and the one above; a water floor is a pond
+            int depth = Math.max(1, io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.floorMaxDepth"));
+            boolean[] air = new boolean[depth + 1];
+            boolean[] wet = new boolean[depth + 1];
+            int[] skyAt = new int[depth + 1];
+            int n = 0;
+            for (; n <= depth; n++) {
+                BlockPos q = target.below(n);
+                if (!level.isLoaded(q)) break;
+                var st = level.getBlockState(q);
+                air[n] = st.isAir();
+                wet[n] = st.getFluidState().is(net.minecraft.tags.FluidTags.WATER);
+                skyAt[n] = level.getBrightness(LightLayer.SKY, q);
+                if (!air[n]) { n++; break; }
             }
-            if (dark == null) {
+            if (n == 0) { verdict(k, where + ": not yet - its column is not loaded"); continue; }
+            String no = CaveMouths.floorVerdict(java.util.Arrays.copyOf(air, n), java.util.Arrays.copyOf(wet, n), java.util.Arrays.copyOf(skyAt, n));
+            int f = CaveMouths.floor(java.util.Arrays.copyOf(air, n));
+            if (no != null) {
                 dropped.add(k);
-                String line = where + ": dropped - not a cave (no air under the surface with sky light <= " + CaveMouths.maxSky() + " at the bottom" + (seenSky >= 0 ? ", sky " + seenSky : "") + ")";
+                cand.refuse(c.x(), c.y(), c.z());
+                String line = where + ": dropped - not a cave (" + no + ")";
                 verdict(k, line);
                 LOG.info("[entropybot] sense: cave candidate {}", line);   // said once: the candidate is dropped
                 continue;
             }
+            BlockPos dark = target.below(f);
             int d = (int) Math.round(Math.sqrt(eye.distanceToSqr(new Vec3(c.x() + 0.5, c.y() + 0.5, c.z() + 0.5))));
             verdict(k, where + ": confirmed - air at " + dark.toShortString() + " under the surface, sky " + level.getBrightness(LightLayer.SKY, dark) + ", from " + d + " m");
             if (sg.sawMouth(dim, c.x(), c.y(), c.z(), d, now) != null) {

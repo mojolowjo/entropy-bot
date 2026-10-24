@@ -115,6 +115,17 @@ public final class ExploreRules {
         return null;
     }
 
+    /**
+     * 0.39.z48 (owner 2026-10-24: "explore TOWARD the possible cave positions", S65): the explore's next aim for an ore need:
+     * the first of {@code nearestFirst} (the cave candidates within cave.exploreTowardM, nearest first, the dropped ones
+     * already out) that {@code visited} does not name; null: none (the next unexplored chunk, as before).
+     */
+    public static int[] toward(List<int[]> nearestFirst, Predicate<int[]> visited) {
+        if (nearestFirst == null) return null;
+        for (int[] c : nearestFirst) if (visited == null || !visited.test(c)) return c;
+        return null;
+    }
+
     /** Arrived near a chunk target (within ARRIVED blocks, x + z)? */
     public static boolean arrived(int x, int z, Target t) {
         return Math.abs(x - t.x()) + Math.abs(z - t.z()) <= arrivedV();

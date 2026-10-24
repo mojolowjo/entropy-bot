@@ -118,6 +118,7 @@ public record StepNeeds(String toolKind, int minTier, Map<String, Integer> consu
             case Step.Mine m -> m.how() == Step.Mine.How.STRIP ? NONE : forFamily(m.family());
             case Step.Strip st -> forBlocks(st.ores());
             case Step.ChopTree t -> t.log() == null ? NONE : forBlocks(List.of(t.log()));
+            case Step.TakeStation t -> forBlocks(List.of(full(t.item())));     // 0.39.z48: the station block's own tier
             case Step.Craft k -> recipeInputs(k.item(), k.n(), ItemWorth.CRAFT);
             case Step.Smelt k -> withFuel(recipeInputs(k.item(), k.n(), ItemWorth.SMELT), k.item(), k.n());
             case Step.Build b -> {

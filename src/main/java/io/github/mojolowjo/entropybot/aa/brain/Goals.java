@@ -47,6 +47,14 @@ public final class Goals {
         /** 0.39.z30: re-plans on a changed fact so far (aa want again sets it back to 0). */
         public int replans;
 
+        /**
+         * 0.39.z48 (S66): the running pick's price when it was taken (seconds, NaN: none), when (ms) and whether it ends in an
+         * explore; a mid-job re-price switches only when cheaper than what is left of it by replan.switchMarginS.
+         */
+        public double pricedS = Double.NaN;
+        public long pricedAtMs;
+        public boolean pricedExplore;
+
         /** 0.39.z33 (S36): the sources this order dropped (unreachable, gone), charged by their source key; held for the order's life. */
         public final Failures sources = new Failures();
     }
@@ -87,6 +95,7 @@ public final class Goals {
         if (ch == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");
         if (!ch.ok() || ch.steps().isEmpty()) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, ch.why());
         g.replans++;
+        took(g, ch, bb.clock.now());
         String line = g.r.key() + ": " + fact.text() + " - re-planned: " + ch.steps().get(0).text() + " first";
         bb.port.log(line + " (after step " + failed.text() + ": " + why + "; chain: " + ch.why() + ")");
         bb.port.tellOwner(line);
@@ -103,8 +112,47 @@ public final class Goals {
         var ch = chain(bb, g);
         if (ch == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");
         if (!ch.ok() || ch.steps().isEmpty()) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, ch.why());
+        // 0.39.z48 (S66, runs I/J: 12-24 "re-priced ... the pick changed" per run): the new way replaces the running pick
+        // only when cheaper than what is left of it by replan.switchMarginS; else the running steps go on
+        long now = bb.clock.now();
+        double left = leftS(g, now);
+        if (!switches(left, g.pricedExplore, ch.seconds(), ch.explore(), switchMarginS())) {
+            String kept = "kept the running pick: the new way " + Math.round(ch.seconds()) + " s"
+                    + (ch.explore() ? " (ends in an explore)" : "") + " vs " + (Double.isNaN(left) ? "?" : Math.round(left)) + " s left"
+                    + (g.pricedExplore ? " (ends in an explore)" : "") + " (replan.switchMarginS " + Math.round(switchMarginS()) + ")";
+            bb.port.log(g.r.key() + ": " + fact.text() + " - " + kept);
+            return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, kept);
+        }
+        took(g, ch, now);
         bb.port.log(g.r.key() + ": " + fact.text() + " - priced again (chain: " + ch.why() + ")");
         return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(ch.steps(), null);
+    }
+
+    /** 0.39.z48: the seconds a re-price must save to switch the running pick (Tuning replan.switchMarginS). */
+    public static double switchMarginS() { return Tuning.get("replan.switchMarginS"); }
+
+    /** 0.39.z48: the order's pick was taken now at the chain's price. */
+    static void took(Goal g, io.github.mojolowjo.entropybot.aa.NeedChain.Chain ch, long nowMs) {
+        g.pricedS = ch.seconds();
+        g.pricedAtMs = nowMs;
+        g.pricedExplore = ch.explore();
+    }
+
+    /** 0.39.z48: what is left of the running pick's price now (its price less the time since; NaN: none taken). */
+    static double leftS(Goal g, long nowMs) {
+        if (Double.isNaN(g.pricedS)) return Double.NaN;
+        return Math.max(0, g.pricedS - (nowMs - g.pricedAtMs) / 1000.0);   // structural: milliseconds per second
+    }
+
+    /**
+     * 0.39.z48 (S66, pure): a re-priced way replaces the running pick: a priced way over one that ends in an explore, never
+     * an explore over a priced way, no running price known: yes; else only when it is cheaper by {@code marginS}.
+     */
+    public static boolean switches(double leftS, boolean leftExplore, double newS, boolean newExplore, double marginS) {
+        if (newExplore && !leftExplore) return false;
+        if (leftExplore && !newExplore) return true;
+        if (Double.isNaN(leftS)) return true;
+        return leftS - newS >= marginS;
     }
 
     /** The strip orders whose run ended done (their goals are met; a failed run parks its goal instead). */
@@ -297,7 +345,9 @@ public final class Goals {
         if (g.n - have(bb.in.bag, g) <= 0) return null;
         if (g.strip != null) return stripLoop(g.strip);        // the strip order's own loop (no chain)
         var ch = chain(bb, g);
-        return ch == null || !ch.ok() || ch.steps().isEmpty() ? null : ch.steps();
+        if (ch == null || !ch.ok() || ch.steps().isEmpty()) return null;
+        took(g, ch, bb.clock.now());           // 0.39.z48: the running pick's price (the re-price margin)
+        return ch.steps();
     }
 
     /** The goal's chain on the world fact now (null: no world facts yet). */

@@ -20,7 +20,7 @@ public final class JobBoundary {
 
     /** A job that holds the boundary checks while it runs: the block jobs, the placements, the uses. */
     public static boolean holds(Step s) {
-        return s instanceof Step.ChopTree || s instanceof Step.Collect || s instanceof Step.KelpCut || s instanceof Step.MineAt
+        return s instanceof Step.ChopTree || s instanceof Step.Collect || s instanceof Step.TakeStation || s instanceof Step.KelpCut || s instanceof Step.MineAt
                 || s instanceof Step.Dig || s instanceof Step.Build || s instanceof Step.PlaceNear || s instanceof Step.BuildSchematic
                 || s instanceof Step.Light || s instanceof Step.Eat;
     }

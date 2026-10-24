@@ -1614,6 +1614,13 @@ public final class AaRuntime implements JobPort {
         int rw = rr == null ? -1 : rr.placed;      // review: only placements (a retried block is no progress)
         progress = io.github.mojolowjo.entropybot.aa.core.RestoreProgress.tick(progress, lastRestoreWork, rw);
         lastRestoreWork = rw;
+        // 0.39.z48 (run I 03:18:04: "stuck 40 s" while Baritone's chop broke a 7-block iron cluster): a block being broken is
+        // progress. Read from the game's own break state that Baritone's break helper drives for its chop / mine process
+        // (MultiPlayerGameMode#isDestroying and #getDestroyStage, 0-9 per block): each new stage counts
+        var gm = net.minecraft.client.Minecraft.getInstance().gameMode;
+        int ds = gm != null && gm.isDestroying() ? gm.getDestroyStage() : -1;
+        if (ds >= 0 && ds != lastDestroyStage) progress++;
+        lastDestroyStage = ds;
         int bagTotal = 0;
         for (int i = 0; i < 36; i++) bagTotal += p.getInventory().getItem(i).getCount();  // game fact: the player inventory has 36 slots (hotbar is slots 0-8)
         if (lastBag >= 0 && bagTotal > lastBag) progress++;          // gained (a deposit's drop is no progress by itself)
@@ -1635,6 +1642,8 @@ public final class AaRuntime implements JobPort {
     }
 
     private double lastGoalDist = -1;
+    /** 0.39.z48: the break stage seen last tick (-1: not breaking). */
+    private int lastDestroyStage = -1;
     /** The kind of the task AA started last (its progress rules differ: a build spends blocks). */
     private TaskKind startedKind;
 

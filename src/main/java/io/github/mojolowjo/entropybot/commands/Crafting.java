@@ -234,6 +234,12 @@ final class Crafting {
      */
     static final java.util.Set<String> DEAD_TABLES = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
+    /**
+     * 0.39.z48 (S62): stations whose use the fork gave up on from every stand it tried (its second try from another side
+     * included); refused like a dead table from then on, so the chain prices the next one or a new one. Key as DEAD_TABLES.
+     */
+    static final java.util.Set<String> UNUSABLE_STATIONS = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     static String tableKey(int[] t) {
         Minecraft mc = Minecraft.getInstance();
         String id = mc.level == null ? "?" : String.valueOf(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(
@@ -280,7 +286,8 @@ final class Crafting {
 
     /** The known stations of the recipe kind not refused (untrusted, or a dead table), nearest first; none; or not loaded. */
     StationFact knownStation(String kind) {
-        return commands.nearby.station(kind, at -> untrusted(at) || keptOut(at) || (!DEAD_TABLES.isEmpty() && DEAD_TABLES.contains(tableKey(at))));
+        return commands.nearby.station(kind, at -> untrusted(at) || keptOut(at) || (!DEAD_TABLES.isEmpty() && DEAD_TABLES.contains(tableKey(at)))
+                || (!UNUSABLE_STATIONS.isEmpty() && UNUSABLE_STATIONS.contains(tableKey(at))));
     }
 
     /** rule 15: the text of a not-loaded station fact ("stations: item data not loaded yet (...)"). */
@@ -1575,7 +1582,11 @@ final class Crafting {
                     case GONE:
                         io.github.mojolowjo.entropybot.aa.moves.FactChange.station(kind, name, Jobs.fmt(c.table));     // 0.39.z30: the step's changed fact
                         return craftFail(s, st, "error: " + v.why() + " - the chain prices the table again");
-                    case FAILED: return craftFail(s, st, CraftJob.couldNotOpenTable(v.why()));
+                    case FAILED:
+                        // 0.39.z48 (S62): the use failed from every stand the fork tried: a station fact, re-plan without it
+                        UNUSABLE_STATIONS.add(tableKey(c.table));
+                        io.github.mojolowjo.entropybot.aa.moves.FactChange.stationUnusable(kind, name, Jobs.fmt(c.table), v.why());
+                        return craftFail(s, st, CraftJob.couldNotOpenTable(v.why()) + " - the chain prices the table again");
                     case NONE:
                         io.github.mojolowjo.entropybot.aa.moves.FactChange.station(kind, name, null);
                         return craftFail(s, st, CraftJob.noTable(step.item()));

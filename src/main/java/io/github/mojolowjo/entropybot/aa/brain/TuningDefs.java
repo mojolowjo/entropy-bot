@@ -80,6 +80,8 @@ final class TuningDefs {
         Tuning.def("steps.placeNearR", 3, "one-planner 0.39.z1", "blocks within which the fork's placeNear picks the cell of a place-near step (a table, a furnace)");
         Tuning.def("needChain.maxTrials", 4000, "one-planner 0.39.z1", "ways priced in one chain before a requirement takes the first of its ways that stands, the rest unpriced (a bound on the search)");
         Tuning.def("station.nearM", 30, "station-far 0.39.z33", "a known station within this many blocks (straight line) is used as is; farther, its walk is priced against placing a new one near me");
+        Tuning.def("station.takeNear", 2, "0.39.z48 (S63)", "the walk before taking a known station block ends within this many blocks of it (Baritone's GoalNear)");
+        Tuning.def("station.takeReachM", 6, "0.39.z48 (S63)", "a station take starts only within this many blocks of the station (the walk before it got there); farther, the step fails with the distance");
         Tuning.def("station.mainBonusS", 30, "main-stations 0.39.z35", "seconds off the walk price of the owner's main station of a kind (aa station main, aa deposit x y z): a price, not a rule");
         Tuning.def("needChain.unknownBreakS", 3, "one-planner 0.39.z1 (was coalOptions.mineOre)", "seconds a block takes to break when the game gives it no hardness (no data loaded)");
         Tuning.def("needChain.unknownMobHp", 10, "one-planner 0.39.z1", "health points a mob is priced at when the game's attributes give none (the hunt's kill time)");
@@ -953,6 +955,9 @@ final class TuningDefs {
         Tuning.def("cave.candidateReachM", 96, "0.39.z47", "blocks from the bot within which an unconfirmed cave candidate is a way for an ore need with no confirmed mouth");
         Tuning.def("explore.retryS", 20, "0.39.z47 (run H: 374 explore restarts in 3 min)", "seconds an order waits after its chain explore ended with no new source before it explores again (said once: no new source; next explore in N s)");
         Tuning.def("cave.confirmM", 24, "0.39.z46 (owner: confirm when getting close)", "blocks from the eyes within which a candidate is confirmed by a ray; no rays at farther ones");
+        Tuning.def("cave.exploreTowardM", 128, "0.39.z48 (owner 2026-10-24: explore toward the possible cave positions)", "blocks from the bot within which an ore need's explore aims at the nearest unvisited cave candidate instead of the next unexplored chunk");
+        Tuning.def("cave.floorMaxDepth", 64, "0.39.z48 (item 4)", "the most air cells walked down a candidate's own column to its floor for the sky-light test");
+        Tuning.def("replan.switchMarginS", 10, "0.39.z48 (runs I/J: 12-24 re-price job ends a run)", "a mid-job re-price switches the order's pick (at the next step boundary) only when the new way is cheaper by at least this many seconds");
         Tuning.def("cave.mouthRays", 4, "0.39.z44", "the rays a pass (every 10 ticks) the mouth candidates take first from the shared Seen budget");
         Tuning.def("cave.goneReach", 1.5, "0.39.z44 (rule 15)", "standing within this of a known mouth whose cell is not air forgets it");
         Tuning.def("cave.exploreMinutes", 10, "0.39.z44", "the minutes the mine-in-the-cave way explores a mouth for the ore at most");

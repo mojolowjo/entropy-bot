@@ -267,7 +267,13 @@ public final class Steps {
             return false;
         }
         List<Step> left = steps.subList(idx, steps.size());
-        if (r == null || r.steps() == null || r.steps().isEmpty() || r.steps().equals(left)) return false;
+        if (r == null || r.steps() == null || r.steps().isEmpty() || r.steps().equals(left)) {
+            if (r != null && r.steps() == null && r.why() != null && !running) why = stage() + ": " + r.why();
+            return false;
+        }
+        // 0.39.z48 (S66): a running step is never cut for another way; the one step whose end IS the paths' answer - the
+        // explore while paths compute - ends only for a priced way (a new pick that waits on paths again runs on as it is)
+        if (running && waitsOnPaths(r.steps())) return false;
         if (running) safeCancel("re-priced: " + f.text() + " - the pick changed");
         List<Step> all = new java.util.ArrayList<>(steps.subList(0, idx));
         all.addAll(r.steps());
@@ -276,6 +282,12 @@ public final class Steps {
         idx--;
         next();
         return true;
+    }
+
+    /** 0.39.z48: the steps hold an explore while the chain's paths compute (the pick still waits on a walk's price). */
+    static boolean waitsOnPaths(List<Step> s) {
+        for (Step x : s) if (x instanceof Step.Explore e && e.whilePaths()) return true;
+        return false;
     }
 
     /** The fact the last re-plan answered, until the next step's start line said it; null: none. */

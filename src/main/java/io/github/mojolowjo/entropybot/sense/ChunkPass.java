@@ -472,9 +472,19 @@ public final class ChunkPass {
         try {
             // 0.39.z44: the cave-mouth candidates of this chunk from its 256 surface heights (no block reads)
             int[] top = new int[256];
+            boolean[] water = new boolean[256];
+            net.minecraft.core.BlockPos.MutableBlockPos q = new net.minecraft.core.BlockPos.MutableBlockPos();
             for (int lz = 0; lz < 16; lz++)
-                for (int lx = 0; lx < 16; lx++) top[lx + 16 * lz] = chunk.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, lx, lz);
-            mouths.put(it.cx(), it.cz(), CaveMouths.candidates(it.cx(), it.cz(), top));
+                for (int lx = 0; lx < 16; lx++) {
+                    top[lx + 16 * lz] = chunk.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, lx, lz);
+                    // 0.39.z48 (item 5): a water column: its top (surface) block holds water (CaveMouths#shapes says why
+                    // the client's two heightmaps cannot tell it); never a candidate
+                    q.set((it.cx() << 4) + lx, top[lx + 16 * lz] - 1, (it.cz() << 4) + lz);
+                    water[lx + 16 * lz] = chunk.getBlockState(q).getFluidState().is(net.minecraft.tags.FluidTags.WATER);
+                }
+            CaveMouths.Shapes sh = CaveMouths.shapes(it.cx(), it.cz(), top, water);
+            mouths.put(it.cx(), it.cz(), sh.candidates());
+            mouths.putFlooded(it.cx(), it.cz(), sh.flooded());
         } catch (Throwable t) {
             error("cave candidates", t);
         }

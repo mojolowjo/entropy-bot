@@ -139,6 +139,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.Walk w -> walk(w);
                 case Step.ChopTree t -> chop(p, t);
                 case Step.Collect k -> collect(p, k);
+                case Step.TakeStation t -> takeStation(p, t);
                 case Step.HuntAt h -> hunt(p, h);
                 case Step.Build b -> build(b);
                 case Step.PlaceNear n -> placeNear(p, n);
@@ -184,6 +185,7 @@ public final class StepHands implements Steps.Hands {
             return switch (s) {
                 case Step.ChopTree t -> mineStatus(p);
                 case Step.Collect k -> mineStatus(p);
+                case Step.TakeStation t -> mineStatus(p);
                 case Step.KelpCut k -> mineStatus(p);
                 case Step.MineAt m -> veinStatus(p, m);
                 case Step.Strip st -> StripStep.status(st, Core.INSTANCE.reflexes.hold());
@@ -589,6 +591,40 @@ public final class StepHands implements Steps.Hands {
     }
 
     /**
+     * 0.39.z48 (run J 12:05:35, S63): the known station block at the step's cell, taken from beside it (the walk before it
+     * went there on the priced path): the cell is checked first (not loaded: not known, rule 15; another block: the source
+     * fact "gone", the order re-plans), then the fork's component break (mineComponent) on that block kind from here, whose
+     * nearest component is this station - never the stock mine process, which searches the cache for any such block.
+     */
+    private String takeStation(LocalPlayer p, Step.TakeStation t) {
+        mineSource = null;
+        String id = t.item().contains(":") ? t.item() : "minecraft:" + t.item();
+        Block own = BuiltInRegistries.ITEM.getOptional(ResourceLocation.tryParse(id)).map(Block::byItem).orElse(net.minecraft.world.level.block.Blocks.AIR);
+        if (own == net.minecraft.world.level.block.Blocks.AIR) return "error: " + t.text() + ": " + t.item() + " is no block";
+        BlockPos at = new BlockPos(t.x(), t.y(), t.z());
+        var level = Minecraft.getInstance().level;
+        if (level == null || !level.isLoaded(at)) return "error: " + t.text() + ": " + io.github.mojolowjo.entropybot.aa.PathPrice.NOT_KNOWN + " (its chunk is not loaded)";
+        Block there = level.getBlockState(at).getBlock();
+        if (there != own) {
+            io.github.mojolowjo.entropybot.aa.moves.FactChange.source(t.item(), t.x() + " " + t.y() + " " + t.z());
+            return "error: " + t.text() + ": the " + t.item() + " is gone (" + BuiltInRegistries.BLOCK.getKey(there) + " there now)";
+        }
+        int[] here = Jobs.here(p);
+        double d = Math.sqrt(Jobs.distSq(here, new int[]{t.x(), t.y(), t.z()}));
+        if (d > Tuning.get("station.takeReachM")) return "error: " + t.text() + ": " + Math.round(d) + " m from it, the walk before did not get there";
+        mineFrom = "at " + t.x() + " " + t.y() + " " + t.z();
+        component = true;
+        try {
+            return mine(p, new ArrayList<>(List.of(own)), List.of(id), 1, t.text());
+        } finally {
+            component = false;
+        }
+    }
+
+    /** 0.39.z48: the next mine() runs the fork's component break whatever the block kind (a station take). */
+    private boolean component;
+
+    /**
      * TAG_NEEDS: a collect of a tag need whose member no lookup named ("collect #coals 4"): Baritone's MineProcess on every block
      * whose loot gives a member or whose own item is one (AaRuntime.sourceBlocksOf), counted as any member in the bag (the
      * game's tag index).
@@ -624,7 +660,7 @@ public final class StepHands implements Steps.Hands {
         if (b == null) return "error: baritone not loaded";
         // S26 (owner 2026-10-22): an ore cluster is one job like a tree: the fork's component rule (mineComponent) for logs and
         // ores alike; any other block set (stone, sand...) stays on the stock mine process (a stone "component" is the hillside)
-        chopping = allLogs(blocks) || allOres(blocks);
+        chopping = component || allLogs(blocks) || allOres(blocks);
         if (!allLogs(blocks)) {
             // the tier guard (owner-watched 2026-10-22): never start a dig the bag's pickaxe cannot do; the step fails at once
             // and the chain re-prices with the pickaxe first. Blocks it cannot dig leave the filter.

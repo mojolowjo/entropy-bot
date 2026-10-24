@@ -851,6 +851,19 @@ public final class Brain extends Node {
         boolean waiting = bb.task() != null && bb.task().spec() != null && bb.task().spec().kind() == io.github.mojolowjo.entropybot.aa.core.TaskKind.WAIT;     // a wait stands still on purpose
         boolean fast = !waiting && cur.stuckMs == stuckMs() && now - lastMoveAt >= fastStuckMs() && now - lastProgressAt >= fastStuckMs();
         if (!fast && now - lastProgressAt < cur.stuckMs) return Status.RUNNING;
+        // 0.39.z48 (run I 03:18:04): an owner order's stall is the z33 source fact of its running step ("stuck 40 s at
+        // <step>"): the order re-plans without it instead of parking (as z46's 180 s watch); needs keep their halt below
+        if (cur.kind == Desire.Kind.OWNER && bb.task() != null) {
+            long secs = (now - lastProgressAt) / 1000;  // structural: milliseconds per second
+            if (bb.port.noProgress(bb.taskId(), "stuck " + secs + " s")) {
+                bb.port.log("brain: " + cur.id + " stuck " + secs + " s" + (fast ? " (no move, no bag change)" : "") + " - re-planned on the step's source fact");
+                sig = progressSig(bb);
+                moveSig = moveSigOf(bb);
+                lastProgressAt = now;
+                lastMoveAt = now;
+                return Status.RUNNING;
+            }
+        }
         stuck++;
         String why = "stuck: " + cur.id + " made no progress for " + (now - lastProgressAt) / 1000 + "s" + (fast ? " (no move, no bag change)" : "");  // structural: milliseconds per second
         bb.port.log("brain " + why + " - halted, cooling down, the next desire runs");

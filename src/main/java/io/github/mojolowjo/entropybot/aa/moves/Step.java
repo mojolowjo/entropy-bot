@@ -124,6 +124,15 @@ public sealed interface Step {
         }
     }
 
+    /**
+     * 0.39.z48 (run J 12:05:35, S63): break and pick up the KNOWN station block at x y z (the furnace the bot placed): the
+     * walk before it went there on the priced path; the fork's component break from beside it (never Baritone's mine for
+     * that block kind, which searches the whole cache for any such block).
+     */
+    record TakeStation(String item, int x, int y, int z) implements Step {
+        public String text() { return "take " + item + " at " + x + " " + y + " " + z; }
+    }
+
     /** Craft {@code n} of {@code item} (an item action: the craft job, no Baritone). */
     record Craft(String item, int n) implements Step {
         public String text() { return "craft " + item + " " + n; }

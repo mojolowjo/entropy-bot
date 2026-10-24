@@ -29,6 +29,15 @@ public final class FactChange {
         last = new Fact("station " + kind, name + (at == null ? ": none known" : " at " + at + " gone"));
     }
 
+    /**
+     * 0.39.z48 (run I 03:19:34, S62): the fork's use of the known station ended failed from where it stood ("no face visible
+     * from ..." after its second try from another side): the station slot; the order re-plans and the chain prices the next
+     * known station or making a new one (z33's far-station rule), this one refused from now on.
+     */
+    public static void stationUnusable(String kind, String name, String at, String why) {
+        last = new Fact("station " + kind, name + " at " + at + " unusable: " + why);
+    }
+
     /** A known source the step went for is gone. */
     public static void source(String block, String at) {
         last = new Fact("source " + block + " " + at, block.replaceFirst("^minecraft:", "") + " at " + at + " gone");

@@ -1486,9 +1486,19 @@ public final class NeedChain {
      * lacks).
      */
     private static List<Alt> sourceAlts(Ctx c, String word, String gives, int lack, List<Spot> known) {
-        List<Spot> spots = new ArrayList<>(known);
-        spots.sort(Comparator.comparingDouble(Spot::dist));
+        List<Spot> spots = new ArrayList<>();
         List<Alt> alts = new ArrayList<>();
+        for (Spot sp : known) {
+            // 0.39.z48 (run J 12:05:35, S63): a known station block (the furnace I placed) is taken where it stands, by its
+            // priced walk, never by the collect's search for any block of its kind; not loaded: its way is not known (rule 15)
+            if (stationBlock(sp)) {
+                if (sp.unloaded()) c.note(() -> "station " + shw(sp.block()) + " at " + sp.x() + " " + sp.y() + " " + sp.z() + ": " + PathPrice.NOT_KNOWN + " (its chunk is not loaded; rule 15)");
+                else alts.add(new Alt("take the " + shw(sp.block()) + " " + Math.round(sp.dist()) + " m", () -> stationTake(c, word, gives, lack, sp)));
+                continue;
+            }
+            spots.add(sp);
+        }
+        spots.sort(Comparator.comparingDouble(Spot::dist));
         for (Spot first : spots) {
             List<Spot> order = new ArrayList<>();
             order.add(first);
@@ -1497,6 +1507,58 @@ public final class NeedChain {
         }
         return alts;
     }
+
+    /** 0.39.z48: the spot's block is the station of a recipe kind (the game's recipe data names it: the table, the furnace). */
+    static boolean stationBlock(Spot sp) {
+        if (sp.block() == null) return false;
+        String b = sp.block().contains(":") ? sp.block() : "minecraft:" + sp.block();
+        for (String kind : List.of(ItemWorth.CRAFT, ItemWorth.SMELT)) {
+            String st = ItemWorth.stationOf(kind);
+            if (st != null && st.equals(b)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 0.39.z48 (S63): take the known station block at {@code sp}: the pickaxe its block asks for first, the priced walk there
+     * (Baritone's complete path, or no price: the way cannot be picked), its break, one item into the bag; the rest of the
+     * need from the explore when one is not enough.
+     */
+    private static String stationTake(Ctx c, String word, String gives, int lack, Spot sp) {
+        int tier = tierOf(word, sp);
+        if (tier == MiningTiers.UNKNOWN) { c.fail = "the pickaxe tier of " + shw(sp.block()) + " is not known (no mining data loaded yet)"; return null; }
+        String pre = null;
+        if (tier > c.pickTier) {
+            pre = cheapestPickaxe(c, tier);
+            if (c.fail != null) return null;
+            if (c.stuck) return "take the " + shw(sp.block()) + " " + Math.round(sp.dist()) + " m (after " + pre + ")";
+        }
+        Walked wk = walk(c, sp.x(), sp.y(), sp.z(), sp.dist());
+        if (c.fail != null) {
+            if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreachable.put(sourceKey(word, sp), wk.fail());
+            return null;
+        }
+        c.steps.add(new Step.Walk(sp.x(), sp.y(), sp.z(), stationNear()));
+        c.steps.add(new Step.TakeStation(shw(gives), sp.x(), sp.y(), sp.z()));
+        c.seconds += wk.seconds();
+        c.away = wk.seconds();
+        double each = breakS(c, gives, sp);
+        c.seconds += each;
+        if (c.pickItem != null && tier >= 1) c.pickWorn += 1;       // game fact: a pickaxe loses 1 durability per block mined
+        c.taken.merge(sp.key(), 1, Integer::sum);
+        c.bag.merge(gives, 1, Integer::sum);
+        final String with = pre;
+        c.note(() -> "take the " + shw(sp.block()) + " at " + sp.x() + " " + sp.y() + " " + sp.z() + ": break " + s(each) + (with == null ? "" : " with " + with));
+        String how = noted("take the " + shw(sp.block()) + " " + Math.round(sp.dist()) + " m" + (pre == null ? "" : " with " + pre), wk);
+        if (lack > 1) {
+            String leaf = exploreLeaf(c, word, "not enough " + shw(word) + " known");
+            return leaf == null ? null : how + " + " + leaf;
+        }
+        return how;
+    }
+
+    /** 0.39.z48: the walk before a station take ends within this many blocks of it (Tuning station.takeNear). */
+    static int stationNear() { return Tuning.i("station.takeNear"); }
 
     /**
      * TAG_NEEDS: the known sources of a tag need (the world's lookup for the whole source set): every tree its own way (the
@@ -1569,6 +1631,7 @@ public final class NeedChain {
     public static String sourceKey(Step s) {
         if (s instanceof Step.ChopTree t && t.at() != null) return "cut at " + t.at()[0] + " " + t.at()[1] + " " + t.at()[2];
         if (s instanceof Step.Collect k) return "collect " + k.item();
+        if (s instanceof Step.TakeStation t) return "take at " + t.x() + " " + t.y() + " " + t.z();   // 0.39.z48
         if (s instanceof Step.ToBand b) return io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(b.minY(), b.maxY());   // 0.39.z42
         if (s instanceof Step.Strip st) return STRIP_KEY + st.key();      // 0.39.z43: a strip that ended lava / no path / no pickaxe
         if (s instanceof Step.ToStrip t) return STRIP_KEY + t.strip();    // 0.39.z46: no path down to the band: the same strip way
@@ -1577,6 +1640,7 @@ public final class NeedChain {
 
     /** The key of a spot of {@code item} (a need word; a tag's spot by the item it gives) (see {@link #sourceKey(Step)}). */
     public static String sourceKey(String item, Spot sp) {
+        if (stationBlock(sp)) return "take at " + sp.x() + " " + sp.y() + " " + sp.z();     // 0.39.z48: a station is its cell
         return tree(item, sp) ? "cut at " + sp.x() + " " + sp.y() + " " + sp.z() : "collect " + shw(sp.gives() != null ? word(sp.gives()) : item);
     }
 

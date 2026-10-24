@@ -710,6 +710,8 @@ final class Mining {
         String found;
         final Set<Integer> poiIds = new HashSet<>();
         ExploreRules.Target target;
+        /** 0.39.z48: the cave candidate the current target walks toward ("x y z"), null: a chunk target. */
+        String aimed;
         /** 0.23.1: gathering on the way (explore ... gather off = false); the bot's spot. */
         boolean gather = true;
         final int[] at = new int[3];
@@ -720,6 +722,20 @@ final class Mining {
         int chunksAtGather;
         Map<String, Integer> before;
         final Map<String, Integer> took = new LinkedHashMap<>();
+    }
+
+    /** 0.39.z48 (S65): cave candidates an explore walked toward this session ("x y z"): never aimed at again. */
+    static final Set<String> CAVE_VISITED = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** 0.39.z48: one of the explore's until words is an ore need (a source block the game tags c:ores). */
+    private boolean oreNeed(String untilSource) {
+        if (commands.aaRuntime == null) return false;
+        for (String part : untilSource.split("\\|")) {
+            if (part.isEmpty()) continue;
+            for (String b : commands.aaRuntime.sourceBlocksOf(io.github.mojolowjo.entropybot.aa.NeedChain.word(part)))
+                if (io.github.mojolowjo.entropybot.aa.brain.ItemWorth.hasTag(b, "c:ores")) return true;
+        }
+        return false;
     }
 
     /** 0.23.1: at most this many gathers (a tree, a surface vein) per explore/find run; a look round every 2 s while out there. */
@@ -1050,9 +1066,31 @@ final class Mining {
             return "wait";
         }
         // didn't get there (water, cliffs): give that chunk up
-        if (ex.target != null && !ExploreRules.arrived(me[0], me[2], ex.target)) notes().markExplored(List.of(ExploreRules.key(d, ex.target.x() >> 4, ex.target.z() >> 4)));
+        if (ex.target != null && ex.aimed == null && !ExploreRules.arrived(me[0], me[2], ex.target)) notes().markExplored(List.of(ExploreRules.key(d, ex.target.x() >> 4, ex.target.z() >> 4)));
+        if (ex.aimed != null) {
+            // 0.39.z48 (S65): the walk toward a cave candidate ended (there, or Baritone got no nearer): visited, never aimed
+            // at again; its confirmation was the rays' (within cave.confirmM)
+            CAVE_VISITED.add(ex.aimed);
+            LOG.info("[entropybot] explore: walk toward cave candidate {} ended {} m from it", ex.aimed,
+                    Math.round(Math.hypot(me[0] - ex.target.x(), me[2] - ex.target.z())));
+            ex.aimed = null;
+        }
         ex.target = null;
-        if (done == null) {
+        // 0.39.z48 (owner 2026-10-24, item 6): an ore need's explore aims at the nearest unvisited cave candidate within
+        // cave.exploreTowardM (dropped ones are out of the list) before the next unexplored chunk
+        if (done == null && ex.untilSource != null && oreNeed(ex.untilSource)) {
+            var cands = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.mouths().near(me[0], me[1], me[2], (int) Math.floor(Tuning.get("cave.exploreTowardM")));
+            List<int[]> cells = new ArrayList<>();
+            for (var k : cands) cells.add(new int[]{k.x(), k.y(), k.z()});
+            int[] aim = ExploreRules.toward(cells, cell -> CAVE_VISITED.contains(Jobs.fmt(cell)));
+            if (aim != null) {
+                ex.aimed = Jobs.fmt(aim);
+                ex.target = new ExploreRules.Target(aim[0], aim[2]);
+                LOG.info("[entropybot] explore: toward cave candidate {} ({} m; cave.exploreTowardM {})", ex.aimed,
+                        Math.round(Math.sqrt(Jobs.distSq(me, aim))), Math.round(Tuning.get("cave.exploreTowardM")));
+            }
+        }
+        if (done == null && ex.target == null) {
             // V1b: the nearest never-seen chunk (that way, with a direction); never a spot the policy refuses
             final int y = me[1];
             int[] c = io.github.mojolowjo.entropybot.vocab.ExploreWords.next(me[0] >> 4, me[2] >> 4, ex.sx, ex.sz, ex.dir,
