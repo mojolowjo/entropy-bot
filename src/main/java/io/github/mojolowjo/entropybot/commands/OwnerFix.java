@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
@@ -57,14 +58,46 @@ public final class OwnerFix {
         }
     }
 
+    /** What the companion report is right now. NONE is a fact (no companion runs), not a failure. */
+    public enum State { REPORT, NONE, NOT_LOADED, BROKEN }
+
+    /** A parse: the fix, or the reason there is none. */
+    record Parsed(Fix fix, String reason) {}
+
+    /** owner.json's text as a Fix, or the reason it is not one (not JSON, a field missing or wrong, a non-finite number). */
+    static Parsed parsed(String json) {
+        try {
+            JsonObject o = JsonParser.parseString(json).getAsJsonObject();
+            String name = o.get("name").getAsString(), dim = o.get("dim").getAsString();
+            double x = o.get("x").getAsDouble(), y = o.get("y").getAsDouble(), z = o.get("z").getAsDouble();
+            long received = o.get("received").getAsLong();
+            if (name.isEmpty() || dim.isEmpty()) return new Parsed(null, "name or dim is empty");
+            if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) return new Parsed(null, "a coordinate is not a finite number");
+            return new Parsed(new Fix(name, x, y, z, dim, received, intOr(o, "food"), intOr(o, "health")), null);
+        } catch (RuntimeException e) {
+            return new Parsed(null, "not a usable report: " + e);
+        }
+    }
+
+    /** owner.json's text as a Fix; null when it is not one (current() says why, once). */
+    public static Fix parse(String json) { return parsed(json).fix(); }
+
     private final Supplier<Path> file;
+    private final Consumer<String> say;
     private long mtime = Long.MIN_VALUE, size = -1;
     private Fix cached;
+    private State state = State.NOT_LOADED;
+    private String said;   // the last line said, so the same text is not said twice
 
     /** @param file where owner.json is (null while the bot's folder is not known yet) */
-    public OwnerFix(Supplier<Path> file) {
+    public OwnerFix(Supplier<Path> file) { this(file, Quiet::line); }
+
+    OwnerFix(Supplier<Path> file, Consumer<String> say) {
         this.file = file;
+        this.say = say;
     }
+
+    public synchronized State state() { return state; }
 
     /** The fix for {@code player} as block coordinates, or null (no file, another player, stale, other dimension). */
     public int[] pos(String player, String botDim) {
@@ -80,35 +113,45 @@ public final class OwnerFix {
         return new int[]{(int) Math.floor(f.x()), (int) Math.floor(f.y()), (int) Math.floor(f.z())};
     }
 
-    /** owner.json's text as a Fix; null when it is not JSON or lacks a field or has a non-finite number. */
-    public static Fix parse(String json) {
-        try {
-            JsonObject o = JsonParser.parseString(json).getAsJsonObject();
-            String name = o.get("name").getAsString(), dim = o.get("dim").getAsString();
-            double x = o.get("x").getAsDouble(), y = o.get("y").getAsDouble(), z = o.get("z").getAsDouble();
-            long received = o.get("received").getAsLong();
-            if (name.isEmpty() || dim.isEmpty() || !Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) return null;
-            return new Fix(name, x, y, z, dim, received, intOr(o, "food"), intOr(o, "health"));
-        } catch (RuntimeException e) {
-            Quiet.warn("OwnerFix.parse failed, carrying on with the fallback", e);
-            return null;
+    private void set(State s, String line) {
+        state = s;
+        if (!line.equals(said)) {
+            said = line;
+            say.accept(line);
         }
     }
 
-    /** The file's fix, cached by mtime and size; a half-written or missing file keeps the last good one (age still rules). */
+    /**
+     * The file's fix, cached by mtime and size. No file is state NONE (said once, and again only if the file appears and
+     * goes); a file that exists but is not a report is BROKEN (said once per change of its reason) and the last good fix
+     * stays (age still rules). Returns the cached fix in every state.
+     */
     public synchronized Fix current() {
         Path p = file.get();
-        if (p == null) return cached;
+        if (p == null) {
+            state = State.NOT_LOADED;
+            return cached;
+        }
+        if (!Files.exists(p)) {
+            mtime = Long.MIN_VALUE;
+            size = -1;
+            set(State.NONE, "no companion report (entropybot/owner.json): the owner's position comes from sight only");
+            return cached;
+        }
         try {
             long m = Files.getLastModifiedTime(p).toMillis(), s = Files.size(p);
             if (m == mtime && s == size) return cached;
-            Fix f = parse(Files.readString(p, StandardCharsets.UTF_8));
+            Parsed r = parsed(Files.readString(p, StandardCharsets.UTF_8));
             mtime = m;
             size = s;
-            if (f != null) cached = f;
-        } catch (IOException | RuntimeException e) {
-            Quiet.warn("OwnerFix.current failed, carrying on with the fallback", e);
-            // no file yet, or caught mid-replace: the next call looks again
+            if (r.fix() != null) {
+                cached = r.fix();
+                set(State.REPORT, "companion report found (entropybot/owner.json)");
+            } else {
+                set(State.BROKEN, "companion report entropybot/owner.json is broken: " + r.reason());
+            }
+        } catch (IOException e) {
+            set(State.BROKEN, "companion report entropybot/owner.json cannot be read: " + e);
         }
         return cached;
     }

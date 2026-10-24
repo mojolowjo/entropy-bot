@@ -86,6 +86,47 @@ class OwnerFixTest {
     }
 
     @Test void noFolderYetGivesNothing() {
-        assertNull(new OwnerFix(() -> null).pos("mojolowjo", OW));
+        java.util.List<String> said = new java.util.ArrayList<>();
+        OwnerFix of = new OwnerFix(() -> null, said::add);
+        assertNull(of.pos("mojolowjo", OW));
+        assertNull(of.pos("mojolowjo", OW));
+        assertEquals(OwnerFix.State.NOT_LOADED, of.state());
+        assertEquals(0, said.size(), "an unknown folder is not said");
+    }
+
+    @Test void missingFileIsNoneSaidOnceThenReportSaidOnceThenNoneAgain() throws IOException {
+        java.util.List<String> said = new java.util.ArrayList<>();
+        Path f = tmp.resolve("owner.json");
+        OwnerFix of = new OwnerFix(() -> f, said::add);
+        for (int i = 0; i < 5; i++) assertNull(of.current());
+        assertEquals(OwnerFix.State.NONE, of.state());
+        assertEquals(1, said.size());
+        assertEquals("no companion report (entropybot/owner.json): the owner's position comes from sight only", said.get(0));
+        Files.writeString(f, "{\"name\":\"mojolowjo\",\"x\":1,\"y\":2,\"z\":3,\"dim\":\"minecraft:overworld\",\"received\":" + System.currentTimeMillis() + "}");
+        for (int i = 0; i < 3; i++) assertNotNull(of.current());
+        assertEquals(OwnerFix.State.REPORT, of.state());
+        assertEquals(2, said.size());
+        Files.delete(f);
+        of.current();
+        of.current();
+        assertEquals(OwnerFix.State.NONE, of.state());
+        assertEquals(3, said.size(), "the file going is said once");
+    }
+
+    @Test void brokenFileIsBrokenWithTheReasonSaidOncePerTextChange() throws IOException {
+        java.util.List<String> said = new java.util.ArrayList<>();
+        Path f = tmp.resolve("owner.json");
+        OwnerFix of = new OwnerFix(() -> f, said::add);
+        Files.writeString(f, "{ torn");
+        for (int i = 0; i < 4; i++) of.current();
+        assertEquals(OwnerFix.State.BROKEN, of.state());
+        assertEquals(1, said.size());
+        assertEquals(true, said.get(0).contains("broken: not a usable report"));
+        Files.writeString(f, "{\"name\":\"a\",\"x\":1,\"y\":2,\"z\":3,\"dim\":\"d\"}");
+        Files.setLastModifiedTime(f, FileTime.fromMillis(System.currentTimeMillis() + 5000));
+        of.current();
+        of.current();
+        assertEquals(OwnerFix.State.BROKEN, of.state());
+        assertEquals(2, said.size(), "a different reason is said once more");
     }
 }
