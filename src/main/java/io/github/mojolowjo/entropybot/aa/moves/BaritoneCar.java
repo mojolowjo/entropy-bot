@@ -27,8 +27,8 @@ import java.util.List;
  * Backbone step 2: the {@link Car} on Baritone. Goals go through the mod's {@link EngineProcess} override (its one
  * Baritone process, so the job's goal is kept under it); the burrow and the dig-in through the fork's
  * {@link IBurrowProcess} (priority over the engine's hold); the look through {@code LookBehavior.updateTarget}. The
- * pillar adds the bag's pillar blocks (planks included) to {@code acceptableThrowawayItems} for its run and puts the
- * list back on stop. 0.39.z8 (owner 2026-10-22): the car never sets Baritone's breaking / placing (walks: Baritone's
+ * pillar adds the bag's pillar blocks (planks included) to {@code acceptableThrowawayItems} for its run through the
+ * fork's run lease (engine.RunThrowaway, 0.39.z38; the job's kept items stay out) and ends that run on stop. 0.39.z8 (owner 2026-10-22): the car never sets Baritone's breaking / placing (walks: Baritone's
  * travel settings as shipped; the burrow owns its own).
  *
  * <p>Loader notes: Baritone API only (BaritoneAPI.getProvider().getPrimaryBaritone(), goals, settings); the fork's
@@ -46,7 +46,14 @@ public final class BaritoneCar implements Car {
     private long calcAtStart;
     private IBurrowProcess burrow;
     private Status forced;
-    private List<Item> savedThrow, setThrow;
+    /** 0.39.z38: this car holds the fork's run throwaway lease (the bag's pillar blocks) for its leg. */
+    private boolean throwHeld;
+
+    private void holdThrow() {
+        if (throwHeld) return;
+        io.github.mojolowjo.entropybot.engine.RunThrowaway.add(this, bagBlocks());
+        throwHeld = true;
+    }
 
     /** Backbone step 4: a reflex car's goals run at {@link EngineProcess#REFLEX_PRIORITY} (above every process). */
     private final boolean reflex;
@@ -113,13 +120,7 @@ public final class BaritoneCar implements Car {
             pr.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, REFLEX_INTENT_BY);
             var s = BaritoneAPI.getSettings();
             reflexOn = true;
-            if (savedThrow == null) {
-                savedThrow = new ArrayList<>(s.acceptableThrowawayItems.value);
-                List<Item> list = new ArrayList<>(savedThrow);
-                for (Item i : bagBlocks()) if (!list.contains(i)) list.add(i);
-                s.acceptableThrowawayItems.value = list;
-                setThrow = list;
-            }
+            holdThrow();     // 0.39.z38: the bag's pillar blocks through the fork's run lease (never written here)
             try {
                 savedUnder = s.pathUnderWater.value;
                 s.pathUnderWater.value = true;
@@ -254,13 +255,7 @@ public final class BaritoneCar implements Car {
         }
         try {
             var s = BaritoneAPI.getSettings();
-            if (savedThrow == null) {
-                savedThrow = new ArrayList<>(s.acceptableThrowawayItems.value);
-                List<Item> list = new ArrayList<>(savedThrow);
-                for (Item i : bagBlocks()) if (!list.contains(i)) list.add(i);
-                s.acceptableThrowawayItems.value = list;
-                setThrow = list;
-            }
+            holdThrow();     // 0.39.z38: the bag's pillar blocks through the fork's run lease (never written here)
             burrow = b().getBurrowProcess();
             burrow.burrowHere(depth, up, timeoutTicks, reflex);     // a reflex car's burrow at priority 10 (the reflex level)
             what = "burrow " + (up ? "up " : "down ") + depth;
@@ -303,17 +298,7 @@ public final class BaritoneCar implements Car {
 
     @Override public void pillar(int[] top) {
         fresh();
-        try {
-            var s = BaritoneAPI.getSettings();
-            savedThrow = new ArrayList<>(s.acceptableThrowawayItems.value);
-            List<Item> list = new ArrayList<>(savedThrow);
-            for (Item i : bagBlocks()) if (!list.contains(i)) list.add(i);
-            s.acceptableThrowawayItems.value = list;
-            setThrow = list;
-        } catch (RuntimeException e) {
-            forced = Status.failed("pillar settings: " + e);
-            return;
-        }
+        holdThrow();     // 0.39.z38: the bag's pillar blocks through the fork's run lease (never written here; failures logged there)
         goal = new GoalBlock(pos(top));
         what = "pillar to " + top[0] + " " + top[1] + " " + top[2];
         calcAtStart = engine.calcFails();
@@ -326,14 +311,7 @@ public final class BaritoneCar implements Car {
         engine.hold();          // the job stays paused; BurrowProcess (-0.25) outranks the hold (-0.5)
         reflexContext();        // 0.39.s7: the dig-in under the travel rule set
         try {
-            var s = BaritoneAPI.getSettings();
-            if (savedThrow == null) {           // reflexContext set the list already (the bag's blocks)
-                savedThrow = new ArrayList<>(s.acceptableThrowawayItems.value);
-                List<Item> list = new ArrayList<>(savedThrow);
-                for (Item i : bagBlocks()) if (!list.contains(i)) list.add(i);
-                s.acceptableThrowawayItems.value = list;
-                setThrow = list;
-            }
+            holdThrow();     // 0.39.z38: the bag's pillar blocks through the fork's run lease (never written here)
             burrow = b().getBurrowProcess();
             burrow.digInHere(timeoutTicks);          // rm-threat: the fork picks the wall
             what = "dig in";
@@ -439,14 +417,13 @@ public final class BaritoneCar implements Car {
         try {
             var s = BaritoneAPI.getSettings();
             // review: only what is still the value this car set (an owner change during the run wins)
-            if (savedThrow != null && s.acceptableThrowawayItems.value == setThrow) s.acceptableThrowawayItems.value = savedThrow;
+            if (throwHeld) io.github.mojolowjo.entropybot.engine.RunThrowaway.end(this);
             if (savedSwim != null && Boolean.TRUE.equals(s.swimUpWithoutPath.value)) s.swimUpWithoutPath.value = savedSwim;
         } catch (RuntimeException | LinkageError e) {
             LOG.warn("[entropybot] moves: settings restore failed: {}", e.toString());
         }
         savedSwim = null;
-        savedThrow = null;
-        setThrow = null;
+        throwHeld = false;
         restoreReflexContext();
     }
 

@@ -16,12 +16,5 @@ class HungerConserveTest {
         assertTrue(HungerConserve.covered(40, 30));
     }
 
-    @Test void flagLapses() {
-        HungerConserve.set(true, 1000);
-        assertTrue(HungerConserve.active(1000 + HungerConserve.lapseMs() - 1));
-        assertFalse(HungerConserve.active(1000 + HungerConserve.lapseMs()));
-        HungerConserve.set(false, 1000);
-        assertFalse(HungerConserve.active(1001));
-    }
 
 }

@@ -91,6 +91,21 @@ public record StepNeeds(String toolKind, int minTier, Map<String, Integer> consu
         return null;
     }
 
+    /**
+     * 0.39.z38 (a pending step's ingredients are never throwaway): the items the job's remaining steps use up, each once
+     * in step order - Baritone's run lease keeps them out of {@code acceptableThrowawayItems} while the job runs. A tool is
+     * named by its role and tier only (no item), and a tool is never a full block, so no tool can be throwaway.
+     */
+    public static List<String> keepOf(List<StepNeeds> remaining) {
+        List<String> out = new ArrayList<>();
+        if (remaining == null) return out;
+        for (StepNeeds n : remaining) {
+            if (n == null) continue;
+            for (String id : n.consumes().keySet()) if (!out.contains(id)) out.add(id);
+        }
+        return out;
+    }
+
     /** The fact's subject for the missing tool ("pickaxe tier>=1"). */
     public String toolKey() { return toolKind + " tier>=" + minTier; }
 

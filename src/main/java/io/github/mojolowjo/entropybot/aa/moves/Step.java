@@ -16,8 +16,11 @@ public sealed interface Step {
     String text();
 
     /** Walk to x y z: within {@code near} blocks (0 = onto that block). Baritone GoalBlock / GoalNear. */
-    record Walk(int x, int y, int z, int near) implements Step {
-        public String text() { return "goto " + x + " " + y + " " + z + (near > 0 ? " near " + near : ""); }
+    record Walk(int x, int y, int z, int near, boolean place) implements Step {
+        /** 0.39.z38: a plain walk (Baritone's walk lease: placing off for its run). */
+        public Walk(int x, int y, int z, int near) { this(x, y, z, near, false); }
+
+        public String text() { return "goto " + x + " " + y + " " + z + (near > 0 ? " near " + near : "") + (place ? " placing" : ""); }
     }
 
     /** Mine one known ore cell (and its vein) of {@code family}: the mine verb's per-ore step over Baritone's MineProcess. */

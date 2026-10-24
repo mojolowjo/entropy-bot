@@ -399,11 +399,9 @@ final class TuningDefs {
         Tuning.def("housePlan.digMax", 1000, "rm-constants 0.39.u2 (was HousePlan.DIG_MAX)", "A box dig over this many cells asks for confirm");
         Tuning.def("housePlan.scanRadius", 4, "rm-constants 0.39.u2 (was HousePlan.SCAN_RADIUS)", "The house's own scan");
         // hungerConserve
-        Tuning.def("hungerConserve.lapseMs", 3_000, "rm-constants 0.39.u2 (was HungerConserve.LAPSE_MS)", "The flag lapses this long after the last renewal (the AA tick runs every 250 ms)");
         // ironOptions
         Tuning.def("ironOptions.clear", 10, "rm-constants 0.39.u2 (was IronOptions.CLEAR)", "the clear of IronOptions");
         Tuning.def("ironOptions.digBlock", 3, "rm-constants 0.39.u2 (was IronOptions.DIG_BLOCK)", "the dig block of IronOptions");
-        Tuning.def("ironOptions.placeBlock", 5, "rm-constants 0.39.u2 (was IronOptions.PLACE_BLOCK)", "the place block of IronOptions");
         Tuning.def("ironOptions.caveTime", 120, "rm-constants 0.39.u2 (was IronOptions.CAVE_TIME)", "the cave time of IronOptions");
         Tuning.def("ironOptions.stripTime", 200, "rm-constants 0.39.u2 (was IronOptions.STRIP_TIME)", "the strip time of IronOptions");
         Tuning.def("ironOptions.stale", 1.5, "rm-constants 0.39.u2 (was IronOptions.STALE)", "the stale of IronOptions");

@@ -26,9 +26,9 @@ class NoBaritoneSettingsTest {
     static final String EXEMPT = "baritone/BaritoneHook.java";
 
     /** A direct write: {@code x.allowBreak.value = ...} (not {@code ==}). */
-    static final Pattern WRITE = Pattern.compile("\\ballow(Break|Place|BreakAnyway)\\s*\\.\\s*value\\s*=(?!=)");
+    static final Pattern WRITE = Pattern.compile("\\b(allow(Break|Place|BreakAnyway|Sprint)|acceptableThrowawayItems)\\s*\\.\\s*value\\s*=(?!=)");
     /** A write by name: {@code byLowerName.get("allowbreak")} and the like. */
-    static final Pattern BY_NAME = Pattern.compile("byLowerName\\s*\\.\\s*get\\(\\s*\"allow(break|place|breakanyway)\"", Pattern.CASE_INSENSITIVE);
+    static final Pattern BY_NAME = Pattern.compile("byLowerName\\s*\\.\\s*get\\(\\s*\"(allow(break|place|breakanyway|sprint)|acceptablethrowawayitems)\"", Pattern.CASE_INSENSITIVE);
 
     @Test
     void theModSetsNoBreakOrPlaceSetting() throws IOException {
@@ -40,7 +40,7 @@ class NoBaritoneSettingsTest {
             if (rel.equals(EXEMPT)) continue;
             hits.addAll(scan(rel, NoChainTextTest.stripComments(Files.readString(p))));
         }
-        assertTrue(hits.isEmpty(), "Baritone's allowBreak / allowPlace / allowBreakAnyway set by the mod (the fork processes own them): " + hits);
+        assertTrue(hits.isEmpty(), "Baritone's allowBreak / allowPlace / allowBreakAnyway / allowSprint / acceptableThrowawayItems set by the mod (the fork's leases own them, 0.39.z38): " + hits);
     }
 
     /** The scan itself works: writes are caught, reads, comparisons and comments are not. */
@@ -52,8 +52,11 @@ class NoBaritoneSettingsTest {
                 "boolean b = s.allowPlace.value;",
                 "if (s.allowPlace.value == x) y();",
                 "st.allowBreakAnyway . value=list;",
-                "var t = s.byLowerName.get(\"allowplace\");"));
-        assertEquals(List.of("probe:2", "probe:5", "probe:6"), scan("probe", probe));
+                "var t = s.byLowerName.get(\"allowplace\");",
+                "s.allowSprint.value = false;",
+                "s.acceptableThrowawayItems.value = list;",
+                "List<Item> l = s.acceptableThrowawayItems.value;"));
+        assertEquals(List.of("probe:2", "probe:5", "probe:6", "probe:7", "probe:8"), scan("probe", probe));
     }
 
     static List<String> scan(String rel, String src) {

@@ -295,7 +295,6 @@ public final class Core {
             io.github.mojolowjo.entropybot.watchview.SkyScanner.INSTANCE.tick(tick);      // 0.17.1: the tunnel view's surface scan (never throws)
             io.github.mojolowjo.entropybot.surface.SurfaceExport.INSTANCE.tick();      // 0.19.3: the surface export for the dashboard (never throws)
             if (tick % 10 == 4) io.github.mojolowjo.entropybot.commands.PaperPlan.INSTANCE.tick();        // 0.32.3: plan go ends -> settings back
-            if (mc.player != null) io.github.mojolowjo.entropybot.aa.moves.SprintRule.tick(reflexes.reflex() == io.github.mojolowjo.entropybot.engine.Reflexes.Reflex.FLEEING);   // rm-routes: hunger conserve -> Baritone allowSprint
         } catch (Throwable t) {
             errors++;
             if (errors <= 5 || errors % 1200 == 0) LOG.error("[entropybot] tick error #{}: {}", errors, t.toString());

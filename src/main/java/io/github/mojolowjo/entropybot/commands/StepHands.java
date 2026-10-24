@@ -90,6 +90,11 @@ public final class StepHands implements Steps.Hands {
         return io.github.mojolowjo.entropybot.aa.moves.StepNeeds.of(s);
     }
 
+    /** 0.39.z38: the run's pending items to the fork's run throwaway lease (never placed as throwaway while it runs). */
+    @Override public void keep(List<String> items) {
+        io.github.mojolowjo.entropybot.engine.RunThrowaway.keep(items);
+    }
+
     /** 0.39.z34: the bag as the step checks see it: the player's main inventory (one pass of its slots per look). */
     @Override public io.github.mojolowjo.entropybot.aa.moves.StepNeeds.Bag bag() {
         if (Minecraft.getInstance().player == null) return null;
@@ -519,7 +524,7 @@ public final class StepHands implements Steps.Hands {
     private String walk(Step.Walk w) {
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null) return "error: not in a world";
-        String r = follow(w.text(), () -> c.stepJob(w.text(), () -> c.walkTo(p, w.x(), w.y(), w.z())));
+        String r = follow(w.text(), () -> c.stepJob(w.text(), () -> c.walkTo(p, w.x(), w.y(), w.z(), w.place())));   // 0.39.z38: plain walks place nothing
         if (r != null) return r;
         if (c.jobs.running() && "travel".equals(c.jobs.job.type)) {
             walkJob = c.jobs.job;

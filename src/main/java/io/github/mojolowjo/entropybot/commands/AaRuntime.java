@@ -379,9 +379,8 @@ public final class AaRuntime implements JobPort {
             on = conserving;                      // keep the last answer on a read error
             why = conserveWhy;
         }
-        io.github.mojolowjo.entropybot.aa.brain.HungerConserve.set(on, now);
         if (on != conserving) {
-            LOG.info("[entropybot] aa: conserving hunger {} ({})", on ? "starts: no sprint, no parkour" : "ends: normal movement",
+            LOG.info("[entropybot] aa: conserving hunger {} ({})", on ? "short (sprint costs more than it saves; noted only: Baritone owns sprint)" : "no longer short",
                     on ? why : "a food source is known or the bag covers the need");
             conserving = on;
         }

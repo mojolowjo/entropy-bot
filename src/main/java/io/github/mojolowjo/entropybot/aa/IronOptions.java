@@ -166,7 +166,7 @@ public final class IronOptions {
 
     public static double clear() { return Tuning.get("ironOptions.clear"); }
     public static double digBlockV() { return Tuning.get("ironOptions.digBlock"); }
-    public static double placeBlock() { return Tuning.get("ironOptions.placeBlock"); }
+    public static double placeBlock() { return io.github.mojolowjo.entropybot.aa.moves.WalkWay.placeS(); }   // 0.39.z38: the one placement penalty (walk.placeS)
     public static double caveTime() { return Tuning.get("ironOptions.caveTime"); }
     public static double stripTime() { return Tuning.get("ironOptions.stripTime"); }
     public static double stale() { return Tuning.get("ironOptions.stale"); }
@@ -283,7 +283,7 @@ public final class IronOptions {
                 return out;
             }
             if (target != null && (way == Way.WALK_KNOWN || way == Way.DIG_KNOWN || way == Way.PILLAR_KNOWN)) {
-                if (way == Way.PILLAR_KNOWN) out.add(new Step.Walk(target.x(), target.y() + 1, target.z(), 0));
+                if (way == Way.PILLAR_KNOWN) out.add(new Step.Walk(target.x(), target.y() + 1, target.z(), 0, true));
                 out.add(new Step.MineAt(ore, target.x(), target.y(), target.z(), way != Way.WALK_KNOWN));
                 if (way == Way.PILLAR_KNOWN) tail(out);
                 return out;
@@ -292,7 +292,7 @@ public final class IronOptions {
                 case WALK_KNOWN -> out.add(new Step.Mine(ore, n, Step.Mine.How.KNOWN));
                 case DIG_KNOWN, WATER_STAND, WATER_PLACE, DRY_SIDE -> out.add(new Step.Mine(ore, n, Step.Mine.How.DIG));
                 case PILLAR_KNOWN -> {
-                    out.add(new Step.Walk(target.x(), target.y() + 1, target.z(), 0));
+                    out.add(new Step.Walk(target.x(), target.y() + 1, target.z(), 0, true));
                     out.add(new Step.Mine(ore, n, Step.Mine.How.DIG));
                     tail(out);
                 }

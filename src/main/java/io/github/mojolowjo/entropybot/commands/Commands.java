@@ -1187,13 +1187,16 @@ public final class Commands implements Chains.Env {
     }
 
     /** The walk to x y z (a target in the air: the ground there; inside a block: the nearest free spot), the travel job. */
-    String walkTo(LocalPlayer player, int gx, int gy, int gz) {
+    String walkTo(LocalPlayer player, int gx, int gy, int gz) { return walkTo(player, gx, gy, gz, false); }
+
+    /** 0.39.z38: as above; {@code place}: the priced placing walk (Baritone's walk lease with placing on), else a plain walk. */
+    String walkTo(LocalPlayer player, int gx, int gy, int gz, boolean place) {
         String at = gx + " " + gy + " " + gz;
         String shaftNo = shaftRefusal(player, at);     // 0.24.4
         if (shaftNo != null) return shaftNo;
         if (Jobs.targetInAir(player.level(), gx, gy, gz)) {      // 0.28.1 (trial fix A): a target in the air walks to the ground there
             int[] g = Jobs.groundUnder(player.level(), gx, gy, gz);
-            return Texts.withNote(jobs.startTravel("goto " + Jobs.fmt(g), "going to " + Jobs.fmt(g), null, null, false),
+            return Texts.withNote(jobs.startTravel("goto " + Jobs.fmt(g), "going to " + Jobs.fmt(g), null, null, false, place),
                     io.github.mojolowjo.entropybot.world.SurfaceRule.airNote(g[0], g[1], g[2]));
         }
         String solidId = Jobs.solidAt(player.level(), gx, gy, gz);       // 0.31.0 (5): a target inside a block
@@ -1204,10 +1207,10 @@ public final class Commands implements Chains.Env {
                 return "error: " + at + " is inside " + solidId + " and there's no free spot within " + WalkEnd.freeAround() + " blocks";
             }
             LOG.info("[entropybot] walk {}: inside {}, going to {} instead", at, solidId, Jobs.fmt(f));
-            String r = jobs.startTravel("goto " + Jobs.fmt(f), "going to " + Jobs.fmt(f), null, null, false);
+            String r = jobs.startTravel("goto " + Jobs.fmt(f), "going to " + Jobs.fmt(f), null, null, false, place);
             return r != null && r.startsWith("error") ? r : Texts.withNote(r, at + " is inside " + solidId + ": going to " + Jobs.fmt(f) + " instead");
         }
-        return jobs.startTravel("goto " + at, "going to " + at, null, null, false);
+        return jobs.startTravel("goto " + at, "going to " + at, null, null, false, place);
     }
 
     /** The walk to a player (in view, else the companion mod's fresh position), the travel job. */

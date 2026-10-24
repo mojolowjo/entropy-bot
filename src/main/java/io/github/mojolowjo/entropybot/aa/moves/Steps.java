@@ -40,6 +40,40 @@ public final class Steps {
 
         /** 0.39.z34: the bag now; null: these hands have none (nothing is checked). */
         default StepNeeds.Bag bag() { return null; }
+
+        /** 0.39.z38: the items the run's remaining steps use up (Baritone keeps them out of the throwaway list); empty: none. */
+        default void keep(List<String> items) {}
+    }
+
+    /** The items the remaining steps (the running one on) use up, from their declared needs ({@link StepNeeds#keepOf}). */
+    List<String> keepFromHere() {
+        List<StepNeeds> rest = new java.util.ArrayList<>();
+        for (int i = Math.max(0, idx); i < steps.size(); i++) {
+            try {
+                rest.add(hands.needs(steps.get(i)));
+            } catch (RuntimeException e) {
+                keepErr = "the needs of step " + (i + 1) + " could not be read for the keep list: " + e;   // said in the start line
+            }
+        }
+        return StepNeeds.keepOf(rest);
+    }
+
+    /** What went wrong building or setting the keep list (said in the step's start line), null: nothing. */
+    private String keepErr;
+
+    private void pushKeep(List<String> items) {
+        try {
+            hands.keep(items);
+        } catch (RuntimeException e) {
+            keepErr = "the keep list could not be set: " + e;
+        }
+    }
+
+    /** The run ended: nothing kept; a failure to say so is added to the end line. */
+    private void endKeep() {
+        keepErr = null;
+        pushKeep(List.of());
+        if (keepErr != null) why = why + " (" + keepErr + ")";
     }
 
     /** Ticks between the running tool step's bag looks (Tuning job.bagCheckTicks). */
@@ -121,6 +155,7 @@ public final class Steps {
         if (idx >= steps.size()) {
             phase = Phase.DONE;
             why = "done" + (lastStatus == null || lastStatus.isEmpty() ? "" : " - " + lastStatus);
+            endKeep();
             return;
         }
         stepStart = now;
@@ -132,12 +167,15 @@ public final class Steps {
         if (idx >= steps.size()) {               // an empty routine or compound: nothing left to run
             phase = Phase.DONE;
             why = "done" + (lastStatus == null || lastStatus.isEmpty() ? "" : " - " + lastStatus);
+            endKeep();
             return;
         }
         Step s = steps.get(idx);
         String r;
         FactChange.clear();
         lookNeeds(s);
+        keepErr = null;
+        pushKeep(keepFromHere());
         // 0.39.z34 (S39): the step's tool must be in the bag before it starts; missing, the bag fact re-plans the order
         String lack = toolLack(s);
         if (lack != null) { failOrReplan(lack); return; }
@@ -148,7 +186,7 @@ public final class Steps {
         }
         if (r != null) failOrReplan(r);
         else {
-            why = started(idx, steps) + (needs.none() ? "" : " " + needs.text()) + (replanFact == null ? "" : " (re-planned: " + replanFact + ")");
+            why = started(idx, steps) + (needs.none() ? "" : " " + needs.text()) + (replanFact == null ? "" : " (re-planned: " + replanFact + ")") + (keepErr == null ? "" : " (" + keepErr + ")");
             replanFact = null;
         }
     }
@@ -359,6 +397,7 @@ public final class Steps {
         phase = Phase.FAILED;
         failedStep = idx >= 0 && idx < steps.size() ? steps.get(idx) : null;
         why = "stopped at step " + (idx + 1) + " (" + steps.get(Math.max(0, Math.min(idx, steps.size() - 1))).text() + "): " + reason.replaceFirst("^error: ", "");
+        endKeep();
     }
 
     /** Ends the run FAILED "cancelled" (the owner's stop, AA's switch); nothing when not running. */
@@ -368,6 +407,7 @@ public final class Steps {
         safeCancel(reason);
         phase = Phase.FAILED;
         why = "stopped at step " + (idx + 1) + " (" + steps.get(idx).text() + "): cancelled: " + reason;
+        endKeep();
     }
 
     private void safeCancel(String reason) {

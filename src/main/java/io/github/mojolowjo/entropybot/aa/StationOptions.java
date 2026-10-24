@@ -66,9 +66,15 @@ public final class StationOptions {
             double d = f.knownDist() >= 0 ? f.knownDist() : Price.tune("base.distGuess");
             int[] at = f.knownAt();
             if (d > near) dropped.add("use known " + item + ": " + Price.r(d) + " away, over " + Price.r(near));
-            else Price.add(rows, dropped, m, now, Options.typed("use known " + item, "known", List.of(new Step.Walk(at[0], at[1], at[2], (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("steps.walkNear"))), d,
-                    "one " + Price.r(d) + " away" + (f.knownDist() >= 0 ? "" : " (distance not sensed, priced at base.distGuess)"), "known " + item, m)
-                    .withSite(Site.of(at)));
+            else {
+                // 0.39.z38: a plain walk there found no path without placing: the placing walk, dearer by the placement penalty
+                int placed = io.github.mojolowjo.entropybot.aa.moves.WalkWay.mustPlace(at[0], at[1], at[2], now);
+                double cost = d + Price.s(io.github.mojolowjo.entropybot.aa.moves.WalkWay.priceS(0, placed));
+                Price.add(rows, dropped, m, now, Options.typed("use known " + item, "known", List.of(io.github.mojolowjo.entropybot.aa.moves.WalkWay.step(at[0], at[1], at[2], (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("steps.walkNear"), now)), cost,
+                        "one " + Price.r(d) + " away" + (f.knownDist() >= 0 ? "" : " (distance not sensed, priced at base.distGuess)")
+                                + (placed > 0 ? ", no path on foot: placing walk, " + placed + " block(s) at walk.placeS " + Price.r(io.github.mojolowjo.entropybot.aa.moves.WalkWay.placeS()) + " s" : ""), "known " + item, m)
+                        .withSite(Site.of(at)));
+            }
         }
         // a placed chest is noted by a scan round me (the base chests fact reads the noted chests)
         List<Step> place = new ArrayList<>();
