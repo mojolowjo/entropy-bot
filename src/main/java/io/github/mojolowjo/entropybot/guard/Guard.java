@@ -111,7 +111,6 @@ public final class Guard {
         PolicyRuntime pr = PolicyRuntime.INSTANCE;
         if (pr.travelLive() && pr.intent() == BreakPolicy.Intent.TRAVEL) return vetoTravelBreak(level, pos, dim, pr);
         GuardCore.Verdict v = core.check(dim, pos.getX(), pos.getY(), pos.getZ(), "break", infoFor(level, pos));
-        shadowClick(level, pos, dim, v);
         return refuse(level, pos, "break", v);
     }
 
@@ -144,20 +143,6 @@ public final class Guard {
         return refuse(level, pos, "break", v);
     }
 
-
-    /** Mining plan phase 0: the policy's answer next to the fence's, counted and logged when they differ. Never throws. */
-    private void shadowClick(Level level, BlockPos pos, String dim, GuardCore.Verdict v) {
-        try {
-            PolicyRuntime pr = PolicyRuntime.INSTANCE;
-            BreakPolicy.Intent in = pr.intent();
-            BreakPolicy.Verdict pv = pr.judge(PolicyStats.SITE_CLICK, BreakPolicy.Action.BREAK, in, dim, pos.getX(), pos.getY(), pos.getZ(),
-                    pr.facts(level, pos, false), pr.where());
-            // in log mode the fence lets a would-be veto through; the comparison is against what it WOULD do
-            pr.shadow(PolicyStats.SITE_CLICK, v.allowed() && !v.wouldVeto(), v.reason(), pv, in, pos.getX(), pos.getY(), pos.getZ());
-        } catch (Throwable t) {
-            PolicyRuntime.INSTANCE.stats.error("click shadow: " + t);
-        }
-    }
 
     /** Every block placement (BlockItem.place) and every liquid, fire, egg or entity put down. True = refuse. */
     public boolean vetoPlace(Level level, BlockPos pos) { return vetoPlace(level, pos, false); }
@@ -332,7 +317,6 @@ public final class Guard {
             return true;
         }
         GuardCore.Verdict v = core.checkBoxes(dim, x, y, z, "break");
-        shadowAstar(dim, at, x, y, z, v);
         if (!v.allowed()) return true;
         if (v.wouldVeto()) {
             long t = core.tick();
@@ -343,32 +327,5 @@ public final class Guard {
             }
         }
         return false;
-    }
-
-    /**
-     * Mining plan phase 0: the policy's answer (boxes, and with the bsi the block facts too) next to the A* hook's.
-     * Pathfinder thread: snapshot and bsi reads only. Never throws.
-     */
-    private void shadowAstar(String dim, PolicyRuntime.StateAt at, int x, int y, int z, GuardCore.Verdict v) {
-        try {
-            PolicyRuntime pr = PolicyRuntime.INSTANCE;
-            BreakPolicy.Intent in = pr.intentNow();
-            boolean today = v.allowed() && !v.wouldVeto();
-            BreakPolicy.Verdict pv;
-            if (at == null) {
-                pr.stats.ask(PolicyStats.SITE_ASTAR_BOXES);
-                pv = BreakPolicy.boxes(pr.snapshot(), in, dim, x, y, z);
-                if (!pv.allowed()) pr.stats.deny(PolicyStats.SITE_ASTAR_BOXES, pv.reason());
-                pr.shadow(PolicyStats.SITE_ASTAR_BOXES, today, v.reason(), pv, in, x, y, z);
-            } else {
-                BreakPolicy.BlockFacts f = pr.facts(at, dim, x, y, z, false);
-                // isPossiblyProtected is asked for placements too (an air or water cell): no break verdict to compare there
-                if (f.loaded() && f.inCell() != BreakPolicy.Fluid.NONE) return;
-                pv = pr.judge(PolicyStats.SITE_ASTAR_COST, BreakPolicy.Action.BREAK, in, dim, x, y, z, f, pr.where());
-                pr.shadow(PolicyStats.SITE_ASTAR_COST, today, v.reason(), pv, in, x, y, z);
-            }
-        } catch (Throwable t) {
-            PolicyRuntime.INSTANCE.stats.error("astar shadow: " + t);
-        }
     }
 }

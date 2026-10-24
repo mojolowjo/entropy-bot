@@ -26,7 +26,7 @@ import java.util.function.Supplier;
  * {@link BreakPolicy} as the game sees it (mining plan 3.1, 3.4, 5): the rule snapshot (rebuilt when the guard's
  * policy or the connection changes), the active intent, the two {@link BlockFacts} adapters (a {@code Level} on the
  * client thread, Baritone's {@code BlockStateInterface} through {@link StateAt} on the pathfinder thread), the
- * counters and the shadow comparisons ("would differ"). Everything the pathfinder thread reads is a volatile
+ * counters. Everything the pathfinder thread reads is a volatile
  * snapshot; nothing here touches {@code Level} off the client thread.
  *
  * <p>Phase 0: shadow only (no behaviour change). Phase 1 ({@link #LIVE}): the TRAVEL column is live through the cost
@@ -327,19 +327,6 @@ public final class PolicyRuntime {
             stats.error(site + ": " + t);
             if (stats.errors() <= 5) LOG.warn("[entropybot] rules: policy error at {}: {}", site, t.toString());  // structural: log throttle: only the first few errors are logged
             return new BreakPolicy.Verdict(false, Double.POSITIVE_INFINITY, "policy error: " + t.getClass().getSimpleName(), false, "error");
-        }
-    }
-
-    /**
-     * Shadow mode (phase 0): today's decision and the policy's answer for the same cell. Counts and logs (rate-limited)
-     * when they differ. {@code todayAllowed}: what the existing rule decided; its reason names the category (a lease or
-     * box rule vs a fact).
-     */
-    public void shadow(String site, boolean todayAllowed, String todayReason, BreakPolicy.Verdict policy, Intent in, int x, int y, int z) {
-        if (policy == null || policy.allowed() == todayAllowed) return;
-        String why = todayAllowed ? "policy denies: " + policy.reason() : "policy allows (" + policy.rule() + "), today: " + todayReason;
-        if (stats.differ(site, why, System.currentTimeMillis())) {
-            LOG.info("[entropybot] rules would differ at {} ({}, {} {} {}): {}", site, in.name().toLowerCase(), x, y, z, why);
         }
     }
 

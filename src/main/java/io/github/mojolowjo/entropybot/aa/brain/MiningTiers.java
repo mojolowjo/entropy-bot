@@ -28,6 +28,12 @@ public final class MiningTiers {
 
         /** The least tier among the blocks whose drops include this item (diamond from its ore), or -1 if no block drops it / unknown. */
         default int dropTier(String itemId) { return -1; }
+
+        /**
+         * 0.39.z37: the least tier among the ore blocks of a family word ("iron" takes iron_ore and deepslate_iron_ore: the
+         * game's block registry and mining tags), or -1 if no block of the family is known.
+         */
+        default int familyTier(String family) { return -1; }
     }
 
     /**

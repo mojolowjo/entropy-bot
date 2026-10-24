@@ -23,7 +23,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * would refuse. Runs on the pathfinder thread; the guard reads immutable snapshots there.
  *
  * <p>Mining plan phase 0: the context's {@code bsi} goes along, so the policy can read the block facts on this thread
- * (shadow mode counts where it would differ).
+ * (the policy decides).
  *
  * <p>Only applied when the readable class exists (the unoptimized jar); see GuardMixinPlugin.
  */

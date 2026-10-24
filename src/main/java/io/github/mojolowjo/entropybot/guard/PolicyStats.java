@@ -1,7 +1,5 @@
 package io.github.mojolowjo.entropybot.guard;
 
-import io.github.mojolowjo.entropybot.aa.brain.Tuning;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -10,7 +8,7 @@ import java.util.concurrent.atomic.LongAdder;
 
 /**
  * Mining plan 5: the policy's counters (PLANNING.md 3: anything that runs every tick reports). Asks per site, denies by
- * reason, "would differ" per site (shadow mode: the policy's answer differs from today's decision), errors. Thread-safe,
+ * reason, errors. Thread-safe,
  * lock-free on the hot path; pure Java.
  */
 public final class PolicyStats {
@@ -19,15 +17,9 @@ public final class PolicyStats {
 
     private final Map<String, LongAdder> asks = new ConcurrentHashMap<>();
     private final Map<String, LongAdder> denies = new ConcurrentHashMap<>();
-    private final Map<String, LongAdder> differs = new ConcurrentHashMap<>();
     private final Map<String, LongAdder> allowedByTravel = new ConcurrentHashMap<>();
     private final LongAdder errors = new LongAdder();
     private volatile String lastError;
-    private volatile long lastDifferMs;
-    private final LongAdder differLogged = new LongAdder();
-
-    /** How many "would differ" lines go to the log in full before the rate limit (one per LOG_EVERY_MS) applies. */
-    public static int differFull() { return Tuning.i("policyStats.differFull"); }
     public static final long LOG_EVERY_MS = 10_000; // structural
 
     public void ask(String site) { bump(asks, site); }
@@ -36,26 +28,6 @@ public final class PolicyStats {
 
     /** Phase 1: a click or a plan the box rules would have refused, let through under the TRAVEL intent. */
     public void travelOverride(String site) { bump(allowedByTravel, site); }
-
-    /**
-     * Shadow mode: today's decision and the policy's differ at this site. Returns true when the caller should write the
-     * full line to the log (the first {@link #DIFFER_FULL}, then one per {@link #LOG_EVERY_MS}).
-     */
-    public boolean differ(String site, String reason, long nowMs) {
-        bump(differs, site + ": " + (reason == null ? "?" : reason));
-        return mayLog(nowMs);
-    }
-
-    /** The rate limit alone (the caller builds the line only when this says yes). */
-    public boolean mayLog(long nowMs) {
-        long n = differLogged.sum();
-        if (n < differFull() || nowMs - lastDifferMs >= LOG_EVERY_MS) {
-            differLogged.increment();
-            lastDifferMs = nowMs;
-            return true;
-        }
-        return false;
-    }
 
     public void error(String what) {
         errors.increment();
@@ -67,8 +39,6 @@ public final class PolicyStats {
     public String lastError() { return lastError; }
 
     public long asks() { return asks.values().stream().mapToLong(LongAdder::sum).sum(); }
-
-    public long differs() { return differs.values().stream().mapToLong(LongAdder::sum).sum(); }
 
     public long travelOverrides() { return allowedByTravel.values().stream().mapToLong(LongAdder::sum).sum(); }
 
@@ -90,8 +60,6 @@ public final class PolicyStats {
         if (!a.isEmpty()) sb.append(" (").append(String.join(", ", a)).append(")");
         List<String> d = top(denies, 5);
         sb.append(" | denies: ").append(d.isEmpty() ? "none" : String.join("; ", d));
-        List<String> w = top(differs, 5);
-        sb.append(" | would differ: ").append(w.isEmpty() ? "none" : differs() + " (" + String.join("; ", w) + ")");
         long t = travelOverrides();
         if (t > 0) sb.append(" | travel let through ").append(t);
         long e = errors();

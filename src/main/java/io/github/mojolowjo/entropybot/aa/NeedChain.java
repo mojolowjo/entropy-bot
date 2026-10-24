@@ -217,6 +217,9 @@ public final class NeedChain {
     /** TAG_NEEDS: the need word is one item (not a tag, not several). */
     public static boolean plain(String word) { return word != null && new Want(word).item(); }
 
+    /** 0.39.z37: the items a need word names (a tag's members, the items of an "a|b" list), in id order. */
+    public static Set<String> membersOf(String word) { return new Want(word).members(); }
+
     /** A need word in full: "#planks" -> "#minecraft:planks", "torch" -> "minecraft:torch"; several parts in one canonical order. */
     public static String word(String raw) {
         if (raw == null) return null;
@@ -1490,6 +1493,8 @@ public final class NeedChain {
         Spot first = order.get(0);
         boolean log = tree(word, first);
         String pre = null;
+        Want asked = new Want(word);
+        int haveBefore = have(c, asked);
         int tier = tierOf(word, first);
         if (tier == MiningTiers.UNKNOWN) { c.fail = "the pickaxe tier of " + shw(blockOf(gives, first)) + " is not known (no mining data loaded yet)"; return null; }
         if (tier > c.pickTier) {
@@ -1502,7 +1507,9 @@ public final class NeedChain {
             if (c.fail != null) return null;
             if (c.stuck) return "dig " + shw(gives) + " seen " + Math.round(first.dist()) + " m (after " + pre + ")";
         }
-        int remaining = lack;
+        // 0.39.z37 (S39): a tool made first out of the asked item's own stock (the pickaxe takes 3 of the bag's cobblestone)
+        // consumes before the collect counts: what it took is lacking again
+        int remaining = lack + Math.max(0, haveBefore - have(c, asked));
         Walked firstWalk = null;
         for (Spot sp : order) {
             if (remaining <= 0) break;

@@ -599,7 +599,6 @@ placeRules.stonePicksDefault	3.0
 placedPlan.defaultRadius	24.0
 pointS	6.0
 policyRuntime.waterColumnMax	32.0
-policyStats.differFull	5.0
 predictions.last	20.0
 predictions.minSamples	5.0
 predictions.tolerance	0.25
@@ -913,5 +912,5 @@ debug.logMaxMb	5.0
 needs.worryFood	60.0
 needs.worryDanger	75.0
 needs.healEatHp	10.0
-needs.cookedBonus	500.0
+needs.rawPenalty	500.0
 needs.swordScore	20.0

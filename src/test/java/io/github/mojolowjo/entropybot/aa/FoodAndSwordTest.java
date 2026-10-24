@@ -30,20 +30,22 @@ class FoodAndSwordTest {
     /** S34: cooked beef 80 + 128 + 500 = 708 beats raw beef 30 + 18 = 48; raw only is still eaten (48 > -1). */
     @Test
     void s34CookedBeforeRawFromTheRecipeData() {
-        assertTrue(ReflexRules.cooked("minecraft:cooked_beef"));
-        assertFalse(ReflexRules.cooked("minecraft:beef"));
-        assertFalse(ReflexRules.cooked("minecraft:bread"), "not a cooking recipe's result");
+        assertFalse(ReflexRules.raw("minecraft:cooked_beef"), "a cooking result is not raw");
+        assertTrue(ReflexRules.raw("minecraft:beef"));
+        assertFalse(ReflexRules.raw("minecraft:bread"), "not a cooking recipe's input");
         assertEquals(708, price("minecraft:cooked_beef", 8, 12.8f));
         assertEquals(48, price("minecraft:beef", 3, 1.8f));
         assertTrue(price("minecraft:beef", 3, 1.8f) > 0, "raw only: raw is eaten");
-        assertTrue(price("minecraft:cooked_chicken", 6, 7.2f) > price("minecraft:golden_carrot", 6, 14.4f), "cooked first, whatever the bar");
+        int cookedBeef = price("minecraft:cooked_beef", 8, 12.8f), bread = price("minecraft:bread", 5, 6f), beef = price("minecraft:beef", 3, 1.8f);
+        assertTrue(cookedBeef > bread && bread > beef, "cooked_beef > bread > beef: " + cookedBeef + " " + bread + " " + beef);
+        assertTrue(price("minecraft:carrot", 3, 3.6f) > beef, "a carrot is not raw");
     }
 
     /** S34: no cooking data loaded: nothing counts as cooked (said once), the plain price stands. */
     @Test
     void noRecipeDataNothingIsCooked() {
         TestData.clear();
-        assertFalse(ReflexRules.cooked("minecraft:cooked_beef"));
+        assertFalse(ReflexRules.raw("minecraft:beef"));
     }
 
     /** S34: under needs.healEatHp (10) with food in the bag the bot eats whenever the bar is not full. */
@@ -64,6 +66,8 @@ class FoodAndSwordTest {
         assertNull(AaDesires.swordsMissing());
         NeedChain.Chain c = NeedChain.of(new Step.Obtain(AaDesires.SWORDS, 1), new NeedChain.World(bag, true, w -> null));
         assertTrue(c.ok(), c.why());
+        assertEquals(0.3, c.seconds(), 1e-9, "one craft: 0.3 s");
+        assertEquals(io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(0.3), c.cost(), 1e-9, "cost is walk-blocks (0.3 s x 4.317 = 1.2951), not seconds");
         assertTrue(c.why().startsWith("swords <- 1 wooden_sword <- craft: 2 oak_planks + 1 stick: 0.3 s"), c.why());
         assertEquals(List.of("wooden_sword"), c.steps().stream().map(x -> ((Step.Craft) x).item()).toList());
         assertEquals(1, c.steps().stream().filter(x -> x instanceof Step.Craft).count(), c.steps().toString());

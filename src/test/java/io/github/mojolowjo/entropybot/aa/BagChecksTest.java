@@ -154,8 +154,8 @@ class BagChecksTest {
             if (collect < 0 && texts.get(i).startsWith("collect")) collect = i;
         }
         assertTrue(craft >= 0 && collect > craft, texts.toString());
-        // found in z34, not fixed here: the re-plan collects 2 (the 4 in the bag counted, the 3 the new pickaxe takes not), so the
-        // run ends DONE with 3 in the bag; the order's own met check (Goals) sees the rest
+        // 0.39.z37: the re-plan collects 5 (the bag's 4 less the 3 the new pickaxe takes, 6 asked): the order's count stands
+        assertEquals(6, g.bag.get("minecraft:cobblestone"), g.bag.toString());
         assertEquals(1, g.bag.get("minecraft:stone_pickaxe"), g.bag.toString());
         assertTrue(t < Tuning.get("steps.stepMaxS") * 20, "ended by the bag look, not the step's time limit: tick " + t);
         assertTrue(g.cancelled.stream().anyMatch(c -> c.startsWith("stone_pickaxe gone (broke)")), g.cancelled.toString());
@@ -220,5 +220,29 @@ class BagChecksTest {
         StepNeeds n = StepNeeds.of(new Step.Collect("minecraft:cobblestone", 2));
         assertFalse(n.hasTool());
         assertEquals("[needs: not loaded: no mining data]", n.text());
+    }
+
+    /** 0.39.z37: Mine KNOWN / DIG / CAVE declare the family's tier (not STRIP), a collect of a tag the least tier of its members, a smelt its fuel. */
+    @Test
+    void z37MineFamilyTagCollectAndSmeltFuelAreDeclared() {
+        TestData d = ScenariosTest.world("wooden", "stone");
+        for (Step.Mine.How how : List.of(Step.Mine.How.KNOWN, Step.Mine.How.DIG, Step.Mine.How.CAVE)) {
+            StepNeeds n = StepNeeds.of(new Step.Mine("iron", 3, how));
+            assertTrue(n.hasTool() && n.minTier() == 2 && n.toolKind().equals("pickaxe"), how + " " + n.text());
+        }
+        assertEquals(StepNeeds.NONE, StepNeeds.of(new Step.Mine("iron", 3, Step.Mine.How.STRIP)));
+        assertEquals("[needs: not loaded: no block of the family nickel in the mining data]", StepNeeds.of(new Step.Mine("nickel", 1, Step.Mine.How.KNOWN)).text());
+        d.tag("iron_ore", "minecraft:z37_set").tag("coal_ore", "minecraft:z37_set");
+        StepNeeds tag = StepNeeds.of(new Step.Collect("#minecraft:z37_set", 2));
+        assertTrue(tag.hasTool() && tag.minTier() == 1, "the least tier over the members: " + tag.text());
+        d.tag("dirt", "minecraft:z37_set");
+        assertEquals(StepNeeds.NONE, StepNeeds.of(new Step.Collect("#minecraft:z37_set", 2)), "a member that needs no pickaxe");
+        StepNeeds smelt = StepNeeds.of(new Step.Smelt("minecraft:cooked_beef", 2, true));
+        assertEquals(400, smelt.fuelTicks(), smelt.text());
+        Game g = new Game();
+        g.bag.put("minecraft:beef", 2);
+        assertTrue(smelt.itemShort(g.bag(), "smelt").startsWith("fuel: 0 of 400 burn ticks"), smelt.itemShort(g.bag(), "smelt"));
+        g.bag.put("minecraft:coal", 1);
+        assertNull(smelt.itemShort(g.bag(), "smelt"), "any item with a burn time, from the fuel table");
     }
 }

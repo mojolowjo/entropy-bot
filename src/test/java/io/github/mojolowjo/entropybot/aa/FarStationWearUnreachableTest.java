@@ -101,7 +101,9 @@ class FarStationWearUnreachableTest {
             if (s instanceof Step.Collect && collect < 0) collect = i;
         }
         assertTrue(craft >= 0 && collect > craft, worn.steps().toString());
-        assertEquals(fresh.seconds() + 2 * 1.3 / 4.317 + 0.3, worn.seconds(), TOL, fresh.why() + " / " + worn.why());
+        // 0.39.z37 (S39): the new pickaxe takes 3 of the bag's cobblestone first, so the dig breaks 3 more
+        double threeMore = NeedChain.resolve("cobblestone", 133, stoneWorld(131)).seconds() - fresh.seconds();
+        assertEquals(fresh.seconds() + 2 * 1.3 / 4.317 + 0.3 + threeMore, worn.seconds(), TOL, fresh.why() + " / " + worn.why());
     }
 
     /** Rule 15: durability unknown inserts no pickaxe; unlimited neither. */

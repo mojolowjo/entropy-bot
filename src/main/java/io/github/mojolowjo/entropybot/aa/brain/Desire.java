@@ -207,6 +207,21 @@ public final class Desire {
     /** AA_CLEANUP 4: trumps, and at its full score beats a running trumping desire too (danger over the shelter and the hide). */
     boolean overTrumps;
 
+    /**
+     * Cleanup 0.39.z37: this desire may preempt a running order's step once its score is at or over the Tuning line
+     * {@code worryKey} (Worry). The flag is the desire's own; no id is compared.
+     */
+    boolean preemptsOrder;
+    String worryKey;
+
+    public Desire preemptsOrder(String tuningKey) {
+        preemptsOrder = true;
+        worryKey = tuningKey;
+        return this;
+    }
+
+    public boolean preemptsOrder() { return preemptsOrder; }
+
     public Desire overTrumps() {
         trumps = true;
         overTrumps = true;

@@ -111,17 +111,19 @@ public final class ReflexRules {
         if (id == null || io.github.mojolowjo.entropybot.aa.brain.ItemWorth.junkFood(id) || harmful) return -1;
         if (io.github.mojolowjo.entropybot.aa.brain.ItemWorth.effectFood(id) && health >= goldenBelow()) return -1;
         if (nutrition <= 0) return -1;
-        // needs-ruling 0.39.z32 (NEEDS_RULING 2): a cooked food (a cooking recipe's result, the game's recipe data) is
-        // needs.cookedBonus ahead, so raw is eaten only when nothing cooked is in the bag
-        int cooked = cooked(id) ? (int) Math.round(Tuning.get("needs.cookedBonus")) : 0;
-        return nutrition * 10 + Math.round(saturation * 10) + cooked;  // structural: ranking: nutrition and saturation in tenths
+        // 0.39.z37 (NEEDS_RULING 2): a raw food (the input of a cooking recipe in the game's recipe data, not itself a cooking
+        // result) is needs.rawPenalty behind every other food, so it is eaten only when nothing else is in the bag. A score
+        // under 0 means "never", so the penalty is kept as the same gap: the other foods sit that far above the raw ones.
+        int rest = raw(id) ? 0 : (int) Math.round(Tuning.get("needs.rawPenalty"));
+        return nutrition * 10 + Math.round(saturation * 10) + rest;  // structural: ranking: nutrition and saturation in tenths
     }
 
-    /** needs-ruling 0.39.z32: the item is the result of a cooking recipe (smelting, smoking, campfire) in the game's recipe data. */
-    public static boolean cooked(String id) {
+    /** 0.39.z37: the item is the input of a cooking recipe (smelting, smoking, campfire) in the game's recipe data and not itself a cooking result. */
+    public static boolean raw(String id) {
         if (id == null) return false;
         String full = id.indexOf(':') < 0 ? "minecraft:" + id : id;
-        return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.cooks().containsValue(full);
+        java.util.Map<String, String> cooks = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.cooks();
+        return cooks.containsKey(full) && !cooks.containsValue(full);
     }
 
     /**

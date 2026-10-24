@@ -66,7 +66,7 @@ class AaBrainTest {
 
     @Test
     void ownerGoalWaitsTheMinimumRunAndNeverBeatsUrgentUpkeep() {
-        Brain br = new Brain("brain", "t", d(0, "a", Desire.Kind.PROGRESS), d(1, "needs.food", Desire.Kind.UPKEEP));
+        Brain br = new Brain("brain", "t", d(0, "a", Desire.Kind.PROGRESS), d(1, "needs.food", Desire.Kind.UPKEEP).preemptsOrder("needs.worryFood"));
         s[0] = 40;
         br.tick(bb);
         Desire goal = d(2, "osmium", Desire.Kind.OWNER).fresh(clock.now() + 600_000);

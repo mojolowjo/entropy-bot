@@ -90,6 +90,15 @@ final class MiningTierSource implements MiningTiers.Source {
 
     @Override public int dropTier(String itemId) { return drops.getOrDefault(itemId, -1); }
 
+    @Override public int familyTier(String family) {
+        int least = Integer.MAX_VALUE;
+        for (var e : tiers.entrySet()) {
+            String id = BuiltInRegistries.BLOCK.getKey(e.getKey()).toString();
+            if (io.github.mojolowjo.entropybot.cave.OreSpec.oreId(id) && io.github.mojolowjo.entropybot.sense.KnownOre.family(id, family)) least = Math.min(least, e.getValue());
+        }
+        return least == Integer.MAX_VALUE ? -1 : least;
+    }
+
     @Override public int blockTier(String itemId) {
         var rl = net.minecraft.resources.ResourceLocation.tryParse(itemId);
         if (rl == null) return -1;

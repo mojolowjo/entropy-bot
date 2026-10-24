@@ -152,10 +152,10 @@ public final class Brain extends Node {
         // needs-ruling 0.39.z32: while an order is wanted only a worry over its line keeps its score (Worry)
         String worry = null;
         if (orderGate && !orderPrereqs.contains(d.id)) {
-            String silent = Worry.silences(d.id, d.kind, v);
+            String silent = Worry.silences(d, v);
             if (silent != null) return new Scored(d, 0, 0, "silent: " + silent, "not wanted: " + silent);
-            if (Worry.over(d.id, v)) {
-                worry = Worry.text(d.id, v);
+            if (Worry.over(d, v)) {
+                worry = Worry.text(d, v);
                 worries.add(d.id);
             }
         }

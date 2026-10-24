@@ -29,8 +29,8 @@ class WorryTest {
     String last() { return port.started.get(port.started.size() - 1).chain(); }
 
     Brain withOrderRunning() {
-        Brain br = new Brain("brain", "t", d(0, "goal.planks", Desire.Kind.OWNER), d(1, "needs.food", Desire.Kind.UPKEEP),
-                d(2, AaDesires.DANGER_ID, Desire.Kind.UPKEEP), d(3, "needs.torches", Desire.Kind.UPKEEP));
+        Brain br = new Brain("brain", "t", d(0, "goal.planks", Desire.Kind.OWNER), d(1, "needs.food", Desire.Kind.UPKEEP).preemptsOrder("needs.worryFood"),
+                d(2, AaDesires.DANGER_ID, Desire.Kind.UPKEEP).preemptsOrder("needs.worryDanger"), d(3, "needs.torches", Desire.Kind.UPKEEP));
         s[0] = 60;
         s[1] = -1;
         s[2] = -1;
@@ -101,9 +101,9 @@ class WorryTest {
     @Test
     void theLinesAreTuningKnobs() {
         Tuning.set("needs.worryFood", 30);
-        assertTrue(Worry.over("needs.food", 30));
-        assertFalse(Worry.over("needs.torches", 99));
-        assertNull(Worry.silences("goal.x", Desire.Kind.OWNER, 50));
-        assertNull(Worry.silences("needs.bed", Desire.Kind.PROGRESS, 100), "the owner's aa do of a need stays");
+        assertTrue(Worry.over(d(1, "needs.food", Desire.Kind.UPKEEP).preemptsOrder("needs.worryFood"), 30));
+        assertFalse(Worry.over(d(3, "needs.torches", Desire.Kind.UPKEEP), 99));
+        assertNull(Worry.silences(d(0, "goal.x", Desire.Kind.OWNER), 50));
+        assertNull(Worry.silences(d(3, "needs.bed", Desire.Kind.PROGRESS), 100), "the owner's aa do of a need stays");
     }
 }

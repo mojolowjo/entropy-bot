@@ -87,7 +87,7 @@ final class TuningDefs {
         Tuning.def("needs.worryFood", 60, "needs-ruling 0.39.z32 (owner 2026-10-23, section 1)", "the food need's score from which it preempts a running order's step (aa why: worry); below it an order is never interrupted by hunger");
         Tuning.def("needs.worryDanger", 75, "needs-ruling 0.39.z32 (owner 2026-10-23, section 1)", "the danger desire's score from which it preempts a running order's step (aa why: worry); below it the order goes on");
         Tuning.def("needs.healEatHp", 10, "needs-ruling 0.39.z32 (owner 2026-10-23, section 2)", "health under which the eat reflex eats from the bag whenever the bar is not full (healing; the reflex pauses the step, the step resumes)");
-        Tuning.def("needs.cookedBonus", 500, "needs-ruling 0.39.z32 (owner 2026-10-23, section 2)", "price points a cooked food (a cooking recipe's result in the game's recipe data) is ahead of any other food in the bag (nutrition x10 + saturation x10 tops at ~300): raw only when nothing cooked");
+        Tuning.def("needs.rawPenalty", 500, "needs-ruling 0.39.z37 (was needs.cookedBonus, owner 2026-10-23, section 2)", "price points a raw food (the input of a cooking recipe in the game's recipe data, not itself a cooking result) is behind every other food in the bag (nutrition x10 + saturation x10 tops at ~300): raw only when nothing else; bread and a golden carrot are not raw");
         Tuning.def("needs.swordScore", 20, "needs-ruling 0.39.z32 (owner 2026-10-23, section 3)", "the sword need's score (a sword in the bag): low, so it runs when idle; an order silences it below the worry lines");
         Tuning.def("needs.ironTier", 3,"one-planner 0.39.z1 (was the game-fact tier 3 of the iron rung)", "the pickaxe tier the iron need wants (the bot's scale: wood 1, stone 2, iron 3, diamond 4)");
         Tuning.def("pathCost.budgetMs", 15, "path-cost 0.39.z12", "milliseconds one walk price may ask Baritone's A* (IPathCost) on the game thread; the fork caps it at its pathCostMaxMs");
@@ -512,8 +512,7 @@ final class TuningDefs {
         Tuning.def("placedPlan.defaultRadius", 24, "rm-constants 0.39.u2 (was PlacedPlan.DEFAULT_RADIUS)", "The walk-back limit of 'restore placed' without a radius");
         // planner
         // policyStats
-        Tuning.def("policyStats.differFull", 5, "rm-constants 0.39.u2 (was PolicyStats.DIFFER_FULL)", "How many 'would differ' lines go to the log in full before the rate limit (one per LOG_EVERY_MS) applies");
-        // predictions
+                // predictions
         Tuning.def("predictions.tolerance", 0.25, "rm-constants 0.39.u2 (was Predictions.TOLERANCE)", "the tolerance of Predictions");
         Tuning.def("predictions.minSamples", 5, "rm-constants 0.39.u2 (was Predictions.MIN_SAMPLES)", "the min samples of Predictions");
         Tuning.def("predictions.last", 20, "rm-constants 0.39.u2 (was Predictions.LAST)", "the last of Predictions");

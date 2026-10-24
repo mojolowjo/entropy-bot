@@ -17,11 +17,14 @@ import java.util.Map;
  * ends short and while a tool step runs; a shortfall is a {@link FactChange#bagNeed} and the order re-plans (z30). Rule 15:
  * no mining data is {@link #unknown} (said in the line, nothing checked). Pure.
  */
-public record StepNeeds(String toolKind, int minTier, Map<String, Integer> consumes, String unknown) {
+public record StepNeeds(String toolKind, int minTier, Map<String, Integer> consumes, String unknown, int fuelTicks) {
     /** The tool role the game's tier data is about (MiningTiers' scale: the needs_*_tool tags rank pickaxes). */
     public static final String TIER_TOOL = "pickaxe";
 
-    public static final StepNeeds NONE = new StepNeeds(null, 0, Map.of(), null);
+    public static final StepNeeds NONE = new StepNeeds(null, 0, Map.of(), null, 0);
+
+    /** The record before 0.39.z37 (no fuel declared). */
+    public StepNeeds(String toolKind, int minTier, Map<String, Integer> consumes, String unknown) { this(toolKind, minTier, consumes, unknown, 0); }
 
     public StepNeeds {
         consumes = consumes == null ? Map.of() : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(consumes));
@@ -44,7 +47,7 @@ public record StepNeeds(String toolKind, int minTier, Map<String, Integer> consu
 
     public boolean hasTool() { return toolKind != null && minTier >= 1; }
 
-    public boolean none() { return !hasTool() && consumes.isEmpty() && unknown == null; }
+    public boolean none() { return !hasTool() && consumes.isEmpty() && unknown == null && fuelTicks <= 0; }
 
     /** "[needs: pickaxe tier>=1, oak_planks 3]"; "" when none. */
     public String text() {
@@ -52,6 +55,7 @@ public record StepNeeds(String toolKind, int minTier, Map<String, Integer> consu
         List<String> p = new ArrayList<>();
         if (hasTool()) p.add(toolKind + " tier>=" + minTier);
         for (var e : consumes.entrySet()) p.add(sh(e.getKey()) + " " + e.getValue());
+        if (fuelTicks > 0) p.add("fuel " + fuelTicks + " burn ticks");
         if (unknown != null) p.add("not loaded: " + unknown);
         return "[needs: " + String.join(", ", p) + "]";
     }
@@ -78,6 +82,12 @@ public record StepNeeds(String toolKind, int minTier, Map<String, Integer> consu
             int have = bag.count(e.getKey());
             if (have < e.getValue()) return sh(e.getKey()) + ": " + have + " of " + e.getValue() + " in the bag, the " + verb + " uses " + e.getValue();
         }
+        if (fuelTicks > 0) {
+            // the game's fuel table (any item with a burn time), less what the step itself uses up
+            long burn = 0;
+            for (var f : ItemWorth.fuels().entrySet()) burn += (long) Math.max(0, bag.count(f.getKey()) - consumes.getOrDefault(f.getKey(), 0)) * f.getValue();
+            if (burn < fuelTicks) return "fuel: " + burn + " of " + fuelTicks + " burn ticks in the bag, the " + verb + " burns " + fuelTicks;
+        }
         return null;
     }
 
@@ -89,11 +99,12 @@ public record StepNeeds(String toolKind, int minTier, Map<String, Integer> consu
     /** The step's needs from the game's data; {@link #NONE} for a step that takes nothing from the bag. */
     public static StepNeeds of(Step s) {
         return switch (s) {
-            case Step.Collect k -> io.github.mojolowjo.entropybot.aa.NeedChain.plain(k.item()) ? forItem(full(k.item())) : NONE;
+            case Step.Collect k -> io.github.mojolowjo.entropybot.aa.NeedChain.plain(k.item()) ? forItem(full(k.item())) : forMembers(k.item());
+            case Step.Mine m -> m.how() == Step.Mine.How.STRIP ? NONE : forFamily(m.family());
             case Step.Strip st -> forBlocks(st.ores());
             case Step.ChopTree t -> t.log() == null ? NONE : forBlocks(List.of(t.log()));
             case Step.Craft k -> recipeInputs(k.item(), k.n(), ItemWorth.CRAFT);
-            case Step.Smelt k -> recipeInputs(k.item(), k.n(), ItemWorth.SMELT);
+            case Step.Smelt k -> withFuel(recipeInputs(k.item(), k.n(), ItemWorth.SMELT), k.item(), k.n());
             case Step.Build b -> {
                 Map<String, Integer> m = new LinkedHashMap<>();
                 for (String i : b.items()) m.merge(full(i), 1, Integer::sum);
@@ -113,6 +124,33 @@ public record StepNeeds(String toolKind, int minTier, Map<String, Integer> consu
             if (t >= 0) least = Math.min(least, t);
         }
         return least == Integer.MAX_VALUE || least == MiningTiers.UNREACHABLE || least < 1 ? NONE : new StepNeeds(TIER_TOOL, least, Map.of(), null);
+    }
+
+    /** A mine of a family (KNOWN / DIG / CAVE): the least tier among the family's ore blocks (the game's block registry and mining tags). */
+    static StepNeeds forFamily(String family) {
+        if (!MiningTiers.ready()) return new StepNeeds(null, 0, Map.of(), "no mining data");
+        int t = MiningTiers.source().familyTier(family);
+        if (t < 0) return new StepNeeds(null, 0, Map.of(), "no block of the family " + family + " in the mining data");
+        return t < 1 || t == MiningTiers.UNREACHABLE ? NONE : new StepNeeds(TIER_TOOL, t, Map.of(), null);
+    }
+
+    /** A collect of a tag (or an "a|b" list): the least tier over its members (the dig takes any it can), as for one item. */
+    static StepNeeds forMembers(String word) {
+        if (!MiningTiers.ready()) return new StepNeeds(null, 0, Map.of(), "no mining data");
+        int least = Integer.MAX_VALUE;
+        for (String item : io.github.mojolowjo.entropybot.aa.NeedChain.membersOf(word)) {
+            int t = MiningTiers.source().blockTier(full(item));
+            if (t < 0) t = MiningTiers.source().dropTier(full(item));
+            if (t >= 0 && t != MiningTiers.UNREACHABLE) least = Math.min(least, t);
+        }
+        return least == Integer.MAX_VALUE || least < 1 ? NONE : new StepNeeds(TIER_TOOL, least, Map.of(), null);
+    }
+
+    /** A smelt's burn: {@code n} items x Tuning craftJob.smeltTicks burn ticks, from any item the game's fuel table lists. */
+    static StepNeeds withFuel(StepNeeds in, String item, int n) {
+        if (ItemWorth.fuels().isEmpty()) return new StepNeeds(in.toolKind, in.minTier, in.consumes, in.unknown != null ? in.unknown : "no fuel table", 0);
+        int ticks = (int) Math.round(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("craftJob.smeltTicks")) * Math.max(1, n);
+        return new StepNeeds(in.toolKind, in.minTier, in.consumes, in.unknown, ticks);
     }
 
     /** A collect of {@code item}: its own block's tier, else the least tier of the blocks that drop it (the loot data). */

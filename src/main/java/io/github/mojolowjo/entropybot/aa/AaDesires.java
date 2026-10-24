@@ -215,7 +215,7 @@ public final class AaDesires {
     /** Round 4A N: a need as a desire (its score, value-flow prerequisite, feasibility, live cost, probe and site). */
     public static Desire need(Need r) {
         Desire d = switch (r.id) {
-            case "needs.food" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, AaDesires::foodScore));
+            case "needs.food" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, AaDesires::foodScore)).preemptsOrder("needs.worryFood");
             case "needs.torches" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(Tuning.get("torch.base") + Curves.upkeep(Tuning.get("torch.span"), b.in.torches, t("torch.target")), factor(b, "torches"))))
                     .prereq(b -> b.in.tableKnown || b.in.tableInBag ? null : "needs.tableFurnace");
             case "needs.bag" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(Tuning.get("bag.base") + Curves.upkeep(Tuning.get("bag.span"), b.in.freeSlots, t("bag.leave")), factor(b, "bag"))));
@@ -724,7 +724,7 @@ public final class AaDesires {
         });
         return new Desire(DANGER_ID, Desire.Kind.UPKEEP, wayHolds(job), AaDesires::dangerScore)
                 .cools(5_000, 0).optionHolds().patient(shelterPatienceMs()).overTrumps().lastTry().nightProof()
-                .met(AaDesires::dangerMet);
+                .met(AaDesires::dangerMet).preemptsOrder("needs.worryDanger");
     }
 
     /** Review 4: the ways that leave the bot sealed in; the fact (int[] pos) where it sealed in last. */
