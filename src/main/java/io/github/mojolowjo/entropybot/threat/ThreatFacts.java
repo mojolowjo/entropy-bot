@@ -41,8 +41,19 @@ public record ThreatFacts(Me me, List<Foe> foes, Ways ways) {
      */
     public record Ways(int fleeRun, double baseDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround,
                        boolean burrow, boolean niche, boolean inWater, int waterColumn, int headDepth, int[] shoreCell, double shoreDist,
-                       boolean waterNear, String burrowNo, String nicheNo) {
+                       boolean waterNear, String burrowNo, String nicheNo, double shoreS, String shoreNo) {
         public static final Ways NONE = new Ways(0, -1, false, 0, 0, true);
+
+        /** 0.39.z42 (rule 18): shoreS, the swim's seconds by Baritone's complete path to the shore cell (NaN: not known, shoreNo says why). */
+        public Ways(int fleeRun, double baseDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround,
+                    boolean burrow, boolean niche, boolean inWater, int waterColumn, int headDepth, int[] shoreCell, double shoreDist,
+                    boolean waterNear, String burrowNo, String nicheNo) {
+            this(fleeRun, baseDist, digIn, pillarBlocks, headRoom, onGround, burrow, niche, inWater, waterColumn, headDepth,
+                    shoreCell, shoreDist, waterNear, burrowNo, nicheNo, Double.NaN, NO_SHORE_PATH);
+        }
+
+        /** The shoreNo of a shape without the path fact. */
+        public static final String NO_SHORE_PATH = "walk: path not known (no path asked)";
 
         /**
          * Backbone step 2 (owner: water is parked): waterNear = water in or beside the feet or head cell. The burrow, the

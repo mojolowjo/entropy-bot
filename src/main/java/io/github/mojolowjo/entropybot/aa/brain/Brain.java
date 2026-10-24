@@ -793,7 +793,11 @@ public final class Brain extends Node {
         if (s == Status.SUCCESS) {
             failures.succeeded(d.id);
             if (!nested && plan != null) planNext = plan.next(d.id);      // AA_ROUND3 2: the plan's next runs while near
-            if (d.selfCool && d.restMs > 0) failures.rest(d.id, d.restMs, now, "done just now (a rest before it runs again)");
+            if (d.selfCool && d.restMs > 0) {
+                failures.rest(d.id, d.restMs, now, "done just now (a rest before it runs again)");
+                // 0.39.z42: an order's rest between legs is a Tuning value (goals.legRestMs), said when it is taken
+                if (d.kind == Desire.Kind.OWNER) bb.port.log(d.id + ": waiting " + d.restMs / 1000 + " s before the next leg (goals.legRestMs)");  // structural: milliseconds per second
+            }
             if (d.kind == Desire.Kind.WANT) Wants.done(bb, d.id, now);   // B3: boredom starts over
             onEnd(d, true, taskSeen, now - startedAt);
             taskSeen = false;

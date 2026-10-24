@@ -44,8 +44,17 @@ public final class Personality {
         def("boredomDays", 1, 0.25, 10, "in-game days until a want is fully bored");
     }
 
+    /**
+     * 0.39.z42: keys a saved file may still hold that no longer mean anything, with why: dropped on load (said once in the
+     * log, the file written again without them), never an error. "tools": the tools upkeep factor of the tools need, which
+     * went in 0.39.y1 (a pickaxe is made when a chain's dig asks for one); its old files kept the key.
+     */
+    private static final Map<String, String> RETIRED = Map.of("tools", "the tools need went in 0.39.y1 (a pickaxe is made when a chain's dig asks for one)");
+
     private final Map<String, Double> v = new LinkedHashMap<>();
     public final List<String> errors = new ArrayList<>();
+    /** 0.39.z42: the retired keys the file held ("tools: why"); the adapter writes the file again without them. */
+    public final List<String> retired = new ArrayList<>();
 
     public Personality() {
         for (var e : RANGE.entrySet()) v.put(e.getKey(), e.getValue()[0]);
@@ -56,6 +65,8 @@ public final class Personality {
         Personality p = new Personality();
         if (m == null) return p;
         for (var e : m.entrySet()) {
+            String gone = RETIRED.get(e.getKey().toLowerCase(Locale.ROOT));
+            if (gone != null) { p.retired.add(e.getKey() + ": " + gone); continue; }
             String err = e.getValue() instanceof Number n ? p.set(e.getKey(), n.doubleValue())
                     : "\"" + e.getKey() + "\" is not a number";
             if (err != null) p.errors.add(err);

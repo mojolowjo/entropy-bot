@@ -59,17 +59,19 @@ class FullPathTest {
         assertTrue(after.dropped().stream().anyMatch(d -> d.startsWith("tree 10 m: 15.0 s (dearer than tree 5 m)")), after.dropped().toString());
     }
 
-    /** S46: the only way still computed: the chain waits (no park, no explore), priced again when the answer lands. */
+    /**
+     * S46, 0.39.z42 (S48, owner: never stand still for a path): the only way still computed: the chain does not wait, it
+     * explores meanwhile (the explore ends when the answer lands); the way's "computing" stays in the dropped list.
+     */
     @Test
-    void s46_theOnlyWayStillComputedWaitsAndNeverExplores() {
+    void s46_theOnlyWayStillComputedExploresMeanwhile() {
         ScenariosTest.world("wooden");
         Spot b = ScenariosTest.tree(5, 4);
         Chain c = logs(1, new ScenariosTest.FakePath().computing(b), b);
-        assertFalse(c.ok(), c.why());
-        assertFalse(c.explore(), c.why());
-        assertTrue(c.waiting(), c.why());
-        assertEquals(NeedChain.COMPUTING, c.missing());
-        assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Explore), c.steps().toString());
+        assertTrue(c.ok() && c.explore() && !c.waiting(), c.why());
+        assertTrue(c.why().contains("paths computing: 1 way waiting; exploring meanwhile"), c.why());
+        assertTrue(c.dropped().contains("tree 5 m: " + NeedChain.COMPUTING), c.dropped().toString());
+        assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Explore e && e.whilePaths()), c.steps().toString());
     }
 
     /** S47: chunks not loaded keeps the way unpicked with that text while a known way stands. */
@@ -82,7 +84,7 @@ class FullPathTest {
         assertTrue(c.why().startsWith("oak_log <- cut tree seen 10 m"), c.why());
         assertTrue(c.dropped().contains("tree 5 m: walk: path not known (chunks not loaded)"), c.dropped().toString());
         Chain only = logs(1, new ScenariosTest.FakePath().chunks(b), b);
-        assertTrue(only.waiting() && !only.explore(), only.why());
+        assertTrue(!only.waiting() && only.explore(), "0.39.z42: explores meanwhile: " + only.why());
     }
 
     /** S47: "unreachable" (a complete search found nothing) drops the source with Baritone's reason: the z33 source fact. */
@@ -108,7 +110,8 @@ class FullPathTest {
         ScenariosTest.world("wooden");
         Spot a = ScenariosTest.tree(10, 4);
         Chain c = NeedChain.resolve("oak_log", 1, ScenariosTest.w(Map.of(), false, false, Map.of("oak_log", List.of(a))).withPath(null));
-        assertEquals(PathPrice.NOT_KNOWN + " (no path provider)", c.missing());
+        assertTrue(c.explore(), "0.39.z42: explores meanwhile: " + c.why());
+        assertTrue(c.dropped().stream().anyMatch(d -> d.endsWith(PathPrice.NOT_KNOWN + " (no path provider)")), c.dropped().toString());
         Chain bag = NeedChain.resolve("oak_planks", 4, ScenariosTest.w(Map.of("minecraft:oak_log", 1), false, false, Map.of()).withPath(null));
         assertTrue(bag.ok() && !bag.explore(), bag.why());
     }

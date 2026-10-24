@@ -481,7 +481,9 @@ public final class AaDesires {
                 .onFail((bb, why) -> { if (!io.github.mojolowjo.entropybot.aa.brain.Goals.passing(why)) io.github.mojolowjo.entropybot.aa.brain.Goals.park(bb, g, why); })
                 .prereq(bb -> io.github.mojolowjo.entropybot.aa.brain.Goals.prereq(bb, g))
                 .fresh(g.given + io.github.mojolowjo.entropybot.aa.brain.Goals.freshMs())
-                .cost(600).exposure(g.r.ore() ? Desire.Exposure.UNDER : Desire.Exposure.ANY).cools(Cooldown.noRunMsV(), Cooldown.noRunMsV()).lastTry();
+                // 0.39.z42: a leg that ended done (an explore that found its source) is no reason to rest the order: the next
+                // leg starts at the next pick (the rest is Tuning goals.legRestMs, said in the log when it is not 0)
+                .cost(600).exposure(g.r.ore() ? Desire.Exposure.UNDER : Desire.Exposure.ANY).cools(Cooldown.noRunMsV(), Tuning.l("goals.legRestMs")).lastTry();
     }
 
     // ---- B7: schematic builds (2.12) ----

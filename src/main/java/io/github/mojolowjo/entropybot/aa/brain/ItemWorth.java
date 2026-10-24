@@ -331,6 +331,9 @@ public final class ItemWorth {
         if (s == null || id == null || tag == null) return false;
         return s.tags(full(id)).contains(tag.indexOf(':') < 0 ? "minecraft:" + tag : tag);
     }
+    /** 0.39.z42: every tag the game gives the id (block and item tags; empty without data). */
+    public static Set<String> tagsOf(String id) { Source s = source; return s == null || id == null ? Set.of() : s.tags(full(id)); }
+
     /** The ids the game tags with {@code tag}, sorted (empty without data: said once). */
     public static List<String> withTag(String tag) {
         Source s = source;

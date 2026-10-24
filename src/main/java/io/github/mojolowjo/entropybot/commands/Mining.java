@@ -697,6 +697,8 @@ final class Mining {
         long until, start, targetAt, findAt = -1, untilAt = -1;
         /** live-facts: the item whose source, once known, ends the walk (a chain's explore); null: none. */
         String untilSource;
+        /** 0.39.z42: an explore while the chain's paths compute: it ends when a path answer lands after this count (-1: not one). */
+        long pathsLanded = -1;
         int chunks, sx, sz;
         /** 0.33.0: where the walk started (the report says how far it went). */
         int[] from;
@@ -729,7 +731,18 @@ final class Mining {
     String explore(LocalPlayer p, String rest) {
         io.github.mojolowjo.entropybot.vocab.ExploreWords.Args a = io.github.mojolowjo.entropybot.vocab.ExploreWords.parse(rest, io.github.mojolowjo.entropybot.vocab.ExploreWords.defaultMinutes());
         if (a.error() != null) return a.error();
-        return startExplore(p, a.dir(), a.minutes(), null, a.gather(), a.until());
+        return startExplore(p, a.dir(), a.minutes(), null, a.gather(), a.until(), false);
+    }
+
+    /**
+     * 0.39.z42 (Step.Explore whilePaths): the chain's explore while its ways wait on a walk's path: the plain explore walk
+     * (gathering as a plain explore does), ended the moment a path answer lands (LivePathPrice.landed moves), so the order
+     * is priced again on it.
+     */
+    String exploreWhilePaths(LocalPlayer p, int minutes) {
+        io.github.mojolowjo.entropybot.vocab.ExploreWords.Args a = io.github.mojolowjo.entropybot.vocab.ExploreWords.parse(String.valueOf(minutes), io.github.mojolowjo.entropybot.vocab.ExploreWords.defaultMinutes());
+        if (a.error() != null) return a.error();
+        return startExplore(p, a.dir(), a.minutes(), null, a.gather(), null, true);
     }
 
     /** V1b: "find cave|<poi kind>|<biome> [minutes]": a known one answers at once; else explore until one turns up. */
@@ -745,10 +758,10 @@ final class Mining {
             }
             if (best != null) return "ok: I know a " + f.what() + ": #" + best.id() + " at " + best.x() + " " + best.y() + " " + best.z() + " (" + Math.round(Math.sqrt(bd)) + "m) - go poi " + best.id();
         }
-        return startExplore(p, null, f.minutes(), f, f.gather(), null);
+        return startExplore(p, null, f.minutes(), f, f.gather(), null, false);
     }
 
-    private String startExplore(LocalPlayer p, String dir, int minutes, io.github.mojolowjo.entropybot.vocab.ExploreWords.Find find, boolean gather, String untilSource) {
+    private String startExplore(LocalPlayer p, String dir, int minutes, io.github.mojolowjo.entropybot.vocab.ExploreWords.Find find, boolean gather, String untilSource, boolean whilePaths) {
         String busy = busyText();
         if (busy != null) return busy;
         try {
@@ -762,6 +775,7 @@ final class Mining {
         ex.dir = dir;
         ex.find = find;
         ex.untilSource = untilSource;
+        if (whilePaths) ex.pathsLanded = LivePathPrice.INSTANCE.landed();
         int[] me = Jobs.here(p);
         ex.sx = me[0] >> 4;
         ex.sz = me[2] >> 4;
@@ -974,6 +988,15 @@ final class Mining {
                 notes().flush();
                 return "next";
             }
+        }
+        // 0.39.z42: an explore while the chain's paths compute ends when a path answer lands (the order is priced again on it)
+        if (ex.pathsLanded >= 0 && done == null && LivePathPrice.INSTANCE.landed() != ex.pathsLanded) {
+            String known = "a walk's path is known now (" + LivePathPrice.INSTANCE.lastLanded() + "); the chain is priced again";
+            LOG.info("[entropybot] explore: {}", known);
+            s.note = known + tookText(ex.took);
+            if (b != null) Jobs.cancel(b);
+            notes().flush();
+            return "next";
         }
         if (ex.find != null && done == null && (ex.findAt < 0 || now() - ex.findAt >= 20)) {
             ex.findAt = now();

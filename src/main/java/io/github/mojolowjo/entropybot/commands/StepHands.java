@@ -445,7 +445,8 @@ public final class StepHands implements Steps.Hands {
                 case STRIP -> throw new IllegalStateException("a strip leg runs on the fork's strip (mineStrip)");
             }, x -> null));
             case Step.FindCave k -> c.stepJob(s.text(), () -> Mining.get().find(p, io.github.mojolowjo.entropybot.vocab.ExploreWords.find("cave " + k.minutes(), Commands.POI_KINDS, Commands::isBiome)));
-            case Step.Explore k -> c.stepJob(s.text(), () -> Mining.get().explore(p, k.minutes() + (k.until() == null ? "" : " until " + k.until())));
+            case Step.Explore k -> c.stepJob(s.text(), () -> k.whilePaths() ? Mining.get().exploreWhilePaths(p, k.minutes())
+                    : Mining.get().explore(p, k.minutes() + (k.until() == null ? "" : " until " + k.until())));
             case Step.Dig d -> c.stepJob(s.text(), () -> DigCommands.dig(c, p, d.from()[0] + " " + d.from()[1] + " " + d.from()[2] + " " + d.to()[0] + " " + d.to()[1] + " " + d.to()[2]
                     + (d.ores() ? " ores" : "") + (d.viaEngine() ? " via engine" : ""), me));
             case Step.DigArea k -> c.stepJob(s.text(), () -> DigCommands.dig(c, p, k.box()[0] + " " + k.box()[1] + " " + k.box()[2] + " " + k.box()[3] + " +" + k.up(), me));
@@ -784,7 +785,11 @@ public final class StepHands implements Steps.Hands {
             return Car.Status.done("ok: at y " + y + " (band " + t.minY() + ".." + t.maxY() + ")");
         }
         if (b == null) return Car.Status.failed("baritone not loaded");
-        if (!b.getCustomGoalProcess().isActive() && !Core.INSTANCE.reflexes.hold()) return Car.Status.failed(t.text() + ": Baritone's goal ended at y " + y + " (no path into the band)");
+        if (!b.getCustomGoalProcess().isActive() && !Core.INSTANCE.reflexes.hold()) {
+            String why = "Baritone's goal ended at y " + y + " (no path into the band)";
+            io.github.mojolowjo.entropybot.aa.moves.FactChange.band(t.minY(), t.maxY(), why);     // 0.39.z42: a fact change, the order re-plans
+            return Car.Status.failed(t.text() + ": " + why);
+        }
         return Car.Status.running(t.text() + ": at y " + y);
     }
 

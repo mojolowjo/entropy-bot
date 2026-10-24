@@ -21,7 +21,10 @@ class NearbyExposureTest {
     static final String RAW = "minecraft:raw_iron_block", IRON = "minecraft:iron_ore";
 
     @BeforeEach
-    void data() { TestData.planner().install(); }
+    void data() {
+        // the raw ore block is known as one from the game's data: its item crafts into a raw material (c:raw_materials)
+        TestData.planner().recipe("raw_iron", 9, "raw_iron_block").tag("raw_iron", "c:raw_materials").install();
+    }
 
     @AfterEach
     void clear() { TestData.clear(); }
@@ -79,7 +82,7 @@ class NearbyExposureTest {
 
     @Test
     void anOnlyBuriedScanFallsBackToMySightingsAndSaysSo() {
-        World w = new World().put(3, 60, 0, IRON);
+        World w = new World().put(3, 60, 0, IRON).air(50, 65, 50);       // the sighted ore has an open face
         Nearby.Source s = Nearby.source(w, ME, Set.of(IRON), () -> SIGHTED);
         assertSame(SIGHTED, s.spot());
         assertEquals("fallback", s.from());
@@ -87,10 +90,52 @@ class NearbyExposureTest {
         assertSame(SIGHTED, Nearby.nearest(w, ME, Set.of(IRON), () -> SIGHTED));
     }
 
+    /** 0.39.z42 (run C 20:28:52): a sighted ore goes through the same exposed-face test: buried, it is no source. */
+    @Test
+    void aBuriedSightedOreIsNoSourceEither() {
+        World w = new World();
+        Nearby.Source s = Nearby.source(w, ME, Set.of(IRON), () -> SIGHTED);
+        assertNull(s.spot(), s.line());
+        assertEquals(Map.of(IRON, 1), s.buried());
+    }
+
     @Test
     void aSideInAnUnloadedChunkWithNoOpenFaceIsUnknownNotExposed() {
         World w = new World().put(999, 60, 0, IRON);
         assertNull(Nearby.exposed(w, 999, 60, 0), "rule 15: one side not loaded, no open face known");
         assertNull(Nearby.source(w, ME, Set.of(IRON), () -> null).spot());
+    }
+
+    /** S49a: stone under one dirt (no open face) is a source: the exposed-face rule is for ore only. */
+    @Test
+    void s49aStoneUnderOneDirtIsASource() {
+        String stone = "minecraft:stone";
+        World w = new World().put(2, 62, 0, stone);                      // every side solid (dirt above, stone around)
+        assertFalse(Nearby.exposureRuled(stone));
+        Nearby.Source s = Nearby.source(w, ME, Set.of(stone), () -> null);
+        assertNotNull(s.spot(), s.line());
+        assertTrue(s.line().endsWith("seen (in the loaded chunks)"), s.line());
+    }
+
+    /** S49b: an iron_ore with six solid neighbours is not a source; the ore set comes from the tags and the recipes. */
+    @Test
+    void s49bAnIronOreWithSixSolidNeighboursIsNotASource() {
+        assertTrue(Nearby.exposureRuled(IRON), "c:ores");
+        assertTrue(Nearby.exposureRuled(RAW), "crafts into raw_iron (c:raw_materials)");
+        World w = new World().put(2, 40, 0, IRON);
+        Nearby.Source s = Nearby.source(w, ME, Set.of(IRON), () -> null);
+        assertNull(s.spot());
+        assertEquals(Map.of(IRON, 1), s.buried());
+    }
+
+    /** S49c: an iron_ore whose neighbour chunk is not loaded (no open face known) is "not loaded", not a source, not buried. */
+    @Test
+    void s49cAnIronOreWithAnUnloadedNeighbourIsNotLoaded() {
+        World w = new World().put(999, 40, 0, IRON);
+        Nearby.Source s = Nearby.source(w, ME, Set.of(IRON), () -> null);
+        assertNull(s.spot());
+        assertEquals(Map.of(IRON, 1), s.unloaded());
+        assertTrue(s.buried().isEmpty());
+        assertTrue(s.line().contains("1 iron_ore not loaded (a side's chunk), not counted"), s.line());
     }
 }

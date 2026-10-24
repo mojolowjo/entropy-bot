@@ -631,7 +631,7 @@ public final class AaRuntime implements JobPort {
         // rule 15: only a known station is a spot; not loaded means no item data, so the chain has no recipes to plan a
         // craft from (ItemWorth empty); none is none
         if (!(c.crafting.knownStation(kind) instanceof io.github.mojolowjo.entropybot.aa.StationFact.Known k)) return null;
-        var at = k.nearest();
+        var at = io.github.mojolowjo.entropybot.aa.Nearby.byPath(k.spots(), LivePathPrice.INSTANCE);   // 0.39.z42 (rule 18): by the complete path
         // 0.39.z30, rule 15: a remembered station whose chunk is not loaded is "not loaded", not "known": priced as remembered, marked unverified
         var lv = Minecraft.getInstance().level;
         return lv != null && !lv.isLoaded(new net.minecraft.core.BlockPos(at.x(), at.y(), at.z())) ? at.notLoaded() : at;
@@ -2646,6 +2646,11 @@ public final class AaRuntime implements JobPort {
                     m.put(e.getKey(), v.isJsonPrimitive() && v.getAsJsonPrimitive().isNumber() ? (Object) v.getAsDouble() : v.toString());
                 }
                 p = io.github.mojolowjo.entropybot.aa.brain.Personality.of(m);
+                // 0.39.z42: a retired key ("tools") is dropped and the file written again without it, said once here
+                if (!p.retired.isEmpty()) {
+                    LOG.info("[entropybot] aa: personality: dropped retired key(s): {}", String.join("; ", p.retired));
+                    if (p.errors.isEmpty()) savePersonality(p);
+                }
             } catch (Exception e) {
                 p = new io.github.mojolowjo.entropybot.aa.brain.Personality();
                 p.errors.add(f.getFileName() + " unreadable: " + e.getMessage());

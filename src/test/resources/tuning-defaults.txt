@@ -309,7 +309,6 @@ dangerOptions.damageMargin	1.25
 dangerOptions.digS	3.0
 dangerOptions.edgeS	2.0
 dangerOptions.pathFactor	0.6
-dangerOptions.pathX	1.3
 dangerOptions.pillarS	1.5
 dangerOptions.pursuitRange	16.0
 dangerOptions.shooterDist	3.5
@@ -437,6 +436,7 @@ furnaceJobs.stallMs	60000.0
 game.lavaHpPerS	8.0
 goals.freshMs	300000.0
 goals.high	20.0
+goals.legRestMs	0.0
 goals.maxN	4096.0
 goals.oreDefault	8.0
 gridLoop.clearTicks	4.0

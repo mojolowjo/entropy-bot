@@ -247,7 +247,6 @@ final class TuningDefs {
         Tuning.def("dangerOptions.pillarS", 1.5, "rm-constants 0.39.u2 (was DangerOptions.PILLAR_S)", "Seconds to dig two cells down (or into a wall) and seal");
         Tuning.def("dangerOptions.pathFactor", 0.6, "rm-constants 0.39.u2 (was DangerOptions.PATH_FACTOR)", "the path factor of DangerOptions");
         Tuning.def("dangerOptions.pursuitRange", 16, "rm-constants 0.39.u2 (was DangerOptions.PURSUIT_RANGE)", "A walker this far behind at the start loses the bot on the way");
-        Tuning.def("dangerOptions.pathX", 1.3, "rm-constants 0.39.u2 (was DangerOptions.PATH_X)", "AA_STEP3 (TIME_MODEL)");
         Tuning.def("dangerOptions.edgeS", 2, "rm-constants 0.39.u2 (was DangerOptions.EDGE_S)", "AA_STEP3 (TIME_MODEL)");
         // debugRules
         Tuning.def("debugRules.maxCells", 4096, "rm-constants 0.39.u2 (was DebugRules.MAX_CELLS)", "the max cells of DebugRules");
@@ -365,7 +364,8 @@ final class TuningDefs {
         // goals
         Tuning.def("goals.high", 20, "rm-constants 0.39.u2 (was Goals.HIGH)", "the high of Goals");
         Tuning.def("goals.oreDefault", 8, "rm-constants 0.39.u2 (was Goals.ORE_DEFAULT)", "the ore default of Goals");
-        Tuning.def("goals.freshMs", 5 * 60_000, "rm-constants 0.39.u2 (was Goals.FRESH_MS)", "A fresh goal may interrupt the running task (once) within this time");
+        Tuning.def("goals.legRestMs", 0, "0.39.z42 (run C 20:27:45-20:28:15: the order rested cooldown.noRunMs 30 s after its explore leg)", "ms an owner order waits after one of its legs ended done (an explore that found the source) before its next leg; 0: the next leg starts at the next pick");
+        Tuning.def("goals.freshMs", 5 * 60_000,"rm-constants 0.39.u2 (was Goals.FRESH_MS)", "A fresh goal may interrupt the running task (once) within this time");
         // gridLoop
         Tuning.def("gridLoop.maxPerCell", 64, "rm-constants 0.39.u2 (was GridLoop.MAX_PER_CELL)", "A stack per cell at most (and never more than the item's own stack size)");
         Tuning.def("gridLoop.clearTicks", 4, "rm-constants 0.39.u2 (was GridLoop.CLEAR_TICKS)", "Ticks after a clear before the next fill (the cleared items settle in the bag)");

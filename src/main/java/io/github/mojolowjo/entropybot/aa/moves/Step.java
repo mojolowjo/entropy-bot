@@ -185,9 +185,14 @@ public sealed interface Step {
      * Walk new land for {@code minutes} (the explore verb: Baritone's explore goal), the want's way. live-facts: {@code until}
      * (an item id, null: none) ends it the moment a source of that item is known (a chain's explore for a missing source).
      */
-    record Explore(int minutes, String until) implements Step {
+    record Explore(int minutes, String until, boolean whilePaths) implements Step {
         public Explore(int minutes) { this(minutes, null); }
-        public String text() { return "explore " + minutes + (until == null ? "" : " until " + until); }
+        public Explore(int minutes, String until) { this(minutes, until, false); }
+        /**
+         * 0.39.z42: {@code whilePaths}: the chain's ways all wait on a walk's path (computing, chunks not loaded): this explore
+         * moves the bot meanwhile and ends the moment a path answer lands (the order is priced again then).
+         */
+        public String text() { return "explore " + minutes + (until == null ? "" : " until " + until) + (whilePaths ? " while paths compute" : ""); }
     }
 
     // ---- rm-execution2: the kinds the remaining option sets and desires run ----

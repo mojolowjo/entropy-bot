@@ -281,9 +281,12 @@ public final class Steps {
      * {@link Replanner} for the steps from here on the facts of now and goes on with them; no fact, no replanner, no way
      * now or the same step failing again after a re-plan: the run ends FAILED with the reason (both reasons for a repeat).
      */
-    private void failOrReplan(String reason) {
-        FactChange.Fact fact;
-        try {
+    private void failOrReplan(String reason) { failOrReplan(reason, null); }
+
+    /** {@code known}: the fact the run itself found (a source step's timeout), null: the hands say it. */
+    private void failOrReplan(String reason, FactChange.Fact known) {
+        FactChange.Fact fact = known;
+        if (fact == null) try {
             fact = hands.lastFact();
         } catch (RuntimeException e) {
             fact = null;
@@ -424,7 +427,13 @@ public final class Steps {
                     failOrReplan(lack);
                 } else if (now - stepStart > stepTicks()) {
                     safeCancel("timed out");
-                    fail("timed out after " + stepTicks() / 20 + " s" + (st.why() == null ? "" : " (" + st.why() + ")"));  // game fact: 20 game ticks per second
+                    String out = "timed out after " + stepTicks() / 20 + " s";  // game fact: 20 game ticks per second
+                    String reason = out + (st.why() == null ? "" : " (" + st.why() + ")");
+                    // 0.39.z42 (run C 20:38:58): a source step that timed out is the z33 source fact: the order re-plans
+                    // without that source; any other step's timeout ends the run as before
+                    String src = io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(s);
+                    if (src != null) failOrReplan(reason, new FactChange.Fact("source " + src, out));
+                    else fail(reason);
                 } else if (st.why() != null) why = stage() + ": " + st.why();
             }
         }

@@ -769,10 +769,12 @@ class ScenariosTest {
         assertTrue(chainPart(c.why()).contains("cut tree seen 10 m, walk 3.0 s (path)"), c.why());
         String charcoal = c.dropped().stream().filter(d -> d.startsWith("charcoal: ")).findFirst().orElseThrow(() -> new AssertionError(c.dropped().toString()));
         assertTrue(charcoal.startsWith("charcoal: 88.6 s (dearer than coal)"), charcoal);
-        // 0.39.z41: no path provider is no walk price at all (the line is gone): every way with a walk waits on "path not known"
+        // 0.39.z41: no path provider is no walk price at all (the line is gone): every way with a walk is "path not known";
+        // 0.39.z42 (S48): the chain does not wait on them, it explores meanwhile
         Chain none = NeedChain.resolve("torch", 16, w(Map.of(), false, false, seen).withPath(null));
-        assertFalse(none.ok(), none.why());
-        assertTrue(none.waiting() && none.missing().startsWith(PathPrice.NOT_KNOWN + " (no path provider)"), none.why());
+        assertTrue(none.ok() && none.explore() && !none.waiting(), none.why());
+        assertTrue(none.why().contains("paths computing: "), none.why());
+        assertTrue(none.dropped().stream().anyMatch(d -> d.contains(PathPrice.NOT_KNOWN + " (no path provider)")), none.dropped().toString());
         for (var e : fake.asked.entrySet()) assertEquals(1, e.getValue(), "each spot asked once a pass: " + fake.asked);
     }
 

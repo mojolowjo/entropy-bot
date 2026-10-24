@@ -164,7 +164,12 @@ public final class NeedChain {
             List<String> h = new ArrayList<>(held);
             for (var e : keyWhy.entrySet()) h.add(e.getKey() + ": " + e.getValue());
             World less = without((item, sp) -> keyWhy.containsKey(sourceKey(item, sp)));
-            return new World(bag, tableNear, furnaceNear, less.seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, h);
+            // 0.39.z42: a dropped band (no path into it from here) is no band for the order: its explore goes overland
+            Function<String, int[]> b = band == null ? null : word -> {
+                int[] r = band.apply(word);
+                return r != null && keyWhy.containsKey(io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(r[0], r[1])) ? null : r;
+            };
+            return new World(bag, tableNear, furnaceNear, less.seenAll, mobs, loot, b, horizonBlocks, path, stationAt, usesLeft, h);
         }
     }
 
@@ -369,6 +374,7 @@ public final class NeedChain {
         boolean tableReady, furnaceReady, stuck;
         boolean tableWalked, furnaceWalked;   // station-memory: the walk to the known station is priced (or the station was placed here)
         String fail;          // the way being tried cannot be done: the reason
+        int pathsWaiting;     // 0.39.z42: the ways of the last requirement with no way standing that wait on a path (choose)
         String unknown;       // the first need nothing is known to give (the explore leaf's)
         String loopOn;        // the need a loop failure came back to (set with fail)
         String pickItem;      // the best pickaxe in hand or made
@@ -653,7 +659,9 @@ public final class NeedChain {
                 for (Trial t : trials) { drop(c, t.alt().label, t.fail()); verdict(nodes, t, "dropped: " + t.fail()); }
                 // 0.39.z41: no way stands while a walk's path is not known (computing, chunks not loaded): the requirement waits
                 // on it (priced again when the answer lands), it does not turn into an explore
-                for (Trial t : trials) if (t.fail() != null && t.fail().startsWith(PathPrice.NOT_KNOWN)) { c.fail = t.fail(); break; }
+                for (Trial t : trials) if (t.fail() != null && t.fail().startsWith(PathPrice.NOT_KNOWN)) { if (c.fail == null || !c.fail.startsWith(PathPrice.NOT_KNOWN)) c.fail = t.fail(); }
+                // 0.39.z42: how many ways wait on a path, for the requirement's explore meanwhile (pathsExplore)
+                c.pathsWaiting = (int) trials.stream().filter(t -> t.fail() != null && t.fail().startsWith(PathPrice.NOT_KNOWN)).count();
             }
             return null;
         }
@@ -810,6 +818,7 @@ public final class NeedChain {
             alts.addAll(tagHuntAlts(c, w, lack));
             Trial win = choose(c, alts, w.word);
             if (win != null) return new Got(win.alt().id != null ? win.alt().id : w.word, n, win.phrase());
+            if (waitsOnPaths(c)) return new Got(w.word, n, pathsExplore(c, w.word));
             if (c.fail != null) return null;
             String leaf = exploreLeaf(c, w.word, noSource(c, w.word));
             return c.fail != null ? null : new Got(w.word, n, leaf);
@@ -1069,6 +1078,7 @@ public final class NeedChain {
             alts.addAll(huntAlts(c, item, lack));
             Trial w = choose(c, alts, item);
             if (w != null) return w.phrase();
+            if (waitsOnPaths(c)) return pathsExplore(c, item);
             if (c.fail != null) return null;
             return exploreLeaf(c, item, noSource(c, item));
         } finally {
@@ -1491,6 +1501,7 @@ public final class NeedChain {
     public static String sourceKey(Step s) {
         if (s instanceof Step.ChopTree t && t.at() != null) return "cut at " + t.at()[0] + " " + t.at()[1] + " " + t.at()[2];
         if (s instanceof Step.Collect k) return "collect " + k.item();
+        if (s instanceof Step.ToBand b) return io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(b.minY(), b.maxY());   // 0.39.z42
         return null;
     }
 
@@ -1732,6 +1743,33 @@ public final class NeedChain {
         c.bag.merge(item, lack, Integer::sum);
         return noted("hunt " + kills + " " + sh(s.from()) + " seen " + Math.round(m.dist()) + " m", wk);
     }
+
+    /** 0.39.z42: no way of the requirement stands and the reason is a walk whose path is not known (computing, chunks not loaded). */
+    private static boolean waitsOnPaths(Ctx c) {
+        return c.fail != null && c.fail.startsWith(PathPrice.NOT_KNOWN) && c.pathsWaiting > 0;
+    }
+
+    /**
+     * 0.39.z42 (owner: "never stand still for a path"): every way of the requirement waits on a walk's complete path: the
+     * requirement does not wait, it explores meanwhile (the explore moves the bot and needs no walk price), the explore
+     * ending the moment a path answer lands so the order is priced again on it (Step.Explore whilePaths). No band: it is a
+     * move while the paths compute, not a search for a missing source. aa why: "paths computing: N ways waiting; exploring
+     * meanwhile". The ways' "not known" reasons stay in the dropped list.
+     */
+    private static String pathsExplore(Ctx c, String word) {
+        int n = c.pathsWaiting;
+        c.fail = null;
+        c.pathsWaiting = 0;
+        c.steps.add(new Step.Explore(exploreMinutes(), null, true));
+        c.stuck = true;
+        if (c.unknown == null) c.unknown = word;
+        String out = "explore (" + PATHS_COMPUTING + n + " way" + (n == 1 ? "" : "s") + " waiting; exploring meanwhile)";
+        if (c.trace != null) c.trace.note("ways of " + shw(word) + ": " + out);
+        return out;
+    }
+
+    /** 0.39.z42: the words of {@link #pathsExplore}. */
+    static final String PATHS_COMPUTING = "paths computing: ";
 
     /**
      * The leaf when no way stands: look for the need's source (a tag: any member's: the whole source set). It has no price.

@@ -49,6 +49,17 @@ public final class FactChange {
         return l.length() > 160 ? l.substring(0, 157) + "..." : l;  // structural: one chat line's length in the step text
     }
 
+    /** 0.39.z42: the source key of a band ("to y 5..31"): the explore way that goes to that height first. */
+    public static String bandKey(int minY, int maxY) { return "to y " + minY + ".." + maxY; }
+
+    /**
+     * 0.39.z42 (run C 20:27:06): Baritone's goal ended outside the band (no path into it from here): the same source slot;
+     * the order re-plans without that band (the chain takes the next way or explores overland).
+     */
+    public static void band(int minY, int maxY, String why) {
+        last = new Fact("source " + bandKey(minY, maxY), why);
+    }
+
     /** The reason an unreachable source is dropped with ("unreachable (Baritone: Unable to find any path to ...)"). */
     public static String unreachableText(String why) { return "unreachable (Baritone: " + why + ")"; }
 

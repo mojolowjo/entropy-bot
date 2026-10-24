@@ -1,6 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
 import io.github.mojolowjo.entropybot.aa.NeedChain.Spot;
+import io.github.mojolowjo.entropybot.aa.brain.ItemWorth;
 import io.github.mojolowjo.entropybot.aa.brain.LootBook;
 import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 
@@ -8,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -235,9 +237,32 @@ public final class Nearby {
             out.add(priced(s, new Spot(p[0], p[1], p[2], dist(p, me), id), first, priced, blocks));
         }
         // 0.39.z41: which station the chain prices first: straight metres less the bonus in walk-blocks (a ranking, never
-        // its price: the chain prices the walk by Baritone's complete path and takes the bonus off that)
+        // its price: the chain prices the walk by Baritone's complete path and takes the bonus off that). 0.39.z42: only
+        // the pre-filter of byPath, which picks among the first stations by their complete paths
         out.sort(Comparator.comparingDouble((Spot sp) -> sp.dist() - io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(sp.bonusS())).thenComparingDouble(Spot::dist));
         return new Lookup(out, skipped, priced);
+    }
+
+    /**
+     * 0.39.z42 (rule 18): the station the chain walks to, by Baritone's complete path less its bonus. The lookup's order
+     * (straight metres less the bonus) is only the pre-filter: the first {@code pathCost.maxPending} stations of it are asked
+     * (each ask is one background search); among those with a complete path the cheapest walk less its bonus wins; none known
+     * yet: the pre-filter's first (the chain asks its walk again and says "path not known" until it lands). Never a price.
+     * Null: no stations.
+     */
+    public static Spot byPath(List<Spot> spots, PathPrice pp) {
+        if (spots == null || spots.isEmpty()) return null;
+        if (pp == null) return spots.get(0);
+        Spot best = null;
+        double bestS = Double.POSITIVE_INFINITY;
+        for (int i = 0; i < Math.min(spots.size(), PathPrice.maxPending()); i++) {
+            Spot sp = spots.get(i);
+            PathPrice.Answer a = pp.price(sp.x(), sp.y(), sp.z(), sp.dist());
+            if (a == null || a.kind() != PathPrice.Kind.PRICED || a.walk() == null) continue;
+            double s = a.walk().seconds() - Math.max(0, sp.bonusS());
+            if (s < bestS) { bestS = s; best = sp; }
+        }
+        return best != null ? best : spots.get(0);
     }
 
     /**
@@ -335,42 +360,83 @@ public final class Nearby {
      * (exposed) block of the scan, "fallback" for AA's sightings, "none"), and the buried blocks of the scan it skipped, per
      * block id (in the order met, nearest first).
      */
-    public record Source(Spot spot, String from, java.util.Map<String, Integer> buried) {
-        public Source { buried = java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(buried)); }
+    public record Source(Spot spot, String from, java.util.Map<String, Integer> buried, java.util.Map<String, Integer> unloaded) {
+        public Source {
+            buried = java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(buried));
+            unloaded = java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(unloaded == null ? Map.of() : unloaded));
+        }
 
-        /** aa debug's line: "nearest raw_iron_block at x y z: seen (exposed) | 3 iron_ore buried, not counted". */
+        public Source(Spot spot, String from, java.util.Map<String, Integer> buried) { this(spot, from, buried, Map.of()); }
+
+        /** aa debug's line: "nearest raw_iron_block at x y z: seen (exposed) | 3 iron_ore buried, not counted | 1 iron_ore not loaded, not counted". */
         public String line() {
             String at = spot == null ? "none known" : "nearest " + shortId(spot.block()) + " at " + spot.x() + " " + spot.y() + " " + spot.z()
-                    + ("baritone".equals(from) ? ": seen (exposed)" : ": from my sightings");
+                    + ("baritone".equals(from) ? ": seen" + (exposureRuled(spot.block()) ? " (exposed)" : " (in the loaded chunks)") : ": from my sightings");
             List<String> b = new ArrayList<>();
             for (var e : buried.entrySet()) b.add(e.getValue() + " " + shortId(e.getKey()) + " buried, not counted");
+            for (var e : unloaded.entrySet()) b.add(e.getValue() + " " + shortId(e.getKey()) + " not loaded (a side's chunk), not counted");
             return b.isEmpty() ? at : at + " | " + String.join(", ", b);
         }
     }
 
+    private static String fullId(String id) { return id.indexOf(':') < 0 ? "minecraft:" + id : id; }
+
     private static String shortId(String id) { return id == null ? "?" : id.replaceFirst("^minecraft:", ""); }
+
+    /** The game's ore tag (common tags). */
+    static final String ORES_TAG = "c:ores", RAW_TAG = "c:raw_materials";
+
+    /**
+     * 0.39.z42 (rule 17 is about ore a player could see): the exposed-face rule applies to an ore only: a block the game tags
+     * as an ore ({@code c:ores}, or a {@code minecraft:*_ores} block tag) or a raw ore block (a block whose own item crafts
+     * into a raw material, {@code c:raw_materials}: raw_iron_block -> raw_iron, from the game's recipes). Stone, dirt,
+     * gravel, sand and logs keep the plain "in the loaded chunks" rule. Game data only (tags, recipes); no name list.
+     */
+    public static boolean exposureRuled(String block) {
+        if (block == null) return false;
+        for (String t : ItemWorth.tagsOf(block))
+            if (t.equals(ORES_TAG) || t.startsWith("minecraft:") && t.endsWith("_ores")) return true;
+        for (String raw : ItemWorth.itemsIn(RAW_TAG))
+            for (ItemWorth.Recipe r : ItemWorth.recipes(raw))
+                if (!r.inputs().isEmpty() && r.inputs().stream().allMatch(i -> fullId(i).equals(fullId(block)))) return true;
+        return false;
+    }
 
     /**
      * legit sources (owner 2026-10-23: "a block counts as seen only when it has an exposed face, like a player who sees ore on
-     * a cave wall"): {@link #nearest} with its notes. A block of the scan counts only when {@link #exposed}; a buried one is
-     * skipped and counted (the strip and explore ways reach it). The rest as before: the policy, fair play, a log only as a tree.
+     * a cave wall"): {@link #nearest} with its notes. 0.39.z42: an ore ({@link #exposureRuled}) counts only when
+     * {@link #exposed}: a buried one is skipped and counted (the strip and explore ways reach it), one with a side in an
+     * unloaded chunk and no open face is "not loaded" (rule 15) and counted apart; any other block counts in the loaded
+     * chunks. AA's sightings (the fallback) go through the same test for an ore. The rest as before: the policy, fair play,
+     * a log only as a tree.
      */
     public static Source source(Scan s, int[] me, Set<String> blocks, Supplier<Spot> fallback) {
-        java.util.Map<String, Integer> buried = new java.util.LinkedHashMap<>();
+        java.util.Map<String, Integer> buried = new java.util.LinkedHashMap<>(), unloaded = new java.util.LinkedHashMap<>();
         if (s != null && blocks != null && !blocks.isEmpty()) {
             int checked = 0;
             for (int[] p : sorted(s.find(blocks, scanR()), me)) {
                 if (checked++ >= maxChecks()) break;
                 String id = s.blockAt(p[0], p[1], p[2]);
                 if (id == null || !blocks.contains(id) || !s.allowed(p[0], p[1], p[2]) || !s.fairOk(p[0], p[1], p[2])) continue;
-                if (!Boolean.TRUE.equals(exposed(s, p[0], p[1], p[2]))) { buried.merge(id, 1, Integer::sum); continue; }
+                if (!counts(s, id, p[0], p[1], p[2], buried, unloaded)) continue;
                 if (s.isLog(id) && !s.leavesNear(p[0], p[1], p[2], leafReach())) continue;
                 return new Source(new Spot(p[0], p[1], p[2], dist(p, me), id, s.isLog(id) ? treeLogs(s.logs(scanR()), p, s.treeCap())
-                        : s.isOre(id) ? clusterSize(s, blocks, p) : 0), "baritone", buried);
+                        : s.isOre(id) ? clusterSize(s, blocks, p) : 0), "baritone", buried, unloaded);
             }
         }
         Spot f = fallback == null ? null : fallback.get();
-        return new Source(f, f == null ? "none" : "fallback", buried);
+        // 0.39.z42: a sighted ore is tested as a scanned one (run C 20:28:52: the ore index's raw_iron_block had no exposure test)
+        if (f != null && s != null && f.block() != null && !counts(s, f.block(), f.x(), f.y(), f.z(), buried, unloaded)) f = null;
+        return new Source(f, f == null ? "none" : "fallback", buried, unloaded);
+    }
+
+    /** One candidate under the exposed-face rule: true when it counts; a buried or not-loaded ore is counted in its map. */
+    private static boolean counts(Scan s, String id, int x, int y, int z, java.util.Map<String, Integer> buried, java.util.Map<String, Integer> unloaded) {
+        if (!exposureRuled(id)) return true;
+        Boolean e = exposed(s, x, y, z);
+        if (Boolean.TRUE.equals(e)) return true;
+        (e == null ? unloaded : buried).merge(id, 1, Integer::sum);
+        return false;
     }
 
     /** The six face neighbours. */

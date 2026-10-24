@@ -420,8 +420,17 @@ public final class DangerMoves {
             int[] wf = wetNow ? water(mc, p) : new int[]{0, 0, 0, 0};
             int[] shore = wetNow ? shore(mc, p, wf[3] != 0 ? wf[3] : p.blockPosition().getY()) : null;
             double shoreDist = shore == null ? -1 : Math.sqrt(Math.pow(shore[0] + 0.5 - p.getX(), 2) + Math.pow(shore[2] + 0.5 - p.getZ(), 2));
+            // 0.39.z42 (rule 18): the swim to the shore is priced by Baritone's complete path (the chain's background search);
+            // the straight distance above only names it in aa why
+            double shoreS = Double.NaN;
+            String shoreNo = null;
+            if (shore != null) {
+                io.github.mojolowjo.entropybot.aa.PathPrice.Answer a = io.github.mojolowjo.entropybot.commands.LivePathPrice.INSTANCE.price(shore[0], shore[1], shore[2], shoreDist);
+                if (a.kind() == io.github.mojolowjo.entropybot.aa.PathPrice.Kind.PRICED && a.walk() != null) shoreS = a.walk().seconds();
+                else shoreNo = io.github.mojolowjo.entropybot.aa.PathPrice.NOT_KNOWN + " (" + a.kind().name().toLowerCase(java.util.Locale.ROOT) + (a.reason() == null ? "" : ": " + a.reason()) + ")";
+            }
             return new ThreatFacts(me, foes, new ThreatFacts.Ways(flee, baseDist, burrow || niche, tw[0], headRoom(mc, p),
-                    p.onGround() && !wetNow, burrow, niche, wetNow, wf[0], wf[1], shore, shoreDist, wn, noBurrow, noNiche));
+                    p.onGround() && !wetNow, burrow, niche, wetNow, wf[0], wf[1], shore, shoreDist, wn, noBurrow, noNiche, shoreS, shoreNo));
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] danger facts failed (calm facts used): {}", e.toString());
             return ThreatFacts.CALM;

@@ -132,7 +132,10 @@ public final class LivePathPrice implements PathPrice {
      * values; rough, rule 14: the level now, when the answer lands). 0: none, or no cells in the answer.
      */
     private static double lavaTicks(Minecraft mc, IPathCost.Answer a) {
-        if (a.path == null || a.path.isEmpty() || mc.level == null) return 0;
+        // 0.39.z42 (rule 7): the one null here is the level: the answer lands later than the ask, and the world may have
+        // been left meanwhile. The fork's Answer.path is never null (List.of() when it gives no cells: no lava to price).
+        if (mc.level == null) return 0;
+        if (a.path.isEmpty()) return 0;
         java.util.List<int[]> cells = new java.util.ArrayList<>();
         for (BlockPos p : a.path) cells.add(new int[]{p.getX(), p.getY(), p.getZ()});
         var lv = mc.level;

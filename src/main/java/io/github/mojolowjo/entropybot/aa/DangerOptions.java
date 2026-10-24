@@ -273,7 +273,6 @@ public final class DangerOptions {
     /** AA_STEP3 (TIME_MODEL): swim 2.2 blocks/s, a place 0.25 s, a straight line x 1.3 before a path exists, 2 s per water edge. */
     static final double SWIM_BPS = 2.2; // game fact: swimming speed 2.2 blocks per second
     static final double PLACE_S = 0.25; // game fact: placing a block takes 0.25 s (TIME_MODEL)
-    static double pathX() { return Tuning.get("dangerOptions.pathX"); }
     static double edgeS() { return Tuning.get("dangerOptions.edgeS"); }
     /** Review 0.39.a4 5: sinking held down (sneak) in water, blocks/s (vanilla about 1; a hand number until measured). */
     static final double SINK_BPS = 1.0; // game fact: sinking speed 1.0 block per second
@@ -362,16 +361,19 @@ public final class DangerOptions {
                         : col + " blocks up out of the water, " + fmt(pt) + " s, air risk " + fmt(r) + ", then open " + Math.round(open) + " s";
                 Priced po = priced(me, death, Way.PILLAR_OUT, ok, during(near, pt) + amb * (pt + open), nightT(need, pt), why);
                 all.add(ok ? plus(po, airLoss(death, col, pt, air), "air " + Math.round(airLoss(death, col, pt, air)) + " s", null) : po);
-                // the shore first: the swim (TIME_MODEL swim 2.2 blocks/s, straight x 1.3, 2 s the water edge), then the box
-                // there when the bag has its blocks, else a burrow there (its floor unknown from here: tried there)
+                // the shore first: the swim (0.39.z42, rule 18: Baritone's complete path to the shore cell, + 2 s the water
+                // edge; not known yet: the way cannot be picked), then the box there when the bag has its blocks, else a
+                // burrow there (its floor unknown from here: tried there)
                 int[] sc = w.shoreCell();
-                if (sc != null && w.shoreDist() >= 0) {
-                    double st = w.shoreDist() * pathX() / SWIM_BPS + edgeS();
+                if (sc != null && w.shoreDist() >= 0 && Double.isNaN(w.shoreS()))
+                    all.add(new Priced(Way.SHORE, false, 0, 0, 0, "swim to the shore " + sc[0] + " " + sc[1] + " " + sc[2] + ": " + w.shoreNo()));
+                else if (sc != null && w.shoreDist() >= 0) {
+                    double st = w.shoreS() + edgeS();
                     double gt = boxOk ? bt : ut;
                     String ground = boxOk ? "box" : "burrow";
                     double al = airLoss(death, w.headDepth(), 0, air);
                     Priced sp = priced(me, death, Way.SHORE, true, during(near, st + gt) + amb * (st + gt), nightT(need, st + gt),
-                            "swim " + Math.round(w.shoreDist()) + " to the shore " + sc[0] + " " + sc[1] + " " + sc[2] + " " + fmt(st) + " s, then " + ground + " " + fmt(gt) + " s");
+                            "swim " + Math.round(w.shoreDist()) + " to the shore " + sc[0] + " " + sc[1] + " " + sc[2] + " " + fmt(st) + " s (path), then " + ground + " " + fmt(gt) + " s");
                     all.add(plus(sp, al, "air " + Math.round(al) + " s", boxOk ? List.of(new Step.Walk(sc[0], sc[1], sc[2], 0), new Step.Shelter())
                             : List.of(new Step.Walk(sc[0], sc[1], sc[2], 0), new Step.Burrow(), new Step.Wait((int) Tuning.get("steps.burrowWaitS")))));
                 } else all.add(new Priced(Way.SHORE, false, 0, 0, 0, "no dry cell within " + ThreatFacts.shoreReach()));

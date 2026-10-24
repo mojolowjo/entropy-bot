@@ -43,7 +43,13 @@ class DangerStep3aTest {
     @Test
     void theWatchCaseDeepWaterPricesTheShoreOrPillarOutUnderTheWait() {
         // step2-watch: deep water (12 cells to the floor, 2 over the head), 16 blocks, night, danger 1.0, 4 hp, a shore 20 away
-        ThreatFacts.Ways w = new ThreatFacts.Ways(0, -1, false, 16, 3, false, false, false, true, 12, 2, new int[]{-180, 63, -238}, 20);
+        // 0.39.z42 (rule 18): the swim is Baritone's complete path to the shore cell (here 11.8 s); not known: no shore way
+        ThreatFacts.Ways unknown = new ThreatFacts.Ways(0, -1, false, 16, 3, false, false, false, true, 12, 2, new int[]{-180, 63, -238}, 20);
+        DangerOptions.Choice u = DangerOptions.choose(new ThreatFacts(me(4), List.of(), unknown), night(16, false, 200, 200));
+        assertFalse(way(u, DangerOptions.Way.SHORE).possible(), u.terms());
+        assertTrue(u.terms().contains("swim to the shore -180 63 -238: walk: path not known"), u.terms());
+        ThreatFacts.Ways w = new ThreatFacts.Ways(0, -1, false, 16, 3, false, false, false, true, 12, 2, new int[]{-180, 63, -238}, 20,
+                false, null, null, 11.8, null);
         DangerOptions.Choice c = DangerOptions.choose(new ThreatFacts(me(4), List.of(), w), night(16, false, 200, 200));
         DangerOptions.Priced wait = way(c, DangerOptions.Way.WAIT);
         assertTrue(c.best().way() == DangerOptions.Way.SHORE || c.best().way() == DangerOptions.Way.PILLAR_OUT, c.terms());
