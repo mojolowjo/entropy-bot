@@ -3120,7 +3120,18 @@ public final class AaRuntime implements JobPort {
         pick.add("brain's best now: " + (best == null ? "none scored yet" : best.d().id + " score " + Math.round(best.score()) + (best.skip() != null ? " (" + best.skip() + ")" : ""))
                 + "; the full rank of a draft order is not computed (it is not in the brain's list)");
         List<String> stations = List.of(c.nearby.stationsLine(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT), c.nearby.stationsLine(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT));
-        return io.github.mojolowjo.entropybot.aa.DebugTree.order(bb, g, "want " + arg, this::sourceBlocksOf, pick, stations);
+        c.nearby.beginNotes();                              // legit sources (0.39.z40): each source lookup's seen / buried line
+        String out;
+        List<String> src;
+        try {
+            out = io.github.mojolowjo.entropybot.aa.DebugTree.order(bb, g, "want " + arg, this::sourceBlocksOf, pick, stations);
+        } finally {
+            src = c.nearby.endNotes();
+        }
+        StringBuilder sb = new StringBuilder(out);
+        if (src.isEmpty()) sb.append("\n  sources: no block source looked up");
+        for (String s : src) sb.append("\n  ").append(s);
+        return sb.toString();
     }
 
     private String debugManual(String verb, String arg) {

@@ -57,6 +57,7 @@ class NeedLiveFactsTest {
         @Override public boolean leavesNear(int x, int y, int z, int reach) { return x == -20; }
         @Override public boolean allowed(int x, int y, int z) { return true; }
         @Override public String blockAt(int x, int y, int z) { return CELLS.get(x + " " + y + " " + z); }
+        @Override public Boolean open(int x, int y, int z) { return true; }   // stated: every face open (legit sources: NearbyExposureTest)
     };
 
     static Spot source(String word) {
@@ -109,6 +110,7 @@ class NeedLiveFactsTest {
             @Override public boolean leavesNear(int x, int y, int z, int reach) { return false; }
             @Override public boolean allowed(int x, int y, int z) { return true; }
             @Override public String blockAt(int x, int y, int z) { return cells.get(x + " " + y + " " + z); }
+            @Override public Boolean open(int x, int y, int z) { return true; }   // stated: every face open (legit sources: NearbyExposureTest)
         };
         Function<String, Spot> source = w -> Nearby.nearest(scan, ME, Nearby.sourceBlocks(w, BOOK, NeedLiveFactsTest::ownBlock), () -> null);
         // nothing known: a chain's explore names the item it looks for (here the oak log), and the explore for coal waits on its item

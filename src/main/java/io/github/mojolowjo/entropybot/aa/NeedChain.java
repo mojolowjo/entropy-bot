@@ -1354,11 +1354,16 @@ public final class NeedChain {
         boolean line = a == null || Double.isNaN(a.seconds()) || a.seconds() < 0;
         Walked out = line
                 ? new Walked(walkS(dist), "walk " + s(walkS(dist)) + " (line)")
-                : new Walked(a.seconds(), "walk " + (a.about() ? "about " : "") + s(a.seconds()) + " (path)");
+                : new Walked(a.seconds(), "walk " + (a.about() ? "about " : "") + s(a.seconds()) + " (path)" + lavaNote(a));
         c.walks.put(key, out);
         walkNote(c, x, y, z, dist, !line ? (a.about() ? "about: partial + heuristic (Baritone path)" : "Baritone path, complete")
                 : "line x " + StepTimes.pathFactor() + (asked ? " (no path answer from Baritone: " + (noAnswer != null ? noAnswer : "an unusable estimate") + ")" : " (pathCost.perChainMax queries used)"), out);
         return out;
+    }
+
+    /** Lava distance (0.39.z40): " (+3.0 s lava detour)" when the walk's path paid the lava price (rule 14: rough), else "". */
+    static String lavaNote(PathPrice.Walk a) {
+        return a == null ? "" : io.github.mojolowjo.entropybot.guard.LavaNear.note(a.lavaS(), 1);
     }
 
     /** aa debug: one walk's line (where, how far, the estimate's kind, its seconds). */

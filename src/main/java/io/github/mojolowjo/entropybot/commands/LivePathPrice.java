@@ -47,7 +47,25 @@ public final class LivePathPrice implements PathPrice {
             LOG.debug("[entropybot] path cost to {} {} {}: no path ({})", x, y, z, a.reason);
             return new Answer(null, "no path: " + a.reason);
         }
-        return new Answer(new Walk(a.ticks / io.github.mojolowjo.entropybot.aa.brain.GameTimes.TPS, !a.complete), null);
+        double tps = io.github.mojolowjo.entropybot.aa.brain.GameTimes.TPS;
+        return new Answer(new Walk(a.ticks / tps, !a.complete, lavaTicks(mc, a) / tps), null);
+    }
+
+    /**
+     * Lava distance (0.39.z40): the lava price inside the walk (the hook's LavaNear rule over the path's cells, at the Tuning
+     * values; rough, rule 14: the level now, not the calculation's snapshot). 0: none, or no cells in the answer.
+     */
+    private static double lavaTicks(Minecraft mc, IPathCost.Answer a) {
+        if (a.path == null || a.path.isEmpty() || mc.level == null) return 0;
+        java.util.List<int[]> cells = new java.util.ArrayList<>();
+        for (BlockPos p : a.path) cells.add(new int[]{p.getX(), p.getY(), p.getZ()});
+        var lv = mc.level;
+        io.github.mojolowjo.entropybot.guard.LavaNear.Lava lava = (x, y, z) -> {
+            BlockPos q = new BlockPos(x, y, z);
+            return lv.isLoaded(q) && lv.getFluidState(q).is(net.minecraft.tags.FluidTags.LAVA);
+        };
+        return io.github.mojolowjo.entropybot.guard.LavaNear.pathTicks(lava, cells, io.github.mojolowjo.entropybot.guard.LavaNear.reach(),
+                io.github.mojolowjo.entropybot.guard.LavaNear.penalty());
     }
 
     private Answer none(String why) {

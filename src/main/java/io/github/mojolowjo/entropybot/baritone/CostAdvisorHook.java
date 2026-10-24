@@ -39,10 +39,13 @@ public final class CostAdvisorHook {
      * keep-out box walks out by the shortest way: that box is dear, not impassable, for this calculation).
      */
     public record Token(BreakPolicy.Snapshot snapshot, Intent intent, String dim, BreakPolicy.Where me,
-                        io.github.mojolowjo.entropybot.guard.Policy areas, int[] at) {
+                        io.github.mojolowjo.entropybot.guard.Policy areas, int[] at, int lavaReach, double lavaPenalty) {
         public Token(BreakPolicy.Snapshot snapshot, Intent intent, String dim, BreakPolicy.Where me) {
-            this(snapshot, intent, dim, me, null, null);
+            this(snapshot, intent, dim, me, null, null, 0, 0);
         }
+
+        /** The token has keep-out or danger boxes to price (moveMultiplier). */
+        boolean boxes() { return areas != null && !(areas.keepOut.isEmpty() && areas.danger.isEmpty()); }
     }
 
     private static volatile boolean fork, moveHook;
@@ -106,8 +109,10 @@ public final class CostAdvisorHook {
                     return placeCost(a[0], (Integer) a[1], (Integer) a[2], (Integer) a[3], (BlockState) a[4], stateAt(a[5]), (Double) a[6]);
                 case "moveMultiplier":
                     return moveMultiplier(a[0], (Integer) a[1], (Integer) a[2], (Integer) a[3]);
-                case "pricesMoves":        // review 4: no keep-out or danger box = the A* loop never asks per node
-                    return a[0] instanceof Token tk && tk.areas() != null && !(tk.areas().keepOut.isEmpty() && tk.areas().danger.isEmpty());
+                case "moveExtra":          // lava distance (0.39.z40): extra ticks of a move near lava
+                    return moveExtra(a[0], (Integer) a[1], (Integer) a[2], (Integer) a[3], stateAt(a[4]));
+                case "pricesMoves":        // review 4: no keep-out or danger box and no lava price = the A* loop never asks per node
+                    return a[0] instanceof Token tk && (tk.boxes() || tk.lavaPenalty() > 0);
                 case "toString": return "EntropyBot cost advisor";
                 case "hashCode": return System.identityHashCode(CostAdvisorHook.class);
                 case "equals": return a != null && a.length == 1 && a[0] != null && Proxy.isProxyClass(a[0].getClass());
@@ -137,7 +142,32 @@ public final class CostAdvisorHook {
         } catch (Throwable caught) { Quiet.warn("CostAdvisorHook.begin failed, carrying on with the fallback", caught); }
         io.github.mojolowjo.entropybot.guard.Policy areas = null;
         try { areas = Guard.INSTANCE.core.policy(); } catch (Throwable caught) { Quiet.warn("CostAdvisorHook.begin failed, carrying on with the fallback", caught); }
-        return new Token(pr.snapshot(), pr.intentNow(), dim, pr.where(), areas, at);
+        int reach = 0;
+        double pen = 0;
+        try {
+            reach = io.github.mojolowjo.entropybot.guard.LavaNear.reach();
+            pen = io.github.mojolowjo.entropybot.guard.LavaNear.penalty();
+        } catch (RuntimeException caught) { Quiet.warn("CostAdvisorHook.begin: the lava Tuning could not be read, no lava price this calculation", caught); }
+        return new Token(pr.snapshot(), pr.intentNow(), dim, pr.where(), areas, at, reach, pen);
+    }
+
+    /**
+     * Lava distance (0.39.z40, {@link io.github.mojolowjo.entropybot.guard.LavaNear}): the extra ticks of a move whose feet
+     * end at x y z within the token's reach of lava (the fork's {@code CostAdvisor.moveExtra}, added after the move
+     * multiplier); NaN = none. Pathfinder thread: Baritone's BlockStateInterface only.
+     */
+    public static double moveExtra(Object token, int x, int y, int z, PolicyRuntime.StateAt at) {
+        if (!(token instanceof Token t) || t.lavaPenalty() <= 0) return Double.NaN;
+        double e = io.github.mojolowjo.entropybot.guard.LavaNear.ticks(lava(at), x, y, z, t.lavaReach(), t.lavaPenalty());
+        return e > 0 ? e : Double.NaN;
+    }
+
+    /** The lava test over a state source (null state: not lava). */
+    static io.github.mojolowjo.entropybot.guard.LavaNear.Lava lava(PolicyRuntime.StateAt at) {
+        return (x, y, z) -> {
+            BlockState b = at.at(x, y, z);
+            return b != null && PolicyRuntime.fluidOf(b) == BreakPolicy.Fluid.LAVA;
+        };
     }
 
     /**
@@ -176,6 +206,14 @@ public final class CostAdvisorHook {
         BreakPolicy.Verdict sv = pr.structureVerdict(s, dim, at, x, y, z);
         if (!sv.allowed()) {
             pr.stats.deny(PolicyStats.SITE_ASTAR_COST, sv.reason());
+            return COST_INF;
+        }
+        // lava distance (0.39.z40): a break that opens lava onto the bot (lava in the cell or at a face: the fork burrow's test)
+        // is refused for every intent, unless the bot starts this calculation in lava (the reflex's dig-out leg)
+        var lava = lava(at);
+        if (io.github.mojolowjo.entropybot.guard.LavaNear.opensLava(lava, x, y, z)
+                && !(t != null && t.at() != null && (lava.at(t.at()[0], t.at()[1], t.at()[2]) || lava.at(t.at()[0], t.at()[1] + 1, t.at()[2])))) {
+            pr.stats.deny(PolicyStats.SITE_ASTAR_COST, "the break opens lava");
             return COST_INF;
         }
         if (dim == null) return in == Intent.TRAVEL ? COST_INF : Double.NaN;      // fail closed for travel

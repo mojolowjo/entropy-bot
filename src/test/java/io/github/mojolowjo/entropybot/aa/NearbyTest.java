@@ -38,6 +38,7 @@ class NearbyTest {
         @Override public boolean leavesNear(int x, int y, int z, int reach) { return leaves.test(new int[]{x, y, z}); }
         @Override public boolean allowed(int x, int y, int z) { return allowed.test(new int[]{x, y, z}); }
         @Override public String blockAt(int x, int y, int z) { return ids.getOrDefault(x + " " + y + " " + z, "minecraft:stone"); }
+        @Override public Boolean open(int x, int y, int z) { return true; }   // stated: every face open (legit sources: NearbyExposureTest)
     }
 
     @Test
@@ -92,6 +93,7 @@ class NearbyTest {
             @Override public boolean leavesNear(int x, int y, int z, int reach) { return true; }
             @Override public boolean allowed(int x, int y, int z) { return true; }
             @Override public String blockAt(int x, int y, int z) { return x == 400 ? null : f.blockAt(x, y, z); }   // 400: not loaded
+            @Override public Boolean open(int x, int y, int z) { return true; }   // stated: every face open (legit sources: NearbyExposureTest)
             @Override public List<Nearby.Mine> own() {
                 return List.of(new Nearby.Mine(20, 64, 0, "minecraft:crafting_table"), new Nearby.Mine(400, 64, 0, "minecraft:crafting_table"),
                         new Nearby.Mine(5, 64, 0, "minecraft:crafting_table"), new Nearby.Mine(2, 64, 0, "minecraft:furnace"));
@@ -119,6 +121,7 @@ class NearbyTest {
             @Override public boolean leavesNear(int x, int y, int z, int reach) { return false; }
             @Override public boolean allowed(int x, int y, int z) { return true; }
             @Override public String blockAt(int x, int y, int z) { return world.get(x + " " + y + " " + z); }
+            @Override public Boolean open(int x, int y, int z) { return true; }   // stated: every face open (legit sources: NearbyExposureTest)
             @Override public List<Nearby.Mine> own() {
                 return List.of(new Nearby.Mine(-4, -60, 14, "minecraft:crafting_table"), new Nearby.Mine(6, 64, 0, "minecraft:crafting_table"),
                         new Nearby.Mine(900, 64, 0, "minecraft:crafting_table"));

@@ -11,7 +11,9 @@ import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 public interface PathPrice {
 
     /** The walk from the bot's feet to stand by the block: seconds of Baritone's path; {@code about}: a partial path plus its estimate of the rest. */
-    record Walk(double seconds, boolean about) {}
+    record Walk(double seconds, boolean about, double lavaS) {
+        public Walk(double seconds, boolean about) { this(seconds, about, 0); }
+    }
 
     /** Baritone's price of the walk to stand by the block at x y z; null: no path answer within budget (the caller takes the line, said so). */
     Walk toBlock(int x, int y, int z);

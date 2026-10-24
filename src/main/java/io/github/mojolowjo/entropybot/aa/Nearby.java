@@ -21,8 +21,11 @@ import java.util.function.Supplier;
  *     {@code nearby.leafReach} blocks above or beside it, i.e. a tree and not a stack of logs in a build.</li>
  * <li>{@link #nearest}: live-facts (0.39.y3): the nearest of any block set (NeedChain's source of any item: {@link #sourceBlocks}
  *     from the game's loot data plus the item's own block); a block tagged logs only as a tree (the {@link #log} rule), an ore
- *     cell only under the fair-play rule ({@link Scan#fairOk}), the policy allowing.</li>
+ *     cell only under the fair-play rule ({@link Scan#fairOk}), the policy allowing; legit sources (0.39.z40): a block counts
+ *     only with an exposed face ({@link #exposed}); a buried one is skipped and counted ({@link Source#buried}).</li>
  * </ul>
+ * Note: Baritone's {@code scanChunkRadius} (FasterWorldScanner) reads the client's loaded chunk sections, not its cache;
+ * exposure is read from the same loaded chunks ({@link Scan#open}).
  * Pure (JUnit: NearbyTest, NeedLiveFactsTest); the live {@link Scan} is {@code commands.NearbyLive}. Loader notes: Baritone API only.
  */
 public final class Nearby {
@@ -46,6 +49,12 @@ public final class Nearby {
         boolean allowed(int x, int y, int z);
         /** The block id at the cell. */
         String blockAt(int x, int y, int z);
+        /**
+         * legit sources (0.39.z40): the cell lets sight through: it holds no collision (air, water, lava, a torch, grass:
+         * Baritone's MineProcess.isNextToAir test, isTransparent, widened to every non-solid block as the owner ruled);
+         * null: its chunk is not loaded. No default: a scan states it.
+         */
+        Boolean open(int x, int y, int z);
         /** The most logs one chop takes as one tree (Baritone's chopComponentMax); unknown: no cap. */
         default int treeCap() { return Integer.MAX_VALUE; }  // structural: no cap known
         /** station-memory: the stations I placed myself (the ledger), any distance, loaded or not, as {x, y, z} with their block. */
@@ -316,18 +325,67 @@ public final class Nearby {
 
     /** The nearest block of the set I may work at by Baritone's scan (a log only with leaves by it, an ore only if fair), else the fallback; null: none. */
     public static Spot nearest(Scan s, int[] me, Set<String> blocks, Supplier<Spot> fallback) {
+        return source(s, me, blocks, fallback).spot();
+    }
+
+    /**
+     * legit sources (0.39.z40): one source lookup's answer: the spot (null: none), where it came from ("baritone" for a seen
+     * (exposed) block of the scan, "fallback" for AA's sightings, "none"), and the buried blocks of the scan it skipped, per
+     * block id (in the order met, nearest first).
+     */
+    public record Source(Spot spot, String from, java.util.Map<String, Integer> buried) {
+        public Source { buried = java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(buried)); }
+
+        /** aa debug's line: "nearest raw_iron_block at x y z: seen (exposed) | 3 iron_ore buried, not counted". */
+        public String line() {
+            String at = spot == null ? "none known" : "nearest " + shortId(spot.block()) + " at " + spot.x() + " " + spot.y() + " " + spot.z()
+                    + ("baritone".equals(from) ? ": seen (exposed)" : ": from my sightings");
+            List<String> b = new ArrayList<>();
+            for (var e : buried.entrySet()) b.add(e.getValue() + " " + shortId(e.getKey()) + " buried, not counted");
+            return b.isEmpty() ? at : at + " | " + String.join(", ", b);
+        }
+    }
+
+    private static String shortId(String id) { return id == null ? "?" : id.replaceFirst("^minecraft:", ""); }
+
+    /**
+     * legit sources (owner 2026-10-23: "a block counts as seen only when it has an exposed face, like a player who sees ore on
+     * a cave wall"): {@link #nearest} with its notes. A block of the scan counts only when {@link #exposed}; a buried one is
+     * skipped and counted (the strip and explore ways reach it). The rest as before: the policy, fair play, a log only as a tree.
+     */
+    public static Source source(Scan s, int[] me, Set<String> blocks, Supplier<Spot> fallback) {
+        java.util.Map<String, Integer> buried = new java.util.LinkedHashMap<>();
         if (s != null && blocks != null && !blocks.isEmpty()) {
             int checked = 0;
             for (int[] p : sorted(s.find(blocks, scanR()), me)) {
                 if (checked++ >= maxChecks()) break;
                 String id = s.blockAt(p[0], p[1], p[2]);
                 if (id == null || !blocks.contains(id) || !s.allowed(p[0], p[1], p[2]) || !s.fairOk(p[0], p[1], p[2])) continue;
+                if (!Boolean.TRUE.equals(exposed(s, p[0], p[1], p[2]))) { buried.merge(id, 1, Integer::sum); continue; }
                 if (s.isLog(id) && !s.leavesNear(p[0], p[1], p[2], leafReach())) continue;
-                return new Spot(p[0], p[1], p[2], dist(p, me), id, s.isLog(id) ? treeLogs(s.logs(scanR()), p, s.treeCap())
-                        : s.isOre(id) ? clusterSize(s, blocks, p) : 0);
+                return new Source(new Spot(p[0], p[1], p[2], dist(p, me), id, s.isLog(id) ? treeLogs(s.logs(scanR()), p, s.treeCap())
+                        : s.isOre(id) ? clusterSize(s, blocks, p) : 0), "baritone", buried);
             }
         }
-        return fallback == null ? null : fallback.get();
+        Spot f = fallback == null ? null : fallback.get();
+        return new Source(f, f == null ? "none" : "fallback", buried);
+    }
+
+    /** The six face neighbours. */
+    private static final int[][] FACES = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+
+    /**
+     * legit sources: the block has an exposed face: one of its six neighbours is open ({@link Scan#open}). False: six solid
+     * neighbours (buried); null: no open face known and a neighbour's chunk not loaded (rule 15: not counted, not "buried for sure").
+     */
+    public static Boolean exposed(Scan s, int x, int y, int z) {
+        boolean unknown = false;
+        for (int[] d : FACES) {
+            Boolean o = s.open(x + d[0], y + d[1], z + d[2]);
+            if (Boolean.TRUE.equals(o)) return true;
+            if (o == null) unknown = true;
+        }
+        return unknown ? null : false;
     }
 
     public static int scanR() { return Tuning.i("nearby.scanR"); }

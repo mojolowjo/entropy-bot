@@ -40,6 +40,7 @@ class StationNoteTest {
             @Override public boolean leavesNear(int x, int y, int z, int reach) { return false; }
             @Override public boolean allowed(int x, int y, int z) { return true; }
             @Override public String blockAt(int x, int y, int z) { return null; }
+            @Override public Boolean open(int x, int y, int z) { return true; }   // stated: every face open (legit sources: NearbyExposureTest)
         };
     }
 

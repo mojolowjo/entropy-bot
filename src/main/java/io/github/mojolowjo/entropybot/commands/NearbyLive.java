@@ -56,20 +56,40 @@ final class NearbyLive {
         return logSpot;
     }
 
-    private record Cached(long at, int[] me, Spot spot) {}
+    private record Cached(long at, int[] me, Nearby.Source source) {}
     private final java.util.Map<java.util.Set<String>, Cached> sets = new java.util.HashMap<>();
+    /** legit sources (0.39.z40): the source lines since {@link #beginNotes} (aa debug), per block set; null: not collecting. */
+    private java.util.Map<java.util.Set<String>, String> notes;
 
-    /** live-facts: the nearest block of the set (Nearby.nearest), Baritone first, else {@code fallback}; cached per set as the log answer is. */
+    /** live-facts: the nearest block of the set (Nearby.source), Baritone first, else {@code fallback}; cached per set as the log answer is. */
     Spot nearest(java.util.Set<String> blocks, Supplier<Spot> fallback) {
         long now = System.currentTimeMillis();
         int[] me = here();
         if (me == null) return fallback == null ? null : fallback.get();
         Cached k = sets.get(blocks);
-        if (k != null && now - k.at() < Tuning.l("nearby.cacheMs") && close(me, k.me())) return k.spot();
-        sets.values().removeIf(e -> now - e.at() >= Tuning.l("nearby.cacheMs"));
-        Spot s = Nearby.nearest(scan(), me, blocks, fallback);
-        sets.put(java.util.Set.copyOf(blocks), new Cached(now, me, s));
-        return s;
+        if (k == null || now - k.at() >= Tuning.l("nearby.cacheMs") || !close(me, k.me())) {
+            sets.values().removeIf(e -> now - e.at() >= Tuning.l("nearby.cacheMs"));
+            k = new Cached(now, me, Nearby.source(scan(), me, blocks, fallback));
+            sets.put(java.util.Set.copyOf(blocks), k);
+        }
+        if (notes != null) notes.put(java.util.Set.copyOf(blocks), k.source().line());
+        return k.source().spot();
+    }
+
+    /** aa debug: start collecting the source lines of the lookups that follow. */
+    void beginNotes() { notes = new java.util.LinkedHashMap<>(); }
+
+    /** aa debug: the collected source lines ("sources: nearest ... seen (exposed) | 3 iron_ore buried, not counted"), and stop. */
+    List<String> endNotes() {
+        List<String> out = new ArrayList<>();
+        if (notes != null) for (var e : notes.entrySet()) {
+            List<String> ids = new ArrayList<>();
+            for (String id : e.getKey()) ids.add(id.replaceFirst("^minecraft:", ""));
+            java.util.Collections.sort(ids);
+            out.add("sources (" + String.join("|", ids) + "): " + e.getValue());
+        }
+        notes = null;
+        return out;
     }
 
     private record Known(long at, int[] me, long data, StationFact.Known fact) {}
@@ -286,6 +306,11 @@ final class NearbyLive {
                     io.github.mojolowjo.entropybot.Quiet.warn("nearby: this Baritone has no chopComponentMax (not the Entropy fork), trees counted uncapped", e);
                     return Nearby.Scan.super.treeCap();
                 }
+            }
+            @Override public Boolean open(int x, int y, int z) {
+                BlockPos q = new BlockPos(x, y, z);
+                if (!mc.level.isLoaded(q)) return null;
+                return mc.level.getBlockState(q).getCollisionShape(mc.level, q).isEmpty();   // air, water, lava, torch, grass
             }
             @Override public String blockAt(int x, int y, int z) {
                 BlockPos q = new BlockPos(x, y, z);

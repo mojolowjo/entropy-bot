@@ -79,6 +79,7 @@ class StructureBlocksTest {
             @Override public boolean leavesNear(int x, int y, int z, int reach) { return false; }
             @Override public boolean allowed(int x, int y, int z) { return true; }
             @Override public String blockAt(int x, int y, int z) { return world.get(x + " " + y + " " + z); }
+            @Override public Boolean open(int x, int y, int z) { return true; }   // stated: every face open (legit sources: NearbyExposureTest)
             @Override public List<Nearby.Mine> own() { return List.of(new Nearby.Mine(110, 64, 10, "minecraft:furnace")); }
             // no stationUse override: the scan states the owner's policy, Scan.stationUse asks BreakPolicy itself
             @Override public Policy stationPolicy() { return p; }
@@ -105,6 +106,7 @@ class StructureBlocksTest {
             @Override public boolean leavesNear(int x, int y, int z, int reach) { return false; }
             @Override public boolean allowed(int x, int y, int z) { return true; }
             @Override public String blockAt(int x, int y, int z) { return world.get(x + " " + y + " " + z); }
+            @Override public Boolean open(int x, int y, int z) { return true; }   // stated: every face open (legit sources: NearbyExposureTest)
             @Override public List<Nearby.Mine> own() { return List.of(new Nearby.Mine(500, 64, 10, "minecraft:furnace")); }
             @Override public Policy stationPolicy() { return far; }
             @Override public String stationDim() { return OW; }
@@ -124,6 +126,7 @@ class StructureBlocksTest {
             @Override public boolean leavesNear(int x, int y, int z, int reach) { return false; }
             @Override public boolean allowed(int x, int y, int z) { return true; }
             @Override public String blockAt(int x, int y, int z) { return "minecraft:furnace"; }
+            @Override public Boolean open(int x, int y, int z) { return true; }   // stated: every face open (legit sources: NearbyExposureTest)
             @Override public List<Nearby.Mine> own() { return List.of(); }
         };
         Nearby.Lookup l = Nearby.lookup(s, new int[]{0, 64, 0}, Set.of("minecraft:furnace"));

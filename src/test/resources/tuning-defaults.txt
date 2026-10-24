@@ -914,3 +914,5 @@ needs.worryDanger	75.0
 needs.healEatHp	10.0
 needs.rawPenalty	500.0
 needs.swordScore	20.0
+lava.nearBlocks	2.0
+lava.nearPenalty	10.0
