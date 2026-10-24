@@ -34,6 +34,17 @@ public final class BaritoneHook {
     private int attempts;
     private String lastError;
 
+    /**
+     * 0.39.z33 (S36): Baritone's last chat line and how many it has said (its logger, client thread). The stock mine process
+     * has no end reason in its API (IMineProcess: no lastEnd); it says its end in this line ("Unable to find any path to ...").
+     */
+    private static volatile String lastLine;
+    private static volatile long lines;
+
+    public static String lastLine() { return lastLine; }
+
+    public static long lines() { return lines; }
+
     public boolean hooked() { return hooked; }
 
     public boolean engineRegistered() { return engineRegistered; }
@@ -98,7 +109,7 @@ public final class BaritoneHook {
             Settings s = BaritoneAPI.getSettings();
             Consumer<Component> previous = s.logger.value;
             s.logger.value = previous.andThen(msg -> {
-                try { ring.push("log", msg.getString(), null); } catch (RuntimeException caught) { Quiet.warn("BaritoneHook.onBlockChange failed, carrying on with the fallback", caught); }
+                try { lastLine = msg.getString(); lines++; ring.push("log", lastLine, null); } catch (RuntimeException caught) { Quiet.warn("BaritoneHook.onBlockChange failed, carrying on with the fallback", caught); }
             });
             hooked = true;
             lastError = null;

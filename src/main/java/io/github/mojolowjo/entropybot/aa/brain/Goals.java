@@ -46,6 +46,19 @@ public final class Goals {
 
         /** 0.39.z30: re-plans on a changed fact so far (aa want again sets it back to 0). */
         public int replans;
+
+        /** 0.39.z33 (S36): the sources this order dropped (unreachable, gone), charged by their source key; held for the order's life. */
+        public final Failures sources = new Failures();
+    }
+
+    /** 0.39.z33: a dropped source is held for the order's life (a new aa want makes a new goal). */
+    static final long ORDER_LIFE_MS = Long.MAX_VALUE / 4; // structural: no lapse within an order
+
+    /** The order's dropped sources, key -> reason (the chain prices without them and lists them). */
+    public static Map<String, String> droppedSources(Goal g) {
+        Map<String, String> out = new java.util.LinkedHashMap<>();
+        for (Failures.Rec r : g.sources.of(g.id())) if (r.option() != null) out.put(r.option(), r.reason());
+        return out;
     }
 
     /** 0.39.z30: at most this many re-plans on a changed fact per order (Tuning replan.maxPerOrder). */
@@ -66,6 +79,9 @@ public final class Goals {
             return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "re-planned " + g.replans + " times already (replan.maxPerOrder " + replanMax() + ")");
         }
         if (g.n - have(bb.in.bag, g) <= 0) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
+        // 0.39.z33 (S36): a source fact charges the failed step's source by its key: the chain drops it for this order
+        String src = io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(failed);
+        if (src != null && fact.key().startsWith("source ")) g.sources.failedFor(g.id(), src, fact.text(), bb.clock.now(), null, ORDER_LIFE_MS);
         var ch = chain(bb, g);
         if (ch == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");
         if (!ch.ok() || ch.steps().isEmpty()) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, ch.why());
@@ -231,6 +247,7 @@ public final class Goals {
         if (g.strip != null) return null;
         var world = world(bb);
         if (world == null) return null;
+        world = world.withoutSources(droppedSources(g));          // 0.39.z33: the order's dropped sources, listed with their reasons
         if (g.r.group()) return io.github.mojolowjo.entropybot.aa.NeedChain.resolveAll(g.r.key(), g.r.ids(), g.n, world);
         return io.github.mojolowjo.entropybot.aa.NeedChain.resolve(g.r.ids().isEmpty() ? g.r.key() : g.r.ids().get(0), g.n, world);
     }

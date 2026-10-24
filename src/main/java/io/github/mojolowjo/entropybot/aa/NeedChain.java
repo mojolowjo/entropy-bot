@@ -91,7 +91,14 @@ public final class NeedChain {
      */
     public record World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
                         Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path,
-                        Function<String, Spot> stationAt) {
+                        Function<String, Spot> stationAt, Function<String, Integer> usesLeft, List<String> held) {
+        /** 0.39.z33: no tool-wear facts (every tool unlimited) and no source held. */
+        public World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
+                     Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path,
+                     Function<String, Spot> stationAt) {
+            this(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, null, null);
+        }
+
         /** No path provider: every walk is the straight line x 1.3 (and the line says nothing of it). */
         public World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
                      Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks) {
@@ -105,6 +112,8 @@ public final class NeedChain {
 
         public World {
             if (stationAt == null) stationAt = k -> null;
+            if (usesLeft == null) usesLeft = k -> io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED;
+            held = held == null ? List.of() : List.copyOf(held);
             Map<String, Integer> b = new LinkedHashMap<>();
             if (bag != null) for (var e : bag.entrySet()) b.merge(id(e.getKey()), e.getValue(), Integer::sum);
             bag = Map.copyOf(b);
@@ -127,20 +136,35 @@ public final class NeedChain {
             this(bag, tableNear, false, w -> { Spot s = seen == null ? null : seen.apply(w); return s == null ? List.of() : List.of(s); }, null, null, null, horizonBlocks);
         }
 
-        public World withMobs(Function<String, List<Mob>> m, LootBook l) { return new World(bag, tableNear, furnaceNear, seenAll, m, l, band, horizonBlocks, path, stationAt); }
+        public World withMobs(Function<String, List<Mob>> m, LootBook l) { return new World(bag, tableNear, furnaceNear, seenAll, m, l, band, horizonBlocks, path, stationAt, usesLeft, held); }
 
-        public World withBand(Function<String, int[]> b) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, b, horizonBlocks, path, stationAt); }
+        public World withBand(Function<String, int[]> b) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, b, horizonBlocks, path, stationAt, usesLeft, held); }
 
         /** path-cost: the walks priced by Baritone's planned path first (null: the line). */
-        public World withPath(PathPrice p) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, p, stationAt); }
+        public World withPath(PathPrice p) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, p, stationAt, usesLeft, held); }
 
         /** station-memory: where the known stations stand (recipe kind -> spot; null: no position known). */
-        public World withStations(Function<String, Spot> at) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, at); }
+        public World withStations(Function<String, Spot> at) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, at, usesLeft, held); }
+
+        /** 0.39.z33: the uses left of the bag's best stack of a tool id ({@link io.github.mojolowjo.entropybot.aa.brain.ToolUses}). */
+        public World withUses(Function<String, Integer> u) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, u, held); }
 
         /** chop: the same world less the sources {@code held} names (need word, spot): a failed source is out of the re-price. */
         public World without(java.util.function.BiPredicate<String, Spot> held) {
             Function<String, List<Spot>> sa = seenAll;
-            return new World(bag, tableNear, furnaceNear, w -> sa.apply(w).stream().filter(sp -> !held.test(word(w), sp)).toList(), mobs, loot, band, horizonBlocks, path, stationAt);
+            return new World(bag, tableNear, furnaceNear, w -> sa.apply(w).stream().filter(sp -> !held.test(word(w), sp)).toList(), mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, this.held);
+        }
+
+        /**
+         * 0.39.z33: the same world less the sources an order dropped ({@code keyWhy}: source key ({@link #sourceKey(Step)}) ->
+         * reason); each is listed in the chain's dropped ways with its reason.
+         */
+        public World withoutSources(Map<String, String> keyWhy) {
+            if (keyWhy == null || keyWhy.isEmpty()) return this;
+            List<String> h = new ArrayList<>(held);
+            for (var e : keyWhy.entrySet()) h.add(e.getKey() + ": " + e.getValue());
+            World less = without((item, sp) -> keyWhy.containsKey(sourceKey(item, sp)));
+            return new World(bag, tableNear, furnaceNear, less.seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, h);
         }
     }
 
@@ -342,11 +366,14 @@ public final class NeedChain {
         String loopOn;        // the need a loop failure came back to (set with fail)
         String pickItem;      // the best pickaxe in hand or made
         int pickTier;
+        int pickWorn;         // 0.39.z33: blocks the bag's pickItem breaks in this chain so far (a made pickaxe: reset, it is new)
+        boolean pickMade;     // 0.39.z33: pickItem was made in this chain (fresh: its uses are its max damage, not the bag's)
         int trials;           // ways priced so far (the search's bound)
 
         Ctx(World w) {
             this.w = w;
             for (var e : w.bag().entrySet()) if (e.getValue() > 0) bag.merge(e.getKey(), e.getValue(), Integer::sum);
+            dropped.addAll(w.held());                  // 0.39.z33: the sources the order dropped, with their reasons
             tableReady = w.tableNear();
             furnaceReady = w.furnaceNear();
             for (var e : w.bag().entrySet()) {
@@ -366,11 +393,11 @@ public final class NeedChain {
         /** Everything a way changes, to put back when the way is dropped. */
         record Snap(Map<String, Integer> bag, List<Step> steps, Map<String, Integer> leafAt, Map<String, Integer> taken, List<String> dropped,
                     double seconds, double away, boolean tableReady, boolean furnaceReady, boolean stuck, String unknown, String pickItem, int pickTier,
-                    boolean tableWalked, boolean furnaceWalked) {}
+                    boolean tableWalked, boolean furnaceWalked, int pickWorn, boolean pickMade) {}
 
         Snap snap() {
             return new Snap(new LinkedHashMap<>(bag), new ArrayList<>(steps), new LinkedHashMap<>(leafAt), new LinkedHashMap<>(taken), new ArrayList<>(dropped),
-                    seconds, away, tableReady, furnaceReady, stuck, unknown, pickItem, pickTier, tableWalked, furnaceWalked);
+                    seconds, away, tableReady, furnaceReady, stuck, unknown, pickItem, pickTier, tableWalked, furnaceWalked, pickWorn, pickMade);
         }
 
         void restore(Snap s) {
@@ -382,6 +409,7 @@ public final class NeedChain {
             seconds = s.seconds(); away = s.away(); tableReady = s.tableReady(); furnaceReady = s.furnaceReady(); stuck = s.stuck();
             unknown = s.unknown(); pickItem = s.pickItem(); pickTier = s.pickTier();
             tableWalked = s.tableWalked(); furnaceWalked = s.furnaceWalked();
+            pickWorn = s.pickWorn(); pickMade = s.pickMade();
             fail = null; loopOn = null;
         }
     }
@@ -1204,11 +1232,49 @@ public final class NeedChain {
         String label = table ? "table" : "furnace";
         if (table ? c.tableReady : c.furnaceReady) {
             boolean walkedBefore = table ? c.tableWalked : c.furnaceWalked;
+            Spot far = walkedBefore ? null : c.w.stationAt().apply(kind);
+            if (far != null && far.dist() > stationNearM()) return farStation(c, kind, table, label, far);
             String k = knownWalk(c, kind, table, label);
             c.note(() -> "station " + label + ": " + (k != null ? (k.contains(UNVERIFIED) ? "not loaded, remembered, " : "known, ") + k : walkedBefore ? "known, walked to before in this chain" : "in reach"));
             return k;
         }
         c.note(() -> "station " + label + ": none known: to make or take from the bag and place near me");
+        return placeNew(c, kind, table, label);
+    }
+
+    /** 0.39.z33: a known station farther than this many blocks (straight line) is priced against placing a new one near me. */
+    public static double stationNearM() { return Tuning.get("station.nearM"); }
+
+    /**
+     * 0.39.z33 (owner 2026-10-23, S37, rule 1): a known station beyond {@link #stationNearM} is one way; making (or taking from
+     * the bag) and placing a new one near me is the other. Both are priced on the same simulated bag; the cheaper stands, the
+     * other is listed dropped with its seconds. Rule 15 unchanged: a station not loaded is priced as remembered, unverified.
+     */
+    private static String farStation(Ctx c, String kind, boolean table, String label, Spot far) {
+        Ctx.Snap s0 = c.snap();
+        double t0 = c.seconds;
+        String walk = knownWalk(c, kind, table, label);
+        double walkS = c.seconds - t0;
+        Ctx.Snap walked = c.snap();
+        c.restore(s0);
+        String place = placeNew(c, kind, table, label);
+        double placeS = c.seconds - t0;
+        boolean placeStands = c.fail == null && !c.stuck;
+        String pw = "place a new " + label + " near me", kw = "walk to the known " + label + " " + Math.round(far.dist()) + " m" + (far.unloaded() ? " (" + UNVERIFIED + ")" : "");
+        if (placeStands && placeS < walkS) {
+            drop(c, kw, s(walkS));
+            c.note(() -> "station " + label + ": " + kw + " " + s(walkS) + " vs " + pw + " " + s(placeS) + " -> placed");
+            return place;
+        }
+        String why = placeStands ? s(placeS) : c.fail != null ? c.fail : "its materials end in an explore";
+        c.restore(walked);
+        drop(c, pw, why);
+        c.note(() -> "station " + label + ": " + kw + " " + s(walkS) + " vs " + pw + " " + why + " -> walked");
+        return walk;
+    }
+
+    /** The station made (or taken from the bag) and placed near me (Baritone's builder picks the cell). */
+    private static String placeNew(Ctx c, String kind, boolean table, String label) {
         String item = ItemWorth.stationOf(kind);
         if (item == null) { c.fail = "the game's data names no station for " + kind + " recipes"; return null; }
         String made = obtain(c, item, 1);
@@ -1428,23 +1494,20 @@ public final class NeedChain {
             if (c.fail != null) return null;
             if (c.stuck) return "dig " + shw(gives) + " seen " + Math.round(first.dist()) + " m (after " + pre + ")";      // the pickaxe's own source is still to find: the chain ends at that explore
         }
+        if (pre == null && tier >= 1) {
+            pre = wornPickaxe(c, word, gives, lack, order, log, tier);
+            if (c.fail != null) return null;
+            if (c.stuck) return "dig " + shw(gives) + " seen " + Math.round(first.dist()) + " m (after " + pre + ")";
+        }
         int remaining = lack;
         Walked firstWalk = null;
         for (Spot sp : order) {
             if (remaining <= 0) break;
-            double per = perBlock(c, gives, sp.block());
-            int blocksWanted = (int) Math.ceil(remaining / per - 1e-9);  // structural: epsilon
-            int avail = sp.count() <= 0 ? blocksWanted : sp.count() - c.taken.getOrDefault(sp.key(), 0);
-            // S20 (owner 2026-10-22): the chop takes the whole tree (the fork's ChopTree), so a counted tree is priced and
-            // bagged by all its logs, the surplus to stock; the next tree only while the need is not covered.
-            // S26 (owner 2026-10-22, "a cluster of coal ore is one job"): an ore cluster the scan counted is the same unit (the
-            // fork's component rule mines it whole); an uncounted spot (count 0) stays "as many blocks as needed"
+            int[] tg = takeOf(c, gives, sp, remaining, log);
+            int take = tg[0], got = tg[1];
+            if (take <= 0) continue;
             boolean ore = !log && sp.block() != null && ItemWorth.hasTag(sp.block(), "c:ores");
             boolean whole = (log || ore) && sp.count() > 0;
-            int take = whole ? avail : Math.min(avail, blocksWanted);
-            if (take <= 0) continue;
-            int got = whole ? (int) Math.floor(take * per + 1e-9) : Math.min(remaining, (int) Math.floor(take * per + 1e-9));  // structural: epsilon
-            if (got <= 0) got = Math.min(remaining, take);
             // the step's number: an ore cluster's yield (the job's count is the cluster's drops: a short pickup fails the
             // job); a cut keeps the logs asked (S17: the chop takes the whole tree whatever the number); else what is asked
             int wanted = ore && whole ? got : Math.min(remaining, got);
@@ -1467,6 +1530,7 @@ public final class NeedChain {
             c.seconds += each * take;
             final int took = take;
             c.note(() -> "break " + shw(blockOf(gives, sp)) + " x" + took + ": tool " + (c.pickItem == null || tierOf(gives, sp) < 1 ? "hand" : sh(c.pickItem)) + ", " + s(each) + " each = " + s(each * took));
+            if (c.pickItem != null && tierOf(gives, sp) >= 1) c.pickWorn += take;     // 0.39.z33: one use a block (game fact: a pickaxe loses 1 durability per block mined)
             c.taken.merge(sp.key(), take, Integer::sum);
             c.bag.merge(gives, got, Integer::sum);
             remaining -= got;
@@ -1478,6 +1542,73 @@ public final class NeedChain {
             return leaf == null ? null : how + " + " + leaf;
         }
         return how;
+    }
+
+    /**
+     * The blocks a spot gives this way and the items they yield, {take, got}: S20 (owner 2026-10-22): the chop takes the whole
+     * tree (the fork's ChopTree), so a counted tree is priced and bagged by all its logs, the surplus to stock; the next tree
+     * only while the need is not covered. S26 (owner 2026-10-22, "a cluster of coal ore is one job"): an ore cluster the scan
+     * counted is the same unit (the fork's component rule mines it whole); an uncounted spot (count 0) stays "as many blocks
+     * as needed".
+     */
+    private static int[] takeOf(Ctx c, String gives, Spot sp, int remaining, boolean log) {
+        double per = perBlock(c, gives, sp.block());
+        int blocksWanted = (int) Math.ceil(remaining / per - 1e-9);  // structural: epsilon
+        int avail = sp.count() <= 0 ? blocksWanted : sp.count() - c.taken.getOrDefault(sp.key(), 0);
+        boolean ore = !log && sp.block() != null && ItemWorth.hasTag(sp.block(), "c:ores");
+        boolean whole = (log || ore) && sp.count() > 0;
+        int take = whole ? avail : Math.min(avail, blocksWanted);
+        if (take <= 0) return new int[]{0, 0};
+        int got = whole ? (int) Math.floor(take * per + 1e-9) : Math.min(remaining, (int) Math.floor(take * per + 1e-9));  // structural: epsilon
+        if (got <= 0) got = Math.min(remaining, take);
+        return new int[]{take, got};
+    }
+
+    /**
+     * 0.39.z33 (owner 2026-10-23, S38): the pickaxe in the bag wears one use a block; when the blocks this chain breaks with
+     * it (the ones before and this way's) pass its uses left (the item's own data, {@link World#usesLeft}), a new pickaxe is
+     * made first (the cheapest that digs {@code tier}, as the tier rule makes one) and priced in. Unknown durability (rule 15)
+     * and none (unlimited) insert nothing; unknown is said. No new pickaxe to be had: the worn one stays, said. Returns the
+     * new pickaxe's phrase, null: none inserted.
+     */
+    private static String wornPickaxe(Ctx c, String word, String gives, int lack, List<Spot> order, boolean log, int tier) {
+        if (log || c.pickItem == null || c.pickMade) return null;
+        String tool = c.pickItem;
+        Integer u = c.w.usesLeft().apply(tool);
+        int uses = u == null ? io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN : u;
+        if (uses == io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN) { c.note(() -> sh(tool) + ": durability unknown"); return null; }
+        if (uses == io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED) return null;
+        int blocks = c.pickWorn, remaining = lack;
+        for (Spot sp : order) {
+            if (remaining <= 0) break;
+            int[] tg = takeOf(c, gives, sp, remaining, log);
+            if (tg[0] <= 0) continue;
+            if (tierOf(gives, sp) >= 1) blocks += tg[0];
+            remaining -= tg[1];
+        }
+        if (blocks <= uses) return null;
+        final int total = blocks;
+        Ctx.Snap before = c.snap();
+        double s0 = c.seconds;
+        c.bag.merge(tool, -1, Integer::sum);                       // it breaks before the job ends: out of the simulated bag
+        c.pickItem = null;
+        c.pickTier = 0;
+        c.pickWorn = 0;
+        for (var e : c.bag.entrySet()) {
+            if (e.getValue() <= 0) continue;
+            int t = MiningTiers.toolTier(e.getKey(), "pickaxe");
+            if (t > c.pickTier) { c.pickTier = t; c.pickItem = e.getKey(); }
+        }
+        String p = c.pickTier >= tier && c.pickItem != null && !c.pickItem.equals(tool) ? sh(c.pickItem) + " (in the bag)" : cheapestPickaxe(c, tier);
+        if (c.fail != null) {
+            String why = c.fail;
+            c.restore(before);
+            c.note(() -> sh(tool) + ": " + uses + " uses left, " + total + " blocks to break; no new pickaxe to be had (" + why + "): the worn one is used");
+            return null;
+        }
+        double add = c.seconds - s0;
+        c.note(() -> sh(tool) + ": " + uses + " uses left, " + total + " blocks to break -> a new pickaxe first (+" + s(add) + ")");
+        return p;
     }
 
     /** The block a spot's break is priced on: its own id, else the item's own block. */
@@ -1594,6 +1725,8 @@ public final class NeedChain {
         }
         c.pickItem = win.alt().id;
         c.pickTier = Math.max(c.pickTier, win.alt().tier);
+        c.pickMade = true;                                  // 0.39.z33: a new pickaxe: its uses are fresh
+        c.pickWorn = 0;
         return win.alt().label + " (<- " + win.phrase() + ")";
     }
 

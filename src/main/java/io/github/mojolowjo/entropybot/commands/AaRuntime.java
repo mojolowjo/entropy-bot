@@ -587,7 +587,30 @@ public final class AaRuntime implements JobPort {
         var in = bb.in;
         return new io.github.mojolowjo.entropybot.aa.NeedChain.World(in.bag, in.tableKnown, in.furnaceKnown,
                 item -> { var s = nearestSource(item); return s == null ? List.of() : List.of(s); },
-                this::animalsKnown, currentLootBook(), this::band, 0, LivePathPrice.INSTANCE, this::stationAt);
+                this::animalsKnown, currentLootBook(), this::band, 0, LivePathPrice.INSTANCE, this::stationAt).withUses(AaRuntime::usesLeft);
+    }
+
+    /**
+     * 0.39.z33: the uses left of the bag's best stack of {@code id}, from the item's data components (MAX_DAMAGE, DAMAGE;
+     * {@link io.github.mojolowjo.entropybot.aa.brain.ToolUses}); no such stack: unlimited (it breaks nothing in a chain).
+     */
+    static Integer usesLeft(String id) {
+        LocalPlayer p = Minecraft.getInstance().player;
+        if (p == null) return io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN;
+        int best = Integer.MIN_VALUE;
+        for (net.minecraft.world.item.ItemStack st : p.getInventory().items) {
+            if (st.isEmpty() || !net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString().equals(id)) continue;
+            boolean mod = false;
+            for (var tc : st.getComponents()) {
+                var key = net.minecraft.core.registries.BuiltInRegistries.DATA_COMPONENT_TYPE.getKey(tc.type());
+                if (key != null && !"minecraft".equals(key.getNamespace())) { mod = true; break; }
+            }
+            boolean tool = st.has(net.minecraft.core.component.DataComponents.TOOL) || st.is(net.minecraft.tags.ItemTags.PICKAXES);
+            Integer dmg = st.get(net.minecraft.core.component.DataComponents.DAMAGE);
+            int u = io.github.mojolowjo.entropybot.aa.brain.ToolUses.of(st.get(net.minecraft.core.component.DataComponents.MAX_DAMAGE), dmg == null ? 0 : dmg, tool, mod);
+            best = Math.max(best, u);
+        }
+        return best == Integer.MIN_VALUE ? io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED : best;
     }
 
     /** station-memory (0.39.z14): where the known station of the recipe kind stands (the craft step's own lookup); null: none. */

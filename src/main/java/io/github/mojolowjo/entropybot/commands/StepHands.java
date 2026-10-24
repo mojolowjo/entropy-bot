@@ -206,6 +206,8 @@ public final class StepHands implements Steps.Hands {
         if (mining) endMining();
         chopping = false;
         miningWhat = null;
+        mineSource = null;
+        mineFrom = null;
         countIds = List.of();
         huntTarget = -1;
         huntTicks = 0;
@@ -509,6 +511,7 @@ public final class StepHands implements Steps.Hands {
     }
 
     private String collect(LocalPlayer p, Step.Collect k) {
+        mineSource = k.item();
         if (!io.github.mojolowjo.entropybot.aa.NeedChain.plain(k.item())) return collectAny(p, k);
         String id = k.item().contains(":") ? k.item() : "minecraft:" + k.item();
         // the blocks that give it: the game's loot data (LootBook), and the block of the item itself
@@ -590,6 +593,9 @@ public final class StepHands implements Steps.Hands {
         io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE, "steps");
         mining = true;
         miningWhat = what;
+        mineLines0 = io.github.mojolowjo.entropybot.baritone.BaritoneHook.lines();
+        int[] here = Jobs.here(p);
+        mineFrom = "searched from " + here[0] + " " + here[1] + " " + here[2];
         try {
             if (chopping) {
                 b.getChopProcess().mineComponent(target, filter);
@@ -613,6 +619,18 @@ public final class StepHands implements Steps.Hands {
         int n = 0;
         for (net.minecraft.world.item.ItemStack st : p.getInventory().items) if (!st.isEmpty() && filter.has(st)) n += st.getCount();
         return n;
+    }
+
+    /** 0.39.z33: Baritone's chat-line count at the mine's start, the collect's item (null: not a collect) and where it started. */
+    private long mineLines0;
+    private String mineSource, mineFrom;
+
+    /**
+     * 0.39.z33 (S36, rule 7): the mine process's end in Baritone's own words: its last chat line since the start (the stock
+     * mine process says its end there, its API has none); no line since the start is said so, never guessed.
+     */
+    static String mineSaid(long linesAtStart, long linesNow, String lastLine) {
+        return io.github.mojolowjo.entropybot.aa.moves.FactChange.baritoneSaid(linesAtStart, linesNow, lastLine);
     }
 
     /** The chop's end reason as the step's failure text (an empty one is said so, never guessed). */
@@ -645,7 +663,10 @@ public final class StepHands implements Steps.Hands {
         if (b == null) return Car.Status.failed("baritone not loaded");
         if (!b.getMineProcess().isActive() && !Core.INSTANCE.reflexes.hold()) {
             endMining();
-            return Car.Status.failed(miningWhat + ": Baritone's mine process ended with " + got + " of " + want + " (the mine process gives no reason)");
+            String said = mineSaid(mineLines0, io.github.mojolowjo.entropybot.baritone.BaritoneHook.lines(), io.github.mojolowjo.entropybot.baritone.BaritoneHook.lastLine());
+            // 0.39.z33 (S36): none of it got: the source is a changed fact (unreachable) and the order re-plans without it
+            if (got <= 0 && mineSource != null) io.github.mojolowjo.entropybot.aa.moves.FactChange.unreachable(mineSource, mineFrom, said);
+            return Car.Status.failed(miningWhat + ": Baritone's mine process ended with " + got + " of " + want + ": " + said);
         }
         return Car.Status.running(miningWhat + ": " + got + " of " + want);
     }

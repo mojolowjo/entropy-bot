@@ -25,6 +25,24 @@ public final class FactChange {
         last = new Fact("source " + block + " " + at, block.replaceFirst("^minecraft:", "") + " at " + at + " gone");
     }
 
+    /**
+     * 0.39.z33 (S36): the step's source could not be reached: Baritone's process ended with none of it ({@code why}: its own
+     * words, or that it said none). The same slot as {@link #source}: the order re-plans without that source.
+     */
+    public static void unreachable(String block, String at, String why) {
+        last = new Fact("source " + block + " " + at, unreachableText(why));
+    }
+
+    /** Baritone's last chat line since a process started (its count then and now), or that it said none: never guessed. */
+    public static String baritoneSaid(long linesAtStart, long linesNow, String lastLine) {
+        if (linesNow <= linesAtStart || lastLine == null || lastLine.isBlank()) return "Baritone said nothing since the mine started";
+        String l = lastLine.strip();
+        return l.length() > 160 ? l.substring(0, 157) + "..." : l;  // structural: one chat line's length in the step text
+    }
+
+    /** The reason an unreachable source is dropped with ("unreachable (Baritone: Unable to find any path to ...)"). */
+    public static String unreachableText(String why) { return "unreachable (Baritone: " + why + ")"; }
+
     /** An item the step needs is not in the bag (nor in storage) when it starts. */
     public static void bag(String item, String why) {
         last = new Fact("bag " + item, item.replaceFirst("^minecraft:", "") + " not in the bag (" + why + ")");
