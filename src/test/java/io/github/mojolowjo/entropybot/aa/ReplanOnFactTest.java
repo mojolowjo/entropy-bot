@@ -38,7 +38,7 @@ class ReplanOnFactTest {
     static World world(Map<String, Integer> bag, Spot table, Map<String, List<Spot>> seen) {
         Map<String, List<Spot>> ids = new HashMap<>(seen);
         // as the live needWorld: a station known anywhere counts (tableKnown), and stationAt says where
-        return new World(bag, table != null, false, w -> ScenariosTest.lookup(ids, w), null, null, null, 0, null, k -> ItemWorth.CRAFT.equals(k) ? table : null);
+        return io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(bag, table != null, false, w -> ScenariosTest.lookup(ids, w), null, null, null, 0, null, k -> ItemWorth.CRAFT.equals(k) ? table : null));
     }
 
     static final Map<String, List<Spot>> TREE_10 = Map.of("minecraft:oak_log", List.of(ScenariosTest.tree(10, 1)));

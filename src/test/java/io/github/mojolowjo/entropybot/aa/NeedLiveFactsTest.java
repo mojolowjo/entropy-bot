@@ -114,7 +114,7 @@ class NeedLiveFactsTest {
         };
         Function<String, Spot> source = w -> Nearby.nearest(scan, ME, Nearby.sourceBlocks(w, BOOK, NeedLiveFactsTest::ownBlock), () -> null);
         // nothing known: a chain's explore names the item it looks for (here the oak log), and the explore for coal waits on its item
-        NeedChain.Chain c = NeedChain.resolve("oak_planks", 4, new NeedChain.World(Map.of(), false, source));
+        NeedChain.Chain c = NeedChain.resolve("oak_planks", 4, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new NeedChain.World(Map.of(), false, source)));
         assertTrue(c.explore(), c.why());
         assertEquals("oak_log", ((Step.Explore) c.steps().get(c.steps().size() - 1)).until());
         Step.Explore ex = new Step.Explore(NeedChain.exploreMinutes(), "coal");
@@ -134,7 +134,7 @@ class NeedLiveFactsTest {
 
     @Test
     void theChainSourcesRawIronLiveFromTheOre() {
-        NeedChain.Chain c = NeedChain.resolve("raw_iron", 1, new NeedChain.World(Map.of("minecraft:stone_pickaxe", 1), false, SEEN));     // iron ore asks for a stone pickaxe; S26: the scan knows a 1-ore cluster
+        NeedChain.Chain c = NeedChain.resolve("raw_iron", 1, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new NeedChain.World(Map.of("minecraft:stone_pickaxe", 1), false, SEEN)));     // iron ore asks for a stone pickaxe; S26: the scan knows a 1-ore cluster
         assertFalse(c.explore(), c.why());
         boolean walk = false, collect = false;
         for (Step st : c.steps()) {

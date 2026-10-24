@@ -90,9 +90,15 @@ final class TuningDefs {
         Tuning.def("needs.rawPenalty", 500, "needs-ruling 0.39.z37 (was needs.cookedBonus, owner 2026-10-23, section 2)", "price points a raw food (the input of a cooking recipe in the game's recipe data, not itself a cooking result) is behind every other food in the bag (nutrition x10 + saturation x10 tops at ~300): raw only when nothing else; bread and a golden carrot are not raw");
         Tuning.def("needs.swordScore", 20, "needs-ruling 0.39.z32 (owner 2026-10-23, section 3)", "the sword need's score (a sword in the bag): low, so it runs when idle; an order silences it below the worry lines");
         Tuning.def("needs.ironTier", 3,"one-planner 0.39.z1 (was the game-fact tier 3 of the iron rung)", "the pickaxe tier the iron need wants (the bot's scale: wood 1, stone 2, iron 3, diamond 4)");
-        Tuning.def("pathCost.budgetMs", 15, "path-cost 0.39.z12", "milliseconds one walk price may ask Baritone's A* (IPathCost) on the game thread; the fork caps it at its pathCostMaxMs");
-        Tuning.def("pathCost.budgetS", 300, "path-cost 0.39.z12", "seconds of walk past which Baritone's A* stops pricing a walk (its cost ceiling); a dearer walk takes the line");
-        Tuning.def("pathCost.perChainMax", 12, "path-cost 0.39.z12", "walk prices one chain may ask Baritone for (each spot once); past them the line x 1.3");
+        Tuning.def("pathCost.budgetS", 900, "path-cost 0.39.z12 (z41: 300 -> 900, the full search)", "seconds of walk past which Baritone's A* stops (its cost ceiling); a dearer walk is \"path not known (budget)\", never a number");
+        Tuning.def("pathCost.fullMaxMs", 2000, "full-path 0.39.z41 (owner 2026-10-23)", "milliseconds one walk's full A* search may run on Baritone's executor (IPathCost.estimateInBackground, off the game thread)");
+        Tuning.def("pathCost.maxNodes", 400_000, "full-path 0.39.z41", "A* nodes one walk's full search may open (past them: path not known, budget)");
+        Tuning.def("pathCost.maxPending", 4, "full-path 0.39.z41", "walk searches in flight at once; a way asked past them is \"path not known yet\" and asked again on the next pass");
+        Tuning.def("pathCost.reuseBlocks", 4, "full-path 0.39.z41", "a walk's answer is kept while the bot stands within this many blocks of where it was asked from (and the bag is the same)");
+        Tuning.def("pathCost.keepS", 60, "full-path 0.39.z41", "seconds a walk's answer is kept at most (the world near the path may change)");
+        Tuning.def("price.walkX", 1.0, "full-path 0.39.z41 (owner: \"I may want to price things myself\")", "TickPrice: multiplier on every walk's seconds from Baritone's path ticks");
+        Tuning.def("price.breakX", 1.0, "full-path 0.39.z41", "TickPrice: multiplier on every break's seconds from the game's break formula");
+        Tuning.def("price.placeX", 1.0, "full-path 0.39.z41", "TickPrice: multiplier on every place's seconds");
         Tuning.def("needChain.exploreReturn", 0.5, "rm-bootstrap 0.39.v1", "share of the explore time the walk back costs again (the explore way's return leg)");
         Tuning.def("lava.nearBlocks", 2, "lava distance 0.39.z40 (owner 2026-10-23)", "blocks from a lava block (source or flowing) within which a path cell costs lava.nearPenalty more");
         Tuning.def("lava.nearPenalty", 10, "lava distance 0.39.z40: Baritone ticks; one block walked = 4.63 ticks, so about 2 blocks of walk per cell in reach", "extra Baritone ticks of a move ending within lava.nearBlocks of lava (0 = off)");
@@ -657,8 +663,6 @@ final class TuningDefs {
         // stepRun
         Tuning.def("stepRun.animalRange", 32, "rm-constants 0.39.u2 (was StepRun.ANIMAL_RANGE)", "Blocks round me the food facts count animals in");
         // stepTimes
-        Tuning.def("stepTimes.pathFactor", 1.3, "rm-constants 0.39.u2 (was StepTimes.PATH_FACTOR)", "TIME_MODEL: path length = straight line x 1.3 when no plan exists yet");
-        Tuning.def("stepTimes.climbS", 0.3, "rm-constants 0.39.u2 (was StepTimes.CLIMB_S)", "TIME_MODEL: path length = straight line x 1.3 when no plan exists yet");
         // steps
         Tuning.def("steps.maxExpansions", 16, "rm-constants 0.39.u2 (was Steps.MAX_EXPANSIONS)", "At most this many expansions (a plan in a plan) per run");
         Tuning.def("replan.maxPerOrder", 3, "0.39.z30 (owner 2026-10-23)", "At most this many re-plans on a changed fact (a station gone, a source gone, an item missing) per order");

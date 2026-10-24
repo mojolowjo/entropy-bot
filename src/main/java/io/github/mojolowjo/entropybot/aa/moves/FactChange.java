@@ -9,7 +9,16 @@ package io.github.mojolowjo.entropybot.aa.moves;
  */
 public final class FactChange {
     /** {@code key}: the fact's kind and subject ("station minecraft:crafting_table"); {@code text}: the chat words ("table at 4 -60 -104 gone"). */
-    public record Fact(String key, String text) {}
+    public record Fact(String key, String text) {
+        /** 0.39.z41: a new price, not a failure: a walk's path became known (the order is priced again, nothing is charged). */
+        public boolean price() { return key.startsWith(PRICE); }
+    }
+
+    /** 0.39.z41: the key of {@link #priced}. */
+    public static final String PRICE = "price ";
+
+    /** 0.39.z41: a walk's complete path landed ({@code text}: what landed); the running order is priced again at its next step. */
+    public static Fact priced(String text) { return new Fact(PRICE + "walk", text); }
 
     private static Fact last;
 

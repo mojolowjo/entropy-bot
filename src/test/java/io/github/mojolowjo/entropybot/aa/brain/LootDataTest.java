@@ -111,7 +111,7 @@ class LootDataTest {
         var gravel = new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(5, 64, 0, 5, "minecraft:gravel", 64);
         var cow = new io.github.mojolowjo.entropybot.aa.NeedChain.Mob("minecraft:cow", 12, 64, 0, 12);
         bb.fact(io.github.mojolowjo.entropybot.aa.NeedChain.WORLD_FACT, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.NeedChain.World>) () ->
-                new io.github.mojolowjo.entropybot.aa.NeedChain.World(bb.in.bag, false, w -> w.equals("minecraft:flint") ? gravel : null)
+                io.github.mojolowjo.entropybot.aa.FakePaths.paths(new io.github.mojolowjo.entropybot.aa.NeedChain.World(bb.in.bag, false, w -> w.equals("minecraft:flint") ? gravel : null))
                         .withMobs(t -> t.equals("minecraft:cow") ? List.of(cow) : List.of(), book()));
         Goals.Goal flint = Goals.add(bb, Thing.resolve("flint", cat), 3, 0, 0);
         List<io.github.mojolowjo.entropybot.aa.moves.Step> fs = Goals.steps(bb, flint);

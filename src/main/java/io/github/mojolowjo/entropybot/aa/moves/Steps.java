@@ -159,6 +159,7 @@ public final class Steps {
             return;
         }
         stepStart = now;
+        if (reprice()) return;                   // 0.39.z41: a walk's path landed: priced again here, before the step starts
         String bad = expand();
         if (bad != null) {
             fail(bad);
@@ -230,6 +231,43 @@ public final class Steps {
     private String toolLackAt(Step s) {
         lastBagLook = now;
         return toolLack(s);
+    }
+
+    /** 0.39.z41: a new price waiting for the next step boundary (a walk's path landed), null: none. */
+    private FactChange.Fact priceAsk;
+
+    /**
+     * 0.39.z41 (owner 2026-10-23): a walk's complete path landed while this run runs: the order is priced again at the next
+     * step's start (a running step is never cut). No replanner: nothing to price, said nowhere (no order behind the run).
+     */
+    public void repriceAtNextStep(FactChange.Fact f) { if (phase == Phase.RUNNING && replanner != null) priceAsk = f; }
+
+    /**
+     * The re-price at a step boundary: the order's planner on the facts of now; other steps than the ones left switch the
+     * run (said in the step's start line, "re-priced: ... - switched"); the same steps, or no way now, keep the run as it is.
+     * True: the steps were switched and the new step started.
+     */
+    private boolean reprice() {
+        FactChange.Fact f = priceAsk;
+        priceAsk = null;
+        if (f == null || replanner == null) return false;
+        Step at = steps.get(idx);
+        Routine r;
+        try {
+            r = replanner.replan(at, f, f.text());
+        } catch (RuntimeException e) {
+            why = stage() + ": the re-price failed: " + e + " (the run goes on as planned)";
+            return false;
+        }
+        List<Step> left = steps.subList(idx, steps.size());
+        if (r == null || r.steps() == null || r.steps().isEmpty() || r.steps().equals(left)) return false;
+        List<Step> all = new java.util.ArrayList<>(steps.subList(0, idx));
+        all.addAll(r.steps());
+        steps = List.copyOf(all);
+        replanFact = "re-priced: " + f.text() + " - switched to " + r.steps().get(0).text() + " first";
+        idx--;
+        next();
+        return true;
     }
 
     /** The fact the last re-plan answered, until the next step's start line said it; null: none. */

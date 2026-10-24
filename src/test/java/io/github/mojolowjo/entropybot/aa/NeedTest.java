@@ -36,7 +36,7 @@ class NeedTest {
     /** The chain's world: the bag, a tree 10 m away. */
     void world(Map<String, Integer> bag) {
         NeedChain.Spot tree = new NeedChain.Spot(10, 64, 0, 10, "minecraft:oak_log", 8);
-        bb.fact(NeedChain.WORLD_FACT, (Supplier<NeedChain.World>) () -> new NeedChain.World(bag, false, w -> w.equals("minecraft:oak_log") ? tree : null));
+        bb.fact(NeedChain.WORLD_FACT, (Supplier<NeedChain.World>) () -> io.github.mojolowjo.entropybot.aa.FakePaths.paths(new NeedChain.World(bag, false, w -> w.equals("minecraft:oak_log") ? tree : null)));
     }
 
     @Test

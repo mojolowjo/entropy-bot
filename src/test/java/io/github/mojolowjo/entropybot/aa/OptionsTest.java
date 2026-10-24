@@ -183,7 +183,7 @@ class OptionsTest {
     @Test
     void aFactsSupplierThatThrowsIsCountedAndTheChainRuns() {
         bb.fact("t.facts", (Supplier<F>) () -> { throw new IllegalStateException("boom"); });
-        bb.fact(NeedChain.WORLD_FACT, (Supplier<NeedChain.World>) () -> new NeedChain.World(java.util.Map.of(), false, w -> null));
+        bb.fact(NeedChain.WORLD_FACT, (Supplier<NeedChain.World>) () -> io.github.mojolowjo.entropybot.aa.FakePaths.paths(new NeedChain.World(java.util.Map.of(), false, w -> null)));
         Options.Picker<F> p = new Options.Picker<>("TOOLS", "t.facts", F.class, new TwoWays());
         Need r = new Need("needs.tools", TaskKind.TOOLS, b -> true, b -> null, b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Obtain("x", 1)), p);
         assertEquals(Status.RUNNING, r.tick(bb));

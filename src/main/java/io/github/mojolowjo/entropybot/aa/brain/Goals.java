@@ -72,6 +72,7 @@ public final class Goals {
      */
     public static io.github.mojolowjo.entropybot.aa.moves.Steps.Routine replan(Blackboard bb, Goal g, Step failed,
                                                                              io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact, String why) {
+        if (fact.price()) return reprice(bb, g, fact);
         if (g.replans >= replanMax()) {
             String line = g.r.key() + ": " + fact.text() + " - not re-planned: " + g.replans + " re-plans already (replan.maxPerOrder " + replanMax() + ")";
             bb.port.log(line);
@@ -89,6 +90,20 @@ public final class Goals {
         String line = g.r.key() + ": " + fact.text() + " - re-planned: " + ch.steps().get(0).text() + " first";
         bb.port.log(line + " (after step " + failed.text() + ": " + why + "; chain: " + ch.why() + ")");
         bb.port.tellOwner(line);
+        return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(ch.steps(), null);
+    }
+
+    /**
+     * 0.39.z41: a walk's complete path landed while the order runs: its chain priced again on the facts of now (the same call
+     * as {@link #replan}); not a failure, not counted against replan.maxPerOrder. The steps from here (the caller keeps the
+     * old ones when they are the same, or when no way stands now: null steps with why), logged with the chain.
+     */
+    static io.github.mojolowjo.entropybot.aa.moves.Steps.Routine reprice(Blackboard bb, Goal g, io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact) {
+        if (g.n - have(bb.in.bag, g) <= 0) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
+        var ch = chain(bb, g);
+        if (ch == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");
+        if (!ch.ok() || ch.steps().isEmpty()) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, ch.why());
+        bb.port.log(g.r.key() + ": " + fact.text() + " - priced again (chain: " + ch.why() + ")");
         return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(ch.steps(), null);
     }
 
@@ -213,7 +228,10 @@ public final class Goals {
             return g.r.key() + " is only in " + Thing.dimName(w.dim()) + "; I don't travel there yet";
         // loot-book-bg: while the book is read in the background, an order whose chain waits on it is held (not parked) with
         // "waiting for the loot book (N of M)"; once the book is published the chain is priced again on the next pick
-        if (bb.fact(LootBook.FACT) instanceof LootBook book && !book.ready()) {
+        // 0.39.z41: the same while a walk's full path is computed in the background (the chain waits on "path not known yet")
+        var wd = world(bb);
+        boolean pathsPending = wd != null && wd.path() != null && wd.path().pending();
+        if (bb.fact(LootBook.FACT) instanceof LootBook book && !book.ready() || pathsPending) {
             var ch = chain(bb, g);
             if (ch != null && ch.waiting()) return ch.missing();
         }
@@ -265,8 +283,11 @@ public final class Goals {
         var world = world(bb);
         if (world == null) return null;
         world = world.withoutSources(droppedSources(g));          // 0.39.z33: the order's dropped sources, listed with their reasons
-        if (g.r.group()) return io.github.mojolowjo.entropybot.aa.NeedChain.resolveAll(g.r.key(), g.r.ids(), g.n, world);
-        return io.github.mojolowjo.entropybot.aa.NeedChain.resolve(g.r.ids().isEmpty() ? g.r.key() : g.r.ids().get(0), g.n, world);
+        var ch = g.r.group() ? io.github.mojolowjo.entropybot.aa.NeedChain.resolveAll(g.r.key(), g.r.ids(), g.n, world)
+                : io.github.mojolowjo.entropybot.aa.NeedChain.resolve(g.r.ids().isEmpty() ? g.r.key() : g.r.ids().get(0), g.n, world);
+        // 0.39.z41: a source Baritone's complete search found unreachable is the z33 source fact: dropped for the order's life
+        for (var e : ch.unreachable().entrySet()) g.sources.failedFor(g.id(), e.getKey(), e.getValue(), bb.clock.now(), null, ORDER_LIFE_MS);
+        return ch;
     }
 
     /**

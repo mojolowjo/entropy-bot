@@ -49,9 +49,9 @@ class DebugTreeTest {
         assertTrue(t.matches("(?s).*way iron_pickaxe -> dropped: no known source.*"), t);
         assertTrue(t.matches("(?s).*way stone_pickaxe -> dropped: loop.*"), t);
         // the facts under the ways: the tree's walk and break, the stone's walk and break
-        assertTrue(t.contains("walk to 30 64 0 (30 m straight): line x 1.3 (no path provider), 9.0 s"), t);
+        assertTrue(t.contains("walk to 30 64 0 (30 m straight): Baritone path, complete, 9.0 s"), t);
         assertTrue(t.matches("(?s).*break oak_log x\\d+: tool hand, 3\\.0 s each.*"), t);
-        assertTrue(t.contains("walk to 12 60 3 (12 m straight): line x 1.3 (no path provider), 3.6 s"), t);
+        assertTrue(t.contains("walk to 12 60 3 (12 m straight): Baritone path, complete, 3.6 s"), t);
         assertTrue(t.matches("(?s).*break stone x3: tool wooden_pickaxe, 1\\.5 s each = 4\\.5 s.*"), t);
         assertTrue(t.contains("dropped (3):"), t);
         assertTrue(t.contains("first step: step 1/"), t);
@@ -63,7 +63,7 @@ class DebugTreeTest {
         TestData d = TestData.planner();
         for (String m : List.of("wooden", "stone", "iron", "diamond")) d.tag(m + "_pickaxe", "minecraft:pickaxes");
         d.install();
-        bb.fact(NeedChain.WORLD_FACT, (Supplier<NeedChain.World>) () -> new NeedChain.World(Map.of(), false, NeedChainTest.seen(null, NeedChainTest.STONE)));
+        bb.fact(NeedChain.WORLD_FACT, (Supplier<NeedChain.World>) () -> io.github.mojolowjo.entropybot.aa.FakePaths.paths(new NeedChain.World(Map.of(), false, NeedChainTest.seen(null, NeedChainTest.STONE))));
         String t = DebugTree.order(bb, Goals.draft(item("stone_pickaxe"), 1, 0, clock.now()), "want stone_pickaxe", w -> Set.of("block of " + w), null, null);
         int at = t.indexOf("explore until one of these is known (");
         assertTrue(at > 0, t);

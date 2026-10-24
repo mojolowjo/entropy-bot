@@ -41,7 +41,7 @@ class TypedOptionsTest {
     void theChainsStepsAreRunnable() {
         io.github.mojolowjo.entropybot.aa.brain.TestData.planner().tag("wooden_pickaxe", "minecraft:pickaxes").tag("stone_pickaxe", "minecraft:pickaxes").install();
         NeedChain.Spot tree = new NeedChain.Spot(10, 64, 0, 10, "minecraft:oak_log", 6), stone = new NeedChain.Spot(0, 60, 16, 16, "minecraft:stone", 40);
-        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new NeedChain.World(Map.of(), false, w -> w.equals("minecraft:oak_log") ? tree : w.equals("minecraft:cobblestone") ? stone : null));
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new NeedChain.World(Map.of(), false, w -> w.equals("minecraft:oak_log") ? tree : w.equals("minecraft:cobblestone") ? stone : null)));
         assertTrue(c.ok() && !c.steps().isEmpty(), c.why());
         for (Step s : c.steps()) runnable(s);
         assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.ChopTree t && java.util.Arrays.equals(t.at(), new int[]{10, 64, 0})), "the tree's cell comes from the facts, no mod-side scan: " + c.steps());

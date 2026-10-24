@@ -33,7 +33,7 @@ class FarStationWearUnreachableTest {
     static World world(Map<String, Integer> bag, Spot table, Map<String, List<Spot>> seen) {
         Map<String, List<Spot>> ids = new HashMap<>();
         for (var e : seen.entrySet()) ids.put(e.getKey().contains(":") ? e.getKey() : "minecraft:" + e.getKey(), e.getValue());
-        return new World(bag, table != null, false, w -> ScenariosTest.lookup(ids, w), null, null, null, 0, null, k -> ItemWorth.CRAFT.equals(k) ? table : null);
+        return io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(bag, table != null, false, w -> ScenariosTest.lookup(ids, w), null, null, null, 0, null, k -> ItemWorth.CRAFT.equals(k) ? table : null));
     }
 
     // ---- S37: a far station against a new one near me ----

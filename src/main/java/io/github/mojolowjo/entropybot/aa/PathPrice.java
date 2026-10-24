@@ -3,36 +3,66 @@ package io.github.mojolowjo.entropybot.aa;
 import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 
 /**
- * path-cost (BARITONE_HANDOFF channel 3): the walk price of a chain's trip, asked of Baritone's own A* before walking
- * (the fork's IPathCost: its planned path in ticks, within a budget; no movement). TIME_MODEL: path_length = Baritone's
- * planned path if there is one, else the straight line x 1.3; the chain asks here first and keeps the line when there is
- * no answer. The live one is {@code commands/LivePathPrice}; tests use a fake. Pure. Loader notes: none.
+ * path-cost (BARITONE_HANDOFF channel 3): the walk price of a chain's trip, asked of Baritone's own A* before walking.
+ * 0.39.z41 (owner 2026-10-23: "math the actual path it will take ... A path that is not known, or whose chunks are not
+ * loaded, is 'path not known', not a number"): a walk's price is Baritone's COMPLETE path cost or it is not a price. The
+ * straight line and the partial "about" estimate are gone; a walk whose path is not known yet ({@link Kind#COMPUTING}),
+ * whose search met unloaded chunks ({@link Kind#CHUNKS}), that Baritone found unreachable ({@link Kind#UNREACHABLE}) or
+ * that has no answer ({@link Kind#NONE}) cannot be picked. The live one is {@code commands/LivePathPrice} (the full search
+ * in the background); tests use a fake. Pure. Loader notes: none.
  */
 public interface PathPrice {
 
-    /** The walk from the bot's feet to stand by the block: seconds of Baritone's path; {@code about}: a partial path plus its estimate of the rest. */
-    record Walk(double seconds, boolean about, double lavaS) {
-        public Walk(double seconds, boolean about) { this(seconds, about, 0); }
+    /** A complete walk: seconds of Baritone's path (through {@link TickPrice}), its lava part in seconds. */
+    record Walk(double seconds, double lavaS) {
+        public Walk(double seconds) { this(seconds, 0); }
     }
 
-    /** Baritone's price of the walk to stand by the block at x y z; null: no path answer within budget (the caller takes the line, said so). */
-    Walk toBlock(int x, int y, int z);
+    /** What an answer is: a price, or why there is none (rule 15: loaded / empty / not loaded). */
+    enum Kind { PRICED, COMPUTING, CHUNKS, UNREACHABLE, NONE }
 
-    /** 0.39.z28: one query's answer: the walk, or (walk null) why there is none, in the provider's words. */
-    record Answer(Walk walk, String reason) {}
-
-    /** {@link #toBlock} with the reason when there is no walk (aa debug prints it); a provider without reasons says so. */
-    default Answer price(int x, int y, int z) {
-        Walk w = toBlock(x, y, z);
-        return new Answer(w, w == null ? "this path provider gives no reason" : null);
+    /** One ask's answer: the walk (PRICED only) or the kind and Baritone's / the provider's words. */
+    record Answer(Walk walk, Kind kind, String reason) {
+        public static Answer priced(Walk w) { return new Answer(w, Kind.PRICED, null); }
+        public static Answer computing(String why) { return new Answer(null, Kind.COMPUTING, why); }
+        public static Answer chunks(String why) { return new Answer(null, Kind.CHUNKS, why); }
+        public static Answer unreachable(String why) { return new Answer(null, Kind.UNREACHABLE, why); }
+        public static Answer none(String why) { return new Answer(null, Kind.NONE, why); }
     }
 
-    /** Milliseconds one query may take (the fork caps it). */
-    static long budgetMs() { return (long) Tuning.get("pathCost.budgetMs"); }
+    /** The start of every not-a-price text a way fails with (aa why / aa debug; {@link NeedChain.Chain#waiting}). */
+    String NOT_KNOWN = "walk: path not known";
 
-    /** The walk past which A* stops pricing (its cost ceiling), in seconds. */
+    /**
+     * The walk from the bot's feet to stand by the block at x y z. {@code dist}: the straight metres the chain knows (said
+     * in aa debug; the live provider does not use it, a test fake may). Game thread for the live one.
+     */
+    Answer price(int x, int y, int z, double dist);
+
+    /** A complete walk now, else null (callers that only compare known walks: the deposit). */
+    default Walk toBlock(int x, int y, int z) { return price(x, y, z, Double.NaN).walk(); }
+
+    /** A computation is in flight (an order whose chain waits on it is held, not parked). */
+    default boolean pending() { return false; }
+
+    /** Bumped each time an answer lands (the running order re-prices at its next step). */
+    default long landed() { return 0; }
+
+    /** Milliseconds one background search may run (Baritone's executor, not the game thread). */
+    static long fullMaxMs() { return (long) Tuning.get("pathCost.fullMaxMs"); }
+
+    /** A* nodes one background search may open. */
+    static int maxNodes() { return Tuning.i("pathCost.maxNodes"); }
+
+    /** The walk past which A* stops (its cost ceiling), in seconds. */
     static double budgetS() { return Tuning.get("pathCost.budgetS"); }
 
-    /** Path queries one chain may ask; past them the line. */
-    static int perChainMax() { return Tuning.i("pathCost.perChainMax"); }
+    /** Searches in flight at once; more asks wait for the next pass. */
+    static int maxPending() { return Tuning.i("pathCost.maxPending"); }
+
+    /** A cached answer is kept while the bot stands within this many blocks of where it was asked from. */
+    static double reuseBlocks() { return Tuning.get("pathCost.reuseBlocks"); }
+
+    /** A cached answer is kept at most this many seconds. */
+    static double keepS() { return Tuning.get("pathCost.keepS"); }
 }

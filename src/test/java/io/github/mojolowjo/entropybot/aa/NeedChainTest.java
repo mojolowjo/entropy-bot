@@ -40,7 +40,7 @@ class NeedChainTest {
 
     @Test
     void fromNothingATreeAndStoneSeenGiveTheWholeChain() {
-        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, seen(TREE, STONE)));
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(Map.of(), false, seen(TREE, STONE))));
         assertTrue(c.ok(), c.why());
         assertFalse(c.explore());
         List<Step> s = c.steps();
@@ -59,12 +59,12 @@ class NeedChainTest {
     void aKnownTable20mAwayIsWalkedToAndPricedNeverMadeAgain() {
         Map<String, Integer> bag = Map.of("minecraft:cobblestone", 8, "minecraft:oak_planks", 4);
         Spot table = new Spot(20, 64, 0, 20, "minecraft:crafting_table");
-        World far = new World(bag, true, seen(null, null)).withStations(k -> io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT.equals(k) ? table : null);
+        World far = io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(bag, true, seen(null, null))).withStations(k -> io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT.equals(k) ? table : null);
         NeedChain.Chain c = NeedChain.resolve("furnace", 1, far);
-        NeedChain.Chain here = NeedChain.resolve("furnace", 1, new World(bag, true, seen(null, null)));
+        NeedChain.Chain here = NeedChain.resolve("furnace", 1, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(bag, true, seen(null, null))));
         assertTrue(c.ok() && !c.explore(), c.why());
         assertTrue(c.why().contains("at the table 20 m"), "the craft phrase names the walk: " + c.why());
-        assertEquals(here.seconds() + NeedChain.walkS(20), c.seconds(), 1e-6, "the price holds the 20 m walk to the table");
+        assertEquals(here.seconds() + FakePaths.walkS(20), c.seconds(), 1e-6, "the price holds the 20 m walk to the table");
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.PlaceNear), "no second table: " + c.steps());
         assertEquals(List.of(new Step.Craft("furnace", 1)), c.steps(), "the craft step walks to the table itself (InteractProcess)");
     }
@@ -73,7 +73,7 @@ class NeedChainTest {
     @Test
     void theTableForgottenRepricesTheChainWithANewOne() {
         Map<String, Integer> bag = Map.of("minecraft:cobblestone", 8, "minecraft:oak_planks", 4);
-        NeedChain.Chain c = NeedChain.resolve("furnace", 1, new World(bag, false, seen(null, null)));
+        NeedChain.Chain c = NeedChain.resolve("furnace", 1, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(bag, false, seen(null, null))));
         assertTrue(c.ok() && !c.explore(), c.why());
         int place = at(c.steps(), Step.PlaceNear.class, "crafting_table"), craft = at(c.steps(), Step.Craft.class, "furnace");
         assertTrue(place >= 0 && craft > place, c.steps().toString());
@@ -87,23 +87,23 @@ class NeedChainTest {
         p.done.set(812);
         var reading = io.github.mojolowjo.entropybot.aa.brain.LootBook.reading(p);
         Function<String, List<Spot>> none = w -> List.of();
-        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, false, none, null, reading, null, 0));
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(Map.of(), false, false, none, null, reading, null, 0)));
         assertFalse(c.ok(), c.why());
         assertTrue(c.waiting(), c.why());
         assertEquals("waiting for the loot book (812 of 3104)", c.missing());
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Explore), "no explore on a missing book: " + c.steps());
         // a tree seen: the chain stands without the book where it can
-        NeedChain.Chain t = NeedChain.resolve("oak_planks", 4, new World(Map.of(), false, false, w -> w.equals("minecraft:oak_log") ? List.of(TREE) : List.of(), null, reading, null, 0));
+        NeedChain.Chain t = NeedChain.resolve("oak_planks", 4, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(Map.of(), false, false, w -> w.equals("minecraft:oak_log") ? List.of(TREE) : List.of(), null, reading, null, 0)));
         assertTrue(t.ok() && !t.explore(), t.why());
         // the book lands (ready, nothing in it): the same order is priced again and ends in its explore
         var landed = new io.github.mojolowjo.entropybot.aa.brain.LootBook(List.of(), "jars: 3,104 tables, 2.1 s");
-        NeedChain.Chain again = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, false, none, null, landed, null, 0));
+        NeedChain.Chain again = NeedChain.resolve("stone_pickaxe", 1, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(Map.of(), false, false, none, null, landed, null, 0)));
         assertTrue(again.ok() && again.explore(), again.why());
     }
 
     @Test
     void nothingSeenIsTheExploreWayPricedForThatNeedNeverADrop() {
-        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, seen(null, null)));
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(Map.of(), false, seen(null, null))));
         assertTrue(c.ok(), "no tree seen is not infeasible: " + c.why());
         assertTrue(c.explore());
         assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes(), "oak_log")), c.steps());
@@ -113,7 +113,7 @@ class NeedChainTest {
 
     @Test
     void logsInTheBagGoStraightToTheTableAndTheCrafts() {
-        World w = new World(Map.of("minecraft:oak_log", 8), false, seen(null, STONE));
+        World w = io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(Map.of("minecraft:oak_log", 8), false, seen(null, STONE)));
         NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, w);
         assertTrue(c.ok(), c.why());
         assertEquals(-1, at(c.steps(), Step.ChopTree.class, "cut"), "8 logs are enough: " + c.steps());
@@ -123,7 +123,7 @@ class NeedChainTest {
 
     @Test
     void aTableInReachIsNotMadeAgain() {
-        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of("minecraft:oak_log", 8), true, seen(null, STONE)));
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(Map.of("minecraft:oak_log", 8), true, seen(null, STONE))));
         assertTrue(c.ok(), c.why());
         assertEquals(-1, at(c.steps(), Step.PlaceNear.class, "crafting_table"), c.steps().toString());
         assertEquals(-1, at(c.steps(), Step.Craft.class, "crafting_table"), c.steps().toString());
@@ -131,7 +131,7 @@ class NeedChainTest {
 
     @Test
     void aTableFromTheBagIsPlacedNotCrafted() {
-        World w = new World(Map.of("minecraft:oak_log", 8, "minecraft:crafting_table", 1), false, seen(null, STONE));
+        World w = io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(Map.of("minecraft:oak_log", 8, "minecraft:crafting_table", 1), false, seen(null, STONE)));
         NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, w);
         assertTrue(at(c.steps(), Step.PlaceNear.class, "crafting_table") >= 0);
         assertEquals(-1, at(c.steps(), Step.Craft.class, "crafting_table"));
@@ -139,14 +139,14 @@ class NeedChainTest {
 
     @Test
     void whatIsInTheBagIsNoWork() {
-        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of("minecraft:stone_pickaxe", 1), false, seen(null, null)));
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(Map.of("minecraft:stone_pickaxe", 1), false, seen(null, null))));
         assertTrue(c.ok());
         assertTrue(c.steps().isEmpty());
     }
 
     @Test
     void theTableIsAnItemPlacedNearMeAndNoCellIsEverAsked() {
-        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of("minecraft:oak_log", 8), false, seen(null, STONE)));
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(Map.of("minecraft:oak_log", 8), false, seen(null, STONE))));
         assertTrue(c.ok() && !c.explore(), c.why());
         assertTrue(c.steps().contains(new Step.PlaceNear("crafting_table")), c.steps().toString());
         assertFalse(c.why().contains("cell"), c.why());
@@ -159,7 +159,7 @@ class NeedChainTest {
         d.recipe("zinc_ingot", 1, "zinc_block");
         d.recipe("zinc_block", 1, "zinc_ingot");
         d.install();
-        NeedChain.Chain c = NeedChain.resolve("zinc_ingot", 1, new World(Map.of(), false, seen(TREE, STONE)));
+        NeedChain.Chain c = NeedChain.resolve("zinc_ingot", 1, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(Map.of(), false, seen(TREE, STONE))));
         assertTrue(c.ok(), "a loop never kills the chain: " + c.why());
         assertTrue(c.explore(), c.why());
         assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Explore), c.steps().toString());
@@ -174,7 +174,7 @@ class NeedChainTest {
         d.recipe("zinc_block", 1, "zinc_ingot");
         d.recipe("gadget", 1, "zinc_ingot", "oak_planks");
         d.install();
-        NeedChain.Chain c = NeedChain.resolve("gadget", 1, new World(Map.of(), true, seen(TREE, STONE)));
+        NeedChain.Chain c = NeedChain.resolve("gadget", 1, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(Map.of(), true, seen(TREE, STONE))));
         assertTrue(c.ok(), c.why());
         assertTrue(at(c.steps(), Step.ChopTree.class, "cut") >= 0 || at(c.steps(), Step.Explore.class, "") >= 0, c.steps().toString());
         assertFalse(c.dropped().isEmpty(), c.why());
@@ -185,7 +185,7 @@ class NeedChainTest {
         TestData d = TestData.planner();
         d.recipe("gadget", 1, "mystery");
         d.install();
-        NeedChain.Chain c = NeedChain.resolve("gadget", 1, new World(Map.of(), true, seen(TREE, STONE)));
+        NeedChain.Chain c = NeedChain.resolve("gadget", 1, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(Map.of(), true, seen(TREE, STONE))));
         assertTrue(c.ok(), "no recipe and no source is an explore, not a 'no way': " + c.why());
         assertTrue(c.explore());
         assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes(), "mystery")), c.steps());
@@ -194,7 +194,7 @@ class NeedChainTest {
 
     @Test
     void aNoTreeWorldIsTheExploreLeafAndTheWhyLineShowsTheChain() {
-        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, seen(null, STONE)));
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(Map.of(), false, seen(null, STONE))));
         System.out.println("WHY-LINE " + c.why());
         assertTrue(c.ok() && c.explore(), c.why());
         assertEquals(1, c.steps().size(), c.steps().toString());
@@ -210,14 +210,14 @@ class NeedChainTest {
         d.recipe("far_thing", 1, "gadget");
         d.install();
         // the tree is 30 m away: crafting from logs costs more than a 1-block horizon, and far_thing has no other branch, so the craft stays
-        NeedChain.Chain c = NeedChain.resolve("far_thing", 1, new World(Map.of(), false, seen(TREE, STONE), 1));
+        NeedChain.Chain c = NeedChain.resolve("far_thing", 1, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(Map.of(), false, seen(TREE, STONE), 1)));
         assertTrue(c.ok(), c.why());
         assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Craft || s instanceof Step.Explore), c.steps().toString());
     }
 
     @Test
     void aWoodenPickaxeInTheBagSkipsTheTierSubNeed() {
-        World w = new World(Map.of("minecraft:wooden_pickaxe", 1, "minecraft:oak_log", 4), true, seen(null, STONE));
+        World w = io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(Map.of("minecraft:wooden_pickaxe", 1, "minecraft:oak_log", 4), true, seen(null, STONE)));
         NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, w);
         assertEquals(-1, at(c.steps(), Step.Craft.class, "wooden_pickaxe"), c.steps().toString());
         assertTrue(at(c.steps(), Step.Collect.class, "cobblestone") >= 0);
@@ -239,7 +239,7 @@ class NeedChainTest {
     @Test
     void stoneWithATreeSeenTakesTheWoodenPickaxeNotTheGoldOne() {
         goldWorld();
-        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, seen(TREE, STONE)));
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(Map.of(), false, seen(TREE, STONE))));
         System.out.println("WHY-LINE (a) " + c.why());
         assertTrue(c.ok() && !c.explore(), c.why());
         assertTrue(at(c.steps(), Step.Craft.class, "wooden_pickaxe") >= 0, c.steps().toString());
@@ -252,7 +252,7 @@ class NeedChainTest {
     @Test
     void theRecipeLoopCandidateIsPricedOutAndTheChainCompletes() {
         goldWorld();
-        NeedChain.Chain c = NeedChain.resolve("cobblestone", 3, new World(Map.of(), false, seen(TREE, STONE)));
+        NeedChain.Chain c = NeedChain.resolve("cobblestone", 3, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(Map.of(), false, seen(TREE, STONE))));
         assertTrue(c.ok() && !c.explore(), c.why());
         assertTrue(c.dropped().stream().anyMatch(x -> x.startsWith("golden_pickaxe: ")), c.dropped().toString());
         assertTrue(at(c.steps(), Step.Collect.class, "cobblestone") > at(c.steps(), Step.Craft.class, "wooden_pickaxe"), c.steps().toString());
@@ -261,7 +261,7 @@ class NeedChainTest {
     @Test
     void noTreeStoneSeenExploresForALogNotForGold() {
         goldWorld();
-        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, new World(Map.of(), false, seen(null, STONE)));
+        NeedChain.Chain c = NeedChain.resolve("stone_pickaxe", 1, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(Map.of(), false, seen(null, STONE))));
         System.out.println("WHY-LINE (c) " + c.why());
         assertTrue(c.ok() && c.explore(), c.why());
         String chain = chainPart(c.why());

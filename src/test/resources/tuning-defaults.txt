@@ -777,8 +777,6 @@ steerRules.turnRateMax	180.0
 steerRules.turnRateMin	5.0
 steerRules.windowMs	60000.0
 stepRun.animalRange	32.0
-stepTimes.climbS	0.3
-stepTimes.pathFactor	1.3
 steps.burrowWaitS	120.0
 steps.calmWaitS	60.0
 steps.exploreMin	5.0
@@ -905,9 +903,15 @@ needChain.unknownBreakS	3.0
 needChain.unknownMobHp	10.0
 needs.foodItems	8.0
 needs.ironTier	3.0
-pathCost.budgetMs	15.0
-pathCost.budgetS	300.0
-pathCost.perChainMax	12.0
+pathCost.budgetS	900.0
+pathCost.fullMaxMs	2000.0
+pathCost.maxNodes	400000.0
+pathCost.maxPending	4.0
+pathCost.reuseBlocks	4.0
+pathCost.keepS	60.0
+price.walkX	1.0
+price.breakX	1.0
+price.placeX	1.0
 debug.logMaxMb	5.0
 needs.worryFood	60.0
 needs.worryDanger	75.0

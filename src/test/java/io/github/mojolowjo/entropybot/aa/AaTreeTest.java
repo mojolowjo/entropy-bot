@@ -34,8 +34,8 @@ class AaTreeTest {
         // TAG_NEEDS: the world answers a tag word with any member's spots (the live lookup's source set), as ScenariosTest's
         java.util.Map<String, java.util.List<NeedChain.Spot>> seen = new java.util.HashMap<>();
         spots.forEach((k, v) -> seen.put(k, java.util.List.of(v)));
-        bb.fact(NeedChain.WORLD_FACT, (java.util.function.Supplier<NeedChain.World>) () -> new NeedChain.World(bb.in.bag, bb.in.tableKnown, bb.in.furnaceKnown,
-                word -> ScenariosTest.lookup(seen, word), null, null, null, 0));
+        bb.fact(NeedChain.WORLD_FACT, (java.util.function.Supplier<NeedChain.World>) () -> io.github.mojolowjo.entropybot.aa.FakePaths.paths(new NeedChain.World(bb.in.bag, bb.in.tableKnown, bb.in.furnaceKnown,
+                word -> ScenariosTest.lookup(seen, word), null, null, null, 0)));
     }
 
     @AfterEach

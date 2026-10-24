@@ -47,7 +47,7 @@ class ScenariosTest {
     static World w(Map<String, Integer> bag, boolean table, boolean furnace, Map<String, List<Spot>> seen) {
         Map<String, List<Spot>> ids = new java.util.HashMap<>();
         for (var e : seen.entrySet()) ids.put(e.getKey().contains(":") ? e.getKey() : "minecraft:" + e.getKey(), e.getValue());
-        return new World(bag, table, furnace, word -> lookup(ids, word), null, null, null, 0);
+        return io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(bag, table, furnace, word -> lookup(ids, word), null, null, null, 0));
     }
 
     static List<Spot> lookup(Map<String, List<Spot>> ids, String word) {
@@ -82,7 +82,7 @@ class ScenariosTest {
         Chain c = NeedChain.resolve("oak_log", 1, w(Map.of(), false, false, Map.of("oak_log", List.of(tree(10, 4)))));
         assertTrue(c.ok() && !c.explore(), c.why());
         assertEquals(15.01, c.seconds(), TOL, c.why());
-        assertTrue(c.why().startsWith("oak_log <- cut tree seen 10 m: 15.0 s"), c.why());
+        assertTrue(c.why().startsWith("oak_log <- cut tree seen 10 m, walk 3.0 s (path): 15.0 s"), c.why());
         assertTrue(c.dropped().isEmpty(), c.dropped().toString());
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Explore), c.steps().toString());
     }
@@ -143,7 +143,7 @@ class ScenariosTest {
         Chain c = NeedChain.resolve("oak_log", 1, w(Map.of(), false, false, Map.of("oak_log", List.of(tree(40, 5), tree(10, 5)))));
         assertTrue(c.ok() && !c.explore(), c.why());
         assertEquals(18.01, c.seconds(), TOL, c.why());
-        assertTrue(c.why().startsWith("oak_log <- cut tree seen 10 m: 18.0 s"), c.why());
+        assertTrue(c.why().startsWith("oak_log <- cut tree seen 10 m, walk 3.0 s (path): 18.0 s"), c.why());
         assertEquals(1, c.dropped().size(), c.dropped().toString());
         assertTrue(c.dropped().get(0).startsWith("tree 40 m: 27.0 s"), c.dropped().toString());
     }
@@ -326,7 +326,7 @@ class ScenariosTest {
         assertTrue(c.ok() && !c.explore(), c.why());
         assertEquals(104.55, c.seconds(), TOL, c.why());
         String chain = chainPart(c.why());
-        assertTrue(chain.startsWith("torch <- craft: 4 charcoal <- smelt 4 oak_log <- cut tree seen 10 m + furnace <- craft: 8 cobblestone"), c.why());
+        assertTrue(chain.startsWith("torch <- craft: 4 charcoal <- smelt 4 oak_log <- cut tree seen 10 m, walk 3.0 s (path) + furnace <- craft: 8 cobblestone"), c.why());
         assertTrue(chain.contains("burn 3 oak_log (in the bag)"), "the tree's surplus logs burn, from the game's fuel table: " + c.why());
         assertFalse(c.why().contains("fuel"), "no family word anywhere: " + c.why());
         List<Class<?>> order = List.of(Step.ChopTree.class, Step.PlaceNear.class, Step.Collect.class, Step.Smelt.class);
@@ -399,7 +399,7 @@ class ScenariosTest {
         Chain raw = food(w(Map.of(), false, false, Map.of()).withMobs(cows, foodBook()));
         assertTrue(raw.ok() && !raw.explore(), raw.why());
         assertEquals(14.52, raw.seconds(), TOL, raw.why());
-        assertTrue(raw.why().startsWith("food <- 8 beef <- hunt 4 cow seen 15 m: 14.5 s"), raw.why());
+        assertTrue(raw.why().startsWith("food <- 8 beef <- hunt 4 cow seen 15 m, walk 4.5 s (path): 14.5 s"), raw.why());
         Chain crop = food(w(Map.of(), false, false, Map.of("wheat", List.of(new Spot(10, 64, 0, 10, "minecraft:wheat", 30)))).withMobs(t -> List.of(), foodBook()));
         assertTrue(crop.ok() && !crop.explore(), crop.why());
         assertEquals(77.41, crop.seconds(), TOL, crop.why());
@@ -507,7 +507,7 @@ class ScenariosTest {
         assertArrayEquals(new int[]{10, 64, 0}, cut.at());
         assertEquals("cut at 10 64 0", NeedChain.sourceKey(cut), "its source key is the tree");
         assertEquals(27.01, c.seconds(), TOL, "priced as the run: the chop takes all 8 logs of the tree: " + c.why());
-        assertEquals(3.0, (c.seconds() - NeedChain.walkS(10)) / 8, TOL, "3.0 s a log, 8 logs");
+        assertEquals(3.0, (c.seconds() - FakePaths.walkS(10)) / 8, TOL, "3.0 s a log, 8 logs");
     }
 
     /**
@@ -707,21 +707,34 @@ class ScenariosTest {
         assertEquals(List.of("cut 1 at 5 64 0", "craft test:ash_planks 4", "craft crafting_table 1"), c.steps().stream().map(Step::text).toList());
     }
 
-    /** path-cost: a fake of Baritone's walk price: the cells it knows a path for (seconds), the rest "as the line"; null cells: no path. */
+    /**
+     * path-cost: a fake of Baritone's walk price (0.39.z41): the cells it has a COMPLETE path for (seconds); cells still
+     * computed, whose chunks are not loaded, or that the complete search found unreachable; any other cell: "computing".
+     */
     static final class FakePath implements PathPrice {
         final Map<String, Double> seconds = new java.util.HashMap<>();
+        final Map<String, PathPrice.Answer> not = new java.util.HashMap<>();
         final java.util.Map<String, Integer> asked = new java.util.HashMap<>();
-        boolean about;
+        long landed;
 
-        FakePath path(Spot s, double metres) { seconds.put(s.x() + "," + s.y() + "," + s.z(), metres * StepTimes.pathFactor() / io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps()); return this; }
+        static String k(Spot s) { return s.x() + "," + s.y() + "," + s.z(); }
+        FakePath path(Spot s, double metres) { seconds.put(k(s), FakePaths.walkS(metres)); not.remove(k(s)); landed++; return this; }
         FakePath asLine(Spot s) { return path(s, s.dist()); }
+        FakePath computing(Spot s) { not.put(k(s), PathPrice.Answer.computing(null)); return this; }
+        FakePath chunks(Spot s) { not.put(k(s), PathPrice.Answer.chunks("chunks not loaded")); return this; }
+        FakePath unreachable(Spot s) { not.put(k(s), PathPrice.Answer.unreachable("no path: the complete search found none")); return this; }
 
-        @Override public Walk toBlock(int x, int y, int z) {
-            String k = x + "," + y + "," + z;
-            asked.merge(k, 1, Integer::sum);
-            Double s = seconds.get(k);
-            return s == null ? null : new Walk(s, about);
+        @Override public PathPrice.Answer price(int x, int y, int z, double dist) {
+            String key = x + "," + y + "," + z;
+            asked.merge(key, 1, Integer::sum);
+            if (not.containsKey(key)) return not.get(key);
+            Double s = seconds.get(key);
+            return s == null ? PathPrice.Answer.computing(null) : PathPrice.Answer.priced(new Walk(s));
         }
+
+        @Override public boolean pending() { return not.values().stream().anyMatch(a -> a.kind() == PathPrice.Kind.COMPUTING); }
+
+        @Override public long landed() { return landed; }
     }
 
     /**
@@ -756,10 +769,10 @@ class ScenariosTest {
         assertTrue(chainPart(c.why()).contains("cut tree seen 10 m, walk 3.0 s (path)"), c.why());
         String charcoal = c.dropped().stream().filter(d -> d.startsWith("charcoal: ")).findFirst().orElseThrow(() -> new AssertionError(c.dropped().toString()));
         assertTrue(charcoal.startsWith("charcoal: 88.6 s (dearer than coal)"), charcoal);
-        // by the line (no path provider) the same coal walk was 40 x 1.3 / 4.317 = 12.05 s: 51.51 s
-        Chain line = NeedChain.resolve("torch", 16, w(Map.of(), false, false, seen));
-        assertEquals(51.51, line.seconds(), TOL, line.why());
-        assertFalse(line.why().contains("(path)") || line.why().contains("(line)"), "no provider: the old line, unsaid: " + line.why());
+        // 0.39.z41: no path provider is no walk price at all (the line is gone): every way with a walk waits on "path not known"
+        Chain none = NeedChain.resolve("torch", 16, w(Map.of(), false, false, seen).withPath(null));
+        assertFalse(none.ok(), none.why());
+        assertTrue(none.waiting() && none.missing().startsWith(PathPrice.NOT_KNOWN + " (no path provider)"), none.why());
         for (var e : fake.asked.entrySet()) assertEquals(1, e.getValue(), "each spot asked once a pass: " + fake.asked);
     }
 
@@ -814,28 +827,6 @@ class ScenariosTest {
         assertEquals(3.01 + 10 * 3.0, c.seconds(), TOL, c.why());
     }
 
-    /** path-cost: no path answer is the line, said "(line)"; a partial path is used and said "about"; past perChainMax the line. */
-    @Test
-    void aWalkWithNoPathIsTheLineAndSaysSoAndThePerChainBoundHolds() {
-        world("wooden", "stone");
-        Spot tree = tree(10, 8);
-        Chain none = NeedChain.resolve("crafting_table", 1, w(Map.of(), false, false, Map.of("oak_log", List.of(tree))).withPath(new FakePath()));
-        assertTrue(none.why().contains("cut tree seen 10 m, walk 3.0 s (line)"), none.why());
-        FakePath about = new FakePath().path(tree, 20);
-        about.about = true;
-        Chain partial = NeedChain.resolve("crafting_table", 1, w(Map.of(), false, false, Map.of("oak_log", List.of(tree))).withPath(about));
-        assertTrue(partial.why().contains("walk about 6.0 s (path)"), partial.why());
-        io.github.mojolowjo.entropybot.aa.brain.Tuning.set("pathCost.perChainMax", 0);
-        try {
-            FakePath never = new FakePath().path(tree, 20);
-            Chain capped = NeedChain.resolve("crafting_table", 1, w(Map.of(), false, false, Map.of("oak_log", List.of(tree))).withPath(never));
-            assertTrue(never.asked.isEmpty(), never.asked.toString());
-            assertTrue(capped.why().contains("walk 3.0 s (line)"), capped.why());
-        } finally {
-            io.github.mojolowjo.entropybot.aa.brain.Tuning.reset();
-        }
-    }
-
     /** Point 3: a "dig coal ore" way with no pickaxe carries the pickaxe chain in its price and makes the pickaxe before the collect. */
     @Test
     void aCoalOreDigWithNoPickaxeCarriesThePickaxeChain() {
@@ -857,9 +848,9 @@ class ScenariosTest {
     void aTagSourceDigWithNoBlockNamedStillMakesThePickaxeFirst() {
         world("wooden", "stone");
         Spot sighting = new Spot(0, 40, 20, 20, null, 4).giving("minecraft:coal");
-        Chain c = NeedChain.resolve("#minecraft:coals", 4, new World(Map.of(), false, false,
+        Chain c = NeedChain.resolve("#minecraft:coals", 4, io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(Map.of(), false, false,
                 word -> word.equals("#minecraft:coals") ? List.of(sighting) : word.equals("#minecraft:logs") || word.equals("minecraft:oak_log") ? List.of(tree(10, 6)) : List.of(),
-                null, null, null, 0));
+                null, null, null, 0)));
         assertTrue(c.ok() && !c.explore(), c.why());
         assertTrue(c.why().contains("with wooden_pickaxe"), c.why());
         assertPickaxeBeforeCollect(c, "coal");

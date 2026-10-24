@@ -99,7 +99,7 @@ public final class NeedChain {
             this(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, null, null);
         }
 
-        /** No path provider: every walk is the straight line x 1.3 (and the line says nothing of it). */
+        /** No path provider: no walk has a price (0.39.z41: "walk: path not known (no path provider)"); ways without a walk stand. */
         public World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
                      Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks) {
             this(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, null, null);
@@ -140,7 +140,7 @@ public final class NeedChain {
 
         public World withBand(Function<String, int[]> b) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, b, horizonBlocks, path, stationAt, usesLeft, held); }
 
-        /** path-cost: the walks priced by Baritone's planned path first (null: the line). */
+        /** path-cost: the walks priced by Baritone's complete path (null: no walk has a price). */
         public World withPath(PathPrice p) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, p, stationAt, usesLeft, held); }
 
         /** station-memory: where the known stations stand (recipe kind -> spot; null: no position known). */
@@ -175,11 +175,18 @@ public final class NeedChain {
      * @param missing why there is no way at all (null: there is one)
      * @param dropped every way priced out on the way, each with its reason (seconds, or "no known source", or "loop")
      */
-    public record Chain(List<Step> steps, double cost, String why, boolean explore, String missing, List<String> dropped) {
+    public record Chain(List<Step> steps, double cost, String why, boolean explore, String missing, List<String> dropped, Map<String, String> unreachable) {
+        public Chain(List<Step> steps, double cost, String why, boolean explore, String missing, List<String> dropped) { this(steps, cost, why, explore, missing, dropped, Map.of()); }
         public Chain(List<Step> steps, double cost, String why, boolean explore, String missing) { this(steps, cost, why, explore, missing, List.of()); }
+        public Chain {
+            unreachable = unreachable == null ? Map.of() : Map.copyOf(unreachable);
+        }
         public boolean ok() { return missing == null; }
-        /** loot-book-bg: no way stands only because the loot book is still being read: no park, no explore; priced again when it lands. */
-        public boolean waiting() { return missing != null && missing.startsWith(LootBook.WAITING); }
+        /**
+         * loot-book-bg: no way stands only because the loot book is still being read: no park, no explore; priced again when it
+         * lands. 0.39.z41: or because a walk's path is not known yet / its chunks are not loaded ({@link PathPrice#NOT_KNOWN}).
+         */
+        public boolean waiting() { return missing != null && (missing.startsWith(LootBook.WAITING) || missing.startsWith(PathPrice.NOT_KNOWN)); }
         /** The chain's price in seconds (the explore leg of an explore chain is in {@code cost}, not here). */
         public double seconds() { return Unit.seconds(cost); }
     }
@@ -198,9 +205,6 @@ public final class NeedChain {
     private static final int GRID_2X2 = 4; // game fact: the inventory crafting grid holds 4 ingredients
     /** The tag the game gives every log block: a block of it is a tree (Baritone's chop). */
     private static final String LOGS_TAG = "minecraft:logs";
-
-    /** TIME_MODEL: walk = straight line x 1.3 / walk speed, before Baritone has planned a path. */
-    static double walkS(double dist) { return dist * StepTimes.pathFactor() / Unit.walkBps(); }
 
     static String s(double seconds) { return String.format(Locale.ROOT, "%.1f s", seconds); }
 
@@ -361,7 +365,7 @@ public final class NeedChain {
         double seconds;       // everything priced so far, in seconds
         double away;          // seconds of the walk from the last new source back to where the stations are (0: at them)
         final Map<String, Walked> walks = new LinkedHashMap<>();   // path-cost: spot key -> its walk, one pricing pass (never restored)
-        int pathAsked;        // path-cost: Baritone queries this pass (bounded by pathCost.perChainMax)
+        final Map<String, String> unreachable = new LinkedHashMap<>();   // 0.39.z41: source key -> Baritone's unreachable reason (never restored)
         boolean tableReady, furnaceReady, stuck;
         boolean tableWalked, furnaceWalked;   // station-memory: the walk to the known station is priced (or the station was placed here)
         String fail;          // the way being tried cannot be done: the reason
@@ -567,9 +571,9 @@ public final class NeedChain {
         // an explore has no price in the chain; the scorer still needs a number to weigh the whole row, so the row's cost carries the explore leg
         if (c.stuck) cost += exploreMinutes() * Options.MINUTE * (1 + exploreReturn());
         String drops = c.dropped.isEmpty() ? "" : " | dropped: " + String.join("; ", c.dropped);
-        if (c.fail != null) return new Chain(List.copyOf(c.steps), cost, name + ": " + c.fail + drops, false, c.fail, List.copyOf(c.dropped));
+        if (c.fail != null) return new Chain(List.copyOf(c.steps), cost, name + ": " + c.fail + drops, false, c.fail, List.copyOf(c.dropped), c.unreachable);
         String why = head + (c.stuck ? "" : ": " + s(c.seconds)) + drops;
-        return new Chain(List.copyOf(c.steps), cost, why, c.stuck, null, List.copyOf(c.dropped));
+        return new Chain(List.copyOf(c.steps), cost, why, c.stuck, null, List.copyOf(c.dropped), c.unreachable);
     }
 
     /** One way to get a requirement: what runs it on the simulated bag, its name for the dropped list, and what breaks a tie. */
@@ -645,7 +649,12 @@ public final class NeedChain {
                 c.fail = trials.get(0).fail(); c.loopOn = trials.get(0).loopOn();
                 for (Trace.Node n : nodes) n.verdict = "fails up to the way that asked (a loop through " + shw(c.loopOn) + ")";
             }
-            else for (Trial t : trials) { drop(c, t.alt().label, t.fail()); verdict(nodes, t, "dropped: " + t.fail()); }
+            else {
+                for (Trial t : trials) { drop(c, t.alt().label, t.fail()); verdict(nodes, t, "dropped: " + t.fail()); }
+                // 0.39.z41: no way stands while a walk's path is not known (computing, chunks not loaded): the requirement waits
+                // on it (priced again when the answer lands), it does not turn into an explore
+                for (Trial t : trials) if (t.fail() != null && t.fail().startsWith(PathPrice.NOT_KNOWN)) { c.fail = t.fail(); break; }
+            }
             return null;
         }
         c.restore(win.after());
@@ -1238,6 +1247,7 @@ public final class NeedChain {
             Spot far = walkedBefore ? null : c.w.stationAt().apply(kind);
             if (far != null && far.dist() > stationNearM()) return farStation(c, kind, table, label, far);
             String k = knownWalk(c, kind, table, label);
+            if (c.fail != null) return null;                // 0.39.z41: its walk is not a price (path not known, unreachable)
             c.note(() -> "station " + label + ": " + (k != null ? (k.contains(UNVERIFIED) ? "not loaded, remembered, " : "known, ") + k : walkedBefore ? "known, walked to before in this chain" : "in reach"));
             return k;
         }
@@ -1257,6 +1267,7 @@ public final class NeedChain {
         Ctx.Snap s0 = c.snap();
         double t0 = c.seconds;
         String walk = knownWalk(c, kind, table, label);
+        String walkFail = c.fail;                           // 0.39.z41: the walk is not a price (path not known, unreachable)
         double walkS = c.seconds - t0;
         Ctx.Snap walked = c.snap();
         c.restore(s0);
@@ -1265,6 +1276,18 @@ public final class NeedChain {
         boolean placeStands = c.fail == null && !c.stuck;
         String pw = "place a new " + label + " near me", kw = "walk to the known " + label + " " + Math.round(far.dist()) + " m" + (far.unloaded() ? " (" + UNVERIFIED + ")" : "")
                 + (Nearby.isMain(null, far, null) ? " (" + Nearby.MAIN + " -" + Math.round(Math.max(0, far.bonusS())) + " s)" : "");
+        if (placeStands && walkFail != null) {
+            drop(c, kw, walkFail);
+            c.note(() -> "station " + label + ": " + kw + " " + walkFail + " vs " + pw + " " + s(placeS) + " -> placed");
+            return place;
+        }
+        if (walkFail != null) {
+            String pf = c.fail != null ? c.fail : "its materials end in an explore";
+            c.restore(walked);
+            drop(c, pw, pf);
+            c.fail = walkFail;
+            return null;
+        }
         if (placeStands && placeS < walkS) {
             drop(c, kw, s(walkS));
             c.note(() -> "station " + label + ": " + kw + " " + s(walkS) + " vs " + pw + " " + s(placeS) + " -> placed");
@@ -1304,6 +1327,7 @@ public final class NeedChain {
         if (at == null) return null;
         if (table) c.tableWalked = true; else c.furnaceWalked = true;
         Walked wk = walk(c, at.x(), at.y(), at.z(), at.dist());
+        if (c.fail != null) return null;                    // 0.39.z41: no price for the walk: the way cannot be picked
         double walkS = Math.max(c.away, wk.seconds());
         double bonus = Math.min(walkS, Math.max(0, at.bonusS()));       // a use-stations station: seconds off its walk (never below 0)
         c.seconds += walkS - bonus;
@@ -1322,43 +1346,47 @@ public final class NeedChain {
     }
 
     /**
-     * path-cost: one trip's walk. {@code note}: how the line says it ("" with no path provider: the old line rule, unsaid;
-     * else "walk 48.2 s (path)", "walk about 48.2 s (path)" for a partial path, "walk 18.0 s (line)").
+     * path-cost: one trip's walk. {@code note}: how the line says it ("walk 48.2 s (path)"); {@code fail}: 0.39.z41, why it
+     * is not a price ("walk: path not known yet (computing)", "walk: path not known (chunks not loaded)", "unreachable
+     * (Baritone: ...)"), null with a price; {@code kind}: the provider's answer kind.
      */
-    record Walked(double seconds, String note) {}
+    record Walked(double seconds, String note, String fail, PathPrice.Kind kind) {}
+
+    /** 0.39.z41: the way's text for a walk that is not a price (aa why / aa debug). */
+    static final String COMPUTING = PathPrice.NOT_KNOWN + " yet (computing)";
 
     /**
-     * path-cost: the walk to the cell at {@code dist} straight metres: Baritone's planned path first (the world's
-     * {@link PathPrice}, each spot once a pass, at most {@code pathCost.perChainMax} queries), else the straight line x 1.3
-     * (TIME_MODEL path_length).
+     * path-cost: the walk to the cell at {@code dist} straight metres. 0.39.z41 (owner 2026-10-23): Baritone's COMPLETE path
+     * (the world's {@link PathPrice}, each spot once a pass) or no price: a walk that is not known sets {@code c.fail} (the
+     * way cannot be picked; the chain picks among the ways whose walks are known and the ways without one).
      */
     private static Walked walk(Ctx c, int x, int y, int z, double dist) {
-        PathPrice pp = c.w.path();
-        if (pp == null) {
-            Walked out = new Walked(walkS(dist), "");
-            walkNote(c, x, y, z, dist, "line x " + StepTimes.pathFactor() + " (no path provider)", out);
-            return out;
-        }
         String key = x + "," + y + "," + z;
-        Walked known = c.walks.get(key);
-        if (known != null) { walkNote(c, x, y, z, dist, "priced before in this pass", known); return known; }
-        PathPrice.Walk a = null;
-        String noAnswer = null;                           // aa debug: the provider's reason when it gave no walk
-        boolean asked = c.pathAsked < PathPrice.perChainMax();
-        if (asked) {
-            c.pathAsked++;
-            PathPrice.Answer ans = pp.price(x, y, z);
-            a = ans.walk();
-            noAnswer = ans.reason();
+        Walked out = c.walks.get(key);
+        if (out != null) walkNote(c, x, y, z, dist, "priced before in this pass", out);
+        else {
+            PathPrice pp = c.w.path();
+            PathPrice.Answer a = pp == null ? PathPrice.Answer.none("no path provider") : pp.price(x, y, z, dist);
+            out = walked(a);
+            c.walks.put(key, out);
+            walkNote(c, x, y, z, dist, out.fail() == null ? "Baritone path, complete" : out.fail(), out);
         }
-        boolean line = a == null || Double.isNaN(a.seconds()) || a.seconds() < 0;
-        Walked out = line
-                ? new Walked(walkS(dist), "walk " + s(walkS(dist)) + " (line)")
-                : new Walked(a.seconds(), "walk " + (a.about() ? "about " : "") + s(a.seconds()) + " (path)" + lavaNote(a));
-        c.walks.put(key, out);
-        walkNote(c, x, y, z, dist, !line ? (a.about() ? "about: partial + heuristic (Baritone path)" : "Baritone path, complete")
-                : "line x " + StepTimes.pathFactor() + (asked ? " (no path answer from Baritone: " + (noAnswer != null ? noAnswer : "an unusable estimate") + ")" : " (pathCost.perChainMax queries used)"), out);
+        if (out.fail() != null) c.fail = out.fail();
         return out;
+    }
+
+    /** One provider answer as the chain's walk: a complete path is a price, anything else says why it is not. */
+    static Walked walked(PathPrice.Answer a) {
+        String why = a.reason() == null || a.reason().isBlank() ? "" : a.reason();
+        return switch (a.kind()) {
+            case PRICED -> a.walk() == null || !(a.walk().seconds() >= 0) || Double.isInfinite(a.walk().seconds())
+                    ? new Walked(Double.NaN, "", PathPrice.NOT_KNOWN + " (an unusable answer: " + a.walk() + ")", PathPrice.Kind.NONE)
+                    : new Walked(a.walk().seconds(), "walk " + s(a.walk().seconds()) + " (path)" + lavaNote(a.walk()), null, PathPrice.Kind.PRICED);
+            case COMPUTING -> new Walked(Double.NaN, "", why.isEmpty() ? COMPUTING : PathPrice.NOT_KNOWN + " yet (computing; " + why + ")", a.kind());
+            case CHUNKS -> new Walked(Double.NaN, "", PathPrice.NOT_KNOWN + " (" + (why.isEmpty() ? "chunks not loaded" : why) + ")", a.kind());
+            case UNREACHABLE -> new Walked(Double.NaN, "", io.github.mojolowjo.entropybot.aa.moves.FactChange.unreachableText(why.isEmpty() ? "no path, the search ended" : why), a.kind());
+            case NONE -> new Walked(Double.NaN, "", PathPrice.NOT_KNOWN + " (" + (why.isEmpty() ? "no answer, no reason given" : why) + ")", a.kind());
+        };
     }
 
     /** Lava distance (0.39.z40): " (+3.0 s lava detour)" when the walk's path paid the lava price (rule 14: rough), else "". */
@@ -1537,6 +1565,16 @@ public final class NeedChain {
                 c.steps.add(log ? new Step.ChopTree(new int[]{sp.x(), sp.y(), sp.z()}, wanted, null) : new Step.Collect(shw(gives), wanted));
                 c.note(() -> "source: known " + shw(blockOf(gives, sp)) + " at " + sp.x() + " " + sp.y() + " " + sp.z() + ", " + Math.round(sp.dist()) + " m" + (sp.count() > 0 ? ", " + sp.count() + " blocks" : ""));
                 Walked wk = walk(c, sp.x(), sp.y(), sp.z(), sp.dist());
+                if (c.fail != null) {                       // 0.39.z41: no price for this walk
+                    if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreachable.put(sourceKey(word, sp), wk.fail());   // the z33 source fact
+                    if (sp == first) return null;           // the way's own spot: the way cannot be picked
+                    String why = c.fail;                    // a further spot: this way goes on without it (its walk is not a price)
+                    c.fail = null;
+                    c.leafAt.remove(sp.key());
+                    c.steps.remove(c.steps.size() - 1);
+                    c.note(() -> "spot " + sp.x() + " " + sp.y() + " " + sp.z() + " left out: " + why);
+                    continue;
+                }
                 if (firstWalk == null) firstWalk = wk;
                 c.seconds += wk.seconds();
                 c.away = wk.seconds();
@@ -1656,11 +1694,11 @@ public final class NeedChain {
         // the hardness of the item's own block when it is one (cobblestone, a log: SCENARIOS prices "break cobblestone"), else the spot's (an ore)
         double own = ItemWorth.facts(item).hardness();
         double hardness = own > 0 ? own : ItemWorth.facts(blockOf(item, sp)).hardness();
-        if (hardness <= 0) return tree(item, sp) ? WoodOptions.cutLog() : Tuning.get("needChain.unknownBreakS");
+        if (hardness <= 0) return TickPrice.breakS(tree(item, sp) ? WoodOptions.cutLog() : Tuning.get("needChain.unknownBreakS"));
         int tier = tierOf(item, sp);
-        if (tier < 1) return GameTimes.breakSeconds(hardness, 1, true);
+        if (tier < 1) return TickPrice.breakS(GameTimes.breakSeconds(hardness, 1, true));
         double speed = c.pickItem == null ? 1 : Math.max(1, ItemWorth.facts(c.pickItem).digSpeed());
-        return GameTimes.breakSeconds(hardness, speed, c.pickTier >= tier);
+        return TickPrice.breakS(GameTimes.breakSeconds(hardness, speed, c.pickTier >= tier));
     }
 
     /** The ways an animal gives the item: per mob kind whose loot drops it (the game's loot data), the nearest one known. */
@@ -1688,6 +1726,7 @@ public final class NeedChain {
         double killS = Math.ceil(hp / dmg - 1e-9) * HIT_S;  // structural: epsilon
         c.steps.add(new Step.HuntAt(s.from(), kills, new int[]{m.x(), m.z()}, sh(item), lack));
         Walked wk = walk(c, m.x(), m.y(), m.z(), m.dist());
+        if (c.fail != null) return null;                    // 0.39.z41: no price for the walk
         c.seconds += wk.seconds() + kills * killS;
         c.away = wk.seconds();
         c.bag.merge(item, lack, Integer::sum);
@@ -1735,7 +1774,7 @@ public final class NeedChain {
         }
         Trial win = choose(c, alts, null);
         if (win == null) {
-            c.fail = "no pickaxe of tier " + tier + " can be had to dig" + (alts.isEmpty() ? ": none in the game data can be crafted" : "");
+            if (c.fail == null || !c.fail.startsWith(PathPrice.NOT_KNOWN)) c.fail = "no pickaxe of tier " + tier + " can be had to dig" + (alts.isEmpty() ? ": none in the game data can be crafted" : "");
             return null;
         }
         c.pickItem = win.alt().id;

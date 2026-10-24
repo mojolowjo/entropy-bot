@@ -234,7 +234,9 @@ public final class Nearby {
             if (!usable(s, p, false, first, skipped)) continue;
             out.add(priced(s, new Spot(p[0], p[1], p[2], dist(p, me), id), first, priced, blocks));
         }
-        out.sort(Comparator.comparingDouble((Spot sp) -> NeedChain.walkS(sp.dist()) - sp.bonusS()).thenComparingDouble(Spot::dist));
+        // 0.39.z41: which station the chain prices first: straight metres less the bonus in walk-blocks (a ranking, never
+        // its price: the chain prices the walk by Baritone's complete path and takes the bonus off that)
+        out.sort(Comparator.comparingDouble((Spot sp) -> sp.dist() - io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(sp.bonusS())).thenComparingDouble(Spot::dist));
         return new Lookup(out, skipped, priced);
     }
 
@@ -256,7 +258,7 @@ public final class Nearby {
             why.add(MAIN + " -" + Math.round(m));
         }
         if (why.isEmpty()) return sp;
-        priced.add(sp.x() + " " + sp.y() + " " + sp.z() + ": " + String.join(", ", why) + " s off the walk of " + Math.round(NeedChain.walkS(sp.dist())) + " s");
+        priced.add(sp.x() + " " + sp.y() + " " + sp.z() + ": " + String.join(", ", why) + " s off its walk (" + Math.round(sp.dist()) + " m straight)");
         return sp.withBonus(b);
     }
 

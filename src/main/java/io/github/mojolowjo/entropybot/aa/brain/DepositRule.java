@@ -42,7 +42,7 @@ public final class DepositRule {
 
     /**
      * @param known     the known containers nearest-first by the line (null = the fact is not loaded yet)
-     * @param pathCost  Baritone's path cost in seconds to a cell, null = no path
+     * @param pathCost  Baritone's complete path cost in seconds to a cell, null = no path, NaN = still computed (0.39.z41)
      * @param chestInBag a chest item is in the bag
      * @param canCraft   the bag holds 8 planks (the chest recipe's input, from the recipe data)
      */
@@ -58,16 +58,19 @@ public final class DepositRule {
         if (known == null) return new Choice(How.WAIT, null, "the chest memory is not loaded yet");
         int[] best = null;
         double bestCost = Double.MAX_VALUE, bestRaw = 0, bestBonus = 0;
-        int noPath = 0;
+        int noPath = 0, computing = 0;
         for (int[] k : known) {
             Double c = pathCost.apply(k);
             if (c == null) { noPath++; continue; }
+            if (c.isNaN()) { computing++; continue; }
             Double b = bonusS.apply(k);
             double bb = b == null ? 0 : Math.max(0, b);
             if (c - bb < bestCost) { bestCost = c - bb; best = k; bestRaw = c; bestBonus = bb; }
         }
         if (best != null) return new Choice(How.KNOWN, best, "the known chest at " + at(best) + " (" + Math.round(bestRaw) + " s away"
                 + (bestBonus > 0 ? ", -" + Math.round(bestBonus) + " s bonus" : "") + ")");
+        // 0.39.z41: a known chest whose path is still computed is waited for (it may be the nearest): no chest made meanwhile
+        if (computing > 0) return new Choice(How.WAIT, null, "the path to " + computing + " known chest" + (computing == 1 ? "" : "s") + " is not known yet (computing)");
         String note = noPath > 0 ? " (no path to the " + noPath + " known)" : "";
         if (chestInBag) return new Choice(How.BAG, null, "a chest from the bag" + note);
         if (canCraft) return new Choice(How.CRAFT, null, "a chest crafted from 8 planks" + note);

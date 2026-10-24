@@ -12,7 +12,7 @@ import java.util.regex.Pattern;
 
 /**
  * AA_STEP3 B (TIME_MODEL): the predicted seconds of each step of a way. A step the game's numbers can price alone is
- * "known": {@code goto x y z} = straight line x 1.3 / walk speed + 0.3 s per block climbed, {@code wait n} = n,
+ * "known": {@code wait n} = n (0.39.z41: a {@code goto} is no straight-line price; it is unknown like a dig),
  * {@code craft} = 0.3, {@code place} = 0.15. The rest of the way's price (the option's total in seconds, which the option
  * set built from the same terms) is shared equally between the steps that cannot be priced alone, flagged unknown
  * ({@code known == false}); with no total they stay NaN. The prediction ledger then shows where this split is wrong.
@@ -21,9 +21,6 @@ import java.util.regex.Pattern;
 public final class StepTimes {
     private StepTimes() {}
 
-    /** TIME_MODEL: path length = straight line x 1.3 when no plan exists yet. */
-    public static double pathFactor() { return Tuning.get("stepTimes.pathFactor"); }
-    public static double climbS() { return Tuning.get("stepTimes.climbS"); }
     public static final double CRAFT_S = 0.3; // game fact: TIME_MODEL: a craft 0.3 s, a place 0.15 s
     public static final double PLACE_S = 0.15; // game fact: TIME_MODEL: a craft 0.3 s, a place 0.15 s
 
@@ -65,8 +62,7 @@ public final class StepTimes {
             Matcher w = WAIT.matcher(s);
             if (g.matches()) {
                 int[] to = {Integer.parseInt(g.group(1)), Integer.parseInt(g.group(2)), Integer.parseInt(g.group(3))};
-                sec[i] = at == null ? Double.NaN : walkS(at, to);
-                known[i] = at != null;
+                known[i] = false;                   // 0.39.z41: no straight-line walk price; the way's total shares it
                 at = to;
             } else if (w.matches()) {
                 sec[i] = Double.parseDouble(w.group(1));
@@ -85,14 +81,6 @@ public final class StepTimes {
         List<Est> out = new ArrayList<>();
         for (int i = 0; i < steps.size(); i++) out.add(new Est(steps.get(i), known[i] ? sec[i] : share, known[i]));
         return out;
-    }
-
-    /** TIME_MODEL walk: straight line x 1.3 at walking speed, + 0.3 s per block climbed. */
-    public static double walkS(int[] a, int[] b) {
-        double dx = b[0] - a[0], dz = b[2] - a[2];
-        double blocks = Math.sqrt(dx * dx + dz * dz) * pathFactor();
-        double climb = Math.max(0, b[1] - a[1]);
-        return Unit.seconds(blocks) + climbS() * climb;
     }
 
     /** The points the way visits that the steps name (every {@code goto x y z}), from the bot's place; plus the site when given. */

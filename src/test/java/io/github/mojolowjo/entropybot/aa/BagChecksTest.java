@@ -99,8 +99,8 @@ class BagChecksTest {
 
     static World world(Game g) {
         Map<String, List<Spot>> ids = new HashMap<>(Map.of("minecraft:cobblestone", List.of(STONE_12)));
-        return new World(new HashMap<>(g.bag), true, false, w -> ScenariosTest.lookup(ids, w), null, null, null, 0, null,
-                k -> ItemWorth.CRAFT.equals(k) ? new Spot(2, 64, 0, 2, "minecraft:crafting_table") : null);
+        return io.github.mojolowjo.entropybot.aa.FakePaths.paths(new World(new HashMap<>(g.bag), true, false, w -> ScenariosTest.lookup(ids, w), null, null, null, 0, null,
+                k -> ItemWorth.CRAFT.equals(k) ? new Spot(2, 64, 0, 2, "minecraft:crafting_table") : null));
     }
 
     static Game s39Game() {

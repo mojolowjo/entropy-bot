@@ -82,10 +82,11 @@ class SlowModeTest {
     void stepTimesUseTheGameNumbersAndShareTheRest() {
         List<String> steps = List.of("goto 43 64 0", "mine iron_ore 3", "wait 4", "cut 16");
         var est = StepTimes.estimate(steps, new int[]{0, 64, 0}, 60);
-        assertTrue(est.get(0).known());
-        assertEquals(43 * StepTimes.pathFactor() / 4.317, est.get(0).seconds(), 0.01);
+        // 0.39.z41: a goto is no straight-line price any more: it shares the rest like the other steps the game cannot price alone
+        assertFalse(est.get(0).known());
         assertEquals(4, est.get(2).seconds(), 1e-9);
-        double rest = (60 - est.get(0).seconds() - 4) / 2;
+        double rest = (60 - 4) / 3.0;
+        assertEquals(rest, est.get(0).seconds(), 1e-9);
         assertFalse(est.get(1).known());
         assertEquals(rest, est.get(1).seconds(), 1e-9);
         assertEquals(rest, est.get(3).seconds(), 1e-9);

@@ -150,8 +150,9 @@ final class DepositLeg {
         java.util.Map<String, Double> bonus = new java.util.HashMap<>();
         if (f instanceof StationFact.Known k) for (var s : k.spots()) bonus.put(DepositRule.at(new int[]{s.x(), s.y(), s.z()}), s.bonusS());
         DepositRule.Choice ch = DepositRule.choose(known, cell -> {
-            var w = LivePathPrice.INSTANCE.toBlock(cell[0], cell[1], cell[2]);
-            return w == null ? null : w.seconds();
+            // 0.39.z41: a complete path is the price; one still computed is NaN (the deposit waits for it); else no path
+            var a = LivePathPrice.INSTANCE.price(cell[0], cell[1], cell[2], Double.NaN);
+            return a.walk() != null ? a.walk().seconds() : a.kind() == io.github.mojolowjo.entropybot.aa.PathPrice.Kind.COMPUTING ? Double.NaN : null;
         }, cell -> bonus.getOrDefault(DepositRule.at(cell), 0.0), bagChest != null, planks(p) >= 8);          // the chest recipe's input (8 planks), as the game's recipe has it
         LOG.info("[entropybot] deposit: {}", ch.why());
         return switch (ch.how()) {

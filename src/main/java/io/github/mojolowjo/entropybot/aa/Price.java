@@ -27,7 +27,7 @@ final class Price {
 
     static double craftS() { return tune("station.craftS"); }
 
-    static double placeS() { return tune("station.placeS"); }
+    static double placeS() { return TickPrice.placeS(tune("station.placeS")); }      // 0.39.z41: through the one conversion place
 
     /** Under ground: the climb out before a surface way, {@code depth} blocks up (0 on the surface). */
     static double climb(boolean under, int depth) {

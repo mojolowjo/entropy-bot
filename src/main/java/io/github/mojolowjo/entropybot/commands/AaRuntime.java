@@ -1173,6 +1173,7 @@ public final class AaRuntime implements JobPort {
             Status s = tree.tick(bb);
             swimTick(p, now);
             replanTick(p, now);
+            pathLandedTick();
             slow.tick(p, now);               // AA_STEP3 B: the ledger rows and the slow-mode hold
             // 0.36.2 (review 6): while danger drives, AA's chain starts no next step and no retry (the pause ended the
             // running one); held a little past AA's next tick, so it goes on by itself once the guard lets go
@@ -1700,6 +1701,21 @@ public final class AaRuntime implements JobPort {
         fill(bb.in, sensed, p, mc);
     }
 
+    /** 0.39.z41: the path answers seen landed so far (LivePathPrice.landed). */
+    private long pathLandedSeen;
+
+    /**
+     * 0.39.z41: a walk's full path answer landed (the background search, posted to this thread): the running order is priced
+     * again at its next step (Steps.repriceAtNextStep through the order's own planner); an order that waits is priced again on
+     * its next pick anyway.
+     */
+    private void pathLandedTick() {
+        long v = LivePathPrice.INSTANCE.landed();
+        if (v == pathLandedSeen) return;
+        pathLandedSeen = v;
+        if (typedRun && taskReplan != null) c.stepRun.steps.repriceAtNextStep(io.github.mojolowjo.entropybot.aa.moves.FactChange.priced(LivePathPrice.INSTANCE.lastLanded()));
+    }
+
     /** 0.39.z30: the running task's re-plan on a changed fact (an order's), null: none. */
     private io.github.mojolowjo.entropybot.aa.core.JobPort.TaskSpec.Replan taskReplan;
     /** Rule 7: when the task's typed run started, the bag and the cell then (-1: none running). */
@@ -1719,7 +1735,7 @@ public final class AaRuntime implements JobPort {
         var rp = taskReplan;
         // 0.39.z30: an order's step failing on a changed fact is charged in Failures under the order by the fact's key, then re-planned
         io.github.mojolowjo.entropybot.aa.moves.Steps.Replanner replan = rp == null ? null : (failed, fact, why) -> {
-            tree.brain.failures.counted(rp.desire(), fact.key(), why);
+            if (!fact.price()) tree.brain.failures.counted(rp.desire(), fact.key(), why);     // 0.39.z41: a new price is no failure
             factsNow();
             return rp.planner().replan(failed, fact, why);
         };

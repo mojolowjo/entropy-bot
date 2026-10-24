@@ -23,8 +23,8 @@ class GoalsTest {
         TestData d = TestData.planner().tag("wooden_pickaxe", "minecraft:pickaxes").install();
         try {
             NeedChain.Spot ore = new NeedChain.Spot(4, 60, -2, 8, "minecraft:coal_ore", 20);
-            bb.fact(NeedChain.WORLD_FACT, (java.util.function.Supplier<NeedChain.World>) () -> new NeedChain.World(Map.of("minecraft:wooden_pickaxe", 1), false,
-                    w -> w.equals("minecraft:coal") ? ore : null));
+            bb.fact(NeedChain.WORLD_FACT, (java.util.function.Supplier<NeedChain.World>) () -> io.github.mojolowjo.entropybot.aa.FakePaths.paths(new NeedChain.World(Map.of("minecraft:wooden_pickaxe", 1), false,
+                    w -> w.equals("minecraft:coal") ? ore : null)));
             Goals.Goal g = Goals.add(bb, AaFix3Test.COAL, 16, 0, clock.now());
             assertEquals("collect coal 20", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g)), "chop B2: no walk before a block source; S26: the 20-ore cluster is one job");
             assertTrue(Goals.chain(bb, g).why().startsWith("coal <- dig coal seen 8 m"), Goals.chain(bb, g).why());

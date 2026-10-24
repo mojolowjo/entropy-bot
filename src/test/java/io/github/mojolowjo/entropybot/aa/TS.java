@@ -20,7 +20,7 @@ public final class TS {
 
     /** The chains' world facts: a world that knows nothing (the adapter installs the real one). */
     public static void world(io.github.mojolowjo.entropybot.aa.core.Blackboard bb) {
-        bb.fact(NeedChain.WORLD_FACT, (java.util.function.Supplier<NeedChain.World>) () -> new NeedChain.World(java.util.Map.of(), false, w -> null));
+        bb.fact(NeedChain.WORLD_FACT, (java.util.function.Supplier<NeedChain.World>) () -> io.github.mojolowjo.entropybot.aa.FakePaths.paths(new NeedChain.World(java.util.Map.of(), false, w -> null)));
     }
 
     /**
@@ -34,8 +34,8 @@ public final class TS {
         java.util.Map<String, NeedChain.Spot> spots = java.util.Map.of("minecraft:oak_log", new NeedChain.Spot(10, 64, 0, 10, "minecraft:oak_log", 64),
                 "minecraft:cobblestone", new NeedChain.Spot(0, 60, 16, 16, "minecraft:stone", 200), "minecraft:coal", new NeedChain.Spot(0, 40, 20, 20, "minecraft:coal_ore", 40),
                 "minecraft:raw_iron", new NeedChain.Spot(0, 30, 20, 25, "minecraft:iron_ore", 40));
-        bb.fact(NeedChain.WORLD_FACT, (java.util.function.Supplier<NeedChain.World>) () -> new NeedChain.World(bb.in.bag, bb.in.tableKnown, bb.in.furnaceKnown,
-                item -> spots.containsKey(item) ? List.of(spots.get(item)) : List.of(), null, null, null, 0));
+        bb.fact(NeedChain.WORLD_FACT, (java.util.function.Supplier<NeedChain.World>) () -> io.github.mojolowjo.entropybot.aa.FakePaths.paths(new NeedChain.World(bb.in.bag, bb.in.tableKnown, bb.in.furnaceKnown,
+                item -> spots.containsKey(item) ? List.of(spots.get(item)) : List.of(), null, null, null, 0)));
     }
 
     /** One need goal ("I need 1 of it") as a need's goal steps. */
