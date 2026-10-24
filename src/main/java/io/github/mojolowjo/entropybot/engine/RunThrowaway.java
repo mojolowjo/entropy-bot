@@ -64,6 +64,17 @@ public final class RunThrowaway {
         if (l != null) l.add(run, items);
     }
 
+    /**
+     * 0.39.z39 (owner 2026-10-23: placing on a walk is a price, not a ban; rule 1): Tuning {@code walk.placePenalty} to
+     * the fork's walk lease, which holds it as Baritone's {@code blockPlacementPenalty} for each walk's run only and puts
+     * the setting back at the walk's end. The mod never writes the setting; chop / strip / build / burrow / dig-out runs
+     * keep their own.
+     */
+    public static void walkPenalty() {
+        var l = lease("walk placement penalty");
+        if (l != null) l.walkPenalty(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("walk.placePenalty"));
+    }
+
     public static void end(Object run) {
         var l = lease("end of a throwaway run");
         if (l != null) l.end(run);

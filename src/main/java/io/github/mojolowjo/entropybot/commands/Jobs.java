@@ -44,8 +44,6 @@ public final class Jobs {
         public final io.github.mojolowjo.entropybot.aa.door.Driver driver = io.github.mojolowjo.entropybot.aa.door.Door.current();
         public String type, status, label, goal;
         public boolean done, reflex;
-        /** 0.39.z38: the priced placing walk (Baritone's placing walk); false: a plain walk, placing off. */
-        public boolean placing;
         Request req;
         long startTick, until, total, ticks;
         int[] dest;
@@ -387,10 +385,7 @@ public final class Jobs {
      * goal: a Baritone command ("goto x y z", "goto x z", "follow player NAME"); dest: where it ends up (a /home
      * first when that is near home and far off), or null; reflex: no fence check.
      */
-    public String startTravel(String goal, String label, int[] dest, String destDim, boolean reflex) { return startTravel(goal, label, dest, destDim, reflex, false); }
-
-    /** 0.39.z38: {@code place}: the walk may place (the priced placing way, Baritone's placing walk); false: a plain walk. */
-    public String startTravel(String goal, String label, int[] dest, String destDim, boolean reflex, boolean place) {
+    public String startTravel(String goal, String label, int[] dest, String destDim, boolean reflex) {
         if (!door("travel " + label)) return io.github.mojolowjo.entropybot.aa.door.Door.refusal("travel " + label);
         IBaritone b = baritone();
         if (b == null) return "error: baritone not loaded";
@@ -413,7 +408,6 @@ public final class Jobs {
         j.goal = goal;
         j.dest = dest;
         j.reflex = reflex;
-        j.placing = place;
         if (dest != null && tpWorth(p, dest, destDim)) {
             // stand still for /home (in case the server has a warm-up), then walk the rest
             cancel(b);
@@ -450,16 +444,8 @@ public final class Jobs {
 
     /** Sets the walk's one Baritone goal and remembers it (a reflex hold sets it again afterwards). */
     static void walkGoal(IBaritone b, Job j, baritone.api.pathing.goals.Goal g) {
-        // 0.39.z38: a plain walk is Baritone's walk (the fork's walk lease: placing off for its run); the priced placing
-        // way asks the fork's placing walk. The stock jar has none: the walk fails with that reason, never placing silently.
-        if (j.placing) {
-            try {
-                b.getCustomGoalProcess().setGoalAndPathPlacing(g);
-            } catch (LinkageError e) {
-                LOG.warn("[entropybot] walk: this Baritone has no setGoalAndPathPlacing (the stock jar? install the entropy fork): {}", e.toString());
-                b.getCustomGoalProcess().setGoalAndPath(g);
-            }
-        } else b.getCustomGoalProcess().setGoalAndPath(g);
+        io.github.mojolowjo.entropybot.engine.RunThrowaway.walkPenalty();     // 0.39.z39: the walk's placement price, held by the fork's walk lease for its run
+        b.getCustomGoalProcess().setGoalAndPath(g);
         j.goalObj = g;
     }
 
@@ -596,18 +582,6 @@ public final class Jobs {
         return m.find() ? new int[]{Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2))} : null;
     }
 
-    /** The fork's word for how the last walk ended ("" from the stock jar, or none yet). */
-    static String walkEnd(IBaritone b) {
-        if (b == null) return "";
-        try {
-            String e = b.getCustomGoalProcess().lastEnd();
-            return e == null ? "" : e;
-        } catch (LinkageError e) {
-            LOG.warn("[entropybot] walk: this Baritone has no walk end (the stock jar?) - a no-path walk is not told apart from one that needs placing: {}", e.toString());
-            return "";
-        }
-    }
-
     static String noPathResult(Player p, Job j) {
         int[] d = travelDest(j), me = here(p);
         String text = "error: no path to " + (d != null ? fmt(d) : String.valueOf(j.goal).replaceFirst("^goto ", "")) + " - stuck at " + fmt(me);
@@ -692,15 +666,8 @@ public final class Jobs {
             return;
         }
         if ("nopath".equals(ev)) {
-            // 0.39.z38: the fork's walk says why ("no path without placing" for a plain walk): a path fact for the re-plan
-            String end = walkEnd(b);
             if (b != null) cancel(b);
-            int[] d = travelDest(j);
-            if (d != null && io.github.mojolowjo.entropybot.aa.moves.WalkWay.NO_PATH_PLAIN.equals(end)) {
-                io.github.mojolowjo.entropybot.aa.moves.WalkWay.noPlainPath(d[0], d[1], d[2], (int) Math.floor(p.getY()), System.currentTimeMillis());
-                io.github.mojolowjo.entropybot.aa.moves.FactChange.path(d[0] + " " + d[1] + " " + d[2], end);
-            }
-            finish(noPathResult(p, j) + " (walk: " + (end.isEmpty() ? "Baritone found no path" : "Baritone: " + end) + ")");
+            finish(noPathResult(p, j) + " (walk: Baritone found no path)");
             return;
         }
         if (ev == null && core.tick() - j.startTick < Tuning.i("jobs.startWaitTicks")) return;

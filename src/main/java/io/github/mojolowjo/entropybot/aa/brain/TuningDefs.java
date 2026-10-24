@@ -401,6 +401,7 @@ final class TuningDefs {
         // hungerConserve
         // ironOptions
         Tuning.def("ironOptions.clear", 10, "rm-constants 0.39.u2 (was IronOptions.CLEAR)", "the clear of IronOptions");
+        Tuning.def("ironOptions.placeBlock", 5, "rm-constants 0.39.u2 (was IronOptions.PLACE_BLOCK)", "the place block of IronOptions");
         Tuning.def("ironOptions.digBlock", 3, "rm-constants 0.39.u2 (was IronOptions.DIG_BLOCK)", "the dig block of IronOptions");
         Tuning.def("ironOptions.caveTime", 120, "rm-constants 0.39.u2 (was IronOptions.CAVE_TIME)", "the cave time of IronOptions");
         Tuning.def("ironOptions.stripTime", 200, "rm-constants 0.39.u2 (was IronOptions.STRIP_TIME)", "the strip time of IronOptions");

@@ -173,8 +173,7 @@ public final class Tuning {
         def("hands.clickS", 5, "builder placements", "seconds one right-click stage (altar use) may take");
         def("hands.buildS", 60, "builder placements", "seconds one builder placement leg (walk, face, click) may take");
         def("walk.stuckS", 30, "rm-routes (was Jobs.TRAVEL_STUCK_TICKS)", "seconds a walk may go without a block of progress toward its goal before it fails");
-        def("walk.placeS", 5, "0.39.z38 placement per run", "the placement penalty: seconds each block a placing walk places costs (a plain walk places none; the placing walk is priced only after a plain one found no path)");
-        def("walk.noPathMemoryS", 600, "0.39.z38 placement per run", "seconds a target a plain walk could not reach stays noted (meanwhile its walk is offered as the dearer placing way)");
+        def("walk.placePenalty", 60, "0.39.z39 placement price (owner 2026-10-23)", "Baritone blockPlacementPenalty a plain walk runs with (the fork's walk lease, put back at its end); about 3x Baritone's shipped 20, so a walk places less often but still may");
         def("walk.farXZ", 128, "rm-routes", "blocks across beyond which a walk asks Baritone for GoalXZ first, then GoalBlock on arrival");
         TuningDefs.register();
     }

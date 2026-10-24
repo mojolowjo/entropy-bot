@@ -43,14 +43,6 @@ public final class FactChange {
     /** The reason an unreachable source is dropped with ("unreachable (Baritone: Unable to find any path to ...)"). */
     public static String unreachableText(String why) { return "unreachable (Baritone: " + why + ")"; }
 
-    /**
-     * 0.39.z38: a plain walk to {@code at} found no path without placing ({@code why}: Baritone's walk end). The order
-     * re-plans; an option walking there then prices the placing walk as the dearer way ({@link WalkWay}).
-     */
-    public static void path(String at, String why) {
-        last = new Fact("path " + at, "no way to " + at + " on foot (Baritone: " + why + ")");
-    }
-
     /** An item the step needs is not in the bag (nor in storage) when it starts. */
     public static void bag(String item, String why) {
         last = new Fact("bag " + item, item.replaceFirst("^minecraft:", "") + " not in the bag (" + why + ")");

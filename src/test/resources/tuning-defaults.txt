@@ -494,6 +494,7 @@ ironOptions.digHard	40.0
 ironOptions.digMax	16.0
 ironOptions.furnaceCobble	8.0
 ironOptions.pillarMinUp	3.0
+ironOptions.placeBlock	5.0
 ironOptions.smeltHereCost	10.0
 ironOptions.smeltWalk	24.0
 ironOptions.stale	1.5
@@ -855,8 +856,7 @@ utilitySelector.probeMs	60000.0
 veins.maxGap	4.0
 veins.maxVein	24.0
 walk.farXZ	128.0
-walk.noPathMemoryS	600.0
-walk.placeS	5.0
+walk.placePenalty	60.0
 walk.stuckS	30.0
 walkEnd.atGoal	1.0
 walkEnd.freeAround	3.0

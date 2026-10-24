@@ -1,6 +1,5 @@
 package io.github.mojolowjo.entropybot.aa.moves;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -9,10 +8,8 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 0.39.z38 "placement per run": the keep list from the remaining steps' needs, and the walk way's placing price. */
+/** 0.39.z38 "placement per run": the keep list from the remaining steps' needs, and the walk's placement price. */
 class PlacementPerRunTest {
-
-    @AfterEach void clean() { WalkWay.clear(); }
 
     // ---- the throwaway keep list ----
 
@@ -73,34 +70,10 @@ class PlacementPerRunTest {
         assertEquals(List.of(), pushed.get(pushed.size() - 1));
     }
 
-    // ---- the walk way's price ----
+    // ---- the walk's placement price (0.39.z39) ----
 
-    @Test void aPlainWalkCostsItsSecondsAPlacingWalkPaysThePenaltyPerBlock() {
-        assertEquals(12.0, WalkWay.priceS(12, 0), 1e-9);
-        assertEquals(12 + 3 * WalkWay.placeS(), WalkWay.priceS(12, 3), 1e-9);
-        assertTrue(WalkWay.priceS(12, 1) > WalkWay.priceS(12, 0), "placing is the dearer way");
-        assertEquals(1, WalkWay.blocks(70, 64), "placing at all is at least one block");
-        assertEquals(4, WalkWay.blocks(60, 64));
-    }
-
-    @Test void onlyAfterNoPathWithoutPlacingIsTheWalkOfferedPlacingAndDearer() {
-        long now = 1_000_000;
-        Step.Walk plain = WalkWay.step(4, 64, 4, 2, now);
-        assertFalse(plain.place(), "a walk places nothing until a plain walk there found no path");
-        assertEquals(30.0, WalkWay.stepPriceS(4, 64, 4, 30, now), 1e-9);
-        WalkWay.noPlainPath(4, 64, 4, 61, now);
-        Step.Walk placing = WalkWay.step(4, 64, 4, 2, now + 1);
-        assertTrue(placing.place());
-        assertTrue(placing.text().endsWith(" placing"), placing.text());
-        assertEquals(30 + 3 * WalkWay.placeS(), WalkWay.stepPriceS(4, 64, 4, 30, now + 1), 1e-9);
-        long later = now + (long) (1000 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("walk.noPathMemoryS")) + 1;
-        assertFalse(WalkWay.step(4, 64, 4, 2, later).place(), "the note lapses: a plain walk is tried again");
-    }
-
-    @Test void thePathFactNamesTheTargetAndBaritonesWords() {
-        FactChange.path("4 64 4", WalkWay.NO_PATH_PLAIN);
-        FactChange.Fact f = FactChange.take();
-        assertEquals("path 4 64 4", f.key());
-        assertTrue(f.text().contains("no path without placing"), f.text());
+    @Test void aWalkPricesPlacingAtAboutThreeTimesBaritonesShippedPenalty() {
+        double shipped = 20;     // Baritone Settings.blockPlacementPenalty as shipped
+        assertEquals(3 * shipped, io.github.mojolowjo.entropybot.aa.brain.Tuning.get("walk.placePenalty"), 1e-9);
     }
 }

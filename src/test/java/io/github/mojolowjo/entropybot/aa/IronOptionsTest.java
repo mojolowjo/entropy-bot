@@ -89,7 +89,7 @@ class IronOptionsTest {
         m.failed(Way.DIG_KNOWN, up, "no path", 0);
         c = IronOptions.choose(f, m, 1);
         assertEquals(Way.PILLAR_KNOWN, c.way());
-        assertEquals("goto 2 71 0 placing > mine iron 1 at 2 70 0 dig", c.command("iron", 3));
+        assertEquals("goto 2 71 0 > mine iron 1 at 2 70 0 dig", c.command("iron", 3));
         Facts few = new Facts(List.of(up), 60, false, 4, true, -1, false, null, -1, false, false, 0);
         c = IronOptions.choose(few, m, 1);
         assertNull(c.way());
