@@ -129,6 +129,7 @@ public final class Tuning {
         // builder placements (0.39.q1): the movers' time limits and retries, out of aa/moves
         def("moves.calcFails", 20, "backbone step 2", "Baritone ticks of failed path calculation before a move leg fails");
         def("moves.walkS", 30, "backbone step 2", "seconds a walk / cover leg may take");
+        def("job.bagCheckTicks", 20, "0.39.z34 (S39, owner 2026-10-23: more bag checks during a job)", "game ticks between a running tool step's bag looks (its tool gone ends the step with the fact and the order re-plans)");
         def("steps.stepMaxS", 600, "rm-execution (was the hunt's 10 min cap)", "seconds one typed step of an option (walk, cut, hunt, mine, craft...) may run before the option fails 'timed out'");
         def("steps.burrowWaitS", 120, "rm-execution2 (was the chain text 'burrow, wait 120')", "seconds the bot waits sealed in after a night burrow (base and danger ways) before the need picks again");
         def("steps.calmWaitS", 60, "rm-execution2 (was the chain text 'wait 60')", "seconds the danger desire's wait and pillar-out ways hold still");

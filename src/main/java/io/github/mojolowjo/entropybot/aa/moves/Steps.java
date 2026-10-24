@@ -34,7 +34,24 @@ public final class Steps {
 
         /** 0.39.z30: the fact the step that just failed found changed ({@link FactChange}), taken once; null: none. */
         default FactChange.Fact lastFact() { return FactChange.take(); }
+
+        /** 0.39.z34: what the step needs from the bag (its own data, {@link StepNeeds#of}). */
+        default StepNeeds needs(Step s) { return StepNeeds.of(s); }
+
+        /** 0.39.z34: the bag now; null: these hands have none (nothing is checked). */
+        default StepNeeds.Bag bag() { return null; }
     }
+
+    /** Ticks between the running tool step's bag looks (Tuning job.bagCheckTicks). */
+    static long bagCheckTicks() { return Math.max(1, Tuning.i("job.bagCheckTicks")); }
+
+    /** The running step's declared needs, the tool seen at its start and that tool's uses at the last look. */
+    private StepNeeds needs = StepNeeds.NONE;
+    private String hadTool;
+    private int hadUses = io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN;
+    private long lastBagLook;
+    /** The fact the last re-plan answered (aa why says it), null: none. */
+    private String replanFact;
 
     /**
      * 0.39.z30: the order's own planner, asked again when a step fails on a changed fact: the step list from here on the
@@ -87,6 +104,8 @@ public final class Steps {
         replanner = replan;
         replannedStep = null;
         replannedWhy = null;
+        replanFact = null;
+        needs = StepNeeds.NONE;
         if (this.steps.isEmpty()) {
             phase = Phase.FAILED;
             why = "stopped at step 0 (nothing): no steps to run";
@@ -118,14 +137,68 @@ public final class Steps {
         Step s = steps.get(idx);
         String r;
         FactChange.clear();
+        lookNeeds(s);
+        // 0.39.z34 (S39): the step's tool must be in the bag before it starts; missing, the bag fact re-plans the order
+        String lack = toolLack(s);
+        if (lack != null) { failOrReplan(lack); return; }
         try {
             r = hands.start(s);
         } catch (RuntimeException e) {
             r = "error: " + e;
         }
         if (r != null) failOrReplan(r);
-        else why = started(idx, steps);
+        else {
+            why = started(idx, steps) + (needs.none() ? "" : " " + needs.text()) + (replanFact == null ? "" : " (re-planned: " + replanFact + ")");
+            replanFact = null;
+        }
     }
+
+    /** The step's declared needs and the tool the bag holds for it now (a failure to read them is said in the needs). */
+    private void lookNeeds(Step s) {
+        hadTool = null;
+        hadUses = io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN;
+        lastBagLook = now;
+        try {
+            needs = hands.needs(s);
+            if (needs == null) needs = StepNeeds.NONE;
+            StepNeeds.Bag bag = hands.bag();
+            if (bag != null && needs.hasTool() && bag.bestTier(needs.toolKind()) >= needs.minTier()) {
+                hadTool = bag.bestTool(needs.toolKind());
+                if (hadTool != null) hadUses = bag.usesLeft(hadTool);
+            }
+        } catch (RuntimeException e) {
+            needs = new StepNeeds(null, 0, java.util.Map.of(), "the needs could not be read: " + e);
+        }
+    }
+
+    /** The running step's tool missing from the bag now (the fact's words), null: there or nothing to check. */
+    private String toolLack(Step s) {
+        StepNeeds.Bag bag;
+        try {
+            bag = hands.bag();
+            if (bag == null || !needs.hasTool()) return null;
+            String m = needs.toolMissing(bag, Step.verb(s), hadTool, hadUses);
+            if (m == null) {
+                String best = bag.bestTool(needs.toolKind());
+                if (best != null) { hadTool = best; hadUses = bag.usesLeft(best); }
+            }
+            return m;
+        } catch (RuntimeException e) {
+            why = stage() + ": the bag could not be read: " + e;   // said, the step goes on unchecked this look
+            return null;
+        }
+    }
+
+    private String toolLackAt(Step s) {
+        lastBagLook = now;
+        return toolLack(s);
+    }
+
+    /** The fact the last re-plan answered, until the next step's start line said it; null: none. */
+    public String replanFact() { return replanFact; }
+
+    /** The running step's declared needs ({@link StepNeeds#NONE} when idle). */
+    public StepNeeds needs() { return phase == Phase.RUNNING ? needs : StepNeeds.NONE; }
 
     /**
      * 0.39.z30 (owner 2026-10-23): a step that failed on a changed fact (its hands say which, typed) asks the run's
@@ -139,6 +212,28 @@ public final class Steps {
         } catch (RuntimeException e) {
             fact = null;
             reason = reason + " (its changed fact could not be read: " + e + ")";
+        }
+        // 0.39.z34 (S39): a step that ends short is checked against its declared needs: a tool gone is the cause (it wins
+        // over the hands' own fact, e.g. a mine that stopped with 0 got); an item it uses up short is one when the hands had none
+        if (idx >= 0 && idx < steps.size()) {
+            Step s = steps.get(idx);
+            String tool = toolLack(s);
+            if (tool != null) {
+                fact = new FactChange.Fact("bag " + needs.toolKey(), tool);
+                if (!reason.contains(tool)) reason = tool + " (" + reason.replaceFirst("^error: ", "") + ")";
+            } else if (fact == null) {
+                String item;
+                try {
+                    item = needs.itemShort(hands.bag(), Step.verb(s));
+                } catch (RuntimeException e) {
+                    item = null;
+                    reason = reason + " (the bag could not be read: " + e + ")";
+                }
+                if (item != null) {
+                    fact = new FactChange.Fact("bag " + item.substring(0, item.indexOf(':')), item);
+                    reason = reason + " (" + item + ")";
+                }
+            }
         }
         if (fact == null || replanner == null || idx < 0 || idx >= steps.size()) { fail(reason); return; }
         Step failed = steps.get(idx);
@@ -159,6 +254,7 @@ public final class Steps {
         }
         replannedStep = failed.text();
         replannedWhy = clean;
+        replanFact = fact.text();
         List<Step> all = new java.util.ArrayList<>(steps.subList(0, idx));
         all.addAll(r.steps());
         steps = List.copyOf(all);
@@ -245,7 +341,12 @@ public final class Steps {
                 next();
             }
             default -> {
-                if (now - stepStart > stepTicks()) {
+                // 0.39.z34 (S39): a tool step's bag look every job.bagCheckTicks: the tool gone ends the step at once with the fact
+                String lack = needs.hasTool() && now - lastBagLook >= bagCheckTicks() ? toolLackAt(s) : null;
+                if (lack != null) {
+                    safeCancel(lack);
+                    failOrReplan(lack);
+                } else if (now - stepStart > stepTicks()) {
                     safeCancel("timed out");
                     fail("timed out after " + stepTicks() / 20 + " s" + (st.why() == null ? "" : " (" + st.why() + ")"));  // game fact: 20 game ticks per second
                 } else if (st.why() != null) why = stage() + ": " + st.why();
@@ -317,7 +418,7 @@ public final class Steps {
     public int index() { return phase == Phase.RUNNING ? idx : -1; }
 
     /** "2/5 mine iron 1 at 1 2 3 dig" for the running step, null when none. */
-    public String stepText() { return phase == Phase.RUNNING ? (idx + 1) + "/" + steps.size() + " " + steps.get(idx).text() : null; }
+    public String stepText() { return phase == Phase.RUNNING ? (idx + 1) + "/" + steps.size() + " " + steps.get(idx).text() + (needs.none() ? "" : " " + needs.text()) : null; }
 
     /** The run's steps. */
     public List<Step> steps() { return steps; }

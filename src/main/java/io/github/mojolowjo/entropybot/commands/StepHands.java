@@ -76,6 +76,50 @@ public final class StepHands implements Steps.Hands {
         return st;
     }
 
+    /**
+     * 0.39.z34 (S39): the step's needs from its own data ({@link io.github.mojolowjo.entropybot.aa.moves.StepNeeds#of}); a
+     * mine at one ore cell asks the tier of the block that is there now (the game's needs_*_tool tags).
+     */
+    @Override public io.github.mojolowjo.entropybot.aa.moves.StepNeeds needs(Step s) {
+        LocalPlayer p = Minecraft.getInstance().player;
+        if (s instanceof Step.MineAt m && p != null) {
+            BlockPos q = new BlockPos(m.x(), m.y(), m.z());
+            if (!p.level().isLoaded(q)) return io.github.mojolowjo.entropybot.aa.moves.StepNeeds.NONE;   // its start says "not loaded"
+            return io.github.mojolowjo.entropybot.aa.moves.StepNeeds.forBlocks(List.of(BuiltInRegistries.BLOCK.getKey(p.level().getBlockState(q).getBlock()).toString()));
+        }
+        return io.github.mojolowjo.entropybot.aa.moves.StepNeeds.of(s);
+    }
+
+    /** 0.39.z34: the bag as the step checks see it: the player's main inventory (one pass of its slots per look). */
+    @Override public io.github.mojolowjo.entropybot.aa.moves.StepNeeds.Bag bag() {
+        if (Minecraft.getInstance().player == null) return null;
+        return new io.github.mojolowjo.entropybot.aa.moves.StepNeeds.Bag() {
+            private String best(String kind, int[] tier) {
+                LocalPlayer p = Minecraft.getInstance().player;
+                String id = null;
+                if (p == null) return null;
+                for (net.minecraft.world.item.ItemStack st : p.getInventory().items) {
+                    if (st.isEmpty()) continue;
+                    String iid = BuiltInRegistries.ITEM.getKey(st.getItem()).toString();
+                    int t = io.github.mojolowjo.entropybot.aa.brain.MiningTiers.toolTier(iid, kind);
+                    if (t > tier[0]) { tier[0] = t; id = iid; }
+                }
+                return id;
+            }
+
+            @Override public int bestTier(String kind) { int[] t = {0}; best(kind, t); return t[0]; }
+
+            @Override public String bestTool(String kind) { return best(kind, new int[]{0}); }
+
+            @Override public int usesLeft(String id) { Integer u = AaRuntime.usesLeft(id); return u == null ? io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN : u; }
+
+            @Override public int count(String id) {
+                LocalPlayer p = Minecraft.getInstance().player;
+                return p == null ? 0 : Gui.inventory(p).getOrDefault(id, 0);
+            }
+        };
+    }
+
     private String start0(Step s) {
         step = s;
         LocalPlayer p = Minecraft.getInstance().player;

@@ -48,6 +48,14 @@ public final class FactChange {
         last = new Fact("bag " + item, item.replaceFirst("^minecraft:", "") + " not in the bag (" + why + ")");
     }
 
+    /**
+     * 0.39.z34 (S39): the step's declared need ({@link StepNeeds}) is short in the bag - its tool gone, an item it uses up
+     * short. The same "bag" slot as {@link #bag}; {@code what}: the missing need ("pickaxe tier>=1"), {@code text}: the words.
+     */
+    public static void bagNeed(String what, String text) {
+        last = new Fact("bag " + what, text);
+    }
+
     /** The fact said since the last {@link #clear}, taken once; null: none. */
     public static Fact take() {
         Fact f = last;

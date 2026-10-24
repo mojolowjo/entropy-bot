@@ -502,6 +502,7 @@ ironOptions.stale	1.5
 ironOptions.stripBlocks	60.0
 ironOptions.stripTime	200.0
 itemWorthSource.harmP	0.5
+job.bagCheckTicks	20.0
 jobPort.maxMs	3600000.0
 jobPort.noProgressMs	180000.0
 jobPort.timeoutMs	1200000.0
