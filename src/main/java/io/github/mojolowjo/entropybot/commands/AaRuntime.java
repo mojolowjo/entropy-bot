@@ -100,6 +100,7 @@ public final class AaRuntime implements JobPort {
         worldLoaded();
         bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.SURFACE_FACTS, perTick(new io.github.mojolowjo.entropybot.aa.FactsMemo<>(0), timed("surface", this::surfaceFacts)));
         bb.fact(io.github.mojolowjo.entropybot.aa.NeedChain.WORLD_FACT, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.NeedChain.World>) this::needWorld);
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.NOT_READY_FACT, (java.util.function.Supplier<String>) this::sensesNotReady);   // 0.39.z36
         bb.fact(io.github.mojolowjo.entropybot.aa.FoodOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts>) this::foodFacts);
         NeedFacts.install(bb, this);          // round 4A N wiring: the station, bed, base and bag facts (O's sets)
         bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.STATS_FACT, tree.brain.stats);
@@ -582,6 +583,19 @@ public final class AaRuntime implements JobPort {
      * ({@link #nearestSource}), the animals of a kind known ({@link #animalsKnown}), the loot data, and where the blocks
      * that drop an item generate ({@link #band}). Null while the senses are not ready.
      */
+    /**
+     * 0.39.z36 (rule 15): why {@link #needWorld} is null now, as one line: the senses run in aa's tick, which runs only while
+     * aa is on; the time is the player's own tick count in this world (the game's, since the join or the last respawn).
+     */
+    String sensesNotReady() {
+        LocalPlayer p = Minecraft.getInstance().player;
+        long upS = p == null ? -1 : p.tickCount / 20;     // game fact: 20 ticks a second
+        if (p == null) return io.github.mojolowjo.entropybot.aa.brain.Goals.notReadyLine("no player in a world", -1, "join a world, then try again");
+        if (sensed == null && !on()) return io.github.mojolowjo.entropybot.aa.brain.Goals.notReadyLine("aa is off and the senses run only while it is on (none read yet)", upS, "aa on, then try again");
+        if (sensed == null) return io.github.mojolowjo.entropybot.aa.brain.Goals.notReadyLine("the senses have not run yet (aa's tick has not read them)", upS, "try again");
+        return io.github.mojolowjo.entropybot.aa.brain.Goals.notReadyLine("the senses ran but gave no bag facts", upS, "try again");
+    }
+
     io.github.mojolowjo.entropybot.aa.NeedChain.World needWorld() {
         if (sensed == null || sensed.feas == null) return null;
         var in = bb.in;
@@ -2973,7 +2987,10 @@ public final class AaRuntime implements JobPort {
         lootCtx();
         // one-planner: the order is priced by the one chain now; the line says the chain or the explore it starts
         var ch = io.github.mojolowjo.entropybot.aa.brain.Goals.chain(bb, g);
-        String lootLine = ch == null ? "; chain: no facts yet (the senses are not ready)" : "; chain: " + ch.why();
+        // 0.39.z36 (rule 15): no world fact yet: said with what is not ready; the goal is kept and runs once the senses are
+        String lootLine = ch == null && io.github.mojolowjo.entropybot.aa.brain.Goals.world(bb) == null
+                ? "; " + io.github.mojolowjo.entropybot.aa.brain.Goals.notReady(bb) + " (the goal is kept: it starts when the senses are ready)"
+                : ch == null ? "; chain: none (a strip order runs its own loop)" : "; chain: " + ch.why();
         tree.brain.add(io.github.mojolowjo.entropybot.aa.AaDesires.ownerGoal(g));
         knownDue = true;                              // review: known positions now, not in up to 10 s
         String blocked = io.github.mojolowjo.entropybot.aa.brain.Goals.blocked(bb, g);

@@ -1660,6 +1660,9 @@ final class Crafting {
             case WAIT:
                 return c.loop.settling() ? "wait" : null;
             case FAIL:
+                // 0.39.z36 (S41): ran out of an ingredient mid-step (the bag changed since the step's start): the bag fact re-plans
+                if (o.why() == GridLoop.Why.NO_LAYOUT && !c.loop.ranOut().isEmpty())
+                    io.github.mojolowjo.entropybot.aa.moves.FactChange.ranOut(c.loop.ranOut(), o.error());
                 c.loop = null;
                 if (o.why() == GridLoop.Why.NO_RESULT) return craftFail(s, st, CraftJob.gridDidNotMake(c.ci, c.made, step.item()));
                 if (o.why() == GridLoop.Why.FULL) return craftFail(s, st, CraftJob.failPrefix(c.ci, c.made) + o.error() + " (made " + c.made + " of " + step.want() + " " + CraftPlanner.shortId(step.item()) + ")");

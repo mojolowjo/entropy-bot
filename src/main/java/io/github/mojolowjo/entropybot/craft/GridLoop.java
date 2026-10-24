@@ -66,6 +66,11 @@ public final class GridLoop {
 
     public boolean done() { return made >= want; }
 
+    /** 0.39.z36 (S41): the ingredient (the recipe's accepted items for that cell) the last layout ran out of; empty: none. */
+    public java.util.List<String> ranOut() { return ranOut; }
+
+    private java.util.List<String> ranOut = java.util.List.of();
+
     /** The batch is crafted and not yet counted: keep ticking it (with any menu open) until this turns false. */
     public boolean settling() { return "settle".equals(stage); }
 
@@ -169,7 +174,10 @@ public final class GridLoop {
     private Out fill(GuiMenu m, Items items, long now) {
         Map<String, Integer> have = bag(m);
         GridLayout.Layout lay = GridLayout.layout(recipe, size, have);
-        if (!lay.ok()) return Out.fail(Why.NO_LAYOUT, lay.error() + (lay.missing() != null ? " (" + lay.missing() + ")" : ""));
+        if (!lay.ok()) {
+            ranOut = lay.missingCell();
+            return Out.fail(Why.NO_LAYOUT, lay.error() + (lay.missing() != null ? " (" + lay.missing() + ")" : ""));
+        }
         Map<String, Integer> per = new LinkedHashMap<>();
         for (String id : lay.slots().values()) per.merge(id, 1, Integer::sum);
         int k = maxPerCell();

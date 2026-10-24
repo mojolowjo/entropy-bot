@@ -549,6 +549,9 @@ public final class StepHands implements Steps.Hands {
             }
         }
         if (blocks.isEmpty()) return "error: no log block left in the logs kind (kinds logs)";
+        // 0.39.z36 (S42): the cut's source (its log or the logs kind, at its tree): an end with none got is its changed fact
+        mineSource = t.log() != null ? t.log() : "logs";
+        if (t.at() != null) mineFrom = "at " + t.at()[0] + " " + t.at()[1] + " " + t.at()[2];
         List<String> ids = new ArrayList<>();
         for (Block b : blocks) ids.add(BuiltInRegistries.ITEM.getKey(b.asItem()).toString());
         return mine(p, blocks, ids, t.logs(), "cut " + t.logs() + " " + (t.log() == null ? "logs" : t.log().replaceFirst("^minecraft:", "")));
@@ -639,13 +642,15 @@ public final class StepHands implements Steps.Hands {
         miningWhat = what;
         mineLines0 = io.github.mojolowjo.entropybot.baritone.BaritoneHook.lines();
         int[] here = Jobs.here(p);
-        mineFrom = "searched from " + here[0] + " " + here[1] + " " + here[2];
+        if (mineFrom == null) mineFrom = "searched from " + here[0] + " " + here[1] + " " + here[2];   // a tree step names its own spot
         try {
             if (chopping) {
                 b.getChopProcess().mineComponent(target, filter);
                 if (!b.getChopProcess().isActive()) {          // it ended at its start (none in range): its own reason
                     endMining();
-                    return "error: " + what + ": " + endOf(b.getChopProcess().lastEnd());
+                    String end = endOf(b.getChopProcess().lastEnd());
+                    ChopEnd.zeroGot(0, mineSource, mineFrom, end);   // 0.39.z36 (S42): none got: the source fact, the order re-plans
+                    return "error: " + what + ": " + end;
                 }
             } else {
                 b.getMineProcess().mineWith(target, filter, true);
@@ -697,7 +702,7 @@ public final class StepHands implements Steps.Hands {
             if (b == null) return Car.Status.failed("baritone not loaded");
             if (b.getChopProcess().isActive() || Core.INSTANCE.reflexes.hold()) return Car.Status.running(miningWhat + ": " + got + " of " + want);
             endMining();
-            return ChopEnd.of(miningWhat, got, want, endOf(b.getChopProcess().lastEnd()));
+            return ChopEnd.of(miningWhat, got, want, endOf(b.getChopProcess().lastEnd()), mineSource, mineFrom);
         }
         if (got >= want) {
             if (b != null) b.getMineProcess().cancel();
@@ -709,7 +714,7 @@ public final class StepHands implements Steps.Hands {
             endMining();
             String said = mineSaid(mineLines0, io.github.mojolowjo.entropybot.baritone.BaritoneHook.lines(), io.github.mojolowjo.entropybot.baritone.BaritoneHook.lastLine());
             // 0.39.z33 (S36): none of it got: the source is a changed fact (unreachable) and the order re-plans without it
-            if (got <= 0 && mineSource != null) io.github.mojolowjo.entropybot.aa.moves.FactChange.unreachable(mineSource, mineFrom, said);
+            ChopEnd.zeroGot(got, mineSource, mineFrom, said);
             return Car.Status.failed(miningWhat + ": Baritone's mine process ended with " + got + " of " + want + ": " + said);
         }
         return Car.Status.running(miningWhat + ": " + got + " of " + want);

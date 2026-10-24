@@ -89,6 +89,20 @@ class DebugTreeTest {
         assertEquals(desires, br.desires().size(), "the brain's desires unchanged");
     }
 
+    /** S43 (0.39.z36, rule 15 NOT_LOADED): no world fact yet: the header and ONE body line with what is not ready and the time. */
+    @Test
+    void s43_noFactsYetIsOneNotLoadedLineNotATree() {
+        bb.fact(Goals.NOT_READY_FACT, (Supplier<String>) () -> Goals.notReadyLine("aa is off and the senses run only while it is on (none read yet)", 100, "aa on, then try again"));
+        String t = DebugTree.order(bb, Goals.draft(item("torch"), 4, 0, clock.now()), "want torch 4", null, List.of("score: test"), List.of("stations: x"));
+        List<String> lines = t.lines().toList();
+        assertEquals(2, lines.size(), t);
+        assertTrue(lines.get(0).startsWith("aa debug want torch 4 " + DebugTree.DRY), t);
+        assertEquals("  senses not ready: aa is off and the senses run only while it is on (none read yet) (world up 100 s); aa on, then try again", lines.get(1));
+        Blackboard bare = new Blackboard(clock, port, new Tracer());
+        assertTrue(DebugTree.order(bare,Goals.draft(item("torch"), 4, 0, clock.now()), "want torch 4", null, null, null)
+                .endsWith("senses not ready: the reason is not known (no adapter installed it) (world up unknown); try again"), "no adapter: said so");
+    }
+
     @Test
     void outsideTracedTheRecorderRecordsNothing() {
         ScenariosTest.world("wooden", "stone", "iron", "golden");

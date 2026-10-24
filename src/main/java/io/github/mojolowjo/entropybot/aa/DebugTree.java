@@ -33,6 +33,11 @@ public final class DebugTree {
     public static String order(Blackboard bb, Goals.Goal g, String line, Function<String, Set<String>> blocks, List<String> pick, List<String> stations) {
         List<String> out = new ArrayList<>();
         out.add("aa debug " + line + " " + DRY);
+        // 0.39.z36 (rule 15, NOT_LOADED): no world fact yet: the one body line says what is not ready, never an empty tree
+        if (Goals.world(bb) == null) {
+            out.add("  " + Goals.notReady(bb));
+            return String.join("\n", out);
+        }
         out.add("order: " + g.r.key() + " x" + g.n + (g.prio > 0 ? " high" : g.prio < 0 ? " low" : "") + " [" + g.r.text() + "]");
         int have = Goals.have(bb.in.bag, g);
         out.add("  need: " + Math.max(0, g.n - have) + " more " + g.r.key() + " (have " + have + " of " + g.n + ")");
@@ -45,7 +50,7 @@ public final class DebugTree {
         NeedChain.Trace t = NeedChain.trace();
         NeedChain.Chain ch = NeedChain.traced(t, () -> Goals.chain(bb, g));
         if (ch == null) {
-            out.add("  chain: no facts yet (the senses are not ready)");
+            out.add("  chain: none (" + Goals.notReady(bb) + ")");
             return String.join("\n", out);
         }
         out.add("  chain: " + ch.why());

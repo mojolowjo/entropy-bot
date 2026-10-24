@@ -31,13 +31,22 @@ public final class GridLayout {
      * for the 2x2 grid), "not a crafting recipe", "doesn't fit a crafting grid", or "ingredients ran out" with
      * {@code missing} = the short id of a cell's first alternative there is none of.
      */
-    public record Layout(Map<Integer, String> slots, String error, String missing) {
+    public record Layout(Map<Integer, String> slots, String error, String missing, List<String> missingCell) {
+        public Layout(Map<Integer, String> slots, String error, String missing) {
+            this(slots, error, missing, List.of());
+        }
+
         public boolean ok() {
             return error == null;
         }
 
         static Layout fail(String why, String missing) {
             return new Layout(Map.of(), why, missing);
+        }
+
+        /** 0.39.z36 (S41): ran out: the cell's whole ingredient (every item the recipe's Ingredient accepts there), not one id. */
+        static Layout ranOut(List<String> alts) {
+            return new Layout(Map.of(), RAN_OUT, shortId(alts.get(0)), List.copyOf(alts));
         }
     }
 
@@ -76,7 +85,7 @@ public final class GridLayout {
                     pick = a;
                 }
             }
-            if (pick == null) return Layout.fail(RAN_OUT, shortId(alts.get(0)));
+            if (pick == null) return Layout.ranOut(alts);
             left.put(pick, best - 1);
             slots.put(slot, pick);
         }

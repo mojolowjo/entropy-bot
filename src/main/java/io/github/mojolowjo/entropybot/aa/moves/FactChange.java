@@ -49,6 +49,19 @@ public final class FactChange {
     }
 
     /**
+     * 0.39.z36 (S41): a craft ran out of one recipe ingredient mid-step ({@code alts}: every item the recipe's Ingredient
+     * accepts in that cell, as the game expanded it): the "bag" slot keyed by that ingredient as a need word (several items
+     * joined, {@link io.github.mojolowjo.entropybot.aa.NeedChain#word}); the order re-plans on the bag of now.
+     */
+    public static void ranOut(java.util.List<String> alts, String why) {
+        if (alts == null || alts.isEmpty()) return;
+        java.util.List<String> sh = new java.util.ArrayList<>();
+        for (String a : alts) sh.add(a.replaceFirst("^minecraft:", ""));
+        last = new Fact("bag " + io.github.mojolowjo.entropybot.aa.NeedChain.word(String.join("|", alts)),
+                "none of " + String.join(", ", sh) + " left in the bag (" + why + ")");
+    }
+
+    /**
      * 0.39.z34 (S39): the step's declared need ({@link StepNeeds}) is short in the bag - its tool gone, an item it uses up
      * short. The same "bag" slot as {@link #bag}; {@code what}: the missing need ("pickaxe tier>=1"), {@code text}: the words.
      */

@@ -48,6 +48,32 @@ class GridLayoutTest {
         assertEquals(Map.of(0, m("wheat"), 1, m("wheat"), 2, m("wheat")), GridLayout.layout(r("bread"), 3, counts("wheat", 3)).slots());
     }
 
+    /**
+     * S41 (0.39.z36, night run 2026-10-23): the furnace's ingredient is a tag (cobblestone, blackstone, cobbled_deepslate as
+     * the game expands it in every cell). A bag of 5 cobblestone + 3 cobbled_deepslate lays out all 8 cells; with 7 it runs
+     * out and names the cell's whole ingredient (the re-plan's bag fact), not one id.
+     */
+    @Test
+    void s41_aFurnaceFromMixedMembersOfItsIngredient() {
+        List<String> stone = List.of(m("cobblestone"), m("blackstone"), m("cobbled_deepslate"));
+        List<List<String>> cells = new java.util.ArrayList<>();
+        for (int i = 0; i < 9; i++) cells.add(i == 4 ? List.of() : stone);
+        RecipeData furnace = RecipeData.shaped("minecraft:furnace", m("furnace"), 1, 3, 3, cells);
+        Layout l = GridLayout.layout(furnace, GridLayout.TABLE, counts("cobblestone", 5, "cobbled_deepslate", 3));
+        assertTrue(l.ok(), l.error());
+        assertEquals(8, l.slots().size());
+        assertEquals(5, l.slots().values().stream().filter(m("cobblestone")::equals).count());
+        assertEquals(3, l.slots().values().stream().filter(m("cobbled_deepslate")::equals).count());
+        Layout out = GridLayout.layout(furnace, GridLayout.TABLE, counts("cobblestone", 4, "cobbled_deepslate", 3));
+        assertEquals(GridLayout.RAN_OUT, out.error());
+        assertEquals(stone, out.missingCell(), "the cell's whole ingredient");
+        io.github.mojolowjo.entropybot.aa.moves.FactChange.ranOut(out.missingCell(), "ingredients ran out (cobblestone)");
+        var f = io.github.mojolowjo.entropybot.aa.moves.FactChange.take();
+        assertNotNull(f, "an ingredients-ran-out end sets the bag fact");
+        assertEquals("bag minecraft:blackstone|minecraft:cobbled_deepslate|minecraft:cobblestone", f.key());
+        assertEquals("none of cobblestone, blackstone, cobbled_deepslate left in the bag (ingredients ran out (cobblestone))", f.text());
+    }
+
     @Test
     void shapelessFillsInOrder() {
         assertEquals(Map.of(0, m("oak_wood")), GridLayout.layout(r("oak_planks"), 2, counts("oak_log", 1, "oak_wood", 5)).slots());

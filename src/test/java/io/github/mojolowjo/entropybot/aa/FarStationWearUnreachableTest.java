@@ -166,4 +166,49 @@ class FarStationWearUnreachableTest {
         assertTrue(re[0].explore(), re[0].why());
         assertTrue(re[0].dropped().contains("collect cobblestone: unreachable (Baritone: Unable to find any path to stone, canceling mine)"), re[0].dropped().toString());
     }
+
+    // ---- S42: a tree the chop cannot reach ----
+
+    /** One cut step that fails "no path to any target (got 0 of 1)" with the chop's source fact; the re-plan's chain on the dropped tree. */
+    static Chain s42Replan(Map<String, List<Spot>> seen) {
+        Chain first = NeedChain.resolve("oak_log", 1, ScenariosTest.w(Map.of(), false, false, seen));
+        assertTrue(first.ok() && first.steps().get(0) instanceof Step.ChopTree, first.why());
+        Map<String, String> dropped = new LinkedHashMap<>();
+        Steps run = new Steps(new Steps.Hands() {
+            @Override public String start(Step s) { return null; }
+            @Override public Car.Status status(Step s) {
+                FactChange.unreachable("logs", "at 10 64 0", "no path to any target");     // what ChopEnd says at 0 got
+                return Car.Status.failed("cut 1 logs: no path to any target (got 0 of 1)");
+            }
+            @Override public void cancel(String why) {}
+        });
+        Chain[] re = new Chain[1];
+        run.start("owner goal", first.steps(), 0, (failed, fact, why) -> {
+            assertTrue(fact.key().startsWith("source "), fact.key());
+            dropped.put(NeedChain.sourceKey(failed), fact.text());
+            re[0] = NeedChain.resolve("oak_log", 1, ScenariosTest.w(Map.of(), false, false, seen).withoutSources(dropped));
+            return new Steps.Routine(List.of(new Step.Wait(1)), null);
+        });
+        for (int t = 1; t < 5 && run.running(); t++) run.tick(t);
+        assertNotNull(re[0], "the cut's 0 of 1 re-plans (z36), it does not park: " + run.why());
+        assertTrue(re[0].dropped().contains("cut at 10 64 0: unreachable (Baritone: no path to any target)"), re[0].dropped().toString());
+        return re[0];
+    }
+
+    /** S42 by hand: trees A 10 m and B 40 m; A cannot be reached: the re-plan cuts B. */
+    @Test
+    void s42_anUnreachableTreeRePlansToTheNextTree() {
+        ScenariosTest.world("wooden");
+        Chain re = s42Replan(Map.of("oak_log", List.of(ScenariosTest.tree(10, 4), ScenariosTest.tree(40, 4))));
+        assertTrue(re.ok() && !re.explore(), re.why());
+        assertEquals("cut 1 at 40 64 0", re.steps().get(0).text());
+    }
+
+    /** S42: the only tree known cannot be reached: the re-plan explores. */
+    @Test
+    void s42_anUnreachableOnlyTreeRePlansToAnExplore() {
+        ScenariosTest.world("wooden");
+        Chain re = s42Replan(Map.of("oak_log", List.of(ScenariosTest.tree(10, 4))));
+        assertTrue(re.explore(), re.why());
+    }
 }

@@ -223,6 +223,23 @@ public final class Goals {
     /** one-planner: no prerequisite desire: the chain makes the pickaxe a dig asks for (the lowest tier that does it). */
     public static String prereq(Blackboard bb, Goal g) { return null; }
 
+    /** 0.39.z36 (rule 15): the adapter's Supplier&lt;String&gt; of what is not ready while {@link #world} is null. */
+    public static final String NOT_READY_FACT = "aa.notReady";
+
+    /**
+     * 0.39.z36 (rule 15, NOT_LOADED): the one line said while the chain has no world: what is not ready (the adapter's
+     * {@link #NOT_READY_FACT}; none installed: said so) and how long the bot has been in the world.
+     */
+    public static String notReady(Blackboard bb) {
+        return bb.fact(NOT_READY_FACT) instanceof java.util.function.Supplier<?> s && s.get() instanceof String w ? w
+                : notReadyLine("the reason is not known (no adapter installed it)", -1, "try again");
+    }
+
+    /** The NOT_LOADED line's words: "senses not ready: {what} (world up {upS} s); {next}" ({@code upS} &lt; 0: unknown). */
+    public static String notReadyLine(String what, long upS, String next) {
+        return "senses not ready: " + what + " (world up " + (upS < 0 ? "unknown" : upS + " s") + "); " + next;
+    }
+
     /** What the chains start from (the adapter's {@link NeedChain#WORLD_FACT}), null: not readable yet. */
     public static io.github.mojolowjo.entropybot.aa.NeedChain.World world(Blackboard bb) {
         return bb.fact(io.github.mojolowjo.entropybot.aa.NeedChain.WORLD_FACT) instanceof java.util.function.Supplier<?> s
