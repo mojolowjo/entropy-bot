@@ -259,7 +259,6 @@ craftPlanner.smeltAlts	10.0
 craftPlanner.wideDepth	2.0
 crafting.boxDy	3.0
 crafting.closeTicks	10.0
-crafting.hereR	6.0
 crafting.laterMin	30.0
 crafting.lookTicks	10.0
 crafting.nearR	16.0

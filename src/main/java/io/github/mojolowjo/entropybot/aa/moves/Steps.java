@@ -285,7 +285,7 @@ public final class Steps {
     }
 
     /** 0.39.z48: the steps hold an explore while the chain's paths compute (the pick still waits on a walk's price). */
-    static boolean waitsOnPaths(List<Step> s) {
+    public static boolean waitsOnPaths(List<Step> s) {
         for (Step x : s) if (x instanceof Step.Explore e && e.whilePaths()) return true;
         return false;
     }

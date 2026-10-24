@@ -698,7 +698,17 @@ public final class AaRuntime implements JobPort {
         for (var m : sg.mouths(dim, me[0], me[1], me[2]))
             l.add(m.where() + " " + Math.round(Math.sqrt(Jobs.distSq(me, new int[]{m.x(), m.y(), m.z()}))) + " m (seen from " + m.count() + " m)");
         List<String> v = io.github.mojolowjo.entropybot.sense.SightingsRuntime.verdicts();   // 0.39.z46: each candidate's last ray verdict
-        return cavesLine() + (l.isEmpty() ? "" : ": " + String.join(", ", l)) + (v.isEmpty() ? "" : "\n  candidate " + String.join("\n  candidate ", v));
+        // 0.39.z49 (owner's cave check): the candidates no ray read yet, with the shape numbers the rule used (cave.exploreTowardM)
+        List<String> s = new ArrayList<>();
+        for (var c : pass.mouths().near(me[0], me[1], me[2], (int) Math.floor(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.exploreTowardM")))) {
+            String w = io.github.mojolowjo.entropybot.sense.CaveMouths.where(c);
+            boolean rayed = false;
+            for (String x : v) rayed |= x.startsWith(w);
+            if (!rayed) s.add(w + ": no ray yet, " + Math.round(Math.sqrt(Jobs.distSq(me, new int[]{c.x(), c.y(), c.z()}))) + " m");
+        }
+        List<String> all = new ArrayList<>(v);
+        all.addAll(s);
+        return cavesLine() + (l.isEmpty() ? "" : ": " + String.join(", ", l)) + (all.isEmpty() ? "" : "\n  candidate " + String.join("\n  candidate ", all));
     }
 
     /**

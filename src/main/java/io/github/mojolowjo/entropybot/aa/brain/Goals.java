@@ -54,6 +54,8 @@ public final class Goals {
         public double pricedS = Double.NaN;
         public long pricedAtMs;
         public boolean pricedExplore;
+        /** 0.39.z49 (S67): the running pick is a real priced way; false: none taken, or the explore while paths compute (no price). */
+        public boolean pricedWay;
 
         /** 0.39.z33 (S36): the sources this order dropped (unreachable, gone), charged by their source key; held for the order's life. */
         public final Failures sources = new Failures();
@@ -116,7 +118,8 @@ public final class Goals {
         // only when cheaper than what is left of it by replan.switchMarginS; else the running steps go on
         long now = bb.clock.now();
         double left = leftS(g, now);
-        if (!switches(left, g.pricedExplore, ch.seconds(), ch.explore(), switchMarginS())) {
+        boolean newWay = !io.github.mojolowjo.entropybot.aa.moves.Steps.waitsOnPaths(ch.steps());
+        if (!switches(g.pricedWay, left, g.pricedExplore, newWay, ch.seconds(), ch.explore(), switchMarginS())) {
             String kept = "kept the running pick: the new way " + Math.round(ch.seconds()) + " s"
                     + (ch.explore() ? " (ends in an explore)" : "") + " vs " + (Double.isNaN(left) ? "?" : Math.round(left)) + " s left"
                     + (g.pricedExplore ? " (ends in an explore)" : "") + " (replan.switchMarginS " + Math.round(switchMarginS()) + ")";
@@ -133,9 +136,11 @@ public final class Goals {
 
     /** 0.39.z48: the order's pick was taken now at the chain's price. */
     static void took(Goal g, io.github.mojolowjo.entropybot.aa.NeedChain.Chain ch, long nowMs) {
-        g.pricedS = ch.seconds();
+        // 0.39.z49 (S67, run K: "vs 104 s left" for the explore while paths compute): that explore is not a way - no price
+        g.pricedWay = !io.github.mojolowjo.entropybot.aa.moves.Steps.waitsOnPaths(ch.steps());
+        g.pricedS = g.pricedWay ? ch.seconds() : Double.NaN;
         g.pricedAtMs = nowMs;
-        g.pricedExplore = ch.explore();
+        g.pricedExplore = g.pricedWay && ch.explore();
     }
 
     /** 0.39.z48: what is left of the running pick's price now (its price less the time since; NaN: none taken). */
@@ -149,6 +154,17 @@ public final class Goals {
      * an explore over a priced way, no running price known: yes; else only when it is cheaper by {@code marginS}.
      */
     public static boolean switches(double leftS, boolean leftExplore, double newS, boolean newExplore, double marginS) {
+        return switches(true, leftS, leftExplore, true, newS, newExplore, marginS);
+    }
+
+    /**
+     * 0.39.z49 (S67, pure): the margin applies only when BOTH the running pick and the new pick are real priced ways. The
+     * running pick no way (the explore while paths compute, none taken): the new pick replaces it at once; the new pick no
+     * way (it waits on paths again): the running way goes on.
+     */
+    public static boolean switches(boolean leftWay, double leftS, boolean leftExplore, boolean newWay, double newS, boolean newExplore, double marginS) {
+        if (!leftWay) return true;
+        if (!newWay) return false;
         if (newExplore && !leftExplore) return false;
         if (leftExplore && !newExplore) return true;
         if (Double.isNaN(leftS)) return true;

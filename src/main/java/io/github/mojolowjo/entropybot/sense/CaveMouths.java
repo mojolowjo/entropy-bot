@@ -31,7 +31,37 @@ public final class CaveMouths {
     public static int maxSky() { return Tuning.i("cave.maxSky"); }
 
     /** A candidate: the lowest open cell at the top of the hole (the air cell over its floor), and its shape. */
-    public record Candidate(int x, int y, int z, String shape) {}
+    public record Candidate(int x, int y, int z, String shape, String numbers) {
+        public Candidate(int x, int y, int z, String shape) { this(x, y, z, shape, ""); }
+    }
+
+    /** 0.39.z49 (owner's cave check on z48): the side named by a direction from the low column ("+x", "-z"). */
+    static String side(int dx, int dz) { return dx > 0 ? "+x" : dx < 0 ? "-x" : dz > 0 ? "+z" : "-z"; }
+
+    /**
+     * 0.39.z49 (pure): the shape numbers the rule used, for the owner to check a spot against it: a mouth "slope -x 4 cols
+     * steps 1,0,1,1 (+3), cliff +x +7"; a ravine "cliffs +x +6 / -x +5".
+     */
+    public static String shapeNumbers(String shape, String cliffSide, int cliff, String backSide, int back, int[] steps) {
+        if ("ravine".equals(shape)) return "cliffs " + cliffSide + " +" + cliff + " / " + backSide + " +" + back;
+        StringBuilder b = new StringBuilder();
+        int sum = 0;
+        for (int i = 0; i < steps.length; i++) { b.append(i == 0 ? "" : ",").append(steps[i]); sum += steps[i]; }
+        return "slope " + backSide + " " + steps.length + " cols steps " + b + " (+" + sum + "), cliff " + cliffSide + " +" + cliff;
+    }
+
+    /**
+     * 0.39.z49 (pure): the hole's column numbers a ray read: its depth from the candidate cell (the first air over the
+     * surface top) to its lowest air cell, the sky light there and one above, water at its bottom.
+     */
+    public static String holeNumbers(int depth, int skyLow, int skyAbove, boolean water) {
+        return "depth " + depth + " to its lowest air, sky " + skyLow + " there / " + skyAbove + " one above, water " + (water ? "yes" : "no");
+    }
+
+    /** The candidate's line head: "x y z (shape: numbers)". */
+    public static String where(Candidate c) {
+        return c.x() + " " + c.y() + " " + c.z() + " (" + c.shape() + (c.numbers().isEmpty() ? "" : ": " + c.numbers()) + ")";
+    }
 
     /**
      * The candidate rule over one chunk's heights. {@code top[lx + 16 * lz]} = the WORLD_SURFACE top block Y of the column
@@ -76,21 +106,28 @@ public final class CaveMouths {
         for (int lz = 0; lz < 16; lz++)
             for (int lx = 0; lx < 16; lx++) {
                 int h = top[lx + 16 * lz];
-                String shape = null;
+                String shape = null, numbers = "";
                 int drop = 0;
                 for (int[] d : dirs) {
                     int cliff = cliff(top, lx, lz, d[0], d[1], h);
                     if (cliff < cliffDrop()) continue;
                     int back = cliff(top, lx, lz, -d[0], -d[1], h);
-                    if (back >= cliffDrop()) { shape = "ravine"; drop = Math.max(drop, Math.min(cliff, back)); }
-                    else if (gentle(top, lx, lz, -d[0], -d[1], h)) { if (shape == null) shape = "mouth"; drop = Math.max(drop, cliff); }
+                    int[] steps;
+                    if (back >= cliffDrop()) {
+                        if (!"ravine".equals(shape) || Math.min(cliff, back) > drop) numbers = shapeNumbers("ravine", side(d[0], d[1]), cliff, side(-d[0], -d[1]), back, null);
+                        shape = "ravine"; drop = Math.max(drop, Math.min(cliff, back));
+                    } else if ((steps = gentleSteps(top, lx, lz, -d[0], -d[1], h)) != null) {
+                        if (shape == null) shape = "mouth";
+                        if ("mouth".equals(shape) && cliff >= drop) numbers = shapeNumbers("mouth", side(d[0], d[1]), cliff, side(-d[0], -d[1]), back, steps);
+                        drop = Math.max(drop, cliff);
+                    }
                 }
                 if (shape == null) continue;
                 if (water != null && water[lx + 16 * lz]) {
-                    flooded.add(new Candidate((cx << 4) + lx, h + 1, (cz << 4) + lz, "flooded " + shape));
+                    flooded.add(new Candidate((cx << 4) + lx, h + 1, (cz << 4) + lz, "flooded " + shape, numbers));
                     continue;
                 }
-                raw.add(new Candidate((cx << 4) + lx, h + 1, (cz << 4) + lz, shape));
+                raw.add(new Candidate((cx << 4) + lx, h + 1, (cz << 4) + lz, shape, numbers));
                 drops.add(drop);
             }
         List<Integer> order = new ArrayList<>();
@@ -160,16 +197,18 @@ public final class CaveMouths {
     }
 
     /** Along (dx, dz) the ground rises gently for slopeLen columns: each step 0..slopeMaxStep, at least 1 in all. */
-    private static boolean gentle(int[] top, int lx, int lz, int dx, int dz, int h) {
+    private static int[] gentleSteps(int[] top, int lx, int lz, int dx, int dz, int h) {
         int prev = h;
+        int[] steps = new int[slopeLen()];
         for (int k = 1; k <= slopeLen(); k++) {
             int x = lx + dx * k, z = lz + dz * k;
-            if (x < 0 || x > 15 || z < 0 || z > 15) return false;
+            if (x < 0 || x > 15 || z < 0 || z > 15) return null;
             int step = top[x + 16 * z] - prev;
-            if (step < 0 || step > slopeMaxStep()) return false;
+            if (step < 0 || step > slopeMaxStep()) return null;
+            steps[k - 1] = step;
             prev = top[x + 16 * z];
         }
-        return prev > h;
+        return prev > h ? steps : null;
     }
 
     /**

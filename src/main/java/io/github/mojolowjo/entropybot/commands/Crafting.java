@@ -493,9 +493,6 @@ final class Crafting {
         return planSteps(p, plan, label, out, collectTargets, kind, efficient, false);
     }
 
-    /** How near a furnace must be to count as "here" ({@code smelt ... here}: else the one from the bag goes down next to me). */
-    static int hereR() { return Tuning.i("crafting.hereR"); }
-
     /**
      * @param here 0.36.a8 (AA's iron scorer, smelting on the spot): a furnace further than {@link #HERE_R} from me is not
      *             used; the one in the bag goes down next to me and I wait there (wait mode), as when none is near
@@ -514,14 +511,13 @@ final class Crafting {
         boolean smelts = false;
         for (Crafter.Smelt sm : plan.stream().filter(s -> s instanceof Crafter.Smelt).map(s -> (Crafter.Smelt) s).toList()) {
             smelts = true;
-            int[] nearF;
-            if (here) nearF = findBlockAround(Jobs.here(p), FURNACE, hereR(), 3);
-            else {
-                StationFact ff = findFurnace(p);
-                // rule 15: not loaded is said, never read as "none known" (the AA step waits before it gets here: StepHands)
-                if (ff instanceof StationFact.NotLoaded n) return notLoadedText(n) + " - smelt again once it is in";
-                nearF = ff instanceof StationFact.Known k ? cell(k) : null;
-            }
+            // 0.39.z49 (S68, run K: "furnace: none known within 6" beside "nearest furnace 26 m"): "here" too reads the
+            // station memory the stations line reads, at any distance (the chain priced its walk, station.nearM); the step
+            // walks to it. "none known" only when the memory and Baritone's scan hold none.
+            StationFact ff = findFurnace(p);
+            // rule 15: not loaded is said, never read as "none known" (the AA step waits before it gets here: StepHands)
+            if (ff instanceof StationFact.NotLoaded n) return notLoadedText(n) + " - smelt again once it is in";
+            int[] nearF = ff instanceof StationFact.Known k ? cell(k) : null;
             if (efficient ? findFurnaces(p, true).isEmpty() : nearF == null) {
                 if (nearF != null && efficient) {
                     efficient = false;                 // a furnace near me but not at the base: stand by it
@@ -531,7 +527,7 @@ final class Crafting {
                 // rm-mining: the smelt places no furnace of its own (the old "no free spot next to me for mine" rule is gone):
                 // it takes a known / camp furnace or fails here, and AA's station option set places one through the builder
                 io.github.mojolowjo.entropybot.aa.moves.FactChange.station(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT, stationName(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT), null);
-                return CraftJob.noFurnace(sm.item()) + " (stage furnace: none known" + (here ? " within " + hereR() : "") + ") - next: place furnace x y z (the station set), then smelt again";
+                return CraftJob.noFurnace(sm.item()) + " (stage furnace: none known) - next: place furnace x y z (the station set), then smelt again";
             }
         }
         for (FurnacePlan.Action a : FurnacePlan.order(plan, planner::recipe, efficient, collectTargets)) {

@@ -230,7 +230,6 @@ final class TuningDefs {
         Tuning.def("craftPlanner.craftAlts", 40, "rm-constants 0.39.u2 (was CraftPlanner.CRAFT_ALTS)", "How many alternatives of a missing crafting ingredient are tried");
         Tuning.def("craftPlanner.smeltAlts", 10, "rm-constants 0.39.u2 (was CraftPlanner.SMELT_ALTS)", "How many alternatives of a missing furnace input are tried");
         // crafting
-        Tuning.def("crafting.hereR", 6, "rm-constants 0.39.u2 (was Crafting.HERE_R)", "How near a furnace must be to count as 'here'");
         // creeperSprint
         Tuning.def("creeperSprint.start", 6, "rm-constants 0.39.u2 (was CreeperSprint.START)", "the start of CreeperSprint");
         Tuning.def("creeperSprint.maxTicks", 100, "rm-constants 0.39.u2 (was CreeperSprint.MAX_TICKS)", "the max ticks of CreeperSprint");
