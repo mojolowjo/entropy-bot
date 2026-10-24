@@ -907,3 +907,8 @@ pathCost.budgetMs	15.0
 pathCost.budgetS	300.0
 pathCost.perChainMax	12.0
 debug.logMaxMb	5.0
+needs.worryFood	60.0
+needs.worryDanger	75.0
+needs.healEatHp	10.0
+needs.cookedBonus	500.0
+needs.swordScore	20.0

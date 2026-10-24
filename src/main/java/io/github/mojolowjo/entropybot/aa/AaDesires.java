@@ -184,7 +184,26 @@ public final class AaDesires {
         Need dawn = new Need(DAWN_ID, TaskKind.TABLE_FURNACE, bb -> NightWork.climbAtDawn(bb, AaLadder.surfaceDepth()), bb -> null, bb -> List.of(new Step.Climb()),
                 new Options.Picker<>("SURFACE", RungOptions.SURFACE_FACTS, RungOptions.SurfaceFacts.class, new RungOptions.Surface())
                         .withoutFacts((b, planned) -> noFacts("climb", List.of(new Step.Climb()))));
-        return List.of(hunger, tableFurnace, spare, torch, base, bed, deposit, iron, dawn);
+        // needs-ruling 0.39.z32 (NEEDS_RULING 3): a sword in the bag (any member of the game's swords tag); the way is the
+        // tag need's chain (the cheapest member the recipes make, priced like the iron need's pickaxe)
+        Need sword = new Need(SWORD_ID, TaskKind.TOOLS, bb -> !hasSword(bb.in.bag), bb -> swordsMissing(), bb -> obtain(SWORDS, 1));
+        return List.of(hunger, tableFurnace, spare, torch, base, bed, deposit, iron, dawn, sword);
+    }
+
+    /** needs-ruling 0.39.z32: the sword need's id and the tag it takes any member of (a step target, not a list). */
+    public static final String SWORD_ID = "needs.sword", SWORDS = "#minecraft:swords";
+
+    /** needs-ruling 0.39.z32: any item of the game's swords tag is in the bag. */
+    public static boolean hasSword(java.util.Map<String, Integer> bag) {
+        if (bag == null) return false;
+        for (var e : bag.entrySet()) if (e.getValue() != null && e.getValue() > 0 && io.github.mojolowjo.entropybot.aa.brain.ItemWorth.isIn(e.getKey(), SWORDS.substring(1))) return true;
+        return false;
+    }
+
+    /** Rule 15: the swords tag not loaded (no item data) or empty: the need has no way, said in aa why. Null: it has members. */
+    static String swordsMissing() {
+        if (!io.github.mojolowjo.entropybot.aa.brain.ItemWorth.hasData()) return "not loaded: no item data (the swords tag)";
+        return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.itemsIn(SWORDS.substring(1)).isEmpty() ? "empty: the game's swords tag has no items" : null;
     }
 
     /** AA_ROUND3 5: the best sheep herd remembered and not in view ({x, z, dist, conf%}; LootBook.HERDS_FACT), or null. */
@@ -208,6 +227,7 @@ public final class AaDesires {
             case "needs.iron" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, AaDesires::ironValue)).cost(Tuning.get("cost.iron"))
                     .exposure(Desire.Exposure.UNDER);
             case DAWN_ID -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> Tuning.get("dawnClimb")));
+            case SWORD_ID -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Tuning.get("needs.swordScore")));
             default -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Tuning.get("need.defaultScore")));
         };
         return wire(d, r).site(b -> rungSite(r, b));

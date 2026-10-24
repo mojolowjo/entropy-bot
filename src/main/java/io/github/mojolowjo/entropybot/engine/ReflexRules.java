@@ -100,7 +100,7 @@ public final class ReflexRules {
      */
     public static boolean wantsMeal(int food, float health, int bestNutrition) {
         if (bestNutrition <= 0) return wantsMeal(food, health);
-        return food <= eatUrgent() || 20 - food >= bestNutrition || (food < EAT_FOOD_HURT && health < EAT_FOOD_HURT);  // game fact: the food bar is 20 points
+        return healEat(food, health, bestNutrition) || food <= eatUrgent() || 20 - food >= bestNutrition || (food < EAT_FOOD_HURT && health < EAT_FOOD_HURT);  // game fact: the food bar is 20 points
     }
 
     /**
@@ -111,7 +111,25 @@ public final class ReflexRules {
         if (id == null || io.github.mojolowjo.entropybot.aa.brain.ItemWorth.junkFood(id) || harmful) return -1;
         if (io.github.mojolowjo.entropybot.aa.brain.ItemWorth.effectFood(id) && health >= goldenBelow()) return -1;
         if (nutrition <= 0) return -1;
-        return nutrition * 10 + Math.round(saturation * 10);  // structural: ranking: nutrition and saturation in tenths
+        // needs-ruling 0.39.z32 (NEEDS_RULING 2): a cooked food (a cooking recipe's result, the game's recipe data) is
+        // needs.cookedBonus ahead, so raw is eaten only when nothing cooked is in the bag
+        int cooked = cooked(id) ? (int) Math.round(Tuning.get("needs.cookedBonus")) : 0;
+        return nutrition * 10 + Math.round(saturation * 10) + cooked;  // structural: ranking: nutrition and saturation in tenths
+    }
+
+    /** needs-ruling 0.39.z32: the item is the result of a cooking recipe (smelting, smoking, campfire) in the game's recipe data. */
+    public static boolean cooked(String id) {
+        if (id == null) return false;
+        String full = id.indexOf(':') < 0 ? "minecraft:" + id : id;
+        return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.cooks().containsValue(full);
+    }
+
+    /**
+     * needs-ruling 0.39.z32 (NEEDS_RULING 2): healing is a trigger: under Tuning {@code needs.healEatHp} health with a
+     * food in the bag ({@code bestNutrition} > 0) the bot eats whenever the bar is not full (the reflex pauses the step).
+     */
+    public static boolean healEat(int food, float health, int bestNutrition) {
+        return bestNutrition > 0 && food < 20 && health < Tuning.get("needs.healEatHp");  // game fact: the food bar is 20 points (full: the game refuses a bite)
     }
 
     /** How far monsters count: 8 blocks, 24 right after a hit. */

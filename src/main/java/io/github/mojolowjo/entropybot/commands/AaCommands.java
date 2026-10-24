@@ -100,7 +100,7 @@ final class AaCommands {
             return a.isEmpty() ? (set == null ? "aa only: off (usage: aa only <need>|off, e.g. aa only torches)" : "only: " + set)
                     : set == null ? "aa only: off - every need and want is back" : "only: " + set + " - every other need and want is silent (danger, reflexes and your orders stay on); aa only off to end";
         }, f(S, "only <need>|off", "only that need runs (danger, reflexes and your orders stay on); off ends it"));
-        v("needs", (c, aa, vb, a) -> aa.needs(a), f(S, "needs on|off", "the bot's own needs on, or your orders only (saved per world)"));             // orders-tier: saved per world
+        v("needs", (c, aa, vb, a) -> aa.needs(a), f(S, "needs on|off", "own needs on (an order: only worried hunger/danger cut in), or orders only (per world)"));             // orders-tier: saved per world
         v("forget", (c, aa, vb, a) -> a.equals("stations") ? c.nearby.forgetAllStations() : "usage: aa forget stations (drops every station record of mine in this world)",
                 f(S, "forget stations", "drop every station record of mine in this world"));
         v("eat", (c, aa, vb, a) -> aa.order("eat", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Eat())), f(S, "eat (the best food in the bag)", "eat the best food in the bag"));

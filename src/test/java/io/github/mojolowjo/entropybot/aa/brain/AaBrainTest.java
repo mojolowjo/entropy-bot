@@ -66,7 +66,7 @@ class AaBrainTest {
 
     @Test
     void ownerGoalWaitsTheMinimumRunAndNeverBeatsUrgentUpkeep() {
-        Brain br = new Brain("brain", "t", d(0, "a", Desire.Kind.PROGRESS), d(1, "food", Desire.Kind.UPKEEP));
+        Brain br = new Brain("brain", "t", d(0, "a", Desire.Kind.PROGRESS), d(1, "needs.food", Desire.Kind.UPKEEP));
         s[0] = 40;
         br.tick(bb);
         Desire goal = d(2, "osmium", Desire.Kind.OWNER).fresh(clock.now() + 600_000);
@@ -80,14 +80,14 @@ class AaBrainTest {
             br.tick(bb);
         }
         assertEquals("obtain 1 do osmium", last());
-        s[1] = 76;                       // urgent upkeep beats the owner's 90
+        s[1] = 76;                       // needs-ruling 0.39.z32: food over its worry line (needs.worryFood 60) beats the owner's 90
         br.tick(bb);
-        assertEquals("obtain 1 do food", last());
+        assertEquals("obtain 1 do needs.food", last());
         // with nothing running, urgent upkeep still ranks over the owner's goal
         port.done(3, "done");
         br.tick(bb);
         br.tick(bb);
-        assertEquals("obtain 1 do food", last());
+        assertEquals("obtain 1 do needs.food", last());
     }
 
     @Test

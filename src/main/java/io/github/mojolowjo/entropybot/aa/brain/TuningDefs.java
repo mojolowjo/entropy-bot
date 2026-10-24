@@ -82,7 +82,12 @@ final class TuningDefs {
         Tuning.def("needChain.unknownBreakS", 3, "one-planner 0.39.z1 (was coalOptions.mineOre)", "seconds a block takes to break when the game gives it no hardness (no data loaded)");
         Tuning.def("needChain.unknownMobHp", 10, "one-planner 0.39.z1", "health points a mob is priced at when the game's attributes give none (the hunt's kill time)");
         Tuning.def("needs.foodItems", 8, "one-planner 0.39.z1 (was the planner goal food 8)", "food items the food need's chain gets (any plain food, the cheapest per point)");
-        Tuning.def("needs.ironTier", 3, "one-planner 0.39.z1 (was the game-fact tier 3 of the iron rung)", "the pickaxe tier the iron need wants (the bot's scale: wood 1, stone 2, iron 3, diamond 4)");
+        Tuning.def("needs.worryFood", 60, "needs-ruling 0.39.z32 (owner 2026-10-23, section 1)", "the food need's score from which it preempts a running order's step (aa why: worry); below it an order is never interrupted by hunger");
+        Tuning.def("needs.worryDanger", 75, "needs-ruling 0.39.z32 (owner 2026-10-23, section 1)", "the danger desire's score from which it preempts a running order's step (aa why: worry); below it the order goes on");
+        Tuning.def("needs.healEatHp", 10, "needs-ruling 0.39.z32 (owner 2026-10-23, section 2)", "health under which the eat reflex eats from the bag whenever the bar is not full (healing; the reflex pauses the step, the step resumes)");
+        Tuning.def("needs.cookedBonus", 500, "needs-ruling 0.39.z32 (owner 2026-10-23, section 2)", "price points a cooked food (a cooking recipe's result in the game's recipe data) is ahead of any other food in the bag (nutrition x10 + saturation x10 tops at ~300): raw only when nothing cooked");
+        Tuning.def("needs.swordScore", 20, "needs-ruling 0.39.z32 (owner 2026-10-23, section 3)", "the sword need's score (a sword in the bag): low, so it runs when idle; an order silences it below the worry lines");
+        Tuning.def("needs.ironTier", 3,"one-planner 0.39.z1 (was the game-fact tier 3 of the iron rung)", "the pickaxe tier the iron need wants (the bot's scale: wood 1, stone 2, iron 3, diamond 4)");
         Tuning.def("pathCost.budgetMs", 15, "path-cost 0.39.z12", "milliseconds one walk price may ask Baritone's A* (IPathCost) on the game thread; the fork caps it at its pathCostMaxMs");
         Tuning.def("pathCost.budgetS", 300, "path-cost 0.39.z12", "seconds of walk past which Baritone's A* stops pricing a walk (its cost ceiling); a dearer walk takes the line");
         Tuning.def("pathCost.perChainMax", 12, "path-cost 0.39.z12", "walk prices one chain may ask Baritone for (each spot once); past them the line x 1.3");

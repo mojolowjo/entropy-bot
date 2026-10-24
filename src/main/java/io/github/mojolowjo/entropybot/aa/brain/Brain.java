@@ -149,6 +149,16 @@ public final class Brain extends Node {
             bb.port.log("brain: " + d.id + " score failed: " + e);
             return new Scored(d, -1, -1, "score failed", "score failed: " + e);
         }
+        // needs-ruling 0.39.z32: while an order is wanted only a worry over its line keeps its score (Worry)
+        String worry = null;
+        if (orderGate && !orderPrereqs.contains(d.id)) {
+            String silent = Worry.silences(d.id, d.kind, v);
+            if (silent != null) return new Scored(d, 0, 0, "silent: " + silent, "not wanted: " + silent);
+            if (Worry.over(d.id, v)) {
+                worry = Worry.text(d.id, v);
+                worries.add(d.id);
+            }
+        }
         String parkedWhy = null;
         if (v >= 0 && v < 100) {                       // feasibility: no source for a required input = parked, not worth 38  // structural: the score scale tops at 100 (the owner's aa do); under it a desire is not an order
             try {
@@ -193,6 +203,7 @@ public final class Brain extends Node {
             v = v >= Tuning.get("urgent") ? v * m : Math.min(Tuning.get("urgent") - 1, v * m);      // review: the night never makes a desire urgent
             parts += " night x" + Math.round(m * 100) / 100.0 + " (danger " + Math.round(danger * 100) / 100.0 + ")";  // structural: percent
         }
+        if (worry != null) parts += " " + worry;
         if (parkedWhy != null) return new Scored(d, 0, 0, "parked (infeasible)", "parked: " + parkedWhy, 0, cu > now ? 0 : Math.max(0, v));
         double rank = v + (urgent(d, v) ? 1000 : 0);
         double pv = 0;
@@ -292,8 +303,33 @@ public final class Brain extends Node {
      */
     public List<Scored> scoreAll(Blackboard bb) {
         long now = bb.clock.now();
+        // needs-ruling 0.39.z32: the owner's orders first; one wanted (and the full set on) gates the rest (Worry)
+        Scored[] first = new Scored[desires.size()];
+        boolean wanted = false;
+        orderGate = false;
+        worries.clear();
+        for (int i = 0; i < first.length; i++) {
+            Desire d = desires.get(i);
+            if (d.kind != Desire.Kind.OWNER) continue;
+            first[i] = score(bb, d, now);
+            if (first[i].skip() == null && first[i].score() > 0) wanted = true;
+        }
+        orderGate = Worry.gates(wanted);
+        lastGate = orderGate;
+        // an order's own prerequisite (Goals.prereq: the need its chain waits on) is part of the order, never silenced
+        orderPrereqs.clear();
+        if (orderGate) for (int i = 0; i < first.length; i++) {
+            if (first[i] == null || first[i].skip() != null || first[i].score() <= 0) continue;
+            try {
+                String p = desires.get(i).prereq.apply(bb);
+                if (p != null) orderPrereqs.add(p);
+            } catch (RuntimeException e) {
+                bb.port.log("brain: " + desires.get(i).id + " prereq failed: " + e);
+            }
+        }
         List<Scored> out = new ArrayList<>();
-        for (Desire d : desires) out.add(score(bb, d, now));
+        for (int i = 0; i < first.length; i++) out.add(first[i] != null ? first[i] : score(bb, desires.get(i), now));
+        orderGate = false;
         Map<String, Integer> at = new HashMap<>();
         for (int i = 0; i < out.size(); i++) at.put(out.get(i).d().id, i);
         // AA_ROUND2 4: an under-ground stock-up that could run now (not held, not parked): the night shelter may yield to it
@@ -442,6 +478,13 @@ public final class Brain extends Node {
         return !(cur.id.equals("needs.food") && bb.in.food < Tuning.get("trumpFood"));
     }
 
+    /** needs-ruling 0.39.z32: the order gate while scoring (Worry), the last scoring's gate, and the worries over their line then. */
+    private boolean orderGate, lastGate;
+    private final java.util.Set<String> worries = new java.util.HashSet<>(), orderPrereqs = new java.util.HashSet<>();
+
+    /** needs-ruling 0.39.z32: an order gated the last scoring (aa why). */
+    public boolean orderGated() { return lastGate; }
+
     private double curScore;
     /** The commitment bonus now (the personality's margin, default {@link #BONUS}). */
     private double bonus = Tuning.get("margin");
@@ -458,6 +501,11 @@ public final class Brain extends Node {
             boolean canUrge = s.d() != cur && s.skip() == null && s.score() < 100 && urgent(s.d(), s.own());  // structural: the score scale tops at 100 (the owner's aa do)
             if (!canUrge) s.d().urgentSince = -1;          // review: the grace starts afresh every time
             if (s.d() == cur || s.skip() != null || s.score() >= 100) continue;  // structural: the score scale tops at 100 (the owner's aa do)
+            // needs-ruling 0.39.z32: a worry over its line preempts the running order's step, mid-job too (Worry)
+            if (lastGate && cur.kind == Desire.Kind.OWNER && worries.contains(s.d().id)) {
+                cands.add(s);
+                continue;
+            }
             // jobs (owner 2026-10-22): mid-job only danger (a trumping desire) and starving food interrupt; the rest waits for the boundary
             if (JobBoundary.mid() && !s.d().trumps && !(s.d().id.equals("needs.food") && bb.in.food < Tuning.get("trumpFood"))) continue;
             // grace: an urgent challenger with a grace waits that long after it turned urgent (the running step finishes)
