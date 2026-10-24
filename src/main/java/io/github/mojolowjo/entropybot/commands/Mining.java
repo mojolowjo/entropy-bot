@@ -991,7 +991,7 @@ final class Mining {
         }
         // 0.39.z42: an explore while the chain's paths compute ends when a path answer lands (the order is priced again on it)
         if (ex.pathsLanded >= 0 && done == null && LivePathPrice.INSTANCE.landed() != ex.pathsLanded) {
-            String known = "a walk's path is known now (" + LivePathPrice.INSTANCE.lastLanded() + "); the chain is priced again";
+            String known = "a walk's path is known now (" + LivePathPrice.INSTANCE.lastLanded() + "); " + io.github.mojolowjo.entropybot.aa.brain.FastEnd.FACT_ARRIVED;
             LOG.info("[entropybot] explore: {}", known);
             s.note = known + tookText(ex.took);
             if (b != null) Jobs.cancel(b);

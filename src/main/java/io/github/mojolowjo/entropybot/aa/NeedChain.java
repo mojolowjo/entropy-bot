@@ -80,6 +80,21 @@ public final class NeedChain {
     public record Mob(String type, int x, int y, int z, double dist) {}
 
     /**
+     * 0.39.z43: what the strip way "mine at the ore's level" is priced on, from the game's data (AaRuntime: the world-gen
+     * placement read, {@link io.github.mojolowjo.entropybot.aa.brain.OreBand}): {@code ores} the ore block ids that give
+     * the need (the strip's set), {@code minY..maxY} their band, {@code y} the strip's feet Y (the band's best layer at or
+     * below the feet), {@code perSlab} the expected ore blocks per chunk in the slab at y, {@code x z feetY} where the bot
+     * stands, {@code heading} where it faces, {@code host} the block a strip at y digs through (its break is priced).
+     */
+    static final String STRIP_KEY = "strip ";
+
+    public record StripBand(List<String> ores, int minY, int maxY, int y, double perSlab, int x, int z, int feetY, String heading, String host) {
+        public StripBand { ores = List.copyOf(ores); }
+        /** The source key of this strip way, the same as its step's ({@link NeedChain#sourceKey(Step)}): a failed strip or no path to its Y drops it for the order. */
+        public String key() { List<String> s = new ArrayList<>(ores); s.sort(null); return STRIP_KEY + String.join(",", s) + "|" + y + "|" + heading; }
+    }
+
+    /**
      * What the bot knows now. {@code bag}: item id -> count; {@code tableNear} / {@code furnaceNear}: one within reach;
      * {@code seenAll}: a need word (an item id, a tag "#ns:path", or several joined by "|") -> the known blocks that give it
      * (for a tag: any member; nearest first not needed); {@code mobs}: entity id -> the animals of that kind known;
@@ -91,12 +106,19 @@ public final class NeedChain {
      */
     public record World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
                         Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path,
-                        Function<String, Spot> stationAt, Function<String, Integer> usesLeft, List<String> held) {
+                        Function<String, Spot> stationAt, Function<String, Integer> usesLeft, List<String> held, Function<String, StripBand> strip) {
+        /** 0.39.z43: no strip facts (the strip way is not offered). */
+        public World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
+                     Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path,
+                     Function<String, Spot> stationAt, Function<String, Integer> usesLeft, List<String> held) {
+            this(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, null);
+        }
+
         /** 0.39.z33: no tool-wear facts (every tool unlimited) and no source held. */
         public World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
                      Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path,
                      Function<String, Spot> stationAt) {
-            this(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, null, null);
+            this(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, null, null, null);
         }
 
         /** No path provider: no walk has a price (0.39.z41: "walk: path not known (no path provider)"); ways without a walk stand. */
@@ -124,6 +146,7 @@ public final class NeedChain {
             Map<String, List<Mob>> mmemo = new ConcurrentHashMap<>();
             mobs = w -> mmemo.computeIfAbsent(id(w), k -> { List<Mob> l = mb.apply(k); return l == null ? List.of() : List.copyOf(l); });
             if (band == null) band = w -> null;
+            if (strip == null) strip = w -> null;
             if (horizonBlocks <= 0) horizonBlocks = Unit.blocks(Sequencer.defaultHorizonS());
         }
 
@@ -136,23 +159,26 @@ public final class NeedChain {
             this(bag, tableNear, false, w -> { Spot s = seen == null ? null : seen.apply(w); return s == null ? List.of() : List.of(s); }, null, null, null, horizonBlocks);
         }
 
-        public World withMobs(Function<String, List<Mob>> m, LootBook l) { return new World(bag, tableNear, furnaceNear, seenAll, m, l, band, horizonBlocks, path, stationAt, usesLeft, held); }
+        public World withMobs(Function<String, List<Mob>> m, LootBook l) { return new World(bag, tableNear, furnaceNear, seenAll, m, l, band, horizonBlocks, path, stationAt, usesLeft, held, strip); }
 
-        public World withBand(Function<String, int[]> b) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, b, horizonBlocks, path, stationAt, usesLeft, held); }
+        public World withBand(Function<String, int[]> b) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, b, horizonBlocks, path, stationAt, usesLeft, held, strip); }
 
         /** path-cost: the walks priced by Baritone's complete path (null: no walk has a price). */
-        public World withPath(PathPrice p) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, p, stationAt, usesLeft, held); }
+        public World withPath(PathPrice p) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, p, stationAt, usesLeft, held, strip); }
 
         /** station-memory: where the known stations stand (recipe kind -> spot; null: no position known). */
-        public World withStations(Function<String, Spot> at) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, at, usesLeft, held); }
+        public World withStations(Function<String, Spot> at) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, at, usesLeft, held, strip); }
 
         /** 0.39.z33: the uses left of the bag's best stack of a tool id ({@link io.github.mojolowjo.entropybot.aa.brain.ToolUses}). */
+        /** 0.39.z43: the strip facts per need word ({@link StripBand}; null: no strip way for it). */
+        public World withStrip(Function<String, StripBand> s) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, s); }
+
         public World withUses(Function<String, Integer> u) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, u, held); }
 
         /** chop: the same world less the sources {@code held} names (need word, spot): a failed source is out of the re-price. */
         public World without(java.util.function.BiPredicate<String, Spot> held) {
             Function<String, List<Spot>> sa = seenAll;
-            return new World(bag, tableNear, furnaceNear, w -> sa.apply(w).stream().filter(sp -> !held.test(word(w), sp)).toList(), mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, this.held);
+            return new World(bag, tableNear, furnaceNear, w -> sa.apply(w).stream().filter(sp -> !held.test(word(w), sp)).toList(), mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, this.held, strip);
         }
 
         /**
@@ -169,7 +195,12 @@ public final class NeedChain {
                 int[] r = band.apply(word);
                 return r != null && keyWhy.containsKey(io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(r[0], r[1])) ? null : r;
             };
-            return new World(bag, tableNear, furnaceNear, less.seenAll, mobs, loot, b, horizonBlocks, path, stationAt, usesLeft, h);
+            Function<String, StripBand> st = strip;
+            Function<String, StripBand> stripLess = word -> {           // 0.39.z43: the same dropped band drops its strip way
+                StripBand r = st.apply(word);
+                return r != null && keyWhy.containsKey(r.key()) ? null : r;
+            };
+            return new World(bag, tableNear, furnaceNear, less.seenAll, mobs, loot, b, horizonBlocks, path, stationAt, usesLeft, h, stripLess);
         }
     }
 
@@ -816,6 +847,7 @@ public final class NeedChain {
             for (Group g : groups(w, ItemWorth.SMELT)) alts.add(groupAlt(c, w, lack, g));
             alts.addAll(tagSourceAlts(c, w, lack));
             alts.addAll(tagHuntAlts(c, w, lack));
+            if (c.w.seenAll().apply(w.word).isEmpty()) alts.addAll(stripAlts(c, w.word, w.word, lack));   // 0.39.z43
             Trial win = choose(c, alts, w.word);
             if (win != null) return new Got(win.alt().id != null ? win.alt().id : w.word, n, win.phrase());
             if (waitsOnPaths(c)) return new Got(w.word, n, pathsExplore(c, w.word));
@@ -1076,6 +1108,7 @@ public final class NeedChain {
             for (ItemWorth.Recipe r : ItemWorth.recipes(item, ItemWorth.SMELT)) alts.add(new Alt("smelting " + sh(item) + " from " + ingredients(r), () -> smelt(c, item, lack, r)));
             alts.addAll(sourceAlts(c, item, item, lack, c.w.seenAll().apply(item)));
             alts.addAll(huntAlts(c, item, lack));
+            if (c.w.seenAll().apply(item).isEmpty()) alts.addAll(stripAlts(c, item, item, lack));   // 0.39.z43: mine at the ore's level
             Trial w = choose(c, alts, item);
             if (w != null) return w.phrase();
             if (waitsOnPaths(c)) return pathsExplore(c, item);
@@ -1502,6 +1535,7 @@ public final class NeedChain {
         if (s instanceof Step.ChopTree t && t.at() != null) return "cut at " + t.at()[0] + " " + t.at()[1] + " " + t.at()[2];
         if (s instanceof Step.Collect k) return "collect " + k.item();
         if (s instanceof Step.ToBand b) return io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(b.minY(), b.maxY());   // 0.39.z42
+        if (s instanceof Step.Strip st) return STRIP_KEY + st.key();      // 0.39.z43: a strip that ended lava / no path / no pickaxe
         return null;
     }
 
@@ -1742,6 +1776,82 @@ public final class NeedChain {
         c.away = wk.seconds();
         c.bag.merge(item, lack, Integer::sum);
         return noted("hunt " + kills + " " + sh(s.from()) + " seen " + Math.round(m.dist()) + " m", wk);
+    }
+
+    /**
+     * 0.39.z43 (owner, Run D: "if it is looking for ore then it should just mine at the recommended level"): for a need with
+     * no known source whose blocks generate in a band (the strip facts, {@link StripBand}), the way "go to the band's best Y
+     * and strip there until the amount is in the bag" - the strip job (Step.Strip, the fork's StripProcess, with its deposit
+     * leg and walk back: {@link io.github.mojolowjo.entropybot.aa.brain.Goals#stripLoop}). One way among the others (rule 1),
+     * priced by its own facts; no strip facts (multiplayer, no world-gen read, no band at or below the feet): no way.
+     */
+    private static List<Alt> stripAlts(Ctx c, String word, String gives, int lack) {
+        StripBand sb = c.w.strip().apply(word);
+        if (sb == null || sb.ores().isEmpty()) return List.of();
+        Alt a = new Alt("strip at y " + sb.y(), () -> strip(c, word, gives, lack, sb));
+        a.id = gives;
+        return List.of(a);
+    }
+
+    /**
+     * The strip way's price (rule 14, rough; STRIP_MINING "third version"): the pickaxe the ores ask for first (StepNeeds'
+     * tier, the cheapest one made as everywhere), the walk/dig to (x, y, z) - Baritone's path (rule 18; not known yet: the
+     * way waits, the chain explores meanwhile as z42 does; no path: the band is dropped for the order, the z33 fact) - then
+     * per ore block wanted the blocks dug per ore found ({@link io.github.mojolowjo.entropybot.aa.brain.OreBand#blocksPerOre})
+     * x the host block's break with the pickaxe in hand, plus the ore's own breaks. The step's amount: the ore blocks for the
+     * lack (the loot data's drops per block). Not priced: the pickaxe's wear over the tunnel (the strip ends "no pickaxe
+     * left" and the order re-plans).
+     */
+    private static String strip(Ctx c, String word, String gives, int lack, StripBand sb) {
+        MiningTiers.Source src = MiningTiers.source();
+        if (src == null) { c.fail = "strip: the pickaxe tier of " + shw(sb.ores().get(0)) + " is not known (no mining data loaded yet)"; return null; }
+        int tier = 0;
+        for (String o : sb.ores()) {
+            int t = src.blockTier(o);
+            if (t == MiningTiers.UNKNOWN) { c.fail = "strip: the pickaxe tier of " + shw(o) + " is not known"; return null; }
+            tier = Math.max(tier, t);
+        }
+        String head = "strip at y " + sb.y() + " (band " + sb.minY() + ".." + sb.maxY() + ")";
+        String pre = null;
+        if (tier > c.pickTier) {
+            pre = cheapestPickaxe(c, tier);
+            if (c.fail != null) return null;
+            if (c.stuck) return head + " (after " + pre + ")";
+        }
+        Walked wk = walk(c, sb.x(), sb.y(), sb.z(), Math.abs(sb.feetY() - sb.y()));
+        if (c.fail != null) {
+            if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreachable.put(sb.key(), wk.fail());   // the z33 source fact: the band dropped
+            return null;
+        }
+        String ore = sb.ores().get(0);
+        double per = perBlock(c, gives, ore);
+        int oreBlocks = (int) Math.ceil(lack / per - 1e-9);  // structural: epsilon
+        double bpo = io.github.mojolowjo.entropybot.aa.brain.OreBand.blocksPerOre(sb.perSlab());
+        int dug = (int) Math.ceil(oreBlocks * bpo - 1e-9);   // structural: epsilon
+        double hostS = blockBreakS(c, sb.host() != null ? sb.host() : ore), oreS = blockBreakS(c, ore);
+        double digS = dug * hostS + oreBlocks * oreS;
+        c.seconds += wk.seconds() + digS;
+        c.away = wk.seconds();
+        if (c.pickItem != null) c.pickWorn += dug + oreBlocks;
+        Map<String, Integer> amounts = Map.of(io.github.mojolowjo.entropybot.aa.brain.StripOrder.countKey(ore, io.github.mojolowjo.entropybot.cave.OreSpec::family), oreBlocks);
+        c.steps.addAll(io.github.mojolowjo.entropybot.aa.brain.Goals.stripLoop(new Step.Strip(sb.ores(), amounts, sb.y(), sb.heading(), 0)));
+        c.bag.merge(gives, Math.max(lack, (int) Math.floor(oreBlocks * per + 1e-9)), Integer::sum);  // structural: epsilon
+        final String line = head + " ~" + Math.round(bpo) + " blocks/ore (" + String.format(java.util.Locale.ROOT, "%.1f", sb.perSlab())
+                + " ore a chunk in " + io.github.mojolowjo.entropybot.aa.brain.OreBand.slab() + " layers) x " + oreBlocks + " ore = " + dug + " blocks"
+                + " (" + shw(sb.host() != null ? sb.host() : ore) + " " + s(hostS) + " each) -> " + s(wk.seconds() + digS);
+        c.note(() -> "source: none known for " + shw(word) + ": " + line);
+        return noted(line + (pre == null ? "" : " with " + pre), wk);
+    }
+
+    /** One block's break by the game's formula with the pickaxe in hand when its tier asks for one (as {@link #breakS}). */
+    private static double blockBreakS(Ctx c, String block) {
+        double hardness = ItemWorth.facts(block).hardness();
+        if (hardness <= 0) return TickPrice.breakS(Tuning.get("needChain.unknownBreakS"));
+        MiningTiers.Source src = MiningTiers.source();
+        int tier = src == null ? 0 : Math.max(0, src.blockTier(block));
+        if (tier < 1) return TickPrice.breakS(GameTimes.breakSeconds(hardness, 1, true));
+        double speed = c.pickItem == null ? 1 : Math.max(1, ItemWorth.facts(c.pickItem).digSpeed());
+        return TickPrice.breakS(GameTimes.breakSeconds(hardness, speed, c.pickTier >= tier));
     }
 
     /** 0.39.z42: no way of the requirement stands and the reason is a walk whose path is not known (computing, chunks not loaded). */

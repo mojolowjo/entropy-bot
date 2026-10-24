@@ -33,7 +33,7 @@ public final class ExploreRules {
             var s = source.apply(part);
             if (s == null) continue;
             return "a source of " + part + " is known: " + (s.block() == null ? "" : s.block().replaceFirst("^minecraft:", "") + " ")
-                    + "at " + s.x() + " " + s.y() + " " + s.z() + " (" + Math.round(s.dist()) + " away); the chain is priced again";
+                    + "at " + s.x() + " " + s.y() + " " + s.z() + " (" + Math.round(s.dist()) + " away); " + io.github.mojolowjo.entropybot.aa.brain.FastEnd.FACT_ARRIVED;
         }
         return null;
     }

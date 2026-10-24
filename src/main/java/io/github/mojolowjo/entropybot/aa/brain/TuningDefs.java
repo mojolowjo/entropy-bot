@@ -936,6 +936,8 @@ final class TuningDefs {
         Tuning.def("threatRuntime.seenDist", 2.5, "rm-constants 0.39.u2 (inline literal in ThreatRuntime)", "blocks within which a mob counts as seen without a line of sight");
         Tuning.def("worth.baseShare", 0.8, "rm-constants 0.39.u2 (inline literal in Worth)", "a base is worth this share of a bed");
         Tuning.def("worth.bedBase", 20, "rm-constants 0.39.u2 (inline literal in Worth)", "the bed worth floor");
+        Tuning.def("strip.slabLayers", 16, "0.39.z43 (owner: blocks per ore = 256 x 16 / expected)", "the Y layers a strip at the band's peak counts the expected ore in (OreBand)");
+        Tuning.def("strip.maxBlocksPerOre", 2000, "0.39.z43", "the cap of the blocks a strip digs per ore block found (a near-empty band is not priced as infinite)");
         Tuning.def("worth.bedSpan", 60, "rm-constants 0.39.u2 (inline literal in Worth)", "the bed worth span (scaled by the night danger)");
     }
 }

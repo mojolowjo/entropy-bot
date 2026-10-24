@@ -920,3 +920,5 @@ needs.rawPenalty	500.0
 needs.swordScore	20.0
 lava.nearBlocks	2.0
 lava.nearPenalty	10.0
+strip.slabLayers	16.0
+strip.maxBlocksPerOre	2000.0

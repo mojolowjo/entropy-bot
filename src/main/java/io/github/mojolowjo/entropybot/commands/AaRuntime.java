@@ -600,8 +600,49 @@ public final class AaRuntime implements JobPort {
         var in = bb.in;
         return new io.github.mojolowjo.entropybot.aa.NeedChain.World(in.bag, in.tableKnown, in.furnaceKnown,
                 item -> { var s = nearestSource(item); return s == null ? List.of() : List.of(s); },
-                this::animalsKnown, currentLootBook(), this::band, 0, LivePathPrice.INSTANCE, this::stationAt).withUses(AaRuntime::usesLeft);
+                this::animalsKnown, currentLootBook(), this::band, 0, LivePathPrice.INSTANCE, this::stationAt).withUses(AaRuntime::usesLeft).withStrip(this::strip);
     }
+
+    /**
+     * 0.39.z43: the strip facts of a need word (NeedChain.StripBand): the blocks that drop it (sourceBlocksOf: the loot data
+     * and its own block) that have a height-placed world-gen feature in this dimension ({@link #ORE_FEATURES}, read with the
+     * catalog), the band's best layer at or below the feet (OreBand.bestY), its expected ore per chunk, where the bot stands
+     * and faces, and the block the world has at that Y under the bot (loaded: its break is priced; else none, the ore's own).
+     * Null: no world-gen placement read (multiplayer), no player, or none of the blocks is placed at or below the feet.
+     */
+    io.github.mojolowjo.entropybot.aa.NeedChain.StripBand strip(String word) {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer p = mc.player;
+        var all = ORE_FEATURES;
+        if (p == null || mc.level == null || all == null) return null;
+        var here = all.get(mc.level.dimension().location().toString());
+        if (here == null) return null;
+        List<String> ores = new ArrayList<>();
+        List<io.github.mojolowjo.entropybot.aa.brain.OreBand.Feature> fs = new ArrayList<>();
+        for (String b : new java.util.TreeSet<>(sourceBlocksOf(io.github.mojolowjo.entropybot.aa.NeedChain.word(word)))) {
+            var l = here.get(b);
+            if (l == null || l.isEmpty()) continue;
+            ores.add(b);
+            fs.addAll(l);
+        }
+        if (ores.isEmpty()) return null;
+        int[] me = Jobs.here(p);
+        Integer y = io.github.mojolowjo.entropybot.aa.brain.OreBand.bestY(fs, me[1]);
+        if (y == null) return null;
+        int lo = Integer.MAX_VALUE, hi = Integer.MIN_VALUE;
+        for (var ft : fs) { lo = Math.min(lo, ft.lo()); hi = Math.max(hi, ft.hi()); }
+        String host = null;
+        var pos = new net.minecraft.core.BlockPos(me[0], y, me[2]);
+        if (mc.level.hasChunkAt(pos)) {
+            var st = mc.level.getBlockState(pos);
+            if (!st.isAir()) host = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
+        }
+        return new io.github.mojolowjo.entropybot.aa.NeedChain.StripBand(ores, lo, hi, y,
+                io.github.mojolowjo.entropybot.aa.brain.OreBand.perSlab(fs, y), me[0], me[2], me[1], p.getDirection().getName(), host);
+    }
+
+    /** 0.39.z43: dimension -> ore block id -> its height-placed features (singleplayer: the integrated server's placed features; null: not read). */
+    static volatile Map<String, Map<String, List<io.github.mojolowjo.entropybot.aa.brain.OreBand.Feature>>> ORE_FEATURES;
 
     /**
      * 0.39.z33: the uses left of the bag's best stack of {@code id}, from the item's data components (MAX_DAMAGE, DAMAGE;
@@ -2806,6 +2847,8 @@ public final class AaRuntime implements JobPort {
         if (server == null) return null;
         Map<String, java.util.Set<String>> dims = new java.util.HashMap<>();
         Map<String, int[]> ys = new java.util.HashMap<>();
+        Map<String, Map<String, List<io.github.mojolowjo.entropybot.aa.brain.OreBand.Feature>>> feats = new java.util.HashMap<>();
+        int unread = 0;
         try {
             for (var lvl : server.getAllLevels()) {
                 String dim = lvl.dimension().location().toString();
@@ -2818,17 +2861,24 @@ public final class AaRuntime implements JobPort {
                             if (!seen.add(placed)) continue;
                             if (!(placed.feature().value().config() instanceof net.minecraft.world.level.levelgen.feature.configurations.OreConfiguration oc)) continue;
                             int[] y = heights(placed.placement(), bottom, top);
+                            var feat = io.github.mojolowjo.entropybot.aa.brain.OreBand.of(placementJson(placed.placement()), oc.size, bottom, top);
+                            if (feat == null && y != null) unread++;
                             for (var t : oc.targetStates) {
                                 String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(t.state.getBlock()).toString();
                                 dims.computeIfAbsent(id, k -> new java.util.TreeSet<>()).add(dim);
                                 if (y != null) ys.merge(id, y, (a, b) -> new int[]{Math.min(a[0], b[0]), Math.max(a[1], b[1])});
+                                if (feat != null) feats.computeIfAbsent(dim, k -> new java.util.HashMap<>()).computeIfAbsent(id, k -> new ArrayList<>()).add(feat);
                             }
                         }
             }
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] aa: worldgen read failed ({}) - the vanilla table and name guesses are used", e.toString());
+            ORE_FEATURES = null;
             return null;
         }
+        ORE_FEATURES = feats;
+        LOG.info("[entropybot] aa: ore placements read for the strip way: {} dimensions{}", feats.size(),
+                unread == 0 ? "" : ", " + unread + " height-placed features not priced (a count or height the reader does not know)");
         Map<String, io.github.mojolowjo.entropybot.aa.brain.Thing.Gen> out = new java.util.HashMap<>();
         for (var e : dims.entrySet()) {
             int[] y = ys.get(e.getKey());
@@ -2857,6 +2907,14 @@ public final class AaRuntime implements JobPort {
         } catch (RuntimeException e) {
             LOG.debug("[entropybot] aa: herds seen: {}", e.toString());
         }
+    }
+
+    /** 0.39.z43: a placement list as the placed_feature JSON array (each modifier through its codec; one that does not encode is left out). */
+    private static com.google.gson.JsonArray placementJson(List<net.minecraft.world.level.levelgen.placement.PlacementModifier> mods) {
+        var arr = new com.google.gson.JsonArray();
+        for (var m : mods)
+            net.minecraft.world.level.levelgen.placement.PlacementModifier.CODEC.encodeStart(com.mojang.serialization.JsonOps.INSTANCE, m).result().ifPresent(arr::add);
+        return arr;
     }
 
     /** The min/max Y of the anchors in a placement list's height_range (null when none). */
