@@ -441,7 +441,7 @@ public final class StepHands implements Steps.Hands {
             case Step.Mine m -> c.stepJob(s.text(), () -> Mining.get().mine(p, switch (m.how()) {
                 case KNOWN -> m.family() + " " + m.n();
                 case DIG -> m.family() + " " + m.n() + " dig";
-                case CAVE -> "cave " + m.family() + " " + m.n();
+                case CAVE -> "cave " + m.family() + " " + m.n() + (m.minutes() > 0 ? " " + m.minutes() + "m" : "");
                 case STRIP -> throw new IllegalStateException("a strip leg runs on the fork's strip (mineStrip)");
             }, x -> null));
             case Step.FindCave k -> c.stepJob(s.text(), () -> Mining.get().find(p, io.github.mojolowjo.entropybot.vocab.ExploreWords.find("cave " + k.minutes(), Commands.POI_KINDS, Commands::isBiome)));

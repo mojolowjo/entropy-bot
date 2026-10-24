@@ -938,6 +938,13 @@ final class TuningDefs {
         Tuning.def("worth.bedBase", 20, "rm-constants 0.39.u2 (inline literal in Worth)", "the bed worth floor");
         Tuning.def("strip.slabLayers", 16, "0.39.z43 (owner: blocks per ore = 256 x 16 / expected)", "the Y layers a strip at the band's peak counts the expected ore in (OreBand)");
         Tuning.def("strip.maxBlocksPerOre", 2000, "0.39.z43", "the cap of the blocks a strip digs per ore block found (a near-empty band is not priced as infinite)");
+        Tuning.def("cave.holeDepth", 4, "0.39.z44 (CAVE_DETECTION option 1)", "a column this many blocks below the ground on both sides is a cave-mouth candidate (the heightmap rule)");
+        Tuning.def("cave.holeReach", 4, "0.39.z44", "the columns looked along on each side for the higher ground of a hole");
+        Tuning.def("cave.ravineRun", 3, "0.39.z44", "the columns in a line, walled along one axis, that make a ravine candidate");
+        Tuning.def("cave.maxSky", 0, "0.39.z44 (owner: skylight 0)", "the sky light at most of a seen cell that makes a candidate a cave mouth (it goes underground)");
+        Tuning.def("cave.mouthRays", 4, "0.39.z44", "the rays a pass (every 10 ticks) the mouth candidates take first from the shared Seen budget");
+        Tuning.def("cave.goneReach", 1.5, "0.39.z44 (rule 15)", "standing within this of a known mouth whose cell is not air forgets it");
+        Tuning.def("cave.exploreMinutes", 10, "0.39.z44", "the minutes the mine-in-the-cave way explores a mouth for the ore at most");
         Tuning.def("worth.bedSpan", 60, "rm-constants 0.39.u2 (inline literal in Worth)", "the bed worth span (scaled by the night danger)");
     }
 }

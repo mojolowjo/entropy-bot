@@ -99,6 +99,11 @@ public final class ChunkPass {
 
     private final SightingsRuntime sightRt = new SightingsRuntime();
 
+    /** 0.39.z44: the cave-mouth candidates of the loaded chunks (the heightmap rule, memory only). */
+    private final CaveMouths mouths = new CaveMouths();
+
+    public CaveMouths mouths() { return mouths; }
+
     /** AA_ROUND3 3/5: the seen ore cells of this world (Sightings kind ORE, sightings.json); null before the world files are known. */
     public Seen seen() {
         Sightings s = sightings();
@@ -133,6 +138,7 @@ public final class ChunkPass {
             int cx = chunk.getPos().x, cz = chunk.getPos().z;
             schedule.unloaded(cx, cz);
             live.remove(ChunkSummary.key(cx, cz));
+            mouths.drop(cx, cz);
             ChunkSummary s = dim == null ? null : index.get(dim, cx, cz);
             if (s != null) s.stale = true;
         } catch (Throwable t) {
@@ -228,7 +234,7 @@ public final class ChunkPass {
             try {
                 Sightings sg = sightings();
                 if (sg != null && dim != null) seenRt.tick(level, mc.player, index, sg.ore(), dim, tick, now);
-                if (sg != null && dim != null) sightRt.tick(level, mc.player, sg, dim, seenRt.budget, tick, now);
+                if (sg != null && dim != null) sightRt.tick(level, mc.player, sg, dim, seenRt.budget, mouths, tick, now);
             } catch (Throwable t) {
                 error("seen", t);
             }
@@ -244,6 +250,7 @@ public final class ChunkPass {
         writeDue(now, true);
         schedule.clear();
         live.clear();
+        mouths.clear();
         index.markAllStale();
         dim = d;
         dimStartMs = now;
@@ -461,6 +468,15 @@ public final class ChunkPass {
             if (st != null) st.addChunk(fresh);
         } catch (Throwable t) {
             error("ore stats", t);
+        }
+        try {
+            // 0.39.z44: the cave-mouth candidates of this chunk from its 256 surface heights (no block reads)
+            int[] top = new int[256];
+            for (int lz = 0; lz < 16; lz++)
+                for (int lx = 0; lx < 16; lx++) top[lx + 16 * lz] = chunk.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, lx, lz);
+            mouths.put(it.cx(), it.cz(), CaveMouths.candidates(it.cx(), it.cz(), top));
+        } catch (Throwable t) {
+            error("cave candidates", t);
         }
         mapChunk(it.cx(), it.cz());
         if (old == null || old.stale || !changes.isEmpty()) dirty.mark(SummaryFiles.Dirty.key(dim, it.cx(), it.cz()), now);

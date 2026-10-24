@@ -600,7 +600,7 @@ public final class AaRuntime implements JobPort {
         var in = bb.in;
         return new io.github.mojolowjo.entropybot.aa.NeedChain.World(in.bag, in.tableKnown, in.furnaceKnown,
                 item -> { var s = nearestSource(item); return s == null ? List.of() : List.of(s); },
-                this::animalsKnown, currentLootBook(), this::band, 0, LivePathPrice.INSTANCE, this::stationAt).withUses(AaRuntime::usesLeft).withStrip(this::strip);
+                this::animalsKnown, currentLootBook(), this::band, 0, LivePathPrice.INSTANCE, this::stationAt).withUses(AaRuntime::usesLeft).withStrip(this::strip).withCave(this::caveWay);
     }
 
     /**
@@ -639,6 +639,55 @@ public final class AaRuntime implements JobPort {
         }
         return new io.github.mojolowjo.entropybot.aa.NeedChain.StripBand(ores, lo, hi, y,
                 io.github.mojolowjo.entropybot.aa.brain.OreBand.perSlab(fs, y), me[0], me[2], me[1], p.getDirection().getName(), host);
+    }
+
+    /**
+     * 0.39.z44: the cave way's facts for a need word (NeedChain.CaveWay): the nearest known cave mouth (Sightings, seen:
+     * CAVE_DETECTION option 1), the first block that drops the word and the game tags as an ore (c:ores), and Seen's cave
+     * yield for its family (the Tuning prior blended in until caving minutes are measured). Null: no world, no mouth known,
+     * or no ore block gives the word.
+     */
+    io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay caveWay(String word) {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer p = mc.player;
+        var pass = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE;
+        var sg = pass.sightings();
+        String dim = pass.dim();
+        if (p == null || sg == null || dim == null) return null;
+        String ore = null;
+        for (String b : new java.util.TreeSet<>(sourceBlocksOf(io.github.mojolowjo.entropybot.aa.NeedChain.word(word))))
+            if (io.github.mojolowjo.entropybot.aa.brain.ItemWorth.hasTag(b, "c:ores")) { ore = b; break; }
+        if (ore == null) return null;
+        int[] me = Jobs.here(p);
+        var mouths = sg.mouths(dim, me[0], me[1], me[2]);
+        if (mouths.isEmpty()) return null;
+        var m = mouths.get(0);
+        String fam = io.github.mojolowjo.entropybot.cave.OreSpec.family(ore);
+        return new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(m.x(), m.y(), m.z(), Math.sqrt(Jobs.distSq(me, new int[]{m.x(), m.y(), m.z()})),
+                ore, fam, sg.ore().caveRate(fam), sg.ore().caveMinutes() > 0);
+    }
+
+    /** 0.39.z44: aa status: "caves: N mouths known (M candidates)". */
+    String cavesLine() {
+        var pass = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE;
+        var sg = pass.sightings();
+        String dim = pass.dim();
+        if (sg == null || dim == null) return "caves: no world";
+        return "caves: " + sg.mouths(dim, 0, 0, 0).size() + " mouths known (" + pass.mouths().count() + " candidates)";
+    }
+
+    /** 0.39.z44: aa debug: the known mouths with their distance, nearest first. */
+    String cavesDebug() {
+        var pass = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE;
+        var sg = pass.sightings();
+        String dim = pass.dim();
+        LocalPlayer p = Minecraft.getInstance().player;
+        if (sg == null || dim == null || p == null) return cavesLine();
+        int[] me = Jobs.here(p);
+        List<String> l = new ArrayList<>();
+        for (var m : sg.mouths(dim, me[0], me[1], me[2]))
+            l.add(m.where() + " " + Math.round(Math.sqrt(Jobs.distSq(me, new int[]{m.x(), m.y(), m.z()}))) + " m (seen from " + m.count() + " m)");
+        return cavesLine() + (l.isEmpty() ? "" : ": " + String.join(", ", l));
     }
 
     /** 0.39.z43: dimension -> ore block id -> its height-placed features (singleplayer: the integrated server's placed features; null: not read). */
@@ -3125,7 +3174,7 @@ public final class AaRuntime implements JobPort {
         if (t.isEmpty()) return "usage: aa debug <want ...|do <need>|use <option>> (the thinking, nothing moves)";
         String verb = t.contains(" ") ? t.substring(0, t.indexOf(' ')) : t, arg = t.contains(" ") ? t.substring(t.indexOf(' ') + 1).trim() : "";
         return switch (verb) {
-            case "want" -> debugWant(arg);
+            case "want" -> debugWant(arg) + "\n" + cavesDebug();
             case "do", "use" -> on() ? debugManual(verb, arg) : AaCommands.OFF;
             default -> "nothing to plan for " + verb;
         };

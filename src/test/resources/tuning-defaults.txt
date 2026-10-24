@@ -922,3 +922,10 @@ lava.nearBlocks	2.0
 lava.nearPenalty	10.0
 strip.slabLayers	16.0
 strip.maxBlocksPerOre	2000.0
+cave.holeDepth	4.0
+cave.holeReach	4.0
+cave.ravineRun	3.0
+cave.maxSky	0.0
+cave.mouthRays	4.0
+cave.goneReach	1.5
+cave.exploreMinutes	10.0

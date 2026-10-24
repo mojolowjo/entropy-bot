@@ -160,6 +160,38 @@ public final class Sightings {
 
     public synchronized List<Rec> caves(String dim) { return new ArrayList<>(caves.getOrDefault(dim, List.of())); }
 
+    /** 0.39.z44: the id of a cave mouth record ({@link CaveMouths}: a heightmap hole confirmed by sight). */
+    public static final String MOUTH = "mouth";
+
+    /**
+     * 0.39.z44: a confirmed cave mouth at x y z, seen from {@code seenFrom} blocks (kept in the record's count): a new record
+     * (returned) unless a mouth lies within {@link #merge()} (null).
+     */
+    public synchronized Rec sawMouth(String dim, int x, int y, int z, int seenFrom, long now) {
+        List<Rec> l = caves.computeIfAbsent(dim, k -> new ArrayList<>());
+        for (Rec r : l) if (MOUTH.equals(r.id()) && d2(r, x, y, z) <= (long) merge() * merge()) return null;
+        Rec r = new Rec(Kind.CAVE, MOUTH, x, y, z, now, Math.max(0, seenFrom), 1, 0);
+        l.add(r);
+        while (l.size() > maxCaves()) l.remove(0);
+        dirty = true;
+        return r;
+    }
+
+    /** 0.39.z44: the known mouths (not exhausted), nearest first from x y z. */
+    public synchronized List<Rec> mouths(String dim, int x, int y, int z) {
+        List<Rec> out = new ArrayList<>();
+        for (Rec r : caves.getOrDefault(dim, List.of())) if (MOUTH.equals(r.id()) && r.exhausted() == 0) out.add(r);
+        out.sort((a, b) -> Long.compare(d2(a, x, y, z), d2(b, x, y, z)));
+        return out;
+    }
+
+    /** 0.39.z44 (rule 15, gone): the mouth record at exactly x y z is forgotten; true when there was one. */
+    public synchronized boolean forgetMouth(String dim, int x, int y, int z) {
+        boolean gone = caves.getOrDefault(dim, new ArrayList<>()).removeIf(r -> MOUTH.equals(r.id()) && r.x() == x && r.y() == y && r.z() == z);
+        if (gone) dirty = true;
+        return gone;
+    }
+
     /** Blocks walked on the surface (the explore chance's denominator). */
     public synchronized void walked(double blocks) {
         if (blocks > 0 && blocks < 64) { walked += blocks; dirty = true; }

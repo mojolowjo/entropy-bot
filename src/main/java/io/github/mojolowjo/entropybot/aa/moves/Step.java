@@ -26,14 +26,17 @@ public sealed interface Step {
     }
 
     /** {@code n} ore of {@code family} the mine verb's own way ({@link How}): the known ores, a cave, a strip mine. */
-    record Mine(String family, int n, How how) implements Step {
+    record Mine(String family, int n, How how, int minutes) implements Step {
         public enum How { KNOWN, DIG, CAVE, STRIP }
+
+        /** No time bound (the verb's own default); 0.39.z44: {@code minutes} bounds a cave leg (the cave way). */
+        public Mine(String family, int n, How how) { this(family, n, how, 0); }
 
         public String text() {
             return switch (how) {
                 case KNOWN -> "mine " + family + " " + n;
                 case DIG -> "mine " + family + " " + n + " dig";
-                case CAVE -> "mine cave " + family + " " + n;
+                case CAVE -> "mine cave " + family + " " + n + (minutes > 0 ? " " + minutes + "m" : "");   // 0.39.z44: the cave way's bound
                 case STRIP -> "mine strip " + family + " " + n;
             };
         }

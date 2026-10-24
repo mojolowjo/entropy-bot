@@ -175,6 +175,9 @@ public final class Seen {
         return (caveOres.getOrDefault(family, 0.0) + priorRate() * priorMin()) / (caveMinutes + priorMin());
     }
 
+    /** 0.39.z44: minutes of caving measured so far (0: the cave yield is the prior alone). */
+    public synchronized double caveMinutes() { return caveMinutes; }
+
     public synchronized String caveText() {
         return String.format(java.util.Locale.ROOT, "caving %.1f min, seen %s (prior %.1f/min a family)", caveMinutes, caveOres, priorRate());
     }

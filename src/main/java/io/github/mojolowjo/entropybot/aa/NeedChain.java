@@ -88,6 +88,19 @@ public final class NeedChain {
      */
     static final String STRIP_KEY = "strip ";
 
+    /**
+     * 0.39.z44 (CAVE_DETECTION option 1): what the way "mine in the cave" is priced on: the nearest known cave mouth (a
+     * Sightings fact: a heightmap hole confirmed by sight, rule 17) at x y z, {@code dist} straight metres away, the ore block
+     * {@code ore} that gives the need, and the cave yield Seen learns for its family ({@code perMin} ore a minute of caving,
+     * the Tuning prior blended in; {@code measured}: minutes of caving were measured).
+     */
+    static final String CAVE_KEY = "cave mouth ";
+
+    public record CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured) {
+        /** The source key of this way: a mouth with no path is dropped for the order. */
+        public String key() { return CAVE_KEY + x + "," + y + "," + z; }
+    }
+
     public record StripBand(List<String> ores, int minY, int maxY, int y, double perSlab, int x, int z, int feetY, String heading, String host) {
         public StripBand { ores = List.copyOf(ores); }
         /** The source key of this strip way, the same as its step's ({@link NeedChain#sourceKey(Step)}): a failed strip or no path to its Y drops it for the order. */
@@ -106,7 +119,15 @@ public final class NeedChain {
      */
     public record World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
                         Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path,
-                        Function<String, Spot> stationAt, Function<String, Integer> usesLeft, List<String> held, Function<String, StripBand> strip) {
+                        Function<String, Spot> stationAt, Function<String, Integer> usesLeft, List<String> held, Function<String, StripBand> strip,
+                        Function<String, CaveWay> cave) {
+        /** 0.39.z44: no cave-mouth facts (the cave way is not offered). */
+        public World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
+                     Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path,
+                     Function<String, Spot> stationAt, Function<String, Integer> usesLeft, List<String> held, Function<String, StripBand> strip) {
+            this(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, null);
+        }
+
         /** 0.39.z43: no strip facts (the strip way is not offered). */
         public World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
                      Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path,
@@ -147,6 +168,7 @@ public final class NeedChain {
             mobs = w -> mmemo.computeIfAbsent(id(w), k -> { List<Mob> l = mb.apply(k); return l == null ? List.of() : List.copyOf(l); });
             if (band == null) band = w -> null;
             if (strip == null) strip = w -> null;
+            if (cave == null) cave = w -> null;
             if (horizonBlocks <= 0) horizonBlocks = Unit.blocks(Sequencer.defaultHorizonS());
         }
 
@@ -159,26 +181,29 @@ public final class NeedChain {
             this(bag, tableNear, false, w -> { Spot s = seen == null ? null : seen.apply(w); return s == null ? List.of() : List.of(s); }, null, null, null, horizonBlocks);
         }
 
-        public World withMobs(Function<String, List<Mob>> m, LootBook l) { return new World(bag, tableNear, furnaceNear, seenAll, m, l, band, horizonBlocks, path, stationAt, usesLeft, held, strip); }
+        public World withMobs(Function<String, List<Mob>> m, LootBook l) { return new World(bag, tableNear, furnaceNear, seenAll, m, l, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave); }
 
-        public World withBand(Function<String, int[]> b) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, b, horizonBlocks, path, stationAt, usesLeft, held, strip); }
+        public World withBand(Function<String, int[]> b) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, b, horizonBlocks, path, stationAt, usesLeft, held, strip, cave); }
 
         /** path-cost: the walks priced by Baritone's complete path (null: no walk has a price). */
-        public World withPath(PathPrice p) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, p, stationAt, usesLeft, held, strip); }
+        public World withPath(PathPrice p) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, p, stationAt, usesLeft, held, strip, cave); }
 
         /** station-memory: where the known stations stand (recipe kind -> spot; null: no position known). */
-        public World withStations(Function<String, Spot> at) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, at, usesLeft, held, strip); }
+        public World withStations(Function<String, Spot> at) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, at, usesLeft, held, strip, cave); }
 
         /** 0.39.z33: the uses left of the bag's best stack of a tool id ({@link io.github.mojolowjo.entropybot.aa.brain.ToolUses}). */
         /** 0.39.z43: the strip facts per need word ({@link StripBand}; null: no strip way for it). */
-        public World withStrip(Function<String, StripBand> s) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, s); }
+        public World withStrip(Function<String, StripBand> s) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, s, cave); }
 
-        public World withUses(Function<String, Integer> u) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, u, held); }
+        /** 0.39.z44: the cave-mouth facts per need word ({@link CaveWay}; null: no cave way for it). */
+        public World withCave(Function<String, CaveWay> k) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, k); }
+
+        public World withUses(Function<String, Integer> u) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, u, held, strip, cave); }
 
         /** chop: the same world less the sources {@code held} names (need word, spot): a failed source is out of the re-price. */
         public World without(java.util.function.BiPredicate<String, Spot> held) {
             Function<String, List<Spot>> sa = seenAll;
-            return new World(bag, tableNear, furnaceNear, w -> sa.apply(w).stream().filter(sp -> !held.test(word(w), sp)).toList(), mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, this.held, strip);
+            return new World(bag, tableNear, furnaceNear, w -> sa.apply(w).stream().filter(sp -> !held.test(word(w), sp)).toList(), mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, this.held, strip, cave);
         }
 
         /**
@@ -200,7 +225,12 @@ public final class NeedChain {
                 StripBand r = st.apply(word);
                 return r != null && keyWhy.containsKey(r.key()) ? null : r;
             };
-            return new World(bag, tableNear, furnaceNear, less.seenAll, mobs, loot, b, horizonBlocks, path, stationAt, usesLeft, h, stripLess);
+            Function<String, CaveWay> cv = cave;
+            Function<String, CaveWay> caveLess = word -> {             // 0.39.z44: a mouth with no path is dropped for the order
+                CaveWay r = cv.apply(word);
+                return r != null && keyWhy.containsKey(r.key()) ? null : r;
+            };
+            return new World(bag, tableNear, furnaceNear, less.seenAll, mobs, loot, b, horizonBlocks, path, stationAt, usesLeft, h, stripLess, caveLess);
         }
     }
 
@@ -848,6 +878,7 @@ public final class NeedChain {
             alts.addAll(tagSourceAlts(c, w, lack));
             alts.addAll(tagHuntAlts(c, w, lack));
             if (c.w.seenAll().apply(w.word).isEmpty()) alts.addAll(stripAlts(c, w.word, w.word, lack));   // 0.39.z43
+            if (c.w.seenAll().apply(w.word).isEmpty()) alts.addAll(caveAlts(c, w.word, w.word, lack));    // 0.39.z44
             Trial win = choose(c, alts, w.word);
             if (win != null) return new Got(win.alt().id != null ? win.alt().id : w.word, n, win.phrase());
             if (waitsOnPaths(c)) return new Got(w.word, n, pathsExplore(c, w.word));
@@ -1109,6 +1140,7 @@ public final class NeedChain {
             alts.addAll(sourceAlts(c, item, item, lack, c.w.seenAll().apply(item)));
             alts.addAll(huntAlts(c, item, lack));
             if (c.w.seenAll().apply(item).isEmpty()) alts.addAll(stripAlts(c, item, item, lack));   // 0.39.z43: mine at the ore's level
+            if (c.w.seenAll().apply(item).isEmpty()) alts.addAll(caveAlts(c, item, item, lack));    // 0.39.z44: mine in the cave
             Trial w = choose(c, alts, item);
             if (w != null) return w.phrase();
             if (waitsOnPaths(c)) return pathsExplore(c, item);
@@ -1841,6 +1873,63 @@ public final class NeedChain {
                 + " (" + shw(sb.host() != null ? sb.host() : ore) + " " + s(hostS) + " each) -> " + s(wk.seconds() + digS);
         c.note(() -> "source: none known for " + shw(word) + ": " + line);
         return noted(line + (pre == null ? "" : " with " + pre), wk);
+    }
+
+    /**
+     * 0.39.z44 (CAVE_DETECTION option 1, owner: "most like how a player would see it"): for an ore need with no known exposed
+     * source and a cave mouth known (the CaveWay facts), the way "walk to the mouth and explore the cave for the ore" (the
+     * cave job, Step.Mine CAVE, bounded by {@code cave.exploreMinutes}). One way among the others (rule 1).
+     */
+    private static List<Alt> caveAlts(Ctx c, String word, String gives, int lack) {
+        CaveWay cw = c.w.cave().apply(word);
+        if (cw == null || cw.ore() == null || !(cw.perMin() > 0)) return List.of();
+        Alt a = new Alt("cave mouth " + Math.round(cw.dist()) + " m", () -> cave(c, word, gives, lack, cw));
+        a.id = gives;
+        return List.of(a);
+    }
+
+    /**
+     * The cave way's price (rule 14, rough): the pickaxe the ore asks for first (as the strip), the walk to the mouth
+     * (Baritone's complete path, rule 18; not known yet: the way waits; no path: the mouth is dropped for the order), then
+     * the minutes the cave yield says the ore blocks take (ore blocks / ore a minute) plus their breaks. Past
+     * {@code cave.exploreMinutes} the way does not stand (the cave job stops there). Not priced: the walk inside the cave
+     * (it is in the yield's minutes), the torches.
+     */
+    private static String cave(Ctx c, String word, String gives, int lack, CaveWay cw) {
+        MiningTiers.Source src = MiningTiers.source();
+        if (src == null) { c.fail = "cave: the pickaxe tier of " + shw(cw.ore()) + " is not known (no mining data loaded yet)"; return null; }
+        int tier = src.blockTier(cw.ore());
+        if (tier == MiningTiers.UNKNOWN) { c.fail = "cave: the pickaxe tier of " + shw(cw.ore()) + " is not known"; return null; }
+        String head = "cave mouth " + Math.round(cw.dist()) + " m";
+        String pre = null;
+        if (tier > c.pickTier) {
+            pre = cheapestPickaxe(c, tier);
+            if (c.fail != null) return null;
+            if (c.stuck) return head + " (after " + pre + ")";
+        }
+        Walked wk = walk(c, cw.x(), cw.y(), cw.z(), cw.dist());
+        if (c.fail != null) {
+            if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreachable.put(cw.key(), wk.fail());
+            return null;
+        }
+        double per = perBlock(c, gives, cw.ore());
+        int oreBlocks = (int) Math.ceil(lack / per - 1e-9);  // structural: epsilon
+        double minutes = oreBlocks / cw.perMin(), max = Tuning.get("cave.exploreMinutes");
+        String yield = "yield ~" + String.format(java.util.Locale.ROOT, "%.2f", cw.perMin()) + " ore/min (" + (cw.measured() ? "measured" : "prior") + ")";
+        if (minutes > max) {
+            c.fail = head + ", " + yield + ": " + oreBlocks + " ore take ~" + Math.round(minutes) + " min, past cave.exploreMinutes " + Math.round(max);
+            return null;
+        }
+        double exploreS = minutes * 60, oreS = oreBlocks * blockBreakS(c, cw.ore());  // structural: seconds per minute
+        c.seconds += wk.seconds() + exploreS + oreS;
+        c.away = wk.seconds() + exploreS;
+        if (c.pickItem != null) c.pickWorn += oreBlocks;
+        c.steps.add(new Step.Walk(cw.x(), cw.y(), cw.z(), 0));
+        c.steps.add(new Step.Mine(cw.family(), oreBlocks, Step.Mine.How.CAVE, (int) Math.ceil(max)));
+        c.bag.merge(gives, Math.max(lack, (int) Math.floor(oreBlocks * per + 1e-9)), Integer::sum);  // structural: epsilon
+        final String line = head + ", " + yield + " x " + oreBlocks + " ore -> " + s(wk.seconds() + exploreS + oreS);
+        c.note(() -> "source: none known for " + shw(word) + ": in the cave: " + line);
+        return noted("in the cave: " + line + (pre == null ? "" : " with " + pre), wk);
     }
 
     /** One block's break by the game's formula with the pickaxe in hand when its tier asks for one (as {@link #breakS}). */

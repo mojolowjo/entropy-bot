@@ -53,9 +53,11 @@ final class SightingsRuntime {
     /** Entity id -> last time it was seen after its confirmation. */
     private final Map<Integer, Long> confirmed = new HashMap<>();
 
-    void tick(ClientLevel level, LocalPlayer p, Sightings sg, String dim, Seen.Budget budget, long tick, long now) {
+    void tick(ClientLevel level, LocalPlayer p, Sightings sg, String dim, Seen.Budget budget, CaveMouths cand, long tick, long now) {
         boolean roofed = roofed(level, p);
+        if (tick % 10 == 7 && !roofed) mouths(level, p, sg, dim, budget, cand, now);
         if (tick % 10 == 7 && !roofed) caves(level, p, sg, dim, budget, now);
+        if (tick % 20 == 13) mouthGone(level, p, sg, dim);
         if (tick % 10 == 3 && !roofed) trees(level, p, sg, dim, budget, now);
         if (tick % 20 == 11) {
             animals(level, p, sg, dim, budget, now, roofed);
@@ -70,6 +72,80 @@ final class SightingsRuntime {
     static boolean roofed(ClientLevel level, LocalPlayer p) {
         BlockPos b = p.blockPosition();
         return level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, b.getX(), b.getZ()) > p.getEyeY() + 3;
+    }
+
+    private long mouthRays, mouthsSeen, mouthsGone;
+    /** candidate key -> the next of its 5 aims (the floor cell, then the 4 sides at the floor) */
+    private final Map<Long, Integer> aim = new HashMap<>();
+
+    /**
+     * 0.39.z44 (CAVE_DETECTION option 1): the cave-mouth candidates (ChunkPass: the heightmap rule) within Seen's range and
+     * view cone get up to {@code cave.mouthRays} rays a pass from the shared Seen budget (no new cost: the same rays a
+     * second, taken first). A candidate's rays aim in turn at its cell and at the 4 cells beside it at the floor, carried on
+     * to the range: the air cell where the ray ends counts when it lies under its column's surface (the cell itself or
+     * inside the hole's walls) and it or the air under it is dark to the sky ({@link CaveMouths#goesUnder}). Only cells the
+     * ray reached are read. Log: "sense: seen cave mouth at x y z from d m (hole|ravine)".
+     */
+    private void mouths(ClientLevel level, LocalPlayer p, Sightings sg, String dim, Seen.Budget budget, CaveMouths cand, long now) {
+        if (cand == null) return;
+        Vec3 eye = p.getEyePosition(), look = p.getLookAngle();
+        if (aim.size() > 4096) aim.clear();                          // structural: memory cap
+        int shots = 0, max = io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.mouthRays");
+        List<Sightings.Rec> known = sg.mouths(dim, (int) eye.x, (int) eye.y, (int) eye.z);
+        for (CaveMouths.Candidate c : cand.near(eye.x, eye.y, eye.z, Seen.range())) {
+            if (shots >= max) return;
+            if (!Seen.inCone(eye.x, eye.y, eye.z, look.x, look.y, look.z, c.x(), c.y(), c.z())) continue;
+            boolean have = false;
+            for (Sightings.Rec r : known) {
+                long dx = r.x() - c.x(), dz = r.z() - c.z();
+                if (dx * dx + dz * dz <= (long) Sightings.merge() * Sightings.merge()) { have = true; break; }
+            }
+            if (have) continue;
+            if (!budget.take(now)) return;
+            shots++;
+            mouthRays++;
+            long k = Seen.key(c.x(), c.y(), c.z());
+            int i = aim.getOrDefault(k, 0);
+            aim.put(k, (i + 1) % 5);
+            int[][] off = {{0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+            BlockPos target = new BlockPos(c.x() + off[i][0], c.y(), c.z() + off[i][1]);
+            Vec3 tc = target.getCenter(), dir = tc.subtract(eye);
+            if (dir.lengthSqr() < 1e-6) continue;
+            Vec3 to = eye.add(dir.normalize().scale(Seen.range()));
+            BlockHitResult r = level.clip(new ClipContext(eye, to, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, p));
+            // the cell the ray ended in: the air before the block it hit (a miss: the target, which it passed)
+            BlockPos a = r.getType() == HitResult.Type.BLOCK ? r.getBlockPos().relative(r.getDirection()) : target;
+            // reached: the ray got to the target cell (ended in it or beyond it)
+            boolean reached = r.getType() != HitResult.Type.BLOCK || eye.distanceTo(r.getLocation()) >= eye.distanceTo(tc) - 0.87;   // structural: half a cell's diagonal: the hit lies on the target cell or beyond
+            if (!reached || !level.isLoaded(a)) continue;
+            int surf = level.getHeight(Heightmap.Types.WORLD_SURFACE, a.getX(), a.getZ());
+            boolean under = a.equals(new BlockPos(c.x(), c.y(), c.z())) || a.getY() < surf;
+            boolean air = level.getBlockState(a).isAir(), belowAir = level.getBlockState(a.below()).isAir();
+            if (!CaveMouths.goesUnder(true, under, air, level.getBrightness(LightLayer.SKY, a), belowAir, level.getBrightness(LightLayer.SKY, a.below()))) continue;
+            int d = (int) Math.round(Math.sqrt(eye.distanceToSqr(new Vec3(c.x() + 0.5, c.y() + 0.5, c.z() + 0.5))));
+            if (sg.sawMouth(dim, c.x(), c.y(), c.z(), d, now) != null) {
+                mouthsSeen++;
+                aim.remove(k);
+                known = sg.mouths(dim, (int) eye.x, (int) eye.y, (int) eye.z);
+                LOG.info("[entropybot] sense: seen cave mouth at {} {} {} from {} m ({})", c.x(), c.y(), c.z(), d, c.shape());
+            }
+        }
+    }
+
+    /** 0.39.z44 (rule 15, gone): standing by a known mouth whose cell is not air (filled, built over): it is forgotten. */
+    private void mouthGone(ClientLevel level, LocalPlayer p, Sightings sg, String dim) {
+        BlockPos b = p.blockPosition();
+        for (Sightings.Rec r : sg.mouths(dim, b.getX(), b.getY(), b.getZ())) {
+            long dx = r.x() - b.getX(), dy = r.y() - b.getY(), dz = r.z() - b.getZ();
+            double g = io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.goneReach");
+            if (dx * dx + dy * dy + dz * dz > g * g) break;          // nearest first: the rest are farther
+            BlockPos at = new BlockPos(r.x(), r.y(), r.z());
+            if (!level.isLoaded(at)) continue;
+            if (CaveMouths.state(true, true, level.getBlockState(at).isAir()) == CaveMouths.State.GONE && sg.forgetMouth(dim, r.x(), r.y(), r.z())) {
+                mouthsGone++;
+                LOG.info("[entropybot] sense: cave mouth at {} {} {} gone (the cell is {} now)", r.x(), r.y(), r.z(), level.getBlockState(at).getBlock().getName().getString());
+            }
+        }
     }
 
     private void caves(ClientLevel level, LocalPlayer p, Sightings sg, String dim, Seen.Budget budget, long now) {
@@ -215,5 +291,5 @@ final class SightingsRuntime {
         return out;
     }
 
-    String status() { return caveRays + " cave rays, " + caves + " caves, " + treeRays + " tree rays, " + trees + " trees, " + animalRays + " animal rays, " + herds + " herd notes"; }
+    String status() { return mouthRays + " mouth rays, " + mouthsSeen + " mouths seen, " + mouthsGone + " gone, " + caveRays + " cave rays, " + caves + " caves, " + treeRays + " tree rays, " + trees + " trees, " + animalRays + " animal rays, " + herds + " herd notes"; }
 }
