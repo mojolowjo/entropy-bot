@@ -108,6 +108,16 @@ public final class LivePathPrice implements PathPrice {
         return kept;
     }
 
+    /**
+     * 0.39.z47 (item 4: ordinary walks as the strip): a chain walk or a station visit to stand by the block at pos through
+     * {@link #walk} (the kept path when the bot still stands at its start, else Baritone searches fresh); the goal walked.
+     */
+    public static baritone.api.pathing.goals.Goal walkGoal(IBaritone b, BlockPos pos) {
+        io.github.mojolowjo.entropybot.engine.RunThrowaway.walkPenalty();     // the walk's placement price, as Jobs.walkGoal
+        walk(b, pos);
+        return goal(pos);
+    }
+
     /** Game thread: one search's answer is kept and the chain is told (landed++). */
     private void land(Minecraft mc, String key, int[] from, int bag, IPathCost.Answer a, Throwable err) {
         inFlight.remove(key);

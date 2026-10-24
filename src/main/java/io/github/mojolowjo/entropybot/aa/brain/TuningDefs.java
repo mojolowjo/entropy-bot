@@ -949,6 +949,9 @@ final class TuningDefs {
         Tuning.def("cave.slopeLen", 3, "0.39.z46", "the columns a mouth's gentle side slopes over at least");
         Tuning.def("cave.cliffDrop", 5, "0.39.z46 (owner: a steep drop of at least 5)", "the rise of a mouth's steep side (both sides: a ravine) over its low point");
         Tuning.def("cave.cliffReach", 2, "0.39.z46 (owner: within 1-2 columns)", "the columns within which the steep side rises");
+        Tuning.def("cave.candidatePriorS", 30, "0.39.z47 (owner's ruling: check the nearest hole before stripping)", "seconds added to an unconfirmed cave candidate's way for its confirmation by sight on the walk (with the walk's price it wins over the strip only when near)");
+        Tuning.def("cave.candidateReachM", 96, "0.39.z47", "blocks from the bot within which an unconfirmed cave candidate is a way for an ore need with no confirmed mouth");
+        Tuning.def("explore.retryS", 20, "0.39.z47 (run H: 374 explore restarts in 3 min)", "seconds an order waits after its chain explore ended with no new source before it explores again (said once: no new source; next explore in N s)");
         Tuning.def("cave.confirmM", 24, "0.39.z46 (owner: confirm when getting close)", "blocks from the eyes within which a candidate is confirmed by a ray; no rays at farther ones");
         Tuning.def("cave.mouthRays", 4, "0.39.z44", "the rays a pass (every 10 ticks) the mouth candidates take first from the shared Seen budget");
         Tuning.def("cave.goneReach", 1.5, "0.39.z44 (rule 15)", "standing within this of a known mouth whose cell is not air forgets it");

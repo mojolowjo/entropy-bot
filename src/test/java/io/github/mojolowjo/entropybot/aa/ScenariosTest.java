@@ -327,7 +327,7 @@ class ScenariosTest {
         assertEquals(104.55, c.seconds(), TOL, c.why());
         String chain = chainPart(c.why());
         assertTrue(chain.startsWith("torch <- craft: 4 charcoal <- smelt 4 oak_log <- cut tree seen 10 m, walk 3.0 s (path) + furnace <- craft: 8 cobblestone"), c.why());
-        assertTrue(chain.contains("burn 3 oak_log (in the bag)"), "the tree's surplus logs burn, from the game's fuel table: " + c.why());
+        assertTrue(chain.contains("burn 3 oak_log (in the bag, the cheapest burn by worth)"), "the tree's surplus logs burn, from the game's fuel table: " + c.why());
         assertFalse(c.why().contains("fuel"), "no family word anywhere: " + c.why());
         List<Class<?>> order = List.of(Step.ChopTree.class, Step.PlaceNear.class, Step.Collect.class, Step.Smelt.class);
         int last = -1;

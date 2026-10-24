@@ -21,6 +21,12 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Package D: the planner fixes (TO-LOOK-AT-LATER 15 and the DEVNOTES "planner quirk"). */
 class PlannerFixesTest {
+    @org.junit.jupiter.api.BeforeEach
+    void fuelTable() { TestFuels.install(); }   // 0.39.z47: fuel from the game's table
+
+    @org.junit.jupiter.api.AfterEach
+    void noFuelTable() { TestFuels.remove(); }
+
     static final String MA = "mysticalagriculture:";
     static final String CRYSTAL = MA + "infusion_crystal";
     static final String[] TIERS = {"inferium", "prudentium", "tertium", "imperium", "supremium"};

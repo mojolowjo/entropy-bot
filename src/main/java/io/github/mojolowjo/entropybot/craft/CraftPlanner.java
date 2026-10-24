@@ -58,12 +58,6 @@ public final class CraftPlanner implements Crafter {
 
     private static final Pattern ITEM_ID = Pattern.compile("^[a-z0-9_.-]+:[a-z0-9_./-]+$");
 
-    /** Fuel kinds in the order they are picked, and how many items one smelts (coal or charcoal 8, a coal block 80, planks 1). */
-    record FuelKind(Pattern re, int per) {}
-
-    static final List<FuelKind> FUEL_KINDS = List.of(new FuelKind(Pattern.compile(":(coal|charcoal)$"), 8),
-            new FuelKind(Pattern.compile(":coal_block$"), 80), new FuelKind(Pattern.compile("_planks$"), 1));
-
     /** Fuel for a furnace step. */
     public record Fuel(String id, int count) {}
 
@@ -419,19 +413,54 @@ public final class CraftPlanner implements Crafter {
         return null;
     }
 
-    /** Fuel for {@code n} items from the counts (coal or charcoal first, then a coal block, then planks), or null. */
+    /**
+     * Fuel for {@code n} items from the counts (0.39.z47, run H: "no fuel (coal or charcoal)" with logs in the bag): any item
+     * the game's fuel table gives a burn time above 0 (ItemWorth.fuels: NeoForge getBurnTime for smelting), enough of it for
+     * n x Tuning craftJob.smeltTicks; the cheapest by the items' worth (ItemWorth: count x worth; an item of unknown worth
+     * after every known one), never a damageable item (a tool burns away its own worth). Null: nothing in the bag burns.
+     */
     public static Fuel pickFuel(Map<String, Integer> counts, int n) {
-        for (FuelKind f : FUEL_KINDS) {
-            for (Map.Entry<String, Integer> e : counts.entrySet()) {
-                int have = e.getValue() == null ? 0 : e.getValue();
-                if (have <= 0 || !f.re().matcher(e.getKey()).find()) continue;
-                int need = ceilDiv(n, f.per());
-                if (have >= need) return new Fuel(e.getKey(), need);
-            }
-        }
-        return null;
+        return pickFuel(counts, n, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.fuels(), CraftJob.smeltTicks(),
+                id -> io.github.mojolowjo.entropybot.aa.brain.ItemWorth.damageable(id) ? -1
+                        : io.github.mojolowjo.entropybot.aa.brain.ItemWorth.of(id).known() ? io.github.mojolowjo.entropybot.aa.brain.ItemWorth.of(id).value() : Double.NaN);
     }
 
+    /** The burn ticks of {@code id} in the fuel table (its key with or without the namespace); 0: not a fuel. */
+    public static int burnTicks(Map<String, Integer> fuels, String id) {
+        if (fuels == null || id == null) return 0;
+        Integer b = fuels.get(id);
+        if (b == null) b = fuels.get(id.indexOf(':') < 0 ? "minecraft:" + id : id.substring(id.indexOf(':') + 1));
+        return b == null ? 0 : b;
+    }
+
+    /**
+     * The pure rule of {@link #pickFuel(Map, int)}: {@code worth} gives an item's worth (NaN unknown: ranked after the known
+     * ones; equal costs: the fewest pieces; below 0: never burned).
+     */
+    public static Fuel pickFuel(Map<String, Integer> counts, int n, Map<String, Integer> fuels, int smeltTicks,
+                                java.util.function.ToDoubleFunction<String> worth) {
+        Fuel best = null;
+        double bestCost = 0;
+        boolean bestKnown = false;
+        for (Map.Entry<String, Integer> e : counts.entrySet()) {
+            int have = e.getValue() == null ? 0 : e.getValue();
+            int burn = burnTicks(fuels, e.getKey());
+            if (have <= 0 || burn <= 0) continue;
+            int need = (int) Math.ceil((double) n * smeltTicks / burn);
+            if (have < need) continue;
+            double w = worth.applyAsDouble(e.getKey());
+            if (w < 0) continue;
+            boolean known = !Double.isNaN(w);
+            double cost = known ? need * w : need;
+            boolean better = best == null || (known && !bestKnown) || (known == bestKnown && (cost < bestCost || (cost == bestCost && need < best.count())));
+            if (better) {
+                best = new Fuel(e.getKey(), need);
+                bestCost = cost;
+                bestKnown = known;
+            }
+        }
+        return best;
+    }
     // planSmelt: null when planned, NO_SMELTING without a furnace recipe, else why not
     private String planSmelt(String id, int want, Map<String, Integer> counts, int depth, List<Step> steps, Ctx ctx) {
         String lastErr = NO_SMELTING;
@@ -478,7 +507,7 @@ public final class CraftPlanner implements Crafter {
             trial.put(input, get(trial, input) - n);
             Fuel fuel = pickFuel(trial, n);
             if (fuel == null) {
-                lastErr = "no fuel (coal or charcoal) to smelt " + n + " " + shortId(input);
+                lastErr = "no fuel to smelt " + n + " " + shortId(input) + " (nothing left in the bag burns: the game's fuel table)";
                 continue;
             }
             trial.put(fuel.id(), get(trial, fuel.id()) - fuel.count());

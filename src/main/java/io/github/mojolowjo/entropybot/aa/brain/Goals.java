@@ -229,6 +229,13 @@ public final class Goals {
         // loot-book-bg: while the book is read in the background, an order whose chain waits on it is held (not parked) with
         // "waiting for the loot book (N of M)"; once the book is published the chain is priced again on the next pick
         // 0.39.z41: the same while a walk's full path is computed in the background (the chain waits on "path not known yet")
+        // 0.39.z47 (run H, S60): a chain's explore that ended with no new source does not start again within explore.retryS
+        long waitS = exploreWaitS(exploreBareAtMs, System.currentTimeMillis(), exploreRetryS());
+        if (waitS > 0) {
+            var ch = chain(bb, g);
+            if (ch != null && ch.ok() && !ch.steps().isEmpty() && ch.steps().get(0) instanceof Step.Explore)
+                return "no new source; next explore in " + waitS + " s";
+        }
         var wd = world(bb);
         boolean pathsPending = wd != null && wd.path() != null && wd.path().pending();
         if (bb.fact(LootBook.FACT) instanceof LootBook book && !book.ready() || pathsPending) {
@@ -236,6 +243,22 @@ public final class Goals {
             if (ch != null && ch.waiting()) return ch.missing();
         }
         return null;
+    }
+
+    /** 0.39.z47: when (System ms) the last chain explore ended with no new source; 0: none yet. */
+    private static volatile long exploreBareAtMs;
+
+    /** 0.39.z47: the explore job (Mining) says its chain explore ended with no new source. */
+    public static void exploreEndedBare(long atMs) { exploreBareAtMs = atMs; }
+
+    /** 0.39.z47: seconds an order waits after a chain explore that found nothing new (Tuning explore.retryS). */
+    public static int exploreRetryS() { return Tuning.i("explore.retryS"); }
+
+    /** 0.39.z47 (pure): seconds left of the wait after a bare explore ended at {@code endedMs} (0: none or over). */
+    public static long exploreWaitS(long endedMs, long nowMs, int retryS) {
+        if (endedMs <= 0 || retryS <= 0) return 0;
+        long left = endedMs + retryS * 1000L - nowMs;          // structural: milliseconds per second
+        return left <= 0 ? 0 : (left + 999) / 1000;          // structural: whole seconds, rounded up
     }
 
     /** one-planner: no prerequisite desire: the chain makes the pickaxe a dig asks for (the lowest tier that does it). */

@@ -27,11 +27,22 @@ public final class ExploreRules {
      * joined by "|" ("#coal_ores|#logs_that_burn" for torch's coals): any one of them known ends it.
      */
     public static String untilFound(String word, java.util.function.Function<String, io.github.mojolowjo.entropybot.aa.NeedChain.Spot> source) {
+        return untilFound(word, source, (part, s) -> null);
+    }
+
+    /**
+     * 0.39.z47 (run H: 374 explore restarts in 3 min): as {@link #untilFound(String, java.util.function.Function)}, but a
+     * source the order dropped ({@code dropped}: its reason, null when not dropped; z33's Goal.sources) does not end the
+     * explore - the chain prices without it, so ending on it would start the same explore again at once.
+     */
+    public static String untilFound(String word, java.util.function.Function<String, io.github.mojolowjo.entropybot.aa.NeedChain.Spot> source,
+                                    java.util.function.BiFunction<String, io.github.mojolowjo.entropybot.aa.NeedChain.Spot, String> dropped) {
         if (word == null || source == null) return null;
         for (String part : word.split("\\|")) {
             if (part.isEmpty()) continue;
             var s = source.apply(part);
             if (s == null) continue;
+            if (dropped != null && dropped.apply(part, s) != null) continue;
             return "a source of " + part + " is known: " + (s.block() == null ? "" : s.block().replaceFirst("^minecraft:", "") + " ")
                     + "at " + s.x() + " " + s.y() + " " + s.z() + " (" + Math.round(s.dist()) + " away); " + io.github.mojolowjo.entropybot.aa.brain.FastEnd.FACT_ARRIVED;
         }

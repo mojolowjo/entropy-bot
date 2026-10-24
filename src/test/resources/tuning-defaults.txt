@@ -937,3 +937,7 @@ cave.slopeLen	3.0
 cave.cliffDrop	5.0
 cave.cliffReach	2.0
 cave.confirmM	24.0
+
+cave.candidatePriorS	30.0
+cave.candidateReachM	96.0
+explore.retryS	20.0

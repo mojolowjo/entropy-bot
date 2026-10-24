@@ -697,6 +697,8 @@ final class Mining {
         long until, start, targetAt, findAt = -1, untilAt = -1;
         /** live-facts: the item whose source, once known, ends the walk (a chain's explore); null: none. */
         String untilSource;
+        /** 0.39.z47: the until words whose known source was dropped for the order (said once each). */
+        final java.util.Set<String> saidDropped = new java.util.HashSet<>();
         /** 0.39.z42: an explore while the chain's paths compute: it ends when a path answer lands after this count (-1: not one). */
         long pathsLanded = -1;
         int chunks, sx, sz;
@@ -980,7 +982,12 @@ final class Mining {
         // live-facts: a chain's explore ends the moment the missing source is known (the one Nearby fact), checked once a second
         if (ex.untilSource != null && done == null && (ex.untilAt < 0 || now() - ex.untilAt >= 20) && commands.aaRuntime != null) {  // structural: once a second in ticks
             ex.untilAt = now();
-            String known = ExploreRules.untilFound(ex.untilSource, commands.aaRuntime::knownSource);
+            String known = ExploreRules.untilFound(ex.untilSource, commands.aaRuntime::knownSource, (part, sp) -> {
+                String why = commands.aaRuntime.droppedByOrder(part, sp);     // 0.39.z47: a dropped source never ends it
+                if (why != null && ex.saidDropped.add(part))
+                    LOG.info("[entropybot] explore: {} at {} {} {} was dropped for the order ({}); exploring on", part, sp.x(), sp.y(), sp.z(), why);
+                return why;
+            });
             if (known != null) {
                 LOG.info("[entropybot] explore: {}", known);
                 s.note = known + tookText(ex.took);
@@ -1065,6 +1072,14 @@ final class Mining {
             s.note = ExploreRules.note(ex.chunks, now() - ex.start, done != null ? done : "nothing left to explore in reach", fresh, ex.from, Jobs.here(p));
             if (ex.find != null) s.note = "no " + ex.find.what().replaceFirst("^minecraft:", "") + " found (" + (done != null ? done : "nothing left in reach") + "); " + s.note;
             s.note += tookText(ex.took);
+            // 0.39.z47 (run H): a chain's explore that ends with no new source is not a find: the order's next explore waits
+            // explore.retryS (Goals.blocked), said once here
+            if (ex.untilSource != null || ex.pathsLanded >= 0) {
+                io.github.mojolowjo.entropybot.aa.brain.Goals.exploreEndedBare(System.currentTimeMillis());
+                String wait = "no new source; next explore in " + io.github.mojolowjo.entropybot.aa.brain.Goals.exploreRetryS() + " s";
+                LOG.info("[entropybot] explore: {}", wait);
+                s.note = wait + "; " + s.note;
+            }
             // owner 2026-10-20 ("done exploring for 5 min" after 1 min): the label says the real time and why it ended
             long realMin = Math.max(0, Math.round((now() - ex.start) / 1200.0));
             String why = done != null ? done : "nothing left to explore in reach";

@@ -537,6 +537,11 @@ public final class StepHands implements Steps.Hands {
                 IBaritone b = Jobs.baritone();
                 if (walkJob.finalGoal != null) walkJob.finalGoal = g;           // the far walk's last leg
                 else if (b != null) Jobs.walkGoal(b, walkJob, g);
+            } else if (walkJob.finalGoal == null) {
+                // 0.39.z47 (item 4): the chain's walk starts Baritone on the path its price kept (LivePathPrice.walk: the
+                // bot still at its start and its cells unchanged), else Baritone searches fresh - as the strip leg (z46)
+                IBaritone b = Jobs.baritone();
+                if (b != null) walkJob.goalObj = LivePathPrice.walkGoal(b, new BlockPos(w.x(), w.y(), w.z()));
             }
         }
         return null;

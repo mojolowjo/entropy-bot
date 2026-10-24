@@ -96,7 +96,10 @@ public final class NeedChain {
      */
     static final String CAVE_KEY = "cave mouth ";
 
-    public record CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured) {
+    public record CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured, boolean candidate) {
+        public CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured) {
+            this(x, y, z, dist, ore, family, perMin, measured, false);
+        }
         /** The source key of this way: a mouth with no path is dropped for the order. */
         public String key() { return CAVE_KEY + x + "," + y + "," + z; }
     }
@@ -1262,11 +1265,11 @@ public final class NeedChain {
         if (fuels.isEmpty()) { c.fail = "the game's fuel table is empty (no data loaded)"; return null; }
         TreeMap<Integer, Set<String>> classes = new TreeMap<>(Comparator.reverseOrder());
         for (var e : fuels.entrySet()) if (e.getValue() > 0) classes.computeIfAbsent(e.getValue(), t -> new TreeSet<>()).add(e.getKey());
-        for (var e : classes.entrySet()) {
-            int count = (int) Math.ceil(k * smeltTicks() / e.getKey());
-            Want cw = new Want(classWord(e.getValue()));
-            if (have(c, cw) >= count) return "burn " + counted(take(c, cw, count, null)) + " (in the bag)";
-        }
+        // 0.39.z47 (S61): in the bag, the fuel the smelt step burns (CraftPlanner.pickFuel: any item with a burn time, the
+        // cheapest by worth), so the chain says the fuel the furnace gets
+        var inBag = io.github.mojolowjo.entropybot.craft.CraftPlanner.pickFuel(c.bag, k);
+        if (inBag != null && have(c, new Want(inBag.id())) >= inBag.count())
+            return "burn " + counted(take(c, new Want(inBag.id()), inBag.count(), inBag.id())) + " (in the bag, the cheapest burn by worth)";
         List<Alt> alts = new ArrayList<>();
         for (var e : classes.entrySet()) {
             int count = (int) Math.ceil(k * smeltTicks() / e.getKey());
@@ -1887,7 +1890,7 @@ public final class NeedChain {
     private static List<Alt> caveAlts(Ctx c, String word, String gives, int lack) {
         CaveWay cw = c.w.cave().apply(word);
         if (cw == null || cw.ore() == null || !(cw.perMin() > 0)) return List.of();
-        Alt a = new Alt("cave mouth " + Math.round(cw.dist()) + " m", () -> cave(c, word, gives, lack, cw));
+        Alt a = new Alt((cw.candidate() ? "cave candidate " : "cave mouth ") + Math.round(cw.dist()) + " m", () -> cave(c, word, gives, lack, cw));
         a.id = gives;
         return List.of(a);
     }
@@ -1904,7 +1907,11 @@ public final class NeedChain {
         if (src == null) { c.fail = "cave: the pickaxe tier of " + shw(cw.ore()) + " is not known (no mining data loaded yet)"; return null; }
         int tier = src.blockTier(cw.ore());
         if (tier == MiningTiers.UNKNOWN) { c.fail = "cave: the pickaxe tier of " + shw(cw.ore()) + " is not known"; return null; }
-        String head = "cave mouth " + Math.round(cw.dist()) + " m";
+        // 0.39.z47 (owner's ruling, z46 left it out): an unconfirmed candidate (the heightmap's shape) is walked to and
+        // confirmed by sight within cave.confirmM on the way; its price adds Tuning cave.candidatePriorS for that check, so
+        // it wins over the band strip only when it is near; one that fails the check is dropped there (CaveMouths, said once)
+        double confirmS = cw.candidate() ? Tuning.get("cave.candidatePriorS") : 0;
+        String head = (cw.candidate() ? "cave candidate " : "cave mouth ") + Math.round(cw.dist()) + " m" + (cw.candidate() ? " (to confirm)" : "");
         String pre = null;
         if (tier > c.pickTier) {
             pre = cheapestPickaxe(c, tier);
@@ -1925,13 +1932,14 @@ public final class NeedChain {
             return null;
         }
         double exploreS = minutes * 60, oreS = oreBlocks * blockBreakS(c, cw.ore());  // structural: seconds per minute
-        c.seconds += wk.seconds() + exploreS + oreS;
+        c.seconds += wk.seconds() + confirmS + exploreS + oreS;
         c.away = wk.seconds() + exploreS;
         if (c.pickItem != null) c.pickWorn += oreBlocks;
         c.steps.add(new Step.Walk(cw.x(), cw.y(), cw.z(), 0));
         c.steps.add(new Step.Mine(cw.family(), oreBlocks, Step.Mine.How.CAVE, (int) Math.ceil(max)));
         c.bag.merge(gives, Math.max(lack, (int) Math.floor(oreBlocks * per + 1e-9)), Integer::sum);  // structural: epsilon
-        final String line = head + ", " + yield + " x " + oreBlocks + " ore -> " + s(wk.seconds() + exploreS + oreS);
+        final String line = head + ", " + yield + " x " + oreBlocks + " ore" + (cw.candidate() ? " + confirm " + s(confirmS) : "")
+                + " -> " + s(wk.seconds() + confirmS + exploreS + oreS);
         c.note(() -> "source: none known for " + shw(word) + ": in the cave: " + line);
         return noted("in the cave: " + line + (pre == null ? "" : " with " + pre), wk);
     }

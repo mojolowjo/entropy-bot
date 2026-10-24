@@ -20,6 +20,12 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Package D: a plan's furnace steps run while the bot crafts what doesn't need them (the "efficiency mode"). */
 class FurnacePlanTest {
+    @org.junit.jupiter.api.BeforeEach
+    void fuelTable() { TestFuels.install(); }   // 0.39.z47: fuel from the game's table
+
+    @org.junit.jupiter.api.AfterEach
+    void noFuelTable() { TestFuels.remove(); }
+
     static final Smelt IRON = new Smelt("minecraft:iron_ingot", m("iron_ingot"), 4, m("raw_iron"), 4, m("coal"), 1);
     static final Smelt GLASS = new Smelt("minecraft:glass", m("glass"), 3, m("sand"), 3, m("coal"), 1);
 

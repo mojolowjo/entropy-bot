@@ -8,6 +8,12 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Package 4: a fuel slot holding another fuel is not a conflict (trial 8: 1 charcoal refused three charcoal crafts). */
 class FurnaceForeignFuelTest {
+    @org.junit.jupiter.api.BeforeEach
+    void fuelTable() { TestFuels.install(); }   // 0.39.z47: fuel from the game's table
+
+    @org.junit.jupiter.api.AfterEach
+    void noFuelTable() { TestFuels.remove(); }
+
     private static final String PLANKS = "minecraft:spruce_planks";
 
     private static Slots fuel(String id, int n) { return new Slots(null, 0, id, n, null, 0); }
@@ -59,6 +65,6 @@ class FurnaceForeignFuelTest {
 
     @Test void planksSmeltOneAndAHalf() {
         assertEquals(1.5, FurnaceJobs.smeltsPer("minecraft:oak_planks"));
-        assertEquals(1, FurnaceJobs.smeltsPer("modded:weird_fuel"));
+        assertEquals(0, FurnaceJobs.smeltsPer("modded:weird_fuel"), "0.39.z47: not in the game's fuel table: it does not burn (a modded fuel is in the table)");
     }
 }

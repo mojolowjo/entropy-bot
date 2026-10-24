@@ -376,20 +376,15 @@ public final class FurnaceJobs {
     /** Most a foreign fuel may smelt before the bot tops up with its own (16 items = 160 s of burning to wait out). */
     public static double foreignFuelSmall() { return Tuning.get("furnaceJobs.foreignFuelSmall"); }
 
-    /** Items one piece of {@code id} smelts (vanilla burn times / 200 ticks); 1 for an unknown fuel. */
+    /**
+     * Items one piece of {@code id} smelts: its burn ticks in the game's fuel table (NeoForge getBurnTime, ItemWorth.fuels)
+     * / Tuning craftJob.smeltTicks (0.39.z47: was a name list); 0 when the table does not list it (or none is loaded: said once).
+     */
     public static double smeltsPer(String id) {
         if (id == null) return 0;
-        String s = shortId(id);
-        if (s.equals("coal") || s.equals("charcoal")) return 8;
-        if (s.equals("coal_block")) return 80;
-        if (s.equals("lava_bucket")) return 100;
-        if (s.equals("blaze_rod")) return 12;
-        if (s.equals("dried_kelp_block")) return 20;
-        if (s.equals("stick") || s.endsWith("_sapling") || s.equals("bamboo")) return 0.5;
-        if (s.endsWith("_planks") || s.endsWith("_log") || s.endsWith("_wood") || s.endsWith("_stem") || s.endsWith("_hyphae")) return 1.5;
-        return 1;
+        int burn = CraftPlanner.burnTicks(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.fuels(), id);
+        return burn <= 0 ? 0 : (double) burn / CraftJob.smeltTicks();
     }
-
     /** Seconds a fuel slot of {@code n} {@code id} keeps burning (10 s per item smelted). */
     public static int burnSeconds(String id, int n) {
         return (int) Math.ceil(smeltsPer(id) * n * 10);

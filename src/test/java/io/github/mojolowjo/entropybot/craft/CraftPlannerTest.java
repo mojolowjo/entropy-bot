@@ -7,6 +7,8 @@ import io.github.mojolowjo.entropybot.craft.Crafter.Craft;
 import io.github.mojolowjo.entropybot.craft.Crafter.Plan;
 import io.github.mojolowjo.entropybot.craft.Crafter.Smelt;
 import io.github.mojolowjo.entropybot.craft.Crafter.Step;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -61,6 +63,12 @@ class CraftPlannerTest {
 
     final CraftPlanner p = new CraftPlanner(world());
 
+    @BeforeEach
+    void fuelTable() { TestFuels.install(); }
+
+    @AfterEach
+    void noFuelTable() { TestFuels.remove(); }
+
     /** sim.js's plan(): "craft N -> id | smelt n input (fuel) -> id" or "ERR why" (planAll's prefix included). */
     String sim(String id, int n, Map<String, Integer> c) {
         AllPlan r = p.planAll(List.of(new Target(m(id), n)), c);
@@ -82,10 +90,10 @@ class CraftPlannerTest {
         assertEquals("craft 2 -> refinedstorage:raw_basic_processor | smelt 2 refinedstorage:raw_basic_processor (1 minecraft:coal) -> refinedstorage:basic_processor",
                 sim("refinedstorage:basic_processor", 2, counts("iron_ingot", 2, "refinedstorage:silicon", 2, "refinedstorage:processor_binding", 2, "coal", 1)),
                 "a processor: craft the raw one, then smelt it with coal");
-        assertEquals("ERR refinedstorage:basic_processor: no fuel (coal or charcoal) to smelt 2 refinedstorage:raw_basic_processor",
+        assertEquals("ERR refinedstorage:basic_processor: no fuel to smelt 2 refinedstorage:raw_basic_processor (nothing left in the bag burns: the game's fuel table)",
                 sim("refinedstorage:basic_processor", 2, counts("iron_ingot", 2, "refinedstorage:silicon", 2, "refinedstorage:processor_binding", 2)),
                 "no fuel: it says so");
-        assertEquals("smelt 3 minecraft:raw_iron (3 minecraft:oak_planks) -> minecraft:iron_ingot",
+        assertEquals("smelt 3 minecraft:raw_iron (2 minecraft:oak_planks) -> minecraft:iron_ingot",
                 sim("iron_ingot", 3, counts("raw_iron", 5, "oak_planks", 4)), "an ingot from raw ore, planks as fuel");
         assertEquals("craft 8 -> minecraft:torch", sim("torch", 8, counts("raw_iron", 1, "charcoal", 2, "stick", 2)), "a plain craft (charcoal for coal)");
         assertEquals("smelt 1 minecraft:raw_iron (1 minecraft:coal) -> minecraft:iron_ingot | craft 1 -> refinedstorage:raw_basic_processor"
@@ -194,17 +202,18 @@ class CraftPlannerTest {
                 "a block in stock is unpacked (no lower tier in stock), before the furnace");
         assertEquals(new CraftPlanner.Fuel(m("coal"), 1), CraftPlanner.pickFuel(counts("oak_planks", 64, "coal", 1), 8), "coal first, 8 a piece");
         assertEquals(new CraftPlanner.Fuel(m("charcoal"), 2), CraftPlanner.pickFuel(counts("charcoal", 2), 9));
-        assertEquals(new CraftPlanner.Fuel(m("spruce_planks"), 9), CraftPlanner.pickFuel(counts("coal", 1, "spruce_planks", 9), 9));
-        assertNull(CraftPlanner.pickFuel(counts("coal", 1, "oak_planks", 8), 9));
+        assertEquals(new CraftPlanner.Fuel(m("spruce_planks"), 6), CraftPlanner.pickFuel(counts("coal", 1, "spruce_planks", 9), 9), "planks burn 300 ticks: 1.5 items a piece");
+        assertEquals(new CraftPlanner.Fuel(m("oak_planks"), 6), CraftPlanner.pickFuel(counts("coal", 1, "oak_planks", 8), 9));
+        assertNull(CraftPlanner.pickFuel(counts("coal", 1, "oak_planks", 5), 9));
         // no fuel for an item whose only crafting recipe is a breakdown: the furnace's reason is the useful one (package D)
-        assertEquals("no fuel (coal or charcoal) to smelt 3 raw_iron", p.plan(m("iron_ingot"), 3, counts("raw_iron", 3)).error());
+        assertEquals("no fuel to smelt 3 raw_iron (nothing left in the bag burns: the game's fuel table)", p.plan(m("iron_ingot"), 3, counts("raw_iron", 3)).error());
     }
 
     @Test
     void smeltingErrors() {
         assertEquals("need 3 of one kind of sand to smelt", p.plan(m("glass"), 3, counts("sand", 2, "red_sand", 2, "coal", 1)).error());
         assertEquals("missing 2 sand (or similar) to smelt into glass", p.plan(m("glass"), 3, counts("sand", 1, "coal", 1)).error());
-        assertEquals("no fuel (coal or charcoal) to smelt 3 red_sand", p.plan(m("glass"), 3, counts("sand", 2, "red_sand", 3)).error());
+        assertEquals("no fuel to smelt 3 red_sand (nothing left in the bag burns: the game's fuel table)", p.plan(m("glass"), 3, counts("sand", 2, "red_sand", 3)).error());
         assertEquals("there is no crafting recipe for bedrock", p.plan(m("bedrock"), 1, counts()).error());
         Plan s = p.planSmelt(m("glass"), 2, counts("red_sand", 2, "coal", 1));
         assertEquals(List.of(new Smelt("minecraft:glass", m("glass"), 2, m("red_sand"), 2, m("coal"), 1)), s.steps());

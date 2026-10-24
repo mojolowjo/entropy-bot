@@ -662,9 +662,17 @@ public final class AaRuntime implements JobPort {
         if (ore == null) return null;
         int[] me = Jobs.here(p);
         var mouths = sg.mouths(dim, me[0], me[1], me[2]);
-        if (mouths.isEmpty()) return null;
-        var m = mouths.get(0);
         String fam = io.github.mojolowjo.entropybot.cave.OreSpec.family(ore);
+        if (mouths.isEmpty()) {
+            // 0.39.z47 (owner's ruling): no confirmed mouth: the nearest candidate within cave.candidateReachM, walked to
+            // and confirmed on the way (NeedChain prices it with cave.candidatePriorS)
+            var cands = pass.mouths().near(me[0], me[1], me[2], io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.candidateReachM"));
+            if (cands.isEmpty()) return null;
+            var k = cands.get(0);
+            return new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(k.x(), k.y(), k.z(), Math.sqrt(Jobs.distSq(me, new int[]{k.x(), k.y(), k.z()})),
+                    ore, fam, sg.ore().caveRate(fam), sg.ore().caveMinutes() > 0, true);
+        }
+        var m = mouths.get(0);
         return new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(m.x(), m.y(), m.z(), Math.sqrt(Jobs.distSq(me, new int[]{m.x(), m.y(), m.z()})),
                 ore, fam, sg.ore().caveRate(fam), sg.ore().caveMinutes() > 0);
     }
@@ -855,6 +863,20 @@ public final class AaRuntime implements JobPort {
                 var a = known.get(0);
                 return new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(a.x(), a.y(), a.z(), a.dist(), src.from());
             }
+        }
+        return null;
+    }
+
+    /**
+     * 0.39.z47: the reason an open order dropped this source (z33's Goal.sources, by the chain's source key), null when no
+     * order dropped it. The chain's explore does not end on a dropped source (ExploreRules.untilFound).
+     */
+    String droppedByOrder(String part, io.github.mojolowjo.entropybot.aa.NeedChain.Spot sp) {
+        if (bb == null || sp == null) return null;
+        String key = io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(part, sp);
+        for (var g : io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb)) {
+            String why = io.github.mojolowjo.entropybot.aa.brain.Goals.droppedSources(g).get(key);
+            if (why != null) return why;
         }
         return null;
     }

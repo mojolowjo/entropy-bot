@@ -365,8 +365,10 @@ public final class Seq {
             Goal goal = st.near ? new GoalNear(bp, 2) : st.exact ? new GoalBlock(bp) : new GoalGetToBlock(bp);
             j.goal = null;
             j.dest = st.pos;
-            // rm-routes: the step's walk is one Baritone goal
-            b.getCustomGoalProcess().setGoalAndPath(goal);
+            // rm-routes: the step's walk is one Baritone goal; 0.39.z47: a stand-by-the-block walk (a station visit) starts
+            // Baritone on the path its price kept when the bot still stands at its start (LivePathPrice.walk), else fresh
+            if (goal instanceof GoalGetToBlock) goal = LivePathPrice.walkGoal(b, bp);
+            else b.getCustomGoalProcess().setGoalAndPath(goal);
             j.goalObj = goal;
             j.startTick = now();
             j.lastStepTick = -1;
