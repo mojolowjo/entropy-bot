@@ -143,6 +143,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.Build b -> build(b);
                 case Step.PlaceNear n -> placeNear(p, n);
                 case Step.ToBand t -> toBand(p, t);
+                case Step.ToStrip t -> toStrip(p, t);
                 case Step.Climb k -> climb(p);
                 case Step.Fish fs -> fish(p, fs);
                 case Step.KelpCut k -> kelpCut(p, k);
@@ -193,6 +194,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.Build b -> buildStatus(b);
                 case Step.PlaceNear n -> placeNearStatus(n);
                 case Step.ToBand t -> toBandStatus(p, t);
+                case Step.ToStrip t -> toStripStatus(p, t);
                 case Step.Climb k -> climbStatus();
                 default -> requestStatus();
             };
@@ -224,7 +226,7 @@ public final class StepHands implements Steps.Hands {
                 if (b != null) Jobs.cancel(b);
             }
             if (step instanceof Step.Build || step instanceof Step.PlaceNear) io.github.mojolowjo.entropybot.aa.moves.JobHands.get().stop(why);
-            if (step instanceof Step.ToBand) {
+            if (step instanceof Step.ToBand || step instanceof Step.ToStrip) {
                 IBaritone b = Jobs.baritone();
                 if (b != null) Jobs.cancel(b);
             }
@@ -791,6 +793,34 @@ public final class StepHands implements Steps.Hands {
             return Car.Status.failed(t.text() + ": " + why);
         }
         return Car.Status.running(t.text() + ": at y " + y);
+    }
+
+    // ---- 0.39.z46: to the strip's band: the priced path (one search), done when the feet stand by the cell ----
+
+    private String toStrip(LocalPlayer p, Step.ToStrip t) {
+        BlockPos at = new BlockPos(t.x(), t.y(), t.z());
+        if (LivePathPrice.goal(at).isInGoal(p.blockPosition())) { instant = "ok: already by " + t.x() + " " + t.y() + " " + t.z(); return null; }
+        IBaritone b = Jobs.baritone();
+        if (b == null) return "error: baritone not loaded";
+        io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "to strip");
+        LivePathPrice.walk(b, at);
+        return null;
+    }
+
+    private Car.Status toStripStatus(LocalPlayer p, Step.ToStrip t) {
+        if (instant != null) return Car.Status.done(instant);
+        IBaritone b = Jobs.baritone();
+        if (b == null) return Car.Status.failed("baritone not loaded");
+        if (LivePathPrice.goal(new BlockPos(t.x(), t.y(), t.z())).isInGoal(p.blockPosition())) {
+            Jobs.cancel(b);
+            return Car.Status.done("ok: at y " + p.blockPosition().getY() + " for the strip");
+        }
+        if (!b.getCustomGoalProcess().isActive() && !Core.INSTANCE.reflexes.hold()) {
+            String why = "Baritone's walk ended at y " + p.blockPosition().getY() + " short of y " + t.y() + " (no path down to the band)";
+            io.github.mojolowjo.entropybot.aa.moves.FactChange.strip(t.strip(), why);    // the strip way dropped for the order, it re-plans
+            return Car.Status.failed(t.text() + ": " + why);
+        }
+        return Car.Status.running(t.text() + ": at y " + p.blockPosition().getY());
     }
 
     // ---- hunt: GoalNear on the animal, the strike stays the reflexes' input ----

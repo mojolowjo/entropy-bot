@@ -247,7 +247,14 @@ public final class Steps {
      * run (said in the step's start line, "re-priced: ... - switched"); the same steps, or no way now, keep the run as it is.
      * True: the steps were switched and the new step started.
      */
-    private boolean reprice() {
+    private boolean reprice() { return reprice(false); }
+
+    /**
+     * {@code running}: 0.39.z46 (runs E-G: "explore 5 while paths compute" ended and restarted within 0-2 s on every path
+     * answer) - the running explore-while-paths step is priced again on the answer where it runs; it is cancelled only when
+     * the order's pick changed (other steps from here), else it runs on to its minutes.
+     */
+    private boolean reprice(boolean running) {
         FactChange.Fact f = priceAsk;
         priceAsk = null;
         if (f == null || replanner == null) return false;
@@ -261,6 +268,7 @@ public final class Steps {
         }
         List<Step> left = steps.subList(idx, steps.size());
         if (r == null || r.steps() == null || r.steps().isEmpty() || r.steps().equals(left)) return false;
+        if (running) safeCancel("re-priced: " + f.text() + " - the pick changed");
         List<Step> all = new java.util.ArrayList<>(steps.subList(0, idx));
         all.addAll(r.steps());
         steps = List.copyOf(all);
@@ -420,6 +428,7 @@ public final class Steps {
                 next();
             }
             default -> {
+                if (priceAsk != null && s instanceof Step.Explore ex && ex.whilePaths() && reprice(true)) return phase;
                 // 0.39.z34 (S39): a tool step's bag look every job.bagCheckTicks: the tool gone ends the step at once with the fact
                 String lack = needs.hasTool() && now - lastBagLook >= bagCheckTicks() ? toolLackAt(s) : null;
                 if (lack != null) {
@@ -438,6 +447,22 @@ public final class Steps {
             }
         }
         return phase;
+    }
+
+    /**
+     * 0.39.z46 (run G 23:40:12): the no-progress watch fired (no move, no step change for jobPort.noProgressMs): the
+     * running step ends and its target is the source fact ("no progress 180 s at mine ..."), keyed as the step's source
+     * ({@link io.github.mojolowjo.entropybot.aa.NeedChain#sourceKey}; a step with no source: its own words), so the order
+     * re-plans without it. True: the run goes on re-planned; false: not running, or no re-plan (the run ended FAILED).
+     */
+    public boolean noProgress(String text) {
+        if (phase != Phase.RUNNING || paused || idx < 0 || idx >= steps.size()) return false;
+        Step s = steps.get(idx);
+        String src = io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(s);
+        String words = text + " at " + s.text();
+        safeCancel(words);
+        failOrReplan(words, FactChange.noProgress(src != null ? src : "step " + s.text(), words));
+        return phase == Phase.RUNNING;
     }
 
     private void fail(String reason) {

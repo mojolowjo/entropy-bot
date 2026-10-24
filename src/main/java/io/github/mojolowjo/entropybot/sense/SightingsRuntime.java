@@ -39,7 +39,7 @@ import java.util.concurrent.ThreadLocalRandom;
  * ({@code Level.clip}, {@code getBrightness}, {@code getHeight}, {@code getEntitiesOfClass}; Mojang names, the same on
  * both loaders). Errors: ChunkPass's wrapper counts and logs them.
  */
-final class SightingsRuntime {
+public final class SightingsRuntime {
     private static final Logger LOG = LogUtils.getLogger();
     /** The pitfall cap (AA_ROUND3 5 (1)): at most this many cave rays a pass. */
     static final int CAVE_RAYS = 16; // structural
@@ -75,25 +75,36 @@ final class SightingsRuntime {
     }
 
     private long mouthRays, mouthsSeen, mouthsGone;
-    /** candidate key -> the next of its 5 aims (the floor cell, then the 4 sides at the floor) */
-    private final Map<Long, Integer> aim = new HashMap<>();
+
+    /** 0.39.z46: the last verdict per cave-mouth candidate (confirmed / rejected and why), newest last; aa debug lists them. */
+    private static final Map<Long, String> VERDICTS = new java.util.LinkedHashMap<>(16, 0.75f, true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<Long, String> e) { return size() > Seen.range(); }   // bounded: one line per candidate in range at most
+    };
+
+    private static synchronized void verdict(long key, String line) { VERDICTS.put(key, line); }
+
+    /** aa debug: one line per candidate the rays looked at (its last verdict). */
+    public static synchronized List<String> verdicts() { return new java.util.ArrayList<>(VERDICTS.values()); }
+    /** 0.39.z46: candidates a ray showed are not caves (dropped, said once). */
+    private final java.util.Set<Long> dropped = new java.util.HashSet<>();
 
     /**
-     * 0.39.z44 (CAVE_DETECTION option 1): the cave-mouth candidates (ChunkPass: the heightmap rule) within Seen's range and
-     * view cone get up to {@code cave.mouthRays} rays a pass from the shared Seen budget (no new cost: the same rays a
-     * second, taken first). A candidate's rays aim in turn at its cell and at the 4 cells beside it at the floor, carried on
-     * to the range: the air cell where the ray ends counts when it lies under its column's surface (the cell itself or
-     * inside the hole's walls) and it or the air under it is dark to the sky ({@link CaveMouths#goesUnder}). Only cells the
-     * ray reached are read. Log: "sense: seen cave mouth at x y z from d m (hole|ravine)".
+     * 0.39.z46 (owner 2026-10-24): the cave candidates (ChunkPass: the heightmap's shape, {@link CaveMouths#candidates})
+     * within {@code cave.confirmM} and the view cone get up to {@code cave.mouthRays} rays a pass from the shared Seen
+     * budget; none at farther ones. A ray that reaches the low point reads the air below and beside it: one under its
+     * column's surface with sky light at most {@code cave.maxSky} = a cave mouth ("sense: seen cave mouth ..."); none = not
+     * a cave, the candidate is dropped and said once. A ray stopped short tries again on a later pass.
      */
     private void mouths(ClientLevel level, LocalPlayer p, Sightings sg, String dim, Seen.Budget budget, CaveMouths cand, long now) {
         if (cand == null) return;
         Vec3 eye = p.getEyePosition(), look = p.getLookAngle();
-        if (aim.size() > 4096) aim.clear();                          // structural: memory cap
+        if (dropped.size() > 4096) dropped.clear();                  // structural: memory cap
         int shots = 0, max = io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.mouthRays");
         List<Sightings.Rec> known = sg.mouths(dim, (int) eye.x, (int) eye.y, (int) eye.z);
-        for (CaveMouths.Candidate c : cand.near(eye.x, eye.y, eye.z, Seen.range())) {
+        for (CaveMouths.Candidate c : cand.toConfirm(eye.x, eye.y, eye.z)) {   // z46: no rays at far candidates
             if (shots >= max) return;
+            long k = Seen.key(c.x(), c.y(), c.z());
+            if (dropped.contains(k)) continue;
             if (!Seen.inCone(eye.x, eye.y, eye.z, look.x, look.y, look.z, c.x(), c.y(), c.z())) continue;
             boolean have = false;
             for (Sightings.Rec r : known) {
@@ -104,28 +115,35 @@ final class SightingsRuntime {
             if (!budget.take(now)) return;
             shots++;
             mouthRays++;
-            long k = Seen.key(c.x(), c.y(), c.z());
-            int i = aim.getOrDefault(k, 0);
-            aim.put(k, (i + 1) % 5);
-            int[][] off = {{0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}};
-            BlockPos target = new BlockPos(c.x() + off[i][0], c.y(), c.z() + off[i][1]);
+            // 0.39.z46 (owner 2026-10-24): one ray at the low point; then sky light 0 in the air beside / below it = a mouth
+            BlockPos target = new BlockPos(c.x(), c.y(), c.z());
             Vec3 tc = target.getCenter(), dir = tc.subtract(eye);
             if (dir.lengthSqr() < 1e-6) continue;
-            Vec3 to = eye.add(dir.normalize().scale(Seen.range()));
+            Vec3 to = eye.add(dir.normalize().scale(CaveMouths.confirmM()));
             BlockHitResult r = level.clip(new ClipContext(eye, to, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, p));
-            // the cell the ray ended in: the air before the block it hit (a miss: the target, which it passed)
-            BlockPos a = r.getType() == HitResult.Type.BLOCK ? r.getBlockPos().relative(r.getDirection()) : target;
-            // reached: the ray got to the target cell (ended in it or beyond it)
             boolean reached = r.getType() != HitResult.Type.BLOCK || eye.distanceTo(r.getLocation()) >= eye.distanceTo(tc) - 0.87;   // structural: half a cell's diagonal: the hit lies on the target cell or beyond
-            if (!reached || !level.isLoaded(a)) continue;
-            int surf = level.getHeight(Heightmap.Types.WORLD_SURFACE, a.getX(), a.getZ());
-            boolean under = a.equals(new BlockPos(c.x(), c.y(), c.z())) || a.getY() < surf;
-            boolean air = level.getBlockState(a).isAir(), belowAir = level.getBlockState(a.below()).isAir();
-            if (!CaveMouths.goesUnder(true, under, air, level.getBrightness(LightLayer.SKY, a), belowAir, level.getBrightness(LightLayer.SKY, a.below()))) continue;
+            String where = c.x() + " " + c.y() + " " + c.z() + " (" + c.shape() + ")";
+            if (!reached) { verdict(k, where + ": not yet - the ray stopped at " + r.getBlockPos().toShortString() + " before the low point"); continue; }
+            BlockPos dark = null;
+            int seenSky = -1;
+            for (BlockPos q : new BlockPos[]{target.below(), target.east(), target.west(), target.south(), target.north()}) {
+                if (!level.isLoaded(q) || !level.getBlockState(q).isAir()) continue;
+                int sky = level.getBrightness(LightLayer.SKY, q);
+                boolean under = q.getY() < level.getHeight(Heightmap.Types.WORLD_SURFACE, q.getX(), q.getZ());
+                if (CaveMouths.goesUnder(true, under, true, sky, false, 0)) { dark = q; break; }
+                seenSky = Math.max(seenSky, sky);
+            }
+            if (dark == null) {
+                dropped.add(k);
+                String line = where + ": dropped - not a cave (no air under the surface with sky light <= " + CaveMouths.maxSky() + " at the bottom" + (seenSky >= 0 ? ", sky " + seenSky : "") + ")";
+                verdict(k, line);
+                LOG.info("[entropybot] sense: cave candidate {}", line);   // said once: the candidate is dropped
+                continue;
+            }
             int d = (int) Math.round(Math.sqrt(eye.distanceToSqr(new Vec3(c.x() + 0.5, c.y() + 0.5, c.z() + 0.5))));
+            verdict(k, where + ": confirmed - air at " + dark.toShortString() + " under the surface, sky " + level.getBrightness(LightLayer.SKY, dark) + ", from " + d + " m");
             if (sg.sawMouth(dim, c.x(), c.y(), c.z(), d, now) != null) {
                 mouthsSeen++;
-                aim.remove(k);
                 known = sg.mouths(dim, (int) eye.x, (int) eye.y, (int) eye.z);
                 LOG.info("[entropybot] sense: seen cave mouth at {} {} {} from {} m ({})", c.x(), c.y(), c.z(), d, c.shape());
             }

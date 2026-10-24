@@ -371,6 +371,15 @@ public sealed interface Step {
         public String text() { return "to y " + minY + ".." + maxY; }
     }
 
+    /**
+     * 0.39.z46 (S58): the strip way's first leg: walk / dig to stand by the cell (x, y, z) at the band's peak Y, the path its
+     * price kept (the fork's priced path: one search; a dig-down is a path with breaks, Baritone's own). The step's source
+     * key is its strip's ({@code strip}: the strip it leads to), so no path drops that band way for the order.
+     */
+    record ToStrip(int x, int y, int z, String strip) implements Step {
+        public String text() { return "to y " + y + " (priced path)"; }
+    }
+
     /** A step made of steps: {@link Steps} runs its parts in its place (one machine, one failure path). */
     sealed interface Compound extends Step permits StripLeg, ClearChunk, Kelp {
         List<Step> parts();

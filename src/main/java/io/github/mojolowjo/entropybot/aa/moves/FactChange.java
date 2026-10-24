@@ -60,6 +60,20 @@ public final class FactChange {
         last = new Fact("source " + bandKey(minY, maxY), why);
     }
 
+    /**
+     * 0.39.z46: a strip way ended short (the strip's own end - "no path", lava, no pickaxe - or no path down to its band):
+     * the source slot keyed by the strip ({@code key}: Step.Strip#key); the order re-plans without that band way.
+     */
+    public static void strip(String key, String why) {
+        last = new Fact("source strip " + key, "strip at " + key + ": " + why);
+    }
+
+    /**
+     * 0.39.z46 (run G 23:40:12): a step made no progress (no move, no step change) for the watch's time: the source slot
+     * keyed by the step's target ({@code key}); the order re-plans instead of parking.
+     */
+    public static Fact noProgress(String key, String text) { return new Fact("source " + key, text); }
+
     /** The reason an unreachable source is dropped with ("unreachable (Baritone: Unable to find any path to ...)"). */
     public static String unreachableText(String why) { return "unreachable (Baritone: " + why + ")"; }
 

@@ -125,20 +125,25 @@ public final class OreBand {
     }
 
     /**
-     * The best strip Y: among the features' peaks (a peak above {@code ceiling} - the bot's feet: a strip digs into the
-     * ground, it does not climb - counts at the ceiling when its range reaches it), the one whose slab holds the most.
-     * Null: no feature reaches the ceiling or below.
+     * The best strip Y: a feature's PEAK (0.39.z46, owner: "the band's peak Y"; runs E-G: z43 counted a peak above the feet
+     * at the feet, so coal's 0..192 band struck at y 70 on the surface and Baritone said "no path"). Among the peaks at or
+     * below {@code ceiling} (the feet: the strip way's first leg is the priced path down to it), the one whose slab holds the
+     * most; when every peak lies above the feet, the lowest of them (the priced path tells whether it can be reached).
+     * Null: no feature.
      */
     public static Integer bestY(List<Feature> fs, int ceiling) {
-        Integer best = null;
+        Integer best = null, above = null;
         double bestN = 0;
         for (Feature f : fs) {
-            if (f.lo() > ceiling) continue;
-            int y = Math.min(f.peak(), ceiling);
+            int y = f.peak();
+            if (y > ceiling) {
+                if (above == null || y < above) above = y;
+                continue;
+            }
             double n = perSlab(fs, y);
             if (n > bestN) { bestN = n; best = y; }
         }
-        return best;
+        return best != null ? best : above;
     }
 
     /** Blocks dug per ore block found (the slab's blocks over its expected ore), capped by {@code strip.maxBlocksPerOre}. */

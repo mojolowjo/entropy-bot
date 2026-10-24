@@ -929,3 +929,11 @@ cave.maxSky	0.0
 cave.mouthRays	4.0
 cave.goneReach	1.5
 cave.exploreMinutes	10.0
+pricedPath.on	1.0
+pricedPath.keepTicks	1200.0
+pricedPath.maxSegments	16.0
+cave.slopeMaxStep	1.0
+cave.slopeLen	3.0
+cave.cliffDrop	5.0
+cave.cliffReach	2.0
+cave.confirmM	24.0

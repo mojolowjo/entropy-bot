@@ -37,41 +37,7 @@ class Z44CaveMouthTest {
 
     // ---- the candidate rule ----
 
-    @Test
-    void s54_aSixDeepHoleIsOneCandidateAtItsLowestOpenCell() {
-        int[] top = flatWithHole(6, 6, 3, 6);
-        top[7 + 16 * 7] = 56;                                   // its deepest column
-        List<CaveMouths.Candidate> c = CaveMouths.candidates(2, -1, top);
-        assertEquals(1, c.size(), c.toString());
-        assertEquals(new CaveMouths.Candidate(32 + 7, 57, -16 + 7, "hole"), c.get(0), "the air over the deepest floor");
-    }
-
-    @Test
-    void aShallowDipDoesNotCount() {
-        assertTrue(CaveMouths.candidates(0, 0, flatWithHole(6, 6, 3, 3)).isEmpty(), "3 deep < cave.holeDepth 4");
-        assertFalse(CaveMouths.candidates(0, 0, flatWithHole(6, 6, 3, 4)).isEmpty(), "4 deep counts");
-        Tuning.set("cave.holeDepth", 8);
-        assertTrue(CaveMouths.candidates(0, 0, flatWithHole(6, 6, 3, 6)).isEmpty(), "the depth is Tuning's");
-    }
-
-    @Test
-    void aRavineRunCountsAndAOneColumnNotchAlongACliffDoesNot() {
-        int[] top = new int[256];
-        Arrays.fill(top, 70);
-        for (int z = 2; z < 12; z++) top[8 + 16 * z] = 60;     // a 1-wide trench along z, walled along x
-        List<CaveMouths.Candidate> c = CaveMouths.candidates(0, 0, top);
-        assertEquals(1, c.size(), "one candidate for the run (merged): " + c);
-        assertEquals("ravine", c.get(0).shape());
-        int[] notch = new int[256];
-        Arrays.fill(notch, 70);
-        for (int z = 0; z < 16; z++) for (int x = 9; x < 16; x++) notch[x + 16 * z] = 60;   // a cliff: low ground on one side only
-        notch[8 + 16 * 5] = 60;
-        assertTrue(CaveMouths.candidates(0, 0, notch).isEmpty(), "walled on one side only: no hole, no ravine");
-        Tuning.set("cave.ravineRun", 11);
-        assertTrue(CaveMouths.candidates(0, 0, top).isEmpty(), "a run shorter than cave.ravineRun: no ravine");
-    }
-
-    // ---- the confirmation and the states (rule 15) ----
+    // 0.39.z46: the z44 hole / ravine rule is replaced by the owner's heightmap-shape rule (Z46PricedPathTest)
 
     @Test
     void s54_seenAndDarkIsAMouthUnseenIsACandidateOnly() {

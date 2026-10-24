@@ -95,6 +95,9 @@ final class TuningDefs {
         Tuning.def("pathCost.maxNodes", 400_000, "full-path 0.39.z41", "A* nodes one walk's full search may open (past them: path not known, budget)");
         Tuning.def("pathCost.maxPending", 4, "full-path 0.39.z41", "walk searches in flight at once; a way asked past them is \"path not known yet\" and asked again on the next pass");
         Tuning.def("pathCost.reuseBlocks", 4, "full-path 0.39.z41", "a walk's answer is kept while the bot stands within this many blocks of where it was asked from (and the bag is the same)");
+        Tuning.def("pricedPath.on", 1, "priced-path 0.39.z46 (owner 2026-10-24: one search for the price and the walk)", "1: a walk's price is the fork's priced path (Baritone's own search run to a full path segment by segment, kept and walked); 0: z41's route (IPathCost.estimateInBackground once, the walk searches fresh)");
+        Tuning.def("pricedPath.keepTicks", 1200, "priced-path 0.39.z46", "game ticks the fork keeps a priced path for the walk (it also goes when the bot moves off its start)");
+        Tuning.def("pricedPath.maxSegments", 16, "priced-path 0.39.z46", "Baritone path segments one price may chain at most (each one Baritone's own timeouts); past them: path not known (budget)");
         Tuning.def("pathCost.keepS", 60, "full-path 0.39.z41", "seconds a walk's answer is kept at most (the world near the path may change)");
         Tuning.def("price.walkX", 1.0, "full-path 0.39.z41 (owner: \"I may want to price things myself\")", "TickPrice: multiplier on every walk's seconds from Baritone's path ticks");
         Tuning.def("price.breakX", 1.0, "full-path 0.39.z41", "TickPrice: multiplier on every break's seconds from the game's break formula");
@@ -941,7 +944,12 @@ final class TuningDefs {
         Tuning.def("cave.holeDepth", 4, "0.39.z44 (CAVE_DETECTION option 1)", "a column this many blocks below the ground on both sides is a cave-mouth candidate (the heightmap rule)");
         Tuning.def("cave.holeReach", 4, "0.39.z44", "the columns looked along on each side for the higher ground of a hole");
         Tuning.def("cave.ravineRun", 3, "0.39.z44", "the columns in a line, walled along one axis, that make a ravine candidate");
-        Tuning.def("cave.maxSky", 0, "0.39.z44 (owner: skylight 0)", "the sky light at most of a seen cell that makes a candidate a cave mouth (it goes underground)");
+        Tuning.def("cave.maxSky", 0, "0.39.z44 (owner: skylight 0; z46 owner 2026-10-24: sky light 0 in the cell below the low point)", "the sky light at most of the air under a candidate's low point (or a seen air cell under its column's surface) that makes it a cave mouth");
+        Tuning.def("cave.slopeMaxStep", 1, "0.39.z46 (owner 2026-10-24: the cylinder rule)", "the most a mouth's gentle side falls per column");
+        Tuning.def("cave.slopeLen", 3, "0.39.z46", "the columns a mouth's gentle side slopes over at least");
+        Tuning.def("cave.cliffDrop", 5, "0.39.z46 (owner: a steep drop of at least 5)", "the rise of a mouth's steep side (both sides: a ravine) over its low point");
+        Tuning.def("cave.cliffReach", 2, "0.39.z46 (owner: within 1-2 columns)", "the columns within which the steep side rises");
+        Tuning.def("cave.confirmM", 24, "0.39.z46 (owner: confirm when getting close)", "blocks from the eyes within which a candidate is confirmed by a ray; no rays at farther ones");
         Tuning.def("cave.mouthRays", 4, "0.39.z44", "the rays a pass (every 10 ticks) the mouth candidates take first from the shared Seen budget");
         Tuning.def("cave.goneReach", 1.5, "0.39.z44 (rule 15)", "standing within this of a known mouth whose cell is not air forgets it");
         Tuning.def("cave.exploreMinutes", 10, "0.39.z44", "the minutes the mine-in-the-cave way explores a mouth for the ore at most");

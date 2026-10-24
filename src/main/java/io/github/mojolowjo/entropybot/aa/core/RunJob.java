@@ -96,6 +96,13 @@ public final class RunJob extends Node {
         }
         if (now - lastProgressAt > running.noProgressMs()) {
             long s = (now - lastProgressAt) / 1000;  // structural: milliseconds per second
+            // 0.39.z46: an order's run re-plans on it (the step's target as the source fact) instead of parking
+            if (bb.port.noProgress(taskId, "no progress " + s + " s")) {
+                bb.port.log("no progress " + s + "s in " + running.kind() + ": re-planned on the step's source fact");
+                lastProgressAt = now;
+                lastProgress = bb.port.progress(taskId);
+                return Status.RUNNING;
+            }
             bb.port.cancel(taskId, "no progress " + s + "s");
             bb.port.log("stuck " + running.kind() + ": no progress " + s + "s");
             bb.port.incident("aa stuck " + running.kind() + " \"" + running.chain() + "\": no progress " + s + "s");

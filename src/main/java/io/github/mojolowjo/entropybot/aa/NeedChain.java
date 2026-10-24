@@ -1568,6 +1568,7 @@ public final class NeedChain {
         if (s instanceof Step.Collect k) return "collect " + k.item();
         if (s instanceof Step.ToBand b) return io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(b.minY(), b.maxY());   // 0.39.z42
         if (s instanceof Step.Strip st) return STRIP_KEY + st.key();      // 0.39.z43: a strip that ended lava / no path / no pickaxe
+        if (s instanceof Step.ToStrip t) return STRIP_KEY + t.strip();    // 0.39.z46: no path down to the band: the same strip way
         return null;
     }
 
@@ -1866,7 +1867,10 @@ public final class NeedChain {
         c.away = wk.seconds();
         if (c.pickItem != null) c.pickWorn += dug + oreBlocks;
         Map<String, Integer> amounts = Map.of(io.github.mojolowjo.entropybot.aa.brain.StripOrder.countKey(ore, io.github.mojolowjo.entropybot.cave.OreSpec::family), oreBlocks);
-        c.steps.addAll(io.github.mojolowjo.entropybot.aa.brain.Goals.stripLoop(new Step.Strip(sb.ores(), amounts, sb.y(), sb.heading(), 0)));
+        Step.Strip strip = new Step.Strip(sb.ores(), amounts, sb.y(), sb.heading(), 0);
+        // 0.39.z46 (S58): the first leg is the priced path down to the band's peak (the walk the price above searched)
+        if (sb.feetY() != sb.y()) c.steps.add(new Step.ToStrip(sb.x(), sb.y(), sb.z(), strip.key()));
+        c.steps.addAll(io.github.mojolowjo.entropybot.aa.brain.Goals.stripLoop(strip));
         c.bag.merge(gives, Math.max(lack, (int) Math.floor(oreBlocks * per + 1e-9)), Integer::sum);  // structural: epsilon
         final String line = head + " ~" + Math.round(bpo) + " blocks/ore (" + String.format(java.util.Locale.ROOT, "%.1f", sb.perSlab())
                 + " ore a chunk in " + io.github.mojolowjo.entropybot.aa.brain.OreBand.slab() + " layers) x " + oreBlocks + " ore = " + dug + " blocks"

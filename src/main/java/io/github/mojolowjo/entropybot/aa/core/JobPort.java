@@ -101,6 +101,13 @@ public interface JobPort {
     /** A monotonic activity counter (steps done + blocks moved + bag changes): the no-progress watch. */
     long progress(long taskId);
 
+    /**
+     * 0.39.z46 (run G 23:40:12: "no progress 180s" parked the order): the no-progress watch fired on this task: its typed run,
+     * when it has an order's re-plan, takes it as the running step's source fact ({@code text}: "no progress 180 s at ...")
+     * and re-plans. True: re-planned, the task goes on; false: no re-plan (the watch ends the task as before).
+     */
+    default boolean noProgress(long taskId, String text) { return false; }
+
     /** A line for the game log ("[entropybot] aa: ..."). */
     default void log(String line) {}
 

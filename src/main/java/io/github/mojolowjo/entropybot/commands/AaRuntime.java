@@ -689,7 +689,8 @@ public final class AaRuntime implements JobPort {
         List<String> l = new ArrayList<>();
         for (var m : sg.mouths(dim, me[0], me[1], me[2]))
             l.add(m.where() + " " + Math.round(Math.sqrt(Jobs.distSq(me, new int[]{m.x(), m.y(), m.z()}))) + " m (seen from " + m.count() + " m)");
-        return cavesLine() + (l.isEmpty() ? "" : ": " + String.join(", ", l));
+        List<String> v = io.github.mojolowjo.entropybot.sense.SightingsRuntime.verdicts();   // 0.39.z46: each candidate's last ray verdict
+        return cavesLine() + (l.isEmpty() ? "" : ": " + String.join(", ", l)) + (v.isEmpty() ? "" : "\n  candidate " + String.join("\n  candidate ", v));
     }
 
     /**
@@ -2064,6 +2065,12 @@ public final class AaRuntime implements JobPort {
     }
 
     @Override public long progress(long taskId) { return progress; }
+
+    /** 0.39.z46: the no-progress watch on an order's typed run: the running step's source fact, the order re-plans. */
+    @Override public boolean noProgress(long taskId, String text) {
+        if (taskId != current || !typedRun || taskReplan == null || !c.stepRun.steps.running()) return false;
+        return c.stepRun.steps.noProgress(text);
+    }
 
     /**
      * 0.36.1 (review 6): a real pause: the chain's running step ends as "interrupted: low health ..." so Chains retries

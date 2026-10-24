@@ -177,6 +177,9 @@ final class StripStep {
         if (holding) return Car.Status.running(sp.status() + " - " + sp.why());
         Car.Status st = StripOrder.endOf(sp.lastEnd(), sp.status());
         ended(s, st);
+        // 0.39.z46 (run E 22:46:11 "strip: no path" parked the order): a strip that ended short is the source fact with
+        // Baritone's words; the order re-plans without this band way
+        if (st.state() == Car.State.FAILED) io.github.mojolowjo.entropybot.aa.moves.FactChange.strip(s.key(), st.why());
         return st;
     }
 

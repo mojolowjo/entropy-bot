@@ -58,7 +58,8 @@ public final class LivePathPrice implements PathPrice {
         IBaritone b = Jobs.baritone();
         if (b == null) return none("Baritone is not loaded");
         BlockPos pos = new BlockPos(x, y, z);
-        if (!mc.level.isLoaded(pos)) return Answer.chunks("not loaded: the target's chunk is not loaded");
+        // 0.39.z46 (S57): with the priced path, "chunks not loaded" is Baritone's own world view's answer (the fork's)
+        if (!PathPrice.pricedPathOn() && !mc.level.isLoaded(pos)) return Answer.chunks("not loaded: the target's chunk is not loaded");
         String key = x + "," + y + "," + z;
         int[] me = Jobs.here(mc.player);
         int bag = 31 * bagHash(mc) + System.identityHashCode(mc.level);     // another level (dimension, world): not the same answer
@@ -71,10 +72,14 @@ public final class LivePathPrice implements PathPrice {
             return Answer.computing("queued: pathCost.maxPending " + PathPrice.maxPending() + " searches in flight");
         java.util.concurrent.CompletableFuture<IPathCost.Answer> f;
         try {
-            f = b.getPathCost().estimateInBackground(new GoalGetToBlock(pos),
+            // 0.39.z46: the fork's priced path (Baritone's own search to a full path, kept for the walk: one search);
+            // pricedPath.on 0: z41's route (one background A* with our budget, the walk searches fresh)
+            f = PathPrice.pricedPathOn()
+                    ? b.getPricedPath().price(goal(pos), PathPrice.pricedKeepTicks(), PathPrice.pricedMaxSegments())
+                    : b.getPathCost().estimateInBackground(goal(pos),
                     (int) Math.ceil(PathPrice.budgetS() * io.github.mojolowjo.entropybot.aa.brain.GameTimes.TPS), PathPrice.fullMaxMs(), PathPrice.maxNodes());
         } catch (LinkageError e) {
-            return none("this Baritone has no IPathCost.estimateInBackground (the stock jar or an older fork? install the entropy fork z41): " + e);
+            return none("this Baritone has no IPricedPath / IPathCost.estimateInBackground (the stock jar or an older fork? install the entropy fork z46): " + e);
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] path cost to {}: the search could not start", key, e);
             return Answer.none("the search could not start: " + e);
@@ -82,6 +87,25 @@ public final class LivePathPrice implements PathPrice {
         inFlight.put(key, me);
         f.whenComplete((a, err) -> mc.execute(() -> land(mc, key, me, bag, a, err)));
         return Answer.computing(null);
+    }
+
+    /** The goal a walk is priced with, and walked with when the price's path is reused (the fork matches goals by equals). */
+    public static GoalGetToBlock goal(BlockPos pos) { return new GoalGetToBlock(pos); }
+
+    /**
+     * 0.39.z46: walk to stand by the block at pos: the fork's priced path walks the path its price kept (one search) when
+     * the bot still stands at its start; else Baritone searches fresh. pricedPath.on 0: Baritone's CustomGoalProcess as z41.
+     * True: the kept path is walked.
+     */
+    public static boolean walk(IBaritone b, BlockPos pos) {
+        if (!PathPrice.pricedPathOn()) {
+            b.getCustomGoalProcess().setGoalAndPath(goal(pos));
+            return false;
+        }
+        boolean kept = b.getPricedPath().walk(goal(pos));
+        LOG.info("[entropybot] path: walk to {} {} {}: {}", pos.getX(), pos.getY(), pos.getZ(),
+                kept ? "the priced path (one search)" : "no kept path from here - Baritone searches fresh");
+        return kept;
     }
 
     /** Game thread: one search's answer is kept and the chain is told (landed++). */
@@ -106,6 +130,8 @@ public final class LivePathPrice implements PathPrice {
         if (!a.noPath && a.complete) return Answer.priced(new Walk(TickPrice.walkS(a.ticks), TickPrice.walkS(lavaTicks(mc, a))));
         if (!a.noPath) return Answer.none("budget: the search ran out before the goal (" + a + ")");
         if (IPathCost.Answer.UNREACHABLE.equals(a.reason)) return Answer.unreachable("no path: the complete search found none");
+        if (baritone.api.pathing.calc.IPricedPath.NO_PROGRESS.equals(a.reason))       // 0.39.z46: a segment search went nowhere
+            return Answer.unreachable("no path: Baritone's search made no progress (" + a.reason + ")");
         if (IPathCost.Answer.CHUNKS.equals(a.reason)) return Answer.chunks(IPathCost.Answer.CHUNKS);
         return Answer.none(a.reason);
     }

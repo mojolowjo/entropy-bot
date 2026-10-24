@@ -65,4 +65,13 @@ public interface PathPrice {
 
     /** A cached answer is kept at most this many seconds. */
     static double keepS() { return Tuning.get("pathCost.keepS"); }
+
+    /** 0.39.z46: the fork's priced path prices and walks (one search); off: z41's route (search once, walk fresh). */
+    static boolean pricedPathOn() { return Tuning.i("pricedPath.on") != 0; }
+
+    /** 0.39.z46: game ticks the fork keeps a priced path for the walk. */
+    static int pricedKeepTicks() { return Tuning.i("pricedPath.keepTicks"); }
+
+    /** 0.39.z46: Baritone path segments one price may chain at most. */
+    static int pricedMaxSegments() { return Tuning.i("pricedPath.maxSegments"); }
 }

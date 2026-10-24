@@ -38,32 +38,53 @@ public final class CaveMouths {
      * (the cell over it is the first air). Edge columns compare with the columns inside the chunk only. Columns of one hole
      * within {@link Sightings#merge()} are one candidate: the lowest.
      */
+    public static int slopeMaxStep() { return Tuning.i("cave.slopeMaxStep"); }
+    public static int slopeLen() { return Tuning.i("cave.slopeLen"); }
+    public static int cliffDrop() { return Tuning.i("cave.cliffDrop"); }
+    /** The columns within which the cliff side must rise (owner: "within 1-2 columns"). */
+    public static int cliffReach() { return Tuning.i("cave.cliffReach"); }
+    /** Rays confirm a candidate only within this many blocks of the eyes (owner: "when getting close"). */
+    public static double confirmM() { return Tuning.get("cave.confirmM"); }
+
+    /** The candidates a ray may confirm: within {@link #confirmM()} of the eyes (the rest get no ray). */
+    public List<Candidate> toConfirm(double x, double y, double z) { return near(x, y, z, (int) Math.floor(confirmM())); }
+
+    /**
+     * 0.39.z46 (owner 2026-10-24: "a cylinder intersecting the ground at an angle: one side of the mouth slopes down
+     * gently, the other side is a steep drop of at least 5 blocks ... any severe drop is also a potential ravine"): over one
+     * chunk's WORLD_SURFACE heights, a MOUTH is a low column reached along one line by a gentle slope (each column at most
+     * {@code cave.slopeMaxStep} lower, over {@code cave.slopeLen}+ columns, falling at least 1 in all) whose opposite side
+     * rises {@code cave.cliffDrop}+ within 1-2 columns; a RAVINE is a column with such a rise on both sides of one line.
+     * {@code top[lx + 16 * lz]} = the top block Y; edge columns compare with the chunk's own columns only. Columns of one
+     * place within {@link Sightings#merge()} are one candidate: the deepest drop first, then the lowest.
+     */
     public static List<Candidate> candidates(int cx, int cz, int[] top) {
-        int d = holeDepth(), r = holeReach();
-        int[] axis = new int[256];                        // bit 1: walled along x, bit 2: walled along z
-        for (int lz = 0; lz < 16; lz++)
-            for (int lx = 0; lx < 16; lx++) {
-                int h = top[lx + 16 * lz], need = h + d;
-                boolean xs = high(top, lx, lz, -1, 0, r, need) && high(top, lx, lz, 1, 0, r, need);
-                boolean zs = high(top, lx, lz, 0, -1, r, need) && high(top, lx, lz, 0, 1, r, need);
-                axis[lx + 16 * lz] = (xs ? 1 : 0) | (zs ? 2 : 0);
-            }
+        int[][] dirs = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
         List<Candidate> raw = new ArrayList<>();
+        List<Integer> drops = new ArrayList<>();
         for (int lz = 0; lz < 16; lz++)
             for (int lx = 0; lx < 16; lx++) {
-                int a = axis[lx + 16 * lz];
-                if (a == 0) continue;
-                String shape;
-                if (a == 3) shape = "hole";
-                else {
-                    // a ravine: walled along one axis, the run goes along the other
-                    int dx = a == 1 ? 0 : 1, dz = a == 1 ? 1 : 0;
-                    int run = 1 + runOf(axis, lx, lz, dx, dz, a) + runOf(axis, lx, lz, -dx, -dz, a);
-                    if (run < ravineRun()) continue;
-                    shape = "ravine";
+                int h = top[lx + 16 * lz];
+                String shape = null;
+                int drop = 0;
+                for (int[] d : dirs) {
+                    int cliff = cliff(top, lx, lz, d[0], d[1], h);
+                    if (cliff < cliffDrop()) continue;
+                    int back = cliff(top, lx, lz, -d[0], -d[1], h);
+                    if (back >= cliffDrop()) { shape = "ravine"; drop = Math.max(drop, Math.min(cliff, back)); }
+                    else if (gentle(top, lx, lz, -d[0], -d[1], h)) { if (shape == null) shape = "mouth"; drop = Math.max(drop, cliff); }
                 }
-                raw.add(new Candidate((cx << 4) + lx, top[lx + 16 * lz] + 1, (cz << 4) + lz, shape));
+                if (shape == null) continue;
+                raw.add(new Candidate((cx << 4) + lx, h + 1, (cz << 4) + lz, shape));
+                drops.add(drop);
             }
+        List<Integer> order = new ArrayList<>();
+        for (int i = 0; i < raw.size(); i++) order.add(i);
+        final List<Candidate> found = raw;
+        order.sort((p, q) -> drops.get(p).equals(drops.get(q)) ? Integer.compare(found.get(p).y(), found.get(q).y()) : Integer.compare(drops.get(q), drops.get(p)));
+        List<Candidate> sorted = new ArrayList<>();
+        for (int i : order) sorted.add(found.get(i));
+        raw = sorted;
         raw.sort((p, q) -> Integer.compare(p.y(), q.y()));
         List<Candidate> out = new ArrayList<>();
         long m2 = (long) Sightings.merge() * Sightings.merge();
@@ -78,19 +99,28 @@ public final class CaveMouths {
         return out;
     }
 
-    private static boolean high(int[] top, int lx, int lz, int dx, int dz, int r, int need) {
-        for (int k = 1; k <= r; k++) {
+    /** The most the ground rises within 1-2 columns along (dx, dz) over h (0: outside the chunk or lower). */
+    private static int cliff(int[] top, int lx, int lz, int dx, int dz, int h) {
+        int best = 0;
+        for (int k = 1; k <= cliffReach(); k++) {
             int x = lx + dx * k, z = lz + dz * k;
-            if (x < 0 || x > 15 || z < 0 || z > 15) return false;
-            if (top[x + 16 * z] >= need) return true;
+            if (x < 0 || x > 15 || z < 0 || z > 15) break;
+            best = Math.max(best, top[x + 16 * z] - h);
         }
-        return false;
+        return best;
     }
 
-    private static int runOf(int[] axis, int lx, int lz, int dx, int dz, int a) {
-        int n = 0;
-        for (int x = lx + dx, z = lz + dz; x >= 0 && x <= 15 && z >= 0 && z <= 15 && (axis[x + 16 * z] & a) != 0; x += dx, z += dz) n++;
-        return n;
+    /** Along (dx, dz) the ground rises gently for slopeLen columns: each step 0..slopeMaxStep, at least 1 in all. */
+    private static boolean gentle(int[] top, int lx, int lz, int dx, int dz, int h) {
+        int prev = h;
+        for (int k = 1; k <= slopeLen(); k++) {
+            int x = lx + dx * k, z = lz + dz * k;
+            if (x < 0 || x > 15 || z < 0 || z > 15) return false;
+            int step = top[x + 16 * z] - prev;
+            if (step < 0 || step > slopeMaxStep()) return false;
+            prev = top[x + 16 * z];
+        }
+        return prev > h;
     }
 
     /**
