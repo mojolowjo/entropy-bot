@@ -93,9 +93,6 @@ final class ItemWorthSource implements ItemWorth.Source {
             } catch (RuntimeException e) { s.failed++; }
         }
         s.readMobs(level);
-        s.readOres();
-        s.readFishing();
-        s.readMobFood(level, s);
         RecipeManager rm = level.getRecipeManager();
         for (var h : rm.getRecipes()) {
             var r = h.value();
@@ -158,35 +155,6 @@ final class ItemWorthSource implements ItemWorth.Source {
         return ItemWorth.needWordOf(items, tagItems);
     }
 
-    /** Mob -> its food drop from the loot tables (singleplayer server only: a client has none, said once by ItemWorth). */
-    private void readMobFood(Level level, ItemWorthSource s) {
-        var server = net.minecraft.client.Minecraft.getInstance().getSingleplayerServer();
-        if (server == null) return;
-        try {
-            var ops = net.minecraft.resources.RegistryOps.create(com.mojang.serialization.JsonOps.INSTANCE, server.registryAccess());
-            var rr = server.reloadableRegistries();
-            java.util.function.Function<String, com.google.gson.JsonElement> lookup = id -> {
-                try {
-                    var key = net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.LOOT_TABLE, ResourceLocation.parse(id));
-                    var t = rr.getLootTable(key);
-                    return t == net.minecraft.world.level.storage.loot.LootTable.EMPTY ? null : net.minecraft.world.level.storage.loot.LootTable.DIRECT_CODEC.encodeStart(ops, t).result().orElse(null);
-                } catch (RuntimeException e) { failed++; return null; }
-            };
-            for (var e : BuiltInRegistries.ENTITY_TYPE.entrySet()) {
-                var type = e.getValue();
-                if (type.getCategory() != net.minecraft.world.entity.MobCategory.CREATURE) continue;       // the friendly land animals; the owner's rules sort the rest
-                var parsed = io.github.mojolowjo.entropybot.aa.brain.LootBook.parse(lookup.apply(type.getDefaultLootTable().location().toString()), lookup);
-                String best = null; double bestN = 0;
-                for (var d : parsed.entrySet()) {
-                    var f = facts.getOrDefault(d.getKey(), ItemWorth.Facts.NONE);
-                    if (f.nutrition() <= 0) continue;
-                    double n = d.getValue()[0] * d.getValue()[1];
-                    if (n > bestN) { bestN = n; best = d.getKey(); }
-                }
-                if (best != null) mobFood.put(e.getKey().location().toString(), best);
-            }
-        } catch (RuntimeException e) { failed++; }
-    }
 
     private final Map<String, String> smeltInputs = new HashMap<>(), oreDrops = new HashMap<>();
     private final java.util.Set<String> tableItems = new java.util.HashSet<>();
@@ -194,49 +162,38 @@ final class ItemWorthSource implements ItemWorth.Source {
     @Override public boolean needsTable(String id) { return tableItems.contains(id); }
     @Override public String oreDropping(String item) { return oreDrops.get(item); }
 
-    /** Ore block -> what its loot table drops (singleplayer server only: a client has none; the planner then knows no ore). */
-    private void readOres() {
-        var server = net.minecraft.client.Minecraft.getInstance().getSingleplayerServer();
-        if (server == null) return;
-        try {
-            var ops = net.minecraft.resources.RegistryOps.create(com.mojang.serialization.JsonOps.INSTANCE, server.registryAccess());
-            var rr = server.reloadableRegistries();
-            java.util.function.Function<String, com.google.gson.JsonElement> lookup = id -> {
-                try {
-                    var key = net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.LOOT_TABLE, ResourceLocation.parse(id));
-                    var t = rr.getLootTable(key);
-                    return t == net.minecraft.world.level.storage.loot.LootTable.EMPTY ? null : net.minecraft.world.level.storage.loot.LootTable.DIRECT_CODEC.encodeStart(ops, t).result().orElse(null);
-                } catch (RuntimeException e) { failed++; return null; }
-            };
-            for (var b : BuiltInRegistries.BLOCK) {
-                if (!b.defaultBlockState().is(net.neoforged.neoforge.common.Tags.Blocks.ORES)) continue;
-                String id = BuiltInRegistries.BLOCK.getKey(b).toString();
-                var parsed = io.github.mojolowjo.entropybot.aa.brain.LootBook.parse(lookup.apply(b.getLootTable().location().toString()), lookup);
-                for (String drop : parsed.keySet()) if (!drop.equals(id)) oreDrops.putIfAbsent(drop, id);
-            }
-        } catch (RuntimeException e) { failed++; }
-    }
 
     private final java.util.Set<String> fishing = new java.util.HashSet<>();
     @Override public java.util.Set<String> fishingFish() { return fishing; }
 
-    /** The fish pool of the fishing loot (singleplayer server only), less the harmful foods (a pufferfish poisons). */
-    private void readFishing() {
-        var server = net.minecraft.client.Minecraft.getInstance().getSingleplayerServer();
-        if (server == null) return;
-        try {
-            var ops = net.minecraft.resources.RegistryOps.create(com.mojang.serialization.JsonOps.INSTANCE, server.registryAccess());
-            var rr = server.reloadableRegistries();
-            java.util.function.Function<String, com.google.gson.JsonElement> lookup = id -> {
-                try {
-                    var key = net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.LOOT_TABLE, ResourceLocation.parse(id));
-                    var t = rr.getLootTable(key);
-                    return t == net.minecraft.world.level.storage.loot.LootTable.EMPTY ? null : net.minecraft.world.level.storage.loot.LootTable.DIRECT_CODEC.encodeStart(ops, t).result().orElse(null);
-                } catch (RuntimeException e) { failed++; return null; }
-            };
-            var parsed = io.github.mojolowjo.entropybot.aa.brain.LootBook.parse(lookup.apply(net.minecraft.world.level.storage.loot.BuiltInLootTables.FISHING_FISH.location().toString()), lookup);
-            for (String item : parsed.keySet()) if (!junkFood.contains(item) && !risky.contains(item)) fishing.add(item);
-        } catch (RuntimeException e) { failed++; }
+    /**
+     * 0.39.z45 (rule 19): the loot facts from the loot book (the jars, singleplayer and a server alike), taken when the book
+     * lands: mob -> its best food drop (the friendly land animals), ore block (c:ores) -> what it drops, and the fishing
+     * fish pool less the harmful foods. Before the book lands these are empty and ItemWorth says "not loaded" once.
+     * {@code fish}: the fishing table's items read with the book (null: not read, said by the reader).
+     */
+    void loot(io.github.mojolowjo.entropybot.aa.brain.LootBook book, java.util.Set<String> fish) {
+        mobFood.clear();
+        oreDrops.clear();
+        fishing.clear();
+        for (var e : BuiltInRegistries.ENTITY_TYPE.entrySet()) {
+            if (e.getValue().getCategory() != net.minecraft.world.entity.MobCategory.CREATURE) continue;       // the friendly land animals; the owner's rules sort the rest
+            String mob = e.getKey().location().toString();
+            String best = null; double bestN = 0;
+            for (var src : book.all()) {
+                if (src.kind() != io.github.mojolowjo.entropybot.aa.brain.LootBook.Kind.MOB || !src.from().equals(mob)) continue;
+                if (facts.getOrDefault(src.item(), ItemWorth.Facts.NONE).nutrition() <= 0) continue;
+                double n = src.per() * src.chance();
+                if (n > bestN) { bestN = n; best = src.item(); }
+            }
+            if (best != null) mobFood.put(mob, best);
+        }
+        for (var b : BuiltInRegistries.BLOCK) {
+            if (!b.defaultBlockState().is(net.neoforged.neoforge.common.Tags.Blocks.ORES)) continue;
+            String id = BuiltInRegistries.BLOCK.getKey(b).toString();
+            for (var src : book.blockDrops(id)) if (!src.item().equals(id)) oreDrops.putIfAbsent(src.item(), id);
+        }
+        if (fish != null) for (String item : fish) if (!junkFood.contains(item) && !risky.contains(item)) fishing.add(item);
     }
 
     private final Map<String, ItemWorth.Mob> mobs = new HashMap<>();

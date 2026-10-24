@@ -26,7 +26,7 @@ import java.util.Set;
  * never the empty set; the next join reads again. The writes that start a read share the lock with {@code gen}. Loader notes: vanilla data-pack API
  * (MultiPackResourceManager.listResources); Fabric: the same calls.
  */
-final class WorldGenReader {
+public final class WorldGenReader {
     private static final Logger LOG = LogUtils.getLogger();
 
     private WorldGenReader() {}
@@ -34,6 +34,19 @@ final class WorldGenReader {
     private static int gen;                       // guarded by WorldGenReader.class: the read now running
     /** The world-gen block ids; null = not loaded yet. */
     static volatile Set<String> blocks;
+    /** 0.39.z45: the ore placements of the same read (rule 19: the jars on singleplayer and a server alike); null = not loaded yet. */
+    static volatile WorldGenFiles.Ores ores;
+    /** 0.39.z45: the world-gen files the last finished read took (from the jars or its cache); -1 while not done. */
+    static volatile int filesRead = -1;
+
+    /** The ore placements; null while the read runs or after it failed (not loaded, rule 15). */
+    public static WorldGenFiles.Ores ores() { return ores; }
+
+    /** The world-gen files the finished read took; -1: not loaded. */
+    public static int filesRead() { return filesRead; }
+
+    /** The reason the last read failed; null: it did not. */
+    public static String failed() { return failed; }
     /** The jar packs the running or last read used; -1 while they are counted. */
     static volatile int jars = -1;
     /** The jar read gave no world-gen file at all (before the override). */
@@ -48,6 +61,8 @@ final class WorldGenReader {
         synchronized (WorldGenReader.class) {
             my = ++gen;
             blocks = null;
+            ores = null;
+            filesRead = -1;
             jars = -1;
             noData = false;
             failed = null;
@@ -60,6 +75,8 @@ final class WorldGenReader {
         JarPacks.POOL.execute(() -> {
             Set<String> s;
             boolean none;
+            WorldGenFiles.Ores oreRead;
+            int readFiles;
             try {
                 long t0 = System.nanoTime();
                 var packs = JarPacks.select();
@@ -82,7 +99,7 @@ final class WorldGenReader {
                     from = "jars";
                     List<WorldGenFiles.Entry> json = new ArrayList<>();
                     try (var rm = packs.open()) {
-                        for (String d : WorldGenFiles.JSON_DIRS) add(rm.listResources(d, rl -> rl.getPath().endsWith(".json")), json);
+                        for (String d : dirs()) add(rm.listResources(d, rl -> rl.getPath().endsWith(".json")), json);
                         r = WorldGenFiles.read(json);
                     }
                     if (cache != null) {
@@ -95,6 +112,11 @@ final class WorldGenReader {
                     }
                 }
                 none = r.blocks().isEmpty();
+                oreRead = r.ores();
+                readFiles = r.files();
+                LOG.info("[entropybot] aa: ore placements from the {} (rule 19, singleplayer and server alike): {} ore placed features, {} biomes, {} biome modifiers{}",
+                        from, oreRead.placed().size(), oreRead.biomes().size(), oreRead.modifiers().size(),
+                        oreRead.unread() == 0 ? "" : "; " + oreRead.unread() + " entries not read (first: " + oreRead.firstUnread() + ")");
                 s = r.blocks();
                 LOG.info("[entropybot] structure facts: world gen places {} blocks (from the {}: {} packs, {} files, {} skipped{}; configured features and noise settings only; structure templates are not read: villages and fossils are built things, their blocks stay structure blocks); {} ms",
                         s.size(), from, jars, r.files(), r.bad(), r.firstBad() == null ? "" : ", first: " + r.firstBad(), (System.nanoTime() - t0) / 1_000_000);  // structural: ns to ms
@@ -110,9 +132,18 @@ final class WorldGenReader {
             synchronized (WorldGenReader.class) {
                 if (my != gen) return;                // a newer world started its own read
                 noData = none;
+                ores = oreRead;
+                filesRead = readFiles;
                 blocks = s;
             }
         });
+    }
+
+    /** The folders of the one read: the block-state names and the ore placements. */
+    private static List<String> dirs() {
+        List<String> l = new ArrayList<>(WorldGenFiles.JSON_DIRS);
+        l.addAll(WorldGenFiles.PLACEMENT_DIRS);
+        return l;
     }
 
     private static void add(Map<ResourceLocation, Resource> found, List<WorldGenFiles.Entry> out) {

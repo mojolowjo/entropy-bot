@@ -33,9 +33,9 @@ import java.util.concurrent.Executors;
  * hands back a not-ready placeholder book, and runs the read on its own daemon thread. The game thread takes the finished
  * book with {@link #poll} and publishes it to the blackboard in one step.
  * <ul>
- * <li>Singleplayer / LAN host: the integrated server's loot tables (ReloadableServerRegistries), encoded with
- * LootTable.DIRECT_CODEC, as before; not cached (world data packs differ per world).</li>
- * <li>Multiplayer client: the loot-table JSON in the client's own jars, through the game's data-pack API:
+ * <li>0.39.z45 (rule 19): the integrated server's loot path is deleted; singleplayer, a LAN host and a server's client all
+ * read the jars below, so they behave the same (a world's own data pack is not read: said in the report, not hidden).</li>
+ * <li>Every client: the loot-table JSON in the client's own jars, through the game's data-pack API:
  * {@code ServerPacksSource.createVanillaTrustedRepository()} (the game jar's vanilla pack plus every mod's data pack: NeoForge
  * adds them to that repository), the packs a new world would turn on (shouldAddAutomatically, default features), read with
  * a {@code MultiPackResourceManager}: {@code listResources("loot_table")} and {@code "loot_tables"}. Later packs win, as on
@@ -83,14 +83,19 @@ final class LootBookReader {
             blocks.computeIfAbsent(key.location().toString(), k -> new ArrayList<>()).add(e.getKey().location().toString());
         }
         passive = Set.copyOf(pas);
-        var server = mc.getSingleplayerServer();
-        LootBook.Progress p = new LootBook.Progress(server != null ? "integrated server" : "from the jars");
+        // 0.39.z45 (rule 19): the jars on singleplayer and a server alike; the integrated server's loot path is deleted
+        LootBook.Progress p = new LootBook.Progress("from the jars");
         String game = net.minecraft.SharedConstants.getCurrentVersion().getName();
         LOG.info("[entropybot] aa: loot book: reading in the background ({})", p.from);
+        synchronized (this) { tables = -1; fish = null; }
         POOL.execute(() -> {
             LootBook b;
+            Set<String> f = null;
+            int[] n = {-1};
             try {
-                b = server != null ? integrated(server, blocks, mobs, p) : jars(blocks, mobs, p, dir, game);
+                var packs = io.github.mojolowjo.entropybot.JarPacks.select();
+                b = jars(packs, blocks, mobs, p, dir, game, n);
+                f = fishing(packs);
             } catch (RuntimeException | Error e) {
                 LOG.warn("[entropybot] aa: loot book read failed ({}) - aa want uses recipes, ores and gather sources only; aa want reads again", e.toString());
                 b = LootBook.empty("read failed: " + e.getClass().getSimpleName());
@@ -100,10 +105,58 @@ final class LootBookReader {
                 if (my == gen) {
                     done = b;
                     doneGen = my;
+                    tables = n[0];
+                    fish = f;
                 } else LOG.info("[entropybot] aa: loot book of an earlier world dropped (a newer read runs)");
             }
         });
         return LootBook.reading(p);
+    }
+
+    private int tables = -1;           // guarded by this
+    private Set<String> fish;          // guarded by this
+
+    /** 0.39.z45: the loot tables the finished read took (from the jars or its cache); -1: not loaded. */
+    synchronized int tablesRead() { return tables; }
+
+    /** 0.39.z45: the fishing table's fish (the game's fishing loot from the jars); null: not loaded or not read (said). */
+    synchronized Set<String> fishPool() { return fish; }
+
+    /**
+     * 0.39.z45: the items of the game's fishing fish table (BuiltInLootTables.FISHING_FISH) from the jars, nested tables
+     * through the same packs; null when it is not in them or does not read (said, never an empty pool).
+     */
+    private static Set<String> fishing(io.github.mojolowjo.entropybot.JarPacks packs) {
+        String table = net.minecraft.world.level.storage.loot.BuiltInLootTables.FISHING_FISH.location().toString();
+        try (var rm = packs.open()) {
+            Map<String, JsonElement> seen = new HashMap<>();
+            java.util.function.Function<String, JsonElement> lookup = k -> {
+                if (seen.containsKey(k)) return seen.get(k);
+                JsonElement j = null;
+                var rl = net.minecraft.resources.ResourceLocation.tryParse(k);
+                if (rl != null) for (String d : LootFiles.DIRS) {
+                    var res = rm.getResource(net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(rl.getNamespace(), d + "/" + rl.getPath() + ".json"));
+                    if (res.isEmpty()) continue;
+                    try (Reader rd = res.get().openAsReader()) {
+                        j = JsonParser.parseReader(rd);
+                    } catch (IOException e) {
+                        throw new IllegalStateException(k + ": " + e, e);
+                    }
+                    break;
+                }
+                seen.put(k, j);
+                return j;
+            };
+            JsonElement t = lookup.apply(table);
+            if (t == null) {
+                LOG.warn("[entropybot] aa: the fishing table {} is not in the jars - no item counts as a fish", table);
+                return null;
+            }
+            return Set.copyOf(LootBook.parse(t, lookup).keySet());
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] aa: the fishing table {} did not read ({}) - no item counts as a fish", table, e.toString());
+            return null;
+        }
     }
 
     /** Game thread: the finished book of the current read, once; null while it runs (or after it was taken). */
@@ -114,47 +167,10 @@ final class LootBookReader {
         return b;
     }
 
-    // ---- singleplayer: the integrated server ----
+    // ---- the jars on the client's disk (singleplayer and a server alike, rule 19) ----
 
-    private static LootBook integrated(net.minecraft.server.MinecraftServer server, Map<String, List<String>> blocks, Map<String, List<String>> mobs, LootBook.Progress p) {
+    private static LootBook jars(io.github.mojolowjo.entropybot.JarPacks packs, Map<String, List<String>> blocks, Map<String, List<String>> mobs, LootBook.Progress p, Path dir, String game, int[] tablesOut) {
         long t0 = System.nanoTime();
-        var ops = net.minecraft.resources.RegistryOps.create(com.mojang.serialization.JsonOps.INSTANCE, server.registryAccess());
-        var rr = server.reloadableRegistries();
-        int[] bad = {0};
-        Map<String, JsonElement> cache = new HashMap<>();
-        java.util.function.Function<String, JsonElement> lookup = id -> {
-            if (cache.containsKey(id)) return cache.get(id);
-            JsonElement j = null;
-            try {
-                var key = net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.LOOT_TABLE, net.minecraft.resources.ResourceLocation.parse(id));
-                var t = rr.getLootTable(key);
-                if (t != net.minecraft.world.level.storage.loot.LootTable.EMPTY) {
-                    j = net.minecraft.world.level.storage.loot.LootTable.DIRECT_CODEC.encodeStart(ops, t).result().orElse(null);
-                    if (j == null) bad[0]++;
-                }
-            } catch (RuntimeException e) {
-                bad[0]++;
-            }
-            cache.put(id, j);
-            return j;
-        };
-        List<String> ids = new ArrayList<>();
-        for (var loc : rr.getKeys(net.minecraft.core.registries.Registries.LOOT_TABLE)) ids.add(loc.toString());
-        p.total.set(ids.size());
-        LootFiles.Read r = LootFiles.build(ids, lookup, blocks, mobs, p);
-        List<LootBook.Source> all = new ArrayList<>(r.sources());
-        int tradesBad = trades(all);
-        var book = new LootBook(all, "integrated server");
-        LOG.info("[entropybot] aa: loot book: {}; {} tables and {} trades skipped{}; {} ms", book.counts(), bad[0] + r.bad(), tradesBad,
-                r.firstBad() == null ? "" : " (first: " + r.firstBad() + ")", (System.nanoTime() - t0) / 1_000_000);  // structural: nanoseconds to milliseconds
-        return book;
-    }
-
-    // ---- multiplayer: the jars on the client's disk ----
-
-    private static LootBook jars(Map<String, List<String>> blocks, Map<String, List<String>> mobs, LootBook.Progress p, Path dir, String game) {
-        long t0 = System.nanoTime();
-        var packs = io.github.mojolowjo.entropybot.JarPacks.select();
         Set<String> idv = packs.idVersions;
         String hash = LootFiles.hash(idv, game);
         Path cacheFile = dir == null ? null : dir.resolve(LootFiles.cacheName(hash));
@@ -162,6 +178,7 @@ final class LootBookReader {
             p.from = "from the cache";
             try {
                 LootFiles.Read r = LootFiles.fromCache(Files.readString(cacheFile), hash);
+                tablesOut[0] = r.tables();
                 List<LootBook.Source> all = new ArrayList<>(r.sources());
                 int tradesBad = trades(all);
                 var book = new LootBook(all, "cache");
@@ -194,6 +211,7 @@ final class LootBookReader {
             }
         }
         LootFiles.Read r = LootFiles.build(tables.keySet(), tables::get, blocks, mobs, null);
+        tablesOut[0] = tables.size();
         if (firstBad == null) firstBad = r.firstBad();
         double s = (System.nanoTime() - t0) / 1e9;  // structural: nanoseconds to seconds
         if (cacheFile != null) {

@@ -31,8 +31,8 @@ final class MiningTierSource implements MiningTiers.Source {
 
     private record Pick(int locked, List<HolderSet<Block>> sets) {}
 
-    /** @param server the integrated server for the loot tables (null: drops unknown, only the block items count) */
-    static MiningTierSource read(net.minecraft.server.MinecraftServer server) {
+    /** @param book the loot book (the jars' loot tables, rule 19; null: not loaded yet, only the block items count until it lands) */
+    static MiningTierSource read(io.github.mojolowjo.entropybot.aa.brain.LootBook book) {
         MiningTierSource s = new MiningTierSource();
         List<Pick> picks = new ArrayList<>();
         for (Item item : BuiltInRegistries.ITEM) {
@@ -67,25 +67,24 @@ final class MiningTierSource implements MiningTiers.Source {
         }
         // the tags are data loaded with the world: none needing a tool means they were not there yet
         if (s.blocksNeedingTool == 0) throw new IllegalStateException("no block needs a tool: the block tags are not loaded yet");
-        if (server != null) s.readDrops(server);
+        if (book != null) s.readDrops(book);
         return s;
     }
 
-    /** Which items each block drops (the loot tables, on the server thread): the least tier among the blocks dropping it. */
-    private void readDrops(net.minecraft.server.MinecraftServer server) {
-        server.submit(() -> {
-            var level = server.overworld();
-            for (Block b : BuiltInRegistries.BLOCK) {
-                try {
-                    int t = tiers.getOrDefault(b, 0);
-                    for (var st : Block.getDrops(b.defaultBlockState(), level, net.minecraft.core.BlockPos.ZERO, null)) {
-                        if (st.isEmpty()) continue;
-                        drops.merge(BuiltInRegistries.ITEM.getKey(st.getItem()).toString(), t, Math::min);
-                    }
-                } catch (RuntimeException e) { dropFailures++; }
-            }
-            dropsRead = true;
-        }).join();
+    /**
+     * Which items each block drops (0.39.z45: the loot book's block sources, read from the jars on singleplayer and a server
+     * alike, instead of the integrated server's loot): the least tier among the blocks dropping it. A block's own item is
+     * the blockTier's.
+     */
+    private void readDrops(io.github.mojolowjo.entropybot.aa.brain.LootBook book) {
+        for (var src : book.all()) {
+            if (src.kind() != io.github.mojolowjo.entropybot.aa.brain.LootBook.Kind.BLOCK) continue;
+            var rl = net.minecraft.resources.ResourceLocation.tryParse(src.from());
+            Block b = rl == null ? null : BuiltInRegistries.BLOCK.getOptional(rl).orElse(null);
+            if (b == null) { dropFailures++; continue; }
+            drops.merge(src.item(), tiers.getOrDefault(b, 0), Math::min);
+        }
+        dropsRead = true;
     }
 
     @Override public int dropTier(String itemId) { return drops.getOrDefault(itemId, -1); }

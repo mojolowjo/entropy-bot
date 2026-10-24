@@ -613,9 +613,11 @@ public final class AaRuntime implements JobPort {
     io.github.mojolowjo.entropybot.aa.NeedChain.StripBand strip(String word) {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer p = mc.player;
-        var all = ORE_FEATURES;
-        if (p == null || mc.level == null || all == null) return null;
-        var here = all.get(mc.level.dimension().location().toString());
+        if (p == null || mc.level == null) return null;
+        int[] at = Jobs.here(p);
+        String key = mc.level.dimension().location() + " " + (at[0] >> 4) + " " + (at[2] >> 4) + " " + System.identityHashCode(io.github.mojolowjo.entropybot.guard.WorldGenReader.ores());
+        if (!key.equals(columnKey) || columnCache == null) { columnCache = columnFeatures(mc, at); columnKey = columnCache == null ? null : key; }
+        var here = columnCache;
         if (here == null) return null;
         List<String> ores = new ArrayList<>();
         List<io.github.mojolowjo.entropybot.aa.brain.OreBand.Feature> fs = new ArrayList<>();
@@ -689,9 +691,6 @@ public final class AaRuntime implements JobPort {
             l.add(m.where() + " " + Math.round(Math.sqrt(Jobs.distSq(me, new int[]{m.x(), m.y(), m.z()}))) + " m (seen from " + m.count() + " m)");
         return cavesLine() + (l.isEmpty() ? "" : ": " + String.join(", ", l));
     }
-
-    /** 0.39.z43: dimension -> ore block id -> its height-placed features (singleplayer: the integrated server's placed features; null: not read). */
-    static volatile Map<String, Map<String, List<io.github.mojolowjo.entropybot.aa.brain.OreBand.Feature>>> ORE_FEATURES;
 
     /**
      * 0.39.z33: the uses left of the bag's best stack of {@code id}, from the item's data components (MAX_DAMAGE, DAMAGE;
@@ -2655,6 +2654,9 @@ public final class AaRuntime implements JobPort {
                     treeRecipes = all.size();
                     try {       // AA_ROUND4 C: the item data the worth is derived from (rebuilt with the recipes)
                         var src = ItemWorthSource.read(mc.level);
+                        var book = currentLootBook();
+                        if (book != null && book.ready()) src.loot(book, lootReader.fishPool());
+                        itemWorthSrc = src;
                         io.github.mojolowjo.entropybot.aa.brain.ItemWorth.use(src);
                         LOG.info("[entropybot] aa: item worth from data: {} items with facts, {} with recipes, {} unreadable", src.itemsWithFacts(), src.itemsWithRecipes(), src.failed);
                     } catch (RuntimeException e) {
@@ -2841,7 +2843,7 @@ public final class AaRuntime implements JobPort {
         catalog = new io.github.mojolowjo.entropybot.aa.brain.Thing.Catalog(items, blocks, names, tiers, gen, dropsOf, dropping);
         catalogWorld = world;
         LOG.info("[entropybot] aa: resolver catalog: {} items, {} blocks, worldgen {}", items.size(), blocks.size(),
-                gen == null ? "none (multiplayer)" : gen.size() + " ore blocks");
+                gen == null ? "not loaded yet (the jars' world-gen read runs; taken when it lands)" : gen.size() + " ore blocks");
         return catalog;
     }
 
@@ -2856,6 +2858,15 @@ public final class AaRuntime implements JobPort {
             lootFailed = landed.origin.startsWith("read failed");
             LOG.info("[entropybot] aa: loot book for this world: {} - orders waiting on it are priced again", landed.counts());     // a failed read says "read failed" here and warns above
         }
+        if (landed != null) {                 // 0.39.z45: the item data's loot facts and the drop tiers come from the book (the jars)
+            if (itemWorthSrc != null) itemWorthSrc.loot(landed, lootReader.fishPool());
+            io.github.mojolowjo.entropybot.aa.brain.MiningTiers.use(null);
+        }
+        var cat = catalog;                    // 0.39.z45: the jars' world-gen read landed after the catalog: take it now
+        if (cat != null && cat.gen() == null && io.github.mojolowjo.entropybot.guard.WorldGenReader.ores() != null) {
+            var g = worldgen(mc);
+            if (g != null) catalog = new io.github.mojolowjo.entropybot.aa.brain.Thing.Catalog(cat.items(), cat.blocks(), cat.names(), cat.tiers(), g, cat.dropsOf(), cat.droppedBy());
+        }
         String world = Core.INSTANCE.files() == null ? "" : Core.INSTANCE.files().worldRoot().toString();
         if (world.equals(catalogTried)) return;
         catalogTried = world;
@@ -2866,6 +2877,24 @@ public final class AaRuntime implements JobPort {
     private final LootBookReader lootReader = new LootBookReader();
     /** loot-book-bg: the last read failed: the owner's aa want starts it again. */
     private boolean lootFailed;
+    /** 0.39.z45: the item data in use, so the loot book's facts reach it when the book lands. */
+    private ItemWorthSource itemWorthSrc;
+
+    /**
+     * 0.39.z45 (rule 19), aa status: where the game data came from. "game data: jars (N files: M world-gen, K loot tables)
+     * | server sync: recipes R, tags T" - the jars on singleplayer and a server alike, the recipes and tags the server sends
+     * every client.
+     */
+    String gameDataLine() {
+        int wg = io.github.mojolowjo.entropybot.guard.WorldGenReader.filesRead(), lt = lootReader.tablesRead();
+        String w = wg < 0 ? (io.github.mojolowjo.entropybot.guard.WorldGenReader.failed() != null ? "world-gen read failed" : "world-gen not loaded yet") : wg + " world-gen";
+        String l = lt < 0 ? "loot not loaded yet" : lt + " loot tables";
+        String jars = (wg >= 0 && lt >= 0 ? (wg + lt) + " files: " : "") + w + ", " + l;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return "game data: jars (" + jars + ") | server sync: no world";
+        long tags = mc.level.registryAccess().registries().mapToLong(r -> r.value().getTagNames().count()).sum();
+        return "game data: jars (" + jars + ") | server sync: recipes " + mc.level.getRecipeManager().getRecipes().size() + ", tags " + tags;
+    }
 
     /** loot-book-bg: starts the read for this world and publishes the not-ready placeholder (its progress for aa status and the chains' wait). */
     private void startLoot(Minecraft mc) {
@@ -2887,55 +2916,68 @@ public final class AaRuntime implements JobPort {
     }
 
     /**
-     * Singleplayer only: every ore feature (OreConfiguration targets) in each level's possible biomes (NeoForge biome
-     * modifiers included), with the Y range from its height_range placement (encoded to JSON: the anchors). Null when
-     * there is no integrated server; a failure is logged and gives null (the vanilla table / guess take over).
+     * 0.39.z45 (rule 19): where each ore generates, from the jars' world-gen read (WorldGenReader: placed features joined to
+     * their configured features, the biomes' lists, NeoForge's biome modifiers) on singleplayer and a server alike; the
+     * z43 read of the integrated server's registries is deleted. Y range: every placement in the data (the anchors against
+     * this dimension's build height); dimensions: this one for the ores the biomes under the bot place (the chunk data the
+     * server sends), none known yet for the rest (said once). Null: the read is not done (not loaded; the catalog takes it
+     * when it lands) or no level.
      */
     private static Map<String, io.github.mojolowjo.entropybot.aa.brain.Thing.Gen> worldgen(Minecraft mc) {
-        var server = mc.getSingleplayerServer();
-        if (server == null) return null;
-        Map<String, java.util.Set<String>> dims = new java.util.HashMap<>();
-        Map<String, int[]> ys = new java.util.HashMap<>();
-        Map<String, Map<String, List<io.github.mojolowjo.entropybot.aa.brain.OreBand.Feature>>> feats = new java.util.HashMap<>();
-        int unread = 0;
-        try {
-            for (var lvl : server.getAllLevels()) {
-                String dim = lvl.dimension().location().toString();
-                int bottom = lvl.getMinBuildHeight(), top = lvl.getMaxBuildHeight();
-                java.util.Set<Object> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-                for (var biome : lvl.getChunkSource().getGenerator().getBiomeSource().possibleBiomes())
-                    for (var set : biome.value().getGenerationSettings().features())
-                        for (var pf : set) {
-                            var placed = pf.value();
-                            if (!seen.add(placed)) continue;
-                            if (!(placed.feature().value().config() instanceof net.minecraft.world.level.levelgen.feature.configurations.OreConfiguration oc)) continue;
-                            int[] y = heights(placed.placement(), bottom, top);
-                            var feat = io.github.mojolowjo.entropybot.aa.brain.OreBand.of(placementJson(placed.placement()), oc.size, bottom, top);
-                            if (feat == null && y != null) unread++;
-                            for (var t : oc.targetStates) {
-                                String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(t.state.getBlock()).toString();
-                                dims.computeIfAbsent(id, k -> new java.util.TreeSet<>()).add(dim);
-                                if (y != null) ys.merge(id, y, (a, b) -> new int[]{Math.min(a[0], b[0]), Math.max(a[1], b[1])});
-                                if (feat != null) feats.computeIfAbsent(dim, k -> new java.util.HashMap<>()).computeIfAbsent(id, k -> new ArrayList<>()).add(feat);
-                            }
-                        }
-            }
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] aa: worldgen read failed ({}) - the vanilla table and name guesses are used", e.toString());
-            ORE_FEATURES = null;
-            return null;
-        }
-        ORE_FEATURES = feats;
-        LOG.info("[entropybot] aa: ore placements read for the strip way: {} dimensions{}", feats.size(),
-                unread == 0 ? "" : ", " + unread + " height-placed features not priced (a count or height the reader does not know)");
+        var ores = io.github.mojolowjo.entropybot.guard.WorldGenReader.ores();
+        if (ores == null || mc.level == null || mc.player == null) return null;
+        int bottom = mc.level.getMinBuildHeight(), top = mc.level.getMaxBuildHeight();
+        int[] unpriced = {0};
+        var all = io.github.mojolowjo.entropybot.guard.WorldGenFiles.features(ores, ores.biomes().keySet(), b -> true, bottom, top, unpriced);
+        var here = columnFeatures(mc, Jobs.here(mc.player));
+        String dim = mc.level.dimension().location().toString();
         Map<String, io.github.mojolowjo.entropybot.aa.brain.Thing.Gen> out = new java.util.HashMap<>();
-        for (var e : dims.entrySet()) {
-            int[] y = ys.get(e.getKey());
-            int u = io.github.mojolowjo.entropybot.aa.brain.Thing.UNKNOWN_Y;
-            out.put(e.getKey(), new io.github.mojolowjo.entropybot.aa.brain.Thing.Gen(e.getValue(), y == null ? u : y[0], y == null ? u : y[1]));
+        int elsewhere = 0;
+        for (var e : all.entrySet()) {
+            int lo = Integer.MAX_VALUE, hi = Integer.MIN_VALUE;
+            for (var ft : e.getValue()) { lo = Math.min(lo, ft.lo()); hi = Math.max(hi, ft.hi()); }
+            boolean seen = here != null && here.containsKey(e.getKey());
+            if (!seen) elsewhere++;
+            out.put(e.getKey(), new io.github.mojolowjo.entropybot.aa.brain.Thing.Gen(seen ? java.util.Set.of(dim) : java.util.Set.of(), lo, hi));
         }
+        LOG.info("[entropybot] aa: ore placements for the resolver (from the jars): {} ore blocks; {} placed only by biomes not under the bot (their dimension is not known yet){}",
+                out.size(), elsewhere, unpriced[0] == 0 ? "" : "; " + unpriced[0] + " height-placed features not priced (a count or height the reader does not know)");
         return out;
     }
+
+    private String columnKey;
+    private Map<String, List<io.github.mojolowjo.entropybot.aa.brain.OreBand.Feature>> columnCache;
+
+    /**
+     * 0.39.z45: block -> its height-placed features in the biomes of the column under the bot (the client's biomes, sent
+     * by the server with the chunks, one per biome cell of 4 blocks; the biome modifiers by the game's synced biome tags),
+     * from the jars' read. Null: the read is not done or the column is not loaded.
+     */
+    private static Map<String, List<io.github.mojolowjo.entropybot.aa.brain.OreBand.Feature>> columnFeatures(Minecraft mc, int[] at) {
+        var ores = io.github.mojolowjo.entropybot.guard.WorldGenReader.ores();
+        var lv = mc.level;
+        if (ores == null || lv == null || !lv.hasChunkAt(new net.minecraft.core.BlockPos(at[0], at[1], at[2]))) return null;
+        int bottom = lv.getMinBuildHeight(), top = lv.getMaxBuildHeight();
+        List<net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome>> hs = new ArrayList<>();
+        java.util.Set<String> ids = new java.util.TreeSet<>();
+        for (int y = bottom; y < top; y += BIOME_CELL) {
+            var h = lv.getBiome(new net.minecraft.core.BlockPos(at[0], y, at[2]));
+            var k = h.unwrapKey();
+            if (k.isEmpty() || !ids.add(k.get().location().toString())) continue;
+            hs.add(h);
+        }
+        java.util.function.Predicate<String> named = spec -> {
+            boolean tag = spec.startsWith("#");
+            var rl = net.minecraft.resources.ResourceLocation.tryParse(tag ? spec.substring(1) : spec);
+            if (rl == null) return false;
+            for (var h : hs) if (tag ? h.is(net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.BIOME, rl)) : h.is(rl)) return true;
+            return false;
+        };
+        return io.github.mojolowjo.entropybot.guard.WorldGenFiles.features(ores, ids, named, bottom, top, null);
+    }
+
+    /** The game's biome cell: biomes are stored per 4 x 4 x 4 blocks (QuartPos). */
+    private static final int BIOME_CELL = 4; // structural: QuartPos.SIZE
 
     private java.util.Set<String> lootPassive = java.util.Set.of();
     /** A friendly-category mob that fights back (a wolf, a bee, a polar bear, a llama): the game gives it an attack-damage attribute or a ranged attack; never "passive" for a loot hunt. */
@@ -2955,40 +2997,6 @@ public final class AaRuntime implements JobPort {
             bb.fact(io.github.mojolowjo.entropybot.aa.brain.LootBook.HERDS_FACT, herdsSeen(mc.level, mc.player));
         } catch (RuntimeException e) {
             LOG.debug("[entropybot] aa: herds seen: {}", e.toString());
-        }
-    }
-
-    /** 0.39.z43: a placement list as the placed_feature JSON array (each modifier through its codec; one that does not encode is left out). */
-    private static com.google.gson.JsonArray placementJson(List<net.minecraft.world.level.levelgen.placement.PlacementModifier> mods) {
-        var arr = new com.google.gson.JsonArray();
-        for (var m : mods)
-            net.minecraft.world.level.levelgen.placement.PlacementModifier.CODEC.encodeStart(com.mojang.serialization.JsonOps.INSTANCE, m).result().ifPresent(arr::add);
-        return arr;
-    }
-
-    /** The min/max Y of the anchors in a placement list's height_range (null when none). */
-    private static int[] heights(List<net.minecraft.world.level.levelgen.placement.PlacementModifier> mods, int bottom, int top) {
-        int[] r = null;
-        for (var m : mods) {
-            if (!(m instanceof net.minecraft.world.level.levelgen.placement.HeightRangePlacement)) continue;
-            var json = net.minecraft.world.level.levelgen.placement.PlacementModifier.CODEC
-                    .encodeStart(com.mojang.serialization.JsonOps.INSTANCE, m).result().orElse(null);
-            if (json == null) continue;
-            List<Integer> vals = new ArrayList<>();
-            anchors(json, bottom, top, vals);
-            for (int v : vals) r = r == null ? new int[]{v, v} : new int[]{Math.min(r[0], v), Math.max(r[1], v)};
-        }
-        return r;
-    }
-
-    private static void anchors(com.google.gson.JsonElement j, int bottom, int top, List<Integer> out) {
-        if (j.isJsonArray()) for (var x : j.getAsJsonArray()) anchors(x, bottom, top, out);
-        if (!j.isJsonObject()) return;
-        for (var e : j.getAsJsonObject().entrySet()) {
-            String k = e.getKey();
-            if ((k.equals("absolute") || k.equals("above_bottom") || k.equals("below_top")) && e.getValue().isJsonPrimitive())
-                out.add(io.github.mojolowjo.entropybot.aa.brain.Thing.anchorY(k, e.getValue().getAsInt(), bottom, top));
-            else anchors(e.getValue(), bottom, top, out);
         }
     }
 
@@ -3400,12 +3408,13 @@ public final class AaRuntime implements JobPort {
     private void loadMiningTiers() {
         if (io.github.mojolowjo.entropybot.aa.brain.MiningTiers.ready() || bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.TECH_FACT) == null) return;
         try {
-            var mt = MiningTierSource.read(Minecraft.getInstance().getSingleplayerServer());
+            var book = currentLootBook();
+            var mt = MiningTierSource.read(book != null && book.ready() ? book : null);
             io.github.mojolowjo.entropybot.aa.brain.MiningTiers.use(mt);
             List<io.github.mojolowjo.entropybot.aa.brain.ToolGroup.Tier> gameTiers = new ArrayList<>();       // the game's own tier enum: name, speed, attack bonus
             for (net.minecraft.world.item.Tiers t : net.minecraft.world.item.Tiers.values()) gameTiers.add(new io.github.mojolowjo.entropybot.aa.brain.ToolGroup.Tier(t.name(), t.getSpeed(), t.getUses()));
             io.github.mojolowjo.entropybot.aa.brain.ToolGroup.use(gameTiers);
-            LOG.info("[entropybot] aa: mining tiers from data: {} pickaxes, {} blocks need a tool, drops {} ({} failed)", mt.pickaxes, mt.blocksNeedingTool, mt.dropsRead ? "read" : "not read (no integrated server)", mt.dropFailures);
+            LOG.info("[entropybot] aa: mining tiers from data: {} pickaxes, {} blocks need a tool, drops {} ({} failed)", mt.pickaxes, mt.blocksNeedingTool, mt.dropsRead ? "read (the loot book, from the jars)" : "not loaded yet (the loot book is read in the background; read again when it lands)", mt.dropFailures);
         } catch (RuntimeException e) {
             if (!miningTiersWarned) LOG.warn("[entropybot] aa: mining tier data not read yet - the blocked share uses the old table, retrying every minute: {}", e.toString());
             miningTiersWarned = true;
