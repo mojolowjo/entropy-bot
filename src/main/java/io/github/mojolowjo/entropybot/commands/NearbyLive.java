@@ -108,15 +108,36 @@ final class NearbyLive {
         if (!io.github.mojolowjo.entropybot.aa.brain.ItemWorth.hasData()) return new StationFact.NotLoaded("item data not loaded yet");
         int[] me = here();
         if (me == null) return new StationFact.NotLoaded("not in a world");
+        java.util.Set<String> ids = containerIds();
+        StationBlocks.Answer blocks = ids.isEmpty() ? new StationBlocks.Answer.None("the game tags no chest or barrel the item data calls a container")
+                : new StationBlocks.Answer.Of(ids);
+        return Nearby.stationFact(scan(), me, blocks);
+    }
+
+    /** The container blocks of the deposit fact: the game's chest and barrel tags that the item data calls a container. */
+    java.util.Set<String> containerIds() {
         java.util.Set<String> ids = new java.util.LinkedHashSet<>();
         for (var tag : List.of(net.neoforged.neoforge.common.Tags.Blocks.CHESTS, net.neoforged.neoforge.common.Tags.Blocks.BARRELS))
             BuiltInRegistries.BLOCK.getTagOrEmpty(tag).forEach(h -> {
                 String id = BuiltInRegistries.BLOCK.getKey(h.value()).toString();
                 if (io.github.mojolowjo.entropybot.aa.brain.ItemWorth.container(id)) ids.add(id);
             });
-        StationBlocks.Answer blocks = ids.isEmpty() ? new StationBlocks.Answer.None("the game tags no chest or barrel the item data calls a container")
-                : new StationBlocks.Answer.Of(ids);
-        return Nearby.stationFact(scan(), me, blocks);
+        return ids;
+    }
+
+    /**
+     * main-stations (0.39.z35): the block set of a chain station kind (MainStations.KINDS): a recipe kind's station blocks,
+     * the container kind's chest and barrel blocks; null: not loaded yet (rule 15: never "none").
+     */
+    java.util.Set<String> blocksOfKind(String kind) {
+        if (!io.github.mojolowjo.entropybot.aa.brain.ItemWorth.hasData()) return null;
+        if (io.github.mojolowjo.entropybot.aa.MainStations.CONTAINER.equals(kind)) return containerIds();
+        return stationBlocks(kind) instanceof StationBlocks.Answer.Of o ? o.ids() : null;
+    }
+
+    /** main-stations: the station fact of a chain station kind (the containers for the container kind). */
+    StationFact factOfKind(String kind) {
+        return io.github.mojolowjo.entropybot.aa.MainStations.CONTAINER.equals(kind) ? containers() : stations(kind);
     }
 
     /** station-note (0.39.z15): the lookup's log line ({@link Nearby#stationsLine}) from the same station fact, in its three states. */

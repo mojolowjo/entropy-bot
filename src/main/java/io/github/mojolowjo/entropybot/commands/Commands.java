@@ -442,6 +442,7 @@ public final class Commands implements Chains.Env {
         if (!ready) return "not ready yet";
         StringBuilder sb = new StringBuilder();
         sb.append(areaStore.load(files)).append("; ").append(RestoreLive.INSTANCE.load(this, files));
+        sb.append("; ").append(MainStationsLive.load(files));                  // main-stations 0.39.z35: beside the station memory
         sb.append("; ").append(brainStore.loadWorldPart(files));               // 0.31.0: home, deaths, mines... of this world
         if (aaRuntime != null) sb.append("; ").append(aaRuntime.worldLoaded());   // live-facts: AA's switch is this world's
         sb.append(migrateAreas(files));
@@ -458,6 +459,7 @@ public final class Commands implements Chains.Env {
         StringBuilder sb = new StringBuilder();
         sb.append(pmStore.load(files)).append("; ").append(brainStore.load(files)).append("; ").append(areaStore.load(files));
         sb.append("; ").append(RestoreLive.INSTANCE.load(this, files));          // P1: the restore ledger
+        sb.append("; ").append(MainStationsLive.load(files));                   // main-stations 0.39.z35
         sb.append("; ").append(Storage.loadEmptied(files));                     // 0.31.1: looted corpses
         PathCommand.syncRuntime(this);
         JsonObject memory = null;

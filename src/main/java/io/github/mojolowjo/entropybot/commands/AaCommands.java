@@ -27,7 +27,7 @@ final class AaCommands {
     }
 
     /** 0.39.z27: the help's headings in order; "areas and tags" comes from VerbTable's area row (the owner verb). */
-    static final List<String> GROUPS = List.of("orders", "areas and tags", "status", "tuning", "help");
+    static final List<String> GROUPS = List.of("orders", "areas and tags", "stations", "status", "tuning", "help");
     static final String AREAS = "areas and tags";
 
     /** aa do / use (and their debug forms) while aa is off. */
@@ -77,7 +77,7 @@ final class AaCommands {
                 f(O, "ask on|off", "before each task show my options and wait for aa pick"));
         v("build", (c, aa, vb, a) -> aa.build(a), f(O, "build <name> here|at <x y z> [high|low]", "build that saved design here or there (its material list said)"));
         // ---- status
-        v("status", (c, aa, vb, a) -> aa.statusLine() + StripStep.liveLine() + aa.tuningLine() + "\n" + aa.counts() + "\n" + aa.lootLine() + (aa.on() ? "\n" + aa.brainCounters() + "\ndesires: " + String.join(" | ", aa.brainLines(5)) + "\n" + aa.goalsLine() + "\n" + aa.wantsLine() + "\nrungs: " + aa.ladderLine() + "\n" + aa.optionStatus() : ""),
+        v("status", (c, aa, vb, a) -> aa.statusLine() + StripStep.liveLine() + aa.tuningLine() + "\n" + io.github.mojolowjo.entropybot.aa.MainStations.now().line() + "\n" + aa.counts() + "\n" + aa.lootLine() + (aa.on() ? "\n" + aa.brainCounters() + "\ndesires: " + String.join(" | ", aa.brainLines(5)) + "\n" + aa.goalsLine() + "\n" + aa.wantsLine() + "\nrungs: " + aa.ladderLine() + "\n" + aa.optionStatus() : ""),
                 f(S, "status", "who drives, the counters, the desires, goals and wants, each rung's reason"));
         v("why", (c, aa, vb, a) -> {
             List<String> d = aa.decisions();
@@ -123,7 +123,6 @@ final class AaCommands {
         v("fair", (c, aa, vb, a) -> aa.fair(a), f(T, "fair on|off", "on: only ore I have seen counts; off: the whole chunk index"));
         v("like", (c, aa, vb, a) -> aa.like(a), f(T, "like [<key> <n>]", "the personality (want weights, upkeep, sleep, margin): list or set one"));
         v("replan", (c, aa, vb, a) -> aa.replan(a), f(T, "replan on|off", "whether a task is planned again when its facts change"));
-        v("look", (c, aa, vb, a) -> aa.look(a), f(T, "look [smooth <ticks>]", "how many ticks a head turn takes (saved)"));
         v("horizon", (c, aa, vb, a) -> aa.horizon(a), f(T, "horizon [seconds]", "how far ahead the sequencer plans (saved)"));
         // ---- help
         v("help", (c, aa, vb, a) -> help(), f("help", "help", "this list"));

@@ -47,16 +47,27 @@ public final class DepositRule {
      * @param canCraft   the bag holds 8 planks (the chest recipe's input, from the recipe data)
      */
     public static Choice choose(List<int[]> known, Function<int[], Double> pathCost, boolean chestInBag, boolean canCraft) {
+        return choose(known, pathCost, k -> 0.0, chestInBag, canCraft);
+    }
+
+    /**
+     * main-stations (0.39.z35): the same with each chest's price bonus in seconds ({@code bonusS}: the main chest's
+     * station.mainBonusS): a price, not a rule (a main far beyond the bonus loses to a near one).
+     */
+    public static Choice choose(List<int[]> known, Function<int[], Double> pathCost, Function<int[], Double> bonusS, boolean chestInBag, boolean canCraft) {
         if (known == null) return new Choice(How.WAIT, null, "the chest memory is not loaded yet");
         int[] best = null;
-        double bestCost = Double.MAX_VALUE;
+        double bestCost = Double.MAX_VALUE, bestRaw = 0, bestBonus = 0;
         int noPath = 0;
         for (int[] k : known) {
             Double c = pathCost.apply(k);
             if (c == null) { noPath++; continue; }
-            if (c < bestCost) { bestCost = c; best = k; }
+            Double b = bonusS.apply(k);
+            double bb = b == null ? 0 : Math.max(0, b);
+            if (c - bb < bestCost) { bestCost = c - bb; best = k; bestRaw = c; bestBonus = bb; }
         }
-        if (best != null) return new Choice(How.KNOWN, best, "the known chest at " + at(best) + " (" + Math.round(bestCost) + " s away)");
+        if (best != null) return new Choice(How.KNOWN, best, "the known chest at " + at(best) + " (" + Math.round(bestRaw) + " s away"
+                + (bestBonus > 0 ? ", -" + Math.round(bestBonus) + " s bonus" : "") + ")");
         String note = noPath > 0 ? " (no path to the " + noPath + " known)" : "";
         if (chestInBag) return new Choice(How.BAG, null, "a chest from the bag" + note);
         if (canCraft) return new Choice(How.CRAFT, null, "a chest crafted from 8 planks" + note);

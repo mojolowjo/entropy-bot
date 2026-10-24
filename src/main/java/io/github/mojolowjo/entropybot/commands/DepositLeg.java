@@ -146,10 +146,13 @@ final class DepositLeg {
             }
         };
         String bagChest = chestInBag(p);
+        // main-stations (0.39.z35): the lookup's price bonus of each chest (the main's station.mainBonusS, a use-stations area's)
+        java.util.Map<String, Double> bonus = new java.util.HashMap<>();
+        if (f instanceof StationFact.Known k) for (var s : k.spots()) bonus.put(DepositRule.at(new int[]{s.x(), s.y(), s.z()}), s.bonusS());
         DepositRule.Choice ch = DepositRule.choose(known, cell -> {
             var w = LivePathPrice.INSTANCE.toBlock(cell[0], cell[1], cell[2]);
             return w == null ? null : w.seconds();
-        }, bagChest != null, planks(p) >= 8);           // the chest recipe's input (8 planks), as the game's recipe has it
+        }, cell -> bonus.getOrDefault(DepositRule.at(cell), 0.0), bagChest != null, planks(p) >= 8);          // the chest recipe's input (8 planks), as the game's recipe has it
         LOG.info("[entropybot] deposit: {}", ch.why());
         return switch (ch.how()) {
             case WAIT -> Car.Status.running("deposit: " + ch.why());

@@ -1260,7 +1260,8 @@ public final class NeedChain {
         String place = placeNew(c, kind, table, label);
         double placeS = c.seconds - t0;
         boolean placeStands = c.fail == null && !c.stuck;
-        String pw = "place a new " + label + " near me", kw = "walk to the known " + label + " " + Math.round(far.dist()) + " m" + (far.unloaded() ? " (" + UNVERIFIED + ")" : "");
+        String pw = "place a new " + label + " near me", kw = "walk to the known " + label + " " + Math.round(far.dist()) + " m" + (far.unloaded() ? " (" + UNVERIFIED + ")" : "")
+                + (Nearby.isMain(null, far, null) ? " (" + Nearby.MAIN + " -" + Math.round(Math.max(0, far.bonusS())) + " s)" : "");
         if (placeStands && placeS < walkS) {
             drop(c, kw, s(walkS));
             c.note(() -> "station " + label + ": " + kw + " " + s(walkS) + " vs " + pw + " " + s(placeS) + " -> placed");
@@ -1306,7 +1307,9 @@ public final class NeedChain {
         c.away = 0;
         // 0.39.z30, rule 15: a remembered station in a chunk not loaded is priced as remembered; the step verifies it on
         // arrival (not the station: the fact becomes none and the order re-plans)
-        return noted("at the " + label + " " + Math.round(at.dist()) + " m" + (bonus > 0 ? " (" + io.github.mojolowjo.entropybot.guard.AreaTags.USE_STATIONS + " -" + Math.round(bonus) + " s)" : "")
+        boolean main = Nearby.isMain(null, at, null);                   // main-stations (0.39.z35): the owner's main of the kind
+        return noted("at the " + label + " " + Math.round(at.dist()) + " m" + (main ? " (" + Nearby.MAIN + ")" : "")
+                + (bonus > 0 ? " (" + (main ? Nearby.MAIN + (bonus > MainStations.bonusS() ? " + " + io.github.mojolowjo.entropybot.guard.AreaTags.USE_STATIONS : "") : io.github.mojolowjo.entropybot.guard.AreaTags.USE_STATIONS) + " -" + Math.round(bonus) + " s)" : "")
                 + (at.unloaded() ? " (" + UNVERIFIED + ")" : ""), wk);
     }
 

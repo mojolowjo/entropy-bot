@@ -80,6 +80,7 @@ final class TuningDefs {
         Tuning.def("steps.placeNearR", 3, "one-planner 0.39.z1", "blocks within which the fork's placeNear picks the cell of a place-near step (a table, a furnace)");
         Tuning.def("needChain.maxTrials", 4000, "one-planner 0.39.z1", "ways priced in one chain before a requirement takes the first of its ways that stands, the rest unpriced (a bound on the search)");
         Tuning.def("station.nearM", 30, "station-far 0.39.z33", "a known station within this many blocks (straight line) is used as is; farther, its walk is priced against placing a new one near me");
+        Tuning.def("station.mainBonusS", 30, "main-stations 0.39.z35", "seconds off the walk price of the owner's main station of a kind (aa station main, aa deposit x y z): a price, not a rule");
         Tuning.def("needChain.unknownBreakS", 3, "one-planner 0.39.z1 (was coalOptions.mineOre)", "seconds a block takes to break when the game gives it no hardness (no data loaded)");
         Tuning.def("needChain.unknownMobHp", 10, "one-planner 0.39.z1", "health points a mob is priced at when the game's attributes give none (the hunt's kill time)");
         Tuning.def("needs.foodItems", 8, "one-planner 0.39.z1 (was the planner goal food 8)", "food items the food need's chain gets (any plain food, the cheapest per point)");

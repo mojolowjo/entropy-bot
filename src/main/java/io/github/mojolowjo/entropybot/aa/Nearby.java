@@ -82,6 +82,8 @@ public final class Nearby {
         default io.github.mojolowjo.entropybot.guard.Policy stationPolicy() { return null; }
         /** The dimension the scan looks in (the policy's areas are per dimension). */
         default String stationDim() { return null; }
+        /** main-stations (0.39.z35): the owner's mains of this world (MainStations.current). */
+        default MainStations mains() { return MainStations.now(); }
     }
 
     /**
@@ -133,7 +135,7 @@ public final class Nearby {
         Spot a = spots.get(0);
         String block = a.block() == null ? "?" : a.block().replaceFirst("^minecraft:", "");
         return "stations: " + n + " of mine, " + (spots.size() - n) + " scanned within " + scanR + ", nearest " + block + " "
-                + Math.round(a.dist()) + " m at " + a.x() + " " + a.y() + " " + a.z();
+                + Math.round(a.dist()) + " m at " + a.x() + " " + a.y() + " " + a.z() + (isMain(null, a, blocks) ? " (" + MAIN + ")" : "");
     }
 
     /**
@@ -200,27 +202,63 @@ public final class Nearby {
             }
             if (!seen.add(key(p[0], p[1], p[2]))) continue;
             if (!usable(s, p, true, first, skipped)) continue;
-            out.add(priced(new Spot(p[0], p[1], p[2], dist(p, me), m.block()), first, priced));
+            out.add(priced(s, new Spot(p[0], p[1], p[2], dist(p, me), m.block()), first, priced, blocks));
+        }
+        // main-stations (0.39.z35): a main of the set is known wherever it is, as my placements are (unloaded: kept, unverified)
+        MainStations ms = s.mains();
+        if (ms != null) for (MainStations.Main m : ms.all()) {
+            if (m.block() == null || !blocks.contains(m.block())) continue;
+            int[] p = {m.x(), m.y(), m.z()};
+            String now = s.blockAt(p[0], p[1], p[2]);
+            if (now != null && !now.equals(m.block())) {
+                skipped.add(m.at() + ": the main " + MainStations.word(m.kind()) + " is " + now + " now (aa station clear " + MainStations.word(m.kind()) + ")");
+                continue;
+            }
+            if (!seen.add(key(p[0], p[1], p[2]))) continue;
+            if (!usable(s, p, false, first, skipped)) continue;
+            out.add(priced(s, new Spot(p[0], p[1], p[2], dist(p, me), m.block()), first, priced, blocks));
         }
         for (int[] p : s.find(blocks, scanR())) {
             if (!seen.add(key(p[0], p[1], p[2]))) continue;
             String id = s.blockAt(p[0], p[1], p[2]);
             if (id == null || !blocks.contains(id)) continue;
             if (!usable(s, p, false, first, skipped)) continue;
-            out.add(priced(new Spot(p[0], p[1], p[2], dist(p, me), id), first, priced));
+            out.add(priced(s, new Spot(p[0], p[1], p[2], dist(p, me), id), first, priced, blocks));
         }
         out.sort(Comparator.comparingDouble((Spot sp) -> NeedChain.walkS(sp.dist()) - sp.bonusS()).thenComparingDouble(Spot::dist));
         return new Lookup(out, skipped, priced);
     }
 
-    /** A use-stations station's price bonus (Tuning nearby.useStationsS), said in the lookup's notes. */
-    private static Spot priced(Spot sp, Set<String> first, List<String> priced) {
-        if (!first.contains(key(sp.x(), sp.y(), sp.z()))) return sp;
-        double b = Tuning.get("nearby.useStationsS");
-        priced.add(sp.x() + " " + sp.y() + " " + sp.z() + ": " + io.github.mojolowjo.entropybot.guard.AreaTags.USE_STATIONS + " -" + Math.round(b)
-                + " s off the walk of " + Math.round(NeedChain.walkS(sp.dist())) + " s");
+    /**
+     * A use-stations station's price bonus (Tuning nearby.useStationsS) plus a main's (station.mainBonusS, main-stations
+     * 0.39.z35), said in the lookup's notes ("x y z: main -30 s off the walk of 52 s").
+     */
+    private static Spot priced(Scan s, Spot sp, Set<String> first, List<String> priced, Set<String> blocks) {
+        double b = 0;
+        List<String> why = new ArrayList<>();
+        if (first.contains(key(sp.x(), sp.y(), sp.z()))) {
+            double u = Tuning.get("nearby.useStationsS");
+            b += u;
+            why.add(io.github.mojolowjo.entropybot.guard.AreaTags.USE_STATIONS + " -" + Math.round(u));
+        }
+        if (isMain(s, sp, blocks)) {
+            double m = MainStations.bonusS();
+            b += m;
+            why.add(MAIN + " -" + Math.round(m));
+        }
+        if (why.isEmpty()) return sp;
+        priced.add(sp.x() + " " + sp.y() + " " + sp.z() + ": " + String.join(", ", why) + " s off the walk of " + Math.round(NeedChain.walkS(sp.dist())) + " s");
         return sp.withBonus(b);
     }
+
+    /** The spot is the main of its set. */
+    public static boolean isMain(Scan s, Spot sp, Set<String> blocks) {
+        MainStations ms = s == null ? MainStations.now() : s.mains();
+        return ms != null && sp != null && ms.at(sp.x(), sp.y(), sp.z(), blocks) != null;
+    }
+
+    /** The word of a main in the lookup's notes and the chain's station lines ("(main)"). */
+    public static final String MAIN = "main";
 
     private static boolean usable(Scan s, int[] p, boolean mine, Set<String> first, List<String> skipped) {
         var v = s.stationUse(p[0], p[1], p[2], mine);
