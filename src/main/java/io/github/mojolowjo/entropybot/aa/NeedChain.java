@@ -113,18 +113,29 @@ public final class NeedChain {
      * in this list is the strip way then ({@link World#withoutSources}).
      */
     public record StripBand(List<String> ores, int minY, int maxY, int y, double perSlab, int x, int z, int feetY, String heading, String host,
-                            List<String> headings) {
+                            List<String> headings, boolean fresh) {
         public StripBand {
             ores = List.copyOf(ores);
             headings = headings == null || headings.isEmpty() ? List.of(heading) : List.copyOf(headings);
         }
+        public StripBand(List<String> ores, int minY, int maxY, int y, double perSlab, int x, int z, int feetY, String heading, String host,
+                         List<String> headings) {
+            this(ores, minY, maxY, y, perSlab, x, z, feetY, heading, host, headings, false);
+        }
         public StripBand(List<String> ores, int minY, int maxY, int y, double perSlab, int x, int z, int feetY, String heading, String host) {
             this(ores, minY, maxY, y, perSlab, x, z, feetY, heading, host, null);
         }
-        /** The source key of this strip way, the same as its step's ({@link NeedChain#sourceKey(Step)}): a failed strip or no path to its Y drops it for the order. */
-        public String key() { List<String> s = new ArrayList<>(ores); s.sort(null); return STRIP_KEY + String.join(",", s) + "|" + y + "|" + heading; }
+        /**
+         * The source key of this strip way, the same as its step's ({@link NeedChain#sourceKey(Step)}): a failed strip or no
+         * path to its Y drops it for the order. 0.39.z64 item 4: a strip from fresh ground carries its start ("|from x,z").
+         */
+        public String key() { List<String> s = new ArrayList<>(ores); s.sort(null); return STRIP_KEY + String.join(",", s) + "|" + y + "|" + heading + (fresh ? "|from " + from() : ""); }
+        /** "x,z" of a fresh start, null for the strip from the feet's column. */
+        public String from() { return fresh ? x + "," + z : null; }
         /** The same strip way in heading {@code h} (its list unchanged). */
-        public StripBand toward(String h) { return new StripBand(ores, minY, maxY, y, perSlab, x, z, feetY, h, host, headings); }
+        public StripBand toward(String h) { return new StripBand(ores, minY, maxY, y, perSlab, x, z, feetY, h, host, headings, fresh); }
+        /** 0.39.z64 item 4: the strip from fresh ground at (fx, fz), heading {@code h}: a walk there first. */
+        public StripBand freshAt(int fx, int fz, String h) { return new StripBand(ores, minY, maxY, y, perSlab, fx, fz, feetY, h, host, List.of(h), true); }
     }
 
     /**
@@ -2010,7 +2021,30 @@ public final class NeedChain {
         if (sb == null || sb.ores().isEmpty()) return List.of();
         Alt a = new Alt("strip at y " + sb.y(), () -> strip(c, word, gives, lack, sb));
         a.id = gives;
-        return List.of(a);
+        List<Alt> out = new ArrayList<>(List.of(a));
+        // 0.39.z64 item 4 (runs S-U: every heading from one origin; run U's area 969 faces, 0 iron): once the areas along
+        // this heading are seen (strip.areaMinFaces), strips from fresh ground strip.freshStartBlocks away in each heading
+        // are ways too - each priced by Baritone's walk there (rule 18) and its own areas' yield; the cheapest wins (rule 1)
+        var seen = io.github.mojolowjo.entropybot.aa.brain.StripAreas.along(sb.x(), sb.y(), sb.z(), sb.heading(), sb.ores());
+        if (io.github.mojolowjo.entropybot.aa.brain.StripAreas.judged(seen)) {
+            int d = Math.max(1, Tuning.i("strip.freshStartBlocks"));
+            for (String h : io.github.mojolowjo.entropybot.aa.brain.StripOrder.HEADINGS) {
+                int[] v = WayUp.dir(h);
+                StripBand f = sb.freshAt(sb.x() + d * v[0], sb.z() + d * v[1], h);
+                if (heldKey(c, f.key())) continue;
+                Alt fa = new Alt("strip at y " + sb.y() + " from fresh ground " + d + " m " + h, () -> strip(c, word, gives, lack, f));
+                fa.id = gives;
+                out.add(fa);
+            }
+        }
+        return out;
+    }
+
+    /** A source key held for the order (World.held's "key: why" lines). */
+    private static boolean heldKey(Ctx c, String key) {
+        if (c.w.held() == null) return false;
+        for (String h : c.w.held()) if (h.startsWith(key + ": ")) return true;
+        return false;
     }
 
     /**
@@ -2020,11 +2054,10 @@ public final class NeedChain {
      * per ore block wanted the blocks dug per ore found ({@link io.github.mojolowjo.entropybot.aa.brain.OreBand#blocksPerOre})
      * x the host block's break with the pickaxe in hand, plus the ore's own breaks. The step's amount: the ore blocks for the
      * lack (the loot data's drops per block). 0.39.z62 item 2: the pickaxe's wear over the walk's dug blocks, the tunnel and
-     * the ores is held against its uses; past them the spares are made up front ({@link #spareTools}).
+     * the ores is held against its uses; past them the spares are made up front ({@link #spareTools}). 0.39.z64: a tunnel
+     * cell breaks the fork's {@code IStripProcess.TUNNEL_HEIGHT} blocks (wear and dig seconds), and the band's blocks per
+     * ore is scaled by what the areas along the heading already showed ({@link io.github.mojolowjo.entropybot.aa.brain.StripAreas}).
      */
-    /** structural: the strip tunnel is 1 wide and 2 high (feet and head), so a fresh cell is two blocks broken. */
-    static final int TUNNEL_HEIGHT = 2; // structural: StripProcess's tunnel cells are feet + head
-
     private static String strip(Ctx c, String word, String gives, int lack, StripBand sb) {
         MiningTiers.Source src = MiningTiers.source();
         if (src == null) { c.fail = "strip: the pickaxe tier of " + shw(sb.ores().get(0)) + " is not known (no mining data loaded yet)"; return null; }
@@ -2041,7 +2074,8 @@ public final class NeedChain {
             if (c.fail != null) return null;
             if (c.stuck) return head + " (after " + pre + ")";
         }
-        Walked wk = walk(c, sb.x(), sb.y(), sb.z(), Math.abs(sb.feetY() - sb.y()));
+        // the straight metres (a hint; the price is Baritone's path): down to the band, plus the way to a fresh start
+        Walked wk = walk(c, sb.x(), sb.y(), sb.z(), Math.abs(sb.feetY() - sb.y()) + (sb.fresh() ? Math.max(1, Tuning.i("strip.freshStartBlocks")) : 0));
         if (c.fail != null) {
             if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreachable.put(sb.key(), wk.fail());   // the z33 source fact: the band dropped
             return null;
@@ -2049,30 +2083,39 @@ public final class NeedChain {
         String ore = sb.ores().get(0);
         double per = perBlock(c, gives, ore);
         int oreBlocks = (int) Math.ceil(lack / per - 1e-9);  // structural: epsilon
-        double bpo = io.github.mojolowjo.entropybot.aa.brain.OreBand.blocksPerOre(sb.perSlab());
+        double band = io.github.mojolowjo.entropybot.aa.brain.OreBand.blocksPerOre(sb.perSlab());
+        // 0.39.z64 item 4: the areas along this heading as seen (faces, the wanted ores on them) scale the band's estimate
+        var seen = io.github.mojolowjo.entropybot.aa.brain.StripAreas.along(sb.x(), sb.y(), sb.z(), sb.heading(), sb.ores());
+        double scale = io.github.mojolowjo.entropybot.aa.brain.StripAreas.factor(io.github.mojolowjo.entropybot.aa.brain.StripAreas.perFace(sb.perSlab()), seen);
+        double bpo = Math.min(Tuning.get("strip.maxBlocksPerOre"), band * scale);
         int dug = (int) Math.ceil(oreBlocks * bpo - 1e-9);   // structural: epsilon
         double hostS = blockBreakS(c, sb.host() != null ? sb.host() : ore), oreS = blockBreakS(c, ore);
-        double digS = dug * hostS + oreBlocks * oreS;
+        // 0.39.z64 review 1: a tunnel cell is TUNNEL_HEIGHT blocks broken (feet and head), its seconds as its wear
+        int tunnelBreaks = baritone.api.process.IStripProcess.TUNNEL_HEIGHT * dug;
+        double digS = tunnelBreaks * hostS + oreBlocks * oreS;
         // 0.39.z62 item 2 (run S 04:57:03: the stone pickaxe broke after the dug shaft from y 64 plus 46 strip blocks): the
         // way's pickaxe wear - the walk's pickaxe blocks (Baritone's path) + the tunnel + the ores - against the pickaxe's
         // uses; past them, the spare pickaxes are planned up front (spareTools)
         // 0.39.z64 item 2 (run U 06:08:07-06:10:19: a fresh stone pickaxe, 131 uses, broke after 67 strip cells; the chain's
         // spares ran out at y 16 and the next one needed wood from the surface): each fresh tunnel cell is two blocks
         // (the fork's GoalBlock digs the feet and the head cell), so the tunnel wears the pickaxe twice per cell dug
-        int wear = wk.pickBreaks() + TUNNEL_HEIGHT * dug + oreBlocks;
+        int wear = wk.pickBreaks() + tunnelBreaks + oreBlocks;
         String spare = spareTools(c, wear, tier);
         c.seconds += wk.seconds() + digS;
         c.away = wk.seconds();
         if (c.pickItem != null && spare == null) c.pickWorn += wear;
         Map<String, Integer> amounts = Map.of(io.github.mojolowjo.entropybot.aa.brain.StripOrder.countKey(ore, io.github.mojolowjo.entropybot.cave.OreSpec::family), oreBlocks);
-        Step.Strip strip = new Step.Strip(sb.ores(), amounts, sb.y(), sb.heading(), 0);
-        // 0.39.z46 (S58): the first leg is the priced path down to the band's peak (the walk the price above searched)
-        if (sb.feetY() != sb.y()) c.steps.add(new Step.ToStrip(sb.x(), sb.y(), sb.z(), strip.key()));
+        Step.Strip strip = new Step.Strip(sb.ores(), amounts, sb.y(), sb.heading(), 0, sb.from());
+        // 0.39.z46 (S58): the first leg is the priced path down to the band's peak (the walk the price above searched);
+        // 0.39.z64 item 4: a strip from fresh ground walks to its start first
+        if (sb.feetY() != sb.y() || sb.fresh()) c.steps.add(new Step.ToStrip(sb.x(), sb.y(), sb.z(), strip.key()));
         c.steps.addAll(io.github.mojolowjo.entropybot.aa.brain.Goals.stripLoop(strip));
         c.bag.merge(gives, Math.max(lack, (int) Math.floor(oreBlocks * per + 1e-9)), Integer::sum);  // structural: epsilon
-        final String line = head + " ~" + Math.round(bpo) + " blocks/ore (" + String.format(java.util.Locale.ROOT, "%.1f", sb.perSlab())
-                + " ore a chunk in " + io.github.mojolowjo.entropybot.aa.brain.OreBand.slab() + " layers) x " + oreBlocks + " ore = " + dug + " blocks"
-                + " (" + shw(sb.host() != null ? sb.host() : ore) + " " + s(hostS) + " each) -> " + s(wk.seconds() + digS);
+        final String areas = seen.faces() <= 0 ? "" : " (areas along " + sb.heading() + ": " + seen.faces() + " faces seen, " + seen.ores() + " ore on them: band "
+                + Math.round(band) + " x " + String.format(java.util.Locale.ROOT, "%.2f", scale) + ")";
+        final String line = head + (sb.fresh() ? " from fresh ground " + sb.from() + " " + sb.heading() : "") + " ~" + Math.round(bpo) + " blocks/ore (" + String.format(java.util.Locale.ROOT, "%.1f", sb.perSlab())
+                + " ore a chunk in " + io.github.mojolowjo.entropybot.aa.brain.OreBand.slab() + " layers)" + areas + " x " + oreBlocks + " ore = " + dug + " blocks"
+                + " (" + shw(sb.host() != null ? sb.host() : ore) + " " + s(hostS) + " each, " + baritone.api.process.IStripProcess.TUNNEL_HEIGHT + " a cell) -> " + s(wk.seconds() + digS);
         c.note(() -> "source: none known for " + shw(word) + ": " + line);
         return noted(line + (pre == null ? "" : " with " + pre) + (spare == null ? "" : " + " + spare), wk);
     }

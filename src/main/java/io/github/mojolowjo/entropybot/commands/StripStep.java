@@ -239,8 +239,59 @@ final class StripStep {
         boolean on = WalkProbe.on();
         sp.probe(on);
         java.util.List<String> lines = sp.drainProbe();
+        areaFacts(sp);
         if (!on) return;
         for (String l : lines) LOG.info("[entropybot] probe strip: {}", l);
+    }
+
+    // ---- 0.39.z64 item 4: the areas' seen faces and ores (StripAreas), per world in strip-areas.json ----
+
+    /** The world file the facts were read from (a world change reads again). */
+    private static String areasFile;
+
+    private static Path areasPath() {
+        var f = Core.INSTANCE.files();
+        if (f == null) throw new IllegalStateException("no world files (not in a world)");
+        return f.worldRoot().resolve("strip-areas.json");
+    }
+
+    /** The facts of this world loaded into StripAreas (once per world); false: no world files (said by the caller). */
+    static boolean areasLoaded() {
+        Path p;
+        try {
+            p = areasPath();
+        } catch (RuntimeException e) {
+            Quiet.warn("StripStep.areasLoaded: no world files: the strip areas' yield is not known (the band's estimate alone)", e);
+            return false;
+        }
+        String where = p.toString();
+        if (where.equals(areasFile)) return true;
+        Map<String, io.github.mojolowjo.entropybot.aa.brain.StripAreas.Seen> m = new LinkedHashMap<>();
+        try {
+            if (Files.exists(p)) {
+                JsonObject all = JsonParser.parseString(Files.readString(p, StandardCharsets.UTF_8)).getAsJsonObject();
+                for (var e : all.entrySet()) m.put(e.getKey(), GSON.fromJson(e.getValue(), io.github.mojolowjo.entropybot.aa.brain.StripAreas.Seen.class));
+            }
+        } catch (Exception e) {
+            Quiet.warn("StripStep.areasLoaded: strip-areas.json unreadable: starting the areas' facts empty", e);
+            m.clear();
+        }
+        io.github.mojolowjo.entropybot.aa.brain.StripAreas.load(m);
+        areasFile = where;
+        LOG.info("[entropybot] strip areas: {} area(s) of seen strip faces read for this world", m.size());
+        return true;
+    }
+
+    /** The fork's cell reads since the last tick into StripAreas, written when any came. */
+    private static void areaFacts(IStripProcess sp) {
+        java.util.List<IStripProcess.CellRead> reads = sp.drainCells();
+        if (reads.isEmpty() || !areasLoaded()) return;
+        for (var r : reads) io.github.mojolowjo.entropybot.aa.brain.StripAreas.add(r.x(), r.y(), r.z(), r.faces(), r.ores());
+        try {
+            Files.writeString(areasPath(), GSON.toJson(io.github.mojolowjo.entropybot.aa.brain.StripAreas.all()), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            Quiet.warn("StripStep.areaFacts: strip-areas.json not written (the facts stay for this session)", e);
+        }
     }
 
     /**

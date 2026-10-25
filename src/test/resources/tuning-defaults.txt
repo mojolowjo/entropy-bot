@@ -929,6 +929,11 @@ lava.nearBlocks	2.0
 lava.nearPenalty	10.0
 strip.slabLayers	16.0
 strip.maxBlocksPerOre	2000.0
+strip.areaSize	16.0
+strip.areaPriorFaces	200.0
+strip.areaLookCells	24.0
+strip.areaMinFaces	100.0
+strip.freshStartBlocks	48.0
 cave.holeDepth	4.0
 cave.holeReach	4.0
 cave.ravineRun	3.0

@@ -682,6 +682,7 @@ public final class AaRuntime implements JobPort {
             String said = "shut " + me[0] + "," + me[1] + "," + me[2] + " " + shut;
             if (stripAirSaid.add(said)) LOG.info("[entropybot] aa: strip at y {} for {}: heading left out, blocked at its start: {}", y, word, String.join(", ", shut));
         }
+        StripStep.areasLoaded();                         // 0.39.z64 item 4: this world's seen strip areas price the way
         return new io.github.mojolowjo.entropybot.aa.NeedChain.StripBand(ores, lo, hi, y,
                 io.github.mojolowjo.entropybot.aa.brain.OreBand.perSlab(fs, y), me[0], me[2], me[1], open.get(0), host, open);
     }

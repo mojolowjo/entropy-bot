@@ -61,10 +61,15 @@ public sealed interface Step {
      * The owner's strip order: the fork's StripProcess on the ore block ids {@code ores} at Y {@code y} along
      * {@code heading} (north/east/south/west); {@code serial}: the order's time (two orders alike are two runs).
      */
-    record Strip(List<String> ores, java.util.Map<String, Integer> amounts, int y, String heading, long serial) implements Step {
+    record Strip(List<String> ores, java.util.Map<String, Integer> amounts, int y, String heading, long serial, String from) implements Step {
         public Strip {
             ores = List.copyOf(ores);
             amounts = java.util.Map.copyOf(amounts);
+        }
+
+        /** The strip from where the bot stands at {@code y} (no fresh start). */
+        public Strip(List<String> ores, java.util.Map<String, Integer> amounts, int y, String heading, long serial) {
+            this(ores, amounts, y, heading, serial, null);
         }
 
         public String text() {
@@ -72,14 +77,17 @@ public sealed interface Step {
             for (String o : ores) s.add(o.replaceFirst("^minecraft:", ""));
             List<String> a = new ArrayList<>();
             for (var e : new java.util.TreeMap<>(amounts).entrySet()) a.add(e.getKey() + " " + e.getValue());
-            return "strip " + String.join(",", s) + " at feet y " + y + " " + heading + (a.isEmpty() ? " until stopped" : " for " + String.join(", ", a));
+            return "strip " + String.join(",", s) + " at feet y " + y + " " + heading + (from == null ? "" : " from " + from) + (a.isEmpty() ? " until stopped" : " for " + String.join(", ", a));
         }
 
-        /** The order's identity for its saved progress: the ore set, the Y, the heading (amounts and time left out). */
+        /**
+         * The order's identity for its saved progress: the ore set, the Y, the heading (amounts and time left out); 0.39.z64
+         * item 4: a strip from fresh ground adds its start ("|from x,z"), so it never resumes the tunnel at the old origin.
+         */
         public String key() {
             List<String> s = new ArrayList<>(ores);
             s.sort(null);
-            return String.join(",", s) + "|" + y + "|" + heading;
+            return String.join(",", s) + "|" + y + "|" + heading + (from == null ? "" : "|from " + from);
         }
     }
 

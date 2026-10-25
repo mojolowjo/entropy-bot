@@ -429,7 +429,7 @@ final class TuningDefs {
         Tuning.def("ironOptions.caveFace", 2, "rm-constants 0.39.u2 (was IronOptions.CAVE_FACE)", "the cave face of IronOptions");
         Tuning.def("ironOptions.digDeepBlock", 6, "rm-constants 0.39.u2 (was IronOptions.DIG_DEEP_BLOCK)", "the dig deep block of IronOptions");
         Tuning.def("ironOptions.digHard", 40, "rm-constants 0.39.u2 (was IronOptions.DIG_HARD)", "the dig hard of IronOptions");
-        Tuning.def("ironOptions.stripBlocks", 60, "rm-constants 0.39.u2 (was IronOptions.STRIP_BLOCKS)", "Blocks a strip tunnel digs for one find (its wear term)");
+        Tuning.def("ironOptions.stripBlocks", 60, "rm-constants 0.39.u2 (was IronOptions.STRIP_BLOCKS)", "Tunnel cells a strip digs for one find (its wear term: each cell is IStripProcess.TUNNEL_HEIGHT blocks, feet and head)");
         Tuning.def("ironOptions.digMax", 16, "rm-constants 0.39.u2 (was IronOptions.DIG_MAX)", "the dig max of IronOptions");
         Tuning.def("ironOptions.pillarMinUp", 3, "rm-constants 0.39.u2 (was IronOptions.PILLAR_MIN_UP)", "the pillar min up of IronOptions");
         Tuning.def("ironOptions.smeltWalk", 24, "rm-constants 0.39.u2 (was IronOptions.SMELT_WALK)", "the smelt walk of IronOptions");
@@ -992,5 +992,11 @@ final class TuningDefs {
         Tuning.def("replan.maxSourceDrops", 8, "0.39.z62 item 1 (run S 04:57:35: the iron order stopped at replan.maxPerOrder 3 after one tool fact and one blocked heading counted three times)", "At most this many re-plans per order on a source fact that drops a source NEW to the order (each takes one way out of a finite set: a strip heading, a band, a spot); other facts and repeats count against replan.maxPerOrder");
         Tuning.def("tools.maxSpares", 3, "0.39.z62 review 3 (run S's 335-block strip needed 2 spare stone pickaxes)", "At most this many spare pickaxes a way makes up front for its wear; more means the rough blocks-per-ore estimate dominates, so the rest is re-planned on the bag of that moment when a pickaxe breaks (said in aa debug)");
         Tuning.def("debug.aaTickMs", 20, "0.39.z62 item 4 (run S 04:57:07-12: client ticks of 3050 and 5586 ms in 'guard+commands (aa)'; design D3a 3.1)", "while debug.loadProbe is on, an AA tick slower than this (ms) gets a 'probe aatick:' line with its sections and the chain resolves in it; 20 ms = 40% of a 50 ms client tick");
+        // 0.39.z64 item 4 (runs S-U: every heading from one origin; run U's area: 969 faces, 0 iron): the strip's yield as a fact of the area
+        Tuning.def("strip.areaSize", 16, "0.39.z64 item 4 (run U: 251 cells in one ~26x27 area)", "the side of the square (blocks, at one Y) the strip's seen faces and ores are kept per (StripAreas); 16 = a chunk");
+        Tuning.def("strip.areaPriorFaces", 200, "0.39.z64 item 4 (run U: 969 faces, 0 iron -> the band's estimate x 5.85)", "how many faces the band's expected ore counts as when blended with an area's seen faces: fewer = the seen faces weigh sooner");
+        Tuning.def("strip.areaLookCells", 24, "0.39.z64 item 4", "how far along its heading (cells) a strip way looks at the areas its main tunnel would run through for their seen yield");
+        Tuning.def("strip.areaMinFaces", 100, "0.39.z64 item 4", "the seen faces along a heading from which strips from fresh ground (strip.freshStartBlocks away) are offered as ways too, priced by Baritone's walk there and their own areas");
+        Tuning.def("strip.freshStartBlocks", 48, "0.39.z64 item 4 (run U: the three headings stayed within ~26 blocks of the origin)", "how far from the strip's origin (blocks, each heading) a strip from fresh ground starts");
     }
 }

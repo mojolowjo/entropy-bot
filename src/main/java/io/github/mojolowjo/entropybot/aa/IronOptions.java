@@ -179,8 +179,11 @@ public final class IronOptions {
     public static double digDeepBlock() { return Tuning.get("ironOptions.digDeepBlock"); }
     public static int digHard() { return Tuning.i("ironOptions.digHard"); }
 
-    /** Blocks a strip tunnel digs for one find (its wear term). */
+    /** Tunnel cells a strip digs for one find (its wear term counts their blocks: {@link #stripBreaks}). */
     public static int stripBlocks() { return Tuning.i("ironOptions.stripBlocks"); }
+
+    /** 0.39.z64 review 1: the blocks those cells break - each tunnel cell is the fork's TUNNEL_HEIGHT blocks (feet and head). */
+    public static int stripBreaks() { return baritone.api.process.IStripProcess.TUNNEL_HEIGHT * stripBlocks(); }
 
     /**
      * Tool wear as a cost (ToolWear, director 2026-10-19): the extra seconds the cheapest way (use the pickaxe, craft a
@@ -408,7 +411,7 @@ public final class IronOptions {
                         : d.kind() == io.github.mojolowjo.entropybot.aa.brain.Discovery.Kind.STRIP ? Way.STRIP : null;
                 if (w == null) continue;
                 if (m.blocked(w, null, now)) dropped.add(d.label() + ": " + m.reason(w, null));
-                else ranked.add(scored(w, null, d.cost() + (w == Way.STRIP ? wear(f, stripBlocks()) : 0), d.label() + ": " + d.why() + (w == Way.STRIP ? wearWhy(f, stripBlocks()) : ""), m));
+                else ranked.add(scored(w, null, d.cost() + (w == Way.STRIP ? wear(f, stripBreaks()) : 0), d.label() + ": " + d.why() + (w == Way.STRIP ? wearWhy(f, stripBreaks()) : ""), m));
             }
             dropped.addAll(f.fair().dropped());
         } else if (f.caveDist() >= 0) {
@@ -418,7 +421,7 @@ public final class IronOptions {
         if (f.fair() != null) { /* the strip row came with the discovery ways */ }
         else if (f.stripAllowed()) {
             if (m.blocked(Way.STRIP, null, now)) dropped.add("strip: " + m.reason(Way.STRIP, null));
-            else ranked.add(scored(Way.STRIP, null, stripTime() + wear(f, stripBlocks()), "a mine is marked" + wearWhy(f, stripBlocks()), m));
+            else ranked.add(scored(Way.STRIP, null, stripTime() + wear(f, stripBreaks()), "a mine is marked" + wearWhy(f, stripBreaks()), m));
         } else dropped.add("strip: " + (f.stripWhy() == null ? "not allowed" : f.stripWhy()));
         ranked.sort((a, b) -> Double.compare(a.cost(), b.cost()));
         Smelt smelt = smeltWhere(f, m, now);
