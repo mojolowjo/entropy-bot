@@ -109,12 +109,17 @@ public final class LivePathPrice implements PathPrice {
      * run P 23:46:34-38: one walk priced 10 times from one cell - each finished craft changed the bag, the bag hash dropped
      * the kept answer and the chain re-priced): the fork's path memory answers (IPricedPath.price with Limits): a done future
      * is a memory answer (exact, the suffix of a kept path from the feet, 0 at the goal, a kept no-path answer from this
-     * cell) or "queued" / "chunks not loaded" - answered now, no landing, no re-price; else the search's future (a second
-     * ask of the same goal from the same cell joins it), which lands once. The mod keeps no answers of its own here: what
+     * cell) or "queued" / "chunks not loaded" - answered now, no landing, no re-price; else the search's future, which lands
+     * once (z57 review 2: while it runs, asks of the goal wait on it here without asking the fork; it is never cancelled
+     * for a move and its answer is the fork's re-ask from the feet at the landing, rule 18). The mod keeps no answers of its own here: what
      * is kept and when it is dropped (feet off the path, a block on it, what the price used, the world, pathCost.maxKeepS)
      * is the fork's one rule. The "probe reuse:" lines say every drop (debug.walkProbe).
      */
     private Answer pricedAsk(Minecraft mc, IBaritone b, BlockPos pos, String key, int[] me) {
+        // 0.39.z57 review 2: a search for this goal is running - the fork would join it (every asker gets a future answered
+        // from the feet when it lands, never cancelled for a move); one Pending per goal key lands once and re-prices once
+        Pending running = pending.get(key);
+        if (running != null && !running.future().isDone()) return Answer.computing(null);
         java.util.concurrent.CompletableFuture<IPathCost.Answer> f;
         try {
             f = b.getPricedPath().price(goal(pos), limits());
@@ -134,13 +139,10 @@ public final class LivePathPrice implements PathPrice {
                 LOG.warn("[entropybot] path cost to {}: the fork's answer failed", key, e);
                 return Answer.none("the fork's answer failed: " + e);
             }
-            Answer wait = a == null ? null : PricedAnswers.notYet(a.reason, baritone.api.pathing.calc.IPricedPath.QUEUED,
-                    baritone.api.pathing.calc.IPricedPath.LEFT_START, PathPrice.maxPending());
+            Answer wait = a == null ? null : PricedAnswers.notYet(a.reason, baritone.api.pathing.calc.IPricedPath.QUEUED, PathPrice.maxPending());
             if (wait != null) return wait;
             return answer(mc, b, a, key, pos);
         }
-        Pending p = pending.get(key);
-        if (p != null && p.future() == f) return Answer.computing(null);    // joined: the same search, landing once
         pending.put(key, new Pending(f, me));
         started++;                                       // 0.39.z56 item 3: the load probe's count (game thread)
         f.whenComplete((a, err) -> mc.execute(() -> landPriced(mc, b, key, f, me, a, err)));
@@ -149,12 +151,12 @@ public final class LivePathPrice implements PathPrice {
 
     /**
      * 0.39.z57: the fork's limits from Tuning: pathCost.maxKeepS, pricedPath.keepTicks (no-path), maxSegments,
-     * pathCost.maxPending, pathCost.restartBlocks (review 6).
+     * pathCost.maxPending.
      */
     private static baritone.api.pathing.calc.IPricedPath.Limits limits() {
         return new baritone.api.pathing.calc.IPricedPath.Limits(
                 (int) Math.ceil(PathPrice.maxKeepS() * io.github.mojolowjo.entropybot.aa.brain.GameTimes.TPS),
-                PathPrice.pricedKeepTicks(), PathPrice.pricedMaxSegments(), PathPrice.maxPending(), PathPrice.restartBlocks());
+                PathPrice.pricedKeepTicks(), PathPrice.pricedMaxSegments(), PathPrice.maxPending());
     }
 
     /** 0.39.z57 (rule 7): the fork's drop lines, one "probe reuse:" line each while debug.walkProbe is on (read anyway: bounded). */
@@ -169,22 +171,31 @@ public final class LivePathPrice implements PathPrice {
         for (String l : lines) LOG.info("[entropybot] probe reuse: {}", ProbeLines.reuse(l));
     }
 
-    /** 0.39.z57: one search landed (game thread): the chain is told (landed++); a search cancelled for a newer ask says nothing. */
-    private void landPriced(Minecraft mc, IBaritone b, String key, java.util.concurrent.CompletableFuture<IPathCost.Answer> f, int[] from,
+    /**
+     * 0.39.z57: one search landed (game thread): the chain is told (landed++). Review 2 item 1 (rule 18): {@code a} is the
+     * fork's answer from the feet at the landing (the memory asked again then: exact / suffix of the path just kept, or the
+     * answer of the search started again from the feet), never the search's answer from its own start; the lava part is
+     * that answer's (tied to the landing) and the probe line starts at the answer's first cell (the feet's cell on the path).
+     */
+    private void landPriced(Minecraft mc, IBaritone b, String key, java.util.concurrent.CompletableFuture<IPathCost.Answer> f, int[] asked,
                             IPathCost.Answer a, Throwable err) {
         Pending p = pending.get(key);
         if (p != null && p.future() == f) pending.remove(key);
         drops(b);
-        if (err == null && a != null && baritone.api.pathing.calc.IPricedPath.LEFT_START.equals(a.reason)) return;
+        int[] from = mc.player == null ? asked : Jobs.here(mc.player);
         String[] q = key.split(",");
         BlockPos goal = new BlockPos(Integer.parseInt(q[0]), Integer.parseInt(q[1]), Integer.parseInt(q[2]));
         Answer out;
         if (err != null) {
             LOG.warn("[entropybot] path cost to {}: the background search threw", key, err);
             out = Answer.none("the search threw: " + err);
-        } else out = answer(mc, b, a, key, goal);
+        } else {
+            Answer wait = a == null ? null : PricedAnswers.notYet(a.reason, baritone.api.pathing.calc.IPricedPath.QUEUED, PathPrice.maxPending());
+            out = wait != null ? wait : answer(mc, b, a, key, goal);
+        }
         if (WalkProbe.on() && a != null) {
-            if (!a.noPath) WalkProbe.price(goal, from, a);
+            int[] on = a.path.isEmpty() ? from : new int[]{a.path.get(0).getX(), a.path.get(0).getY(), a.path.get(0).getZ()};
+            if (!a.noPath) WalkProbe.price(goal, on, a);
             else if (IPathCost.Answer.UNREACHABLE.equals(a.reason) || baritone.api.pathing.calc.IPricedPath.NO_PROGRESS.equals(a.reason)) WalkProbe.unreachable(goal, from, a.reason);
         }
         lastLanded = "walk to " + key.replace(',', ' ') + ": " + (out.walk() != null ? Math.round(out.walk().seconds()) + " s, complete" : out.kind() + " (" + out.reason() + ")");

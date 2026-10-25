@@ -19,16 +19,15 @@ import static org.junit.jupiter.api.Assertions.*;
 class Z57PathMemoryTest {
 
     private static final String QUEUED = "queued";
-    private static final String LEFT = "cancelled: the bot left the search's start";
 
     @Test
-    void queuedAndLeftStartAreNotKnownYetNeverNone() {
-        PathPrice.Answer q = PricedAnswers.notYet(QUEUED, QUEUED, LEFT, 4);
+    void queuedIsNotKnownYetNeverNone() {
+        PathPrice.Answer q = PricedAnswers.notYet(QUEUED, QUEUED, 4);
         assertEquals(PathPrice.Kind.COMPUTING, q.kind());
         assertEquals("queued: pathCost.maxPending 4 searches in flight", q.reason());
-        assertEquals(PathPrice.Kind.COMPUTING, PricedAnswers.notYet(LEFT, QUEUED, LEFT, 4).kind());
-        assertNull(PricedAnswers.notYet("unreachable", QUEUED, LEFT, 4));     // a real answer goes through
-        assertNull(PricedAnswers.notYet(null, QUEUED, LEFT, 4));              // a path answer has no reason
+        assertNull(PricedAnswers.notYet("unreachable", QUEUED, 4));     // a real answer goes through
+        assertNull(PricedAnswers.notYet("chunks not loaded", QUEUED, 4)); // goes through as Kind.CHUNKS: "path not known"
+        assertNull(PricedAnswers.notYet(null, QUEUED, 4));              // a path answer has no reason
     }
 
     /** A fake level's lava read: each cell's ticks from {@code ticks} by x, counted. */
@@ -75,6 +74,7 @@ class Z57PathMemoryTest {
         assertEquals("path asks +12: from memory exact +9 suffix +1 zero +1 no-path +0, joined in flight +0, searches started +1,"
                 + " queued +0, cancelled +0, kept dropped +0", l);
         assertTrue(ProbeLines.asks(new long[]{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}).endsWith(", not loaded +1"));
+        assertTrue(ProbeLines.asks(new long[]{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 3}).endsWith(", not loaded +1, stamp builds +3"));
         assertEquals("path asks: not counted by this fork jar", ProbeLines.asks(new long[]{-1}));
         assertEquals("path asks: not counted by this fork jar", ProbeLines.asks(null));
         assertEquals("dropped the kept answer to G: block changed at 3 64 0 (air -> crafting_table) (not known until the new search lands)",
@@ -85,7 +85,7 @@ class Z57PathMemoryTest {
     void theSafetyAgeIsATuningEntryAndKeepSIsTheOldRouteOnly() {
         assertEquals(300, Tuning.get("pathCost.maxKeepS"), 1e-9);
         assertEquals(300, PathPrice.maxKeepS(), 1e-9);
-        assertEquals(8, PathPrice.restartBlocks(), 1e-9);
+        assertTrue(Tuning.lines("pathCost.restartBlocks").isEmpty());   // review 2 item 4: removed (nothing is cancelled for a move)
         assertTrue(String.join("\n", Tuning.lines("pathCost.keepS")).contains("pricedPath.on 0 only"));
         assertTrue(String.join("\n", Tuning.lines("pricedPath.keepTicks")).contains("NO-PATH"));
     }

@@ -71,10 +71,6 @@ public interface PathPrice {
      * priced path's safety age in seconds; the fork's path memory drops it earlier on the facts it depends on.
      */
     static double maxKeepS() { return Tuning.get("pathCost.maxKeepS"); }
-
-    /** 0.39.z57 review 6: an ask within this many blocks of a running search's start joins it; farther, it restarts. */
-    static double restartBlocks() { return Tuning.get("pathCost.restartBlocks"); }
-
     /** 0.39.z46: the fork's priced path prices and walks (one search); off: z41's route (search once, walk fresh). */
     static boolean pricedPathOn() { return Tuning.i("pricedPath.on") != 0; }
 

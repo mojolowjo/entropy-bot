@@ -11,8 +11,8 @@ import java.util.function.Supplier;
  * 0.39.z57 (path memory; owner 2026-10-25: "while doing stuff it should not forget the path that was already planned"): the
  * pure parts of {@link LivePathPrice}'s ask over the fork's path memory.
  * <ul>
- * <li>{@link #notYet}: the fork's "queued" (pathCost.maxPending searches run) and "cancelled: the bot left the search's
- *     start" are not path answers: the path is not known yet (rule 15: COMPUTING, never NONE or UNREACHABLE).</li>
+ * <li>{@link #notYet}: the fork's "queued" (pathCost.maxPending searches run) is not a path answer: the path is not
+ *     known yet (rule 15: COMPUTING, never NONE or UNREACHABLE).</li>
  * <li>{@link LavaKept}: the lava part of a walk (LavaNear per path cell, z40) is read once per LANDING of the fork's memory
  *     (review 9: tied to the landing, IPricedPath.landingOf): a memory answer of that same landing (exact or suffix: that
  *     path's tail) sums the kept cells' part; a new landing - a re-search, or the old one aged out - reads it again, even
@@ -25,12 +25,11 @@ public final class PricedAnswers {
 
     /**
      * The chain's answer for a fork reason that is no answer yet, else null: {@code queued} -> "queued: pathCost.maxPending N
-     * searches in flight", {@code leftStart} -> computing (the newer ask's own search answers).
+     * searches in flight" (computing). Review 2: no search is cancelled for a move any more, so there is no "left the start".
      */
-    public static PathPrice.Answer notYet(String reason, String queued, String leftStart, int maxPending) {
+    public static PathPrice.Answer notYet(String reason, String queued, int maxPending) {
         if (reason == null) return null;
         if (reason.equals(queued)) return PathPrice.Answer.computing("queued: pathCost.maxPending " + maxPending + " searches in flight");
-        if (reason.equals(leftStart)) return PathPrice.Answer.computing("the search from a cell the bot left was cancelled; the new one runs");
         return null;
     }
 
