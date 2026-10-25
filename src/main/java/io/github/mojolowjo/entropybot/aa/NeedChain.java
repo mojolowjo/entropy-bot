@@ -1270,7 +1270,8 @@ public final class NeedChain {
         var inBag = io.github.mojolowjo.entropybot.craft.CraftPlanner.pickFuel(c.bag, k);
         if (inBag != null && have(c, new Want(inBag.id())) >= inBag.count())
             return "burn " + counted(take(c, new Want(inBag.id()), inBag.count(), inBag.id())) + " (in the bag, the cheapest burn by worth)";
-        List<Alt> alts = new ArrayList<>();
+        List<Alt> alts = new ArrayList<>(), woodAlts = new ArrayList<>();
+        Map<Alt, Double> wood = new java.util.HashMap<>();
         for (var e : classes.entrySet()) {
             int count = (int) Math.ceil(k * smeltTicks() / e.getKey());
             String cw = classWord(e.getValue());
@@ -1283,14 +1284,56 @@ public final class NeedChain {
                 if (c.fail == null && !c.stuck) take(c, new Want(cw), count, g.id());
                 return "burn " + g.part();
             };
-            alts.add(a);
+            // 0.39.z51 item 4 (run L: a boat crafted for 3 smelts): a class made of wood is priced by the wood it consumes
+            // for this burn (FuelWood: the recipe data and the burn ticks; its least-wood member); a class with a member made
+            // of no wood (coal in #coals) is had without wood and stays a plain way
+            double wd = Double.POSITIVE_INFINITY;
+            for (String m : e.getValue()) {
+                double pm = io.github.mojolowjo.entropybot.craft.FuelWood.planks(m);
+                if (pm <= 0) { wd = Double.POSITIVE_INFINITY; break; }
+                wd = Math.min(wd, count * pm);
+            }
+            if (Double.isInfinite(wd)) alts.add(a);
+            else { wood.put(a, wd); woodAlts.add(a); }
         }
-        Trial win = choose(c, alts, null);
+        // the least-wood classes stand with the non-wood ones; a class consuming more wood is dropped by that fact once a
+        // lesser one stood (priced: it won, or lost on seconds to another way); one that failed lets the next by wood in
+        java.util.TreeMap<Double, List<Alt>> levels = new java.util.TreeMap<>();
+        for (Alt a : woodAlts) levels.computeIfAbsent(wood.get(a), x -> new ArrayList<>()).add(a);
+        Trial win = null;
+        if (levels.isEmpty()) win = choose(c, alts, null);
+        Ctx.Snap before = c.snap();
+        boolean first = true;
+        for (var lv : levels.entrySet()) {
+            if (!first) {                                       // the failed level's reasons stay listed
+                List<String> said = new ArrayList<>(c.dropped);
+                c.restore(before);
+                for (String d : said) if (!c.dropped.contains(d)) c.dropped.add(d);
+            }
+            first = false;
+            List<Alt> tryAlts = new ArrayList<>(alts);
+            tryAlts.addAll(lv.getValue());
+            win = choose(c, tryAlts, null);
+            Alt lead = null;
+            for (Alt a : lv.getValue()) if ((win != null && win.alt() == a) || stoodPriced(c, a.label)) { lead = a; break; }
+            if (lead == null) continue;
+            for (var more : levels.tailMap(lv.getKey(), false).values())
+                for (Alt m : more)
+                    drop(c, m.label, String.format(java.util.Locale.ROOT, "uses %.1f planks of wood vs %.1f (%s)", wood.get(m), lv.getKey(), lead.label));
+            break;
+        }
         if (win == null) {
             if (c.fail == null) c.fail = "nothing of the fuel table can be had";
             return null;
         }
         return win.phrase();
+    }
+
+    /** 0.39.z51: the way {@code label} was priced and lost on seconds (its dropped line says "dearer than"). */
+    private static boolean stoodPriced(Ctx c, String label) {
+        String head = label + ": ";
+        for (String d : c.dropped) if (d.startsWith(head) && d.contains("dearer than")) return true;
+        return false;
     }
 
     /**

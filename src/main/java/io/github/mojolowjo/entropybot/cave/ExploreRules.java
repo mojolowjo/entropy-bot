@@ -49,6 +49,25 @@ public final class ExploreRules {
         return null;
     }
 
+    /** 0.39.z51: the source a {@link #untilFound} line names, without its distance ("a source of X is known: stone at 1 2 3"); null for null. */
+    public static String sourceOf(String known) {
+        if (known == null) return null;
+        int k = known.indexOf(" (");
+        return k < 0 ? known : known.substring(0, k);
+    }
+
+    /**
+     * 0.39.z51 item 3 (run L 16:30:00-16:30:21: "explore until #stone_tool_materials" started 66 times, each ending at once on
+     * "stone at -11 48 -61 is known" while the chain's dig way waited on its path): the explore ends on a known source when
+     * that source is new since the explore started; one already known at its start (nothing changed) is a re-plan fact
+     * that holds {@code replan.unchangedHoldS} seconds, not an immediate end. Null known: no end.
+     */
+    public static boolean untilEnds(String known, String knownAtStart, double secondsSinceStart) {
+        if (known == null) return false;
+        if (knownAtStart == null || !sourceOf(known).equals(sourceOf(knownAtStart))) return true;
+        return secondsSinceStart >= Tuning.get("replan.unchangedHoldS");
+    }
+
     public static int seen() { return Tuning.i("exploreRules.seen"); }
     public static int rings() { return Tuning.i("exploreRules.rings"); }
     public static int defaultMinutes() { return Tuning.i("exploreRules.defaultMinutes"); }

@@ -216,7 +216,19 @@ public final class CavePatterns {
      * {dark cells, darkest sky}: a flood fill over air from the floor cell, within {@code cave.pocketReach} blocks of it on
      * each axis and under the rim (the hole's own air), counting the cells with sky light at most {@code cave.maxSky}.
      */
-    public static int[] pocket(int x, int y, int z, int rim, Cells cells) {
+    public static int[] pocket(int x, int y, int z, int rim, Cells cells) { return fill(x, y, z, rim, cells, null); }
+
+    /**
+     * 0.39.z51 item 1: the dark pocket's cells themselves (the same near-only fill as {@link #pocket}; packed by
+     * {@link Sightings#cell}), stored once on the confirmed mouth for the caving step to walk into.
+     */
+    public static List<Long> pocketCells(int x, int y, int z, int rim, Cells cells) {
+        List<Long> out = new java.util.ArrayList<>();
+        fill(x, y, z, rim, cells, out);
+        return out;
+    }
+
+    private static int[] fill(int x, int y, int z, int rim, Cells cells, List<Long> darkCells) {
         int reach = Tuning.i("cave.pocketReach"), maxSky = Tuning.i("cave.maxSky");
         int dark = 0, darkest = 15;     // structural: the brightest sky light
         if (!cells.air(x, y, z)) return new int[]{0, darkest};
@@ -228,7 +240,10 @@ public final class CavePatterns {
         while (!q.isEmpty()) {
             int[] p = q.poll();
             int s = cells.sky(p[0], p[1], p[2]);
-            if (s <= maxSky) dark++;
+            if (s <= maxSky) {
+                dark++;
+                if (darkCells != null) darkCells.add(Sightings.cell(p[0], p[1], p[2]));
+            }
             darkest = Math.min(darkest, s);
             for (int[] d : nb) {
                 int nx = p[0] + d[0], ny = p[1] + d[1], nz = p[2] + d[2];

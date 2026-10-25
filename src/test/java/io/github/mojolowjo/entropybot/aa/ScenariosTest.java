@@ -324,10 +324,10 @@ class ScenariosTest {
         world("wooden", "stone");
         Chain c = NeedChain.resolve("torch", 16, w(Map.of(), false, false, s12Seen()));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(104.55, c.seconds(), TOL, c.why());
+        assertEquals(104.85, c.seconds(), TOL, c.why());   // z51 item 4: the burn is 3 planks (3 planks of wood, not 3 logs = 12), the sticks one more craft 0.3
         String chain = chainPart(c.why());
         assertTrue(chain.startsWith("torch <- craft: 4 charcoal <- smelt 4 oak_log <- cut tree seen 10 m, walk 3.0 s (path) + furnace <- craft: 8 cobblestone"), c.why());
-        assertTrue(chain.contains("burn 3 oak_log (in the bag, the cheapest burn by worth)"), "the tree's surplus logs burn, from the game's fuel table: " + c.why());
+        assertTrue(chain.contains("burn 3 oak_planks (in the bag, the cheapest burn by worth)"), "z51: the least wood burns (planks, not logs), from the game's fuel table: " + c.why());
         assertFalse(c.why().contains("fuel"), "no family word anywhere: " + c.why());
         List<Class<?>> order = List.of(Step.ChopTree.class, Step.PlaceNear.class, Step.Collect.class, Step.Smelt.class);
         int last = -1;
@@ -792,7 +792,7 @@ class ScenariosTest {
         FakePath fake = new FakePath().asLine(tree).asLine(STONE_12).path(coal, 200);
         Chain c = NeedChain.resolve("torch", 16, w(Map.of(), false, false, Map.of("oak_log", List.of(tree), "cobblestone", List.of(STONE_12), "coal", List.of(coal))).withPath(fake));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(102.14, c.seconds(), TOL, c.why());
+        assertEquals(102.44, c.seconds(), TOL, c.why());   // z51 item 4: S12 + 0.3 (planks burn, the sticks one more craft)
         assertTrue(chainPart(c.why()).startsWith("torch <- craft: 4 charcoal <- smelt 4 oak_log"), c.why());
         assertTrue(chainPart(c.why()).contains("dig cobblestone seen 12 m with wooden_pickaxe"), c.why());
         String coalWay = c.dropped().stream().filter(d -> d.startsWith("coal: ")).findFirst().orElseThrow(() -> new AssertionError(c.dropped().toString()));

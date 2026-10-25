@@ -967,6 +967,7 @@ final class TuningDefs {
         Tuning.def("cave.slopeMin", 1, "0.39.z50 (the z46 rule's falling at least 1)", "a mouth's gentle side rises at least this before any cave pattern exists");
         Tuning.def("cave.depthMin", 1, "0.39.z50", "a hole's depth (rim to its floor) at least this before any cave pattern exists");
         Tuning.def("cave.exploreMinutes", 10, "0.39.z44", "the minutes the mine-in-the-cave way explores a mouth for the ore at most");
+        Tuning.def("replan.unchangedHoldS", 15, "0.39.z51 (run L: 66 explore-until-stone starts in ~5 s, 2 a second)", "an explore whose until-source was already known when it started (nothing changed) holds this many seconds before it ends on that source; the order's re-price still cancels it the moment its pick changes");
         Tuning.def("worth.bedSpan", 60, "rm-constants 0.39.u2 (inline literal in Worth)", "the bed worth span (scaled by the night danger)");
     }
 }

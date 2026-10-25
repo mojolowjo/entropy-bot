@@ -155,6 +155,27 @@ public final class Caves {
     }
 
     /**
+     * 0.39.z51 item 1: the cave of a CONFIRMED mouth at x y z: the cave whose entrance lies within {@code merge} blocks of it
+     * (horizontal; the mouth's own record), else a new {@code cave_N} with its entrance there. A cave name is given only
+     * here: an unconfirmed spot never becomes a cave_N.
+     */
+    public synchronized Cave atMouth(String dim, int x, int y, int z, int merge, long nowMs, long tick) {
+        for (Cave c : caves.values()) {
+            long dx = c.ex - x, dz = c.ez - z;
+            if (c.dim.equals(dim) && dx * dx + dz * dz <= (long) merge * merge) return c;
+        }
+        String n;
+        do { n = "cave_" + next++; } while (caves.containsKey(n));
+        Cave c = new Cave(n, dim, x, y, z);
+        c.created = nowMs;
+        c.updated = nowMs;
+        caves.put(n, c);
+        prune(c);
+        touch(tick);
+        return c;
+    }
+
+    /**
      * Package H: past {@link #MAX_CAVES} caves or {@link #MAX_CELLS} cells in all, whole caves go: the oldest finished
      * one (no frontier left) first, then the oldest; never {@code keep} (the cave being explored). How many went.
      */

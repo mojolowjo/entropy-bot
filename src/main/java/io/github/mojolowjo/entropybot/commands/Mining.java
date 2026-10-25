@@ -697,6 +697,9 @@ final class Mining {
         long until, start, targetAt, findAt = -1, untilAt = -1;
         /** live-facts: the item whose source, once known, ends the walk (a chain's explore); null: none. */
         String untilSource;
+        /** 0.39.z51 item 3: the until-source known at the first check (null: none); untilChecked: that check ran. */
+        String untilAtStart;
+        boolean untilChecked;
         /** 0.39.z47: the until words whose known source was dropped for the order (said once each). */
         final java.util.Set<String> saidDropped = new java.util.HashSet<>();
         /** 0.39.z42: an explore while the chain's paths compute: it ends when a path answer lands after this count (-1: not one). */
@@ -1004,7 +1007,14 @@ final class Mining {
                     LOG.info("[entropybot] explore: {} at {} {} {} was dropped for the order ({}); exploring on", part, sp.x(), sp.y(), sp.z(), why);
                 return why;
             });
-            if (known != null) {
+            // 0.39.z51 item 3: a source already known at the explore's start is no change: it holds replan.unchangedHoldS
+            if (!ex.untilChecked) {
+                ex.untilChecked = true;
+                ex.untilAtStart = known;
+                if (known != null) LOG.info("[entropybot] explore: {} - known when the explore started (nothing changed): exploring on for replan.unchangedHoldS {} s unless the order's pick changes",
+                        ExploreRules.sourceOf(known), Math.round(Tuning.get("replan.unchangedHoldS")));
+            }
+            if (ExploreRules.untilEnds(known, ex.untilAtStart, (now() - ex.start) / 20.0)) {   // structural: 20 ticks a second
                 LOG.info("[entropybot] explore: {}", known);
                 s.note = known + tookText(ex.took);
                 if (b != null) Jobs.cancel(b);
@@ -1154,6 +1164,11 @@ final class Mining {
         final List<String> noCaveAt = new ArrayList<>();
         /** 0.28.0: known ore spots (the index) this run walked to already. */
         final Set<Long> knownTried = new HashSet<>();
+        /** 0.39.z51 item 1: the confirmed mouth this run caves in, its pocket cells not walked yet, the mouths tried. */
+        io.github.mojolowjo.entropybot.sense.Sightings.MouthFact mouth;
+        final List<int[]> pocket = new ArrayList<>();
+        int pocketCells;
+        final Set<String> mouthsTried = new HashSet<>();
 
         int got() { return spec.count(tally); }
     }
@@ -1162,25 +1177,28 @@ final class Mining {
         if (bagRoom(p) <= CaveRules.free()) return "error: my bag is nearly full - \"deposit\" first";
         protectBoxes();                           // S1: fail closed - a policy it can't read refuses here (BadPolicy, caught in mine())
         int[] me = Jobs.here(p);
-        // AA_ROUND3 5: no known cave within reach but a cave opening I have seen within 64: the cave starts there (walk first)
-        int[] at = me, walkTo = null;
-        if (m.at() == null || m.at().isEmpty()) {
-            Caves.Cave k = core.caves.nearest(dim(), me[0], me[1], me[2]);
-            boolean knownNear = k != null && Jobs.distSq(me, new int[]{k.ex, k.ey, k.ez}) <= (long) Caves.pickWithin() * Caves.pickWithin();
-            var sg = knownNear ? null : pass().sightings();
-            var open = sg == null ? null : sg.nearestCave(dim(), me[0], me[1], me[2], io.github.mojolowjo.entropybot.aa.brain.Discovery.seenCaveWithin());
-            if (open != null) {
-                at = new int[]{open.x(), open.y(), open.z()};
-                if (Jobs.distSq(me, at) > 36) walkTo = at;
-                LOG.info("[entropybot] cave: no known cave near; the cave opening I saw at {} ({} away)", open.where(), Math.round(Math.sqrt(Jobs.distSq(me, at))));
-            }
+        // 0.39.z51 item 1: the caving step enters a CONFIRMED mouth (its stored fact: floor cell + dark pocket cells); no
+        // dark-corner test of its own, no cave named at an unconfirmed spot. None known: the step's named failure.
+        var sg = pass().sightings();
+        if (sg == null) return "error: " + CaveRules.NO_MOUTH + " (the sightings are not loaded yet)";   // rule 15: not loaded, never "none"
+        io.github.mojolowjo.entropybot.sense.Sightings.MouthFact mf;
+        if (m.at() != null && !m.at().isEmpty()) {
+            Caves.Cave k = core.caves.get(m.at());
+            if (k == null) return "error: I know no cave called " + m.at() + " (\"debug caves\" lists them)";
+            mf = sg.mouthFact(dim(), k.ex, k.ey, k.ez);
+            if (mf == null) return "error: " + CaveRules.NO_MOUTH + " at " + m.at() + " (" + k.ex + " " + k.ey + " " + k.ez + ")";
+        } else {
+            var known = sg.confirmedMouths(dim(), me[0], me[1], me[2]);
+            if (known.isEmpty()) return "error: " + CaveRules.NO_MOUTH + " known (cave candidates are confirmed by sight within cave.confirmM)";
+            mf = known.get(0);
         }
-        Caves.Cave c = core.caves.pick(m.at() == null ? "" : m.at(), dim(), at[0], at[1], at[2], System.currentTimeMillis(), now());
-        if (c == null) return "error: I know no cave called " + m.at() + " (\"debug caves\" lists them)";
+        Caves.Cave c = core.caves.atMouth(dim(), mf.x(), mf.y(), mf.z(), io.github.mojolowjo.entropybot.sense.Sightings.factMerge(), System.currentTimeMillis(), now());
+        int[] walkTo = new int[]{mf.fx(), mf.fy(), mf.fz()};
+        LOG.info("[entropybot] cave: entering the confirmed mouth {} as {}: floor {} {} {}, {} pocket cells ({} m away)", mf.where(), c.name,
+                mf.fx(), mf.fy(), mf.fz(), mf.pocket().size(), Math.round(Math.sqrt(Jobs.distSq(me, walkTo))));
         int minutes = m.minutes() > 0 ? m.minutes() : CaveRules.minutesV();
         CaveRun cv = new CaveRun();
-        cv.name = c.name;
-        cv.entrance = new int[]{c.ex, c.ey, c.ez};
+        enterMouth(cv, mf, c);
         cv.spec = m.spec();
         cv.ids = m.spec().ids();
         cv.target = m.n();
@@ -1188,12 +1206,24 @@ final class Mining {
         cv.start = now();
         cv.own = c.visited.isEmpty() ? c.name : null;
         Seq s = new Seq(jobs, storage, CaveRules.label(c.name, m.spec(), m.n(), minutes),
-                walkTo == null ? List.of(new Seq.Step("cavestep")) : List.of(Seq.Step.walk(walkTo.clone(), true), new Seq.Step("cavestep")), "always");
+                List.of(Seq.Step.walk(walkTo.clone(), true), new Seq.Step("cavestep")), "always");
         runs.put(s, cv);
         String r = jobs.startSeq(s, "always");
         jobs.job.holdOnFight = true;              // monsters live in caves: a fight holds the caving, it doesn't end it
         RestoreLive.INSTANCE.scanBuilds(p, Jobs.here(p));     // P1: someone's build near here? (a whisper, never a box)
         return r;
+    }
+
+    /** 0.39.z51 item 1: the run caves in this confirmed mouth now: its cave record, its floor cell, its pocket cells to walk. */
+    private void enterMouth(CaveRun cv, io.github.mojolowjo.entropybot.sense.Sightings.MouthFact mf, Caves.Cave c) {
+        cv.mouth = mf;
+        cv.mouthsTried.add(mf.where());
+        cv.name = c.name;
+        cv.entrance = new int[]{mf.fx(), mf.fy(), mf.fz()};
+        cv.pocket.clear();
+        cv.pocket.add(new int[]{mf.fx(), mf.fy(), mf.fz()});
+        for (Long k : mf.pocket()) cv.pocket.add(io.github.mojolowjo.entropybot.sense.Sightings.cellOf(k));
+        cv.pocketCells = cv.pocket.size();
     }
 
     private void visit(CaveRun cv, int x, int y, int z) {
@@ -1250,6 +1280,8 @@ final class Mining {
             if (Jobs.distSq(me, cv.walk) > 9) {
                 // didn't get there: that spot counts as explored, so the next search looks elsewhere
                 visit(cv, cv.walk[0], cv.walk[1], cv.walk[2]);
+                int[] w = cv.walk;
+                cv.pocket.removeIf(q -> q[0] == w[0] && q[1] == w[1] && q[2] == w[2]);   // z51: a pocket cell not reached is not tried again
                 cv.missed++;
             } else {
                 cv.missed = 0;
@@ -1258,7 +1290,7 @@ final class Mining {
         }
         String why = CaveRules.stopReason(cv.spec, cv.got(), cv.target, now(), cv.until, bagRoom(p), p.getHealth(), p.getFoodData().getFoodLevel(), Gui.inventory(p));
         if (why == null && cv.missed >= CaveRules.misses()) {
-            why = "I couldn't reach the next dark spot 4 times";
+            why = "I couldn't reach the next pocket cell " + cv.missed + " times";
             if (caveEmpty(cv)) return caveMove(s, cv, p, why);          // wave 1, item 2: no cave here, so somewhere else
         }
         if (why != null) return caveFinish(s, cv, why, false, false);
@@ -1313,7 +1345,7 @@ final class Mining {
             spliceHere(s, List.of(clear));
             return "wait";
         }
-        // 0.28.0: no vein in reach: a known ore of the list (the chunk pass's index) near the cave goes before a dark corner
+        // 0.28.0: no vein in reach: a known ore of the list (the chunk pass's index) near the cave goes before the pocket walk
         int[] ko = knownCaveOre(cv, p, c, off);
         if (ko != null) {
             cv.walk = ko;
@@ -1324,23 +1356,20 @@ final class Mining {
             s.setStatus(s.label + " - walking to known ore at " + Jobs.fmt(ko) + " (" + cv.got() + " ores so far)");
             return "wait";
         }
-        if (r.frontier() == null) {
-            // S1: a cave in (or by) a protect box with nothing outside it: no cave here, closed for good, move on
+        // 0.39.z51 item 1: no ore in reach: on into the confirmed mouth's dark pocket (its stored cells), the next cell by
+        // Baritone's priced path; the step's own dark-corner test is gone
+        int[] next = CaveRules.nextPocketCell(cv.pocket, me, q -> jobs.walkVerdict(q[0], q[1], q[2]) != null || off.test(q[0], q[1], q[2]), 2);   // structural: GoalNear 1 + one cell = walked
+        if (next == null) {
+            // S1: a mouth in (or by) a protect box: closed for good, the next confirmed mouth
             MineRules.Near en = CaveRules.offLimits(prot, d, c.ex, c.ey, c.ez);
             if (caveEmpty(cv) && en != null) return caveMove(s, cv, p, CaveRules.protectedCaveText(cv.name, en), true);
-            if (caveEmpty(cv)) return caveMove(s, cv, p, "no dark corner in reach");
-            return caveFinish(s, cv, "no dark corner left in reach", true, false);
+            return caveFinish(s, cv, "walked the dark pocket of " + cv.name + " (" + cv.pocketCells + " cells)", true, false);
         }
-        CaveSearch.Cell f = r.frontier();
-        if (jobs.walkVerdict(f.x(), f.y(), f.z()) != null || off.test(f.x(), f.y(), f.z())) {
-            visit(cv, f.x(), f.y(), f.z());
-            return "wait";
-        }
-        cv.walk = new int[]{f.x(), f.y(), f.z()};
+        cv.walk = next.clone();
         cv.walkAt = now();
-        if (b != null) {
-            b.getCustomGoalProcess().setGoalAndPath(new GoalNear(bp(cv.walk), 1));
-        }
+        if (b == null) return caveFinish(s, cv, "Baritone is not loaded (no walk into the pocket)", false, false);
+        b.getCustomGoalProcess().setGoalAndPath(new GoalNear(bp(cv.walk), 1));
+        s.setStatus(s.label + " - into the pocket of " + cv.name + ", " + cv.pocket.size() + " of " + cv.pocketCells + " cells left (" + cv.got() + " ores so far)");
         return "wait";
     }
 
@@ -1397,40 +1426,29 @@ final class Mining {
         if (c != null) core.caves.finish(c, !closeForGood && !cv.name.equals(cv.own), System.currentTimeMillis(), now());
         cv.noCaveAt.add(cv.name + " (" + Jobs.fmt(cv.entrance != null ? cv.entrance : me) + ")");
         cv.moves++;
-        LOG.info("[entropybot] cave: no cave at {} ({}) - move {}", cv.name, why, cv.moves);
+        LOG.info("[entropybot] cave: nothing more at {} ({}) - move {}", cv.name, why, cv.moves);
         if (cv.moves > CaveRules.moves()) return caveFinish(s, cv, CaveRules.noCaveText(cv.noCaveAt, why), false, true);
-        // S1: never a known cave whose entrance lies in or by a protect box
-        CaveRules.Known best = CaveRules.nearestKnown(knownCaves(), d, me[0], me[1], me[2], CaveRules.closedNames(cv.noCaveAt),
-                k -> jobs.walkVerdict(k.x(), k.y(), k.z()) != null || CaveRules.offLimits(prot, d, k.x(), k.y(), k.z()) != null || outsideFenced(d, k.x(), k.z()));
-        List<Seq.Step> steps = new ArrayList<>();
-        ExploreRules.Target t = null;
-        if (best != null) {
-            steps.add(Seq.Step.walk(new int[]{best.x(), best.y(), best.z()}, true));
-            Seq.Step rs = new Seq.Step("caverestart");
-            rs.id = best.name();
-            rs.why = why;
-            steps.add(rs);
-        } else {
-            cv.skip.addAll(ExploreRules.around(d, me[0], me[2]));       // the job's own set, not the explored notes
-            // S1: unexplored land in or by a protect box is passed over (that chunk goes in the job's skip set)
-            for (int n = 0; n < 12; n++) {
-                t = ExploreRules.target(d, me[0], me[1], me[2], land(d), cv.skip);
-                if (t == null || (CaveRules.offLimits(prot, d, t.x(), me[1], t.z()) == null && !outsideFenced(d, t.x(), t.z()))) break;      // 0.27.3: and the policy allows it
-                cv.skip.add(ExploreRules.key(d, t.x() >> 4, t.z() >> 4));
-                t = null;
+        // 0.39.z51 item 1: the next CONFIRMED mouth not tried by this run (never unexplored land, never a cave named at an
+        // unconfirmed spot); S1: never one in or by a protect box or a fenced column
+        var sg = pass().sightings();
+        if (sg != null && closeForGood && cv.mouth != null) sg.walkedMouth(d, cv.mouth.x(), cv.mouth.y(), cv.mouth.z(), System.currentTimeMillis());   // S1: closed for good
+        io.github.mojolowjo.entropybot.sense.Sightings.MouthFact next = null;
+        if (sg != null)
+            for (var f : sg.confirmedMouths(d, me[0], me[1], me[2])) {
+                if (cv.mouthsTried.contains(f.where())) continue;
+                if (jobs.walkVerdict(f.fx(), f.fy(), f.fz()) != null || CaveRules.offLimits(prot, d, f.x(), f.y(), f.z()) != null || outsideFenced(d, f.x(), f.z())) continue;
+                next = f;
+                break;
             }
-            if (t == null) return caveFinish(s, cv, "there is no cave here (" + why + "), and no unexplored land is left in reach", false, true);
-            Seq.Step xz = new Seq.Step("cavexz");
-            xz.pos = new int[]{t.x(), me[1], t.z()};
-            steps.add(xz);
-            // the search there goes on in the cave this job made, if it made one: one cave record per job at most
-            Seq.Step rs = new Seq.Step("caverestart");
-            rs.id = cv.own != null ? cv.own : "";
-            rs.why = why;
-            steps.add(rs);
-        }
+        if (next == null) return caveFinish(s, cv, CaveRules.NO_MOUTH + " left to try (" + why + ")", false, true);
+        List<Seq.Step> steps = new ArrayList<>();
+        steps.add(Seq.Step.walk(new int[]{next.fx(), next.fy(), next.fz()}, true));
+        Seq.Step rs = new Seq.Step("caverestart");
+        rs.pos = new int[]{next.x(), next.y(), next.z()};
+        rs.why = why;
+        steps.add(rs);
         spliceHere(s, steps);
-        s.setStatus(s.label + " - no cave here (" + why + "), moving to " + (best != null ? best.name() : t.x() + " " + t.z()));
+        s.setStatus(s.label + " - nothing more here (" + why + "), moving to the confirmed mouth " + next.where());
         return "wait";
     }
 
@@ -1454,14 +1472,13 @@ final class Mining {
         return "next";
     }
 
-    /** Starts the cave search again where the bot is now (or in the named cave). */
+    /** 0.39.z51 item 1: the caving goes on in the confirmed mouth at the step's pos (its stored fact), never at a bare spot. */
     private String caveRestart(Seq s, Seq.Step st, LocalPlayer p, CaveRun cv) {
-        int[] me = Jobs.here(p);
-        String name = st.id == null ? "" : st.id;
-        Caves.Cave c = core.caves.pick(name, dim(), me[0], me[1], me[2], System.currentTimeMillis(), now());
-        if (c == null) return "I know no cave called " + name + " (\"debug caves\" lists them)";
-        cv.name = c.name;
-        cv.entrance = new int[]{c.ex, c.ey, c.ez};
+        var sg = pass().sightings();
+        var mf = sg == null || st.pos == null ? null : sg.mouthFact(dim(), st.pos[0], st.pos[1], st.pos[2]);
+        if (mf == null) return caveFinish(s, cv, CaveRules.NO_MOUTH + (st.pos == null ? "" : " at " + Jobs.fmt(st.pos)) + (sg == null ? " (the sightings are not loaded)" : ""), false, true);
+        Caves.Cave c = core.caves.atMouth(dim(), mf.x(), mf.y(), mf.z(), io.github.mojolowjo.entropybot.sense.Sightings.factMerge(), System.currentTimeMillis(), now());
+        enterMouth(cv, mf, c);
         if (c.visited.isEmpty() && cv.own == null) cv.own = c.name;
         cv.tried.clear();
         cv.missed = 0;
@@ -1469,7 +1486,7 @@ final class Mining {
         cv.visitStart = cv.got();
         s.label = CaveRules.relabel(s.label, c.name);
         s.job().label = s.label;
-        LOG.info("[entropybot] cave: searching again in {} at {}", c.name, Jobs.fmt(cv.entrance));
+        LOG.info("[entropybot] cave: entering the confirmed mouth {} as {}: floor {}, {} pocket cells", mf.where(), c.name, Jobs.fmt(cv.entrance), cv.pocketCells);
         return "next";
     }
 
@@ -1485,6 +1502,10 @@ final class Mining {
                 LOG.warn("[entropybot] cave: couldn't mark the sighting exhausted: {}", e.toString());
             }
         }
+        // 0.39.z51: the mouth's pocket was walked to its end: its fact stays, the cave way offers it no more
+        var sgw = pass().sightings();
+        if (sgw != null && cv.mouth != null && finished && sgw.walkedMouth(dim(), cv.mouth.x(), cv.mouth.y(), cv.mouth.z(), System.currentTimeMillis()))
+            LOG.info("[entropybot] cave: the pocket of the confirmed mouth {} is walked ({} ore); offered no more", cv.mouth.where(), cv.got());
         List<Seq.Step> steps = new ArrayList<>();
         if (cv.entrance != null) steps.add(Seq.Step.walk(cv.entrance.clone(), true));
         Seq.Step end = new Seq.Step("caveend");

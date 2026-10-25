@@ -112,6 +112,9 @@ public final class SightingsRuntime {
                 if (dx * dx + dz * dz <= (long) Sightings.merge() * Sightings.merge()) { have = true; break; }
             }
             if (have) continue;
+            // 0.39.z51 item 2: a mouth confirms once - its stored confirmation (merged within cave.mergeM) is read, never
+            // re-run (run L: 101 "confirmed" lines for one mouth once its sighting was marked exhausted)
+            if (sg.mouthFact(dim, c.x(), c.y(), c.z()) != null) continue;
             if (!budget.take(now)) return;
             shots++;
             mouthRays++;
@@ -144,7 +147,11 @@ public final class SightingsRuntime {
                 continue;
             }
             int d = (int) Math.round(Math.sqrt(eye.distanceToSqr(new Vec3(c.x() + 0.5, c.y() + 0.5, c.z() + 0.5))));
-            String ok = where + ": confirmed - a dark pocket under the surface at " + h.fx() + " " + (h.floorY() + 1) + " " + h.fz() + ", from " + d + " m (" + hole + ")";
+            // 0.39.z51 items 1-2: the confirmation is a stored fact on the mouth (tick, floor cell, the dark pocket's cells)
+            List<Long> pocket = CavePatterns.pocketCells(h.fx(), h.floorY() + 1, h.fz(), h.rim(), cells(level));
+            if (sg.confirmMouth(dim, c.x(), c.y(), c.z(), level.getGameTime(), h.fx(), h.floorY() + 1, h.fz(), pocket) == null) continue;   // merged into a stored one
+            String ok = where + ": confirmed - a dark pocket under the surface at " + h.fx() + " " + (h.floorY() + 1) + " " + h.fz() + ", from " + d + " m ("
+                    + hole + "; " + pocket.size() + " pocket cells stored)";
             verdict(k, ok);
             LOG.info("[entropybot] sense: cave candidate {}", ok);
             ChunkPass.INSTANCE.label(new CavePatterns.Patch(c.x(), c.y(), c.z(), "cave", "bot", h.depth(), h.pocket(), h.darkSky(), ws, null));

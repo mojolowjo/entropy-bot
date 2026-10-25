@@ -442,12 +442,24 @@ public final class CraftPlanner implements Crafter {
         Fuel best = null;
         double bestCost = 0;
         boolean bestKnown = false;
+        // 0.39.z51 item 4 (run L: a boat burned over 2 planks): among the fuels made of wood only the one consuming the least
+        // wood for this burn (FuelWood: recipe data x burn ticks) stands; the rest are not burned while it covers the job
+        double leastWood = Double.POSITIVE_INFINITY;
+        for (Map.Entry<String, Integer> e : counts.entrySet()) {
+            int have = e.getValue() == null ? 0 : e.getValue(), burn = burnTicks(fuels, e.getKey());
+            if (have <= 0 || burn <= 0) continue;
+            int need = (int) Math.ceil((double) n * smeltTicks / burn);
+            double wd = FuelWood.planks(e.getKey());
+            if (have >= need && wd > 0 && worth.applyAsDouble(e.getKey()) >= 0) leastWood = Math.min(leastWood, need * wd);
+        }
         for (Map.Entry<String, Integer> e : counts.entrySet()) {
             int have = e.getValue() == null ? 0 : e.getValue();
             int burn = burnTicks(fuels, e.getKey());
             if (have <= 0 || burn <= 0) continue;
             int need = (int) Math.ceil((double) n * smeltTicks / burn);
             if (have < need) continue;
+            double wd = FuelWood.planks(e.getKey());
+            if (wd > 0 && need * wd > leastWood) continue;
             double w = worth.applyAsDouble(e.getKey());
             if (w < 0) continue;
             boolean known = !Double.isNaN(w);

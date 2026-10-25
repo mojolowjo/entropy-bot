@@ -192,6 +192,87 @@ public final class Sightings {
         return gone;
     }
 
+    // ---- 0.39.z51 items 1-2: the confirmation of a mouth, a stored fact ----
+
+    /**
+     * 0.39.z51: a mouth's confirmation (run L: the "confirmed" line 101 times in 11 min for one mouth): the candidate cell
+     * x y z, when it was confirmed, the hole's floor cell (fx fy fz: the first air over its floor) and the dark pocket cells
+     * the z50 fill found ({@link #cell} packed); {@code walked}: when a caving step walked its pocket (0 = not yet).
+     */
+    public record MouthFact(int x, int y, int z, long confirmedAt, int fx, int fy, int fz, List<Long> pocket, long walked) {
+        public MouthFact {
+            pocket = List.copyOf(pocket);
+        }
+
+        public String where() { return x + " " + y + " " + z; }
+    }
+
+    private final Map<String, List<MouthFact>> mouthFacts = new HashMap<>();
+
+    /** The radius within which two mouth candidates are one feature ({@code cave.mergeM}): one fact for both. */
+    public static int factMerge() { return Tuning.i("cave.mergeM"); }
+
+    /** A cell packed in one long (x, z 26 bits, y 12 bits; BlockPos.asLong's layout). */
+    public static long cell(int x, int y, int z) {
+        return ((long) (x & 0x3FFFFFF) << 38) | ((long) (z & 0x3FFFFFF) << 12) | (y & 0xFFF);
+    }
+
+    /** {x, y, z} of a {@link #cell}. */
+    public static int[] cellOf(long c) {
+        return new int[]{(int) (c >> 38), (int) (c << 52 >> 52), (int) (c << 26 >> 38)};
+    }
+
+    /**
+     * The confirmation of the mouth at x y z: stored (returned) once; a fact within {@link #factMerge()} (horizontal) already
+     * holds it (one feature, z50's merge): null, the stored fact is kept as it is.
+     */
+    public synchronized MouthFact confirmMouth(String dim, int x, int y, int z, long at, int fx, int fy, int fz, List<Long> pocket) {
+        if (mouthFact(dim, x, y, z) != null) return null;
+        MouthFact f = new MouthFact(x, y, z, at, fx, fy, fz, pocket == null ? List.of() : pocket, 0);
+        List<MouthFact> l = mouthFacts.computeIfAbsent(dim, k -> new ArrayList<>());
+        l.add(f);
+        while (l.size() > maxCaves()) l.remove(0);
+        dirty = true;
+        return f;
+    }
+
+    /** The stored confirmation of the mouth at (or merged with, {@link #factMerge()}) x y z; null: none stored. */
+    public synchronized MouthFact mouthFact(String dim, int x, int y, int z) {
+        long m = (long) factMerge() * factMerge();
+        for (MouthFact f : mouthFacts.getOrDefault(dim, List.of())) {
+            long dx = f.x() - x, dz = f.z() - z;
+            if (dx * dx + dz * dz <= m) return f;
+        }
+        return null;
+    }
+
+    /** The confirmed mouths whose pocket no caving step walked yet, nearest first from x y z (empty: none known). */
+    public synchronized List<MouthFact> confirmedMouths(String dim, int x, int y, int z) {
+        List<MouthFact> out = new ArrayList<>();
+        for (MouthFact f : mouthFacts.getOrDefault(dim, List.of())) if (f.walked() == 0) out.add(f);
+        out.sort((a, b) -> Long.compare(d2f(a, x, y, z), d2f(b, x, y, z)));
+        return out;
+    }
+
+    /** A caving step walked the pocket of the mouth at x y z (the fact stays, offered no more). True when there was one. */
+    public synchronized boolean walkedMouth(String dim, int x, int y, int z, long now) {
+        List<MouthFact> l = mouthFacts.getOrDefault(dim, List.of());
+        for (int i = 0; i < l.size(); i++) {
+            MouthFact f = l.get(i);
+            if (f.x() == x && f.y() == y && f.z() == z && f.walked() == 0) {
+                l.set(i, new MouthFact(f.x(), f.y(), f.z(), f.confirmedAt(), f.fx(), f.fy(), f.fz(), f.pocket(), Math.max(1, now)));
+                dirty = true;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static long d2f(MouthFact f, int x, int y, int z) {
+        long dx = f.x() - x, dy = f.y() - y, dz = f.z() - z;
+        return dx * dx + dy * dy + dz * dz;
+    }
+
     /** Blocks walked on the surface (the explore chance's denominator). */
     public synchronized void walked(double blocks) {
         if (blocks > 0 && blocks < 64) { walked += blocks; dirty = true; }
@@ -355,7 +436,39 @@ public final class Sightings {
         o.add("trees", recs(trees));
         o.addProperty("walked", walked);
         o.addProperty("cavesFound", cavesFound);
+        JsonObject mf = new JsonObject();                    // 0.39.z51: the mouths' confirmations
+        for (Map.Entry<String, List<MouthFact>> d : new TreeMap<>(mouthFacts).entrySet()) {
+            JsonArray a = new JsonArray();
+            for (MouthFact f : d.getValue()) {
+                JsonArray e = new JsonArray();
+                e.add(f.x()); e.add(f.y()); e.add(f.z()); e.add(f.confirmedAt()); e.add(f.fx()); e.add(f.fy()); e.add(f.fz()); e.add(f.walked());
+                JsonArray pk = new JsonArray();
+                for (Long c : f.pocket()) pk.add(c);
+                e.add(pk);
+                a.add(e);
+            }
+            mf.add(d.getKey(), a);
+        }
+        o.add("mouthFacts", mf);
         return new Gson().toJson(o);
+    }
+
+    private static void readFacts(JsonObject o, Sightings s, int[] skipped) {
+        try {
+            if (!o.has("mouthFacts")) return;
+            for (Map.Entry<String, JsonElement> d : o.getAsJsonObject("mouthFacts").entrySet())
+                for (JsonElement e : d.getValue().getAsJsonArray()) {
+                    try {
+                        JsonArray a = e.getAsJsonArray();
+                        List<Long> pk = new ArrayList<>();
+                        for (JsonElement c : a.get(8).getAsJsonArray()) pk.add(c.getAsLong());
+                        s.mouthFacts.computeIfAbsent(d.getKey(), x -> new ArrayList<>()).add(new MouthFact(a.get(0).getAsInt(), a.get(1).getAsInt(), a.get(2).getAsInt(),
+                                a.get(3).getAsLong(), a.get(4).getAsInt(), a.get(5).getAsInt(), a.get(6).getAsInt(), pk, a.get(7).getAsLong()));
+                    } catch (RuntimeException ex) {
+                        Quiet.warn("Sightings.readFacts failed, carrying on with the fallback", ex); skipped[0]++; }
+                }
+        } catch (RuntimeException ex) {
+            Quiet.warn("Sightings.readFacts failed, carrying on with the fallback", ex); skipped[0]++; }
     }
 
     private static JsonObject recs(Map<String, List<Rec>> m) {
@@ -395,6 +508,7 @@ public final class Sightings {
         read(o, "caves", Kind.CAVE, s.caves, skipped);
         read(o, "animals", Kind.ANIMAL, s.animals, skipped);
         read(o, "trees", Kind.TREE, s.trees, skipped);
+        readFacts(o, s, skipped);
         try {
             if (o.has("walked")) s.walked = Math.max(0, o.get("walked").getAsDouble());
             if (o.has("cavesFound")) s.cavesFound = Math.max(0, o.get("cavesFound").getAsDouble());

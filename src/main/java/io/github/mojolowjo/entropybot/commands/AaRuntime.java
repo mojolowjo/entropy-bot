@@ -661,19 +661,13 @@ public final class AaRuntime implements JobPort {
             if (io.github.mojolowjo.entropybot.aa.brain.ItemWorth.hasTag(b, "c:ores")) { ore = b; break; }
         if (ore == null) return null;
         int[] me = Jobs.here(p);
-        var mouths = sg.mouths(dim, me[0], me[1], me[2]);
+        // 0.39.z51 item 1: the cave way stands only on a CONFIRMED mouth (its stored fact, pocket not walked yet), the one
+        // the caving step enters; an unconfirmed candidate is no cave way (the explore aims at candidates, the rays confirm)
+        var mouths = sg.confirmedMouths(dim, me[0], me[1], me[2]);
         String fam = io.github.mojolowjo.entropybot.cave.OreSpec.family(ore);
-        if (mouths.isEmpty()) {
-            // 0.39.z47 (owner's ruling): no confirmed mouth: the nearest candidate within cave.candidateReachM, walked to
-            // and confirmed on the way (NeedChain prices it with cave.candidatePriorS)
-            var cands = pass.mouths().near(me[0], me[1], me[2], io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.candidateReachM"));
-            if (cands.isEmpty()) return null;
-            var k = cands.get(0);
-            return new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(k.x(), k.y(), k.z(), Math.sqrt(Jobs.distSq(me, new int[]{k.x(), k.y(), k.z()})),
-                    ore, fam, sg.ore().caveRate(fam), sg.ore().caveMinutes() > 0, true);
-        }
+        if (mouths.isEmpty()) return null;
         var m = mouths.get(0);
-        return new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(m.x(), m.y(), m.z(), Math.sqrt(Jobs.distSq(me, new int[]{m.x(), m.y(), m.z()})),
+        return new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(m.fx(), m.fy(), m.fz(), Math.sqrt(Jobs.distSq(me, new int[]{m.fx(), m.fy(), m.fz()})),
                 ore, fam, sg.ore().caveRate(fam), sg.ore().caveMinutes() > 0);
     }
 

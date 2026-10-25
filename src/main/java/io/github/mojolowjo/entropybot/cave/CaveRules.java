@@ -28,7 +28,33 @@ public final class CaveRules {
     public static int veinSpread() { return Tuning.i("caveRules.veinSpread"); }
     /** The walk to a frontier: until Baritone is done or this many ticks (60 s). */
     public static long walkTicks() { return Tuning.l("caveRules.walkTicks"); }
-    static final Pattern FOOD = Pattern.compile("bread|cooked|apple|carrot|potato|stew|berries|melon|pie|cookie");
+    /** 0.39.z51 item 1: the caving step's named failure when no confirmed mouth is known (the cave way is then not offered). */
+    public static final String NO_MOUTH = "no confirmed cave mouth";
+
+    /**
+     * 0.39.z51 item 1 (run L: the step's own dark-corner test walked away from the confirmed mouth 33 63 -61): the next
+     * cell of the confirmed mouth's dark pocket to walk into. The cells within {@code reached} blocks of {@code me} are
+     * walked (removed), as are those {@code off} refuses (keep-out, no path verdict); the nearest left is next. Null: the
+     * pocket is walked. Mutates {@code pocket}.
+     */
+    public static int[] nextPocketCell(List<int[]> pocket, int[] me, Predicate<int[]> off, int reached) {
+        long r2 = (long) reached * reached;
+        pocket.removeIf(c -> d2(c, me) <= r2 || (off != null && off.test(c)));
+        int[] best = null;
+        long bd = Long.MAX_VALUE;
+        for (int[] c : pocket) {
+            long d = d2(c, me);
+            if (d < bd) { bd = d; best = c; }
+        }
+        return best;
+    }
+
+    private static long d2(int[] a, int[] b) {
+        long dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    static final Pattern FOOD =Pattern.compile("bread|cooked|apple|carrot|potato|stew|berries|melon|pie|cookie");
 
     /** How the bot is doing: a reason to stop caving, or null (the bridge's caveStop). */
     public static String stopReason(OreSpec spec, int got, int target, long now, long until, int bagRoom, float health, int food,
