@@ -83,6 +83,17 @@ public final class SightingsRuntime {
 
     private static synchronized void verdict(long key, String line) { VERDICTS.put(key, line); }
 
+    /** 0.39.z52 (aa cave list): why each dropped candidate was dropped, by its key (capped like the dropped set). */
+    private static final Map<Long, String> DROP_REASONS = new java.util.HashMap<>();
+
+    private static synchronized void dropReason(long key, String why) {
+        if (DROP_REASONS.size() > 4096) DROP_REASONS.clear();     // structural: memory cap, the same as the dropped set
+        DROP_REASONS.put(key, why);
+    }
+
+    /** The reason the candidate at x y z was dropped this session; null = not dropped. */
+    public static synchronized String dropReason(int x, int y, int z) { return DROP_REASONS.get(Seen.key(x, y, z)); }
+
     /** aa debug: one line per candidate the rays looked at (its last verdict). */
     public static synchronized List<String> verdicts() { return new java.util.ArrayList<>(VERDICTS.values()); }
     /** 0.39.z46: candidates a ray showed are not caves (dropped, said once). */

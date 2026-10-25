@@ -22,8 +22,7 @@ final class CaveLabel {
     static String run(String arg) {
         String a = arg == null ? "" : arg.trim().toLowerCase(java.util.Locale.ROOT);
         ChunkPass pass = ChunkPass.INSTANCE;
-        if (a.equals("list") || a.isEmpty())
-            return pass.patterns().text() + "\nshapes the vote turned down this session: " + pass.shapesVotedOut();
+        if (a.equals("list") || a.isEmpty()) return list(pass);
         String label = switch (a) {
             case "yes" -> "cave";
             case "no", "cliff" -> "cliff";
@@ -41,5 +40,34 @@ final class CaveLabel {
         int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z);
         pass.label(new CavePatterns.Patch(x, y, z, label, "owner", h.depth(), h.pocket(), h.darkSky(), ws, null));
         return "aa cave: " + x + " " + y + " " + z + " labelled " + label + " (" + h.numbers() + ")\n" + pass.patterns().rule().line();
+    }
+
+    /**
+     * 0.39.z52 (the owner's labelling walk): the rule line, then every candidate of the loaded chunks and every stored
+     * mouth, nearest to the owner first (a candidate within cave.mergeM of a mouth shows as that mouth).
+     */
+    private static String list(ChunkPass pass) {
+        Minecraft mc = Minecraft.getInstance();
+        CavePatterns pat = pass.patterns();
+        String rule = pat.rule().line() + "\nshapes the vote turned down this session: " + pass.shapesVotedOut();
+        if (mc.player == null) return rule + "\naa cave list: no world (candidates and mouths are known in a world)";
+        var sg = pass.sightings();
+        String dim = pass.dim();
+        java.util.List<io.github.mojolowjo.entropybot.sense.CaveList.Entry> out = new java.util.ArrayList<>();
+        java.util.List<io.github.mojolowjo.entropybot.sense.Sightings.MouthFact> mouths = sg == null || dim == null ? java.util.List.of() : sg.allMouths(dim);
+        for (var f : mouths)
+            out.add(io.github.mojolowjo.entropybot.sense.CaveList.mouth(f.x(), f.y(), f.z(), f.pocket().size(), f.fx(), f.fy(), f.fz(), f.walked() != 0));
+        String note = sg == null || dim == null ? "\n(sightings not loaded: mouths unknown)" : "";
+        long m = (long) io.github.mojolowjo.entropybot.sense.Sightings.factMerge() * io.github.mojolowjo.entropybot.sense.Sightings.factMerge();
+        for (var c : pass.mouths().all()) {
+            boolean isMouth = false;
+            for (var f : mouths) { long dx = f.x() - c.x(), dz = f.z() - c.z(); if (dx * dx + dz * dz <= m) { isMouth = true; break; } }
+            if (isMouth) continue;
+            String why = SightingsRuntime.dropReason(c.x(), c.y(), c.z());
+            if (why == null && pass.mouths().refused(c.x(), c.y(), c.z())) why = "refused earlier (reason not kept this session)";
+            out.add(io.github.mojolowjo.entropybot.sense.CaveList.candidate(c.x(), c.y(), c.z(), c.shape() + (c.numbers().isEmpty() ? "" : " " + c.numbers()), why));
+        }
+        var p = mc.player;
+        return io.github.mojolowjo.entropybot.sense.CaveList.text(rule, out, pat.all(), p.getX(), p.getY(), p.getZ()) + note;
     }
 }

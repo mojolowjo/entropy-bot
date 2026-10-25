@@ -270,6 +270,13 @@ public final class CaveMouths {
         return out;
     }
 
+    /** 0.39.z52 (aa cave list): every candidate of the loaded chunks, merged, the refused ones included. */
+    public synchronized List<Candidate> all() {
+        List<Candidate> all = new ArrayList<>();
+        for (List<Candidate> l : byChunk.values()) all.addAll(l);
+        return CavePatterns.merge(all);
+    }
+
     private static double d2(Candidate c, double x, double y, double z) {
         double dx = c.x() + 0.5 - x, dy = c.y() + 0.5 - y, dz = c.z() + 0.5 - z;
         return dx * dx + dy * dy + dz * dz;

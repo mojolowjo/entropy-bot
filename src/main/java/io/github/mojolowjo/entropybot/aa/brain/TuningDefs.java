@@ -960,7 +960,7 @@ final class TuningDefs {
         Tuning.def("cave.mouthRays", 4, "0.39.z44", "the rays a pass (every 10 ticks) the mouth candidates take first from the shared Seen budget");
         Tuning.def("cave.goneReach", 1.5, "0.39.z44 (rule 15)", "standing within this of a known mouth whose cell is not air forgets it");
         Tuning.def("cave.darkPocketCells", 6, "0.39.z50 (owner 2026-10-24: require a pocket, not a cell)", "the dark air cells (sky light at most cave.maxSky) a mouth's pocket needs before any cave pattern exists");
-        Tuning.def("cave.pocketReach", 6, "0.39.z50 (owner)", "blocks from a hole's floor cell on each axis the pocket fill reads (the hole's own air)");
+        Tuning.def("cave.pocketReach", 10, "0.39.z50 (owner); z52: 10 (seed cave #9 reaches sky 0 at 10)", "blocks from a hole's floor cell on each axis the pocket fill reads (the hole's own air)");
         Tuning.def("cave.patternK", 3, "0.39.z50 (owner)", "the nearest labelled cave patterns that vote on a spot");
         Tuning.def("cave.botLabelWeight", 0.5, "0.39.z50 (owner)", "the vote of a pattern the bot labelled (a confirmation or a drop); the owner's weigh 1");
         Tuning.def("cave.mergeM", 8, "0.39.z50 (owner: one feature = one candidate)", "candidates within this many blocks merge into one, the lowest point kept");

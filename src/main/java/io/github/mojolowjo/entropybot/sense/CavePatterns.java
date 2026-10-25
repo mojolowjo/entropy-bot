@@ -27,7 +27,8 @@ import java.util.Set;
  *     over the patterns. The cave side wins when its weight beats cliff + hill + water; a bot label weighs
  *     {@code cave.botLabelWeight}.</li>
  * <li>The rule's thresholds (slope, cliff, depth, pocket, darkest sky) are the caves' own extremes (the loosest a
- *     labelled cave showed); before any cave pattern exists the Tuning defaults hold (cave.slopeMin, cave.cliffDrop,
+ *     labelled cave showed; z52: the pocket never below cave.darkPocketCells); a mouth needs the pocket OR the darkest
+ *     sky (z52: two dark proofs); before any cave pattern exists the Tuning defaults hold (cave.slopeMin, cave.cliffDrop,
  *     cave.depthMin, cave.darkPocketCells, cave.maxSky).</li>
  * </ul>
  * Files: the world's {@code cave-patterns.json} and the global one (the shared seed of 2026-10-24 included, from the
@@ -49,7 +50,7 @@ public final class CavePatterns {
     public record Rule(int patterns, int slope, int cliff, int depth, int pocket, int darkSky, boolean derived) {
         public String line() {
             return (derived ? "cave rule from " + patterns + " patterns" : "cave rule (Tuning defaults, no cave pattern yet)")
-                    + ": slope >= " + slope + ", cliff >= " + cliff + ", depth >= " + depth + ", pocket >= " + pocket + ", darkest sky <= " + darkSky;
+                    + ": slope >= " + slope + ", cliff >= " + cliff + ", depth >= " + depth + ", pocket >= " + pocket + " or darkest sky <= " + darkSky;
         }
     }
 
@@ -103,7 +104,9 @@ public final class CavePatterns {
             sky = Math.max(sky, p.darkSky());
         }
         if (cliff == Integer.MAX_VALUE) return d;
-        return new Rule(n, slope, cliff, depth, pocket, sky, true);
+        // 0.39.z52 (owner's ruling "a pocket, not a cell"): the derived pocket never falls below cave.darkPocketCells (seed caves
+        // #15 and #17 show pocket 0, which would make the pocket rule pass anything)
+        return new Rule(n, slope, cliff, depth, Math.max(pocket, d.pocket()), sky, true);
     }
 
     // ---- the nearest-neighbour vote ----
@@ -255,12 +258,13 @@ public final class CavePatterns {
         return new int[]{dark, darkest};
     }
 
-    /** The mouth verdict: null = a cave mouth (the rule's depth, pocket and darkest sky met, the vote cave), else why not. */
+    /** The mouth verdict: null = a cave mouth (the rule's depth met, the pocket OR the darkest sky met, the vote cave), else why not. */
     public static String verdict(Hole h, Rule rule, Vote v) {
         if (h.water()) return "its floor is water (a pond)";
         if (h.depth() < rule.depth()) return "depth " + h.depth() + " < " + rule.depth();
-        if (h.pocket() < rule.pocket()) return "pocket " + h.pocket() + " < " + rule.pocket() + " dark cells (a cell is not a pocket)";
-        if (h.darkSky() > rule.darkSky()) return "darkest sky " + h.darkSky() + " > " + rule.darkSky();
+        // 0.39.z52 (owner): two dark proofs, either confirms: the pocket rule OR the darkest-sky rule
+        if (h.pocket() < rule.pocket() && h.darkSky() > rule.darkSky())
+            return "no dark proof: pocket " + h.pocket() + " < " + rule.pocket() + " dark cells (a cell is not a pocket) and darkest sky " + h.darkSky() + " > " + rule.darkSky();
         if (!v.cave()) return "nearer the not-a-cave patterns (" + v.line() + ")";
         return null;
     }

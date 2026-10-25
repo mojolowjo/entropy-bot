@@ -254,6 +254,9 @@ public final class Sightings {
         return out;
     }
 
+    /** 0.39.z52 (aa cave list): every stored mouth of the dimension, walked ones included. */
+    public synchronized List<MouthFact> allMouths(String dim) { return List.copyOf(mouthFacts.getOrDefault(dim, List.of())); }
+
     /** A caving step walked the pocket of the mouth at x y z (the fact stays, offered no more). True when there was one. */
     public synchronized boolean walkedMouth(String dim, int x, int y, int z, long now) {
         List<MouthFact> l = mouthFacts.getOrDefault(dim, List.of());

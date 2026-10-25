@@ -65,7 +65,8 @@ class Z50CavePatternTest {
         assertEquals(1, one.pocket());
         CavePatterns.Rule d = CavePatterns.defaults();
         CavePatterns.Vote none = new CavePatterns().vote(new int[81], 0, 0, 0, true, null);
-        assertTrue(CavePatterns.verdict(one, d, none).startsWith("pocket 1 < 6"), "one dark cell is not a cave");
+        // z52: two dark proofs, either confirms; under the defaults (cave.maxSky 0) the darkest-sky rule passes one sky-0 cell
+        assertNull(CavePatterns.verdict(one, d, none), "z52: one sky-0 cell meets the default darkest-sky rule");
         // a tunnel into the cliff: 2 high, 4 deep, dark past its first cell
         for (int x = 1; x <= 4; x++) for (int y = 63; y <= 64; y++) { g.air.put(Seen.key(x, y, 0), true); if (x > 1) g.sky.put(Seen.key(x, y, 0), 0); }
         CavePatterns.Hole tunnel = CavePatterns.walk(0, 0, g::top, g);
@@ -80,13 +81,13 @@ class Z50CavePatternTest {
         // read from the cave-z49 region files (WORLD_SURFACE heightmap, block states, sky light) with the same walk
         CavePatterns.Patch c7 = at(p, -104, -58), c9 = at(p, -127, -88), c15 = at(p, -53, 16);
         assertEquals(7, c7.depth());
-        assertEquals(28, c7.pocket());
+        assertEquals(228, c7.pocket(), "z52: re-measured at cave.pocketReach 10");
         assertEquals(27, c9.depth());
-        assertEquals(0, c9.pocket(), "#9: the darkest sky within 6 of its floor is 5 (sky 0 first at 10)");
-        assertEquals(5, c9.darkSky());
+        assertEquals(5, c9.pocket(), "#9 at reach 10 (z52): 5 sky-0 cells");
+        assertEquals(0, c9.darkSky());
         assertEquals(9, c15.depth());
-        assertEquals(0, c15.pocket(), "#15: the darkest sky within 6 is 8");
-        assertEquals(8, c15.darkSky());
+        assertEquals(0, c15.pocket(), "#15: the darkest sky within 10 is 3 (z52)");
+        assertEquals(3, c15.darkSky());
         for (CavePatterns.Patch q : p.all()) assertTrue(q.depth() > 0, "every spot has a depth now: " + q.x() + " " + q.z());
     }
 
@@ -103,7 +104,7 @@ class Z50CavePatternTest {
         System.out.println("z50 heightmap-stage leave-one-out: caves kept " + hm + " of 5");
         assertTrue(r.derived());
         assertEquals(16, r.patterns(), "the unknown #2 does not count");
-        assertEquals("cave rule from 16 patterns: slope >= " + r.slope() + ", cliff >= " + r.cliff() + ", depth >= 7, pocket >= 0, darkest sky <= 11", r.line());
+        assertEquals("cave rule from 16 patterns: slope >= " + r.slope() + ", cliff >= " + r.cliff() + ", depth >= 7, pocket >= 6 or darkest sky <= 11", r.line());
         assertFalse(new CavePatterns().rule().derived(), "no pattern: the Tuning defaults");
         assertEquals(CavePatterns.defaults(), new CavePatterns().rule());
     }
