@@ -460,6 +460,7 @@ public final class AaDesires {
     public static Desire ownerGoal(io.github.mojolowjo.entropybot.aa.brain.Goals.Goal g) {
         String id = g.id();
         RunJob job = new RunJob(id + ".job", TaskKind.EXPLORE, bb -> {
+            io.github.mojolowjo.entropybot.aa.brain.Goals.runStarts(g);     // 0.39.z70 review 1: no stale honest-loop try
             var rt = io.github.mojolowjo.entropybot.aa.brain.Goals.routine(bb, g);
             List<Step> s = rt == null ? null : rt.steps();
             if (s == null) {

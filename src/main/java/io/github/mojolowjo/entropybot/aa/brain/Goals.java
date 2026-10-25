@@ -187,6 +187,13 @@ public final class Goals {
         };
     }
 
+    /**
+     * 0.39.z70 review 1: a run of the order is about to start (its job's spec is asked): a try handed by an earlier run's
+     * honest-loop park that no park took (the run's end was a passing one) is dropped, so it never reaches a later, unrelated
+     * park and gives that one an R1 retry.
+     */
+    public static void runStarts(Goal g) { g.loopAttempt = null; }
+
     /** 0.39.z70: "re-plans this order: 2; dropped: strip ..., tree at 1 2 3" (the honest-loop park line). Pure. */
     public static String orderState(Goal g) {
         var d = droppedSources(g).keySet();

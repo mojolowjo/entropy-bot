@@ -355,6 +355,68 @@ class Z70StepCheckTest {
         assertEquals("again", g.parked);
     }
 
+    /**
+     * Review 1: an honest-loop try whose run ended without a park (a passing end) is dropped when the next run starts, so a
+     * later unrelated park ("no way to get it") gets no R1 retry.
+     */
+    @Test
+    void r1_aStaleTryNeverReachesALaterPark() {
+        FakePort port = new FakePort();
+        Blackboard bb = new Blackboard(new Clock.Fake(0), port, new Tracer());
+        bb.in.bag = Map.of();
+        bb.in.pos = new int[]{0, 64, 0};
+        Goals.Goal g = Goals.add(bb, new Thing.Result("furnace", "furnace", false, List.of("minecraft:furnace"), List.of("furnace"), 0, null, "furnace", null), 1, 0, 0);
+        Goals.replanner(bb, g).parked(cobbleTry());     // the run parked on the loop, but its end was passing: no park took it
+        Goals.runStarts(g);                              // the next run starts
+        assertNull(g.loopAttempt);
+        Goals.park(bb, g, "no way to get it: no cobblestone known");
+        assertNull(g.loopPark, "the unrelated park keeps no loop facts");
+        bb.in.bag = Map.of("cobblestone", 9);
+        assertTrue(Goals.retryLoopParks(bb).isEmpty());
+        assertNotNull(g.parked);
+    }
+
+    /** Review 2: one Attempt part differs, no DONE between - the fact key only: re-planned, not parked. */
+    @Test
+    void onlyTheFactKeyDiffersRePlans() {
+        Hands h = new Hands();
+        h.status = s -> Car.Status.failed("walk ended at y 70");
+        int[] n = {0};
+        h.fact = s -> new FactChange.Fact("source strip k" + (++n[0] <= 1 ? "1" : "2"), "walk ended at y 70 short of y 16");
+        int[] asked = {0};
+        Steps run = new Steps(h);
+        run.start("goal.iron", List.of(STRIP_K1), 0, (failed, fact, why) -> { asked[0]++; return new Steps.Routine(List.of(STRIP_K1), null); });
+        run.tick(1);
+        run.tick(2);                                     // the same step, cell and bag; another fact key: re-planned
+        assertEquals(2, asked[0], run.why());
+        assertTrue(run.running(), run.why());
+        run.tick(3);                                     // the k2 fact again, all equal: parked
+        assertEquals(Steps.Phase.FAILED, run.phase());
+        assertTrue(run.why().contains("the same way failed twice from the same place with the same bag"), run.why());
+    }
+
+    /** Review 2: one Attempt part differs, no DONE between - the needs' bag count only: re-planned; then all equal: parked. */
+    @Test
+    void onlyTheBagDiffersRePlans() {
+        Hands h = new Hands();
+        Step place = new Step.PlaceNear("minecraft:crafting_table");     // needs 1 crafting_table from the bag (its own data)
+        h.bag = Map.of("minecraft:crafting_table", 1);
+        h.status = s -> Car.Status.failed("no cell within 3 blocks");
+        h.fact = s -> new FactChange.Fact("place minecraft:crafting_table", "place crafting_table near me failed: no cell within 3 blocks");
+        int[] asked = {0};
+        Steps run = new Steps(h);
+        run.start("goal.torch", List.of(place), 0, (failed, fact, why) -> { asked[0]++; return new Steps.Routine(List.of(place), null); });
+        run.tick(1);
+        h.bag = Map.of("minecraft:crafting_table", 2);   // the same step, fact and cell; one more table in the bag
+        run.tick(2);
+        assertEquals(2, asked[0], run.why());
+        assertTrue(run.running(), run.why());
+        assertEquals("crafting_table 2", run.lastFailed().needsBag());
+        run.tick(3);                                     // all equal now: parked
+        assertEquals(Steps.Phase.FAILED, run.phase());
+        assertTrue(run.why().contains("the same way failed twice from the same place with the same bag: place minecraft:crafting_table near me"), run.why());
+    }
+
     /** R1 is the honest-loop park only: any other park waits for aa want as before. */
     @Test
     void r1_otherParksStayParked() {
