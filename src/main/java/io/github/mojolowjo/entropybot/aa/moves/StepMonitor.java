@@ -123,6 +123,8 @@ public final class StepMonitor {
     private long startTick, lastProgress, calcAtBest;
     private int[] startFeet;
     private double bestGoal = Double.NaN, bestFar;
+    /** 0.39.z72 (D2 3.3): the goal the best belongs to (another goal re-bases it: a churning target is no progress). */
+    private String bestGoalId;
     private long bestGoalAt = -1, bestFarAt = -1, bestMadeAt = -1, stageAt = -1, placedAt = -1, chunksAt = -1;
     private int bestMade = -1, bestChunks = -1;
     /** 0.39.z71 review 1: the best break stage per block cell this step broke at (a restart of one block is no progress). */
@@ -145,6 +147,7 @@ public final class StepMonitor {
         lastProgress = now;
         startFeet = sig.feet();
         bestGoal = sig.goalDist();
+        bestGoalId = sig.goalId();
         bestGoalAt = Double.isNaN(bestGoal) ? -1 : now;
         bestFar = 0;
         bestFarAt = -1;
@@ -190,7 +193,12 @@ public final class StepMonitor {
         List<String> moved = new ArrayList<>();
         double g = sig.goalDist();
         if (!Double.isNaN(g)) {
-            if (Double.isNaN(bestGoal)) { bestGoal = g; bestGoalAt = now; }        // a goal appeared: its first value is the start
+            if (Double.isNaN(bestGoal) || !java.util.Objects.equals(sig.goalId(), bestGoalId)) {     // a goal appeared or another goal: its first value is the start
+                bestGoal = g;
+                bestGoalId = sig.goalId();
+                bestGoalAt = now;
+                calcAtBest = sig.calcFailed();   // 0.39.z72: another goal is another question for Baritone's searches
+            }
             else if (g <= bestGoal - 1) {                                       // structural: one block nearer
                 moved.add("the goal " + num(bestGoal - g) + " nearer, best " + num(g));
                 bestGoal = g;

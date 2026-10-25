@@ -39,7 +39,7 @@ class Z71StepMonitorTest {
 
     /** As {@link #sig}, with the cell of the block being broken. */
     static StepSignals sigAt(double goal, int[] feet, boolean exec, long calcFailed, int made, int stage, String cell, long placed, int chunks, String wait) {
-        return new StepSignals(true, null, feet, goal, false, exec, false, calcFailed, made, stage, cell, placed, chunks, wait);
+        return new StepSignals(true, null, feet, goal, null, false, exec, false, calcFailed, made, stage, cell, placed, chunks, wait);
     }
 
     static StepSignals walkSig(double goal) { return sig(goal, FEET, true, 0, -1, -1, 0, -1, null); }

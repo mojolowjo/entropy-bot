@@ -722,6 +722,9 @@ final class Mining {
         String found;
         final Set<Integer> poiIds = new HashSet<>();
         ExploreRules.Target target;
+        /** 0.39.z72 (D2 3.3): the current target as a held fact (null: none chosen yet); the run's failed targets. */
+        ExploreRules.TargetHold.Held hold;
+        final List<ExploreRules.TargetHold.Failed> failed = new ArrayList<>();
         /** 0.39.z68: where the until target generates (GenWhere), read once per run (whereRead). */
         io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact where;
         boolean whereRead;
@@ -1078,6 +1081,7 @@ final class Mining {
                     if (add != null) {
                         if (b != null) Jobs.cancel(b);
                         ex.target = null;
+                        ex.hold = null;                  // 0.39.z72: a gather is no failure of the target (chosen again after it)
                         ex.gathers++;
                         ex.chunksAtGather = ex.chunks;
                         ex.gatherStart = now();
@@ -1096,12 +1100,28 @@ final class Mining {
                 LOG.warn("[entropybot] explore gather: {}", e.toString());
             }
         }
-        if (done == null && ex.target != null && (now() - ex.targetAt < 20 || (b != null && !Jobs.idle(b) && now() - ex.targetAt < ExploreRules.walkTicks()))) {
-            s.setStatus(s.label + " - walking to " + ex.target.x() + " " + ex.target.z() + " (" + ex.chunks + " chunks so far)");
-            return "wait";
+        // 0.39.z72 (D2 3.3, run P P6): the target is a held fact - held until reached or failed (no path monitor.noPathFails
+        // times or no new best for monitor.stallS); Baritone idle alone is no failure: the same goal is set again (once a
+        // second). Was (z56, Mining ~1079): given up 1 s after Baritone went idle and its chunk marked explored, never reached.
+        if (done == null && ex.target != null && ex.hold != null) {
+            ex.hold = ExploreRules.TargetHold.look(ex.hold, now(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed());
+            if (ex.hold.state() == ExploreRules.TargetHold.State.HELD) {
+                if (b != null && Jobs.idle(b) && now() - ex.targetAt >= 20) {     // structural: once a second in ticks
+                    b.getCustomGoalProcess().setGoalAndPath(new GoalXZ(ex.target.x(), ex.target.z()));
+                    ex.targetAt = now();
+                }
+                s.setStatus(s.label + " - walking to " + ex.target.x() + " " + ex.target.z() + " (" + ex.chunks + " chunks so far)");
+                return "wait";
+            }
+            if (ex.hold.marksExplored()) notes().markExplored(List.of(ExploreRules.key(d, ex.target.x() >> 4, ex.target.z() >> 4)));
+            else if (ex.hold.state() == ExploreRules.TargetHold.State.FAILED) {
+                // rule 15: never reached is never "explored"; the run passes over it until the bot moved failures.moved from here
+                ex.failed.add(new ExploreRules.TargetHold.Failed(ex.target.x(), ex.target.z(), me, ex.hold.why()));
+                LOG.info("[entropybot] {}", ExploreRules.TargetHold.failedLine(ex.hold));
+                if (b != null) Jobs.cancel(b);
+            }
         }
-        // didn't get there (water, cliffs): give that chunk up
-        if (ex.target != null && ex.aimed == null && !ExploreRules.arrived(me[0], me[2], ex.target)) notes().markExplored(List.of(ExploreRules.key(d, ex.target.x() >> 4, ex.target.z() >> 4)));
+        ex.hold = null;
         if (ex.aimed != null) {
             // 0.39.z48 (S65): the walk toward a cave candidate ended (there, or Baritone got no nearer): visited, never aimed
             // at again; its confirmation was the rays' (within cave.confirmM)
@@ -1164,7 +1184,9 @@ final class Mining {
             int[] c = io.github.mojolowjo.entropybot.vocab.ExploreWords.next(me[0] >> 4, me[2] >> 4, ex.sx, ex.sz, ex.dir,
                     // 0.23.1: unvisited = not in explored.json AND no painted map tile (a tile still loading counts as seen this round)
                     (cx, cz) -> io.github.mojolowjo.entropybot.vocab.ExploreWords.seen(notes().explored(ExploreRules.key(d, cx, cz)),
-                            core.terrain() == null ? Boolean.FALSE : core.terrain().painted(d, cx, cz)),
+                            core.terrain() == null ? Boolean.FALSE : core.terrain().painted(d, cx, cz))
+                            // 0.39.z72: a target that failed from near here is passed over (a fact about where it failed)
+                            || ExploreRules.TargetHold.skip(ex.failed, cx, cz, me, io.github.mojolowjo.entropybot.aa.brain.Failures.movedV()),
                     (cx, cz) -> {
                         String why = io.github.mojolowjo.entropybot.commands.FenceRules.walkVerdict(io.github.mojolowjo.entropybot.api.BotAPI.check(d, (cx << 4) + 8, y, (cz << 4) + 8, "go"));
                         if (why != null) notes().markExplored(List.of(ExploreRules.key(d, cx, cz)));
@@ -1203,6 +1225,7 @@ final class Mining {
             b.getCustomGoalProcess().setGoalAndPath(new GoalXZ(ex.target.x(), ex.target.z()));
         }
         ex.targetAt = now();
+        ex.hold = ExploreRules.TargetHold.start(ex.target, now(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed());   // 0.39.z72
         return "wait";
     }
 

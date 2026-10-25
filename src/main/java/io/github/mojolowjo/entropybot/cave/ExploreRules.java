@@ -241,4 +241,101 @@ public final class ExploreRules {
         int i = (int) Math.floorMod(Math.round(deg / 45.0), 8L);  // structural: compass: 8 points of 45 degrees
         return "went " + d + " blocks " + names[i] + ", " + at;
     }
+
+    /**
+     * 0.39.z72 (design D2 3.3, Job C; run P 00:04:15-54: a new explore target -264 24, -248 24, -232 24 ... one per
+     * CALC_FAILED while the feet stood at -148 -33 -83, each unreached chunk marked explored): the chosen explore target as
+     * a held fact. It is held until REACHED ({@link #arrived}) or FAILED - Baritone found no path {@code monitor.noPathFails}
+     * times since the last new best, or no new best for {@code monitor.stallS}. A new best = the feet's horizontal distance
+     * to the target 1 block below its best. Baritone going idle is not a failure by itself: the adapter sets the same goal
+     * again for a HELD target (rule 2: Baritone walks). A FAILED target is not marked explored (rule 15: an unreached chunk
+     * was never seen); the run keeps it with the cell it failed from and skips it until the bot moved {@code failures.moved}
+     * blocks from there ({@link #skip}). The hold never picks a target (rule 1: the chooser's pick is unchanged), it only
+     * says how long the pick lives and what its end marks. Pure (JUnit: Z72ExploreHoldTest).
+     */
+    public static final class TargetHold {
+        private TargetHold() {}
+
+        public enum State { HELD, REACHED, FAILED }
+
+        /**
+         * The held target {@code x z}: held since {@code since} (ticks), its best distance and when, Baritone's failed-search
+         * count at that best, the failed searches since it, the state and why.
+         */
+        public record Held(int x, int z, long since, double best, long bestAt, long calcAtBest, int noPathFails, State state, String why) {
+            public Target target() { return new Target(x, z); }
+
+            /** A REACHED target marks its chunk explored; a FAILED one never does. */
+            public boolean marksExplored() { return state == State.REACHED; }
+        }
+
+        /** A failed target, the cell it failed from and why (the run's failed set). */
+        public record Failed(int x, int z, int[] from, String why) {
+            public Failed {
+                from = from == null ? null : from.clone();
+            }
+        }
+
+        /** Baritone's failed searches since a target's last new best before it fails (Tuning monitor.noPathFails). */
+        public static int noPathFailsV() { return Math.max(1, Tuning.i("monitor.noPathFails")); }
+
+        /** Ticks with no new best before a target fails (Tuning monitor.stallS x 20 ticks a second, a game fact). */
+        public static long stallTicks() { return Math.round(20 * Tuning.get("monitor.stallS")); }
+
+        /** The target chosen at {@code now} from {@code feet} (null: not known), Baritone's failed-search count then. */
+        public static Held start(Target t, long now, int[] feet, long calcFailed) {
+            return new Held(t.x(), t.z(), now, dist(feet, t.x(), t.z()), now, calcFailed, 0, State.HELD, "held");
+        }
+
+        /** One look at {@code now} from {@code feet}: the hold's next state. A REACHED or FAILED hold stays as it is. */
+        public static Held look(Held h, long now, int[] feet, long calcFailed) {
+            if (h == null || h.state() != State.HELD) return h;
+            if (feet != null && arrived(feet[0], feet[2], h.target())) return with(h, h.best(), h.bestAt(), h.calcAtBest(), 0, State.REACHED, "reached");
+            double d = dist(feet, h.x(), h.z());
+            double best = h.best();
+            long bestAt = h.bestAt(), calcAt = h.calcAtBest();
+            if (!Double.isNaN(d) && (Double.isNaN(best) || d <= best - 1)) {        // structural: one block nearer
+                best = d;
+                bestAt = now;
+                calcAt = calcFailed;
+            }
+            int fails = (int) Math.max(0, calcFailed - calcAt);
+            String from = feet == null ? "an unknown cell" : feet[0] + " " + feet[1] + " " + feet[2];
+            if (fails >= noPathFailsV()) return with(h, best, bestAt, calcAt, fails, State.FAILED, "Baritone found no path " + fails + " times from " + from);
+            if (now - bestAt >= stallTicks())
+                return with(h, best, bestAt, calcAt, fails, State.FAILED, "no new best for " + (now - bestAt) / 20 + " s from " + from    // game fact: 20 ticks a second
+                        + (Double.isNaN(best) ? "" : " (best " + Math.round(best) + " m)"));
+            return with(h, best, bestAt, calcAt, fails, State.HELD, "held");
+        }
+
+        private static Held with(Held h, double best, long bestAt, long calcAt, int fails, State s, String why) {
+            return new Held(h.x(), h.z(), h.since(), best, bestAt, calcAt, fails, s, why);
+        }
+
+        /** The feet's horizontal distance to x z, NaN: no feet. */
+        static double dist(int[] feet, int x, int z) {
+            if (feet == null || feet.length < 3) return Double.NaN;     // structural: x y z
+            double dx = feet[0] - x, dz = feet[2] - z;
+            return Math.sqrt(dx * dx + dz * dz);
+        }
+
+        /**
+         * The chunk {@code cx cz} holds a target that failed from a cell the bot ({@code me}) is still within {@code moved}
+         * blocks of: the next-target pick passes over it (a fact about where it failed, never "explored"). Unknown feet:
+         * still skipped (rule 15).
+         */
+        public static boolean skip(List<Failed> failed, int cx, int cz, int[] me, double moved) {
+            if (failed == null) return false;
+            for (Failed f : failed) {
+                if (f.x() >> 4 != cx || f.z() >> 4 != cz) continue;     // structural: a chunk is 16 blocks (>> 4)
+                if (me == null || f.from() == null) return true;
+                double dx = me[0] - f.from()[0], dy = me[1] - f.from()[1], dz = me[2] - f.from()[2];
+                if (Math.sqrt(dx * dx + dy * dy + dz * dz) < moved) return true;
+            }
+            return false;
+        }
+
+        /** "explore: target -264 24 failed: Baritone found no path 3 times from -148 -33 -83" (said once per failure). */
+        public static String failedLine(Held h) { return "explore: target " + h.x() + " " + h.z() + " failed: " + h.why(); }
+    }
 }

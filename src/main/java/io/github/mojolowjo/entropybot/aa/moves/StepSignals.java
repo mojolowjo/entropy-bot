@@ -7,7 +7,8 @@ package io.github.mojolowjo.entropybot.aa.moves;
  * not wired, a reflex holds the bot) - the monitor then never says REPLAN.
  * <ul>
  * <li>{@code feet}: the feet cell {x, y, z}; {@code goalDist}: Baritone's {@code Goal.heuristic} at the feet (NaN: no goal;
- *     a progress fact, never a price - rule 18); {@code inGoal}: the feet in that goal;</li>
+ *     a progress fact, never a price - rule 18); {@code goalId}: which goal that is (0.39.z72: another goal re-bases the best -
+ *     a target that changes is no progress), null: one unknown goal; {@code inGoal}: the feet in that goal;</li>
  * <li>{@code executing}: Baritone follows a path; {@code calcRunning}: a path search runs; {@code calcFailed}: Baritone's
  *     CALC_FAILED path events so far (a running count; the monitor counts those since the last new best);</li>
  * <li>{@code made}: how many of the step's own output (StepMonitor#output) the bag gained since the step started, -1: not
@@ -20,7 +21,7 @@ package io.github.mojolowjo.entropybot.aa.moves;
  * </ul>
  * Pure (JUnit: Z71StepMonitorTest). Loader notes: none (plain values; the adapter reads Baritone's API and vanilla).
  */
-public record StepSignals(boolean loaded, String notLoaded, int[] feet, double goalDist, boolean inGoal, boolean executing,
+public record StepSignals(boolean loaded, String notLoaded, int[] feet, double goalDist, String goalId, boolean inGoal, boolean executing,
                           boolean calcRunning, long calcFailed, int made, int destroyStage, String breakingCell, long placedCount,
                           int exploredChunks, String ownWait) {
     public StepSignals {
@@ -29,6 +30,6 @@ public record StepSignals(boolean loaded, String notLoaded, int[] feet, double g
 
     /** Not loaded, with why (rule 15). */
     public static StepSignals notLoaded(String why) {
-        return new StepSignals(false, why == null ? "not known why" : why, null, Double.NaN, false, false, false, 0, -1, -1, null, 0, -1, null);
+        return new StepSignals(false, why == null ? "not known why" : why, null, Double.NaN, null, false, false, false, 0, -1, -1, null, 0, -1, null);
     }
 }
