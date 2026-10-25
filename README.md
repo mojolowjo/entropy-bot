@@ -1,77 +1,40 @@
 # Entropy Bot
 
-A client-side NeoForge mod (Minecraft 1.21.1) that turns a Minecraft account into a helper bot, with
-[Baritone](https://github.com/cabaletta/baritone) as the legs. Baritone only walks; everything the
-bot breaks or places goes through the mod's own engine, inside areas the owner defines in game, behind
-a guard that checks every block click and refuses when unsure.
+A client-side NeoForge mod (Minecraft 1.21.1) that turns one Minecraft account into a helper bot. It is an improved
+[Baritone](https://github.com/cabaletta/baritone): our own Baritone fork does every move, dig and place, and the mod
+decides what to do. The owner gives orders in game (`aa want torch 16, iron_pickaxe`); the bot plans each order from
+the game's own data (recipes, tags, loot tables, world-gen, burn times), prices every way in seconds, runs the
+cheapest and re-plans when a step fails. No AI model is needed to run it.
 
-This is release **0.1** (milestone B0 of the plan): the guard, the areas policy, leases, Baritone path
-and log events, and an atomic JSON file helper, all behind one static class scripts can call. The jobs
-themselves (mining, farming, chests, crafting) still live in a KubeJS script that calls this mod and
-move into it release by release.
-
-## What it does today
-
-- **Guard, three hooks.** A Mixin into `MultiPlayerGameMode` catches every block break and every
-  liquid, fire, spawn egg or entity put down; a Mixin into `BlockItem.place` catches every block
-  placement (after doors, buttons and menus had their turn); a Mixin into Baritone's
-  `CalculationContext.isPossiblyProtected` keeps its route planner from planning breaks the guard
-  would refuse.
-- **The floor** can't be switched off: blocks with a block entity (chests, machines, beds...), building
-  blocks that don't occur in the wild (planks, glass, doors, torches, rails, crops...), protect boxes,
-  the Nether and the End.
-- **Areas and leases** on top: a break or placement needs a lease (a job's short-lived permission for
-  one small box) inside an area; with no areas or no lease nothing breaks. `log` mode records what
-  those rules would have refused instead of refusing; the floor is enforced either way.
-- **Events.** Baritone's path events (`CALC_FAILED`, `AT_GOAL`, `CANCELED`...) and chat lines, and the
-  guard's decisions, in a ring with sequence numbers.
-- **Files.** Atomic JSON writes under `<game dir>/entropybot/`.
-- **The one chunk pass (0.28.0, `sense/`).** Every chunk is read once when it arrives (and again on a resend or
-  after a dropped patch), kept as a small summary (ore counts and positions by family, POI blocks, column tops) and
-  patched per block from the existing block hook; once a minute one chunk is re-read to check the patches. Points of
-  interest, the terrain map and the surface export read it; `entropybot/sense/<dim>/<cx>.<cz>.json` keeps the
-  summaries across restarts, so `mine <ore>`, gather, the brain and the cave job plan from the ore index
-  (`ores known [family] [r]`). `sense status` shows reads, patches, drops, tick time, files and the self-audit.
-
-## For scripts
-
-```
-io.github.mojolowjo.entropybot.api.BotAPI
-  String version();  String features();  String token()
-  String events(long afterSeq, int max);  long lastSeq()
-  String guard();  String check(String dim, int x, int y, int z, String action)   // break | place | go
-  String policy();  String setPolicy(String json, String token);  String mode(String mode, String token)
-  String lease(String token, String task, String boxJson, boolean place);  String forceLease(String token, String task, String boxJson)
-  void release(String id);  void releaseAll(String token);  int heartbeat(String token)
-  String vetoes(int max);  String writeJson(String name, String json);  String readJson(String name)
-  boolean hold()
-```
-
-Policy JSON: `{"areas":[{"name":"home","x1":-120,"z1":100,"x2":60,"z2":260}],"protect":[{"name":"base","x1":-40,"y1":45,"z1":170,"x2":-10,"y2":80,"z2":200}]}`
-(a box without `y1`/`y2` covers every height; `dim` defaults to the overworld). A lease box needs
-`y1` and `y2` and may cover at most 4,096 blocks (64 for a force lease).
-
-From KubeJS: `var BotAPI = Java.tryLoadClass('io.github.mojolowjo.entropybot.api.BotAPI')` (null when the
-mod is absent).
+## What it does
+- **Orders** (`aa want <item> [n]`, `aa want strip <ore> ...`, `aa want deposit`): craft, smelt, dig, hunt or explore
+  for anything the recipes and loot tables know, vanilla or modded, with the stations and tools it needs made on
+  the way. `aa why` and `aa debug want <item>` show every way considered, its price and why the losers lost.
+- **Legit play.** It only uses ore it has seen with an exposed face (no x-ray), finds caves from the surface shape
+  and confirms them by sight, strip-mines at the ore's real world-gen band.
+- **Respect for builds.** A fail-closed guard checks every block click and Baritone's own path costs: structure
+  blocks outside the owner's areas are never broken, keep-out areas never entered, what the bot placed it may take
+  back. Areas are drawn in game (`area ...`).
+- **Survival reflexes** (air, lava, fire, creepers, eating from the bag) are always on; with `aa needs on` the bot
+  also looks after food, torches and stock by itself.
+- **Owner tools**: a watch camera, a flight recorder, a local dashboard, a config screen and a PowerShell bridge.
 
 ## Building
-
-Needs JDK 21. Gradle downloads the official `baritone-unoptimized-neoforge-1.11.3.jar` into `libs/`
-and checks its sha1 against the release's `checksums.txt`.
+Needs JDK 21. Gradle downloads the official `baritone-unoptimized-neoforge-1.11.3.jar` into `libs/` and checks its
+sha1; put the fork jar (`...-1.11.3-entropy.jar`, built from the fork's source) beside it to compile against the fork.
 
 ```
-./gradlew build        # JUnit tests and build/libs/entropybot-<version>.jar
+./gradlew test build   # JUnit tests and build/libs/entropybot-<version>.jar
 ./gradlew runClient    # a dev client with Baritone loaded next to the mod
 ```
 
 ## Installing
+Put the mod jar and ONE Baritone jar (the fork, or the stock unoptimized build) into the client's `mods` folder; the
+shipped `baritone-api-neoforge-*.jar` must be disabled (same mod id). Client only; the server never sees the mod.
 
-Put the mod jar and `baritone-unoptimized-neoforge-1.11.3.jar` into the client's `mods` folder. The
-shipped `baritone-api-neoforge-1.11.3.jar` must be disabled first: both carry the mod id `baritoe`, and
-the mod's Mixin into Baritone needs the readable class names of the unoptimized build (the plugin
-skips that one Mixin when it finds the ProGuard build instead, and `features()` then lacks
-`guard:astar`). Client only; the server never sees the mod.
+## For developers
+`CLAUDE.md` is the map of the code (packages, the decision flow, conventions); `docs/ARCHITECTURE.md` has the tick
+order, the fact sources and the files the mod writes. `companion/` is a small separate mod for the owner's own game.
 
 ## License
-
 LGPL-3.0-or-later (see `LICENSE` and `LICENSE.GPL`). Baritone is LGPL-3.0 and the mod patches into it.
