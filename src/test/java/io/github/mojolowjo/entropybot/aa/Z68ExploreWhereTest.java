@@ -85,6 +85,12 @@ class Z68ExploreWhereTest {
         f.put("minecraft:worldgen/configured_feature/crimson_fungus.json", CRIMSON);
         f.put("minecraft:worldgen/placed_feature/crimson_fungi.json", CRIMSON_PLACED);
         f.put("minecraft:worldgen/configured_feature/ore_dirt.json", ORE_DIRT);
+        f.put("minecraft:worldgen/configured_feature/kelp.json", "{\"type\":\"minecraft:kelp\",\"config\":{\"state\":{\"Name\":\"minecraft:kelp\"}}}");
+        f.put("minecraft:worldgen/placed_feature/kelp_cold.json", "{\"feature\":\"minecraft:kelp\",\"placement\":[{\"type\":\"minecraft:noise_based_count\",\"noise_factor\":80.0,\"noise_to_count_ratio\":120},"
+                + "{\"type\":\"minecraft:in_square\"},{\"type\":\"minecraft:heightmap\",\"heightmap\":\"OCEAN_FLOOR_WG\"},{\"type\":\"minecraft:biome\"}]}");
+        f.put("minecraft:worldgen/configured_feature/flower_plains.json", "{\"type\":\"minecraft:flower\",\"config\":{\"state\":{\"Name\":\"minecraft:dandelion\"}}}");
+        f.put("minecraft:worldgen/placed_feature/flower_plains.json", "{\"feature\":\"minecraft:flower_plains\",\"placement\":[{\"type\":\"minecraft:rarity_filter\",\"chance\":32},"
+                + "{\"type\":\"minecraft:in_square\"},{\"type\":\"minecraft:heightmap\",\"heightmap\":\"MOTION_BLOCKING\"},{\"type\":\"minecraft:biome\"}]}");
         f.put("minecraft:worldgen/placed_feature/ore_dirt.json", ORE_DIRT_PLACED);
         List<WorldGenFiles.Entry> es = new ArrayList<>();
         for (var e : f.entrySet()) es.add(entry(e.getKey(), e.getValue()));
@@ -201,10 +207,42 @@ class Z68ExploreWhereTest {
 
     @Test
     void anOreTargetKeepsItsBandAndSaysCaves() {
-        Chain c = NeedChain.resolve("oak_log", 4, logsWorld(null).withWhere(new NeedChain.WhereFacts(
-                word -> GenWhere.of(Set.of("minecraft:iron_ore"), placers(), -64, 320), () -> null)));
+        // z68 review 3: the iron target with the iron fact (logsWorld's where gives iron_ore for a word without "log")
+        Chain c = NeedChain.resolve("iron_ore", 1, logsWorld(null));
         assertTrue(c.steps().get(0) instanceof Step.ToBand b && b.minY() == -64 && b.maxY() == 384, "the fact's band when the ore placements gave none: " + c.steps());
-        assertTrue(c.why().contains("explore for oak_log under ground, toward caves in or near the band (iron_ore generates under ground at Y -64..384"), c.why());
+        assertTrue(c.why().contains("explore for iron_ore under ground, toward caves in or near the band (iron_ore generates under ground at Y -64..384"), c.why());
+    }
+
+    @Test
+    void withCaveKeepsTheWhereFacts() {
+        var facts = new NeedChain.WhereFacts(w -> GenWhere.unknown("x"), () -> null);
+        var w = ScenariosTest.w(Map.of(), false, false, Map.of()).withWhere(facts).withCave(word -> null).withStrip(word -> null).withUses(i -> 1)
+                .withRooms(List.of()).withPath(FakePaths.byDistance()).withBand(word -> null).withStations(k -> null).withMobs(id -> List.of(), null)
+                .withoutSources(Map.of("collect x", "gone")).withPlaceFailures(Map.of("place at 1 2 3", "no room"), new int[]{1, 2, 3});
+        assertSame(facts, w.where(), "every later with* keeps the where facts (review 1: withCave dropped them)");
+    }
+
+    @Test
+    void ironCavesInTheMiddleBandComeFirstForABotAtY16() {
+        var iron = where("minecraft:iron_ore", "minecraft:deepslate_iron_ore");
+        assertEquals(3, iron.bands().size(), iron.bands().toString());
+        var pb = iron.preferred(16);
+        assertEquals("minecraft:ore_iron_middle", pb.feature(), "y 16 is inside small (-64..72, 10 veins) and middle (-24..56, 10 veins): middle is denser");
+        assertEquals(-24, pb.lo());
+        assertEquals(56, pb.hi());
+        assertEquals("minecraft:ore_iron_upper", iron.preferred(200).feature(), "high in a mountain: the upper band");
+        List<int[]> caves = List.of(new int[]{3, 64, 3}, new int[]{8, -40, 8}, new int[]{9, 10, 9}, new int[]{12, 100, 0});
+        List<int[]> sorted = ExploreRules.bandFirst(caves, pb.lo(), pb.hi());
+        assertArrayEquals(new int[]{9, 10, 9}, sorted.get(0), "the cave in -24..56 first, though -40 is in the union too");
+    }
+
+    @Test
+    void onlyLandHeightmapsAreTheSurfaceTheSeaFloorIsNot() {
+        var kelp = where("minecraft:kelp");
+        assertEquals(GenWhere.Kind.UNKNOWN, kelp.kind(), "OCEAN_FLOOR_WG without the no-water filter: the sea floor, not the surface");
+        assertTrue(kelp.why().contains("placed on the sea floor (kelp_cold"), kelp.why());
+        assertEquals(GenWhere.Kind.SURFACE, where("minecraft:dandelion").kind(), "MOTION_BLOCKING: the land surface");
+        assertEquals(GenWhere.Kind.SURFACE, where("minecraft:oak_log").kind(), "trees: OCEAN_FLOOR with surface_water_depth_filter 0 (no water over it): land");
     }
 
     @Test

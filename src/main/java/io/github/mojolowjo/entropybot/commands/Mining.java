@@ -1124,7 +1124,12 @@ final class Mining {
             if (bandTarget && sg != null) for (var m : sg.mouths(d, me[0], me[1], me[2]))
                 if (Jobs.distSq(me, new int[]{m.x(), m.y(), m.z()}) <= (long) within * within) cells.add(new int[]{m.x(), m.y(), m.z()});
             cells.sort(java.util.Comparator.comparingDouble(c2 -> Jobs.distSq(me, c2)));
-            if (bandTarget) cells = ExploreRules.bandFirst(cells, ex.where.lo(), ex.where.hi());
+            if (bandTarget) {
+                // z68 review 2: the placer band nearest the feet (inside it: 0), ties to the densest - not the whole union
+                var pb = ex.where.preferred(me[1]);
+                cells = pb == null ? ExploreRules.bandFirst(cells, ex.where.lo(), ex.where.hi()) : ExploreRules.bandFirst(cells, pb.lo(), pb.hi());
+                if (pb != null && !cells.isEmpty()) LOG.debug("[entropybot] explore: caves in {}'s band {}..{} first (feet y {})", pb.feature(), pb.lo(), pb.hi(), me[1]);
+            }
             int[] aim = ExploreRules.toward(cells, cell -> CAVE_VISITED.contains(Jobs.fmt(cell)));
             if (aim != null) {
                 ex.aimed = Jobs.fmt(aim);

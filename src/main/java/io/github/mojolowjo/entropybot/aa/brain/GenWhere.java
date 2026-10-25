@@ -16,10 +16,11 @@ import java.util.TreeSet;
  * client's jars (rule 19), never from a name list (rule 4). A {@link Placer} is one placed feature whose placement says
  * where (its own {@code placement} list) and the blocks its feature tree places (every block state {@code Name} of its
  * configured feature, following the placed / configured features it names). The placement's kind:
- * <ul><li>a {@code heightmap} modifier: SURFACE (trees, flowers, sugar cane, pumpkins: put on the ground's top);</li>
+ * <ul><li>a {@code heightmap} modifier on the land surface: SURFACE (trees, flowers, sugar cane, pumpkins: put on the ground's top;
+ * review 4: OCEAN_FLOOR only with the no-water filter, else the sea floor: kelp, seagrass are not the surface);</li>
  * <li>else a {@code height_range} modifier: a BAND y1..y2 under ground (ores, geodes, underground lakes);</li>
  * <li>else none (a nested feature placed by its parent, a nether {@code count_on_every_layer}): it says nothing.</li></ul>
- * A target's {@link Fact}: SURFACE when its blocks are only heightmap-placed, BAND (the union) when only height-range-placed,
+ * A target's {@link Fact}: SURFACE when its blocks are only heightmap-placed, BAND (the union, each placer's own band kept: review 2) when only height-range-placed,
  * UNKNOWN when no feature places them or they are placed both ways (today's explore), NOT_LOADED while the read is not done
  * (rule 15: never "none"). The biome share and the dimension are not modelled (rule 14: rough): every biome's features
  * count. The planner prices what it does with the fact (rule 1): the walk up to the surface is a priced walk (rule 18).
@@ -37,12 +38,40 @@ public final class GenWhere {
     }
 
     /**
-     * Where a target generates. {@code block} / {@code feature}: the block and placed feature that say it (null for UNKNOWN /
-     * NOT_LOADED); {@code lo..hi}: the band (BAND only); {@code why}: the reason for UNKNOWN / NOT_LOADED.
+     * 0.39.z68 review 2: one placer's own band: Y lo..hi, its veins per chunk (the {@code count} modifier's mean, a
+     * {@code rarity_filter}'s 1/chance; none or not read: 1) and its placed feature.
      */
-    public record Fact(Kind kind, int lo, int hi, String block, String feature, String why) {
+    public record Band(int lo, int hi, double veins, String feature) {
+        /** Veins per layer: the placer's density over its height (rough, rule 14: the shape of the distribution is not read). */
+        public double density() { return veins / Math.max(1, hi - lo + 1); }
+
+        /** Blocks from y to the band (0 inside it). */
+        public int dist(int y) { return y < lo ? lo - y : y > hi ? y - hi : 0; }
+    }
+
+    /**
+     * Where a target generates. {@code block} / {@code feature}: the block and placed feature that say it (null for UNKNOWN /
+     * NOT_LOADED); {@code lo..hi}: the band, the union of {@code bands} (BAND only); {@code why}: the reason for UNKNOWN /
+     * NOT_LOADED.
+     */
+    public record Fact(Kind kind, int lo, int hi, String block, String feature, String why, List<Band> bands) {
+        public Fact { bands = bands == null ? List.of() : List.copyOf(bands); }
+
+        public Fact(Kind kind, int lo, int hi, String block, String feature, String why) { this(kind, lo, hi, block, feature, why, List.of()); }
+
         public boolean surface() { return kind == Kind.SURFACE; }
         public boolean band() { return kind == Kind.BAND; }
+
+        /**
+         * 0.39.z68 review 2 (iron's union -64..384 is the whole world): the band to look in from feet Y {@code y}: of the
+         * placers' own bands the nearest to y (0: y inside it), ties to the densest (veins per layer). Null: no band.
+         */
+        public Band preferred(int y) {
+            Band best = null;
+            for (Band b : bands)
+                if (best == null || b.dist(y) < best.dist(y) || (b.dist(y) == best.dist(y) && b.density() > best.density())) best = b;
+            return best;
+        }
 
         /** The fact as the explore's step text says it ("oak_log grows on the surface: trees_plains is heightmap-placed"). */
         public String text() {
@@ -59,7 +88,7 @@ public final class GenWhere {
 
     public static Fact unknown(String why) { return new Fact(Kind.UNKNOWN, 0, 0, null, null, why); }
 
-    /** A placement list's kind: SURFACE (a heightmap modifier), BAND {lo, hi} (a height_range it reads), null: says nothing. */
+    /** A placement list's band {lo, hi} (its height_range), null: none it reads. */
     static int[] band(JsonArray placement, int bottom, int top) {
         if (placement == null) return null;
         for (JsonElement e : placement) {
@@ -78,32 +107,78 @@ public final class GenWhere {
         return null;
     }
 
-    /** True when the placement puts the feature on a heightmap's top (the ground's surface, the ocean floor). */
-    static boolean heightmap(JsonArray placement) {
-        if (placement == null) return false;
-        for (JsonElement e : placement)
-            if (e.isJsonObject() && "heightmap".equals(type(e.getAsJsonObject()))) return true;
-        return false;
+    /** 0.39.z68 review 2: veins per chunk: the count modifiers' means times the rarity filters' 1/chance (a count not read: 1). */
+    static double veins(JsonArray placement) {
+        double v = 1;
+        if (placement == null) return v;
+        for (JsonElement e : placement) {
+            if (!e.isJsonObject()) continue;
+            JsonObject m = e.getAsJsonObject();
+            String t = type(m);
+            if ("count".equals(t)) {
+                JsonElement c = m.get("count");
+                if (c != null && c.isJsonPrimitive()) v *= c.getAsDouble();
+                else if (c != null && c.isJsonObject() && c.getAsJsonObject().has("value")) v *= c.getAsJsonObject().get("value").getAsDouble();
+                else if (c != null && c.isJsonObject() && c.getAsJsonObject().has("min_inclusive") && c.getAsJsonObject().has("max_inclusive"))
+                    v *= (c.getAsJsonObject().get("min_inclusive").getAsDouble() + c.getAsJsonObject().get("max_inclusive").getAsDouble()) / 2;
+            } else if ("rarity_filter".equals(t) && m.has("chance") && m.get("chance").getAsInt() > 0) v /= m.get("chance").getAsInt();
+        }
+        return v;
+    }
+
+    /** How a heightmap placement lays the feature: on the land surface, on the sea floor, or none (no heightmap modifier). */
+    enum Lay { LAND, FLOOR, NONE }
+
+    /**
+     * 0.39.z68 review 4: the heightmap modifier's map. WORLD_SURFACE(_WG) / MOTION_BLOCKING(_NO_LEAVES): the land surface.
+     * OCEAN_FLOOR(_WG): the top solid block, under water or not - the land surface only when the same placement also has a
+     * {@code surface_water_depth_filter} with {@code max_water_depth} 0 (no water over it: the game's tree placements), else
+     * the sea floor (kelp, seagrass). Any other map: the sea floor's side (not called the surface).
+     */
+    static Lay lay(JsonArray placement) {
+        if (placement == null) return Lay.NONE;
+        String map = null;
+        boolean dry = false;
+        for (JsonElement e : placement) {
+            if (!e.isJsonObject()) continue;
+            JsonObject m = e.getAsJsonObject();
+            String t = type(m);
+            if ("heightmap".equals(t) && m.has("heightmap") && m.get("heightmap").isJsonPrimitive()) map = m.get("heightmap").getAsString();
+            else if ("heightmap".equals(t)) map = "";
+            if ("surface_water_depth_filter".equals(t) && m.has("max_water_depth") && m.get("max_water_depth").getAsInt() <= 0) dry = true;
+        }
+        if (map == null) return Lay.NONE;
+        if (map.startsWith("WORLD_SURFACE") || map.startsWith("MOTION_BLOCKING")) return Lay.LAND;
+        if (map.startsWith("OCEAN_FLOOR") && dry) return Lay.LAND;
+        return Lay.FLOOR;
     }
 
     /**
      * The fact for the blocks that give a target ({@code blocks}: the loot data's blocks and the item's own block), from the
      * placers ({@code placers} null: not loaded). {@code bottom}/{@code top}: the dimension's build height for the anchors.
+     * 0.39.z68 review 4: a sea-floor placer (OCEAN_FLOOR without the dry filter: kelp, seagrass) is not the surface: alone
+     * it is UNKNOWN (said: "placed on the sea floor"), beside land or band placers it is left out.
      */
     public static Fact of(Collection<String> blocks, Collection<Placer> placers, int bottom, int top) {
         if (placers == null) return notLoaded("the world-gen read is not done");
         if (blocks == null || blocks.isEmpty()) return unknown("no block gives it");
         Set<String> want = new TreeSet<>(blocks);
-        String sBlock = null, sFeat = null, bBlock = null, bFeat = null;
+        String sBlock = null, sFeat = null, bBlock = null, bFeat = null, fBlock = null, fFeat = null;
         int lo = Integer.MAX_VALUE, hi = Integer.MIN_VALUE;
+        List<Band> bands = new ArrayList<>();
         List<Placer> sorted = new ArrayList<>(placers);
         sorted.sort(java.util.Comparator.comparing(Placer::id));
         for (Placer p : sorted) {
             String hit = null;
             for (String b : p.blocks()) if (want.contains(b) && (hit == null || b.compareTo(hit) < 0)) hit = b;
             if (hit == null) continue;
-            if (heightmap(p.placement())) {
+            Lay lay = lay(p.placement());
+            if (lay == Lay.LAND) {
                 if (sBlock == null) { sBlock = hit; sFeat = p.id(); }
+                continue;
+            }
+            if (lay == Lay.FLOOR) {
+                if (fBlock == null) { fBlock = hit; fFeat = p.id(); }
                 continue;
             }
             int[] r = band(p.placement(), bottom, top);
@@ -111,11 +186,13 @@ public final class GenWhere {
             if (bBlock == null) { bBlock = hit; bFeat = p.id(); }
             lo = Math.min(lo, r[0]);
             hi = Math.max(hi, r[1]);
+            bands.add(new Band(r[0], r[1], veins(p.placement()), p.id()));
         }
         if (sBlock != null && bBlock != null)
-            return unknown(sh(sBlock) + " is heightmap-placed (" + sh(sFeat) + ") and " + sh(bBlock) + " height-range-placed (" + sh(bFeat) + "): both ways");
+            return unknown(sh(sBlock) + " is placed on the ground's top (" + sh(sFeat) + ") and " + sh(bBlock) + " height-range-placed (" + sh(bFeat) + "): both ways");
         if (sBlock != null) return new Fact(Kind.SURFACE, 0, 0, sBlock, sFeat, null);
-        if (bBlock != null) return new Fact(Kind.BAND, lo, hi, bBlock, bFeat, null);
+        if (bBlock != null) return new Fact(Kind.BAND, lo, hi, bBlock, bFeat, null, bands);
+        if (fBlock != null) return unknown(sh(fBlock) + " is placed on the sea floor (" + sh(fFeat) + ": OCEAN_FLOOR, water allowed over it), not the land surface");
         List<String> names = new ArrayList<>();
         for (String b : want) { if (names.size() == 3) { names.add("..."); break; } names.add(sh(b)); }   // structural: display: how many items a text lists
         return unknown("no world-gen feature places " + String.join(", ", names));
