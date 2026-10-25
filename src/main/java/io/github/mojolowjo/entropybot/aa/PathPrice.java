@@ -48,6 +48,12 @@ public interface PathPrice {
     /** Bumped each time an answer lands (the running order re-prices at its next step). */
     default long landed() { return 0; }
 
+    /**
+     * 0.39.z60 review 2: first answers (walks not answered yet in this order) computing or queued now; -1: not known (no
+     * fork count). The chain charges the first-answer wait only while some are pending (NeedChain.pathsExplore).
+     */
+    default int firstAnswersPending() { return -1; }
+
     /** Milliseconds one background search may run (Baritone's executor, not the game thread). */
     static long fullMaxMs() { return (long) Tuning.get("pathCost.fullMaxMs"); }
 

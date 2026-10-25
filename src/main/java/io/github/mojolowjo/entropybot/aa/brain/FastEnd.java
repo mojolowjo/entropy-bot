@@ -31,6 +31,23 @@ public final class FastEnd {
      * @param stage    the step it was on when it ended (null: unknown)
      * @return null when the end stands, else the failure text
      */
+    /** 0.39.z60 review 4: game ticks a fast end with no bag change yet waits for the server's inventory sync (Tuning). */
+    public static int syncTicks() { return Tuning.i("failures.fastEndSyncTicks"); }
+
+    /** 0.39.z60 review 4: hold the end for the inventory sync ({@code verdict}: what it would say now), or decide it. */
+    public record Hold(boolean waitSync, String verdict) {}
+
+    /**
+     * 0.39.z60 review 4 (Opus Design: on a server the crafted or picked-up items reach the client's bag a few ticks after the
+     * step's end): {@link #verdict} on the bags now; a "changing nothing" seen less than {@link #syncTicks} game ticks after
+     * the end tick is held (look again next tick) instead of called a failure. {@code ranMs}: the run's time AT its end.
+     */
+    public static Hold settle(String end, long ranMs, Map<String, Integer> bagBefore, Map<String, Integer> bagNow, double movedBlocks, String stage, long ticksSinceEnd) {
+        String v = verdict(end, ranMs, bagBefore, bagNow, movedBlocks, stage);
+        if (v == null) return new Hold(false, null);
+        return new Hold(ticksSinceEnd < syncTicks(), v);
+    }
+
     public static String verdict(String end, long ranMs, Map<String, Integer> bagBefore, Map<String, Integer> bagAfter, double movedBlocks, String stage) {
         if (end == null || !end.startsWith("done")) return null;
         if (ranMs >= limitMs()) return null;

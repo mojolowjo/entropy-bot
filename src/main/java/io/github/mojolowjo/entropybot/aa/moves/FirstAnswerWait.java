@@ -41,8 +41,9 @@ public final class FirstAnswerWait {
      * way ends the step, Steps), and now also when none progressed - no fork segment and no answer landed - for
      * {@code stallS} (pathCost.firstAnswerStallS).
      *
-     * @param stalledTicks game ticks since the last progress (a segment search or an answer landed; 0: progress unknown, never judged)
-     * @param stallS       seconds without progress that end the wait (0: never)
+     * @param stalledTicks game ticks since the last progress (a segment search or an answer landed); -1: progress not known
+     *                     (z60 review 2: the wait ends at once, as before z60)
+     * @param stallS       seconds without progress that end the wait (0: progress is never judged - the 4-argument call)
      */
     public static Decision of(long waitedTicks, int waitS, int pendingFirst, boolean landedSince, long stalledTicks, double stallS) {
         long limit = (long) waitS * GameTimes.TPS;
@@ -53,6 +54,10 @@ public final class FirstAnswerWait {
         }
         if (pendingFirst == 0) return new Decision(Next.EXPLORE, waitedTicks <= 0 ? "no first answer is computing: exploring at once"
                 : "no first answer computing any more after " + secs(waitedTicks) + " s and still no priced way: exploring meanwhile");
+        // z60 review 2: progress not known (the fork gives no segment count): no 30 s wait on an unknown - explore at once as before
+        if (stallS > 0 && stalledTicks < 0) {
+            return new Decision(Next.EXPLORE, "this fork jar does not count segment searches (IPricedPath.searchCounts), so progress is not known: exploring at once");
+        }
         if (waitedTicks >= limit) {
             return new Decision(Next.EXPLORE, "waited " + waitS + " s, " + pendingFirst + " path" + (pendingFirst == 1 ? "" : "s")
                     + " still computing: exploring meanwhile");
@@ -64,6 +69,49 @@ public final class FirstAnswerWait {
         }
         return new Decision(Next.WAIT, "waiting up to " + waitS + " s while " + pendingFirst + " path" + (pendingFirst == 1 ? "" : "s")
                 + " compute (" + secs(waitedTicks) + " s so far; Baritone idle, priced from this cell)");
+    }
+
+    /**
+     * 0.39.z60 review 2: the wait's state as the step hands keep it (StepHands holds one; Z60RunRTest drives the same one on
+     * fake hands): when it began, the landed answers and fork segments at the last look, and when the last progress was.
+     * Each look turns the live numbers into a {@link Decision}. Pure.
+     */
+    public static final class Tracker {
+        private long start = -1, landed, segs = -1, progressAt = -1;
+
+        /** The wait begins now with these counts (segments -1: the fork does not count them). */
+        public void begin(long now, long landedNow, long segsNow) {
+            start = now;
+            landed = landedNow;
+            segs = segsNow;
+            progressAt = now;
+        }
+
+        public boolean waiting() { return start >= 0; }
+
+        public void end() { start = -1; }
+
+        /** One look: an answer or a fork segment landed since the last look is progress; the decision on the numbers now. */
+        public Decision look(long now, long landedNow, long segsNow, int pendingFirst, int waitS, double stallS) {
+            boolean since = landedNow != landed;
+            landed = landedNow;
+            if (since || segsNow != segs) progressAt = now;
+            segs = segsNow;
+            long stalled = segsNow < 0 ? -1 : now - progressAt;
+            return of(now - start, waitS, pendingFirst, since, stalled, stallS);
+        }
+    }
+
+    /**
+     * 0.39.z60 review 2: the seconds the chain charges for the wait when it prices "explore while paths compute" - the
+     * EXPECTED wait, not the cap: none pending (or not counted: the hands then explore at once) 0; else one search round
+     * ({@code roundS}, pathCost.firstAnswerExpectS: about one segment search, Baritone's 2 s failureTimeoutMS) per
+     * {@code slots} first answers pending (the fork runs pathCost.maxPending at once), at most the cap {@code waitS}.
+     */
+    public static double expectedS(int pendingFirst, int slots, double roundS, int waitS) {
+        if (pendingFirst <= 0 || waitS <= 0) return 0;
+        int rounds = (pendingFirst + Math.max(1, slots) - 1) / Math.max(1, slots);
+        return Math.min(waitS, rounds * Math.max(0, roundS));
     }
 
     private static String secs(long ticks) {

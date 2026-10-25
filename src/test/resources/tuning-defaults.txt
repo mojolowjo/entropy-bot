@@ -370,6 +370,7 @@ exploreWords.rings	24.0
 failures.cdBaseMs	120000.0
 failures.cdMaxMs	960000.0
 failures.fastEndMs	1000.0
+failures.fastEndSyncTicks	4.0
 failures.moved	16.0
 failures.retryMaxMs	3600000.0
 failures.retryMs	600000.0
@@ -913,6 +914,7 @@ pathCost.reserveForRunning	1.0
 pathCost.researchMinS	3.0
 pathCost.queueKeepS	30.0
 pathCost.firstAnswerWaitS	30.0
+pathCost.firstAnswerExpectS	2.0
 pathCost.firstAnswerStallS	8.0
 price.walkX	1.0
 price.breakX	1.0

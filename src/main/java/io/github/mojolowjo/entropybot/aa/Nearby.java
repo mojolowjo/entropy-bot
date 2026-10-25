@@ -384,10 +384,16 @@ public final class Nearby {
         /** aa debug's line: "nearest raw_iron_block at x y z: seen (exposed) | 3 iron_ore buried, not counted | 1 iron_ore not loaded, not counted". */
         public String line() {
             String at = spot == null ? "none known" : "nearest " + shortId(spot.block()) + " at " + spot.x() + " " + spot.y() + " " + spot.z()
-                    + ("baritone".equals(from) ? ": seen" + (exposureRuled(spot.block()) ? " (exposed)" : " (in the loaded chunks)") : ": from my sightings");
+                    + ("not loaded".equals(from) ? ": not known yet (its structure fact is not loaded; rule 15)"
+                    : "baritone".equals(from) ? ": seen" + (exposureRuled(spot.block()) ? " (exposed)" : " (in the loaded chunks)") : ": from my sightings");
             List<String> b = new ArrayList<>();
             for (var e : buried.entrySet()) b.add(e.getValue() + " " + shortId(e.getKey()) + " buried, not counted");
-            for (var e : unloaded.entrySet()) b.add(e.getValue() + " " + shortId(e.getKey()) + " not loaded (a side's chunk), not counted");
+            for (var e : unloaded.entrySet()) {
+                String k = e.getKey();
+                // 0.39.z60 review 1: a block whose structure fact is not loaded yet is not known (rule 15): waited for, never "no"
+                if (k.endsWith(STRUCTURE_FACT)) b.add(e.getValue() + " " + shortId(k.substring(0, k.length() - STRUCTURE_FACT.length())) + ": structure fact not loaded yet, waiting");
+                else b.add(e.getValue() + " " + shortId(k) + " not loaded (a side's chunk), not counted");
+            }
             // 0.39.z60 item 2: the key is "block refused (the policy's reason)"
             for (var e : refused.entrySet()) b.add(e.getValue() + " " + shortId(e.getKey()) + ", not counted");
             return b.isEmpty() ? at : at + " | " + String.join(", ", b);
@@ -428,6 +434,7 @@ public final class Nearby {
     public static Source source(Scan s, int[] me, Set<String> blocks, Supplier<Spot> fallback) {
         java.util.Map<String, Integer> buried = new java.util.LinkedHashMap<>(), unloaded = new java.util.LinkedHashMap<>(),
                 refused = new java.util.LinkedHashMap<>();
+        Spot waitFor = null;                 // 0.39.z60 review 1: the nearest block whose structure fact is not loaded yet
         if (s != null && blocks != null && !blocks.isEmpty()) {
             int checked = 0;
             for (int[] p : sorted(s.find(blocks, scanR()), me)) {
@@ -435,7 +442,12 @@ public final class Nearby {
                 String id = s.blockAt(p[0], p[1], p[2]);
                 if (id == null || !blocks.contains(id) || !s.allowed(p[0], p[1], p[2]) || !s.fairOk(p[0], p[1], p[2])) continue;
                 if (!counts(s, id, p[0], p[1], p[2], buried, unloaded)) continue;
-                if (!mayBreak(s, id, p[0], p[1], p[2], refused)) continue;
+                int may = mayBreak(s, id, p[0], p[1], p[2], refused, unloaded);
+                if (may == NOT_KNOWN) {
+                    if (waitFor == null) waitFor = new Spot(p[0], p[1], p[2], dist(p, me), id).notLoaded();
+                    continue;
+                }
+                if (may == REFUSED) continue;
                 if (s.isLog(id) && !s.leavesNear(p[0], p[1], p[2], leafReach())) continue;
                 return new Source(new Spot(p[0], p[1], p[2], dist(p, me), id, s.isLog(id) ? treeLogs(s.logs(scanR()), p, s.treeCap())
                         : s.isOre(id) ? clusterSize(s, blocks, p) : 0), "baritone", buried, unloaded, refused);
@@ -445,20 +457,36 @@ public final class Nearby {
         // 0.39.z42: a sighted ore is tested as a scanned one (run C 20:28:52: the ore index's raw_iron_block had no exposure test)
         if (f != null && s != null && f.block() != null && !counts(s, f.block(), f.x(), f.y(), f.z(), buried, unloaded)) f = null;
         // 0.39.z60 item 2: a sighting goes through the structure rule as a scanned block does
-        if (f != null && s != null && f.block() != null && !mayBreak(s, f.block(), f.x(), f.y(), f.z(), refused)) f = null;
+        if (f != null && s != null && f.block() != null) {
+            int may = mayBreak(s, f.block(), f.x(), f.y(), f.z(), refused, unloaded);
+            if (may == NOT_KNOWN && waitFor == null) waitFor = f.notLoaded();
+            if (may != COUNTS) f = null;
+        }
+        // 0.39.z60 review 1 (rule 15): no counted source but one whose structure fact is not loaded yet: that spot, marked not
+        // loaded - the chain waits on it with the reason (NeedChain: "not known yet"), never "no source known"
+        if (f == null && waitFor != null) return new Source(waitFor, "not loaded", buried, unloaded, refused);
         return new Source(f, f == null ? "none" : "fallback", buried, unloaded, refused);
     }
+
+    /** z60 review 1: the unloaded bucket's key suffix for a block whose structure fact is not loaded yet. */
+    static final String STRUCTURE_FACT = " (its structure fact)";
+    static final int COUNTS = 1, REFUSED = 0, NOT_KNOWN = -1;   // structural: the three answers of mayBreak, names not numbers
 
     /**
      * 0.39.z60 item 2 (RULES 16; runs Q/R "collect 4 torch" on the world's placed torches): the block may go as a source by
      * the break policy's structure rule ({@link Scan#sourceBreak}); a refusal is counted by block and reason
-     * ("torch refused (" + the policy's reason + ")") for aa debug's source line. No verdict (a scan that does not ask): counts.
+     * ("torch refused (" + the policy's reason + ")") for aa debug's source line. No verdict (a scan that does not ask):
+     * counts. Review 1 (rule 15): the "not loaded yet" verdict goes to the {@code unloaded} bucket - NOT_KNOWN, never refused.
      */
-    private static boolean mayBreak(Scan s, String id, int x, int y, int z, java.util.Map<String, Integer> refused) {
+    private static int mayBreak(Scan s, String id, int x, int y, int z, java.util.Map<String, Integer> refused, java.util.Map<String, Integer> unloaded) {
         io.github.mojolowjo.entropybot.guard.BreakPolicy.Verdict v = s.sourceBreak(x, y, z);
-        if (v == null || v.allowed()) return true;
+        if (v == null || v.allowed()) return COUNTS;
+        if (io.github.mojolowjo.entropybot.guard.BreakPolicy.structureNotLoaded(v)) {
+            unloaded.merge(id + STRUCTURE_FACT, 1, Integer::sum);
+            return NOT_KNOWN;
+        }
         refused.merge(id + " refused (" + v.reason() + ")", 1, Integer::sum);
-        return false;
+        return REFUSED;
     }
 
     /** One candidate under the exposed-face rule: true when it counts; a buried or not-loaded ore is counted in its map. */

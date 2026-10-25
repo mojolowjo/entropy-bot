@@ -67,6 +67,97 @@ class Z60RunRTest {
         assertEquals("waited 30 s, 1 path still computing: exploring meanwhile", capped.why());
     }
 
+    /**
+     * Review 2: fake hands run the explore while paths compute exactly as StepHands does - its start begins the hands'
+     * FirstAnswerWait.Tracker with the live counts, each status look feeds it the counts of now - with a fake fork's numbers
+     * (first answers pending, answers landed, segment searches landed) and a game clock in ticks.
+     */
+    private static final class TrackerHands implements Steps.Hands {
+        final FirstAnswerWait.Tracker wait = new FirstAnswerWait.Tracker();
+        long clock, landed, segs;
+        int pending;
+        final List<String> explored = new ArrayList<>();
+        String lastWhy;
+
+        @Override public String start(Step s) {
+            Step.Explore k = (Step.Explore) s;
+            var d = FirstAnswerWait.of(0, k.waitS(), pending, false);
+            lastWhy = d.why();
+            if (d.next() == FirstAnswerWait.Next.EXPLORE) { explored.add(lastWhy); return null; }
+            wait.begin(clock, landed, segs);
+            return null;
+        }
+
+        @Override public Car.Status status(Step s) {
+            Step.Explore k = (Step.Explore) s;
+            if (!wait.waiting()) return Car.Status.running("exploring");
+            var d = wait.look(clock, landed, segs, pending, k.waitS(), Tuning.get("pathCost.firstAnswerStallS"));
+            lastWhy = d.why();
+            if (d.next() == FirstAnswerWait.Next.WAIT) return Car.Status.running(d.why());
+            wait.end();
+            explored.add(d.why());
+            return Car.Status.running("exploring");
+        }
+
+        @Override public void cancel(String why) { wait.end(); }
+    }
+
+    private static Steps waiting(TrackerHands h) {
+        Steps run = new Steps(h);
+        run.start("goal.torch", List.of(new Step.Explore(5, null, true, io.github.mojolowjo.entropybot.aa.NeedChain.firstAnswerWaitS())), 0,
+                (failed, fact, why) -> new Steps.Routine(null, "no way priced yet"));
+        return run;
+    }
+
+    /** Run R's start on the hands: segments land every 3 s, so the bot still stands at 20 s; then they stop: 8 s later it explores. */
+    @Test
+    void theHandsWaitWhileSegmentsLandAndExploreAfterAStall() {
+        TrackerHands h = new TrackerHands();
+        h.pending = 2;
+        h.segs = 10;
+        Steps run = waiting(h);
+        for (int t = 1; t <= 80; t++) {                     // 20 s of AA looks (every 5 game ticks)
+            h.clock += 5;
+            if (h.clock % 60 == 0) h.segs++;                // a segment search lands every 3 s
+            run.tick(t);
+        }
+        assertTrue(h.explored.isEmpty(), h.lastWhy);
+        assertTrue(h.lastWhy.startsWith("waiting up to 30 s while 2 paths compute (20.0 s so far"), h.lastWhy);
+        int t = 81;
+        while (h.explored.isEmpty() && t < 200) {           // the searches stop progressing
+            h.clock += 5;
+            run.tick(t++);
+        }
+        assertEquals(1, h.explored.size());
+        assertTrue(h.explored.get(0).startsWith("2 paths still computing but none progressed for 8.0 s"), h.explored.get(0));
+        assertEquals(360 + 8 * TPS, h.clock, "8 s after the last segment (game tick 360, 18 s): explored at 26 s, before the 30 s cap");
+    }
+
+    /** Review 2: the fork gives no segment count (-1): the hands explore at the first look, not after the 30 s cap. */
+    @Test
+    void theHandsExploreAtOnceWhenSegmentsAreNotCounted() {
+        TrackerHands h = new TrackerHands();
+        h.pending = 2;
+        h.segs = -1;
+        Steps run = waiting(h);
+        h.clock += 5;
+        run.tick(1);
+        assertEquals(1, h.explored.size(), h.lastWhy);
+        assertTrue(h.explored.get(0).startsWith("this fork jar does not count segment searches"), h.explored.get(0));
+    }
+
+    /** Review 2: the chain's charge is the expected wait - 0 with nothing pending or not counted, a round per 4 pending, capped. */
+    @Test
+    void theChainChargesTheExpectedWaitNotTheCap() {
+        double round = Tuning.get("pathCost.firstAnswerExpectS");
+        assertEquals(2, round, 1e-9);
+        assertEquals(0, FirstAnswerWait.expectedS(0, 4, round, 30), 1e-9);
+        assertEquals(0, FirstAnswerWait.expectedS(-1, 4, round, 30), 1e-9);
+        assertEquals(2, FirstAnswerWait.expectedS(2, 4, round, 30), 1e-9);      // run R's start: one round
+        assertEquals(6, FirstAnswerWait.expectedS(9, 4, round, 30), 1e-9);      // three rounds of 4 slots
+        assertEquals(30, FirstAnswerWait.expectedS(100, 4, round, 30), 1e-9);   // never past the cap
+    }
+
     // ---- item 2: placed torches are structure blocks (RULES 16), never a source outside my areas ----
 
     /** A fake scan: one wall_torch at 54 m (run R's), the structure verdict from BreakPolicy.structure over a fact. */
@@ -104,7 +195,14 @@ class Z60RunRTest {
         assertEquals("none known | 1 wall_torch refused (" + BreakPolicy.STRUCTURE_OUTSIDE + "), not counted", s.line());
         assertNotNull(Nearby.source(scan("minecraft:wall_torch", BreakPolicy.Structure.YES, true, true), me, torch, () -> null).spot(), "placed by me: mine to take");
         assertNotNull(Nearby.source(scan("minecraft:stone", BreakPolicy.Structure.NO, false, true), me, Set.of("minecraft:stone"), () -> null).spot(), "not a structure: a source");
-        assertNull(Nearby.source(scan("minecraft:wall_torch", BreakPolicy.Structure.NOT_LOADED, false, true), me, torch, () -> null).spot(), "facts not loaded: fail closed");
+        // review 1 (rule 15): the structure fact not loaded yet is NOT KNOWN - the spot comes back marked not loaded (the chain
+        // waits on it), counted in the unloaded bucket, never refused
+        Nearby.Source wait = Nearby.source(scan("minecraft:wall_torch", BreakPolicy.Structure.NOT_LOADED, false, true), me, torch, () -> null);
+        assertNotNull(wait.spot());
+        assertTrue(wait.spot().unloaded());
+        assertEquals("not loaded", wait.from());
+        assertTrue(wait.refused().isEmpty(), wait.refused().toString());
+        assertEquals("nearest wall_torch at -181 38 -95: not known yet (its structure fact is not loaded; rule 15) | 1 wall_torch: structure fact not loaded yet, waiting", wait.line());
         assertNotNull(Nearby.source(scan("minecraft:wall_torch", BreakPolicy.Structure.YES, false, false), me, torch, () -> null).spot(), "a scan that does not ask: as before");
         // a sighting (the fallback) goes through the same rule
         Nearby.Scan none = scan("minecraft:air", BreakPolicy.Structure.YES, false, true);
@@ -167,5 +265,28 @@ class Z60RunRTest {
         assertNull(FastEnd.verdict("done - ok: made 4 torch", 256, before, after, 0, null));
         // the z58 inputs (the same sensed bag twice) gave the false failure
         assertTrue(FastEnd.verdict("done - ok: made 4 torch", 256, before, before, 0, null).startsWith("failed: ended after 256 ms changing nothing"));
+    }
+
+    /**
+     * Review 4: on a server the torches reach the client's bag 2 ticks after the craft step ended - the end is held up to
+     * failures.fastEndSyncTicks (4) and stands once the bag shows them; a bag that never changes is called a failure at 4.
+     */
+    @Test
+    void aDelayedBagIsWaitedForAFewTicks() {
+        assertEquals(4, FastEnd.syncTicks());
+        Map<String, Integer> before = Map.of("minecraft:stick", 3, "minecraft:coal", 6);
+        Map<String, Integer> synced = Map.of("minecraft:stick", 2, "minecraft:coal", 5, "minecraft:torch", 4);
+        String end = "done - ok: made 4 torch";
+        // the delayed bag: unchanged at the end tick and the next, the torches at tick 2
+        FastEnd.Hold t0 = FastEnd.settle(end, 256, before, before, 0, null, 0);
+        assertTrue(t0.waitSync(), "held for the sync");
+        assertTrue(FastEnd.settle(end, 256, before, before, 0, null, 1).waitSync());
+        FastEnd.Hold t2 = FastEnd.settle(end, 256, before, synced, 0, null, 2);
+        assertFalse(t2.waitSync());
+        assertNull(t2.verdict(), "the end stands");
+        // a bag that never changes: a failure once the sync ticks are over
+        FastEnd.Hold t4 = FastEnd.settle(end, 256, before, before, 0, null, 4);
+        assertFalse(t4.waitSync());
+        assertTrue(t4.verdict().startsWith("failed: ended after 256 ms changing nothing"), t4.verdict());
     }
 }

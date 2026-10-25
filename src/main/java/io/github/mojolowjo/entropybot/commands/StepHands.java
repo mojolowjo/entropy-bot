@@ -216,7 +216,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.ToBand t -> toBandStatus(p, t);
                 case Step.ToStrip t -> toStripStatus(p, t);
                 case Step.Climb k -> climbStatus();
-                case Step.Explore k when firstWaitStart >= 0 -> firstWaitStatus(k);
+                case Step.Explore k when firstWait.waiting() -> firstWaitStatus(k);
                 default -> requestStatus();
             };
         } catch (RuntimeException e) {
@@ -293,13 +293,16 @@ public final class StepHands implements Steps.Hands {
         climbing = false;
         climbEnd = null;
         dataWait.reset();
-        firstWaitStart = -1;
+        firstWait.end();
     }
 
     // ---- 0.39.z58: the explore while paths compute first waits in place while first answers compute ----
 
-    /** When the first-answer wait started (the level's game time), -1: not waiting. */
-    private long firstWaitStart = -1;
+    /**
+     * The first-answer wait's state (0.39.z60 review 2: FirstAnswerWait.Tracker, pure - its JUnit drives the same object the
+     * hands keep): when it began, the landed answers and fork segments at the last look, the last progress.
+     */
+    private final FirstAnswerWait.Tracker firstWait = new FirstAnswerWait.Tracker();
 
     /** 0.39.z58 review 7: the level's game time (stops while the game is paused); 0 with no level (the status says not in a world first). */
     private static long gameTime() {
@@ -319,33 +322,20 @@ public final class StepHands implements Steps.Hands {
         if (d.next() == FirstAnswerWait.Next.EXPLORE) return direct(k);
         IBaritone b = Jobs.baritone();
         if (b != null) Jobs.cancel(b);                   // Baritone idle: the first answers are priced from the cell it stands on
-        firstWaitStart = gameTime();
-        firstWaitLanded = LivePathPrice.INSTANCE.landed();
-        firstWaitSegs = LivePathPrice.INSTANCE.segmentsLanded();
-        firstWaitProgressAt = firstWaitStart;
+        firstWait.begin(gameTime(), LivePathPrice.INSTANCE.landed(), LivePathPrice.INSTANCE.segmentsLanded());
         return null;
     }
 
-    /** The landed count at the last look of the wait (an answer since: its re-price may still be on its way). */
-    private long firstWaitLanded;
-    /** 0.39.z60 item 1: the fork's segments landed at the last look (-1: not known) and the game time of the last progress. */
-    private long firstWaitSegs = -1, firstWaitProgressAt = -1;
-
+    /**
+     * 0.39.z60 item 1 (run R 03:34:56: the wait ended at 4 s with 2 searches still progressing; both landed at 6 s): the wait
+     * runs to its 30 s cap while the first answers progress - a fork segment or an answer landed within
+     * pathCost.firstAnswerStallS; review 2: the segment count not known (-1) ends it at once, as before.
+     */
     private Car.Status firstWaitStatus(Step.Explore k) {
-        long landed = LivePathPrice.INSTANCE.landed();
-        boolean since = landed != firstWaitLanded;
-        firstWaitLanded = landed;
-        // 0.39.z60 item 1 (run R 03:34:56: the wait ended at 4 s with 2 searches still progressing; both landed at 6 s): the
-        // wait runs to its 30 s cap while the first answers progress - a fork segment or an answer landed within
-        // pathCost.firstAnswerStallS; the segment count not known (-1): progress is not judged, the cap holds
-        long segs = LivePathPrice.INSTANCE.segmentsLanded(), now = gameTime();
-        if (since || segs != firstWaitSegs) firstWaitProgressAt = now;
-        firstWaitSegs = segs;
-        long stalled = segs < 0 ? 0 : now - firstWaitProgressAt;
-        FirstAnswerWait.Decision d = FirstAnswerWait.of(now - firstWaitStart, k.waitS(), LivePathPrice.INSTANCE.firstAnswersPending(), since,
-                stalled, Tuning.get("pathCost.firstAnswerStallS"));
+        FirstAnswerWait.Decision d = firstWait.look(gameTime(), LivePathPrice.INSTANCE.landed(), LivePathPrice.INSTANCE.segmentsLanded(),
+                LivePathPrice.INSTANCE.firstAnswersPending(), k.waitS(), Tuning.get("pathCost.firstAnswerStallS"));
         if (d.next() == FirstAnswerWait.Next.WAIT) return Car.Status.running(k.text() + ": " + d.why());
-        firstWaitStart = -1;
+        firstWait.end();
         LOG.info("[entropybot] steps: {}: {}", k.text(), d.why());
         String r = direct(k);
         return r != null ? Car.Status.failed(r) : requestStatus();

@@ -1896,6 +1896,7 @@ public final class AaRuntime implements JobPort {
         if (typedStartMs < 0) {         // rule 7: the task's first start (a replan or an escape goes on with the same clock)
             typedStartMs = System.currentTimeMillis();
             typedStartBag = liveBag();                   // 0.39.z60 item 4: the bag now, not the last sensed one
+            fastEndSeen = -1;                            // review 4: no end held from an earlier task
             LocalPlayer sp = Minecraft.getInstance().player;
             typedStartAt = sp == null ? null : Jobs.here(sp);
         }
@@ -2086,6 +2087,7 @@ public final class AaRuntime implements JobPort {
             typedEnded();
         }
         if (lastEnd != null) {
+            if (holdForSync(lastEnd)) return JobState.RUNNING;   // 0.39.z60 review 4: the server's bag sync
             String e = lastEnd;
             lastEnd = null;
             current = -1;
@@ -2111,22 +2113,52 @@ public final class AaRuntime implements JobPort {
         return JobState.RUNNING;
     }
 
+    /** 0.39.z60 review 4: the game time the typed run's end was first seen (-1: none held) and its run time then. */
+    private long fastEndSeen = -1, fastEndRanMs;
+
+    /** 0.39.z60 review 4: the level's game time (0 with no level). */
+    private static long gameTimeNow() {
+        var lv = Minecraft.getInstance().level;
+        return lv == null ? 0 : lv.getGameTime();
+    }
+
+    /** How far the bot went since the typed run started (0 with no player or start cell). */
+    private double movedSinceStart() {
+        LocalPlayer p = Minecraft.getInstance().player;
+        if (p == null || typedStartAt == null) return 0;
+        int[] now = Jobs.here(p);
+        return Math.hypot(now[0] - typedStartAt[0], Math.hypot(now[1] - typedStartAt[1], now[2] - typedStartAt[2]));
+    }
+
+    /**
+     * 0.39.z60 review 4 (on a server the bag reaches the client a few ticks after the craft or pickup): true while a fast
+     * "done" shows no bag change yet and fewer than failures.fastEndSyncTicks game ticks passed since its end was first
+     * seen - the end is held (the task still RUNNING) and looked at again; the run time is the one at the end.
+     */
+    private boolean holdForSync(String e) {
+        if (!typedRun || typedStartMs < 0) return false;
+        long now = gameTimeNow();
+        if (fastEndSeen < 0) {
+            fastEndSeen = now;
+            fastEndRanMs = System.currentTimeMillis() - typedStartMs;
+        }
+        var h = io.github.mojolowjo.entropybot.aa.brain.FastEnd.settle(e, fastEndRanMs, typedStartBag, liveBag(), movedSinceStart(),
+                c.stepRun.steps.stepText(), now - fastEndSeen);
+        return h.waitSync();
+    }
+
     /** Rule 7: a typed run that ends "done" within failures.fastEndMs having changed nothing is a failure with its stage (FastEnd). */
     private String fastEnd(String e) {
         long start = typedStartMs;
         typedStartMs = -1;
+        long ranMs = fastEndSeen >= 0 ? fastEndRanMs : System.currentTimeMillis() - start;   // review 4: the time at the end
+        fastEndSeen = -1;
         if (!typedRun || start < 0) return e;
-        double moved = 0;
-        LocalPlayer p = Minecraft.getInstance().player;
-        if (p != null && typedStartAt != null) {
-            int[] now = Jobs.here(p);
-            moved = Math.hypot(now[0] - typedStartAt[0], Math.hypot(now[1] - typedStartAt[1], now[2] - typedStartAt[2]));
-        }
         // 0.39.z60 item 4 (run R 03:50:45: "order torch stopped: failed: ended after 256 ms changing nothing at its first step
         // - ok: made 4 torch", then "got 4 torch (goal 4 done)"): both bags were the SENSED one (bb.in.bag, read every 10
         // ticks), which had not caught the craft 5 ticks old - the end is judged on the player's bag now (start and end alike)
-        String v = io.github.mojolowjo.entropybot.aa.brain.FastEnd.verdict(e, System.currentTimeMillis() - start, typedStartBag,
-                liveBag(), moved, c.stepRun.steps.stepText());
+        String v = io.github.mojolowjo.entropybot.aa.brain.FastEnd.verdict(e, ranMs, typedStartBag,
+                liveBag(), movedSinceStart(), c.stepRun.steps.stepText());
         if (v == null) return e;
         LOG.info("[entropybot] aa: the task ended \"done\" at once with nothing changed - counted failed: {}", v);
         return v;
@@ -2146,6 +2178,7 @@ public final class AaRuntime implements JobPort {
         if (taskId != current) return;
         current = -1;
         typedStartMs = -1;
+        fastEndSeen = -1;                                // 0.39.z60 review 4
         clearEscape();
         if (chainRunning()) c.chains.clear();
         if (typedRun) {

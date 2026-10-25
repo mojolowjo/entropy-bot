@@ -171,7 +171,7 @@ public final class BreakPolicy {
      * open. Else refused with the reason.
      */
     public static Verdict structure(Policy p, String dim, int x, int y, int z, Structure s, boolean placedByMe) {
-        if (s == null || s == Structure.NOT_LOADED) return Verdict.floor("not loaded yet");
+        if (s == null || s == Structure.NOT_LOADED) return Verdict.floor(NOT_LOADED_YET);
         if (s == Structure.NO) return Verdict.ok(1, "not a structure");
         Policy pol = p == null ? Policy.EMPTY : p;
         Box pr = pol.protectAt(dim, x, y, z);
@@ -181,6 +181,17 @@ public final class BreakPolicy {
         String an = a == null ? null : a.name == null ? "box" : a.name;
         if (a != null && a.has(AreaTags.BREAK_STRUCTURES)) return Verdict.ok(1, "structure, " + an + " " + AreaTags.BREAK_STRUCTURES);
         return Verdict.deny(a == null ? STRUCTURE_OUTSIDE : "structure block in " + an + " (no " + AreaTags.BREAK_STRUCTURES + " tag)", Kind.STRUCTURE);
+    }
+
+    /** The reason of {@link #structure}'s fail-closed answer while the cell's structure fact is not loaded (rule 15). */
+    public static final String NOT_LOADED_YET = "not loaded yet";
+
+    /**
+     * 0.39.z60 review 1 (rule 15): the verdict is {@link #structure}'s "the structure fact is not loaded yet" - refused for the
+     * click, but for a lookup NOT KNOWN (wait with that reason), never "no".
+     */
+    public static boolean structureNotLoaded(Verdict v) {
+        return v != null && !v.allowed() && v.floor() && NOT_LOADED_YET.equals(v.reason());
     }
 
     /** A cell's structure fact and whether I placed it (the ledger, asked for a structure block only). */

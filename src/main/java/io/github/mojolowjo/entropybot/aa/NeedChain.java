@@ -257,7 +257,7 @@ public final class NeedChain {
          * loot-book-bg: no way stands only because the loot book is still being read: no park, no explore; priced again when it
          * lands. 0.39.z41: or because a walk's path is not known yet / its chunks are not loaded ({@link PathPrice#NOT_KNOWN}).
          */
-        public boolean waiting() { return missing != null && (missing.startsWith(LootBook.WAITING) || missing.startsWith(PathPrice.NOT_KNOWN)); }
+        public boolean waiting() { return missing != null && (missing.startsWith(LootBook.WAITING) || missing.startsWith(PathPrice.NOT_KNOWN) || missing.endsWith(SOURCE_NOT_LOADED)); }
         /** The chain's price in seconds (the explore leg of an explore chain is in {@code cost}, not here). */
         public double seconds() { return Unit.seconds(cost); }
     }
@@ -1705,6 +1705,9 @@ public final class NeedChain {
         return true;
     }
 
+    /** 0.39.z60 review 1: the words of a source whose structure fact is not loaded yet (rule 15: not known, waited for). */
+    public static final String SOURCE_NOT_LOADED = "not known yet (its structure fact is not loaded; rule 15)";
+
     /** How many of the item one block of {@code block} drops (the loot data's expectation; 1 when unknown). */
     private static double perBlock(Ctx c, String item, String block) {
         if (c.w.loot() == null || block == null) return 1;
@@ -1719,6 +1722,12 @@ public final class NeedChain {
      */
     private static String sourceFrom(Ctx c, String word, String gives, int lack, List<Spot> order) {
         Spot first = order.get(0);
+        // 0.39.z60 review 1 (rule 15): a source whose structure fact is not loaded yet (Nearby: "not loaded") is not known -
+        // this way waits with the reason (said in the dropped list), never priced and never "no source"
+        if (first.unloaded()) {
+            c.fail = "source " + shw(blockOf(gives, first)) + " at " + first.x() + " " + first.y() + " " + first.z() + ": " + SOURCE_NOT_LOADED;
+            return null;
+        }
         boolean log = tree(word, first);
         String pre = null;
         Want asked = new Want(word);
@@ -2090,7 +2099,11 @@ public final class NeedChain {
         // place up to pathCost.firstAnswerWaitS while first answers compute (the hands skip it when none does), then explores.
         // The wait is the step's own time (rule 3: a wait is a way with its seconds)
         int waitS = firstAnswerWaitS();
-        c.seconds += waitS;
+        // 0.39.z60 review 2: the price carries the EXPECTED wait, not the cap - none when no first answer is pending now (or
+        // the fork does not count them: the hands then explore at once), else a search round per pathCost.maxPending pending
+        int pending = c.w.path() == null ? -1 : c.w.path().firstAnswersPending();
+        c.seconds += io.github.mojolowjo.entropybot.aa.moves.FirstAnswerWait.expectedS(pending, PathPrice.maxPending(),
+                Tuning.get("pathCost.firstAnswerExpectS"), waitS);
         c.steps.add(new Step.Explore(exploreMinutes(), null, true, waitS));
         c.stuck = true;
         if (c.unknown == null) c.unknown = word;
@@ -2116,6 +2129,13 @@ public final class NeedChain {
         // on a missing book; the way fails with the wait (null back, c.fail set) and the chain is priced again when it lands
         if (c.w.loot() != null && !c.w.loot().ready()) {
             c.fail = c.w.loot().waiting();
+            return null;
+        }
+        // 0.39.z60 review 1 (rule 15): a known block whose structure fact is not loaded yet may well be a source: no explore on
+        // an unknown, the chain waits with the reason (Chain.waiting) and is priced again on the next look
+        for (Spot sp : c.w.seenAll().apply(word)) {
+            if (!sp.unloaded()) continue;
+            c.fail = "source " + shw(sp.block() == null ? word : sp.block()) + " at " + sp.x() + " " + sp.y() + " " + sp.z() + ": " + SOURCE_NOT_LOADED;
             return null;
         }
         int[] band = c.w.band().apply(word);
