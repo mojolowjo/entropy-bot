@@ -177,7 +177,21 @@ public final class ProbeLines {
         return "path asks +" + d[0] + ": from memory exact +" + d[2] + " suffix +" + d[3] + " zero +" + d[1] + " no-path +" + d[4]
                 + ", joined in flight +" + d[5] + ", searches started +" + d[6] + ", queued +" + d[7] + ", cancelled +" + d[8]
                 + ", kept dropped +" + d[9] + (d.length > 10 ? ", not loaded +" + d[10] : "")
-                + (d.length > 11 ? ", stamp builds +" + d[11] : "");          // z57 review 2 item 3
+                + (d.length > 11 ? ", stamp builds +" + d[11] : "")           // z57 review 2 item 3
+                + queue(d);
+    }
+
+    /**
+     * 0.39.z58 item 3 (run Q 02:28-02:35: "in flight 4", "queued +16" with no word of who held the slots): the fork's queue
+     * counts per class [12..23] - started and queued per class (running step / first answer / re-search / rest), cancelled
+     * for priority (re-search, rest), re-search waits answered, queued asks that left the queue; "" from an older fork.
+     */
+    static String queue(long[] d) {
+        if (d.length < 24) return "";
+        return " | by class running step/first answer/re-search/rest: started +" + d[12] + "/+" + d[13] + "/+" + d[14] + "/+" + d[15]
+                + ", queued +" + d[16] + "/+" + d[17] + "/+" + d[18] + "/+" + d[19]
+                + ", cancelled for priority re-search +" + d[20] + " rest +" + d[21]
+                + ", re-search waits +" + d[22] + ", left the queue +" + d[23];
     }
 
     /** 0.39.z57 (rule 7): one dropped kept answer, the fork's words ("to <goal>: <why>"). */

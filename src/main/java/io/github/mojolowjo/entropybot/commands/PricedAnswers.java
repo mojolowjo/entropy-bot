@@ -26,10 +26,14 @@ public final class PricedAnswers {
     /**
      * The chain's answer for a fork reason that is no answer yet, else null: {@code queued} -> "queued: pathCost.maxPending N
      * searches in flight" (computing). Review 2: no search is cancelled for a move any more, so there is no "left the start".
+     * 0.39.z58 item 2 (run Q 02:28-02:35): the fork's re-search wait ({@code researchWait}: the bot moved off the goal's last
+     * answer, the next search waits pathCost.researchMinS) -> computing with the fork's words (rule 15: not known yet; rule
+     * 18: never the old price). A queued ask now waits in the fork's priority queue, which starts it when a slot frees.
      */
-    public static PathPrice.Answer notYet(String reason, String queued, int maxPending) {
+    public static PathPrice.Answer notYet(String reason, String queued, String researchWait, int maxPending) {
         if (reason == null) return null;
-        if (reason.equals(queued)) return PathPrice.Answer.computing("queued: pathCost.maxPending " + maxPending + " searches in flight");
+        if (reason.equals(queued)) return PathPrice.Answer.computing("queued: pathCost.maxPending " + maxPending + " searches in flight (the fork's priority queue starts it when a slot frees)");
+        if (reason.equals(researchWait)) return PathPrice.Answer.computing(researchWait + " (pathCost.researchMinS)");
         return null;
     }
 

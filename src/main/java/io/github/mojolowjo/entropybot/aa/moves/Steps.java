@@ -310,6 +310,21 @@ public final class Steps {
         return false;
     }
 
+    /**
+     * 0.39.z58 item 1 (D3 pricing queue; run Q 02:29:32: the crafting walks' searches queued behind re-searches): the walk of
+     * the step that runs now or runs next - the first {@link Step.Walk} or {@link Step.ToStrip} from {@code idx} on, as x y z
+     * (the cell its price and its walk use); null when none is left or nothing runs (idx < 0). The fork's queue gives that
+     * goal's search the first slot; which way wins stays the scorer's (rule 1).
+     */
+    public static int[] walkAhead(List<? extends Step> steps, int idx) {
+        if (steps == null || idx < 0) return null;
+        for (int i = idx; i < steps.size(); i++) {
+            if (steps.get(i) instanceof Step.Walk w) return new int[]{w.x(), w.y(), w.z()};
+            if (steps.get(i) instanceof Step.ToStrip t) return new int[]{t.x(), t.y(), t.z()};
+        }
+        return null;
+    }
+
     /** The fact the last re-plan answered, until the next step's start line said it; null: none. */
     public String replanFact() { return replanFact; }
 

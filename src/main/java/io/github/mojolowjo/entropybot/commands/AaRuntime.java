@@ -1311,6 +1311,7 @@ public final class AaRuntime implements JobPort {
             swimTick(p, now);
             replanTick(p, now);
             pathLandedTick();
+            runningWalkTick();
             slow.tick(p, now);               // AA_STEP3 B: the ledger rows and the slow-mode hold
             // 0.36.2 (review 6): while danger drives, AA's chain starts no next step and no retry (the pause ended the
             // running one); held a little past AA's next tick, so it goes on by itself once the guard lets go
@@ -1855,6 +1856,17 @@ public final class AaRuntime implements JobPort {
      * again at its next step (Steps.repriceAtNextStep through the order's own planner); an order that waits is priced again on
      * its next pick anyway.
      */
+    /**
+     * 0.39.z58 item 1 (D3 pricing queue; run Q 02:29:32: the crafting walks "computing" behind re-searches of alternatives):
+     * the fork is told the walk the running typed step does or does next (Steps.walkAhead), so that goal's search goes first
+     * and may use the pathCost.reserveForRunning slots; none while no typed run runs. Told on a change only (LivePathPrice).
+     */
+    private void runningWalkTick() {
+        var st = c.stepRun.steps;
+        int[] w = typedRun && st.running() ? io.github.mojolowjo.entropybot.aa.moves.Steps.walkAhead(st.steps(), st.index()) : null;
+        LivePathPrice.INSTANCE.running(w == null ? null : new net.minecraft.core.BlockPos(w[0], w[1], w[2]));
+    }
+
     private void pathLandedTick() {
         long v = LivePathPrice.INSTANCE.landed();
         if (v == pathLandedSeen) return;
@@ -3185,6 +3197,7 @@ public final class AaRuntime implements JobPort {
         var g = io.github.mojolowjo.entropybot.aa.brain.Goals.add(bb, r, a.n(), a.prio(), now);
         tree.brain.failures.forget(g.id());           // orders-tier: aa want again clears a parked order and its old holds
         g.replans = 0;                                // 0.39.z30: and its re-plan count
+        LivePathPrice.INSTANCE.orderStarted();        // 0.39.z58: the fork's "not answered yet in this order" class starts again
         lootCtx();
         // one-planner: the order is priced by the one chain now; the line says the chain or the explore it starts
         var ch = io.github.mojolowjo.entropybot.aa.brain.Goals.chain(bb, g);

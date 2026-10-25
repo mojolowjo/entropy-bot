@@ -19,15 +19,16 @@ import static org.junit.jupiter.api.Assertions.*;
 class Z57PathMemoryTest {
 
     private static final String QUEUED = "queued";
+    private static final String WAIT = baritone.api.pathing.calc.IPricedPath.RESEARCH_WAIT;   // z58
 
     @Test
     void queuedIsNotKnownYetNeverNone() {
-        PathPrice.Answer q = PricedAnswers.notYet(QUEUED, QUEUED, 4);
+        PathPrice.Answer q = PricedAnswers.notYet(QUEUED, QUEUED, WAIT, 4);
         assertEquals(PathPrice.Kind.COMPUTING, q.kind());
-        assertEquals("queued: pathCost.maxPending 4 searches in flight", q.reason());
-        assertNull(PricedAnswers.notYet("unreachable", QUEUED, 4));     // a real answer goes through
-        assertNull(PricedAnswers.notYet("chunks not loaded", QUEUED, 4)); // goes through as Kind.CHUNKS: "path not known"
-        assertNull(PricedAnswers.notYet(null, QUEUED, 4));              // a path answer has no reason
+        assertEquals("queued: pathCost.maxPending 4 searches in flight (the fork's priority queue starts it when a slot frees)", q.reason());
+        assertNull(PricedAnswers.notYet("unreachable", QUEUED, WAIT, 4));     // a real answer goes through
+        assertNull(PricedAnswers.notYet("chunks not loaded", QUEUED, WAIT, 4)); // goes through as Kind.CHUNKS: "path not known"
+        assertNull(PricedAnswers.notYet(null, QUEUED, WAIT, 4));              // a path answer has no reason
     }
 
     /** A fake level's lava read: each cell's ticks from {@code ticks} by x, counted. */

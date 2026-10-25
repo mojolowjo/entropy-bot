@@ -79,4 +79,13 @@ public interface PathPrice {
 
     /** 0.39.z46: Baritone path segments one price may chain at most. */
     static int pricedMaxSegments() { return Tuning.i("pricedPath.maxSegments"); }
+
+    /** 0.39.z58 (run Q 02:29:32): search slots only the running step's walk may use. */
+    static int reserveForRunning() { return Tuning.i("pathCost.reserveForRunning"); }
+
+    /** 0.39.z58 (run Q 02:28-02:35): seconds before a re-search when the bot moved off the goal's answer. */
+    static double researchMinS() { return Tuning.get("pathCost.researchMinS"); }
+
+    /** 0.39.z58: seconds a queued ask stays in the fork's queue without being asked again. */
+    static double queueKeepS() { return Tuning.get("pathCost.queueKeepS"); }
 }

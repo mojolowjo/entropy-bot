@@ -46,7 +46,11 @@ public final class LivePathPrice implements PathPrice {
 
     @Override public boolean pending() { return !inFlight.isEmpty() || !pending.isEmpty(); }
 
-    @Override public long landed() { return landed; }
+    /**
+     * Answers landed since the start; 0.39.z58: plus the fork's queue landings (searches its queue started for asks it had
+     * answered "queued": the chain re-prices on them as on its own).
+     */
+    @Override public long landed() { return landed + queueLandings(); }
 
     /** 0.39.z56 item 3 (load probe): searches started since the game started. */
     private volatile long started;
@@ -139,7 +143,7 @@ public final class LivePathPrice implements PathPrice {
                 LOG.warn("[entropybot] path cost to {}: the fork's answer failed", key, e);
                 return Answer.none("the fork's answer failed: " + e);
             }
-            Answer wait = a == null ? null : PricedAnswers.notYet(a.reason, baritone.api.pathing.calc.IPricedPath.QUEUED, PathPrice.maxPending());
+            Answer wait = a == null ? null : PricedAnswers.notYet(a.reason, baritone.api.pathing.calc.IPricedPath.QUEUED, baritone.api.pathing.calc.IPricedPath.RESEARCH_WAIT, PathPrice.maxPending());
             if (wait != null) return wait;
             return answer(mc, b, a, key, pos);
         }
@@ -154,9 +158,61 @@ public final class LivePathPrice implements PathPrice {
      * pathCost.maxPending.
      */
     private static baritone.api.pathing.calc.IPricedPath.Limits limits() {
+        double tps = io.github.mojolowjo.entropybot.aa.brain.GameTimes.TPS;
+        // 0.39.z58 (run Q 02:29:32: all slots held by re-searches): pathCost.reserveForRunning, researchMinS, queueKeepS
         return new baritone.api.pathing.calc.IPricedPath.Limits(
-                (int) Math.ceil(PathPrice.maxKeepS() * io.github.mojolowjo.entropybot.aa.brain.GameTimes.TPS),
-                PathPrice.pricedKeepTicks(), PathPrice.pricedMaxSegments(), PathPrice.maxPending());
+                (int) Math.ceil(PathPrice.maxKeepS() * tps),
+                PathPrice.pricedKeepTicks(), PathPrice.pricedMaxSegments(), PathPrice.maxPending(),
+                PathPrice.reserveForRunning(), (int) Math.ceil(PathPrice.researchMinS() * tps), (int) Math.ceil(PathPrice.queueKeepS() * tps));
+    }
+
+    /** 0.39.z58: the running step's walk target last told to the fork (null: none), compared so the fork is told on a change. */
+    private BlockPos runningTold;
+    private boolean runningSet;
+
+    /**
+     * 0.39.z58 item 1 (D3 pricing queue; run Q 02:29:32): the walk the running step does or does next (null: none) - the
+     * fork's queue gives its price the first slot (and the pathCost.reserveForRunning ones). Told on a change only; game thread.
+     * The scorer still picks the way (rule 1): this only orders searches.
+     */
+    public void running(BlockPos at) {
+        if (!PathPrice.pricedPathOn()) return;
+        if (runningSet && java.util.Objects.equals(at, runningTold)) return;
+        IBaritone b = Jobs.baritone();
+        if (b == null) return;
+        try {
+            b.getPricedPath().runningGoal(at == null ? null : goal(at));
+        } catch (LinkageError e) {
+            none("this Baritone has no IPricedPath.runningGoal (an older fork? install the entropy fork z58): " + e);
+            return;
+        }
+        runningTold = at;
+        runningSet = true;
+        LOG.debug("[entropybot] path queue: the running step's walk is {}", at == null ? "none" : at.toShortString());
+    }
+
+    /** 0.39.z58 item 1: a new order (aa want) - the fork's "not answered yet in this order" class starts again. Game thread. */
+    public void orderStarted() {
+        if (!PathPrice.pricedPathOn()) return;
+        IBaritone b = Jobs.baritone();
+        if (b == null) return;
+        try {
+            b.getPricedPath().orderStarted();
+        } catch (LinkageError e) {
+            none("this Baritone has no IPricedPath.orderStarted (an older fork? install the entropy fork z58): " + e);
+        }
+    }
+
+    /** 0.39.z58: landings of searches the fork's queue started itself (no future of ours lands for them); 0 from an older fork. */
+    private static long queueLandings() {
+        if (!PathPrice.pricedPathOn()) return 0;
+        IBaritone b = Jobs.baritone();
+        if (b == null) return 0;
+        try {
+            return b.getPricedPath().queueLandings();
+        } catch (LinkageError e) {
+            return 0;                                    // an older fork: said once by running()/orderStarted()
+        }
     }
 
     /** 0.39.z57 (rule 7): the fork's drop lines, one "probe reuse:" line each while debug.walkProbe is on (read anyway: bounded). */
@@ -190,7 +246,7 @@ public final class LivePathPrice implements PathPrice {
             LOG.warn("[entropybot] path cost to {}: the background search threw", key, err);
             out = Answer.none("the search threw: " + err);
         } else {
-            Answer wait = a == null ? null : PricedAnswers.notYet(a.reason, baritone.api.pathing.calc.IPricedPath.QUEUED, PathPrice.maxPending());
+            Answer wait = a == null ? null : PricedAnswers.notYet(a.reason, baritone.api.pathing.calc.IPricedPath.QUEUED, baritone.api.pathing.calc.IPricedPath.RESEARCH_WAIT, PathPrice.maxPending());
             out = wait != null ? wait : answer(mc, b, a, key, goal);
         }
         if (WalkProbe.on() && a != null) {
