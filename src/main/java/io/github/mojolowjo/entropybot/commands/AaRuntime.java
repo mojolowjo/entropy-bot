@@ -638,7 +638,15 @@ public final class AaRuntime implements JobPort {
         // 0.39.z55 item 3 (run N: 25 of 75 "no progress" answers were walks to y 96 straight above the bot - OreBand.bestY's
         // lowest peak above the feet, coal's; the price searched a pillar into open air for a strip with no rock): a band Y
         // at or above the ground's top in this loaded column is no strip here, said once per column and Y, never searched
-        if (y > me[1] && mc.level.hasChunkAt(pos)) {
+        // z55 review 1 (rule 15), the guard's two branches: a band Y at or below the feet is the old path (the priced path
+        // down tells, the fork answers "chunks not loaded" itself); a band Y above the feet is asked of the column: its
+        // chunk not loaded here = "not loaded", said with that reason and nothing priced (no pillar search into the unknown)
+        if (y > me[1] && !mc.level.hasChunkAt(pos)) {
+            String said = "unloaded " + (me[0] >> 4) + "," + (me[2] >> 4) + "," + y;
+            if (stripAirSaid.add(said)) LOG.info("[entropybot] aa: strip at y {} for {}: not loaded - the column's chunk is not loaded, so whether rock is there is not known (no walk priced; asked again later)", y, word);
+            return null;
+        }
+        if (y > me[1]) {
             // loader note: vanilla Level#getHeight with a heightmap the client keeps (MOTION_BLOCKING; leaves count as ground: a
             // tree only keeps the strip)
             int top = mc.level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, me[0], me[2]);
@@ -1903,6 +1911,7 @@ public final class AaRuntime implements JobPort {
      * back stored runs the return leg; else the end is the task's end.
      */
     private void typedEnded() {
+        stripAirSaid.clear();                 // z55 review 4: the strip-air / not-loaded lines are said again in the next run
         var st = c.stepRun.steps;
         String msg = st.why();
         boolean done = st.phase() == io.github.mojolowjo.entropybot.aa.moves.Steps.Phase.DONE;
