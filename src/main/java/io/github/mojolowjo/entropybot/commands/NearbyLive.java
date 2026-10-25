@@ -296,6 +296,16 @@ final class NearbyLive {
                 return false;
             }
             @Override public boolean allowed(int x, int y, int z) { return c.workAllowed(adim, x, y, z); }
+            // 0.39.z60 item 2 (runs Q/R: "collect 4 torch" on placed torches): RULES 16 for a source - BreakPolicy.structure over
+            // the cell's structure fact (StructureTable + the ledger), the guard's policy and the level's dimension, the same
+            // answer the click (GuardCore) and the path cost (CostAdvisorHook) get
+            @Override public io.github.mojolowjo.entropybot.guard.BreakPolicy.Verdict sourceBreak(int x, int y, int z) {
+                if (mc.level == null) return null;
+                String gdim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level);
+                var f = io.github.mojolowjo.entropybot.guard.PolicyRuntime.structureFacts(mc.level, gdim, new BlockPos(x, y, z));
+                return io.github.mojolowjo.entropybot.guard.BreakPolicy.structure(io.github.mojolowjo.entropybot.guard.Guard.INSTANCE.core.policy(),
+                        gdim, x, y, z, f.structure(), f.placedByMe());
+            }
             // STRUCTURE_BLOCKS: the owner's areas decide which stations are options (Scan.stationUse asks BreakPolicy.stationUse)
             @Override public io.github.mojolowjo.entropybot.guard.Policy stationPolicy() { return io.github.mojolowjo.entropybot.guard.Guard.INSTANCE.core.policy(); }
             @Override public String stationDim() { return adim; }

@@ -69,7 +69,7 @@ class FullPathTest {
         Spot b = ScenariosTest.tree(5, 4);
         Chain c = logs(1, new ScenariosTest.FakePath().computing(b), b);
         assertTrue(c.ok() && c.explore() && !c.waiting(), c.why());
-        assertTrue(c.why().contains("paths computing: 1 way waiting; first waiting up to 4 s in place while first answers compute, then exploring meanwhile"), c.why());
+        assertTrue(c.why().contains("paths computing: 1 way waiting; first waiting up to " + io.github.mojolowjo.entropybot.aa.NeedChain.firstAnswerWaitS() + " s in place while first answers compute, then exploring meanwhile"), c.why());
         assertTrue(c.dropped().contains("tree 5 m: " + NeedChain.COMPUTING), c.dropped().toString());
         assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Explore e && e.whilePaths()), c.steps().toString());
     }

@@ -86,6 +86,16 @@ public final class FactChange {
     /** The reason an unreachable source is dropped with ("unreachable (Baritone: Unable to find any path to ...)"). */
     public static String unreachableText(String why) { return "unreachable (Baritone: " + why + ")"; }
 
+    /**
+     * 0.39.z60 item 3 (run R 03:52:52: "place crafting_table near me: no cell within 3 blocks" stopped the iron order with no
+     * re-plan): the fork's placeNear found no cell for {@code item} here (none free, none to clear) or its leg failed: the
+     * "place" slot keyed by the item; the order re-plans on the facts of now (the same step failing again ends the run with
+     * both reasons, Steps).
+     */
+    public static void placeFailed(String item, String why) {
+        last = new Fact("place " + item, "place " + item.replaceFirst("^minecraft:", "") + " near me failed here: " + why);
+    }
+
     /** An item the step needs is not in the bag (nor in storage) when it starts. */
     public static void bag(String item, String why) {
         last = new Fact("bag " + item, item.replaceFirst("^minecraft:", "") + " not in the bag (" + why + ")");

@@ -204,7 +204,7 @@ class Z58PathQueueTest {
 
     @Test
     void theQueueNumbersAreTuningEntries() {
-        assertEquals(4, Tuning.get("pathCost.firstAnswerWaitS"), 1e-9);
+        assertEquals(30, Tuning.get("pathCost.firstAnswerWaitS"), 1e-9);     // 0.39.z60 item 1: the cap (was 4)
         assertEquals(1, Tuning.get("pathCost.reserveForRunning"), 1e-9);
         assertEquals(3, Tuning.get("pathCost.researchMinS"), 1e-9);
         assertEquals(30, Tuning.get("pathCost.queueKeepS"), 1e-9);

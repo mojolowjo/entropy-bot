@@ -321,17 +321,29 @@ public final class StepHands implements Steps.Hands {
         if (b != null) Jobs.cancel(b);                   // Baritone idle: the first answers are priced from the cell it stands on
         firstWaitStart = gameTime();
         firstWaitLanded = LivePathPrice.INSTANCE.landed();
+        firstWaitSegs = LivePathPrice.INSTANCE.segmentsLanded();
+        firstWaitProgressAt = firstWaitStart;
         return null;
     }
 
     /** The landed count at the last look of the wait (an answer since: its re-price may still be on its way). */
     private long firstWaitLanded;
+    /** 0.39.z60 item 1: the fork's segments landed at the last look (-1: not known) and the game time of the last progress. */
+    private long firstWaitSegs = -1, firstWaitProgressAt = -1;
 
     private Car.Status firstWaitStatus(Step.Explore k) {
         long landed = LivePathPrice.INSTANCE.landed();
         boolean since = landed != firstWaitLanded;
         firstWaitLanded = landed;
-        FirstAnswerWait.Decision d = FirstAnswerWait.of(gameTime() - firstWaitStart, k.waitS(), LivePathPrice.INSTANCE.firstAnswersPending(), since);
+        // 0.39.z60 item 1 (run R 03:34:56: the wait ended at 4 s with 2 searches still progressing; both landed at 6 s): the
+        // wait runs to its 30 s cap while the first answers progress - a fork segment or an answer landed within
+        // pathCost.firstAnswerStallS; the segment count not known (-1): progress is not judged, the cap holds
+        long segs = LivePathPrice.INSTANCE.segmentsLanded(), now = gameTime();
+        if (since || segs != firstWaitSegs) firstWaitProgressAt = now;
+        firstWaitSegs = segs;
+        long stalled = segs < 0 ? 0 : now - firstWaitProgressAt;
+        FirstAnswerWait.Decision d = FirstAnswerWait.of(now - firstWaitStart, k.waitS(), LivePathPrice.INSTANCE.firstAnswersPending(), since,
+                stalled, Tuning.get("pathCost.firstAnswerStallS"));
         if (d.next() == FirstAnswerWait.Next.WAIT) return Car.Status.running(k.text() + ": " + d.why());
         firstWaitStart = -1;
         LOG.info("[entropybot] steps: {}: {}", k.text(), d.why());
@@ -852,7 +864,11 @@ public final class StepHands implements Steps.Hands {
 
     private String placeNear(LocalPlayer p, Step.PlaceNear n) {
         var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().placeNear(n.item(), Tuning.i("steps.placeNearR"), (int) (20 * Tuning.need("hands.buildS")), "steps");
-        return r.failed() ? "error: " + r.why() : null;
+        if (!r.failed()) return null;
+        // 0.39.z60 item 3 (run R 03:52:52: the order stopped on "no cell within 3 blocks" with no re-plan): a typed fact, so
+        // the order is planned again on the facts of now (rule 7) instead of parked
+        io.github.mojolowjo.entropybot.aa.moves.FactChange.placeFailed(n.item(), r.why());
+        return "error: " + r.why();
     }
 
     private Car.Status placeNearStatus(Step.PlaceNear n) {
@@ -866,7 +882,10 @@ public final class StepHands implements Steps.Hands {
             }
             return Car.Status.done("ok: " + n.text());
         }
-        if (r.failed()) return Car.Status.failed(r.why());
+        if (r.failed()) {
+            io.github.mojolowjo.entropybot.aa.moves.FactChange.placeFailed(n.item(), r.why());   // 0.39.z60 item 3: re-plan, never park
+            return Car.Status.failed(r.why());
+        }
         return Car.Status.running(r.why());
     }
 

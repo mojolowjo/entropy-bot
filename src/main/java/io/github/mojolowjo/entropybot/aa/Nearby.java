@@ -89,6 +89,15 @@ public final class Nearby {
                     io.github.mojolowjo.entropybot.guard.BreakPolicy.Kind.STATION.word, io.github.mojolowjo.entropybot.guard.BreakPolicy.Kind.STATION);
             return io.github.mojolowjo.entropybot.guard.BreakPolicy.stationUse(p, stationDim(), x, y, z, mine);
         }
+        /**
+         * 0.39.z60 item 2 (runs Q 02:29:32 and R 03:35:34: "collect 4 torch" - Baritone's mine on the world's wall_torch /
+         * torch blocks 54 m away, 237 s, "Unable to find any path"; the scan's {@link #allowed} asks the keep-out / no-break
+         * boxes only, so a placed torch - a structure block by StructureTable: crafted, never placed by world gen - counted as
+         * a source): may the block at the cell be BROKEN as a source - RULES 16, {@code BreakPolicy.structure} over the cell's
+         * structure fact (the one authority, as the click and the path cost ask it). Null: this scan does not ask (a test
+         * fake: every block counts, as before); a refusal (BreakPolicy.STRUCTURE_OUTSIDE, not loaded yet) is no source.
+         */
+        default io.github.mojolowjo.entropybot.guard.BreakPolicy.Verdict sourceBreak(int x, int y, int z) { return null; }
         /** The owner's areas the station rule reads (the guard's policy); null: none known, every station refused. */
         default io.github.mojolowjo.entropybot.guard.Policy stationPolicy() { return null; }
         /** The dimension the scan looks in (the policy's areas are per dimension). */
@@ -360,11 +369,15 @@ public final class Nearby {
      * (exposed) block of the scan, "fallback" for AA's sightings, "none"), and the buried blocks of the scan it skipped, per
      * block id (in the order met, nearest first).
      */
-    public record Source(Spot spot, String from, java.util.Map<String, Integer> buried, java.util.Map<String, Integer> unloaded) {
+    public record Source(Spot spot, String from, java.util.Map<String, Integer> buried, java.util.Map<String, Integer> unloaded,
+                         java.util.Map<String, Integer> refused) {
         public Source {
             buried = java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(buried));
             unloaded = java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(unloaded == null ? Map.of() : unloaded));
+            refused = java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(refused == null ? Map.of() : refused));
         }
+
+        public Source(Spot spot, String from, java.util.Map<String, Integer> buried, java.util.Map<String, Integer> unloaded) { this(spot, from, buried, unloaded, Map.of()); }
 
         public Source(Spot spot, String from, java.util.Map<String, Integer> buried) { this(spot, from, buried, Map.of()); }
 
@@ -375,6 +388,8 @@ public final class Nearby {
             List<String> b = new ArrayList<>();
             for (var e : buried.entrySet()) b.add(e.getValue() + " " + shortId(e.getKey()) + " buried, not counted");
             for (var e : unloaded.entrySet()) b.add(e.getValue() + " " + shortId(e.getKey()) + " not loaded (a side's chunk), not counted");
+            // 0.39.z60 item 2: the key is "block refused (the policy's reason)"
+            for (var e : refused.entrySet()) b.add(e.getValue() + " " + shortId(e.getKey()) + ", not counted");
             return b.isEmpty() ? at : at + " | " + String.join(", ", b);
         }
     }
@@ -411,7 +426,8 @@ public final class Nearby {
      * a log only as a tree.
      */
     public static Source source(Scan s, int[] me, Set<String> blocks, Supplier<Spot> fallback) {
-        java.util.Map<String, Integer> buried = new java.util.LinkedHashMap<>(), unloaded = new java.util.LinkedHashMap<>();
+        java.util.Map<String, Integer> buried = new java.util.LinkedHashMap<>(), unloaded = new java.util.LinkedHashMap<>(),
+                refused = new java.util.LinkedHashMap<>();
         if (s != null && blocks != null && !blocks.isEmpty()) {
             int checked = 0;
             for (int[] p : sorted(s.find(blocks, scanR()), me)) {
@@ -419,15 +435,30 @@ public final class Nearby {
                 String id = s.blockAt(p[0], p[1], p[2]);
                 if (id == null || !blocks.contains(id) || !s.allowed(p[0], p[1], p[2]) || !s.fairOk(p[0], p[1], p[2])) continue;
                 if (!counts(s, id, p[0], p[1], p[2], buried, unloaded)) continue;
+                if (!mayBreak(s, id, p[0], p[1], p[2], refused)) continue;
                 if (s.isLog(id) && !s.leavesNear(p[0], p[1], p[2], leafReach())) continue;
                 return new Source(new Spot(p[0], p[1], p[2], dist(p, me), id, s.isLog(id) ? treeLogs(s.logs(scanR()), p, s.treeCap())
-                        : s.isOre(id) ? clusterSize(s, blocks, p) : 0), "baritone", buried, unloaded);
+                        : s.isOre(id) ? clusterSize(s, blocks, p) : 0), "baritone", buried, unloaded, refused);
             }
         }
         Spot f = fallback == null ? null : fallback.get();
         // 0.39.z42: a sighted ore is tested as a scanned one (run C 20:28:52: the ore index's raw_iron_block had no exposure test)
         if (f != null && s != null && f.block() != null && !counts(s, f.block(), f.x(), f.y(), f.z(), buried, unloaded)) f = null;
-        return new Source(f, f == null ? "none" : "fallback", buried, unloaded);
+        // 0.39.z60 item 2: a sighting goes through the structure rule as a scanned block does
+        if (f != null && s != null && f.block() != null && !mayBreak(s, f.block(), f.x(), f.y(), f.z(), refused)) f = null;
+        return new Source(f, f == null ? "none" : "fallback", buried, unloaded, refused);
+    }
+
+    /**
+     * 0.39.z60 item 2 (RULES 16; runs Q/R "collect 4 torch" on the world's placed torches): the block may go as a source by
+     * the break policy's structure rule ({@link Scan#sourceBreak}); a refusal is counted by block and reason
+     * ("torch refused (" + the policy's reason + ")") for aa debug's source line. No verdict (a scan that does not ask): counts.
+     */
+    private static boolean mayBreak(Scan s, String id, int x, int y, int z, java.util.Map<String, Integer> refused) {
+        io.github.mojolowjo.entropybot.guard.BreakPolicy.Verdict v = s.sourceBreak(x, y, z);
+        if (v == null || v.allowed()) return true;
+        refused.merge(id + " refused (" + v.reason() + ")", 1, Integer::sum);
+        return false;
     }
 
     /** One candidate under the exposed-face rule: true when it counts; a buried or not-loaded ore is counted in its map. */

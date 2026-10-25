@@ -1895,7 +1895,7 @@ public final class AaRuntime implements JobPort {
         typedKey = key;
         if (typedStartMs < 0) {         // rule 7: the task's first start (a replan or an escape goes on with the same clock)
             typedStartMs = System.currentTimeMillis();
-            typedStartBag = bb.in.bag == null ? Map.of() : new java.util.HashMap<>(bb.in.bag);
+            typedStartBag = liveBag();                   // 0.39.z60 item 4: the bag now, not the last sensed one
             LocalPlayer sp = Minecraft.getInstance().player;
             typedStartAt = sp == null ? null : Jobs.here(sp);
         }
@@ -2122,11 +2122,24 @@ public final class AaRuntime implements JobPort {
             int[] now = Jobs.here(p);
             moved = Math.hypot(now[0] - typedStartAt[0], Math.hypot(now[1] - typedStartAt[1], now[2] - typedStartAt[2]));
         }
+        // 0.39.z60 item 4 (run R 03:50:45: "order torch stopped: failed: ended after 256 ms changing nothing at its first step
+        // - ok: made 4 torch", then "got 4 torch (goal 4 done)"): both bags were the SENSED one (bb.in.bag, read every 10
+        // ticks), which had not caught the craft 5 ticks old - the end is judged on the player's bag now (start and end alike)
         String v = io.github.mojolowjo.entropybot.aa.brain.FastEnd.verdict(e, System.currentTimeMillis() - start, typedStartBag,
-                bb.in.bag == null ? Map.of() : bb.in.bag, moved, c.stepRun.steps.stepText());
+                liveBag(), moved, c.stepRun.steps.stepText());
         if (v == null) return e;
         LOG.info("[entropybot] aa: the task ended \"done\" at once with nothing changed - counted failed: {}", v);
         return v;
+    }
+
+    /**
+     * 0.39.z60 item 4: the player's bag now ({id: n}, the 36 slots: Gui.inventory) for the fast-end check; the sensed bag
+     * only with no player (it is then the last known one, said by the senses).
+     */
+    private Map<String, Integer> liveBag() {
+        LocalPlayer p = Minecraft.getInstance().player;
+        if (p != null) return io.github.mojolowjo.entropybot.gui.Gui.inventory(p);
+        return bb.in.bag == null ? Map.of() : new java.util.HashMap<>(bb.in.bag);
     }
 
     @Override public void cancel(long taskId, String why) {
