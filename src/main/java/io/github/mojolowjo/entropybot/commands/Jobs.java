@@ -82,6 +82,11 @@ public final class Jobs {
         RestoreRun restoreRun;
         String restoreMsg;
         boolean restoreDone;
+        /**
+         * 0.39.z66 review 1 (rule 6): the restore is AA's own put-back - the tail restoreGate starts after a job from
+         * RestoreLive.afterJob - never the owner's "restore now" / take down (startRestore leaves it false).
+         */
+        boolean aaPutBack;
     }
 
     static final java.util.concurrent.atomic.AtomicLong NEXT_ID = new java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis());
@@ -308,6 +313,7 @@ public final class Jobs {
             if (b != null) cancel(b);
             j.restoreMsg = msg;
             j.restoreRun = r;
+            j.aaPutBack = true;          // 0.39.z66 review 1: the afterJob tail is AA's own put-back (a step start may halt it)
             j.status = "putting back " + r.total() + (r.total() == 1 ? " block" : " blocks") + " I broke on the way";
             LOG.info("[entropybot] {} (then: {})", j.status, msg);
             return null;

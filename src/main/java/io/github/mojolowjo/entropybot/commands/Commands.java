@@ -1192,11 +1192,16 @@ public final class Commands implements Chains.Env {
      * stopped); else the step's failure (the restore did not stop - never seen, said so).
      */
     String haltRestoreFor(String label) {
-        boolean restore = jobs.running() && jobs.job.restoreRun != null;
-        if (io.github.mojolowjo.entropybot.aa.door.Door.aaSlot(chains.running(), jobs.running(), restore) != io.github.mojolowjo.entropybot.aa.door.Door.Slot.HALT_RESTORE) return null;
-        LOG.info("[entropybot] steps: restore halted for step \"{}\" ({}; {} wait in the ledger)", label, jobs.job.status, RestoreLive.INSTANCE.pendingCount());
-        jobs.finish("stopped: the order's step needs the slot (the restore waits)");
-        return jobs.running() ? "error: busy: the restore did not stop for step " + label + " (" + jobs.job.status + ")" : null;
+        // review 1 (rule 6): only AA's own put-back (Job.aaPutBack, the afterJob tail), never the owner's restore / take down
+        return RestoreHalt.haltFor(label, new RestoreHalt.Slot() {
+            @Override public boolean chainRunning() { return chains.running(); }
+            @Override public boolean jobRunning() { return jobs.running(); }
+            @Override public boolean aaPutBack() { return jobs.job != null && jobs.job.restoreRun != null && jobs.job.aaPutBack; }
+            @Override public String status() { return jobs.job == null ? "-" : jobs.job.status; }
+            @Override public int pending() { return RestoreLive.INSTANCE.pendingCount(); }
+            @Override public void finish(String msg) { jobs.finish(msg); }
+            @Override public void log(String line) { LOG.info("[entropybot] {}", line); }
+        });
     }
 
     /** A typed step's method as its own job (StepHands; no verb text): a task makes it busy, a walk is replaced, the job's request attached. */

@@ -119,6 +119,23 @@ class Z66RunXTest {
         assertTrue(done.steps().stream().noneMatch(s -> s instanceof Step.Collect k && k.item().contains("iron")), "no iron dug (cobblestone for a new furnace here beats the 400 m walk): " + done.steps());
     }
 
+    /**
+     * Review 2: the loot data gives no stone (stone drops cobblestone), yet the stone chain still smelts cobblestone - the
+     * explore leaf's new fail is reached only after every recipe and furnace recipe way (NeedChain.obtain / needWord).
+     */
+    @Test
+    void stoneIsStillSmeltedFromCobblestoneThoughNoBlockDropsIt() {
+        world();
+        assertNotNull(Nearby.noSource("stone", BOOK), "no block or mob drops stone itself");
+        Chain c = NeedChain.resolve("stone", 1, ScenariosTest.w(Map.of("minecraft:cobblestone", 1, "minecraft:coal", 1), true, true, Map.of()).withMobs(x -> List.of(), BOOK));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Smelt k && k.item().equals("stone")), c.steps().toString());
+        Chain none = NeedChain.resolve("stone", 1, ScenariosTest.w(Map.of("minecraft:coal", 1), true, true, Map.of()).withMobs(x -> List.of(), BOOK));
+        assertFalse(none.why().contains("no block or mob gives stone"), "the smelt way stands (it explores for cobblestone): " + none.why());
+        assertTrue(exploresFor(none, "cobblestone") || none.why().contains("cobblestone"), none.why() + " " + none.steps());
+        assertFalse(exploresFor(none, "stone"), none.steps().toString());
+    }
+
     // ---- item 1: the slot at a step's start ----
 
     /** Run X 08:38:24: the put-back of the stopped job held the slot; a step start halts it like AA's task start. */
