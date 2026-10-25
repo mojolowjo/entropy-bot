@@ -953,6 +953,7 @@ cave.depthFloor	5.0
 cave.skyOnlyVoteMargin	2.0
 cave.canopyMaxDepth	48.0
 debug.walkProbe	0.0
+interact.stuckTicks	200.0
 debug.stepProbe	0.0
 debug.loadProbe	0.0
 debug.slowTickMs	50.0

@@ -176,6 +176,25 @@ final class BaritoneHand implements JobHands.Hand {
     // ---- block use (fork: IInteractProcess, apart from the placing hands) ----
     private baritone.api.process.IInteractProcess interact;
     private int useRun = -1;
+    private Object stuckWarnedWorld;
+
+    /**
+     * 0.39.z56 review 3 (rule 1; run O 22:11:55-22:14:51: the walk to the table bobbed in water for 180 s): Tuning
+     * {@code interact.stuckTicks} handed to the fork's interact walk for each use (IInteractProcess.stuckTicks, fork z56), as
+     * walk.placePenalty goes through the walk lease; the mod never writes Baritone's interactStuckTicks setting. A stock jar
+     * or an older fork without the call keeps its own setting: said once per world with what is lost.
+     */
+    private void stuckWindow(baritone.api.process.IInteractProcess ip) {
+        try {
+            ip.stuckTicks(io.github.mojolowjo.entropybot.aa.brain.Tuning.i("interact.stuckTicks"));
+        } catch (LinkageError e) {
+            Object w = Minecraft.getInstance().level;
+            if (w != stuckWarnedWorld) {
+                stuckWarnedWorld = w;
+                LOG.warn("[entropybot] job hands: this Baritone has no IInteractProcess.stuckTicks (the stock jar or a fork older than z56) - Tuning interact.stuckTicks is not used this world; the station walk's stuck window is Baritone's interactStuckTicks setting: {}", e.toString());
+            }
+        }
+    }
 
     /** The fork's InteractProcess.use: it stands within reach, looks and clicks; the policy's walk verdict vetoes the stand before each click. */
     @Override public void startUse(int[] on) {
@@ -188,6 +207,7 @@ final class BaritoneHand implements JobHands.Hand {
             if (lv == null) { forced = Car.Status.failed("use: no world"); return; }
             String dim = Guard.dimOf(lv);
             interact = b().getInteractProcess();
+            stuckWindow(interact);
             interact.use(pos(on), f -> standVerdict(dim, f));
             useRun = interact.run();
         } catch (LinkageError e) {

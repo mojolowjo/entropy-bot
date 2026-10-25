@@ -121,7 +121,10 @@ public final class WalkProbe {
         };
     }
 
-    /** BaritoneHook: one path event; printed while a walk step runs and the probe is on (a repeat in a row is counted). */
+    /**
+     * BaritoneHook: one path event; printed while a walk step runs and the probe is on (a repeat in a row is counted).
+     * Path events arrive on the client thread (PathingBehavior.dispatchEvents from onTick; the calc thread only queues them).
+     */
     public static void event(String name) {
         String s = step;
         if (s == null || !on()) return;

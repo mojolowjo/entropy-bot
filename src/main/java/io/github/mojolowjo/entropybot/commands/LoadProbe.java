@@ -66,7 +66,10 @@ public final class LoadProbe {
     /** Core.onClientTick: section {@code i} ended (ProbeLines.SECTIONS). */
     public static void mark(int i) { if (active && i >= 0 && i < marks.length) marks[i] = System.nanoTime(); }
 
-    /** BaritoneHook: a path event (Baritone's own calcs counted; the slow tick says what it heard). */
+    /**
+     * BaritoneHook: a path event (Baritone's own calcs counted; the slow tick says what it heard). Path events arrive on the
+     * client thread (PathingBehavior.dispatchEvents from onTick; the calc thread only queues them).
+     */
     public static void pathEvent(String name) {
         if (!active) return;
         if (name.equals("CALC_STARTED") || name.equals("NEXT_SEGMENT_CALC_STARTED")) calcs++;

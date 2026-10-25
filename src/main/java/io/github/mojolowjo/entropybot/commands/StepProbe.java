@@ -173,7 +173,10 @@ public final class StepProbe {
         return h;
     }
 
-    /** BaritoneHook: a path event while a step runs (not said here when the walk probe says it for this step). */
+    /**
+     * BaritoneHook: a path event while a step runs (not said here when the walk probe says it for this step). Path events
+     * arrive on the client thread (PathingBehavior.dispatchEvents from onTick; the calc thread only queues them).
+     */
     public static void event(String name) {
         Step s = step;
         if (s == null || !on()) return;
