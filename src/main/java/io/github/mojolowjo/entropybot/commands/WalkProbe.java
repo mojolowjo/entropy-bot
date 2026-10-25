@@ -178,6 +178,22 @@ public final class WalkProbe {
         }
     }
 
+    /**
+     * 0.39.z55 item 1 (run N 21:23:54: the walk to the table placed the furnace's cobblestone at -21 55..59 -11): every block
+     * this client places, while the probe is on: the item, how many stay in the hand, kept by the job or not, where.
+     */
+    public static void placed(net.minecraft.world.item.ItemStack inHand, BlockPos at) {
+        if (!on()) return;
+        try {
+            var item = inHand.getItem();
+            String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item).toString();
+            LOG.info("[entropybot] probe keep: placed {} at {} {} {} | {} left in the hand after it | {} | step {}", id, at.getX(), at.getY(), at.getZ(),
+                    Math.max(0, inHand.getCount() - 1), io.github.mojolowjo.entropybot.engine.RunThrowaway.placedAs(item), step == null ? "-" : step);
+        } catch (RuntimeException | LinkageError e) {
+            Quiet.warn("WalkProbe.placed: the place line could not be written", e);
+        }
+    }
+
     /** LivePathPrice.land: an UNREACHABLE / NO_PROGRESS answer for goal from {@code from}. */
     static void unreachable(BlockPos goal, int[] from, String reason) {
         if (!on()) return;

@@ -105,8 +105,16 @@ public final class LivePathPrice implements PathPrice {
         }
         boolean kept = b.getPricedPath().walk(goal(pos));
         WalkProbe.walked(kept);                              // 0.39.z54 B: the walk's kept / fresh answer for the probe line
+        // 0.39.z55 item 2 (run N 21:25:33: "no kept path from here" with no reason; the bot had put a crafting table on the
+        // kept path's first cell): the fork's reason; its fresh search now uses the price's search goal (DigDownGoal)
+        String why;
+        try {
+            why = b.getPricedPath().walkWhy();
+        } catch (LinkageError e) {
+            why = "this fork has no IPricedPath.walkWhy (an older fork: install the z55 jar): " + e;
+        }
         LOG.info("[entropybot] path: walk to {} {} {}: {}", pos.getX(), pos.getY(), pos.getZ(),
-                kept ? "the priced path (one search)" : "no kept path from here - Baritone searches fresh");
+                kept ? "the priced path (one search)" : "no kept path from here (" + why + ") - Baritone searches fresh, with the price's search goal");
         return kept;
     }
 

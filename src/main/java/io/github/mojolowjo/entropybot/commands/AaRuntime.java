@@ -635,6 +635,19 @@ public final class AaRuntime implements JobPort {
         for (var ft : fs) { lo = Math.min(lo, ft.lo()); hi = Math.max(hi, ft.hi()); }
         String host = null;
         var pos = new net.minecraft.core.BlockPos(me[0], y, me[2]);
+        // 0.39.z55 item 3 (run N: 25 of 75 "no progress" answers were walks to y 96 straight above the bot - OreBand.bestY's
+        // lowest peak above the feet, coal's; the price searched a pillar into open air for a strip with no rock): a band Y
+        // at or above the ground's top in this loaded column is no strip here, said once per column and Y, never searched
+        if (y > me[1] && mc.level.hasChunkAt(pos)) {
+            // loader note: vanilla Level#getHeight with a heightmap the client keeps (MOTION_BLOCKING; leaves count as ground: a
+            // tree only keeps the strip)
+            int top = mc.level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, me[0], me[2]);
+            if (y >= top) {
+                String said = (me[0] >> 4) + "," + (me[2] >> 4) + "," + y;
+                if (stripAirSaid.add(said)) LOG.info("[entropybot] aa: strip at y {} for {}: no rock there - the ground here ends at y {} (the band's peak lies in the open air above this column; no walk priced)", y, word, top - 1);
+                return null;
+            }
+        }
         if (mc.level.hasChunkAt(pos)) {
             var st = mc.level.getBlockState(pos);
             if (!st.isAir()) host = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
@@ -2989,6 +3002,8 @@ public final class AaRuntime implements JobPort {
 
     private String columnKey;
     private Map<String, List<io.github.mojolowjo.entropybot.aa.brain.OreBand.Feature>> columnCache;
+    /** 0.39.z55 item 3: the strip Ys said to lie in the open air (chunk column, Y), each said once. */
+    private final java.util.Set<String> stripAirSaid = new java.util.HashSet<>();
 
     /**
      * 0.39.z45: block -> its height-placed features in the biomes of the column under the bot (the client's biomes, sent

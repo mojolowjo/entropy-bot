@@ -17,7 +17,7 @@ import java.util.Map;
  * ends short and while a tool step runs; a shortfall is a {@link FactChange#bagNeed} and the order re-plans (z30). Rule 15:
  * no mining data is {@link #unknown} (said in the line, nothing checked). Pure.
  */
-public record StepNeeds(String toolKind, int minTier, Map<String, Integer> consumes, String unknown, int fuelTicks) {
+public record StepNeeds(String toolKind, int minTier, Map<String, Integer> consumes, String unknown, int fuelTicks, List<String> keeps) {
     /** The tool role the game's tier data is about (MiningTiers' scale: the needs_*_tool tags rank pickaxes). */
     public static final String TIER_TOOL = "pickaxe";
 
@@ -26,8 +26,15 @@ public record StepNeeds(String toolKind, int minTier, Map<String, Integer> consu
     /** The record before 0.39.z37 (no fuel declared). */
     public StepNeeds(String toolKind, int minTier, Map<String, Integer> consumes, String unknown) { this(toolKind, minTier, consumes, unknown, 0); }
 
+    /**
+     * The record before 0.39.z55 ({@code keeps}: items the step may use up without a count of its own - every member of a
+     * recipe slot that takes alternatives (a tag), every input of an item with several recipes; only the keep list reads them).
+     */
+    public StepNeeds(String toolKind, int minTier, Map<String, Integer> consumes, String unknown, int fuelTicks) { this(toolKind, minTier, consumes, unknown, fuelTicks, List.of()); }
+
     public StepNeeds {
         consumes = consumes == null ? Map.of() : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(consumes));
+        keeps = keeps == null ? List.of() : List.copyOf(keeps);
     }
 
     /** What the bag holds now (the game's inventory; tests a map). */
@@ -102,6 +109,7 @@ public record StepNeeds(String toolKind, int minTier, Map<String, Integer> consu
         for (StepNeeds n : remaining) {
             if (n == null) continue;
             for (String id : n.consumes().keySet()) if (!out.contains(id)) out.add(id);
+            for (String id : n.keeps()) if (!out.contains(id)) out.add(id);     // 0.39.z55 item 1: a tag slot's members
         }
         return out;
     }
@@ -164,9 +172,9 @@ public record StepNeeds(String toolKind, int minTier, Map<String, Integer> consu
 
     /** A smelt's burn: {@code n} items x Tuning craftJob.smeltTicks burn ticks, from any item the game's fuel table lists. */
     static StepNeeds withFuel(StepNeeds in, String item, int n) {
-        if (ItemWorth.fuels().isEmpty()) return new StepNeeds(in.toolKind, in.minTier, in.consumes, in.unknown != null ? in.unknown : "no fuel table", 0);
+        if (ItemWorth.fuels().isEmpty()) return new StepNeeds(in.toolKind, in.minTier, in.consumes, in.unknown != null ? in.unknown : "no fuel table", 0, in.keeps);
         int ticks = (int) Math.round(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("craftJob.smeltTicks")) * Math.max(1, n);
-        return new StepNeeds(in.toolKind, in.minTier, in.consumes, in.unknown, ticks);
+        return new StepNeeds(in.toolKind, in.minTier, in.consumes, in.unknown, ticks, in.keeps);
     }
 
     /** A collect of {@code item}: its own block's tier, else the least tier of the blocks that drop it (the loot data). */
@@ -179,19 +187,35 @@ public record StepNeeds(String toolKind, int minTier, Map<String, Integer> consu
 
     /**
      * The inputs of the item's one recipe of {@code kind}, times the crafts {@code n} takes. Several recipes or a slot that
-     * takes alternatives: which one the job uses is its choice, so those inputs are not declared (the job's own check stays).
+     * takes alternatives: which one the job uses is its choice, so those inputs are not declared as counts (the job's own
+     * check stays). 0.39.z55 item 1 (run N 21:24:13: "torch: none of cobblestone, blackstone, cobbled_deepslate left in the
+     * bag (ingredients ran out (cobblestone))" after the walk to the table placed the cobblestone to climb; the same on
+     * 2026-10-23): such slots were skipped here, so the furnace's one slot {@code #minecraft:stone_crafting_materials} put
+     * nothing in the keep list and Baritone used the cobblestone as throwaway. Every member of such a slot, and every input of
+     * every recipe when there are several, is now in {@link #keeps}: none of them is throwaway while the job still needs it.
      */
     static StepNeeds recipeInputs(String item, int n, String kind) {
+        // rule 15: no recipe data is said in the step's line (nothing checked, nothing kept), never read as "no inputs"
+        if (!ItemWorth.hasData()) return new StepNeeds(null, 0, Map.of(), "no recipe data (the keep list holds none of its inputs)");
         List<ItemWorth.Recipe> rs = ItemWorth.recipes(full(item), kind);
-        if (rs.size() != 1) return NONE;
+        if (rs.isEmpty()) return NONE;
+        List<String> keeps = new ArrayList<>();
+        if (rs.size() != 1) {
+            for (ItemWorth.Recipe r : rs) for (List<String> slot : r.options()) for (String i : slot) if (!keeps.contains(full(i))) keeps.add(full(i));
+            return new StepNeeds(null, 0, Map.of(), null, 0, keeps);
+        }
         ItemWorth.Recipe r = rs.get(0);
         int times = (int) Math.ceil(Math.max(1, n) / (double) Math.max(1, r.outCount()));
         Map<String, Integer> m = new LinkedHashMap<>();
-        for (String w : r.needs()) {
-            if (w.startsWith("#") || w.indexOf('|') >= 0) continue;
+        for (int s = 0; s < r.needs().size(); s++) {
+            String w = r.needs().get(s);
+            if (w.startsWith("#") || w.indexOf('|') >= 0) {
+                for (String i : r.options().get(s)) if (!keeps.contains(full(i))) keeps.add(full(i));
+                continue;
+            }
             m.merge(full(w), times, Integer::sum);
         }
-        return new StepNeeds(null, 0, m, null);
+        return new StepNeeds(null, 0, m, null, 0, keeps);
     }
 
     static String full(String id) { return id.indexOf(':') < 0 ? "minecraft:" + id : id; }

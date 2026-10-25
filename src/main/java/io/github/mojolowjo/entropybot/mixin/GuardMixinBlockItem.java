@@ -27,7 +27,10 @@ public abstract class GuardMixinBlockItem {
             if (!level.isClientSide()) return;
             String path = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(context.getItemInHand().getItem()).getPath();
             if (Guard.INSTANCE.vetoPlace(level, context.getClickedPos(), path.endsWith("torch"))) cir.setReturnValue(InteractionResult.FAIL);
-            else io.github.mojolowjo.entropybot.commands.RestoreLive.INSTANCE.notePlaced(context.getClickedPos(), path);      // aa-litter + rm-mining: my placements are noted as mine
+            else {
+                io.github.mojolowjo.entropybot.commands.RestoreLive.INSTANCE.notePlaced(context.getClickedPos(), path);      // aa-litter + rm-mining: my placements are noted as mine
+                io.github.mojolowjo.entropybot.commands.WalkProbe.placed(context.getItemInHand(), context.getClickedPos());   // 0.39.z55 item 1 probe (debug.walkProbe)
+            }
         } catch (Throwable caught) { Quiet.warn("GuardMixinBlockItem.? failed, carrying on with the fallback", caught); }
     }
 }

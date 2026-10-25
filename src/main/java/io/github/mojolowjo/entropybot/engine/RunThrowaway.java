@@ -56,6 +56,26 @@ public final class RunThrowaway {
         if (l == null) return;
         l.keep(items);
         if (!items.isEmpty()) LOG.debug("[entropybot] run throwaway: kept out of the throwaway list {}", ids);
+        // 0.39.z55 item 1 (run N: the furnace's cobblestone was placed on the walk to the table): the keep list at every
+        // step start and what the fork's lease holds, behind debug.walkProbe
+        if (io.github.mojolowjo.entropybot.commands.WalkProbe.on())
+            LOG.info("[entropybot] probe keep: the job keeps {} | the fork's lease keeps {}", ids, l.kept());
+    }
+
+    /**
+     * 0.39.z55 item 1 (probe): an item the bot just placed, as the lease sees it: "kept" (the job still needs it: a keep
+     * failure), "throwaway" (on Baritone's throwaway list now), or "not throwaway" (a block a build or a station placed).
+     * Read only; never writes a setting.
+     */
+    public static String placedAs(Item item) {
+        var l = lease("read the kept items");
+        if (l == null) return "unknown (no lease in this Baritone)";
+        if (l.kept().contains(item)) return "KEPT (the job still needs it)";
+        try {
+            return BaritoneAPI.getSettings().acceptableThrowawayItems.value.contains(item) ? "throwaway" : "not throwaway (a build's or a station's block)";
+        } catch (RuntimeException e) {
+            return "unknown (" + e + ")";
+        }
     }
 
     /** A run's extra throwaway items (the fork's lease; put back at {@link #end}). */
