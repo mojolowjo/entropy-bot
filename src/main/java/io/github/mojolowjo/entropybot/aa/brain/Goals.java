@@ -62,6 +62,9 @@ public final class Goals {
 
         /** 0.39.z33 (S36): the sources this order dropped (unreachable, gone), charged by their source key; held for the order's life. */
         public final Failures sources = new Failures();
+
+        /** 0.39.z65 item 2: the spare-tool line last said for this order (said again only when a taken chain's line differs). */
+        public String sparesSaid;
     }
 
     /** 0.39.z33: a dropped source is held for the order's life (a new aa want makes a new goal). */
@@ -115,7 +118,7 @@ public final class Goals {
         if (!ch.ok() || ch.steps().isEmpty()) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, ch.why());
         if (newSource) g.sourceReplans++;
         else g.replans++;
-        took(g, ch, bb.clock.now());
+        took(bb, g, ch);
         String line = g.r.key() + ": " + fact.text() + " - re-planned: " + ch.steps().get(0).text() + " first";
         bb.port.log(line + " (after step " + failed.text() + ": " + why + "; chain: " + ch.why() + ")");
         bb.port.tellOwner(line);
@@ -144,13 +147,31 @@ public final class Goals {
             bb.port.log(g.r.key() + ": " + fact.text() + " - " + kept);
             return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, kept);
         }
-        took(g, ch, now);
+        took(bb, g, ch);
         bb.port.log(g.r.key() + ": " + fact.text() + " - priced again (chain: " + ch.why() + ")");
         return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(ch.steps(), null, ch.uses());
     }
 
     /** 0.39.z48: the seconds a re-price must save to switch the running pick (Tuning replan.switchMarginS). */
     public static double switchMarginS() { return Tuning.get("replan.switchMarginS"); }
+
+    /**
+     * 0.39.z65 item 2 (run V 07:13:11: one stone pickaxe and no spare; why only in aa debug): a taken chain's spare-tool
+     * decisions, one info line per chain taken ("iron_pickaxe: spare pickaxes: stone_pickaxe: 0 uses left, ..."), said again
+     * only when they differ from the last line said for this order. Nothing when the chain decided none.
+     */
+    static void took(Blackboard bb, Goal g, io.github.mojolowjo.entropybot.aa.NeedChain.Chain ch) {
+        took(g, ch, bb.clock.now());
+        String s = sparesLine(g, ch);
+        if (s != null) bb.port.log(s);
+    }
+
+    /** 0.39.z65 item 2 (pure): the line to say for a taken chain's spares, null: none, or the same as last said (then kept). */
+    public static String sparesLine(Goal g, io.github.mojolowjo.entropybot.aa.NeedChain.Chain ch) {
+        if (ch == null || ch.spares().isEmpty() || ch.spares().equals(g.sparesSaid)) return null;
+        g.sparesSaid = ch.spares();
+        return g.r.key() + ": spare pickaxes: " + ch.spares();
+    }
 
     /** 0.39.z48: the order's pick was taken now at the chain's price. */
     static void took(Goal g, io.github.mojolowjo.entropybot.aa.NeedChain.Chain ch, long nowMs) {
@@ -387,7 +408,7 @@ public final class Goals {
         if (g.strip != null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(stripLoop(g.strip), null);   // the strip order's own loop (no chain)
         var ch = chain(bb, g);
         if (ch == null || !ch.ok() || ch.steps().isEmpty()) return null;
-        took(g, ch, bb.clock.now());           // 0.39.z48: the running pick's price (the re-price margin)
+        took(bb, g, ch);           // 0.39.z48: the running pick's price (the re-price margin)
         return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(ch.steps(), null, ch.uses());
     }
 

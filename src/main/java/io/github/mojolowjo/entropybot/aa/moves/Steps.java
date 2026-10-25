@@ -513,6 +513,7 @@ public final class Steps {
         if (steps == null || idx < 0) return null;
         for (int i = idx; i < steps.size(); i++) {
             if (steps.get(i) instanceof Step.Walk w) return new int[]{w.x(), w.y(), w.z()};
+            if (steps.get(i) instanceof Step.ToStation w) return new int[]{w.x(), w.y(), w.z()};     // 0.39.z65 item 1
             if (steps.get(i) instanceof Step.ToStrip t) return new int[]{t.x(), t.y(), t.z()};
         }
         return null;
@@ -561,6 +562,7 @@ public final class Steps {
                     reason = reason + " (" + item + ")";
                 }
             }
+            if (fact == null) fact = walkLeads(steps, idx, reason);
         }
         if (fact == null || replanner == null || idx < 0 || idx >= steps.size()) { fail(reason); return; }
         Step failed = steps.get(idx);
@@ -586,6 +588,18 @@ public final class Steps {
         splice(idx, r.steps(), r.uses(), steps.size());
         idx--;
         next();
+    }
+
+    /**
+     * 0.39.z65 item 1 (run V 07:15:22, rule 7): a failed {@link Step.Walk} with no fact of its own whose next step has a
+     * source ({@link io.github.mojolowjo.entropybot.aa.NeedChain#sourceKey}: a station take, a tree, a collect) is that
+     * source's fact - the walk led there and could not get there, so the order re-plans without it instead of ending.
+     * Null: not a walk, or nothing after it names a source (the run ends with the reason as before). Pure.
+     */
+    public static FactChange.Fact walkLeads(List<? extends Step> steps, int idx, String reason) {
+        if (steps == null || idx < 0 || idx + 1 >= steps.size() || !(steps.get(idx) instanceof Step.Walk)) return null;
+        String src = io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(steps.get(idx + 1));
+        return src == null ? null : FactChange.walkFor(src, reason.replaceFirst("^error: ", ""));
     }
 
     /**

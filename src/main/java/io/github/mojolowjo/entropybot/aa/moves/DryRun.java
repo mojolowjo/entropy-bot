@@ -125,6 +125,7 @@ public final class DryRun {
             case Step.HuntAt h -> h.forItem() == null ? null : Map.of(NeedChain.word(h.forItem()), Math.max(0, h.forCount()));
             case Step.ChopTree t -> t.log() == null ? null : Map.of(NeedChain.word(t.log()), Math.max(0, t.logs()));
             case Step.Walk w -> Map.of();
+            case Step.ToStation w -> Map.of();             // 0.39.z65: a walk
             case Step.PlaceNear p -> Map.of();
             default -> null;
         };

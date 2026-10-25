@@ -90,8 +90,22 @@ public final class FactChange {
 
     /** 0.39.z62: the source key a fact names itself (a blocked strip heading), null: the failed step's key applies. */
     public static String ownSourceKey(Fact f) {
+        if (f != null && f.key().startsWith(WALK_TO)) return f.key().substring(WALK_TO.length());     // 0.39.z65 item 1
         String p = "source " + io.github.mojolowjo.entropybot.aa.NeedChain.STRIP_HEADING;
         return f != null && f.key().startsWith(p) ? f.key().substring("source ".length()) : null;
+    }
+
+    /** 0.39.z65: the key prefix of {@link #walkFor}. */
+    static final String WALK_TO = "source walk to ";
+
+    /**
+     * 0.39.z65 item 1 (run V 07:15:22: "goto -261 75 21 near 2: couldn't get there (walk: Baritone stopped short)" stopped
+     * the iron order - a walk's failure said no fact, so the run ended and the order parked): a walk that failed on its way
+     * to the next step's source ({@code sourceKey}: that step's {@link io.github.mojolowjo.entropybot.aa.NeedChain#sourceKey},
+     * e.g. "take at x y z") is that source's fact - unreachable from here, the order re-plans without it (rule 7).
+     */
+    public static Fact walkFor(String sourceKey, String why) {
+        return new Fact(WALK_TO + sourceKey, "the walk to " + sourceKey + " failed: " + why);
     }
 
     /**

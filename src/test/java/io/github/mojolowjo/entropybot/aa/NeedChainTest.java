@@ -66,7 +66,9 @@ class NeedChainTest {
         assertTrue(c.why().contains("at the table 20 m"), "the craft phrase names the walk: " + c.why());
         assertEquals(here.seconds() + FakePaths.walkS(20), c.seconds(), 1e-6, "the price holds the 20 m walk to the table");
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.PlaceNear), "no second table: " + c.steps());
-        assertEquals(List.of(new Step.Craft("furnace", 1)), c.steps(), "the craft step walks to the table itself (InteractProcess)");
+        // 0.39.z65 item 1 (run V 07:15:19): the priced walk is its own step before the craft (the use's own search never climbs)
+        assertEquals(List.of(new Step.ToStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT, "crafting_table", 20, 64, 0), new Step.Craft("furnace", 1)), c.steps(),
+                "the chain's priced walk to the table, then the craft");
     }
 
     /** station-memory: the table forgotten (gone on arrival) -> no table known: the same order is priced again and places one. */

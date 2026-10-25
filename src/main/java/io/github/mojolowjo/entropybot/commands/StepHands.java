@@ -157,7 +157,7 @@ public final class StepHands implements Steps.Hands {
     private String start0(Step s) {
         step = s;
         // 0.39.z54 B: the walk probe's step (one field; the probe itself reads Tuning debug.walkProbe)
-        WalkProbe.step(s instanceof Step.ToStrip || s instanceof Step.ToBand || s instanceof Step.Walk ? s.text() : null);
+        WalkProbe.step(s instanceof Step.ToStrip || s instanceof Step.ToBand || s instanceof Step.Walk || s instanceof Step.ToStation ? s.text() : null);
         StepProbe.begin(s);                      // 0.39.z56 item 1: every step kind (one field; the probe reads Tuning debug.stepProbe)
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null) return "error: not in a world";
@@ -168,6 +168,7 @@ public final class StepHands implements Steps.Hands {
             if (StepWait.kindOf(s) != null) return dataWait.start(s, c.nearby::stations, () -> direct(s));
             return switch (s) {
                 case Step.Walk w -> walk(w);
+                case Step.ToStation t -> toStation(t);     // 0.39.z65 item 1: the chain's priced walk
                 case Step.ChopTree t -> chop(p, t);
                 case Step.Collect k -> collect(p, k);
                 case Step.TakeStation t -> takeStation(p, t);
@@ -231,6 +232,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.ToStrip t -> toStripStatus(p, t);
                 case Step.Climb k -> climbStatus();
                 case Step.Explore k when firstWait.waiting() -> firstWaitStatus(k);
+                case Step.ToStation t -> toStationStatus(t);
                 default -> requestStatus();
             };
         } catch (RuntimeException e) {
@@ -306,6 +308,8 @@ public final class StepHands implements Steps.Hands {
         huntWhy = null;
         climbing = false;
         climbEnd = null;
+        bandCell = null;                         // 0.39.z65 item 3
+        bandWalking = false;
         dataWait.reset();
         firstWait.end();
     }
@@ -614,19 +618,47 @@ public final class StepHands implements Steps.Hands {
         if (r != null) return r;
         if (c.jobs.running() && "travel".equals(c.jobs.job.type)) {
             walkJob = c.jobs.job;
-            if (w.near() > 0) {
-                GoalNear g = new GoalNear(new BlockPos(w.x(), w.y(), w.z()), w.near());
-                IBaritone b = Jobs.baritone();
-                if (walkJob.finalGoal != null) walkJob.finalGoal = g;           // the far walk's last leg
-                else if (b != null) Jobs.walkGoal(b, walkJob, g);
+            if (w.near() > 0 && walkJob.finalGoal != null) {
+                walkJob.finalGoal = new GoalNear(new BlockPos(w.x(), w.y(), w.z()), w.near());   // the far walk's last leg
             } else if (walkJob.finalGoal == null) {
                 // 0.39.z47 (item 4): the chain's walk starts Baritone on the path its price kept (LivePathPrice.walk: the
-                // bot still at its start and its cells unchanged), else Baritone searches fresh - as the strip leg (z46)
+                // bot still at its start and its cells unchanged), else Baritone searches fresh - as the strip leg (z46).
+                // 0.39.z65 item 1 (run V 07:15:22: "goto -261 75 21 near 2 ... Baritone stopped short" 59 below the table):
+                // a walk "near" a block walks the same priced goal too (GoalGetToBlock: within one block, inside "near"),
+                // never a plain GoalNear search of its own - the chain priced exactly this goal (NeedChain.walk), and the
+                // fork steers a priced goal's searches (DigDownGoal below, z63 ClimbGoal above)
                 IBaritone b = Jobs.baritone();
                 if (b != null) walkJob.goalObj = LivePathPrice.walkGoal(b, new BlockPos(w.x(), w.y(), w.z()));
             }
         }
         return null;
+    }
+
+    /**
+     * 0.39.z65 item 1: the walk to a known station (the travel job on the chain's priced goal); ended failed, it is the
+     * station's fact as the fork's use failure is (Crafting's z48 branch): refused from now on, the order re-plans and the
+     * chain prices the next known station or placing a new one here (NeedChain.farStation / placeNew). Never a park.
+     */
+    private Car.Status toStationStatus(Step.ToStation t) {
+        Car.Status st = requestStatus();
+        if (st.state() != Car.State.FAILED) return st;
+        return Car.Status.failed(stationRefused(t, "the walk to it ended short: " + (st.why() == null ? "no reason" : st.why())));
+    }
+
+    /** 0.39.z65 item 1: the station walk's start; a walk refused at its start is the station's fact as well. */
+    private String toStation(Step.ToStation t) {
+        String r = walk(new Step.Walk(t.x(), t.y(), t.z(), 0));
+        return r == null ? null : "error: " + stationRefused(t, "the walk to it did not start: " + r);
+    }
+
+    /** The station refused from now on and its fact said (the order re-plans); the step's failure words. */
+    private String stationRefused(Step.ToStation t, String why0) {
+        int[] at = {t.x(), t.y(), t.z()};
+        String why = why0.replace(": error: ", ": ");
+        Crafting.UNUSABLE_STATIONS.add(Crafting.tableKey(at));
+        io.github.mojolowjo.entropybot.aa.moves.FactChange.stationUnusable(t.kind(), t.name(), Jobs.fmt(at), why);
+        LOG.info("[entropybot] stations: the {} at {} refused from now on: {}", t.name(), Jobs.fmt(at), why);
+        return t.name() + " at " + Jobs.fmt(at) + " unusable: " + why;
     }
 
     // ---- Baritone's MineProcess: a tree, a block to collect ----
@@ -927,14 +959,26 @@ public final class StepHands implements Steps.Hands {
 
     // ---- to a height band: one Baritone goal (GoalYLevel to the nearest Y of the band); done once the feet are in it ----
 
+    /**
+     * 0.39.z65 item 3 (run V 07:05:35: "to y 5..31: Baritone's goal ended at y 62 (no path into the band)"): the band is
+     * reached by Baritone's priced path to the cell of the feet's column at the band's nearest Y (as the strip's first leg,
+     * ToStrip) - the fork steers a priced goal's searches (DigDownGoal below, z63 ClimbGoal above), which a plain
+     * GoalYLevel never got (it has no one goal position). Asked when the step starts, walked once its complete path is known
+     * (rule 18); computing / chunks not loaded: the step waits (its step time bounds it); no path: the band fact as before.
+     */
+    private int[] bandCell;
+    private boolean bandWalking;
+
     private String toBand(LocalPlayer p, Step.ToBand t) {
-        int y = Jobs.here(p)[1];
+        int[] me = Jobs.here(p);
+        int y = me[1];
+        bandCell = null;
+        bandWalking = false;
         if (y >= t.minY() && y <= t.maxY()) { instant = "ok: already at y " + y + " (band " + t.minY() + ".." + t.maxY() + ")"; return null; }
         IBaritone b = Jobs.baritone();
         if (b == null) return "error: baritone not loaded";
-        int target = Math.max(t.minY(), Math.min(t.maxY(), y));
-        b.getCustomGoalProcess().setGoalAndPath(new baritone.api.pathing.goals.GoalYLevel(target));
-        LOG.info("[entropybot] steps: {} - Baritone GoalYLevel {}", t.text(), target);
+        bandCell = new int[]{me[0], t.target(y), me[2]};
+        LOG.info("[entropybot] steps: {} - Baritone's priced path to {} (the band's nearest Y under the feet; walked once its complete path is known)", t.text(), Jobs.fmt(bandCell));
         return null;
     }
 
@@ -947,6 +991,26 @@ public final class StepHands implements Steps.Hands {
             return Car.Status.done("ok: at y " + y + " (band " + t.minY() + ".." + t.maxY() + ")");
         }
         if (b == null) return Car.Status.failed("baritone not loaded");
+        if (!bandWalking && bandCell != null) {
+            io.github.mojolowjo.entropybot.aa.PathPrice.Answer a = LivePathPrice.INSTANCE.price(bandCell[0], bandCell[1], bandCell[2], Math.abs(y - bandCell[1]));
+            switch (a.kind()) {
+                case PRICED -> {
+                    io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "to band");
+                    LivePathPrice.walk(b, new BlockPos(bandCell[0], bandCell[1], bandCell[2]));
+                    bandWalking = true;
+                    return Car.Status.running(t.text() + ": walking the priced path to " + Jobs.fmt(bandCell));
+                }
+                case COMPUTING, CHUNKS -> {
+                    return Car.Status.running(t.text() + ": the path to " + Jobs.fmt(bandCell) + " is not known yet (" + a.kind().name().toLowerCase(java.util.Locale.ROOT)
+                            + (a.reason() == null ? "" : ": " + a.reason()) + ")");
+                }
+                default -> {
+                    String why = "no path into the band from y " + y + " (" + (a.reason() == null ? a.kind().name().toLowerCase(java.util.Locale.ROOT) : a.reason()) + ")";
+                    io.github.mojolowjo.entropybot.aa.moves.FactChange.band(t.minY(), t.maxY(), why);     // 0.39.z42: a fact change, the order re-plans
+                    return Car.Status.failed(t.text() + ": " + why);
+                }
+            }
+        }
         if (!b.getCustomGoalProcess().isActive() && !Core.INSTANCE.reflexes.hold()) {
             String why = "Baritone's goal ended at y " + y + " (no path into the band)";
             io.github.mojolowjo.entropybot.aa.moves.FactChange.band(t.minY(), t.maxY(), why);     // 0.39.z42: a fact change, the order re-plans

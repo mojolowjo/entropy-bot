@@ -33,7 +33,8 @@ public final class KeepClear {
         int reach = Math.max(1, radius) + 1;       // structural: one cell past the placing radius
         for (int i = Math.max(0, from); i < steps.size(); i++) {
             Step s = steps.get(i);
-            int[] goal = s instanceof Step.Walk w ? new int[]{w.x(), w.y(), w.z()} : s instanceof Step.ToStrip t ? new int[]{t.x(), t.y(), t.z()} : null;
+            int[] goal = s instanceof Step.Walk w ? new int[]{w.x(), w.y(), w.z()} : s instanceof Step.ToStrip t ? new int[]{t.x(), t.y(), t.z()}
+                    : s instanceof Step.ToStation st ? new int[]{st.x(), st.y(), st.z()} : null;      // 0.39.z65: the station walk too
             if (goal != null) {
                 List<int[]> path = walkCells == null ? null : walkCells.apply(goal);
                 if (path != null) for (int[] c : path) {

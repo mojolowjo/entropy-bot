@@ -20,6 +20,18 @@ public sealed interface Step {
         public String text() { return "goto " + x + " " + y + " " + z + (near > 0 ? " near " + near : ""); }
     }
 
+    /**
+     * 0.39.z65 item 1 (run V 07:15:19: the craft step's use walked from y 16 to the table 59 up with the fork's own unsteered
+     * search and stopped): the walk to the KNOWN station of the recipe kind {@code kind} ({@code name}: its block, for the
+     * lines) at x y z before the craft / smelt step that uses it - the chain's priced walk (Baritone's complete path to stand
+     * by the block, the same goal the price searched; placing at the walk lease's penalty, z63's ClimbGoal steering a climb),
+     * so the use then finds the block in reach. Its failure is the station's fact (unusable from here): the order re-plans
+     * and the chain prices the next known station or a new one placed here.
+     */
+    record ToStation(String kind, String name, int x, int y, int z) implements Step {
+        public String text() { return "goto " + x + " " + y + " " + z + " (the " + name + ", priced path)"; }
+    }
+
     /** Mine one known ore cell (and its vein) of {@code family}: the mine verb's per-ore step over Baritone's MineProcess. */
     record MineAt(String family, int x, int y, int z, boolean dig) implements Step {
         public String text() { return "mine " + family + " 1 at " + x + " " + y + " " + z + (dig ? " dig" : " walk"); }
@@ -393,6 +405,17 @@ public sealed interface Step {
      */
     record ToBand(int minY, int maxY) implements Step {
         public String text() { return "to y " + minY + ".." + maxY; }
+
+        /**
+         * 0.39.z65 item 3: the Y of the priced walk's cell from feet at {@code y} - the band's nearest Y, one inside each edge
+         * when the band is 3 or more high, because the walk's goal (stand by the cell, GoalGetToBlock) ends with the feet
+         * within one block of it, so every end of that goal is in the band.
+         */
+        public int target(int y) {
+            boolean inset = maxY - minY >= 2;
+            int lo = inset ? minY + 1 : minY, hi = inset ? maxY - 1 : maxY;
+            return Math.max(lo, Math.min(hi, y));
+        }
     }
 
     /**

@@ -293,6 +293,7 @@ public final class Replan {
             case io.github.mojolowjo.entropybot.aa.moves.Step.MineAt m -> m.dig();
             case io.github.mojolowjo.entropybot.aa.moves.Step.Mine m -> m.how() == io.github.mojolowjo.entropybot.aa.moves.Step.Mine.How.DIG;
             case io.github.mojolowjo.entropybot.aa.moves.Step.Walk w -> me != null && w.y() > me[1] + 2;
+            case io.github.mojolowjo.entropybot.aa.moves.Step.ToStation w -> me != null && w.y() > me[1] + 2;     // 0.39.z65
             default -> false;
         };
     }

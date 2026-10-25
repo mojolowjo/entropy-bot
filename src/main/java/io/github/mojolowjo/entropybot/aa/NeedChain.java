@@ -292,7 +292,10 @@ public final class NeedChain {
      * @param dropped every way priced out on the way, each with its reason (seconds, or "no known source", or "loop")
      */
     public record Chain(List<Step> steps, double cost, String why, boolean explore, String missing, List<String> dropped, Map<String, String> unreachable,
-                        List<Map<String, Integer>> uses) {
+                        List<Map<String, Integer>> uses, String spares) {
+        /** 0.39.z65 item 2: {@code spares} - the spare-tool decisions of the ways kept ("" none), for the log's one line per chain. */
+        public Chain(List<Step> steps, double cost, String why, boolean explore, String missing, List<String> dropped, Map<String, String> unreachable,
+                     List<Map<String, Integer>> uses) { this(steps, cost, why, explore, missing, dropped, unreachable, uses, ""); }
         public Chain(List<Step> steps, double cost, String why, boolean explore, String missing, List<String> dropped, Map<String, String> unreachable) { this(steps, cost, why, explore, missing, dropped, unreachable, List.of()); }
         public Chain(List<Step> steps, double cost, String why, boolean explore, String missing, List<String> dropped) { this(steps, cost, why, explore, missing, dropped, Map.of()); }
         public Chain(List<Step> steps, double cost, String why, boolean explore, String missing) { this(steps, cost, why, explore, missing, List.of()); }
@@ -303,6 +306,7 @@ public final class NeedChain {
          * compares step lists by equals, and a bag-mix change is not "other steps".
          */
         public Chain {
+            spares = spares == null ? "" : spares;
             unreachable = unreachable == null ? Map.of() : Map.copyOf(unreachable);
             uses = uses == null ? List.of() : java.util.Collections.unmodifiableList(new ArrayList<>(uses));
         }
@@ -531,11 +535,23 @@ public final class NeedChain {
         /** Everything a way changes, to put back when the way is dropped. */
         record Snap(Map<String, Integer> bag, List<Step> steps, Map<String, Integer> leafAt, Map<String, Integer> taken, List<String> dropped,
                     double seconds, double away, boolean tableReady, boolean furnaceReady, boolean stuck, String unknown, String pickItem, int pickTier,
-                    boolean tableWalked, boolean furnaceWalked, int pickWorn, boolean pickMade) {}
+                    boolean tableWalked, boolean furnaceWalked, int pickWorn, boolean pickMade, List<String> spares) {}
+
+        /**
+         * 0.39.z65 item 2 (run V 07:13:11: one stone pickaxe, no spare, and the reason only in aa debug): the spare-tool
+         * decisions of the ways this chain kept ({@link #spareTools}), one line each; restored with a dropped way.
+         */
+        List<String> spares = new ArrayList<>();
+
+        /** 0.39.z65: one spare decision (kept in the chain, and the aa debug note as before). */
+        void spare(String line) {
+            spares.add(line);
+            note(() -> line);
+        }
 
         Snap snap() {
             return new Snap(new LinkedHashMap<>(bag), new ArrayList<>(steps), new LinkedHashMap<>(leafAt), new LinkedHashMap<>(taken), new ArrayList<>(dropped),
-                    seconds, away, tableReady, furnaceReady, stuck, unknown, pickItem, pickTier, tableWalked, furnaceWalked, pickWorn, pickMade);
+                    seconds, away, tableReady, furnaceReady, stuck, unknown, pickItem, pickTier, tableWalked, furnaceWalked, pickWorn, pickMade, new ArrayList<>(spares));
         }
 
         void restore(Snap s) {
@@ -548,6 +564,7 @@ public final class NeedChain {
             unknown = s.unknown(); pickItem = s.pickItem(); pickTier = s.pickTier();
             tableWalked = s.tableWalked(); furnaceWalked = s.furnaceWalked();
             pickWorn = s.pickWorn(); pickMade = s.pickMade();
+            spares = new ArrayList<>(s.spares());
             fail = null; loopOn = null;
         }
     }
@@ -704,9 +721,10 @@ public final class NeedChain {
         String drops = c.dropped.isEmpty() ? "" : " | dropped: " + String.join("; ", c.dropped);
         List<Map<String, Integer>> uses = new ArrayList<>();
         for (Step st : c.steps) uses.add(c.uses.get(st));
-        if (c.fail != null) return new Chain(List.copyOf(c.steps), cost, name + ": " + c.fail + drops, false, c.fail, List.copyOf(c.dropped), c.unreachable, uses);
+        String spares = String.join("; ", c.spares);         // 0.39.z65 item 2
+        if (c.fail != null) return new Chain(List.copyOf(c.steps), cost, name + ": " + c.fail + drops, false, c.fail, List.copyOf(c.dropped), c.unreachable, uses, spares);
         String why = head + (c.stuck ? "" : ": " + s(c.seconds)) + drops;
-        return new Chain(List.copyOf(c.steps), cost, why, c.stuck, null, List.copyOf(c.dropped), c.unreachable, uses);
+        return new Chain(List.copyOf(c.steps), cost, why, c.stuck, null, List.copyOf(c.dropped), c.unreachable, uses, spares);
     }
 
     /** 0.39.z61: the step just added used {@code used} (need word -> count) from the simulated bag. */
@@ -1528,6 +1546,11 @@ public final class NeedChain {
         if (table) c.tableWalked = true; else c.furnaceWalked = true;
         Walked wk = walk(c, at.x(), at.y(), at.z(), at.dist());
         if (c.fail != null) return null;                    // 0.39.z41: no price for the walk: the way cannot be picked
+        // 0.39.z65 item 1 (run V 07:15:19: "no path to the crafting_table ... (from -261 16 22)", the table 59 up): the walk the
+        // price searched is a step of its own - Baritone's complete path to stand by the station (placing at the walk's
+        // penalty, z63's ClimbGoal steering a climb), never the use's own search; a walk of 0 s (already by it): no step
+        String item = ItemWorth.stationOf(kind);
+        if (wk.seconds() > 0) c.steps.add(new Step.ToStation(kind, item == null ? label : sh(item), at.x(), at.y(), at.z()));
         double walkS = Math.max(c.away, wk.seconds());
         double bonus = Math.min(walkS, Math.max(0, at.bonusS()));       // a use-stations station: seconds off its walk (never below 0)
         c.seconds += walkS - bonus;
@@ -2152,11 +2175,14 @@ public final class NeedChain {
         }
         if (uses == io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED) return null;
         if (uses == io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN || fresh <= 0) {
-            c.note(() -> sh(tool) + ": durability unknown (no MAX_DAMAGE in its data): " + wear + " blocks to break, no spare planned");
+            c.spare(sh(tool) + ": durability unknown (no MAX_DAMAGE in its data): " + wear + " blocks to break, no spare planned");
             return null;
         }
         int left = Math.max(0, uses - c.pickWorn);
-        if (wear <= left) return null;
+        if (wear <= left) {
+            c.spare(sh(tool) + ": " + left + " uses left, " + wear + " blocks to break: no spare needed");
+            return null;
+        }
         // z62 review 1: the bag's other pickaxes that dig this tier count first (their uses left; the one in hand excluded)
         int others = 0, otherCount = 0;
         for (var e : c.bag.entrySet()) {
@@ -2171,13 +2197,13 @@ public final class NeedChain {
         }
         final int bagUses = others, bagCount = otherCount;
         if (wear <= left + others) {
-            c.note(() -> sh(tool) + ": " + left + " uses left, " + wear + " blocks to break; the bag's " + bagCount + " other pickaxe(s) (" + bagUses + " uses) cover it: no spare made");
+            c.spare(sh(tool) + ": " + left + " uses left, " + wear + " blocks to break; the bag's " + bagCount + " other pickaxe(s) (" + bagUses + " uses) cover it: no spare made");
             return null;
         }
         int need = (int) Math.ceil((wear - left - others) / (double) fresh - 1e-9);   // structural: epsilon
         int cap = Math.max(0, Tuning.i("tools.maxSpares"));
         int extra = Math.min(need, cap);
-        if (extra < need) c.note(() -> sh(tool) + ": " + need + " spares would cover " + wear + " blocks; tools.maxSpares " + cap + " holds: " + cap + " made, the rest re-planned when a pickaxe breaks");
+        if (extra < need) c.spare(sh(tool) + ": " + need + " spares would cover " + wear + " blocks; tools.maxSpares " + cap + " holds: " + cap + " made, the rest re-planned when a pickaxe breaks");
         if (extra <= 0) return null;
         Ctx.Snap before = c.snap();
         double s0 = c.seconds;
@@ -2185,7 +2211,7 @@ public final class NeedChain {
         if (c.fail != null || c.stuck) {
             String why = c.fail != null ? c.fail : "its materials are not known yet (an explore)";
             c.restore(before);
-            c.note(() -> sh(tool) + ": " + left + " uses left, " + wear + " blocks to break; no spare to be had (" + why + "): the worn one is used");
+            c.spare(sh(tool) + ": " + left + " uses left, " + wear + " blocks to break; no spare to be had (" + why + "): the worn one is used");
             return null;
         }
         c.bag.merge(tool, -extra, Integer::sum);            // they wear out in this way
@@ -2193,7 +2219,7 @@ public final class NeedChain {
         c.pickWorn = Math.max(0, Math.min(fresh, (wear - left - others) - (extra - 1) * fresh));   // the last spare's wear (rough)
         double add = c.seconds - s0;
         final int n = extra;
-        c.note(() -> sh(tool) + ": " + left + " uses left, " + wear + " blocks to break, the bag's other pickaxes " + bagUses + " uses (" + fresh + " a new one) -> " + n + " spare " + sh(tool) + " made first (+" + s(add) + ")");
+        c.spare(sh(tool) + ": " + left + " uses left, " + wear + " blocks to break, the bag's other pickaxes " + bagUses + " uses (" + fresh + " a new one) -> " + n + " spare " + sh(tool) + " made first (+" + s(add) + ")");
         return n + " spare " + sh(tool) + (p == null ? "" : " (<- " + p + ")");
     }
 
