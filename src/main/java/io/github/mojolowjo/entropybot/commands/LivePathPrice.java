@@ -101,8 +101,8 @@ public final class LivePathPrice implements PathPrice {
     private record Pending(java.util.concurrent.CompletableFuture<IPathCost.Answer> future, int[] from) {}
 
     private final Map<String, Pending> pending = new HashMap<>();
-    /** 0.39.z57: per goal key, the last landed path's cells and lava part (a memory answer is that path's tail). */
-    private final Map<String, PricedAnswers.Lava> lavaKept = new HashMap<>();
+    /** 0.39.z57 review 9: per goal key, the lava part read for the memory's landing. */
+    private final PricedAnswers.LavaKept lavaKept = new PricedAnswers.LavaKept(LAVA_KEPT);
 
     /**
      * 0.39.z57 (path memory; owner 2026-10-25: "while doing stuff it should not forget the path that was already planned";
@@ -137,7 +137,7 @@ public final class LivePathPrice implements PathPrice {
             Answer wait = a == null ? null : PricedAnswers.notYet(a.reason, baritone.api.pathing.calc.IPricedPath.QUEUED,
                     baritone.api.pathing.calc.IPricedPath.LEFT_START, PathPrice.maxPending());
             if (wait != null) return wait;
-            return answer(mc, a, key);
+            return answer(mc, b, a, key, pos);
         }
         Pending p = pending.get(key);
         if (p != null && p.future() == f) return Answer.computing(null);    // joined: the same search, landing once
@@ -147,11 +147,14 @@ public final class LivePathPrice implements PathPrice {
         return Answer.computing(null);
     }
 
-    /** 0.39.z57: the fork's limits from Tuning: pathCost.maxKeepS, pricedPath.keepTicks (no-path), maxSegments, pathCost.maxPending. */
+    /**
+     * 0.39.z57: the fork's limits from Tuning: pathCost.maxKeepS, pricedPath.keepTicks (no-path), maxSegments,
+     * pathCost.maxPending, pathCost.restartBlocks (review 6).
+     */
     private static baritone.api.pathing.calc.IPricedPath.Limits limits() {
         return new baritone.api.pathing.calc.IPricedPath.Limits(
                 (int) Math.ceil(PathPrice.maxKeepS() * io.github.mojolowjo.entropybot.aa.brain.GameTimes.TPS),
-                PathPrice.pricedKeepTicks(), PathPrice.pricedMaxSegments(), PathPrice.maxPending());
+                PathPrice.pricedKeepTicks(), PathPrice.pricedMaxSegments(), PathPrice.maxPending(), PathPrice.restartBlocks());
     }
 
     /** 0.39.z57 (rule 7): the fork's drop lines, one "probe reuse:" line each while debug.walkProbe is on (read anyway: bounded). */
@@ -173,14 +176,14 @@ public final class LivePathPrice implements PathPrice {
         if (p != null && p.future() == f) pending.remove(key);
         drops(b);
         if (err == null && a != null && baritone.api.pathing.calc.IPricedPath.LEFT_START.equals(a.reason)) return;
+        String[] q = key.split(",");
+        BlockPos goal = new BlockPos(Integer.parseInt(q[0]), Integer.parseInt(q[1]), Integer.parseInt(q[2]));
         Answer out;
         if (err != null) {
             LOG.warn("[entropybot] path cost to {}: the background search threw", key, err);
             out = Answer.none("the search threw: " + err);
-        } else out = answer(mc, a, key);
+        } else out = answer(mc, b, a, key, goal);
         if (WalkProbe.on() && a != null) {
-            String[] q = key.split(",");
-            BlockPos goal = new BlockPos(Integer.parseInt(q[0]), Integer.parseInt(q[1]), Integer.parseInt(q[2]));
             if (!a.noPath) WalkProbe.price(goal, from, a);
             else if (IPathCost.Answer.UNREACHABLE.equals(a.reason) || baritone.api.pathing.calc.IPricedPath.NO_PROGRESS.equals(a.reason)) WalkProbe.unreachable(goal, from, a.reason);
         }
@@ -189,20 +192,21 @@ public final class LivePathPrice implements PathPrice {
         landed++;
     }
 
-    /** 0.39.z57: Baritone's answer as the chain's, the lava part read once per landed path and summed for its tails. */
-    private Answer answer(Minecraft mc, IPathCost.Answer a, String key) {
+    /**
+     * 0.39.z57: Baritone's answer as the chain's; review 9: the lava part is read once per landing of the fork's memory
+     * (IPricedPath.landingOf) and summed for that landing's tails - a re-search reads it again.
+     */
+    private Answer answer(Minecraft mc, IBaritone b, IPathCost.Answer a, String key, BlockPos pos) {
         if (a == null || a.noPath || !a.complete) return answer(mc, a);
         java.util.List<int[]> cells = new java.util.ArrayList<>(a.path.size());
         for (BlockPos q : a.path) cells.add(new int[]{q.getX(), q.getY(), q.getZ()});
-        long[] ask = PricedAnswers.cells(cells);
-        PricedAnswers.Lava kept = lavaKept.get(key);
-        double lava = kept == null ? Double.NaN : kept.suffix(ask);
-        if (Double.isNaN(lava)) {
-            PricedAnswers.Lava fresh = new PricedAnswers.Lava(ask, lavaCells(mc, cells));
-            if (lavaKept.size() > LAVA_KEPT) lavaKept.clear();
-            lavaKept.put(key, fresh);
-            lava = fresh.total();
+        long landing;
+        try {
+            landing = b.getPricedPath().landingOf(goal(pos));
+        } catch (LinkageError e) {
+            landing = -1;                                // an older fork: read every time (said once by pricedAsk's install line)
         }
+        double lava = lavaKept.lava(key, landing, PricedAnswers.cells(cells), () -> lavaCells(mc, cells));
         return Answer.priced(new Walk(TickPrice.walkS(a.ticks), TickPrice.walkS(lava)));
     }
 

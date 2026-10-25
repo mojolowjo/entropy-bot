@@ -31,18 +31,39 @@ class Z57PathMemoryTest {
         assertNull(PricedAnswers.notYet(null, QUEUED, LEFT, 4));              // a path answer has no reason
     }
 
+    /** A fake level's lava read: each cell's ticks from {@code ticks} by x, counted. */
+    private int reads;
+
+    private java.util.function.Supplier<double[]> reader(List<int[]> cells, double[] byX) {
+        return () -> {
+            reads++;
+            double[] out = new double[cells.size()];
+            for (int i = 0; i < out.length; i++) out[i] = byX[cells.get(i)[0]];
+            return out;
+        };
+    }
+
     @Test
-    void aMemoryAnswersLavaIsTheKeptPathsTail() {
-        // a 5-cell path; lava ticks per cell (the start's is never charged): 0, 2, 0, 3, 1 -> whole path 6
+    void theLavaPartIsReadOncePerLandingAndSummedForItsTails() {
+        // review 9: a 5-cell path; lava ticks per cell by x (the start's is never charged): 9, 2, 0, 3, 1 -> whole path 6
         List<int[]> cells = List.of(new int[]{0, 64, 0}, new int[]{1, 64, 0}, new int[]{2, 64, 0}, new int[]{3, 64, 0}, new int[]{4, 64, 0});
-        PricedAnswers.Lava lava = new PricedAnswers.Lava(PricedAnswers.cells(cells), new double[]{9, 2, 0, 3, 1});
-        assertEquals(6, lava.total(), 1e-9);
-        assertEquals(6, lava.suffix(PricedAnswers.cells(cells)), 1e-9);                 // exact
-        assertEquals(4, lava.suffix(PricedAnswers.cells(cells.subList(1, 5))), 1e-9);   // from cell 1: cells 2..4
-        assertEquals(1, lava.suffix(PricedAnswers.cells(cells.subList(3, 5))), 1e-9);
-        assertEquals(0, lava.suffix(PricedAnswers.cells(cells.subList(4, 5))), 1e-9);
-        // another path (not a tail): read fresh
-        assertTrue(Double.isNaN(lava.suffix(PricedAnswers.cells(List.of(new int[]{1, 64, 1}, new int[]{4, 64, 0})))));
+        double[] lavaByX = {9, 2, 0, 3, 1};
+        PricedAnswers.LavaKept kept = new PricedAnswers.LavaKept(16);
+        assertEquals(6, kept.lava("G", 1, PricedAnswers.cells(cells), reader(cells, lavaByX)), 1e-9);                  // landing 1: read
+        assertEquals(6, kept.lava("G", 1, PricedAnswers.cells(cells), reader(cells, lavaByX)), 1e-9);                  // exact: kept
+        List<int[]> from1 = cells.subList(1, 5), from3 = cells.subList(3, 5);
+        assertEquals(4, kept.lava("G", 1, PricedAnswers.cells(from1), reader(from1, lavaByX)), 1e-9);                  // suffix: cells 2..4
+        assertEquals(1, kept.lava("G", 1, PricedAnswers.cells(from3), reader(from3, lavaByX)), 1e-9);
+        assertEquals(1, reads);
+        // lava flowed in by cell 2 and the path was searched again (landing 2): read again, though the cells are the same
+        double[] now = {9, 2, 5, 3, 1};
+        assertEquals(11, kept.lava("G", 2, PricedAnswers.cells(cells), reader(cells, now)), 1e-9);
+        assertEquals(2, reads);
+        assertEquals(9, kept.lava("G", 2, PricedAnswers.cells(from1), reader(from1, now)), 1e-9);
+        assertEquals(2, reads);
+        // no landing (0 at the goal, an older fork): read, never kept
+        assertEquals(1, kept.lava("G", -1, PricedAnswers.cells(from3), reader(from3, now)), 1e-9);
+        assertEquals(3, reads);
         assertNotEquals(PricedAnswers.cell(1, 64, 0), PricedAnswers.cell(0, 64, 1));
         assertNotEquals(PricedAnswers.cell(-1, 64, 0), PricedAnswers.cell(1, 64, 0));
     }
@@ -53,6 +74,7 @@ class Z57PathMemoryTest {
         String l = ProbeLines.asks(new long[]{12, 1, 9, 1, 0, 0, 1, 0, 0, 0});
         assertEquals("path asks +12: from memory exact +9 suffix +1 zero +1 no-path +0, joined in flight +0, searches started +1,"
                 + " queued +0, cancelled +0, kept dropped +0", l);
+        assertTrue(ProbeLines.asks(new long[]{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}).endsWith(", not loaded +1"));
         assertEquals("path asks: not counted by this fork jar", ProbeLines.asks(new long[]{-1}));
         assertEquals("path asks: not counted by this fork jar", ProbeLines.asks(null));
         assertEquals("dropped the kept answer to G: block changed at 3 64 0 (air -> crafting_table) (not known until the new search lands)",
@@ -63,6 +85,7 @@ class Z57PathMemoryTest {
     void theSafetyAgeIsATuningEntryAndKeepSIsTheOldRouteOnly() {
         assertEquals(300, Tuning.get("pathCost.maxKeepS"), 1e-9);
         assertEquals(300, PathPrice.maxKeepS(), 1e-9);
+        assertEquals(8, PathPrice.restartBlocks(), 1e-9);
         assertTrue(String.join("\n", Tuning.lines("pathCost.keepS")).contains("pricedPath.on 0 only"));
         assertTrue(String.join("\n", Tuning.lines("pricedPath.keepTicks")).contains("NO-PATH"));
     }

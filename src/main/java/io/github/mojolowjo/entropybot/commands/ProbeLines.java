@@ -176,7 +176,7 @@ public final class ProbeLines {
         if (d == null || d.length < 10 || d[0] < 0) return "path asks: not counted by this fork jar";
         return "path asks +" + d[0] + ": from memory exact +" + d[2] + " suffix +" + d[3] + " zero +" + d[1] + " no-path +" + d[4]
                 + ", joined in flight +" + d[5] + ", searches started +" + d[6] + ", queued +" + d[7] + ", cancelled +" + d[8]
-                + ", kept dropped +" + d[9];
+                + ", kept dropped +" + d[9] + (d.length > 10 ? ", not loaded +" + d[10] : "");
     }
 
     /** 0.39.z57 (rule 7): one dropped kept answer, the fork's words ("to <goal>: <why>"). */

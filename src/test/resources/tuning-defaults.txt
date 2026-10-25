@@ -908,6 +908,7 @@ pathCost.maxNodes	400000.0
 pathCost.maxPending	4.0
 pathCost.reuseBlocks	4.0
 pathCost.keepS	60.0
+pathCost.restartBlocks	8.0
 pathCost.maxKeepS	300.0
 price.walkX	1.0
 price.breakX	1.0
