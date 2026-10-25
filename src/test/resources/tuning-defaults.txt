@@ -973,3 +973,5 @@ cave.depthMin	1.0
 cave.walkedHoldS	600.0
 replan.switchMarginS	10.0
 replan.unchangedHoldS	15.0
+replan.maxSourceDrops	8.0
+debug.aaTickMs	20.0

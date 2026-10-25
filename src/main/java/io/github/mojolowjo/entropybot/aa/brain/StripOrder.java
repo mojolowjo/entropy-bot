@@ -189,6 +189,31 @@ public final class StripOrder {
         return lo > hi ? null : Math.floorDiv(lo + hi, 2);
     }
 
+    /**
+     * 0.39.z62 item 1b: the headings a planned strip tries, in order: {@code started} (a tunnel of the same ores at the same Y
+     * already begun, from its saved progress; null: none) first, then {@code facing}, then the rest clockwise from the facing
+     * (north, east, south, west). Each heading once; an unknown word is left out.
+     */
+    public static List<String> headingOrder(String started, String facing) {
+        List<String> out = new ArrayList<>();
+        if (started != null && HEADINGS.contains(started)) out.add(started);
+        int f = facing == null ? -1 : CLOCKWISE.indexOf(facing);
+        for (int i = 0; i < CLOCKWISE.size(); i++) {
+            String h = CLOCKWISE.get(((f < 0 ? 0 : f) + i) % CLOCKWISE.size());
+            if (!out.contains(h)) out.add(h);
+        }
+        return out;
+    }
+
+    /** The compass words clockwise (the turn order of {@link #headingOrder}). */
+    private static final List<String> CLOCKWISE = List.of("north", "east", "south", "west");
+
+    /**
+     * 0.39.z62 item 1b: a strip that ended failed with no block dug since it started ({@code blocksNow} not past
+     * {@code blocksAtStart}, the saved progress it resumed from) was blocked at its start in its heading.
+     */
+    public static boolean blockedAtStart(int blocksAtStart, int blocksNow) { return blocksNow <= blocksAtStart; }
+
     /** The fork's end text as the step's status: "done..." is DONE, anything else FAILED with that text (never silent). */
     public static Car.Status endOf(String forkEnd, String forkStatus) {
         if (forkEnd == null || forkEnd.isBlank()) return Car.Status.failed("strip: the fork's strip ended without a reason (" + forkStatus + ")");

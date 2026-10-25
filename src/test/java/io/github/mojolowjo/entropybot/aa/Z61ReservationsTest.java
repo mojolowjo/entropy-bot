@@ -261,6 +261,11 @@ class Z61ReservationsTest {
             seen[0] = fact;
             return new Steps.Routine(List.of(new Step.Collect("cobblestone", 2), new Step.Craft("stone_pickaxe", 1), new Step.Craft("furnace", 1)), null);
         });
+        // 0.39.z62 item 3a: the shortage is looked at again one tick later before it re-plans (a bag a tick behind a pickup)
+        assertEquals(0, heldAtReplan.size(), "held one tick first");
+        assertEquals(List.of(), h.started);
+        assertTrue(run.why().contains("looking again next tick"), run.why());
+        run.tick(1);
         assertEquals(1, heldAtReplan.size());
         assertEquals(List.of("furnace 1 (order furnace)"), texts(heldAtReplan.get(0)), "only the order's reserve while it re-plans");
         assertEquals("bag stone_crafting_materials", seen[0].key());
@@ -279,6 +284,8 @@ class Z61ReservationsTest {
         List<Step> first = List.of(new Step.Craft("stone_pickaxe", 1), new Step.Craft("furnace", 1));
         Steps run = new Steps(h);
         run.start("owner goal", first, 0, (failed, fact, why) -> new Steps.Routine(first, null));
+        run.tick(1);                             // 0.39.z62 item 3a: each shortage is looked at again a tick later
+        run.tick(2);
         assertEquals(Steps.Phase.FAILED, run.phase());
         assertTrue(run.why().contains("re-planned after \"step 2 (craft furnace 1) needs 8") && run.why().contains("the same step failed again"), run.why());
         assertEquals(List.of(), h.last(), "the run's end reserves nothing");

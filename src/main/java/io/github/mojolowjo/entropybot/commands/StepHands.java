@@ -867,12 +867,44 @@ public final class StepHands implements Steps.Hands {
     // ---- place near me: the fork's placeNear picks the cell (free, reachable, the guard allowing), the stand and the face; the mod names none ----
 
     private String placeNear(LocalPlayer p, Step.PlaceNear n) {
-        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().placeNear(n.item(), Tuning.i("steps.placeNearR"), (int) (20 * Tuning.need("hands.buildS")), "steps");
+        // 0.39.z62 item 1a (run S 04:57:21): the cells the chain's next walk or strip uses are kept free - a constraint for
+        // Baritone's pick (KeepClear), never a cell named to place on
+        List<int[]> keep = keepClear(p);
+        if (!keep.isEmpty()) LOG.info("[entropybot] steps: {}: keeping {} cell(s) free for the next step ({})", n.text(), keep.size(), keepText(keep));
+        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().placeNear(n.item(), Tuning.i("steps.placeNearR"), (int) (20 * Tuning.need("hands.buildS")), "steps", keep);
         if (!r.failed()) return null;
         // 0.39.z60 item 3 (run R 03:52:52: the order stopped on "no cell within 3 blocks" with no re-plan): a typed fact, so
         // the order is planned again on the facts of now (rule 7) instead of parked
         io.github.mojolowjo.entropybot.aa.moves.FactChange.placeFailed(n.item(), r.why());
         return "error: " + r.why();
+    }
+
+    /**
+     * 0.39.z62 item 1a: the cells to keep free for the steps after the running one (KeepClear over the running run's steps;
+     * a walk's cells from the fork's kept price for its goal). Empty when no typed run runs here (an owner verb).
+     */
+    private List<int[]> keepClear(LocalPlayer p) {
+        var run = c.stepRun.steps;
+        int idx = run.index();
+        if (idx < 0) return List.of();
+        IBaritone b = Jobs.baritone();
+        return io.github.mojolowjo.entropybot.aa.moves.KeepClear.cells(run.steps(), idx + 1, Jobs.here(p), Tuning.i("steps.placeNearR"), goal -> {
+            if (b == null) return null;
+            List<int[]> out = new ArrayList<>();
+            try {
+                for (baritone.api.pathing.calc.IPath seg : b.getPricedPath().keptSegments(LivePathPrice.goal(new BlockPos(goal[0], goal[1], goal[2]))))
+                    for (var q : seg.positions()) out.add(new int[]{q.getX(), q.getY(), q.getZ()});
+            } catch (LinkageError e) {
+                return null;                     // a fork without kept segments: no walk cells known (said by the probe's install line)
+            }
+            return out;
+        });
+    }
+
+    private static String keepText(List<int[]> cells) {
+        List<String> s = new ArrayList<>();
+        for (int i = 0; i < cells.size() && i < 6; i++) s.add(cells.get(i)[0] + " " + cells.get(i)[1] + " " + cells.get(i)[2]);   // structural: a log line names at most 6
+        return String.join(", ", s) + (cells.size() > 6 ? ", ..." : "");   // structural: as above
     }
 
     private Car.Status placeNearStatus(Step.PlaceNear n) {

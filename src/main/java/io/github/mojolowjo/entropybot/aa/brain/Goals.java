@@ -47,6 +47,9 @@ public final class Goals {
         /** 0.39.z30: re-plans on a changed fact so far (aa want again sets it back to 0). */
         public int replans;
 
+        /** 0.39.z62 item 1: re-plans on a source new to this order (replan.maxSourceDrops; aa want again sets it back to 0). */
+        public int sourceReplans;
+
         /**
          * 0.39.z48 (S66): the running pick's price when it was taken (seconds, NaN: none), when (ms) and whether it ends in an
          * explore; a mid-job re-price switches only when cheaper than what is left of it by replan.switchMarginS.
@@ -74,6 +77,9 @@ public final class Goals {
     /** 0.39.z30: at most this many re-plans on a changed fact per order (Tuning replan.maxPerOrder). */
     public static int replanMax() { return Tuning.i("replan.maxPerOrder"); }
 
+    /** 0.39.z62 item 1: at most this many re-plans on a NEW dropped source per order (Tuning replan.maxSourceDrops). */
+    public static int replanMaxSources() { return Tuning.i("replan.maxSourceDrops"); }
+
     /**
      * 0.39.z30 (owner 2026-10-23: a job whose fact changed re-plans and continues): the order's chain priced again on the
      * facts of now - the same call the order's job makes ({@link #steps}) - after {@code failed} found {@code fact} changed.
@@ -83,20 +89,32 @@ public final class Goals {
     public static io.github.mojolowjo.entropybot.aa.moves.Steps.Routine replan(Blackboard bb, Goal g, Step failed,
                                                                              io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact, String why) {
         if (fact.price()) return reprice(bb, g, fact);
-        if (g.replans >= replanMax()) {
-            String line = g.r.key() + ": " + fact.text() + " - not re-planned: " + g.replans + " re-plans already (replan.maxPerOrder " + replanMax() + ")";
+        // 0.39.z33 (S36): a source fact charges the failed step's source by its key: the chain drops it for this order.
+        // 0.39.z62 item 1b: a fact may name its own source key (a strip heading blocked at its Y, any ore set)
+        String own = io.github.mojolowjo.entropybot.aa.moves.FactChange.ownSourceKey(fact);
+        String src = own != null ? own : io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(failed);
+        boolean sourceFact = src != null && fact.key().startsWith("source ");
+        // 0.39.z62 item 1 (run S 04:57:35: "not re-planned: 3 re-plans already" - the pickaxe broke, then the same blocked
+        // heading three times as three ore sets): a source fact that drops a source NEW to this order takes one way out of a
+        // finite set, so it counts against replan.maxSourceDrops, not replan.maxPerOrder; every other fact (a bag, a station,
+        // a placement) and a source dropped again count against replan.maxPerOrder as before
+        boolean newSource = sourceFact && !droppedSources(g).containsKey(src);
+        String cap = newSource ? (g.sourceReplans >= replanMaxSources() ? "replan.maxSourceDrops " + replanMaxSources() : null)
+                : (g.replans >= replanMax() ? "replan.maxPerOrder " + replanMax() : null);
+        if (cap != null) {
+            int n = newSource ? g.sourceReplans : g.replans;
+            String line = g.r.key() + ": " + fact.text() + " - not re-planned: " + n + (newSource ? " sources dropped" : " re-plans") + " already (" + cap + ")";
             bb.port.log(line);
             bb.port.tellOwner(line);
-            return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "re-planned " + g.replans + " times already (replan.maxPerOrder " + replanMax() + ")");
+            return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, (newSource ? "dropped " + n + " sources" : "re-planned " + n + " times") + " already (" + cap + ")");
         }
         if (g.n - have(bb.in.bag, g) <= 0) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
-        // 0.39.z33 (S36): a source fact charges the failed step's source by its key: the chain drops it for this order
-        String src = io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(failed);
-        if (src != null && fact.key().startsWith("source ")) g.sources.failedFor(g.id(), src, fact.text(), bb.clock.now(), null, ORDER_LIFE_MS);
+        if (sourceFact) g.sources.failedFor(g.id(), src, fact.text(), bb.clock.now(), null, ORDER_LIFE_MS);
         var ch = chain(bb, g);
         if (ch == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");
         if (!ch.ok() || ch.steps().isEmpty()) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, ch.why());
-        g.replans++;
+        if (newSource) g.sourceReplans++;
+        else g.replans++;
         took(g, ch, bb.clock.now());
         String line = g.r.key() + ": " + fact.text() + " - re-planned: " + ch.steps().get(0).text() + " first";
         bb.port.log(line + " (after step " + failed.text() + ": " + why + "; chain: " + ch.why() + ")");
@@ -450,8 +468,11 @@ public final class Goals {
         var world = world(bb);
         if (world == null) return null;
         world = world.withoutSources(droppedSources(g));          // 0.39.z33: the order's dropped sources, listed with their reasons
+        var laps = io.github.mojolowjo.entropybot.aa.core.TickLaps.AA;    // 0.39.z62 item 4: resolves counted while the probe is on
+        long t0 = laps.now();
         var ch = g.r.group() ? io.github.mojolowjo.entropybot.aa.NeedChain.resolveAll(g.r.key(), g.r.ids(), g.n, world)
                 : io.github.mojolowjo.entropybot.aa.NeedChain.resolve(g.r.ids().isEmpty() ? g.r.key() : g.r.ids().get(0), g.n, world);
+        if (t0 != 0) laps.resolved(laps.now() - t0);
         // 0.39.z41: a source Baritone's complete search found unreachable is the z33 source fact: dropped for the order's life
         for (var e : ch.unreachable().entrySet()) g.sources.failedFor(g.id(), e.getKey(), e.getValue(), bb.clock.now(), null, ORDER_LIFE_MS);
         return ch;

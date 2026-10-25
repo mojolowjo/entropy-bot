@@ -14,8 +14,15 @@ import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 public interface PathPrice {
 
     /** A complete walk: seconds of Baritone's path (through {@link TickPrice}), its lava part in seconds. */
-    record Walk(double seconds, double lavaS) {
+    record Walk(double seconds, double lavaS, int pickBreaks) {
         public Walk(double seconds) { this(seconds, 0); }
+        public Walk(double seconds, double lavaS) { this(seconds, lavaS, 0); }
+        /**
+         * 0.39.z62 item 2 (run S: the stone pickaxe broke after the dug shaft from y 64 to 16 plus 46 strip blocks): the
+         * blocks on the path's cells (feet and head height) that the game mines with a pickaxe, at the landing - the walk's
+         * wear on the pickaxe (rough, rule 14: one use a block); 0: none or not counted.
+         */
+        public int pickBreaks() { return Math.max(0, pickBreaks); }
     }
 
     /** What an answer is: a price, or why there is none (rule 15: loaded / empty / not loaded). */

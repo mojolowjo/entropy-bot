@@ -55,8 +55,20 @@ public final class LoadProbe {
         preNs = System.nanoTime();
         modNs = 0;
         java.util.Arrays.fill(marks, 0);
+        stepsNs = 0;
+        aaNs = 0;
         eventsThisTick.clear();
         landedTick = LivePathPrice.INSTANCE.landed();
+    }
+
+    /** 0.39.z62 item 4: this tick's step machine and AA tick inside Commands.tick (ns; 0: not reached). */
+    private static long stepsNs, aaNs;
+
+    /** 0.39.z62 item 4 (D3a 3.1 "Core sections split"): Commands.tick's step machine and AA tick took these nanoseconds. */
+    public static void inside(long steps, long aa) {
+        if (!active) return;
+        stepsNs = Math.max(0, steps);
+        aaNs = Math.max(0, aa);
     }
 
     /** EntropyBot: around Core.onClientTick. */
@@ -121,12 +133,16 @@ public final class LoadProbe {
     private static String did() {
         var s = Core.INSTANCE.commands;
         String step = "-";
+        String typed = null;
         try {
             step = s != null && s.jobs.running() ? s.jobs.job.status : "no job";
+            typed = s == null ? null : s.stepRun.steps.stepText();      // 0.39.z62 item 4: the typed step (D3a: "job no job" during typed steps)
         } catch (RuntimeException e) {
             step = "unknown (" + e + ")";
         }
-        return "job " + step + " | path events " + (eventsThisTick.isEmpty() ? "none" : eventsThisTick)
+        return "job " + step + (typed == null ? "" : " | typed step " + typed)
+                + String.format(java.util.Locale.ROOT, " | inside guard+commands: steps %.1f ms, aa tick %.1f ms (see probe aatick)", stepsNs / 1e6, aaNs / 1e6)
+                + " | path events " + (eventsThisTick.isEmpty() ? "none" : eventsThisTick)
                 + " | priced paths landed " + (LivePathPrice.INSTANCE.landed() - landedTick);
     }
 

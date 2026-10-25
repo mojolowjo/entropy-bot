@@ -989,5 +989,7 @@ final class TuningDefs {
         Tuning.def("cave.exploreMinutes", 10, "0.39.z44", "the minutes the mine-in-the-cave way explores a mouth for the ore at most");
         Tuning.def("replan.unchangedHoldS", 15, "0.39.z51 (run L: 66 explore-until-stone starts in ~5 s, 2 a second)", "an explore whose until-source was already known when it started (nothing changed) holds this many seconds before it ends on that source; the order's re-price still cancels it the moment its pick changes");
         Tuning.def("worth.bedSpan", 60, "rm-constants 0.39.u2 (inline literal in Worth)", "the bed worth span (scaled by the night danger)");
+        Tuning.def("replan.maxSourceDrops", 8, "0.39.z62 item 1 (run S 04:57:35: the iron order stopped at replan.maxPerOrder 3 after one tool fact and one blocked heading counted three times)", "At most this many re-plans per order on a source fact that drops a source NEW to the order (each takes one way out of a finite set: a strip heading, a band, a spot); other facts and repeats count against replan.maxPerOrder");
+        Tuning.def("debug.aaTickMs", 20, "0.39.z62 item 4 (run S 04:57:07-12: client ticks of 3050 and 5586 ms in 'guard+commands (aa)'; design D3a 3.1)", "while debug.loadProbe is on, an AA tick slower than this (ms) gets a 'probe aatick:' line with its sections and the chain resolves in it; 20 ms = 40% of a 50 ms client tick");
     }
 }

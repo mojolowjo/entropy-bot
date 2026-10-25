@@ -78,6 +78,23 @@ public final class FactChange {
     }
 
     /**
+     * 0.39.z62 item 1b (run S 04:57:30-35): a strip that ended with no new block in its heading - blocked at its start (a
+     * station Baritone will not break, a refused cell) - is a fact about that HEADING at that Y, not about the ores: the
+     * source slot keyed by {@link io.github.mojolowjo.entropybot.aa.NeedChain#headingKey}; the order re-plans and every strip
+     * way at that Y takes its next heading.
+     */
+    public static void stripBlocked(int y, String heading, String why) {
+        last = new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.headingKey(y, heading),
+                "strip " + heading + " at feet y " + y + " blocked at its start: " + why);
+    }
+
+    /** 0.39.z62: the source key a fact names itself (a blocked strip heading), null: the failed step's key applies. */
+    public static String ownSourceKey(Fact f) {
+        String p = "source " + io.github.mojolowjo.entropybot.aa.NeedChain.STRIP_HEADING;
+        return f != null && f.key().startsWith(p) ? f.key().substring("source ".length()) : null;
+    }
+
+    /**
      * 0.39.z46 (run G 23:40:12): a step made no progress (no move, no step change) for the watch's time: the source slot
      * keyed by the step's target ({@code key}); the order re-plans instead of parking.
      */

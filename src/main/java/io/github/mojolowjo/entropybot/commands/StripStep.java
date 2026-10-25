@@ -7,6 +7,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.github.mojolowjo.entropybot.Core;
+import io.github.mojolowjo.entropybot.Quiet;
 import io.github.mojolowjo.entropybot.aa.brain.StripOrder;
 import io.github.mojolowjo.entropybot.aa.brain.Thing;
 import io.github.mojolowjo.entropybot.aa.moves.Car;
@@ -101,7 +102,39 @@ final class StripStep {
         return all.has(s.key()) ? GSON.fromJson(all.get(s.key()), StripOrder.Saved.class) : null;
     }
 
+    /** 0.39.z62 item 1b: the saved file's keys as last read (null: not read since the last write). */
+    private static java.util.Set<String> savedKeys;
+    /** The world's file those keys were read from (a world change reads again). */
+    private static String savedFile;
+
+    /**
+     * 0.39.z62 item 1b: the heading of a strip of exactly these ores at this Y whose progress is saved in this world (a
+     * tunnel begun: the planner resumes it rather than start one where the bot happens to face); null: none, or no world
+     * files. The keys are read once per write (the planner asks per chain).
+     */
+    static String startedHeading(List<String> ores, int y) {
+        java.util.Set<String> keys = savedKeys;
+        String where;
+        try {
+            where = file().toString();
+            if (keys == null || !where.equals(savedFile)) {
+                keys = new java.util.HashSet<>(readAll().keySet());
+                savedKeys = keys;
+                savedFile = where;
+            }
+        } catch (RuntimeException e) {
+            Quiet.warn("StripStep.startedHeading: strip-progress.json not read (no tunnel to resume known)", e);
+            return null;
+        }
+        List<String> s = new java.util.ArrayList<>(ores);
+        s.sort(null);
+        String head = String.join(",", s) + "|" + y + "|";
+        for (String h : StripOrder.HEADINGS) if (keys.contains(head + h)) return h;
+        return null;
+    }
+
     private static void save(Step.Strip s, StripOrder.Saved p) {
+        savedKeys = null;
         JsonObject all = readAll();
         if (p == null) all.remove(s.key());
         else all.add(s.key(), GSON.toJsonTree(p));
@@ -123,6 +156,8 @@ final class StripStep {
     // ---- the step's hands ----
 
     private static StripOrder.Saved lastSaved;
+    /** 0.39.z62 item 1b: the blocks the running strip's saved progress held when it started (0: a new tunnel). */
+    private static int startBlocks;
 
     /** Starts the fork's strip, resumed from this order's saved progress; null = started, else "error: ...". */
     static String start(Step.Strip s) {
@@ -137,6 +172,7 @@ final class StripStep {
             return "error: " + e.getMessage();
         }
         lastSaved = from;
+        startBlocks = from == null ? 0 : from.blocks();      // 0.39.z62 item 1b: what this start resumes from
         b.getStripProcess().strip(new BlockOptionalMetaLookup(s.ores().toArray(String[]::new)), s.y(), d, of(from));
         if (!b.getStripProcess().isActive()) return "error: the strip did not start: " + b.getStripProcess().lastEnd();
         return null;
@@ -179,7 +215,12 @@ final class StripStep {
         ended(s, st);
         // 0.39.z46 (run E 22:46:11 "strip: no path" parked the order): a strip that ended short is the source fact with
         // Baritone's words; the order re-plans without this band way
-        if (st.state() == Car.State.FAILED) io.github.mojolowjo.entropybot.aa.moves.FactChange.strip(s.key(), st.why());
+        if (st.state() == Car.State.FAILED) {
+            // 0.39.z62 item 1b (run S 04:57:30: "strip east feet y 16: 0 blocks ... no path", the new table on the tunnel's
+            // first cell): no new block since this start = the heading is blocked here, a fact for that heading at that Y
+            if (StripOrder.blockedAtStart(startBlocks, now == null ? 0 : now.blocks())) io.github.mojolowjo.entropybot.aa.moves.FactChange.stripBlocked(s.y(), s.heading(), st.why());
+            else io.github.mojolowjo.entropybot.aa.moves.FactChange.strip(s.key(), st.why());
+        }
         return st;
     }
 
@@ -209,6 +250,7 @@ final class StripStep {
     }
 
     static void saveDeposits(Step.Strip s, io.github.mojolowjo.entropybot.aa.brain.DepositRule.Deposits d) {
+        savedKeys = null;
         JsonObject all = readAll();
         String k = s.key() + "|deposits";
         if (d == null) all.remove(k);

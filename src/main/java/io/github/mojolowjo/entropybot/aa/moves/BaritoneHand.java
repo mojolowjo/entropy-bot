@@ -138,7 +138,16 @@ final class BaritoneHand implements JobHands.Hand {
     }
 
     /** one-planner: the fork's placeNear (Baritone picks the cell, the stand and the face; the mod names none). */
-    @Override public void startPlaceNear(String item, int radius, int timeoutTicks) {
+    @Override public void startPlaceNear(String item, int radius, int timeoutTicks) { startPlaceNear(item, radius, timeoutTicks, List.of()); }
+
+    /**
+     * 0.39.z62 item 1a (run S 04:57:21: the new table at -219 16 33 stood on the strip's first tunnel cell): {@code keepClear}
+     * is a constraint on Baritone's pick - the leg's cell check refuses those cells ("kept clear for a later step"), the fork
+     * still picks the cell, the stand, the face and the click.
+     */
+    @Override public void startPlaceNear(String item, int radius, int timeoutTicks, List<int[]> keepClear) {
+        java.util.Set<BlockPos> keep = new java.util.HashSet<>();
+        if (keepClear != null) for (int[] k : keepClear) keep.add(new BlockPos(k[0], k[1], k[2]));
         proc = null;
         builder = null;
         interact = null;
@@ -153,7 +162,10 @@ final class BaritoneHand implements JobHands.Hand {
             if (p.getInventory().countItem(it) < 1) { forced = Car.Status.failed("stage items: need 1 " + rl.getPath() + ", the bag has 0"); return; }
             String dim = Guard.dimOf(lv);
             baritone.api.process.IBuilderProcess.LegGuard g = new baritone.api.process.IBuilderProcess.LegGuard() {
-                @Override public String cell(BlockPos q) { return guardVerdict(lv, dim, q, "place"); }
+                @Override public String cell(BlockPos q) {
+                    if (keep.contains(q)) return "kept clear: a later step of the chain uses this cell";
+                    return guardVerdict(lv, dim, q, "place");
+                }
 
                 @Override public String stand(BlockPos f) { return standVerdict(dim, f); }
 

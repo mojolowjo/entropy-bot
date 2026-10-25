@@ -612,8 +612,11 @@ public final class Commands implements Chains.Env {
             if (tick % 600 == 31 && worldTicks > 400 && !aaOn()) {          // AA_CLEANUP 3: the stage for actions.json with AA off (AA senses itself)
                 try { senses.sense(); } catch (RuntimeException e) { LOG.warn("[entropybot] sense: {}", e.toString()); }
             }
+            long lpSteps = LoadProbe.active ? System.nanoTime() : 0;                                  // 0.39.z62 item 4: the slow tick names the step machine and AA apart
             stepRun.tick();                                                                          // rm-execution: the typed steps (AA's and the owner's verbs)
+            long lpAa = LoadProbe.active ? System.nanoTime() : 0;
             if (tick % 5 == 2 && worldTicks > 400 && aaRuntime != null) { try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(io.github.mojolowjo.entropybot.aa.door.Driver.AA)) { aaRuntime.tick(tick); } }             // 0.36.0: AA at 4 Hz, never throws
+            if (lpSteps != 0) LoadProbe.inside(lpAa - lpSteps, System.nanoTime() - lpAa);
         if (worldTicks > 400) planning.tick(tick);                                                  // B3: actions.json when the state changed (every 5 s), never throws
             // B7e N: the idle self-check (whispers only what changed, at most every 30 min)
             if (tick % 200 == 77 && worldTicks > 1200) selfCheck.idleTick(player, !jobs.running() && !chains.running() && !requests.busy(), System.currentTimeMillis());

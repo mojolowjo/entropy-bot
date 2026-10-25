@@ -660,8 +660,51 @@ public final class AaRuntime implements JobPort {
             var st = mc.level.getBlockState(pos);
             if (!st.isAir()) host = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
         }
+        // 0.39.z62 item 1b (run S 04:57:22-30: the re-price after crafting at the new table faced the table, so the strip's
+        // heading - the facing - turned east, straight into it): the headings in the order tried - a tunnel of these ores at
+        // this Y already started (its saved progress: resume it), then the facing, then clockwise - less one whose start
+        // cells Baritone will not break (only read when the strip starts at the feet; deeper, the start is dug down to)
+        List<String> order = io.github.mojolowjo.entropybot.aa.brain.StripOrder.headingOrder(
+                StripStep.startedHeading(ores, y), p.getDirection().getName());
+        List<String> open = new ArrayList<>();
+        List<String> shut = new ArrayList<>();
+        for (String h : order) {
+            String why = y == me[1] ? startBlocked(mc.level, me, h) : null;
+            if (why == null) open.add(h);
+            else shut.add(h + " (" + why + ")");
+        }
+        if (open.isEmpty()) {
+            String said = "shut " + me[0] + "," + me[1] + "," + me[2];
+            if (stripAirSaid.add(said)) LOG.info("[entropybot] aa: strip at y {} for {}: every heading is blocked at its start here: {}", y, word, String.join(", ", shut));
+            return null;
+        }
+        if (!shut.isEmpty()) {
+            String said = "shut " + me[0] + "," + me[1] + "," + me[2] + " " + shut;
+            if (stripAirSaid.add(said)) LOG.info("[entropybot] aa: strip at y {} for {}: heading left out, blocked at its start: {}", y, word, String.join(", ", shut));
+        }
         return new io.github.mojolowjo.entropybot.aa.NeedChain.StripBand(ores, lo, hi, y,
-                io.github.mojolowjo.entropybot.aa.brain.OreBand.perSlab(fs, y), me[0], me[2], me[1], p.getDirection().getName(), host);
+                io.github.mojolowjo.entropybot.aa.brain.OreBand.perSlab(fs, y), me[0], me[2], me[1], open.get(0), host, open);
+    }
+
+    /**
+     * 0.39.z62 item 1b: why a strip from the feet {@code me} in heading {@code h} is blocked at its first cell (feet and head
+     * height): a block Baritone will not break (its own blocksToAvoidBreaking setting - a station by default) or one no tool
+     * breaks (destroy speed below 0); null: open (an unloaded cell is not known to be blocked: open, the strip says more).
+     * Loader notes: vanilla Level#getBlockState / BlockState#getDestroySpeed, Baritone's Settings.
+     */
+    private static String startBlocked(net.minecraft.world.level.Level lv, int[] me, String h) {
+        int[] d = io.github.mojolowjo.entropybot.aa.WayUp.dir(h);
+        if (d == null) return null;
+        var avoid = baritone.api.BaritoneAPI.getSettings().blocksToAvoidBreaking.value;
+        for (int dy = 0; dy <= 1; dy++) {            // structural: the feet and the head cell of the tunnel's first step
+            var q = new net.minecraft.core.BlockPos(me[0] + d[0], me[1] + dy, me[2] + d[1]);
+            if (!lv.isLoaded(q)) continue;
+            var st = lv.getBlockState(q);
+            String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
+            if (avoid.contains(st.getBlock())) return id.replaceFirst("^minecraft:", "") + " at " + q.getX() + " " + q.getY() + " " + q.getZ() + ", which Baritone will not break (blocksToAvoidBreaking)";
+            if (!st.isAir() && st.getDestroySpeed(lv, q) < 0) return id.replaceFirst("^minecraft:", "") + " at " + q.getX() + " " + q.getY() + " " + q.getZ() + " cannot be broken";
+        }
+        return null;
     }
 
     /**
@@ -1277,6 +1320,9 @@ public final class AaRuntime implements JobPort {
         if (!on()) return;
         lookApply();
         long t0 = System.nanoTime();
+        // 0.39.z62 item 4 (run S 04:57:07-12, D3a 3.1): the AA tick's sections while debug.loadProbe is on (one field read off)
+        var laps = io.github.mojolowjo.entropybot.aa.core.TickLaps.AA;
+        laps.begin(LoadProbe.active);
         try {
             Minecraft mc = Minecraft.getInstance();
             LocalPlayer p = mc.player;
@@ -1300,20 +1346,29 @@ public final class AaRuntime implements JobPort {
                 return;
             }
             worldFacts(mc);                 // live-facts: the loot book is read once per world when AA starts ticking in it
+            laps.lap("worldFacts");
             if (sensedTick < 0 || tick - sensedTick >= 10) {  // structural: periodic cadence in ticks (20 ticks = 1 s)
                 sensed = c.senses.sense();      // AA_CLEANUP 3: was BrainRuntime.sense()
                 sensedTick = tick;
             }
+            laps.lap("senses");
             escapeTick(p, mc);
+            laps.lap("escape");
             fill(bb.in, sensed, p, mc);
+            laps.lap("fill");
             runDead = false;
             if (runStartMs >= 0) runMarks.tick(now - runStartMs, bb.in.pickTier, bb.in.tableKnown || bb.in.tableInBag, bb.in.furnaceKnown || bb.in.furnaceInBag, bb.in.food);
             drainTick(now);
             conserveTick(now);
+            laps.lap("drain+conserve");
             progressTick(p);
+            laps.lap("progress");
             brainFacts(mc, now);
+            laps.lap("brainFacts");
             goalsTick(p, tick);
+            laps.lap("goals");
             caveTick(now);
+            laps.lap("cave");
             if (now < heldUntil) {
                 if (bb.in.otherJob == null) {
                     tracer.beginTick();
@@ -1329,11 +1384,16 @@ public final class AaRuntime implements JobPort {
                 return;
             }
             Status s = tree.tick(bb);
+            laps.lap("tree");
             swimTick(p, now);
+            laps.lap("swim");
             replanTick(p, now);
+            laps.lap("replan");
             pathLandedTick();
             runningWalkTick();
+            laps.lap("pathLanded+runningWalk");
             slow.tick(p, now);               // AA_STEP3 B: the ledger rows and the slow-mode hold
+            laps.lap("slow");
             // 0.36.2 (review 6): while danger drives, AA's chain starts no next step and no retry (the pause ended the
             // running one); held a little past AA's next tick, so it goes on by itself once the guard lets go
             if ("danger".equals(tree.driver()) && chainRunning()) c.chains.holdFor(10);
@@ -1343,10 +1403,27 @@ public final class AaRuntime implements JobPort {
             }
             if (s == Status.FAILURE && tracer.counts.ticks % 240 == 1) LOG.info("[entropybot] aa: nothing to do: {}", tree.root.reason());  // structural: periodic cadence in ticks (20 ticks = 1 s)
             snapshot(now, tree.driver());
+            laps.lap("snapshot");
         } catch (Throwable e) {
             tickFailed(e);
         } finally {
             tracer.counts.tickUs = (System.nanoTime() - t0) / 1000;  // structural: milliseconds per second
+            aaTickLine(tick);
+        }
+    }
+
+    /**
+     * 0.39.z62 item 4: the "probe aatick:" line for an AA tick over debug.aaTickMs while the load probe is on (TickLaps; an
+     * early return names only the sections it reached). Never throws into the tick.
+     */
+    private static void aaTickLine(long tick) {
+        var laps = io.github.mojolowjo.entropybot.aa.core.TickLaps.AA;
+        if (!laps.on()) return;
+        try {
+            String l = laps.line(tick, Tuning.get("debug.aaTickMs"));
+            if (l != null) LOG.info("[entropybot] probe aatick: {}", l);
+        } catch (RuntimeException e) {
+            io.github.mojolowjo.entropybot.Quiet.warn("AaRuntime.aaTickLine: the aatick line could not be written", e);
         }
     }
 
@@ -3277,6 +3354,7 @@ public final class AaRuntime implements JobPort {
         var g = io.github.mojolowjo.entropybot.aa.brain.Goals.add(bb, r, a.n(), a.prio(), now);
         tree.brain.failures.forget(g.id());           // orders-tier: aa want again clears a parked order and its old holds
         g.replans = 0;                                // 0.39.z30: and its re-plan count
+        g.sourceReplans = 0;                          // 0.39.z62 item 1: and its new-source re-plans
         LivePathPrice.INSTANCE.orderStarted();        // 0.39.z58: the fork's "not answered yet in this order" class starts again
         lootCtx();
         // one-planner: the order is priced by the one chain now; the line says the chain or the explore it starts

@@ -106,11 +106,35 @@ public final class NeedChain {
         public String key() { return CAVE_KEY + x + "," + y + "," + z; }
     }
 
-    public record StripBand(List<String> ores, int minY, int maxY, int y, double perSlab, int x, int z, int feetY, String heading, String host) {
-        public StripBand { ores = List.copyOf(ores); }
+    /**
+     * 0.39.z62 item 1b: {@code headings} - the headings the strip may take, in the order tried (the first is {@code heading});
+     * AaRuntime leaves out one whose start cells Baritone will not break (its blocksToAvoidBreaking, unbreakable blocks). A
+     * strip that ends with no new block in its heading holds that heading for the order ({@link #headingKey}); the next one
+     * in this list is the strip way then ({@link World#withoutSources}).
+     */
+    public record StripBand(List<String> ores, int minY, int maxY, int y, double perSlab, int x, int z, int feetY, String heading, String host,
+                            List<String> headings) {
+        public StripBand {
+            ores = List.copyOf(ores);
+            headings = headings == null || headings.isEmpty() ? List.of(heading) : List.copyOf(headings);
+        }
+        public StripBand(List<String> ores, int minY, int maxY, int y, double perSlab, int x, int z, int feetY, String heading, String host) {
+            this(ores, minY, maxY, y, perSlab, x, z, feetY, heading, host, null);
+        }
         /** The source key of this strip way, the same as its step's ({@link NeedChain#sourceKey(Step)}): a failed strip or no path to its Y drops it for the order. */
         public String key() { List<String> s = new ArrayList<>(ores); s.sort(null); return STRIP_KEY + String.join(",", s) + "|" + y + "|" + heading; }
+        /** The same strip way in heading {@code h} (its list unchanged). */
+        public StripBand toward(String h) { return new StripBand(ores, minY, maxY, y, perSlab, x, z, feetY, h, host, headings); }
     }
+
+    /**
+     * 0.39.z62 item 1b (run S 04:57:30-35: "strip east feet y 16: 0 blocks ... no path" three times, once per ore set - the
+     * new crafting table stood on the tunnel's first cell): a strip blocked in its heading is a fact about the HEADING at that
+     * Y, whatever the ores; held for the order under this key, every strip way at {@code y} tries its next heading.
+     */
+    public static final String STRIP_HEADING = "strip heading ";
+
+    public static String headingKey(int y, String heading) { return STRIP_HEADING + "y " + y + " " + heading; }
 
     /**
      * What the bot knows now. {@code bag}: item id -> count; {@code tableNear} / {@code furnaceNear}: one within reach;
@@ -228,7 +252,15 @@ public final class NeedChain {
             Function<String, StripBand> st = strip;
             Function<String, StripBand> stripLess = word -> {           // 0.39.z43: the same dropped band drops its strip way
                 StripBand r = st.apply(word);
-                return r != null && keyWhy.containsKey(r.key()) ? null : r;
+                if (r == null) return null;
+                // 0.39.z62 item 1b: a heading blocked at this Y is skipped for the next open one; the strip itself dropped
+                // (its key: lava, no path down to the band, a tunnel that ended short) drops the way as before
+                for (String hd : r.headings()) {
+                    if (keyWhy.containsKey(headingKey(r.y(), hd))) continue;
+                    StripBand t = r.toward(hd);
+                    return keyWhy.containsKey(t.key()) ? null : t;
+                }
+                return null;
             };
             Function<String, CaveWay> cv = cave;
             Function<String, CaveWay> caveLess = word -> {             // 0.39.z44: a mouth with no path is dropped for the order
@@ -1505,7 +1537,9 @@ public final class NeedChain {
      * is not a price ("walk: path not known yet (computing)", "walk: path not known (chunks not loaded)", "unreachable
      * (Baritone: ...)"), null with a price; {@code kind}: the provider's answer kind.
      */
-    record Walked(double seconds, String note, String fail, PathPrice.Kind kind) {}
+    record Walked(double seconds, String note, String fail, PathPrice.Kind kind, int pickBreaks) {
+        Walked(double seconds, String note, String fail, PathPrice.Kind kind) { this(seconds, note, fail, kind, 0); }
+    }
 
     /** 0.39.z41: the way's text for a walk that is not a price (aa why / aa debug). */
     static final String COMPUTING = PathPrice.NOT_KNOWN + " yet (computing)";
@@ -1536,7 +1570,7 @@ public final class NeedChain {
         return switch (a.kind()) {
             case PRICED -> a.walk() == null || !(a.walk().seconds() >= 0) || Double.isInfinite(a.walk().seconds())
                     ? new Walked(Double.NaN, "", PathPrice.NOT_KNOWN + " (an unusable answer: " + a.walk() + ")", PathPrice.Kind.NONE)
-                    : new Walked(a.walk().seconds(), "walk " + s(a.walk().seconds()) + " (path)" + lavaNote(a.walk()), null, PathPrice.Kind.PRICED);
+                    : new Walked(a.walk().seconds(), "walk " + s(a.walk().seconds()) + " (path)" + lavaNote(a.walk()), null, PathPrice.Kind.PRICED, a.walk().pickBreaks());
             case COMPUTING -> new Walked(Double.NaN, "", why.isEmpty() ? COMPUTING : PathPrice.NOT_KNOWN + " yet (computing; " + why + ")", a.kind());
             case CHUNKS -> new Walked(Double.NaN, "", PathPrice.NOT_KNOWN + " (" + (why.isEmpty() ? "chunks not loaded" : why) + ")", a.kind());
             case UNREACHABLE -> new Walked(Double.NaN, "", io.github.mojolowjo.entropybot.aa.moves.FactChange.unreachableText(why.isEmpty() ? "no path, the search ended" : why), a.kind());
@@ -1985,8 +2019,8 @@ public final class NeedChain {
      * way waits, the chain explores meanwhile as z42 does; no path: the band is dropped for the order, the z33 fact) - then
      * per ore block wanted the blocks dug per ore found ({@link io.github.mojolowjo.entropybot.aa.brain.OreBand#blocksPerOre})
      * x the host block's break with the pickaxe in hand, plus the ore's own breaks. The step's amount: the ore blocks for the
-     * lack (the loot data's drops per block). Not priced: the pickaxe's wear over the tunnel (the strip ends "no pickaxe
-     * left" and the order re-plans).
+     * lack (the loot data's drops per block). 0.39.z62 item 2: the pickaxe's wear over the walk's dug blocks, the tunnel and
+     * the ores is held against its uses; past them the spares are made up front ({@link #spareTools}).
      */
     private static String strip(Ctx c, String word, String gives, int lack, StripBand sb) {
         MiningTiers.Source src = MiningTiers.source();
@@ -2016,9 +2050,14 @@ public final class NeedChain {
         int dug = (int) Math.ceil(oreBlocks * bpo - 1e-9);   // structural: epsilon
         double hostS = blockBreakS(c, sb.host() != null ? sb.host() : ore), oreS = blockBreakS(c, ore);
         double digS = dug * hostS + oreBlocks * oreS;
+        // 0.39.z62 item 2 (run S 04:57:03: the stone pickaxe broke after the dug shaft from y 64 plus 46 strip blocks): the
+        // way's pickaxe wear - the walk's pickaxe blocks (Baritone's path) + the tunnel + the ores - against the pickaxe's
+        // uses; past them, the spare pickaxes are planned up front (spareTools)
+        int wear = wk.pickBreaks() + dug + oreBlocks;
+        String spare = spareTools(c, wear);
         c.seconds += wk.seconds() + digS;
         c.away = wk.seconds();
-        if (c.pickItem != null) c.pickWorn += dug + oreBlocks;
+        if (c.pickItem != null && spare == null) c.pickWorn += wear;
         Map<String, Integer> amounts = Map.of(io.github.mojolowjo.entropybot.aa.brain.StripOrder.countKey(ore, io.github.mojolowjo.entropybot.cave.OreSpec::family), oreBlocks);
         Step.Strip strip = new Step.Strip(sb.ores(), amounts, sb.y(), sb.heading(), 0);
         // 0.39.z46 (S58): the first leg is the priced path down to the band's peak (the walk the price above searched)
@@ -2029,7 +2068,55 @@ public final class NeedChain {
                 + " ore a chunk in " + io.github.mojolowjo.entropybot.aa.brain.OreBand.slab() + " layers) x " + oreBlocks + " ore = " + dug + " blocks"
                 + " (" + shw(sb.host() != null ? sb.host() : ore) + " " + s(hostS) + " each) -> " + s(wk.seconds() + digS);
         c.note(() -> "source: none known for " + shw(word) + ": " + line);
-        return noted(line + (pre == null ? "" : " with " + pre), wk);
+        return noted(line + (pre == null ? "" : " with " + pre) + (spare == null ? "" : " + " + spare), wk);
+    }
+
+    /**
+     * 0.39.z62 item 2 (rule 14 rough; run S: one stone pickaxe for the shaft from y 64 to 16 and the strip, broken after 46
+     * strip blocks, re-planned mid-strip): a way that breaks {@code wear} blocks with the chain's pickaxe ({@code c.pickItem})
+     * past its uses - a pickaxe made in this chain: its max damage (the item's MAX_DAMAGE data, {@link ItemWorth.Facts#durability});
+     * one in the bag: its uses left ({@link World#usesLeft}) - less what this chain already wore - gets the spare pickaxes of
+     * the same kind made up front, {@code ceil(over / fresh uses)}, priced by the same recursion (cobblestone is cheap: the
+     * scorer sees it). The spares wear out in the way: out of the simulated bag again, the last one's wear carried. Not
+     * counted: Unbreaking (its effect is the enchantment's item_damage data, evaluated by the game on the server level only;
+     * reading it by the enchantment's name would be a name list) - rough and on the safe side, rule 14. Unknown durability
+     * (rule 15) is said and nothing is added; no spare to be had (or only after an explore): the worn one is used, said.
+     * Returns the spares' phrase, null: none added.
+     */
+    private static String spareTools(Ctx c, int wear) {
+        if (c.pickItem == null || wear <= 0) return null;
+        String tool = c.pickItem;
+        int fresh = (int) Math.floor(ItemWorth.facts(tool).durability());
+        int uses;
+        if (c.pickMade) uses = fresh > 0 ? fresh : io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN;
+        else {
+            Integer u = c.w.usesLeft().apply(tool);
+            uses = u == null ? io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN : u;
+        }
+        if (uses == io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED) return null;
+        if (uses == io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN || fresh <= 0) {
+            c.note(() -> sh(tool) + ": durability unknown (no MAX_DAMAGE in its data): " + wear + " blocks to break, no spare planned");
+            return null;
+        }
+        int left = Math.max(0, uses - c.pickWorn);
+        if (wear <= left) return null;
+        int extra = (int) Math.ceil((wear - left) / (double) fresh - 1e-9);   // structural: epsilon
+        Ctx.Snap before = c.snap();
+        double s0 = c.seconds;
+        String p = obtain(c, tool, c.have(tool) + extra);
+        if (c.fail != null || c.stuck) {
+            String why = c.fail != null ? c.fail : "its materials are not known yet (an explore)";
+            c.restore(before);
+            c.note(() -> sh(tool) + ": " + left + " uses left, " + wear + " blocks to break; no spare to be had (" + why + "): the worn one is used");
+            return null;
+        }
+        c.bag.merge(tool, -extra, Integer::sum);            // they wear out in this way
+        c.pickMade = true;
+        c.pickWorn = (wear - left) - (extra - 1) * fresh;   // the last spare's wear
+        double add = c.seconds - s0;
+        final int n = extra;
+        c.note(() -> sh(tool) + ": " + left + " uses left, " + wear + " blocks to break (" + fresh + " a new one) -> " + n + " spare " + sh(tool) + " made first (+" + s(add) + ")");
+        return n + " spare " + sh(tool) + (p == null ? "" : " (<- " + p + ")");
     }
 
     /**

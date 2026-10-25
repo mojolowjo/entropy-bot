@@ -270,6 +270,7 @@ public final class Steps {
         this.uses = java.util.Collections.unmodifiableList(sized(uses, this.steps.size()));
         table = Reservations.NONE;
         lastDry = null;
+        dryHold = null;
         failedStep = null;
         this.now = tick;
         idx = -1;
@@ -313,7 +314,6 @@ public final class Steps {
             return;
         }
         Step s = steps.get(idx);
-        String r;
         FactChange.clear();
         lookNeeds(s);
         keepErr = null;
@@ -322,13 +322,40 @@ public final class Steps {
         List<StepNeeds> rest = needsFromHere();
         Reservations rs = reservationsFromHere(rest);
         pushReserve(rs);
-        String dryNote = null;
+        dryHold = null;
         DryRun.Shortage dry = dryRun(rest);
-        lastDry = dry == null ? null : dry.text();
-        if (dry != null) {
-            if (replanner != null) { failOrReplan(dry.text(), new FactChange.Fact(dry.key(), dry.text())); return; }
-            dryNote = "dry run: " + dry.text() + " (no order behind the run: not re-planned)";
+        // 0.39.z62 item 3a (z61 review: the client bag can lag a tick behind a pickup): a shortage of a LATER step is looked
+        // at again on the next tick before it re-plans the order; the step waits that tick (said in its line)
+        if (dry != null && replanner != null) {
+            dryHold = dry;
+            why = stage() + ": dry run short, looking again next tick before re-planning (the bag may lag a pickup): " + dry.text();
+            return;
         }
+        begin(s, rs, dry);
+    }
+
+    /**
+     * 0.39.z62 item 3a: a step held one tick on a dry-run shortage: the dry run again on the bag of now; still short, the bag
+     * fact re-plans the order; else the step starts.
+     */
+    private void dryAgain() {
+        dryHold = null;
+        List<StepNeeds> rest = needsFromHere();
+        Reservations rs = reservationsFromHere(rest);
+        pushReserve(rs);
+        DryRun.Shortage dry = dryRun(rest);
+        if (dry != null && replanner != null) { failOrReplan(dry.text() + " (looked again a tick later)", new FactChange.Fact(dry.key(), dry.text())); return; }
+        begin(steps.get(idx), rs, dry);
+    }
+
+    /** 0.39.z62 item 3a: the shortage the running step waits one tick on, null: none. */
+    private DryRun.Shortage dryHold;
+
+    /** The step's start after the dry run: the tool check, the hands' start, the start line. */
+    private void begin(Step s, Reservations rs, DryRun.Shortage dry) {
+        String r;
+        String dryNote = null;
+        if (dry != null) dryNote = "dry run: " + dry.text() + " (no order behind the run: not re-planned)";
         // 0.39.z34 (S39): the step's tool must be in the bag before it starts; missing, the bag fact re-plans the order
         String lack = toolLack(s);
         if (lack != null) { failOrReplan(lack); return; }
@@ -347,7 +374,11 @@ public final class Steps {
         }
     }
 
-    /** 0.39.z61: the dry run of the steps from here on the bag now; null: no shortage, or these hands list no bag. */
+    /**
+     * 0.39.z61: the dry run of the steps from here on the bag now; null: no shortage, or these hands list no bag. 0.39.z62
+     * item 3: the running step itself is left to its own checks (DryRun.look judgeFirst false); {@link #lastDry} holds the
+     * shortage or where the walk stopped / what it skipped (aa why).
+     */
     private DryRun.Shortage dryRun(List<StepNeeds> rest) {
         java.util.Map<String, Integer> items;
         try {
@@ -355,9 +386,12 @@ public final class Steps {
             items = bag == null ? null : bag.items();
         } catch (RuntimeException e) {
             keepErr = (keepErr == null ? "" : keepErr + "; ") + "the dry run could not read the bag: " + e;
+            lastDry = "not checked: the bag could not be read";
             return null;
         }
-        return items == null ? null : DryRun.check(steps, idx, rest, items);
+        DryRun.Outcome o = DryRun.look(steps, idx, rest, items, false);
+        lastDry = o.shortage() != null ? o.shortage().text() : o.note();
+        return o.shortage();
     }
 
     /** The step's declared needs and the tool the bag holds for it now (a failure to read them is said in the needs). */
@@ -601,6 +635,7 @@ public final class Steps {
         paused = false;
         if (phase != Phase.RUNNING) return;
         stepStart = now;
+        if (dryHold != null) return;             // 0.39.z62 item 3a: not started yet - the next tick looks again, then starts it
         String r;
         try {
             r = hands.start(steps.get(idx));
@@ -620,6 +655,7 @@ public final class Steps {
     public Phase tick(long tick) {
         now = tick;
         if (phase != Phase.RUNNING || paused) return phase;
+        if (dryHold != null) { dryAgain(); return phase; }     // 0.39.z62 item 3a: the held step's second look
         Step s = steps.get(idx);
         // 0.39.z58 (the first-answer wait): a landed answer re-prices the explore while paths compute BEFORE its status is read,
         // so a priced way ends it where it stands instead of its explore starting first and being cancelled a tick later

@@ -34,37 +34,76 @@ public final class DryRun {
      * {@code bag} (item id -> count, the bag now); null: none found (or {@code bag} null: nothing to check).
      */
     public static Shortage check(List<Step> steps, int from, List<StepNeeds> needs, Map<String, Integer> bag) {
-        if (bag == null || steps == null || needs == null) return null;
+        return look(steps, from, needs, bag, true).shortage();
+    }
+
+    /**
+     * 0.39.z62 item 3b (z61 review: "no shortage" read the same whether the walk checked every step or stopped at the first
+     * mine): the dry run's answer with where it stopped or what it skipped. {@code shortage}: the first one (null: none
+     * found); {@code note}: what was and was not checked, in aa why's words ("checked steps 3-5; stopped at step 6 (strip
+     * ...): its yield is not known, nothing after it checked; step 4 (craft ...) not checked: recipe guessed (...)").
+     */
+    public record Outcome(Shortage shortage, String note) {}
+
+    /**
+     * As {@link #check}, with the note. {@code judgeFirst} false (0.39.z62 item 3a, z61 review: a client bag a tick behind a
+     * pickup re-planned a healthy chain): the running step's own needs are not judged here - its tool and items are checked
+     * by its start (toolLack) and its end (StepNeeds.itemShort) - only taken off the copy as far as the bag holds them; the
+     * later steps are judged.
+     */
+    public static Outcome look(List<Step> steps, int from, List<StepNeeds> needs, Map<String, Integer> bag, boolean judgeFirst) {
+        if (bag == null) return new Outcome(null, "not checked: no bag in these hands");
+        if (steps == null || needs == null) return new Outcome(null, "not checked: no steps");
         Map<String, Integer> b = new LinkedHashMap<>();
         for (var e : bag.entrySet()) if (e.getValue() != null && e.getValue() > 0) b.merge(e.getKey(), e.getValue(), Integer::sum);
         int lastChange = -1;                     // the last step that changed the bag (-1: none, "now")
+        List<String> skipped = new ArrayList<>();
+        int last = from - 1;
         for (int k = 0; k < needs.size() && from + k < steps.size(); k++) {
             int i = from + k;
             Step s = steps.get(i);
             StepNeeds n = needs.get(k);
+            boolean judged = judgeFirst || k > 0;
             boolean changed = false;
-            if (n != null && n.guess() == null && n.countsUnknown() == null) {
+            if (n == null) skipped.add("step " + (i + 1) + " (" + s.text() + ") not checked: its needs could not be read");
+            else if (n.guess() != null) skipped.add("step " + (i + 1) + " (" + s.text() + ") not checked: " + n.guess());
+            else if (n.countsUnknown() != null) skipped.add("step " + (i + 1) + " (" + s.text() + ") not checked: counts not loaded (" + n.countsUnknown() + ")");
+            else {
                 Map<String, Integer> all = new LinkedHashMap<>(n.consumes());
                 n.tagUses().forEach((w, c) -> all.merge(w, c, Integer::sum));
                 for (var e : all.entrySet()) {
                     int have = count(b, e.getKey());
-                    if (have < e.getValue()) return shortage(i, s, e.getKey(), e.getValue(), have, lastChange);
-                    take(b, e.getKey(), e.getValue());
+                    if (have < e.getValue() && judged) return new Outcome(shortage(i, s, e.getKey(), e.getValue(), have, lastChange), null);
+                    take(b, e.getKey(), Math.min(have, e.getValue()));
                     changed = true;
                 }
                 if (n.fuelTicks() > 0 && !ItemWorth.fuels().isEmpty()) {
                     long burn = burn(b);
-                    if (burn < n.fuelTicks()) return shortage(i, s, Reservations.FUEL, n.fuelTicks(), (int) Math.min(Integer.MAX_VALUE, burn), lastChange);
-                    burnOff(b, n.fuelTicks(), laterWords(needs, k + 1));
+                    if (burn < n.fuelTicks() && judged) return new Outcome(shortage(i, s, Reservations.FUEL, n.fuelTicks(), (int) Math.min(Integer.MAX_VALUE, burn), lastChange), null);
+                    burnOff(b, (int) Math.min(n.fuelTicks(), burn), laterWords(needs, k + 1));
                     changed = true;
                 }
             }
             Map<String, Integer> made = produces(s);
-            if (made == null) return null;       // its yield is not known: nothing after it is checked
+            if (made == null) {                  // its yield is not known: nothing after it is checked
+                String stop = "stopped at step " + (i + 1) + " (" + s.text() + "): its yield is not known, nothing after it checked";
+                return new Outcome(null, noteOf(from, last, judgeFirst, stop, skipped));
+            }
             for (var e : made.entrySet()) if (e.getValue() > 0) { b.merge(e.getKey(), e.getValue(), Integer::sum); changed = true; }
             if (changed) lastChange = i;
+            last = i;
         }
-        return null;
+        return new Outcome(null, noteOf(from, last, judgeFirst, null, skipped));
+    }
+
+    private static String noteOf(int from, int last, boolean judgeFirst, String stop, List<String> skipped) {
+        int first = judgeFirst ? from : from + 1;
+        List<String> parts = new ArrayList<>();
+        parts.add(last < first ? "no later step checked" : "checked steps " + (first + 1) + (last > first ? "-" + (last + 1) : ""));
+        if (!judgeFirst) parts.add("step " + (from + 1) + " (running) left to its own checks");
+        if (stop != null) parts.add(stop);
+        parts.addAll(skipped);
+        return String.join("; ", parts);
     }
 
     private static Shortage shortage(int i, Step s, String word, int need, int have, int lastChange) {

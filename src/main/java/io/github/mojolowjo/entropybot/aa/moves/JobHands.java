@@ -46,6 +46,13 @@ public final class JobHands {
         default void startPlaceNear(String item, int radius, int timeoutTicks) { throw new UnsupportedOperationException("these hands cannot place near"); }
 
         /**
+         * 0.39.z62 item 1a: as above with a constraint: {@code keepClear} - cells a later step of the chain uses (a strip's
+         * first tunnel cells, a walk's first path cells), refused by the leg's cell check, so Baritone picks another cell.
+         * The mod still names no cell to place on. Hands without it ignore the constraint.
+         */
+        default void startPlaceNear(String item, int radius, int timeoutTicks, List<int[]> keepClear) { startPlaceNear(item, radius, timeoutTicks); }
+
+        /**
          * Use block {@code on} with whatever is in hand (a table, furnace, chest, bed): the fork's
          * {@code IInteractProcess.use} gets within reach, looks, clicks; DONE when a menu opened or the block changed,
          * FAILED with the fork's reason. Status / cancel then follow it.
@@ -219,6 +226,8 @@ public final class JobHands {
     private List<String> buildItems;
     private String nearItem;
     private int nearRadius;
+    /** 0.39.z62 item 1a: the cells the running place-near keeps free (empty: none). */
+    private List<int[]> nearKeep = List.of();
 
     /**
      * one-planner: place block item {@code item} near me within {@code radius} (the fork picks the cell, the stand and
@@ -226,6 +235,11 @@ public final class JobHands {
      * "cannot reach: ...").
      */
     public synchronized Result placeNear(String item, int radius, int timeoutTicks, String who) {
+        return placeNear(item, radius, timeoutTicks, who, List.of());
+    }
+
+    /** 0.39.z62 item 1a: as above, keeping {@code keepClear} free (a constraint for Baritone's pick, {@link Hand#startPlaceNear(String, int, int, List)}). */
+    public synchronized Result placeNear(String item, int radius, int timeoutTicks, String who, List<int[]> keepClear) {
         String ks = "place " + item + " near me";
         if (key != null && ks.equals(key)) return request(ks, List.of(), List.of(), timeoutTicks, who, null, "place", null);
         if (key != null && !finished) return new Result(State.RUNNING, "waiting: my hands are busy with " + key + (this.who.isEmpty() ? "" : " for " + this.who));
@@ -236,6 +250,7 @@ public final class JobHands {
         clicks = List.of();
         nearItem = item;
         nearRadius = radius;
+        nearKeep = keepClear == null ? List.of() : List.copyOf(keepClear);
         startedMs = clock.getAsLong();
         timeout = timeoutTicks;
         onDone = null;
@@ -296,7 +311,10 @@ public final class JobHands {
     private Result start() {
         try {
             if (useCell != null) hand.startUse(useCell);
-            else if (nearItem != null) hand.startPlaceNear(nearItem, nearRadius, timeout);
+            else if (nearItem != null) {
+                if (nearKeep.isEmpty()) hand.startPlaceNear(nearItem, nearRadius, timeout);
+                else hand.startPlaceNear(nearItem, nearRadius, timeout, nearKeep);
+            }
             else if (buildCells != null) hand.startBuild(buildCells, buildItems, timeout, buildReplace);
             else hand.start(dig, clicks, timeout);
         } catch (RuntimeException e) {
@@ -379,6 +397,7 @@ public final class JobHands {
         buildCells = null;
         buildItems = null;
         nearItem = null;
+        nearKeep = List.of();
         useCell = null;
     }
 
