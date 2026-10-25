@@ -951,5 +951,6 @@ cave.botLabelWeight	0.5
 cave.mergeM	8.0
 cave.slopeMin	1.0
 cave.depthMin	1.0
+cave.walkedHoldS	600.0
 replan.switchMarginS	10.0
 replan.unchangedHoldS	15.0

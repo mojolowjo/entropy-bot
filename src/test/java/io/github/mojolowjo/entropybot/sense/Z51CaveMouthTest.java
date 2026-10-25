@@ -56,8 +56,37 @@ class Z51CaveMouthTest {
         assertArrayEquals(new int[]{-120, 62, -184}, Sightings.cellOf(Sightings.cell(-120, 62, -184)), "negative cells round-trip");
         assertEquals(1, back.confirmedMouths(DIM, 0, 64, 0).size());
         assertTrue(back.walkedMouth(DIM, 33, 63, -61, 99));
-        assertTrue(back.confirmedMouths(DIM, 0, 64, 0).isEmpty(), "walked: the cave way and the step offer it no more");
+        assertTrue(back.confirmedMouths(DIM, 0, 64, 0, 100).isEmpty(), "walked with no ore: held (cave.walkedHoldS)");
         assertNotNull(back.mouthFact(DIM, 33, 63, -61), "the fact stays: no re-confirmation");
+    }
+
+    /**
+     * z53 review 3-4: a walked mouth that yielded ore stays offered while the order needs ore; one walked with 0 ore is held
+     * cave.walkedHoldS, then offered again; closed for good never; the walk facts survive the file.
+     */
+    @Test
+    void aWalkedMouthIsHeldOnlyWhenItGaveNoOre() {
+        long hold = Sightings.walkedHoldMs();
+        assertTrue(hold > 0);
+        Sightings sg = new Sightings();
+        sg.confirmMouth(DIM, 33, 63, -61, 1000, 33, 52, -61, pocket());
+        sg.confirmMouth(DIM, 200, 63, 200, 1000, 200, 52, 200, pocket());
+        sg.confirmMouth(DIM, -200, 63, -200, 1000, -200, 52, -200, pocket());
+        long t = 10_000;
+        assertTrue(sg.walkedMouth(DIM, 33, 63, -61, t, 3));
+        assertTrue(sg.walkedMouth(DIM, 200, 63, 200, t, 0));
+        assertTrue(sg.walkedMouth(DIM, -200, 63, -200, t, Sightings.MouthFact.CLOSED));
+        Sightings back = Sightings.fromJson(sg.toJson(), new int[]{0});
+        assertEquals(3, back.mouthFact(DIM, 33, 63, -61).oreOnWalk());
+        var now = back.confirmedMouths(DIM, 0, 64, 0, t + 1);
+        assertEquals(1, now.size(), "only the one that yielded ore: " + now);
+        assertEquals(33, now.get(0).x());
+        var later = back.confirmedMouths(DIM, 0, 64, 0, t + hold);
+        assertEquals(2, later.size(), "the 0-ore mouth is offered again after the hold: " + later);
+        assertTrue(later.stream().noneMatch(f -> f.x() == -200), "closed for good: never");
+        // a second walk of the ore mouth with 0 ore holds it too
+        assertTrue(back.walkedMouth(DIM, 33, 63, -61, t + hold, 0));
+        assertTrue(back.confirmedMouths(DIM, 0, 64, 0, t + hold + 1).stream().noneMatch(f -> f.x() == 33));
     }
 
     /** The pocket cells are the fill's own dark cells (the count the z50 verdict used). */

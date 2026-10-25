@@ -55,6 +55,8 @@ import java.util.function.ToDoubleFunction;
  * {@code AaRuntime.needWorld}).
  */
 public final class NeedChain {
+    /** z53: fuel classes whose wood was logged "not known" (once each). */
+    private static final java.util.Set<String> UNKNOWN_WOOD_SAID = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private NeedChain() {}
 
     /**
@@ -1290,6 +1292,11 @@ public final class NeedChain {
             double wd = Double.POSITIVE_INFINITY;
             for (String m : e.getValue()) {
                 double pm = io.github.mojolowjo.entropybot.craft.FuelWood.planks(m);
+                if (Double.isInfinite(pm)) {                     // z53 review 1 (rule 15): unknown wood is "not known", never free
+                    if (UNKNOWN_WOOD_SAID.add(cw))
+                        com.mojang.logging.LogUtils.getLogger().info("[aa] fuel {}: wood not known ({}: recipe cycle or depth cut); stands as a plain way", cw, m);
+                    wd = Double.POSITIVE_INFINITY; break;
+                }
                 if (pm <= 0) { wd = Double.POSITIVE_INFINITY; break; }
                 wd = Math.min(wd, count * pm);
             }
