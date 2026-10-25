@@ -158,8 +158,9 @@ class Z62RunSTest {
     // ---- item 2: the pickaxe's wear ----
 
     /**
-     * Run S: one stone pickaxe for 332 strip blocks + 3 ores. Hand numbers: wear 335, 131 uses left -> over 204, ceil(204 /
-     * 131) = 2 spare stone pickaxes made up front from the bag's cobblestone and sticks.
+     * Run S: one stone pickaxe for 332 strip cells + 3 ores. Hand numbers (z64 item 2: a cell is two blocks, feet and head):
+     * wear 2 x 332 + 3 = 667, 131 uses left -> over 536, ceil(536 / 131) = 5 spares, tools.maxSpares 3 holds: 3 spare stone
+     * pickaxes made up front from the bag's cobblestone and sticks.
      */
     @Test
     void theStripPlansSparePickaxesForItsWear() {
@@ -167,8 +168,8 @@ class Z62RunSTest {
         Map<String, Integer> bag = Map.of("minecraft:stone_pickaxe", 1, "minecraft:cobblestone", 20, "minecraft:stick", 10);
         Chain c = NeedChain.resolve("raw_iron", 3, world(bag, band("east")).withUses(id -> 131));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(2, crafted(c, "stone_pickaxe"), c.steps().toString());
-        assertTrue(c.why().contains("+ 2 spare stone_pickaxe"), c.why());
+        assertEquals(3, crafted(c, "stone_pickaxe"), c.steps().toString());
+        assertTrue(c.why().contains("+ 3 spare stone_pickaxe"), c.why());
         int craft = -1, st = -1;
         for (int i = 0; i < c.steps().size(); i++) {
             if (c.steps().get(i) instanceof Step.Craft k && k.item().equals("stone_pickaxe")) craft = i;
@@ -176,27 +177,28 @@ class Z62RunSTest {
         }
         assertTrue(craft >= 0 && craft < st, "the spares before the strip: " + c.steps());
         // enough uses: none; durability unknown (rule 15): none, said
-        assertEquals(0, crafted(NeedChain.resolve("raw_iron", 3, world(bag, band("east")).withUses(id -> 400)), "stone_pickaxe"));
+        assertEquals(0, crafted(NeedChain.resolve("raw_iron", 3, world(bag, band("east")).withUses(id -> 667)), "stone_pickaxe"));
+        assertEquals(1, crafted(NeedChain.resolve("raw_iron", 3, world(bag, band("east")).withUses(id -> 666)), "stone_pickaxe"), "one use short: one spare");
         assertEquals(0, crafted(NeedChain.resolve("raw_iron", 3, world(bag, band("east")).withUses(id -> ToolUses.UNKNOWN)), "stone_pickaxe"));
         assertEquals(0, crafted(NeedChain.resolve("raw_iron", 3, world(bag, band("east"))), "stone_pickaxe"), "no wear facts: unlimited");
     }
 
     /**
-     * z62 review 1 and 3: the bag's other pickaxes of the tier count before spares (3 stone pickaxes x 131 = 393 >= the 335
-     * blocks: none made; 1: 2 made, as above); the spare count is capped by tools.maxSpares.
+     * z62 review 1 and 3: the bag's other pickaxes of the tier count before spares (z64: wear 667; 6 stone pickaxes x 131 =
+     * 786 >= 667: none made; 5 x 131 = 655: one more); the spare count is capped by tools.maxSpares.
      */
     @Test
     void theBagsOtherPickaxesCountFirstAndTheSparesAreCapped() {
         ScenariosTest.world("wooden", "stone");
-        Map<String, Integer> three = Map.of("minecraft:stone_pickaxe", 3, "minecraft:cobblestone", 20, "minecraft:stick", 10);
-        Chain c = NeedChain.resolve("raw_iron", 3, world(three, band("east")).withUses(id -> 131));
+        Map<String, Integer> six = Map.of("minecraft:stone_pickaxe", 6, "minecraft:cobblestone", 20, "minecraft:stick", 10);
+        Chain c = NeedChain.resolve("raw_iron", 3, world(six, band("east")).withUses(id -> 131));
         assertTrue(c.ok(), c.why());
         assertEquals(0, crafted(c, "stone_pickaxe"), c.why());
-        Map<String, Integer> two = Map.of("minecraft:stone_pickaxe", 2, "minecraft:cobblestone", 20, "minecraft:stick", 10);
-        assertEquals(1, crafted(NeedChain.resolve("raw_iron", 3, world(two, band("east")).withUses(id -> 131)), "stone_pickaxe"), "262 of 335: one more");
+        Map<String, Integer> five = Map.of("minecraft:stone_pickaxe", 5, "minecraft:cobblestone", 20, "minecraft:stick", 10);
+        assertEquals(1, crafted(NeedChain.resolve("raw_iron", 3, world(five, band("east")).withUses(id -> 131)), "stone_pickaxe"), "655 of 667: one more");
         Map<String, Integer> one = Map.of("minecraft:stone_pickaxe", 1, "minecraft:cobblestone", 20, "minecraft:stick", 10);
         Tuning.set("tools.maxSpares", 1);
-        assertEquals(1, crafted(NeedChain.resolve("raw_iron", 3, world(one, band("east")).withUses(id -> 131)), "stone_pickaxe"), "2 needed, the cap holds at 1");
+        assertEquals(1, crafted(NeedChain.resolve("raw_iron", 3, world(one, band("east")).withUses(id -> 131)), "stone_pickaxe"), "5 needed, the cap holds at 1");
         Tuning.set("tools.maxSpares", 0);
         assertEquals(0, crafted(NeedChain.resolve("raw_iron", 3, world(one, band("east")).withUses(id -> 131)), "stone_pickaxe"));
     }
@@ -232,13 +234,13 @@ class Z62RunSTest {
         assertNull(StripOrder.startBlocked(feet, "west", head));
     }
 
-    /** The walk's pickaxe blocks count: 400 uses, 335 strip + 100 dug on the path = 435 -> 1 spare; the same walk with 0 breaks -> none. */
+    /** The walk's pickaxe blocks count: 700 uses, 667 strip (z64: 2 x 332 + 3) + 100 dug on the path = 767 -> 1 spare; the same walk with 0 breaks -> none. */
     @Test
     void theWalksDugBlocksWearThePickaxeToo() {
         ScenariosTest.world("wooden", "stone");
         Map<String, Integer> bag = Map.of("minecraft:stone_pickaxe", 1, "minecraft:cobblestone", 20, "minecraft:stick", 10);
         StripBand deep = new StripBand(IRON, -64, 384, 16, band("east").perSlab(), 0, 0, 64, "east", "minecraft:stone");
-        var w = ScenariosTest.w(bag, true, true, Map.of()).withStrip(word -> word.contains("raw_iron") || word.contains("iron_ore") ? deep : null).withUses(id -> 400);
+        var w = ScenariosTest.w(bag, true, true, Map.of()).withStrip(word -> word.contains("raw_iron") || word.contains("iron_ore") ? deep : null).withUses(id -> 700);
         Chain dug = NeedChain.resolve("raw_iron", 3, w.withPath((x, y, z, d) -> PathPrice.Answer.priced(new PathPrice.Walk(30, 0, 100))));
         assertEquals(1, crafted(dug, "stone_pickaxe"), dug.why());
         Chain open = NeedChain.resolve("raw_iron", 3, w.withPath((x, y, z, d) -> PathPrice.Answer.priced(new PathPrice.Walk(30, 0, 0))));

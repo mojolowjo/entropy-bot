@@ -2022,6 +2022,9 @@ public final class NeedChain {
      * lack (the loot data's drops per block). 0.39.z62 item 2: the pickaxe's wear over the walk's dug blocks, the tunnel and
      * the ores is held against its uses; past them the spares are made up front ({@link #spareTools}).
      */
+    /** structural: the strip tunnel is 1 wide and 2 high (feet and head), so a fresh cell is two blocks broken. */
+    static final int TUNNEL_HEIGHT = 2; // structural: StripProcess's tunnel cells are feet + head
+
     private static String strip(Ctx c, String word, String gives, int lack, StripBand sb) {
         MiningTiers.Source src = MiningTiers.source();
         if (src == null) { c.fail = "strip: the pickaxe tier of " + shw(sb.ores().get(0)) + " is not known (no mining data loaded yet)"; return null; }
@@ -2053,7 +2056,10 @@ public final class NeedChain {
         // 0.39.z62 item 2 (run S 04:57:03: the stone pickaxe broke after the dug shaft from y 64 plus 46 strip blocks): the
         // way's pickaxe wear - the walk's pickaxe blocks (Baritone's path) + the tunnel + the ores - against the pickaxe's
         // uses; past them, the spare pickaxes are planned up front (spareTools)
-        int wear = wk.pickBreaks() + dug + oreBlocks;
+        // 0.39.z64 item 2 (run U 06:08:07-06:10:19: a fresh stone pickaxe, 131 uses, broke after 67 strip cells; the chain's
+        // spares ran out at y 16 and the next one needed wood from the surface): each fresh tunnel cell is two blocks
+        // (the fork's GoalBlock digs the feet and the head cell), so the tunnel wears the pickaxe twice per cell dug
+        int wear = wk.pickBreaks() + TUNNEL_HEIGHT * dug + oreBlocks;
         String spare = spareTools(c, wear, tier);
         c.seconds += wk.seconds() + digS;
         c.away = wk.seconds();

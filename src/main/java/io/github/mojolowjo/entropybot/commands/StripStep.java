@@ -172,6 +172,7 @@ final class StripStep {
         lastSaved = from;
         startBlocks = from == null ? 0 : from.blocks();      // 0.39.z62 item 1b: what this start resumes from
         startStep = from == null ? 0 : from.step();
+        b.getStripProcess().probe(WalkProbe.on());          // 0.39.z64 item 1: the "probe strip:" lines (debug.walkProbe)
         b.getStripProcess().strip(new BlockOptionalMetaLookup(s.ores().toArray(String[]::new)), s.y(), d, of(from));
         if (!b.getStripProcess().isActive()) return "error: the strip did not start: " + b.getStripProcess().lastEnd();
         return null;
@@ -189,6 +190,7 @@ final class StripStep {
         IBaritone b = Jobs.baritone();
         if (b == null) return Car.Status.failed("baritone not loaded");
         var sp = b.getStripProcess();
+        probeLines(sp);
         StripOrder.Saved now = of(sp.progress());
         try {
             if (now != null && !now.equals(lastSaved)) {
@@ -224,6 +226,21 @@ final class StripStep {
             else io.github.mojolowjo.entropybot.aa.moves.FactChange.strip(s.key(), st.why());
         }
         return st;
+    }
+
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger("entropybot");
+
+    /**
+     * 0.39.z64 item 1 (run U: 251 strip cells at y 16, "0 clusters mined", no "strip: cluster at" line): the fork's probe
+     * lines, one "[entropybot] probe strip:" line per new tunnel cell (its solid faces, the ore-tagged ones and whether the
+     * strip's ore set matched them) while debug.walkProbe is on; the probe follows the switch while the strip runs.
+     */
+    private static void probeLines(IStripProcess sp) {
+        boolean on = WalkProbe.on();
+        sp.probe(on);
+        java.util.List<String> lines = sp.drainProbe();
+        if (!on) return;
+        for (String l : lines) LOG.info("[entropybot] probe strip: {}", l);
     }
 
     /**
