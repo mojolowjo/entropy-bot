@@ -43,6 +43,7 @@ public abstract class GuardMixinBlockItem {
     private void entropybot$placed(BlockPlaceContext context, CallbackInfoReturnable<InteractionResult> cir) {
         try {
             if (!context.getLevel().isClientSide()) return;
+            io.github.mojolowjo.entropybot.commands.StepSignalsLive.placed(cir.getReturnValue());     // 0.39.z71: the step monitor's placed count
             io.github.mojolowjo.entropybot.commands.WalkProbe.placed(cir.getReturnValue(), context.getClickedPos());
         } catch (Throwable caught) { Quiet.warn("GuardMixinBlockItem.placed failed (probe line only)", caught); }
     }

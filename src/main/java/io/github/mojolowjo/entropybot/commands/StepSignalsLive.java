@@ -1,0 +1,90 @@
+package io.github.mojolowjo.entropybot.commands;
+
+import baritone.api.IBaritone;
+import baritone.api.pathing.goals.Goal;
+import io.github.mojolowjo.entropybot.Core;
+import io.github.mojolowjo.entropybot.aa.moves.Step;
+import io.github.mojolowjo.entropybot.aa.moves.StepMonitor;
+import io.github.mojolowjo.entropybot.aa.moves.StepSignals;
+import io.github.mojolowjo.entropybot.gui.Gui;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+
+import java.util.Map;
+
+/**
+ * 0.39.z71 (design D2 3.2 / 4, Job B): the running step's {@link StepSignals} from the game, for the step monitor. Read
+ * only, client thread, one read per monitor look (monitor.everyTicks):
+ * <ul>
+ * <li>Baritone's API only: {@code IPathingBehavior.getGoal()} with {@code Goal.heuristic(x, y, z)} / {@code isInGoal},
+ *     {@code getCurrent()} (executing), {@code getInProgress()} (a search), and the CALC_FAILED count the existing
+ *     {@code BaritoneHook} path listener keeps;</li>
+ * <li>vanilla: the feet, the bag ({@code Gui.inventory}), {@code MultiPlayerGameMode#isDestroying / getDestroyStage} (as
+ *     AaRuntime's progress already reads them);</li>
+ * <li>the placed count from the existing {@code GuardMixinBlockItem} RETURN hook ({@link #placed}; no new mixin);</li>
+ * <li>the explore's new chunks from Mining.</li>
+ * </ul>
+ * Rule 15: no player, no Baritone, its event hook not wired yet (the CALC_FAILED count would be a quiet zero) or a reflex
+ * holding the bot: not loaded with why. Loader notes: Baritone API (IPathingBehavior, Goal); vanilla Minecraft.player,
+ * MultiPlayerGameMode; Fabric: the same calls under Yarn names, the mixin hook unchanged.
+ */
+public final class StepSignalsLive {
+    /** One per StepHands (the running step's made baseline). */
+    StepSignalsLive() {}
+
+    /** Blocks this client placed (BlockItem.place consumed the action), a running count. */
+    private static volatile long placed;
+
+    /** GuardMixinBlockItem at RETURN of BlockItem.place (client side): one more block placed. */
+    public static void placed(net.minecraft.world.InteractionResult r) {
+        if (r != null && r.consumesAction()) placed++;
+    }
+
+    public static long placedCount() { return placed; }
+
+    /** The output word and its bag count when the step started (made = the gain since), null word: none named. */
+    private String outWord;
+    private int outBase;
+    /** The step explores (Mining's chunk count is its signal; any other step: -1). */
+    private boolean explores;
+
+    /** StepHands: a step started; its output's bag count now (the made baseline). */
+    void begin(Step s, LocalPlayer p) {
+        explores = StepMonitor.kind(s) == StepMonitor.Kind.EXPLORE;
+        outWord = StepMonitor.output(s);
+        outBase = outWord == null || p == null ? 0 : count(Gui.inventory(p), outWord);
+        if (p == null) outWord = null;
+    }
+
+    /** The bag's count of {@code word}: an item id, or a tag / "a|b" word as its members summed. */
+    static int count(Map<String, Integer> bag, String word) {
+        String w = io.github.mojolowjo.entropybot.aa.NeedChain.word(word);
+        if (io.github.mojolowjo.entropybot.aa.NeedChain.plain(w)) return bag.getOrDefault(w, 0);
+        int n = 0;
+        for (String m : io.github.mojolowjo.entropybot.aa.NeedChain.membersOf(w)) n += bag.getOrDefault(m.indexOf(':') < 0 ? "minecraft:" + m : m, 0);
+        return n;
+    }
+
+    /**
+     * The signals now. {@code notLoaded}: the hands' own rule-15 wait (the station fact not loaded), null: none;
+     * {@code ownWait}: the step waits on its own clock (the furnace, the first-answer wait), null: none.
+     */
+    StepSignals read(String notLoaded, String ownWait) {
+        LocalPlayer p = Minecraft.getInstance().player;
+        if (p == null) return StepSignals.notLoaded("no player");
+        if (notLoaded != null) return StepSignals.notLoaded(notLoaded);
+        IBaritone b = Jobs.baritone();
+        if (b == null) return StepSignals.notLoaded("Baritone not loaded");
+        if (!Core.INSTANCE.baritone.hooked()) return StepSignals.notLoaded("Baritone's event hook is not wired yet (no CALC_FAILED count)");
+        if (Core.INSTANCE.reflexes.hold()) return StepSignals.notLoaded("a reflex holds the bot (its own watch)");
+        int[] f = Jobs.here(p);
+        Goal g = b.getPathingBehavior().getGoal();
+        double d = g == null ? Double.NaN : g.heuristic(f[0], f[1], f[2]);
+        boolean in = g != null && g.isInGoal(f[0], f[1], f[2]);
+        var gm = Minecraft.getInstance().gameMode;
+        int ds = gm != null && gm.isDestroying() ? gm.getDestroyStage() : -1;
+        int made = outWord == null ? -1 : Math.max(0, count(Gui.inventory(p), outWord) - outBase);
+        return new StepSignals(true, null, f, d, in, b.getPathingBehavior().getCurrent() != null, b.getPathingBehavior().getInProgress().isPresent(),
+                io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(), made, ds, placed, explores ? Mining.get().exploredChunks() : -1, ownWait);
+    }
+}

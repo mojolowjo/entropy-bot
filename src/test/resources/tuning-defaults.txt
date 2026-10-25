@@ -986,3 +986,7 @@ replan.unchangedHoldS	15.0
 replan.maxSourceDrops	8.0
 debug.aaTickMs	20.0
 tools.maxSpares	3.0
+monitor.everyTicks	20.0
+monitor.stallS	30.0
+monitor.noPathFails	3.0
+debug.monitorProbe	0.0

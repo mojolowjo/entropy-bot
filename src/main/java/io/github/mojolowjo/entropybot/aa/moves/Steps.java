@@ -18,6 +18,8 @@ import java.util.List;
  * the orders' reserves (release before repair, said in the re-plan line).
  * <p>0.39.z70 (design D2 3.1, Job A): steps are compared by {@link StepId}, never by their text; a failure parks the run only
  * when its {@link Attempt} equals the last failed one (the honest loop), and every switch logs its {@link PlanDiff}.
+ * 0.39.z71 (D2 3.2, Job B): while a step runs, {@link StepMonitor} looks at its {@link StepSignals} every monitor.everyTicks:
+ * a stall or "Baritone found no path" re-plans on a typed fact, a done fact seen while the hands still run completes it.
  * Loader notes: none (the fork's
  * {@code baritone.api.process.Reserves} is plain Java).
  */
@@ -80,6 +82,15 @@ public final class Steps {
 
         /** 0.39.z70: a decision line for the log (the re-plan's plan diff); these hands may drop it (tests). */
         default void log(String line) {}
+
+        /**
+         * 0.39.z71 (design D2 3.2): what the game shows about the running step now, for {@link StepMonitor}; null: these
+         * hands have no signals - the monitor is off for this run (fake hands, as before).
+         */
+        default StepSignals signals(Step s) { return null; }
+
+        /** 0.39.z71: a {@code probe monitor:} line (debug.monitorProbe 1); these hands may drop it. */
+        default void probe(String line) {}
     }
 
     /**
@@ -419,6 +430,7 @@ public final class Steps {
             return;
         }
         Step s = steps.get(idx);
+        monitorOn = false;                       // 0.39.z71: on again at the step's start (begin)
         FactChange.clear();
         lookNeeds(s);
         startFeet = feetNow();                   // 0.39.z70: the Attempt's start cell
@@ -477,6 +489,74 @@ public final class Steps {
             why = started(idx, steps) + (needs.none() ? "" : " " + needs.text()) + (replanFact == null ? "" : " (re-planned: " + replanFact + ")") + (keepErr == null ? "" : " (" + keepErr + ")")
                     + (rs.unknown() == null ? "" : " (reserves not loaded: " + rs.unknown() + ")") + (dryNote == null ? "" : " (" + dryNote + ")");
             replanFact = null;
+            startMonitor(s);
+        }
+    }
+
+    // ---- 0.39.z71 (design D2 3.2, Job B): the step monitor ----
+
+    private final StepMonitor monitor = new StepMonitor();
+    /** The monitor judges the running step (these hands give signals, the kind is not exempt). */
+    private boolean monitorOn;
+    private long lastLook;
+    private boolean notLoadedSaid;
+    private StepMonitor.Verdict lastVerdict;
+
+    /** The step started (or started again): the monitor's bests from its signals now; no signals: off for this step. */
+    private void startMonitor(Step s) {
+        StepSignals sig = signalsNow(s);
+        monitorOn = sig != null && StepMonitor.kind(s) != StepMonitor.Kind.EXEMPT;
+        monitor.begin(s, sig, now);
+        lastLook = now;
+        notLoadedSaid = false;
+        lastVerdict = null;
+    }
+
+    private StepSignals signalsNow(Step s) {
+        try {
+            return hands.signals(s);
+        } catch (RuntimeException e) {
+            return StepSignals.notLoaded("the signals could not be read: " + e);    // rule 15: said as not loaded, never a stall
+        }
+    }
+
+    /**
+     * One look of the monitor (every monitor.everyTicks while the step runs): CONTINUE - nothing (a not-loaded reason said
+     * once per step); COMPLETE - the hands are cancelled and the next step starts; REPLAN - the hands are cancelled and the
+     * typed fact goes to {@link #failOrReplan} (the honest-loop Attempt rule applies). Each REPLAN / COMPLETE is logged.
+     */
+    private void monitorLook(Step s) {
+        lastLook = now;
+        StepSignals sig = signalsNow(s);
+        if (sig == null) sig = StepSignals.notLoaded("these hands gave no signals this look");
+        StepMonitor.Look l = monitor.look(sig, now);
+        if (Tuning.get("debug.monitorProbe") >= 1 && (l.v() != lastVerdict || monitor.stalled() || !sig.loaded())) {
+            try {
+                hands.probe(monitor.probeLine(now, sig, l));
+            } catch (RuntimeException e) {
+                why = stage() + ": the monitor probe line could not be written: " + e;
+            }
+        }
+        lastVerdict = l.v();
+        switch (l.v()) {
+            case CONTINUE -> {
+                if (!sig.loaded() && !notLoadedSaid) {
+                    notLoadedSaid = true;
+                    hands.log(stage() + ": monitor: " + l.reason());
+                }
+            }
+            case COMPLETE -> {
+                hands.log(stage() + ": " + l.reason());
+                safeCancel(l.reason());
+                lastFailed = null;               // a step ended done (0.39.z70: progress was made)
+                lastStatus = l.reason();
+                next();
+            }
+            case REPLAN -> {
+                hands.log(stage() + ": monitor: " + l.reason());
+                safeCancel("monitor: " + l.reason());
+                failOrReplan(l.reason(), l.fact());
+            }
         }
     }
 
@@ -849,7 +929,10 @@ public final class Steps {
             ended("refused at its restart");     // 0.39.z56 item 2a
             fail("after the pause: " + r.replaceFirst("^error: ", ""));
         }
-        else why = stage() + " resumed";
+        else {
+            why = stage() + " resumed";
+            startMonitor(steps.get(idx));        // 0.39.z71: started again from here: its bests start again
+        }
     }
 
     public boolean paused() { return paused; }
@@ -896,7 +979,11 @@ public final class Steps {
                     String src = io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(s);
                     if (src != null) failOrReplan(reason, new FactChange.Fact("source " + src, out));
                     else fail(reason);
-                } else if (st.why() != null) why = stage() + ": " + st.why();
+                } else {
+                    if (st.why() != null) why = stage() + ": " + st.why();
+                    // 0.39.z71 (D2 3.2): the monitor's look once per monitor.everyTicks (it may end, complete or re-plan the step)
+                    if (monitorOn && now - lastLook >= StepMonitor.everyTicks()) monitorLook(s);
+                }
             }
         }
         return phase;

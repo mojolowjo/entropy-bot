@@ -1002,6 +1002,11 @@ final class TuningDefs {
         Tuning.def("strip.areaLookCells", 24, "0.39.z64 item 4", "how far along its heading (cells) a strip way looks at the areas its main tunnel would run through for their seen yield");
         Tuning.def("strip.areaMinFaces", 100, "0.39.z64 item 4", "the seen faces along a heading from which strips from fresh ground (strip.freshStartBlocks away) are offered as ways too, priced by Baritone's walk there and their own areas");
         Tuning.def("strip.freshStartBlocks", 48, "0.39.z64 item 4 (run U: the three headings stayed within ~26 blocks of the origin)", "the farthest (blocks, each heading) a strip from fresh ground may start from the origin; it starts at the nearest cell whose area square has no face seen at that Y (review 6: the offset follows the area facts)");
+        // 0.39.z71 (design D2 3.2 / 3.5, Job B): the step monitor
+        Tuning.def("monitor.everyTicks", 20, "0.39.z71 (D2 3.5: one look a second, 20 ticks = 1 s)", "ticks between two looks of the step monitor at the running step's signals (cheap compares only)");
+        Tuning.def("monitor.stallS", 30, "0.39.z71 (D2 3.5, a guess: run O 180 s silent, run P 36+ s churn; Brain's fast watch 40 s sits above it)", "seconds a judged step may go with no new best in any of its signals (goal, feet, made, break stage, placed, explored) before the monitor re-plans it on a typed fact");
+        Tuning.def("monitor.noPathFails", 3, "0.39.z71 (D2 3.5, a guess: run P 00:04:15-21 CALC_FAILED every ~5 s on one target)", "Baritone's failed path searches since the step's last new best, with nothing executing, before the monitor re-plans it ('Baritone found no path N times')");
+        Tuning.def("debug.monitorProbe", 0, "0.39.z71 (D2 3.6)", "1: one '[entropybot] probe monitor:' line per verdict change, per look while stalled and per look whose signals are not loaded (feet, step, verdict, goal and its best, made, break stage, placed, failed searches, executing, the reason); 0: off");
         Tuning.def("strip.areaMinFactor", 0.5, "0.39.z64 review 5 (a vein is several ore blocks together - 1.21 ore_iron_middle size 9 - so one vein in few faces is clumping, not a richer area)", "the lowest an area's seen yield may scale the band's blocks per ore: 0.5 = at most twice as rich as the band says, so one vein cannot make a strip look 30x richer");
     }
 }

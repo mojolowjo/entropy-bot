@@ -98,6 +98,41 @@ public final class StepHands implements Steps.Hands {
     /** 0.39.z70: the step machine's decision lines (the re-plan's plan diff) at info level. */
     @Override public void log(String line) { LOG.info("[entropybot] steps: {}", line); }
 
+    // ---- 0.39.z71 (design D2 3.2): the step monitor's signals ----
+
+    private final StepSignalsLive live = new StepSignalsLive();
+    /** When (System ms) the running step started: a furnace job it started is its own wait. */
+    private long stepStartMs;
+
+    /** The running step's signals now (StepSignalsLive); the hands' own waits said as such. */
+    @Override public io.github.mojolowjo.entropybot.aa.moves.StepSignals signals(Step s) {
+        if (s != step) return io.github.mojolowjo.entropybot.aa.moves.StepSignals.notLoaded("not the running step");
+        String nl = dataWait.waiting() ? "the station fact is not loaded yet (the step waits for it)" : null;
+        return live.read(nl, ownWait(s));
+    }
+
+    /**
+     * The step waits on a clock of its own (the monitor's stall window does not run meanwhile), its words; null: none. The
+     * explore's first-answer wait (bounded by pathCost.firstAnswerWaitS), the band walk's priced path still computing
+     * (bounded by steps.stepMaxS), a smelt / cook whose furnace job (started by this step) is cooking - the furnace job's
+     * own due time and its stall watch (furnaceJobs.stallMs). The game exposes no furnace progress to the client outside
+     * its open menu, so the furnace job's clock is the smelt's signal (D2 risk 8), never a guess.
+     */
+    private String ownWait(Step s) {
+        if (s instanceof Step.Explore && firstWait.waiting()) return "waiting in place while the first path answers compute (its own bound pathCost.firstAnswerWaitS)";
+        if (s instanceof Step.ToBand && !bandWalking && bandCell != null) return "the priced path to " + Jobs.fmt(bandCell) + " is not known yet (its own bound steps.stepMaxS)";
+        if (s instanceof Step.Smelt || s instanceof Step.Cook) {
+            long now = System.currentTimeMillis();
+            for (var j : c.crafting.furnaces().all())
+                if (!j.stalled && j.remaining() > 0 && j.startedAt >= stepStartMs && now < j.dueAt + io.github.mojolowjo.entropybot.craft.FurnaceJobs.slackMs())
+                    return io.github.mojolowjo.entropybot.craft.FurnaceJobs.waitStatus(j, now) + " (its own watch furnaceJobs.stallMs)";
+        }
+        return null;
+    }
+
+    /** 0.39.z71: the monitor's probe lines (debug.monitorProbe 1). */
+    @Override public void probe(String line) { LOG.info("[entropybot] probe monitor: {}", line); }
+
     /**
      * 0.39.z34 (S39): the step's needs from its own data ({@link io.github.mojolowjo.entropybot.aa.moves.StepNeeds#of}); a
      * mine at one ore cell asks the tier of the block that is there now (the game's needs_*_tool tags).
@@ -170,6 +205,8 @@ public final class StepHands implements Steps.Hands {
         StepProbe.begin(s);                      // 0.39.z56 item 1: every step kind (one field; the probe reads Tuning debug.stepProbe)
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null) return "error: not in a world";
+        live.begin(s, p);                        // 0.39.z71: the monitor's made baseline (before the step takes or makes anything)
+        stepStartMs = System.currentTimeMillis();
         // 0.39.z66 item 1 (run X 08:38:24, 08:40:39): AA's own put-back holding the slot is halted for every step kind - a
         // job step would answer "busy" and end the order's run, a Baritone step (collect, chop) would lose control to it
         String halt = c.haltRestoreFor(s.text());

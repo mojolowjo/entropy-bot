@@ -851,6 +851,8 @@ public final class Brain extends Node {
         boolean waiting = bb.task() != null && bb.task().spec() != null && bb.task().spec().kind() == io.github.mojolowjo.entropybot.aa.core.TaskKind.WAIT;     // a wait stands still on purpose
         boolean fast = !waiting && cur.stuckMs == stuckMs() && now - lastMoveAt >= fastStuckMs() && now - lastProgressAt >= fastStuckMs();
         if (!fast && now - lastProgressAt < cur.stuckMs) return Status.RUNNING;
+        // 0.39.z71 (D2 3.2): the step monitor (monitor.stallS) sits below this watch; it firing means the monitor said nothing
+        bb.port.log("brain: outer watch fired: the step monitor said nothing (" + cur.id + ", " + (now - lastProgressAt) / 1000 + " s" + (fast ? ", no move, no bag change" : "") + ")");  // structural: milliseconds per second
         // 0.39.z48 (run I 03:18:04): an owner order's stall is the z33 source fact of its running step ("stuck 40 s at
         // <step>"): the order re-plans without it instead of parking (as z46's 180 s watch); needs keep their halt below
         if (cur.kind == Desire.Kind.OWNER && bb.task() != null) {

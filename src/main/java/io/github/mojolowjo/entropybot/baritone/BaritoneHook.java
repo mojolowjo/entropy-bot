@@ -45,6 +45,15 @@ public final class BaritoneHook {
 
     public static long lines() { return lines; }
 
+    /**
+     * 0.39.z71 (design D2 3.2): Baritone's CALC_FAILED path events since the hook was wired (client thread; a running count -
+     * the step monitor counts those since a step's last new best). Read only with {@link #hooked()} true: before that the
+     * monitor says its signals are not loaded (an unwired hook is never a quiet zero).
+     */
+    private static volatile long calcFailed;
+
+    public static long calcFailed() { return calcFailed; }
+
     public boolean hooked() { return hooked; }
 
     public boolean engineRegistered() { return engineRegistered; }
@@ -86,6 +95,7 @@ public final class BaritoneHook {
                 @Override
                 public void onPathEvent(PathEvent event) {
                     try {
+                        if (event == PathEvent.CALC_FAILED) calcFailed++;                          // 0.39.z71 (D2 3.2): the step monitor's no-path count
                         io.github.mojolowjo.entropybot.commands.WalkProbe.event(event.name());     // 0.39.z54 B: every event while a walk step runs (probe on)
                         io.github.mojolowjo.entropybot.commands.StepProbe.event(event.name());     // 0.39.z56 item 1: any step (debug.stepProbe)
                         io.github.mojolowjo.entropybot.commands.LoadProbe.pathEvent(event.name()); // 0.39.z56 item 3: calcs counted (debug.loadProbe)

@@ -74,6 +74,15 @@ final class Mining {
     final Crafting crafting;
     /** The running jobs' state (one Seq each; gone with the Seq). */
     private final Map<Seq, Object> runs = new WeakHashMap<>();
+
+    /** 0.39.z71 (D2 3.2): the explore started last (its new chunks are the step monitor's explored signal). */
+    private volatile ExRun lastEx;
+
+    /** 0.39.z71: the new chunks of the explore started last, -1: none started this session. */
+    int exploredChunks() {
+        ExRun e = lastEx;
+        return e == null ? -1 : e.chunks;
+    }
     private List<String> oreIds;
 
     private Mining(Core core) {
@@ -806,6 +815,7 @@ final class Mining {
             return "error: " + MineRules.badPolicyText(e).replace("I won't mine", "I won't explore");
         }
         ExRun ex = new ExRun();
+        lastEx = ex;                             // 0.39.z71: the step monitor reads its chunks
         ex.until = now() + minutes * 1200L;
         ex.start = now();
         ex.dir = dir;

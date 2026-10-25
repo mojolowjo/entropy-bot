@@ -98,6 +98,8 @@ public final class RunJob extends Node {
         }
         if (now - lastProgressAt > running.noProgressMs()) {
             long s = (now - lastProgressAt) / 1000;  // structural: milliseconds per second
+            // 0.39.z71 (D2 3.2): with monitor.stallS below this watch it fires only when the step monitor is off or broken: said
+            bb.port.log("outer watch fired after " + s + " s in " + running.kind() + ": the step monitor said nothing");
             // 0.39.z46: an order's run re-plans on it (the step's target as the source fact) instead of parking
             JobPort.NoProgress np = bb.port.noProgress(taskId, "no progress " + s + " s");
             if (np == JobPort.NoProgress.REPLANNED) {
