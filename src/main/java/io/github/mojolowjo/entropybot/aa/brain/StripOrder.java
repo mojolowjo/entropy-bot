@@ -193,6 +193,10 @@ public final class StripOrder {
      * 0.39.z62 item 1b: the headings a planned strip tries, in order: {@code started} (a tunnel of the same ores at the same Y
      * already begun, from its saved progress; null: none) first, then {@code facing}, then the rest clockwise from the facing
      * (north, east, south, west). Each heading once; an unknown word is left out.
+     * <p>Rule 1 note (z62 review 4): this order is no price and no choice between ways - the chain prices every heading of a
+     * strip at the band equal (the same band facts, the same blocks per ore), so the order only breaks that tie: resume a
+     * started tunnel, else the facing. A heading the facts shut (its first cell refused, or blocked at its first cell in this
+     * order) is left out, never priced lower.
      */
     public static List<String> headingOrder(String started, String facing) {
         List<String> out = new ArrayList<>();
@@ -208,11 +212,45 @@ public final class StripOrder {
     /** The compass words clockwise (the turn order of {@link #headingOrder}). */
     private static final List<String> CLOCKWISE = List.of("north", "east", "south", "west");
 
+    /** The fork StripProcess's end reason when its search to the next tunnel cell failed (StripProcess: end("no path")). */
+    public static final String NO_PATH = "no path";
+
     /**
-     * 0.39.z62 item 1b: a strip that ended failed with no block dug since it started ({@code blocksNow} not past
-     * {@code blocksAtStart}, the saved progress it resumed from) was blocked at its start in its heading.
+     * 0.39.z62 review 2: the strip's heading is blocked at its FIRST cell - only when the fork ended {@link #NO_PATH} after it
+     * stood at the strip's Y ({@code started}: the fork's origin set; before that the "no path" is the way down, not the
+     * heading) and before it took a step or dug a block since this start ({@code stepNow}/{@code blocksNow} not past the
+     * saved progress it resumed from). Any other end with nothing dug - a broken pickaxe, lava or water ahead, a danger stop,
+     * lost control, a pause - is not a fact about the heading.
      */
-    public static boolean blockedAtStart(int blocksAtStart, int blocksNow) { return blocksNow <= blocksAtStart; }
+    public static boolean noPathAtFirstCell(String forkEnd, boolean started, int stepAtStart, int stepNow, int blocksAtStart, int blocksNow) {
+        return NO_PATH.equals(forkEnd) && started && stepNow <= stepAtStart && blocksNow <= blocksAtStart;
+    }
+
+    /**
+     * 0.39.z62 review 4: the heading of a saved strip of exactly {@code ores} at {@code y} among the progress file's keys
+     * (Step.Strip#key: the sorted ids, the Y, the heading), checked in {@link #HEADINGS} order; null: none.
+     */
+    public static String startedHeading(java.util.Set<String> savedKeys, List<String> ores, int y) {
+        if (savedKeys == null || ores == null) return null;
+        List<String> s = new ArrayList<>(ores);
+        s.sort(null);
+        String head = String.join(",", s) + "|" + y + "|";
+        for (String h : HEADINGS) if (savedKeys.contains(head + h)) return h;
+        return null;
+    }
+
+    /**
+     * 0.39.z62 item 1b / review 4: why a strip from {@code feet} in heading {@code h} is blocked at its first cell (feet and head
+     * height), from {@code cell}: a cell {x, y, z} -> why it will not be broken (null: it may be, or not loaded); null: open.
+     */
+    public static String startBlocked(int[] feet, String h, Function<int[], String> cell) {
+        int[] d = io.github.mojolowjo.entropybot.aa.WayUp.dir(h);
+        for (int dy = 0; dy <= 1; dy++) {            // structural: the feet and the head cell of the tunnel's first step
+            String why = cell.apply(new int[]{feet[0] + d[0], feet[1] + dy, feet[2] + d[1]});
+            if (why != null) return why;
+        }
+        return null;
+    }
 
     /** The fork's end text as the step's status: "done..." is DONE, anything else FAILED with that text (never silent). */
     public static Car.Status endOf(String forkEnd, String forkStatus) {

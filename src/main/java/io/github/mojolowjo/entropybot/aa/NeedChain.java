@@ -2054,7 +2054,7 @@ public final class NeedChain {
         // way's pickaxe wear - the walk's pickaxe blocks (Baritone's path) + the tunnel + the ores - against the pickaxe's
         // uses; past them, the spare pickaxes are planned up front (spareTools)
         int wear = wk.pickBreaks() + dug + oreBlocks;
-        String spare = spareTools(c, wear);
+        String spare = spareTools(c, wear, tier);
         c.seconds += wk.seconds() + digS;
         c.away = wk.seconds();
         if (c.pickItem != null && spare == null) c.pickWorn += wear;
@@ -2075,15 +2075,18 @@ public final class NeedChain {
      * 0.39.z62 item 2 (rule 14 rough; run S: one stone pickaxe for the shaft from y 64 to 16 and the strip, broken after 46
      * strip blocks, re-planned mid-strip): a way that breaks {@code wear} blocks with the chain's pickaxe ({@code c.pickItem})
      * past its uses - a pickaxe made in this chain: its max damage (the item's MAX_DAMAGE data, {@link ItemWorth.Facts#durability});
-     * one in the bag: its uses left ({@link World#usesLeft}) - less what this chain already wore - gets the spare pickaxes of
-     * the same kind made up front, {@code ceil(over / fresh uses)}, priced by the same recursion (cobblestone is cheap: the
-     * scorer sees it). The spares wear out in the way: out of the simulated bag again, the last one's wear carried. Not
+     * one in the bag: its uses left ({@link World#usesLeft}) - less what this chain already wore. z62 review 1: the bag's other
+     * pickaxes that dig {@code tier} count next (each stack's uses left; an unknown one is not counted, one that never wears
+     * ends the check); only what is still over gets spare pickaxes of the same kind made up front, {@code ceil(over / fresh
+     * uses)}, at most {@code tools.maxSpares} (review 3: past it, said; the rest is re-planned when a pickaxe breaks), priced
+     * by the same recursion (cobblestone is cheap: the scorer sees it). The made spares wear out in the way: out of the
+     * simulated bag again, the last one's wear carried. Not
      * counted: Unbreaking (its effect is the enchantment's item_damage data, evaluated by the game on the server level only;
      * reading it by the enchantment's name would be a name list) - rough and on the safe side, rule 14. Unknown durability
      * (rule 15) is said and nothing is added; no spare to be had (or only after an explore): the worn one is used, said.
      * Returns the spares' phrase, null: none added.
      */
-    private static String spareTools(Ctx c, int wear) {
+    private static String spareTools(Ctx c, int wear, int tier) {
         if (c.pickItem == null || wear <= 0) return null;
         String tool = c.pickItem;
         int fresh = (int) Math.floor(ItemWorth.facts(tool).durability());
@@ -2100,7 +2103,28 @@ public final class NeedChain {
         }
         int left = Math.max(0, uses - c.pickWorn);
         if (wear <= left) return null;
-        int extra = (int) Math.ceil((wear - left) / (double) fresh - 1e-9);   // structural: epsilon
+        // z62 review 1: the bag's other pickaxes that dig this tier count first (their uses left; the one in hand excluded)
+        int others = 0, otherCount = 0;
+        for (var e : c.bag.entrySet()) {
+            int k = e.getValue() - (e.getKey().equals(tool) ? 1 : 0);
+            if (k <= 0 || MiningTiers.toolTier(e.getKey(), "pickaxe") < tier) continue;
+            Integer u = c.w.usesLeft().apply(e.getKey());
+            int each = u == null ? io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN : u;
+            if (each == io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED) return null;     // one never wears out
+            if (each == io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN) continue;          // not counted (rule 15): said below
+            others += k * each;
+            otherCount += k;
+        }
+        final int bagUses = others, bagCount = otherCount;
+        if (wear <= left + others) {
+            c.note(() -> sh(tool) + ": " + left + " uses left, " + wear + " blocks to break; the bag's " + bagCount + " other pickaxe(s) (" + bagUses + " uses) cover it: no spare made");
+            return null;
+        }
+        int need = (int) Math.ceil((wear - left - others) / (double) fresh - 1e-9);   // structural: epsilon
+        int cap = Math.max(0, Tuning.i("tools.maxSpares"));
+        int extra = Math.min(need, cap);
+        if (extra < need) c.note(() -> sh(tool) + ": " + need + " spares would cover " + wear + " blocks; tools.maxSpares " + cap + " holds: " + cap + " made, the rest re-planned when a pickaxe breaks");
+        if (extra <= 0) return null;
         Ctx.Snap before = c.snap();
         double s0 = c.seconds;
         String p = obtain(c, tool, c.have(tool) + extra);
@@ -2112,10 +2136,10 @@ public final class NeedChain {
         }
         c.bag.merge(tool, -extra, Integer::sum);            // they wear out in this way
         c.pickMade = true;
-        c.pickWorn = (wear - left) - (extra - 1) * fresh;   // the last spare's wear
+        c.pickWorn = Math.max(0, Math.min(fresh, (wear - left - others) - (extra - 1) * fresh));   // the last spare's wear (rough)
         double add = c.seconds - s0;
         final int n = extra;
-        c.note(() -> sh(tool) + ": " + left + " uses left, " + wear + " blocks to break (" + fresh + " a new one) -> " + n + " spare " + sh(tool) + " made first (+" + s(add) + ")");
+        c.note(() -> sh(tool) + ": " + left + " uses left, " + wear + " blocks to break, the bag's other pickaxes " + bagUses + " uses (" + fresh + " a new one) -> " + n + " spare " + sh(tool) + " made first (+" + s(add) + ")");
         return n + " spare " + sh(tool) + (p == null ? "" : " (<- " + p + ")");
     }
 

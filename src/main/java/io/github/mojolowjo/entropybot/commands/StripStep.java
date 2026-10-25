@@ -126,11 +126,7 @@ final class StripStep {
             Quiet.warn("StripStep.startedHeading: strip-progress.json not read (no tunnel to resume known)", e);
             return null;
         }
-        List<String> s = new java.util.ArrayList<>(ores);
-        s.sort(null);
-        String head = String.join(",", s) + "|" + y + "|";
-        for (String h : StripOrder.HEADINGS) if (keys.contains(head + h)) return h;
-        return null;
+        return StripOrder.startedHeading(keys, ores, y);
     }
 
     private static void save(Step.Strip s, StripOrder.Saved p) {
@@ -158,6 +154,8 @@ final class StripStep {
     private static StripOrder.Saved lastSaved;
     /** 0.39.z62 item 1b: the blocks the running strip's saved progress held when it started (0: a new tunnel). */
     private static int startBlocks;
+    /** 0.39.z62 review 2: the step index the running strip's saved progress held when it started (0: a new tunnel). */
+    private static int startStep;
 
     /** Starts the fork's strip, resumed from this order's saved progress; null = started, else "error: ...". */
     static String start(Step.Strip s) {
@@ -173,6 +171,7 @@ final class StripStep {
         }
         lastSaved = from;
         startBlocks = from == null ? 0 : from.blocks();      // 0.39.z62 item 1b: what this start resumes from
+        startStep = from == null ? 0 : from.step();
         b.getStripProcess().strip(new BlockOptionalMetaLookup(s.ores().toArray(String[]::new)), s.y(), d, of(from));
         if (!b.getStripProcess().isActive()) return "error: the strip did not start: " + b.getStripProcess().lastEnd();
         return null;
@@ -218,7 +217,10 @@ final class StripStep {
         if (st.state() == Car.State.FAILED) {
             // 0.39.z62 item 1b (run S 04:57:30: "strip east feet y 16: 0 blocks ... no path", the new table on the tunnel's
             // first cell): no new block since this start = the heading is blocked here, a fact for that heading at that Y
-            if (StripOrder.blockedAtStart(startBlocks, now == null ? 0 : now.blocks())) io.github.mojolowjo.entropybot.aa.moves.FactChange.stripBlocked(s.y(), s.heading(), st.why());
+            // z62 review 2: only the fork's "no path" at the first cell after it stood at the strip's Y - a broken pickaxe, lava,
+            // a danger stop or no path down never burns the heading
+            if (StripOrder.noPathAtFirstCell(sp.lastEnd(), now != null && now.started(), startStep, now == null ? 0 : now.step(),
+                    startBlocks, now == null ? 0 : now.blocks())) io.github.mojolowjo.entropybot.aa.moves.FactChange.stripBlocked(s.y(), s.heading(), st.why());
             else io.github.mojolowjo.entropybot.aa.moves.FactChange.strip(s.key(), st.why());
         }
         return st;

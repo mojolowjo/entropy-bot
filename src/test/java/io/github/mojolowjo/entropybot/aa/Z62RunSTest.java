@@ -70,9 +70,6 @@ class Z62RunSTest {
         assertEquals(List.of("east", "south", "west", "north"), StripOrder.headingOrder(null, "east"));
         assertEquals(List.of("south", "east", "west", "north"), StripOrder.headingOrder("south", "east"), "run S: the south tunnel (30 blocks) is resumed");
         assertEquals(List.of("north", "east", "south", "west"), StripOrder.headingOrder(null, "up"), "no compass facing: clockwise from north");
-        assertTrue(StripOrder.blockedAtStart(0, 0), "a new tunnel with 0 blocks");
-        assertTrue(StripOrder.blockedAtStart(30, 30), "a resumed tunnel that dug nothing more");
-        assertFalse(StripOrder.blockedAtStart(30, 31));
     }
 
     /** Run S 04:57:30-35: "strip east ... 0 blocks ... no path" for three ore sets; one fact for the heading, any ore set. */
@@ -182,6 +179,57 @@ class Z62RunSTest {
         assertEquals(0, crafted(NeedChain.resolve("raw_iron", 3, world(bag, band("east")).withUses(id -> 400)), "stone_pickaxe"));
         assertEquals(0, crafted(NeedChain.resolve("raw_iron", 3, world(bag, band("east")).withUses(id -> ToolUses.UNKNOWN)), "stone_pickaxe"));
         assertEquals(0, crafted(NeedChain.resolve("raw_iron", 3, world(bag, band("east"))), "stone_pickaxe"), "no wear facts: unlimited");
+    }
+
+    /**
+     * z62 review 1 and 3: the bag's other pickaxes of the tier count before spares (3 stone pickaxes x 131 = 393 >= the 335
+     * blocks: none made; 1: 2 made, as above); the spare count is capped by tools.maxSpares.
+     */
+    @Test
+    void theBagsOtherPickaxesCountFirstAndTheSparesAreCapped() {
+        ScenariosTest.world("wooden", "stone");
+        Map<String, Integer> three = Map.of("minecraft:stone_pickaxe", 3, "minecraft:cobblestone", 20, "minecraft:stick", 10);
+        Chain c = NeedChain.resolve("raw_iron", 3, world(three, band("east")).withUses(id -> 131));
+        assertTrue(c.ok(), c.why());
+        assertEquals(0, crafted(c, "stone_pickaxe"), c.why());
+        Map<String, Integer> two = Map.of("minecraft:stone_pickaxe", 2, "minecraft:cobblestone", 20, "minecraft:stick", 10);
+        assertEquals(1, crafted(NeedChain.resolve("raw_iron", 3, world(two, band("east")).withUses(id -> 131)), "stone_pickaxe"), "262 of 335: one more");
+        Map<String, Integer> one = Map.of("minecraft:stone_pickaxe", 1, "minecraft:cobblestone", 20, "minecraft:stick", 10);
+        Tuning.set("tools.maxSpares", 1);
+        assertEquals(1, crafted(NeedChain.resolve("raw_iron", 3, world(one, band("east")).withUses(id -> 131)), "stone_pickaxe"), "2 needed, the cap holds at 1");
+        Tuning.set("tools.maxSpares", 0);
+        assertEquals(0, crafted(NeedChain.resolve("raw_iron", 3, world(one, band("east")).withUses(id -> 131)), "stone_pickaxe"));
+    }
+
+    /** z62 review 2: only "no path" at the first cell, after the fork stood at the strip's Y, burns the heading. */
+    @Test
+    void onlyANoPathAtTheFirstCellBlocksTheHeading() {
+        assertTrue(StripOrder.noPathAtFirstCell("no path", true, 0, 0, 0, 0), "run S 04:57:30");
+        assertTrue(StripOrder.noPathAtFirstCell("no path", true, 12, 12, 30, 30), "a resumed tunnel stuck at its next cell");
+        assertFalse(StripOrder.noPathAtFirstCell("no pickaxe left", true, 0, 0, 0, 0), "the pickaxe broke");
+        assertFalse(StripOrder.noPathAtFirstCell("lava ahead", true, 0, 0, 0, 0));
+        assertFalse(StripOrder.noPathAtFirstCell("stopped", true, 0, 0, 0, 0), "a danger stop or a pause");
+        assertFalse(StripOrder.noPathAtFirstCell("no path", false, 0, 0, 0, 0), "no path DOWN to the strip's Y");
+        assertFalse(StripOrder.noPathAtFirstCell("no path", true, 0, 3, 0, 2), "it got past the first cell");
+        assertFalse(StripOrder.noPathAtFirstCell("no path", true, 4, 6, 3, 3), "a branch's return steps (no fresh block) moved on");
+    }
+
+    /** z62 review 4: the started tunnel's heading from the progress keys, and a heading shut at its first cell. */
+    @Test
+    void theStartedHeadingAndTheBlockedStartAreReadFromFacts() {
+        java.util.Set<String> keys = java.util.Set.of("minecraft:deepslate_iron_ore,minecraft:iron_ore|16|south",
+                "minecraft:deepslate_iron_ore,minecraft:iron_ore|16|south|deposits", "minecraft:coal_ore|40|west");
+        assertEquals("south", StripOrder.startedHeading(keys, List.of("minecraft:iron_ore", "minecraft:deepslate_iron_ore"), 16), "the ores in any order");
+        assertNull(StripOrder.startedHeading(keys, IRON, 12), "another Y");
+        assertNull(StripOrder.startedHeading(keys, List.of("minecraft:iron_ore"), 16), "another ore set");
+        assertNull(StripOrder.startedHeading(null, IRON, 16));
+        int[] feet = {-220, 16, 33};
+        java.util.function.Function<int[], String> table = c -> c[0] == -219 && c[1] == 16 && c[2] == 33 ? "crafting_table at -219 16 33, which Baritone will not break" : null;
+        assertEquals("crafting_table at -219 16 33, which Baritone will not break", StripOrder.startBlocked(feet, "east", table), "run S's table");
+        assertNull(StripOrder.startBlocked(feet, "south", table));
+        java.util.function.Function<int[], String> head = c -> c[1] == 17 && c[0] == -220 && c[2] == 32 ? "bedrock" : null;
+        assertEquals("bedrock", StripOrder.startBlocked(feet, "north", head), "the head cell counts");
+        assertNull(StripOrder.startBlocked(feet, "west", head));
     }
 
     /** The walk's pickaxe blocks count: 400 uses, 335 strip + 100 dug on the path = 435 -> 1 spare; the same walk with 0 breaks -> none. */

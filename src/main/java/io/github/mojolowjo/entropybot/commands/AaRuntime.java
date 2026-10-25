@@ -693,18 +693,16 @@ public final class AaRuntime implements JobPort {
      * Loader notes: vanilla Level#getBlockState / BlockState#getDestroySpeed, Baritone's Settings.
      */
     private static String startBlocked(net.minecraft.world.level.Level lv, int[] me, String h) {
-        int[] d = io.github.mojolowjo.entropybot.aa.WayUp.dir(h);
-        if (d == null) return null;
         var avoid = baritone.api.BaritoneAPI.getSettings().blocksToAvoidBreaking.value;
-        for (int dy = 0; dy <= 1; dy++) {            // structural: the feet and the head cell of the tunnel's first step
-            var q = new net.minecraft.core.BlockPos(me[0] + d[0], me[1] + dy, me[2] + d[1]);
-            if (!lv.isLoaded(q)) continue;
+        return io.github.mojolowjo.entropybot.aa.brain.StripOrder.startBlocked(me, h, c -> {      // z62 review 4: the pure walk, tested
+            var q = new net.minecraft.core.BlockPos(c[0], c[1], c[2]);
+            if (!lv.isLoaded(q)) return null;
             var st = lv.getBlockState(q);
-            String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
-            if (avoid.contains(st.getBlock())) return id.replaceFirst("^minecraft:", "") + " at " + q.getX() + " " + q.getY() + " " + q.getZ() + ", which Baritone will not break (blocksToAvoidBreaking)";
-            if (!st.isAir() && st.getDestroySpeed(lv, q) < 0) return id.replaceFirst("^minecraft:", "") + " at " + q.getX() + " " + q.getY() + " " + q.getZ() + " cannot be broken";
-        }
-        return null;
+            String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString().replaceFirst("^minecraft:", "");
+            if (avoid.contains(st.getBlock())) return id + " at " + c[0] + " " + c[1] + " " + c[2] + ", which Baritone will not break (blocksToAvoidBreaking)";
+            if (!st.isAir() && st.getDestroySpeed(lv, q) < 0) return id + " at " + c[0] + " " + c[1] + " " + c[2] + " cannot be broken";
+            return null;
+        });
     }
 
     /**

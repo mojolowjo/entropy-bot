@@ -975,3 +975,4 @@ replan.switchMarginS	10.0
 replan.unchangedHoldS	15.0
 replan.maxSourceDrops	8.0
 debug.aaTickMs	20.0
+tools.maxSpares	3.0
