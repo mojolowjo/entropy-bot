@@ -124,7 +124,9 @@ public final class StepMonitor {
     private int[] startFeet;
     private double bestGoal = Double.NaN, bestFar;
     private long bestGoalAt = -1, bestFarAt = -1, bestMadeAt = -1, stageAt = -1, placedAt = -1, chunksAt = -1;
-    private int bestMade = -1, lastStage = -1, bestChunks = -1;
+    private int bestMade = -1, bestChunks = -1;
+    /** 0.39.z71 review 1: the best break stage per block cell this step broke at (a restart of one block is no progress). */
+    private final java.util.Map<String, Integer> stageBest = new java.util.HashMap<>();
     private long bestPlaced;
 
     /** A step started (or started again after a pause): its bests from {@code sig} (null or not loaded: on the first loaded look). */
@@ -148,7 +150,8 @@ public final class StepMonitor {
         bestFarAt = -1;
         bestMade = sig.made();
         bestMadeAt = -1;
-        lastStage = sig.destroyStage();
+        stageBest.clear();
+        stage(sig);
         stageAt = -1;
         bestPlaced = sig.placedCount();
         placedAt = -1;
@@ -188,7 +191,7 @@ public final class StepMonitor {
         double g = sig.goalDist();
         if (!Double.isNaN(g)) {
             if (Double.isNaN(bestGoal)) { bestGoal = g; bestGoalAt = now; }        // a goal appeared: its first value is the start
-            else if (g <= bestGoal - 1) {
+            else if (g <= bestGoal - 1) {                                       // structural: one block nearer
                 moved.add("the goal " + num(bestGoal - g) + " nearer, best " + num(g));
                 bestGoal = g;
                 bestGoalAt = now;
@@ -197,7 +200,7 @@ public final class StepMonitor {
         if (sig.feet() != null && startFeet == null) startFeet = sig.feet();
         else if (sig.feet() != null) {
             double far = horizontal(sig.feet(), startFeet);
-            if (far >= bestFar + 1) {
+            if (far >= bestFar + 1) {                                           // structural: one block farther
                 moved.add("feet " + num(far) + " from the start");
                 bestFar = far;
                 bestFarAt = now;
@@ -208,11 +211,10 @@ public final class StepMonitor {
             bestMade = sig.made();
             bestMadeAt = now;
         }
-        if (sig.destroyStage() >= 0 && sig.destroyStage() > lastStage) {
-            moved.add("breaking a block (stage " + sig.destroyStage() + ")");
+        if (stage(sig)) {
+            moved.add("breaking a block (stage " + sig.destroyStage() + (sig.breakingCell() == null ? "" : " at " + sig.breakingCell()) + ")");
             stageAt = now;
         }
-        lastStage = sig.destroyStage();
         if (sig.placedCount() > bestPlaced) {
             moved.add("placed " + (sig.placedCount() - bestPlaced));
             bestPlaced = sig.placedCount();
@@ -240,6 +242,21 @@ public final class StepMonitor {
         if (quiet >= stallTicks()) return replan("no progress " + quiet / 20 + " s: " + bests(sig));     // game fact: 20 ticks a second
         stalled = moved.isEmpty();
         return cont(moved.isEmpty() ? "no new best for " + quiet / 20 + " s" : String.join(", ", moved));     // game fact: 20 ticks a second
+    }
+
+    /**
+     * 0.39.z71 review 1: the break stage is a new best for its block - above the best stage seen on that cell in this step (a
+     * new cell starts at none). A dig that aborts and restarts the same block (-1, 0, 1, -1, 0 ...) is no progress; a tunnel
+     * (a new cell per block) is. No cell known: one cell "unknown" (rule 15: never a reset). True: a new best.
+     */
+    private boolean stage(StepSignals sig) {
+        int st = sig.destroyStage();
+        if (st < 0) return false;
+        String cell = sig.breakingCell() == null ? "unknown" : sig.breakingCell();
+        Integer best = stageBest.get(cell);
+        if (best != null && st <= best) return false;
+        stageBest.put(cell, st);
+        return true;
     }
 
     /** Each signal with its best and when (seconds from the step's start): the stall's reason. */

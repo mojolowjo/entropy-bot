@@ -34,7 +34,12 @@ class Z71StepMonitorTest {
 
     /** Signals: goal, feet, executing, failed searches, made, break stage, placed, explored, own wait. */
     static StepSignals sig(double goal, int[] feet, boolean exec, long calcFailed, int made, int stage, long placed, int chunks, String wait) {
-        return new StepSignals(true, null, feet, goal, false, exec, false, calcFailed, made, stage, placed, chunks, wait);
+        return sigAt(goal, feet, exec, calcFailed, made, stage, null, placed, chunks, wait);
+    }
+
+    /** As {@link #sig}, with the cell of the block being broken. */
+    static StepSignals sigAt(double goal, int[] feet, boolean exec, long calcFailed, int made, int stage, String cell, long placed, int chunks, String wait) {
+        return new StepSignals(true, null, feet, goal, false, exec, false, calcFailed, made, stage, cell, placed, chunks, wait);
     }
 
     static StepSignals walkSig(double goal) { return sig(goal, FEET, true, 0, -1, -1, 0, -1, null); }
@@ -190,7 +195,7 @@ class Z71StepMonitorTest {
     @Test
     void risk_aStripBetweenOresIsProgressByItsBreakStage() {
         Hands h = new Hands();
-        h.script = s -> sig(Double.NaN, FEET, false, 0, 0, s % 4 == 3 ? -1 : (s % 4) * 3, 0, -1, null);     // 0, 3, 6, broken, 0, ...
+        h.script = s -> sigAt(Double.NaN, FEET, false, 0, 0, s % 4 == 3 ? -1 : (s % 4) * 3, "-27 16 " + (-55 - s / 4), 0, -1, null);     // 0, 3, 6, broken; the next cell: 0, ...
         Planner p = new Planner(h);
         Steps run = new Steps(h);
         run.start("goal.iron", List.of(new Step.Mine("iron", 3, Step.Mine.How.STRIP)), 0, p);
@@ -235,7 +240,7 @@ class Z71StepMonitorTest {
         for (int mode = 0; mode < 3; mode++) {
             int m = mode;
             Hands h = new Hands();
-            h.script = s -> sig(12, FEET, true, 0, -1, m == 0 ? s % 10 : -1, m == 1 ? s : 0, -1, null);
+            h.script = s -> sigAt(12, FEET, true, 0, -1, m == 0 ? s % 10 : -1, m == 0 ? "-27 " + (61 - s / 10) + " -55" : null, m == 1 ? s : 0, -1, null);     // digging down: a new cell per block
             Planner p = new Planner(h);
             Steps run = new Steps(h);
             run.start("goal.iron", List.of(new Step.ToStrip(-72, 16, -99, "iron_ore|16|west")), 0, p);
@@ -243,6 +248,96 @@ class Z71StepMonitorTest {
             if (m < 2) assertTrue(p.facts.isEmpty(), "mode " + m + ": " + p.facts);
             else assertEquals(List.of(30), p.at, "nothing digs or places: the plateau is a stall");
         }
+    }
+
+    // ---- 0.39.z71 review ----
+
+    /** Review 1: one block's dig that aborts and restarts forever (0, 1, 2, broken off, 0 ...) is no progress after its best (2 at 2 s): REPLAN at 32 s. */
+    @Test
+    void review_aRestartedBlockIsNoProgress() {
+        Hands h = new Hands();
+        h.script = s -> sigAt(Double.NaN, FEET, false, 0, 0, s % 4 == 3 ? -1 : s % 4, "5 16 5", 0, -1, null);
+        Planner p = new Planner(h);
+        Steps run = new Steps(h);
+        run.start("goal.iron", List.of(new Step.Mine("iron", 3, Step.Mine.How.STRIP)), 0, p);
+        run(run, h, p, 60);
+        assertEquals(List.of(32), p.at);
+        assertTrue(p.facts.get(0).text().contains("last break stage at 2 s"), p.facts.get(0).text());
+    }
+
+    /** Review 3: Baritone failed its searches 5 times but still executes a path: no "no path" REPLAN; only the stall at 30 s. */
+    @Test
+    void review_failedSearchesWhileExecutingAreNoNoPath() {
+        Hands h = new Hands();
+        h.script = s -> sig(10, FEET, true, s >= 1 ? 5 : 0, -1, -1, 0, -1, null);
+        Planner p = new Planner(h);
+        Steps run = new Steps(h);
+        run.start("goal.iron", List.of(new Step.Walk(5, 64, 5, 0)), 0, p);
+        run(run, h, p, 40);
+        assertEquals(List.of(30), p.at);
+        assertTrue(p.facts.get(0).text().startsWith("no progress 30 s"), p.facts.get(0).text());
+    }
+
+    /** Review 3: the CALC_FAILED count starts again at a new step: the first walk's 2 failures do not count for the second. */
+    @Test
+    void review_theNoPathCountStartsAtEachStep() {
+        Step a = new Step.Walk(5, 64, 5, 0), b = new Step.Walk(9, 64, 9, 0);
+        Hands h = new Hands() {
+            @Override public Car.Status status(Step s) { return s.equals(a) && second >= 10 ? Car.Status.done("arrived") : Car.Status.running("walking"); }
+        };
+        h.script = s -> sig(10, FEET, false, s >= 16 ? 5 : s >= 14 ? 4 : s >= 12 ? 3 : s >= 5 ? 2 : 0, -1, -1, 0, -1, null);
+        Planner p = new Planner(h);
+        Steps run = new Steps(h);
+        run.start("goal.iron", List.of(a, b), 0, p);
+        run(run, h, p, 25);
+        assertEquals(List.of(16), p.at, "b started at 10 s with 2 failures behind it: 5 - 2 = 3 at 16 s");
+        assertEquals("step walk 9 64 9 near 0", p.facts.get(0).key());
+    }
+
+    /** Review 3: the CALC_FAILED count starts again after a pause (the step starts again from where the bot is). */
+    @Test
+    void review_theNoPathCountStartsAgainAfterAPause() {
+        Hands h = new Hands();
+        h.script = s -> sig(10, FEET, false, s >= 12 ? 5 : s >= 10 ? 4 : s >= 8 ? 3 : s >= 5 ? 2 : 0, -1, -1, 0, -1, null);
+        Planner p = new Planner(h);
+        Steps run = new Steps(h);
+        run.start("goal.iron", List.of(new Step.Walk(5, 64, 5, 0)), 0, p);
+        run(run, h, p, 6);
+        run.pause("a creeper near");
+        h.second = 7;
+        run.resume();                                    // the bests (and the count's start, 2) from here
+        run(run, h, p, 20);
+        assertEquals(List.of(12), p.at, "without the restart the count would be 3 at 8 s");
+    }
+
+    /** Review 3: the explore's first-answer wait in place holds the stall clock; once it ends (its own bound) the window runs. */
+    @Test
+    void review_theFirstAnswerWaitHoldsTheClockUntilItsBound() {
+        Hands h = new Hands();
+        h.script = s -> sig(Double.NaN, FEET, false, 0, -1, -1, 0, 5, s <= 30 ? "waiting in place while the first path answers compute (its own bound pathCost.firstAnswerWaitS)" : null);
+        Planner p = new Planner(h);
+        Steps run = new Steps(h);
+        run.start("goal.iron", List.of(new Step.Explore(5, null, true, 30)), 0, p);
+        run(run, h, p, 59);
+        assertTrue(p.facts.isEmpty(), p.facts.toString());
+        run(run, h, p, 70);
+        assertEquals(List.of(60), p.at, "the wait's end at 30 s + 30 s");
+    }
+
+    /** Review 3: the band walk's path still computing holds the monitor; the step's own bound (steps.stepMaxS 600 s) ends it as the band's fact. */
+    @Test
+    void review_theBandsComputingPathEndsAtTheStepsBound() {
+        Hands h = new Hands();
+        h.script = s -> sig(Double.NaN, FEET, false, 0, -1, -1, 0, -1, "the priced path to -27 16 -55 is not known yet (its own bound steps.stepMaxS)");
+        Planner p = new Planner(h);
+        Steps run = new Steps(h);
+        run.start("goal.iron", List.of(new Step.ToBand(-64, 72)), 0, p);
+        run(run, h, p, 600);
+        assertTrue(p.facts.isEmpty(), "no monitor verdict while it computes: " + p.facts);
+        run(run, h, p, 610);
+        assertEquals(List.of(601), p.at);
+        assertTrue(p.facts.get(0).key().startsWith("source "), p.facts.get(0).key());
+        assertEquals("timed out after 600 s", p.facts.get(0).text());
     }
 
     /** An exempt kind (a wait stands still on purpose) is never judged. */

@@ -83,8 +83,10 @@ public final class StepSignalsLive {
         boolean in = g != null && g.isInGoal(f[0], f[1], f[2]);
         var gm = Minecraft.getInstance().gameMode;
         int ds = gm != null && gm.isDestroying() ? gm.getDestroyStage() : -1;
+        // 0.39.z71 review 1: the block being broken is the one under the crosshair (Baritone looks at it; vanilla hitResult)
+        String cell = ds >= 0 && Minecraft.getInstance().hitResult instanceof net.minecraft.world.phys.BlockHitResult bh ? Jobs.fmt(new int[]{bh.getBlockPos().getX(), bh.getBlockPos().getY(), bh.getBlockPos().getZ()}) : null;
         int made = outWord == null ? -1 : Math.max(0, count(Gui.inventory(p), outWord) - outBase);
         return new StepSignals(true, null, f, d, in, b.getPathingBehavior().getCurrent() != null, b.getPathingBehavior().getInProgress().isPresent(),
-                io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(), made, ds, placed, explores ? Mining.get().exploredChunks() : -1, ownWait);
+                io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(), made, ds, cell, placed, explores ? Mining.get().exploredChunks() : -1, ownWait);
     }
 }
