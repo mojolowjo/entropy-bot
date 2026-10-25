@@ -61,7 +61,7 @@ class Z58PathQueueTest {
      */
     private static final class WaitHands implements Steps.Hands {
         int pending;
-        long clockMs, landed, seenLanded;
+        long clock, landed, seenLanded;
         long waitStart = -1;
         final List<String> started = new java.util.ArrayList<>();
         final List<String> exploreStarted = new java.util.ArrayList<>();
@@ -73,7 +73,7 @@ class Z58PathQueueTest {
             if (s instanceof Step.Explore k && k.whilePaths() && k.waitS() > 0) {
                 var d = io.github.mojolowjo.entropybot.aa.moves.FirstAnswerWait.of(0, k.waitS(), pending, false);
                 if (d.next() == io.github.mojolowjo.entropybot.aa.moves.FirstAnswerWait.Next.EXPLORE) exploreStarted.add(s.text());
-                else { waitStart = clockMs; seenLanded = landed; }
+                else { waitStart = clock; seenLanded = landed; }
             }
             return null;
         }
@@ -82,7 +82,7 @@ class Z58PathQueueTest {
             if (s instanceof Step.Explore k && waitStart >= 0) {
                 boolean since = landed != seenLanded;
                 seenLanded = landed;
-                var d = io.github.mojolowjo.entropybot.aa.moves.FirstAnswerWait.of(clockMs - waitStart, k.waitS(), pending, since);
+                var d = io.github.mojolowjo.entropybot.aa.moves.FirstAnswerWait.of(clock - waitStart, k.waitS(), pending, since);
                 lastWhy = d.why();
                 if (d.next() == io.github.mojolowjo.entropybot.aa.moves.FirstAnswerWait.Next.EXPLORE) { waitStart = -1; exploreStarted.add(s.text()); }
             }
@@ -98,10 +98,10 @@ class Z58PathQueueTest {
         var E = io.github.mojolowjo.entropybot.aa.moves.FirstAnswerWait.Next.EXPLORE;
         assertEquals(W, io.github.mojolowjo.entropybot.aa.moves.FirstAnswerWait.of(0, 4, 3, false).next());
         assertEquals("waiting up to 4 s while 3 paths compute (1.5 s so far; Baritone idle, priced from this cell)",
-                io.github.mojolowjo.entropybot.aa.moves.FirstAnswerWait.of(1500, 4, 3, false).why());
-        assertEquals(E, io.github.mojolowjo.entropybot.aa.moves.FirstAnswerWait.of(4000, 4, 3, false).next());   // the wait is over
+                io.github.mojolowjo.entropybot.aa.moves.FirstAnswerWait.of(30, 4, 3, false).why());
+        assertEquals(E, io.github.mojolowjo.entropybot.aa.moves.FirstAnswerWait.of(80, 4, 3, false).next());   // the wait is over
         assertEquals(E, io.github.mojolowjo.entropybot.aa.moves.FirstAnswerWait.of(0, 4, 0, false).next());      // none computing
-        assertEquals(W, io.github.mojolowjo.entropybot.aa.moves.FirstAnswerWait.of(800, 4, 0, true).next());     // the last one just landed
+        assertEquals(W, io.github.mojolowjo.entropybot.aa.moves.FirstAnswerWait.of(16, 4, 0, true).next());     // the last one just landed
         assertTrue(io.github.mojolowjo.entropybot.aa.moves.FirstAnswerWait.of(0, 4, -1, false).why().contains("does not count"));  // rule 15: said
         assertEquals(E, io.github.mojolowjo.entropybot.aa.moves.FirstAnswerWait.of(0, 4, -1, false).next());
     }
@@ -117,13 +117,13 @@ class Z58PathQueueTest {
         h.pending = 3;
         run.start("goal.torch", List.of(ex), 0, (failed, fact, why) -> new Steps.Routine(List.of(new Step.Walk(3, 64, -9, 0), craft), null));
         for (int t = 1; t <= 4; t++) {                     // 1 s of AA ticks: the searches run, the bot stands
-            h.clockMs += 250;
+            h.clock += 5;
             run.tick(t);
         }
         assertTrue(h.exploreStarted.isEmpty(), "standing still while the first answers compute: " + h.lastWhy);
         assertTrue(h.lastWhy.startsWith("waiting up to " + waitS + " s while 3 paths compute"), h.lastWhy);
         // 1.5 s: the three land from the standing cell (exact answers), the mod re-prices: the craft way is priced
-        h.clockMs += 500;
+        h.clock += 10;
         h.pending = 0;
         h.landed += 3;
         run.tick(5);                                       // the hands' look: the last one just landed - still waiting
@@ -143,15 +143,63 @@ class Z58PathQueueTest {
         h.pending = 2;
         run.start("goal.torch", List.of(ex), 0, (failed, fact, why) -> new Steps.Routine(null, "no way priced yet"));
         for (int t = 1; t <= 15; t++) {                    // 3.75 s: still waiting
-            h.clockMs += 250;
+            h.clock += 5;
             run.tick(t);
         }
         assertTrue(h.exploreStarted.isEmpty(), h.lastWhy);
-        h.clockMs += 250;                                  // 4 s, nothing landed
+        h.clock += 5;                                  // 4 s, nothing landed
         run.tick(16);
         assertEquals(List.of(ex.text()), h.exploreStarted, "the wait is over: the explore as before");
         assertEquals("waited 4 s, 2 paths still computing: exploring meanwhile", h.lastWhy);
         assertTrue(ex.text().endsWith("(first waiting up to 4 s in place while first answers compute)"), ex.text());
+    }
+
+    @Test
+    void aPausedGameDoesNotBurnTheWait() {
+        // review 7: the wait counts the level's game ticks; paused, they stand still (the step machine's own ticks go on)
+        WaitHands h = new WaitHands();
+        Steps run = new Steps(h);
+        h.pending = 1;
+        run.start("goal.torch", List.of(new Step.Explore(5, null, true, 4)), 0, (failed, fact, why) -> new Steps.Routine(null, "none"));
+        for (int t = 1; t <= 200; t++) run.tick(t);       // 200 step-machine ticks, game time frozen
+        assertTrue(h.exploreStarted.isEmpty(), h.lastWhy);
+        assertTrue(h.lastWhy.contains("(0.0 s so far"), h.lastWhy);
+    }
+
+    /** Hands that finish each step when told (done = its text). */
+    private static final class DoneHands implements Steps.Hands {
+        String done;
+        @Override public String start(Step s) { return null; }
+        @Override public io.github.mojolowjo.entropybot.aa.moves.Car.Status status(Step s) {
+            return s.text().equals(done) ? io.github.mojolowjo.entropybot.aa.moves.Car.Status.done("ok")
+                    : io.github.mojolowjo.entropybot.aa.moves.Car.Status.running(s.text());
+        }
+        @Override public void cancel(String why) {}
+    }
+
+    @Test
+    void theRunningWalkFollowsTheRunAndTwoOrdersAreTwoRuns() {
+        // review 6: walkAhead on a real step run - before the walk (crafting), on it, after it, at the order's end; review 2:
+        // each run started is a new order for the fork (runId moves on every start)
+        DoneHands h = new DoneHands();
+        Steps run = new Steps(h);
+        Step craft = new Step.Craft("minecraft:crafting_table", 1), walk = new Step.Walk(3, 64, -9, 0), collect = new Step.Collect("minecraft:torch", 4);
+        run.start("goal.torch", List.of(craft, walk, collect), 0);
+        long first = run.runId();
+        assertArrayEquals(new int[]{3, 64, -9}, Steps.walkAhead(run.steps(), run.index()), "crafting: the walk it does next");
+        h.done = craft.text();
+        run.tick(1);
+        assertArrayEquals(new int[]{3, 64, -9}, Steps.walkAhead(run.steps(), run.index()), "walking now");
+        h.done = walk.text();
+        run.tick(2);
+        assertNull(Steps.walkAhead(run.steps(), run.index()), "past the walk: Baritone's mine needs no priced walk");
+        h.done = collect.text();
+        run.tick(3);
+        assertEquals(Steps.Phase.DONE, run.phase());
+        assertNull(Steps.walkAhead(run.steps(), run.index()), "the order's end: none");
+        run.start("goal.furnace", List.of(new Step.ToStrip(10, 12, 10, "iron")), 4);
+        assertNotEquals(first, run.runId(), "the next order is a new run: the fork is told orderStarted");
+        assertArrayEquals(new int[]{10, 12, 10}, Steps.walkAhead(run.steps(), run.index()));
     }
 
     @Test

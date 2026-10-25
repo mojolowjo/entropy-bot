@@ -145,6 +145,7 @@ public final class Steps {
     /** 0.39.z30: as {@link #start(String, List, long)}, re-planned through {@code replan} when a step fails on a changed fact. */
     public Phase start(String key, List<Step> steps, long tick, Replanner replan) {
         if (phase == Phase.RUNNING) cancel("replaced by " + key);
+        runId++;                                     // 0.39.z58 review 2: a new order / chain is active (the fork's first-answer class)
         this.key = key;
         this.steps = List.copyOf(steps);
         failedStep = null;
@@ -316,6 +317,14 @@ public final class Steps {
      * (the cell its price and its walk use); null when none is left or nothing runs (idx < 0). The fork's queue gives that
      * goal's search the first slot; which way wins stays the scorer's (rule 1).
      */
+    /**
+     * 0.39.z58 review 2: one number per {@link #start} - each run started (an order's chain, the next order in a list, an
+     * order planned again from scratch, aa on with kept goals) is a new one; the mod tells the fork orderStarted on a change.
+     */
+    private long runId;
+
+    public long runId() { return runId; }
+
     public static int[] walkAhead(List<? extends Step> steps, int idx) {
         if (steps == null || idx < 0) return null;
         for (int i = idx; i < steps.size(); i++) {

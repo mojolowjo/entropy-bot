@@ -1863,9 +1863,18 @@ public final class AaRuntime implements JobPort {
      */
     private void runningWalkTick() {
         var st = c.stepRun.steps;
+        // review 2: every run started (not only aa want) is a new order for the fork's "not answered yet" class; searches of
+        // the old one still in flight keep the class they started with (the fork stores it per running search)
+        if (st.runId() != orderRunTold) {
+            orderRunTold = st.runId();
+            LivePathPrice.INSTANCE.orderStarted();
+        }
         int[] w = typedRun && st.running() ? io.github.mojolowjo.entropybot.aa.moves.Steps.walkAhead(st.steps(), st.index()) : null;
         LivePathPrice.INSTANCE.running(w == null ? null : new net.minecraft.core.BlockPos(w[0], w[1], w[2]));
     }
+
+    /** 0.39.z58 review 2: the step run last told to the fork as a new order. */
+    private long orderRunTold;
 
     private void pathLandedTick() {
         long v = LivePathPrice.INSTANCE.landed();

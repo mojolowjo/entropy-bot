@@ -169,6 +169,8 @@ public final class LivePathPrice implements PathPrice {
     /** 0.39.z58: the running step's walk target last told to the fork (null: none), compared so the fork is told on a change. */
     private BlockPos runningTold;
     private boolean runningSet;
+    /** 0.39.z58 review 3: the fork instance it was told to (identity). */
+    private Object runningFork;
 
     /**
      * 0.39.z58 item 1 (D3 pricing queue; run Q 02:29:32): the walk the running step does or does next (null: none) - the
@@ -177,9 +179,11 @@ public final class LivePathPrice implements PathPrice {
      */
     public void running(BlockPos at) {
         if (!PathPrice.pricedPathOn()) return;
-        if (runningSet && java.util.Objects.equals(at, runningTold)) return;
         IBaritone b = Jobs.baritone();
         if (b == null) return;
+        // review 3: told again when the fork instance changed (a world change or reconnect gives a new Baritone)
+        Object fork = b.getPricedPath();
+        if (runningSet && fork == runningFork && java.util.Objects.equals(at, runningTold)) return;
         try {
             b.getPricedPath().runningGoal(at == null ? null : goal(at));
         } catch (LinkageError e) {
@@ -187,6 +191,7 @@ public final class LivePathPrice implements PathPrice {
             return;
         }
         runningTold = at;
+        runningFork = fork;
         runningSet = true;
         LOG.debug("[entropybot] path queue: the running step's walk is {}", at == null ? "none" : at.toShortString());
     }

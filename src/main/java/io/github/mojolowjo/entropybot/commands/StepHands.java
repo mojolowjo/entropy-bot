@@ -298,8 +298,14 @@ public final class StepHands implements Steps.Hands {
 
     // ---- 0.39.z58: the explore while paths compute first waits in place while first answers compute ----
 
-    /** When the first-answer wait started (ms), -1: not waiting. */
+    /** When the first-answer wait started (the level's game time), -1: not waiting. */
     private long firstWaitStart = -1;
+
+    /** 0.39.z58 review 7: the level's game time (stops while the game is paused); 0 with no level (the status says not in a world first). */
+    private static long gameTime() {
+        var lv = Minecraft.getInstance().level;
+        return lv == null ? 0 : lv.getGameTime();
+    }
 
     /**
      * 0.39.z58 (Opus Design ruling on run Q 02:29:32: rule 18 stays exact; the explore moved the bot off every crafting
@@ -313,7 +319,7 @@ public final class StepHands implements Steps.Hands {
         if (d.next() == FirstAnswerWait.Next.EXPLORE) return direct(k);
         IBaritone b = Jobs.baritone();
         if (b != null) Jobs.cancel(b);                   // Baritone idle: the first answers are priced from the cell it stands on
-        firstWaitStart = System.currentTimeMillis();
+        firstWaitStart = gameTime();
         firstWaitLanded = LivePathPrice.INSTANCE.landed();
         return null;
     }
@@ -325,7 +331,7 @@ public final class StepHands implements Steps.Hands {
         long landed = LivePathPrice.INSTANCE.landed();
         boolean since = landed != firstWaitLanded;
         firstWaitLanded = landed;
-        FirstAnswerWait.Decision d = FirstAnswerWait.of(System.currentTimeMillis() - firstWaitStart, k.waitS(), LivePathPrice.INSTANCE.firstAnswersPending(), since);
+        FirstAnswerWait.Decision d = FirstAnswerWait.of(gameTime() - firstWaitStart, k.waitS(), LivePathPrice.INSTANCE.firstAnswersPending(), since);
         if (d.next() == FirstAnswerWait.Next.WAIT) return Car.Status.running(k.text() + ": " + d.why());
         firstWaitStart = -1;
         LOG.info("[entropybot] steps: {}: {}", k.text(), d.why());
