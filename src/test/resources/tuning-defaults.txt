@@ -367,6 +367,7 @@ exploreWords.findMinutes	10.0
 exploreWords.maxFromStart	16.0
 exploreWords.maxMinutes	30.0
 exploreWords.rings	24.0
+exploreWords.waterRings	4.0
 failures.cdBaseMs	120000.0
 failures.cdMaxMs	960000.0
 failures.fastEndMs	1000.0

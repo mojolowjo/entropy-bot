@@ -429,6 +429,17 @@ public sealed interface Step {
         public String text() { return "to y " + y + " (priced path)"; }
     }
 
+    /**
+     * 0.39.z68 (owner 2026-10-25: "if it's wood - go to surface to explore"): an explore for a target that generates on the
+     * surface (GenWhere SURFACE) started under ground first walks up to the surface cell x y z by the chain's priced walk
+     * (Baritone's complete path, the same goal the price searched; z63's ClimbGoal steering the climb); done there, or as soon
+     * as the feet stand under open sky. Its failure is its own source fact (NeedChain.surfaceKey): the order re-plans and the
+     * explore runs from where the bot is.
+     */
+    record ToSurface(int x, int y, int z) implements Step {
+        public String text() { return "up to the surface at " + x + " " + y + " " + z + " (priced path)"; }
+    }
+
     /** A step made of steps: {@link Steps} runs its parts in its place (one machine, one failure path). */
     sealed interface Compound extends Step permits StripLeg, ClearChunk, Kelp {
         List<Step> parts();

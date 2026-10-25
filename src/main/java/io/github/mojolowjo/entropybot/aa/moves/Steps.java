@@ -517,6 +517,7 @@ public final class Steps {
         for (int i = idx; i < steps.size(); i++) {
             if (steps.get(i) instanceof Step.Walk w) return new int[]{w.x(), w.y(), w.z()};
             if (steps.get(i) instanceof Step.ToStation w) return new int[]{w.x(), w.y(), w.z()};     // 0.39.z65 item 1
+            if (steps.get(i) instanceof Step.ToSurface w) return new int[]{w.x(), w.y(), w.z()};     // 0.39.z68
             if (steps.get(i) instanceof Step.ToStrip t) return new int[]{t.x(), t.y(), t.z()};
         }
         return null;

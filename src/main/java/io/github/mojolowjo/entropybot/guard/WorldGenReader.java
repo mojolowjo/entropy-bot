@@ -114,8 +114,8 @@ public final class WorldGenReader {
                 none = r.blocks().isEmpty();
                 oreRead = r.ores();
                 readFiles = r.files();
-                LOG.info("[entropybot] aa: ore placements from the {} (rule 19, singleplayer and server alike): {} ore placed features, {} biomes, {} biome modifiers{}",
-                        from, oreRead.placed().size(), oreRead.biomes().size(), oreRead.modifiers().size(),
+                LOG.info("[entropybot] aa: ore placements from the {} (rule 19, singleplayer and server alike): {} ore placed features, {} biomes, {} biome modifiers, {} placed features that say where (heightmap = surface, height_range = a band; 0.39.z68){}",
+                        from, oreRead.placed().size(), oreRead.biomes().size(), oreRead.modifiers().size(), oreRead.placers().size(),
                         oreRead.unread() == 0 ? "" : "; " + oreRead.unread() + " entries not read (first: " + oreRead.firstUnread() + ")");
                 s = r.blocks();
                 LOG.info("[entropybot] structure facts: world gen places {} blocks (from the {}: {} packs, {} files, {} skipped{}; configured features and noise settings only; structure templates are not read: villages and fossils are built things, their blocks stay structure blocks); {} ms",

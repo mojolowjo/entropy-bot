@@ -549,23 +549,9 @@ public final class AaRuntime implements JobPort {
         for (int y = me[1] + 2; shaft && y <= me[1] + depth; y++) if (!openCell(lv, me[0], y, me[2])) shaft = false;
         Map<String, Integer> bag = sensed.feas != null ? sensed.feas.bag : Map.of();
         long t0 = System.nanoTime();
-        int[] sky = null;
-        double best = Double.MAX_VALUE;
-        net.minecraft.core.BlockPos.MutableBlockPos m = new net.minecraft.core.BlockPos.MutableBlockPos();
-        for (int x = me[0] - skyR(); x <= me[0] + skyR(); x++)
-            for (int z = me[2] - skyR(); z <= me[2] + skyR(); z++) {
-                m.set(x, 0, z);
-                if (!lv.isLoaded(m)) continue;
-                int y = lv.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
-                double d = Math.sqrt(Jobs.distSq(me, new int[]{x, y, z}));
-                m.set(x, y, z);
-                if (d >= best || !lv.canSeeSky(m) || !openCell(lv, x, y, z) || !openCell(lv, x, y + 1, z)) continue;     // review: no roof (the Nether)
-                m.set(x, y - 1, z);
-                var below = lv.getBlockState(m);
-                if (below.getCollisionShape(lv, m).isEmpty() || !below.getFluidState().isEmpty()) continue;
-                best = d;
-                sky = new int[]{x, y, z};
-            }
+        double[] bestOut = {Double.MAX_VALUE};
+        int[] sky = skyCell(lv, me, bestOut);
+        double best = bestOut[0];
         factsParts = "sky scan " + (System.nanoTime() - t0) / 1000 + " us";  // structural: milliseconds per second
         boolean tf = !(bb.in.tableKnown || bb.in.tableInBag) || !(bb.in.furnaceKnown || bb.in.furnaceInBag);
         return new io.github.mojolowjo.entropybot.aa.RungOptions.SurfaceFacts(depth, me, shaft, AaEscape.throwaway(bag),
@@ -576,6 +562,69 @@ public final class AaRuntime implements JobPort {
 
     /** The open-sky cell search radius (columns), S2. */
     static int skyR() { return Tuning.i("aaRuntime.skyR"); }
+
+    /**
+     * S2: the nearest open-sky standing cell within {@link #skyR} columns of {@code me} (loaded columns only): the leaf-free
+     * surface's air cell with sky over it, two cells of room and a solid, dry block under it; {@code best[0]}: its straight
+     * metres. Null: none in the loaded columns. Loader notes: vanilla Level#getHeight (MOTION_BLOCKING_NO_LEAVES), canSeeSky.
+     */
+    private static int[] skyCell(net.minecraft.world.level.Level lv, int[] me, double[] best) {
+        int[] sky = null;
+        net.minecraft.core.BlockPos.MutableBlockPos m = new net.minecraft.core.BlockPos.MutableBlockPos();
+        for (int x = me[0] - skyR(); x <= me[0] + skyR(); x++)
+            for (int z = me[2] - skyR(); z <= me[2] + skyR(); z++) {
+                m.set(x, 0, z);
+                if (!lv.isLoaded(m)) continue;
+                int y = lv.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+                double d = Math.sqrt(Jobs.distSq(me, new int[]{x, y, z}));
+                m.set(x, y, z);
+                if (d >= best[0] || !lv.canSeeSky(m) || !openCell(lv, x, y, z) || !openCell(lv, x, y + 1, z)) continue;     // review: no roof (the Nether)
+                m.set(x, y - 1, z);
+                var below = lv.getBlockState(m);
+                if (below.getCollisionShape(lv, m).isEmpty() || !below.getFluidState().isEmpty()) continue;
+                best[0] = d;
+                sky = new int[]{x, y, z};
+            }
+        return sky;
+    }
+
+    /**
+     * 0.39.z68: the surface over the bot for the explore leaf (NeedChain.Surface): the depth under ground (Jobs.underDepth,
+     * the one rule), then the nearest open-sky standing cell ({@link #skyCell}), else the column's leaf-free top. Null: no
+     * player or the feet's chunk is not loaded (rule 15: not known, never "on the surface").
+     */
+    io.github.mojolowjo.entropybot.aa.NeedChain.Surface surfaceOver() {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer p = mc.player;
+        if (p == null || mc.level == null) return null;
+        var lv = mc.level;
+        int[] me = Jobs.here(p);
+        if (!lv.hasChunkAt(new net.minecraft.core.BlockPos(me[0], me[1], me[2]))) return null;
+        int depth = Jobs.underDepth(lv, me[0], me[1], me[2]);
+        if (depth == 0) return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(0, me[0], me[1], me[2], 0);
+        double[] best = {Double.MAX_VALUE};
+        int[] sky = skyCell(lv, me, best);
+        if (sky != null) return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(depth, sky[0], sky[1], sky[2], best[0]);
+        int top = lv.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, me[0], me[2]);
+        return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(depth, me[0], top, me[2], Math.abs(top - me[1]));
+    }
+
+    /**
+     * 0.39.z68: where a need word's blocks generate (GenWhere over the jars' placers, rule 19; the blocks: sourceBlocksOf,
+     * the loot data and the own block). The read not done or failed: NOT_LOADED with that reason (rule 15).
+     */
+    public io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact whereOf(String word) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return io.github.mojolowjo.entropybot.aa.brain.GenWhere.notLoaded("no level");
+        var ores = io.github.mojolowjo.entropybot.guard.WorldGenReader.ores();
+        if (ores == null) {
+            String f = io.github.mojolowjo.entropybot.guard.WorldGenReader.failed();
+            return io.github.mojolowjo.entropybot.aa.brain.GenWhere.notLoaded(f != null ? "the world-gen read failed (" + f + ")" : "the world-gen read is not done");
+        }
+        java.util.Set<String> blocks = new java.util.TreeSet<>();
+        for (String part : word.split("\\|")) if (!part.isEmpty()) blocks.addAll(sourceBlocksOf(io.github.mojolowjo.entropybot.aa.NeedChain.word(part)));
+        return io.github.mojolowjo.entropybot.aa.brain.GenWhere.of(blocks, ores.placers(), mc.level.getMinBuildHeight(), mc.level.getMaxBuildHeight());
+    }
 
     /**
      * one-planner: what the chain starts from: the bag, a table and a furnace known, the nearest known block of any item
@@ -601,7 +650,19 @@ public final class AaRuntime implements JobPort {
         return new io.github.mojolowjo.entropybot.aa.NeedChain.World(in.bag, in.tableKnown, in.furnaceKnown,
                 item -> { var s = nearestSource(item); return s == null ? List.of() : List.of(s); },
                 this::animalsKnown, currentLootBook(), this::band, 0, LivePathPrice.INSTANCE, this::stationAt).withUses(AaRuntime::usesLeft).withStrip(this::strip).withCave(this::caveWay)
-                .withRooms(rooms(in.pos));
+                .withRooms(rooms(in.pos))
+                .withWhere(new io.github.mojolowjo.entropybot.aa.NeedChain.WhereFacts(this::whereOf, once(this::surfaceOver)));   // 0.39.z68
+    }
+
+    /** 0.39.z68: a supplier read once per world snapshot (the sky scan runs only when an explore leaf asks). */
+    private static <T> java.util.function.Supplier<T> once(java.util.function.Supplier<T> s) {
+        Object[] box = {null};
+        boolean[] done = {false};
+        return () -> {
+            if (!done[0]) { box[0] = s.get(); done[0] = true; }
+            @SuppressWarnings("unchecked") T t = (T) box[0];
+            return t;
+        };
     }
 
     /** 0.39.z67 item 1: the solid-ground cells the bot stood on (newest first), kept per world and dimension. */

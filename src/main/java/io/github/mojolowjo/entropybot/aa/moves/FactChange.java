@@ -49,6 +49,16 @@ public final class FactChange {
                 name + " at " + x + " " + y + " " + z + " out for this order: " + why);
     }
 
+    /**
+     * 0.39.z68: the explore's walk up to the surface cell x y z failed (or did not start): a source fact keyed
+     * {@link io.github.mojolowjo.entropybot.aa.NeedChain#surfaceKey}, held for this order; the order re-plans and the explore
+     * runs from where the bot is (the chain prices no walk up while one is held).
+     */
+    public static void surface(int x, int y, int z, String why) {
+        last = new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.surfaceKey(x, y, z),
+                "the walk up to the surface at " + x + " " + y + " " + z + " out for this order: " + why);
+    }
+
     /** A known source the step went for is gone. */
     public static void source(String block, String at) {
         last = new Fact("source " + block + " " + at, block.replaceFirst("^minecraft:", "") + " at " + at + " gone");

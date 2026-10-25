@@ -145,6 +145,19 @@ public final class ExploreRules {
         return null;
     }
 
+    /**
+     * 0.39.z68 (owner 2026-10-25: "if it's ore, explore for caves"): the cave candidates of an explore for a band target
+     * (GenWhere BAND) with the ones whose cell lies in the band {@code lo..hi} first, each part nearest first as given (a
+     * mouth or pocket in the band opens onto it; the others still lead under ground).
+     */
+    public static List<int[]> bandFirst(List<int[]> nearestFirst, int lo, int hi) {
+        List<int[]> in = new ArrayList<>(), out = new ArrayList<>();
+        if (nearestFirst == null) return in;
+        for (int[] c : nearestFirst) (c[1] >= lo && c[1] <= hi ? in : out).add(c);
+        in.addAll(out);
+        return in;
+    }
+
     /** Arrived near a chunk target (within ARRIVED blocks, x + z)? */
     public static boolean arrived(int x, int z, Target t) {
         return Math.abs(x - t.x()) + Math.abs(z - t.z()) <= arrivedV();

@@ -63,10 +63,25 @@ public final class ExploreWords {
      * one nearer the start chunk, then scan order. Null when none within {@link #RINGS}.
      */
     public static int[] next(int cx, int cz, int sx, int sz, String dir, BiPred seen, BiPred refused) {
+        return next(cx, cz, sx, sz, dir, seen, refused, null, 0);
+    }
+
+    public static int waterRings() { return Tuning.i("exploreWords.waterRings"); }
+
+    /**
+     * 0.39.z68 (owner 2026-10-25: wood on the surface; run Y 09:26-09:31: the explore went into the open sea): as
+     * {@link #next(int, int, int, int, String, BiPred, BiPred)}, but a chunk {@code water} says the client knows is water
+     * (an explore for a surface target: GenWhere SURFACE) counts {@code waterRings} rings farther - land is preferred, the
+     * sea is still taken when no land chunk is nearer than that. An unseen chunk is not known: no extra (rule 15). Null
+     * water or waterRings 0: the plain ring order.
+     */
+    public static int[] next(int cx, int cz, int sx, int sz, String dir, BiPred seen, BiPred refused, BiPred water, int waterRings) {
         int[] st = dir == null ? null : step(dir);
+        int extra = water == null ? 0 : Math.max(0, waterRings);
+        int[] best = null;
+        int bestCost = Integer.MAX_VALUE, bestAhead = Integer.MIN_VALUE, bestHome = Integer.MAX_VALUE;
         for (int r = 1; r <= rings(); r++) {
-            int[] best = null;
-            int bestAhead = Integer.MIN_VALUE, bestHome = Integer.MAX_VALUE;
+            if (best != null && r > bestCost) break;          // no cell of this ring or later can cost less
             for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) {
                 if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue;
                 int x = cx + dx, z = cz + dz;
@@ -83,15 +98,16 @@ public final class ExploreWords {
                 // (the walk back is priced in the explore, exploreReturn), then scan order
                 int ahead = st == null ? -(dx * dx + dz * dz) : (x - sx) * st[0] + (z - sz) * st[1];
                 int home = (x - sx) * (x - sx) + (z - sz) * (z - sz);
-                if (best == null || ahead > bestAhead || (st == null && ahead == bestAhead && home < bestHome)) {
+                int cost = r + (extra > 0 && water.test(x, z) ? extra : 0);
+                if (best == null || cost < bestCost || (cost == bestCost && (ahead > bestAhead || (st == null && ahead == bestAhead && home < bestHome)))) {
                     best = new int[]{x, z};
+                    bestCost = cost;
                     bestAhead = ahead;
                     bestHome = home;
                 }
             }
-            if (best != null) return best;
         }
-        return null;
+        return best;
     }
 
     public interface BiPred { boolean test(int x, int z); }

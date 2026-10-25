@@ -157,7 +157,7 @@ public final class StepHands implements Steps.Hands {
     private String start0(Step s) {
         step = s;
         // 0.39.z54 B: the walk probe's step (one field; the probe itself reads Tuning debug.walkProbe)
-        WalkProbe.step(s instanceof Step.ToStrip || s instanceof Step.ToBand || s instanceof Step.Walk || s instanceof Step.ToStation ? s.text() : null);
+        WalkProbe.step(s instanceof Step.ToStrip || s instanceof Step.ToBand || s instanceof Step.Walk || s instanceof Step.ToStation || s instanceof Step.ToSurface ? s.text() : null);
         StepProbe.begin(s);                      // 0.39.z56 item 1: every step kind (one field; the probe reads Tuning debug.stepProbe)
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null) return "error: not in a world";
@@ -173,6 +173,7 @@ public final class StepHands implements Steps.Hands {
             return switch (s) {
                 case Step.Walk w -> walk(w);
                 case Step.ToStation t -> toStation(t);     // 0.39.z65 item 1: the chain's priced walk
+                case Step.ToSurface t -> toSurface(p, t);  // 0.39.z68: the explore's priced walk up
                 case Step.ChopTree t -> chop(p, t);
                 case Step.Collect k -> collect(p, k);
                 case Step.TakeStation t -> takeStation(p, t);
@@ -237,6 +238,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.Climb k -> climbStatus();
                 case Step.Explore k when firstWait.waiting() -> firstWaitStatus(k);
                 case Step.ToStation t -> toStationStatus(t);
+                case Step.ToSurface t -> toSurfaceStatus(p, t);
                 default -> requestStatus();
             };
         } catch (RuntimeException e) {
@@ -648,6 +650,39 @@ public final class StepHands implements Steps.Hands {
         Car.Status st = requestStatus();
         if (st.state() != Car.State.FAILED) return st;
         return Car.Status.failed(stationRefused(t, "the walk to it ended short: " + (st.why() == null ? "no reason" : st.why())));
+    }
+
+    /**
+     * 0.39.z68: the explore's walk up to the surface (the travel job on the chain's priced goal, as the station walk).
+     * Already under open sky (RestoreRules' under-ground rule over the leaf-free surface, Jobs.underDepth): done at once.
+     * Loader notes: vanilla Level#canSeeSky / heightmaps through Jobs.underDepth.
+     */
+    private String toSurface(LocalPlayer p, Step.ToSurface t) {
+        int[] me = Jobs.here(p);
+        if (Jobs.underDepth(p.level(), me[0], me[1], me[2]) == 0) { instant = "ok: already under open sky at y " + me[1]; return null; }
+        String r = walk(new Step.Walk(t.x(), t.y(), t.z(), 0));
+        return r == null ? null : "error: " + surfaceRefused(t, "the walk up did not start: " + r);
+    }
+
+    /** 0.39.z68: done at the cell or as soon as the feet stand under open sky; ended failed, it is the walk up's fact (a re-plan). */
+    private Car.Status toSurfaceStatus(LocalPlayer p, Step.ToSurface t) {
+        if (instant != null) return Car.Status.done(instant);
+        int[] me = Jobs.here(p);
+        if (Jobs.underDepth(p.level(), me[0], me[1], me[2]) == 0) {
+            if (walkJob != null && c.jobs.running() && c.jobs.job == walkJob) c.jobs.finish("done: on the surface at " + Jobs.fmt(me));
+            LOG.info("[entropybot] steps: {} - on the surface at {} (under open sky)", t.text(), Jobs.fmt(me));
+            return Car.Status.done("ok: on the surface at " + Jobs.fmt(me));
+        }
+        Car.Status st = requestStatus();
+        if (st.state() != Car.State.FAILED) return st;
+        return Car.Status.failed(surfaceRefused(t, "the walk up ended short: " + (st.why() == null ? "no reason" : st.why())));
+    }
+
+    private String surfaceRefused(Step.ToSurface t, String why0) {
+        String why = why0.replace(": error: ", ": ");
+        io.github.mojolowjo.entropybot.aa.moves.FactChange.surface(t.x(), t.y(), t.z(), why);
+        LOG.info("[entropybot] explore: the walk up to the surface at {} {} {} out for this order: {} - the explore runs from where I am", t.x(), t.y(), t.z(), why);
+        return "the walk up to the surface at " + t.x() + " " + t.y() + " " + t.z() + " out for this order: " + why;
     }
 
     /** 0.39.z65 item 1: the station walk's start; a walk refused at its start is the station's fact as well. */

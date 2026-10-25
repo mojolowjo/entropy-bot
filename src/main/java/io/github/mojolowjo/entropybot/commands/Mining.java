@@ -713,6 +713,9 @@ final class Mining {
         String found;
         final Set<Integer> poiIds = new HashSet<>();
         ExploreRules.Target target;
+        /** 0.39.z68: where the until target generates (GenWhere), read once per run (whereRead). */
+        io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact where;
+        boolean whereRead;
         /** 0.39.z48: the cave candidate the current target walks toward ("x y z"), null: a chunk target. */
         String aimed;
         /** 0.23.1: gathering on the way (explore ... gather off = false); the bot's spot. */
@@ -729,6 +732,18 @@ final class Mining {
 
     /** 0.39.z48 (S65): cave candidates an explore walked toward this session ("x y z"): never aimed at again. */
     static final Set<String> CAVE_VISITED = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /**
+     * 0.39.z68 item (c): the client knows chunk cx cz is water: it is loaded and its centre column's top (the MOTION_BLOCKING
+     * heightmap, which counts water) holds water by the game's fluid tag. Not loaded: not known, false (rule 15: no extra).
+     * Loader notes: vanilla Level#hasChunk, Level#getHeight, FluidState#is(FluidTags.WATER).
+     */
+    static boolean waterChunk(Level lv, int cx, int cz) {
+        if (lv == null || !lv.hasChunk(cx, cz)) return false;
+        int x = (cx << 4) + 8, z = (cz << 4) + 8;           // game fact: the centre of a chunk is 8 blocks in
+        int top = lv.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, x, z);
+        return lv.getFluidState(new BlockPos(x, top - 1, z)).is(net.minecraft.tags.FluidTags.WATER);
+    }
 
     /** 0.39.z48: one of the explore's until words is an ore need (a source block the game tags c:ores). */
     private boolean oreNeed(String untilSource) {
@@ -1086,12 +1101,30 @@ final class Mining {
             ex.aimed = null;
         }
         ex.target = null;
+        // 0.39.z68 (owner 2026-10-25): where the target generates (GenWhere from the jars' world-gen data), read once per run
+        if (ex.untilSource != null && !ex.whereRead && commands.aaRuntime != null) {
+            boolean first = ex.where == null;
+            ex.where = commands.aaRuntime.whereOf(ex.untilSource);
+            ex.whereRead = ex.where.kind() != io.github.mojolowjo.entropybot.aa.brain.GenWhere.Kind.NOT_LOADED;   // rule 15: asked again until loaded
+            if (first || ex.whereRead) LOG.info("[entropybot] explore: for {}: {}", ex.untilSource, ex.where.surface() ? "on the surface - " + ex.where.text() + " (known water chunks count exploreWords.waterRings " + io.github.mojolowjo.entropybot.vocab.ExploreWords.waterRings() + " rings farther)"
+                    : ex.where.band() ? "toward caves in or near the band - " + ex.where.text() : "as before - " + ex.where.text());
+        }
+        boolean surfaceTarget = ex.where != null && ex.where.surface();
+        boolean bandTarget = ex.where != null && ex.where.band();
         // 0.39.z48 (owner 2026-10-24, item 6): an ore need's explore aims at the nearest unvisited cave candidate within
-        // cave.exploreTowardM (dropped ones are out of the list) before the next unexplored chunk
-        if (done == null && ex.untilSource != null && oreNeed(ex.untilSource)) {
-            var cands = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.mouths().near(me[0], me[1], me[2], (int) Math.floor(Tuning.get("cave.exploreTowardM")));
+        // cave.exploreTowardM (dropped ones are out of the list) before the next unexplored chunk. 0.39.z68: a band target
+        // (GenWhere BAND) does so with the candidates and the seen mouths (Sightings) in its band first; a surface target
+        // never; an unknown one as before (an ore by the c:ores tag)
+        if (done == null && ex.untilSource != null && (bandTarget || (!surfaceTarget && oreNeed(ex.untilSource)))) {
+            int within = (int) Math.floor(Tuning.get("cave.exploreTowardM"));
+            var cands = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.mouths().near(me[0], me[1], me[2], within);
             List<int[]> cells = new ArrayList<>();
             for (var k : cands) cells.add(new int[]{k.x(), k.y(), k.z()});
+            var sg = pass().sightings();
+            if (bandTarget && sg != null) for (var m : sg.mouths(d, me[0], me[1], me[2]))
+                if (Jobs.distSq(me, new int[]{m.x(), m.y(), m.z()}) <= (long) within * within) cells.add(new int[]{m.x(), m.y(), m.z()});
+            cells.sort(java.util.Comparator.comparingDouble(c2 -> Jobs.distSq(me, c2)));
+            if (bandTarget) cells = ExploreRules.bandFirst(cells, ex.where.lo(), ex.where.hi());
             int[] aim = ExploreRules.toward(cells, cell -> CAVE_VISITED.contains(Jobs.fmt(cell)));
             if (aim != null) {
                 ex.aimed = Jobs.fmt(aim);
@@ -1111,7 +1144,9 @@ final class Mining {
                         String why = io.github.mojolowjo.entropybot.commands.FenceRules.walkVerdict(io.github.mojolowjo.entropybot.api.BotAPI.check(d, (cx << 4) + 8, y, (cz << 4) + 8, "go"));
                         if (why != null) notes().markExplored(List.of(ExploreRules.key(d, cx, cz)));
                         return why != null;
-                    });
+                    },
+                    // 0.39.z68 item (c): a surface target prefers land - a chunk the client has loaded whose centre column's top is water
+                    surfaceTarget ? (cx, cz) -> waterChunk(p.level(), cx, cz) : null, io.github.mojolowjo.entropybot.vocab.ExploreWords.waterRings());
             if (c != null) ex.target = new ExploreRules.Target((c[0] << 4) + 8, (c[1] << 4) + 8);
         }
         if (ex.target == null) {

@@ -43,7 +43,7 @@ public final class WorldGenFiles {
     public static final List<String> PLACEMENT_DIRS = List.of("worldgen/placed_feature", "worldgen/biome", "neoforge/biome_modifier", "tags/worldgen/placed_feature");
     /** The owner's correction, in the entropybot folder: {"<block id>": true (world gen places it) | false (it does not)}. */
     public static final String OVERRIDE_FILE = "worldgen-override.json";
-    static final int CACHE_VERSION = 3;  // structural: the cache file's format version (2: no template blocks; 3: the ore placements)
+    static final int CACHE_VERSION = 4;  // structural: the cache file's format version (2: no template blocks; 3: the ore placements; 4: the "where" placers)
 
     /** One file of the read: its id ("ns:path" under data/ns) and how to open it. */
     public interface Entry {
@@ -70,8 +70,16 @@ public final class WorldGenFiles {
      * (tags expanded); the biome modifiers' adds; and the entries not read (a placed feature whose configured feature is
      * not in the jars, an unknown feature tag, a biome modifier of another kind), counted for the log.
      */
-    public record Ores(Map<String, Ore> placed, Map<String, List<String>> biomes, List<Modifier> modifiers, int unread, String firstUnread) {
-        public static final Ores EMPTY = new Ores(Map.of(), Map.of(), List.of(), 0, null);
+    public record Ores(Map<String, Ore> placed, Map<String, List<String>> biomes, List<Modifier> modifiers, int unread, String firstUnread,
+                       List<io.github.mojolowjo.entropybot.aa.brain.GenWhere.Placer> placers) {
+        public static final Ores EMPTY = new Ores(Map.of(), Map.of(), List.of(), 0, null, List.of());
+
+        public Ores { placers = placers == null ? List.of() : List.copyOf(placers); }
+
+        /** No "where" placers (0.39.z68): the ore placements only. */
+        public Ores(Map<String, Ore> placed, Map<String, List<String>> biomes, List<Modifier> modifiers, int unread, String firstUnread) {
+            this(placed, biomes, modifiers, unread, firstUnread, List.of());
+        }
     }
 
     /** Reads the JSON entries' block-state names into one set and the ore placements; a broken file is counted, never thrown. */
@@ -150,7 +158,62 @@ public final class WorldGenFiles {
             features(m.get("features"), tags, f, miss, e.getKey());
             ms.add(new Modifier(List.copyOf(b), List.copyOf(f)));
         }
-        return new Ores(Map.copyOf(out), Map.copyOf(bs), List.copyOf(ms), unread[0], first[0]);
+        return new Ores(Map.copyOf(out), Map.copyOf(bs), List.copyOf(ms), unread[0], first[0], placers(configured, placed));
+    }
+
+    /**
+     * 0.39.z68: every placed feature whose placement says where (a {@code heightmap} or a {@code height_range} modifier,
+     * {@link io.github.mojolowjo.entropybot.aa.brain.GenWhere}) with the blocks its feature tree places: the block-state
+     * {@code Name}s of its configured feature, following the placed / configured features the tree names by id (a tree
+     * selector names its placed trees). The placement lists of nested placed features are not read for blocks (their
+     * {@code would_survive} states are predicates, not placed blocks); every {@code type} string is skipped.
+     */
+    static List<io.github.mojolowjo.entropybot.aa.brain.GenWhere.Placer> placers(Map<String, JsonElement> configured, Map<String, JsonElement> placed) {
+        List<io.github.mojolowjo.entropybot.aa.brain.GenWhere.Placer> out = new java.util.ArrayList<>();
+        for (var e : new java.util.TreeMap<>(placed).entrySet()) {
+            if (!e.getValue().isJsonObject()) continue;
+            JsonObject p = e.getValue().getAsJsonObject();
+            JsonElement pl = p.get("placement");
+            if (pl == null || !pl.isJsonArray() || !says(pl.getAsJsonArray())) continue;
+            Set<String> names = new java.util.TreeSet<>();
+            Set<String> visited = new HashSet<>();
+            visited.add("placed " + e.getKey());
+            reach(p.get("feature"), configured, placed, names, visited, true);
+            if (!names.isEmpty()) out.add(new io.github.mojolowjo.entropybot.aa.brain.GenWhere.Placer(e.getKey(), List.copyOf(names), pl.getAsJsonArray()));
+        }
+        return List.copyOf(out);
+    }
+
+    /** A placement list with a heightmap or a height_range modifier (the two kinds that say where). */
+    private static boolean says(JsonArray placement) {
+        for (JsonElement m : placement) {
+            if (!m.isJsonObject() || !m.getAsJsonObject().has("type")) continue;
+            String t = m.getAsJsonObject().get("type").getAsString();
+            if (t.endsWith("heightmap") || t.endsWith("height_range")) return true;
+        }
+        return false;
+    }
+
+    /** The block names a feature tree places; {@code feature}: a string here is a configured feature's id (a placed feature's "feature"). */
+    private static void reach(JsonElement e, Map<String, JsonElement> configured, Map<String, JsonElement> placed, Set<String> names, Set<String> visited, boolean feature) {
+        if (e == null) return;
+        if (e.isJsonArray()) { for (JsonElement c : e.getAsJsonArray()) reach(c, configured, placed, names, visited, false); return; }
+        if (e.isJsonPrimitive()) {
+            if (!e.getAsJsonPrimitive().isString()) return;
+            String id = id(e.getAsString());
+            if (!feature && placed.containsKey(id) && visited.add("placed " + id)) {
+                JsonElement p = placed.get(id);
+                if (p.isJsonObject()) reach(p.getAsJsonObject().get("feature"), configured, placed, names, visited, true);
+            } else if (configured.containsKey(id) && visited.add("configured " + id)) reach(configured.get(id), configured, placed, names, visited, false);
+            return;
+        }
+        if (!e.isJsonObject()) return;
+        for (var en : e.getAsJsonObject().entrySet()) {
+            String k = en.getKey();
+            if (k.equals("type") || k.equals("placement")) continue;
+            if (k.equals("Name") && en.getValue().isJsonPrimitive()) { names.add(en.getValue().getAsString()); continue; }
+            reach(en.getValue(), configured, placed, names, visited, false);   // a placed id first (a selector's entry), else a configured one
+        }
     }
 
     /** A configured feature JSON of the ore shape (config.size, config.targets[].state.Name) -> its Ore; null: not ore-shaped. */
@@ -306,6 +369,15 @@ public final class WorldGenFiles {
             ms.add(mo);
         }
         oj.add("modifiers", ms);
+        JsonArray ws = new JsonArray();                       // 0.39.z68: the "where" placers
+        for (var w : ores.placers()) {
+            JsonObject wo = new JsonObject();
+            wo.addProperty("id", w.id());
+            wo.add("blocks", array(w.blocks()));
+            wo.add("placement", w.placement());
+            ws.add(wo);
+        }
+        oj.add("placers", ws);
         oj.addProperty("unread", ores.unread());
         if (ores.firstUnread() != null) oj.addProperty("firstUnread", ores.firstUnread());
         o.add("ores", oj);
@@ -336,8 +408,13 @@ public final class WorldGenFiles {
         for (var e : oj.getAsJsonObject("biomes").entrySet()) biomes.put(e.getKey(), list(e.getValue()));
         List<Modifier> ms = new java.util.ArrayList<>();
         for (JsonElement e : oj.getAsJsonArray("modifiers")) ms.add(new Modifier(list(e.getAsJsonObject().get("biomes")), list(e.getAsJsonObject().get("features"))));
+        List<io.github.mojolowjo.entropybot.aa.brain.GenWhere.Placer> ws = new java.util.ArrayList<>();
+        for (JsonElement e : oj.getAsJsonArray("placers")) {          // 0.39.z68 (version 4): missing = not whole, the jars are read again
+            JsonObject w = e.getAsJsonObject();
+            ws.add(new io.github.mojolowjo.entropybot.aa.brain.GenWhere.Placer(w.get("id").getAsString(), list(w.get("blocks")), w.getAsJsonArray("placement")));
+        }
         return new Ores(Map.copyOf(placed), Map.copyOf(biomes), List.copyOf(ms), oj.has("unread") ? oj.get("unread").getAsInt() : 0,
-                oj.has("firstUnread") ? oj.get("firstUnread").getAsString() : null);
+                oj.has("firstUnread") ? oj.get("firstUnread").getAsString() : null, ws);
     }
 
     /** The read back from a cache file; one that is not this hash's or not whole throws IllegalArgumentException with the reason. */

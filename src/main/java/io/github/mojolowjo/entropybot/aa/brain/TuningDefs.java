@@ -317,6 +317,7 @@ final class TuningDefs {
         Tuning.def("exploreWords.maxMinutes", 30, "rm-constants 0.39.u2 (was ExploreWords.MAX_MINUTES)", "the max minutes of ExploreWords");
         Tuning.def("exploreWords.rings", 24, "rm-constants 0.39.u2 (was ExploreWords.RINGS)", "the rings of ExploreWords");
         Tuning.def("exploreWords.maxFromStart", 16, "rm-constants 0.39.u2 (was ExploreWords.MAX_FROM_START)", "How far (chunks, either axis) from where it started it goes, so the walk home stays short (256 blocks)");
+        Tuning.def("exploreWords.waterRings", 4, "0.39.z68 (owner 2026-10-25: wood on the surface; run Y 09:26-09:31: the explore went into the open sea)", "an explore for a surface target (GenWhere SURFACE) counts a chunk the client knows is water at its centre this many rings farther (it prefers land; an unseen chunk is not known: no extra)");
         Tuning.def("exploreWords.caveAir", 40, "rm-constants 0.39.u2 (was ExploreWords.CAVE_AIR)", "A cave under the bot");
         // failures
         Tuning.def("failures.retryMs", 10 * 60_000, "rm-constants 0.39.u2 (was Failures.RETRY_MS)", "the retry ms of Failures");

@@ -190,6 +190,33 @@ public final class NeedChain {
     }
 
     /**
+     * 0.39.z68: the surface over the bot: {@code depth} blocks of ground over the feet (0: under open sky, RestoreRules'
+     * one under-ground rule), and the cell to walk up to (the nearest open-sky standing cell, else the column's top);
+     * {@code dist}: its straight metres from the feet (a hint; the price is Baritone's path, rule 18).
+     */
+    public record Surface(int depth, int x, int y, int z, double dist) {}
+
+    /**
+     * 0.39.z68 (owner 2026-10-25: "if it's wood - go to surface to explore, if it's ore, explore for caves"): the facts the
+     * explore leaf reads: {@code of}: need word -> where its blocks generate ({@link io.github.mojolowjo.entropybot.aa.brain.GenWhere},
+     * from the jars' world-gen data; null: no such fact given, the explore as before z68); {@code surface}: the surface over
+     * the bot now (null: not known - the column not loaded, rule 15).
+     */
+    public record WhereFacts(Function<String, io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact> of, java.util.function.Supplier<Surface> surface) {
+        public static final WhereFacts NONE = new WhereFacts(w -> null, () -> null);
+
+        public WhereFacts {
+            if (of == null) of = w -> null;
+            if (surface == null) surface = () -> null;
+        }
+    }
+
+    /** 0.39.z68: the source key of the walk up to the surface ("surface at x y z"); any one held for the order: no walk up. */
+    public static final String SURFACE_AT = "surface at ";
+
+    public static String surfaceKey(int x, int y, int z) { return SURFACE_AT + x + " " + y + " " + z; }
+
+    /**
      * What the bot knows now. {@code bag}: item id -> count; {@code tableNear} / {@code furnaceNear}: one within reach;
      * {@code seenAll}: a need word (an item id, a tag "#ns:path", or several joined by "|") -> the known blocks that give it
      * (for a tag: any member; nearest first not needed); {@code mobs}: entity id -> the animals of that kind known;
@@ -202,13 +229,21 @@ public final class NeedChain {
     public record World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
                         Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path,
                         Function<String, Spot> stationAt, Function<String, Integer> usesLeft, List<String> held, Function<String, StripBand> strip,
-                        Function<String, CaveWay> cave, Rooms rooms) {
+                        Function<String, CaveWay> cave, Rooms rooms, WhereFacts where) {
+        /** 0.39.z68: no "where" facts ({@link WhereFacts#NONE}: every explore as before z68). */
+        public World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
+                     Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path,
+                     Function<String, Spot> stationAt, Function<String, Integer> usesLeft, List<String> held, Function<String, StripBand> strip,
+                     Function<String, CaveWay> cave, Rooms rooms) {
+            this(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, null);
+        }
+
         /** 0.39.z67 item 1: no cells with room known and no place failure held ({@link Rooms#NONE}). */
         public World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
                      Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path,
                      Function<String, Spot> stationAt, Function<String, Integer> usesLeft, List<String> held, Function<String, StripBand> strip,
                      Function<String, CaveWay> cave) {
-            this(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, null);
+            this(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, null, null);
         }
 
         /** 0.39.z44: no cave-mouth facts (the cave way is not offered). */
@@ -260,6 +295,7 @@ public final class NeedChain {
             if (strip == null) strip = w -> null;
             if (cave == null) cave = w -> null;
             if (rooms == null) rooms = Rooms.NONE;
+            if (where == null) where = WhereFacts.NONE;
             if (horizonBlocks <= 0) horizonBlocks = Unit.blocks(Sequencer.defaultHorizonS());
         }
 
@@ -272,30 +308,33 @@ public final class NeedChain {
             this(bag, tableNear, false, w -> { Spot s = seen == null ? null : seen.apply(w); return s == null ? List.of() : List.of(s); }, null, null, null, horizonBlocks);
         }
 
-        public World withMobs(Function<String, List<Mob>> m, LootBook l) { return new World(bag, tableNear, furnaceNear, seenAll, m, l, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms); }
+        public World withMobs(Function<String, List<Mob>> m, LootBook l) { return new World(bag, tableNear, furnaceNear, seenAll, m, l, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where); }
 
-        public World withBand(Function<String, int[]> b) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, b, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms); }
+        public World withBand(Function<String, int[]> b) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, b, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where); }
 
         /** path-cost: the walks priced by Baritone's complete path (null: no walk has a price). */
-        public World withPath(PathPrice p) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, p, stationAt, usesLeft, held, strip, cave, rooms); }
+        public World withPath(PathPrice p) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, p, stationAt, usesLeft, held, strip, cave, rooms, where); }
 
         /** station-memory: where the known stations stand (recipe kind -> spot; null: no position known). */
-        public World withStations(Function<String, Spot> at) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, at, usesLeft, held, strip, cave, rooms); }
+        public World withStations(Function<String, Spot> at) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, at, usesLeft, held, strip, cave, rooms, where); }
 
         /** 0.39.z33: the uses left of the bag's best stack of a tool id ({@link io.github.mojolowjo.entropybot.aa.brain.ToolUses}). */
         /** 0.39.z43: the strip facts per need word ({@link StripBand}; null: no strip way for it). */
-        public World withStrip(Function<String, StripBand> s) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, s, cave, rooms); }
+        public World withStrip(Function<String, StripBand> s) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, s, cave, rooms, where); }
 
         /** 0.39.z44: the cave-mouth facts per need word ({@link CaveWay}; null: no cave way for it). */
         public World withCave(Function<String, CaveWay> k) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, k, rooms); }
 
-        public World withUses(Function<String, Integer> u) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, u, held, strip, cave, rooms); }
+        public World withUses(Function<String, Integer> u) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, u, held, strip, cave, rooms, where); }
 
         /** 0.39.z67 item 1: the cells with room known now (solid ground the bot stood on, known stations; dist from the bot). */
         public World withRooms(List<Spot> cells) {
             return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave,
-                    new Rooms(cells, rooms.hereFailed()));
+                    new Rooms(cells, rooms.hereFailed()), where);
         }
+
+        /** 0.39.z68: where explore targets generate and the surface over the bot ({@link WhereFacts}). */
+        public World withWhere(WhereFacts w) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, w); }
 
         /**
          * 0.39.z67 item 1 (run Y 09:26:14 / 09:31:16): the order's held place failures ({@code keyWhy}: its dropped sources;
@@ -323,13 +362,13 @@ public final class NeedChain {
                 if (!close) cells.add(s);
             }
             return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave,
-                    new Rooms(cells, here));
+                    new Rooms(cells, here), where);
         }
 
         /** chop: the same world less the sources {@code held} names (need word, spot): a failed source is out of the re-price. */
         public World without(java.util.function.BiPredicate<String, Spot> held) {
             Function<String, List<Spot>> sa = seenAll;
-            return new World(bag, tableNear, furnaceNear, w -> sa.apply(w).stream().filter(sp -> !held.test(word(w), sp)).toList(), mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, this.held, strip, cave, rooms);
+            return new World(bag, tableNear, furnaceNear, w -> sa.apply(w).stream().filter(sp -> !held.test(word(w), sp)).toList(), mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, this.held, strip, cave, rooms, where);
         }
 
         /**
@@ -373,7 +412,7 @@ public final class NeedChain {
             };
             boolean tn = tableNear && !heldStation(sa, keyWhy, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT);
             boolean fn = furnaceNear && !heldStation(sa, keyWhy, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT);
-            return new World(bag, tn, fn, less.seenAll, mobs, loot, b, horizonBlocks, path, stationLess, usesLeft, h, stripLess, caveLess, rooms);
+            return new World(bag, tn, fn, less.seenAll, mobs, loot, b, horizonBlocks, path, stationLess, usesLeft, h, stripLess, caveLess, rooms, where);
         }
 
         /** 0.39.z65 review 1: the known station of the kind is one the order dropped. */
@@ -1949,6 +1988,7 @@ public final class NeedChain {
         if (s instanceof Step.ToBand b) return io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(b.minY(), b.maxY());   // 0.39.z42
         if (s instanceof Step.Strip st) return STRIP_KEY + st.key();      // 0.39.z43: a strip that ended lava / no path / no pickaxe
         if (s instanceof Step.ToStrip t) return STRIP_KEY + t.strip();    // 0.39.z46: no path down to the band: the same strip way
+        if (s instanceof Step.ToSurface t) return surfaceKey(t.x(), t.y(), t.z());   // 0.39.z68: no way up: explore from here
         return null;
     }
 
@@ -2538,17 +2578,66 @@ public final class NeedChain {
             c.fail = "source " + shw(sp.block() == null ? word : sp.block()) + " at " + sp.x() + " " + sp.y() + " " + sp.z() + ": " + SOURCE_NOT_LOADED;
             return null;
         }
+        // 0.39.z68 (owner 2026-10-25: "if it's wood - go to surface to explore, if it's ore, explore for caves"): where the
+        // target generates, from the jars' world-gen data (GenWhere: heightmap-placed = the surface, height_range = a band)
+        var where = c.w.where().of().apply(word);
+        String whereText = null, upText = null;
         int[] band = c.w.band().apply(word);
+        if (where != null && where.surface()) {
+            band = null;                                     // a surface target has no band to go down to
+            whereText = "on the surface (" + where.text() + ")";
+            upText = surfaceWalk(c);
+            if (upText == null && c.fail != null) return null;  // the walk up waits on its path (rule 18): the way waits, no explore
+        } else if (where != null && where.band()) {
+            // a band the ore placements did not give (a geode, an underground lake): the fact's own band, unless held
+            if (band == null && !heldKey(c, io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(where.lo(), where.hi()))) band = new int[]{where.lo(), where.hi()};
+            whereText = "under ground, toward caves in or near the band (" + where.text() + ")";
+        } else if (where != null) {
+            whereText = "as before (" + where.text() + ")";
+        }
         if (band != null) c.steps.add(new Step.ToBand(band[0], band[1]));
         c.steps.add(new Step.Explore(exploreMinutes(), shw(word)));      // live-facts: it ends once a source of the need is known
         c.stuck = true;
         if (c.unknown == null) c.unknown = word;
         String out = "explore (" + reason + (band == null ? "" : "; it generates at Y " + band[0] + ".." + band[1] + ", going there first") + ")";
+        if (whereText != null) out = "explore for " + shw(word) + " " + whereText + (upText == null ? "" : "; " + upText) + " " + out.substring("explore ".length());
         if (c.trace != null) {
             c.trace.note("source: none known for " + shw(word) + ": " + out);
             c.trace.untilFrom.computeIfAbsent(shw(word), k -> new LinkedHashSet<>()).add(c.trace.way());
         }
         return out;
+    }
+
+    /**
+     * 0.39.z68: the walk up before a surface target's explore (rule 1: an option with its price; rule 18: Baritone's complete
+     * path to the surface cell, the fork's ClimbGoal steering the climb). Returns its phrase with the step added and its
+     * seconds charged; null with no walk: under open sky already (the explore as before), the surface not known here (rule
+     * 15: said, the explore runs from here), a walk up already held for this order (its failure, said), or no path up
+     * (unreachable: said, the explore runs from here). Null with {@code c.fail} set: the path is not known yet (the way waits).
+     */
+    private static String surfaceWalk(Ctx c) {
+        Surface s = c.w.where().surface().get();
+        if (s == null) {
+            c.note(() -> "surface: where it is over the bot is not known (its column is not loaded): the explore runs from here");
+            return null;
+        }
+        if (s.depth() <= 0) return null;
+        for (String h : c.w.held())
+            if (h.startsWith(SURFACE_AT)) {
+                c.note(() -> "surface: the walk up failed in this order (" + h + "): the explore runs from here");
+                return null;
+            }
+        Walked wk = walk(c, s.x(), s.y(), s.z(), s.dist());
+        if (c.fail != null) {
+            if (wk.kind() != PathPrice.Kind.UNREACHABLE) return null;
+            c.unreachable.put(surfaceKey(s.x(), s.y(), s.z()), wk.fail());
+            c.fail = null;
+            c.note(() -> "surface: no path up to " + s.x() + " " + s.y() + " " + s.z() + " (" + wk.fail() + "): the explore runs from here");
+            return null;
+        }
+        c.steps.add(new Step.ToSurface(s.x(), s.y(), s.z()));
+        c.seconds += wk.seconds();
+        return noted("walk up to the surface at " + s.x() + " " + s.y() + " " + s.z() + " first (" + s.depth() + " under ground)", wk);
     }
 
     /**

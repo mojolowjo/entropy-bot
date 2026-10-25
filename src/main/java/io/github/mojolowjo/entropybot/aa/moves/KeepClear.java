@@ -34,7 +34,8 @@ public final class KeepClear {
         for (int i = Math.max(0, from); i < steps.size(); i++) {
             Step s = steps.get(i);
             int[] goal = s instanceof Step.Walk w ? new int[]{w.x(), w.y(), w.z()} : s instanceof Step.ToStrip t ? new int[]{t.x(), t.y(), t.z()}
-                    : s instanceof Step.ToStation st ? new int[]{st.x(), st.y(), st.z()} : null;      // 0.39.z65: the station walk too
+                    : s instanceof Step.ToStation st ? new int[]{st.x(), st.y(), st.z()}      // 0.39.z65: the station walk too
+                    : s instanceof Step.ToSurface su ? new int[]{su.x(), su.y(), su.z()} : null;      // 0.39.z68: the walk up too
             if (goal != null) {
                 List<int[]> path = walkCells == null ? null : walkCells.apply(goal);
                 if (path != null) for (int[] c : path) {
