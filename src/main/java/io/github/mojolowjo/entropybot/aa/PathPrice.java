@@ -14,9 +14,16 @@ import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 public interface PathPrice {
 
     /** A complete walk: seconds of Baritone's path (through {@link TickPrice}), its lava part in seconds. */
-    record Walk(double seconds, double lavaS, int pickBreaks) {
+    record Walk(double seconds, double lavaS, int pickBreaks, double pickHardness) {
         public Walk(double seconds) { this(seconds, 0); }
         public Walk(double seconds, double lavaS) { this(seconds, lavaS, 0); }
+        public Walk(double seconds, double lavaS, int pickBreaks) { this(seconds, lavaS, pickBreaks, 0); }
+        /**
+         * 0.39.z69 item 1 (run AA 11:39:48: "to y 5..31" dug stone by hand from y 62 to 31 for 5 min): the summed hardness
+         * ({@code BlockState.getDestroySpeed}) of the {@link #pickBreaks} blocks - what the chain prices their breaks by hand
+         * and with a pickaxe from (the game's break formula); 0: not counted.
+         */
+        public double pickHardness() { return Math.max(0, pickHardness); }
         /**
          * 0.39.z62 item 2 (run S: the stone pickaxe broke after the dug shaft from y 64 to 16 plus 46 strip blocks): the
          * blocks on the path's cells (feet and head height) that the game mines with a pickaxe, at the landing - the walk's

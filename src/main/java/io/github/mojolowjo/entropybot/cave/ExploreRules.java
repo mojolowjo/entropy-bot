@@ -158,6 +158,21 @@ public final class ExploreRules {
         return in;
     }
 
+    /**
+     * 0.39.z69 item 2 (owner 2026-10-25: "does the data tell where the ore is denser?"): the cave candidates of an explore
+     * for a band target ranked by the target's density curve at each cell's Y ({@code density}: GenWhere.Fact#curve with
+     * the caves' air-exposure discard), densest first; equal densities keep the given order (nearest first). A cell outside
+     * every band (density 0) still leads under ground: last, nearest first.
+     */
+    public static List<int[]> byCurve(List<int[]> nearestFirst, java.util.function.IntToDoubleFunction density) {
+        List<int[]> out = new ArrayList<>();
+        if (nearestFirst == null) return out;
+        out.addAll(nearestFirst);
+        if (density == null) return out;
+        out.sort(java.util.Comparator.comparingDouble((int[] c) -> density.applyAsDouble(c[1])).reversed());   // a stable sort: ties stay nearest first
+        return out;
+    }
+
     /** Arrived near a chunk target (within ARRIVED blocks, x + z)? */
     public static boolean arrived(int x, int z, Target t) {
         return Math.abs(x - t.x()) + Math.abs(z - t.z()) <= arrivedV();

@@ -118,7 +118,9 @@ class Z68ExploreWhereTest {
         assertEquals(GenWhere.Kind.BAND, w.kind(), w.text());
         assertEquals(-64, w.lo(), "ore_iron_small: uniform above_bottom 0 at bottom -64");
         assertEquals(384, w.hi(), "ore_iron_upper: trapezoid 80..384");
-        assertEquals("deepslate_iron_ore generates under ground at Y -64..384: ore_iron_middle is height-range-placed", w.text());
+        // 0.39.z69 item 2: the curve's peaks follow, densest first
+        assertEquals("deepslate_iron_ore generates under ground at Y -64..384: ore_iron_middle is height-range-placed; densest at y 232 (ore_iron_upper trapezoid 80..384, 5.3 a chunk layer)"
+                + " and y 16 (ore_iron_middle trapezoid -24..56, 2.5 a chunk layer)", w.text());
     }
 
     @Test
@@ -142,8 +144,8 @@ class Z68ExploreWhereTest {
         assertEquals(r.ores().placers().size(), back.ores().placers().size());
         assertEquals(GenWhere.of(List.of("minecraft:oak_log"), r.ores().placers(), -64, 320),
                 GenWhere.of(List.of("minecraft:oak_log"), back.ores().placers(), -64, 320));
-        String v3 = WorldGenFiles.toCache(hash, r).replace("\"version\":4", "\"version\":3");
-        assertThrows(IllegalArgumentException.class, () -> WorldGenFiles.fromCache(v3, hash), "a version 3 cache has no placers: the jars are read again");
+        String v4 = WorldGenFiles.toCache(hash, r).replace("\"version\":5", "\"version\":4");
+        assertThrows(IllegalArgumentException.class, () -> WorldGenFiles.fromCache(v4, hash), "a version 4 cache has no vein sizes / discards (z69): the jars are read again");
     }
 
     // ---- the chain: a bot at y 16 exploring for logs walks up first ----

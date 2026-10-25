@@ -24,6 +24,9 @@ import java.util.TreeSet;
  * UNKNOWN when no feature places them or they are placed both ways (today's explore), NOT_LOADED while the read is not done
  * (rule 15: never "none"). The biome share and the dimension are not modelled (rule 14: rough): every biome's features
  * count. The planner prices what it does with the fact (rule 1): the walk up to the surface is a priced walk (rule 18).
+ * 0.39.z69 item 2 (owner: "we can't just accept a range like -64..384"): each band carries its placer's density curve
+ * ({@link OreBand.Feature}: the height provider's shape, count, vein size, air-exposure discard); the fact says its peaks
+ * ({@link Fact#peakText}) and gives the density at a Y ({@link Fact#curve}) - the explore ranks caves by it.
  * Pure (JUnit: Z68ExploreWhereTest). Loader notes: the vanilla data format (placed_feature / configured_feature JSON, the
  * PlacementModifier and HeightProvider codecs' JSON); NeoForge / Fabric alike.
  */
@@ -32,18 +35,34 @@ public final class GenWhere {
 
     public enum Kind { SURFACE, BAND, UNKNOWN, NOT_LOADED }
 
-    /** One placed feature with a placement that says where: its id, the blocks its feature tree places, its placement list. */
-    public record Placer(String id, List<String> blocks, JsonArray placement) {
+    /**
+     * One placed feature with a placement that says where: its id, the blocks its feature tree places, its placement list;
+     * 0.39.z69 item 2: an ore-shaped configured feature's vein {@code size} and {@code discard_chance_on_air_exposure}
+     * (0 / 0: not an ore shape - the curve then counts its placements, one a vein).
+     */
+    public record Placer(String id, List<String> blocks, JsonArray placement, int size, double discard) {
         public Placer { blocks = List.copyOf(blocks); }
+
+        public Placer(String id, List<String> blocks, JsonArray placement) { this(id, blocks, placement, 0, 0); }
     }
 
     /**
      * 0.39.z68 review 2: one placer's own band: Y lo..hi, its veins per chunk (the {@code count} modifier's mean, a
-     * {@code rarity_filter}'s 1/chance; none or not read: 1) and its placed feature.
+     * {@code rarity_filter}'s 1/chance; none or not read: 1) and its placed feature. 0.39.z69 item 2: {@code curve}: its
+     * density by height ({@link OreBand.Feature}: the height provider's shape, the vein size, the air-exposure discard);
+     * null: the placement's count is not read (the flat veins per layer then).
      */
-    public record Band(int lo, int hi, double veins, String feature) {
-        /** Veins per layer: the placer's density over its height (rough, rule 14: the shape of the distribution is not read). */
-        public double density() { return veins / Math.max(1, hi - lo + 1); }
+    public record Band(int lo, int hi, double veins, String feature, OreBand.Feature curve) {
+        public Band(int lo, int hi, double veins, String feature) { this(lo, hi, veins, feature, null); }
+
+        /** The density at the placer's peak (its curve's), else veins per layer over its height (rough, rule 14). */
+        public double density() { return curve != null ? curve.perY(curve.peak()) : veins / Math.max(1, hi - lo + 1); }
+
+        /** 0.39.z69 item 2: expected blocks per chunk on layer y; {@code cave}: what a cave wall shows (the discard taken off). */
+        public double at(int y, boolean cave) {
+            if (curve != null) return cave ? curve.exposedPerY(y) : curve.perY(y);
+            return y < lo || y > hi ? 0 : veins / Math.max(1, hi - lo + 1);
+        }
 
         /** Blocks from y to the band (0 inside it). */
         public int dist(int y) { return y < lo ? lo - y : y > hi ? y - hi : 0; }
@@ -73,11 +92,54 @@ public final class GenWhere {
             return best;
         }
 
+        /**
+         * 0.39.z69 item 2 (owner 2026-10-25: "does the data tell where the ore is denser?"): the target's density at y -
+         * expected blocks per chunk on that layer, every placer's curve summed (OreBand, the one curve); {@code cave}: what a
+         * cave wall shows (each placer's air-exposure discard taken off). 0 outside every band, and for a fact with no bands.
+         */
+        public double curve(int y, boolean cave) {
+            double sum = 0;
+            for (Band b : bands) sum += b.at(y, cave);
+            return sum;
+        }
+
+        /** 0.39.z69 item 2: the placers' curves (the bands whose count was read). */
+        public List<OreBand.Feature> curves() {
+            List<OreBand.Feature> out = new ArrayList<>();
+            for (Band b : bands) if (b.curve() != null) out.add(b.curve());
+            return out;
+        }
+
+        /** 0.39.z69 item 2: one peak of the curve: its Y, the density there, and the placer densest at it. */
+        public record Peak(int y, double density, Band by) {}
+
+        /** 0.39.z69 item 2: the curve's peaks ({@link OreBand#peaks}), densest first; {@code cave}: as a cave wall shows them. */
+        public List<Peak> peaks(boolean cave) {
+            List<Peak> out = new ArrayList<>();
+            for (int y : OreBand.peaks(curves(), cave)) {
+                Band by = null;
+                for (Band b : bands) if (b.curve() != null && (by == null || b.at(y, cave) > by.at(y, cave))) by = b;
+                out.add(new Peak(y, curve(y, cave), by));
+            }
+            out.sort(java.util.Comparator.comparingDouble(Peak::density).reversed().thenComparingInt(Peak::y));
+            return out;
+        }
+
+        /** 0.39.z69 item 2: "densest at y 232 (ore_iron_upper trapezoid 80..384) and y 16 (ore_iron_middle trapezoid -24..56)"; "" none. */
+        public String peakText() {
+            List<String> parts = new ArrayList<>();
+            for (Peak p : peaks(false))
+                parts.add("y " + p.y() + " (" + (p.by() == null ? "?" : sh(p.by().feature()) + " " + p.by().curve().shapeText())
+                        + ", " + String.format(java.util.Locale.ROOT, "%.1f", p.density()) + " a chunk layer)");
+            return parts.isEmpty() ? "" : "densest at " + String.join(" and ", parts);
+        }
+
         /** The fact as the explore's step text says it ("oak_log grows on the surface: trees_plains is heightmap-placed"). */
         public String text() {
             return switch (kind) {
                 case SURFACE -> sh(block) + " grows on the surface: " + sh(feature) + " is heightmap-placed";
-                case BAND -> sh(block) + " generates under ground at Y " + lo + ".." + hi + ": " + sh(feature) + " is height-range-placed";
+                case BAND -> sh(block) + " generates under ground at Y " + lo + ".." + hi + ": " + sh(feature) + " is height-range-placed"
+                        + (peakText().isEmpty() ? "" : "; " + peakText());
                 case UNKNOWN -> "where it generates is not known: " + why;
                 case NOT_LOADED -> "where it generates is not loaded yet: " + why;
             };
@@ -186,7 +248,8 @@ public final class GenWhere {
             if (bBlock == null) { bBlock = hit; bFeat = p.id(); }
             lo = Math.min(lo, r[0]);
             hi = Math.max(hi, r[1]);
-            bands.add(new Band(r[0], r[1], veins(p.placement()), p.id()));
+            // 0.39.z69 item 2: the placer's density curve (the same OreBand the strip way reads; not an ore shape: one a vein)
+            bands.add(new Band(r[0], r[1], veins(p.placement()), p.id(), OreBand.of(p.placement(), Math.max(1, p.size()), p.discard(), bottom, top)));   // structural: not ore-shaped = one block a placement
         }
         if (sBlock != null && bBlock != null)
             return unknown(sh(sBlock) + " is placed on the ground's top (" + sh(sFeat) + ") and " + sh(bBlock) + " height-range-placed (" + sh(bFeat) + "): both ways");

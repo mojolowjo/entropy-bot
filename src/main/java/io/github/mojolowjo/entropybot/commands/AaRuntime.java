@@ -651,7 +651,13 @@ public final class AaRuntime implements JobPort {
                 item -> { var s = nearestSource(item); return s == null ? List.of() : List.of(s); },
                 this::animalsKnown, currentLootBook(), this::band, 0, LivePathPrice.INSTANCE, this::stationAt).withUses(AaRuntime::usesLeft).withStrip(this::strip).withCave(this::caveWay)
                 .withRooms(rooms(in.pos))
-                .withWhere(new io.github.mojolowjo.entropybot.aa.NeedChain.WhereFacts(this::whereOf, once(this::surfaceOver)));   // 0.39.z68
+                .withWhere(new io.github.mojolowjo.entropybot.aa.NeedChain.WhereFacts(this::whereOf, once(this::surfaceOver), AaRuntime::feetNow));   // 0.39.z68; z69: the feet
+    }
+
+    /** 0.39.z69 item 1: the feet cell now for the explore leaf's band walk (null: no player). Loader notes: vanilla LocalPlayer#blockPosition (Jobs.here). */
+    private static int[] feetNow() {
+        LocalPlayer p = Minecraft.getInstance().player;
+        return p == null ? null : Jobs.here(p);
     }
 
     /** 0.39.z68: a supplier read once per world snapshot (the sky scan runs only when an explore leaf asks). */

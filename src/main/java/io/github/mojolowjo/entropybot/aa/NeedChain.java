@@ -40,7 +40,8 @@ import java.util.function.ToDoubleFunction;
  * <li>Hunt it: a mob whose loot drops it ({@link LootBook} MOB sources) with an animal of that kind known
  *     ({@link World#mobs}): the walk and the kills (the mob's health by the bot's hit, game facts).</li>
  * <li>Else explore until a source is known: no price (the check before the chain, SCENARIOS); for an item a block
- *     generates with (the catalog's worldgen) one Baritone goal to that height band first ({@link Step.ToBand}).</li>
+ *     generates with (the catalog's worldgen) one Baritone goal to that height band first ({@link Step.ToBand}); 0.39.z69:
+ *     that walk is priced (Baritone's path, its breaks by hand) against making the cheapest pickaxe first ({@code bandLeg}).</li>
  * </ul>
  * TAG_NEEDS (owner 2026-10-22): a need is {@code N of <item>} or {@code N of #<tag>} (a recipe slot as the recipe gives it,
  * {@link ItemWorth.Recipe#needs}). A tag need stays a tag until a step must name a block or an item in the world: it is met
@@ -200,14 +201,22 @@ public final class NeedChain {
      * 0.39.z68 (owner 2026-10-25: "if it's wood - go to surface to explore, if it's ore, explore for caves"): the facts the
      * explore leaf reads: {@code of}: need word -> where its blocks generate ({@link io.github.mojolowjo.entropybot.aa.brain.GenWhere},
      * from the jars' world-gen data; null: no such fact given, the explore as before z68); {@code surface}: the surface over
-     * the bot now (null: not known - the column not loaded, rule 15).
+     * the bot now (null: not known - the column not loaded, rule 15). 0.39.z69 item 1: {@code feet}: the bot's feet cell now
+     * {x, y, z} (null: not known) - the band walk's cell (the feet's column at the band's nearest Y, as StepHands walks it)
+     * is priced from it; not known: the ToBand step as before z69 (unpriced, said).
      */
-    public record WhereFacts(Function<String, io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact> of, java.util.function.Supplier<Surface> surface) {
+    public record WhereFacts(Function<String, io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact> of, java.util.function.Supplier<Surface> surface,
+                             java.util.function.Supplier<int[]> feet) {
         public static final WhereFacts NONE = new WhereFacts(w -> null, () -> null);
+
+        public WhereFacts(Function<String, io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact> of, java.util.function.Supplier<Surface> surface) {
+            this(of, surface, null);
+        }
 
         public WhereFacts {
             if (of == null) of = w -> null;
             if (surface == null) surface = () -> null;
+            if (feet == null) feet = () -> null;
         }
     }
 
@@ -645,6 +654,7 @@ public final class NeedChain {
         int pickWorn;         // 0.39.z33: blocks the bag's pickItem breaks in this chain so far (a made pickaxe: reset, it is new)
         boolean pickMade;     // 0.39.z33: pickItem was made in this chain (fresh: its uses are its max damage, not the bag's)
         int trials;           // ways priced so far (the search's bound)
+        boolean bandPick;     // 0.39.z69 item 1: a band walk's pickaxe-first is being priced (no second one inside it)
         /**
          * 0.39.z61 (D1 J2): a craft / smelt step (this very object) -> what the simulated bag took for it, by the recipe slot's
          * need word. Keyed by identity: a dropped way's steps simply never reach the chain (no restore needed).
@@ -1778,8 +1788,8 @@ public final class NeedChain {
      * is not a price ("walk: path not known yet (computing)", "walk: path not known (chunks not loaded)", "unreachable
      * (Baritone: ...)"), null with a price; {@code kind}: the provider's answer kind.
      */
-    record Walked(double seconds, String note, String fail, PathPrice.Kind kind, int pickBreaks) {
-        Walked(double seconds, String note, String fail, PathPrice.Kind kind) { this(seconds, note, fail, kind, 0); }
+    record Walked(double seconds, String note, String fail, PathPrice.Kind kind, int pickBreaks, double pickHardness) {
+        Walked(double seconds, String note, String fail, PathPrice.Kind kind) { this(seconds, note, fail, kind, 0, 0); }
     }
 
     /** 0.39.z41: the way's text for a walk that is not a price (aa why / aa debug). */
@@ -1811,7 +1821,7 @@ public final class NeedChain {
         return switch (a.kind()) {
             case PRICED -> a.walk() == null || !(a.walk().seconds() >= 0) || Double.isInfinite(a.walk().seconds())
                     ? new Walked(Double.NaN, "", PathPrice.NOT_KNOWN + " (an unusable answer: " + a.walk() + ")", PathPrice.Kind.NONE)
-                    : new Walked(a.walk().seconds(), "walk " + s(a.walk().seconds()) + " (path)" + lavaNote(a.walk()), null, PathPrice.Kind.PRICED, a.walk().pickBreaks());
+                    : new Walked(a.walk().seconds(), "walk " + s(a.walk().seconds()) + " (path)" + lavaNote(a.walk()), null, PathPrice.Kind.PRICED, a.walk().pickBreaks(), a.walk().pickHardness());
             case COMPUTING -> new Walked(Double.NaN, "", why.isEmpty() ? COMPUTING : PathPrice.NOT_KNOWN + " yet (computing; " + why + ")", a.kind());
             case CHUNKS -> new Walked(Double.NaN, "", PathPrice.NOT_KNOWN + " (" + (why.isEmpty() ? "chunks not loaded" : why) + ")", a.kind());
             case UNREACHABLE -> new Walked(Double.NaN, "", io.github.mojolowjo.entropybot.aa.moves.FactChange.unreachableText(why.isEmpty() ? "no path, the search ended" : why), a.kind());
@@ -2595,17 +2605,141 @@ public final class NeedChain {
         } else if (where != null) {
             whereText = "as before (" + where.text() + ")";
         }
-        if (band != null) c.steps.add(new Step.ToBand(band[0], band[1]));
+        String legText = null;
+        if (band != null) {
+            // 0.39.z69 item 1 (run AA 11:39:48: "to y 5..31" with no pickaxe dug stone by hand from y 62 to 31 for 5 min,
+            // then stuck 40 s on the next one): the walk down is Baritone's priced path (rule 18) with its breaks, compared
+            // with making the cheapest pickaxe first (rule 1: an option with its price)
+            legText = bandLeg(c, band);
+            if (legText == null && c.fail != null) return null;   // its path (or the pickaxe's) is not known yet: the way waits
+            if (BAND_DROPPED.equals(legText)) { band = null; legText = null; }
+        }
         c.steps.add(new Step.Explore(exploreMinutes(), shw(word)));      // live-facts: it ends once a source of the need is known
         c.stuck = true;
         if (c.unknown == null) c.unknown = word;
-        String out = "explore (" + reason + (band == null ? "" : "; it generates at Y " + band[0] + ".." + band[1] + ", going there first") + ")";
+        String out = "explore (" + reason + (band == null ? "" : "; it generates at Y " + band[0] + ".." + band[1] + ", going there first"
+                + (legText == null || legText.isEmpty() ? "" : ": " + legText)) + ")";
         if (whereText != null) out = "explore for " + shw(word) + " " + whereText + (upText == null ? "" : "; " + upText) + " " + out.substring("explore ".length());
         if (c.trace != null) {
             c.trace.note("source: none known for " + shw(word) + ": " + out);
             c.trace.untilFrom.computeIfAbsent(shw(word), k -> new LinkedHashSet<>()).add(c.trace.way());
         }
         return out;
+    }
+
+    /** 0.39.z69 item 1: {@link #bandLeg}'s answer when the band is out for this order (no path into it): the explore runs from here. */
+    static final String BAND_DROPPED = "\u0000band dropped";
+
+    /**
+     * 0.39.z69 item 1 (run AA 11:39:17-11:44:44: the torch chain cut 1 log, then "to y 5..31" walked Baritone's path down from
+     * y 62 with no pickaxe in the bag, breaking stone by hand - 7.5 s a block and no drop, the loot data's match_tool - for 5
+     * min; the next one stood 40 s while its hand-dig path computed): the ToBand step's walk priced before it is offered. The
+     * cell is the feet's column at the band's nearest Y ({@link Step.ToBand#target}, the cell StepHands walks to); the price is
+     * Baritone's complete path (rule 18) with the bag the bot holds now, its pickaxe-mineable breaks counted
+     * ({@link PathPrice.Walk#pickBreaks}, #mineable/pickaxe, their hardness). With no pickaxe in the chain and breaks on the
+     * path, the way "make the cheapest pickaxe first (the game's pickaxes tag, any tier digs a #mineable/pickaxe block at the
+     * tool's speed), then walk" is priced on a snapshot: the pickaxe's chain + its spares for the breaks
+     * ({@link #spareTools}) + the walk less what the breaks save (the game's break formula: by hand at speed 1 and /100, with
+     * the pickaxe at its speed and /30) - and the cheaper of the two is kept (rule 1). Returns the leg's phrase with its steps
+     * added and its seconds charged; "" when it adds nothing priced (in the band already, or the feet not known: the ToBand
+     * step as before, unpriced, said); {@link #BAND_DROPPED} with no step: Baritone found no path into the band (held for the
+     * order, the z42 fact); null with {@code c.fail}: the walk's (or the pickaxe's) path is not known yet - the way waits.
+     */
+    private static String bandLeg(Ctx c, int[] band) {
+        Step.ToBand tb = new Step.ToBand(band[0], band[1]);
+        int[] feet = c.w.where().feet().get();
+        if (feet == null || feet.length < 3) {     // structural: x y z
+            c.steps.add(tb);
+            c.note(() -> "band walk: the feet are not known: " + tb.text() + " is not priced (the step walks Baritone's path when it starts)");
+            return "";
+        }
+        if (feet[1] >= band[0] && feet[1] <= band[1]) {
+            c.note(() -> "band walk: the feet are in the band already (y " + feet[1] + ")");
+            return "";
+        }
+        int ty = tb.target(feet[1]);
+        Walked wk = walk(c, feet[0], ty, feet[2], Math.abs(feet[1] - ty));
+        if (c.fail != null) {
+            if (wk.kind() != PathPrice.Kind.UNREACHABLE) return null;
+            c.unreachable.put(io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(band[0], band[1]), wk.fail());
+            c.fail = null;
+            c.note(() -> "band walk: no path into " + tb.text() + " (" + wk.fail() + "): the explore runs from here");
+            return BAND_DROPPED;
+        }
+        int digs = wk.pickBreaks();
+        double handS = wk.seconds();
+        String head = (feet[1] > ty ? "dig down" : "walk") + " to y " + ty;
+        if (digs <= 0) {
+            c.steps.add(tb);
+            c.seconds += handS;
+            return noted(head, wk);
+        }
+        if (c.pickItem != null) {
+            // a pickaxe in the bag (Baritone priced the path with it) or made earlier in this chain (priced by hand: the saving)
+            double saved = c.pickMade ? savedS(digs, wk.pickHardness(), c.pickItem) : 0;
+            int tier = Math.max(1, c.pickTier);       // structural: any pickaxe (the bot's tier scale: 1 = the least pickaxe)
+            String spare = spareTools(c, digs, tier);
+            if (spare == null) c.pickWorn += digs;
+            c.steps.add(tb);
+            double s = Math.max(0, handS - saved);
+            c.seconds += s;
+            return head + " with " + sh(c.pickItem) + " (" + digs + " blocks to break" + (saved > 0 ? ", " + s(saved) + " saved on the hand price" : "") + "): " + s(s)
+                    + (spare == null ? "" : " + " + spare);
+        }
+        String pick = null, spare = null;
+        double pickS = Double.NaN, withS = Double.NaN;
+        if (!c.bandPick) {
+            Ctx.Snap before = c.snap();
+            double s0 = c.seconds;
+            c.bandPick = true;
+            try {
+                pick = cheapestPickaxe(c, 1);          // structural: any pickaxe (the bot's tier scale: 1 = the least pickaxe)
+                if (c.fail == null && !c.stuck) spare = spareTools(c, digs, Math.max(1, c.pickTier));
+            } finally {
+                c.bandPick = false;
+            }
+            if (c.fail != null || c.stuck) {
+                String why = c.fail != null ? c.fail : "its own source is still to find (" + (c.unknown == null ? "?" : shw(c.unknown)) + ")";
+                boolean waits = c.fail != null && c.fail.startsWith(PathPrice.NOT_KNOWN);
+                c.restore(before);
+                if (waits) { c.fail = why; return null; }      // rule 18: the pickaxe's walk is not known yet, the leg waits
+                c.note(() -> "band walk: no pickaxe to be had first (" + why + "): the dig by hand stands alone");
+                pick = null;
+            } else {
+                pickS = c.seconds - s0;
+                double saved = savedS(digs, wk.pickHardness(), c.pickItem);
+                withS = pickS + Math.max(0, handS - saved);
+                if (withS < handS) {
+                    if (spare == null) c.pickWorn += digs;
+                    c.steps.add(tb);
+                    c.seconds = s0 + withS;
+                    final double fp = pickS, fw = withS, fs = saved;
+                    c.note(() -> "band walk: " + digs + " blocks to break - the pickaxe first " + s(fp) + " + the walk " + s(handS - fs) + " = " + s(fw) + " beats by hand " + s(handS));
+                    return head + " with " + sh(c.pickItem) + " made first (" + digs + " blocks to break; pickaxe " + s(pickS) + " + walk " + s(handS - saved) + " = " + s(withS)
+                            + ", by hand " + s(handS) + "; <- " + pick + ")" + (spare == null ? "" : " + " + spare);
+                }
+                c.restore(before);
+            }
+        }
+        c.steps.add(tb);
+        c.seconds += handS;
+        final double fw = withS;
+        c.note(() -> "band walk: " + digs + " blocks to break by hand " + s(handS) + (Double.isNaN(fw) ? "" : " (the pickaxe first " + s(fw) + ")"));
+        return head + " by hand (" + digs + " blocks to break" + (Double.isNaN(withS) ? "" : "; the pickaxe first " + s(withS)) + "): " + s(handS);
+    }
+
+    /**
+     * 0.39.z69 item 1: seconds a walk's {@code digs} pickaxe-mineable breaks save with {@code pick} in hand over the hand
+     * price Baritone's path carried (the game's break formula, {@link GameTimes#breakSeconds}, at the blocks' mean hardness:
+     * by hand speed 1 and not the right tool, /100; with the pickaxe its dig speed and the right tool, /30). Rough (rule 14):
+     * one mean block. 0: the hardness was not counted (said).
+     */
+    static double savedS(int digs, double hardness, String pick) {
+        if (digs <= 0 || hardness <= 0 || pick == null) return 0;
+        double h = hardness / digs;
+        double speed = Math.max(1, ItemWorth.facts(pick).digSpeed());
+        double hand = TickPrice.breakS(GameTimes.breakSeconds(h, 1, false)), with = TickPrice.breakS(GameTimes.breakSeconds(h, speed, true));
+        return Math.max(0, digs * (hand - with));
     }
 
     /**

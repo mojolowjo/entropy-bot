@@ -313,7 +313,8 @@ public final class LivePathPrice implements PathPrice {
             landing = -1;                                // an older fork: read every time (said once by pricedAsk's install line)
         }
         double lava = lavaKept.lava(key, landing, PricedAnswers.cells(cells), () -> lavaCells(mc, cells));
-        return Answer.priced(new Walk(TickPrice.walkS(a.ticks), TickPrice.walkS(lava), pickBreaks(mc, a.path)));
+        double[] dug = pickBreaks(mc, a.path);
+        return Answer.priced(new Walk(TickPrice.walkS(a.ticks), TickPrice.walkS(lava), (int) dug[0], dug[1]));
     }
 
     /** structural: goal keys whose lava parts are kept (a chain asks a few dozen; past this they are read again) */
@@ -387,7 +388,10 @@ public final class LivePathPrice implements PathPrice {
     /** Baritone's answer as the chain's: complete -> the price; noPath -> its reason, by kind; "about" -> not a price. */
     private static Answer answer(Minecraft mc, IPathCost.Answer a) {
         if (a == null) return Answer.none("the search gave no answer");
-        if (!a.noPath && a.complete) return Answer.priced(new Walk(TickPrice.walkS(a.ticks), TickPrice.walkS(lavaTicks(mc, a)), pickBreaks(mc, a.path)));
+        if (!a.noPath && a.complete) {
+            double[] dug = pickBreaks(mc, a.path);
+            return Answer.priced(new Walk(TickPrice.walkS(a.ticks), TickPrice.walkS(lavaTicks(mc, a)), (int) dug[0], dug[1]));
+        }
         if (!a.noPath) return Answer.none("budget: the search ran out before the goal (" + a + ")");
         if (IPathCost.Answer.UNREACHABLE.equals(a.reason)) return Answer.unreachable("no path: the complete search found none");
         if (baritone.api.pathing.calc.IPricedPath.NO_PROGRESS.equals(a.reason))       // 0.39.z46: a segment search went nowhere
@@ -436,21 +440,27 @@ public final class LivePathPrice implements PathPrice {
     /**
      * 0.39.z62 item 2 (rule 14, rough): the blocks the walk breaks with a pickaxe - per path cell (the feet's cells) the feet
      * and head block, counted when the game tags it mineable with a pickaxe (BlockTags.MINEABLE_WITH_PICKAXE); the level now,
-     * when the answer lands. 0: no level, no cells, or an unloaded cell (not counted). Loader notes: vanilla
-     * Level#getBlockState, BlockState#is(TagKey).
+     * when the answer lands. 0: no level, no cells, or an unloaded cell (not counted). 0.39.z69 item 1: with their summed
+     * hardness ({@code {count, hardness}}), what the chain prices the breaks by hand and with a pickaxe from. Loader notes:
+     * vanilla Level#getBlockState, BlockState#is(TagKey), BlockState#getDestroySpeed(BlockGetter, BlockPos).
      */
-    private static int pickBreaks(Minecraft mc, java.util.List<? extends BlockPos> path) {
-        if (mc.level == null || path == null || path.isEmpty()) return 0;
+    private static double[] pickBreaks(Minecraft mc, java.util.List<? extends BlockPos> path) {
+        if (mc.level == null || path == null || path.isEmpty()) return new double[]{0, 0};
         var lv = mc.level;
         int n = 0;
+        double hard = 0;
         for (int i = 1; i < path.size(); i++) {          // the first cell is where the walk starts (nothing broken there)
             BlockPos p = path.get(i);
             for (int dy = 0; dy <= 1; dy++) {            // structural: the feet and the head cell
                 BlockPos q = p.above(dy);
-                if (lv.isLoaded(q) && lv.getBlockState(q).is(net.minecraft.tags.BlockTags.MINEABLE_WITH_PICKAXE)) n++;
+                if (!lv.isLoaded(q)) continue;
+                var st = lv.getBlockState(q);
+                if (!st.is(net.minecraft.tags.BlockTags.MINEABLE_WITH_PICKAXE)) continue;
+                n++;
+                hard += Math.max(0, st.getDestroySpeed(lv, q));
             }
         }
-        return n;
+        return new double[]{n, hard};
     }
 
     /** 0.39.z57: each cell's lava ticks (LavaNear at the Tuning values, the level now); zeros when the level is gone (rule 7: the level is the one null). */

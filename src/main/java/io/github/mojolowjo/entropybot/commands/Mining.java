@@ -1107,7 +1107,8 @@ final class Mining {
             ex.where = commands.aaRuntime.whereOf(ex.untilSource);
             ex.whereRead = ex.where.kind() != io.github.mojolowjo.entropybot.aa.brain.GenWhere.Kind.NOT_LOADED;   // rule 15: asked again until loaded
             if (first || ex.whereRead) LOG.info("[entropybot] explore: for {}: {}", ex.untilSource, ex.where.surface() ? "on the surface - " + ex.where.text() + " (known water chunks count exploreWords.waterRings " + io.github.mojolowjo.entropybot.vocab.ExploreWords.waterRings() + " rings farther)"
-                    : ex.where.band() ? "toward caves in or near the band - " + ex.where.text() : "as before - " + ex.where.text());
+                    : ex.where.band() ? "toward caves in or near the band, ranked by the density at their Y (exposed ore: less the air-exposure discard) - " + ex.where.text()
+                    : "as before - " + ex.where.text());
         }
         boolean surfaceTarget = ex.where != null && ex.where.surface();
         boolean bandTarget = ex.where != null && ex.where.band();
@@ -1125,10 +1126,19 @@ final class Mining {
                 if (Jobs.distSq(me, new int[]{m.x(), m.y(), m.z()}) <= (long) within * within) cells.add(new int[]{m.x(), m.y(), m.z()});
             cells.sort(java.util.Comparator.comparingDouble(c2 -> Jobs.distSq(me, c2)));
             if (bandTarget) {
-                // z68 review 2: the placer band nearest the feet (inside it: 0), ties to the densest - not the whole union
-                var pb = ex.where.preferred(me[1]);
-                cells = pb == null ? ExploreRules.bandFirst(cells, ex.where.lo(), ex.where.hi()) : ExploreRules.bandFirst(cells, pb.lo(), pb.hi());
-                if (pb != null && !cells.isEmpty()) LOG.debug("[entropybot] explore: caves in {}'s band {}..{} first (feet y {})", pb.feature(), pb.lo(), pb.hi(), me[1]);
+                // 0.39.z69 item 2 (owner: "does the data tell where the ore is denser?"): the caves ranked by the target's
+                // density curve at their Y as a cave wall shows it (each placer's air-exposure discard taken off), densest
+                // first, ties nearest first; a fact with no curve read: z68's placer band nearest the feet first
+                var where = ex.where;
+                if (!where.curves().isEmpty()) {
+                    cells = ExploreRules.byCurve(cells, y -> where.curve(y, true));
+                    if (!cells.isEmpty()) LOG.debug("[entropybot] explore: caves ranked by {}'s density at their Y (first at y {}: {})", ex.untilSource, cells.get(0)[1],
+                            String.format(java.util.Locale.ROOT, "%.2f", where.curve(cells.get(0)[1], true)));
+                } else {
+                    var pb = where.preferred(me[1]);
+                    cells = pb == null ? ExploreRules.bandFirst(cells, where.lo(), where.hi()) : ExploreRules.bandFirst(cells, pb.lo(), pb.hi());
+                    if (pb != null && !cells.isEmpty()) LOG.debug("[entropybot] explore: caves in {}'s band {}..{} first (feet y {})", pb.feature(), pb.lo(), pb.hi(), me[1]);
+                }
             }
             int[] aim = ExploreRules.toward(cells, cell -> CAVE_VISITED.contains(Jobs.fmt(cell)));
             if (aim != null) {

@@ -21,6 +21,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
+import io.github.mojolowjo.entropybot.aa.brain.GenWhere;
+
 /**
  * 0.39.z26 (2): the pure half of the world-gen block read (the structure fact's "crafted and not world-gen" leg). The block
  * ids world gen places, from the data the client's jars carry (the same data packs the loot book reads, JarPacks): every
@@ -43,7 +45,7 @@ public final class WorldGenFiles {
     public static final List<String> PLACEMENT_DIRS = List.of("worldgen/placed_feature", "worldgen/biome", "neoforge/biome_modifier", "tags/worldgen/placed_feature");
     /** The owner's correction, in the entropybot folder: {"<block id>": true (world gen places it) | false (it does not)}. */
     public static final String OVERRIDE_FILE = "worldgen-override.json";
-    static final int CACHE_VERSION = 4;  // structural: the cache file's format version (2: no template blocks; 3: the ore placements; 4: the "where" placers)
+    static final int CACHE_VERSION = 5;  // structural: the cache file's format version (2: no template blocks; 3: the ore placements; 4: the "where" placers; 5: vein size and air-exposure discard)
 
     /** One file of the read: its id ("ns:path" under data/ns) and how to open it. */
     public interface Entry {
@@ -60,7 +62,10 @@ public final class WorldGenFiles {
      * 0.39.z45: one placed feature that places ore: its id, the blocks its configured feature targets (an ore-shaped config:
      * {@code size} and {@code targets[].state}), the vein size and the placement list as the JSON writes it.
      */
-    public record Ore(String id, List<String> blocks, int size, JsonArray placement) {}
+    public record Ore(String id, List<String> blocks, int size, JsonArray placement, double discard) {
+        /** No air-exposure discard (0.39.z69: the configured feature's {@code discard_chance_on_air_exposure}, 0 when absent). */
+        public Ore(String id, List<String> blocks, int size, JsonArray placement) { this(id, blocks, size, placement, 0); }
+    }
 
     /** A biome modifier's add: the biomes it names (ids or #tags, the game's biome tags resolve them) and the placed features it adds. */
     public record Modifier(List<String> biomes, List<String> features) {}
@@ -71,7 +76,7 @@ public final class WorldGenFiles {
      * not in the jars, an unknown feature tag, a biome modifier of another kind), counted for the log.
      */
     public record Ores(Map<String, Ore> placed, Map<String, List<String>> biomes, List<Modifier> modifiers, int unread, String firstUnread,
-                       List<io.github.mojolowjo.entropybot.aa.brain.GenWhere.Placer> placers) {
+                       List<GenWhere.Placer> placers) {
         public static final Ores EMPTY = new Ores(Map.of(), Map.of(), List.of(), 0, null, List.of());
 
         public Ores { placers = placers == null ? List.of() : List.copyOf(placers); }
@@ -168,8 +173,8 @@ public final class WorldGenFiles {
      * selector names its placed trees). The placement lists of nested placed features are not read for blocks (their
      * {@code would_survive} states are predicates, not placed blocks); every {@code type} string is skipped.
      */
-    static List<io.github.mojolowjo.entropybot.aa.brain.GenWhere.Placer> placers(Map<String, JsonElement> configured, Map<String, JsonElement> placed) {
-        List<io.github.mojolowjo.entropybot.aa.brain.GenWhere.Placer> out = new java.util.ArrayList<>();
+    static List<GenWhere.Placer> placers(Map<String, JsonElement> configured, Map<String, JsonElement> placed) {
+        List<GenWhere.Placer> out = new java.util.ArrayList<>();
         for (var e : new java.util.TreeMap<>(placed).entrySet()) {
             if (!e.getValue().isJsonObject()) continue;
             JsonObject p = e.getValue().getAsJsonObject();
@@ -179,7 +184,13 @@ public final class WorldGenFiles {
             Set<String> visited = new HashSet<>();
             visited.add("placed " + e.getKey());
             reach(p.get("feature"), configured, placed, names, visited, true);
-            if (!names.isEmpty()) out.add(new io.github.mojolowjo.entropybot.aa.brain.GenWhere.Placer(e.getKey(), List.copyOf(names), pl.getAsJsonArray()));
+            if (names.isEmpty()) continue;
+            // 0.39.z69 item 2: an ore-shaped configured feature gives its vein size and air-exposure discard (the density curve)
+            JsonElement f = p.get("feature");
+            JsonElement cf = f != null && f.isJsonPrimitive() ? configured.get(id(f.getAsString())) : f;
+            Ore o = ore(e.getKey(), cf, pl);
+            out.add(o == null ? new GenWhere.Placer(e.getKey(), List.copyOf(names), pl.getAsJsonArray())
+                    : new GenWhere.Placer(e.getKey(), List.copyOf(names), pl.getAsJsonArray(), o.size(), o.discard()));
         }
         return List.copyOf(out);
     }
@@ -231,7 +242,10 @@ public final class WorldGenFiles {
             for (String b : n) if (!blocks.contains(b)) blocks.add(b);
         }
         if (blocks.isEmpty()) return null;
-        return new Ore(placedId, List.copyOf(blocks), co.get("size").getAsInt(), placement.getAsJsonArray());
+        // 0.39.z69 item 2: OreConfiguration's discard_chance_on_air_exposure (absent: 0, the codec's default)
+        JsonElement dc = co.get("discard_chance_on_air_exposure");
+        double discard = dc != null && dc.isJsonPrimitive() ? dc.getAsDouble() : 0;
+        return new Ore(placedId, List.copyOf(blocks), co.get("size").getAsInt(), placement.getAsJsonArray(), discard);
     }
 
     /** A feature list (an id, "#tag", or an array of them) into ids, the tags expanded from the jars' placed-feature tags. */
@@ -281,7 +295,7 @@ public final class WorldGenFiles {
         for (String pf : pfs) {
             Ore ore = o.placed().get(pf);
             if (ore == null) continue;                       // not an ore placement
-            var f = io.github.mojolowjo.entropybot.aa.brain.OreBand.of(ore.placement(), ore.size(), bottom, top);
+            var f = io.github.mojolowjo.entropybot.aa.brain.OreBand.of(ore.placement(), ore.size(), ore.discard(), bottom, top);
             if (f == null) { if (unpriced != null && heightPlaced(ore.placement())) unpriced[0]++; continue; }
             for (String b : ore.blocks()) out.computeIfAbsent(b, k -> new java.util.ArrayList<>()).add(f);
         }
@@ -354,6 +368,7 @@ public final class WorldGenFiles {
             for (String b : x.blocks()) bl.add(b);
             p.add("blocks", bl);
             p.addProperty("size", x.size());
+            p.addProperty("discard", x.discard());           // 0.39.z69 (version 5)
             p.add("placement", x.placement());
             pl.add(p);
         }
@@ -375,6 +390,8 @@ public final class WorldGenFiles {
             wo.addProperty("id", w.id());
             wo.add("blocks", array(w.blocks()));
             wo.add("placement", w.placement());
+            wo.addProperty("size", w.size());                // 0.39.z69 (version 5)
+            wo.addProperty("discard", w.discard());
             ws.add(wo);
         }
         oj.add("placers", ws);
@@ -402,16 +419,17 @@ public final class WorldGenFiles {
         Map<String, Ore> placed = new java.util.TreeMap<>();
         for (JsonElement e : oj.getAsJsonArray("placed")) {
             JsonObject p = e.getAsJsonObject();
-            placed.put(p.get("id").getAsString(), new Ore(p.get("id").getAsString(), list(p.get("blocks")), p.get("size").getAsInt(), p.getAsJsonArray("placement")));
+            placed.put(p.get("id").getAsString(), new Ore(p.get("id").getAsString(), list(p.get("blocks")), p.get("size").getAsInt(), p.getAsJsonArray("placement"),
+                    p.get("discard").getAsDouble()));      // 0.39.z69 (version 5): missing = not whole, the jars are read again
         }
         Map<String, List<String>> biomes = new java.util.TreeMap<>();
         for (var e : oj.getAsJsonObject("biomes").entrySet()) biomes.put(e.getKey(), list(e.getValue()));
         List<Modifier> ms = new java.util.ArrayList<>();
         for (JsonElement e : oj.getAsJsonArray("modifiers")) ms.add(new Modifier(list(e.getAsJsonObject().get("biomes")), list(e.getAsJsonObject().get("features"))));
-        List<io.github.mojolowjo.entropybot.aa.brain.GenWhere.Placer> ws = new java.util.ArrayList<>();
+        List<GenWhere.Placer> ws = new java.util.ArrayList<>();
         for (JsonElement e : oj.getAsJsonArray("placers")) {          // 0.39.z68 (version 4): missing = not whole, the jars are read again
             JsonObject w = e.getAsJsonObject();
-            ws.add(new io.github.mojolowjo.entropybot.aa.brain.GenWhere.Placer(w.get("id").getAsString(), list(w.get("blocks")), w.getAsJsonArray("placement")));
+            ws.add(new GenWhere.Placer(w.get("id").getAsString(), list(w.get("blocks")), w.getAsJsonArray("placement"), w.get("size").getAsInt(), w.get("discard").getAsDouble()));
         }
         return new Ores(Map.copyOf(placed), Map.copyOf(biomes), List.copyOf(ms), oj.has("unread") ? oj.get("unread").getAsInt() : 0,
                 oj.has("firstUnread") ? oj.get("firstUnread").getAsString() : null, ws);
