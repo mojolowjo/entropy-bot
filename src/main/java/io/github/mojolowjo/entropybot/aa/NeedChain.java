@@ -113,29 +113,31 @@ public final class NeedChain {
      * in this list is the strip way then ({@link World#withoutSources}).
      */
     public record StripBand(List<String> ores, int minY, int maxY, int y, double perSlab, int x, int z, int feetY, String heading, String host,
-                            List<String> headings, boolean fresh) {
+                            List<String> headings, int freshDist) {
         public StripBand {
             ores = List.copyOf(ores);
             headings = headings == null || headings.isEmpty() ? List.of(heading) : List.copyOf(headings);
         }
         public StripBand(List<String> ores, int minY, int maxY, int y, double perSlab, int x, int z, int feetY, String heading, String host,
                          List<String> headings) {
-            this(ores, minY, maxY, y, perSlab, x, z, feetY, heading, host, headings, false);
+            this(ores, minY, maxY, y, perSlab, x, z, feetY, heading, host, headings, 0);
         }
         public StripBand(List<String> ores, int minY, int maxY, int y, double perSlab, int x, int z, int feetY, String heading, String host) {
             this(ores, minY, maxY, y, perSlab, x, z, feetY, heading, host, null);
         }
         /**
          * The source key of this strip way, the same as its step's ({@link NeedChain#sourceKey(Step)}): a failed strip or no
-         * path to its Y drops it for the order. 0.39.z64 item 4: a strip from fresh ground carries its start ("|from x,z").
+         * path to its Y drops it for the order. 0.39.z64 item 4 / review 3: a strip from fresh ground carries its start's area square ("|from area ax,az"): held and resumed by (Y, heading, square), so a bot a few blocks on asks the same way, never a new one each plan.
          */
-        public String key() { List<String> s = new ArrayList<>(ores); s.sort(null); return STRIP_KEY + String.join(",", s) + "|" + y + "|" + heading + (fresh ? "|from " + from() : ""); }
-        /** "x,z" of a fresh start, null for the strip from the feet's column. */
-        public String from() { return fresh ? x + "," + z : null; }
+        public String key() { List<String> s = new ArrayList<>(ores); s.sort(null); return STRIP_KEY + String.join(",", s) + "|" + y + "|" + heading + (fresh() ? "|from " + from() : ""); }
+        /** "area ax,az" of a fresh start's square, null for the strip from the feet's column. */
+        public String from() { return fresh() ? "area " + io.github.mojolowjo.entropybot.aa.brain.StripAreas.square(x, z) : null; }
+        /** A strip from fresh ground: {@code freshDist} blocks from the origin along its heading (0: from the feet's column). */
+        public boolean fresh() { return freshDist > 0; }
         /** The same strip way in heading {@code h} (its list unchanged). */
-        public StripBand toward(String h) { return new StripBand(ores, minY, maxY, y, perSlab, x, z, feetY, h, host, headings, fresh); }
-        /** 0.39.z64 item 4: the strip from fresh ground at (fx, fz), heading {@code h}: a walk there first. */
-        public StripBand freshAt(int fx, int fz, String h) { return new StripBand(ores, minY, maxY, y, perSlab, fx, fz, feetY, h, host, List.of(h), true); }
+        public StripBand toward(String h) { return new StripBand(ores, minY, maxY, y, perSlab, x, z, feetY, h, host, headings, freshDist); }
+        /** 0.39.z64 item 4: the strip from fresh ground at (fx, fz), {@code dist} blocks away, heading {@code h}: a walk there first. */
+        public StripBand freshAt(int fx, int fz, int dist, String h) { return new StripBand(ores, minY, maxY, y, perSlab, fx, fz, feetY, h, host, List.of(h), Math.max(1, dist)); }
     }
 
     /**
@@ -2023,16 +2025,19 @@ public final class NeedChain {
         a.id = gives;
         List<Alt> out = new ArrayList<>(List.of(a));
         // 0.39.z64 item 4 (runs S-U: every heading from one origin; run U's area 969 faces, 0 iron): once the areas along
-        // this heading are seen (strip.areaMinFaces), strips from fresh ground strip.freshStartBlocks away in each heading
-        // are ways too - each priced by Baritone's walk there (rule 18) and its own areas' yield; the cheapest wins (rule 1)
+        // this heading are seen (strip.areaMinFaces), strips from fresh ground in each heading are ways too - each starting at
+        // the nearest cell whose area square is not seen yet (review 6), priced by Baritone's walk there (rule 18) and its own
+        // areas' yield; the cheapest wins (rule 1). Review 4: each is its own Alt, priced on a snapshot (choose): a walk not
+        // known yet (computing, chunks) or failing drops that Alt only, never the strip from the feet; the walks are new goals
+        // to the fork's queue, so they rank FIRST (below the running step's walk, PathMemory.Prio) and REST once answered
         var seen = io.github.mojolowjo.entropybot.aa.brain.StripAreas.along(sb.x(), sb.y(), sb.z(), sb.heading(), sb.ores());
         if (io.github.mojolowjo.entropybot.aa.brain.StripAreas.judged(seen)) {
-            int d = Math.max(1, Tuning.i("strip.freshStartBlocks"));
             for (String h : io.github.mojolowjo.entropybot.aa.brain.StripOrder.HEADINGS) {
-                int[] v = WayUp.dir(h);
-                StripBand f = sb.freshAt(sb.x() + d * v[0], sb.z() + d * v[1], h);
+                int[] at = io.github.mojolowjo.entropybot.aa.brain.StripAreas.freshStart(sb.x(), sb.y(), sb.z(), h);
+                if (at == null) continue;
+                StripBand f = sb.freshAt(at[0], at[1], at[2], h);
                 if (heldKey(c, f.key())) continue;
-                Alt fa = new Alt("strip at y " + sb.y() + " from fresh ground " + d + " m " + h, () -> strip(c, word, gives, lack, f));
+                Alt fa = new Alt("strip at y " + sb.y() + " from fresh ground " + at[2] + " m " + h, () -> strip(c, word, gives, lack, f));
                 fa.id = gives;
                 out.add(fa);
             }
@@ -2075,7 +2080,7 @@ public final class NeedChain {
             if (c.stuck) return head + " (after " + pre + ")";
         }
         // the straight metres (a hint; the price is Baritone's path): down to the band, plus the way to a fresh start
-        Walked wk = walk(c, sb.x(), sb.y(), sb.z(), Math.abs(sb.feetY() - sb.y()) + (sb.fresh() ? Math.max(1, Tuning.i("strip.freshStartBlocks")) : 0));
+        Walked wk = walk(c, sb.x(), sb.y(), sb.z(), Math.abs(sb.feetY() - sb.y()) + sb.freshDist());
         if (c.fail != null) {
             if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreachable.put(sb.key(), wk.fail());   // the z33 source fact: the band dropped
             return null;

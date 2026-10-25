@@ -8,6 +8,7 @@ import io.github.mojolowjo.entropybot.aa.moves.Step;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -106,9 +107,81 @@ class Z64RunUTest {
         assertNotNull(st.from(), "a strip from fresh ground: " + c.steps());
         assertTrue(st.key().endsWith("|from " + st.from()), st.key());
         Step.ToStrip to = (Step.ToStrip) c.steps().stream().filter(s -> s instanceof Step.ToStrip).findFirst().orElseThrow();
-        assertEquals(st.from(), to.x() + "," + to.z());
-        assertTrue(Math.abs(to.x() + 220) + Math.abs(to.z() - 33) >= 48, "48+ blocks from the origin: " + to);
+        assertEquals(st.from(), "area " + io.github.mojolowjo.entropybot.aa.brain.StripAreas.square(to.x(), to.z()));
+        assertFalse(io.github.mojolowjo.entropybot.aa.brain.StripAreas.seen(to.x(), 16, to.z()), "review 6: the start's square is not seen yet: " + to);
         assertTrue(c.cost() < origin.cost(), "fresh " + c.cost() + " < origin " + origin.cost());
         assertTrue(c.why().contains("from fresh ground"), c.why());
+    }
+
+    /** Run U's facts: squares (-14,2) and (-13,2) at y 16 seen (969 faces, 0 iron), the bot at -220 16 33. */
+    static NeedChain.World runU(int x, Map<String, String> held) {
+        io.github.mojolowjo.entropybot.aa.brain.StripAreas.clear();
+        io.github.mojolowjo.entropybot.aa.brain.StripAreas.add(-220, 16, 33, 500, Map.of("minecraft:copper_ore", 7));
+        io.github.mojolowjo.entropybot.aa.brain.StripAreas.add(-205, 16, 33, 469, Map.of("minecraft:coal_ore", 6));
+        Map<String, Integer> bag = Map.of("minecraft:stone_pickaxe", 1, "minecraft:cobblestone", 20, "minecraft:stick", 10);
+        Map<String, String> h = new java.util.HashMap<>(held);
+        for (String d : List.of("south", "west", "north")) h.put(NeedChain.headingKey(16, d), "run U");
+        var b = Z62RunSTest.band("east");
+        var at = new NeedChain.StripBand(b.ores(), b.minY(), b.maxY(), b.y(), b.perSlab(), x, b.z(), b.feetY(), b.heading(), b.host(), b.headings());
+        return Z62RunSTest.world(bag, at).withoutSources(h);
+    }
+
+    /**
+     * Review 3: a fresh start is held by (Y, heading, area square): the bot a block or two on asks the SAME way (one key),
+     * and once that way failed (its key held) the next plan takes another, never the held one again - two re-plans, no
+     * ping-pong.
+     */
+    @Test
+    void aFreshStartIsHeldByItsSquareSoReplansDoNotPingPong() {
+        ScenariosTest.world("wooden", "stone");
+        Step.Strip first = Z62RunSTest.strip(NeedChain.resolve("raw_iron", 3, runU(-220, Map.of())));
+        assertNotNull(first.from(), "run U's facts: a fresh start");
+        Step.Strip moved = Z62RunSTest.strip(NeedChain.resolve("raw_iron", 3, runU(-219, Map.of())));
+        assertEquals(first.key(), moved.key(), "a block on: the same square, the same way");
+        Map<String, String> held = new java.util.HashMap<>();
+        held.put(NeedChain.STRIP_KEY + first.key(), "strip: no path");
+        Step.Strip second = Z62RunSTest.strip(NeedChain.resolve("raw_iron", 3, runU(-219, held)));
+        assertNotEquals(first.key(), second.key(), "the held square is not asked again: " + second.key());
+        held.put(NeedChain.STRIP_KEY + second.key(), "strip: lava ahead");
+        Step.Strip third = Z62RunSTest.strip(NeedChain.resolve("raw_iron", 3, runU(-218, held)));
+        assertNotEquals(first.key(), third.key());
+        assertNotEquals(second.key(), third.key());
+    }
+
+    /**
+     * Review 4: each fresh start is its own way, priced on a snapshot: its walk not known yet (computing) or over unloaded
+     * chunks drops only that way; the strip from the feet stands and is the plan.
+     */
+    @Test
+    void aFreshStartsUnknownWalkDropsOnlyItself() {
+        ScenariosTest.world("wooden", "stone");
+        for (PathPrice.Answer away : List.of(PathPrice.Answer.computing("2 searches in flight"), PathPrice.Answer.chunks("chunks not loaded"))) {
+            NeedChain.World w = runU(-220, Map.of()).withPath((x, y, z, d) -> x == -220 && z == 33
+                    ? PathPrice.Answer.priced(new PathPrice.Walk(0)) : away);
+            Chain c = NeedChain.resolve("raw_iron", 3, w);
+            assertTrue(c.ok() && !c.explore(), c.why());
+            Step.Strip st = Z62RunSTest.strip(c);
+            assertNull(st.from(), "the strip from the feet: " + c.steps());
+            assertTrue(c.dropped().stream().anyMatch(s -> s.contains("fresh ground") && s.contains(PathPrice.NOT_KNOWN)), c.dropped().toString());
+        }
+    }
+
+    /** Review 5: the factor's floor (strip.areaMinFactor 0.5) and few faces moving the price modestly (100 faces, 0 ore: x 1.5). */
+    @Test
+    void theFactorIsFlooredAndFewFacesMoveItModestly() {
+        double p = io.github.mojolowjo.entropybot.aa.brain.StripAreas.perFace(37.1);
+        assertEquals(1.5, io.github.mojolowjo.entropybot.aa.brain.StripAreas.factor(p, new io.github.mojolowjo.entropybot.aa.brain.StripAreas.Yield(100, 0, 1)), 1e-9);
+        assertEquals(0.5, io.github.mojolowjo.entropybot.aa.brain.StripAreas.factor(p, new io.github.mojolowjo.entropybot.aa.brain.StripAreas.Yield(100, 9, 1)), 1e-9,
+                "one vein of 9 in 100 faces: x 0.5, not x 0.03");
+        // review 2: damaged entries are skipped, never thrown on
+        Map<String, Integer> nulls = new java.util.HashMap<>();
+        nulls.put("minecraft:iron_ore", null);
+        nulls.put(null, 3);
+        assertEquals(Map.of(), new io.github.mojolowjo.entropybot.aa.brain.StripAreas.Seen(5, nulls).ores());
+        Map<String, io.github.mojolowjo.entropybot.aa.brain.StripAreas.Seen> m = new java.util.HashMap<>();
+        m.put("16 1 1", null);
+        m.put("16 2 2", new io.github.mojolowjo.entropybot.aa.brain.StripAreas.Seen(7, null));
+        io.github.mojolowjo.entropybot.aa.brain.StripAreas.load(m);
+        assertEquals(1, io.github.mojolowjo.entropybot.aa.brain.StripAreas.all().size());
     }
 }

@@ -997,6 +997,7 @@ final class TuningDefs {
         Tuning.def("strip.areaPriorFaces", 200, "0.39.z64 item 4 (run U: 969 faces, 0 iron -> the band's estimate x 5.85)", "how many faces the band's expected ore counts as when blended with an area's seen faces: fewer = the seen faces weigh sooner");
         Tuning.def("strip.areaLookCells", 24, "0.39.z64 item 4", "how far along its heading (cells) a strip way looks at the areas its main tunnel would run through for their seen yield");
         Tuning.def("strip.areaMinFaces", 100, "0.39.z64 item 4", "the seen faces along a heading from which strips from fresh ground (strip.freshStartBlocks away) are offered as ways too, priced by Baritone's walk there and their own areas");
-        Tuning.def("strip.freshStartBlocks", 48, "0.39.z64 item 4 (run U: the three headings stayed within ~26 blocks of the origin)", "how far from the strip's origin (blocks, each heading) a strip from fresh ground starts");
+        Tuning.def("strip.freshStartBlocks", 48, "0.39.z64 item 4 (run U: the three headings stayed within ~26 blocks of the origin)", "the farthest (blocks, each heading) a strip from fresh ground may start from the origin; it starts at the nearest cell whose area square has no face seen at that Y (review 6: the offset follows the area facts)");
+        Tuning.def("strip.areaMinFactor", 0.5, "0.39.z64 review 5 (a vein is several ore blocks together - 1.21 ore_iron_middle size 9 - so one vein in few faces is clumping, not a richer area)", "the lowest an area's seen yield may scale the band's blocks per ore: 0.5 = at most twice as rich as the band says, so one vein cannot make a strip look 30x richer");
     }
 }

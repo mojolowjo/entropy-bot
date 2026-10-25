@@ -934,6 +934,7 @@ strip.areaPriorFaces	200.0
 strip.areaLookCells	24.0
 strip.areaMinFaces	100.0
 strip.freshStartBlocks	48.0
+strip.areaMinFactor	0.5
 cave.holeDepth	4.0
 cave.holeReach	4.0
 cave.ravineRun	3.0

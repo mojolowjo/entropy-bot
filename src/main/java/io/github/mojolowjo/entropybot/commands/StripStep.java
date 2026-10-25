@@ -255,26 +255,59 @@ final class StripStep {
         return f.worldRoot().resolve("strip-areas.json");
     }
 
-    /** The facts of this world loaded into StripAreas (once per world); false: no world files (said by the caller). */
+    /** z64 review 1: "no world files" was said for this stretch without a world (said once, again after a world was had). */
+    private static boolean noFilesSaid;
+    /** z64 review 2: this world's file was unreadable and kept as .bad: nothing is written over it this session. */
+    private static boolean areasBad;
+
+    /**
+     * The facts of this world loaded into StripAreas (once per world); false: no world files. Review 1 (rule 15): with no
+     * world files, or on a world change, the facts held are cleared first - a price never uses another world's areas; the
+     * "no world files" warning is said once until a world is had again. Review 2: an unreadable strip-areas.json is renamed
+     * to strip-areas.json.bad (a second one gets the time in its name) and this world's facts start empty; damaged entries
+     * (null from GSON) are skipped.
+     */
     static boolean areasLoaded() {
         Path p;
         try {
             p = areasPath();
         } catch (RuntimeException e) {
-            Quiet.warn("StripStep.areasLoaded: no world files: the strip areas' yield is not known (the band's estimate alone)", e);
+            if (areasFile != null) io.github.mojolowjo.entropybot.aa.brain.StripAreas.clear();
+            areasFile = null;
+            areasBad = false;
+            if (!noFilesSaid) Quiet.warn("StripStep.areasLoaded: no world files: the strip areas' yield is not known (the band's estimate alone)", e);
+            noFilesSaid = true;
             return false;
         }
+        noFilesSaid = false;
         String where = p.toString();
         if (where.equals(areasFile)) return true;
+        io.github.mojolowjo.entropybot.aa.brain.StripAreas.clear();      // a world change: the old world's facts go first
+        areasBad = false;
         Map<String, io.github.mojolowjo.entropybot.aa.brain.StripAreas.Seen> m = new LinkedHashMap<>();
         try {
             if (Files.exists(p)) {
                 JsonObject all = JsonParser.parseString(Files.readString(p, StandardCharsets.UTF_8)).getAsJsonObject();
-                for (var e : all.entrySet()) m.put(e.getKey(), GSON.fromJson(e.getValue(), io.github.mojolowjo.entropybot.aa.brain.StripAreas.Seen.class));
+                int skipped = 0;
+                for (var e : all.entrySet()) {
+                    var s = e.getValue() == null || e.getValue().isJsonNull() ? null : GSON.fromJson(e.getValue(), io.github.mojolowjo.entropybot.aa.brain.StripAreas.Seen.class);
+                    if (e.getKey() == null || s == null) { skipped++; continue; }
+                    m.put(e.getKey(), new io.github.mojolowjo.entropybot.aa.brain.StripAreas.Seen(s.faces(), s.ores()));
+                }
+                if (skipped > 0) LOG.info("[entropybot] strip areas: {} empty entr(ies) in strip-areas.json skipped", skipped);
             }
         } catch (Exception e) {
-            Quiet.warn("StripStep.areasLoaded: strip-areas.json unreadable: starting the areas' facts empty", e);
             m.clear();
+            areasBad = true;
+            Path bad = p.resolveSibling("strip-areas.json.bad");
+            if (Files.exists(bad)) bad = p.resolveSibling("strip-areas.json.bad-" + System.currentTimeMillis());
+            try {
+                Files.move(p, bad);
+                Quiet.warn("StripStep.areasLoaded: strip-areas.json unreadable, kept as " + bad.getFileName() + ": this world's area facts start empty", e);
+                areasBad = false;                                        // the bad file is out of the way: new facts may be written
+            } catch (Exception moveFailed) {
+                Quiet.warn("StripStep.areasLoaded: strip-areas.json unreadable and not renamed (" + moveFailed + "): it is not written over this session; the facts start empty", e);
+            }
         }
         io.github.mojolowjo.entropybot.aa.brain.StripAreas.load(m);
         areasFile = where;
@@ -287,6 +320,7 @@ final class StripStep {
         java.util.List<IStripProcess.CellRead> reads = sp.drainCells();
         if (reads.isEmpty() || !areasLoaded()) return;
         for (var r : reads) io.github.mojolowjo.entropybot.aa.brain.StripAreas.add(r.x(), r.y(), r.z(), r.faces(), r.ores());
+        if (areasBad) return;                                            // review 2: the unreadable file is never written over
         try {
             Files.writeString(areasPath(), GSON.toJson(io.github.mojolowjo.entropybot.aa.brain.StripAreas.all()), StandardCharsets.UTF_8);
         } catch (Exception e) {
