@@ -924,7 +924,7 @@ public final class StepHands implements Steps.Hands {
         if (!r.failed()) return null;
         // 0.39.z60 item 3 (run R 03:52:52: the order stopped on "no cell within 3 blocks" with no re-plan): a typed fact, so
         // the order is planned again on the facts of now (rule 7) instead of parked
-        io.github.mojolowjo.entropybot.aa.moves.FactChange.placeFailed(n.item(), r.why());
+        io.github.mojolowjo.entropybot.aa.moves.FactChange.placeFailed(n.item(), r.why(), Jobs.here(p));   // 0.39.z67 item 1: where it failed
         return "error: " + r.why();
     }
 
@@ -968,7 +968,9 @@ public final class StepHands implements Steps.Hands {
             return Car.Status.done("ok: " + n.text());
         }
         if (r.failed()) {
-            io.github.mojolowjo.entropybot.aa.moves.FactChange.placeFailed(n.item(), r.why());   // 0.39.z60 item 3: re-plan, never park
+            LocalPlayer pl = Minecraft.getInstance().player;
+            // 0.39.z60 item 3: re-plan, never park; 0.39.z67 item 1: the fact names where it failed (null player: the plain fact)
+            io.github.mojolowjo.entropybot.aa.moves.FactChange.placeFailed(n.item(), r.why(), pl == null ? null : Jobs.here(pl));
             return Car.Status.failed(r.why());
         }
         return Car.Status.running(r.why());

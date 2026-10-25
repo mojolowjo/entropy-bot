@@ -600,7 +600,40 @@ public final class AaRuntime implements JobPort {
         var in = bb.in;
         return new io.github.mojolowjo.entropybot.aa.NeedChain.World(in.bag, in.tableKnown, in.furnaceKnown,
                 item -> { var s = nearestSource(item); return s == null ? List.of() : List.of(s); },
-                this::animalsKnown, currentLootBook(), this::band, 0, LivePathPrice.INSTANCE, this::stationAt).withUses(AaRuntime::usesLeft).withStrip(this::strip).withCave(this::caveWay);
+                this::animalsKnown, currentLootBook(), this::band, 0, LivePathPrice.INSTANCE, this::stationAt).withUses(AaRuntime::usesLeft).withStrip(this::strip).withCave(this::caveWay)
+                .withRooms(rooms(in.pos));
+    }
+
+    /** 0.39.z67 item 1: the solid-ground cells the bot stood on (newest first), kept per world and dimension. */
+    private final io.github.mojolowjo.entropybot.aa.RoomCells roomCells = new io.github.mojolowjo.entropybot.aa.RoomCells();
+    private String roomDim;
+
+    /**
+     * 0.39.z67 item 1 (run Y 09:26:14 / 09:31:16): the feet this tick as a cell with room when the bot stands on solid
+     * ground - on the ground, out of water, a block with a sturdy top under the feet. Loader notes: vanilla Entity#onGround,
+     * Entity#isInWater, Level#dimension, BlockState#isFaceSturdy(BlockGetter, BlockPos, Direction.UP).
+     */
+    private void stoodTick(LocalPlayer p, Minecraft mc) {
+        String dim = mc.level.dimension().location().toString();
+        if (!dim.equals(roomDim)) { roomCells.clear(); roomDim = dim; }
+        int[] at = Jobs.here(p);
+        var below = new net.minecraft.core.BlockPos(at[0], at[1] - 1, at[2]);
+        boolean solid = p.onGround() && !p.isInWater()
+                && mc.level.getBlockState(below).isFaceSturdy(mc.level, below, net.minecraft.core.Direction.UP);
+        roomCells.stood(at, solid);
+    }
+
+    /**
+     * 0.39.z67 item 1: the cells with room the chain may place near when placing near me failed where the bot stands: the
+     * solid ground stood on (RoomCells) and the known stations (a station stands on ground the bot reached), from {@code me}.
+     */
+    private List<io.github.mojolowjo.entropybot.aa.NeedChain.Spot> rooms(int[] me) {
+        List<io.github.mojolowjo.entropybot.aa.NeedChain.Spot> out = new ArrayList<>(roomCells.spots(me));
+        for (String kind : List.of(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT)) {
+            var s = stationAt(kind);
+            if (s != null && !s.unloaded()) out.add(new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(s.x(), s.y(), s.z(), s.dist(), null));
+        }
+        return out;
     }
 
     /**
@@ -1326,6 +1359,8 @@ public final class AaRuntime implements JobPort {
             Minecraft mc = Minecraft.getInstance();
             LocalPlayer p = mc.player;
             if (p == null || mc.level == null) {
+                roomCells.clear();          // 0.39.z67 item 1: the cells with room belong to that world
+                roomDim = null;
                 appendRun();                // the world unloaded: the run ends here
                 slow.reset();               // AA_STEP3 B: slow mode, the drawn route and Baritone's render settings do not outlive the world
                 return;
@@ -1354,6 +1389,7 @@ public final class AaRuntime implements JobPort {
             escapeTick(p, mc);
             laps.lap("escape");
             fill(bb.in, sensed, p, mc);
+            stoodTick(p, mc);
             laps.lap("fill");
             runDead = false;
             if (runStartMs >= 0) runMarks.tick(now - runStartMs, bb.in.pickTier, bb.in.tableKnown || bb.in.tableInBag, bb.in.furnaceKnown || bb.in.furnaceInBag, bb.in.food);

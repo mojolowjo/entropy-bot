@@ -150,6 +150,46 @@ public final class NeedChain {
     public static String headingKey(int y, String heading) { return STRIP_HEADING + "y " + y + " " + heading; }
 
     /**
+     * 0.39.z67 item 1 (run Y 09:26:14 / 09:31:16: "place crafting_table near me: no cell within 3 blocks; none to clear either"
+     * swimming at sea level, re-planned to the same "place near me" at the same spot, the order stopped): a place-near that
+     * failed is a fact about WHERE it failed: held for the order under this key ("place at x y z", the feet then).
+     */
+    public static final String PLACE_AT = "place at ";
+
+    public static String placeKey(int x, int y, int z) { return PLACE_AT + x + " " + y + " " + z; }
+
+    /** 0.39.z67: the cell of a {@link #placeKey}, null for any other key. Pure. */
+    static int[] placeCell(String key) {
+        if (key == null || !key.startsWith(PLACE_AT)) return null;
+        String[] c = key.substring(PLACE_AT.length()).trim().split("\\s+");
+        if (c.length != 3) return null;     // structural: x y z
+        for (String n : c) if (!n.matches("-?\\d{1,9}")) return null;
+        return new int[]{Integer.parseInt(c[0]), Integer.parseInt(c[1]), Integer.parseInt(c[2])};
+    }
+
+    /** 0.39.z67: straight-line blocks between two cells. */
+    static double dist3(int[] a, int[] b) {
+        double dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    /** 0.39.z67 item 1 (Tuning place.failedNearM). */
+    public static double placeFailedNearM() { return Tuning.get("place.failedNearM"); }
+
+    /** 0.39.z67 item 1 (Tuning place.roomNear). */
+    static int roomNear() { return Tuning.i("place.roomNear"); }
+
+    /**
+     * 0.39.z67 item 1: where a station may be placed when placing near me failed here. {@code cells}: cells with room from
+     * facts (solid ground the bot stood on, known stations), each with its straight distance from the bot now;
+     * {@code hereFailed}: why placing near me here is out (the held failure's words), null: not out.
+     */
+    public record Rooms(List<Spot> cells, String hereFailed) {
+        public static final Rooms NONE = new Rooms(List.of(), null);
+        public Rooms { cells = cells == null ? List.of() : List.copyOf(cells); }
+    }
+
+    /**
      * What the bot knows now. {@code bag}: item id -> count; {@code tableNear} / {@code furnaceNear}: one within reach;
      * {@code seenAll}: a need word (an item id, a tag "#ns:path", or several joined by "|") -> the known blocks that give it
      * (for a tag: any member; nearest first not needed); {@code mobs}: entity id -> the animals of that kind known;
@@ -162,7 +202,15 @@ public final class NeedChain {
     public record World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
                         Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path,
                         Function<String, Spot> stationAt, Function<String, Integer> usesLeft, List<String> held, Function<String, StripBand> strip,
-                        Function<String, CaveWay> cave) {
+                        Function<String, CaveWay> cave, Rooms rooms) {
+        /** 0.39.z67 item 1: no cells with room known and no place failure held ({@link Rooms#NONE}). */
+        public World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
+                     Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path,
+                     Function<String, Spot> stationAt, Function<String, Integer> usesLeft, List<String> held, Function<String, StripBand> strip,
+                     Function<String, CaveWay> cave) {
+            this(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, null);
+        }
+
         /** 0.39.z44: no cave-mouth facts (the cave way is not offered). */
         public World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
                      Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path,
@@ -211,6 +259,7 @@ public final class NeedChain {
             if (band == null) band = w -> null;
             if (strip == null) strip = w -> null;
             if (cave == null) cave = w -> null;
+            if (rooms == null) rooms = Rooms.NONE;
             if (horizonBlocks <= 0) horizonBlocks = Unit.blocks(Sequencer.defaultHorizonS());
         }
 
@@ -223,29 +272,64 @@ public final class NeedChain {
             this(bag, tableNear, false, w -> { Spot s = seen == null ? null : seen.apply(w); return s == null ? List.of() : List.of(s); }, null, null, null, horizonBlocks);
         }
 
-        public World withMobs(Function<String, List<Mob>> m, LootBook l) { return new World(bag, tableNear, furnaceNear, seenAll, m, l, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave); }
+        public World withMobs(Function<String, List<Mob>> m, LootBook l) { return new World(bag, tableNear, furnaceNear, seenAll, m, l, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms); }
 
-        public World withBand(Function<String, int[]> b) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, b, horizonBlocks, path, stationAt, usesLeft, held, strip, cave); }
+        public World withBand(Function<String, int[]> b) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, b, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms); }
 
         /** path-cost: the walks priced by Baritone's complete path (null: no walk has a price). */
-        public World withPath(PathPrice p) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, p, stationAt, usesLeft, held, strip, cave); }
+        public World withPath(PathPrice p) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, p, stationAt, usesLeft, held, strip, cave, rooms); }
 
         /** station-memory: where the known stations stand (recipe kind -> spot; null: no position known). */
-        public World withStations(Function<String, Spot> at) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, at, usesLeft, held, strip, cave); }
+        public World withStations(Function<String, Spot> at) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, at, usesLeft, held, strip, cave, rooms); }
 
         /** 0.39.z33: the uses left of the bag's best stack of a tool id ({@link io.github.mojolowjo.entropybot.aa.brain.ToolUses}). */
         /** 0.39.z43: the strip facts per need word ({@link StripBand}; null: no strip way for it). */
-        public World withStrip(Function<String, StripBand> s) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, s, cave); }
+        public World withStrip(Function<String, StripBand> s) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, s, cave, rooms); }
 
         /** 0.39.z44: the cave-mouth facts per need word ({@link CaveWay}; null: no cave way for it). */
-        public World withCave(Function<String, CaveWay> k) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, k); }
+        public World withCave(Function<String, CaveWay> k) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, k, rooms); }
 
-        public World withUses(Function<String, Integer> u) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, u, held, strip, cave); }
+        public World withUses(Function<String, Integer> u) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, u, held, strip, cave, rooms); }
+
+        /** 0.39.z67 item 1: the cells with room known now (solid ground the bot stood on, known stations; dist from the bot). */
+        public World withRooms(List<Spot> cells) {
+            return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave,
+                    new Rooms(cells, rooms.hereFailed()));
+        }
+
+        /**
+         * 0.39.z67 item 1 (run Y 09:26:14 / 09:31:16): the order's held place failures ({@code keyWhy}: its dropped sources;
+         * the {@link #PLACE_AT} keys count, each the cell where a place-near failed) seen from {@code pos} (the feet now; null:
+         * not known, then none applies here - the step says it again if it fails, rule 15). The bot within
+         * {@code place.failedNearM} of one: placing near me here is out ({@link Rooms#hereFailed}, its reason); a cell with
+         * room within {@code steps.placeNearR} of one (the cells that placeNear already looked at) is no cell with room. Nothing held: this world.
+         */
+        public World withPlaceFailures(Map<String, String> keyWhy, int[] pos) {
+            if (keyWhy == null || keyWhy.isEmpty()) return this;
+            List<int[]> failed = new ArrayList<>();
+            String here = null;
+            double near = placeFailedNearM();
+            for (var e : keyWhy.entrySet()) {
+                int[] at = placeCell(e.getKey());
+                if (at == null) continue;
+                failed.add(at);
+                if (here == null && pos != null && dist3(pos, at) <= near) here = e.getValue();
+            }
+            if (failed.isEmpty()) return this;
+            List<Spot> cells = new ArrayList<>();
+            for (Spot s : rooms.cells()) {
+                boolean close = false;
+                for (int[] f : failed) close |= dist3(new int[]{s.x(), s.y(), s.z()}, f) <= Tuning.get("steps.placeNearR");   // the cells the failed placeNear looked at
+                if (!close) cells.add(s);
+            }
+            return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave,
+                    new Rooms(cells, here));
+        }
 
         /** chop: the same world less the sources {@code held} names (need word, spot): a failed source is out of the re-price. */
         public World without(java.util.function.BiPredicate<String, Spot> held) {
             Function<String, List<Spot>> sa = seenAll;
-            return new World(bag, tableNear, furnaceNear, w -> sa.apply(w).stream().filter(sp -> !held.test(word(w), sp)).toList(), mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, this.held, strip, cave);
+            return new World(bag, tableNear, furnaceNear, w -> sa.apply(w).stream().filter(sp -> !held.test(word(w), sp)).toList(), mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, this.held, strip, cave, rooms);
         }
 
         /**
@@ -289,7 +373,7 @@ public final class NeedChain {
             };
             boolean tn = tableNear && !heldStation(sa, keyWhy, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT);
             boolean fn = furnaceNear && !heldStation(sa, keyWhy, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT);
-            return new World(bag, tn, fn, less.seenAll, mobs, loot, b, horizonBlocks, path, stationLess, usesLeft, h, stripLess, caveLess);
+            return new World(bag, tn, fn, less.seenAll, mobs, loot, b, horizonBlocks, path, stationLess, usesLeft, h, stripLess, caveLess, rooms);
         }
 
         /** 0.39.z65 review 1: the known station of the kind is one the order dropped. */
@@ -512,6 +596,7 @@ public final class NeedChain {
         final Map<String, String> unreachable = new LinkedHashMap<>();   // 0.39.z41: source key -> Baritone's unreachable reason (never restored)
         boolean tableReady, furnaceReady, stuck;
         boolean tableWalked, furnaceWalked;   // station-memory: the walk to the known station is priced (or the station was placed here)
+        boolean atRoom;       // 0.39.z67 item 1: the chain walked to a cell with room (placing near me failed where the bot stood)
         String fail;          // the way being tried cannot be done: the reason
         int pathsWaiting;     // 0.39.z42: the ways of the last requirement with no way standing that wait on a path (choose)
         String unknown;       // the first need nothing is known to give (the explore leaf's)
@@ -550,7 +635,7 @@ public final class NeedChain {
         /** Everything a way changes, to put back when the way is dropped. */
         record Snap(Map<String, Integer> bag, List<Step> steps, Map<String, Integer> leafAt, Map<String, Integer> taken, List<String> dropped,
                     double seconds, double away, boolean tableReady, boolean furnaceReady, boolean stuck, String unknown, String pickItem, int pickTier,
-                    boolean tableWalked, boolean furnaceWalked, int pickWorn, boolean pickMade, List<String> spares) {}
+                    boolean tableWalked, boolean furnaceWalked, int pickWorn, boolean pickMade, List<String> spares, boolean atRoom) {}
 
         /**
          * 0.39.z65 item 2 (run V 07:13:11: one stone pickaxe, no spare, and the reason only in aa debug): the spare-tool
@@ -566,7 +651,7 @@ public final class NeedChain {
 
         Snap snap() {
             return new Snap(new LinkedHashMap<>(bag), new ArrayList<>(steps), new LinkedHashMap<>(leafAt), new LinkedHashMap<>(taken), new ArrayList<>(dropped),
-                    seconds, away, tableReady, furnaceReady, stuck, unknown, pickItem, pickTier, tableWalked, furnaceWalked, pickWorn, pickMade, new ArrayList<>(spares));
+                    seconds, away, tableReady, furnaceReady, stuck, unknown, pickItem, pickTier, tableWalked, furnaceWalked, pickWorn, pickMade, new ArrayList<>(spares), atRoom);
         }
 
         void restore(Snap s) {
@@ -580,6 +665,7 @@ public final class NeedChain {
             tableWalked = s.tableWalked(); furnaceWalked = s.furnaceWalked();
             pickWorn = s.pickWorn(); pickMade = s.pickMade();
             spares = new ArrayList<>(s.spares());
+            atRoom = s.atRoom();
             fail = null; loopOn = null;
         }
     }
@@ -1540,13 +1626,78 @@ public final class NeedChain {
         String made = obtain(c, item, 1);
         if (c.fail != null) return null;
         if (c.stuck) return made == null ? null : label + " <- " + made;
+        // 0.39.z67 item 1 (run Y 09:26:14 / 09:31:16): placing near me failed where the bot stands (a held fact for the
+        // order): the station goes near a cell with room from facts, reached by its priced walk (rule 18); Baritone still
+        // picks the cell there (rule 2)
+        String room = null;
+        if (c.w.rooms().hereFailed() != null && !c.atRoom && placesHere(c.steps)) {
+            room = roomWalk(c, item);
+            if (room == null) return null;
+        }
         c.steps.add(new Step.PlaceNear(sh(item)));
         c.seconds += Price.placeS();
         c.note(() -> "place " + sh(item) + " near me: " + s(Price.placeS()));
         c.bag.merge(item, -1, Integer::sum);
         if (table) { c.tableReady = true; c.tableWalked = true; } else { c.furnaceReady = true; c.furnaceWalked = true; }
         c.away = 0;                                       // placed near where the bot stands
-        return label + " <- " + (made == null ? "in the bag, placed" : made + ", placed");
+        return label + " <- " + (made == null ? "in the bag, placed" : made + ", placed") + (room == null ? "" : " " + room);
+    }
+
+    /**
+     * 0.39.z67 item 1 (rule 1, 18): placing near me failed here: every cell with room the world knows ({@link World#rooms}:
+     * solid ground stood on, known stations; none within place.failedNearM of a held failure) priced by Baritone's complete
+     * path; the cheapest stands - its walk ("goto x y z near place.roomNear") goes before the place-near, the losers are
+     * noted. Null with {@code c.fail}: a walk not known yet (the chain waits on it, as any walk), or no cell with room known
+     * or reachable (the readable fact). Returns the phrase part ("near the cell with room at x y z, walk 12.0 s (path)").
+     */
+    /**
+     * 0.39.z67 item 1: no step before the place moves the bot (only crafts, smelts, cooks, places, waits, eats, drops), so
+     * the place-near would run where the bot stands now - where the held failure applies. Pure.
+     */
+    static boolean placesHere(List<Step> before) {
+        for (Step s : before)
+            if (!(s instanceof Step.Craft || s instanceof Step.Smelt || s instanceof Step.Cook || s instanceof Step.PlaceNear
+                    || s instanceof Step.Wait || s instanceof Step.Eat || s instanceof Step.DropJunk)) return false;
+        return true;
+    }
+
+    private static String roomWalk(Ctx c, String item) {
+        String here = c.w.rooms().hereFailed();
+        List<Spot> cells = new ArrayList<>(c.w.rooms().cells());
+        cells.sort(Comparator.comparingDouble(Spot::dist));
+        Spot best = null;
+        Walked bestW = null;
+        String notKnown = null;
+        List<String> out = new ArrayList<>();
+        for (Spot sp : cells) {
+            Walked wk = walk(c, sp.x(), sp.y(), sp.z(), sp.dist());
+            String f = c.fail;
+            c.fail = null;
+            if (f != null) {
+                out.add(sp.x() + " " + sp.y() + " " + sp.z() + ": " + f);
+                if (notKnown == null && wk.kind() != PathPrice.Kind.UNREACHABLE) notKnown = f;
+                continue;
+            }
+            if (bestW == null || wk.seconds() < bestW.seconds()) { best = sp; bestW = wk; }
+        }
+        if (best == null) {
+            String why = "place " + sh(item) + " near me: " + here + "; no cell with room to place it near"
+                    + (cells.isEmpty() ? " is known (no solid ground stood on away from there, no known station)" : ": " + String.join("; ", out));
+            c.fail = notKnown != null ? notKnown : why;
+            c.note(() -> why);
+            return null;
+        }
+        final Spot at = best;
+        final Walked w = bestW;
+        for (Spot sp : cells) if (sp != at) {
+            Walked o = c.walks.get(sp.x() + "," + sp.y() + "," + sp.z());
+            if (o != null && o.fail() == null) drop(c, "place " + sh(item) + " near the cell with room at " + sp.x() + " " + sp.y() + " " + sp.z(), s(o.seconds()));
+        }
+        c.steps.add(new Step.Walk(at.x(), at.y(), at.z(), roomNear()));
+        c.seconds += w.seconds();
+        c.atRoom = true;
+        c.note(() -> "place " + sh(item) + ": placing near me failed here (" + here + "): near the cell with room at " + at.x() + " " + at.y() + " " + at.z() + ", " + s(w.seconds()));
+        return noted("near the cell with room at " + at.x() + " " + at.y() + " " + at.z(), w);
     }
 
     /**

@@ -515,7 +515,10 @@ public final class Goals {
         if (g.strip != null) return null;
         var world = world(bb);
         if (world == null) return null;
-        world = world.withoutSources(droppedSources(g, bb.in == null ? null : bb.in.pos));    // 0.39.z33 (z65: a station back once closer)
+        int[] pos = bb.in == null ? null : bb.in.pos;
+        var dropped = droppedSources(g, pos);
+        // 0.39.z33 (z65: a station back once closer); 0.39.z67 item 1: a place-near that failed holds its spot (near it: a cell with room)
+        world = world.withoutSources(dropped).withPlaceFailures(dropped, pos);
         var laps = io.github.mojolowjo.entropybot.aa.core.TickLaps.AA;    // 0.39.z62 item 4: resolves counted while the probe is on
         long t0 = laps.now();
         var ch = g.r.group() ? io.github.mojolowjo.entropybot.aa.NeedChain.resolveAll(g.r.key(), g.r.ids(), g.n, world)

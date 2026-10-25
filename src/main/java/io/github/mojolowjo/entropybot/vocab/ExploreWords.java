@@ -59,13 +59,14 @@ public final class ExploreWords {
     /**
      * The next chunk {cx, cz} to walk to from chunk cx cz: the nearest one not seen (explored.apply(cx, cz) false) and not
      * refused, ring by ring; with a direction only chunks ahead of the start chunk (sx sz) within a 90 degree cone, the
-     * one furthest along first on a ring tie. Null when none within {@link #RINGS}.
+     * one furthest along first on a ring tie; without one the ring's nearest by straight distance (0.39.z67 item 2), then the
+     * one nearer the start chunk, then scan order. Null when none within {@link #RINGS}.
      */
     public static int[] next(int cx, int cz, int sx, int sz, String dir, BiPred seen, BiPred refused) {
         int[] st = dir == null ? null : step(dir);
         for (int r = 1; r <= rings(); r++) {
             int[] best = null;
-            int bestAhead = Integer.MIN_VALUE;
+            int bestAhead = Integer.MIN_VALUE, bestHome = Integer.MAX_VALUE;
             for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) {
                 if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue;
                 int x = cx + dx, z = cz + dz;
@@ -75,10 +76,17 @@ public final class ExploreWords {
                     if (ahead <= 0 || side > ahead) continue;
                 }
                 if (seen.test(x, z) || refused.test(x, z)) continue;
-                int ahead = st == null ? 0 : (x - sx) * st[0] + (z - sz) * st[1];
-                if (best == null || ahead > bestAhead) {
+                // 0.39.z67 item 2 (run Y 09:26-09:31: the explore went west into the open sea): with no direction the
+                // nearest chunk of the ring by straight distance wins (was: the first in scan order - the west column
+                // first, the ring's farthest corner before its nearest edge, so every explore drifted west); with a
+                // direction the one furthest along, as before; equal straight distances: the one nearer the explore's start
+                // (the walk back is priced in the explore, exploreReturn), then scan order
+                int ahead = st == null ? -(dx * dx + dz * dz) : (x - sx) * st[0] + (z - sz) * st[1];
+                int home = (x - sx) * (x - sx) + (z - sz) * (z - sz);
+                if (best == null || ahead > bestAhead || (st == null && ahead == bestAhead && home < bestHome)) {
                     best = new int[]{x, z};
                     bestAhead = ahead;
+                    bestHome = home;
                 }
             }
             if (best != null) return best;

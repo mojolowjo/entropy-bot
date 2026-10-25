@@ -111,6 +111,7 @@ public final class FactChange {
     /** 0.39.z62: the source key a fact names itself (a blocked strip heading), null: the failed step's key applies. */
     public static String ownSourceKey(Fact f) {
         if (f != null && f.key().startsWith(WALK_TO)) return f.key().substring(WALK_TO.length());     // 0.39.z65 item 1
+        if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.PLACE_AT)) return f.key().substring("source ".length());   // 0.39.z67 item 1
         String p = "source " + io.github.mojolowjo.entropybot.aa.NeedChain.STRIP_HEADING;
         return f != null && f.key().startsWith(p) ? f.key().substring("source ".length()) : null;
     }
@@ -145,6 +146,18 @@ public final class FactChange {
      */
     public static void placeFailed(String item, String why) {
         last = new Fact("place " + item, "place " + item.replaceFirst("^minecraft:", "") + " near me failed here: " + why);
+    }
+
+    /**
+     * 0.39.z67 item 1 (run Y 09:26:14 / 09:31:16: the re-plan offered the same "place near me" at the same sea-level spot and
+     * the order stopped): the failure is a fact about WHERE it failed ({@code at}: the feet then; null: not known, the
+     * plain fact above): a source slot keyed {@link io.github.mojolowjo.entropybot.aa.NeedChain#placeKey}, held for the
+     * order; the re-plan places near a cell with room from facts instead, by its priced walk (NeedChain.roomWalk).
+     */
+    public static void placeFailed(String item, String why, int[] at) {
+        if (at == null || at.length < 3) { placeFailed(item, why); return; }     // structural: x y z
+        last = new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.placeKey(at[0], at[1], at[2]),
+                "place " + item.replaceFirst("^minecraft:", "") + " near me failed at " + at[0] + " " + at[1] + " " + at[2] + ": " + why);
     }
 
     /** An item the step needs is not in the bag (nor in storage) when it starts. */

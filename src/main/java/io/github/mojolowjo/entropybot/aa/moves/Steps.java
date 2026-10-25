@@ -223,6 +223,8 @@ public final class Steps {
     private Replanner replanner;
     /** The step text and reason of the failure the last re-plan answered (the same step failing again stops the run). */
     private String replannedStep, replannedWhy;
+    /** 0.39.z67 item 1: the key of the fact the last re-plan answered (a place-near failed at another cell is another fact). */
+    private String replannedKey;
 
 
     /**
@@ -280,6 +282,7 @@ public final class Steps {
         replanner = replan;
         replannedStep = null;
         replannedWhy = null;
+        replannedKey = null;
         replanFact = null;
         needs = StepNeeds.NONE;
         if (this.steps.isEmpty()) {
@@ -567,7 +570,7 @@ public final class Steps {
         if (fact == null || replanner == null || idx < 0 || idx >= steps.size()) { fail(reason); return; }
         Step failed = steps.get(idx);
         String clean = reason.replaceFirst("^error: ", "");
-        if (failed.text().equals(replannedStep)) {
+        if (sameAgain(failed, replannedStep, fact.key(), replannedKey)) {
             fail("re-planned after \"" + replannedWhy + "\" and the same step failed again: " + clean);
             return;
         }
@@ -584,10 +587,23 @@ public final class Steps {
         }
         replannedStep = failed.text();
         replannedWhy = clean;
+        replannedKey = fact.key();
         replanFact = fact.text() + (released.isEmpty() ? "" : "; " + released.replace("the old chain", "the failed chain"));
         splice(idx, r.steps(), r.uses(), steps.size());
         idx--;
         next();
+    }
+
+    /**
+     * The step that failed is the one the last re-plan answered: the run ends with both reasons. 0.39.z67 item 1 (run Y
+     * 09:26:14): a place-near whose fact names another cell ({@link io.github.mojolowjo.entropybot.aa.NeedChain#placeKey}:
+     * placed near a cell with room after failing where the bot stood) is a new fact, re-planned again - bounded by the
+     * order's replan.maxSourceDrops and the cells with room held one by one. Pure.
+     */
+    public static boolean sameAgain(Step failed, String lastStep, String key, String lastKey) {
+        if (!failed.text().equals(lastStep)) return false;
+        if (failed instanceof Step.PlaceNear && key != null && key.startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.PLACE_AT)) return key.equals(lastKey);
+        return true;
     }
 
     /**
