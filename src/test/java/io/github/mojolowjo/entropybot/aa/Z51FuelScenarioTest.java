@@ -90,4 +90,18 @@ class Z51FuelScenarioTest {
         // 3 smelts x 200 ticks: 2 planks (2 planks of wood) vs 1 boat (5 planks of wood)
         assertTrue(io.github.mojolowjo.entropybot.craft.FuelWood.woodFor("minecraft:oak_planks", 3) < io.github.mojolowjo.entropybot.craft.FuelWood.woodFor("minecraft:oak_boat", 3));
     }
+
+    /** z53 review 1: a cycle or a depth cut is unknown wood (+inf), never free; a wood-free recipe beside it still gives 0. */
+    @Test
+    void unknownWoodIsNotFree() {
+        TestData d = boatWorld();
+        d.recipe("loop_a", 1, "loop_b");
+        d.recipe("loop_b", 1, "loop_a");
+        d.recipe("deep_1", 1, "deep_2"); d.recipe("deep_2", 1, "deep_3"); d.recipe("deep_3", 1, "deep_4");
+        d.recipe("deep_4", 1, "deep_5"); d.recipe("deep_5", 1, "deep_6"); d.recipe("deep_6", 1, "oak_planks");
+        d.install();
+        assertTrue(Double.isInfinite(io.github.mojolowjo.entropybot.craft.FuelWood.planks("minecraft:loop_a")), "a cycle is not known");
+        assertTrue(Double.isInfinite(io.github.mojolowjo.entropybot.craft.FuelWood.planks("minecraft:deep_1")), "a depth cut is not known");
+        assertEquals(0, io.github.mojolowjo.entropybot.craft.FuelWood.planks("minecraft:coal"), 1e-9);
+    }
 }

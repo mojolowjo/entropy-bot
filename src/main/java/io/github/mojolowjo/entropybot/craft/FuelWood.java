@@ -19,16 +19,19 @@ public final class FuelWood {
 
     static final int DEPTH = 4; // structural: recipe depth searched (a boat: planks <- log)
 
-    /** The planks of wood one {@code id} consumes (0: none, or not known from the recipes). */
+    /** The planks of wood one {@code id} consumes (0: none; +inf: not known from the recipes - a cycle or a depth cut). */
     public static double planks(String id) {
         if (id == null) return 0;
+        long ver;
         synchronized (CACHE) {
-            if (cacheVersion != ItemWorth.version()) { CACHE.clear(); cacheVersion = ItemWorth.version(); }
+            ver = ItemWorth.version();
+            if (cacheVersion != ver) { CACHE.clear(); cacheVersion = ver; }
             Double v = CACHE.get(id);
             if (v != null) return v;
         }
         double v = planks(id, DEPTH, new HashSet<>());
-        synchronized (CACHE) { CACHE.put(id, v); }
+        // z53 review 2: a value walked from old data never lands under a newer version
+        synchronized (CACHE) { if (cacheVersion == ver && ItemWorth.version() == ver) CACHE.put(id, v); }
         return v;
     }
 
@@ -40,17 +43,18 @@ public final class FuelWood {
         if (id == null) return 0;
         if (ItemWorth.isIn(id, "minecraft:planks") || ItemWorth.plank(id)) return 1;   // structural: the unit itself
         if (ItemWorth.isIn(id, "minecraft:logs")) return logPlanks(id);
-        if (depth <= 0 || !path.add(id)) return 0;
+        // z53 review 1 (rule 15): a cycle, a depth cut or an option with no items is unknown wood (+inf), never free
+        if (!path.add(id)) return Double.POSITIVE_INFINITY;
+        List<ItemWorth.Recipe> rs = ItemWorth.recipes(id);
+        if (rs.isEmpty()) { path.remove(id); return 0; }          // no recipe makes it: no wood consumed
+        if (depth <= 0) { path.remove(id); return Double.POSITIVE_INFINITY; }
         double best = Double.NaN;
-        for (ItemWorth.Recipe r : ItemWorth.recipes(id)) {
+        for (ItemWorth.Recipe r : rs) {
             double sum = 0;
             for (List<String> opts : r.options()) {
-                double low = Double.NaN;
-                for (String o : opts) {
-                    double w = planks(o, depth - 1, path);
-                    if (Double.isNaN(low) || w < low) low = w;
-                }
-                sum += Double.isNaN(low) ? 0 : low;
+                double low = Double.POSITIVE_INFINITY;
+                for (String o : opts) low = Math.min(low, planks(o, depth - 1, path));
+                sum += low;
             }
             double each = sum / Math.max(1, r.outCount());
             if (Double.isNaN(best) || each < best) best = each;

@@ -459,7 +459,7 @@ public final class CraftPlanner implements Crafter {
             int need = (int) Math.ceil((double) n * smeltTicks / burn);
             if (have < need) continue;
             double wd = FuelWood.planks(e.getKey());
-            if (wd > 0 && need * wd > leastWood) continue;
+            if (wd > 0 && Double.isFinite(wd) && need * wd > leastWood) continue;   // z53: unknown wood is not dropped by wood
             double w = worth.applyAsDouble(e.getKey());
             if (w < 0) continue;
             boolean known = !Double.isNaN(w);

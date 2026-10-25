@@ -199,9 +199,26 @@ public final class Sightings {
      * x y z, when it was confirmed, the hole's floor cell (fx fy fz: the first air over its floor) and the dark pocket cells
      * the z50 fill found ({@link #cell} packed); {@code walked}: when a caving step walked its pocket (0 = not yet).
      */
-    public record MouthFact(int x, int y, int z, long confirmedAt, int fx, int fy, int fz, List<Long> pocket, long walked) {
+    public record MouthFact(int x, int y, int z, long confirmedAt, int fx, int fy, int fz, List<Long> pocket, long walked, int oreOnWalk) {
+        /** z53: oreOnWalk for a mouth closed for good (S1: in a protect box): never offered again. */
+        public static final int CLOSED = -1; // structural: a marker, not an ore count
+
         public MouthFact {
             pocket = List.copyOf(pocket);
+        }
+
+        public MouthFact(int x, int y, int z, long confirmedAt, int fx, int fy, int fz, List<Long> pocket, long walked) {
+            this(x, y, z, confirmedAt, fx, fy, fz, pocket, walked, 0);
+        }
+
+        /**
+         * z53 (review of 7b16ad9): offered to the cave way at {@code now}: never walked; walked and it yielded ore on its last
+         * walk; walked with 0 ore and {@code holdMs} has passed since. Closed for good: never.
+         */
+        public boolean offered(long now, long holdMs) {
+            if (walked == 0) return true;
+            if (oreOnWalk == CLOSED) return false;
+            return oreOnWalk > 0 || now - walked >= holdMs;
         }
 
         public String where() { return x + " " + y + " " + z; }
@@ -246,10 +263,18 @@ public final class Sightings {
         return null;
     }
 
-    /** The confirmed mouths whose pocket no caving step walked yet, nearest first from x y z (empty: none known). */
+    /** Tuning {@code cave.walkedHoldS} in ms: a mouth walked with no ore is held this long (z53). */
+    public static long walkedHoldMs() { return Tuning.l("cave.walkedHoldS") * 1000L; }
+
+    /** The confirmed mouths offered now ({@link MouthFact#offered}), nearest first from x y z (empty: none known). */
     public synchronized List<MouthFact> confirmedMouths(String dim, int x, int y, int z) {
+        return confirmedMouths(dim, x, y, z, System.currentTimeMillis());
+    }
+
+    public synchronized List<MouthFact> confirmedMouths(String dim, int x, int y, int z, long now) {
+        long hold = walkedHoldMs();
         List<MouthFact> out = new ArrayList<>();
-        for (MouthFact f : mouthFacts.getOrDefault(dim, List.of())) if (f.walked() == 0) out.add(f);
+        for (MouthFact f : mouthFacts.getOrDefault(dim, List.of())) if (f.offered(now, hold)) out.add(f);
         out.sort((a, b) -> Long.compare(d2f(a, x, y, z), d2f(b, x, y, z)));
         return out;
     }
@@ -257,13 +282,21 @@ public final class Sightings {
     /** 0.39.z52 (aa cave list): every stored mouth of the dimension, walked ones included. */
     public synchronized List<MouthFact> allMouths(String dim) { return List.copyOf(mouthFacts.getOrDefault(dim, List.of())); }
 
-    /** A caving step walked the pocket of the mouth at x y z (the fact stays, offered no more). True when there was one. */
+    /** z51 form: a walk with no ore counted (held {@code cave.walkedHoldS}). */
     public synchronized boolean walkedMouth(String dim, int x, int y, int z, long now) {
+        return walkedMouth(dim, x, y, z, now, 0);
+    }
+
+    /**
+     * A caving step walked the pocket of the mouth at x y z and got {@code ore} there ({@link MouthFact#CLOSED}: closed for
+     * good). The fact keeps walkedAt and oreOnWalk; {@link MouthFact#offered} reads them. True when there was one.
+     */
+    public synchronized boolean walkedMouth(String dim, int x, int y, int z, long now, int ore) {
         List<MouthFact> l = mouthFacts.getOrDefault(dim, List.of());
         for (int i = 0; i < l.size(); i++) {
             MouthFact f = l.get(i);
-            if (f.x() == x && f.y() == y && f.z() == z && f.walked() == 0) {
-                l.set(i, new MouthFact(f.x(), f.y(), f.z(), f.confirmedAt(), f.fx(), f.fy(), f.fz(), f.pocket(), Math.max(1, now)));
+            if (f.x() == x && f.y() == y && f.z() == z && f.oreOnWalk() != MouthFact.CLOSED) {
+                l.set(i, new MouthFact(f.x(), f.y(), f.z(), f.confirmedAt(), f.fx(), f.fy(), f.fz(), f.pocket(), Math.max(1, now), ore));
                 dirty = true;
                 return true;
             }
@@ -448,6 +481,7 @@ public final class Sightings {
                 JsonArray pk = new JsonArray();
                 for (Long c : f.pocket()) pk.add(c);
                 e.add(pk);
+                e.add(f.oreOnWalk());                        // z53: index 9 (older files: 0)
                 a.add(e);
             }
             mf.add(d.getKey(), a);
@@ -466,7 +500,8 @@ public final class Sightings {
                         List<Long> pk = new ArrayList<>();
                         for (JsonElement c : a.get(8).getAsJsonArray()) pk.add(c.getAsLong());
                         s.mouthFacts.computeIfAbsent(d.getKey(), x -> new ArrayList<>()).add(new MouthFact(a.get(0).getAsInt(), a.get(1).getAsInt(), a.get(2).getAsInt(),
-                                a.get(3).getAsLong(), a.get(4).getAsInt(), a.get(5).getAsInt(), a.get(6).getAsInt(), pk, a.get(7).getAsLong()));
+                                a.get(3).getAsLong(), a.get(4).getAsInt(), a.get(5).getAsInt(), a.get(6).getAsInt(), pk, a.get(7).getAsLong(),
+                                a.size() > 9 ? a.get(9).getAsInt() : 0));
                     } catch (RuntimeException ex) {
                         Quiet.warn("Sightings.readFacts failed, carrying on with the fallback", ex); skipped[0]++; }
                 }

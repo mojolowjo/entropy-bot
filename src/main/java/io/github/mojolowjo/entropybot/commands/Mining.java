@@ -1431,7 +1431,10 @@ final class Mining {
         // 0.39.z51 item 1: the next CONFIRMED mouth not tried by this run (never unexplored land, never a cave named at an
         // unconfirmed spot); S1: never one in or by a protect box or a fenced column
         var sg = pass().sightings();
-        if (sg != null && closeForGood && cv.mouth != null) sg.walkedMouth(d, cv.mouth.x(), cv.mouth.y(), cv.mouth.z(), System.currentTimeMillis());   // S1: closed for good
+        // S1: closed for good; z53 review 4: otherwise the walk is recorded too (its ore: held when 0, cave.walkedHoldS)
+        if (sg != null && cv.mouth != null)
+            sg.walkedMouth(d, cv.mouth.x(), cv.mouth.y(), cv.mouth.z(), System.currentTimeMillis(),
+                    closeForGood ? io.github.mojolowjo.entropybot.sense.Sightings.MouthFact.CLOSED : cv.got() - cv.visitStart);
         io.github.mojolowjo.entropybot.sense.Sightings.MouthFact next = null;
         if (sg != null)
             for (var f : sg.confirmedMouths(d, me[0], me[1], me[2])) {
@@ -1502,10 +1505,13 @@ final class Mining {
                 LOG.warn("[entropybot] cave: couldn't mark the sighting exhausted: {}", e.toString());
             }
         }
-        // 0.39.z51: the mouth's pocket was walked to its end: its fact stays, the cave way offers it no more
+        // 0.39.z51: the mouth's pocket was walked to its end: its fact stays; z53 review 3: it stays offered while its last
+        // walk yielded ore, a 0-ore walk holds it cave.walkedHoldS
         var sgw = pass().sightings();
-        if (sgw != null && cv.mouth != null && finished && sgw.walkedMouth(dim(), cv.mouth.x(), cv.mouth.y(), cv.mouth.z(), System.currentTimeMillis()))
-            LOG.info("[entropybot] cave: the pocket of the confirmed mouth {} is walked ({} ore); offered no more", cv.mouth.where(), cv.got());
+        int ore = cv.got() - cv.visitStart;
+        if (sgw != null && cv.mouth != null && finished && sgw.walkedMouth(dim(), cv.mouth.x(), cv.mouth.y(), cv.mouth.z(), System.currentTimeMillis(), ore))
+            LOG.info("[entropybot] cave: the pocket of the confirmed mouth {} is walked ({} ore); {}", cv.mouth.where(), ore,
+                    ore > 0 ? "still offered" : "held " + io.github.mojolowjo.entropybot.sense.Sightings.walkedHoldMs() / 1000 + " s");
         List<Seq.Step> steps = new ArrayList<>();
         if (cv.entrance != null) steps.add(Seq.Step.walk(cv.entrance.clone(), true));
         Seq.Step end = new Seq.Step("caveend");
