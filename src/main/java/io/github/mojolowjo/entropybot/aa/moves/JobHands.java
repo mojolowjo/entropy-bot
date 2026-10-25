@@ -314,6 +314,7 @@ public final class JobHands {
         }
         if (s == null) s = Car.Status.failed("the hand gave no status");
         String why = s.why() == null ? "" : s.why();
+        lastWhy = why;                           // 0.39.z56 item 1: the step probe's "waiting" (no string built here)
         return switch (s.state()) {
             case RUNNING -> new Result(State.RUNNING, why);
             case DONE -> {
@@ -379,6 +380,23 @@ public final class JobHands {
         buildItems = null;
         nearItem = null;
         useCell = null;
+    }
+
+    /** 0.39.z56 item 1: the hand's last status words for the running request (the fork's own reason). */
+    private volatile String lastWhy = "";
+
+    /**
+     * 0.39.z56 item 1 (run O: the craft's walk to the table said nothing for 180 s): {the request ("use -34 70 -55 for ..."),
+     * the hand's last words} for the step probe; {"idle", "-"} when none runs or the hands were never made. Read only: never
+     * makes the hands, never polls.
+     */
+    public static synchronized String[] peek() {
+        JobHands h = live;
+        if (h == null) return new String[]{"idle", "-"};
+        synchronized (h) {
+            if (h.key == null) return new String[]{"idle", "-"};
+            return new String[]{h.key + (h.who.isEmpty() ? "" : " for " + h.who) + (h.finished ? " (ended)" : ""), h.finished && h.result != null ? h.result.why() : h.lastWhy};
+        }
     }
 
     /** Once a client tick: follows a running request so its end (and onDone) is seen without the caller. */

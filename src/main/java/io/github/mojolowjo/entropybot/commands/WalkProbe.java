@@ -137,14 +137,25 @@ public final class WalkProbe {
         }
     }
 
-    /** A cancel the mod sends ({@code who}: Jobs.cancel, SafetyNet.cancel, reflex, stop); said with its callers while a walk step runs. */
+    /** 0.39.z56 item 1: the walk probe says this step's events and cancels itself (the step probe leaves them out). */
+    static boolean covers() { return step != null && on(); }
+
+    /**
+     * A cancel the mod sends ({@code who}: Jobs.cancel, SafetyNet.cancel, reflex, stop); said with its callers while a walk
+     * step runs, and (0.39.z56 item 1) by the step probe while any other step runs.
+     */
     public static void cancelled(String who) {
         String s = step;
-        if (s == null || !on()) return;
+        boolean walk = s != null && on();
+        if (!walk && !StepProbe.running()) return;
         try {
             String frames = StackWalker.getInstance().walk(st -> st.skip(1).limit(4)
                     .map(f -> f.getClassName().substring(f.getClassName().lastIndexOf('.') + 1) + "." + f.getMethodName() + ":" + f.getLineNumber())
                     .reduce((a, c) -> a + " <- " + c).orElse("?"));
+            if (!walk) {
+                StepProbe.cancelled(who, frames);
+                return;
+            }
             LOG.info("[entropybot] probe event: {}", ProbeLines.cancel(tick, feet(), who, frames, s));
         } catch (RuntimeException e) {
             Quiet.warn("WalkProbe.cancelled: the cancel line could not be written", e);
@@ -182,13 +193,30 @@ public final class WalkProbe {
      * 0.39.z55 item 1 (run N 21:23:54: the walk to the table placed the furnace's cobblestone at -21 55..59 -11): every block
      * this client places, while the probe is on: the item, how many stay in the hand, kept by the job or not, where.
      */
-    public static void placed(net.minecraft.world.item.ItemStack inHand, BlockPos at) {
+    public static void placing(net.minecraft.world.item.ItemStack inHand) {
         if (!on()) return;
+        // 0.39.z56 item 2b (run O 22:11:20.963-21.759: one crafting table, five "placed" lines 4 ticks apart; the block came at
+        // 21.759): BlockItem.place's HEAD runs for every use attempt, also the ones it refuses (canPlace: an entity in the
+        // cell, updatePlacementContext / getPlacementState null, placeBlock false), and Baritone's builder clicks every few
+        // ticks until one lands. HEAD only remembers the item and the count (the stack reads AIR once a placement empties it);
+        // the line is written at RETURN, once, when the result says the block was placed (consumesAction).
+        placingItem = inHand.getItem();
+        placingCount = inHand.getCount();
+    }
+
+    private static net.minecraft.world.item.Item placingItem;
+    private static int placingCount;
+
+    /** GuardMixinBlockItem at RETURN of BlockItem.place: one line per real placement (the result consumed the action). */
+    public static void placed(net.minecraft.world.InteractionResult result, BlockPos at) {
+        if (!on()) return;
+        var item = placingItem;
+        placingItem = null;
+        if (item == null || result == null || !result.consumesAction()) return;
         try {
-            var item = inHand.getItem();
             String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item).toString();
             LOG.info("[entropybot] probe keep: placed {} at {} {} {} | {} left in the hand after it | {} | step {}", id, at.getX(), at.getY(), at.getZ(),
-                    Math.max(0, inHand.getCount() - 1), io.github.mojolowjo.entropybot.engine.RunThrowaway.placedAs(item), step == null ? "-" : step);
+                    Math.max(0, placingCount - 1), io.github.mojolowjo.entropybot.engine.RunThrowaway.placedAs(item), step == null ? "-" : step);
         } catch (RuntimeException | LinkageError e) {
             Quiet.warn("WalkProbe.placed: the place line could not be written", e);
         }

@@ -754,4 +754,7 @@ public final class RecStore {
     }
 
     public long writtenLines() { return written.get(); }
+
+    /** 0.39.z56 item 3 (load probe): items waiting for the writer thread now. */
+    public int pendingSize() { return pending.size(); }
 }

@@ -47,6 +47,14 @@ public final class LivePathPrice implements PathPrice {
 
     @Override public long landed() { return landed; }
 
+    /** 0.39.z56 item 3 (load probe): searches started since the game started. */
+    private volatile long started;
+
+    public long started() { return started; }
+
+    /** 0.39.z56 item 3 (load probe): searches in flight now (game thread). */
+    public int inFlight() { return inFlight.size(); }
+
     /** The last landed answer's words ("walk to 3 12 -40: 812 ticks, complete"), for the re-price line. */
     public String lastLanded() { return lastLanded; }
 
@@ -85,6 +93,7 @@ public final class LivePathPrice implements PathPrice {
             return Answer.none("the search could not start: " + e);
         }
         inFlight.put(key, me);
+        started++;                                       // 0.39.z56 item 3: the load probe's count (game thread)
         f.whenComplete((a, err) -> mc.execute(() -> land(mc, key, me, bag, a, err)));
         return Answer.computing(null);
     }
@@ -114,7 +123,8 @@ public final class LivePathPrice implements PathPrice {
             why = "this fork has no IPricedPath.walkWhy (an older fork: install the z55 jar): " + e;
         }
         LOG.info("[entropybot] path: walk to {} {} {}: {}", pos.getX(), pos.getY(), pos.getZ(),
-                kept ? "the priced path (one search)" : "no kept path from here (" + why + ") - Baritone searches fresh, with the price's search goal");
+                kept ? "the priced path (one search)" : "no kept path from here (" + why + ") - Baritone searches fresh, with the price's search goal"
+                        + " (fork z56: every priced walk, its first and next-segment searches; z55 swapped only with a kept price, run O 22:15:04)");
         return kept;
     }
 

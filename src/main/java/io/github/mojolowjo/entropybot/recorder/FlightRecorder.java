@@ -690,6 +690,10 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
     @Override
     public boolean enabled() { return on; }
 
+    /** 0.39.z56 item 3: the load probe's recorder facts (queue, lines written, disk bytes); read only. */
+    @Override
+    public long[] loadCounts() { return new long[]{store.pendingSize(), store.writtenLines(), store.diskBytes()}; }
+
     @Override
     public String summary() {
         RecorderSettings s;

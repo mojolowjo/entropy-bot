@@ -78,6 +78,25 @@ public final class RunThrowaway {
         }
     }
 
+    /**
+     * 0.39.z56 item 1 (the step probe, run O: only dirt left as throwaway under ground): the bag's stacks Baritone may place
+     * now - on its throwaway list and not kept by the job - as "dirt 8, ..."; "none" when there is none. Read only.
+     */
+    public static String throwawayInBag(net.minecraft.world.entity.player.Player p) {
+        var l = lease("read the kept items");
+        List<Item> kept = l == null ? List.of() : l.kept();
+        java.util.Map<String, Integer> n = new java.util.LinkedHashMap<>();
+        var list = BaritoneAPI.getSettings().acceptableThrowawayItems.value;
+        for (var st : p.getInventory().items) {
+            if (st.isEmpty() || !list.contains(st.getItem()) || kept.contains(st.getItem())) continue;
+            n.merge(BuiltInRegistries.ITEM.getKey(st.getItem()).getPath(), st.getCount(), Integer::sum);
+        }
+        if (n.isEmpty()) return "none" + (l == null ? " (no lease in this Baritone: kept items unknown)" : "");
+        StringBuilder b = new StringBuilder();
+        n.forEach((k, v) -> b.append(b.length() == 0 ? "" : ", ").append(k).append(' ').append(v));
+        return b.toString();
+    }
+
     /** A run's extra throwaway items (the fork's lease; put back at {@link #end}). */
     public static void add(Object run, List<Item> items) {
         var l = lease("extra throwaway " + items.size() + " items");

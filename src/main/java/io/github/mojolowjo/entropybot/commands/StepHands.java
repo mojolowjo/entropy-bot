@@ -72,8 +72,20 @@ public final class StepHands implements Steps.Hands {
 
     @Override public Car.Status status(Step s) {
         Car.Status st = status0(s);
+        StepProbe.status(st.why());              // 0.39.z56 item 1: one field (the probe reads it when on)
         if (st.state() != Car.State.RUNNING) io.github.mojolowjo.entropybot.aa.brain.JobBoundary.leave();
         return st;
+    }
+
+    /**
+     * 0.39.z56 item 2a (run O 22:15:20-22:17:43: "probe walk:" lines went on after the iron order stopped, 790 -> 3197 - the
+     * walk step FAILED, the run ended without a cancel, and only start / cancel cleared the pointer): Steps says the step is
+     * over on every path; the probes' step pointers go. Nothing else changes (the step's own state is reset at the next
+     * start or cancel, as before).
+     */
+    @Override public void ended(String how) {
+        WalkProbe.step(null);
+        StepProbe.end(how);
     }
 
     /**
@@ -94,6 +106,7 @@ public final class StepHands implements Steps.Hands {
     @Override public void keep(List<String> items) {
         io.github.mojolowjo.entropybot.engine.RunThrowaway.keep(items);
         io.github.mojolowjo.entropybot.engine.RunThrowaway.walkPenalty();     // 0.39.z39: the walk lease's placement price, fresh per step
+        StepProbe.keep(items.size());                                         // 0.39.z56 item 1: one field
     }
 
     /** 0.39.z34: the bag as the step checks see it: the player's main inventory (one pass of its slots per look). */
@@ -130,6 +143,7 @@ public final class StepHands implements Steps.Hands {
         step = s;
         // 0.39.z54 B: the walk probe's step (one field; the probe itself reads Tuning debug.walkProbe)
         WalkProbe.step(s instanceof Step.ToStrip || s instanceof Step.ToBand || s instanceof Step.Walk ? s.text() : null);
+        StepProbe.begin(s);                      // 0.39.z56 item 1: every step kind (one field; the probe reads Tuning debug.stepProbe)
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null) return "error: not in a world";
         stationsLine(s);

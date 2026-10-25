@@ -87,6 +87,8 @@ public final class BaritoneHook {
                 public void onPathEvent(PathEvent event) {
                     try {
                         io.github.mojolowjo.entropybot.commands.WalkProbe.event(event.name());     // 0.39.z54 B: every event while a walk step runs (probe on)
+                        io.github.mojolowjo.entropybot.commands.StepProbe.event(event.name());     // 0.39.z56 item 1: any step (debug.stepProbe)
+                        io.github.mojolowjo.entropybot.commands.LoadProbe.pathEvent(event.name()); // 0.39.z56 item 3: calcs counted (debug.loadProbe)
                         // 0.23.1: Baritone's idle tick sends CANCELED 20 times a second: repeats dropped, a line a minute
                         switch (pathFilter.offer(event.name(), System.currentTimeMillis())) {
                             case PASS -> ring.push("path", event.name(), null);

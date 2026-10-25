@@ -17,6 +17,11 @@ public final class EntropyBot {
         NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.LOWEST, ClientTickEvent.Post.class,
                 e -> io.github.mojolowjo.entropybot.blind.BlindRuntime.INSTANCE.postTick());
         NeoForge.EVENT_BUS.addListener(ClientTickEvent.Pre.class, e -> io.github.mojolowjo.entropybot.blind.BlindRuntime.INSTANCE.preTick());
+        // 0.39.z56 item 3 (the owner sees very low frame rates at times): the load probe's window around the whole client
+        // tick (Pre first, Post last) and each frame's start; one Tuning read a tick (debug.loadProbe), never throws
+        NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.HIGHEST, ClientTickEvent.Pre.class, e -> io.github.mojolowjo.entropybot.commands.LoadProbe.preTick());
+        NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.LOWEST, ClientTickEvent.Post.class, e -> io.github.mojolowjo.entropybot.commands.LoadProbe.postTick());
+        NeoForge.EVENT_BUS.addListener(net.neoforged.neoforge.client.event.RenderFrameEvent.Pre.class, e -> io.github.mojolowjo.entropybot.commands.LoadProbe.frame());
         modBus.addListener(net.neoforged.fml.event.lifecycle.FMLClientSetupEvent.class, e -> {
             try {
                 io.github.mojolowjo.entropybot.blind.BlindRuntime.INSTANCE.load(
@@ -96,6 +101,8 @@ public final class EntropyBot {
     }
 
     private static void onClientTick(ClientTickEvent.Post event) {
+        io.github.mojolowjo.entropybot.commands.LoadProbe.modStart();     // 0.39.z56 item 3: the mod's share (a field check when off)
         Core.INSTANCE.onClientTick();
+        io.github.mojolowjo.entropybot.commands.LoadProbe.modEnd();
     }
 }

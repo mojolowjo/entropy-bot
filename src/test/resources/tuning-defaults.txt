@@ -953,6 +953,11 @@ cave.depthFloor	5.0
 cave.skyOnlyVoteMargin	2.0
 cave.canopyMaxDepth	48.0
 debug.walkProbe	0.0
+debug.stepProbe	0.0
+debug.loadProbe	0.0
+debug.slowTickMs	50.0
+debug.probeEveryTicks	20.0
+debug.stepProbePhaseGapTicks	5.0
 cave.mergeM	8.0
 cave.slopeMin	1.0
 cave.depthMin	1.0

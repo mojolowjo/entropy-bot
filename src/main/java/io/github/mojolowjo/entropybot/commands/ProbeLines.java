@@ -9,13 +9,177 @@ import java.util.TreeMap;
  * 0.39.z54 B (run M 19:00:59: "Baritone's walk ended at y 70 short of y 16 (no path down to the band)" while the priced
  * path to y 16 was complete; 38 UNREACHABLE "no progress" answers in 3.5 min): the probe's line texts from plain values,
  * so the game side ({@link WalkProbe}) only gathers facts. No fix and no decision here: facts for one watched run.
- * Pure (JUnit: Z54WalkProbeTest). Loader notes: none.
+ * 0.39.z56: the step probe's ({@link StepProbe}: still rule, phase and still lines) and the load probe's ({@link LoadProbe}:
+ * window, load and slow-tick lines) texts too.
+ * Pure (JUnit: Z54WalkProbeTest, Z56StepProbeTest, Z56LoadProbeTest). Loader notes: none.
  */
 public final class ProbeLines {
     private ProbeLines() {}
 
     /** The probe is on: Tuning debug.walkProbe 1 (WalkProbe's gate; every probe entry returns at once when this is false). */
     public static boolean on() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("debug.walkProbe") >= 1; }
+
+    /** 0.39.z56 item 1: the step probe is on (Tuning debug.stepProbe 1; StepProbe's gate). */
+    public static boolean stepOn() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("debug.stepProbe") >= 1; }
+
+    /** 0.39.z56 item 3: the load probe is on (Tuning debug.loadProbe 1; LoadProbe's gate). */
+    public static boolean loadOn() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("debug.loadProbe") >= 1; }
+
+    /** 0.39.z56: client ticks between a step probe's still lines and between load lines (Tuning debug.probeEveryTicks, 20 = 1 s). */
+    public static long everyTicks() { return Math.max(1, io.github.mojolowjo.entropybot.aa.brain.Tuning.l("debug.probeEveryTicks")); }
+
+    /** 0.39.z56: the fewest client ticks between two step phase lines (Tuning debug.stepProbePhaseGapTicks; changes in between are counted). */
+    public static long phaseGapTicks() { return Math.max(1, io.github.mojolowjo.entropybot.aa.brain.Tuning.l("debug.stepProbePhaseGapTicks")); }
+
+    /** 0.39.z56 item 3: a client tick longer than this many ms gets its own slow-tick line (Tuning debug.slowTickMs). */
+    public static double slowTickMs() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("debug.slowTickMs"); }
+
+    // ---- 0.39.z56 item 1: the step probe (run O 22:11:46-22:14:51: "crafting furnace at the crafting table" then three
+    // unrelated price lines in 3 min and "no progress 180 s at craft furnace 1"; the craft's walk had no probe at all) ----
+
+    /**
+     * When a still line is due: no progress = the feet stay in the anchor's column within one block up or down (a swimmer's
+     * bob, run O: y 62 / 63 every 3-4 s, is no progress) and the bag is unchanged. A move out of that box or a bag change
+     * is progress: the anchor moves there and the count starts again. Due once per {@code every} ticks of no progress.
+     */
+    public static final class Still {
+        private int[] anchor;
+        private int bag;
+        private long since = -1, lastLine = -1;
+
+        /** Forget everything (a new step). */
+        public void reset() { anchor = null; since = -1; lastLine = -1; }
+
+        /** One tick's feet and bag signature; true when a still line is due now. */
+        public boolean due(long tick, int[] feet, int bagSig, long every) {
+            if (feet == null) return false;
+            boolean same = anchor != null && bag == bagSig && anchor[0] == feet[0] && anchor[2] == feet[2] && Math.abs(anchor[1] - feet[1]) <= 1;
+            if (!same) {
+                anchor = feet.clone();
+                bag = bagSig;
+                since = tick;
+                lastLine = tick;
+                return false;
+            }
+            if (tick - lastLine < every) return false;
+            lastLine = tick;
+            return true;
+        }
+
+        /** Ticks since the last progress (0 before any). */
+        public long stillTicks(long tick) { return since < 0 ? 0 : tick - since; }
+
+        /** The anchor cell ("x y z"), "-" before any. */
+        public String anchor() { return at(anchor); }
+    }
+
+    /**
+     * A step's sub-phase as the probe sees it: the step's own status words, the job hands' request, Baritone's process in
+     * control and its goal. A change of any is a phase change.
+     */
+    public record Phase(String status, String hands, String control, String goal) {
+        public String text() { return "status " + status + " | hands " + hands + " | in control " + control + " | goal " + goal; }
+    }
+
+    /** The phase line: what changed from {@code was} to {@code now} (the step's start when {@code was} is null); {@code folded}: changes not printed since the last line. */
+    public static String phase(long tick, int[] feet, String kind, String step, Phase was, Phase now, int folded) {
+        StringBuilder b = new StringBuilder("t=" + tick + " feet " + at(feet) + " | " + kind + " " + step + " | ");
+        if (was == null) b.append("start: ").append(now.text());
+        else {
+            List<String> ch = new java.util.ArrayList<>();
+            if (!java.util.Objects.equals(was.status(), now.status())) ch.add("status " + was.status() + " -> " + now.status());
+            if (!java.util.Objects.equals(was.hands(), now.hands())) ch.add("hands " + was.hands() + " -> " + now.hands());
+            if (!java.util.Objects.equals(was.control(), now.control())) ch.add("in control " + was.control() + " -> " + now.control());
+            if (!java.util.Objects.equals(was.goal(), now.goal())) ch.add("goal " + was.goal() + " -> " + now.goal());
+            b.append(ch.isEmpty() ? "no change" : String.join(" | ", ch));
+        }
+        if (folded > 0) b.append(" (").append(folded).append(" phase change(s) in between not printed: debug.stepProbePhaseGapTicks)");
+        return b.toString();
+    }
+
+    /** The still line: everything a stalled step shows, once per debug.probeEveryTicks. */
+    public record StepStill(long tick, int[] feet, String kind, String step, long stillTicks, String anchor, Phase phase,
+                            boolean executing, int[] src, int[] dest, int pos, int len, boolean calc, String lastEvent, long eventAgo,
+                            String waiting, String needs, int keep, String throwaway) {
+        public String line() {
+            return "t=" + tick + " feet " + at(feet) + " | " + kind + " " + step
+                    + String.format(Locale.ROOT, " | NO PROGRESS %.1f s (feet within one block of %s, bag unchanged)", stillTicks / 20.0, anchor)   // game fact: 20 ticks a second
+                    + " | " + phase.text()
+                    + " | path " + (executing ? at(src) + " -> " + at(dest) + " at " + pos + "/" + len : "none executing")
+                    + " | calc " + (calc ? "in progress" : "none")
+                    + " | last path event " + (lastEvent == null ? "none this step" : lastEvent + " " + eventAgo + " ticks ago")
+                    + " | waiting " + waiting + " | needs in bag " + needs + " | keep list " + keep + " | throwaway in bag " + throwaway;
+        }
+    }
+
+    /** "cobblestone 8/8, stick 0/1" for the step's needs (have / uses) - "none" when it uses nothing. */
+    public static String needs(Map<String, Integer> uses, java.util.function.ToIntFunction<String> have) {
+        if (uses == null || uses.isEmpty()) return "none";
+        StringBuilder b = new StringBuilder();
+        for (Map.Entry<String, Integer> e : uses.entrySet())
+            b.append(b.length() == 0 ? "" : ", ").append(e.getKey().replaceFirst("^minecraft:", "")).append(' ').append(have.applyAsInt(e.getKey())).append('/').append(e.getValue());
+        return b.toString();
+    }
+
+    // ---- 0.39.z56 item 3: the load probe (the owner sees very low frame rates at times) ----
+
+    /** One window's client tick and mod times (ms), summed per tick; read and reset once per load line. */
+    public static final class Load {
+        private int ticks, frames;
+        private double tickSum, tickMax, modSum, modMax, frameMax;
+
+        public void tick(double tickMs, double modMs) {
+            ticks++;
+            tickSum += tickMs;
+            tickMax = Math.max(tickMax, tickMs);
+            modSum += modMs;
+            modMax = Math.max(modMax, modMs);
+        }
+
+        /** One frame's interval (ms from the last frame's start). */
+        public void frame(double ms) {
+            frames++;
+            frameMax = Math.max(frameMax, ms);
+        }
+
+        /** "client tick avg 3.1 max 12.0 ms (20 ticks) | mod avg 1.2 max 9.0 ms (39% of the tick time) | frames 58, longest 48 ms" then reset. */
+        public String takeLine() {
+            String s = ticks == 0 ? "client tick: none measured"
+                    : String.format(Locale.ROOT, "client tick avg %.1f max %.1f ms (%d ticks) | mod avg %.1f max %.1f ms (%.0f%% of the tick time)",
+                    tickSum / ticks, tickMax, ticks, modSum / ticks, modMax, tickSum <= 0 ? 0 : 100 * modSum / tickSum);
+            s += String.format(Locale.ROOT, " | frames %d, longest %.0f ms", frames, frameMax);
+            ticks = 0; frames = 0; tickSum = 0; tickMax = 0; modSum = 0; modMax = 0; frameMax = 0;
+            return s;
+        }
+    }
+
+    /** The load line's other facts, as counts since the last line where a "+" is shown. */
+    public record LoadFacts(int fps, String window, long pricedStarted, long pricedLanded, int pricedInFlight,
+                            long[] segs, long calcs, long calcFails, long[] recorder, long heapUsedMb, long heapMaxMb, long gcCount, long gcMs) {
+        public String line(long tick) {
+            String fork = segs == null || segs[0] < 0 ? "fork counts not in this jar" : "fork segments started +" + segs[0] + " landed +" + segs[1] + ", nodes opened +" + segs[2];
+            String rec = recorder == null ? "recorder off" : "recorder queue " + recorder[0] + ", lines written +" + recorder[1] + String.format(Locale.ROOT, ", disk %.1f MB", recorder[2] / 1048576.0);
+            return "t=" + tick + " | fps " + fps + " | " + window
+                    + " | priced paths started +" + pricedStarted + " landed +" + pricedLanded + " in flight " + pricedInFlight + "; " + fork
+                    + " | Baritone path calcs started +" + calcs + " failed +" + calcFails
+                    + " | " + rec
+                    + " | heap " + heapUsedMb + "/" + heapMaxMb + " MB | GC +" + gcCount + " in " + gcMs + " ms";
+        }
+    }
+
+    /** Names of the mod's tick sections, in Core.onClientTick's order (LoadProbe.mark indices). */
+    public static final String[] SECTIONS = {"guard+commands (aa)", "reflexes", "probes+knowledge", "chunk pass", "recorder", "rest"};
+
+    /** The slow-tick line: the tick, the mod's part and its sections (ms), what the mod did in it. */
+    public static String slowTick(long tick, double tickMs, double limit, double modMs, double[] sections, String did) {
+        StringBuilder b = new StringBuilder(String.format(Locale.ROOT, "t=%d | client tick %.1f ms (over debug.slowTickMs %.0f) | mod %.1f ms", tick, tickMs, limit, modMs));
+        if (sections != null) {
+            b.append(':');
+            for (int i = 0; i < sections.length && i < SECTIONS.length; i++) b.append(String.format(Locale.ROOT, " %s %.1f", SECTIONS[i], sections[i])).append(i + 1 < sections.length ? "," : "");
+        }
+        b.append(String.format(Locale.ROOT, " | outside the mod %.1f ms (vanilla, Baritone's tick, other mods)", Math.max(0, tickMs - modMs)));
+        return b.append(" | ").append(did).toString();
+    }
 
     /**
      * 0.39.z54 review 1: what a movement already knows, read without side effects (the probe never calls Baritone's

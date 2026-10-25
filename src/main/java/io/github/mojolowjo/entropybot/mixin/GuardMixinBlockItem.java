@@ -29,8 +29,21 @@ public abstract class GuardMixinBlockItem {
             if (Guard.INSTANCE.vetoPlace(level, context.getClickedPos(), path.endsWith("torch"))) cir.setReturnValue(InteractionResult.FAIL);
             else {
                 io.github.mojolowjo.entropybot.commands.RestoreLive.INSTANCE.notePlaced(context.getClickedPos(), path);      // aa-litter + rm-mining: my placements are noted as mine
-                io.github.mojolowjo.entropybot.commands.WalkProbe.placed(context.getItemInHand(), context.getClickedPos());   // 0.39.z55 item 1 probe (debug.walkProbe)
+                io.github.mojolowjo.entropybot.commands.WalkProbe.placing(context.getItemInHand());   // 0.39.z55 item 1 probe (debug.walkProbe); z56 2b: the line at RETURN
             }
         } catch (Throwable caught) { Quiet.warn("GuardMixinBlockItem.? failed, carrying on with the fallback", caught); }
+    }
+
+    /**
+     * 0.39.z56 item 2b (run O 22:11:20-21: five "probe keep: placed" lines for one crafting table): the probe's line once per
+     * block really placed - BlockItem.place's result consumed the action (HEAD runs for every attempt, refused ones too).
+     * Read only; client side only.
+     */
+    @Inject(method = "place", at = @At("RETURN"))
+    private void entropybot$placed(BlockPlaceContext context, CallbackInfoReturnable<InteractionResult> cir) {
+        try {
+            if (!context.getLevel().isClientSide()) return;
+            io.github.mojolowjo.entropybot.commands.WalkProbe.placed(cir.getReturnValue(), context.getClickedPos());
+        } catch (Throwable caught) { Quiet.warn("GuardMixinBlockItem.placed failed (probe line only)", caught); }
     }
 }

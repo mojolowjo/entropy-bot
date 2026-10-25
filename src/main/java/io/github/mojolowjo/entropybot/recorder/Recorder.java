@@ -46,6 +46,12 @@ public interface Recorder {
     /** False for {@link #NONE} and while the recorder is off. */
     default boolean enabled() { return false; }
 
+    /**
+     * 0.39.z56 item 3 (the load probe): {the writer thread's queue now, lines written since the game started, bytes on disk};
+     * null when this recorder has none (NONE). Read only, any thread.
+     */
+    default long[] loadCounts() { return null; }
+
     /** The {@code recorder} verb's status text: settings, disk use, the last incidents. */
     default String summary() { return "the recorder is not installed"; }
 

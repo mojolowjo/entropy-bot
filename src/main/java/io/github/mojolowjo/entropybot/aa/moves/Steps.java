@@ -43,6 +43,23 @@ public final class Steps {
 
         /** 0.39.z38: the items the run's remaining steps use up (Baritone keeps them out of the throwaway list); empty: none. */
         default void keep(List<String> items) {}
+
+        /**
+         * 0.39.z56 item 2a (run O 22:15:20-22:17:43: "probe walk:" lines went on after the iron order stopped, 790 -> 3197):
+         * the running step is no longer running - done, failed, refused at its start, cancelled, timed out, no progress,
+         * re-planned or the run's end. Called on every one of those paths (more than once is fine); the hands drop what
+         * follows the step (the probes' step pointers). Never changes what the step did.
+         */
+        default void ended(String how) {}
+    }
+
+    /** 0.39.z56 item 2a: tells the hands the step is over; a failure there is said in the run's words, never thrown. */
+    private void ended(String how) {
+        try {
+            hands.ended(how);
+        } catch (RuntimeException e) {
+            why = why + " (the step's end could not be told to its hands: " + e + ")";
+        }
     }
 
     /** The items the remaining steps (the running one on) use up, from their declared needs ({@link StepNeeds#keepOf}). */
@@ -71,6 +88,7 @@ public final class Steps {
 
     /** The run ended: nothing kept; a failure to say so is added to the end line. */
     private void endKeep() {
+        ended("the run ended");                  // 0.39.z56 item 2a: every run end (done, failed, cancelled)
         keepErr = null;
         pushKeep(List.of());
         if (keepErr != null) why = why + " (" + keepErr + ")";
@@ -185,8 +203,10 @@ public final class Steps {
         } catch (RuntimeException e) {
             r = "error: " + e;
         }
-        if (r != null) failOrReplan(r);
-        else {
+        if (r != null) {
+            ended("refused at its start");       // 0.39.z56 item 2a: the hands may have taken the step before they refused it
+            failOrReplan(r);
+        } else {
             why = started(idx, steps) + (needs.none() ? "" : " " + needs.text()) + (replanFact == null ? "" : " (re-planned: " + replanFact + ")") + (keepErr == null ? "" : " (" + keepErr + ")");
             replanFact = null;
         }
@@ -415,7 +435,10 @@ public final class Steps {
         } catch (RuntimeException e) {
             r = "error: " + e;
         }
-        if (r != null) fail("after the pause: " + r.replaceFirst("^error: ", ""));
+        if (r != null) {
+            ended("refused at its restart");     // 0.39.z56 item 2a
+            fail("after the pause: " + r.replaceFirst("^error: ", ""));
+        }
         else why = stage() + " resumed";
     }
 
@@ -434,8 +457,12 @@ public final class Steps {
         }
         if (st == null) st = Car.Status.failed("the hands gave no status");
         switch (st.state()) {
-            case FAILED -> failOrReplan(st.why() == null ? "the step ended failed without a reason from its hands" : st.why());
+            case FAILED -> {
+                ended("failed");                 // 0.39.z56 item 2a (run O: a failed walk step kept its probe pointer)
+                failOrReplan(st.why() == null ? "the step ended failed without a reason from its hands" : st.why());
+            }
             case DONE -> {
+                ended("done");                   // 0.39.z56 item 2a
                 lastStatus = st.why();
                 next();
             }
@@ -500,6 +527,7 @@ public final class Steps {
         } catch (RuntimeException e) {
             why = stage() + ": cancel failed: " + e;
         }
+        ended("cancelled: " + reason);           // 0.39.z56 item 2a: pause, timeout, tool gone, no progress, re-price, stop
     }
 
     /** Back to IDLE after its end was read. */
