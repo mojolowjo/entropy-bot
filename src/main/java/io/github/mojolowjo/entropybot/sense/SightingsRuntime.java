@@ -91,6 +91,8 @@ public final class SightingsRuntime {
         DROP_REASONS.put(key, why);
     }
 
+    private static synchronized void dropReasonGone(long key) { DROP_REASONS.remove(key); }
+
     /** The reason the candidate at x y z was dropped this session; null = not dropped. */
     public static synchronized String dropReason(int x, int y, int z) { return DROP_REASONS.get(Seen.key(x, y, z)); }
 
@@ -152,6 +154,7 @@ public final class SightingsRuntime {
                 cand.refuse(c.x(), c.y(), c.z());
                 String line = where + ": dropped - not a cave (" + no + "; " + hole + ")";
                 verdict(k, line);
+                dropReason(k, no);                                        // z52 review: the reason aa cave list prints
                 LOG.info("[entropybot] sense: cave candidate {}", line);   // said once: the candidate is dropped
                 // z50 (S71): the bot's own drop is a labelled patch (weighted cave.botLabelWeight)
                 ChunkPass.INSTANCE.label(new CavePatterns.Patch(c.x(), c.y(), c.z(), h.water() ? "water" : "cliff", "bot", h.depth(), h.pocket(), h.darkSky(), ws, null));
@@ -164,6 +167,7 @@ public final class SightingsRuntime {
             String ok = where + ": confirmed - a dark pocket under the surface at " + h.fx() + " " + (h.floorY() + 1) + " " + h.fz() + ", from " + d + " m ("
                     + hole + "; " + pocket.size() + " pocket cells stored)";
             verdict(k, ok);
+            dropReasonGone(k);                                            // z52 review: confirmed, no drop reason left
             LOG.info("[entropybot] sense: cave candidate {}", ok);
             ChunkPass.INSTANCE.label(new CavePatterns.Patch(c.x(), c.y(), c.z(), "cave", "bot", h.depth(), h.pocket(), h.darkSky(), ws, null));
             if (sg.sawMouth(dim, c.x(), c.y(), c.z(), d, now) != null) {
