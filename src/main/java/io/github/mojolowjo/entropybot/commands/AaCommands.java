@@ -76,6 +76,18 @@ final class AaCommands {
                 f(O, "pick <n>", "answer the asking need: run its option n"),
                 f(O, "ask on|off", "before each task show my options and wait for aa pick"));
         v("build", (c, aa, vb, a) -> aa.build(a), f(O, "build <name> here|at <x y z> [high|low]", "build that saved design here or there (its material list said)"));
+        // ---- stations (main-stations 0.39.z35; 0.39.z54 A6: wired, the forms had no caller since z35 - run M's help dump)
+        v("look", (c, aa, vb, a) -> MainStationsLive.look(c, aa, a),
+                f("stations", "look", "what my crosshair is on (a station kind, my main?)"),
+                f("stations", "look <station kind>", "turn my head to the nearest known one of that kind (Baritone's look)"),
+                f("stations", "look smooth <ticks>", "how many ticks a head turn takes (1..60, saved)"));
+        v("station", (c, aa, vb, a) -> MainStationsLive.station(c, a),
+                f("stations", "station main", "the station under my crosshair becomes the main of its kind"),
+                f("stations", "station list", "the main stations of this world"),
+                f("stations", "station clear <station kind>", "forget the main of that kind"));
+        v("deposit", (c, aa, vb, a) -> MainStationsLive.deposit(c, a),
+                f("stations", "deposit", "the chests the deposit uses, the main first"),
+                f("stations", "deposit <x y z>", "that chest becomes the deposit's main"));
         // ---- caves (0.39.z50, S71: the owner labels spots; the cave rule comes from the labelled patterns)
         v("cave", (c, aa, vb, a) -> CaveLabel.run(a),
                 f("caves", "cave yes|no|hill|cliff", "label the spot under the crosshair (or where I stand): a cave, not one, a hill, a cliff"),

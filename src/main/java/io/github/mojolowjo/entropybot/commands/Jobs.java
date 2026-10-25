@@ -203,6 +203,7 @@ public final class Jobs {
     }
 
     static void cancel(IBaritone b) {
+        WalkProbe.cancelled("Jobs.cancel");          // 0.39.z54 B: who ended the walk (probe on, a walk step running)
         try { b.getPathingBehavior().cancelEverything(); } catch (Throwable caught) { Quiet.warn("Jobs.cancel failed, carrying on with the fallback", caught); }
     }
 

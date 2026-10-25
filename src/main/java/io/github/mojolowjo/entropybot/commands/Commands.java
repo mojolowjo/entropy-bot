@@ -1497,6 +1497,7 @@ public final class Commands implements Chains.Env {
         io.github.mojolowjo.entropybot.baritone.SafetyNet.INSTANCE.restore();
         try {
             IBaritone b = BaritoneAPI.getProvider().getPrimaryBaritone();
+            WalkProbe.cancelled("stop (Commands.stopAll)");     // 0.39.z54 B
             if (b != null) b.getPathingBehavior().cancelEverything();
         } catch (Throwable caught) { Quiet.warn("Commands.stopAll failed, carrying on with the fallback", caught); }
         core.guard.core.releaseAll(core.token);

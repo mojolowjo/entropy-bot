@@ -1116,6 +1116,7 @@ public final class Reflexes {
                 moves.stop("entered " + dim);
                 try {
                     IBaritone b = BaritoneAPI.getProvider().getPrimaryBaritone();
+                    io.github.mojolowjo.entropybot.commands.WalkProbe.cancelled("reflex (denied dimension)");     // 0.39.z54 B
                     if (b != null) b.getPathingBehavior().cancelEverything();
                 } catch (Throwable caught) { Quiet.warn("Reflexes.dimensionWatch failed, carrying on with the fallback", caught); }
                 events.push("reflex", "in " + dim + ", which is off limits: going home", null);

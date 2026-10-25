@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * 0.39.z52: the pocket floor holds once patterns exist, the darkest sky is the second dark proof (pocket OR darkest sky),
  * aa cave list for the owner's labelling walk. Fact states (rule 15): no pattern (defaults), patterns but no cave (defaults),
- * cave patterns loaded (derived, floored).
+ * cave patterns loaded (derived, floored). 0.39.z54 A5: hand-made patterns ({@link Z50CavePatternTest#fakes()}), no seed.
  */
 class Z52CaveRuleTest {
 
@@ -41,39 +41,21 @@ class Z52CaveRuleTest {
 
     @Test
     void derivedPocketNeverBelowTheFloor() {
-        CavePatterns p = Z50CavePatternTest.seeded();
-        CavePatterns.Rule r = p.rule();
+        CavePatterns.Rule r = Z50CavePatternTest.fakes().rule();
         assertTrue(r.derived());
-        assertEquals(Tuning.i("cave.darkPocketCells"), r.pocket(), "seed caves #15-#17 show pocket 0; the floor holds");
-        assertEquals(11, r.darkSky(), "the loosest seed cave's darkest sky");
+        assertEquals(Tuning.i("cave.darkPocketCells"), r.pocket(), "caves B and C show pocket 0; the floor holds");
+        assertEquals(11, r.darkSky(), "the loosest cave's darkest sky (B)");
     }
 
     @Test
-    void eitherDarkProofConfirms() {
-        CavePatterns.Rule r = Z50CavePatternTest.seeded().rule();
-        assertNull(CavePatterns.verdict(hole(9, 0, 3), r, CAVE), "darkest sky 3 passes without a pocket");
+    void eitherDarkProofPassesTheVerdict() {
+        CavePatterns.Rule r = Z50CavePatternTest.fakes().rule();
+        assertNull(CavePatterns.verdict(hole(9, 0, 3), r, CAVE), "darkest sky 3 passes the verdict without a pocket");
         assertNull(CavePatterns.verdict(hole(9, 7, 12), r, CAVE), "a pocket of 7 passes with darkest sky 12");
         String no = CavePatterns.verdict(hole(9, 2, 12), r, CAVE);
         assertNotNull(no);
         assertTrue(no.startsWith("no dark proof: pocket 2 < 6"), no);
         assertTrue(no.contains("darkest sky 12 > 11"), no);
-    }
-
-    @Test
-    void whichSeedCavesPass() {
-        CavePatterns p = Z50CavePatternTest.seeded();
-        CavePatterns.Rule r = p.rule();
-        int pocket = 0, sky = 0, n = 0;
-        for (CavePatterns.Patch q : p.all()) {
-            if (!q.cave()) continue;
-            n++;
-            if (q.pocket() >= r.pocket()) pocket++;
-            if (q.darkSky() <= r.darkSky()) sky++;
-            assertNull(CavePatterns.verdict(hole(q.depth(), q.pocket(), q.darkSky()), r, CAVE), "seed cave " + q.x() + " " + q.z());
-        }
-        assertEquals(5, n);
-        assertEquals(1, pocket, "only #7 has a pocket of 6+ at reach 10");
-        assertEquals(5, sky);
     }
 
     // ---- aa cave list ----

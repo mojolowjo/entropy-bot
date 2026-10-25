@@ -35,9 +35,13 @@ final class CaveLabel {
         BlockPos at = mc.hitResult instanceof BlockHitResult b && b.getType() == HitResult.Type.BLOCK ? b.getBlockPos() : mc.player.blockPosition();
         int x = at.getX(), z = at.getZ();
         var level = mc.level;
-        CavePatterns.Hole h = CavePatterns.walk(x, z, (cx, cz) -> level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, cx, cz) - 1, SightingsRuntime.cells(level));
+        // 0.39.z54 A3: the label's patch, walk and spot are read over GROUND heights (leaves, logs and air stripped), as the
+        // shape test and the bot's own walk read them
+        CavePatterns.Hole h = SightingsRuntime.walk(level, x, z);
         int[] ws = SightingsRuntime.patch(level, x, z);
-        int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z);
+        int g = SightingsRuntime.top(level, x, z);
+        if (g == io.github.mojolowjo.entropybot.sense.CaveMouths.NOT_LOADED) return "aa cave: the chunk at " + x + " " + z + " is not loaded: nothing labelled (stand nearer)";
+        int y = g + 1;
         pass.label(new CavePatterns.Patch(x, y, z, label, "owner", h.depth(), h.pocket(), h.darkSky(), ws, null));
         return "aa cave: " + x + " " + y + " " + z + " labelled " + label + " (" + h.numbers() + ")\n" + pass.patterns().rule().line();
     }
@@ -49,7 +53,8 @@ final class CaveLabel {
     private static String list(ChunkPass pass) {
         Minecraft mc = Minecraft.getInstance();
         CavePatterns pat = pass.patterns();
-        String rule = pat.rule().line() + "\nshapes the vote turned down this session: " + pass.shapesVotedOut();
+        String rule = pat.rule().line() + "\nshapes the vote turned down this session: " + pass.shapesVotedOut()
+                + (pass.canopyCapped() > 0 ? "; columns past cave.canopyMaxDepth (heightmap top kept): " + pass.canopyCapped() : "");
         if (mc.player == null) return rule + "\naa cave list: no world (candidates and mouths are known in a world)";
         var sg = pass.sightings();
         String dim = pass.dim();
@@ -65,7 +70,10 @@ final class CaveLabel {
             if (isMouth) continue;
             String why = SightingsRuntime.dropReason(c.x(), c.y(), c.z());
             if (why == null && pass.mouths().refused(c.x(), c.y(), c.z())) why = "refused earlier (reason not kept this session)";
-            out.add(io.github.mojolowjo.entropybot.sense.CaveList.candidate(c.x(), c.y(), c.z(), c.shape() + (c.numbers().isEmpty() ? "" : " " + c.numbers()), why));
+            String nums = c.shape() + (c.numbers().isEmpty() ? "" : " " + c.numbers());
+            String wait = why == null ? SightingsRuntime.holdReason(c.x(), c.y(), c.z()) : null;     // z54 A4
+            out.add(wait != null ? io.github.mojolowjo.entropybot.sense.CaveList.held(c.x(), c.y(), c.z(), nums, wait)
+                    : io.github.mojolowjo.entropybot.sense.CaveList.candidate(c.x(), c.y(), c.z(), nums, why));
         }
         var p = mc.player;
         return io.github.mojolowjo.entropybot.sense.CaveList.text(rule, out, pat.all(), p.getX(), p.getY(), p.getZ()) + note;

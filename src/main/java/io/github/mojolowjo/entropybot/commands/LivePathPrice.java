@@ -100,9 +100,11 @@ public final class LivePathPrice implements PathPrice {
     public static boolean walk(IBaritone b, BlockPos pos) {
         if (!PathPrice.pricedPathOn()) {
             b.getCustomGoalProcess().setGoalAndPath(goal(pos));
+            WalkProbe.walked(false);                         // 0.39.z54 B
             return false;
         }
         boolean kept = b.getPricedPath().walk(goal(pos));
+        WalkProbe.walked(kept);                              // 0.39.z54 B: the walk's kept / fresh answer for the probe line
         LOG.info("[entropybot] path: walk to {} {} {}: {}", pos.getX(), pos.getY(), pos.getZ(),
                 kept ? "the priced path (one search)" : "no kept path from here - Baritone searches fresh");
         return kept;
@@ -126,6 +128,13 @@ public final class LivePathPrice implements PathPrice {
             LOG.warn("[entropybot] path cost to {}: the background search threw", key, err);
             out = Answer.none("the search threw: " + err);
         } else out = answer(mc, a);
+        // 0.39.z54 B (run M: the walk vs the price; 38 "no progress" answers): the probe's lines, nothing built when off
+        if (WalkProbe.on() && a != null) {
+            String[] p = key.split(",");
+            BlockPos goal = new BlockPos(Integer.parseInt(p[0]), Integer.parseInt(p[1]), Integer.parseInt(p[2]));
+            if (!a.noPath) WalkProbe.price(goal, from, a);
+            else if (IPathCost.Answer.UNREACHABLE.equals(a.reason) || baritone.api.pathing.calc.IPricedPath.NO_PROGRESS.equals(a.reason)) WalkProbe.unreachable(goal, from, a.reason);
+        }
         long now = System.currentTimeMillis();
         kept.values().removeIf(old -> now - old.atMs() > PathPrice.keepS() * 1000);   // structural: milliseconds per second
         kept.put(key, new Kept(out, from, bag, now));

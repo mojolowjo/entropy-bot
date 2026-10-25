@@ -72,7 +72,10 @@ public final class HelpCommand {
             // owner 2026-10-23 ("AA is the only driver"): the old verbs and the AI operator
             "deposit", "scan", "take", "put", "get", "give", "drop", "craft", "cook", "cut", "farm", "explore", "go", "goto", "come",
             "follow", "flee", "climb", "burrow", "build", "light", "compact", "restock", "restore", "repeat", "wait", "sleep", "eat",
-            "attack", "upgrade", "pots", "rs", "goal", "plan", "need", "surface", "assist", "open", "close", "stop", "ai");
+            "attack", "upgrade", "pots", "rs", "goal", "plan", "need", "surface", "assist", "open", "close", "stop", "ai",
+            // 0.39.z54 A7 (run M's help dump): the old brain's pages; each answers removedVerb in Commands, no live verb
+            // behind it (aa needs on|off is the aa row's form and stays)
+            "needs", "brain", "idle", "dayplan");
 
     static boolean deleted(VerbTable.Verb v) {
         for (String w : VerbTable.words(v)) if (DELETED.contains(w)) return true;

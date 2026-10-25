@@ -96,6 +96,23 @@ public final class SightingsRuntime {
     /** The reason the candidate at x y z was dropped this session; null = not dropped. */
     public static synchronized String dropReason(int x, int y, int z) { return DROP_REASONS.get(Seen.key(x, y, z)); }
 
+    /** 0.39.z54 A4 (aa cave list): why a candidate whose hole passed stays a candidate (the darkest sky alone), by its key. */
+    private static final Map<Long, String> HOLD_REASONS = new java.util.HashMap<>();
+
+    /** True when the reason is new or changed for this key (the line is said then, once per mouth and reason). */
+    private static synchronized boolean holdReason(long key, String why) {
+        if (HOLD_REASONS.size() > 4096) HOLD_REASONS.clear();     // structural: memory cap, the same as the dropped set
+        return !why.equals(HOLD_REASONS.put(key, why));
+    }
+
+    private static synchronized void holdReasonGone(long key) { HOLD_REASONS.remove(key); }
+
+    /** 0.39.z54 A4: why the candidate at x y z stays a candidate after its hole passed; null = not held. */
+    public static synchronized String holdReason(int x, int y, int z) { return HOLD_REASONS.get(Seen.key(x, y, z)); }
+
+    /** 0.39.z54 A4: held candidates -> the patterns' size when held (looked at again once the owner labels more). */
+    private final Map<Long, Integer> held = new HashMap<>();
+
     /** aa debug: one line per candidate the rays looked at (its last verdict). */
     public static synchronized List<String> verdicts() { return new java.util.ArrayList<>(VERDICTS.values()); }
     /** 0.39.z46: candidates a ray showed are not caves (dropped, said once). */
@@ -112,12 +129,15 @@ public final class SightingsRuntime {
         if (cand == null) return;
         Vec3 eye = p.getEyePosition(), look = p.getLookAngle();
         if (dropped.size() > 4096) dropped.clear();                  // structural: memory cap
+        if (held.size() > 4096) held.clear();                        // structural: memory cap
         int shots = 0, max = io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.mouthRays");
         List<Sightings.Rec> known = sg.mouths(dim, (int) eye.x, (int) eye.y, (int) eye.z);
         for (CaveMouths.Candidate c : cand.toConfirm(eye.x, eye.y, eye.z)) {   // z46: no rays at far candidates
             if (shots >= max) return;
             long k = Seen.key(c.x(), c.y(), c.z());
             if (dropped.contains(k)) continue;
+            Integer heldAt = held.get(k);                                 // z54 A4: held until the patterns change
+            if (heldAt != null && heldAt == ChunkPass.INSTANCE.patterns().size()) continue;
             if (!Seen.inCone(eye.x, eye.y, eye.z, look.x, look.y, look.z, c.x(), c.y(), c.z())) continue;
             boolean have = false;
             for (Sightings.Rec r : known) {
@@ -144,10 +164,11 @@ public final class SightingsRuntime {
             // the rim through air to its first non-air cell (the hole's own air column, rule 17's exception); then the
             // near-only pocket fill over the hole's own air from that floor cell (owner: "require a pocket, not a cell")
             CavePatterns pat = ChunkPass.INSTANCE.patterns();
-            CavePatterns.Hole h = CavePatterns.walk(c.x(), c.z(), (x, z) -> top(level, x, z), cells(level));
+            CavePatterns.Hole h = walk(level, c.x(), c.z());
             int[] ws = patch(level, c.x(), c.z());
             CavePatterns.Vote v = pat.vote(ws, h.depth(), h.pocket(), h.darkSky(), true, null);
-            String no = CavePatterns.verdict(h, pat.rule(), v);
+            CavePatterns.Rule rule = pat.rule();
+            String no = CavePatterns.verdict(h, rule, v);
             String hole = h.numbers() + "; " + v.line();
             if (no != null) {
                 dropped.add(k);
@@ -156,10 +177,23 @@ public final class SightingsRuntime {
                 verdict(k, line);
                 dropReason(k, no);                                        // z52 review: the reason aa cave list prints
                 LOG.info("[entropybot] sense: cave candidate {}", line);   // said once: the candidate is dropped
-                // z50 (S71): the bot's own drop is a labelled patch (weighted cave.botLabelWeight)
-                ChunkPass.INSTANCE.label(new CavePatterns.Patch(c.x(), c.y(), c.z(), h.water() ? "water" : "cliff", "bot", h.depth(), h.pocket(), h.darkSky(), ws, null));
+                // z54 A1 (owner's ruling 2026-10-24): the bot's own drop is no labelled patch any more (z50 wrote one)
                 continue;
             }
+            // 0.39.z54 A4: the darkest sky alone confirms only with the vote's margin; else the mouth stays a candidate,
+            // said once per mouth and reason, and not looked at again until the patterns change (the owner labels)
+            String wait = CavePatterns.hold(h, rule, v);
+            if (wait != null) {
+                held.put(k, pat.size());
+                if (holdReason(k, wait)) {
+                    String line = where + ": candidate - " + wait + " (" + hole + ")";
+                    verdict(k, line);
+                    LOG.info("[entropybot] sense: cave candidate {}", line);
+                }
+                continue;
+            }
+            held.remove(k);
+            holdReasonGone(k);
             int d = (int) Math.round(Math.sqrt(eye.distanceToSqr(new Vec3(c.x() + 0.5, c.y() + 0.5, c.z() + 0.5))));
             // 0.39.z51 items 1-2: the confirmation is a stored fact on the mouth (tick, floor cell, the dark pocket's cells)
             List<Long> pocket = CavePatterns.pocketCells(h.fx(), h.floorY() + 1, h.fz(), h.rim(), cells(level));
@@ -169,7 +203,7 @@ public final class SightingsRuntime {
             verdict(k, ok);
             dropReasonGone(k);                                            // z52 review: confirmed, no drop reason left
             LOG.info("[entropybot] sense: cave candidate {}", ok);
-            ChunkPass.INSTANCE.label(new CavePatterns.Patch(c.x(), c.y(), c.z(), "cave", "bot", h.depth(), h.pocket(), h.darkSky(), ws, null));
+            // z54 A1 (owner's ruling 2026-10-24): the bot's own confirmation is no labelled patch any more (z50 wrote one)
             if (sg.sawMouth(dim, c.x(), c.y(), c.z(), d, now) != null) {
                 mouthsSeen++;
                 known = sg.mouths(dim, (int) eye.x, (int) eye.y, (int) eye.z);
@@ -178,20 +212,43 @@ public final class SightingsRuntime {
         }
     }
 
-    /** 0.39.z50: the WORLD_SURFACE top block Y of a column (Level.getHeight gives the first free Y). */
-    static int top(ClientLevel level, int x, int z) { return level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1; }
+    /**
+     * 0.39.z50: the top block Y of a column; 0.39.z54 A3: its GROUND (the WORLD_SURFACE top with leaves, logs and air
+     * stripped, {@link CaveMouths#ground}; Level.getHeight gives the first free Y). {@link CaveMouths#NOT_LOADED} when the
+     * column's chunk is not loaded (rule 15: the client has no height there).
+     */
+    public static int top(ClientLevel level, int x, int z) {
+        if (!level.hasChunk(x >> 4, z >> 4)) return CaveMouths.NOT_LOADED;
+        int hm = level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1, minY = level.getMinBuildHeight();
+        BlockPos.MutableBlockPos q = new BlockPos.MutableBlockPos();
+        return CaveMouths.ground(hm, y -> y >= minY && ChunkPass.canopy(level.getBlockState(q.set(x, y, z))));
+    }
 
     /**
-     * 0.39.z50: the 9 x 9 WORLD_SURFACE tops round x z, relative to the centre (the heightmap only, rule 17). A column of a
-     * chunk not loaded reads as the centre's height (no difference; the client has no height there).
+     * 0.39.z50: the 9 x 9 tops round x z (z54 A3: ground heights), relative to the centre (the heightmap and the column's
+     * own top blocks, rule 17). A column of a chunk not loaded reads as the centre's height (no difference; the client
+     * has no height there).
      */
     public static int[] patch(ClientLevel level, int x, int z) {
         int r = CavePatterns.R, n = CavePatterns.SIDE, c = top(level, x, z);
         int[] out = new int[n * n];
+        if (c == CaveMouths.NOT_LOADED) return out;
         for (int dz = -r; dz <= r; dz++)
-            for (int dx = -r; dx <= r; dx++)
-                out[(dz + r) * n + dx + r] = level.hasChunk((x + dx) >> 4, (z + dz) >> 4) ? top(level, x + dx, z + dz) - c : 0;
+            for (int dx = -r; dx <= r; dx++) {
+                int t = top(level, x + dx, z + dz);
+                out[(dz + r) * n + dx + r] = t == CaveMouths.NOT_LOADED ? 0 : t - c;
+            }
         return out;
+    }
+
+    /**
+     * 0.39.z54 A3: the hole walk over ground heights; a column not loaded reads as the candidate's own height (no
+     * difference, as in {@link #patch}).
+     */
+    public static CavePatterns.Hole walk(ClientLevel level, int x, int z) {
+        int c0 = top(level, x, z);
+        int c = c0 == CaveMouths.NOT_LOADED ? level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1 : c0;
+        return CavePatterns.walk(x, z, (cx, cz) -> { int t = top(level, cx, cz); return t == CaveMouths.NOT_LOADED ? c : t; }, cells(level));
     }
 
     /** 0.39.z50: the hole walk's and the pocket fill's cells from the level (an unloaded cell is not air: the walk stops). */

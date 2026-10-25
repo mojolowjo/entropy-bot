@@ -128,6 +128,8 @@ public final class StepHands implements Steps.Hands {
 
     private String start0(Step s) {
         step = s;
+        // 0.39.z54 B: the walk probe's step (one field; the probe itself reads Tuning debug.walkProbe)
+        WalkProbe.step(s instanceof Step.ToStrip || s instanceof Step.ToBand || s instanceof Step.Walk ? s.text() : null);
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null) return "error: not in a world";
         stationsLine(s);
@@ -251,6 +253,7 @@ public final class StepHands implements Steps.Hands {
     private void reset() {
         io.github.mojolowjo.entropybot.aa.brain.JobBoundary.leave();
         step = null;
+        WalkProbe.step(null);                    // 0.39.z54 B
         fishing = null;
         deposit = null;
         vein = null;

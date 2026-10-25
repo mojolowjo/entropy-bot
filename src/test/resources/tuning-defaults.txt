@@ -947,7 +947,12 @@ cave.floorMaxDepth	64.0
 cave.darkPocketCells	6.0
 cave.pocketReach	10.0
 cave.patternK	3.0
-cave.botLabelWeight	0.5
+cave.botLabelWeight	0.0
+cave.cliffFloor	5.0
+cave.depthFloor	5.0
+cave.skyOnlyVoteMargin	2.0
+cave.canopyMaxDepth	48.0
+debug.walkProbe	0.0
 cave.mergeM	8.0
 cave.slopeMin	1.0
 cave.depthMin	1.0

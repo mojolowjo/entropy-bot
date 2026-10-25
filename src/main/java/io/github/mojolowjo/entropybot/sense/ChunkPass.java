@@ -359,14 +359,28 @@ public final class ChunkPass {
 
     private CavePatterns patterns = new CavePatterns(), worldPatterns = new CavePatterns();
     private String patRoot;
-    private long shapesVotedOut;
+    private long shapesVotedOut, canopyCapped;
+    private boolean noPatternsSaid, canopyCappedSaid;
 
     /** Shapes the patterns' vote turned down (sense status / aa cave list). */
     public long shapesVotedOut() { return shapesVotedOut; }
 
+    /** 0.39.z54 A3: columns whose leaves / logs / air ran past cave.canopyMaxDepth (the heightmap top kept; aa cave list). */
+    public long canopyCapped() { return canopyCapped; }
+
     /**
-     * The patterns that vote: the global file (every world's labels and the bundled 2026-10-24 seed, written there on first
-     * use); the world's own file keeps this world's labels. The rule line is said once per world. Never throws.
+     * 0.39.z54 A3: a cell the ground walk passes: air, or a block in the {@code #minecraft:leaves} or {@code #minecraft:logs}
+     * tag (the game's tags, never a list; modded trees that tag their blocks count too). Loader notes: vanilla
+     * {@code BlockState.is(TagKey)} / {@code BlockTags}, the same on both loaders.
+     */
+    public static boolean canopy(net.minecraft.world.level.block.state.BlockState s) {
+        return s.isAir() || s.is(net.minecraft.tags.BlockTags.LEAVES) || s.is(net.minecraft.tags.BlockTags.LOGS);
+    }
+
+    /**
+     * The patterns that vote: the global file in the game folder (every world's owner labels; 0.39.z54 A5, owner: no label
+     * data ships in the public jar, so no seed: a fresh install has no file and the Tuning defaults hold until the owner
+     * labels); the world's own file keeps this world's labels. The rule line is said once per world. Never throws.
      */
     public CavePatterns patterns() {
         try {
@@ -379,13 +393,18 @@ public final class ChunkPass {
             int[] skipped = new int[1];
             Path gf = files.root().resolve("cave-patterns.json"), wf = files.worldRoot().resolve("cave-patterns.json");
             if (java.nio.file.Files.isRegularFile(gf)) g.read(java.nio.file.Files.readString(gf), skipped);
-            else {
-                g.read(CavePatterns.seed(), skipped);
-                files.writeAtomic(gf, g.toJson());
-                LOG.info("[entropybot] sense: cave-patterns.json: seeded with the {} labelled spots of 2026-10-24", g.size());
+            else if (!noPatternsSaid) {
+                noPatternsSaid = true;                    // said once a session (rule 15: the file is empty-by-absence, said)
+                LOG.info("[entropybot] sense: no cave patterns yet ({} not found): the Tuning defaults until the owner labels (aa cave yes|no|hill|cliff)", gf);
             }
             if (java.nio.file.Files.isRegularFile(wf)) w.read(java.nio.file.Files.readString(wf), skipped);
             if (skipped[0] > 0) LOG.warn("[entropybot] sense: cave-patterns.json had {} unreadable part(s), skipped", skipped[0]);
+            // 0.39.z54 A1 (owner's ruling 2026-10-24: the bot's verdicts weigh nothing while calibrating): older files keep
+            // the bot's entries (read, never rewritten away); said once per load with what they weigh
+            int bot = g.botEntries();
+            if (bot > 0) LOG.info("[entropybot] sense: cave-patterns.json: {} bot entries read, weighing cave.botLabelWeight {}{}", bot,
+                    io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.botLabelWeight"),
+                    io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.botLabelWeight") <= 0 ? " (ignored: only the owner's labels vote and shape the rule)" : "");
             g.saved();
             w.saved();
             patterns = g;
@@ -399,7 +418,7 @@ public final class ChunkPass {
         return patterns;
     }
 
-    /** A labelled spot (aa cave, or the bot's own confirmation / drop): into the global and the world's file. Never throws. */
+    /** A labelled spot (aa cave; z54 A1: the owner's only, the bot writes none): into the global and the world's file. Never throws. */
     public void label(CavePatterns.Patch p) {
         try {
             patterns().add(p);
@@ -555,12 +574,25 @@ public final class ChunkPass {
             net.minecraft.core.BlockPos.MutableBlockPos q = new net.minecraft.core.BlockPos.MutableBlockPos();
             for (int lz = 0; lz < 16; lz++)
                 for (int lx = 0; lx < 16; lx++) {
-                    top[lx + 16 * lz] = chunk.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, lx, lz);
+                    int hm = chunk.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, lx, lz);
                     // 0.39.z48 (item 5): a water column: its top (surface) block holds water (CaveMouths#shapes says why
                     // the client's two heightmaps cannot tell it); never a candidate
-                    q.set((it.cx() << 4) + lx, top[lx + 16 * lz] - 1, (it.cz() << 4) + lz);
+                    q.set((it.cx() << 4) + lx, hm - 1, (it.cz() << 4) + lz);
                     water[lx + 16 * lz] = chunk.getBlockState(q).getFluidState().is(net.minecraft.tags.FluidTags.WATER);
+                    // 0.39.z54 A3: the shape test reads the ground, leaves / logs / air stripped from the column top (this
+                    // chunk's own blocks: loaded by definition here)
+                    final int bx = (it.cx() << 4) + lx, bz = (it.cz() << 4) + lz;
+                    final int minY = chunk.getMinBuildHeight();
+                    java.util.function.IntPredicate canopy = y -> { if (y < minY) return false; q.set(bx, y, bz); return canopy(chunk.getBlockState(q)); };
+                    int g = CaveMouths.ground(hm, canopy);
+                    if (CaveMouths.canopyCapped(hm, g, canopy)) canopyCapped++;
+                    top[lx + 16 * lz] = g;
                 }
+            if (canopyCapped > 0 && !canopyCappedSaid) {
+                canopyCappedSaid = true;
+                LOG.info("[entropybot] sense: a column ran past cave.canopyMaxDepth {} cells of leaves, logs and air: its heightmap top is kept for the cave shape test (count in sense status)",
+                        io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.canopyMaxDepth"));
+            }
             // 0.39.z50: the rule the cave patterns give (Tuning defaults before any), then the patterns' vote on each
             // shape's 9 x 9 surface patch (the heightmap only, rule 17): a shape the not-a-cave side wins is no candidate
             CavePatterns pat = patterns();

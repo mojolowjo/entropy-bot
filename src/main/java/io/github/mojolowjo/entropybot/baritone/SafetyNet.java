@@ -132,6 +132,7 @@ public final class SafetyNet {
 
     /** Baritone's own "cancel" also clears a pause (sent only while the pause is in control), then cancelEverything. */
     public static void cancel(IBaritone b) {
+        io.github.mojolowjo.entropybot.commands.WalkProbe.cancelled("SafetyNet.cancel");     // 0.39.z54 B
         try {
             var c = b.getPathingControlManager().mostRecentInControl();
             if (c.isPresent() && c.get().displayName().contains("Pause")) b.getCommandManager().execute("cancel");

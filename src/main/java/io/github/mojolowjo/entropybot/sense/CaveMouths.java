@@ -20,7 +20,10 @@ import java.util.Map;
  *     (it goes underground, not a surface dip): a {@link Sightings} record "mouth" (sightings.json caves map).</li>
  * <li>GONE: the bot stands by the mouth and its cell is not air: the record is forgotten.</li>
  * </ul>
- * Pure (JUnit: Z44CaveMouthTest). Loader notes: none (the heights and the rays are read in ChunkPass / SightingsRuntime).
+ * 0.39.z54 A3: the heights the shape test reads are GROUND heights ({@link #ground}: leaves, logs and air stripped from the
+ * column top), not the raw heightmap.
+ * Pure (JUnit: Z44CaveMouthTest, Z54CaveRuleTest). Loader notes: none (the heights, the column's blocks and the rays are
+ * read in ChunkPass / SightingsRuntime).
  */
 public final class CaveMouths {
     public enum State { CANDIDATE, SEEN, GONE }
@@ -167,6 +170,28 @@ public final class CaveMouths {
         int above = f > 0 ? sky[f - 1] : sky[f];
         if (sky[f] <= maxSky() || above <= maxSky()) return null;
         return "lit to the floor (sky " + sky[f] + " at its lowest air, " + f + " below the rim)";
+    }
+
+    /** 0.39.z54 A3: a column whose chunk is not loaded has no ground height (rule 15: not loaded, never "flat" or "deep"). */
+    public static final int NOT_LOADED = Integer.MIN_VALUE;   // structural: a sentinel, not a height
+
+    /**
+     * 0.39.z54 A3 (labelling walk on z53, owner: "a lot of the last few have just been in a forest"; the client has only
+     * WORLD_SURFACE and MOTION_BLOCKING and both count leaves): the ground height of a column. From the heightmap's top
+     * block {@code top} down past the cells {@code canopy} says are leaves, logs (the {@code #minecraft:leaves} and
+     * {@code #minecraft:logs} tags, read by the caller) or air, to the first other block; that block's Y. At most
+     * {@code cave.canopyMaxDepth} cells: past it the heightmap top is kept and {@link #canopyCapped} says so to the caller.
+     */
+    public static int ground(int top, java.util.function.IntPredicate canopy) {
+        int max = Math.max(0, Tuning.i("cave.canopyMaxDepth"));
+        int y = top;
+        while (top - y < max && canopy.test(y)) y--;
+        return canopy.test(y) ? top : y;
+    }
+
+    /** 0.39.z54 A3: the walk down a column ran past cave.canopyMaxDepth cells of leaves, logs and air (the heightmap top kept). */
+    public static boolean canopyCapped(int top, int ground, java.util.function.IntPredicate canopy) {
+        return ground == top && canopy.test(top);
     }
 
     /** The most the ground rises within 1-2 columns along (dx, dz) over h (0: outside the chunk or lower). */

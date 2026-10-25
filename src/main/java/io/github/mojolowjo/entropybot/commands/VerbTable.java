@@ -127,8 +127,9 @@ public final class VerbTable {
         v("check", "", "jobs", O, "check", "a self-test: what I miss to work on my own, each with the command that fixes it", "check", "check");
         v("look", "", "jobs", O, "look | look <area>", "a text map around me (top-down; under ground the feet layer and two side slices) or of an area, with a legend", "look|look <area>", "where");
         v("reply", "", "jobs", O, "reply full | reply short", "answers short (RESULT/HERE/NEW/OPTIONS, about 600 characters) or the whole text", "reply full|reply short", "why");
-        v("why", "", "jobs", G, "why | why cut | why brain | why threats", "the last failure in full; why cut: the last answer the short shape cut; why brain: the brain's last decision: the branch, each need's score, what was skipped (and why), the stage; why threats: the threat test's last fight-or-flee verdict, each mob near now (aggro y/n, path N (straight M), distance -1/s -> counts|noted) and the last 32 changes",
-                "why|why cut|why brain|why threats", "status");
+        // 0.39.z54 A7: "why brain" left the help (the old brain's page; it answers removedVerb, aa why is the way)
+        v("why", "", "jobs", G, "why | why cut | why threats", "the last failure in full; why cut: the last answer the short shape cut; why threats: the threat test's last fight-or-flee verdict, each mob near now (aggro y/n, path N (straight M), distance -1/s -> counts|noted) and the last 32 changes",
+                "why|why cut|why threats", "status");
         v("deaths", "", "jobs", P, "deaths | death policy on|off", "deaths in the last hour; fetch my corpse after a death or not", "deaths", "status", "deaths");
         // ---- kinds and tools (VOCABULARY 6)
         v("kinds", "", "materials", O, "kinds | kinds <kind> | kinds <kind> exclude|include <id>",

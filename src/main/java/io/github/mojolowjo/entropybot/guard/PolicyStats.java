@@ -40,6 +40,13 @@ public final class PolicyStats {
 
     public long asks() { return asks.values().stream().mapToLong(LongAdder::sum).sum(); }
 
+    /** 0.39.z54 B (the walk probe): the refusals counted at one site, every reason summed. */
+    public long denies(String site) {
+        long n = 0;
+        for (var e : denies.entrySet()) if (e.getKey().startsWith(site + ": ")) n += e.getValue().sum();
+        return n;
+    }
+
     public long travelOverrides() { return allowedByTravel.values().stream().mapToLong(LongAdder::sum).sum(); }
 
     /** The top n entries of a counter map as "key n", biggest first. */

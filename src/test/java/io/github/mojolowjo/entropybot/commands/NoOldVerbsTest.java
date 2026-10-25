@@ -75,7 +75,9 @@ class NoOldVerbsTest {
         String help = AaCommands.help();
         for (String f : List.of("aa scan", "aa eat", "aa restore", "aa want deposit", "aa want <item> [n], <item> [n]")) assertTrue(help.contains(f), f + ": " + help);
         for (String w : AaCommands.TABLE.keySet()) assertTrue(help.contains("aa " + w), w);
-        for (String w : DELETED) if (!List.of("scan", "eat", "restore", "go", "drop", "build").contains(w)) assertNull(AaCommands.TABLE.get(w), "aa " + w);
+        // 0.39.z54 A6: "aa deposit [x y z]" is the main-stations form (z35, owner 2026-10-23: list the deposit chests, mark
+        // the main), not the deleted deposit job (that is "aa want deposit")
+        for (String w : DELETED) if (!List.of("scan", "eat", "restore", "go", "drop", "build", "deposit").contains(w)) assertNull(AaCommands.TABLE.get(w), "aa " + w);
     }
 
     @Test

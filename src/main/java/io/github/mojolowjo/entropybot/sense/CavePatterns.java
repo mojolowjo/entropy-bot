@@ -25,14 +25,18 @@ import java.util.Set;
  * <li>A new spot is scored by a plain nearest-neighbour vote ({@code cave.patternK}) over the labelled patches: the
  *     patch distance is the smallest of its 8 turns and mirrors (a cave faces any way), each number scaled by its spread
  *     over the patterns. The cave side wins when its weight beats cliff + hill + water; a bot label weighs
- *     {@code cave.botLabelWeight}.</li>
+ *     {@code cave.botLabelWeight} (0.39.z54 A1, owner's ruling 2026-10-24: 0 while the rule is calibrated; a patch that
+ *     weighs 0 takes no place among the k nearest and no part in the rule; the bot writes no patches any more).</li>
  * <li>The rule's thresholds (slope, cliff, depth, pocket, darkest sky) are the caves' own extremes (the loosest a
- *     labelled cave showed; z52: the pocket never below cave.darkPocketCells); a mouth needs the pocket OR the darkest
- *     sky (z52: two dark proofs); before any cave pattern exists the Tuning defaults hold (cave.slopeMin, cave.cliffDrop,
- *     cave.depthMin, cave.darkPocketCells, cave.maxSky).</li>
+ *     labelled cave showed; z52: the pocket never below cave.darkPocketCells; z54 A2: the cliff never below
+ *     cave.cliffFloor, the depth never below cave.depthFloor); a mouth needs the pocket OR the darkest sky (z52: two dark
+ *     proofs; z54 A4: the darkest sky alone confirms only with a vote margin, else the mouth stays a candidate); before any
+ *     cave pattern exists the Tuning defaults hold (cave.slopeMin, cave.cliffDrop, cave.depthMin, cave.darkPocketCells,
+ *     cave.maxSky).</li>
  * </ul>
- * Files: the world's {@code cave-patterns.json} and the global one (the shared seed of 2026-10-24 included, from the
- * bundled resource on first use). Pure; loader notes: none (ChunkPass and SightingsRuntime read the heights and cells).
+ * Files: the world's {@code cave-patterns.json} and the global one (z54 A5: no bundled seed; the game folder's global
+ * file is the only source). Pure (JUnit: Z50CavePatternTest, Z52CaveRuleTest, Z54CaveRuleTest). Loader notes: none
+ * (ChunkPass and SightingsRuntime read the heights and cells).
  */
 public final class CavePatterns {
     public static final int SIDE = 9;            // structural: the 9 x 9 patch of the owner's brief
@@ -44,18 +48,24 @@ public final class CavePatterns {
         /** cliff / hill / water: the not-a-cave side; unknown votes for neither. */
         public boolean notCave() { return "cliff".equals(label) || "hill".equals(label) || "water".equals(label); }
         public double weight() { return owner() ? 1 : Tuning.get("cave.botLabelWeight"); }
+        /** 0.39.z54 A1: a labelled patch that votes and shapes the rule (cave or not-a-cave side, weight above 0). */
+        public boolean votes() { return (cave() || notCave()) && weight() > 0; }
     }
 
-    /** The rule the patterns give: a shape is a candidate with slope >= slope and cliff >= cliff; a mouth needs the rest. */
-    public record Rule(int patterns, int slope, int cliff, int depth, int pocket, int darkSky, boolean derived) {
+    /**
+     * The rule the patterns give: a shape is a candidate with slope >= slope and cliff >= cliff; a mouth needs the rest.
+     * {@code floors}: 0.39.z54 A2, the floors that hold a derived threshold up ("cliff 5 (derived 0)"; "" = none).
+     */
+    public record Rule(int patterns, int slope, int cliff, int depth, int pocket, int darkSky, boolean derived, String floors) {
         public String line() {
             return (derived ? "cave rule from " + patterns + " patterns" : "cave rule (Tuning defaults, no cave pattern yet)")
-                    + ": slope >= " + slope + ", cliff >= " + cliff + ", depth >= " + depth + ", pocket >= " + pocket + " or darkest sky <= " + darkSky;
+                    + ": slope >= " + slope + ", cliff >= " + cliff + ", depth >= " + depth + ", pocket >= " + pocket + " or darkest sky <= " + darkSky
+                    + (floors.isEmpty() ? "" : " (floors hold: " + floors + ")");
         }
     }
 
     public static Rule defaults() {
-        return new Rule(0, Tuning.i("cave.slopeMin"), Tuning.i("cave.cliffDrop"), Tuning.i("cave.depthMin"), Tuning.i("cave.darkPocketCells"), Tuning.i("cave.maxSky"), false);
+        return new Rule(0, Tuning.i("cave.slopeMin"), Tuning.i("cave.cliffDrop"), Tuning.i("cave.depthMin"), Tuning.i("cave.darkPocketCells"), Tuning.i("cave.maxSky"), false, "");
     }
 
     private final List<Patch> list = new ArrayList<>();
@@ -93,7 +103,7 @@ public final class CavePatterns {
         Rule d = defaults();
         int n = 0, slope = Integer.MAX_VALUE, cliff = Integer.MAX_VALUE, depth = Integer.MAX_VALUE, pocket = Integer.MAX_VALUE, sky = Integer.MIN_VALUE;
         for (Patch p : list) {
-            if (!p.cave() && !p.notCave()) continue;
+            if (!p.votes()) continue;          // z54 A1: a bot patch weighs 0 while calibrating: no part in the rule
             n++;
             if (!p.cave()) continue;
             int[] s = shape(p.ws());
@@ -106,7 +116,21 @@ public final class CavePatterns {
         if (cliff == Integer.MAX_VALUE) return d;
         // 0.39.z52 (owner's ruling "a pocket, not a cell"): the derived pocket never falls below cave.darkPocketCells (seed caves
         // #15 and #17 show pocket 0, which would make the pocket rule pass anything)
-        return new Rule(n, slope, cliff, depth, Math.max(pocket, d.pocket()), sky, true);
+        // 0.39.z54 A2 (labelling walk on z53: "cliff >= 7" fell to "cliff >= 1" after one label, the owner's flight to
+        // "cliff >= 0, depth >= 5"; the candidates became +1/+1 bumps): the cliff and the depth get floors the same way
+        List<String> held = new ArrayList<>();
+        int cf = Tuning.i("cave.cliffFloor"), df = Tuning.i("cave.depthFloor");
+        if (cliff < cf) held.add("cliff " + cf + " (derived " + cliff + ")");
+        if (depth < df) held.add("depth " + df + " (derived " + depth + ")");
+        if (pocket < d.pocket()) held.add("pocket " + d.pocket() + " (derived " + pocket + ")");
+        return new Rule(n, slope, Math.max(cliff, cf), Math.max(depth, df), Math.max(pocket, d.pocket()), sky, true, String.join(", ", held));
+    }
+
+    /** 0.39.z54 A1: the patterns the bot labelled (read from an older file; they weigh cave.botLabelWeight, 0 by default). */
+    public synchronized int botEntries() {
+        int n = 0;
+        for (Patch p : list) if (!p.owner()) n++;
+        return n;
     }
 
     // ---- the nearest-neighbour vote ----
@@ -147,7 +171,7 @@ public final class CavePatterns {
      */
     public synchronized Vote vote(int[] ws, int depth, int pocket, int darkSky, boolean full, Patch skip) {
         List<Patch> lab = new ArrayList<>();
-        for (Patch p : list) if (p != skip && (p.cave() || p.notCave())) lab.add(p);
+        for (Patch p : list) if (p != skip && p.votes()) lab.add(p);      // z54 A1: a 0-weight patch takes no place among the k
         if (lab.isEmpty()) return new Vote(true, 0, 0, "none");
         double sp = 0, md = 0, mp = 0, ms = 0;
         for (Patch p : lab) { for (int v : p.ws()) sp += (double) v * v; md += p.depth(); mp += p.pocket(); ms += p.darkSky(); }
@@ -269,6 +293,20 @@ public final class CavePatterns {
         return null;
     }
 
+    /**
+     * 0.39.z54 A4 (owner's flight on a new seed: 8 of 10 confirmed mouths had the darkest sky alone, 0 pocket cells; the
+     * labelling walk: the owner called 3 of 4 such mouths cliff): for a hole {@link #verdict} passed, null = it confirms
+     * (the pocket proof, or the darkest sky with the vote's cave side ahead by {@code cave.skyOnlyVoteMargin}), else why it
+     * stays a candidate ("darkest sky only, pocket N, vote cave X vs not Y").
+     */
+    public static String hold(Hole h, Rule rule, Vote v) {
+        if (h.pocket() >= rule.pocket()) return null;
+        double margin = Tuning.get("cave.skyOnlyVoteMargin");
+        if (v.caveW() - v.otherW() >= margin) return null;
+        return String.format(java.util.Locale.ROOT, "darkest sky only, pocket %d, vote cave %.1f vs not %.1f (the darkest sky alone needs the cave side ahead by %.1f)",
+                h.pocket(), v.caveW(), v.otherW(), margin);
+    }
+
     // ---- merge: one feature = one candidate ----
 
     /** Candidates within {@code cave.mergeM} of a lower one merge into it (the lowest point kept). */
@@ -340,22 +378,13 @@ public final class CavePatterns {
         return v;
     }
 
-    /** The bundled seed (the owner's 16 verdicts of 2026-10-24, heights read from the cave-z49 save). */
-    public static String seed() {
-        try (var in = CavePatterns.class.getResourceAsStream("/entropybot/cave-patterns-seed.json")) {
-            if (in == null) throw new IllegalStateException("the bundled cave-patterns-seed.json is missing");
-            return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-        } catch (java.io.IOException ex) {
-            throw new IllegalStateException("couldn't read the bundled cave-patterns-seed.json", ex);
-        }
-    }
-
     /** aa cave list: the patterns and the rule. */
     public synchronized String text() {
         StringBuilder b = new StringBuilder(rule().line());
         int cave = 0, not = 0, unk = 0, bot = 0;
         for (Patch p : list) { if (p.cave()) cave++; else if (p.notCave()) not++; else unk++; if (!p.owner()) bot++; }
-        b.append("\n").append(list.size()).append(" patterns: ").append(cave).append(" cave, ").append(not).append(" not a cave, ").append(unk).append(" unknown (").append(bot).append(" bot-labelled)");
+        b.append("\n").append(list.size()).append(" patterns: ").append(cave).append(" cave, ").append(not).append(" not a cave, ").append(unk).append(" unknown (").append(bot)
+                .append(" bot-labelled, weighing ").append(Tuning.get("cave.botLabelWeight")).append(")");
         for (Patch p : list) {
             int[] s = shape(p.ws());
             b.append("\n").append(p.label()).append(" ").append(p.x()).append(" ").append(p.y()).append(" ").append(p.z()).append(" (").append(p.by())

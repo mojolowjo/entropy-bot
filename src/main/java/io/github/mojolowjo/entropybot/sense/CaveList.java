@@ -19,6 +19,11 @@ public final class CaveList {
         return new Entry(x, y, z, dropReason == null ? "candidate" : "dropped: " + dropReason, numbers == null || numbers.isEmpty() ? "no shape numbers" : numbers);
     }
 
+    /** 0.39.z54 A4: a candidate whose hole passed but stays a candidate (the darkest sky alone): the reason. */
+    public static Entry held(int x, int y, int z, String numbers, String reason) {
+        return new Entry(x, y, z, "candidate: " + reason, numbers == null || numbers.isEmpty() ? "no shape numbers" : numbers);
+    }
+
     /** A confirmed mouth (its stored fact). */
     public static Entry mouth(int x, int y, int z, int pocketCells, int fx, int fy, int fz, boolean walked) {
         return new Entry(x, y, z, "mouth" + (walked ? " (pocket walked)" : ""), pocketCells + " pocket cells, floor " + fx + " " + fy + " " + fz);
