@@ -79,7 +79,7 @@ final class AaCommands {
         // ---- stations (main-stations 0.39.z35; 0.39.z54 A6: wired, the forms had no caller since z35 - run M's help dump)
         v("look", (c, aa, vb, a) -> MainStationsLive.look(c, aa, a),
                 f("stations", "look", "what my crosshair is on (a station kind, my main?)"),
-                f("stations", "look <station kind>", "turn my head to the nearest known one of that kind (Baritone's look)"),
+                f("stations", "look <station kind>", "turn my head to the nearest known one of that kind (Baritone's look, a face in reach only)"),
                 f("stations", "look smooth <ticks>", "how many ticks a head turn takes (1..60, saved)"));
         v("station", (c, aa, vb, a) -> MainStationsLive.station(c, a),
                 f("stations", "station main", "the station under my crosshair becomes the main of its kind"),

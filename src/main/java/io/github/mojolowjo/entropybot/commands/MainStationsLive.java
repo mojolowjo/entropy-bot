@@ -14,7 +14,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
-import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,8 +22,8 @@ import java.util.Optional;
 /**
  * main-stations (0.39.z35, owner 2026-10-23), the game side of {@link MainStations}: aa look, aa station main|list|clear,
  * aa deposit [x y z]; the mains saved per world in {@value #FILE} beside the station memory (restore.json), loaded with it.
- * The look turn is Baritone's: {@code RotationUtils.reachable} (a face in reach) else the rotation to the block's centre,
- * handed to {@code ILookBehavior.updateTarget}; no camera setter of ours (Baritone decides how the head turns). The
+ * The look turn is Baritone's: {@code RotationUtils.reachable} (a face in reach) handed to {@code ILookBehavior.updateTarget};
+ * out of reach = no turn (0.39.z54 rules gate); no camera setter of ours (Baritone decides how the head turns). The
  * crosshair block is the client's {@code Minecraft.hitResult}. Loader notes: Baritone API, vanilla client hit result.
  */
 final class MainStationsLive {
@@ -106,23 +105,25 @@ final class MainStationsLive {
             case StationFact.Known k -> {
                 Spot s = k.spots().get(0);
                 for (Spot x : k.spots()) if (x.dist() < s.dist()) s = x;           // the closest, not the cheapest
-                String turn = turnTo(s.x(), s.y(), s.z());
+                String turn = turnTo(s.x(), s.y(), s.z(), s.dist());
                 yield "I look at " + s.block() + " at " + s.x() + " " + s.y() + " " + s.z() + ", " + Math.round(s.dist()) + " m" + turn;
             }
         };
     }
 
-    /** Hands the turn to Baritone's look behaviour; "" or " (why it could not)". */
-    private static String turnTo(int x, int y, int z) {
+    /**
+     * Hands the turn to Baritone's look behaviour when Baritone finds a face in reach; "" or " (why not)". 0.39.z54 rules
+     * gate (rule 2, no choosers): out of reach = no turn (the old fallback to the block's centre was a look target chosen here).
+     */
+    private static String turnTo(int x, int y, int z, double dist) {
         try {
             var b = BaritoneAPI.getProvider().getPrimaryBaritone();
             var ctx = b.getPlayerContext();
             if (ctx.player() == null) return " (no player to turn)";
-            BlockPos q = new BlockPos(x, y, z);
-            Optional<Rotation> r = RotationUtils.reachable(ctx, q);
-            Rotation rot = r.orElseGet(() -> RotationUtils.calcRotationFromVec3d(ctx.playerHead(), Vec3.atCenterOf(q), ctx.playerRotations()));
-            b.getLookBehavior().updateTarget(rot, false);
-            return r.isPresent() ? "" : " (out of reach: turned toward it)";
+            Optional<Rotation> r = RotationUtils.reachable(ctx, new BlockPos(x, y, z));
+            if (r.isEmpty()) return " (out of reach (" + Math.round(dist) + " m): not turned; Baritone turns only to a face it can reach)";
+            b.getLookBehavior().updateTarget(r.get(), false);
+            return "";
         } catch (RuntimeException | LinkageError e) {
             Quiet.line("aa look: the turn failed: " + e);
             return " (the turn failed: " + e + ")";
