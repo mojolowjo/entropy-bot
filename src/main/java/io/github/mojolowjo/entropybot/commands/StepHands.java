@@ -161,6 +161,10 @@ public final class StepHands implements Steps.Hands {
         StepProbe.begin(s);                      // 0.39.z56 item 1: every step kind (one field; the probe reads Tuning debug.stepProbe)
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null) return "error: not in a world";
+        // 0.39.z66 item 1 (run X 08:38:24, 08:40:39): AA's own put-back holding the slot is halted for every step kind - a
+        // job step would answer "busy" and end the order's run, a Baritone step (collect, chop) would lose control to it
+        String halt = c.haltRestoreFor(s.text());
+        if (halt != null) return halt;
         stationsLine(s);
         try {
             // station-race (0.39.z17, rule 15): a craft / smelt whose station fact is not loaded yet waits for it (status:
@@ -298,6 +302,7 @@ public final class StepHands implements Steps.Hands {
         miningWhat = null;
         mineSource = null;
         mineFrom = null;
+        mineFilter = null;
         countIds = List.of();
         huntTarget = -1;
         huntTicks = 0;
@@ -692,15 +697,12 @@ public final class StepHands implements Steps.Hands {
         mineSource = k.item();
         if (!io.github.mojolowjo.entropybot.aa.NeedChain.plain(k.item())) return collectAny(p, k);
         String id = k.item().contains(":") ? k.item() : "minecraft:" + k.item();
-        // the blocks that give it: the game's loot data (LootBook), and the block of the item itself
+        // the blocks that give it: the game's loot data (LootBook), and the block of the item itself when it gives it
+        // (0.39.z66 item 2: Nearby.sourceBlocks, the chain's own pairing - an iron_ore block drops raw_iron, not iron_ore)
         List<Block> blocks = new ArrayList<>();
         var book = c.aaRuntime == null ? null : c.aaRuntime.currentLootBook();
-        if (book != null) for (String bid : book.blocksDropping(id))
-            BuiltInRegistries.BLOCK.getOptional(ResourceLocation.tryParse(bid)).ifPresent(blocks::add);
-        BuiltInRegistries.ITEM.getOptional(ResourceLocation.tryParse(id)).ifPresent(it -> {
-            Block own = Block.byItem(it);
-            if (own != net.minecraft.world.level.block.Blocks.AIR && !blocks.contains(own)) blocks.add(own);
-        });
+        for (String bid : io.github.mojolowjo.entropybot.aa.Nearby.sourceBlocks(id, book, AaRuntime::ownBlock))
+            BuiltInRegistries.BLOCK.getOptional(ResourceLocation.tryParse(bid)).ifPresent(b -> { if (!blocks.contains(b)) blocks.add(b); });
         if (blocks.isEmpty()) return "error: no block gives " + k.item() + (book == null || book.isEmpty() ? " (no loot data in this world)" : " (the game's loot data)");
         return mine(p, blocks, List.of(id), k.n(), "collect " + k.n() + " " + k.item());
     }
@@ -800,6 +802,8 @@ public final class StepHands implements Steps.Hands {
         // the count goes to Baritone (not 0): it counts the bag's items its filter matches (the blocks' drops), so its
         // target is what is there now + want
         int target = itemsOf(p, filter) + want;
+        mineFilter = filter;                     // 0.39.z66 item 2: the drops' gain at the end, as Baritone counts it
+        mineDrops0 = target - want;
         // 0.39.z8 (owner 2026-10-22, "remove the old job habit"): no Baritone setting here; the fork's chop / mine run
         // owns breaking and placing for its run (and the chop the bag's placeable blocks as throwaway)
         io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE, "steps");
@@ -838,6 +842,14 @@ public final class StepHands implements Steps.Hands {
     /** 0.39.z33: Baritone's chat-line count at the mine's start, the collect's item (null: not a collect) and where it started. */
     private long mineLines0;
     private String mineSource, mineFrom;
+    /** 0.39.z66 item 2: the mine's filter and the bag's count of its items at the start (null: no mine running). */
+    private BlockOptionalMetaLookup mineFilter;
+    private int mineDrops0;
+
+    /** 0.39.z66 item 2: the bag's gain of the mine filter's items since the start (Baritone's count); -1: not known. */
+    private int dropsGot(LocalPlayer p) {
+        return mineFilter == null ? -1 : itemsOf(p, mineFilter) - mineDrops0;
+    }
 
     /**
      * 0.39.z33 (S36, rule 7): the mine process's end in Baritone's own words: its last chat line since the start (the stock
@@ -867,7 +879,7 @@ public final class StepHands implements Steps.Hands {
             if (b == null) return Car.Status.failed("baritone not loaded");
             if (b.getChopProcess().isActive() || Core.INSTANCE.reflexes.hold()) return Car.Status.running(miningWhat + ": " + got + " of " + want);
             endMining();
-            return ChopEnd.of(miningWhat, got, want, endOf(b.getChopProcess().lastEnd()), mineSource, mineFrom);
+            return ChopEnd.of(miningWhat, got, want, endOf(b.getChopProcess().lastEnd()), mineSource, mineFrom, dropsGot(p));
         }
         if (got >= want) {
             if (b != null) b.getMineProcess().cancel();
@@ -878,6 +890,8 @@ public final class StepHands implements Steps.Hands {
         if (!b.getMineProcess().isActive() && !Core.INSTANCE.reflexes.hold()) {
             endMining();
             String said = mineSaid(mineLines0, io.github.mojolowjo.entropybot.baritone.BaritoneHook.lines(), io.github.mojolowjo.entropybot.baritone.BaritoneHook.lastLine());
+            int drops = dropsGot(p);
+            if (drops > got) return ChopEnd.of(miningWhat, got, want, said, mineSource, mineFrom, drops);   // 0.39.z66 item 2: other drops, its own words
             // 0.39.z33 (S36): none of it got: the source is a changed fact (unreachable) and the order re-plans without it
             ChopEnd.zeroGot(got, mineSource, mineFrom, said);
             return Car.Status.failed(miningWhat + ": Baritone's mine process ended with " + got + " of " + want + ": " + said);

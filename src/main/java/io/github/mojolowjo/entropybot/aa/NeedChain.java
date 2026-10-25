@@ -2371,6 +2371,15 @@ public final class NeedChain {
             c.fail = c.w.loot().waiting();
             return null;
         }
+        // 0.39.z66 item 2 (run X 08:40:40: "smelt 4 iron_ore <- ... explore (not enough iron_ore known)" beat "smelting
+        // iron_ingot from raw_iron: walk: path not known yet" with 10 raw_iron in the bag - a way ending in an explore stands,
+        // one waiting on a path does not, choose): an item nothing gives but a tool-gated drop of its own block (the loot
+        // data) has no source an explore could find: the way fails with that fact, never an explore that cannot end on it
+        String none = Nearby.noSource(word, c.w.loot());
+        if (none != null) {
+            c.fail = none;
+            return null;
+        }
         // 0.39.z60 review 1 (rule 15): a known block whose structure fact is not loaded yet may well be a source: no explore on
         // an unknown, the chain waits with the reason (Chain.waiting) and is priced again on the next look
         for (Spot sp : c.w.seenAll().apply(word)) {

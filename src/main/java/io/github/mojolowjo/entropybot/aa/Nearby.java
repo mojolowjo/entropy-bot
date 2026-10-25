@@ -319,6 +319,11 @@ public final class Nearby {
      * live-facts, one-planner: the blocks that give an item: the blocks the game's loot data says drop it, then the item's
      * own block ({@code ownBlock}, null: none), the same pairing the collect step uses. Empty: no block gives it (a mob
      * drop, an unknown item).
+     * <p>0.39.z66 item 2 (run X 08:38:24-08:41:01: "collect 3 iron_ore ... have 19 valid items (cluster 9 blocks: picked up
+     * 9) (got 0 of 3)" read as unreachable, the iron_ore source dropped, the order exploring with 19 raw_iron in the bag):
+     * the own block counts only when it gives the item - the loot data has no drops for it (not read: kept as before), or
+     * its drops include the item. An iron_ore block drops raw_iron (its iron_ore drop is behind silk touch, which the book
+     * skips): it is no source of the item iron_ore, so no chain plans "smelt iron_ore &lt;- dig iron_ore" again.
      */
     public static Set<String> sourceBlocks(String item, LootBook book, Function<String, String> ownBlock) {
         Set<String> out = new LinkedHashSet<>();
@@ -326,8 +331,38 @@ public final class Nearby {
         String id = item.indexOf(':') < 0 ? "minecraft:" + item : item;
         if (book != null) out.addAll(book.blocksDropping(id));
         String own = ownBlock == null ? null : ownBlock.apply(id);
-        if (own != null) out.add(own);
+        if (own != null && ownGives(own, id, book)) out.add(own);
         return out;
+    }
+
+    /**
+     * 0.39.z66 item 2: does a block give the item it places back as? Its loot data's drops when the book has any for it
+     * (rule 15: no book / no drops read for it = not known, kept as a source as before z66), else yes. Pure.
+     */
+    public static boolean ownGives(String block, String item, LootBook book) {
+        if (book == null) return true;
+        List<LootBook.Source> drops = book.blockDrops(block);
+        if (drops.isEmpty()) return true;
+        for (LootBook.Source s : drops) if (item.equals(s.item())) return true;
+        return false;
+    }
+
+    /**
+     * 0.39.z66 item 2: the item has an own block (same id) whose loot data drops other items and no block or mob drops the
+     * item itself: nothing gives it but a tool-gated drop (silk touch). The chain's explore for it could never end on a
+     * source; the way fails with this reason instead (NeedChain.exploreLeaf). Null: something may give it (or not known).
+     */
+    public static String noSource(String id, LootBook book) {
+        if (book == null || !book.ready() || book.isEmpty() || id == null || id.startsWith("#") || id.contains("|")) return null;
+        String full = id.indexOf(':') < 0 ? "minecraft:" + id : id;
+        List<LootBook.Source> own = book.blockDrops(full);
+        if (own.isEmpty() || ownGives(full, full, book)) return null;
+        for (LootBook.Source s : book.sources(full)) if (s.kind() == LootBook.Kind.BLOCK || s.kind() == LootBook.Kind.MOB) return null;
+        Set<String> drops = new java.util.TreeSet<>();
+        for (LootBook.Source s : own) drops.add(s.item().replaceFirst("^minecraft:", ""));
+        String sh = full.replaceFirst("^minecraft:", "");
+        return "no block or mob gives " + sh + " (the game's loot data: the " + sh + " block drops " + String.join(", ", drops)
+                + "; its own drop is behind a tool condition such as silk touch, never a source)";
     }
 
     /**

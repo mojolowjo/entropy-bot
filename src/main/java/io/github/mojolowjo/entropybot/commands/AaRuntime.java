@@ -879,7 +879,7 @@ public final class AaRuntime implements JobPort {
     }
 
     /** The item's own block id (the block it places), null when it places none. */
-    private static String ownBlock(String item) {
+    static String ownBlock(String item) {
         var it = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(net.minecraft.resources.ResourceLocation.tryParse(item)).orElse(null);
         if (it == null) return null;
         var b = net.minecraft.world.level.block.Block.byItem(it);

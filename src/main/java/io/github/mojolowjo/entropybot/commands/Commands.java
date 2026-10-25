@@ -1181,8 +1181,28 @@ public final class Commands implements Chains.Env {
         }
     }
 
+    /**
+     * 0.39.z66 item 1 (run X 08:38:24 / 08:40:39: "order iron_chestplate stopped: stopped at step 3 (explore 5 until ...):
+     * busy: putting back blocks I broke on the way (0 of 5)"): a step re-plan stopped the running job, whose end started
+     * the put-back of the blocks it broke (Jobs: the restore tail, job.restoreRun); the re-planned run's next step then
+     * found the slot held and ended the run on "busy" - and a Baritone step (a collect) started beside it lost control to
+     * it (08:40:39 "unreachable (Baritone: lost control)"). A typed step starting while that put-back holds the slot halts
+     * it, as AA's task start does (AaRuntime.start, Door.aaSlot HALT_RESTORE: putting back is AA's own work below every
+     * desire; its blocks wait in the ledger and are put back later), said in the log. Null: no restore in the slot (or it
+     * stopped); else the step's failure (the restore did not stop - never seen, said so).
+     */
+    String haltRestoreFor(String label) {
+        boolean restore = jobs.running() && jobs.job.restoreRun != null;
+        if (io.github.mojolowjo.entropybot.aa.door.Door.aaSlot(chains.running(), jobs.running(), restore) != io.github.mojolowjo.entropybot.aa.door.Door.Slot.HALT_RESTORE) return null;
+        LOG.info("[entropybot] steps: restore halted for step \"{}\" ({}; {} wait in the ledger)", label, jobs.job.status, RestoreLive.INSTANCE.pendingCount());
+        jobs.finish("stopped: the order's step needs the slot (the restore waits)");
+        return jobs.running() ? "error: busy: the restore did not stop for step " + label + " (" + jobs.job.status + ")" : null;
+    }
+
     /** A typed step's method as its own job (StepHands; no verb text): a task makes it busy, a walk is replaced, the job's request attached. */
     Reply stepJob(String label, java.util.function.Supplier<String> body) {
+        String halt = haltRestoreFor(label);
+        if (halt != null) return Reply.now(halt);
         if (jobs.running() && !jobs.walking()) return Reply.now("busy: " + jobs.job.status);
         jobs.replaceWalk();
         String r = body.get();

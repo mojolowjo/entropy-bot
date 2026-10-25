@@ -62,6 +62,15 @@ public final class FactChange {
         last = new Fact("source " + block + " " + at, unreachableText(why));
     }
 
+    /**
+     * 0.39.z66 item 2 (run X 08:41:01): the step's blocks were reached and broken but dropped other items than the step
+     * counts ({@code why}: the counts). The same source slot as {@link #unreachable}: the order re-plans without that
+     * source, in the true words.
+     */
+    public static void otherDrops(String block, String at, String why) {
+        last = new Fact("source " + block + " " + at, why);
+    }
+
     /** Baritone's last chat line since a process started (its count then and now), or that it said none: never guessed. */
     public static String baritoneSaid(long linesAtStart, long linesNow, String lastLine) {
         if (linesNow <= linesAtStart || lastLine == null || lastLine.isBlank()) return "Baritone said nothing since the mine started";
