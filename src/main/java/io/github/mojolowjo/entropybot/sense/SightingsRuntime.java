@@ -101,17 +101,20 @@ public final class SightingsRuntime {
 
     /** True when the reason is new or changed for this key (the line is said then, once per mouth and reason). */
     private static synchronized boolean holdReason(long key, String why) {
-        if (HOLD_REASONS.size() > 4096) HOLD_REASONS.clear();     // structural: memory cap, the same as the dropped set
         return !why.equals(HOLD_REASONS.put(key, why));
     }
 
     private static synchronized void holdReasonGone(long key) { HOLD_REASONS.remove(key); }
 
+    private static synchronized int holdReasons() { return HOLD_REASONS.size(); }
+
+    private static synchronized void clearHoldReasons() { HOLD_REASONS.clear(); }
+
     /** 0.39.z54 A4: why the candidate at x y z stays a candidate after its hole passed; null = not held. */
     public static synchronized String holdReason(int x, int y, int z) { return HOLD_REASONS.get(Seen.key(x, y, z)); }
 
-    /** 0.39.z54 A4: held candidates -> the patterns' size when held (looked at again once the owner labels more). */
-    private final Map<Long, Integer> held = new HashMap<>();
+    /** 0.39.z54 A4: held candidates -> the patterns' stamp when held (review 3: looked at again on any pattern or rule-Tuning change). */
+    private final Map<Long, Long> held = new HashMap<>();
 
     /** aa debug: one line per candidate the rays looked at (its last verdict). */
     public static synchronized List<String> verdicts() { return new java.util.ArrayList<>(VERDICTS.values()); }
@@ -129,15 +132,18 @@ public final class SightingsRuntime {
         if (cand == null) return;
         Vec3 eye = p.getEyePosition(), look = p.getLookAngle();
         if (dropped.size() > 4096) dropped.clear();                  // structural: memory cap
-        if (held.size() > 4096) held.clear();                        // structural: memory cap
+        if (held.size() > 4096 || holdReasons() > 4096) {            // structural: memory cap; z54 review 4: both together
+            held.clear();
+            clearHoldReasons();
+        }
         int shots = 0, max = io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.mouthRays");
         List<Sightings.Rec> known = sg.mouths(dim, (int) eye.x, (int) eye.y, (int) eye.z);
         for (CaveMouths.Candidate c : cand.toConfirm(eye.x, eye.y, eye.z)) {   // z46: no rays at far candidates
             if (shots >= max) return;
             long k = Seen.key(c.x(), c.y(), c.z());
             if (dropped.contains(k)) continue;
-            Integer heldAt = held.get(k);                                 // z54 A4: held until the patterns change
-            if (heldAt != null && heldAt == ChunkPass.INSTANCE.patterns().size()) continue;
+            Long heldAt = held.get(k);                                    // z54 A4: held until the patterns or the rule's Tuning change
+            if (CavePatterns.stillHeld(heldAt, ChunkPass.INSTANCE.patterns().stamp())) continue;
             if (!Seen.inCone(eye.x, eye.y, eye.z, look.x, look.y, look.z, c.x(), c.y(), c.z())) continue;
             boolean have = false;
             for (Sightings.Rec r : known) {
@@ -166,6 +172,10 @@ public final class SightingsRuntime {
             CavePatterns pat = ChunkPass.INSTANCE.patterns();
             CavePatterns.Hole h = walk(level, c.x(), c.z());
             int[] ws = patch(level, c.x(), c.z());
+            if (h == null || ws == null) {                                // z54 review 2 (rule 15): its column is not loaded
+                verdict(k, where + ": candidate, not yet - its column's chunk is not loaded (no walk, no vote this pass)");
+                continue;
+            }
             CavePatterns.Vote v = pat.vote(ws, h.depth(), h.pocket(), h.darkSky(), true, null);
             CavePatterns.Rule rule = pat.rule();
             String no = CavePatterns.verdict(h, rule, v);
@@ -184,7 +194,7 @@ public final class SightingsRuntime {
             // said once per mouth and reason, and not looked at again until the patterns change (the owner labels)
             String wait = CavePatterns.hold(h, rule, v);
             if (wait != null) {
-                held.put(k, pat.size());
+                held.put(k, pat.stamp());
                 if (holdReason(k, wait)) {
                     String line = where + ": candidate - " + wait + " (" + hole + ")";
                     verdict(k, line);
@@ -230,25 +240,15 @@ public final class SightingsRuntime {
      * has no height there).
      */
     public static int[] patch(ClientLevel level, int x, int z) {
-        int r = CavePatterns.R, n = CavePatterns.SIDE, c = top(level, x, z);
-        int[] out = new int[n * n];
-        if (c == CaveMouths.NOT_LOADED) return out;
-        for (int dz = -r; dz <= r; dz++)
-            for (int dx = -r; dx <= r; dx++) {
-                int t = top(level, x + dx, z + dz);
-                out[(dz + r) * n + dx + r] = t == CaveMouths.NOT_LOADED ? 0 : t - c;
-            }
-        return out;
+        return CavePatterns.patchGround(x, z, (cx, cz) -> top(level, cx, cz));      // z54 review 2: null when the centre is not loaded
     }
 
     /**
-     * 0.39.z54 A3: the hole walk over ground heights; a column not loaded reads as the candidate's own height (no
-     * difference, as in {@link #patch}).
+     * 0.39.z54 A3: the hole walk over ground heights; null when the candidate's own column is not loaded (review 2, rule
+     * 15: the caller skips it this pass); a neighbour column not loaded reads as the candidate's own height.
      */
     public static CavePatterns.Hole walk(ClientLevel level, int x, int z) {
-        int c0 = top(level, x, z);
-        int c = c0 == CaveMouths.NOT_LOADED ? level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1 : c0;
-        return CavePatterns.walk(x, z, (cx, cz) -> { int t = top(level, cx, cz); return t == CaveMouths.NOT_LOADED ? c : t; }, cells(level));
+        return CavePatterns.walkGround(x, z, (cx, cz) -> top(level, cx, cz), cells(level));
     }
 
     /** 0.39.z50: the hole walk's and the pocket fill's cells from the level (an unloaded cell is not air: the walk stops). */

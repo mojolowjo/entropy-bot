@@ -64,14 +64,39 @@ public final class CavePatterns {
         }
     }
 
+    /** The Tuning defaults (no cave pattern yet); 0.39.z54 review 5: the cliff and depth floors hold here too, said in the line. */
     public static Rule defaults() {
-        return new Rule(0, Tuning.i("cave.slopeMin"), Tuning.i("cave.cliffDrop"), Tuning.i("cave.depthMin"), Tuning.i("cave.darkPocketCells"), Tuning.i("cave.maxSky"), false, "");
+        int cliff = Tuning.i("cave.cliffDrop"), depth = Tuning.i("cave.depthMin"), cf = Tuning.i("cave.cliffFloor"), df = Tuning.i("cave.depthFloor");
+        List<String> held = new ArrayList<>();
+        if (cliff < cf) held.add("cliff " + cf + " (cave.cliffDrop " + cliff + ")");
+        if (depth < df) held.add("depth " + df + " (cave.depthMin " + depth + ")");
+        return new Rule(0, Tuning.i("cave.slopeMin"), Math.max(cliff, cf), Math.max(depth, df), Tuning.i("cave.darkPocketCells"), Tuning.i("cave.maxSky"), false, String.join(", ", held));
     }
 
     private final List<Patch> list = new ArrayList<>();
     private boolean dirty;
+    /** 0.39.z54 review 3: bumped on every edit of the patterns (add, read). */
+    private long edits;
 
-    public synchronized void add(Patch p) { list.add(p); dirty = true; }
+    public synchronized void add(Patch p) { list.add(p); dirty = true; edits++; }
+
+    /** 0.39.z54 review 3: the Tuning entries the walk, the vote, the rule, the verdict and the hold read. */
+    static final List<String> RULE_TUNING = List.of("cave.botLabelWeight", "cave.patternK", "cave.cliffFloor", "cave.depthFloor", "cave.darkPocketCells",
+            "cave.maxSky", "cave.slopeMin", "cave.cliffDrop", "cave.depthMin", "cave.skyOnlyVoteMargin", "cave.cliffReach", "cave.slopeLen",
+            "cave.pocketReach", "cave.floorMaxDepth");
+
+    /**
+     * 0.39.z54 review 3: a stamp that changes with every edit of these patterns (and with this object: another world's
+     * set) and with any Tuning entry of {@link #RULE_TUNING}; a held candidate is looked at again when it changes.
+     */
+    public synchronized long stamp() {
+        long h = 31L * System.identityHashCode(this) + edits;
+        for (String t : RULE_TUNING) h = 31 * h + Double.hashCode(Tuning.get(t));
+        return h;
+    }
+
+    /** 0.39.z54 review 3: a candidate held at stamp {@code heldAt} (null = not held) stays held while the stamp is the same. */
+    public static boolean stillHeld(Long heldAt, long now) { return heldAt != null && heldAt == now; }
     public synchronized List<Patch> all() { return List.copyOf(list); }
     public synchronized int size() { return list.size(); }
     public synchronized boolean dirty() { return dirty; }
@@ -240,6 +265,33 @@ public final class CavePatterns {
     }
 
     /**
+     * 0.39.z54 A3 + review 2: the walk over GROUND heights ({@code ground}: {@link CaveMouths#NOT_LOADED} for a column of a
+     * chunk not loaded). Null when the candidate's own column is not loaded (rule 15: no centre height, no walk - the
+     * caller skips the candidate this pass); a neighbour column not loaded reads as the centre's height (no difference).
+     */
+    public static Hole walkGround(int x, int z, java.util.function.IntBinaryOperator ground, Cells cells) {
+        int c = ground.applyAsInt(x, z);
+        if (c == CaveMouths.NOT_LOADED) return null;
+        return walk(x, z, (cx, cz) -> { int t = ground.applyAsInt(cx, cz); return t == CaveMouths.NOT_LOADED ? c : t; }, cells);
+    }
+
+    /**
+     * 0.39.z54 review 2: the 9 x 9 patch of ground heights relative to the centre; null when the centre's column is not
+     * loaded (never an all-zero patch); a neighbour column not loaded reads 0 (no difference).
+     */
+    public static int[] patchGround(int x, int z, java.util.function.IntBinaryOperator ground) {
+        int c = ground.applyAsInt(x, z);
+        if (c == CaveMouths.NOT_LOADED) return null;
+        int[] out = new int[SIDE * SIDE];
+        for (int dz = -R; dz <= R; dz++)
+            for (int dx = -R; dx <= R; dx++) {
+                int t = ground.applyAsInt(x + dx, z + dz);
+                out[(dz + R) * SIDE + dx + R] = t == CaveMouths.NOT_LOADED ? 0 : t - c;
+            }
+        return out;
+    }
+
+    /**
      * {dark cells, darkest sky}: a flood fill over air from the floor cell, within {@code cave.pocketReach} blocks of it on
      * each axis and under the rim (the hole's own air), counting the cells with sky light at most {@code cave.maxSky}.
      */
@@ -357,6 +409,7 @@ public final class CavePatterns {
         JsonElement e = new Gson().fromJson(json, JsonElement.class);
         JsonArray a = e != null && e.isJsonObject() && e.getAsJsonObject().has("patterns") ? e.getAsJsonObject().getAsJsonArray("patterns") : e != null && e.isJsonArray() ? e.getAsJsonArray() : null;
         if (a == null) { skipped[0]++; return; }
+        edits++;                                  // z54 review 3
         for (JsonElement x : a) {
             try {
                 JsonObject j = x.getAsJsonObject();

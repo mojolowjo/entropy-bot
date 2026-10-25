@@ -395,7 +395,7 @@ public final class ChunkPass {
             if (java.nio.file.Files.isRegularFile(gf)) g.read(java.nio.file.Files.readString(gf), skipped);
             else if (!noPatternsSaid) {
                 noPatternsSaid = true;                    // said once a session (rule 15: the file is empty-by-absence, said)
-                LOG.info("[entropybot] sense: no cave patterns yet ({} not found): the Tuning defaults until the owner labels (aa cave yes|no|hill|cliff)", gf);
+                LOG.info("[entropybot] sense: no cave patterns yet ({} not found): the Tuning defaults until the owner labels (aa cave yes|no|hill|cliff); a mouth with the darkest sky alone stays a candidate until then (the vote is 0 vs 0)", gf);
             }
             if (java.nio.file.Files.isRegularFile(wf)) w.read(java.nio.file.Files.readString(wf), skipped);
             if (skipped[0] > 0) LOG.warn("[entropybot] sense: cave-patterns.json had {} unreadable part(s), skipped", skipped[0]);
@@ -599,7 +599,9 @@ public final class ChunkPass {
             CaveMouths.Shapes sh = CaveMouths.shapes(it.cx(), it.cz(), top, water, pat.rule());
             List<CaveMouths.Candidate> kept = new ArrayList<>();
             for (CaveMouths.Candidate cd : sh.candidates()) {
-                CavePatterns.Vote v = pat.vote(SightingsRuntime.patch(level, cd.x(), cd.z()), 0, 0, 0, false, null);
+                int[] ws = SightingsRuntime.patch(level, cd.x(), cd.z());
+                if (ws == null) continue;      // z54 review 2 (rule 15): its column is not loaded: no vote, no candidate this read
+                CavePatterns.Vote v = pat.vote(ws, 0, 0, 0, false, null);
                 if (v.cave()) kept.add(new CaveMouths.Candidate(cd.x(), cd.y(), cd.z(), cd.shape(), cd.numbers() + (cd.numbers().isEmpty() ? "" : "; ") + v.line()));
                 else shapesVotedOut++;
             }

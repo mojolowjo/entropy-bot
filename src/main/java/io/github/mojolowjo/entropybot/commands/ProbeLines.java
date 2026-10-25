@@ -14,6 +14,30 @@ import java.util.TreeMap;
 public final class ProbeLines {
     private ProbeLines() {}
 
+    /** The probe is on: Tuning debug.walkProbe 1 (WalkProbe's gate; every probe entry returns at once when this is false). */
+    public static boolean on() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("debug.walkProbe") >= 1; }
+
+    /**
+     * 0.39.z54 review 1: what a movement already knows, read without side effects (the probe never calls Baritone's
+     * toBreak / toPlace, which fill these caches from a world read): the caches when Baritone computed them (null = not
+     * yet), the planned break positions and whether a placement is planned.
+     */
+    public interface MoveFacts {
+        List<?> breakCached();
+        List<?> placeCached();
+        int plannedBreaks();
+        boolean plannedPlace();
+    }
+
+    /** "breaks 1 places 0" from Baritone's caches, else "breaks/places not computed yet (planned: breaks N, place yes|no)". */
+    public static String move(MoveFacts m) {
+        List<?> b = m.breakCached(), p = m.placeCached();
+        String planned = "planned: breaks " + m.plannedBreaks() + ", place " + (m.plannedPlace() ? "yes" : "no");
+        if (b == null || p == null)
+            return "breaks " + (b == null ? "?" : b.size()) + " places " + (p == null ? "?" : p.size()) + " (not computed yet by Baritone; " + planned + ")";
+        return "breaks " + b.size() + " places " + p.size() + " (" + planned + ")";
+    }
+
     /** "x y z", or "-" for none. */
     public static String at(int[] p) { return p == null ? "-" : p[0] + " " + p[1] + " " + p[2]; }
 
@@ -23,14 +47,14 @@ public final class ProbeLines {
      */
     public record Walk(long tick, int[] feet, String step, String goal, String inControl, boolean goalProcessActive, boolean executing,
                        int[] src, int[] dest, int pos, int len, boolean calc, String origin, int[] offer, String walkAnswer,
-                       String move, int breaks, int places, String intent, boolean hold) {
+                       String move, String moveFacts, String intent, boolean hold) {
         public String line() {
             return "t=" + tick + " feet " + at(feet) + " | step " + step + " | goal " + goal + " | in control " + inControl
                     + " | custom goal active " + goalProcessActive
                     + " | path " + (executing ? at(src) + " -> " + at(dest) + " at " + pos + "/" + len : "none executing")
                     + " | calc " + (calc ? "in progress" : "none")
                     + " | origin " + origin + " (offered " + offer[0] + ", taken " + offer[1] + "; walk start: " + walkAnswer + ")"
-                    + " | move " + move + (move.equals("-") ? "" : " breaks " + breaks + " places " + places)
+                    + " | move " + move + (move.equals("-") ? "" : " " + moveFacts)
                     + " | intent " + intent + " | reflex hold " + hold;
         }
     }
@@ -45,12 +69,15 @@ public final class ProbeLines {
         return "t=" + tick + " feet " + at(feet) + " | CANCEL by " + who + " (" + frames + ") | step " + (step == null ? "-" : step);
     }
 
-    /** One kept segment of a price: start, end, ticks, the movements by kind and what they break, place and fall. */
+    /**
+     * One kept segment of a price: start, end, ticks, the movements by kind, the break positions and placements they plan
+     * (the movements' own plan, no world read: review 1) and the falls (a drop of more than one block).
+     */
     public record Segment(int[] src, int[] dest, double ticks, Map<String, Integer> kinds, int breaks, int places, int falls) {
         public String text() {
             StringBuilder k = new StringBuilder();
             for (Map.Entry<String, Integer> e : new TreeMap<>(kinds).entrySet()) k.append(k.length() == 0 ? "" : ", ").append(e.getKey()).append(' ').append(e.getValue());
-            return at(src) + " -> " + at(dest) + " " + Math.round(ticks) + " ticks [" + k + "] breaks " + breaks + " places " + places + " falls " + falls;
+            return at(src) + " -> " + at(dest) + " " + Math.round(ticks) + " ticks [" + k + "] planned breaks " + breaks + " places " + places + " falls " + falls;
         }
     }
 

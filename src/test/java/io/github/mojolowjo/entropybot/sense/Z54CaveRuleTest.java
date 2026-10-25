@@ -132,6 +132,53 @@ class Z54CaveRuleTest {
         assertTrue(e.verdict().startsWith("candidate: darkest sky only"), e.verdict());
     }
 
+    // ---- review fixes ----
+
+    @Test
+    void r2AnUnloadedCandidateColumnIsSkippedNotZeroed() {
+        Z50CavePatternTest.Grid g = new Z50CavePatternTest.Grid();
+        java.util.function.IntBinaryOperator unloadedCentre = (x, z) -> x == 0 && z == 0 ? CaveMouths.NOT_LOADED : g.top(x, z);
+        assertNull(CavePatterns.walkGround(0, 0, unloadedCentre, g), "no walk: the caller skips the candidate (no vote, no drop, no hold)");
+        assertNull(CavePatterns.patchGround(0, 0, unloadedCentre), "never an all-zero patch");
+        // a loaded centre with an unloaded neighbour column: that neighbour reads as no difference
+        java.util.function.IntBinaryOperator unloadedSide = (x, z) -> x == 3 ? CaveMouths.NOT_LOADED : x > 0 ? 69 : g.top(x, z);
+        int[] ws = CavePatterns.patchGround(0, 0, unloadedSide);
+        assertNotNull(ws);
+        assertEquals(0, ws[CavePatterns.R * CavePatterns.SIDE + 3 + CavePatterns.R]);
+        assertEquals(7, ws[CavePatterns.R * CavePatterns.SIDE + 1 + CavePatterns.R]);
+        assertNotNull(CavePatterns.walkGround(0, 0, unloadedSide, g));
+    }
+
+    @Test
+    void r3AHeldCandidateIsLookedAtAgainOnAnyEditOrRuleTuningChange() {
+        CavePatterns p = Z50CavePatternTest.fakes();
+        long held = p.stamp();
+        assertTrue(CavePatterns.stillHeld(held, p.stamp()));
+        assertFalse(CavePatterns.stillHeld(null, p.stamp()), "not held");
+        p.add(new CavePatterns.Patch(900, 70, 0, "cliff", "owner", 9, 0, 12, Z50CavePatternTest.mouth(9, 0), null));
+        assertFalse(CavePatterns.stillHeld(held, p.stamp()), "a new label");
+        held = p.stamp();
+        Tuning.set("cave.skyOnlyVoteMargin", 1);
+        assertFalse(CavePatterns.stillHeld(held, p.stamp()), "a rule Tuning entry changed");
+        held = p.stamp();
+        Tuning.set("cave.patternK", 5);
+        assertFalse(CavePatterns.stillHeld(held, p.stamp()), "the vote's k changed");
+        held = p.stamp();
+        p.read(new CavePatterns().toJson(), new int[1]);
+        assertFalse(CavePatterns.stillHeld(held, p.stamp()), "a file read is an edit too");
+    }
+
+    @Test
+    void r5TheFloorsHoldInTheDefaultsToo() {
+        CavePatterns.Rule d = CavePatterns.defaults();
+        assertEquals(Math.max(Tuning.i("cave.depthMin"), Tuning.i("cave.depthFloor")), d.depth());
+        assertEquals(Math.max(Tuning.i("cave.cliffDrop"), Tuning.i("cave.cliffFloor")), d.cliff());
+        assertTrue(d.line().contains("(floors hold: depth 5 (cave.depthMin 1))"), d.line());
+        Tuning.set("cave.depthMin", 8);
+        assertEquals(8, CavePatterns.defaults().depth());
+        assertFalse(CavePatterns.defaults().line().contains("floors hold"), CavePatterns.defaults().line());
+    }
+
     // ---- A5: no bundled seed ----
 
     @Test

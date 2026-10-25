@@ -37,10 +37,11 @@ final class CaveLabel {
         var level = mc.level;
         // 0.39.z54 A3: the label's patch, walk and spot are read over GROUND heights (leaves, logs and air stripped), as the
         // shape test and the bot's own walk read them
+        int g = SightingsRuntime.top(level, x, z);
         CavePatterns.Hole h = SightingsRuntime.walk(level, x, z);
         int[] ws = SightingsRuntime.patch(level, x, z);
-        int g = SightingsRuntime.top(level, x, z);
-        if (g == io.github.mojolowjo.entropybot.sense.CaveMouths.NOT_LOADED) return "aa cave: the chunk at " + x + " " + z + " is not loaded: nothing labelled (stand nearer)";
+        if (g == io.github.mojolowjo.entropybot.sense.CaveMouths.NOT_LOADED || h == null || ws == null)
+            return "aa cave: the chunk at " + x + " " + z + " is not loaded: nothing labelled (stand nearer)";
         int y = g + 1;
         pass.label(new CavePatterns.Patch(x, y, z, label, "owner", h.depth(), h.pocket(), h.darkSky(), ws, null));
         return "aa cave: " + x + " " + y + " " + z + " labelled " + label + " (" + h.numbers() + ")\n" + pass.patterns().rule().line();

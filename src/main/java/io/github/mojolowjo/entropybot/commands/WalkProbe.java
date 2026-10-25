@@ -7,7 +7,6 @@ import baritone.api.pathing.movement.IMovement;
 import baritone.api.pathing.path.IPathExecutor;
 import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.Quiet;
-import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -37,8 +36,9 @@ import java.util.Map;
  * </ul>
  * Off (the default) costs one Tuning read per call and builds no string. Never throws (a failure is said by Quiet.warn).
  * Pure parts in {@link ProbeLines} (JUnit: Z54WalkProbeTest). Loader notes: Baritone API (IPathingBehavior, IPathExecutor,
- * IPath, IPricedPath z54 methods of the entropy fork) and its internal {@code baritone.pathing.movement.Movement} /
- * {@code baritone.utils.BlockStateInterface} (toBreak / toPlace, as ReflexProbe reads internals); vanilla
+ * IPath, IPricedPath z54 methods of the entropy fork) and its internal {@code baritone.pathing.movement.Movement} (read
+ * only: the public toBreakCached / toPlaceCached, toBreakAll, the fork's placePlanned; never toBreak / toPlace, which fill
+ * Baritone's caches from a world read - review of z54); vanilla
  * {@code Minecraft.player / level}; slf4j.
  */
 public final class WalkProbe {
@@ -54,7 +54,7 @@ public final class WalkProbe {
     private static long costSeen, placeSeen;
 
     /** The probe is on (Tuning debug.walkProbe 1). */
-    public static boolean on() { return Tuning.get("debug.walkProbe") >= 1; }
+    public static boolean on() { return ProbeLines.on(); }
 
     /** StepHands: a walk step started (its text); null = no walk step runs. Cheap: one field. */
     static void step(String text) {
@@ -93,29 +93,32 @@ public final class WalkProbe {
         IPathExecutor cur = pb.getCurrent();
         IPath path = cur == null ? null : cur.getPath();
         int pos = cur == null ? -1 : cur.getPosition();
-        String move = "-";
-        int breaks = 0, places = 0;
+        String move = "-", facts = "";
         if (path != null && pos >= 0 && pos < path.movements().size()) {
             IMovement m = path.movements().get(pos);
             move = m.getClass().getSimpleName();
-            int[] bp = breaksPlaces(b, m);
-            breaks = bp[0];
-            places = bp[1];
+            facts = m instanceof baritone.pathing.movement.Movement mv ? ProbeLines.move(facts(mv)) : "(not Baritone's Movement: breaks/places unknown)";
         }
         String control = b.getPathingControlManager().mostRecentInControl().map(pr -> pr.displayName()).orElse("none");
         var priced = b.getPricedPath();
         String origin = path == null ? "-" : priced.fromKept(path) ? "kept" : "fresh";
         return new ProbeLines.Walk(tick, feet(), s, String.valueOf(pb.getGoal()), control, b.getCustomGoalProcess().isActive(), path != null,
                 path == null ? null : at(path.getSrc()), path == null ? null : at(path.getDest()), pos, path == null ? 0 : path.length(),
-                pb.getInProgress().isPresent(), origin, priced.offerCounts(), walkAnswer, move, breaks, places,
+                pb.getInProgress().isPresent(), origin, priced.offerCounts(), walkAnswer, move, facts,
                 String.valueOf(io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.intentNow()), Core.INSTANCE.reflexes.hold()).line();
     }
 
-    /** {breaks, places} of one movement as Baritone's own Movement says now (0, 0 for a movement of another kind). */
-    private static int[] breaksPlaces(IBaritone b, IMovement m) {
-        if (!(m instanceof baritone.pathing.movement.Movement mv)) return new int[]{0, 0};
-        var bsi = new baritone.utils.BlockStateInterface(b.getPlayerContext());
-        return new int[]{mv.toBreak(bsi).size(), mv.toPlace(bsi).size()};
+    /**
+     * 0.39.z54 review 1: a movement's facts read without side effects - the public caches as they are (never toBreak /
+     * toPlace, which fill them from a world read), the planned break positions and the planned placement (fork z54).
+     */
+    private static ProbeLines.MoveFacts facts(baritone.pathing.movement.Movement mv) {
+        return new ProbeLines.MoveFacts() {
+            public List<?> breakCached() { return mv.toBreakCached; }
+            public List<?> placeCached() { return mv.toPlaceCached; }
+            public int plannedBreaks() { return mv.toBreakAll().length; }
+            public boolean plannedPlace() { return mv.placePlanned(); }
+        };
     }
 
     /** BaritoneHook: one path event; printed while a walk step runs and the probe is on (a repeat in a row is counted). */
@@ -161,9 +164,10 @@ public final class WalkProbe {
                 for (IMovement m : seg.movements()) {
                     String k = m.getClass().getSimpleName().replaceFirst("^Movement", "");
                     kinds.merge(k, 1, Integer::sum);
-                    int[] bp = breaksPlaces(b, m);
-                    br += bp[0];
-                    pl += bp[1];
+                    if (m instanceof baritone.pathing.movement.Movement mv) {      // review 1: the plan only, no world read
+                        br += mv.toBreakAll().length;
+                        if (mv.placePlanned()) pl++;
+                    }
                     if (m.getDest().getY() < m.getSrc().getY() - 1) falls++;     // structural: a drop of more than one block
                 }
                 segs.add(new ProbeLines.Segment(at(seg.getSrc()), at(seg.getDest()), seg.ticksRemainingFrom(0), kinds, br, pl, falls));
