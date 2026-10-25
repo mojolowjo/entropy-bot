@@ -22,7 +22,8 @@ import java.util.List;
  *     the next), the chain's priced paths started / landed / in flight, the fork's segment searches started / landed and
  *     nodes opened (IPricedPath.searchCounts, fork z56), Baritone's own path calcs started / failed (its path events), the
  *     recorder's writer queue, lines written and disk use, JVM heap used / max and GC count and time - each "+" since the
- *     last line;</li>
+ *     last line; 0.39.z57: then the path memory's asks (IPricedPath.askCounts: asks, answered from memory exact / suffix /
+ *     zero / kept no-path, joined in flight, searches started, queued, cancelled, kept answers dropped);</li>
  * <li>{@code [entropybot] probe slowtick:} every client tick longer than {@code debug.slowTickMs} (50 ms): its ms, the mod's
  *     ms by section of Core.onClientTick, the time outside the mod, and what the mod did in it (the running step, the path
  *     events heard, priced paths that landed). Not rate-limited: a slow tick is the fact asked for (at most 20 a second).</li>
@@ -97,7 +98,7 @@ public final class LoadProbe {
             if (limit > 0 && tickMs > limit) LOG.info("[entropybot] probe slowtick: {}", ProbeLines.slowTick(t, tickMs, limit, modMs, sections(), did()));
             if (lastLine < 0 || t - lastLine >= ProbeLines.everyTicks()) {
                 lastLine = t;
-                LOG.info("[entropybot] probe load: {}", facts().line(t));
+                LOG.info("[entropybot] probe load: {} | {}", facts().line(t), ProbeLines.asks(askDelta()));
             }
         } catch (RuntimeException | LinkageError e) {
             Quiet.warn("LoadProbe.postTick: the load line could not be written", e);
@@ -127,6 +128,25 @@ public final class LoadProbe {
         }
         return "job " + step + " | path events " + (eventsThisTick.isEmpty() ? "none" : eventsThisTick)
                 + " | priced paths landed " + (LivePathPrice.INSTANCE.landed() - landedTick);
+    }
+
+    private static long[] askSeen;
+
+    /** 0.39.z57: the fork's path-memory counts since the last line (IPricedPath.askCounts); null from a fork without them. */
+    private static long[] askDelta() {
+        var b = Jobs.baritone();
+        if (b == null) return null;
+        long[] now;
+        try {
+            now = b.getPricedPath().askCounts();
+        } catch (LinkageError e) {
+            return null;                                 // an older fork: the line says "not counted by this fork jar"
+        }
+        if (now == null || now.length < 10 || now[0] < 0) return null;
+        long[] d = new long[now.length];
+        for (int i = 0; i < now.length; i++) d[i] = askSeen == null ? 0 : now[i] - askSeen[i];
+        askSeen = now;
+        return d;
     }
 
     private static ProbeLines.LoadFacts facts() {

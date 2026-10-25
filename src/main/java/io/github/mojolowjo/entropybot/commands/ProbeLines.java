@@ -167,6 +167,23 @@ public final class ProbeLines {
         }
     }
 
+    /**
+     * 0.39.z57 (path memory; run P 23:46-23:50: 406 priced paths, 180 exact repeats): the asks part of the load line from
+     * the fork's IPricedPath.askCounts deltas {asks, zero, exact, suffix, kept no-path, joined, started, queued, cancelled,
+     * dropped}; a fork without them says so.
+     */
+    public static String asks(long[] d) {
+        if (d == null || d.length < 10 || d[0] < 0) return "path asks: not counted by this fork jar";
+        return "path asks +" + d[0] + ": from memory exact +" + d[2] + " suffix +" + d[3] + " zero +" + d[1] + " no-path +" + d[4]
+                + ", joined in flight +" + d[5] + ", searches started +" + d[6] + ", queued +" + d[7] + ", cancelled +" + d[8]
+                + ", kept dropped +" + d[9];
+    }
+
+    /** 0.39.z57 (rule 7): one dropped kept answer, the fork's words ("to <goal>: <why>"). */
+    public static String reuse(String fork) {
+        return "dropped the kept answer " + fork + " (not known until the new search lands)";
+    }
+
     /** Names of the mod's tick sections, in Core.onClientTick's order (LoadProbe.mark indices). */
     public static final String[] SECTIONS = {"guard+commands (aa)", "reflexes", "probes+knowledge", "chunk pass", "recorder", "rest"};
 

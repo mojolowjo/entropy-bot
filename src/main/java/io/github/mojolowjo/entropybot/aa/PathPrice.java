@@ -63,8 +63,14 @@ public interface PathPrice {
     /** A cached answer is kept while the bot stands within this many blocks of where it was asked from. */
     static double reuseBlocks() { return Tuning.get("pathCost.reuseBlocks"); }
 
-    /** A cached answer is kept at most this many seconds. */
+    /** A cached answer is kept at most this many seconds (z57: the z41 route, pricedPath.on 0, only). */
     static double keepS() { return Tuning.get("pathCost.keepS"); }
+
+    /**
+     * 0.39.z57 (owner 2026-10-25: "while doing stuff it should not forget the path that was already planned"): a complete
+     * priced path's safety age in seconds; the fork's path memory drops it earlier on the facts it depends on.
+     */
+    static double maxKeepS() { return Tuning.get("pathCost.maxKeepS"); }
 
     /** 0.39.z46: the fork's priced path prices and walks (one search); off: z41's route (search once, walk fresh). */
     static boolean pricedPathOn() { return Tuning.i("pricedPath.on") != 0; }

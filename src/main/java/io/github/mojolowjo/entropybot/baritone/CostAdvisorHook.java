@@ -113,6 +113,10 @@ public final class CostAdvisorHook {
                     return moveExtra(a[0], (Integer) a[1], (Integer) a[2], (Integer) a[3], stateAt(a[4]));
                 case "pricesMoves":        // review 4: no keep-out or danger box and no lava price = the A* loop never asks per node
                     return a[0] instanceof Token tk && (tk.boxes() || tk.lavaPenalty() > 0);
+                // 0.39.z57 (path memory): the break rules' epoch - the policy snapshot is replaced only when the owner's areas,
+                // protect boxes or the server flag change (PolicyRuntime.tick), so its identity is the epoch; a kept priced path
+                // is dropped when it moves. A Long: the fork's method returns long (an Integer would not unbox)
+                case "rulesEpoch": return (long) System.identityHashCode(PolicyRuntime.INSTANCE.snapshot());
                 case "toString": return "EntropyBot cost advisor";
                 case "hashCode": return System.identityHashCode(CostAdvisorHook.class);
                 case "equals": return a != null && a.length == 1 && a[0] != null && Proxy.isProxyClass(a[0].getClass());
