@@ -1131,7 +1131,7 @@ final class Mining {
                 // first, ties nearest first; a fact with no curve read: z68's placer band nearest the feet first
                 var where = ex.where;
                 if (!where.curves().isEmpty()) {
-                    cells = ExploreRules.byCurve(cells, y -> where.curve(y, true));
+                    cells = ExploreRules.byCurve(cells, y -> where.curve(y, true), me, within);
                     if (!cells.isEmpty()) LOG.debug("[entropybot] explore: caves ranked by {}'s density at their Y (first at y {}: {})", ex.untilSource, cells.get(0)[1],
                             String.format(java.util.Locale.ROOT, "%.2f", where.curve(cells.get(0)[1], true)));
                 } else {

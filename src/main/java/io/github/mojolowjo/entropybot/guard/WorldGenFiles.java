@@ -284,13 +284,7 @@ public final class WorldGenFiles {
      */
     public static Map<String, List<io.github.mojolowjo.entropybot.aa.brain.OreBand.Feature>> features(Ores o, Collection<String> biomes,
             java.util.function.Predicate<String> modifierBiome, int bottom, int top, int[] unpriced) {
-        Set<String> pfs = new java.util.LinkedHashSet<>();
-        for (String b : biomes) pfs.addAll(o.biomes().getOrDefault(b, List.of()));
-        for (Modifier m : o.modifiers()) {
-            boolean in = false;
-            for (String b : m.biomes()) if (modifierBiome.test(b)) { in = true; break; }
-            if (in) pfs.addAll(m.features());
-        }
+        Set<String> pfs = placedIn(o, biomes, modifierBiome);
         Map<String, List<io.github.mojolowjo.entropybot.aa.brain.OreBand.Feature>> out = new java.util.TreeMap<>();
         for (String pf : pfs) {
             Ore ore = o.placed().get(pf);
@@ -300,6 +294,43 @@ public final class WorldGenFiles {
             for (String b : ore.blocks()) out.computeIfAbsent(b, k -> new java.util.ArrayList<>()).add(f);
         }
         return out;
+    }
+
+    /**
+     * 0.39.z69 fix 2 (run AA: #stone_tool_materials got blackstone's band 5..31 in the overworld, the nether's ore_blackstone
+     * merged in): the placed features the given biomes place - each biome JSON's {@code features} lists (tags expanded) and
+     * the NeoForge biome modifiers whose biome entry names one of them ({@code modifierBiome}: the game's synced biome tags).
+     * How the dimension is known from the data: a placed feature belongs to a dimension only through the biomes that list
+     * it, and the biomes of the bot's dimension are the ones the server's chunk data carries for the level the bot is in
+     * (the client's biome cells); a nether ore is listed only by nether biomes, so it never shows in the overworld's set.
+     */
+    public static Set<String> placedIn(Ores o, Collection<String> biomes, java.util.function.Predicate<String> modifierBiome) {
+        Set<String> pfs = new java.util.LinkedHashSet<>();
+        for (String b : biomes) pfs.addAll(o.biomes().getOrDefault(b, List.of()));
+        for (Modifier m : o.modifiers()) {
+            boolean in = false;
+            for (String b : m.biomes()) if (modifierBiome.test(b)) { in = true; break; }
+            if (in) pfs.addAll(m.features());
+        }
+        return pfs;
+    }
+
+    /** 0.39.z69 fix 2: the "where" placers of the given biomes only ({@link #placedIn}: the bot's dimension's biomes). */
+    public static List<GenWhere.Placer> placersIn(Ores o, Collection<String> biomes, java.util.function.Predicate<String> modifierBiome) {
+        Set<String> pfs = placedIn(o, biomes, modifierBiome);
+        List<GenWhere.Placer> out = new java.util.ArrayList<>();
+        for (GenWhere.Placer p : o.placers()) if (pfs.contains(p.id())) out.add(p);
+        return out;
+    }
+
+    /**
+     * 0.39.z69 fix 2: {minY, maxY} where any of {@code blocks} is height-placed in {@code features} (block -> its features,
+     * {@link #features} for the bot's dimension's biomes); null: none of them is.
+     */
+    public static int[] band(Map<String, List<io.github.mojolowjo.entropybot.aa.brain.OreBand.Feature>> features, Collection<String> blocks) {
+        int lo = Integer.MAX_VALUE, hi = Integer.MIN_VALUE;
+        for (String b : blocks) for (var f : features.getOrDefault(b, List.of())) { lo = Math.min(lo, f.lo()); hi = Math.max(hi, f.hi()); }
+        return lo == Integer.MAX_VALUE ? null : new int[]{lo, hi};
     }
 
     /** Every biome the read knows and every biome modifier's entry: the whole data's ore features (for the resolver's Y range). */

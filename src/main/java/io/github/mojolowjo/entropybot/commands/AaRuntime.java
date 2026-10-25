@@ -623,7 +623,12 @@ public final class AaRuntime implements JobPort {
         }
         java.util.Set<String> blocks = new java.util.TreeSet<>();
         for (String part : word.split("\\|")) if (!part.isEmpty()) blocks.addAll(sourceBlocksOf(io.github.mojolowjo.entropybot.aa.NeedChain.word(part)));
-        return io.github.mojolowjo.entropybot.aa.brain.GenWhere.of(blocks, ores.placers(), mc.level.getMinBuildHeight(), mc.level.getMaxBuildHeight());
+        // 0.39.z69 fix 2: only the placers this dimension's biomes list (run AA: the nether's blackstone_blobs made stone "both ways")
+        var seen = biomesHere();
+        if (seen == null) return io.github.mojolowjo.entropybot.aa.brain.GenWhere.notLoaded("this dimension's biomes are not known yet (the feet's chunk is not loaded)");
+        var placers = io.github.mojolowjo.entropybot.guard.WorldGenFiles.placersIn(ores, seen.keySet(), namedBy(seen.values()));
+        var f = io.github.mojolowjo.entropybot.aa.brain.GenWhere.of(blocks, placers, mc.level.getMinBuildHeight(), mc.level.getMaxBuildHeight());
+        return mc.player == null ? f : f.withFeet(Jobs.here(mc.player)[1]);     // 0.39.z69 fix 3: the peaks said from the feet
     }
 
     /**
@@ -965,17 +970,61 @@ public final class AaRuntime implements JobPort {
      * block, the worldgen read at load); null: none of them generates, or no worldgen was read (multiplayer).
      */
     int[] band(String item) {
-        var cat = catalog;
-        if (cat == null || cat.gen() == null) return null;
-        java.util.Set<String> blocks = sourceBlocksOf(item);
-        int lo = Integer.MAX_VALUE, hi = Integer.MIN_VALUE;
-        for (String b : blocks) {
-            var g = cat.gen().get(b);
-            if (g == null || g.minY() == io.github.mojolowjo.entropybot.aa.brain.Thing.UNKNOWN_Y) continue;
-            lo = Math.min(lo, g.minY());
-            hi = Math.max(hi, g.maxY());
+        // 0.39.z69 fix 2 (run AA: #stone_tool_materials got the nether's blackstone band 5..31 in the overworld - the catalog's
+        // Y ranges merge every dimension): the ore features of the biomes this dimension has shown (WorldGenFiles.placedIn)
+        var here = dimFeatures();
+        if (here == null) return null;
+        return io.github.mojolowjo.entropybot.guard.WorldGenFiles.band(here, sourceBlocksOf(item));
+    }
+
+    /** 0.39.z69 fix 2: dimension -> the biomes its chunks showed the bot (id -> holder, for the biome modifiers' synced tags). */
+    private final Map<String, Map<String, net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome>>> dimBiomes = new java.util.HashMap<>();
+    private String dimFeaturesKey;
+    private Map<String, List<io.github.mojolowjo.entropybot.aa.brain.OreBand.Feature>> dimFeaturesCache;
+
+    /**
+     * 0.39.z69 fix 2: the biomes of the bot's dimension seen so far, with the feet column's added now (the client's biome
+     * cells, sent by the server with the chunks: QuartPos cells). Null: no level or player, or the feet's chunk is not
+     * loaded and none seen yet (rule 15). Loader notes: vanilla Level#getBiome, Holder#unwrapKey, Level#dimension.
+     */
+    private Map<String, net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome>> biomesHere() {
+        Minecraft mc = Minecraft.getInstance();
+        var lv = mc.level;
+        if (lv == null || mc.player == null) return null;
+        var seen = dimBiomes.computeIfAbsent(lv.dimension().location().toString(), k -> new java.util.TreeMap<>());
+        int[] at = Jobs.here(mc.player);
+        if (lv.hasChunkAt(new net.minecraft.core.BlockPos(at[0], at[1], at[2])))
+            for (int y = lv.getMinBuildHeight(); y < lv.getMaxBuildHeight(); y += BIOME_CELL) {
+                var h = lv.getBiome(new net.minecraft.core.BlockPos(at[0], y, at[2]));
+                h.unwrapKey().ifPresent(k -> seen.putIfAbsent(k.location().toString(), h));
+            }
+        return seen.isEmpty() ? null : seen;
+    }
+
+    /** 0.39.z69 fix 2: a biome entry of a biome modifier (an id or a #tag) names one of {@code hs} (the game's synced biome tags). */
+    private static java.util.function.Predicate<String> namedBy(java.util.Collection<net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome>> hs) {
+        return spec -> {
+            boolean tag = spec.startsWith("#");
+            var rl = net.minecraft.resources.ResourceLocation.tryParse(tag ? spec.substring(1) : spec);
+            if (rl == null) return false;
+            for (var h : hs) if (tag ? h.is(net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.BIOME, rl)) : h.is(rl)) return true;
+            return false;
+        };
+    }
+
+    /** 0.39.z69 fix 2: block -> its height-placed features in the bot's dimension (the biomes seen there); null: not loaded. */
+    private Map<String, List<io.github.mojolowjo.entropybot.aa.brain.OreBand.Feature>> dimFeatures() {
+        var ores = io.github.mojolowjo.entropybot.guard.WorldGenReader.ores();
+        var seen = biomesHere();
+        Minecraft mc = Minecraft.getInstance();
+        if (ores == null || seen == null || mc.level == null) return null;
+        String key = mc.level.dimension().location() + " " + seen.size() + " " + System.identityHashCode(ores);
+        if (!key.equals(dimFeaturesKey) || dimFeaturesCache == null) {
+            dimFeaturesCache = io.github.mojolowjo.entropybot.guard.WorldGenFiles.features(ores, seen.keySet(), namedBy(seen.values()),
+                    mc.level.getMinBuildHeight(), mc.level.getMaxBuildHeight(), null);
+            dimFeaturesKey = key;
         }
-        return lo == Integer.MAX_VALUE ? null : new int[]{lo, hi};
+        return dimFeaturesCache;
     }
 
     /** The item's own block id (the block it places), null when it places none. */
@@ -1061,9 +1110,11 @@ public final class AaRuntime implements JobPort {
      */
     String droppedByOrder(String part, io.github.mojolowjo.entropybot.aa.NeedChain.Spot sp) {
         if (bb == null || sp == null) return null;
-        String key = io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(part, sp);
+        String key = io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(part, sp), spot = io.github.mojolowjo.entropybot.aa.NeedChain.spotKey(part, sp);
         for (var g : io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb)) {
-            String why = io.github.mojolowjo.entropybot.aa.brain.Goals.droppedSources(g).get(key);
+            var dropped = io.github.mojolowjo.entropybot.aa.brain.Goals.droppedSources(g);
+            String why = dropped.get(key);
+            if (why == null) why = dropped.get(spot);           // 0.39.z69 fix 1: this one spot dropped
             if (why != null) return why;
         }
         return null;

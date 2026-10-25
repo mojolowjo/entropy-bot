@@ -388,7 +388,7 @@ public final class NeedChain {
             if (keyWhy == null || keyWhy.isEmpty()) return this;
             List<String> h = new ArrayList<>(held);
             for (var e : keyWhy.entrySet()) h.add(e.getKey() + ": " + e.getValue());
-            World less = without((item, sp) -> keyWhy.containsKey(sourceKey(item, sp)));
+            World less = without((item, sp) -> spotHeld(item, sp, keyWhy::containsKey));     // 0.39.z69 fix 1: an item key or one spot's
             // 0.39.z42: a dropped band (no path into it from here) is no band for the order: its explore goes overland
             Function<String, int[]> b = band == null ? null : word -> {
                 int[] r = band.apply(word);
@@ -1788,8 +1788,8 @@ public final class NeedChain {
      * is not a price ("walk: path not known yet (computing)", "walk: path not known (chunks not loaded)", "unreachable
      * (Baritone: ...)"), null with a price; {@code kind}: the provider's answer kind.
      */
-    record Walked(double seconds, String note, String fail, PathPrice.Kind kind, int pickBreaks, double pickHardness) {
-        Walked(double seconds, String note, String fail, PathPrice.Kind kind) { this(seconds, note, fail, kind, 0, 0); }
+    record Walked(double seconds, String note, String fail, PathPrice.Kind kind, int pickBreaks, Map<String, Integer> dug) {
+        Walked(double seconds, String note, String fail, PathPrice.Kind kind) { this(seconds, note, fail, kind, 0, Map.of()); }
     }
 
     /** 0.39.z41: the way's text for a walk that is not a price (aa why / aa debug). */
@@ -1821,7 +1821,7 @@ public final class NeedChain {
         return switch (a.kind()) {
             case PRICED -> a.walk() == null || !(a.walk().seconds() >= 0) || Double.isInfinite(a.walk().seconds())
                     ? new Walked(Double.NaN, "", PathPrice.NOT_KNOWN + " (an unusable answer: " + a.walk() + ")", PathPrice.Kind.NONE)
-                    : new Walked(a.walk().seconds(), "walk " + s(a.walk().seconds()) + " (path)" + lavaNote(a.walk()), null, PathPrice.Kind.PRICED, a.walk().pickBreaks(), a.walk().pickHardness());
+                    : new Walked(a.walk().seconds(), "walk " + s(a.walk().seconds()) + " (path)" + lavaNote(a.walk()), null, PathPrice.Kind.PRICED, a.walk().pickBreaks(), a.walk().dug());
             case COMPUTING -> new Walked(Double.NaN, "", why.isEmpty() ? COMPUTING : PathPrice.NOT_KNOWN + " yet (computing; " + why + ")", a.kind());
             case CHUNKS -> new Walked(Double.NaN, "", PathPrice.NOT_KNOWN + " (" + (why.isEmpty() ? "chunks not loaded" : why) + ")", a.kind());
             case UNREACHABLE -> new Walked(Double.NaN, "", io.github.mojolowjo.entropybot.aa.moves.FactChange.unreachableText(why.isEmpty() ? "no path, the search ended" : why), a.kind());
@@ -1897,7 +1897,7 @@ public final class NeedChain {
         }
         Walked wk = walk(c, sp.x(), sp.y(), sp.z(), sp.dist());
         if (c.fail != null) {
-            if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreachable.put(sourceKey(word, sp), wk.fail());
+            if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreachable.put(spotKey(word, sp), wk.fail());   // 0.39.z69 fix 1: that spot only
             return null;
         }
         c.steps.add(new Step.Walk(sp.x(), sp.y(), sp.z(), stationNear()));
@@ -2014,6 +2014,24 @@ public final class NeedChain {
         return tree(item, sp) ? "cut at " + sp.x() + " " + sp.y() + " " + sp.z() : "collect " + shw(sp.gives() != null ? word(sp.gives()) : item);
     }
 
+    /**
+     * 0.39.z69 fix 1 (run AA 11:50: one cobblestone spot Baritone found unreachable held "collect cobblestone" for the
+     * order's life, so no cobblestone source counted again and every explore for stone ended on nothing): the key of ONE
+     * spot - a tree or a station is its cell already ({@link #sourceKey(String, Spot)}); a collect spot is its item AND its
+     * cell ("collect cobblestone at 12 60 3"). A walk to the spot that Baritone found unreachable holds this key, so only
+     * that spot is out for the order. The item key ("collect cobblestone") stays the key of a failed Collect step (the
+     * fork's mine process takes any block of the item, its failure is about all of them).
+     */
+    public static String spotKey(String item, Spot sp) {
+        String k = sourceKey(item, sp);
+        return k.startsWith("collect ") ? k + " at " + sp.x() + " " + sp.y() + " " + sp.z() : k;
+    }
+
+    /** 0.39.z69 fix 1: a spot is held by {@code held} under its item key (a failed Collect step) or its own spot key. */
+    public static boolean spotHeld(String item, Spot sp, java.util.function.Predicate<String> held) {
+        return held.test(sourceKey(item, sp)) || held.test(spotKey(item, sp));
+    }
+
     /** A block the game tags as logs is a tree (Baritone's tree mining); a spot with no block known for a tag need: a tree when the need is logs only. */
     private static boolean tree(String item, Spot sp) {
         String b = sp.block() != null ? sp.block() : sp.gives() != null ? sp.gives() : item;
@@ -2090,7 +2108,7 @@ public final class NeedChain {
                 c.note(() -> "source: known " + shw(blockOf(gives, sp)) + " at " + sp.x() + " " + sp.y() + " " + sp.z() + ", " + Math.round(sp.dist()) + " m" + (sp.count() > 0 ? ", " + sp.count() + " blocks" : ""));
                 Walked wk = walk(c, sp.x(), sp.y(), sp.z(), sp.dist());
                 if (c.fail != null) {                       // 0.39.z41: no price for this walk
-                    if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreachable.put(sourceKey(word, sp), wk.fail());   // the z33 source fact
+                    if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreachable.put(spotKey(word, sp), wk.fail());   // the z33 source fact; z69 fix 1: that spot only
                     if (sp == first) return null;           // the way's own spot: the way cannot be picked
                     String why = c.fail;                    // a further spot: this way goes on without it (its walk is not a price)
                     c.fail = null;
@@ -2676,7 +2694,7 @@ public final class NeedChain {
         }
         if (c.pickItem != null) {
             // a pickaxe in the bag (Baritone priced the path with it) or made earlier in this chain (priced by hand: the saving)
-            double saved = c.pickMade ? savedS(digs, wk.pickHardness(), c.pickItem) : 0;
+            double saved = c.pickMade ? savedS(wk.dug(), c.pickItem) : 0;
             int tier = Math.max(1, c.pickTier);       // structural: any pickaxe (the bot's tier scale: 1 = the least pickaxe)
             String spare = spareTools(c, digs, tier);
             if (spare == null) c.pickWorn += digs;
@@ -2691,24 +2709,32 @@ public final class NeedChain {
         if (!c.bandPick) {
             Ctx.Snap before = c.snap();
             double s0 = c.seconds;
+            boolean stuckBefore = c.stuck;             // z69 review (a): an earlier explore in the chain is not this pickaxe's
             c.bandPick = true;
+            // z69 review (e): the pickaxe's pricing notes go under a node of their own in aa debug (kept when it loses, with
+            // its verdict); the unreachable facts it met stay (z41: a Baritone "no path" is true whichever way is kept)
+            Trace.Node node = c.trace == null ? null : c.trace.push("way the cheapest pickaxe first (the band walk's breaks)", true);
             try {
                 pick = cheapestPickaxe(c, 1);          // structural: any pickaxe (the bot's tier scale: 1 = the least pickaxe)
-                if (c.fail == null && !c.stuck) spare = spareTools(c, digs, Math.max(1, c.pickTier));
+                if (pickFirstFails(c.fail, stuckBefore, c.stuck) == null) spare = spareTools(c, digs, Math.max(1, c.pickTier));
             } finally {
                 c.bandPick = false;
+                if (node != null) c.trace.pop();
             }
-            if (c.fail != null || c.stuck) {
-                String why = c.fail != null ? c.fail : "its own source is still to find (" + (c.unknown == null ? "?" : shw(c.unknown)) + ")";
+            String fails = pickFirstFails(c.fail, stuckBefore, c.stuck);
+            if (fails != null) {
+                String why = c.fail != null ? c.fail : fails + " (" + (c.unknown == null ? "?" : shw(c.unknown)) + ")";
                 boolean waits = c.fail != null && c.fail.startsWith(PathPrice.NOT_KNOWN);
                 c.restore(before);
+                if (node != null) node.verdict = "dropped: " + why;
                 if (waits) { c.fail = why; return null; }      // rule 18: the pickaxe's walk is not known yet, the leg waits
                 c.note(() -> "band walk: no pickaxe to be had first (" + why + "): the dig by hand stands alone");
                 pick = null;
             } else {
                 pickS = c.seconds - s0;
-                double saved = savedS(digs, wk.pickHardness(), c.pickItem);
+                double saved = savedS(wk.dug(), c.pickItem);
                 withS = pickS + Math.max(0, handS - saved);
+                if (node != null) node.verdict = (withS < handS ? "picked: " : "dropped: ") + s(withS) + " vs by hand " + s(handS);
                 if (withS < handS) {
                     if (spare == null) c.pickWorn += digs;
                     c.steps.add(tb);
@@ -2729,17 +2755,38 @@ public final class NeedChain {
     }
 
     /**
-     * 0.39.z69 item 1: seconds a walk's {@code digs} pickaxe-mineable breaks save with {@code pick} in hand over the hand
-     * price Baritone's path carried (the game's break formula, {@link GameTimes#breakSeconds}, at the blocks' mean hardness:
-     * by hand speed 1 and not the right tool, /100; with the pickaxe its dig speed and the right tool, /30). Rough (rule 14):
-     * one mean block. 0: the hardness was not counted (said).
+     * 0.39.z69 review (a): why the band walk's pickaxe-first way does not stand after its pricing - a failure, or an explore
+     * it STARTED ({@code stuckAfter} with {@code stuckBefore} false: the pickaxe's own source is still to find); an explore
+     * the chain was in before it is not this way's. Null: it stands. Pure.
      */
-    static double savedS(int digs, double hardness, String pick) {
-        if (digs <= 0 || hardness <= 0 || pick == null) return 0;
-        double h = hardness / digs;
+    static String pickFirstFails(String fail, boolean stuckBefore, boolean stuckAfter) {
+        if (fail != null) return fail;
+        return stuckAfter && !stuckBefore ? "its own source is still to find" : null;
+    }
+
+    /**
+     * 0.39.z69 item 1, review (d): seconds a walk's pickaxe-mineable breaks ({@code dug}: block id -> count, Baritone's path)
+     * save with {@code pick} in hand over the hand price the path carried - per block kind by the game's break formula
+     * ({@link GameTimes#breakSeconds}) with its hardness (item data) and harvest tier (MiningTiers, the needs_*_tool tags):
+     * by hand speed 1, /30 when the block needs no tool, else /100; with the pickaxe its dig speed, /30 when its tier
+     * harvests the block, else /100. A kind with no hardness known is left out (rule 15, said in aa debug by the caller's
+     * price). 0: nothing counted.
+     */
+    static double savedS(Map<String, Integer> dug, String pick) {
+        if (dug == null || dug.isEmpty() || pick == null) return 0;
         double speed = Math.max(1, ItemWorth.facts(pick).digSpeed());
-        double hand = TickPrice.breakS(GameTimes.breakSeconds(h, 1, false)), with = TickPrice.breakS(GameTimes.breakSeconds(h, speed, true));
-        return Math.max(0, digs * (hand - with));
+        int have = MiningTiers.toolTier(pick, "pickaxe");
+        double sum = 0;
+        for (var e : dug.entrySet()) {
+            double h = ItemWorth.facts(e.getKey()).hardness();
+            if (!(h > 0)) continue;
+            int need = MiningTiers.source() == null ? MiningTiers.UNKNOWN : MiningTiers.blockTierOf(e.getKey());
+            if (need == MiningTiers.UNKNOWN) continue;
+            double hand = TickPrice.breakS(GameTimes.breakSeconds(h, 1, need < 1));
+            double with = TickPrice.breakS(GameTimes.breakSeconds(h, speed, have >= need));
+            sum += e.getValue() * Math.max(0, hand - with);
+        }
+        return sum;
     }
 
     /**

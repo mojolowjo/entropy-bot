@@ -71,12 +71,18 @@ public final class GenWhere {
     /**
      * Where a target generates. {@code block} / {@code feature}: the block and placed feature that say it (null for UNKNOWN /
      * NOT_LOADED); {@code lo..hi}: the band, the union of {@code bands} (BAND only); {@code why}: the reason for UNKNOWN /
-     * NOT_LOADED.
+     * NOT_LOADED. 0.39.z69 fix 3: {@code feet}: the bot's feet Y when the fact was asked (null: not given) - the peaks are
+     * said nearest the feet first.
      */
-    public record Fact(Kind kind, int lo, int hi, String block, String feature, String why, List<Band> bands) {
+    public record Fact(Kind kind, int lo, int hi, String block, String feature, String why, List<Band> bands, Integer feet) {
         public Fact { bands = bands == null ? List.of() : List.copyOf(bands); }
 
+        public Fact(Kind kind, int lo, int hi, String block, String feature, String why, List<Band> bands) { this(kind, lo, hi, block, feature, why, bands, null); }
+
         public Fact(Kind kind, int lo, int hi, String block, String feature, String why) { this(kind, lo, hi, block, feature, why, List.of()); }
+
+        /** 0.39.z69 fix 3: the same fact seen from feet Y {@code y} (the peaks then said nearest first). */
+        public Fact withFeet(int y) { return new Fact(kind, lo, hi, block, feature, why, bands, y); }
 
         public boolean surface() { return kind == Kind.SURFACE; }
         public boolean band() { return kind == Kind.BAND; }
@@ -125,10 +131,17 @@ public final class GenWhere {
             return out;
         }
 
-        /** 0.39.z69 item 2: "densest at y 232 (ore_iron_upper trapezoid 80..384) and y 16 (ore_iron_middle trapezoid -24..56)"; "" none. */
+        /**
+         * 0.39.z69 item 2: "densest at y 16 (ore_iron_middle trapezoid -24..56, 2.5 a chunk layer) and y 232 (...)"; "" none.
+         * Fix 3 (Opus Design): with the feet known the peaks are said nearest the feet first, else densest first. The
+         * biomes are not modelled (rule 14): ore_iron_upper is placed by the mountain biomes only, yet its 232 peak counts
+         * as everywhere - the bot's own dimension's biomes choose the placers, not the biome at a spot.
+         */
         public String peakText() {
             List<String> parts = new ArrayList<>();
-            for (Peak p : peaks(false))
+            List<Peak> ps = new ArrayList<>(peaks(false));
+            if (feet != null) ps.sort(java.util.Comparator.comparingInt((Peak p) -> Math.abs(p.y() - feet)).thenComparing(java.util.Comparator.comparingDouble(Peak::density).reversed()));
+            for (Peak p : ps)
                 parts.add("y " + p.y() + " (" + (p.by() == null ? "?" : sh(p.by().feature()) + " " + p.by().curve().shapeText())
                         + ", " + String.format(java.util.Locale.ROOT, "%.1f", p.density()) + " a chunk layer)");
             return parts.isEmpty() ? "" : "densest at " + String.join(" and ", parts);

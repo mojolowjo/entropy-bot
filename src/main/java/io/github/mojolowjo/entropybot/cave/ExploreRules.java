@@ -161,15 +161,22 @@ public final class ExploreRules {
     /**
      * 0.39.z69 item 2 (owner 2026-10-25: "does the data tell where the ore is denser?"): the cave candidates of an explore
      * for a band target ranked by the target's density curve at each cell's Y ({@code density}: GenWhere.Fact#curve with
-     * the caves' air-exposure discard), densest first; equal densities keep the given order (nearest first). A cell outside
-     * every band (density 0) still leads under ground: last, nearest first.
+     * the caves' air-exposure discard). z69 review (b): the walk there counts too - each cave scores its density over
+     * (its straight metres from {@code me} + {@code scale}), {@code scale} the explore's own reach (cave.exploreTowardM), so a
+     * near cave at 90% of the peak beats a far one at the peak, and a far cave needs a clearly denser Y to win (rough, rule
+     * 14). Equal scores keep the given order (nearest first). A cell outside every band (density 0) still leads under
+     * ground: last, nearest first.
      */
-    public static List<int[]> byCurve(List<int[]> nearestFirst, java.util.function.IntToDoubleFunction density) {
+    public static List<int[]> byCurve(List<int[]> nearestFirst, java.util.function.IntToDoubleFunction density, int[] me, double scale) {
         List<int[]> out = new ArrayList<>();
         if (nearestFirst == null) return out;
         out.addAll(nearestFirst);
         if (density == null) return out;
-        out.sort(java.util.Comparator.comparingDouble((int[] c) -> density.applyAsDouble(c[1])).reversed());   // a stable sort: ties stay nearest first
+        double s = Math.max(1, scale);       // structural: at least one metre (no division by zero)
+        out.sort(java.util.Comparator.comparingDouble((int[] c) -> {
+            double d = me == null ? 0 : Math.sqrt(Math.pow(c[0] - me[0], 2) + Math.pow(c[1] - me[1], 2) + Math.pow(c[2] - me[2], 2));
+            return density.applyAsDouble(c[1]) / (d + s);
+        }).reversed());                      // a stable sort: ties stay nearest first
         return out;
     }
 

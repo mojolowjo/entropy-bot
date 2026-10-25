@@ -86,7 +86,9 @@ public final class OreBand {
      * 0.39.z69 item 2: the share of a biased height provider at offset t (0..h) of its range h, the vanilla samplers summed:
      * {@code biased_to_bottom}: k = nextInt(h - inner + 1), then t = nextInt(k + inner); {@code very_biased_to_bottom}:
      * k in [inner, h], l in [0, k - 1], t in [0, l - 1 + inner] (Mth.nextInt inclusive). A range too short for the inner:
-     * everything at the bottom (the samplers' own fallback).
+     * everything at the bottom (the samplers' own fallback). Rough (rule 14), said: with {@code inner} over 2 the
+     * very-biased sampler can return a Y above the range's top (l - 1 + inner past h); that share is cut off here, not
+     * moved, so the layers 0..h sum to a little under one then.
      */
     static double biased(Shape kind, int h, int inner, int t) {
         if (t < 0 || t > h) return 0;

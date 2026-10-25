@@ -45,7 +45,7 @@ class Z69ToolsAndCurveTest {
     static PathPrice runAaPaths() {
         PathPrice walks = FakePaths.byDistance();
         return (x, y, z, d) -> y == BAND_CELL_Y && x == 0 && z == 0
-                ? PathPrice.Answer.priced(new PathPrice.Walk(handPathS(), 0, DIGS, DIGS * STONE_H))
+                ? PathPrice.Answer.priced(new PathPrice.Walk(handPathS(), 0, DIGS, Map.of("minecraft:stone", DIGS)))
                 : walks.price(x, y, z, d);
     }
 
@@ -81,7 +81,7 @@ class Z69ToolsAndCurveTest {
         ScenariosTest.world("wooden", "stone");
         Chain c = NeedChain.resolve("cobblestone", 8, runAaWorld(Map.of()));
         double hand = handPathS();
-        double saved = NeedChain.savedS(DIGS, DIGS * STONE_H, "minecraft:wooden_pickaxe");
+        double saved = NeedChain.savedS(Map.of("minecraft:stone", DIGS), "minecraft:wooden_pickaxe");
         // by hand 150 ticks a stone block (/100), the wooden pickaxe (speed 2, the right tool, /30) 23 ticks
         assertEquals(DIGS * (7.5 - 1.15), saved, 1e-6, "the game's break formula, by hand vs the wooden pickaxe");
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("= ([0-9.]+) s, by hand ([0-9.]+) s").matcher(c.why());
@@ -173,7 +173,7 @@ class Z69ToolsAndCurveTest {
         var iron = Z68ExploreWhereTest.where("minecraft:iron_ore", "minecraft:deepslate_iron_ore");
         // nearest first: a cave at y 64 (only the small uniform), one at y 16 (the middle's peak), one at y 40, one at y 75 (none)
         List<int[]> near = List.of(new int[]{3, 64, 3}, new int[]{5, 75, 5}, new int[]{8, 40, 8}, new int[]{9, 16, 9});
-        List<int[]> ranked = ExploreRules.byCurve(near, y -> iron.curve(y, true));
+        List<int[]> ranked = ExploreRules.byCurve(near, y -> iron.curve(y, true), new int[]{0, 30, 0}, 64);
         assertArrayEquals(new int[]{9, 16, 9}, ranked.get(0), "the densest Y first, though farther");
         assertArrayEquals(new int[]{8, 40, 8}, ranked.get(1));
         assertArrayEquals(new int[]{3, 64, 3}, ranked.get(2));
@@ -182,9 +182,109 @@ class Z69ToolsAndCurveTest {
         var j = new GenWhere.Placer("minecraft:ore_a", List.of("minecraft:a"), JsonParser.parseString(Z43StripWayTest.MIDDLE).getAsJsonObject().getAsJsonArray("placement"), 9, 0.9);
         var k = new GenWhere.Placer("minecraft:ore_b", List.of("minecraft:a"), JsonParser.parseString(Z43StripWayTest.SMALL).getAsJsonObject().getAsJsonArray("placement"), 9, 0);
         var two = GenWhere.of(List.of("minecraft:a"), List.of(j, k), -64, 320);
-        List<int[]> r2 = ExploreRules.byCurve(List.of(new int[]{0, 16, 0}, new int[]{0, 60, 0}), y -> two.curve(y, true));
+        List<int[]> r2 = ExploreRules.byCurve(List.of(new int[]{0, 16, 0}, new int[]{0, 60, 0}), y -> two.curve(y, true), new int[]{0, 38, 0}, 64);
         assertArrayEquals(new int[]{0, 16, 0}, r2.get(0), "the middle at 16 still beats the small alone at 60 after its 0.9 discard: "
                 + two.curve(16, true) + " vs " + two.curve(60, true));
         assertTrue(two.curve(16, true) < two.curve(16, false), "the discard lowers the cave density");
+    }
+
+    // ---- fix round (Opus Design + the Sonnet review) ----
+
+    /** Fix 1: one unreachable cobblestone spot holds that spot only; another spot of the same item is still used. */
+    @Test
+    void oneUnreachableSpotHoldsThatSpotOnly() {
+        ScenariosTest.world("wooden", "stone");
+        NeedChain.Spot far = new NeedChain.Spot(12, 60, 3, 12, "minecraft:stone", 40), near = new NeedChain.Spot(20, 60, 3, 20, "minecraft:stone", 40);
+        PathPrice walks = FakePaths.byDistance();
+        var w = ScenariosTest.w(Map.of("minecraft:wooden_pickaxe", 1), false, false, Map.of("cobblestone", List.of(far, near)))
+                .withPath((x, y, z, d) -> x == 12 ? PathPrice.Answer.unreachable("no path") : walks.price(x, y, z, d));
+        Chain first = NeedChain.resolve("cobblestone", 3, w);
+        String key = NeedChain.spotKey("minecraft:cobblestone", far);
+        assertEquals("collect cobblestone at 12 60 3", key);
+        assertTrue(first.unreachable().containsKey(key), "the spot's own key: " + first.unreachable());
+        assertFalse(first.unreachable().containsKey("collect cobblestone"), "never the whole item: " + first.unreachable());
+        Chain again = NeedChain.resolve("cobblestone", 3, w.withoutSources(first.unreachable()));
+        assertTrue(again.ok() && !again.explore(), "the other cobblestone spot is still a source: " + again.why());
+        assertTrue(again.why().contains("dig cobblestone seen 20 m"), again.why());
+        // a failed Collect step (the fork's mine takes any block of the item) still holds the item key: every spot out
+        Chain step = NeedChain.resolve("cobblestone", 3, w.withoutSources(Map.of("collect cobblestone", "the mine ended with none")));
+        assertTrue(step.explore(), step.why());
+    }
+
+    static final String ORE_BLACKSTONE = "{\"type\":\"minecraft:ore\",\"config\":{\"discard_chance_on_air_exposure\":0.0,\"size\":33,\"targets\":["
+            + "{\"state\":{\"Name\":\"minecraft:blackstone\"},\"target\":{\"predicate_type\":\"minecraft:tag_match\",\"tag\":\"minecraft:base_stone_nether\"}}]}}";
+    static final String BLACKSTONE_PLACED = "{\"feature\":\"minecraft:ore_blackstone\",\"placement\":[{\"type\":\"minecraft:count\",\"count\":2},{\"type\":\"minecraft:in_square\"},"
+            + "{\"type\":\"minecraft:height_range\",\"height\":{\"type\":\"minecraft:uniform\",\"max_inclusive\":{\"absolute\":31},\"min_inclusive\":{\"absolute\":5}}},{\"type\":\"minecraft:biome\"}]}";
+
+    static io.github.mojolowjo.entropybot.guard.WorldGenFiles.Ores twoDimensions() {
+        Map<String, String> f = new java.util.LinkedHashMap<>();
+        f.put("minecraft:worldgen/configured_feature/ore_iron.json", Z68ExploreWhereTest.ORE_IRON);
+        f.put("minecraft:worldgen/placed_feature/ore_iron_middle.json", Z68ExploreWhereTest.MIDDLE);
+        f.put("minecraft:worldgen/configured_feature/ore_blackstone.json", ORE_BLACKSTONE);
+        f.put("minecraft:worldgen/placed_feature/ore_blackstone.json", BLACKSTONE_PLACED);
+        f.put("minecraft:worldgen/biome/plains.json", "{\"features\":[[],[\"minecraft:ore_iron_middle\"]]}");
+        f.put("minecraft:worldgen/biome/basalt_deltas.json", "{\"features\":[[],[\"minecraft:ore_blackstone\"]]}");
+        List<io.github.mojolowjo.entropybot.guard.WorldGenFiles.Entry> es = new java.util.ArrayList<>();
+        for (var e : f.entrySet()) es.add(Z68ExploreWhereTest.entry(e.getKey(), e.getValue()));
+        return io.github.mojolowjo.entropybot.guard.WorldGenFiles.read(es).ores();
+    }
+
+    /** Fix 2: the overworld's biomes never give the stone materials the nether's blackstone band. */
+    @Test
+    void theOverworldsStoneSourcesGetNoNetherBand() {
+        var ores = twoDimensions();
+        List<String> stone = List.of("minecraft:cobblestone", "minecraft:blackstone", "minecraft:cobbled_deepslate", "minecraft:stone");
+        var over = io.github.mojolowjo.entropybot.guard.WorldGenFiles.features(ores, List.of("minecraft:plains"), b -> false, -64, 320, null);
+        assertNull(io.github.mojolowjo.entropybot.guard.WorldGenFiles.band(over, stone), "no overworld biome lists ore_blackstone: " + over.keySet());
+        assertArrayEquals(new int[]{-24, 56}, io.github.mojolowjo.entropybot.guard.WorldGenFiles.band(over, List.of("minecraft:iron_ore")));
+        var nether = io.github.mojolowjo.entropybot.guard.WorldGenFiles.features(ores, List.of("minecraft:basalt_deltas"), b -> false, 0, 256, null);
+        assertArrayEquals(new int[]{5, 31}, io.github.mojolowjo.entropybot.guard.WorldGenFiles.band(nether, stone), "in the nether it is the band");
+        var whereOver = GenWhere.of(stone, io.github.mojolowjo.entropybot.guard.WorldGenFiles.placersIn(ores, List.of("minecraft:plains"), b -> false), -64, 320);
+        assertNotEquals(GenWhere.Kind.BAND, whereOver.kind(), whereOver.text());
+        var whereNether = GenWhere.of(stone, io.github.mojolowjo.entropybot.guard.WorldGenFiles.placersIn(ores, List.of("minecraft:basalt_deltas"), b -> false), 0, 256);
+        assertEquals(GenWhere.Kind.BAND, whereNether.kind(), whereNether.text());
+    }
+
+    /** Fix 3: the peaks are said nearest the feet first. */
+    @Test
+    void thePeaksAreSaidFromTheFeet() {
+        var iron = Z68ExploreWhereTest.where("minecraft:iron_ore", "minecraft:deepslate_iron_ore");
+        String low = iron.withFeet(20).peakText(), high = iron.withFeet(200).peakText();
+        assertTrue(low.indexOf("y 16 (") < low.indexOf("y 232 ("), low);
+        assertTrue(high.indexOf("y 232 (") < high.indexOf("y 16 ("), high);
+    }
+
+    /** Review (a): an explore the chain was in before is not the pickaxe-first way's failure. */
+    @Test
+    void anEarlierStuckDoesNotBlockThePickaxeFirstWay() {
+        assertNull(NeedChain.pickFirstFails(null, true, true), "stuck before and after: the pickaxe itself stood");
+        assertNotNull(NeedChain.pickFirstFails(null, false, true), "the pickaxe started an explore: it does not stand");
+        assertNull(NeedChain.pickFirstFails(null, false, false));
+        assertEquals("walk: path not known yet (computing)", NeedChain.pickFirstFails("walk: path not known yet (computing)", true, true));
+    }
+
+    /** Review (b): a near cave at 90% of the peak beats a far one at the peak; a far one clearly denser still wins. */
+    @Test
+    void aNearCaveNearThePeakBeatsAFarOneAtThePeak() {
+        java.util.function.IntToDoubleFunction d = y -> y == 10 ? 0.9 : y == 20 ? 1.0 : y == 30 ? 3.0 : 0;
+        int[] me = {0, 15, 0};
+        List<int[]> r = ExploreRules.byCurve(List.of(new int[]{10, 10, 0}, new int[]{150, 20, 0}), d, me, 64);
+        assertEquals(10, r.get(0)[1], "near at 90% first");
+        List<int[]> r2 = ExploreRules.byCurve(List.of(new int[]{10, 10, 0}, new int[]{150, 30, 0}), d, me, 64);
+        assertEquals(30, r2.get(0)[1], "three times the density is worth the walk");
+    }
+
+    /** Review (d): each block kind breaks with its own harvest divisor (/30 right tool and tier, /100 otherwise). */
+    @Test
+    void theSavingUsesEachKindsHarvestDivisor() {
+        ScenariosTest.world("wooden", "stone");
+        String wood = "minecraft:wooden_pickaxe";
+        double stone = TickPrice.breakS(GameTimes.breakSeconds(1.5, 1, false)) - TickPrice.breakS(GameTimes.breakSeconds(1.5, 2, true));
+        double dirt = TickPrice.breakS(GameTimes.breakSeconds(0.5, 1, true)) - TickPrice.breakS(GameTimes.breakSeconds(0.5, 2, true));
+        double iron = TickPrice.breakS(GameTimes.breakSeconds(3, 1, false)) - TickPrice.breakS(GameTimes.breakSeconds(3, 2, false));
+        assertEquals(2 * stone, NeedChain.savedS(Map.of("minecraft:stone", 2), wood), 1e-9, "stone: tier 1, the wooden pickaxe harvests it");
+        assertEquals(2 * dirt, NeedChain.savedS(Map.of("minecraft:dirt", 2), wood), 1e-9, "no tool needed: /30 by hand too");
+        assertEquals(iron, NeedChain.savedS(Map.of("minecraft:iron_ore", 1), wood), 1e-9, "tier 2 over the wooden pickaxe: /100 both");
+        assertEquals(2 * stone + 2 * dirt + iron, NeedChain.savedS(Map.of("minecraft:stone", 2, "minecraft:dirt", 2, "minecraft:iron_ore", 1), wood), 1e-9);
     }
 }

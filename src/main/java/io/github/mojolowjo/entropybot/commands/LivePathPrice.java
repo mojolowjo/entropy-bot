@@ -313,8 +313,8 @@ public final class LivePathPrice implements PathPrice {
             landing = -1;                                // an older fork: read every time (said once by pricedAsk's install line)
         }
         double lava = lavaKept.lava(key, landing, PricedAnswers.cells(cells), () -> lavaCells(mc, cells));
-        double[] dug = pickBreaks(mc, a.path);
-        return Answer.priced(new Walk(TickPrice.walkS(a.ticks), TickPrice.walkS(lava), (int) dug[0], dug[1]));
+        var dug = pickBreaks(mc, a.path);
+        return Answer.priced(new Walk(TickPrice.walkS(a.ticks), TickPrice.walkS(lava), count(dug), dug));
     }
 
     /** structural: goal keys whose lava parts are kept (a chain asks a few dozen; past this they are read again) */
@@ -389,8 +389,8 @@ public final class LivePathPrice implements PathPrice {
     private static Answer answer(Minecraft mc, IPathCost.Answer a) {
         if (a == null) return Answer.none("the search gave no answer");
         if (!a.noPath && a.complete) {
-            double[] dug = pickBreaks(mc, a.path);
-            return Answer.priced(new Walk(TickPrice.walkS(a.ticks), TickPrice.walkS(lavaTicks(mc, a)), (int) dug[0], dug[1]));
+            var dug = pickBreaks(mc, a.path);
+            return Answer.priced(new Walk(TickPrice.walkS(a.ticks), TickPrice.walkS(lavaTicks(mc, a)), count(dug), dug));
         }
         if (!a.noPath) return Answer.none("budget: the search ran out before the goal (" + a + ")");
         if (IPathCost.Answer.UNREACHABLE.equals(a.reason)) return Answer.unreachable("no path: the complete search found none");
@@ -440,15 +440,15 @@ public final class LivePathPrice implements PathPrice {
     /**
      * 0.39.z62 item 2 (rule 14, rough): the blocks the walk breaks with a pickaxe - per path cell (the feet's cells) the feet
      * and head block, counted when the game tags it mineable with a pickaxe (BlockTags.MINEABLE_WITH_PICKAXE); the level now,
-     * when the answer lands. 0: no level, no cells, or an unloaded cell (not counted). 0.39.z69 item 1: with their summed
-     * hardness ({@code {count, hardness}}), what the chain prices the breaks by hand and with a pickaxe from. Loader notes:
-     * vanilla Level#getBlockState, BlockState#is(TagKey), BlockState#getDestroySpeed(BlockGetter, BlockPos).
+     * when the answer lands. 0: no level, no cells, or an unloaded cell (not counted). 0.39.z69 item 1 / review (d): by
+     * block kind (block id -> count), what the chain prices each kind's breaks by hand and with a pickaxe from (its
+     * hardness and harvest tier from the item data). Loader notes: vanilla Level#getBlockState, BlockState#is(TagKey),
+     * BuiltInRegistries.BLOCK#getKey.
      */
-    private static double[] pickBreaks(Minecraft mc, java.util.List<? extends BlockPos> path) {
-        if (mc.level == null || path == null || path.isEmpty()) return new double[]{0, 0};
+    private static java.util.Map<String, Integer> pickBreaks(Minecraft mc, java.util.List<? extends BlockPos> path) {
+        java.util.Map<String, Integer> out = new java.util.TreeMap<>();
+        if (mc.level == null || path == null || path.isEmpty()) return out;
         var lv = mc.level;
-        int n = 0;
-        double hard = 0;
         for (int i = 1; i < path.size(); i++) {          // the first cell is where the walk starts (nothing broken there)
             BlockPos p = path.get(i);
             for (int dy = 0; dy <= 1; dy++) {            // structural: the feet and the head cell
@@ -456,11 +456,17 @@ public final class LivePathPrice implements PathPrice {
                 if (!lv.isLoaded(q)) continue;
                 var st = lv.getBlockState(q);
                 if (!st.is(net.minecraft.tags.BlockTags.MINEABLE_WITH_PICKAXE)) continue;
-                n++;
-                hard += Math.max(0, st.getDestroySpeed(lv, q));
+                out.merge(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString(), 1, Integer::sum);
             }
         }
-        return new double[]{n, hard};
+        return out;
+    }
+
+    /** 0.39.z69: the count of a {@link #pickBreaks} map. */
+    private static int count(java.util.Map<String, Integer> dug) {
+        int n = 0;
+        for (int v : dug.values()) n += v;
+        return n;
     }
 
     /** 0.39.z57: each cell's lava ticks (LavaNear at the Tuning values, the level now); zeros when the level is gone (rule 7: the level is the one null). */
