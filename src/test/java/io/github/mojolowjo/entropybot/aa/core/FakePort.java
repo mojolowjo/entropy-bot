@@ -51,6 +51,11 @@ public final class FakePort implements JobPort {
 
     @Override public long progress(long taskId) { return progress.getOrDefault(taskId, 0L); }
 
+    /** 0.39.z70: the no-progress watch's answer (null: not an order's typed run, as before). */
+    public java.util.function.BiFunction<Long, String, NoProgress> onNoProgress;
+
+    @Override public NoProgress noProgress(long taskId, String text) { return onNoProgress == null ? NoProgress.NOT_MINE : onNoProgress.apply(taskId, text); }
+
     @Override public void log(String line) { log.add(line); }
 
     @Override public void incident(String what) { incidents.add(what); }

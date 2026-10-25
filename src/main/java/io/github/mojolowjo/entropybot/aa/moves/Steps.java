@@ -15,7 +15,10 @@ import java.util.List;
  * <p>0.39.z61 (design D1 J2): at every step start the reserves of the steps from here ({@link Reservations}, counted, from
  * the plan's own takes carried in {@link Routine#uses}) go to the hands' lease, and the dry run ({@link DryRun}) walks those
  * steps on the bag: a shortage re-plans the order before the step runs. Before a re-plan or a re-price the lease keeps only
- * the orders' reserves (release before repair, said in the re-plan line). Loader notes: none (the fork's
+ * the orders' reserves (release before repair, said in the re-plan line).
+ * <p>0.39.z70 (design D2 3.1, Job A): steps are compared by {@link StepId}, never by their text; a failure parks the run only
+ * when its {@link Attempt} equals the last failed one (the honest loop), and every switch logs its {@link PlanDiff}.
+ * Loader notes: none (the fork's
  * {@code baritone.api.process.Reserves} is plain Java).
  */
 public final class Steps {
@@ -68,6 +71,71 @@ public final class Steps {
          * follows the step (the probes' step pointers). Never changes what the step did.
          */
         default void ended(String how) {}
+
+        /**
+         * 0.39.z70 (design D2 3.1): the feet cell now ({x, y, z}), read when a step starts - the start cell of its
+         * {@link Attempt}; null: not known (these hands, or no player). Rule 15: an unknown cell is never "the same place".
+         */
+        default int[] feet() { return null; }
+
+        /** 0.39.z70: a decision line for the log (the re-plan's plan diff); these hands may drop it (tests). */
+        default void log(String line) {}
+    }
+
+    /**
+     * 0.39.z70 (design D2 3.1, Job A): one failed try of a step - its {@link StepId}, the key of the fact it failed on, the
+     * feet cell where it started and the bag counts of what it needs (its {@link StepNeeds} consumes, counted slots and tool
+     * tier, sorted; read when it failed). Two equal tries mean the planner would be asked the same question again: the run
+     * parks (honest loop). Rule 15: a null cell or bag is never "the same" ({@link #sameAs}).
+     */
+    public record Attempt(StepId id, String factKey, List<Integer> feet, java.util.SortedMap<String, Integer> needs) {
+        public Attempt {
+            feet = feet == null ? null : List.copyOf(feet);
+            needs = needs == null ? null : java.util.Collections.unmodifiableSortedMap(new java.util.TreeMap<>(needs));
+        }
+
+        /** "x y z" of the start cell, null: not known. */
+        public String startCell() {
+            if (feet == null) return null;
+            List<String> c = new java.util.ArrayList<>();
+            for (Integer i : feet) c.add(String.valueOf(i));
+            return String.join(" ", c);
+        }
+
+        /** "cobblestone 0, pickaxe tier 1" (sorted), "" when the step needs nothing, null: the bag was not readable. */
+        public String needsBag() {
+            if (needs == null) return null;
+            List<String> p = new java.util.ArrayList<>();
+            for (var e : needs.entrySet()) p.add(StepNeeds.sh(e.getKey()) + " " + e.getValue());
+            return String.join(", ", p);
+        }
+
+        /** The same step, the same fact, from the same cell, with the same needs in the bag; any unknown part: false. */
+        public boolean sameAs(Attempt o) {
+            return o != null && id != null && id.equals(o.id) && factKey != null && factKey.equals(o.factKey)
+                    && feet != null && feet.equals(o.feet) && needs != null && needs.equals(o.needs);
+        }
+    }
+
+    /** The key of the tool tier in {@link Attempt#needs} ("pickaxe tier"). */
+    static String tierKey(String kind) { return kind + " tier"; }
+
+    /**
+     * 0.39.z70 (pure): the bag counts of what {@code n} needs: each plain consume by its id, each counted slot (a tag, an
+     * "a|b" word) as the sum of its members, the tool kind's best tier. Null: no bag (rule 15).
+     */
+    public static java.util.SortedMap<String, Integer> needsBag(StepNeeds n, StepNeeds.Bag bag) {
+        if (bag == null) return null;
+        java.util.SortedMap<String, Integer> out = new java.util.TreeMap<>();
+        if (n == null) return out;
+        for (String id : n.consumes().keySet()) out.put(id, bag.count(id));
+        for (String w : n.tagUses().keySet()) {
+            int have = 0;
+            for (String m : io.github.mojolowjo.entropybot.aa.NeedChain.membersOf(w)) have += bag.count(StepNeeds.full(m));
+            out.put(w, have);
+        }
+        if (n.hasTool()) out.put(tierKey(n.toolKind()), bag.bestTier(n.toolKind()));
+        return out;
     }
 
     /** 0.39.z56 item 2a: tells the hands the step is over; a failure there is said in the run's words, never thrown. */
@@ -218,13 +286,45 @@ public final class Steps {
      */
     public interface Replanner {
         Routine replan(Step failed, FactChange.Fact fact, String why);
+
+        /**
+         * 0.39.z70 (D2 3.1): the order's re-plan count and dropped sources for the park line ("re-plans this order: 2;
+         * dropped: strip ..."); null: not known (the run's own count is said then).
+         */
+        default String orderState() { return null; }
+
+        /** 0.39.z70: the run switched to new steps ({@code reprice}: a re-price, else a failure re-plan); the order counts it. */
+        default void switched(PlanDiff d, boolean reprice) {}
+
+        /** 0.39.z70 (owner's ruling R1 = c): the run parks on an honest loop at {@code a}; the order keeps it for one more try. */
+        default void parked(Attempt a) {}
+
+        /**
+         * 0.39.z70: {@code planner}'s re-plan wrapped by {@code fn} (an adapter that charges the fact first), every other answer
+         * still {@code planner}'s own.
+         */
+        static Replanner around(Replanner planner, Replanner fn) {
+            return new Replanner() {
+                @Override public Routine replan(Step failed, FactChange.Fact fact, String why) { return fn.replan(failed, fact, why); }
+                @Override public String orderState() { return planner.orderState(); }
+                @Override public void switched(PlanDiff d, boolean reprice) { planner.switched(d, reprice); }
+                @Override public void parked(Attempt a) { planner.parked(a); }
+            };
+        }
     }
 
     private Replanner replanner;
-    /** The step text and reason of the failure the last re-plan answered (the same step failing again stops the run). */
-    private String replannedStep, replannedWhy;
-    /** 0.39.z67 item 1: the key of the fact the last re-plan answered (a place-near failed at another cell is another fact). */
-    private String replannedKey;
+    /**
+     * 0.39.z70 (D2 3.1, replaces z30's "the same step failed again" by the step's text): the last failed try the run
+     * re-planned, cleared when a later step ends DONE (progress was made); null: none.
+     */
+    private Attempt lastFailed;
+    /** 0.39.z70: the running step's start cell (Hands.feet at its start), null: not known. */
+    private int[] startFeet;
+    /** 0.39.z70: re-plans on a failure in this run, switches (re-plans and re-prices) in this run. */
+    private int replans, switches;
+    /** 0.39.z70: the source facts this run re-planned on (the park line when the order says nothing). */
+    private final java.util.LinkedHashSet<String> droppedHere = new java.util.LinkedHashSet<>();
 
 
     /**
@@ -280,9 +380,11 @@ public final class Steps {
         paused = false;
         expansions = 0;
         replanner = replan;
-        replannedStep = null;
-        replannedWhy = null;
-        replannedKey = null;
+        lastFailed = null;
+        startFeet = null;
+        replans = 0;
+        switches = 0;
+        droppedHere.clear();
         replanFact = null;
         needs = StepNeeds.NONE;
         if (this.steps.isEmpty()) {
@@ -319,6 +421,7 @@ public final class Steps {
         Step s = steps.get(idx);
         FactChange.clear();
         lookNeeds(s);
+        startFeet = feetNow();                   // 0.39.z70: the Attempt's start cell
         keepErr = null;
         // 0.39.z61 (D1 J2 3.4): the reserves of the steps from here, counted, to the lease; then the dry run of those steps on
         // the bag: a shortage is a bag fact that re-plans the order now, before the step runs (no order: said in the line)
@@ -476,7 +579,8 @@ public final class Steps {
             return false;
         }
         List<Step> left = steps.subList(idx, steps.size());
-        if (r == null || r.steps() == null || r.steps().isEmpty() || r.steps().equals(left)) {
+        // 0.39.z70 (D2 3.1, design 1.8): the same steps by identity (a record's array field compares by reference)
+        if (r == null || r.steps() == null || r.steps().isEmpty() || StepId.same(r.steps(), left)) {
             pushReserve(held);                   // the run goes on as planned: its table back
             if (r != null && r.steps() == null && r.why() != null && !running) why = stage() + ": " + r.why();
             return false;
@@ -485,8 +589,9 @@ public final class Steps {
         // explore while paths compute - ends only for a priced way (a new pick that waits on paths again runs on as it is)
         if (running && waitsOnPaths(r.steps())) { pushReserve(held); return false; }
         if (running) safeCancel("re-priced: " + f.text() + " - the pick changed");
+        String diff = planDiff(left, r.steps(), true);
         splice(idx, r.steps(), r.uses(), steps.size());
-        replanFact = "re-priced: " + f.text() + " - switched to " + r.steps().get(0).text() + " first" + (released.isEmpty() ? "" : "; " + released);
+        replanFact = "re-priced: " + f.text() + " - switched to " + r.steps().get(0).text() + " first" + (released.isEmpty() ? "" : "; " + released) + "; " + diff;
         idx--;
         next();
         return true;
@@ -531,8 +636,9 @@ public final class Steps {
 
     /**
      * 0.39.z30 (owner 2026-10-23): a step that failed on a changed fact (its hands say which, typed) asks the run's
-     * {@link Replanner} for the steps from here on the facts of now and goes on with them; no fact, no replanner, no way
-     * now or the same step failing again after a re-plan: the run ends FAILED with the reason (both reasons for a repeat).
+     * {@link Replanner} for the steps from here on the facts of now and goes on with them; no fact, no replanner or no way
+     * now: the run ends FAILED with the reason. 0.39.z70 (D2 3.1): a try equal to the last failed one ({@link Attempt}) parks
+     * the run with the honest-loop words instead.
      */
     private void failOrReplan(String reason) { failOrReplan(reason, null); }
 
@@ -571,8 +677,24 @@ public final class Steps {
         if (fact == null || replanner == null || idx < 0 || idx >= steps.size()) { fail(reason); return; }
         Step failed = steps.get(idx);
         String clean = reason.replaceFirst("^error: ", "");
-        if (sameAgain(failed, replannedStep, fact.key(), replannedKey)) {
-            fail("re-planned after \"" + replannedWhy + "\" and the same step failed again: " + clean);
+        // 0.39.z70 (D2 3.1, run M P1 / run N P3): park only when this try equals the last failed one - the same step, the same
+        // fact, from the same cell, with the same needs in the bag: the planner's inputs are the same, a re-plan would loop.
+        // Anything else re-plans (the order's caps bound it, Goals.replan). Rule 15: an unknown cell or bag is not "the same".
+        Attempt now = attempt(failed, fact.key());
+        if (now.sameAs(lastFailed)) {
+            String park = "the same way failed twice from the same place with the same bag: " + failed.text() + " - " + fact.text() + " (" + orderState() + ")";
+            try {
+                replanner.parked(now);
+            } catch (RuntimeException e) {
+                park = park + " (the order could not keep the park's facts: " + e + ")";
+            }
+            fail(park);
+            return;
+        }
+        // 0.39.z70: a run never re-plans more often than an order may (both caps), so a planner with no cap of its own cannot loop
+        int runCap = Tuning.i("replan.maxPerOrder") + Tuning.i("replan.maxSourceDrops");
+        if (replans >= runCap) {
+            fail(clean + " (not re-planned: " + replans + " re-plans in this run already, replan.maxPerOrder + replan.maxSourceDrops " + runCap + ")");
             return;
         }
         String released = release();             // 0.39.z61 (D1 3.4): the re-plan sees the bag without the failed chain's claims
@@ -586,26 +708,75 @@ public final class Steps {
             fail(reason + (r == null || r.why() == null ? "" : " (re-plan: " + r.why() + ")"));
             return;
         }
-        replannedStep = failed.text();
-        replannedWhy = clean;
-        replannedKey = fact.key();
-        replanFact = fact.text() + (released.isEmpty() ? "" : "; " + released.replace("the old chain", "the failed chain"));
+        lastFailed = now;
+        replans++;
+        if (fact.key().startsWith("source ")) droppedHere.add(fact.key().substring("source ".length()));
+        String diff = planDiff(steps.subList(idx, steps.size()), r.steps(), false);
+        replanFact = fact.text() + (released.isEmpty() ? "" : "; " + released.replace("the old chain", "the failed chain")) + "; " + diff;
         splice(idx, r.steps(), r.uses(), steps.size());
         idx--;
         next();
     }
 
     /**
-     * The step that failed is the one the last re-plan answered: the run ends with both reasons. 0.39.z67 item 1 (run Y
-     * 09:26:14): a place-near whose fact names another cell ({@link io.github.mojolowjo.entropybot.aa.NeedChain#placeKey}:
-     * placed near a cell with room after failing where the bot stood) is a new fact, re-planned again - bounded by the
-     * order's replan.maxSourceDrops and the cells with room held one by one. Pure.
+     * 0.39.z70 (D2 3.1): the try of {@code failed} on the fact keyed {@code key}: its identity, the cell it started from and
+     * the bag counts of its needs now (z67's place-near "failed at another cell" is a fact key of its own, so it is covered).
      */
-    public static boolean sameAgain(Step failed, String lastStep, String key, String lastKey) {
-        if (!failed.text().equals(lastStep)) return false;
-        if (failed instanceof Step.PlaceNear && key != null && key.startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.PLACE_AT)) return key.equals(lastKey);
-        return true;
+    private Attempt attempt(Step failed, String key) {
+        java.util.SortedMap<String, Integer> bag;
+        try {
+            bag = needsBag(needs, hands.bag());
+        } catch (RuntimeException e) {
+            bag = null;                          // rule 15: not readable is never "the same bag" (this try re-plans)
+            why = stage() + ": the bag could not be read for the try's facts: " + e;
+        }
+        List<Integer> feet = startFeet == null || startFeet.length != 3 ? null : List.of(startFeet[0], startFeet[1], startFeet[2]);   // structural: x y z
+        return new Attempt(StepId.of(failed), key, feet, bag);
     }
+
+    /** The feet from the hands now (null: not known; a failure to read them is not known either, said in the line). */
+    private int[] feetNow() {
+        try {
+            int[] f = hands.feet();
+            return f == null ? null : f.clone();
+        } catch (RuntimeException e) {
+            keepErr = "the feet could not be read: " + e;
+            return null;
+        }
+    }
+
+    /** The order's count and dropped sources for the park line; the run's own when the order says nothing. */
+    private String orderState() {
+        String s, err = "";
+        try {
+            s = replanner.orderState();
+        } catch (RuntimeException e) {
+            s = null;
+            err = " (the order's count could not be read: " + e + ")";
+        }
+        if (s != null) return s;
+        return "re-plans this run: " + replans + "; dropped: " + (droppedHere.isEmpty() ? "none" : String.join(", ", droppedHere)) + err;
+    }
+
+    /**
+     * 0.39.z70 (D2 3.1 stability): the switch's plan diff, logged through the hands and counted by the order; the words
+     * for the step's start line.
+     */
+    private String planDiff(List<Step> old, List<Step> neu, boolean reprice) {
+        PlanDiff d = PlanDiff.of(old, neu);
+        switches++;
+        String line = d.line(switches) + (reprice ? " (re-priced)" : "");
+        try {
+            hands.log(line);
+            replanner.switched(d, reprice);
+        } catch (RuntimeException e) {
+            line = line + " (not counted: " + e + ")";
+        }
+        return line;
+    }
+
+    /** 0.39.z70: the last failed try this run re-planned (aa why, tests), null: none since the last DONE. */
+    public Attempt lastFailed() { return lastFailed; }
 
     /**
      * 0.39.z65 item 1 (run V 07:15:22, rule 7): a failed {@link Step.Walk} with no fact of its own whose next step has a
@@ -666,6 +837,7 @@ public final class Steps {
         paused = false;
         if (phase != Phase.RUNNING) return;
         stepStart = now;
+        startFeet = feetNow();                   // 0.39.z70: the step starts again from here
         if (dryHold != null) return;             // 0.39.z62 item 3a: not started yet - the next tick looks again, then starts it
         String r;
         try {
@@ -705,6 +877,7 @@ public final class Steps {
             }
             case DONE -> {
                 ended("done");                   // 0.39.z56 item 2a
+                lastFailed = null;               // 0.39.z70 (D2 3.1): progress was made, the next failure is a new question
                 lastStatus = st.why();
                 next();
             }

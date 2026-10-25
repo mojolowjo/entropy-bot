@@ -855,8 +855,11 @@ public final class Brain extends Node {
         // <step>"): the order re-plans without it instead of parking (as z46's 180 s watch); needs keep their halt below
         if (cur.kind == Desire.Kind.OWNER && bb.task() != null) {
             long secs = (now - lastProgressAt) / 1000;  // structural: milliseconds per second
-            if (bb.port.noProgress(bb.taskId(), "stuck " + secs + " s")) {
-                bb.port.log("brain: " + cur.id + " stuck " + secs + " s" + (fast ? " (no move, no bag change)" : "") + " - re-planned on the step's source fact");
+            var np = bb.port.noProgress(bb.taskId(), "stuck " + secs + " s");
+            // 0.39.z70 (D2 3.1, run O P5): an ended typed run is not halted here either; its task reads the run's own end next
+            if (np != io.github.mojolowjo.entropybot.aa.core.JobPort.NoProgress.NOT_MINE) {
+                bb.port.log("brain: " + cur.id + " stuck " + secs + " s" + (fast ? " (no move, no bag change)" : "")
+                        + (np == io.github.mojolowjo.entropybot.aa.core.JobPort.NoProgress.REPLANNED ? " - re-planned on the step's source fact" : " - the typed run has ended; its own end is read next"));
                 sig = progressSig(bb);
                 moveSig = moveSigOf(bb);
                 lastProgressAt = now;

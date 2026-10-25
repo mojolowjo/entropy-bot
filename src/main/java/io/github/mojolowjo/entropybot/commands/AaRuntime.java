@@ -1178,6 +1178,9 @@ public final class AaRuntime implements JobPort {
             String k = r.picker().counters(now);
             if (k != null) b.append('\n').append(r.id.substring(6)).append(": ").append(k);
         }
+        // 0.39.z70 (D2 3.1): per order, how often its plan switched and how much each switch changed
+        if (bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.FACT) instanceof List<?>)
+            for (var g : io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb)) b.append('\n').append("order ").append(io.github.mojolowjo.entropybot.aa.brain.Goals.stabilityLine(g));
         return (red ? "!! a facts supplier failed in the last minute (see the log: aa: <RUNG> facts:)\n" : "") + io.github.mojolowjo.entropybot.aa.AaManual.of(bb).describe(now) + b
                 + "\n" + replanLog.text(replanOn()) + (runningOpt == null ? "" : "; running " + runningOpt.id() + (runningOpt.ret().leg() == io.github.mojolowjo.entropybot.aa.Replan.Leg.NONE ? "" : ", " + runningOpt.ret().text()));
     }
@@ -2157,11 +2160,12 @@ public final class AaRuntime implements JobPort {
         }
         var rp = taskReplan;
         // 0.39.z30: an order's step failing on a changed fact is charged in Failures under the order by the fact's key, then re-planned
-        io.github.mojolowjo.entropybot.aa.moves.Steps.Replanner replan = rp == null ? null : (failed, fact, why) -> {
+        // 0.39.z70: around() keeps the order's own answers (its count for the park line, the plan diffs, the park's facts)
+        io.github.mojolowjo.entropybot.aa.moves.Steps.Replanner replan = rp == null ? null : io.github.mojolowjo.entropybot.aa.moves.Steps.Replanner.around(rp.planner(), (failed, fact, why) -> {
             if (!fact.price()) tree.brain.failures.counted(rp.desire(), fact.key(), why);     // 0.39.z41: a new price is no failure
             factsNow();
             return rp.planner().replan(failed, fact, why);
-        };
+        });
         typedRun = true;                 // 0.39.z61: set before the start, so the first step's reserves see the running order
         String r = c.stepRun.start(key, steps, label, replan, uses);
         typedEndSeen = r != null;
@@ -2445,10 +2449,16 @@ public final class AaRuntime implements JobPort {
 
     @Override public long progress(long taskId) { return progress; }
 
-    /** 0.39.z46: the no-progress watch on an order's typed run: the running step's source fact, the order re-plans. */
-    @Override public boolean noProgress(long taskId, String text) {
-        if (taskId != current || !typedRun || taskReplan == null || !c.stepRun.steps.running()) return false;
-        return c.stepRun.steps.noProgress(text);
+    /**
+     * 0.39.z46: the no-progress watch on an order's typed run: the running step's source fact, the order re-plans. 0.39.z70
+     * (D2 3.1, run O P5): a typed run that has ended - before the watch, or in the watch's own re-plan - is ENDED, so the
+     * watch leaves the end to the next poll (its own reason, never "no progress").
+     */
+    @Override public NoProgress noProgress(long taskId, String text) {
+        if (taskId != current || !typedRun || taskReplan == null) return NoProgress.NOT_MINE;
+        if (!c.stepRun.steps.running()) return NoProgress.ENDED;
+        if (c.stepRun.steps.noProgress(text)) return NoProgress.REPLANNED;
+        return c.stepRun.steps.running() ? NoProgress.NOT_MINE : NoProgress.ENDED;     // still running: paused (the watch as before)
     }
 
     /**
@@ -3416,6 +3426,7 @@ public final class AaRuntime implements JobPort {
             LOG.info("[entropybot] aa: {}", msg);
             c.whisper(c.owner(), "aa: " + msg);
         }
+        io.github.mojolowjo.entropybot.aa.brain.Goals.retryLoopParks(bb);     // 0.39.z70 (R1 = c): said by Goals (log + whisper)
     }
 
     // ---- B7: schematic builds (2.12) ----

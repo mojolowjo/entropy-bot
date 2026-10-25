@@ -89,6 +89,15 @@ public final class StepHands implements Steps.Hands {
         StepProbe.end(how);
     }
 
+    /** 0.39.z70 (D2 3.1): the feet cell when a step starts (the Attempt's start cell); null: no player (rule 15). */
+    @Override public int[] feet() {
+        LocalPlayer p = Minecraft.getInstance().player;
+        return p == null ? null : Jobs.here(p);
+    }
+
+    /** 0.39.z70: the step machine's decision lines (the re-plan's plan diff) at info level. */
+    @Override public void log(String line) { LOG.info("[entropybot] steps: {}", line); }
+
     /**
      * 0.39.z34 (S39): the step's needs from its own data ({@link io.github.mojolowjo.entropybot.aa.moves.StepNeeds#of}); a
      * mine at one ore cell asks the tier of the block that is there now (the game's needs_*_tool tags).

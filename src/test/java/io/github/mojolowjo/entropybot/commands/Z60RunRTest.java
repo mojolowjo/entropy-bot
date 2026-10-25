@@ -224,12 +224,22 @@ class Z60RunRTest {
         }
         @Override public Car.Status status(Step s) { return Car.Status.done("ok: " + s.text()); }
         @Override public void cancel(String why) {}
+        @Override public int[] feet() { return new int[]{-568, 61, 709}; }    // 0.39.z70: the try's start cell (run R's spot)
+        @Override public io.github.mojolowjo.entropybot.aa.moves.StepNeeds.Bag bag() {
+            return new io.github.mojolowjo.entropybot.aa.moves.StepNeeds.Bag() {
+                @Override public int bestTier(String kind) { return 0; }
+                @Override public String bestTool(String kind) { return null; }
+                @Override public int usesLeft(String id) { return io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED; }
+                @Override public int count(String id) { return 1; }
+            };
+        }
     }
 
     /**
      * Run R 03:52:52 (-568 61 709, under ground after the cobblestone collect): "place crafting_table near me: no cell within 3
-     * blocks" stopped the iron order with no re-plan. Now the place fact re-plans it (the replanner is asked with that fact);
-     * the same step failing again after the re-plan ends the run with both reasons (named, never parked silently).
+     * blocks" stopped the iron order with no re-plan. Now the place fact re-plans it (the replanner is asked with that fact).
+     * 0.39.z70 (D2 3.1): the walk ending DONE between is progress, so the place failing after it is re-planned again; the
+     * same try again (the same place-near, fact, cell and bag, nothing done between) ends the run with the honest words.
      */
     @Test
     void runRsTableWithNoCellReplans() {
@@ -239,15 +249,16 @@ class Z60RunRTest {
         Step place = new Step.PlaceNear("minecraft:crafting_table");
         run.start("goal.iron_pickaxe", List.of(new Step.Craft("minecraft:crafting_table", 1), place), 0, (failed, fact, why) -> {
             facts.add(fact);
-            return new Steps.Routine(List.of(new Step.Walk(-560, 64, 712, 0), place), null);
+            return new Steps.Routine(facts.size() == 1 ? List.of(new Step.Walk(-560, 64, 712, 0), place) : List.of(place), null);
         });
         run.tick(1);                                       // the craft done -> the place refused at its start -> re-planned
         assertEquals(1, facts.size(), run.why());
         assertEquals("place minecraft:crafting_table", facts.get(0).key());
         assertEquals(Steps.Phase.RUNNING, run.phase(), run.why());
-        run.tick(2);                                       // the walk done -> the place fails again: ended with both reasons
+        run.tick(2);                                       // the walk done (progress) -> the place fails again: re-planned, then the same try at once
+        assertEquals(2, facts.size(), run.why());
         assertEquals(Steps.Phase.FAILED, run.phase());
-        assertTrue(run.why().contains("re-planned after"), run.why());
+        assertTrue(run.why().contains("the same way failed twice from the same place with the same bag: place minecraft:crafting_table near me"), run.why());
         assertTrue(run.why().contains("no cell within 3 blocks"), run.why());
     }
 

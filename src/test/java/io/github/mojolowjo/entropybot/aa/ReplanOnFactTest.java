@@ -135,18 +135,36 @@ class ReplanOnFactTest {
         assertTrue(run2.why().contains("(re-plan: "), run2.why());
     }
 
+    /**
+     * 0.39.z70 (D2 3.1): the same try again - the same step, the same station fact, from the same cell, the same bag - parks
+     * the run with the honest-loop words (z30's "the same step failed again" by text is gone).
+     */
     @Test
-    void theSameStepFailingAgainAfterARePlanStopsWithBothReasons() {
+    void theSameTryAgainAfterARePlanParksWithTheHonestWords() {
         Game g = new Game();
         g.table = null;
-        Steps run = new Steps(g);
+        Steps run = new Steps(new Steps.Hands() {
+            @Override public String start(Step s) { return g.start(s); }
+            @Override public Car.Status status(Step s) { return g.status(s); }
+            @Override public void cancel(String why) {}
+            @Override public int[] feet() { return new int[]{0, 64, 0}; }
+            @Override public io.github.mojolowjo.entropybot.aa.moves.StepNeeds.Bag bag() {
+                return new io.github.mojolowjo.entropybot.aa.moves.StepNeeds.Bag() {
+                    @Override public int bestTier(String kind) { return 0; }
+                    @Override public String bestTool(String kind) { return null; }
+                    @Override public int usesLeft(String id) { return io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED; }
+                    @Override public int count(String id) { return g.bag.getOrDefault(id, 0); }
+                };
+            }
+        });
         Step craft = new Step.Craft("minecraft:wooden_pickaxe", 1);
         int[] asked = {0};
         run.start("owner goal", List.of(craft), 0, (f, fact, why) -> { asked[0]++; return new Steps.Routine(List.of(craft), null); });
         for (int t = 1; t < 10 && run.running(); t++) run.tick(t);
         assertEquals(Steps.Phase.FAILED, run.phase());
         assertEquals(1, asked[0]);
-        assertTrue(run.why().contains("same step failed again"), run.why());
+        assertTrue(run.why().contains("the same way failed twice from the same place with the same bag: craft minecraft:wooden_pickaxe 1 - "), run.why());
+        assertTrue(run.why().contains("(re-plans this run: 1; dropped: none)"), run.why());
     }
 
     @Test

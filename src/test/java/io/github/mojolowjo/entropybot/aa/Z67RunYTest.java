@@ -96,36 +96,48 @@ class Z67RunYTest {
         assertEquals("place minecraft:crafting_table", FactChange.take().key(), "no position known: the plain fact");
     }
 
-    /** The place-near failing again at ANOTHER cell is a new fact: re-planned again, not ended; the same cell ends it. */
+    /**
+     * The place-near failing again at ANOTHER cell is a new fact: re-planned again, not ended; the same cell from the same
+     * feet with the same bag ends it. 0.39.z70 (D2 3.1): the fact key is part of the try ({@link Steps.Attempt}), so z67's
+     * place-near rule is the general rule now (sameAgain by text is gone).
+     */
     @Test
     void anotherCellIsANewFactTheSameCellEnds() {
         Step place = new Step.PlaceNear("crafting_table");
-        assertFalse(Steps.sameAgain(place, place.text(), "source place at 1 2 3", "source place at -701 62 -86"));
-        assertTrue(Steps.sameAgain(place, place.text(), "source place at 1 2 3", "source place at 1 2 3"));
-        assertTrue(Steps.sameAgain(place, place.text(), "place minecraft:crafting_table", "place minecraft:crafting_table"));
-        assertFalse(Steps.sameAgain(new Step.Craft("x", 1), place.text(), "k", "k"));
-
         List<int[]> at = new ArrayList<>(List.of(SEA, new int[]{-680, 64, -90}, new int[]{-680, 64, -90}));
         List<FactChange.Fact> facts = new ArrayList<>();
+        int[][] feet = {SEA.clone()};
         Steps run = new Steps(new Steps.Hands() {
             @Override public String start(Step s) {
                 if (s instanceof Step.PlaceNear p) {
                     FactChange.placeFailed(p.item(), "no cell within 3 blocks", at.remove(0));
                     return "error: no cell within 3 blocks";
                 }
+                if (s instanceof Step.Walk w) feet[0] = new int[]{w.x(), w.y(), w.z()};
                 return null;
             }
             @Override public Car.Status status(Step s) { return Car.Status.done("ok"); }
             @Override public void cancel(String why) {}
+            @Override public int[] feet() { return feet[0]; }
+            @Override public io.github.mojolowjo.entropybot.aa.moves.StepNeeds.Bag bag() {
+                return new io.github.mojolowjo.entropybot.aa.moves.StepNeeds.Bag() {
+                    @Override public int bestTier(String kind) { return 0; }
+                    @Override public String bestTool(String kind) { return null; }
+                    @Override public int usesLeft(String id) { return io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED; }
+                    @Override public int count(String id) { return BAG.getOrDefault(id, 0); }
+                };
+            }
         });
+        // the planner: first the walk to the shore and the place there; then the same place-near from the shore again
         run.start("goal.torch", List.of(place), 0, (failed, fact, why) -> {
             facts.add(fact);
-            return new Steps.Routine(List.of(new Step.Walk(-680, 64, -90, 1), place), null);
+            return new Steps.Routine(facts.size() == 1 ? List.of(new Step.Walk(-680, 64, -90, 1), place) : List.of(place), null);
         });
         for (int t = 1; t <= 20 && run.phase() != Steps.Phase.FAILED; t++) run.tick(t);
         assertEquals(2, facts.size(), "the second failure (at the shore cell) re-planned again: " + run.why());
-        assertEquals(Steps.Phase.FAILED, run.phase(), "the same cell again ends the run with both reasons: " + run.why());
-        assertTrue(run.why().contains("the same step failed again"), run.why());
+        assertEquals("source place at -680 64 -90", facts.get(1).key());
+        assertEquals(Steps.Phase.FAILED, run.phase(), "the same cell again ends the run: " + run.why());
+        assertTrue(run.why().contains("the same way failed twice from the same place with the same bag: place crafting_table near me - place crafting_table near me failed at -680 64 -90"), run.why());
     }
 
     /** RoomCells: solid ground only, one per place.failedNearM stretch, at most place.roomsKept, newest first. */

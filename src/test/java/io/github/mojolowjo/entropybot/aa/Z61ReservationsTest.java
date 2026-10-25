@@ -275,11 +275,16 @@ class Z61ReservationsTest {
         assertTrue(texts(h.last()).contains("#stone_crafting_materials 8 (craft furnace 1)"), texts(h.last()).toString());
     }
 
-    /** The same shortage after the re-plan stops the run with both reasons (the existing rule); no order behind the run: said, not re-planned. */
+    /**
+     * The same shortage after the re-plan, from the same cell with the same bag, parks the run (0.39.z70: the honest-loop
+     * words); no order behind the run: said, not re-planned.
+     */
     @Test
     void theSameShortageAgainStopsAndWithoutAnOrderItIsSaid() {
         stoneGame();
-        Hands h = new Hands();
+        Hands h = new Hands() {
+            @Override public int[] feet() { return new int[]{0, 64, 0}; }
+        };
         h.bag.putAll(Map.of(COBBLE, 9, STICK, 2));
         List<Step> first = List.of(new Step.Craft("stone_pickaxe", 1), new Step.Craft("furnace", 1));
         Steps run = new Steps(h);
@@ -287,7 +292,7 @@ class Z61ReservationsTest {
         run.tick(1);                             // 0.39.z62 item 3a: each shortage is looked at again a tick later
         run.tick(2);
         assertEquals(Steps.Phase.FAILED, run.phase());
-        assertTrue(run.why().contains("re-planned after \"step 2 (craft furnace 1) needs 8") && run.why().contains("the same step failed again"), run.why());
+        assertTrue(run.why().contains("the same way failed twice from the same place with the same bag: craft stone_pickaxe 1 - step 2 (craft furnace 1) needs 8"), run.why());
         assertEquals(List.of(), h.last(), "the run's end reserves nothing");
         Hands h2 = new Hands();
         h2.bag.putAll(Map.of(COBBLE, 9, STICK, 2));

@@ -5,7 +5,9 @@ import java.util.function.Function;
 /**
  * AA v0 (AA_PLAN 3): the leaf that owns one task. States and lines as the plan's table: start ok -> RUNNING; refused ->
  * FAILURE(refusal) (the Cooldown above keeps it from retrying every tick); chain ended "done..." -> SUCCESS; ended
- * otherwise -> FAILURE(end text); timeout -> cancel, FAILURE("timeout"); no progress -> cancel, FAILURE("no progress");
+ * otherwise -> FAILURE(end text); timeout -> cancel, FAILURE("timeout"); no progress -> cancel, FAILURE("no progress")
+ * (0.39.z70: an order's typed run re-plans instead, and a typed run that has ended is read at the next poll with its own
+ * reason);
  * halted (owner preempt, aa off) -> cancelled, no failure counted; paused by danger -> RUNNING, the clocks stop; GONE
  * (someone else removed it) -> FAILURE("removed by ...") and a {@code lost} count (a poster we forgot to gate).
  */
@@ -97,10 +99,18 @@ public final class RunJob extends Node {
         if (now - lastProgressAt > running.noProgressMs()) {
             long s = (now - lastProgressAt) / 1000;  // structural: milliseconds per second
             // 0.39.z46: an order's run re-plans on it (the step's target as the source fact) instead of parking
-            if (bb.port.noProgress(taskId, "no progress " + s + " s")) {
+            JobPort.NoProgress np = bb.port.noProgress(taskId, "no progress " + s + " s");
+            if (np == JobPort.NoProgress.REPLANNED) {
                 bb.port.log("no progress " + s + "s in " + running.kind() + ": re-planned on the step's source fact");
                 lastProgressAt = now;
                 lastProgress = bb.port.progress(taskId);
+                return Status.RUNNING;
+            }
+            // 0.39.z70 (D2 3.1, run O P5): the typed run already ended (or ended in the watch's re-plan): no cancel, no
+            // "no progress" end - the next poll reads the run's own end and its reason
+            if (np == JobPort.NoProgress.ENDED) {
+                bb.port.log("watch " + s + "s in " + running.kind() + ": the typed run has ended; its own end is read next");
+                lastProgressAt = now;
                 return Status.RUNNING;
             }
             bb.port.cancel(taskId, "no progress " + s + "s");

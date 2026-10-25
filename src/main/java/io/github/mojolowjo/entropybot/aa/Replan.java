@@ -221,17 +221,17 @@ public final class Replan {
         public boolean switches() { return to != null; }
     }
 
-    /** Steps shared at the start of both chains. */
-    public static int commonPrefix(List<String> a, List<String> b) {
+    /** Steps shared at the start of both chains (0.39.z70, D2 3.1: by {@link io.github.mojolowjo.entropybot.aa.moves.StepId}, never by text). */
+    public static <T> int commonPrefix(List<T> a, List<T> b) {
         int n = 0;
-        while (n < a.size() && n < b.size() && same(a.get(n), b.get(n))) n++;
+        while (n < a.size() && n < b.size() && java.util.Objects.equals(a.get(n), b.get(n))) n++;
         return n;
     }
 
     /** Steps shared at the end of both chains (not overlapping the prefix). */
-    public static int commonSuffix(List<String> a, List<String> b, int prefix) {
+    public static <T> int commonSuffix(List<T> a, List<T> b, int prefix) {
         int n = 0;
-        while (n < a.size() - prefix && n < b.size() - prefix && same(a.get(a.size() - 1 - n), b.get(b.size() - 1 - n))) n++;
+        while (n < a.size() - prefix && n < b.size() - prefix && java.util.Objects.equals(a.get(a.size() - 1 - n), b.get(b.size() - 1 - n))) n++;
         return n;
     }
 
@@ -272,18 +272,16 @@ public final class Replan {
         if (!(a <= c * (1 - cheaper()) && c - a >= minSave())) return new Decision(null, -1, c, a, scores + ": not 30% and 3 s cheaper");
         if (lastSwitchAt >= 0 && now - lastSwitchAt < lockMs()) return new Decision(null, -1, c, a, scores + ": locked " + (lockMs() - (now - lastSwitchAt) + 999) / 1000 + " s after a switch");  // structural: round up to whole seconds
         if (midDigOrPillar) return new Decision(null, -1, c, a, scores + ": mid dig-down or pillar");
-        List<String> rs = lines(running), as = lines(alt);
+        List<io.github.mojolowjo.entropybot.aa.moves.StepId> rs = ids(running), as = ids(alt);
         int p = commonPrefix(rs, as), s = commonSuffix(rs, as, p);
         if (stepIdx < p) return new Decision(null, -1, c, a, scores + ": the step that differs has not started");
         if (stepIdx >= rs.size() - s) return new Decision(null, -1, c, a, scores + ": past the part that differs");
         return new Decision(alt, p, c, a, scores);
     }
 
-    /** The option's step lines (compared step by step: where two options start to differ). */
-    static List<String> lines(Options.Option o) {
-        List<String> out = new java.util.ArrayList<>();
-        for (var s : o.steps()) out.add(s.text());
-        return out;
+    /** The option's step identities (compared step by step: where two options start to differ; 0.39.z70: never the text). */
+    static List<io.github.mojolowjo.entropybot.aa.moves.StepId> ids(Options.Option o) {
+        return io.github.mojolowjo.entropybot.aa.moves.StepId.of(o.steps());
     }
 
     /** True for a step that digs straight down (an ore step that digs) or walks up (a pillar walk 3+ above me). */

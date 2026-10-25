@@ -115,9 +115,15 @@ public interface JobPort {
     /**
      * 0.39.z46 (run G 23:40:12: "no progress 180s" parked the order): the no-progress watch fired on this task: its typed run,
      * when it has an order's re-plan, takes it as the running step's source fact ({@code text}: "no progress 180 s at ...")
-     * and re-plans. True: re-planned, the task goes on; false: no re-plan (the watch ends the task as before).
+     * and re-plans. 0.39.z70 (design D2 3.1, run O 22:14:51 P5: the re-planned run had already ended and the watch hid its
+     * end under "no progress"): {@link NoProgress#REPLANNED} the task goes on; {@link NoProgress#ENDED} the typed run has
+     * ended (before the watch or in its re-plan) - the watch neither cancels nor says "no progress", the next poll reads the
+     * run's own end and reason; {@link NoProgress#NOT_MINE} not an order's typed run (the watch ends the task as before).
      */
-    default boolean noProgress(long taskId, String text) { return false; }
+    default NoProgress noProgress(long taskId, String text) { return NoProgress.NOT_MINE; }
+
+    /** 0.39.z70: what the no-progress watch found ({@link #noProgress}). */
+    enum NoProgress { REPLANNED, ENDED, NOT_MINE }
 
     /** A line for the game log ("[entropybot] aa: ..."). */
     default void log(String line) {}

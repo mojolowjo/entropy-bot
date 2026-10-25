@@ -65,6 +65,138 @@ public final class Goals {
 
         /** 0.39.z65 item 2: the spare-tool line last said for this order (said again only when a taken chain's line differs). */
         public String sparesSaid;
+
+        /** 0.39.z70 (D2 3.1 stability): the order's plan switches (failure re-plans + re-prices), the re-prices among them, the steps they changed. */
+        public int switches, repriceSwitches, stepsChanged;
+
+        /** 0.39.z70 (R1 = c): the honest-loop try the run parked on, until {@link #park} keeps it as {@link #loopPark}. */
+        public io.github.mojolowjo.entropybot.aa.moves.Steps.Attempt loopAttempt;
+        /** 0.39.z70 (R1 = c): the facts the order parked on by the honest loop (null: another park, or none). */
+        public LoopPark loopPark;
+        /** 0.39.z70 (R1 = c): the one more try was taken (once per order; aa want again makes a new order). */
+        public boolean loopRetried;
+    }
+
+    /**
+     * 0.39.z70 (owner's ruling R1 = c on D2): what an order parked by the honest loop parked on - the try ({@code at}), the
+     * bag counts of its needs then ({@code counts}, as {@link #needCounts} reads the sensed bag), and the cells of the known
+     * sources of the order's item and the step's needs ({@code sources}; null: not known then, rule 15).
+     */
+    public record LoopPark(io.github.mojolowjo.entropybot.aa.moves.Steps.Attempt at, Map<String, Integer> counts, java.util.Set<String> sources) {
+        public LoopPark {
+            counts = Map.copyOf(counts);
+            sources = sources == null ? null : java.util.Set.copyOf(sources);
+        }
+    }
+
+    /**
+     * 0.39.z70 (R1 = c; pure): what changed since the honest-loop park, the words for the chat; null: nothing (it stays
+     * parked). A need's count in the bag rose; the bot stands {@code failures.moved} blocks from the cell the try started
+     * at; a source cell not known at the park. Rule 15: an unknown part (no feet, no sources) is no change.
+     */
+    public static String loopChange(LoopPark p, Map<String, Integer> countsNow, int[] feetNow, java.util.Set<String> sourcesNow) {
+        if (p == null) return null;
+        for (var e : new java.util.TreeMap<>(p.counts()).entrySet()) {
+            Integer now = countsNow == null ? null : countsNow.get(e.getKey());
+            if (now != null && now > e.getValue()) return e.getKey().replaceAll("(^|[|#])minecraft:", "$1") + " in the bag rose from " + e.getValue() + " to " + now;
+        }
+        List<Integer> f = p.at() == null ? null : p.at().feet();
+        if (f != null && f.size() == 3 && feetNow != null && feetNow.length == 3) {      // structural: x y z
+            double d = Failures.moved(feetNow, new int[]{f.get(0), f.get(1), f.get(2)});
+            if (d >= Failures.movedV()) return "moved " + Math.round(d) + " blocks from where it parked (" + p.at().startCell() + ", failures.moved " + Math.round(Failures.movedV()) + ")";
+        }
+        if (p.sources() != null && sourcesNow != null)
+            for (String s : new java.util.TreeSet<>(sourcesNow)) if (!p.sources().contains(s)) return "a new source seen: " + s;
+        return null;
+    }
+
+    /**
+     * 0.39.z70 (R1 = c): the bag counts of an Attempt's need keys from the sensed bag (path -> count): a plain id by its
+     * path, a counted slot (a tag, an "a|b" word) as its members summed, a tool tier ("pickaxe tier") as the bag's pickaxe
+     * tier. Pure.
+     */
+    public static Map<String, Integer> needCounts(java.util.Collection<String> keys, Map<String, Integer> bag, int pickTier) {
+        Map<String, Integer> out = new java.util.LinkedHashMap<>();
+        if (keys == null || bag == null) return out;
+        for (String k : keys) {
+            if (k.endsWith(" tier")) { out.put(k, pickTier); continue; }
+            if (io.github.mojolowjo.entropybot.aa.NeedChain.plain(k)) { out.put(k, bag.getOrDefault(Thing.path(k), 0)); continue; }
+            int have = 0;
+            for (String m : io.github.mojolowjo.entropybot.aa.NeedChain.membersOf(k)) have += bag.getOrDefault(Thing.path(m), 0);
+            out.put(k, have);
+        }
+        return out;
+    }
+
+    /** 0.39.z70 (R1 = c): the cells of the known sources of the order's item and the try's plain needs; null: no world facts. */
+    static java.util.Set<String> sourceCells(Blackboard bb, Goal g, io.github.mojolowjo.entropybot.aa.moves.Steps.Attempt a) {
+        var w = world(bb);
+        if (w == null) return null;
+        java.util.Set<String> items = new java.util.TreeSet<>(g.r.ids().isEmpty() ? List.of(g.r.key()) : g.r.ids());
+        if (a != null && a.needs() != null)
+            for (String k : a.needs().keySet()) if (!k.endsWith(" tier") && io.github.mojolowjo.entropybot.aa.NeedChain.plain(k)) items.add(k);
+        java.util.Set<String> out = new java.util.TreeSet<>();
+        for (String id : items)
+            for (var s : w.seenAll().apply(id)) out.add(Thing.path(id) + " at " + s.x() + " " + s.y() + " " + s.z());
+        return out;
+    }
+
+    /**
+     * 0.39.z70 (R1 = c): every order parked by the honest loop whose parked-on facts changed tries once more - it is unparked
+     * (once per order), said in the log and the whisper. Called with the goals' done check. The lines said.
+     */
+    public static List<String> retryLoopParks(Blackboard bb) {
+        List<String> out = new ArrayList<>();
+        if (!(bb.fact(FACT) instanceof List<?>)) return out;
+        for (Goal g : of(bb)) {
+            if (g.parked == null || g.loopPark == null || g.loopRetried) continue;
+            int[] pos = bb.in == null ? null : bb.in.pos;
+            Map<String, Integer> bag = bb.in == null ? null : bb.in.bag;
+            String change = loopChange(g.loopPark, needCounts(g.loopPark.counts().keySet(), bag, bb.in == null ? 0 : bb.in.pickTier), pos, sourceCells(bb, g, g.loopPark.at()));
+            if (change == null) continue;
+            String line = "order " + g.r.key() + " tries once more: " + change + " (it parked on: " + g.parked + ")";
+            g.parked = null;
+            g.loopRetried = true;
+            g.loopPark = null;
+            bb.port.log(line);
+            bb.port.tellOwner(line);
+            out.add(line);
+        }
+        return out;
+    }
+
+    /**
+     * 0.39.z70: the order's re-planner for its run - {@link #replan}, its count and dropped sources for the park line, the
+     * plan diffs counted for aa status, and the honest-loop park's try kept for R1.
+     */
+    public static io.github.mojolowjo.entropybot.aa.moves.Steps.Replanner replanner(Blackboard bb, Goal g) {
+        return new io.github.mojolowjo.entropybot.aa.moves.Steps.Replanner() {
+            @Override public io.github.mojolowjo.entropybot.aa.moves.Steps.Routine replan(Step failed, io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact, String why) {
+                return Goals.replan(bb, g, failed, fact, why);
+            }
+
+            @Override public String orderState() { return Goals.orderState(g); }
+
+            @Override public void switched(io.github.mojolowjo.entropybot.aa.moves.PlanDiff d, boolean reprice) {
+                g.switches++;
+                if (reprice) g.repriceSwitches++;
+                g.stepsChanged += d.changed();
+            }
+
+            @Override public void parked(io.github.mojolowjo.entropybot.aa.moves.Steps.Attempt a) { g.loopAttempt = a; }
+        };
+    }
+
+    /** 0.39.z70: "re-plans this order: 2; dropped: strip ..., tree at 1 2 3" (the honest-loop park line). Pure. */
+    public static String orderState(Goal g) {
+        var d = droppedSources(g).keySet();
+        return "re-plans this order: " + (g.replans + g.sourceReplans) + "; dropped: " + (d.isEmpty() ? "none" : String.join(", ", d));
+    }
+
+    /** 0.39.z70 (D2 3.1, aa status): "iron_pickaxe: re-plans 3 (1 re-priced), steps changed per re-plan 2.3". Pure. */
+    public static String stabilityLine(Goal g) {
+        double per = g.switches == 0 ? 0 : (double) g.stepsChanged / g.switches;
+        return g.r.key() + ": re-plans " + g.switches + " (" + g.repriceSwitches + " re-priced), steps changed per re-plan " + String.format(Locale.ROOT, "%.1f", per);
     }
 
     /** 0.39.z33: a dropped source is held for the order's life (a new aa want makes a new goal). */
@@ -273,7 +405,15 @@ public final class Goals {
     public static boolean park(Blackboard bb, Goal g, String why) {
         if (g.parked != null) return false;
         g.parked = why == null || why.isBlank() ? "no reason given" : why;
-        String line = "order " + g.r.key() + " stopped: " + g.parked + " (aa want " + g.r.word().trim() + " to try again, aa drop " + g.r.key() + " to clear it)";
+        // 0.39.z70 (R1 = c): the run parked on an honest loop: its facts are kept, one more try comes when one of them changes
+        var a = g.loopAttempt;
+        g.loopAttempt = null;
+        String again = "";
+        if (a != null && !g.loopRetried) {
+            g.loopPark = new LoopPark(a, needCounts(a.needs() == null ? List.of() : a.needs().keySet(), bb.in == null ? null : bb.in.bag, bb.in == null ? 0 : bb.in.pickTier), sourceCells(bb, g, a));
+            again = "; it tries once more by itself when a need in the bag rises, it moves " + Math.round(Failures.movedV()) + " blocks or a new source is seen";
+        }
+        String line = "order " + g.r.key() + " stopped: " + g.parked + " (aa want " + g.r.word().trim() + " to try again, aa drop " + g.r.key() + " to clear it" + again + ")";
         bb.port.log(line);
         bb.port.tellOwner(line);
         return true;

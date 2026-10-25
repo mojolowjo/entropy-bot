@@ -473,7 +473,7 @@ public final class AaDesires {
             }
             // 0.39.z30: a step that fails on a changed fact re-plans the order through the same chain call
             return JobPort.TaskSpec.steps(TaskKind.EXPLORE, s, "owner goal").withUses(rt.uses())     // 0.39.z61: the chain's counts
-                    .withReplan(new JobPort.TaskSpec.Replan(id, (failed, fact, why) -> io.github.mojolowjo.entropybot.aa.brain.Goals.replan(bb, g, failed, fact, why)));
+                    .withReplan(new JobPort.TaskSpec.Replan(id, io.github.mojolowjo.entropybot.aa.brain.Goals.replanner(bb, g)));     // 0.39.z70: the order's own answers too
         });
         Node node = AaTree.idleCd(id + ".cd", job);
         return new Desire(id, Desire.Kind.OWNER, node, bb -> io.github.mojolowjo.entropybot.aa.brain.Goals.score(bb, g))
