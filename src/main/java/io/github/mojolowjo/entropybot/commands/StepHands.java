@@ -8,6 +8,7 @@ import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.aa.moves.StepWait;
 import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 import io.github.mojolowjo.entropybot.aa.moves.Car;
+import io.github.mojolowjo.entropybot.aa.moves.FirstAnswerWait;
 import io.github.mojolowjo.entropybot.aa.moves.Step;
 import io.github.mojolowjo.entropybot.aa.moves.Steps;
 import io.github.mojolowjo.entropybot.gui.Gui;
@@ -170,6 +171,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.Deposit d when d.order() != null -> depositLeg(p, d);           // the strip order's deposit leg (DepositLeg)
                 case Step.StripBack k -> stripBack(p, k);
                 case Step.Deposit d -> depositLeg(p, d);                                  // DepositLeg (the order's leg, or a plain deposit)
+                case Step.Explore k when k.whilePaths() && k.waitS() > 0 -> exploreFirstWait(k);   // 0.39.z58: wait in place first
                 default -> direct(s);   // the item actions and the mine steps: the method, its own job
             };
         } catch (RuntimeException e) {
@@ -214,6 +216,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.ToBand t -> toBandStatus(p, t);
                 case Step.ToStrip t -> toStripStatus(p, t);
                 case Step.Climb k -> climbStatus();
+                case Step.Explore k when firstWaitStart >= 0 -> firstWaitStatus(k);
                 default -> requestStatus();
             };
         } catch (RuntimeException e) {
@@ -290,6 +293,44 @@ public final class StepHands implements Steps.Hands {
         climbing = false;
         climbEnd = null;
         dataWait.reset();
+        firstWaitStart = -1;
+    }
+
+    // ---- 0.39.z58: the explore while paths compute first waits in place while first answers compute ----
+
+    /** When the first-answer wait started (ms), -1: not waiting. */
+    private long firstWaitStart = -1;
+
+    /**
+     * 0.39.z58 (Opus Design ruling on run Q 02:29:32: rule 18 stays exact; the explore moved the bot off every crafting
+     * walk's first answer): while first answers are computing or queued in the fork, the step waits in place (Baritone idle,
+     * no walk) up to its waitS, so they land from this cell; each landing re-prices the order (Steps: a priced way ends the
+     * step). None pending / the wait over -> the explore as before (FirstAnswerWait).
+     */
+    private String exploreFirstWait(Step.Explore k) {
+        FirstAnswerWait.Decision d = FirstAnswerWait.of(0, k.waitS(), LivePathPrice.INSTANCE.firstAnswersPending(), false);
+        LOG.info("[entropybot] steps: {}: {}", k.text(), d.why());
+        if (d.next() == FirstAnswerWait.Next.EXPLORE) return direct(k);
+        IBaritone b = Jobs.baritone();
+        if (b != null) Jobs.cancel(b);                   // Baritone idle: the first answers are priced from the cell it stands on
+        firstWaitStart = System.currentTimeMillis();
+        firstWaitLanded = LivePathPrice.INSTANCE.landed();
+        return null;
+    }
+
+    /** The landed count at the last look of the wait (an answer since: its re-price may still be on its way). */
+    private long firstWaitLanded;
+
+    private Car.Status firstWaitStatus(Step.Explore k) {
+        long landed = LivePathPrice.INSTANCE.landed();
+        boolean since = landed != firstWaitLanded;
+        firstWaitLanded = landed;
+        FirstAnswerWait.Decision d = FirstAnswerWait.of(System.currentTimeMillis() - firstWaitStart, k.waitS(), LivePathPrice.INSTANCE.firstAnswersPending(), since);
+        if (d.next() == FirstAnswerWait.Next.WAIT) return Car.Status.running(k.text() + ": " + d.why());
+        firstWaitStart = -1;
+        LOG.info("[entropybot] steps: {}: {}", k.text(), d.why());
+        String r = direct(k);
+        return r != null ? Car.Status.failed(r) : requestStatus();
     }
 
     /** one-planner: the chain for an Obtain step, on the facts as it starts (AaRuntime.obtainSteps: NeedChain). */

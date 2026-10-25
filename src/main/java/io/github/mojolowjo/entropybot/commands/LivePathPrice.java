@@ -203,6 +203,22 @@ public final class LivePathPrice implements PathPrice {
         }
     }
 
+    /**
+     * 0.39.z58 (Opus Design ruling): first answers (walks not answered yet in this order) running or queued in the fork; -1
+     * when not known (the priced path off, no Baritone, an older fork: said once). Game thread.
+     */
+    public int firstAnswersPending() {
+        if (!PathPrice.pricedPathOn()) return -1;
+        IBaritone b = Jobs.baritone();
+        if (b == null) return -1;
+        try {
+            return b.getPricedPath().firstAnswersPending();
+        } catch (LinkageError e) {
+            none("this Baritone has no IPricedPath.firstAnswersPending (an older fork? install the entropy fork z58): " + e);
+            return -1;
+        }
+    }
+
     /** 0.39.z58: landings of searches the fork's queue started itself (no future of ours lands for them); 0 from an older fork. */
     private static long queueLandings() {
         if (!PathPrice.pricedPathOn()) return 0;

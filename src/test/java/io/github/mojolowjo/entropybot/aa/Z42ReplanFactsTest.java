@@ -41,7 +41,7 @@ class Z42ReplanFactsTest {
         Chain c = logs(fake, a, b);
         assertTrue(c.ok() && c.explore(), c.why());
         assertFalse(c.waiting(), c.why());
-        assertTrue(c.why().contains("paths computing: 2 ways waiting; exploring meanwhile"), c.why());
+        assertTrue(c.why().contains("paths computing: 2 ways waiting; first waiting up to 4 s in place while first answers compute, then exploring meanwhile"), c.why());
         Step.Explore ex = (Step.Explore) c.steps().stream().filter(s -> s instanceof Step.Explore).findFirst().orElseThrow();
         assertTrue(ex.whilePaths(), ex.text());
         assertNull(ex.until(), "the sources are known: the explore ends on a landed path, not on a source");

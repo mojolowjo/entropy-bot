@@ -912,6 +912,7 @@ pathCost.maxKeepS	300.0
 pathCost.reserveForRunning	1.0
 pathCost.researchMinS	3.0
 pathCost.queueKeepS	30.0
+pathCost.firstAnswerWaitS	4.0
 price.walkX	1.0
 price.breakX	1.0
 price.placeX	1.0

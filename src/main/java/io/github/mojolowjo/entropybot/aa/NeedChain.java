@@ -2085,13 +2085,23 @@ public final class NeedChain {
         int n = c.pathsWaiting;
         c.fail = null;
         c.pathsWaiting = 0;
-        c.steps.add(new Step.Explore(exploreMinutes(), null, true));
+        // 0.39.z58 (Opus Design ruling on run Q 02:29:32: rule 18 stays exact, so a walk priced from a cell the bot has left
+        // is never known; the explore moved the bot off every first answer and "collect 4 torch" won): the step first waits in
+        // place up to pathCost.firstAnswerWaitS while first answers compute (the hands skip it when none does), then explores.
+        // The wait is the step's own time (rule 3: a wait is a way with its seconds)
+        int waitS = firstAnswerWaitS();
+        c.seconds += waitS;
+        c.steps.add(new Step.Explore(exploreMinutes(), null, true, waitS));
         c.stuck = true;
         if (c.unknown == null) c.unknown = word;
-        String out = "explore (" + PATHS_COMPUTING + n + " way" + (n == 1 ? "" : "s") + " waiting; exploring meanwhile)";
+        String out = "explore (" + PATHS_COMPUTING + n + " way" + (n == 1 ? "" : "s") + " waiting; first waiting up to " + waitS
+                + " s in place while first answers compute, then exploring meanwhile)";
         if (c.trace != null) c.trace.note("ways of " + shw(word) + ": " + out);
         return out;
     }
+
+    /** 0.39.z58: seconds the explore while paths compute first waits in place while first answers compute (Tuning). */
+    public static int firstAnswerWaitS() { return (int) Math.ceil(Tuning.get("pathCost.firstAnswerWaitS")); }
 
     /** 0.39.z42: the words of {@link #pathsExplore}. */
     static final String PATHS_COMPUTING = "paths computing: ";

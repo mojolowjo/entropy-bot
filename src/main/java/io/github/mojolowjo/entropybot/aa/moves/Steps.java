@@ -464,6 +464,9 @@ public final class Steps {
         now = tick;
         if (phase != Phase.RUNNING || paused) return phase;
         Step s = steps.get(idx);
+        // 0.39.z58 (the first-answer wait): a landed answer re-prices the explore while paths compute BEFORE its status is read,
+        // so a priced way ends it where it stands instead of its explore starting first and being cancelled a tick later
+        if (priceAsk != null && s instanceof Step.Explore ex0 && ex0.whilePaths() && reprice(true)) return phase;
         Car.Status st;
         try {
             st = hands.status(s);
@@ -482,7 +485,6 @@ public final class Steps {
                 next();
             }
             default -> {
-                if (priceAsk != null && s instanceof Step.Explore ex && ex.whilePaths() && reprice(true)) return phase;
                 // 0.39.z34 (S39): a tool step's bag look every job.bagCheckTicks: the tool gone ends the step at once with the fact
                 String lack = needs.hasTool() && now - lastBagLook >= bagCheckTicks() ? toolLackAt(s) : null;
                 if (lack != null) {
