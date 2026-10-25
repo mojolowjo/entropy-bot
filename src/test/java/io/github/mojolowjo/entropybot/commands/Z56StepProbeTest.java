@@ -81,7 +81,7 @@ class Z56StepProbeTest {
         assertTrue(l.contains("path -27 62 -55 -> -33 70 -55 at 0/40"), l);
         assertTrue(l.contains("calc none"), l);
         assertTrue(l.contains("last path event CALC_FINISHED_NOW_EXECUTING 75 ticks ago"), l);
-        assertTrue(l.contains("needs in bag cobblestone 8/8 | keep list 31 | throwaway in bag dirt 8"), l);
+        assertTrue(l.contains("needs in bag cobblestone 8/8 | reserves 31 | spare throwaway in bag dirt 8"), l);
         String idle = new ProbeLines.StepStill(1, null, "craft", "c", 0, "-", ph, false, null, null, -1, 0, true, null, 0, "-", "none", 0, "none").line();
         assertTrue(idle.contains("path none executing | calc in progress | last path event none this step"), idle);
     }

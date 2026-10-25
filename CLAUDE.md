@@ -12,7 +12,7 @@ Design docs live there under `docs/`; this file links them by relative path. Thi
 
 ## Build and run
 - JDK 21: `$env:JAVA_HOME="C:\Program Files\Java\jdk-21"`, then `.\gradlew.bat test build --offline` (about 2 min,
-  2153 JUnit tests, jar in `build/libs/entropybot-<mod_version>.jar`). `mod_version` is in `gradle.properties`.
+  2219 JUnit tests, jar in `build/libs/entropybot-<mod_version>.jar`). `mod_version` is in `gradle.properties`.
 - Gradle fetches the stock Baritone jar into `libs/` and checks its sha1; when the fork jar
   `baritone-unoptimized-neoforge-1.11.3-entropy.jar` is beside it, the mod compiles against the fork.
 - `.\gradlew.bat runClient` starts a dev client with Baritone. Test games are launched from the operator repo:

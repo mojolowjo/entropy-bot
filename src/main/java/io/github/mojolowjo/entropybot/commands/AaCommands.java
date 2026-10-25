@@ -93,13 +93,13 @@ final class AaCommands {
                 f("caves", "cave yes|no|hill|cliff", "label the spot under the crosshair (or where I stand): a cave, not one, a hill, a cliff"),
                 f("caves", "cave list", "the labelled cave patterns and the cave rule derived from them"));
         // ---- status
-        v("status", (c, aa, vb, a) -> aa.statusLine() + StripStep.liveLine() + aa.tuningLine() + "\n" + io.github.mojolowjo.entropybot.aa.MainStations.now().line() + "\n" + aa.counts() + "\n" + aa.cavesLine() + "\n" + aa.lootLine() + "\n" + aa.gameDataLine() + (aa.on() ? "\n" + aa.brainCounters() + "\ndesires: " + String.join(" | ", aa.brainLines(5)) + "\n" + aa.goalsLine() + "\n" + aa.wantsLine() + "\nrungs: " + aa.ladderLine() + "\n" + aa.optionStatus() : ""),
+        v("status", (c, aa, vb, a) -> aa.statusLine() + StripStep.liveLine() + aa.tuningLine() + "\n" + aa.reserveLine() + "\n" + io.github.mojolowjo.entropybot.aa.MainStations.now().line() + "\n" + aa.counts() + "\n" + aa.cavesLine() + "\n" + aa.lootLine() + "\n" + aa.gameDataLine() + (aa.on() ? "\n" + aa.brainCounters() + "\ndesires: " + String.join(" | ", aa.brainLines(5)) + "\n" + aa.goalsLine() + "\n" + aa.wantsLine() + "\nrungs: " + aa.ladderLine() + "\n" + aa.optionStatus() : ""),
                 f(S, "status", "who drives, the counters, the desires, goals and wants, each rung's reason"));
         v("why", (c, aa, vb, a) -> {
             List<String> d = aa.decisions();
             // STRUCTURE_BLOCKS: the station lookups this why reports, each with its own notes (skipped, priced); a way's
             // structure refusal is in that way's own option line (no global last state, 0.39.z26 fix 11)
-            String refusals = "\n" + c.nearby.stationsLine(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT) + "\n" + c.nearby.stationsLine(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT);
+            String refusals = "\n" + aa.reserveLine() + "\n" + c.nearby.stationsLine(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT) + "\n" + c.nearby.stationsLine(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT);
             String opts = aa.on() ? "\ndesires (top 5):\n" + String.join("\n", aa.brainLines(5)) + "\n" + aa.wantsLine() + "\n" + aa.ideasLine() + "\n" + String.join("\n", aa.optionLines()) : "";
             if (d.isEmpty()) return "aa why: no decisions yet" + (aa.on() ? " (rungs: " + aa.ladderLine() + ")" + opts : " (aa is off)") + StripStep.liveLine() + refusals;
             List<String> last = d.subList(Math.max(0, d.size() - 10), d.size());

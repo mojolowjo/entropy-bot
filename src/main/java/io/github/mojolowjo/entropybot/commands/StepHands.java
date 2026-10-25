@@ -100,14 +100,22 @@ public final class StepHands implements Steps.Hands {
             if (!p.level().isLoaded(q)) return io.github.mojolowjo.entropybot.aa.moves.StepNeeds.NONE;   // its start says "not loaded"
             return io.github.mojolowjo.entropybot.aa.moves.StepNeeds.forBlocks(List.of(BuiltInRegistries.BLOCK.getKey(p.level().getBlockState(q).getBlock()).toString()));
         }
-        return io.github.mojolowjo.entropybot.aa.moves.StepNeeds.of(s);
+        return io.github.mojolowjo.entropybot.aa.moves.StepNeeds.of(s, bag());   // 0.39.z61: the bag picks among several recipes
     }
 
-    /** 0.39.z38: the run's pending items to the fork's run throwaway lease (never placed as throwaway while it runs). */
-    @Override public void keep(List<String> items) {
-        io.github.mojolowjo.entropybot.engine.RunThrowaway.keep(items);
+    /**
+     * 0.39.z61 (D1 J2, replaces z38's keep list): the run's counted reserves to the fork's lease (Baritone places a reserved
+     * item only while the bag holds more than the reserves need).
+     */
+    @Override public void reserve(List<baritone.api.process.Reserves.Reserve<String>> reserves) {
+        io.github.mojolowjo.entropybot.engine.RunThrowaway.reserve(reserves);
         io.github.mojolowjo.entropybot.engine.RunThrowaway.walkPenalty();     // 0.39.z39: the walk lease's placement price, fresh per step
-        StepProbe.keep(items.size());                                         // 0.39.z56 item 1: one field
+        StepProbe.keep(reserves.size());                                      // 0.39.z56 item 1: one field (now the reserves' count)
+    }
+
+    /** 0.39.z61 (owner's ruling 1, option c): the running order's target and the finished orders' items. */
+    @Override public List<baritone.api.process.Reserves.Reserve<String>> orderReserves() {
+        return c.aaRuntime == null ? List.of() : c.aaRuntime.orderReserves();
     }
 
     /** 0.39.z34: the bag as the step checks see it: the player's main inventory (one pass of its slots per look). */
@@ -136,6 +144,12 @@ public final class StepHands implements Steps.Hands {
             @Override public int count(String id) {
                 LocalPlayer p = Minecraft.getInstance().player;
                 return p == null ? 0 : Gui.inventory(p).getOrDefault(id, 0);
+            }
+
+            /** 0.39.z61: the dry run's bag (the main inventory's stacks summed by item id). */
+            @Override public java.util.Map<String, Integer> items() {
+                LocalPlayer p = Minecraft.getInstance().player;
+                return p == null ? null : Gui.inventory(p);
             }
         };
     }

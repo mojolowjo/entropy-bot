@@ -115,6 +115,9 @@ dependencies {
     // official jar next to this mod.
     compileOnly files(baritoneFile)
     testCompileOnly files(baritoneFile)
+    // 0.39.z61 (design D1 J2): the pure tests run the fork's plain-Java reserve math (baritone.api.process.Reserves), the
+    // one place of it, so the jar is on the test runtime too
+    testRuntimeOnly files(baritoneFile)
     localRuntime files(baritoneFile)
 
     // JUnit 5 for the pure-Java unit tests (guard core, event ring, files). They use no Minecraft types.

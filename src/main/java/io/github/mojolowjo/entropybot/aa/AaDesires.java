@@ -460,7 +460,8 @@ public final class AaDesires {
     public static Desire ownerGoal(io.github.mojolowjo.entropybot.aa.brain.Goals.Goal g) {
         String id = g.id();
         RunJob job = new RunJob(id + ".job", TaskKind.EXPLORE, bb -> {
-            List<Step> s = io.github.mojolowjo.entropybot.aa.brain.Goals.steps(bb, g);
+            var rt = io.github.mojolowjo.entropybot.aa.brain.Goals.routine(bb, g);
+            List<Step> s = rt == null ? null : rt.steps();
             if (s == null) {
                 // orders-tier: a chain that does not stand parks the order with its reason (no retry every few seconds);
                 // no world facts yet or the order already met is no reason to park
@@ -471,7 +472,7 @@ public final class AaDesires {
                 return null;
             }
             // 0.39.z30: a step that fails on a changed fact re-plans the order through the same chain call
-            return JobPort.TaskSpec.steps(TaskKind.EXPLORE, s, "owner goal")
+            return JobPort.TaskSpec.steps(TaskKind.EXPLORE, s, "owner goal").withUses(rt.uses())     // 0.39.z61: the chain's counts
                     .withReplan(new JobPort.TaskSpec.Replan(id, (failed, fact, why) -> io.github.mojolowjo.entropybot.aa.brain.Goals.replan(bb, g, failed, fact, why)));
         });
         Node node = AaTree.idleCd(id + ".cd", job);

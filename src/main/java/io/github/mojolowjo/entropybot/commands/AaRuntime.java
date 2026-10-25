@@ -767,7 +767,28 @@ public final class AaRuntime implements JobPort {
         var ch = io.github.mojolowjo.entropybot.aa.NeedChain.of(o, w);
         LOG.info("[entropybot] aa: {}: {}", o.text(), ch.why());
         if (!ch.ok()) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, ch.why());
-        return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(ch.steps(), null);
+        return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(ch.steps(), null, ch.uses());   // 0.39.z61: with its counts
+    }
+
+    /**
+     * 0.39.z61 (D1 J2; owner's ruling 1, option c): the orders' ORDER reserves for the run's lease - the running order's target
+     * (the typed task's re-plan names its desire, "goal.&lt;key&gt;") and every finished order's items (Goals.orderReserves,
+     * each lowered to what the bag still holds).
+     */
+    java.util.List<baritone.api.process.Reserves.Reserve<String>> orderReserves() {
+        io.github.mojolowjo.entropybot.aa.brain.Goals.Goal running = null;
+        var rp = taskReplan;
+        if (typedRun && rp != null) for (var g : io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb)) if (g.id().equals(rp.desire())) running = g;
+        return io.github.mojolowjo.entropybot.aa.brain.Goals.orderReserves(running, io.github.mojolowjo.entropybot.aa.brain.Goals.finished(bb), bb.in.bag);
+    }
+
+    /**
+     * 0.39.z61 (D1 3.7): aa why / aa status's reserve line: "reserved: stone_crafting_materials 8 (craft furnace), ... | spare to
+     * place: 92 (cobblestone 92)" - the run's table, the last dry-run shortage, and the fork's lease's spare throwaway.
+     */
+    String reserveLine() {
+        LocalPlayer p = Minecraft.getInstance().player;
+        return "reserved: " + c.stepRun.steps.reservesText() + " | spare to place: " + (p == null ? "unknown (not in a world)" : io.github.mojolowjo.entropybot.engine.RunThrowaway.spareLine(p));
     }
 
     /**
@@ -1704,7 +1725,8 @@ public final class AaRuntime implements JobPort {
         // rm-execution2: every AA task runs on its typed steps (aa/moves/Steps over StepRun): Steps.run(option.steps)
         if (t.typed()) {
             List<io.github.mojolowjo.entropybot.aa.moves.Step> run = opt != null && opt.typed() ? stepsFrom(opt, 0) : t.steps();
-            String r = runTyped(opt == null ? t.kind() + " " + t.source() : opt.memoryKey(), run, t.kind() + " " + (opt == null ? t.source() : opt.id()));
+            String r = runTyped(opt == null ? t.kind() + " " + t.source() : opt.memoryKey(), run, t.kind() + " " + (opt == null ? t.source() : opt.id()),
+                    run == t.steps() ? t.uses() : null);      // 0.39.z61: the chain's counts go with its own steps only
             if (r != null) {
                 refusal = r;
                 runningOpt = null;
@@ -1891,7 +1913,10 @@ public final class AaRuntime implements JobPort {
     private int[] typedStartAt;
 
     /** Starts AA's typed steps; null when they run, else why not. */
-    private String runTyped(String key, List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, String label) {
+    private String runTyped(String key, List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, String label) { return runTyped(key, steps, label, null); }
+
+    /** 0.39.z61: as above, with the plan's own counts per step ({@code uses}: Chain#uses; null: none known). */
+    private String runTyped(String key, List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, String label, List<Map<String, Integer>> uses) {
         typedKey = key;
         if (typedStartMs < 0) {         // rule 7: the task's first start (a replan or an escape goes on with the same clock)
             typedStartMs = System.currentTimeMillis();
@@ -1907,8 +1932,8 @@ public final class AaRuntime implements JobPort {
             factsNow();
             return rp.planner().replan(failed, fact, why);
         };
-        String r = c.stepRun.start(key, steps, label, replan);
-        typedRun = true;
+        typedRun = true;                 // 0.39.z61: set before the start, so the first step's reserves see the running order
+        String r = c.stepRun.start(key, steps, label, replan, uses);
         typedEndSeen = r != null;
         if (r == null) slow.chainStarted();
         return r;
@@ -3472,8 +3497,15 @@ public final class AaRuntime implements JobPort {
         String w = arg == null ? "" : arg.trim().toLowerCase(java.util.Locale.ROOT).replaceAll("\\s+", "_");
         if (w.isEmpty()) return "usage: aa drop <thing>|all";
         var builds = io.github.mojolowjo.entropybot.aa.brain.Blueprint.of(bb);
-        if (goals.isEmpty() && builds.isEmpty()) return "no owner goals";
         List<String> gone = new ArrayList<>();
+        // 0.39.z61 (ruling 1 option c): a finished order's items stay safe from pillaring until aa drop names it (or all)
+        var fin = io.github.mojolowjo.entropybot.aa.brain.Goals.finished(bb);
+        for (var f : new ArrayList<>(fin)) {
+            if (!w.equals("all") && !f.key.equals(w) && !f.key.endsWith(":" + w) && !f.ids.contains(w.contains(":") ? w : "minecraft:" + w)) continue;
+            fin.remove(f);
+            gone.add("finished " + f.key + " (its items may be placed again)");
+        }
+        if (goals.isEmpty() && builds.isEmpty() && gone.isEmpty()) return "no owner goals";
         for (var b : new ArrayList<>(builds)) {              // B7: builds by name
             if (!w.equals("all") && !b.name.equals(w)) continue;
             builds.remove(b);
@@ -3507,6 +3539,9 @@ public final class AaRuntime implements JobPort {
         List<String> out = new ArrayList<>();
         for (var g : goals) out.add(io.github.mojolowjo.entropybot.aa.brain.Goals.line(bb, g, scoreOf(g.id())));
         for (var b : io.github.mojolowjo.entropybot.aa.brain.Blueprint.of(bb)) out.add("build " + io.github.mojolowjo.entropybot.aa.brain.Blueprint.line(bb, b, scoreOf(b.id())));
+        List<String> fin = new ArrayList<>();          // 0.39.z61 (ruling 1 option c): met orders whose items are never pillared
+        for (var f : io.github.mojolowjo.entropybot.aa.brain.Goals.finished(bb)) fin.add(f.key + " " + f.n);
+        if (!fin.isEmpty()) out.add("finished, kept from pillaring (aa drop <thing> lets them go): " + String.join(", ", fin));
         return "owner goals" + (out.isEmpty() ? ": none (aa want <thing> [n] [high|low] | aa build <name> here)" : " (" + out.size() + "):\n" + String.join("\n", out))
                 + "\n" + ideasLine();
     }

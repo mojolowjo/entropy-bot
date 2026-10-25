@@ -1,5 +1,6 @@
 package io.github.mojolowjo.entropybot.aa.moves;
 
+import baritone.api.process.Reserves;
 import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 
 import java.util.List;
@@ -11,6 +12,11 @@ import java.util.List;
  * run FAILED with its stage and reason, {@code "stopped at step i (<step>): <reason>"}, and {@link #failedKey()} names
  * the option's memory key for Failures. One failure path: no retry, no "try N", no step skipped after a failure.
  * Decides nothing (the option chose the steps). Pure (no game classes): JUnit runs it on fake hands. Never throws.
+ * <p>0.39.z61 (design D1 J2): at every step start the reserves of the steps from here ({@link Reservations}, counted, from
+ * the plan's own takes carried in {@link Routine#uses}) go to the hands' lease, and the dry run ({@link DryRun}) walks those
+ * steps on the bag: a shortage re-plans the order before the step runs. Before a re-plan or a re-price the lease keeps only
+ * the orders' reserves (release before repair, said in the re-plan line). Loader notes: none (the fork's
+ * {@code baritone.api.process.Reserves} is plain Java).
  */
 public final class Steps {
     public enum Phase { IDLE, RUNNING, DONE, FAILED }
@@ -41,8 +47,19 @@ public final class Steps {
         /** 0.39.z34: the bag now; null: these hands have none (nothing is checked). */
         default StepNeeds.Bag bag() { return null; }
 
-        /** 0.39.z38: the items the run's remaining steps use up (Baritone keeps them out of the throwaway list); empty: none. */
-        default void keep(List<String> items) {}
+        /**
+         * 0.39.z61 (D1 J2, replaces z38's keep list): the run's reserves to the fork's lease - what the remaining steps use up,
+         * counted, and the orders' targets; Baritone places a reserved item only while the bag holds more than the reserves
+         * need. Called at every step start (the whole table), with only the orders' reserves before a re-plan, empty at the
+         * run's end.
+         */
+        default void reserve(List<Reserves.Reserve<String>> reserves) {}
+
+        /**
+         * 0.39.z61 (owner's ruling 1 on D1, option c): the orders' ORDER reserves - the running order's target and every
+         * finished order's items (safe from pillaring, usable as ingredients); empty: none.
+         */
+        default List<Reserves.Reserve<String>> orderReserves() { return List.of(); }
 
         /**
          * 0.39.z56 item 2a (run O 22:15:20-22:17:43: "probe walk:" lines went on after the iron order stopped, 790 -> 3197):
@@ -62,36 +79,126 @@ public final class Steps {
         }
     }
 
-    /** The items the remaining steps (the running one on) use up, from their declared needs ({@link StepNeeds#keepOf}). */
-    List<String> keepFromHere() {
-        List<StepNeeds> rest = new java.util.ArrayList<>();
-        for (int i = Math.max(0, idx); i < steps.size(); i++) {
-            try {
-                rest.add(hands.needs(steps.get(i)));
-            } catch (RuntimeException e) {
-                keepErr = "the needs of step " + (i + 1) + " could not be read for the keep list: " + e;   // said in the start line
-            }
+    /**
+     * 0.39.z61: step {@code i}'s needs: its hands' declaration ({@link StepNeeds#of}) with the plan's own counts for it
+     * ({@link #uses}) when the chain carried them. A failure to read them is said in the start line (null needs).
+     */
+    StepNeeds needsAt(int i) {
+        try {
+            StepNeeds n = hands.needs(steps.get(i));
+            if (n == null) n = StepNeeds.NONE;
+            return n.withUses(usesAt(i));
+        } catch (RuntimeException e) {
+            keepErr = "the needs of step " + (i + 1) + " could not be read for the reserves: " + e;   // said in the start line
+            return null;
         }
-        return StepNeeds.keepOf(rest);
     }
 
-    /** What went wrong building or setting the keep list (said in the step's start line), null: nothing. */
+    /** The needs of the steps from here (the running one on), parallel to {@code steps.subList(idx, ...)}. */
+    private List<StepNeeds> needsFromHere() {
+        List<StepNeeds> rest = new java.util.ArrayList<>();
+        for (int i = Math.max(0, idx); i < steps.size(); i++) rest.add(needsAt(i));
+        return rest;
+    }
+
+    /** 0.39.z61 (D1 J2 3.4 step 1): the reserves of the steps from here plus the orders' ({@link Reservations#build}). */
+    Reservations reservationsFromHere(List<StepNeeds> rest) {
+        return Reservations.build(steps, Math.max(0, idx), rest, orders());
+    }
+
+    /** The orders' reserves from the hands (a failure is said in the start line: none then). */
+    private List<Reserves.Reserve<String>> orders() {
+        try {
+            List<Reserves.Reserve<String>> o = hands.orderReserves();
+            return o == null ? List.of() : o;
+        } catch (RuntimeException e) {
+            keepErr = "the orders' reserves could not be read: " + e;
+            return List.of();
+        }
+    }
+
+    /** What went wrong building or setting the reserves (said in the step's start line), null: nothing. */
     private String keepErr;
 
-    private void pushKeep(List<String> items) {
+    /** 0.39.z61: the table pushed last (aa why; what a release lets go); NONE when nothing is reserved. */
+    private Reservations table = Reservations.NONE;
+
+    /** 0.39.z61: the last dry-run shortage (aa why), null: none at the last step start. */
+    private String lastDry;
+
+    private void pushReserve(Reservations r) {
+        table = r == null ? Reservations.NONE : r;
         try {
-            hands.keep(items);
+            hands.reserve(table.list());
         } catch (RuntimeException e) {
-            keepErr = "the keep list could not be set: " + e;
+            keepErr = "the reserves could not be set: " + e;
         }
     }
 
-    /** The run ended: nothing kept; a failure to say so is added to the end line. */
+    /**
+     * 0.39.z61 (D1 3.4, release before repair; Round 4 #4): before the order is planned or priced again, the lease keeps only
+     * the orders' reserves, so the new chain is priced without the old chain's claims. The words for the re-plan line, ""
+     * when nothing of the chain was reserved.
+     */
+    private String release() {
+        int n = table.chainCount();
+        keepErr = null;
+        pushReserve(Reservations.ordersOnly(table.orders()));
+        String err = keepErr == null ? "" : " (" + keepErr + ")";
+        return n == 0 ? err : "released " + n + " reserve" + (n == 1 ? "" : "s") + " of the old chain" + err;
+    }
+
+    /** The run ended: nothing reserved; a failure to say so is added to the end line. */
     private void endKeep() {
         ended("the run ended");                  // 0.39.z56 item 2a: every run end (done, failed, cancelled)
         keepErr = null;
-        pushKeep(List.of());
+        lastDry = null;
+        pushReserve(Reservations.NONE);
         if (keepErr != null) why = why + " (" + keepErr + ")";
+    }
+
+    /**
+     * 0.39.z61: aa why's reserve words: the table pushed at the step's start ({@link Reservations#text}) and the last dry-run
+     * shortage; "nothing (no run)" when idle.
+     */
+    public String reservesText() {
+        if (phase != Phase.RUNNING) return "nothing (no run)";
+        return table.text() + (lastDry == null ? "" : " | dry run: " + lastDry);
+    }
+
+    // ---- 0.39.z61: the plan's own counts, parallel to the steps ----
+
+    /** Per step, what the plan's simulated bag took for it (null entries: none known); kept parallel to {@link #steps}. */
+    private List<java.util.Map<String, Integer>> uses = List.of();
+
+    private java.util.Map<String, Integer> usesAt(int i) { return i >= 0 && i < uses.size() ? uses.get(i) : null; }
+
+    /** {@code n} null entries (steps with no plan counts). */
+    private static List<java.util.Map<String, Integer>> nulls(int n) {
+        List<java.util.Map<String, Integer>> out = new java.util.ArrayList<>();
+        for (int i = 0; i < n; i++) out.add(null);
+        return out;
+    }
+
+    /** {@code u} sized to {@code n} steps (missing: null, too long: cut). */
+    private static List<java.util.Map<String, Integer>> sized(List<java.util.Map<String, Integer>> u, int n) {
+        List<java.util.Map<String, Integer>> out = new java.util.ArrayList<>();
+        for (int i = 0; i < n; i++) out.add(u != null && i < u.size() ? u.get(i) : null);
+        return out;
+    }
+
+    /** Steps {@code 0..at} kept, {@code r}'s steps (with its uses) put in their place from {@code at} on, then {@code tail}. */
+    private void splice(int at, List<Step> parts, List<java.util.Map<String, Integer>> partUses, int tailFrom) {
+        List<Step> all = new java.util.ArrayList<>(steps.subList(0, at));
+        List<java.util.Map<String, Integer>> u = new java.util.ArrayList<>(sized(uses, steps.size()).subList(0, at));
+        all.addAll(parts);
+        u.addAll(sized(partUses, parts.size()));
+        if (tailFrom < steps.size()) {
+            all.addAll(steps.subList(tailFrom, steps.size()));
+            u.addAll(sized(uses, steps.size()).subList(tailFrom, steps.size()));
+        }
+        steps = List.copyOf(all);
+        uses = java.util.Collections.unmodifiableList(u);
     }
 
     /** Ticks between the running tool step's bag looks (Tuning job.bagCheckTicks). */
@@ -118,8 +225,17 @@ public final class Steps {
     private String replannedStep, replannedWhy;
 
 
-    /** The chain as typed steps, or null with why. */
-    public record Routine(List<Step> steps, String why) {}
+    /**
+     * The chain as typed steps, or null with why. 0.39.z61: {@code uses} - per step, what the plan's simulated bag took for it
+     * (NeedChain.Chain#uses; empty: not known, the steps' own data counts).
+     */
+    public record Routine(List<Step> steps, String why, List<java.util.Map<String, Integer>> uses) {
+        public Routine(List<Step> steps, String why) { this(steps, why, List.of()); }
+
+        public Routine {
+            uses = uses == null ? List.of() : java.util.Collections.unmodifiableList(new java.util.ArrayList<>(uses));
+        }
+    }
 
     /** At most this many expansions (a plan in a plan) per run: a routine that names itself ends FAILED, never loops. */
     static int maxExpansions() { return Tuning.i("steps.maxExpansions"); }
@@ -143,11 +259,17 @@ public final class Steps {
     public Phase start(String key, List<Step> steps, long tick) { return start(key, steps, tick, null); }
 
     /** 0.39.z30: as {@link #start(String, List, long)}, re-planned through {@code replan} when a step fails on a changed fact. */
-    public Phase start(String key, List<Step> steps, long tick, Replanner replan) {
+    public Phase start(String key, List<Step> steps, long tick, Replanner replan) { return start(key, steps, null, tick, replan); }
+
+    /** 0.39.z61: as above, with the plan's own counts per step ({@code uses}, parallel to {@code steps}; null: none known). */
+    public Phase start(String key, List<Step> steps, List<java.util.Map<String, Integer>> uses, long tick, Replanner replan) {
         if (phase == Phase.RUNNING) cancel("replaced by " + key);
         runId++;                                     // 0.39.z58 review 2: a new order / chain is active (the fork's first-answer class)
         this.key = key;
         this.steps = List.copyOf(steps);
+        this.uses = java.util.Collections.unmodifiableList(sized(uses, this.steps.size()));
+        table = Reservations.NONE;
+        lastDry = null;
         failedStep = null;
         this.now = tick;
         idx = -1;
@@ -195,7 +317,18 @@ public final class Steps {
         FactChange.clear();
         lookNeeds(s);
         keepErr = null;
-        pushKeep(keepFromHere());
+        // 0.39.z61 (D1 J2 3.4): the reserves of the steps from here, counted, to the lease; then the dry run of those steps on
+        // the bag: a shortage is a bag fact that re-plans the order now, before the step runs (no order: said in the line)
+        List<StepNeeds> rest = needsFromHere();
+        Reservations rs = reservationsFromHere(rest);
+        pushReserve(rs);
+        String dryNote = null;
+        DryRun.Shortage dry = dryRun(rest);
+        lastDry = dry == null ? null : dry.text();
+        if (dry != null) {
+            if (replanner != null) { failOrReplan(dry.text(), new FactChange.Fact(dry.key(), dry.text())); return; }
+            dryNote = "dry run: " + dry.text() + " (no order behind the run: not re-planned)";
+        }
         // 0.39.z34 (S39): the step's tool must be in the bag before it starts; missing, the bag fact re-plans the order
         String lack = toolLack(s);
         if (lack != null) { failOrReplan(lack); return; }
@@ -208,9 +341,23 @@ public final class Steps {
             ended("refused at its start");       // 0.39.z56 item 2a: the hands may have taken the step before they refused it
             failOrReplan(r);
         } else {
-            why = started(idx, steps) + (needs.none() ? "" : " " + needs.text()) + (replanFact == null ? "" : " (re-planned: " + replanFact + ")") + (keepErr == null ? "" : " (" + keepErr + ")");
+            why = started(idx, steps) + (needs.none() ? "" : " " + needs.text()) + (replanFact == null ? "" : " (re-planned: " + replanFact + ")") + (keepErr == null ? "" : " (" + keepErr + ")")
+                    + (rs.unknown() == null ? "" : " (reserves not loaded: " + rs.unknown() + ")") + (dryNote == null ? "" : " (" + dryNote + ")");
             replanFact = null;
         }
+    }
+
+    /** 0.39.z61: the dry run of the steps from here on the bag now; null: no shortage, or these hands list no bag. */
+    private DryRun.Shortage dryRun(List<StepNeeds> rest) {
+        java.util.Map<String, Integer> items;
+        try {
+            StepNeeds.Bag bag = hands.bag();
+            items = bag == null ? null : bag.items();
+        } catch (RuntimeException e) {
+            keepErr = (keepErr == null ? "" : keepErr + "; ") + "the dry run could not read the bag: " + e;
+            return null;
+        }
+        return items == null ? null : DryRun.check(steps, idx, rest, items);
     }
 
     /** The step's declared needs and the tool the bag holds for it now (a failure to read them is said in the needs). */
@@ -221,6 +368,7 @@ public final class Steps {
         try {
             needs = hands.needs(s);
             if (needs == null) needs = StepNeeds.NONE;
+            needs = needs.withUses(usesAt(idx));             // 0.39.z61: the plan's own counts for this step
             StepNeeds.Bag bag = hands.bag();
             if (bag != null && needs.hasTool() && bag.bestTier(needs.toolKind()) >= needs.minTier()) {
                 hadTool = bag.bestTool(needs.toolKind());
@@ -280,26 +428,28 @@ public final class Steps {
         priceAsk = null;
         if (f == null || replanner == null) return false;
         Step at = steps.get(idx);
+        Reservations held = table;
+        String released = release();             // 0.39.z61: the new price sees the bag without the old chain's claims
         Routine r;
         try {
             r = replanner.replan(at, f, f.text());
         } catch (RuntimeException e) {
+            pushReserve(held);
             why = stage() + ": the re-price failed: " + e + " (the run goes on as planned)";
             return false;
         }
         List<Step> left = steps.subList(idx, steps.size());
         if (r == null || r.steps() == null || r.steps().isEmpty() || r.steps().equals(left)) {
+            pushReserve(held);                   // the run goes on as planned: its table back
             if (r != null && r.steps() == null && r.why() != null && !running) why = stage() + ": " + r.why();
             return false;
         }
         // 0.39.z48 (S66): a running step is never cut for another way; the one step whose end IS the paths' answer - the
         // explore while paths compute - ends only for a priced way (a new pick that waits on paths again runs on as it is)
-        if (running && waitsOnPaths(r.steps())) return false;
+        if (running && waitsOnPaths(r.steps())) { pushReserve(held); return false; }
         if (running) safeCancel("re-priced: " + f.text() + " - the pick changed");
-        List<Step> all = new java.util.ArrayList<>(steps.subList(0, idx));
-        all.addAll(r.steps());
-        steps = List.copyOf(all);
-        replanFact = "re-priced: " + f.text() + " - switched to " + r.steps().get(0).text() + " first";
+        splice(idx, r.steps(), r.uses(), steps.size());
+        replanFact = "re-priced: " + f.text() + " - switched to " + r.steps().get(0).text() + " first" + (released.isEmpty() ? "" : "; " + released);
         idx--;
         next();
         return true;
@@ -385,6 +535,7 @@ public final class Steps {
             fail("re-planned after \"" + replannedWhy + "\" and the same step failed again: " + clean);
             return;
         }
+        String released = release();             // 0.39.z61 (D1 3.4): the re-plan sees the bag without the failed chain's claims
         Routine r;
         try {
             r = replanner.replan(failed, fact, clean);
@@ -397,10 +548,8 @@ public final class Steps {
         }
         replannedStep = failed.text();
         replannedWhy = clean;
-        replanFact = fact.text();
-        List<Step> all = new java.util.ArrayList<>(steps.subList(0, idx));
-        all.addAll(r.steps());
-        steps = List.copyOf(all);
+        replanFact = fact.text() + (released.isEmpty() ? "" : "; " + released.replace("the old chain", "the failed chain"));
+        splice(idx, r.steps(), r.uses(), steps.size());
         idx--;
         next();
     }
@@ -415,6 +564,7 @@ public final class Steps {
             if (++expansions > maxExpansions()) return "more than " + maxExpansions() + " chains and compound steps in one run";
             Step s = steps.get(idx);
             List<Step> parts;
+            List<java.util.Map<String, Integer>> partUses = null;
             if (s instanceof Step.Compound c) parts = c.parts();
             else {
                 Routine r;
@@ -425,11 +575,9 @@ public final class Steps {
                 }
                 if (r == null || r.steps() == null) return "no chain for " + s.text() + ": " + (r == null || r.why() == null ? "no answer" : r.why());
                 parts = r.steps();
+                partUses = r.uses();                 // 0.39.z61: the chain's own counts come with it
             }
-            java.util.List<Step> all = new java.util.ArrayList<>(steps.subList(0, idx));
-            all.addAll(parts);
-            all.addAll(steps.subList(idx + 1, steps.size()));
-            steps = List.copyOf(all);
+            splice(idx, parts, partUses, idx + 1);
         }
         return null;
     }
@@ -562,6 +710,7 @@ public final class Steps {
         phase = Phase.IDLE;
         paused = false;
         steps = List.of();
+        uses = List.of();
         idx = -1;
         key = null;
         why = "idle";

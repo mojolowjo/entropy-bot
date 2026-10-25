@@ -101,7 +101,7 @@ public final class Goals {
         String line = g.r.key() + ": " + fact.text() + " - re-planned: " + ch.steps().get(0).text() + " first";
         bb.port.log(line + " (after step " + failed.text() + ": " + why + "; chain: " + ch.why() + ")");
         bb.port.tellOwner(line);
-        return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(ch.steps(), null);
+        return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(ch.steps(), null, ch.uses());
     }
 
     /**
@@ -128,7 +128,7 @@ public final class Goals {
         }
         took(g, ch, now);
         bb.port.log(g.r.key() + ": " + fact.text() + " - priced again (chain: " + ch.why() + ")");
-        return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(ch.steps(), null);
+        return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(ch.steps(), null, ch.uses());
     }
 
     /** 0.39.z48: the seconds a re-price must save to switch the running pick (Tuning replan.switchMarginS). */
@@ -260,6 +260,7 @@ public final class Goals {
     public static Goal add(Blackboard bb, Thing.Result r, int n, int prio, long now) {
         Goal g = draft(r, n, prio, now);
         of(bb).removeIf(x -> x.r.key().equals(r.key()));
+        finished(bb).removeIf(x -> x.key.equals(r.key()));      // 0.39.z61: the new order of the same thing takes over its items
         of(bb).add(g);
         return g;
     }
@@ -358,12 +359,89 @@ public final class Goals {
      * yet, done, or no chain at all ({@link #chain} says why).
      */
     public static List<Step> steps(Blackboard bb, Goal g) {
+        var r = routine(bb, g);
+        return r == null ? null : r.steps();
+    }
+
+    /** 0.39.z61: as {@link #steps}, with the chain's own counts per step (Chain#uses: the run's reserves come from them). */
+    public static io.github.mojolowjo.entropybot.aa.moves.Steps.Routine routine(Blackboard bb, Goal g) {
         if (g.n - have(bb.in.bag, g) <= 0) return null;
-        if (g.strip != null) return stripLoop(g.strip);        // the strip order's own loop (no chain)
+        if (g.strip != null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(stripLoop(g.strip), null);   // the strip order's own loop (no chain)
         var ch = chain(bb, g);
         if (ch == null || !ch.ok() || ch.steps().isEmpty()) return null;
         took(g, ch, bb.clock.now());           // 0.39.z48: the running pick's price (the re-price margin)
-        return ch.steps();
+        return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(ch.steps(), null, ch.uses());
+    }
+
+    // ---- 0.39.z61: the orders' reserves (design D1 J2; owner's ruling 1, option c) ----
+
+    /** Blackboard fact: the finished orders whose items stay safe from pillaring ({@link Finished}). */
+    public static final String FINISHED_FACT = "aa.ordersFinished";
+
+    /**
+     * 0.39.z61 (owner's ruling 1 on D1, option c): an order that was met - its items are never Baritone's throwaway, yet any
+     * chain may use them as ingredients. {@code n} only goes down: to what the bag still holds of them (a craft used some,
+     * the owner took some); at 0 the entry goes. Cleared by {@code aa drop} and by a new {@code aa want} of the same thing.
+     */
+    public static final class Finished {
+        public final String key;
+        public final List<String> ids;
+        public final boolean group;
+        public int n;
+
+        public Finished(String key, List<String> ids, int n, boolean group) {
+            this.key = key;
+            this.ids = List.copyOf(ids);
+            this.n = n;
+            this.group = group;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public static List<Finished> finished(Blackboard bb) {
+        if (bb.fact(FINISHED_FACT) instanceof List<?> l) return (List<Finished>) l;
+        List<Finished> l = new ArrayList<>();
+        bb.fact(FINISHED_FACT, l);
+        return l;
+    }
+
+    /** A met order joins the finished list (a strip order holds no items; the same key replaces the older entry). */
+    static void finish(Blackboard bb, Goal g) {
+        if (g.strip != null || g.r.ids().isEmpty()) return;
+        List<Finished> f = finished(bb);
+        f.removeIf(x -> x.key.equals(g.r.key()));
+        f.add(new Finished(g.r.key(), g.r.ids(), g.n, g.r.group()));
+    }
+
+    /**
+     * 0.39.z61 (pure): the ORDER reserves: the running order's target ({@code running}, null: none; a group: each member n)
+     * and every finished order's items, each lowered first to what {@code bag} (path -> count, as {@link #have}) holds now.
+     * A queued order reserves nothing (it plans from the bag when it starts; D1 3.4 "two orders, one bag").
+     */
+    public static List<baritone.api.process.Reserves.Reserve<String>> orderReserves(Goal running, List<Finished> finished, Map<String, Integer> bag) {
+        List<baritone.api.process.Reserves.Reserve<String>> out = new ArrayList<>();
+        if (running != null && running.strip == null && !running.r.ids().isEmpty()) {
+            if (running.r.group()) for (String id : running.r.ids()) out.add(io.github.mojolowjo.entropybot.aa.moves.Reservations.order(running.r.key(), List.of(id), running.n));
+            else out.add(io.github.mojolowjo.entropybot.aa.moves.Reservations.order(running.r.key(), running.r.ids(), running.n));
+        }
+        if (finished != null) {
+            finished.removeIf(f -> {
+                int held = 0;
+                if (f.group) {
+                    int low = Integer.MAX_VALUE;
+                    for (String id : f.ids) low = Math.min(low, bag.getOrDefault(Thing.path(id), 0));
+                    held = low == Integer.MAX_VALUE ? 0 : low;
+                } else for (String id : f.ids) held += bag.getOrDefault(Thing.path(id), 0);
+                f.n = Math.min(f.n, held);
+                return f.n <= 0;
+            });
+            for (Finished f : finished) {
+                if (running != null && f.key.equals(running.r.key())) continue;      // the running order of the same thing holds it
+                if (f.group) for (String id : f.ids) out.add(io.github.mojolowjo.entropybot.aa.moves.Reservations.order(f.key + " (finished)", List.of(id), f.n));
+                else out.add(io.github.mojolowjo.entropybot.aa.moves.Reservations.order(f.key + " (finished)", f.ids, f.n));
+            }
+        }
+        return out;
     }
 
     /** The goal's chain on the world fact now (null: no world facts yet). */
@@ -439,6 +517,7 @@ public final class Goals {
         if (JobBoundary.mid()) return out;
         for (Goal g : of(bb)) if (have(bb.in.bag, g) >= g.n) out.add(g);
         of(bb).removeAll(out);
+        for (Goal g : out) finish(bb, g);        // 0.39.z61 (ruling 1 option c): its items stay safe from pillaring
         return out;
     }
 

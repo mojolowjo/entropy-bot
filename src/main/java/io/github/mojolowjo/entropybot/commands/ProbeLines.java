@@ -108,7 +108,7 @@ public final class ProbeLines {
                     + " | path " + (executing ? at(src) + " -> " + at(dest) + " at " + pos + "/" + len : "none executing")
                     + " | calc " + (calc ? "in progress" : "none")
                     + " | last path event " + (lastEvent == null ? "none this step" : lastEvent + " " + eventAgo + " ticks ago")
-                    + " | waiting " + waiting + " | needs in bag " + needs + " | keep list " + keep + " | throwaway in bag " + throwaway;
+                    + " | waiting " + waiting + " | needs in bag " + needs + " | reserves " + keep + " | spare throwaway in bag " + throwaway;
         }
     }
 

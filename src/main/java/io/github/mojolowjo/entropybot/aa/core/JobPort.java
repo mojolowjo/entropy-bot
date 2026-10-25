@@ -12,7 +12,14 @@ public interface JobPort {
      * option's typed steps (aa/moves/Steps runs them; {@code chain} is then only their label); empty: a chain text.
      */
     record TaskSpec(TaskKind kind, String chain, String source, int priority, long timeoutMs, long noProgressMs,
-                    java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, Replan replan) {
+                    java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, Replan replan,
+                    java.util.List<java.util.Map<String, Integer>> uses) {
+        /** 0.39.z61: the task without the plan's own counts per step ({@code uses}: Chain#uses; empty: not known). */
+        public TaskSpec(TaskKind kind, String chain, String source, int priority, long timeoutMs, long noProgressMs,
+                        java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, Replan replan) {
+            this(kind, chain, source, priority, timeoutMs, noProgressMs, steps, replan, null);
+        }
+
         /**
          * 0.39.z30: an order's re-plan on a changed fact: {@code desire} (Failures charges the changed fact under it) and the
          * order's own planner.
@@ -25,7 +32,10 @@ public interface JobPort {
         }
 
         /** The same task, re-planned by {@code r} when a step fails on a changed fact. */
-        public TaskSpec withReplan(Replan r) { return new TaskSpec(kind, chain, source, priority, timeoutMs, noProgressMs, steps, r); }
+        public TaskSpec withReplan(Replan r) { return new TaskSpec(kind, chain, source, priority, timeoutMs, noProgressMs, steps, r, uses); }
+
+        /** 0.39.z61: the same task with the plan's own counts per step (parallel to {@code steps}). */
+        public TaskSpec withUses(java.util.List<java.util.Map<String, Integer>> u) { return new TaskSpec(kind, chain, source, priority, timeoutMs, noProgressMs, steps, replan, u); }
 
         public static long timeoutMsV() { return Tuning.l("jobPort.timeoutMs"); }
         public static long noProgressMsV() { return Tuning.l("jobPort.noProgressMs"); }
@@ -36,6 +46,7 @@ public interface JobPort {
             if (timeoutMs <= 0 || timeoutMs > maxMs()) timeoutMs = timeoutMsV();
             if (noProgressMs <= 0 || noProgressMs > maxMs()) noProgressMs = noProgressMsV();
             steps = steps == null ? java.util.List.of() : java.util.List.copyOf(steps);
+            uses = uses == null ? java.util.List.of() : java.util.Collections.unmodifiableList(new java.util.ArrayList<>(uses));
         }
 
         public TaskSpec(TaskKind kind, String chain, String source, int priority, long timeoutMs, long noProgressMs) {

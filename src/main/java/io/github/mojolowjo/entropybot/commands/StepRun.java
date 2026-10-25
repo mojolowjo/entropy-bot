@@ -51,13 +51,16 @@ public final class StepRun {
     String start(String key, List<Step> s, String label) { return start(key, s, label, null); }
 
     /** 0.39.z30: as above, an order's run re-planned through {@code replan} when a step fails on a changed fact. */
-    String start(String key, List<Step> s, String label, Steps.Replanner replan) {
+    String start(String key, List<Step> s, String label, Steps.Replanner replan) { return start(key, s, label, replan, null); }
+
+    /** 0.39.z61: as above, with the plan's own counts per step (Chain#uses; null: none known). */
+    String start(String key, List<Step> s, String label, Steps.Replanner replan, List<java.util.Map<String, Integer>> uses) {
         if (steps.running()) return "busy: " + status();
         this.label = label;
         driver = io.github.mojolowjo.entropybot.aa.door.Door.current();
         req = null;
         reportTo = null;
-        Steps.Phase ph = steps.start(key, s, Core.INSTANCE.tick(), replan);
+        Steps.Phase ph = steps.start(key, s, uses, Core.INSTANCE.tick(), replan);
         LOG.info("[entropybot] steps: {} - {}", label, Step.label(s));
         return ph == Steps.Phase.FAILED ? "error: " + steps.why() : null;
     }

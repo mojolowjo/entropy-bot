@@ -246,11 +246,20 @@ public final class NeedChain {
      * @param missing why there is no way at all (null: there is one)
      * @param dropped every way priced out on the way, each with its reason (seconds, or "no known source", or "loop")
      */
-    public record Chain(List<Step> steps, double cost, String why, boolean explore, String missing, List<String> dropped, Map<String, String> unreachable) {
+    public record Chain(List<Step> steps, double cost, String why, boolean explore, String missing, List<String> dropped, Map<String, String> unreachable,
+                        List<Map<String, Integer>> uses) {
+        public Chain(List<Step> steps, double cost, String why, boolean explore, String missing, List<String> dropped, Map<String, String> unreachable) { this(steps, cost, why, explore, missing, dropped, unreachable, List.of()); }
         public Chain(List<Step> steps, double cost, String why, boolean explore, String missing, List<String> dropped) { this(steps, cost, why, explore, missing, dropped, Map.of()); }
         public Chain(List<Step> steps, double cost, String why, boolean explore, String missing) { this(steps, cost, why, explore, missing, List.of()); }
+        /**
+         * 0.39.z61 (D1 J2 3.1 item 1): {@code uses} - per step, parallel to {@code steps}, what the planner's simulated bag
+         * took for that step (need word -> count; null: the step took nothing it counted, StepNeeds falls back to the step's
+         * own data). Empty: not known (an older caller). A parallel list, not a field on the step records: the re-price
+         * compares step lists by equals, and a bag-mix change is not "other steps".
+         */
         public Chain {
             unreachable = unreachable == null ? Map.of() : Map.copyOf(unreachable);
+            uses = uses == null ? List.of() : java.util.Collections.unmodifiableList(new ArrayList<>(uses));
         }
         public boolean ok() { return missing == null; }
         /**
@@ -448,6 +457,11 @@ public final class NeedChain {
         int pickWorn;         // 0.39.z33: blocks the bag's pickItem breaks in this chain so far (a made pickaxe: reset, it is new)
         boolean pickMade;     // 0.39.z33: pickItem was made in this chain (fresh: its uses are its max damage, not the bag's)
         int trials;           // ways priced so far (the search's bound)
+        /**
+         * 0.39.z61 (D1 J2): a craft / smelt step (this very object) -> what the simulated bag took for it, by the recipe slot's
+         * need word. Keyed by identity: a dropped way's steps simply never reach the chain (no restore needed).
+         */
+        final Map<Step, Map<String, Integer>> uses = new java.util.IdentityHashMap<>();
 
         Ctx(World w) {
             this.w = w;
@@ -643,9 +657,16 @@ public final class NeedChain {
         // an explore has no price in the chain; the scorer still needs a number to weigh the whole row, so the row's cost carries the explore leg
         if (c.stuck) cost += exploreMinutes() * Options.MINUTE * (1 + exploreReturn());
         String drops = c.dropped.isEmpty() ? "" : " | dropped: " + String.join("; ", c.dropped);
-        if (c.fail != null) return new Chain(List.copyOf(c.steps), cost, name + ": " + c.fail + drops, false, c.fail, List.copyOf(c.dropped), c.unreachable);
+        List<Map<String, Integer>> uses = new ArrayList<>();
+        for (Step st : c.steps) uses.add(c.uses.get(st));
+        if (c.fail != null) return new Chain(List.copyOf(c.steps), cost, name + ": " + c.fail + drops, false, c.fail, List.copyOf(c.dropped), c.unreachable, uses);
         String why = head + (c.stuck ? "" : ": " + s(c.seconds)) + drops;
-        return new Chain(List.copyOf(c.steps), cost, why, c.stuck, null, List.copyOf(c.dropped), c.unreachable);
+        return new Chain(List.copyOf(c.steps), cost, why, c.stuck, null, List.copyOf(c.dropped), c.unreachable, uses);
+    }
+
+    /** 0.39.z61: the step just added used {@code used} (need word -> count) from the simulated bag. */
+    private static void used(Ctx c, Map<String, Integer> used) {
+        if (!c.steps.isEmpty() && !used.isEmpty()) c.uses.put(c.steps.get(c.steps.size() - 1), java.util.Collections.unmodifiableMap(new LinkedHashMap<>(used)));
     }
 
     /** One way to get a requirement: what runs it on the simulated bag, its name for the dropped list, and what breaks a tie. */
@@ -1054,7 +1075,7 @@ public final class NeedChain {
         boolean craft = ItemWorth.CRAFT.equals(g.kind());
         int batches = (lack + g.outCount() - 1) / g.outCount();
         List<String> parts = new ArrayList<>();
-        Map<String, Integer> used = new LinkedHashMap<>();
+        Map<String, Integer> used = new LinkedHashMap<>(), slotUses = new LinkedHashMap<>();
         List<Map.Entry<String, Integer>> ins = new ArrayList<>(g.slots().entrySet());
         ins.sort(Comparator.comparingInt((Map.Entry<String, Integer> e) -> rawUnseen(c, e.getKey()) ? 1 : 0));
         String verb = craft ? "craft: " : "smelt ";
@@ -1067,6 +1088,7 @@ public final class NeedChain {
             parts.add(got.part());
             if (c.stuck) return verb + String.join(" + ", parts);
             take(c, new Want(e.getKey()), want, got.id()).forEach((k, v) -> used.merge(k, v, Integer::sum));
+            slotUses.merge(word(e.getKey()), want, Integer::sum);      // 0.39.z61: the step's count by its slot word
         }
         if (craft) {
             boolean table = pieces > GRID_2X2;
@@ -1100,6 +1122,7 @@ public final class NeedChain {
             c.steps.add(new Step.Smelt(out != null ? sh(out) : shw(w.word), made, true));
             c.seconds += batches * smeltTicks() / GameTimes.TPS;
         }
+        used(c, slotUses);
         c.bag.merge(name, made, Integer::sum);
         return verb + String.join(" + ", parts);
     }
@@ -1204,6 +1227,7 @@ public final class NeedChain {
         // the slots by need word, the same word counted once (4 planks of one tag); what can be made or fetched first, a raw source nothing knows last
         List<Map.Entry<String, Integer>> ins = new ArrayList<>(slotWords(rec).entrySet());
         ins.sort(Comparator.comparingInt((Map.Entry<String, Integer> e) -> rawUnseen(c, e.getKey()) ? 1 : 0));
+        Map<String, Integer> slotUses = new LinkedHashMap<>();
         for (var e : ins) {
             int want = e.getValue() * batches;
             Got g = needWord(c, e.getKey(), want);
@@ -1211,6 +1235,7 @@ public final class NeedChain {
             parts.add(g.part());
             if (c.stuck) return "craft: " + String.join(" + ", parts);                 // something needed is not known: the chain ends at the explore
             take(c, new Want(e.getKey()), want, g.id());
+            slotUses.merge(word(e.getKey()), want, Integer::sum);      // 0.39.z61: the step's count by its slot word
         }
         if (ItemWorth.needsTable(item) || rec.inputs().size() > GRID_2X2) {
             String t = station(c, ItemWorth.CRAFT);
@@ -1220,6 +1245,7 @@ public final class NeedChain {
             walkBack(c);
         }
         c.steps.add(new Step.Craft(sh(item), batches * rec.outCount()));
+        used(c, slotUses);
         c.seconds += Price.craftS() * batches;
         c.note(() -> "craft: " + sh(item) + " x" + batches * rec.outCount() + " (" + batches + " crafts): " + s(Price.craftS() * batches));
         c.bag.merge(item, batches * rec.outCount(), Integer::sum);
@@ -1249,6 +1275,7 @@ public final class NeedChain {
         if (c.stuck) return "smelt " + String.join(" + ", parts);
         walkBack(c);
         c.steps.add(new Step.Smelt(sh(item), k * rec.outCount(), true));
+        used(c, Map.of(input, k));                                 // 0.39.z61: the input by its word (the fuel: the step's fuel reserve)
         c.seconds += k * smeltTicks() / GameTimes.TPS;
         c.note(() -> "smelt " + sh(item) + " x" + k * rec.outCount() + ": " + s(k * smeltTicks() / GameTimes.TPS));
         c.bag.merge(item, k * rec.outCount(), Integer::sum);

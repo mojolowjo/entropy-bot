@@ -15,7 +15,8 @@ import java.util.List;
 /**
  * 0.39.z38 (rule 2: a process owns its throwaway list for its run): the mod's one door to Baritone's
  * {@code acceptableThrowawayItems} - the fork's {@code IBaritone.getRunThrowaway()} lease. The mod never writes the
- * setting. {@link #keep}: the job's pending ingredients (Steps' keep list) are never throwaway while a run holds;
+ * setting. {@link #reserve} (0.39.z61, was z38's keep list): the run's counted reserves - a reserved item is placed only
+ * while the bag holds more than the reserves need;
  * {@link #add} / {@link #end}: a danger leg's or pillar's extra blocks for its run.
  *
  * <p>Loader notes: Baritone API only; {@code getRunThrowaway()} is missing from the stock jar (LinkageError): logged
@@ -43,36 +44,96 @@ public final class RunThrowaway {
         }
     }
 
-    /** The job's pending items (ids) out of the throwaway list for every run; empty: none kept. */
-    public static void keep(List<String> ids) {
-        List<Item> items = new ArrayList<>();
-        for (String id : ids) {
-            ResourceLocation rl = ResourceLocation.tryParse(id);
-            Item it = rl == null ? Items.AIR : BuiltInRegistries.ITEM.get(rl);
-            if (it == Items.AIR) LOG.warn("[entropybot] run throwaway: keep {}: no such item in this game's registry (not kept)", id);
-            else items.add(it);
-        }
-        var l = lease("keep the job's items " + ids);
-        if (l == null) return;
-        l.keep(items);
-        if (!items.isEmpty()) LOG.debug("[entropybot] run throwaway: kept out of the throwaway list {}", ids);
-        // 0.39.z55 item 1 (run N: the furnace's cobblestone was placed on the walk to the table): the keep list at every
-        // step start and what the fork's lease holds, behind debug.walkProbe
-        if (io.github.mojolowjo.entropybot.commands.WalkProbe.on())
-            LOG.info("[entropybot] probe keep: the job keeps {} | the fork's lease keeps {}", ids, l.kept());
+    /** An id from the game's registry; null (said once per call site's caller) when the game has no such item. */
+    private static Item item(String id) {
+        ResourceLocation rl = ResourceLocation.tryParse(id);
+        Item it = rl == null ? Items.AIR : BuiltInRegistries.ITEM.get(rl);
+        return it == Items.AIR ? null : it;
     }
 
     /**
-     * 0.39.z55 item 1 (probe): an item the bot just placed, as the lease sees it: "kept" (the job still needs it: a keep
-     * failure), "throwaway" (on Baritone's throwaway list now), or "not throwaway" (a block a build or a station placed).
-     * Read only; never writes a setting.
+     * 0.39.z61 (design D1 J2, replaces z38's keep list; run P z56 23:48:55: every stone member kept whole with 103 cobblestone
+     * in the bag, no pillar priced): the run's counted reserves to the fork's lease ({@code IRunThrowaway.reserve}, which
+     * replaces the whole table). Ids become the game's items; a member the registry does not know is left out and said; a
+     * reserve with no member left is said and dropped (it could hold nothing). Empty: nothing reserved.
+     */
+    public static void reserve(List<baritone.api.process.Reserves.Reserve<String>> reserves) {
+        List<baritone.api.process.Reserves.Reserve<Item>> out = new ArrayList<>();
+        List<String> missing = new ArrayList<>();
+        for (var r : reserves) {
+            List<Item> members = new ArrayList<>();
+            java.util.Map<Item, Integer> weight = new java.util.LinkedHashMap<>();
+            for (String id : r.members) {
+                Item it = item(id);
+                if (it == null) { missing.add(id); continue; }
+                members.add(it);
+                if (r.weightOf(id) != 1) weight.put(it, r.weightOf(id));
+            }
+            if (members.isEmpty()) { LOG.warn("[entropybot] run throwaway: reserve {}: none of its items is in this game's registry (not reserved)", r); continue; }
+            out.add(new baritone.api.process.Reserves.Reserve<>(r.word, members, weight, r.units, r.kind, r.step, r.owner));
+        }
+        if (!missing.isEmpty()) LOG.warn("[entropybot] run throwaway: reserve: no such item in this game's registry (left out): {}", missing);
+        var l = lease("reserve the run's items " + reserves.size());
+        if (l == null) return;
+        l.reserve(out);
+        // 0.39.z55 item 1 / z61 (D1 3.7): the table at every step start and what the fork's lease can spare, behind debug.walkProbe
+        if (io.github.mojolowjo.entropybot.commands.WalkProbe.on()) {
+            var p = Minecraft.getInstance().player;
+            LOG.info("[entropybot] probe reserve: {} | the fork's lease spare: {}", table(reserves), p == null ? "unknown (not in a world)" : spareInBag(l, p));
+        }
+    }
+
+    /** The reserves as the lines write them ("stick 2 (craft stone_pickaxe), ..."; "nothing"). */
+    private static String table(List<baritone.api.process.Reserves.Reserve<String>> reserves) {
+        List<String> p = new ArrayList<>();
+        for (var r : reserves) p.add(io.github.mojolowjo.entropybot.aa.moves.Reservations.text(r));
+        return p.isEmpty() ? "nothing" : String.join(", ", p);
+    }
+
+    /** The bag's throwaway stacks with their spare now ("cobblestone 92, dirt 8"; "none"). */
+    private static String spareInBag(baritone.api.process.IRunThrowaway l, net.minecraft.world.entity.player.Player p) {
+        java.util.Map<Item, Integer> seen = new java.util.LinkedHashMap<>();
+        var list = BaritoneAPI.getSettings().acceptableThrowawayItems.value;
+        for (var st : p.getInventory().items) if (!st.isEmpty() && list.contains(st.getItem())) seen.putIfAbsent(st.getItem(), 0);
+        StringBuilder b = new StringBuilder();
+        for (Item it : seen.keySet()) {
+            int s = l.spare(it);
+            if (s > 0) b.append(b.length() == 0 ? "" : ", ").append(BuiltInRegistries.ITEM.getKey(it).getPath()).append(' ').append(s);
+        }
+        return b.length() == 0 ? "none" : b.toString();
+    }
+
+    /**
+     * 0.39.z61 (D1 3.7, aa why / aa status): "92 (cobblestone 92)" - how many throwaway blocks the bag may place in all and
+     * the stacks they come from; the reason when the lease cannot say.
+     */
+    public static String spareLine(net.minecraft.world.entity.player.Player p) {
+        var l = lease("read the spare throwaway");
+        if (l == null) return "unknown (no lease in this Baritone)";
+        try {
+            return l.spareThrowaway() + " (" + spareInBag(l, p) + ")";
+        } catch (RuntimeException e) {
+            return "unknown (" + e + ")";
+        }
+    }
+
+    /**
+     * 0.39.z55 item 1 (probe): an item the bot just placed, as the lease sees it. 0.39.z61 (D1 3.7): "throwaway (spare 91 after
+     * it)"; "RESERVED (spare 0: a lease failure)" when a reserve names it and the bag can no longer meet the reserves; "not
+     * throwaway" (a block a build or a station placed). Read only; never writes a setting.
      */
     public static String placedAs(Item item) {
-        var l = lease("read the kept items");
+        var l = lease("read the reserves");
         if (l == null) return "unknown (no lease in this Baritone)";
-        if (l.kept().contains(item)) return "KEPT (the job still needs it)";
         try {
-            return BaritoneAPI.getSettings().acceptableThrowawayItems.value.contains(item) ? "throwaway" : "not throwaway (a build's or a station's block)";
+            var reserves = l.reserves();
+            var p = Minecraft.getInstance().player;
+            if (p != null && baritone.api.process.Reserves.reserved(reserves, item)) {
+                java.util.Map<Item, Integer> bag = new java.util.HashMap<>();
+                for (var st : p.getInventory().items) if (!st.isEmpty()) bag.merge(st.getItem(), st.getCount(), Integer::sum);
+                if (!baritone.api.process.Reserves.feasible(reserves, bag)) return "RESERVED (spare 0: a lease failure)";
+            }
+            return BaritoneAPI.getSettings().acceptableThrowawayItems.value.contains(item) ? "throwaway (spare " + l.spare(item) + " after it)" : "not throwaway (a build's or a station's block)";
         } catch (RuntimeException e) {
             return "unknown (" + e + ")";
         }
@@ -80,21 +141,13 @@ public final class RunThrowaway {
 
     /**
      * 0.39.z56 item 1 (the step probe, run O: only dirt left as throwaway under ground): the bag's stacks Baritone may place
-     * now - on its throwaway list and not kept by the job - as "dirt 8, ..."; "none" when there is none. Read only.
+     * now - on its throwaway list, with their spare (z61: counts, not keep lists) - as "dirt 8, ..."; "none" when there is
+     * none. Read only.
      */
     public static String throwawayInBag(net.minecraft.world.entity.player.Player p) {
-        var l = lease("read the kept items");
-        List<Item> kept = l == null ? List.of() : l.kept();
-        java.util.Map<String, Integer> n = new java.util.LinkedHashMap<>();
-        var list = BaritoneAPI.getSettings().acceptableThrowawayItems.value;
-        for (var st : p.getInventory().items) {
-            if (st.isEmpty() || !list.contains(st.getItem()) || kept.contains(st.getItem())) continue;
-            n.merge(BuiltInRegistries.ITEM.getKey(st.getItem()).getPath(), st.getCount(), Integer::sum);
-        }
-        if (n.isEmpty()) return "none" + (l == null ? " (no lease in this Baritone: kept items unknown)" : "");
-        StringBuilder b = new StringBuilder();
-        n.forEach((k, v) -> b.append(b.length() == 0 ? "" : ", ").append(k).append(' ').append(v));
-        return b.toString();
+        var l = lease("read the reserves");
+        if (l == null) return "none (no lease in this Baritone: reserves unknown)";
+        return spareInBag(l, p);
     }
 
     /** A run's extra throwaway items (the fork's lease; put back at {@link #end}). */
