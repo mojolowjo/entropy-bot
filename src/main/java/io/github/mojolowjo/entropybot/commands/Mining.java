@@ -1104,7 +1104,7 @@ final class Mining {
         // times or no new best for monitor.stallS); Baritone idle alone is no failure: the same goal is set again (once a
         // second). Was (z56, Mining ~1079): given up 1 s after Baritone went idle and its chunk marked explored, never reached.
         if (done == null && ex.target != null && ex.hold != null) {
-            ex.hold = ExploreRules.TargetHold.look(ex.hold, now(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed());
+            ex.hold = ExploreRules.TargetHold.look(ex.hold, now(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(), b != null && b.getPathingBehavior().getCurrent() != null);
             if (ex.hold.state() == ExploreRules.TargetHold.State.HELD) {
                 if (b != null && Jobs.idle(b) && now() - ex.targetAt >= 20) {     // structural: once a second in ticks
                     b.getCustomGoalProcess().setGoalAndPath(new GoalXZ(ex.target.x(), ex.target.z()));
@@ -1113,7 +1113,7 @@ final class Mining {
                 s.setStatus(s.label + " - walking to " + ex.target.x() + " " + ex.target.z() + " (" + ex.chunks + " chunks so far)");
                 return "wait";
             }
-            if (ex.hold.marksExplored()) notes().markExplored(List.of(ExploreRules.key(d, ex.target.x() >> 4, ex.target.z() >> 4)));
+            if (ex.hold.marksExplored(ex.aimed != null)) notes().markExplored(List.of(ExploreRules.key(d, ex.target.x() >> 4, ex.target.z() >> 4)));
             else if (ex.hold.state() == ExploreRules.TargetHold.State.FAILED) {
                 // rule 15: never reached is never "explored"; the run passes over it until the bot moved failures.moved from here
                 ex.failed.add(new ExploreRules.TargetHold.Failed(ex.target.x(), ex.target.z(), me, ex.hold.why()));

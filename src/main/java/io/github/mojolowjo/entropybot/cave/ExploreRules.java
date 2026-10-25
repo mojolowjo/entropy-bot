@@ -265,8 +265,11 @@ public final class ExploreRules {
         public record Held(int x, int z, long since, double best, long bestAt, long calcAtBest, int noPathFails, State state, String why) {
             public Target target() { return new Target(x, z); }
 
-            /** A REACHED target marks its chunk explored; a FAILED one never does. */
-            public boolean marksExplored() { return state == State.REACHED; }
+            /**
+             * A REACHED chunk target marks its chunk explored; a FAILED one never does; a cave candidate ({@code aimed}) never
+             * does (0.39.z72 review 1: it ends as visited instead, as before).
+             */
+            public boolean marksExplored(boolean aimed) { return state == State.REACHED && !aimed; }
         }
 
         /** A failed target, the cell it failed from and why (the run's failed set). */
@@ -287,8 +290,12 @@ public final class ExploreRules {
             return new Held(t.x(), t.z(), now, dist(feet, t.x(), t.z()), now, calcFailed, 0, State.HELD, "held");
         }
 
-        /** One look at {@code now} from {@code feet}: the hold's next state. A REACHED or FAILED hold stays as it is. */
-        public static Held look(Held h, long now, int[] feet, long calcFailed) {
+        /**
+         * One look at {@code now} from {@code feet}: the hold's next state. A REACHED or FAILED hold stays as it is.
+         * 0.39.z72 review 2: as the step monitor, the failed searches fail the target only while Baritone executes nothing
+         * ({@code executing}: it follows a path - a failure of the global count on another goal is not this target's).
+         */
+        public static Held look(Held h, long now, int[] feet, long calcFailed, boolean executing) {
             if (h == null || h.state() != State.HELD) return h;
             if (feet != null && arrived(feet[0], feet[2], h.target())) return with(h, h.best(), h.bestAt(), h.calcAtBest(), 0, State.REACHED, "reached");
             double d = dist(feet, h.x(), h.z());
@@ -301,7 +308,7 @@ public final class ExploreRules {
             }
             int fails = (int) Math.max(0, calcFailed - calcAt);
             String from = feet == null ? "an unknown cell" : feet[0] + " " + feet[1] + " " + feet[2];
-            if (fails >= noPathFailsV()) return with(h, best, bestAt, calcAt, fails, State.FAILED, "Baritone found no path " + fails + " times from " + from);
+            if (fails >= noPathFailsV() && !executing) return with(h, best, bestAt, calcAt, fails, State.FAILED, "Baritone found no path " + fails + " times from " + from);
             if (now - bestAt >= stallTicks())
                 return with(h, best, bestAt, calcAt, fails, State.FAILED, "no new best for " + (now - bestAt) / 20 + " s from " + from    // game fact: 20 ticks a second
                         + (Double.isNaN(best) ? "" : " (best " + Math.round(best) + " m)"));

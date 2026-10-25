@@ -50,9 +50,9 @@ class Z72ExploreHoldTest {
         Target[] goal = new Target[61];
         Target cur = A;
         for (int s = 1; s <= 60; s++) {
-            h = TargetHold.look(h, s * 20L, RUN_P, calc(s));
+            h = TargetHold.look(h, s * 20L, RUN_P, calc(s), false);
             if (h.state() == State.FAILED) {
-                assertFalse(h.marksExplored(), "rule 15: never reached is never explored");
+                assertFalse(h.marksExplored(false), "rule 15: never reached is never explored");
                 said.add(TargetHold.failedLine(h));
                 if (cur == A) {
                     cur = B;
@@ -117,12 +117,13 @@ class Z72ExploreHoldTest {
     @Test
     void aReachedTargetMarksExplored() {
         Held h = TargetHold.start(A, 0, RUN_P, 0);
-        h = TargetHold.look(h, 20, new int[]{A.x() - 30, 64, A.z()}, 0);
+        h = TargetHold.look(h, 20, new int[]{A.x() - 30, 64, A.z()}, 0, false);
         assertEquals(State.HELD, h.state());
-        h = TargetHold.look(h, 40, new int[]{A.x() - ExploreRules.arrivedV(), 64, A.z()}, 0);
+        h = TargetHold.look(h, 40, new int[]{A.x() - ExploreRules.arrivedV(), 64, A.z()}, 0, false);
         assertEquals(State.REACHED, h.state());
-        assertTrue(h.marksExplored());
-        assertEquals(h, TargetHold.look(h, 60, RUN_P, 9), "an ended hold stays as it is");
+        assertTrue(h.marksExplored(false));
+        assertFalse(h.marksExplored(true), "review 1: a cave candidate reached ends as visited, its chunk not marked (as before z72)");
+        assertEquals(h, TargetHold.look(h, 60, RUN_P, 9, false), "an ended hold stays as it is");
     }
 
     /**
@@ -133,25 +134,36 @@ class Z72ExploreHoldTest {
     void baritoneIdleAloneDoesNotFailAHeldTarget() {
         Held h = TargetHold.start(A, 0, RUN_P, 7);
         for (int s = 1; s <= 29; s++) {
-            h = TargetHold.look(h, s * 20L, RUN_P, 7);
+            h = TargetHold.look(h, s * 20L, RUN_P, 7, false);
             assertEquals(State.HELD, h.state(), "at " + s + " s");
         }
-        h = TargetHold.look(h, 600, RUN_P, 7);
+        h = TargetHold.look(h, 600, RUN_P, 7, false);
         assertEquals(State.FAILED, h.state());
         assertEquals("no new best for 30 s from -148 -33 -83 (best 158 m)", h.why());
+    }
+
+    /** Review 2: failed searches while Baritone still executes a path (another goal's, the count is global) never fail the target. */
+    @Test
+    void failedSearchesWhileExecutingDoNotFailTheTarget() {
+        Held h = TargetHold.start(A, 0, RUN_P, 0);
+        h = TargetHold.look(h, 20, RUN_P, 5, true);
+        assertEquals(State.HELD, h.state(), h.why());
+        assertEquals(5, h.noPathFails());
+        h = TargetHold.look(h, 40, RUN_P, 5, false);
+        assertEquals(State.FAILED, h.state(), "nothing executing now: the same count fails it");
     }
 
     /** A new best (1 m nearer) starts the failed-search count again. */
     @Test
     void aNewBestStartsTheNoPathCountAgain() {
         Held h = TargetHold.start(A, 0, RUN_P, 0);
-        h = TargetHold.look(h, 20, RUN_P, 2);
-        h = TargetHold.look(h, 40, new int[]{-150, -33, -83}, 2);       // 157.8 -> 156.3 m: more than 1 block nearer
+        h = TargetHold.look(h, 20, RUN_P, 2, false);
+        h = TargetHold.look(h, 40, new int[]{-150, -33, -83}, 2, false);       // 157.8 -> 156.3 m: more than 1 block nearer
         assertEquals(State.HELD, h.state());
-        h = TargetHold.look(h, 60, new int[]{-150, -33, -83}, 4);
+        h = TargetHold.look(h, 60, new int[]{-150, -33, -83}, 4, false);
         assertEquals(State.HELD, h.state(), "2 since the best");
         assertEquals(2, h.noPathFails());
-        h = TargetHold.look(h, 80, new int[]{-150, -33, -83}, 5);
+        h = TargetHold.look(h, 80, new int[]{-150, -33, -83}, 5, false);
         assertEquals(State.FAILED, h.state());
     }
 }
