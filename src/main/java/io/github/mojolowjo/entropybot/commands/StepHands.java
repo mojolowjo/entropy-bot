@@ -636,8 +636,8 @@ public final class StepHands implements Steps.Hands {
 
     /**
      * 0.39.z65 item 1: the walk to a known station (the travel job on the chain's priced goal); ended failed, it is the
-     * station's fact as the fork's use failure is (Crafting's z48 branch): refused from now on, the order re-plans and the
-     * chain prices the next known station or placing a new one here (NeedChain.farStation / placeNew). Never a park.
+     * station's fact for this order (review 1): the order re-plans and the chain prices placing a new one here
+     * (NeedChain.World.withoutSources drops it). Never a park.
      */
     private Car.Status toStationStatus(Step.ToStation t) {
         Car.Status st = requestStatus();
@@ -651,14 +651,17 @@ public final class StepHands implements Steps.Hands {
         return r == null ? null : "error: " + stationRefused(t, "the walk to it did not start: " + r);
     }
 
-    /** The station refused from now on and its fact said (the order re-plans); the step's failure words. */
+    /**
+     * The station out for this order and its fact said (the order re-plans); the step's failure words. 0.39.z65 review 1:
+     * an order's source fact (FactChange.stationWalk, held in the order's Goals.sources), never the session-wide
+     * Crafting.UNUSABLE_STATIONS - a walk that failed from here says nothing about the station from elsewhere.
+     */
     private String stationRefused(Step.ToStation t, String why0) {
         int[] at = {t.x(), t.y(), t.z()};
         String why = why0.replace(": error: ", ": ");
-        Crafting.UNUSABLE_STATIONS.add(Crafting.tableKey(at));
-        io.github.mojolowjo.entropybot.aa.moves.FactChange.stationUnusable(t.kind(), t.name(), Jobs.fmt(at), why);
-        LOG.info("[entropybot] stations: the {} at {} refused from now on: {}", t.name(), Jobs.fmt(at), why);
-        return t.name() + " at " + Jobs.fmt(at) + " unusable: " + why;
+        io.github.mojolowjo.entropybot.aa.moves.FactChange.stationWalk(t.name(), t.x(), t.y(), t.z(), why);
+        LOG.info("[entropybot] stations: the {} at {} out for this order: {}", t.name(), Jobs.fmt(at), why);
+        return t.name() + " at " + Jobs.fmt(at) + " out for this order: " + why;
     }
 
     // ---- Baritone's MineProcess: a tree, a block to collect ----
@@ -964,7 +967,9 @@ public final class StepHands implements Steps.Hands {
      * reached by Baritone's priced path to the cell of the feet's column at the band's nearest Y (as the strip's first leg,
      * ToStrip) - the fork steers a priced goal's searches (DigDownGoal below, z63 ClimbGoal above), which a plain
      * GoalYLevel never got (it has no one goal position). Asked when the step starts, walked once its complete path is known
-     * (rule 18); computing / chunks not loaded: the step waits (its step time bounds it); no path: the band fact as before.
+     * (rule 18); computing / chunks not loaded: the step waits - bounded by the step watch (Steps: steps.stepMaxS, past it
+     * the ToBand step's timeout is its band's source fact and the order re-plans; and the no-progress watch,
+     * jobPort.noProgressMs) - never an open wait; no path: the band fact as before.
      */
     private int[] bandCell;
     private boolean bandWalking;

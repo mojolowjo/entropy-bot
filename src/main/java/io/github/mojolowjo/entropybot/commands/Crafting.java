@@ -1579,7 +1579,12 @@ final class Crafting {
                         io.github.mojolowjo.entropybot.aa.moves.FactChange.station(kind, name, Jobs.fmt(c.table));     // 0.39.z30: the step's changed fact
                         return craftFail(s, st, "error: " + v.why() + " - the chain prices the table again");
                     case FAILED:
-                        // 0.39.z48 (S62): the use failed from every stand the fork tried: a station fact, re-plan without it
+                        // 0.39.z48 (S62): the use failed from every stand the fork tried: a station fact, re-plan without it.
+                        // 0.39.z65 review 1: kept session-wide here (only here) because since z65 a far station is first
+                        // reached by the chain's priced walk (Step.ToStation, its failure held for the order only), so this
+                        // end is the block itself refusing from the stands within reach (no face seen from two stands,
+                        // nothing opened). Left: a second use of one table in one chain after a trip away has no ToStation
+                        // (NeedChain.knownWalk prices the first use only), so a "no path" there still lands here, as before z65.
                         UNUSABLE_STATIONS.add(tableKey(c.table));
                         io.github.mojolowjo.entropybot.aa.moves.FactChange.stationUnusable(kind, name, Jobs.fmt(c.table), v.why());
                         return craftFail(s, st, CraftJob.couldNotOpenTable(v.why()) + " - the chain prices the table again");

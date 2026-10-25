@@ -280,7 +280,22 @@ public final class NeedChain {
                 CaveWay r = cv.apply(word);
                 return r != null && keyWhy.containsKey(r.key()) ? null : r;
             };
-            return new World(bag, tableNear, furnaceNear, less.seenAll, mobs, loot, b, horizonBlocks, path, stationAt, usesLeft, h, stripLess, caveLess);
+            // 0.39.z65 review 1: a known station whose priced walk failed in this order ("station at x y z") is out for the
+            // order: no position, and not "near" either (the chain then prices placing a new one here)
+            Function<String, Spot> sa = stationAt;
+            Function<String, Spot> stationLess = k -> {
+                Spot s = sa.apply(k);
+                return s != null && keyWhy.containsKey(stationKey(s.x(), s.y(), s.z())) ? null : s;
+            };
+            boolean tn = tableNear && !heldStation(sa, keyWhy, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT);
+            boolean fn = furnaceNear && !heldStation(sa, keyWhy, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT);
+            return new World(bag, tn, fn, less.seenAll, mobs, loot, b, horizonBlocks, path, stationLess, usesLeft, h, stripLess, caveLess);
+        }
+
+        /** 0.39.z65 review 1: the known station of the kind is one the order dropped. */
+        private static boolean heldStation(Function<String, Spot> at, Map<String, String> keyWhy, String kind) {
+            Spot s = at.apply(kind);
+            return s != null && keyWhy.containsKey(stationKey(s.x(), s.y(), s.z()));
         }
     }
 
@@ -1779,11 +1794,18 @@ public final class NeedChain {
         if (s instanceof Step.ChopTree t && t.at() != null) return "cut at " + t.at()[0] + " " + t.at()[1] + " " + t.at()[2];
         if (s instanceof Step.Collect k) return "collect " + k.item();
         if (s instanceof Step.TakeStation t) return "take at " + t.x() + " " + t.y() + " " + t.z();   // 0.39.z48
+        if (s instanceof Step.ToStation t) return stationKey(t.x(), t.y(), t.z());                  // 0.39.z65 review 1
         if (s instanceof Step.ToBand b) return io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(b.minY(), b.maxY());   // 0.39.z42
         if (s instanceof Step.Strip st) return STRIP_KEY + st.key();      // 0.39.z43: a strip that ended lava / no path / no pickaxe
         if (s instanceof Step.ToStrip t) return STRIP_KEY + t.strip();    // 0.39.z46: no path down to the band: the same strip way
         return null;
     }
+
+    /** 0.39.z65 review 1: the source key of a known station used at its cell ("station at x y z"; a take is "take at"). */
+    public static String stationKey(int x, int y, int z) { return STATION_AT + x + " " + y + " " + z; }
+
+    /** 0.39.z65 review 1: the prefix of {@link #stationKey}. */
+    public static final String STATION_AT = "station at ";
 
     /** The key of a spot of {@code item} (a need word; a tag's spot by the item it gives) (see {@link #sourceKey(Step)}). */
     public static String sourceKey(String item, Spot sp) {

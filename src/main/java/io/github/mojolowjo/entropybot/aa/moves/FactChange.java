@@ -38,6 +38,17 @@ public final class FactChange {
         last = new Fact("station " + kind, name + " at " + at + " unusable: " + why);
     }
 
+    /**
+     * 0.39.z65 review 1 (Opus Design): the chain's priced walk to the known station at {@code at} ("x y z") failed (or did not
+     * start): a source fact keyed {@link io.github.mojolowjo.entropybot.aa.NeedChain#stationKey} - held for THIS order only
+     * (Goals.sources; released on a new order or once the bot stands failures.moved blocks closer), the order re-plans with
+     * the station out (the next known one or a new one placed here). Never the session-wide refusal of a use failure.
+     */
+    public static void stationWalk(String name, int x, int y, int z, String why) {
+        last = new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.stationKey(x, y, z),
+                name + " at " + x + " " + y + " " + z + " out for this order: " + why);
+    }
+
     /** A known source the step went for is gone. */
     public static void source(String block, String at) {
         last = new Fact("source " + block + " " + at, block.replaceFirst("^minecraft:", "") + " at " + at + " gone");

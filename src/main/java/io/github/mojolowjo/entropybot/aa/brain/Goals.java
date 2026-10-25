@@ -77,6 +77,32 @@ public final class Goals {
         return out;
     }
 
+    /**
+     * 0.39.z65 review 1: the order's dropped sources as the chain sees them from {@code pos} (the feet now, null: unknown): a
+     * known station dropped because its walk failed ({@link io.github.mojolowjo.entropybot.aa.NeedChain#STATION_AT}) is
+     * back once the bot stands {@code failures.moved} blocks closer to it than where the walk failed (a walk from there is
+     * another walk); every other source stays dropped for the order's life. A new order starts with none. Pure.
+     */
+    public static Map<String, String> droppedSources(Goal g, int[] pos) {
+        Map<String, String> out = new java.util.LinkedHashMap<>();
+        for (Failures.Rec r : g.sources.of(g.id())) {
+            if (r.option() == null || stationBack(r.option(), r.pos(), pos)) continue;
+            out.put(r.option(), r.reason());
+        }
+        return out;
+    }
+
+    /** 0.39.z65 review 1 (pure): a station key held from {@code from} is released at {@code now} ({@code failures.moved} closer). */
+    public static boolean stationBack(String key, int[] from, int[] now) {
+        String p = io.github.mojolowjo.entropybot.aa.NeedChain.STATION_AT;
+        if (key == null || !key.startsWith(p) || from == null || now == null) return false;
+        String[] c = key.substring(p.length()).trim().split("\\s+");
+        if (c.length != 3) return false;     // structural: x y z
+        for (String n : c) if (!n.matches("-?\\d{1,9}")) return false;     // not a station cell: held as any source
+        int[] at = {Integer.parseInt(c[0]), Integer.parseInt(c[1]), Integer.parseInt(c[2])};
+        return Failures.moved(now, at) <= Failures.moved(from, at) - Failures.movedV();
+    }
+
     /** 0.39.z30: at most this many re-plans on a changed fact per order (Tuning replan.maxPerOrder). */
     public static int replanMax() { return Tuning.i("replan.maxPerOrder"); }
 
@@ -112,7 +138,8 @@ public final class Goals {
             return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, (newSource ? "dropped " + n + " sources" : "re-planned " + n + " times") + " already (" + cap + ")");
         }
         if (g.n - have(bb.in.bag, g) <= 0) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
-        if (sourceFact) g.sources.failedFor(g.id(), src, fact.text(), bb.clock.now(), null, ORDER_LIFE_MS);
+        // 0.39.z65 review 1: a station's walk fact keeps where the bot stood (released once it stands failures.moved closer)
+        if (sourceFact) g.sources.failedFor(g.id(), src, fact.text(), bb.clock.now(), src.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STATION_AT) ? bb.in : null, ORDER_LIFE_MS);
         var ch = chain(bb, g);
         if (ch == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");
         if (!ch.ok() || ch.steps().isEmpty()) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, ch.why());
@@ -488,7 +515,7 @@ public final class Goals {
         if (g.strip != null) return null;
         var world = world(bb);
         if (world == null) return null;
-        world = world.withoutSources(droppedSources(g));          // 0.39.z33: the order's dropped sources, listed with their reasons
+        world = world.withoutSources(droppedSources(g, bb.in == null ? null : bb.in.pos));    // 0.39.z33 (z65: a station back once closer)
         var laps = io.github.mojolowjo.entropybot.aa.core.TickLaps.AA;    // 0.39.z62 item 4: resolves counted while the probe is on
         long t0 = laps.now();
         var ch = g.r.group() ? io.github.mojolowjo.entropybot.aa.NeedChain.resolveAll(g.r.key(), g.r.ids(), g.n, world)

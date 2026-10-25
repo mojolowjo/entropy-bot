@@ -116,6 +116,80 @@ class Z65RunVTest {
         assertEquals(1, g.sourceReplans);
     }
 
+    // ---- review 1: a station whose walk failed is out for THAT order only ----
+
+    static World farTableWorld() {
+        Spot table = new Spot(-261, 75, 21, 60, "minecraft:crafting_table");
+        return FakePaths.paths(new World(Map.of("minecraft:cobblestone", 3, "minecraft:stick", 2), true, k -> null))
+                .withStations(k -> ItemWorth.CRAFT.equals(k) ? table : null);
+    }
+
+    static boolean walksToTable(Chain c) { return c != null && c.steps().stream().anyMatch(s -> s instanceof Step.ToStation); }
+
+    @Test
+    void aFailedStationWalkHoldsTheStationForThatOrderOnly() {
+        ScenariosTest.world("wooden", "stone");
+        Clock.Fake clock = new Clock.Fake(10_000_000);
+        Blackboard bb = new Blackboard(clock, new FakePort(), new Tracer());
+        bb.fact(NeedChain.WORLD_FACT, (Supplier<World>) Z65RunVTest::farTableWorld);
+        bb.in.pos = new int[]{-261, 16, 22};                     // run V 07:15:19: 59 below the table
+        Goals.Goal g = Goals.draft(DebugTreeTest.item("stone_pickaxe"), 1, 0, clock.now());
+        assertTrue(walksToTable(Goals.chain(bb, g)), "first: the priced walk to the known table");
+
+        Step.ToStation walk = new Step.ToStation(ItemWorth.CRAFT, "crafting_table", -261, 75, 21);
+        assertEquals("station at -261 75 21", NeedChain.sourceKey(walk));
+        FactChange.stationWalk("crafting_table", -261, 75, 21, "the walk to it ended short: couldn't get there");
+        FactChange.Fact f = FactChange.take();
+        assertEquals("source station at -261 75 21", f.key());
+        Steps.Routine r = Goals.replan(bb, g, walk, f, "couldn't get there");
+        assertNotNull(r.steps(), r.why());
+        assertFalse(r.steps().stream().anyMatch(s -> s instanceof Step.ToStation), "the table is out for this order: " + r.steps());
+        assertTrue(Goals.droppedSources(g).containsKey("station at -261 75 21"));
+        assertEquals(1, g.sourceReplans, "a new source: counted against replan.maxSourceDrops");
+        assertFalse(walksToTable(Goals.chain(bb, g)), "still out from the same spot");
+
+        // the next order: a new goal, nothing dropped - the table is walked to again
+        Goals.Goal next = Goals.draft(DebugTreeTest.item("stone_pickaxe"), 1, 0, clock.now());
+        assertTrue(walksToTable(Goals.chain(bb, next)), "usable again in the next order");
+
+        // the same order, the bot failures.moved closer (44 blocks): the table is back
+        bb.in.pos = new int[]{-261, 60, 22};
+        assertTrue(walksToTable(Goals.chain(bb, g)), "usable again once the bot stands closer");
+        assertTrue(Goals.droppedSources(g).containsKey("station at -261 75 21"), "the record stays (a repeat counts against replan.maxPerOrder)");
+    }
+
+    @Test
+    void aStationIsBackOnlyWhenTheBotIsFailuresMovedCloser() {
+        double m = io.github.mojolowjo.entropybot.aa.brain.Failures.movedV();
+        String k = NeedChain.stationKey(0, 70, 0);
+        int[] from = {0, 10, 0};                                   // 60 away
+        assertFalse(Goals.stationBack(k, from, new int[]{0, (int) (10 + m - 1), 0}), "a little closer: still out");
+        assertTrue(Goals.stationBack(k, from, new int[]{0, (int) (10 + m), 0}), "failures.moved closer: back");
+        assertFalse(Goals.stationBack(k, from, new int[]{100, 10, 0}), "farther: out");
+        assertFalse(Goals.stationBack("take at 0 70 0", from, new int[]{0, 69, 0}), "other sources stay dropped for the order");
+        assertFalse(Goals.stationBack(k, null, new int[]{0, 69, 0}), "no position kept: held for the order");
+    }
+
+    // ---- review 2: walk-led source re-plans are bounded by replan.maxSourceDrops ----
+
+    @Test
+    void walkLedSourceDropsCountAgainstMaxSourceDrops() {
+        ScenariosTest.world("wooden", "stone");
+        Step walk = new Step.Walk(30, 64, 0, 0);
+        FactChange.Fact tree = Steps.walkLeads(List.of(walk, new Step.ChopTree(new int[]{30, 64, 0}, 4, null)), 0, "stopped short");
+        assertEquals("cut at 30 64 0", FactChange.ownSourceKey(tree), "a tree cell");
+        assertEquals("collect cobblestone", FactChange.ownSourceKey(Steps.walkLeads(List.of(walk, new Step.Collect("cobblestone", 3)), 0, "x")));
+        Clock.Fake clock = new Clock.Fake(10_000_000);
+        Blackboard bb = new Blackboard(clock, new FakePort(), new Tracer());
+        bb.fact(NeedChain.WORLD_FACT, (Supplier<World>) () -> Z62RunSTest.world(Map.of("minecraft:stone_pickaxe", 1), Z62RunSTest.band("east")));
+        Goals.Goal g = Goals.draft(DebugTreeTest.item("raw_iron"), 3, 0, clock.now());
+        g.sourceReplans = Goals.replanMaxSources();
+        Steps.Routine capped = Goals.replan(bb, g, walk, tree, "stopped short");
+        assertNull(capped.steps());
+        assertTrue(capped.why().contains("replan.maxSourceDrops"), capped.why());
+        assertEquals(Goals.replanMaxSources(), g.sourceReplans);
+    }
+
     // ---- item 2: the spare decision at info level, once per chain ----
 
     /**
@@ -161,5 +235,7 @@ class Z65RunVTest {
         assertEquals(12, b.target(12));
         assertEquals(8, new Step.ToBand(7, 8).target(62), "a band under 3 high: its own edge");
         assertEquals(7, new Step.ToBand(7, 7).target(0));
+        assertEquals(7, new Step.ToBand(7, 8).target(0), "from below a 2-level band: its low edge, inside it");
+        for (int y = -64; y <= 320; y += 7) { int t = new Step.ToBand(7, 8).target(y); assertTrue(t >= 7 && t <= 8, "always inside: " + t); }
     }
 }

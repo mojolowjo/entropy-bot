@@ -409,7 +409,9 @@ public sealed interface Step {
         /**
          * 0.39.z65 item 3: the Y of the priced walk's cell from feet at {@code y} - the band's nearest Y, one inside each edge
          * when the band is 3 or more high, because the walk's goal (stand by the cell, GoalGetToBlock) ends with the feet
-         * within one block of it, so every end of that goal is in the band.
+         * within one block of it, so every end of that goal is in the band. A band 1 or 2 levels high gets no inset (it
+         * would leave the band): the nearest Y inside it, so the target is always within minY..maxY. The step's wait for
+         * this cell's path is bounded by the step watch (steps.stepMaxS: its timeout is the band's source fact, a re-plan).
          */
         public int target(int y) {
             boolean inset = maxY - minY >= 2;
