@@ -715,8 +715,6 @@ final class Mining {
         boolean untilChecked;
         /** 0.39.z47: the until words whose known source was dropped for the order (said once each). */
         final java.util.Set<String> saidDropped = new java.util.HashSet<>();
-        /** 0.39.z42: an explore while the chain's paths compute: it ends when a path answer lands after this count (-1: not one). */
-        long pathsLanded = -1;
         int chunks, sx, sz;
         /** 0.33.0: where the walk started (the report says how far it went). */
         int[] from;
@@ -797,18 +795,7 @@ final class Mining {
     String explore(LocalPlayer p, String rest) {
         io.github.mojolowjo.entropybot.vocab.ExploreWords.Args a = io.github.mojolowjo.entropybot.vocab.ExploreWords.parse(rest, io.github.mojolowjo.entropybot.vocab.ExploreWords.defaultMinutes());
         if (a.error() != null) return a.error();
-        return startExplore(p, a.dir(), a.minutes(), null, a.gather(), a.until(), false);
-    }
-
-    /**
-     * 0.39.z42 (Step.Explore whilePaths): the chain's explore while its ways wait on a walk's path: the plain explore walk
-     * (gathering as a plain explore does), ended the moment a path answer lands (LivePathPrice.landed moves), so the order
-     * is priced again on it.
-     */
-    String exploreWhilePaths(LocalPlayer p, int minutes) {
-        io.github.mojolowjo.entropybot.vocab.ExploreWords.Args a = io.github.mojolowjo.entropybot.vocab.ExploreWords.parse(String.valueOf(minutes), io.github.mojolowjo.entropybot.vocab.ExploreWords.defaultMinutes());
-        if (a.error() != null) return a.error();
-        return startExplore(p, a.dir(), a.minutes(), null, a.gather(), null, true);
+        return startExplore(p, a.dir(), a.minutes(), null, a.gather(), a.until());
     }
 
     /** V1b: "find cave|<poi kind>|<biome> [minutes]": a known one answers at once; else explore until one turns up. */
@@ -824,10 +811,10 @@ final class Mining {
             }
             if (best != null) return "ok: I know a " + f.what() + ": #" + best.id() + " at " + best.x() + " " + best.y() + " " + best.z() + " (" + Math.round(Math.sqrt(bd)) + "m) - go poi " + best.id();
         }
-        return startExplore(p, null, f.minutes(), f, f.gather(), null, false);
+        return startExplore(p, null, f.minutes(), f, f.gather(), null);
     }
 
-    private String startExplore(LocalPlayer p, String dir, int minutes, io.github.mojolowjo.entropybot.vocab.ExploreWords.Find find, boolean gather, String untilSource, boolean whilePaths) {
+    private String startExplore(LocalPlayer p, String dir, int minutes, io.github.mojolowjo.entropybot.vocab.ExploreWords.Find find, boolean gather, String untilSource) {
         String busy = busyText();
         if (busy != null) return busy;
         try {
@@ -842,7 +829,10 @@ final class Mining {
         ex.dir = dir;
         ex.find = find;
         ex.untilSource = untilSource;
-        if (whilePaths) ex.pathsLanded = LivePathPrice.INSTANCE.landed();
+        // 0.39.z76 send-back 3 (rule 22: no placing inside an explore; run AU's placements came from the gathers' mine runs,
+        // VeinMine mineWith allowPlace): the explore's walks price a placement out (the fork's walk lease, COST_INF) - the
+        // next step's start puts walk.placePenalty back (StepHands.reserve -> RunThrowaway.walkPenalty)
+        io.github.mojolowjo.entropybot.engine.RunThrowaway.noPlacing();
         int[] me = Jobs.here(p);
         ex.sx = me[0] >> 4;
         ex.sz = me[2] >> 4;
@@ -881,7 +871,7 @@ final class Mining {
         LOG.info("[entropybot] explore: mining {} exposed ore blocks at {} {} {}", vein.size(), f.x(), f.y(), f.z());
         List<Seq.Step> add = new ArrayList<>();
         add.add(Seq.Step.walk(new int[]{f.x(), f.y(), f.z()}, true));
-        add.add(VeinMine.seqStep(vein, "mining the ore at " + f.x() + " " + f.y() + " " + f.z()));       // rm-final: Baritone's MineProcess, not the clear engine
+        add.add(VeinMine.seqStep(vein, "mining the ore at " + f.x() + " " + f.y() + " " + f.z(), false));     // z76 send-back 3 (rule 22): no placing inside an explore       // rm-final: Baritone's MineProcess, not the clear engine
         return add;
     }
 
@@ -1160,12 +1150,6 @@ final class Mining {
                 return "next";
             }
         }
-        // 0.39.z46 (runs E-G): a path answer no longer ends the explore by itself - the order's run prices it again where the
-        // explore runs and cancels it only when the pick changed (Steps.reprice(true)); a landing is said here only
-        if (ex.pathsLanded >= 0 && done == null && LivePathPrice.INSTANCE.landed() != ex.pathsLanded) {
-            ex.pathsLanded = LivePathPrice.INSTANCE.landed();
-            LOG.debug("[entropybot] explore: a path answer landed ({}); the explore runs on unless the order's pick changes", LivePathPrice.INSTANCE.lastLanded());
-        }
         if (ex.find != null && done == null && (ex.findAt < 0 || now() - ex.findAt >= 20)) {
             ex.findAt = now();
             try {
@@ -1318,7 +1302,7 @@ final class Mining {
             s.note += tookText(ex.took);
             // 0.39.z47 (run H): a chain's explore that ends with no new source is not a find: the order's next explore waits
             // explore.retryS (Goals.blocked), said once here
-            if (ex.untilSource != null || ex.pathsLanded >= 0) {
+            if (ex.untilSource != null) {
                 io.github.mojolowjo.entropybot.aa.brain.Goals.exploreEndedBare(System.currentTimeMillis());
                 String wait = "no new source; next explore in " + io.github.mojolowjo.entropybot.aa.brain.Goals.exploreRetryS() + " s";
                 LOG.info("[entropybot] explore: {}", wait);

@@ -537,11 +537,12 @@ public final class AaDesires {
         return null;
     }
 
-    /** Owner default (Q3): build a house (where only a shelter stands), explore, tidy the bag into the chests. */
+    /** Owner default (Q3): build a house (where only a shelter stands), tidy the bag into the chests (z76: no idle explore, rule 22). */
     public static List<Desire> wants() {
         return List.of(
                 want("build", TaskKind.BASE_BED, bb -> bb.in.basePlace == null ? null : List.of(new Step.House(bb.in.basePlace)), AaDesires::buildInfeasible, Desire.Exposure.SURFACE),
-                want("explore", TaskKind.EXPLORE, bb -> List.of(new Step.Explore((int) t("steps.exploreMin"))), bb -> null, Desire.Exposure.SURFACE),
+                // 0.39.z76 send-back 3 (rule 22: the bot moves only as a priced step of the current order): the idle "explore" want
+                // (walk new land for its own sake) is deleted
                 want("tidy", TaskKind.DEPOSIT, bb -> List.of(new Step.Deposit()), bb -> bb.in.baseChests ? null : "no base chests to put things in", Desire.Exposure.ANY));
     }
 

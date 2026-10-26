@@ -35,7 +35,12 @@ public interface PathPrice {
     }
 
     /** What an answer is: a price, or why there is none (rule 15: loaded / empty / not loaded). */
-    enum Kind { PRICED, COMPUTING, CHUNKS, UNREACHABLE, NONE }
+    /**
+     * 0.39.z76 send-back 3: ESTIMATED (rule 18 amended, rule 22) - the walk's path still not known after pathCost.firstAnswerWaitS
+     * of standing: Baritone's estimate (its goal heuristic, no search) is its seconds, "ranked, not priced"; the walk computes
+     * its full path on the way.
+     */
+    enum Kind { PRICED, COMPUTING, CHUNKS, UNREACHABLE, NONE, ESTIMATED }
 
     /** One ask's answer: the walk (PRICED only) or the kind and Baritone's / the provider's words. */
     record Answer(Walk walk, Kind kind, String reason) {
@@ -44,6 +49,8 @@ public interface PathPrice {
         public static Answer chunks(String why) { return new Answer(null, Kind.CHUNKS, why); }
         public static Answer unreachable(String why) { return new Answer(null, Kind.UNREACHABLE, why); }
         public static Answer none(String why) { return new Answer(null, Kind.NONE, why); }
+        /** 0.39.z76 send-back 3: the estimate's seconds after the first-answer wait ({@link Kind#ESTIMATED}). */
+        public static Answer estimated(Walk w, String why) { return new Answer(w, Kind.ESTIMATED, why); }
     }
 
     /** The start of every not-a-price text a way fails with (aa why / aa debug; {@link NeedChain.Chain#waiting}). */

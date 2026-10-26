@@ -314,10 +314,10 @@ class Z71StepMonitorTest {
     @Test
     void review_theFirstAnswerWaitHoldsTheClockUntilItsBound() {
         Hands h = new Hands();
-        h.script = s -> sig(Double.NaN, FEET, false, 0, -1, -1, 0, 5, s <= 30 ? "waiting in place while the first path answers compute (its own bound pathCost.firstAnswerWaitS)" : null);
+        h.script = s -> sig(Double.NaN, FEET, false, 0, -1, -1, 0, 5, s <= 30 ? "standing while the walks compute (its own bound pathCost.firstAnswerWaitS 30 s; rule 22)" : null);
         Planner p = new Planner(h);
         Steps run = new Steps(h);
-        run.start("goal.iron", List.of(new Step.Explore(5, null, true, 30)), 0, p);
+        run.start("goal.iron", List.of(new Step.Explore(5, "raw_iron")), 0, p);     // z76 send-back 3: any judged step with an own wait (the stand itself is exempt)
         run(run, h, p, 59);
         assertTrue(p.facts.isEmpty(), p.facts.toString());
         run(run, h, p, 70);

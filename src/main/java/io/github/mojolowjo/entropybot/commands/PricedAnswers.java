@@ -47,6 +47,20 @@ public final class PricedAnswers {
         return null;
     }
 
+    /**
+     * 0.39.z76 send-back 3 (rule 18 amended, rule 22; run AU 01:57:53-02:02:53: walks "COMPUTING (queued: 4 in flight)" for
+     * 5 min): a walk still not known ({@code a} COMPUTING) after {@code waitS} (pathCost.firstAnswerWaitS) of asks from the
+     * same start is taken by Baritone's estimate ({@code estimateS}, its goal heuristic, no search) - ESTIMATED, "ranked, not
+     * priced"; the walk computes its full path on the way. Before the wait, an unknown estimate (NaN), or any other answer:
+     * {@code a} as it is (rule 15: no estimate is never a price).
+     */
+    public static PathPrice.Answer afterWait(PathPrice.Answer a, long waitedTicks, int waitS, double estimateS) {
+        if (a == null || a.kind() != PathPrice.Kind.COMPUTING) return a;
+        if (waitS <= 0 || waitedTicks < (long) waitS * io.github.mojolowjo.entropybot.aa.brain.GameTimes.TPS || !(estimateS >= 0) || Double.isInfinite(estimateS)) return a;
+        return PathPrice.Answer.estimated(new PathPrice.Walk(estimateS), "not known after " + waitS + " s from here (" + (a.reason() == null ? "computing" : a.reason())
+                + "): Baritone's estimate, ranked, not priced");
+    }
+
     /** One cell as a number (26 bits x, 12 bits y, 26 bits z, as the game packs block positions). */
     public static long cell(int x, int y, int z) {
         return ((long) x & 0x3FFFFFFL) << 38 | ((long) z & 0x3FFFFFFL) << 12 | ((long) y & 0xFFFL);   // structural: BlockPos packing

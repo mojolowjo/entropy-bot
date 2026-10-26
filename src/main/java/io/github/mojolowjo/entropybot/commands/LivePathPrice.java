@@ -70,7 +70,37 @@ public final class LivePathPrice implements PathPrice {
     @Override
     public Answer priceInto(int x, int y, int z, double dist) { return ask(x, y, z, true); }
 
+    /**
+     * 0.39.z76 send-back 3 (rule 18 amended, rule 22): every ask, then its first-answer clock - a walk still COMPUTING after
+     * pathCost.firstAnswerWaitS of asks from the same start (within failures.moved) is answered by Baritone's estimate
+     * ({@link PricedAnswers#afterWait}); any other answer, or a move off that start, starts the clock again.
+     */
     private Answer ask(int x, int y, int z, boolean into) {
+        Answer a = ask0(x, y, z, into);
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.player == null || mc.level == null) return a;
+        String key = key(x, y, z, into);
+        if (a == null || a.kind() != PathPrice.Kind.COMPUTING) { firstAsked.remove(key); return a; }
+        int[] me = Jobs.here(mc.player);
+        long now = mc.level.getGameTime();
+        long[] t0 = firstAsked.get(key);
+        if (t0 == null || AskSweep.dist(me, new int[]{(int) t0[1], (int) t0[2], (int) t0[3]}) > io.github.mojolowjo.entropybot.aa.brain.Failures.movedV()) {
+            if (firstAsked.size() > ASKED_AT_MAX) firstAsked.clear();
+            firstAsked.put(key, new long[]{now, me[0], me[1], me[2]});
+            return a;
+        }
+        int waitS = io.github.mojolowjo.entropybot.aa.NeedChain.firstAnswerWaitS();
+        if (now - t0[0] < (long) waitS * io.github.mojolowjo.entropybot.aa.brain.GameTimes.TPS) return a;
+        return PricedAnswers.afterWait(a, now - t0[0], waitS, estimate(x, y, z));
+    }
+
+    /** 0.39.z76 send-back 3: per ask key, when (game tick) and from where (x y z) it was first answered COMPUTING. */
+    private final Map<String, long[]> firstAsked = new HashMap<>();
+
+    /** structural: a memory bound on the clocks kept (a chain asks a few dozen) */
+    private static final int ASKED_AT_MAX = 1024;
+
+    private Answer ask0(int x, int y, int z, boolean into) {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || !mc.isSameThread()) return none("the chain was priced off the game thread: the path search is started on it only");
         if (mc.player == null || mc.level == null) return Answer.none("no player or level");

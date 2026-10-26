@@ -781,7 +781,6 @@ steerRules.windowMs	60000.0
 stepRun.animalRange	32.0
 steps.burrowWaitS	120.0
 steps.calmWaitS	60.0
-steps.exploreMin	5.0
 steps.fishMin	5.0
 steps.huntAtR	16.0
 steps.huntReach	20.0
@@ -919,8 +918,6 @@ pathCost.reserveForRunning	1.0
 pathCost.researchMinS	3.0
 pathCost.queueKeepS	30.0
 pathCost.firstAnswerWaitS	30.0
-pathCost.firstAnswerExpectS	2.0
-pathCost.firstAnswerStallS	8.0
 price.walkX	1.0
 price.breakX	1.0
 price.placeX	1.0

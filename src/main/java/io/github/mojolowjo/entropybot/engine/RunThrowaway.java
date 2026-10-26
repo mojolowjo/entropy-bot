@@ -167,6 +167,17 @@ public final class RunThrowaway {
         if (l != null) l.walkPenalty(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("walk.placePenalty"));
     }
 
+    /**
+     * 0.39.z76 send-back 3 (rule 22: "no placing or running away inside an explore"): the explore's walks price a placement
+     * at Baritone's own infinite cost (ActionCosts.COST_INF) through the same walk lease, so its searches never place a block
+     * (a target only reachable by placing is no path, the explore's own failure). The next step's start puts
+     * walk.placePenalty back ({@link #walkPenalty}).
+     */
+    public static void noPlacing() {
+        var l = lease("explore: no placing");
+        if (l != null) l.walkPenalty(baritone.api.pathing.movement.ActionCosts.COST_INF);
+    }
+
     public static void end(Object run) {
         var l = lease("end of a throwaway run");
         if (l != null) l.end(run);

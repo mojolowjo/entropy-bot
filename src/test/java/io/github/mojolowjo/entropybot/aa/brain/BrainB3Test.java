@@ -21,9 +21,9 @@ class BrainB3Test {
 
     @Test
     void personalityDefaultsAndBadValuesFallBack() {
-        Personality p = Personality.of(Map.of("build", 30, "explore", 500, "nonsense", 1, "tidy", "x"));
+        Personality p = Personality.of(Map.of("build", 30, "help", 500, "nonsense", 1, "tidy", "x"));
         assertEquals(30, p.get("build"));
-        assertEquals(15, p.get("explore"), "out of range: the default");
+        assertEquals(20, p.get("help"), "out of range: the default");
         assertEquals(10, p.get("tidy"));
         assertEquals(3, p.errors.size(), p.errors.toString());
         assertEquals(15, new Personality().get("margin"));

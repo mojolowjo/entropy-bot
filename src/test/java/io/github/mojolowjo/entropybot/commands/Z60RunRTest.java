@@ -5,7 +5,6 @@ import io.github.mojolowjo.entropybot.aa.brain.FastEnd;
 import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 import io.github.mojolowjo.entropybot.aa.moves.Car;
 import io.github.mojolowjo.entropybot.aa.moves.FactChange;
-import io.github.mojolowjo.entropybot.aa.moves.FirstAnswerWait;
 import io.github.mojolowjo.entropybot.aa.moves.Step;
 import io.github.mojolowjo.entropybot.aa.moves.Steps;
 import io.github.mojolowjo.entropybot.guard.BreakPolicy;
@@ -27,136 +26,8 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class Z60RunRTest {
 
-    private static final int TPS = 20;   // game fact: 20 game ticks a second
-
-    // ---- item 1: the first-answer wait lasts while first answers progress, up to 30 s ----
-
-    /**
-     * Run R 03:34:54 order start: 4 first answers started, two landed within 0.7 s (the trees at -28 70 -51 and -35 72 -53);
-     * the other two (-138 41 15 and -56 48 -11) ran on, fork segments landing at most 4 s apart, and both landed (no path,
-     * 144768 nodes) 6 s after the start. z58 explored at 4 s; z60 waits while they progress and explores only when none is
-     * left (or none progressed for pathCost.firstAnswerStallS, or the 30 s cap).
-     */
-    @Test
-    void runRsStartWaitsWhileTheTwoSlowFirstAnswersProgress() {
-        int cap = io.github.mojolowjo.entropybot.aa.NeedChain.firstAnswerWaitS();
-        double stall = Tuning.get("pathCost.firstAnswerStallS");
-        assertEquals(30, cap);
-        assertEquals(8, stall, 1e-9);
-        // 4 s (03:34:56.955), 2 pending, the last segment landed 1 s ago: z58 explored here, z60 waits
-        var at4 = FirstAnswerWait.of(4 * TPS, cap, 2, false, TPS, stall);
-        assertEquals(FirstAnswerWait.Next.WAIT, at4.next(), at4.why());
-        // 6 s: both landed (no path): none pending, the landing just seen - one more look for its re-price, then explore
-        assertEquals(FirstAnswerWait.Next.WAIT, FirstAnswerWait.of(6 * TPS, cap, 0, true, 0, stall).next());
-        var after = FirstAnswerWait.of(6 * TPS + 5, cap, 0, false, 5, stall);
-        assertEquals(FirstAnswerWait.Next.EXPLORE, after.next());
-        assertTrue(after.why().startsWith("no first answer computing any more after 6.3 s"), after.why());
-        // the old 4-argument call (no progress fact) never judges a stall
-        assertEquals(FirstAnswerWait.Next.WAIT, FirstAnswerWait.of(25 * TPS, cap, 1, false).next());
-    }
-
-    /** Stuck searches (no segment, no answer for 8 s) end the wait early, said with the numbers; the cap ends it anyway. */
-    @Test
-    void aStallOrTheCapEndsTheWait() {
-        var stuck = FirstAnswerWait.of(9 * TPS, 30, 2, false, 8 * TPS, 8);
-        assertEquals(FirstAnswerWait.Next.EXPLORE, stuck.next());
-        assertEquals("2 paths still computing but none progressed for 8.0 s (pathCost.firstAnswerStallS 8.0; waited 9.0 s of 30): exploring meanwhile", stuck.why());
-        assertEquals(FirstAnswerWait.Next.WAIT, FirstAnswerWait.of(9 * TPS, 30, 2, false, 8 * TPS - 1, 8).next());
-        var capped = FirstAnswerWait.of(30 * TPS, 30, 1, false, 0, 8);
-        assertEquals(FirstAnswerWait.Next.EXPLORE, capped.next());
-        assertEquals("waited 30 s, 1 path still computing: exploring meanwhile", capped.why());
-    }
-
-    /**
-     * Review 2: fake hands run the explore while paths compute exactly as StepHands does - its start begins the hands'
-     * FirstAnswerWait.Tracker with the live counts, each status look feeds it the counts of now - with a fake fork's numbers
-     * (first answers pending, answers landed, segment searches landed) and a game clock in ticks.
-     */
-    private static final class TrackerHands implements Steps.Hands {
-        final FirstAnswerWait.Tracker wait = new FirstAnswerWait.Tracker();
-        long clock, landed, segs;
-        int pending;
-        final List<String> explored = new ArrayList<>();
-        String lastWhy;
-
-        @Override public String start(Step s) {
-            Step.Explore k = (Step.Explore) s;
-            var d = FirstAnswerWait.of(0, k.waitS(), pending, false);
-            lastWhy = d.why();
-            if (d.next() == FirstAnswerWait.Next.EXPLORE) { explored.add(lastWhy); return null; }
-            wait.begin(clock, landed, segs);
-            return null;
-        }
-
-        @Override public Car.Status status(Step s) {
-            Step.Explore k = (Step.Explore) s;
-            if (!wait.waiting()) return Car.Status.running("exploring");
-            var d = wait.look(clock, landed, segs, pending, k.waitS(), Tuning.get("pathCost.firstAnswerStallS"));
-            lastWhy = d.why();
-            if (d.next() == FirstAnswerWait.Next.WAIT) return Car.Status.running(d.why());
-            wait.end();
-            explored.add(d.why());
-            return Car.Status.running("exploring");
-        }
-
-        @Override public void cancel(String why) { wait.end(); }
-    }
-
-    private static Steps waiting(TrackerHands h) {
-        Steps run = new Steps(h);
-        run.start("goal.torch", List.of(new Step.Explore(5, null, true, io.github.mojolowjo.entropybot.aa.NeedChain.firstAnswerWaitS())), 0,
-                (failed, fact, why) -> new Steps.Routine(null, "no way priced yet"));
-        return run;
-    }
-
-    /** Run R's start on the hands: segments land every 3 s, so the bot still stands at 20 s; then they stop: 8 s later it explores. */
-    @Test
-    void theHandsWaitWhileSegmentsLandAndExploreAfterAStall() {
-        TrackerHands h = new TrackerHands();
-        h.pending = 2;
-        h.segs = 10;
-        Steps run = waiting(h);
-        for (int t = 1; t <= 80; t++) {                     // 20 s of AA looks (every 5 game ticks)
-            h.clock += 5;
-            if (h.clock % 60 == 0) h.segs++;                // a segment search lands every 3 s
-            run.tick(t);
-        }
-        assertTrue(h.explored.isEmpty(), h.lastWhy);
-        assertTrue(h.lastWhy.startsWith("waiting up to 30 s while 2 paths compute (20.0 s so far"), h.lastWhy);
-        int t = 81;
-        while (h.explored.isEmpty() && t < 200) {           // the searches stop progressing
-            h.clock += 5;
-            run.tick(t++);
-        }
-        assertEquals(1, h.explored.size());
-        assertTrue(h.explored.get(0).startsWith("2 paths still computing but none progressed for 8.0 s"), h.explored.get(0));
-        assertEquals(360 + 8 * TPS, h.clock, "8 s after the last segment (game tick 360, 18 s): explored at 26 s, before the 30 s cap");
-    }
-
-    /** Review 2: the fork gives no segment count (-1): the hands explore at the first look, not after the 30 s cap. */
-    @Test
-    void theHandsExploreAtOnceWhenSegmentsAreNotCounted() {
-        TrackerHands h = new TrackerHands();
-        h.pending = 2;
-        h.segs = -1;
-        Steps run = waiting(h);
-        h.clock += 5;
-        run.tick(1);
-        assertEquals(1, h.explored.size(), h.lastWhy);
-        assertTrue(h.explored.get(0).startsWith("this fork jar does not count segment searches"), h.explored.get(0));
-    }
-
-    /** Review 2: the chain's charge is the expected wait - 0 with nothing pending or not counted, a round per 4 pending, capped. */
-    @Test
-    void theChainChargesTheExpectedWaitNotTheCap() {
-        double round = Tuning.get("pathCost.firstAnswerExpectS");
-        assertEquals(2, round, 1e-9);
-        assertEquals(0, FirstAnswerWait.expectedS(0, 4, round, 30), 1e-9);
-        assertEquals(0, FirstAnswerWait.expectedS(-1, 4, round, 30), 1e-9);
-        assertEquals(2, FirstAnswerWait.expectedS(2, 4, round, 30), 1e-9);      // run R's start: one round
-        assertEquals(6, FirstAnswerWait.expectedS(9, 4, round, 30), 1e-9);      // three rounds of 4 slots
-        assertEquals(30, FirstAnswerWait.expectedS(100, 4, round, 30), 1e-9);   // never past the cap
-    }
+    // ---- item 1 (the first-answer wait of the explore while paths compute) deleted in 0.39.z76 send-back 3 (rule 22): the bot
+    // stands while its walks compute (Step.AwaitPaths, StandWait; Z58PathQueueTest, Z76StandTest) ----
 
     // ---- item 2: placed torches are structure blocks (RULES 16), never a source outside my areas ----
 

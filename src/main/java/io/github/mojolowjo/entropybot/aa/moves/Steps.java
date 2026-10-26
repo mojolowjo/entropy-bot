@@ -845,7 +845,8 @@ public final class Steps {
     /**
      * {@code running}: 0.39.z46 (runs E-G: "explore 5 while paths compute" ended and restarted within 0-2 s on every path
      * answer) - the running explore-while-paths step is priced again on the answer where it runs; it is cancelled only when
-     * the order's pick changed (other steps from here), else it runs on to its minutes.
+     * the order's pick changed (other steps from here), else it runs on to its minutes. 0.39.z76 send-back 3 (rule 22): that
+     * step is now the standing {@link Step.AwaitPaths} (and an explore until a source, z75).
      */
     private boolean reprice(boolean running) {
         FactChange.Fact f = priceAsk;
@@ -870,7 +871,7 @@ public final class Steps {
             return false;
         }
         // 0.39.z48 (S66): a running step is never cut for another way; the one step whose end IS the paths' answer - the
-        // explore while paths compute - ends only for a priced way (a new pick that waits on paths again runs on as it is)
+        // explore while paths compute, z76 the standing step - ends only for a priced way (a new pick that waits on paths again runs on as it is)
         if (running && waitsOnPaths(r.steps())) { pushReserve(held); return false; }
         if (running) safeCancel("re-priced: " + f.text() + " - the pick changed");
         String diff = planDiff(left, r.steps(), true);
@@ -881,9 +882,9 @@ public final class Steps {
         return true;
     }
 
-    /** 0.39.z48: the steps hold an explore while the chain's paths compute (the pick still waits on a walk's price). */
+    /** 0.39.z48: the steps stand while the chain's paths compute (the pick still waits on a walk's price; z76: Step.AwaitPaths). */
     public static boolean waitsOnPaths(List<Step> s) {
-        for (Step x : s) if (x instanceof Step.Explore e && e.whilePaths()) return true;
+        for (Step x : s) if (x instanceof Step.AwaitPaths) return true;
         return false;
     }
 
@@ -1181,7 +1182,8 @@ public final class Steps {
         // re-plan chose the same explore, 14 times in 30 s): an explore until a source is priced again where it runs on a
         // found source (FactChange.found) or a landed path, and ends only when the planner picks other steps - its done-test
         // is the planner's own test of what it found, not a second one
-        if (priceAsk != null && s instanceof Step.Explore ex0 && (ex0.whilePaths() || ex0.until() != null) && reprice(true)) return phase;
+        // 0.39.z76 send-back 3 (rule 22): the standing step is priced again on each landing where it stands, as the until-explore
+        if (priceAsk != null && (s instanceof Step.AwaitPaths || s instanceof Step.Explore ex0 && ex0.until() != null) && reprice(true)) return phase;
         Car.Status st;
         FactChange.Fact threw = null;
         try {

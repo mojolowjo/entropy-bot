@@ -37,6 +37,8 @@ final class VeinMine {
     private final List<Block> kinds = new ArrayList<>();
     private final Map<String, Integer> mined = new LinkedHashMap<>();
     private final String label;
+    /** 0.39.z76 send-back 3 (rule 22): the mine run may place (pillar, bridge); false inside an explore's gather. */
+    private boolean allowPlace = true;
     private boolean started;
     private long startTick;
     private int broken;
@@ -72,7 +74,7 @@ final class VeinMine {
         io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE, "vein");
         // quantity 0: Baritone mines on; the vein is done when its cells are gone, and then the process is cancelled here
         try {
-            b.getMineProcess().mineWith(0, new BlockOptionalMetaLookup(kinds.toArray(new Block[0])), true);
+            b.getMineProcess().mineWith(0, new BlockOptionalMetaLookup(kinds.toArray(new Block[0])), allowPlace);
         } catch (LinkageError e) {
             return "this Baritone has no mineWith (the stock jar? install the entropy fork): " + e;
         }
@@ -142,9 +144,18 @@ final class VeinMine {
 
     // ---- the Seq glue: a vein step spliced into a mine or explore job ----
 
-    static Seq.Step seqStep(List<Pos> vein, String label) {
+    static Seq.Step seqStep(List<Pos> vein, String label) { return seqStep(vein, label, true); }
+
+    /**
+     * 0.39.z76 send-back 3 (rule 22: "no placing or running away inside an explore"; run AU 01:58:12, 02:01:06, 02:02:02: the
+     * client's placed count rose right after each gather vein of the explore - mineWith(..., allowPlace true)): {@code allowPlace}
+     * false for an explore's gather.
+     */
+    static Seq.Step seqStep(List<Pos> vein, String label, boolean allowPlace) {
         Seq.Step s = new Seq.Step("veinmine");
-        s.state = new VeinMine(vein, label);
+        VeinMine v = new VeinMine(vein, label);
+        v.allowPlace = allowPlace;
+        s.state = v;
         return s;
     }
 

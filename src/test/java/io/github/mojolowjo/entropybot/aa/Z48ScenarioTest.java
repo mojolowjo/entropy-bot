@@ -210,8 +210,8 @@ class Z48ScenarioTest {
     void s66AnExploreWhilePathsRunsOnWhenTheNewPickWaitsOnPathsAgain() {
         Hands h = new Hands();
         Steps run = new Steps(h);
-        Step ex = new Step.Explore(5, null, true), craft = new Step.Craft("minecraft:torch", 4);
-        Step ex2 = new Step.Explore(5, null, true), other = new Step.Craft("minecraft:stick", 4);
+        Step ex = new Step.AwaitPaths(30), craft = new Step.Craft("minecraft:torch", 4);
+        Step ex2 = new Step.AwaitPaths(30), other = new Step.Craft("minecraft:stick", 4);
         List<List<Step>> answers = new ArrayList<>(List.of(List.of(ex2, other), List.of(other)));
         run.start("goal.torch", List.of(ex, craft), 0, (failed, fact, why) -> new Steps.Routine(answers.remove(0), null));
         run.repriceAtNextStep(FactChange.priced("walk to 1 2 3: computing"));

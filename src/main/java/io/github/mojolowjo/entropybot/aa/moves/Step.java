@@ -254,21 +254,22 @@ public sealed interface Step {
      * Walk new land for {@code minutes} (the explore verb: Baritone's explore goal), the want's way. live-facts: {@code until}
      * (an item id, null: none) ends it the moment a source of that item is known (a chain's explore for a missing source).
      */
-    record Explore(int minutes, String until, boolean whilePaths, int waitS) implements Step {
+    record Explore(int minutes, String until) implements Step {
         public Explore(int minutes) { this(minutes, null); }
-        public Explore(int minutes, String until) { this(minutes, until, false); }
-        public Explore(int minutes, String until, boolean whilePaths) { this(minutes, until, whilePaths, 0); }
-        /**
-         * 0.39.z42: {@code whilePaths}: the chain's ways all wait on a walk's path (computing, chunks not loaded): this explore
-         * moves the bot meanwhile and ends the moment a path answer lands (the order is priced again then).
-         * 0.39.z58 (Opus Design ruling on run Q: rule 18 stays exact, so a walk priced from a cell the bot left is never known):
-         * {@code waitS} > 0 - while first answers (goals not answered yet in this order) are computing, the step first waits in
-         * place up to waitS seconds, Baritone idle, so they land from the cell the bot stands on; then it explores as before.
-         */
-        public String text() {
-            return "explore " + minutes + (until == null ? "" : " until " + until) + (whilePaths ? " while paths compute" : "")
-                    + (waitS > 0 ? " (first waiting up to " + waitS + " s in place while first answers compute)" : "");
-        }
+
+        public String text() { return "explore " + minutes + (until == null ? "" : " until " + until); }
+    }
+
+    /**
+     * 0.39.z76 send-back 3 (rule 22, owner 2026-10-26: "the bot moves only as a priced step of the current order"; run AU
+     * 01:57:53-02:02:53: "explore 5 while paths compute" walked 5 min while its own prices were re-searched from every new
+     * cell): the chain's ways all wait on a walk's path - the bot STANDS, Baritone idle, up to {@code waitS}
+     * (pathCost.firstAnswerWaitS) while their answers compute from the cell it stands on; each landing prices the order again
+     * there. Past the wait the step says so and the order is priced again, the walks still not known now taken by Baritone's
+     * estimate ("ranked, not priced", rule 18 as amended). Replaces the deleted "explore while paths compute".
+     */
+    record AwaitPaths(int waitS) implements Step {
+        public String text() { return "stand while paths compute (up to " + waitS + " s)"; }
     }
 
     // ---- rm-execution2: the kinds the remaining option sets and desires run ----

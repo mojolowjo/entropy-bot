@@ -133,7 +133,7 @@ class Z46PricedPathTest {
     /** z46 (runs E-G): a path answer re-prices the running explore where it runs; same pick: it runs on, not cancelled. */
     @Test
     void anExploreWhilePathsRunsOnWhenThePickDidNotChange() {
-        Step explore = new Step.Explore(5, null, true);
+        Step explore = new Step.AwaitPaths(30);           // z76 send-back 3: the standing step (was the explore while paths compute)
         Step cut = new Step.ChopTree(new int[]{10, 64, 0}, 4, null);
         Hands h = new Hands();
         Steps run = new Steps(h);

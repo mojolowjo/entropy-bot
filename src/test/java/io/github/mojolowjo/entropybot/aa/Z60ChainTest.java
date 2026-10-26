@@ -51,18 +51,20 @@ class Z60ChainTest {
     }
 
     /**
-     * Review 2: the only way still computing - "explore while paths compute". Nothing pending (or not counted): the wait costs
-     * 0; 2 pending (run R's start after the trees landed): one round, pathCost.firstAnswerExpectS 2 s; never the 30 s cap.
+     * 0.39.z76 send-back 3 (rule 22; was review 2's expected wait of the explore while paths compute): the only way still
+     * computing - the chain STANDS (Step.AwaitPaths, no move), and the stand has no price of its own whatever the fork has
+     * pending (its seconds are not known; the chain ends there as at an explore leaf).
      */
     @Test
-    void theExploreWhilePathsComputeCarriesTheExpectedWaitOnlyWhilePending() {
+    void theStandWhilePathsComputeIsTheOnlyStepAndCarriesNoPrice() {
         ScenariosTest.world("wooden");
         Spot b = ScenariosTest.tree(5, 4);
         double none = logs(pending(new ScenariosTest.FakePath().computing(b), 0), b).seconds();
         double unknown = logs(pending(new ScenariosTest.FakePath().computing(b), -1), b).seconds();
         Chain two = logs(pending(new ScenariosTest.FakePath().computing(b), 2), b);
         assertTrue(two.explore(), two.why());
-        assertEquals(none, unknown, 1e-9, "not counted: the hands explore at once, nothing charged");
-        assertEquals(2.0, two.seconds() - none, 1e-6, two.why());
+        assertEquals(none, unknown, 1e-9);
+        assertEquals(none, two.seconds(), 1e-9, "the stand is charged nothing: " + two.why());
+        assertEquals(List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.AwaitPaths(NeedChain.firstAnswerWaitS())), two.steps(), "standing, no move");
     }
 }

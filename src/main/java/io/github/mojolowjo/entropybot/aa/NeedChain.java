@@ -1104,7 +1104,7 @@ public final class NeedChain {
                 // 0.39.z41: no way stands while a walk's path is not known (computing, chunks not loaded): the requirement waits
                 // on it (priced again when the answer lands), it does not turn into an explore
                 for (Trial t : trials) if (t.fail() != null && t.fail().startsWith(PathPrice.NOT_KNOWN)) { if (c.fail == null || !c.fail.startsWith(PathPrice.NOT_KNOWN)) c.fail = t.fail(); }
-                // 0.39.z42: how many ways wait on a path, for the requirement's explore meanwhile (pathsExplore)
+                // 0.39.z42: how many ways wait on a path, for the requirement's standing wait (pathsWait; z76: no explore meanwhile, rule 22)
                 c.pathsWaiting = (int) trials.stream().filter(t -> t.fail() != null && t.fail().startsWith(PathPrice.NOT_KNOWN)).count();
             }
             return null;
@@ -1264,7 +1264,7 @@ public final class NeedChain {
                 if (win.stuck()) untilOwn(c, stepsAt, w);
                 return new Got(win.alt().id != null ? win.alt().id : w.word, n, win.phrase());
             }
-            if (waitsOnPaths(c)) return new Got(w.word, n, pathsExplore(c, w.word));
+            if (waitsOnPaths(c)) return new Got(w.word, n, pathsWait(c, w.word));
             if (c.fail != null) return null;
             String leaf = exploreLeaf(c, w.word, noSource(c, w.word));
             return c.fail != null ? null : new Got(w.word, n, leaf);
@@ -1576,7 +1576,7 @@ public final class NeedChain {
             if (up != null) alts.add(up);
             Trial w = choose(c, alts, item);
             if (w != null) return w.phrase();
-            if (waitsOnPaths(c)) return pathsExplore(c, item);
+            if (waitsOnPaths(c)) return pathsWait(c, item);
             if (c.fail != null) return null;
             return exploreLeaf(c, item, noSource(c, item));
         } finally {
@@ -2213,6 +2213,10 @@ public final class NeedChain {
             case CHUNKS -> new Walked(Double.NaN, "", PathPrice.NOT_KNOWN + " (" + (why.isEmpty() ? "chunks not loaded" : why) + ")", a.kind());
             case UNREACHABLE -> new Walked(Double.NaN, "", io.github.mojolowjo.entropybot.aa.moves.FactChange.unreachableText(why.isEmpty() ? "no path, the search ended" : why), a.kind());
             case NONE -> new Walked(Double.NaN, "", PathPrice.NOT_KNOWN + " (" + (why.isEmpty() ? "no answer, no reason given" : why) + ")", a.kind());
+            // 0.39.z76 send-back 3 (rule 18 amended, rule 22): past the first-answer wait the walk is taken by Baritone's estimate
+            case ESTIMATED -> a.walk() == null || !(a.walk().seconds() >= 0) || Double.isInfinite(a.walk().seconds())
+                    ? new Walked(Double.NaN, "", PathPrice.NOT_KNOWN + " (an unusable estimate)", PathPrice.Kind.NONE)
+                    : new Walked(a.walk().seconds(), "walk ~" + s(a.walk().seconds()) + " (" + RANKED + ", not priced: Baritone's estimate after the first-answer wait; the full path is computed on the way)", null, a.kind());
         };
     }
 
@@ -3218,39 +3222,32 @@ public final class NeedChain {
     }
 
     /**
-     * 0.39.z42 (owner: "never stand still for a path"): every way of the requirement waits on a walk's complete path: the
-     * requirement does not wait, it explores meanwhile (the explore moves the bot and needs no walk price), the explore
-     * ending the moment a path answer lands so the order is priced again on it (Step.Explore whilePaths). No band: it is a
-     * move while the paths compute, not a search for a missing source. aa why: "paths computing: N ways waiting; exploring
-     * meanwhile". The ways' "not known" reasons stay in the dropped list.
+     * 0.39.z76 send-back 3 (rule 22, owner 2026-10-26: "the bot moves only as a priced step of the current order"; run AU
+     * 01:57:53-02:02:53: the deleted "explore while paths compute" walked 5 min while the walks it waited on were searched
+     * again from every new cell, so none landed): every way of the requirement waits on a walk's complete path - the bot
+     * STANDS while they compute from where it stands ({@link Step.AwaitPaths}, up to pathCost.firstAnswerWaitS), each landing
+     * prices the order again there; past the wait the provider answers the walks still not known by Baritone's estimate
+     * ({@link PathPrice.Kind#ESTIMATED}, "ranked, not priced") and the order is priced again on those. A standing step has
+     * no price of its own (the chain ends there, like an explore leaf). aa why: "stand (paths computing: N ways waiting ...)".
+     * The ways' "not known" reasons stay in the dropped list.
      */
-    private static String pathsExplore(Ctx c, String word) {
+    private static String pathsWait(Ctx c, String word) {
         int n = c.pathsWaiting;
         c.fail = null;
         c.pathsWaiting = 0;
-        // 0.39.z58 (Opus Design ruling on run Q 02:29:32: rule 18 stays exact, so a walk priced from a cell the bot has left
-        // is never known; the explore moved the bot off every first answer and "collect 4 torch" won): the step first waits in
-        // place up to pathCost.firstAnswerWaitS while first answers compute (the hands skip it when none does), then explores.
-        // The wait is the step's own time (rule 3: a wait is a way with its seconds)
         int waitS = firstAnswerWaitS();
-        // 0.39.z60 review 2: the price carries the EXPECTED wait, not the cap - none when no first answer is pending now (or
-        // the fork does not count them: the hands then explore at once), else a search round per pathCost.maxPending pending
-        int pending = c.w.path() == null ? -1 : c.w.path().firstAnswersPending();
-        c.seconds += io.github.mojolowjo.entropybot.aa.moves.FirstAnswerWait.expectedS(pending, PathPrice.maxPending(),
-                Tuning.get("pathCost.firstAnswerExpectS"), waitS);
-        c.steps.add(new Step.Explore(exploreMinutes(), null, true, waitS));
+        c.steps.add(new Step.AwaitPaths(waitS));
         c.stuck = true;
         if (c.unknown == null) c.unknown = word;
-        String out = "explore (" + PATHS_COMPUTING + n + " way" + (n == 1 ? "" : "s") + " waiting; first waiting up to " + waitS
-                + " s in place while first answers compute, then exploring meanwhile)";
+        String out = "stand (" + PATHS_COMPUTING + n + " way" + (n == 1 ? "" : "s") + " waiting; standing up to " + waitS
+                + " s while their answers compute, then the walks still not known are taken by Baritone's estimate)";
         if (c.trace != null) c.trace.note("ways of " + shw(word) + ": " + out);
         return out;
     }
-
-    /** 0.39.z58: seconds the explore while paths compute first waits in place while first answers compute (Tuning). */
+    /** 0.39.z76 send-back 3: seconds the standing step waits for the walks' first answers before the estimate is taken (Tuning). */
     public static int firstAnswerWaitS() { return (int) Math.ceil(Tuning.get("pathCost.firstAnswerWaitS")); }
 
-    /** 0.39.z42: the words of {@link #pathsExplore}. */
+    /** 0.39.z42: the words of {@link #pathsWait}. */
     static final String PATHS_COMPUTING = "paths computing: ";
 
     /**

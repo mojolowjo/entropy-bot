@@ -8,7 +8,6 @@ import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.aa.moves.StepWait;
 import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 import io.github.mojolowjo.entropybot.aa.moves.Car;
-import io.github.mojolowjo.entropybot.aa.moves.FirstAnswerWait;
 import io.github.mojolowjo.entropybot.aa.moves.Step;
 import io.github.mojolowjo.entropybot.aa.moves.Steps;
 import io.github.mojolowjo.entropybot.gui.Gui;
@@ -181,7 +180,7 @@ public final class StepHands implements Steps.Hands {
             case Step.ToStation t -> travel;
             case Step.ToSurface t -> travel;
             case Step.StripBack k -> travel;
-            case Step.Explore k -> !firstWait.waiting() && Mining.exploreWalking();
+            case Step.Explore k -> Mining.exploreWalking();
             case Step.Collect k -> mining;
             case Step.ChopTree t -> mining;
             case Step.KelpCut k -> mining;
@@ -248,13 +247,13 @@ public final class StepHands implements Steps.Hands {
 
     /**
      * The step waits on a clock of its own (the monitor's stall window does not run meanwhile), its words; null: none. The
-     * explore's first-answer wait (bounded by pathCost.firstAnswerWaitS), the band walk's priced path still computing
+     * standing step (bounded by pathCost.firstAnswerWaitS, z76 rule 22), the band walk's priced path still computing
      * (bounded by steps.stepMaxS), a smelt / cook whose furnace job (started by this step) is cooking - the furnace job's
      * own due time and its stall watch (furnaceJobs.stallMs). The game exposes no furnace progress to the client outside
      * its open menu, so the furnace job's clock is the smelt's signal (D2 risk 8), never a guess.
      */
     private String ownWait(Step s) {
-        if (s instanceof Step.Explore && firstWait.waiting()) return "waiting in place while the first path answers compute (its own bound pathCost.firstAnswerWaitS)";
+        if (s instanceof Step.AwaitPaths a && stand.standing()) return "standing while the walks compute (its own bound pathCost.firstAnswerWaitS " + a.waitS() + " s; rule 22)";
         if (s instanceof Step.ToBand && !bandWalking && bandCell != null) return "the priced path to " + Jobs.fmt(bandCell) + " is not known yet (its own bound steps.stepMaxS)";
         if (s instanceof Step.Smelt || s instanceof Step.Cook) {
             long now = System.currentTimeMillis();
@@ -372,7 +371,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.Deposit d when d.order() != null -> depositLeg(p, d);           // the strip order's deposit leg (DepositLeg)
                 case Step.StripBack k -> stripBack(p, k);
                 case Step.Deposit d -> depositLeg(p, d);                                  // DepositLeg (the order's leg, or a plain deposit)
-                case Step.Explore k when k.whilePaths() && k.waitS() > 0 -> exploreFirstWait(k);   // 0.39.z58: wait in place first
+                case Step.AwaitPaths a -> standForPaths(a);   // 0.39.z76 send-back 3 (rule 22): stand while the walks compute
                 default -> direct(s);   // the item actions and the mine steps: the method, its own job
             };
         } catch (RuntimeException e) {
@@ -418,7 +417,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.ToBand t -> toBandStatus(p, t);
                 case Step.ToStrip t -> toStripStatus(p, t);
                 case Step.Climb k -> climbStatus();
-                case Step.Explore k when firstWait.waiting() -> firstWaitStatus(k);
+                case Step.AwaitPaths a -> standStatus(a);     // 0.39.z76 send-back 3 (rule 22)
                 case Step.ToStation t -> toStationStatus(t);
                 case Step.ToSurface t -> toSurfaceStatus(p, t);
                 default -> requestStatus();
@@ -507,16 +506,13 @@ public final class StepHands implements Steps.Hands {
         carOwner = null;
         carFailsAt = io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed();
         dataWait.reset();
-        firstWait.end();
+        stand.end();
     }
 
-    // ---- 0.39.z58: the explore while paths compute first waits in place while first answers compute ----
+    // ---- 0.39.z76 send-back 3 (rule 22): the standing step - the bot stands while its walks' paths compute ----
 
-    /**
-     * The first-answer wait's state (0.39.z60 review 2: FirstAnswerWait.Tracker, pure - its JUnit drives the same object the
-     * hands keep): when it began, the landed answers and fork segments at the last look, the last progress.
-     */
-    private final FirstAnswerWait.Tracker firstWait = new FirstAnswerWait.Tracker();
+    /** The standing step's clock (StandWait, pure - its JUnit drives the same object the hands keep). */
+    private final io.github.mojolowjo.entropybot.aa.moves.StandWait stand = new io.github.mojolowjo.entropybot.aa.moves.StandWait();
 
     /** 0.39.z58 review 7: the level's game time (stops while the game is paused); 0 with no level (the status says not in a world first). */
     private static long gameTime() {
@@ -525,36 +521,33 @@ public final class StepHands implements Steps.Hands {
     }
 
     /**
-     * 0.39.z58 (Opus Design ruling on run Q 02:29:32: rule 18 stays exact; the explore moved the bot off every crafting
-     * walk's first answer): while first answers are computing or queued in the fork, the step waits in place (Baritone idle,
-     * no walk) up to its waitS, so they land from this cell; each landing re-prices the order (Steps: a priced way ends the
-     * step). None pending / the wait over -> the explore as before (FirstAnswerWait).
+     * 0.39.z76 send-back 3 (rule 22; run AU 01:57:53: "no first answer is computing: exploring at once", then 5 min of walking
+     * while every price was searched again from each new cell): the bot stands - Baritone idle, nothing started - so the
+     * walks are priced from the cell it stands on; each landing prices the order again (Steps). Said once at the start.
      */
-    private String exploreFirstWait(Step.Explore k) {
-        FirstAnswerWait.Decision d = FirstAnswerWait.of(0, k.waitS(), LivePathPrice.INSTANCE.firstAnswersPending(), false);
-        LOG.info("[entropybot] steps: {}: {}", k.text(), d.why());
-        if (d.next() == FirstAnswerWait.Next.EXPLORE) return direct(k);
+    private String standForPaths(Step.AwaitPaths a) {
         IBaritone b = Jobs.baritone();
-        if (b != null) Jobs.cancel(b);                   // Baritone idle: the first answers are priced from the cell it stands on
-        firstWait.begin(gameTime(), LivePathPrice.INSTANCE.landed(), LivePathPrice.INSTANCE.segmentsLanded());
+        if (b != null) Jobs.cancel(b);
+        stand.begin(gameTime());
+        LOG.info("[entropybot] steps: {}: standing, Baritone idle, while the walks compute from here (rule 22; {} first answers pending in the fork)",
+                a.text(), LivePathPrice.INSTANCE.firstAnswersPending());
         return null;
     }
 
     /**
-     * 0.39.z60 item 1 (run R 03:34:56: the wait ended at 4 s with 2 searches still progressing; both landed at 6 s): the wait
-     * runs to its 30 s cap while the first answers progress - a fork segment or an answer landed within
-     * pathCost.firstAnswerStallS; review 2: the segment count not known (-1) ends it at once, as before.
+     * Running while it stands; past its waitS (pathCost.firstAnswerWaitS) it says so once and ends with a price fact, so the
+     * order is priced again where the bot stands - the walks still not known then taken by Baritone's estimate (rule 18 as
+     * amended, PathPrice.Kind.ESTIMATED).
      */
-    private Car.Status firstWaitStatus(Step.Explore k) {
-        FirstAnswerWait.Decision d = firstWait.look(gameTime(), LivePathPrice.INSTANCE.landed(), LivePathPrice.INSTANCE.segmentsLanded(),
-                LivePathPrice.INSTANCE.firstAnswersPending(), k.waitS(), Tuning.get("pathCost.firstAnswerStallS"));
-        if (d.next() == FirstAnswerWait.Next.WAIT) return Car.Status.running(k.text() + ": " + d.why());
-        firstWait.end();
-        LOG.info("[entropybot] steps: {}: {}", k.text(), d.why());
-        String r = direct(k);
-        return r != null ? Car.Status.failed(r) : requestStatus();
+    private Car.Status standStatus(Step.AwaitPaths a) {
+        long now = gameTime();
+        if (!stand.over(now, a.waitS())) return Car.Status.running(a.text() + ": " + stand.words(now, a.waitS(), LivePathPrice.INSTANCE.firstAnswersPending()));
+        String why = io.github.mojolowjo.entropybot.aa.moves.StandWait.overWords(a.waitS());
+        if (stand.sayOver()) LOG.info("[entropybot] steps: {}: {}", a.text(), why);
+        stand.end();
+        io.github.mojolowjo.entropybot.aa.moves.FactChange.repriceAfterStand(why);
+        return Car.Status.failed(why);
     }
-
     /** one-planner: the chain for an Obtain step, on the facts as it starts (AaRuntime.obtainSteps: NeedChain). */
     @Override public Steps.Routine routine(Step.Obtain o) {
         if (c.aaRuntime == null) return new Steps.Routine(null, "no chain (aa not loaded)");
@@ -729,8 +722,9 @@ public final class StepHands implements Steps.Hands {
                 case STRIP -> throw new IllegalStateException("a strip leg runs on the fork's strip (mineStrip)");
             }, x -> null));
             case Step.FindCave k -> c.stepJob(s.text(), () -> Mining.get().find(p, io.github.mojolowjo.entropybot.vocab.ExploreWords.find("cave " + k.minutes(), Commands.POI_KINDS, Commands::isBiome)));
-            case Step.Explore k -> c.stepJob(s.text(), () -> k.whilePaths() ? Mining.get().exploreWhilePaths(p, k.minutes())
-                    : Mining.get().explore(p, k.minutes() + (k.until() == null ? "" : " until " + k.until())));
+            // 0.39.z76 send-back 3 (rule 22): a chain's explore is a priced way for one source - no gathering on the way (run AU:
+            // the gathers' mine process placed blocks and ran GoalRunAwayFromMaintainY), no placing (Mining's explore lease)
+            case Step.Explore k -> c.stepJob(s.text(), () -> Mining.get().explore(p, k.minutes() + (k.until() == null ? "" : " until " + k.until()) + " gather off"));
             case Step.Dig d -> c.stepJob(s.text(), () -> DigCommands.dig(c, p, d.from()[0] + " " + d.from()[1] + " " + d.from()[2] + " " + d.to()[0] + " " + d.to()[1] + " " + d.to()[2]
                     + (d.ores() ? " ores" : "") + (d.viaEngine() ? " via engine" : ""), me));
             case Step.DigArea k -> c.stepJob(s.text(), () -> DigCommands.dig(c, p, k.box()[0] + " " + k.box()[1] + " " + k.box()[2] + " " + k.box()[3] + " +" + k.up(), me));

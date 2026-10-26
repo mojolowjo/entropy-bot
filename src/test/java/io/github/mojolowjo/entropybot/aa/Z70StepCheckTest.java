@@ -93,14 +93,14 @@ class Z70StepCheckTest {
         run.start("goal.iron", List.of(STRIP_K1), 0, (failed, fact, why) -> {
             asked.add(fact.key());
             if (fact.price()) return new Steps.Routine(List.of(STRIP_K1), null);
-            return new Steps.Routine(List.of(new Step.Explore(5, null, true)), null);
+            return new Steps.Routine(List.of(new Step.AwaitPaths(30)), null);      // z76 send-back 3: the standing step
         });
-        run.tick(1);                                     // fails from -55 70 -60: re-planned to the explore
+        run.tick(1);                                     // fails from -55 70 -60: re-planned to the standing step
         assertTrue(run.running(), run.why());
-        assertEquals("explore 5 while paths compute", run.steps().get(0).text());
-        h.feet = new int[]{-50, 84, -55};               // the explore carried the bot up
+        assertEquals("stand while paths compute (up to 30 s)", run.steps().get(0).text());
+        h.feet = new int[]{-50, 84, -55};               // (the bot is elsewhere at the next look: another start cell)
         run.repriceAtNextStep(FactChange.priced("the strip walk's path landed"));
-        run.tick(2);                                     // re-priced where the explore runs: the strip walk again
+        run.tick(2);                                     // re-priced where it stands: the strip walk again
         assertEquals(STRIP_K1, run.steps().get(0), run.steps().toString());
         assertTrue(run.running(), run.why());
         run.tick(3);                                     // fails again, from y 84: re-planned (2 failure re-plans + 1 re-price)
@@ -196,11 +196,11 @@ class Z70StepCheckTest {
         FakePort port = new FakePort();
         Blackboard bb = new Blackboard(clock, port, new Tracer());
         Steps run = new Steps(new Steps.Hands() {
-            @Override public String start(Step s) { return s instanceof Step.Explore ? "busy: putting back 3 blocks" : null; }
+            @Override public String start(Step s) { return s instanceof Step.AwaitPaths ? "busy: putting back 3 blocks" : null; }
             @Override public Car.Status status(Step s) { return Car.Status.running("crafting"); }
             @Override public void cancel(String why) {}
         });
-        run.start("goal.torch", List.of(new Step.Craft("furnace", 1)), 0, (failed, fact, why) -> new Steps.Routine(List.of(new Step.Explore(5, null, true)), null));
+        run.start("goal.torch", List.of(new Step.Craft("furnace", 1)), 0, (failed, fact, why) -> new Steps.Routine(List.of(new Step.AwaitPaths(30)), null));
         // the adapter (AaRuntime.noProgress): ended before the watch / ended in its re-plan -> ENDED; the poll then reads the end
         port.onNoProgress = (id, text) -> {
             if (!run.running()) return JobPort.NoProgress.ENDED;
@@ -215,7 +215,7 @@ class Z70StepCheckTest {
         assertTrue(port.cancelled.isEmpty(), port.cancelled.toString());
         assertTrue(port.log.stream().noneMatch(l -> l.contains("no progress")), port.log.toString());
         assertEquals(Status.FAILURE, job.tick(bb));
-        assertEquals("stopped at step 1 (explore 5 while paths compute): busy: putting back 3 blocks", job.reason());
+        assertEquals("stopped at step 1 (stand while paths compute (up to 30 s)): busy: putting back 3 blocks", job.reason());
         assertTrue(port.incidents.isEmpty(), "no stuck incident: " + port.incidents);
     }
 

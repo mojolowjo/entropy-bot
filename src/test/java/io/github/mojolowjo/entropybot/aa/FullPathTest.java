@@ -64,14 +64,14 @@ class FullPathTest {
      * explores meanwhile (the explore ends when the answer lands); the way's "computing" stays in the dropped list.
      */
     @Test
-    void s46_theOnlyWayStillComputedExploresMeanwhile() {
+    void s46_theOnlyWayStillComputedStands() {      // 0.39.z76 send-back 3 (rule 22): it stands, it does not explore meanwhile
         ScenariosTest.world("wooden");
         Spot b = ScenariosTest.tree(5, 4);
         Chain c = logs(1, new ScenariosTest.FakePath().computing(b), b);
         assertTrue(c.ok() && c.explore() && !c.waiting(), c.why());
-        assertTrue(c.why().contains("paths computing: 1 way waiting; first waiting up to " + io.github.mojolowjo.entropybot.aa.NeedChain.firstAnswerWaitS() + " s in place while first answers compute, then exploring meanwhile"), c.why());
+        assertTrue(c.why().contains("stand (paths computing: 1 way waiting; standing up to " + io.github.mojolowjo.entropybot.aa.NeedChain.firstAnswerWaitS() + " s while their answers compute, then the walks still not known are taken by Baritone's estimate)"), c.why());
         assertTrue(c.dropped().contains("tree 5 m: " + NeedChain.COMPUTING), c.dropped().toString());
-        assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Explore e && e.whilePaths()), c.steps().toString());
+        assertEquals(List.of(new Step.AwaitPaths(io.github.mojolowjo.entropybot.aa.NeedChain.firstAnswerWaitS())), c.steps(), "standing is the only step: no move");
     }
 
     /** S47: chunks not loaded keeps the way unpicked with that text while a known way stands. */

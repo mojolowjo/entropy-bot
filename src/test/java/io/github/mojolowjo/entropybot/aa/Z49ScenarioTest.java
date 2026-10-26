@@ -48,7 +48,7 @@ class Z49ScenarioTest {
     void s67TheTreeRunsWithinASecondOfItsPath() {
         Z48ScenarioTest.Hands h = new Z48ScenarioTest.Hands();
         Steps run = new Steps(h);
-        Step ex = new Step.Explore(5, null, true), craft = new Step.Craft("minecraft:torch", 4);
+        Step ex = new Step.AwaitPaths(30), craft = new Step.Craft("minecraft:torch", 4);
         Step tree = new Step.Craft("minecraft:oak_planks", 4);
         run.start("goal.torch", List.of(ex, craft), 0, (failed, fact, why) -> new Steps.Routine(List.of(tree, craft), null));
         run.repriceAtNextStep(FactChange.priced("walk to -28 70 -51: 14 s, complete"));

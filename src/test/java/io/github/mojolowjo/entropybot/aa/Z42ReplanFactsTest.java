@@ -41,10 +41,8 @@ class Z42ReplanFactsTest {
         Chain c = logs(fake, a, b);
         assertTrue(c.ok() && c.explore(), c.why());
         assertFalse(c.waiting(), c.why());
-        assertTrue(c.why().contains("paths computing: 2 ways waiting; first waiting up to " + io.github.mojolowjo.entropybot.aa.NeedChain.firstAnswerWaitS() + " s in place while first answers compute, then exploring meanwhile"), c.why());
-        Step.Explore ex = (Step.Explore) c.steps().stream().filter(s -> s instanceof Step.Explore).findFirst().orElseThrow();
-        assertTrue(ex.whilePaths(), ex.text());
-        assertNull(ex.until(), "the sources are known: the explore ends on a landed path, not on a source");
+        assertTrue(c.why().contains("stand (paths computing: 2 ways waiting; standing up to " + io.github.mojolowjo.entropybot.aa.NeedChain.firstAnswerWaitS() + " s while their answers compute, then the walks still not known are taken by Baritone's estimate)"), c.why());      // z76 send-back 3 (rule 22): it stands
+        assertEquals(List.of(new Step.AwaitPaths(io.github.mojolowjo.entropybot.aa.NeedChain.firstAnswerWaitS())), c.steps(), "the sources are known: it stands until a landed path prices the order");
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.ToBand), c.steps().toString());
 
         fake.path(a, 10);                                     // a's complete answer lands: the next pricing takes it

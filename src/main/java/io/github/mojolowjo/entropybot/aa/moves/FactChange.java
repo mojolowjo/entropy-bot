@@ -99,6 +99,12 @@ public final class FactChange {
     /** 0.39.z76 send-back 2: a hand that caught a throw inside the running step says it ({@link #threwFact}), taken once. */
     public static void threw(Throwable e) { last = threwFact(e); }
 
+    /**
+     * 0.39.z76 send-back 3 (rule 22): the standing step stood its first-answer wait with the walks not known - the order is
+     * priced again where the bot stands (a price fact, no cap counted), the walks still not known taken by Baritone's estimate.
+     */
+    public static void repriceAfterStand(String why) { last = priced(why); }
+
     /** A known source the step went for is gone. */
     public static void source(String block, String at) {
         last = new Fact("source " + block + " " + at, block.replaceFirst("^minecraft:", "") + " at " + at + " gone");
