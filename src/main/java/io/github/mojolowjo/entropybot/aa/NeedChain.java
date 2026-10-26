@@ -484,7 +484,7 @@ public final class NeedChain {
          * loot-book-bg: no way stands only because the loot book is still being read: no park, no explore; priced again when it
          * lands. 0.39.z41: or because a walk's path is not known yet / its chunks are not loaded ({@link PathPrice#NOT_KNOWN}).
          */
-        public boolean waiting() { return missing != null && (missing.startsWith(LootBook.WAITING) || missing.startsWith(PathPrice.NOT_KNOWN) || missing.endsWith(SOURCE_NOT_LOADED)); }
+        public boolean waiting() { return missing != null && (missing.startsWith(LootBook.WAITING) || missing.startsWith(PathPrice.NOT_KNOWN) || missing.endsWith(SOURCE_NOT_LOADED) || missing.startsWith(MINING_WAIT)); }
         /** The chain's price in seconds (the explore leg of an explore chain is in {@code cost}, not here). */
         public double seconds() { return Unit.seconds(cost); }
     }
@@ -954,6 +954,13 @@ public final class NeedChain {
     }
 
     private static Chain finish(Ctx c, String name, String head) {
+        // 0.39.z75 metric fix A (project manager; run AH 19:46:59 "strip ... for coal 0"): a need of 0 is "have it" before any
+        // way is priced (obtain / needTag), and no way of count 0 ever leaves the planner - a step that would get or make
+        // nothing is a planner fault, said, never a way the run or the repair takes
+        if (c.fail == null) {
+            String zero = zeroStep(c.steps);
+            if (zero != null) c.fail = "a way of count 0 (" + zero + "): no way (it would get nothing)";
+        }
         double cost = Unit.blocks(c.seconds);
         // an explore has no price in the chain; the scorer still needs a number to weigh the whole row, so the row's cost carries the explore leg
         if (c.stuck) cost += exploreMinutes() * Options.MINUTE * (1 + exploreReturn());
@@ -964,6 +971,23 @@ public final class NeedChain {
         if (c.fail != null) return new Chain(List.copyOf(c.steps), cost, name + ": " + c.fail + drops, false, c.fail, List.copyOf(c.dropped), c.unreachable, uses, spares, List.of());
         String why = head + (c.stuck ? "" : ": " + s(c.seconds)) + drops;
         return new Chain(List.copyOf(c.steps), cost, why, c.stuck, null, List.copyOf(c.dropped), c.unreachable, uses, spares, stepSeconds(c, Unit.seconds(cost)));
+    }
+
+    /** 0.39.z75 metric fix A: the first step that gets or makes 0 (a collect, a craft, a smelt, a cut, a mine, a strip with no ore), null: none. Pure. */
+    static String zeroStep(List<Step> steps) {
+        for (Step s : steps) {
+            boolean zero = switch (s) {
+                case Step.Collect k -> k.n() <= 0;
+                case Step.Craft k -> k.n() <= 0;
+                case Step.Smelt k -> k.n() <= 0;
+                case Step.ChopTree t -> t.logs() <= 0;
+                case Step.Mine m -> m.n() <= 0;
+                case Step.Strip st -> st.amounts().values().stream().mapToInt(Integer::intValue).sum() <= 0;
+                default -> false;
+            };
+            if (zero) return s.text();
+        }
+        return null;
     }
 
     /**
@@ -1800,6 +1824,7 @@ public final class NeedChain {
                 a.id = g.id();
                 if (c.fail != null || c.stuck) return "burn " + g.part();
                 String kind = one != null ? one : oneKind(c, e.getValue(), count);
+                if (kind == null && c.have(word(cw)) >= count) kind = word(cw);    // the way's own token: one way made it (one source)
                 if (kind == null) {
                     c.fail = "burn: no one kind of " + count + " in the bag after " + (g.phrase() == null ? "the bag" : g.phrase()) + " (the furnace burns one kind: CraftPlanner.pickFuel)";
                     return null;
@@ -2401,8 +2426,25 @@ public final class NeedChain {
      */
     private static double perBlock(Ctx c, String item, String block) {
         if (c.w.loot() == null || block == null) return 1;
-        for (LootBook.Source s : c.w.loot().sources(item)) if (s.kind() == LootBook.Kind.BLOCK && s.from().equals(block) && s.per() > 0) return s.per();
-        return block.equals(id(item)) ? 1 : Double.NaN;
+        Want w = new Want(item);
+        // 0.39.z75 metric fix A (run AH 19:46:59: "strip ... for coal 0", "x 0 ore = 0 blocks"): a tag need's word (#coals)
+        // has no loot entry of its own - the block's drop of any MEMBER is its yield (was: NaN, read as 0 ore by the strip)
+        List<LootBook.Source> ls = w.item() ? c.w.loot().sources(item) : c.w.loot().sourcesMatching(w::has);
+        for (LootBook.Source s : ls) if (s.kind() == LootBook.Kind.BLOCK && s.from().equals(block) && s.per() > 0) return s.per();
+        return (w.item() ? block.equals(id(item)) : w.has(block)) ? 1 : Double.NaN;      // its own block (a member's own, for a tag)
+    }
+
+    /**
+     * 0.39.z75 metric fix A: the item a block gives for a need word - for a tag (or "a|b") the member the loot data says the
+     * block drops (coal_ore -> coal for #coals), so the bag and the step name one item; an item word, no book or no such
+     * entry: the word as it is.
+     */
+    private static String memberFrom(Ctx c, String word, String block) {
+        Want w = new Want(word);
+        if (w.item() || c.w.loot() == null || block == null) return word;
+        for (LootBook.Source s : c.w.loot().sourcesMatching(w::has))
+            if (s.kind() == LootBook.Kind.BLOCK && s.from().equals(block) && s.per() > 0) return word(s.item());
+        return word;
     }
 
     /**
@@ -2787,8 +2829,13 @@ public final class NeedChain {
             return null;
         }
         String ore = sb.ores().get(0);
+        gives = memberFrom(c, gives, ore);                      // z75 metric fix A: the member the ore drops (#coals: coal)
         double per = perBlock(c, gives, ore);
+        // 0.39.z75 metric fix A (rule 15, rule 1): a strip whose ore's yield of the need is not known is no way, and one that
+        // would dig 0 ore for a lack is none either (was: "for coal 0", priced 0 s, the repair's gap 3 times, then a park)
+        if (!(per > 0)) { c.fail = "strip at y " + sb.y() + ": the yield of " + shw(gives) + " from " + shw(ore) + " is not known (no loot entry; rule 15)"; return null; }
         int oreBlocks = (int) Math.ceil(lack / per - 1e-9);  // structural: epsilon
+        if (oreBlocks <= 0) { c.fail = "strip at y " + sb.y() + ": 0 ore for " + lack + " " + shw(gives) + " (nothing to dig)"; return null; }
         double band = io.github.mojolowjo.entropybot.aa.brain.OreBand.blocksPerOre(sb.perSlab());
         // 0.39.z64 item 4: the areas along this heading as seen (faces, the wanted ores on them) scale the band's estimate
         var seen = io.github.mojolowjo.entropybot.aa.brain.StripAreas.along(sb.x(), sb.y(), sb.z(), sb.heading(), sb.ores());
@@ -2953,7 +3000,9 @@ public final class NeedChain {
             return null;
         }
         double per = perBlock(c, gives, cw.ore());
+        if (!(per > 0)) { c.fail = head + ": the yield of " + shw(gives) + " from " + shw(cw.ore()) + " is not known (no loot entry; rule 15)"; return null; }   // z75 metric fix A
         int oreBlocks = (int) Math.ceil(lack / per - 1e-9);  // structural: epsilon
+        if (oreBlocks <= 0) { c.fail = head + ": 0 ore for " + lack + " " + shw(gives) + " (nothing to mine)"; return null; }
         double minutes = oreBlocks / cw.perMin(), max = Tuning.get("cave.exploreMinutes");
         String yield = "yield ~" + String.format(java.util.Locale.ROOT, "%.2f", cw.perMin()) + " ore/min (" + (cw.measured() ? "measured" : "prior") + ")";
         if (minutes > max) {
@@ -3037,6 +3086,15 @@ public final class NeedChain {
             c.fail = c.w.loot().waiting();
             return null;
         }
+        // 0.39.z75 metric fix B (rule 15; run AH 19:46:05-19:46:33: 14 explores "until #stone_tool_materials" in 30 s, each
+        // ended at once on a stone seen, while every dig of it failed "the pickaxe tier ... not known (no mining data loaded
+        // yet)"): with the mining data not loaded, a known block may well be diggable - no explore on a missing fact; the
+        // chain waits with the reason (Chain.waiting) and is priced again once the tiers are read - when a block of the need
+        // is known (its dig is what the missing fact blocks); nothing known: the explore as before
+        if (!MiningTiers.ready() && !c.w.seenAll().apply(word).isEmpty()) {
+            c.fail = MINING_WAIT;
+            return null;
+        }
         // 0.39.z66 item 2 (run X 08:40:40: "smelt 4 iron_ore <- ... explore (not enough iron_ore known)" beat "smelting
         // iron_ingot from raw_iron: walk: path not known yet" with 10 raw_iron in the bag - a way ending in an explore stands,
         // one waiting on a path does not, choose): an item nothing gives but a tool-gated drop of its own block (the loot
@@ -3094,6 +3152,9 @@ public final class NeedChain {
         }
         return out;
     }
+
+    /** 0.39.z75 metric fix B: the chain's wait while the mining tiers are not read (rule 15: not loaded is never "none"). */
+    public static final String MINING_WAIT = "the mining data is not loaded yet (a known block may be diggable once it is; priced again then, rule 15)";
 
     /** 0.39.z69 item 1: {@link #bandLeg}'s answer when the band is out for this order (no path into it): the explore runs from here. */
     static final String BAND_DROPPED = "\u0000band dropped";

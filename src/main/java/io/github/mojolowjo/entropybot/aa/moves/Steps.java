@@ -1029,7 +1029,11 @@ public final class Steps {
         Step s = steps.get(idx);
         // 0.39.z58 (the first-answer wait): a landed answer re-prices the explore while paths compute BEFORE its status is read,
         // so a priced way ends it where it stands instead of its explore starting first and being cancelled a tick later
-        if (priceAsk != null && s instanceof Step.Explore ex0 && ex0.whilePaths() && reprice(true)) return phase;
+        // 0.39.z75 metric fix B (run AH 19:46:05-33: "explore until #stone_tool_materials" ended on each stone seen and the
+        // re-plan chose the same explore, 14 times in 30 s): an explore until a source is priced again where it runs on a
+        // found source (FactChange.found) or a landed path, and ends only when the planner picks other steps - its done-test
+        // is the planner's own test of what it found, not a second one
+        if (priceAsk != null && s instanceof Step.Explore ex0 && (ex0.whilePaths() || ex0.until() != null) && reprice(true)) return phase;
         Car.Status st;
         try {
             st = hands.status(s);

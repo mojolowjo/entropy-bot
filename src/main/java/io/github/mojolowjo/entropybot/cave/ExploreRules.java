@@ -62,6 +62,11 @@ public final class ExploreRules {
      * that source is new since the explore started; one already known at its start (nothing changed) is a re-plan fact
      * that holds {@code replan.unchangedHoldS} seconds, not an immediate end. Null known: no end.
      */
+    /** 0.39.z75 metric fix B: a found source the order was not priced again on yet (another source than the last asked). */
+    public static boolean askAgain(String known, String lastAsked) {
+        return known != null && (lastAsked == null || !sourceOf(known).equals(sourceOf(lastAsked)));
+    }
+
     public static boolean untilEnds(String known, String knownAtStart, double secondsSinceStart) {
         if (known == null) return false;
         if (knownAtStart == null || !sourceOf(known).equals(sourceOf(knownAtStart))) return true;

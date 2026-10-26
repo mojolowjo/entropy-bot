@@ -2147,6 +2147,17 @@ public final class AaRuntime implements JobPort {
     /** 0.39.z58 review 2: the step run last told to the fork as a new order. */
     private long orderRunTold;
 
+    /**
+     * 0.39.z75 metric fix B: an explore of the running order saw its missing source - the order is priced again where the
+     * explore runs (Steps.reprice(true)); the explore ends only if the new price picks other steps. False: no typed run of
+     * an order behind the explore (it ends on the source, as before).
+     */
+    boolean repriceOnFound(String known) {
+        if (!typedRun || taskReplan == null || c.stepRun == null || !c.stepRun.steps.running()) return false;
+        c.stepRun.steps.repriceAtNextStep(io.github.mojolowjo.entropybot.aa.moves.FactChange.found(known));
+        return true;
+    }
+
     private void pathLandedTick() {
         long v = LivePathPrice.INSTANCE.landed();
         if (v == pathLandedSeen) return;
@@ -3273,6 +3284,10 @@ public final class AaRuntime implements JobPort {
         if (landed != null) {                 // 0.39.z45: the item data's loot facts and the drop tiers come from the book (the jars)
             if (itemWorthSrc != null) itemWorthSrc.loot(landed, lootReader.fishPool());
             io.github.mojolowjo.entropybot.aa.brain.MiningTiers.use(null);
+            // 0.39.z75 metric fix B (run AH 19:45:33.781 -> 19:46:32.222: the tiers re-read only at the next tree check,
+            // aaRuntime.treeEveryMs later; for that minute every dig said "no mining data loaded yet" and the chain
+            // explored "until #stone_tool_materials", ended at once on each stone seen, 14 times): read them again now
+            loadMiningTiers();
         }
         var cat = catalog;                    // 0.39.z45: the jars' world-gen read landed after the catalog: take it now
         if (cat != null && cat.gen() == null && io.github.mojolowjo.entropybot.guard.WorldGenReader.ores() != null) {

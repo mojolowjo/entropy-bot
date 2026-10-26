@@ -302,6 +302,93 @@ class Z75UndergroundFuelTest {
         assertTrue(c.why().contains("from where the strip leg to y 16 leaves the bot"), c.why());
     }
 
+    // ---- metric fix (run AH on z75, seed S1 peaceful) ----
+
+    /**
+     * Run AH 19:46:59: "strip at y 67 ... x 0 ore = 0 blocks ... -> 0.0 s" for #coals: the tag word has no loot entry of its
+     * own, the yield read NaN and the ore count (int) NaN = 0 - a way that digs nothing, priced 0 s, won, then Job D's repair
+     * made the same gap 3 times. With the book's coal_ore -> coal (1 a block): 1 ore for 1 coal, priced by its dig; with no
+     * entry for the ore at all: no strip way (said), never one of 0 ore.
+     */
+    @Test
+    void fixA_aTagsStripDigsTheOreItsMemberComesFrom() {
+        OreBand.Feature lower = new OreBand.Feature(0, 192, 0, 30, 17);
+        List<OreBand.Feature> fs = List.of(lower);
+        ScenariosTest.world("wooden", "stone");
+        StripBand coal = new StripBand(List.of("minecraft:coal_ore"), 0, 192, 16, OreBand.perSlab(fs, 16), 0, 0, 16, "east", "minecraft:stone");
+        LootBook book = new LootBook(List.of(new LootBook.Source(LootBook.Kind.BLOCK, "minecraft:coal_ore", "minecraft:coal", 1, 1, false, null)), "test");
+        World w = ScenariosTest.w(Map.of("minecraft:stone_pickaxe", 1, "minecraft:raw_iron", 3, "minecraft:furnace", 1), true, false, Map.of())
+                .withStrip(x -> x.contains("coal") ? coal : null).withMobs(x -> List.of(), book);
+        Chain c = NeedChain.resolve("iron_ingot", 3, w);
+        assertTrue(c.ok() && !c.explore(), c.why());
+        Step.Strip st = (Step.Strip) c.steps().stream().filter(s -> s instanceof Step.Strip).findFirst().orElseThrow();
+        assertEquals(Map.of("coal", 1), st.amounts(), "1 coal ore for the 1 coal the burn needs: " + c.why());
+        int dug = (int) Math.ceil(Math.min(Tuning.get("strip.maxBlocksPerOre"), OreBand.blocksPerOre(OreBand.perSlab(fs, 16))) - 1e-9);
+        assertEquals(dug * 2 * 0.6 + 1.15 + 0.15 + 30, c.seconds(), 0.05, c.why());
+
+        LootBook none = new LootBook(List.of(new LootBook.Source(LootBook.Kind.BLOCK, "minecraft:stone", "minecraft:cobblestone", 1, 1, false, null)), "test");
+        Chain n = NeedChain.resolve("iron_ingot", 3, w.withMobs(x -> List.of(), none));
+        assertTrue(n.steps().stream().noneMatch(s -> s instanceof Step.Strip), "no strip of unknown yield: " + n.steps());
+        assertTrue(n.dropped().stream().anyMatch(d -> d.startsWith("strip at y 16: ") && d.contains("from coal_ore is not known (no loot entry; rule 15)")), n.dropped().toString());
+    }
+
+    /**
+     * Run AH 19:45:33.781 - 19:46:32.222: the loot book landed, the mining tiers were dropped for a re-read a minute later;
+     * meanwhile each stone dig failed "the pickaxe tier ... not known (no mining data loaded yet)" and the chain explored
+     * "until #stone_tool_materials", which ended at once on every stone seen (14 times in 30 s). Rule 15: with the tiers not
+     * read, the chain waits (no explore step, Chain.waiting) and is priced again when they are; read, the dig is priced.
+     */
+    @Test
+    void fixB_noMiningDataWaitsInsteadOfExploring() {
+        TestData d = ScenariosTest.world("wooden", "stone");
+        Map<String, List<Spot>> seen = Map.of("cobblestone", List.of(ScenariosTest.STONE_12));
+        io.github.mojolowjo.entropybot.aa.brain.MiningTiers.use(null);
+        Chain waiting = NeedChain.resolve("cobblestone", 3, ScenariosTest.w(Map.of("minecraft:oak_log", 3), false, false, seen));
+        assertTrue(waiting.waiting(), waiting.why());
+        assertEquals(NeedChain.MINING_WAIT, waiting.missing());
+        assertTrue(waiting.steps().stream().noneMatch(s -> s instanceof Step.Explore), waiting.steps().toString());
+        d.install();
+        Chain priced = NeedChain.resolve("cobblestone", 3, ScenariosTest.w(Map.of("minecraft:oak_log", 3), false, false, seen));
+        assertTrue(priced.ok() && !priced.explore(), priced.why());
+        assertTrue(priced.steps().stream().anyMatch(s -> s instanceof Step.Collect), priced.steps().toString());
+    }
+
+    /**
+     * Run AH 19:46:05-33, the explore's done-test is the planner's: a found source re-prices the order where the explore
+     * runs (FactChange.found); the same explore picked again - it runs on (no end, no restart); a pick of other steps - the
+     * explore is cancelled there and the new steps start.
+     */
+    @Test
+    void fixB_aFoundSourceEndsTheExploreOnlyWhenThePlanUsesIt() {
+        Z48ScenarioTest.Hands h = new Z48ScenarioTest.Hands();
+        io.github.mojolowjo.entropybot.aa.moves.Steps run = new io.github.mojolowjo.entropybot.aa.moves.Steps(h);
+        Step ex = new Step.Explore(5, "#stone_tool_materials|#coals"), craft = new Step.Craft("minecraft:torch", 4);
+        Step dig = new Step.Collect("cobblestone", 8);
+        List<List<Step>> answers = new java.util.ArrayList<>(List.of(List.of(ex, craft), List.of(dig, craft)));
+        run.start("goal.torch", List.of(ex, craft), 0, (failed, fact, why) -> new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(answers.remove(0), null));
+        run.repriceAtNextStep(FactChange.found("a source of #stone_tool_materials is known: stone at -37 64 -60 (8 away)"));
+        run.tick(1);
+        assertEquals(0, h.cancels, "the same explore again: it runs on");
+        assertEquals(List.of(ex.text()), h.started, "never restarted");
+        run.repriceAtNextStep(FactChange.found("a source of #stone_tool_materials is known: stone at -41 64 -60 (8 away)"));
+        run.tick(2);
+        assertEquals(1, h.cancels, "the plan uses the stone now: the explore ends");
+        assertEquals(dig.text(), h.started.get(h.started.size() - 1));
+        assertTrue(io.github.mojolowjo.entropybot.cave.ExploreRules.askAgain("a source of x is known: stone at 1 2 3 (8 away)", null));
+        assertFalse(io.github.mojolowjo.entropybot.cave.ExploreRules.askAgain("a source of x is known: stone at 1 2 3 (5 away)", "a source of x is known: stone at 1 2 3 (8 away)"), "the same source: asked once");
+    }
+
+    /** Project manager: a need of 0 is "have it" before any way; no chain ever carries a way of count 0 (the AH strip "for coal 0"). */
+    @Test
+    void fixA_noWayOfCountZero() {
+        ScenariosTest.world("wooden", "stone");
+        Chain none = NeedChain.resolve("coal", 0, ScenariosTest.w(Map.of(), true, true, Map.of()));
+        assertTrue(none.ok() && none.steps().isEmpty(), none.why());
+        assertNotNull(NeedChain.zeroStep(List.of(new Step.Strip(List.of("minecraft:coal_ore"), Map.of("coal", 0), 67, "north", 0, null))));
+        assertNotNull(NeedChain.zeroStep(List.of(new Step.Collect("coal", 0))));
+        assertNull(NeedChain.zeroStep(List.of(new Step.Collect("coal", 1), new Step.Craft("minecraft:torch", 4))));
+    }
+
     // ---- 3. counted once ----
 
     /**

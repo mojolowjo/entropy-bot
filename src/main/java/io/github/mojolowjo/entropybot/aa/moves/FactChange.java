@@ -20,6 +20,13 @@ public final class FactChange {
     /** 0.39.z41: a walk's complete path landed ({@code text}: what landed); the running order is priced again at its next step. */
     public static Fact priced(String text) { return new Fact(PRICE + "walk", text); }
 
+    /**
+     * 0.39.z75 metric fix B: an explore's missing source became known ({@code text}: what was seen) - the order is priced
+     * again where the explore runs, and the explore ends only when that price picks other steps (the planner's own test of
+     * the source, Steps.reprice(true)); nothing is charged.
+     */
+    public static Fact found(String text) { return new Fact(PRICE + "source", text); }
+
     private static Fact last;
 
     private FactChange() {}

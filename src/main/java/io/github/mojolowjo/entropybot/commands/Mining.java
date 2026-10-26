@@ -708,6 +708,8 @@ final class Mining {
         String untilSource;
         /** 0.39.z51 item 3: the until-source known at the first check (null: none); untilChecked: that check ran. */
         String untilAtStart;
+        /** 0.39.z75 metric fix B: the found source the order was last priced again on (one re-price per source). */
+        String foundAsked;
         boolean untilChecked;
         /** 0.39.z47: the until words whose known source was dropped for the order (said once each). */
         final java.util.Set<String> saidDropped = new java.util.HashSet<>();
@@ -1042,7 +1044,15 @@ final class Mining {
                 if (known != null) LOG.info("[entropybot] explore: {} - known when the explore started (nothing changed): exploring on for replan.unchangedHoldS {} s unless the order's pick changes",
                         ExploreRules.sourceOf(known), Math.round(Tuning.get("replan.unchangedHoldS")));
             }
-            if (ExploreRules.untilEnds(known, ex.untilAtStart, (now() - ex.start) / 20.0)) {   // structural: 20 ticks a second
+            boolean ends = ExploreRules.untilEnds(known, ex.untilAtStart, (now() - ex.start) / 20.0);   // structural: 20 ticks a second
+            // 0.39.z75 metric fix B (run AH 19:46:05-33): the order behind the explore is priced again where it runs, once per
+            // source found; the explore ends only when that price picks other steps (Steps.reprice(true)) - the planner's test
+            if (ends && ExploreRules.askAgain(known, ex.foundAsked) && commands.aaRuntime.repriceOnFound(known)) {
+                ex.foundAsked = known;
+                LOG.info("[entropybot] explore: {} - the order is priced again here; the explore ends only if the new price uses it", ExploreRules.sourceOf(known));
+                ends = false;
+            } else if (ends && ex.foundAsked != null) ends = false;              // asked already: the price said "explore on"
+            if (ends) {
                 LOG.info("[entropybot] explore: {}", known);
                 s.note = known + tookText(ex.took);
                 if (b != null) Jobs.cancel(b);
