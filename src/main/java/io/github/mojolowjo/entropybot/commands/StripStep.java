@@ -157,6 +157,31 @@ final class StripStep {
     /** 0.39.z62 review 2: the step index the running strip's saved progress held when it started (0: a new tunnel). */
     private static int startStep;
 
+    /** 0.39.z77 spares 3: the ore counts the running strip's saved progress held when it started (empty: a new tunnel). */
+    private static Map<String, Integer> startPicked = Map.of();
+    /** 0.39.z77 spares 3: the running strip's yield line was said (once per strip end). */
+    private static boolean yieldSaid;
+
+    /**
+     * 0.39.z77 spares 3 (manager 2026-10-26: the factor between the band's density and what a strip finds is set later from
+     * measured runs): once per strip end, the cells this run dug, the ore it found per family and the price's predicted ore
+     * a cell ({@link StripOrder#yieldLine}), info level. Loader notes: none (the fork's Progress values).
+     */
+    private static void yieldFact(Step.Strip s, StripOrder.Saved now) {
+        if (yieldSaid) return;
+        yieldSaid = true;
+        int cells = Math.max(0, (now == null ? 0 : now.blocks()) - startBlocks);
+        Map<String, Integer> found = new java.util.TreeMap<>();
+        if (now != null) for (var e : now.picked().entrySet()) {
+            int n = e.getValue() - startPicked.getOrDefault(e.getKey(), 0);
+            if (n > 0) found.put(e.getKey(), n);
+        }
+        Map<String, Double> pred = StripOrder.predicted(s.key());
+        java.util.Set<String> fams = new java.util.TreeSet<>(s.amounts().keySet());
+        fams.addAll(pred.keySet());
+        LOG.info("[entropybot] {}", StripOrder.yieldLine(s.key(), cells, found, pred, fams));
+    }
+
     /** Starts the fork's strip, resumed from this order's saved progress; null = started, else "error: ...". */
     static String start(Step.Strip s) {
         IBaritone b = Jobs.baritone();
@@ -172,6 +197,8 @@ final class StripStep {
         lastSaved = from;
         startBlocks = from == null ? 0 : from.blocks();      // 0.39.z62 item 1b: what this start resumes from
         startStep = from == null ? 0 : from.step();
+        startPicked = from == null ? Map.of() : from.picked();   // 0.39.z77 spares 3: the yield line counts this run's finds
+        yieldSaid = false;
         b.getStripProcess().probe(WalkProbe.on());          // 0.39.z64 item 1: the "probe strip:" lines (debug.walkProbe)
         b.getStripProcess().strip(new BlockOptionalMetaLookup(s.ores().toArray(String[]::new)), s.y(), d, of(from));
         if (!b.getStripProcess().isActive()) return "error: the strip did not start: " + b.getStripProcess().lastEnd();
@@ -206,6 +233,7 @@ final class StripStep {
             Car.Status end = StripOrder.endRule(s.amounts(), picked, bagFull(Minecraft.getInstance().player));
             if (end != null) {
                 sp.cancel();
+                yieldFact(s, now);
                 ended(s, end);
                 return end;
             }
@@ -213,6 +241,7 @@ final class StripStep {
         }
         if (holding) return Car.Status.running(sp.status() + " - " + sp.why());
         Car.Status st = StripOrder.endOf(sp.lastEnd(), sp.status());
+        yieldFact(s, now);
         ended(s, st);
         // 0.39.z46 (run E 22:46:11 "strip: no path" parked the order): a strip that ended short is the source fact with
         // Baritone's words; the order re-plans without this band way

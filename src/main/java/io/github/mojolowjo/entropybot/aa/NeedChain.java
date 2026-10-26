@@ -1290,6 +1290,7 @@ public final class NeedChain {
         double digS = 0;
         int tunnelCells = 0, oreTotal = 0;
         Map<String, Integer> amounts = new LinkedHashMap<>();
+        Map<String, Double> perCell = new LinkedHashMap<>();      // 0.39.z77 spares 3: the price's ore a cell per family
         Map<String, Integer> gains = new LinkedHashMap<>();
         List<String> parts = new ArrayList<>();
         for (var e : lacks.entrySet()) {
@@ -1314,8 +1315,9 @@ public final class NeedChain {
             oreTotal += oreBlocks;
             digS += oreBlocks * oreS;
             amounts.merge(io.github.mojolowjo.entropybot.aa.brain.StripOrder.countKey(ore, io.github.mojolowjo.entropybot.cave.OreSpec::family), oreBlocks, Integer::sum);
+            perCell.put(io.github.mojolowjo.entropybot.aa.brain.StripOrder.countKey(ore, io.github.mojolowjo.entropybot.cave.OreSpec::family), 1 / bpo);
             gains.merge(gives, Math.max(e.getValue(), (int) Math.floor(oreBlocks * per + 1e-9)), Integer::sum);     // structural: epsilon
-            parts.add(shw(gives) + " " + e.getValue() + " (" + oreBlocks + " ore x ~" + Math.round(bpo) + " blocks dug = " + dug + " cells)");
+            parts.add(shw(gives) + " " + e.getValue() + " (" + oreBlocks + " ore x ~" + Math.round(bpo) + " blocks = " + dug + " cells)");
         }
         int tunnelBreaks = baritone.api.process.IStripProcess.TUNNEL_HEIGHT * tunnelCells;
         digS += tunnelBreaks * hostS;
@@ -1325,6 +1327,7 @@ public final class NeedChain {
         if (c.pickItem != null && spare == null) c.pickWorn += wear;
         c.seconds += walkS + digS;
         Step.Strip whole = new Step.Strip(ores, amounts, y, first.heading(), 0, null);
+        for (var e : perCell.entrySet()) io.github.mojolowjo.entropybot.aa.brain.StripOrder.predicted(whole.key(), e.getKey(), e.getValue());
         int legAt = c.steps.size();
         if (firstLeg && first.feetY() != y) c.steps.add(new Step.ToStrip(first.x(), y, first.z(), whole.key()));
         List<Step> legs = stripLegs(whole, digS);
@@ -3620,6 +3623,8 @@ public final class NeedChain {
         if (c.pickItem != null && spare == null) c.pickWorn += wear;
         Map<String, Integer> amounts = Map.of(io.github.mojolowjo.entropybot.aa.brain.StripOrder.countKey(ore, io.github.mojolowjo.entropybot.cave.OreSpec::family), oreBlocks);
         Step.Strip strip = new Step.Strip(sb.ores(), amounts, sb.y(), sb.heading(), 0, sb.from());
+        // 0.39.z77 spares 3: the price's ore a cell, for the strip end's yield line (measured against it)
+        io.github.mojolowjo.entropybot.aa.brain.StripOrder.predicted(strip.key(), amounts.keySet().iterator().next(), 1 / bpo);
         // 0.39.z46 (S58): the first leg is the priced path down to the band's peak (the walk the price above searched);
         // 0.39.z64 item 4: a strip from fresh ground walks to its start first
         int legAt = c.steps.size();
@@ -3634,8 +3639,7 @@ public final class NeedChain {
         final String areas = seen.faces() <= 0 ? "" : " (areas along " + sb.heading() + ": " + seen.faces() + " faces seen, " + seen.ores() + " ore on them: band "
                 + Math.round(band) + " x " + String.format(java.util.Locale.ROOT, "%.2f", scale) + ")";
         final String line = head + (sb.fresh() ? " from fresh ground " + sb.from() + " " + sb.heading() : "") + " ~" + Math.round(bpo) + " blocks/ore (" + String.format(java.util.Locale.ROOT, "%.1f", sb.perSlab())
-                + " ore a chunk in " + io.github.mojolowjo.entropybot.aa.brain.OreBand.slab() + " layers: ~" + Math.round(band) + " cells an ore / " + String.format(java.util.Locale.ROOT, "%.0f", SEEN_PER_DUG) + " seen a block dug)"
-                + areas + " x " + oreBlocks + " ore = " + dug + " cells"
+                + " ore a chunk in " + io.github.mojolowjo.entropybot.aa.brain.OreBand.slab() + " layers)" + areas + " x " + oreBlocks + " ore = " + dug + " blocks"
                 + " (" + shw(sb.host() != null ? sb.host() : ore) + " " + s(hostS) + " each, " + baritone.api.process.IStripProcess.TUNNEL_HEIGHT + " a cell) -> " + s(wk.seconds() + digS);
         c.note(() -> "source: none known for " + shw(word) + ": " + line);
         return noted(line + (pre == null ? "" : " with " + pre) + (spare == null ? "" : " + " + spare), wk);
@@ -3648,22 +3652,13 @@ public final class NeedChain {
      * no start cell known or no faces seen: x 1, the band's estimate), capped by {@code strip.maxBlocksPerOre}, x the ore
      * blocks = the tunnel's cells; a cell breaks the fork's {@code IStripProcess.TUNNEL_HEIGHT} blocks. The strip way and the
      * playbook's descent price their dig seconds AND their pickaxe wear ({@link #spareTools}) from it.
-     * <p>0.39.z77 spares 2 (manager's call 3: the overcount fixed from geometry, no knob): the band's blocks per ore is slab
-     * cells per ore cell, but a strip finds the ore it SEES - each block dug opens {@link #SEEN_PER_DUG} new cells around the
-     * tunnel (rule 17: faces only) - so the blocks dug per ore are the band's figure (x the areas, capped) / SEEN_PER_DUG, and
-     * the cells per ore that / TUNNEL_HEIGHT. {@code band}: slab cells per ore; {@code bpo}: blocks dug per ore.
+     * <p>0.39.z77 spares 3 (manager 2026-10-26: the logs beat the geometry - runs BY / BZ found ~1 iron in ~70 cells, the
+     * band's own figure): no seen-cells factor; the strip end's fact line ({@code Strips.yieldLine}) measures cells dug
+     * against ore found so a factor can be set from runs later.
      */
     record StripDig(double band, double scale, double bpo, int cells, io.github.mojolowjo.entropybot.aa.brain.StripAreas.Yield seen) {
         int breaks() { return baritone.api.process.IStripProcess.TUNNEL_HEIGHT * cells; }
     }
-
-    /**
-     * 0.39.z77 spares 2 (structural, geometry): a 1-wide tunnel of TUNNEL_HEIGHT (the fork's 1 x 2) advanced one cell opens
-     * 2 x TUNNEL_HEIGHT side cells (left and right, feet and head) + the roof + the floor = 6 new cells it sees, for
-     * TUNNEL_HEIGHT = 2 blocks dug: (2 x 2 + 2) / 2 = 3 cells seen per block dug. The dug blocks themselves and the cells
-     * ahead (seen again as the next cell's sides) are not counted again; branches overlapping a seen cell are rough (rule 14).
-     */
-    static final double SEEN_PER_DUG = (2.0 * baritone.api.process.IStripProcess.TUNNEL_HEIGHT + 2) / baritone.api.process.IStripProcess.TUNNEL_HEIGHT;   // structural: geometry
 
     /** {@link StripDig} for {@code oreBlocks} ore at {@code y}; {@code start}: the tunnel's first column {x, z} (null: not known). */
     static StripDig stripDig(double perSlab, int oreBlocks, int[] start, int y, String heading, List<String> ores) {
@@ -3671,8 +3666,8 @@ public final class NeedChain {
         var seen = start == null || heading == null ? io.github.mojolowjo.entropybot.aa.brain.StripAreas.Yield.NONE
                 : io.github.mojolowjo.entropybot.aa.brain.StripAreas.along(start[0], y, start[1], heading, ores);
         double scale = io.github.mojolowjo.entropybot.aa.brain.StripAreas.factor(io.github.mojolowjo.entropybot.aa.brain.StripAreas.perFace(perSlab), seen);
-        double bpo = Math.min(Tuning.get("strip.maxBlocksPerOre"), band * scale) / SEEN_PER_DUG;
-        int cells = (int) Math.ceil(Math.max(0, oreBlocks) * bpo / baritone.api.process.IStripProcess.TUNNEL_HEIGHT - 1e-9);   // structural: epsilon
+        double bpo = Math.min(Tuning.get("strip.maxBlocksPerOre"), band * scale);
+        int cells = (int) Math.ceil(Math.max(0, oreBlocks) * bpo - 1e-9);   // structural: epsilon
         return new StripDig(band, scale, bpo, cells, seen);
     }
 

@@ -275,9 +275,9 @@ class Z75UndergroundFuelTest {
         assertTrue(st.ores().contains("minecraft:coal_ore"), st.toString());
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.ToStrip), "at the feet: no walk: " + c.steps());
         // z75 review 3, by hand: 1 coal (1600 ticks >= 600) = 1 ore block; the band's blocks per ore at y 16 (the slab's ore)
-        // / 3 seen a block dug x 1 ore / 2 a cell = the tunnel cells (z77 spares 2), each 2 stone breaks at 0.6 s (hardness 1.5 x 1.5 / 4, the stone pickaxe, in ticks), the
+        // x 1 ore = the tunnel cells, each 2 stone breaks at 0.6 s (hardness 1.5 x 1.5 / 4, the stone pickaxe, in ticks), the
         // ore 1.15 s (3 x 1.5 / 4); the walk 0 s (the feet); the furnace placed 0.15 s; the smelts 3 x 10 s
-        int dug = (int) Math.ceil(Math.min(Tuning.get("strip.maxBlocksPerOre"), OreBand.blocksPerOre(OreBand.perSlab(fs, 16))) / NeedChain.SEEN_PER_DUG / 2 - 1e-9);   // z77 spares 2: / 3 seen a block dug, / 2 a cell
+        int dug = (int) Math.ceil(Math.min(Tuning.get("strip.maxBlocksPerOre"), OreBand.blocksPerOre(OreBand.perSlab(fs, 16))) - 1e-9);
         assertEquals(dug * 2 * 0.6 + 1.15 + 0.15 + 30, c.seconds(), 0.05, "dug " + dug + ": " + c.why());
     }
 
@@ -323,7 +323,7 @@ class Z75UndergroundFuelTest {
         assertTrue(c.ok() && !c.explore(), c.why());
         Step.Strip st = (Step.Strip) c.steps().stream().filter(s -> s instanceof Step.Strip).findFirst().orElseThrow();
         assertEquals(Map.of("coal", 1), st.amounts(), "1 coal ore for the 1 coal the burn needs: " + c.why());
-        int dug = (int) Math.ceil(Math.min(Tuning.get("strip.maxBlocksPerOre"), OreBand.blocksPerOre(OreBand.perSlab(fs, 16))) / NeedChain.SEEN_PER_DUG / 2 - 1e-9);   // z77 spares 2: / 3 seen a block dug, / 2 a cell
+        int dug = (int) Math.ceil(Math.min(Tuning.get("strip.maxBlocksPerOre"), OreBand.blocksPerOre(OreBand.perSlab(fs, 16))) - 1e-9);
         assertEquals(dug * 2 * 0.6 + 1.15 + 0.15 + 30, c.seconds(), 0.05, c.why());
 
         LootBook none = new LootBook(List.of(new LootBook.Source(LootBook.Kind.BLOCK, "minecraft:stone", "minecraft:cobblestone", 1, 1, false, null)), "test");

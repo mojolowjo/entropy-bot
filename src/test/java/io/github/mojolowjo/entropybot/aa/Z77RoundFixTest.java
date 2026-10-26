@@ -145,7 +145,7 @@ class Z77RoundFixTest {
      * Run BF (torch 12:37; baseline 1:43): the surface leg made the gate's stone pickaxe before the batch's torches. Now the
      * orders whose leaves are all surface come first: "surface [torch 4, stone_pickaxe 1]", and with run BE's bag (64 sticks,
      * 9 coal, no tree known) the run's first step is the torches' craft (0.3 s), before the stone pickaxe's explore - the
-     * torch order is done before the explore; the price is the same sum (450 + 412.25 = 862.25 s; z77 spares 2: the dig from geometry; z77 legs: the stations
+     * torch order is done before the explore; the price is the same sum (450 + 716.25 = 1166.25 s; z77 legs: the stations
      * placed again at the strip on's tunnel end, Z77PlaybookTest).
      */
     @Test
@@ -160,26 +160,26 @@ class Z77RoundFixTest {
         int explore = 0;
         for (int i = 0; i < pc.steps().size(); i++) if (pc.steps().get(i) instanceof Step.Explore) explore = i;
         assertTrue(explore > 0, "the torches before the explore: " + pc.steps());
-        assertEquals(NeedChain.exploreS() + 412.25, pc.seconds(), 0.1, pc.why());
+        assertEquals(NeedChain.exploreS() + 716.25, pc.seconds(), 0.1, pc.why());
     }
 
     // ---- 4. run BF: no spare iron pickaxes ----
 
     /**
      * Run BF 08:57:41 ("iron_pickaxe: 22 spares would cover 5861 blocks; tools.maxSpares 3 holds: 3 made"): the iron pickaxe
-     * in hand with 10 uses left, a strip of raw iron 18 wearing 682 (Z62RunSTest's band and ORES: wear 682). The spare kind is the lowest
-     * tier that digs iron ore - the stone pickaxe (131 uses): ceil((682 - 10) / 131) = 6, tools.maxSpares 3 -> 3 stone pickaxes
+     * in hand with 10 uses left, a strip of raw iron 3 wearing 667 (Z62RunSTest's band: wear 667). The spare kind is the lowest
+     * tier that digs iron ore - the stone pickaxe (131 uses): ceil((667 - 10) / 131) = 6, tools.maxSpares 3 -> 3 stone pickaxes
      * from the bag's cobblestone and sticks; no iron pickaxe made, and "3 made" is said with what was made.
      */
     @Test
     void item4_theSpareIsTheLowestTierThatDigsIt_neverTheKitsIron() {
         ScenariosTest.world("wooden", "stone", "iron");
         Map<String, Integer> bag = Map.of("minecraft:iron_pickaxe", 1, "minecraft:cobblestone", 20, "minecraft:stick", 10);
-        Chain c = NeedChain.resolve("raw_iron", Z62RunSTest.ORES, Z62RunSTest.world(bag, Z62RunSTest.band("east")).withUses(id -> id.contains("iron") ? 10 : 131));
+        Chain c = NeedChain.resolve("raw_iron", 3, Z62RunSTest.world(bag, Z62RunSTest.band("east")).withUses(id -> id.contains("iron") ? 10 : 131));
         assertTrue(c.ok(), c.why());
         assertEquals(0, Z62RunSTest.crafted(c, "iron_pickaxe"), c.steps().toString());
         assertEquals(3, Z62RunSTest.crafted(c, "stone_pickaxe"), c.steps().toString());
-        assertTrue(c.spares().contains("iron_pickaxe: 6 spare stone_pickaxe would cover 682 blocks; tools.maxSpares 3 holds: 3 made"), c.spares());
+        assertTrue(c.spares().contains("iron_pickaxe: 6 spare stone_pickaxe would cover 667 blocks; tools.maxSpares 3 holds: 3 made"), c.spares());
         assertTrue(c.spares().contains("-> 3 spare stone_pickaxe made first"), c.spares());
         // the one scale (MiningTiers: wooden 1, stone 2, iron 3): coal's tier 1 a wooden one, iron's tier 2 a stone one
         assertEquals("minecraft:wooden_pickaxe", NeedChain.spareKind(1, "minecraft:iron_pickaxe"), "the lowest tier digging tier 1");

@@ -119,6 +119,51 @@ public final class StripOrder {
         return String.join(", ", out);
     }
 
+    /**
+     * 0.39.z77 spares 3 (manager 2026-10-26: the logs beat the geometry; a factor is set later from measured runs): the
+     * planner's predicted ore a cell per family for each strip it priced (strip key -> count key -> ore a tunnel cell =
+     * 1 / the price's cells an ore, the areas' factor in), the last price kept; the strip end's fact line reads it.
+     */
+    private static final Map<String, Map<String, Double>> PREDICTED = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final int PREDICTED_MAX = 256;   // structural: a bound on strips priced in one session, not a tuning
+
+    /** The planner's prediction for one family of strip {@code key} (ore a cell; not above 0: not kept). */
+    public static void predicted(String key, String family, double perCell) {
+        if (key == null || family == null || !(perCell > 0)) return;
+        if (PREDICTED.size() >= PREDICTED_MAX && !PREDICTED.containsKey(key)) PREDICTED.clear();
+        PREDICTED.computeIfAbsent(key, k -> new java.util.concurrent.ConcurrentHashMap<>()).put(family, perCell);
+    }
+
+    /** The predictions kept for strip {@code key} (count key -> ore a cell); empty: none priced in this session. */
+    public static Map<String, Double> predicted(String key) {
+        Map<String, Double> m = key == null ? null : PREDICTED.get(key);
+        return m == null ? Map.of() : Map.copyOf(m);
+    }
+
+    public static void clearPredicted() { PREDICTED.clear(); }
+
+    /**
+     * 0.39.z77 spares 3: the strip end's fact line - the cells this run of the strip dug (the fork's blocks counter: tunnel
+     * cells advanced), the ore it found per family (the fork's picked counts) with the measured ore a cell, and the band's
+     * predicted ore a cell for that strip (the planner's price). "strip yield: strip minecraft:deepslate_iron_ore,minecraft:iron_ore|16|west:
+     * 58 cells dug; found iron 0 (0.0000 a cell); predicted iron 0.0181 a cell (55.2 cells an ore)". A family with no
+     * prediction kept says so (rule 15: not known, never 0).
+     */
+    public static String yieldLine(String key, int cells, Map<String, Integer> found, Map<String, Double> predicted, Iterable<String> families) {
+        java.util.Set<String> fams = new java.util.TreeSet<>();
+        for (String f : families) fams.add(f);
+        fams.addAll(found.keySet());
+        List<String> got = new ArrayList<>(), pred = new ArrayList<>();
+        for (String f : fams) {
+            int n = found.getOrDefault(f, 0);
+            got.add(f + " " + n + " (" + (cells > 0 ? String.format(Locale.ROOT, "%.4f", n / (double) cells) + " a cell" : "no cell dug") + ")");
+            Double p = predicted.get(f);
+            pred.add(p == null ? f + " not known (no price kept for this strip)"
+                    : f + " " + String.format(Locale.ROOT, "%.4f", p) + " a cell (" + String.format(Locale.ROOT, "%.1f", 1 / p) + " cells an ore)");
+        }
+        return "strip yield: strip " + key + ": " + cells + " cells dug; found " + String.join(", ", got) + "; predicted " + String.join(", ", pred);
+    }
+
     /** A strip's saved progress (the fork's Progress as plain values, kept per world). */
     public record Saved(boolean started, int x, int y, int z, String heading, int step, int length, int branches,
                         int blocks, int clusters, Map<String, Integer> picked) {
