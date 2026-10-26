@@ -640,15 +640,31 @@ public final class AaRuntime implements JobPort {
             String f = io.github.mojolowjo.entropybot.guard.WorldGenReader.failed();
             return io.github.mojolowjo.entropybot.aa.brain.GenWhere.notLoaded(f != null ? "the world-gen read failed (" + f + ")" : "the world-gen read is not done");
         }
-        java.util.Set<String> blocks = new java.util.TreeSet<>();
-        for (String part : word.split("\\|")) if (!part.isEmpty()) blocks.addAll(sourceBlocksOf(io.github.mojolowjo.entropybot.aa.NeedChain.word(part)));
         // 0.39.z69 fix 2: only the placers this dimension's biomes list (run AA: the nether's blackstone_blobs made stone "both ways")
         var seen = biomesHere();
         if (seen == null) return io.github.mojolowjo.entropybot.aa.brain.GenWhere.notLoaded("this dimension's biomes are not known yet (the feet's chunk is not loaded)");
-        var placers = io.github.mojolowjo.entropybot.guard.WorldGenFiles.placersIn(ores, seen.keySet(), namedBy(seen.values()));
-        var f = io.github.mojolowjo.entropybot.aa.brain.GenWhere.of(blocks, placers, mc.level.getMinBuildHeight(), mc.level.getMaxBuildHeight());
+        // 0.39.z77 freeze (run BD 07:53:24): the placers and each word's fact kept while the dimension, its seen biomes and the
+        // world-gen read are the same (was: the placer filter and the fact computed again for every word asked)
+        var book = currentLootBook();      // the words' blocks come from the loot data: a new or newly ready book is a new key
+        String key = mc.level.dimension().location() + " " + seen.size() + " " + System.identityHashCode(ores) + " " + System.identityHashCode(book) + " " + (book != null && book.ready());
+        if (!key.equals(whereKey)) {
+            wherePlacers = io.github.mojolowjo.entropybot.guard.WorldGenFiles.placersIn(ores, seen.keySet(), namedBy(seen.values()));
+            whereFacts.clear();
+            whereKey = key;
+        }
+        var placers = wherePlacers;
+        var f = whereFacts.computeIfAbsent(word, k -> {
+            java.util.Set<String> blocks = new java.util.TreeSet<>();
+            for (String part : k.split("\\|")) if (!part.isEmpty()) blocks.addAll(sourceBlocksOf(io.github.mojolowjo.entropybot.aa.NeedChain.word(part)));
+            return io.github.mojolowjo.entropybot.aa.brain.GenWhere.of(blocks, placers, mc.level.getMinBuildHeight(), mc.level.getMaxBuildHeight());
+        });
         return mc.player == null ? f : f.withFeet(Jobs.here(mc.player)[1]);     // 0.39.z69 fix 3: the peaks said from the feet
     }
+
+    /** 0.39.z77 freeze: whereOf's kept placers and facts, and the key they were made for. */
+    private String whereKey;
+    private java.util.Collection<io.github.mojolowjo.entropybot.aa.brain.GenWhere.Placer> wherePlacers;
+    private final Map<String, io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact> whereFacts = new java.util.HashMap<>();
 
     /**
      * one-planner: what the chain starts from: the bag, a table and a furnace known, the nearest known block of any item
@@ -1058,13 +1074,22 @@ public final class AaRuntime implements JobPort {
         if (lv == null || mc.player == null) return null;
         var seen = dimBiomes.computeIfAbsent(lv.dimension().location().toString(), k -> new java.util.TreeMap<>());
         int[] at = Jobs.here(mc.player);
-        if (lv.hasChunkAt(new net.minecraft.core.BlockPos(at[0], at[1], at[2])))
+        // 0.39.z77 freeze (run BD 07:53:24: this column scan ran once per world fact asked, thousands of times a tick): the
+        // feet column is read once while the bot stays in it (its chunk loaded)
+        String column = lv.dimension().location() + " " + at[0] + " " + at[2];
+        if (column.equals(biomeColumn) && !seen.isEmpty()) return seen;
+        if (lv.hasChunkAt(new net.minecraft.core.BlockPos(at[0], at[1], at[2]))) {
+            biomeColumn = column;
             for (int y = lv.getMinBuildHeight(); y < lv.getMaxBuildHeight(); y += BIOME_CELL) {
                 var h = lv.getBiome(new net.minecraft.core.BlockPos(at[0], y, at[2]));
                 h.unwrapKey().ifPresent(k -> seen.putIfAbsent(k.location().toString(), h));
             }
+        }
         return seen.isEmpty() ? null : seen;
     }
+
+    /** 0.39.z77 freeze: the column the biomes were last read in ("dim x z"), null: none yet. */
+    private String biomeColumn;
 
     /** 0.39.z69 fix 2: a biome entry of a biome modifier (an id or a #tag) names one of {@code hs} (the game's synced biome tags). */
     private static java.util.function.Predicate<String> namedBy(java.util.Collection<net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome>> hs) {

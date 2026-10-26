@@ -165,13 +165,89 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
     /** The recipe tree's depth bound (the expansion's search bound; a deeper tree is no playbook). */
     static final int MAX_DEPTH = 16;     // structural: search bound
 
+    /**
+     * 0.39.z77 freeze (run BD 07:53:24: the client froze in this expansion - every fuel item's wooden tree expanded through
+     * every tag member, each node reading where its blocks generate, AaRuntime.whereOf scanning the biomes): one derivation's
+     * expansion state - the trees memoised by (word, count) (only those no loop cut shaped: a loop failure depends on the
+     * path), the world facts read once a word (where, the known sources), and the node budget (needChain.maxTrials, the
+     * planner's own search bound): past it the derivation fails with that reason, it never hangs.
+     */
+    static final class Ex {
+        final Facts f;
+        final Map<String, Tree> memo = new java.util.HashMap<>();
+        final Map<String, GenWhere.Fact> where = new java.util.HashMap<>();
+        final Map<String, Boolean> known = new java.util.HashMap<>();
+        final int budget = Math.max(1, NeedChain.maxTrials());
+        int nodes, cuts;
+        String over;
+
+        Ex(Facts f) { this.f = f; }
+
+        GenWhere.Fact where(String w) { return where.computeIfAbsent(w, k -> f.where().apply(k)); }
+
+        boolean known(String w, int n) { return known.computeIfAbsent(w + "|" + n, k -> f.surfaceKnown().test(w, n)); }
+    }
+
+    /** An item a furnace recipe makes (a tag: any member's). */
+    static boolean smelted(String w) {
+        for (String m : new NeedChain.Want(w).members()) if (!ItemWorth.recipes(m, ItemWorth.SMELT).isEmpty()) return true;
+        return false;
+    }
+
+    /** What the bag holds of a need word (an item, or a tag's members summed). */
+    static int held(Facts f, String w) {
+        NeedChain.Want want = new NeedChain.Want(w);
+        if (want.item()) return f.have(want.id());
+        int n = 0;
+        for (var e : f.bag().entrySet()) if (e.getValue() > 0 && want.has(e.getKey())) n += e.getValue();
+        return n;
+    }
+
+    /** The derivation running on this thread (its memo and budget); none: a fresh one per top call. */
+    private static final ThreadLocal<Ex> EX = new ThreadLocal<>();
+
+    private static Ex ex(Facts f) {
+        Ex x = EX.get();
+        return x != null && x.f == f ? x : new Ex(f);
+    }
+
     static Tree expand(Facts f, String raw, int n, List<String> path) {
+        Ex x = ex(f);
+        boolean top = EX.get() != x;
+        if (top) EX.set(x);
+        try {
+            return expand(x, raw, n, path);
+        } finally {
+            if (top) EX.remove();
+        }
+    }
+
+    static Tree expand(Ex x, String raw, int n, List<String> path) {
+        Facts f = x.f;
         String w = NeedChain.word(raw);
         if (n <= 0) return Tree.SURFACE;
-        if (path.size() > MAX_DEPTH) return Tree.no("the recipe tree of " + NeedChain.shw(w) + " is deeper than " + MAX_DEPTH);
-        if (path.contains(w)) return Tree.no("loop: " + NeedChain.shw(w) + " needs itself");
-        if (f.surfaceKnown().test(w, n)) return Tree.SURFACE;
-        GenWhere.Fact wf = f.where().apply(w);
+        if (x.over != null) return Tree.no(x.over);
+        if (++x.nodes > x.budget) {
+            x.over = "the recipe expansion passed needChain.maxTrials " + x.budget + " nodes (the playbook's search bound)";
+            return Tree.no(x.over);
+        }
+        if (path.size() > MAX_DEPTH) { x.cuts++; return Tree.no("the recipe tree of " + NeedChain.shw(w) + " is deeper than " + MAX_DEPTH); }
+        if (path.contains(w)) { x.cuts++; return Tree.no("loop: " + NeedChain.shw(w) + " needs itself"); }
+        String key = w + "|" + n;
+        Tree hit = x.memo.get(key);
+        if (hit != null) return hit;
+        int cuts0 = x.cuts;
+        Tree t = expandNode(x, w, n, path);
+        if (x.cuts == cuts0 && x.over == null) x.memo.put(key, t);
+        return t;
+    }
+
+    private static Tree expandNode(Ex x, String w, int n, List<String> path) {
+        Facts f = x.f;
+        // 0.39.z77 freeze: what the bag holds is had (no tree) - not a furnace output (an ingot): those the batch shares, summed
+        // with the bag taken off once (part), never "had" by each order alone
+        if (x.known(w, n) || (held(f, w) >= n && !smelted(w))) return Tree.SURFACE;
+        GenWhere.Fact wf = x.where(w);
         if (wf != null && wf.surface()) return Tree.SURFACE;
         path.add(w);
         try {
@@ -183,14 +259,14 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
                 for (String kind : List.of(ItemWorth.CRAFT, ItemWorth.SMELT))
                     for (ItemWorth.Recipe r : ItemWorth.recipes(item, kind)) {
                         if (NeedChain.packing(item, r)) continue;
-                        Tree t = recipe(f, item, r, n, path);
+                        Tree t = recipe(x, item, r, n, path);
                         if (!t.ok()) { if (why == null) why = t.fail(); continue; }
                         if (t.surface()) return t;
                         if (best == null) best = t;
                     }
             } else {
                 for (String m : want.members()) {
-                    Tree t = expand(f, m, n, path);
+                    Tree t = expand(x, m, n, path);
                     if (!t.ok()) { if (why == null) why = t.fail(); continue; }
                     if (t.surface()) return t;
                     if (best == null) best = t;
@@ -206,12 +282,12 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
         }
     }
 
-    private static Tree recipe(Facts f, String item, ItemWorth.Recipe r, int n, List<String> path) {
+    private static Tree recipe(Ex x, String item, ItemWorth.Recipe r, int n, List<String> path) {
         int batches = (n + r.outCount() - 1) / r.outCount();
         Map<String, Integer> band = new LinkedHashMap<>();
         List<Smelt> smelts = new ArrayList<>();
         for (var e : NeedChain.slotWords(r).entrySet()) {
-            Tree t = expand(f, e.getKey(), e.getValue() * batches, path);
+            Tree t = expand(x, e.getKey(), e.getValue() * batches, path);
             if (!t.ok()) return Tree.no(NeedChain.sh(item) + " <- " + NeedChain.shw(e.getKey()) + ": " + t.fail());
             for (var b : t.band().entrySet()) band.merge(b.getKey(), b.getValue(), Integer::sum);
             smelts.addAll(t.smelts());
@@ -233,6 +309,29 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
 
     /** The playbook of {@code batch} (the open orders in the batch's order) on the facts {@code f}. */
     public static Playbook derive(List<Target> batch, Facts f) {
+        Ex x = new Ex(f);
+        Ex was = EX.get();
+        EX.set(x);
+        try {
+            Playbook pb = derive0(batch, f);
+            if (x.over != null) return no(batch, x.over);         // 0.39.z77 freeze: the bound said, never a hang
+            return pb;
+        } finally {
+            if (was == null) EX.remove(); else EX.set(was);
+        }
+    }
+
+    /** 0.39.z77 freeze: the nodes the last derivation on this thread expanded (tests; -1: none). */
+    static int lastNodes = -1;
+
+    private static Playbook derive0(List<Target> batch, Facts f) {
+        Playbook pb = deriveIn(batch, f);
+        Ex x = EX.get();
+        lastNodes = x == null ? -1 : x.nodes;
+        return pb;
+    }
+
+    private static Playbook deriveIn(List<Target> batch, Facts f) {
         if (batch == null || batch.isEmpty()) return no(batch, "no open order in the batch");
         if (!MiningTiers.ready() || !ItemWorth.hasData()) return no(batch, NOT_LOADED + "the item and mining-tier data");
         Map<Integer, Tree> trees = new LinkedHashMap<>();
@@ -531,8 +630,11 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
         for (var e : fuels) {
             if (e.getValue() <= 0) continue;
             String w = NeedChain.word(e.getKey());
-            Tree t = expand(f, w, 1, new ArrayList<>());
-            if (!t.ok() || !t.smelts().isEmpty() || !t.band().equals(Map.of(w, 1))) continue;
+            // 0.39.z77 freeze (run BD): a fuel is a band leaf by its own facts - world-gen places it in a band, no known
+            // source covers it, it is no tool-gated own-block drop - never by expanding every fuel's recipe tree (the wooden ones)
+            Ex x = ex(f);
+            GenWhere.Fact wf = x.where(w);
+            if (wf == null || !wf.band() || x.known(w, 1) || f.dropOnly().test(w)) continue;
             Integer tl = tiers.computeIfAbsent(w, k -> tierOf(f, k));
             if (tl == null || tl == MiningTiers.UNKNOWN || tl > tier) continue;
             return w;

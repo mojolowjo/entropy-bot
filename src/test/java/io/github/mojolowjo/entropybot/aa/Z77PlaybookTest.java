@@ -464,6 +464,107 @@ class Z77PlaybookTest {
         assertTrue(asks[0] > first, "an answer landed: compared again");
     }
 
+    /**
+     * 0.39.z77 freeze (run BD 07:53:24: the client froze in the expansion - every fuel's wooden tree through every tag member,
+     * the world read at each node). A vanilla-sized recipe set: the iron nugget / block cycles, nuggets smelted from every
+     * iron tool and armour piece, the raw-iron and coal blocks, every wood's planks / slabs / stairs / fences / boats / doors
+     * as fuel. The kit's derivation stands within the node bound and a second, each world fact read once a word.
+     */
+    @Test
+    void freeze_theRealRecipeSetExpandsWithinItsBound() {
+        TestData d = data();
+        String[] woods = {"oak", "spruce", "birch", "jungle", "acacia", "dark_oak", "mangrove", "cherry", "bamboo", "crimson", "warped"};
+        for (String w : woods) {
+            d.tag(w + "_log", "minecraft:logs", "minecraft:logs_that_burn").tag(w + "_planks", "minecraft:planks");
+            d.recipe(w + "_planks", 4, w + "_log");
+            d.recipe(w + "_slab", 6, w + "_planks", w + "_planks", w + "_planks").recipe(w + "_stairs", 4, java.util.Collections.nCopies(6, w + "_planks").toArray(new String[0]));
+            d.recipe(w + "_fence", 3, w + "_planks", "stick", w + "_planks", w + "_planks", "stick", w + "_planks").recipe(w + "_boat", 1, java.util.Collections.nCopies(5, w + "_planks").toArray(new String[0]));
+            d.recipe(w + "_door", 3, java.util.Collections.nCopies(6, w + "_planks").toArray(new String[0])).recipe(w + "_trapdoor", 2, java.util.Collections.nCopies(6, w + "_planks").toArray(new String[0]));
+            for (String k : List.of("_log", "_planks", "_slab", "_stairs", "_fence", "_boat", "_door", "_trapdoor")) d.fuel(w + k, 300);
+        }
+        d.recipe("stick", 4, "#minecraft:planks", "#minecraft:planks").recipe("crafting_table", 1, "#minecraft:planks", "#minecraft:planks", "#minecraft:planks", "#minecraft:planks");
+        d.recipe("bowl", 4, "#minecraft:planks", "#minecraft:planks", "#minecraft:planks").fuel("bowl", 100).fuel("stick", 100).fuel("crafting_table", 300).fuel("wooden_pickaxe", 200);
+        d.recipe("chest", 1, java.util.Collections.nCopies(8, "#minecraft:planks").toArray(new String[0])).fuel("chest", 300).recipe("barrel", 1, "#minecraft:planks", "#minecraft:planks", "#minecraft:planks", "#minecraft:planks", "#minecraft:planks", "#minecraft:planks", "#minecraft:planks", "#minecraft:planks").fuel("barrel", 300);
+        d.recipe("iron_nugget", 9, "iron_ingot").recipe("iron_ingot", 1, java.util.Collections.nCopies(9, "iron_nugget").toArray(new String[0]));
+        d.recipe("iron_block", 1, java.util.Collections.nCopies(9, "iron_ingot").toArray(new String[0])).recipe("iron_ingot", 9, "iron_block");
+        d.recipe("raw_iron_block", 1, java.util.Collections.nCopies(9, "raw_iron").toArray(new String[0])).recipe("raw_iron", 9, "raw_iron_block");
+        d.recipe("coal_block", 1, java.util.Collections.nCopies(9, "coal").toArray(new String[0])).recipe("coal", 9, "coal_block");
+        for (String k : List.of("pickaxe", "axe", "shovel", "hoe", "sword", "helmet", "chestplate", "leggings", "boots")) d.smelt("iron_nugget", "iron_" + k);
+        d.smelt("iron_ingot", "iron_ore").smelt("iron_ingot", "deepslate_iron_ore").smelt("iron_ingot", "raw_iron_block");
+        Map<String, Integer> asked = new java.util.HashMap<>();
+        World w = world(kitBag(9), Map.of());
+        Playbook.Facts base = Playbook.facts(w, null);
+        Playbook.Facts f = new Playbook.Facts(word -> { asked.merge(word, 1, Integer::sum); return base.where().apply(word); }, base.surfaceKnown(), base.dropOnly(),
+                base.oresOf(), base.stripY(), base.perSlab(), base.bag(), base.bagTier());
+        long t0 = System.nanoTime();
+        Playbook pb = Playbook.derive(KIT, f);
+        double ms = (System.nanoTime() - t0) / 1e6;
+        assertTrue(pb.ok(), pb.why());
+        assertTrue(pb.why().startsWith("playbook: surface [torch 4] > descent y 16 [raw_iron 3, coal 1] > at band [iron_ingot 3, iron_pickaxe 1]"), pb.why());
+        assertTrue(Playbook.lastNodes > 0 && Playbook.lastNodes < NeedChain.maxTrials(), "nodes " + Playbook.lastNodes);
+        assertTrue(ms < 1000, "a second at most: " + ms + " ms, " + Playbook.lastNodes + " nodes");
+        assertTrue(asked.values().stream().allMatch(n -> n == 1), "each world fact read once a word: " + asked);
+    }
+
+    /**
+     * The same set with every wood ingredient a tag (#planks, each wood's own logs tag) and no world-gen fact for the logs (no
+     * surface leaf anywhere: every member of every tag fails, the worst case for a search without memo): the derivation
+     * ends within the bound with its reason, never a hang.
+     */
+    @Test
+    void freeze_noSurfaceLeafAnywhere_endsWithItsReason() {
+        TestData d = data();
+        String[] woods = {"oak", "spruce", "birch", "jungle", "acacia", "dark_oak", "mangrove", "cherry", "bamboo", "crimson", "warped"};
+        for (String w : woods) {
+            for (String l : List.of("_log", "_wood", "stripped_" + w + "_log", "stripped_" + w + "_wood"))
+                d.tag(l.startsWith("stripped") ? l : w + l, "minecraft:" + w + "_logs", "minecraft:logs");
+            d.tag(w + "_planks", "minecraft:planks").recipe(w + "_planks", 4, "#minecraft:" + w + "_logs");
+            for (String k : List.of("_slab", "_stairs", "_fence", "_boat", "_door")) { d.recipe(w + k, 2, "#minecraft:planks", "stick", "#minecraft:planks"); d.fuel(w + k, 300); }
+        }
+        d.recipe("stick", 4, "#minecraft:planks", "#minecraft:planks").fuel("stick", 100);
+        d.recipe("iron_nugget", 9, "iron_ingot").recipe("iron_ingot", 1, java.util.Collections.nCopies(9, "iron_nugget").toArray(new String[0]));
+        for (String k : List.of("pickaxe", "axe", "shovel", "hoe", "sword", "helmet", "chestplate", "leggings", "boots")) d.smelt("iron_nugget", "iron_" + k);
+        World w = world(Map.of("minecraft:stone_pickaxe", 1, "minecraft:coal", 9), Map.of());
+        Playbook.Facts base = Playbook.facts(w, null);
+        Map<String, Integer> asked = new java.util.HashMap<>();
+        Playbook.Facts f = new Playbook.Facts(word -> { asked.merge(word, 1, Integer::sum); return word.contains("log") ? GenWhere.unknown("placed both ways (test)") : base.where().apply(word); }, base.surfaceKnown(),
+                base.dropOnly(), base.oresOf(), base.stripY(), base.perSlab(), base.bag(), base.bagTier());
+        long t0 = System.nanoTime();
+        Playbook pb = Playbook.derive(KIT, f);
+        double ms = (System.nanoTime() - t0) / 1e6;
+        assertTrue(ms < 1000, "a second at most: " + ms + " ms, " + Playbook.lastNodes + " nodes");
+        assertFalse(pb.ok(), "no surface leaf for the sticks: " + pb.why());
+        assertTrue(asked.values().stream().allMatch(n -> n == 1), "each world fact read once a word (the live read scans the biomes): " + asked);
+        assertTrue(pb.fail().startsWith("torch: ") || pb.fail().contains("needChain.maxTrials"), pb.fail());
+    }
+
+    /** R3: the load probe's aatick line says the playbook's comparisons and their ms (only when one ran in the tick). */
+    @Test
+    void theLoadProbeSaysThePlaybookMs() {
+        long[] now = {0};
+        var laps = new io.github.mojolowjo.entropybot.aa.core.TickLaps(() -> now[0]);
+        laps.begin(true);
+        laps.resolved(3_000_000);
+        laps.playbook(5_000_000);
+        laps.playbook(2_500_000);
+        now[0] = 30_000_000;
+        String l = laps.line(7, 20);
+        assertTrue(l.endsWith("| resolves 1 = 3.0 ms | playbook 2 = 7.5 ms"), l);
+        laps.begin(true);
+        now[0] = 60_000_000;
+        assertFalse(laps.line(8, 20).contains("playbook"), "no comparison this tick: not said");
+    }
+
+    /** The bound is said, never a hang: a budget of 10 nodes fails the playbook with the reason. */
+    @Test
+    void freeze_pastTheNodeBoundThePlaybookSaysSo() {
+        data();
+        Tuning.set("needChain.maxTrials", 10);
+        Playbook pb = Playbook.derive(KIT, Playbook.facts(world(kitBag(9), Map.of()), null));
+        assertFalse(pb.ok());
+        assertTrue(pb.fail().contains("passed needChain.maxTrials 10 nodes"), pb.fail());
+    }
+
     /** Hands whose every step is done at once. */
     static final class DoneHands implements Steps.Hands {
         @Override public String start(Step s) { return null; }
