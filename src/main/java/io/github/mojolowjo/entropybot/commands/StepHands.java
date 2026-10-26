@@ -526,12 +526,10 @@ public final class StepHands implements Steps.Hands {
      * walks are priced from the cell it stands on; each landing prices the order again (Steps). Said once at the start.
      */
     private String standForPaths(Step.AwaitPaths a) {
-        IBaritone b = Jobs.baritone();
-        if (b != null) Jobs.cancel(b);
-        stand.begin(gameTime());
-        LOG.info("[entropybot] steps: {}: standing, Baritone idle, while the walks compute from here (rule 22; {} first answers pending in the fork)",
-                a.text(), LivePathPrice.INSTANCE.firstAnswersPending());
-        return null;
+        return stand.start(a, gameTime(), LivePathPrice.INSTANCE.firstAnswersPending(), () -> {
+            IBaritone b = Jobs.baritone();
+            if (b != null) Jobs.cancel(b);
+        }, line -> LOG.info("[entropybot] steps: {}", line));
     }
 
     /**
@@ -540,13 +538,7 @@ public final class StepHands implements Steps.Hands {
      * amended, PathPrice.Kind.ESTIMATED).
      */
     private Car.Status standStatus(Step.AwaitPaths a) {
-        long now = gameTime();
-        if (!stand.over(now, a.waitS())) return Car.Status.running(a.text() + ": " + stand.words(now, a.waitS(), LivePathPrice.INSTANCE.firstAnswersPending()));
-        String why = io.github.mojolowjo.entropybot.aa.moves.StandWait.overWords(a.waitS());
-        if (stand.sayOver()) LOG.info("[entropybot] steps: {}: {}", a.text(), why);
-        stand.end();
-        io.github.mojolowjo.entropybot.aa.moves.FactChange.repriceAfterStand(why);
-        return Car.Status.failed(why);
+        return stand.status(a, gameTime(), LivePathPrice.INSTANCE.firstAnswersPending(), line -> LOG.info("[entropybot] steps: {}", line));
     }
     /** one-planner: the chain for an Obtain step, on the facts as it starts (AaRuntime.obtainSteps: NeedChain). */
     @Override public Steps.Routine routine(Step.Obtain o) {

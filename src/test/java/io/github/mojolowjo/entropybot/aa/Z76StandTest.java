@@ -42,7 +42,8 @@ class Z76StandTest {
         Step running;
         final StandWait stand = new StandWait();
         final List<String> started = new ArrayList<>();
-        int smeltLeft = -1;
+        int smeltLeft = -1, carIdled;
+        final List<String> said = new ArrayList<>();
 
         static boolean moving(Step s) {
             return s instanceof Step.Walk || s instanceof Step.Explore || s instanceof Step.ChopTree || s instanceof Step.Collect || s instanceof Step.ToStrip;
@@ -51,18 +52,14 @@ class Z76StandTest {
         @Override public String start(Step s) {
             running = s;
             started.add(s.text());
-            if (s instanceof Step.AwaitPaths) stand.begin(clock);
+            if (s instanceof Step.AwaitPaths a) return stand.start(a, clock, 3, () -> carIdled++, said::add);   // the hands' own stand logic (StandWait)
             if (s instanceof Step.Smelt) smeltLeft = 60 * 20;          // a minute of furnace time
             return null;
         }
 
         @Override public Car.Status status(Step s) {
             if (moving(s)) feet[0]++;
-            if (s instanceof Step.AwaitPaths a && stand.over(clock, a.waitS())) {
-                stand.end();
-                FactChange.repriceAfterStand(StandWait.overWords(a.waitS()));
-                return Car.Status.failed(StandWait.overWords(a.waitS()));
-            }
+            if (s instanceof Step.AwaitPaths a) return stand.status(a, clock, 3, said::add);   // the hands' own stand logic
             if (s instanceof Step.Smelt && --smeltLeft <= 0) return Car.Status.done("ok: smelted");
             return Car.Status.running(s.text());
         }
@@ -94,6 +91,8 @@ class Z76StandTest {
         tick(run, h, 20 * 29);                             // 29 s of standing
         assertArrayEquals(new int[]{0, 64, 0}, h.feet, "zero movement while the prices compute");
         assertEquals(List.of("stand while paths compute (up to 30 s)"), h.started);
+        assertEquals(1, h.carIdled, "the stand's start idles the car (Baritone cancelled), nothing else");
+        assertTrue(h.said.get(0).contains("standing, Baritone idle"), h.said.toString());
     }
 
     /**
@@ -141,7 +140,11 @@ class Z76StandTest {
         PathPrice.Answer est = PricedAnswers.afterWait(computing, 20 * 30, 30, 12);
         assertEquals(PathPrice.Kind.ESTIMATED, est.kind());
         assertEquals(12, est.walk().seconds(), 1e-9);
-        assertSame(computing, PricedAnswers.afterWait(computing, 20 * 60, 30, Double.NaN), "no estimate: still not known");
+        // review (rule 15): past the wait with no usable estimate the way drops - NONE, no NOT_KNOWN prefix, never another stand
+        PathPrice.Answer none = PricedAnswers.afterWait(computing, 20 * 60, 30, Double.NaN);
+        assertEquals(PathPrice.Kind.NONE, none.kind());
+        assertTrue(none.reason().startsWith(PathPrice.NO_ESTIMATE), none.reason());
+        assertSame(computing, PricedAnswers.afterWait(computing, 20 * 30 - 1, 30, Double.NaN), "before the wait: still computing");
         PathPrice.Answer priced = PathPrice.Answer.priced(new PathPrice.Walk(9));
         assertSame(priced, PricedAnswers.afterWait(priced, 20 * 60, 30, 12), "a price stays a price");
     }
@@ -156,5 +159,38 @@ class Z76StandTest {
         assertTrue(c.ok() && !c.explore(), c.why());
         assertEquals("cut 3 at 10 64 0", c.steps().get(0).text());
         assertTrue(c.why().contains("walk ~4.0 s (" + NeedChain.RANKED + ", not priced: Baritone's estimate after the first-answer wait"), c.why());
+    }
+
+    /** Review (rule 15): no estimate after the wait - the next pricing has no stand: the way drops, the explore leaf is the answer. */
+    @Test
+    void noEstimateAfterTheWaitNeverStandsAgain() {
+        ScenariosTest.world("wooden");
+        Spot tree = ScenariosTest.tree(10, 4);
+        PathPrice[] answer = {(x, y, z, d) -> PathPrice.Answer.computing(null)};
+        PathPrice pp = (x, y, z, d) -> answer[0].price(x, y, z, d);
+        NeedChain.World w = ScenariosTest.w(Map.of(), false, false, Map.of("oak_log", List.of(tree))).withPath(pp);
+        Chain first = NeedChain.resolve("oak_log", 3, w);
+        assertEquals(List.of(new Step.AwaitPaths(NeedChain.firstAnswerWaitS())), first.steps(), first.why());
+        PathPrice.Answer none = PricedAnswers.afterWait(PathPrice.Answer.computing(null), 20 * 30, 30, Double.NaN);
+        answer[0] = (x, y, z, d) -> none;
+        Chain second = NeedChain.resolve("oak_log", 3, w);
+        assertTrue(second.steps().stream().noneMatch(s -> s instanceof Step.AwaitPaths), "no second stand: " + second.steps());
+        assertTrue(second.dropped().stream().anyMatch(d -> d.contains(PathPrice.NO_ESTIMATE)), second.dropped().toString());
+    }
+
+    /**
+     * Review (rule 18: a heuristic rank is never a price): tree A 30 m away with an estimate of 0 s, tree B 20 m away priced
+     * complete at 20 x 1.3 / 4.317 = 6.02 s. A is charged at least its straight walk, 30 / 4.317 = 6.95 s, so B is cut.
+     */
+    @Test
+    void anEstimateIsChargedAtLeastTheStraightWalk() {
+        ScenariosTest.world("wooden");
+        Spot a = ScenariosTest.tree(30, 4), b = ScenariosTest.tree(20, 4);
+        PathPrice pp = (x, y, z, d) -> x == 30 ? PathPrice.Answer.estimated(new PathPrice.Walk(0), "estimate") : PathPrice.Answer.priced(new PathPrice.Walk(FakePaths.walkS(d)));
+        Chain c = NeedChain.resolve("oak_log", 3, ScenariosTest.w(Map.of(), false, false, Map.of("oak_log", List.of(a, b))).withPath(pp));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertEquals("cut 3 at 20 64 0", c.steps().get(0).text(), c.why());
+        assertTrue(c.dropped().stream().anyMatch(d -> d.startsWith("tree 30 m: ") && d.contains("dearer")), c.dropped().toString());
+        assertEquals(30 / io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps(), NeedChain.estimateFloor(NeedChain.walked(PathPrice.Answer.estimated(new PathPrice.Walk(0), "e")), 30).seconds(), 1e-9);
     }
 }

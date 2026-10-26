@@ -3607,9 +3607,11 @@ public final class AaRuntime implements JobPort {
         String w = a.word();
         String wantKey = switch (w) {
             case "house", "build" -> "build";
-            case "explore", "tidy" -> w;
+            case "tidy" -> w;
             default -> null;
         };
+        // 0.39.z76 send-back 3 review (rule 22): the idle explore want is deleted - said, never a silent no
+        if ("explore".equals(w)) return new WantAsk("error: no idle explore want (rule 22: the bot moves only as a priced step of an order) - the explore verb walks new land on your word", a, null, null);
         if (wantKey != null) return new WantAsk(null, a, null, wantKey);
         for (var d : tree.brain.desires())
             if (d.id.equals("needs." + w)) return new WantAsk(isNeed(w), a, null, null);

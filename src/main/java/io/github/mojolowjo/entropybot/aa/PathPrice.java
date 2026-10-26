@@ -53,6 +53,13 @@ public interface PathPrice {
         public static Answer estimated(Walk w, String why) { return new Answer(w, Kind.ESTIMATED, why); }
     }
 
+    /**
+     * 0.39.z76 send-back 3 review (rule 15): the reason of a walk still not known after the first-answer wait with no usable
+     * estimate (an older fork, no player, an infinite heuristic): the way drops - it is NOT a path wait (no NOT_KNOWN prefix,
+     * so the chain never stands for it again) and the other ways compete.
+     */
+    String NO_ESTIMATE = "walk: no estimate after the first-answer wait";
+
     /** The start of every not-a-price text a way fails with (aa why / aa debug; {@link NeedChain.Chain#waiting}). */
     String NOT_KNOWN = "walk: path not known";
 
@@ -94,7 +101,7 @@ public interface PathPrice {
 
     /**
      * 0.39.z60 review 2: first answers (walks not answered yet in this order) computing or queued now; -1: not known (no
-     * fork count). The chain charges the first-answer wait only while some are pending (NeedChain.pathsExplore).
+     * fork count). The standing step (NeedChain.pathsWait, z76) says it in its line.
      */
     default int firstAnswersPending() { return -1; }
 

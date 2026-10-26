@@ -51,12 +51,16 @@ public final class PricedAnswers {
      * 0.39.z76 send-back 3 (rule 18 amended, rule 22; run AU 01:57:53-02:02:53: walks "COMPUTING (queued: 4 in flight)" for
      * 5 min): a walk still not known ({@code a} COMPUTING) after {@code waitS} (pathCost.firstAnswerWaitS) of asks from the
      * same start is taken by Baritone's estimate ({@code estimateS}, its goal heuristic, no search) - ESTIMATED, "ranked, not
-     * priced"; the walk computes its full path on the way. Before the wait, an unknown estimate (NaN), or any other answer:
-     * {@code a} as it is (rule 15: no estimate is never a price).
+     * priced"; the walk computes its full path on the way. Before the wait, or any other answer: {@code a} as it is. Past the
+     * wait with no usable estimate (NaN, infinite): NONE {@link PathPrice#NO_ESTIMATE} - the way drops (rule 15: no estimate
+     * is never a price, and never another stand).
      */
     public static PathPrice.Answer afterWait(PathPrice.Answer a, long waitedTicks, int waitS, double estimateS) {
         if (a == null || a.kind() != PathPrice.Kind.COMPUTING) return a;
-        if (waitS <= 0 || waitedTicks < (long) waitS * io.github.mojolowjo.entropybot.aa.brain.GameTimes.TPS || !(estimateS >= 0) || Double.isInfinite(estimateS)) return a;
+        if (waitS <= 0 || waitedTicks < (long) waitS * io.github.mojolowjo.entropybot.aa.brain.GameTimes.TPS) return a;
+        // z76 review (rule 15): past the wait with no usable estimate the way drops (never another stand: no NOT_KNOWN prefix)
+        if (!(estimateS >= 0) || Double.isInfinite(estimateS))
+            return PathPrice.Answer.none(PathPrice.NO_ESTIMATE + " (" + waitS + " s from here, " + (a.reason() == null ? "computing" : a.reason()) + "; Baritone's estimate not known: an older fork, no player, or none for this goal)");
         return PathPrice.Answer.estimated(new PathPrice.Walk(estimateS), "not known after " + waitS + " s from here (" + (a.reason() == null ? "computing" : a.reason())
                 + "): Baritone's estimate, ranked, not priced");
     }

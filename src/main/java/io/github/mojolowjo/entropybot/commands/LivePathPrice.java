@@ -335,24 +335,6 @@ public final class LivePathPrice implements PathPrice {
         }
     }
 
-    /**
-     * 0.39.z60 item 1 (run R 03:34:55-03:35:00): the fork's segment searches landed since the game started
-     * (IPricedPath.searchCounts()[1]) - the first-answer wait's progress fact; -1 when not known (the priced path off, no
-     * Baritone, a fork without the counts: the wait then never judges progress and runs to its cap). Game thread.
-     */
-    public long segmentsLanded() {
-        if (!PathPrice.pricedPathOn()) return -1;
-        IBaritone b = Jobs.baritone();
-        if (b == null) return -1;
-        try {
-            long[] c = b.getPricedPath().searchCounts();
-            return c == null || c.length < 2 ? -1 : c[1];
-        } catch (LinkageError e) {
-            none("this Baritone has no IPricedPath.searchCounts (an older fork? install the entropy fork z56 or later): " + e);
-            return -1;
-        }
-    }
-
     /** 0.39.z58: landings of searches the fork's queue started itself (no future of ours lands for them); 0 from an older fork. */
     private static long queueLandings() {
         if (!PathPrice.pricedPathOn()) return 0;

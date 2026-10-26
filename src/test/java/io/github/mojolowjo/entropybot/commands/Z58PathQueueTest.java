@@ -70,19 +70,18 @@ class Z58PathQueueTest {
         @Override public String start(Step s) {
             started.add(s.text());
             if (s instanceof Step.Walk || s instanceof Step.Explore || s instanceof Step.ToStrip) moves.add(s.text());
-            if (s instanceof Step.AwaitPaths) stand.begin(clock);
+            if (s instanceof Step.AwaitPaths a) return stand.start(a, clock, 3, () -> carIdled++, x -> {});   // the hands' own stand logic
             return null;
         }
 
+        int carIdled;
+
         @Override public io.github.mojolowjo.entropybot.aa.moves.Car.Status status(Step s) {
             if (s instanceof Step.AwaitPaths a) {
-                if (stand.over(clock, a.waitS())) {
-                    lastWhy = io.github.mojolowjo.entropybot.aa.moves.StandWait.overWords(a.waitS());
-                    stand.end();
-                    io.github.mojolowjo.entropybot.aa.moves.FactChange.repriceAfterStand(lastWhy);
-                    return io.github.mojolowjo.entropybot.aa.moves.Car.Status.failed(lastWhy);
-                }
-                lastWhy = stand.words(clock, a.waitS(), 3);
+                var st = stand.status(a, clock, 3, x -> {});
+                boolean on = st.state() == io.github.mojolowjo.entropybot.aa.moves.Car.State.RUNNING;
+                lastWhy = on ? st.why().substring(a.text().length() + 2) : st.why();     // the words after "<step>: "
+                return st;
             }
             return io.github.mojolowjo.entropybot.aa.moves.Car.Status.running(s.text());
         }

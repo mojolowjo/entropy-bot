@@ -45,6 +45,30 @@ public final class StandWait {
         return true;
     }
 
+    /**
+     * 0.39.z76 send-back 3 review: the standing step's start as the hands run it - the car idled ({@code idleCar}: Baritone
+     * cancelled, nothing started) and the clock begun; the start line is said through {@code say}. Null: it runs.
+     */
+    public String start(Step.AwaitPaths a, long now, int firstPending, Runnable idleCar, java.util.function.Consumer<String> say) {
+        idleCar.run();
+        begin(now);
+        say.accept(a.text() + ": standing, Baritone idle, while the walks compute from here (rule 22; " + firstPending + " first answers pending in the fork)");
+        return null;
+    }
+
+    /**
+     * The standing step's status as the hands run it: running while it stands; past its waitS said once and ended FAILED with
+     * the price fact ({@link FactChange#repriceAfterStand}), so the order is priced again where the bot stands.
+     */
+    public Car.Status status(Step.AwaitPaths a, long now, int computing, java.util.function.Consumer<String> say) {
+        if (!over(now, a.waitS())) return Car.Status.running(a.text() + ": " + words(now, a.waitS(), computing));
+        String why = overWords(a.waitS());
+        if (sayOver()) say.accept(a.text() + ": " + why);
+        end();
+        FactChange.repriceAfterStand(why);
+        return Car.Status.failed(why);
+    }
+
     /** The end line: why the order is priced again now. */
     public static String overWords(int waitS) {
         return "stood " + waitS + " s (pathCost.firstAnswerWaitS) with the walks' paths not known: the order is priced again,"

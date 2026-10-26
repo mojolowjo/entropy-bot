@@ -2186,7 +2186,7 @@ public final class NeedChain {
         else {
             PathPrice pp = c.w.path();
             PathPrice.Answer a = pp == null ? PathPrice.Answer.none("no path provider") : into ? pp.priceInto(x, y, z, dist) : pp.price(x, y, z, dist);
-            out = walked(a);
+            out = estimateFloor(walked(a), dist);     // z76 send-back 3 review (rule 18): an estimate never beats the straight walk
             c.walks.put(key, out);
             walkNote(c, x, y, z, dist, out.fail() == null ? "Baritone path, complete" : out.fail(), out);
         }
@@ -2202,6 +2202,18 @@ public final class NeedChain {
         return FROM_BELOW + leg + " leaves the bot: not known (Baritone's search starts at the feet; a walk from a cell the bot will reach later is not priced, rule 15)";
     }
 
+    /**
+     * 0.39.z76 send-back 3 review (rule 18: a heuristic rank is never a price): an ESTIMATED walk is charged at least the walk of
+     * the straight metres ({@code dist}, Unit.seconds) - Baritone's heuristic is a lower bound (0 s, or a target behind rock),
+     * which must not beat a complete priced path - and keeps its "ranked, not priced" words. Any other walk as it is.
+     */
+    static Walked estimateFloor(Walked w, double dist) {
+        if (w == null || w.kind() != PathPrice.Kind.ESTIMATED || !(dist >= 0)) return w;
+        double floor = io.github.mojolowjo.entropybot.aa.brain.Unit.seconds(dist);
+        if (w.seconds() >= floor) return w;
+        return new Walked(floor, w.note() + " (at least the straight " + Math.round(dist) + " m: " + s(floor) + ")", null, w.kind(), w.pickBreaks(), w.dug());
+    }
+
     /** One provider answer as the chain's walk: a complete path is a price, anything else says why it is not. */
     static Walked walked(PathPrice.Answer a) {
         String why = a.reason() == null || a.reason().isBlank() ? "" : a.reason();
@@ -2212,7 +2224,9 @@ public final class NeedChain {
             case COMPUTING -> new Walked(Double.NaN, "", why.isEmpty() ? COMPUTING : PathPrice.NOT_KNOWN + " yet (computing; " + why + ")", a.kind());
             case CHUNKS -> new Walked(Double.NaN, "", PathPrice.NOT_KNOWN + " (" + (why.isEmpty() ? "chunks not loaded" : why) + ")", a.kind());
             case UNREACHABLE -> new Walked(Double.NaN, "", io.github.mojolowjo.entropybot.aa.moves.FactChange.unreachableText(why.isEmpty() ? "no path, the search ended" : why), a.kind());
-            case NONE -> new Walked(Double.NaN, "", PathPrice.NOT_KNOWN + " (" + (why.isEmpty() ? "no answer, no reason given" : why) + ")", a.kind());
+            // z76 send-back 3 review (rule 15): no estimate after the wait is a way that drops, never another stand
+            case NONE -> why.startsWith(PathPrice.NO_ESTIMATE) ? new Walked(Double.NaN, "", why, a.kind())
+                    : new Walked(Double.NaN, "", PathPrice.NOT_KNOWN + " (" + (why.isEmpty() ? "no answer, no reason given" : why) + ")", a.kind());
             // 0.39.z76 send-back 3 (rule 18 amended, rule 22): past the first-answer wait the walk is taken by Baritone's estimate
             case ESTIMATED -> a.walk() == null || !(a.walk().seconds() >= 0) || Double.isInfinite(a.walk().seconds())
                     ? new Walked(Double.NaN, "", PathPrice.NOT_KNOWN + " (an unusable estimate)", PathPrice.Kind.NONE)
@@ -2301,7 +2315,7 @@ public final class NeedChain {
                 }
                 String p = way.get();
                 Walked wk = c.walks.get(first.x() + "," + first.y() + "," + first.z());
-                if (wk != null && wk.kind() != PathPrice.Kind.UNREACHABLE) asked++;
+                if (wk != null && wk.kind() != PathPrice.Kind.UNREACHABLE && (wk.fail() == null || !wk.fail().startsWith(PathPrice.NO_ESTIMATE))) asked++;   // z76: no estimate frees it too
                 return p;
             };
         }
