@@ -99,15 +99,96 @@ public final class StepHands implements Steps.Hands {
         String search = "Baritone's search " + (pb.getInProgress().isPresent() ? "running" + (age < 0 ? " (start not seen)" : " " + age * 50 + " ms") : "none")   // structural: 50 ms a tick
                 + " (primaryTimeoutMS " + set.primaryTimeoutMS.value + ", failureTimeoutMS " + set.failureTimeoutMS.value
                 + ", planAheadPrimaryTimeoutMS " + set.planAheadPrimaryTimeoutMS.value + ", planAheadFailureTimeoutMS " + set.planAheadFailureTimeoutMS.value + ")";
-        long[] seg = b.getPricedPath().searchCounts();
+        // 0.39.z76 J3-mod item 0 (fork J3: run AL's "73 running" was started - landed, with 70 searches cancelled for priority
+        // that never land): the fork's true running count, IPricedPath.pending() (= started - landed - ended)
         String pricing = "pricing searches: the mod's in flight " + LivePathPrice.INSTANCE.inFlight()
-                + ", the fork's segment searches running " + (seg == null || seg.length < 2 || seg[0] < 0 ? "not known" : String.valueOf(seg[0] - seg[1]))   // structural: [started, landed]
-                + ", first answers pending " + b.getPricedPath().firstAnswersPending();
+                + ", the fork's segment searches running " + segmentsRunning(b)
+                + ", first answers pending " + b.getPricedPath().firstAnswersPending()
+                + ", the mod's asks withdrawn so far " + LivePathPrice.INSTANCE.withdrawn();
+        // 0.39.z76 J3-mod item 0: the goal's owner process (its class: an inactive one shows only "INACTIVE" by name), the goal
+        // last set while this step ran and who held it, Baritone's last search result, the explore target (or that it holds none)
+        String owner = "goal owner " + ctl.map(StepHands::processName).orElse("none") + " (last goal this step " + (carGoal == null ? "none seen" : carGoal + " by " + carOwner) + ")";
+        String calc = "Baritone's last search result " + (io.github.mojolowjo.entropybot.baritone.BaritoneHook.lastCalc() == null ? "none seen" : io.github.mojolowjo.entropybot.baritone.BaritoneHook.lastCalc());
         String target = s instanceof Step.Explore ? Mining.exploreTargetText(me) : null;
-        return "process " + proc + " | pathing " + pb.isPathing() + ", " + path + " | goal " + pb.getGoal() + " | feet " + me[0] + " " + me[1] + " " + me[2]
+        if (s instanceof Step.Explore && target == null) target = "explore target none (the explore holds no target now)";
+        return "process " + proc + " | " + owner + " | pathing " + pb.isPathing() + ", " + path + " | goal " + pb.getGoal() + " | feet " + me[0] + " " + me[1] + " " + me[2]
                 + " | in fluid " + (p.isInWater() || p.isInLava() ? (p.isInLava() ? "lava" : "water") : "no")
                 + " | " + (lastMoveTick < 0 ? "no move seen yet" : (now - lastMoveTick) + " ticks since the last move")
-                + " | " + search + " | " + pricing + (target == null ? "" : " | " + target);
+                + " | " + search + " | " + calc + " | " + pricing + (target == null ? "" : " | " + target);
+    }
+
+    /**
+     * 0.39.z76 J3-mod item 0: the fork's priced segment searches running now - {@code IPricedPath.pending()} (fork J3); an older
+     * fork: started - landed - ended from searchCounts ([3] when it has one), said as such. Loader notes: the fork's IPricedPath.
+     */
+    private static String segmentsRunning(IBaritone b) {
+        try {
+            return String.valueOf(b.getPricedPath().pending());
+        } catch (LinkageError e) {
+            long[] seg = b.getPricedPath().searchCounts();
+            if (seg == null || seg.length < 2 || seg[0] < 0) return "not known (this fork has no IPricedPath.pending: " + e + ")";
+            return (seg[0] - seg[1] - (seg.length > 3 ? seg[3] : 0)) + " (started - landed" + (seg.length > 3 ? " - ended" : ", an older fork: over-counts the cancelled") + ")";   // structural: [started, landed, nodes, ended]
+        }
+    }
+
+    /** 0.39.z76 J3-mod item 0: a Baritone process by its class (its display name is "INACTIVE" once it is not active). */
+    private static String processName(baritone.api.process.IBaritoneProcess p) {
+        return p.getClass().getSimpleName() + (p.isActive() ? " (active)" : " (inactive)");
+    }
+
+    // ---- 0.39.z76 J3-mod item 0: the car has no goal ----
+
+    /** The goal last seen set while this step ran ("GoalXZ{...}") and the process that held it; null: none seen yet. */
+    private String carGoal, carOwner;
+    /** Baritone's CALC_FAILED count when that goal was last seen (or when the step started). */
+    private long carFailsAt;
+
+    /**
+     * 0.39.z76 J3-mod item 0 (run AL 21:06:51, run AK 20:49:42-20:50:10): the car is idle now under a step that drives it -
+     * Baritone has no goal, no process in control is active, no path executes and no search runs; Baritone's own reason
+     * ({@link Steps#carIdleReason}). Null while the car drives, while the step does not use it now ({@link #drivesCar}: its
+     * own waits, a hunt's strike, the item jobs), while a reflex holds the bot, or with no Baritone (the status says so).
+     * Loader notes: Baritone API (IPathingBehavior#getGoal / getCurrent / getInProgress, IPathingControlManager#mostRecentInControl).
+     */
+    @Override public String carIdle(Step s) {
+        if (s != step || instant != null || dataWait.waiting() || !drivesCar(s) || Core.INSTANCE.reflexes.hold()) return null;
+        IBaritone b = Jobs.baritone();
+        if (b == null) return null;
+        var pb = b.getPathingBehavior();
+        var ctl = b.getPathingControlManager().mostRecentInControl();
+        long fails = io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed();
+        baritone.api.pathing.goals.Goal g = pb.getGoal();
+        if (g != null) {
+            carGoal = String.valueOf(g);
+            carOwner = ctl.map(StepHands::processName).orElse("no process in control");
+            carFailsAt = fails;
+            return null;
+        }
+        if (ctl.isPresent() && ctl.get().isActive()) return null;        // a process drives with no goal (the chop's break in reach)
+        if (pb.getCurrent() != null || pb.getInProgress().isPresent()) return null;
+        return Steps.carIdleReason(carGoal, carOwner, fails - carFailsAt, io.github.mojolowjo.entropybot.baritone.BaritoneHook.lastCalc());
+    }
+
+    /**
+     * 0.39.z76 J3-mod item 0: the running step drives Baritone now - a walk whose travel job runs, an explore walking to its
+     * held target (Mining.exploreWalking), a collect / cut while its mine process is on, the band and strip walks once
+     * walking. Not: a hunt (its strike and pick-up have their own cadence), placements, strips, mines at a cell, item jobs.
+     */
+    private boolean drivesCar(Step s) {
+        boolean travel = walkJob != null && c.jobs.running() && c.jobs.job == walkJob;
+        return switch (s) {
+            case Step.Walk w -> travel;
+            case Step.ToStation t -> travel;
+            case Step.ToSurface t -> travel;
+            case Step.StripBack k -> travel;
+            case Step.Explore k -> !firstWait.waiting() && Mining.exploreWalking();
+            case Step.Collect k -> mining;
+            case Step.ChopTree t -> mining;
+            case Step.KelpCut k -> mining;
+            case Step.ToBand t -> bandWalking;
+            case Step.ToStrip t -> true;
+            default -> false;
+        };
     }
 
     /**
@@ -417,6 +498,9 @@ public final class StepHands implements Steps.Hands {
         climbEnd = null;
         bandCell = null;                         // 0.39.z65 item 3
         bandWalking = false;
+        carGoal = null;                          // 0.39.z76 J3-mod item 0: the next step's car starts unseen
+        carOwner = null;
+        carFailsAt = io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed();
         dataWait.reset();
         firstWait.end();
     }

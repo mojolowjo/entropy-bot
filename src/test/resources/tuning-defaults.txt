@@ -992,3 +992,5 @@ monitor.everyTicks	20.0
 monitor.stallS	30.0
 monitor.noPathFails	3.0
 debug.monitorProbe	0.0
+steps.carIdleTicks	80.0
+pathCost.pricedTop	2.0

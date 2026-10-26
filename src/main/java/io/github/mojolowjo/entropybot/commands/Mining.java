@@ -1039,6 +1039,16 @@ final class Mining {
         return "explore target " + ex.target.x() + " " + ex.target.z() + " " + Math.round(d) + " m from the feet (" + (ex.targetWhy == null ? "why not said" : ex.targetWhy) + ")";
     }
 
+    /**
+     * 0.39.z76 J3-mod item 0: the running explore walks toward a held target now (it gives Baritone that goal again once a
+     * second while Baritone is idle) - the step's car should have a goal; false: no running explore, a gather, between
+     * targets, or the explore did not step within the last second.
+     */
+    static boolean exploreWalking() {
+        ExRun ex = lastExplore;
+        return ex != null && ex.target != null && ex.hold != null && Core.INSTANCE.tick() - lastExploreTick <= 20;   // structural: one second in ticks
+    }
+
     /** The explore run that stepped last (its target is the one a monitor's cancel froze). */
     private static volatile ExRun lastExplore;
 

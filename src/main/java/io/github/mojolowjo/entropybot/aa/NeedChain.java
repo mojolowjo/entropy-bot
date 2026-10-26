@@ -1505,6 +1505,21 @@ public final class NeedChain {
             walkBack(c);
         }
         String out = outputOf(g, used);
+        // 0.39.z76 J3-mod item 1 (run AM 21:39:44: "craft #planks 8" with 1 birch + 1 oak log: no one member makes 8, the craft
+        // refused twice and the order parked): inputs that name several members are one craft per member they make
+        Map<String, Integer> split = craft && out == null ? membersMade(g, used, batches, w.word) : null;
+        if (split != null) {
+            self.id = null;
+            String slot = word(g.slots().keySet().iterator().next());
+            for (var e : split.entrySet()) {
+                int n = e.getValue() * g.outCount();
+                c.steps.add(new Step.Craft(e.getKey().equals(w.word) ? shw(w.word) : sh(e.getKey()), n));
+                used(c, Map.of(slot, e.getValue() * pieces));     // 0.39.z61: each craft's own count of the slot word
+                c.bag.merge(e.getKey(), n, Integer::sum);
+            }
+            c.seconds += Price.craftS() * batches;
+            return verb + String.join(" + ", parts);
+        }
         self.id = out;
         String name = out != null ? out : w.word;
         int made = batches * g.outCount();
@@ -2227,13 +2242,73 @@ public final class NeedChain {
             spots.add(sp);
         }
         spots.sort(Comparator.comparingDouble(Spot::dist));
-        for (Spot first : spots) {
+        Ranks rk = new Ranks(c, spots);                  // 0.39.z76 J3-mod item 2: rank rough, walk exact (rule 18)
+        for (Spot first : rk.order()) {
             List<Spot> order = new ArrayList<>();
             order.add(first);
             for (Spot o : spots) if (o != first) order.add(o);
-            alts.add(new Alt((tree(word, first) ? "tree " : shw(gives) + " ") + Math.round(first.dist()) + " m", () -> sourceFrom(c, word, gives, lack, order)));
+            alts.add(new Alt((tree(word, first) ? "tree " : shw(gives) + " ") + Math.round(first.dist()) + " m", rk.run(first, () -> sourceFrom(c, word, gives, lack, order))));
         }
         return alts;
+    }
+
+    // ---- 0.39.z76 J3-mod item 2: rank rough, walk exact (rule 18 amended 2026-10-25 late evening) ----
+
+    /** The start of a way's text that was ranked, not priced (aa why, the dropped list). */
+    public static final String RANKED = "ranked";
+
+    /**
+     * 0.39.z76 J3-mod item 2 (rule 18 amended: "ten searches before the first step were the 2-5 s freezes"): the known
+     * sources of one need in rank order - Baritone's estimate from the feet ({@link PathPrice#estimate}: its goal heuristic,
+     * no search) when every source has one, else the straight metres (the lookup's order) - and the budget of full priced
+     * paths: the ways run in that order and only the first {@code pathCost.pricedTop} whose walk was asked (priced, or not
+     * known yet) get a priced path; a way whose walk Baritone found unreachable, or that failed before any walk, frees its
+     * place for the next. The rest are "ranked": not asked, never a price (their walk is told to the provider as ranked
+     * out, which withdraws a pending ask of it nobody asked again). The way the bot takes always has its complete path.
+     */
+    private static final class Ranks {
+        private final Ctx c;
+        private final List<Spot> order;
+        private final int top = PathPrice.pricedTop();
+        private int asked;
+
+        Ranks(Ctx c, List<Spot> byDist) {
+            this.c = c;
+            this.order = rank(c.w.path(), byDist);
+        }
+
+        List<Spot> order() { return order; }
+
+        /** The way of {@code first} run within the budget: past it, "ranked" (no walk asked, c.fail says why). */
+        Supplier<String> run(Spot first, Supplier<String> way) {
+            return () -> {
+                if (asked >= top) {
+                    PathPrice pp = c.w.path();
+                    if (pp != null) pp.rankedOut(first.x(), first.y(), first.z());
+                    c.fail = RANKED + " number " + (order.indexOf(first) + 1) + " of " + order.size() + " by Baritone's estimate (no search, not a price): only the top "
+                            + top + " ways get a priced path (pathCost.pricedTop, rule 18)";
+                    return null;
+                }
+                String p = way.get();
+                Walked wk = c.walks.get(first.x() + "," + first.y() + "," + first.z());
+                if (wk != null && wk.kind() != PathPrice.Kind.UNREACHABLE) asked++;
+                return p;
+            };
+        }
+    }
+
+    /** The spots by Baritone's estimate from the feet when every one has one, else as given (straight metres); ties keep the given order. Pure. */
+    static List<Spot> rank(PathPrice pp, List<Spot> byDist) {
+        if (pp == null || byDist.size() < 2) return byDist;
+        Map<Spot, Double> est = new java.util.IdentityHashMap<>();
+        for (Spot sp : byDist) {
+            double e = pp.estimate(sp.x(), sp.y(), sp.z());
+            if (Double.isNaN(e)) return byDist;          // rule 15: one not known - the straight metres for all (one unit)
+            est.put(sp, e);
+        }
+        List<Spot> out = new ArrayList<>(byDist);
+        out.sort(Comparator.comparingDouble(est::get));   // stable: a tie keeps the straight-metres order
+        return out;
     }
 
     /** 0.39.z48: the spot's block is the station of a recipe kind (the game's recipe data names it: the table, the furnace). */
@@ -2306,15 +2381,16 @@ public final class NeedChain {
         Map<String, List<Spot>> dig = new LinkedHashMap<>();
         for (Spot sp : spots) {
             if (tree(w.word, sp)) trees.add(sp);
-            else dig.computeIfAbsent(givesOf(sp, w), k -> new ArrayList<>()).add(sp);
+            else dig.computeIfAbsent(givesOf(c, sp, w), k -> new ArrayList<>()).add(sp);
         }
         List<Alt> alts = new ArrayList<>();
-        for (Spot first : trees) {
+        Ranks rk = new Ranks(c, trees);                  // 0.39.z76 J3-mod item 2: rank rough, walk exact (rule 18)
+        for (Spot first : rk.order()) {
             List<Spot> order = new ArrayList<>();
             order.add(first);
             for (Spot o : trees) if (o != first) order.add(o);
-            String gives = givesOf(first, w);
-            Alt a = new Alt("tree " + Math.round(first.dist()) + " m", () -> sourceFrom(c, w.word, gives, lack, order));
+            String gives = givesOf(c, first, w);
+            Alt a = new Alt("tree " + Math.round(first.dist()) + " m", rk.run(first, () -> sourceFrom(c, w.word, gives, lack, order)));
             a.id = gives;
             alts.add(a);
         }
@@ -2333,11 +2409,13 @@ public final class NeedChain {
         return alts;
     }
 
-    /** What a spot of a tag need yields: what the lookup says (the loot data), else its block when that is a member, else the need's token. */
-    private static String givesOf(Spot sp, Want w) {
+    /**
+     * What a spot of a tag need yields: what the lookup says (the loot data), else the one tag-member pick for its block
+     * ({@link #memberOf}, 0.39.z76 J3-mod item 1: its drop's member, the block itself when a member), else the need's token.
+     */
+    private static String givesOf(Ctx c, Spot sp, Want w) {
         if (sp.gives() != null) return word(sp.gives());
-        if (sp.block() != null && w.has(sp.block())) return sp.block();
-        return w.word;
+        return memberOf(c, w.word, sp.block());
     }
 
     /** TAG_NEEDS: the animals whose loot drops any member, each its own way (the member it drops). */
@@ -2467,24 +2545,77 @@ public final class NeedChain {
     private static double perBlock(Ctx c, String item, String block) {
         if (c.w.loot() == null || block == null) return 1;
         Want w = new Want(item);
-        // 0.39.z75 metric fix A (run AH 19:46:59: "strip ... for coal 0", "x 0 ore = 0 blocks"): a tag need's word (#coals)
-        // has no loot entry of its own - the block's drop of any MEMBER is its yield (was: NaN, read as 0 ore by the strip)
-        List<LootBook.Source> ls = w.item() ? c.w.loot().sources(item) : c.w.loot().sourcesMatching(w::has);
-        for (LootBook.Source s : ls) if (s.kind() == LootBook.Kind.BLOCK && s.from().equals(block) && s.per() > 0) return s.per();
-        return (w.item() ? block.equals(id(item)) : w.has(block)) ? 1 : Double.NaN;      // its own block (a member's own, for a tag)
+        if (w.item()) {
+            for (LootBook.Source s : c.w.loot().sources(item)) if (s.kind() == LootBook.Kind.BLOCK && s.from().equals(block) && s.per() > 0) return s.per();
+            return block.equals(id(item)) ? 1 : Double.NaN;
+        }
+        // 0.39.z75 metric fix A (run AH 19:46:59: "strip ... for coal 0"), moved to the one tag-member pick in 0.39.z76 J3-mod
+        // item 1: a tag need's word (#coals) has no loot entry of its own - its yield is the drop of the member the block gives
+        LootBook.Source s = tagDrop(c, w, block);
+        if (s != null) return s.per();
+        return w.has(block) ? 1 : Double.NaN;      // a member's own block (a log for #logs)
+    }
+
+    // ---- 0.39.z76 J3-mod item 1: the one place a tag need becomes a member ----
+    // (run AM 21:39:44: "craft #planks 8 ... no member of #planks can be made from what I have (11 members)" with 1 birch and
+    // 1 oak log in the bag, then "made 4 birch_planks"; z75 metric fix A's #coals strip; run AH's #stone_tool_materials
+    // explore). A tag need stays its word until something names the member: a block names it by its drop (tagDrop /
+    // memberOf: coal_ore -> coal, stone -> cobblestone, a log -> itself), the inputs a recipe group took name it by the recipe
+    // that takes them (membersMade: one member, or one craft per member the bag's inputs make). Read from the loot data, the
+    // tag index and the recipes; no name list, no per-tag case.
+
+    /** The loot source by which {@code block} drops a member of the tag need {@code w} (the book's first such entry); null: none, an item need, no book. */
+    private static LootBook.Source tagDrop(Ctx c, Want w, String block) {
+        if (w.item() || block == null || c.w.loot() == null) return null;
+        for (LootBook.Source s : c.w.loot().sourcesMatching(w::has))
+            if (s.kind() == LootBook.Kind.BLOCK && s.from().equals(block) && s.per() > 0) return s;
+        return null;
     }
 
     /**
-     * 0.39.z75 metric fix A: the item a block gives for a need word - for a tag (or "a|b") the member the loot data says the
-     * block drops (coal_ore -> coal for #coals), so the bag and the step name one item; an item word, no book or no such
-     * entry: the word as it is.
+     * The item a block gives for a need word: an item word as it is; for a tag (or "a|b") the member the loot data says the
+     * block drops ({@link #tagDrop}), else the block itself when it is a member (a log for #logs), else the word (no member
+     * named: the step and the bag keep the tag's token).
      */
-    private static String memberFrom(Ctx c, String word, String block) {
+    private static String memberOf(Ctx c, String word, String block) {
         Want w = new Want(word);
-        if (w.item() || c.w.loot() == null || block == null) return word;
-        for (LootBook.Source s : c.w.loot().sourcesMatching(w::has))
-            if (s.kind() == LootBook.Kind.BLOCK && s.from().equals(block) && s.per() > 0) return word(s.item());
-        return word;
+        if (w.item() || block == null) return word;
+        LootBook.Source s = tagDrop(c, w, block);
+        if (s != null) return word(s.item());
+        return w.has(block) ? block : word;
+    }
+
+    /**
+     * The members a one-ingredient recipe group makes from what it took ({@code used}: item -> pieces; a slot's token for what a
+     * way still has to get): each concrete input goes to the one member whose recipe takes it, the token to the need word (the
+     * craft names the member from the bag when it runs); member (or the word) -> batches. Null: one member or none named
+     * ({@link #outputOf} names it), a group of several slots, an input two members take, or a batch that would mix inputs.
+     */
+    static Map<String, Integer> membersMade(Group g, Map<String, Integer> used, int batches, String word) {
+        if (g.slots().size() != 1) return null;
+        int per = g.slots().values().iterator().next();
+        if (per <= 0) return null;
+        Map<String, Integer> pieces = new LinkedHashMap<>();
+        for (var e : used.entrySet()) {
+            String k = e.getKey(), to = null;
+            if (!k.startsWith("#") && k.indexOf('|') < 0) {
+                Set<String> outs = new LinkedHashSet<>();
+                for (int i = 0; i < g.recs().size(); i++)
+                    for (String sw : g.recs().get(i).needs()) if (new Want(sw).has(k)) { outs.add(g.outs().get(i)); break; }
+                if (outs.size() == 1) to = outs.iterator().next();
+            }
+            if (to == null && !k.startsWith("#") && k.indexOf('|') < 0) return null;    // an input two members take (or none): not split
+            pieces.merge(to == null ? word : to, e.getValue(), Integer::sum);
+        }
+        if (pieces.size() < 2) return null;
+        Map<String, Integer> out = new LinkedHashMap<>();
+        int sum = 0;
+        for (var e : pieces.entrySet()) {
+            if (e.getValue() % per != 0) return null;       // a batch would take two kinds: the game's recipe does not mix them
+            out.put(e.getKey(), e.getValue() / per);
+            sum += e.getValue() / per;
+        }
+        return sum == batches ? out : null;
     }
 
     /**
@@ -2869,7 +3000,7 @@ public final class NeedChain {
             return null;
         }
         String ore = sb.ores().get(0);
-        gives = memberFrom(c, gives, ore);                      // z75 metric fix A: the member the ore drops (#coals: coal)
+        gives = memberOf(c, gives, ore);                        // z75 metric fix A / J3-mod item 1: the member the ore drops (#coals: coal)
         double per = perBlock(c, gives, ore);
         // 0.39.z75 metric fix A (rule 15, rule 1): a strip whose ore's yield of the need is not known is no way, and one that
         // would dig 0 ore for a lack is none either (was: "for coal 0", priced 0 s, the repair's gap 3 times, then a park)
@@ -3039,6 +3170,7 @@ public final class NeedChain {
             if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreachable.put(cw.key(), wk.fail());
             return null;
         }
+        gives = memberOf(c, gives, cw.ore());                   // J3-mod item 1: the member the ore drops names the bag's gain
         double per = perBlock(c, gives, cw.ore());
         if (!(per > 0)) { c.fail = head + ": the yield of " + shw(gives) + " from " + shw(cw.ore()) + " is not known (no loot entry; rule 15)"; return null; }   // z75 metric fix A
         int oreBlocks = (int) Math.ceil(lack / per - 1e-9);  // structural: epsilon

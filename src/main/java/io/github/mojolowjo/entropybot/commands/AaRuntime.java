@@ -2162,6 +2162,7 @@ public final class AaRuntime implements JobPort {
         }
         int[] w = typedRun && st.running() ? io.github.mojolowjo.entropybot.aa.moves.Steps.walkAhead(st.steps(), st.index()) : null;
         LivePathPrice.INSTANCE.running(w == null ? null : new net.minecraft.core.BlockPos(w[0], w[1], w[2]));
+        LivePathPrice.INSTANCE.sweep();          // 0.39.z76 J3-mod item 2: withdraw the asks nobody wants (ranked out / the bot left their start)
     }
 
     /** 0.39.z58 review 2: the step run last told to the fork as a new order. */

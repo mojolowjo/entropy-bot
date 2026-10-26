@@ -55,6 +55,19 @@ public interface PathPrice {
      */
     Answer price(int x, int y, int z, double dist);
 
+    /**
+     * 0.39.z76 J3-mod item 2 (rule 18 amended: rank rough, walk exact): Baritone's own estimate of the walk from the feet to
+     * stand by the block at x y z - its goal heuristic (the fork's IPathEstimate), NO search, in seconds - for ranking ways
+     * before they are priced; never a price (no wall, cliff, break or place is in it). NaN: not known (no estimate here).
+     */
+    default double estimate(int x, int y, int z) { return Double.NaN; }
+
+    /**
+     * 0.39.z76 J3-mod item 2: the chain ranked the walk to x y z out of the ways it prices (pathCost.pricedTop) - it was not
+     * asked; the live provider withdraws a pending ask of it that nobody asked again (IPricedPath.cancel). Game thread.
+     */
+    default void rankedOut(int x, int y, int z) {}
+
     /** A complete walk now, else null (callers that only compare known walks: the deposit). */
     default Walk toBlock(int x, int y, int z) { return price(x, y, z, Double.NaN).walk(); }
 
@@ -78,6 +91,9 @@ public interface PathPrice {
 
     /** The walk past which A* stops (its cost ceiling), in seconds. */
     static double budgetS() { return Tuning.get("pathCost.budgetS"); }
+
+    /** 0.39.z76 J3-mod item 2: the known sources of one need that get a full priced path (Tuning pathCost.pricedTop). */
+    static int pricedTop() { return Math.max(1, Tuning.i("pathCost.pricedTop")); }
 
     /** Searches in flight at once; more asks wait for the next pass. */
     static int maxPending() { return Tuning.i("pathCost.maxPending"); }

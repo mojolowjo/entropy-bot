@@ -102,6 +102,32 @@ public final class Steps {
 
         /** 0.39.z71: a {@code probe monitor:} line (debug.monitorProbe 1); these hands may drop it. */
         default void probe(String line) {}
+
+        /**
+         * 0.39.z76 J3-mod item 0 (run AL 21:06:51 "probe stall: process INACTIVE, goal null"; run AK 20:49:42-20:50:10: the goal
+         * null 1-5 ticks after each CALC_FAILED, set again by the explore): the car (Baritone) is idle now - no goal, no process
+         * in control active, no path executing, no search running - while the running step drives it; Baritone's own reason
+         * ({@link #carIdleReason}). Null: the car drives, or the step does not use it now (a wait of its own, a reflex, a craft).
+         * Read every tick; {@link Steps} ends the step after steps.carIdleTicks of it.
+         */
+        default String carIdle(Step s) { return null; }
+    }
+
+    /** 0.39.z76 J3-mod item 0: ticks the car may stand idle with no goal under a step that drives it (Tuning steps.carIdleTicks). */
+    public static long carIdleTicks() { return Math.max(1, Tuning.l("steps.carIdleTicks")); }
+
+    /**
+     * 0.39.z76 J3-mod item 0: Baritone's own reason the car has no goal, from what the hands saw while the step ran:
+     * {@code lastGoal} (the goal last set, null: none seen since the step started), {@code owner} (the process that held it),
+     * {@code failsSince} (Baritone's CALC_FAILED events since that goal was seen), {@code lastCalc} (Baritone's last search
+     * result event, null: none seen). Pure.
+     */
+    public static String carIdleReason(String lastGoal, String owner, long failsSince, String lastCalc) {
+        String calc = lastCalc == null ? "no search result seen" : "Baritone's last search result " + lastCalc;
+        if (lastGoal == null) return "the goal was never set (no Baritone process took this step; " + calc + ")";
+        String who = owner == null ? "a process not seen" : owner;
+        if (failsSince > 0) return who + " dropped its goal " + lastGoal + " after a failed search (" + failsSince + " CALC_FAILED since it was set) and nothing set it again";
+        return who + " ended with its goal " + lastGoal + " and nothing set it again (no failed search; " + calc + ")";
     }
 
     /**
@@ -628,6 +654,45 @@ public final class Steps {
         lastLook = now;
         notLoadedSaid = false;
         lastVerdict = null;
+        carIdleSince = -1;                       // 0.39.z76 J3-mod item 0: the idle car's clock starts again with the step
+    }
+
+    // ---- 0.39.z76 J3-mod item 0: the car has no goal ----
+
+    /** The tick the car was first seen idle with no goal under the running step (-1: it drives, or not judged). */
+    private long carIdleSince = -1;
+
+    /**
+     * 0.39.z76 J3-mod item 0 (run AL 21:06:51, run AK 20:49:42-20:50:10): a step that drives the car (not a craft, a smelt or
+     * a kind the monitor never judges) whose hands report the car idle with no goal ({@link Hands#carIdle}) for
+     * steps.carIdleTicks in a row ends at once with Baritone's own reason - not after the monitor's monitor.stallS - and
+     * re-plans on the step's fact (its source key, else its StepId), as the monitor's REPLAN does. A car between two paths
+     * (1-2 ticks, the explore's goal set again) is no end. True: the step ended.
+     */
+    private boolean carIdleEnds(Step s) {
+        StepMonitor.Kind k = StepMonitor.kind(s);
+        if (k == StepMonitor.Kind.EXEMPT || k == StepMonitor.Kind.ITEM_JOB) { carIdleSince = -1; return false; }
+        String idle;
+        try {
+            idle = hands.carIdle(s);
+        } catch (RuntimeException e) {
+            why = stage() + ": the car's state could not be read: " + e;     // rule 15: not known is no idle car
+            carIdleSince = -1;
+            return false;
+        }
+        if (idle == null) { carIdleSince = -1; return false; }
+        if (carIdleSince < 0) carIdleSince = now;
+        long t = now - carIdleSince;
+        if (t < carIdleTicks()) return false;
+        String reason = "the car has no goal: Baritone idle with no goal for " + t + " ticks (steps.carIdleTicks " + carIdleTicks() + "): " + idle;
+        hands.log(stage() + ": " + reason);
+        carIdleSince = -1;
+        safeCancel(reason);
+        String src = io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(s);
+        FactChange.Fact f = src != null ? FactChange.noProgress(src, reason + " at " + s.text())
+                : new FactChange.Fact("step " + StepId.of(s).text(), reason + " at " + s.text());
+        failOrReplan(reason, f);
+        return true;
     }
 
     private StepSignals signalsNow(Step s) {
@@ -1125,7 +1190,7 @@ public final class Steps {
                     String src = io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(s);
                     if (src != null) failOrReplan(reason, new FactChange.Fact("source " + src, out));
                     else fail(reason);
-                } else {
+                } else if (!carIdleEnds(s)) {            // 0.39.z76 J3-mod item 0: the car with no goal ends the step at once
                     if (st.why() != null) why = stage() + ": " + st.why();
                     // 0.39.z71 (D2 3.2): the monitor's look once per monitor.everyTicks (it may end, complete or re-plan the step)
                     if (monitorOn && now - lastLook >= StepMonitor.everyTicks()) monitorLook(s);

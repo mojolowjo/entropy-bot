@@ -254,7 +254,8 @@ public final class Nearby {
 
     /**
      * 0.39.z42 (rule 18): the station the chain walks to, by Baritone's complete path less its bonus. The lookup's order
-     * (straight metres less the bonus) is only the pre-filter: the first {@code pathCost.maxPending} stations of it are asked
+     * (straight metres less the bonus; 0.39.z76: Baritone's estimate less the bonus when known) is only the pre-filter: the
+     * first {@code pathCost.pricedTop} stations of it are asked
      * (each ask is one background search); among those with a complete path the cheapest walk less its bonus wins; none known
      * yet: the pre-filter's first (the chain asks its walk again and says "path not known" until it lands). Never a price.
      * Null: no stations.
@@ -262,16 +263,36 @@ public final class Nearby {
     public static Spot byPath(List<Spot> spots, PathPrice pp) {
         if (spots == null || spots.isEmpty()) return null;
         if (pp == null) return spots.get(0);
+        // 0.39.z76 J3-mod item 2 (rule 18 amended: rank rough, walk exact): the stations ranked by Baritone's estimate less their
+        // bonus when every one has an estimate (else the pre-filter's order); the first pathCost.pricedTop are asked (was
+        // pathCost.maxPending), the rest are ranked out (not asked; a pending ask of them is withdrawn when nobody asks again)
+        List<Spot> order = rankStations(spots, pp);
         Spot best = null;
         double bestS = Double.POSITIVE_INFINITY;
-        for (int i = 0; i < Math.min(spots.size(), PathPrice.maxPending()); i++) {
-            Spot sp = spots.get(i);
+        int top = Math.min(order.size(), PathPrice.pricedTop());
+        for (int i = top; i < order.size(); i++) pp.rankedOut(order.get(i).x(), order.get(i).y(), order.get(i).z());
+        for (int i = 0; i < top; i++) {
+            Spot sp = order.get(i);
             PathPrice.Answer a = pp.price(sp.x(), sp.y(), sp.z(), sp.dist());
             if (a == null || a.kind() != PathPrice.Kind.PRICED || a.walk() == null) continue;
             double s = a.walk().seconds() - Math.max(0, sp.bonusS());
             if (s < bestS) { bestS = s; best = sp; }
         }
-        return best != null ? best : spots.get(0);
+        return best != null ? best : order.get(0);
+    }
+
+    /** 0.39.z76 J3-mod item 2: the stations by Baritone's estimate less the bonus when all have one, else as given. Pure. */
+    static List<Spot> rankStations(List<Spot> spots, PathPrice pp) {
+        if (spots.size() < 2) return spots;
+        java.util.Map<Spot, Double> est = new java.util.IdentityHashMap<>();
+        for (Spot sp : spots) {
+            double e = pp.estimate(sp.x(), sp.y(), sp.z());
+            if (Double.isNaN(e)) return spots;           // rule 15: one not known - the pre-filter's order for all
+            est.put(sp, e - Math.max(0, sp.bonusS()));
+        }
+        List<Spot> out = new java.util.ArrayList<>(spots);
+        out.sort(Comparator.comparingDouble(est::get));
+        return out;
     }
 
     /**

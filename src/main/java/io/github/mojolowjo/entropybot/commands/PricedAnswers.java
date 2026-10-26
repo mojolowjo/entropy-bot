@@ -31,7 +31,17 @@ public final class PricedAnswers {
      * 18: never the old price). A queued ask now waits in the fork's priority queue, which starts it when a slot frees.
      */
     public static PathPrice.Answer notYet(String reason, String queued, String researchWait, int maxPending) {
+        return notYet(reason, queued, researchWait, null, maxPending);
+    }
+
+    /**
+     * As above; 0.39.z76 J3-mod item 2 (rule 15): the fork's {@code withdrawn} (IPricedPath.WITHDRAWN: the mod's ask was
+     * cancelled - a way dropped, or the bot moved off its start) is no path answer either: "path not known yet", asked again
+     * on the next price - never "no path", so it never drops a source.
+     */
+    public static PathPrice.Answer notYet(String reason, String queued, String researchWait, String withdrawn, int maxPending) {
         if (reason == null) return null;
+        if (reason.equals(withdrawn)) return PathPrice.Answer.computing(withdrawn + ": asked again on the next price (rule 15: not known, never no path)");
         if (reason.equals(queued)) return PathPrice.Answer.computing("queued: pathCost.maxPending " + maxPending + " searches in flight (the fork's priority queue starts it when a slot frees)");
         if (reason.equals(researchWait)) return PathPrice.Answer.computing(researchWait + " (pathCost.researchMinS)");
         return null;

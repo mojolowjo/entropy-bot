@@ -54,6 +54,19 @@ public final class BaritoneHook {
 
     public static long calcFailed() { return calcFailed; }
 
+    /**
+     * 0.39.z76 J3-mod item 0: Baritone's last search result path event (CALC_FAILED, CALC_FINISHED_NOW_EXECUTING,
+     * NEXT_SEGMENT_CALC_FINISHED, NEXT_CALC_FAILED ...) and the client tick it came; null / -1: none since the hook was wired.
+     * For the stall probe's "last calc result" and the car-idle reason.
+     */
+    private static volatile String lastCalc;
+    private static volatile long lastCalcTick = -1;
+
+    public static String lastCalc() {
+        String c = lastCalc;
+        return c == null ? null : c + " " + (io.github.mojolowjo.entropybot.Core.INSTANCE.tick() - lastCalcTick) + " ticks ago";
+    }
+
     public boolean hooked() { return hooked; }
 
     public boolean engineRegistered() { return engineRegistered; }
@@ -96,6 +109,10 @@ public final class BaritoneHook {
                 public void onPathEvent(PathEvent event) {
                     try {
                         if (event == PathEvent.CALC_FAILED) calcFailed++;                          // 0.39.z71 (D2 3.2): the step monitor's no-path count
+                        if (event.name().contains("CALC") && !event.name().endsWith("STARTED")) {  // 0.39.z76 J3-mod item 0: the last search result
+                            lastCalc = event.name();
+                            lastCalcTick = io.github.mojolowjo.entropybot.Core.INSTANCE.tick();
+                        }
                         io.github.mojolowjo.entropybot.commands.WalkProbe.event(event.name());     // 0.39.z54 B: every event while a walk step runs (probe on)
                         io.github.mojolowjo.entropybot.commands.StepProbe.event(event.name());     // 0.39.z56 item 1: any step (debug.stepProbe)
                         io.github.mojolowjo.entropybot.commands.LoadProbe.pathEvent(event.name()); // 0.39.z56 item 3: calcs counted (debug.loadProbe)

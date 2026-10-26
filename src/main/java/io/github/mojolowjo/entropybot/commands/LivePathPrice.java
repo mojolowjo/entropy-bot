@@ -75,6 +75,8 @@ public final class LivePathPrice implements PathPrice {
         if (!PathPrice.pricedPathOn() && !mc.level.isLoaded(pos)) return Answer.chunks("not loaded: the target's chunk is not loaded");
         String key = x + "," + y + "," + z;
         int[] me = Jobs.here(mc.player);
+        if (asked.size() > ASKED_MAX) asked.clear();     // no sweep runs while AA is off: the set never grows past a bound
+        asked.add(key);                                  // 0.39.z76 J3-mod item 2: asked since the last sweep (kept, not withdrawn)
         if (PathPrice.pricedPathOn()) return pricedAsk(mc, b, pos, key, me);
         int bag = 31 * bagHash(mc) + System.identityHashCode(mc.level);     // another level (dimension, world): not the same answer
         long now = System.currentTimeMillis();
@@ -99,6 +101,78 @@ public final class LivePathPrice implements PathPrice {
         started++;                                       // 0.39.z56 item 3: the load probe's count (game thread)
         f.whenComplete((a, err) -> mc.execute(() -> land(mc, key, me, bag, a, err)));
         return Answer.computing(null);
+    }
+
+    // ---- 0.39.z76 J3-mod item 2: rank rough (the estimate), withdraw what nobody wants (IPricedPath.cancel) ----
+
+    /** Goal keys asked / ranked out since the last {@link #sweep} (game thread). */
+    private final Set<String> asked = new java.util.HashSet<>(), rankedOut = new java.util.HashSet<>();
+    /** Asks withdrawn since the game started (the stall probe's count). */
+    private volatile long withdrawn;
+
+    public long withdrawn() { return withdrawn; }
+
+    /**
+     * Baritone's estimate of the walk from the feet to stand by x y z: the fork's {@code IBaritone.getPathEstimate()} (its goal
+     * heuristic, no search) in seconds; NaN with no player or Baritone, or an older fork (said once). Game thread.
+     */
+    @Override
+    public double estimate(int x, int y, int z) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.player == null) return Double.NaN;
+        IBaritone b = Jobs.baritone();
+        if (b == null) return Double.NaN;
+        try {
+            double t = b.getPathEstimate().estimate(goal(new BlockPos(x, y, z)), mc.player.blockPosition());
+            return Double.isNaN(t) || Double.isInfinite(t) ? Double.NaN : TickPrice.walkS(t);
+        } catch (LinkageError e) {
+            none("this Baritone has no IBaritone.getPathEstimate (an older fork? install the entropy fork J3): ways are ranked by the straight metres; " + e);
+            return Double.NaN;
+        }
+    }
+
+    @Override public void rankedOut(int x, int y, int z) {
+        if (rankedOut.size() > ASKED_MAX) rankedOut.clear();
+        rankedOut.add(x + "," + y + "," + z);
+    }
+
+    /** structural: a memory bound on the goal keys kept between two sweeps (a chain asks a few dozen) */
+    private static final int ASKED_MAX = 1024;
+
+    /**
+     * Once per AA tick (AaRuntime): the pending asks nobody asked since the last sweep that the chain ranked out, or whose
+     * start the bot left by more than failures.moved ({@link AskSweep}), are withdrawn - the fork cancels their search (its
+     * slot frees at once) and answers WITHDRAWN, which reads "path not known" (PricedAnswers.notYet). Never the running
+     * step's walk. Game thread. Loader notes: the fork's IPricedPath.cancel (J3).
+     */
+    public void sweep() {
+        try {
+            if (!PathPrice.pricedPathOn() || pending.isEmpty()) return;
+            Minecraft mc = Minecraft.getInstance();
+            IBaritone b = Jobs.baritone();
+            if (mc == null || mc.player == null || b == null) return;
+            java.util.List<AskSweep.Ask> open = new java.util.ArrayList<>();
+            for (var e : pending.entrySet()) if (!e.getValue().future().isDone()) open.add(new AskSweep.Ask(e.getKey(), e.getValue().from()));
+            String run = runningTold == null ? null : runningTold.getX() + "," + runningTold.getY() + "," + runningTold.getZ();
+            for (String key : AskSweep.due(open, asked, rankedOut, Jobs.here(mc.player), io.github.mojolowjo.entropybot.aa.brain.Failures.movedV(), run)) {
+                String[] q = key.split(",");
+                BlockPos g = new BlockPos(Integer.parseInt(q[0]), Integer.parseInt(q[1]), Integer.parseInt(q[2]));
+                boolean out;
+                try {
+                    out = b.getPricedPath().cancel(goal(g));
+                } catch (LinkageError e) {
+                    none("this Baritone has no IPricedPath.cancel (an older fork? install the entropy fork J3): asks nobody wants run to their end; " + e);
+                    return;
+                }
+                if (out) {
+                    withdrawn++;
+                    LOG.debug("[entropybot] path cost: the ask for {} withdrawn ({})", key, rankedOut.contains(key) ? "ranked out of the priced ways" : "the bot left its start");
+                }
+            }
+        } finally {
+            asked.clear();
+            rankedOut.clear();
+        }
     }
 
     /** 0.39.z57: one search in flight per goal key: its future (the fork's; a joined ask gets the same one) and where it was asked. */
@@ -143,7 +217,8 @@ public final class LivePathPrice implements PathPrice {
                 LOG.warn("[entropybot] path cost to {}: the fork's answer failed", key, e);
                 return Answer.none("the fork's answer failed: " + e);
             }
-            Answer wait = a == null ? null : PricedAnswers.notYet(a.reason, baritone.api.pathing.calc.IPricedPath.QUEUED, baritone.api.pathing.calc.IPricedPath.RESEARCH_WAIT, PathPrice.maxPending());
+            Answer wait = a == null ? null : PricedAnswers.notYet(a.reason, baritone.api.pathing.calc.IPricedPath.QUEUED, baritone.api.pathing.calc.IPricedPath.RESEARCH_WAIT,
+                    baritone.api.pathing.calc.IPricedPath.WITHDRAWN, PathPrice.maxPending());
             if (wait != null) return wait;
             return answer(mc, b, a, key, pos);
         }
@@ -277,6 +352,11 @@ public final class LivePathPrice implements PathPrice {
         Pending p = pending.get(key);
         if (p != null && p.future() == f) pending.remove(key);
         drops(b);
+        // 0.39.z76 J3-mod item 2: a withdrawn ask is no answer - nothing landed, nothing to re-price on (rule 15: not known)
+        if (err == null && a != null && baritone.api.pathing.calc.IPricedPath.WITHDRAWN.equals(a.reason)) {
+            LOG.debug("[entropybot] path cost: walk to {}: {}", key.replace(',', ' '), a.reason);
+            return;
+        }
         int[] from = mc.player == null ? asked : Jobs.here(mc.player);
         String[] q = key.split(",");
         BlockPos goal = new BlockPos(Integer.parseInt(q[0]), Integer.parseInt(q[1]), Integer.parseInt(q[2]));
@@ -285,7 +365,8 @@ public final class LivePathPrice implements PathPrice {
             LOG.warn("[entropybot] path cost to {}: the background search threw", key, err);
             out = Answer.none("the search threw: " + err);
         } else {
-            Answer wait = a == null ? null : PricedAnswers.notYet(a.reason, baritone.api.pathing.calc.IPricedPath.QUEUED, baritone.api.pathing.calc.IPricedPath.RESEARCH_WAIT, PathPrice.maxPending());
+            Answer wait = a == null ? null : PricedAnswers.notYet(a.reason, baritone.api.pathing.calc.IPricedPath.QUEUED, baritone.api.pathing.calc.IPricedPath.RESEARCH_WAIT,
+                    baritone.api.pathing.calc.IPricedPath.WITHDRAWN, PathPrice.maxPending());
             out = wait != null ? wait : answer(mc, b, a, key, goal);
         }
         if (WalkProbe.on() && a != null) {
