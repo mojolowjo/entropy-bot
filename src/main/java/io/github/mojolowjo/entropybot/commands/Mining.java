@@ -1008,9 +1008,38 @@ final class Mining {
         return out;
     }
 
+    /**
+     * 0.39.z75 (run AI 20:11:05-20:14:16: helmet, leggings and boots each parked on "explore 5 until raw_iron: monitor: no
+     * progress 30 s ... farthest 0 from the start", the re-plan picking the same explore toward the same target from the
+     * same spot): the explore targets frozen under the step monitor, each with the feet it froze from - a fact by position;
+     * every later explore passes over that target until the bot stands failures.moved from there (TargetHold.skip).
+     */
+    static final List<ExploreRules.TargetHold.Failed> FROZEN = java.util.Collections.synchronizedList(new ArrayList<>());
+
+    /** 0.39.z75: a chunk whose explore target froze from near here (FROZEN). */
+    private static boolean frozenSkip(int cx, int cz, int[] me) {
+        synchronized (FROZEN) {
+            return ExploreRules.TargetHold.skip(FROZEN, cx, cz, me, io.github.mojolowjo.entropybot.aa.brain.Failures.movedV());
+        }
+    }
+
+    /** The explore run that stepped last (its target is the one a monitor's cancel froze). */
+    private static volatile ExRun lastExplore;
+
+    /** 0.39.z75: the step monitor ended the running explore for no progress at {@code feet}: its target is held by position. */
+    static void frozen(int[] feet, String why) {
+        ExRun ex = lastExplore;
+        if (ex == null || ex.target == null) return;
+        FROZEN.add(new ExploreRules.TargetHold.Failed(ex.target.x(), ex.target.z(), feet, "frozen: " + why));
+        if (ex.aimed != null) CAVE_VISITED.add(ex.aimed);
+        LOG.info("[entropybot] explore: target {} {} held from {} {} {} (the monitor ended the explore: {}); the next explore from here picks another",
+                ex.target.x(), ex.target.z(), feet[0], feet[1], feet[2], why);
+    }
+
     private String exploreStep(Seq s, LocalPlayer p) {
         ExRun ex = runs.get(s) instanceof ExRun x ? x : null;
         if (ex == null) return "the explore run is gone";
+        lastExplore = ex;
         // review 0.33.2: a gather that ended without its tally step (failed, skipped) is closed here, never left open
         if (ex.gatherStart > 0) {
             LOG.info("[entropybot] explore: gather {} ended without its tally ({} ticks)", ex.gathers, now() - ex.gatherStart);
@@ -1208,7 +1237,8 @@ final class Mining {
                     (cx, cz) -> io.github.mojolowjo.entropybot.vocab.ExploreWords.seen(notes().explored(ExploreRules.key(d, cx, cz)),
                             core.terrain() == null ? Boolean.FALSE : core.terrain().painted(d, cx, cz))
                             // 0.39.z72: a target that failed from near here is passed over (a fact about where it failed)
-                            || ExploreRules.TargetHold.skip(ex.failed, cx, cz, me, io.github.mojolowjo.entropybot.aa.brain.Failures.movedV()),
+                            || ExploreRules.TargetHold.skip(ex.failed, cx, cz, me, io.github.mojolowjo.entropybot.aa.brain.Failures.movedV())
+                            || frozenSkip(cx, cz, me),
                     (cx, cz) -> {
                         String why = io.github.mojolowjo.entropybot.commands.FenceRules.walkVerdict(io.github.mojolowjo.entropybot.api.BotAPI.check(d, (cx << 4) + 8, y, (cz << 4) + 8, "go"));
                         if (why != null) notes().markExplored(List.of(ExploreRules.key(d, cx, cz)));

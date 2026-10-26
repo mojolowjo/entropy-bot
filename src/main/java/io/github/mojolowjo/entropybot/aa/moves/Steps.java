@@ -53,6 +53,14 @@ public final class Steps {
         default StepNeeds.Bag bag() { return null; }
 
         /**
+         * 0.39.z75 (run AI 20:11:05-20:14:16: three explores "no progress 30 s ... Baritone executing", farthest 0): the facts
+         * of a frozen walk or explore at the monitor's no-progress verdict - Baritone's process in control and its state, the
+         * path's length and the index on it, the goal, the feet, in fluid, ticks since the last move; null: these hands
+         * cannot read them. Written as a probe line behind debug.stepProbe.
+         */
+        default String stallFacts(Step s) { return null; }
+
+        /**
          * 0.39.z61 (D1 J2, replaces z38's keep list): the run's reserves to the fork's lease - what the remaining steps use up,
          * counted, and the orders' targets; Baritone places a reserved item only while the bag holds more than the reserves
          * need. Called at every step start (the whole table), with only the orders' reserves before a re-plan, empty at the
@@ -655,6 +663,15 @@ public final class Steps {
             }
             case REPLAN -> {
                 hands.log(stage() + ": monitor: " + l.reason());
+                if (Tuning.get("debug.stepProbe") >= 1 && (s instanceof Step.Explore || s instanceof Step.Walk || s instanceof Step.ToStation
+                        || s instanceof Step.ToStrip || s instanceof Step.ToBand || s instanceof Step.ToSurface)) {
+                    try {                                // 0.39.z75: the frozen walk's facts, one line
+                        String f = hands.stallFacts(s);
+                        hands.probe("probe stall: " + stage() + " | " + (f == null ? "no stall facts in these hands" : f));
+                    } catch (RuntimeException e) {
+                        why = stage() + ": the stall facts could not be read: " + e;
+                    }
+                }
                 safeCancel("monitor: " + l.reason());
                 failOrReplan(l.reason(), l.fact());
             }

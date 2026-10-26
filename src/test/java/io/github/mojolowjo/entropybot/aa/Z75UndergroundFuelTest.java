@@ -490,6 +490,53 @@ class Z75UndergroundFuelTest {
         assertTrue(asked.get(0).text().startsWith("short by 1 of 2 raw_iron (1 arrived)"), asked.get(0).text());
     }
 
+    /**
+     * Run AI 20:11:05-20:14:16: a frozen walk/explore at the monitor's no-progress verdict writes its facts (Baritone's
+     * process, the path and its index, the goal, the feet, fluid, ticks since the last move) as one probe line behind
+     * debug.stepProbe; off: no line.
+     */
+    @Test
+    void freeze_theStallFactsLine() {
+        for (int probe : new int[]{1, 0}) {
+            Tuning.set("debug.stepProbe", probe);
+            List<String> lines = new java.util.ArrayList<>();
+            int[] second = {0};
+            io.github.mojolowjo.entropybot.aa.moves.Steps.Hands h = new io.github.mojolowjo.entropybot.aa.moves.Steps.Hands() {
+                @Override public String start(Step s) { return null; }
+                @Override public io.github.mojolowjo.entropybot.aa.moves.Car.Status status(Step s) { return io.github.mojolowjo.entropybot.aa.moves.Car.Status.running("on it"); }
+                @Override public void cancel(String why) {}
+                @Override public int[] feet() { return new int[]{3, 16, -160}; }
+                @Override public io.github.mojolowjo.entropybot.aa.moves.StepSignals signals(Step s) {
+                    int k = second[0];
+                    return new io.github.mojolowjo.entropybot.aa.moves.StepSignals(true, null, new int[]{3, 16, -160}, 220.6, "GoalXZ", false, false, false, k >= 7 ? 3 : k >= 4 ? 2 : k >= 2 ? 1 : 0, -1, -1, null, 0, -1, null);
+                }
+                @Override public void probe(String line) { lines.add(line); }
+                @Override public String stallFacts(Step s) { return "process Custom Goal (active) | pathing true, path 40 moves, at 0 | goal GoalXZ{x=200,z=-160} | feet 3 16 -160 | in fluid no | 600 ticks since the last move"; }
+            };
+            io.github.mojolowjo.entropybot.aa.moves.Steps run = new io.github.mojolowjo.entropybot.aa.moves.Steps(h);
+            boolean[] replanned = {false};
+            run.start("k", List.of(new Step.Walk(200, 16, -160, 0)), 0, (f, fact, w) -> { replanned[0] = true; return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(List.of(new Step.Wait(5)), null); });
+            for (int s = 1; s <= 20 && !replanned[0]; s++) { second[0] = s; run.tick(s * 20L); }
+            assertTrue(replanned[0], run.why());
+            long stall = lines.stream().filter(l -> l.startsWith("probe stall: ")).count();
+            assertEquals(probe, stall, lines.toString());
+            if (probe == 1) assertTrue(lines.stream().anyMatch(l -> l.contains("600 ticks since the last move")), lines.toString());
+        }
+    }
+
+    /**
+     * Run AI: the target an explore froze on, held by position: from the feet it froze at (3 16 -160) the next explore
+     * passes over that target's chunk; once the bot stands failures.moved away it may try it again.
+     */
+    @Test
+    void freeze_theFrozenTargetIsPassedOverFromThere() {
+        var frozen = List.of(new io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.Failed(200, -160, new int[]{3, 16, -160}, "frozen: no progress 30 s"));
+        double moved = io.github.mojolowjo.entropybot.aa.brain.Failures.movedV();
+        assertTrue(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.skip(frozen, 200 >> 4, -160 >> 4, new int[]{3, 16, -160}, moved), "the same target from the same spot: passed over");
+        assertFalse(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.skip(frozen, 180 >> 4, -160 >> 4, new int[]{3, 16, -160}, moved), "another target: open");
+        assertFalse(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.skip(frozen, 200 >> 4, -160 >> 4, new int[]{3 + (int) Math.ceil(moved), 16, -160}, moved), "moved away: open again");
+    }
+
     // ---- 3. counted once ----
 
     /**

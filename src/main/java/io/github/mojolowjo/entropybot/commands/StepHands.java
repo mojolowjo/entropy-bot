@@ -71,7 +71,37 @@ public final class StepHands implements Steps.Hands {
         return r;
     }
 
+    /** 0.39.z75: the feet at the last status call and the tick they last changed (the stall facts' "since the last move"). */
+    private int[] lastFeet;
+    private long lastMoveTick = -1;
+
+    /**
+     * 0.39.z75 (run AI 20:11:05-20:14:16): a frozen walk's or explore's facts for the probe line. Loader notes: Baritone's
+     * IPathingControlManager#mostRecentInControl, IBaritoneProcess#displayName, IPathingBehavior#getCurrent / getGoal /
+     * isPathing, IPathExecutor#getPath / getPosition; vanilla Entity#isInWater / isInLava.
+     */
+    @Override public String stallFacts(Step s) {
+        LocalPlayer p = Minecraft.getInstance().player;
+        IBaritone b = Jobs.baritone();
+        if (p == null || b == null) return "no player or no Baritone";
+        int[] me = Jobs.here(p);
+        var ctl = b.getPathingControlManager().mostRecentInControl();
+        String proc = ctl.map(x -> x.displayName() + (x.isActive() ? " (active)" : " (inactive)")).orElse("none");
+        var pb = b.getPathingBehavior();
+        var cur = pb.getCurrent();
+        String path = cur == null ? "no path executing" : "path " + cur.getPath().length() + " moves, at " + cur.getPosition();
+        long now = Core.INSTANCE.tick();
+        return "process " + proc + " | pathing " + pb.isPathing() + ", " + path + " | goal " + pb.getGoal() + " | feet " + me[0] + " " + me[1] + " " + me[2]
+                + " | in fluid " + (p.isInWater() || p.isInLava() ? (p.isInLava() ? "lava" : "water") : "no")
+                + " | " + (lastMoveTick < 0 ? "no move seen yet" : (now - lastMoveTick) + " ticks since the last move");
+    }
+
     @Override public Car.Status status(Step s) {
+        LocalPlayer pl = Minecraft.getInstance().player;
+        if (pl != null) {
+            int[] f = Jobs.here(pl);
+            if (lastFeet == null || f[0] != lastFeet[0] || f[1] != lastFeet[1] || f[2] != lastFeet[2]) { lastFeet = f; lastMoveTick = Core.INSTANCE.tick(); }
+        }
         Car.Status st = status0(s);
         StepProbe.status(st.why());              // 0.39.z56 item 1: one field (the probe reads it when on)
         if (st.state() != Car.State.RUNNING) io.github.mojolowjo.entropybot.aa.brain.JobBoundary.leave();
@@ -295,6 +325,13 @@ public final class StepHands implements Steps.Hands {
 
     @Override public void cancel(String why) {
         try {
+            // 0.39.z75 (run AI 20:11:05-20:14:16: the same explore re-picked from the same spot, frozen twice, parked): a
+            // monitor's no-progress end of an explore holds its target by position (Mining.frozen), so the next explore
+            // from here picks another target
+            if (why != null && why.startsWith("monitor: ") && why.contains("no progress")) {
+                LocalPlayer fp = Minecraft.getInstance().player;
+                if (fp != null) Mining.frozen(Jobs.here(fp), why.substring("monitor: ".length()));
+            }
             if (mining) {
                 IBaritone b = Jobs.baritone();
                 if (b != null && chopping) b.getChopProcess().cancel();
