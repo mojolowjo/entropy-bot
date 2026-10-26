@@ -165,13 +165,20 @@ public final class Steps {
         }
 
         /**
-         * 0.39.z76 sb4 review 2: the try without its cell - "step | fact key | needs in the bag" - for the order's set of tries
+         * 0.39.z76 sb4 review 2: the try without its cell - "step | fact key | needs in the bag" (a place fact: and its cell,
+         * review 3) - for the order's set of tries
          * on facts it holds nothing for; null: a part not known (rule 15: never "the same").
          */
         public String tryKey() {
             if (id == null || factKey == null || needs == null) return null;
+            // sb4 review 3 (coordinator): a place failure is a fact about WHERE (z67's own rule) - its try is keyed by the
+            // start cell too (another cell = a new try; a cell not known: never the same, rule 15)
+            if (factKey.startsWith(PLACE_FACT)) return feet == null ? null : id.text() + " | " + factKey + " | " + needsBag() + " | at " + startCell();
             return id.text() + " | " + factKey + " | " + needsBag();
         }
+
+        /** The key prefix of FactChange.placeFailed's plain fact ("place minecraft:crafting_table"). */
+        static final String PLACE_FACT = "place ";
     }
 
     /** The key of the tool tier in {@link Attempt#needs} ("pickaxe tier"). */

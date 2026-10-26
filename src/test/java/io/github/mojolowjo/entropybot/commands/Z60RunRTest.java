@@ -85,8 +85,10 @@ class Z60RunRTest {
     /** Hands where the place step fails like run R's (the fork's words) and says the place fact; every other step is done. */
     private static final class PlaceHands implements Steps.Hands {
         final List<String> started = new ArrayList<>();
+        int[] at = {-568, 61, 709};                                           // run R's spot
         @Override public String start(Step s) {
             started.add(s.text());
+            if (s instanceof Step.Walk w) at = new int[]{w.x(), w.y(), w.z()};    // sb4 review 3: a walk ends at another cell
             if (s instanceof Step.PlaceNear p) {
                 FactChange.placeFailed(p.item(), "stage build: place crafting_table near me: no cell within 3 blocks");
                 return "error: gave up at place crafting_table near me: stage build: place crafting_table near me: no cell within 3 blocks";
@@ -95,7 +97,7 @@ class Z60RunRTest {
         }
         @Override public Car.Status status(Step s) { return Car.Status.done("ok: " + s.text()); }
         @Override public void cancel(String why) {}
-        @Override public int[] feet() { return new int[]{-568, 61, 709}; }    // 0.39.z70: the try's start cell (run R's spot)
+        @Override public int[] feet() { return at.clone(); }                   // 0.39.z70: the try's start cell
         @Override public io.github.mojolowjo.entropybot.aa.moves.StepNeeds.Bag bag() {
             return new io.github.mojolowjo.entropybot.aa.moves.StepNeeds.Bag() {
                 @Override public int bestTier(String kind) { return 0; }
@@ -111,7 +113,7 @@ class Z60RunRTest {
      * blocks" stopped the iron order with no re-plan. Now the place fact re-plans it (the replanner is asked with that fact).
      * 0.39.z70 (D2 3.1): the walk ending DONE between is progress, so the place failing after it is re-planned again; the
      * same try again (the same place-near, fact, cell and bag, nothing done between) ends the run with the honest words.
-     * 0.39.z76 sb4 review 2: the place's plain fact holds nothing, so its try seen again in the order parks (a done step between).
+     * 0.39.z76 sb4 review 3: a place fact is about WHERE, so another cell (the walk's) is a new try; the same cell parks.
      */
     @Test
     void runRsTableWithNoCellReplans() {
@@ -127,12 +129,10 @@ class Z60RunRTest {
         assertEquals(1, facts.size(), run.why());
         assertEquals("place minecraft:crafting_table", facts.get(0).key());
         assertEquals(Steps.Phase.RUNNING, run.phase(), run.why());
-        run.tick(2);                                       // the walk done -> the place fails again on the same fact with the same bag
-        // 0.39.z76 sb4 review 2: "place X" holds nothing for the order, so its try (step, fact, bag; any cell, a done step
-        // between) seen again in this order parks - it was re-planned once more before (z70), with no count left to bound it
-        assertEquals(1, facts.size(), run.why());
+        run.tick(2);                                       // the walk done (progress) -> the place fails again at the walk's cell: re-planned, then the same try at once
+        assertEquals(2, facts.size(), run.why());
         assertEquals(Steps.Phase.FAILED, run.phase());
-        assertTrue(run.why().contains("the same try failed again in this order (another cell or another try between): place minecraft:crafting_table near me"), run.why());
+        assertTrue(run.why().contains("the same way failed twice from the same place with the same bag: place minecraft:crafting_table near me"), run.why());
         assertTrue(run.why().contains("no cell within 3 blocks"), run.why());
     }
 

@@ -235,6 +235,60 @@ class Z76SendBack4Test {
         assertTrue(second.why().contains("the same try failed again in this order"), second.why());
     }
 
+    /** Hands for the place cases: the place fails with the plain place fact, any other step is done; the feet as set. */
+    static final class PlaceHands implements Steps.Hands {
+        int[] feet = {-568, 61, 709};
+        boolean moveEachTry;
+        FactChange.Fact last;
+        @Override public String start(Step s) {
+            if (s instanceof Step.PlaceNear && moveEachTry) feet = new int[]{feet[0] + 20, feet[1], feet[2]};
+            return null;
+        }
+        @Override public Car.Status status(Step s) {
+            if (!(s instanceof Step.PlaceNear)) return Car.Status.done("ok");
+            last = new FactChange.Fact("place minecraft:crafting_table", "place crafting_table near me failed here: no cell within 3 blocks");
+            return Car.Status.failed("no cell within 3 blocks");
+        }
+        @Override public void cancel(String why) {}
+        @Override public FactChange.Fact lastFact() { FactChange.Fact f = last; last = null; return f; }
+        @Override public int[] feet() { return feet.clone(); }
+        @Override public void log(String line) {}
+        @Override public StepNeeds.Bag bag() {
+            return new StepNeeds.Bag() {
+                @Override public int bestTier(String kind) { return 0; }
+                @Override public String bestTool(String kind) { return null; }
+                @Override public int usesLeft(String id) { return io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED; }
+                @Override public int count(String id) { return 1; }
+            };
+        }
+    }
+
+    /**
+     * sb4 review 3: the same place failing twice at the SAME cell parks, even with a done step between (which clears the
+     * one-slot park); at a new cell each time it re-plans (a place fact is about where).
+     */
+    @Test
+    void theSamePlaceFailingTwiceAtTheSameCellParks() {
+        Step place = new Step.PlaceNear("minecraft:crafting_table"), craft = new Step.Craft("minecraft:crafting_table", 1);
+        PlaceHands h = new PlaceHands();
+        int[] asked = {0};
+        Steps run = new Steps(h);
+        run.start("goal.iron_pickaxe", List.of(place), 0, (failed, fact, why) -> { asked[0]++; return new Steps.Routine(List.of(craft, place), null); });
+        for (int t = 1; t <= 6 && run.running(); t++) run.tick(t);
+        assertEquals(Steps.Phase.FAILED, run.phase(), run.why());
+        assertEquals(1, asked[0], "re-planned once; the second failure at -568 61 709 parks");
+        assertTrue(run.why().contains("the same try failed again in this order"), run.why());
+
+        PlaceHands moving = new PlaceHands();
+        moving.moveEachTry = true;
+        int[] asked2 = {0};
+        Steps run2 = new Steps(moving);
+        run2.start("goal.iron_pickaxe", List.of(place), 0, (failed, fact, why) -> { asked2[0]++; return new Steps.Routine(List.of(craft, place), null); });
+        for (int t = 1; t <= 12; t++) run2.tick(t);
+        assertTrue(run2.running(), "a new cell each try is a new question: " + run2.why());
+        assertTrue(asked2[0] >= 3, "re-planned " + asked2[0]);
+    }
+
     /** sb4 review 2: any part of the first-cells read that throws is said in the fact, never lost. */
     @Test
     void aFirstCellsReadThatThrowsIsSaid() {
