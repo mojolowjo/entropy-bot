@@ -644,9 +644,10 @@ public final class AaRuntime implements JobPort {
         var seen = biomesHere();
         if (seen == null) return io.github.mojolowjo.entropybot.aa.brain.GenWhere.notLoaded("this dimension's biomes are not known yet (the feet's chunk is not loaded)");
         // 0.39.z77 freeze (run BD 07:53:24): the placers and each word's fact kept while the dimension, its seen biomes and the
-        // world-gen read are the same (was: the placer filter and the fact computed again for every word asked)
+        // world-gen read are the same (was: the placer filter and the fact computed again for every word asked); freeze review 3:
+        // this very level too (a rejoin to another world of the same dimension and biome count is new facts)
         var book = currentLootBook();      // the words' blocks come from the loot data: a new or newly ready book is a new key
-        String key = mc.level.dimension().location() + " " + seen.size() + " " + System.identityHashCode(ores) + " " + System.identityHashCode(book) + " " + (book != null && book.ready());
+        String key = System.identityHashCode(mc.level) + " " + mc.level.dimension().location() + " " + seen.size() + " " + System.identityHashCode(ores) + " " + System.identityHashCode(book) + " " + (book != null && book.ready());
         if (!key.equals(whereKey)) {
             wherePlacers = io.github.mojolowjo.entropybot.guard.WorldGenFiles.placersIn(ores, seen.keySet(), namedBy(seen.values()));
             whereFacts.clear();
@@ -1072,11 +1073,11 @@ public final class AaRuntime implements JobPort {
         Minecraft mc = Minecraft.getInstance();
         var lv = mc.level;
         if (lv == null || mc.player == null) return null;
-        var seen = dimBiomes.computeIfAbsent(lv.dimension().location().toString(), k -> new java.util.TreeMap<>());
+        var seen = dimBiomes.computeIfAbsent(System.identityHashCode(lv) + " " + lv.dimension().location(), k -> new java.util.TreeMap<>());     // freeze review 3: per level
         int[] at = Jobs.here(mc.player);
         // 0.39.z77 freeze (run BD 07:53:24: this column scan ran once per world fact asked, thousands of times a tick): the
         // feet column is read once while the bot stays in it (its chunk loaded)
-        String column = lv.dimension().location() + " " + at[0] + " " + at[2];
+        String column = System.identityHashCode(lv) + " " + lv.dimension().location() + " " + at[0] + " " + at[2];     // freeze review 3: this level (a rejoin is another)
         if (column.equals(biomeColumn) && !seen.isEmpty()) return seen;
         if (lv.hasChunkAt(new net.minecraft.core.BlockPos(at[0], at[1], at[2]))) {
             biomeColumn = column;

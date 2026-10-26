@@ -128,8 +128,8 @@ class Z77PlaybookTest {
         BatchWay.Row ad = BatchWay.sequential(KIT, i -> w, w.bag());
         assertTrue(ad.fail() != null || ad.explore(), ad.toString());
         BatchWay.Result r = BatchWay.pick("b1", pb, pc, ad);
-        assertFalse(r.playbook(), r.line());
-        assertTrue(r.line().contains(" orders in turn): ad-hoc"), r.line());
+        assertEquals(pc.seconds() < ad.seconds(), r.playbook(), "price against price (manager on run BE): " + r.line());
+        assertTrue(r.line().contains(" (an explore leg in it)"), r.line());
     }
 
     // ---- 2. the kit with its tools in the bag: the playbook wins by the descents and the stations ----
@@ -194,7 +194,71 @@ class Z77PlaybookTest {
         Chain pc = NeedChain.resolvePlaybook(pb, w);
         assertFalse(BatchWay.pick("b1", pb, pc, new BatchWay.Row(pc.seconds(), false, null, false, 6)).playbook());
         assertTrue(BatchWay.pick("b1", pb, pc, new BatchWay.Row(pc.seconds() + 0.01, false, null, false, 6)).playbook());
-        assertTrue(BatchWay.pick("b1", pb, pc, new BatchWay.Row(1, true, null, false, 6)).playbook(), "a priced playbook beats an ad-hoc row that explores");
+        assertTrue(BatchWay.pick("b1", pb, pc, new BatchWay.Row(pc.seconds() + 300, true, null, false, 6)).playbook(), "price against price: a dearer ad-hoc row with an explore loses");
+        assertFalse(BatchWay.pick("b1", pb, pc, new BatchWay.Row(pc.seconds() - 1, true, null, false, 6)).playbook(), "a cheaper one wins, explore or not");
+    }
+
+    /**
+     * Run BE 08:08:15 ("playbook 450.0 s (ends in an explore) vs ad-hoc 900.0 s (ends in an explore): ad-hoc"; manager: the
+     * price is the SUM of the legs, price against price). No tree known: the surface gate (the stone pickaxe, its wooden
+     * pickaxe's logs) ends in an explore - priced as the explore, 450 s, and taken as had after it; the rest as in the kit
+     * scenario: torches 0.3 + descent and strip 89.85 + furnace and 3 smelts 30.15 + table and pickaxe 0.45 + the strip on 325.2
+     * + 24 smelts and four crafts 241.2 = 687.15: 1137.15 s. The steps end at the explore (its find re-prices the rest).
+     */
+    @Test
+    void be_aPlaybookWhoseFirstLegExploresIsTheSumOfItsLegs() {
+        data();
+        World w = world(Map.of("minecraft:stick", 64, "minecraft:crafting_table", 5, "minecraft:furnace", 5, "minecraft:coal", 9), Map.of());
+        Playbook pb = Playbook.derive(KIT, Playbook.facts(w, null));
+        assertTrue(pb.why().contains("surface [stone_pickaxe 1, torch 4]"), pb.why());
+        Chain pc = NeedChain.resolvePlaybook(pb, w);
+        assertTrue(pc.ok() && pc.explore(), pc.why());
+        assertEquals(NeedChain.exploreS() + 687.15, pc.seconds(), 0.1, pc.why());
+        assertTrue(pc.steps().get(pc.steps().size() - 1) instanceof Step.Explore, pc.steps().toString());
+        assertTrue(pc.steps().stream().noneMatch(s -> s instanceof Step.Strip), "the run's steps end at the explore: " + pc.steps());
+        BatchWay.Row ad = BatchWay.sequential(KIT, i -> w, w.bag());
+        BatchWay.Result r = BatchWay.pick("b1", pb, pc, ad);
+        assertEquals(pc.seconds() < ad.seconds(), r.playbook(), r.line());
+        assertTrue(BatchWay.pick("b1", pb, pc, new BatchWay.Row(2260.5, true, null, false, 6)).playbook(), "run BE's numbers: the cheaper playbook wins");
+    }
+
+    /** Rule 15: a leg not priced yet (the descent's path computing) - the playbook is "not priced yet", the ad-hoc runs meanwhile, said. */
+    @Test
+    void be_notPricedYet_theAdhocRunsMeanwhile() {
+        data();
+        World w = world(kitBag(9), Map.of()).withPath((x, y, z, d) -> y < 60 ? PathPrice.Answer.computing("searching") : PATHS.price(x, y, z, d));
+        Playbook pb = Playbook.derive(KIT, Playbook.facts(w, null));
+        Chain pc = NeedChain.resolvePlaybook(pb, w);
+        assertFalse(pc.ok(), pc.why());
+        BatchWay.Result r = BatchWay.pick("b1", pb, pc, new BatchWay.Row(5000, false, null, false, 6));
+        assertFalse(r.playbook(), r.line());
+        assertFalse(r.settled(), "asked again when the answer lands");
+        assertTrue(r.line().contains("playbook not priced yet (") && r.line().contains(": ad-hoc meanwhile"), r.line());
+    }
+
+    /** Freeze review 1: two orders that each take 1 coal, the bag holds 1 - it counts for one of them only: the playbook gathers the other. */
+    @Test
+    void review1_theBagCountsOnceForTheBatch() {
+        TestData d = data();
+        d.recipe("test:lamp", 1, "coal", "stick").recipe("test:lantern", 1, "coal", "stick");
+        World w = world(Map.of("minecraft:stone_pickaxe", 1, "minecraft:stick", 64, "minecraft:coal", 1), Map.of());
+        Playbook pb = Playbook.derive(List.of(new Target("test:lamp", 1), new Target("test:lantern", 1)), Playbook.facts(w, null));
+        assertTrue(pb.ok(), pb.why());
+        assertTrue(pb.why().contains("descent y 16 [coal 1]"), "the second order's coal is gathered: " + pb.why());
+    }
+
+    /** Freeze review 2: a kept tree is not reused where one of its leaves is on the path (a loop it would hide): asked again, the loop is cut. */
+    @Test
+    void review2_aKeptTreeIsNotReusedOverItsOwnLeaf() {
+        data();
+        Playbook.Ex x = new Playbook.Ex(Playbook.facts(world(kitBag(9), Map.of()), null));
+        Playbook.Tree fake = new Playbook.Tree(null, Map.of("minecraft:raw_iron", 3), List.of());
+        x.memo.put("minecraft:iron_pickaxe|1", fake);
+        Playbook.Tree off = Playbook.expand(x, "minecraft:iron_pickaxe", 1, new ArrayList<>());
+        assertSame(fake, off, "off the path: the kept tree");
+        Playbook.Tree on = Playbook.expand(x, "minecraft:iron_pickaxe", 1, new ArrayList<>(List.of("minecraft:raw_iron")));
+        assertNotSame(fake, on, "its leaf on the path: asked again");
+        assertFalse(on.ok(), "raw_iron needs itself through the pickaxe's ingots: " + on);
     }
 
     // ---- 3. the fuel stripped too: one strip of both families, split into legs past steps.stepMaxS (R2) ----
@@ -500,7 +564,7 @@ class Z77PlaybookTest {
         Playbook pb = Playbook.derive(KIT, f);
         double ms = (System.nanoTime() - t0) / 1e6;
         assertTrue(pb.ok(), pb.why());
-        assertTrue(pb.why().startsWith("playbook: surface [torch 4] > descent y 16 [raw_iron 3, coal 1] > at band [iron_ingot 3, iron_pickaxe 1]"), pb.why());
+        assertTrue(pb.why().contains("descent y 16 [raw_iron 3, coal 1]") && pb.why().contains("strip on y 16"), pb.why());
         assertTrue(Playbook.lastNodes > 0 && Playbook.lastNodes < NeedChain.maxTrials(), "nodes " + Playbook.lastNodes);
         assertTrue(ms < 1000, "a second at most: " + ms + " ms, " + Playbook.lastNodes + " nodes");
         assertTrue(asked.values().stream().allMatch(n -> n == 1), "each world fact read once a word: " + asked);
@@ -535,7 +599,8 @@ class Z77PlaybookTest {
         assertTrue(ms < 1000, "a second at most: " + ms + " ms, " + Playbook.lastNodes + " nodes");
         assertFalse(pb.ok(), "no surface leaf for the sticks: " + pb.why());
         assertTrue(asked.values().stream().allMatch(n -> n == 1), "each world fact read once a word (the live read scans the biomes): " + asked);
-        assertTrue(pb.fail().startsWith("torch: ") || pb.fail().contains("needChain.maxTrials"), pb.fail());
+        assertTrue(pb.fail().startsWith("torch: "), "the memo kept it within the bound, the reason is the sticks: " + pb.fail());
+        assertFalse(pb.fail().contains("needChain.maxTrials"), pb.fail());
     }
 
     /** R3: the load probe's aatick line says the playbook's comparisons and their ms (only when one ran in the tick). */

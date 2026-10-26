@@ -426,7 +426,8 @@ public final class Goals {
     static io.github.mojolowjo.entropybot.aa.moves.Steps.Routine reprice(Blackboard bb, Goal g, io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact) {
         // 0.39.z77 answers (1) (manager: re-price only on a fact change - a failed step, a bag count off the plan): a landed
         // price never re-resolves the batch's running playbook; its legs go on as planned
-        if (g.playbookRun) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "kept: the batch's playbook runs on (re-planned only on a changed fact)");
+        // (a playbook that ends in an explore is priced again as any explore: its find is the fact that picks the rest)
+        if (g.playbookRun && !g.pricedExplore) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "kept: the batch's playbook runs on (re-planned only on a changed fact)");
         if (g.n - have(bb.in.bag, g) <= 0) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
         var ch = chain(bb, g);
         if (ch == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");

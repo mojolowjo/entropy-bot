@@ -178,10 +178,12 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
         final Map<String, GenWhere.Fact> where = new java.util.HashMap<>();
         final Map<String, Boolean> known = new java.util.HashMap<>();
         final int budget = Math.max(1, NeedChain.maxTrials());
-        int nodes, cuts;
+        int nodes, cuts, bagUses;
         String over;
+        /** 0.39.z77 freeze review 1: the bag left for the batch's orders, taken off as each node is served from it. */
+        Map<String, Integer> left;
 
-        Ex(Facts f) { this.f = f; }
+        Ex(Facts f) { this.f = f; this.left = new java.util.HashMap<>(f.bag()); }
 
         GenWhere.Fact where(String w) { return where.computeIfAbsent(w, k -> f.where().apply(k)); }
 
@@ -194,13 +196,33 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
         return false;
     }
 
-    /** What the bag holds of a need word (an item, or a tag's members summed). */
-    static int held(Facts f, String w) {
+    /** What the bag still holds for the batch of a need word (an item, or a tag's members summed). */
+    static int held(Ex x, String w) {
         NeedChain.Want want = new NeedChain.Want(w);
-        if (want.item()) return f.have(want.id());
+        if (want.item()) return x.left.getOrDefault(want.id(), 0);
         int n = 0;
-        for (var e : f.bag().entrySet()) if (e.getValue() > 0 && want.has(e.getKey())) n += e.getValue();
+        for (var e : x.left.entrySet()) if (e.getValue() > 0 && want.has(e.getKey())) n += e.getValue();
         return n;
+    }
+
+    /** 0.39.z77 freeze review 1: {@code n} of the need served from the batch's bag (a tag: its members in key order). */
+    static void take(Ex x, String w, int n) {
+        NeedChain.Want want = new NeedChain.Want(w);
+        int need = n;
+        for (String k : new java.util.TreeSet<>(x.left.keySet())) {
+            if (need <= 0) break;
+            int have = x.left.getOrDefault(k, 0);
+            if (have <= 0 || !(want.item() ? k.equals(want.id()) : want.has(k))) continue;
+            int t = Math.min(have, need);
+            x.left.put(k, have - t);
+            need -= t;
+        }
+        x.bagUses++;
+    }
+
+    private static boolean disjoint(Tree t, List<String> path) {
+        for (String l : t.leaves()) if (path.contains(l)) return false;
+        return true;
     }
 
     /** The derivation running on this thread (its memo and budget); none: a fresh one per top call. */
@@ -235,10 +257,12 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
         if (path.contains(w)) { x.cuts++; return Tree.no("loop: " + NeedChain.shw(w) + " needs itself"); }
         String key = w + "|" + n;
         Tree hit = x.memo.get(key);
-        if (hit != null) return hit;
-        int cuts0 = x.cuts;
+        // freeze review 2: a kept tree is reused only where none of its leaves is on the path now (else a loop it hides)
+        if (hit != null && disjoint(hit, path)) return hit;
+        int cuts0 = x.cuts, uses0 = x.bagUses;
         Tree t = expandNode(x, w, n, path);
-        if (x.cuts == cuts0 && x.over == null) x.memo.put(key, t);
+        // kept: no loop cut and no bag served shaped it (both depend on where it was asked), its leaves off the path
+        if (x.cuts == cuts0 && x.bagUses == uses0 && x.over == null && (path.isEmpty() || disjoint(t, path))) x.memo.put(key, t);
         return t;
     }
 
@@ -246,32 +270,38 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
         Facts f = x.f;
         // 0.39.z77 freeze: what the bag holds is had (no tree) - not a furnace output (an ingot): those the batch shares, summed
         // with the bag taken off once (part), never "had" by each order alone
-        if (x.known(w, n) || (held(f, w) >= n && !smelted(w))) return Tree.SURFACE;
+        if (x.known(w, n)) return Tree.SURFACE;
+        if (!smelted(w) && held(x, w) >= n) { take(x, w, n); return Tree.SURFACE; }     // freeze review 1: once for the batch
         GenWhere.Fact wf = x.where(w);
         if (wf != null && wf.surface()) return Tree.SURFACE;
         path.add(w);
         try {
             Tree best = null;
             String why = null;
+            // freeze review 1: each way is tried on the bag as it was; the one kept leaves its bag (a dropped way takes nothing)
+            Map<String, Integer> start = new java.util.HashMap<>(x.left), bestLeft = null;
             NeedChain.Want want = new NeedChain.Want(w);
             if (want.item()) {
                 String item = want.id();
                 for (String kind : List.of(ItemWorth.CRAFT, ItemWorth.SMELT))
                     for (ItemWorth.Recipe r : ItemWorth.recipes(item, kind)) {
                         if (NeedChain.packing(item, r)) continue;
+                        x.left = new java.util.HashMap<>(start);
                         Tree t = recipe(x, item, r, n, path);
                         if (!t.ok()) { if (why == null) why = t.fail(); continue; }
                         if (t.surface()) return t;
-                        if (best == null) best = t;
+                        if (best == null) { best = t; bestLeft = x.left; }
                     }
             } else {
                 for (String m : want.members()) {
+                    x.left = new java.util.HashMap<>(start);
                     Tree t = expand(x, m, n, path);
                     if (!t.ok()) { if (why == null) why = t.fail(); continue; }
                     if (t.surface()) return t;
-                    if (best == null) best = t;
+                    if (best == null) { best = t; bestLeft = x.left; }
                 }
             }
+            x.left = bestLeft != null ? bestLeft : start;
             if (best != null) return best;
             if (wf != null && wf.band() && !f.dropOnly().test(w)) return new Tree(null, Map.of(w, n), List.of());
             if (wf == null || wf.kind() == GenWhere.Kind.NOT_LOADED)

@@ -1028,11 +1028,19 @@ public final class NeedChain {
         if (pb == null || !pb.ok()) return playbookFails(c, pb == null ? "no playbook" : pb.fail());
         List<String> phrases = new ArrayList<>();
         int levelY = Playbook.NO_Y;
+        // 0.39.z77 freeze review (manager's ruling on run BE 08:08:15, "playbook 450.0 s (ends in an explore)" while its legs
+        // listed a descent and strips: the pricing stopped at the surface leg's explore): the playbook's price is the SUM of its
+        // legs - a surface get that ends in an explore is priced as that explore and taken as had after it, the later legs
+        // priced on; the chain's steps end at the explore (the re-price where it finds its source picks the rest)
+        int exploreEnd = -1;
+        String exploreFor = null;
+        legs:
         for (Playbook.Leg leg : pb.legs()) {
             java.util.Set<Step> before = ids(c.steps);
             if (leg.kind() == Playbook.Kind.DESCENT) {
                 String p = playbookStrip(c, leg, levelY);
                 if (c.fail != null) return playbookFails(c, "descent to y " + leg.y() + ": " + c.fail);
+                if (c.stuck && exploreEnd >= 0) break;                  // a second unknown after the surface explore: priced so far
                 if (c.stuck) return playbookFails(c, "descent to y " + leg.y() + ": its pickaxe ends in an explore (no known source for " + shw(c.unknown) + ")");
                 if (p != null) phrases.add(p);
                 levelY = leg.y();
@@ -1047,15 +1055,22 @@ public final class NeedChain {
             try {
                 for (Playbook.Target t : leg.gets()) {
                     String item = id(t.item());
+                    boolean gate = leg.gates().contains(item);
                     // a gate: the pickaxe the derivation chose for its tier (its leaves on this leg's side), made unless one digs it
-                    String p = leg.gates().contains(item) ? (leg.tier() > c.pickTier ? obtain(c, item, c.have(item) + 1) : null) : obtain(c, item, t.n());
+                    String p = gate ? (leg.tier() > c.pickTier ? obtain(c, item, c.have(item) + 1) : null) : obtain(c, item, t.n());
                     if (c.fail == null && !c.stuck) madePick(c, item);
                     if (c.fail != null) return playbookFails(c, name + ": " + sh(item) + ": " + c.fail);
                     if (c.stuck) {
+                        if (exploreEnd >= 0) { phrases.add(name + ": " + String.join("; ", got)); break legs; }
                         if (!surface) return playbookFails(c, name + ": " + sh(item) + " ends in an explore (no known source for " + shw(c.unknown) + ")");
-                        got.add(sh(item) + " " + t.n() + " <- " + p);
-                        phrases.add(name + ": " + String.join("; ", got));
-                        return finish(c, PLAYBOOK, PLAYBOOK + " <- " + String.join(" > ", phrases));
+                        got.add(sh(item) + " " + t.n() + " <- " + p + " (then priced as had)");
+                        exploreEnd = c.steps.size();
+                        exploreFor = c.unknown;
+                        c.stuck = false;
+                        int lack = (gate ? c.have(item) + 1 : t.n()) - c.have(item);
+                        if (lack > 0) c.bag.merge(item, lack, Integer::sum);
+                        madePick(c, item);
+                        continue;
                     }
                     got.add(sh(item) + " " + t.n() + (p == null ? " (in the bag)" : " <- " + p));
                 }
@@ -1065,7 +1080,12 @@ public final class NeedChain {
             phrases.add(name + ": " + String.join("; ", got));
             added.add(addedSince(c, before));
         }
-        return finish(c, PLAYBOOK, PLAYBOOK + " <- " + String.join(" > ", phrases));
+        if (exploreEnd >= 0) {
+            c.stuck = true;
+            c.unknown = exploreFor;
+            c.steps.subList(exploreEnd, c.steps.size()).clear();       // the run's steps end at the explore; the price is all legs
+        }
+        return finish(c, PLAYBOOK, PLAYBOOK + " <- " + String.join(" > ", phrases) + (exploreEnd >= 0 ? ": " + s(c.seconds) + " priced with the legs after the explore" : ""));
     }
 
     /** 0.39.z77 J2: a pickaxe the playbook just made that digs better than the one in hand is the one the next strip digs with (fresh). */
