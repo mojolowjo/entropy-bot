@@ -867,6 +867,18 @@ public final class NeedChain {
         return out;
     }
 
+    /**
+     * 0.39.z77 bagat (run BY 15:27:03: "table <- craft: 4 acacia_planks ... + burn 2 oak_planks (in the bag, the cheapest burn by
+     * worth)", then "step 15 (smelt iron_ingot 3 here) needs 2 of oak_planks; the bag will hold 0 after step 14", the same chain
+     * again, the order parked): a recipe slot of a step that takes any member (a tag, an "a|b" word: the step's use is the slot
+     * word, StepNeeds.withUses) comes off the chain's bag as the step's own check takes it - the need's token first, then the
+     * bag's members as they came in (DryRun.take, the dry run every step runs before it starts) - never "what the way just
+     * made" first. So the bag a later pick reads (the burn, a tool, an "in the bag" source) is the bag as it will be at its
+     * step: the table's 4 #planks took the bag's 2 oak + 2 of the made acacia, and the burn after it sees 2 acacia_planks, not
+     * the oak. A recipe group's own take ({@link #makeGroup}) still prefers what its way made: there the inputs name the member.
+     */
+    private static Map<String, Integer> takeAsStep(Ctx c, Want w, int n) { return take(c, w, n, w.word); }
+
     /** What a take of {@code n} from the bag would name: one kind when one kind covers it, else the need word. */
     private static String bagName(Ctx c, Want w, int n) {
         if (w.item()) return w.id();
@@ -2228,7 +2240,7 @@ public final class NeedChain {
             if (c.fail != null || g == null) { if (c.fail == null) c.fail = "no " + shw(e.getKey()) + " can be had"; return null; }
             parts.add(g.part());
             if (c.stuck) return "craft: " + String.join(" + ", parts);                 // something needed is not known: the chain ends at the explore
-            take(c, new Want(e.getKey()), want, g.id());
+            takeAsStep(c, new Want(e.getKey()), want);                 // 0.39.z77 bagat: as the step's own check takes it
             slotUses.merge(word(e.getKey()), want, Integer::sum);      // 0.39.z61: the step's count by its slot word
         }
         if (ItemWorth.needsTable(item) || rec.inputs().size() > GRID_2X2) {
@@ -2258,7 +2270,7 @@ public final class NeedChain {
         if (c.fail != null || in == null) { if (c.fail == null) c.fail = "no " + shw(input) + " can be had"; return null; }
         parts.add(in.part());
         if (c.stuck) return "smelt " + String.join(" + ", parts);
-        take(c, new Want(input), k, in.id());
+        takeAsStep(c, new Want(input), k);                         // 0.39.z77 bagat: as the step's own check takes it
         String f = station(c, ItemWorth.SMELT);
         if (c.fail != null) return null;
         if (f != null) parts.add(f);
