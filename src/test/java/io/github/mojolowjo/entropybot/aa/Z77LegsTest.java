@@ -51,6 +51,64 @@ class Z77LegsTest {
                         () -> new io.github.mojolowjo.entropybot.aa.brain.GenWhere.Base(Z77PlaybookTest.STONE, Integer.MIN_VALUE, null, "test")));
     }
 
+    /** The bot at 0 16 0, 48 blocks of ground over it (the surface at y 64); the strip facts from the feet (strip at y 16 there). */
+    static World atY16(Map<String, Integer> bag) {
+        java.util.function.Function<String, NeedChain.StripBand> strip16 = word -> {
+            NeedChain.StripBand b = Z77PlaybookTest.strip(word);
+            return b == null ? null : new NeedChain.StripBand(b.ores(), b.minY(), b.maxY(), 16, b.perSlab(), 0, 0, 16, b.heading(), b.host(), b.headings(), b.freshDist());
+        };
+        return ScenariosTest.w(bag, false, false, Map.of()).withMobs(x -> List.of(), Z77PlaybookTest.book())
+                .withPath(Z77PlaybookTest.PATHS).withStrip(strip16)
+                .withWhere(new NeedChain.WhereFacts(Z77PlaybookTest::where, () -> new NeedChain.Surface(48, 0, 64, 0, 48), () -> new int[]{0, 16, 0},
+                        () -> new io.github.mojolowjo.entropybot.aa.brain.GenWhere.Base(Z77PlaybookTest.STONE, Integer.MIN_VALUE, null, "test")));
+    }
+
+    static final List<Playbook.Target> THREE = List.of(new Playbook.Target("minecraft:iron_helmet", 1), new Playbook.Target("minecraft:iron_boots", 1),
+            new Playbook.Target("minecraft:torch", 4));
+
+    /**
+     * Legs 2 (manager 2026-10-26; run BJ 10:39:15: a trip re-priced at y -59 said "surface: iron_chestplate ..."): a 3-order
+     * trip (helmet, boots, torches) priced again from y 16 under 48 blocks of ground, the bag with sticks and coal (the
+     * torches' leaves had here). No surface leg: "here at y 16 [torch 4]", the strip at the feet ("strip here y 16", no
+     * walk down), the smelt and the armour at the band; the trip line says so.
+     */
+    @Test
+    void legs2_aTripPricedFromY16_hasNoSurfaceLeg() {
+        Z77PlaybookTest.data();
+        World w = atY16(Map.of("minecraft:stone_pickaxe", 1, "minecraft:stick", 64, "minecraft:coal", 9, "minecraft:furnace", 5, "minecraft:crafting_table", 5));
+        Playbook pb = Playbook.derive(THREE, Playbook.facts(w, null));
+        assertTrue(pb.ok(), pb.why());
+        assertTrue(pb.legs().stream().noneMatch(l -> l.kind() == Playbook.Kind.SURFACE), "no surface leg from under ground: " + pb.why());
+        assertEquals(List.of(Playbook.Kind.HERE, Playbook.Kind.DESCENT, Playbook.Kind.AT_BAND), pb.legs().stream().map(Playbook.Leg::kind).toList(), pb.why());
+        assertTrue(pb.why().startsWith("playbook: here y 16 [torch 4] > strip here y 16 [raw_iron 9"), pb.why());
+        assertTrue(pb.legs().get(1).here(), pb.why());
+        NeedChain.Legs legs = NeedChain.resolvePlaybookLegs(pb, w);
+        Chain pc = legs.chain();
+        assertTrue(pc.ok() && !pc.explore(), pc.why());
+        assertTrue(pc.steps().stream().noneMatch(s -> s instanceof Step.ToStrip || s instanceof Step.ToSurface), "the strip at the feet, no walk: " + pc.steps());
+        String line = BatchWay.shape("b1", 3, pb, pc, legs.starts()).line();
+        assertTrue(line.contains("1 here at y 16: torch 4 | 2 strip here at y 16: raw_iron 9") && !line.contains("surface"), line);
+        assertTrue(legs.starts().values().stream().anyMatch("playbook leg 1/3: here at y 16: torch 4"::equals), legs.starts().values().toString());
+    }
+
+    /**
+     * Legs 2: the same trip with no wood in the bag and none known - the torches' sticks come from logs, which only grow on
+     * the surface: ONE surface leg, the climb for them, after the band legs (the armour needs nothing from up there).
+     */
+    @Test
+    void legs2_aSurfaceOnlyNeed_isTheOneClimbLeg() {
+        Z77PlaybookTest.data();
+        World w = atY16(Map.of("minecraft:stone_pickaxe", 1, "minecraft:coal", 9, "minecraft:furnace", 5, "minecraft:crafting_table", 5));
+        Playbook pb = Playbook.derive(THREE, Playbook.facts(w, null));
+        assertTrue(pb.ok(), pb.why());
+        List<Playbook.Leg> up = pb.legs().stream().filter(l -> l.kind() == Playbook.Kind.SURFACE).toList();
+        assertEquals(1, up.size(), pb.why());
+        assertTrue(up.get(0).climb() && up.get(0).whyY().startsWith(Playbook.CLIMB_FOR), pb.why());
+        assertEquals(List.of(new Playbook.Target("minecraft:torch", 4)), up.get(0).gets(), pb.why());
+        assertSame(up.get(0), pb.legs().get(pb.legs().size() - 1), "after the band legs: " + pb.why());
+        assertTrue(pb.legs().stream().noneMatch(l -> l.kind() == Playbook.Kind.HERE), pb.why());
+    }
+
     static int index(Chain c, Step s) {
         for (int i = 0; i < c.steps().size(); i++) if (c.steps().get(i).equals(s)) return i;
         return -1;

@@ -38,6 +38,10 @@ import java.util.function.Predicate;
  * <li>Legs: SURFACE (the first gate's pickaxe and every order whose leaves are all surface) &gt; per tier stage: DESCENT (one
  *     Y for all its band leaves: the strip Y with the most {@code need x ore per slab}) &gt; AT_BAND (the smelts, then the
  *     orders and gates that unlock more first - a tool tier - then the rest in the batch's order).</li>
+ * <li>0.39.z77 legs 2 (manager 2026-10-26): the legs are placed from where the bot stands. Under aaLadder.surfaceDepth of
+ *     ground the no-band gets are HERE (their leaves had: the bag, a known source, the base block) and only a get with a
+ *     surface-only leaf is a SURFACE leg, the climb for it ("climb for oak_log"); a DESCENT at the feet's Y is the strip
+ *     here. "Surface" is never a fixed first leg.</li>
  * </ul>
  * A fact not loaded (the mining tiers, the world-gen read) is "not loaded", said (rule 15); any order that cannot be
  * classified fails the derivation with its reason (rule 7), said; the order then runs its own chain as its one leg
@@ -58,7 +62,18 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
         public String text() { return NeedChain.shw(item) + " " + n; }
     }
 
-    public enum Kind { SURFACE, DESCENT, AT_BAND }
+    /**
+     * SURFACE: on the surface (from under ground: the climb for a surface-only need, {@link Leg#whyY} "climb for ...");
+     * HERE (0.39.z77 legs 2): under ground, the gets had where the bot stands; DESCENT: to a band Y (at the feet's own Y
+     * under ground: the strip here); AT_BAND: the smelts and the orders down there.
+     */
+    public enum Kind { SURFACE, HERE, DESCENT, AT_BAND }
+
+    /** 0.39.z77 legs 2: the start of a climb leg's words ("climb for oak_log"). */
+    public static final String CLIMB_FOR = "climb for ";
+
+    /** 0.39.z77 legs 2: the start of a DESCENT's words at the feet's own Y under ground ("here at y 16: ..."). */
+    public static final String HERE_AT = "here at ";
 
     /** A leg with no Y (not a descent). */
     public static final int NO_Y = Integer.MIN_VALUE;     // structural: no Y
@@ -83,12 +98,19 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
             List<String> g = new ArrayList<>();
             for (Target t : gets) g.add(t.text());
             String head = switch (kind) {
-                case SURFACE -> "surface";
-                case DESCENT -> (on ? "strip on y " : "descent y ") + y;
+                case SURFACE -> climb() ? whyY : "surface";
+                case HERE -> "here y " + y;
+                case DESCENT -> (on ? "strip on y " : here() ? "strip here y " : "descent y ") + y;
                 case AT_BAND -> "at band";
             };
             return head + " [" + String.join(", ", g) + "]";
         }
+
+        /** 0.39.z77 legs 2: a SURFACE leg from under ground (the climb for a surface-only need). */
+        public boolean climb() { return kind == Kind.SURFACE && whyY != null && whyY.startsWith(CLIMB_FOR); }
+
+        /** 0.39.z77 legs 2: a DESCENT at the feet's own Y under ground (no walk down: the strip here). */
+        public boolean here() { return kind == Kind.DESCENT && whyY != null && whyY.startsWith(HERE_AT); }
     }
 
     /**
@@ -101,9 +123,16 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
      */
     public record Facts(Function<String, GenWhere.Fact> where, BiPredicate<String, Integer> surfaceKnown, Predicate<String> dropOnly,
                         Function<String, List<String>> oresOf, Function<String, Integer> stripY,
-                        BiFunction<String, Integer, Double> perSlab, Map<String, Integer> bag, int bagTier) {
+                        BiFunction<String, Integer, Double> perSlab, Map<String, Integer> bag, int bagTier, boolean under, int feetY) {
         public Facts {
             bag = bag == null ? Map.of() : Map.copyOf(bag);
+        }
+
+        /** On the surface (or the ground over the feet not known): the legs as from the surface. */
+        public Facts(Function<String, GenWhere.Fact> where, BiPredicate<String, Integer> surfaceKnown, Predicate<String> dropOnly,
+                     Function<String, List<String>> oresOf, Function<String, Integer> stripY,
+                     BiFunction<String, Integer, Double> perSlab, Map<String, Integer> bag, int bagTier) {
+            this(where, surfaceKnown, dropOnly, oresOf, stripY, perSlab, bag, bagTier, false, NO_Y);
         }
 
         int have(String id) { return bag.getOrDefault(NeedChain.id(id), 0); }
@@ -137,7 +166,14 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
                 : (word, yy) -> { var sb = w.strip().apply(word); return sb != null && sb.y() == yy ? sb.perSlab() : Double.NaN; };
         int tier = 0;
         for (var e : w.bag().entrySet()) if (e.getValue() > 0) tier = Math.max(tier, MiningTiers.toolTier(e.getKey(), "pickaxe"));
-        return new Facts(word -> w.where().of().apply(word), known, word -> Nearby.noSource(word, w.loot()) != null, ores, y, ps, w.bag(), tier);
+        // 0.39.z77 legs 2 (manager 2026-10-26, run BJ 10:39:15: a trip re-priced at y -59 called its legs "surface"): where the
+        // bot stands - under aaLadder.surfaceDepth of ground (the planner's own "under ground", NeedChain.exploreLeaf) the legs
+        // are placed from the feet's Y; the ground over the feet not known (rule 15): as from the surface, the walks priced as ever
+        NeedChain.Surface over = w.where().surface() == null ? null : w.where().surface().get();
+        int[] feet = w.where().feet() == null ? null : w.where().feet().get();
+        boolean under = over != null && feet != null && feet.length >= 3 && over.depth() >= AaLadder.surfaceDepth();   // structural: x y z
+        return new Facts(word -> w.where().of().apply(word), known, word -> Nearby.noSource(word, w.loot()) != null, ores, y, ps, w.bag(), tier,
+                under, under ? feet[1] : NO_Y);
     }
 
     // ---- the expansion (classify and sum) ----
@@ -146,7 +182,18 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
     record Smelt(String out, int n, String leaf, int outPer, int inPer) {}
 
     /** One word's tree: why it fails (null: it stands), its band leaves not under a smelt (word -> count), its smelts. */
-    record Tree(String fail, Map<String, Integer> band, List<Smelt> smelts) {
+    record Tree(String fail, Map<String, Integer> band, List<Smelt> smelts, Set<String> up) {
+        /**
+         * 0.39.z77 legs 2: {@code up} - its surface-only leaves (world-gen places them on the ground's top, no known source and
+         * the bag short: the logs), the need a climb is for when the bot is under ground; a leaf had (the bag, a known
+         * source, the base block) is had where the bot stands.
+         */
+        Tree {
+            up = up == null ? Set.of() : Set.copyOf(up);
+        }
+
+        Tree(String fail, Map<String, Integer> band, List<Smelt> smelts) { this(fail, band, smelts, Set.of()); }
+
         static final Tree SURFACE = new Tree(null, Map.of(), List.of());
 
         static Tree no(String why) { return new Tree(why, Map.of(), List.of()); }
@@ -274,7 +321,7 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
         if (x.known(w, n)) return Tree.SURFACE;
         if (!smelted(w) && held(x, w) >= n) { take(x, w, n); return Tree.SURFACE; }     // freeze review 1: once for the batch
         GenWhere.Fact wf = x.where(w);
-        if (wf != null && wf.surface()) return Tree.SURFACE;
+        if (wf != null && wf.surface()) return new Tree(null, Map.of(), List.of(), Set.of(w));     // z77 legs 2: surface-only
         path.add(w);
         try {
             Tree best = null;
@@ -290,16 +337,16 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
                         x.left = new java.util.HashMap<>(start);
                         Tree t = recipe(x, item, r, n, path);
                         if (!t.ok()) { if (why == null) why = t.fail(); continue; }
-                        if (t.surface()) return t;
-                        if (best == null) { best = t; bestLeft = x.left; }
+                        if (t.surface() && t.up().isEmpty()) return t;
+                        if (best == null || (t.surface() && !best.surface())) { best = t; bestLeft = x.left; }     // z77 legs 2: a way had here before a climb
                     }
             } else {
                 for (String m : want.members()) {
                     x.left = new java.util.HashMap<>(start);
                     Tree t = expand(x, m, n, path);
                     if (!t.ok()) { if (why == null) why = t.fail(); continue; }
-                    if (t.surface()) return t;
-                    if (best == null) { best = t; bestLeft = x.left; }
+                    if (t.surface() && t.up().isEmpty()) return t;
+                    if (best == null || (t.surface() && !best.surface())) { best = t; bestLeft = x.left; }     // z77 legs 2: a member had here before a climb
                 }
             }
             x.left = bestLeft != null ? bestLeft : start;
@@ -317,20 +364,22 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
         int batches = (n + r.outCount() - 1) / r.outCount();
         Map<String, Integer> band = new LinkedHashMap<>();
         List<Smelt> smelts = new ArrayList<>();
+        Set<String> up = new LinkedHashSet<>();
         for (var e : NeedChain.slotWords(r).entrySet()) {
             Tree t = expand(x, e.getKey(), e.getValue() * batches, path);
             if (!t.ok()) return Tree.no(NeedChain.sh(item) + " <- " + NeedChain.shw(e.getKey()) + ": " + t.fail());
             for (var b : t.band().entrySet()) band.merge(b.getKey(), b.getValue(), Integer::sum);
             smelts.addAll(t.smelts());
+            up.addAll(t.up());
         }
         if (ItemWorth.SMELT.equals(r.kind()) && (!band.isEmpty() || !smelts.isEmpty())) {
             if (band.size() == 1 && smelts.isEmpty()) {          // straight from a band leaf (an ingot from its raw ore)
                 String leaf = band.keySet().iterator().next();
-                return new Tree(null, Map.of(), List.of(new Smelt(item, n, leaf, r.outCount(), 1)));     // structural: a furnace takes one input a batch
+                return new Tree(null, Map.of(), List.of(new Smelt(item, n, leaf, r.outCount(), 1)), up);     // structural: a furnace takes one input a batch
             }
             smelts.add(new Smelt(item, n, null, r.outCount(), 1));     // structural: a furnace takes one input a batch
         }
-        return new Tree(null, band, smelts);
+        return new Tree(null, band, smelts, up);
     }
 
     // ---- the derivation ----
@@ -427,7 +476,35 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
         // the surface leg, the gate's pickaxe after them - the order is done before the first leg's tools are made
         int gatesFirst = surface.size();
         for (var e : trees.entrySet()) if (e.getValue().surface()) surface.add(surface.size() - gatesFirst, batch.get(e.getKey()));
-        if (!surface.isEmpty()) legs.add(new Leg(Kind.SURFACE, surface, NO_Y, null, null, gateTier0, surfaceGates, false));
+        Leg climbLast = null;
+        if (!f.under()) {
+            if (!surface.isEmpty()) legs.add(new Leg(Kind.SURFACE, surface, NO_Y, null, null, gateTier0, surfaceGates, false));
+        } else {
+            // 0.39.z77 legs 2 (manager 2026-10-26: "surface" is never a fixed first leg; run BJ 10:39:15): under ground the
+            // no-band gets are placed from the feet - what their leaves are had by (the bag, a known source, the base block)
+            // is a leg HERE; only a get with a surface-only leaf (world-gen on the ground's top, none known: the logs) is a
+            // leg to CLIMB for it - first when a band leg's tree or a gate needs that leaf too, else after the band legs
+            List<Target> here = new ArrayList<>(), climb = new ArrayList<>();
+            Set<String> hereGates = new LinkedHashSet<>(), climbGates = new LinkedHashSet<>(), upWords = new LinkedHashSet<>();
+            for (Target t : surface) {
+                String id = NeedChain.id(t.item());
+                Tree tr = null;
+                for (var e : trees.entrySet()) if (batch.get(e.getKey()) == t) tr = e.getValue();
+                if (tr == null) tr = expand(f, id, t.n(), new ArrayList<>());          // the gate's pickaxe
+                boolean gate = surfaceGates.contains(t.item());
+                if (tr.up().isEmpty()) { here.add(t); if (gate) hereGates.add(t.item()); }
+                else { climb.add(t); upWords.addAll(tr.up()); if (gate) climbGates.add(t.item()); }
+            }
+            boolean bandUp = !climbGates.isEmpty();
+            for (Tree t : trees.values()) if (!t.surface() && !t.up().isEmpty()) bandUp = true;
+            for (Gate g : gates) if (!g.tree().up().isEmpty()) bandUp = true;
+            if (!here.isEmpty()) legs.add(new Leg(Kind.HERE, here, f.feetY(), "here at y " + f.feetY(), null, hereGates.isEmpty() ? 0 : gateTier0, hereGates, false));
+            if (!climb.isEmpty()) {
+                Leg up = new Leg(Kind.SURFACE, climb, NO_Y, CLIMB_FOR + String.join(", ", upWords.stream().map(NeedChain::shw).toList()), null,
+                        climbGates.isEmpty() ? 0 : gateTier0, climbGates, false);
+                if (bandUp) legs.add(up); else climbLast = up;
+            }
+        }
         Map<String, Integer> bagLeft = new LinkedHashMap<>(f.bag());
         for (int k = 0; k <= maxStage; k++) {
             final int sk = k;
@@ -466,6 +543,7 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
                 if (why != null) return no(batch, why);
             }
         }
+        if (climbLast != null) legs.add(climbLast);
         List<String> parts = new ArrayList<>();
         for (Leg l : legs) parts.add(l.text());
         return new Playbook(batch, legs, "playbook: " + String.join(" > ", parts), null);
@@ -572,7 +650,8 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
             down.add(new Target(e.getKey(), e.getValue()));
             tierK = Math.max(tierK, tiers.getOrDefault(e.getKey(), 0));
         }
-        return new Leg(Kind.DESCENT, down, bestY, (on ? "on at " : "") + "y " + bestY + ": the most ore for the batch (" + String.join(" + ", score) + " a slab)", per, tierK, null, on);
+        boolean here = !on && f.under() && f.feetY() == bestY;          // z77 legs 2: under ground at the band's Y already
+        return new Leg(Kind.DESCENT, down, bestY, (on ? "on at " : here ? HERE_AT : "") + "y " + bestY + ": the most ore for the batch (" + String.join(" + ", score) + " a slab)", per, tierK, null, on);
     }
 
     /** The pickaxe tier the leaf's strip blocks ask (the highest); null: no strip way for it; {@link MiningTiers#UNKNOWN}: not loaded. */

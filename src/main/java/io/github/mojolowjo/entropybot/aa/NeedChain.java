@@ -1022,8 +1022,10 @@ public final class NeedChain {
         List<String> g = new ArrayList<>();
         for (Playbook.Target t : leg.gets()) g.add(t.text());
         return switch (leg.kind()) {
-            case SURFACE -> "on the surface: " + String.join(", ", g);
+            case SURFACE -> (leg.climb() ? leg.whyY() + " (up to the surface): " : "on the surface: ") + String.join(", ", g);
+            case HERE -> "here at y " + leg.y() + ": " + String.join(", ", g);
             case DESCENT -> (leg.on() ? "strip on at y " + leg.y() + " for " + String.join(", ", g) + " (with the new pickaxe)"
+                    : leg.here() ? "strip here at y " + leg.y() + " for " + String.join(", ", g) + " (one strip)"
                     : "descent to y " + leg.y() + " for " + String.join(", ", g) + " (one strip)");
             case AT_BAND -> "at the band: " + String.join(", ", g);
         };
@@ -1076,8 +1078,10 @@ public final class NeedChain {
                 added.add(addedSince(c, before));
                 continue;
             }
-            boolean surface = leg.kind() == Playbook.Kind.SURFACE;
-            String name = surface ? "surface" : "at band";
+            // 0.39.z77 legs 2: a leg HERE (under ground, the gets had where the bot stands) is priced as the surface leg is - no
+            // leg to another level inside it, from the feet
+            boolean surface = leg.kind() == Playbook.Kind.SURFACE || leg.kind() == Playbook.Kind.HERE;
+            String name = leg.kind() == Playbook.Kind.HERE ? "here at y " + leg.y() : leg.climb() ? leg.whyY() : surface ? "surface" : "at band";
             List<String> got = new ArrayList<>();
             boolean wasHoisting = c.hoisting;
             if (surface) c.hoisting = true;                      // no leg to another level in the surface leg
@@ -3194,7 +3198,7 @@ public final class NeedChain {
         c.pickTier = 0;
         c.pickWorn = 0;
         for (var e : c.bag.entrySet()) {
-            if (e.getValue() <= 0) continue;
+            if (c.have(e.getKey()) <= 0) continue;           // z77 legs review: less what is set aside (a later leg's holdings up there)
             int t = MiningTiers.toolTier(e.getKey(), "pickaxe");
             if (t > c.pickTier) { c.pickTier = t; c.pickItem = e.getKey(); }
         }
@@ -3513,7 +3517,7 @@ public final class NeedChain {
         // z62 review 1: the bag's other pickaxes that dig this tier count first (their uses left; the one in hand excluded)
         int others = 0, otherCount = 0;
         for (var e : c.bag.entrySet()) {
-            int k = e.getValue() - (e.getKey().equals(tool) ? 1 : 0);
+            int k = c.have(e.getKey()) - (e.getKey().equals(tool) ? 1 : 0);     // z77 legs review: less what is set aside
             if (k <= 0 || MiningTiers.toolTier(e.getKey(), "pickaxe") < tier) continue;
             Integer u = c.w.usesLeft().apply(e.getKey());
             int each = u == null ? io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN : u;

@@ -231,11 +231,12 @@ public final class BatchWay {
             List<String> g = new ArrayList<>();
             for (Playbook.Target t : l.gets()) g.add(t.text());
             String head = switch (l.kind()) {
-                case SURFACE -> "surface";
-                case DESCENT -> (l.on() ? "strip on at y " : "descent to y ") + l.y();
+                case SURFACE -> l.climb() ? l.whyY() : "surface";
+                case HERE -> "here at y " + l.y();
+                case DESCENT -> (l.on() ? "strip on at y " : l.here() ? "strip here at y " : "descent to y ") + l.y();
                 case AT_BAND -> "at the band";
             };
-            String carry = l.kind() == Playbook.Kind.DESCENT && !l.on() && at.containsKey(i) ? carries(pb, i, at.get(i), pc) : "";
+            String carry = l.kind() == Playbook.Kind.DESCENT && !l.on() && !l.here() && at.containsKey(i) ? carries(pb, i, at.get(i), pc) : "";
             parts.add((i + 1) + " " + head + ": " + String.join(", ", g) + (carry.isEmpty() ? "" : ", carries " + carry));
         }
         String price = pc.explore() ? "priced with its explore " + Math.round(pc.seconds()) + " s" : "priced " + Math.round(pc.seconds()) + " s";
