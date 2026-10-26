@@ -18,6 +18,23 @@ public final class RestoreRules {
 
     public static String shortId(String id) { return id == null ? "" : id.replaceFirst("^minecraft:", ""); }
 
+    /**
+     * 0.39.z75 put-back off (owner 2026-10-25 19:40: "turn off putting back blocks I broke on the way for now"): Tuning
+     * {@code restore.putBack} - 1: a job's end puts back what it broke on the way (restore mode auto), as before; 0: no
+     * put-back run starts at a job's end and nothing waits on the ledger ("restore pending" not shown). The ledger still
+     * notes the breaks (the owner's "restore now", the placed blocks' take-down).
+     */
+    public static boolean putBackOn() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("restore.putBack") >= 1; }
+
+    /** 0.39.z75: the job end's words when put-back is off and the job broke {@code broken} blocks; null: on, or none broken. */
+    public static String putBackOffNote(int broken) {
+        if (putBackOn() || broken <= 0) return null;
+        return "put-back off (restore.putBack 0): " + broken + (broken == 1 ? " broken block" : " broken blocks") + " left";
+    }
+
+    /** 0.39.z75: a put-back run may start at a job's end - put-back on, restore mode auto, something broken. */
+    public static boolean startsAfterJob(String mode, int broken) { return putBackOn() && "auto".equals(mode) && broken > 0; }
+
     private static String full(String id) { return id.contains(":") ? id : "minecraft:" + id; }
 
     /** The stone a stone tool or a furnace takes: the stone tool materials and the overworld base stone. */

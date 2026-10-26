@@ -369,8 +369,7 @@ public final class RestoreLive {
     /** A job ends: the run that puts its entries back (null: nothing to do, or the mode says not now). */
     RestoreRun afterJob(Jobs.Job j, int[] here, String dim) {
         List<Ledger.Entry> mine = book.ledger.forJob(j.id);
-        if (mine.isEmpty()) return null;
-        if (!auto()) return null;
+        if (!RestoreRules.startsAfterJob(book.mode, mine.size())) return null;     // 0.39.z75: restore.putBack 0 starts none (said: waitingNote)
         RestorePlan.Plan plan = RestorePlan.plan(mine, here, dim, RestorePlan.afterJob(), Gui0.inventory());
         return new RestoreRun(plan);
     }
@@ -380,6 +379,8 @@ public final class RestoreLive {
         int n = 0;
         for (Ledger.Entry e : book.ledger.forJob(j.id)) if (e.restorable()) n++;
         if (n == 0) return null;
+        String off = RestoreRules.putBackOffNote(n);                  // 0.39.z75: off, said once per job end (never silent)
+        if (off != null) return off;
         return n + (n == 1 ? " block" : " blocks") + " to put back (restore now)";
     }
 
@@ -445,6 +446,7 @@ public final class RestoreLive {
         StringBuilder sb = new StringBuilder();
         sb.append("restore: hook ").append(MixinFlags.restoreApplied ? "active" : "NOT in").append(", ").append(breaksSeen)
                 .append(" breaks seen this session, ").append(recorded).append(" recorded; mode ").append(book.mode);
+        if (!RestoreRules.putBackOn()) sb.append(" (put-back off: restore.putBack 0, no put-back at a job's end)");   // 0.39.z75
         if (readOnly) sb.append("; ").append(loadNote);
         int w = book.ledger.waiting();
         sb.append("; ").append(w).append(w == 1 ? " block" : " blocks").append(" to put back");
@@ -546,6 +548,7 @@ public final class RestoreLive {
 
     /** AA_STEP2 3: blocks waiting in the ledger to be put back (aa status "restore pending: N blocks"). */
     public int pendingCount() {
+        if (!RestoreRules.putBackOn()) return 0;                      // 0.39.z75: put-back off - nothing waits on the ledger
         int n = 0;
         for (Ledger.Entry e : book.ledger.confirmed()) if (e.restorable()) n++;
         return n;

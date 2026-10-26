@@ -302,6 +302,7 @@ public final class Jobs {
                 if (r == null) {
                     String w = RestoreLive.INSTANCE.waitingNote(j);
                     if (w != null) text += "; " + w;
+                    if (w != null && w.startsWith("put-back off")) LOG.info("[entropybot] {}: {}", j.label, w);    // 0.39.z75: one line per job end
                 }
                 return text;
             }

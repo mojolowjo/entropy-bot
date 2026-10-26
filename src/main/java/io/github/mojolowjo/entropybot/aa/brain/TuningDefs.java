@@ -592,6 +592,8 @@ final class TuningDefs {
         // restorePlan
         Tuning.def("restorePlan.afterJob", 24, "rm-constants 0.39.u2 (was RestorePlan.AFTER_JOB)", "The walk-back limit after a job (further entries wait for 'restore now')");
         Tuning.def("restorePlan.nowDefault", 32, "rm-constants 0.39.u2 (was RestorePlan.NOW_DEFAULT)", "The walk-back limit after a job (further entries wait for 'restore now')");
+        // 0.39.z75 put-back off (owner 2026-10-25 19:40: "turn off putting back blocks I broke on the way for now")
+        Tuning.def("restore.putBack", 0, "0.39.z75 put-back off (owner 2026-10-25 19:40)", "1: a job's end puts back the blocks it broke on the way (as before z75); 0: no put-back run starts, said once per job end");
         // restoreRun
         Tuning.def("restoreRun.walkMax", 20 * 60, "rm-constants 0.39.u2 (was RestoreRun.WALK_MAX)", "the walk max of RestoreRun");
         Tuning.def("restoreRun.checkTicks", 6, "rm-constants 0.39.u2 (was RestoreRun.CHECK_TICKS)", "the check ticks of RestoreRun");

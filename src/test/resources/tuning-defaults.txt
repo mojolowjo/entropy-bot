@@ -687,6 +687,7 @@ replan.water	60.0
 respawnHomes.maxHomes	8.0
 respawnHomes.settleTicks	100.0
 respawnS	5.0
+restore.putBack	0.0
 restoreArgs.maxRadius	64.0
 restorePlan.afterJob	24.0
 restorePlan.nowDefault	32.0

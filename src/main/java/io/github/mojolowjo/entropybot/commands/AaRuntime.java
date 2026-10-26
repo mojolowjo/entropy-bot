@@ -2982,6 +2982,7 @@ public final class AaRuntime implements JobPort {
 
     /** AA_STEP2 3: "restore pending: N blocks" (running now / waiting in the ledger). */
     private String restoreLine() {
+        if (!io.github.mojolowjo.entropybot.restore.RestoreRules.putBackOn()) return "put-back off (restore.putBack 0)";   // 0.39.z75
         int n;
         try {
             n = RestoreLive.INSTANCE.pendingCount();
