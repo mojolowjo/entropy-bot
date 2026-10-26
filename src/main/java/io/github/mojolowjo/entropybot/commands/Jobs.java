@@ -62,6 +62,11 @@ public final class Jobs {
         long bestTick, lastStepTick = -1;
         /** 0.33.1: an owner/operator "goto x z" (not a chain, a reflex or a leg): only these get the ended-short check. */
         boolean xzOrder;
+        /**
+         * 0.39.z77 walk (run BT 13:14:32): the feet where Baritone went idle short of the walk's goal (null: not ended short) -
+         * the typed end the step hands read for the walk's fact (StepHands.walkStatus), never the end line's words.
+         */
+        int[] shortEnd;
         // B7b part 2: a job made of steps, the goal object of its walk (unsticking plans it again), and whether the
         // open menu is closed when it ends ("always", or "fail" = unless it ended ok)
         Seq seq;
@@ -685,13 +690,17 @@ public final class Jobs {
         if (j.type.equals("travel")) {
             // Baritone goes idle without a no-path event when the goal can't be reached: the end position decides
             int[] d = travelDest(j), me = here(p);
+            // 0.39.z77 walk (run BT 13:14:32, rule 7): the end short is a typed fact (j.shortEnd) the order re-plans on; no
+            // owner action and no advice the bot does not do itself ("goto a spot next to it, or come get me" is gone)
             if (!j.reflex && d != null && !WalkEnd.arrived(me, d)) {
-                finish(WalkEnd.shortResult(me, d) + " (walk: Baritone stopped short) - next: goto a spot next to it, or come get me");
+                j.shortEnd = me.clone();
+                finish(WalkEnd.shortResult(me, d) + " (walk: Baritone stopped short)");
                 return;
             }
             int[] xz = d == null && j.xzOrder && !j.reflex ? travelXZ(j) : null;
             if (xz != null && !WalkEnd.arrivedXZ(me, xz)) {
-                finish(WalkEnd.shortResultXZ(me, xz) + " (walk: Baritone stopped short) - next: goto a spot next to it, or come get me");
+                j.shortEnd = me.clone();
+                finish(WalkEnd.shortResultXZ(me, xz) + " (walk: Baritone stopped short)");
                 return;
             }
             String v = goalVerdict(p, j);

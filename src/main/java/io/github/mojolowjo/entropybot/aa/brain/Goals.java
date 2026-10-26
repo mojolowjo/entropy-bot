@@ -311,10 +311,19 @@ public final class Goals {
         return out;
     }
 
-    /** 0.39.z65 review 1 (pure): a station key held from {@code from} is released at {@code now} ({@code failures.moved} closer). */
+    /**
+     * 0.39.z65 review 1; 0.39.z77 walk: a key held by where the bot stood when it failed - a station's walk ("station at x y
+     * z") or a walk target that ended short twice ("walk target x y z", FactChange.walkHeld). Pure.
+     */
+    static boolean positional(String key) {
+        return key != null && (key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STATION_AT) || key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.WALK_TARGET));
+    }
+
+    /** 0.39.z65 review 1 (pure): a station key (0.39.z77: or a walk target) held from {@code from} is released at {@code now} ({@code failures.moved} closer). */
     public static boolean stationBack(String key, int[] from, int[] now) {
-        String p = io.github.mojolowjo.entropybot.aa.NeedChain.STATION_AT;
-        if (key == null || !key.startsWith(p) || from == null || now == null) return false;
+        if (!positional(key) || from == null || now == null) return false;
+        String p = key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STATION_AT) ? io.github.mojolowjo.entropybot.aa.NeedChain.STATION_AT
+                : io.github.mojolowjo.entropybot.aa.NeedChain.WALK_TARGET;
         String[] c = key.substring(p.length()).trim().split("\\s+");
         if (c.length != 3) return false;     // structural: x y z
         for (String n : c) if (!n.matches("-?\\d{1,9}")) return false;     // not a station cell: held as any source
@@ -364,7 +373,8 @@ public final class Goals {
         // 0.39.z77 answers (1): an order met inside its batch's playbook run re-plans that run for the batch's open orders
         if (g.n - have(bb.in.bag, g) <= 0 && !trip) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
         // 0.39.z65 review 1: a station's walk fact keeps where the bot stood (released once it stands failures.moved closer)
-        if (sourceFact) g.sources.failedFor(g.id(), src, fact.text(), bb.clock.now(), src.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STATION_AT) ? bb.in : null, ORDER_LIFE_MS);
+        // 0.39.z77 walk: a held walk target keeps it too (the same per-position hold)
+        if (sourceFact) g.sources.failedFor(g.id(), src, fact.text(), bb.clock.now(), positional(src) ? bb.in : null, ORDER_LIFE_MS);
         var ch = runChain(bb, g);
         if (ch == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");
         // 0.39.z73 (D2 3.4): the repair, priced against this full re-plan

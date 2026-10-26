@@ -162,10 +162,7 @@ public final class BatchWay {
         Trip t = new Trip(key, landed(w), s.settled(), pb, s.chain(), starts, s.line());
         TRIPS.put(tk, t);
         LEGS.put(tk, starts);
-        if (!s.line().equals(SAID.get(tk))) {
-            SAID.put(tk, s.line());
-            if (bb.port != null) bb.port.log(g.r.key() + ": " + s.line());
-        }
+        if (sayAgain(tk, s.change()) && bb.port != null) bb.port.log(g.r.key() + ": " + s.line());    // 0.39.z77: on a change only
         return s.chain() != null ? s.chain() : own(g, key, landed(w), own);
     }
 
@@ -178,8 +175,22 @@ public final class BatchWay {
         bb.port.tellOwner(t.line());
     }
 
-    /** A trip's chain as it runs ({@code chain}: null - the order's own chain, as said in {@code line}), kept or not. */
-    public record Shaped(NeedChain.Chain chain, String line, boolean settled) {}
+    /**
+     * A trip's chain as it runs ({@code chain}: null - the order's own chain, as said in {@code line}), kept or not.
+     * 0.39.z77 walk commit (manager; run BT: 269 trip lines in 20 min, several a second at 12:57 - one per re-price):
+     * {@code change} - the trip's legs and carry lists only (no price, no stand or no-way reason); the line is logged again
+     * only when this differs from the last one logged for the batch ({@link #sayAgain}).
+     */
+    public record Shaped(NeedChain.Chain chain, String line, boolean settled, String change) {
+        public Shaped(NeedChain.Chain chain, String line, boolean settled) { this(chain, line, settled, line); }
+    }
+
+    /** 0.39.z77: the trip {@code tk}'s line is logged when its {@code change} differs from the last logged (recorded). */
+    public static boolean sayAgain(String tk, String change) {
+        if (change == null || change.equals(SAID.get(tk))) return false;
+        SAID.put(tk, change);
+        return true;
+    }
 
     /**
      * The trip's chain as the order runs it (pure): the playbook's chain; the whole trip waiting on a path from here - a
@@ -189,20 +200,21 @@ public final class BatchWay {
         String head = TRIP + key + " (" + orders + " order" + (orders == 1 ? "" : "s") + "): ";
         if (pb == null || !pb.ok() || pc == null)
             return new Shaped(null, head + "no trip derived (" + (pb == null ? "no playbook" : pb.fail()) + "): the order's own chain as its one leg", true);
+        String bare = head + legs(pb, null, null);           // 0.39.z77: the legs with no carry known (no priced chain)
         if (!pc.ok() && NeedChain.waitsHere(pc.missing())) {
             if (pc.missing().contains(io.github.mojolowjo.entropybot.aa.PathPrice.NOT_KNOWN)) {
                 NeedChain.Chain stand = new NeedChain.Chain(List.of(new Step.AwaitPaths(NeedChain.firstAnswerWaitS())), 0, "trip: stand (" + pc.missing() + ")", true, null);
-                return new Shaped(stand, head + "stand while the first leg's walks compute (" + pc.missing() + ")", false);
+                return new Shaped(stand, head + "stand while the first leg's walks compute (" + pc.missing() + ")", false, bare);
             }
-            return new Shaped(null, head + "waits (" + pc.missing() + "): the order's own chain says it", false);
+            return new Shaped(null, head + "waits (" + pc.missing() + "): the order's own chain says it", false, bare);
         }
-        if (!pc.ok()) return new Shaped(pc, head + "no way (" + pc.missing() + ")", true);
+        if (!pc.ok()) return new Shaped(pc, head + "no way (" + pc.missing() + ")", true, bare);
         if (!pc.steps().isEmpty() && !(pc.seconds() > 0)) {                      // shape review 3: an explore trip too
             String z = zero(pc.seconds());
-            return new Shaped(new NeedChain.Chain(List.of(), 0, "trip refused: " + z, false, "trip refused: " + z), head + "refused (" + z + ")", true);
+            return new Shaped(new NeedChain.Chain(List.of(), 0, "trip refused: " + z, false, "trip refused: " + z), head + "refused (" + z + ")", true, bare);
         }
         boolean waits = Steps.waitsOnPaths(pc.steps());
-        return new Shaped(pc, head + line(pb, pc, starts), !waits);
+        return new Shaped(pc, head + line(pb, pc, starts), !waits, head + legs(pb, pc, starts));
     }
 
     /** 0.39.z77 round fix 5: why a trip's seconds are no price ("priced 0.0 s: a way priced 0 or less is never valid"). */
@@ -216,10 +228,19 @@ public final class BatchWay {
      * that no step after it makes and no later leg gets (the take-along, from the plan's own per-step uses).
      */
     static String line(Playbook pb, NeedChain.Chain pc, Map<Step, String> starts) {
+        String price = pc.explore() ? "priced with its explore " + Math.round(pc.seconds()) + " s" : "priced " + Math.round(pc.seconds()) + " s";
+        return legs(pb, pc, starts) + "; " + price;
+    }
+
+    /**
+     * 0.39.z77: the trip's legs and what each descent carries (pure) - {@link #line} without the price; {@code pc} null: the
+     * legs only (no carry is known without a priced chain).
+     */
+    static String legs(Playbook pb, NeedChain.Chain pc, Map<Step, String> starts) {
         List<Playbook.Leg> legs = pb.legs();
         // the first step of each leg in the chain, by the planner's leg numbers ("playbook leg 2/5: ...")
         Map<Integer, Integer> at = new java.util.HashMap<>();
-        for (int k = 0; k < pc.steps().size(); k++) {
+        for (int k = 0; pc != null && k < pc.steps().size(); k++) {
             String t = starts == null ? null : starts.get(pc.steps().get(k));
             if (t == null || !t.startsWith("playbook leg ")) continue;
             int slash = t.indexOf('/');
@@ -239,8 +260,7 @@ public final class BatchWay {
             String carry = l.kind() == Playbook.Kind.DESCENT && !l.on() && !l.here() && at.containsKey(i) ? carries(pb, i, at.get(i), pc) : "";
             parts.add((i + 1) + " " + head + ": " + String.join(", ", g) + (carry.isEmpty() ? "" : ", carries " + carry));
         }
-        String price = pc.explore() ? "priced with its explore " + Math.round(pc.seconds()) + " s" : "priced " + Math.round(pc.seconds()) + " s";
-        return legs.size() + " leg" + (legs.size() == 1 ? "" : "s") + " - " + String.join(" | ", parts) + "; " + price;
+        return legs.size() + " leg" + (legs.size() == 1 ? "" : "s") + " - " + String.join(" | ", parts);
     }
 
     /** What the bot takes down at descent leg {@code i}: the uses after the descent's strip start, less what is made or got there. */

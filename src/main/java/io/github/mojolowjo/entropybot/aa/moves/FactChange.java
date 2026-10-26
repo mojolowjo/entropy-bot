@@ -207,6 +207,44 @@ public final class FactChange {
         return new Fact(WALK_TO + sourceKey, "the walk to " + sourceKey + " failed: " + why);
     }
 
+    /** 0.39.z77 walk: the key prefix of {@link #walkShortFact}. */
+    public static final String WALK_SHORT = "walk short to ";
+
+    /**
+     * 0.39.z77 walk (run BT 13:14:32, rule 7: the leggings order stopped on "goto 20 21 -10: couldn't get there (22 blocks
+     * away, stopped at 28 21 11)"): a walk step to {@code target} that Baritone ended short at {@code feet} - the fact "walk
+     * to x y z ended short at fx fy fz: Baritone's reason", keyed by the target and the feet it ended at ("walk short to x y z
+     * at fx fy fz"). Not a hold: the order re-plans from the feet of now (a stand cell beside the target, another station,
+     * the next leg - the planner's prices from here). The same key again in the order (the same target short at the same
+     * feet) is the hold {@link #walkHeld} (Steps.failOrReplan). Pure.
+     */
+    public static Fact walkShortFact(int[] target, int[] feet, String why) {
+        String t = cell(target), f = cell(feet);
+        String w = why == null ? "no reason" : why.replaceFirst("^error: ", "");
+        return new Fact(WALK_SHORT + t + " at " + f, "walk to " + t + " ended short at " + f + ": " + w);
+    }
+
+    /** 0.39.z77 walk: the hands say {@link #walkShortFact} (taken once, as every fact here). */
+    public static void walkShort(int[] target, int[] feet, String why) { last = walkShortFact(target, feet, why); }
+
+    /** 0.39.z77 walk: {@code f} is a walk that ended short ({@link #walkShortFact}). */
+    public static boolean isWalkShort(Fact f) { return f != null && f.key().startsWith(WALK_SHORT); }
+
+    /**
+     * 0.39.z77 walk: the same target ended short again at the same feet in this order - the source fact keyed
+     * {@link io.github.mojolowjo.entropybot.aa.NeedChain#walkTargetKey}: held for the order (Goals' per-position hold: back
+     * once the bot stands failures.moved closer to it than where it failed), every way whose walk goes there is priced out
+     * with this reason (NeedChain.World#withoutSources) and the next way runs.
+     */
+    public static Fact walkHeld(int[] target, Fact shortFact) {
+        return new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.walkTargetKey(target[0], target[1], target[2]),
+                (shortFact == null ? "walk to " + cell(target) + " ended short" : shortFact.text()) + " (twice from there: the target held for this order)");
+    }
+
+    private static String cell(int[] c) {
+        return c == null || c.length < 3 ? "?" : c[0] + " " + c[1] + " " + c[2];     // structural: x y z
+    }
+
     /**
      * 0.39.z46 (run G 23:40:12): a step made no progress (no move, no step change) for the watch's time: the source slot
      * keyed by the step's target ({@code key}); the order re-plans instead of parking.

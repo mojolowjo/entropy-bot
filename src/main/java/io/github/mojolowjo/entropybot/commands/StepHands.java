@@ -420,6 +420,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.AwaitPaths a -> standStatus(a);     // 0.39.z76 send-back 3 (rule 22)
                 case Step.ToStation t -> toStationStatus(t);
                 case Step.ToSurface t -> toSurfaceStatus(p, t);
+                case Step.Walk w -> walkStatus(w);
                 default -> requestStatus();
             };
         } catch (RuntimeException e) {
@@ -844,6 +845,20 @@ public final class StepHands implements Steps.Hands {
             }
         }
         return null;
+    }
+
+    /**
+     * 0.39.z77 walk (run BT 13:14:32: "stopped at step 2 (goto 20 21 -10): couldn't get there (22 blocks away, stopped at
+     * 28 21 11) (walk: Baritone stopped short)" ended the leggings order - a walk has no count and its failure said no fact):
+     * the walk's travel job ended short (its typed end, Jobs.Job#shortEnd) - the fact "walk to x y z ended short at feet:
+     * Baritone's reason" keyed by the target (FactChange.walkShort); the order re-plans on it (Steps.failOrReplan holds the
+     * target when the same target ends short again at the same feet).
+     */
+    private Car.Status walkStatus(Step.Walk w) {
+        Car.Status st = requestStatus();
+        if (st.state() == Car.State.FAILED && walkJob != null && walkJob.shortEnd != null)
+            io.github.mojolowjo.entropybot.aa.moves.FactChange.walkShort(new int[]{w.x(), w.y(), w.z()}, walkJob.shortEnd, st.why());
+        return st;
     }
 
     /**

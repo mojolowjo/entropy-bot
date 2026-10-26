@@ -440,7 +440,9 @@ public final class NeedChain {
             };
             boolean tn = tableNear && !heldStation(sa, keyWhy, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT);
             boolean fn = furnaceNear && !heldStation(sa, keyWhy, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT);
-            return new World(bag, tn, fn, less.seenAll, mobs, loot, b, horizonBlocks, path, stationLess, usesLeft, h, stripLess, caveLess, rooms, where);
+            // 0.39.z77 walk: a walk target the order holds (ended short twice at the same feet) answers unreachable
+            PathPrice pathLess = heldWalks(path, keyWhy);
+            return new World(bag, tn, fn, less.seenAll, mobs, loot, b, horizonBlocks, pathLess, stationLess, usesLeft, h, stripLess, caveLess, rooms, where);
         }
 
         /** 0.39.z65 review 1: the known station of the kind is one the order dropped. */
@@ -2880,6 +2882,42 @@ public final class NeedChain {
 
     /** 0.39.z65 review 1: the prefix of {@link #stationKey}. */
     public static final String STATION_AT = "station at ";
+
+    /** 0.39.z77 walk: the prefix of {@link #walkTargetKey}. */
+    public static final String WALK_TARGET = "walk target ";
+
+    /**
+     * 0.39.z77 walk (run BT 13:14:32): the source key of a walk target the order holds (the same walk ended short twice at
+     * the same feet, FactChange.walkHeld): every walk the chain prices to that cell answers unreachable with the hold's
+     * reason ({@link #heldWalks}), so the way that needs it drops and the next one competes.
+     */
+    public static String walkTargetKey(int x, int y, int z) { return WALK_TARGET + x + " " + y + " " + z; }
+
+    /**
+     * 0.39.z77 walk: {@code p} with the walk targets held in {@code keyWhy} ({@link #walkTargetKey}) priced unreachable with
+     * their reason - the same answer Baritone's "no path" gives, so every way through that walk is dropped and listed with
+     * the reason (rule 7); every other ask as {@code p}. No held target (or no provider): {@code p} itself. Pure.
+     */
+    static PathPrice heldWalks(PathPrice p, Map<String, String> keyWhy) {
+        if (p == null || keyWhy == null) return p;
+        Map<String, String> held = new java.util.HashMap<>();
+        for (var e : keyWhy.entrySet()) if (e.getKey() != null && e.getKey().startsWith(WALK_TARGET)) held.put(e.getKey(), e.getValue());
+        if (held.isEmpty()) return p;
+        return new PathPrice() {
+            private String why(int x, int y, int z) {
+                String w = held.get(walkTargetKey(x, y, z));
+                return w == null ? null : "the walk to " + x + " " + y + " " + z + " is held for this order: " + w;
+            }
+            @Override public Answer price(int x, int y, int z, double dist) { String w = why(x, y, z); return w != null ? Answer.unreachable(w) : p.price(x, y, z, dist); }
+            @Override public Answer priceInto(int x, int y, int z, double dist) { String w = why(x, y, z); return w != null ? Answer.unreachable(w) : p.priceInto(x, y, z, dist); }
+            @Override public double estimate(int x, int y, int z) { return why(x, y, z) != null ? Double.NaN : p.estimate(x, y, z); }
+            @Override public Walk toBlock(int x, int y, int z) { return why(x, y, z) != null ? null : p.toBlock(x, y, z); }
+            @Override public void rankedOut(int x, int y, int z) { p.rankedOut(x, y, z); }
+            @Override public boolean pending() { return p.pending(); }
+            @Override public long landed() { return p.landed(); }
+            @Override public int firstAnswersPending() { return p.firstAnswersPending(); }
+        };
+    }
 
     /** The key of a spot of {@code item} (a need word; a tag's spot by the item it gives) (see {@link #sourceKey(Step)}). */
     public static String sourceKey(String item, Spot sp) {

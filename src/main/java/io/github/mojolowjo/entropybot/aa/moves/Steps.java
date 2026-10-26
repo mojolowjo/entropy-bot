@@ -1013,7 +1013,11 @@ public final class Steps {
                 }
             }
             if (fact == null) fact = shortFact(s, reason);       // 0.39.z75: a step that ended short of its count
-            if (fact == null) fact = walkLeads(steps, idx, reason);
+            // 0.39.z77 walk: a walk that led to a named source is that source's fact (z65) over its own short end
+            if (fact == null || FactChange.isWalkShort(fact)) {
+                FactChange.Fact lead = walkLeads(steps, idx, reason);
+                if (lead != null) fact = lead;
+            }
         }
         if (fact == null || replanner == null || idx < 0 || idx >= steps.size()) { fail(reason); return; }
         Step failed = steps.get(idx);
@@ -1025,6 +1029,16 @@ public final class Steps {
             return;
         }
         why = before;
+        // 0.39.z77 walk (run BT 13:14:32): a walk that ended short is a re-plan from the feet of now; the same target short
+        // again at the same feet in this order (its try seen before: the order's tries, below) holds that target for the
+        // order (a source fact, Goals' per-position hold) - the next way runs, never the honest park on a walk
+        if (FactChange.isWalkShort(fact) && failed instanceof Step.Walk w) {
+            String seen = attempt(failed, fact.key()).tryKey();
+            if (seen != null && orderTries().contains(seen)) {
+                fact = FactChange.walkHeld(new int[]{w.x(), w.y(), w.z()}, fact);
+                hands.log("step " + failed.text() + ": " + fact.text());
+            }
+        }
         // 0.39.z70 (D2 3.1, run M P1 / run N P3): park only when this try equals the last failed one - the same step, the same
         // fact, from the same cell, with the same needs in the bag: the planner's inputs are the same, a re-plan would loop.
         // Rule 15: an unknown cell or bag is not "the same".
