@@ -109,15 +109,9 @@ public final class Jobs {
      * walk down from MOTION_BLOCKING past leaves. Vanilla API only (Heightmap, BlockTags.LEAVES).
      */
     public static int surfaceNoLeaves(net.minecraft.world.level.Level level, int x, int z) {
-        // 0.39.z76 surface: the one answer for every caller (world.SurfaceHeight); rule 15: not loaded or no heightmap data
-        // in the client's chunk -> SurfaceHeight.NOT_KNOWN, never the bottom of the world
-        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos(x, 0, z);
-        return io.github.mojolowjo.entropybot.world.SurfaceHeight.noLeaves(level.hasChunk(x >> 4, z >> 4),
-                level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, x, z), level.getMinBuildHeight(), y -> {
-                    m.setY(y);
-                    var st = level.getBlockState(m);
-                    return st.is(net.minecraft.tags.BlockTags.LEAVES) || !st.blocksMotion();
-                });
+        // 0.39.z76 surface: the one answer for every caller (world.SurfaceHeightLive, the one heightmap reader); rule 15: not
+        // loaded or no heightmap data in the client's chunk -> SurfaceHeight.NOT_KNOWN, never the bottom of the world
+        return io.github.mojolowjo.entropybot.world.SurfaceHeightLive.noLeaves(level, x, z);
     }
 
     /** 0.28.1 (trial fix A): one cell for SurfaceRule, from the level (vanilla BlockState/BlockTags only). */
@@ -780,17 +774,27 @@ public final class Jobs {
     }
 
 
-    /** 0.34.3: the shared under-ground rule at a cell (RestoreRules.underDepth over the leaf-free surface): depth or 0. */
+    /**
+     * 0.34.3: the shared under-ground rule at a cell (RestoreRules.underDepth over the leaf-free surface): depth or 0.
+     * 0.39.z76 surface 2 (rule 15): the surface not known - 0 (no depth is claimed) plus the fact ({@link #surfaceNotKnown}),
+     * said once per chunk; never a guessed depth.
+     */
     public static int underDepth(net.minecraft.world.level.Level lv, int x, int y, int z) {
         int surface = surfaceNoLeaves(lv, x, z);
         // 0.39.z76 surface (rule 15): the surface not known - the sky test alone decides, and the reason is said once
         if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(surface)) {
-            if (SURFACE_UNKNOWN_SAID.add((x >> 4) + "," + (z >> 4)))
-                LOG.info("[entropybot] surface over {} {} not known (the client's chunk has no heightmap data): under ground only if the sky is not seen", x, z);
-            return lv.canSeeSky(new BlockPos(x, y + 1, z)) ? 0 : 1;
+            surfaceNotKnown = "the surface over " + x + " " + z + " is not known (the column is not loaded or the client's chunk has no heightmap data)";
+            if (SURFACE_UNKNOWN_SAID.add((x >> 4) + "," + (z >> 4))) LOG.info("[entropybot] {}: no depth under ground is claimed there", surfaceNotKnown);
+            return 0;
         }
+        surfaceNotKnown = null;
         return RestoreRules.underDepth(lv.canSeeSky(new BlockPos(x, y + 1, z)), surface, y);
     }
+
+    /** 0.39.z76 surface 2: the fact of the last {@link #underDepth} answer whose surface was not known (null: it was known). */
+    private static volatile String surfaceNotKnown;
+
+    public static String surfaceNotKnown() { return surfaceNotKnown; }
 
     /** 0.39.z76 surface: the chunks whose unknown surface was said (once each). */
     private static final java.util.Set<String> SURFACE_UNKNOWN_SAID = java.util.concurrent.ConcurrentHashMap.newKeySet();

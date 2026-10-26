@@ -10,7 +10,6 @@ import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.levelgen.Heightmap;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -371,7 +370,7 @@ public final class SurfaceExport {
 
             @Override
             public int top(int x, int z) {
-                return Math.min(level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z), max);
+                return Math.min(io.github.mojolowjo.entropybot.world.SurfaceHeightLive.worldSurface(level, x, z), max);
             }
         };
     }

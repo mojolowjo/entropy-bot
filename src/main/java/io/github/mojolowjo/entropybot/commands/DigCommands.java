@@ -484,7 +484,7 @@ final class DigCommands {
         SurfaceDig.Source src = new SurfaceDig.Source() {
             @Override public int kind(int x, int y, int z) { return io.github.mojolowjo.entropybot.surface.SurfaceExport.kindOf(level, m.set(x, y, z)); }
             @Override public boolean liquid(int x, int y, int z) { return level.getBlockState(m.set(x, y, z)).getBlock() instanceof net.minecraft.world.level.block.LiquidBlock; }
-            @Override public int top(int x, int z) { return Math.min(level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z), max); }
+            @Override public int top(int x, int z) { return Math.min(io.github.mojolowjo.entropybot.world.SurfaceHeightLive.worldSurface(level, x, z), max); }
         };
         SurfaceDig.Plan plan;
         try {

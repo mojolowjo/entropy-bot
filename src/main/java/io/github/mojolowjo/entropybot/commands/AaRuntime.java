@@ -790,7 +790,12 @@ public final class AaRuntime implements JobPort {
         if (y > me[1]) {
             // loader note: vanilla Level#getHeight with a heightmap the client keeps (MOTION_BLOCKING; leaves count as ground: a
             // tree only keeps the strip)
-            int top = mc.level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, me[0], me[2]);
+            int top = io.github.mojolowjo.entropybot.world.SurfaceHeightLive.top(mc.level, me[0], me[2]);   // z76 surface 2: the one heightmap reader
+            if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(top)) {         // rule 15: no data in the column - not known, no strip priced
+                String said = "unknown " + (me[0] >> 4) + "," + (me[2] >> 4) + "," + y;
+                if (stripAirSaid.add(said)) LOG.info("[entropybot] aa: strip at y {} for {}: not known - the column's ground height is not known (no heightmap data; no walk priced, asked again later)", y, word);
+                return null;
+            }
             if (y >= top) {
                 String said = (me[0] >> 4) + "," + (me[2] >> 4) + "," + y;
                 if (stripAirSaid.add(said)) LOG.info("[entropybot] aa: strip at y {} for {}: no rock there - the ground here ends at y {} (the band's peak lies in the open air above this column; no walk priced)", y, word, top - 1);

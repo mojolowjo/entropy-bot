@@ -272,7 +272,7 @@ public final class SkyScanner {
         for (int[] c : cols) {
             int h;
             try {
-                h = level.getHeight(Heightmap.Types.WORLD_SURFACE, x + c[0], z + c[1]);
+                h = io.github.mojolowjo.entropybot.world.SurfaceHeightLive.worldSurface(level, x + c[0], z + c[1]);
             } catch (RuntimeException e) {
                 h = level.getMaxBuildHeight();
             }

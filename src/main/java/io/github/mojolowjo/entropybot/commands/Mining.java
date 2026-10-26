@@ -446,7 +446,7 @@ final class Mining {
                 if (!idOk.test(BuiltInRegistries.BLOCK.getKey(level.getBlockState(q).getBlock()).toString())) continue;     // gone
                 boolean open = airFace(level, h.x(), h.y(), h.z());
                 boolean sky = open && skyOpen(level, q);
-                int top = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, h.x(), h.z()) - 1;
+                int top = io.github.mojolowjo.entropybot.world.SurfaceHeightLive.worldSurface(level, h.x(), h.z()) - 1;
                 boolean touchesWater = io.github.mojolowjo.entropybot.guard.Guard.liquidNextTo(level, h.x(), h.y(), h.z()) != null || !level.getFluidState(q.below()).isEmpty();
                 // aa-costs: the drowning risk of a dig down from in the water (DrownRisk prices the depth; no fixed "2 below")
                 boolean wetDown = !open && p.isInWater() && h.y() < me[1] && !touchesWater;
@@ -771,7 +771,7 @@ final class Mining {
     static boolean waterChunk(Level lv, int cx, int cz) {
         if (lv == null || !lv.hasChunk(cx, cz)) return false;
         int x = (cx << 4) + 8, z = (cz << 4) + 8;           // game fact: the centre of a chunk is 8 blocks in
-        int top = lv.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, x, z);
+        int top = io.github.mojolowjo.entropybot.world.SurfaceHeightLive.motionBlocking(lv, x, z);
         return lv.getFluidState(new BlockPos(x, top - 1, z)).is(net.minecraft.tags.FluidTags.WATER);
     }
 
@@ -967,7 +967,7 @@ final class Mining {
         int n = 0;
         BlockPos.MutableBlockPos q = new BlockPos.MutableBlockPos();
         for (int dx = -8; dx <= 8; dx += 2) for (int dz = -8; dz <= 8; dz += 2) {
-            int top = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, me[0] + dx, me[2] + dz);
+            int top = io.github.mojolowjo.entropybot.world.SurfaceHeightLive.worldSurface(level, me[0] + dx, me[2] + dz);
             for (int y = top - 4; y >= Math.max(level.getMinBuildHeight(), top - 40); y--) {
                 q.set(me[0] + dx, y, me[2] + dz);
                 if (level.isLoaded(q) && level.getBlockState(q).isAir() && level.getBrightness(LightLayer.SKY, q) == 0) n++;

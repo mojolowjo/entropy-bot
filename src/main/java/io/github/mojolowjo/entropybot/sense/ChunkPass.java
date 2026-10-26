@@ -574,7 +574,7 @@ public final class ChunkPass {
             net.minecraft.core.BlockPos.MutableBlockPos q = new net.minecraft.core.BlockPos.MutableBlockPos();
             for (int lz = 0; lz < 16; lz++)
                 for (int lx = 0; lx < 16; lx++) {
-                    int hm = chunk.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, lx, lz);
+                    int hm = io.github.mojolowjo.entropybot.world.SurfaceHeightLive.worldSurface(chunk, lx, lz);
                     // 0.39.z48 (item 5): a water column: its top (surface) block holds water (CaveMouths#shapes says why
                     // the client's two heightmaps cannot tell it); never a candidate
                     q.set((it.cx() << 4) + lx, hm - 1, (it.cz() << 4) + lz);

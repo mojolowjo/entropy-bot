@@ -12,7 +12,6 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
 
 import java.util.ArrayList;
@@ -121,13 +120,13 @@ public final class ViewLive {
             @Override public char top(int x, int z) {
                 BlockPos b = new BlockPos(x, lv.getMinBuildHeight(), z);
                 if (!lv.isLoaded(b)) return '?';
-                int y = lv.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z) - 1;
+                int y = io.github.mojolowjo.entropybot.world.SurfaceHeightLive.motionBlocking(lv, x, z) - 1;
                 BlockPos q = new BlockPos(x, y, z);
                 return topChar(lv.getBlockState(q), lv, q);
             }
 
             @Override public int topY(int x, int z) {
-                return lv.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z) - 1;
+                return io.github.mojolowjo.entropybot.world.SurfaceHeightLive.motionBlocking(lv, x, z) - 1;
             }
 
             @Override public char at(int x, int y, int z) {
@@ -164,7 +163,7 @@ public final class ViewLive {
                 int cx = (b.x1 + b.x2) / 2, cz = (b.z1 + b.z2) / 2;
                 int r = Math.min(15, Math.max(7, Math.max(b.x2 - b.x1, b.z2 - b.z1) / 2 + 2));
                 // live: from under ground every column read "^": an area map is levelled at its floor (or its centre's ground)
-                int ref = b.y1 > Box.ALL_Y_MIN ? b.y1 + 1 : lv.getHeight(Heightmap.Types.MOTION_BLOCKING, cx, cz);
+                int ref = b.y1 > Box.ALL_Y_MIN ? b.y1 + 1 : io.github.mojolowjo.entropybot.world.SurfaceHeightLive.motionBlocking(lv, cx, cz);
                 return LookMap.overhead(cells(lv), cx, cz, ref, r, me, mobs(p, 40), "area " + b.name);
             }
             if (io.github.mojolowjo.entropybot.commands.Jobs.underDepth(lv, me[0], me[1], me[2]) > 0)      // 0.34.3: the shared rule

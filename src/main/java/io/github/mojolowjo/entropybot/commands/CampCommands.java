@@ -212,7 +212,7 @@ final class CampCommands {
                 int top = io.github.mojolowjo.entropybot.camp.HouseGround.NONE;
                 m.set(x, lv.getMinBuildHeight(), z);
                 if (lv.isLoaded(m)) {
-                    int y = lv.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z) - 1;
+                    int y = io.github.mojolowjo.entropybot.world.SurfaceHeightLive.worldSurface(lv, x, z) - 1;
                     for (; y >= lv.getMinBuildHeight(); y--) {
                         m.set(x, y, z);
                         BlockState st = lv.getBlockState(m);

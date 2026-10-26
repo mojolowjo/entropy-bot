@@ -9,7 +9,6 @@ import net.minecraft.tags.BlockTags;
 import net.minecraft.world.entity.animal.Animal;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.LightLayer;
-import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -234,7 +233,7 @@ public final class SightingsRuntime {
      */
     public static int top(ClientLevel level, int x, int z) {
         if (!level.hasChunk(x >> 4, z >> 4)) return CaveMouths.NOT_LOADED;
-        int hm = level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1, minY = level.getMinBuildHeight();
+        int hm = io.github.mojolowjo.entropybot.world.SurfaceHeightLive.worldSurface(level, x, z) - 1, minY = level.getMinBuildHeight();
         BlockPos.MutableBlockPos q = new BlockPos.MutableBlockPos();
         return CaveMouths.ground(hm, y -> y >= minY && ChunkPass.canopy(level.getBlockState(q.set(x, y, z))));
     }

@@ -1,5 +1,6 @@
 package io.github.mojolowjo.entropybot.map;
 
+import io.github.mojolowjo.entropybot.world.SurfaceHeightLive;
 import io.github.mojolowjo.entropybot.Quiet;
 
 import com.mojang.logging.LogUtils;
@@ -13,7 +14,6 @@ import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
-import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.MapColor;
 import org.slf4j.Logger;
 
@@ -302,7 +302,7 @@ public final class TerrainMap {
     private int column(ClientLevel level, LevelChunk chunk, int x, int z, int yNorth) {
         colY = NO_Y;
         int minY = level.getMinBuildHeight();
-        int y = chunk.getHeight(Heightmap.Types.WORLD_SURFACE, x, z);
+        int y = SurfaceHeightLive.worldSurface(chunk, x, z);
         if (y < minY) return 0;
         BlockState st = null;
         MapColor mc = MapColor.NONE;

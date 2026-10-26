@@ -69,11 +69,11 @@ public final class McChunkReader {
 
             @Override public BlockState state(int i, int lx, int ly, int lz) { return secs[i].getBlockState(lx, ly, lz); }
 
-            @Override public int top(int lx, int lz) { return chunk.getHeight(Heightmap.Types.WORLD_SURFACE, lx, lz); }
+            @Override public int top(int lx, int lz) { return io.github.mojolowjo.entropybot.world.SurfaceHeightLive.worldSurface(chunk, lx, lz); }
         };
         return SummaryBuilder.build(dim, chunk.getPos().x, chunk.getPos().z, src, classifier, now);
     }
 
     /** The column's top now (after a change): the live heightmap. */
-    public static int top(LevelChunk chunk, int x, int z) { return chunk.getHeight(Heightmap.Types.WORLD_SURFACE, x & 15, z & 15); }
+    public static int top(LevelChunk chunk, int x, int z) { return io.github.mojolowjo.entropybot.world.SurfaceHeightLive.worldSurface(chunk, x & 15, z & 15); }
 }
