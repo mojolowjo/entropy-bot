@@ -530,11 +530,18 @@ class Z77PlaybookTest {
         Goals.chain(bb, gs.get(0));
         int first = asks[0];
         assertTrue(first > 0, "the first trip asks the strips' walks");
-        for (int i = 0; i < 20; i++) { Goals.blocked(bb, gs.get(0)); Goals.chain(bb, gs.get(0)); }
-        assertEquals(first, asks[0], "20 ticks with paths pending: the trip kept, no walk asked again");
+        // shape review 2 (manager: per BATCH, the 42-per-tick lesson): every order of the batch, every tick, asks the one trip
+        for (int i = 0; i < 20; i++) for (Goals.Goal g : gs) { Goals.blocked(bb, g); Goals.chain(bb, g); }
+        assertEquals(first, asks[0], "20 ticks x 6 orders with paths pending: the trip kept, no walk asked again");
+        assertEquals(1, BatchWay.priced("b1"), "one trip priced for the whole batch");
         landed[0]++;
-        Goals.chain(bb, gs.get(0));
+        for (Goals.Goal g : gs) { Goals.blocked(bb, g); Goals.chain(bb, g); }
         assertTrue(asks[0] > first, "an answer landed: priced again");
+        assertEquals(2, BatchWay.priced("b1"), "one re-price per landed path for the whole batch, not one per order");
+        // shape review 2: an order alone whose trip is one leg (its own chain) is kept the same way - not resolved on every ask
+        Goals.Goal alone = Goals.add(bb, item("stick"), 4, 0, 10_000_000);
+        for (int i = 0; i < 10; i++) Goals.chain(bb, alone);
+        assertEquals(1, BatchWay.priced("own " + alone.id()), "the own chain resolved once while its key holds");
     }
 
     /**

@@ -791,6 +791,15 @@ public final class Jobs {
         return RestoreRules.underDepth(lv.canSeeSky(new BlockPos(x, y + 1, z)), surface, y);
     }
 
+    /**
+     * 0.39.z77 shape review 1 (rule 15): as {@link #underDepth}, but -1 when the surface over the column is not known - for the
+     * steps that end on "out on the surface" (the walk up, the climb), where "not known" must never read as "out".
+     */
+    public static int underDepthKnown(net.minecraft.world.level.Level lv, int x, int y, int z) {
+        if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(surfaceNoLeaves(lv, x, z))) return -1;
+        return underDepth(lv, x, y, z);
+    }
+
     /** 0.39.z76 surface 2: the fact of the last {@link #underDepth} answer whose surface was not known (null: it was known). */
     private static volatile String surfaceNotKnown;
 

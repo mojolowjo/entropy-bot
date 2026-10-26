@@ -360,7 +360,7 @@ public final class NeedChain {
         /** 0.39.z68: where explore targets generate and the surface over the bot ({@link WhereFacts}). */
         public World withWhere(WhereFacts w) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, w); }
 
-        /** 0.39.z77 J2: the same world with another bag (the sequential ad-hoc price: each order from the bag the last left). */
+        /** 0.39.z77 J2: the same world with another bag (a chain priced from the bag another left). */
         public World withBag(Map<String, Integer> b) { return new World(b, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where); }
 
         /**
@@ -960,12 +960,12 @@ public final class NeedChain {
         return finish(c, "pickaxe", phrase == null ? "a pickaxe of tier " + tier + " is in the bag" : "pickaxe <- " + phrase);
     }
 
-    // ---- 0.39.z77 J2: the playbook way (D5 J2; rule 1 clarified: one priced option beside the ad-hoc chain) ----
+    // ---- 0.39.z77 J2: the playbook way (D5 J2; SHAPE CHANGE 2026-10-26: every plain-item order's one trip, BatchWay) ----
 
     /** 0.39.z77 J2: the name of a playbook chain (its why line starts with it). */
     public static final String PLAYBOOK = "playbook";
 
-    /** 0.39.z77 price review 2: the start of the reason a playbook has a leg with no price yet (rule 15: the ad-hoc runs meanwhile). */
+    /** 0.39.z77 price review 2: the start of the reason a playbook has a leg with no price yet (SHAPE CHANGE: that leg is priced when the bot gets there). */
     public static final String NOT_PRICED = "not priced yet: ";
 
     /** 0.39.z77 price review 2: a second unknown after the surface explore - the legs after it have no price, so neither has the playbook. */
@@ -1287,7 +1287,7 @@ public final class NeedChain {
         return out;
     }
 
-    /** 0.39.z77 J2: a chain and the simulated bag after it (the sequential ad-hoc price: the next order starts from it). */
+    /** 0.39.z77 J2: a chain and the simulated bag after it (the next chain starts from it). */
     public record Priced(Chain chain, Map<String, Integer> bagAfter) {}
 
     /** 0.39.z77 J2: {@link #resolve} of an item with the simulated bag it leaves (item id -> count; a way's own tokens left out). */
@@ -3772,10 +3772,12 @@ public final class NeedChain {
     /**
      * 0.39.z77 round fix 5 (run BG 09:07:39-09:23:30): a walk up that Baritone ended "arrived" with {@code depth} blocks of
      * ground still over the feet ({@code at}) - at or past aaLadder.surfaceDepth ({@code under}), the planner's own "under
-     * ground" - did not reach the surface: its reason (the walk up's fact); null: it did (or the depth is not known, -1).
+     * ground" - did not reach the surface: its reason (the walk up's fact); null: it did. 0.39.z77 shape review 1 (rule 15):
+     * {@code depth} -1 (the surface over the column not known) is never "reached": the walk up ends with that reason.
      */
     public static String walkUpShort(int depth, int under, String at) {
-        if (depth < 0 || depth < under) return null;
+        if (depth < 0) return "the walk up ended at " + at + " where the surface is not known (rule 15: not known is never on the surface)";
+        if (depth < under) return null;
         return "the walk up ended under ground (" + depth + " blocks over the feet at " + at + ", aaLadder.surfaceDepth " + under + ")";
     }
 

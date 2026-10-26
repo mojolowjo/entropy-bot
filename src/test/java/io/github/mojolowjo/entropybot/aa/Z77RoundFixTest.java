@@ -201,7 +201,15 @@ class Z77RoundFixTest {
         assertTrue(NeedChain.walkUpShort(47, 3, "-28 22 -48").contains("ended under ground (47 blocks over the feet at -28 22 -48"));
         assertNull(NeedChain.walkUpShort(0, 3, "x"), "under open sky");
         assertNull(NeedChain.walkUpShort(2, 3, "x"), "under the surface depth: the surface");
-        assertNull(NeedChain.walkUpShort(-1, 3, "x"), "not known: as Baritone said");
+        // shape review 1 (rule 15): the surface over the column not known is never "on the surface" - the walk up ends with that
+        assertTrue(NeedChain.walkUpShort(-1, 3, "-28 22 -48").contains("where the surface is not known"), "not known is never reached");
+        // the climb the same: out only on a known surface; not known - on while Baritone climbs, then its fact
+        var rg = io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.class;
+        assertTrue(io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.climbEnd(0, true, "x").startsWith("ok: on the surface"), rg.getSimpleName());
+        assertNull(io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.climbEnd(-1, true, "x"), "not known: climbing on");
+        assertNull(io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.climbEnd(47, true, "x"));
+        assertTrue(io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.climbEnd(-1, false, "x").contains("where the surface is not known"));
+        assertTrue(io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.climbEnd(47, false, "x").contains("with 47 blocks over the feet"));
         var w = Z77ExploreTest.deep(word -> null).withBag(Map.of("minecraft:stone_pickaxe", 1, "minecraft:cobblestone", 20));
         assertEquals(new Step.ToSurface(-181, 64, 27), NeedChain.resolve("raw_iron", 3, w).steps().get(0), "the walk up as before");
         FactChange.exploreHere(new int[]{-181, 16, 27}, "under ground: no target from here");
@@ -255,5 +263,8 @@ class Z77RoundFixTest {
         assertFalse(s.line().contains(" 0 s"), "no number for a trip not priced: " + s.line());
         Chain priced = NeedChain.resolvePlaybook(pb, w);
         assertSame(priced, BatchWay.shape("b1", 6, pb, priced, Map.of()).chain(), "a priced trip runs");
+        // shape review 3: an explore trip priced 0 s is refused too
+        Chain zeroExplore = new Chain(List.of(new Step.Explore(5, "raw_iron")), 0, "x", true, null);
+        assertTrue(BatchWay.shape("b1", 6, pb, zeroExplore, Map.of()).line().contains("refused (priced 0.0 s"), "an explore trip of 0 s");
     }
 }

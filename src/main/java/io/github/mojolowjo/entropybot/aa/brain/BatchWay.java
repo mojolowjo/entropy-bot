@@ -52,16 +52,24 @@ public final class BatchWay {
 
     private static long landed(NeedChain.World w) { return w.path() == null ? 0 : w.path().landed(); }
 
-    /** Per ORDER (its own holds and world): the trip it was last priced; per trip key the leg starts of the last one priced. */
+    /** Per BATCH (trip key): the trip last priced, and its leg starts (shape review 2). */
     private static final Map<String, Trip> TRIPS = new ConcurrentHashMap<>();
     private static final Map<String, Map<Step, String>> LEGS = new ConcurrentHashMap<>();
     private static final Map<String, String> SAID = new ConcurrentHashMap<>(), TOLD = new ConcurrentHashMap<>();
 
     /** Tests and a new runtime: forget every trip. */
-    public static void clear() { TRIPS.clear(); LEGS.clear(); SAID.clear(); TOLD.clear(); }
+    public static void clear() { TRIPS.clear(); LEGS.clear(); OWN.clear(); PRICED.clear(); SAID.clear(); TOLD.clear(); }
 
-    /** The order's kept trip is priced again on its next ask (a re-price: the stand's estimates, a landed path). */
-    static void forget(Goals.Goal g) { TRIPS.remove(g.id()); }
+    /** The batch's kept trip is priced again on its next ask (a re-price: the stand's estimates, a landed path). */
+    static void forget(Goals.Goal g) {
+        TRIPS.remove(tripKey(g));
+        OWN.remove(g.id());
+    }
+
+    /** Tests (R3): how many trips this batch priced so far (each a derivation and its legs' resolve). */
+    public static int priced(String tk) { return PRICED.getOrDefault(tk, 0); }
+
+    private static final Map<String, Integer> PRICED = new ConcurrentHashMap<>();
 
     /** The trip's key: the batch ("b1"), or the order alone ("order goal.torch"). */
     public static String tripKey(Goals.Goal g) { return g.batch != null ? g.batch : "order " + g.id(); }
@@ -92,28 +100,51 @@ public final class BatchWay {
     /** A trip is for plain-item orders only (a strip order or a group runs its own chain). */
     static boolean tripOrder(Goals.Goal g) { return g.strip == null && !g.r.group(); }
 
-    private static String tripKeyOf(Blackboard bb, Goals.Goal g, List<Goals.Goal> open, NeedChain.World w) {
-        StringBuilder b = new StringBuilder(tripKey(g)).append(" | ").append(g.r.key());
+    /** The trip's key (pure): the batch, its open orders, the bag, the place in failures.moved cells, the batch's holds. */
+    static String tripKeyOf(String tk, List<Goals.Goal> open, Map<String, Integer> bag, int[] pos, java.util.Collection<String> held) {
+        StringBuilder b = new StringBuilder(tk).append(" |");
         for (Goals.Goal o : open) b.append(' ').append(o.r.key()).append(':').append(o.n);
-        b.append(" | ").append(new TreeMap<>(w.bag()));
-        int[] pos = bb.in == null ? null : bb.in.pos;
+        b.append(" | ").append(new TreeMap<>(bag));
         int cell = Math.max(1, (int) Math.round(Failures.movedV()));
         if (pos != null && pos.length >= 3) b.append(" | at ").append(Math.floorDiv(pos[0], cell)).append(',').append(Math.floorDiv(pos[1], cell)).append(',').append(Math.floorDiv(pos[2], cell));   // structural: x y z
-        b.append(" | held ").append(new TreeMap<>(Goals.droppedSources(g)).keySet());
+        b.append(" | held ").append(new java.util.TreeSet<>(held));
         return b.toString();
+    }
+
+    /** 0.39.z77 shape review 2: an order's own chain where no trip is derived, kept by the trip's key and the landings (per order). */
+    private record Own(String key, long landed, boolean settled, NeedChain.Chain chain) {}
+
+    private static final Map<String, Own> OWN = new ConcurrentHashMap<>();
+
+    private static NeedChain.Chain own(Goals.Goal g, String key, long landed, java.util.function.Supplier<NeedChain.Chain> own) {
+        Own o = OWN.get(g.id());
+        if (o != null && o.key().equals(key) && (o.settled() || o.landed() == landed)) return o.chain();
+        NeedChain.Chain c = own.get();
+        PRICED.merge("own " + g.id(), 1, Integer::sum);
+        if (c != null) OWN.put(g.id(), new Own(key, landed, !c.waiting() && !Steps.waitsOnPaths(c.steps()), c));
+        return c;
     }
 
     /**
      * The trip {@code g} runs now on {@code w} (kept while its key holds), or {@code own} - the order's own chain, asked only
-     * when the derivation does not stand (its one leg, said). Null own: the caller resolves it then.
+     * when the derivation does not stand (its one leg, said).
+     * <p>0.39.z77 shape review 2 (manager: one re-price per landed path for the whole batch; the 42-per-tick lesson): the trip
+     * is kept per BATCH - every order of it asks the same trip on the same world, the batch's holds all applied (each open
+     * order's dropped sources), so the six orders' per-tick tests share one price and a landed path re-prices it once.
      */
-    static NeedChain.Chain trip(Blackboard bb, Goals.Goal g, NeedChain.World w, java.util.function.Supplier<NeedChain.Chain> own) {
+    static NeedChain.Chain trip(Blackboard bb, Goals.Goal g, NeedChain.World w0, java.util.function.Supplier<NeedChain.Chain> own) {
         List<Goals.Goal> open = open(bb, g);
         if (open.isEmpty()) open = List.of(g);
-        String key = tripKeyOf(bb, g, open, w);
         String tk = tripKey(g);
-        Trip kept = TRIPS.get(g.id());
-        if (kept != null && kept.holds(key, landed(w))) return kept.chain() != null ? kept.chain() : own.get();
+        Map<String, String> mine = Goals.droppedSources(g), others = new TreeMap<>();
+        for (Goals.Goal o : open) for (var e : Goals.droppedSources(o).entrySet()) if (!mine.containsKey(e.getKey())) others.put(e.getKey(), e.getValue());
+        NeedChain.World w = others.isEmpty() ? w0 : w0.withoutSources(others);
+        java.util.Set<String> held = new java.util.TreeSet<>(mine.keySet());
+        held.addAll(others.keySet());
+        String key = tripKeyOf(tk, open, w.bag(), bb.in == null ? null : bb.in.pos, held);
+        Trip kept = TRIPS.get(tk);
+        if (kept != null && kept.holds(key, landed(w))) return kept.chain() != null ? kept.chain() : own(g, key, landed(w), own);
+        PRICED.merge(tk, 1, Integer::sum);
         long t0 = TickLaps.AA.now();
         List<Playbook.Target> targets = new ArrayList<>();
         for (Goals.Goal o : open) targets.add(new Playbook.Target(itemOf(o), o.n));
@@ -129,19 +160,19 @@ public final class BatchWay {
                 : shape(tk, open.size(), pb, l == null ? null : l.chain(), l == null ? Map.of() : l.starts());
         Map<Step, String> starts = l == null || s.chain() != l.chain() ? Map.of() : l.starts();
         Trip t = new Trip(key, landed(w), s.settled(), pb, s.chain(), starts, s.line());
-        TRIPS.put(g.id(), t);
+        TRIPS.put(tk, t);
         LEGS.put(tk, starts);
         if (!s.line().equals(SAID.get(tk))) {
             SAID.put(tk, s.line());
             if (bb.port != null) bb.port.log(g.r.key() + ": " + s.line());
         }
-        return s.chain() != null ? s.chain() : own.get();
+        return s.chain() != null ? s.chain() : own(g, key, landed(w), own);
     }
 
     /** The owner hears the trip the order took, once a line, before its steps run (Goals.took). */
     static void announce(Blackboard bb, Goals.Goal g) {
         String tk = tripKey(g);
-        Trip t = TRIPS.get(g.id());
+        Trip t = TRIPS.get(tk);
         if (t == null || t.chain() == null || bb.port == null || !t.settled() || t.line().equals(TOLD.get(tk))) return;
         TOLD.put(tk, t.line());
         bb.port.tellOwner(t.line());
@@ -166,7 +197,7 @@ public final class BatchWay {
             return new Shaped(null, head + "waits (" + pc.missing() + "): the order's own chain says it", false);
         }
         if (!pc.ok()) return new Shaped(pc, head + "no way (" + pc.missing() + ")", true);
-        if (!pc.steps().isEmpty() && !pc.explore() && !(pc.seconds() > 0)) {
+        if (!pc.steps().isEmpty() && !(pc.seconds() > 0)) {                      // shape review 3: an explore trip too
             String z = zero(pc.seconds());
             return new Shaped(new NeedChain.Chain(List.of(), 0, "trip refused: " + z, false, "trip refused: " + z), head + "refused (" + z + ")", true);
         }

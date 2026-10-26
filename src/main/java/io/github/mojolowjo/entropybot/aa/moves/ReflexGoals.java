@@ -95,5 +95,17 @@ public final class ReflexGoals {
         @Override public String toString() { return "UnderSky (feet under open sky, pull up to y " + upTo + ")"; }
     }
 
+    /**
+     * 0.39.z77 shape review 1 (rule 15): the climb's end from the feet's {@code depth} under ground (-1: the surface over the
+     * column not known) and whether Baritone's goal still runs: null - climbing on; "ok: ..." - out (a KNOWN surface, 0
+     * over the feet); else the failure (Baritone's goal ended under ground, or where the surface is not known - never "out").
+     */
+    public static String climbEnd(int depth, boolean active, String at) {
+        if (depth == 0) return "ok: on the surface at " + at + " (under open sky)";
+        if (active) return null;
+        return depth < 0 ? "Baritone's climb goal ended at " + at + " where the surface is not known (rule 15: not known is never out)"
+                : "Baritone's climb goal ended at " + at + " with " + depth + " blocks over the feet";
+    }
+
     private ReflexGoals() { }
 }

@@ -3648,7 +3648,7 @@ public final class AaRuntime implements JobPort {
         List<String> many = AaCommands.wantList(arg);
         if (many.size() > 1) {
             StringBuilder out = new StringBuilder();
-            // 0.39.z77 J2: the orders of one line are a batch (BatchWay: their playbook is priced beside the ad-hoc chains)
+            // 0.39.z77 J2 / SHAPE CHANGE: the orders of one line are a batch (BatchWay: one trip for them)
             String was = wantBatch;
             wantBatch = "b" + (++batchSerial);
             try {

@@ -20,9 +20,9 @@ import java.util.function.Predicate;
 
 /**
  * 0.39.z77 J2 (design D5 J2; RULES rule 1 clarified 2026-10-25: "a playbook is an option, not a script"): the player's route
- * for a BATCH of orders, derived from the game's data - never a written list (rule 4). One way beside the ad-hoc chain
- * (each order its own chain), priced as one by {@link NeedChain#resolvePlaybook}, picked by Goals only when cheaper (a tie
- * keeps the ad-hoc chain; never forced).
+ * for a BATCH of orders (or one order), derived from the game's data - never a written list (rule 4). 0.39.z77 SHAPE CHANGE
+ * (owner 2026-10-26: playbook first, repair locally): every plain-item order runs it as its ONE trip (BatchWay), priced inside
+ * its legs by {@link NeedChain#resolvePlaybook}; no comparison with another planner.
  * <ul>
  * <li>Each order's recipe tree is expanded (crafting recipes, then furnace recipes; a tag stays a tag: any member that
  *     stands, an all-surface one first) down to its leaves - only to CLASSIFY and to SUM (which recipe runs stays the
@@ -40,7 +40,8 @@ import java.util.function.Predicate;
  *     orders and gates that unlock more first - a tool tier - then the rest in the batch's order).</li>
  * </ul>
  * A fact not loaded (the mining tiers, the world-gen read) is "not loaded", said (rule 15); any order that cannot be
- * classified fails the playbook with its reason (rule 7) and the ad-hoc chain runs. Pure (JUnit: Z77PlaybookTest).
+ * classified fails the derivation with its reason (rule 7), said; the order then runs its own chain as its one leg
+ * (BatchWay). Pure (JUnit: Z77PlaybookTest).
  * Loader notes: none (the facts come through AaRuntime: GenWhere from the jars' world-gen JSON, the strip facts, the
  * recipe index synced by the server).
  */

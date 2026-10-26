@@ -673,37 +673,35 @@ public final class StepHands implements Steps.Hands {
 
     private String climb(LocalPlayer p) {
         int[] me = Jobs.here(p);
-        int depth = Jobs.underDepth(p.level(), me[0], me[1], me[2]);
+        int depth = Jobs.underDepthKnown(p.level(), me[0], me[1], me[2]);
         if (depth == 0) { instant = "ok: already under open sky at y " + me[1]; return null; }
         IBaritone b = Jobs.baritone();
         if (b == null) return "error: climb: baritone not loaded";
         int top = Jobs.surfaceNoLeaves(p.level(), me[0], me[2]);
-        int upTo = io.github.mojolowjo.entropybot.world.SurfaceHeight.known(top) && top > me[1] ? top : me[1] + depth;
+        // shape review 1 (rule 15): the surface not known (depth -1) - the goal still pulls up; "out" is only a known surface
+        int upTo = io.github.mojolowjo.entropybot.world.SurfaceHeight.known(top) && top > me[1] ? top : me[1] + Math.max(1, depth);
         io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "climb");
         b.getCustomGoalProcess().setGoalAndPath(new io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.UnderSky(SKY_CELLS, upTo));
         climbing = true;
-        LOG.info("[entropybot] steps: climb - Baritone's goal: the feet under open sky (pull up to y {}; {} blocks over the feet at {})", upTo, depth, Jobs.fmt(me));
+        LOG.info("[entropybot] steps: climb - Baritone's goal: the feet under open sky (pull up to y {}; {} over the feet at {})", upTo, depth < 0 ? "the surface not known" : depth + " blocks", Jobs.fmt(me));
         return null;
     }
 
     private Car.Status climbStatus(LocalPlayer p) {
         if (instant != null) return Car.Status.done(instant);
         int[] me = Jobs.here(p);
-        int depth = Jobs.underDepth(p.level(), me[0], me[1], me[2]);
+        int depth = Jobs.underDepthKnown(p.level(), me[0], me[1], me[2]);
         IBaritone b = Jobs.baritone();
-        if (depth == 0) {
-            if (b != null) Jobs.cancel(b);
-            climbing = false;
-            return Car.Status.done("ok: on the surface at " + Jobs.fmt(me) + " (under open sky)");
-        }
         if (b == null) { climbing = false; return Car.Status.failed("climb: baritone not loaded"); }
-        if (!b.getCustomGoalProcess().isActive() && !Core.INSTANCE.reflexes.hold()) {
-            climbing = false;
-            String why = "Baritone's climb goal ended at " + Jobs.fmt(me) + " with " + depth + " blocks over the feet";
-            io.github.mojolowjo.entropybot.aa.moves.FactChange.climb(why);     // 0.39.z77 answers (2): the climb's own fact
-            return Car.Status.failed("climb: " + why);
+        String end = io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.climbEnd(depth, b.getCustomGoalProcess().isActive() || Core.INSTANCE.reflexes.hold(), Jobs.fmt(me));
+        if (end == null) return Car.Status.running("climbing: y " + me[1] + ", " + (depth < 0 ? "the surface not known" : depth + " blocks over the feet"));
+        climbing = false;
+        if (end.startsWith("ok")) {
+            Jobs.cancel(b);
+            return Car.Status.done(end);
         }
-        return Car.Status.running("climbing: y " + me[1] + ", " + depth + " blocks over the feet");
+        io.github.mojolowjo.entropybot.aa.moves.FactChange.climb(end);     // 0.39.z77 answers (2): the climb's own fact
+        return Car.Status.failed("climb: " + end);
     }
 
     /** The client level as the climb's goal reads it (Baritone calls it from its path thread, as the reflex goals' cells). */
@@ -866,7 +864,7 @@ public final class StepHands implements Steps.Hands {
      */
     private String toSurface(LocalPlayer p, Step.ToSurface t) {
         int[] me = Jobs.here(p);
-        if (Jobs.underDepth(p.level(), me[0], me[1], me[2]) == 0) { instant = "ok: already under open sky at y " + me[1]; return null; }
+        if (Jobs.underDepthKnown(p.level(), me[0], me[1], me[2]) == 0) { instant = "ok: already under open sky at y " + me[1]; return null; }
         String r = walk(new Step.Walk(t.x(), t.y(), t.z(), 0));
         return r == null ? null : "error: " + surfaceRefused(t, "the walk up did not start: " + r);
     }
@@ -875,7 +873,7 @@ public final class StepHands implements Steps.Hands {
     private Car.Status toSurfaceStatus(LocalPlayer p, Step.ToSurface t) {
         if (instant != null) return Car.Status.done(instant);
         int[] me = Jobs.here(p);
-        if (Jobs.underDepth(p.level(), me[0], me[1], me[2]) == 0) {
+        if (Jobs.underDepthKnown(p.level(), me[0], me[1], me[2]) == 0) {
             if (walkJob != null && c.jobs.running() && c.jobs.job == walkJob) c.jobs.finish("done: on the surface at " + Jobs.fmt(me));
             LOG.info("[entropybot] steps: {} - on the surface at {} (under open sky)", t.text(), Jobs.fmt(me));
             return Car.Status.done("ok: on the surface at " + Jobs.fmt(me));
@@ -886,7 +884,7 @@ public final class StepHands implements Steps.Hands {
         // failed "under ground" and the re-plan walked "up" again, until the order's timeout): a walk up that ends with the feet
         // still under ground (NeedChain.walkUpShort) did not reach the surface - the walk up's fact, held for the order
         if (st.state() == Car.State.DONE) {
-            String short_ = io.github.mojolowjo.entropybot.aa.NeedChain.walkUpShort(Jobs.underDepth(p.level(), me[0], me[1], me[2]), io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth(), Jobs.fmt(me));
+            String short_ = io.github.mojolowjo.entropybot.aa.NeedChain.walkUpShort(Jobs.underDepthKnown(p.level(), me[0], me[1], me[2]), io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth(), Jobs.fmt(me));
             if (short_ != null) return Car.Status.failed(surfaceRefused(t, short_));
         }
         if (st.state() != Car.State.FAILED) return st;
