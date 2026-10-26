@@ -479,8 +479,9 @@ public final class AaDesires {
         Node node = AaTree.idleCd(id + ".cd", job);
         return new Desire(id, Desire.Kind.OWNER, node, bb -> io.github.mojolowjo.entropybot.aa.brain.Goals.score(bb, g))
                 .infeasible(bb -> io.github.mojolowjo.entropybot.aa.brain.Goals.blocked(bb, g))
-                // orders-tier: a run that fails parks the order with its reason, said once; a busy slot is no reason
-                .onFail((bb, why) -> { if (!io.github.mojolowjo.entropybot.aa.brain.Goals.passing(why)) io.github.mojolowjo.entropybot.aa.brain.Goals.park(bb, g, why); })
+                // orders-tier: a run that fails parks the order with its reason, said once; a busy slot is no reason;
+                // 0.39.z77 met: a met order has no stop (its carried run's end is logged under the batch)
+                .onFail((bb, why) -> io.github.mojolowjo.entropybot.aa.brain.Goals.runFailed(bb, g, why))
                 .prereq(bb -> io.github.mojolowjo.entropybot.aa.brain.Goals.prereq(bb, g))
                 .fresh(g.given + io.github.mojolowjo.entropybot.aa.brain.Goals.freshMs())
                 // 0.39.z42: a leg that ended done (an explore that found its source) is no reason to rest the order: the next

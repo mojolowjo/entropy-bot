@@ -508,6 +508,47 @@ class Z77PlaybookTest {
     }
 
     /**
+     * 0.39.z77 met (run BR 12:03:14 "got 1 iron_pickaxe", 12:04:02 "order iron_pickaxe stopped: stopped at step 20 (stand
+     * while paths compute (up to 30 s)): stood 30 s ... (re-plan: the order is met)"): the pickaxe's order runs the batch's
+     * playbook, is met mid-run, then the run ends on a stand. A met order has no stop: no "order iron_pickaxe stopped" line,
+     * the batch's line instead, nothing parked, the batch's other orders still open. An open order's failed run still parks.
+     */
+    @Test
+    void met_aCarriedRunsEndIsTheBatchsLineNeverAStop() {
+        data();
+        Clock.Fake clock = new Clock.Fake(10_000_000);
+        FakePort port = new FakePort();
+        World w = world(kitBag(9), Map.of());
+        List<Goals.Goal> gs = new ArrayList<>();
+        Blackboard bb = batchBoard(port, clock, () -> w, gs);
+        Goals.Goal pick = gs.get(1);
+        Goals.routine(bb, pick);
+        assertTrue(pick.playbookRun, "the pickaxe's order runs the batch's playbook");
+        bb.in.bag = Map.of("iron_pickaxe", 1, "torch", 4);           // the pickaxe crafted mid-run: its order is met
+        assertTrue(Goals.done(bb).contains(pick));
+        assertTrue(Goals.carriesOn(pick, pick.id()), "its run carries on");
+        // the run's stand ends (its chain stood: no priced way); the re-plan answers "the order is met", the run ends with it
+        Step stand = new Step.AwaitPaths(30);
+        pick.pricedWay = false;
+        var r = Goals.replan(bb, pick, stand, FactChange.priced("stood 30 s"), "stood 30 s");
+        assertNull(r.steps());
+        String why = "stopped at step 20 (" + stand.text() + "): stood 30 s (re-plan: " + r.why() + ")";
+        assertFalse(Goals.runFailed(bb, pick, why), "a met order is not parked");
+        assertNull(pick.parked);
+        assertTrue(port.log.stream().noneMatch(l -> l.startsWith("order iron_pickaxe stopped")), port.log.toString());
+        assertTrue(port.told.stream().noneMatch(l -> l.startsWith("order iron_pickaxe stopped")), port.told.toString());
+        assertTrue(port.log.contains("batch b1: the run ended: " + why + "; the order iron_pickaxe is met"), port.log.subList(Math.max(0, port.log.size() - 3), port.log.size()).toString());
+        List<Goals.Goal> open = Goals.of(bb);                         // the torches (4 in the bag) were met too
+        assertEquals(List.of("iron_helmet", "iron_chestplate", "iron_leggings", "iron_boots"), open.stream().map(g -> g.r.key()).toList());
+        for (Goals.Goal g : open) assertNull(g.parked, g.r.key() + " still open");
+        // an order not met: its failed run parks it with the stop line, as before
+        Goals.Goal helmet = gs.get(2);
+        assertTrue(Goals.runFailed(bb, helmet, "stopped at step 3 (x): failed"));
+        assertTrue(port.log.stream().anyMatch(l -> l.startsWith("order iron_helmet stopped: stopped at step 3 (x): failed")), port.log.toString());
+        assertFalse(Goals.runFailed(bb, gs.get(3), "busy: the slot"), "a passing reason parks nothing");
+    }
+
+    /**
      * Review 1 (R3): while a descent's path computes (the strip cells COMPUTING, paths pending) the verdict is not settled -
      * still kept until the next answer lands: the order's chain asked again and its blocked() test every tick price no
      * second comparison (no walk asked again); a landed answer makes the next ask compare again.

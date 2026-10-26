@@ -104,6 +104,9 @@ public final class Goals {
          * fact inside that run, not the run's end ({@link #carriesOn}); the run is re-planned only on a changed fact.
          */
         public boolean playbookRun;
+
+        /** 0.39.z77 met: the order was taken off the goals as met ({@link #done}); a later end of its run is no stop ({@link #runFailed}). */
+        public boolean met;
     }
 
     /**
@@ -569,6 +572,22 @@ public final class Goals {
         return true;
     }
 
+    /**
+     * 0.39.z77 met (run BR 12:04:02: "order iron_pickaxe stopped: stopped at step 20 (stand while paths compute ...) (re-plan:
+     * the order is met)", 48 s after its "got"): the order's run ended failed. A met order has no stop - the carried batch run's
+     * end is logged under the batch ("batch b1: the run ended: &lt;why&gt;; the order iron_pickaxe is met"), nothing is parked,
+     * and the batch's next open order takes over as before (the met order's desire leaves when its run ends, AaRuntime's
+     * carried set). A passing reason parks nothing; any other parks the order ({@link #park}). True: parked.
+     */
+    public static boolean runFailed(Blackboard bb, Goal g, String why) {
+        if (passing(why)) return false;
+        boolean met = g.met || (bb.in != null && bb.in.bag != null && have(bb.in.bag, g) >= g.n);
+        if (!met) return park(bb, g, why);
+        bb.port.log((g.batch != null ? "batch " + g.batch : "order " + g.r.key()) + ": the run ended: "
+                + (why == null || why.isBlank() ? "no reason given" : why) + "; the order " + g.r.key() + " is met");
+        return false;
+    }
+
     /** orders-tier: a failure that says nothing about the order itself (the slot busy, no facts yet): no park. */
     public static boolean passing(String why) {
         if (why == null) return false;
@@ -902,6 +921,7 @@ public final class Goals {
         if (JobBoundary.mid()) return out;
         for (Goal g : of(bb)) if (have(bb.in.bag, g) >= g.n) out.add(g);
         of(bb).removeAll(out);
+        for (Goal g : out) g.met = true;         // 0.39.z77 met: a carried run's later end is logged under the batch, never a stop
         for (Goal g : out) finish(bb, g);        // 0.39.z61 (ruling 1 option c): its items stay safe from pillaring
         return out;
     }
