@@ -213,26 +213,47 @@ class Z77RoundFixTest {
     }
 
     /**
-     * Run BG 09:23:33 ("the ad-hoc chains run (playbook 0 s vs ad-hoc 1463 s)"; manager: a way priced 0 is never valid): a
-     * playbook not priced yet shows no number in chat; one "priced" 0 s is refused with that reason (the ad-hoc runs); an
-     * ad-hoc row of 0 s is refused too (a priced playbook runs).
+     * Run BI 15:51 / 22:41 ("climb: stopped at step 1 (goto -131 14 19): "goto" was deleted"): the climb step is one Baritone
+     * goal, the feet under open sky (rule 2) - never the old climb verb's staircase of deleted owner verbs. A column of rock
+     * from y 17 to 63 under open sky at 64: in the goal only at 64 and up (feet and head open, the head under sky); the
+     * heuristic pulls up (Baritone's Y-level cost, 0 at y 64).
      */
     @Test
-    void item5_aZeroSecondPlaybookIsRefused() {
+    void climb_isOneBaritoneGoal_neverTheDeletedVerbs() throws java.io.IOException {
+        var cells = new io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.SkyCells() {
+            @Override public boolean open(int x, int y, int z) { return y < 17 || y >= 64 || y == 22 || y == 23; }      // a pocket at 22-23
+            @Override public boolean sky(int x, int y, int z) { return y >= 64; }
+        };
+        var g = new io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.UnderSky(cells, 64);
+        assertFalse(g.isInGoal(0, 22, 0), "a pocket under the rock is no way out");
+        assertTrue(g.isInGoal(0, 64, 0));
+        assertTrue(g.heuristic(0, 22, 0) > 0);
+        assertEquals(0, g.heuristic(0, 64, 0));
+        String hands = java.nio.file.Files.readString(java.nio.file.Path.of("src/main/java/io/github/mojolowjo/entropybot/commands/StepHands.java"));
+        assertFalse(hands.contains("DigCommands.climb("), "the step never runs the climb verb's chain");
+        assertTrue(hands.contains("new io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.UnderSky("), "the climb is the Baritone goal");
+    }
+
+    /**
+     * Run BG 09:23:33 ("the ad-hoc chains run (playbook 0 s vs ad-hoc 1463 s)": a playbook not priced, shown as 0 s; manager:
+     * a way priced 0 is never valid). SHAPE CHANGE: no comparison is left to show it, and a trip "priced" 0 s with steps is
+     * refused with that reason (no steps run); a trip waiting on its first leg's walk stands, its line with no number.
+     */
+    @Test
+    void item5_aZeroSecondTripIsRefused() {
         Z77PlaybookTest.data();
         World w = Z77PlaybookTest.world(Z77PlaybookTest.kitBag(9), Map.of());
         Playbook pb = Playbook.derive(Z77PlaybookTest.KIT, Playbook.facts(w, null));
-        Chain notYet = new Chain(List.of(), 0, "x", false, NeedChain.NOT_PRICED + ": the descent's walk computing");
-        BatchWay.Result r0 = BatchWay.pick("b1", pb, notYet, new BatchWay.Row(1462.7, true, null, false, 4));
-        assertFalse(r0.playbook());
-        assertEquals("batch b1: the ad-hoc chains run (playbook not priced vs ad-hoc 1463 s)", BatchWay.chatLine("b1", r0));
         Chain zero = new Chain(List.of(new Step.Craft("torch", 4)), 0, "x", false, null);
-        BatchWay.Result r = BatchWay.pick("b1", pb, zero, new BatchWay.Row(1462.7, true, null, false, 4));
-        assertFalse(r.playbook(), r.line());
-        assertTrue(r.line().contains("playbook refused (priced 0.0 s: a way priced 0 or less is never valid)"), r.line());
+        BatchWay.Shaped z = BatchWay.shape("b1", 6, pb, zero, Map.of());
+        assertFalse(z.chain().ok(), z.line());
+        assertTrue(z.chain().steps().isEmpty());
+        assertEquals("trip b1 (6 orders): refused (priced 0.0 s: a way priced 0 or less is never valid)", z.line());
+        Chain notYet = new Chain(List.of(), 0, "x", false, "descent to y 16: " + PathPrice.NOT_KNOWN + " yet (computing)");
+        BatchWay.Shaped s = BatchWay.shape("b1", 4, pb, notYet, Map.of());
+        assertTrue(s.chain().ok() && s.chain().steps().get(0) instanceof Step.AwaitPaths, s.line());
+        assertFalse(s.line().contains(" 0 s"), "no number for a trip not priced: " + s.line());
         Chain priced = NeedChain.resolvePlaybook(pb, w);
-        BatchWay.Result ra = BatchWay.pick("b1", pb, priced, new BatchWay.Row(0, false, null, false, 6));
-        assertTrue(ra.playbook(), ra.line());
-        assertTrue(ra.line().contains("ad-hoc refused (priced 0.0 s"), ra.line());
+        assertSame(priced, BatchWay.shape("b1", 6, pb, priced, Map.of()).chain(), "a priced trip runs");
     }
 }

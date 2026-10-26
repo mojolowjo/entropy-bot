@@ -539,7 +539,7 @@ public final class NeedChain {
     }
 
     /** A need word as the lines write it: "#minecraft:planks" -> "#planks". */
-    static String shw(String word) {
+    public static String shw(String word) {
         if (word == null) return "?";
         if (word.indexOf('|') >= 0) {
             List<String> out = new ArrayList<>();
@@ -995,7 +995,7 @@ public final class NeedChain {
         List<java.util.Set<Step>> added = new ArrayList<>();
         Chain ch = playbookChain(c, pb, added);
         Map<Step, String> starts = new java.util.IdentityHashMap<>();
-        if (ch.ok() && !ch.explore() && pb != null) {
+        if (ch.ok() && pb != null) {                              // SHAPE CHANGE: an explore trip says its legs too
             int prev = -1, n = Math.min(added.size(), pb.legs().size());
             for (int i = 0; i < n; i++) {
                 int at = -1;
@@ -1042,12 +1042,25 @@ public final class NeedChain {
         // priced on; the chain's steps end at the explore (the re-price where it finds its source picks the rest)
         int exploreEnd = -1;
         String exploreFor = null;
+        // 0.39.z77 SHAPE CHANGE (owner 2026-10-26 10:30: playbook first, pricing only inside legs): the trip runs as derived;
+        // a leg whose price cannot be had from here yet - a walk not known (rule 15/18), or a second unknown after the surface
+        // explore - is priced when the bot gets there: the run's steps end before it ({@code later}) and the trip is priced
+        // again from the bag at that boundary (never a whole-order "which planner")
+        String later = null;
+        int legNo = 0;
+        legs:
         for (Playbook.Leg leg : pb.legs()) {
+            legNo++;
             java.util.Set<Step> before = ids(c.steps);
             if (leg.kind() == Playbook.Kind.DESCENT) {
                 String p = playbookStrip(c, leg, levelY, exploreEnd >= 0);
+                if (c.fail != null && legNo > 1 && !before.isEmpty() && waitsHere(c.fail)) {
+                    later = "descent to y " + leg.y() + ": " + c.fail;
+                    cutTo(c, before);
+                    break;
+                }
                 if (c.fail != null) return playbookFails(c, "descent to y " + leg.y() + ": " + c.fail);
-                if (c.stuck && exploreEnd >= 0) return playbookFails(c, secondUnknown(c));     // price review 2: never priced on fewer legs
+                if (c.stuck && exploreEnd >= 0) { later = secondUnknown(c); break; }     // price review 2 / SHAPE CHANGE: priced on its find
                 if (c.stuck) return playbookFails(c, "descent to y " + leg.y() + ": its pickaxe ends in an explore (no known source for " + shw(c.unknown) + ")");
                 if (p != null) phrases.add(p);
                 levelY = leg.y();
@@ -1066,9 +1079,14 @@ public final class NeedChain {
                     // a gate: the pickaxe the derivation chose for its tier (its leaves on this leg's side), made unless one digs it
                     String p = gate ? (leg.tier() > c.pickTier ? obtain(c, item, c.have(item) + 1) : null) : obtain(c, item, t.n());
                     if (c.fail == null && !c.stuck) madePick(c, item);
+                    if (c.fail != null && legNo > 1 && !before.isEmpty() && waitsHere(c.fail)) {
+                        later = name + ": " + sh(item) + ": " + c.fail;
+                        cutTo(c, before);
+                        break legs;
+                    }
                     if (c.fail != null) return playbookFails(c, name + ": " + sh(item) + ": " + c.fail);
                     if (c.stuck) {
-                        if (exploreEnd >= 0) return playbookFails(c, secondUnknown(c));       // price review 2: never priced on fewer legs
+                        if (exploreEnd >= 0) { later = secondUnknown(c); break legs; }       // price review 2 / SHAPE CHANGE: priced on its find
                         if (!surface) return playbookFails(c, name + ": " + sh(item) + " ends in an explore (no known source for " + shw(c.unknown) + ")");
                         got.add(sh(item) + " " + t.n() + " <- " + p + " (then priced as had)");
                         exploreEnd = c.steps.size();
@@ -1093,7 +1111,21 @@ public final class NeedChain {
             c.unknown = exploreFor;
             c.steps.subList(exploreEnd, c.steps.size()).clear();       // the run's steps end at the explore; the price is all legs
         }
-        return finish(c, PLAYBOOK, PLAYBOOK + " <- " + String.join(" > ", phrases) + (exploreEnd >= 0 ? ": " + s(c.seconds) + " priced with the legs after the explore" : ""));
+        String tail = later != null ? "; the legs from there are priced when the bot gets there (" + later + ")"
+                : exploreEnd >= 0 ? ": " + s(c.seconds) + " priced with the legs after the explore" : "";
+        return finish(c, PLAYBOOK, PLAYBOOK + " <- " + String.join(" > ", phrases) + tail);
+    }
+
+    /** 0.39.z77 SHAPE CHANGE: a leg's failure that is a wait from here (a walk not known, chunks, the loot book or tiers not read). */
+    public static boolean waitsHere(String fail) {
+        return fail != null && (fail.contains(PathPrice.NOT_KNOWN) || fail.startsWith(LootBook.WAITING) || fail.endsWith(SOURCE_NOT_LOADED) || fail.startsWith(MINING_WAIT));
+    }
+
+    /** 0.39.z77 SHAPE CHANGE: the plan back to the steps it held at a leg's start (the leg priced when the bot gets there). */
+    private static void cutTo(Ctx c, java.util.Set<Step> before) {
+        c.steps.removeIf(s -> !before.contains(s));
+        c.fail = null;
+        c.stuck = false;
     }
 
     /** 0.39.z77 J2: a pickaxe the playbook just made that digs better than the one in hand is the one the next strip digs with (fresh). */

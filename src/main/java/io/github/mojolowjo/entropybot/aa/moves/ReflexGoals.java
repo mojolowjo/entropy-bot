@@ -62,5 +62,38 @@ public final class ReflexGoals {
         @Override public String toString() { return "Water (feet in water)"; }
     }
 
+    /** The world as the climb's goal sees it: a cell with no collision and no fluid, and the sky seen from a cell. */
+    public interface SkyCells {
+        boolean open(int x, int y, int z);
+
+        boolean sky(int x, int y, int z);
+    }
+
+    /** 0.39.z77 round fix (run BI): the feet at y are out: feet and head open, the head under open sky. */
+    public static boolean underSky(SkyCells c, int x, int y, int z) {
+        return c.open(x, y, z) && c.open(x, y + 1, z) && c.sky(x, y + 1, z);
+    }
+
+    /**
+     * 0.39.z77 round fix (run BI 15:51 / 22:41: the climb ran deleted owner verbs, "goto" and "dig"; rule 2): the climb's one
+     * goal - the feet under open sky, anywhere; the heuristic pulls up toward {@code upTo} (Baritone's own Y-level cost), so the
+     * search digs and pillars up first. Baritone picks the cells, the digs and the placements.
+     */
+    public static final class UnderSky implements Goal {
+        private final SkyCells cells;
+        private final int upTo;
+
+        public UnderSky(SkyCells cells, int upTo) {
+            this.cells = cells;
+            this.upTo = upTo;
+        }
+
+        @Override public boolean isInGoal(int x, int y, int z) { return underSky(cells, x, y, z); }
+
+        @Override public double heuristic(int x, int y, int z) { return y >= upTo ? 0 : GoalYLevel.calculate(upTo, y); }
+
+        @Override public String toString() { return "UnderSky (feet under open sky, pull up to y " + upTo + ")"; }
+    }
+
     private ReflexGoals() { }
 }

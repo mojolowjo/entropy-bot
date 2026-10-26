@@ -416,7 +416,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.PlaceNear n -> placeNearStatus(n);
                 case Step.ToBand t -> toBandStatus(p, t);
                 case Step.ToStrip t -> toStripStatus(p, t);
-                case Step.Climb k -> climbStatus();
+                case Step.Climb k -> climbStatus(p);
                 case Step.AwaitPaths a -> standStatus(a);     // 0.39.z76 send-back 3 (rule 22)
                 case Step.ToStation t -> toStationStatus(t);
                 case Step.ToSurface t -> toSurfaceStatus(p, t);
@@ -455,7 +455,11 @@ public final class StepHands implements Steps.Hands {
                 IBaritone b = Jobs.baritone();
                 if (b != null) Jobs.cancel(b);
             }
-            if (step instanceof Step.Climb && climbing && c.chains.running() && "climb".equals(c.chains.name())) c.chains.clear();
+            if (step instanceof Step.Climb && climbing) {
+                climbing = false;
+                IBaritone b = Jobs.baritone();
+                if (b != null) Jobs.cancel(b);
+            }
             if ((req != null && !req.finished) || walkJob != null) {
                 if (c.jobs.running()) c.jobs.finish("stopped: " + why);
             }
@@ -496,8 +500,7 @@ public final class StepHands implements Steps.Hands {
         huntWalkAt = -1;
         huntWhy = null;
         climbing = false;
-        climbEnd = null;
-        bandCell = null;                         // 0.39.z65 item 3
+        bandCell = null;                        // 0.39.z65 item 3
         bandWalking = false;
         stripWalking = false;                    // 0.39.z76 review
         collectSpot = null;                      // 0.39.z76 send-back 2
@@ -655,42 +658,68 @@ public final class StepHands implements Steps.Hands {
         return mine(p, blocks, ids, k.n(), "cut " + k.n() + " kelp");
     }
 
-    // ---- the climb: the climb verb plans its own staircase and runs it as a chain of its own ----
+    // ---- the climb: one Baritone goal - the feet under open sky (ReflexGoals.UnderSky); Baritone digs, pillars and walks ----
 
-    private boolean climbing, climbHooked;
-    private String climbEnd;
+    /**
+     * 0.39.z77 round fix (run BI 15:51 / 22:41: "climb: stopped at step 1 (goto -131 14 19): "goto" was deleted" - the climb
+     * ran the old climb verb's staircase as a chain of deleted owner verbs; rule 2, Baritone is the car): the climb is ONE
+     * Baritone goal, the feet and head open under open sky ({@link io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.UnderSky},
+     * its heuristic pulling up toward the column's surface); Baritone picks every cell, dig, pillar and step. Done once the
+     * feet stand under open sky; Baritone's goal ending with the feet still under ground is the climb's fact (FactChange.climb,
+     * held for the order). Bounded by the step watch and the no-progress watch as every walk. Loader notes: vanilla
+     * Level#canSeeSky, heightmaps (Jobs.surfaceNoLeaves / underDepth); Baritone's custom goal process.
+     */
+    private boolean climbing;
 
     private String climb(LocalPlayer p) {
-        if (!climbHooked) {
-            climbHooked = true;
-            c.chains.onEnd((name, msg) -> {
-                if (climbing && "climb".equals(name)) climbEnd = msg == null ? "ended without a word" : msg;
-            });
-        }
-        String r = DigCommands.climb(c, p, "", c.owner());
-        if (r != null && r.startsWith("ok")) {
-            instant = r;
-            return null;
-        }
-        if (r == null || !r.startsWith("started")) return "error: climb: " + (r == null ? "no answer" : r);
+        int[] me = Jobs.here(p);
+        int depth = Jobs.underDepth(p.level(), me[0], me[1], me[2]);
+        if (depth == 0) { instant = "ok: already under open sky at y " + me[1]; return null; }
+        IBaritone b = Jobs.baritone();
+        if (b == null) return "error: climb: baritone not loaded";
+        int top = Jobs.surfaceNoLeaves(p.level(), me[0], me[2]);
+        int upTo = io.github.mojolowjo.entropybot.world.SurfaceHeight.known(top) && top > me[1] ? top : me[1] + depth;
+        io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "climb");
+        b.getCustomGoalProcess().setGoalAndPath(new io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.UnderSky(SKY_CELLS, upTo));
         climbing = true;
+        LOG.info("[entropybot] steps: climb - Baritone's goal: the feet under open sky (pull up to y {}; {} blocks over the feet at {})", upTo, depth, Jobs.fmt(me));
         return null;
     }
 
-    private Car.Status climbStatus() {
+    private Car.Status climbStatus(LocalPlayer p) {
         if (instant != null) return Car.Status.done(instant);
-        if (climbEnd != null) {
-            String m = climbEnd;
+        int[] me = Jobs.here(p);
+        int depth = Jobs.underDepth(p.level(), me[0], me[1], me[2]);
+        IBaritone b = Jobs.baritone();
+        if (depth == 0) {
+            if (b != null) Jobs.cancel(b);
             climbing = false;
-            if (m.startsWith("done")) return Car.Status.done(m);
-            io.github.mojolowjo.entropybot.aa.moves.FactChange.climb(m);     // 0.39.z77 answers (2): the climb's own fact
-            return Car.Status.failed("climb: " + m);
+            return Car.Status.done("ok: on the surface at " + Jobs.fmt(me) + " (under open sky)");
         }
-        if (c.chains.running() && "climb".equals(c.chains.name())) return Car.Status.running("climbing: " + c.chains.stepText());
-        climbing = false;
-        io.github.mojolowjo.entropybot.aa.moves.FactChange.climb("its chain went without an end (stopped by someone)");
-        return Car.Status.failed("climb: its chain went without an end (stopped by someone)");
+        if (b == null) { climbing = false; return Car.Status.failed("climb: baritone not loaded"); }
+        if (!b.getCustomGoalProcess().isActive() && !Core.INSTANCE.reflexes.hold()) {
+            climbing = false;
+            String why = "Baritone's climb goal ended at " + Jobs.fmt(me) + " with " + depth + " blocks over the feet";
+            io.github.mojolowjo.entropybot.aa.moves.FactChange.climb(why);     // 0.39.z77 answers (2): the climb's own fact
+            return Car.Status.failed("climb: " + why);
+        }
+        return Car.Status.running("climbing: y " + me[1] + ", " + depth + " blocks over the feet");
     }
+
+    /** The client level as the climb's goal reads it (Baritone calls it from its path thread, as the reflex goals' cells). */
+    private static final io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.SkyCells SKY_CELLS = new io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.SkyCells() {
+        @Override public boolean open(int x, int y, int z) {
+            var lv = net.minecraft.client.Minecraft.getInstance().level;
+            if (lv == null) return false;
+            BlockPos q = new BlockPos(x, y, z);
+            return lv.getBlockState(q).getCollisionShape(lv, q).isEmpty() && lv.getFluidState(q).isEmpty();
+        }
+
+        @Override public boolean sky(int x, int y, int z) {
+            var lv = net.minecraft.client.Minecraft.getInstance().level;
+            return lv != null && lv.canSeeSky(new BlockPos(x, y, z));
+        }
+    };
 
     // ---- the item actions and the mine steps: the typed step calls its method (never a verb line), its job's request ----
 

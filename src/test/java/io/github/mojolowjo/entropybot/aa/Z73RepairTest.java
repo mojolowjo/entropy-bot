@@ -169,6 +169,11 @@ class Z73RepairTest {
         assertFalse(full.repair(), full.line());
         assertTrue(full.line().startsWith("full re-plan 110.0 s: cheaper than the repair "), full.line());
         assertTrue(full.line().endsWith("(replan.switchMarginS 10)"), full.line());
+        // 0.39.z77 SHAPE CHANGE (owner: repair locally): a trip's repair is never priced against its whole re-plan (the
+        // margin Goals passes for a trip is infinite) - the same cheaper full re-plan, the repair kept
+        Repair.Pick trip = Repair.pick(left, null, sp, gap, 30.3, chain(List.of(new Step.Explore(5)), 110, List.of(110.0)), bag, Double.POSITIVE_INFINITY, null);
+        assertTrue(trip.repair(), trip.line());
+        assertEquals(120.75, trip.repairS(), 0.01);
     }
 
     /**

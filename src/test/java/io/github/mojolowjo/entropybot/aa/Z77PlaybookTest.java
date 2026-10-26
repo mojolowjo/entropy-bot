@@ -109,13 +109,12 @@ class Z77PlaybookTest {
      * Feet 0 64 0 on land, nothing known: the playbook derives the route (the stone pickaxe from the base block's cobblestone,
      * the torches from charcoal - all surface; one descent to y 16 for the iron pickaxe's 3 raw iron and 1 coal (3 smelts x
      * 200 / 1600, up), the smelt and the pickaxe there, then the strip on at the same level with it for the armour's 24 and
-     * 3 coal, one smelt for them). Its explore is for a surface word (E1: the surface leg asks surface leaves only). Taken as
-     * had after it, the stone pickaxe leaves the torches' sticks with no known source either - a second unknown: the legs after
-     * it have no price, so the playbook is "not priced yet" (price review 2; never priced on fewer legs) and the ad-hoc runs
-     * meanwhile (by hand: no price against the ad-hoc row's - the ad-hoc runs).
+     * 3 coal, one smelt for them). Its explore has a surface part (E1). Taken as had after it, the stone pickaxe leaves a
+     * second unknown: SHAPE CHANGE (playbook first, pricing only inside legs) - the trip runs to its explore and the legs after
+     * it are priced when the bot gets there (its find re-prices the trip); no comparison, no ad-hoc meanwhile.
      */
     @Test
-    void s1_freshWorld_theSecondUnknownIsNotPriced_adhocMeanwhile_theExploreIsASurfaceWord() {
+    void s1_freshWorld_theTripRunsToItsExplore_theLegsAfterArePricedThere() {
         data();
         World w = world(Map.of(), Map.of());
         Playbook pb = Playbook.derive(KIT, Playbook.facts(w, null));
@@ -123,8 +122,9 @@ class Z77PlaybookTest {
         assertEquals("playbook: surface [torch 4, stone_pickaxe 1] > descent y 16 [raw_iron 3, coal 1] > at band [iron_ingot 3, iron_pickaxe 1] > strip on y 16 "
                 + "[raw_iron 24, coal 3] > at band [iron_ingot 24, iron_helmet 1, iron_chestplate 1, iron_leggings 1, iron_boots 1]", pb.why());
         Chain pc = NeedChain.resolvePlaybook(pb, w);
-        assertFalse(pc.ok(), pc.why());
-        assertTrue(pc.missing().startsWith(NeedChain.NOT_PRICED) && pc.missing().contains("after the surface explore"), pc.missing());
+        assertTrue(pc.ok() && pc.explore(), pc.why());
+        assertTrue(pc.why().contains("priced when the bot gets there (" + NeedChain.NOT_PRICED + "a second need") && pc.why().contains("after the surface explore"), pc.why());
+        assertTrue(pc.steps().get(pc.steps().size() - 1) instanceof Step.Explore, "the run ends at the explore: " + pc.steps());
         Step.Explore ex = (Step.Explore) pc.steps().stream().filter(s -> s instanceof Step.Explore).findFirst().orElseThrow();
         // 0.39.z77 round fix 3: the torches come first - their explore is "logs or coal" (charcoal from logs, or coal seen on the
         // way): a surface part turns the land-first water term on (E1, per part) and no leg goes down before it
@@ -132,12 +132,9 @@ class Z77PlaybookTest {
         assertTrue(pc.steps().stream().noneMatch(s -> s instanceof Step.ToBand || s instanceof Step.ToStrip), "no leg down before the surface explore: " + pc.steps());
         assertTrue(pc.steps().get(0) instanceof Step.Explore || pc.steps().stream().noneMatch(s -> s instanceof Step.Craft c && c.item().contains("pickaxe")),
                 "the torches' explore before any pickaxe: " + pc.steps());
-        BatchWay.Row ad = BatchWay.sequential(KIT, i -> w, w.bag());
-        assertTrue(ad.fail() != null || ad.explore(), ad.toString());
-        BatchWay.Result r = BatchWay.pick("b1", pb, pc, ad);
-        assertFalse(r.playbook(), r.line());
-        assertFalse(r.settled(), "asked again");
-        assertTrue(r.line().contains("playbook not priced yet: a second need") && r.line().contains(": ad-hoc meanwhile"), r.line());
+        BatchWay.Shaped s = BatchWay.shape("b1", 6, pb, pc, Map.of());
+        assertSame(pc, s.chain(), "the trip runs, no other planner");
+        assertTrue(s.line().startsWith("trip b1 (6 orders): 5 legs - 1 surface: torch 4, stone_pickaxe 1 | 2 descent to y 16: raw_iron 3, coal 1"), s.line());
     }
 
     // ---- 2. the kit with its tools in the bag: the playbook wins by the descents and the stations ----
@@ -173,17 +170,14 @@ class Z77PlaybookTest {
         assertEquals(List.of(3, 24), strips.stream().map(s -> s.amounts().values().stream().mapToInt(Integer::intValue).sum()).toList());
         assertEquals(List.of(new Step.Smelt("iron_ingot", 3, true), new Step.Smelt("iron_ingot", 24, true)), pc.steps().stream().filter(s -> s instanceof Step.Smelt).toList(),
                 "one smelt for the pickaxe, one for the armour");
-        BatchWay.Row ad = BatchWay.sequential(KIT, i -> w, w.bag());
-        assertNull(ad.fail(), ad.toString());
-        assertFalse(ad.explore());
-        assertEquals(803.55, ad.seconds(), 0.1, ad.toString());
-        BatchWay.Result r = BatchWay.pick("b1", pb, pc, ad);
-        assertTrue(r.playbook(), r.line());
-        assertTrue(r.line().startsWith("chain | batch b1: playbook 687."), r.line());
-        assertTrue(r.line().contains(" vs ad-hoc 803."), r.line());
-        // the watcher's words: the pick and each leg as it starts
-        assertEquals("batch b1: the playbook runs (playbook 687 s vs ad-hoc 804 s; 5 legs: surface, descent to y 16, at the band, strip on at y 16, at the band)",
-                BatchWay.chatLine("b1", r));
+        // SHAPE CHANGE: the watcher's words - the whole trip with what the descent carries down, then each leg as it starts
+        // (the ad-hoc row's 803.55 s by hand above is no longer priced: no comparison)
+        BatchWay.Shaped sh = BatchWay.shape("b1", 6, pb, pc, legs.starts());
+        assertSame(pc, sh.chain());
+        assertTrue(sh.line().startsWith("trip b1 (6 orders): 5 legs - 1 surface: torch 4 | 2 descent to y 16: raw_iron 3, coal 1, carries "), sh.line());
+        assertTrue(sh.line().contains(", carries ") && sh.line().contains("coal 4 (fuel)") && sh.line().contains("stick 2") && sh.line().contains("furnace 1") && sh.line().contains("crafting_table 1"),
+                "the smelts' fuel (27 x 200 / 1600, up), the pickaxe's sticks and the two stations go down: " + sh.line());
+        assertTrue(sh.line().endsWith(" | 5 at the band: iron_ingot 24, iron_helmet 1, iron_chestplate 1, iron_leggings 1, iron_boots 1; priced 687 s"), sh.line());
         List<String> said = new ArrayList<>();
         for (Step s : pc.steps()) if (legs.starts().containsKey(s)) said.add(legs.starts().get(s));
         assertEquals(LEG_LINES, said);
@@ -192,19 +186,6 @@ class Z77PlaybookTest {
     static final List<String> LEG_LINES = List.of("playbook leg 1/5: on the surface: torch 4", "playbook leg 2/5: descent to y 16 for raw_iron 3, coal 1 (one strip)",
             "playbook leg 3/5: at the band: iron_ingot 3, iron_pickaxe 1", "playbook leg 4/5: strip on at y 16 for raw_iron 24, coal 3 (with the new pickaxe)",
             "playbook leg 5/5: at the band: iron_ingot 24, iron_helmet 1, iron_chestplate 1, iron_leggings 1, iron_boots 1");
-
-    /** A tie keeps the ad-hoc row (rule 1: never forced). */
-    @Test
-    void aTieKeepsTheAdhocRow() {
-        data();
-        World w = world(kitBag(9), Map.of());
-        Playbook pb = Playbook.derive(KIT, Playbook.facts(w, null));
-        Chain pc = NeedChain.resolvePlaybook(pb, w);
-        assertFalse(BatchWay.pick("b1", pb, pc, new BatchWay.Row(pc.seconds(), false, null, false, 6)).playbook());
-        assertTrue(BatchWay.pick("b1", pb, pc, new BatchWay.Row(pc.seconds() + 0.01, false, null, false, 6)).playbook());
-        assertTrue(BatchWay.pick("b1", pb, pc, new BatchWay.Row(pc.seconds() + 300, true, null, false, 6)).playbook(), "price against price: a dearer ad-hoc row with an explore loses");
-        assertFalse(BatchWay.pick("b1", pb, pc, new BatchWay.Row(pc.seconds() - 1, true, null, false, 6)).playbook(), "a cheaper one wins, explore or not");
-    }
 
     /**
      * Run BE 08:08:15 ("playbook 450.0 s (ends in an explore) vs ad-hoc 900.0 s (ends in an explore): ad-hoc"; manager: the
@@ -227,25 +208,33 @@ class Z77PlaybookTest {
         assertEquals(NeedChain.exploreS() + 715.95, pc.seconds(), 0.1, pc.why());
         assertTrue(pc.steps().get(pc.steps().size() - 1) instanceof Step.Explore, pc.steps().toString());
         assertTrue(pc.steps().stream().noneMatch(s -> s instanceof Step.Strip), "the run's steps end at the explore: " + pc.steps());
-        BatchWay.Row ad = BatchWay.sequential(KIT, i -> w, w.bag());
-        assertEquals(2250.3, ad.seconds(), 0.1, ad.toString());
-        BatchWay.Result r = BatchWay.pick("b1", pb, pc, ad);
-        assertTrue(r.playbook(), r.line());
-        assertTrue(BatchWay.pick("b1", pb, pc, new BatchWay.Row(2260.5, true, null, false, 6)).playbook(), "run BE's numbers: the cheaper playbook wins");
+        assertTrue(BatchWay.shape("b1", 6, pb, pc, Map.of()).line().endsWith("; priced with its explore 1166 s"), "the trip's sum, said");
     }
 
-    /** Rule 15: a leg not priced yet (the descent's path computing) - the playbook is "not priced yet", the ad-hoc runs meanwhile, said. */
+    /**
+     * SHAPE CHANGE (rule 15, pricing inside legs): the descent's path computing - the first leg (the torches, 0.3 s) runs now;
+     * the descent is priced when the bot gets there: the run's steps end before it, said. The first leg itself waiting on a
+     * path: the trip stands (rule 22), never another planner.
+     */
     @Test
-    void be_notPricedYet_theAdhocRunsMeanwhile() {
+    void be_aLaterLegNotPricedYet_theFirstLegRuns_theTripIsPricedAtTheBoundary() {
         data();
         World w = world(kitBag(9), Map.of()).withPath((x, y, z, d) -> y < 60 ? PathPrice.Answer.computing("searching") : PATHS.price(x, y, z, d));
         Playbook pb = Playbook.derive(KIT, Playbook.facts(w, null));
         Chain pc = NeedChain.resolvePlaybook(pb, w);
-        assertFalse(pc.ok(), pc.why());
-        BatchWay.Result r = BatchWay.pick("b1", pb, pc, new BatchWay.Row(5000, false, null, false, 6));
-        assertFalse(r.playbook(), r.line());
-        assertFalse(r.settled(), "asked again when the answer lands");
-        assertTrue(r.line().contains("playbook not priced yet (") && r.line().contains(": ad-hoc meanwhile"), r.line());
+        assertTrue(pc.ok() && !pc.explore(), pc.why());
+        assertEquals(List.of(new Step.Craft("torch", 4)), pc.steps());
+        assertTrue(pc.why().contains("priced when the bot gets there (descent to y 16: " + PathPrice.NOT_KNOWN), pc.why());
+        // nothing before the waiting leg: the trip stands
+        World none = world(Map.of("minecraft:stone_pickaxe", 1, "minecraft:stick", 64, "minecraft:crafting_table", 5, "minecraft:furnace", 5, "minecraft:coal", 9, "minecraft:torch", 4), Map.of())
+                .withPath((x, y, z, d) -> y < 60 ? PathPrice.Answer.computing("searching") : PATHS.price(x, y, z, d));
+        Playbook pb2 = Playbook.derive(KIT.subList(1, KIT.size()), Playbook.facts(none, null));
+        Chain pc2 = NeedChain.resolvePlaybook(pb2, none);
+        assertFalse(pc2.ok(), pc2.why());
+        BatchWay.Shaped s = BatchWay.shape("b1", 5, pb2, pc2, Map.of());
+        assertFalse(s.settled(), "asked again when the answer lands");
+        assertEquals(List.of(new Step.AwaitPaths(NeedChain.firstAnswerWaitS())), s.chain().steps(), s.line());
+        assertTrue(s.line().contains("stand while the first leg's walks compute"), s.line());
     }
 
     /** Freeze review 1: two orders that each take 1 coal, the bag holds 1 - it counts for one of them only: the playbook gathers the other. */
@@ -307,9 +296,6 @@ class Z77PlaybookTest {
         assertArrayEquals(new int[]{12, 2}, ic.get(1));
         assertArrayEquals(new int[]{12, 1}, ic.get(2));
         assertEquals(1, count(pc, Step.ToStrip.class), "one descent");
-        BatchWay.Row ad = BatchWay.sequential(KIT, i -> w, w.bag());
-        assertTrue(ad.explore() || ad.fail() != null, ad.toString());
-        assertTrue(BatchWay.pick("b1", pb, pc, ad).playbook());
     }
 
     /** R2 for any strip: a strip priced within steps.stepMaxS is one leg, past it the legs share every amount. Pure. */
@@ -340,9 +326,7 @@ class Z77PlaybookTest {
         Chain pc = NeedChain.resolvePlaybook(pb, w);
         assertTrue(pc.ok() && !pc.explore(), pc.why());
         assertEquals(0, count(pc, Step.ToStrip.class), pc.steps().toString());
-        BatchWay.Row ad = BatchWay.sequential(KIT, i -> w, w.bag());
-        assertNull(ad.fail(), ad.toString());
-        assertTrue(pc.seconds() <= ad.seconds() + 0.05, pc.seconds() + " vs " + ad.seconds());
+        assertEquals(1, pc.steps().stream().filter(s -> s instanceof Step.PlaceNear p && p.item().contains("furnace")).count(), "one furnace for the batch: " + pc.steps());
     }
 
     // ---- 5. a modded pack: two gates, two descents, from the same code ----
@@ -440,24 +424,36 @@ class Z77PlaybookTest {
         Chain ch = Goals.chain(bb, torch);
         assertTrue(ch.why().startsWith(NeedChain.PLAYBOOK), ch.why());
         assertEquals(687.15, ch.seconds(), 0.1);
-        assertEquals(1, port.log.stream().filter(l -> l.startsWith("chain | batch b1: playbook 687.")).count(), port.log.toString());
-        assertTrue(port.told.stream().anyMatch(l -> l.startsWith("batch b1: the playbook runs")), port.told.toString());
-        Goals.chain(bb, torch);                                  // the same bag and place: the kept verdict, no second line
-        assertEquals(1, port.log.stream().filter(l -> l.startsWith("chain | batch b1:")).count(), port.log.toString());
-        // the run: each leg's first step says the leg
+        assertEquals(1, port.log.stream().filter(l -> l.startsWith("torch: trip b1 (6 orders): 5 legs - ")).count(), port.log.toString());
+        Goals.chain(bb, torch);                                  // the same bag and place: the kept trip, no second line
+        assertEquals(1, port.log.stream().filter(l -> l.contains("trip b1 (")).count(), port.log.toString());
+        // the order takes it: the whole trip said before the bot moves, then each leg's first step says the leg
         var rt = Goals.routine(bb, torch);
+        assertEquals(1, port.told.stream().filter(l -> l.startsWith("trip b1 (6 orders): 5 legs - 1 surface: torch 4 | 2 descent to y 16")).count(), port.told.toString());
         Steps run = new Steps(new DoneHands());
         run.start("goal.torch", rt.steps(), 0, Goals.replanner(bb, torch));
         for (int i = 0; i < 200 && run.running(); i++) run.tick(i + 1);
         assertEquals(LEG_LINES, port.told.stream().filter(l -> l.startsWith("playbook leg")).toList());
-        // a failed step of the playbook holds it for the order: the ad-hoc chain takes over
-        Step strip = rt.steps().stream().filter(s -> s instanceof Step.Strip).findFirst().orElseThrow();
-        Goals.replan(bb, torch, strip, new FactChange.Fact("source strip x", "strip: no path"), "strip: no path");
-        assertTrue(Goals.droppedSources(torch).containsKey(BatchWay.key("b1")), Goals.droppedSources(torch).toString());
-        assertFalse(Goals.chain(bb, torch).why().startsWith(NeedChain.PLAYBOOK), "the ad-hoc chain now");
-        // one open order in a batch, or none: the order's own chain
-        Tuning.set("playbook.on", 0);
-        assertFalse(Goals.chain(bb, gs.get(1)).why().startsWith(NeedChain.PLAYBOOK), "playbook.on 0: the ad-hoc chain only");
+        // SHAPE CHANGE: a failed step of the trip is repaired inside its leg - never the J2 hold and an ad-hoc chain
+        // (the strip ended short with no source held: the gap for what it served - raw_iron 3 for the smelt - from the bag as
+        // it is, the trip's later steps kept, never priced against a whole re-plan)
+        int at = -1;
+        for (int i = 0; i < rt.steps().size(); i++) if (rt.steps().get(i) instanceof Step.Strip) { at = i; break; }
+        Step strip = rt.steps().get(at);
+        List<Step> rest = rt.steps().subList(at, rt.steps().size());
+        List<Map<String, Integer>> restUses = rt.uses().size() == rt.steps().size() ? rt.uses().subList(at, rt.steps().size()) : null;
+        var r = Goals.replan(bb, torch, strip, new FactChange.Fact("short strip", "strip: 1 of 3 iron"), "strip: 1 of 3 iron",
+                new Steps.Remaining(rest, restUses, Map.of("minecraft:stone_pickaxe", 1, "minecraft:stick", 64, "minecraft:crafting_table", 5, "minecraft:furnace", 5, "minecraft:coal", 9, "minecraft:torch", 4)));
+        assertNotNull(r.steps(), r.why());
+        // here the gap (raw_iron 3 from the surface) ends in an explore, so no repair stands: the trip is priced again from the
+        // bag - the same derivation, never the order's own chain (Z73RepairTest: a repair that stands is kept in a trip)
+        assertTrue(port.log.stream().anyMatch(l -> l.contains("strip: 1 of 3 iron - re-planned: ") && l.contains("chain: playbook <- ")), port.log.subList(Math.max(0, port.log.size() - 3), port.log.size()).toString());
+        assertTrue(torch.playbookRun, "the trip goes on");
+        assertTrue(Goals.droppedSources(torch).keySet().stream().noneMatch(k -> k.startsWith("playbook ")), Goals.droppedSources(torch).toString());
+        assertTrue(Goals.chain(bb, torch).why().startsWith(NeedChain.PLAYBOOK), "still the trip");
+        // an order alone: its own trip too
+        Goals.Goal alone = Goals.add(bb, item("iron_helmet"), 1, 0, clock.now());
+        assertTrue(Goals.chain(bb, alone).why().startsWith(NeedChain.PLAYBOOK), "one order is one trip");
     }
 
     static Blackboard batchBoard(FakePort port, Clock.Fake clock, java.util.function.Supplier<World> w, List<Goals.Goal> gs) {
@@ -506,7 +502,7 @@ class Z77PlaybookTest {
         assertNull(kept.steps(), "a landed price re-resolves nothing: " + kept.why());
         while (run.running() && t < 1000) run.tick(++t);
         assertEquals(LEG_LINES, port.told.stream().filter(l -> l.startsWith("playbook leg")).toList(), "the same run, its numbers kept");
-        assertEquals(1, port.log.stream().filter(l -> l.startsWith("chain | batch b1:")).count(), "one comparison: " + port.log);
+        assertEquals(1, port.told.stream().filter(l -> l.startsWith("trip b1 (")).count(), "one trip said: " + port.told);
     }
 
     /**
@@ -527,17 +523,18 @@ class Z77PlaybookTest {
             @Override public boolean pending() { return true; }
             @Override public long landed() { return landed[0]; }
         };
-        World w = world(kitBag(9), Map.of()).withPath(pp);
+        // the torches in the bag: the trip's first leg is the descent, whose walk computes - the trip stands, kept until an answer lands
+        World w = world(Map.of("minecraft:stone_pickaxe", 1, "minecraft:stick", 64, "minecraft:crafting_table", 5, "minecraft:furnace", 5, "minecraft:coal", 9, "minecraft:torch", 4), Map.of()).withPath(pp);
         List<Goals.Goal> gs = new ArrayList<>();
         Blackboard bb = batchBoard(new FakePort(), new Clock.Fake(10_000_000), () -> w, gs);
         Goals.chain(bb, gs.get(0));
         int first = asks[0];
-        assertTrue(first > 0, "the first comparison asks the strips' walks");
+        assertTrue(first > 0, "the first trip asks the strips' walks");
         for (int i = 0; i < 20; i++) { Goals.blocked(bb, gs.get(0)); Goals.chain(bb, gs.get(0)); }
-        assertEquals(first, asks[0], "20 ticks with paths pending: no second comparison");
+        assertEquals(first, asks[0], "20 ticks with paths pending: the trip kept, no walk asked again");
         landed[0]++;
         Goals.chain(bb, gs.get(0));
-        assertTrue(asks[0] > first, "an answer landed: compared again");
+        assertTrue(asks[0] > first, "an answer landed: priced again");
     }
 
     /**

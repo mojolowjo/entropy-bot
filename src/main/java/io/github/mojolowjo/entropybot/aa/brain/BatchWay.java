@@ -4,84 +4,81 @@ import io.github.mojolowjo.entropybot.aa.NeedChain;
 import io.github.mojolowjo.entropybot.aa.Playbook;
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.TickLaps;
+import io.github.mojolowjo.entropybot.aa.moves.Step;
 import io.github.mojolowjo.entropybot.aa.moves.Steps;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 
 /**
- * 0.39.z77 J2 (design D5 J2; rule 1 clarified: a playbook is one priced option, never forced): the batch's two ways for the
- * order about to run - the PLAYBOOK (the batch's open orders as one derived route, {@link Playbook}, priced by
- * {@link NeedChain#resolvePlaybook}) and the AD-HOC row (each open order's own chain in turn, this order first, each on the bag
- * the last one left, positions as now: the manager's R1 - it charges every later order its own descent, a bias to the
- * playbook; both numbers are said). Price against price (manager on run BE: no category rule): the playbook is taken when
- * it is priced (an explore leg counts as its price) and cheaper, or the ad-hoc row has no way; a tie (equal seconds) keeps the ad-hoc chain. The running order then runs
- * the playbook's steps; the later orders find their items in the bag (Goals.have). One line per new comparison:
- * "chain | batch b1: playbook 936.4 s vs ad-hoc 1093.0 s: playbook (...)".
- * <p>R3 (resolve time on the client tick): the verdict is kept per batch, keyed by the open orders, the bag, the place
- * (failures.moved cells) and the order's holds; a settled verdict re-prices only the chain it picked (one resolve, as an
- * order alone). A comparison whose rows wait on paths is kept until the next path answer lands (then asked again). Measured on the AA
- * tick's stopwatch ({@link TickLaps#playbook}: "probe aatick: ... | playbook N = M ms").
- * Pure (JUnit: Z77PlaybookTest). Loader notes: none (the world and the ore-per-slab fact come from AaRuntime).
+ * 0.39.z77 SHAPE CHANGE (owner 2026-10-26 10:30, "playbook first, repair locally"; was J2's playbook-vs-ad-hoc comparison,
+ * deleted with Tuning playbook.on): every plain-item order - alone, or its {@code aa want} line's batch - is planned as ONE
+ * TRIP, the {@link Playbook} derived from the recipes, the tags, the world-gen data and the tiers, priced inside its legs by
+ * {@link NeedChain#resolvePlaybookLegs} (which tree, which strip, table carried or placed, climb or walk up). There is no
+ * top-level "which planner": the trip's seconds are said, never compared. A leg whose walk is not known yet from here is
+ * priced when the bot gets there (NeedChain); the whole trip waiting on a path stands (rule 22); a trip priced 0 s is
+ * refused (a way priced 0 is never valid); a derivation that does not stand (a fact not loaded, rule 15; an item the data
+ * gives no route for) falls back to the order's own chain as its one leg, said. The trip's line - its legs and what each
+ * carries down - is said to the owner when the order takes it, before the bot moves; each leg is said as it starts (Goals).
+ * <p>R3 (resolve time on the client tick): the trip is kept per order (each order's holds are its own), keyed by the open orders, the bag, the place
+ * (failures.moved cells) and the order's holds; one that waits on paths is kept until the next path answer lands. Measured
+ * on the AA tick's stopwatch ({@link TickLaps#playbook}: "probe aatick: ... | playbook N = M ms").
+ * Pure (JUnit: Z77PlaybookTest, Z77RoundFixTest). Loader notes: none (the world and the ore-per-slab fact come from AaRuntime).
  */
 public final class BatchWay {
     private BatchWay() {}
 
-    /** 0.39.z77 J2: the key a failed playbook step holds for its order's life ("playbook b1"). */
-    public static final String KEY = "playbook ";
-
-    public static String key(String batch) { return KEY + batch; }
-
     /** Blackboard fact: the adapter's ore per slab at a Y ({@code BiFunction<String, Integer, Double>}: need word, y; NaN: not known). */
     public static final String PER_SLAB_FACT = "aa.perSlabAt";
 
-    /** Tuning playbook.on (the J2 round's A/B switch). */
-    public static boolean on() { return Tuning.get("playbook.on") > 0; }
+    /** The start of a trip line ("trip b1 (6 orders): ..."). */
+    public static final String TRIP = "trip ";
 
     /**
-     * One comparison: its key, the path answers landed when it was made ({@code landed}), whether neither row waited on a path
-     * ({@code settled}), the pick, the playbook, the line said. 0.39.z77 review 1 (R3): an unsettled verdict is kept too, for
-     * the same key until the next path answer lands (PathPrice#landed) - never a full comparison per tick while paths compute.
+     * One trip as priced: its key, the path answers landed then ({@code landed}), whether it waited on no path
+     * ({@code settled}), the playbook, its chain, the leg starts (by identity) and the line said.
      */
-    record Verdict(String key, long landed, boolean settled, boolean playbook, Playbook pb, String line) {
+    record Trip(String key, long landed, boolean settled, Playbook pb, NeedChain.Chain chain, Map<Step, String> starts, String line) {
         boolean holds(String k, long landedNow) { return key != null && key.equals(k) && (settled || landed == landedNow); }
     }
 
     private static long landed(NeedChain.World w) { return w.path() == null ? 0 : w.path().landed(); }
 
-    private static final Map<String, Verdict> VERDICTS = new ConcurrentHashMap<>();
-    private static final Map<String, String> SAID = new ConcurrentHashMap<>(), PICKED = new ConcurrentHashMap<>();
-    /** The leg starts of the batch's last playbook chain priced (its own step objects -> "playbook leg 2/3: ..."). */
-    private static final Map<String, Map<io.github.mojolowjo.entropybot.aa.moves.Step, String>> LEGS = new ConcurrentHashMap<>();
+    /** Per ORDER (its own holds and world): the trip it was last priced; per trip key the leg starts of the last one priced. */
+    private static final Map<String, Trip> TRIPS = new ConcurrentHashMap<>();
+    private static final Map<String, Map<Step, String>> LEGS = new ConcurrentHashMap<>();
+    private static final Map<String, String> SAID = new ConcurrentHashMap<>(), TOLD = new ConcurrentHashMap<>();
 
-    /** Tests: forget every batch's verdict. */
-    public static void clear() { VERDICTS.clear(); SAID.clear(); PICKED.clear(); LEGS.clear(); }
+    /** Tests and a new runtime: forget every trip. */
+    public static void clear() { TRIPS.clear(); LEGS.clear(); SAID.clear(); TOLD.clear(); }
 
-    /** The leg starts of the batch's last playbook chain (by identity of its steps); empty: none. */
-    public static Map<io.github.mojolowjo.entropybot.aa.moves.Step, String> legs(String batch) {
-        Map<io.github.mojolowjo.entropybot.aa.moves.Step, String> m = batch == null ? null : LEGS.get(batch);
+    /** The order's kept trip is priced again on its next ask (a re-price: the stand's estimates, a landed path). */
+    static void forget(Goals.Goal g) { TRIPS.remove(g.id()); }
+
+    /** The trip's key: the batch ("b1"), or the order alone ("order goal.torch"). */
+    public static String tripKey(Goals.Goal g) { return g.batch != null ? g.batch : "order " + g.id(); }
+
+    /** The leg starts of the trip last priced for {@code key} (by identity of its steps); empty: none. */
+    public static Map<Step, String> legs(String key) {
+        Map<Step, String> m = key == null ? null : LEGS.get(key);
         return m == null ? Map.of() : m;
     }
 
-    /** The chat words of a pick: "batch b1: the playbook runs - 850 s vs 967 s ad-hoc (3 legs: surface, descent to y 16, at the band)". Pure. */
-    public static String chatLine(String batch, Result r) {
-        String nums = (Double.isNaN(r.playbookS()) ? "playbook not priced" : String.format(Locale.ROOT, "playbook %.0f s", r.playbookS()))
-                + " vs " + (Double.isNaN(r.adhocS()) ? "ad-hoc not priced" : String.format(Locale.ROOT, "ad-hoc %.0f s", r.adhocS()));
-        if (!r.playbook()) return "batch " + batch + ": the ad-hoc chains run (" + nums + ")";
-        List<String> legs = new ArrayList<>();
-        for (Playbook.Leg l : r.pb().legs()) legs.add(l.kind() == Playbook.Kind.DESCENT ? (l.on() ? "strip on at y " : "descent to y ") + l.y() : l.kind() == Playbook.Kind.SURFACE ? "surface" : "at the band");
-        return "batch " + batch + ": the playbook runs (" + nums + "; " + legs.size() + " legs: " + String.join(", ", legs) + ")";
-    }
-
-    /** The open orders of {@code g}'s batch (not parked, not met, plain items), in the batch's order; empty: no batch. */
+    /** The open orders of {@code g}'s trip (its batch's, not parked, not met, plain items, in the batch's order; alone: itself). */
     static List<Goals.Goal> open(Blackboard bb, Goals.Goal g) {
         List<Goals.Goal> out = new ArrayList<>();
-        if (g.batch == null || !(bb.fact(Goals.FACT) instanceof List<?>)) return out;
+        if (g.batch == null || !(bb.fact(Goals.FACT) instanceof List<?>)) {
+            if (bb.in == null || Goals.have(bb.in.bag, g) < g.n) out.add(g);
+            return out;
+        }
         for (Goals.Goal o : Goals.of(bb)) {
             if (!g.batch.equals(o.batch) || o.parked != null || o.strip != null || o.r.group()) continue;
             if (bb.in != null && Goals.have(bb.in.bag, o) >= o.n) continue;
@@ -92,17 +89,11 @@ public final class BatchWay {
 
     static String itemOf(Goals.Goal o) { return o.r.ids().isEmpty() ? o.r.key() : o.r.ids().get(0); }
 
-    /** Not for this order: off, no batch, held, or fewer than two open orders. Null: it is. */
-    static String outWhy(Blackboard bb, Goals.Goal g, List<Goals.Goal> open) {
-        if (!on()) return "playbook.on 0";
-        if (g.batch == null || g.strip != null || g.r.group()) return "no batch";
-        if (Goals.droppedSources(g).containsKey(key(g.batch))) return "held for this order";
-        if (open.size() < 2) return "one open order";
-        return null;
-    }
+    /** A trip is for plain-item orders only (a strip order or a group runs its own chain). */
+    static boolean tripOrder(Goals.Goal g) { return g.strip == null && !g.r.group(); }
 
-    private static String verdictKey(Blackboard bb, Goals.Goal g, List<Goals.Goal> open, NeedChain.World w) {
-        StringBuilder b = new StringBuilder(g.batch).append(" | ").append(g.r.key());
+    private static String tripKeyOf(Blackboard bb, Goals.Goal g, List<Goals.Goal> open, NeedChain.World w) {
+        StringBuilder b = new StringBuilder(tripKey(g)).append(" | ").append(g.r.key());
         for (Goals.Goal o : open) b.append(' ').append(o.r.key()).append(':').append(o.n);
         b.append(" | ").append(new TreeMap<>(w.bag()));
         int[] pos = bb.in == null ? null : bb.in.pos;
@@ -112,128 +103,143 @@ public final class BatchWay {
         return b.toString();
     }
 
-    /** A settled playbook verdict for this order now: the playbook's chain (one resolve); null: none (the caller prices the ad-hoc chain). */
-    static NeedChain.Chain cached(Blackboard bb, Goals.Goal g, NeedChain.World w) {
-        if (g.batch == null) return null;
-        Verdict v = VERDICTS.get(g.batch);
-        if (v == null || !v.playbook()) return null;
+    /**
+     * The trip {@code g} runs now on {@code w} (kept while its key holds), or {@code own} - the order's own chain, asked only
+     * when the derivation does not stand (its one leg, said). Null own: the caller resolves it then.
+     */
+    static NeedChain.Chain trip(Blackboard bb, Goals.Goal g, NeedChain.World w, java.util.function.Supplier<NeedChain.Chain> own) {
         List<Goals.Goal> open = open(bb, g);
-        if (outWhy(bb, g, open) != null || !v.holds(verdictKey(bb, g, open, w), landed(w))) return null;
+        if (open.isEmpty()) open = List.of(g);
+        String key = tripKeyOf(bb, g, open, w);
+        String tk = tripKey(g);
+        Trip kept = TRIPS.get(g.id());
+        if (kept != null && kept.holds(key, landed(w))) return kept.chain() != null ? kept.chain() : own.get();
         long t0 = TickLaps.AA.now();
-        NeedChain.Legs l = NeedChain.resolvePlaybookLegs(v.pb(), w);
-        if (t0 != 0) TickLaps.AA.playbook(TickLaps.AA.now() - t0);
-        NeedChain.Chain pc = l.chain();
-        if (!(pc.ok() && !Steps.waitsOnPaths(pc.steps()))) return null;
-        LEGS.put(g.batch, l.starts());
-        return pc;
-    }
-
-    /** The chain the order runs: {@code adhoc} (its own chain, priced already) or the batch's playbook when that is cheaper. */
-    static NeedChain.Chain choose(Blackboard bb, Goals.Goal g, NeedChain.World w, NeedChain.Chain adhoc) {
-        List<Goals.Goal> open = open(bb, g);
-        if (outWhy(bb, g, open) != null) return adhoc;
-        String key = verdictKey(bb, g, open, w);
-        Verdict v = VERDICTS.get(g.batch);
-        if (v != null && v.holds(key, landed(w)) && !v.playbook()) return adhoc;
-        long t0 = TickLaps.AA.now();
-        Result r = compare(bb, g, open, w);
-        if (t0 != 0) TickLaps.AA.playbook(TickLaps.AA.now() - t0);
-        VERDICTS.put(g.batch, new Verdict(key, landed(w), r.settled(), r.playbook(), r.pb(), r.line()));
-        if (!r.line().equals(SAID.get(g.batch))) {
-            SAID.put(g.batch, r.line());
-            if (bb.port != null) bb.port.log(r.line());
-        }
-        // 0.39.z77 J2 (owner via the manager: the watcher sees the choice): the pick in chat when it is new or changed
-        String pickWord = r.playbook() ? "playbook" : "ad-hoc";
-        if (!pickWord.equals(PICKED.get(g.batch)) && bb.port != null) {
-            PICKED.put(g.batch, pickWord);
-            bb.port.tellOwner(chatLine(g.batch, r));
-        }
-        return r.playbook() ? r.chain() : adhoc;
-    }
-
-    /** One comparison's outcome: the pick, the playbook and its chain, both rows' numbers in {@code line}, whether it may be kept. */
-    public record Result(boolean playbook, Playbook pb, NeedChain.Chain chain, double playbookS, double adhocS, String line, boolean settled) {}
-
-    static Result compare(Blackboard bb, Goals.Goal g, List<Goals.Goal> open, NeedChain.World w) {
-        List<Goals.Goal> inOrder = new ArrayList<>(open);                 // the ad-hoc row: this order first, then the batch's order
-        inOrder.remove(g);
-        inOrder.add(0, g);
         List<Playbook.Target> targets = new ArrayList<>();
         for (Goals.Goal o : open) targets.add(new Playbook.Target(itemOf(o), o.n));
         @SuppressWarnings("unchecked")
         BiFunction<String, Integer, Double> perSlab = bb.fact(PER_SLAB_FACT) instanceof BiFunction<?, ?, ?> f ? (BiFunction<String, Integer, Double>) f : null;
         Playbook pb = Playbook.derive(targets, Playbook.facts(w, perSlab));
-        NeedChain.Legs l = pb.ok() ? NeedChain.resolvePlaybookLegs(pb, w) : null;
-        NeedChain.Chain pc = l == null ? null : l.chain();
-        if (l != null) LEGS.put(g.batch, l.starts());
-        Row ad = adhoc(bb, inOrder, w);
-        return pick(g.batch, pb, pc, ad);
-    }
-
-    /** The ad-hoc row: the sum of the orders' chains in turn ({@code fail}: the first that has no way; {@code explore}: one ends in an explore). */
-    public record Row(double seconds, boolean explore, String fail, boolean waiting, int orders) {}
-
-    static Row adhoc(Blackboard bb, List<Goals.Goal> inOrder, NeedChain.World w) {
-        List<Playbook.Target> ts = new ArrayList<>();
-        for (Goals.Goal o : inOrder) ts.add(new Playbook.Target(itemOf(o), o.n));
-        return sequential(ts, i -> {
-            NeedChain.World wo = i == 0 ? w : Goals.chainWorld(bb, inOrder.get(i));
-            return wo == null ? w : wo;
-        }, w.bag());
-    }
-
-    /**
-     * The ad-hoc row (pure): each order's own chain in turn ({@code worldOf}: the order's world by its index; the bag of
-     * each is the one the last left, from {@code bag}), the seconds summed (an explore chain's explore leg in it).
-     */
-    public static Row sequential(List<Playbook.Target> inOrder, java.util.function.IntFunction<NeedChain.World> worldOf, Map<String, Integer> bag) {
-        double sum = 0;
-        boolean explore = false, waiting = false;
-        for (int i = 0; i < inOrder.size(); i++) {
-            Playbook.Target o = inOrder.get(i);
-            var p = NeedChain.resolveWithBag(o.item(), o.n(), worldOf.apply(i).withBag(bag));
-            if (!p.chain().ok()) return new Row(sum, explore, p.chain().why(), waiting || p.chain().waiting(), i);
-            sum += p.chain().seconds();
-            explore |= p.chain().explore();
-            waiting |= Steps.waitsOnPaths(p.chain().steps());
-            bag = p.bagAfter();
+        // an order alone whose trip is one leg: that leg IS the order's own chain (the same planner on the same facts; its
+        // words and aa debug tree as before)
+        boolean oneLeg = open.size() == 1 && pb.ok() && pb.legs().size() == 1;
+        NeedChain.Legs l = pb.ok() && !oneLeg ? NeedChain.resolvePlaybookLegs(pb, w) : null;
+        if (t0 != 0) TickLaps.AA.playbook(TickLaps.AA.now() - t0);
+        Shaped s = oneLeg ? new Shaped(null, TRIP + tk + " (1 order): 1 leg - " + pb.legs().get(0).text() + ": the order's own chain", true)
+                : shape(tk, open.size(), pb, l == null ? null : l.chain(), l == null ? Map.of() : l.starts());
+        Map<Step, String> starts = l == null || s.chain() != l.chain() ? Map.of() : l.starts();
+        Trip t = new Trip(key, landed(w), s.settled(), pb, s.chain(), starts, s.line());
+        TRIPS.put(g.id(), t);
+        LEGS.put(tk, starts);
+        if (!s.line().equals(SAID.get(tk))) {
+            SAID.put(tk, s.line());
+            if (bb.port != null) bb.port.log(g.r.key() + ": " + s.line());
         }
-        return new Row(sum, explore, null, waiting, inOrder.size());
+        return s.chain() != null ? s.chain() : own.get();
     }
+
+    /** The owner hears the trip the order took, once a line, before its steps run (Goals.took). */
+    static void announce(Blackboard bb, Goals.Goal g) {
+        String tk = tripKey(g);
+        Trip t = TRIPS.get(g.id());
+        if (t == null || t.chain() == null || bb.port == null || !t.settled() || t.line().equals(TOLD.get(tk))) return;
+        TOLD.put(tk, t.line());
+        bb.port.tellOwner(t.line());
+    }
+
+    /** A trip's chain as it runs ({@code chain}: null - the order's own chain, as said in {@code line}), kept or not. */
+    public record Shaped(NeedChain.Chain chain, String line, boolean settled) {}
 
     /**
-     * The pick (pure), price against price (manager's ruling on run BE: no category rule outside the price, rule 1): the
-     * playbook when it is priced (ok, no stand on paths; an explore leg counts its price like any leg) and the ad-hoc row has
-     * no way or costs more; a tie (equal seconds) keeps the ad-hoc chain. A playbook with a leg not priced yet (a walk's
-     * path not known, rule 15) is "not priced yet": the ad-hoc chain runs meanwhile, the line says so. Settled (kept): neither
-     * row waits on paths.
+     * The trip's chain as the order runs it (pure): the playbook's chain; the whole trip waiting on a path from here - a
+     * stand (rule 22); priced 0 s - refused; no derivation - the order's own chain (null chain), the reason said.
      */
-    public static Result pick(String batch, Playbook pb, NeedChain.Chain pc, Row ad) {
-        boolean pbWaits = pc != null && (pc.waiting() || Steps.waitsOnPaths(pc.steps()) || pc.missing() != null && (pc.missing().contains(io.github.mojolowjo.entropybot.aa.PathPrice.NOT_KNOWN) || pc.missing().startsWith(NeedChain.NOT_PRICED)));
-        // 0.39.z77 round fix 5 (run BG 09:23:33: "the ad-hoc chains run (playbook 0 s vs ad-hoc 1463 s)"; manager: a way priced 0
-        // is never valid, as a count 0 is not): a row is a price only when its seconds are over 0 - a playbook or an ad-hoc row of
-        // 0 s (or not a number) is refused with that reason, never compared
-        String pbZero = pc != null && pc.ok() && !Steps.waitsOnPaths(pc.steps()) && !(pc.seconds() > 0) ? zero(pc.seconds()) : null;
-        boolean pbPriced = pc != null && pc.ok() && !Steps.waitsOnPaths(pc.steps()) && pbZero == null;
-        String adZero = ad.fail() == null && !(ad.seconds() > 0) ? zero(ad.seconds()) : null;
-        boolean adStands = ad.fail() == null && adZero == null;
-        boolean take = pbPriced && (!adStands || pc.seconds() < ad.seconds());
-        String pbText = pc == null ? "not derived (" + pb.fail() + ")" : pbWaits ? (pc.missing() != null && pc.missing().startsWith(NeedChain.NOT_PRICED) ? pc.missing() : "not priced yet (" + (pc.missing() != null ? pc.missing() : "a walk's path computing") + ")")
-                : !pc.ok() ? "has no way (" + pc.missing() + ")"
-                : pbZero != null ? "refused (" + pbZero + ")"
-                : String.format(Locale.ROOT, "%.1f s", pc.seconds()) + (pc.explore() ? " (an explore leg in it)" : "");
-        String adText = adZero != null ? "refused (" + adZero + ")"
-                : !adStands ? (ad.waiting() ? "not priced yet (" + ad.fail() + ")" : "has no way (" + ad.fail() + ")")
-                : String.format(Locale.ROOT, "%.1f s", ad.seconds()) + (ad.explore() ? " (an explore leg in it)" : "");
-        String line = "chain | batch " + batch + ": playbook " + pbText + " vs ad-hoc " + adText + " (" + ad.orders() + " orders in turn): " + (take ? "playbook" : "ad-hoc")
-                + (pbWaits ? " meanwhile" : "") + (pc != null && pc.ok() ? " [" + pb.why() + "]" : "");
-        // the chat's numbers are prices only: a row not priced (waiting, no way, refused) says so, never its partial seconds
-        return new Result(take, pb, pc, pbPriced ? pc.seconds() : Double.NaN, adStands ? ad.seconds() : Double.NaN, line, !pbWaits && !ad.waiting());
+    public static Shaped shape(String key, int orders, Playbook pb, NeedChain.Chain pc, Map<Step, String> starts) {
+        String head = TRIP + key + " (" + orders + " order" + (orders == 1 ? "" : "s") + "): ";
+        if (pb == null || !pb.ok() || pc == null)
+            return new Shaped(null, head + "no trip derived (" + (pb == null ? "no playbook" : pb.fail()) + "): the order's own chain as its one leg", true);
+        if (!pc.ok() && NeedChain.waitsHere(pc.missing())) {
+            if (pc.missing().contains(io.github.mojolowjo.entropybot.aa.PathPrice.NOT_KNOWN)) {
+                NeedChain.Chain stand = new NeedChain.Chain(List.of(new Step.AwaitPaths(NeedChain.firstAnswerWaitS())), 0, "trip: stand (" + pc.missing() + ")", true, null);
+                return new Shaped(stand, head + "stand while the first leg's walks compute (" + pc.missing() + ")", false);
+            }
+            return new Shaped(null, head + "waits (" + pc.missing() + "): the order's own chain says it", false);
+        }
+        if (!pc.ok()) return new Shaped(pc, head + "no way (" + pc.missing() + ")", true);
+        if (!pc.steps().isEmpty() && !pc.explore() && !(pc.seconds() > 0)) {
+            String z = zero(pc.seconds());
+            return new Shaped(new NeedChain.Chain(List.of(), 0, "trip refused: " + z, false, "trip refused: " + z), head + "refused (" + z + ")", true);
+        }
+        boolean waits = Steps.waitsOnPaths(pc.steps());
+        return new Shaped(pc, head + line(pb, pc, starts), !waits);
     }
 
-    /** 0.39.z77 round fix 5: why a row's seconds are no price ("priced 0.0 s: no way is free"). */
+    /** 0.39.z77 round fix 5: why a trip's seconds are no price ("priced 0.0 s: a way priced 0 or less is never valid"). */
     static String zero(double s) {
         return "priced " + (Double.isNaN(s) ? "NaN" : String.format(Locale.ROOT, "%.1f", s)) + " s: a way priced 0 or less is never valid";
+    }
+
+    /**
+     * The trip as the owner reads it (pure): "5 legs - 1 surface: torch 4, stone_pickaxe 1 | 2 descent to y 16: raw_iron 3,
+     * coal 1, carries crafting_table 1, stick 2 | ... ; priced 687 s". A descent's carry: what the steps after its start use
+     * that no step after it makes and no later leg gets (the take-along, from the plan's own per-step uses).
+     */
+    static String line(Playbook pb, NeedChain.Chain pc, Map<Step, String> starts) {
+        List<Playbook.Leg> legs = pb.legs();
+        // the first step of each leg in the chain, by the planner's leg numbers ("playbook leg 2/5: ...")
+        Map<Integer, Integer> at = new java.util.HashMap<>();
+        for (int k = 0; k < pc.steps().size(); k++) {
+            String t = starts == null ? null : starts.get(pc.steps().get(k));
+            if (t == null || !t.startsWith("playbook leg ")) continue;
+            int slash = t.indexOf('/');
+            if (slash > 13) at.put(Integer.parseInt(t.substring(13, slash)) - 1, k);    // structural: "playbook leg ".length()
+        }
+        List<String> parts = new ArrayList<>();
+        for (int i = 0; i < legs.size(); i++) {
+            Playbook.Leg l = legs.get(i);
+            List<String> g = new ArrayList<>();
+            for (Playbook.Target t : l.gets()) g.add(t.text());
+            String head = switch (l.kind()) {
+                case SURFACE -> "surface";
+                case DESCENT -> (l.on() ? "strip on at y " : "descent to y ") + l.y();
+                case AT_BAND -> "at the band";
+            };
+            String carry = l.kind() == Playbook.Kind.DESCENT && !l.on() && at.containsKey(i) ? carries(pb, i, at.get(i), pc) : "";
+            parts.add((i + 1) + " " + head + ": " + String.join(", ", g) + (carry.isEmpty() ? "" : ", carries " + carry));
+        }
+        String price = pc.explore() ? "priced with its explore " + Math.round(pc.seconds()) + " s" : "priced " + Math.round(pc.seconds()) + " s";
+        return legs.size() + " leg" + (legs.size() == 1 ? "" : "s") + " - " + String.join(" | ", parts) + "; " + price;
+    }
+
+    /** What the bot takes down at descent leg {@code i}: the uses after the descent's strip start, less what is made or got there. */
+    static String carries(Playbook pb, int i, int start, NeedChain.Chain pc) {
+        if (start < 0 || pc.uses().size() != pc.steps().size()) return "";
+        while (start < pc.steps().size() && !(pc.steps().get(start) instanceof Step.ToStrip || pc.steps().get(start) instanceof Step.Strip)) start++;   // what is made up there before going down is not carried
+        Set<String> made = new LinkedHashSet<>();
+        for (int j = i; j < pb.legs().size(); j++) for (Playbook.Target t : pb.legs().get(j).gets()) made.add(NeedChain.shw(t.item()));
+        for (int k = start; k < pc.steps().size(); k++) {
+            Step s = pc.steps().get(k);
+            if (s instanceof Step.Craft c) made.add(NeedChain.shw(c.item()));
+            if (s instanceof Step.Smelt c) made.add(NeedChain.shw(c.item()));
+        }
+        Map<String, Integer> used = new LinkedHashMap<>();
+        for (int k = start; k < pc.steps().size(); k++) {
+            // a station placed down there from the bag (the table, the furnace) goes down with the bot
+            if (pc.steps().get(k) instanceof Step.PlaceNear p && !made.contains(NeedChain.shw(p.item()))) used.merge(NeedChain.shw(p.item()), 1, Integer::sum);
+            Map<String, Integer> u = pc.uses().get(k);
+            if (u == null) continue;
+            for (var e : u.entrySet()) {
+                boolean fuel = e.getKey().startsWith("fuel ");                  // StepNeeds' fuel use ("fuel minecraft:coal")
+                String w = NeedChain.shw(fuel ? e.getKey().substring("fuel ".length()) : e.getKey());
+                if (!fuel && made.contains(w) || e.getValue() <= 0) continue;    // the fuel the plan burns is the bag's (StepNeeds' count)
+                used.merge(w + (fuel ? " (fuel)" : ""), e.getValue(), Integer::sum);
+            }
+        }
+        List<String> out = new ArrayList<>();
+        for (var e : used.entrySet()) {
+            String k = e.getKey();
+            out.add(k.endsWith(" (fuel)") ? k.substring(0, k.length() - " (fuel)".length()) + " " + e.getValue() + " (fuel)" : k + " " + e.getValue());
+        }
+        return String.join(", ", out);
     }
 }

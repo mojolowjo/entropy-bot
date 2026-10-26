@@ -340,16 +340,11 @@ public final class Goals {
                                                                              io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact, String why,
                                                                              io.github.mojolowjo.entropybot.aa.moves.Steps.Remaining left) {
         if (fact.price()) return reprice(bb, g, fact);
-        // 0.39.z77 J2 (rule 7; the Goals.chain unreachable pattern): a step of the playbook this order runs failed - the
-        // playbook is held for the order's life (key "playbook <batch>") and the ad-hoc chain takes over from the bag as it is
-        boolean held = false;
-        if (g.batch != null && failed != null && g.playbookSteps.contains(failed)) {
-            held = true;
-            g.playbookRun = false;
-            g.sources.failedFor(g.id(), BatchWay.key(g.batch), "a playbook step failed: " + failed.text() + " - " + fact.text(), bb.clock.now(), null, ORDER_LIFE_MS);
-            g.playbookSteps.clear();
-            bb.port.log(g.r.key() + ": the playbook is out for this order (" + failed.text() + ": " + fact.text() + "); the ad-hoc chain takes over from the bag as it is");
-        }
+        // 0.39.z77 SHAPE CHANGE (owner 2026-10-26 10:30: repair locally): a failed step of the trip is repaired inside its
+        // leg - the gap for what it served, from the bag as it is, the trip's later steps kept (D2's repair; never priced
+        // against a whole re-plan); only when no repair stands is the trip priced again from the bag (the same derivation,
+        // what is had counted); no way left ends the order with the reasons. The J2 hold "playbook <batch>" is deleted
+        boolean trip = g.playbookRun;
         // 0.39.z33 (S36): a source fact charges the failed step's source by its key: the chain drops it for this order.
         // 0.39.z62 item 1b: a fact may name its own source key (a strip heading blocked at its Y, any ore set)
         String own = io.github.mojolowjo.entropybot.aa.moves.FactChange.ownSourceKey(fact);
@@ -364,13 +359,13 @@ public final class Goals {
         // deleted. The order stops only when no way is left - every way held or dropped with its reason - or the honest park
         boolean newSource = sourceFact && !droppedSources(g).containsKey(src);
         // 0.39.z77 answers (1): an order met inside its batch's playbook run re-plans that run for the batch's open orders
-        if (g.n - have(bb.in.bag, g) <= 0 && (!g.playbookRun || held)) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
+        if (g.n - have(bb.in.bag, g) <= 0 && !trip) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
         // 0.39.z65 review 1: a station's walk fact keeps where the bot stood (released once it stands failures.moved closer)
         if (sourceFact) g.sources.failedFor(g.id(), src, fact.text(), bb.clock.now(), src.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STATION_AT) ? bb.in : null, ORDER_LIFE_MS);
         var ch = runChain(bb, g);
         if (ch == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");
         // 0.39.z73 (D2 3.4): the repair, priced against this full re-plan
-        var pk = left == null ? null : repair(bb, g, left, ch, sourceFact ? src : null);
+        var pk = left == null ? null : repair(bb, g, left, ch, sourceFact ? src : null, trip ? Double.POSITIVE_INFINITY : switchMarginS());
         if (pk != null) bb.port.log(g.r.key() + ": " + pk.line());
         if (pk != null && pk.repair()) {
             if (newSource) g.sourceReplans++;
@@ -402,6 +397,12 @@ public final class Goals {
      */
     static io.github.mojolowjo.entropybot.aa.moves.Repair.Pick repair(Blackboard bb, Goal g, io.github.mojolowjo.entropybot.aa.moves.Steps.Remaining left,
                                                                     io.github.mojolowjo.entropybot.aa.NeedChain.Chain full, String dropped) {
+        return repair(bb, g, left, full, dropped, switchMarginS());
+    }
+
+    /** 0.39.z77 SHAPE CHANGE: {@code margin} - a trip's repair is never priced against its whole re-plan (infinite). */
+    static io.github.mojolowjo.entropybot.aa.moves.Repair.Pick repair(Blackboard bb, Goal g, io.github.mojolowjo.entropybot.aa.moves.Steps.Remaining left,
+                                                                    io.github.mojolowjo.entropybot.aa.NeedChain.Chain full, String dropped, double margin) {
         var sp = io.github.mojolowjo.entropybot.aa.moves.Repair.split(left.steps());
         io.github.mojolowjo.entropybot.aa.NeedChain.Chain gap = null;
         double tail = Double.NaN;
@@ -415,7 +416,7 @@ public final class Goals {
                 tail += s;
             }
         }
-        return io.github.mojolowjo.entropybot.aa.moves.Repair.pick(left.steps(), left.uses(), sp, gap, tail, full, left.bag(), switchMarginS(), dropped);
+        return io.github.mojolowjo.entropybot.aa.moves.Repair.pick(left.steps(), left.uses(), sp, gap, tail, full, left.bag(), margin, dropped);
     }
 
     /**
@@ -427,8 +428,9 @@ public final class Goals {
         // 0.39.z77 answers (1) (manager: re-price only on a fact change - a failed step, a bag count off the plan): a landed
         // price never re-resolves the batch's running playbook; its legs go on as planned
         // (a playbook that ends in an explore is priced again as any explore: its find is the fact that picks the rest)
-        if (g.playbookRun && !g.pricedExplore) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "kept: the batch's playbook runs on (re-planned only on a changed fact)");
+        if (g.playbookRun && g.pricedWay && !g.pricedExplore) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "kept: the trip runs on (re-planned only on a changed fact)");
         if (g.n - have(bb.in.bag, g) <= 0) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
+        BatchWay.forget(g);          // SHAPE CHANGE: a re-price asks the trip's walks again (a stand's estimates, a landed path)
         var ch = chain(bb, g);
         if (ch == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");
         if (!ch.ok() || ch.steps().isEmpty()) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, ch.why());
@@ -459,6 +461,7 @@ public final class Goals {
      */
     static void took(Blackboard bb, Goal g, io.github.mojolowjo.entropybot.aa.NeedChain.Chain ch) {
         took(g, ch, bb.clock.now());
+        if (g.playbookRun) BatchWay.announce(bb, g);       // SHAPE CHANGE: the whole trip said before the bot moves
         String s = sparesLine(g, ch);
         if (s != null) bb.port.log(s);
     }
@@ -476,7 +479,7 @@ public final class Goals {
         g.playbookRun = ch.why() != null && ch.why().startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.PLAYBOOK);
         if (g.playbookRun) {
             g.playbookSteps.addAll(ch.steps());
-            var legs = BatchWay.legs(g.batch);
+            var legs = BatchWay.legs(BatchWay.tripKey(g));
             for (Step s : ch.steps()) { String t = legs.get(s); if (t != null) g.legStarts.put(s, t); }
         }
         // 0.39.z73 (D2 3.4): the taken chain's per-step seconds, kept for a later repair's tail price
@@ -823,15 +826,17 @@ public final class Goals {
         var world = chainWorld(bb, g);
         if (world == null) return null;
         var laps = io.github.mojolowjo.entropybot.aa.core.TickLaps.AA;    // 0.39.z62 item 4: resolves counted while the probe is on
-        // 0.39.z77 J2: a kept playbook verdict for this batch, bag and place re-prices the playbook alone (R3: one resolve)
-        var ch = batch ? BatchWay.cached(bb, g, world) : null;
-        if (ch == null) {
+        // 0.39.z77 SHAPE CHANGE (owner 2026-10-26 10:30: playbook first): a plain-item order runs its trip (alone or with its
+        // batch), kept per batch, bag and place (R3); the order's own chain only where no trip is derived (said) or for a group
+        final var wf = world;
+        java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.NeedChain.Chain> own = () -> {
             long t0 = laps.now();
-            ch = g.r.group() ? io.github.mojolowjo.entropybot.aa.NeedChain.resolveAll(g.r.key(), g.r.ids(), g.n, world)
-                    : io.github.mojolowjo.entropybot.aa.NeedChain.resolve(g.r.ids().isEmpty() ? g.r.key() : g.r.ids().get(0), g.n, world);
+            var c = g.r.group() ? io.github.mojolowjo.entropybot.aa.NeedChain.resolveAll(g.r.key(), g.r.ids(), g.n, wf)
+                    : io.github.mojolowjo.entropybot.aa.NeedChain.resolve(g.r.ids().isEmpty() ? g.r.key() : g.r.ids().get(0), g.n, wf);
             if (t0 != 0) laps.resolved(laps.now() - t0);
-            if (batch) ch = BatchWay.choose(bb, g, world, ch);      // 0.39.z77 J2: the batch's playbook when it is cheaper (rule 1: an option)
-        }
+            return c;
+        };
+        var ch = BatchWay.tripOrder(g) ? BatchWay.trip(bb, g, world, own) : own.get();
         // 0.39.z41: a source Baritone's complete search found unreachable is the z33 source fact: dropped for the order's life
         for (var e : ch.unreachable().entrySet()) g.sources.failedFor(g.id(), e.getKey(), e.getValue(), bb.clock.now(), null, ORDER_LIFE_MS);
         return ch;
