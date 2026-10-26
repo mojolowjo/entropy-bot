@@ -193,7 +193,7 @@ class Z65RunVTest {
     // ---- item 2: the spare decision at info level, once per chain ----
 
     /**
-     * Run V 07:13:09: a stone pickaxe made in the chain (131 uses) for a strip of 2 x 66 + 3 = 135 blocks: the spare needs
+     * Run V 07:13:09: a stone pickaxe made in the chain (131 uses) for a strip of 2 x 66 + 18 = 150 blocks (z77 spares 2: 18 ore): the spare needs
      * 2 sticks and no wood is in the bag or known - "no spare to be had", the worn one is used; with sticks in the bag one
      * spare is made (Z64RunUTest's hand numbers); the chain carries the line for the log.
      */
@@ -202,19 +202,19 @@ class Z65RunVTest {
         ScenariosTest.world("wooden", "stone");
         Tuning.set("strip.maxBlocksPerOre", 22);
         Map<String, Integer> noWood = Map.of("minecraft:stone_pickaxe", 1, "minecraft:cobblestone", 20);
-        Chain c = NeedChain.resolve("raw_iron", 3, Z62RunSTest.world(noWood, Z62RunSTest.band("east")).withUses(id -> 131));
+        Chain c = NeedChain.resolve("raw_iron", 18, Z62RunSTest.world(noWood, Z62RunSTest.band("east")).withUses(id -> 131));
         assertTrue(c.ok() && !c.explore(), c.why());
         assertEquals(0, Z62RunSTest.crafted(c, "stone_pickaxe"), c.steps().toString());
-        assertTrue(c.spares().startsWith("stone_pickaxe: 131 uses left, 135 blocks to break; no spare stone_pickaxe to be had ("), c.spares());
+        assertTrue(c.spares().startsWith("stone_pickaxe: 131 uses left, 150 blocks to break; no spare stone_pickaxe to be had ("), c.spares());
         assertTrue(c.spares().endsWith("): the worn one is used"), c.spares());
 
         Map<String, Integer> sticks = Map.of("minecraft:stone_pickaxe", 1, "minecraft:cobblestone", 20, "minecraft:stick", 10);
-        Chain s = NeedChain.resolve("raw_iron", 3, Z62RunSTest.world(sticks, Z62RunSTest.band("east")).withUses(id -> 131));
+        Chain s = NeedChain.resolve("raw_iron", 18, Z62RunSTest.world(sticks, Z62RunSTest.band("east")).withUses(id -> 131));
         assertEquals(1, Z62RunSTest.crafted(s, "stone_pickaxe"));
         assertTrue(s.spares().contains("-> 1 spare stone_pickaxe made first"), s.spares());
 
-        Chain none = NeedChain.resolve("raw_iron", 3, Z62RunSTest.world(sticks, Z62RunSTest.band("east")).withUses(id -> 135));
-        assertEquals("stone_pickaxe: 135 uses left, 135 blocks to break: no spare needed", none.spares());
+        Chain none = NeedChain.resolve("raw_iron", 18, Z62RunSTest.world(sticks, Z62RunSTest.band("east")).withUses(id -> 150));
+        assertEquals("stone_pickaxe: 150 uses left, 150 blocks to break: no spare needed", none.spares());
 
         // once per chain: the same line again is not said again; another one is
         Goals.Goal g = Goals.draft(DebugTreeTest.item("raw_iron"), 3, 0, 0);

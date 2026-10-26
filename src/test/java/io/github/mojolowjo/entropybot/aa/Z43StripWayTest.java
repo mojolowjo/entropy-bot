@@ -93,8 +93,9 @@ class Z43StripWayTest {
         ScenariosTest.world("wooden", "stone");
         Chain c = NeedChain.resolve("raw_iron", 3, stripWorld(Map.of("minecraft:stone_pickaxe", 1), Map.of()));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertTrue(c.why().contains("strip at y 16 (band -64..384) ~110 blocks/ore"), c.why());
-        assertTrue(c.why().contains("x 3 ore = 332 blocks"), c.why());
+        // 0.39.z77 spares 2: ~110 slab cells an ore / 3 seen a block dug = ~37 blocks dug an ore; 3 x 36.8 / 2 a cell = 56 cells
+        assertTrue(c.why().contains("strip at y 16 (band -64..384) ~37 blocks/ore"), c.why());
+        assertTrue(c.why().contains("~110 cells an ore / 3 seen a block dug) x 3 ore = 56 cells"), c.why());
         Step.Strip st = (Step.Strip) c.steps().stream().filter(s -> s instanceof Step.Strip).findFirst().orElseThrow();
         assertEquals(16, st.y());
         assertEquals("east", st.heading());

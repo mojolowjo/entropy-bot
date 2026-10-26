@@ -706,6 +706,7 @@ public final class NeedChain {
         int pickTier;
         int pickWorn;         // 0.39.z33: blocks the bag's pickItem breaks in this chain so far (a made pickaxe: reset, it is new)
         boolean pickMade;     // 0.39.z33: pickItem was made in this chain (fresh: its uses are its max damage, not the bag's)
+        boolean pickOut;      // 0.39.z77 spares 2: pickItem is not in the simulated bag (spares made and worn in a way: out of it)
         int trials;           // ways priced so far (the search's bound)
         boolean bandPick;     // 0.39.z69 item 1: a band walk's pickaxe-first is being priced (no second one inside it)
         /**
@@ -768,7 +769,7 @@ public final class NeedChain {
         /** Everything a way changes, to put back when the way is dropped. */
         record Snap(Map<String, Integer> bag, List<Step> steps, Map<String, Integer> leafAt, Map<String, Integer> taken, List<String> dropped,
                     double seconds, double away, boolean tableReady, boolean furnaceReady, boolean stuck, String unknown, String pickItem, int pickTier,
-                    boolean tableWalked, boolean furnaceWalked, int pickWorn, boolean pickMade, List<String> spares, boolean atRoom,
+                    boolean tableWalked, boolean furnaceWalked, int pickWorn, boolean pickMade, boolean pickOut, List<String> spares, boolean atRoom,
                     String down, int downAt, boolean tableDown, boolean furnaceDown, Map<String, Integer> upBag) {}
 
         /**
@@ -785,7 +786,7 @@ public final class NeedChain {
 
         Snap snap() {
             return new Snap(new LinkedHashMap<>(bag), new ArrayList<>(steps), new LinkedHashMap<>(leafAt), new LinkedHashMap<>(taken), new ArrayList<>(dropped),
-                    seconds, away, tableReady, furnaceReady, stuck, unknown, pickItem, pickTier, tableWalked, furnaceWalked, pickWorn, pickMade, new ArrayList<>(spares), atRoom,
+                    seconds, away, tableReady, furnaceReady, stuck, unknown, pickItem, pickTier, tableWalked, furnaceWalked, pickWorn, pickMade, pickOut, new ArrayList<>(spares), atRoom,
                     down, downAt, tableDown, furnaceDown, upBag == null ? null : new LinkedHashMap<>(upBag));
         }
 
@@ -798,7 +799,7 @@ public final class NeedChain {
             seconds = s.seconds(); away = s.away(); tableReady = s.tableReady(); furnaceReady = s.furnaceReady(); stuck = s.stuck();
             unknown = s.unknown(); pickItem = s.pickItem(); pickTier = s.pickTier();
             tableWalked = s.tableWalked(); furnaceWalked = s.furnaceWalked();
-            pickWorn = s.pickWorn(); pickMade = s.pickMade();
+            pickWorn = s.pickWorn(); pickMade = s.pickMade(); pickOut = s.pickOut();
             spares = new ArrayList<>(s.spares());
             atRoom = s.atRoom();
             down = s.down(); downAt = s.downAt(); tableDown = s.tableDown(); furnaceDown = s.furnaceDown();
@@ -1214,6 +1215,7 @@ public final class NeedChain {
             c.pickItem = item;
             c.pickTier = t;
             c.pickMade = true;
+            c.pickOut = false;
             c.pickWorn = 0;
         }
     }
@@ -1231,8 +1233,8 @@ public final class NeedChain {
      * last leg left the bot by the break formula (the Y difference x the tunnel height x the host's break: rule 18 amended, no
      * walk priced from a future cell) - then per family its ore blocks x blocks per ore (the leg's ore per slab; 0.39.z77
      * spares: x the areas along the first descent's heading, {@link #stripDig}, the seconds and the wear alike) x the tunnel
-     * height x the host's break plus the ores' own breaks: the families summed (a tunnel finds both at once; rough on the safe
-     * side). The strip leaves the bot down there ({@code c.down}): later needs are met there or before going down.
+     * height x the host's break plus the ores' own breaks: one tunnel for all of them (0.39.z77 spares 2: its cells the most
+     * any family needs, the others come along; the ores' own breaks summed). The strip leaves the bot down there ({@code c.down}): later needs are met there or before going down.
      */
     private static String playbookStrip(Ctx c, Playbook.Leg leg, int levelY, boolean afterExplore) {
         MiningTiers.Source src = MiningTiers.source();
@@ -1286,7 +1288,7 @@ public final class NeedChain {
             walkNote = " (down " + dy + (levelY == Playbook.NO_Y ? " from the surface after the explore: " : " from the last descent: ") + walkBreaks + " breaks x " + s(hostS) + ", rule 18 amended)";
         }
         double digS = 0;
-        int tunnelBreaks = 0, oreTotal = 0;
+        int tunnelCells = 0, oreTotal = 0;
         Map<String, Integer> amounts = new LinkedHashMap<>();
         Map<String, Integer> gains = new LinkedHashMap<>();
         List<String> parts = new ArrayList<>();
@@ -1304,16 +1306,20 @@ public final class NeedChain {
             StripDig sd = stripDig(slab, oreBlocks, firstLeg ? new int[]{first.x(), first.z()} : null, y, first.heading(), sb.ores());
             double bpo = sd.bpo();
             int dug = sd.cells();
-            int cells = sd.breaks();
             double oreS = blockBreakS(c, ore);
-            tunnelBreaks += cells;
+            // 0.39.z77 spares 2 (manager's call 2): ONE tunnel at the band serves every family in it - its cells are the
+            // most any family needs (the rarest decides), the others come along; was: the families' cells summed (run CA
+            // 15:35:44: coal 3's 672 cells on top of iron 24's 1325, 4021 blocks of wear)
+            tunnelCells = Math.max(tunnelCells, dug);
             oreTotal += oreBlocks;
-            double fam = cells * hostS + oreBlocks * oreS;
-            digS += fam;
+            digS += oreBlocks * oreS;
             amounts.merge(io.github.mojolowjo.entropybot.aa.brain.StripOrder.countKey(ore, io.github.mojolowjo.entropybot.cave.OreSpec::family), oreBlocks, Integer::sum);
             gains.merge(gives, Math.max(e.getValue(), (int) Math.floor(oreBlocks * per + 1e-9)), Integer::sum);     // structural: epsilon
-            parts.add(shw(gives) + " " + e.getValue() + " (" + oreBlocks + " ore x ~" + Math.round(bpo) + " blocks = " + dug + " cells: " + s(fam) + ")");
+            parts.add(shw(gives) + " " + e.getValue() + " (" + oreBlocks + " ore x ~" + Math.round(bpo) + " blocks dug = " + dug + " cells)");
         }
+        int tunnelBreaks = baritone.api.process.IStripProcess.TUNNEL_HEIGHT * tunnelCells;
+        digS += tunnelBreaks * hostS;
+        final String tunnel = lacks.size() > 1 ? "; one tunnel of " + tunnelCells + " cells (the most of them; the others come along)" : "";
         int wear = walkBreaks + tunnelBreaks + oreTotal;
         String spare = spareTools(c, wear, tier);
         if (c.pickItem != null && spare == null) c.pickWorn += wear;
@@ -1343,7 +1349,7 @@ public final class NeedChain {
         if (hostDrop != null && carried > 0) c.bag.merge(id(hostDrop), carried, Integer::sum);
         int n = legs.size() / io.github.mojolowjo.entropybot.aa.brain.Goals.stripLoop(whole).size();
         final String line = "descent to y " + y + " (" + leg.whyY() + "): one strip of " + String.join(", ", ores.stream().map(NeedChain::shw).toList()) + " for "
-                + String.join(" + ", parts) + (n > 1 ? " in " + n + " legs (steps.stepMaxS " + Math.round(Tuning.get("steps.stepMaxS")) + " s each)" : "")
+                + String.join(" + ", parts) + tunnel + ": " + s(digS) + (n > 1 ? " in " + n + " legs (steps.stepMaxS " + Math.round(Tuning.get("steps.stepMaxS")) + " s each)" : "")
                 + ", walk " + s(walkS) + walkNote + " -> " + s(walkS + digS)
                 + (hostDrop != null && carried > 0 ? "; carries " + carried + " " + sh(id(hostDrop)) + " (the tunnel's: the climb back's blocks)" : "");
         c.note(() -> line);
@@ -3355,7 +3361,7 @@ public final class NeedChain {
         for (var e : c.bag.entrySet()) {
             if (c.have(e.getKey()) <= 0) continue;           // z77 legs review: less what is set aside (a later leg's holdings up there)
             int t = MiningTiers.toolTier(e.getKey(), "pickaxe");
-            if (t > c.pickTier) { c.pickTier = t; c.pickItem = e.getKey(); }
+            if (t > c.pickTier) { c.pickTier = t; c.pickItem = e.getKey(); c.pickOut = false; }
         }
         String p = c.pickTier >= tier && c.pickItem != null && !c.pickItem.equals(tool) ? sh(c.pickItem) + " (in the bag)" : cheapestPickaxe(c, tier);
         if (c.fail != null) {
@@ -3628,7 +3634,8 @@ public final class NeedChain {
         final String areas = seen.faces() <= 0 ? "" : " (areas along " + sb.heading() + ": " + seen.faces() + " faces seen, " + seen.ores() + " ore on them: band "
                 + Math.round(band) + " x " + String.format(java.util.Locale.ROOT, "%.2f", scale) + ")";
         final String line = head + (sb.fresh() ? " from fresh ground " + sb.from() + " " + sb.heading() : "") + " ~" + Math.round(bpo) + " blocks/ore (" + String.format(java.util.Locale.ROOT, "%.1f", sb.perSlab())
-                + " ore a chunk in " + io.github.mojolowjo.entropybot.aa.brain.OreBand.slab() + " layers)" + areas + " x " + oreBlocks + " ore = " + dug + " blocks"
+                + " ore a chunk in " + io.github.mojolowjo.entropybot.aa.brain.OreBand.slab() + " layers: ~" + Math.round(band) + " cells an ore / " + String.format(java.util.Locale.ROOT, "%.0f", SEEN_PER_DUG) + " seen a block dug)"
+                + areas + " x " + oreBlocks + " ore = " + dug + " cells"
                 + " (" + shw(sb.host() != null ? sb.host() : ore) + " " + s(hostS) + " each, " + baritone.api.process.IStripProcess.TUNNEL_HEIGHT + " a cell) -> " + s(wk.seconds() + digS);
         c.note(() -> "source: none known for " + shw(word) + ": " + line);
         return noted(line + (pre == null ? "" : " with " + pre) + (spare == null ? "" : " + " + spare), wk);
@@ -3641,10 +3648,22 @@ public final class NeedChain {
      * no start cell known or no faces seen: x 1, the band's estimate), capped by {@code strip.maxBlocksPerOre}, x the ore
      * blocks = the tunnel's cells; a cell breaks the fork's {@code IStripProcess.TUNNEL_HEIGHT} blocks. The strip way and the
      * playbook's descent price their dig seconds AND their pickaxe wear ({@link #spareTools}) from it.
+     * <p>0.39.z77 spares 2 (manager's call 3: the overcount fixed from geometry, no knob): the band's blocks per ore is slab
+     * cells per ore cell, but a strip finds the ore it SEES - each block dug opens {@link #SEEN_PER_DUG} new cells around the
+     * tunnel (rule 17: faces only) - so the blocks dug per ore are the band's figure (x the areas, capped) / SEEN_PER_DUG, and
+     * the cells per ore that / TUNNEL_HEIGHT. {@code band}: slab cells per ore; {@code bpo}: blocks dug per ore.
      */
     record StripDig(double band, double scale, double bpo, int cells, io.github.mojolowjo.entropybot.aa.brain.StripAreas.Yield seen) {
         int breaks() { return baritone.api.process.IStripProcess.TUNNEL_HEIGHT * cells; }
     }
+
+    /**
+     * 0.39.z77 spares 2 (structural, geometry): a 1-wide tunnel of TUNNEL_HEIGHT (the fork's 1 x 2) advanced one cell opens
+     * 2 x TUNNEL_HEIGHT side cells (left and right, feet and head) + the roof + the floor = 6 new cells it sees, for
+     * TUNNEL_HEIGHT = 2 blocks dug: (2 x 2 + 2) / 2 = 3 cells seen per block dug. The dug blocks themselves and the cells
+     * ahead (seen again as the next cell's sides) are not counted again; branches overlapping a seen cell are rough (rule 14).
+     */
+    static final double SEEN_PER_DUG = (2.0 * baritone.api.process.IStripProcess.TUNNEL_HEIGHT + 2) / baritone.api.process.IStripProcess.TUNNEL_HEIGHT;   // structural: geometry
 
     /** {@link StripDig} for {@code oreBlocks} ore at {@code y}; {@code start}: the tunnel's first column {x, z} (null: not known). */
     static StripDig stripDig(double perSlab, int oreBlocks, int[] start, int y, String heading, List<String> ores) {
@@ -3652,8 +3671,8 @@ public final class NeedChain {
         var seen = start == null || heading == null ? io.github.mojolowjo.entropybot.aa.brain.StripAreas.Yield.NONE
                 : io.github.mojolowjo.entropybot.aa.brain.StripAreas.along(start[0], y, start[1], heading, ores);
         double scale = io.github.mojolowjo.entropybot.aa.brain.StripAreas.factor(io.github.mojolowjo.entropybot.aa.brain.StripAreas.perFace(perSlab), seen);
-        double bpo = Math.min(Tuning.get("strip.maxBlocksPerOre"), band * scale);
-        int cells = (int) Math.ceil(Math.max(0, oreBlocks) * bpo - 1e-9);   // structural: epsilon
+        double bpo = Math.min(Tuning.get("strip.maxBlocksPerOre"), band * scale) / SEEN_PER_DUG;
+        int cells = (int) Math.ceil(Math.max(0, oreBlocks) * bpo / baritone.api.process.IStripProcess.TUNNEL_HEIGHT - 1e-9);   // structural: epsilon
         return new StripDig(band, scale, bpo, cells, seen);
     }
 
@@ -3694,11 +3713,12 @@ public final class NeedChain {
             return null;
         }
         // z62 review 1: the bag's other pickaxes that dig this tier count first (their uses left; the one in hand excluded)
-        int others = 0, otherCount = 0, held = 0;
+        int others = 0, otherCount = 0;
         for (var e : c.bag.entrySet()) {
-            int k = c.have(e.getKey()) - (e.getKey().equals(tool) ? 1 : 0);     // z77 legs review: less what is set aside
+            // z77 legs review: less what is set aside; 0.39.z77 spares 2 (review 2): the one in hand is one of the bag's only
+            // when it is in the simulated bag - spares made and worn in an earlier way are out of it (c.pickOut)
+            int k = c.have(e.getKey()) - (e.getKey().equals(tool) && !c.pickOut ? 1 : 0);
             if (k <= 0 || MiningTiers.toolTier(e.getKey(), "pickaxe") < tier) continue;
-            held += k;                                       // 0.39.z77 spares: every one held, its uses known or not
             Integer u = c.w.usesLeft().apply(e.getKey());
             int each = u == null ? io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN : u;
             if (each == io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED) return null;     // one never wears out
@@ -3724,7 +3744,11 @@ public final class NeedChain {
         // 0.39.z77 spares (run CA 15:30-15:47, 22 stone pickaxes: "-> 3 spare stone_pickaxe made first" on every re-plan while
         // the bag's other pickaxes rose 0 -> 393 -> ... -> 1965 uses, until the bag was full): tools.maxSpares caps the spare
         // pickaxes HELD, not the ones one chain makes - the bag's other pickaxes of the tier (less what is set aside) count
-        // against it, so a re-plan with the spares already held makes none past the cap; the rest is re-planned when one breaks
+        // against it, so a re-plan with the spares already held makes none past the cap; the rest is re-planned when one breaks.
+        // 0.39.z77 spares 2 (review 1): held as new ones of the kind made - their known uses over its fresh uses, rounded down;
+        // unknown uses count 0 (rule 15: not known is no value) - so worn or unknown pickaxes never fill the cap while the
+        // wear is still short; the gap the cap leaves is said below
+        int held = others / freshK;
         int extra = Math.min(need, Math.max(0, cap - held));
         final int heldN = held;
         Ctx.Snap before = c.snap();
@@ -3738,10 +3762,12 @@ public final class NeedChain {
         }
         // the cap said with what was made (z77 round fix 4: "3 made" was said before the make, which then failed)
         if (extra < need) c.spare(sh(tool) + ": " + need + " spare " + sh(kind) + " would cover " + wear + " blocks; tools.maxSpares " + cap + " holds"
-                + (heldN > 0 ? " (" + heldN + " other pickaxe(s) held already)" : "") + ": " + extra + " made, the rest re-planned when a pickaxe breaks");
+                + (heldN > 0 ? " (" + heldN + " held already: the bag's " + bagUses + " uses / " + freshK + " a new one)" : "") + ": " + extra
+                + " made, " + Math.max(0, wear - left - others - extra * freshK) + " blocks over, re-planned when a pickaxe breaks");
         if (extra <= 0) return null;
         c.bag.merge(kind, -extra, Integer::sum);            // they wear out in this way
         c.pickMade = true;
+        c.pickOut = true;                                  // spares 2: the one in hand is out of the simulated bag
         c.pickItem = kind;                                 // the last one in hand digs on (its speed for what follows, rough)
         c.pickWorn = Math.max(0, Math.min(freshK, (wear - left - others) - (extra - 1) * freshK));   // the last spare's wear (rough)
         double add = c.seconds - s0;
@@ -4328,6 +4354,7 @@ public final class NeedChain {
         c.pickItem = win.alt().id;
         c.pickTier = Math.max(c.pickTier, win.alt().tier);
         c.pickMade = true;                                  // 0.39.z33: a new pickaxe: its uses are fresh
+        c.pickOut = false;                                  // spares 2: made into the simulated bag
         c.pickWorn = 0;
         return win.alt().label + " (<- " + win.phrase() + ")";
     }

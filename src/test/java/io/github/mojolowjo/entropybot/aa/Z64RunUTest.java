@@ -29,18 +29,18 @@ class Z64RunUTest {
     }
 
     /**
-     * Hand numbers: strip.maxBlocksPerOre 22 -> 3 ores x 22 = 66 cells; wear 2 x 66 + 3 = 135 > 131 uses: one spare stone
-     * pickaxe, crafted before the strip (on the surface) from the bag's cobblestone and sticks. One block a cell (69) would
-     * have made none - run U's east tunnel.
+     * Hand numbers: strip.maxBlocksPerOre 22 -> 22 / 3 seen a block dug (z77 spares 2) = 7.33 blocks dug an ore, 18 ores x
+     * 7.33 / 2 a cell = 66 cells; wear 2 x 66 + 18 = 150 > 131 uses: one spare stone pickaxe, crafted before the strip (on the
+     * surface) from the bag's cobblestone and sticks. One block a cell (84) would have made none - run U's east tunnel.
      */
     @Test
     void aStripCellWearsThePickaxeTwice() {
         ScenariosTest.world("wooden", "stone");
         Tuning.set("strip.maxBlocksPerOre", 22);
         Map<String, Integer> bag = Map.of("minecraft:stone_pickaxe", 1, "minecraft:cobblestone", 20, "minecraft:stick", 10);
-        Chain c = NeedChain.resolve("raw_iron", 3, Z62RunSTest.world(bag, Z62RunSTest.band("east")).withUses(id -> 131));
+        Chain c = NeedChain.resolve("raw_iron", 18, Z62RunSTest.world(bag, Z62RunSTest.band("east")).withUses(id -> 131));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertTrue(c.why().contains("= 66 blocks"), c.why());
+        assertTrue(c.why().contains("x 18 ore = 66 cells"), c.why());
         assertEquals(1, Z62RunSTest.crafted(c, "stone_pickaxe"), c.steps().toString());
         int craft = -1, strip = -1;
         for (int i = 0; i < c.steps().size(); i++) {
@@ -48,8 +48,8 @@ class Z64RunUTest {
             if (c.steps().get(i) instanceof Step.Strip && strip < 0) strip = i;
         }
         assertTrue(craft >= 0 && craft < strip, "the spare (and its sticks) before the strip: " + c.steps());
-        // 135 uses cover 2 x 66 + 3 exactly: none
-        assertEquals(0, Z62RunSTest.crafted(NeedChain.resolve("raw_iron", 3, Z62RunSTest.world(bag, Z62RunSTest.band("east")).withUses(id -> 135)), "stone_pickaxe"));
+        // 150 uses cover 2 x 66 + 18 exactly: none
+        assertEquals(0, Z62RunSTest.crafted(NeedChain.resolve("raw_iron", 18, Z62RunSTest.world(bag, Z62RunSTest.band("east")).withUses(id -> 150)), "stone_pickaxe"));
         assertEquals(2, baritone.api.process.IStripProcess.TUNNEL_HEIGHT);
     }
 

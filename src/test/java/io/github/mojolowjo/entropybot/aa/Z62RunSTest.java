@@ -158,15 +158,22 @@ class Z62RunSTest {
     // ---- item 2: the pickaxe's wear ----
 
     /**
-     * Run S: one stone pickaxe for 332 strip cells + 3 ores. Hand numbers (z64 item 2: a cell is two blocks, feet and head):
-     * wear 2 x 332 + 3 = 667, 131 uses left -> over 536, ceil(536 / 131) = 5 spares, tools.maxSpares 3 holds: 3 spare stone
+     * 0.39.z77 spares 2: the strip's dig from geometry (Z77SparesTest) - run S's band, ~110.4 slab cells an ore / 3 seen a
+     * block dug = 36.8 blocks dug an ore; the wear tests here strip {@link #ORES} ore (was 3, 332 cells: now 3 ore are 56
+     * cells, too few to wear a pickaxe out): 18 x 36.8 / 2 a cell = 332 cells, wear 2 x 332 + 18 = 682.
+     */
+    static final int ORES = 18;
+
+    /**
+     * Run S: one stone pickaxe for 332 strip cells + 18 ores. Hand numbers (z64 item 2: a cell is two blocks, feet and head):
+     * wear 2 x 332 + 18 = 682, 131 uses left -> over 551, ceil(551 / 131) = 5 spares, tools.maxSpares 3 holds: 3 spare stone
      * pickaxes made up front from the bag's cobblestone and sticks.
      */
     @Test
     void theStripPlansSparePickaxesForItsWear() {
         ScenariosTest.world("wooden", "stone");
         Map<String, Integer> bag = Map.of("minecraft:stone_pickaxe", 1, "minecraft:cobblestone", 20, "minecraft:stick", 10);
-        Chain c = NeedChain.resolve("raw_iron", 3, world(bag, band("east")).withUses(id -> 131));
+        Chain c = NeedChain.resolve("raw_iron", ORES, world(bag, band("east")).withUses(id -> 131));
         assertTrue(c.ok() && !c.explore(), c.why());
         assertEquals(3, crafted(c, "stone_pickaxe"), c.steps().toString());
         assertTrue(c.why().contains("+ 3 spare stone_pickaxe"), c.why());
@@ -177,34 +184,34 @@ class Z62RunSTest {
         }
         assertTrue(craft >= 0 && craft < st, "the spares before the strip: " + c.steps());
         // enough uses: none; durability unknown (rule 15): none, said
-        assertEquals(0, crafted(NeedChain.resolve("raw_iron", 3, world(bag, band("east")).withUses(id -> 667)), "stone_pickaxe"));
-        assertEquals(1, crafted(NeedChain.resolve("raw_iron", 3, world(bag, band("east")).withUses(id -> 666)), "stone_pickaxe"), "one use short: one spare");
-        assertEquals(0, crafted(NeedChain.resolve("raw_iron", 3, world(bag, band("east")).withUses(id -> ToolUses.UNKNOWN)), "stone_pickaxe"));
-        assertEquals(0, crafted(NeedChain.resolve("raw_iron", 3, world(bag, band("east"))), "stone_pickaxe"), "no wear facts: unlimited");
+        assertEquals(0, crafted(NeedChain.resolve("raw_iron", ORES, world(bag, band("east")).withUses(id -> 682)), "stone_pickaxe"));
+        assertEquals(1, crafted(NeedChain.resolve("raw_iron", ORES, world(bag, band("east")).withUses(id -> 681)), "stone_pickaxe"), "one use short: one spare");
+        assertEquals(0, crafted(NeedChain.resolve("raw_iron", ORES, world(bag, band("east")).withUses(id -> ToolUses.UNKNOWN)), "stone_pickaxe"));
+        assertEquals(0, crafted(NeedChain.resolve("raw_iron", ORES, world(bag, band("east"))), "stone_pickaxe"), "no wear facts: unlimited");
     }
 
     /**
-     * z62 review 1 and 3: the bag's other pickaxes of the tier count before spares (z64: wear 667; 6 stone pickaxes x 131 =
-     * 786 >= 667: none made); the spare count is capped by tools.maxSpares. 0.39.z77 spares (run CA): the cap is on the
-     * spares HELD - 5 stone pickaxes (655 of 667) hold 4 others past the cap 3: none made, the rest re-planned when one breaks
-     * (was: one more; Z77SparesTest).
+     * z62 review 1 and 3: the bag's other pickaxes of the tier count before spares (z77 spares 2: wear 682; 6 stone pickaxes
+     * x 131 = 786 >= 682: none made); the spare count is capped by tools.maxSpares. 0.39.z77 spares (run CA): the cap is on
+     * the spares HELD - 5 stone pickaxes (655 of 682) hold 4 others (524 uses / 131 = 4 new ones) past the cap 3: none made,
+     * the rest re-planned when one breaks (was: one more; Z77SparesTest).
      */
     @Test
     void theBagsOtherPickaxesCountFirstAndTheSparesAreCapped() {
         ScenariosTest.world("wooden", "stone");
         Map<String, Integer> six = Map.of("minecraft:stone_pickaxe", 6, "minecraft:cobblestone", 20, "minecraft:stick", 10);
-        Chain c = NeedChain.resolve("raw_iron", 3, world(six, band("east")).withUses(id -> 131));
+        Chain c = NeedChain.resolve("raw_iron", ORES, world(six, band("east")).withUses(id -> 131));
         assertTrue(c.ok(), c.why());
         assertEquals(0, crafted(c, "stone_pickaxe"), c.why());
         Map<String, Integer> five = Map.of("minecraft:stone_pickaxe", 5, "minecraft:cobblestone", 20, "minecraft:stick", 10);
-        assertEquals(0, crafted(NeedChain.resolve("raw_iron", 3, world(five, band("east")).withUses(id -> 131)), "stone_pickaxe"), "655 of 667, 4 held past tools.maxSpares 3: none");
+        assertEquals(0, crafted(NeedChain.resolve("raw_iron", ORES, world(five, band("east")).withUses(id -> 131)), "stone_pickaxe"), "655 of 682, 4 held past tools.maxSpares 3: none");
         Tuning.set("tools.maxSpares", 5);
-        assertEquals(1, crafted(NeedChain.resolve("raw_iron", 3, world(five, band("east")).withUses(id -> 131)), "stone_pickaxe"), "655 of 667, room for one under 5 held: one more");
+        assertEquals(1, crafted(NeedChain.resolve("raw_iron", ORES, world(five, band("east")).withUses(id -> 131)), "stone_pickaxe"), "655 of 682, room for one under 5 held: one more");
         Map<String, Integer> one = Map.of("minecraft:stone_pickaxe", 1, "minecraft:cobblestone", 20, "minecraft:stick", 10);
         Tuning.set("tools.maxSpares", 1);
-        assertEquals(1, crafted(NeedChain.resolve("raw_iron", 3, world(one, band("east")).withUses(id -> 131)), "stone_pickaxe"), "5 needed, the cap holds at 1");
+        assertEquals(1, crafted(NeedChain.resolve("raw_iron", ORES, world(one, band("east")).withUses(id -> 131)), "stone_pickaxe"), "5 needed, the cap holds at 1");
         Tuning.set("tools.maxSpares", 0);
-        assertEquals(0, crafted(NeedChain.resolve("raw_iron", 3, world(one, band("east")).withUses(id -> 131)), "stone_pickaxe"));
+        assertEquals(0, crafted(NeedChain.resolve("raw_iron", ORES, world(one, band("east")).withUses(id -> 131)), "stone_pickaxe"));
     }
 
     /** z62 review 2: only "no path" at the first cell, after the fork stood at the strip's Y, burns the heading. */
@@ -238,13 +245,16 @@ class Z62RunSTest {
         assertNull(StripOrder.startBlocked(feet, "west", head));
     }
 
-    /** The walk's pickaxe blocks count: 700 uses, 667 strip (z64: 2 x 332 + 3) + 100 dug on the path = 767 -> 1 spare; the same walk with 0 breaks -> none. */
+    /**
+     * The walk's pickaxe blocks count: 200 uses, 115 strip (z77 spares 2: 3 ore, 56 cells: 2 x 56 + 3) + 100 dug on the path
+     * = 215 -> 1 spare; the same walk with 0 breaks -> none.
+     */
     @Test
     void theWalksDugBlocksWearThePickaxeToo() {
         ScenariosTest.world("wooden", "stone");
         Map<String, Integer> bag = Map.of("minecraft:stone_pickaxe", 1, "minecraft:cobblestone", 20, "minecraft:stick", 10);
         StripBand deep = new StripBand(IRON, -64, 384, 16, band("east").perSlab(), 0, 0, 64, "east", "minecraft:stone");
-        var w = ScenariosTest.w(bag, true, true, Map.of()).withStrip(word -> word.contains("raw_iron") || word.contains("iron_ore") ? deep : null).withUses(id -> 700);
+        var w = ScenariosTest.w(bag, true, true, Map.of()).withStrip(word -> word.contains("raw_iron") || word.contains("iron_ore") ? deep : null).withUses(id -> 200);
         Chain dug = NeedChain.resolve("raw_iron", 3, w.withPath((x, y, z, d) -> PathPrice.Answer.priced(new PathPrice.Walk(30, 0, 100))));
         assertEquals(1, crafted(dug, "stone_pickaxe"), dug.why());
         Chain open = NeedChain.resolve("raw_iron", 3, w.withPath((x, y, z, d) -> PathPrice.Answer.priced(new PathPrice.Walk(30, 0, 0))));

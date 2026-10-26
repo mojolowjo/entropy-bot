@@ -59,8 +59,9 @@ class Z77ExploreTest {
     // ---- E2: deep under ground ----
 
     /**
-     * (a) Feet in the rock at y 16 in iron's band: the way is the strip at the feet - 3 ore x 16 = 48 cells x 2 x 0.6 = 57.6
-     * + 3 x 1.15 = 3.45: 61.05 s, no walk (the strip's own cell, 0 m); no Explore step, no walk to a column.
+     * (a) Feet in the rock at y 16 in iron's band: the way is the strip at the feet - 16 slab cells an ore / 3 seen a block
+     * dug (z77 spares 2) x 3 ore / 2 a cell = 8 cells x 2 x 0.6 = 9.6 + 3 x 1.15 = 3.45: 13.05 s, no walk (the strip's own
+     * cell, 0 m); no Explore step, no walk to a column.
      */
     @Test
     void e2a_theStripAtTheFeet_noExplore() {
@@ -68,7 +69,7 @@ class Z77ExploreTest {
                 ? new StripBand(List.of(IRON_ORE), 0, 31, 16, 256, -181, 27, 16, "west", STONE) : null);
         Chain c = NeedChain.resolve("raw_iron", 3, w);
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(61.05, c.seconds(), 0.1, c.why());
+        assertEquals(13.05, c.seconds(), 0.1, c.why());
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Explore || s instanceof Step.ToStrip || s instanceof Step.ToBand), c.steps().toString());
         assertTrue(c.steps().get(0) instanceof Step.Strip st && st.y() == 16, c.steps().toString());
     }
