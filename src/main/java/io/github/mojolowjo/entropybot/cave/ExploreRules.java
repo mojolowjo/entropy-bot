@@ -336,6 +336,13 @@ public final class ExploreRules {
          * blocks of: the next-target pick passes over it (a fact about where it failed, never "explored"). Unknown feet:
          * still skipped (rule 15).
          */
+        /** 0.39.z75 review 2: a held target no longer applies - the bot stands {@code moved} or more from where it failed. */
+        public static boolean released(Failed f, int[] me, double moved) {
+            if (f == null || f.from() == null || me == null) return false;
+            double dx = me[0] - f.from()[0], dy = me[1] - f.from()[1], dz = me[2] - f.from()[2];
+            return Math.sqrt(dx * dx + dy * dy + dz * dz) >= moved;
+        }
+
         public static boolean skip(List<Failed> failed, int cx, int cz, int[] me, double moved) {
             if (failed == null) return false;
             for (Failed f : failed) {

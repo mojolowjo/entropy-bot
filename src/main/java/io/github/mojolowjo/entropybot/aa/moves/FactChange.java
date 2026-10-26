@@ -139,6 +139,7 @@ public final class FactChange {
     public static String ownSourceKey(Fact f) {
         if (f != null && f.key().startsWith(WALK_TO)) return f.key().substring(WALK_TO.length());     // 0.39.z65 item 1
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.PLACE_AT)) return f.key().substring("source ".length());   // 0.39.z67 item 1
+        if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.NEAR)) return f.key().substring("source ".length());       // z75 review 2
         String p = "source " + io.github.mojolowjo.entropybot.aa.NeedChain.STRIP_HEADING;
         return f != null && f.key().startsWith(p) ? f.key().substring("source ".length()) : null;
     }

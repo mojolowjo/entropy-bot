@@ -96,6 +96,16 @@ public final class StepHands implements Steps.Hands {
                 + " | " + (lastMoveTick < 0 ? "no move seen yet" : (now - lastMoveTick) + " ticks since the last move");
     }
 
+    /**
+     * 0.39.z75 (run AI 20:11:05-20:14:16; review 2: only for an explore, called by the run for that step): the monitor ended
+     * the running explore for no progress - its target is held by position (Mining.frozen), so the next explore from here
+     * picks another target.
+     */
+    @Override public void exploreFrozen(Step s, String why) {
+        LocalPlayer fp = Minecraft.getInstance().player;
+        if (fp != null && s instanceof Step.Explore) Mining.frozen(Jobs.here(fp), why);
+    }
+
     @Override public Car.Status status(Step s) {
         LocalPlayer pl = Minecraft.getInstance().player;
         if (pl != null) {
@@ -325,13 +335,6 @@ public final class StepHands implements Steps.Hands {
 
     @Override public void cancel(String why) {
         try {
-            // 0.39.z75 (run AI 20:11:05-20:14:16: the same explore re-picked from the same spot, frozen twice, parked): a
-            // monitor's no-progress end of an explore holds its target by position (Mining.frozen), so the next explore
-            // from here picks another target
-            if (why != null && why.startsWith("monitor: ") && why.contains("no progress")) {
-                LocalPlayer fp = Minecraft.getInstance().player;
-                if (fp != null) Mining.frozen(Jobs.here(fp), why.substring("monitor: ".length()));
-            }
             if (mining) {
                 IBaritone b = Jobs.baritone();
                 if (b != null && chopping) b.getChopProcess().cancel();
@@ -849,6 +852,7 @@ public final class StepHands implements Steps.Hands {
         if (d > Tuning.get("station.takeReachM")) return "error: " + t.text() + ": " + Math.round(d) + " m from it, the walk before did not get there";
         mineFrom = "at " + t.x() + " " + t.y() + " " + t.z();
         takePickupUntil = -1;
+        takeStartTick = Core.INSTANCE.tick();
         component = true;
         try {
             return mine(p, new ArrayList<>(List.of(own)), List.of(id), 1, t.text());
@@ -860,8 +864,8 @@ public final class StepHands implements Steps.Hands {
     /** 0.39.z48: the next mine() runs the fork's component break whatever the block kind (a station take). */
     private boolean component;
 
-    /** 0.39.z75 take: the tick the take's pickup wait ends (-1: none started). */
-    private long takePickupUntil = -1;
+    /** 0.39.z75 take: the tick the take's pickup wait ends (-1: none started); the tick the take started (-1: none). */
+    private long takePickupUntil = -1, takeStartTick = -1;
 
     /**
      * 0.39.z75 take (run AI 20:06:10): the take's status on the observed state (TakeEnd): the station in the bag - done;
@@ -881,7 +885,7 @@ public final class StepHands implements Steps.Hands {
         boolean stands = level != null && level.getBlockState(new BlockPos(t.x(), t.y(), t.z())).getBlock() == own;
         boolean breaking = b.getChopProcess().isActive() || Core.INSTANCE.reflexes.hold();
         long now = Core.INSTANCE.tick();
-        var v = io.github.mojolowjo.entropybot.aa.moves.TakeEnd.judge(got, breaking, stands, now, takePickupUntil);
+        var v = io.github.mojolowjo.entropybot.aa.moves.TakeEnd.judge(got, breaking, stands, now, takePickupUntil, takeStartTick < 0 ? Long.MAX_VALUE : now - takeStartTick);
         switch (v) {
             case DONE -> {
                 if (takePickupUntil >= 0) b.getFollowProcess().cancel();

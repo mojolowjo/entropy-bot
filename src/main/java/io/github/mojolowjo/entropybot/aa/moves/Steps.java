@@ -60,6 +60,9 @@ public final class Steps {
          */
         default String stallFacts(Step s) { return null; }
 
+        /** 0.39.z75 review 2: the monitor ended this running explore for no progress ({@code why}); its target is held by position. */
+        default void exploreFrozen(Step s, String why) {}
+
         /**
          * 0.39.z61 (D1 J2, replaces z38's keep list): the run's reserves to the fork's lease - what the remaining steps use up,
          * counted, and the orders' targets; Baritone places a reserved item only while the bag holds more than the reserves
@@ -573,7 +576,13 @@ public final class Steps {
      * in the bag slot of what it was for (StepsShort) - never a plain stop. Null: not short, or not countable.
      */
     private FactChange.Fact shortFact(Step s, String reason) {
-        return StepsShort.of(StepsShort.wants(s), madeAtStart, madeNow(s), reason);
+        int[] feet;
+        try {
+            feet = hands.feet();
+        } catch (RuntimeException e) {
+            feet = null;                         // rule 15: the feet not known - the bag slot, no position held
+        }
+        return StepsShort.of(s, StepsShort.wants(s), madeAtStart, madeNow(s), feet, reason);
     }
 
     private void begin(Step s, Reservations rs, DryRun.Shortage dry) {
@@ -670,6 +679,13 @@ public final class Steps {
                         hands.probe("probe stall: " + stage() + " | " + (f == null ? "no stall facts in these hands" : f));
                     } catch (RuntimeException e) {
                         why = stage() + ": the stall facts could not be read: " + e;
+                    }
+                }
+                if (s instanceof Step.Explore && l.reason() != null && l.reason().startsWith("no progress")) {
+                    try {
+                        hands.exploreFrozen(s, l.reason());
+                    } catch (RuntimeException e) {
+                        why = stage() + ": the frozen explore's target could not be held: " + e;
                     }
                 }
                 safeCancel("monitor: " + l.reason());

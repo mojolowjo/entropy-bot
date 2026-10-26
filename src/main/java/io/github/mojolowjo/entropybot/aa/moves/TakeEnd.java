@@ -20,8 +20,17 @@ public final class TakeEnd {
      * @param now          ticks now; {@code pickupUntil}: the tick the pickup wait ends (-1: no pickup started)
      */
     public static Verdict judge(int got, boolean breaking, boolean stands, long now, long pickupUntil) {
+        return judge(got, breaking, stands, now, pickupUntil, Long.MAX_VALUE);
+    }
+
+    /** z75 review 2: the fork's break gets a second to take control (its process inactive on the first ticks is no end). */
+    static final long TAKE_CONTROL_TICKS = 20; // structural: one second (20 game ticks) for a started process to show active
+
+    /** As above; {@code sinceStart}: ticks since the take started (a break not active yet on the first second: running). */
+    public static Verdict judge(int got, boolean breaking, boolean stands, long now, long pickupUntil, long sinceStart) {
         if (got >= 1) return Verdict.DONE;
         if (pickupUntil < 0 && breaking) return Verdict.RUNNING;
+        if (pickupUntil < 0 && stands && sinceStart < TAKE_CONTROL_TICKS) return Verdict.RUNNING;
         if (!stands) {
             if (pickupUntil < 0) return Verdict.PICKUP;
             if (now < pickupUntil) return Verdict.RUNNING;

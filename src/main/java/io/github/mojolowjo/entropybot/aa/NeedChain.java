@@ -400,7 +400,8 @@ public final class NeedChain {
             if (keyWhy == null || keyWhy.isEmpty()) return this;
             List<String> h = new ArrayList<>(held);
             for (var e : keyWhy.entrySet()) h.add(e.getKey() + ": " + e.getValue());
-            World less = without((item, sp) -> spotHeld(item, sp, keyWhy::containsKey));     // 0.39.z69 fix 1: an item key or one spot's
+            List<String[]> near = nearHolds(keyWhy.keySet());                                // z75 review 2: a short collect's position
+            World less = without((item, sp) -> spotHeld(item, sp, keyWhy::containsKey) || nearHeld(near, item, sp));     // 0.39.z69 fix 1: an item key or one spot's
             // 0.39.z42: a dropped band (no path into it from here) is no band for the order: its explore goes overland
             Function<String, int[]> b = band == null ? null : word -> {
                 int[] r = band.apply(word);
@@ -2396,6 +2397,45 @@ public final class NeedChain {
     public static String spotKey(String item, Spot sp) {
         String k = sourceKey(item, sp);
         return k.startsWith("collect ") ? k + " at " + sp.x() + " " + sp.y() + " " + sp.z() : k;
+    }
+
+    /** z75 review 2: the prefix of {@link #nearKey}. */
+    public static final String NEAR = "near collect ";
+
+    /**
+     * z75 review 2 (run AI 20:10:05, z67 style): the source key of a collect that ended short at {@code at} - "near collect
+     * raw_iron at 3 16 -160"; held for the order, the item's spots within failures.moved of there are out (the cluster it
+     * emptied, the drop it could not reach), so the re-plan uses another source or another way.
+     */
+    public static String nearKey(String item, int[] at) {
+        return NEAR + shw(word(item)) + " at " + at[0] + " " + at[1] + " " + at[2];
+    }
+
+    /** z75 review 2: the near holds among held keys, each {item word, x, y, z}. Pure. */
+    static List<String[]> nearHolds(java.util.Collection<String> keys) {
+        List<String[]> out = new ArrayList<>();
+        for (String k : keys) {
+            if (k == null || !k.startsWith(NEAR)) continue;
+            String rest = k.substring(NEAR.length());
+            int a = rest.lastIndexOf(" at ");
+            if (a < 0) continue;
+            String[] xyz = rest.substring(a + " at ".length()).trim().split(" ");
+            if (xyz.length != 3 || !xyz[0].matches("-?\\d+") || !xyz[1].matches("-?\\d+") || !xyz[2].matches("-?\\d+")) continue;   // structural: x y z, written by nearKey
+            out.add(new String[]{word(rest.substring(0, a)), xyz[0], xyz[1], xyz[2]});
+        }
+        return out;
+    }
+
+    /** z75 review 2: a spot of {@code item} lies within failures.moved of a near hold of that item. */
+    static boolean nearHeld(List<String[]> near, String item, Spot sp) {
+        if (near.isEmpty() || sp == null) return false;
+        String gives = sp.gives() != null ? word(sp.gives()) : word(item);
+        for (String[] h : near) {
+            if (!h[0].equals(gives) && !h[0].equals(word(item)) && !gives(h[0], gives)) continue;
+            int[] at = {Integer.parseInt(h[1]), Integer.parseInt(h[2]), Integer.parseInt(h[3])};     // checked digits (nearHolds)
+            if (dist3(at, new int[]{sp.x(), sp.y(), sp.z()}) <= io.github.mojolowjo.entropybot.aa.brain.Failures.movedV()) return true;
+        }
+        return false;
     }
 
     /** 0.39.z69 fix 1: a spot is held by {@code held} under its item key (a failed Collect step) or its own spot key. */

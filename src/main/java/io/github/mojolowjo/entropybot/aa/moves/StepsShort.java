@@ -32,13 +32,27 @@ public final class StepsShort {
 
     /** The short fact from the step's wants and the bag's counts at its start and now; null: not short, or not known. */
     public static FactChange.Fact of(Map<String, Integer> wants, Map<String, Integer> start, Map<String, Integer> now, String reason) {
+        return of(null, wants, start, now, null, reason);
+    }
+
+    /**
+     * z75 review 2 (the second plan must use another source, z67 style): the short fact of {@code step}. A collect that ends
+     * short at {@code feet} (known) is the source fact of its item NEAR there ({@link io.github.mojolowjo.entropybot.aa.NeedChain#nearKey}:
+     * the order prices that item's spots within failures.moved of there out - the cluster it emptied, the drop it could not
+     * reach); a cut is its tree's source fact (the run charges "cut at x y z"); every other short step: the bag slot.
+     */
+    public static FactChange.Fact of(Step step, Map<String, Integer> wants, Map<String, Integer> start, Map<String, Integer> now, int[] feet, String reason) {
         if (wants == null || start == null || now == null) return null;
         for (var e : wants.entrySet()) {
             int arrived = Math.max(0, now.getOrDefault(e.getKey(), 0) - start.getOrDefault(e.getKey(), 0));
             if (arrived >= e.getValue()) continue;
             String word = StepNeeds.sh(e.getKey()).replaceFirst("^#", "");
-            return new FactChange.Fact("bag " + word, "short by " + (e.getValue() - arrived) + " of " + e.getValue() + " " + word
-                    + " (" + arrived + " arrived): " + (reason == null ? "" : reason.replaceFirst("^error: ", "")));
+            String text = "short by " + (e.getValue() - arrived) + " of " + e.getValue() + " " + word
+                    + " (" + arrived + " arrived): " + (reason == null ? "" : reason.replaceFirst("^error: ", ""));
+            if (step instanceof Step.Collect k && feet != null && feet.length >= 3)       // structural: x y z
+                return new FactChange.Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.nearKey(k.item(), feet), text);
+            if (step instanceof Step.ChopTree t && t.at() != null) return new FactChange.Fact("source cut short", text);
+            return new FactChange.Fact("bag " + word, text);
         }
         return null;
     }

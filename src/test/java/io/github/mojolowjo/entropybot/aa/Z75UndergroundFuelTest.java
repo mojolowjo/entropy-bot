@@ -465,12 +465,23 @@ class Z75UndergroundFuelTest {
         assertNull(io.github.mojolowjo.entropybot.aa.moves.StepsShort.wants(new Step.Walk(0, 0, 0, 0)), "a walk has no count");
     }
 
-    /** AI 20:10:05 end to end: a collect that ends short re-plans (the replanner is asked with the short fact), never a plain stop. */
+    /**
+     * AI 20:10:05 end to end (review 2): a collect that ends short at the cluster (feet 3 16 -160) re-plans with the short
+     * fact as the item's source NEAR there; fed through the planner like the order does (its own source key held), the
+     * second plan does not dig the same cluster (still listed 1 m away, the stale scan) but the next known iron ore 30 m
+     * off - walk 30 x 1.3 / 4.317 = 9.03 s + 1 ore by the stone pickaxe - and says the near cluster dropped.
+     */
     @Test
-    void short_aShortCollectRePlans() {
+    void short_aShortCollectRePlansWithAnotherSource() {
+        ScenariosTest.world("wooden", "stone");
+        Spot cluster = new Spot(3, 16, -159, 1, "minecraft:iron_ore", 2), far = new Spot(33, 16, -160, 30, "minecraft:iron_ore", 3);
+        World w = ScenariosTest.w(Map.of("minecraft:stone_pickaxe", 1, "minecraft:raw_iron", 1), true, true, Map.of("raw_iron", List.of(cluster, far)));
+        Chain first = NeedChain.resolve("raw_iron", 2, w);
+        assertTrue(first.why().contains("seen 1 m"), "first: the near cluster: " + first.why());
         java.util.Map<String, Integer> bag = new java.util.HashMap<>(Map.of("minecraft:raw_iron", 0));
-        Step collect = new Step.Collect("raw_iron", 2), craft = new Step.Craft("minecraft:iron_ingot", 1);
+        Step collect = new Step.Collect("raw_iron", 2);
         List<FactChange.Fact> asked = new java.util.ArrayList<>();
+        List<Chain> second = new java.util.ArrayList<>();
         io.github.mojolowjo.entropybot.aa.moves.Steps.Hands h = new io.github.mojolowjo.entropybot.aa.moves.Steps.Hands() {
             int t;
             @Override public String start(Step s) { return null; }
@@ -481,13 +492,23 @@ class Z75UndergroundFuelTest {
             @Override public void cancel(String why) {}
             @Override public FactChange.Fact lastFact() { return null; }
             @Override public StepNeeds.Bag bag() { return bagOf(bag); }
+            @Override public int[] feet() { return new int[]{3, 16, -160}; }
         };
         io.github.mojolowjo.entropybot.aa.moves.Steps run = new io.github.mojolowjo.entropybot.aa.moves.Steps(h);
-        run.start("goal.iron", List.of(collect, craft), 0, (failed, fact, why) -> { asked.add(fact); return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(List.of(new Step.Collect("raw_iron", 1), craft), null); });
+        run.start("goal.iron", List.of(collect), 0, (failed, fact, why) -> {
+            asked.add(fact);
+            String own = FactChange.ownSourceKey(fact);                 // the order's charge (Goals): the fact's own source key
+            Chain c = NeedChain.resolve("raw_iron", 2, w.withoutSources(Map.of(own, fact.text())));
+            second.add(c);
+            return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(c.steps(), null);
+        });
         for (int i = 1; i <= 4; i++) run.tick(i);
         assertEquals(1, asked.size(), "re-planned once: " + run.why());
-        assertEquals("bag raw_iron", asked.get(0).key());
+        assertEquals("source " + NeedChain.nearKey("raw_iron", new int[]{3, 16, -160}), asked.get(0).key());
         assertTrue(asked.get(0).text().startsWith("short by 1 of 2 raw_iron (1 arrived)"), asked.get(0).text());
+        Chain c = second.get(0);
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertTrue(c.why().contains("seen 30 m") && !c.why().contains("seen 1 m"), "another source: " + c.why());
     }
 
     /**
@@ -537,6 +558,30 @@ class Z75UndergroundFuelTest {
         assertFalse(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.skip(frozen, 200 >> 4, -160 >> 4, new int[]{3 + (int) Math.ceil(moved), 16, -160}, moved), "moved away: open again");
     }
 
+    /**
+     * Review 2: the short fact by step kind with the feet known - a collect: its item's source near the feet (z67 style), a
+     * cut: its tree's source (the run charges "cut at x y z"), a craft: the bag slot; a take whose break is not active on
+     * its first ticks is not short yet; a held frozen target is released once the bot stands failures.moved away.
+     */
+    @Test
+    void review2_shortKeysTakeGraceAndFrozenRelease() {
+        ScenariosTest.world("wooden", "stone");
+        int[] feet = {3, 16, -160};
+        Step collect = new Step.Collect("raw_iron", 2), cut = new Step.ChopTree(new int[]{10, 64, 0}, 4, null), craft = new Step.Craft("stick", 4);
+        assertEquals("source near collect raw_iron at 3 16 -160", io.github.mojolowjo.entropybot.aa.moves.StepsShort.of(collect, Map.of("minecraft:raw_iron", 2), Map.of("minecraft:raw_iron", 0), Map.of("minecraft:raw_iron", 1), feet, "x").key());
+        assertEquals("source cut short", io.github.mojolowjo.entropybot.aa.moves.StepsShort.of(cut, io.github.mojolowjo.entropybot.aa.moves.StepsShort.wants(cut), Map.of(), Map.of(), feet, "x").key());
+        assertEquals("bag stick", io.github.mojolowjo.entropybot.aa.moves.StepsShort.of(craft, Map.of("minecraft:stick", 4), Map.of(), Map.of(), feet, "x").key());
+        assertEquals("near collect raw_iron at 3 16 -160", FactChange.ownSourceKey(new FactChange.Fact("source near collect raw_iron at 3 16 -160", "t")));
+        // the take: its break not active on the first second is no end
+        assertEquals(io.github.mojolowjo.entropybot.aa.moves.TakeEnd.Verdict.RUNNING, io.github.mojolowjo.entropybot.aa.moves.TakeEnd.judge(0, false, true, 101, -1, 1), "first tick, not active yet");
+        assertEquals(io.github.mojolowjo.entropybot.aa.moves.TakeEnd.Verdict.SHORT, io.github.mojolowjo.entropybot.aa.moves.TakeEnd.judge(0, false, true, 140, -1, 40), "inactive after a second: short");
+        // the frozen target's release
+        var f = new io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.Failed(200, -160, feet, "frozen");
+        double moved = io.github.mojolowjo.entropybot.aa.brain.Failures.movedV();
+        assertFalse(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.released(f, feet, moved));
+        assertTrue(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.released(f, new int[]{3 + (int) Math.ceil(moved), 16, -160}, moved));
+    }
+
     // ---- 3. counted once ----
 
     /**
@@ -561,7 +606,7 @@ class Z75UndergroundFuelTest {
 
     static StepNeeds.Bag bagOf(Map<String, Integer> m) {
         return new StepNeeds.Bag() {
-            @Override public int bestTier(String kind) { return 0; }
+            @Override public int bestTier(String kind) { return 9; }       // any pickaxe the steps ask for
             @Override public String bestTool(String kind) { return null; }
             @Override public int usesLeft(String id) { return 0; }
             @Override public int count(String id) { return m.getOrDefault(id, 0); }

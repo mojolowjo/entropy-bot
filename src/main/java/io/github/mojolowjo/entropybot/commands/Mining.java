@@ -1019,27 +1019,54 @@ final class Mining {
     /** 0.39.z75: a chunk whose explore target froze from near here (FROZEN). */
     private static boolean frozenSkip(int cx, int cz, int[] me) {
         synchronized (FROZEN) {
+            pruneFrozen(me);
             return ExploreRules.TargetHold.skip(FROZEN, cx, cz, me, io.github.mojolowjo.entropybot.aa.brain.Failures.movedV());
         }
+    }
+
+    /** z75 review 2: the held targets the bot now stands failures.moved from are released (they would not apply any more). */
+    private static void pruneFrozen(int[] me) {
+        if (me != null) FROZEN.removeIf(f -> ExploreRules.TargetHold.released(f, me, io.github.mojolowjo.entropybot.aa.brain.Failures.movedV()));
     }
 
     /** The explore run that stepped last (its target is the one a monitor's cancel froze). */
     private static volatile ExRun lastExplore;
 
+    /** 0.39.z75 review 2: the tick {@link #lastExplore} last stepped (a frozen() older than a second is no running explore's). */
+    private static volatile long lastExploreTick = -1;
+
+    /** z75 review 2: entries FROZEN keeps at most (the oldest go first). */
+    static final int FROZEN_MAX = 32; // structural: a memory bound, far more than an order's explores
+
     /** 0.39.z75: the step monitor ended the running explore for no progress at {@code feet}: its target is held by position. */
     static void frozen(int[] feet, String why) {
         ExRun ex = lastExplore;
-        if (ex == null || ex.target == null) return;
-        FROZEN.add(new ExploreRules.TargetHold.Failed(ex.target.x(), ex.target.z(), feet, "frozen: " + why));
+        lastExplore = null;
+        if (ex == null || ex.target == null || feet == null || Core.INSTANCE.tick() - lastExploreTick > 20) {   // structural: one second in ticks
+            LOG.info("[entropybot] explore: the monitor ended an explore ({}) with no running target to hold", why);
+            return;
+        }
+        synchronized (FROZEN) {
+            pruneFrozen(feet);
+            FROZEN.add(new ExploreRules.TargetHold.Failed(ex.target.x(), ex.target.z(), feet, "frozen: " + why));
+            while (FROZEN.size() > FROZEN_MAX) FROZEN.remove(0);
+        }
         if (ex.aimed != null) CAVE_VISITED.add(ex.aimed);
         LOG.info("[entropybot] explore: target {} {} held from {} {} {} (the monitor ended the explore: {}); the next explore from here picks another",
                 ex.target.x(), ex.target.z(), feet[0], feet[1], feet[2], why);
     }
 
     private String exploreStep(Seq s, LocalPlayer p) {
+        String r = exploreStep0(s, p);
+        if (!"wait".equals(r)) lastExplore = null;          // z75 review 2: an explore that ended (or is gone) is no running one
+        return r;
+    }
+
+    private String exploreStep0(Seq s, LocalPlayer p) {
         ExRun ex = runs.get(s) instanceof ExRun x ? x : null;
         if (ex == null) return "the explore run is gone";
         lastExplore = ex;
+        lastExploreTick = Core.INSTANCE.tick();
         // review 0.33.2: a gather that ended without its tally step (failed, skipped) is closed here, never left open
         if (ex.gatherStart > 0) {
             LOG.info("[entropybot] explore: gather {} ended without its tally ({} ticks)", ex.gathers, now() - ex.gatherStart);
