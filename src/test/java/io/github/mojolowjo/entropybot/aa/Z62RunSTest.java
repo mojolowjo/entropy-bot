@@ -185,7 +185,9 @@ class Z62RunSTest {
 
     /**
      * z62 review 1 and 3: the bag's other pickaxes of the tier count before spares (z64: wear 667; 6 stone pickaxes x 131 =
-     * 786 >= 667: none made; 5 x 131 = 655: one more); the spare count is capped by tools.maxSpares.
+     * 786 >= 667: none made); the spare count is capped by tools.maxSpares. 0.39.z77 spares (run CA): the cap is on the
+     * spares HELD - 5 stone pickaxes (655 of 667) hold 4 others past the cap 3: none made, the rest re-planned when one breaks
+     * (was: one more; Z77SparesTest).
      */
     @Test
     void theBagsOtherPickaxesCountFirstAndTheSparesAreCapped() {
@@ -195,7 +197,9 @@ class Z62RunSTest {
         assertTrue(c.ok(), c.why());
         assertEquals(0, crafted(c, "stone_pickaxe"), c.why());
         Map<String, Integer> five = Map.of("minecraft:stone_pickaxe", 5, "minecraft:cobblestone", 20, "minecraft:stick", 10);
-        assertEquals(1, crafted(NeedChain.resolve("raw_iron", 3, world(five, band("east")).withUses(id -> 131)), "stone_pickaxe"), "655 of 667: one more");
+        assertEquals(0, crafted(NeedChain.resolve("raw_iron", 3, world(five, band("east")).withUses(id -> 131)), "stone_pickaxe"), "655 of 667, 4 held past tools.maxSpares 3: none");
+        Tuning.set("tools.maxSpares", 5);
+        assertEquals(1, crafted(NeedChain.resolve("raw_iron", 3, world(five, band("east")).withUses(id -> 131)), "stone_pickaxe"), "655 of 667, room for one under 5 held: one more");
         Map<String, Integer> one = Map.of("minecraft:stone_pickaxe", 1, "minecraft:cobblestone", 20, "minecraft:stick", 10);
         Tuning.set("tools.maxSpares", 1);
         assertEquals(1, crafted(NeedChain.resolve("raw_iron", 3, world(one, band("east")).withUses(id -> 131)), "stone_pickaxe"), "5 needed, the cap holds at 1");
