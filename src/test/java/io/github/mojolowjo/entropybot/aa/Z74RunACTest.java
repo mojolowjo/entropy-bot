@@ -133,6 +133,23 @@ class Z74RunACTest {
         assertEquals(List.of(30), at, "nothing placed, no move for monitor.stallS: the stall");
     }
 
+    /** Review 3: only PLACE skips the no-path rule - a walk (MOVE) and a collect (BREAK) still re-plan on 3 failed searches. */
+    @Test
+    void i2_walksAndGathersStillGetTheNoPathVerdict() {
+        for (Step step : List.of(new Step.Walk(5, 64, 5, 0), new Step.Collect("cobblestone", 8))) {
+            Hands h = new Hands();
+            h.status = s -> Car.Status.running("on it");
+            h.script = s -> new StepSignals(true, null, new int[]{-155, 68, -92}, 20, "GoalBlock", false, false, false, s >= 7 ? 3 : s >= 4 ? 2 : s >= 2 ? 1 : 0, -1, -1, null, 0, -1, null);
+            List<Integer> at = new ArrayList<>();
+            List<String> why = new ArrayList<>();
+            Steps run = new Steps(h);
+            run.start("k", List.of(step), 0, (f, fact, w) -> { at.add(h.second); why.add(fact.text()); return new Steps.Routine(List.of(new Step.Wait(5)), null); });
+            for (int s = 1; s <= 20 && at.isEmpty(); s++) { h.second = s; run.tick(s * 20L); }
+            assertEquals(List.of(7), at, step.text());
+            assertTrue(why.get(0).startsWith("Baritone found no path 3 times"), why.toString());
+        }
+    }
+
     /** A place step that keeps placing (a build leg) is progress, whatever Baritone's searches say. */
     @Test
     void i2_placingIsProgress() {
@@ -205,7 +222,11 @@ class Z74RunACTest {
         assertTrue(c.why().contains("dig down 4 to stone (the noise settings' default block, deepslate below y 8"), c.why());
         Chain f = NeedChain.resolve("furnace", 1, baseWorld(Map.of("minecraft:wooden_pickaxe", 1)));
         assertTrue(f.ok() && !f.explore(), f.why());
-        assertTrue(f.seconds() < 173, "the furnace (and charcoal after it, a 10 s smelt) well under run AD's 173 s coal strip: " + f.why());
+        // by hand: the walk down 4 m (4 x 1.3 / 4.317 = 1.20 s, dirt by hand on the priced path) + 8 cobblestone at 2 x 1.5 / 2
+        // (the wooden pickaxe's speed) = 1.5 s each = 12.0 s + the craft 0.3 s = 13.5 s - charcoal after it (a 10 s smelt) is
+        // far under run AD's 173 s coal strip
+        assertEquals(walk(4) + 8 * 1.5 + 0.3, f.seconds(), 0.05, f.why());
+        assertTrue(f.why().contains("the surface layer under it assumed 3 deep - SurfaceSystem's average, not seen"), f.why());
     }
 
     /** Not on the surface, or no base block known: no such way (rule 15) - the explore as before. */

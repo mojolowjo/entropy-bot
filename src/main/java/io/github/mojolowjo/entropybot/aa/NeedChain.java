@@ -2368,13 +2368,6 @@ public final class NeedChain {
     }
 
     /**
-     * 0.39.z43 (owner, Run D: "if it is looking for ore then it should just mine at the recommended level"): for a need with
-     * no known source whose blocks generate in a band (the strip facts, {@link StripBand}), the way "go to the band's best Y
-     * and strip there until the amount is in the bag" - the strip job (Step.Strip, the fork's StripProcess, with its deposit
-     * leg and walk back: {@link io.github.mojolowjo.entropybot.aa.brain.Goals#stripLoop}). One way among the others (rule 1),
-     * priced by its own facts; no strip facts (multiplayer, no world-gen read, no band at or below the feet): no way.
-     */
-    /**
      * Game fact (vanilla SurfaceSystem#getSurfaceDepth: noise x 2.75 + 3 + a quarter of random, the noise about 0 on average):
      * the surface layer over the base block is about 3 blocks under the top block.
      */
@@ -2402,13 +2395,18 @@ public final class NeedChain {
         if (c.w.loot() != null) {
             // the base block's own drops (the loot data), the one the need takes - its sure drop first
             List<LootBook.Source> drops = new ArrayList<>(c.w.loot().blockDrops(base.block()));
-            drops.sort(Comparator.comparingDouble((LootBook.Source d) -> -d.per() * d.chance()));
+            drops.sort(Comparator.comparingDouble((LootBook.Source d) -> -d.per()));     // z74 review 2: per already carries the chance
             for (LootBook.Source d : drops) if (d.per() > 0 && want.has(d.item())) { gives = d.item(); break; }
         } else if (want.has(base.block())) gives = base.block();
         if (gives == null) return alts;
-        int ty = feet[1] - 1 - SURFACE_LAYER;
+        // z74 review 1: the column's own top from the surface fact (under open sky: the cell stands on the top block); what lies
+        // under the top block is not seen (rule 17: no x-ray), so the surface layer is assumed - SurfaceSystem's average, said
+        int topBlock = s.y() - 1;
+        int ty = topBlock - SURFACE_LAYER;
         if (base.deep() != null) ty = Math.max(ty, base.sureFrom());
         int depth = feet[1] - ty, top = ty;
+        String assumed = " (the column's top block at y " + topBlock + "; the surface layer under it assumed " + SURFACE_LAYER
+                + " deep - SurfaceSystem's average, not seen)";
         String g = gives;
         alts.add(new Alt(shw(base.block()) + " (the base block, " + depth + " deep)", () -> {
             // the pickaxe its block asks for is made up here first (a station placed in the hole would have no room)
@@ -2426,11 +2424,18 @@ public final class NeedChain {
             c.walks.put(probe.key(), new Walked(0, "in reach from the hole the walk down made", null, PathPrice.Kind.PRICED));
             String how = sourceFrom(c, word, g, lack, List.of(probe));
             if (how == null) return null;
-            return "dig down " + depth + " to " + base.text() + (pre == null ? "" : " with " + pre) + (leg == null || leg.isEmpty() ? "" : ": " + leg) + ", then " + how;
+            return "dig down " + depth + " to " + base.text() + assumed + (pre == null ? "" : " with " + pre) + (leg == null || leg.isEmpty() ? "" : ": " + leg) + ", then " + how;
         }));
         return alts;
     }
 
+    /**
+     * 0.39.z43 (owner, Run D: "if it is looking for ore then it should just mine at the recommended level"): for a need with
+     * no known source whose blocks generate in a band (the strip facts, {@link StripBand}), the way "go to the band's best Y
+     * and strip there until the amount is in the bag" - the strip job (Step.Strip, the fork's StripProcess, with its deposit
+     * leg and walk back: {@link io.github.mojolowjo.entropybot.aa.brain.Goals#stripLoop}). One way among the others (rule 1),
+     * priced by its own facts; no strip facts (multiplayer, no world-gen read, no band at or below the feet): no way.
+     */
     private static List<Alt> stripAlts(Ctx c, String word, String gives, int lack) {
         StripBand sb = c.w.strip().apply(word);
         if (sb == null || sb.ores().isEmpty()) return List.of();
