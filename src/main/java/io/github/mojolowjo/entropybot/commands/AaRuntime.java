@@ -2164,7 +2164,6 @@ public final class AaRuntime implements JobPort {
         io.github.mojolowjo.entropybot.aa.moves.Steps.Replanner replan = rp == null ? null : io.github.mojolowjo.entropybot.aa.moves.Steps.Replanner.around(rp.planner(), (failed, fact, why) -> {
             if (!fact.price()) tree.brain.failures.counted(rp.desire(), fact.key(), why);     // 0.39.z41: a new price is no failure
             factsNow();
-            return rp.planner().replan(failed, fact, why);
         });
         typedRun = true;                 // 0.39.z61: set before the start, so the first step's reserves see the running order
         String r = c.stepRun.start(key, steps, label, replan, uses);

@@ -311,16 +311,46 @@ public final class Steps {
         default void parked(Attempt a) {}
 
         /**
-         * 0.39.z70: {@code planner}'s re-plan wrapped by {@code fn} (an adapter that charges the fact first), every other answer
-         * still {@code planner}'s own.
+         * 0.39.z73 (design D2 3.4): the re-plan of a failed step with what was left of the run ({@code left}: the failed step
+         * first, its plan counts, the bag's stacks), so the order may price a repair (gap + kept tail) against the full
+         * re-plan. Default: the plain re-plan.
          */
-        static Replanner around(Replanner planner, Replanner fn) {
+        default Routine replan(Step failed, FactChange.Fact fact, String why, Remaining left) { return replan(failed, fact, why); }
+
+        /**
+         * 0.39.z70: {@code planner}'s answers, with {@code before} run first on every re-plan (an adapter that charges the fact);
+         * 0.39.z73: both re-plan forms go to {@code planner}.
+         */
+        static Replanner around(Replanner planner, Before before) {
             return new Replanner() {
-                @Override public Routine replan(Step failed, FactChange.Fact fact, String why) { return fn.replan(failed, fact, why); }
+                @Override public Routine replan(Step failed, FactChange.Fact fact, String why) {
+                    before.run(failed, fact, why);
+                    return planner.replan(failed, fact, why);
+                }
+                @Override public Routine replan(Step failed, FactChange.Fact fact, String why, Remaining left) {
+                    before.run(failed, fact, why);
+                    return planner.replan(failed, fact, why, left);
+                }
                 @Override public String orderState() { return planner.orderState(); }
                 @Override public void switched(PlanDiff d, boolean reprice) { planner.switched(d, reprice); }
                 @Override public void parked(Attempt a) { planner.parked(a); }
             };
+        }
+
+        /** What an adapter does before each re-plan (charge the fact, refresh the facts). */
+        interface Before {
+            void run(Step failed, FactChange.Fact fact, String why);
+        }
+    }
+
+    /**
+     * 0.39.z73 (D2 3.4): what was left of the run when a step failed - the steps from it on, their plan counts (parallel; null
+     * entries: none), the bag's stacks (item id -> count; null: not readable).
+     */
+    public record Remaining(List<Step> steps, List<java.util.Map<String, Integer>> uses, java.util.Map<String, Integer> bag) {
+        public Remaining {
+            steps = List.copyOf(steps);
+            uses = uses == null ? List.of() : java.util.Collections.unmodifiableList(new java.util.ArrayList<>(uses));
         }
     }
 
@@ -429,6 +459,7 @@ public final class Steps {
             endKeep();
             return;
         }
+        if (skipAhead()) return;                 // 0.39.z73 (D2 3.4): a later suffix already possible from the bag
         Step s = steps.get(idx);
         monitorOn = false;                       // 0.39.z71: on again at the step's start (begin)
         FactChange.clear();
@@ -450,6 +481,46 @@ public final class Steps {
             return;
         }
         begin(s, rs, dry);
+    }
+
+    /** 0.39.z73: the run from the failed step on, its plan counts and the bag's stacks (null: not readable). */
+    private Remaining remaining() {
+        java.util.Map<String, Integer> bag;
+        try {
+            StepNeeds.Bag b = hands.bag();
+            bag = b == null ? null : b.items();
+        } catch (RuntimeException e) {
+            bag = null;                          // rule 15: the repair's dry run says "not readable", the full re-plan runs
+        }
+        return new Remaining(steps.subList(idx, steps.size()), sized(uses, steps.size()).subList(idx, steps.size()), bag);
+    }
+
+    // ---- 0.39.z73 (design D2 3.4, Job D): the kernel check ----
+
+    /** The skipped steps' words for the next start line, null: none. */
+    private String skipNote;
+
+    /**
+     * The kernel check at the step boundary (and before a re-plan): the latest later step whose suffix the bag already makes
+     * possible, with what the skipped steps were for kept ({@link Kernels#latest}); each skipped step said. True: the run went
+     * on from there (that step started, or the run ended).
+     */
+    private boolean skipAhead() {
+        Kernels.Skip k;
+        try {
+            k = Kernels.latest(steps, idx, needsFromHere(), hands.bag());
+        } catch (RuntimeException e) {
+            why = stage() + ": the kernel check could not be read (no skip): " + e;
+            return false;
+        }
+        if (k == null) return false;
+        List<String> said = new java.util.ArrayList<>();
+        for (int i = 0; i < k.said().size(); i++) said.add("step " + (idx + i + 1) + "/" + steps.size() + " " + k.said().get(i));
+        for (String l : said) hands.log(l);
+        skipNote = "skipped steps " + (idx + 1) + (k.to() - idx > 1 ? "-" + k.to() : "") + ": " + String.join("; ", k.said());
+        idx = k.to() - 1;
+        next();
+        return true;
     }
 
     /**
@@ -487,8 +558,10 @@ public final class Steps {
             failOrReplan(r);
         } else {
             why = started(idx, steps) + (needs.none() ? "" : " " + needs.text()) + (replanFact == null ? "" : " (re-planned: " + replanFact + ")") + (keepErr == null ? "" : " (" + keepErr + ")")
-                    + (rs.unknown() == null ? "" : " (reserves not loaded: " + rs.unknown() + ")") + (dryNote == null ? "" : " (" + dryNote + ")");
+                    + (rs.unknown() == null ? "" : " (reserves not loaded: " + rs.unknown() + ")") + (dryNote == null ? "" : " (" + dryNote + ")")
+                    + (skipNote == null ? "" : " (" + skipNote + ")");
             replanFact = null;
+            skipNote = null;
             startMonitor(s);
         }
     }
@@ -757,6 +830,13 @@ public final class Steps {
         if (fact == null || replanner == null || idx < 0 || idx >= steps.size()) { fail(reason); return; }
         Step failed = steps.get(idx);
         String clean = reason.replaceFirst("^error: ", "");
+        // 0.39.z73 (D2 3.4): before the planner is asked, the kernel check - what the failed step was for may be in the bag now
+        String before = why;
+        if (skipAhead()) {
+            hands.log("step " + (failed == null ? "?" : failed.text()) + " failed (" + clean + "), but a later step is possible from the bag: skipped ahead");
+            return;
+        }
+        why = before;
         // 0.39.z70 (D2 3.1, run M P1 / run N P3): park only when this try equals the last failed one - the same step, the same
         // fact, from the same cell, with the same needs in the bag: the planner's inputs are the same, a re-plan would loop.
         // Anything else re-plans (the order's caps bound it, Goals.replan). Rule 15: an unknown cell or bag is not "the same".
@@ -780,7 +860,7 @@ public final class Steps {
         String released = release();             // 0.39.z61 (D1 3.4): the re-plan sees the bag without the failed chain's claims
         Routine r;
         try {
-            r = replanner.replan(failed, fact, clean);
+            r = replanner.replan(failed, fact, clean, remaining());     // 0.39.z73: what was left, for a priced repair
         } catch (RuntimeException e) {
             r = new Routine(null, "the re-plan: " + e);
         }

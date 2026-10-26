@@ -439,8 +439,10 @@ public final class NeedChain {
      * @param dropped every way priced out on the way, each with its reason (seconds, or "no known source", or "loop")
      */
     public record Chain(List<Step> steps, double cost, String why, boolean explore, String missing, List<String> dropped, Map<String, String> unreachable,
-                        List<Map<String, Integer>> uses, String spares) {
+                        List<Map<String, Integer>> uses, String spares, List<Double> stepSeconds) {
         /** 0.39.z65 item 2: {@code spares} - the spare-tool decisions of the ways kept ("" none), for the log's one line per chain. */
+        public Chain(List<Step> steps, double cost, String why, boolean explore, String missing, List<String> dropped, Map<String, String> unreachable,
+                     List<Map<String, Integer>> uses, String spares) { this(steps, cost, why, explore, missing, dropped, unreachable, uses, spares, List.of()); }
         public Chain(List<Step> steps, double cost, String why, boolean explore, String missing, List<String> dropped, Map<String, String> unreachable,
                      List<Map<String, Integer>> uses) { this(steps, cost, why, explore, missing, dropped, unreachable, uses, ""); }
         public Chain(List<Step> steps, double cost, String why, boolean explore, String missing, List<String> dropped, Map<String, String> unreachable) { this(steps, cost, why, explore, missing, dropped, unreachable, List.of()); }
@@ -452,7 +454,15 @@ public final class NeedChain {
          * own data). Empty: not known (an older caller). A parallel list, not a field on the step records: the re-price
          * compares step lists by equals, and a bag-mix change is not "other steps".
          */
+        /*
+         * 0.39.z73 (design D2 3.4, Job D): {@code stepSeconds} - per step, parallel to {@code steps}, the chain's own rough
+         * seconds split: what the planner priced after the step was added until the next step was (the seconds priced before
+         * the first add go to the first step; an explore chain's explore leg to its last step), so they sum to
+         * {@link #seconds()}. Empty: not known (an older caller). The repair prices a kept tail by them (rule 14: the same
+         * rough numbers split, no finer term).
+         */
         public Chain {
+            stepSeconds = stepSeconds == null ? List.of() : List.copyOf(stepSeconds);
             spares = spares == null ? "" : spares;
             unreachable = unreachable == null ? Map.of() : Map.copyOf(unreachable);
             uses = uses == null ? List.of() : java.util.Collections.unmodifiableList(new ArrayList<>(uses));
@@ -633,7 +643,29 @@ public final class NeedChain {
         final Trace trace = TRACE.get();
         final World w;
         final Map<String, Integer> bag = new LinkedHashMap<>();
-        final List<Step> steps = new ArrayList<>();
+        /** 0.39.z73 (D2 3.4): each step object -> {@link #seconds} when it was first added (Chain#stepSeconds; never restored). */
+        final Map<Step, Double> addedAt = new java.util.IdentityHashMap<>();
+        final List<Step> steps = new Marked();
+
+        /** The chain's steps, each marked with the seconds priced so far when it first came in (a restore re-adds the same objects). */
+        private final class Marked extends ArrayList<Step> {
+            @Override public boolean add(Step s) {
+                addedAt.putIfAbsent(s, seconds);
+                return super.add(s);
+            }
+
+            @Override public boolean addAll(java.util.Collection<? extends Step> all) {
+                for (Step s : all) addedAt.putIfAbsent(s, seconds);
+                return super.addAll(all);
+            }
+
+            @Override public Step set(int i, Step s) {
+                Step old = super.set(i, s);
+                Double m = old == null ? null : addedAt.get(old);     // a merged leaf keeps its place in the split
+                if (m != null) addedAt.putIfAbsent(s, m);
+                return old;
+            }
+        }
         final Map<String, Integer> leafAt = new LinkedHashMap<>();   // spot key -> index of its collect step
         final Map<String, Integer> taken = new LinkedHashMap<>();    // spot key -> blocks taken from it
         final List<String> path = new ArrayList<>();
@@ -872,9 +904,34 @@ public final class NeedChain {
         List<Map<String, Integer>> uses = new ArrayList<>();
         for (Step st : c.steps) uses.add(c.uses.get(st));
         String spares = String.join("; ", c.spares);         // 0.39.z65 item 2
-        if (c.fail != null) return new Chain(List.copyOf(c.steps), cost, name + ": " + c.fail + drops, false, c.fail, List.copyOf(c.dropped), c.unreachable, uses, spares);
+        if (c.fail != null) return new Chain(List.copyOf(c.steps), cost, name + ": " + c.fail + drops, false, c.fail, List.copyOf(c.dropped), c.unreachable, uses, spares, List.of());
         String why = head + (c.stuck ? "" : ": " + s(c.seconds)) + drops;
-        return new Chain(List.copyOf(c.steps), cost, why, c.stuck, null, List.copyOf(c.dropped), c.unreachable, uses, spares);
+        return new Chain(List.copyOf(c.steps), cost, why, c.stuck, null, List.copyOf(c.dropped), c.unreachable, uses, spares, stepSeconds(c, Unit.seconds(cost)));
+    }
+
+    /**
+     * 0.39.z73 (D2 3.4): the chain's seconds split per step from the add marks - step i gets what was priced from its add to
+     * the next step's (the first also what came before it, the last up to {@code total}: an explore chain's leg too), so the
+     * list sums to {@code total}. A step with no mark (never seen added) gets 0. Empty for no steps.
+     */
+    static List<Double> stepSeconds(Ctx c, double total) {
+        int n = c.steps.size();
+        List<Double> out = new ArrayList<>();
+        if (n == 0) return out;
+        double[] mark = new double[n];
+        for (int i = 0; i < n; i++) {
+            Double m = c.addedAt.get(c.steps.get(i));
+            mark[i] = m == null ? (i == 0 ? 0 : mark[i - 1]) : m;
+            if (i > 0 && mark[i] < mark[i - 1]) mark[i] = mark[i - 1];     // a merged / re-added step out of order: no negative share
+        }
+        for (int i = 0; i < n; i++) {
+            double from = i == 0 ? 0 : mark[i], to = i + 1 < n ? mark[i + 1] : total;
+            out.add(Math.max(0, to - from));
+        }
+        double sum = 0;
+        for (double d : out) sum += d;
+        out.set(n - 1, out.get(n - 1) + (total - sum));         // what clamping moved, back on the last: the sum is the total
+        return out;
     }
 
     /** 0.39.z61: the step just added used {@code used} (need word -> count) from the simulated bag. */

@@ -66,6 +66,12 @@ public final class Goals {
         /** 0.39.z65 item 2: the spare-tool line last said for this order (said again only when a taken chain's line differs). */
         public String sparesSaid;
 
+        /**
+         * 0.39.z73 (D2 3.4): each step object of the chains this order took -> its rough seconds (Chain#stepSeconds), so a
+         * repair prices the kept tail at its old prices. By identity: the run holds the chain's own step objects.
+         */
+        public final Map<Step, Double> stepSeconds = new java.util.IdentityHashMap<>();
+
         /** 0.39.z70 (D2 3.1 stability): the order's plan switches (failure re-plans + re-prices), the re-prices among them, the steps they changed. */
         public int switches, repriceSwitches, stepsChanged;
 
@@ -175,6 +181,11 @@ public final class Goals {
                 return Goals.replan(bb, g, failed, fact, why);
             }
 
+            @Override public io.github.mojolowjo.entropybot.aa.moves.Steps.Routine replan(Step failed, io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact, String why,
+                                                                                  io.github.mojolowjo.entropybot.aa.moves.Steps.Remaining left) {
+                return Goals.replan(bb, g, failed, fact, why, left);
+            }
+
             @Override public String orderState() { return Goals.orderState(g); }
 
             @Override public void switched(io.github.mojolowjo.entropybot.aa.moves.PlanDiff d, boolean reprice) {
@@ -256,6 +267,18 @@ public final class Goals {
      */
     public static io.github.mojolowjo.entropybot.aa.moves.Steps.Routine replan(Blackboard bb, Goal g, Step failed,
                                                                              io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact, String why) {
+        return replan(bb, g, failed, fact, why, null);
+    }
+
+    /**
+     * 0.39.z73 (design D2 3.4, Job D): as above with what was left of the run ({@code left}, null: not known): the full
+     * re-plan and the repair (the gap for what the failed step served + the kept tail, dry-run on the bag) are both priced,
+     * the repair kept unless the full re-plan is cheaper by replan.switchMarginS ({@link io.github.mojolowjo.entropybot.aa.moves.Repair}).
+     * The caps, the dropped source and the line to the owner as before; the pick is said with both prices.
+     */
+    public static io.github.mojolowjo.entropybot.aa.moves.Steps.Routine replan(Blackboard bb, Goal g, Step failed,
+                                                                             io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact, String why,
+                                                                             io.github.mojolowjo.entropybot.aa.moves.Steps.Remaining left) {
         if (fact.price()) return reprice(bb, g, fact);
         // 0.39.z33 (S36): a source fact charges the failed step's source by its key: the chain drops it for this order.
         // 0.39.z62 item 1b: a fact may name its own source key (a strip heading blocked at its Y, any ore set)
@@ -281,6 +304,22 @@ public final class Goals {
         if (sourceFact) g.sources.failedFor(g.id(), src, fact.text(), bb.clock.now(), src.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STATION_AT) ? bb.in : null, ORDER_LIFE_MS);
         var ch = chain(bb, g);
         if (ch == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");
+        // 0.39.z73 (D2 3.4): the repair, priced against this full re-plan
+        var pk = left == null ? null : repair(bb, g, left, ch);
+        if (pk != null) bb.port.log(g.r.key() + ": " + pk.line());
+        if (pk != null && pk.repair()) {
+            if (newSource) g.sourceReplans++;
+            else g.replans++;
+            for (int i = 0; i < pk.steps().size() && i < pk.gapSeconds().size(); i++) g.stepSeconds.put(pk.steps().get(i), pk.gapSeconds().get(i));
+            g.pricedWay = true;
+            g.pricedS = pk.repairS();
+            g.pricedAtMs = bb.clock.now();
+            g.pricedExplore = false;
+            String line = g.r.key() + ": " + fact.text() + " - repaired: " + pk.steps().get(0).text() + " first, " + pk.kept() + " step" + (pk.kept() == 1 ? "" : "s") + " kept";
+            bb.port.log(line + " (after step " + failed.text() + ": " + why + ")");
+            bb.port.tellOwner(line);
+            return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(pk.steps(), null, pk.uses());
+        }
         if (!ch.ok() || ch.steps().isEmpty()) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, ch.why());
         if (newSource) g.sourceReplans++;
         else g.replans++;
@@ -289,6 +328,29 @@ public final class Goals {
         bb.port.log(line + " (after step " + failed.text() + ": " + why + "; chain: " + ch.why() + ")");
         bb.port.tellOwner(line);
         return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(ch.steps(), null, ch.uses());
+    }
+
+    /**
+     * 0.39.z73 (D2 3.4): the repair candidate against {@code full}: the split of what was left, the gap's chain for what the
+     * failed step served (on the order's world of now, its dropped sources applied), the kept tail's old seconds (from the
+     * chains this order took, {@link Goal#stepSeconds}; one missing: not known), the dry run on the bag.
+     */
+    static io.github.mojolowjo.entropybot.aa.moves.Repair.Pick repair(Blackboard bb, Goal g, io.github.mojolowjo.entropybot.aa.moves.Steps.Remaining left,
+                                                                    io.github.mojolowjo.entropybot.aa.NeedChain.Chain full) {
+        var sp = io.github.mojolowjo.entropybot.aa.moves.Repair.split(left.steps());
+        io.github.mojolowjo.entropybot.aa.NeedChain.Chain gap = null;
+        double tail = Double.NaN;
+        if (sp.why() == null) {
+            var w = chainWorld(bb, g);
+            if (w != null) gap = io.github.mojolowjo.entropybot.aa.NeedChain.resolve(sp.item(), sp.n(), w);
+            tail = 0;
+            for (int i = sp.served() + 1; i < left.steps().size(); i++) {
+                Double s = g.stepSeconds.get(left.steps().get(i));
+                if (s == null) { tail = Double.NaN; break; }
+                tail += s;
+            }
+        }
+        return io.github.mojolowjo.entropybot.aa.moves.Repair.pick(left.steps(), left.uses(), sp, gap, tail, full, left.bag(), switchMarginS());
     }
 
     /**
@@ -341,6 +403,8 @@ public final class Goals {
 
     /** 0.39.z48: the order's pick was taken now at the chain's price. */
     static void took(Goal g, io.github.mojolowjo.entropybot.aa.NeedChain.Chain ch, long nowMs) {
+        // 0.39.z73 (D2 3.4): the taken chain's per-step seconds, kept for a later repair's tail price
+        if (ch.stepSeconds().size() == ch.steps().size()) for (int i = 0; i < ch.steps().size(); i++) g.stepSeconds.put(ch.steps().get(i), ch.stepSeconds().get(i));
         // 0.39.z49 (S67, run K: "vs 104 s left" for the explore while paths compute): that explore is not a way - no price
         g.pricedWay = !io.github.mojolowjo.entropybot.aa.moves.Steps.waitsOnPaths(ch.steps());
         g.pricedS = g.pricedWay ? ch.seconds() : Double.NaN;
@@ -658,14 +722,20 @@ public final class Goals {
     }
 
     /** The goal's chain on the world fact now (null: no world facts yet). */
-    public static io.github.mojolowjo.entropybot.aa.NeedChain.Chain chain(Blackboard bb, Goal g) {
-        if (g.strip != null) return null;
+    /** 0.39.z73: the order's world of now - the planner's facts with the order's dropped sources and failed places applied; null: none yet. */
+    static io.github.mojolowjo.entropybot.aa.NeedChain.World chainWorld(Blackboard bb, Goal g) {
         var world = world(bb);
         if (world == null) return null;
         int[] pos = bb.in == null ? null : bb.in.pos;
         var dropped = droppedSources(g, pos);
         // 0.39.z33 (z65: a station back once closer); 0.39.z67 item 1: a place-near that failed holds its spot (near it: a cell with room)
-        world = world.withoutSources(dropped).withPlaceFailures(dropped, pos);
+        return world.withoutSources(dropped).withPlaceFailures(dropped, pos);
+    }
+
+    public static io.github.mojolowjo.entropybot.aa.NeedChain.Chain chain(Blackboard bb, Goal g) {
+        if (g.strip != null) return null;
+        var world = chainWorld(bb, g);
+        if (world == null) return null;
         var laps = io.github.mojolowjo.entropybot.aa.core.TickLaps.AA;    // 0.39.z62 item 4: resolves counted while the probe is on
         long t0 = laps.now();
         var ch = g.r.group() ? io.github.mojolowjo.entropybot.aa.NeedChain.resolveAll(g.r.key(), g.r.ids(), g.n, world)
