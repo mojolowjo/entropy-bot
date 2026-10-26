@@ -710,6 +710,8 @@ final class Mining {
         String untilAtStart;
         /** 0.39.z75 metric fix B: the found source the order was last priced again on (one re-price per source). */
         String foundAsked;
+        /** 0.39.z75 log: the found sources whose hold was said (once each); the end line lists them. */
+        final java.util.Set<String> heldSaid = new java.util.LinkedHashSet<>();
         boolean untilChecked;
         /** 0.39.z47: the until words whose known source was dropped for the order (said once each). */
         final java.util.Set<String> saidDropped = new java.util.HashSet<>();
@@ -1051,7 +1053,17 @@ final class Mining {
                 ex.foundAsked = known;
                 LOG.info("[entropybot] explore: {} - the order is priced again here; the explore ends only if the new price uses it", ExploreRules.sourceOf(known));
                 ends = false;
-            } else if (ends && ex.foundAsked != null) ends = false;              // asked already: the price said "explore on"
+            } else if (ends && ex.foundAsked != null) {
+                // asked already: the price said "explore on" - held, said once per source (rule 7: never a silent hold)
+                ends = false;
+                String src = ExploreRules.sourceOf(known);
+                if (ex.heldSaid.add(src)) {
+                    boolean same = !ExploreRules.askAgain(known, ex.foundAsked);
+                    LOG.info("[entropybot] explore: {} seen, not ended: {}", src, same
+                            ? "the order was priced on this source already and kept this explore (it waits for a source the plan uses, or its time limit)"
+                            : "the re-price was not asked (no typed run of an order behind the explore now); it runs to a source the plan uses or its time limit");
+                }
+            }
             if (ends) {
                 LOG.info("[entropybot] explore: {}", known);
                 s.note = known + tookText(ex.took);
@@ -1223,6 +1235,9 @@ final class Mining {
             // owner 2026-10-20 ("done exploring for 5 min" after 1 min): the label says the real time and why it ended
             long realMin = Math.max(0, Math.round((now() - ex.start) / 1200.0));
             String why = done != null ? done : "nothing left to explore in reach";
+            // 0.39.z75 log (rule 7): every end of an explore says why, and the found sources it held for the plan
+            LOG.info("[entropybot] explore: ended after {} min ({}){}", realMin, why, ex.heldSaid.isEmpty() ? ""
+                    : "; seen but not used by the order's plan: " + String.join(", ", ex.heldSaid) + (ex.foundAsked == null ? "" : " (priced again on " + ExploreRules.sourceOf(ex.foundAsked) + ")"));
             s.label = (ex.find != null ? "looking for a " + ex.find.what().replaceFirst("^minecraft:", "") : "exploring")
                     + " - ended after " + realMin + " min (" + why + ")";
             if (s.job() != null) s.job().label = s.label;
