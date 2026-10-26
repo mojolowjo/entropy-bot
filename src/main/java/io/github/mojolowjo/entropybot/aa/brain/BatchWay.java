@@ -31,7 +31,9 @@ import java.util.function.BiFunction;
  * <p>R3 (resolve time on the client tick): the trip is kept per order (each order's holds are its own), keyed by the open orders, the bag, the place
  * (failures.moved cells) and the order's holds; one that waits on paths is kept until the next path answer lands. Measured
  * on the AA tick's stopwatch ({@link TickLaps#playbook}: "probe aatick: ... | playbook N = M ms").
- * Pure (JUnit: Z77PlaybookTest, Z77RoundFixTest). Loader notes: none (the world and the ore-per-slab fact come from AaRuntime).
+ * <p>0.39.z77 noway: a leg with no way ends only the orders whose own items need it ({@link Playbook.Leg#serves}), parked
+ * with the leg's reasons; the batch's other orders derive their trip again without them and run on (said in the log).
+ * Pure (JUnit: Z77PlaybookTest, Z77RoundFixTest, Z77NoWayTest). Loader notes: none (the world and the ore-per-slab fact come from AaRuntime).
  */
 public final class BatchWay {
     private BatchWay() {}
@@ -42,11 +44,16 @@ public final class BatchWay {
     /** The start of a trip line ("trip b1 (6 orders): ..."). */
     public static final String TRIP = "trip ";
 
+    /** The start of the reason an order ends with when no way stands for it ("no way to get it: playbook: ..."). */
+    public static final String NO_WAY = "no way to get it: ";
+
     /**
      * One trip as priced: its key, the path answers landed then ({@code landed}), whether it waited on no path
-     * ({@code settled}), the playbook, its chain, the leg starts (by identity) and the line said.
+     * ({@code settled}), the playbook, its chain, the leg starts (by identity) and the line said. 0.39.z77 noway: {@code ends} -
+     * the ids of the open orders a leg with no way ends (those whose own items need that leg) when the others do not need it;
+     * empty: the trip's verdict is every order's.
      */
-    record Trip(String key, long landed, boolean settled, Playbook pb, NeedChain.Chain chain, Map<Step, String> starts, String line) {
+    record Trip(String key, long landed, boolean settled, Playbook pb, NeedChain.Chain chain, Map<Step, String> starts, String line, Set<String> ends) {
         boolean holds(String k, long landedNow) { return key != null && key.equals(k) && (settled || landed == landedNow); }
     }
 
@@ -143,7 +150,24 @@ public final class BatchWay {
         held.addAll(others.keySet());
         String key = tripKeyOf(tk, open, w.bag(), bb.in == null ? null : bb.in.pos, held);
         Trip kept = TRIPS.get(tk);
-        if (kept != null && kept.holds(key, landed(w))) return kept.chain() != null ? kept.chain() : own(g, key, landed(w), own);
+        Trip t = kept != null && kept.holds(key, landed(w)) ? kept : price(bb, g, tk, key, open, w);
+        // 0.39.z77 noway (run BU 13:34:23: the helmet's band leg had no way and ended the PICKAXE's order, never made): a leg's
+        // no-way ends only the orders whose own items need it (with the leg's reasons, as an order's no-way always did); every
+        // other order of the batch derives its trip again without them and runs on
+        if (!t.ends().isEmpty() && t.chain() != null) {
+            boolean gone = bb.port != null;
+            for (Goals.Goal o : open) {
+                if (o == g || !t.ends().contains(o.id())) continue;
+                if (bb.port != null) Goals.park(bb, o, NO_WAY + t.chain().why());
+                gone &= o.parked != null;
+            }
+            if (!t.ends().contains(g.id()) && gone) return trip(bb, g, w0, own);     // the ended orders parked: the key changes
+        }
+        return t.chain() != null ? t.chain() : own(g, key, landed(w), own);
+    }
+
+    /** The trip of the batch {@code tk} priced now on {@code w} for its {@code open} orders, kept under {@code key}. */
+    private static Trip price(Blackboard bb, Goals.Goal g, String tk, String key, List<Goals.Goal> open, NeedChain.World w) {
         PRICED.merge(tk, 1, Integer::sum);
         long t0 = TickLaps.AA.now();
         List<Playbook.Target> targets = new ArrayList<>();
@@ -159,11 +183,31 @@ public final class BatchWay {
         Shaped s = oneLeg ? new Shaped(null, TRIP + tk + " (1 order): 1 leg - " + pb.legs().get(0).text() + ": the order's own chain", true)
                 : shape(tk, open.size(), pb, l == null ? null : l.chain(), l == null ? Map.of() : l.starts());
         Map<Step, String> starts = l == null || s.chain() != l.chain() ? Map.of() : l.starts();
-        Trip t = new Trip(key, landed(w), s.settled(), pb, s.chain(), starts, s.line());
+        Set<String> ends = l == null || s.chain() != l.chain() ? Set.of() : ends(open, l.failed(pb));
+        Trip t = new Trip(key, landed(w), s.settled(), pb, s.chain(), starts, s.line(), ends);
         TRIPS.put(tk, t);
         LEGS.put(tk, starts);
         if (sayAgain(tk, s.change()) && bb.port != null) bb.port.log(g.r.key() + ": " + s.line());    // 0.39.z77: on a change only
-        return s.chain() != null ? s.chain() : own(g, key, landed(w), own);
+        if (!ends.isEmpty() && bb.port != null) {
+            List<String> names = new ArrayList<>();
+            for (Goals.Goal o : open) if (ends.contains(o.id())) names.add(o.r.key());
+            bb.port.log(TRIP + tk + ": leg " + (l.failedLeg() + 1) + "/" + pb.legs().size() + " (" + l.failed(pb).text() + ") has no way: it ends the order"
+                    + (names.size() == 1 ? " " : "s ") + String.join(", ", names) + " (their items need it); the other orders' trip is derived again without "
+                    + (names.size() == 1 ? "it" : "them"));
+        }
+        return t;
+    }
+
+    /**
+     * 0.39.z77 noway (pure): the ids of the {@code open} orders (in the trip's target order) that a leg with no way ends - the
+     * orders it serves ({@link Playbook.Leg#serves}); empty when no leg failed, it serves none, or it serves every open order
+     * (then the trip's no-way is every order's, as before).
+     */
+    static Set<String> ends(List<Goals.Goal> open, Playbook.Leg failed) {
+        if (failed == null || open.size() < 2) return Set.of();
+        Set<String> out = new LinkedHashSet<>();
+        for (int i : failed.serves()) if (i >= 0 && i < open.size()) out.add(open.get(i).id());
+        return out.isEmpty() || out.size() >= open.size() ? Set.of() : out;
     }
 
     /** The owner hears the trip the order took, once a line, before its steps run (Goals.took). */

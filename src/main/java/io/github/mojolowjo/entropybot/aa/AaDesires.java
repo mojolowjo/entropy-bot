@@ -469,7 +469,7 @@ public final class AaDesires {
                 var ch = io.github.mojolowjo.entropybot.aa.brain.Goals.chain(bb, g);
                 // loot-book-bg: a chain that only waits on the loot book is no reason to park (it is priced again when the book lands)
                 if (ch != null && !ch.waiting() && io.github.mojolowjo.entropybot.aa.brain.Goals.have(bb.in.bag, g) < g.n && (!ch.ok() || ch.steps().isEmpty()))
-                    io.github.mojolowjo.entropybot.aa.brain.Goals.park(bb, g, "no way to get it: " + ch.why());
+                    io.github.mojolowjo.entropybot.aa.brain.Goals.park(bb, g, io.github.mojolowjo.entropybot.aa.brain.BatchWay.NO_WAY + ch.why());
                 return null;
             }
             // 0.39.z30: a step that fails on a changed fact re-plans the order through the same chain call

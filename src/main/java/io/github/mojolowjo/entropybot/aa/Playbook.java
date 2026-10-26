@@ -45,7 +45,7 @@ import java.util.function.Predicate;
  * </ul>
  * A fact not loaded (the mining tiers, the world-gen read) is "not loaded", said (rule 15); any order that cannot be
  * classified fails the derivation with its reason (rule 7), said; the order then runs its own chain as its one leg
- * (BatchWay). Pure (JUnit: Z77PlaybookTest).
+ * (BatchWay). Pure (JUnit: Z77PlaybookTest, Z77NoWayTest).
  * Loader notes: none (the facts come through AaRuntime: GenWhere from the jars' world-gen JSON, the strip facts, the
  * recipe index synced by the server).
  */
@@ -86,13 +86,25 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
      * leaf word -> ore a chunk slab at {@code y} (the strip's price); {@code tier}: the pickaxe tier the leg's strip digs
      * with (DESCENT) or its gate makes (SURFACE / AT_BAND; 0 none); {@code gates}: the gets that are a gate's pickaxe (the
      * planner makes the cheapest pickaxe of {@code tier} for them, not that very item).
+     * <p>0.39.z77 noway (run BU 13:34:23: "order iron_pickaxe stopped: no way to get it: playbook: at band: iron_helmet ends in
+     * an explore" - the helmet's band leg ended the pickaxe): {@code serves} - the batch's orders (indices into
+     * {@link Playbook#targets}) whose OWN items need this leg: its gets are their items, or the inputs their items are made
+     * from (a descent's ore, the at-band smelt), or a gate's pickaxe their band leaves need. A leg with no way ends only these.
      */
-    public record Leg(Kind kind, List<Target> gets, int y, String whyY, Map<String, Double> perSlab, int tier, Set<String> gates, boolean on) {
+    public record Leg(Kind kind, List<Target> gets, int y, String whyY, Map<String, Double> perSlab, int tier, Set<String> gates, boolean on, Set<Integer> serves) {
         public Leg {
             gets = List.copyOf(gets);
             perSlab = perSlab == null ? Map.of() : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(perSlab));
             gates = gates == null ? Set.of() : Set.copyOf(gates);
+            serves = serves == null ? Set.of() : java.util.Collections.unmodifiableSet(new TreeSet<>(serves));
         }
+
+        public Leg(Kind kind, List<Target> gets, int y, String whyY, Map<String, Double> perSlab, int tier, Set<String> gates, boolean on) {
+            this(kind, gets, y, whyY, perSlab, tier, gates, on, null);
+        }
+
+        /** 0.39.z77 noway: this leg serving {@code orders}. */
+        Leg serving(Set<Integer> orders) { return new Leg(kind, gets, y, whyY, perSlab, tier, gates, on, orders); }
 
         public String text() {
             List<String> g = new ArrayList<>();
@@ -476,9 +488,12 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
         // the surface leg, the gate's pickaxe after them - the order is done before the first leg's tools are made
         int gatesFirst = surface.size();
         for (var e : trees.entrySet()) if (e.getValue().surface()) surface.add(surface.size() - gatesFirst, batch.get(e.getKey()));
+        // 0.39.z77 noway: a no-band leg serves the orders it gets and, when it makes a gate's pickaxe, every order with a band leaf
+        Set<Integer> banded = new TreeSet<>();
+        for (var e : trees.entrySet()) if (!e.getValue().surface()) banded.add(e.getKey());
         Leg climbLast = null;
         if (!f.under()) {
-            if (!surface.isEmpty()) legs.add(new Leg(Kind.SURFACE, surface, NO_Y, null, null, gateTier0, surfaceGates, false));
+            if (!surface.isEmpty()) legs.add(new Leg(Kind.SURFACE, surface, NO_Y, null, null, gateTier0, surfaceGates, false, served(batch, surface, !surfaceGates.isEmpty(), banded)));
         } else {
             // 0.39.z77 legs 2 (manager 2026-10-26: "surface" is never a fixed first leg; run BJ 10:39:15): under ground the
             // no-band gets are placed from the feet - what their leaves are had by (the bag, a known source, the base block)
@@ -498,10 +513,11 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
             boolean bandUp = !climbGates.isEmpty();
             for (Tree t : trees.values()) if (!t.surface() && !t.up().isEmpty()) bandUp = true;
             for (Gate g : gates) if (!g.tree().up().isEmpty()) bandUp = true;
-            if (!here.isEmpty()) legs.add(new Leg(Kind.HERE, here, f.feetY(), "here at y " + f.feetY(), null, hereGates.isEmpty() ? 0 : gateTier0, hereGates, false));
+            if (!here.isEmpty()) legs.add(new Leg(Kind.HERE, here, f.feetY(), "here at y " + f.feetY(), null, hereGates.isEmpty() ? 0 : gateTier0, hereGates, false,
+                    served(batch, here, !hereGates.isEmpty(), banded)));
             if (!climb.isEmpty()) {
                 Leg up = new Leg(Kind.SURFACE, climb, NO_Y, CLIMB_FOR + String.join(", ", upWords.stream().map(NeedChain::shw).toList()), null,
-                        climbGates.isEmpty() ? 0 : gateTier0, climbGates, false);
+                        climbGates.isEmpty() ? 0 : gateTier0, climbGates, false, served(batch, climb, !climbGates.isEmpty(), banded));
                 if (bandUp) legs.add(up); else climbLast = up;
             }
         }
@@ -515,31 +531,34 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
             // stripped on at the same level with it (no second descent; the better pickaxe digs faster: priced, rule 1)
             List<Tree> toolTrees = new ArrayList<>(), restTrees = new ArrayList<>();
             List<Integer> toolIdx = new ArrayList<>(), restIdx = new ArrayList<>();
+            List<Integer> toolOf = new ArrayList<>(), restOf = new ArrayList<>();       // 0.39.z77 noway: each tree's order (-1: a gate's)
             List<Gate> gatesK = new ArrayList<>();
             for (Gate g : gates) {
-                if (stageOfGate(g, tiers, gates, p0, stage) == sk) { gatesK.add(g); toolTrees.add(g.tree()); }
-                else restTrees.add(g.tree());
+                if (stageOfGate(g, tiers, gates, p0, stage) == sk) { gatesK.add(g); toolTrees.add(g.tree()); toolOf.add(-1); }
+                else { restTrees.add(g.tree()); restOf.add(-1); }
             }
             for (var e : trees.entrySet()) {
                 if (e.getValue().surface()) continue;
                 boolean mine = stageOfTree(e.getValue(), stage) == sk;
                 boolean better = mine && MiningTiers.toolTier(NeedChain.id(batch.get(e.getKey()).item()), "pickaxe") > pk;
-                if (better) { toolTrees.add(e.getValue()); toolIdx.add(e.getKey()); }
-                else { restTrees.add(e.getValue()); if (mine) restIdx.add(e.getKey()); }
+                if (better) { toolTrees.add(e.getValue()); toolIdx.add(e.getKey()); toolOf.add(e.getKey()); }
+                else { restTrees.add(e.getValue()); restOf.add(e.getKey()); if (mine) restIdx.add(e.getKey()); }
             }
             boolean split = !toolTrees.isEmpty() && hasLeaves(restTrees, stage, sk);
             if (split) {
-                String why = part(f, batch, sk, pk, toolTrees, gatesK, toolIdx, stage, tiers, bagLeft, false, legs);
+                String why = part(f, batch, sk, pk, toolTrees, toolOf, trees, gatesK, toolIdx, stage, tiers, bagLeft, false, legs);
                 if (why != null) return no(batch, why);
-                why = part(f, batch, sk, pk, restTrees, List.of(), restIdx, stage, tiers, bagLeft, true, legs);
+                why = part(f, batch, sk, pk, restTrees, restOf, trees, List.of(), restIdx, stage, tiers, bagLeft, true, legs);
                 if (why != null) return no(batch, why);
             } else {
                 List<Tree> all = new ArrayList<>(toolTrees);
                 all.addAll(restTrees);
+                List<Integer> allOf = new ArrayList<>(toolOf);
+                allOf.addAll(restOf);
                 List<Integer> idx = new ArrayList<>(toolIdx);
                 idx.addAll(restIdx);
                 java.util.Collections.sort(idx);
-                String why = part(f, batch, sk, pk, all, gatesK, idx, stage, tiers, bagLeft, false, legs);
+                String why = part(f, batch, sk, pk, all, allOf, trees, gatesK, idx, stage, tiers, bagLeft, false, legs);
                 if (why != null) return no(batch, why);
             }
         }
@@ -550,6 +569,38 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
     }
 
     private static Playbook no(List<Target> batch, String why) { return new Playbook(batch, List.of(), "playbook: " + why, why); }
+
+    /**
+     * 0.39.z77 noway: the orders a no-band leg serves - those whose own target it gets (by identity: the batch's Target), and
+     * when it makes a gate's pickaxe ({@code gate}) every order with a band leaf ({@code banded}: they dig with it).
+     */
+    private static Set<Integer> served(List<Target> batch, List<Target> gets, boolean gate, Set<Integer> banded) {
+        Set<Integer> out = new TreeSet<>();
+        for (Target t : gets) for (int i = 0; i < batch.size(); i++) if (batch.get(i) == t) out.add(i);
+        if (gate) out.addAll(banded);
+        return out;
+    }
+
+    /**
+     * 0.39.z77 noway: the orders one part of a stage serves (its DESCENT and its AT_BAND): the part's own orders ({@code idx}),
+     * every order whose tree feeds it (a band leaf or a smelt of stage {@code k}), and - when it makes a gate, or a gate's tree
+     * feeds it - every order with a band leaf of a later stage (the gate's pickaxe digs those).
+     */
+    private static Set<Integer> partServes(int k, List<Tree> parts, List<Integer> partOf, Map<Integer, Tree> trees, boolean gates, List<Integer> idx, Map<String, Integer> stage) {
+        Set<Integer> out = new TreeSet<>(idx);
+        boolean later = gates;
+        for (int j = 0; j < parts.size(); j++) {
+            Tree t = parts.get(j);
+            boolean feeds = false;
+            for (String b : t.band().keySet()) feeds |= stage.getOrDefault(b, -1) == k;
+            for (Smelt s : t.smelts()) feeds |= s.leaf() != null && stage.getOrDefault(s.leaf(), -1) == k;
+            if (!feeds) continue;
+            int i = j < partOf.size() ? partOf.get(j) : -1;
+            if (i >= 0) out.add(i); else later = true;
+        }
+        if (later) for (var e : trees.entrySet()) if (!e.getValue().surface() && stageOfTree(e.getValue(), stage) > k) out.add(e.getKey());
+        return out;
+    }
 
     /** Any band leaf of stage {@code k} in these trees. */
     private static boolean hasLeaves(List<Tree> trees, Map<String, Integer> stage, int k) {
@@ -562,8 +613,9 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
      * lacks of their output - {@code bagLeft}, used up part by part - and their fuel) and its AT_BAND (the smelts, the gates,
      * the orders: tools first). {@code on}: stripped on at the last descent's level. Null: added; else the reason.
      */
-    private static String part(Facts f, List<Target> batch, int k, int pk, List<Tree> trees, List<Gate> gatesK, List<Integer> idx, Map<String, Integer> stage,
-                               Map<String, Integer> tiers, Map<String, Integer> bagLeft, boolean on, List<Leg> legs) {
+    private static String part(Facts f, List<Target> batch, int k, int pk, List<Tree> trees, List<Integer> treeOf, Map<Integer, Tree> orders, List<Gate> gatesK,
+                               List<Integer> idx, Map<String, Integer> stage, Map<String, Integer> tiers, Map<String, Integer> bagLeft, boolean on, List<Leg> legs) {
+        Set<Integer> serves = partServes(k, trees, treeOf, orders, !gatesK.isEmpty(), idx, stage);     // 0.39.z77 noway
         Map<String, Integer> leafNeed = new LinkedHashMap<>();
         Map<String, Integer> smeltOut = new LinkedHashMap<>();
         Map<String, Smelt> smeltOf = new LinkedHashMap<>();
@@ -598,7 +650,7 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
         if (!gets.isEmpty()) {          // empty: the bag holds this part's ore already - no descent, the at-band leg as below
             Object d = descent(f, k, gets, fuel, tiers, on);
             if (d instanceof String why) return why;
-            legs.add((Leg) d);
+            legs.add(((Leg) d).serving(serves));
         }
         // at the band: the smelts, then the gates and the tools, then the rest in the batch's order
         List<Target> at = new ArrayList<>();
@@ -614,7 +666,7 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
         }
         at.addAll(tools);
         at.addAll(rest);
-        if (!at.isEmpty()) legs.add(new Leg(Kind.AT_BAND, at, NO_Y, null, null, atTier, atGates, false));
+        if (!at.isEmpty()) legs.add(new Leg(Kind.AT_BAND, at, NO_Y, null, null, atTier, atGates, false, serves));
         return null;
     }
 

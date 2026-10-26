@@ -999,12 +999,20 @@ public final class NeedChain {
      * first step of each leg in the chain's order -> "playbook leg 2/3: descent to y 16 for raw_iron 27, coal 4" (said when
      * that step starts, Goals' replanner). Empty when the chain does not stand.
      */
-    public record Legs(Chain chain, Map<Step, String> starts) {}
+    public record Legs(Chain chain, Map<Step, String> starts, int failedLeg) {
+        public Legs(Chain chain, Map<Step, String> starts) { this(chain, starts, -1); }
+
+        /** 0.39.z77 noway: the leg (of {@code pb.legs()}) whose no-way failed the chain; null: none (it stands, or no leg's). */
+        public Playbook.Leg failed(Playbook pb) {
+            return chain.ok() || pb == null || failedLeg < 0 || failedLeg >= pb.legs().size() ? null : pb.legs().get(failedLeg);
+        }
+    }
 
     public static Legs resolvePlaybookLegs(Playbook pb, World w) {
         Ctx c = new Ctx(w);
         List<java.util.Set<Step>> added = new ArrayList<>();
-        Chain ch = playbookChain(c, pb, added);
+        int[] failedLeg = {-1};
+        Chain ch = playbookChain(c, pb, added, failedLeg);
         Map<Step, String> starts = new java.util.IdentityHashMap<>();
         if (ch.ok() && pb != null) {                              // SHAPE CHANGE: an explore trip says its legs too
             int prev = -1, n = Math.min(added.size(), pb.legs().size());
@@ -1016,7 +1024,7 @@ public final class NeedChain {
                 prev = at;
             }
         }
-        return new Legs(ch, starts);
+        return new Legs(ch, starts, ch.ok() ? -1 : failedLeg[0]);
     }
 
     /** 0.39.z77 J2: a leg as the watcher reads it ("descent to y 16 for raw_iron 27, coal 4"). */
@@ -1045,7 +1053,7 @@ public final class NeedChain {
         return s;
     }
 
-    private static Chain playbookChain(Ctx c, Playbook pb, List<java.util.Set<Step>> added) {
+    private static Chain playbookChain(Ctx c, Playbook pb, List<java.util.Set<Step>> added, int[] failedLeg) {
         if (pb == null || !pb.ok()) return playbookFails(c, pb == null ? "no playbook" : pb.fail());
         List<String> phrases = new ArrayList<>();
         int levelY = Playbook.NO_Y;
@@ -1064,6 +1072,7 @@ public final class NeedChain {
         legs:
         for (Playbook.Leg leg : pb.legs()) {
             legNo++;
+            failedLeg[0] = legNo - 1;            // 0.39.z77 noway: a fail returned in this leg is this leg's no-way
             java.util.Set<Step> before = ids(c.steps);
             if (leg.kind() == Playbook.Kind.DESCENT) {
                 String p = playbookStrip(c, leg, levelY, exploreEnd >= 0);
@@ -1121,6 +1130,7 @@ public final class NeedChain {
             phrases.add(name + ": " + String.join("; ", got));
             added.add(addedSince(c, before));
         }
+        failedLeg[0] = -1;                       // past the legs: a fail now is no one leg's
         if (exploreEnd >= 0) {
             c.stuck = true;
             c.unknown = exploreFor;
