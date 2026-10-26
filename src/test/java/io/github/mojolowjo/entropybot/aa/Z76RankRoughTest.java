@@ -148,7 +148,45 @@ class Z76RankRoughTest {
         assertEquals(Set.of("14,64,0", "20,64,0"), pp.rankedOut);
     }
 
+    /** Review: the two nearest stations unreachable free their places - the 3rd and 4th are asked, the 3rd (14 m) is the walk. */
+    @Test
+    void unreachableStationsFreeTheirPlaces() {
+        Counting pp = new Counting();
+        pp.answers.put("5,64,0", PathPrice.Answer.unreachable("no path: the complete search found none"));
+        pp.answers.put("9,64,0", PathPrice.Answer.unreachable("no path: the complete search found none"));
+        List<Spot> st = List.of(new Spot(5, 64, 0, 5, "minecraft:crafting_table", 1), new Spot(9, 64, 0, 9, "minecraft:crafting_table", 1),
+                new Spot(14, 64, 0, 14, "minecraft:crafting_table", 1), new Spot(20, 64, 0, 20, "minecraft:crafting_table", 1),
+                new Spot(30, 64, 0, 30, "minecraft:crafting_table", 1));
+        Spot best = Nearby.byPath(st, pp);
+        assertEquals(List.of("5,64,0", "9,64,0", "14,64,0", "20,64,0"), pp.asked);
+        assertEquals(14, best.x());
+        assertEquals(Set.of("30,64,0"), pp.rankedOut);
+        // nothing priced yet: the first asked one not unreachable, never the unreachable nearest
+        Counting none = new Counting();
+        none.answers.put("5,64,0", PathPrice.Answer.unreachable("no path"));
+        none.answers.put("9,64,0", PathPrice.Answer.computing(null));
+        none.answers.put("14,64,0", PathPrice.Answer.computing(null));
+        assertEquals(9, Nearby.byPath(st, none).x());
+    }
+
     // ---- the withdraw (fork J3: IPricedPath.cancel, WITHDRAWN) ----
+
+    /**
+     * Review (two planners on staggered ticks): a goal asked in the window before this one is still "asked again" and stays;
+     * not asked for two whole windows, a ranked-out ask goes.
+     */
+    @Test
+    void anAskIsKeptForTwoSweepWindows() {
+        AskSweep.Window w = new AskSweep.Window();
+        List<AskSweep.Ask> pending = List.of(new AskSweep.Ask("30,64,0", new int[]{0, 64, 0}));
+        int[] feet = {0, 64, 0};
+        w.asked("30,64,0");                      // planner A asks it (window 1)
+        assertEquals(List.of(), w.sweep(pending, feet, 16, null));
+        w.rankedOut("30,64,0");                  // planner B ranks it out (window 2), A did not run this tick
+        assertEquals(List.of(), w.sweep(pending, feet, 16, null), "asked one window before: kept");
+        w.rankedOut("30,64,0");                  // window 3: B again, A not since window 1
+        assertEquals(List.of("30,64,0"), w.sweep(pending, feet, 16, null), "two windows with no ask: withdrawn");
+    }
 
     /** A dropped way's ask is withdrawn; asked again, it stays; the bot past failures.moved (16) from its start: withdrawn; never the running walk. */
     @Test

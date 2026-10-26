@@ -75,8 +75,7 @@ public final class LivePathPrice implements PathPrice {
         if (!PathPrice.pricedPathOn() && !mc.level.isLoaded(pos)) return Answer.chunks("not loaded: the target's chunk is not loaded");
         String key = x + "," + y + "," + z;
         int[] me = Jobs.here(mc.player);
-        if (asked.size() > ASKED_MAX) asked.clear();     // no sweep runs while AA is off: the set never grows past a bound
-        asked.add(key);                                  // 0.39.z76 J3-mod item 2: asked since the last sweep (kept, not withdrawn)
+        window.asked(key);                               // 0.39.z76 J3-mod item 2: asked in this sweep window (kept, not withdrawn)
         if (PathPrice.pricedPathOn()) return pricedAsk(mc, b, pos, key, me);
         int bag = 31 * bagHash(mc) + System.identityHashCode(mc.level);     // another level (dimension, world): not the same answer
         long now = System.currentTimeMillis();
@@ -105,8 +104,8 @@ public final class LivePathPrice implements PathPrice {
 
     // ---- 0.39.z76 J3-mod item 2: rank rough (the estimate), withdraw what nobody wants (IPricedPath.cancel) ----
 
-    /** Goal keys asked / ranked out since the last {@link #sweep} (game thread). */
-    private final Set<String> asked = new java.util.HashSet<>(), rankedOut = new java.util.HashSet<>();
+    /** Goal keys asked (this window and the one before) / ranked out since the last {@link #sweep} (game thread). */
+    private final AskSweep.Window window = new AskSweep.Window();
     /** Asks withdrawn since the game started (the stall probe's count). */
     private volatile long withdrawn;
 
@@ -131,21 +130,17 @@ public final class LivePathPrice implements PathPrice {
         }
     }
 
-    @Override public void rankedOut(int x, int y, int z) {
-        if (rankedOut.size() > ASKED_MAX) rankedOut.clear();
-        rankedOut.add(x + "," + y + "," + z);
-    }
-
-    /** structural: a memory bound on the goal keys kept between two sweeps (a chain asks a few dozen) */
-    private static final int ASKED_MAX = 1024;
+    @Override public void rankedOut(int x, int y, int z) { window.rankedOut(x + "," + y + "," + z); }
 
     /**
-     * Once per AA tick (AaRuntime): the pending asks nobody asked since the last sweep that the chain ranked out, or whose
+     * Once per AA tick (AaRuntime): the pending asks nobody asked in the last two sweep windows (review: two planners on
+     * staggered ticks keep their goals, AskSweep.Window) that the chain ranked out, or whose
      * start the bot left by more than failures.moved ({@link AskSweep}), are withdrawn - the fork cancels their search (its
      * slot frees at once) and answers WITHDRAWN, which reads "path not known" (PricedAnswers.notYet). Never the running
      * step's walk. Game thread. Loader notes: the fork's IPricedPath.cancel (J3).
      */
     public void sweep() {
+        boolean swept = false;
         try {
             if (!PathPrice.pricedPathOn() || pending.isEmpty()) return;
             Minecraft mc = Minecraft.getInstance();
@@ -154,7 +149,8 @@ public final class LivePathPrice implements PathPrice {
             java.util.List<AskSweep.Ask> open = new java.util.ArrayList<>();
             for (var e : pending.entrySet()) if (!e.getValue().future().isDone()) open.add(new AskSweep.Ask(e.getKey(), e.getValue().from()));
             String run = runningTold == null ? null : runningTold.getX() + "," + runningTold.getY() + "," + runningTold.getZ();
-            for (String key : AskSweep.due(open, asked, rankedOut, Jobs.here(mc.player), io.github.mojolowjo.entropybot.aa.brain.Failures.movedV(), run)) {
+            swept = true;                                // review: the window turns in its own sweep (asks of the last two windows kept)
+            for (String key : window.sweep(open, Jobs.here(mc.player), io.github.mojolowjo.entropybot.aa.brain.Failures.movedV(), run)) {
                 String[] q = key.split(",");
                 BlockPos g = new BlockPos(Integer.parseInt(q[0]), Integer.parseInt(q[1]), Integer.parseInt(q[2]));
                 boolean out;
@@ -166,12 +162,11 @@ public final class LivePathPrice implements PathPrice {
                 }
                 if (out) {
                     withdrawn++;
-                    LOG.debug("[entropybot] path cost: the ask for {} withdrawn ({})", key, rankedOut.contains(key) ? "ranked out of the priced ways" : "the bot left its start");
+                    LOG.debug("[entropybot] path cost: the ask for {} withdrawn (ranked out of the priced ways or its start left; nobody asked it for two sweeps)", key);
                 }
             }
         } finally {
-            asked.clear();
-            rankedOut.clear();
+            if (!swept) window.next();
         }
     }
 

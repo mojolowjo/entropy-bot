@@ -186,7 +186,7 @@ public final class StepHands implements Steps.Hands {
             case Step.ChopTree t -> mining;
             case Step.KelpCut k -> mining;
             case Step.ToBand t -> bandWalking;
-            case Step.ToStrip t -> true;
+            case Step.ToStrip t -> stripWalking;             // review: once its walk started (as ToBand)
             default -> false;
         };
     }
@@ -498,7 +498,8 @@ public final class StepHands implements Steps.Hands {
         climbEnd = null;
         bandCell = null;                         // 0.39.z65 item 3
         bandWalking = false;
-        carGoal = null;                          // 0.39.z76 J3-mod item 0: the next step's car starts unseen
+        stripWalking = false;                    // 0.39.z76 review
+        carGoal = null;                         // 0.39.z76 J3-mod item 0: the next step's car starts unseen
         carOwner = null;
         carFailsAt = io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed();
         dataWait.reset();
@@ -1353,8 +1354,12 @@ public final class StepHands implements Steps.Hands {
         if (b == null) return "error: baritone not loaded";
         io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "to strip");
         LivePathPrice.walk(b, at);
+        stripWalking = true;                     // 0.39.z76 review: the car drives this step from here (drivesCar)
         return null;
     }
+
+    /** 0.39.z76 review: the strip leg's walk started (the car-idle check judges it only then). */
+    private boolean stripWalking;
 
     private Car.Status toStripStatus(LocalPlayer p, Step.ToStrip t) {
         if (instant != null) return Car.Status.done(instant);
