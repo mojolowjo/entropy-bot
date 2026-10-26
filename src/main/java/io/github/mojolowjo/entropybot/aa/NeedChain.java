@@ -965,6 +965,14 @@ public final class NeedChain {
     /** 0.39.z77 J2: the name of a playbook chain (its why line starts with it). */
     public static final String PLAYBOOK = "playbook";
 
+    /** 0.39.z77 price review 2: the start of the reason a playbook has a leg with no price yet (rule 15: the ad-hoc runs meanwhile). */
+    public static final String NOT_PRICED = "not priced yet: ";
+
+    /** 0.39.z77 price review 2: a second unknown after the surface explore - the legs after it have no price, so neither has the playbook. */
+    private static String secondUnknown(Ctx c) {
+        return NOT_PRICED + "a second need with no known source after the surface explore (" + shw(c.unknown) + "): the legs after it are not priced (rule 15)";
+    }
+
     /**
      * 0.39.z77 J2: the chain of a whole {@link Playbook} on ONE simulated bag and context: the SURFACE leg's gets (the gate's
      * pickaxe, the all-surface orders) with no leg to another level inside it; each DESCENT as ONE strip of every band
@@ -1034,13 +1042,12 @@ public final class NeedChain {
         // priced on; the chain's steps end at the explore (the re-price where it finds its source picks the rest)
         int exploreEnd = -1;
         String exploreFor = null;
-        legs:
         for (Playbook.Leg leg : pb.legs()) {
             java.util.Set<Step> before = ids(c.steps);
             if (leg.kind() == Playbook.Kind.DESCENT) {
-                String p = playbookStrip(c, leg, levelY);
+                String p = playbookStrip(c, leg, levelY, exploreEnd >= 0);
                 if (c.fail != null) return playbookFails(c, "descent to y " + leg.y() + ": " + c.fail);
-                if (c.stuck && exploreEnd >= 0) break;                  // a second unknown after the surface explore: priced so far
+                if (c.stuck && exploreEnd >= 0) return playbookFails(c, secondUnknown(c));     // price review 2: never priced on fewer legs
                 if (c.stuck) return playbookFails(c, "descent to y " + leg.y() + ": its pickaxe ends in an explore (no known source for " + shw(c.unknown) + ")");
                 if (p != null) phrases.add(p);
                 levelY = leg.y();
@@ -1061,11 +1068,12 @@ public final class NeedChain {
                     if (c.fail == null && !c.stuck) madePick(c, item);
                     if (c.fail != null) return playbookFails(c, name + ": " + sh(item) + ": " + c.fail);
                     if (c.stuck) {
-                        if (exploreEnd >= 0) { phrases.add(name + ": " + String.join("; ", got)); break legs; }
+                        if (exploreEnd >= 0) return playbookFails(c, secondUnknown(c));       // price review 2: never priced on fewer legs
                         if (!surface) return playbookFails(c, name + ": " + sh(item) + " ends in an explore (no known source for " + shw(c.unknown) + ")");
                         got.add(sh(item) + " " + t.n() + " <- " + p + " (then priced as had)");
                         exploreEnd = c.steps.size();
                         exploreFor = c.unknown;
+                        c.unknown = null;                               // a second unknown names itself (price review 2)
                         c.stuck = false;
                         int lack = (gate ? c.have(item) + 1 : t.n()) - c.have(item);
                         if (lack > 0) c.bag.merge(item, lack, Integer::sum);
@@ -1114,7 +1122,7 @@ public final class NeedChain {
      * height x the host's break plus the ores' own breaks: the families summed (a tunnel finds both at once; rough on the safe
      * side). The strip leaves the bot down there ({@code c.down}): later needs are met there or before going down.
      */
-    private static String playbookStrip(Ctx c, Playbook.Leg leg, int levelY) {
+    private static String playbookStrip(Ctx c, Playbook.Leg leg, int levelY, boolean afterExplore) {
         MiningTiers.Source src = MiningTiers.source();
         if (src == null) { c.fail = "the pickaxe tiers are not known (no mining data loaded yet)"; return null; }
         List<String> ores = new ArrayList<>();
@@ -1151,7 +1159,9 @@ public final class NeedChain {
         String walkNote;
         Walked wk = null;
         boolean firstLeg = c.down == null;
-        if (firstLeg) {
+        // 0.39.z77 price review 1 (rule 18): after the surface explore the bot is not at the feet any more - the descent is the
+        // break formula from the surface Y (no walk priced from a cell the bot reaches later), as a later descent is
+        if (firstLeg && !afterExplore) {
             wk = walk(c, first.x(), y, first.z(), Math.abs(first.feetY() - y));
             if (c.fail != null) return null;
             walkS = wk.seconds();
@@ -1161,7 +1171,7 @@ public final class NeedChain {
             int dy = Math.abs((levelY == Playbook.NO_Y ? first.feetY() : levelY) - y);
             walkBreaks = dy * baritone.api.process.IStripProcess.TUNNEL_HEIGHT;
             walkS = walkBreaks * hostS;
-            walkNote = " (down " + dy + " from the last descent: " + walkBreaks + " breaks x " + s(hostS) + ", rule 18 amended)";
+            walkNote = " (down " + dy + (levelY == Playbook.NO_Y ? " from the surface after the explore: " : " from the last descent: ") + walkBreaks + " breaks x " + s(hostS) + ", rule 18 amended)";
         }
         double digS = 0;
         int tunnelBreaks = 0, oreTotal = 0;

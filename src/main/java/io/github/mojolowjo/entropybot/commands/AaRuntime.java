@@ -647,7 +647,7 @@ public final class AaRuntime implements JobPort {
         // world-gen read are the same (was: the placer filter and the fact computed again for every word asked); freeze review 3:
         // this very level too (a rejoin to another world of the same dimension and biome count is new facts)
         var book = currentLootBook();      // the words' blocks come from the loot data: a new or newly ready book is a new key
-        String key = System.identityHashCode(mc.level) + " " + mc.level.dimension().location() + " " + seen.size() + " " + System.identityHashCode(ores) + " " + System.identityHashCode(book) + " " + (book != null && book.ready());
+        String key = levelId(mc.level) + " " + mc.level.dimension().location() + " " + seen.size() + " " + System.identityHashCode(ores) + " " + System.identityHashCode(book) + " " + (book != null && book.ready());
         if (!key.equals(whereKey)) {
             wherePlacers = io.github.mojolowjo.entropybot.guard.WorldGenFiles.placersIn(ores, seen.keySet(), namedBy(seen.values()));
             whereFacts.clear();
@@ -1061,6 +1061,20 @@ public final class AaRuntime implements JobPort {
 
     /** 0.39.z69 fix 2: dimension -> the biomes its chunks showed the bot (id -> holder, for the biome modifiers' synced tags). */
     private final Map<String, Map<String, net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome>>> dimBiomes = new java.util.HashMap<>();
+
+    /** 0.39.z77 price review 4: the level the biome and where caches were made in (weak: never kept alive) and its number. */
+    private java.lang.ref.WeakReference<net.minecraft.world.level.Level> cacheLevel = new java.lang.ref.WeakReference<>(null);
+    private int levelSerial;
+
+    /** 0.39.z77 price review 4: this level's number - a new level (a rejoin, another world) clears the seen biomes and counts on (no identity hash, no collision). */
+    private int levelId(net.minecraft.world.level.Level lv) {
+        if (cacheLevel.get() != lv) {
+            cacheLevel = new java.lang.ref.WeakReference<>(lv);
+            levelSerial++;
+            dimBiomes.clear();
+        }
+        return levelSerial;
+    }
     private String dimFeaturesKey;
     private Map<String, List<io.github.mojolowjo.entropybot.aa.brain.OreBand.Feature>> dimFeaturesCache;
 
@@ -1073,11 +1087,11 @@ public final class AaRuntime implements JobPort {
         Minecraft mc = Minecraft.getInstance();
         var lv = mc.level;
         if (lv == null || mc.player == null) return null;
-        var seen = dimBiomes.computeIfAbsent(System.identityHashCode(lv) + " " + lv.dimension().location(), k -> new java.util.TreeMap<>());     // freeze review 3: per level
+        var seen = dimBiomes.computeIfAbsent(levelId(lv) + " " + lv.dimension().location(), k -> new java.util.TreeMap<>());     // freeze review 3 / price review 4: per level
         int[] at = Jobs.here(mc.player);
         // 0.39.z77 freeze (run BD 07:53:24: this column scan ran once per world fact asked, thousands of times a tick): the
         // feet column is read once while the bot stays in it (its chunk loaded)
-        String column = System.identityHashCode(lv) + " " + lv.dimension().location() + " " + at[0] + " " + at[2];     // freeze review 3: this level (a rejoin is another)
+        String column = levelId(lv) + " " + lv.dimension().location() + " " + at[0] + " " + at[2];     // freeze review 3: this level (a rejoin is another)
         if (column.equals(biomeColumn) && !seen.isEmpty()) return seen;
         if (lv.hasChunkAt(new net.minecraft.core.BlockPos(at[0], at[1], at[2]))) {
             biomeColumn = column;

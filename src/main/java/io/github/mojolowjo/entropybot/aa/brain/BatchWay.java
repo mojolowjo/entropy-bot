@@ -210,11 +210,11 @@ public final class BatchWay {
      * row waits on paths.
      */
     public static Result pick(String batch, Playbook pb, NeedChain.Chain pc, Row ad) {
-        boolean pbWaits = pc != null && (pc.waiting() || Steps.waitsOnPaths(pc.steps()) || pc.missing() != null && pc.missing().contains(io.github.mojolowjo.entropybot.aa.PathPrice.NOT_KNOWN));
+        boolean pbWaits = pc != null && (pc.waiting() || Steps.waitsOnPaths(pc.steps()) || pc.missing() != null && (pc.missing().contains(io.github.mojolowjo.entropybot.aa.PathPrice.NOT_KNOWN) || pc.missing().startsWith(NeedChain.NOT_PRICED)));
         boolean pbPriced = pc != null && pc.ok() && !Steps.waitsOnPaths(pc.steps());
         boolean adStands = ad.fail() == null;
         boolean take = pbPriced && (!adStands || pc.seconds() < ad.seconds());
-        String pbText = pc == null ? "not derived (" + pb.fail() + ")" : pbWaits ? "not priced yet (" + (pc.missing() != null ? pc.missing() : "a walk's path computing") + ")"
+        String pbText = pc == null ? "not derived (" + pb.fail() + ")" : pbWaits ? (pc.missing() != null && pc.missing().startsWith(NeedChain.NOT_PRICED) ? pc.missing() : "not priced yet (" + (pc.missing() != null ? pc.missing() : "a walk's path computing") + ")")
                 : !pc.ok() ? "has no way (" + pc.missing() + ")"
                 : String.format(Locale.ROOT, "%.1f s", pc.seconds()) + (pc.explore() ? " (an explore leg in it)" : "");
         String adText = !adStands ? (ad.waiting() ? "not priced yet (" + ad.fail() + ")" : "has no way (" + ad.fail() + ")")

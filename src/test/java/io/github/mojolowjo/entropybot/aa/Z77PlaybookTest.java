@@ -109,11 +109,13 @@ class Z77PlaybookTest {
      * Feet 0 64 0 on land, nothing known: the playbook derives the route (the stone pickaxe from the base block's cobblestone,
      * the torches from charcoal - all surface; one descent to y 16 for the iron pickaxe's 3 raw iron and 1 coal (3 smelts x
      * 200 / 1600, up), the smelt and the pickaxe there, then the strip on at the same level with it for the armour's 24 and
-     * 3 coal, one smelt for them). Both rows end in an explore; the tie keeps the ad-hoc row (never forced); the playbook's
-     * explore is for a surface word (E1: its surface leg asks surface leaves only).
+     * 3 coal, one smelt for them). Its explore is for a surface word (E1: the surface leg asks surface leaves only). Taken as
+     * had after it, the stone pickaxe leaves the torches' sticks with no known source either - a second unknown: the legs after
+     * it have no price, so the playbook is "not priced yet" (price review 2; never priced on fewer legs) and the ad-hoc runs
+     * meanwhile (by hand: no price against the ad-hoc row's - the ad-hoc runs).
      */
     @Test
-    void s1_freshWorld_bothExplore_adhocKept_theExploreIsASurfaceWord() {
+    void s1_freshWorld_theSecondUnknownIsNotPriced_adhocMeanwhile_theExploreIsASurfaceWord() {
         data();
         World w = world(Map.of(), Map.of());
         Playbook pb = Playbook.derive(KIT, Playbook.facts(w, null));
@@ -121,15 +123,16 @@ class Z77PlaybookTest {
         assertEquals("playbook: surface [stone_pickaxe 1, torch 4] > descent y 16 [raw_iron 3, coal 1] > at band [iron_ingot 3, iron_pickaxe 1] > strip on y 16 "
                 + "[raw_iron 24, coal 3] > at band [iron_ingot 24, iron_helmet 1, iron_chestplate 1, iron_leggings 1, iron_boots 1]", pb.why());
         Chain pc = NeedChain.resolvePlaybook(pb, w);
-        assertTrue(pc.ok() && pc.explore(), pc.why());
-        assertTrue(pc.why().startsWith(NeedChain.PLAYBOOK), pc.why());
+        assertFalse(pc.ok(), pc.why());
+        assertTrue(pc.missing().startsWith(NeedChain.NOT_PRICED) && pc.missing().contains("after the surface explore"), pc.missing());
         Step.Explore ex = (Step.Explore) pc.steps().stream().filter(s -> s instanceof Step.Explore).findFirst().orElseThrow();
         for (String part : NeedChain.word(ex.until()).split("\\|")) assertTrue(where(part).surface(), "a surface word: " + ex.until());
         BatchWay.Row ad = BatchWay.sequential(KIT, i -> w, w.bag());
         assertTrue(ad.fail() != null || ad.explore(), ad.toString());
         BatchWay.Result r = BatchWay.pick("b1", pb, pc, ad);
-        assertEquals(pc.seconds() < ad.seconds(), r.playbook(), "price against price (manager on run BE): " + r.line());
-        assertTrue(r.line().contains(" (an explore leg in it)"), r.line());
+        assertFalse(r.playbook(), r.line());
+        assertFalse(r.settled(), "asked again");
+        assertTrue(r.line().contains("playbook not priced yet: a second need") && r.line().contains(": ad-hoc meanwhile"), r.line());
     }
 
     // ---- 2. the kit with its tools in the bag: the playbook wins by the descents and the stations ----
@@ -202,8 +205,11 @@ class Z77PlaybookTest {
      * Run BE 08:08:15 ("playbook 450.0 s (ends in an explore) vs ad-hoc 900.0 s (ends in an explore): ad-hoc"; manager: the
      * price is the SUM of the legs, price against price). No tree known: the surface gate (the stone pickaxe, its wooden
      * pickaxe's logs) ends in an explore - priced as the explore, 450 s, and taken as had after it; the rest as in the kit
-     * scenario: torches 0.3 + descent and strip 89.85 + furnace and 3 smelts 30.15 + table and pickaxe 0.45 + the strip on 325.2
-     * + 24 smelts and four crafts 241.2 = 687.15: 1137.15 s. The steps end at the explore (its find re-prices the rest).
+     * scenario, but the descent from where the explore leaves the bot is the break formula (rule 18, price review 1: 48 levels x 2
+     * breaks x 0.6 = 57.6, never the feet's path): torches 0.3 + descent 57.6 + strip 61.05 + furnace and 3 smelts 30.15 +
+     * table and pickaxe 0.45 + the strip on 325.2 + 24 smelts and four crafts 241.2 = 715.95: 1165.95 s. The steps end at the
+     * explore (its find re-prices the rest). The ad-hoc row: torches 0.3, then each iron order's pickaxe ends in the same
+     * explore with nothing priced before it: 5 x 450 = 2250.3 s - the playbook wins.
      */
     @Test
     void be_aPlaybookWhoseFirstLegExploresIsTheSumOfItsLegs() {
@@ -213,12 +219,13 @@ class Z77PlaybookTest {
         assertTrue(pb.why().contains("surface [stone_pickaxe 1, torch 4]"), pb.why());
         Chain pc = NeedChain.resolvePlaybook(pb, w);
         assertTrue(pc.ok() && pc.explore(), pc.why());
-        assertEquals(NeedChain.exploreS() + 687.15, pc.seconds(), 0.1, pc.why());
+        assertEquals(NeedChain.exploreS() + 715.95, pc.seconds(), 0.1, pc.why());
         assertTrue(pc.steps().get(pc.steps().size() - 1) instanceof Step.Explore, pc.steps().toString());
         assertTrue(pc.steps().stream().noneMatch(s -> s instanceof Step.Strip), "the run's steps end at the explore: " + pc.steps());
         BatchWay.Row ad = BatchWay.sequential(KIT, i -> w, w.bag());
+        assertEquals(2250.3, ad.seconds(), 0.1, ad.toString());
         BatchWay.Result r = BatchWay.pick("b1", pb, pc, ad);
-        assertEquals(pc.seconds() < ad.seconds(), r.playbook(), r.line());
+        assertTrue(r.playbook(), r.line());
         assertTrue(BatchWay.pick("b1", pb, pc, new BatchWay.Row(2260.5, true, null, false, 6)).playbook(), "run BE's numbers: the cheaper playbook wins");
     }
 
