@@ -156,7 +156,11 @@ public final class Seq {
         try {
             r = step(steps.get(idx), p);
         } catch (RuntimeException e) {
-            r = String.valueOf(e);
+            // 0.39.z76 send-back 1 (rule 7; run AN 23:30:07: an NPE ended the explore with its message but no stack, so its
+            // line was not known): the throw is said with the mod's frame it came from (Quiet: first hit and every 100th), and
+            // ends the job with its message and that frame
+            r = e + " at " + io.github.mojolowjo.entropybot.Quiet.where(e);
+            io.github.mojolowjo.entropybot.Quiet.warn("Seq.step " + steps.get(idx).type + " (" + label + ") threw at " + io.github.mojolowjo.entropybot.Quiet.where(e), e);
         }
         if (job() == null || job().done) return;
         if (r.equals("wait")) return;

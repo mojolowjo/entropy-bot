@@ -736,6 +736,18 @@ final class Mining {
         boolean whereRead;
         /** 0.39.z48: the cave candidate the current target walks toward ("x y z"), null: a chunk target. */
         String aimed;
+
+        /**
+         * 0.39.z76 send-back 1 (run AN 23:29:43-23:30:07: a gather on the way to cave candidate 117 13 213 dropped the target
+         * but kept {@code aimed}; back from the vein, the "walk toward cave candidate ... ended" line read the null target: a
+         * NullPointerException that stopped the chestplate order): a gather drops the target, its hold and the candidate it
+         * walked toward together - none of them failed or was visited (the candidate may be aimed at again after it).
+         */
+        void dropTargetForGather() {
+            target = null;
+            hold = null;
+            aimed = null;
+        }
         /** 0.23.1: gathering on the way (explore ... gather off = false); the bot's spot. */
         boolean gather = true;
         final int[] at = new int[3];
@@ -1178,8 +1190,7 @@ final class Mining {
                     List<Seq.Step> add = gatherSteps(s, ex, p);
                     if (add != null) {
                         if (b != null) Jobs.cancel(b);
-                        ex.target = null;
-                        ex.hold = null;                  // 0.39.z72: a gather is no failure of the target (chosen again after it)
+                        ex.dropTargetForGather();        // 0.39.z72: a gather is no failure of the target (chosen again after it); z76: the candidate too
                         ex.gathers++;
                         ex.chunksAtGather = ex.chunks;
                         ex.gatherStart = now();
@@ -1220,14 +1231,14 @@ final class Mining {
             }
         }
         ex.hold = null;
-        if (ex.aimed != null) {
+        if (ex.aimed != null && ex.target != null) {     // z76 send-back 1: never a candidate without its target (run AN NPE)
             // 0.39.z48 (S65): the walk toward a cave candidate ended (there, or Baritone got no nearer): visited, never aimed
             // at again; its confirmation was the rays' (within cave.confirmM)
             CAVE_VISITED.add(ex.aimed);
             LOG.info("[entropybot] explore: walk toward cave candidate {} ended {} m from it", ex.aimed,
                     Math.round(Math.hypot(me[0] - ex.target.x(), me[2] - ex.target.z())));
-            ex.aimed = null;
         }
+        ex.aimed = null;
         ex.target = null;
         // 0.39.z68 (owner 2026-10-25): where the target generates (GenWhere from the jars' world-gen data), read once per run
         if (ex.untilSource != null && !ex.whereRead && commands.aaRuntime != null) {
