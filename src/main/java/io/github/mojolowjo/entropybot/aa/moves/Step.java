@@ -172,8 +172,45 @@ public sealed interface Step {
      * Baritone's MineProcess on the blocks that give {@code item} until {@code n} more are in the bag (cobblestone from
      * stone: the game's drop data says which blocks).
      */
-    record Collect(String item, int n) implements Step {
+    /**
+     * {@code n} of {@code item} by Baritone's mine process. 0.39.z76 send-back 2 (run AP 00:07-00:17: "collect oak_planks 11"
+     * priced at a structure's planks 75 m away walked ~1000 blocks to other planks Baritone knew): {@code at} is the spot the
+     * chain priced (x y z; null: none named) - the step is that spot's, and a mine that walks away from it ends
+     * ({@link #leftSpot}). Not part of the step's identity (equals, text): the same collect from another spot is the same step.
+     */
+    record Collect(String item, int n, int[] at) implements Step {
+        public Collect(String item, int n) { this(item, n, null); }
+
+        public Collect {
+            at = at == null ? null : at.clone();
+        }
+
         public String text() { return "collect " + item + " " + n; }
+
+        /** The priced spot as "x y z", null: none named. */
+        public String spot() { return at == null ? null : at[0] + " " + at[1] + " " + at[2]; }
+
+        /**
+         * The feet went more than {@code moved} (failures.moved) farther from the priced spot than they started: Baritone's
+         * mine is going for other blocks of the item, not the priced ones. False with no spot or no feet (rule 15). Pure.
+         */
+        public boolean leftSpot(int[] feet, double startDist, double moved) {
+            if (at == null || feet == null || feet.length < 3 || Double.isNaN(startDist)) return false;     // structural: x y z
+            return dist(feet) > startDist + moved;
+        }
+
+        /** The straight metres from {@code feet} to the priced spot (NaN: none named). */
+        public double dist(int[] feet) {
+            if (at == null || feet == null || feet.length < 3) return Double.NaN;     // structural: x y z
+            double dx = feet[0] - at[0], dy = feet[1] - at[1], dz = feet[2] - at[2];
+            return Math.sqrt(dx * dx + dy * dy + dz * dz);
+        }
+
+        @Override public boolean equals(Object o) { return o instanceof Collect k && java.util.Objects.equals(item, k.item) && n == k.n; }
+
+        @Override public int hashCode() { return java.util.Objects.hash(item, n); }
+
+        @Override public String toString() { return "Collect[item=" + item + ", n=" + n + (at == null ? "" : ", at=" + spot()) + "]"; }
     }
 
     /** Take {@code n} of {@code item} from storage into the bag (a storage action: the get job). */

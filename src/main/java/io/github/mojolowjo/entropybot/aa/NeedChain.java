@@ -354,6 +354,9 @@ public final class NeedChain {
                     new Rooms(cells, rooms.hereFailed()), where);
         }
 
+        /** 0.39.z76 send-back 2: the order's held sources ("key: why"), as the live world reads them from the order. */
+        public World withHeld(List<String> h) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, h, strip, cave, rooms, where); }
+
         /** 0.39.z68: where explore targets generate and the surface over the bot ({@link WhereFacts}). */
         public World withWhere(WhereFacts w) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, w); }
 
@@ -2163,7 +2166,10 @@ public final class NeedChain {
      * (the world's {@link PathPrice}, each spot once a pass) or no price: a walk that is not known sets {@code c.fail} (the
      * way cannot be picked; the chain picks among the ways whose walks are known and the ways without one).
      */
-    private static Walked walk(Ctx c, int x, int y, int z, double dist) {
+    private static Walked walk(Ctx c, int x, int y, int z, double dist) { return walk(c, x, y, z, dist, false); }
+
+    /** 0.39.z76 send-back 2: {@code into} - the feet end in the cell (the band walk, {@link PathPrice#priceInto}), not by it. */
+    private static Walked walk(Ctx c, int x, int y, int z, double dist, boolean into) {
         if (c.down != null) {
             // 0.39.z75 item 1 (rule 15, rule 18; D4 1: the fork's priced path starts at the feet, never at a cell the chain
             // will reach later): a walk after the leg to another level is from where that leg leaves the bot - not priced,
@@ -2174,12 +2180,12 @@ public final class NeedChain {
             c.fail = out.fail();
             return out;
         }
-        String key = x + "," + y + "," + z;
+        String key = (into ? "in:" : "") + x + "," + y + "," + z;
         Walked out = c.walks.get(key);
         if (out != null) walkNote(c, x, y, z, dist, "priced before in this pass", out);
         else {
             PathPrice pp = c.w.path();
-            PathPrice.Answer a = pp == null ? PathPrice.Answer.none("no path provider") : pp.price(x, y, z, dist);
+            PathPrice.Answer a = pp == null ? PathPrice.Answer.none("no path provider") : into ? pp.priceInto(x, y, z, dist) : pp.price(x, y, z, dist);
             out = walked(a);
             c.walks.put(key, out);
             walkNote(c, x, y, z, dist, out.fail() == null ? "Baritone path, complete" : out.fail(), out);
@@ -2672,11 +2678,12 @@ public final class NeedChain {
             if (at != null) {
                 Step prev = c.steps.get(at);
                 c.steps.set(at, prev instanceof Step.ChopTree t ? new Step.ChopTree(t.at(), t.logs() + wanted, t.log())
-                        : new Step.Collect(((Step.Collect) prev).item(), ((Step.Collect) prev).n() + wanted));
+                        : new Step.Collect(((Step.Collect) prev).item(), ((Step.Collect) prev).n() + wanted, ((Step.Collect) prev).at()));
             } else {
                 // chop: no walk step before a block source (the cut/collect paths itself; the spot names the blocks and the price)
                 c.leafAt.put(sp.key(), c.steps.size());
-                c.steps.add(log ? new Step.ChopTree(new int[]{sp.x(), sp.y(), sp.z()}, wanted, null) : new Step.Collect(shw(gives), wanted));
+                c.steps.add(log ? new Step.ChopTree(new int[]{sp.x(), sp.y(), sp.z()}, wanted, null)
+                        : new Step.Collect(shw(gives), wanted, new int[]{sp.x(), sp.y(), sp.z()}));   // z76 send-back 2: the priced spot named (run AP)
                 c.note(() -> "source: known " + shw(blockOf(gives, sp)) + " at " + sp.x() + " " + sp.y() + " " + sp.z() + ", " + Math.round(sp.dist()) + " m" + (sp.count() > 0 ? ", " + sp.count() + " blocks" : ""));
                 Walked wk = walk(c, sp.x(), sp.y(), sp.z(), sp.dist());
                 if (c.fail != null) {                       // 0.39.z41: no price for this walk
@@ -3312,6 +3319,15 @@ public final class NeedChain {
             if (legText == null && c.fail != null) return null;   // its path (or the pickaxe's) is not known yet: the way waits
             if (BAND_DROPPED.equals(legText)) { band = null; legText = null; }
         }
+        // 0.39.z76 send-back 2 (run AO 20:37): an explore from here that froze is held by position - with no walk up and no band
+        // leg to move the bot first, the same explore is no way again until the bot moved failures.moved (said, rule 7)
+        if (upText == null && (legText == null || legText.isEmpty())) {
+            String froze = frozenHere(c);
+            if (froze != null) {
+                c.fail = "the explore from here froze (" + froze + "); held for this order until the bot moves failures.moved";
+                return null;
+            }
+        }
         c.steps.add(new Step.Explore(exploreMinutes(), shw(word)));      // live-facts: it ends once a source of the need is known
         c.stuck = true;
         if (c.unknown == null) c.unknown = word;
@@ -3323,6 +3339,31 @@ public final class NeedChain {
             c.trace.untilFrom.computeIfAbsent(shw(word), k -> new LinkedHashSet<>()).add(c.trace.way());
         }
         return out;
+    }
+
+    /** 0.39.z76 send-back 2 (run AO 20:37): the key prefix of an explore that froze at a position (held for the order). */
+    public static final String EXPLORE_FROZEN = "explore frozen at ";
+
+    /** 0.39.z76 send-back 2: the key of an explore that made no progress from {@code feet} ("explore frozen at x y z"). */
+    public static String exploreFrozenKey(int[] feet) { return EXPLORE_FROZEN + feet[0] + " " + feet[1] + " " + feet[2]; }
+
+    /**
+     * 0.39.z76 send-back 2 (run AO 23:54-23:56: the same explore picked again from y 24 three times, each frozen): the held
+     * frozen explore within failures.moved of the feet ("explore frozen at x y z: why"), null: none, or the feet not known.
+     */
+    static String frozenHere(Ctx c) {
+        if (c.w.held() == null) return null;
+        int[] feet = c.w.where().feet().get();
+        if (feet == null || feet.length < 3) return null;      // structural: x y z
+        for (String h : c.w.held()) {
+            if (!h.startsWith(EXPLORE_FROZEN)) continue;
+            int colon = h.indexOf(':');
+            String[] xyz = (colon < 0 ? h : h.substring(0, colon)).substring(EXPLORE_FROZEN.length()).trim().split(" ");
+            if (xyz.length != 3 || !xyz[0].matches("-?\\d+") || !xyz[1].matches("-?\\d+") || !xyz[2].matches("-?\\d+")) continue;   // structural: x y z
+            int[] at = {Integer.parseInt(xyz[0]), Integer.parseInt(xyz[1]), Integer.parseInt(xyz[2])};
+            if (dist3(at, feet) <= io.github.mojolowjo.entropybot.aa.brain.Failures.movedV()) return h;
+        }
+        return null;
     }
 
     /** 0.39.z75 metric fix B: the chain's wait while the mining tiers are not read (rule 15: not loaded is never "none"). */
@@ -3359,7 +3400,7 @@ public final class NeedChain {
             return "";
         }
         int ty = tb.target(feet[1]);
-        Walked wk = walk(c, feet[0], ty, feet[2], Math.abs(feet[1] - ty));
+        Walked wk = walk(c, feet[0], ty, feet[2], Math.abs(feet[1] - ty), true);     // z76 send-back 2: the feet end IN the band (run AN)
         if (c.fail != null) {
             if (wk.kind() != PathPrice.Kind.UNREACHABLE) return null;
             c.unreachable.put(io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(band[0], band[1]), wk.fail());

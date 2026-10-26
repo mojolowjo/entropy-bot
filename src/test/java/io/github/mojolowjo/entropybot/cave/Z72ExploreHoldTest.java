@@ -39,7 +39,8 @@ class Z72ExploreHoldTest {
     /**
      * Test 13 (run P): A fails at 17 s on three failed searches (not marked explored), B is chosen and would fail at 34 s;
      * the explore step's monitor REPLANs at 30 s (no chunk, no new best since 0 s: B's goal is nearer than A's by 11 m, but
-     * another goal is no progress). One target change before the REPLAN (run P: ~36 in 36 s).
+     * another goal is no progress). One target change before the REPLAN (run P: ~36 in 36 s). 0.39.z76 send-back 2: the
+     * failed searches count across the re-target, so the REPLAN is at 17 s ("no path 3 times").
      */
     @Test
     void t13_runPTheHeldTargetFailsOnceAndTheStepRePlans() {
@@ -92,9 +93,13 @@ class Z72ExploreHoldTest {
             second[0] = s;
             run.tick(s * 20L);
         }
-        assertEquals(List.of(30), at, "the REPLAN at 30 s: " + facts);
-        assertTrue(facts.get(0).text().startsWith("no progress 30 s"), facts.get(0).text());
-        assertEquals(1, changes.stream().filter(c -> c < 30).count(), "one target change before the REPLAN");
+        // 0.39.z76 send-back 2 (run AO 20:37; was: the REPLAN at 30 s, the count started again on B): a re-target without a
+        // move is no new question - the failed searches count on (5, 11, 17 s), so the REPLAN comes at 17 s on "no path 3
+        // times", keyed by the position (the frozen explore held there)
+        assertEquals(List.of(17), at, "the REPLAN at 17 s: " + facts);
+        assertTrue(facts.get(0).text().startsWith("Baritone found no path 3 times from -148 -33 -83"), facts.get(0).text());
+        assertEquals("source " + io.github.mojolowjo.entropybot.aa.NeedChain.EXPLORE_FROZEN + "-148 -33 -83", facts.get(0).key());
+        assertEquals(1, changes.stream().filter(c -> c <= 17).count(), "one target change by the REPLAN");
     }
 
     /** Test 13, the skip: A is passed over from where it failed until the bot stands failures.moved (16) blocks away. */

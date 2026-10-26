@@ -619,14 +619,16 @@ public final class Steps {
         // 0.39.z34 (S39): the step's tool must be in the bag before it starts; missing, the bag fact re-plans the order
         String lack = toolLack(s);
         if (lack != null) { failOrReplan(lack); return; }
+        FactChange.Fact threw = null;
         try {
             r = hands.start(s);
         } catch (RuntimeException e) {
-            r = "error: " + e;
+            threw = FactChange.threwFact(e);     // 0.39.z76 send-back 2 (rule 7): a throw is the step's fact, the order re-plans
+            r = "error: " + threw.text();
         }
         if (r != null) {
             ended("refused at its start");       // 0.39.z56 item 2a: the hands may have taken the step before they refused it
-            failOrReplan(r);
+            failOrReplan(r, threw);
         } else {
             why = started(idx, steps) + (needs.none() ? "" : " " + needs.text()) + (replanFact == null ? "" : " (re-planned: " + replanFact + ")") + (keepErr == null ? "" : " (" + keepErr + ")")
                     + (rs.unknown() == null ? "" : " (reserves not loaded: " + rs.unknown() + ")") + (dryNote == null ? "" : " (" + dryNote + ")")
@@ -689,6 +691,9 @@ public final class Steps {
         carIdleSince = -1;
         safeCancel(reason);
         String src = io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(s);
+        int[] at = feetNow();
+        if (s instanceof Step.Explore && at != null && at.length >= 3)       // z76 send-back 2: the frozen explore held by position; structural: x y z
+            src = io.github.mojolowjo.entropybot.aa.NeedChain.exploreFrozenKey(at);
         FactChange.Fact f = src != null ? FactChange.noProgress(src, reason + " at " + s.text())
                 : new FactChange.Fact("step " + StepId.of(s).text(), reason + " at " + s.text());
         failOrReplan(reason, f);
@@ -1127,14 +1132,17 @@ public final class Steps {
         startFeet = feetNow();                   // 0.39.z70: the step starts again from here
         if (dryHold != null) return;             // 0.39.z62 item 3a: not started yet - the next tick looks again, then starts it
         String r;
+        FactChange.Fact threw = null;
         try {
             r = hands.start(steps.get(idx));
         } catch (RuntimeException e) {
-            r = "error: " + e;
+            threw = FactChange.threwFact(e);     // 0.39.z76 send-back 2 (rule 7)
+            r = "error: " + threw.text();
         }
         if (r != null) {
             ended("refused at its restart");     // 0.39.z56 item 2a
-            fail("after the pause: " + r.replaceFirst("^error: ", ""));
+            if (threw != null) failOrReplan("after the pause: " + r.replaceFirst("^error: ", ""), threw);
+            else fail("after the pause: " + r.replaceFirst("^error: ", ""));
         }
         else {
             why = stage() + " resumed";
@@ -1158,16 +1166,18 @@ public final class Steps {
         // is the planner's own test of what it found, not a second one
         if (priceAsk != null && s instanceof Step.Explore ex0 && (ex0.whilePaths() || ex0.until() != null) && reprice(true)) return phase;
         Car.Status st;
+        FactChange.Fact threw = null;
         try {
             st = hands.status(s);
         } catch (RuntimeException e) {
-            st = Car.Status.failed("error: " + e);
+            threw = FactChange.threwFact(e);     // 0.39.z76 send-back 2 (rule 7): a throw is the step's fact, the order re-plans
+            st = Car.Status.failed("error: " + threw.text());
         }
         if (st == null) st = Car.Status.failed("the hands gave no status");
         switch (st.state()) {
             case FAILED -> {
                 ended("failed");                 // 0.39.z56 item 2a (run O: a failed walk step kept its probe pointer)
-                failOrReplan(st.why() == null ? "the step ended failed without a reason from its hands" : st.why());
+                failOrReplan(st.why() == null ? "the step ended failed without a reason from its hands" : st.why(), threw);
             }
             case DONE -> {
                 ended("done");                   // 0.39.z56 item 2a

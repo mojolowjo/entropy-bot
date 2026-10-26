@@ -64,7 +64,13 @@ public final class LivePathPrice implements PathPrice {
     public String lastLanded() { return lastLanded; }
 
     @Override
-    public Answer price(int x, int y, int z, double dist) {
+    public Answer price(int x, int y, int z, double dist) { return ask(x, y, z, false); }
+
+    /** 0.39.z76 send-back 2 (run AN: the band walk ended one above a one-high band): priced with the goal of that exact cell. */
+    @Override
+    public Answer priceInto(int x, int y, int z, double dist) { return ask(x, y, z, true); }
+
+    private Answer ask(int x, int y, int z, boolean into) {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || !mc.isSameThread()) return none("the chain was priced off the game thread: the path search is started on it only");
         if (mc.player == null || mc.level == null) return Answer.none("no player or level");
@@ -73,10 +79,10 @@ public final class LivePathPrice implements PathPrice {
         BlockPos pos = new BlockPos(x, y, z);
         // 0.39.z46 (S57): with the priced path, "chunks not loaded" is Baritone's own world view's answer (the fork's)
         if (!PathPrice.pricedPathOn() && !mc.level.isLoaded(pos)) return Answer.chunks("not loaded: the target's chunk is not loaded");
-        String key = x + "," + y + "," + z;
+        String key = key(x, y, z, into);
         int[] me = Jobs.here(mc.player);
         window.asked(key);                               // 0.39.z76 J3-mod item 2: asked in this sweep window (kept, not withdrawn)
-        if (PathPrice.pricedPathOn()) return pricedAsk(mc, b, pos, key, me);
+        if (PathPrice.pricedPathOn()) return pricedAsk(mc, b, posOf(key), key, me);
         int bag = 31 * bagHash(mc) + System.identityHashCode(mc.level);     // another level (dimension, world): not the same answer
         long now = System.currentTimeMillis();
         Kept k = kept.get(key);
@@ -88,7 +94,7 @@ public final class LivePathPrice implements PathPrice {
         java.util.concurrent.CompletableFuture<IPathCost.Answer> f;
         try {
             // pricedPath.on 0: z41's route (one background A* with our budget, the walk searches fresh); on 1: pricedAsk
-            f = b.getPathCost().estimateInBackground(goal(pos),
+            f = b.getPathCost().estimateInBackground(goalOf(key),
                     (int) Math.ceil(PathPrice.budgetS() * io.github.mojolowjo.entropybot.aa.brain.GameTimes.TPS), PathPrice.fullMaxMs(), PathPrice.maxNodes());
         } catch (LinkageError e) {
             return none("this Baritone has no IPricedPath / IPathCost.estimateInBackground (the stock jar or an older fork? install the entropy fork z46): " + e);
@@ -151,11 +157,9 @@ public final class LivePathPrice implements PathPrice {
             String run = runningTold == null ? null : runningTold.getX() + "," + runningTold.getY() + "," + runningTold.getZ();
             swept = true;                                // review: the window turns in its own sweep (asks of the last two windows kept)
             for (String key : window.sweep(open, Jobs.here(mc.player), io.github.mojolowjo.entropybot.aa.brain.Failures.movedV(), run)) {
-                String[] q = key.split(",");
-                BlockPos g = new BlockPos(Integer.parseInt(q[0]), Integer.parseInt(q[1]), Integer.parseInt(q[2]));
                 boolean out;
                 try {
-                    out = b.getPricedPath().cancel(goal(g));
+                    out = b.getPricedPath().cancel(goalOf(key));
                 } catch (LinkageError e) {
                     none("this Baritone has no IPricedPath.cancel (an older fork? install the entropy fork J3): asks nobody wants run to their end; " + e);
                     return;
@@ -195,7 +199,7 @@ public final class LivePathPrice implements PathPrice {
         if (running != null && !running.future().isDone()) return Answer.computing(null);
         java.util.concurrent.CompletableFuture<IPathCost.Answer> f;
         try {
-            f = b.getPricedPath().price(goal(pos), limits());
+            f = b.getPricedPath().price(goalOf(key), limits());
         } catch (LinkageError e) {
             return none("this Baritone has no IPricedPath.price(Goal, Limits) (an older fork? install the entropy fork z57): " + e);
         } catch (RuntimeException e) {
@@ -353,8 +357,7 @@ public final class LivePathPrice implements PathPrice {
             return;
         }
         int[] from = mc.player == null ? asked : Jobs.here(mc.player);
-        String[] q = key.split(",");
-        BlockPos goal = new BlockPos(Integer.parseInt(q[0]), Integer.parseInt(q[1]), Integer.parseInt(q[2]));
+        BlockPos goal = posOf(key);
         Answer out;
         if (err != null) {
             LOG.warn("[entropybot] path cost to {}: the background search threw", key, err);
@@ -384,7 +387,7 @@ public final class LivePathPrice implements PathPrice {
         for (BlockPos q : a.path) cells.add(new int[]{q.getX(), q.getY(), q.getZ()});
         long landing;
         try {
-            landing = b.getPricedPath().landingOf(goal(pos));
+            landing = b.getPricedPath().landingOf(goalOf(key));
         } catch (LinkageError e) {
             landing = -1;                                // an older fork: read every time (said once by pricedAsk's install line)
         }
@@ -400,18 +403,42 @@ public final class LivePathPrice implements PathPrice {
     public static GoalGetToBlock goal(BlockPos pos) { return new GoalGetToBlock(pos); }
 
     /**
+     * 0.39.z76 send-back 2 (run AN 23:16:18 "to y 56..56: Baritone's goal ended at y 57"; 13x in AK, 32x in AL): the band walk's
+     * goal - the feet IN this cell (GoalBlock). The stand-by goal ({@link #goal}) is reached from the cell above and two below,
+     * so a one-high band's walk stopped one block over it. DigDownGoal / ClimbGoal steer it as any priced goal.
+     */
+    public static baritone.api.pathing.goals.GoalBlock into(BlockPos pos) { return new baritone.api.pathing.goals.GoalBlock(pos); }
+
+    /** 0.39.z76 send-back 2: the ask's key: "x,y,z" (stand by), "in:x,y,z" (feet in the cell). */
+    static String key(int x, int y, int z, boolean into) { return (into ? INTO : "") + x + "," + y + "," + z; }
+
+    private static final String INTO = "in:";
+
+    static BlockPos posOf(String key) {
+        String[] q = (key.startsWith(INTO) ? key.substring(INTO.length()) : key).split(",");
+        return new BlockPos(Integer.parseInt(q[0]), Integer.parseInt(q[1]), Integer.parseInt(q[2]));
+    }
+
+    static baritone.api.pathing.goals.Goal goalOf(String key) { return key.startsWith(INTO) ? into(posOf(key)) : goal(posOf(key)); }
+
+    /**
      * 0.39.z46: walk to stand by the block at pos: the fork's priced path walks the path its price kept (one search) when
      * the bot still stands at its start; else Baritone searches fresh. pricedPath.on 0: Baritone's CustomGoalProcess as z41.
      * 0.39.z57: from any cell of the kept path the fork walks its suffix (and keeps the path known along the way).
      * True: the kept path is walked.
      */
-    public static boolean walk(IBaritone b, BlockPos pos) {
+    public static boolean walk(IBaritone b, BlockPos pos) { return walk(b, pos, goal(pos)); }
+
+    /** 0.39.z76 send-back 2: the band walk - the feet end IN the cell ({@link #into}), on its priced path. */
+    public static boolean walkInto(IBaritone b, BlockPos pos) { return walk(b, pos, into(pos)); }
+
+    private static boolean walk(IBaritone b, BlockPos pos, baritone.api.pathing.goals.Goal g) {
         if (!PathPrice.pricedPathOn()) {
-            b.getCustomGoalProcess().setGoalAndPath(goal(pos));
+            b.getCustomGoalProcess().setGoalAndPath(g);
             WalkProbe.walked(false);                         // 0.39.z54 B
             return false;
         }
-        boolean kept = b.getPricedPath().walk(goal(pos));
+        boolean kept = b.getPricedPath().walk(g);
         drops(b);                            // 0.39.z57: a kept path the walk found stale is said (probe reuse)
         WalkProbe.walked(kept);                              // 0.39.z54 B: the walk's kept / fresh answer for the probe line
         // 0.39.z55 item 2 (run N 21:25:33: "no kept path from here" with no reason; the bot had put a crafting table on the
@@ -448,8 +475,7 @@ public final class LivePathPrice implements PathPrice {
         } else out = answer(mc, a);
         // 0.39.z54 B (run M: the walk vs the price; 38 "no progress" answers): the probe's lines, nothing built when off
         if (WalkProbe.on() && a != null) {
-            String[] p = key.split(",");
-            BlockPos goal = new BlockPos(Integer.parseInt(p[0]), Integer.parseInt(p[1]), Integer.parseInt(p[2]));
+            BlockPos goal = posOf(key);
             if (!a.noPath) WalkProbe.price(goal, from, a);
             else if (IPathCost.Answer.UNREACHABLE.equals(a.reason) || baritone.api.pathing.calc.IPricedPath.NO_PROGRESS.equals(a.reason)) WalkProbe.unreachable(goal, from, a.reason);
         }

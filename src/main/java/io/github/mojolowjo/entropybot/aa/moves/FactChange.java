@@ -76,6 +76,29 @@ public final class FactChange {
         last = new Fact("source take at " + x + " " + y + " " + z, why);
     }
 
+    /**
+     * 0.39.z76 send-back 2 (run AP 00:07-00:17): a collect whose mine walked away from the spot the chain priced - that spot's
+     * near-collect fact ({@link io.github.mojolowjo.entropybot.aa.NeedChain#nearKey}): the order prices the item's spots
+     * within failures.moved of it out and re-plans.
+     */
+    public static void nearCollect(String item, int[] at, String why) {
+        last = new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.nearKey(item, at), why);
+    }
+
+    /**
+     * 0.39.z76 send-back 2 (rule 7; run AN 23:30:07: an NPE inside the explore ended the step "error: ..." with no fact, so
+     * the chestplate order stopped): a throw inside a step is that step's fact - keyed by the mod's frame it came from
+     * ("threw at Mining.exploreStep0:1228"), its text the exception and the frame - and the order re-plans on it (its caps
+     * bound it; the same throw from the same place with the same bag parks, the honest loop).
+     */
+    public static Fact threwFact(Throwable e) {
+        String w = io.github.mojolowjo.entropybot.Quiet.where(e);
+        return new Fact("threw at " + w, "a throw inside the step: " + e + " at " + w);
+    }
+
+    /** 0.39.z76 send-back 2: a hand that caught a throw inside the running step says it ({@link #threwFact}), taken once. */
+    public static void threw(Throwable e) { last = threwFact(e); }
+
     /** A known source the step went for is gone. */
     public static void source(String block, String at) {
         last = new Fact("source " + block + " " + at, block.replaceFirst("^minecraft:", "") + " at " + at + " gone");
@@ -140,6 +163,7 @@ public final class FactChange {
         if (f != null && f.key().startsWith(WALK_TO)) return f.key().substring(WALK_TO.length());     // 0.39.z65 item 1
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.PLACE_AT)) return f.key().substring("source ".length());   // 0.39.z67 item 1
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.NEAR)) return f.key().substring("source ".length());       // z75 review 2
+        if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.EXPLORE_FROZEN)) return f.key().substring("source ".length());   // z76 send-back 2
         String p = "source " + io.github.mojolowjo.entropybot.aa.NeedChain.STRIP_HEADING;
         return f != null && f.key().startsWith(p) ? f.key().substring("source ".length()) : null;
     }

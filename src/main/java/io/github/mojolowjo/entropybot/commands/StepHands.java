@@ -376,8 +376,9 @@ public final class StepHands implements Steps.Hands {
                 default -> direct(s);   // the item actions and the mine steps: the method, its own job
             };
         } catch (RuntimeException e) {
-            LOG.warn("[entropybot] steps: {} did not start: {}", s.text(), e.toString());
-            return "error: " + s.text() + ": " + e;
+            LOG.warn("[entropybot] steps: {} did not start: {} at {}", s.text(), e.toString(), io.github.mojolowjo.entropybot.Quiet.where(e));
+            io.github.mojolowjo.entropybot.aa.moves.FactChange.threw(e);     // 0.39.z76 send-back 2 (rule 7): the step's fact, the order re-plans
+            return "error: " + s.text() + ": " + e + " at " + io.github.mojolowjo.entropybot.Quiet.where(e);
         }
     }
 
@@ -423,8 +424,9 @@ public final class StepHands implements Steps.Hands {
                 default -> requestStatus();
             };
         } catch (RuntimeException e) {
-            LOG.warn("[entropybot] steps: {} status: {}", s.text(), e.toString());
-            return Car.Status.failed("status: " + e);
+            LOG.warn("[entropybot] steps: {} status: {} at {}", s.text(), e.toString(), io.github.mojolowjo.entropybot.Quiet.where(e));
+            io.github.mojolowjo.entropybot.aa.moves.FactChange.threw(e);     // 0.39.z76 send-back 2 (rule 7): the step's fact, the order re-plans
+            return Car.Status.failed("status: " + e + " at " + io.github.mojolowjo.entropybot.Quiet.where(e));
         }
     }
 
@@ -499,6 +501,8 @@ public final class StepHands implements Steps.Hands {
         bandCell = null;                         // 0.39.z65 item 3
         bandWalking = false;
         stripWalking = false;                    // 0.39.z76 review
+        collectSpot = null;                      // 0.39.z76 send-back 2
+        collectStartDist = Double.NaN;
         carGoal = null;                         // 0.39.z76 J3-mod item 0: the next step's car starts unseen
         carOwner = null;
         carFailsAt = io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed();
@@ -913,8 +917,14 @@ public final class StepHands implements Steps.Hands {
         return mine(p, blocks, ids, t.logs(), "cut " + t.logs() + " " + (t.log() == null ? "logs" : t.log().replaceFirst("^minecraft:", "")));
     }
 
+    /** 0.39.z76 send-back 2 (run AP): the running collect's priced spot (null: none named) and the feet's metres from it at the start. */
+    private Step.Collect collectSpot;
+    private double collectStartDist = Double.NaN;
+
     private String collect(LocalPlayer p, Step.Collect k) {
         mineSource = k.item();
+        collectSpot = k.at() == null ? null : k;
+        collectStartDist = k.dist(Jobs.here(p));
         if (!io.github.mojolowjo.entropybot.aa.NeedChain.plain(k.item())) return collectAny(p, k);
         String id = k.item().contains(":") ? k.item() : "minecraft:" + k.item();
         // the blocks that give it: the game's loot data (LootBook), and the block of the item itself when it gives it
@@ -1191,6 +1201,17 @@ public final class StepHands implements Steps.Hands {
             endMining();
             return Car.Status.done("ok: " + miningWhat + ": got " + got);
         }
+        // 0.39.z76 send-back 2 (run AP 00:07:24-00:17:24: "collect oak_planks 11" priced at a spot 75 m away walked ~1000 blocks
+        // to other planks Baritone knew): the collect is the priced spot's - a mine walking away from it ends with that spot's fact
+        int[] here = Jobs.here(p);
+        if (collectSpot != null && !Core.INSTANCE.reflexes.hold() && collectSpot.leftSpot(here, collectStartDist, io.github.mojolowjo.entropybot.aa.brain.Failures.movedV())) {
+            if (b != null) b.getMineProcess().cancel();
+            endMining();
+            String why = miningWhat + ": Baritone's mine went away from the priced spot " + collectSpot.spot() + " (" + Math.round(collectSpot.dist(here)) + " m from it, "
+                    + Math.round(collectStartDist) + " m at the start; failures.moved " + Math.round(io.github.mojolowjo.entropybot.aa.brain.Failures.movedV()) + "), got " + got + " of " + want;
+            io.github.mojolowjo.entropybot.aa.moves.FactChange.nearCollect(collectSpot.item(), collectSpot.at(), why);
+            return Car.Status.failed(why);
+        }
         if (b == null) return Car.Status.failed("baritone not loaded");
         if (!b.getMineProcess().isActive() && !Core.INSTANCE.reflexes.hold()) {
             endMining();
@@ -1318,11 +1339,11 @@ public final class StepHands implements Steps.Hands {
         }
         if (b == null) return Car.Status.failed("baritone not loaded");
         if (!bandWalking && bandCell != null) {
-            io.github.mojolowjo.entropybot.aa.PathPrice.Answer a = LivePathPrice.INSTANCE.price(bandCell[0], bandCell[1], bandCell[2], Math.abs(y - bandCell[1]));
+            io.github.mojolowjo.entropybot.aa.PathPrice.Answer a = LivePathPrice.INSTANCE.priceInto(bandCell[0], bandCell[1], bandCell[2], Math.abs(y - bandCell[1]));   // z76 send-back 2: the feet IN the band
             switch (a.kind()) {
                 case PRICED -> {
                     io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "to band");
-                    LivePathPrice.walk(b, new BlockPos(bandCell[0], bandCell[1], bandCell[2]));
+                    LivePathPrice.walkInto(b, new BlockPos(bandCell[0], bandCell[1], bandCell[2]));   // z76 send-back 2 (run AN: ended at y 57 over 56..56)
                     bandWalking = true;
                     return Car.Status.running(t.text() + ": walking the priced path to " + Jobs.fmt(bandCell));
                 }

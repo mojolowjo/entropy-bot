@@ -202,7 +202,11 @@ public final class StepMonitor {
                 bestGoal = g;
                 bestGoalId = sig.goalId();
                 bestGoalAt = now;
-                calcAtBest = sig.calcFailed();   // 0.39.z72: another goal is another question for Baritone's searches
+                // 0.39.z72: another goal is another question for Baritone's searches. 0.39.z76 send-back 2 (run AO 23:54-23:56:
+                // under ground the explore took a new target every ~6 s, each "no path 3 times", the count started again on
+                // each and only the 30 s stall ended it, three times): an explore's re-target without a move is no new
+                // question - its failed searches count on from the last real progress
+                if (kind != Kind.EXPLORE) calcAtBest = sig.calcFailed();
             }
             else if (g <= bestGoal - 1) {                                       // structural: one block nearer
                 moved.add("the goal " + num(bestGoal - g) + " nearer, best " + num(g));
@@ -252,9 +256,9 @@ public final class StepMonitor {
         // 0.39.z74 item 2: the builder's placeNear fails searches as part of its own pick of a cell (it ends with its own reason:
         // 'no cell within N blocks', 'cannot reach: ...'), so a placement never gets the no-path verdict; its stall rule stays
         if (kind != Kind.PLACE && fails >= noPathFails() && !sig.executing())
-            return replan("Baritone found no path " + fails + " times from " + at(sig.feet()) + (Double.isNaN(g) ? "" : " (goal " + num(g) + ", best " + num(bestGoal) + ")") + ", nothing executing");
+            return replan("Baritone found no path " + fails + " times from " + at(sig.feet()) + (Double.isNaN(g) ? "" : " (goal " + num(g) + ", best " + num(bestGoal) + ")") + ", nothing executing", sig.feet());
         long quiet = now - lastProgress;
-        if (quiet >= stallTicks()) return replan("no progress " + quiet / 20 + " s: " + bests(sig));     // game fact: 20 ticks a second
+        if (quiet >= stallTicks()) return replan("no progress " + quiet / 20 + " s: " + bests(sig), sig.feet());     // game fact: 20 ticks a second
         stalled = moved.isEmpty();
         return cont(moved.isEmpty() ? "no new best for " + quiet / 20 + " s" : String.join(", ", moved));     // game fact: 20 ticks a second
     }
@@ -300,8 +304,19 @@ public final class StepMonitor {
                 + " | calcFailed " + (sig.calcFailed() - calcAtBest) + " | executing " + (sig.executing() ? "y" : "n") + " - " + l.reason();
     }
 
-    private Look replan(String why) {
+    private Look replan(String why) { return replan(why, null); }
+
+    /**
+     * 0.39.z76 send-back 2 (run AO 20:37): an explore that made no progress from {@code feet} is that position's fact - the
+     * explore way is held there for the order ({@link io.github.mojolowjo.entropybot.aa.NeedChain#exploreFrozenKey}), so the
+     * next plan from here takes another way (the walk up, a band leg) instead of the same frozen explore.
+     */
+    private Look replan(String why, int[] feet) {
         stalled = true;
+        if (kind == Kind.EXPLORE && feet != null && feet.length >= 3) {     // structural: x y z
+            String k = io.github.mojolowjo.entropybot.aa.NeedChain.exploreFrozenKey(feet);
+            return new Look(Verdict.REPLAN, why, FactChange.noProgress(k, why + " at " + step.text()));
+        }
         String src = io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(step);
         FactChange.Fact f = src != null ? FactChange.noProgress(src, why + " at " + step.text())
                 : new FactChange.Fact("step " + StepId.of(step).text(), why + " at " + step.text());

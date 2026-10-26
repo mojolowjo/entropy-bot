@@ -160,6 +160,7 @@ public final class Seq {
             // line was not known): the throw is said with the mod's frame it came from (Quiet: first hit and every 100th), and
             // ends the job with its message and that frame
             r = e + " at " + io.github.mojolowjo.entropybot.Quiet.where(e);
+            io.github.mojolowjo.entropybot.aa.moves.FactChange.threw(e);         // send-back 2 (rule 7): a typed step behind this job re-plans on it
             io.github.mojolowjo.entropybot.Quiet.warn("Seq.step " + steps.get(idx).type + " (" + label + ") threw at " + io.github.mojolowjo.entropybot.Quiet.where(e), e);
         }
         if (job() == null || job().done) return;

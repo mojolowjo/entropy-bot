@@ -566,7 +566,7 @@ public final class AaRuntime implements JobPort {
     /**
      * S2: the nearest open-sky standing cell within {@link #skyR} columns of {@code me} (loaded columns only): the leaf-free
      * surface's air cell with sky over it, two cells of room and a solid, dry block under it; {@code best[0]}: its straight
-     * metres. Null: none in the loaded columns. Loader notes: vanilla Level#getHeight (MOTION_BLOCKING_NO_LEAVES), canSeeSky.
+     * metres. Null: none in the loaded columns. Loader notes: vanilla Level#getHeight (MOTION_BLOCKING, through Jobs.surfaceNoLeaves: the client has no NO_LEAVES map), canSeeSky.
      */
     private static int[] skyCell(net.minecraft.world.level.Level lv, int[] me, double[] best) {
         int[] sky = null;
@@ -575,7 +575,7 @@ public final class AaRuntime implements JobPort {
             for (int z = me[2] - skyR(); z <= me[2] + skyR(); z++) {
                 m.set(x, 0, z);
                 if (!lv.isLoaded(m)) continue;
-                int y = lv.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+                int y = Jobs.surfaceNoLeaves(lv, x, z);       // 0.39.z76 send-back 2: the client has no MOTION_BLOCKING_NO_LEAVES (read -64)
                 double d = Math.sqrt(Jobs.distSq(me, new int[]{x, y, z}));
                 m.set(x, y, z);
                 if (d >= best[0] || !lv.canSeeSky(m) || !openCell(lv, x, y, z) || !openCell(lv, x, y + 1, z)) continue;     // review: no roof (the Nether)
@@ -605,7 +605,9 @@ public final class AaRuntime implements JobPort {
         double[] best = {Double.MAX_VALUE};
         int[] sky = skyCell(lv, me, best);
         if (sky != null) return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(depth, sky[0], sky[1], sky[2], best[0]);
-        int top = lv.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, me[0], me[2]);
+        // 0.39.z76 send-back 2 (runs AK, AL, AO: every "surface at x -64 z: unreachable" - the walk up aimed at the bottom of the
+        // world, so no surface explore ever walked up first): the client keeps only MOTION_BLOCKING / WORLD_SURFACE (Jobs.surfaceNoLeaves)
+        int top = Jobs.surfaceNoLeaves(lv, me[0], me[2]);
         return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(depth, me[0], top, me[2], Math.abs(top - me[1]));
     }
 
@@ -2661,11 +2663,11 @@ public final class AaRuntime implements JobPort {
         return threatMemo;
     }
 
-    /** The surface's y at x z (the MOTION_BLOCKING_NO_LEAVES heightmap), MIN_VALUE when the chunk is not loaded. */
+    /** The surface's y at x z (leaves skipped, Jobs.surfaceNoLeaves), MIN_VALUE when the chunk is not loaded. */
     private static int surfaceY(int x, int z) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || !mc.level.hasChunk(x >> 4, z >> 4)) return Integer.MIN_VALUE;
-        return mc.level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+        return Jobs.surfaceNoLeaves(mc.level, x, z);       // 0.39.z76 send-back 2: the client heightmaps (NO_LEAVES reads -64 there)
     }
 
     private int torchMemo;

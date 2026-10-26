@@ -68,6 +68,14 @@ public interface PathPrice {
      */
     default void rankedOut(int x, int y, int z) {}
 
+    /**
+     * 0.39.z76 send-back 2 (run AN 23:16:18 "to y 56..56: Baritone's goal ended at y 57"; 13x in AK, 32x in AL): the walk
+     * whose feet end IN the cell x y z (a band walk: the cell is inside the band), not by it - the stand-by goal is reached
+     * from the cell above (and two below), outside a one-high band. The live provider prices and walks it with Baritone's
+     * goal of that exact cell; a fake without it answers as {@link #price}.
+     */
+    default Answer priceInto(int x, int y, int z, double dist) { return price(x, y, z, dist); }
+
     /** A complete walk now, else null (callers that only compare known walks: the deposit). */
     default Walk toBlock(int x, int y, int z) { return price(x, y, z, Double.NaN).walk(); }
 
