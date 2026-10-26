@@ -145,7 +145,8 @@ class Z77RoundFixTest {
      * Run BF (torch 12:37; baseline 1:43): the surface leg made the gate's stone pickaxe before the batch's torches. Now the
      * orders whose leaves are all surface come first: "surface [torch 4, stone_pickaxe 1]", and with run BE's bag (64 sticks,
      * 9 coal, no tree known) the run's first step is the torches' craft (0.3 s), before the stone pickaxe's explore - the
-     * torch order is done before the explore; the price is the same sum (450 + 715.95 = 1165.95 s).
+     * torch order is done before the explore; the price is the same sum (450 + 716.25 = 1166.25 s; z77 legs: the stations
+     * placed again at the strip on's tunnel end, Z77PlaybookTest).
      */
     @Test
     void item3_theTorchesFirstInTheSurfaceLeg() {
@@ -159,7 +160,7 @@ class Z77RoundFixTest {
         int explore = 0;
         for (int i = 0; i < pc.steps().size(); i++) if (pc.steps().get(i) instanceof Step.Explore) explore = i;
         assertTrue(explore > 0, "the torches before the explore: " + pc.steps());
-        assertEquals(NeedChain.exploreS() + 715.95, pc.seconds(), 0.1, pc.why());
+        assertEquals(NeedChain.exploreS() + 716.25, pc.seconds(), 0.1, pc.why());
     }
 
     // ---- 4. run BF: no spare iron pickaxes ----

@@ -144,8 +144,9 @@ class Z77PlaybookTest {
      * PLAYBOOK (the player's order: the iron pickaxe's ore first, then the rest with it): torches 0.3 (the bag's coal); the
      * descent 48 x 0.6 = 28.8; the strip 3 iron x 16 = 48 cells x 2 x 0.6 = 57.6 + 3 x 1.15 = 3.45 (61.05; its 1 coal in the
      * bag); the furnace placed 0.15 + 3 smelts 30; the table placed 0.15 + the pickaxe 0.3; the strip on at y 16 with the iron
-     * pickaxe, 24 x 16 = 384 cells x 2 x 0.4 = 307.2 + 24 x 0.75 = 18 (325.2, no walk); 24 smelts 240; four crafts 1.2:
-     * 687.15 s.
+     * pickaxe, 24 x 16 = 384 cells x 2 x 0.4 = 307.2 + 24 x 0.75 = 18 (325.2, no walk); a furnace placed again 0.15 (0.39.z77
+     * legs: the strip on leaves the bot at its tunnel's end, 384 cells from the first two stations) + 24 smelts 240; a table
+     * placed again 0.15 + four crafts 1.2: 687.45 s.
      * AD-HOC in turn (each later order digs with the iron pickaxe the second one made): torches 0.3; pickaxe 28.8 + 61.05 +
      * furnace 0.15 + 30 + table 0.15 + 0.3 = 120.45; helmet 28.8 + 80 cells x 0.8 = 64 + 5 x 0.75 + 0.15 + 50 + 0.45 = 147.15;
      * chestplate 28.8 + 102.4 + 6 + 0.15 + 80 + 0.45 = 217.8; leggings 28.8 + 89.6 + 5.25 + 0.15 + 70 + 0.45 = 194.25; boots
@@ -162,7 +163,7 @@ class Z77PlaybookTest {
         NeedChain.Legs legs = NeedChain.resolvePlaybookLegs(pb, w);
         Chain pc = legs.chain();
         assertTrue(pc.ok() && !pc.explore(), pc.why());
-        assertEquals(687.15, pc.seconds(), 0.1, pc.why());
+        assertEquals(687.45, pc.seconds(), 0.1, pc.why());
         assertEquals(1, count(pc, Step.ToStrip.class), "one descent: " + pc.steps());
         List<Step.Strip> strips = pc.steps().stream().filter(s -> s instanceof Step.Strip).map(s -> (Step.Strip) s).toList();
         assertEquals(2, strips.size(), pc.steps().toString());
@@ -175,8 +176,8 @@ class Z77PlaybookTest {
         BatchWay.Shaped sh = BatchWay.shape("b1", 6, pb, pc, legs.starts());
         assertSame(pc, sh.chain());
         assertTrue(sh.line().startsWith("trip b1 (6 orders): 5 legs - 1 surface: torch 4 | 2 descent to y 16: raw_iron 3, coal 1, carries "), sh.line());
-        assertTrue(sh.line().contains(", carries ") && sh.line().contains("coal 4 (fuel)") && sh.line().contains("stick 2") && sh.line().contains("furnace 1") && sh.line().contains("crafting_table 1"),
-                "the smelts' fuel (27 x 200 / 1600, up), the pickaxe's sticks and the two stations go down: " + sh.line());
+        assertTrue(sh.line().contains(", carries ") && sh.line().contains("coal 4 (fuel)") && sh.line().contains("stick 2") && sh.line().contains("furnace 2") && sh.line().contains("crafting_table 2"),
+                "the smelts' fuel (27 x 200 / 1600, up), the pickaxe's sticks and two of each station (z77 legs: one again at the strip on's end) go down: " + sh.line());
         assertTrue(sh.line().endsWith(" | 5 at the band: iron_ingot 24, iron_helmet 1, iron_chestplate 1, iron_leggings 1, iron_boots 1; priced 687 s"), sh.line());
         List<String> said = new ArrayList<>();
         for (Step s : pc.steps()) if (legs.starts().containsKey(s)) said.add(legs.starts().get(s));
@@ -193,7 +194,8 @@ class Z77PlaybookTest {
      * pickaxe's logs) ends in an explore - priced as the explore, 450 s, and taken as had after it; the rest as in the kit
      * scenario, but the descent from where the explore leaves the bot is the break formula (rule 18, price review 1: 48 levels x 2
      * breaks x 0.6 = 57.6, never the feet's path): torches 0.3 + descent 57.6 + strip 61.05 + furnace and 3 smelts 30.15 +
-     * table and pickaxe 0.45 + the strip on 325.2 + 24 smelts and four crafts 241.2 = 715.95: 1165.95 s. The steps end at the
+     * table and pickaxe 0.45 + the strip on 325.2 + a furnace and a table placed again 0.3 (z77 legs) + 24 smelts and four
+     * crafts 241.2 = 716.25: 1166.25 s. The steps end at the
      * explore (its find re-prices the rest). The ad-hoc row: torches 0.3, then each iron order's pickaxe ends in the same
      * explore with nothing priced before it: 5 x 450 = 2250.3 s - the playbook wins.
      */
@@ -205,7 +207,7 @@ class Z77PlaybookTest {
         assertTrue(pb.why().contains("surface [torch 4, stone_pickaxe 1]"), pb.why());
         Chain pc = NeedChain.resolvePlaybook(pb, w);
         assertTrue(pc.ok() && pc.explore(), pc.why());
-        assertEquals(NeedChain.exploreS() + 715.95, pc.seconds(), 0.1, pc.why());
+        assertEquals(NeedChain.exploreS() + 716.25, pc.seconds(), 0.1, pc.why());
         assertTrue(pc.steps().get(pc.steps().size() - 1) instanceof Step.Explore, pc.steps().toString());
         assertTrue(pc.steps().stream().noneMatch(s -> s instanceof Step.Strip), "the run's steps end at the explore: " + pc.steps());
         assertTrue(BatchWay.shape("b1", 6, pb, pc, Map.of()).line().endsWith("; priced with its explore 1166 s"), "the trip's sum, said");
@@ -268,8 +270,8 @@ class Z77PlaybookTest {
      * The bag holds 1 coal (the torches take it): each strip takes the iron AND the coal at once (the fork's StripProcess
      * takes any ore set; the end rule waits for every amount). The pickaxe's part: 28.8 + iron 61.05 + coal 1 x 16 cells x 2
      * x 0.6 = 19.2 + 1.15 = 20.35, then 0.15 + 30 + 0.15 + 0.3; the rest with the iron pickaxe: iron 325.2 + coal 3 x 16 =
-     * 48 cells x 2 x 0.4 = 38.4 + 3 x 0.75 = 2.25 (40.65), then 240 + 1.2. Total 0.3 + 110.2 + 30.6 + 365.85 + 241.2 =
-     * 748.15 s. With steps.stepMaxS 300 the second strip's dig 365.85 is past it: 2 legs of that strip (iron 12 + 12, coal 2
+     * 48 cells x 2 x 0.4 = 38.4 + 3 x 0.75 = 2.25 (40.65), then a furnace and a table placed again 0.3 (z77 legs: at the
+     * tunnel's end) + 240 + 1.2. Total 0.3 + 110.2 + 30.6 + 365.85 + 241.5 = 748.45 s. With steps.stepMaxS 300 the second strip's dig 365.85 is past it: 2 legs of that strip (iron 12 + 12, coal 2
      * + 1), the price the same. The ad-hoc row cannot get the fuel down there (a strip leg is the chain's one leg to another
      * level): it ends in an explore, the priced playbook runs.
      */
@@ -281,7 +283,7 @@ class Z77PlaybookTest {
         Playbook pb = Playbook.derive(KIT, Playbook.facts(w, null));
         Chain pc = NeedChain.resolvePlaybook(pb, w);
         assertTrue(pc.ok() && !pc.explore(), pc.why());
-        assertEquals(748.15, pc.seconds(), 0.1, pc.why());
+        assertEquals(748.45, pc.seconds(), 0.1, pc.why());
         List<Step.Strip> strips = pc.steps().stream().filter(s -> s instanceof Step.Strip).map(s -> (Step.Strip) s).toList();
         assertEquals(3, strips.size(), "the pickaxe's strip, then two legs of the rest: " + pc.steps());
         for (Step.Strip s : strips) assertEquals(List.of(IRON_ORE, COAL_ORE), s.ores(), "both families in one strip");
@@ -423,7 +425,7 @@ class Z77PlaybookTest {
         Goals.Goal torch = gs.get(0);
         Chain ch = Goals.chain(bb, torch);
         assertTrue(ch.why().startsWith(NeedChain.PLAYBOOK), ch.why());
-        assertEquals(687.15, ch.seconds(), 0.1);
+        assertEquals(687.45, ch.seconds(), 0.1);
         assertEquals(1, port.log.stream().filter(l -> l.startsWith("torch: trip b1 (6 orders): 5 legs - ")).count(), port.log.toString());
         Goals.chain(bb, torch);                                  // the same bag and place: the kept trip, no second line
         assertEquals(1, port.log.stream().filter(l -> l.contains("trip b1 (")).count(), port.log.toString());

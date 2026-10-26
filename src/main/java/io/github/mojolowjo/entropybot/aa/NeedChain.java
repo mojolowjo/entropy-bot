@@ -721,6 +721,14 @@ public final class NeedChain {
         String down;
         int downAt = -1;
         boolean tableDown, furnaceDown;
+        /**
+         * 0.39.z77 legs (send-back 2; run BK 10:57:13: "iron_helmet 1 <- before going down: craft: 5 iron_ingot" - the armour
+         * crafted up there from the ingots the strip down there makes, then "step 7 (craft iron_helmet 1) needs 5 of iron_ingot;
+         * the bag will hold 0"): what the bag holds at the start of the leg {@code down} names (item -> count), kept current with
+         * what the ways met before going down add and take. A need met before going down has only this ({@link #beforeDown}).
+         * Null: not down.
+         */
+        Map<String, Integer> upBag;
         /** 0.39.z75 item 1: a need is being priced before going down ({@link #beforeDown}): no second leg to another level in it. */
         boolean hoisting;
         /** 0.39.z75 item 3 (run AE 8): bag items an outer need has counted as had - set aside while its ways are priced. */
@@ -753,7 +761,7 @@ public final class NeedChain {
         record Snap(Map<String, Integer> bag, List<Step> steps, Map<String, Integer> leafAt, Map<String, Integer> taken, List<String> dropped,
                     double seconds, double away, boolean tableReady, boolean furnaceReady, boolean stuck, String unknown, String pickItem, int pickTier,
                     boolean tableWalked, boolean furnaceWalked, int pickWorn, boolean pickMade, List<String> spares, boolean atRoom,
-                    String down, int downAt, boolean tableDown, boolean furnaceDown) {}
+                    String down, int downAt, boolean tableDown, boolean furnaceDown, Map<String, Integer> upBag) {}
 
         /**
          * 0.39.z65 item 2 (run V 07:13:11: one stone pickaxe, no spare, and the reason only in aa debug): the spare-tool
@@ -770,7 +778,7 @@ public final class NeedChain {
         Snap snap() {
             return new Snap(new LinkedHashMap<>(bag), new ArrayList<>(steps), new LinkedHashMap<>(leafAt), new LinkedHashMap<>(taken), new ArrayList<>(dropped),
                     seconds, away, tableReady, furnaceReady, stuck, unknown, pickItem, pickTier, tableWalked, furnaceWalked, pickWorn, pickMade, new ArrayList<>(spares), atRoom,
-                    down, downAt, tableDown, furnaceDown);
+                    down, downAt, tableDown, furnaceDown, upBag == null ? null : new LinkedHashMap<>(upBag));
         }
 
         void restore(Snap s) {
@@ -786,6 +794,7 @@ public final class NeedChain {
             spares = new ArrayList<>(s.spares());
             atRoom = s.atRoom();
             down = s.down(); downAt = s.downAt(); tableDown = s.tableDown(); furnaceDown = s.furnaceDown();
+            upBag = s.upBag() == null ? null : new LinkedHashMap<>(s.upBag());
             fail = null; loopOn = null;
         }
     }
@@ -1240,8 +1249,16 @@ public final class NeedChain {
         if (firstLeg && first.feetY() != y) c.steps.add(new Step.ToStrip(first.x(), y, first.z(), whole.key()));
         List<Step> legs = stripLegs(whole, digS);
         c.steps.addAll(legs);
-        if (firstLeg && first.feetY() != y) { c.down = "the playbook's descent to y " + y; c.downAt = legAt; c.away = 0; }
-        else if (!firstLeg) c.down = "the playbook's descent to y " + y;
+        if (firstLeg && first.feetY() != y) { c.down = "the playbook's descent to y " + y; c.downAt = legAt; c.away = 0; c.upBag = new LinkedHashMap<>(c.bag); }
+        else if (!firstLeg) {
+            c.down = "the playbook's descent to y " + y;
+            // 0.39.z77 legs (send-back 2; runs BJ 10:38:28 "take the crafting_table 83 m: walk: path not known yet", BK): the strip
+            // leaves the bot at its tunnel's end, its dug cells away from the table and furnace placed down there before - the
+            // walk back is from a cell the bot reaches later (rule 18 amended: not priced), so the next leg's crafts and smelts
+            // place their own, carried down (beforeDown) or made from what is carried
+            c.tableDown = false;
+            c.furnaceDown = false;
+        }
         else c.away = walkS;
         for (var e : gains.entrySet()) c.bag.merge(e.getKey(), e.getValue(), Integer::sum);
         // 0.39.z77 answers (2): the tunnel's own blocks come with the bot (the host's drop by the loot data, one a break): the
@@ -1997,11 +2014,30 @@ public final class NeedChain {
             c.away = 0;
             c.hoisting = true;
             int moved = 0;
+            // 0.39.z77 legs (send-back 2; run BK 10:57:13): up there, before the leg, the bag holds only what it held at the
+            // leg's start - what the leg and the steps after it gain (the strip's ore, the smelt's ingots) is set aside while
+            // these ways are priced (have() counts it out), so no step moved before the leg uses a later leg's output; what the
+            // way met up there adds or takes is the leg start's bag from now on
+            Map<String, Integer> late = new LinkedHashMap<>();
+            if (c.upBag != null) for (var e : c.bag.entrySet()) {
+                int k = c.have(e.getKey()) - c.upBag.getOrDefault(e.getKey(), 0);
+                if (k > 0) late.put(e.getKey(), k);
+            }
+            for (var e : late.entrySet()) c.aside.merge(e.getKey(), e.getValue(), Integer::sum);
+            Map<String, Integer> bag0 = new LinkedHashMap<>(c.bag);
             try {
                 Trial t = choose(c, ways.get(), self);
                 if (t == null) {
-                    if (c.fail == null) c.fail = "no way stands before going down either";
+                    if (c.fail == null) c.fail = "no way stands before going down either" + (late.isEmpty() ? "" : " (up there the bag has none of what the legs below make: " + counted(late) + ")");
                     return null;
+                }
+                if (c.upBag != null) {
+                    java.util.Set<String> keys = new LinkedHashSet<>(bag0.keySet());
+                    keys.addAll(c.bag.keySet());
+                    for (String k : keys) {
+                        int d = c.bag.getOrDefault(k, 0) - bag0.getOrDefault(k, 0);
+                        if (d != 0) c.upBag.merge(k, d, Integer::sum);
+                    }
                 }
                 if (t.alt().id != null) a.id = t.alt().id;
                 walkBack(c);                                 // back to where the leg starts, before it
@@ -2020,6 +2056,7 @@ public final class NeedChain {
                 }
                 return BEFORE_DOWN + " (" + leg + "): " + t.phrase();
             } finally {
+                putBack(c, late);
                 c.down = leg;
                 c.downAt = at + moved;
                 c.away = away0;
@@ -3426,6 +3463,7 @@ public final class NeedChain {
         if (level) {
             c.down = "the strip leg to y " + sb.y();
             c.downAt = legAt;
+            c.upBag = new LinkedHashMap<>(c.bag);         // 0.39.z77 legs: the bag at the leg's start (before the strip's gains)
         }
         c.bag.merge(gives, Math.max(lack, (int) Math.floor(oreBlocks * per + 1e-9)), Integer::sum);  // structural: epsilon
         final String areas = seen.faces() <= 0 ? "" : " (areas along " + sb.heading() + ": " + seen.faces() + " faces seen, " + seen.ores() + " ore on them: band "
