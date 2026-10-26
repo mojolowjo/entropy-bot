@@ -40,7 +40,17 @@ public final class TakeEnd {
 
     /** The short end's words: what the take saw, so the fact names it. */
     public static String shortText(String step, boolean stands, String chopEnd, boolean pickedUpWaited) {
+        return shortText(step, stands, chopEnd, pickedUpWaited, null);
+    }
+
+    /**
+     * Take 2 (run AJ 20:23:41 / 20:24:55): with {@code facts} - what the take saw that the fork's in-reach break needs (on the
+     * ground at the start, the eyes' distance to the block, a liquid or falling block beside or above it) and the chop's own
+     * last words - so the next run says which precondition failed (rule 7). Null facts: the words as before.
+     */
+    public static String shortText(String step, boolean stands, String chopEnd, boolean pickedUpWaited, String facts) {
         return step + ": short by 1: " + (stands ? "the station still stands (the break did not happen: " + chopEnd + ")"
-                : "the station was broken, its drop did not reach the bag" + (pickedUpWaited ? " within station.takePickupS" : "") + " (" + chopEnd + ")");
+                : "the station was broken, its drop did not reach the bag" + (pickedUpWaited ? " within station.takePickupS" : "") + " (" + chopEnd + ")")
+                + (facts == null || facts.isEmpty() ? "" : " [" + facts + "]");
     }
 }

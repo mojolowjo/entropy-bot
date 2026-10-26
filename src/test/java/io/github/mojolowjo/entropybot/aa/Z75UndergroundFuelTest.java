@@ -582,6 +582,39 @@ class Z75UndergroundFuelTest {
         assertTrue(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.released(f, new int[]{3 + (int) Math.ceil(moved), 16, -160}, moved));
     }
 
+    /**
+     * Take 2 (run AJ 20:23:41 torch, 20:24:55 iron_pickaxe): two shorts at one cell hold "take at x y z" for EVERY order -
+     * the next order's chain (here a stone pickaxe, 2 logs in the bag, the table 1 m away) makes and places a new table
+     * (planks 0.3 + table 0.3 + place 0.15 + the pickaxe 0.3 = 1.05 s), no TakeStation; one short holds nothing for the
+     * others (the order's own hold covers it); the bot moved failures.moved, or the table gone: released.
+     */
+    @Test
+    void take2_twoShortsAtOneCellHoldTheTakeForEveryOrder() {
+        ScenariosTest.world("wooden", "stone");
+        var holds = new io.github.mojolowjo.entropybot.aa.moves.TakeHolds();
+        int[] feet = {0, 76, 0};
+        double moved = io.github.mojolowjo.entropybot.aa.brain.Failures.movedV();
+        io.github.mojolowjo.entropybot.aa.moves.TakeHolds.Cells stands = (x, y, z, item) -> true;
+        holds.shortAt(1, 76, 0, TABLE, feet, "short by 1: the station still stands");
+        assertTrue(holds.held(feet, stands, moved).isEmpty(), "one short: no hold for every order");
+        holds.shortAt(1, 76, 0, TABLE, feet, "short by 1: the station still stands");
+        Map<String, String> held = holds.held(feet, stands, moved);
+        assertEquals(java.util.Set.of("take at 1 76 0"), held.keySet());
+        World w = ScenariosTest.w(Map.of("minecraft:oak_log", 2, "minecraft:cobblestone", 3, "minecraft:stick", 2), false, false, Map.of(TABLE, List.of(TABLE_1M)));
+        Chain next = NeedChain.resolve("stone_pickaxe", 1, w.withoutSources(held));
+        assertTrue(next.ok() && !next.explore(), next.why());
+        assertTrue(next.steps().stream().noneMatch(s -> s instanceof Step.TakeStation), next.steps().toString());
+        assertEquals(List.of(new Step.Craft("oak_planks", 4), new Step.Craft("crafting_table", 1), new Step.PlaceNear("crafting_table"), new Step.Craft("stone_pickaxe", 1)), next.steps());
+        assertEquals(1.05, next.seconds(), 0.01, next.why());
+        assertTrue(holds.held(new int[]{(int) Math.ceil(moved), 76, 0}, stands, moved).isEmpty(), "moved failures.moved: released");
+        holds.shortAt(1, 76, 0, TABLE, feet, "x");
+        holds.shortAt(1, 76, 0, TABLE, feet, "x");
+        assertTrue(holds.held(feet, (x, y, z, item) -> false, moved).isEmpty(), "the table gone: released");
+        assertTrue(io.github.mojolowjo.entropybot.aa.moves.TakeEnd.shortText("take crafting_table at 1 76 0", true, "cluster 1 block: picked up 0 of 1", false,
+                "on the ground at the start no, eyes 1.6 m from it, beside/above it no liquid or falling block, Baritone's last words: chop: no path to part of the current tree")
+                .endsWith("[on the ground at the start no, eyes 1.6 m from it, beside/above it no liquid or falling block, Baritone's last words: chop: no path to part of the current tree]"));
+    }
+
     // ---- 3. counted once ----
 
     /**

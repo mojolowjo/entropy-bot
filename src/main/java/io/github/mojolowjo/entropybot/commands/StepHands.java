@@ -91,9 +91,23 @@ public final class StepHands implements Steps.Hands {
         var cur = pb.getCurrent();
         String path = cur == null ? "no path executing" : "path " + cur.getPath().length() + " moves, at " + cur.getPosition();
         long now = Core.INSTANCE.tick();
+        // 0.39.z75 probe (run AK 20:50:41 / 20:51:44: a 400 m GoalXZ from y -28, "a search running", nothing executing; the
+        // hypothesis: the pricing searches starve Baritone's movement search on the shared executor): its search's age and
+        // timeouts, the pricing searches running and queued now, and the explore target with its chooser's reason
+        var set = baritone.api.BaritoneAPI.getSettings();
+        long age = StepProbe.calcAgeTicks();
+        String search = "Baritone's search " + (pb.getInProgress().isPresent() ? "running" + (age < 0 ? " (start not seen)" : " " + age * 50 + " ms") : "none")   // structural: 50 ms a tick
+                + " (primaryTimeoutMS " + set.primaryTimeoutMS.value + ", failureTimeoutMS " + set.failureTimeoutMS.value
+                + ", planAheadPrimaryTimeoutMS " + set.planAheadPrimaryTimeoutMS.value + ", planAheadFailureTimeoutMS " + set.planAheadFailureTimeoutMS.value + ")";
+        long[] seg = b.getPricedPath().searchCounts();
+        String pricing = "pricing searches: the mod's in flight " + LivePathPrice.INSTANCE.inFlight()
+                + ", the fork's segment searches running " + (seg == null || seg.length < 2 || seg[0] < 0 ? "not known" : String.valueOf(seg[0] - seg[1]))   // structural: [started, landed]
+                + ", first answers pending " + b.getPricedPath().firstAnswersPending();
+        String target = s instanceof Step.Explore ? Mining.exploreTargetText(me) : null;
         return "process " + proc + " | pathing " + pb.isPathing() + ", " + path + " | goal " + pb.getGoal() + " | feet " + me[0] + " " + me[1] + " " + me[2]
                 + " | in fluid " + (p.isInWater() || p.isInLava() ? (p.isInLava() ? "lava" : "water") : "no")
-                + " | " + (lastMoveTick < 0 ? "no move seen yet" : (now - lastMoveTick) + " ticks since the last move");
+                + " | " + (lastMoveTick < 0 ? "no move seen yet" : (now - lastMoveTick) + " ticks since the last move")
+                + " | " + search + " | " + pricing + (target == null ? "" : " | " + target);
     }
 
     /**
@@ -853,6 +867,7 @@ public final class StepHands implements Steps.Hands {
         mineFrom = "at " + t.x() + " " + t.y() + " " + t.z();
         takePickupUntil = -1;
         takeStartTick = Core.INSTANCE.tick();
+        takeOnGround = p.onGround();                // take 2: the fork's in-reach break asks for the ground (said if short)
         component = true;
         try {
             return mine(p, new ArrayList<>(List.of(own)), List.of(id), 1, t.text());
@@ -866,6 +881,32 @@ public final class StepHands implements Steps.Hands {
 
     /** 0.39.z75 take: the tick the take's pickup wait ends (-1: none started); the tick the take started (-1: none). */
     private long takePickupUntil = -1, takeStartTick = -1;
+    /** take 2: on the ground when the take started. */
+    private boolean takeOnGround;
+
+    /**
+     * take 2 (run AJ 20:23:41 / 20:24:55): what the fork's in-reach break needs, as the take saw it at its end - on the ground
+     * at the start, the eyes' distance to the block's centre, a liquid or a falling block above or beside it (Baritone's
+     * avoidBreaking adjacency), and Baritone's last chat line. Loader notes: vanilla Entity#getEyePosition, Vec3#atCenterOf,
+     * Level#getFluidState, FallingBlock.
+     */
+    private String takeFacts(LocalPlayer p, Step.TakeStation t) {
+        var level = Minecraft.getInstance().level;
+        BlockPos at = new BlockPos(t.x(), t.y(), t.z());
+        List<String> near = new ArrayList<>();
+        if (level != null) {
+            for (BlockPos q : List.of(at.above(), at.north(), at.south(), at.east(), at.west())) {
+                var st = level.getBlockState(q);
+                if (!level.getFluidState(q).isEmpty()) near.add("liquid at " + q.getX() + " " + q.getY() + " " + q.getZ());
+                else if (st.getBlock() instanceof net.minecraft.world.level.block.FallingBlock) near.add(BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath() + " (falls) at " + q.getX() + " " + q.getY() + " " + q.getZ());
+            }
+        }
+        double eye = p.getEyePosition().distanceTo(net.minecraft.world.phys.Vec3.atCenterOf(at));
+        String last = io.github.mojolowjo.entropybot.baritone.BaritoneHook.lastLine();
+        return "on the ground at the start " + (takeOnGround ? "yes" : "no") + ", eyes " + String.format(java.util.Locale.ROOT, "%.1f", eye) + " m from it"
+                + ", beside/above it " + (near.isEmpty() ? "no liquid or falling block" : String.join(", ", near))
+                + ", Baritone's last words: " + (last == null || last.isEmpty() ? "none" : last);
+    }
 
     /**
      * 0.39.z75 take (run AI 20:06:10): the take's status on the observed state (TakeEnd): the station in the bag - done;
@@ -891,6 +932,7 @@ public final class StepHands implements Steps.Hands {
                 if (takePickupUntil >= 0) b.getFollowProcess().cancel();
                 takePickupUntil = -1;
                 endMining();
+                io.github.mojolowjo.entropybot.aa.moves.TakeHolds.INSTANCE.clear(t.x(), t.y(), t.z());     // take 2: done here, no hold
                 return Car.Status.done("ok: " + miningWhat + ": got " + got + " (in the bag)");
             }
             case RUNNING -> {
@@ -910,8 +952,10 @@ public final class StepHands implements Steps.Hands {
                 takePickupUntil = -1;
                 endMining();
                 String end = endOf(b.getChopProcess().lastEnd());
-                String why = io.github.mojolowjo.entropybot.aa.moves.TakeEnd.shortText(t.text(), stands, end, waited);
+                String why = io.github.mojolowjo.entropybot.aa.moves.TakeEnd.shortText(t.text(), stands, end, waited, takeFacts(p, t));
                 io.github.mojolowjo.entropybot.aa.moves.FactChange.take(t.x(), t.y(), t.z(), why);
+                // take 2: the cell's short takes count for every order (two: held for all of them, TakeHolds)
+                io.github.mojolowjo.entropybot.aa.moves.TakeHolds.INSTANCE.shortAt(t.x(), t.y(), t.z(), id, Jobs.here(p), why);
                 return Car.Status.failed(why);
             }
         }

@@ -669,7 +669,23 @@ public final class AaRuntime implements JobPort {
                 item -> { var s = nearestSource(item); return s == null ? List.of() : List.of(s); },
                 this::animalsKnown, currentLootBook(), this::band, 0, LivePathPrice.INSTANCE, this::stationAt).withUses(AaRuntime::usesLeft).withStrip(this::strip).withCave(this::caveWay)
                 .withRooms(rooms(in.pos))
-                .withWhere(new io.github.mojolowjo.entropybot.aa.NeedChain.WhereFacts(this::whereOf, once(this::surfaceOver), AaRuntime::feetNow, AaRuntime::baseHere));   // 0.39.z68; z69: the feet; z74: the base block
+                .withWhere(new io.github.mojolowjo.entropybot.aa.NeedChain.WhereFacts(this::whereOf, once(this::surfaceOver), AaRuntime::feetNow, AaRuntime::baseHere))   // 0.39.z68; z69: the feet; z74: the base block
+                // 0.39.z75 take 2 (run AJ 20:23:41 / 20:24:55): a station take short twice at one cell is out for every order
+                .withoutSources(io.github.mojolowjo.entropybot.aa.moves.TakeHolds.INSTANCE.held(feetNow(), AaRuntime::stationStands,
+                        io.github.mojolowjo.entropybot.aa.brain.Failures.movedV()));
+    }
+
+    /**
+     * take 2: the station item's block stands at x y z now (null: the chunk is not loaded - not known, rule 15). Loader
+     * notes: vanilla Level#isLoaded / getBlockState, BuiltInRegistries.
+     */
+    private static Boolean stationStands(int x, int y, int z, String item) {
+        var lv = Minecraft.getInstance().level;
+        if (lv == null) return null;
+        var pos = new net.minecraft.core.BlockPos(x, y, z);
+        if (!lv.isLoaded(pos)) return null;
+        String id = item.contains(":") ? item : "minecraft:" + item;
+        return net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(lv.getBlockState(pos).getBlock()).toString().equals(id);
     }
 
     /** 0.39.z69 item 1: the feet cell now for the explore leaf's band walk (null: no player). Loader notes: vanilla LocalPlayer#blockPosition (Jobs.here). */

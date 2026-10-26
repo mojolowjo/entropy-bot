@@ -48,6 +48,11 @@ public final class StepProbe {
     private static volatile int keep;
     private static boolean fresh;
     private static long tick, startTick, lastPhaseTick = -1, eventTick;
+    /** 0.39.z75 probe: the probe tick Baritone's running search started (-1: none known running). */
+    private static long calcStartTick = -1;
+
+    /** 0.39.z75 probe: ticks since Baritone's current search started (-1: none known; only while debug.stepProbe is on). */
+    static long calcAgeTicks() { return calcStartTick < 0 ? -1 : tick - calcStartTick; }
     private static ProbeLines.Phase lastPhase;
     private static int folded, eventRepeats;
     private static String lastEvent;
@@ -183,6 +188,9 @@ public final class StepProbe {
         try {
             lastEvent = name;
             eventTick = tick;
+            // 0.39.z75 probe: when Baritone's current search started (CALC_STARTED / NEXT_SEGMENT_CALC_STARTED), for the stall line
+            if (name.endsWith("CALC_STARTED")) calcStartTick = tick;
+            else if (name.startsWith("CALC_") || name.startsWith("NEXT_SEGMENT_CALC_F") || name.equals("CANCELED")) calcStartTick = -1;
             if (WalkProbe.covers()) return;
             if (name.equals(lastEventSaid)) { eventRepeats++; return; }
             String was = lastEventSaid;

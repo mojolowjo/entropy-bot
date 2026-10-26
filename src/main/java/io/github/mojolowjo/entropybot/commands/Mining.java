@@ -726,6 +726,8 @@ final class Mining {
         String found;
         final Set<Integer> poiIds = new HashSet<>();
         ExploreRules.Target target;
+        /** 0.39.z75 probe: why the target was picked (the chooser's reason, for the stall line). */
+        String targetWhy;
         /** 0.39.z72 (D2 3.3): the current target as a held fact (null: none chosen yet); the run's failed targets. */
         ExploreRules.TargetHold.Held hold;
         final List<ExploreRules.TargetHold.Failed> failed = new ArrayList<>();
@@ -1029,6 +1031,14 @@ final class Mining {
         if (me != null) FROZEN.removeIf(f -> ExploreRules.TargetHold.released(f, me, io.github.mojolowjo.entropybot.aa.brain.Failures.movedV()));
     }
 
+    /** 0.39.z75 probe: the running explore's target, its distance from {@code me} and why it was picked; null: no running explore. */
+    static String exploreTargetText(int[] me) {
+        ExRun ex = lastExplore;
+        if (ex == null || ex.target == null || me == null || Core.INSTANCE.tick() - lastExploreTick > 20) return null;   // structural: one second in ticks
+        double d = Math.hypot(me[0] - ex.target.x(), me[2] - ex.target.z());
+        return "explore target " + ex.target.x() + " " + ex.target.z() + " " + Math.round(d) + " m from the feet (" + (ex.targetWhy == null ? "why not said" : ex.targetWhy) + ")";
+    }
+
     /** The explore run that stepped last (its target is the one a monitor's cancel froze). */
     private static volatile ExRun lastExplore;
 
@@ -1252,6 +1262,7 @@ final class Mining {
             if (aim != null) {
                 ex.aimed = Jobs.fmt(aim);
                 ex.target = new ExploreRules.Target(aim[0], aim[2]);
+                ex.targetWhy = "toward cave candidate " + ex.aimed + " (the nearest unvisited within cave.exploreTowardM" + (bandTarget ? ", ranked by the band" : "") + ")";
                 LOG.info("[entropybot] explore: toward cave candidate {} ({} m; cave.exploreTowardM {})", ex.aimed,
                         Math.round(Math.sqrt(Jobs.distSq(me, aim))), Math.round(Tuning.get("cave.exploreTowardM")));
             }
@@ -1273,7 +1284,10 @@ final class Mining {
                     },
                     // 0.39.z68 item (c): a surface target prefers land - a chunk the client has loaded whose centre column's top is water
                     surfaceTarget ? (cx, cz) -> waterChunk(p.level(), cx, cz) : null, io.github.mojolowjo.entropybot.vocab.ExploreWords.waterRings());
-            if (c != null) ex.target = new ExploreRules.Target((c[0] << 4) + 8, (c[1] << 4) + 8);
+            if (c != null) {
+                ex.target = new ExploreRules.Target((c[0] << 4) + 8, (c[1] << 4) + 8);
+                ex.targetWhy = "the nearest never-seen chunk " + c[0] + "," + c[1] + (surfaceTarget ? " (a surface target: land first)" : "");
+            }
         }
         if (ex.target == null) {
             List<ExploreRules.Poi> fresh = new ArrayList<>();
