@@ -206,17 +206,25 @@ public final class NeedChain {
      * is priced from it; not known: the ToBand step as before z69 (unpriced, said).
      */
     public record WhereFacts(Function<String, io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact> of, java.util.function.Supplier<Surface> surface,
-                             java.util.function.Supplier<int[]> feet) {
+                             java.util.function.Supplier<int[]> feet, java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.brain.GenWhere.Base> base) {
         public static final WhereFacts NONE = new WhereFacts(w -> null, () -> null);
 
         public WhereFacts(Function<String, io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact> of, java.util.function.Supplier<Surface> surface) {
             this(of, surface, null);
         }
 
+        /** No base block known (before 0.39.z74). */
+        public WhereFacts(Function<String, io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact> of, java.util.function.Supplier<Surface> surface,
+                          java.util.function.Supplier<int[]> feet) {
+            this(of, surface, feet, null);
+        }
+
+        /** 0.39.z74 item 4: {@code base} - this dimension's base block (GenWhere.Base, from its noise settings); null: not known. */
         public WhereFacts {
             if (of == null) of = w -> null;
             if (surface == null) surface = () -> null;
             if (feet == null) feet = () -> null;
+            if (base == null) base = () -> null;
         }
     }
 
@@ -1175,6 +1183,7 @@ public final class NeedChain {
             alts.addAll(tagHuntAlts(c, w, lack));
             if (c.w.seenAll().apply(w.word).isEmpty()) alts.addAll(stripAlts(c, w.word, w.word, lack));   // 0.39.z43
             if (c.w.seenAll().apply(w.word).isEmpty()) alts.addAll(caveAlts(c, w.word, w.word, lack));    // 0.39.z44
+            alts.addAll(baseAlts(c, w.word, lack));                                                      // 0.39.z74 item 4
             Trial win = choose(c, alts, w.word);
             if (win != null) return new Got(win.alt().id != null ? win.alt().id : w.word, n, win.phrase());
             if (waitsOnPaths(c)) return new Got(w.word, n, pathsExplore(c, w.word));
@@ -1439,6 +1448,7 @@ public final class NeedChain {
             alts.addAll(huntAlts(c, item, lack));
             if (c.w.seenAll().apply(item).isEmpty()) alts.addAll(stripAlts(c, item, item, lack));   // 0.39.z43: mine at the ore's level
             if (c.w.seenAll().apply(item).isEmpty()) alts.addAll(caveAlts(c, item, item, lack));    // 0.39.z44: mine in the cave
+            alts.addAll(baseAlts(c, item, lack));                                                  // 0.39.z74 item 4: dig down to the base block
             Trial w = choose(c, alts, item);
             if (w != null) return w.phrase();
             if (waitsOnPaths(c)) return pathsExplore(c, item);
@@ -2103,11 +2113,17 @@ public final class NeedChain {
     /** 0.39.z60 review 1: the words of a source whose structure fact is not loaded yet (rule 15: not known, waited for). */
     public static final String SOURCE_NOT_LOADED = "not known yet (its structure fact is not loaded; rule 15)";
 
-    /** How many of the item one block of {@code block} drops (the loot data's expectation; 1 when unknown). */
+    /**
+     * How many of the item one block of {@code block} drops: the loot data's EXPECTED yield (LootBook: rolls x weight x the
+     * random_chance / table_bonus conditions at the bot's unenchanted tool x the average count - leaves give a stick at about
+     * 0.03 a block). 0.39.z74 item 1 (run AC 16:51:46: `collect stick 2` from leaves, 1 stick in ~90 s; rule 15): a block
+     * the book holds no entry for gives 1 only when it is the item's own block (it drops itself, as Nearby keeps it), else
+     * the yield is not known (NaN: the spot is left out, never priced as 1). No book in these facts (an older caller): 1.
+     */
     private static double perBlock(Ctx c, String item, String block) {
         if (c.w.loot() == null || block == null) return 1;
         for (LootBook.Source s : c.w.loot().sources(item)) if (s.kind() == LootBook.Kind.BLOCK && s.from().equals(block) && s.per() > 0) return s.per();
-        return 1;
+        return block.equals(id(item)) ? 1 : Double.NaN;
     }
 
     /**
@@ -2143,7 +2159,14 @@ public final class NeedChain {
         // consumes before the collect counts: what it took is lacking again
         int remaining = lack + Math.max(0, haveBefore - have(c, asked));
         Walked firstWalk = null;
+        // 0.39.z74 item 1 (rule 15): a spot whose block's yield of the item is not known is left out (said); none left: no way
+        List<Spot> known = new ArrayList<>();
         for (Spot sp : order) {
+            if (Double.isNaN(perBlock(c, gives, sp.block()))) c.note(() -> "spot " + sp.x() + " " + sp.y() + " " + sp.z() + " left out: the yield of " + shw(gives) + " from " + shw(sp.block()) + " is not known (no loot entry)");
+            else known.add(sp);
+        }
+        if (known.isEmpty()) { c.fail = "the yield of " + shw(gives) + " from " + shw(blockOf(gives, first)) + " is not known (no loot entry; rule 15)"; return null; }
+        for (Spot sp : known) {
             if (remaining <= 0) break;
             int[] tg = takeOf(c, gives, sp, remaining, log);
             int take = tg[0], got = tg[1];
@@ -2182,6 +2205,17 @@ public final class NeedChain {
             c.seconds += each * take;
             final int took = take;
             c.note(() -> "break " + shw(blockOf(gives, sp)) + " x" + took + ": tool " + (c.pickItem == null || tierOf(gives, sp) < 1 ? "hand" : sh(c.pickItem)) + ", " + s(each) + " each = " + s(each * took));
+            // 0.39.z74 item 1 (run AC 16:51:46: "stick 5 m: 11.9 s" won over "stick from #planks: 28.6 s"; the leaves gave 1 stick
+            // in ~90 s): a block that gives the item only by chance (expected yield under 1 a block) is many scattered blocks,
+            // each its own trip - every block after the first is charged the spot's walk again (the walk already priced; rule
+            // 14: the same rough numbers, no finer term). A block that drops the item for sure is one patch, as before.
+            double per = perBlock(c, gives, sp.block());
+            Walked spotWalk = c.walks.get(sp.key());
+            if (per < 1 && take > 1 && spotWalk != null && spotWalk.fail() == null && spotWalk.seconds() > 0) {
+                double again = spotWalk.seconds() * (take - 1);
+                c.seconds += again;
+                c.note(() -> shw(blockOf(gives, sp)) + " gives " + shw(gives) + " by chance (" + String.format(java.util.Locale.ROOT, "%.3f", per) + " a block, the loot data): " + (took - 1) + " more trips of " + s(spotWalk.seconds()) + " = " + s(again));
+            }
             if (c.pickItem != null && tierOf(gives, sp) >= 1) c.pickWorn += take;     // 0.39.z33: one use a block (game fact: a pickaxe loses 1 durability per block mined)
             c.taken.merge(sp.key(), take, Integer::sum);
             c.bag.merge(gives, got, Integer::sum);
@@ -2212,7 +2246,8 @@ public final class NeedChain {
         int take = whole ? avail : Math.min(avail, blocksWanted);
         if (take <= 0) return new int[]{0, 0};
         int got = whole ? (int) Math.floor(take * per + 1e-9) : Math.min(remaining, (int) Math.floor(take * per + 1e-9));  // structural: epsilon
-        if (got <= 0) got = Math.min(remaining, take);
+        // 0.39.z74 item 1: blocks whose expected yield is under one item give none here (was: one item a block, a sure drop)
+        if (got <= 0) return new int[]{0, 0};
         return new int[]{take, got};
     }
 
@@ -2339,6 +2374,63 @@ public final class NeedChain {
      * leg and walk back: {@link io.github.mojolowjo.entropybot.aa.brain.Goals#stripLoop}). One way among the others (rule 1),
      * priced by its own facts; no strip facts (multiplayer, no world-gen read, no band at or below the feet): no way.
      */
+    /**
+     * Game fact (vanilla SurfaceSystem#getSurfaceDepth: noise x 2.75 + 3 + a quarter of random, the noise about 0 on average):
+     * the surface layer over the base block is about 3 blocks under the top block.
+     */
+    static final int SURFACE_LAYER = 3; // game fact: SurfaceSystem's surface depth averages 3 blocks
+
+    /**
+     * 0.39.z74 item 4 (run AD 17:10:08: charcoal's furnace needed "8 #stone_tool_materials <- explore ... (where it generates
+     * is not known: stone is placed on the ground's top ...)", then the only torch way left was a 173 s coal strip): the
+     * dimension's base block (its noise settings' default block, {@link io.github.mojolowjo.entropybot.aa.brain.GenWhere.Base})
+     * is under the surface everywhere - no feature places it, so no "where" fact named it. One way, priced like any dig: the
+     * band walk down the feet's column to the base block's top (the top block, the surface layer under it: {@link #SURFACE_LAYER}
+     * deep, never below the deepslate rule's Y) on Baritone's priced path ({@link #bandLeg}, rule 18), then the dig of the
+     * blocks the need takes from the base block's drop (the loot data: stone gives cobblestone), the hole's own cell priced
+     * as in reach. Offered only on the surface (under ground the base block is round the bot: seen, a plain source) and when
+     * the base block, the surface and the feet are known (rule 15). No block is named in the code (rule 4).
+     */
+    private static List<Alt> baseAlts(Ctx c, String word, int lack) {
+        List<Alt> alts = new ArrayList<>();
+        var base = c.w.where().base().get();
+        Surface s = c.w.where().surface().get();
+        int[] feet = c.w.where().feet().get();
+        if (base == null || s == null || feet == null || feet.length < 3 || s.depth() != 0) return alts;   // structural: x y z
+        Want want = new Want(word);
+        String gives = null;
+        if (c.w.loot() != null) {
+            // the base block's own drops (the loot data), the one the need takes - its sure drop first
+            List<LootBook.Source> drops = new ArrayList<>(c.w.loot().blockDrops(base.block()));
+            drops.sort(Comparator.comparingDouble((LootBook.Source d) -> -d.per() * d.chance()));
+            for (LootBook.Source d : drops) if (d.per() > 0 && want.has(d.item())) { gives = d.item(); break; }
+        } else if (want.has(base.block())) gives = base.block();
+        if (gives == null) return alts;
+        int ty = feet[1] - 1 - SURFACE_LAYER;
+        if (base.deep() != null) ty = Math.max(ty, base.sureFrom());
+        int depth = feet[1] - ty, top = ty;
+        String g = gives;
+        alts.add(new Alt(shw(base.block()) + " (the base block, " + depth + " deep)", () -> {
+            // the pickaxe its block asks for is made up here first (a station placed in the hole would have no room)
+            Spot probe = new Spot(feet[0], top - 1, feet[2], 1, base.block(), 0, g);
+            int tier = tierOf(word, probe);
+            if (tier == MiningTiers.UNKNOWN) { c.fail = "the pickaxe tier of " + shw(base.block()) + " is not known (no mining data loaded yet)"; return null; }
+            String pre = null;
+            if (tier > c.pickTier) {
+                pre = cheapestPickaxe(c, tier);
+                if (c.fail != null || c.stuck) return pre == null ? null : "dig down " + depth + " to " + shw(base.block()) + " (after " + pre + ")";
+            }
+            String leg = bandLeg(c, new int[]{top, top});
+            if (leg == null && c.fail != null) return null;
+            if (BAND_DROPPED.equals(leg)) { c.fail = "no path down to " + shw(base.block()) + " under the feet"; return null; }
+            c.walks.put(probe.key(), new Walked(0, "in reach from the hole the walk down made", null, PathPrice.Kind.PRICED));
+            String how = sourceFrom(c, word, g, lack, List.of(probe));
+            if (how == null) return null;
+            return "dig down " + depth + " to " + base.text() + (pre == null ? "" : " with " + pre) + (leg == null || leg.isEmpty() ? "" : ": " + leg) + ", then " + how;
+        }));
+        return alts;
+    }
+
     private static List<Alt> stripAlts(Ctx c, String word, String gives, int lack) {
         StripBand sb = c.w.strip().apply(word);
         if (sb == null || sb.ores().isEmpty()) return List.of();

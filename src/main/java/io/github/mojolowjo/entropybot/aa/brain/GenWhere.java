@@ -289,4 +289,77 @@ public final class GenWhere {
     }
 
     private static String sh(String id) { return id == null ? "?" : id.replaceFirst("^minecraft:", ""); }
+
+    // ---- 0.39.z74 item 4 (run AD 17:10:08: "where it generates is not known: stone is placed on the ground's top ..."):
+    // the dimension's base block, from its noise settings ----
+
+    /**
+     * A dimension's base block: the noise generator's {@code default_block} (what the terrain is made of under the surface
+     * layer, everywhere), and the surface rule's {@code vertical_gradient} below which another block takes over ({@code deep},
+     * e.g. the overworld's deepslate; {@code sureFrom}: the gradient's {@code false_at_and_above} absolute Y - at and above it
+     * the base block is not replaced; none: Integer.MIN_VALUE). {@code why}: where it was read. Never a feature: no placement
+     * says where it is, the noise does.
+     */
+    public record Base(String block, int sureFrom, String deep, String why) {
+        public String text() {
+            return sh(block) + " (the noise settings' default block" + (deep == null ? "" : ", " + sh(deep) + " below y " + sureFrom) + "; " + why + ")";
+        }
+    }
+
+    /**
+     * The base block of one noise settings JSON ({@code id}: its id for the words); null: it names no default block. The
+     * gradient: the first {@code condition} rule (anywhere in {@code surface_rule}) whose {@code if_true} is a
+     * {@code vertical_gradient} with an absolute {@code false_at_and_above} and whose {@code then_run} sets a block.
+     */
+    public static Base base(String id, JsonElement noise) {
+        if (noise == null || !noise.isJsonObject()) return null;
+        JsonObject o = noise.getAsJsonObject();
+        JsonElement db = o.get("default_block");
+        if (db == null || !db.isJsonObject() || !db.getAsJsonObject().has("Name")) return null;
+        String block = db.getAsJsonObject().get("Name").getAsString();
+        int[] y = {Integer.MIN_VALUE};
+        String[] deep = {null};
+        gradient(o.get("surface_rule"), y, deep, 0);
+        return new Base(block, y[0], deep[0], "noise settings " + id);
+    }
+
+    private static void gradient(JsonElement e, int[] y, String[] deep, int depth) {
+        if (deep[0] != null || e == null || depth > 64) return;     // structural: the rule tree's nesting bound
+        if (e.isJsonArray()) { for (JsonElement x : e.getAsJsonArray()) gradient(x, y, deep, depth + 1); return; }
+        if (!e.isJsonObject()) return;
+        JsonObject o = e.getAsJsonObject();
+        JsonElement t = o.get("if_true"), run = o.get("then_run");
+        if (t != null && t.isJsonObject() && String.valueOf(str(t.getAsJsonObject(), "type")).endsWith("vertical_gradient") && run != null && run.isJsonObject()) {
+            JsonObject fa = t.getAsJsonObject().has("false_at_and_above") && t.getAsJsonObject().get("false_at_and_above").isJsonObject() ? t.getAsJsonObject().getAsJsonObject("false_at_and_above") : null;
+            JsonElement rs = run.getAsJsonObject().get("result_state");
+            if (fa != null && fa.has("absolute") && rs != null && rs.isJsonObject() && rs.getAsJsonObject().has("Name")) {
+                y[0] = fa.get("absolute").getAsInt();
+                deep[0] = rs.getAsJsonObject().get("Name").getAsString();
+                return;
+            }
+        }
+        for (var x : o.entrySet()) if (x.getValue().isJsonObject() || x.getValue().isJsonArray()) gradient(x.getValue(), y, deep, depth + 1);
+    }
+
+    private static String str(JsonObject o, String k) { return o.has(k) && o.get(k).isJsonPrimitive() ? o.get(k).getAsString() : null; }
+
+    /**
+     * The noise settings a dimension's generator names, from a {@code dimension} JSON or a {@code world_preset}'s
+     * {@code dimensions} map: dimension id -> settings id (into {@code out}). A generator that names inline settings or none
+     * is left out (the dimension then reads the settings of its own id, when there are such).
+     */
+    public static void dimensions(String id, JsonElement e, boolean preset, java.util.Map<String, String> out) {
+        if (e == null || !e.isJsonObject()) return;
+        if (!preset) { settingsOf(id, e.getAsJsonObject(), out); return; }
+        JsonElement ds = e.getAsJsonObject().get("dimensions");
+        if (ds == null || !ds.isJsonObject()) return;
+        for (var d : ds.getAsJsonObject().entrySet()) if (d.getValue().isJsonObject()) settingsOf(d.getKey(), d.getValue().getAsJsonObject(), out);
+    }
+
+    private static void settingsOf(String dim, JsonObject d, java.util.Map<String, String> out) {
+        JsonElement g = d.get("generator");
+        if (g == null || !g.isJsonObject()) return;
+        JsonElement s = g.getAsJsonObject().get("settings");
+        if (s != null && s.isJsonPrimitive()) out.putIfAbsent(dim.indexOf(':') < 0 ? "minecraft:" + dim : dim, s.getAsString().indexOf(':') < 0 ? "minecraft:" + s.getAsString() : s.getAsString());
+    }
 }

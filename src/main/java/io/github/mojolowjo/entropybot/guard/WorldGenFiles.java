@@ -42,10 +42,11 @@ public final class WorldGenFiles {
      * placed features (their placement modifiers), the biomes (which placed features each lists) and NeoForge's biome
      * modifiers ({@code add_features}) with the placed-feature tags they may name. Read with {@link #JSON_DIRS} in one read.
      */
-    public static final List<String> PLACEMENT_DIRS = List.of("worldgen/placed_feature", "worldgen/biome", "neoforge/biome_modifier", "tags/worldgen/placed_feature");
+    public static final List<String> PLACEMENT_DIRS = List.of("worldgen/placed_feature", "worldgen/biome", "neoforge/biome_modifier", "tags/worldgen/placed_feature",
+            "dimension", "worldgen/world_preset");     // 0.39.z74 item 4: which noise settings each dimension generates with
     /** The owner's correction, in the entropybot folder: {"<block id>": true (world gen places it) | false (it does not)}. */
     public static final String OVERRIDE_FILE = "worldgen-override.json";
-    static final int CACHE_VERSION = 5;  // structural: the cache file's format version (2: no template blocks; 3: the ore placements; 4: the "where" placers; 5: vein size and air-exposure discard)
+    static final int CACHE_VERSION = 6;  // structural: the cache file's format version (2: no template blocks; 3: the ore placements; 4: the "where" placers; 5: vein size and air-exposure discard; 6: the base blocks)
 
     /** One file of the read: its id ("ns:path" under data/ns) and how to open it. */
     public interface Entry {
@@ -76,10 +77,29 @@ public final class WorldGenFiles {
      * not in the jars, an unknown feature tag, a biome modifier of another kind), counted for the log.
      */
     public record Ores(Map<String, Ore> placed, Map<String, List<String>> biomes, List<Modifier> modifiers, int unread, String firstUnread,
-                       List<GenWhere.Placer> placers) {
+                       List<GenWhere.Placer> placers, Map<String, GenWhere.Base> bases, Map<String, String> dims) {
         public static final Ores EMPTY = new Ores(Map.of(), Map.of(), List.of(), 0, null, List.of());
 
-        public Ores { placers = placers == null ? List.of() : List.copyOf(placers); }
+        /**
+         * 0.39.z74 item 4: {@code bases} - noise settings id -> its base block ({@link GenWhere#base}); {@code dims} - dimension
+         * id -> the noise settings it generates with (the dimension / world preset files).
+         */
+        public Ores {
+            placers = placers == null ? List.of() : List.copyOf(placers);
+            bases = bases == null ? Map.of() : Map.copyOf(bases);
+            dims = dims == null ? Map.of() : Map.copyOf(dims);
+        }
+
+        public Ores(Map<String, Ore> placed, Map<String, List<String>> biomes, List<Modifier> modifiers, int unread, String firstUnread, List<GenWhere.Placer> placers) {
+            this(placed, biomes, modifiers, unread, firstUnread, placers, Map.of(), Map.of());
+        }
+
+        /** The base block of dimension {@code dim}: its generator's settings (else the settings of its own id); null: not known. */
+        public GenWhere.Base baseOf(String dim) {
+            if (dim == null) return null;
+            GenWhere.Base b = bases.get(dims.getOrDefault(dim, dim));
+            return b != null ? b : bases.get(dim);
+        }
 
         /** No "where" placers (0.39.z68): the ore placements only. */
         public Ores(Map<String, Ore> placed, Map<String, List<String>> biomes, List<Modifier> modifiers, int unread, String firstUnread) {
@@ -93,6 +113,8 @@ public final class WorldGenFiles {
         int files = 0, bad = 0;
         String firstBad = null;
         Map<String, JsonElement> configured = new HashMap<>(), placed = new HashMap<>(), biomes = new HashMap<>(), modifiers = new HashMap<>(), tags = new HashMap<>();
+        Map<String, GenWhere.Base> bases = new java.util.TreeMap<>();      // 0.39.z74 item 4
+        Map<String, String> dims = new java.util.TreeMap<>();
         for (Entry e : json) {
             try (InputStream in = e.open(); Reader r = new InputStreamReader(in, StandardCharsets.UTF_8)) {
                 JsonElement j = JsonParser.parseReader(r);
@@ -104,13 +126,17 @@ public final class WorldGenFiles {
                 else if ("worldgen/biome".equals(dir)) biomes.put(id, j);
                 else if ("neoforge/biome_modifier".equals(dir)) modifiers.put(id, j);
                 else if ("tags/worldgen/placed_feature".equals(dir)) tags.put(id, j);
+                else if ("worldgen/noise_settings".equals(dir)) { GenWhere.Base b = GenWhere.base(id, j); if (b != null) bases.put(id, b); }
+                else if ("dimension".equals(dir)) GenWhere.dimensions(id, j, false, dims);
+                else if ("worldgen/world_preset".equals(dir)) GenWhere.dimensions(id, j, true, dims);
                 files++;
             } catch (IOException | RuntimeException x) {
                 bad++;
                 if (firstBad == null) firstBad = e.id() + ": " + x;
             }
         }
-        return new Read(Set.copyOf(names), files, bad, firstBad, ores(configured, placed, biomes, modifiers, tags));
+        Ores o = ores(configured, placed, biomes, modifiers, tags);
+        return new Read(Set.copyOf(names), files, bad, firstBad, new Ores(o.placed(), o.biomes(), o.modifiers(), o.unread(), o.firstUnread(), o.placers(), bases, dims));
     }
 
     /** The read's folder of an entry id ("ns:worldgen/placed_feature/x.json" -> "worldgen/placed_feature"); null: none of ours. */
@@ -426,6 +452,19 @@ public final class WorldGenFiles {
             ws.add(wo);
         }
         oj.add("placers", ws);
+        JsonObject bs = new JsonObject();                     // 0.39.z74 item 4 (version 6): the base blocks
+        for (var e : new java.util.TreeMap<>(ores.bases()).entrySet()) {
+            JsonObject bo = new JsonObject();
+            bo.addProperty("block", e.getValue().block());
+            bo.addProperty("sureFrom", e.getValue().sureFrom());
+            if (e.getValue().deep() != null) bo.addProperty("deep", e.getValue().deep());
+            bo.addProperty("why", e.getValue().why());
+            bs.add(e.getKey(), bo);
+        }
+        oj.add("bases", bs);
+        JsonObject ds = new JsonObject();
+        for (var e : new java.util.TreeMap<>(ores.dims()).entrySet()) ds.addProperty(e.getKey(), e.getValue());
+        oj.add("dims", ds);
         oj.addProperty("unread", ores.unread());
         if (ores.firstUnread() != null) oj.addProperty("firstUnread", ores.firstUnread());
         o.add("ores", oj);
@@ -462,8 +501,15 @@ public final class WorldGenFiles {
             JsonObject w = e.getAsJsonObject();
             ws.add(new GenWhere.Placer(w.get("id").getAsString(), list(w.get("blocks")), w.getAsJsonArray("placement"), w.get("size").getAsInt(), w.get("discard").getAsDouble()));
         }
+        Map<String, GenWhere.Base> bases = new java.util.TreeMap<>();      // 0.39.z74 (version 6): missing = not whole, the jars are read again
+        for (var e : oj.getAsJsonObject("bases").entrySet()) {
+            JsonObject b = e.getValue().getAsJsonObject();
+            bases.put(e.getKey(), new GenWhere.Base(b.get("block").getAsString(), b.get("sureFrom").getAsInt(), b.has("deep") ? b.get("deep").getAsString() : null, b.get("why").getAsString()));
+        }
+        Map<String, String> dims = new java.util.TreeMap<>();
+        for (var e : oj.getAsJsonObject("dims").entrySet()) dims.put(e.getKey(), e.getValue().getAsString());
         return new Ores(Map.copyOf(placed), Map.copyOf(biomes), List.copyOf(ms), oj.has("unread") ? oj.get("unread").getAsInt() : 0,
-                oj.has("firstUnread") ? oj.get("firstUnread").getAsString() : null, ws);
+                oj.has("firstUnread") ? oj.get("firstUnread").getAsString() : null, ws, bases, dims);
     }
 
     /** The read back from a cache file; one that is not this hash's or not whole throws IllegalArgumentException with the reason. */

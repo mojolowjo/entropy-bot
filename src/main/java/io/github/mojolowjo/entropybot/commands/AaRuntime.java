@@ -610,6 +610,19 @@ public final class AaRuntime implements JobPort {
     }
 
     /**
+     * 0.39.z74 item 4: this dimension's base block - the noise settings its generator names (the jars' dimension / world
+     * preset files, else the settings of the dimension's own id), their default block and deepslate rule. Null: no level,
+     * the world-gen read not done, or no settings known for this dimension (rule 15: not known, no way offered). Loader
+     * notes: vanilla ClientLevel#dimension; the data's JSON format (NoiseGeneratorSettings, its codec).
+     */
+    static io.github.mojolowjo.entropybot.aa.brain.GenWhere.Base baseHere() {
+        Minecraft mc = Minecraft.getInstance();
+        var ores = io.github.mojolowjo.entropybot.guard.WorldGenReader.ores();
+        if (mc.level == null || ores == null) return null;
+        return ores.baseOf(mc.level.dimension().location().toString());
+    }
+
+    /**
      * 0.39.z68: where a need word's blocks generate (GenWhere over the jars' placers, rule 19; the blocks: sourceBlocksOf,
      * the loot data and the own block). The read not done or failed: NOT_LOADED with that reason (rule 15).
      */
@@ -656,7 +669,7 @@ public final class AaRuntime implements JobPort {
                 item -> { var s = nearestSource(item); return s == null ? List.of() : List.of(s); },
                 this::animalsKnown, currentLootBook(), this::band, 0, LivePathPrice.INSTANCE, this::stationAt).withUses(AaRuntime::usesLeft).withStrip(this::strip).withCave(this::caveWay)
                 .withRooms(rooms(in.pos))
-                .withWhere(new io.github.mojolowjo.entropybot.aa.NeedChain.WhereFacts(this::whereOf, once(this::surfaceOver), AaRuntime::feetNow));   // 0.39.z68; z69: the feet
+                .withWhere(new io.github.mojolowjo.entropybot.aa.NeedChain.WhereFacts(this::whereOf, once(this::surfaceOver), AaRuntime::feetNow, AaRuntime::baseHere));   // 0.39.z68; z69: the feet; z74: the base block
     }
 
     /** 0.39.z69 item 1: the feet cell now for the explore leaf's band walk (null: no player). Loader notes: vanilla LocalPlayer#blockPosition (Jobs.here). */

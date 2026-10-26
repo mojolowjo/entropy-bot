@@ -110,11 +110,13 @@ public final class StepMonitor {
     }
 
     /**
-     * The kinds a COMPLETE may end: the Baritone gathers whose hands count to n (cancel = Baritone's process stops, the
-     * chop's whole-tree job included). A craft / smelt never: the item job ends itself on its own observed state and a
-     * cancel there would cut its clicks (design 8, COMPLETE mid-job).
+     * The kinds a COMPLETE may end: the Baritone gathers whose hands count to n (cancel = Baritone's process stops). A
+     * craft / smelt never: the item job ends itself on its own observed state and a cancel there would cut its clicks
+     * (design 8, COMPLETE mid-job). 0.39.z74 item 3 (run AD 17:09:18-17:10:23: every "cut 1" ended "complete: 1 of 1 #logs"
+     * and left the tree floating): a chop never either - its job is the whole tree (the fork's ChopProcess ends itself when
+     * the tree is felled), the extra logs go to the bag for later steps (Job D's skip-ahead covers them).
      */
-    static boolean completes(Step s) { return s instanceof Step.Collect || s instanceof Step.ChopTree || s instanceof Step.HuntAt h && h.forItem() != null; }
+    static boolean completes(Step s) { return s instanceof Step.Collect || s instanceof Step.HuntAt h && h.forItem() != null; }
 
     // ---- the running step's bests ----
 
@@ -192,7 +194,9 @@ public final class StepMonitor {
             return cont("waiting on its own clock: " + sig.ownWait());
         }
         List<String> moved = new ArrayList<>();
-        double g = sig.goalDist();
+        // 0.39.z74 item 2 (run AC 16:54:07: 'place furnace near me: ... (goal 6906.7, best 6906.7)'): a placement's Baritone
+        // goal is the builder's own composite search over candidate cells, not a distance to anything the step does - left out
+        double g = kind == Kind.PLACE ? Double.NaN : sig.goalDist();
         if (!Double.isNaN(g)) {
             if (Double.isNaN(bestGoal) || !java.util.Objects.equals(sig.goalId(), bestGoalId)) {     // a goal appeared or another goal: its first value is the start
                 bestGoal = g;
@@ -245,7 +249,9 @@ public final class StepMonitor {
         if (completes(step) && t > 0 && sig.made() >= t)
             return new Look(Verdict.COMPLETE, "complete: " + sig.made() + " of " + t + " " + StepNeeds.sh(output(step)) + " in the bag", null);
         long fails = sig.calcFailed() - calcAtBest;
-        if (fails >= noPathFails() && !sig.executing())
+        // 0.39.z74 item 2: the builder's placeNear fails searches as part of its own pick of a cell (it ends with its own reason:
+        // 'no cell within N blocks', 'cannot reach: ...'), so a placement never gets the no-path verdict; its stall rule stays
+        if (kind != Kind.PLACE && fails >= noPathFails() && !sig.executing())
             return replan("Baritone found no path " + fails + " times from " + at(sig.feet()) + (Double.isNaN(g) ? "" : " (goal " + num(g) + ", best " + num(bestGoal) + ")") + ", nothing executing");
         long quiet = now - lastProgress;
         if (quiet >= stallTicks()) return replan("no progress " + quiet / 20 + " s: " + bests(sig));     // game fact: 20 ticks a second
