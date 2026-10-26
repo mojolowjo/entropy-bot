@@ -52,4 +52,23 @@ class Z77NoWayVerdictScanTest {
         String check = body(code, "private static Chain legNoWay(");
         assertTrue(check.contains("c.waited") && check.contains("waitsHere(") && check.contains("NOT_PRICED"), "legNoWay reads the ways dropped waiting: " + check);
     }
+
+    /**
+     * 0.39.z77 choose (run BW: an explore picked over a way still computing): the pick between ways lets an explore win only
+     * after it read every other way's answer - {@code choose} asks {@code noAnswerYet} of the ways when its winner is stuck,
+     * and that check covers both a failure that is a wait ({@code answerPending}) and a way that stands ({@code stands}).
+     */
+    @Test
+    void anExplorePickReadsTheOtherWaysAnswersFirst() throws IOException {
+        String code = Z76HeightmapReadsTest.code(Files.readString(NEED_CHAIN));
+        String choose = body(code, "private static Trial choose(");
+        assertFalse(choose.isEmpty(), "choose found");
+        int stuck = choose.indexOf("if (win.stuck() && !stands(win, stepsAt))"), restore = choose.indexOf("c.restore(win.after())");
+        assertTrue(stuck >= 0 && restore > stuck, "the explore check runs before the winner is taken: " + choose);
+        assertTrue(choose.substring(stuck, restore).contains("noAnswerYet("), "the explore check reads the other ways' answers");
+        String open = body(code, "private static boolean noAnswerYet(");
+        assertTrue(open.contains("answerPending(") && open.contains("stands("), "a wait and a stand are both no answer yet: " + open);
+        String waiting = body(code, "public boolean waiting(");
+        assertTrue(waiting.contains("answerPending("), "the chain's waiting states and the pick's are one predicate: " + waiting);
+    }
 }

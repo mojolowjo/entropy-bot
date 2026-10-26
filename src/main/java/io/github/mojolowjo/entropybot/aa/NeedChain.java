@@ -493,7 +493,7 @@ public final class NeedChain {
          * loot-book-bg: no way stands only because the loot book is still being read: no park, no explore; priced again when it
          * lands. 0.39.z41: or because a walk's path is not known yet / its chunks are not loaded ({@link PathPrice#NOT_KNOWN}).
          */
-        public boolean waiting() { return missing != null && (missing.startsWith(LootBook.WAITING) || missing.startsWith(PathPrice.NOT_KNOWN) || missing.endsWith(SOURCE_NOT_LOADED) || missing.startsWith(MINING_WAIT)); }
+        public boolean waiting() { return answerPending(missing); }
         /** The chain's price in seconds (the explore leg of an explore chain is in {@code cost}, not here). */
         public double seconds() { return Unit.seconds(cost); }
     }
@@ -1159,6 +1159,15 @@ public final class NeedChain {
                 || fail.startsWith(NOT_PRICED));
     }
 
+    /**
+     * 0.39.z77 choose: a way's failure that is no answer yet - the states a chain waits in ({@link Chain#waiting}): a walk not
+     * known (computing, queued, chunks not loaded), the loot book being read, a source's structure fact or the mining data not
+     * loaded (rule 15). Null or any other failure: a final answer.
+     */
+    static boolean answerPending(String fail) {
+        return fail != null && (fail.startsWith(LootBook.WAITING) || fail.startsWith(PathPrice.NOT_KNOWN) || fail.endsWith(SOURCE_NOT_LOADED) || fail.startsWith(MINING_WAIT));
+    }
+
     /** 0.39.z77 pending: between a leg's name and what it waits on, in a not-priced-yet reason ({@link #legNoWay}). */
     public static final String WAITS_ON = " waits on ";
 
@@ -1467,6 +1476,8 @@ public final class NeedChain {
      * horizon last), restores the winner's state and lists every other with its seconds, its loop or its "no known source".
      * Past {@code needChain.maxTrials} ways in one chain (the search's bound) the first way that stands ends the pricing.
      * Null: no way stands and none ends in an explore (every failure is in the dropped list); the caller makes the explore leaf.
+     * 0.39.z77 choose: an explore wins only against final answers - while another way has no answer yet the way that stands
+     * on its walks is taken, else null with that wait in {@code c.fail} (the caller stands, {@link #pathsWait}).
      */
     private static Trial choose(Ctx c, List<Alt> alts, String self) {
         if (alts.isEmpty()) return null;
@@ -1527,6 +1538,36 @@ public final class NeedChain {
             }
             return null;
         }
+        // 0.39.z77 choose (manager 2026-10-26 ~14:40 on run BW; cycle 5's open line; rule 15: an unknown is never a verdict): an
+        // explore wins only against ways with a final answer (priced, UNREACHABLE, held, dropped with a reason). While another
+        // way of this requirement has no answer yet - its walk computing or queued, chunks, the loot book or the mining data not
+        // loaded (answerPending), or it stands on such a walk itself - the pick is not priced yet: a way that stands is taken,
+        // else no way stands and the caller stands (pathsWait, rule 22) or waits with the reason; priced again when the answer
+        // lands. A priced way still wins at once (the winner is not stuck then). The two-stands bound (stoodHere: "stood at")
+        // turns the walks still not known into final drops, so this never waits for ever.
+        String heldBack = null;
+        if (win.stuck() && !stands(win, stepsAt)) {
+            List<Trial> open = new ArrayList<>();
+            for (Trial t : trials) if (t != win && noAnswerYet(t, stepsAt)) open.add(t);
+            if (!open.isEmpty()) {
+                heldBack = "): not picked while " + open.size() + " way" + (open.size() == 1 ? " has" : "s have") + " no answer yet ("
+                        + open.get(0).alt().label + (open.size() > 1 ? "; " + (open.size() - 1) + " more" : "") + "); priced again when an answer lands (rule 15)";
+                Trial stand = null;
+                for (Trial t : open) if (t.fail() == null && (stand == null || best.compare(t, stand) < 0)) stand = t;
+                if (stand == null) {
+                    for (Trial t : trials) {
+                        String why = t.fail() != null ? t.fail() : EXPLORE_HELD + shw(t.unknown()) + heldBack;
+                        drop(c, t.alt().label, why);
+                        verdict(nodes, t, "dropped: " + why);
+                    }
+                    for (Trial t : open) if (t.fail().startsWith(PathPrice.NOT_KNOWN)) { c.fail = t.fail(); break; }
+                    if (c.fail == null) c.fail = open.get(0).fail();
+                    c.pathsWaiting = (int) open.stream().filter(t -> t.fail().startsWith(PathPrice.NOT_KNOWN)).count();
+                    return null;
+                }
+                win = stand;
+            }
+        }
         c.restore(win.after());
         verdict(nodes, win, "picked" + (win.stuck() ? " (ends in an explore)" : ": " + s(win.seconds())));
         // dropped-audit (0.39.z16): every way not chosen is listed, a way ending in an explore too (it was left out when the
@@ -1535,6 +1576,7 @@ public final class NeedChain {
             if (t == win) continue;
             String why;
             if (t.fail() != null) why = t.fail();
+            else if (heldBack != null && t.stuck() && !stands(t, stepsAt)) why = EXPLORE_HELD + shw(t.unknown()) + heldBack;
             else if (t.stuck()) why = "no known source for " + shw(t.unknown()) + (win.stuck() ? " (the explore ends when one is known too)" : "");
             else if (t.alt().rate != null) why = s(t.seconds()) + String.format(Locale.ROOT, ", %.2f s a point with the eating (dearer a point than %s, %.2f)", t.alt().value(t.seconds()), win.alt().label, win.alt().value(win.seconds()));
             else why = s(t.seconds()) + " (dearer than " + win.alt().label + (t.seconds() > horizonS ? ", past the horizon" : "") + ")";
@@ -1552,6 +1594,21 @@ public final class NeedChain {
         }
         if (win.stuck()) widenExplore(c, stepsAt, trials, win);
         return win;
+    }
+
+    /** 0.39.z77 choose: the start of the dropped reason of an explore held back while another way has no answer yet. */
+    public static final String EXPLORE_HELD = "ends in an explore (no known source for ";
+
+    /** 0.39.z77 choose: the trial stands on walks still computing (its steps since {@code base} hold the standing step). */
+    private static boolean stands(Trial t, int base) {
+        List<Step> st = t.after().steps();
+        for (int i = Math.max(0, base); i < st.size(); i++) if (st.get(i) instanceof Step.AwaitPaths) return true;
+        return false;
+    }
+
+    /** 0.39.z77 choose: the way has no final answer yet - it failed waiting ({@link #answerPending}) or it stands ({@link #stands}). */
+    private static boolean noAnswerYet(Trial t, int base) {
+        return t.fail() != null ? answerPending(t.fail()) : t.stuck() && stands(t, base);
     }
 
     /** aa debug: the trial's verdict on its node (nothing outside a trace). */
@@ -4190,7 +4247,8 @@ public final class NeedChain {
         }
         Trial win = choose(c, alts, null);
         if (win == null) {
-            if (c.fail == null || !c.fail.startsWith(PathPrice.NOT_KNOWN)) c.fail = "no pickaxe of tier " + tier + " can be had to dig" + (alts.isEmpty() ? ": none in the game data can be crafted" : "");
+            // 0.39.z77 choose: any wait choose returns stays a wait (rule 15), never "no pickaxe"
+            if (c.fail == null || !answerPending(c.fail)) c.fail = "no pickaxe of tier " + tier + " can be had to dig" + (alts.isEmpty() ? ": none in the game data can be crafted" : "");
             return null;
         }
         c.pickItem = win.alt().id;
