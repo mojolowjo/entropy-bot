@@ -15,6 +15,12 @@ import java.util.Set;
 public final class AskSweep {
     private AskSweep() {}
 
+    /** 0.39.z76: the prefix of an ask whose feet end IN the cell (a band walk, GoalBlock), not by it. */
+    public static final String INTO = "in:";
+
+    /** 0.39.z76: an ask's goal key - "x,y,z" (stand by the block), "in:x,y,z" (the feet in the cell); the running walk uses the same. */
+    public static String key(int x, int y, int z, boolean into) { return (into ? INTO : "") + x + "," + y + "," + z; }
+
     /** One pending ask: its goal key ("x,y,z") and the feet cell it was asked from (null: not known). */
     public record Ask(String key, int[] from) {}
 

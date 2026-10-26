@@ -154,7 +154,7 @@ public final class LivePathPrice implements PathPrice {
             if (mc == null || mc.player == null || b == null) return;
             java.util.List<AskSweep.Ask> open = new java.util.ArrayList<>();
             for (var e : pending.entrySet()) if (!e.getValue().future().isDone()) open.add(new AskSweep.Ask(e.getKey(), e.getValue().from()));
-            String run = runningTold == null ? null : runningTold.getX() + "," + runningTold.getY() + "," + runningTold.getZ();
+            String run = runningTold;                    // z76 review: the running walk by its own key ("in:x,y,z" for a band walk)
             swept = true;                                // review: the window turns in its own sweep (asks of the last two windows kept)
             for (String key : window.sweep(open, Jobs.here(mc.player), io.github.mojolowjo.entropybot.aa.brain.Failures.movedV(), run)) {
                 boolean out;
@@ -241,7 +241,7 @@ public final class LivePathPrice implements PathPrice {
     }
 
     /** 0.39.z58: the running step's walk target last told to the fork (null: none), compared so the fork is told on a change. */
-    private BlockPos runningTold;
+    private String runningTold;
     private boolean runningSet;
     /** 0.39.z58 review 3: the fork instance it was told to (identity). */
     private Object runningFork;
@@ -251,23 +251,30 @@ public final class LivePathPrice implements PathPrice {
      * fork's queue gives its price the first slot (and the pathCost.reserveForRunning ones). Told on a change only; game thread.
      * The scorer still picks the way (rule 1): this only orders searches.
      */
-    public void running(BlockPos at) {
+    public void running(BlockPos at) { running(at, false); }
+
+    /**
+     * 0.39.z76 review (the band walk is keyed "in:x,y,z" and walked with GoalBlock): {@code into} - the running walk's feet end
+     * IN the cell; the fork is told that goal ({@link #goalOf}) and the sweep spares that key, as the ask itself is keyed.
+     */
+    public void running(BlockPos at, boolean into) {
         if (!PathPrice.pricedPathOn()) return;
         IBaritone b = Jobs.baritone();
         if (b == null) return;
         // review 3: told again when the fork instance changed (a world change or reconnect gives a new Baritone)
         Object fork = b.getPricedPath();
-        if (runningSet && fork == runningFork && java.util.Objects.equals(at, runningTold)) return;
+        String k = at == null ? null : key(at.getX(), at.getY(), at.getZ(), into);
+        if (runningSet && fork == runningFork && java.util.Objects.equals(k, runningTold)) return;
         try {
-            b.getPricedPath().runningGoal(at == null ? null : goal(at));
+            b.getPricedPath().runningGoal(k == null ? null : goalOf(k));
         } catch (LinkageError e) {
             none("this Baritone has no IPricedPath.runningGoal (an older fork? install the entropy fork z58): " + e);
             return;
         }
-        runningTold = at;
+        runningTold = k;
         runningFork = fork;
         runningSet = true;
-        LOG.debug("[entropybot] path queue: the running step's walk is {}", at == null ? "none" : at.toShortString());
+        LOG.debug("[entropybot] path queue: the running step's walk is {}", k == null ? "none" : k);
     }
 
     /** 0.39.z58 item 1: a new order (aa want) - the fork's "not answered yet in this order" class starts again. Game thread. */
@@ -410,9 +417,9 @@ public final class LivePathPrice implements PathPrice {
     public static baritone.api.pathing.goals.GoalBlock into(BlockPos pos) { return new baritone.api.pathing.goals.GoalBlock(pos); }
 
     /** 0.39.z76 send-back 2: the ask's key: "x,y,z" (stand by), "in:x,y,z" (feet in the cell). */
-    static String key(int x, int y, int z, boolean into) { return (into ? INTO : "") + x + "," + y + "," + z; }
+    static String key(int x, int y, int z, boolean into) { return AskSweep.key(x, y, z, into); }
 
-    private static final String INTO = "in:";
+    private static final String INTO = AskSweep.INTO;
 
     static BlockPos posOf(String key) {
         String[] q = (key.startsWith(INTO) ? key.substring(INTO.length()) : key).split(",");

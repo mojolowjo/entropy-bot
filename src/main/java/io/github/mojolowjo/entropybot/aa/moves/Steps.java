@@ -901,6 +901,23 @@ public final class Steps {
 
     public long runId() { return runId; }
 
+    /** 0.39.z76 review: the walk the run does or does next - its cell and whether the feet end IN it (a band walk). */
+    public record Ahead(int[] cell, boolean into) {}
+
+    /**
+     * 0.39.z76 review (the band walk is keyed "in:x,y,z" and walked with GoalBlock, so it had neither the fork's queue
+     * priority nor the sweep's protection): the running ToBand step's cell - the feet's column at the band's nearest Y from
+     * where the step started (as StepHands computes it), feet IN it - else {@link #walkAhead}'s stand-by walk. Null: none.
+     */
+    public Ahead ahead() {
+        if (phase != Phase.RUNNING || idx < 0 || idx >= steps.size()) return null;
+        if (steps.get(idx) instanceof Step.ToBand t && startFeet != null && startFeet.length >= 3            // structural: x y z
+                && (startFeet[1] < t.minY() || startFeet[1] > t.maxY()))
+            return new Ahead(new int[]{startFeet[0], t.target(startFeet[1]), startFeet[2]}, true);
+        int[] w = walkAhead(steps, idx);
+        return w == null ? null : new Ahead(w, false);
+    }
+
     public static int[] walkAhead(List<? extends Step> steps, int idx) {
         if (steps == null || idx < 0) return null;
         for (int i = idx; i < steps.size(); i++) {

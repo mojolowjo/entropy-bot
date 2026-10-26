@@ -68,10 +68,15 @@ public final class SightingsRuntime {
         }
     }
 
-    /** Under a roof: the bot's column's surface is 3+ above its eyes (in a cave, a mine or a house). */
+    /**
+     * Under a roof: the bot's column's surface is 3+ above its eyes (in a cave, a mine or a house). 0.39.z76 surface: read
+     * through the one surface answer (Jobs.surfaceNoLeaves; MOTION_BLOCKING_NO_LEAVES reads -64 on the client, so this was
+     * never true); not known (rule 15): no roof is assumed - the rays run as they did.
+     */
     static boolean roofed(ClientLevel level, LocalPlayer p) {
         BlockPos b = p.blockPosition();
-        return level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, b.getX(), b.getZ()) > p.getEyeY() + 3;
+        int s = io.github.mojolowjo.entropybot.commands.Jobs.surfaceNoLeaves(level, b.getX(), b.getZ());
+        return io.github.mojolowjo.entropybot.world.SurfaceHeight.known(s) && s > p.getEyeY() + 3;
     }
 
     private long mouthRays, mouthsSeen, mouthsGone;
@@ -300,15 +305,18 @@ public final class SightingsRuntime {
             if (!level.isLoaded(a) || eye.distanceToSqr(a.getCenter()) < 16) continue;
             boolean air2 = level.getBlockState(a).isAir() && level.getBlockState(a.above()).isAir();
             if (!air2) continue;
-            int surf = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, a.getX(), a.getZ());
+            // 0.39.z76 surface: the one surface answer (NO_LEAVES read -64 here: "dark" never held); not known: no judgement (rule 15)
+            int surf = io.github.mojolowjo.entropybot.commands.Jobs.surfaceNoLeaves(level, a.getX(), a.getZ());
+            if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(surf)) continue;
             int[] side = null;
             if (a.getY() >= surf - 1) {
                 side = new int[]{Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
                 for (int d = 1; d <= 5; d++) {
-                    side[0] = Math.max(side[0], level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, a.getX() - d, a.getZ()));
-                    side[1] = Math.max(side[1], level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, a.getX() + d, a.getZ()));
-                    side[2] = Math.max(side[2], level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, a.getX(), a.getZ() - d));
-                    side[3] = Math.max(side[3], level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, a.getX(), a.getZ() + d));
+                    // z76 surface: a side column not known stays NOT_KNOWN (MIN_VALUE): it never counts as ground 6+ higher
+                    side[0] = Math.max(side[0], io.github.mojolowjo.entropybot.commands.Jobs.surfaceNoLeaves(level, a.getX() - d, a.getZ()));
+                    side[1] = Math.max(side[1], io.github.mojolowjo.entropybot.commands.Jobs.surfaceNoLeaves(level, a.getX() + d, a.getZ()));
+                    side[2] = Math.max(side[2], io.github.mojolowjo.entropybot.commands.Jobs.surfaceNoLeaves(level, a.getX(), a.getZ() - d));
+                    side[3] = Math.max(side[3], io.github.mojolowjo.entropybot.commands.Jobs.surfaceNoLeaves(level, a.getX(), a.getZ() + d));
                 }
             }
             boolean own = pr.dug(pdim, a.getX(), a.getY(), a.getZ()) || pr.dug(pdim, a.getX(), a.getY() + 1, a.getZ())

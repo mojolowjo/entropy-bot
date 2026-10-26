@@ -182,6 +182,8 @@ final class DigCommands {
             LOG.warn("[entropybot] climb: surface at {} {}: {}", x, z, e.toString());
             return "error: I can't read the ground over me (" + e + ") - next: dig stairs up <dir> <n>";
         }
+        // 0.39.z76 surface (rule 15): the surface over the column not known - said, never planned from y -64
+        if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(surface)) return "error: the ground over me is not known (the client's chunk has no heightmap data) - next: dig stairs up <dir> <n>";
         // 0.30.5 (trial 9, finding 4): two failed climbs here in a row - the third digs plain stairs up toward the camp
         CLIMB_FAILS.ended(c.chainsRef().takeEnd("climb"));
         if (ClimbFallback.fallback(CLIMB_FAILS.fails(here))) return climbFallback(c, p, here, surface, from);

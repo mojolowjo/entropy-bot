@@ -108,17 +108,16 @@ public final class Jobs {
      * WORLD_SURFACE heightmaps (MOTION_BLOCKING_NO_LEAVES read -64 live, so the dig-out never counted as underground):
      * walk down from MOTION_BLOCKING past leaves. Vanilla API only (Heightmap, BlockTags.LEAVES).
      */
-    static int surfaceNoLeaves(net.minecraft.world.level.Level level, int x, int z) {
-        int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, x, z) - 1;
-        int min = level.getMinBuildHeight();
-        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos(x, y, z);
-        while (y > min) {
-            m.setY(y);
-            var st = level.getBlockState(m);
-            if (!st.is(net.minecraft.tags.BlockTags.LEAVES) && st.blocksMotion()) break;
-            y--;
-        }
-        return y + 1;
+    public static int surfaceNoLeaves(net.minecraft.world.level.Level level, int x, int z) {
+        // 0.39.z76 surface: the one answer for every caller (world.SurfaceHeight); rule 15: not loaded or no heightmap data
+        // in the client's chunk -> SurfaceHeight.NOT_KNOWN, never the bottom of the world
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos(x, 0, z);
+        return io.github.mojolowjo.entropybot.world.SurfaceHeight.noLeaves(level.hasChunk(x >> 4, z >> 4),
+                level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, x, z), level.getMinBuildHeight(), y -> {
+                    m.setY(y);
+                    var st = level.getBlockState(m);
+                    return st.is(net.minecraft.tags.BlockTags.LEAVES) || !st.blocksMotion();
+                });
     }
 
     /** 0.28.1 (trial fix A): one cell for SurfaceRule, from the level (vanilla BlockState/BlockTags only). */
@@ -784,8 +783,17 @@ public final class Jobs {
     /** 0.34.3: the shared under-ground rule at a cell (RestoreRules.underDepth over the leaf-free surface): depth or 0. */
     public static int underDepth(net.minecraft.world.level.Level lv, int x, int y, int z) {
         int surface = surfaceNoLeaves(lv, x, z);
+        // 0.39.z76 surface (rule 15): the surface not known - the sky test alone decides, and the reason is said once
+        if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(surface)) {
+            if (SURFACE_UNKNOWN_SAID.add((x >> 4) + "," + (z >> 4)))
+                LOG.info("[entropybot] surface over {} {} not known (the client's chunk has no heightmap data): under ground only if the sky is not seen", x, z);
+            return lv.canSeeSky(new BlockPos(x, y + 1, z)) ? 0 : 1;
+        }
         return RestoreRules.underDepth(lv.canSeeSky(new BlockPos(x, y + 1, z)), surface, y);
     }
+
+    /** 0.39.z76 surface: the chunks whose unknown surface was said (once each). */
+    private static final java.util.Set<String> SURFACE_UNKNOWN_SAID = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     /** 0.32.3: "plan go": a plain walk to the plan's end; onJob gets the job id before the goal is set. */
     String startPlanGo(int[] e, String from, java.util.function.LongConsumer onJob) {

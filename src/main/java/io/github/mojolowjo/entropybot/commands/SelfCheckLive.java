@@ -120,7 +120,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
                 boolean sky = me.level().canSeeSky(new net.minecraft.core.BlockPos(x, y + 1, z));
                 Clearing.LiveWorld lw = new Clearing.LiveWorld();
                 lw.set(me);
-                if (ClimbPlan.inHole(y, surface, sky) && ClimbPlan.depth(y, surface) <= ClimbPlan.hintMax()
+                if (io.github.mojolowjo.entropybot.world.SurfaceHeight.known(surface) && ClimbPlan.inHole(y, surface, sky) && ClimbPlan.depth(y, surface) <= ClimbPlan.hintMax()
                         && !ClimbPlan.indoors(lw, x, y, z, ClimbPlan.depth(y, surface))) f.add(new SelfCheck.Finding("hole", "I'm in a hole (rim " + ClimbPlan.depth(y, surface) + " above me)", "climb"));
                 com.google.gson.JsonObject camp = Core.INSTANCE.knowledge.places().get("camp");
                 if (camp != null && camp.has("x") && Jobs.dimOf(camp).equals(io.github.mojolowjo.entropybot.guard.Guard.dimOf(me.level()))) {

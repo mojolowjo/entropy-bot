@@ -576,6 +576,7 @@ public final class AaRuntime implements JobPort {
                 m.set(x, 0, z);
                 if (!lv.isLoaded(m)) continue;
                 int y = Jobs.surfaceNoLeaves(lv, x, z);       // 0.39.z76 send-back 2: the client has no MOTION_BLOCKING_NO_LEAVES (read -64)
+                if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(y)) continue;     // z76 surface: not known is no cell (rule 15)
                 double d = Math.sqrt(Jobs.distSq(me, new int[]{x, y, z}));
                 m.set(x, y, z);
                 if (d >= best[0] || !lv.canSeeSky(m) || !openCell(lv, x, y, z) || !openCell(lv, x, y + 1, z)) continue;     // review: no roof (the Nether)
@@ -608,6 +609,7 @@ public final class AaRuntime implements JobPort {
         // 0.39.z76 send-back 2 (runs AK, AL, AO: every "surface at x -64 z: unreachable" - the walk up aimed at the bottom of the
         // world, so no surface explore ever walked up first): the client keeps only MOTION_BLOCKING / WORLD_SURFACE (Jobs.surfaceNoLeaves)
         int top = Jobs.surfaceNoLeaves(lv, me[0], me[2]);
+        if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(top)) return null;     // z76 surface (rule 15): not known, never y -64
         return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(depth, me[0], top, me[2], Math.abs(top - me[1]));
     }
 
@@ -2162,8 +2164,9 @@ public final class AaRuntime implements JobPort {
             orderRunTold = st.runId();
             LivePathPrice.INSTANCE.orderStarted();
         }
-        int[] w = typedRun && st.running() ? io.github.mojolowjo.entropybot.aa.moves.Steps.walkAhead(st.steps(), st.index()) : null;
-        LivePathPrice.INSTANCE.running(w == null ? null : new net.minecraft.core.BlockPos(w[0], w[1], w[2]));
+        // 0.39.z76 review: the running band walk too (feet IN its cell, keyed "in:x,y,z" as its ask)
+        var w = typedRun && st.running() ? st.ahead() : null;
+        LivePathPrice.INSTANCE.running(w == null ? null : new net.minecraft.core.BlockPos(w.cell()[0], w.cell()[1], w.cell()[2]), w != null && w.into());
         LivePathPrice.INSTANCE.sweep();          // 0.39.z76 J3-mod item 2: withdraw the asks nobody wants (ranked out / the bot left their start)
     }
 
@@ -2666,8 +2669,8 @@ public final class AaRuntime implements JobPort {
     /** The surface's y at x z (leaves skipped, Jobs.surfaceNoLeaves), MIN_VALUE when the chunk is not loaded. */
     private static int surfaceY(int x, int z) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null || !mc.level.hasChunk(x >> 4, z >> 4)) return Integer.MIN_VALUE;
-        return Jobs.surfaceNoLeaves(mc.level, x, z);       // 0.39.z76 send-back 2: the client heightmaps (NO_LEAVES reads -64 there)
+        if (mc.level == null) return Integer.MIN_VALUE;
+        return Jobs.surfaceNoLeaves(mc.level, x, z);       // 0.39.z76 surface: the client heightmaps; not loaded / no data: MIN_VALUE (SurfaceHeight.NOT_KNOWN)
     }
 
     private int torchMemo;
