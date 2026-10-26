@@ -87,13 +87,48 @@ class Z77ExploreTest {
         assertEquals(FakePaths.walkS(48) + NeedChain.exploreS(), c.seconds(), 0.1, "the walk up and the explore's honest price: " + c.why());
     }
 
-    /** No walk up to be had (no path up): no explore from down here at all - the way fails with the rule-22 reason (said). */
+    /**
+     * Answers (2): deep, the walk up unreachable, a stone pickaxe and 20 cobblestone in the bag: the climb way runs (the climb
+     * verb's own row: 48 x rungOptions.climbBlock 3 + climbFix 10 = 154 walk-blocks = 35.67 s), then the surface explore.
+     */
     @Test
-    void e2c_noWalkUp_noExploreThroughRock() {
-        Chain c = NeedChain.resolve("raw_iron", 3, deep(word -> null).withPath((x, y, z, d) -> PathPrice.Answer.unreachable("no path")));
-        assertFalse(c.ok(), c.why());
-        assertTrue(c.missing().startsWith(NeedChain.UNDER_GROUND), c.why());
-        assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Explore), c.steps().toString());
+    void e2c_walkUpFails_theClimbWithTheBagsBlocksRuns() {
+        var w = deep(word -> null).withPath((x, y, z, d) -> PathPrice.Answer.unreachable("no path"));
+        Chain c = NeedChain.resolve("raw_iron", 3, w.withBag(Map.of("minecraft:stone_pickaxe", 1, "minecraft:cobblestone", 20)));
+        assertTrue(c.ok() && c.explore(), c.why());
+        assertEquals(List.of(new Step.Climb(), new Step.Explore(NeedChain.exploreMinutes(), "raw_iron")), c.steps());
+        assertEquals((48 * 3 + 10) / Unit.WALK_BPS + NeedChain.exploreS(), c.seconds(), 0.1, c.why());
+        assertTrue(c.why().contains("climb up 48 with 20 blocks from the bag and the stone_pickaxe"), c.why());
+        assertTrue(c.unreachable().containsKey("surface at -181 64 27"), "the walk up's fact is held as before: " + c.unreachable());
+    }
+
+    /** The climb failed too (held), or none to be had (no pickaxe, too few blocks): only then the stop, with both reasons. */
+    @Test
+    void e2c_theStopComesOnlyAfterTheClimb_withBothReasons() {
+        var w = deep(word -> null).withPath((x, y, z, d) -> PathPrice.Answer.unreachable("no path"));
+        FactChange.climb("the climb's chain ended: no way up");
+        FactChange.Fact f = FactChange.take();
+        Chain held = NeedChain.resolve("raw_iron", 3, w.withoutSources(Map.of(f.key().substring("source ".length()), f.text())));
+        assertFalse(held.ok(), held.why());
+        assertTrue(held.missing().startsWith(NeedChain.UNDER_GROUND) && held.missing().contains("the walk up: surface at -181 64 27")
+                && held.missing().contains("the climb: climb up: the climb up failed"), held.missing());
+        Chain none = NeedChain.resolve("raw_iron", 3, w.withBag(Map.of("minecraft:cobblestone", 20)));
+        assertFalse(none.ok(), none.why());
+        assertTrue(none.missing().contains("no climb either: no pickaxe and 20 blocks in the bag for 48 up"), none.missing());
+        assertTrue(none.steps().stream().noneMatch(s -> s instanceof Step.Explore || s instanceof Step.Climb), none.steps().toString());
+    }
+
+    /** Review 6 (E0's bound): two stands in a row at one cell, the re-plan a stand again: no third stand, the run ends with the reason. */
+    @Test
+    void e0_noThirdStandAtOneCell() {
+        Z76StandTest.FeetHands h = new Z76StandTest.FeetHands();
+        Steps run = new Steps(h);
+        run.start("goal.chestplate", List.of(new Step.AwaitPaths(30)), 0, (failed, fact, why) -> new Steps.Routine(List.of(new Step.AwaitPaths(30)), null));
+        Z76StandTest.tick(run, h, 20 * 30 * 3);
+        assertFalse(run.running());
+        assertEquals(2, h.started.size(), "two stands, never a third: " + h.started);
+        assertTrue(run.why().contains("no third stand there"), run.why());
+        assertArrayEquals(new int[]{0, 64, 0}, h.feet, "zero movement");
     }
 
     /** (b) at runtime: from under ground only the cave cells IN the target's band are targets (a cell goal); none: no target. */

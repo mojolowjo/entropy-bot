@@ -366,7 +366,7 @@ class Z76SendBack4Test {
         String[] why = {null};
         int s = firstReplan(looks(false), why);
         assertTrue(s > 30 && s <= 75, "AV: 60 s in; here " + s + " s");
-        assertTrue(why[0].startsWith("no progress 30 s: the goal 3.6 (best 3.6"), why[0]);
+        assertTrue(why[0].startsWith("no progress 30 s: the goal heuristic 3.6 (best 3.6"), why[0]);
         assertTrue(why[0].contains("no block broken"), why[0]);
     }
 

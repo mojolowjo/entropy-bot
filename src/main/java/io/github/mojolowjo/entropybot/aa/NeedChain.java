@@ -1182,10 +1182,17 @@ public final class NeedChain {
         else if (!firstLeg) c.down = "the playbook's descent to y " + y;
         else c.away = walkS;
         for (var e : gains.entrySet()) c.bag.merge(e.getKey(), e.getValue(), Integer::sum);
+        // 0.39.z77 answers (2): the tunnel's own blocks come with the bot (the host's drop by the loot data, one a break): the
+        // descent carries the blocks the climb back up and a furnace down there take (Deposit handles a full bag)
+        String hostDrop = c.w.loot() == null ? host : null;
+        if (c.w.loot() != null) for (LootBook.Source d : c.w.loot().blockDrops(host)) if (d.per() > 0) { hostDrop = d.item(); break; }
+        int carried = tunnelBreaks + walkBreaks;
+        if (hostDrop != null && carried > 0) c.bag.merge(id(hostDrop), carried, Integer::sum);
         int n = legs.size() / io.github.mojolowjo.entropybot.aa.brain.Goals.stripLoop(whole).size();
         final String line = "descent to y " + y + " (" + leg.whyY() + "): one strip of " + String.join(", ", ores.stream().map(NeedChain::shw).toList()) + " for "
                 + String.join(" + ", parts) + (n > 1 ? " in " + n + " legs (steps.stepMaxS " + Math.round(Tuning.get("steps.stepMaxS")) + " s each)" : "")
-                + ", walk " + s(walkS) + walkNote + " -> " + s(walkS + digS);
+                + ", walk " + s(walkS) + walkNote + " -> " + s(walkS + digS)
+                + (hostDrop != null && carried > 0 ? "; carries " + carried + " " + sh(id(hostDrop)) + " (the tunnel's: the climb back's blocks)" : "");
         c.note(() -> line);
         String out = line + (pre == null ? "" : " with " + pre) + (spare == null ? "" : " + " + spare);
         return wk == null ? out : noted(out, wk);
@@ -3602,7 +3609,8 @@ public final class NeedChain {
         if (under && !(where != null && where.surface())) {
             String up = surfaceWalk(c);
             if (up == null && c.fail != null) return null;      // the walk up waits on its path (rule 18)
-            if (up == null) { c.fail = noWalkUp(over); return null; }
+            if (up == null) up = climbUp(c, over);           // 0.39.z77 answers (2): the climb with the bag's blocks, priced
+            if (up == null) return null;
             c.steps.add(new Step.Explore(exploreMinutes(), shw(word)));
             c.stuck = true;
             if (c.unknown == null) c.unknown = word;
@@ -3621,7 +3629,7 @@ public final class NeedChain {
             whereText = "on the surface (" + where.text() + ")";
             upText = surfaceWalk(c);
             if (upText == null && c.fail != null) return null;  // the walk up waits on its path (rule 18): the way waits, no explore
-            if (upText == null && under) { c.fail = noWalkUp(over); return null; }     // 0.39.z77 J2 E2: never an explore through rock
+            if (upText == null && under) { upText = climbUp(c, over); if (upText == null) return null; }     // 0.39.z77 J2 E2 / answers (2): never an explore through rock
         } else if (where != null && where.band()) {
             // a band the ore placements did not give (a geode, an underground lake): the fact's own band, unless held
             if (band == null && !heldKey(c, io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(where.lo(), where.hi()))) band = new int[]{where.lo(), where.hi()};
@@ -3664,6 +3672,46 @@ public final class NeedChain {
     static String noWalkUp(Surface over) {
         return "under ground (" + over.depth() + " blocks over the feet) and no priced walk up to the surface (held for this order, no path up, or not known):"
                 + " an explore from here would aim through rock (rule 22)";
+    }
+
+    /** 0.39.z77 answers (2): the source key a failed climb holds for the order (FactChange.climb). */
+    public static final String CLIMB_KEY = "climb up";
+
+    /** The reason of the first held key starting with {@code prefix} ("key: why" -> the whole line), null: none. */
+    private static String heldLine(Ctx c, String prefix) {
+        if (c.w.held() == null) return null;
+        for (String h : c.w.held()) if (h.startsWith(prefix)) return h;
+        return null;
+    }
+
+    /**
+     * 0.39.z77 answers (2) (manager 2026-10-26: "walk up failed" is followed by "climb with N blocks from the bag" as a way):
+     * under ground with no priced walk up (held for the order or unreachable), the climb verb's way up (Step.Climb: Baritone's
+     * staircase with the pickaxe in hand, or a pillar of the bag's blocks) - priced as the climb verb's own row (depth x
+     * rungOptions.climbBlock + rungOptions.climbFix walk-blocks, RungOptions). It stands with a pickaxe in hand or blocks for
+     * every level. A climb that failed in this order ({@link #CLIMB_KEY} held), or none to be had: no way, with both reasons
+     * (rule 7). Returns the phrase with the step added; null with {@code c.fail}.
+     */
+    private static String climbUp(Ctx c, Surface over) {
+        String walk = heldLine(c, SURFACE_AT);
+        if (walk == null) for (var e : c.unreachable.entrySet()) if (e.getKey().startsWith(SURFACE_AT)) { walk = e.getKey() + ": " + e.getValue(); break; }
+        if (walk == null) walk = "no priced walk up";
+        String climbed = heldLine(c, CLIMB_KEY);
+        int blocks = 0;
+        for (var e : c.bag.entrySet()) if (c.have(e.getKey()) > 0 && ItemWorth.stoneLike(e.getKey())) blocks += c.have(e.getKey());
+        boolean pick = c.pickTier >= 1;      // structural: any pickaxe (the bot's tier scale: 1 = the least pickaxe)
+        if (climbed != null) { c.fail = noWalkUp(over) + " - the walk up: " + walk + "; the climb: " + climbed; return null; }
+        if (!pick && blocks < over.depth()) {
+            c.fail = noWalkUp(over) + " - the walk up: " + walk + "; no climb either: no pickaxe and " + blocks + " blocks in the bag for " + over.depth() + " up";
+            return null;
+        }
+        double sec = Unit.seconds(over.depth() * RungOptions.climbBlock() + RungOptions.climbFix());
+        c.steps.add(new Step.Climb());
+        c.seconds += sec;
+        final String line = "climb up " + over.depth() + " with " + Math.min(blocks, over.depth()) + " blocks from the bag" + (pick ? " and the " + sh(c.pickItem) : "")
+                + ": " + s(sec) + " (the walk up out: " + walk + ")";
+        c.note(() -> line);
+        return line;
     }
 
     /** 0.39.z77 J2 E2: the start of {@link #noWalkUp}'s reason. */

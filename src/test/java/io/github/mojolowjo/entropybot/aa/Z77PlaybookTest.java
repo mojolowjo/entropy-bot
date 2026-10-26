@@ -384,6 +384,86 @@ class Z77PlaybookTest {
         assertFalse(Goals.chain(bb, gs.get(1)).why().startsWith(NeedChain.PLAYBOOK), "playbook.on 0: the ad-hoc chain only");
     }
 
+    static Blackboard batchBoard(FakePort port, Clock.Fake clock, java.util.function.Supplier<World> w, List<Goals.Goal> gs) {
+        Blackboard bb = new Blackboard(clock, port, new Tracer());
+        bb.fact(NeedChain.WORLD_FACT, w);
+        bb.in.bag = Map.of();
+        bb.in.pos = new int[]{0, 64, 0};
+        for (Target t : KIT) {
+            Goals.Goal g = Goals.add(bb, item(t.item().substring("minecraft:".length())), t.n(), 0, clock.now());
+            g.batch = "b1";
+            gs.add(g);
+        }
+        return bb;
+    }
+
+    /**
+     * Answers (1) (manager: the batch's run carries on): the iron pickaxe's order runs the playbook; its "got" comes at leg 3
+     * (the pickaxe crafted). That is a fact inside the run, not its end: the order carries on (its score kept, its desire not
+     * removed - Goals.carriesOn), a landed price re-resolves nothing, and the same run says legs 4/5 and 5/5. No second
+     * comparison is priced.
+     */
+    @Test
+    void answers1_theBatchRunCarriesOnPastAnOrdersGot() {
+        data();
+        Clock.Fake clock = new Clock.Fake(10_000_000);
+        FakePort port = new FakePort();
+        World w = world(kitBag(9), Map.of());
+        List<Goals.Goal> gs = new ArrayList<>();
+        Blackboard bb = batchBoard(port, clock, () -> w, gs);
+        Goals.Goal pick = gs.get(1);
+        var rt = Goals.routine(bb, pick);
+        assertTrue(pick.playbookRun, "the pickaxe's order runs the batch's playbook");
+        Steps run = new Steps(new DoneHands());
+        run.start("goal.iron_pickaxe", rt.steps(), 0, Goals.replanner(bb, pick));
+        int crafted = -1;
+        for (int i = 0; i < rt.steps().size(); i++) if (rt.steps().get(i) instanceof Step.Craft k && k.item().equals("iron_pickaxe")) crafted = i;
+        int t = 0;
+        while (run.running() && port.told.stream().noneMatch(l -> l.startsWith("playbook leg 4/5")) && t < 500) run.tick(++t);
+        bb.in.bag = Map.of("iron_pickaxe", 1, "torch", 4);           // the pickaxe crafted: its order is met
+        assertTrue(crafted >= 0);
+        List<Goals.Goal> met = Goals.done(bb);
+        assertTrue(met.contains(pick), met.toString());
+        assertTrue(Goals.carriesOn(pick, pick.id()), "its run carries on");
+        assertTrue(Goals.score(bb, pick) > 0, "no interrupt by the batch's next order while its run goes on");
+        var kept = Goals.replan(bb, pick, rt.steps().get(0), FactChange.priced("walk to 0 16 0: 28.8 s, complete"), "landed");
+        assertNull(kept.steps(), "a landed price re-resolves nothing: " + kept.why());
+        while (run.running() && t < 1000) run.tick(++t);
+        assertEquals(LEG_LINES, port.told.stream().filter(l -> l.startsWith("playbook leg")).toList(), "the same run, its numbers kept");
+        assertEquals(1, port.log.stream().filter(l -> l.startsWith("chain | batch b1:")).count(), "one comparison: " + port.log);
+    }
+
+    /**
+     * Review 1 (R3): while a descent's path computes (the strip cells COMPUTING, paths pending) the verdict is not settled -
+     * still kept until the next answer lands: the order's chain asked again and its blocked() test every tick price no
+     * second comparison (no walk asked again); a landed answer makes the next ask compare again.
+     */
+    @Test
+    void review1_anUnsettledVerdictIsKeptUntilAnAnswerLands() {
+        data();
+        int[] asks = {0};
+        long[] landed = {0};
+        PathPrice pp = new PathPrice() {
+            @Override public Answer price(int x, int y, int z, double dist) {
+                asks[0]++;
+                return y < 60 ? Answer.computing("searching") : PATHS.price(x, y, z, dist);
+            }
+            @Override public boolean pending() { return true; }
+            @Override public long landed() { return landed[0]; }
+        };
+        World w = world(kitBag(9), Map.of()).withPath(pp);
+        List<Goals.Goal> gs = new ArrayList<>();
+        Blackboard bb = batchBoard(new FakePort(), new Clock.Fake(10_000_000), () -> w, gs);
+        Goals.chain(bb, gs.get(0));
+        int first = asks[0];
+        assertTrue(first > 0, "the first comparison asks the strips' walks");
+        for (int i = 0; i < 20; i++) { Goals.blocked(bb, gs.get(0)); Goals.chain(bb, gs.get(0)); }
+        assertEquals(first, asks[0], "20 ticks with paths pending: no second comparison");
+        landed[0]++;
+        Goals.chain(bb, gs.get(0));
+        assertTrue(asks[0] > first, "an answer landed: compared again");
+    }
+
     /** Hands whose every step is done at once. */
     static final class DoneHands implements Steps.Hands {
         @Override public String start(Step s) { return null; }

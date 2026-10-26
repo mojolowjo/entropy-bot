@@ -682,10 +682,13 @@ public final class StepHands implements Steps.Hands {
         if (climbEnd != null) {
             String m = climbEnd;
             climbing = false;
-            return m.startsWith("done") ? Car.Status.done(m) : Car.Status.failed("climb: " + m);
+            if (m.startsWith("done")) return Car.Status.done(m);
+            io.github.mojolowjo.entropybot.aa.moves.FactChange.climb(m);     // 0.39.z77 answers (2): the climb's own fact
+            return Car.Status.failed("climb: " + m);
         }
         if (c.chains.running() && "climb".equals(c.chains.name())) return Car.Status.running("climbing: " + c.chains.stepText());
         climbing = false;
+        io.github.mojolowjo.entropybot.aa.moves.FactChange.climb("its chain went without an end (stopped by someone)");
         return Car.Status.failed("climb: its chain went without an end (stopped by someone)");
     }
 

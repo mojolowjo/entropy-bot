@@ -43,8 +43,16 @@ public final class BatchWay {
     /** Tuning playbook.on (the J2 round's A/B switch). */
     public static boolean on() { return Tuning.get("playbook.on") > 0; }
 
-    /** One comparison: its key (null: not settled, asked again), the pick, the playbook, the line said. */
-    record Verdict(String key, boolean playbook, Playbook pb, String line) {}
+    /**
+     * One comparison: its key, the path answers landed when it was made ({@code landed}), whether neither row waited on a path
+     * ({@code settled}), the pick, the playbook, the line said. 0.39.z77 review 1 (R3): an unsettled verdict is kept too, for
+     * the same key until the next path answer lands (PathPrice#landed) - never a full comparison per tick while paths compute.
+     */
+    record Verdict(String key, long landed, boolean settled, boolean playbook, Playbook pb, String line) {
+        boolean holds(String k, long landedNow) { return key != null && key.equals(k) && (settled || landed == landedNow); }
+    }
+
+    private static long landed(NeedChain.World w) { return w.path() == null ? 0 : w.path().landed(); }
 
     private static final Map<String, Verdict> VERDICTS = new ConcurrentHashMap<>();
     private static final Map<String, String> SAID = new ConcurrentHashMap<>(), PICKED = new ConcurrentHashMap<>();
@@ -108,9 +116,9 @@ public final class BatchWay {
     static NeedChain.Chain cached(Blackboard bb, Goals.Goal g, NeedChain.World w) {
         if (g.batch == null) return null;
         Verdict v = VERDICTS.get(g.batch);
-        if (v == null || !v.playbook() || v.key() == null) return null;
+        if (v == null || !v.playbook()) return null;
         List<Goals.Goal> open = open(bb, g);
-        if (outWhy(bb, g, open) != null || !v.key().equals(verdictKey(bb, g, open, w))) return null;
+        if (outWhy(bb, g, open) != null || !v.holds(verdictKey(bb, g, open, w), landed(w))) return null;
         long t0 = TickLaps.AA.now();
         NeedChain.Legs l = NeedChain.resolvePlaybookLegs(v.pb(), w);
         if (t0 != 0) TickLaps.AA.playbook(TickLaps.AA.now() - t0);
@@ -126,11 +134,11 @@ public final class BatchWay {
         if (outWhy(bb, g, open) != null) return adhoc;
         String key = verdictKey(bb, g, open, w);
         Verdict v = VERDICTS.get(g.batch);
-        if (v != null && key.equals(v.key()) && !v.playbook()) return adhoc;
+        if (v != null && v.holds(key, landed(w)) && !v.playbook()) return adhoc;
         long t0 = TickLaps.AA.now();
         Result r = compare(bb, g, open, w);
         if (t0 != 0) TickLaps.AA.playbook(TickLaps.AA.now() - t0);
-        VERDICTS.put(g.batch, new Verdict(r.settled() ? key : null, r.playbook(), r.pb(), r.line()));
+        VERDICTS.put(g.batch, new Verdict(key, landed(w), r.settled(), r.playbook(), r.pb(), r.line()));
         if (!r.line().equals(SAID.get(g.batch))) {
             SAID.put(g.batch, r.line());
             if (bb.port != null) bb.port.log(r.line());

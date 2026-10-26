@@ -107,6 +107,15 @@ public final class FactChange {
         last = new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.exploreFrozenKey(feet), why);
     }
 
+    /**
+     * 0.39.z77 answers (2): the climb step (the climb verb's way up) ended short - a source fact keyed
+     * {@link io.github.mojolowjo.entropybot.aa.NeedChain#CLIMB_KEY}, held for the order: the re-plan then has no way up and the
+     * order stops with both reasons (the walk up's and this one), never an explore through rock.
+     */
+    public static void climb(String why) {
+        last = new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.CLIMB_KEY, "the climb up failed: " + why);
+    }
+
     /** 0.39.z76 send-back 2: a hand that caught a throw inside the running step says it ({@link #threwFact}), taken once. */
     public static void threw(Throwable e) { last = threwFact(e); }
 

@@ -209,7 +209,7 @@ public final class StepMonitor {
                 if (kind != Kind.EXPLORE) calcAtBest = sig.calcFailed();
             }
             else if (g <= bestGoal - 1) {                                       // structural: one block nearer
-                moved.add("the goal " + num(bestGoal - g) + " nearer, best " + num(g));
+                moved.add("the goal heuristic " + num(bestGoal - g) + " nearer, best " + num(g));
                 bestGoal = g;
                 bestGoalAt = now;
             }
@@ -256,7 +256,7 @@ public final class StepMonitor {
         // 0.39.z74 item 2: the builder's placeNear fails searches as part of its own pick of a cell (it ends with its own reason:
         // 'no cell within N blocks', 'cannot reach: ...'), so a placement never gets the no-path verdict; its stall rule stays
         if (kind != Kind.PLACE && fails >= noPathFails() && !sig.executing())
-            return replan("Baritone found no path " + fails + " times from " + at(sig.feet()) + (Double.isNaN(g) ? "" : " (goal " + num(g) + ", best " + num(bestGoal) + ")") + ", nothing executing", sig.feet());
+            return replan("Baritone found no path " + fails + " times from " + at(sig.feet()) + (Double.isNaN(g) ? "" : " (goal heuristic " + num(g) + ", best " + num(bestGoal) + "; Baritone's estimate, not metres)") + ", nothing executing", sig.feet());
         long quiet = now - lastProgress;
         if (quiet >= stallTicks()) return replan("no progress " + quiet / 20 + " s: " + bests(sig), sig.feet());     // game fact: 20 ticks a second
         stalled = moved.isEmpty();
@@ -281,7 +281,7 @@ public final class StepMonitor {
     /** Each signal with its best and when (seconds from the step's start): the stall's reason. */
     String bests(StepSignals sig) {
         List<String> p = new ArrayList<>();
-        p.add(Double.isNaN(sig.goalDist()) ? "no goal" : "the goal " + num(sig.goalDist()) + " (best " + num(bestGoal) + (bestGoalAt < 0 ? "" : " at " + sec(bestGoalAt)) + ")");
+        p.add(Double.isNaN(sig.goalDist()) ? "no goal" : "the goal heuristic " + num(sig.goalDist()) + " (best " + num(bestGoal) + (bestGoalAt < 0 ? "" : " at " + sec(bestGoalAt)) + ")");
         p.add("feet " + at(sig.feet()) + " (farthest " + num(bestFar) + " from the start" + (bestFarAt < 0 ? "" : " at " + sec(bestFarAt)) + ")");
         p.add(sig.made() < 0 ? "bag gain not known" : bestMadeAt < 0 ? "bag same (made " + sig.made() + ")" : "made " + sig.made() + " (best " + bestMade + " at " + sec(bestMadeAt) + ")");
         p.add(stageAt < 0 ? "no block broken" : "last break stage at " + sec(stageAt));
@@ -299,7 +299,7 @@ public final class StepMonitor {
         String verb = step == null ? "-" : Step.verb(step), text = step == null ? "-" : step.text();
         if (sig == null || !sig.loaded())
             return "t=" + now + " | " + verb + " " + text + " | " + l.v() + " - " + l.reason();
-        return "t=" + now + " feet " + at(sig.feet()) + " | " + verb + " " + text + " | " + l.v() + " | goal " + num(sig.goalDist()) + " best " + num(bestGoal)
+        return "t=" + now + " feet " + at(sig.feet()) + " | " + verb + " " + text + " | " + l.v() + " | goal heuristic " + num(sig.goalDist()) + " best " + num(bestGoal)
                 + (bestGoalAt < 0 ? "" : " at " + sec(bestGoalAt)) + " | made " + sig.made() + " | stage " + sig.destroyStage() + " | placed " + sig.placedCount()
                 + " | calcFailed " + (sig.calcFailed() - calcAtBest) + " | executing " + (sig.executing() ? "y" : "n") + " - " + l.reason();
     }

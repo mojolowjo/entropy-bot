@@ -102,6 +102,7 @@ public final class AaRuntime implements JobPort {
         bb.fact(io.github.mojolowjo.entropybot.aa.NeedChain.WORLD_FACT, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.NeedChain.World>) this::needWorld);
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.NOT_READY_FACT, (java.util.function.Supplier<String>) this::sensesNotReady);   // 0.39.z36
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.BatchWay.PER_SLAB_FACT, (java.util.function.BiFunction<String, Integer, Double>) this::perSlabAt);   // 0.39.z77 J2
+        io.github.mojolowjo.entropybot.aa.brain.BatchWay.clear();     // 0.39.z77 review 5: a new runtime's "b1" never inherits an old b1's verdict
         bb.fact(io.github.mojolowjo.entropybot.aa.FoodOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts>) this::foodFacts);
         NeedFacts.install(bb, this);          // round 4A N wiring: the station, bed, base and bag facts (O's sets)
         bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.STATS_FACT, tree.brain.stats);
@@ -743,13 +744,6 @@ public final class AaRuntime implements JobPort {
     }
 
     /**
-     * 0.39.z43: the strip facts of a need word (NeedChain.StripBand): the blocks that drop it (sourceBlocksOf: the loot data
-     * and its own block) that have a height-placed world-gen feature in this dimension ({@link #ORE_FEATURES}, read with the
-     * catalog), the band's best layer at or below the feet (OreBand.bestY; z75: the feet's own Y counts under ground), its expected ore per chunk, where the bot stands
-     * and faces, and the block the world has at that Y under the bot (loaded: its break is priced; else none, the ore's own).
-     * Null: no world-gen placement read (multiplayer), no player, or none of the blocks is placed at or below the feet.
-     */
-    /**
      * 0.39.z77 J2: a need word's ore a chunk slab at {@code y} (OreBand.perSlab over the feet column's features of the blocks
      * that drop it, the same read as {@link #strip}) - the playbook's one descent Y for several ores. NaN: no player, the
      * column's features not read, or none of the blocks placed here (rule 15: not known, never 0).
@@ -771,6 +765,13 @@ public final class AaRuntime implements JobPort {
         return fs.isEmpty() ? Double.NaN : io.github.mojolowjo.entropybot.aa.brain.OreBand.perSlab(fs, y);
     }
 
+    /**
+     * 0.39.z43: the strip facts of a need word (NeedChain.StripBand): the blocks that drop it (sourceBlocksOf: the loot data
+     * and its own block) that have a height-placed world-gen feature in this dimension ({@link #ORE_FEATURES}, read with the
+     * catalog), the band's best layer at or below the feet (OreBand.bestY; z75: the feet's own Y counts under ground), its expected ore per chunk, where the bot stands
+     * and faces, and the block the world has at that Y under the bot (loaded: its break is priced; else none, the ore's own).
+     * Null: no world-gen placement read (multiplayer), no player, or none of the blocks is placed at or below the feet.
+     */
     io.github.mojolowjo.entropybot.aa.NeedChain.StripBand strip(String word) {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer p = mc.player;
@@ -3498,15 +3499,32 @@ public final class AaRuntime implements JobPort {
     /** Every 10 s while goals exist: the loot context refreshed, reached goals said and dropped (the chain prices the rest). */
     private boolean knownDue;
 
+    /** 0.39.z77 answers (1): met orders whose desire still runs their batch's playbook (removed once that run ends). */
+    private final java.util.Set<String> carrying = new java.util.LinkedHashSet<>();
+
     private void goalsTick(LocalPlayer p, long tick) {
         buildsTick(p, tick);
+        if (!carrying.isEmpty()) {
+            var run = tree.brain.runningDesire();
+            for (var it = carrying.iterator(); it.hasNext(); ) {
+                String id = it.next();
+                if (run != null && run.id.equals(id)) continue;
+                it.remove();
+                tree.brain.remove(id, "goal reached (its batch's playbook run ended)");
+            }
+        }
         var goals = io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb);
         if (goals.isEmpty()) return;
         if (tick % 200 != 7 && !knownDue) return;  // structural: periodic cadence in ticks (20 ticks = 1 s)
         knownDue = false;
         lootCtx();
         for (var g : io.github.mojolowjo.entropybot.aa.brain.Goals.done(bb)) {
-            tree.brain.remove(g.id(), "goal reached");
+            var run = tree.brain.runningDesire();
+            if (io.github.mojolowjo.entropybot.aa.brain.Goals.carriesOn(g, run == null ? null : run.id)) {
+                // 0.39.z77 answers (1): the "got" is a fact inside the batch's running playbook, not the end of its run
+                carrying.add(g.id());
+                LOG.info("[entropybot] aa: {}: met inside the batch's playbook run - the run carries on (its legs keep their numbers)", g.r.key());
+            } else tree.brain.remove(g.id(), "goal reached");
             String msg = "got " + io.github.mojolowjo.entropybot.aa.brain.Goals.have(bb.in.bag, g) + " " + g.r.key() + " (goal " + g.n + " done)";
             LOG.info("[entropybot] aa: {}", msg);
             c.whisper(c.owner(), "aa: " + msg);

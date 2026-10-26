@@ -125,7 +125,7 @@ class Z71StepMonitorTest {
         run(run, h, p, 30);
         assertEquals(List.of(17), p.at);
         assertEquals("source strip iron_ore|16|west", p.facts.get(0).key(), "the strip walk's own source key");
-        assertTrue(p.facts.get(0).text().startsWith("Baritone found no path 3 times from -27 62 -55 (goal 20, best 20), nothing executing"), p.facts.get(0).text());
+        assertTrue(p.facts.get(0).text().startsWith("Baritone found no path 3 times from -27 62 -55 (goal heuristic 20, best 20; Baritone's estimate, not metres), nothing executing"), p.facts.get(0).text());
     }
 
     /** Test 9 (bob, run O): feet y 62 / 63 by turns, goal 7 flat: REPLAN at 30 s (run O: 180 s). */
@@ -382,7 +382,7 @@ class Z71StepMonitorTest {
         try {
             run(run, h, p, 5);
             assertEquals(2, h.probes.size(), h.probes.toString());
-            assertTrue(h.probes.get(0).startsWith("t=80 feet -27 62 -55 | goto goto 5 64 5 | CONTINUE | goal 10 best 10 at 0 s | made -1 | stage -1 | placed 0 | calcFailed 0 | executing y - no new best for 4 s"), h.probes.get(0));
+            assertTrue(h.probes.get(0).startsWith("t=80 feet -27 62 -55 | goto goto 5 64 5 | CONTINUE | goal heuristic 10 best 10 at 0 s | made -1 | stage -1 | placed 0 | calcFailed 0 | executing y - no new best for 4 s"), h.probes.get(0));
         } finally {
             io.github.mojolowjo.entropybot.aa.brain.Tuning.set("debug.monitorProbe", 0);
         }

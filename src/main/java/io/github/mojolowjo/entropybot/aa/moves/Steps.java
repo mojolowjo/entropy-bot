@@ -1063,6 +1063,19 @@ public final class Steps {
             fail(reason + (r == null || r.why() == null ? "" : " (re-plan: " + r.why() + ")"));
             return;
         }
+        // 0.39.z77 review 6 (E0's bound): stands end with a price fact and no try is counted, so the bound is the place: after
+        // two stands in a row from the same cell (2 x pathCost.firstAnswerWaitS; every walk asked in the first is answered by
+        // its estimate or drops by then, PricedAnswers), a third stand there is not started - the run ends with the reason
+        if (reprice && failed instanceof Step.AwaitPaths) {
+            int[] at = startFeet;
+            if (at != null && standCell != null && java.util.Arrays.equals(at, standCell)) standsInRow++;
+            else { standsInRow = 1; standCell = at == null ? null : at.clone(); }
+            if (standsInRow >= 2 && r.steps().get(0) instanceof Step.AwaitPaths) {
+                fail("stood " + standsInRow + " times at " + (at == null ? "?" : at[0] + " " + at[1] + " " + at[2]) + " with walks' paths still not known: no third stand"
+                        + " there (rule 22; each stand's walks are estimated or dropped after it, the next asked new ones)");
+                return;
+            }
+        }
         if (!reprice) lastFailed = now;
         replans++;
         if (fact.key().startsWith("source ")) droppedHere.add(fact.key().substring("source ".length()));
@@ -1072,6 +1085,10 @@ public final class Steps {
         idx--;
         next();
     }
+
+    /** 0.39.z77 review 6: stands ended in a row from the cell {@code standCell} (a step done elsewhere starts the count again). */
+    private int standsInRow;
+    private int[] standCell;
 
     /** The run parks with {@code why}; the order keeps the try for its one more try (R1). */
     private void park(Attempt now, String why) {
@@ -1272,6 +1289,7 @@ public final class Steps {
             case DONE -> {
                 ended("done");                   // 0.39.z56 item 2a
                 lastFailed = null;               // 0.39.z70 (D2 3.1): progress was made, the next failure is a new question
+                standsInRow = 0;                 // 0.39.z77 review 6: a step done: the stands' count starts again
                 lastStatus = st.why();
                 next();
             }

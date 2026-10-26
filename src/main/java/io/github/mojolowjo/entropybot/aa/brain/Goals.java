@@ -98,6 +98,33 @@ public final class Goals {
 
         /** 0.39.z77 J2: the first step of each playbook leg this order took -> its words, said once when that step starts. */
         public final Map<Step, String> legStarts = new java.util.IdentityHashMap<>();
+
+        /**
+         * 0.39.z77 answers (1): the order runs its batch's playbook now (the last chain it took is one). Its own "got" is then a
+         * fact inside that run, not the run's end ({@link #carriesOn}); the run is re-planned only on a changed fact.
+         */
+        public boolean playbookRun;
+    }
+
+    /**
+     * 0.39.z77 answers (1) (manager 2026-10-26: "the batch's run carries on"): an order met while its desire runs the batch's
+     * playbook ({@code runningId}: the brain's running desire) is said ("got ...") but its run is not ended: the legs go on
+     * with their numbers; its desire leaves when that run ends. Pure.
+     */
+    public static boolean carriesOn(Goal g, String runningId) {
+        return g != null && g.playbookRun && g.batch != null && g.id().equals(runningId);
+    }
+
+    /**
+     * 0.39.z77 answers (1): the chain a re-plan of {@code g} takes - its own; for an order already met inside its batch's
+     * playbook run, the batch's open orders' (the first open one's chain: the playbook when two or more are open), so the run
+     * goes on for the rest of the batch. Null: no world.
+     */
+    static io.github.mojolowjo.entropybot.aa.NeedChain.Chain runChain(Blackboard bb, Goal g) {
+        if (g.playbookRun && g.n - have(bb.in.bag, g) <= 0) {
+            for (Goal o : BatchWay.open(bb, g)) if (o != g) return chain(bb, o);
+        }
+        return chain(bb, g);
     }
 
     /**
@@ -315,7 +342,10 @@ public final class Goals {
         if (fact.price()) return reprice(bb, g, fact);
         // 0.39.z77 J2 (rule 7; the Goals.chain unreachable pattern): a step of the playbook this order runs failed - the
         // playbook is held for the order's life (key "playbook <batch>") and the ad-hoc chain takes over from the bag as it is
+        boolean held = false;
         if (g.batch != null && failed != null && g.playbookSteps.contains(failed)) {
+            held = true;
+            g.playbookRun = false;
             g.sources.failedFor(g.id(), BatchWay.key(g.batch), "a playbook step failed: " + failed.text() + " - " + fact.text(), bb.clock.now(), null, ORDER_LIFE_MS);
             g.playbookSteps.clear();
             bb.port.log(g.r.key() + ": the playbook is out for this order (" + failed.text() + ": " + fact.text() + "); the ad-hoc chain takes over from the bag as it is");
@@ -333,10 +363,11 @@ public final class Goals {
         // (replan.maxSourceDrops 8)"; rule 7: a count is never a stop reason): replan.maxPerOrder and replan.maxSourceDrops are
         // deleted. The order stops only when no way is left - every way held or dropped with its reason - or the honest park
         boolean newSource = sourceFact && !droppedSources(g).containsKey(src);
-        if (g.n - have(bb.in.bag, g) <= 0) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
+        // 0.39.z77 answers (1): an order met inside its batch's playbook run re-plans that run for the batch's open orders
+        if (g.n - have(bb.in.bag, g) <= 0 && (!g.playbookRun || held)) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
         // 0.39.z65 review 1: a station's walk fact keeps where the bot stood (released once it stands failures.moved closer)
         if (sourceFact) g.sources.failedFor(g.id(), src, fact.text(), bb.clock.now(), src.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STATION_AT) ? bb.in : null, ORDER_LIFE_MS);
-        var ch = chain(bb, g);
+        var ch = runChain(bb, g);
         if (ch == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");
         // 0.39.z73 (D2 3.4): the repair, priced against this full re-plan
         var pk = left == null ? null : repair(bb, g, left, ch, sourceFact ? src : null);
@@ -393,6 +424,9 @@ public final class Goals {
      * old ones when they are the same, or when no way stands now: null steps with why), logged with the chain.
      */
     static io.github.mojolowjo.entropybot.aa.moves.Steps.Routine reprice(Blackboard bb, Goal g, io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact) {
+        // 0.39.z77 answers (1) (manager: re-price only on a fact change - a failed step, a bag count off the plan): a landed
+        // price never re-resolves the batch's running playbook; its legs go on as planned
+        if (g.playbookRun) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "kept: the batch's playbook runs on (re-planned only on a changed fact)");
         if (g.n - have(bb.in.bag, g) <= 0) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
         var ch = chain(bb, g);
         if (ch == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");
@@ -438,7 +472,8 @@ public final class Goals {
     /** 0.39.z48: the order's pick was taken now at the chain's price. */
     static void took(Goal g, io.github.mojolowjo.entropybot.aa.NeedChain.Chain ch, long nowMs) {
         // 0.39.z77 J2: a playbook chain's steps are the playbook's (a failure of one holds it for the order, replan)
-        if (ch.why() != null && ch.why().startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.PLAYBOOK)) {
+        g.playbookRun = ch.why() != null && ch.why().startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.PLAYBOOK);
+        if (g.playbookRun) {
             g.playbookSteps.addAll(ch.steps());
             var legs = BatchWay.legs(g.batch);
             for (Step s : ch.steps()) { String t = legs.get(s); if (t != null) g.legStarts.put(s, t); }
@@ -598,7 +633,9 @@ public final class Goals {
 
     /** The goal's own score: ownerBase +/- HIGH; -1 once done. */
     public static double score(Blackboard bb, Goal g) {
-        if (have(bb.in.bag, g) >= g.n) return -1;
+        // 0.39.z77 answers (1): a met order whose desire runs its batch's playbook keeps its score until that run ends (no
+        // interrupt by the batch's next order at a step boundary)
+        if (have(bb.in.bag, g) >= g.n && !g.playbookRun) return -1;
         return Math.max(1, Personality.of(bb).get("ownerBase") + g.prio * high());
     }
 
@@ -614,14 +651,14 @@ public final class Goals {
         // 0.39.z47 (run H, S60): a chain's explore that ended with no new source does not start again within explore.retryS
         long waitS = exploreWaitS(exploreBareAtMs, System.currentTimeMillis(), exploreRetryS());
         if (waitS > 0) {
-            var ch = chain(bb, g);
+            var ch = ownChain(bb, g);      // 0.39.z77 review 1 (R3): the waiting test, no batch comparison per tick
             if (ch != null && ch.ok() && !ch.steps().isEmpty() && ch.steps().get(0) instanceof Step.Explore)
                 return "no new source; next explore in " + waitS + " s";
         }
         var wd = world(bb);
         boolean pathsPending = wd != null && wd.path() != null && wd.path().pending();
         if (bb.fact(LootBook.FACT) instanceof LootBook book && !book.ready() || pathsPending) {
-            var ch = chain(bb, g);
+            var ch = ownChain(bb, g);      // 0.39.z77 review 1 (R3): the waiting test, no batch comparison per tick
             if (ch != null && ch.waiting()) return ch.missing();
         }
         return null;
@@ -772,19 +809,27 @@ public final class Goals {
         return world.withoutSources(dropped).withPlaceFailures(dropped, pos);
     }
 
-    public static io.github.mojolowjo.entropybot.aa.NeedChain.Chain chain(Blackboard bb, Goal g) {
+    public static io.github.mojolowjo.entropybot.aa.NeedChain.Chain chain(Blackboard bb, Goal g) { return chain(bb, g, true); }
+
+    /**
+     * 0.39.z77 review 1 (R3): the order's OWN chain, no batch comparison - for the per-tick waiting tests (blocked: does the
+     * chain wait on the loot book or a path?), which must never price the playbook and six chains every tick.
+     */
+    static io.github.mojolowjo.entropybot.aa.NeedChain.Chain ownChain(Blackboard bb, Goal g) { return chain(bb, g, false); }
+
+    private static io.github.mojolowjo.entropybot.aa.NeedChain.Chain chain(Blackboard bb, Goal g, boolean batch) {
         if (g.strip != null) return null;
         var world = chainWorld(bb, g);
         if (world == null) return null;
         var laps = io.github.mojolowjo.entropybot.aa.core.TickLaps.AA;    // 0.39.z62 item 4: resolves counted while the probe is on
-        // 0.39.z77 J2: a settled playbook verdict for this batch, bag and place re-prices the playbook alone (R3: one resolve)
-        var ch = BatchWay.cached(bb, g, world);
+        // 0.39.z77 J2: a kept playbook verdict for this batch, bag and place re-prices the playbook alone (R3: one resolve)
+        var ch = batch ? BatchWay.cached(bb, g, world) : null;
         if (ch == null) {
             long t0 = laps.now();
             ch = g.r.group() ? io.github.mojolowjo.entropybot.aa.NeedChain.resolveAll(g.r.key(), g.r.ids(), g.n, world)
                     : io.github.mojolowjo.entropybot.aa.NeedChain.resolve(g.r.ids().isEmpty() ? g.r.key() : g.r.ids().get(0), g.n, world);
             if (t0 != 0) laps.resolved(laps.now() - t0);
-            ch = BatchWay.choose(bb, g, world, ch);      // 0.39.z77 J2: the batch's playbook when it is cheaper (rule 1: an option)
+            if (batch) ch = BatchWay.choose(bb, g, world, ch);      // 0.39.z77 J2: the batch's playbook when it is cheaper (rule 1: an option)
         }
         // 0.39.z41: a source Baritone's complete search found unreachable is the z33 source fact: dropped for the order's life
         for (var e : ch.unreachable().entrySet()) g.sources.failedFor(g.id(), e.getKey(), e.getValue(), bb.clock.now(), null, ORDER_LIFE_MS);
