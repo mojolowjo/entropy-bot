@@ -682,7 +682,6 @@ final class TuningDefs {
         // stepTimes
         // steps
         Tuning.def("steps.maxExpansions", 16, "rm-constants 0.39.u2 (was Steps.MAX_EXPANSIONS)", "At most this many expansions (a plan in a plan) per run");
-        Tuning.def("replan.maxPerOrder", 3, "0.39.z30 (owner 2026-10-23)", "At most this many re-plans on a changed fact (a station gone, a source gone, an item missing) per order");
         // storage
         Tuning.def("storage.guiSettle", 8, "rm-constants 0.39.u2 (was Storage.GUI_SETTLE)", "the gui settle of Storage");
         Tuning.def("storage.potsR", 16, "rm-constants 0.39.u2 (was Storage.POTS_R)", "the pots r of Storage");
@@ -994,7 +993,6 @@ final class TuningDefs {
         Tuning.def("cave.exploreMinutes", 10, "0.39.z44", "the minutes the mine-in-the-cave way explores a mouth for the ore at most");
         Tuning.def("replan.unchangedHoldS", 15, "0.39.z51 (run L: 66 explore-until-stone starts in ~5 s, 2 a second)", "an explore whose until-source was already known when it started (nothing changed) holds this many seconds before it ends on that source; the order's re-price still cancels it the moment its pick changes");
         Tuning.def("worth.bedSpan", 60, "rm-constants 0.39.u2 (inline literal in Worth)", "the bed worth span (scaled by the night danger)");
-        Tuning.def("replan.maxSourceDrops", 8, "0.39.z62 item 1 (run S 04:57:35: the iron order stopped at replan.maxPerOrder 3 after one tool fact and one blocked heading counted three times)", "At most this many re-plans per order on a source fact that drops a source NEW to the order (each takes one way out of a finite set: a strip heading, a band, a spot); other facts and repeats count against replan.maxPerOrder");
         Tuning.def("tools.maxSpares", 3, "0.39.z62 review 3 (run S's 335-block strip needed 2 spare stone pickaxes)", "At most this many spare pickaxes a way makes up front for its wear; more means the rough blocks-per-ore estimate dominates, so the rest is re-planned on the bag of that moment when a pickaxe breaks (said in aa debug)");
         Tuning.def("debug.aaTickMs", 20, "0.39.z62 item 4 (run S 04:57:07-12: client ticks of 3050 and 5586 ms in 'guard+commands (aa)'; design D3a 3.1)", "while debug.loadProbe is on, an AA tick slower than this (ms) gets a 'probe aatick:' line with its sections and the chain resolves in it; 20 ms = 40% of a 50 ms client tick");
         // 0.39.z64 item 4 (runs S-U: every heading from one origin; run U's area: 969 faces, 0 iron): the strip's yield as a fact of the area

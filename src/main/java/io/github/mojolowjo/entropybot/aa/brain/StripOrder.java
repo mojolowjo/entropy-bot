@@ -252,6 +252,28 @@ public final class StripOrder {
         return null;
     }
 
+    /**
+     * 0.39.z76 sb4 review (run AV 02:40:45-02:41:36: six strips "no path (0 blocks)" with no reason in the log): the rule's
+     * answer for each first cell (feet and head height) of a strip from {@code feet} in heading {@code h}, "first cells:
+     * x y z: answer; x y z: answer", from {@code answer} (the break policy's verdict - its rule row and cost - for a cell; null:
+     * "not known"), for the blocked-heading fact. Pure.
+     */
+    public static String firstCells(int[] feet, String h, Function<int[], String> answer) {
+        int[] d = io.github.mojolowjo.entropybot.aa.WayUp.dir(h);
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (int dy = 0; dy <= 1; dy++) {            // structural: the feet and the head cell of the tunnel's first step
+            int[] c = {feet[0] + d[0], feet[1] + dy, feet[2] + d[1]};
+            String a;
+            try {
+                a = answer.apply(c);
+            } catch (RuntimeException e) {
+                a = "the rule could not be read: " + e;
+            }
+            out.add(c[0] + " " + c[1] + " " + c[2] + ": " + (a == null ? "not known" : a));
+        }
+        return "first cells: " + String.join("; ", out);
+    }
+
     /** The fork's end text as the step's status: "done..." is DONE, anything else FAILED with that text (never silent). */
     public static Car.Status endOf(String forkEnd, String forkStatus) {
         if (forkEnd == null || forkEnd.isBlank()) return Car.Status.failed("strip: the fork's strip ended without a reason (" + forkStatus + ")");

@@ -74,13 +74,16 @@ public final class StepSignalsLive {
      * and restores it on its next tick; read after that, {@code isDestroying} is always false, so the old read
      * "isDestroying ? stage : -1" was -1 for every Baritone dig. The progress behind {@code getDestroyStage} stays while the
      * block is broken and is 0 again once it breaks; Baritone's {@code stopBreakingBlock} can leave it stale (its reset runs
-     * with isDestroying already false), so a stage counts only while the arm swings (Baritone swings on every damaging tick).
-     * Loader notes: vanilla {@code MultiPlayerGameMode#getDestroyStage}, {@code LivingEntity#swinging}; Fabric: the same
-     * under Yarn names.
+     * with isDestroying already false), so a stage counts only while the arm swings (Baritone swings on every damaging tick)
+     * and the crosshair is on a block (review: a mob hit swings too). A stale stage can still show on such a swing; the
+     * callers count a change only between two stages ({@link io.github.mojolowjo.entropybot.aa.core.BreakProgress}, the
+     * monitor's per-cell best). Loader notes: vanilla {@code MultiPlayerGameMode#getDestroyStage},
+     * {@code LivingEntity#swinging}, {@code Minecraft#hitResult}; Fabric: the same under Yarn names.
      */
     static int destroyStage(LocalPlayer p) {
-        var gm = Minecraft.getInstance().gameMode;
-        if (gm == null || p == null || !p.swinging) return -1;
+        Minecraft mc = Minecraft.getInstance();
+        var gm = mc.gameMode;
+        if (gm == null || p == null || !p.swinging || !(mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult)) return -1;
         return gm.getDestroyStage();
     }
 

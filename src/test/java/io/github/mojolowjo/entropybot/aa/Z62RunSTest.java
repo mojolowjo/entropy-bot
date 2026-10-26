@@ -99,8 +99,8 @@ class Z62RunSTest {
 
     /**
      * Run S 04:57:35: the order stopped "re-planned 3 times already (replan.maxPerOrder 3)" - the pickaxe fact, then the same
-     * blocked heading as three ore sets. A fact that drops a NEW source counts against replan.maxSourceDrops; a source
-     * dropped again counts against replan.maxPerOrder.
+     * blocked heading as three ore sets. A fact that drops a NEW source is counted apart from the other re-plans. 0.39.z76
+     * sb4 review: both caps are deleted; the counts are shown, never a stop.
      */
     @Test
     void aNewDroppedSourceDoesNotCountAgainstMaxPerOrder() {
@@ -109,25 +109,25 @@ class Z62RunSTest {
         Blackboard bb = new Blackboard(clock, new FakePort(), new Tracer());
         bb.fact(NeedChain.WORLD_FACT, (Supplier<NeedChain.World>) () -> world(Map.of("minecraft:stone_pickaxe", 1), band("east")));
         Goals.Goal g = Goals.draft(DebugTreeTest.item("raw_iron"), 3, 0, clock.now());
-        g.replans = Goals.replanMax();                       // run S: the cap already reached
+        g.replans = 3;                                       // run S: the old replan.maxPerOrder already reached
         Step.Strip east = new Step.Strip(IRON, Map.of("iron", 3), 16, "east", 0);
         FactChange.stripBlocked(16, "east", "strip: no path (0 blocks)");
         Steps.Routine r = Goals.replan(bb, g, east, FactChange.take(), "strip: no path");
         assertNotNull(r.steps(), r.why());
         assertEquals("south", r.steps().stream().filter(s -> s instanceof Step.Strip).map(s -> ((Step.Strip) s).heading()).findFirst().orElseThrow());
         assertEquals(1, g.sourceReplans);
-        assertEquals(Goals.replanMax(), g.replans, "not counted against replan.maxPerOrder");
-        // the same heading again is no new source: replan.maxPerOrder stops it, said with its name
+        assertEquals(3, g.replans, "a new source is counted apart");
+        // 0.39.z76 sb4 review: no count stops an order (replan.maxPerOrder / maxSourceDrops deleted); the same heading
+        // again and a new source past the old 8 both re-plan
         FactChange.stripBlocked(16, "east", "strip: no path (0 blocks)");
         Steps.Routine again = Goals.replan(bb, g, east, FactChange.take(), "strip: no path");
-        assertNull(again.steps());
-        assertTrue(again.why().contains("replan.maxPerOrder"), again.why());
-        // new sources are capped too (replan.maxSourceDrops)
-        g.sourceReplans = Goals.replanMaxSources();
+        assertNotNull(again.steps(), again.why());
+        assertEquals(4, g.replans, "a repeat is counted (shown), not a stop");
+        g.sourceReplans = 8;
         FactChange.stripBlocked(16, "south", "strip: no path (0 blocks)");
-        Steps.Routine capped = Goals.replan(bb, g, east, FactChange.take(), "x");
-        assertNull(capped.steps());
-        assertTrue(capped.why().contains("replan.maxSourceDrops"), capped.why());
+        Steps.Routine past = Goals.replan(bb, g, east, FactChange.take(), "x");
+        assertTrue(past.why() == null || !past.why().contains("replan.max"), past.why());
+        assertNotNull(past.steps(), past.why());
     }
 
     // ---- item 1a: the station keeps off the chain's known cells ----

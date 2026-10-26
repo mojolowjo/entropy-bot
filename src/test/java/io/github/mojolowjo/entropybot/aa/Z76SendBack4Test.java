@@ -69,13 +69,85 @@ class Z76SendBack4Test {
         List<String> facts = new ArrayList<>();
         Steps run = new Steps(h);
         run.start("goal.iron", List.of(strip), 0, (failed, fact, why) -> { facts.add(fact.key()); return new Steps.Routine(List.of(strip), null); });
-        int old = Tuning.i("replan.maxPerOrder") + Tuning.i("replan.maxSourceDrops");
-        assertEquals(11, old, "the deleted cap was 3 + 8");
+        assertFalse(Tuning.names().contains("replan.maxPerOrder") || Tuning.names().contains("replan.maxSourceDrops"), "deleted with the order's caps (sb4 review)");
         for (int t = 1; t <= 20; t++) run.tick(t);
         assertTrue(run.running(), run.why());
         assertEquals(20, facts.size(), facts.toString());
         assertEquals(20, facts.stream().distinct().count(), "each re-plan on a new fact");
         assertFalse(String.valueOf(run.why()).contains("in this run already"), run.why());
+    }
+
+    /**
+     * sb4 review (manager): no count stops an order. Twelve trees fail one after another, each dropped by its position
+     * ("cut at x y z"), never picked again; then the explore from here freezes; the order ends "no way left: <each dropped
+     * source with its reason>", not "N sources dropped already".
+     */
+    @Test
+    void twelveFailingSourcesEachDroppedByPositionEndWithNoWayLeft() {
+        ScenariosTest.world("wooden");
+        List<NeedChain.Spot> trees = new ArrayList<>();
+        for (int i = 1; i <= 12; i++) trees.add(new NeedChain.Spot(10 * i, 64, 0, 10 * i, "minecraft:oak_log", 3));
+        int[] here = {0, 64, 0};
+        NeedChain.World world = ScenariosTest.w(Map.of(), false, false, Map.of("oak_log", trees))
+                .withWhere(new NeedChain.WhereFacts(word -> null, () -> null, () -> here));
+        io.github.mojolowjo.entropybot.aa.core.Clock.Fake clock = new io.github.mojolowjo.entropybot.aa.core.Clock.Fake(10_000_000);
+        io.github.mojolowjo.entropybot.aa.core.Blackboard bb = new io.github.mojolowjo.entropybot.aa.core.Blackboard(clock,
+                new io.github.mojolowjo.entropybot.aa.core.FakePort(), new io.github.mojolowjo.entropybot.aa.core.Tracer());
+        bb.fact(NeedChain.WORLD_FACT, (java.util.function.Supplier<NeedChain.World>) () -> world);
+        bb.in.pos = here;
+        io.github.mojolowjo.entropybot.aa.brain.Goals.Goal g = io.github.mojolowjo.entropybot.aa.brain.Goals.draft(DebugTreeTest.item("oak_log"), 3, 0, clock.now());
+        java.util.Set<String> cut = new java.util.LinkedHashSet<>();
+        for (int k = 0; k < 12; k++) {
+            NeedChain.Chain ch = io.github.mojolowjo.entropybot.aa.brain.Goals.chain(bb, g);
+            Step chop = ch.steps().stream().filter(s -> s instanceof Step.ChopTree).findFirst().orElse(null);
+            assertNotNull(chop, "tree " + (k + 1) + ": " + ch.why());
+            String key = NeedChain.sourceKey(chop);
+            assertTrue(cut.add(key), "a dropped tree is never picked again: " + key + " in " + cut);
+            Steps.Routine r = io.github.mojolowjo.entropybot.aa.brain.Goals.replan(bb, g, chop, FactChange.noProgress(key, "no progress 30 s at " + key), "no progress");
+            assertTrue(r.why() == null || !r.why().contains("already"), r.why());
+        }
+        assertEquals(12, cut.size());
+        assertEquals(12, g.sourceReplans, "counted, never a stop");
+        NeedChain.Chain ch = io.github.mojolowjo.entropybot.aa.brain.Goals.chain(bb, g);
+        assertTrue(ch.explore(), "all trees out: the explore from here: " + ch.why());
+        Step ex = ch.steps().stream().filter(s -> s instanceof Step.Explore).findFirst().orElseThrow();
+        Steps.Routine end = io.github.mojolowjo.entropybot.aa.brain.Goals.replan(bb, g, ex,
+                FactChange.noProgress(NeedChain.exploreFrozenKey(here), "Baritone found no path 3 times"), "no path");
+        assertNull(end.steps(), end.why());
+        assertTrue(end.why().startsWith("no way left: "), end.why());
+        for (String c : cut) assertTrue(end.why().contains(c + ": no progress 30 s at " + c), c + " in " + end.why());
+        assertTrue(end.why().contains(NeedChain.exploreFrozenKey(here)), end.why());
+    }
+
+    /**
+     * sb4 review (run AV 02:40:47: "strip west feet y -2: 0 blocks ... no path" from -28 -2 -70, no reason logged): the
+     * blocked-heading fact carries the rule's answer (row and cost) for both first cells; a cell not known and a read that
+     * throws are said, never skipped.
+     */
+    @Test
+    void aStripBlockedAtItsFirstCellSaysTheRuleForBothCells() {
+        String t = io.github.mojolowjo.entropybot.aa.brain.StripOrder.firstCells(new int[]{-28, -2, -70}, "west",
+                c -> c[1] == -2 ? "denied: lava beside (lavaNear)" : null);
+        assertEquals("first cells: -29 -2 -70: denied: lava beside (lavaNear); -29 -1 -70: not known", t);
+        String thrown = io.github.mojolowjo.entropybot.aa.brain.StripOrder.firstCells(new int[]{0, 0, 0}, "north",
+                c -> { throw new IllegalStateException("no snapshot"); });
+        assertTrue(thrown.contains("0 0 -1: the rule could not be read: java.lang.IllegalStateException: no snapshot"), thrown);
+        FactChange.stripBlocked(-2, "west", "strip: no path (strip west feet y -2: 0 blocks, 0 clusters mined); " + t);
+        FactChange.Fact f = FactChange.take();
+        assertTrue(f.text().endsWith("-29 -2 -70: denied: lava beside (lavaNear); -29 -1 -70: not known"), f.text());
+    }
+
+    /** sb4 review: the progress tick counts a stage change only between two stages; a -1 <-> stale flip is none. */
+    @Test
+    void aStaleStageFlippingWithTheSwingIsNoProgress() {
+        int[] flips = {-1, 4, -1, 4, -1, 4};
+        int n = 0;
+        for (int i = 1; i < flips.length; i++) if (io.github.mojolowjo.entropybot.aa.core.BreakProgress.counts(flips[i - 1], flips[i])) n++;
+        assertEquals(0, n, "a stale stage shown on each swing");
+        int[] digging = {-1, 0, 3, 7, -1, 1, 6};
+        n = 0;
+        for (int i = 1; i < digging.length; i++) if (io.github.mojolowjo.entropybot.aa.core.BreakProgress.counts(digging[i - 1], digging[i])) n++;
+        assertEquals(3, n, "0->3, 3->7, 1->6");
     }
 
     // ---- 2. run AV's strip through the monitor ----

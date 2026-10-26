@@ -23,7 +23,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class Z76DestroyStageReadTest {
     static final Path ROOT = Path.of("src/main/java/io/github/mojolowjo/entropybot");
     static final String ONE = "commands/StepSignalsLive.java";
-    static final Pattern STAGE = Pattern.compile("getDestroyStage\\s*\\(");
+    static final Pattern STAGE = Pattern.compile("getDestroyStage\\s*\\(|::\\s*getDestroyStage\\b");
+
+    /** The scan catches a call and a method reference, not a comment or a string. */
+    @Test
+    void theScanCatchesACallAndAMethodReference() {
+        String probe = "class P {\n  int a(G g) { return g.getDestroyStage(); }\n  IntSupplier b(G g) { return g :: getDestroyStage; }\n"
+                + "  // g.getDestroyStage()\n  String c = \"::getDestroyStage\";\n}\n";
+        String[] lines = Z76HeightmapReadsTest.code(probe).split("\n", -1);
+        int hits = 0;
+        for (String l : lines) if (STAGE.matcher(l).find()) hits++;
+        org.junit.jupiter.api.Assertions.assertEquals(2, hits);
+    }
 
     @Test
     void theBreakStageIsReadOnlyInStepSignalsLiveWithoutTheDestroyingFlag() throws IOException {

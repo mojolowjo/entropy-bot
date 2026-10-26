@@ -673,7 +673,6 @@ replan.foreignBreak	6.0
 replan.lava	1000.0
 replan.lockMs	20000.0
 replan.longStepMs	15000.0
-replan.maxPerOrder	3.0
 replan.minSave	3.0
 replan.noBlock	30.0
 replan.overCap	25.0
@@ -982,7 +981,6 @@ cave.depthMin	1.0
 cave.walkedHoldS	600.0
 replan.switchMarginS	10.0
 replan.unchangedHoldS	15.0
-replan.maxSourceDrops	8.0
 debug.aaTickMs	20.0
 tools.maxSpares	3.0
 monitor.everyTicks	20.0

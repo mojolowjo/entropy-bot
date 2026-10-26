@@ -222,13 +222,33 @@ final class StripStep {
             // z62 review 2: only the fork's "no path" at the first cell after it stood at the strip's Y - a broken pickaxe, lava,
             // a danger stop or no path down never burns the heading
             if (StripOrder.noPathAtFirstCell(sp.lastEnd(), now != null && now.started(), startStep, now == null ? 0 : now.step(),
-                    startBlocks, now == null ? 0 : now.blocks())) io.github.mojolowjo.entropybot.aa.moves.FactChange.stripBlocked(s.y(), s.heading(), st.why());
+                    startBlocks, now == null ? 0 : now.blocks())) io.github.mojolowjo.entropybot.aa.moves.FactChange.stripBlocked(s.y(), s.heading(), st.why() + "; " + firstCellsRule(s));
             else io.github.mojolowjo.entropybot.aa.moves.FactChange.strip(s.key(), st.why());
         }
         return st;
     }
 
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger("entropybot");
+
+    /**
+     * 0.39.z76 sb4 review (run AV 02:40:45-02:41:36: six strips failed "no path (0 blocks)", the log had no reason): the break
+     * policy's answer for the strip's first cells from the feet at the strip's Y - the verdict with its rule row and cost
+     * multiplier, and the block facts ("fence why" without the rule-set line) - for the blocked-heading fact
+     * ({@link StripOrder#firstCells}). Loader notes: vanilla Minecraft.player / level; the mod's PolicyRuntime.
+     */
+    static String firstCellsRule(Step.Strip s) {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer p = mc.player;
+        var lv = mc.level;
+        if (p == null || lv == null) return "first cells: the rule not known (no player or level)";
+        int[] f = Jobs.here(p);
+        String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(lv);
+        return StripOrder.firstCells(new int[]{f[0], s.y(), f[2]}, s.heading(), c -> {
+            String w = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.why(lv, dim, c[0], c[1], c[2],
+                    io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.BREAK, io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE);
+            return w == null ? null : w.replaceFirst(" \\| rule set .*? \\| block ", " | block ");
+        });
+    }
 
     /**
      * 0.39.z64 item 1 (run U: 251 strip cells at y 16, "0 clusters mined", no "strip: cluster at" line): the fork's probe

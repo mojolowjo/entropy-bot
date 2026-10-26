@@ -145,7 +145,7 @@ class Z65RunVTest {
         assertNotNull(r.steps(), r.why());
         assertFalse(r.steps().stream().anyMatch(s -> s instanceof Step.ToStation), "the table is out for this order: " + r.steps());
         assertTrue(Goals.droppedSources(g).containsKey("station at -261 75 21"));
-        assertEquals(1, g.sourceReplans, "a new source: counted against replan.maxSourceDrops");
+        assertEquals(1, g.sourceReplans, "a new source: counted as a source drop");
         assertFalse(walksToTable(Goals.chain(bb, g)), "still out from the same spot");
 
         // the next order: a new goal, nothing dropped - the table is walked to again
@@ -155,7 +155,7 @@ class Z65RunVTest {
         // the same order, the bot failures.moved closer (44 blocks): the table is back
         bb.in.pos = new int[]{-261, 60, 22};
         assertTrue(walksToTable(Goals.chain(bb, g)), "usable again once the bot stands closer");
-        assertTrue(Goals.droppedSources(g).containsKey("station at -261 75 21"), "the record stays (a repeat counts against replan.maxPerOrder)");
+        assertTrue(Goals.droppedSources(g).containsKey("station at -261 75 21"), "the record stays (a repeat is counted as a re-plan)");
     }
 
     @Test
@@ -170,10 +170,10 @@ class Z65RunVTest {
         assertFalse(Goals.stationBack(k, null, new int[]{0, 69, 0}), "no position kept: held for the order");
     }
 
-    // ---- review 2: walk-led source re-plans are bounded by replan.maxSourceDrops ----
+    // ---- review 2: walk-led source re-plans are counted as source drops (0.39.z76 sb4 review: counted, never a stop) ----
 
     @Test
-    void walkLedSourceDropsCountAgainstMaxSourceDrops() {
+    void walkLedSourceDropsAreCountedNotCapped() {
         ScenariosTest.world("wooden", "stone");
         Step walk = new Step.Walk(30, 64, 0, 0);
         FactChange.Fact tree = Steps.walkLeads(List.of(walk, new Step.ChopTree(new int[]{30, 64, 0}, 4, null)), 0, "stopped short");
@@ -183,11 +183,11 @@ class Z65RunVTest {
         Blackboard bb = new Blackboard(clock, new FakePort(), new Tracer());
         bb.fact(NeedChain.WORLD_FACT, (Supplier<World>) () -> Z62RunSTest.world(Map.of("minecraft:stone_pickaxe", 1), Z62RunSTest.band("east")));
         Goals.Goal g = Goals.draft(DebugTreeTest.item("raw_iron"), 3, 0, clock.now());
-        g.sourceReplans = Goals.replanMaxSources();
-        Steps.Routine capped = Goals.replan(bb, g, walk, tree, "stopped short");
-        assertNull(capped.steps());
-        assertTrue(capped.why().contains("replan.maxSourceDrops"), capped.why());
-        assertEquals(Goals.replanMaxSources(), g.sourceReplans);
+        g.sourceReplans = 8;                                       // the deleted replan.maxSourceDrops
+        Steps.Routine past = Goals.replan(bb, g, walk, tree, "stopped short");
+        assertNotNull(past.steps(), past.why());
+        assertEquals(9, g.sourceReplans, "the tree is a new source: counted");
+        assertTrue(Goals.droppedSources(g).containsKey("cut at 30 64 0"));
     }
 
     // ---- item 2: the spare decision at info level, once per chain ----

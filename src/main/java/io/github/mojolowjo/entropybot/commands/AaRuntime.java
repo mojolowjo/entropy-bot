@@ -1940,7 +1940,7 @@ public final class AaRuntime implements JobPort {
         // (MultiPlayerGameMode#getDestroyStage, 0-9 per block): each new stage counts. 0.39.z76 send-back 4: read through
         // StepSignalsLive.destroyStage (Baritone clears isDestroying after each break tick, so the old gate read -1 always)
         int ds = StepSignalsLive.destroyStage(p);
-        if (ds >= 0 && ds != lastDestroyStage) progress++;
+        if (io.github.mojolowjo.entropybot.aa.core.BreakProgress.counts(lastDestroyStage, ds)) progress++;     // sb4 review: a -1 <-> stale flip is none
         lastDestroyStage = ds;
         int bagTotal = 0;
         for (int i = 0; i < 36; i++) bagTotal += p.getInventory().getItem(i).getCount();  // game fact: the player inventory has 36 slots (hotbar is slots 0-8)

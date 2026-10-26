@@ -47,7 +47,7 @@ public final class Goals {
         /** 0.39.z30: re-plans on a changed fact so far (aa want again sets it back to 0). */
         public int replans;
 
-        /** 0.39.z62 item 1: re-plans on a source new to this order (replan.maxSourceDrops; aa want again sets it back to 0). */
+        /** 0.39.z62 item 1: re-plans on a source new to this order, a count shown, never a stop (aa want again sets it back to 0). */
         public int sourceReplans;
 
         /**
@@ -211,6 +211,16 @@ public final class Goals {
         return "re-plans this order: " + (g.replans + g.sourceReplans) + "; dropped: " + (d.isEmpty() ? "none" : String.join(", ", d));
     }
 
+    /**
+     * 0.39.z76 sb4 review: the order's stop when the re-plan finds no way: "no way left: &lt;each dropped source: its reason&gt;
+     * (chain: &lt;the chain's why&gt;)". Pure.
+     */
+    public static String noWayLeft(Goal g, String chainWhy) {
+        List<String> d = new ArrayList<>();
+        for (var e : droppedSources(g).entrySet()) d.add(e.getKey() + ": " + e.getValue());
+        return "no way left: " + (d.isEmpty() ? "no source dropped" : String.join("; ", d)) + " (chain: " + chainWhy + ")";
+    }
+
     /** 0.39.z70 (D2 3.1, aa status): "iron_pickaxe: re-plans 3 (1 re-priced), steps changed per re-plan 2.3". Pure. */
     public static String stabilityLine(Goal g) {
         double per = g.switches == 0 ? 0 : (double) g.stepsChanged / g.switches;
@@ -253,17 +263,11 @@ public final class Goals {
         return Failures.moved(now, at) <= Failures.moved(from, at) - Failures.movedV();
     }
 
-    /** 0.39.z30: at most this many re-plans on a changed fact per order (Tuning replan.maxPerOrder). */
-    public static int replanMax() { return Tuning.i("replan.maxPerOrder"); }
-
-    /** 0.39.z62 item 1: at most this many re-plans on a NEW dropped source per order (Tuning replan.maxSourceDrops). */
-    public static int replanMaxSources() { return Tuning.i("replan.maxSourceDrops"); }
-
     /**
      * 0.39.z30 (owner 2026-10-23: a job whose fact changed re-plans and continues): the order's chain priced again on the
      * facts of now - the same call the order's job makes ({@link #steps}) - after {@code failed} found {@code fact} changed.
-     * One line to the owner says it; the cap is said when reached; no way now: null steps with the chain's why (the run ends
-     * with the step's own reason). Nothing here knows which fact or item it is.
+     * One line to the owner says it; no way now: null steps with "no way left: " + the order's dropped sources and the
+     * chain's why ({@link #noWayLeft}; the run ends with the step's own reason). No count stops it (0.39.z76 sb4 review). Nothing here knows which fact or item it is.
      */
     public static io.github.mojolowjo.entropybot.aa.moves.Steps.Routine replan(Blackboard bb, Goal g, Step failed,
                                                                              io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact, String why) {
@@ -274,7 +278,7 @@ public final class Goals {
      * 0.39.z73 (design D2 3.4, Job D): as above with what was left of the run ({@code left}, null: not known): the full
      * re-plan and the repair (the gap for what the failed step served + the kept tail, dry-run on the bag) are both priced,
      * the repair kept unless the full re-plan is cheaper by replan.switchMarginS ({@link io.github.mojolowjo.entropybot.aa.moves.Repair}).
-     * The caps, the dropped source and the line to the owner as before; the pick is said with both prices.
+     * The dropped source and the line to the owner as before; the pick is said with both prices.
      */
     public static io.github.mojolowjo.entropybot.aa.moves.Steps.Routine replan(Blackboard bb, Goal g, Step failed,
                                                                              io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact, String why,
@@ -285,20 +289,11 @@ public final class Goals {
         String own = io.github.mojolowjo.entropybot.aa.moves.FactChange.ownSourceKey(fact);
         String src = own != null ? own : io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(failed);
         boolean sourceFact = src != null && fact.key().startsWith("source ");
-        // 0.39.z62 item 1 (run S 04:57:35: "not re-planned: 3 re-plans already" - the pickaxe broke, then the same blocked
-        // heading three times as three ore sets): a source fact that drops a source NEW to this order takes one way out of a
-        // finite set, so it counts against replan.maxSourceDrops, not replan.maxPerOrder; every other fact (a bag, a station,
-        // a placement) and a source dropped again count against replan.maxPerOrder as before
+        // 0.39.z62 item 1: a source fact that drops a source NEW to this order is counted apart (the counts are shown in the
+        // park line, aa status). 0.39.z76 sb4 review (manager, run AV 02:43:29 "not re-planned: 8 sources dropped already
+        // (replan.maxSourceDrops 8)"; rule 7: a count is never a stop reason): replan.maxPerOrder and replan.maxSourceDrops are
+        // deleted. The order stops only when no way is left - every way held or dropped with its reason - or the honest park
         boolean newSource = sourceFact && !droppedSources(g).containsKey(src);
-        String cap = newSource ? (g.sourceReplans >= replanMaxSources() ? "replan.maxSourceDrops " + replanMaxSources() : null)
-                : (g.replans >= replanMax() ? "replan.maxPerOrder " + replanMax() : null);
-        if (cap != null) {
-            int n = newSource ? g.sourceReplans : g.replans;
-            String line = g.r.key() + ": " + fact.text() + " - not re-planned: " + n + (newSource ? " sources dropped" : " re-plans") + " already (" + cap + ")";
-            bb.port.log(line);
-            bb.port.tellOwner(line);
-            return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, (newSource ? "dropped " + n + " sources" : "re-planned " + n + " times") + " already (" + cap + ")");
-        }
         if (g.n - have(bb.in.bag, g) <= 0) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
         // 0.39.z65 review 1: a station's walk fact keeps where the bot stood (released once it stands failures.moved closer)
         if (sourceFact) g.sources.failedFor(g.id(), src, fact.text(), bb.clock.now(), src.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STATION_AT) ? bb.in : null, ORDER_LIFE_MS);
@@ -320,7 +315,7 @@ public final class Goals {
             bb.port.tellOwner(line);
             return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(pk.steps(), null, pk.uses());
         }
-        if (!ch.ok() || ch.steps().isEmpty()) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, ch.why());
+        if (!ch.ok() || ch.steps().isEmpty()) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, noWayLeft(g, ch.why()));
         if (newSource) g.sourceReplans++;
         else g.replans++;
         took(bb, g, ch);
@@ -355,7 +350,7 @@ public final class Goals {
 
     /**
      * 0.39.z41: a walk's complete path landed while the order runs: its chain priced again on the facts of now (the same call
-     * as {@link #replan}); not a failure, not counted against replan.maxPerOrder. The steps from here (the caller keeps the
+     * as {@link #replan}); not a failure, not counted as a re-plan. The steps from here (the caller keeps the
      * old ones when they are the same, or when no way stands now: null steps with why), logged with the chain.
      */
     static io.github.mojolowjo.entropybot.aa.moves.Steps.Routine reprice(Blackboard bb, Goal g, io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact) {

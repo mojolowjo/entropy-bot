@@ -110,7 +110,7 @@ class Z76SendBack2Test {
         Chain far = NeedChain.resolve("oak_log", 3, base.withHeld(List.of(NeedChain.EXPLORE_FROZEN + "40 24 0: no progress 30 s")));
         assertTrue(far.explore(), "40 m from the frozen cell: the explore again: " + far.why());
         assertEquals(NeedChain.EXPLORE_FROZEN + "1 2 3", FactChange.ownSourceKey(FactChange.noProgress(NeedChain.exploreFrozenKey(new int[]{1, 2, 3}), "x")),
-                "the order holds it as a source (replan.maxSourceDrops, not maxPerOrder)");
+                "the order holds it as a source (a dropped source, held by position)");
     }
 
     // ---- (c) the collect's spot ----

@@ -159,7 +159,7 @@ class Z70StepCheckTest {
         int[] asked = {0};
         Steps run = new Steps(h);
         run.start("goal.iron", List.of(STRIP_K1), 0, (failed, fact, why) -> { asked[0]++; return new Steps.Routine(List.of(STRIP_K1), null); });
-        int past = Tuning.i("replan.maxPerOrder") + Tuning.i("replan.maxSourceDrops") + 5;
+        int past = 11 + 5;                               // past the deleted run cap (replan.maxPerOrder 3 + maxSourceDrops 8)
         for (int t = 1; t <= past; t++) run.tick(t);
         assertTrue(run.running(), run.why());
         assertEquals(past, asked[0]);
