@@ -1937,9 +1937,9 @@ public final class AaRuntime implements JobPort {
         lastRestoreWork = rw;
         // 0.39.z48 (run I 03:18:04: "stuck 40 s" while Baritone's chop broke a 7-block iron cluster): a block being broken is
         // progress. Read from the game's own break state that Baritone's break helper drives for its chop / mine process
-        // (MultiPlayerGameMode#isDestroying and #getDestroyStage, 0-9 per block): each new stage counts
-        var gm = net.minecraft.client.Minecraft.getInstance().gameMode;
-        int ds = gm != null && gm.isDestroying() ? gm.getDestroyStage() : -1;
+        // (MultiPlayerGameMode#getDestroyStage, 0-9 per block): each new stage counts. 0.39.z76 send-back 4: read through
+        // StepSignalsLive.destroyStage (Baritone clears isDestroying after each break tick, so the old gate read -1 always)
+        int ds = StepSignalsLive.destroyStage(p);
         if (ds >= 0 && ds != lastDestroyStage) progress++;
         lastDestroyStage = ds;
         int bagTotal = 0;

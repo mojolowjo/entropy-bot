@@ -1001,12 +1001,9 @@ public final class Steps {
             fail(park);
             return;
         }
-        // 0.39.z70: a run never re-plans more often than an order may (both caps), so a planner with no cap of its own cannot loop
-        int runCap = Tuning.i("replan.maxPerOrder") + Tuning.i("replan.maxSourceDrops");
-        if (replans >= runCap) {
-            fail(clean + " (not re-planned: " + replans + " re-plans in this run already, replan.maxPerOrder + replan.maxSourceDrops " + runCap + ")");
-            return;
-        }
+        // 0.39.z76 send-back 4 (run AW 03:18:31 "not re-planned: 11 re-plans in this run already"; rule 7): the run's own count
+        // cap (z70) is deleted - a count is no reason. Each re-plan here carries a new fact; the loop guard is the honest park
+        // above (the same try twice) and the planner's own answer (no way left, rule 22's stops)
         String released = release();             // 0.39.z61 (D1 3.4): the re-plan sees the bag without the failed chain's claims
         Routine r;
         try {

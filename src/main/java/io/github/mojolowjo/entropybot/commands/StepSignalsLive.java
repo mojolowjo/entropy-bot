@@ -66,6 +66,25 @@ public final class StepSignalsLive {
     }
 
     /**
+     * 0.39.z76 send-back 4 (run AV 02:43:29, 02:52:43, 02:56:09: three working strips - 19, 26 and 40 blocks mined, the
+     * second inside an iron cluster - ended "no progress 30 s ... no block broken"; no monitor line in runs AC-AW ever showed
+     * a stage): the game's break stage (0-9) of the block being broken, -1: none. The one read, for the step monitor and
+     * AaRuntime's progress tick. Baritone's {@code BlockBreakHelper.tick} sets {@code MultiPlayerGameMode#isDestroying} back
+     * to false at the end of every break tick (so vanilla's {@code continueAttack} does not abort a break it has no key for)
+     * and restores it on its next tick; read after that, {@code isDestroying} is always false, so the old read
+     * "isDestroying ? stage : -1" was -1 for every Baritone dig. The progress behind {@code getDestroyStage} stays while the
+     * block is broken and is 0 again once it breaks; Baritone's {@code stopBreakingBlock} can leave it stale (its reset runs
+     * with isDestroying already false), so a stage counts only while the arm swings (Baritone swings on every damaging tick).
+     * Loader notes: vanilla {@code MultiPlayerGameMode#getDestroyStage}, {@code LivingEntity#swinging}; Fabric: the same
+     * under Yarn names.
+     */
+    static int destroyStage(LocalPlayer p) {
+        var gm = Minecraft.getInstance().gameMode;
+        if (gm == null || p == null || !p.swinging) return -1;
+        return gm.getDestroyStage();
+    }
+
+    /**
      * The signals now. {@code notLoaded}: the hands' own rule-15 wait (the station fact not loaded), null: none;
      * {@code ownWait}: the step waits on its own clock (the furnace, the first-answer wait), null: none.
      */
@@ -81,8 +100,7 @@ public final class StepSignalsLive {
         Goal g = b.getPathingBehavior().getGoal();
         double d = g == null ? Double.NaN : g.heuristic(f[0], f[1], f[2]);
         boolean in = g != null && g.isInGoal(f[0], f[1], f[2]);
-        var gm = Minecraft.getInstance().gameMode;
-        int ds = gm != null && gm.isDestroying() ? gm.getDestroyStage() : -1;
+        int ds = destroyStage(p);
         // 0.39.z71 review 1: the block being broken is the one under the crosshair (Baritone looks at it; vanilla hitResult)
         String cell = ds >= 0 && Minecraft.getInstance().hitResult instanceof net.minecraft.world.phys.BlockHitResult bh ? Jobs.fmt(new int[]{bh.getBlockPos().getX(), bh.getBlockPos().getY(), bh.getBlockPos().getZ()}) : null;
         int made = outWord == null ? -1 : Math.max(0, count(Gui.inventory(p), outWord) - outBase);

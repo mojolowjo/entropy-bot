@@ -146,9 +146,12 @@ class Z70StepCheckTest {
         assertTrue(run.running(), run.why());
     }
 
-    /** Rule 15: no feet known (or no bag) is never "the same place": re-planned, bounded by the run's cap (both order caps). */
+    /**
+     * Rule 15: no feet known (or no bag) is never "the same place": re-planned each time. 0.39.z76 send-back 4: the run's own
+     * count cap is gone (run AW 03:18:31), so the run asks its planner every time; the order's planner (Goals.replan) answers.
+     */
     @Test
-    void unknownCellIsNeverTheSameAndTheRunIsBounded() {
+    void unknownCellIsNeverTheSame() {
         Hands h = new Hands();
         h.feet = null;
         h.status = s -> Car.Status.failed("walk ended at y 70");
@@ -156,12 +159,10 @@ class Z70StepCheckTest {
         int[] asked = {0};
         Steps run = new Steps(h);
         run.start("goal.iron", List.of(STRIP_K1), 0, (failed, fact, why) -> { asked[0]++; return new Steps.Routine(List.of(STRIP_K1), null); });
-        int cap = Tuning.i("replan.maxPerOrder") + Tuning.i("replan.maxSourceDrops");
-        for (int t = 1; t <= cap + 5 && run.running(); t++) run.tick(t);
-        assertEquals(Steps.Phase.FAILED, run.phase());
-        assertEquals(cap, asked[0]);
-        assertTrue(run.why().contains("not re-planned: " + cap + " re-plans in this run already"), run.why());
-        assertFalse(run.why().contains("the same way failed twice"), run.why());
+        int past = Tuning.i("replan.maxPerOrder") + Tuning.i("replan.maxSourceDrops") + 5;
+        for (int t = 1; t <= past; t++) run.tick(t);
+        assertTrue(run.running(), run.why());
+        assertEquals(past, asked[0]);
     }
 
     /** The order's own count and dropped sources go into the park line when the order answers (Goals.orderState). */
