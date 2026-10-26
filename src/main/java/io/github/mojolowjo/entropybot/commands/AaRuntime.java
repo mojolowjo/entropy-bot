@@ -2105,8 +2105,12 @@ public final class AaRuntime implements JobPort {
      * 0.39.z30: also run right before a re-plan, so the chain reads the station memory of now, not of the last sense.
      */
     private void stationFactsNow(io.github.mojolowjo.entropybot.aa.core.Inputs in) {
-        in.tableKnown = tableSeenOrLatched || c.crafting.knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT) instanceof io.github.mojolowjo.entropybot.aa.StationFact.Known;
-        in.furnaceKnown = furnaceSeenOrLatched || c.crafting.knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT) instanceof io.github.mojolowjo.entropybot.aa.StationFact.Known;
+        // 0.39.z75 take (run AI 20:06:47: the helmet's only table was refused - "stuck 10 s short", "every known one is
+        // refused" - yet a table in sight kept "a table near" true, so the chain priced the craft there at 0 s and never
+        // priced making and placing a new one; the same way failed twice, parked): a sight or the camp latch counts only
+        // while the station lookup does not refuse every known one (StationFact.near)
+        in.tableKnown = io.github.mojolowjo.entropybot.aa.StationFact.near(tableSeenOrLatched, c.crafting.knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT));
+        in.furnaceKnown = io.github.mojolowjo.entropybot.aa.StationFact.near(furnaceSeenOrLatched, c.crafting.knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT));
     }
 
     /** 0.39.z30: a re-plan reads the facts of now: the senses again (the bag after the last step), the inputs filled from them. */

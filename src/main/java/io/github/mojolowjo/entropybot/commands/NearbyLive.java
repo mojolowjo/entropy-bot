@@ -187,7 +187,7 @@ final class NearbyLive {
             case StationFact.Known k -> {
                 List<Spot> ok = new ArrayList<>();
                 for (Spot s : k.spots()) if (skip == null || !skip.test(new int[]{s.x(), s.y(), s.z()})) ok.add(s);
-                yield ok.isEmpty() ? new StationFact.None("every known one is refused (untrusted, or it never opened)") : new StationFact.Known(ok, k.notes());
+                yield ok.isEmpty() ? new StationFact.None(StationFact.REFUSED_ALL) : new StationFact.Known(ok, k.notes());
             }
         };
     }

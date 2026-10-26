@@ -545,7 +545,31 @@ public final class Steps {
     private DryRun.Shortage dryHold;
 
     /** The step's start after the dry run: the tool check, the hands' start, the start line. */
+    /** 0.39.z75: the bag's count at the step's start of each word the step gets or makes (null: not readable or none). */
+    private java.util.Map<String, Integer> madeAtStart;
+
+    /** 0.39.z75: the bag's counts of the step's words now (null: no count, or the bag cannot be listed). */
+    private java.util.Map<String, Integer> madeNow(Step s) {
+        java.util.Map<String, Integer> w = StepsShort.wants(s);
+        if (w == null) return null;
+        try {
+            StepNeeds.Bag b = hands.bag();
+            return StepsShort.counts(w, b == null ? null : b.items());
+        } catch (RuntimeException e) {
+            return null;                         // rule 15: not readable - the short fact is not said (the failure stands as it was)
+        }
+    }
+
+    /**
+     * 0.39.z75 (rule 7): a step that ended short of its count, with no fact of its own: the typed fact "short by N: reason"
+     * in the bag slot of what it was for (StepsShort) - never a plain stop. Null: not short, or not countable.
+     */
+    private FactChange.Fact shortFact(Step s, String reason) {
+        return StepsShort.of(StepsShort.wants(s), madeAtStart, madeNow(s), reason);
+    }
+
     private void begin(Step s, Reservations rs, DryRun.Shortage dry) {
+        madeAtStart = madeNow(s);
         String r;
         String dryNote = null;
         if (dry != null) dryNote = "dry run: " + dry.text() + " (no order behind the run: not re-planned)";
@@ -829,6 +853,7 @@ public final class Steps {
                     reason = reason + " (" + item + ")";
                 }
             }
+            if (fact == null) fact = shortFact(s, reason);       // 0.39.z75: a step that ended short of its count
             if (fact == null) fact = walkLeads(steps, idx, reason);
         }
         if (fact == null || replanner == null || idx < 0 || idx >= steps.size()) { fail(reason); return; }

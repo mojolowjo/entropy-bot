@@ -86,6 +86,7 @@ final class TuningDefs {
         Tuning.def("station.nearM", 30, "station-far 0.39.z33", "a known station within this many blocks (straight line) is used as is; farther, its walk is priced against placing a new one near me");
         Tuning.def("station.takeNear", 2, "0.39.z48 (S63)", "the walk before taking a known station block ends within this many blocks of it (Baritone's GoalNear)");
         Tuning.def("station.takeReachM", 6, "0.39.z48 (S63)", "a station take starts only within this many blocks of the station (the walk before it got there); farther, the step fails with the distance");
+        Tuning.def("station.takePickupS", 10, "0.39.z75 take (run AI 20:06:10: the take ended 'picked up 0 of 1')", "seconds a station take waits for its broken station's drop to reach the bag (Baritone's pickup walks to it) before it ends short with the take's fact");
         Tuning.def("station.mainBonusS", 30, "main-stations 0.39.z35", "seconds off the walk price of the owner's main station of a kind (aa station main, aa deposit x y z): a price, not a rule");
         Tuning.def("needChain.unknownBreakS", 3, "one-planner 0.39.z1 (was coalOptions.mineOre)", "seconds a block takes to break when the game gives it no hardness (no data loaded)");
         Tuning.def("needChain.unknownMobHp", 10, "one-planner 0.39.z1", "health points a mob is priced at when the game's attributes give none (the hunt's kill time)");

@@ -389,6 +389,107 @@ class Z75UndergroundFuelTest {
         assertNull(NeedChain.zeroStep(List.of(new Step.Collect("coal", 1), new Step.Craft("minecraft:torch", 4))));
     }
 
+    // ---- take fix and the short rule (run AI on z75) ----
+
+    /**
+     * Run AI 20:06:10: the fork's break of the table ended at once ("cluster 1 block: picked up 0 of 1"), the table still
+     * standing - the take ends SHORT (its typed fact follows), never a plain stop; a broken table not in the bag is
+     * Baritone's pickup and the step waits for the bag; the table in the bag - DONE.
+     */
+    @Test
+    void take_endsOnTheBagNeverOnTheBreak() {
+        assertEquals(io.github.mojolowjo.entropybot.aa.moves.TakeEnd.Verdict.SHORT, io.github.mojolowjo.entropybot.aa.moves.TakeEnd.judge(0, false, true, 100, -1), "AI 20:06:10: still stands");
+        assertTrue(io.github.mojolowjo.entropybot.aa.moves.TakeEnd.shortText("take crafting_table at -34 70 -55", true, "cluster 1 block: picked up 0 of 1", false).contains("short by 1: the station still stands"));
+        assertEquals(io.github.mojolowjo.entropybot.aa.moves.TakeEnd.Verdict.RUNNING, io.github.mojolowjo.entropybot.aa.moves.TakeEnd.judge(0, true, true, 100, -1), "the break runs");
+        assertEquals(io.github.mojolowjo.entropybot.aa.moves.TakeEnd.Verdict.PICKUP, io.github.mojolowjo.entropybot.aa.moves.TakeEnd.judge(0, false, false, 100, -1), "broken, not in the bag: Baritone's pickup");
+        assertEquals(io.github.mojolowjo.entropybot.aa.moves.TakeEnd.Verdict.RUNNING, io.github.mojolowjo.entropybot.aa.moves.TakeEnd.judge(0, false, false, 150, 300), "waiting for the bag");
+        assertEquals(io.github.mojolowjo.entropybot.aa.moves.TakeEnd.Verdict.SHORT, io.github.mojolowjo.entropybot.aa.moves.TakeEnd.judge(0, false, false, 300, 300), "the wait is over");
+        assertEquals(io.github.mojolowjo.entropybot.aa.moves.TakeEnd.Verdict.DONE, io.github.mojolowjo.entropybot.aa.moves.TakeEnd.judge(1, false, false, 160, 300), "picked up: done");
+    }
+
+    /**
+     * The take's fact ("take at x y z" held for the order) re-plans with another way: with 2 logs in the bag and no other
+     * table, the table is made and placed (planks 0.3 + table 0.3 + place 0.15) before the pickaxe's craft (0.3) - not the
+     * same take again.
+     */
+    @Test
+    void take_aFailedTakeRePlansWithANewTable() {
+        ScenariosTest.world("wooden", "stone");
+        World w = ScenariosTest.w(Map.of("minecraft:oak_log", 2, "minecraft:cobblestone", 3, "minecraft:stick", 2), false, false, Map.of(TABLE, List.of(TABLE_1M)));
+        Chain held = NeedChain.resolve("stone_pickaxe", 1, w.withoutSources(Map.of("take at 1 76 0", "take crafting_table at 1 76 0: short by 1: the station still stands")));
+        assertTrue(held.ok() && !held.explore(), held.why());
+        assertTrue(held.steps().stream().noneMatch(s -> s instanceof Step.TakeStation), held.steps().toString());
+        assertEquals(List.of(new Step.Craft("oak_planks", 4), new Step.Craft("crafting_table", 1), new Step.PlaceNear("crafting_table"), new Step.Craft("stone_pickaxe", 1)), held.steps());
+        assertEquals(0.3 + 0.3 + 0.15 + 0.3, held.seconds(), 0.01, held.why());
+    }
+
+    /**
+     * Run AI 20:06:47: the helmet's one table refused ("every known one is refused"), a table in sight still read "near":
+     * no more - a refused station is not near, so the chain prices making and placing a new one (the table lost -> a new one).
+     */
+    @Test
+    void take_aRefusedTableIsNotNearAndANewOneIsMade() {
+        assertFalse(io.github.mojolowjo.entropybot.aa.StationFact.near(true, new io.github.mojolowjo.entropybot.aa.StationFact.None(io.github.mojolowjo.entropybot.aa.StationFact.REFUSED_ALL)));
+        assertTrue(io.github.mojolowjo.entropybot.aa.StationFact.near(true, new io.github.mojolowjo.entropybot.aa.StationFact.None("no station placed or scanned")));
+        assertTrue(io.github.mojolowjo.entropybot.aa.StationFact.near(false, new io.github.mojolowjo.entropybot.aa.StationFact.Known(List.of(TABLE_1M))));
+        ScenariosTest.world("wooden", "stone");
+        Chain c = NeedChain.resolve("furnace", 1, ScenariosTest.w(Map.of("minecraft:oak_log", 1, "minecraft:cobblestone", 8), false, false, Map.of()));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertEquals(List.of(new Step.Craft("oak_planks", 4), new Step.Craft("crafting_table", 1), new Step.PlaceNear("crafting_table"), new Step.Craft("furnace", 1)), c.steps());
+    }
+
+    /**
+     * The short rule (rule 7), one case per step kind that can end short: the bag counts what arrived, the fact is "short by
+     * N" in the bag slot of what it was for. AI 20:10:05: collect 2 raw_iron, 1 arrived -> short by 1.
+     */
+    @Test
+    void short_everyCountedStepEndsWithATypedFact() {
+        ScenariosTest.world("wooden", "stone");
+        record Case(Step step, String word, int start, int now, String key, int by) {}
+        List<Case> cases = List.of(
+                new Case(new Step.Collect("raw_iron", 2), "minecraft:raw_iron", 0, 1, "bag raw_iron", 1),
+                new Case(new Step.TakeStation("crafting_table", 1, 76, 0), "minecraft:crafting_table", 0, 0, "bag crafting_table", 1),
+                new Case(new Step.ChopTree(new int[]{10, 64, 0}, 4, null), "#" + NeedChain.LOGS_TAG, 0, 2, "bag logs", 2),
+                new Case(new Step.Craft("stick", 4), "minecraft:stick", 0, 0, "bag stick", 4),
+                new Case(new Step.Smelt("iron_ingot", 3, true), "minecraft:iron_ingot", 1, 2, "bag iron_ingot", 2),
+                new Case(new Step.HuntAt("minecraft:cow", 2, new int[]{0, 0}, "beef", 3), "minecraft:beef", 0, 1, "bag beef", 2));
+        for (Case k : cases) {
+            Map<String, Integer> wants = io.github.mojolowjo.entropybot.aa.moves.StepsShort.wants(k.step());
+            assertNotNull(wants, k.step().text());
+            FactChange.Fact f = io.github.mojolowjo.entropybot.aa.moves.StepsShort.of(wants, Map.of(k.word(), k.start()), Map.of(k.word(), k.now()), "the hand's end");
+            assertNotNull(f, k.step().text());
+            assertEquals(k.key(), f.key(), k.step().text());
+            assertTrue(f.text().startsWith("short by " + k.by() + " "), f.text());
+            assertNull(io.github.mojolowjo.entropybot.aa.moves.StepsShort.of(wants, Map.of(k.word(), 0), Map.of(k.word(), 99), "x"), "all arrived: not short");
+        }
+        assertNull(io.github.mojolowjo.entropybot.aa.moves.StepsShort.wants(new Step.Walk(0, 0, 0, 0)), "a walk has no count");
+    }
+
+    /** AI 20:10:05 end to end: a collect that ends short re-plans (the replanner is asked with the short fact), never a plain stop. */
+    @Test
+    void short_aShortCollectRePlans() {
+        java.util.Map<String, Integer> bag = new java.util.HashMap<>(Map.of("minecraft:raw_iron", 0));
+        Step collect = new Step.Collect("raw_iron", 2), craft = new Step.Craft("minecraft:iron_ingot", 1);
+        List<FactChange.Fact> asked = new java.util.ArrayList<>();
+        io.github.mojolowjo.entropybot.aa.moves.Steps.Hands h = new io.github.mojolowjo.entropybot.aa.moves.Steps.Hands() {
+            int t;
+            @Override public String start(Step s) { return null; }
+            @Override public io.github.mojolowjo.entropybot.aa.moves.Car.Status status(Step s) {
+                if (s == collect && ++t >= 2) { bag.put("minecraft:raw_iron", 1); return io.github.mojolowjo.entropybot.aa.moves.Car.Status.failed("collect 2 raw_iron: cluster 2 blocks: picked up 1 of 2 (1 drop left, unreachable) (got 1 of 2)"); }
+                return io.github.mojolowjo.entropybot.aa.moves.Car.Status.running("running");
+            }
+            @Override public void cancel(String why) {}
+            @Override public FactChange.Fact lastFact() { return null; }
+            @Override public StepNeeds.Bag bag() { return bagOf(bag); }
+        };
+        io.github.mojolowjo.entropybot.aa.moves.Steps run = new io.github.mojolowjo.entropybot.aa.moves.Steps(h);
+        run.start("goal.iron", List.of(collect, craft), 0, (failed, fact, why) -> { asked.add(fact); return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(List.of(new Step.Collect("raw_iron", 1), craft), null); });
+        for (int i = 1; i <= 4; i++) run.tick(i);
+        assertEquals(1, asked.size(), "re-planned once: " + run.why());
+        assertEquals("bag raw_iron", asked.get(0).key());
+        assertTrue(asked.get(0).text().startsWith("short by 1 of 2 raw_iron (1 arrived)"), asked.get(0).text());
+    }
+
     // ---- 3. counted once ----
 
     /**

@@ -30,6 +30,19 @@ public sealed interface StationFact {
         public Spot nearest() { return spots.get(0); }
     }
 
+    /** 0.39.z75 take: the None reason of a lookup whose every known station is refused (NearbyLive). */
+    String REFUSED_ALL = "every known one is refused (untrusted, or it never opened)";
+
+    /**
+     * 0.39.z75 take (run AI 20:06:47): a station of the kind counts as near - one known by the lookup, or one in sight / the
+     * camp latch ({@code seenOrLatched}) unless the lookup refuses every known one (that one is the refused station). Pure.
+     */
+    static boolean near(boolean seenOrLatched, StationFact f) {
+        if (f instanceof Known) return true;
+        if (f instanceof None n && REFUSED_ALL.equals(n.why())) return false;
+        return seenOrLatched;
+    }
+
     /** The line text of a not-loaded answer (stationsLine, the waiting step's status). */
     String NOT_LOADED_LINE = "stations: item data not loaded yet";
 }

@@ -269,7 +269,7 @@ public final class StepHands implements Steps.Hands {
             return switch (s) {
                 case Step.ChopTree t -> mineStatus(p);
                 case Step.Collect k -> mineStatus(p);
-                case Step.TakeStation t -> mineStatus(p);
+                case Step.TakeStation t -> takeStatus(p, t);
                 case Step.KelpCut k -> mineStatus(p);
                 case Step.MineAt m -> veinStatus(p, m);
                 case Step.Strip st -> StripStep.status(st, Core.INSTANCE.reflexes.hold());
@@ -811,6 +811,7 @@ public final class StepHands implements Steps.Hands {
         double d = Math.sqrt(Jobs.distSq(here, new int[]{t.x(), t.y(), t.z()}));
         if (d > Tuning.get("station.takeReachM")) return "error: " + t.text() + ": " + Math.round(d) + " m from it, the walk before did not get there";
         mineFrom = "at " + t.x() + " " + t.y() + " " + t.z();
+        takePickupUntil = -1;
         component = true;
         try {
             return mine(p, new ArrayList<>(List.of(own)), List.of(id), 1, t.text());
@@ -821,6 +822,59 @@ public final class StepHands implements Steps.Hands {
 
     /** 0.39.z48: the next mine() runs the fork's component break whatever the block kind (a station take). */
     private boolean component;
+
+    /** 0.39.z75 take: the tick the take's pickup wait ends (-1: none started). */
+    private long takePickupUntil = -1;
+
+    /**
+     * 0.39.z75 take (run AI 20:06:10): the take's status on the observed state (TakeEnd): the station in the bag - done;
+     * the break running - running; the block gone, not in the bag - Baritone's pickup (the stock follow process) walks to
+     * its drop while the step waits station.takePickupS for the bag; else short by 1 with the take's typed fact
+     * (FactChange.take), so the order re-plans. Loader notes: vanilla Level#getBlockState, ItemStack#is; Baritone's
+     * IFollowProcess#pickup.
+     */
+    private Car.Status takeStatus(LocalPlayer p, Step.TakeStation t) {
+        IBaritone b = Jobs.baritone();
+        if (b == null) return Car.Status.failed("baritone not loaded");
+        int got = count(p) - startCount;
+        String id = t.item().contains(":") ? t.item() : "minecraft:" + t.item();
+        net.minecraft.world.item.Item item = BuiltInRegistries.ITEM.get(ResourceLocation.tryParse(id));
+        Block own = Block.byItem(item);
+        var level = Minecraft.getInstance().level;
+        boolean stands = level != null && level.getBlockState(new BlockPos(t.x(), t.y(), t.z())).getBlock() == own;
+        boolean breaking = b.getChopProcess().isActive() || Core.INSTANCE.reflexes.hold();
+        long now = Core.INSTANCE.tick();
+        var v = io.github.mojolowjo.entropybot.aa.moves.TakeEnd.judge(got, breaking, stands, now, takePickupUntil);
+        switch (v) {
+            case DONE -> {
+                if (takePickupUntil >= 0) b.getFollowProcess().cancel();
+                takePickupUntil = -1;
+                endMining();
+                return Car.Status.done("ok: " + miningWhat + ": got " + got + " (in the bag)");
+            }
+            case RUNNING -> {
+                return Car.Status.running(takePickupUntil >= 0 ? miningWhat + ": waiting for the " + t.item() + " drop to reach the bag (Baritone's pickup)" : miningWhat + ": " + got + " of 1");
+            }
+            case PICKUP -> {
+                b.getChopProcess().cancel();
+                b.getFollowProcess().pickup(st -> st.is(item));
+                takePickupUntil = now + Math.round(20 * Tuning.get("station.takePickupS"));     // structural: 20 ticks a second
+                LOG.info("[entropybot] steps: {}: the {} is broken, not in the bag yet: Baritone's pickup walks to its drop (station.takePickupS {} s)",
+                        t.text(), t.item(), Math.round(Tuning.get("station.takePickupS")));
+                return Car.Status.running(miningWhat + ": waiting for the " + t.item() + " drop to reach the bag (Baritone's pickup)");
+            }
+            default -> {
+                boolean waited = takePickupUntil >= 0;
+                if (waited) b.getFollowProcess().cancel();
+                takePickupUntil = -1;
+                endMining();
+                String end = endOf(b.getChopProcess().lastEnd());
+                String why = io.github.mojolowjo.entropybot.aa.moves.TakeEnd.shortText(t.text(), stands, end, waited);
+                io.github.mojolowjo.entropybot.aa.moves.FactChange.take(t.x(), t.y(), t.z(), why);
+                return Car.Status.failed(why);
+            }
+        }
+    }
 
     /**
      * TAG_NEEDS: a collect of a tag need whose member no lookup named ("collect #coals 4"): Baritone's MineProcess on every block

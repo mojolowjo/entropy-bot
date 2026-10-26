@@ -66,6 +66,16 @@ public final class FactChange {
                 "the walk up to the surface at " + x + " " + y + " " + z + " out for this order: " + why);
     }
 
+    /**
+     * 0.39.z75 take (run AI 20:06:10: "take crafting_table at -34 70 -55: cluster 1 block: picked up 0 of 1" stopped the
+     * order with no fact): a station take that ended without the station in the bag - the source slot keyed by the take's
+     * own key ({@link io.github.mojolowjo.entropybot.aa.NeedChain#sourceKey}: "take at x y z"); the order re-plans without
+     * that take (the walk to it, another station or a new one made and placed).
+     */
+    public static void take(int x, int y, int z, String why) {
+        last = new Fact("source take at " + x + " " + y + " " + z, why);
+    }
+
     /** A known source the step went for is gone. */
     public static void source(String block, String at) {
         last = new Fact("source " + block + " " + at, block.replaceFirst("^minecraft:", "") + " at " + at + " gone");

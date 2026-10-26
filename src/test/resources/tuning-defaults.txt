@@ -960,6 +960,7 @@ cave.candidatePriorS	30.0
 cave.candidateReachM	96.0
 explore.retryS	20.0
 station.takeNear	2.0
+station.takePickupS	10.0
 station.takeReachM	6.0
 cave.exploreTowardM	128.0
 cave.floorMaxDepth	64.0
