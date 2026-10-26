@@ -182,8 +182,13 @@ class Z68ExploreWhereTest {
         assertTrue(c.why().contains("explore for oak_log on the surface (oak_log grows on the surface"), c.why());
     }
 
+    /**
+     * 0.39.z77 J2 E2 (manager 2026-10-26; runs AX 14:23, BC 06:24:02): the failed walk up is held for the order as before, but
+     * from 54 blocks under ground the explore no longer runs from here (its target would be a goal through rock, rule 22):
+     * the way fails with the reason (was z68: the explore ran from here).
+     */
     @Test
-    void aFailedWalkUpIsHeldAndTheExploreRunsFromHere() {
+    void aFailedWalkUpIsHeldAndNoExploreRunsThroughRock() {
         NeedChain.Surface under = new NeedChain.Surface(54, 3, SKY_Y, 4, 54.1);
         var w = logsWorld(under);
         Chain first = NeedChain.resolve("oak_log", 4, w);
@@ -194,7 +199,9 @@ class Z68ExploreWhereTest {
         assertEquals("source " + key, f.key(), "a source fact: held for the order, a re-plan");
         Chain again = NeedChain.resolve("oak_log", 4, w.withoutSources(Map.of(key, f.text())));
         assertTrue(again.steps().stream().noneMatch(st -> st instanceof Step.ToSurface), "no walk up again: " + again.steps());
-        assertTrue(again.steps().get(again.steps().size() - 1) instanceof Step.Explore, again.steps().toString());
+        assertTrue(again.steps().stream().noneMatch(st -> st instanceof Step.Explore), "no explore from under ground: " + again.steps());
+        assertFalse(again.ok(), again.why());
+        assertTrue(again.missing().startsWith(NeedChain.UNDER_GROUND), again.why());
     }
 
     @Test

@@ -360,6 +360,9 @@ public final class NeedChain {
         /** 0.39.z68: where explore targets generate and the surface over the bot ({@link WhereFacts}). */
         public World withWhere(WhereFacts w) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, w); }
 
+        /** 0.39.z77 J2: the same world with another bag (the sequential ad-hoc price: each order from the bag the last left). */
+        public World withBag(Map<String, Integer> b) { return new World(b, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where); }
+
         /**
          * 0.39.z67 item 1 (run Y 09:26:14 / 09:31:16): the order's held place failures ({@code keyWhy}: its dropped sources;
          * the {@link #PLACE_AT} keys count, each the cell where a place-near failed) seen from {@code pos} (the feet now; null:
@@ -957,6 +960,285 @@ public final class NeedChain {
         return finish(c, "pickaxe", phrase == null ? "a pickaxe of tier " + tier + " is in the bag" : "pickaxe <- " + phrase);
     }
 
+    // ---- 0.39.z77 J2: the playbook way (D5 J2; rule 1 clarified: one priced option beside the ad-hoc chain) ----
+
+    /** 0.39.z77 J2: the name of a playbook chain (its why line starts with it). */
+    public static final String PLAYBOOK = "playbook";
+
+    /**
+     * 0.39.z77 J2: the chain of a whole {@link Playbook} on ONE simulated bag and context: the SURFACE leg's gets (the gate's
+     * pickaxe, the all-surface orders) with no leg to another level inside it; each DESCENT as ONE strip of every band
+     * family it sums ({@link #playbookStrip}); each AT_BAND leg's gets from the bag the strip filled (the smelt for every
+     * order at once, then the orders), what they need up there met before going down ({@link #beforeDown}, the z75
+     * take-along). Every member must stand (rule 7): a member that fails, or explores past the surface leg, fails the
+     * playbook with its reason; the surface leg ending in an explore is the row's explore (its word a surface word, E1).
+     */
+    public static Chain resolvePlaybook(Playbook pb, World w) { return resolvePlaybookLegs(pb, w).chain(); }
+
+    /**
+     * 0.39.z77 J2 (owner via the manager: the watcher sees each leg as it starts): the playbook's chain and, by identity, the
+     * first step of each leg in the chain's order -> "playbook leg 2/3: descent to y 16 for raw_iron 27, coal 4" (said when
+     * that step starts, Goals' replanner). Empty when the chain does not stand.
+     */
+    public record Legs(Chain chain, Map<Step, String> starts) {}
+
+    public static Legs resolvePlaybookLegs(Playbook pb, World w) {
+        Ctx c = new Ctx(w);
+        List<java.util.Set<Step>> added = new ArrayList<>();
+        Chain ch = playbookChain(c, pb, added);
+        Map<Step, String> starts = new java.util.IdentityHashMap<>();
+        if (ch.ok() && !ch.explore() && pb != null) {
+            int prev = -1, n = Math.min(added.size(), pb.legs().size());
+            for (int i = 0; i < n; i++) {
+                int at = -1;
+                for (int j = prev + 1; j < ch.steps().size(); j++) if (added.get(i).contains(ch.steps().get(j))) { at = j; break; }
+                if (at < 0) continue;
+                starts.put(ch.steps().get(at), "playbook leg " + (i + 1) + "/" + pb.legs().size() + ": " + legWords(pb.legs().get(i)));
+                prev = at;
+            }
+        }
+        return new Legs(ch, starts);
+    }
+
+    /** 0.39.z77 J2: a leg as the watcher reads it ("descent to y 16 for raw_iron 27, coal 4"). */
+    static String legWords(Playbook.Leg leg) {
+        List<String> g = new ArrayList<>();
+        for (Playbook.Target t : leg.gets()) g.add(t.text());
+        return switch (leg.kind()) {
+            case SURFACE -> "on the surface: " + String.join(", ", g);
+            case DESCENT -> (leg.on() ? "strip on at y " + leg.y() + " for " + String.join(", ", g) + " (with the new pickaxe)"
+                    : "descent to y " + leg.y() + " for " + String.join(", ", g) + " (one strip)");
+            case AT_BAND -> "at the band: " + String.join(", ", g);
+        };
+    }
+
+    private static java.util.Set<Step> ids(List<Step> steps) {
+        java.util.Set<Step> s = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        s.addAll(steps);
+        return s;
+    }
+
+    private static java.util.Set<Step> addedSince(Ctx c, java.util.Set<Step> before) {
+        java.util.Set<Step> s = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (Step x : c.steps) if (!before.contains(x)) s.add(x);
+        return s;
+    }
+
+    private static Chain playbookChain(Ctx c, Playbook pb, List<java.util.Set<Step>> added) {
+        if (pb == null || !pb.ok()) return playbookFails(c, pb == null ? "no playbook" : pb.fail());
+        List<String> phrases = new ArrayList<>();
+        int levelY = Playbook.NO_Y;
+        for (Playbook.Leg leg : pb.legs()) {
+            java.util.Set<Step> before = ids(c.steps);
+            if (leg.kind() == Playbook.Kind.DESCENT) {
+                String p = playbookStrip(c, leg, levelY);
+                if (c.fail != null) return playbookFails(c, "descent to y " + leg.y() + ": " + c.fail);
+                if (c.stuck) return playbookFails(c, "descent to y " + leg.y() + ": its pickaxe ends in an explore (no known source for " + shw(c.unknown) + ")");
+                if (p != null) phrases.add(p);
+                levelY = leg.y();
+                added.add(addedSince(c, before));
+                continue;
+            }
+            boolean surface = leg.kind() == Playbook.Kind.SURFACE;
+            String name = surface ? "surface" : "at band";
+            List<String> got = new ArrayList<>();
+            boolean wasHoisting = c.hoisting;
+            if (surface) c.hoisting = true;                      // no leg to another level in the surface leg
+            try {
+                for (Playbook.Target t : leg.gets()) {
+                    String item = id(t.item());
+                    // a gate: the pickaxe the derivation chose for its tier (its leaves on this leg's side), made unless one digs it
+                    String p = leg.gates().contains(item) ? (leg.tier() > c.pickTier ? obtain(c, item, c.have(item) + 1) : null) : obtain(c, item, t.n());
+                    if (c.fail == null && !c.stuck) madePick(c, item);
+                    if (c.fail != null) return playbookFails(c, name + ": " + sh(item) + ": " + c.fail);
+                    if (c.stuck) {
+                        if (!surface) return playbookFails(c, name + ": " + sh(item) + " ends in an explore (no known source for " + shw(c.unknown) + ")");
+                        got.add(sh(item) + " " + t.n() + " <- " + p);
+                        phrases.add(name + ": " + String.join("; ", got));
+                        return finish(c, PLAYBOOK, PLAYBOOK + " <- " + String.join(" > ", phrases));
+                    }
+                    got.add(sh(item) + " " + t.n() + (p == null ? " (in the bag)" : " <- " + p));
+                }
+            } finally {
+                c.hoisting = wasHoisting;
+            }
+            phrases.add(name + ": " + String.join("; ", got));
+            added.add(addedSince(c, before));
+        }
+        return finish(c, PLAYBOOK, PLAYBOOK + " <- " + String.join(" > ", phrases));
+    }
+
+    /** 0.39.z77 J2: a pickaxe the playbook just made that digs better than the one in hand is the one the next strip digs with (fresh). */
+    private static void madePick(Ctx c, String item) {
+        int t = MiningTiers.toolTier(item, "pickaxe");
+        if (t > c.pickTier && c.have(item) > 0) {
+            c.pickItem = item;
+            c.pickTier = t;
+            c.pickMade = true;
+            c.pickWorn = 0;
+        }
+    }
+
+    private static Chain playbookFails(Ctx c, String why) {
+        c.fail = why;
+        return finish(c, PLAYBOOK, PLAYBOOK);
+    }
+
+    /**
+     * 0.39.z77 J2: a playbook DESCENT as ONE strip (the fork's StripProcess takes any ore set: its BlockOptionalMetaLookup,
+     * IStripProcess.strip; StripOrder.endRule ends it when every amount is met): every band leaf's ores in one Step.Strip at
+     * the leg's Y, one amount per family. The price (rule 14, rough; the strip way's own formula): the pickaxe the ores ask
+     * (made first, the cheapest), the walk down - Baritone's path for the first descent (rule 18), a later one from where the
+     * last leg left the bot by the break formula (the Y difference x the tunnel height x the host's break: rule 18 amended, no
+     * walk priced from a future cell) - then per family its ore blocks x blocks per ore (the leg's ore per slab) x the tunnel
+     * height x the host's break plus the ores' own breaks: the families summed (a tunnel finds both at once; rough on the safe
+     * side). The strip leaves the bot down there ({@code c.down}): later needs are met there or before going down.
+     */
+    private static String playbookStrip(Ctx c, Playbook.Leg leg, int levelY) {
+        MiningTiers.Source src = MiningTiers.source();
+        if (src == null) { c.fail = "the pickaxe tiers are not known (no mining data loaded yet)"; return null; }
+        List<String> ores = new ArrayList<>();
+        Map<String, Integer> lacks = new LinkedHashMap<>();
+        Map<String, StripBand> bands = new LinkedHashMap<>();
+        for (Playbook.Target t : leg.gets()) {
+            String w = word(t.item());
+            int lack = t.n() - have(c, new Want(w));
+            if (lack <= 0) continue;
+            StripBand sb = c.w.strip().apply(w);
+            if (sb == null || sb.ores().isEmpty()) { c.fail = "no strip facts for " + shw(w) + " here (no world-gen band at or below the feet, or none read)"; return null; }
+            lacks.put(w, lack);
+            bands.put(w, sb);
+            for (String o : sb.ores()) if (!ores.contains(o)) ores.add(o);
+        }
+        if (lacks.isEmpty()) return "descent to y " + leg.y() + ": its ore is in the bag already";
+        int tier = 0;
+        for (String o : ores) {
+            int t = src.blockTier(o);
+            if (t == MiningTiers.UNKNOWN) { c.fail = "the pickaxe tier of " + shw(o) + " is not known"; return null; }
+            tier = Math.max(tier, t);
+        }
+        StripBand first = bands.values().iterator().next();
+        String pre = null;
+        if (tier > c.pickTier) {
+            pre = cheapestPickaxe(c, tier);
+            if (c.fail != null || c.stuck) return null;
+        }
+        int y = leg.y();
+        String host = first.host() != null ? first.host() : ores.get(0);
+        double hostS = blockBreakS(c, host);
+        double walkS;
+        int walkBreaks;
+        String walkNote;
+        Walked wk = null;
+        boolean firstLeg = c.down == null;
+        if (firstLeg) {
+            wk = walk(c, first.x(), y, first.z(), Math.abs(first.feetY() - y));
+            if (c.fail != null) return null;
+            walkS = wk.seconds();
+            walkBreaks = wk.pickBreaks();
+            walkNote = "";
+        } else {
+            int dy = Math.abs((levelY == Playbook.NO_Y ? first.feetY() : levelY) - y);
+            walkBreaks = dy * baritone.api.process.IStripProcess.TUNNEL_HEIGHT;
+            walkS = walkBreaks * hostS;
+            walkNote = " (down " + dy + " from the last descent: " + walkBreaks + " breaks x " + s(hostS) + ", rule 18 amended)";
+        }
+        double digS = 0;
+        int tunnelBreaks = 0, oreTotal = 0;
+        Map<String, Integer> amounts = new LinkedHashMap<>();
+        Map<String, Integer> gains = new LinkedHashMap<>();
+        List<String> parts = new ArrayList<>();
+        for (var e : lacks.entrySet()) {
+            StripBand sb = bands.get(e.getKey());
+            String ore = sb.ores().get(0);
+            String gives = memberOf(c, e.getKey(), ore);
+            double per = perBlock(c, gives, ore);
+            if (!(per > 0)) { c.fail = "the yield of " + shw(gives) + " from " + shw(ore) + " is not known (no loot entry; rule 15)"; return null; }
+            int oreBlocks = (int) Math.ceil(e.getValue() / per - 1e-9);   // structural: epsilon
+            Double ps = leg.perSlab().get(e.getKey());
+            double slab = ps != null && ps > 0 ? ps : sb.perSlab();
+            double bpo = Math.min(Tuning.get("strip.maxBlocksPerOre"), io.github.mojolowjo.entropybot.aa.brain.OreBand.blocksPerOre(slab));
+            int dug = (int) Math.ceil(oreBlocks * bpo - 1e-9);           // structural: epsilon
+            int cells = baritone.api.process.IStripProcess.TUNNEL_HEIGHT * dug;
+            double oreS = blockBreakS(c, ore);
+            tunnelBreaks += cells;
+            oreTotal += oreBlocks;
+            double fam = cells * hostS + oreBlocks * oreS;
+            digS += fam;
+            amounts.merge(io.github.mojolowjo.entropybot.aa.brain.StripOrder.countKey(ore, io.github.mojolowjo.entropybot.cave.OreSpec::family), oreBlocks, Integer::sum);
+            gains.merge(gives, Math.max(e.getValue(), (int) Math.floor(oreBlocks * per + 1e-9)), Integer::sum);     // structural: epsilon
+            parts.add(shw(gives) + " " + e.getValue() + " (" + oreBlocks + " ore x ~" + Math.round(bpo) + " blocks = " + dug + " cells: " + s(fam) + ")");
+        }
+        int wear = walkBreaks + tunnelBreaks + oreTotal;
+        String spare = spareTools(c, wear, tier);
+        if (c.pickItem != null && spare == null) c.pickWorn += wear;
+        c.seconds += walkS + digS;
+        Step.Strip whole = new Step.Strip(ores, amounts, y, first.heading(), 0, null);
+        int legAt = c.steps.size();
+        if (firstLeg && first.feetY() != y) c.steps.add(new Step.ToStrip(first.x(), y, first.z(), whole.key()));
+        List<Step> legs = stripLegs(whole, digS);
+        c.steps.addAll(legs);
+        if (firstLeg && first.feetY() != y) { c.down = "the playbook's descent to y " + y; c.downAt = legAt; c.away = 0; }
+        else if (!firstLeg) c.down = "the playbook's descent to y " + y;
+        else c.away = walkS;
+        for (var e : gains.entrySet()) c.bag.merge(e.getKey(), e.getValue(), Integer::sum);
+        int n = legs.size() / io.github.mojolowjo.entropybot.aa.brain.Goals.stripLoop(whole).size();
+        final String line = "descent to y " + y + " (" + leg.whyY() + "): one strip of " + String.join(", ", ores.stream().map(NeedChain::shw).toList()) + " for "
+                + String.join(" + ", parts) + (n > 1 ? " in " + n + " legs (steps.stepMaxS " + Math.round(Tuning.get("steps.stepMaxS")) + " s each)" : "")
+                + ", walk " + s(walkS) + walkNote + " -> " + s(walkS + digS);
+        c.note(() -> line);
+        String out = line + (pre == null ? "" : " with " + pre) + (spare == null ? "" : " + " + spare);
+        return wk == null ? out : noted(out, wk);
+    }
+
+    /**
+     * 0.39.z77 J2 (manager's R2; run BC 06:23:36: a 3-iron strip timed out at steps.stepMaxS 600 s): a strip whose priced
+     * dig ({@code digS}) is past steps.stepMaxS is split into legs of the same strip - each its own Step.Strip (the same key:
+     * a leg done by its amounts clears the saved tunnel, the next starts where the bot stands) with its share of every
+     * amount, so each fits the step watch and has its own monitor; the count from the price, no knob. Each leg with its
+     * deposit and walk back ({@link io.github.mojolowjo.entropybot.aa.brain.Goals#stripLoop}). One leg: as before.
+     */
+    static List<Step> stripLegs(Step.Strip whole, double digS) {
+        double max = Tuning.get("steps.stepMaxS");
+        int most = 0;
+        for (int v : whole.amounts().values()) most = Math.max(most, v);
+        int n = max > 0 && digS > max ? (int) Math.ceil(digS / max - 1e-9) : 1;     // structural: epsilon
+        n = Math.max(1, Math.min(n, most));
+        if (n == 1) return io.github.mojolowjo.entropybot.aa.brain.Goals.stripLoop(whole);
+        List<Step> out = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            Map<String, Integer> a = new LinkedHashMap<>();
+            for (var e : whole.amounts().entrySet()) {
+                int part = e.getValue() / n + (i < e.getValue() % n ? 1 : 0);
+                if (part > 0) a.put(e.getKey(), part);
+            }
+            if (a.isEmpty()) continue;
+            out.addAll(io.github.mojolowjo.entropybot.aa.brain.Goals.stripLoop(new Step.Strip(whole.ores(), a, whole.y(), whole.heading(), i + 1, whole.from())));
+        }
+        return out;
+    }
+
+    /** 0.39.z77 J2: a chain and the simulated bag after it (the sequential ad-hoc price: the next order starts from it). */
+    public record Priced(Chain chain, Map<String, Integer> bagAfter) {}
+
+    /** 0.39.z77 J2: {@link #resolve} of an item with the simulated bag it leaves (item id -> count; a way's own tokens left out). */
+    public static Priced resolveWithBag(String what, int n, World w) {
+        Ctx c = new Ctx(w);
+        String item = id(what);
+        String phrase = obtain(c, item, n);
+        Chain ch = finish(c, sh(item), phrase == null ? sh(item) + " is in the bag" : sh(item) + " <- " + phrase);
+        Map<String, Integer> after = new LinkedHashMap<>();
+        for (var e : c.bag.entrySet()) if (e.getValue() > 0 && !e.getKey().startsWith("#") && e.getKey().indexOf('|') < 0) after.put(e.getKey(), e.getValue());
+        return new Priced(ch, after);
+    }
+
+    /**
+     * 0.39.z77 J2: the explore leg's price in seconds - the explore's own limit (discovery.exploreMinutes) and the share of
+     * it the walk back costs again (needChain.exploreReturn). Manager 2026-10-26: the row's old explore leg was 5 x 60 x 1.5
+     * = 450 walk-BLOCKS (104 s) for a step that runs up to 7.5 minutes - a unit slip; now its seconds, converted once.
+     */
+    public static double exploreS() { return exploreMinutes() * Options.MINUTE * (1 + exploreReturn()); }
+
     private static Chain finish(Ctx c, String name, String head) {
         // 0.39.z75 metric fix A (project manager; run AH 19:46:59 "strip ... for coal 0"): a need of 0 is "have it" before any
         // way is priced (obtain / needTag), and no way of count 0 ever leaves the planner - a step that would get or make
@@ -967,7 +1249,8 @@ public final class NeedChain {
         }
         double cost = Unit.blocks(c.seconds);
         // an explore has no price in the chain; the scorer still needs a number to weigh the whole row, so the row's cost carries the explore leg
-        if (c.stuck) cost += exploreMinutes() * Options.MINUTE * (1 + exploreReturn());
+        // 0.39.z77 J2 (manager: a unit slip): its seconds as walk-blocks (was 450 blocks = 104 s for up to 7.5 min)
+        if (c.stuck) cost += Unit.blocks(exploreS());
         String drops = c.dropped.isEmpty() ? "" : " | dropped: " + String.join("; ", c.dropped);
         List<Map<String, Integer>> uses = new ArrayList<>();
         for (Step st : c.steps) uses.add(c.uses.get(st));
@@ -1319,7 +1602,7 @@ public final class NeedChain {
     }
 
     /** A recipe's slots by need word, in the recipe's order: word -> pieces a batch. */
-    private static Map<String, Integer> slotWords(ItemWorth.Recipe r) {
+    static Map<String, Integer> slotWords(ItemWorth.Recipe r) {
         Map<String, Integer> out = new LinkedHashMap<>();
         for (String sw : r.needs()) out.merge(word(sw), 1, Integer::sum);
         return out;
@@ -1678,7 +1961,7 @@ public final class NeedChain {
     }
 
     /** A recipe that takes the item itself (a packing, a dye-over): not a way to make it. */
-    private static boolean packing(String item, ItemWorth.Recipe r) {
+    static boolean packing(String item, ItemWorth.Recipe r) {
         for (List<String> slot : r.options()) if (slot.contains(item)) return true;
         return false;
     }
@@ -3064,7 +3347,7 @@ public final class NeedChain {
         // 0.39.z64 item 4: a strip from fresh ground walks to its start first
         int legAt = c.steps.size();
         if (sb.feetY() != sb.y() || sb.fresh()) c.steps.add(new Step.ToStrip(sb.x(), sb.y(), sb.z(), strip.key()));
-        c.steps.addAll(io.github.mojolowjo.entropybot.aa.brain.Goals.stripLoop(strip));
+        c.steps.addAll(stripLegs(strip, digS));         // 0.39.z77 J2 (R2): past steps.stepMaxS, legs of the same strip
         if (level) {
             c.down = "the strip leg to y " + sb.y();
             c.downAt = legAt;
@@ -3309,11 +3592,36 @@ public final class NeedChain {
         // 0.39.z75 item 1: down there after the leg to another level, the band walk and the walk up are walks from a cell the
         // bot reaches later (not priced): the explore runs from where the leg leaves the bot
         if (c.down != null) whereText = "from where " + c.down + " leaves the bot";
+        // 0.39.z77 J2 E2 (runs AX 14:23, BC 06:24:02: "Baritone found no path 3 times from -181 16 27" - the explore's GoalXZ
+        // target through the rock over the bot; rule 22: never a target a player would not walk to from where it stands):
+        // under aaLadder.surfaceDepth of ground the explore runs from the surface - the priced walk up first, for every target
+        // kind, no band leg from down here (a strip at the feet, the way before any explore, did not stand). No walk up to be
+        // had (held for the order, no path, not known): no explore from here either, said (rule 7)
+        Surface over = c.down != null ? null : c.w.where().surface().get();
+        boolean under = over != null && over.depth() >= AaLadder.surfaceDepth();
+        if (under && !(where != null && where.surface())) {
+            String up = surfaceWalk(c);
+            if (up == null && c.fail != null) return null;      // the walk up waits on its path (rule 18)
+            if (up == null) { c.fail = noWalkUp(over); return null; }
+            c.steps.add(new Step.Explore(exploreMinutes(), shw(word)));
+            c.stuck = true;
+            if (c.unknown == null) c.unknown = word;
+            String out = "explore for " + shw(word) + " from the surface (" + (where == null ? "where it generates not given" : where.text()) + "; under ground here: " + up + ") (" + reason + ")";
+            if (c.trace != null) {
+                c.trace.note("source: none known for " + shw(word) + ": " + out);
+                c.trace.untilFrom.computeIfAbsent(shw(word), k -> new LinkedHashSet<>()).add(c.trace.way());
+            }
+            return out;
+        }
+        // 0.39.z77 J2 E2: a band explore that found no cave cell in the band from down there holds the band (Mining): the
+        // explore then runs on the surface, never the band leg again (it would go back down to the same rock)
+        if (where != null && where.band() && heldKey(c, io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(where.lo(), where.hi()))) band = null;
         if (where != null && where.surface()) {
             band = null;                                     // a surface target has no band to go down to
             whereText = "on the surface (" + where.text() + ")";
             upText = surfaceWalk(c);
             if (upText == null && c.fail != null) return null;  // the walk up waits on its path (rule 18): the way waits, no explore
+            if (upText == null && under) { c.fail = noWalkUp(over); return null; }     // 0.39.z77 J2 E2: never an explore through rock
         } else if (where != null && where.band()) {
             // a band the ore placements did not give (a geode, an underground lake): the fact's own band, unless held
             if (band == null && !heldKey(c, io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(where.lo(), where.hi()))) band = new int[]{where.lo(), where.hi()};
@@ -3351,6 +3659,15 @@ public final class NeedChain {
         }
         return out;
     }
+
+    /** 0.39.z77 J2 E2: the reason an explore from under ground is no way: no walk up stands (rule 22: never through rock). */
+    static String noWalkUp(Surface over) {
+        return "under ground (" + over.depth() + " blocks over the feet) and no priced walk up to the surface (held for this order, no path up, or not known):"
+                + " an explore from here would aim through rock (rule 22)";
+    }
+
+    /** 0.39.z77 J2 E2: the start of {@link #noWalkUp}'s reason. */
+    public static final String UNDER_GROUND = "under ground (";
 
     /** 0.39.z76 send-back 2 (run AO 20:37): the key prefix of an explore that froze at a position (held for the order). */
     public static final String EXPLORE_FROZEN = "explore frozen at ";

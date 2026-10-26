@@ -736,6 +736,14 @@ final class Mining {
         String aimed;
 
         /**
+         * 0.39.z77 J2 E2: the Y of an under-ground target (a cave cell in the band: a cell goal, GoalNear), null: a GoalXZ
+         * target on the surface. E1: {@code landFirst} - a part of the joined until word generates on the surface (the water
+         * term on), {@code landRead} once every part's fact was loaded.
+         */
+        Integer aimY;
+        boolean landFirst, landRead;
+
+        /**
          * 0.39.z76 send-back 1 (run AN 23:29:43-23:30:07: a gather on the way to cave candidate 117 13 213 dropped the target
          * but kept {@code aimed}; back from the vein, the "walk toward cave candidate ... ended" line read the null target: a
          * NullPointerException that stopped the chestplate order): a gather drops the target, its hold and the candidate it
@@ -745,6 +753,7 @@ final class Mining {
             target = null;
             hold = null;
             aimed = null;
+            aimY = null;
         }
         /** 0.23.1: gathering on the way (explore ... gather off = false); the bot's spot. */
         boolean gather = true;
@@ -771,6 +780,15 @@ final class Mining {
         int x = (cx << 4) + 8, z = (cz << 4) + 8;           // game fact: the centre of a chunk is 8 blocks in
         int top = io.github.mojolowjo.entropybot.world.SurfaceHeightLive.motionBlocking(lv, x, z);
         return lv.getFluidState(new BlockPos(x, top - 1, z)).is(net.minecraft.tags.FluidTags.WATER);
+    }
+
+    /**
+     * 0.39.z77 J2 E2: the explore target's Baritone goal - a cell goal near the cave cell (its own Y, Baritone's GoalNear) for
+     * an under-ground target, else the column (GoalXZ) as before. Loader notes: Baritone's GoalNear / GoalXZ, vanilla BlockPos.
+     */
+    private static baritone.api.pathing.goals.Goal exploreGoal(ExRun ex) {
+        if (ex.aimY != null) return new baritone.api.pathing.goals.GoalNear(new BlockPos(ex.target.x(), ex.aimY, ex.target.z()), 2);   // structural: within 2 blocks of the cell
+        return new GoalXZ(ex.target.x(), ex.target.z());
     }
 
     /** 0.39.z48: one of the explore's until words is an ore need (a source block the game tags c:ores). */
@@ -1200,7 +1218,7 @@ final class Mining {
             ex.hold = ExploreRules.TargetHold.look(ex.hold, now(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(), b != null && b.getPathingBehavior().getCurrent() != null);
             if (ex.hold.state() == ExploreRules.TargetHold.State.HELD) {
                 if (b != null && Jobs.idle(b) && now() - ex.targetAt >= 20) {     // structural: once a second in ticks
-                    b.getCustomGoalProcess().setGoalAndPath(new GoalXZ(ex.target.x(), ex.target.z()));
+                    b.getCustomGoalProcess().setGoalAndPath(exploreGoal(ex));
                     ex.targetAt = now();
                 }
                 s.setStatus(s.label + " - walking to " + ex.target.x() + " " + ex.target.z() + " (" + ex.chunks + " chunks so far)");
@@ -1223,6 +1241,7 @@ final class Mining {
                     Math.round(Math.hypot(me[0] - ex.target.x(), me[2] - ex.target.z())));
         }
         ex.aimed = null;
+        ex.aimY = null;
         ex.target = null;
         // 0.39.z68 (owner 2026-10-25): where the target generates (GenWhere from the jars' world-gen data), read once per run
         if (ex.untilSource != null && !ex.whereRead && commands.aaRuntime != null) {
@@ -1233,8 +1252,25 @@ final class Mining {
                     : ex.where.band() ? "toward caves in or near the band, ranked by the density at their Y (exposed ore: less the air-exposure discard) - " + ex.where.text()
                     : "as before - " + ex.where.text());
         }
+        // 0.39.z77 J2 E1 (run AP 00:02:40): a joined until word reads UNKNOWN as a whole (placed both ways); any part that
+        // generates on the surface turns the land-first water term on (read per part, asked again until every part is loaded)
+        if (ex.untilSource != null && !ex.landRead && commands.aaRuntime != null) {
+            boolean loaded = true;
+            for (String part : ex.untilSource.split("\\|"))
+                if (!part.isEmpty() && commands.aaRuntime.whereOf(part).kind() == io.github.mojolowjo.entropybot.aa.brain.GenWhere.Kind.NOT_LOADED) loaded = false;
+            ex.landFirst = ExploreRules.anySurfacePart(ex.untilSource, commands.aaRuntime::whereOf);
+            ex.landRead = loaded;
+            if (ex.landFirst && (ex.where == null || !ex.where.surface()))
+                LOG.info("[entropybot] explore: for {}: a part generates on the surface - known water chunks count exploreWords.waterRings {} rings farther (land first)",
+                        ex.untilSource, io.github.mojolowjo.entropybot.vocab.ExploreWords.waterRings());
+        }
         boolean surfaceTarget = ex.where != null && ex.where.surface();
         boolean bandTarget = ex.where != null && ex.where.band();
+        // 0.39.z77 J2 E2 (runs AX 14:23, BC 06:24:02: "no path 3 times from -181 16 27" - GoalXZ targets through the rock over
+        // the bot): a chain explore under aaLadder.surfaceDepth of ground aims only at cave cells IN the target's band within
+        // cave.exploreTowardM, as a cell goal (Baritone may dig to it); never a never-seen chunk from down there (rule 22)
+        int depthNow = ex.untilSource == null ? 0 : Jobs.underDepth(p.level(), me[0], me[1], me[2]);
+        boolean under = ex.untilSource != null && depthNow >= io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth();
         // 0.39.z48 (owner 2026-10-24, item 6): an ore need's explore aims at the nearest unvisited cave candidate within
         // cave.exploreTowardM (dropped ones are out of the list) before the next unexplored chunk. 0.39.z68: a band target
         // (GenWhere BAND) does so with the candidates and the seen mouths (Sightings) in its band first; a surface target
@@ -1263,14 +1299,32 @@ final class Mining {
                     if (pb != null && !cells.isEmpty()) LOG.debug("[entropybot] explore: caves in {}'s band {}..{} first (feet y {})", pb.feature(), pb.lo(), pb.hi(), me[1]);
                 }
             }
+            // 0.39.z77 J2 E2: from under ground only the cells in the target's band (its placer band nearest the feet)
+            var inBand = under ? (bandTarget ? ex.where.preferred(me[1]) : null) : null;
+            if (under) cells = inBand == null ? new ArrayList<>() : ExploreRules.inBand(cells, inBand.lo(), inBand.hi());
             int[] aim = ExploreRules.toward(cells, cell -> CAVE_VISITED.contains(Jobs.fmt(cell)));
             if (aim != null) {
                 ex.aimed = Jobs.fmt(aim);
                 ex.target = new ExploreRules.Target(aim[0], aim[2]);
-                ex.targetWhy = "toward cave candidate " + ex.aimed + " (the nearest unvisited within cave.exploreTowardM" + (bandTarget ? ", ranked by the band" : "") + ")";
-                LOG.info("[entropybot] explore: toward cave candidate {} ({} m; cave.exploreTowardM {})", ex.aimed,
-                        Math.round(Math.sqrt(Jobs.distSq(me, aim))), Math.round(Tuning.get("cave.exploreTowardM")));
+                if (under) ex.aimY = aim[1];
+                ex.targetWhy = "toward cave candidate " + ex.aimed + " (the nearest unvisited within cave.exploreTowardM" + (bandTarget ? ", ranked by the band" : "")
+                        + (under ? "; under ground: a cell in the band, its own Y" : "") + ")";
+                LOG.info("[entropybot] explore: toward cave candidate {} ({} m; cave.exploreTowardM {}){}", ex.aimed,
+                        Math.round(Math.sqrt(Jobs.distSq(me, aim))), Math.round(Tuning.get("cave.exploreTowardM")), under ? " - a cell goal in the band (under ground)" : "");
             }
+        }
+        if (done == null && ex.target == null && under) {
+            // 0.39.z77 J2 E2 (rule 7, rule 22): no cave cell in the band from down here - no GoalXZ through the rock either: the
+            // explore ends with a fact the order re-plans on (a band target: its band is held - the next explore runs from the
+            // surface, the walk up first; any other: this explore is held where it stands, NeedChain.frozenHere)
+            String why = "under ground (" + depthNow + " blocks over the feet at " + me[0] + " " + me[1] + " " + me[2] + "): no cave cell in the band within cave.exploreTowardM "
+                    + Math.round(Tuning.get("cave.exploreTowardM")) + " and no target a player would walk to from here (a never-seen chunk is a goal through rock; rule 22)";
+            if (bandTarget) io.github.mojolowjo.entropybot.aa.moves.FactChange.band(ex.where.lo(), ex.where.hi(), why);
+            else io.github.mojolowjo.entropybot.aa.moves.FactChange.exploreHere(me, why);
+            LOG.info("[entropybot] explore: {}", why);
+            if (b != null) Jobs.cancel(b);
+            notes().flush();
+            return why;
         }
         if (done == null && ex.target == null) {
             // V1b: the nearest never-seen chunk (that way, with a direction); never a spot the policy refuses
@@ -1288,7 +1342,8 @@ final class Mining {
                         return why != null;
                     },
                     // 0.39.z68 item (c): a surface target prefers land - a chunk the client has loaded whose centre column's top is water
-                    surfaceTarget ? (cx, cz) -> waterChunk(p.level(), cx, cz) : null, io.github.mojolowjo.entropybot.vocab.ExploreWords.waterRings());
+                    // 0.39.z77 J2 E1: also when a part of a joined until word generates on the surface
+                    surfaceTarget || ex.landFirst ? (cx, cz) -> waterChunk(p.level(), cx, cz) : null, io.github.mojolowjo.entropybot.vocab.ExploreWords.waterRings());
             if (c != null) {
                 ex.target = new ExploreRules.Target((c[0] << 4) + 8, (c[1] << 4) + 8);
                 ex.targetWhy = "the nearest never-seen chunk " + c[0] + "," + c[1] + (surfaceTarget ? " (a surface target: land first)" : "");
@@ -1323,7 +1378,7 @@ final class Mining {
             return "next";
         }
         if (b != null) {
-            b.getCustomGoalProcess().setGoalAndPath(new GoalXZ(ex.target.x(), ex.target.z()));
+            b.getCustomGoalProcess().setGoalAndPath(exploreGoal(ex));
         }
         ex.targetAt = now();
         ex.hold = ExploreRules.TargetHold.start(ex.target, now(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed());   // 0.39.z72

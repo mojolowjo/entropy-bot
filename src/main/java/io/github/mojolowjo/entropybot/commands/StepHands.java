@@ -1147,6 +1147,22 @@ public final class StepHands implements Steps.Hands {
     private BlockOptionalMetaLookup mineFilter;
     private int mineDrops0;
 
+    /**
+     * 0.39.z77 J2 E4: the cells of a Baritone goal - a goal with a position (IGoalRenderPos: GoalBlock, GoalTwoBlocks,
+     * GoalGetToBlock, GoalNear) as itself, a GoalComposite as its parts that have one; empty: none read. Loader notes:
+     * Baritone's goal API (IGoalRenderPos#getGoalPos, GoalComposite#goals), vanilla BlockPos.
+     */
+    static List<int[]> goalCells(baritone.api.pathing.goals.Goal g) {
+        List<int[]> out = new java.util.ArrayList<>();
+        if (g instanceof baritone.api.pathing.goals.GoalComposite c) {
+            for (var x : c.goals()) if (x instanceof baritone.api.utils.interfaces.IGoalRenderPos r) { var bp = r.getGoalPos(); out.add(new int[]{bp.getX(), bp.getY(), bp.getZ()}); }
+        } else if (g instanceof baritone.api.utils.interfaces.IGoalRenderPos r) {
+            var bp = r.getGoalPos();
+            out.add(new int[]{bp.getX(), bp.getY(), bp.getZ()});
+        }
+        return out;
+    }
+
     /** 0.39.z66 item 2: the bag's gain of the mine filter's items since the start (Baritone's count); -1: not known. */
     private int dropsGot(LocalPlayer p) {
         return mineFilter == null ? -1 : itemsOf(p, mineFilter) - mineDrops0;
@@ -1197,6 +1213,19 @@ public final class StepHands implements Steps.Hands {
                     + Math.round(collectStartDist) + " m at the start; failures.moved " + Math.round(io.github.mojolowjo.entropybot.aa.brain.Failures.movedV()) + "), got " + got + " of " + want;
             io.github.mojolowjo.entropybot.aa.moves.FactChange.nearCollect(collectSpot.item(), collectSpot.at(), why);
             return Car.Status.failed(why);
+        }
+        // 0.39.z77 J2 E4 (run AP 00:07:24): the mine's own goal - every block it goes for - more than failures.moved from the
+        // priced spot: the same spot's fact before the feet show it (no new comparison, rule 14)
+        if (collectSpot != null && b != null && !Core.INSTANCE.reflexes.hold()) {
+            List<int[]> goals = goalCells(b.getPathingBehavior().getGoal());
+            if (collectSpot.targetAway(goals, io.github.mojolowjo.entropybot.aa.brain.Failures.movedV())) {
+                b.getMineProcess().cancel();
+                endMining();
+                String why = miningWhat + ": Baritone's mine goes for blocks away from the priced spot " + collectSpot.spot() + " (its " + goals.size() + " goal cell"
+                        + (goals.size() == 1 ? "" : "s") + " all more than failures.moved " + Math.round(io.github.mojolowjo.entropybot.aa.brain.Failures.movedV()) + " from it), got " + got + " of " + want;
+                io.github.mojolowjo.entropybot.aa.moves.FactChange.nearCollect(collectSpot.item(), collectSpot.at(), why);
+                return Car.Status.failed(why);
+            }
         }
         if (b == null) return Car.Status.failed("baritone not loaded");
         if (!b.getMineProcess().isActive() && !Core.INSTANCE.reflexes.hold()) {

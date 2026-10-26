@@ -86,6 +86,18 @@ public final class Goals {
          * order); a try seen again parks the run. Emptied by the one more try (R1) and by aa want again.
          */
         public final java.util.Set<String> tries = new java.util.HashSet<>();
+
+        /**
+         * 0.39.z77 J2: the batch this order came in with (one {@code aa want a, b, c} line: AaRuntime names it), null: an
+         * order alone. The batch's open orders may run as one playbook ({@link BatchWay}).
+         */
+        public String batch;
+
+        /** 0.39.z77 J2: the steps of the playbook chains this order took (by identity): a failure of one holds the playbook for the order. */
+        public final java.util.Set<Step> playbookSteps = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+        /** 0.39.z77 J2: the first step of each playbook leg this order took -> its words, said once when that step starts. */
+        public final Map<Step, String> legStarts = new java.util.IdentityHashMap<>();
     }
 
     /**
@@ -203,6 +215,15 @@ public final class Goals {
             @Override public void parked(io.github.mojolowjo.entropybot.aa.moves.Steps.Attempt a) { g.loopAttempt = a; }
 
             @Override public java.util.Set<String> tries() { return g.tries; }
+
+            // 0.39.z77 J2 (owner via the manager: the watcher sees each leg): "playbook leg 2/3: descent to y 16 for ..." in
+            // the log and the whisper, once, when its first step starts
+            @Override public void started(Step s) {
+                String t = g.legStarts.remove(s);
+                if (t == null) return;
+                bb.port.log(g.r.key() + ": " + t);
+                bb.port.tellOwner(t);
+            }
         };
     }
 
@@ -292,6 +313,13 @@ public final class Goals {
                                                                              io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact, String why,
                                                                              io.github.mojolowjo.entropybot.aa.moves.Steps.Remaining left) {
         if (fact.price()) return reprice(bb, g, fact);
+        // 0.39.z77 J2 (rule 7; the Goals.chain unreachable pattern): a step of the playbook this order runs failed - the
+        // playbook is held for the order's life (key "playbook <batch>") and the ad-hoc chain takes over from the bag as it is
+        if (g.batch != null && failed != null && g.playbookSteps.contains(failed)) {
+            g.sources.failedFor(g.id(), BatchWay.key(g.batch), "a playbook step failed: " + failed.text() + " - " + fact.text(), bb.clock.now(), null, ORDER_LIFE_MS);
+            g.playbookSteps.clear();
+            bb.port.log(g.r.key() + ": the playbook is out for this order (" + failed.text() + ": " + fact.text() + "); the ad-hoc chain takes over from the bag as it is");
+        }
         // 0.39.z33 (S36): a source fact charges the failed step's source by its key: the chain drops it for this order.
         // 0.39.z62 item 1b: a fact may name its own source key (a strip heading blocked at its Y, any ore set)
         String own = io.github.mojolowjo.entropybot.aa.moves.FactChange.ownSourceKey(fact);
@@ -409,6 +437,12 @@ public final class Goals {
 
     /** 0.39.z48: the order's pick was taken now at the chain's price. */
     static void took(Goal g, io.github.mojolowjo.entropybot.aa.NeedChain.Chain ch, long nowMs) {
+        // 0.39.z77 J2: a playbook chain's steps are the playbook's (a failure of one holds it for the order, replan)
+        if (ch.why() != null && ch.why().startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.PLAYBOOK)) {
+            g.playbookSteps.addAll(ch.steps());
+            var legs = BatchWay.legs(g.batch);
+            for (Step s : ch.steps()) { String t = legs.get(s); if (t != null) g.legStarts.put(s, t); }
+        }
         // 0.39.z73 (D2 3.4): the taken chain's per-step seconds, kept for a later repair's tail price
         if (ch.stepSeconds().size() == ch.steps().size()) for (int i = 0; i < ch.steps().size(); i++) g.stepSeconds.put(ch.steps().get(i), ch.stepSeconds().get(i));
         // 0.39.z49 (S67, run K: "vs 104 s left" for the explore while paths compute): that explore is not a way - no price
@@ -743,10 +777,15 @@ public final class Goals {
         var world = chainWorld(bb, g);
         if (world == null) return null;
         var laps = io.github.mojolowjo.entropybot.aa.core.TickLaps.AA;    // 0.39.z62 item 4: resolves counted while the probe is on
-        long t0 = laps.now();
-        var ch = g.r.group() ? io.github.mojolowjo.entropybot.aa.NeedChain.resolveAll(g.r.key(), g.r.ids(), g.n, world)
-                : io.github.mojolowjo.entropybot.aa.NeedChain.resolve(g.r.ids().isEmpty() ? g.r.key() : g.r.ids().get(0), g.n, world);
-        if (t0 != 0) laps.resolved(laps.now() - t0);
+        // 0.39.z77 J2: a settled playbook verdict for this batch, bag and place re-prices the playbook alone (R3: one resolve)
+        var ch = BatchWay.cached(bb, g, world);
+        if (ch == null) {
+            long t0 = laps.now();
+            ch = g.r.group() ? io.github.mojolowjo.entropybot.aa.NeedChain.resolveAll(g.r.key(), g.r.ids(), g.n, world)
+                    : io.github.mojolowjo.entropybot.aa.NeedChain.resolve(g.r.ids().isEmpty() ? g.r.key() : g.r.ids().get(0), g.n, world);
+            if (t0 != 0) laps.resolved(laps.now() - t0);
+            ch = BatchWay.choose(bb, g, world, ch);      // 0.39.z77 J2: the batch's playbook when it is cheaper (rule 1: an option)
+        }
         // 0.39.z41: a source Baritone's complete search found unreachable is the z33 source fact: dropped for the order's life
         for (var e : ch.unreachable().entrySet()) g.sources.failedFor(g.id(), e.getKey(), e.getValue(), bb.clock.now(), null, ORDER_LIFE_MS);
         return ch;

@@ -101,6 +101,7 @@ public final class AaRuntime implements JobPort {
         bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.SURFACE_FACTS, perTick(new io.github.mojolowjo.entropybot.aa.FactsMemo<>(0), timed("surface", this::surfaceFacts)));
         bb.fact(io.github.mojolowjo.entropybot.aa.NeedChain.WORLD_FACT, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.NeedChain.World>) this::needWorld);
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.NOT_READY_FACT, (java.util.function.Supplier<String>) this::sensesNotReady);   // 0.39.z36
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.BatchWay.PER_SLAB_FACT, (java.util.function.BiFunction<String, Integer, Double>) this::perSlabAt);   // 0.39.z77 J2
         bb.fact(io.github.mojolowjo.entropybot.aa.FoodOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts>) this::foodFacts);
         NeedFacts.install(bb, this);          // round 4A N wiring: the station, bed, base and bag facts (O's sets)
         bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.STATS_FACT, tree.brain.stats);
@@ -748,6 +749,28 @@ public final class AaRuntime implements JobPort {
      * and faces, and the block the world has at that Y under the bot (loaded: its break is priced; else none, the ore's own).
      * Null: no world-gen placement read (multiplayer), no player, or none of the blocks is placed at or below the feet.
      */
+    /**
+     * 0.39.z77 J2: a need word's ore a chunk slab at {@code y} (OreBand.perSlab over the feet column's features of the blocks
+     * that drop it, the same read as {@link #strip}) - the playbook's one descent Y for several ores. NaN: no player, the
+     * column's features not read, or none of the blocks placed here (rule 15: not known, never 0).
+     */
+    double perSlabAt(String word, Integer y) {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer p = mc.player;
+        if (p == null || mc.level == null || y == null) return Double.NaN;
+        int[] at = Jobs.here(p);
+        String key = mc.level.dimension().location() + " " + (at[0] >> 4) + " " + (at[2] >> 4) + " " + System.identityHashCode(io.github.mojolowjo.entropybot.guard.WorldGenReader.ores());
+        if (!key.equals(columnKey) || columnCache == null) { columnCache = columnFeatures(mc, at); columnKey = columnCache == null ? null : key; }
+        var here = columnCache;
+        if (here == null) return Double.NaN;
+        List<io.github.mojolowjo.entropybot.aa.brain.OreBand.Feature> fs = new ArrayList<>();
+        for (String b : new java.util.TreeSet<>(sourceBlocksOf(io.github.mojolowjo.entropybot.aa.NeedChain.word(word)))) {
+            var l = here.get(b);
+            if (l != null) fs.addAll(l);
+        }
+        return fs.isEmpty() ? Double.NaN : io.github.mojolowjo.entropybot.aa.brain.OreBand.perSlab(fs, y);
+    }
+
     io.github.mojolowjo.entropybot.aa.NeedChain.StripBand strip(String word) {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer p = mc.player;
@@ -3557,13 +3580,24 @@ public final class AaRuntime implements JobPort {
                 + "; I only place (blocks in the way stay); aa goals shows the layer" + (on() ? "" : " (aa is off: aa on to work on it)");
     }
 
+    /** 0.39.z77 J2: the batch of the aa want line being read (null: an order alone), and the batches named so far. */
+    private String wantBatch;
+    private int batchSerial;
+
     /** aa want <thing> [n] [high|low] (also the wants by name: house/build, explore, tidy). */
     String want(String arg) {
         if (io.github.mojolowjo.entropybot.aa.brain.StripOrder.is(arg)) return wantStrip(arg);
         List<String> many = AaCommands.wantList(arg);
         if (many.size() > 1) {
             StringBuilder out = new StringBuilder();
-            for (String one : many) out.append(out.length() == 0 ? "" : "\n").append(one).append(": ").append(want(one));
+            // 0.39.z77 J2: the orders of one line are a batch (BatchWay: their playbook is priced beside the ad-hoc chains)
+            String was = wantBatch;
+            wantBatch = "b" + (++batchSerial);
+            try {
+                for (String one : many) out.append(out.length() == 0 ? "" : "\n").append(one).append(": ").append(want(one));
+            } finally {
+                wantBatch = was;
+            }
             return out.toString();
         }
         if (arg != null && arg.trim().equalsIgnoreCase("deposit")) return order("deposit", depositSteps());
@@ -3578,6 +3612,7 @@ public final class AaRuntime implements JobPort {
             return "ok: " + wantBored(wantKey);
         }
         var g = io.github.mojolowjo.entropybot.aa.brain.Goals.add(bb, r, a.n(), a.prio(), now);
+        g.batch = wantBatch;                          // 0.39.z77 J2: null for an order alone
         tree.brain.failures.forget(g.id());           // orders-tier: aa want again clears a parked order and its old holds
         g.replans = 0;                                // 0.39.z30: and its re-plan count
         g.sourceReplans = 0;                          // 0.39.z62 item 1: and its new-source re-plans

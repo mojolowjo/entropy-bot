@@ -97,6 +97,16 @@ public final class FactChange {
         return new Fact("threw at " + w, "a throw inside the step: " + e + " at " + w);
     }
 
+    /**
+     * 0.39.z77 J2 E2 (runs AX 14:23, BC 06:24:02): a chain explore under ground found no target a player would walk to from
+     * there (no cave cell in the band; a never-seen chunk would be a goal through rock): the explore from here is held by
+     * position ({@link io.github.mojolowjo.entropybot.aa.NeedChain#exploreFrozenKey}); the order re-plans (the walk up first).
+     */
+    public static void exploreHere(int[] feet, String why) {
+        if (feet == null || feet.length < 3) { last = new Fact("explore under ground", why); return; }     // structural: x y z
+        last = new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.exploreFrozenKey(feet), why);
+    }
+
     /** 0.39.z76 send-back 2: a hand that caught a throw inside the running step says it ({@link #threwFact}), taken once. */
     public static void threw(Throwable e) { last = threwFact(e); }
 

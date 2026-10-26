@@ -185,6 +185,36 @@ public final class ExploreRules {
         return out;
     }
 
+    /**
+     * 0.39.z77 J2 E1 (run AP 00:02:40: the fresh world's one explore for a JOINED word "#logs|..|raw_iron|#coals" read UNKNOWN
+     * by GenWhere - placed both ways - so the land-first water term was off and the nearest unseen chunk lay over the sea):
+     * the water term is on when ANY part of the until word generates on the surface ({@code of}: a part -> its fact; null
+     * or not loaded: not that part). Pure.
+     */
+    public static boolean anySurfacePart(String until, java.util.function.Function<String, io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact> of) {
+        if (until == null || of == null) return false;
+        for (String part : until.split("\\|")) {
+            if (part.isEmpty()) continue;
+            var f = of.apply(part);
+            if (f != null && f.surface()) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 0.39.z77 J2 E2 (runs AX 14:23, BC 06:24:02: "no path 3 times from -181 16 27" toward cave candidates at y 60-98 by a
+     * GoalXZ through the rock over the bot): under ground an explore's only targets are cave cells IN the target's band
+     * {@code lo..hi} (within the reach the caller gave): a cell goal Baritone may dig to, as a player tunnels to a cave at its
+     * own level. A cell out of the band - or any never-seen chunk - is no target from down there (rule 22: never a target a
+     * player would not walk to from where it stands). The kept cells, in the given order. Pure.
+     */
+    public static List<int[]> inBand(List<int[]> cells, int lo, int hi) {
+        List<int[]> out = new ArrayList<>();
+        if (cells == null) return out;
+        for (int[] c : cells) if (c[1] >= lo && c[1] <= hi) out.add(c);
+        return out;
+    }
+
     /** Arrived near a chunk target (within ARRIVED blocks, x + z)? */
     public static boolean arrived(int x, int z, Target t) {
         return Math.abs(x - t.x()) + Math.abs(z - t.z()) <= arrivedV();

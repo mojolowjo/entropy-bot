@@ -370,6 +370,9 @@ public final class Steps {
          */
         default java.util.Set<String> tries() { return null; }
 
+        /** 0.39.z77 J2: step {@code s} of the run starts now (the order says a playbook leg's start to the watcher). */
+        default void started(Step s) {}
+
         /**
          * 0.39.z73 (design D2 3.4): the re-plan of a failed step with what was left of the run ({@code left}: the failed step
          * first, its plan counts, the bag's stacks), so the order may price a repair (gap + kept tail) against the full
@@ -395,6 +398,7 @@ public final class Steps {
                 @Override public void switched(PlanDiff d, boolean reprice) { planner.switched(d, reprice); }
                 @Override public void parked(Attempt a) { planner.parked(a); }
                 @Override public java.util.Set<String> tries() { return planner.tries(); }
+                @Override public void started(Step s) { planner.started(s); }
             };
         }
 
@@ -638,6 +642,13 @@ public final class Steps {
 
     private void begin(Step s, Reservations rs, DryRun.Shortage dry) {
         madeAtStart = madeNow(s);
+        if (replanner != null) {
+            try {
+                replanner.started(s);                // 0.39.z77 J2: a playbook leg's start is said to the watcher
+            } catch (RuntimeException e) {
+                why = stage() + ": the order's start note failed: " + e;
+            }
+        }
         String r;
         String dryNote = null;
         if (dry != null) dryNote = "dry run: " + dry.text() + " (no order behind the run: not re-planned)";
@@ -1016,7 +1027,11 @@ public final class Steps {
         // fact, from the same cell, with the same needs in the bag: the planner's inputs are the same, a re-plan would loop.
         // Rule 15: an unknown cell or bag is not "the same".
         Attempt now = attempt(failed, fact.key());
-        if (now.sameAs(lastFailed)) {
+        // 0.39.z77 J2 E0 (run AZ 05:13:31, S1 chestplate: "the same try failed again in this order (stand while paths compute)"):
+        // a price fact - the standing step's wait over (StandWait), a landed path - is a re-price, never a try: no park and
+        // no try counted on it (the walks then go by Baritone's estimate or drop "no estimate", NeedChain.walked)
+        boolean reprice = fact.price();
+        if (!reprice && now.sameAs(lastFailed)) {
             park(now, "the same way failed twice from the same place with the same bag: " + failed.text() + " - " + fact.text() + " (" + orderState() + ")");
             return;
         }
@@ -1026,7 +1041,7 @@ public final class Steps {
         // order parks. A "source ..." fact is held by the order (Goals.replan drops that way, by its own key when the step
         // names none), so its repeat from another cell is another question (z70 R1, test t1) and is left to the park above.
         String tk = now.tryKey();
-        if (tk != null && !fact.key().startsWith("source ")) {
+        if (tk != null && !reprice && !fact.key().startsWith("source ")) {
             java.util.Set<String> tries = orderTries();
             if (!tries.add(tk)) {
                 park(now, "the same try failed again in this order (another cell or another try between): " + failed.text() + " - " + fact.text()
@@ -1048,7 +1063,7 @@ public final class Steps {
             fail(reason + (r == null || r.why() == null ? "" : " (re-plan: " + r.why() + ")"));
             return;
         }
-        lastFailed = now;
+        if (!reprice) lastFailed = now;
         replans++;
         if (fact.key().startsWith("source ")) droppedHere.add(fact.key().substring("source ".length()));
         String diff = planDiff(steps.subList(idx, steps.size()), r.steps(), false);

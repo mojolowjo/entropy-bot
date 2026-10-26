@@ -199,6 +199,18 @@ public sealed interface Step {
             return dist(feet) > startDist + moved;
         }
 
+        /**
+         * 0.39.z77 J2 E4 (run AP 00:07:24: "dig oak_planks seen 75 m" priced, then the mine walked ~1000 blocks for 600 s):
+         * Baritone's goal cells for the mine ({@code goals}: each sub-goal's cell; empty or null: none read) are ALL more than
+         * {@code moved} (failures.moved) from the priced spot - it goes for other blocks of the item, not the priced ones,
+         * before the feet show it. False with no spot or no goal cell (rule 15). Pure.
+         */
+        public boolean targetAway(List<int[]> goals, double moved) {
+            if (at == null || goals == null || goals.isEmpty()) return false;
+            for (int[] g : goals) if (g == null || g.length < 3 || dist(g) <= moved) return false;     // structural: x y z
+            return true;
+        }
+
         /** The straight metres from {@code feet} to the priced spot (NaN: none named). */
         public double dist(int[] feet) {
             if (at == null || feet == null || feet.length < 3) return Double.NaN;     // structural: x y z

@@ -36,6 +36,8 @@ public final class TickLaps {
         ns.clear();
         resolves = 0;
         resolveNs = 0;
+        playbooks = 0;
+        playbookNs = 0;
         start = clock.getAsLong();
         last = start;
     }
@@ -54,6 +56,19 @@ public final class TickLaps {
         if (!on) return;
         resolves++;
         resolveNs += Math.max(0, nanos);
+    }
+
+    private int playbooks;
+    private long playbookNs;
+
+    /**
+     * 0.39.z77 J2 (manager's R3: the playbook must not add to the 1.0-1.4 s ticks of runs AZ/BC): one batch comparison or
+     * playbook re-price took {@code nanos} (BatchWay); said in the line as "| playbook N = M ms" when any ran this tick.
+     */
+    public void playbook(long nanos) {
+        if (!on) return;
+        playbooks++;
+        playbookNs += Math.max(0, nanos);
     }
 
     /** Now on this stopwatch's clock (0 when off: the caller skips the resolve count). */
@@ -79,6 +94,7 @@ public final class TickLaps {
         if (named == 0) b.append(" no section over 0.1 ms");
         if (others > 0) b.append(String.format(Locale.ROOT, ", others %.1f", others));
         b.append(String.format(Locale.ROOT, " | resolves %d = %.1f ms", resolves, resolveNs / 1e6));     // structural: ns per ms
+        if (playbooks > 0) b.append(String.format(Locale.ROOT, " | playbook %d = %.1f ms", playbooks, playbookNs / 1e6));     // structural: ns per ms
         return b.toString();
     }
 }
