@@ -3581,6 +3581,7 @@ public final class AaRuntime implements JobPort {
         tree.brain.failures.forget(g.id());           // orders-tier: aa want again clears a parked order and its old holds
         g.replans = 0;                                // 0.39.z30: and its re-plan count
         g.sourceReplans = 0;                          // 0.39.z62 item 1: and its new-source re-plans
+        g.tries.clear();                              // 0.39.z76 sb4 review 2: and its tries
         LivePathPrice.INSTANCE.orderStarted();        // 0.39.z58: the fork's "not answered yet in this order" class starts again
         lootCtx();
         // one-planner: the order is priced by the one chain now; the line says the chain or the explore it starts

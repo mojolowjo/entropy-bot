@@ -237,16 +237,20 @@ final class StripStep {
      * ({@link StripOrder#firstCells}). Loader notes: vanilla Minecraft.player / level; the mod's PolicyRuntime.
      */
     static String firstCellsRule(Step.Strip s) {
-        Minecraft mc = Minecraft.getInstance();
-        LocalPlayer p = mc.player;
-        var lv = mc.level;
-        if (p == null || lv == null) return "first cells: the rule not known (no player or level)";
-        int[] f = Jobs.here(p);
-        String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(lv);
-        return StripOrder.firstCells(new int[]{f[0], s.y(), f[2]}, s.heading(), c -> {
-            String w = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.why(lv, dim, c[0], c[1], c[2],
-                    io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.BREAK, io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE);
-            return w == null ? null : w.replaceFirst(" \\| rule set .*? \\| block ", " | block ");
+        // sb4 review 2: the whole read is guarded (the feet, the dimension, the heading's direction can throw too), so the
+        // blocked-heading fact is never lost for want of its detail
+        return StripOrder.guardedFirstCells(() -> {
+            Minecraft mc = Minecraft.getInstance();
+            LocalPlayer p = mc.player;
+            var lv = mc.level;
+            if (p == null || lv == null) return "first cells: the rule not known (no player or level)";
+            int[] f = Jobs.here(p);
+            String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(lv);
+            return StripOrder.firstCells(new int[]{f[0], s.y(), f[2]}, s.heading(), c -> {
+                String w = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.why(lv, dim, c[0], c[1], c[2],
+                        io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.BREAK, io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE);
+                return w == null ? null : w.replaceFirst(" \\| rule set .*? \\| block ", " | block ");
+            });
         });
     }
 

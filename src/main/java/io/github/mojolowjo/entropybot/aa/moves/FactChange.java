@@ -88,8 +88,9 @@ public final class FactChange {
     /**
      * 0.39.z76 send-back 2 (rule 7; run AN 23:30:07: an NPE inside the explore ended the step "error: ..." with no fact, so
      * the chestplate order stopped): a throw inside a step is that step's fact - keyed by the mod's frame it came from
-     * ("threw at Mining.exploreStep0:1228"), its text the exception and the frame - and the order re-plans on it (its caps
-     * bound it; the same throw from the same place with the same bag parks, the honest loop).
+     * ("threw at Mining.exploreStep0:1228"), its text the exception and the frame - and the order re-plans on it. 0.39.z76 sb4
+     * review 2: no count bounds it; the same step throwing at the same frame with the same needs in the bag again in this
+     * order - from any cell, other tries between - parks (Steps' order tries), as does the same try twice from one cell.
      */
     public static Fact threwFact(Throwable e) {
         String w = io.github.mojolowjo.entropybot.Quiet.where(e);

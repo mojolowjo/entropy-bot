@@ -274,6 +274,19 @@ public final class StripOrder {
         return "first cells: " + String.join("; ", out);
     }
 
+    /**
+     * 0.39.z76 sb4 review 2: {@code read}'s first-cells text, or "first cells: the rule could not be read: &lt;e&gt;" when any
+     * part of the read throws (the fact keeps its reason, rule 7). Pure.
+     */
+    public static String guardedFirstCells(java.util.function.Supplier<String> read) {
+        try {
+            String t = read.get();
+            return t == null ? "first cells: the rule not known" : t;
+        } catch (RuntimeException e) {
+            return "first cells: the rule could not be read: " + e;
+        }
+    }
+
     /** The fork's end text as the step's status: "done..." is DONE, anything else FAILED with that text (never silent). */
     public static Car.Status endOf(String forkEnd, String forkStatus) {
         if (forkEnd == null || forkEnd.isBlank()) return Car.Status.failed("strip: the fork's strip ended without a reason (" + forkStatus + ")");

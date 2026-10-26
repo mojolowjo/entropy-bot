@@ -81,6 +81,11 @@ public final class Goals {
         public LoopPark loopPark;
         /** 0.39.z70 (R1 = c): the one more try was taken (once per order; aa want again makes a new order). */
         public boolean loopRetried;
+        /**
+         * 0.39.z76 sb4 review 2: the order's tries ({@code Steps.Attempt#tryKey}: step, fact, needs in the bag; no cell, no
+         * order); a try seen again parks the run. Emptied by the one more try (R1) and by aa want again.
+         */
+        public final java.util.Set<String> tries = new java.util.HashSet<>();
     }
 
     /**
@@ -164,6 +169,7 @@ public final class Goals {
             g.parked = null;
             g.loopRetried = true;
             g.loopPark = null;
+            g.tries.clear();                 // 0.39.z76 sb4 review 2: the one more try asks its questions afresh
             bb.port.log(line);
             bb.port.tellOwner(line);
             out.add(line);
@@ -195,6 +201,8 @@ public final class Goals {
             }
 
             @Override public void parked(io.github.mojolowjo.entropybot.aa.moves.Steps.Attempt a) { g.loopAttempt = a; }
+
+            @Override public java.util.Set<String> tries() { return g.tries; }
         };
     }
 
@@ -288,6 +296,9 @@ public final class Goals {
         // 0.39.z62 item 1b: a fact may name its own source key (a strip heading blocked at its Y, any ore set)
         String own = io.github.mojolowjo.entropybot.aa.moves.FactChange.ownSourceKey(fact);
         String src = own != null ? own : io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(failed);
+        // 0.39.z76 sb4 review 2: a source fact whose step names no source key is held by the fact's own key (never a fact
+        // that holds nothing: Steps' order tries leave every "source ..." fact to the order's holds)
+        if (src == null && fact.key().startsWith("source ") && fact.key().length() > "source ".length()) src = fact.key().substring("source ".length());
         boolean sourceFact = src != null && fact.key().startsWith("source ");
         // 0.39.z62 item 1: a source fact that drops a source NEW to this order is counted apart (the counts are shown in the
         // park line, aa status). 0.39.z76 sb4 review (manager, run AV 02:43:29 "not re-planned: 8 sources dropped already

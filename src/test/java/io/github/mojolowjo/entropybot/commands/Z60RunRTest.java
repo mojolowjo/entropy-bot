@@ -111,6 +111,7 @@ class Z60RunRTest {
      * blocks" stopped the iron order with no re-plan. Now the place fact re-plans it (the replanner is asked with that fact).
      * 0.39.z70 (D2 3.1): the walk ending DONE between is progress, so the place failing after it is re-planned again; the
      * same try again (the same place-near, fact, cell and bag, nothing done between) ends the run with the honest words.
+     * 0.39.z76 sb4 review 2: the place's plain fact holds nothing, so its try seen again in the order parks (a done step between).
      */
     @Test
     void runRsTableWithNoCellReplans() {
@@ -126,10 +127,12 @@ class Z60RunRTest {
         assertEquals(1, facts.size(), run.why());
         assertEquals("place minecraft:crafting_table", facts.get(0).key());
         assertEquals(Steps.Phase.RUNNING, run.phase(), run.why());
-        run.tick(2);                                       // the walk done (progress) -> the place fails again: re-planned, then the same try at once
-        assertEquals(2, facts.size(), run.why());
+        run.tick(2);                                       // the walk done -> the place fails again on the same fact with the same bag
+        // 0.39.z76 sb4 review 2: "place X" holds nothing for the order, so its try (step, fact, bag; any cell, a done step
+        // between) seen again in this order parks - it was re-planned once more before (z70), with no count left to bound it
+        assertEquals(1, facts.size(), run.why());
         assertEquals(Steps.Phase.FAILED, run.phase());
-        assertTrue(run.why().contains("the same way failed twice from the same place with the same bag: place minecraft:crafting_table near me"), run.why());
+        assertTrue(run.why().contains("the same try failed again in this order (another cell or another try between): place minecraft:crafting_table near me"), run.why());
         assertTrue(run.why().contains("no cell within 3 blocks"), run.why());
     }
 

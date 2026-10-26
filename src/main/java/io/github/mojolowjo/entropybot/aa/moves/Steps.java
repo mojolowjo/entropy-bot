@@ -163,6 +163,15 @@ public final class Steps {
             return o != null && id != null && id.equals(o.id) && factKey != null && factKey.equals(o.factKey)
                     && feet != null && feet.equals(o.feet) && needs != null && needs.equals(o.needs);
         }
+
+        /**
+         * 0.39.z76 sb4 review 2: the try without its cell - "step | fact key | needs in the bag" - for the order's set of tries
+         * on facts it holds nothing for; null: a part not known (rule 15: never "the same").
+         */
+        public String tryKey() {
+            if (id == null || factKey == null || needs == null) return null;
+            return id.text() + " | " + factKey + " | " + needsBag();
+        }
     }
 
     /** The key of the tool tier in {@link Attempt#needs} ("pickaxe tier"). */
@@ -348,6 +357,13 @@ public final class Steps {
         default void parked(Attempt a) {}
 
         /**
+         * 0.39.z76 sb4 review 2: the order's tries on facts it does not hold as sources ({@link Attempt#tryKey}: the step, the
+         * fact, the needs in the bag - not the cell, not the order of tries), kept for the order's life; null: the run keeps
+         * its own set.
+         */
+        default java.util.Set<String> tries() { return null; }
+
+        /**
          * 0.39.z73 (design D2 3.4): the re-plan of a failed step with what was left of the run ({@code left}: the failed step
          * first, its plan counts, the bag's stacks), so the order may price a repair (gap + kept tail) against the full
          * re-plan. Default: the plain re-plan.
@@ -371,6 +387,7 @@ public final class Steps {
                 @Override public String orderState() { return planner.orderState(); }
                 @Override public void switched(PlanDiff d, boolean reprice) { planner.switched(d, reprice); }
                 @Override public void parked(Attempt a) { planner.parked(a); }
+                @Override public java.util.Set<String> tries() { return planner.tries(); }
             };
         }
 
@@ -463,6 +480,7 @@ public final class Steps {
         replans = 0;
         switches = 0;
         droppedHere.clear();
+        runTries.clear();
         replanFact = null;
         needs = StepNeeds.NONE;
         if (this.steps.isEmpty()) {
@@ -989,17 +1007,25 @@ public final class Steps {
         why = before;
         // 0.39.z70 (D2 3.1, run M P1 / run N P3): park only when this try equals the last failed one - the same step, the same
         // fact, from the same cell, with the same needs in the bag: the planner's inputs are the same, a re-plan would loop.
-        // Anything else re-plans (the order's caps bound it, Goals.replan). Rule 15: an unknown cell or bag is not "the same".
+        // Rule 15: an unknown cell or bag is not "the same".
         Attempt now = attempt(failed, fact.key());
         if (now.sameAs(lastFailed)) {
-            String park = "the same way failed twice from the same place with the same bag: " + failed.text() + " - " + fact.text() + " (" + orderState() + ")";
-            try {
-                replanner.parked(now);
-            } catch (RuntimeException e) {
-                park = park + " (the order could not keep the park's facts: " + e + ")";
-            }
-            fail(park);
+            park(now, "the same way failed twice from the same place with the same bag: " + failed.text() + " - " + fact.text() + " (" + orderState() + ")");
             return;
+        }
+        // 0.39.z76 sb4 review 2 (with no count cap, a fact the order holds nothing for - "bag X", "place X", "threw at ..." -
+        // alternating A/B, or the same try from a new cell each time, never met the one-slot park above): the order's set of
+        // tries without the cell and the order of tries, for the facts the order holds nothing for. A try seen before in this
+        // order parks. A "source ..." fact is held by the order (Goals.replan drops that way, by its own key when the step
+        // names none), so its repeat from another cell is another question (z70 R1, test t1) and is left to the park above.
+        String tk = now.tryKey();
+        if (tk != null && !fact.key().startsWith("source ")) {
+            java.util.Set<String> tries = orderTries();
+            if (!tries.add(tk)) {
+                park(now, "the same try failed again in this order (another cell or another try between): " + failed.text() + " - " + fact.text()
+                        + " with " + (now.needsBag().isEmpty() ? "no needs" : now.needsBag()) + " (" + orderState() + ")");
+                return;
+            }
         }
         // 0.39.z76 send-back 4 (run AW 03:18:31 "not re-planned: 11 re-plans in this run already"; rule 7): the run's own count
         // cap (z70) is deleted - a count is no reason. Each re-plan here carries a new fact; the loop guard is the honest park
@@ -1024,6 +1050,32 @@ public final class Steps {
         idx--;
         next();
     }
+
+    /** The run parks with {@code why}; the order keeps the try for its one more try (R1). */
+    private void park(Attempt now, String why) {
+        String park = why;
+        try {
+            replanner.parked(now);
+        } catch (RuntimeException e) {
+            park = park + " (the order could not keep the park's facts: " + e + ")";
+        }
+        fail(park);
+    }
+
+    /** 0.39.z76 sb4 review 2: the order's set of tries ({@link Replanner#tries}), else this run's own. */
+    private java.util.Set<String> orderTries() {
+        java.util.Set<String> s;
+        try {
+            s = replanner.tries();
+        } catch (RuntimeException e) {
+            s = null;
+            why = stage() + ": the order's tries could not be read, this run's are used: " + e;
+        }
+        return s != null ? s : runTries;
+    }
+
+    /** 0.39.z76 sb4 review 2: this run's tries when the order keeps none. */
+    private final java.util.Set<String> runTries = new java.util.HashSet<>();
 
     /**
      * 0.39.z70 (D2 3.1): the try of {@code failed} on the fact keyed {@code key}: its identity, the cell it started from and

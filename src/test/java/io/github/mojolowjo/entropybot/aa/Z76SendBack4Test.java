@@ -150,6 +150,100 @@ class Z76SendBack4Test {
         assertEquals(3, n, "0->3, 3->7, 1->6");
     }
 
+    // ---- sb4 review 2: facts the order holds nothing for ----
+
+    /** Every step fails with the fact {@code fact} gives it; the feet move one block each look (a new cell every try). */
+    static final class AltHands implements Steps.Hands {
+        final int[] feet = {0, 64, 0};
+        java.util.function.Function<Step, FactChange.Fact> fact = s -> null;
+        FactChange.Fact last;
+        @Override public String start(Step s) { feet[0]++; return null; }
+        @Override public Car.Status status(Step s) { last = fact.apply(s); return Car.Status.failed("ran out"); }
+        @Override public void cancel(String why) {}
+        @Override public FactChange.Fact lastFact() { FactChange.Fact f = last; last = null; return f; }
+        @Override public int[] feet() { return feet.clone(); }
+        @Override public void log(String line) {}
+        @Override public StepNeeds.Bag bag() {
+            return new StepNeeds.Bag() {
+                @Override public int bestTier(String kind) { return 0; }
+                @Override public String bestTool(String kind) { return null; }
+                @Override public int usesLeft(String id) { return io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED; }
+                @Override public int count(String id) { return 0; }
+            };
+        }
+    }
+
+    /** The planner alternates: after A it gives B, after B it gives A; it records each fact it was asked on. */
+    static Steps.Replanner alternate(Step a, Step b, List<String> asked) {
+        return (failed, fact, why) -> {
+            asked.add(fact.key());
+            return new Steps.Routine(List.of(failed.equals(a) ? b : a), null);
+        };
+    }
+
+    /** A craft that runs out of sticks and a place that lacks a table, alternating from a new cell each time: parks on the repeat. */
+    @Test
+    void twoStepsAlternatingOnBagFactsPark() {
+        AltHands h = new AltHands();
+        Step a = new Step.Craft("minecraft:torch", 4), b = new Step.PlaceNear("minecraft:crafting_table");
+        h.fact = s -> s.equals(a) ? new FactChange.Fact("bag stick", "short of stick") : new FactChange.Fact("bag crafting_table", "no crafting_table");
+        List<String> asked = new ArrayList<>();
+        Steps run = new Steps(h);
+        run.start("goal.torch", List.of(a), 0, alternate(a, b, asked));
+        for (int t = 1; t <= 10 && run.running(); t++) run.tick(t);
+        assertEquals(Steps.Phase.FAILED, run.phase(), run.why());
+        assertEquals(List.of("bag stick", "bag crafting_table"), asked, "A and B asked once each, the third try (A again) parks");
+        assertTrue(run.why().contains("the same try failed again in this order"), run.why());
+        assertTrue(run.why().contains(a.text()), run.why());
+    }
+
+    /** A throw at two places, alternating: the third throw (the first place again) parks. */
+    @Test
+    void throwsAtTwoPlacesAlternatingPark() {
+        AltHands h = new AltHands();
+        Step a = new Step.Craft("minecraft:torch", 4), b = new Step.Craft("minecraft:stick", 4);
+        h.fact = s -> s.equals(a) ? new FactChange.Fact("threw at Mining.exploreStep0:1228", "NullPointerException at Mining.exploreStep0:1228")
+                : new FactChange.Fact("threw at Crafting.tick:310", "IllegalStateException at Crafting.tick:310");
+        List<String> asked = new ArrayList<>();
+        Steps run = new Steps(h);
+        run.start("goal.torch", List.of(a), 0, alternate(a, b, asked));
+        for (int t = 1; t <= 10 && run.running(); t++) run.tick(t);
+        assertEquals(Steps.Phase.FAILED, run.phase(), run.why());
+        assertEquals(2, asked.size(), asked.toString());
+        assertTrue(run.why().contains("the same try failed again in this order"), run.why());
+    }
+
+    /** The order keeps the tries across its runs (Goals' replanner hands its set); a new bag count is a new try. */
+    @Test
+    void theOrdersTriesSpanItsRunsAndAChangedBagIsANewTry() {
+        Step a = new Step.Craft("minecraft:torch", 4);
+        java.util.Set<String> orderTries = new java.util.HashSet<>();
+        Steps.Replanner p = new Steps.Replanner() {
+            @Override public Steps.Routine replan(Step failed, FactChange.Fact fact, String why) { return new Steps.Routine(List.of(a), null); }
+            @Override public java.util.Set<String> tries() { return orderTries; }
+        };
+        AltHands h = new AltHands();
+        h.fact = s -> new FactChange.Fact("bag stick", "short of stick");
+        Steps first = new Steps(h);
+        first.start("goal.torch", List.of(a), 0, p);
+        first.tick(1);                                    // re-planned once: the try is the order's now
+        assertEquals(1, orderTries.size(), orderTries.toString());
+        Steps second = new Steps(h);                      // the order's next run
+        second.start("goal.torch", List.of(a), 0, p);
+        second.tick(1);
+        assertEquals(Steps.Phase.FAILED, second.phase(), "the order has seen this try: " + second.why());
+        assertTrue(second.why().contains("the same try failed again in this order"), second.why());
+    }
+
+    /** sb4 review 2: any part of the first-cells read that throws is said in the fact, never lost. */
+    @Test
+    void aFirstCellsReadThatThrowsIsSaid() {
+        String t = io.github.mojolowjo.entropybot.aa.brain.StripOrder.guardedFirstCells(() -> { throw new IllegalArgumentException("no heading up"); });
+        assertEquals("first cells: the rule could not be read: java.lang.IllegalArgumentException: no heading up", t);
+        assertEquals("first cells: the rule not known", io.github.mojolowjo.entropybot.aa.brain.StripOrder.guardedFirstCells(() -> null));
+        assertEquals("first cells: x", io.github.mojolowjo.entropybot.aa.brain.StripOrder.guardedFirstCells(() -> "first cells: x"));
+    }
+
     // ---- 2. run AV's strip through the monitor ----
 
     static final Step STRIP_AV = new Step.Strip(List.of("minecraft:deepslate_iron_ore", "minecraft:iron_ore"), Map.of("iron", 3), -5, "south", 1L);
