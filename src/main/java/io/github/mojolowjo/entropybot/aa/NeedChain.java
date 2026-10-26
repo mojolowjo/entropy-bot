@@ -1757,7 +1757,7 @@ public final class NeedChain {
         alts.addAll(tagSourceAlts(c, w, lack));
         alts.addAll(tagHuntAlts(c, w, lack));
         if (c.w.seenAll().apply(w.word).isEmpty()) alts.addAll(stripAlts(c, w.word, w.word, lack));   // 0.39.z43
-        if (c.w.seenAll().apply(w.word).isEmpty()) alts.addAll(caveAlts(c, w.word, w.word, lack));    // 0.39.z44
+        alts.addAll(caveAlts(c, w.word, w.word, lack));    // 0.39.z44; 0.39.z77 cave: beside any seen source too
         alts.addAll(baseAlts(c, w.word, lack));                                                      // 0.39.z74 item 4
         return alts;
     }
@@ -2094,7 +2094,7 @@ public final class NeedChain {
         alts.addAll(sourceAlts(c, item, item, lack, c.w.seenAll().apply(item)));
         alts.addAll(huntAlts(c, item, lack));
         if (c.w.seenAll().apply(item).isEmpty()) alts.addAll(stripAlts(c, item, item, lack));   // 0.39.z43: mine at the ore's level
-        if (c.w.seenAll().apply(item).isEmpty()) alts.addAll(caveAlts(c, item, item, lack));    // 0.39.z44: mine in the cave
+        alts.addAll(caveAlts(c, item, item, lack));    // 0.39.z44: mine in the cave; 0.39.z77 cave: beside any seen ore too
         alts.addAll(baseAlts(c, item, lack));                                                  // 0.39.z74 item 4: dig down to the base block
         return alts;
     }
@@ -3725,13 +3725,40 @@ public final class NeedChain {
      * 0.39.z44 (CAVE_DETECTION option 1, owner: "most like how a player would see it"): for an ore need with no known exposed
      * source and a cave mouth known (the CaveWay facts), the way "walk to the mouth and explore the cave for the ore" (the
      * cave job, Step.Mine CAVE, bounded by {@code cave.exploreMinutes}). One way among the others (rule 1).
+     * 0.39.z77 cave (manager 2026-10-26 ~15:10 on run BW 14:22:14: one raw_iron seen 8 m, held, so no cave way was offered and
+     * "dig 1 + explore" won): offered whenever the planner's facts know the cave ({@link #caveOffered}), priced beside any
+     * seen source; the scorer picks by price, no "prefer caves" rule.
      */
     private static List<Alt> caveAlts(Ctx c, String word, String gives, int lack) {
-        CaveWay cw = c.w.cave().apply(word);
-        if (cw == null || cw.ore() == null || !(cw.perMin() > 0)) return List.of();
+        CaveWay cw = caveOffered(c.w, word);
+        if (cw == null) return List.of();
         Alt a = new Alt((cw.candidate() ? "cave candidate " : "cave mouth ") + Math.round(cw.dist()) + " m", () -> cave(c, word, gives, lack, cw));
         a.id = gives;
         return List.of(a);
+    }
+
+    /**
+     * 0.39.z77 cave: the planner's own cave test - the cave way {@code w} offers for {@code word} (a mouth known, an ore block
+     * that gives the word, a yield above 0); null: none. One test for the ways ({@link #caveAlts}) and the explore's end
+     * ({@link #caveSource}).
+     */
+    static CaveWay caveOffered(World w, String word) {
+        if (w == null || word == null) return null;
+        CaveWay cw = w.cave().apply(word);
+        return cw == null || cw.ore() == null || !(cw.perMin() > 0) ? null : cw;
+    }
+
+    /**
+     * 0.39.z77 cave (run BW 14:24:10-14:24:35: the cave at 20 21 -10 was confirmed during "explore 5 until raw_iron" and the
+     * explore ran on until it failed - a cave was no source in its until test): a new way for {@code word} that an explore
+     * for it ends on - a CONFIRMED cave the planner offers on {@code w} (the order's world: a cave the order dropped is none),
+     * as a spot at its mouth (block: its ore, gives: the word). A candidate is the explore's aim, never its end. Null: none.
+     * Pure (JUnit: Z77CaveWayTest).
+     */
+    public static Spot caveSource(World w, String word) {
+        CaveWay cw = caveOffered(w, word);
+        if (cw == null || cw.candidate()) return null;
+        return new Spot(cw.x(), cw.y(), cw.z(), cw.dist(), cw.ore(), 0, word);
     }
 
     /**
@@ -3782,7 +3809,7 @@ public final class NeedChain {
         c.bag.merge(gives, Math.max(lack, (int) Math.floor(oreBlocks * per + 1e-9)), Integer::sum);  // structural: epsilon
         final String line = head + ", " + yield + " x " + oreBlocks + " ore" + (cw.candidate() ? " + confirm " + s(confirmS) : "")
                 + " -> " + s(wk.seconds() + confirmS + exploreS + oreS);
-        c.note(() -> "source: none known for " + shw(word) + ": in the cave: " + line);
+        c.note(() -> "source: " + shw(word) + " in the cave: " + line);
         return noted("in the cave: " + line + (pre == null ? "" : " with " + pre), wk);
     }
 

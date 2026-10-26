@@ -842,6 +842,19 @@ public final class Goals {
         return world.withoutSources(dropped).withPlaceFailures(dropped, pos);
     }
 
+    /**
+     * 0.39.z77 cave (run BW 14:24:10): the confirmed cave the planner offers for {@code word} on the world fact
+     * ({@link io.github.mojolowjo.entropybot.aa.NeedChain#caveSource}) - none when an open order's world dropped it (its key
+     * held: a mouth with no path), as a dropped seen source ends no explore. The chain's explore until {@code word} ends on it.
+     * Null: no world facts yet, no cave, or dropped.
+     */
+    public static io.github.mojolowjo.entropybot.aa.NeedChain.Spot caveFor(Blackboard bb, String word) {
+        var s = io.github.mojolowjo.entropybot.aa.NeedChain.caveSource(world(bb), word);
+        if (s == null) return null;
+        for (Goal g : of(bb)) if (io.github.mojolowjo.entropybot.aa.NeedChain.caveSource(chainWorld(bb, g), word) == null) return null;
+        return s;
+    }
+
     public static io.github.mojolowjo.entropybot.aa.NeedChain.Chain chain(Blackboard bb, Goal g) { return chain(bb, g, true); }
 
     /**

@@ -1134,7 +1134,7 @@ final class Mining {
                 if (why != null && ex.saidDropped.add(part))
                     LOG.info("[entropybot] explore: {} at {} {} {} was dropped for the order ({}); exploring on", part, sp.x(), sp.y(), sp.z(), why);
                 return why;
-            });
+            }, commands.aaRuntime::knownCave);       // 0.39.z77 cave: a confirmed cave the planner offers ends it too (run BW 14:24:10)
             // 0.39.z51 item 3: a source already known at the explore's start is no change: it holds replan.unchangedHoldS
             if (!ex.untilChecked) {
                 ex.untilChecked = true;

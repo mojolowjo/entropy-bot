@@ -37,14 +37,30 @@ public final class ExploreRules {
      */
     public static String untilFound(String word, java.util.function.Function<String, io.github.mojolowjo.entropybot.aa.NeedChain.Spot> source,
                                     java.util.function.BiFunction<String, io.github.mojolowjo.entropybot.aa.NeedChain.Spot, String> dropped) {
+        return untilFound(word, source, dropped, null);
+    }
+
+    /**
+     * 0.39.z77 cave (run BW 14:24:10: the cave at 20 21 -10 was confirmed during "explore 5 until raw_iron", the explore ran on
+     * 25 s and failed): as {@link #untilFound(String, java.util.function.Function, java.util.function.BiFunction)}, and a part
+     * with no source known (or only a dropped one) ends the explore on a confirmed cave the planner offers for it ({@code cave}:
+     * NeedChain.caveSource on the order's world, so a cave the order dropped is none there; null: no cave facts). The order is
+     * then priced again on the new facts, as for a seen source.
+     */
+    public static String untilFound(String word, java.util.function.Function<String, io.github.mojolowjo.entropybot.aa.NeedChain.Spot> source,
+                                    java.util.function.BiFunction<String, io.github.mojolowjo.entropybot.aa.NeedChain.Spot, String> dropped,
+                                    java.util.function.Function<String, io.github.mojolowjo.entropybot.aa.NeedChain.Spot> cave) {
         if (word == null || source == null) return null;
         for (String part : word.split("\\|")) {
             if (part.isEmpty()) continue;
             var s = source.apply(part);
-            if (s == null) continue;
-            if (dropped != null && dropped.apply(part, s) != null) continue;
-            return "a source of " + part + " is known: " + (s.block() == null ? "" : s.block().replaceFirst("^minecraft:", "") + " ")
-                    + "at " + s.x() + " " + s.y() + " " + s.z() + " (" + Math.round(s.dist()) + " away); " + io.github.mojolowjo.entropybot.aa.brain.FastEnd.FACT_ARRIVED;
+            if (s != null && (dropped == null || dropped.apply(part, s) == null))
+                return "a source of " + part + " is known: " + (s.block() == null ? "" : s.block().replaceFirst("^minecraft:", "") + " ")
+                        + "at " + s.x() + " " + s.y() + " " + s.z() + " (" + Math.round(s.dist()) + " away); " + io.github.mojolowjo.entropybot.aa.brain.FastEnd.FACT_ARRIVED;
+            var k = cave == null ? null : cave.apply(part);
+            if (k != null)
+                return "a source of " + part + " is known: a cave" + (k.block() == null ? "" : " with " + k.block().replaceFirst("^minecraft:", ""))
+                        + " at " + k.x() + " " + k.y() + " " + k.z() + " (" + Math.round(k.dist()) + " away); " + io.github.mojolowjo.entropybot.aa.brain.FastEnd.FACT_ARRIVED;
         }
         return null;
     }

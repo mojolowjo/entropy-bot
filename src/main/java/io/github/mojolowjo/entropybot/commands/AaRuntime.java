@@ -1225,6 +1225,14 @@ public final class AaRuntime implements JobPort {
         return null;
     }
 
+    /**
+     * 0.39.z77 cave (run BW 14:24:10): the confirmed cave the planner offers for an explore's until word (Goals.caveFor: the
+     * planner's own cave test on the orders' worlds), null: none, dropped, or no world facts yet. The chain's explore ends on it.
+     */
+    io.github.mojolowjo.entropybot.aa.NeedChain.Spot knownCave(String part) {
+        return bb == null ? null : io.github.mojolowjo.entropybot.aa.brain.Goals.caveFor(bb, part);
+    }
+
     /** The nearest tree AA's sightings know that I may cut (the tree fact's fallback). */
     private io.github.mojolowjo.entropybot.aa.NeedChain.Spot treeSighting() {
         var trees = woodFacts();
