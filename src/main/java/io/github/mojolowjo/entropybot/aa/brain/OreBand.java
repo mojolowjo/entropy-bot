@@ -262,9 +262,22 @@ public final class OreBand {
      * whose slab holds the most; when every peak lies above the feet, the lowest of them (the priced path tells whether it
      * can be reached). Null: no feature.
      */
-    public static Integer bestY(List<Feature> fs, int ceiling) {
+    public static Integer bestY(List<Feature> fs, int ceiling) { return bestY(fs, ceiling, false); }
+
+    /**
+     * 0.39.z75 item 2c (run AF 18:22-18:42: under ground at y 13-16 inside coal's band 0..192, no coal way offered - its one
+     * peak, y 96, lies above the feet, so the strip asked for a climb into the air): {@code inRock} - the feet are in the
+     * rock (under ground): the feet's own Y is a strip Y too when the band holds ore there (a tunnel from where the bot
+     * stands, no walk), compared with the peaks below it by the slab's ore. On the surface (false): as before, the peaks
+     * only (a tunnel at the surface's height runs into the open air).
+     */
+    public static Integer bestY(List<Feature> fs, int ceiling, boolean inRock) {
         Integer best = null, above = null;
         double bestN = 0;
+        if (inRock && fs != null) {
+            double here = perSlab(fs, ceiling);
+            if (here > 0) { best = ceiling; bestN = here; }
+        }
         for (int y : peaks(fs, false)) {
             if (y > ceiling) {
                 if (above == null || y < above) above = y;

@@ -724,7 +724,7 @@ public final class AaRuntime implements JobPort {
     /**
      * 0.39.z43: the strip facts of a need word (NeedChain.StripBand): the blocks that drop it (sourceBlocksOf: the loot data
      * and its own block) that have a height-placed world-gen feature in this dimension ({@link #ORE_FEATURES}, read with the
-     * catalog), the band's best layer at or below the feet (OreBand.bestY), its expected ore per chunk, where the bot stands
+     * catalog), the band's best layer at or below the feet (OreBand.bestY; z75: the feet's own Y counts under ground), its expected ore per chunk, where the bot stands
      * and faces, and the block the world has at that Y under the bot (loaded: its break is priced; else none, the ore's own).
      * Null: no world-gen placement read (multiplayer), no player, or none of the blocks is placed at or below the feet.
      */
@@ -747,7 +747,10 @@ public final class AaRuntime implements JobPort {
         }
         if (ores.isEmpty()) return null;
         int[] me = Jobs.here(p);
-        Integer y = io.github.mojolowjo.entropybot.aa.brain.OreBand.bestY(fs, me[1]);
+        // 0.39.z75 item 2c (run AF 18:22: under ground in coal's band, no coal way): the feet in the rock (no sky over the head,
+        // as SenseRuntime's skyAbove) make the feet's own Y a strip Y. Loader notes: vanilla Level#canSeeSky(BlockPos)
+        boolean inRock = !mc.level.canSeeSky(new net.minecraft.core.BlockPos(me[0], me[1] + 1, me[2]));
+        Integer y = io.github.mojolowjo.entropybot.aa.brain.OreBand.bestY(fs, me[1], inRock);
         if (y == null) return null;
         int lo = Integer.MAX_VALUE, hi = Integer.MIN_VALUE;
         for (var ft : fs) { lo = Math.min(lo, ft.lo()); hi = Math.max(hi, ft.hi()); }

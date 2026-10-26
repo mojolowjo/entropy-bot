@@ -50,6 +50,10 @@ import java.util.function.ToDoubleFunction;
  * only for the same word or words that are exactly one game tag, {@code #planks <- #logs}; different tags are different
  * ways, {@code #coals}: charcoal and coal); it is dug by its known sources grouped by the member they give (a tree is any log); the explore
  * is for its whole source set. The member is whatever the leaf (the bag, the tree, the ore) yields.
+ * 0.39.z75 (resource accounting): the chain knows where each leg leaves the bot - after a strip leg to another level a walk
+ * is not priced (the fork prices from the feet only, rule 15) and a need there is met there or "before going down" (its
+ * steps put before that leg, carried down); a smelt's planned fuel is a counted need of its step, one kind (the furnace
+ * job's rule); a recipe way runs with what the bag holds of its own need set aside (counted once).
  * An item already on the path is a loop: that way is dropped. A way that ends in an explore never competes with one that
  * does not. Every loser goes to the dropped list with its seconds or its reason. Rough prices (RULES 14): walk, break,
  * craft, place, smelt, kill. Pure (JUnit: NeedChainTest, ScenariosTest). Loader notes: none (the facts come from
@@ -700,6 +704,22 @@ public final class NeedChain {
          * need word. Keyed by identity: a dropped way's steps simply never reach the chain (no restore needed).
          */
         final Map<Step, Map<String, Integer>> uses = new java.util.IdentityHashMap<>();
+        /*
+         * 0.39.z75 item 1 (run AE 17:29:44, AF 18:12:45: the table and the wood left on the surface): where the chain leaves the
+         * bot. {@code down}: the leg that took it to another level (a strip leg from the feet to the band's Y), null: the
+         * bot is where the walks are priced from (the feet now, the base). {@code downAt}: that leg's first step index (the
+         * steps of a need met "before going down" go in before it). {@code tableDown} / {@code furnaceDown}: a station of the
+         * kind was placed down there in this chain (the base flags tableReady / tableWalked stay the base's).
+         */
+        String down;
+        int downAt = -1;
+        boolean tableDown, furnaceDown;
+        /** 0.39.z75 item 1: a need is being priced before going down ({@link #beforeDown}): no second leg to another level in it. */
+        boolean hoisting;
+        /** 0.39.z75 item 3 (run AE 8): bag items an outer need has counted as had - set aside while its ways are priced. */
+        final Map<String, Integer> aside = new LinkedHashMap<>();
+        /** 0.39.z75 item 2: the burn the last {@link #burn} planned (the smelt step's counted fuel); null: none named. */
+        Burn burned;
 
         Ctx(World w) {
             this.w = w;
@@ -719,12 +739,14 @@ public final class NeedChain {
         /** aa debug: a fact line under the way being priced (nothing outside a trace). */
         void note(Supplier<String> s) { if (trace != null) trace.note(s.get()); }
 
-        int have(String item) { return bag.getOrDefault(item, 0); }
+        /** What the bag holds of the item for this need: less what an outer need already counted as had (0.39.z75 item 3). */
+        int have(String item) { return Math.max(0, bag.getOrDefault(item, 0) - aside.getOrDefault(item, 0)); }
 
         /** Everything a way changes, to put back when the way is dropped. */
         record Snap(Map<String, Integer> bag, List<Step> steps, Map<String, Integer> leafAt, Map<String, Integer> taken, List<String> dropped,
                     double seconds, double away, boolean tableReady, boolean furnaceReady, boolean stuck, String unknown, String pickItem, int pickTier,
-                    boolean tableWalked, boolean furnaceWalked, int pickWorn, boolean pickMade, List<String> spares, boolean atRoom) {}
+                    boolean tableWalked, boolean furnaceWalked, int pickWorn, boolean pickMade, List<String> spares, boolean atRoom,
+                    String down, int downAt, boolean tableDown, boolean furnaceDown) {}
 
         /**
          * 0.39.z65 item 2 (run V 07:13:11: one stone pickaxe, no spare, and the reason only in aa debug): the spare-tool
@@ -740,7 +762,8 @@ public final class NeedChain {
 
         Snap snap() {
             return new Snap(new LinkedHashMap<>(bag), new ArrayList<>(steps), new LinkedHashMap<>(leafAt), new LinkedHashMap<>(taken), new ArrayList<>(dropped),
-                    seconds, away, tableReady, furnaceReady, stuck, unknown, pickItem, pickTier, tableWalked, furnaceWalked, pickWorn, pickMade, new ArrayList<>(spares), atRoom);
+                    seconds, away, tableReady, furnaceReady, stuck, unknown, pickItem, pickTier, tableWalked, furnaceWalked, pickWorn, pickMade, new ArrayList<>(spares), atRoom,
+                    down, downAt, tableDown, furnaceDown);
         }
 
         void restore(Snap s) {
@@ -755,6 +778,7 @@ public final class NeedChain {
             pickWorn = s.pickWorn(); pickMade = s.pickMade();
             spares = new ArrayList<>(s.spares());
             atRoom = s.atRoom();
+            down = s.down(); downAt = s.downAt(); tableDown = s.tableDown(); furnaceDown = s.furnaceDown();
             fail = null; loopOn = null;
         }
     }
@@ -763,8 +787,33 @@ public final class NeedChain {
     private static int have(Ctx c, Want w) {
         if (w.item()) return c.have(w.id());
         int n = 0;
-        for (var e : c.bag.entrySet()) if (e.getValue() > 0 && w.has(e.getKey())) n += e.getValue();
+        for (var e : c.bag.entrySet()) if (e.getValue() > 0 && w.has(e.getKey())) n += c.have(e.getKey());   // z75 item 3: less what is set aside
         return n;
+    }
+
+    /**
+     * 0.39.z75 item 3 (run AE 17:31:10 / 17:34:53: "iron_helmet <- craft: 5 iron_ingot <- craft: 18 iron_nugget <- craft: 2
+     * iron_ingot" with 3 ingots in the bag - the 2 the nuggets took were "had" from the same 3 the helmet already counted): a
+     * need that counts some of the bag as had sets those aside while its ways are priced, so an inner need never counts them
+     * again; the round trip then meets the loop guard. Returns what was set aside (item -> count) for {@link #putBack}.
+     */
+    private static Map<String, Integer> setAside(Ctx c, Want w) {
+        Map<String, Integer> out = new LinkedHashMap<>();
+        for (var e : c.bag.entrySet()) {
+            if (e.getValue() <= 0 || !w.has(e.getKey())) continue;
+            int k = c.have(e.getKey());
+            if (k > 0) out.put(e.getKey(), k);
+        }
+        for (var e : out.entrySet()) c.aside.merge(e.getKey(), e.getValue(), Integer::sum);
+        return out;
+    }
+
+    /** 0.39.z75 item 3: the set-aside items count for this need again (its ways are priced). */
+    private static void putBack(Ctx c, Map<String, Integer> set) {
+        for (var e : set.entrySet()) {
+            int left = c.aside.getOrDefault(e.getKey(), 0) - e.getValue();
+            if (left > 0) c.aside.put(e.getKey(), left); else c.aside.remove(e.getKey());
+        }
     }
 
     /**
@@ -797,7 +846,7 @@ public final class NeedChain {
     /** What a take of {@code n} from the bag would name: one kind when one kind covers it, else the need word. */
     private static String bagName(Ctx c, Want w, int n) {
         if (w.item()) return w.id();
-        for (var e : c.bag.entrySet()) if (e.getValue() > 0 && w.has(e.getKey())) return e.getValue() >= n ? e.getKey() : w.word;
+        for (var e : c.bag.entrySet()) if (c.have(e.getKey()) > 0 && w.has(e.getKey())) return c.have(e.getKey()) >= n ? e.getKey() : w.word;
         return w.word;
     }
 
@@ -959,6 +1008,8 @@ public final class NeedChain {
         double work;
         /** Seconds -> the number the ways compare by (null: the seconds). */
         java.util.function.DoubleUnaryOperator rate;
+        /** 0.39.z75 item 2: a burn way's fuel (set by its run). */
+        Burn burned;
         Alt(String label, Supplier<String> run) { this.label = label; this.run = run; }
         double value(double seconds) { return rate == null ? seconds : rate.applyAsDouble(seconds); }
     }
@@ -1176,22 +1227,58 @@ public final class NeedChain {
         }
         c.path.add(w.word);
         try {
-            List<Alt> alts = new ArrayList<>();
-            for (Group g : groups(w, ItemWorth.CRAFT)) alts.add(groupAlt(c, w, lack, g));
-            for (Group g : groups(w, ItemWorth.SMELT)) alts.add(groupAlt(c, w, lack, g));
-            alts.addAll(tagSourceAlts(c, w, lack));
-            alts.addAll(tagHuntAlts(c, w, lack));
-            if (c.w.seenAll().apply(w.word).isEmpty()) alts.addAll(stripAlts(c, w.word, w.word, lack));   // 0.39.z43
-            if (c.w.seenAll().apply(w.word).isEmpty()) alts.addAll(caveAlts(c, w.word, w.word, lack));    // 0.39.z44
-            alts.addAll(baseAlts(c, w.word, lack));                                                      // 0.39.z74 item 4
+            int stepsAt = c.steps.size();
+            List<Alt> alts = tagAlts(c, w, lack);
+            Alt up = beforeDown(c, shw(w.word), w.word, () -> tagAlts(c, w, lack));
+            if (up != null) alts.add(up);
             Trial win = choose(c, alts, w.word);
-            if (win != null) return new Got(win.alt().id != null ? win.alt().id : w.word, n, win.phrase());
+            if (win != null) {
+                if (win.stuck()) untilOwn(c, stepsAt, w);
+                return new Got(win.alt().id != null ? win.alt().id : w.word, n, win.phrase());
+            }
             if (waitsOnPaths(c)) return new Got(w.word, n, pathsExplore(c, w.word));
             if (c.fail != null) return null;
             String leaf = exploreLeaf(c, w.word, noSource(c, w.word));
             return c.fail != null ? null : new Got(w.word, n, leaf);
         } finally {
             c.path.remove(c.path.size() - 1);
+        }
+    }
+
+    /** The ways of a tag need: its members' recipe groups, its known sources, the animals, the strip, the cave, the base block. */
+    private static List<Alt> tagAlts(Ctx c, Want w, int lack) {
+        List<Alt> alts = new ArrayList<>();
+        for (Group g : groups(w, ItemWorth.CRAFT)) alts.add(asideAlt(c, w, groupAlt(c, w, lack, g)));
+        for (Group g : groups(w, ItemWorth.SMELT)) alts.add(asideAlt(c, w, groupAlt(c, w, lack, g)));
+        alts.addAll(tagSourceAlts(c, w, lack));
+        alts.addAll(tagHuntAlts(c, w, lack));
+        if (c.w.seenAll().apply(w.word).isEmpty()) alts.addAll(stripAlts(c, w.word, w.word, lack));   // 0.39.z43
+        if (c.w.seenAll().apply(w.word).isEmpty()) alts.addAll(caveAlts(c, w.word, w.word, lack));    // 0.39.z44
+        alts.addAll(baseAlts(c, w.word, lack));                                                      // 0.39.z74 item 4
+        return alts;
+    }
+
+    /**
+     * 0.39.z75 item 2c (run AF 18:22-18:42: "explore 5 until lava_bucket|#logs|bamboo|...|scaffolding", every burnable but
+     * coal and charcoal, under ground with coal ore round): a tag need whose winning way ends in an explore for ONE member's
+     * leaf (#coals: charcoal's logs) explored only for that leaf - the tag's own sources (the blocks whose loot drops a member:
+     * coal ore) were never asked, because the tag's own explore runs only when no way stands. Its explore now ends on a source
+     * of the tag too: the tag's word joins the until words of the explore steps the winner added - only when the loot data
+     * names a block or a mob that drops a member (no book, or not read yet: nothing added, rule 15; no source: an explore
+     * could never end on it).
+     */
+    private static void untilOwn(Ctx c, int from, Want w) {
+        LootBook book = c.w.loot();
+        if (book == null || !book.ready()) return;
+        boolean any = false;
+        for (LootBook.Source s : book.sourcesMatching(w::has)) any |= s.kind() == LootBook.Kind.BLOCK || s.kind() == LootBook.Kind.MOB;
+        if (!any) return;
+        for (int i = Math.max(0, from); i < c.steps.size(); i++) {
+            if (!(c.steps.get(i) instanceof Step.Explore e) || e.until() == null) continue;
+            String own = shw(w.word);
+            Set<String> words = new LinkedHashSet<>(List.of(e.until().split("\\|")));
+            if (!words.add(own)) continue;
+            c.steps.set(i, new Step.Explore(e.minutes(), String.join("|", words)));
         }
     }
 
@@ -1358,6 +1445,7 @@ public final class NeedChain {
         List<Map.Entry<String, Integer>> ins = new ArrayList<>(g.slots().entrySet());
         ins.sort(Comparator.comparingInt((Map.Entry<String, Integer> e) -> rawUnseen(c, e.getKey()) ? 1 : 0));
         String verb = craft ? "craft: " : "smelt ";
+        Burn fuel = null;
         int pieces = 0;
         for (var e : ins) {
             int want = e.getValue() * batches;
@@ -1388,6 +1476,7 @@ public final class NeedChain {
             if (c.fail != null) return null;
             parts.add(burn);
             if (c.stuck) return verb + String.join(" + ", parts);
+            fuel = c.burned;
             walkBack(c);
         }
         String out = outputOf(g, used);
@@ -1401,6 +1490,7 @@ public final class NeedChain {
             c.steps.add(new Step.Smelt(out != null ? sh(out) : shw(w.word), made, true));
             c.seconds += batches * smeltTicks() / GameTimes.TPS;
         }
+        if (fuel != null) slotUses.merge(FUEL_USE + fuel.word(), fuel.n(), Integer::sum);     // 0.39.z75 item 2
         used(c, slotUses);
         c.bag.merge(name, made, Integer::sum);
         return verb + String.join(" + ", parts);
@@ -1438,17 +1528,9 @@ public final class NeedChain {
         }
         c.path.add(item);
         try {
-            List<Alt> alts = new ArrayList<>();
-            for (ItemWorth.Recipe r : ItemWorth.recipes(item, ItemWorth.CRAFT)) {
-                if (packing(item, r)) continue;
-                alts.add(new Alt(sh(item) + " from " + ingredients(r), () -> craft(c, item, lack, r)));
-            }
-            for (ItemWorth.Recipe r : ItemWorth.recipes(item, ItemWorth.SMELT)) alts.add(new Alt("smelting " + sh(item) + " from " + ingredients(r), () -> smelt(c, item, lack, r)));
-            alts.addAll(sourceAlts(c, item, item, lack, c.w.seenAll().apply(item)));
-            alts.addAll(huntAlts(c, item, lack));
-            if (c.w.seenAll().apply(item).isEmpty()) alts.addAll(stripAlts(c, item, item, lack));   // 0.39.z43: mine at the ore's level
-            if (c.w.seenAll().apply(item).isEmpty()) alts.addAll(caveAlts(c, item, item, lack));    // 0.39.z44: mine in the cave
-            alts.addAll(baseAlts(c, item, lack));                                                  // 0.39.z74 item 4: dig down to the base block
+            List<Alt> alts = itemAlts(c, item, lack);
+            Alt up = beforeDown(c, sh(item), item, () -> itemAlts(c, item, lack));
+            if (up != null) alts.add(up);
             Trial w = choose(c, alts, item);
             if (w != null) return w.phrase();
             if (waitsOnPaths(c)) return pathsExplore(c, item);
@@ -1457,6 +1539,99 @@ public final class NeedChain {
         } finally {
             c.path.remove(c.path.size() - 1);
         }
+    }
+
+    /**
+     * 0.39.z75 item 3: a recipe way of a need runs with what the bag holds of the need set aside - its inner needs never count
+     * those as had (the recipe makes the lack, it does not recount). A dig way recounts after its pickaxe (z37, S39: the
+     * pickaxe may take the bag's own cobblestone, the dig breaks that many more) and runs without.
+     */
+    private static Supplier<String> aside(Ctx c, Want w, Supplier<String> way) {
+        return () -> {
+            Map<String, Integer> set = setAside(c, w);
+            try {
+                return way.get();
+            } finally {
+                putBack(c, set);
+            }
+        };
+    }
+
+    /** 0.39.z75 item 3: a tag's recipe group way, run with the tag's members in the bag set aside ({@link #aside}). */
+    private static Alt asideAlt(Ctx c, Want w, Alt a) {
+        a.run = aside(c, w, a.run);
+        return a;
+    }
+
+    /** The ways of an item need (the recipes, the furnace, the known blocks, the animals, the strip, the cave, the base block). */
+    private static List<Alt> itemAlts(Ctx c, String item, int lack) {
+        List<Alt> alts = new ArrayList<>();
+        Want self = new Want(item);
+        for (ItemWorth.Recipe r : ItemWorth.recipes(item, ItemWorth.CRAFT)) {
+            if (packing(item, r)) continue;
+            alts.add(new Alt(sh(item) + " from " + ingredients(r), aside(c, self, () -> craft(c, item, lack, r))));
+        }
+        for (ItemWorth.Recipe r : ItemWorth.recipes(item, ItemWorth.SMELT)) alts.add(new Alt("smelting " + sh(item) + " from " + ingredients(r), aside(c, self, () -> smelt(c, item, lack, r))));
+        alts.addAll(sourceAlts(c, item, item, lack, c.w.seenAll().apply(item)));
+        alts.addAll(huntAlts(c, item, lack));
+        if (c.w.seenAll().apply(item).isEmpty()) alts.addAll(stripAlts(c, item, item, lack));   // 0.39.z43: mine at the ore's level
+        if (c.w.seenAll().apply(item).isEmpty()) alts.addAll(caveAlts(c, item, item, lack));    // 0.39.z44: mine in the cave
+        alts.addAll(baseAlts(c, item, lack));                                                  // 0.39.z74 item 4: dig down to the base block
+        return alts;
+    }
+
+    /** 0.39.z75 item 1: the label start of a way met before the chain's leg to another level. */
+    public static final String BEFORE_DOWN = "before going down";
+
+    /**
+     * 0.39.z75 item 1 (rule 1: an option with its price, no scripted "always carry"; run AE 17:29:44: the iron pickaxe's table
+     * left 47 blocks up, AF 18:12:45: the sticks' logs on the surface): while the chain is down there ({@code c.down}), a
+     * need is met where the bot is (its walks not known from there, {@link #walk}) or - this way - before the leg that took
+     * it down: the same ways priced where the walks are priced from, their steps put in before that leg, the items carried
+     * down in the bag ("take the crafting_table" along, the logs cut first). Null: the chain is not down, or a way is
+     * being priced before going down already (one level of it).
+     */
+    private static Alt beforeDown(Ctx c, String label, String self, Supplier<List<Alt>> ways) {
+        if (c.down == null) return null;
+        Alt a = new Alt(label + " " + BEFORE_DOWN, null);
+        a.run = () -> {
+            String leg = c.down;
+            int at = c.downAt, s0 = c.steps.size();
+            double away0 = c.away;
+            c.down = null;                                   // priced where the walks are priced from: the base, before the leg
+            c.away = 0;
+            c.hoisting = true;
+            int moved = 0;
+            try {
+                Trial t = choose(c, ways.get(), self);
+                if (t == null) {
+                    if (c.fail == null) c.fail = "no way stands before going down either";
+                    return null;
+                }
+                if (t.alt().id != null) a.id = t.alt().id;
+                walkBack(c);                                 // back to where the leg starts, before it
+                moved = c.steps.size() - s0;
+                if (moved > 0) {
+                    List<Step> mv = new ArrayList<>(c.steps.subList(s0, c.steps.size()));
+                    c.steps.subList(s0, c.steps.size()).clear();
+                    c.steps.addAll(at, mv);
+                    Double mark = at + moved < c.steps.size() ? c.addedAt.get(c.steps.get(at + moved)) : null;
+                    if (mark != null) for (Step s : mv) c.addedAt.put(s, mark);     // their seconds go with the leg's (stepSeconds)
+                    for (var e : c.leafAt.entrySet()) {
+                        int i = e.getValue();
+                        if (i >= s0) e.setValue(at + (i - s0));
+                        else if (i >= at) e.setValue(i + moved);
+                    }
+                }
+                return BEFORE_DOWN + " (" + leg + "): " + t.phrase();
+            } finally {
+                c.down = leg;
+                c.downAt = at + moved;
+                c.away = away0;
+                c.hoisting = false;
+            }
+        };
+        return a;
     }
 
     /** A recipe that takes the item itself (a packing, a dye-over): not a way to make it. */
@@ -1553,9 +1728,10 @@ public final class NeedChain {
         if (c.fail != null) return null;
         parts.add(burn);
         if (c.stuck) return "smelt " + String.join(" + ", parts);
+        Burn fuel = c.burned;
         walkBack(c);
         c.steps.add(new Step.Smelt(sh(item), k * rec.outCount(), true));
-        used(c, Map.of(input, k));                                 // 0.39.z61: the input by its word (the fuel: the step's fuel reserve)
+        used(c, smeltUses(input, k, fuel));                        // 0.39.z61: the input by its word; z75 item 2: the planned fuel, counted
         c.seconds += k * smeltTicks() / GameTimes.TPS;
         c.note(() -> "smelt " + sh(item) + " x" + k * rec.outCount() + ": " + s(k * smeltTicks() / GameTimes.TPS));
         c.bag.merge(item, k * rec.outCount(), Integer::sum);
@@ -1563,6 +1739,24 @@ public final class NeedChain {
     }
 
     static double smeltTicks() { return Tuning.get("craftJob.smeltTicks"); }
+
+    /** 0.39.z75 item 2: the prefix of a smelt step's planned fuel in its uses ("fuel minecraft:coal" -> 1); StepNeeds.withUses reads it. */
+    public static final String FUEL_USE = "fuel ";
+
+    /**
+     * 0.39.z75 item 2 (run AF 18:12:51 / 18:21:46: the smelt's fuel was only "any burn ticks" in its needs): a smelt step's
+     * uses - its input by its word and the fuel the chain planned for it ({@code fuel}; null: none named), so the fuel is a
+     * counted need of its step like any consume (StepNeeds.withUses, Reservations, DryRun).
+     */
+    static Map<String, Integer> smeltUses(String input, int k, Burn fuel) {
+        Map<String, Integer> out = new LinkedHashMap<>();
+        out.put(input, k);
+        if (fuel != null && fuel.word() != null && fuel.n() > 0) out.merge(FUEL_USE + fuel.word(), fuel.n(), Integer::sum);
+        return out;
+    }
+
+    /** 0.39.z75 item 2: a planned burn - the fuel's need word and its count. */
+    record Burn(String word, int n) {}
 
     /**
      * The burn for {@code k} smelts by the tag rule (TAG_NEEDS 6): the fuel table's items in classes of the same burn ticks
@@ -1576,9 +1770,14 @@ public final class NeedChain {
         for (var e : fuels.entrySet()) if (e.getValue() > 0) classes.computeIfAbsent(e.getValue(), t -> new TreeSet<>()).add(e.getKey());
         // 0.39.z47 (S61): in the bag, the fuel the smelt step burns (CraftPlanner.pickFuel: any item with a burn time, the
         // cheapest by worth), so the chain says the fuel the furnace gets
-        var inBag = io.github.mojolowjo.entropybot.craft.CraftPlanner.pickFuel(c.bag, k);
-        if (inBag != null && have(c, new Want(inBag.id())) >= inBag.count())
+        c.burned = null;
+        Map<String, Integer> free = new LinkedHashMap<>();         // z75 item 3: less what an outer need set aside
+        for (String id : c.bag.keySet()) if (c.have(id) > 0) free.put(id, c.have(id));
+        var inBag = io.github.mojolowjo.entropybot.craft.CraftPlanner.pickFuel(free, k);
+        if (inBag != null && have(c, new Want(inBag.id())) >= inBag.count()) {
+            c.burned = new Burn(word(inBag.id()), inBag.count());
             return "burn " + counted(take(c, new Want(inBag.id()), inBag.count(), inBag.id())) + " (in the bag, the cheapest burn by worth)";
+        }
         List<Alt> alts = new ArrayList<>(), woodAlts = new ArrayList<>();
         Map<Alt, Double> wood = new java.util.HashMap<>();
         for (var e : classes.entrySet()) {
@@ -1587,11 +1786,19 @@ public final class NeedChain {
             boolean plain = new Want(cw).item() || cw.indexOf('|') < 0;
             Alt a = new Alt("burn " + (plain ? shw(cw) : e.getValue().size() + " items of " + e.getKey() + " ticks"), null);
             a.run = () -> {
-                Got g = needWord(c, cw, count);
+                // 0.39.z75 item 2 (run AF 18:21:43-46: "burn 2 acacia_fence|...|oak_planks|..." counted in the bag, then the
+                // smelt "can't smelt 3 iron_ingot - no fuel ... nothing left in the bag burns"): the furnace job burns ONE kind
+                // that covers the smelt and never a tool (CraftPlanner.pickFuel); a class held mixed in the bag is no burn - what
+                // the bag holds that no single kind can join is not counted, the rest is made or fetched as one kind
+                int mixed = have(c, new Want(cw)), single = oneKind(c, e.getValue());
+                int ask = mixed >= count && single < count ? count + (mixed - single) : count;
+                Got g = needWord(c, cw, ask);
                 if (g == null) return null;
                 a.id = g.id();
                 if (c.fail == null && !c.stuck) take(c, new Want(cw), count, g.id());
-                return "burn " + g.part();
+                a.burned = new Burn(word(g.id()), count);
+                return "burn " + (ask == count ? g.part() : count + " " + shw(g.id()) + " (one kind: the bag's mix of " + mixed + " burns as " + single + ")"
+                        + (g.phrase() == null ? "" : " <- " + g.phrase()));
             };
             // 0.39.z51 item 4 (run L: a boat crafted for 3 smelts): a class made of wood is priced by the wood it consumes
             // for this burn (FuelWood: the recipe data and the burn ticks; its least-wood member); a class with a member made
@@ -1640,7 +1847,22 @@ public final class NeedChain {
             if (c.fail == null) c.fail = "nothing of the fuel table can be had";
             return null;
         }
+        c.burned = win.alt().burned;
         return win.phrase();
+    }
+
+    /**
+     * 0.39.z75 item 2: the most one item of {@code members} the bag holds for a burn - one kind (the furnace job loads one),
+     * never a damageable item (a tool burns away its worth: CraftPlanner.pickFuel refuses it), less what is set aside.
+     */
+    private static int oneKind(Ctx c, Set<String> members) {
+        int best = 0;
+        for (String m : members) {
+            String id = id(m);
+            if (ItemWorth.damageable(id)) continue;
+            best = Math.max(best, c.have(id));
+        }
+        return best;
     }
 
     /** 0.39.z51: the way {@code label} was priced and lost on seconds (its dropped line says "dearer than"). */
@@ -1677,6 +1899,7 @@ public final class NeedChain {
     private static String station(Ctx c, String kind) {
         boolean table = ItemWorth.CRAFT.equals(kind);
         String label = table ? "table" : "furnace";
+        if (c.down != null) return downStation(c, kind, table, label);
         if (table ? c.tableReady : c.furnaceReady) {
             boolean walkedBefore = table ? c.tableWalked : c.furnaceWalked;
             Spot far = walkedBefore ? null : c.w.stationAt().apply(kind);
@@ -1687,6 +1910,25 @@ public final class NeedChain {
             return k;
         }
         c.note(() -> "station " + label + ": none known: to make or take from the bag and place near me");
+        return placeNew(c, kind, table, label);
+    }
+
+    /**
+     * 0.39.z75 item 1 (run AE 17:29:44: "crafting table at -754 63 -236 unusable: ... no path ... from -755 16 -236", the
+     * craft priced 0 s because the table was walked to before the strip): the station a step needs after the leg to another
+     * level. One placed down there in this chain: in reach. The base's (known, placed or in reach there): the climb back to
+     * it is not priced ({@link #fromBelow}, rule 15) - listed as dropped; the way that stands is one placed down there, its
+     * item from the bag, made from what the bag carries, or met before going down (the base's taken along, made up there:
+     * {@link #beforeDown}) - each priced, the cheapest wins (rule 1).
+     */
+    private static String downStation(Ctx c, String kind, boolean table, String label) {
+        if (table ? c.tableDown : c.furnaceDown) {
+            c.note(() -> "station " + label + ": placed down there before in this chain");
+            return null;
+        }
+        boolean up = (table ? c.tableReady : c.furnaceReady) || c.w.stationAt().apply(kind) != null;
+        if (up) drop(c, "the " + label + " up there", fromBelow(c.down));
+        c.note(() -> "station " + label + ": " + (up ? "the one up there is not priced from down here; " : "") + "one placed near me down there");
         return placeNew(c, kind, table, label);
     }
 
@@ -1754,7 +1996,8 @@ public final class NeedChain {
         c.seconds += Price.placeS();
         c.note(() -> "place " + sh(item) + " near me: " + s(Price.placeS()));
         c.bag.merge(item, -1, Integer::sum);
-        if (table) { c.tableReady = true; c.tableWalked = true; } else { c.furnaceReady = true; c.furnaceWalked = true; }
+        if (c.down != null) { if (table) c.tableDown = true; else c.furnaceDown = true; }        // 0.39.z75: down there, not at the base
+        else if (table) { c.tableReady = true; c.tableWalked = true; } else { c.furnaceReady = true; c.furnaceWalked = true; }
         c.away = 0;                                       // placed near where the bot stands
         return label + " <- " + (made == null ? "in the bag, placed" : made + ", placed") + (room == null ? "" : " " + room);
     }
@@ -1868,6 +2111,16 @@ public final class NeedChain {
      * way cannot be picked; the chain picks among the ways whose walks are known and the ways without one).
      */
     private static Walked walk(Ctx c, int x, int y, int z, double dist) {
+        if (c.down != null) {
+            // 0.39.z75 item 1 (rule 15, rule 18; D4 1: the fork's priced path starts at the feet, never at a cell the chain
+            // will reach later): a walk after the leg to another level is from where that leg leaves the bot - not priced,
+            // never the feet's price (run AE: the table 1 m away priced as 1 m after "to y 16"). Not a wait either: no answer
+            // will ever land for it before the bot is there; the way is dropped and the others compete (beforeDown).
+            Walked out = new Walked(Double.NaN, "", fromBelow(c.down), PathPrice.Kind.NONE);
+            walkNote(c, x, y, z, dist, out.fail(), out);
+            c.fail = out.fail();
+            return out;
+        }
         String key = x + "," + y + "," + z;
         Walked out = c.walks.get(key);
         if (out != null) walkNote(c, x, y, z, dist, "priced before in this pass", out);
@@ -1880,6 +2133,14 @@ public final class NeedChain {
         }
         if (out.fail() != null) c.fail = out.fail();
         return out;
+    }
+
+    /** 0.39.z75 item 1: the start of the reason a walk after a leg to another level is not priced. */
+    public static final String FROM_BELOW = "walk from where ";
+
+    /** 0.39.z75 item 1: why a walk after {@code leg} has no price (rule 15: "not known", never the feet's price). */
+    static String fromBelow(String leg) {
+        return FROM_BELOW + leg + " leaves the bot: not known (Baritone's search starts at the feet; a walk from a cell the bot will reach later is not priced, rule 15)";
     }
 
     /** One provider answer as the chain's walk: a complete path is a price, anything else says why it is not. */
@@ -1976,6 +2237,12 @@ public final class NeedChain {
         if (c.pickItem != null && tier >= 1) c.pickWorn += 1;       // game fact: a pickaxe loses 1 durability per block mined
         c.taken.merge(sp.key(), 1, Integer::sum);
         c.bag.merge(gives, 1, Integer::sum);
+        // 0.39.z75 item 1: the base's own station taken (carried down): no station of the kind stands at the base any more
+        for (String kind : List.of(ItemWorth.CRAFT, ItemWorth.SMELT)) {
+            Spot at = c.w.stationAt().apply(kind);
+            if (at == null || at.x() != sp.x() || at.y() != sp.y() || at.z() != sp.z()) continue;
+            if (ItemWorth.CRAFT.equals(kind)) { c.tableReady = false; c.tableWalked = true; } else { c.furnaceReady = false; c.furnaceWalked = true; }
+        }
         final String with = pre;
         c.note(() -> "take the " + shw(sp.block()) + " at " + sp.x() + " " + sp.y() + " " + sp.z() + ": break " + s(each) + (with == null ? "" : " with " + with));
         String how = noted("take the " + shw(sp.block()) + " " + Math.round(sp.dist()) + " m" + (pre == null ? "" : " with " + pre), wk);
@@ -2439,6 +2706,10 @@ public final class NeedChain {
     private static List<Alt> stripAlts(Ctx c, String word, String gives, int lack) {
         StripBand sb = c.w.strip().apply(word);
         if (sb == null || sb.ores().isEmpty()) return List.of();
+        if (c.hoisting) {                                    // 0.39.z75 item 1: one leg to another level at a time
+            c.note(() -> "strip for " + shw(word) + ": not offered before going down (the chain's one leg to another level is the other strip)");
+            return List.of();
+        }
         Alt a = new Alt("strip at y " + sb.y(), () -> strip(c, word, gives, lack, sb));
         a.id = gives;
         List<Alt> out = new ArrayList<>(List.of(a));
@@ -2525,14 +2796,24 @@ public final class NeedChain {
         int wear = wk.pickBreaks() + tunnelBreaks + oreBlocks;
         String spare = spareTools(c, wear, tier);
         c.seconds += wk.seconds() + digS;
-        c.away = wk.seconds();
+        // 0.39.z75 item 1 (D4 1; run AE 17:27:35: the furnace placed at y 16 zeroed the walk back, the table up there priced
+        // 0 s): a strip at another level than the feet leaves the bot down there - the walk back up is no mirror of the way
+        // down (a dug shaft is not walked up, D4 2) and no path from there is priced: later walks are "not known" (walk) and
+        // later needs are met there or before the leg (beforeDown). A strip at the feet's own level stays as before.
+        boolean level = sb.feetY() != sb.y();
+        c.away = level ? 0 : wk.seconds();
         if (c.pickItem != null && spare == null) c.pickWorn += wear;
         Map<String, Integer> amounts = Map.of(io.github.mojolowjo.entropybot.aa.brain.StripOrder.countKey(ore, io.github.mojolowjo.entropybot.cave.OreSpec::family), oreBlocks);
         Step.Strip strip = new Step.Strip(sb.ores(), amounts, sb.y(), sb.heading(), 0, sb.from());
         // 0.39.z46 (S58): the first leg is the priced path down to the band's peak (the walk the price above searched);
         // 0.39.z64 item 4: a strip from fresh ground walks to its start first
+        int legAt = c.steps.size();
         if (sb.feetY() != sb.y() || sb.fresh()) c.steps.add(new Step.ToStrip(sb.x(), sb.y(), sb.z(), strip.key()));
         c.steps.addAll(io.github.mojolowjo.entropybot.aa.brain.Goals.stripLoop(strip));
+        if (level) {
+            c.down = "the strip leg to y " + sb.y();
+            c.downAt = legAt;
+        }
         c.bag.merge(gives, Math.max(lack, (int) Math.floor(oreBlocks * per + 1e-9)), Integer::sum);  // structural: epsilon
         final String areas = seen.faces() <= 0 ? "" : " (areas along " + sb.heading() + ": " + seen.faces() + " faces seen, " + seen.ores() + " ore on them: band "
                 + Math.round(band) + " x " + String.format(java.util.Locale.ROOT, "%.2f", scale) + ")";
@@ -2762,9 +3043,12 @@ public final class NeedChain {
         }
         // 0.39.z68 (owner 2026-10-25: "if it's wood - go to surface to explore, if it's ore, explore for caves"): where the
         // target generates, from the jars' world-gen data (GenWhere: heightmap-placed = the surface, height_range = a band)
-        var where = c.w.where().of().apply(word);
+        var where = c.down != null ? null : c.w.where().of().apply(word);
         String whereText = null, upText = null;
-        int[] band = c.w.band().apply(word);
+        int[] band = c.down != null ? null : c.w.band().apply(word);
+        // 0.39.z75 item 1: down there after the leg to another level, the band walk and the walk up are walks from a cell the
+        // bot reaches later (not priced): the explore runs from where the leg leaves the bot
+        if (c.down != null) whereText = "from where " + c.down + " leaves the bot";
         if (where != null && where.surface()) {
             band = null;                                     // a surface target has no band to go down to
             whereText = "on the surface (" + where.text() + ")";

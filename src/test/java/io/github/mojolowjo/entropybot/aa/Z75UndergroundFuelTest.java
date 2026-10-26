@@ -1,0 +1,279 @@
+package io.github.mojolowjo.entropybot.aa;
+
+import io.github.mojolowjo.entropybot.aa.NeedChain.Chain;
+import io.github.mojolowjo.entropybot.aa.NeedChain.Spot;
+import io.github.mojolowjo.entropybot.aa.NeedChain.StripBand;
+import io.github.mojolowjo.entropybot.aa.NeedChain.World;
+import io.github.mojolowjo.entropybot.aa.brain.ItemWorth;
+import io.github.mojolowjo.entropybot.aa.brain.LootBook;
+import io.github.mojolowjo.entropybot.aa.brain.OreBand;
+import io.github.mojolowjo.entropybot.aa.brain.TestData;
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+import io.github.mojolowjo.entropybot.aa.moves.DryRun;
+import io.github.mojolowjo.entropybot.aa.moves.FactChange;
+import io.github.mojolowjo.entropybot.aa.moves.Step;
+import io.github.mojolowjo.entropybot.aa.moves.StepNeeds;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * 0.39.z75 (runs AE on z73, AF on z74): one resource model - (1) where each leg leaves the bot: a walk after the strip leg
+ * to another level is not priced from the feet, and a need there is met there or before going down; (2) the smelt's fuel
+ * is a counted need of its step, one kind that covers it (the furnace job's rule), and the fuel explore includes the
+ * tag's own sources (coal ore); under ground in coal's band the feet's level is a strip Y; (3) what a need counted from the
+ * bag is set aside for its inner needs. Hand numbers: the walk is the straight line x 1.3 at the walk speed (FakePaths).
+ */
+class Z75UndergroundFuelTest {
+    @AfterEach
+    void clear() {
+        TestData.clear();
+        FactChange.clear();
+        Tuning.reset();
+    }
+
+    static final String TABLE = "minecraft:crafting_table";
+    /** The table the bot placed 1 m from the feet (y 76, the strip's band peak 60 below). */
+    static final Spot TABLE_1M = new Spot(1, 76, 0, 1, TABLE);
+
+    static StripBand ironAt16From76() {
+        List<OreBand.Feature> fs = Z43StripWayTest.iron();
+        return new StripBand(List.of("minecraft:deepslate_iron_ore", "minecraft:iron_ore"), -64, 384, 16, OreBand.perSlab(fs, 16), 0, 0, 76, "east", "minecraft:stone");
+    }
+
+    /** The surface world: the table 1 m away (known, near, a block to take), iron only by the strip at y 16. */
+    static World surface(Map<String, Integer> bag) {
+        return ScenariosTest.w(bag, true, false, Map.of(TABLE, List.of(TABLE_1M)))
+                .withStations(k -> ItemWorth.CRAFT.equals(k) ? TABLE_1M : null)
+                .withStrip(w -> w.contains("raw_iron") || w.contains("iron_ore") ? ironAt16From76() : null);
+    }
+
+    static int index(Chain c, Class<?> kind) {
+        for (int i = 0; i < c.steps().size(); i++) if (kind.isInstance(c.steps().get(i))) return i;
+        return -1;
+    }
+
+    static int lastIndex(Chain c, java.util.function.Predicate<Step> p) {
+        int at = -1;
+        for (int i = 0; i < c.steps().size(); i++) if (p.test(c.steps().get(i))) at = i;
+        return at;
+    }
+
+    // ---- 1. the table left on the surface ----
+
+    /**
+     * Run AE 17:29:44: iron 3 by the strip at y 16 (60 down), then the iron pickaxe at a table. The table 1 m away up there
+     * is not 1 m from y 16 any more: its climb back is not priced (dropped, said); the chain that stands takes the table
+     * along before going down (walk 1 m 0.30 s, break, back 0.30 s) and places it near the bot down there (0.15 s), so the
+     * craft runs where the bot is. The bag: a stone pickaxe, 2 sticks, a furnace, 1 coal.
+     */
+    @Test
+    void i1_theTableGoesDownWithTheBot() {
+        ScenariosTest.world("wooden", "stone");
+        Chain c = NeedChain.resolve("iron_pickaxe", 1, surface(Map.of("minecraft:stone_pickaxe", 1, "minecraft:stick", 2,
+                "minecraft:furnace", 1, "minecraft:coal", 1)));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        int take = index(c, Step.TakeStation.class), down = index(c, Step.ToStrip.class), smelt = index(c, Step.Smelt.class);
+        int placeTable = lastIndex(c, s -> s instanceof Step.PlaceNear p && p.item().contains("crafting_table"));
+        int craft = lastIndex(c, s -> s instanceof Step.Craft k && k.item().equals("iron_pickaxe"));
+        assertTrue(take >= 0 && down > take, "the table is taken before the strip leg: " + c.steps());
+        assertTrue(smelt > down && placeTable > smelt && craft > placeTable, "placed down there, then the craft: " + c.steps());
+        assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.ToStation), "no walk to the table up there: " + c.steps());
+        assertTrue(c.dropped().stream().anyMatch(d -> d.startsWith("the table up there: " + NeedChain.FROM_BELOW + "the strip leg to y 16")), c.dropped().toString());
+        assertTrue(c.why().contains(NeedChain.BEFORE_DOWN + " (the strip leg to y 16): take the crafting_table 1 m"), c.why());
+    }
+
+    /**
+     * The same order with the table in the bag already: the take before going down is the only difference - the two chains
+     * differ by the walk there and back (2 x 0.30 s) and the table's break, nothing else (the strip, the smelt, the
+     * places, the craft the same).
+     */
+    @Test
+    void i1_theTakeAlongCostsItsWalkAndBreakOnly() {
+        ScenariosTest.world("wooden", "stone");
+        Map<String, Integer> bag = Map.of("minecraft:stone_pickaxe", 1, "minecraft:stick", 2, "minecraft:furnace", 1, "minecraft:coal", 1);
+        Chain taken = NeedChain.resolve("iron_pickaxe", 1, surface(bag));
+        Map<String, Integer> withTable = new java.util.HashMap<>(bag);
+        withTable.put(TABLE, 1);
+        Chain carried = NeedChain.resolve("iron_pickaxe", 1, surface(withTable));
+        assertTrue(carried.ok() && !carried.explore(), carried.why());
+        assertTrue(carried.steps().stream().noneMatch(s -> s instanceof Step.TakeStation), carried.steps().toString());
+        double walk = FakePaths.walkS(1);
+        // the table by hand: hardness 2.5 x 1.5 = 3.75 s (the game's formula, no tool asked); walk 1 m = 1.3 / 4.317 = 0.30 s
+        assertEquals(2 * walk + 3.75, taken.seconds() - carried.seconds(), 0.06, taken.why() + " vs " + carried.why());
+        assertEquals(carried.steps().size() + 2, taken.steps().size(), "the walk to it and the take: " + taken.steps() + " vs " + carried.steps());
+    }
+
+    /** A chain with no leg to another level is unchanged: the iron pickaxe from the bag's ingots at the table 1 m away = walk 0.30 + craft 0.3. */
+    @Test
+    void i1_noDescentNoChange() {
+        ScenariosTest.world("wooden", "stone");
+        Chain c = NeedChain.resolve("iron_pickaxe", 1, surface(Map.of("minecraft:iron_ingot", 3, "minecraft:stick", 2)));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertEquals(FakePaths.walkS(1) + 0.3, c.seconds(), 0.01, c.why());
+        assertEquals(List.of(new Step.ToStation(ItemWorth.CRAFT, "crafting_table", 1, 76, 0), new Step.Craft("iron_pickaxe", 1)), c.steps());
+        assertFalse(c.why().contains(NeedChain.BEFORE_DOWN), c.why());
+    }
+
+    /** Run AF 18:12:45: a tree seen up there is no source from down there - the logs for the sticks are cut before going down. */
+    @Test
+    void i1_theLogsAreCutBeforeGoingDown() {
+        ScenariosTest.world("wooden", "stone");
+        World w = ScenariosTest.w(Map.of("minecraft:stone_pickaxe", 1, "minecraft:furnace", 1, "minecraft:coal", 1, TABLE, 1), true, false,
+                        Map.of("oak_log", List.of(ScenariosTest.tree(10, 4))))
+                .withStrip(x -> x.contains("raw_iron") || x.contains("iron_ore") ? ironAt16From76() : null);
+        Chain c = NeedChain.resolve("iron_pickaxe", 1, w);
+        assertTrue(c.ok() && !c.explore(), c.why());
+        int cut = index(c, Step.ChopTree.class), down = index(c, Step.ToStrip.class);
+        assertTrue(cut >= 0 && down > cut, "the tree is cut before the strip leg: " + c.steps());
+        assertTrue(c.why().contains(NeedChain.BEFORE_DOWN), c.why());
+    }
+
+    // ---- 2. fuel ----
+
+    static final String PLANKS = "minecraft:oak_planks";
+
+    /**
+     * Two orders, one fuel unit (1 oak plank, 300 ticks), both smelt one raw iron (200 ticks). The second planned from the
+     * same bag counts the plank for its smelt - as a counted need of the smelt step (the plan's fuel, a consume): once the
+     * first has burned it, the dry run of the second finds the plank gone before its smelt runs (a bag fact: the order
+     * re-plans with a fuel way), and the smelt's own start check says the same - never "no fuel" as a stop.
+     */
+    @Test
+    void i2_theSecondOrdersSmeltRePlansOnItsFuel() {
+        ScenariosTest.world("wooden", "stone");
+        Map<String, Integer> bag = Map.of("minecraft:raw_iron", 2, PLANKS, 1);
+        Chain second = NeedChain.resolve("iron_ingot", 1, ScenariosTest.w(bag, true, true, Map.of()));
+        assertTrue(second.ok() && !second.explore(), second.why());
+        int at = index(second, Step.Smelt.class);
+        StepNeeds n = StepNeeds.of(second.steps().get(at)).withUses(second.uses().get(at));
+        assertEquals(Map.of("minecraft:raw_iron", 1, PLANKS, 1), n.consumes(), "the plank is the smelt's counted need: " + n.text());
+        assertEquals(0, n.fuelTicks(), "the plan's fuel replaces the generic burn ticks");
+        Map<String, Integer> afterFirst = Map.of("minecraft:raw_iron", 1);
+        DryRun.Shortage dry = DryRun.check(second.steps(), at, List.of(n), afterFirst);
+        assertNotNull(dry, "the dry run says it before the smelt runs");
+        assertEquals("bag oak_planks", dry.key());
+        StepNeeds.Bag left = bagOf(afterFirst);
+        assertNotNull(n.itemShort(left, "smelt"), "the step's own start check: a bag fact, not a stop");
+    }
+
+    /**
+     * Run AF 18:21:43-46: the bag's mix of the 300-tick class (1 plank + 1 crafting table) summed to the 600 ticks of 3
+     * smelts, but the furnace job burns ONE kind: the generic burn check (a step the plan did not count) says it short, at
+     * the dry run and at the step's start; one kind of 2 planks covers it.
+     */
+    @Test
+    void i2_aMixOfFuelsIsNoBurn() {
+        ScenariosTest.world("wooden", "stone");
+        StepNeeds n = StepNeeds.of(new Step.Smelt("iron_ingot", 3, true));
+        assertEquals(600, n.fuelTicks());
+        Map<String, Integer> mix = Map.of("minecraft:raw_iron", 3, PLANKS, 1, TABLE, 1);
+        assertNotNull(DryRun.check(List.of(new Step.Smelt("iron_ingot", 3, true)), 0, List.of(n), mix), "a mix is short");
+        assertNotNull(n.itemShort(bagOf(mix), "smelt"));
+        Map<String, Integer> one = Map.of("minecraft:raw_iron", 3, PLANKS, 2);
+        assertNull(DryRun.check(List.of(new Step.Smelt("iron_ingot", 3, true)), 0, List.of(n), one), "one kind covers it");
+        assertNull(n.itemShort(bagOf(one), "smelt"));
+    }
+
+    /**
+     * The chain's burn counts the same rule: 1 plank + 1 table in the bag is no burn of 600 ticks - the fuel it plans is one
+     * kind made from the log (counted on the smelt step), and the dry run of the whole plan on that bag finds no shortage.
+     */
+    @Test
+    void i2_theChainBurnsOneKind() {
+        ScenariosTest.world("wooden", "stone");
+        Map<String, Integer> bag = Map.of("minecraft:raw_iron", 3, PLANKS, 1, TABLE, 1, "minecraft:oak_log", 1);
+        Chain c = NeedChain.resolve("iron_ingot", 3, ScenariosTest.w(bag, true, true, Map.of()));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Craft), "the fuel is made, not the bag's mix: " + c.why());
+        int at = index(c, Step.Smelt.class);
+        StepNeeds n = StepNeeds.of(c.steps().get(at)).withUses(c.uses().get(at));
+        Map<String, Integer> fuel = new java.util.HashMap<>(n.consumes());
+        fuel.remove("minecraft:raw_iron");
+        assertEquals(1, fuel.size(), "one kind: " + n.text());
+        var e = fuel.entrySet().iterator().next();
+        assertTrue((long) e.getValue() * ItemWorth.fuels().get(e.getKey()) >= 600, n.text());
+        List<StepNeeds> all = new java.util.ArrayList<>();
+        for (int i = 0; i < c.steps().size(); i++) all.add(StepNeeds.of(c.steps().get(i)).withUses(c.uses().get(i)));
+        assertNull(DryRun.check(c.steps(), 0, all, bag), "the plan runs on its bag: " + c.why());
+    }
+
+    /** The fuel explore (nothing burns, nothing known): its until words include #coals (coal ore ends it), not only charcoal's logs. */
+    @Test
+    void i2_theFuelExploreEndsOnCoalToo() {
+        ScenariosTest.world("wooden", "stone");
+        LootBook book = new LootBook(List.of(new LootBook.Source(LootBook.Kind.BLOCK, "minecraft:coal_ore", "minecraft:coal", 1, 1, false, null),
+                new LootBook.Source(LootBook.Kind.BLOCK, "minecraft:oak_log", "minecraft:oak_log", 1, 1, false, null)), "test");
+        World w = ScenariosTest.w(Map.of("minecraft:raw_iron", 3), true, true, Map.of()).withMobs(x -> List.of(), book);
+        Chain c = NeedChain.resolve("iron_ingot", 3, w);
+        assertTrue(c.explore(), c.why());
+        Step.Explore e = (Step.Explore) c.steps().stream().filter(s -> s instanceof Step.Explore x && x.until() != null).findFirst().orElseThrow();
+        List<String> until = List.of(e.until().split("\\|"));
+        boolean coal = false, charcoal = false;
+        for (String u : until) {
+            coal |= NeedChain.gives(u, "minecraft:coal");
+            charcoal |= NeedChain.gives(u, "minecraft:charcoal") || NeedChain.gives(u, "minecraft:oak_log");
+        }
+        assertTrue(coal && charcoal, "coal and charcoal (its logs) end the explore: " + e.until());
+    }
+
+    /**
+     * Under ground at y 16, inside coal's band (0..192, one peak at y 96 above the feet): the feet's own level is a strip Y
+     * (the slab's ore there > 0), so the chain prices a coal way at y 16 - a tunnel from the feet, no walk; on the surface the
+     * peaks only (as before: the lowest above).
+     */
+    @Test
+    void i2_underGroundInCoalsBandTheChainPricesACoalWay() {
+        OreBand.Feature lower = new OreBand.Feature(0, 192, 0, 30, 17);
+        List<OreBand.Feature> fs = List.of(lower);
+        assertEquals(96, OreBand.bestY(fs, 16), "on the surface rule: the peak above");
+        assertEquals(16, OreBand.bestY(fs, 16, true), "in the rock: the feet's level");
+        assertEquals(96, OreBand.bestY(fs, -11, true), "below the band: the peak above, as before");
+        ScenariosTest.world("wooden", "stone");
+        StripBand coal = new StripBand(List.of("minecraft:coal_ore"), 0, 192, 16, OreBand.perSlab(fs, 16), 0, 0, 16, "east", "minecraft:stone");
+        World w = ScenariosTest.w(Map.of("minecraft:stone_pickaxe", 1, "minecraft:raw_iron", 3, "minecraft:furnace", 1), true, false, Map.of())
+                .withStrip(x -> x.contains("coal") ? coal : null);
+        Chain c = NeedChain.resolve("iron_ingot", 3, w);
+        assertTrue(c.ok() && !c.explore(), c.why());
+        Step.Strip st = (Step.Strip) c.steps().stream().filter(s -> s instanceof Step.Strip).findFirst().orElseThrow();
+        assertEquals(16, st.y());
+        assertTrue(st.ores().contains("minecraft:coal_ore"), st.toString());
+        assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.ToStrip), "at the feet: no walk: " + c.steps());
+    }
+
+    // ---- 3. counted once ----
+
+    /**
+     * Run AE 17:31:10: the helmet takes 5 ingots, the bag holds 3. "5 iron_ingot <- craft: 18 iron_nugget <- craft: 2
+     * iron_ingot" counted the bag's 3 twice (2 of them went into the nuggets). Set aside for the helmet, the 3 are not "had"
+     * by the nuggets' need: the round trip is a loop, dropped; the 2 missing ingots come from the smelt: 2 x 10 s (200 ticks
+     * each) + the helmet's craft 0.3 s at the table in reach (the furnace in reach, the coal in the bag) = 20.3 s.
+     */
+    @Test
+    void i3_theBagIsCountedOnce() {
+        TestData d = ScenariosTest.world("wooden", "stone");
+        d.recipe("iron_nugget", 9, "iron_ingot");
+        d.recipe("iron_ingot", 1, java.util.Collections.nCopies(9, "iron_nugget").toArray(new String[0]));
+        d.install();
+        Chain c = NeedChain.resolve("iron_helmet", 1, ScenariosTest.w(Map.of("minecraft:iron_ingot", 3, "minecraft:raw_iron", 2, "minecraft:coal", 1), true, true, Map.of()));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Craft k && k.item().equals("iron_nugget")), "no nugget round trip: " + c.why());
+        assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Smelt k && k.item().equals("iron_ingot") && k.n() == 2), c.steps().toString());
+        assertTrue(c.dropped().stream().anyMatch(d2 -> d2.contains("loop: iron_ingot needs itself")), c.dropped().toString());
+        assertEquals(20.3, c.seconds(), 0.05, c.why());
+    }
+
+    static StepNeeds.Bag bagOf(Map<String, Integer> m) {
+        return new StepNeeds.Bag() {
+            @Override public int bestTier(String kind) { return 0; }
+            @Override public String bestTool(String kind) { return null; }
+            @Override public int usesLeft(String id) { return 0; }
+            @Override public int count(String id) { return m.getOrDefault(id, 0); }
+            @Override public Map<String, Integer> items() { return new java.util.HashMap<>(m); }
+        };
+    }
+}

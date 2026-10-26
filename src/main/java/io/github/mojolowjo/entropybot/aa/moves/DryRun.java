@@ -78,9 +78,12 @@ public final class DryRun {
                     changed = true;
                 }
                 if (n.fuelTicks() > 0 && !ItemWorth.fuels().isEmpty()) {
-                    long burn = burn(b);
-                    if (burn < n.fuelTicks() && judged) return new Outcome(shortage(i, s, Reservations.FUEL, n.fuelTicks(), (int) Math.min(Integer.MAX_VALUE, burn), lastChange), null);
-                    burnOff(b, (int) Math.min(n.fuelTicks(), burn), laterWords(needs, k + 1));
+                    // 0.39.z75 item 2 (run AF 18:21:43-46: the bag's mix summed to the smelt's ticks, the furnace job found
+                    // "nothing left in the bag burns"): the burn is ONE kind that covers it, never a tool - the job's rule
+                    String kind = oneKind(b, n.fuelTicks(), laterWords(needs, k + 1));
+                    if (kind == null && judged) return new Outcome(shortage(i, s, Reservations.FUEL, n.fuelTicks(), (int) Math.min(Integer.MAX_VALUE, oneKindTicks(b)), lastChange), null);
+                    if (kind != null) take(b, kind, (n.fuelTicks() + burnOf(kind) - 1) / burnOf(kind));
+                    else burnOff(b, (int) Math.min(n.fuelTicks(), burn(b)), laterWords(needs, k + 1));
                     changed = true;
                 }
             }
@@ -161,6 +164,30 @@ public final class DryRun {
         int least = Integer.MAX_VALUE;
         for (String m : NeedChain.membersOf(entry)) least = Math.min(least, Math.max(0, fuels.getOrDefault(StepNeeds.full(m), 0)));
         return least == Integer.MAX_VALUE ? 0 : least;
+    }
+
+    /**
+     * 0.39.z75 item 2: the bag entry the furnace job would burn for {@code ticks} - one kind whose count covers them, never a
+     * damageable item (CraftPlanner.pickFuel's rule); one no later step names first, then the one burning longest a piece.
+     * Null: no one kind covers them.
+     */
+    static String oneKind(Map<String, Integer> b, int ticks, List<String> later) {
+        String best = null;
+        for (var e : b.entrySet()) {
+            int per = burnOf(e.getKey());
+            if (e.getValue() <= 0 || per <= 0 || ItemWorth.damageable(e.getKey()) || (long) e.getValue() * per < ticks) continue;
+            if (best == null) { best = e.getKey(); continue; }
+            boolean nb = named(later, best), ne = named(later, e.getKey());
+            if (nb != ne ? nb : per > burnOf(best)) best = e.getKey();
+        }
+        return best;
+    }
+
+    /** 0.39.z75 item 2: the most burn ticks one kind of the bag gives (never a damageable item). */
+    static long oneKindTicks(Map<String, Integer> b) {
+        long best = 0;
+        for (var e : b.entrySet()) if (e.getValue() > 0 && !ItemWorth.damageable(e.getKey())) best = Math.max(best, (long) e.getValue() * burnOf(e.getKey()));
+        return best;
     }
 
     private static long burn(Map<String, Integer> b) {

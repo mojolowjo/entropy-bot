@@ -51,15 +51,24 @@ public record StepNeeds(String toolKind, int minTier, Map<String, Integer> consu
     public StepNeeds withUses(Map<String, Integer> uses) {
         if (uses == null) return this;
         Map<String, Integer> plain = new LinkedHashMap<>(), tags = new LinkedHashMap<>();
+        int fuel = fuelTicks;
         for (var e : uses.entrySet()) {
             if (e.getKey() == null || e.getValue() == null || e.getValue() <= 0) continue;
+            // 0.39.z75 item 2 (run AF 18:21:46): the fuel the plan named for a smelt is a counted need of the step - one item:
+            // a consume like any (reserved by its count, checked by the dry run; the generic burn ticks give way to it); a
+            // class of items: the burn ticks stay (one kind that covers them, the furnace job's rule: DryRun.oneKindTicks)
+            if (e.getKey().startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.FUEL_USE)) {
+                String fw = io.github.mojolowjo.entropybot.aa.NeedChain.word(e.getKey().substring(io.github.mojolowjo.entropybot.aa.NeedChain.FUEL_USE.length()));
+                if (fuelTicks > 0 && io.github.mojolowjo.entropybot.aa.NeedChain.plain(fw)) { plain.merge(fw, e.getValue(), Integer::sum); fuel = 0; }
+                continue;
+            }
             String w = io.github.mojolowjo.entropybot.aa.NeedChain.word(e.getKey());
             if (io.github.mojolowjo.entropybot.aa.NeedChain.plain(w)) plain.merge(w, e.getValue(), Integer::sum);
             else tags.merge(w, e.getValue(), Integer::sum);
         }
         String unk = countsUnknown != null && countsUnknown.equals(unknown) ? null : unknown;
         String still = countsUnknown != null && countsUnknown.startsWith(NO_FUEL) ? countsUnknown : null;   // the fuel table is not the plan's
-        return new StepNeeds(toolKind, minTier, plain, still != null ? unknown : unk, fuelTicks, tags, null, still);
+        return new StepNeeds(toolKind, minTier, plain, still != null ? unknown : unk, fuel, tags, null, still);
     }
 
     /** The rule-15 words of a smelt with no fuel table. */
@@ -123,10 +132,15 @@ public record StepNeeds(String toolKind, int minTier, Map<String, Integer> consu
             if (have < e.getValue()) return sh(e.getKey()) + ": " + have + " of " + e.getValue() + " in the bag, the " + verb + " uses " + e.getValue();
         }
         if (fuelTicks > 0) {
-            // the game's fuel table (any item with a burn time), less what the step itself uses up
+            // the game's fuel table (any item with a burn time), less what the step itself uses up; 0.39.z75 item 2 (run AF
+            // 18:21:46: a mix "in the bag" the furnace job could not burn): ONE kind that covers it, never a tool - the job's
+            // rule (CraftPlanner.pickFuel)
             long burn = 0;
-            for (var f : ItemWorth.fuels().entrySet()) burn += (long) Math.max(0, bag.count(f.getKey()) - consumes.getOrDefault(f.getKey(), 0)) * f.getValue();
-            if (burn < fuelTicks) return "fuel: " + burn + " of " + fuelTicks + " burn ticks in the bag, the " + verb + " burns " + fuelTicks;
+            for (var f : ItemWorth.fuels().entrySet()) {
+                if (f.getValue() == null || f.getValue() <= 0 || ItemWorth.damageable(f.getKey())) continue;
+                burn = Math.max(burn, (long) Math.max(0, bag.count(f.getKey()) - consumes.getOrDefault(f.getKey(), 0)) * f.getValue());
+            }
+            if (burn < fuelTicks) return "fuel: " + burn + " of " + fuelTicks + " burn ticks in the bag of one kind, the " + verb + " burns " + fuelTicks;
         }
         return null;
     }
