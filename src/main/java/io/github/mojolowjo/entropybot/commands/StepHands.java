@@ -852,6 +852,14 @@ public final class StepHands implements Steps.Hands {
             return Car.Status.done("ok: on the surface at " + Jobs.fmt(me));
         }
         Car.Status st = requestStatus();
+        // 0.39.z77 round fix 5 (run BG 09:07:39-09:23:30, 321 re-plans: "up to the surface at -28 23 -49" - an open-sky cell at the
+        // foot of a shaft next to the feet - ended "ok: arrived near -28 22 -48" under 47 blocks of rock every 3 s, the explore
+        // failed "under ground" and the re-plan walked "up" again, until the order's timeout): a walk up that ends with the feet
+        // still under ground (NeedChain.walkUpShort) did not reach the surface - the walk up's fact, held for the order
+        if (st.state() == Car.State.DONE) {
+            String short_ = io.github.mojolowjo.entropybot.aa.NeedChain.walkUpShort(Jobs.underDepth(p.level(), me[0], me[1], me[2]), io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth(), Jobs.fmt(me));
+            if (short_ != null) return Car.Status.failed(surfaceRefused(t, short_));
+        }
         if (st.state() != Car.State.FAILED) return st;
         return Car.Status.failed(surfaceRefused(t, "the walk up ended short: " + (st.why() == null ? "no reason" : st.why())));
     }

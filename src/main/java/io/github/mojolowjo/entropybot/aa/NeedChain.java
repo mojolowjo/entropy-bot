@@ -2507,6 +2507,12 @@ public final class NeedChain {
             PathPrice pp = c.w.path();
             PathPrice.Answer a = pp == null ? PathPrice.Answer.none("no path provider") : into ? pp.priceInto(x, y, z, dist) : pp.price(x, y, z, dist);
             out = estimateFloor(walked(a), dist);     // z76 send-back 3 review (rule 18): an estimate never beats the straight walk
+            // 0.39.z77 round fix 2 (run BH): stood twice here with this walk still not known - it drops for the order (no
+            // estimate, rule 15: never a price, never a third stand); the other ways compete
+            if (out.fail() != null && out.fail().startsWith(PathPrice.NOT_KNOWN)) {
+                String stood = stoodHere(c);
+                if (stood != null) out = new Walked(Double.NaN, "", "walk: dropped, " + out.fail().substring("walk: ".length()) + " after the stands here (" + stood + ")", PathPrice.Kind.NONE);
+            }
             c.walks.put(key, out);
             walkNote(c, x, y, z, dist, out.fail() == null ? "Baritone path, complete" : out.fail(), out);
         }
@@ -3451,27 +3457,55 @@ public final class NeedChain {
             c.spare(sh(tool) + ": " + left + " uses left, " + wear + " blocks to break; the bag's " + bagCount + " other pickaxe(s) (" + bagUses + " uses) cover it: no spare made");
             return null;
         }
-        int need = (int) Math.ceil((wear - left - others) / (double) fresh - 1e-9);   // structural: epsilon
+        // 0.39.z77 round fix 4 (run BF 08:57:41, iron_boots: "iron_pickaxe: 22 spares would cover 5861 blocks; tools.maxSpares 3
+        // holds: 3 made" for a coal strip; manager: the kit's own iron never becomes spare tools): a spare is the lowest-tier
+        // pickaxe the game data crafts that still digs this strip's tier (stone for coal or iron), never one of the tool in hand
+        // when a lower one digs it - its iron stays for the orders. The tool in hand is worn first (Baritone takes the best)
+        String kind = spareKind(tier, tool);
+        int freshK = kind.equals(tool) ? fresh : (int) Math.floor(ItemWorth.facts(kind).durability());
+        if (freshK <= 0) { kind = tool; freshK = fresh; }       // the lower kind's durability not known (rule 15): the tool's own kind
+        final String sk = kind;
+        int need = (int) Math.ceil((wear - left - others) / (double) freshK - 1e-9);   // structural: epsilon
         int cap = Math.max(0, Tuning.i("tools.maxSpares"));
         int extra = Math.min(need, cap);
-        if (extra < need) c.spare(sh(tool) + ": " + need + " spares would cover " + wear + " blocks; tools.maxSpares " + cap + " holds: " + cap + " made, the rest re-planned when a pickaxe breaks");
-        if (extra <= 0) return null;
         Ctx.Snap before = c.snap();
         double s0 = c.seconds;
-        String p = obtain(c, tool, c.have(tool) + extra);
-        if (c.fail != null || c.stuck) {
+        String p = extra <= 0 ? null : obtain(c, kind, c.have(kind) + extra);
+        if (extra > 0 && (c.fail != null || c.stuck)) {
             String why = c.fail != null ? c.fail : "its materials are not known yet (an explore)";
             c.restore(before);
-            c.spare(sh(tool) + ": " + left + " uses left, " + wear + " blocks to break; no spare to be had (" + why + "): the worn one is used");
+            c.spare(sh(tool) + ": " + left + " uses left, " + wear + " blocks to break; no spare " + sh(kind) + " to be had (" + why + "): the worn one is used");
             return null;
         }
-        c.bag.merge(tool, -extra, Integer::sum);            // they wear out in this way
+        // the cap said with what was made (z77 round fix 4: "3 made" was said before the make, which then failed)
+        if (extra < need) c.spare(sh(tool) + ": " + need + " spare " + sh(kind) + " would cover " + wear + " blocks; tools.maxSpares " + cap + " holds: " + extra + " made, the rest re-planned when a pickaxe breaks");
+        if (extra <= 0) return null;
+        c.bag.merge(kind, -extra, Integer::sum);            // they wear out in this way
         c.pickMade = true;
-        c.pickWorn = Math.max(0, Math.min(fresh, (wear - left - others) - (extra - 1) * fresh));   // the last spare's wear (rough)
+        c.pickItem = kind;                                 // the last one in hand digs on (its speed for what follows, rough)
+        c.pickWorn = Math.max(0, Math.min(freshK, (wear - left - others) - (extra - 1) * freshK));   // the last spare's wear (rough)
         double add = c.seconds - s0;
-        final int n = extra;
-        c.spare(sh(tool) + ": " + left + " uses left, " + wear + " blocks to break, the bag's other pickaxes " + bagUses + " uses (" + fresh + " a new one) -> " + n + " spare " + sh(tool) + " made first (+" + s(add) + ")");
-        return n + " spare " + sh(tool) + (p == null ? "" : " (<- " + p + ")");
+        final int n = extra, fk = freshK;
+        c.spare(sh(tool) + ": " + left + " uses left, " + wear + " blocks to break, the bag's other pickaxes " + bagUses + " uses (" + fk + " a new " + sh(sk) + ") -> " + n + " spare " + sh(sk) + " made first (+" + s(add) + ")");
+        return n + " spare " + sh(kind) + (p == null ? "" : " (<- " + p + ")");
+    }
+
+    /**
+     * 0.39.z77 round fix 4: the spare pickaxe kind for a strip of {@code tier} - the game's pickaxes (tag) with a crafting
+     * recipe whose tool tier digs it, the lowest tier, ties by the less raw work (then the id); {@code tool} when none is
+     * lower than it. Data only (tags, tiers, recipes; rule 4).
+     */
+    static String spareKind(int tier, String tool) {
+        String best = tool;
+        int bestT = MiningTiers.toolTier(tool, "pickaxe");
+        double bestW = rawWork(tool, new ArrayList<>());
+        for (String pid : new TreeSet<>(ItemWorth.itemsIn("pickaxes"))) {
+            int t = MiningTiers.toolTier(pid, "pickaxe");
+            if (t < tier || t > bestT || ItemWorth.recipes(pid, ItemWorth.CRAFT).isEmpty()) continue;
+            double w = rawWork(pid, new ArrayList<>());
+            if (t < bestT || w < bestW) { best = pid; bestT = t; bestW = w; }
+        }
+        return best;
     }
 
     /**
@@ -3637,7 +3671,12 @@ public final class NeedChain {
         Surface over = c.down != null ? null : c.w.where().surface().get();
         boolean under = over != null && over.depth() >= AaLadder.surfaceDepth();
         if (under && !(where != null && where.surface())) {
-            String up = surfaceWalk(c);
+            // 0.39.z77 round fix 5 (run BG: the walk up "done" next to the feet, the explore failed "under ground" from the same
+            // cell 317 times): an explore from here already failed under ground - a walk up that leaves the bot here is no walk
+            // up; the climb (its own priced row) or the stop, said
+            String froze = frozenHere(c);
+            String up = froze != null ? null : surfaceWalk(c);
+            if (froze != null) c.note(() -> "surface: the explore from here failed under ground (" + froze + "): no walk up from here, the climb");
             if (up == null && c.fail != null) return null;      // the walk up waits on its path (rule 18)
             if (up == null) up = climbUp(c, over);           // 0.39.z77 answers (2): the climb with the bag's blocks, priced
             if (up == null) return null;
@@ -3698,6 +3737,16 @@ public final class NeedChain {
         return out;
     }
 
+    /**
+     * 0.39.z77 round fix 5 (run BG 09:07:39-09:23:30): a walk up that Baritone ended "arrived" with {@code depth} blocks of
+     * ground still over the feet ({@code at}) - at or past aaLadder.surfaceDepth ({@code under}), the planner's own "under
+     * ground" - did not reach the surface: its reason (the walk up's fact); null: it did (or the depth is not known, -1).
+     */
+    public static String walkUpShort(int depth, int under, String at) {
+        if (depth < 0 || depth < under) return null;
+        return "the walk up ended under ground (" + depth + " blocks over the feet at " + at + ", aaLadder.surfaceDepth " + under + ")";
+    }
+
     /** 0.39.z77 J2 E2: the reason an explore from under ground is no way: no walk up stands (rule 22: never through rock). */
     static String noWalkUp(Surface over) {
         return "under ground (" + over.depth() + " blocks over the feet) and no priced walk up to the surface (held for this order, no path up, or not known):"
@@ -3754,17 +3803,33 @@ public final class NeedChain {
     public static String exploreFrozenKey(int[] feet) { return EXPLORE_FROZEN + feet[0] + " " + feet[1] + " " + feet[2]; }
 
     /**
+     * 0.39.z77 round fix 2 (run BH 09:32:11: two stands at -235 69 -201 with the same walks not known, then the order stopped):
+     * the key prefix the second stand at a cell holds for the order (Steps): the walks still not known from within
+     * failures.moved of it are dropped, "no estimate" (rule 15), so the next way runs.
+     */
+    public static final String STOOD_AT = "stood at ";
+
+    /** 0.39.z77 round fix 2: the key of the stands at {@code feet} ("stood at x y z"). */
+    public static String stoodKey(int[] feet) { return STOOD_AT + feet[0] + " " + feet[1] + " " + feet[2]; }
+
+    /**
      * 0.39.z76 send-back 2 (run AO 23:54-23:56: the same explore picked again from y 24 three times, each frozen): the held
      * frozen explore within failures.moved of the feet ("explore frozen at x y z: why"), null: none, or the feet not known.
      */
-    static String frozenHere(Ctx c) {
+    static String frozenHere(Ctx c) { return heldNear(c, EXPLORE_FROZEN); }
+
+    /** 0.39.z77 round fix 2: the held stands within failures.moved of the feet ("stood at x y z: why"), null: none. */
+    static String stoodHere(Ctx c) { return heldNear(c, STOOD_AT); }
+
+    /** A held "prefix x y z: why" line within failures.moved of the feet, null: none, or the feet not known. */
+    private static String heldNear(Ctx c, String prefix) {
         if (c.w.held() == null) return null;
         int[] feet = c.w.where().feet().get();
         if (feet == null || feet.length < 3) return null;      // structural: x y z
         for (String h : c.w.held()) {
-            if (!h.startsWith(EXPLORE_FROZEN)) continue;
+            if (!h.startsWith(prefix)) continue;
             int colon = h.indexOf(':');
-            String[] xyz = (colon < 0 ? h : h.substring(0, colon)).substring(EXPLORE_FROZEN.length()).trim().split(" ");
+            String[] xyz = (colon < 0 ? h : h.substring(0, colon)).substring(prefix.length()).trim().split(" ");
             if (xyz.length != 3 || !xyz[0].matches("-?\\d+") || !xyz[1].matches("-?\\d+") || !xyz[2].matches("-?\\d+")) continue;   // structural: x y z
             int[] at = {Integer.parseInt(xyz[0]), Integer.parseInt(xyz[1]), Integer.parseInt(xyz[2])};
             if (dist3(at, feet) <= io.github.mojolowjo.entropybot.aa.brain.Failures.movedV()) return h;

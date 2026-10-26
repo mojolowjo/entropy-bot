@@ -205,7 +205,7 @@ class Z65RunVTest {
         Chain c = NeedChain.resolve("raw_iron", 3, Z62RunSTest.world(noWood, Z62RunSTest.band("east")).withUses(id -> 131));
         assertTrue(c.ok() && !c.explore(), c.why());
         assertEquals(0, Z62RunSTest.crafted(c, "stone_pickaxe"), c.steps().toString());
-        assertTrue(c.spares().startsWith("stone_pickaxe: 131 uses left, 135 blocks to break; no spare to be had ("), c.spares());
+        assertTrue(c.spares().startsWith("stone_pickaxe: 131 uses left, 135 blocks to break; no spare stone_pickaxe to be had ("), c.spares());
         assertTrue(c.spares().endsWith("): the worn one is used"), c.spares());
 
         Map<String, Integer> sticks = Map.of("minecraft:stone_pickaxe", 1, "minecraft:cobblestone", 20, "minecraft:stick", 10);

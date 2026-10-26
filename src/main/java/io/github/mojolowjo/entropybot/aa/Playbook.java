@@ -421,7 +421,11 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
             surfaceGates.add(pick);
             gateTier0 = tier0;
         }
-        for (var e : trees.entrySet()) if (e.getValue().surface()) surface.add(batch.get(e.getKey()));
+        // 0.39.z77 round fix 3 (run BF: torch 12:37 vs the baseline's 1:43; manager: the order's cheapest item first when it is
+        // on the way): the batch's orders whose leaves are all surface (the torches: logs and coal or charcoal) come first in
+        // the surface leg, the gate's pickaxe after them - the order is done before the first leg's tools are made
+        int gatesFirst = surface.size();
+        for (var e : trees.entrySet()) if (e.getValue().surface()) surface.add(surface.size() - gatesFirst, batch.get(e.getKey()));
         if (!surface.isEmpty()) legs.add(new Leg(Kind.SURFACE, surface, NO_Y, null, null, gateTier0, surfaceGates, false));
         Map<String, Integer> bagLeft = new LinkedHashMap<>(f.bag());
         for (int k = 0; k <= maxStage; k++) {

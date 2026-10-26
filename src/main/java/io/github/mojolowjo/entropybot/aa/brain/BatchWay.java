@@ -211,16 +211,29 @@ public final class BatchWay {
      */
     public static Result pick(String batch, Playbook pb, NeedChain.Chain pc, Row ad) {
         boolean pbWaits = pc != null && (pc.waiting() || Steps.waitsOnPaths(pc.steps()) || pc.missing() != null && (pc.missing().contains(io.github.mojolowjo.entropybot.aa.PathPrice.NOT_KNOWN) || pc.missing().startsWith(NeedChain.NOT_PRICED)));
-        boolean pbPriced = pc != null && pc.ok() && !Steps.waitsOnPaths(pc.steps());
-        boolean adStands = ad.fail() == null;
+        // 0.39.z77 round fix 5 (run BG 09:23:33: "the ad-hoc chains run (playbook 0 s vs ad-hoc 1463 s)"; manager: a way priced 0
+        // is never valid, as a count 0 is not): a row is a price only when its seconds are over 0 - a playbook or an ad-hoc row of
+        // 0 s (or not a number) is refused with that reason, never compared
+        String pbZero = pc != null && pc.ok() && !Steps.waitsOnPaths(pc.steps()) && !(pc.seconds() > 0) ? zero(pc.seconds()) : null;
+        boolean pbPriced = pc != null && pc.ok() && !Steps.waitsOnPaths(pc.steps()) && pbZero == null;
+        String adZero = ad.fail() == null && !(ad.seconds() > 0) ? zero(ad.seconds()) : null;
+        boolean adStands = ad.fail() == null && adZero == null;
         boolean take = pbPriced && (!adStands || pc.seconds() < ad.seconds());
         String pbText = pc == null ? "not derived (" + pb.fail() + ")" : pbWaits ? (pc.missing() != null && pc.missing().startsWith(NeedChain.NOT_PRICED) ? pc.missing() : "not priced yet (" + (pc.missing() != null ? pc.missing() : "a walk's path computing") + ")")
                 : !pc.ok() ? "has no way (" + pc.missing() + ")"
+                : pbZero != null ? "refused (" + pbZero + ")"
                 : String.format(Locale.ROOT, "%.1f s", pc.seconds()) + (pc.explore() ? " (an explore leg in it)" : "");
-        String adText = !adStands ? (ad.waiting() ? "not priced yet (" + ad.fail() + ")" : "has no way (" + ad.fail() + ")")
+        String adText = adZero != null ? "refused (" + adZero + ")"
+                : !adStands ? (ad.waiting() ? "not priced yet (" + ad.fail() + ")" : "has no way (" + ad.fail() + ")")
                 : String.format(Locale.ROOT, "%.1f s", ad.seconds()) + (ad.explore() ? " (an explore leg in it)" : "");
         String line = "chain | batch " + batch + ": playbook " + pbText + " vs ad-hoc " + adText + " (" + ad.orders() + " orders in turn): " + (take ? "playbook" : "ad-hoc")
                 + (pbWaits ? " meanwhile" : "") + (pc != null && pc.ok() ? " [" + pb.why() + "]" : "");
-        return new Result(take, pb, pc, pc == null ? Double.NaN : pc.seconds(), ad.seconds(), line, !pbWaits && !ad.waiting());
+        // the chat's numbers are prices only: a row not priced (waiting, no way, refused) says so, never its partial seconds
+        return new Result(take, pb, pc, pbPriced ? pc.seconds() : Double.NaN, adStands ? ad.seconds() : Double.NaN, line, !pbWaits && !ad.waiting());
+    }
+
+    /** 0.39.z77 round fix 5: why a row's seconds are no price ("priced 0.0 s: no way is free"). */
+    static String zero(double s) {
+        return "priced " + (Double.isNaN(s) ? "NaN" : String.format(Locale.ROOT, "%.1f", s)) + " s: a way priced 0 or less is never valid";
     }
 }

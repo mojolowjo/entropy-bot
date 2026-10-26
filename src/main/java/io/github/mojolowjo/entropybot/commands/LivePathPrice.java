@@ -80,7 +80,7 @@ public final class LivePathPrice implements PathPrice {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.player == null || mc.level == null) return a;
         String key = key(x, y, z, into);
-        if (a == null || a.kind() != PathPrice.Kind.COMPUTING) { firstAsked.remove(key); return a; }
+        if (!PricedAnswers.waits(a)) { firstAsked.remove(key); return a; }      // 0.39.z77 round fix 1: CHUNKS keeps the clock too (run BH)
         int[] me = Jobs.here(mc.player);
         long now = mc.level.getGameTime();
         long[] t0 = firstAsked.get(key);

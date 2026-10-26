@@ -120,13 +120,18 @@ class Z77PlaybookTest {
         World w = world(Map.of(), Map.of());
         Playbook pb = Playbook.derive(KIT, Playbook.facts(w, null));
         assertTrue(pb.ok(), pb.why());
-        assertEquals("playbook: surface [stone_pickaxe 1, torch 4] > descent y 16 [raw_iron 3, coal 1] > at band [iron_ingot 3, iron_pickaxe 1] > strip on y 16 "
+        assertEquals("playbook: surface [torch 4, stone_pickaxe 1] > descent y 16 [raw_iron 3, coal 1] > at band [iron_ingot 3, iron_pickaxe 1] > strip on y 16 "
                 + "[raw_iron 24, coal 3] > at band [iron_ingot 24, iron_helmet 1, iron_chestplate 1, iron_leggings 1, iron_boots 1]", pb.why());
         Chain pc = NeedChain.resolvePlaybook(pb, w);
         assertFalse(pc.ok(), pc.why());
         assertTrue(pc.missing().startsWith(NeedChain.NOT_PRICED) && pc.missing().contains("after the surface explore"), pc.missing());
         Step.Explore ex = (Step.Explore) pc.steps().stream().filter(s -> s instanceof Step.Explore).findFirst().orElseThrow();
-        for (String part : NeedChain.word(ex.until()).split("\\|")) assertTrue(where(part).surface(), "a surface word: " + ex.until());
+        // 0.39.z77 round fix 3: the torches come first - their explore is "logs or coal" (charcoal from logs, or coal seen on the
+        // way): a surface part turns the land-first water term on (E1, per part) and no leg goes down before it
+        assertTrue(java.util.Arrays.stream(NeedChain.word(ex.until()).split("\\|")).anyMatch(p -> where(p).surface()), "a surface part: " + ex.until());
+        assertTrue(pc.steps().stream().noneMatch(s -> s instanceof Step.ToBand || s instanceof Step.ToStrip), "no leg down before the surface explore: " + pc.steps());
+        assertTrue(pc.steps().get(0) instanceof Step.Explore || pc.steps().stream().noneMatch(s -> s instanceof Step.Craft c && c.item().contains("pickaxe")),
+                "the torches' explore before any pickaxe: " + pc.steps());
         BatchWay.Row ad = BatchWay.sequential(KIT, i -> w, w.bag());
         assertTrue(ad.fail() != null || ad.explore(), ad.toString());
         BatchWay.Result r = BatchWay.pick("b1", pb, pc, ad);
@@ -216,7 +221,7 @@ class Z77PlaybookTest {
         data();
         World w = world(Map.of("minecraft:stick", 64, "minecraft:crafting_table", 5, "minecraft:furnace", 5, "minecraft:coal", 9), Map.of());
         Playbook pb = Playbook.derive(KIT, Playbook.facts(w, null));
-        assertTrue(pb.why().contains("surface [stone_pickaxe 1, torch 4]"), pb.why());
+        assertTrue(pb.why().contains("surface [torch 4, stone_pickaxe 1]"), pb.why());
         Chain pc = NeedChain.resolvePlaybook(pb, w);
         assertTrue(pc.ok() && pc.explore(), pc.why());
         assertEquals(NeedChain.exploreS() + 715.95, pc.seconds(), 0.1, pc.why());

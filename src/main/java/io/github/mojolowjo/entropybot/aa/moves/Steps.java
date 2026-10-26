@@ -488,6 +488,8 @@ public final class Steps {
         replanner = replan;
         lastFailed = null;
         startFeet = null;
+        standsInRow = 0;                         // 0.39.z77 round fix 2 (run BH: "stood 2, 3, 4, 5, 6 times" across orders): per run
+        standCell = null;
         replans = 0;
         switches = 0;
         droppedHere.clear();
@@ -1071,9 +1073,35 @@ public final class Steps {
             if (at != null && standCell != null && java.util.Arrays.equals(at, standCell)) standsInRow++;
             else { standsInRow = 1; standCell = at == null ? null : at.clone(); }
             if (standsInRow >= 2 && r.steps().get(0) instanceof Step.AwaitPaths) {
-                fail("stood " + standsInRow + " times at " + (at == null ? "?" : at[0] + " " + at[1] + " " + at[2]) + " with walks' paths still not known: no third stand"
-                        + " there (rule 22; each stand's walks are estimated or dropped after it, the next asked new ones)");
-                return;
+                // 0.39.z77 round fix 2 (run BH 09:32:11-09:34:12: each order stopped in turn at its stand; manager: a stand's
+                // end drops the WAY, never the order): the walks still not known from here are dropped for this order (a source
+                // fact keyed by the cell, NeedChain.stoodKey: "no estimate" for each, rule 15) and the order is priced again - the
+                // next way runs. Only when that re-plan stands again (no way without a walk not known) the run ends, said
+                String where = at == null ? "?" : at[0] + " " + at[1] + " " + at[2];
+                String stood = "stood " + standsInRow + " times at " + where + " with walks' paths still not known";
+                if (at != null) {
+                    FactChange.Fact drop = new FactChange.Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.stoodKey(at),
+                            stood + ": those walks are dropped for this order (no estimate; rule 22: no third stand there)");
+                    Routine r2;
+                    try {
+                        r2 = replanner.replan(failed, drop, drop.text(), remaining());
+                    } catch (RuntimeException e) {
+                        r2 = new Routine(null, "the re-plan: " + e);
+                    }
+                    if (r2 != null && r2.steps() != null && !r2.steps().isEmpty() && !(r2.steps().get(0) instanceof Step.AwaitPaths)) {
+                        hands.log(stood + ": the walks not known from here dropped for this order, priced again - " + r2.steps().get(0).text() + " next");
+                        r = r2;
+                        fact = drop;
+                        standsInRow = 0;
+                    } else {
+                        fail(stood + ": no third stand there, and with those walks dropped no way is left"
+                                + (r2 == null || r2.why() == null ? "" : " (" + r2.why() + ")") + " (rule 22)");
+                        return;
+                    }
+                } else {
+                    fail(stood + ": no third stand there (rule 22; the cell is not known, rule 15)");
+                    return;
+                }
             }
         }
         if (!reprice) lastFailed = now;

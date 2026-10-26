@@ -56,13 +56,25 @@ public final class PricedAnswers {
      * is never a price, and never another stand).
      */
     public static PathPrice.Answer afterWait(PathPrice.Answer a, long waitedTicks, int waitS, double estimateS) {
-        if (a == null || a.kind() != PathPrice.Kind.COMPUTING) return a;
+        if (!waits(a)) return a;
         if (waitS <= 0 || waitedTicks < (long) waitS * io.github.mojolowjo.entropybot.aa.brain.GameTimes.TPS) return a;
         // z76 review (rule 15): past the wait with no usable estimate the way drops (never another stand: no NOT_KNOWN prefix)
         if (!(estimateS >= 0) || Double.isInfinite(estimateS))
             return PathPrice.Answer.none(PathPrice.NO_ESTIMATE + " (" + waitS + " s from here, " + (a.reason() == null ? "computing" : a.reason()) + "; Baritone's estimate not known: an older fork, no player, or none for this goal)");
         return PathPrice.Answer.estimated(new PathPrice.Walk(estimateS), "not known after " + waitS + " s from here (" + (a.reason() == null ? "computing" : a.reason())
                 + "): Baritone's estimate, ranked, not priced");
+    }
+
+    /**
+     * 0.39.z77 round fix 1 (run BH 09:31:00-09:34:12, S3: "walk to in:-235 15 -201: CHUNKS (chunks not loaded)" and "-249 56
+     * -213: CHUNKS" answered again and again from one cell for 3 min, the fork idle - "0 first answers pending" - so every
+     * order stood 30 s, was priced again on the same two answers and stood again): an answer that is not a path yet keeps the
+     * first-answer clock - COMPUTING, and CHUNKS (rule 18: a path into chunks Baritone has not loaded is "path not known", the
+     * same wait). Was COMPUTING only: a CHUNKS answer reset the clock, the next ask (COMPUTING, after the answer aged out)
+     * started it again, so no estimate ever came and no way ever dropped. Pure.
+     */
+    public static boolean waits(PathPrice.Answer a) {
+        return a != null && (a.kind() == PathPrice.Kind.COMPUTING || a.kind() == PathPrice.Kind.CHUNKS);
     }
 
     /** One cell as a number (26 bits x, 12 bits y, 26 bits z, as the game packs block positions). */
