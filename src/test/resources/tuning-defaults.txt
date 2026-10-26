@@ -262,6 +262,7 @@ crafting.closeTicks	10.0
 crafting.laterMin	30.0
 crafting.lookTicks	10.0
 crafting.nearR	16.0
+crafting.openWaitTicks	80.0
 crafting.slotsTicks	4.0
 crafting.tableWaitTicks	60.0
 creeperSprint.awayDot	0.5

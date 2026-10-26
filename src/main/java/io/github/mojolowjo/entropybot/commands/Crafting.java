@@ -341,6 +341,27 @@ final class Crafting {
         return null;
     }
 
+    /**
+     * 0.39.z77 furnace (run BN 11:39:27): a station block whose menu did not come after the open step's click and its one
+     * retry ({@code why}: the interact's facts, OpenWait.reason) is refused from now on like a table whose use the fork gave
+     * up on (z48, {@link #UNUSABLE_STATIONS}); its fact (FactChange.stationUnusable) re-plans the order, and the chain prices
+     * the next known station against making / taking one from the bag and placing it near me (NeedChain.farStation, rule 1:
+     * the walk stays the honest way when placing cannot be had). The step's failure words, or null: the block is no station
+     * of a recipe kind (a chest: the plain failure) or its data is not loaded (rule 15: nothing refused on a guess).
+     */
+    String openRefused(int[] pos, String why) {
+        for (String kind : List.of(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT)) {
+            if (!Boolean.TRUE.equals(stationMemory.isStation(kind, pos))) continue;
+            String name = stationName(kind);
+            UNUSABLE_STATIONS.add(tableKey(pos));
+            io.github.mojolowjo.entropybot.aa.moves.FactChange.stationUnusable(kind, name, Jobs.fmt(pos), why);
+            String line = why + " - the " + name + " at " + Jobs.fmt(pos) + " is refused from now on; the chain prices the " + name + " again";
+            commands.log(line);
+            return line;
+        }
+        return null;
+    }
+
     /** The station's name for the lines ("crafting table", "furnace"): the station item the recipe data names. */
     static String stationName(String kind) {
         String item = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.stationOf(kind);
@@ -379,7 +400,8 @@ final class Crafting {
                 if (!dup) out.add(new int[]{s.x(), s.y(), s.z()});
             }
         }
-        out.removeIf(f -> untrusted(f) || keptOut(f));
+        // 0.39.z77 furnace: a furnace that never opened (openRefused) is no candidate either - the chain priced without it
+        out.removeIf(f -> untrusted(f) || keptOut(f) || (!UNUSABLE_STATIONS.isEmpty() && UNUSABLE_STATIONS.contains(tableKey(f))));
         out.sort(java.util.Comparator.comparingLong(f -> dist2(f, me)));
         return out;
     }

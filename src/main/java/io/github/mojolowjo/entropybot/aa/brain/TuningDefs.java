@@ -864,6 +864,7 @@ final class TuningDefs {
         Tuning.def("crafting.laterMin", 30, "rm-constants 0.39.u2 (inline literal in Crafting)", "minutes before a smelting job is looked at again");
         Tuning.def("crafting.lookTicks", 10, "rm-constants 0.39.u2 (inline literal in Crafting)", "ticks between two looks at the table");
         Tuning.def("crafting.nearR", 16, "rm-constants 0.39.u2 (inline literal in Crafting)", "blocks within which a station counts as near");
+        Tuning.def("crafting.openWaitTicks", 80, "0.39.z77 furnace (run BN 11:39:27: Seq.openStep's inline literal, now counted from the click)", "client ticks a container's menu is given to come after the open step's click (then one more click, then the step fails)");
         Tuning.def("crafting.slotsTicks", 4, "rm-constants 0.39.u2 (inline literal in Crafting)", "ticks the slots are given to arrive");
         Tuning.def("crafting.tableWaitTicks", 60, "rm-constants 0.39.u2 (inline literal in Crafting)", "ticks a table is given to open");
         Tuning.def("creeperSprint.safeMax", 17, "rm-constants 0.39.u2 (inline literal in CreeperSprint)", "the most safe distance a chain asks for");

@@ -58,6 +58,8 @@ public final class Seq {
         public boolean exact;
         /** 0.25.1: the ore-detour look ran for this walk (once per step). */
         boolean oreChecked;
+        /** 0.39.z77 furnace: this open step clicked once more after a menu that did not come (OpenWait: once). */
+        boolean openRetried;
         Object state;
 
         /** B7d: a "clear" step's options, and what it did once it ended (see {@link Clearing}). */
@@ -465,7 +467,39 @@ public final class Seq {
             if (!machine) storage.rememberOpen(p);
             return "next";
         }
-        return elapsed > 80 ? "the container at " + Jobs.fmt(st.pos) + " did not open" : "wait";
+        // 0.39.z77 furnace (run BN 11:39:27.738: "did not open" two ticks after the click): the wait counts from the click's
+        // end (stageTick), not from the step's start - the smelt's reopen splices this step at the same index, so the step's
+        // clock was the furnace wait's (300+ ticks) and the first look before the server's menu arrived failed. A menu that
+        // does not come: one more click at the same container, the reason logged; then the step fails with those facts
+        long since = now() - stageTick;
+        switch (io.github.mojolowjo.entropybot.craft.OpenWait.noMenu(since, st.openRetried)) {
+            case WAIT: return "wait";
+            case RETRY: {
+                st.openRetried = true;
+                stage = "click";
+                org.slf4j.LoggerFactory.getLogger(Seq.class).info("[entropybot] open: {} - clicking it once more", openFacts(st, p, mc, since));
+                return "wait";
+            }
+            default: {
+                String why = openFacts(st, p, mc, since) + " - after one more click";
+                // a station that never opened from here is refused from now on (as a table whose use failed, z48): the
+                // chain prices the next known one against placing a new one near me (z33's far-station rule, rule 1)
+                String refused = storage.crafting == null ? null : storage.crafting.openRefused(st.pos, why);
+                return refused != null ? refused : why;
+            }
+        }
+    }
+
+    /** 0.39.z77 furnace: the interact's own facts when the menu did not come (OpenWait.reason). */
+    private static String openFacts(Step st, LocalPlayer p, Minecraft mc, long since) {
+        BlockPos bp = new BlockPos(st.pos[0], st.pos[1], st.pos[2]);
+        double eyes = p.getEyePosition().distanceTo(new Vec3(st.pos[0] + 0.5, st.pos[1] + 0.5, st.pos[2] + 0.5));
+        String cross;
+        if (mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult bh && bh.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK)
+            cross = bh.getBlockPos().equals(bp) ? "on it" : "on " + bh.getBlockPos().getX() + " " + bh.getBlockPos().getY() + " " + bh.getBlockPos().getZ();
+        else cross = "on no block";
+        String block = mc.level == null ? null : Storage.blockName(mc.level.getBlockState(bp));
+        return io.github.mojolowjo.entropybot.craft.OpenWait.reason(Jobs.fmt(st.pos), since, Gui.screenName(), eyes, p.blockInteractionRange(), cross, block);
     }
 
     // ---- ops ----
