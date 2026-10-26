@@ -1790,14 +1790,25 @@ public final class NeedChain {
                 // smelt "can't smelt 3 iron_ingot - no fuel ... nothing left in the bag burns"): the furnace job burns ONE kind
                 // that covers the smelt and never a tool (CraftPlanner.pickFuel); a class held mixed in the bag is no burn - what
                 // the bag holds that no single kind can join is not counted, the rest is made or fetched as one kind
-                int mixed = have(c, new Want(cw)), single = oneKind(c, e.getValue());
-                int ask = mixed >= count && single < count ? count + (mixed - single) : count;
+                // z75 review 2: a kind the bag holds enough of is burned (no way priced); else the way makes the count anew
+                // (what the bag holds of the class not counted) and one kind must cover it after, or the way fails, said
+                String one = oneKind(c, e.getValue(), count);
+                int mixed = have(c, new Want(cw));
+                int ask = one != null ? count : mixed + count;
                 Got g = needWord(c, cw, ask);
                 if (g == null) return null;
                 a.id = g.id();
-                if (c.fail == null && !c.stuck) take(c, new Want(cw), count, g.id());
-                a.burned = new Burn(word(g.id()), count);
-                return "burn " + (ask == count ? g.part() : count + " " + shw(g.id()) + " (one kind: the bag's mix of " + mixed + " burns as " + single + ")"
+                if (c.fail != null || c.stuck) return "burn " + g.part();
+                String kind = one != null ? one : oneKind(c, e.getValue(), count);
+                if (kind == null) {
+                    c.fail = "burn: no one kind of " + count + " in the bag after " + (g.phrase() == null ? "the bag" : g.phrase()) + " (the furnace burns one kind: CraftPlanner.pickFuel)";
+                    return null;
+                }
+                take(c, new Want(kind), count, kind);
+                a.id = kind;
+                a.burned = new Burn(word(kind), count);
+                return "burn " + (one != null ? count + " " + shw(kind) + " (in the bag)"
+                        : count + " " + shw(kind) + (mixed > 0 ? " (one kind: the bag's " + mixed + " of the class not counted)" : "")
                         + (g.phrase() == null ? "" : " <- " + g.phrase()));
             };
             // 0.39.z51 item 4 (run L: a boat crafted for 3 smelts): a class made of wood is priced by the wood it consumes
@@ -1852,15 +1863,16 @@ public final class NeedChain {
     }
 
     /**
-     * 0.39.z75 item 2: the most one item of {@code members} the bag holds for a burn - one kind (the furnace job loads one),
-     * never a damageable item (a tool burns away its worth: CraftPlanner.pickFuel refuses it), less what is set aside.
+     * 0.39.z75 item 2: the member of {@code members} the bag holds at least {@code count} of for a burn, the most held -
+     * one kind (the furnace job loads one), never a damageable item (a tool burns away its worth: CraftPlanner.pickFuel
+     * refuses it), less what is set aside. Null: none.
      */
-    private static int oneKind(Ctx c, Set<String> members) {
-        int best = 0;
+    private static String oneKind(Ctx c, Set<String> members, int count) {
+        String best = null;
         for (String m : members) {
             String id = id(m);
-            if (ItemWorth.damageable(id)) continue;
-            best = Math.max(best, c.have(id));
+            if (ItemWorth.damageable(id) || c.have(id) < count) continue;
+            if (best == null || c.have(id) > c.have(best)) best = id;
         }
         return best;
     }

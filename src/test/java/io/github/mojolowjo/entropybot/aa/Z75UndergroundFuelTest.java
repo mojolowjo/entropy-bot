@@ -180,26 +180,57 @@ class Z75UndergroundFuelTest {
     }
 
     /**
-     * The chain's burn counts the same rule: 1 plank + 1 table in the bag is no burn of 600 ticks - the fuel it plans is one
-     * kind made from the log (counted on the smelt step), and the dry run of the whole plan on that bag finds no shortage.
+     * The chain's burn counts the same rule (z75 review 2, by hand). 3 smelts = 600 ticks; the bag holds 1 oak plank + 1
+     * crafting table (both 300 ticks: 600 mixed, 300 of one kind) and no coal; a tree 10 m (4 logs). No kind in the bag covers
+     * it (pickFuel: 2 of one kind), so the 300-tick class - the least wood, 2 x 1 plank - is made anew as one kind: the
+     * tree, walk 10 m 3.01 + 4 logs x 3.0 = 15.01 s, the walk back to the furnace 3.01 s, 2 oak_log burned (counted on the
+     * smelt step); the smelts 3 x 10 s = 30 s: 48.02 s. The charcoal way (the same tree + a smelt 10 s = 28.02 s) loses.
+     * The dry run of the plan on that bag finds no shortage.
      */
     @Test
     void i2_theChainBurnsOneKind() {
         ScenariosTest.world("wooden", "stone");
-        Map<String, Integer> bag = Map.of("minecraft:raw_iron", 3, PLANKS, 1, TABLE, 1, "minecraft:oak_log", 1);
-        Chain c = NeedChain.resolve("iron_ingot", 3, ScenariosTest.w(bag, true, true, Map.of()));
+        Map<String, Integer> bag = Map.of("minecraft:raw_iron", 3, PLANKS, 1, TABLE, 1);
+        Chain c = NeedChain.resolve("iron_ingot", 3, ScenariosTest.w(bag, true, true, Map.of("oak_log", List.of(ScenariosTest.tree(10, 4)))));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Craft), "the fuel is made, not the bag's mix: " + c.why());
+        assertEquals(List.of(new Step.ChopTree(new int[]{10, 64, 0}, 2, null).text(), new Step.Smelt("iron_ingot", 3, true).text()),
+                c.steps().stream().map(Step::text).toList(), c.why());
+        assertEquals(15.01 + 3.01 + 30, c.seconds(), 0.05, c.why());
         int at = index(c, Step.Smelt.class);
         StepNeeds n = StepNeeds.of(c.steps().get(at)).withUses(c.uses().get(at));
-        Map<String, Integer> fuel = new java.util.HashMap<>(n.consumes());
-        fuel.remove("minecraft:raw_iron");
-        assertEquals(1, fuel.size(), "one kind: " + n.text());
-        var e = fuel.entrySet().iterator().next();
-        assertTrue((long) e.getValue() * ItemWorth.fuels().get(e.getKey()) >= 600, n.text());
+        assertEquals(Map.of("minecraft:raw_iron", 3, "minecraft:oak_log", 2), n.consumes(), n.text());
+        assertEquals(0, n.fuelTicks());
         List<StepNeeds> all = new java.util.ArrayList<>();
         for (int i = 0; i < c.steps().size(); i++) all.add(StepNeeds.of(c.steps().get(i)).withUses(c.uses().get(i)));
         assertNull(DryRun.check(c.steps(), 0, all, bag), "the plan runs on its bag: " + c.why());
+    }
+
+    /**
+     * z75 review 1: a legitimate two-level use of the bag is unchanged from z74 (the set-aside only touches a recipe way's
+     * OWN need). Wooden pickaxe from 3 logs, no table: 3 planks <- 1 log (0.3); 2 sticks <- 2 planks, the bag's 1 left + 1
+     * log (0.3) -> 4 sticks (0.3); the table <- 4 planks, the bag's 3 + 1 log (0.3), the table (0.3), placed (0.15); the
+     * pickaxe (0.3): 1.95 s, 7 steps.
+     */
+    @Test
+    void review1_sticksAndTableFromTheSameLogs() {
+        ScenariosTest.world("wooden", "stone");
+        Chain c = NeedChain.resolve("wooden_pickaxe", 1, ScenariosTest.w(Map.of("minecraft:oak_log", 3), false, false, Map.of()));
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertEquals(1.95, c.seconds(), 0.01, c.why());
+        assertEquals(List.of(new Step.Craft("oak_planks", 4), new Step.Craft("oak_planks", 4), new Step.Craft("stick", 4), new Step.Craft("oak_planks", 4),
+                new Step.Craft("crafting_table", 1), new Step.PlaceNear("crafting_table"), new Step.Craft("wooden_pickaxe", 1)), c.steps());
+    }
+
+    /** z75 review 1: a partial bag plus a recipe - 6 planks with 2 in the bag: one craft from the log (4), 0.3 s; 6 sticks with 2: one craft, 0.3 s. */
+    @Test
+    void review1_aPartialBagPlusARecipe() {
+        ScenariosTest.world("wooden", "stone");
+        Chain p = NeedChain.resolve("oak_planks", 6, ScenariosTest.w(Map.of(PLANKS, 2, "minecraft:oak_log", 1), false, false, Map.of()));
+        assertEquals(List.of(new Step.Craft("oak_planks", 4)), p.steps(), p.why());
+        assertEquals(0.3, p.seconds(), 0.01, p.why());
+        Chain s = NeedChain.resolve("stick", 6, ScenariosTest.w(Map.of("minecraft:stick", 2, PLANKS, 2), false, false, Map.of()));
+        assertEquals(List.of(new Step.Craft("stick", 4)), s.steps(), s.why());
+        assertEquals(0.3, s.seconds(), 0.01, s.why());
     }
 
     /** The fuel explore (nothing burns, nothing known): its until words include #coals (coal ore ends it), not only charcoal's logs. */
@@ -243,6 +274,32 @@ class Z75UndergroundFuelTest {
         assertEquals(16, st.y());
         assertTrue(st.ores().contains("minecraft:coal_ore"), st.toString());
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.ToStrip), "at the feet: no walk: " + c.steps());
+        // z75 review 3, by hand: 1 coal (1600 ticks >= 600) = 1 ore block; the band's blocks per ore at y 16 (the slab's ore)
+        // x 1 ore = the tunnel cells, each 2 stone breaks at 0.6 s (hardness 1.5 x 1.5 / 4, the stone pickaxe, in ticks), the
+        // ore 1.15 s (3 x 1.5 / 4); the walk 0 s (the feet); the furnace placed 0.15 s; the smelts 3 x 10 s
+        int dug = (int) Math.ceil(Math.min(Tuning.get("strip.maxBlocksPerOre"), OreBand.blocksPerOre(OreBand.perSlab(fs, 16))) - 1e-9);
+        assertEquals(dug * 2 * 0.6 + 1.15 + 0.15 + 30, c.seconds(), 0.05, "dug " + dug + ": " + c.why());
+    }
+
+    /**
+     * z75 review 3: a second strip while the chain is down. Iron 3 by the strip from y 76 to 16, the smelt's fuel only by a
+     * coal strip at y 60 (no coal, no tree, nothing that burns in the bag): that strip's walk is from where the first leg
+     * leaves the bot - not known (dropped, said), and no strip is offered before going down (one leg to another level). The
+     * chain's answer: the fuel explore from down there (no band walk, no walk up), the iron strip kept before it.
+     */
+    @Test
+    void review3_aSecondStripWhileDownIsNotKnown() {
+        ScenariosTest.world("wooden", "stone");
+        StripBand coal = new StripBand(List.of("minecraft:coal_ore"), 0, 192, 60, 1.0, 0, 0, 76, "east", "minecraft:stone");
+        World w = ScenariosTest.w(Map.of("minecraft:stone_pickaxe", 1, "minecraft:furnace", 1), true, false, Map.of())
+                .withStrip(x -> x.contains("coal") ? coal : x.contains("raw_iron") || x.contains("iron_ore") ? ironAt16From76() : null);
+        Chain c = NeedChain.resolve("iron_ingot", 3, w);
+        assertTrue(c.explore(), c.why());
+        assertEquals(1, c.steps().stream().filter(s -> s instanceof Step.ToStrip).count(), "the iron leg only: " + c.steps());
+        assertTrue(c.dropped().stream().anyMatch(d -> d.startsWith("strip at y 60: " + NeedChain.FROM_BELOW + "the strip leg to y 16")), c.dropped().toString());
+        int down = index(c, Step.ToStrip.class), ex = index(c, Step.Explore.class);
+        assertTrue(ex > down, c.steps().toString());
+        assertTrue(c.why().contains("from where the strip leg to y 16 leaves the bot"), c.why());
     }
 
     // ---- 3. counted once ----
