@@ -47,16 +47,19 @@ public final class Repair {
      * REPAIR or FULL. {@code left}: the remaining steps (the failed one first) with {@code leftUses} parallel;
      * {@code gap}: the planner's chain for the split's (item, n) (null: none asked); {@code tailSeconds}: the kept tail's old
      * seconds (NaN: not known); {@code full}: the whole re-plan (null: no facts); {@code bag}: the bag's stacks (item id ->
-     * count; null: not readable); {@code margin}: replan.switchMarginS.
+     * count; null: not readable); {@code margin}: replan.switchMarginS. 0.39.z73 review 1: {@code dropped} - the source key the
+     * failure just dropped for the order (null: none): a kept tail step on it would fail the same way, so FULL.
      */
     public static Pick pick(List<Step> left, List<Map<String, Integer>> leftUses, Split sp, NeedChain.Chain gap, double tailSeconds,
-                            NeedChain.Chain full, Map<String, Integer> bag, double margin) {
+                            NeedChain.Chain full, Map<String, Integer> bag, double margin, String dropped) {
         boolean fullOk = full != null && full.ok() && !full.steps().isEmpty();
         double fullS = fullOk ? full.seconds() : Double.NaN;
         String fullText = fullOk ? "full re-plan " + s(fullS) + (full.explore() ? " (ends in an explore)" : "") : "no full re-plan stands";
         if (sp == null || sp.why() != null) return full("no repair: " + (sp == null ? "no split" : sp.why()), fullText, fullS);
         if (gap == null || !gap.ok() || gap.steps().isEmpty()) return full("no repair: the gap for " + sp.n() + " " + StepNeeds.sh(sp.item()) + " does not stand" + (gap == null ? "" : " (" + gap.why() + ")"), fullText, fullS);
         if (gap.explore()) return full("no repair: the gap for " + sp.n() + " " + StepNeeds.sh(sp.item()) + " ends in an explore", fullText, fullS);
+        if (dropped != null) for (int i = sp.served() + 1; i < left.size(); i++)
+            if (dropped.equals(NeedChain.sourceKey(left.get(i)))) return full("no repair: the kept tail uses the dropped source " + dropped + " (step " + left.get(i).text() + ")", fullText, fullS);
         if (Double.isNaN(tailSeconds)) return full("no repair: the kept tail's prices are not known", fullText, fullS);
         List<Step> tail = left.subList(sp.served() + 1, left.size());
         List<Step> steps = new ArrayList<>(gap.steps());

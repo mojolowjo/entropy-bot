@@ -27,8 +27,18 @@ import java.util.Map;
 public final class Kernels {
     private Kernels() {}
 
-    /** A skip: run step {@code to} next; {@code said}: one line per skipped step ("craft stick 4 skipped: 4 stick already in the bag"). */
-    public record Skip(int to, List<String> said) {}
+    /**
+     * A skip: run step {@code to} next; {@code said}: one line per skipped step ("craft stick 4 skipped: 4 stick already in
+     * the bag"). 0.39.z73 review 2: {@code to} -1 with {@code noCheck}: the check could not run (the bag not readable, rule
+     * 7 / 15: said, never a quiet "nothing holds").
+     */
+    public record Skip(int to, List<String> said, String noCheck) {
+        public Skip(int to, List<String> said) { this(to, said, null); }
+
+        static Skip notChecked(String why) { return new Skip(-1, List.of(), why); }
+
+        public boolean skips() { return to >= 0; }
+    }
 
     /**
      * The latest j in (cur, steps.size()) whose suffix is possible from {@code bag} now with the skipped steps' outputs kept;
@@ -36,14 +46,14 @@ public final class Kernels {
      * not readable). The last step is never skipped (it is what the run is for). {@code bag} null or without its stacks: null.
      */
     public static Skip latest(List<Step> steps, int cur, List<StepNeeds> needs, StepNeeds.Bag bag) {
-        if (bag == null || steps == null || needs == null || cur < 0) return null;
+        if (bag == null || steps == null || needs == null || cur < 0) return null;     // these hands keep no bag: nothing to check
         Map<String, Integer> items;
         try {
             items = bag.items();
         } catch (RuntimeException e) {
-            return null;                         // rule 15: an unreadable bag holds nothing for the check (no skip)
+            return Skip.notChecked("the bag could not be read: " + e);     // rule 15: never read as "nothing holds"
         }
-        if (items == null) return null;
+        if (items == null) return Skip.notChecked("the bag's stacks are not listed");
         for (int j = steps.size() - 1; j > cur; j--) {
             if (!skippable(steps, cur, j)) continue;
             Map<String, Integer> need = required(steps, cur, j, needs);

@@ -44,7 +44,7 @@ public final class Serves {
                 for (var e : new java.util.TreeMap<>(st.amounts()).entrySet()) out.put(NeedChain.word(e.getKey()), e.getValue());
                 yield out;
             }
-            case Step.ChopTree t -> Map.of(NeedChain.word(t.log() != null ? t.log() : "#minecraft:logs"), Math.max(0, t.logs()));   // the game's logs tag
+            case Step.ChopTree t -> Map.of(NeedChain.word(t.log() != null ? t.log() : "#" + NeedChain.LOGS_TAG), Math.max(0, t.logs()));   // the game's logs tag
             case Step.Cook k -> null;                        // the raw item is named, not what it cooks into
             default -> {
                 Map<String, Integer> m = DryRun.produces(s);

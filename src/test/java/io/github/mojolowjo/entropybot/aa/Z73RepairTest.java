@@ -35,7 +35,7 @@ class Z73RepairTest {
     static final String STICK = "minecraft:stick", TABLE = "minecraft:crafting_table", INGOT = "minecraft:iron_ingot";
 
     /** Fake hands: every step starts and runs; needs as given per step text (else none); the bag's stacks as given. */
-    static final class Hands implements Steps.Hands {
+    static class Hands implements Steps.Hands {
         final Map<String, Integer> bag = new HashMap<>();
         final Map<String, StepNeeds> needs = new HashMap<>();
         final List<String> started = new ArrayList<>(), logged = new ArrayList<>();
@@ -154,7 +154,7 @@ class Z73RepairTest {
         double margin = io.github.mojolowjo.entropybot.aa.brain.Goals.switchMarginS();
         assertEquals(10, margin);
 
-        Repair.Pick pk = Repair.pick(left, null, sp, gap, 30.3, chain(List.of(new Step.Explore(5)), 115, List.of(115.0)), bag, margin);
+        Repair.Pick pk = Repair.pick(left, null, sp, gap, 30.3, chain(List.of(new Step.Explore(5)), 115, List.of(115.0)), bag, margin, null);
         assertTrue(pk.repair(), pk.line());
         assertEquals(120.75, pk.repairS(), 0.01);
         assertEquals(5, pk.steps().size());
@@ -165,7 +165,7 @@ class Z73RepairTest {
         assertEquals(2, d.changed());
         assertEquals(3, d.kept());
 
-        Repair.Pick full = Repair.pick(left, null, sp, gap, 30.3, chain(List.of(new Step.Explore(5)), 110, List.of(110.0)), bag, margin);
+        Repair.Pick full = Repair.pick(left, null, sp, gap, 30.3, chain(List.of(new Step.Explore(5)), 110, List.of(110.0)), bag, margin, null);
         assertFalse(full.repair(), full.line());
         assertTrue(full.line().startsWith("full re-plan 110.0 s: cheaper than the repair "), full.line());
         assertTrue(full.line().endsWith("(replan.switchMarginS 10)"), full.line());
@@ -187,12 +187,12 @@ class Z73RepairTest {
         assertEquals(INGOT, sp.item());
         Chain gap = chain(List.of(new Step.PlaceNear("furnace"), new Step.Smelt("iron_ingot", 3, true)), 30.15, List.of(0.15, 30.0));
         Map<String, Integer> bag = Map.of("minecraft:furnace", 1, "minecraft:raw_iron", 3, STICK, 1);
-        Repair.Pick pk = Repair.pick(left, leftUses, sp, gap, 0.3, chain(List.of(new Step.Explore(5)), 200, List.of(200.0)), bag, 10);
+        Repair.Pick pk = Repair.pick(left, leftUses, sp, gap, 0.3, chain(List.of(new Step.Explore(5)), 200, List.of(200.0)), bag, 10, null);
         assertFalse(pk.repair(), pk.line());
         assertTrue(pk.line().contains("no repair: the kept tail runs short - step 3 (craft iron_pickaxe 1) needs 2 of stick; the bag will hold 1 after step 2"), pk.line());
 
         Map<String, Integer> enough = Map.of("minecraft:furnace", 1, "minecraft:raw_iron", 3, STICK, 2);
-        assertTrue(Repair.pick(left, leftUses, sp, gap, 0.3, chain(List.of(new Step.Explore(5)), 200, List.of(200.0)), enough, 10).repair(), "2 sticks: the tail stands");
+        assertTrue(Repair.pick(left, leftUses, sp, gap, 0.3, chain(List.of(new Step.Explore(5)), 200, List.of(200.0)), enough, 10, null).repair(), "2 sticks: the tail stands");
     }
 
     /** Rule 15: no tail prices, a gap ending in an explore, no bag - each a full re-plan, said. */
@@ -203,11 +203,47 @@ class Z73RepairTest {
         Repair.Split sp = Repair.split(left);
         Chain gap = chain(List.of(new Step.Smelt("iron_ingot", 3, true)), 30, List.of(30.0));
         Chain full = chain(List.of(new Step.Explore(5)), 200, List.of(200.0));
-        assertTrue(Repair.pick(left, null, sp, gap, Double.NaN, full, Map.of(), 10).line().contains("the kept tail's prices are not known"));
-        assertTrue(Repair.pick(left, null, sp, gap, 0.3, full, null, 10).line().contains("the bag is not readable"));
+        assertTrue(Repair.pick(left, null, sp, gap, Double.NaN, full, Map.of(), 10, null).line().contains("the kept tail's prices are not known"));
+        assertTrue(Repair.pick(left, null, sp, gap, 0.3, full, null, 10, null).line().contains("the bag is not readable"));
         Chain explore = new Chain(List.of(new Step.Explore(5)), 0, "x", true, null);
-        assertTrue(Repair.pick(left, null, sp, explore, 0.3, full, Map.of(), 10).line().contains("ends in an explore"));
+        assertTrue(Repair.pick(left, null, sp, explore, 0.3, full, Map.of(), 10, null).line().contains("ends in an explore"));
         assertTrue(Repair.split(List.of(new Step.Mine("iron", 3, Step.Mine.How.CAVE))).why().contains("is not known"));
+    }
+
+    /** Review 1: a kept tail step on the source the failure just dropped would fail the same way: FULL, said. */
+    @Test
+    void aTailOnTheDroppedSourceIsNoRepair() {
+        Step collect = new Step.Collect("cobblestone", 3), craft = new Step.Craft("furnace", 1), again = new Step.Collect("cobblestone", 5);
+        List<Step> left = List.of(collect, craft, again);
+        Repair.Split sp = Repair.split(left);
+        Chain gap = chain(List.of(new Step.Collect("cobblestone", 3)), 10, List.of(10.0));
+        Chain full = chain(List.of(new Step.Explore(5)), 200, List.of(200.0));
+        String src = NeedChain.sourceKey(collect);
+        assertEquals("collect cobblestone", src);
+        Repair.Pick pk = Repair.pick(left, null, sp, gap, 5, full, Map.of(), 10, src);
+        assertFalse(pk.repair(), pk.line());
+        assertTrue(pk.line().contains("no repair: the kept tail uses the dropped source collect cobblestone (step collect cobblestone 5)"), pk.line());
+        assertTrue(Repair.pick(left, null, sp, gap, 5, full, Map.of(), 10, null).repair(), "no source dropped: the repair stands");
+    }
+
+    /** Review 2: a bag that cannot be read is said in the step's start line (no skip check), never a quiet "nothing holds". */
+    @Test
+    void anUnreadableBagIsSaid() {
+        Hands h = new Hands() {
+            @Override public StepNeeds.Bag bag() {
+                return new StepNeeds.Bag() {
+                    @Override public int bestTier(String kind) { return 0; }
+                    @Override public String bestTool(String kind) { return null; }
+                    @Override public int usesLeft(String id) { return io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED; }
+                    @Override public int count(String id) { return 0; }
+                    @Override public Map<String, Integer> items() { throw new IllegalStateException("inventory locked"); }
+                };
+            }
+        };
+        Steps run = new Steps(h);
+        run.start("k", List.of(new Step.Collect("stick", 4), new Step.Craft("iron_pickaxe", 1)), 0);
+        assertEquals(List.of("collect stick 4"), h.started);
+        assertTrue(run.why().contains("(no skip check: the bag could not be read: java.lang.IllegalStateException: inventory locked)"), run.why());
     }
 
     // ---- per-step seconds: the same rough numbers split, summing to the chain's price ----
@@ -235,7 +271,8 @@ class Z73RepairTest {
         assertEquals(0.3, make.stepSeconds().get(make.stepSeconds().size() - 1), 0.01, make.steps() + " " + make.stepSeconds());
         // an explore chain: its explore leg on its last step
         Chain ex = NeedChain.resolve("wooden_pickaxe", 1, ReplanOnFactTest.world(Map.of(), null, Map.of()));
-        if (ex.ok() && ex.explore()) sums(ex);
+        assertTrue(ex.ok() && ex.explore(), "the precondition: nothing known gives a log - the chain ends in an explore: " + ex.why());
+        sums(ex);
         TestData.clear();
         ScenariosTest.world("wooden", "stone");
         Chain stone = NeedChain.resolve("stone_pickaxe", 1, Z61ReservationsTest.world(Map.of("minecraft:cobblestone", 103, STICK, 2, "minecraft:wooden_pickaxe", 1), true));

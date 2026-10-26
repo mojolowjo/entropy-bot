@@ -490,7 +490,7 @@ public final class NeedChain {
     /** Game fact: the inventory's crafting grid is 2x2: more than 4 ingredients need the crafting station. */
     private static final int GRID_2X2 = 4; // game fact: the inventory crafting grid holds 4 ingredients
     /** The tag the game gives every log block: a block of it is a tree (Baritone's chop). */
-    private static final String LOGS_TAG = "minecraft:logs";
+    public static final String LOGS_TAG = "minecraft:logs";      // 0.39.z73 review 4: Serves / StepMonitor read the same tag
 
     static String s(double seconds) { return String.format(Locale.ROOT, "%.1f s", seconds); }
 

@@ -305,7 +305,7 @@ public final class Goals {
         var ch = chain(bb, g);
         if (ch == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");
         // 0.39.z73 (D2 3.4): the repair, priced against this full re-plan
-        var pk = left == null ? null : repair(bb, g, left, ch);
+        var pk = left == null ? null : repair(bb, g, left, ch, sourceFact ? src : null);
         if (pk != null) bb.port.log(g.r.key() + ": " + pk.line());
         if (pk != null && pk.repair()) {
             if (newSource) g.sourceReplans++;
@@ -336,7 +336,7 @@ public final class Goals {
      * chains this order took, {@link Goal#stepSeconds}; one missing: not known), the dry run on the bag.
      */
     static io.github.mojolowjo.entropybot.aa.moves.Repair.Pick repair(Blackboard bb, Goal g, io.github.mojolowjo.entropybot.aa.moves.Steps.Remaining left,
-                                                                    io.github.mojolowjo.entropybot.aa.NeedChain.Chain full) {
+                                                                    io.github.mojolowjo.entropybot.aa.NeedChain.Chain full, String dropped) {
         var sp = io.github.mojolowjo.entropybot.aa.moves.Repair.split(left.steps());
         io.github.mojolowjo.entropybot.aa.NeedChain.Chain gap = null;
         double tail = Double.NaN;
@@ -350,7 +350,7 @@ public final class Goals {
                 tail += s;
             }
         }
-        return io.github.mojolowjo.entropybot.aa.moves.Repair.pick(left.steps(), left.uses(), sp, gap, tail, full, left.bag(), switchMarginS());
+        return io.github.mojolowjo.entropybot.aa.moves.Repair.pick(left.steps(), left.uses(), sp, gap, tail, full, left.bag(), switchMarginS(), dropped);
     }
 
     /**

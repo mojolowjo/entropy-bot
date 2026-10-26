@@ -514,6 +514,10 @@ public final class Steps {
             return false;
         }
         if (k == null) return false;
+        if (!k.skips()) {                        // 0.39.z73 review 2: said in the step's start line
+            skipNote = "no skip check: " + k.noCheck();
+            return false;
+        }
         List<String> said = new java.util.ArrayList<>();
         for (int i = 0; i < k.said().size(); i++) said.add("step " + (idx + i + 1) + "/" + steps.size() + " " + k.said().get(i));
         for (String l : said) hands.log(l);

@@ -1,5 +1,6 @@
 package io.github.mojolowjo.entropybot.aa.moves;
 
+import io.github.mojolowjo.entropybot.aa.NeedChain;
 import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 
 import java.util.ArrayList;
@@ -86,7 +87,7 @@ public final class StepMonitor {
     public static String output(Step s) {
         return switch (s) {
             case Step.Collect k -> k.item();
-            case Step.ChopTree t -> t.log() != null ? t.log() : "#minecraft:logs";   // the game's logs tag (the chop's own filter)
+            case Step.ChopTree t -> t.log() != null ? t.log() : "#" + NeedChain.LOGS_TAG;   // the game's logs tag (the chop's own filter)
             case Step.Craft k -> k.item();
             case Step.Smelt k -> k.item();
             case Step.HuntAt h -> h.forItem();
