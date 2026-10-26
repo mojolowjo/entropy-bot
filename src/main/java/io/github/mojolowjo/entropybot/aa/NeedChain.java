@@ -737,6 +737,12 @@ public final class NeedChain {
         final Map<String, Integer> aside = new LinkedHashMap<>();
         /** 0.39.z75 item 2: the burn the last {@link #burn} planned (the smelt step's counted fuel); null: none named. */
         Burn burned;
+        /**
+         * 0.39.z77 pending (run BV 13:59:36): every way dropped with no final answer yet ("label: reason", {@link #waitsHere}),
+         * in the order dropped - a losing way's too. Never restored: a playbook leg's no-way verdict reads what its gets dropped
+         * waiting ({@link #legNoWay}).
+         */
+        final List<String> waited = new ArrayList<>();
 
         Ctx(World w) {
             this.w = w;
@@ -1012,7 +1018,8 @@ public final class NeedChain {
         Ctx c = new Ctx(w);
         List<java.util.Set<Step>> added = new ArrayList<>();
         int[] failedLeg = {-1};
-        Chain ch = playbookChain(c, pb, added, failedLeg);
+        Chain ch = pb == null || !pb.ok() ? playbookFails(c, pb == null ? "no playbook" : pb.fail()) : playbookChain(c, pb, added, failedLeg);
+        if (!ch.ok() && waitsHere(ch.missing())) failedLeg[0] = -1;     // 0.39.z77 pending: a wait is no leg's no-way
         Map<Step, String> starts = new java.util.IdentityHashMap<>();
         if (ch.ok() && pb != null) {                              // SHAPE CHANGE: an explore trip says its legs too
             int prev = -1, n = Math.min(added.size(), pb.legs().size());
@@ -1054,7 +1061,6 @@ public final class NeedChain {
     }
 
     private static Chain playbookChain(Ctx c, Playbook pb, List<java.util.Set<Step>> added, int[] failedLeg) {
-        if (pb == null || !pb.ok()) return playbookFails(c, pb == null ? "no playbook" : pb.fail());
         List<String> phrases = new ArrayList<>();
         int levelY = Playbook.NO_Y;
         // 0.39.z77 freeze review (manager's ruling on run BE 08:08:15, "playbook 450.0 s (ends in an explore)" while its legs
@@ -1074,16 +1080,18 @@ public final class NeedChain {
             legNo++;
             failedLeg[0] = legNo - 1;            // 0.39.z77 noway: a fail returned in this leg is this leg's no-way
             java.util.Set<Step> before = ids(c.steps);
+            String legName = "leg " + legNo + "/" + pb.legs().size() + " (" + leg.text() + ")";
             if (leg.kind() == Playbook.Kind.DESCENT) {
+                int w0 = c.waited.size();
                 String p = playbookStrip(c, leg, levelY, exploreEnd >= 0);
                 if (c.fail != null && legNo > 1 && !before.isEmpty() && waitsHere(c.fail)) {
                     later = "descent to y " + leg.y() + ": " + c.fail;
                     cutTo(c, before);
                     break;
                 }
-                if (c.fail != null) return playbookFails(c, "descent to y " + leg.y() + ": " + c.fail);
+                if (c.fail != null) return legNoWay(c, w0, legName, "descent to y " + leg.y() + ": " + c.fail);
                 if (c.stuck && exploreEnd >= 0) { later = secondUnknown(c); break; }     // price review 2 / SHAPE CHANGE: priced on its find
-                if (c.stuck) return playbookFails(c, "descent to y " + leg.y() + ": its pickaxe ends in an explore (no known source for " + shw(c.unknown) + ")");
+                if (c.stuck) return legNoWay(c, w0, legName, "descent to y " + leg.y() + ": its pickaxe ends in an explore (no known source for " + shw(c.unknown) + ")");
                 if (p != null) phrases.add(p);
                 levelY = leg.y();
                 added.add(addedSince(c, before));
@@ -1100,6 +1108,7 @@ public final class NeedChain {
                 for (Playbook.Target t : leg.gets()) {
                     String item = id(t.item());
                     boolean gate = leg.gates().contains(item);
+                    int w0 = c.waited.size();
                     // a gate: the pickaxe the derivation chose for its tier (its leaves on this leg's side), made unless one digs it
                     String p = gate ? (leg.tier() > c.pickTier ? obtain(c, item, c.have(item) + 1) : null) : obtain(c, item, t.n());
                     if (c.fail == null && !c.stuck) madePick(c, item);
@@ -1108,10 +1117,10 @@ public final class NeedChain {
                         cutTo(c, before);
                         break legs;
                     }
-                    if (c.fail != null) return playbookFails(c, name + ": " + sh(item) + ": " + c.fail);
+                    if (c.fail != null) return legNoWay(c, w0, legName, name + ": " + sh(item) + ": " + c.fail);
                     if (c.stuck) {
                         if (exploreEnd >= 0) { later = secondUnknown(c); break legs; }       // price review 2 / SHAPE CHANGE: priced on its find
-                        if (!surface) return playbookFails(c, name + ": " + sh(item) + " ends in an explore (no known source for " + shw(c.unknown) + ")");
+                        if (!surface) return legNoWay(c, w0, legName, name + ": " + sh(item) + " ends in an explore (no known source for " + shw(c.unknown) + ")");
                         got.add(sh(item) + " " + t.n() + " <- " + p + " (then priced as had)");
                         exploreEnd = c.steps.size();
                         exploreFor = c.unknown;
@@ -1141,9 +1150,33 @@ public final class NeedChain {
         return finish(c, PLAYBOOK, PLAYBOOK + " <- " + String.join(" > ", phrases) + tail);
     }
 
-    /** 0.39.z77 SHAPE CHANGE: a leg's failure that is a wait from here (a walk not known, chunks, the loot book or tiers not read). */
+    /**
+     * 0.39.z77 SHAPE CHANGE: a leg's failure that is a wait from here (a walk not known, chunks, the loot book or tiers not read).
+     * 0.39.z77 pending: or a leg not priced yet ({@link #legNoWay}).
+     */
     public static boolean waitsHere(String fail) {
-        return fail != null && (fail.contains(PathPrice.NOT_KNOWN) || fail.startsWith(LootBook.WAITING) || fail.endsWith(SOURCE_NOT_LOADED) || fail.startsWith(MINING_WAIT));
+        return fail != null && (fail.contains(PathPrice.NOT_KNOWN) || fail.startsWith(LootBook.WAITING) || fail.endsWith(SOURCE_NOT_LOADED) || fail.startsWith(MINING_WAIT)
+                || fail.startsWith(NOT_PRICED));
+    }
+
+    /** 0.39.z77 pending: between a leg's name and what it waits on, in a not-priced-yet reason ({@link #legNoWay}). */
+    public static final String WAITS_ON = " waits on ";
+
+    /**
+     * 0.39.z77 pending (run BV 13:59:36: "leg 4/4 (at band [...]) has no way" while its cheaper fuel and stick ways were "walk:
+     * path not known yet (computing; queued ...)" - the fuel fell to lava_bucket, an explore, no way under ground; rule 15:
+     * an unknown read as a verdict): a playbook leg's no-way, final only when every way its get or strip tried has a final
+     * answer (priced, UNREACHABLE, held, dropped with a reason). A way dropped with no answer yet since {@code w0} (computing,
+     * queued, chunks or data not loaded: {@link #waitsHere}) makes the leg "not priced yet" - a wait: the trip stands
+     * (BatchWay.shape, rule 22), says what it waits for, parks nobody, and is priced again when an answer lands. A verdict
+     * that is itself a wait stays as it is. Every leg's no-way goes through here (Z77NoWayVerdictScanTest).
+     */
+    private static Chain legNoWay(Ctx c, int w0, String leg, String verdict) {
+        if (waitsHere(c.fail) || c.waited.size() <= w0) return playbookFails(c, verdict);
+        Set<String> w = new LinkedHashSet<>(c.waited.subList(w0, c.waited.size()));
+        String first = w.iterator().next();
+        return playbookFails(c, NOT_PRICED + leg + WAITS_ON + w.size() + " of its ways with no answer yet (" + first
+                + (w.size() > 1 ? "; " + (w.size() - 1) + " more" : "") + "); without them: " + verdict + "; priced again when an answer lands (rule 15)");
     }
 
     /** 0.39.z77 SHAPE CHANGE: the plan back to the steps it held at a leg's start (the leg priced when the bot gets there). */
@@ -1572,6 +1605,7 @@ public final class NeedChain {
     /** The dropped list names each losing candidate once:the same requirement is asked again per batch, the label is listed the first time only. */
     private static void drop(Ctx c, String label, String why) {
         String head = label + ": ";
+        if (waitsHere(why)) c.waited.add(head + why);     // 0.39.z77 pending: counted before the list's dedupe
         for (String d : c.dropped) if (d.startsWith(head)) return;
         c.dropped.add(head + why);
     }

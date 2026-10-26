@@ -33,7 +33,9 @@ import java.util.function.BiFunction;
  * on the AA tick's stopwatch ({@link TickLaps#playbook}: "probe aatick: ... | playbook N = M ms").
  * <p>0.39.z77 noway: a leg with no way ends only the orders whose own items need it ({@link Playbook.Leg#serves}), parked
  * with the leg's reasons; the batch's other orders derive their trip again without them and run on (said in the log).
- * Pure (JUnit: Z77PlaybookTest, Z77RoundFixTest, Z77NoWayTest). Loader notes: none (the world and the ore-per-slab fact come from AaRuntime).
+ * 0.39.z77 pending: a leg is no way only when every one of its ways has a final answer; one still computing or queued makes
+ * it "not priced yet" - the trip stands (rule 22), said to the owner, nobody parked (NeedChain.legNoWay).
+ * Pure (JUnit: Z77PlaybookTest, Z77RoundFixTest, Z77NoWayTest, Z77PendingTest). Loader notes: none (the world and the ore-per-slab fact come from AaRuntime).
  */
 public final class BatchWay {
     private BatchWay() {}
@@ -46,6 +48,9 @@ public final class BatchWay {
 
     /** The start of the reason an order ends with when no way stands for it ("no way to get it: playbook: ..."). */
     public static final String NO_WAY = "no way to get it: ";
+
+    /** 0.39.z77 pending: the start of a standing trip's why ("trip: stand (not priced yet: leg 5/5 ...)"). */
+    static final String STAND = "trip: stand (";
 
     /**
      * One trip as priced: its key, the path answers landed then ({@code landed}), whether it waited on no path
@@ -187,7 +192,11 @@ public final class BatchWay {
         Trip t = new Trip(key, landed(w), s.settled(), pb, s.chain(), starts, s.line(), ends);
         TRIPS.put(tk, t);
         LEGS.put(tk, starts);
-        if (sayAgain(tk, s.change()) && bb.port != null) bb.port.log(g.r.key() + ": " + s.line());    // 0.39.z77: on a change only
+        if (sayAgain(tk, s.change()) && bb.port != null) {
+            bb.port.log(g.r.key() + ": " + s.line());    // 0.39.z77: on a change only
+            // 0.39.z77 pending: a trip standing on a leg not priced yet says so to the owner (once while that leg waits)
+            if (s.chain() != null && s.chain().why().startsWith(STAND + NeedChain.NOT_PRICED)) bb.port.tellOwner(s.line());
+        }
         if (!ends.isEmpty() && bb.port != null) {
             List<String> names = new ArrayList<>();
             for (Goals.Goal o : open) if (ends.contains(o.id())) names.add(o.r.key());
@@ -246,8 +255,15 @@ public final class BatchWay {
             return new Shaped(null, head + "no trip derived (" + (pb == null ? "no playbook" : pb.fail()) + "): the order's own chain as its one leg", true);
         String bare = head + legs(pb, null, null);           // 0.39.z77: the legs with no carry known (no priced chain)
         if (!pc.ok() && NeedChain.waitsHere(pc.missing())) {
+            // 0.39.z77 pending (run BV 13:59:36): a leg whose ways still wait on answers is not priced yet - the trip stands, its
+            // line says the leg and what it waits on (said to the owner once while that leg waits, price()); nobody is parked
+            if (pc.missing().startsWith(NeedChain.NOT_PRICED)) {
+                NeedChain.Chain stand = new NeedChain.Chain(List.of(new Step.AwaitPaths(NeedChain.firstAnswerWaitS())), 0, STAND + pc.missing() + ")", true, null);
+                int cut = pc.missing().indexOf(NeedChain.WAITS_ON);
+                return new Shaped(stand, head + "stand: " + pc.missing(), false, bare + " | stand: " + (cut < 0 ? pc.missing() : pc.missing().substring(0, cut)));
+            }
             if (pc.missing().contains(io.github.mojolowjo.entropybot.aa.PathPrice.NOT_KNOWN)) {
-                NeedChain.Chain stand = new NeedChain.Chain(List.of(new Step.AwaitPaths(NeedChain.firstAnswerWaitS())), 0, "trip: stand (" + pc.missing() + ")", true, null);
+                NeedChain.Chain stand = new NeedChain.Chain(List.of(new Step.AwaitPaths(NeedChain.firstAnswerWaitS())), 0, STAND + pc.missing() + ")", true, null);
                 return new Shaped(stand, head + "stand while the first leg's walks compute (" + pc.missing() + ")", false, bare);
             }
             return new Shaped(null, head + "waits (" + pc.missing() + "): the order's own chain says it", false, bare);
