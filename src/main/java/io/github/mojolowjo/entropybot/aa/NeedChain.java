@@ -1390,6 +1390,9 @@ public final class NeedChain {
         @Override public void run(PathPrice p) { if (p != null) p.rankedOut(x, y, z); }
     }
 
+    /** 0.39.z78 D6 (review): the game data's epoch now on {@code w} - a worker's result priced in another one is never applied. */
+    public static Object dataEpoch(World w) { return w == null ? null : epoch(w); }
+
     /** 0.39.z78 D6: the game data a resolve is priced from (another epoch forgets every kept node). */
     private static Object epoch(World w) {
         LootBook b = w.loot();

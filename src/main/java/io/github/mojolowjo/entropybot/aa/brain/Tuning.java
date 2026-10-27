@@ -21,6 +21,17 @@ public final class Tuning {
 
     private static final Map<String, Entry> ALL = new LinkedHashMap<>();
 
+    /**
+     * 0.39.z78 D6 (review: the planner worker reads the numbers off the render thread while {@code aa tune} writes them):
+     * what {@link #get} reads - an immutable copy of {@link #ALL}, published again after every write; the writers and the
+     * listings hold {@link #LOCK}.
+     */
+    private static volatile Map<String, Entry> VIEW = Map.of();
+    private static final Object LOCK = new Object();
+    private static boolean defined;
+
+    private static void publish() { VIEW = Map.copyOf(ALL); }
+
     static {
         // AA_ROUND4 C (ItemWorth): the scales the item data is turned into worth with (iron pickaxe ~30, stone 15, wooden 4)
         def("worth.toolK", 1.15, "AA_ROUND4 C", "a digging tool's worth = this x speed^pow x (1 + level) x ln(1 + durability) x role");
@@ -175,11 +186,18 @@ public final class Tuning {
         def("walk.placePenalty", 60, "0.39.z39 placement price (owner 2026-10-23)", "Baritone blockPlacementPenalty a plain walk runs with (the fork's walk lease, put back at its end); about 3x Baritone's shipped 20, so a walk places less often but still may");
         def("walk.farXZ", 128, "rm-routes", "blocks across beyond which a walk asks Baritone for GoalXZ first, then GoalBlock on arrival");
         TuningDefs.register();
+        synchronized (LOCK) {
+            defined = true;
+            publish();
+        }
     }
 
     static void def(String name, double v, String run, String why) {
-        if (ALL.containsKey(name)) throw new IllegalStateException("tuning \"" + name + "\" is defined twice");
-        ALL.put(name, new Entry(name, v, v, run, why));
+        synchronized (LOCK) {
+            if (ALL.containsKey(name)) throw new IllegalStateException("tuning \"" + name + "\" is defined twice");
+            ALL.put(name, new Entry(name, v, v, run, why));
+            if (defined) publish();              // a definition after the static ones: seen at once
+        }
     }
 
     /** True under JUnit: an unknown name throws there; in the game it is logged once (and reads 0, loudly wrong rather than silent). */
@@ -192,7 +210,7 @@ public final class Tuning {
 
     /** The value now (the default unless tuned). An unknown name is a bug (rule 7): it throws under test, and in the game logs an error once. */
     public static double get(String name) {
-        Entry e = ALL.get(name);
+        Entry e = VIEW.get(name);
         if (e != null) return e.value();
         String msg = "no tuning \"" + name + "\" is registered in Tuning";
         if (strict) throw new IllegalArgumentException(msg);
@@ -215,6 +233,10 @@ public final class Tuning {
 
     /** Sets one; returns the reply line ("ok: ..." or "error: ..."). */
     public static String set(String name, double v) {
+        synchronized (LOCK) { return setLocked(name, v); }
+    }
+
+    private static String setLocked(String name, double v) {
         Entry e = ALL.get(name);
         if (e == null) {
             // 0.39.z4 (owner 2026-10-22): the chat path lowercases the PM, so "gridLoop.settleMin" arrived as
@@ -226,13 +248,17 @@ public final class Tuning {
         if (Double.isNaN(v) || Double.isInfinite(v) || v < 0) return "error: " + name + " must be a number 0 or more";
         ALL.put(name, new Entry(e.name(), e.def(), v, e.run(), e.why()));
         version++;
+        publish();
         return "ok: " + name + " " + fmt(v) + (v == e.def() ? " (the default)" : " (default " + fmt(e.def()) + ")");
     }
 
     /** All back to the defaults (a new world). */
     public static void reset() {
-        for (Entry e : List.copyOf(ALL.values())) ALL.put(e.name(), new Entry(e.name(), e.def(), e.def(), e.run(), e.why()));
-        version++;
+        synchronized (LOCK) {
+            for (Entry e : List.copyOf(ALL.values())) ALL.put(e.name(), new Entry(e.name(), e.def(), e.def(), e.run(), e.why()));
+            version++;
+            publish();
+        }
     }
 
     private static volatile long version;
@@ -243,7 +269,7 @@ public final class Tuning {
     /** The tuned (not default) values, for the world's file. */
     public static Map<String, Double> changed() {
         Map<String, Double> m = new LinkedHashMap<>();
-        for (Entry e : ALL.values()) if (e.value() != e.def()) m.put(e.name(), e.value());
+        synchronized (LOCK) { for (Entry e : ALL.values()) if (e.value() != e.def()) m.put(e.name(), e.value()); }
         return m;
     }
 
@@ -266,7 +292,9 @@ public final class Tuning {
      */
     public static List<String> lines() {
         Map<String, List<Entry>> groups = new java.util.TreeMap<>();
-        for (Entry e : ALL.values()) groups.computeIfAbsent(prefixOf(e.name()), k -> new ArrayList<>()).add(e);
+        List<Entry> all;
+        synchronized (LOCK) { all = List.copyOf(ALL.values()); }
+        for (Entry e : all) groups.computeIfAbsent(prefixOf(e.name()), k -> new ArrayList<>()).add(e);
         List<String> out = new ArrayList<>();
         for (var g : groups.entrySet()) {
             out.add("== " + g.getKey() + " (" + g.getValue().size() + ") ==");
@@ -302,9 +330,9 @@ public final class Tuning {
     }
 
     /** The default of one number (for the legacy constants and the tests). */
-    public static double defOf(String name) { Entry e = ALL.get(name); return e == null ? Double.NaN : e.def(); }
+    public static double defOf(String name) { Entry e = VIEW.get(name); return e == null ? Double.NaN : e.def(); }
 
-    public static java.util.Set<String> names() { return ALL.keySet(); }
+    public static java.util.Set<String> names() { synchronized (LOCK) { return java.util.Collections.unmodifiableSet(new java.util.LinkedHashSet<>(ALL.keySet())); } }
 
     static String fmt(double v) { return v == Math.rint(v) ? String.valueOf((long) v) : String.format(Locale.ROOT, "%.3f", v).replaceAll("0+$", ""); }
 }

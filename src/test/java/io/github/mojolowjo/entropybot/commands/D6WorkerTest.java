@@ -209,6 +209,99 @@ class D6WorkerTest {
         assertTrue(log.stream().noneMatch(x -> x.contains("re-planned while thinking")), log.toString());
     }
 
+    // ---- review round ----
+
+    @Test
+    void anErrorOnTheWorker_isPosted_theThreadGoesOn_theTripFailsLoud() throws InterruptedException {
+        data();
+        Live live = new Live();
+        List<String> log = new ArrayList<>();
+        boolean[] overflow = {true};
+        PlannerWorker worker = new PlannerWorker(j -> {
+            if (overflow[0]) { overflow[0] = false; throw new StackOverflowError("test: the resolve ran out of stack"); }
+            return PlannerWorker.resolve(j);
+        });
+        PlannerPort port = new PlannerPort(worker, () -> 0, log::add);
+        Playbook pb = Playbook.derive(KIT, Playbook.facts(live.world(), null));
+        port.legs("b1", pb, Set.of(), live.world());
+        while (worker.landed() < 1) Thread.sleep(1);
+        assertFalse(worker.busy("b1"), "the request is not left running");
+        NeedChain.Legs l = port.legs("b1", pb, Set.of(), live.world());
+        assertFalse(l.chain().ok(), "the trip fails with the reason: " + l.chain().why());
+        assertTrue(l.chain().why().contains("StackOverflowError"), l.chain().why());
+        assertTrue(log.stream().anyMatch(x -> x.contains("could not resolve the trip off the render thread")), "said: " + log);
+        NeedChain.Legs again = untilApplied(port, worker, pb, live, 30);     // the same thread resolves the next request
+        assertTrue(Deep.equal(again, PlanNodes.old(() -> NeedChain.resolvePlaybookLegs(pb, live.world()))));
+    }
+
+    @Test
+    void gameDataChangedWhileThinking_theResultIsDropped() throws InterruptedException {
+        data();
+        Live live = new Live();
+        List<String> log = new ArrayList<>();
+        boolean[] tune = {false};
+        PlannerWorker worker = new PlannerWorker(j -> {
+            PlannerWorker.Done d = PlannerWorker.resolve(j);
+            if (tune[0]) { tune[0] = false; Tuning.set("walk.farXZ", 129); }    // aa tune while it thought
+            return d;
+        });
+        PlannerPort port = new PlannerPort(worker, () -> 0, log::add);
+        Playbook pb = Playbook.derive(KIT, Playbook.facts(live.world(), null));
+        untilApplied(port, worker, pb, live, 30);
+        tune[0] = true;
+        port.legs("b1", pb, Set.of(), live.world());
+        long seen = worker.landed();
+        while (worker.landed() == seen) Thread.sleep(1);
+        NeedChain.Legs l = port.legs("b1", pb, Set.of(), live.world());
+        assertTrue(NeedChain.thinking(l.chain()), "dropped: " + l.chain().why());
+        assertTrue(log.stream().anyMatch(x -> x.contains("re-planned while thinking: game data")), "said: " + log);
+        NeedChain.Legs b = untilApplied(port, worker, pb, live, 30);
+        assertTrue(Deep.equal(b, PlanNodes.old(() -> NeedChain.resolvePlaybookLegs(pb, live.world()))), "applied in the new data");
+    }
+
+    @Test
+    void answersKeepLanding_theTripIsStillApplied_neverOnAStalePrice() throws InterruptedException {
+        data();
+        Live live = new Live();
+        List<String> log = new ArrayList<>();
+        PlannerWorker worker = new PlannerWorker();
+        PlannerPort port = new PlannerPort(worker, () -> 0, log::add);
+        Playbook pb = Playbook.derive(KIT, Playbook.facts(live.world(), null));
+        untilApplied(port, worker, pb, live, 30);
+        // every result lands after the near tree's walk answered again (another price): each one is stale on arrival
+        NeedChain.Legs l = null;
+        int asks = 0;
+        for (int i = 0; i < 100; i++) {
+            asks++;
+            l = port.legs("b1", pb, Set.of(), live.world());
+            if (!NeedChain.thinking(l.chain())) break;
+            long seen = worker.landed();
+            while (worker.landed() == seen) Thread.sleep(1);
+            live.walks.put("12,64,0", PathPrice.Answer.priced(new PathPrice.Walk(10 + i)));
+        }
+        assertNotNull(l);
+        assertFalse(NeedChain.thinking(l.chain()), "applied within the cap: " + asks + " asks");
+        assertTrue(asks <= PlannerPort.ROUNDS + 2, "bounded: " + asks + " asks");
+        assertTrue(log.stream().anyMatch(x -> x.contains("results in a row dropped") && x.contains("resolved on the client tick")), "said loud: " + log);
+        assertTrue(Deep.equal(l, PlanNodes.old(() -> NeedChain.resolvePlaybookLegs(pb, live.world()))), "the facts of now, never a stale price");
+    }
+
+    @Test
+    void tuningIsReadOffThreadWhileTheClientTunes() throws InterruptedException {
+        List<Throwable> bad = new java.util.concurrent.CopyOnWriteArrayList<>();
+        Thread reader = new Thread(() -> {
+            try {
+                for (int i = 0; i < 200_000; i++) if (!(Tuning.get("walk.farXZ") > 0)) bad.add(new IllegalStateException("read " + Tuning.get("walk.farXZ")));
+            } catch (RuntimeException e) {
+                bad.add(e);
+            }
+        });
+        reader.start();
+        for (int i = 0; i < 2_000; i++) { Tuning.set("walk.farXZ", 100 + i % 50); if (i % 100 == 0) Tuning.reset(); }
+        reader.join(30_000);
+        assertTrue(bad.isEmpty(), "every read saw a whole value: " + bad);
+    }
+
     @Test
     void aNewerRequestSupersedesAQueuedOne() throws InterruptedException {
         CountDownLatch hold = new CountDownLatch(1);

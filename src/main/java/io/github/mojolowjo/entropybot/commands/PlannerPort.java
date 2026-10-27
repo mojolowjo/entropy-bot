@@ -40,7 +40,7 @@ public final class PlannerPort implements BatchWay.Planner {
 
     /** The probe numbers (client tick): the last applied resolve and the tick-side costs. */
     private PlanNodes.Stats lastStats = PlanNodes.Stats.NONE;
-    private long lastResolveNs, lastApplyNs, lastSnapNs, resolves, drops, fetches;
+    private long lastResolveNs, lastApplyNs, lastSnapNs, resolves, drops, fetches, caps;
 
     /** One trip's request and its last result's facts. */
     private static final class State {
@@ -50,7 +50,12 @@ public final class PlannerPort implements BatchWay.Planner {
         Collection<PlanNodes.Fact> keys = List.of();
         PlannerWorker.Done ready;
         String waitWords = "thinking: the first resolve of this trip";
+        /** Results of this trip dropped in a row since its last apply (ROUNDS caps them). */
+        int dropsInRow;
     }
+
+    /** structural: results of one trip dropped in a row before it is resolved on the client tick (a fetch round or two is normal) */
+    static final int ROUNDS = 8;
 
     public PlannerPort(PlannerWorker worker, LongSupplier tick, Consumer<String> log) {
         this.worker = worker;
@@ -81,14 +86,27 @@ public final class PlannerPort implements BatchWay.Planner {
         s.ready = null;
         if (r != null && same && r.job().version() == s.version) {
             if (r.error() != null) {
-                // rule 7: the worker could not resolve it - said, and resolved here as before D6
-                log.accept("planner: the trip " + key + " could not be resolved off the render thread (" + r.error() + "): resolved on the client tick");
                 io.github.mojolowjo.entropybot.Quiet.warn("PlannerPort.legs: the worker's resolve of " + key + " threw", r.error());
                 s.version = -1;
-                return NeedChain.keepingFuel(kept, () -> NeedChain.resolvePlaybookLegs(pb, w));
+                s.dropsInRow = 0;
+                if (r.error() instanceof RuntimeException) {
+                    // rule 7: the worker could not resolve it - said, and resolved here as before D6
+                    log.accept("planner: the trip " + key + " could not be resolved off the render thread (" + r.error() + "): resolved on the client tick");
+                    return NeedChain.keepingFuel(kept, () -> NeedChain.resolvePlaybookLegs(pb, w));
+                }
+                // review: a stack overflow or out of memory is not tried again on the render thread (its stack is the smaller):
+                // the trip fails with the reason, said loud; a new request (a changed fact) asks the worker again
+                String why = "the planner could not resolve the trip off the render thread (" + r.error() + "; rule 7)";
+                log.accept("planner: trip " + key + ": " + why);
+                return new NeedChain.Legs(new NeedChain.Chain(List.of(), 0, NeedChain.PLAYBOOK + ": " + why, false, why), Map.of(), -1);
             }
             long t0 = System.nanoTime();
-            List<String> changed = check(r, w, live);
+            // review: a result priced in other game data (items, tiers, Tuning, the loot book) than the snapshot's and the live
+            // one's - changed while it thought - is dropped as any changed fact
+            Object now = NeedChain.dataEpoch(w);
+            boolean data = r.epochStart() != null && Deep.equal(r.job().snap().epoch(), r.epochStart()) && Deep.equal(r.epochStart(), r.epochEnd())
+                    && Deep.equal(r.epochEnd(), now);
+            List<String> changed = data ? check(r, w, live) : List.of("game data (items, tiers, Tuning or the loot book changed while it thought)");
             s.keys = r.read().facts().keySet();
             if (changed.isEmpty()) {
                 r.read().runEffects(w.path());
@@ -97,6 +115,7 @@ public final class PlannerPort implements BatchWay.Planner {
                 lastStats = r.read().stats();
                 resolves++;
                 s.version = -1;                                  // applied: the next ask is a new request
+                s.dropsInRow = 0;
                 return r.legs();
             }
             String said = null;
@@ -105,10 +124,21 @@ public final class PlannerPort implements BatchWay.Planner {
                 drops++;
                 log.accept("planner: trip " + key + ": re-planned while thinking: " + said + (changed.size() > 1 ? " (+" + (changed.size() - 1) + " more)" : ""));
             } else fetches++;
-            s.waitWords = "thinking: " + r.read().dirty(live, w) + " nodes dirty";
-        } else if (same && worker.busy(key)) {
+            // review (rule 14, rule 15): the rounds are bounded by a structural cap, never by a price - past it the facts keep
+            // changing faster than the worker answers (a walk on the move, answers landing): resolved here on the facts of now
+            // this once (the old resolve's freeze, exact), said loud
+            if (++s.dropsInRow >= ROUNDS) {
+                log.accept("planner: trip " + key + ": " + s.dropsInRow + " results in a row dropped (the facts kept changing while it thought; last: "
+                        + changed.get(0) + "): resolved on the client tick this once (rule 15: never a stale price)");
+                s.dropsInRow = 0;
+                s.version = -1;
+                caps++;
+                return NeedChain.keepingFuel(kept, () -> NeedChain.resolvePlaybookLegs(pb, w));
+            }
+            s.waitWords = "thinking: " + (data ? r.read().dirty(live, w) + " nodes dirty" : "the game data changed");        } else if (same && worker.busy(key)) {
             return NeedChain.thinking(s.waitWords);               // the request is being resolved: the stand goes on
         } else if (!same) {
+            s.dropsInRow = 0;
             s.waitWords = s.keys.isEmpty() ? "thinking: the first resolve of this trip" : "thinking: a new request for this trip";
         }
         long t0 = System.nanoTime();
@@ -141,8 +171,8 @@ public final class PlannerPort implements BatchWay.Planner {
 
     /** The probe text: the last applied resolve's nodes and times, the drops, the requests in flight. */
     public String probe() {
-        return String.format(Locale.ROOT, "planner: %s, resolve %.1f ms (worker), apply %.1f ms, snapshot %.1f ms, applied %d, dropped %d (+%d fetches), in flight %d",
-                lastStats.text(), lastResolveNs / 1e6, lastApplyNs / 1e6, lastSnapNs / 1e6, resolves, drops, fetches, worker.inFlight());     // structural: ns per ms
+        return String.format(Locale.ROOT, "planner: %s, resolve %.1f ms (worker), apply %.1f ms, snapshot %.1f ms, applied %d, dropped %d (+%d fetches), on the client tick %d, in flight %d",
+                lastStats.text(), lastResolveNs / 1e6, lastApplyNs / 1e6, lastSnapNs / 1e6, resolves, drops, fetches, caps, worker.inFlight());     // structural: ns per ms
     }
 
     /** A new world or AA off: the requests are forgotten (a late result of the old world is dropped by its version). */

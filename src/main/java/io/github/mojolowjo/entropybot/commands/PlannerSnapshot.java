@@ -19,7 +19,10 @@ import java.util.Set;
  * copied on the client tick. {@link #take}: every fact the request's last resolve read (its record, NeedChain.Read) is
  * asked of the live World now - the seen sources, the walks (the path asks are posted here, on the client tick), the
  * strips, the caves, the stations, the uses, the "where" facts, the strip areas and the main stations - and the World's
- * plain facts (the bag in its live order, the stations near, the holds, the rooms, the horizon) are copied. The frozen
+ * plain facts (the bag in its live order, the stations near, the holds, the rooms, the horizon) are copied - 0.39.z78 D6
+ * review: the World's own values are immutable by its constructor (the bag Map.copyOf, the holds List.copyOf, Rooms'
+ * cells List.copyOf, booleans and a double), the loot book is filled in its constructor and never written after (a
+ * reading book is another object, not ready: the epoch), so sharing them is a copy. The frozen
  * World answers from these copies only: a fact not in the snapshot does not exist for the planner - it answers "not
  * known" (a walk computing, no source seen, no strip, ...), the read is recorded like any other, and the result's check
  * on the client tick finds it differs from the live answer, so that result is never applied; the next snapshot carries it.
@@ -32,9 +35,11 @@ public final class PlannerSnapshot {
     private final NeedChain.Extras extras;
     private final Map<PlanNodes.Fact, Object> answers;
     private final long version, takenAt;
+    private final Object epoch;
 
     private PlannerSnapshot(NeedChain.World world, LinkedHashMap<String, Integer> bag, NeedChain.Extras extras, Map<PlanNodes.Fact, Object> answers,
-                            long version, long takenAt) {
+                            long version, long takenAt, Object epoch) {
+        this.epoch = epoch;
         this.world = world;
         this.bag = bag;
         this.extras = extras;
@@ -53,6 +58,9 @@ public final class PlannerSnapshot {
     public long version() { return version; }
 
     public long takenAt() { return takenAt; }
+
+    /** 0.39.z78 D6 review: the game data's epoch when the snapshot was taken (NeedChain.dataEpoch on the live World). */
+    public Object epoch() { return epoch; }
 
     /** The fact was copied into this snapshot (a fact read that was not is a "not known" answer, a miss). */
     public boolean copied(PlanNodes.Fact f) { return answers.containsKey(f); }
@@ -84,7 +92,7 @@ public final class PlannerSnapshot {
                         () -> (NeedChain.Surface) get(a, new PlanNodes.Fact("surface", null), null),
                         () -> { int[] f = (int[]) get(a, new PlanNodes.Fact("feet", null), null); return f == null ? null : f.clone(); },
                         () -> (GenWhere.Base) get(a, new PlanNodes.Fact("base", null), null)));
-        return new PlannerSnapshot(w, NeedChain.liveBag(live), new FrozenExtras(a), Map.copyOf(withNulls(a)), version, takenAt);
+        return new PlannerSnapshot(w, NeedChain.liveBag(live), new FrozenExtras(a), Map.copyOf(withNulls(a)), version, takenAt, NeedChain.dataEpoch(live));
     }
 
     /** Map.copyOf refuses nulls: the copied answers with each null kept as a marker. */

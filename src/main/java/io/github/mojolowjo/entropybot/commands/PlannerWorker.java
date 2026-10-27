@@ -24,8 +24,22 @@ public final class PlannerWorker {
     /** One request: the trip {@code key}, its version (the port's counter), the playbook, the kept fuels, the facts. */
     public record Job(String key, long version, Playbook pb, Set<String> keptFuel, PlannerSnapshot snap) {}
 
-    /** One result: its request, the legs, the record of what it read, the resolve time on the worker; {@code error}: it threw. */
-    public record Done(Job job, NeedChain.Legs legs, NeedChain.Read read, long resolveNs, RuntimeException error) {}
+    /**
+     * One result: its request, the legs, the record of what it read, the resolve time on the worker; {@code error}: it threw
+     * (anything: an exception, a stack overflow, out of memory). 0.39.z78 D6 review: {@code epochStart} / {@code epochEnd} - the
+     * game data's epoch (NeedChain.dataEpoch: items, tiers, Tuning, the loot book) when the resolve started and ended; the
+     * port applies a result only when both equal the snapshot's and the live one's.
+     */
+    public record Done(Job job, NeedChain.Legs legs, NeedChain.Read read, long resolveNs, Throwable error, Object epochStart, Object epochEnd) {
+        /** Tests: a result with no epoch (never applied by the port). */
+        public Done(Job job, NeedChain.Legs legs, NeedChain.Read read, long resolveNs, Throwable error) { this(job, legs, read, resolveNs, error, null, null); }
+    }
+
+    /**
+     * structural: the worker thread's stack (bytes) - the resolve recurses as deep as the trip's need tree, which ran on the
+     * render thread's stack before D6; this is far above a thread's default, so a trip that fit there fits here.
+     */
+    static final long STACK = 64L << 20;     // structural: 64 MB of stack for the planner thread
 
     private final Object lock = new Object();
     private final LinkedHashMap<String, Job> queued = new LinkedHashMap<>();
@@ -43,12 +57,13 @@ public final class PlannerWorker {
 
     static Done resolve(Job j) {
         long t0 = System.nanoTime();
+        Object start = NeedChain.dataEpoch(j.snap().world());
         try {
             NeedChain.Legs l = NeedChain.offThread(j.snap().extras(), j.snap().bag(),
                     () -> NeedChain.keepingFuel(j.keptFuel(), () -> NeedChain.resolvePlaybookLegs(j.pb(), j.snap().world())));
-            return new Done(j, l, NeedChain.lastRead(), System.nanoTime() - t0, null);
-        } catch (RuntimeException e) {
-            return new Done(j, null, NeedChain.Read.NONE, System.nanoTime() - t0, e);
+            return new Done(j, l, NeedChain.lastRead(), System.nanoTime() - t0, null, start, NeedChain.dataEpoch(j.snap().world()));
+        } catch (RuntimeException | Error e) {        // rule 7: any failure is posted and said by the port, never a dead thread
+            return new Done(j, null, NeedChain.Read.NONE, System.nanoTime() - t0, e, start, null);
         }
     }
 
@@ -57,7 +72,7 @@ public final class PlannerWorker {
         synchronized (lock) {
             queued.put(j.key(), j);
             if (thread == null || !thread.isAlive()) {
-                thread = new Thread(this::loop, "entropybot-planner");
+                thread = new Thread(null, this::loop, "entropybot-planner", STACK);
                 thread.setDaemon(true);
                 thread.start();
             }
@@ -100,16 +115,17 @@ public final class PlannerWorker {
                 it.remove();
                 running = j.key();
             }
-            Done d;
+            Done d = null;
             try {
                 d = resolver.apply(j);
-            } catch (RuntimeException e) {
+            } catch (RuntimeException | Error e) {        // rule 7 (review): a stack overflow, out of memory, an assertion - posted, said by the port
                 d = new Done(j, null, NeedChain.Read.NONE, 0, e);
-            }
-            synchronized (lock) {
-                done.put(j.key(), d);
-                running = null;
-                landed++;
+            } finally {
+                synchronized (lock) {
+                    done.put(j.key(), d != null ? d : new Done(j, null, NeedChain.Read.NONE, 0, new IllegalStateException("the planner posted no result")));
+                    running = null;                            // never left set: busy(key) ends with every request
+                    landed++;
+                }
             }
         }
     }
