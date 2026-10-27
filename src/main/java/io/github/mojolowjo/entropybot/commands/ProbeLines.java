@@ -25,6 +25,50 @@ public final class ProbeLines {
     /** 0.39.z77 mineintent: the strip's refuse probe is on (the strip probe debug.walkProbe, or debug.stepProbe; both off by default). */
     public static boolean stripRefuseOn() { return on() || stepOn(); }
 
+    /** 0.39.z77 hotbar: the tool probe is on (Tuning debug.toolProbe 1; ToolProbe's gate; off by default). */
+    public static boolean toolOn() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("debug.toolProbe") >= 1; }
+
+    // ---- 0.39.z77 hotbar: the tool probe (candidate-strip-pace, runs CW-DI: no line named the tool in hand) ----
+
+    /**
+     * When a tool line is due: each new break stage of the block being broken (another cell, or another stage on the
+     * same cell); no block being broken (-1) says nothing and forgets the last one, so the next block's first stage is due.
+     */
+    public static final class Stages {
+        private String cell;
+        private int stage = -1;
+
+        public boolean due(String atCell, int now) {
+            if (now < 0 || atCell == null) { cell = null; stage = -1; return false; }
+            if (atCell.equals(cell) && now == stage) return false;
+            cell = atCell;
+            stage = now;
+            return true;
+        }
+    }
+
+    /** One item as the tool line names it: its id (short), the bag slot (1-36, the hotbar 1-9) and its speed on the block. */
+    public record Held(String id, int slot, double speed) {
+        String text() { return (id == null || id.isEmpty() ? "empty hand" : shortId(id)) + " (" + (slot < 9 ? "hotbar " : "bag slot ") + (slot + 1) + String.format(Locale.ROOT, ", speed %.1f)", speed); }   // game fact: the hotbar is inventory slots 0-8
+    }
+
+    /** True when the bag holds a faster item for the block than the one in hand (the run summary counts these). */
+    public static boolean lower(Held hand, Held best) {
+        return hand != null && best != null && best.speed() > hand.speed() && best.slot() != hand.slot();
+    }
+
+    /**
+     * "t=120 stage 3 at 10 11 12 stone | hand wooden_pickaxe (hotbar 1, speed 2.0) | bag best stone_pickaxe (bag slot 24,
+     * speed 4.0) | LOWER than the bag's | step strip ..."; "best in hand" when the hand holds the bag's fastest.
+     */
+    public static String tool(long tick, int stage, String cell, String block, Held hand, Held best, String step) {
+        String b = best == null || !lower(hand, best) ? "best in hand" : "bag best " + best.text() + " | LOWER than the bag's";
+        return "t=" + tick + " stage " + stage + " at " + cell + " " + shortId(block) + " | hand " + (hand == null ? "-" : hand.text()) + " | " + b
+                + " | step " + (step == null ? "-" : step);
+    }
+
+    private static String shortId(String id) { return id == null ? "-" : id.replaceFirst("^minecraft:", ""); }
+
     /** 0.39.z56 item 3: the load probe is on (Tuning debug.loadProbe 1; LoadProbe's gate). */
     public static boolean loadOn() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("debug.loadProbe") >= 1; }
 

@@ -70,6 +70,9 @@ public final class StepProbe {
         fresh = true;
     }
 
+    /** 0.39.z77 hotbar: the running step (null: none), for the tool probe's line. */
+    static Step current() { return step; }
+
     /** StepHands.status: the step's own status words this look (one field). */
     static void status(String why) { status = why == null ? "-" : why; }
 

@@ -976,6 +976,7 @@ debug.loadProbe	0.0
 debug.slowTickMs	50.0
 debug.probeEveryTicks	20.0
 debug.stepProbePhaseGapTicks	5.0
+debug.toolProbe	0.0
 debug.stripRefuseMaxLines	500.0
 cave.mergeM	8.0
 cave.slopeMin	1.0
