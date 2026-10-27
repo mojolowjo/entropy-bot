@@ -689,6 +689,34 @@ public final class NeedChain {
     /** A new, empty trace for {@link #traced}. */
     public static Trace trace() { return new Trace(); }
 
+    /** 0.39.z77 trip: the fuels a trip burned before (need words), kept while {@link #keepingFuel} prices. */
+    private static final ThreadLocal<Set<String>> KEPT_FUEL = new ThreadLocal<>();
+
+    /**
+     * 0.39.z77 trip (manager's ruling 2026-10-26 ~21:35, fix 2; run CU 21:02-21:05: the descent's fuel swapped coal / oak_slab /
+     * coal_block between re-prices of the same trip): {@code run} priced with the fuels the trip burned before ({@code kept});
+     * a smelt burns one of them from the bag while the bag (less what is set aside) covers it ({@link #burn}), else the
+     * cheapest as before. Nothing is kept outside the call.
+     */
+    public static <T> T keepingFuel(Set<String> kept, Supplier<T> run) {
+        Set<String> was = KEPT_FUEL.get();
+        KEPT_FUEL.set(kept == null ? Set.of() : kept);
+        try {
+            return run.get();
+        } finally {
+            if (was == null) KEPT_FUEL.remove(); else KEPT_FUEL.set(was);
+        }
+    }
+
+    /** 0.39.z77 trip: of the kept fuels ({@link #keepingFuel}), the one the {@code free} bag covers for {@code k} smelts; null: none. */
+    private static io.github.mojolowjo.entropybot.craft.CraftPlanner.Fuel keptFuel(Map<String, Integer> free, int k) {
+        Set<String> kept = KEPT_FUEL.get();
+        if (kept == null || kept.isEmpty()) return null;
+        Map<String, Integer> only = new LinkedHashMap<>();
+        for (var e : free.entrySet()) if (kept.contains(word(e.getKey()))) only.put(e.getKey(), e.getValue());
+        return only.isEmpty() ? null : io.github.mojolowjo.entropybot.craft.CraftPlanner.pickFuel(only, k);
+    }
+
     // ---- the recursion ----
 
     private static final class Ctx {
@@ -2530,10 +2558,12 @@ public final class NeedChain {
         c.burned = null;
         Map<String, Integer> free = new LinkedHashMap<>();         // z75 item 3: less what an outer need set aside
         for (String id : c.bag.keySet()) if (c.have(id) > 0) free.put(id, c.have(id));
-        var inBag = io.github.mojolowjo.entropybot.craft.CraftPlanner.pickFuel(free, k);
+        // 0.39.z77 trip: the fuel the trip burned before, while the bag covers it (keepingFuel)
+        var kept = keptFuel(free, k);
+        var inBag = kept != null ? kept : io.github.mojolowjo.entropybot.craft.CraftPlanner.pickFuel(free, k);
         if (inBag != null && have(c, new Want(inBag.id())) >= inBag.count()) {
             c.burned = new Burn(word(inBag.id()), inBag.count());
-            return "burn " + counted(take(c, new Want(inBag.id()), inBag.count(), inBag.id())) + " (in the bag, the cheapest burn by worth)";
+            return "burn " + counted(take(c, new Want(inBag.id()), inBag.count(), inBag.id())) + (kept != null ? " (in the bag, the fuel this trip burned before)" : " (in the bag, the cheapest burn by worth)");
         }
         List<Alt> alts = new ArrayList<>(), woodAlts = new ArrayList<>();
         Map<Alt, Double> wood = new java.util.HashMap<>();

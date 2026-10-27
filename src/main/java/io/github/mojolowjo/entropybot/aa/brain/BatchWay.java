@@ -39,7 +39,14 @@ import java.util.function.BiFunction;
  * it "not priced yet" - the trip stands (rule 22), said to the owner, nobody parked (NeedChain.legNoWay).
  * 0.39.z77 carry: the line's carry lists are read from the trip as priced (every leg, before the run's explore cut), so a
  * re-price of the same legs carries the same; the legs the run leaves to be priced when the bot gets there say so.
- * Pure (JUnit: Z77PlaybookTest, Z77RoundFixTest, Z77NoWayTest, Z77PendingTest, Z77CarryTest). Loader notes: none (the world and the ore-per-slab fact come from AaRuntime).
+ * <p>0.39.z77 trip (manager's ruling 2026-10-26 ~21:35, run CU 21:02-21:06: "playbook 2 = 250-650 ms" on most AA ticks while
+ * the bot waited at the furnace, 16 trip lines whose carries swapped): the brain's per-tick waiting test (Goals.blocked) asks
+ * the trip for every open order; the batch's holds were each asker's own, and the met order whose desire carries the run on
+ * is not in {@link #open} - so its ask and the next order's had two keys and derived the trip in turn, twice an AA tick. Now
+ * the batch's holds are the same for every asker (the running order's too, {@link #RUN_FACT}); while the running step needs
+ * no walk the waiting test reads the kept trip unless a fact that step depends on changed ({@link #stepFacts}); a re-priced
+ * trip burns the fuel it burned before while the bag still covers it (NeedChain.keepingFuel).
+ * Pure (JUnit: Z77PlaybookTest, Z77RoundFixTest, Z77NoWayTest, Z77PendingTest, Z77CarryTest, Z77TripTest). Loader notes: none (the world, the ore-per-slab fact and the running step come from AaRuntime).
  */
 public final class BatchWay {
     private BatchWay() {}
@@ -74,7 +81,25 @@ public final class BatchWay {
     private static final Map<String, String> SAID = new ConcurrentHashMap<>(), TOLD = new ConcurrentHashMap<>();
 
     /** Tests and a new runtime: forget every trip. */
-    public static void clear() { TRIPS.clear(); LEGS.clear(); OWN.clear(); PRICED.clear(); SAID.clear(); TOLD.clear(); }
+    public static void clear() { TRIPS.clear(); LEGS.clear(); OWN.clear(); PRICED.clear(); SAID.clear(); TOLD.clear(); HOLDS.clear(); FUELS.clear(); }
+
+    /** 0.39.z77 trip: Blackboard fact - the typed order run now ({@link Run}); null while no order's typed run runs. */
+    public static final String RUN_FACT = "aa.tripRun";
+
+    /**
+     * 0.39.z77 trip: the order whose typed run runs ({@code order}: its goal id, the run's desire), its running step, that
+     * step's planned counts ({@code uses}: Chain#uses; null: not known) and the furnaces' remaining inputs ({@code furnace}:
+     * item id -> count, this dimension; null: not read). AaRuntime publishes it each AA tick, before the tree.
+     */
+    public record Run(String order, Step step, Map<String, Integer> uses, Map<String, Integer> furnace) {}
+
+    /** 0.39.z77 trip: per batch, the running step the waiting test held the kept trip for (by identity) and its facts then. */
+    private record Hold(Step step, String facts) {}
+
+    private static final Map<String, Hold> HOLDS = new ConcurrentHashMap<>();
+
+    /** 0.39.z77 trip: per batch, the fuels the trip last priced burns (need words; NeedChain.keepingFuel). */
+    private static final Map<String, Set<String>> FUELS = new ConcurrentHashMap<>();
 
     /** The batch's kept trip is priced again on its next ask (a re-price: the stand's estimates, a landed path). */
     static void forget(Goals.Goal g) {
@@ -223,11 +248,26 @@ public final class BatchWay {
      * order's dropped sources), so the six orders' per-tick tests share one price and a landed path re-prices it once.
      */
     static NeedChain.Chain trip(Blackboard bb, Goals.Goal g, NeedChain.World w0, java.util.function.Supplier<NeedChain.Chain> own) {
+        return trip(bb, g, w0, own, false);
+    }
+
+    /**
+     * 0.39.z77 trip: as above; {@code waitTest} - the brain's per-tick waiting test asks (Goals.ownChain): while the batch's
+     * running step needs no walk it reads the kept trip ({@link #hold}); every other ask derives by the key, as before.
+     */
+    static NeedChain.Chain trip(Blackboard bb, Goals.Goal g, NeedChain.World w0, java.util.function.Supplier<NeedChain.Chain> own, boolean waitTest) {
         List<Goals.Goal> open = open(bb, g);
         if (open.isEmpty()) open = List.of(g);
         String tk = tripKey(g);
+        Run run = bb.fact(RUN_FACT) instanceof Run r ? r : null;
+        Goals.Goal runner = runner(bb, tk, run);
+        // 0.39.z77 trip (run CU 20:52-21:05: "playbook 2" on every AA tick exactly while a met order carried the run on): the
+        // batch's holds are its open orders' AND the running order's - the same set whoever asks (was: the asker's own plus
+        // the open orders', so the met runner's ask and the next order's keyed the trip twice and derived it in turn)
+        List<Goals.Goal> holders = new ArrayList<>(open);
+        if (runner != null && !holders.contains(runner)) holders.add(runner);
         Map<String, String> mine = Goals.droppedSources(g), others = new TreeMap<>();
-        for (Goals.Goal o : open) for (var e : Goals.droppedSources(o).entrySet()) if (!mine.containsKey(e.getKey())) others.put(e.getKey(), e.getValue());
+        for (Goals.Goal o : holders) for (var e : Goals.droppedSources(o).entrySet()) if (!mine.containsKey(e.getKey())) others.put(e.getKey(), e.getValue());
         NeedChain.World w = others.isEmpty() ? w0 : w0.withoutSources(others);
         java.util.Set<String> held = new java.util.TreeSet<>(mine.keySet());
         held.addAll(others.keySet());
@@ -235,9 +275,11 @@ public final class BatchWay {
         int[] pos = bb.in == null ? null : bb.in.pos;
         String base = tripKeyOf(tk, open, pos, under, held);
         Trip kept = TRIPS.get(tk);
+        Held h = waitTest ? hold(bb, tk, run, runner, kept) : Held.NONE;
+        if (h == Held.KEEP) return kept.chain();
         // 0.39.z77 carry 2: the kept trip's own band Ys say whether the feet crossed one (its legs placed again)
         // 0.39.z77 seen: and its own references say which of the bag's counts it depends on
-        Trip t = kept != null && kept.holds(base + bagPart(kept.refs(), w.bag()) + bandPlace(kept.pb(), pos, under), landed(w)) ? kept : price(bb, g, tk, base, pos, under, open, w);
+        Trip t = h != Held.AGAIN && kept != null && kept.holds(base + bagPart(kept.refs(), w.bag()) + bandPlace(kept.pb(), pos, under), landed(w)) ? kept : price(bb, g, tk, base, pos, under, open, w);
         // 0.39.z77 noway (run BU 13:34:23: the helmet's band leg had no way and ended the PICKAXE's order, never made): a leg's
         // no-way ends only the orders whose own items need it (with the leg's reasons, as an order's no-way always did); every
         // other order of the batch derives its trip again without them and runs on
@@ -248,9 +290,70 @@ public final class BatchWay {
                 if (bb.port != null) Goals.park(bb, o, NO_WAY + t.chain().why());
                 gone &= o.parked != null;
             }
-            if (!t.ends().contains(g.id()) && gone) return trip(bb, g, w0, own);     // the ended orders parked: the key changes
+            if (!t.ends().contains(g.id()) && gone) return trip(bb, g, w0, own, waitTest);     // the ended orders parked: the key changes
         }
         return t.chain() != null ? t.chain() : own(g, t.key(), landed(w), own);
+    }
+
+    /** 0.39.z77 trip: the batch {@code tk}'s order whose typed run runs now ({@code run}), null: none or another batch's. */
+    static Goals.Goal runner(Blackboard bb, String tk, Run run) {
+        if (run == null || run.order() == null || !(bb.fact(Goals.FACT) instanceof List<?>)) return null;
+        for (Goals.Goal o : Goals.of(bb)) if (run.order().equals(o.id()) && tk.equals(tripKey(o))) return o;
+        return null;
+    }
+
+    /** 0.39.z77 trip: the waiting test's verdict - no hold (by the key), the kept trip, or derived again once (a step fact changed). */
+    enum Held { NONE, KEEP, AGAIN }
+
+    /**
+     * 0.39.z77 trip (manager's ruling 2026-10-26 ~21:35, fix 1): while the batch's running step needs no walk (a craft, a smelt
+     * or cook here, a smelt's take, a placement - SeenAsk.holds; the stand waits on the answers by design and is not held) the
+     * waiting test reads the kept trip: path answers landing for other legs and the bag or furnace changes the step makes do
+     * not derive it. Only a fact that step itself depends on ({@link #stepFacts}: its station, its inputs) changing derives it
+     * again - once (AGAIN); the hold then keeps the new facts. A new step starts the hold anew. Only a kept trip that stands
+     * (settled, priced, not waiting) is held.
+     */
+    static Held hold(Blackboard bb, String tk, Run run, Goals.Goal runner, Trip kept) {
+        Step s = run == null ? null : run.step();
+        boolean noWalk = s != null && io.github.mojolowjo.entropybot.aa.SeenAsk.holds(s) && !(s instanceof Step.AwaitPaths);
+        if (!noWalk || runner == null || kept == null || kept.chain() == null || !kept.settled() || !kept.chain().ok() || kept.chain().waiting()) {
+            HOLDS.remove(tk);
+            return Held.NONE;
+        }
+        String f = stepFacts(run, bb.in == null ? null : bb.in.bag, bb.in != null && bb.in.tableKnown, bb.in != null && bb.in.furnaceKnown);
+        Hold was = HOLDS.put(tk, new Hold(s, f));
+        return was == null || was.step() != s || was.facts().equals(f) ? Held.KEEP : Held.AGAIN;
+    }
+
+    /**
+     * 0.39.z77 trip (pure): the facts the running step depends on - its station (a smelt, a cook or a smelt's take: a furnace
+     * known; a craft: a table known) and each input its plan counts ({@code run.uses}, the fuel left out: it goes into the
+     * furnace) being anywhere the bot knows: in the bag (an item, or a tag's member), in a furnace job still running
+     * ({@code run.furnace}), or the step's own output in the bag. "furnace known | raw_iron there".
+     */
+    static String stepFacts(Run run, Map<String, Integer> bag, boolean tableKnown, boolean furnaceKnown) {
+        Step s = run.step();
+        List<String> out = new ArrayList<>();
+        if (s instanceof Step.Smelt || s instanceof Step.Cook || s instanceof Step.SmeltCollect) out.add("furnace " + (furnaceKnown ? "known" : "gone"));
+        if (s instanceof Step.Craft) out.add("table " + (tableKnown ? "known" : "none"));
+        String made = s instanceof Step.Smelt m ? m.item() : s instanceof Step.Cook k ? k.item() : s instanceof Step.Craft c ? c.item() : null;
+        boolean got = made != null && count(bag, made) > 0;
+        if (run.uses() != null) for (var e : new TreeMap<>(run.uses()).entrySet()) {
+            String w = e.getKey();
+            if (w == null || w.startsWith(NeedChain.FUEL_USE) || e.getValue() == null || e.getValue() <= 0) continue;
+            out.add(NeedChain.shw(w) + (got || count(bag, w) + count(run.furnace(), w) > 0 ? " there" : " gone"));
+        }
+        return String.join(" | ", out);
+    }
+
+    /** 0.39.z77 trip: what {@code counts} hold of the need word {@code w} (the item, or any member of a tag). */
+    private static int count(Map<String, Integer> counts, String w) {
+        if (counts == null || w == null) return 0;
+        String word = NeedChain.word(w);
+        int n = 0;
+        for (var e : counts.entrySet())
+            if (e.getValue() != null && e.getValue() > 0 && (word.equals(NeedChain.word(e.getKey())) || NeedChain.gives(word, e.getKey()))) n += e.getValue();
+        return n;
     }
 
     /**
@@ -282,7 +385,10 @@ public final class BatchWay {
         // an order alone whose trip is one leg: that leg IS the order's own chain (the same planner on the same facts; its
         // words and aa debug tree as before)
         boolean oneLeg = open.size() == 1 && pb.ok() && pb.legs().size() == 1;
-        NeedChain.Legs l = pb.ok() && !oneLeg ? NeedChain.resolvePlaybookLegs(pb, w) : null;
+        // 0.39.z77 trip (fix 2; run CU 21:02-21:05: the descent's fuel swapped coal / oak_slab / coal_block between prices): a
+        // re-priced trip burns the fuel it burned before while the bag still covers it
+        NeedChain.Legs l = pb.ok() && !oneLeg ? NeedChain.keepingFuel(FUELS.getOrDefault(tk, Set.of()), () -> NeedChain.resolvePlaybookLegs(pb, w)) : null;
+        if (l != null && l.chain().ok()) FUELS.put(tk, fuelsOf(l.whole() == null ? l.chain() : l.whole()));
         if (t0 != 0) TickLaps.AA.playbook(TickLaps.AA.now() - t0);
         Shaped s = oneLeg ? new Shaped(null, TRIP + tk + " (1 order): 1 leg - " + pb.legs().get(0).text() + ": the order's own chain", true)
                 : shape(tk, open.size(), pb, l == null ? null : l.chain(), l == null ? Map.of() : l.starts(), l == null ? null : l.whole());
@@ -308,6 +414,18 @@ public final class BatchWay {
                     + (names.size() == 1 ? "it" : "them"));
         }
         return t;
+    }
+
+    /** 0.39.z77 trip (pure): the fuels a priced chain burns - its smelts' planned fuel words (NeedChain.FUEL_USE in its uses). */
+    static Set<String> fuelsOf(NeedChain.Chain c) {
+        Set<String> out = new LinkedHashSet<>();
+        if (c == null || c.uses() == null) return out;
+        for (Map<String, Integer> u : c.uses()) {
+            if (u == null) continue;
+            for (var e : u.entrySet()) if (e.getKey() != null && e.getKey().startsWith(NeedChain.FUEL_USE) && e.getValue() != null && e.getValue() > 0)
+                out.add(NeedChain.word(e.getKey().substring(NeedChain.FUEL_USE.length())));
+        }
+        return out;
     }
 
     /**

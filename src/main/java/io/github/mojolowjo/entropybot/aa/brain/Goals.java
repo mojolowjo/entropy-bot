@@ -981,7 +981,8 @@ public final class Goals {
 
     /**
      * 0.39.z77 review 1 (R3): the order's OWN chain, no batch comparison - for the per-tick waiting tests (blocked: does the
-     * chain wait on the loot book or a path?), which must never price the playbook and six chains every tick.
+     * chain wait on the loot book or a path?), which must never price the playbook and six chains every tick. 0.39.z77 trip:
+     * a trip order's test asks the batch's trip as the waiting test - kept while the running step needs no walk (BatchWay.hold).
      */
     static io.github.mojolowjo.entropybot.aa.NeedChain.Chain ownChain(Blackboard bb, Goal g) { return chain(bb, g, false); }
 
@@ -1000,7 +1001,9 @@ public final class Goals {
             if (t0 != 0) laps.resolved(laps.now() - t0);
             return c;
         };
-        var ch = BatchWay.tripOrder(g) ? BatchWay.trip(bb, g, world, own) : own.get();
+        // 0.39.z77 trip (run CU 21:02-21:06): the waiting test (batch false) reads the batch's kept trip while its running step
+        // needs no walk (BatchWay.hold); the flag was unused since the SHAPE CHANGE, so every tick's test derived the trip
+        var ch = BatchWay.tripOrder(g) ? BatchWay.trip(bb, g, world, own, !batch) : own.get();
         // 0.39.z41: a source Baritone's complete search found unreachable is the z33 source fact: dropped for the order's life
         for (var e : ch.unreachable().entrySet()) g.sources.failedFor(g.id(), e.getKey(), e.getValue(), bb.clock.now(), null, ORDER_LIFE_MS);
         return ch;

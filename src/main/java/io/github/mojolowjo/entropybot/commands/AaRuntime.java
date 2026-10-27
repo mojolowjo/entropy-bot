@@ -1666,6 +1666,7 @@ public final class AaRuntime implements JobPort {
                 c.vocab.tick();
                 return;
             }
+            bb.fact(io.github.mojolowjo.entropybot.aa.brain.BatchWay.RUN_FACT, tripRun());     // 0.39.z77 trip: the running step, for the trip's hold
             Status s = tree.tick(bb);
             laps.lap("tree");
             swimTick(p, now);
@@ -2302,13 +2303,31 @@ public final class AaRuntime implements JobPort {
         }
         // 0.39.z77 seen 3 (run CU 21:00-21:05): a vein asks only while the run still lacks its family after the bag and the
         // furnaces' inputs (the jobs' remaining input in this dimension), and never while the running step needs no walk
+        var asked = seenAsk.tick(c.stepRun.steps, cells, Jobs.here(p), this::sourceBlocksOf, io.github.mojolowjo.entropybot.cave.ExploreRules::smeltInputs,
+                io.github.mojolowjo.entropybot.sense.Seen.range(), System.currentTimeMillis(), io.github.mojolowjo.entropybot.aa.Replan.everyMs(), liveBag(), furnaceInputs(dim));
+        for (String n : seenAsk.notes()) LOG.info("[entropybot] aa: {}", n);
+        if (asked != null) LOG.info("[entropybot] aa: {} - the order is priced again where the step runs", asked.text());
+    }
+
+    /** 0.39.z77 seen 3: the furnace jobs' remaining inputs in dimension {@code dim} (item id -> count; none known: empty). */
+    private Map<String, Integer> furnaceInputs(String dim) {
         Map<String, Integer> furnace = new java.util.HashMap<>();
         for (var j : c.crafting.furnaces().all())
             if (j.input != null && dim != null && dim.equals(j.dim) && j.remaining() > 0) furnace.merge(j.input, j.remaining(), Integer::sum);
-        var asked = seenAsk.tick(c.stepRun.steps, cells, Jobs.here(p), this::sourceBlocksOf, io.github.mojolowjo.entropybot.cave.ExploreRules::smeltInputs,
-                io.github.mojolowjo.entropybot.sense.Seen.range(), System.currentTimeMillis(), io.github.mojolowjo.entropybot.aa.Replan.everyMs(), liveBag(), furnace);
-        for (String n : seenAsk.notes()) LOG.info("[entropybot] aa: {}", n);
-        if (asked != null) LOG.info("[entropybot] aa: {} - the order is priced again where the step runs", asked.text());
+        return furnace;
+    }
+
+    /**
+     * 0.39.z77 trip (run CU 21:02-21:06): the typed order run now - its order, running step, that step's planned counts and
+     * the furnaces' inputs - for the batch trip's hold (BatchWay.RUN_FACT); null while no order's typed run runs.
+     */
+    private io.github.mojolowjo.entropybot.aa.brain.BatchWay.Run tripRun() {
+        if (!typedRun || taskReplan == null || c.stepRun == null || !c.stepRun.steps.running()) return null;
+        var st = c.stepRun.steps;
+        int at = st.index();
+        if (at < 0 || at >= st.steps().size()) return null;
+        return new io.github.mojolowjo.entropybot.aa.brain.BatchWay.Run(taskReplan.desire(), st.steps().get(at), st.usesOf(at),
+                furnaceInputs(io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.dim()));
     }
 
     private void pathLandedTick() {
