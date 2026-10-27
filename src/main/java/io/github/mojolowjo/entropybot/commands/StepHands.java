@@ -1208,6 +1208,7 @@ public final class StepHands implements Steps.Hands {
         int target = itemsOf(p, filter) + want;
         mineFilter = filter;                     // 0.39.z66 item 2: the drops' gain at the end, as Baritone counts it
         mineDrops0 = target - want;
+        exploreWatch.reset();                    // 0.39.z77 wood 2: a new mine has not been in control yet
         // 0.39.z8 (owner 2026-10-22, "remove the old job habit"): no Baritone setting here; the fork's chop / mine run
         // owns breaking and placing for its run (and the chop the bag's placeable blocks as throwaway)
         io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE, "steps");
@@ -1249,6 +1250,8 @@ public final class StepHands implements Steps.Hands {
     /** 0.39.z66 item 2: the mine's filter and the bag's count of its items at the start (null: no mine running). */
     private BlockOptionalMetaLookup mineFilter;
     private int mineDrops0;
+    /** 0.39.z77 wood 2: the spot collect's watch on the mine's explore (reset at each mine's start). */
+    private final io.github.mojolowjo.entropybot.aa.moves.MineExploreWatch exploreWatch = new io.github.mojolowjo.entropybot.aa.moves.MineExploreWatch();
 
     /**
      * 0.39.z77 J2 E4: the cells of a Baritone goal - a goal with a position (IGoalRenderPos: GoalBlock, GoalTwoBlocks,
@@ -1319,20 +1322,23 @@ public final class StepHands implements Steps.Hands {
         }
         // 0.39.z77 J2 E4 (run AP 00:07:24): the mine's own goal - every block it goes for - more than failures.moved from the
         // priced spot: the same spot's fact before the feet show it (no new comparison, rule 14)
-        if (collectSpot != null && b != null && !Core.INSTANCE.reflexes.hold()) {
+        if (collectSpot != null && b != null) {
             // 0.39.z77 wood (run DE 02:35:56: the mine's explore has no goal cell, so E4 read none and the bot went 83 blocks
             // down): Baritone's mine in control running its explore (it knows none of the blocks in its sight) with the priced
-            // spot out of that sight - the same spot's fact at once. Loader notes: Baritone's API (IPathingControlManager#
-            // mostRecentInControl, IPathingBehavior#getGoal, GoalRunAway: MineProcess.updateGoal's explore), its settings.
-            boolean mineInControl = b.getPathingControlManager().mostRecentInControl().orElse(null) == b.getMineProcess();
-            if (collectSpot.exploresAway(here, mineInControl && b.getPathingBehavior().getGoal() instanceof baritone.api.pathing.goals.GoalRunAway)) {
+            // spot out of that sight - the same spot's fact; wood 2: only after one scan pace in control (MineExploreWatch).
+            // Loader notes: Baritone's API (IPathingControlManager#mostRecentInControl, IPathingBehavior#getGoal, GoalRunAway:
+            // MineProcess.updateGoal's explore), its settings mineGoalUpdateInterval and legitMineYLevel.
+            boolean mineInControl = !Core.INSTANCE.reflexes.hold() && b.getPathingControlManager().mostRecentInControl().orElse(null) == b.getMineProcess();
+            var bs = baritone.api.BaritoneAPI.getSettings();
+            String why = exploreWatch.tick(collectSpot, here, mineInControl, b.getPathingBehavior().getGoal() instanceof baritone.api.pathing.goals.GoalRunAway,
+                    bs.mineGoalUpdateInterval.value, bs.legitMineYLevel.value, miningWhat, got, want);
+            if (why != null) {
                 b.getMineProcess().cancel();
                 endMining();
-                String why = miningWhat + ": Baritone's mine knows no " + collectSpot.item() + " in its sight (" + Step.Collect.MINE_SIGHT + " blocks of the feet) and runs its explore toward y "
-                        + baritone.api.BaritoneAPI.getSettings().legitMineYLevel.value + " - the priced spot " + collectSpot.spot() + " (" + Math.round(collectSpot.dist(here)) + " m) is not what it goes for, got " + got + " of " + want;
-                io.github.mojolowjo.entropybot.aa.moves.FactChange.nearCollect(collectSpot.item(), collectSpot.at(), why);
                 return Car.Status.failed(why);
             }
+        }
+        if (collectSpot != null && b != null && !Core.INSTANCE.reflexes.hold()) {
             List<int[]> goals = goalCells(b.getPathingBehavior().getGoal());
             if (collectSpot.targetAway(goals, io.github.mojolowjo.entropybot.aa.brain.Failures.movedV())) {
                 b.getMineProcess().cancel();

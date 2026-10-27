@@ -257,4 +257,123 @@ class Z77ExploreTest {
         assertFalse(new Step.Collect("dark_oak_planks", 2).exploresAway(start, true), "no priced spot: no claim (rule 15)");
         assertFalse(k.exploresAway(null, true), "no feet: no claim");
     }
+
+    // ---- wood 2 (review of 1207c13b): the watch StepHands.mineStatus drives, the tick-0 race, the fork's sight ----
+
+    /**
+     * DE's shape through the watch mineStatus feeds (the mine in control, its goal the explore GoalRunAway, the spot 40 m
+     * off at 37 35 7, Baritone's default scan pace 5): nothing for the first scan pace of ticks, the spot's fact after it.
+     */
+    @Test
+    void wood2_deShapeThroughTheWatchEndsAfterOneScanPace() {
+        Step.Collect k = new Step.Collect("dark_oak_planks", 2, new int[]{37, 35, 7});
+        io.github.mojolowjo.entropybot.aa.moves.MineExploreWatch w = new io.github.mojolowjo.entropybot.aa.moves.MineExploreWatch();
+        int[] feet = {8, 62, 2};
+        int pace = 5;
+        for (int t = 0; t < pace; t++)
+            assertNull(w.tick(k, feet, true, true, pace, -59, "collect 2 dark_oak_planks", 0, 2), "tick " + t + ": the first scan may not have landed");
+        assertNull(FactChange.take(), "no fact before one scan pace");
+        String why = w.tick(k, feet, true, true, pace, -59, "collect 2 dark_oak_planks", 0, 2);
+        assertNotNull(why, "after one scan pace in control: the explore is the mine's answer");
+        assertTrue(why.contains("explore toward y -59") && why.contains("37 35 7 (40 m)"), why);
+        FactChange.Fact f = FactChange.take();
+        assertNotNull(f, "the spot's near-collect fact is said");
+        assertEquals(why, f.text());
+    }
+
+    /** The tick-0 race: an 11-15 block spot is never ended while the mine is fresh; control lost starts the count again. */
+    @Test
+    void wood2_aFreshMineIsNotEndedOnItsFirstTicks() {
+        Step.Collect k = new Step.Collect("oak_planks", 4, new int[]{12, 64, 0});
+        io.github.mojolowjo.entropybot.aa.moves.MineExploreWatch w = new io.github.mojolowjo.entropybot.aa.moves.MineExploreWatch();
+        int[] feet = {0, 64, 0};                         // 12 blocks off on x: out of the mine's sight
+        assertNull(w.tick(k, feet, true, true, 5, -59, "collect 4 oak_planks", 0, 4), "tick 0: no end");
+        for (int t = 1; t < 5; t++) assertNull(w.tick(k, feet, true, true, 5, -59, "collect 4 oak_planks", 0, 4));
+        assertNull(w.tick(k, feet, false, true, 5, -59, "collect 4 oak_planks", 0, 4), "a tick not in control (another process, a reflex)");
+        assertEquals(0, w.inControl(), "the count starts again");
+        for (int t = 0; t < 5; t++) assertNull(w.tick(k, feet, true, false, 5, -59, "collect 4 oak_planks", 0, 4), "goal cells: not the explore");
+        assertNull(w.tick(k, new int[]{5, 64, 0}, true, true, 5, -59, "collect 4 oak_planks", 0, 4), "within sight of the spot: the gap between blocks in view");
+        assertNotNull(w.tick(k, feet, true, true, 5, -59, "collect 4 oak_planks", 0, 4), "past the pace, out of sight, exploring: ended");
+        w.reset();
+        assertNull(w.tick(k, feet, true, true, 0, -59, "collect 4 oak_planks", 0, 4), "a pace of 0 still waits one tick");
+        assertNotNull(w.tick(k, feet, true, true, 0, -59, "collect 4 oak_planks", 0, 4));
+        w.reset();
+        for (int t = 0; t < 10; t++) assertNull(w.tick(null, feet, true, true, 5, -59, "collect 4 oak_planks", 0, 4), "no priced spot: no claim");
+    }
+
+    /**
+     * MINE_SIGHT is the fork's MineProcess.addNearby searchDist: a local there (not a field or a setting, so no reflection
+     * reads it), read here from the fork jar's bytecode - the {@code bipush N; istore; ldc2_w} that opens its scan (the
+     * next local is fakedBlockReachDistance, 20.0). The fork changed it, or the shape of addNearby: this fails.
+     */
+    @Test
+    void wood2_mineSightIsTheForksSearchDist() throws Exception {
+        byte[] cls;
+        try (var in = Step.class.getClassLoader().getResourceAsStream("baritone/process/MineProcess.class")) {
+            assertNotNull(in, "the fork jar is on the test runtime (libs)");
+            cls = in.readAllBytes();
+        }
+        byte[] code = methodCode(cls, "addNearby");
+        assertNotNull(code, "the fork's MineProcess has addNearby");
+        Integer found = null;
+        for (int i = 0; i + 4 < code.length; i++) {
+            // bipush N; istore idx; ldc2_w (0x10, N, 0x36, idx, 0x14)
+            if (code[i] == 0x10 && code[i + 2] == 0x36 && code[i + 4] == 0x14) { found = (int) code[i + 1]; break; }
+        }
+        assertNotNull(found, "addNearby's searchDist not found: the fork changed its scan, check Step.Collect.MINE_SIGHT");
+        assertEquals(found.intValue(), Step.Collect.MINE_SIGHT, "Step.Collect.MINE_SIGHT drifted from the fork's searchDist");
+    }
+
+    /** The Code bytes of the first method named {@code name} in a class file (null: none). A minimal class-file walk. */
+    static byte[] methodCode(byte[] b, String name) {
+        java.nio.ByteBuffer in = java.nio.ByteBuffer.wrap(b);
+        in.position(8);                                  // magic, minor, major
+        int n = in.getShort() & 0xFFFF;
+        String[] utf = new String[n];
+        for (int i = 1; i < n; i++) {
+            int tag = in.get() & 0xFF;
+            switch (tag) {
+                case 1 -> { byte[] s = new byte[in.getShort() & 0xFFFF]; in.get(s); utf[i] = new String(s, java.nio.charset.StandardCharsets.UTF_8); }
+                case 3, 4, 9, 10, 11, 12, 17, 18 -> in.position(in.position() + 4);
+                case 5, 6 -> { in.position(in.position() + 8); i++; }
+                case 7, 8, 16, 19, 20 -> in.position(in.position() + 2);
+                case 15 -> in.position(in.position() + 3);
+                default -> throw new IllegalStateException("constant pool tag " + tag);
+            }
+        }
+        in.position(in.position() + 6);                  // access, this, super
+        int ifaces = in.getShort() & 0xFFFF;
+        in.position(in.position() + 2 * ifaces);         // interfaces
+        int fields = in.getShort() & 0xFFFF;
+        for (int f = 0; f < fields; f++) { in.position(in.position() + 6); skipAttrs(in); }
+        int methods = in.getShort() & 0xFFFF;
+        for (int m = 0; m < methods; m++) {
+            in.getShort();
+            String mn = utf[in.getShort() & 0xFFFF];
+            in.getShort();
+            int attrs = in.getShort() & 0xFFFF;
+            for (int a = 0; a < attrs; a++) {
+                String an = utf[in.getShort() & 0xFFFF];
+                int len = in.getInt();
+                int end = in.position() + len;
+                if (name.equals(mn) && "Code".equals(an)) {
+                    in.position(in.position() + 4);      // max_stack, max_locals
+                    byte[] code = new byte[in.getInt()];
+                    in.get(code);
+                    return code;
+                }
+                in.position(end);
+            }
+        }
+        return null;
+    }
+
+    private static void skipAttrs(java.nio.ByteBuffer in) {
+        int attrs = in.getShort() & 0xFFFF;
+        for (int a = 0; a < attrs; a++) {
+            in.getShort();
+            int len = in.getInt();
+            in.position(in.position() + len);
+        }
+    }
 }
