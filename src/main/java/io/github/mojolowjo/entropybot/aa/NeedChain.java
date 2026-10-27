@@ -2854,6 +2854,10 @@ public final class NeedChain {
      * Null: no way stands and none ends in an explore (every failure is in the dropped list); the caller makes the explore leaf.
      * 0.39.z77 choose: an explore wins only against final answers - while another way has no answer yet the way that stands
      * on its walks is taken, else null with that wait in {@code c.fail} (the caller stands, {@link #pathsWait}).
+     * <p>The tie rule (0.39.z78 D6, manager 2026-10-27): ways compare by, in order, no explore in it, within the horizon,
+     * the way's value of its own seconds (its rate, else the seconds), then its {@code work}, its {@code tier} and its index
+     * in {@code alts}. The seconds are exact sums on the 2^-20 s grid ({@link #grid}, Ctx#addS), so two ways of the same
+     * price are a true tie, never one decided by float noise - and a tie is decided by that order (work, tier, way index).
      */
     private static Trial choose(Ctx c, List<Alt> alts, String self) {
         if (alts.isEmpty()) return null;

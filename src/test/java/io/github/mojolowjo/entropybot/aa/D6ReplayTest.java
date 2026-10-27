@@ -36,6 +36,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * The recipes are the tests' TestData (the log has none) and the bag is what the events imply, so the chains are not the
  * runs' own; what is proved is old == incremental on the runs' sequences of fact changes. The counts are printed
  * ("D6 replay runDJ-z78h: ...").
+ * <p>The baseline is the exact arithmetic (manager 2026-10-27): the old resolve here sums seconds on the same 2^-20 s grid
+ * (NeedChain.grid), so true ties go by choose's declared order (work, tier, way index), not by float noise. Against the
+ * pre-grid sums, run DJ's picks differ at such ties (40 of 263 trips; DK, DL, DQ none); that is accepted, not a regression.
  */
 class D6ReplayTest {
     @AfterEach
