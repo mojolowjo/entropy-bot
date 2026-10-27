@@ -56,7 +56,7 @@ class Z46PricedPathTest {
         Step.Strip st = (Step.Strip) c.steps().get(strip);
         Step.ToStrip t = (Step.ToStrip) c.steps().get(to);
         assertEquals(NeedChain.sourceKey(st), NeedChain.sourceKey(t), "no path down to the band drops the same strip way");
-        assertEquals(Z43StripWayTest.ironBand().key(), NeedChain.sourceKey(t));
+        assertEquals(NeedChain.stripHold(Z43StripWayTest.ironBand().key()), NeedChain.sourceKey(t));     // 0.39.z78 strip: its heading
     }
 
     /** S58 (runs E-G: coal's 0..192 band was struck at the feet, y 70): a peak above the feet stays the peak. */

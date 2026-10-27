@@ -92,6 +92,7 @@ public final class WorldFacts {
      */
     static String scoped(String key, String start) {
         if (key == null || !key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STRIP_HEADING) || start == null) return key;
+        if (key.contains("|from ")) return key;              // 0.39.z78 strip: a fresh start's hold is scoped already (NeedChain.stripHold)
         return io.github.mojolowjo.entropybot.aa.NeedChain.headingFrom(key, start);
     }
 

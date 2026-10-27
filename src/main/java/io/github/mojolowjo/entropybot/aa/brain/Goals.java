@@ -391,7 +391,15 @@ public final class Goals {
         Map<String, String> out = new java.util.LinkedHashMap<>();
         for (Failures.Rec r : g.sources.of(g.id())) {
             if (r.option() == null) continue;
-            if (pos != null && positional(r.option())) {
+            if (pos != null && headingHold(r.option()) && r.pos() != null) {
+                // 0.39.z78 strip (manager 2026-10-27): a heading hold lifts as the other holds do, by the bot's move - past
+                // failures.moved (+ the same 8-block band) from where it was learned, so a later strip may take that heading
+                // from another cell; held again within failures.moved
+                double d = Failures.moved(r.pos(), pos);
+                if (d >= Failures.movedV() + WorldFacts.MARGIN) g.back.add(r.option());
+                else if (d < Failures.movedV()) g.back.remove(r.option());
+                if (g.back.contains(r.option())) continue;
+            } else if (pos != null && positional(r.option())) {
                 double gain = stationGain(r.option(), r.pos(), pos);
                 if (gain >= Failures.movedV() + WorldFacts.MARGIN) g.back.add(r.option());
                 else if (!(gain >= Failures.movedV())) g.back.remove(r.option());        // less, or not a cell (NaN): held
@@ -406,6 +414,11 @@ public final class Goals {
      * 0.39.z65 review 1; 0.39.z77 walk: a key held by where the bot stood when it failed - a station's walk ("station at x y
      * z") or a walk target that ended short twice ("walk target x y z", FactChange.walkHeld). Pure.
      */
+    /** 0.39.z78 strip: a strip heading hold ("strip heading y Y h[|from ...]", NeedChain.stripHold) - kept with where the bot stood. Pure. */
+    static boolean headingHold(String key) {
+        return key != null && key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STRIP_HEADING);
+    }
+
     static boolean positional(String key) {
         return key != null && (key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STATION_AT) || key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.WALK_TARGET));
     }
@@ -470,12 +483,15 @@ public final class Goals {
         if (g.n - have(bb.in.bag, g) <= 0 && !trip) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
         // 0.39.z65 review 1: a station's walk fact keeps where the bot stood (released once it stands failures.moved closer)
         // 0.39.z77 walk: a held walk target keeps it too (the same per-position hold)
-        if (sourceFact) g.sources.failedFor(g.id(), src, fact.text(), bb.clock.now(), positional(src) ? bb.in : null, ORDER_LIFE_MS);
+        if (sourceFact) g.sources.failedFor(g.id(), src, fact.text(), bb.clock.now(), positional(src) || headingHold(src) ? bb.in : null, ORDER_LIFE_MS);
         // 0.39.z77 world (run CX 22:43:18: the met pickaxe's water-ahead strip re-tried by the helmet): the fact is the world's
         // 0.39.z77 world 3 (review 1): a heading fact is kept by the tunnel's start too - the strip's fresh start, else the
         // square of the feet's column (where a strip from the feet starts, NeedChain.stripStart)
         int[] feet = bb.in == null ? null : bb.in.pos;
-        String start = failed instanceof io.github.mojolowjo.entropybot.aa.moves.Step.Strip st && st.from() != null ? st.from()
+        // 0.39.z78 strip: a heading fact that names its cause cell (water / lava ahead) is the tunnel's, whatever the start (the
+        // fork resumes a tunnel by its key from anywhere): kept unscoped, lifted when that cell reads dry (WorldFacts.gone)
+        String start = WorldFacts.causeCell(fact.text()) != null ? null
+                : failed instanceof io.github.mojolowjo.entropybot.aa.moves.Step.Strip st && st.from() != null ? st.from()
                 : feet == null || feet.length < 3 ? null : "area " + StripAreas.square(feet[0], feet[2]);     // structural: x y z
         if (sourceFact) WorldFacts.of(bb).learned(src, fact.text(), g.r.key(), bb.in, start);
         var ch = runChain(bb, g);

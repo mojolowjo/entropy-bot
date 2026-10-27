@@ -135,9 +135,18 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
      */
     public record Facts(Function<String, GenWhere.Fact> where, BiPredicate<String, Integer> surfaceKnown, Predicate<String> dropOnly,
                         Function<String, List<String>> oresOf, Function<String, Integer> stripY,
-                        BiFunction<String, Integer, Double> perSlab, Map<String, Integer> bag, int bagTier, boolean under, int feetY) {
+                        BiFunction<String, Integer, Double> perSlab, Map<String, Integer> bag, int bagTier, boolean under, int feetY,
+                        List<String> stripHolds) {
         public Facts {
             bag = bag == null ? Map.of() : Map.copyOf(bag);
+            stripHolds = stripHolds == null ? List.of() : List.copyOf(stripHolds);
+        }
+
+        /** No strip holds known (0.39.z78 strip: {@code stripHolds} - the World's held strip headings, for a no-strip reason only). */
+        public Facts(Function<String, GenWhere.Fact> where, BiPredicate<String, Integer> surfaceKnown, Predicate<String> dropOnly,
+                     Function<String, List<String>> oresOf, Function<String, Integer> stripY,
+                     BiFunction<String, Integer, Double> perSlab, Map<String, Integer> bag, int bagTier, boolean under, int feetY) {
+            this(where, surfaceKnown, dropOnly, oresOf, stripY, perSlab, bag, bagTier, under, feetY, List.of());
         }
 
         /** On the surface (or the ground over the feet not known): the legs as from the surface. */
@@ -184,8 +193,12 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
         NeedChain.Surface over = w.where().surface() == null ? null : w.where().surface().get();
         int[] feet = w.where().feet() == null ? null : w.where().feet().get();
         boolean under = over != null && feet != null && feet.length >= 3 && over.depth() >= AaLadder.surfaceDepth();   // structural: x y z
+        // 0.39.z78 strip: the held strip headings (World#withoutSources leaves a band out when every heading is held): the
+        // no-strip reason names them (rule 7); the legs never read them
+        List<String> holds = new ArrayList<>();
+        for (String h : w.held()) if (h.startsWith(NeedChain.STRIP_HEADING)) holds.add(h);
         return new Facts(word -> w.where().of().apply(word), known, word -> Nearby.noSource(word, w.loot()) != null, ores, y, ps, w.bag(), tier,
-                under, under ? feet[1] : NO_Y);
+                under, under ? feet[1] : NO_Y, holds);
     }
 
     // ---- the expansion (classify and sum) ----
@@ -452,7 +465,8 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
             int need = 0;
             for (String l : leaves) {
                 Integer tl = tiers.computeIfAbsent(l, k -> tierOf(f, k));
-                if (tl == null) return no(batch, NeedChain.shw(l) + ": no strip way here (no world-gen band of its blocks at or below the feet, or none read; rule 15)");
+                if (tl == null) return no(batch, NeedChain.shw(l) + ": no strip way here (" + (f.stripHolds().isEmpty() ? "no world-gen band of its blocks at or below the feet, or none read; rule 15"
+                        : "every heading of its band is held: " + String.join("; ", f.stripHolds()) + " - or no world-gen band of its blocks here") + ")");
                 if (tl == MiningTiers.UNKNOWN) return no(batch, NOT_LOADED + "the pickaxe tier of " + NeedChain.shw(l) + "'s blocks");
                 if (tl > p0 && covering(gates, tl, tiers) == null) need = Math.max(need, tl);
             }

@@ -100,7 +100,7 @@ class Z43StripWayTest {
         assertEquals("east", st.heading());
         assertEquals(Map.of("iron", 3), st.amounts(), "the amount is the strip's end rule");
         assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Deposit), "bag full: the deposit leg: " + c.steps());
-        assertEquals("strip " + st.key(), NeedChain.sourceKey(st));
+        assertEquals(NeedChain.headingKey(16, "east"), NeedChain.sourceKey(st), "0.39.z78 strip: held by its heading at its Y");
     }
 
     /** S52: no strip facts (multiplayer, no placement read): the surface explore stays the way. */

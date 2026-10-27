@@ -212,10 +212,14 @@ public final class FactChange {
 
     /**
      * 0.39.z46: a strip way ended short (the strip's own end - "no path", lava, no pickaxe - or no path down to its band):
-     * the source slot keyed by the strip ({@code key}: Step.Strip#key); the order re-plans without that band way.
+     * the order re-plans without it. 0.39.z78 strip: held by the strip's HEADING at its Y (NeedChain.stripHold of {@code key},
+     * Step.Strip#key; a fresh start's from that start), the one strip key the strip ways and the playbook's strip read.
      */
     public static void strip(String key, String why) {
-        last = new Fact("source strip " + key, "strip at " + key + ": " + why);
+        // 0.39.z78 strip (run DS 15:14:33): held by the strip's heading at its Y (NeedChain.stripHold), the key the strip ways
+        // and the playbook's strip ask - never the joined ore key no reader asked
+        String hold = io.github.mojolowjo.entropybot.aa.NeedChain.stripHold(key);
+        last = new Fact("source " + (hold != null ? hold : io.github.mojolowjo.entropybot.aa.NeedChain.STRIP_KEY + key), "strip at " + key + ": " + why);
     }
 
     /**

@@ -161,6 +161,41 @@ public final class NeedChain {
      */
     public static String headingFrom(String headingKey, String start) { return headingKey + "|from " + start; }
 
+    /**
+     * 0.39.z78 strip (run DS 15:14:33, to-do/diag-strip-heading-hold.md; manager 2026-10-27): the ONE key every strip hold
+     * has - its heading at its Y ({@link #headingKey}), scoped by a fresh start ({@link #headingFrom}) - from a strip's key
+     * ("ores|Y|heading[|from area ax,az]", Step.Strip#key, with or without {@link #STRIP_KEY}). Was: water / lava ahead and
+     * the other strip ends held the joined ore key, which the per-word strip ways never asked, so the re-plan ran the same
+     * heading into the same water. Null: not a strip key.
+     */
+    public static String stripHold(String stripKey) {
+        if (stripKey == null) return null;
+        String k = stripKey.startsWith(STRIP_KEY) && !stripKey.startsWith(STRIP_HEADING) ? stripKey.substring(STRIP_KEY.length()) : stripKey;
+        if (k.startsWith(STRIP_HEADING)) return k;
+        String[] p = k.split("\\|");
+        if (p.length < 3 || !p[1].matches("-?\\d{1,4}") || p[2].isBlank()) return null;     // structural: ores | y | heading
+        String h = headingKey(Integer.parseInt(p[1]), p[2]);
+        String from = p.length > 3 && p[3].startsWith("from ") ? p[3].substring("from ".length()) : null;     // structural: the 4th part
+        return from == null ? h : headingFrom(h, from);
+    }
+
+    /** 0.39.z78 strip: the hold's reason of heading {@code hd} of band {@code r} at its Y (from the feet, or from its start), null: open. */
+    static String headingHeld(Map<String, String> keyWhy, StripBand r, String hd) {
+        String k = headingKey(r.y(), hd);
+        if (!r.fresh() && keyWhy.containsKey(k)) return keyWhy.get(k);                          // a fresh start's tunnel is its own
+        return keyWhy.get(headingFrom(k, stripStart(r)));                                       // 0.39.z77 world 3: from this start
+    }
+
+    /** 0.39.z78 strip: the same for band {@code r} at Y {@code y}, read from a World's held list ("key: why" lines, World#held), null: open. */
+    static String headingHeld(List<String> held, StripBand r, int y, String hd) {
+        String k = headingKey(y, hd), kf = headingFrom(k, stripStart(r));
+        for (String h : held) {
+            if (!r.fresh() && h.startsWith(k + ": ")) return h.substring(k.length() + 2);
+            if (h.startsWith(kf + ": ")) return h.substring(kf.length() + 2);
+        }
+        return null;
+    }
+
     /** 0.39.z77 world 3: a strip way's start - a fresh start's own area, else the square of the column it starts from. */
     public static String stripStart(StripBand b) {
         return b.fresh() ? b.from() : "area " + io.github.mojolowjo.entropybot.aa.brain.StripAreas.square(b.x(), b.z());
@@ -462,11 +497,12 @@ public final class NeedChain {
                 if (r == null) return null;
                 // 0.39.z62 item 1b: a heading blocked at this Y is skipped for the next open one; the strip itself dropped
                 // (its key: lava, no path down to the band, a tunnel that ended short) drops the way as before
+                // 0.39.z78 strip (run DS): every strip hold is its heading key (stripHold), so this is its one reader; the old
+                // per-word way-key check is deleted - no hold of that form is written any more (it never matched the playbook's
+                // joined strip, the run DS loop)
                 for (String hd : r.headings()) {
-                    if (keyWhy.containsKey(headingKey(r.y(), hd))) continue;
-                    if (keyWhy.containsKey(headingFrom(headingKey(r.y(), hd), stripStart(r)))) continue;    // 0.39.z77 world 3: from this start
-                    StripBand t = r.toward(hd);
-                    return keyWhy.containsKey(t.key()) ? null : t;
+                    if (headingHeld(keyWhy, r, hd) != null) continue;
+                    return r.toward(hd);
                 }
                 return null;
             };
@@ -2519,7 +2555,15 @@ public final class NeedChain {
             int lack = t.n() - have(c, new Want(w));
             if (lack <= 0) continue;
             StripBand sb = c.w.strip().apply(w);
-            if (sb == null || sb.ores().isEmpty()) { c.fail = "no strip facts for " + shw(w) + " here (no world-gen band at or below the feet, or none read)"; return null; }
+            if (sb == null || sb.ores().isEmpty()) {
+                // 0.39.z78 strip: every heading of the band held (its ways leave it out, World#withoutSources): said with the holds
+                List<String> holds = new ArrayList<>();
+                String at = headingKey(leg.y(), "");
+                for (String h : c.w.held()) if (h.startsWith(at)) holds.add(h.substring(STRIP_HEADING.length()));
+                c.fail = !holds.isEmpty() ? "no strip at y " + leg.y() + " for " + shw(w) + ": every heading is held (" + String.join("; ", holds) + ")"
+                        : "no strip facts for " + shw(w) + " here (no world-gen band at or below the feet, or none read)";
+                return null;
+            }
             lacks.put(w, lack);
             bands.put(w, sb);
             for (String o : sb.ores()) if (!ores.contains(o)) ores.add(o);
@@ -2532,6 +2576,26 @@ public final class NeedChain {
             tier = Math.max(tier, t);
         }
         StripBand first = bands.values().iterator().next();
+        // 0.39.z78 strip (run DS 15:14:33-36: water ahead west at y 16 held, the re-plan struck west again and parked): the
+        // joined strip's heading is the band's first one (StripOrder's order: a started tunnel, the facing, clockwise) whose
+        // heading key at the leg's Y is not held (stripHold: every strip hold has that key); each held one is said in the
+        // dropped list with the next; every heading held: no strip here, with the reasons (rule 7)
+        String heading = null;
+        List<String> heldHeadings = new ArrayList<>();
+        for (String h : first.headings()) {
+            String why = headingHeld(c.w.held(), first, leg.y(), h);
+            if (why == null) { heading = h; break; }
+            heldHeadings.add(h);
+            heldHeadings.add(why);
+        }
+        if (heading == null) {
+            List<String> said = new ArrayList<>();
+            for (int i = 0; i < heldHeadings.size(); i += 2) said.add(heldHeadings.get(i) + ": " + heldHeadings.get(i + 1));
+            c.fail = "no strip at y " + leg.y() + ": every heading is held (" + (said.isEmpty() ? "none open here" : String.join("; ", said)) + ")";
+            return null;
+        }
+        for (int i = 0; i < heldHeadings.size(); i += 2)
+            drop(c, "strip " + heldHeadings.get(i) + " at y " + leg.y() + " held", heldHeadings.get(i + 1) + "; " + heading + " next");
         String pre = null;
         if (tier > c.pickTier) {
             pre = cheapestPickaxe(c, tier);
@@ -2578,7 +2642,7 @@ public final class NeedChain {
             double slab = ps != null && ps > 0 ? ps : sb.perSlab();
             // 0.39.z77 spares: the strip way's own dig estimate (stripDig: the band x the areas along the heading); the
             // tunnel's start is known for the first descent only (a later one starts where the last leg left the bot: x 1)
-            StripDig sd = stripDig(c.w, slab, oreBlocks, firstLeg ? new int[]{first.x(), first.z()} : null, y, first.heading(), sb.ores());
+            StripDig sd = stripDig(c.w, slab, oreBlocks, firstLeg ? new int[]{first.x(), first.z()} : null, y, heading, sb.ores());
             double bpo = sd.bpo();
             int dug = sd.cells();
             double oreS = blockBreakS(c, ore);
@@ -2599,7 +2663,7 @@ public final class NeedChain {
         // seconds and the family priced with no strip (the playbook's own descent has no rival way in a choice); the first
         // descent only - the strip that runs next (a later one at the same Y shares its key and is priced again from there)
         if (firstLeg) {
-            String key = new Step.Strip(ores, amounts, y, first.heading(), 0, null).key();
+            String key = new Step.Strip(ores, amounts, y, heading, 0, null).key();
             for (var e : slabs.entrySet()) c.effect(new YieldPriced(key, e.getKey(), e.getValue(), baritone.api.process.IStripProcess.TUNNEL_HEIGHT * hostS));
             otherWays(c, key, lacks, familyOf);
         }
@@ -2610,7 +2674,7 @@ public final class NeedChain {
         String spare = spareTools(c, wear, tier);
         if (c.pickItem != null && spare == null) c.pickWorn += wear;
         c.addS(walkS + digS);
-        Step.Strip whole = new Step.Strip(ores, amounts, y, first.heading(), 0, null);
+        Step.Strip whole = new Step.Strip(ores, amounts, y, heading, 0, null);
         for (var e : perCell.entrySet()) c.effect(new Predicted(whole.key(), e.getKey(), e.getValue()));
         int legAt = c.steps.size();
         if (firstLeg && first.feetY() != y) c.steps.add(new Step.ToStrip(first.x(), y, first.z(), whole.key()));
@@ -4455,8 +4519,10 @@ public final class NeedChain {
         if (s instanceof Step.TakeStation t) return "take at " + t.x() + " " + t.y() + " " + t.z();   // 0.39.z48
         if (s instanceof Step.ToStation t) return stationKey(t.x(), t.y(), t.z());                  // 0.39.z65 review 1
         if (s instanceof Step.ToBand b) return io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(b.minY(), b.maxY());   // 0.39.z42
-        if (s instanceof Step.Strip st) return STRIP_KEY + st.key();      // 0.39.z43: a strip that ended lava / no path / no pickaxe
-        if (s instanceof Step.ToStrip t) return STRIP_KEY + t.strip();    // 0.39.z46: no path down to the band: the same strip way
+        // 0.39.z43 / z46: a strip that ended (lava, no path, no pickaxe) or the walk down to it; 0.39.z78 strip: held by its
+        // heading at its Y, the one strip key every reader asks (stripHold)
+        if (s instanceof Step.Strip st) return stripHold(st.key());
+        if (s instanceof Step.ToStrip t) return stripHold(t.strip());
         if (s instanceof Step.ToSurface t) return surfaceKey(t.x(), t.y(), t.z());   // 0.39.z68: no way up: explore from here
         return null;
     }

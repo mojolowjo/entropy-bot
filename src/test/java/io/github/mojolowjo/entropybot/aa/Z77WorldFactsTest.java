@@ -72,7 +72,7 @@ class Z77WorldFactsTest {
         FactChange.strip(st.key(), why);
         Steps.Routine r = Goals.replan(bb, pickaxe, st, FactChange.take(), why);
         assertNotNull(r.steps(), r.why());
-        assertTrue(Goals.droppedSources(pickaxe).containsKey(NeedChain.STRIP_KEY + st.key()), "the learner's own hold, as before");
+        assertTrue(Goals.droppedSources(pickaxe).containsKey(NeedChain.stripHold(st.key())), "the learner's own hold: its heading (0.39.z78 strip)");
     }
 
     /** CX 22:43:21 (the scenario): the met pickaxe's water-ahead heading at y 17 west is not re-tried by the helmet. */
@@ -93,7 +93,7 @@ class Z77WorldFactsTest {
         assertNotEquals("west", heading(c), "the strip west at y 17 is out for the helmet too: " + c.why());
         assertTrue(c.why().contains("water ahead at 8 17 0") && c.why().contains("(a world fact: minecraft:raw_iron learned it at 9 17 1)"), c.why());
         FakePort port = (FakePort) bb.port;
-        long said = port.log.stream().filter(l -> l.contains("held as a world fact") && l.contains("|17|west") && l.contains("tried again when its cause is gone")).count();
+        long said = port.log.stream().filter(l -> l.contains("held as a world fact") && l.contains("strip heading y 17 west") && l.contains("tried again when its cause is gone")).count();
         assertEquals(1, said, port.log.toString());
         assertTrue(port.log.stream().anyMatch(l -> l.startsWith("minecraft:iron_ore: strip ") && l.contains("water ahead at 8 17 0")
                 && l.contains("minecraft:raw_iron learned it at 9 17 1")), port.log.toString());

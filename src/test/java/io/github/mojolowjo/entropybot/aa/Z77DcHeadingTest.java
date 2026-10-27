@@ -65,11 +65,9 @@ class Z77DcHeadingTest {
         assertEquals(NeedChain.headingKey(16, "east"), FactChange.ownSourceKey(f), "the heading, not the way's key, is held");
         assertTrue(f.text().contains("found no path after 21 cells: " + why), f.text());
 
-        // run DC as it was: the way's own key held - no strip at all, the climb and the surface explore
-        Chain was = NeedChain.resolve("raw_iron", 12, dc(band).withoutSources(Map.of(band.key(), why)));
-        assertTrue(was.explore(), was.why());
-        assertTrue(was.steps().stream().noneMatch(s -> s instanceof Step.Strip), was.why());
-        assertTrue(was.steps().stream().anyMatch(s -> s instanceof Step.Explore), was.why());
+        // run DC held the way's own key (no strip at all, the climb and the surface explore); 0.39.z78 strip: no hold of that
+        // form is written any more - the way's key is held as its heading (NeedChain.stripHold)
+        assertEquals(NeedChain.headingKey(16, "east"), NeedChain.stripHold(band.key()));
 
         // the fix: the order's own hold (the heading) - the strip south at y 16, priced, no explore
         Chain now = NeedChain.resolve("raw_iron", 12, dc(band).withoutSources(Map.of(FactChange.ownSourceKey(f), f.text())));
@@ -89,13 +87,14 @@ class Z77DcHeadingTest {
         assertTrue(none.explore() && none.steps().stream().noneMatch(s -> s instanceof Step.Strip), none.why());
     }
 
-    /** A strip from fresh ground keeps its own key (its tunnel only), as before; lava or no path down still drop the way. */
+    /** A strip from fresh ground is held by its heading from its own start (its tunnel only); 0.39.z78 strip: the one key form. */
     @Test
-    void aStripFromFreshGround_keepsItsOwnKey() {
+    void aStripFromFreshGround_isHeldByItsHeadingFromItsStart() {
         Step.Strip fresh = new Step.Strip(Z62RunSTest.IRON, Map.of("iron", 12), 16, "east", 0, "area 3,4");
         FactChange.stripNoPath(fresh, 9, "strip: no path (9 blocks)");
         FactChange.Fact f = FactChange.take();
-        assertEquals("source strip " + fresh.key(), f.key());
-        assertNull(FactChange.ownSourceKey(f), "the failed step's key applies");
+        String held = NeedChain.headingFrom(NeedChain.headingKey(16, "east"), "area 3,4");
+        assertEquals("source " + held, f.key());
+        assertEquals(held, FactChange.ownSourceKey(f), "the fact names its key: the heading from that start");
     }
 }

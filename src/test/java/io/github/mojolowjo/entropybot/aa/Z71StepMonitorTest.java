@@ -124,7 +124,7 @@ class Z71StepMonitorTest {
         run.start("goal.iron", List.of(new Step.ToStrip(-72, 16, -99, "iron_ore|16|west")), 0, p);
         run(run, h, p, 30);
         assertEquals(List.of(17), p.at);
-        assertEquals("source strip iron_ore|16|west", p.facts.get(0).key(), "the strip walk's own source key");
+        assertEquals("source strip heading y 16 west", p.facts.get(0).key(), "the strip walk's own source key: its heading (0.39.z78 strip)");
         assertTrue(p.facts.get(0).text().startsWith("Baritone found no path 3 times from -27 62 -55 (goal heuristic 20, best 20; Baritone's estimate, not metres), nothing executing"), p.facts.get(0).text());
     }
 

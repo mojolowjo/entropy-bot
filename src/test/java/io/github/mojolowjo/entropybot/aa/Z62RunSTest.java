@@ -88,9 +88,11 @@ class Z62RunSTest {
         assertEquals("south", strip(c).heading(), "the next heading clockwise");
         // the iron_ore-only and deepslate-only ways (run S's 2nd and 3rd re-plans) skip east too
         assertEquals("south", strip(NeedChain.resolve("iron_ore", 3, w.withoutSources(Map.of(NeedChain.headingKey(16, "east"), "x")))).heading());
-        // a strip dropped by its own key (lava, no path down) still drops the way, as z43
-        Map<String, String> both = Map.of(NeedChain.headingKey(16, "east"), "x", band("east").toward("south").key(), "lava ahead");
-        assertTrue(NeedChain.resolve("raw_iron", 3, w.withoutSources(both)).steps().stream().noneMatch(s -> s instanceof Step.Strip));
+        // 0.39.z78 strip (run DS): a strip that ended on its own (lava, no path down) is held by its heading too
+        // (NeedChain.stripHold), so the next one stands - east and south held: west
+        assertEquals(NeedChain.headingKey(16, "south"), NeedChain.stripHold(band("east").toward("south").key()), "the way's key is held as its heading");
+        Map<String, String> both = Map.of(NeedChain.headingKey(16, "east"), "x", NeedChain.stripHold(band("east").toward("south").key()), "lava ahead");
+        assertEquals("west", strip(NeedChain.resolve("raw_iron", 3, w.withoutSources(both))).heading());
         // every heading blocked: no strip way
         Map<String, String> all = new java.util.HashMap<>();
         for (String h : StripOrder.HEADINGS) all.put(NeedChain.headingKey(16, h), "blocked");
