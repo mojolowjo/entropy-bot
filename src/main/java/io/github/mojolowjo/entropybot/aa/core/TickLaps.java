@@ -38,6 +38,7 @@ public final class TickLaps {
         resolveNs = 0;
         playbooks = 0;
         playbookNs = 0;
+        split.clear();
         start = clock.getAsLong();
         last = start;
     }
@@ -71,6 +72,15 @@ public final class TickLaps {
         playbookNs += Math.max(0, nanos);
     }
 
+    /** 0.39.z78 D6 (run DP): this tick's client part of the playbook by part (derive, check, snapshot, apply), nanoseconds. */
+    private final java.util.Map<String, Long> split = new java.util.LinkedHashMap<>();
+
+    /** 0.39.z78 D6 (run DP): one part of the playbook's client time this tick (BatchWay, PlannerPort); said as "playbook split". */
+    public void split(String part, long nanos) {
+        if (!on) return;
+        split.merge(part, Math.max(0, nanos), Long::sum);
+    }
+
     /** 0.39.z78 D6: a trip was asked of the planner this tick (BatchWay; the line then carries the planner's numbers). */
     public boolean planned() { return on && playbooks > 0; }
 
@@ -98,6 +108,17 @@ public final class TickLaps {
         if (others > 0) b.append(String.format(Locale.ROOT, ", others %.1f", others));
         b.append(String.format(Locale.ROOT, " | resolves %d = %.1f ms", resolves, resolveNs / 1e6));     // structural: ns per ms
         if (playbooks > 0) b.append(String.format(Locale.ROOT, " | playbook %d = %.1f ms", playbooks, playbookNs / 1e6));     // structural: ns per ms
+        if (playbooks > 0) {
+            // 0.39.z78 D6 (run DP): where the playbook's client time went this tick; rest: shape, refs, the line
+            long parts = 0;
+            b.append(" | playbook split:");
+            for (String k : List.of("derive", "check", "snapshot", "apply")) {
+                long v = split.getOrDefault(k, 0L);
+                parts += v;
+                b.append(String.format(Locale.ROOT, " %s %.1f,", k, v / 1e6));     // structural: ns per ms
+            }
+            b.append(String.format(Locale.ROOT, " rest %.1f ms", Math.max(0, playbookNs - parts) / 1e6));     // structural: ns per ms
+        }
         return b.toString();
     }
 }

@@ -671,9 +671,11 @@ class Z77PlaybookTest {
         laps.resolved(3_000_000);
         laps.playbook(5_000_000);
         laps.playbook(2_500_000);
+        laps.split("derive", 1_000_000);             // 0.39.z78 run DP: the client part split
+        laps.split("check", 2_000_000);
         now[0] = 30_000_000;
         String l = laps.line(7, 20);
-        assertTrue(l.endsWith("| resolves 1 = 3.0 ms | playbook 2 = 7.5 ms"), l);
+        assertTrue(l.endsWith("| resolves 1 = 3.0 ms | playbook 2 = 7.5 ms | playbook split: derive 1.0, check 2.0, snapshot 0.0, apply 0.0, rest 4.5 ms"), l);
         laps.begin(true);
         now[0] = 60_000_000;
         assertFalse(laps.line(8, 20).contains("playbook"), "no comparison this tick: not said");

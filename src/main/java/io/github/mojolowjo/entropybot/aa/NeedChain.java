@@ -1816,7 +1816,7 @@ public final class NeedChain {
     }
 
     /** 0.39.z78 D6: a playbook's legs with fresh step objects (the chain, the whole trip and the leg starts share them, by identity). */
-    static Legs fresh(Legs l) {
+    public static Legs fresh(Legs l) {
         if (l == null) return null;
         Map<Step, Step> map = new java.util.IdentityHashMap<>();
         Chain ch = fresh(l.chain(), map);

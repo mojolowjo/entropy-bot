@@ -117,13 +117,22 @@ class D6WorkerTest {
     static NeedChain.Legs untilApplied(PlannerPort port, PlannerWorker worker, Playbook pb, Live live, double seconds) throws InterruptedException {
         long until = System.nanoTime() + (long) (seconds * 1e9);
         while (System.nanoTime() < until) {
+            long seen = worker.landed();
             NeedChain.Legs l = port.legs("b1", pb, Set.of(), live.world());
             if (!NeedChain.thinking(l.chain())) return l;
-            long seen = worker.landed();
             while (worker.landed() == seen && System.nanoTime() < until) Thread.sleep(2);
         }
         fail("the planner did not answer within " + seconds + " s");
         return null;
+    }
+
+    /** Waits for a worker landing after {@code seen}; fails after 30 s instead of hanging the build. */
+    static void awaitLanding(PlannerWorker worker, long seen) throws InterruptedException {
+        long until = System.nanoTime() + 30_000_000_000L;
+        while (worker.landed() == seen) {
+            if (System.nanoTime() > until) fail("no worker landing within 30 s (nothing was submitted?)");
+            Thread.sleep(1);
+        }
     }
 
     @Test
@@ -144,9 +153,10 @@ class D6WorkerTest {
         // a request whose result lands after a fact it read changed: dropped, said, asked again
         live.trees.remove(0);
         live.trees.add(0, new Spot(12, 64, 0, 12, "minecraft:oak_log", 5));                 // the same tree, so the trip is the same request
-        port.legs("b1", pb, Set.of(), live.world());                                         // a new request (re-price)
+        live.walks.put("12,64,0", PathPrice.Answer.priced(new PathPrice.Walk(70.0)));         // a read fact moved: the kept result fails its check
         long seen = worker.landed();
-        while (worker.landed() == seen) Thread.sleep(2);
+        port.legs("b1", pb, Set.of(), live.world());                                         // a new request (re-price)
+        awaitLanding(worker, seen);
         live.walks.put("12,64,0", PathPrice.Answer.priced(new PathPrice.Walk(90.0)));         // the near tree's walk landed dearer meanwhile
         assertTrue(port.ready("b1"), "its result is ready for the kept stand");
         NeedChain.Legs again = port.legs("b1", pb, Set.of(), live.world());
@@ -175,10 +185,10 @@ class D6WorkerTest {
                 case 2 -> live.bag.put("minecraft:coal", 2 + r.nextInt(8));
                 default -> live.walks.clear();
             }
+            long seen = worker.landed();
             NeedChain.Legs l = port.legs("b1", pb, Set.of(), live.world());
-            if (r.nextBoolean()) {
-                long seen = worker.landed();
-                while (worker.landed() == seen) Thread.sleep(1);
+            if (r.nextBoolean() && NeedChain.thinking(l.chain())) {                          // a kept result submits nothing (run DP)
+                awaitLanding(worker, seen);
                 if (r.nextBoolean()) live.walks.put("25,64,0", PathPrice.Answer.priced(new PathPrice.Walk(1 + r.nextInt(40))));   // changed after the snapshot
             }
             if (NeedChain.thinking(l.chain())) l = untilApplied(port, worker, pb, live, 30);
@@ -198,9 +208,10 @@ class D6WorkerTest {
         PlannerPort port = new PlannerPort(worker, () -> 0, log::add);
         Playbook pb = Playbook.derive(KIT, Playbook.facts(live.world(), null));
         untilApplied(port, worker, pb, live, 30);
-        port.legs("b1", pb, Set.of(), live.world());                                         // a request with a full snapshot
         long seen = worker.landed();
-        while (worker.landed() == seen) Thread.sleep(2);
+        // run DP: the applied result is kept and checked live, so asking again submits nothing (no landing to wait on)
+        assertFalse(NeedChain.thinking(port.legs("b1", pb, Set.of(), live.world()).chain()));
+        assertEquals(seen, worker.landed());
         // a walk no way of this trip asks (the trip's descent copies the bag whole for its carry list, so a bag count is
         // always one of its facts: D6 report)
         live.walks.put("99,64,99", PathPrice.Answer.unreachable("no path"));
@@ -249,9 +260,10 @@ class D6WorkerTest {
         Playbook pb = Playbook.derive(KIT, Playbook.facts(live.world(), null));
         untilApplied(port, worker, pb, live, 30);
         tune[0] = true;
-        port.legs("b1", pb, Set.of(), live.world());
+        live.walks.put("12,64,0", PathPrice.Answer.priced(new PathPrice.Walk(70.0)));         // a read fact moved: a new request
         long seen = worker.landed();
-        while (worker.landed() == seen) Thread.sleep(1);
+        port.legs("b1", pb, Set.of(), live.world());
+        awaitLanding(worker, seen);
         NeedChain.Legs l = port.legs("b1", pb, Set.of(), live.world());
         assertTrue(NeedChain.thinking(l.chain()), "dropped: " + l.chain().why());
         assertTrue(log.stream().anyMatch(x -> x.contains("re-planned while thinking: game data")), "said: " + log);
@@ -271,12 +283,13 @@ class D6WorkerTest {
         // every result lands after the near tree's walk answered again (another price): each one is stale on arrival
         NeedChain.Legs l = null;
         int asks = 0;
+        live.walks.put("12,64,0", PathPrice.Answer.priced(new PathPrice.Walk(9)));            // a read fact moved: the kept result fails its check
         for (int i = 0; i < 100; i++) {
             asks++;
+            long seen = worker.landed();
             l = port.legs("b1", pb, Set.of(), live.world());
             if (!NeedChain.thinking(l.chain())) break;
-            long seen = worker.landed();
-            while (worker.landed() == seen) Thread.sleep(1);
+            awaitLanding(worker, seen);
             live.walks.put("12,64,0", PathPrice.Answer.priced(new PathPrice.Walk(10 + i)));
         }
         assertNotNull(l);
@@ -284,6 +297,67 @@ class D6WorkerTest {
         assertTrue(asks <= PlannerPort.ROUNDS + 2, "bounded: " + asks + " asks");
         assertTrue(log.stream().anyMatch(x -> x.contains("results in a row dropped") && x.contains("resolved on the client tick")), "said loud: " + log);
         assertTrue(Deep.equal(l, PlanNodes.old(() -> NeedChain.resolvePlaybookLegs(pb, live.world()))), "the facts of now, never a stale price");
+    }
+
+    // ---- run DP ----
+
+    @Test
+    void runDP_aReAskWithNothingChanged_isTheAppliedResult_noWorkerRound_noStand() throws InterruptedException {
+        data();
+        Live live = new Live();
+        List<String> log = new ArrayList<>();
+        PlannerWorker worker = new PlannerWorker();
+        PlannerPort port = new PlannerPort(worker, () -> 0, log::add);
+        Playbook pb = Playbook.derive(KIT, Playbook.facts(live.world(), null));
+        NeedChain.Legs a = untilApplied(port, worker, pb, live, 30);
+        long landed = worker.landed();
+        // the re-price a worker result (or any landing) triggers: the same trip asked again, no fact changed
+        for (int i = 0; i < 5; i++) {
+            NeedChain.Legs b = port.legs("b1", pb, Set.of(), live.world());
+            assertFalse(NeedChain.thinking(b.chain()), "no stand: " + b.chain().why());
+            assertTrue(Deep.equal(a, b), "the applied result");
+            assertNotSame(a.chain().steps().get(0), b.chain().steps().get(0), "fresh step objects, as a resolve gives");
+        }
+        assertEquals(landed, worker.landed(), "no worker round: nothing submitted, so nothing lands to re-price on (the run DP loop)");
+        assertTrue(port.probe().contains("kept 5"), port.probe());
+        // a fact it read changes: the next ask goes to the worker again
+        live.walks.put("12,64,0", PathPrice.Answer.priced(new PathPrice.Walk(77.0)));
+        assertTrue(NeedChain.thinking(port.legs("b1", pb, Set.of(), live.world()).chain()), "a changed fact: the worker again");
+        NeedChain.Legs c = untilApplied(port, worker, pb, live, 30);
+        assertTrue(Deep.equal(c, PlanNodes.old(() -> NeedChain.resolvePlaybookLegs(pb, live.world()))));
+    }
+
+    @Test
+    void runDP_theBatchsHoldsInAnotherAskersOrder_dropNothing() throws InterruptedException {
+        data();
+        Live live = new Live();
+        List<String> log = new ArrayList<>();
+        PlannerWorker worker = new PlannerWorker();
+        PlannerPort port = new PlannerPort(worker, () -> 0, log::add);
+        Map<String, String> mine = new LinkedHashMap<>(), theirs = new LinkedHashMap<>();
+        mine.put("station at 90 64 90", "held by order A");
+        mine.put("station at 91 64 91", "held by order B");
+        theirs.put("station at 91 64 91", "held by order B");
+        theirs.put("station at 90 64 90", "held by order A");
+        Playbook pb = Playbook.derive(KIT, Playbook.facts(live.world(), null));
+        // order A asks (its holds first) until applied: the first result fetches the facts, the next one is snapshotted
+        long until = System.nanoTime() + 30_000_000_000L;
+        boolean applied = false;
+        while (!applied && System.nanoTime() < until) {
+            long seen = worker.landed();
+            applied = !NeedChain.thinking(port.legs("b1", pb, Set.of(), live.world().withoutSources(mine)).chain());
+            if (!applied) awaitLanding(worker, seen);
+        }
+        assertTrue(applied, "applied within 30 s");
+        // order B re-prices the same trip: the kept result's check reads the holds in B's order
+        assertFalse(NeedChain.thinking(port.legs("b1", pb, Set.of(), live.world().withoutSources(theirs)).chain()), "kept for B");
+        // a result snapshotted in A's order lands and B checks it
+        live.walks.put("12,64,0", PathPrice.Answer.priced(new PathPrice.Walk(70.0)));
+        long seen = worker.landed();
+        assertTrue(NeedChain.thinking(port.legs("b1", pb, Set.of(), live.world().withoutSources(mine)).chain()), "a read fact moved");
+        awaitLanding(worker, seen);
+        assertFalse(NeedChain.thinking(port.legs("b1", pb, Set.of(), live.world().withoutSources(theirs)).chain()), "applied for B");
+        assertTrue(log.stream().noneMatch(x -> x.contains("re-planned while thinking: held")), "the same holds in another order are no change: " + log);
     }
 
     @Test

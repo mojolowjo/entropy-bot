@@ -413,7 +413,9 @@ public final class BatchWay {
         for (Goals.Goal o : open) targets.add(new Playbook.Target(itemOf(o), o.n));
         @SuppressWarnings("unchecked")
         BiFunction<String, Integer, Double> perSlab = bb.fact(PER_SLAB_FACT) instanceof BiFunction<?, ?, ?> f ? (BiFunction<String, Integer, Double>) f : null;
+        long d0 = TickLaps.AA.now();
         Playbook pb = Playbook.derive(targets, Playbook.facts(w, perSlab));
+        if (d0 != 0) TickLaps.AA.split("derive", TickLaps.AA.now() - d0);     // 0.39.z78 D6 (run DP): the split
         // an order alone whose trip is one leg: that leg IS the order's own chain (the same planner on the same facts; its
         // words and aa debug tree as before)
         boolean oneLeg = open.size() == 1 && pb.ok() && pb.legs().size() == 1;

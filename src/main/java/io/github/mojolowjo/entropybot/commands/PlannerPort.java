@@ -40,7 +40,7 @@ public final class PlannerPort implements BatchWay.Planner {
 
     /** The probe numbers (client tick): the last applied resolve and the tick-side costs. */
     private PlanNodes.Stats lastStats = PlanNodes.Stats.NONE;
-    private long lastResolveNs, lastApplyNs, lastSnapNs, resolves, drops, fetches, caps;
+    private long lastResolveNs, lastApplyNs, lastSnapNs, resolves, drops, fetches, caps, kepts;
 
     /** One trip's request and its last result's facts. */
     private static final class State {
@@ -52,6 +52,10 @@ public final class PlannerPort implements BatchWay.Planner {
         String waitWords = "thinking: the first resolve of this trip";
         /** Results of this trip dropped in a row since its last apply (ROUNDS caps them). */
         int dropsInRow;
+        /** 0.39.z78 D6 (run DP): the result last applied, for its playbook and kept fuels - a new ask of the same is checked against it first. */
+        PlannerWorker.Done applied;
+        Playbook appliedPb;
+        Set<String> appliedKept;
     }
 
     /** structural: results of one trip dropped in a row before it is resolved on the client tick (a fetch round or two is normal) */
@@ -101,15 +105,20 @@ public final class PlannerPort implements BatchWay.Planner {
                 return new NeedChain.Legs(new NeedChain.Chain(List.of(), 0, NeedChain.PLAYBOOK + ": " + why, false, why), Map.of(), -1);
             }
             long t0 = System.nanoTime();
+            var laps = io.github.mojolowjo.entropybot.aa.core.TickLaps.AA;
             // review: a result priced in other game data (items, tiers, Tuning, the loot book) than the snapshot's and the live
             // one's - changed while it thought - is dropped as any changed fact
-            Object now = NeedChain.dataEpoch(w);
-            boolean data = r.epochStart() != null && Deep.equal(r.job().snap().epoch(), r.epochStart()) && Deep.equal(r.epochStart(), r.epochEnd())
-                    && Deep.equal(r.epochEnd(), now);
+            boolean data = epochHolds(r, w);
             List<String> changed = data ? check(r, w, live) : List.of("game data (items, tiers, Tuning or the loot book changed while it thought)");
+            laps.split("check", System.nanoTime() - t0);
             s.keys = r.read().facts().keySet();
             if (changed.isEmpty()) {
+                long a0 = System.nanoTime();
                 r.read().runEffects(w.path());
+                laps.split("apply", System.nanoTime() - a0);
+                s.applied = r;
+                s.appliedPb = pb;
+                s.appliedKept = Set.copyOf(kept);
                 lastApplyNs = System.nanoTime() - t0;
                 lastResolveNs = r.resolveNs();
                 lastStats = r.read().stats();
@@ -135,9 +144,28 @@ public final class PlannerPort implements BatchWay.Planner {
                 caps++;
                 return NeedChain.keepingFuel(kept, () -> NeedChain.resolvePlaybookLegs(pb, w));
             }
-            s.waitWords = "thinking: " + (data ? r.read().dirty(live, w) + " nodes dirty" : "the game data changed");        } else if (same && worker.busy(key)) {
+            s.waitWords = "thinking: " + (data ? r.read().dirty(live, w) + " nodes dirty" : "the game data changed");
+        } else if (same && worker.busy(key)) {
             return NeedChain.thinking(s.waitWords);               // the request is being resolved: the stand goes on
         } else if (!same) {
+            // 0.39.z78 D6 (run DP: a worker result re-priced the trip, the re-price asked the worker again, its result
+            // re-priced the trip - 435 trip lines, a stand every ~250 ms): the result last applied for this very request
+            // (the same playbook, the same kept fuels) is checked live first; while every fact it read holds it is the answer
+            // again (its effects run again, fresh step objects: as a resolve now would give) - no worker round, no stand
+            if (s.applied != null && !worker.busy(key) && Deep.equal(pb, s.appliedPb) && Deep.equal(kept, s.appliedKept)) {
+                long c0 = System.nanoTime();
+                List<String> changed = epochHolds(s.applied, w) ? check(s.applied, w, live) : List.of("game data");
+                io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.split("check", System.nanoTime() - c0);
+                if (changed.isEmpty()) {
+                    long a0 = System.nanoTime();
+                    s.applied.read().runEffects(w.path());
+                    io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.split("apply", System.nanoTime() - a0);
+                    kepts++;
+                    return NeedChain.fresh(s.applied.legs());
+                }
+                s.keys = s.applied.read().facts().keySet();
+                s.applied = null;
+            }
             s.dropsInRow = 0;
             s.waitWords = s.keys.isEmpty() ? "thinking: the first resolve of this trip" : "thinking: a new request for this trip";
         }
@@ -148,6 +176,7 @@ public final class PlannerPort implements BatchWay.Planner {
         PlannerSnapshot snap = PlannerSnapshot.take(w, s.keys, live, s.version, tick.getAsLong());
         worker.submit(new PlannerWorker.Job(key, s.version, pb, s.kept, snap));
         lastSnapNs = System.nanoTime() - t0;
+        io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.split("snapshot", lastSnapNs);
         return NeedChain.thinking(s.waitWords);
     }
 
@@ -161,7 +190,7 @@ public final class PlannerPort implements BatchWay.Planner {
             PlanNodes.Fact f = e.getKey();
             Object now = NeedChain.ask(w, null, f);
             live.put(f, now);
-            if (Deep.equal(PlanNodes.unboxed(e.getValue()), now)) continue;
+            if (same(f, PlanNodes.unboxed(e.getValue()), now)) continue;
             out.add((r.job().snap().copied(f) ? "" : MISS) + f.field() + (f.key() == null ? "" : " " + f.key()));
         }
         String bag = r.read().bagChanged(w);
@@ -169,10 +198,26 @@ public final class PlannerPort implements BatchWay.Planner {
         return out;
     }
 
+    /**
+     * 0.39.z78 D6 (run DP: 25 drops "re-planned while thinking: held"): a kept answer and the live one agree. The holds are
+     * the batch's holds, the same set whoever of its orders asks, each asker's own first (BatchWay.trip; its trip key reads them
+     * as a set): compared as a set. Everything else by value.
+     */
+    static boolean same(PlanNodes.Fact f, Object kept, Object now) {
+        if ("held".equals(f.field()) && kept instanceof List<?> a && now instanceof List<?> b) return new java.util.TreeSet<Object>(a).equals(new java.util.TreeSet<Object>(b)) && a.size() == b.size();
+        return Deep.equal(kept, now);
+    }
+
+    /** The game data's epoch of {@code r} (snapshot, start, end) is the live one now. */
+    static boolean epochHolds(PlannerWorker.Done r, NeedChain.World w) {
+        return r.epochStart() != null && Deep.equal(r.job().snap().epoch(), r.epochStart()) && Deep.equal(r.epochStart(), r.epochEnd())
+                && Deep.equal(r.epochEnd(), NeedChain.dataEpoch(w));
+    }
+
     /** The probe text: the last applied resolve's nodes and times, the drops, the requests in flight. */
     public String probe() {
-        return String.format(Locale.ROOT, "planner: %s, resolve %.1f ms (worker), apply %.1f ms, snapshot %.1f ms, applied %d, dropped %d (+%d fetches), on the client tick %d, in flight %d",
-                lastStats.text(), lastResolveNs / 1e6, lastApplyNs / 1e6, lastSnapNs / 1e6, resolves, drops, fetches, caps, worker.inFlight());     // structural: ns per ms
+        return String.format(Locale.ROOT, "planner: %s, resolve %.1f ms (worker), apply %.1f ms, snapshot %.1f ms, applied %d, kept %d, dropped %d (+%d fetches), on the client tick %d, in flight %d",
+                lastStats.text(), lastResolveNs / 1e6, lastApplyNs / 1e6, lastSnapNs / 1e6, resolves, kepts, drops, fetches, caps, worker.inFlight());     // structural: ns per ms
     }
 
     /** A new world or AA off: the requests are forgotten (a late result of the old world is dropped by its version). */

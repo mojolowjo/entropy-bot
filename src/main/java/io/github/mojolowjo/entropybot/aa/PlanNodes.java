@@ -326,10 +326,10 @@ public final class PlanNodes {
 
     /**
      * structural: a memory bound - the inner nodes kept across every request (each holds the planner's state as it entered
-     * and left it, some KB); past it the least recently used requests keep their root only (its facts and bag words merged
+     * and left it, some KB; 0.39.z78 run DP: 3000 trimmed every live trip tree to its root, so nothing below it was reused); past it the least recently used requests keep their root only (its facts and bag words merged
      * into it: still checked whole, never stale), the newest tree is trimmed last.
      */
-    static final int INNER = 3000;     // structural: a memory bound (the inner nodes kept)
+    static final int INNER = 10_000;     // structural: a memory bound - run DP's largest trip tree was 8158 nodes; ~5.6 KB a node measured (D6MemTest): ~56 MB a thread
 
     void root(Object key, Node n) {
         roots.put(key, n);
