@@ -51,8 +51,8 @@ public final class PlanNodes {
         }
     }
 
-    /** D6 order of work: the live path resolves as before until the replay test is green; tests switch the nodes on. */
-    static final boolean DEFAULT_ON = false;
+    /** D6 order of work: the replay test (D6ReplayTest, runs DJ / DK / DL) is green - the live path resolves by the nodes; {@link #old} the old resolve. */
+    static final boolean DEFAULT_ON = true;
     private static volatile boolean on = DEFAULT_ON;
 
     /** Tests: the nodes on or off for every thread ({@link #DEFAULT_ON} after). */
