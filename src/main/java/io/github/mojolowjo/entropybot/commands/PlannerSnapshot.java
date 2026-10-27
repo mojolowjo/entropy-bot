@@ -73,7 +73,7 @@ public final class PlannerSnapshot {
                 live.loot(),
                 word -> (int[]) get(a, new PlanNodes.Fact("band", word), null),
                 live.horizonBlocks(),
-                live.path() == null ? null : new FrozenPath(a),
+                live.path() == null ? null : new FrozenPath(a, byCell(a)),
                 kind -> (NeedChain.Spot) get(a, new PlanNodes.Fact("station", kind), null),
                 id -> (Integer) get(a, new PlanNodes.Fact("uses", id), ToolUses.UNLIMITED),
                 live.held(),
@@ -107,15 +107,31 @@ public final class PlannerSnapshot {
         return v == null ? List.of() : (List<T>) v;
     }
 
-    /** The walks as copied: a walk not asked here is "computing" (its ask is posted by the result's check on the client tick). */
-    private record FrozenPath(Map<PlanNodes.Fact, Object> a) implements PathPrice {
-        @Override public Answer price(int x, int y, int z, double dist) {
-            return (Answer) get(a, new PlanNodes.Fact("price", new NeedChain.PathKey(x, y, z, dist, false)), Answer.computing(null));
+    /** The copied walks by their cell (x y z, into), whatever straight metres they were asked with. */
+    private static Map<List<Object>, Object> byCell(Map<PlanNodes.Fact, Object> a) {
+        Map<List<Object>, Object> out = new HashMap<>();
+        for (var e : a.entrySet())
+            if (e.getKey().field().equals("price") && e.getKey().key() instanceof NeedChain.PathKey k) out.put(List.of(k.x(), k.y(), k.z(), k.into()), e.getValue());
+        return out;
+    }
+
+    /**
+     * The walks as copied: a walk not asked here is "computing" (its ask is posted by the result's check on the client tick).
+     * A walk asked with other straight metres than copied (the feet moved: the chain's hint changed) answers the copy of its
+     * cell - the live provider prices from the feet and never reads the metres; where a provider does, the result's check
+     * finds the answer differs and drops it, so nothing is applied on it.
+     */
+    private record FrozenPath(Map<PlanNodes.Fact, Object> a, Map<List<Object>, Object> cells) implements PathPrice {
+        private Answer walk(int x, int y, int z, double dist, boolean into) {
+            PlanNodes.Fact f = new PlanNodes.Fact("price", new NeedChain.PathKey(x, y, z, dist, into));
+            if (a.containsKey(f)) return (Answer) a.get(f);
+            List<Object> cell = List.of(x, y, z, into);
+            return cells.containsKey(cell) ? (Answer) cells.get(cell) : Answer.computing(null);
         }
 
-        @Override public Answer priceInto(int x, int y, int z, double dist) {
-            return (Answer) get(a, new PlanNodes.Fact("price", new NeedChain.PathKey(x, y, z, dist, true)), Answer.computing(null));
-        }
+        @Override public Answer price(int x, int y, int z, double dist) { return walk(x, y, z, dist, false); }
+
+        @Override public Answer priceInto(int x, int y, int z, double dist) { return walk(x, y, z, dist, true); }
 
         @Override public double estimate(int x, int y, int z) {
             Object v = get(a, new PlanNodes.Fact("estimate", List.of(x, y, z)), Double.NaN);

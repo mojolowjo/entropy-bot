@@ -57,6 +57,49 @@ class D6ReplayTest {
     @Test
     void runDL_theOldAndTheIncrementalResolveAgreeAtEveryPlanPoint() { replay("runDL-z78h"); }
 
+    /**
+     * The worker end to end: at every plan point of run DL the trip is asked of the planner port (the snapshot copied on
+     * "the client tick", resolved on the worker thread, checked against the facts then, applied or dropped and asked again)
+     * until it is applied; each applied trip must equal the old resolve on the same facts.
+     */
+    @Test
+    void runDL_throughTheWorker_everyAppliedTripIsTheOldResolveOnItsFacts() throws InterruptedException {
+        Z77PlaybookTest.data();
+        PlanNodes.forgetMine();
+        PlanNodes.on(true);
+        LootBook book = book();
+        Facts f = new Facts();
+        var worker = new io.github.mojolowjo.entropybot.commands.PlannerWorker();
+        List<String> log = new ArrayList<>();
+        var port = new io.github.mojolowjo.entropybot.commands.PlannerPort(worker, () -> 0, log::add);
+        int applied = 0, asks = 0;
+        for (JsonObject e : events("runDL-z78h")) {
+            f.apply(e);
+            if (!"plan".equals(e.get("k").getAsString()) || f.orders.isEmpty()) continue;
+            List<Playbook.Target> targets = new ArrayList<>();
+            for (var o : f.orders.entrySet()) targets.add(new Playbook.Target(o.getKey(), o.getValue()));
+            Playbook pb = Playbook.derive(targets, Playbook.facts(f.world(book), null));
+            if (!pb.ok()) continue;
+            NeedChain.Legs l = null;
+            long until = System.nanoTime() + 30_000_000_000L;
+            while (System.nanoTime() < until) {
+                asks++;
+                l = port.legs("b1", pb, java.util.Set.of(), f.world(book));
+                if (!NeedChain.thinking(l.chain())) break;
+                long seen = worker.landed();
+                while (worker.landed() == seen && System.nanoTime() < until) Thread.sleep(1);
+            }
+            assertNotNull(l);
+            assertFalse(NeedChain.thinking(l.chain()), "the planner answered within 30 s at " + e.get("t").getAsString());
+            World w = f.world(book);
+            NeedChain.Legs old = PlanNodes.old(() -> NeedChain.resolvePlaybookLegs(pb, w));
+            assertTrue(Deep.equal(old, l), "runDL " + e.get("t").getAsString() + ": the applied trip differs: " + D6NodesTest.diff(old, l));
+            applied++;
+        }
+        assertTrue(applied > 50, "applied " + applied);
+        System.out.printf("D6 replay runDL-z78h through the worker: %d trips applied, %d asks, each the old resolve on its facts; %s%n", applied, asks, port.probe());
+    }
+
     static final String STONE = "minecraft:stone";
 
     /** The run's facts so far. */
