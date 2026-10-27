@@ -50,7 +50,7 @@ public final class PlannerPort implements BatchWay.Planner {
         Collection<PlanNodes.Fact> keys = List.of();
         PlannerWorker.Done ready;
         String waitWords = "thinking: the first resolve of this trip";
-        /** Results of this trip dropped in a row since its last apply (ROUNDS caps them). */
+        /** Results of this trip dropped in a row since its last apply (past ROUNDS the stand says why). */
         int dropsInRow;
         /** 0.39.z78 D6 (run DP): the result last applied, for its playbook and kept fuels - a new ask of the same is checked against it first. */
         PlannerWorker.Done applied;
@@ -58,7 +58,7 @@ public final class PlannerPort implements BatchWay.Planner {
         Set<String> appliedKept;
     }
 
-    /** structural: results of one trip dropped in a row before it is resolved on the client tick (a fetch round or two is normal) */
+    /** structural: results of one trip dropped in a row before the trip stands with the reason (a fetch round or two is normal) */
     static final int ROUNDS = 8;
 
     public PlannerPort(PlannerWorker worker, LongSupplier tick, Consumer<String> log) {
@@ -133,18 +133,19 @@ public final class PlannerPort implements BatchWay.Planner {
                 drops++;
                 log.accept("planner: trip " + key + ": re-planned while thinking: " + said + (changed.size() > 1 ? " (+" + (changed.size() - 1) + " more)" : ""));
             } else fetches++;
-            // review (rule 14, rule 15): the rounds are bounded by a structural cap, never by a price - past it the facts keep
-            // changing faster than the worker answers (a walk on the move, answers landing): resolved here on the facts of now
-            // this once (the old resolve's freeze, exact), said loud
-            if (++s.dropsInRow >= ROUNDS) {
-                log.accept("planner: trip " + key + ": " + s.dropsInRow + " results in a row dropped (the facts kept changing while it thought; last: "
-                        + changed.get(0) + "): resolved on the client tick this once (rule 15: never a stale price)");
-                s.dropsInRow = 0;
-                s.version = -1;
-                caps++;
-                return NeedChain.keepingFuel(kept, () -> NeedChain.resolvePlaybookLegs(pb, w));
-            }
+            // review (rule 14, rule 15): the rounds are counted against a structural cap, never a price. Run DR round (manager
+            // 2026-10-27; runs DQ/DR: the fallback's full resolve on the client tick was the 870 ms tick, 16 of them in DR):
+            // past it the trip is never resolved on the client tick - it stands with the reason (rule 22; its leaf is "not
+            // priced yet", rule 15), said loud once a streak, and asks the worker again as on any drop
             s.waitWords = "thinking: " + (data ? r.read().dirty(live, w) + " nodes dirty" : "the game data changed");
+            if (++s.dropsInRow >= ROUNDS) {
+                if (s.dropsInRow == ROUNDS) {
+                    log.accept("planner: trip " + key + ": " + s.dropsInRow + " results in a row dropped (the facts kept changing while it thought; last: "
+                            + changed.get(0) + "): the trip stands until a result holds (rule 22; rule 15: never a stale price)");
+                    caps++;
+                }
+                s.waitWords = "thinking: the facts keep changing while it thinks (" + s.dropsInRow + " results in a row dropped; last: " + changed.get(0) + ")";
+            }
         } else if (same && worker.busy(key)) {
             return NeedChain.thinking(s.waitWords);               // the request is being resolved: the stand goes on
         } else if (!same) {
@@ -225,7 +226,7 @@ public final class PlannerPort implements BatchWay.Planner {
 
     /** The probe text: the last applied resolve's nodes and times, the drops, the requests in flight. */
     public String probe() {
-        return String.format(Locale.ROOT, "planner: %s, resolve %.1f ms (worker), apply %.1f ms, snapshot %.1f ms, applied %d, kept %d, dropped %d (+%d fetches), on the client tick %d, in flight %d",
+        return String.format(Locale.ROOT, "planner: %s, resolve %.1f ms (worker), apply %.1f ms, snapshot %.1f ms, applied %d, kept %d, dropped %d (+%d fetches), stood past the cap %d, in flight %d",
                 lastStats.text(), lastResolveNs / 1e6, lastApplyNs / 1e6, lastSnapNs / 1e6, resolves, kepts, drops, fetches, caps, worker.inFlight());     // structural: ns per ms
     }
 

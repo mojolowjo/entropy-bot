@@ -272,7 +272,7 @@ class D6WorkerTest {
     }
 
     @Test
-    void answersKeepLanding_theTripIsStillApplied_neverOnAStalePrice() throws InterruptedException {
+    void answersKeepLanding_pastTheCapTheTripStandsWithTheReason_neverOnAStalePrice_appliedOnceTheFactsHold() throws InterruptedException {
         data();
         Live live = new Live();
         List<String> log = new ArrayList<>();
@@ -281,22 +281,26 @@ class D6WorkerTest {
         Playbook pb = Playbook.derive(KIT, Playbook.facts(live.world(), null));
         untilApplied(port, worker, pb, live, 30);
         // every result lands after the near tree's walk answered again (another price): each one is stale on arrival
-        NeedChain.Legs l = null;
-        int asks = 0;
         live.walks.put("12,64,0", PathPrice.Answer.priced(new PathPrice.Walk(9)));            // a read fact moved: the kept result fails its check
-        for (int i = 0; i < 100; i++) {
-            asks++;
+        NeedChain.Legs l = null;
+        int rounds = PlannerPort.ROUNDS + 4;
+        for (int i = 0; i < rounds; i++) {
             long seen = worker.landed();
             l = port.legs("b1", pb, Set.of(), live.world());
-            if (!NeedChain.thinking(l.chain())) break;
+            assertTrue(NeedChain.thinking(l.chain()), "round " + i + ": never applied while every result is stale: " + l.chain().why());
             awaitLanding(worker, seen);
             live.walks.put("12,64,0", PathPrice.Answer.priced(new PathPrice.Walk(10 + i)));
         }
-        assertNotNull(l);
-        assertFalse(NeedChain.thinking(l.chain()), "applied within the cap: " + asks + " asks");
-        assertTrue(asks <= PlannerPort.ROUNDS + 2, "bounded: " + asks + " asks");
-        assertTrue(log.stream().anyMatch(x -> x.contains("results in a row dropped") && x.contains("resolved on the client tick")), "said loud: " + log);
-        assertTrue(Deep.equal(l, PlanNodes.old(() -> NeedChain.resolvePlaybookLegs(pb, live.world()))), "the facts of now, never a stale price");
+        // run DR round (manager 2026-10-27): past the cap no resolve on the client tick - the stand says why, said once
+        l = port.legs("b1", pb, Set.of(), live.world());
+        assertTrue(NeedChain.thinking(l.chain()), l.chain().why());
+        assertTrue(l.chain().why().contains("the facts keep changing while it thinks"), "the stand's reason: " + l.chain().why());
+        assertEquals(1, log.stream().filter(x -> x.contains("results in a row dropped") && x.contains("the trip stands until a result holds")).count(), "said loud, once a streak: " + log);
+        assertTrue(log.stream().noneMatch(x -> x.contains("resolved on the client tick")), log.toString());
+        assertTrue(port.probe().contains("stood past the cap 1"), port.probe());
+        // the facts hold again: the next result is applied, the facts of now
+        NeedChain.Legs a = untilApplied(port, worker, pb, live, 30);
+        assertTrue(Deep.equal(a, PlanNodes.old(() -> NeedChain.resolvePlaybookLegs(pb, live.world()))), "the facts of now, never a stale price");
     }
 
     // ---- run DQ diagnosis ----
