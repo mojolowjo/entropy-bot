@@ -184,6 +184,17 @@ public final class FactChange {
                 "strip " + heading + " at feet y " + y + " blocked at its start: " + why);
     }
 
+    /**
+     * 0.39.z77 strip (runs CK, CF, CJ: strips dug on to the 600 s cap): a strip that ended on its own yield check because a
+     * tunnel in another heading, or a strip from fresh ground, or (a strip of several families) any other way prices cheaper
+     * than going on here is a fact about this HEADING at that Y, as {@link #stripBlocked} is: the order re-plans and every strip
+     * way at that Y takes its next heading (a strip from fresh ground keeps its own key).
+     */
+    public static void stripYield(int y, String heading, String why) {
+        last = new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.headingKey(y, heading),
+                "strip " + heading + " at feet y " + y + " ended on its yield: " + why);
+    }
+
     /** 0.39.z62: the source key a fact names itself (a blocked strip heading), null: the failed step's key applies. */
     public static String ownSourceKey(Fact f) {
         if (f != null && f.key().startsWith(WALK_TO)) return f.key().substring(WALK_TO.length());     // 0.39.z65 item 1

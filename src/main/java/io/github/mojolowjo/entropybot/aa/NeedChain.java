@@ -1371,6 +1371,8 @@ public final class NeedChain {
         int tunnelCells = 0, oreTotal = 0;
         Map<String, Integer> amounts = new LinkedHashMap<>();
         Map<String, Double> perCell = new LinkedHashMap<>();      // 0.39.z77 spares 3: the price's ore a cell per family
+        Map<String, Double> slabs = new LinkedHashMap<>();        // 0.39.z77 strip: the band per family, for the yield check
+        Map<String, String> familyOf = new LinkedHashMap<>();     // 0.39.z77 strip: need word -> family (count key)
         Map<String, Integer> gains = new LinkedHashMap<>();
         List<String> parts = new ArrayList<>();
         for (var e : lacks.entrySet()) {
@@ -1396,8 +1398,18 @@ public final class NeedChain {
             digS += oreBlocks * oreS;
             amounts.merge(io.github.mojolowjo.entropybot.aa.brain.StripOrder.countKey(ore, io.github.mojolowjo.entropybot.cave.OreSpec::family), oreBlocks, Integer::sum);
             perCell.put(io.github.mojolowjo.entropybot.aa.brain.StripOrder.countKey(ore, io.github.mojolowjo.entropybot.cave.OreSpec::family), 1 / bpo);
+            slabs.put(io.github.mojolowjo.entropybot.aa.brain.StripOrder.countKey(ore, io.github.mojolowjo.entropybot.cave.OreSpec::family), slab);
+            familyOf.put(e.getKey(), io.github.mojolowjo.entropybot.aa.brain.StripOrder.countKey(ore, io.github.mojolowjo.entropybot.cave.OreSpec::family));
             gains.merge(gives, Math.max(e.getValue(), (int) Math.floor(oreBlocks * per + 1e-9)), Integer::sum);     // structural: epsilon
             parts.add(shw(gives) + " " + e.getValue() + " (" + oreBlocks + " ore x ~" + Math.round(bpo) + " blocks = " + dug + " cells)");
+        }
+        // 0.39.z77 strip (runs CK 16:50:31-17:00:31, CF 17:11:31): the yield check's facts per family - the band, a cell's
+        // seconds and the family priced with no strip (the playbook's own descent has no rival way in a choice); the first
+        // descent only - the strip that runs next (a later one at the same Y shares its key and is priced again from there)
+        if (firstLeg) {
+            String key = new Step.Strip(ores, amounts, y, first.heading(), 0, null).key();
+            for (var e : slabs.entrySet()) io.github.mojolowjo.entropybot.aa.brain.StripYield.priced(key, e.getKey(), e.getValue(), baritone.api.process.IStripProcess.TUNNEL_HEIGHT * hostS);
+            otherWays(c, key, lacks, familyOf);
         }
         int tunnelBreaks = baritone.api.process.IStripProcess.TUNNEL_HEIGHT * tunnelCells;
         digS += tunnelBreaks * hostS;
@@ -1438,6 +1450,66 @@ public final class NeedChain {
         c.note(() -> line);
         String out = line + (pre == null ? "" : " with " + pre) + (spare == null ? "" : " + " + spare);
         return wk == null ? out : noted(out, wk);
+    }
+
+    /**
+     * 0.39.z77 strip (manager's ruling 2026-10-26 ~17:40, run CK: the 1 coal of a met strip never found at y 16, 600 s): a
+     * playbook descent's families each priced with no strip way ({@code c.hoisting}: no leg to another level, so no strip),
+     * on a snapshot put back after (the chain, the bag, the wait list, the trials, the unreachable sources: as before it): a
+     * fuel the descent strips for the smelts by the planner's own burn ways for the same smelts (the charcoal for the coal), any
+     * other family by its ways (a seen vein, a known cave). A way that stands with a final price is the family's other way
+     * ({@link io.github.mojolowjo.entropybot.aa.brain.StripYield#other}); none (an explore, a wait, a fail): not priced, NaN.
+     */
+    private static void otherWays(Ctx c, String key, Map<String, Integer> lacks, Map<String, String> familyOf) {
+        for (var e : lacks.entrySet()) {
+            String fam = familyOf.get(e.getKey());
+            if (fam == null || e.getKey().startsWith("#") || e.getKey().indexOf('|') >= 0) continue;    // the playbook's leaves are items
+            String id0 = id(e.getKey());
+            if (ItemWorth.fuels().getOrDefault(id0, 0) <= 0 && c.w.seenAll().apply(id0).isEmpty() && (c.w.cave() == null || c.w.cave().apply(id0) == null)) {
+                // nothing seen and no cave known: its ways end in an explore (no price) - not priced, no walk asked for it
+                io.github.mojolowjo.entropybot.aa.brain.StripYield.other(key, fam, Double.NaN, "no source of " + shw(id0) + " seen and no cave known (an explore: no price)", false);
+                continue;
+            }
+            Ctx.Snap s0 = c.snap();
+            double base = c.seconds;
+            int waited = c.waited.size(), trials = c.trials;
+            java.util.Set<String> unreach = new java.util.HashSet<>(c.unreachable.keySet());
+            boolean hoist = c.hoisting;
+            String fail = c.fail, loop = c.loopOn;
+            Burn burned = c.burned;
+            String item = id(e.getKey());
+            int burnT = ItemWorth.fuels().getOrDefault(item, 0);
+            String words;
+            double secs = Double.NaN;
+            if (c.trace != null) c.trace.push("the other way for " + shw(item) + " " + e.getValue() + " (no strip; the strip's yield check, not taken)", false);
+            try {
+                c.hoisting = true;
+                if (burnT > 0) {
+                    int k = Math.max(1, (int) Math.floor(e.getValue() * (double) burnT / smeltTicks() + 1e-9));   // structural: epsilon
+                    String p = burn(c, k);
+                    words = "the fuel for " + k + " smelts: " + (p == null ? c.fail : p);
+                } else {
+                    String p = obtain(c, item, c.have(item) + e.getValue());
+                    words = p == null ? String.valueOf(c.fail) : p;
+                }
+                if (c.fail == null && !c.stuck) secs = c.seconds - base;
+                else if (c.stuck) words = "ends in an explore (no price): " + words;
+            } finally {
+                c.restore(s0);
+                c.hoisting = hoist;
+                c.fail = fail;
+                c.loopOn = loop;
+                c.burned = burned;
+                c.trials = trials;
+                while (c.waited.size() > waited) c.waited.remove(c.waited.size() - 1);
+                c.unreachable.keySet().retainAll(unreach);
+                if (c.trace != null) c.trace.pop();
+            }
+            final String w = words;
+            final double sv = secs;
+            c.note(() -> "the other way for " + fam + ": " + (Double.isNaN(sv) ? "not priced (" + w + ")" : s(sv) + " (" + w + ")"));
+            io.github.mojolowjo.entropybot.aa.brain.StripYield.other(key, fam, sv, w, false);
+        }
     }
 
     /**
@@ -1570,6 +1642,8 @@ public final class NeedChain {
         java.util.function.DoubleUnaryOperator rate;
         /** 0.39.z75 item 2: a burn way's fuel (set by its run). */
         Burn burned;
+        /** 0.39.z77 strip: a strip way ({@link #stripAlts}): its rivals' best price is kept for its yield check ({@link #stripRivals}). */
+        boolean strip;
         Alt(String label, Supplier<String> run) { this.label = label; this.run = run; }
         double value(double seconds) { return rate == null ? seconds : rate.applyAsDouble(seconds); }
     }
@@ -1616,6 +1690,7 @@ public final class NeedChain {
         } finally {
             if (c.trace != null) c.trace.pop();
         }
+        stripRivals(c, trials, stepsAt, self);                // 0.39.z77 strip: before the pick, whoever wins
         double horizonS = Unit.seconds(c.w.horizonBlocks());
         Comparator<Trial> best = Comparator.<Trial>comparingInt(t -> t.stuck() ? 1 : 0)
                 .thenComparingInt(t -> t.seconds() > horizonS ? 1 : 0)
@@ -1699,6 +1774,44 @@ public final class NeedChain {
         }
         if (win.stuck()) widenExplore(c, stepsAt, trials, win);
         return win;
+    }
+
+    /**
+     * 0.39.z77 strip (manager's ruling 2026-10-26 ~17:40; runs CF 17:11:31, CJ 17:25:25: iron strips of 100+ cells with no
+     * cluster ran on): each strip way priced in this choice keeps the best price of its rivals for the same need - a seen vein,
+     * a cave, a strip from fresh ground in another heading, the charcoal - for the strip's yield check while it runs
+     * ({@link io.github.mojolowjo.entropybot.aa.brain.StripYield#other}); a rival that ends in an explore or fails has no price
+     * (rule 15). A re-price of the order on the facts of then (a landed path, the strip's own sightings) refreshes it. A
+     * need whose strip way is not offered because a source of it is seen now (itemAlts: the strip only with nothing seen)
+     * keeps its ways' best price for the strip from the feet ({@code self}'s strip facts: the tunnel the bot is in resumes
+     * under that key), so a vein the strip passed is a price the strip is checked against (run CJ 17:25:25: "dig raw_iron
+     * seen 14 m" after 102 dry cells).
+     */
+    private static void stripRivals(Ctx c, List<Trial> trials, int base, String self) {
+        boolean any = false;
+        for (Trial t : trials) {
+            if (!t.alt().strip) continue;
+            any = true;
+            if (t.fail() != null) continue;
+            Step.Strip st = null;
+            List<Step> after = t.after().steps();
+            for (int i = Math.max(0, base); i < after.size() && st == null; i++) if (after.get(i) instanceof Step.Strip s) st = s;
+            if (st == null || st.amounts().size() != 1) continue;
+            rival(st.key(), st.amounts().keySet().iterator().next(), trials, t);
+        }
+        if (any || self == null || c.hoisting || c.down != null || trials.isEmpty() || c.w.seenAll().apply(self).isEmpty()) return;
+        StripBand sb = c.w.strip().apply(self);
+        if (sb == null || sb.ores().isEmpty()) return;
+        String key = new Step.Strip(sb.ores(), Map.of(), sb.y(), sb.heading(), 0, sb.from()).key();
+        rival(key, io.github.mojolowjo.entropybot.aa.brain.StripOrder.countKey(sb.ores().get(0), io.github.mojolowjo.entropybot.cave.OreSpec::family), trials, null);
+    }
+
+    /** The best priced trial but {@code not} kept as the other way of strip {@code key}'s {@code family} (NaN: none priced). */
+    private static void rival(String key, String family, List<Trial> trials, Trial not) {
+        Trial best = null;
+        for (Trial o : trials) if (o != not && o.fail() == null && !o.stuck() && (best == null || o.seconds() < best.seconds())) best = o;
+        io.github.mojolowjo.entropybot.aa.brain.StripYield.other(key, family, best == null ? Double.NaN : best.seconds(),
+                best == null ? "no other way priced" : best.alt().label, best != null && best.alt().strip);
     }
 
     /** 0.39.z77 choose: the start of the dropped reason of an explore held back while another way has no answer yet. */
@@ -3605,6 +3718,7 @@ public final class NeedChain {
         }
         Alt a = new Alt("strip at y " + sb.y(), () -> strip(c, word, gives, lack, sb));
         a.id = gives;
+        a.strip = true;
         List<Alt> out = new ArrayList<>(List.of(a));
         // 0.39.z64 item 4 (runs S-U: every heading from one origin; run U's area 969 faces, 0 iron): once the areas along
         // this heading are seen (strip.areaMinFaces), strips from fresh ground in each heading are ways too - each starting at
@@ -3621,6 +3735,7 @@ public final class NeedChain {
                 if (heldKey(c, f.key())) continue;
                 Alt fa = new Alt("strip at y " + sb.y() + " from fresh ground " + at[2] + " m " + h, () -> strip(c, word, gives, lack, f));
                 fa.id = gives;
+                fa.strip = true;
                 out.add(fa);
             }
         }
@@ -3705,6 +3820,9 @@ public final class NeedChain {
         Step.Strip strip = new Step.Strip(sb.ores(), amounts, sb.y(), sb.heading(), 0, sb.from());
         // 0.39.z77 spares 3: the price's ore a cell, for the strip end's yield line (measured against it)
         io.github.mojolowjo.entropybot.aa.brain.StripOrder.predicted(strip.key(), amounts.keySet().iterator().next(), 1 / bpo);
+        // 0.39.z77 strip: the band and a cell's seconds, for the strip's own yield check (StripYield.check); its rivals' best
+        // price comes from the choice it is priced in (choose)
+        io.github.mojolowjo.entropybot.aa.brain.StripYield.priced(strip.key(), amounts.keySet().iterator().next(), sb.perSlab(), baritone.api.process.IStripProcess.TUNNEL_HEIGHT * hostS);
         // 0.39.z46 (S58): the first leg is the priced path down to the band's peak (the walk the price above searched);
         // 0.39.z64 item 4: a strip from fresh ground walks to its start first
         int legAt = c.steps.size();
@@ -3736,12 +3854,15 @@ public final class NeedChain {
      * band's own figure): no seen-cells factor; the strip end's fact line ({@code Strips.yieldLine}) measures cells dug
      * against ore found so a factor can be set from runs later.
      */
-    record StripDig(double band, double scale, double bpo, int cells, io.github.mojolowjo.entropybot.aa.brain.StripAreas.Yield seen) {
+    public record StripDig(double band, double scale, double bpo, int cells, io.github.mojolowjo.entropybot.aa.brain.StripAreas.Yield seen) {
         int breaks() { return baritone.api.process.IStripProcess.TUNNEL_HEIGHT * cells; }
     }
 
-    /** {@link StripDig} for {@code oreBlocks} ore at {@code y}; {@code start}: the tunnel's first column {x, z} (null: not known). */
-    static StripDig stripDig(double perSlab, int oreBlocks, int[] start, int y, String heading, List<String> ores) {
+    /**
+     * {@link StripDig} for {@code oreBlocks} ore at {@code y}; {@code start}: the tunnel's first column {x, z} (null: not known).
+     * 0.39.z77 strip: public - the running strip's yield check prices a tunnel from the feet in another heading by it (StripStep).
+     */
+    public static StripDig stripDig(double perSlab, int oreBlocks, int[] start, int y, String heading, List<String> ores) {
         double band = io.github.mojolowjo.entropybot.aa.brain.OreBand.blocksPerOre(perSlab);
         var seen = start == null || heading == null ? io.github.mojolowjo.entropybot.aa.brain.StripAreas.Yield.NONE
                 : io.github.mojolowjo.entropybot.aa.brain.StripAreas.along(start[0], y, start[1], heading, ores);

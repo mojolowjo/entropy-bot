@@ -9,6 +9,7 @@ import com.google.gson.JsonParser;
 import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.Quiet;
 import io.github.mojolowjo.entropybot.aa.brain.StripOrder;
+import io.github.mojolowjo.entropybot.aa.brain.StripYield;
 import io.github.mojolowjo.entropybot.aa.brain.Thing;
 import io.github.mojolowjo.entropybot.aa.moves.Car;
 import io.github.mojolowjo.entropybot.aa.moves.Step;
@@ -31,7 +32,10 @@ import java.util.Map;
  * The strip order in the game: the words resolved against the game's data (ore tags, mining tiers, the catalog's
  * worldgen band, the bag's best pickaxe), and the step's hands: the fork's StripProcess gets only the ore set, the Y and
  * the heading; Baritone decides every stand, look and click. Its progress is saved per world (strip-progress.json, by
- * the order's key) so the same order resumes from the tunnel end after any pause or a relaunch.
+ * the order's key) so the same order resumes from the tunnel end after any pause or a relaunch. 0.39.z77 strip: a family
+ * met leaves the strip (the fork's set without its ores) and the families left go on only while the strip is their
+ * cheapest way ({@link StripYield}); a "no path" inside the tunnel says the rule of the cell Baritone's goal named.
+ * Loader notes: Baritone's API (IStripProcess, IPathingBehavior.getGoal / GoalBlock); vanilla Minecraft.player / level.
  */
 final class StripStep {
     private StripStep() {}
@@ -199,10 +203,68 @@ final class StripStep {
         startStep = from == null ? 0 : from.step();
         startPicked = from == null ? Map.of() : from.picked();   // 0.39.z77 spares 3: the yield line counts this run's finds
         yieldSaid = false;
+        checkedBlocks = -1;
+        goalCell = null;
+        // 0.39.z77 strip: a family already met leaves the strip from its start (its ores out of the fork's set)
+        List<String> live = StripYield.liveOres(s.ores(), s.amounts(), from == null ? Map.of() : from.picked(), StripStep::family);
+        running = live.isEmpty() ? s.ores() : live;
         b.getStripProcess().probe(WalkProbe.on());          // 0.39.z64 item 1: the "probe strip:" lines (debug.walkProbe)
-        b.getStripProcess().strip(new BlockOptionalMetaLookup(s.ores().toArray(String[]::new)), s.y(), d, of(from));
+        b.getStripProcess().strip(new BlockOptionalMetaLookup(running.toArray(String[]::new)), s.y(), d, of(from));
         if (!b.getStripProcess().isActive()) return "error: the strip did not start: " + b.getStripProcess().lastEnd();
         return null;
+    }
+
+    /** An ore id's count key (the fork's picked counts, the order's amounts). */
+    private static String family(String ore) { return StripOrder.countKey(ore, OreSpec::family); }
+
+    /** 0.39.z77 strip: the ores the fork's strip digs for now (the families not met yet). */
+    private static List<String> running = List.of();
+    /** 0.39.z77 strip: the tunnel's blocks at the last yield check (-1: none since the start). */
+    private static int checkedBlocks = -1;
+    /** 0.39.z77 strip (b): the cell Baritone's goal named last while the strip ran ({x, y, z}; null: none seen). */
+    private static int[] goalCell;
+
+    /**
+     * 0.39.z77 strip (manager's ruling 2026-10-26; run CK 16:50:31-17:00:31: iron 27 of 3 mined in 5 clusters, the strip dug on
+     * for the 1 coal to the 600 s cap): a family met while the strip runs leaves it - the fork's strip is started again from
+     * its progress (the same tunnel, the counts carried on) with the ores of the families left. Null: nothing to change, or
+     * changed; else the failed status (the fork did not take the new set).
+     */
+    private static Car.Status dropMet(Step.Strip s, IStripProcess sp, StripOrder.Saved now) {
+        List<String> live = StripYield.liveOres(s.ores(), s.amounts(), now.picked(), StripStep::family);
+        if (live.isEmpty() || live.size() >= running.size()) return null;
+        java.util.Set<String> gone = new java.util.TreeSet<>();
+        for (String o : running) if (!live.contains(o)) gone.add(family(o));
+        Direction d = Direction.byName(s.heading());
+        sp.cancel();
+        sp.strip(new BlockOptionalMetaLookup(live.toArray(String[]::new)), s.y(), d, of(now));
+        running = live;
+        LOG.info("[entropybot] strip: {} met ({}): left the strip; it digs on for {}", String.join(", ", gone),
+                StripOrder.counts(s.amounts(), now.picked()), String.join(", ", live.stream().map(StripStep::family).distinct().toList()));
+        if (!sp.isActive()) return Car.Status.failed("strip: the strip did not go on without the met ores: " + sp.lastEnd() + " (" + sp.status() + ")");
+        return null;
+    }
+
+    /**
+     * 0.39.z77 strip: the per-family yield check on a new tunnel cell ({@link StripYield#check}, the planner's facts kept for
+     * this strip's key): the cells and drops of the tunnel so far against the band's prediction, the other ways' prices,
+     * and a tunnel from the feet in another heading priced by the strip way's own estimate (NeedChain.stripDig: the band x
+     * the areas seen along it). Null: go on.
+     */
+    private static StripYield.End yieldCheck(Step.Strip s, StripOrder.Saved now) {
+        if (now == null || !now.started() || now.blocks() == checkedBlocks) return null;
+        checkedBlocks = now.blocks();
+        Map<String, StripYield.Fact> facts = StripYield.facts(s.key());
+        if (facts.isEmpty()) return null;                   // an owner's strip order, or not priced this session: runs as ordered
+        LocalPlayer p = Minecraft.getInstance().player;
+        int[] feet = p == null ? null : Jobs.here(p);
+        StripYield.HeadingCells cells = feet == null ? null : (h, fam, left) -> {
+            StripYield.Fact f = facts.get(fam);
+            if (f == null || !(f.perSlab() > 0)) return -1;
+            List<String> ores = s.ores().stream().filter(o -> family(o).equals(fam)).toList();
+            return io.github.mojolowjo.entropybot.aa.NeedChain.stripDig(f.perSlab(), left, new int[]{feet[0], feet[2]}, s.y(), h, ores).cells();
+        };
+        return StripYield.check(s.amounts(), now.picked(), now.blocks(), StripOrder.predicted(s.key()), facts, s.heading(), cells);
     }
 
     private static boolean bagFull(LocalPlayer p) {
@@ -237,6 +299,26 @@ final class StripStep {
                 ended(s, end);
                 return end;
             }
+            if (now != null && !holding) {                  // a reflex holding the bot: nothing restarted under it
+                Car.Status bad = dropMet(s, sp, now);
+                if (bad != null) {
+                    yieldFact(s, now);
+                    io.github.mojolowjo.entropybot.aa.moves.FactChange.strip(s.key(), bad.why());
+                    return bad;
+                }
+                // 0.39.z77 strip: the families left go on only while this strip is their cheapest way (the planner's prices)
+                StripYield.End y = yieldCheck(s, now);
+                if (y != null) {
+                    sp.cancel();
+                    yieldFact(s, now);
+                    String why = "strip: " + y.why();
+                    LOG.info("[entropybot] strip {}: {} (the re-plan holds {})", s.key(), why, y.heading() ? "the heading " + s.heading() + " at y " + s.y() : "this strip's ores");
+                    if (y.heading()) io.github.mojolowjo.entropybot.aa.moves.FactChange.stripYield(s.y(), s.heading(), why);
+                    else io.github.mojolowjo.entropybot.aa.moves.FactChange.strip(s.key(), why);
+                    return Car.Status.failed(why);
+                }
+            }
+            goalCell = goalOf(b);
             return Car.Status.running(sp.status() + " - " + sp.why());
         }
         if (holding) return Car.Status.running(sp.status() + " - " + sp.why());
@@ -252,6 +334,14 @@ final class StripStep {
             // a danger stop or no path down never burns the heading
             if (StripOrder.noPathAtFirstCell(sp.lastEnd(), now != null && now.started(), startStep, now == null ? 0 : now.step(),
                     startBlocks, now == null ? 0 : now.blocks())) io.github.mojolowjo.entropybot.aa.moves.FactChange.stripBlocked(s.y(), s.heading(), st.why() + "; " + firstCellsRule(s));
+            // 0.39.z77 strip (b) (run CJ 17:25:25: "no path (strip east feet y 16: 102 blocks ...)" - the branch's next cell 6 16 25
+            // was a dripstone_block the break policy denies outside the areas, read only later as a first cell at 17:31:05): a "no
+            // path" inside the tunnel says the rule of the cell Baritone's goal named
+            else if (StripOrder.NO_PATH.equals(sp.lastEnd())) {
+                String cell = nextCellRule(goalCell);
+                LOG.info("[entropybot] strip {}: no path after {} cells; {}", s.key(), now == null ? 0 : now.blocks(), cell);
+                io.github.mojolowjo.entropybot.aa.moves.FactChange.strip(s.key(), st.why() + "; " + cell);
+            }
             else io.github.mojolowjo.entropybot.aa.moves.FactChange.strip(s.key(), st.why());
         }
         return st;
@@ -281,6 +371,41 @@ final class StripStep {
                 return w == null ? null : w.replaceFirst(" \\| rule set .*? \\| block ", " | block ");
             });
         });
+    }
+
+    /** 0.39.z77 strip (b): the cell of Baritone's goal while the strip runs ({x, y, z}), the last one kept when none is set. */
+    private static int[] goalOf(IBaritone b) {
+        try {
+            if (b.getPathingBehavior().getGoal() instanceof baritone.api.pathing.goals.GoalBlock g) {
+                var at = g.getGoalPos();
+                return new int[]{at.getX(), at.getY(), at.getZ()};
+            }
+        } catch (RuntimeException e) {
+            Quiet.warn("StripStep.goalOf: Baritone's goal not read (the next cell of a no-path end not known)", e);
+        }
+        return goalCell;
+    }
+
+    /**
+     * 0.39.z77 strip (b): the break policy's answer for the cell Baritone's goal named last and the one above it (feet and
+     * head), as {@link #firstCellsRule} reads the first cells; "the next cell not known" when no goal cell was seen.
+     * Loader notes: vanilla Minecraft.level; the mod's PolicyRuntime.
+     */
+    static String nextCellRule(int[] cell) {
+        if (cell == null) return "the next cell not known (no goal cell seen while the strip ran)";
+        return "the next cell (Baritone's goal) " + StripOrder.guardedFirstCells(() -> {
+            Minecraft mc = Minecraft.getInstance();
+            var lv = mc.level;
+            if (lv == null) return "first cells: the rule not known (no level)";
+            String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(lv);
+            List<String> out = new java.util.ArrayList<>();
+            for (int dy = 0; dy < IStripProcess.TUNNEL_HEIGHT; dy++) {
+                String w = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.why(lv, dim, cell[0], cell[1] + dy, cell[2],
+                        io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.BREAK, io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE);
+                out.add(cell[0] + " " + (cell[1] + dy) + " " + cell[2] + ": " + (w == null ? "not known" : w.replaceFirst(" \\| rule set .*? \\| block ", " | block ")));
+            }
+            return "first cells: " + String.join("; ", out);
+        }).replaceFirst("^first cells: ", "");
     }
 
     /**
