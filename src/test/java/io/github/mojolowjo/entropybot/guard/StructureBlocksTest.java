@@ -301,15 +301,6 @@ class StructureBlocksTest {
     }
 
     @Test
-    void theOverrideFileAddsAndRemovesOneIdEach() throws Exception {
-        var o = WorldGenFiles.override("{\"minecraft:bone_block\": true, \"diorite\": false}");
-        Set<String> gen = WorldGenFiles.apply(jarRead().blocks(), o);
-        assertEquals(Structure.NO, WorldGenFiles.fact(false, false, false, false, true, gen, "minecraft:bone_block"), "added");
-        assertEquals(Structure.YES, WorldGenFiles.fact(false, false, false, false, true, gen, "minecraft:diorite"), "removed");
-        assertThrows(IllegalArgumentException.class, () -> WorldGenFiles.override("{\"minecraft:glass\": 1}"), "a broken entry is named, the file not used");
-    }
-
-    @Test
     void areaTagsParseSaveAndRefuseUnknownWords() {
         Policy p = Policy.parse(POLICY);
         assertEquals(List.of("break-structures"), p.innermostAreaAt(OW, 5, 64, 5).tags);

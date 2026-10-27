@@ -144,9 +144,9 @@ class Z68ExploreWhereTest {
         assertEquals(r.ores().placers().size(), back.ores().placers().size());
         assertEquals(GenWhere.of(List.of("minecraft:oak_log"), r.ores().placers(), -64, 320),
                 GenWhere.of(List.of("minecraft:oak_log"), back.ores().placers(), -64, 320));
-        String v4 = WorldGenFiles.toCache(hash, r).replace("\"version\":7", "\"version\":4");
+        String v4 = WorldGenFiles.toCache(hash, r).replace("\"version\":8", "\"version\":4");
         assertThrows(IllegalArgumentException.class, () -> WorldGenFiles.fromCache(v4, hash), "a version 4 cache has no vein sizes / discards (z69): the jars are read again");
-        String v5 = WorldGenFiles.toCache(hash, r).replace("\"version\":7", "\"version\":5");
+        String v5 = WorldGenFiles.toCache(hash, r).replace("\"version\":8", "\"version\":5");
         assertThrows(IllegalArgumentException.class, () -> WorldGenFiles.fromCache(v5, hash), "0.39.z74: a version 5 cache has no base blocks: the jars are read again");
     }
 

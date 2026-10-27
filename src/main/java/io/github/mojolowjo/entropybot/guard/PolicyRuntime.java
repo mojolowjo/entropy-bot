@@ -425,6 +425,12 @@ public final class PolicyRuntime {
                 + " | block " + (f.loaded() ? id + (f.ore() ? " (ore)" : "")
                 + ", in cell " + f.inCell().name().toLowerCase() + ", above " + f.above().name().toLowerCase() + (f.fallingAbove() ? " (falling)" : "")
                 + ", sides " + f.sides().name().toLowerCase() + (f.dugByMe() ? ", dug by me" : "")
-                + ", structure " + f.structure().name().toLowerCase().replace('_', ' ') + (f.placedByMe() ? " (placed by me)" : "") : "not loaded");
+                + structureText(f, level, pos) : "not loaded");
+    }
+
+    /** 0.39.z77 natural 2: a structure block says why it is one ("structure: not placed by any feature the jars name"). */
+    private static String structureText(BlockFacts f, Level level, BlockPos pos) {
+        String why = f.structure() == BreakPolicy.Structure.YES && level != null ? StructureTable.why(level.getBlockState(pos).getBlock()) : null;
+        return (why != null ? ", structure: " + why : ", structure " + f.structure().name().toLowerCase().replace('_', ' ')) + (f.placedByMe() ? " (placed by me)" : "");
     }
 }

@@ -20,7 +20,7 @@ import java.util.Set;
  * 0.39.z26 (2): the adapter half of the world-gen block read. On a server's client the CONFIGURED_FEATURE and NOISE_SETTINGS
  * registries are not there, so the set comes from the client's own jars on singleplayer and on a server alike (one path):
  * the loot book's jar packs (JarPacks), read on the shared background thread after the join, cached per mod list in
- * {@code entropybot/worldgen-<hash>.json}, then the owner's {@code worldgen-override.json}. Rule 15: {@link #blocks} is null
+ * {@code entropybot/worldgen-<hash>.json} (0.39.z77 natural 2: no override file, a name list). Rule 15: {@link #blocks} is null
  * until the read is done (not loaded), then a set (empty = the jars gave no world-gen data, said). A failed read is its
  * own state ({@link #failed}, the reason kept): the set stays null, so crafted blocks answer not loaded with that reason,
  * never the empty set; the next join reads again. The writes that start a read share the lock with {@code gen}. Loader notes: vanilla data-pack API
@@ -34,6 +34,8 @@ public final class WorldGenReader {
     private static int gen;                       // guarded by WorldGenReader.class: the read now running
     /** The world-gen block ids; null = not loaded yet. */
     static volatile Set<String> blocks;
+    /** 0.39.z77 natural 2: the block tags the jars' carvers name (ids without "#"); null = not loaded yet. Set before {@link #blocks}. */
+    static volatile Set<String> carverTags;
     /** 0.39.z45: the ore placements of the same read (rule 19: the jars on singleplayer and a server alike); null = not loaded yet. */
     static volatile WorldGenFiles.Ores ores;
     /** 0.39.z45: the world-gen files the last finished read took (from the jars or its cache); -1 while not done. */
@@ -49,18 +51,19 @@ public final class WorldGenReader {
     public static String failed() { return failed; }
     /** The jar packs the running or last read used; -1 while they are counted. */
     static volatile int jars = -1;
-    /** The jar read gave no world-gen file at all (before the override). */
+    /** The jar read gave no world-gen file at all. */
     static volatile boolean noData;
     /** FAILED: the read's reason (null: not failed); {@link #blocks} stays null (not loaded) and the next join reads again. */
     static volatile String failed;
     private static volatile boolean saidWaiting;
 
-    /** Game thread, once per world: drops the old set and starts the read. dir: the entropybot folder (null: no cache, no override). */
+    /** Game thread, once per world: drops the old set and starts the read. dir: the entropybot folder (null: no cache). */
     static void start(Path dir, String game) {
         int my;
         synchronized (WorldGenReader.class) {
             my = ++gen;
             blocks = null;
+            carverTags = null;
             ores = null;
             filesRead = -1;
             jars = -1;
@@ -73,7 +76,7 @@ public final class WorldGenReader {
             LOG.info("[entropybot] structure facts: the world-gen read waits behind the loot book's read on the shared jars thread - crafted blocks answer not loaded until both are done");
         }
         JarPacks.POOL.execute(() -> {
-            Set<String> s;
+            Set<String> s, ct;
             boolean none;
             WorldGenFiles.Ores oreRead;
             int readFiles;
@@ -118,8 +121,9 @@ public final class WorldGenReader {
                         from, oreRead.placed().size(), oreRead.biomes().size(), oreRead.modifiers().size(), oreRead.placers().size(),
                         oreRead.unread() == 0 ? "" : "; " + oreRead.unread() + " entries not read (first: " + oreRead.firstUnread() + ")");
                 s = r.blocks();
-                LOG.info("[entropybot] structure facts: world gen places {} blocks (from the {}: {} packs, {} files, {} skipped{}; configured features (block states and plain block ids) and noise settings only; structure templates are not read: villages and fossils are built things, their blocks stay structure blocks); {} ms",
-                        s.size(), from, jars, r.files(), r.bad(), r.firstBad() == null ? "" : ", first: " + r.firstBad(), (System.nanoTime() - t0) / 1_000_000);  // structural: ns to ms
+                ct = r.carverTags();
+                LOG.info("[entropybot] structure facts: world gen places {} blocks (from the {}: {} packs, {} files, {} skipped{}; configured features (block states and plain block ids) and noise settings only; structure templates are not read: villages and fossils are built things, their blocks stay structure blocks); the carvers name {} block tags {}; {} ms",
+                        s.size(), from, jars, r.files(), r.bad(), r.firstBad() == null ? "" : ", first: " + r.firstBad(), ct.size(), ct, (System.nanoTime() - t0) / 1_000_000);  // structural: ns to ms
             } catch (RuntimeException | Error e) {
                 // its own state FAILED: crafted blocks answer not loaded with this reason (never the empty set); read again on the next join
                 LOG.warn("[entropybot] structure facts: the world-gen read failed ({}) - crafted blocks answer not loaded and are refused; it is read again on the next join", e.toString());
@@ -128,12 +132,13 @@ public final class WorldGenReader {
                 }
                 return;
             }
-            s = override(s, dir);
+            oldOverride(dir);
             synchronized (WorldGenReader.class) {
                 if (my != gen) return;                // a newer world started its own read
                 noData = none;
                 ores = oreRead;
                 filesRead = readFiles;
+                carverTags = ct;                      // before blocks: a reader that sees the set sees the tags
                 blocks = s;
             }
         });
@@ -153,6 +158,7 @@ public final class WorldGenReader {
     private static List<String> dirs() {
         List<String> l = new ArrayList<>(WorldGenFiles.JSON_DIRS);
         l.addAll(WorldGenFiles.PLACEMENT_DIRS);
+        l.addAll(WorldGenFiles.CARVER_DIRS);
         return l;
     }
 
@@ -167,24 +173,12 @@ public final class WorldGenReader {
         }
     }
 
-    /** The owner's {@code worldgen-override.json}: said when used, when missing (optional) and when broken (not used). */
-    private static Set<String> override(Set<String> s, Path dir) {
-        if (dir == null) {
-            LOG.info("[entropybot] structure facts: no entropybot folder - {} not read", WorldGenFiles.OVERRIDE_FILE);
-            return s;
-        }
-        Path f = dir.resolve(WorldGenFiles.OVERRIDE_FILE);
-        if (!Files.isRegularFile(f)) {
-            LOG.info("[entropybot] structure facts: no {} (optional: {\"<block id>\": true|false} adds or removes a world-gen block)", f);
-            return s;
-        }
-        try {
-            var o = WorldGenFiles.override(Files.readString(f));
-            LOG.info("[entropybot] structure facts: {} sets {} blocks", f.getFileName(), o.size());
-            return WorldGenFiles.apply(s, o);
-        } catch (IOException | RuntimeException e) {
-            LOG.warn("[entropybot] structure facts: {} not used ({}) - fix it; the jars' set stands", f.getFileName(), e.getMessage());
-            return s;
-        }
+    /** 0.39.z77 natural 2: the deleted override file's name, only to say that one left in the folder is not read. */
+    private static final String OLD_OVERRIDE = "worldgen-override.json";
+
+    /** An old {@code worldgen-override.json} left in the folder is said, never read (a name list, rule 4). */
+    private static void oldOverride(Path dir) {
+        if (dir != null && Files.isRegularFile(dir.resolve(OLD_OVERRIDE)))
+            LOG.warn("[entropybot] structure facts: {} is no longer read (0.39.z77: a name list, rule 4) - the jars' world-gen, carver tags and ore loot decide", dir.resolve(OLD_OVERRIDE));
     }
 }

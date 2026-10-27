@@ -28,10 +28,10 @@ import io.github.mojolowjo.entropybot.aa.brain.GenWhere;
  * ids world gen places, from the data the client's jars carry (the same data packs the loot book reads, JarPacks): every
  * block state's {@code "Name"} in {@code data/<ns>/worldgen/configured_feature/*.json} and
  * {@code data/<ns>/worldgen/noise_settings/*.json} (the same JSON the registries' codecs write), and since 0.39.z77 the plain
- * block ids the configured features name ({@link #blockIds}: dripstone_block). 0.39.z26 (3): the structure
- * templates ({@code data/<ns>/structure/*.nbt}) are not read: villages and fossils are built things, so their blocks stay
- * structure blocks (STRUCTURE_BLOCKS.md). Then the cache file (per mod list) and the owner's override
- * file. No name of ours: every id comes from the files.
+ * block ids the configured features name ({@link #blockIds}: dripstone_block), and the carvers' tags ({@link #CARVER_DIRS}).
+ * 0.39.z26 (3): the structure templates ({@code data/<ns>/structure/*.nbt}) are not read: villages and fossils are built
+ * things, so their blocks stay structure blocks (STRUCTURE_BLOCKS.md). Then the cache file (per mod list). 0.39.z77
+ * natural 2: the owner's override file is deleted (a name list, rule 4). No name of ours: every id comes from the files.
  */
 public final class WorldGenFiles {
     private WorldGenFiles() {}
@@ -45,9 +45,16 @@ public final class WorldGenFiles {
      */
     public static final List<String> PLACEMENT_DIRS = List.of("worldgen/placed_feature", "worldgen/biome", "neoforge/biome_modifier", "tags/worldgen/placed_feature",
             "dimension", "worldgen/world_preset");     // 0.39.z74 item 4: which noise settings each dimension generates with
-    /** The owner's correction, in the entropybot folder: {"<block id>": true (world gen places it) | false (it does not)}. */
-    public static final String OVERRIDE_FILE = "worldgen-override.json";
-    static final int CACHE_VERSION = 7;  // structural: the cache file's format version (2: no template blocks; 3: the ore placements; 4: the "where" placers; 5: vein size and air-exposure discard; 6: the base blocks; 7: the configured features' plain block ids)
+    /**
+     * 0.39.z77 natural 2: the carvers' folder. A carver's {@code replaceable} is the block set it cuts through, the
+     * generated terrain (vanilla: {@code #overworld_carver_replaceables}, which holds the ore veins' raw_iron_block and
+     * raw_copper_block). Only its tags and plain block ids are taken, never its states: a carver's {@code debug_settings}
+     * name glass, buttons and candles.
+     */
+    public static final List<String> CARVER_DIRS = List.of("worldgen/configured_carver");
+    static final int CACHE_VERSION = 8;  // structural: the cache file's format version (2: no template blocks; 3: the ore placements; 4: the "where" placers; 5: vein size and air-exposure discard; 6: the base blocks; 7: the configured features' plain block ids; 8: the carvers' tags)
+    /** 0.39.z77 natural 2: the structure fact's reason for a crafted block no world-gen source names (the dropped list says it). */
+    public static final String NOT_PLACED = "not placed by any feature the jars name";
 
     /** One file of the read: its id ("ns:path" under data/ns) and how to open it. */
     public interface Entry {
@@ -55,8 +62,15 @@ public final class WorldGenFiles {
         InputStream open() throws IOException;
     }
 
-    /** What one read made: the block ids, the files read, the files skipped and the first such error, and the ore placements. */
-    public record Read(Set<String> blocks, int files, int bad, String firstBad, Ores ores) {
+    /**
+     * What one read made: the block ids, the files read, the files skipped and the first such error, the ore placements, and
+     * (0.39.z77 natural 2) the block tags the carvers name ({@code carverTags}: tag ids without the "#").
+     */
+    public record Read(Set<String> blocks, int files, int bad, String firstBad, Ores ores, Set<String> carverTags) {
+        public Read {
+            carverTags = carverTags == null ? Set.of() : Set.copyOf(carverTags);
+        }
+        public Read(Set<String> blocks, int files, int bad, String firstBad, Ores ores) { this(blocks, files, bad, firstBad, ores, Set.of()); }
         public Read(Set<String> blocks, int files, int bad, String firstBad) { this(blocks, files, bad, firstBad, Ores.EMPTY); }
     }
 
@@ -116,11 +130,11 @@ public final class WorldGenFiles {
 
     /**
      * Reads the JSON entries' block-state names into one set, plus the plain block ids the configured features name
-     * ({@link #blockIds}; {@code isBlock}: the game's block registry, null: not taken), and the ore placements; a broken
-     * file is counted, never thrown.
+     * ({@link #blockIds}; {@code isBlock}: the game's block registry, null: not taken), the carvers' tags and plain block
+     * ids ({@link #CARVER_DIRS}), and the ore placements; a broken file is counted, never thrown.
      */
     public static Read read(Collection<? extends Entry> json, java.util.function.Predicate<String> isBlock) {
-        Set<String> names = new HashSet<>();
+        Set<String> names = new HashSet<>(), carverTags = new java.util.TreeSet<>();
         int files = 0, bad = 0;
         String firstBad = null;
         Map<String, JsonElement> configured = new HashMap<>(), placed = new HashMap<>(), biomes = new HashMap<>(), modifiers = new HashMap<>(), tags = new HashMap<>();
@@ -132,7 +146,11 @@ public final class WorldGenFiles {
                 String dir = dirOf(e.id());
                 String id = shortId(e.id(), dir);
                 if (dir == null || JSON_DIRS.contains(dir)) collect(j, names);
-                if ("worldgen/configured_feature".equals(dir) && isBlock != null) blockIds(j, isBlock, names);   // 0.39.z77 natural
+                if ("worldgen/configured_feature".equals(dir) && isBlock != null) blockIds(j, isBlock, names, false);   // 0.39.z77 natural
+                if (dir != null && CARVER_DIRS.contains(dir)) {                         // 0.39.z77 natural 2: tags and plain ids, never the debug states
+                    tags(j, carverTags);
+                    if (isBlock != null) blockIds(j, isBlock, names, true);
+                }
                 if ("worldgen/configured_feature".equals(dir)) configured.put(id, j);
                 else if ("worldgen/placed_feature".equals(dir)) placed.put(id, j);
                 else if ("worldgen/biome".equals(dir)) biomes.put(id, j);
@@ -148,13 +166,15 @@ public final class WorldGenFiles {
             }
         }
         Ores o = ores(configured, placed, biomes, modifiers, tags);
-        return new Read(Set.copyOf(names), files, bad, firstBad, new Ores(o.placed(), o.biomes(), o.modifiers(), o.unread(), o.firstUnread(), o.placers(), bases, dims));
+        return new Read(Set.copyOf(names), files, bad, firstBad, new Ores(o.placed(), o.biomes(), o.modifiers(), o.unread(), o.firstUnread(), o.placers(), bases, dims),
+                carverTags);
     }
 
     /** The read's folder of an entry id ("ns:worldgen/placed_feature/x.json" -> "worldgen/placed_feature"); null: none of ours. */
     static String dirOf(String entryId) {
         String path = entryId.substring(entryId.indexOf(':') + 1);
         for (String d : JSON_DIRS) if (path.startsWith(d + "/")) return d;
+        for (String d : CARVER_DIRS) if (path.startsWith(d + "/")) return d;
         for (String d : PLACEMENT_DIRS) if (path.startsWith(d + "/")) return d;
         return null;
     }
@@ -403,6 +423,63 @@ public final class WorldGenFiles {
         return fact(tagged, never, entity, station, crafted, gen, id);
     }
 
+    /**
+     * 0.39.z77 natural 2 (manager 2026-10-26): StructureTable's per-block rule with the three world-gen sources. A crafted
+     * block is never a structure block when one holds: (1) the jars' world-gen names it ({@code gen}: {@link #read});
+     * (2) it is in a tag a carver of the jars names ({@code carverTags}, null: the read is not done); (3) its loot drops an
+     * ore family's item ({@code dropsOre}, null: the loot book is not loaded). A tag, a block entity or a station stays
+     * a structure block either way (vanilla's carver tag holds suspicious_gravel / suspicious_sand, block entities).
+     */
+    public static <T> BreakPolicy.Structure classify(java.util.List<T> structureTags, java.util.List<T> neverTags, java.util.function.Predicate<T> inTag,
+                                                     java.util.List<T> carverTags, boolean entity, boolean station, boolean crafted, boolean unread,
+                                                     Set<String> gen, Boolean dropsOre, String id) {
+        if (unread) return BreakPolicy.Structure.NOT_LOADED;
+        boolean tagged = false, never = false;
+        for (T t : structureTags) if (inTag.test(t)) { tagged = true; break; }
+        for (T t : neverTags) if (inTag.test(t)) { never = true; break; }
+        Boolean carver = null;
+        if (carverTags != null) {
+            carver = false;
+            for (T t : carverTags) if (inTag.test(t)) { carver = true; break; }
+        }
+        return BreakPolicy.structureOf(true, tagged, never, entity, station, crafted, natural(gen, carver, dropsOre, id));
+    }
+
+    /** The three sources' answer (rule 15): one says yes = natural; else one not loaded = not loaded (null); else no. */
+    public static Boolean natural(Set<String> gen, Boolean inCarverTag, Boolean dropsOre, String id) {
+        Boolean named = gen == null ? null : gen.contains(id);
+        if (Boolean.TRUE.equals(named) || Boolean.TRUE.equals(inCarverTag) || Boolean.TRUE.equals(dropsOre)) return Boolean.TRUE;
+        if (named == null || inCarverTag == null || dropsOre == null) return null;
+        return Boolean.FALSE;
+    }
+
+    /** The items an ore family drops: every drop of every block in {@code ores} (the game's c:ores, its loot from the jars). */
+    public static Set<String> oreItems(Collection<String> ores, java.util.function.Function<String, ? extends Collection<String>> dropsOf) {
+        Set<String> out = new HashSet<>();
+        for (String o : ores) out.addAll(dropsOf.apply(o));
+        return Set.copyOf(out);
+    }
+
+    /** Why a block is a structure block (the rule line, the dropped list): its tag, a block entity, a station, or {@link #NOT_PLACED}. */
+    public static String structureWhy(String tag, boolean entity, boolean station) {
+        if (tag != null) return "tag #" + tag;
+        if (entity) return "a block entity";
+        if (station) return "a recipe type's station";
+        return NOT_PLACED;
+    }
+
+    /** 0.39.z77 natural 2: every block tag a JSON names ("#ns:path" strings, the "#" dropped), codec type ids skipped. */
+    public static void tags(JsonElement e, Set<String> out) {
+        if (e == null) return;
+        if (e.isJsonArray()) { for (JsonElement c : e.getAsJsonArray()) tags(c, out); return; }
+        if (e.isJsonPrimitive()) {
+            if (e.getAsJsonPrimitive().isString() && e.getAsString().startsWith("#")) out.add(e.getAsString().substring(1));
+            return;
+        }
+        if (!e.isJsonObject()) return;
+        for (var en : e.getAsJsonObject().entrySet()) if (!en.getKey().endsWith("type")) tags(en.getValue(), out);
+    }
+
     /** Every block state's "Name" in the JSON. */
     public static void collect(JsonElement e, Set<String> names) {
         if (e == null) return;
@@ -425,19 +502,20 @@ public final class WorldGenFiles {
      * dripstone_block only as ground the glow_lichen and sculk_vein features grow on. A block world gen's own data names as
      * part of the generated world is terrain, never a "crafted and not world-gen" structure block. Every string value
      * that is a block id ({@code isBlock}: the game's block registry) is taken, except a codec type id (a key ending in
-     * "type": the feature, provider and predicate types).
+     * "type": the feature, provider and predicate types). {@code skipStates}: a state's {@code Name} is not taken (a
+     * carver: its debug states are not terrain).
      */
-    public static void blockIds(JsonElement e, java.util.function.Predicate<String> isBlock, Set<String> names) {
+    public static void blockIds(JsonElement e, java.util.function.Predicate<String> isBlock, Set<String> names, boolean skipStates) {
         if (e == null) return;
-        if (e.isJsonArray()) { for (JsonElement c : e.getAsJsonArray()) blockIds(c, isBlock, names); return; }
+        if (e.isJsonArray()) { for (JsonElement c : e.getAsJsonArray()) blockIds(c, isBlock, names, skipStates); return; }
         if (e.isJsonPrimitive()) {
             if (e.getAsJsonPrimitive().isString() && isBlock.test(e.getAsString())) names.add(e.getAsString());
             return;
         }
         if (!e.isJsonObject()) return;
         for (var en : e.getAsJsonObject().entrySet()) {
-            if (en.getKey().endsWith("type")) continue;
-            blockIds(en.getValue(), isBlock, names);
+            if (en.getKey().endsWith("type") || (skipStates && en.getKey().equals("Name"))) continue;
+            blockIds(en.getValue(), isBlock, names, skipStates);
         }
     }
 
@@ -454,6 +532,9 @@ public final class WorldGenFiles {
         JsonArray a = new JsonArray();
         for (String b : new TreeSet<>(r.blocks())) a.add(b);
         o.add("blocks", a);
+        JsonArray ct = new JsonArray();                       // 0.39.z77 natural 2 (version 8)
+        for (String t : new TreeSet<>(r.carverTags())) ct.add(t);
+        o.add("carverTags", ct);
         Ores ores = r.ores() == null ? Ores.EMPTY : r.ores();
         JsonObject oj = new JsonObject();
         JsonArray pl = new JsonArray();
@@ -565,29 +646,10 @@ public final class WorldGenFiles {
         } catch (RuntimeException x) {
             throw new IllegalArgumentException("cache's ore placements are not whole (" + x + ")");
         }
-        return new Read(Set.copyOf(s), o.has("files") ? o.get("files").getAsInt() : 0, o.has("bad") ? o.get("bad").getAsInt() : 0, null, ores);
-    }
-
-    // ---- the owner's override: entropybot/worldgen-override.json ----
-
-    /** The override file: block id -> true (count it as world-gen) or false (do not). A broken entry throws IllegalArgumentException naming it. */
-    public static Map<String, Boolean> override(String text) {
-        JsonObject o = object(text, OVERRIDE_FILE);
-        Map<String, Boolean> out = new LinkedHashMap<>();
-        for (var e : o.entrySet()) {
-            JsonElement v = e.getValue();
-            if (!v.isJsonPrimitive() || !v.getAsJsonPrimitive().isBoolean()) throw new IllegalArgumentException(e.getKey() + ": must be true (world gen places it) or false");
-            String id = e.getKey().trim().toLowerCase(Locale.ROOT);
-            out.put(id.contains(":") ? id : "minecraft:" + id, v.getAsBoolean());
-        }
-        return out;
-    }
-
-    /** The set with the override applied. */
-    public static Set<String> apply(Set<String> blocks, Map<String, Boolean> override) {
-        Set<String> s = new HashSet<>(blocks);
-        for (var e : override.entrySet()) if (e.getValue()) s.add(e.getKey()); else s.remove(e.getKey());
-        return Set.copyOf(s);
+        if (!o.has("carverTags") || !o.get("carverTags").isJsonArray()) throw new IllegalArgumentException("cache has no carver tags (version 8)");
+        Set<String> ct = new HashSet<>();
+        for (JsonElement e : o.getAsJsonArray("carverTags")) ct.add(e.getAsString());
+        return new Read(Set.copyOf(s), o.has("files") ? o.get("files").getAsInt() : 0, o.has("bad") ? o.get("bad").getAsInt() : 0, null, ores, ct);
     }
 
     private static JsonObject object(String text, String what) {

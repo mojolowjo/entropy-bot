@@ -14,13 +14,21 @@ final class TableRetry<T> {
     volatile T value;
     volatile int builtRecipes = -1;
     volatile Set<String> builtGen;
+    /** 0.39.z77 natural 2: the loot book the value was built with (identity; null: none yet). */
+    volatile Object builtLoot;
     private volatile boolean warned;
 
     /** True when this recipe count and world-gen set are already built. */
-    boolean current(int n, Set<String> gen) { return value != null && n == builtRecipes && gen == builtGen; }
+    boolean current(int n, Set<String> gen) { return current(n, gen, null); }
+
+    /** True when this recipe count, world-gen set and loot book are already built. */
+    boolean current(int n, Set<String> gen, Object loot) { return value != null && n == builtRecipes && gen == builtGen && loot == builtLoot; }
 
     /** Builds; returns whether the value is built. A throw leaves it null and the marks unset. */
-    boolean attempt(int n, Set<String> gen, Supplier<T> builder) {
+    boolean attempt(int n, Set<String> gen, Supplier<T> builder) { return attempt(n, gen, null, builder); }
+
+    /** The same with the loot book's mark. */
+    boolean attempt(int n, Set<String> gen, Object loot, Supplier<T> builder) {
         value = null;
         try {
             value = builder.get();
@@ -34,6 +42,7 @@ final class TableRetry<T> {
         }
         builtRecipes = n;
         builtGen = gen;
+        builtLoot = loot;
         if (warned) {
             warned = false;
             Quiet.line("structure facts: the table is built now (the earlier build had failed)");
@@ -42,7 +51,7 @@ final class TableRetry<T> {
     }
 
     /** A new world or no level: forget everything, including the failure said. */
-    void reset() { value = null; builtRecipes = -1; builtGen = null; warned = false; }
+    void reset() { value = null; builtRecipes = -1; builtGen = null; builtLoot = null; warned = false; }
 
     /** The failure said by something else than the build (the tick's own catch): true the first time per world. */
     boolean firstWarn() {
