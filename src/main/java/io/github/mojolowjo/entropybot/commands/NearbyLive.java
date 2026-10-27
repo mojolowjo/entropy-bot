@@ -58,7 +58,25 @@ final class NearbyLive {
         return logSpot;
     }
 
-    private record Cached(long at, int[] me, Nearby.Source source) {}
+    /** One set's answer: made at {@code at} from {@code me}; {@code askedAt} the last time anyone asked (D10: the purge goes by it). */
+    private static final class Cached {
+        final long at;
+        final int[] me;
+        final Nearby.Source source;
+        long askedAt;
+
+        Cached(long at, int[] me, Nearby.Source source) {
+            this.at = at;
+            this.me = me;
+            this.source = source;
+            this.askedAt = at;
+        }
+
+        long at() { return at; }
+        int[] me() { return me; }
+        Nearby.Source source() { return source; }
+    }
+
     private final java.util.Map<java.util.Set<String>, Cached> sets = new java.util.HashMap<>();
     /** legit sources (0.39.z40): the source lines since {@link #beginNotes} (aa debug), per block set; null: not collecting. */
     private java.util.Map<java.util.Set<String>, String> notes;
@@ -86,9 +104,11 @@ final class NearbyLive {
         if (me == null) return fallback == null ? null : fallback.get();
         Cached k = sets.get(blocks);
         boolean due = k == null || now - k.at() >= Tuning.l("nearby.cacheMs") || !close(me, k.me());
+        boolean kept = false;
         if (due && budget.allow(io.github.mojolowjo.entropybot.Core.INSTANCE.tick(), k != null)) {
-            // D10: the purge waits two cache periods, so a set deferred past its time is not dropped before its turn
-            sets.values().removeIf(e -> now - e.at() >= 2 * Tuning.l("nearby.cacheMs"));      // structural: two periods
+            // D10 (review 2): the purge goes by the last ASK, two cache periods back - a set still asked is never dropped, so
+            // a deferred set cannot come back as "new" and be scanned outside the budget; only unasked sets go
+            sets.values().removeIf(e -> now - e.askedAt >= 2 * Tuning.l("nearby.cacheMs"));      // structural: two periods
             long t0 = LAPS.now();
             k = new Cached(now, me, Nearby.source(scan(), me, blocks, fallback));
             if (t0 != 0) {
@@ -97,10 +117,18 @@ final class NearbyLive {
             }
             sets.put(java.util.Set.copyOf(blocks), k);
         } else if (due) {
+            kept = true;
             LAPS.nearby("deferred", 0);                      // D10: kept this tick, renewed on a tick after
         }
-        if (notes != null) notes.put(java.util.Set.copyOf(blocks), k.source().line());
+        k.askedAt = now;
+        // D10 (review 1, rule 15): a kept answer is said as kept, never as current
+        if (notes != null) notes.put(java.util.Set.copyOf(blocks), k.source().line() + (kept ? " (kept, renewing: " + Math.round(dist(me, k.me())) + " m since)" : ""));
         return k.source().spot();
+    }
+
+    private static double dist(int[] a, int[] b) {
+        double dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
     /**
