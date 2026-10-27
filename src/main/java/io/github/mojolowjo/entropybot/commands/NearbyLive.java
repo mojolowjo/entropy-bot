@@ -29,6 +29,8 @@ import java.util.function.Supplier;
  */
 final class NearbyLive {
     private static final Logger LOG = LoggerFactory.getLogger("entropybot");
+    /** 0.39.z78 D6 (run DR round): the AA tick's stopwatch, for the "nearby:" part of the aatick line. */
+    private static final io.github.mojolowjo.entropybot.aa.core.TickLaps LAPS = io.github.mojolowjo.entropybot.aa.core.TickLaps.AA;
 
     private final Commands c;
     private List<Block> logBlocks;
@@ -69,7 +71,9 @@ final class NearbyLive {
         Cached k = sets.get(blocks);
         if (k == null || now - k.at() >= Tuning.l("nearby.cacheMs") || !close(me, k.me())) {
             sets.values().removeIf(e -> now - e.at() >= Tuning.l("nearby.cacheMs"));
+            long t0 = LAPS.now();
             k = new Cached(now, me, Nearby.source(scan(), me, blocks, fallback));
+            if (t0 != 0) LAPS.nearby("renew", LAPS.now() - t0);      // 0.39.z78 D6 (run DR round): the renewals' share of "seen"
             sets.put(java.util.Set.copyOf(blocks), k);
         }
         if (notes != null) notes.put(java.util.Set.copyOf(blocks), k.source().line());
@@ -86,7 +90,9 @@ final class NearbyLive {
         if (skip == null || first == null || !skip.test(first)) return first;
         int[] me = here();
         if (me == null) return null;
+        long t0 = LAPS.now();
         Nearby.Source s = Nearby.source(scan(), me, blocks, fallback, skip);
+        if (t0 != 0) LAPS.nearby("skip", LAPS.now() - t0);           // 0.39.z78 D6: a held spot's fresh lookup (never cached)
         if (notes != null) notes.put(java.util.Set.copyOf(blocks), s.line());
         return s.spot();
     }
@@ -273,6 +279,7 @@ final class NearbyLive {
 
     private List<int[]> scanFor(List<Block> blocks, int radius) {
         List<int[]> out = new ArrayList<>();
+        long t0 = LAPS.now();
         try {
             IBaritone b = Jobs.baritone();
             if (b == null || blocks.isEmpty()) return out;
@@ -281,6 +288,8 @@ final class NearbyLive {
             for (BlockPos q : found) out.add(new int[]{q.getX(), q.getY(), q.getZ()});
         } catch (RuntimeException | LinkageError e) {
             io.github.mojolowjo.entropybot.Quiet.warn("nearby: Baritone's world scan failed, the sightings answer instead", e);
+        } finally {
+            if (t0 != 0) LAPS.nearby("scans", LAPS.now() - t0);     // 0.39.z78 D6: Baritone's own share of a renewal
         }
         return out;
     }

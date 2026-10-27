@@ -40,6 +40,7 @@ public final class TickLaps {
         playbookNs = 0;
         split.clear();
         asks.clear();
+        nearby.clear();
         start = clock.getAsLong();
         last = start;
     }
@@ -93,6 +94,21 @@ public final class TickLaps {
         a[1] += Math.max(0, nanos);
     }
 
+    /** 0.39.z78 D6 (run DR round): this tick's nearby lookups by kind (renew, skip, scans): {count, nanoseconds}, in first-seen order. */
+    private final java.util.Map<String, long[]> nearby = new java.util.LinkedHashMap<>();
+
+    /**
+     * 0.39.z78 D6 (run DR round: "seen" carried 85-90% of the planner's asks, bimodal - a cache hit or a renewal): one nearby
+     * lookup's part ({@code kind}: "renew" a cached answer made again, "skip" a held spot's fresh lookup, "scans" Baritone's
+     * world scans inside them); said as "nearby: renew N = ms, ...".
+     */
+    public void nearby(String kind, long nanos) {
+        if (!on) return;
+        long[] a = nearby.computeIfAbsent(kind, k -> new long[2]);
+        a[0]++;
+        a[1] += Math.max(0, nanos);
+    }
+
     /** 0.39.z78 D6: a trip was asked of the planner this tick (BatchWay; the line then carries the planner's numbers). */
     public boolean planned() { return on && playbooks > 0; }
 
@@ -132,6 +148,12 @@ public final class TickLaps {
             b.append(String.format(Locale.ROOT, " rest %.1f ms", Math.max(0, playbookNs - parts) / 1e6));     // structural: ns per ms
         }
         if (!asks.isEmpty()) b.append(" | ").append(asksText());
+        if (!nearby.isEmpty()) {
+            b.append(" | nearby:");
+            int i = 0;
+            for (var e : nearby.entrySet()) b.append(i++ == 0 ? " " : ", ").append(e.getKey()).append(String.format(Locale.ROOT, " %d = %.1f", e.getValue()[0], e.getValue()[1] / 1e6));     // structural: ns per ms
+            b.append(" ms");
+        }
         return b.toString();
     }
 

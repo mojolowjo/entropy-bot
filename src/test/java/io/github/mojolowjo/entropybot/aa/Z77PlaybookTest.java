@@ -684,8 +684,13 @@ class Z77PlaybookTest {
         assertTrue(a.contains("| planner asks 7 = 10.1 ms: price 2 = 6.0, "), a);
         assertTrue(a.endsWith(", others 1 = 0.1"), "the sixth field summed: " + a);
         laps.begin(true);
+        laps.nearby("renew", 2_000_000);                     // 0.39.z78 run DR round: the nearby lookups by kind
+        laps.nearby("scans", 1_500_000);
+        laps.nearby("renew", 1_000_000);
         now[0] = 90_000_000;
-        assertFalse(laps.line(8, 20).contains("playbook"), "no comparison this tick: not said");
+        String nb = laps.line(8, 20);
+        assertFalse(nb.contains("playbook"), "no comparison this tick: not said");
+        assertTrue(nb.endsWith(" | nearby: renew 2 = 3.0, scans 1 = 1.5 ms"), nb);
     }
 
     /** The bound is said, never a hang: a budget of 10 nodes fails the playbook with the reason. */
