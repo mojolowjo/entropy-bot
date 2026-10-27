@@ -103,7 +103,7 @@ public final class TickLaps {
     /**
      * 0.39.z78 D6 (run DR round: "seen" carried 85-90% of the planner's asks, bimodal - a cache hit or a renewal): one nearby
      * lookup's part ({@code kind}: "renew" a cached answer made again, "skip" a held spot's fresh lookup, "scans" Baritone's
-     * world scans inside them); said as "nearby: renew N = ms, ...".
+     * world scans inside them, "deferred" a renewal put off to a later tick by D10's RenewBudget); said as "nearby: renew N = ms, ...".
      */
     public void nearby(String kind, long nanos) {
         if (!on) return;

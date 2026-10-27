@@ -63,14 +63,32 @@ final class NearbyLive {
     /** legit sources (0.39.z40): the source lines since {@link #beginNotes} (aa debug), per block set; null: not collecting. */
     private java.util.Map<java.util.Set<String>, String> notes;
 
-    /** live-facts: the nearest block of the set (Nearby.source), Baritone first, else {@code fallback}; cached per set as the log answer is. */
+    /**
+     * D10 (0.39.z78; docs/designs/D10-nearby-renew-budget.md): the renewals a client tick may make. Run DS 15:16:40: 101
+     * sets expired in one tick (all first asked in one resolve; every 4 blocks of walking expires them all again), 104
+     * Baritone scans, 80 ms. Past the budget a set keeps its last answer this tick and renews on a tick after.
+     */
+    private final io.github.mojolowjo.entropybot.aa.core.RenewBudget budget = new io.github.mojolowjo.entropybot.aa.core.RenewBudget();
+
+    /** D10: the budget's counters for aa status / the probe ("renewed N, deferred M"). */
+    io.github.mojolowjo.entropybot.aa.core.RenewBudget budget() { return budget; }
+
+    /**
+     * live-facts: the nearest block of the set (Nearby.source), Baritone first, else {@code fallback}; cached per set as the
+     * log answer is. D10: a set past its time ({@code nearby.cacheMs}) or its move ({@code nearby.cacheMove}) is scanned again
+     * only within this tick's {@link io.github.mojolowjo.entropybot.aa.core.RenewBudget}; otherwise its last answer stands
+     * this tick (a fact as of that position and moment, a few blocks of walking old at most; rule 14 prices it rough) and
+     * the probe counts it "deferred". A set with no answer yet is always scanned (rule 15: never "none" for lack of time).
+     */
     Spot nearest(java.util.Set<String> blocks, Supplier<Spot> fallback) {
         long now = System.currentTimeMillis();
         int[] me = here();
         if (me == null) return fallback == null ? null : fallback.get();
         Cached k = sets.get(blocks);
-        if (k == null || now - k.at() >= Tuning.l("nearby.cacheMs") || !close(me, k.me())) {
-            sets.values().removeIf(e -> now - e.at() >= Tuning.l("nearby.cacheMs"));
+        boolean due = k == null || now - k.at() >= Tuning.l("nearby.cacheMs") || !close(me, k.me());
+        if (due && budget.allow(io.github.mojolowjo.entropybot.Core.INSTANCE.tick(), k != null)) {
+            // D10: the purge waits two cache periods, so a set deferred past its time is not dropped before its turn
+            sets.values().removeIf(e -> now - e.at() >= 2 * Tuning.l("nearby.cacheMs"));      // structural: two periods
             long t0 = LAPS.now();
             k = new Cached(now, me, Nearby.source(scan(), me, blocks, fallback));
             if (t0 != 0) {
@@ -78,6 +96,8 @@ final class NearbyLive {
                 LAPS.nearbySet(blocks.size(), setName(blocks));
             }
             sets.put(java.util.Set.copyOf(blocks), k);
+        } else if (due) {
+            LAPS.nearby("deferred", 0);                      // D10: kept this tick, renewed on a tick after
         }
         if (notes != null) notes.put(java.util.Set.copyOf(blocks), k.source().line());
         return k.source().spot();
