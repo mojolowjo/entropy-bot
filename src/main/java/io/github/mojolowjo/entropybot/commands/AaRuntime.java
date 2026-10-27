@@ -1236,7 +1236,10 @@ public final class AaRuntime implements JobPort {
             if (why == null) why = dropped.get(spot);           // 0.39.z69 fix 1: this one spot dropped
             if (why != null) return why;
         }
-        return null;
+        // 0.39.z77 world: a source another order dropped here (a world fact) ends no explore either, its order met or not
+        var world = io.github.mojolowjo.entropybot.aa.brain.WorldFacts.of(bb).heldAt(bb.in);
+        String why = world.get(key);
+        return why != null ? why : world.get(spot);
     }
 
     /**

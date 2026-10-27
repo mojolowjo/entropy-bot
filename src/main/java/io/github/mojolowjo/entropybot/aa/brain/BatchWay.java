@@ -273,10 +273,14 @@ public final class BatchWay {
         Map<String, String> mine = Goals.droppedSources(g), others = new TreeMap<>();
         for (Goals.Goal o : holders) for (var e : Goals.droppedSources(o).entrySet()) if (!mine.containsKey(e.getKey())) others.put(e.getKey(), e.getValue());
         NeedChain.World w = others.isEmpty() ? w0 : w0.withoutSources(others);
-        java.util.Set<String> held = new java.util.TreeSet<>(mine.keySet());
-        held.addAll(others.keySet());
-        boolean under = bb.in != null && bb.in.underDepth >= io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth();
         int[] pos = bb.in == null ? null : bb.in.pos;
+        // 0.39.z77 world: the holds as w0 applied them (Goals.chainWorld: the asker's own by position, the world facts held
+        // here), so a hold lifted by moving re-keys the trip (was: the asker's own keys by name, a station back once closer
+        // kept the trip priced without it)
+        java.util.Set<String> held = new java.util.TreeSet<>(Goals.droppedSources(g, pos).keySet());
+        held.addAll(others.keySet());
+        held.addAll(WorldFacts.of(bb).heldAt(bb.in).keySet());
+        boolean under = bb.in != null && bb.in.underDepth >= io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth();
         String base = tripKeyOf(tk, open, pos, under, held);
         Trip kept = TRIPS.get(tk);
         Held h = waitTest ? hold(bb, tk, run, runner, kept) : Held.NONE;

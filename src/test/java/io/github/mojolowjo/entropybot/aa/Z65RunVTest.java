@@ -148,13 +148,16 @@ class Z65RunVTest {
         assertEquals(1, g.sourceReplans, "a new source: counted as a source drop");
         assertFalse(walksToTable(Goals.chain(bb, g)), "still out from the same spot");
 
-        // the next order: a new goal, nothing dropped - the table is walked to again
+        // the next order: a new goal, nothing of its own dropped - 0.39.z77 world (manager 2026-10-26): the failed walk from
+        // this cell is a world fact, out for the next order too while the bot stands within failures.moved of where it failed
         Goals.Goal next = Goals.draft(DebugTreeTest.item("stone_pickaxe"), 1, 0, clock.now());
-        assertTrue(walksToTable(Goals.chain(bb, next)), "usable again in the next order");
+        assertFalse(walksToTable(Goals.chain(bb, next)), "the world fact holds for the next order from the same spot");
+        assertFalse(Goals.droppedSources(next).containsKey("station at -261 75 21"), "not the next order's own hold");
 
-        // the same order, the bot failures.moved closer (44 blocks): the table is back
+        // the same order, the bot failures.moved closer (44 blocks): the table is back (and for the next order: moved away)
         bb.in.pos = new int[]{-261, 60, 22};
         assertTrue(walksToTable(Goals.chain(bb, g)), "usable again once the bot stands closer");
+        assertTrue(walksToTable(Goals.chain(bb, next)), "usable again in the next order once the bot moved off the cell");
         assertTrue(Goals.droppedSources(g).containsKey("station at -261 75 21"), "the record stays (a repeat is counted as a re-plan)");
     }
 

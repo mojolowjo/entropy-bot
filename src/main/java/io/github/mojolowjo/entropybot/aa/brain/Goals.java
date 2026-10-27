@@ -453,6 +453,8 @@ public final class Goals {
         // 0.39.z65 review 1: a station's walk fact keeps where the bot stood (released once it stands failures.moved closer)
         // 0.39.z77 walk: a held walk target keeps it too (the same per-position hold)
         if (sourceFact) g.sources.failedFor(g.id(), src, fact.text(), bb.clock.now(), positional(src) ? bb.in : null, ORDER_LIFE_MS);
+        // 0.39.z77 world (run CX 22:43:18: the met pickaxe's water-ahead strip re-tried by the helmet): the fact is the world's
+        if (sourceFact) WorldFacts.of(bb).learned(src, fact.text(), g.r.key(), bb.in);
         var ch = runChain(bb, g);
         if (ch == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");
         // 0.39.z73 (D2 3.4): the repair, priced against this full re-plan
@@ -960,6 +962,12 @@ public final class Goals {
         if (world == null) return null;
         int[] pos = bb.in == null ? null : bb.in.pos;
         var dropped = droppedSources(g, pos);
+        // 0.39.z77 world (manager 2026-10-26; run CX 22:43:18, run CS 19:33-19:37): another order's source fact holds here too
+        for (var e : WorldFacts.of(bb).heldFor(droppedSources(g).keySet(), bb.in).entrySet()) {
+            if (dropped.putIfAbsent(e.getKey(), e.getValue()) != null || bb.port == null) continue;
+            String line = WorldFacts.of(bb).sayOnce(g.id() + " " + g.given, g.r.key(), e.getKey(), e.getValue());
+            if (line != null) bb.port.log(line);
+        }
         // 0.39.z33 (z65: a station back once closer); 0.39.z67 item 1: a place-near that failed holds its spot (near it: a cell with room)
         return world.withoutSources(dropped).withPlaceFailures(dropped, pos);
     }
@@ -1005,7 +1013,10 @@ public final class Goals {
         // needs no walk (BatchWay.hold); the flag was unused since the SHAPE CHANGE, so every tick's test derived the trip
         var ch = BatchWay.tripOrder(g) ? BatchWay.trip(bb, g, world, own, !batch) : own.get();
         // 0.39.z41: a source Baritone's complete search found unreachable is the z33 source fact: dropped for the order's life
-        for (var e : ch.unreachable().entrySet()) g.sources.failedFor(g.id(), e.getKey(), e.getValue(), bb.clock.now(), null, ORDER_LIFE_MS);
+        for (var e : ch.unreachable().entrySet()) {
+            g.sources.failedFor(g.id(), e.getKey(), e.getValue(), bb.clock.now(), null, ORDER_LIFE_MS);
+            WorldFacts.of(bb).learned(e.getKey(), e.getValue(), g.r.key(), bb.in);     // 0.39.z77 world: unreachable for every order
+        }
         return ch;
     }
 
