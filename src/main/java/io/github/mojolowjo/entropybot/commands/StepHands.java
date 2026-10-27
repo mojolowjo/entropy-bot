@@ -50,6 +50,8 @@ public final class StepHands implements Steps.Hands {
     private int startCount, want;
     private List<String> countIds = List.of();
     private boolean mining, chopping;
+    /** 0.39.z78 vein: the collect runs the fork's vein (ore); {@code veinWalking}: still on its walk to the priced spot. */
+    private boolean veining, veinWalking;
     private String miningWhat;
     // the hunt
     private int huntTarget = -1, huntTicks;
@@ -435,6 +437,8 @@ public final class StepHands implements Steps.Hands {
             if (mining) {
                 IBaritone b = Jobs.baritone();
                 if (b != null && chopping) b.getChopProcess().cancel();
+                else if (b != null && veining && veinWalking) Jobs.cancel(b);     // 0.39.z78 vein: its walk to the priced spot
+                else if (b != null && veining) b.getVeinProcess().cancel();
                 else if (b != null) b.getMineProcess().cancel();
             }
             if (fishing != null) fishing.end();
@@ -488,6 +492,8 @@ public final class StepHands implements Steps.Hands {
         walkJob = null;
         if (mining) endMining();
         chopping = false;
+        veining = false;
+        veinWalking = false;
         miningWhat = null;
         mineSource = null;
         mineFrom = null;
@@ -1179,9 +1185,12 @@ public final class StepHands implements Steps.Hands {
     private String mine(LocalPlayer p, List<Block> blocks, List<String> ids, int n, String what) {
         IBaritone b = Jobs.baritone();
         if (b == null) return "error: baritone not loaded";
-        // S26 (owner 2026-10-22): an ore cluster is one job like a tree: the fork's component rule (mineComponent) for logs and
-        // ores alike; any other block set (stone, sand...) stays on the stock mine process (a stone "component" is the hillside)
-        chopping = component || allLogs(blocks) || allOres(blocks);
+        // S26 (owner 2026-10-22): an ore cluster is one job like a tree; any other block set (stone, sand...) stays on the
+        // stock mine process (a stone "component" is the hillside). 0.39.z78 vein (owner 2026-10-27, "a vein is not a chop";
+        // RULES 17): a tree and a station take run the fork's chop, ore its vein (only blocks in view, CollectHand)
+        var hand = io.github.mojolowjo.entropybot.aa.moves.CollectHand.of(component, allLogs(blocks), allOres(blocks));
+        chopping = hand == io.github.mojolowjo.entropybot.aa.moves.CollectHand.Hand.CHOP;
+        veining = hand == io.github.mojolowjo.entropybot.aa.moves.CollectHand.Hand.VEIN;
         if (!allLogs(blocks)) {
             // the tier guard (owner-watched 2026-10-22): never start a dig the bag's pickaxe cannot do; the step fails at once
             // and the chain re-prices with the pickaxe first. Blocks it cannot dig leave the filter.
@@ -1208,7 +1217,6 @@ public final class StepHands implements Steps.Hands {
         int target = itemsOf(p, filter) + want;
         mineFilter = filter;                     // 0.39.z66 item 2: the drops' gain at the end, as Baritone counts it
         mineDrops0 = target - want;
-        exploreWatch.reset();                    // 0.39.z77 wood 2: a new mine has not been in control yet
         // 0.39.z8 (owner 2026-10-22, "remove the old job habit"): no Baritone setting here; the fork's chop / mine run
         // owns breaking and placing for its run (and the chop the bag's placeable blocks as throwaway)
         io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE, "steps");
@@ -1219,22 +1227,50 @@ public final class StepHands implements Steps.Hands {
         if (mineFrom == null) mineFrom = "searched from " + here[0] + " " + here[1] + " " + here[2];   // a tree step names its own spot
         try {
             if (chopping) {
-                b.getChopProcess().mineComponent(target, filter);
+                if (component) b.getChopProcess().mineComponent(target, filter);     // a station take: the component at hand
+                else b.getChopProcess().chop(target, filter);                         // 0.39.z78 vein: a tree is the chop's
                 if (!b.getChopProcess().isActive()) {          // it ended at its start (none in range): its own reason
                     endMining();
                     String end = endOf(b.getChopProcess().lastEnd());
                     ChopEnd.zeroGot(0, mineSource, mineFrom, end);   // 0.39.z36 (S42): none got: the source fact, the order re-plans
                     return "error: " + what + ": " + end;
                 }
+            } else if (veining) {
+                // 0.39.z78 vein: the vein takes no spot and targets only blocks in view - the priced spot's walk first, on the
+                // goal the chain priced (LivePathPrice.walkGoal: the kept priced path when the bot still stands at its start)
+                BlockPos spot = collectSpot == null || collectSpot.at() == null ? null : new BlockPos(collectSpot.at()[0], collectSpot.at()[1], collectSpot.at()[2]);
+                if (spot != null && !LivePathPrice.goal(spot).isInGoal(p.blockPosition())) {
+                    veinWalking = true;
+                    LivePathPrice.walkGoal(b, spot);
+                    LOG.info("[entropybot] steps: {} - the walk to the priced spot {} first (Baritone's vein takes only blocks in view)", what, collectSpot.spot());
+                } else {
+                    String end = startVein(b, filter, target, here, what);
+                    if (end != null) return "error: " + end;
+                }
             } else {
                 b.getMineProcess().mineWith(target, filter, true);
             }
         } catch (LinkageError e) {
             endMining();
-            return "error: this Baritone has no mineWith (the stock jar? install the entropy fork): " + e;
+            return "error: this Baritone has no " + (veining ? "IVeinProcess (getVeinProcess: the fork's job-vein jar)" : "mineWith (the stock jar? install the entropy fork)") + ": " + e;
         }
-        LOG.info("[entropybot] steps: {} - Baritone's {} process on {} block kind(s), until {} in the bag", what, chopping ? "chop" : "mine", blocks.size(), target);
+        LOG.info("[entropybot] steps: {} - Baritone's {} process on {} block kind(s), until {} in the bag", what, hand.name, blocks.size(), target);
         return null;
+    }
+
+    /**
+     * 0.39.z78 vein: the fork's vein on {@code filter} until {@code target} in the bag, from where the bot stands now (at the
+     * priced spot). Null: it runs; else the step's failure text from its own end at the start (rule 7).
+     */
+    private String startVein(IBaritone b, BlockOptionalMetaLookup filter, int target, int[] here, String what) {
+        b.getVeinProcess().vein(target, filter);
+        if (b.getVeinProcess().isActive()) return null;
+        endMining();
+        String end = veinEndOf(b.getVeinProcess().lastEnd());
+        String none = io.github.mojolowjo.entropybot.aa.moves.CollectHand.veinNoneInView(collectSpot, end, here, what, 0, want);
+        if (none != null) return none;
+        ChopEnd.zeroGot(0, mineSource, mineFrom, end);
+        return what + ": " + end;
     }
 
     /** The bag's items the filter matches now (what Baritone's quantity counts: its main inventory, as MineProcess reads it). */
@@ -1250,8 +1286,6 @@ public final class StepHands implements Steps.Hands {
     /** 0.39.z66 item 2: the mine's filter and the bag's count of its items at the start (null: no mine running). */
     private BlockOptionalMetaLookup mineFilter;
     private int mineDrops0;
-    /** 0.39.z77 wood 2: the spot collect's watch on the mine's explore (reset at each mine's start). */
-    private final io.github.mojolowjo.entropybot.aa.moves.MineExploreWatch exploreWatch = new io.github.mojolowjo.entropybot.aa.moves.MineExploreWatch();
 
     /**
      * 0.39.z77 J2 E4: the cells of a Baritone goal - a goal with a position (IGoalRenderPos: GoalBlock, GoalTwoBlocks,
@@ -1287,6 +1321,11 @@ public final class StepHands implements Steps.Hands {
         return lastEnd == null || lastEnd.isEmpty() ? "the chop process ended without a reason" : lastEnd;
     }
 
+    /** 0.39.z78 vein: the vein's end reason as the step's failure text (an empty one is said so, never guessed). */
+    static String veinEndOf(String lastEnd) {
+        return lastEnd == null || lastEnd.isEmpty() ? "the vein process ended without a reason" : lastEnd;
+    }
+
     private int count(LocalPlayer p) {
         Map<String, Integer> bag = Gui.inventory(p);
         int n = 0;
@@ -1300,10 +1339,11 @@ public final class StepHands implements Steps.Hands {
         if (chopping) {
             // chop: the whole tree is the job; the process ends itself (the count is checked between trees) with its reason
             if (b == null) return Car.Status.failed("baritone not loaded");
-            if (b.getChopProcess().isActive() || Core.INSTANCE.reflexes.hold()) return Car.Status.running(miningWhat + ": " + got + " of " + want);
+            if (b.getChopProcess().isActive() || Core.INSTANCE.reflexes.hold()) return Car.Status.running(miningWhat + ": " + got + " of " + want + " (Baritone's chop)");
             endMining();
             return ChopEnd.of(miningWhat, got, want, endOf(b.getChopProcess().lastEnd()), mineSource, mineFrom, dropsGot(p));
         }
+        if (veining) return veinStatus(p, b, got);
         if (got >= want) {
             if (b != null) b.getMineProcess().cancel();
             endMining();
@@ -1322,22 +1362,6 @@ public final class StepHands implements Steps.Hands {
         }
         // 0.39.z77 J2 E4 (run AP 00:07:24): the mine's own goal - every block it goes for - more than failures.moved from the
         // priced spot: the same spot's fact before the feet show it (no new comparison, rule 14)
-        if (collectSpot != null && b != null) {
-            // 0.39.z77 wood (run DE 02:35:56: the mine's explore has no goal cell, so E4 read none and the bot went 83 blocks
-            // down): Baritone's mine in control running its explore (it knows none of the blocks in its sight) with the priced
-            // spot out of that sight - the same spot's fact; wood 2: only after one scan pace in control (MineExploreWatch).
-            // Loader notes: Baritone's API (IPathingControlManager#mostRecentInControl, IPathingBehavior#getGoal, GoalRunAway:
-            // MineProcess.updateGoal's explore), its settings mineGoalUpdateInterval and legitMineYLevel.
-            boolean mineInControl = !Core.INSTANCE.reflexes.hold() && b.getPathingControlManager().mostRecentInControl().orElse(null) == b.getMineProcess();
-            var bs = baritone.api.BaritoneAPI.getSettings();
-            String why = exploreWatch.tick(collectSpot, here, mineInControl, b.getPathingBehavior().getGoal() instanceof baritone.api.pathing.goals.GoalRunAway,
-                    bs.mineGoalUpdateInterval.value, bs.legitMineYLevel.value, miningWhat, got, want);
-            if (why != null) {
-                b.getMineProcess().cancel();
-                endMining();
-                return Car.Status.failed(why);
-            }
-        }
         if (collectSpot != null && b != null && !Core.INSTANCE.reflexes.hold()) {
             List<int[]> goals = goalCells(b.getPathingBehavior().getGoal());
             if (collectSpot.targetAway(goals, io.github.mojolowjo.entropybot.aa.brain.Failures.movedV())) {
@@ -1352,14 +1376,61 @@ public final class StepHands implements Steps.Hands {
         if (b == null) return Car.Status.failed("baritone not loaded");
         if (!b.getMineProcess().isActive() && !Core.INSTANCE.reflexes.hold()) {
             endMining();
-            String said = mineSaid(mineLines0, io.github.mojolowjo.entropybot.baritone.BaritoneHook.lines(), io.github.mojolowjo.entropybot.baritone.BaritoneHook.lastLine());
+            // 0.39.z78 vein (fork job-vein, second item): under the run lease (mineWith) the mine ENDS when it knows none of
+            // the block - "none in sight (N blocks of the feet)" / "none in range" (IMineProcess.lastEnd), never its explore
+            // toward legitMineYLevel; at a priced spot that is the spot's fact, in the explore watch's words it replaces
+            String end = mineEnd(b);
+            String none = io.github.mojolowjo.entropybot.aa.moves.CollectHand.mineNoneKnown(collectSpot, end, here, miningWhat, got, want);
+            if (none != null) return Car.Status.failed(none);
+            String said = end != null && !end.isEmpty() ? end
+                    : mineSaid(mineLines0, io.github.mojolowjo.entropybot.baritone.BaritoneHook.lines(), io.github.mojolowjo.entropybot.baritone.BaritoneHook.lastLine());
             int drops = dropsGot(p);
             if (drops > got) return ChopEnd.of(miningWhat, got, want, said, mineSource, mineFrom, drops);   // 0.39.z66 item 2: other drops, its own words
             // 0.39.z33 (S36): none of it got: the source is a changed fact (unreachable) and the order re-plans without it
             ChopEnd.zeroGot(got, mineSource, mineFrom, said);
             return Car.Status.failed(miningWhat + ": Baritone's mine process ended with " + got + " of " + want + ": " + said);
         }
-        return Car.Status.running(miningWhat + ": " + got + " of " + want);
+        return Car.Status.running(miningWhat + ": " + got + " of " + want + " (Baritone's mine)");
+    }
+
+    /** 0.39.z78 vein: the mine's own end (the fork's IMineProcess.lastEnd), null on a fork without it (the chat line then). */
+    private static String mineEnd(IBaritone b) {
+        try {
+            return b.getMineProcess().lastEnd();
+        } catch (LinkageError e) {
+            io.github.mojolowjo.entropybot.Quiet.warn("steps: this Baritone has no IMineProcess.lastEnd (the fork's job-vein jar): the mine's chat line says its end", e);
+            return null;
+        }
+    }
+
+    /**
+     * 0.39.z78 vein: an ore collect on the fork's vein - first its walk to the priced spot (the vein takes no spot and only
+     * blocks in view), then the vein; its end is the step's (CollectHand: "none in view" at the spot is the spot's fact; the
+     * chop's end rules else, ChopEnd).
+     */
+    private Car.Status veinStatus(LocalPlayer p, IBaritone b, int got) {
+        int[] here = Jobs.here(p);
+        if (veinWalking) {
+            if (b.getCustomGoalProcess().isActive() || b.getPathingBehavior().getInProgress().isPresent() || Core.INSTANCE.reflexes.hold())
+                return Car.Status.running(miningWhat + ": walking to the priced spot " + collectSpot.spot() + " (" + Math.round(collectSpot.dist(here)) + " m) for Baritone's vein");
+            veinWalking = false;
+            BlockPos spot = new BlockPos(collectSpot.at()[0], collectSpot.at()[1], collectSpot.at()[2]);
+            if (!LivePathPrice.goal(spot).isInGoal(p.blockPosition())) {
+                endMining();
+                return Car.Status.failed(io.github.mojolowjo.entropybot.aa.moves.CollectHand.veinWalkShort(collectSpot, here, miningWhat,
+                        io.github.mojolowjo.entropybot.baritone.BaritoneHook.lastCalc()));
+            }
+            String end = startVein(b, mineFilter, mineDrops0 + want, here, miningWhat);
+            if (end != null) return Car.Status.failed(end);
+            LOG.info("[entropybot] steps: {} - at the priced spot {}: Baritone's vein on what is in view", miningWhat, collectSpot.spot());
+            return Car.Status.running(miningWhat + ": " + got + " of " + want + " (Baritone's vein)");
+        }
+        if (b.getVeinProcess().isActive() || Core.INSTANCE.reflexes.hold()) return Car.Status.running(miningWhat + ": " + got + " of " + want + " (Baritone's vein)");
+        endMining();
+        String end = veinEndOf(b.getVeinProcess().lastEnd());
+        String none = io.github.mojolowjo.entropybot.aa.moves.CollectHand.veinNoneInView(collectSpot, end, here, miningWhat, got, want);
+        if (none != null) return Car.Status.failed(none);
+        return ChopEnd.of(miningWhat, got, want, end, mineSource, mineFrom, dropsGot(p));
     }
 
     // ---- build: the builder leg ----

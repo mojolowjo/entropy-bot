@@ -249,57 +249,11 @@ class Z77ExploreTest {
         assertFalse(k.leftSpot(onTheWay, d0, moved), "on the way down the feet were nearer the spot than at the start");
         assertTrue(k.leftSpot(below, d0, moved), "DE 02:36:50: 57 m, the feet check at last");
         assertFalse(k.targetAway(List.of(), moved), "the explore has no goal cell: E4 reads none");
-        // the fix: the explore with the spot out of sight ends the collect where it starts
-        assertTrue(k.exploresAway(start, true), "DE 02:35:56: the mine explores, the spot 29 blocks off on x: not its target");
-        assertFalse(k.exploresAway(start, false), "the mine has goal cells (blocks in view): E4 and the feet check judge it");
-        assertFalse(k.exploresAway(new int[]{33, 38, 9}, true), "within the mine's sight of the spot: the gap between blocks in view");
-        assertTrue(k.exploresAway(new int[]{37, 46, 7}, true), "11 blocks above it: out of sight on one axis");
-        assertFalse(new Step.Collect("dark_oak_planks", 2).exploresAway(start, true), "no priced spot: no claim (rule 15)");
-        assertFalse(k.exploresAway(null, true), "no feet: no claim");
+        // 0.39.z78 vein: the fork's mine (job-vein) under the run lease ENDS here itself ("none in sight (10 blocks of the
+        // feet)", no explore): the step fails from that end - CollectHandTest (the explore watch is deleted)
     }
 
-    // ---- wood 2 (review of 1207c13b): the watch StepHands.mineStatus drives, the tick-0 race, the fork's sight ----
-
-    /**
-     * DE's shape through the watch mineStatus feeds (the mine in control, its goal the explore GoalRunAway, the spot 40 m
-     * off at 37 35 7, Baritone's default scan pace 5): nothing for the first scan pace of ticks, the spot's fact after it.
-     */
-    @Test
-    void wood2_deShapeThroughTheWatchEndsAfterOneScanPace() {
-        Step.Collect k = new Step.Collect("dark_oak_planks", 2, new int[]{37, 35, 7});
-        io.github.mojolowjo.entropybot.aa.moves.MineExploreWatch w = new io.github.mojolowjo.entropybot.aa.moves.MineExploreWatch();
-        int[] feet = {8, 62, 2};
-        int pace = 5;
-        for (int t = 0; t < pace; t++)
-            assertNull(w.tick(k, feet, true, true, pace, -59, "collect 2 dark_oak_planks", 0, 2), "tick " + t + ": the first scan may not have landed");
-        assertNull(FactChange.take(), "no fact before one scan pace");
-        String why = w.tick(k, feet, true, true, pace, -59, "collect 2 dark_oak_planks", 0, 2);
-        assertNotNull(why, "after one scan pace in control: the explore is the mine's answer");
-        assertTrue(why.contains("explore toward y -59") && why.contains("37 35 7 (40 m)"), why);
-        FactChange.Fact f = FactChange.take();
-        assertNotNull(f, "the spot's near-collect fact is said");
-        assertEquals(why, f.text());
-    }
-
-    /** The tick-0 race: an 11-15 block spot is never ended while the mine is fresh; control lost starts the count again. */
-    @Test
-    void wood2_aFreshMineIsNotEndedOnItsFirstTicks() {
-        Step.Collect k = new Step.Collect("oak_planks", 4, new int[]{12, 64, 0});
-        io.github.mojolowjo.entropybot.aa.moves.MineExploreWatch w = new io.github.mojolowjo.entropybot.aa.moves.MineExploreWatch();
-        int[] feet = {0, 64, 0};                         // 12 blocks off on x: out of the mine's sight
-        assertNull(w.tick(k, feet, true, true, 5, -59, "collect 4 oak_planks", 0, 4), "tick 0: no end");
-        for (int t = 1; t < 5; t++) assertNull(w.tick(k, feet, true, true, 5, -59, "collect 4 oak_planks", 0, 4));
-        assertNull(w.tick(k, feet, false, true, 5, -59, "collect 4 oak_planks", 0, 4), "a tick not in control (another process, a reflex)");
-        assertEquals(0, w.inControl(), "the count starts again");
-        for (int t = 0; t < 5; t++) assertNull(w.tick(k, feet, true, false, 5, -59, "collect 4 oak_planks", 0, 4), "goal cells: not the explore");
-        assertNull(w.tick(k, new int[]{5, 64, 0}, true, true, 5, -59, "collect 4 oak_planks", 0, 4), "within sight of the spot: the gap between blocks in view");
-        assertNotNull(w.tick(k, feet, true, true, 5, -59, "collect 4 oak_planks", 0, 4), "past the pace, out of sight, exploring: ended");
-        w.reset();
-        assertNull(w.tick(k, feet, true, true, 0, -59, "collect 4 oak_planks", 0, 4), "a pace of 0 still waits one tick");
-        assertNotNull(w.tick(k, feet, true, true, 0, -59, "collect 4 oak_planks", 0, 4));
-        w.reset();
-        for (int t = 0; t < 10; t++) assertNull(w.tick(null, feet, true, true, 5, -59, "collect 4 oak_planks", 0, 4), "no priced spot: no claim");
-    }
+    // ---- wood 2: the fork's sight ----
 
     /**
      * MINE_SIGHT is the fork's MineProcess.addNearby searchDist: a local there (not a field or a setting, so no reflection

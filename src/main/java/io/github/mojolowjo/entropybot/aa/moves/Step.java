@@ -217,20 +217,6 @@ public sealed interface Step {
          */
         public static final int MINE_SIGHT = 10;     // structural: the fork's MineProcess.addNearby searchDist
 
-        /**
-         * 0.39.z77 wood (run DE 02:35:56-02:36:50: "collect 2 dark_oak_planks" at 37 35 7, 40 m off inside the hill, ran
-         * Baritone's GoalRunAwayFromMaintainY y=-59 and took the bot 83 blocks down before the feet were 16 m past the start's
-         * distance): Baritone's mine runs its explore ({@code explores}: it knows no block of the kind - MineProcess.updateGoal's
-         * GoalRunAway to legitMineYLevel) while the priced spot is out of its sight from {@code feet} ({@link #MINE_SIGHT} on an
-         * axis): it is not going for the priced spot. Near the spot an explore is the gap between blocks in view, not this.
-         * False with no spot, no feet or no explore (rule 15). Pure.
-         */
-        public boolean exploresAway(int[] feet, boolean explores) {
-            if (at == null || !explores || feet == null || feet.length < 3) return false;     // structural: x y z
-            for (int i = 0; i < 3; i++) if (Math.abs(feet[i] - at[i]) > MINE_SIGHT) return true;    // structural: x y z
-            return false;
-        }
-
         /** The straight metres from {@code feet} to the priced spot (NaN: none named). */
         public double dist(int[] feet) {
             if (at == null || feet == null || feet.length < 3) return Double.NaN;     // structural: x y z
