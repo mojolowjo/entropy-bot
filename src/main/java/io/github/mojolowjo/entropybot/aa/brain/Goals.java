@@ -63,6 +63,9 @@ public final class Goals {
         /** 0.39.z33 (S36): the sources this order dropped (unreachable, gone), charged by their source key; held for the order's life. */
         public final Failures sources = new Failures();
 
+        /** 0.39.z77 world 4: the positional held sources (a station's walk, a walk target) back now - the hysteresis state of {@link #droppedSources(Goal, int[])}. */
+        public final java.util.Set<String> back = new java.util.HashSet<>();
+
         /** 0.39.z65 item 2: the spare-tool line last said for this order (said again only when a taken chain's line differs). */
         public String sparesSaid;
 
@@ -378,12 +381,22 @@ public final class Goals {
      * 0.39.z65 review 1: the order's dropped sources as the chain sees them from {@code pos} (the feet now, null: unknown): a
      * known station dropped because its walk failed ({@link io.github.mojolowjo.entropybot.aa.NeedChain#STATION_AT}) is
      * back once the bot stands {@code failures.moved} blocks closer to it than where the walk failed (a walk from there is
-     * another walk); every other source stays dropped for the order's life. A new order starts with none. Pure.
+     * another walk); every other source stays dropped for the order's life. A new order starts with none.
+     * <p>0.39.z77 world 4 (re-check: the trip key reads these, BatchWay.trip; feet jittering at the 16-block edge flipped it
+     * every tick): the same band as the world facts (WorldFacts.MARGIN) - back once failures.moved + 8 closer, held again
+     * only when less than failures.moved closer; in between the order's last state ({@link Goal#back}). Feet unknown: held,
+     * the state kept. Updates the state.
      */
     public static Map<String, String> droppedSources(Goal g, int[] pos) {
         Map<String, String> out = new java.util.LinkedHashMap<>();
         for (Failures.Rec r : g.sources.of(g.id())) {
-            if (r.option() == null || stationBack(r.option(), r.pos(), pos)) continue;
+            if (r.option() == null) continue;
+            if (pos != null && positional(r.option())) {
+                double gain = stationGain(r.option(), r.pos(), pos);
+                if (gain >= Failures.movedV() + WorldFacts.MARGIN) g.back.add(r.option());
+                else if (!(gain >= Failures.movedV())) g.back.remove(r.option());        // less, or not a cell (NaN): held
+                if (g.back.contains(r.option())) continue;
+            }
             out.put(r.option(), r.reason());
         }
         return out;
@@ -399,14 +412,19 @@ public final class Goals {
 
     /** 0.39.z65 review 1 (pure): a station key (0.39.z77: or a walk target) held from {@code from} is released at {@code now} ({@code failures.moved} closer). */
     public static boolean stationBack(String key, int[] from, int[] now) {
-        if (!positional(key) || from == null || now == null) return false;
+        return stationGain(key, from, now) >= Failures.movedV();
+    }
+
+    /** 0.39.z77 world 4 (pure): how much closer to a positional key's cell {@code now} is than {@code from} (blocks); NaN: not one, or not known. */
+    static double stationGain(String key, int[] from, int[] now) {
+        if (!positional(key) || from == null || now == null) return Double.NaN;
         String p = key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STATION_AT) ? io.github.mojolowjo.entropybot.aa.NeedChain.STATION_AT
                 : io.github.mojolowjo.entropybot.aa.NeedChain.WALK_TARGET;
         String[] c = key.substring(p.length()).trim().split("\\s+");
-        if (c.length != 3) return false;     // structural: x y z
-        for (String n : c) if (!n.matches("-?\\d{1,9}")) return false;     // not a station cell: held as any source
+        if (c.length != 3) return Double.NaN;     // structural: x y z
+        for (String n : c) if (!n.matches("-?\\d{1,9}")) return Double.NaN;     // not a station cell: held as any source
         int[] at = {Integer.parseInt(c[0]), Integer.parseInt(c[1]), Integer.parseInt(c[2])};
-        return Failures.moved(now, at) <= Failures.moved(from, at) - Failures.movedV();
+        return Failures.moved(from, at) - Failures.moved(now, at);
     }
 
     /**

@@ -29,7 +29,8 @@ import java.util.regex.Pattern;
  * <li>A strip fact ({@link #stripFact}) is about its tunnel, never the bot's distance: the way key names the tunnel
  * (ores, Y, heading, a fresh start's area); a heading blocked or ended at its Y is kept by the tunnel's start as well
  * ({@link #scoped}: "|from area ax,az"), so the same heading from another start is another fact. Lifts: the cause re-read,
- * a fresh start elsewhere (another key), the run's end.</li>
+ * a fresh start elsewhere (another key), the run's end. 0.39.z77 world 4 (coordinator's decision): one whose cause names no
+ * cell (a yield end, "no path" in the tunnel, blocked at its start) holds for the run - the exact tunnel only, said so.</li>
  * <li>Any other fact holds by distance with hysteresis: held within failures.moved of the cell, lifted only beyond
  * failures.moved + {@link #MARGIN}, held again only within failures.moved - feet jittering at the edge never flip it
  * (the batch trip's key reads these, BatchWay.trip).</li>
@@ -174,6 +175,12 @@ public final class WorldFacts {
      */
     public String sayOnce(String order, String orderWord, String key, String why) {
         if (!said.add(order + "|" + key)) return null;
+        Entry e = map.get(key);
+        // 0.39.z77 world 4 (coordinator's decision): a strip fact with no cause cell to re-read (a yield end, "no path" in the
+        // tunnel, blocked at its start) holds for the run; its key is the exact tunnel, so the rest stays open
+        if (stripFact(key) && (e == null || e.rec.cause() == null))
+            return orderWord + ": " + key + " held as a world fact: " + why + "; held for this run: the cause cannot be re-read;"
+                    + " another start or heading is open";
         if (stripFact(key))
             return orderWord + ": " + key + " held as a world fact: " + why + "; that tunnel is tried again when its cause is gone"
                     + " (the water or lava cell seen without it), from another start, or in the next run";

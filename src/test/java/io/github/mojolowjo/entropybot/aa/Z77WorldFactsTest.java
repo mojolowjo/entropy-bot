@@ -215,11 +215,26 @@ class Z77WorldFactsTest {
      */
     @Test
     void feetJitteringAtTheEdgeDoNotChurnTheTrip() {
-        assertTrue(jitterDerivations(33) <= 1, "hysteresis: at most 1 re-derivation in 20 ticks");
-        assertTrue(jitterDerivations(41) >= 10, "control: past the margin every flip re-derives");
+        assertTrue(jitterDerivations(33, false) <= 1, "hysteresis: at most 1 re-derivation in 20 ticks");
+        assertTrue(jitterDerivations(41, false) >= 10, "control: past the margin every flip re-derives");
     }
 
-    static int jitterDerivations(int farY) {
+    /**
+     * World 4 (re-check): the LEARNER still open, holding its own station walk (Goals.droppedSources(g, pos): back once
+     * closer) - 15 / 17 blocks closer than where it failed (the same Ys: 59.0 -> 44.0 / 42.0 from the table), its trip and the
+     * other order's at most 1 re-derivation in 20 ticks. Control: 15 / 25 closer flips the learner's hold every tick.
+     */
+    @Test
+    void theLearnersOwnPositionalHoldHasTheSameBand() {
+        assertTrue(jitterDerivations(33, true) <= 1, "the learner too: at most 1 re-derivation in 20 ticks");
+        assertTrue(jitterDerivations(41, true) >= 10, "control: past the margin every flip re-derives");
+        double m = Failures.movedV();
+        String k = NeedChain.stationKey(0, 70, 0);
+        int[] from = {0, 10, 0};
+        assertTrue(Goals.stationBack(k, from, new int[]{0, (int) (10 + m), 0}), "the pure rule unchanged: 16 closer is back");
+    }
+
+    static int jitterDerivations(int farY, boolean learner) {
         ScenariosTest.world("wooden", "stone");
         Clock.Fake clock = new Clock.Fake(10_000_000);
         Blackboard bb = new Blackboard(clock, new FakePort(), new Tracer());
@@ -230,15 +245,17 @@ class Z77WorldFactsTest {
         FactChange.stationWalk("crafting_table", -261, 75, 21, "the walk to it ended short: couldn't get there");
         assertNotNull(Goals.replan(bb, g, walk, FactChange.take(), "couldn't get there").steps());
         Goals.Goal next = Goals.draft(DebugTreeTest.item("iron_ore"), 1, 0, clock.now());
-        String tk = io.github.mojolowjo.entropybot.aa.brain.BatchWay.tripKey(next);
+        String tk = io.github.mojolowjo.entropybot.aa.brain.BatchWay.tripKey(next), tg = io.github.mojolowjo.entropybot.aa.brain.BatchWay.tripKey(g);
         bb.in.pos = new int[]{-261, 31, 22};                                 // 15 blocks
         Goals.chain(bb, next);
-        int before = io.github.mojolowjo.entropybot.aa.brain.BatchWay.priced(tk);
+        if (learner) Goals.chain(bb, g);
+        int before = io.github.mojolowjo.entropybot.aa.brain.BatchWay.priced(tk) + (learner ? io.github.mojolowjo.entropybot.aa.brain.BatchWay.priced(tg) : 0);
         for (int t = 0; t < 20; t++) {
             bb.in.pos = new int[]{-261, t % 2 == 0 ? farY : 31, 22};
             Goals.chain(bb, next);
+            if (learner) Goals.chain(bb, g);
         }
-        int n = io.github.mojolowjo.entropybot.aa.brain.BatchWay.priced(tk) - before;
+        int n = io.github.mojolowjo.entropybot.aa.brain.BatchWay.priced(tk) + (learner ? io.github.mojolowjo.entropybot.aa.brain.BatchWay.priced(tg) : 0) - before;
         io.github.mojolowjo.entropybot.aa.brain.BatchWay.clear();
         return n;
     }
@@ -267,6 +284,31 @@ class Z77WorldFactsTest {
         assertTrue(w.heldAt(in, null).get("collect raw_iron at 20 28 19").contains("c learned it at 20 28 60"));
     }
 
+    /**
+     * World 4 (coordinator's decision): a strip fact whose cause names no cell (blocked at its start) holds for the run and
+     * says so; the run's end (a new AA runtime: a new blackboard, Commands.init at a world's first tick) clears it.
+     */
+    @Test
+    void aStripFactWithNoCauseCellHoldsForTheRunAndTheRunsEndClearsIt() {
+        ScenariosTest.world("wooden", "stone");
+        Clock.Fake clock = new Clock.Fake(10_000_000);
+        Blackboard bb = bb(band(17, "west"), clock);
+        bb.in.pos = new int[]{9, 17, 1};
+        Goals.Goal pickaxe = Goals.draft(DebugTreeTest.item("raw_iron"), 3, 0, clock.now());
+        FactChange.stripBlocked(17, "west", "strip: no path (strip west feet y 17: 0 blocks, 0 clusters mined)");
+        assertNotNull(Goals.replan(bb, pickaxe, new Step.Strip(IRON, Map.of("iron", 3), 17, "west", 0), FactChange.take(), "strip: no path").steps());
+        bb.in.pos = new int[]{12, 17, 5};
+        Goals.Goal helmet = Goals.draft(DebugTreeTest.item("iron_ore"), 5, 0, clock.now());
+        assertEquals("north", heading(Goals.chain(bb, helmet)));
+        FakePort port = (FakePort) bb.port;
+        assertTrue(port.log.stream().anyMatch(l -> l.contains("held for this run: the cause cannot be re-read; another start or heading is open")), port.log.toString());
+        // the run ends: the next run's blackboard starts with no world facts - west is tried
+        Blackboard next = bb(band(17, "west"), clock);
+        next.in.pos = new int[]{12, 17, 5};
+        assertEquals(0, WorldFacts.of(next).size());
+        assertEquals("west", heading(Goals.chain(next, Goals.draft(DebugTreeTest.item("iron_ore"), 5, 0, clock.now()))));
+    }
+
     /** The store's own rules: what is shared, what lifts it. */
     @Test
     void sharedLiftedAndNotShared() {
@@ -292,6 +334,7 @@ class Z77WorldFactsTest {
         in.pos = new int[]{9, 17, 200};                                     // far off: a strip fact never lifts on distance
         assertEquals(Set.of(strip, NeedChain.headingFrom(heading, "area 0,0")), w.heldAt(in, null).keySet());
         assertTrue(w.sayOnce("o", "helmet", strip, "x").contains("when its cause is gone"));
+        assertTrue(w.sayOnce("o", "helmet", NeedChain.headingFrom(heading, "area 0,0"), "x").contains("held for this run: the cause cannot be re-read"));
         in.pos = null;
         assertEquals(2, w.heldAt(in, null).size(), "feet not known: the strip facts held (rule 15)");
     }
