@@ -73,7 +73,10 @@ final class NearbyLive {
             sets.values().removeIf(e -> now - e.at() >= Tuning.l("nearby.cacheMs"));
             long t0 = LAPS.now();
             k = new Cached(now, me, Nearby.source(scan(), me, blocks, fallback));
-            if (t0 != 0) LAPS.nearby("renew", LAPS.now() - t0);      // 0.39.z78 D6 (run DR round): the renewals' share of "seen"
+            if (t0 != 0) {
+                LAPS.nearby("renew", LAPS.now() - t0);      // 0.39.z78 D6 (run DR round): the renewals' share of "seen"
+                LAPS.nearbySet(blocks.size(), setName(blocks));
+            }
             sets.put(java.util.Set.copyOf(blocks), k);
         }
         if (notes != null) notes.put(java.util.Set.copyOf(blocks), k.source().line());
@@ -95,6 +98,15 @@ final class NearbyLive {
         if (t0 != 0) LAPS.nearby("skip", LAPS.now() - t0);           // 0.39.z78 D6: a held spot's fresh lookup (never cached)
         if (notes != null) notes.put(java.util.Set.copyOf(blocks), s.line());
         return s.spot();
+    }
+
+    /** 0.39.z78 D6: a block set's name for the probe - its first three ids (sorted, no "minecraft:"), "+N more" past them. */
+    static String setName(java.util.Set<String> blocks) {
+        List<String> ids = new ArrayList<>();
+        for (String id : blocks) ids.add(id.replaceFirst("^minecraft:", ""));
+        java.util.Collections.sort(ids);
+        int shown = Math.min(3, ids.size());                 // structural: a probe line a person reads
+        return String.join("|", ids.subList(0, shown)) + (ids.size() > shown ? " +" + (ids.size() - shown) + " more" : "");
     }
 
     /** aa debug: start collecting the source lines of the lookups that follow. */

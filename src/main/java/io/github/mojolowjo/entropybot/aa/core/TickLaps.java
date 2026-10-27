@@ -41,6 +41,9 @@ public final class TickLaps {
         split.clear();
         asks.clear();
         nearby.clear();
+        renewSets = 0;
+        renewMax = 0;
+        renewMaxName = null;
         start = clock.getAsLong();
         last = start;
     }
@@ -109,6 +112,17 @@ public final class TickLaps {
         a[1] += Math.max(0, nanos);
     }
 
+    /** 0.39.z78 D6: the block sets renewed this tick, and the largest (its size and its blocks' names). */
+    private int renewSets, renewMax;
+    private String renewMaxName;
+
+    /** 0.39.z78 D6 (run DR round): one block set renewed ({@code size} blocks, {@code name} its blocks); said with the renewals. */
+    public void nearbySet(int size, String name) {
+        if (!on) return;
+        renewSets++;
+        if (size > renewMax) { renewMax = size; renewMaxName = name; }
+    }
+
     /** 0.39.z78 D6: a trip was asked of the planner this tick (BatchWay; the line then carries the planner's numbers). */
     public boolean planned() { return on && playbooks > 0; }
 
@@ -153,6 +167,8 @@ public final class TickLaps {
             int i = 0;
             for (var e : nearby.entrySet()) b.append(i++ == 0 ? " " : ", ").append(e.getKey()).append(String.format(Locale.ROOT, " %d = %.1f", e.getValue()[0], e.getValue()[1] / 1e6));     // structural: ns per ms
             b.append(" ms");
+            if (renewSets > 0) b.append(" (").append(renewSets).append(" block set").append(renewSets == 1 ? "" : "s").append(" renewed, the largest ")
+                    .append(renewMax).append(" block").append(renewMax == 1 ? "" : "s").append(renewMaxName == null ? "" : ": " + renewMaxName).append(")");
         }
         return b.toString();
     }

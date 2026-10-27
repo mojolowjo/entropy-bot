@@ -687,10 +687,12 @@ class Z77PlaybookTest {
         laps.nearby("renew", 2_000_000);                     // 0.39.z78 run DR round: the nearby lookups by kind
         laps.nearby("scans", 1_500_000);
         laps.nearby("renew", 1_000_000);
+        laps.nearbySet(3, "coal_ore|deepslate_coal_ore|coal_block");
+        laps.nearbySet(1, "oak_log");
         now[0] = 90_000_000;
         String nb = laps.line(8, 20);
         assertFalse(nb.contains("playbook"), "no comparison this tick: not said");
-        assertTrue(nb.endsWith(" | nearby: renew 2 = 3.0, scans 1 = 1.5 ms"), nb);
+        assertTrue(nb.endsWith(" | nearby: renew 2 = 3.0, scans 1 = 1.5 ms (2 block sets renewed, the largest 3 blocks: coal_ore|deepslate_coal_ore|coal_block)"), nb);
     }
 
     /** The bound is said, never a hang: a budget of 10 nodes fails the playbook with the reason. */
