@@ -110,6 +110,19 @@ public final class StripYield {
      */
     public static End check(Map<String, Integer> amounts, Map<String, Integer> picked, int cells, Map<String, Double> predicted,
                             Map<String, Fact> facts, String heading, HeadingCells headings) {
+        Verdict v = verdict(amounts, picked, cells, predicted, facts, heading, headings);
+        return v == null ? null : v.end();
+    }
+
+    /**
+     * {@link #check}'s verdict with the reason a dry strip digs on: {@code end} (null: go on) or {@code on} - 0.39.z77 strip 3:
+     * the sample is in and below the band's, but no other way is priced and no other heading known, so only the step watch
+     * (steps.stepMaxS, Steps' "timed out after N s") ends it; the strip's running status carries this, so that end line says it.
+     */
+    public record Verdict(End end, String on) {}
+
+    public static Verdict verdict(Map<String, Integer> amounts, Map<String, Integer> picked, int cells, Map<String, Double> predicted,
+                                  Map<String, Fact> facts, String heading, HeadingCells headings) {
         if (amounts == null || amounts.isEmpty()) return null;
         Map<String, Integer> left = new LinkedHashMap<>();
         List<String> met = new ArrayList<>();
@@ -167,6 +180,8 @@ public final class StripYield {
             }
         }
         double other = allA ? Math.min(sumA, bestB) : bestB;
+        if (Double.isInfinite(other)) return new Verdict(null, "no other way priced: digging on to the cap (steps.stepMaxS "
+                + Math.round(Tuning.get("steps.stepMaxS")) + " s; this strip's yield: " + worst + ")");
         if (!(other < stripS)) return null;
         boolean viaA = allA && sumA <= bestB;
         List<String> lefts = new ArrayList<>();
@@ -176,7 +191,7 @@ public final class StripYield {
         // the fact the re-plan holds: the strip's ores only for a one-family strip whose cheaper way is no strip (its strip
         // way is then out for that need); else the heading at this Y - a strip of several families is derived again from
         // the bag (the playbook's descent), so only the heading keeps the same tunnel from being taken up again
-        return new End(why, !viaA || aStrip || amounts.size() > 1);
+        return new Verdict(new End(why, !viaA || aStrip || amounts.size() > 1), null);
     }
 
     /**

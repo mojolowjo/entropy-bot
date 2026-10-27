@@ -126,6 +126,23 @@ class Z77StripTest {
     }
 
     /**
+     * 0.39.z77 strip 3: a dry strip with no other way priced and no other heading known digs on; only the step watch
+     * (steps.stepMaxS 600 s, Steps' "timed out after 600 s (<the strip's status>)") ends it - the verdict says so for that
+     * status. Before the sample is in (10 cells at 1 in 55): no such words.
+     */
+    @Test
+    void noOtherWay_theStripSaysItDigsOnToTheCap() {
+        Map<String, Double> p = Map.of("iron", 1 / IRON);
+        Map<String, StripYield.Fact> f = Map.of("iron", new StripYield.Fact(37.1, CELL, Double.NaN, "no other way priced", false));
+        StripYield.Verdict v = StripYield.verdict(Map.of("iron", 3), Map.of(), 102, p, f, "east", null);
+        assertNotNull(v);
+        assertNull(v.end());
+        assertEquals("no other way priced: digging on to the cap (steps.stepMaxS 600 s; this strip's yield: iron 0 in 102 cells against the band's 1 in 55)", v.on());
+        assertNull(StripYield.check(Map.of("iron", 3), Map.of(), 102, p, f, "east", null));
+        assertNull(StripYield.verdict(Map.of("iron", 3), Map.of(), 10, p, f, "east", null), "no sample yet");
+    }
+
+    /**
      * 0.39.z77 strip 2: another heading on the same band prior as this strip, never better - the band's own cells an ore x
      * the ore left as the floor (an estimate under it is raised); dry areas seen there (dearer) stand; ore seen there (a
      * measured yield) may price it under the band; not known (-1) stays not known.

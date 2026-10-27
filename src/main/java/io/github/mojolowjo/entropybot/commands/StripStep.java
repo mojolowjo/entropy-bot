@@ -205,6 +205,7 @@ final class StripStep {
         yieldSaid = false;
         checkedBlocks = -1;
         goalCell = null;
+        onNote = null;
         // 0.39.z77 strip: a family already met leaves the strip from its start (its ores out of the fork's set)
         List<String> live = StripYield.liveOres(s.ores(), s.amounts(), from == null ? Map.of() : from.picked(), StripStep::family);
         running = live.isEmpty() ? s.ores() : live;
@@ -266,8 +267,15 @@ final class StripStep {
             // 0.39.z77 strip 2 (run CS 19:32:56): the same band prior as this strip, never better but for ore seen there
             return StripYield.sameBand(sd.cells(), left, sd.band(), sd.seen().ores() > 0);
         };
-        return StripYield.check(s.amounts(), now.picked(), now.blocks(), StripOrder.predicted(s.key()), facts, s.heading(), cells);
+        StripYield.Verdict v = StripYield.verdict(s.amounts(), now.picked(), now.blocks(), StripOrder.predicted(s.key()), facts, s.heading(), cells);
+        String was = onNote;
+        onNote = v == null ? null : v.on();
+        if (onNote != null && was == null) LOG.info("[entropybot] strip {}: {}", s.key(), onNote);
+        return v == null ? null : v.end();
     }
+
+    /** 0.39.z77 strip 3: why a dry strip digs on to the step watch (no other way priced), in its running status; null: none. */
+    private static String onNote;
 
     private static boolean bagFull(LocalPlayer p) {
         return p != null && p.getInventory().getFreeSlot() < 0;
@@ -321,7 +329,8 @@ final class StripStep {
                 }
             }
             goalCell = goalOf(b);
-            return Car.Status.running(sp.status() + " - " + sp.why());
+            // 0.39.z77 strip 3: Steps' "timed out after N s (<this status>)" then says why the dry strip dug on to the cap
+            return Car.Status.running(sp.status() + " - " + sp.why() + (onNote == null ? "" : "; " + onNote));
         }
         if (holding) return Car.Status.running(sp.status() + " - " + sp.why());
         Car.Status st = StripOrder.endOf(sp.lastEnd(), sp.status());
