@@ -299,6 +299,31 @@ class D6WorkerTest {
         assertTrue(Deep.equal(l, PlanNodes.old(() -> NeedChain.resolvePlaybookLegs(pb, live.world()))), "the facts of now, never a stale price");
     }
 
+    // ---- run DQ diagnosis ----
+
+    /**
+     * Run DQ (c): one walk priced anew (the near tree's) dirties the nodes that read it, and every later node whose entry
+     * state (the steps and seconds so far) took that walk's time misses its exact key too - the re-resolved count passes the
+     * dirty count. Printed ("D6 cascade: ..."); this documents the state of 4c7c3762, it is no target.
+     */
+    @Test
+    void runDQ_aChangedWalk_reResolvesPastItsDirtyNodes() {
+        data();
+        PlanNodes.forgetMine();
+        PlanNodes.on(true);
+        Live live = new Live();
+        Playbook pb = Playbook.derive(KIT, Playbook.facts(live.world(), null));
+        NeedChain.resolvePlaybookLegs(pb, live.world());
+        NeedChain.resolvePlaybookLegs(pb, live.world());
+        PlanNodes.Stats same = PlanNodes.last();
+        live.walks.put("12,64,0", PathPrice.Answer.priced(new PathPrice.Walk(41.0)));
+        NeedChain.resolvePlaybookLegs(pb, live.world());
+        PlanNodes.Stats moved = PlanNodes.last();
+        System.out.printf("D6 cascade: nothing changed: %s; the near tree's walk priced anew: %s%n", same.text(), moved.text());
+        assertEquals(0, same.dirty(), same.text());
+        assertTrue(moved.dirty() > 0 && moved.resolved() > moved.dirty(), moved.text());
+    }
+
     // ---- run DP ----
 
     @Test

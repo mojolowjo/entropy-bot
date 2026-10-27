@@ -57,6 +57,44 @@ class D6ReplayTest {
     @Test
     void runDL_theOldAndTheIncrementalResolveAgreeAtEveryPlanPoint() { replay("runDL-z78h"); }
 
+    @Test
+    void runDQ_theOldAndTheIncrementalResolveAgreeAtEveryPlanPoint() { replay("runDQ-z78"); }
+
+    /**
+     * Run DQ diagnosis (b): the facts one trip resolve reads, by field - the live check asks each once on the client tick.
+     * Printed ("D6 facts runDQ-z78: ..."), the largest trip's census; nothing tuned.
+     */
+    @Test
+    void runDQ_theFactsATripReads_byField() {
+        Z77PlaybookTest.data();
+        PlanNodes.forgetMine();
+        PlanNodes.on(true);
+        LootBook book = book();
+        Facts f = new Facts();
+        int trips = 0, most = 0;
+        Map<String, Integer> census = Map.of();
+        for (JsonObject e : events("runDQ-z78")) {
+            f.apply(e);
+            if (!"plan".equals(e.get("k").getAsString()) || f.orders.isEmpty()) continue;
+            World w = f.world(book);
+            List<Playbook.Target> targets = new ArrayList<>();
+            for (var o : f.orders.entrySet()) targets.add(new Playbook.Target(o.getKey(), o.getValue()));
+            Playbook pb = Playbook.derive(targets, Playbook.facts(w, null));
+            if (!pb.ok()) continue;
+            PlanNodes.forgetMine();                      // a full resolve: every fact the trip reads
+            NeedChain.resolvePlaybookLegs(pb, w);
+            trips++;
+            var facts = NeedChain.lastRead().facts();
+            if (facts.size() <= most) continue;
+            most = facts.size();
+            Map<String, Integer> c = new java.util.TreeMap<>();
+            for (PlanNodes.Fact k : facts.keySet()) c.merge(k.field(), 1, Integer::sum);
+            census = c;
+        }
+        assertTrue(trips > 50, "trips " + trips);
+        System.out.printf("D6 facts runDQ-z78: %d trips; the largest reads %d facts: %s%n", trips, most, census);
+    }
+
     /**
      * The worker end to end: at every plan point of run DL the trip is asked of the planner port (the snapshot copied on
      * "the client tick", resolved on the worker thread, checked against the facts then, applied or dropped and asked again)

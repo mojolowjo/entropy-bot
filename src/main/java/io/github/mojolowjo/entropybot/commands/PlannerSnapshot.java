@@ -74,7 +74,7 @@ public final class PlannerSnapshot {
      */
     public static PlannerSnapshot take(NeedChain.World live, Collection<PlanNodes.Fact> keys, Map<PlanNodes.Fact, Object> known, long version, long takenAt) {
         Map<PlanNodes.Fact, Object> a = new HashMap<>();
-        for (PlanNodes.Fact f : keys) a.put(f, known != null && known.containsKey(f) ? known.get(f) : NeedChain.ask(live, null, f));
+        for (PlanNodes.Fact f : keys) a.put(f, known != null && known.containsKey(f) ? known.get(f) : PlannerPort.timedAsk(live, f));
         NeedChain.World w = new NeedChain.World(live.bag(), live.tableNear(), live.furnaceNear(),
                 word -> list(a, new PlanNodes.Fact("seen", word)),
                 type -> list(a, new PlanNodes.Fact("mobs", type)),

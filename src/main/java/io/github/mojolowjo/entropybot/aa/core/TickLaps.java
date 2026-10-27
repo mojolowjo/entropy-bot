@@ -39,6 +39,7 @@ public final class TickLaps {
         playbooks = 0;
         playbookNs = 0;
         split.clear();
+        asks.clear();
         start = clock.getAsLong();
         last = start;
     }
@@ -81,6 +82,17 @@ public final class TickLaps {
         split.merge(part, Math.max(0, nanos), Long::sum);
     }
 
+    /** 0.39.z78 D6 (run DQ): this tick's live fact asks of the planner (check and snapshot) by field: {count, nanoseconds}. */
+    private final java.util.Map<String, long[]> asks = new java.util.HashMap<>();
+
+    /** 0.39.z78 D6 (run DQ): one live fact ask of the planner (PlannerPort's check, PlannerSnapshot.take); said as "planner asks". */
+    public void ask(String field, long nanos) {
+        if (!on) return;
+        long[] a = asks.computeIfAbsent(field, k -> new long[2]);
+        a[0]++;
+        a[1] += Math.max(0, nanos);
+    }
+
     /** 0.39.z78 D6: a trip was asked of the planner this tick (BatchWay; the line then carries the planner's numbers). */
     public boolean planned() { return on && playbooks > 0; }
 
@@ -119,6 +131,27 @@ public final class TickLaps {
             }
             b.append(String.format(Locale.ROOT, " rest %.1f ms", Math.max(0, playbookNs - parts) / 1e6));     // structural: ns per ms
         }
+        if (!asks.isEmpty()) b.append(" | ").append(asksText());
+        return b.toString();
+    }
+
+    /**
+     * 0.39.z78 D6 (run DQ): "planner asks 812 = 120.3 ms: price 640 = 95.1, strip 45 = 20.3, ..., others 3 = 0.1" - the live
+     * fact asks of this tick, the dearest fields first (the first five named, the rest summed).
+     */
+    String asksText() {
+        long n = 0, t = 0;
+        for (long[] a : asks.values()) { n += a[0]; t += a[1]; }
+        List<java.util.Map.Entry<String, long[]>> l = new java.util.ArrayList<>(asks.entrySet());
+        l.sort((x, y) -> Long.compare(y.getValue()[1], x.getValue()[1]));
+        StringBuilder b = new StringBuilder(String.format(Locale.ROOT, "planner asks %d = %.1f ms:", n, t / 1e6));     // structural: ns per ms
+        long rn = 0, rt = 0;
+        for (int i = 0; i < l.size(); i++) {
+            long[] a = l.get(i).getValue();
+            if (i >= 5) { rn += a[0]; rt += a[1]; continue; }      // structural: five fields named, a line a person reads
+            b.append(i == 0 ? " " : ", ").append(l.get(i).getKey()).append(String.format(Locale.ROOT, " %d = %.1f", a[0], a[1] / 1e6));     // structural: ns per ms
+        }
+        if (rn > 0) b.append(String.format(Locale.ROOT, ", others %d = %.1f", rn, rt / 1e6));     // structural: ns per ms
         return b.toString();
     }
 }

@@ -188,7 +188,7 @@ public final class PlannerPort implements BatchWay.Planner {
         List<String> out = new ArrayList<>();
         for (var e : r.read().facts().entrySet()) {
             PlanNodes.Fact f = e.getKey();
-            Object now = NeedChain.ask(w, null, f);
+            Object now = timedAsk(w, f);
             live.put(f, now);
             if (same(f, PlanNodes.unboxed(e.getValue()), now)) continue;
             out.add((r.job().snap().copied(f) ? "" : MISS) + f.field() + (f.key() == null ? "" : " " + f.key()));
@@ -196,6 +196,15 @@ public final class PlannerPort implements BatchWay.Planner {
         String bag = r.read().bagChanged(w);
         if (bag != null) out.add(bag);
         return out;
+    }
+
+    /** 0.39.z78 D6 (run DQ: the check and the snapshot at 100-160 ms): one live fact ask, its time told to the aatick line by field. */
+    static Object timedAsk(NeedChain.World w, PlanNodes.Fact f) {
+        var laps = io.github.mojolowjo.entropybot.aa.core.TickLaps.AA;
+        long t0 = laps.now();
+        Object v = NeedChain.ask(w, null, f);
+        if (t0 != 0) laps.ask(f.field(), laps.now() - t0);
+        return v;
     }
 
     /**
