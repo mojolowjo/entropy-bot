@@ -38,6 +38,9 @@ public final class LoadProbe {
 
     private LoadProbe() {}
 
+    /** 0.39.z78 D6: the planner's numbers for the load line (AaRuntime installs it; null: none). */
+    static volatile java.util.function.Supplier<String> planner;
+
     /** This tick measures (read once in {@link #preTick}). Core and the hooks check only this field. */
     public static volatile boolean active;
 
@@ -110,7 +113,8 @@ public final class LoadProbe {
             if (limit > 0 && tickMs > limit) LOG.info("[entropybot] probe slowtick: {}", ProbeLines.slowTick(t, tickMs, limit, modMs, sections(), did()));
             if (lastLine < 0 || t - lastLine >= ProbeLines.everyTicks()) {
                 lastLine = t;
-                LOG.info("[entropybot] probe load: {} | {}", facts().line(t), ProbeLines.asks(askDelta()));
+                var pl = planner;
+                LOG.info("[entropybot] probe load: {} | {}{}", facts().line(t), ProbeLines.asks(askDelta()), pl == null ? "" : " | " + pl.get());
             }
         } catch (RuntimeException | LinkageError e) {
             Quiet.warn("LoadProbe.postTick: the load line could not be written", e);

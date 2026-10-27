@@ -54,6 +54,24 @@ public final class BatchWay {
     /** Blackboard fact: the adapter's ore per slab at a Y ({@code BiFunction<String, Integer, Double>}: need word, y; NaN: not known). */
     public static final String PER_SLAB_FACT = "aa.perSlabAt";
 
+    /**
+     * 0.39.z78 D6: Blackboard fact - the planner off the render thread ({@link Planner}); none: the trip's legs are resolved
+     * here, on the AA tick, as before.
+     */
+    public static final String PLANNER_FACT = "aa.planner";
+
+    /**
+     * 0.39.z78 D6 (design "the worker protocol"): the trip's legs for the batch {@code key} on {@code w} - the applied result
+     * of the planner worker when its facts still hold now, else the thinking stand (NeedChain.thinking: not priced yet, the
+     * trip stands, rule 22) while the worker resolves a snapshot of these facts. {@code keptFuel}: NeedChain.keepingFuel's.
+     */
+    public interface Planner {
+        NeedChain.Legs legs(String key, Playbook pb, Set<String> keptFuel, NeedChain.World w);
+
+        /** A result for the trip {@code key}'s request has arrived (its kept thinking stand is priced again to take it). */
+        boolean ready(String key);
+    }
+
     /** The start of a trip line ("trip b1 (6 orders): ..."). */
     public static final String TRIP = "trip ";
 
@@ -287,7 +305,10 @@ public final class BatchWay {
         if (h == Held.KEEP) return kept.chain();
         // 0.39.z77 carry 2: the kept trip's own band Ys say whether the feet crossed one (its legs placed again)
         // 0.39.z77 seen: and its own references say which of the bag's counts it depends on
-        Trip t = h != Held.AGAIN && kept != null && kept.holds(base + bagPart(kept.refs(), w.bag()) + bandPlace(kept.pb(), pos, under), landed(w)) ? kept : price(bb, g, tk, base, pos, under, open, w);
+        // 0.39.z78 D6: a kept thinking stand is priced again as soon as the planner's result for it has arrived
+        boolean answered = kept != null && kept.chain() != null && kept.chain().why().startsWith(STAND + NeedChain.NOT_PRICED + NeedChain.THINKING)
+                && bb.fact(PLANNER_FACT) instanceof Planner pp && pp.ready(tk);
+        Trip t = h != Held.AGAIN && !answered && kept != null && kept.holds(base + bagPart(kept.refs(), w.bag()) + bandPlace(kept.pb(), pos, under), landed(w)) ? kept : price(bb, g, tk, base, pos, under, open, w);
         // 0.39.z77 noway (run BU 13:34:23: the helmet's band leg had no way and ended the PICKAXE's order, never made): a leg's
         // no-way ends only the orders whose own items need it (with the leg's reasons, as an order's no-way always did); every
         // other order of the batch derives its trip again without them and runs on
@@ -398,7 +419,11 @@ public final class BatchWay {
         boolean oneLeg = open.size() == 1 && pb.ok() && pb.legs().size() == 1;
         // 0.39.z77 trip (fix 2; run CU 21:02-21:05: the descent's fuel swapped coal / oak_slab / coal_block between prices): a
         // re-priced trip burns the fuel it burned before while the bag still covers it
-        NeedChain.Legs l = pb.ok() && !oneLeg ? NeedChain.keepingFuel(FUELS.getOrDefault(tk, Set.of()), () -> NeedChain.resolvePlaybookLegs(pb, w)) : null;
+        // 0.39.z78 D6: off the render thread when the adapter installed the planner worker (its result, or the thinking stand)
+        Planner port = bb.fact(PLANNER_FACT) instanceof Planner pp ? pp : null;
+        Set<String> kept = FUELS.getOrDefault(tk, Set.of());
+        NeedChain.Legs l = !pb.ok() || oneLeg ? null : port != null ? port.legs(tk, pb, kept, w) : NeedChain.keepingFuel(kept, () -> NeedChain.resolvePlaybookLegs(pb, w));
+        boolean thinking = l != null && NeedChain.thinking(l.chain());
         if (l != null && l.chain().ok()) FUELS.put(tk, fuelsOf(l.whole() == null ? l.chain() : l.whole()));
         if (t0 != 0) TickLaps.AA.playbook(TickLaps.AA.now() - t0);
         Shaped s = oneLeg ? new Shaped(null, TRIP + tk + " (1 order): 1 leg - " + pb.legs().get(0).text() + ": the order's own chain", true)
@@ -415,7 +440,8 @@ public final class BatchWay {
         if (sayAgain(tk, s.change()) && bb.port != null) {
             bb.port.log(g.r.key() + ": " + s.line());    // 0.39.z77: on a change only
             // 0.39.z77 pending: a trip standing on a leg not priced yet says so to the owner (once while that leg waits)
-            if (s.chain() != null && s.chain().why().startsWith(STAND + NeedChain.NOT_PRICED)) bb.port.tellOwner(s.line());
+            // 0.39.z78 D6: the planner's thinking stand is logged, not whispered (it comes and goes with every re-price)
+            if (s.chain() != null && s.chain().why().startsWith(STAND + NeedChain.NOT_PRICED) && !thinking) bb.port.tellOwner(s.line());
         }
         if (!ends.isEmpty() && bb.port != null) {
             List<String> names = new ArrayList<>();

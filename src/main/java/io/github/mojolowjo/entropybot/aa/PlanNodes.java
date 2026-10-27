@@ -90,6 +90,9 @@ public final class PlanNodes {
 
     static Object unbox(Object v) { return v == NULL ? null : v; }
 
+    /** A kept answer as it was (the maps keep a null answer as a marker). */
+    public static Object unboxed(Object v) { return unbox(v); }
+
     /** A write a resolve makes outside the planner's state, kept with its node and run again on a reuse. */
     public interface Effect {
         /** Runs it; {@code path}: the World's path provider of the resolve (the live one when applied on the client tick). */
@@ -359,6 +362,43 @@ public final class PlanNodes {
             for (List<Node> l : n.children.values()) todo.addAll(l);
         }
         return out;
+    }
+
+    /**
+     * 0.39.z78 D6: which nodes of one request's tree read which facts (each node's subtree, by fact index) - the worker's
+     * result carries it, so the client tick counts the nodes a changed fact makes dirty ("thinking: N nodes dirty").
+     */
+    public record FactNodes(List<Fact> facts, List<java.util.BitSet> subtrees) {
+        public static final FactNodes NONE = new FactNodes(List.of(), List.of());
+
+        /** The nodes whose subtree read any of {@code changed}. */
+        public int dirty(Set<Fact> changed) {
+            java.util.BitSet c = new java.util.BitSet();
+            for (int i = 0; i < facts.size(); i++) if (changed.contains(facts.get(i))) c.set(i);
+            int n = 0;
+            for (java.util.BitSet b : subtrees) if (b.intersects(c)) n++;
+            return n;
+        }
+    }
+
+    /** The fact index and the subtree sets of the tree under {@code root}. */
+    static FactNodes factNodes(Node root) {
+        Map<Fact, Integer> at = new LinkedHashMap<>();
+        List<java.util.BitSet> out = new ArrayList<>();
+        Map<Node, java.util.BitSet> done = new IdentityHashMap<>();
+        subtree(root, at, out, done);
+        return new FactNodes(List.copyOf(at.keySet()), out);
+    }
+
+    private static java.util.BitSet subtree(Node n, Map<Fact, Integer> at, List<java.util.BitSet> out, Map<Node, java.util.BitSet> done) {
+        java.util.BitSet seen = done.get(n);
+        if (seen != null) return seen;
+        java.util.BitSet b = new java.util.BitSet();
+        for (Fact f : n.reads.keySet()) b.set(at.computeIfAbsent(f, k -> at.size()));
+        for (List<Node> l : n.children.values()) for (Node k : l) b.or(subtree(k, at, out, done));
+        done.put(n, b);
+        out.add(b);
+        return b;
     }
 
     // ---- counts ----

@@ -104,6 +104,8 @@ public final class AaRuntime implements JobPort {
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.WorldFacts.FLUID_FACT, (java.util.function.Function<int[], Boolean>) AaRuntime::fluidAt);   // 0.39.z77 world 3
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.BatchWay.PER_SLAB_FACT, (java.util.function.BiFunction<String, Integer, Double>) this::perSlabAt);   // 0.39.z77 J2
         io.github.mojolowjo.entropybot.aa.brain.BatchWay.clear();     // 0.39.z77 review 5: a new runtime's "b1" never inherits an old b1's verdict
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.BatchWay.PLANNER_FACT, planner);     // 0.39.z78 D6: the trips are resolved off the render thread
+        LoadProbe.planner = planner::probe;                                                    // 0.39.z78 D6: its numbers on the load line
         bb.fact(io.github.mojolowjo.entropybot.aa.FoodOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts>) this::foodFacts);
         NeedFacts.install(bb, this);          // round 4A N wiring: the station, bed, base and bag facts (O's sets)
         bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.STATS_FACT, tree.brain.stats);
@@ -117,6 +119,18 @@ public final class AaRuntime implements JobPort {
         slow = new AaSlow(c, this);                                  // AA_STEP3 B: slow mode + the prediction ledger
         c.chains.stepGate(slow::hold);
     }
+
+    // ---- 0.39.z78 D6: the planner off the render thread (PlannerWorker, PlannerPort; docs/designs/D6-planner-incremental.md) ----
+
+    /** The AA tick now (the snapshot's takenAt). */
+    private long aaTick;
+    private final PlannerWorker plannerWorker = new PlannerWorker();
+    private final PlannerPort planner = new PlannerPort(plannerWorker, () -> aaTick, line -> LOG.info("[entropybot] aa: {}", line));
+    /** The worker's results seen by the running stand's re-price (pathLandedTick). */
+    private long plannerLandedSeen;
+
+    /** 0.39.z78 D6: the planner's probe text (the aatick and load lines). */
+    String plannerProbe() { return planner.probe(); }
 
     // ---- AA_STEP3 B: slow mode (AaSlow) ----
 
@@ -1630,6 +1644,7 @@ public final class AaRuntime implements JobPort {
     /** Every 5 client ticks from Commands.tick, in a world. Never throws. */
     void tick(long tick) {
         if (!on()) return;
+        aaTick = tick;
         lookApply();
         long t0 = System.nanoTime();
         // 0.39.z62 item 4 (run S 04:57:07-12, D3a 3.1): the AA tick's sections while debug.loadProbe is on (one field read off)
@@ -1639,6 +1654,7 @@ public final class AaRuntime implements JobPort {
             Minecraft mc = Minecraft.getInstance();
             LocalPlayer p = mc.player;
             if (p == null || mc.level == null) {
+                planner.forget();           // 0.39.z78 D6: the trips' requests belong to that world
                 roomCells.clear();          // 0.39.z67 item 1: the cells with room belong to that world
                 roomDim = null;
                 appendRun();                // the world unloaded: the run ends here
@@ -1733,11 +1749,12 @@ public final class AaRuntime implements JobPort {
      * 0.39.z62 item 4: the "probe aatick:" line for an AA tick over debug.aaTickMs while the load probe is on (TickLaps; an
      * early return names only the sections it reached). Never throws into the tick.
      */
-    private static void aaTickLine(long tick) {
+    private void aaTickLine(long tick) {
         var laps = io.github.mojolowjo.entropybot.aa.core.TickLaps.AA;
         if (!laps.on()) return;
         try {
             String l = laps.line(tick, Tuning.get("debug.aaTickMs"));
+            if (l != null && laps.planned()) l += " | " + planner.probe();      // 0.39.z78 D6: the planner's numbers when a trip was asked
             if (l != null) LOG.info("[entropybot] probe aatick: {}", l);
         } catch (RuntimeException e) {
             io.github.mojolowjo.entropybot.Quiet.warn("AaRuntime.aaTickLine: the aatick line could not be written", e);
@@ -2367,6 +2384,12 @@ public final class AaRuntime implements JobPort {
     }
 
     private void pathLandedTick() {
+        // 0.39.z78 D6: a planner result posted is an answer landing too - the running stand re-prices and takes it
+        long pl = plannerWorker.landed();
+        if (pl != plannerLandedSeen) {
+            plannerLandedSeen = pl;
+            if (typedRun && taskReplan != null) c.stepRun.steps.repriceAtNextStep(io.github.mojolowjo.entropybot.aa.moves.FactChange.priced("the planner's answer (off the render thread)"));
+        }
         long v = LivePathPrice.INSTANCE.landed();
         if (v == pathLandedSeen) return;
         pathLandedSeen = v;

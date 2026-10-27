@@ -1082,8 +1082,19 @@ public final class NeedChain {
         }
     }
 
-    /** 0.39.z78 D6: the bag a resolve starts from - the World's words held (a count above 0), in its order (as Ctx always copied it). */
+    /**
+     * 0.39.z78 D6: the bag a resolve starts from - the World's words held (a count above 0), in its order (as Ctx always
+     * copied it). On the worker: the snapshot's copy of the live World's, in the live order ({@link #offThread}; a World
+     * made again orders its bag anew - Map.copyOf - so the snapshot carries the order the live World has).
+     */
     static LinkedHashMap<String, Integer> initialBag(World w) {
+        LinkedHashMap<String, Integer> o = BAG.get();
+        if (o != null) return new LinkedHashMap<>(o);
+        return liveBag(w);
+    }
+
+    /** 0.39.z78 D6: {@link #initialBag} of {@code w} itself (the client tick's: what a snapshot copies and a result is checked against). */
+    public static LinkedHashMap<String, Integer> liveBag(World w) {
         LinkedHashMap<String, Integer> b = new LinkedHashMap<>();
         for (var e : w.bag().entrySet()) if (e.getValue() > 0) b.merge(e.getKey(), e.getValue(), Integer::sum);
         return b;
@@ -1122,6 +1133,7 @@ public final class NeedChain {
     }
 
     private static final ThreadLocal<Extras> EXTRAS = new ThreadLocal<>();
+    private static final ThreadLocal<LinkedHashMap<String, Integer>> BAG = new ThreadLocal<>();
     private static final ThreadLocal<Boolean> DEFER = ThreadLocal.withInitial(() -> Boolean.FALSE);
 
     private static Extras extras() { Extras x = EXTRAS.get(); return x == null ? Extras.LIVE : x; }
@@ -1130,23 +1142,55 @@ public final class NeedChain {
      * 0.39.z78 D6 (the planner worker, off the render thread): {@code run} with {@code extras} as the facts read outside the
      * World and the effects kept, not run - {@link #deferred} hands them over for the client tick's apply.
      */
-    public static <T> T offThread(Extras extras, Supplier<T> run) {
+    public static <T> T offThread(Extras extras, LinkedHashMap<String, Integer> bag, Supplier<T> run) {
         Extras was = EXTRAS.get();
+        LinkedHashMap<String, Integer> wasBag = BAG.get();
         boolean d = DEFER.get();
         EXTRAS.set(extras);
+        BAG.set(bag);
         DEFER.set(Boolean.TRUE);
         try {
             return run.get();
         } finally {
             if (was == null) EXTRAS.remove(); else EXTRAS.set(was);
+            if (wasBag == null) BAG.remove(); else BAG.set(wasBag);
             DEFER.set(d);
         }
     }
 
+    /** 0.39.z78 D6: a fact's answer on {@code w} now (the snapshot's copy, the check of a result; {@code x} null: the live extras). */
+    public static Object ask(World w, Extras x, PlanNodes.Fact f) { return Facts.ask(w, x == null ? Extras.LIVE : x, f); }
+
+    /** 0.39.z78 D6: the start of a playbook's reason while the planner thinks off the render thread (a stand: rule 22). */
+    public static final String THINKING = "the planner";
+
+    /** 0.39.z78 D6: the trip while its resolve runs on the worker - not priced yet, its stand says so ("thinking: N nodes dirty"). */
+    public static Legs thinking(String words) {
+        String why = NOT_PRICED + THINKING + WAITS_ON + "its answer (" + words + ")";
+        return new Legs(new Chain(List.of(), 0, PLAYBOOK + ": " + why, false, why), Map.of(), -1);
+    }
+
+    /** 0.39.z78 D6: the chain is the planner's thinking stand ({@link #thinking}). */
+    public static boolean thinking(Chain c) { return c != null && c.missing() != null && c.missing().startsWith(NOT_PRICED + THINKING + WAITS_ON); }
+
     /** 0.39.z78 D6: one resolve's record - every fact it read, its bag words, its kept effects, its counts. */
     public record Read(Map<PlanNodes.Fact, Object> facts, Map<String, Integer> bag, Map<Object, PlanNodes.Scan> scans, Map<String, Integer> wholeBag,
-                       List<PlanNodes.Effect> effects, PlanNodes.Stats stats) {
-        public static final Read NONE = new Read(Map.of(), Map.of(), Map.of(), null, List.of(), PlanNodes.Stats.NONE);
+                       List<PlanNodes.Effect> effects, PlanNodes.Stats stats, PlanNodes.FactNodes nodes) {
+        public static final Read NONE = new Read(Map.of(), Map.of(), Map.of(), null, List.of(), PlanNodes.Stats.NONE, PlanNodes.FactNodes.NONE);
+
+        /** The nodes of the resolve's tree a fact that now answers otherwise ({@code live}: the answers asked now) makes dirty; the bag: its root. */
+        public int dirty(Map<PlanNodes.Fact, Object> live, World w) {
+            Set<PlanNodes.Fact> changed = new java.util.HashSet<>();
+            for (var e : facts.entrySet()) if (live.containsKey(e.getKey()) && !Deep.equal(PlanNodes.unboxed(e.getValue()), live.get(e.getKey()))) changed.add(e.getKey());
+            int n = nodes.dirty(changed);
+            return n == 0 && bagChanged(w) != null ? 1 : n;
+        }
+
+        /** The first bag word that differs on {@code w}'s bag now ("bag minecraft:coal"), null: none. */
+        public String bagChanged(World w) { return NeedChain.bagChanged(liveBag(w), bag, scans, wholeBag); }
+
+        /** Runs the kept effects (the strip yield facts, the ranked-out walks) on the client tick, {@code path} the live provider. */
+        public void runEffects(PathPrice path) { for (PlanNodes.Effect e : effects) e.run(path); }
 
         /** Every fact and bag word it read has the same answer on {@code w} now (asked once each). */
         public boolean same(World w, Extras x) { return changed(w, x) == null; }
@@ -1158,7 +1202,7 @@ public final class NeedChain {
                 Object now = Facts.ask(w, xx, e.getKey());
                 if (!Deep.equal(PlanNodes.unbox(e.getValue()), now)) return e.getKey().field() + " " + e.getKey().key();
             }
-            return bagChanged(initialBag(w), bag, scans, wholeBag);
+            return NeedChain.bagChanged(liveBag(w), bag, scans, wholeBag);
         }
     }
 
@@ -1180,7 +1224,7 @@ public final class NeedChain {
     }
 
     /** 0.39.z78 D6: a walk's ask as a fact's key (x y z, the straight metres the chain gave, the feet in the cell or by it). */
-    record PathKey(int x, int y, int z, double dist, boolean into) {}
+    public record PathKey(int x, int y, int z, double dist, boolean into) {}
 
     /**
      * 0.39.z78 D6: the World one resolve reads, each answer told to the open node ({@link PlanNodes.Run#read}) - the
@@ -1721,7 +1765,7 @@ public final class NeedChain {
             }
             PlanNodes.Stats st = new PlanNodes.Stats(r.size, 0, r.size, 0);
             p.last(st);
-            LAST.set(new Read(PlanNodes.allReads(r), r.bagReads, r.scans, r.wholeBag, r.effects, st));
+            LAST.set(new Read(PlanNodes.allReads(r), r.bagReads, r.scans, r.wholeBag, r.effects, st, run.defer ? PlanNodes.factNodes(r) : PlanNodes.FactNodes.NONE));
             return out;
         }
         PlanNodes.Node n = new PlanNodes.Node("root", rk, List.of(), 0);
@@ -1748,7 +1792,8 @@ public final class NeedChain {
         run.computed++;
         PlanNodes.Stats st = new PlanNodes.Stats(f.size, run.computed, run.reusedN, run.dirty + (r == null ? 0 : 1));
         p.last(st);
-        LAST.set(new Read(PlanNodes.allReads(n), n.bagReads, n.scans, n.wholeBag, run.defer ? List.copyOf(run.deferred) : List.of(), st));
+        LAST.set(new Read(PlanNodes.allReads(n), n.bagReads, n.scans, n.wholeBag, run.defer ? List.copyOf(run.deferred) : List.of(), st,
+                run.defer ? PlanNodes.factNodes(n) : PlanNodes.FactNodes.NONE));
         return out;
     }
 

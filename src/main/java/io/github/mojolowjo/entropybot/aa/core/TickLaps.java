@@ -71,6 +71,9 @@ public final class TickLaps {
         playbookNs += Math.max(0, nanos);
     }
 
+    /** 0.39.z78 D6: a trip was asked of the planner this tick (BatchWay; the line then carries the planner's numbers). */
+    public boolean planned() { return on && playbooks > 0; }
+
     /** Now on this stopwatch's clock (0 when off: the caller skips the resolve count). */
     public long now() { return on ? clock.getAsLong() : 0; }
 
