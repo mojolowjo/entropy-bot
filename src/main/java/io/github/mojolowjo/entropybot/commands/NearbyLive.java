@@ -76,6 +76,21 @@ final class NearbyLive {
         return k.source().spot();
     }
 
+    /**
+     * 0.39.z77 stone (run CF 16:55:38): {@link #nearest} passing over the spots {@code skip} refuses (the order's holds): the
+     * cached answer when it is not refused, else a fresh lookup that names the next nearest counted block (not cached: the
+     * holds differ per order; the chain's World memoises it per word). Null skip: {@link #nearest}.
+     */
+    Spot nearest(java.util.Set<String> blocks, Supplier<Spot> fallback, java.util.function.Predicate<Spot> skip) {
+        Spot first = nearest(blocks, fallback);
+        if (skip == null || first == null || !skip.test(first)) return first;
+        int[] me = here();
+        if (me == null) return null;
+        Nearby.Source s = Nearby.source(scan(), me, blocks, fallback, skip);
+        if (notes != null) notes.put(java.util.Set.copyOf(blocks), s.line());
+        return s.spot();
+    }
+
     /** aa debug: start collecting the source lines of the lookups that follow. */
     void beginNotes() { notes = new java.util.LinkedHashMap<>(); }
 

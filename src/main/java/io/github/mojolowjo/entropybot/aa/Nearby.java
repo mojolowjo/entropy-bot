@@ -492,6 +492,18 @@ public final class Nearby {
      * a log only as a tree.
      */
     public static Source source(Scan s, int[] me, Set<String> blocks, Supplier<Spot> fallback) {
+        return source(s, me, blocks, fallback, null);
+    }
+
+    /** 0.39.z77 stone: the words of a spot passed over because the order holds it (aa debug's source line). */
+    static final String HELD = " held by the order (the next one counts)";
+
+    /**
+     * 0.39.z77 stone (run CF 16:55:38: the one stone spot named was held UNREACHABLE and the need had no source left under
+     * ground): {@link #source} that passes over the candidates {@code skip} refuses (the order's holds, NeedChain.Lookup) -
+     * counted apart in the line - so the next nearest counted block is the answer; the sightings' spot too. Null: no skip.
+     */
+    public static Source source(Scan s, int[] me, Set<String> blocks, Supplier<Spot> fallback, java.util.function.Predicate<Spot> skip) {
         java.util.Map<String, Integer> buried = new java.util.LinkedHashMap<>(), unloaded = new java.util.LinkedHashMap<>(),
                 refused = new java.util.LinkedHashMap<>();
         Spot waitFor = null;                 // 0.39.z60 review 1: the nearest block whose structure fact is not loaded yet
@@ -509,6 +521,10 @@ public final class Nearby {
                 }
                 if (may == REFUSED) continue;
                 if (s.isLog(id) && !s.leavesNear(p[0], p[1], p[2], leafReach())) continue;
+                if (skip != null && skip.test(new Spot(p[0], p[1], p[2], dist(p, me), id))) {
+                    refused.merge(id + HELD, 1, Integer::sum);
+                    continue;
+                }
                 return new Source(new Spot(p[0], p[1], p[2], dist(p, me), id, s.isLog(id) ? treeLogs(s.logs(scanR()), p, s.treeCap())
                         : s.isOre(id) ? clusterSize(s, blocks, p) : 0), "baritone", buried, unloaded, refused);
             }
@@ -521,6 +537,10 @@ public final class Nearby {
             int may = mayBreak(s, f.block(), f.x(), f.y(), f.z(), refused, unloaded);
             if (may == NOT_KNOWN && waitFor == null) waitFor = f.notLoaded();
             if (may != COUNTS) f = null;
+        }
+        if (f != null && skip != null && skip.test(f)) {           // 0.39.z77 stone: a held sighting is passed over too
+            refused.merge((f.block() == null ? "sighting" : f.block()) + HELD, 1, Integer::sum);
+            f = null;
         }
         // 0.39.z60 review 1 (rule 15): no counted source but one whose structure fact is not loaded yet: that spot, marked not
         // loaded - the chain waits on it with the reason (NeedChain: "not known yet"), never "no source known"

@@ -238,6 +238,24 @@ public final class NeedChain {
     public static String surfaceKey(int x, int y, int z) { return SURFACE_AT + x + " " + y + " " + z; }
 
     /**
+     * 0.39.z77 stone (run CF 16:55:08-16:55:38, under ground at 11 16 -19: the one stone spot the lookup named, 6 16 -21,
+     * came back UNREACHABLE, the order held that spot, and the re-plan said "at band: iron_ingot ends in an explore (no known
+     * source for #stone_tool_materials)" with stone all round the bot; the order stopped): a source lookup that names the
+     * nearest counted spot can be asked to pass over the spots {@code skip} refuses (need word, spot: the order's holds,
+     * {@link World#without}) and name the next nearest instead. A lookup that answers the nearest one only (the live one)
+     * would otherwise answer the held spot, the hold would filter it out after, and the need would have no source left while
+     * the scan counts the tunnel's own walls. {@code skip} null: no hold. A plain function (the tests' lists of every known
+     * spot) is filtered after, as before. Pure.
+     */
+    @FunctionalInterface
+    public interface Lookup extends Function<String, List<Spot>> {
+        List<Spot> apply(String word, java.util.function.BiPredicate<String, Spot> skip);
+
+        @Override
+        default List<Spot> apply(String word) { return apply(word, null); }
+    }
+
+    /**
      * What the bot knows now. {@code bag}: item id -> count; {@code tableNear} / {@code furnaceNear}: one within reach;
      * {@code seenAll}: a need word (an item id, a tag "#ns:path", or several joined by "|") -> the known blocks that give it
      * (for a tag: any member; nearest first not needed); {@code mobs}: entity id -> the animals of that kind known;
@@ -308,7 +326,13 @@ public final class NeedChain {
             bag = Map.copyOf(b);
             Function<String, List<Spot>> sa = seenAll == null ? w -> List.of() : seenAll;
             Map<String, List<Spot>> memo = new ConcurrentHashMap<>();
-            seenAll = w -> memo.computeIfAbsent(word(w), k -> { List<Spot> l = sa.apply(k); return l == null ? List.of() : List.copyOf(l); });
+            Function<String, List<Spot>> once = w -> memo.computeIfAbsent(word(w), k -> { List<Spot> l = sa.apply(k); return l == null ? List.of() : List.copyOf(l); });
+            // 0.39.z77 stone: a lookup that can pass over held spots stays one through the memo (World#without asks it so)
+            seenAll = sa instanceof Lookup lk ? (Lookup) (w, skip) -> {
+                if (skip == null) return once.apply(w);
+                List<Spot> l = lk.apply(word(w), skip);
+                return l == null ? List.of() : List.copyOf(l);
+            } : once;
             Function<String, List<Mob>> mb = mobs == null ? w -> List.of() : mobs;
             Map<String, List<Mob>> mmemo = new ConcurrentHashMap<>();
             mobs = w -> mmemo.computeIfAbsent(id(w), k -> { List<Mob> l = mb.apply(k); return l == null ? List.of() : List.copyOf(l); });
@@ -392,10 +416,17 @@ public final class NeedChain {
                     new Rooms(cells, here), where);
         }
 
-        /** chop: the same world less the sources {@code held} names (need word, spot): a failed source is out of the re-price. */
+        /**
+         * chop: the same world less the sources {@code held} names (need word, spot): a failed source is out of the re-price.
+         * 0.39.z77 stone: a {@link Lookup} is asked to pass over the held spots (the next nearest one stands, not none); its
+         * answer is filtered too.
+         */
         public World without(java.util.function.BiPredicate<String, Spot> held) {
             Function<String, List<Spot>> sa = seenAll;
-            return new World(bag, tableNear, furnaceNear, w -> sa.apply(w).stream().filter(sp -> !held.test(word(w), sp)).toList(), mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, this.held, strip, cave, rooms, where);
+            Function<String, List<Spot>> less = sa instanceof Lookup lk
+                    ? (Lookup) (w, skip) -> lk.apply(w, skip == null ? held : held.or(skip)).stream().filter(sp -> !held.test(word(w), sp)).toList()
+                    : w -> sa.apply(w).stream().filter(sp -> !held.test(word(w), sp)).toList();
+            return new World(bag, tableNear, furnaceNear, less, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, this.held, strip, cave, rooms, where);
         }
 
         /**

@@ -689,7 +689,8 @@ public final class AaRuntime implements JobPort {
         if (sensed == null || sensed.feas == null) return null;
         var in = bb.in;
         return new io.github.mojolowjo.entropybot.aa.NeedChain.World(in.bag, in.tableKnown, in.furnaceKnown,
-                item -> { var s = nearestSource(item); return s == null ? List.of() : List.of(s); },
+                // 0.39.z77 stone (run CF 16:55:38): the lookup passes over the order's held spots (NeedChain.Lookup), the next nearest counts
+                (io.github.mojolowjo.entropybot.aa.NeedChain.Lookup) (item, skip) -> { var s = nearestSource(item, skip); return s == null ? List.of() : List.of(s); },
                 this::animalsKnown, currentLootBook(), this::band, 0, LivePathPrice.INSTANCE, this::stationAt).withUses(AaRuntime::usesLeft).withStrip(this::strip).withCave(this::caveWay)
                 .withRooms(rooms(in.pos))
                 .withWhere(new io.github.mojolowjo.entropybot.aa.NeedChain.WhereFacts(this::whereOf, once(this::surfaceOver), AaRuntime::feetNow, AaRuntime::baseHere))   // 0.39.z68; z69: the feet; z74: the base block
@@ -1147,6 +1148,14 @@ public final class AaRuntime implements JobPort {
      * Null: no block gives it, or none is known.
      */
     io.github.mojolowjo.entropybot.aa.NeedChain.Spot nearestSource(String item) {
+        return nearestSource(item, null);
+    }
+
+    /**
+     * 0.39.z77 stone: {@link #nearestSource(String)} passing over the spots {@code skip} refuses (need word, spot as the chain
+     * keys it: a tag need's spot with the member it gives), so a held spot leaves the next nearest, never none.
+     */
+    io.github.mojolowjo.entropybot.aa.NeedChain.Spot nearestSource(String item, java.util.function.BiPredicate<String, io.github.mojolowjo.entropybot.aa.NeedChain.Spot> skip) {
         String word = io.github.mojolowjo.entropybot.aa.NeedChain.word(item);
         java.util.Set<String> blocks = sourceBlocksOf(word);
         if (blocks.isEmpty()) return null;
@@ -1155,8 +1164,13 @@ public final class AaRuntime implements JobPort {
             logs |= net.minecraft.core.registries.BuiltInRegistries.BLOCK.getOptional(net.minecraft.resources.ResourceLocation.tryParse(b))
                     .map(x -> x.defaultBlockState().is(net.minecraft.tags.BlockTags.LOGS)).orElse(false);
         final boolean tree = logs;
-        var s = c.nearby.nearest(blocks, () -> tree ? treeSighting() : indexedSighting(blocks));
-        // TAG_NEEDS: a tag need's spot says which member it gives (its loot drop in the tag, else its own item)
+        java.util.function.Predicate<io.github.mojolowjo.entropybot.aa.NeedChain.Spot> pass = skip == null ? null : sp -> skip.test(word, givingOf(sp, word));
+        var s = c.nearby.nearest(blocks, () -> tree ? treeSighting() : indexedSighting(blocks), pass);
+        return s == null ? null : givingOf(s, word);
+    }
+
+    /** TAG_NEEDS: a tag need's spot says which member it gives (its loot drop in the tag, else its own item); a plain need's as it is. */
+    private io.github.mojolowjo.entropybot.aa.NeedChain.Spot givingOf(io.github.mojolowjo.entropybot.aa.NeedChain.Spot s, String word) {
         if (s == null || io.github.mojolowjo.entropybot.aa.NeedChain.plain(word)) return s;
         String gives = io.github.mojolowjo.entropybot.aa.Nearby.gives(s.block(), word, currentLootBook(), AaRuntime::ownItem);
         return gives == null ? s : s.giving(gives);
