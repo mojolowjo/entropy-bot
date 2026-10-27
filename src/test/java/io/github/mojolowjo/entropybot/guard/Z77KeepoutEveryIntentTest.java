@@ -35,6 +35,7 @@ class Z77KeepoutEveryIntentTest {
             @Override public String by() { return by; }
             @Override public void set(Intent n, String b) { i = n; by = b; }
         }, true);
+        ss.focus(new int[]{5, -20, 5});                     // the strip's next cell (0.39.z77 strip 4: only it and its neighbours print)
         StripSearch.Said said = ss.forSearch();
 
         Verdict ko = BreakPolicy.pathProtect(SP, OW, 5, -20, 5);
@@ -48,8 +49,9 @@ class Z77KeepoutEveryIntentTest {
         Verdict nb = BreakPolicy.pathProtect(SP, OW, 55, -20, 5);
         assertFalse(nb.allowed(), "no-break: refused");
         assertEquals("no-break", nb.rule());
+        ss.focus(new int[]{55, -20, 5});
         assertEquals("probe strip refuse: 55 -20 5 minecraft:stone: mine break no-break (in garden (no-break)) cost inf",
-                probeLine(ss, said, 55, -20, 5, Intent.MINE, nb));
+                probeLine(ss, ss.forSearch(), 55, -20, 5, Intent.MINE, nb));
         ss.end(new StripSearch.Store() {
             @Override public Intent intent() { return Intent.MINE; }
             @Override public String by() { return StripSearch.BY; }

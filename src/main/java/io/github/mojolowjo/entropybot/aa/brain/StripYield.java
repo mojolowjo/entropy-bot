@@ -63,7 +63,46 @@ public final class StripYield {
         return m == null ? Map.of() : Map.copyOf(m);
     }
 
-    public static void clear() { FACTS.clear(); }
+    public static void clear() {
+        FACTS.clear();
+        PRIOR.clear();
+    }
+
+    /**
+     * 0.39.z77 strip 4 (run DF 03:44:18-03:51:46: the south strip's price went from 62 to 78 blocks an ore while it dug, and
+     * its end line read "iron 0 in 131 cells against the band's 1 in 131"): the planner prices the same strip key again
+     * while the strip runs (a seen source's "collect now vs finish", the trip's re-price), and each price scales the band
+     * by the areas seen along the heading - this tunnel's own dry faces among them. Read live, the band's cells an ore
+     * moved ahead of the cells dug, so the sample was never in and the strip dug on. The prediction the strip is measured
+     * against is the one its tunnel started on: frozen at a new tunnel's start ({@code newTunnel}), kept while the same
+     * tunnel resumes. A resumed tunnel with none kept (a new session) takes the price now - the best known, said here.
+     */
+    private static final Map<String, Map<String, Double>> PRIOR = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** A strip's tunnel starts ({@code newTunnel}: no saved progress) or resumes: the prediction it is measured against. */
+    public static Map<String, Double> startPrior(String key, boolean newTunnel, Map<String, Double> pricedNow) {
+        if (key == null) return pricedNow == null ? Map.of() : Map.copyOf(pricedNow);
+        if (newTunnel || !PRIOR.containsKey(key)) {
+            if (PRIOR.size() >= MAX && !PRIOR.containsKey(key)) PRIOR.clear();
+            PRIOR.put(key, pricedNow == null ? Map.of() : Map.copyOf(pricedNow));
+        }
+        return PRIOR.get(key);
+    }
+
+    /**
+     * The prediction strip {@code key} is measured against: the one frozen at its tunnel's start ({@link #startPrior}); a
+     * family first priced later (none at the start, or no start seen in this session) is frozen at its first price seen.
+     */
+    public static Map<String, Double> prior(String key, Map<String, Double> pricedNow) {
+        if (key == null) return pricedNow == null ? Map.of() : Map.copyOf(pricedNow);
+        Map<String, Double> was = PRIOR.get(key);
+        if (was != null && (pricedNow == null || was.keySet().containsAll(pricedNow.keySet()))) return was;
+        Map<String, Double> m = new LinkedHashMap<>(pricedNow == null ? Map.of() : pricedNow);
+        if (was != null) m.putAll(was);
+        if (PRIOR.size() >= MAX && !PRIOR.containsKey(key)) PRIOR.clear();
+        PRIOR.put(key, Map.copyOf(m));
+        return PRIOR.get(key);
+    }
 
     /**
      * The strip's ores whose family still keeps it digging: every ore whose family carries no amount (an owner's "until the

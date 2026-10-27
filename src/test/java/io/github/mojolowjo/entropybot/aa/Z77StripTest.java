@@ -126,6 +126,51 @@ class Z77StripTest {
     }
 
     /**
+     * 0.39.z77 strip 4, run DF 03:44:18-03:51:46 (laptop, job-j2 39f30bf9): the south strip was priced at "3 ore x ~62
+     * blocks", re-priced while it dug (~67, ~72, ~78 by 03:44:54, 30 cells in) and ended "iron 0 of 2 after 131 cells (this
+     * strip's yield: iron 0 in 131 cells against the band's 1 in 131 -> 1780.3 s more here; cheaper: a strip from here east
+     * (164 cells ...) 557.6 s)"; its yield line "predicted iron 0.0076 a cell (130.8 cells an ore)". Each re-price scales the
+     * band by the areas seen along the heading - this tunnel's own dry faces among them - so the sample (the band's cells an
+     * ore) moved ahead of the cells dug. Measured against the price its tunnel started on (1 in 62), the strip ends at 62
+     * cells: 2 x (62 + 62) x 3.4 = 843.2 s against the east tunnel's 557.6 s. A resumed tunnel keeps that price; a new one
+     * takes the price then.
+     */
+    @Test
+    void runDF_aDryStripIsMeasuredAgainstItsStartPrice_notARepriceThatCountsItsOwnFaces() {
+        List<String> ores = List.of("minecraft:deepslate_iron_ore", "minecraft:iron_ore");
+        // the source of the drift: the strip way's own estimate rises with this tunnel's dry faces along its heading
+        NeedChain.StripDig before = NeedChain.stripDig(37.1, 2, new int[]{30, 6}, 16, "south", ores);
+        for (int z = 6; z < 36; z++) StripAreas.add(30, 16, z, 6, Map.of());
+        NeedChain.StripDig after = NeedChain.stripDig(37.1, 2, new int[]{30, 6}, 16, "south", ores);
+        assertTrue(after.bpo() > before.bpo(), "dry faces of its own tunnel raise the re-price: " + before.bpo() + " -> " + after.bpo());
+
+        String key = new Step.Strip(ores, Map.of("iron", 2), 16, "south", 0, null).key();
+        StripOrder.predicted(key, "iron", 1 / 62.0);                                    // the price the south strip started on
+        assertEquals(1 / 62.0, StripYield.startPrior(key, true, StripOrder.predicted(key)).get("iron"), 1e-12);
+        StripOrder.predicted(key, "iron", 1 / 130.8);                                   // the re-prices while it dug
+        double cell = 3.4;
+        Map<String, StripYield.Fact> f = Map.of("iron", new StripYield.Fact(37.1, cell, Double.NaN, "no other way priced", false));
+        StripYield.HeadingCells h = (hd, fam, left) -> hd.equals("east") ? 164 : 400;
+        assertNull(StripYield.check(Map.of("iron", 2), Map.of(), 62, StripOrder.predicted(key), f, "south", h),
+                "the old reading (the live re-price, 1 in 131): no sample at 62 cells - run DF dug on to 131");
+        Map<String, Double> p = StripYield.prior(key, StripOrder.predicted(key));
+        assertEquals(1 / 62.0, p.get("iron"), 1e-12, "measured against the tunnel's start price");
+        assertNull(StripYield.check(Map.of("iron", 2), Map.of(), 61, p, f, "south", h), "61 cells: short of the start price's 62");
+        StripYield.End e = StripYield.check(Map.of("iron", 2), Map.of(), 62, p, f, "south", h);
+        assertNotNull(e, "62 cells dry: ends");
+        assertEquals("met: none; iron 0 of 2 after 62 cells (this strip's yield: iron 0 in 62 cells against the band's 1 in 62 -> 843.2 s more here;"
+                + " cheaper: a strip from here east (164 cells at the band and the areas seen along it) 557.6 s)", e.why());
+        assertTrue(StripOrder.yieldLine(key, 62, Map.of(), p, List.of("iron")).endsWith("predicted iron 0.0161 a cell (62.0 cells an ore)"));
+
+        assertEquals(1 / 62.0, StripYield.startPrior(key, false, StripOrder.predicted(key)).get("iron"), 1e-12, "the same tunnel resumed: kept");
+        assertEquals(1 / 130.8, StripYield.startPrior(key, true, StripOrder.predicted(key)).get("iron"), 1e-12, "a new tunnel: the price then");
+        // no start seen in this session (a resumed tunnel after a restart): the first price seen is frozen
+        String other = new Step.Strip(ores, Map.of("iron", 2), 16, "west", 0, null).key();
+        assertEquals(1 / 70.0, StripYield.prior(other, Map.of("iron", 1 / 70.0)).get("iron"), 1e-12);
+        assertEquals(1 / 70.0, StripYield.prior(other, Map.of("iron", 1 / 90.0)).get("iron"), 1e-12, "kept, not chased");
+    }
+
+    /**
      * 0.39.z77 strip 3: a dry strip with no other way priced and no other heading known digs on; only the step watch
      * (steps.stepMaxS 600 s, Steps' "timed out after 600 s (<the strip's status>)") ends it - the verdict says so for that
      * status. Before the sample is in (10 cells at 1 in 55): no such words.

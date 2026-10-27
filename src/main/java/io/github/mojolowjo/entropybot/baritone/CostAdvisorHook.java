@@ -154,8 +154,10 @@ public final class CostAdvisorHook {
             reach = io.github.mojolowjo.entropybot.guard.LavaNear.reach();
             pen = io.github.mojolowjo.entropybot.guard.LavaNear.penalty();
         } catch (RuntimeException caught) { Quiet.warn("CostAdvisorHook.begin: the lava Tuning could not be read, no lava price this calculation", caught); }
-        // 0.39.z77 mineintent: while a strip runs with its probe on, the search carries its own said set (one line per cell)
-        return new Token(pr.snapshot(), pr.intentNow(), dim, pr.where(), areas, at, reach, pen, StripSearch.INSTANCE.forSearch());
+        // 0.39.z77 mineintent: while a strip runs with its probe on, the search carries its own said set (one line per cell);
+        // 0.39.z77 strip 4: the last search's summary line is said as this one starts
+        return new Token(pr.snapshot(), pr.intentNow(), dim, pr.where(), areas, at, reach, pen,
+                StripSearch.INSTANCE.forSearch(l -> LOG.info("[entropybot] {}", l)));
     }
 
     /**

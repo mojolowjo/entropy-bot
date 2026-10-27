@@ -180,7 +180,7 @@ final class StripStep {
             int n = e.getValue() - startPicked.getOrDefault(e.getKey(), 0);
             if (n > 0) found.put(e.getKey(), n);
         }
-        Map<String, Double> pred = StripOrder.predicted(s.key());
+        Map<String, Double> pred = StripYield.prior(s.key(), StripOrder.predicted(s.key()));   // 0.39.z77 strip 4: the tunnel's start price
         java.util.Set<String> fams = new java.util.TreeSet<>(s.amounts().keySet());
         fams.addAll(pred.keySet());
         LOG.info("[entropybot] {}", StripOrder.yieldLine(s.key(), cells, found, pred, fams));
@@ -202,6 +202,9 @@ final class StripStep {
         startBlocks = from == null ? 0 : from.blocks();      // 0.39.z62 item 1b: what this start resumes from
         startStep = from == null ? 0 : from.step();
         startPicked = from == null ? Map.of() : from.picked();   // 0.39.z77 spares 3: the yield line counts this run's finds
+        // 0.39.z77 strip 4 (run DF 03:51:46): the band's prediction this tunnel is measured against, frozen at its start (a
+        // re-price while it runs counts its own dry faces and moved the sample ahead of the cells dug)
+        StripYield.startPrior(s.key(), from == null, StripOrder.predicted(s.key()));
         yieldSaid = false;
         checkedBlocks = -1;
         goalCell = null;
@@ -216,11 +219,11 @@ final class StripStep {
         try {
             b.getStripProcess().strip(new BlockOptionalMetaLookup(running.toArray(String[]::new)), s.y(), d, of(from));
         } catch (RuntimeException e) {
-            SEARCH.end(STORE);
+            endSearch();
             throw e;
         }
         if (!b.getStripProcess().isActive()) {
-            SEARCH.end(STORE);
+            endSearch();
             return "error: the strip did not start: " + b.getStripProcess().lastEnd();
         }
         return null;
@@ -228,6 +231,11 @@ final class StripStep {
 
     /** 0.39.z77 mineintent: the strip's own search intent (MINE while it runs) and its refuse probe. */
     private static final io.github.mojolowjo.entropybot.guard.StripSearch SEARCH = io.github.mojolowjo.entropybot.guard.StripSearch.INSTANCE;
+
+    /** The strip's search intent ends; 0.39.z77 strip 4: the refuse probe's summary lines not said yet go to the log. */
+    private static void endSearch() {
+        for (String l : SEARCH.end(STORE)) LOG.info("[entropybot] {}", l);
+    }
 
     /** The job intent as the strip sets and puts it back (PolicyRuntime's). */
     private static final io.github.mojolowjo.entropybot.guard.StripSearch.Store STORE = new io.github.mojolowjo.entropybot.guard.StripSearch.Store() {
@@ -289,7 +297,7 @@ final class StripStep {
             // 0.39.z77 strip 2 (run CS 19:32:56): the same band prior as this strip, never better but for ore seen there
             return StripYield.sameBand(sd.cells(), left, sd.band(), sd.seen().ores() > 0);
         };
-        StripYield.Verdict v = StripYield.verdict(s.amounts(), now.picked(), now.blocks(), StripOrder.predicted(s.key()), facts, s.heading(), cells);
+        StripYield.Verdict v = StripYield.verdict(s.amounts(), now.picked(), now.blocks(), StripYield.prior(s.key(), StripOrder.predicted(s.key())), facts, s.heading(), cells);
         String was = onNote;
         onNote = v == null ? null : v.on();
         if (onNote != null && was == null) LOG.info("[entropybot] strip {}: {}", s.key(), onNote);
@@ -314,10 +322,10 @@ final class StripStep {
         try {
             st = statusOf(s, holding);
         } catch (RuntimeException e) {
-            SEARCH.end(STORE);
+            endSearch();
             throw e;
         }
-        if (st.state() != Car.State.RUNNING) SEARCH.end(STORE);
+        if (st.state() != Car.State.RUNNING) endSearch();
         else if (!holding) SEARCH.hold(STORE, ProbeLines.stripRefuseOn());
         return st;
     }
@@ -366,6 +374,7 @@ final class StripStep {
                 }
             }
             goalCell = goalOf(b);
+            SEARCH.focus(goalCell);                         // 0.39.z77 strip 4: the refuse probe's per-cell lines: this cell and its neighbours
             // 0.39.z77 strip 3: Steps' "timed out after N s (<this status>)" then says why the dry strip dug on to the cap
             return Car.Status.running(sp.status() + " - " + sp.why() + (onNote == null ? "" : "; " + onNote));
         }
@@ -613,7 +622,7 @@ final class StripStep {
     static void cancel() {
         IBaritone b = Jobs.baritone();
         if (b != null && b.getStripProcess().isActive()) b.getStripProcess().cancel();
-        SEARCH.end(STORE);                                  // 0.39.z77 mineintent: the intent before the strip back
+        endSearch();                                  // 0.39.z77 mineintent: the intent before the strip back
     }
 
     /** Wires aa goals' progress lookup (Goals.line) to the saved file. */
