@@ -92,8 +92,15 @@ class Z77SeenTest {
         return run;
     }
 
-    static String ask(SeenAsk a, String family, int x, int y, int z, int[] feet, Steps run) {
-        return a.ask(new SeenAsk.Cell(family, x, y, z), feet, run.steps(), run.index(), BLOCKS, ExploreRules::smeltInputs, Seen.range());
+    /** One AA tick of the seen trigger at {@code nowMs} with the new cells (AaRuntime.seenTick's call); the ask sent, null: none. */
+    static FactChange.Fact see(SeenAsk a, Steps run, int[] feet, long nowMs, SeenAsk.Cell... cells) {
+        return a.tick(run, List.of(cells), feet, BLOCKS, ExploreRules::smeltInputs, Seen.range(), nowMs, Replan.everyMs());
+    }
+
+    static SeenAsk.Cell iron(int x, int y, int z) { return new SeenAsk.Cell("iron", x, y, z); }
+
+    static boolean offer(SeenAsk a, SeenAsk.Cell c, int[] feet, List<Step> steps, int from) {
+        return a.offer(c, feet, steps, from, BLOCKS, ExploreRules::smeltInputs, Seen.range());
     }
 
     // ---- scenario 1: a walk under ground, iron seen 3 blocks off it - collect now wins ----
@@ -122,16 +129,16 @@ class Z77SeenTest {
         // the senses: a 3-block vein of iron 3 blocks off the walk
         w[0] = under(feet, Map.of("raw_iron", List.of(new Spot(3, 40, 0, 3, IRON_ORE, 3))), Set.of());
         SeenAsk a = new SeenAsk();
-        String text = ask(a, "iron", 3, 40, 0, feet, run);
-        assertEquals("seen iron at 3 40 0 (3 away) for minecraft:iron_ore", text, "the strip after the walk digs iron ore");
-        run.repriceAtNextStep(FactChange.seen("iron", 3, 40, 0, text));
+        FactChange.Fact f = see(a, run, feet, 0, iron(3, 40, 0));
+        assertEquals("seen iron at 3 40 0 (3 away) for minecraft:iron_ore", f.text(), "the strip after the walk digs iron ore");
         run.tick(2);
         assertEquals(1, h.cancels, "the walk is cut where it runs: " + port.log);
         Step now = run.steps().get(run.index());
         assertTrue(now instanceof Step.Collect c && c.item().equals("raw_iron") && c.n() == 3 && c.at()[0] == 3, "the vein is collected now: " + run.steps());
         assertEquals(List.of("seen iron at 3 40 0: collect now (4 s) vs finish to y 16 (priced path) (75 s) - collect now"),
                 port.told.stream().filter(l -> l.startsWith("seen ")).toList());
-        assertNull(ask(a, "iron", 4, 41, 0, feet, run), "a cell of the same vein: asked once");
+        assertNull(see(a, run, feet, 60_000, iron(4, 41, 0)), "a cell of the same vein: asked once");
+        assertEquals(1, a.askedCount(), "its re-price ran: the vein is asked");
     }
 
     // ---- scenario 1b: the same, the iron 40 blocks of tunnel away - finish wins ----
@@ -154,15 +161,14 @@ class Z77SeenTest {
         Steps run = walking(bb, g, h);
         w[0] = under(feet, Map.of("raw_iron", List.of(new Spot(0, 40, 20, 20, IRON_ORE, 1))), Set.of("0 40 20"));
         SeenAsk a = new SeenAsk();
-        String text = ask(a, "iron", 0, 40, 20, feet, run);
-        assertEquals("seen iron at 0 40 20 (20 away) for minecraft:iron_ore", text);
-        run.repriceAtNextStep(FactChange.seen("iron", 0, 40, 20, text));
+        FactChange.Fact f = see(a, run, feet, 0, iron(0, 40, 20));
+        assertEquals("seen iron at 0 40 20 (20 away) for minecraft:iron_ore", f.text());
         run.tick(2);
         assertEquals(0, h.cancels, "the walk runs on: " + port.log);
         assertEquals(List.of(run.steps().get(0).text()), h.started, "never restarted");
         assertEquals(List.of("seen iron at 0 40 20: collect now (not in the cheapest way: 75 s without it) vs finish to y 16 (priced path) (75 s) - the step runs on (replan.switchMarginS 10)"),
                 port.told.stream().filter(l -> l.startsWith("seen ")).toList(), "said once");
-        assertNull(ask(a, "iron", 1, 40, 21, feet, run), "the same vein: asked once");
+        assertNull(see(a, run, feet, 60_000, iron(1, 40, 21)), "the same vein: asked once");
         run.tick(3);
         assertEquals(1, port.told.stream().filter(l -> l.startsWith("seen ")).count(), "said once");
     }
@@ -176,9 +182,11 @@ class Z77SeenTest {
         List<Step> steps = List.of(new Step.ToStrip(0, 16, 0, "strip"), new Step.Strip(List.of(IRON_ORE), Map.of("iron", 3), 16, "east", 0));
         SeenAsk a = new SeenAsk();
         int[] feet = {0, 40, 0};
-        assertNull(a.ask(new SeenAsk.Cell("copper", 2, 40, 0), feet, steps, 0, BLOCKS, ExploreRules::smeltInputs, Seen.range()), "no step needs copper");
-        assertNull(a.ask(new SeenAsk.Cell("iron", 30, 40, 0), feet, steps, 0, BLOCKS, ExploreRules::smeltInputs, Seen.range()), "beyond the sight reach (seen.range 24)");
-        assertNull(a.ask(new SeenAsk.Cell("iron", 2, 40, 0), feet, steps, 2, BLOCKS, ExploreRules::smeltInputs, Seen.range()), "no step left that needs it");
+        assertFalse(offer(a, new SeenAsk.Cell("copper", 2, 40, 0), feet, steps, 0), "no step needs copper");
+        assertFalse(offer(a, iron(30, 40, 0), feet, steps, 0), "beyond the sight reach (seen.range 24)");
+        assertFalse(offer(a, iron(2, 40, 0), feet, steps, 2), "no step left that needs it");
+        assertTrue(offer(a, iron(2, 40, 0), feet, steps, 0));
+        assertFalse(offer(a, iron(3, 41, 0), feet, steps, 0), "its vein waits already");
         List<Step> explore = List.of(new Step.Explore(5, "minecraft:iron_ingot"));
         assertEquals("minecraft:raw_iron", SeenAsk.wants("iron", explore, 0, BLOCKS, ExploreRules::smeltInputs), "iron_ingot <- raw_iron <- iron ore");
         assertNull(SeenAsk.wants("iron", explore, 0, BLOCKS, w -> List.of()), "was: the ingot itself, no block gives it");
@@ -221,6 +229,81 @@ class Z77SeenTest {
         h2.done = craft.text();
         two.tick(2);
         assertEquals(List.of(craft.text(), collect.text()), h2.started, "priced at the boundary");
+    }
+
+    // ---- seen 2 (review): no burst of re-prices; a vein asked only when its re-price ran, per run ----
+
+    /** The walk down and the strip of iron after it, every re-price kept (the walk runs on); {@code asked} counts the re-prices. */
+    static Steps stripRun(Z48ScenarioTest.Hands h, List<FactChange.Fact> asked, String key) {
+        Steps run = new Steps(h);
+        run.start(key, List.of(new Step.ToStrip(0, 16, 0, "strip"), new Step.Strip(List.of(IRON_ORE), Map.of("iron", 3), 16, "east", 0)), 0,
+                (failed, fact, why) -> { asked.add(fact); return new Steps.Routine(null, "kept the running pick"); });
+        run.tick(1);
+        return run;
+    }
+
+    /**
+     * Review item 1 (a cave burst: N veins, N whole re-prices - BatchWay.forget, the chain and its path asks - on N ticks in a
+     * row): 6 distinct veins seen on 6 AA ticks (250 ms apart) - one re-price for the first; the 5 seen meanwhile wait and go
+     * together in ONE more ask, replan.everyMs (5 s, the planner's rolling re-score pace) after the first: 2 re-prices, not 6.
+     */
+    @Test
+    void review1_aBurstOf6VeinsIn6Ticks_twoReprices() {
+        Z48ScenarioTest.Hands h = new Z48ScenarioTest.Hands();
+        List<FactChange.Fact> asked = new ArrayList<>();
+        Steps run = stripRun(h, asked, "goal.raw_iron");
+        SeenAsk a = new SeenAsk();
+        int[] feet = {0, 40, 0};
+        long t = 0;
+        for (int i = 0; i < 6; i++, t += 250) {
+            see(a, run, feet, t, iron(4 * i - 10, 40, 5));          // 4 blocks apart: 6 veins
+            run.tick(2 + i);
+        }
+        assertEquals(1, asked.size(), "the burst: one re-price, the rest wait: " + asked);
+        assertEquals(5, a.waiting());
+        for (int k = 10; t <= Replan.everyMs() + 1000; t += 250, k++) { see(a, run, feet, t); run.tick(k); }
+        assertEquals(2, asked.size(), "one more for the 5 that waited: " + asked);
+        assertTrue(asked.get(1).text().endsWith("; 4 more veins seen"), asked.get(1).text());
+        assertEquals(6, a.askedCount(), "every vein's re-price ran");
+        assertEquals(0, h.cancels, "the walk runs on");
+    }
+
+    /**
+     * Review item 2: a vein asked for order A asks again for order B (a new run clears the marks); a vein whose ask was
+     * overwritten before its re-price ran (another seen fact in Steps' one slot) waits again and asks on the next turn.
+     */
+    @Test
+    void review2_aVeinAsksAgainForTheNextOrder_andAfterItsAskWasOverwritten() {
+        Z48ScenarioTest.Hands h = new Z48ScenarioTest.Hands();
+        List<FactChange.Fact> asked = new ArrayList<>();
+        Steps run = stripRun(h, asked, "goal.iron_helmet");
+        SeenAsk a = new SeenAsk();
+        int[] feet = {0, 40, 0};
+        assertNotNull(see(a, run, feet, 0, iron(3, 40, 0)));
+        run.tick(2);
+        assertNull(see(a, run, feet, 10_000, iron(3, 40, 0)), "order A: asked");
+        assertEquals(1, asked.size());
+        // order B: a new run on the same Steps
+        run.start("goal.iron_boots", List.of(new Step.ToStrip(0, 16, 0, "strip"), new Step.Strip(List.of(IRON_ORE), Map.of("iron", 3), 16, "east", 0)), 0,
+                (failed, fact, why) -> { asked.add(fact); return new Steps.Routine(null, "kept the running pick"); });
+        run.tick(3);
+        FactChange.Fact b = see(a, run, feet, 20_000, iron(3, 40, 0));
+        assertNotNull(b, "order B: the same vein asks again");
+        assertArrayEquals(new int[]{3, 40, 0}, FactChange.seenCell(b));
+        // overwritten: B's ask is replaced in Steps' slot by another seen fact before its re-price runs
+        FactChange.Fact other = FactChange.seen("iron", 9, 40, 9, "seen iron at 9 40 9 (another asker)");
+        run.repriceAtNextStep(other);
+        run.tick(4);
+        assertSame(other, asked.get(asked.size() - 1), "the other fact was priced, not B's");
+        assertNull(see(a, run, feet, 20_250), "within the pace: none");
+        assertEquals(1, a.waiting(), "B's vein waits again: its re-price never ran");
+        FactChange.Fact again = see(a, run, feet, 20_000 + Replan.everyMs());
+        assertNotNull(again, "asked on the next turn");
+        assertArrayEquals(new int[]{3, 40, 0}, FactChange.seenCell(again));
+        run.tick(5);
+        assertSame(again, asked.get(asked.size() - 1));
+        see(a, run, feet, 40_000);
+        assertEquals(1, a.askedCount(), "now its re-price ran");
     }
 
     // ---- folded in: explore until iron_ingot ----

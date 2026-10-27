@@ -21,6 +21,8 @@ import java.util.function.Function;
  * a mine's family - within the sensing reach of the feet asks once per vein (a cell of the family within {@link #VEIN} of an
  * asked one is that vein). No periodic scan, no new knob, no change to the rays: the fact itself is the trigger, and the
  * planner prices "collect it now" against what is left of the running pick (rule 1: Goals.reprice, replan.switchMarginS).
+ * 0.39.z77 seen 2: one ask in flight; the veins seen meanwhile wait and go out together in the next ask, at most one per
+ * replan.everyMs (the planner's rolling re-score pace); a vein counts as asked only once its re-price ran, for that run only.
  * Pure (JUnit: Z77SeenTest). Loader notes: none (the adapter AaRuntime.seenTick drains Seen's fresh cells on the AA tick).
  */
 public final class SeenAsk {
@@ -98,25 +100,120 @@ public final class SeenAsk {
         return false;
     }
 
-    /**
-     * The ask for {@code c} (the fact's chat words, "seen iron at 3 40 0 (3 away) for minecraft:raw_iron"), null: not asked -
-     * beyond {@code reach} of the feet (the sensing reach, Seen.range: a player's sight), a vein asked already, or no step of
-     * the run gets that family. An ask is remembered for its vein. {@code feet} null: the reach is not tested (not known).
-     */
-    public String ask(Cell c, int[] feet, List<Step> steps, int from, Function<String, Set<String>> blocksOf, Function<String, List<String>> smeltInputs, int reach) {
-        if (c == null || c.family() == null) return null;
+    // ---- 0.39.z77 seen 2 (review: a cave burst of N veins gave N whole re-prices on N ticks; a vein was marked asked when
+    // its re-price never ran, and for the life of the runtime): one ask in flight, the waiting veins coalesced into the next
+    // one at the planner's own re-score pace (replan.everyMs, Replan.Timer's), a vein marked asked only when its re-price ran,
+    // every mark dropped when the run changes (another order, a new run) ----
+
+    /** A vein waiting to ask: its cell, the words, its distance from the feet when seen (NaN: not known). */
+    private record Wait(Cell cell, String text, double dist) {}
+
+    private final java.util.ArrayList<Wait> pending = new java.util.ArrayList<>();
+    private List<Wait> flight = List.of();
+    private io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact flightFact;
+    private long lastAt = Long.MIN_VALUE / 2, run = Long.MIN_VALUE;
+
+    /** The run the asks are for ({@code runId}: Steps.runId): another run (a new order, a new run) - every vein may ask again. */
+    public void run(long runId) {
+        if (runId == run) return;
+        run = runId;
+        asked.clear();
+        pending.clear();
+        flight = List.of();
+        flightFact = null;
+    }
+
+    private static boolean inVein(Iterable<Cell> cells, Cell c) {
         int[] at = {c.x(), c.y(), c.z()};
+        for (Cell a : cells) if (a.family().equals(c.family()) && sameVein(new int[]{a.x(), a.y(), a.z()}, at)) return true;
+        return false;
+    }
+
+    private static List<Cell> cells(List<Wait> ws) {
+        List<Cell> out = new java.util.ArrayList<>();
+        for (Wait w : ws) out.add(w.cell());
+        return out;
+    }
+
+    /**
+     * A new cell offered (pure): it waits to ask when it is within {@code reach} of the feet (the sensing reach, Seen.range: a
+     * player's sight; {@code feet} null: not tested), a step of the run gets its family ({@link #wants}), and its vein is
+     * neither asked, waiting nor in flight. True: it waits.
+     */
+    public boolean offer(Cell c, int[] feet, List<Step> steps, int from, Function<String, Set<String>> blocksOf, Function<String, List<String>> smeltInputs, int reach) {
+        if (c == null || c.family() == null) return false;
         double d = Double.NaN;
         if (feet != null && feet.length >= 3) {                       // structural: x y z
             double dx = c.x() - feet[0], dy = c.y() - feet[1], dz = c.z() - feet[2];
             d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            if (d > reach) return null;
+            if (d > reach) return false;
         }
-        for (Cell a : asked) if (a.family().equals(c.family()) && sameVein(new int[]{a.x(), a.y(), a.z()}, at)) return null;
+        if (inVein(asked, c) || inVein(cells(pending), c) || inVein(cells(flight), c)) return false;
         String w = wants(c.family(), steps, from, blocksOf, smeltInputs);
-        if (w == null) return null;
-        asked.addLast(c);
-        while (asked.size() > KEEP) asked.removeFirst();
-        return "seen " + c.family() + " at " + c.x() + " " + c.y() + " " + c.z() + (Double.isNaN(d) ? "" : " (" + Math.round(d) + " away)") + " for " + w;
+        if (w == null) return false;
+        pending.add(new Wait(c, "seen " + c.family() + " at " + c.x() + " " + c.y() + " " + c.z() + (Double.isNaN(d) ? "" : " (" + Math.round(d) + " away)") + " for " + w, d));
+        return true;
     }
+
+    /**
+     * The one ask to send now ({@code nowMs}; {@code everyMs}: the planner's re-score pace, replan.everyMs), null: none - nothing
+     * waits, an ask is in flight, or the last went out less than {@code everyMs} ago. Every waiting vein goes with it (the
+     * re-price reads every seen cell): the nearest names the fact, the line counts the rest ("; 2 more veins seen").
+     */
+    public io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact take(long nowMs, long everyMs) {
+        if (flightFact != null || pending.isEmpty() || nowMs - lastAt < everyMs) return null;
+        Wait best = pending.get(0);
+        for (Wait w : pending) if (!Double.isNaN(w.dist()) && (Double.isNaN(best.dist()) || w.dist() < best.dist())) best = w;
+        int more = pending.size() - 1;
+        flight = List.copyOf(pending);
+        pending.clear();
+        lastAt = nowMs;
+        Cell c = best.cell();
+        flightFact = io.github.mojolowjo.entropybot.aa.moves.FactChange.seen(c.family(), c.x(), c.y(), c.z(),
+                best.text() + (more == 0 ? "" : "; " + more + " more vein" + (more == 1 ? "" : "s") + " seen"));
+        return flightFact;
+    }
+
+    /** The ask in flight, null: none. */
+    public io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact inFlight() { return flightFact; }
+
+    /**
+     * The ask in flight ended: {@code ran} - its re-price ran (Steps.seenRan): its veins are asked for this run; else (its fact
+     * was overwritten, or never priced) they wait again for the next ask.
+     */
+    public void ended(boolean ran) {
+        if (flightFact == null) return;
+        if (ran) {
+            for (Wait w : flight) asked.addLast(w.cell());
+            while (asked.size() > KEEP) asked.removeFirst();
+        } else {
+            pending.addAll(flight);
+        }
+        flight = List.of();
+        flightFact = null;
+    }
+
+    /**
+     * One AA tick over the running order's {@code st} (the adapter's seenTick): the run's marks ({@link #run}), the new cells
+     * offered, the ask in flight settled (its re-price ran: asked; no longer waiting there - overwritten or dropped: its veins
+     * wait again), the next ask sent ({@link #take}; Steps.repriceAtNextStep). Returns the ask sent, null: none.
+     */
+    public io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact tick(io.github.mojolowjo.entropybot.aa.moves.Steps st, List<Cell> fresh, int[] feet,
+                                                                          Function<String, Set<String>> blocksOf, Function<String, List<String>> smeltInputs, int reach,
+                                                                          long nowMs, long everyMs) {
+        run(st.runId());
+        if (fresh != null) for (Cell c : fresh) offer(c, feet, st.steps(), st.index(), blocksOf, smeltInputs, reach);
+        if (flightFact != null) {
+            if (st.seenRan(flightFact)) ended(true);
+            else if (!st.seenAsking(flightFact)) ended(false);
+        }
+        var f = take(nowMs, everyMs);
+        if (f != null) st.repriceAtNextStep(f);
+        return f;
+    }
+
+    /** Tests and aa status: veins waiting, asked. */
+    public int waiting() { return pending.size(); }
+
+    public int askedCount() { return asked.size(); }
 }

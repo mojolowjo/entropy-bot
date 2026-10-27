@@ -496,6 +496,7 @@ public final class Steps {
         runTries.clear();
         replanFact = null;
         seenWait = null;                         // 0.39.z77 seen: an ask is the run's
+        seenRan = null;
         needs = StepNeeds.NONE;
         if (this.steps.isEmpty()) {
             phase = Phase.FAILED;
@@ -883,6 +884,15 @@ public final class Steps {
     /** 0.39.z77 seen: the seen fact whose re-price waited on its walk's price ({@link FactChange#SEEN_WAITS}), null: none. */
     private FactChange.Fact seenWait;
 
+    /** 0.39.z77 seen 2: the last seen fact whose re-price ran (the replanner answered), null: none in this run. */
+    private FactChange.Fact seenRan;
+
+    /** 0.39.z77 seen 2: the re-price of this very seen fact ran (by identity). */
+    public boolean seenRan(FactChange.Fact f) { return f != null && f == seenRan; }
+
+    /** 0.39.z77 seen 2: this very seen fact still waits here - for the next step or tick, or for its walk's landing. */
+    public boolean seenAsking(FactChange.Fact f) { return f != null && (f == priceAsk || f == seenWait); }
+
     /**
      * 0.39.z77 seen (owner 2026-10-26: the trigger is the fact itself; runs BZ/CC: walk, up, explore and strip steps passed
      * 12 veins): the running steps a seen source re-prices where they run - the ones that move the bot past ore (walks, the
@@ -925,8 +935,10 @@ public final class Steps {
         }
         // 0.39.z77 seen: an answer that waits on the seen source's walk keeps the fact for the next landed path; any other
         // answer (a price, kept or switched) ends that ask
-        if (FactChange.isSeen(f))
+        if (FactChange.isSeen(f)) {
             seenWait = r != null && (r.steps() == null ? r.why() != null && r.why().startsWith(FactChange.SEEN_WAITS) : waitsOnPaths(r.steps())) ? f : null;
+            seenRan = f;                         // 0.39.z77 seen 2: its re-price ran (the asker marks its veins asked)
+        }
         List<Step> left = steps.subList(idx, steps.size());
         // 0.39.z70 (D2 3.1, design 1.8): the same steps by identity (a record's array field compares by reference)
         if (r == null || r.steps() == null || r.steps().isEmpty() || StepId.same(r.steps(), left)) {

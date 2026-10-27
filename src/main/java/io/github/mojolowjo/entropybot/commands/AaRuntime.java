@@ -2284,26 +2284,25 @@ public final class AaRuntime implements JobPort {
      * source cells since the last AA tick (Seen.drainFresh: a ray's first sighting, or the exposed-face patch with fair off)
      * - the first of a family the running order's steps need, within the sight reach (seen.range) and of a vein not asked yet,
      * prices the order again where the running step runs (FactChange.seen, Steps.reprice(true)). No order behind the run: the
-     * cells are only sources for the next price (no ask). One ask a tick: the re-price sees every seen cell anyway.
+     * cells are only sources for the next price (no ask). 0.39.z77 seen 2 (review: a cave burst of N veins was N whole re-prices
+     * on N ticks): SeenAsk.tick keeps one ask in flight and sends the waiting veins together, at most one ask per
+     * replan.everyMs (the planner's rolling re-score pace); a vein is marked asked only when its re-price ran, for this run.
      */
     private void seenTick(LocalPlayer p) {
         var seen = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.seen();
         if (seen == null) return;
         var fresh = seen.drainFresh();
-        if (fresh.isEmpty() || !typedRun || taskReplan == null || c.stepRun == null || !c.stepRun.steps.running()) return;
+        if (!typedRun || taskReplan == null || c.stepRun == null || !c.stepRun.steps.running()) return;
         String dim = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.dim();
-        var st = c.stepRun.steps;
-        int[] feet = Jobs.here(p);
+        List<io.github.mojolowjo.entropybot.aa.SeenAsk.Cell> cells = new ArrayList<>();
         for (var f : fresh) {
             if (dim == null || !dim.equals(f.dim())) continue;
             var cell = f.cell();
-            String text = seenAsk.ask(new io.github.mojolowjo.entropybot.aa.SeenAsk.Cell(cell.family(), cell.x(), cell.y(), cell.z()), feet, st.steps(), st.index(),
-                    this::sourceBlocksOf, io.github.mojolowjo.entropybot.cave.ExploreRules::smeltInputs, io.github.mojolowjo.entropybot.sense.Seen.range());
-            if (text == null) continue;
-            LOG.info("[entropybot] aa: {} - the order is priced again where the step runs", text);
-            st.repriceAtNextStep(io.github.mojolowjo.entropybot.aa.moves.FactChange.seen(cell.family(), cell.x(), cell.y(), cell.z(), text));
-            return;
+            cells.add(new io.github.mojolowjo.entropybot.aa.SeenAsk.Cell(cell.family(), cell.x(), cell.y(), cell.z()));
         }
+        var asked = seenAsk.tick(c.stepRun.steps, cells, Jobs.here(p), this::sourceBlocksOf, io.github.mojolowjo.entropybot.cave.ExploreRules::smeltInputs,
+                io.github.mojolowjo.entropybot.sense.Seen.range(), System.currentTimeMillis(), io.github.mojolowjo.entropybot.aa.Replan.everyMs());
+        if (asked != null) LOG.info("[entropybot] aa: {} - the order is priced again where the step runs", asked.text());
     }
 
     private void pathLandedTick() {
