@@ -1017,8 +1017,13 @@ public final class NeedChain {
      * 0.39.z77 J2 (owner via the manager: the watcher sees each leg as it starts): the playbook's chain and, by identity, the
      * first step of each leg in the chain's order -> "playbook leg 2/3: descent to y 16 for raw_iron 27, coal 4" (said when
      * that step starts, Goals' replanner). Empty when the chain does not stand.
+     * <p>0.39.z77 carry (runs CB 15:58:02, CE 16:19:53-16:20:18: the same legs re-priced said "carries ..." on one line and
+     * nothing on the next): {@code whole} - the trip as priced, every leg's steps and their uses, before the run's cut at a
+     * surface explore (the run ends at the explore, the price is all legs); the trip line's carry list is read from it, so a
+     * re-price of the same legs with its explore carries the same. {@code chain} is what runs. No explore: the same chain.
      */
-    public record Legs(Chain chain, Map<Step, String> starts, int failedLeg) {
+    public record Legs(Chain chain, Map<Step, String> starts, int failedLeg, Chain whole) {
+        public Legs(Chain chain, Map<Step, String> starts, int failedLeg) { this(chain, starts, failedLeg, chain); }
         public Legs(Chain chain, Map<Step, String> starts) { this(chain, starts, -1); }
 
         /** 0.39.z77 noway: the leg (of {@code pb.legs()}) whose no-way failed the chain; null: none (it stands, or no leg's). */
@@ -1031,20 +1036,27 @@ public final class NeedChain {
         Ctx c = new Ctx(w);
         List<java.util.Set<Step>> added = new ArrayList<>();
         int[] failedLeg = {-1};
-        Chain ch = pb == null || !pb.ok() ? playbookFails(c, pb == null ? "no playbook" : pb.fail()) : playbookChain(c, pb, added, failedLeg);
+        List<Step> priced = new ArrayList<>();                  // 0.39.z77 carry: every leg's steps, before the explore's cut
+        Chain ch = pb == null || !pb.ok() ? playbookFails(c, pb == null ? "no playbook" : pb.fail()) : playbookChain(c, pb, added, failedLeg, priced);
         if (!ch.ok() && waitsHere(ch.missing())) failedLeg[0] = -1;     // 0.39.z77 pending: a wait is no leg's no-way
+        Chain whole = ch;
+        if (ch.ok() && priced.size() > ch.steps().size()) {
+            List<Map<String, Integer>> uses = new ArrayList<>();
+            for (Step st : priced) uses.add(c.uses.get(st));
+            whole = new Chain(List.copyOf(priced), ch.cost(), ch.why(), ch.explore(), null, ch.dropped(), ch.unreachable(), uses, ch.spares());
+        }
         Map<Step, String> starts = new java.util.IdentityHashMap<>();
         if (ch.ok() && pb != null) {                              // SHAPE CHANGE: an explore trip says its legs too
             int prev = -1, n = Math.min(added.size(), pb.legs().size());
             for (int i = 0; i < n; i++) {
                 int at = -1;
-                for (int j = prev + 1; j < ch.steps().size(); j++) if (added.get(i).contains(ch.steps().get(j))) { at = j; break; }
+                for (int j = prev + 1; j < whole.steps().size(); j++) if (added.get(i).contains(whole.steps().get(j))) { at = j; break; }
                 if (at < 0) continue;
-                starts.put(ch.steps().get(at), "playbook leg " + (i + 1) + "/" + pb.legs().size() + ": " + legWords(pb.legs().get(i)));
+                starts.put(whole.steps().get(at), "playbook leg " + (i + 1) + "/" + pb.legs().size() + ": " + legWords(pb.legs().get(i)));
                 prev = at;
             }
         }
-        return new Legs(ch, starts, ch.ok() ? -1 : failedLeg[0]);
+        return new Legs(ch, starts, ch.ok() ? -1 : failedLeg[0], whole);
     }
 
     /** 0.39.z77 J2: a leg as the watcher reads it ("descent to y 16 for raw_iron 27, coal 4"). */
@@ -1073,7 +1085,7 @@ public final class NeedChain {
         return s;
     }
 
-    private static Chain playbookChain(Ctx c, Playbook pb, List<java.util.Set<Step>> added, int[] failedLeg) {
+    private static Chain playbookChain(Ctx c, Playbook pb, List<java.util.Set<Step>> added, int[] failedLeg, List<Step> priced) {
         List<String> phrases = new ArrayList<>();
         int levelY = Playbook.NO_Y;
         // 0.39.z77 freeze review (manager's ruling on run BE 08:08:15, "playbook 450.0 s (ends in an explore)" while its legs
@@ -1087,6 +1099,12 @@ public final class NeedChain {
         // explore - is priced when the bot gets there: the run's steps end before it ({@code later}) and the trip is priced
         // again from the bag at that boundary (never a whole-order "which planner")
         String later = null;
+        // 0.39.z77 carry (runs CB 15:58:00-02, CE 16:19:53-16:20:18: a band leg's ways still computing cut the run before THAT
+        // leg - the descent ran without the take-along its legs below need, priced up here and put in before it; the bot went
+        // down with no furnace, table or fuel): what a descent carries is what the legs below it use, so a leg below the
+        // descent that took the chain down (a strip on, a band leg) priced when the bot gets there cuts the run before that
+        // descent ({@code downBefore}: the steps before it). Nothing before it: the trip stands until the answer lands (rule 22).
+        java.util.Set<Step> downBefore = null;
         int legNo = 0;
         legs:
         for (Playbook.Leg leg : pb.legs()) {
@@ -1094,20 +1112,30 @@ public final class NeedChain {
             failedLeg[0] = legNo - 1;            // 0.39.z77 noway: a fail returned in this leg is this leg's no-way
             java.util.Set<Step> before = ids(c.steps);
             String legName = "leg " + legNo + "/" + pb.legs().size() + " (" + leg.text() + ")";
+            boolean below = downBefore != null && (leg.kind() == Playbook.Kind.DESCENT || leg.kind() == Playbook.Kind.AT_BAND);
+            java.util.Set<Step> cut = below ? downBefore : before;
             if (leg.kind() == Playbook.Kind.DESCENT) {
                 int w0 = c.waited.size();
                 String p = playbookStrip(c, leg, levelY, exploreEnd >= 0);
-                if (c.fail != null && legNo > 1 && !before.isEmpty() && waitsHere(c.fail)) {
-                    later = "descent to y " + leg.y() + ": " + c.fail;
-                    cutTo(c, before);
-                    break;
+                if (c.fail != null && legNo > 1 && waitsHere(c.fail)) {
+                    if (!cut.isEmpty()) {
+                        later = "descent to y " + leg.y() + ": " + c.fail;
+                        cutTo(c, cut);
+                        break;
+                    }
+                    if (below) return waitsBelow(c, legName, "descent to y " + leg.y() + ": " + c.fail);
                 }
                 if (c.fail != null) return legNoWay(c, w0, legName, "descent to y " + leg.y() + ": " + c.fail);
-                if (c.stuck && exploreEnd >= 0) { later = secondUnknown(c); break; }     // price review 2 / SHAPE CHANGE: priced on its find
+                if (c.stuck && exploreEnd >= 0) {                  // price review 2 / SHAPE CHANGE: priced on its find
+                    later = secondUnknown(c);
+                    if (below) cutTo(c, cut);
+                    break;
+                }
                 if (c.stuck) return legNoWay(c, w0, legName, "descent to y " + leg.y() + ": its pickaxe ends in an explore (no known source for " + shw(c.unknown) + ")");
                 if (p != null) phrases.add(p);
                 levelY = leg.y();
                 added.add(addedSince(c, before));
+                if (downBefore == null && c.down != null) downBefore = before;     // this descent takes the chain down
                 continue;
             }
             // 0.39.z77 legs 2: a leg HERE (under ground, the gets had where the bot stands) is priced as the surface leg is - no
@@ -1125,14 +1153,21 @@ public final class NeedChain {
                     // a gate: the pickaxe the derivation chose for its tier (its leaves on this leg's side), made unless one digs it
                     String p = gate ? (leg.tier() > c.pickTier ? obtain(c, item, c.have(item) + 1) : null) : obtain(c, item, t.n());
                     if (c.fail == null && !c.stuck) madePick(c, item);
-                    if (c.fail != null && legNo > 1 && !before.isEmpty() && waitsHere(c.fail)) {
-                        later = name + ": " + sh(item) + ": " + c.fail;
-                        cutTo(c, before);
-                        break legs;
+                    if (c.fail != null && legNo > 1 && waitsHere(c.fail)) {
+                        if (!cut.isEmpty()) {
+                            later = name + ": " + sh(item) + ": " + c.fail;
+                            cutTo(c, cut);
+                            break legs;
+                        }
+                        if (below) return waitsBelow(c, legName, name + ": " + sh(item) + ": " + c.fail);
                     }
                     if (c.fail != null) return legNoWay(c, w0, legName, name + ": " + sh(item) + ": " + c.fail);
                     if (c.stuck) {
-                        if (exploreEnd >= 0) { later = secondUnknown(c); break legs; }       // price review 2 / SHAPE CHANGE: priced on its find
+                        if (exploreEnd >= 0) {                       // price review 2 / SHAPE CHANGE: priced on its find
+                            later = secondUnknown(c);
+                            if (below) cutTo(c, cut);
+                            break legs;
+                        }
                         if (!surface) return legNoWay(c, w0, legName, name + ": " + sh(item) + " ends in an explore (no known source for " + shw(c.unknown) + ")");
                         got.add(sh(item) + " " + t.n() + " <- " + p + " (then priced as had)");
                         exploreEnd = c.steps.size();
@@ -1153,12 +1188,13 @@ public final class NeedChain {
             added.add(addedSince(c, before));
         }
         failedLeg[0] = -1;                       // past the legs: a fail now is no one leg's
+        priced.addAll(c.steps);                  // 0.39.z77 carry: the trip as priced (its line's carry lists read it)
         if (exploreEnd >= 0) {
             c.stuck = true;
             c.unknown = exploreFor;
             c.steps.subList(exploreEnd, c.steps.size()).clear();       // the run's steps end at the explore; the price is all legs
         }
-        String tail = later != null ? "; the legs from there are priced when the bot gets there (" + later + ")"
+        String tail = later != null ? PRICED_THERE + later + ")"
                 : exploreEnd >= 0 ? ": " + s(c.seconds) + " priced with the legs after the explore" : "";
         return finish(c, PLAYBOOK, PLAYBOOK + " <- " + String.join(" > ", phrases) + tail);
     }
@@ -1199,6 +1235,19 @@ public final class NeedChain {
         String first = w.iterator().next();
         return playbookFails(c, NOT_PRICED + leg + WAITS_ON + w.size() + " of its ways with no answer yet (" + first
                 + (w.size() > 1 ? "; " + (w.size() - 1) + " more" : "") + "); without them: " + verdict + "; priced again when an answer lands (rule 15)");
+    }
+
+    /** 0.39.z77 carry: the tail of a playbook's why whose run ends before a leg priced when the bot gets there (the trip line marks those legs). */
+    public static final String PRICED_THERE = "; the legs from there are priced when the bot gets there (";
+
+    /**
+     * 0.39.z77 carry: a leg below the descent waits on an answer and nothing runs before that descent - not priced yet, the
+     * trip stands (rule 22, BatchWay.shape), said; the descent goes down only with the carry list its legs below need. A wait,
+     * never a no-way verdict (those go through {@link #legNoWay}).
+     */
+    private static Chain waitsBelow(Ctx c, String leg, String fail) {
+        return playbookFails(c, NOT_PRICED + leg + WAITS_ON + "an answer before going down (" + fail + "): the descent carries what the legs below use, so it"
+                + " waits for every one of them; priced again when an answer lands (rule 15)");
     }
 
     /** 0.39.z77 SHAPE CHANGE: the plan back to the steps it held at a leg's start (the leg priced when the bot gets there). */

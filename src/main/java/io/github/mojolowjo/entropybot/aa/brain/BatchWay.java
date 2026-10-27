@@ -29,13 +29,16 @@ import java.util.function.BiFunction;
  * gives no route for) falls back to the order's own chain as its one leg, said. The trip's line - its legs and what each
  * carries down - is said to the owner when the order takes it, before the bot moves; each leg is said as it starts (Goals).
  * <p>R3 (resolve time on the client tick): the trip is kept per order (each order's holds are its own), keyed by the open orders, the bag, the place
- * (failures.moved cells) and the order's holds; one that waits on paths is kept until the next path answer lands. Measured
+ * (x and z in failures.moved cells, on the surface or under ground - 0.39.z77 carry: never the feet's Y) and the order's
+ * holds; one that waits on paths is kept until the next path answer lands. Measured
  * on the AA tick's stopwatch ({@link TickLaps#playbook}: "probe aatick: ... | playbook N = M ms").
  * <p>0.39.z77 noway: a leg with no way ends only the orders whose own items need it ({@link Playbook.Leg#serves}), parked
  * with the leg's reasons; the batch's other orders derive their trip again without them and run on (said in the log).
  * 0.39.z77 pending: a leg is no way only when every one of its ways has a final answer; one still computing or queued makes
  * it "not priced yet" - the trip stands (rule 22), said to the owner, nobody parked (NeedChain.legNoWay).
- * Pure (JUnit: Z77PlaybookTest, Z77RoundFixTest, Z77NoWayTest, Z77PendingTest). Loader notes: none (the world and the ore-per-slab fact come from AaRuntime).
+ * 0.39.z77 carry: the line's carry lists are read from the trip as priced (every leg, before the run's explore cut), so a
+ * re-price of the same legs carries the same; the legs the run leaves to be priced when the bot gets there say so.
+ * Pure (JUnit: Z77PlaybookTest, Z77RoundFixTest, Z77NoWayTest, Z77PendingTest, Z77CarryTest). Loader notes: none (the world and the ore-per-slab fact come from AaRuntime).
  */
 public final class BatchWay {
     private BatchWay() {}
@@ -112,13 +115,20 @@ public final class BatchWay {
     /** A trip is for plain-item orders only (a strip order or a group runs its own chain). */
     static boolean tripOrder(Goals.Goal g) { return g.strip == null && !g.r.group(); }
 
-    /** The trip's key (pure): the batch, its open orders, the bag, the place in failures.moved cells, the batch's holds. */
-    static String tripKeyOf(String tk, List<Goals.Goal> open, Map<String, Integer> bag, int[] pos, java.util.Collection<String> held) {
+    /**
+     * The trip's key (pure): the batch, its open orders, the bag, the place, the batch's holds. The place: x and z in
+     * failures.moved cells and where the legs are placed from - on the surface or under ground ({@code under}: the sensed
+     * depth over the feet, Jobs.underDepth, at least aaLadder.surfaceDepth, as Playbook.facts reads it). 0.39.z77 carry
+     * (run CB 16:04:24-16:05:34: the trip re-priced at every Y the bot passed, "here at y -20", "-16", "-15", ...): the
+     * feet's Y is no fact the trip depends on - only a leg's place changing (the surface <-> under ground) re-prices it, once.
+     */
+    static String tripKeyOf(String tk, List<Goals.Goal> open, Map<String, Integer> bag, int[] pos, boolean under, java.util.Collection<String> held) {
         StringBuilder b = new StringBuilder(tk).append(" |");
         for (Goals.Goal o : open) b.append(' ').append(o.r.key()).append(':').append(o.n);
         b.append(" | ").append(new TreeMap<>(bag));
         int cell = Math.max(1, (int) Math.round(Failures.movedV()));
-        if (pos != null && pos.length >= 3) b.append(" | at ").append(Math.floorDiv(pos[0], cell)).append(',').append(Math.floorDiv(pos[1], cell)).append(',').append(Math.floorDiv(pos[2], cell));   // structural: x y z
+        if (pos != null && pos.length >= 3) b.append(" | at ").append(Math.floorDiv(pos[0], cell)).append(',').append(Math.floorDiv(pos[2], cell));   // structural: x y z (y left out)
+        b.append(under ? " under ground" : " on the surface");
         b.append(" | held ").append(new java.util.TreeSet<>(held));
         return b.toString();
     }
@@ -153,7 +163,7 @@ public final class BatchWay {
         NeedChain.World w = others.isEmpty() ? w0 : w0.withoutSources(others);
         java.util.Set<String> held = new java.util.TreeSet<>(mine.keySet());
         held.addAll(others.keySet());
-        String key = tripKeyOf(tk, open, w.bag(), bb.in == null ? null : bb.in.pos, held);
+        String key = tripKeyOf(tk, open, w.bag(), bb.in == null ? null : bb.in.pos, bb.in != null && bb.in.underDepth >= io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth(), held);
         Trip kept = TRIPS.get(tk);
         Trip t = kept != null && kept.holds(key, landed(w)) ? kept : price(bb, g, tk, key, open, w);
         // 0.39.z77 noway (run BU 13:34:23: the helmet's band leg had no way and ended the PICKAXE's order, never made): a leg's
@@ -186,7 +196,7 @@ public final class BatchWay {
         NeedChain.Legs l = pb.ok() && !oneLeg ? NeedChain.resolvePlaybookLegs(pb, w) : null;
         if (t0 != 0) TickLaps.AA.playbook(TickLaps.AA.now() - t0);
         Shaped s = oneLeg ? new Shaped(null, TRIP + tk + " (1 order): 1 leg - " + pb.legs().get(0).text() + ": the order's own chain", true)
-                : shape(tk, open.size(), pb, l == null ? null : l.chain(), l == null ? Map.of() : l.starts());
+                : shape(tk, open.size(), pb, l == null ? null : l.chain(), l == null ? Map.of() : l.starts(), l == null ? null : l.whole());
         Map<Step, String> starts = l == null || s.chain() != l.chain() ? Map.of() : l.starts();
         Set<String> ends = l == null || s.chain() != l.chain() ? Set.of() : ends(open, l.failed(pb));
         Trip t = new Trip(key, landed(w), s.settled(), pb, s.chain(), starts, s.line(), ends);
@@ -250,6 +260,15 @@ public final class BatchWay {
      * stand (rule 22); priced 0 s - refused; no derivation - the order's own chain (null chain), the reason said.
      */
     public static Shaped shape(String key, int orders, Playbook pb, NeedChain.Chain pc, Map<Step, String> starts) {
+        return shape(key, orders, pb, pc, starts, pc);
+    }
+
+    /**
+     * 0.39.z77 carry: {@link #shape} with the trip as priced ({@code whole}, {@link NeedChain.Legs#whole}: every leg's steps,
+     * before the run's cut at a surface explore) - the line's legs and carry lists are read from it, the run is {@code pc}.
+     */
+    public static Shaped shape(String key, int orders, Playbook pb, NeedChain.Chain pc, Map<Step, String> starts, NeedChain.Chain whole) {
+        if (whole == null || pc == null || !pc.ok()) whole = pc;
         String head = TRIP + key + " (" + orders + " order" + (orders == 1 ? "" : "s") + "): ";
         if (pb == null || !pb.ok() || pc == null)
             return new Shaped(null, head + "no trip derived (" + (pb == null ? "no playbook" : pb.fail()) + "): the order's own chain as its one leg", true);
@@ -274,7 +293,7 @@ public final class BatchWay {
             return new Shaped(new NeedChain.Chain(List.of(), 0, "trip refused: " + z, false, "trip refused: " + z), head + "refused (" + z + ")", true, bare);
         }
         boolean waits = Steps.waitsOnPaths(pc.steps());
-        return new Shaped(pc, head + line(pb, pc, starts), !waits, head + legs(pb, pc, starts));
+        return new Shaped(pc, head + legs(pb, whole, starts) + "; " + price(pc), !waits, head + legs(pb, whole, starts));
     }
 
     /** 0.39.z77 round fix 5: why a trip's seconds are no price ("priced 0.0 s: a way priced 0 or less is never valid"). */
@@ -288,9 +307,15 @@ public final class BatchWay {
      * that no step after it makes and no later leg gets (the take-along, from the plan's own per-step uses).
      */
     static String line(Playbook pb, NeedChain.Chain pc, Map<Step, String> starts) {
-        String price = pc.explore() ? "priced with its explore " + Math.round(pc.seconds()) + " s" : "priced " + Math.round(pc.seconds()) + " s";
-        return legs(pb, pc, starts) + "; " + price;
+        return legs(pb, pc, starts) + "; " + price(pc);
     }
+
+    private static String price(NeedChain.Chain pc) {
+        return pc.explore() ? "priced with its explore " + Math.round(pc.seconds()) + " s" : "priced " + Math.round(pc.seconds()) + " s";
+    }
+
+    /** 0.39.z77 carry: a leg the trip prices when the bot gets there (after the run's last leg; NeedChain.PRICED_THERE). */
+    static final String NOT_PRICED_HERE = " (not priced yet)";
 
     /**
      * 0.39.z77: the trip's legs and what each descent carries (pure) - {@link #line} without the price; {@code pc} null: the
@@ -306,6 +331,11 @@ public final class BatchWay {
             int slash = t.indexOf('/');
             if (slash > 13) at.put(Integer.parseInt(t.substring(13, slash)) - 1, k);    // structural: "playbook leg ".length()
         }
+        // 0.39.z77 carry: the run ends before a leg priced when the bot gets there - that leg and the ones after it say so (a
+        // descent among them carries nothing yet: its legs below are not priced; NeedChain cuts the run before it)
+        int last = -1;
+        for (int i : at.keySet()) last = Math.max(last, i);
+        boolean cut = pc != null && pc.why() != null && pc.why().contains(NeedChain.PRICED_THERE);
         List<String> parts = new ArrayList<>();
         for (int i = 0; i < legs.size(); i++) {
             Playbook.Leg l = legs.get(i);
@@ -318,7 +348,7 @@ public final class BatchWay {
                 case AT_BAND -> "at the band";
             };
             String carry = l.kind() == Playbook.Kind.DESCENT && !l.on() && !l.here() && at.containsKey(i) ? carries(pb, i, at.get(i), pc) : "";
-            parts.add((i + 1) + " " + head + ": " + String.join(", ", g) + (carry.isEmpty() ? "" : ", carries " + carry));
+            parts.add((i + 1) + " " + head + ": " + String.join(", ", g) + (carry.isEmpty() ? "" : ", carries " + carry) + (cut && last >= 0 && i > last ? NOT_PRICED_HERE : ""));
         }
         return legs.size() + " leg" + (legs.size() == 1 ? "" : "s") + " - " + String.join(" | ", parts);
     }
