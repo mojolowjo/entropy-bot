@@ -1166,7 +1166,7 @@ public final class AaRuntime implements JobPort {
                     .map(x -> x.defaultBlockState().is(net.minecraft.tags.BlockTags.LOGS)).orElse(false);
         final boolean tree = logs;
         java.util.function.Predicate<io.github.mojolowjo.entropybot.aa.NeedChain.Spot> pass = skip == null ? null : sp -> skip.test(word, givingOf(sp, word));
-        var s = c.nearby.nearest(blocks, () -> tree ? treeSighting() : indexedSighting(blocks), pass);
+        var s = c.nearby.nearest(blocks, () -> tree ? treeSighting(blocks) : indexedSighting(blocks), pass);
         return s == null ? null : givingOf(s, word);
     }
 
@@ -1267,10 +1267,23 @@ public final class AaRuntime implements JobPort {
     }
 
     /** The nearest tree AA's sightings know that I may cut (the tree fact's fallback). */
-    private io.github.mojolowjo.entropybot.aa.NeedChain.Spot treeSighting() {
+    private io.github.mojolowjo.entropybot.aa.NeedChain.Spot treeSighting() { return treeSighting(null); }
+
+    /**
+     * 0.39.z77 planks (run DH 04:38:13: an acacia tree offered for dark_oak_planks): the nearest such tree that serves a need for
+     * these log blocks ({@code blocks}; null: any log) - one whose lowest log, read where its chunk is loaded, is one of them
+     * (Nearby.treeServes); the next tree when it is not.
+     */
+    private io.github.mojolowjo.entropybot.aa.NeedChain.Spot treeSighting(java.util.Set<String> blocks) {
         var trees = woodFacts();
-        if (trees != null) for (var t : trees.trees()) {
-            if (t.deny() == null) return new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(t.x(), t.y(), t.z(), t.dist(), null);
+        if (trees == null) return null;
+        var lv = Minecraft.getInstance().level;
+        for (var t : trees.trees()) {
+            if (t.deny() != null) continue;
+            String base = null;                              // not read: its chunk not loaded (or no level)
+            net.minecraft.core.BlockPos q = new net.minecraft.core.BlockPos(t.x(), t.y(), t.z());
+            if (blocks != null && lv != null && lv.isLoaded(q)) base = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(lv.getBlockState(q).getBlock()).toString();
+            if (io.github.mojolowjo.entropybot.aa.Nearby.treeServes(blocks, base)) return new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(t.x(), t.y(), t.z(), t.dist(), null);
         }
         return null;
     }

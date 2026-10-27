@@ -409,6 +409,17 @@ public final class Nearby {
     }
 
     /**
+     * 0.39.z77 planks (run DH 04:38:13: "cut 16 at 2 69 -5 > craft dark_oak_planks 64" - the seen tree there was acacia, the
+     * craft then "missing 16 dark_oak_log"): a seen tree is the fallback source of a need for these log blocks ({@code blocks},
+     * the need's source set) unless its lowest log was read ({@code baseLog}, the chunk loaded) and is none of them. Not read
+     * (null: its chunk not loaded): offered as before - its walk is not known until the chunk loads (chunks not loaded), and
+     * then its log is read (rule 15). Pure.
+     */
+    public static boolean treeServes(Set<String> blocks, String baseLog) {
+        return blocks == null || baseLog == null || blocks.contains(baseLog);
+    }
+
+    /**
      * TAG_NEEDS: what a block gives of a need word: the drop of its loot that is in the need (the loot data), else its own item
      * when that is in it ({@code ownItem}); null: neither (the chain then counts the need itself).
      */
