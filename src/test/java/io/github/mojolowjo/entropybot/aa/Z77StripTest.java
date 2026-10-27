@@ -74,24 +74,68 @@ class Z77StripTest {
         assertTrue(e.heading(), "two families: the heading is held");
         // while the iron is short and has no other way priced, the coal comes along: the strip runs on
         assertNull(StripYield.check(Map.of("coal", 1, "iron", 3), Map.of("iron", 2), 249, predicted(), facts(31.0, Double.NaN), "south", null));
-        // a one-family coal strip (the playbook derived again from the bag): its ores held, the charcoal next
-        StripYield.End one = StripYield.check(Map.of("coal", 1), Map.of(), 0, predicted(), facts(31.0, Double.NaN), "south", null);
-        assertNotNull(one, "1 x 224 x 0.8 = 179.2 s > 31.0 s at its first cell");
-        assertTrue(one.why().startsWith("met: none; coal 0 of 1 after 0 cells (this strip's yield: coal 0 in 0 cells against the band's 1 in 224 -> 179.2 s more here"), one.why());
+        // a one-family coal strip (the playbook derived again from the bag): no sample at its first cells (z77 strip 2: the
+        // band's own 224 cells an ore first); after them, dry: 1 x (224 + 224) x 0.8 = 358.4 s > 31.0 s - its ores held
+        assertNull(StripYield.check(Map.of("coal", 1), Map.of(), 0, predicted(), facts(31.0, Double.NaN), "south", null), "0 cells: no sample");
+        assertNull(StripYield.check(Map.of("coal", 1), Map.of(), 223, predicted(), facts(31.0, Double.NaN), "south", null), "223 cells: short of the band's 224");
+        StripYield.End one = StripYield.check(Map.of("coal", 1), Map.of(), 224, predicted(), facts(31.0, Double.NaN), "south", null);
+        assertNotNull(one);
+        assertTrue(one.why().startsWith("met: none; coal 0 of 1 after 224 cells (this strip's yield: coal 0 in 224 cells against the band's 1 in 224 -> 358.4 s more here"), one.why());
         assertFalse(one.heading(), "the ores held: the coal's strip way is out for the order");
     }
 
     /**
      * Control: the coal still cheapest by the strip - a rich yield so far: 9 coal of 10 in 120 cells: (120 + 224) / 10 =
-     * 34.4 cells an ore, 1 left x 34.4 x 0.8 = 27.52 s < 31.0 s: runs on. The same 9 in 200 cells: 42.4 x 0.8 = 33.92 s > 31:
-     * ends.
+     * 34.4 cells an ore, 1 left x 34.4 x 0.8 = 27.52 s < 31.0 s: runs on. z77 strip 2: a yield above the band's is no
+     * evidence against the strip - the same 9 in 200 (and in 300) cells runs on too; 0 coal in 300 cells: 1 x 524 x 0.8 =
+     * 419.2 s > 31: ends.
      */
     @Test
     void control_aRichYield_theStripRunsOn() {
         assertNull(StripYield.check(Map.of("coal", 10, "iron", 3), Map.of("iron", 27, "coal", 9), 120, predicted(), facts(31.0, Double.NaN), "south", null));
-        StripYield.End e = StripYield.check(Map.of("coal", 10, "iron", 3), Map.of("iron", 27, "coal", 9), 200, predicted(), facts(31.0, Double.NaN), "south", null);
+        assertNull(StripYield.check(Map.of("coal", 10, "iron", 3), Map.of("iron", 27, "coal", 9), 200, predicted(), facts(31.0, Double.NaN), "south", null));
+        assertNull(StripYield.check(Map.of("coal", 10, "iron", 3), Map.of("iron", 27, "coal", 9), 300, predicted(), facts(31.0, Double.NaN), "south", null));
+        StripYield.End e = StripYield.check(Map.of("coal", 10, "iron", 3), Map.of("iron", 27), 300, predicted(), facts(31.0, Double.NaN), "south", null);
         assertNotNull(e);
-        assertTrue(e.why().contains("coal 9 of 10 after 200 cells") && e.why().contains("-> 33.9 s more here"), e.why());
+        assertTrue(e.why().contains("coal 0 of 10 after 300 cells") && e.why().contains("-> 4192.0 s more here"), e.why());
+    }
+
+    /**
+     * 0.39.z77 strip 2, run CS 19:32:56 (laptop, job-j2 07ce9d6b): "strip north at feet y 17 ended on its yield: strip: met:
+     * none; iron 0 of 3 after 7 cells (this strip's yield: iron 0 in 7 cells against the band's 1 in 57 -> 648.4 s more here;
+     * cheaper: a strip from here east (173 cells at the band and the areas seen along it) 588.2 s)". A cell 3.4 s (the run's
+     * 588.2 / 173). 0 ore in 7 cells is the band's own prediction at 1 in 57: the strip runs on; so at 56 cells. 0 in 57 (the
+     * band's cells an ore) and 0 in 120: the measured rate below the band's - 3 x (120 + 57) x 3.4 = 1805.4 s against the
+     * east tunnel's 588.2 s: it ends with the "met: ..." line, the heading held.
+     */
+    @Test
+    void runCS_zeroIn7RunsOn_zeroIn120Ends() {
+        double cell = 3.4, band = 57;
+        Map<String, Double> p = Map.of("iron", 1 / band);
+        Map<String, StripYield.Fact> f = Map.of("iron", new StripYield.Fact(37.1, cell, Double.NaN, "no other way priced", false));
+        StripYield.HeadingCells h = (hd, fam, left) -> hd.equals("east") ? 173 : 3 * 90;
+        assertNull(StripYield.check(Map.of("iron", 3), Map.of(), 7, p, f, "north", h), "0 in 7 at 1 in 57: runs on");
+        assertNull(StripYield.check(Map.of("iron", 3), Map.of(), 56, p, f, "north", h), "0 in 56: short of the band's 57");
+        assertNotNull(StripYield.check(Map.of("iron", 3), Map.of(), 57, p, f, "north", h), "0 in 57: the sample is in");
+        assertNull(StripYield.check(Map.of("iron", 3), Map.of("iron", 2), 100, p, f, "north", h), "2 in 100: above the band's rate, runs on");
+        StripYield.End e = StripYield.check(Map.of("iron", 3), Map.of(), 120, p, f, "north", h);
+        assertNotNull(e, "0 in 120: ends");
+        assertEquals("met: none; iron 0 of 3 after 120 cells (this strip's yield: iron 0 in 120 cells against the band's 1 in 57 -> 1805.4 s more here;"
+                + " cheaper: a strip from here east (173 cells at the band and the areas seen along it) 588.2 s)", e.why());
+        assertTrue(e.heading(), "another heading: the heading is held");
+    }
+
+    /**
+     * 0.39.z77 strip 2: another heading on the same band prior as this strip, never better - the band's own cells an ore x
+     * the ore left as the floor (an estimate under it is raised); dry areas seen there (dearer) stand; ore seen there (a
+     * measured yield) may price it under the band; not known (-1) stays not known.
+     */
+    @Test
+    void anotherHeading_onTheSameBandPrior_neverBetter() {
+        assertEquals(171, StripYield.sameBand(150, 3, 57, false), "raised to 3 x 57");
+        assertEquals(400, StripYield.sameBand(400, 3, 57, false), "dry areas there: dearer, kept");
+        assertEquals(120, StripYield.sameBand(120, 3, 57, true), "ore measured there: kept");
+        assertEquals(-1, StripYield.sameBand(-1, 3, 57, false), "not known");
     }
 
     /** Rule 15: no prediction, no cell price or no other way priced and no heading offered - not known, the strip runs on. */
@@ -223,8 +267,11 @@ class Z77StripTest {
         assertEquals("raw_iron 5 m", g.other());
         assertFalse(g.otherStrip());
         assertEquals(1.2, g.cellS(), 1e-9, "the strip's own facts kept");
-        // the dry tunnel against the vein: 3 x (102 + band) cells x 1.2 s >> 5.0 s - it ends, its ores held (one family, no strip)
-        StripYield.End e = StripYield.check(st.amounts(), Map.of(), 102, StripOrder.predicted(st.key()), StripYield.facts(st.key()), st.heading(), null);
+        // the dry tunnel against the vein: 3 x (dug + band) cells x 1.2 s >> 5.0 s - it ends, its ores held (one family, no
+        // strip); z77 strip 2: once the band's own cells an ore are dug (before them: no sample, it runs on)
+        int bandCells = (int) Math.ceil(1 / StripOrder.predicted(st.key()).get("iron") - 1e-9);
+        assertNull(StripYield.check(st.amounts(), Map.of(), bandCells - 1, StripOrder.predicted(st.key()), StripYield.facts(st.key()), st.heading(), null), "short of the band's " + bandCells);
+        StripYield.End e = StripYield.check(st.amounts(), Map.of(), Math.max(102, bandCells), StripOrder.predicted(st.key()), StripYield.facts(st.key()), st.heading(), null);
         assertNotNull(e);
         assertFalse(e.heading(), e.why());
         assertTrue(e.why().contains("cheaper: iron: raw_iron 5 m 5.0 s"), e.why());

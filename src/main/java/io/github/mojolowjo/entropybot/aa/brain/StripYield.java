@@ -101,6 +101,12 @@ public final class StripYield {
      * summed (every family left must have one priced); (b) one tunnel from the feet in another heading, the strip way's
      * own price (the band x the areas seen along it). The strip ends when the cheaper of them is cheaper than going on;
      * a family with no prediction or no cell price kept: not known, the strip runs on (rule 15). Null: go on.
+     * <p>0.39.z77 strip 2 (manager's ruling 2026-10-26 ~19:45; run CS 19:32:56: "iron 0 of 3 after 7 cells (... iron 0 in 7
+     * cells against the band's 1 in 57 -> 648.4 s more here; cheaper: a strip from here east (173 cells ...) 588.2 s)" - 0 in
+     * 7 is what 1 in 57 predicts): the early end fires only on a real sample - every family left has dug at least the band's
+     * own cells an ore ({@code 1 / predicted}) and found fewer ore than the band predicts for those cells; before that, or
+     * at a yield at or above the band's, the strip runs on. A tunnel in another heading is priced on the same band prior
+     * ({@link #sameBand}): never better than the band but for a measured yield there.
      */
     public static End check(Map<String, Integer> amounts, Map<String, Integer> picked, int cells, Map<String, Double> predicted,
                             Map<String, Fact> facts, String heading, HeadingCells headings) {
@@ -120,7 +126,11 @@ public final class StripYield {
             Double p = predicted.get(e.getKey());
             Fact f = facts.get(e.getKey());
             if (p == null || !(p > 0) || f == null || !(f.cellS() > 0)) return null;      // not known: runs on
-            double cpo = (dug + 1 / p) / (picked.getOrDefault(e.getKey(), 0) + 1);
+            int found = picked.getOrDefault(e.getKey(), 0);
+            // structural: from the band prior (no knob) - the sample is the band's own cells an ore, and the measured rate
+            // must then be below the band's (0 in 7 at 1 in 57 is the band's own prediction, no evidence)
+            if (dug < 1 / p - 1e-9 || !(found < p * dug)) return null;     // structural: epsilon
+            double cpo = (dug + 1 / p) / (found + 1);
             double s = e.getValue() * cpo * f.cellS();
             cellS = Math.max(cellS, f.cellS());
             if (s > stripS) {
@@ -167,6 +177,17 @@ public final class StripYield {
         // way is then out for that need); else the heading at this Y - a strip of several families is derived again from
         // the bag (the playbook's descent), so only the heading keeps the same tunnel from being taken up again
         return new End(why, !viaA || aStrip || amounts.size() > 1);
+    }
+
+    /**
+     * 0.39.z77 strip 2: a tunnel in another heading for {@code left} ore, priced on the same band prior as this strip, never
+     * better: at least {@code left} x the band's own cells an ore ({@code bandCellsPerOre}), unless a yield was measured there
+     * ({@code measuredThere}: the wanted ore seen along it - then the areas' factor stands). Cheaper elsewhere can come only
+     * from distance or a measured yield there, never from optimism. Negative {@code cells}: not known, kept.
+     */
+    public static int sameBand(int cells, int left, double bandCellsPerOre, boolean measuredThere) {
+        if (cells < 0 || measuredThere || !(bandCellsPerOre > 0)) return cells;
+        return Math.max(cells, (int) Math.ceil(Math.max(0, left) * bandCellsPerOre - 1e-9));   // structural: epsilon
     }
 
     private static String s(double v) { return String.format(Locale.ROOT, "%.1f s", v); }

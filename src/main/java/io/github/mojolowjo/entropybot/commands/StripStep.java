@@ -262,7 +262,9 @@ final class StripStep {
             StripYield.Fact f = facts.get(fam);
             if (f == null || !(f.perSlab() > 0)) return -1;
             List<String> ores = s.ores().stream().filter(o -> family(o).equals(fam)).toList();
-            return io.github.mojolowjo.entropybot.aa.NeedChain.stripDig(f.perSlab(), left, new int[]{feet[0], feet[2]}, s.y(), h, ores).cells();
+            var sd = io.github.mojolowjo.entropybot.aa.NeedChain.stripDig(f.perSlab(), left, new int[]{feet[0], feet[2]}, s.y(), h, ores);
+            // 0.39.z77 strip 2 (run CS 19:32:56): the same band prior as this strip, never better but for ore seen there
+            return StripYield.sameBand(sd.cells(), left, sd.band(), sd.seen().ores() > 0);
         };
         return StripYield.check(s.amounts(), now.picked(), now.blocks(), StripOrder.predicted(s.key()), facts, s.heading(), cells);
     }
