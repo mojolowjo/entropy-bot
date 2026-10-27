@@ -231,4 +231,30 @@ class Z77ExploreTest {
         assertFalse(k.targetAway(List.of(), moved), "no goal read (rule 15)");
         assertFalse(new Step.Collect("oak_planks", 11).targetAway(List.of(new int[]{900, 64, 0}), moved), "no priced spot");
     }
+
+    /**
+     * 0.39.z77 wood, run DE's shape (02:35:56-02:36:50): the pre-descent "collect 2 dark_oak_planks" at 37 35 7, inside the
+     * hill 40 m from the feet 8 62 2; Baritone's mine knew none in sight and ran its explore (GoalRunAwayFromMaintainY y=-59,
+     * no goal cell). The feet check and E4 never fired on the way down (19 23 3 is 22 m from the spot, nearer than at the
+     * start); only y -21 was 57 m off. The explore with the spot out of the mine's sight is that spot's fact at the start.
+     */
+    @Test
+    void wood_aSpotCollectWhoseMineExploresEndsAtTheStart() {
+        Step.Collect k = new Step.Collect("dark_oak_planks", 2, new int[]{37, 35, 7});
+        double moved = 16;
+        int[] start = {8, 62, 2}, onTheWay = {19, 23, 3}, below = {33, -21, 15};
+        double d0 = k.dist(start);
+        assertEquals(40, Math.round(d0), "DE: 40 m at the start");
+        // what caught it in DE, and only at y -21
+        assertFalse(k.leftSpot(onTheWay, d0, moved), "on the way down the feet were nearer the spot than at the start");
+        assertTrue(k.leftSpot(below, d0, moved), "DE 02:36:50: 57 m, the feet check at last");
+        assertFalse(k.targetAway(List.of(), moved), "the explore has no goal cell: E4 reads none");
+        // the fix: the explore with the spot out of sight ends the collect where it starts
+        assertTrue(k.exploresAway(start, true), "DE 02:35:56: the mine explores, the spot 29 blocks off on x: not its target");
+        assertFalse(k.exploresAway(start, false), "the mine has goal cells (blocks in view): E4 and the feet check judge it");
+        assertFalse(k.exploresAway(new int[]{33, 38, 9}, true), "within the mine's sight of the spot: the gap between blocks in view");
+        assertTrue(k.exploresAway(new int[]{37, 46, 7}, true), "11 blocks above it: out of sight on one axis");
+        assertFalse(new Step.Collect("dark_oak_planks", 2).exploresAway(start, true), "no priced spot: no claim (rule 15)");
+        assertFalse(k.exploresAway(null, true), "no feet: no claim");
+    }
 }

@@ -1320,6 +1320,19 @@ public final class StepHands implements Steps.Hands {
         // 0.39.z77 J2 E4 (run AP 00:07:24): the mine's own goal - every block it goes for - more than failures.moved from the
         // priced spot: the same spot's fact before the feet show it (no new comparison, rule 14)
         if (collectSpot != null && b != null && !Core.INSTANCE.reflexes.hold()) {
+            // 0.39.z77 wood (run DE 02:35:56: the mine's explore has no goal cell, so E4 read none and the bot went 83 blocks
+            // down): Baritone's mine in control running its explore (it knows none of the blocks in its sight) with the priced
+            // spot out of that sight - the same spot's fact at once. Loader notes: Baritone's API (IPathingControlManager#
+            // mostRecentInControl, IPathingBehavior#getGoal, GoalRunAway: MineProcess.updateGoal's explore), its settings.
+            boolean mineInControl = b.getPathingControlManager().mostRecentInControl().orElse(null) == b.getMineProcess();
+            if (collectSpot.exploresAway(here, mineInControl && b.getPathingBehavior().getGoal() instanceof baritone.api.pathing.goals.GoalRunAway)) {
+                b.getMineProcess().cancel();
+                endMining();
+                String why = miningWhat + ": Baritone's mine knows no " + collectSpot.item() + " in its sight (" + Step.Collect.MINE_SIGHT + " blocks of the feet) and runs its explore toward y "
+                        + baritone.api.BaritoneAPI.getSettings().legitMineYLevel.value + " - the priced spot " + collectSpot.spot() + " (" + Math.round(collectSpot.dist(here)) + " m) is not what it goes for, got " + got + " of " + want;
+                io.github.mojolowjo.entropybot.aa.moves.FactChange.nearCollect(collectSpot.item(), collectSpot.at(), why);
+                return Car.Status.failed(why);
+            }
             List<int[]> goals = goalCells(b.getPathingBehavior().getGoal());
             if (collectSpot.targetAway(goals, io.github.mojolowjo.entropybot.aa.brain.Failures.movedV())) {
                 b.getMineProcess().cancel();
