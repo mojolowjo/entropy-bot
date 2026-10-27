@@ -348,10 +348,14 @@ final class StripStep {
             // 0.39.z77 strip (b) (run CJ 17:25:25: "no path (strip east feet y 16: 102 blocks ...)" - the branch's next cell 6 16 25
             // was a dripstone_block the break policy denies outside the areas, read only later as a first cell at 17:31:05): a "no
             // path" inside the tunnel says the rule of the cell Baritone's goal named
+            // 0.39.z77 explore (run DC 01:37:05: the held way key dropped every heading, the order climbed and explored): the
+            // fact is about this heading at this Y (FactChange.stripNoPath); the re-plan takes the next open heading
             else if (StripOrder.NO_PATH.equals(sp.lastEnd())) {
                 String cell = nextCellRule(goalCell);
-                LOG.info("[entropybot] strip {}: no path after {} cells; {}", s.key(), now == null ? 0 : now.blocks(), cell);
-                io.github.mojolowjo.entropybot.aa.moves.FactChange.strip(s.key(), st.why() + "; " + cell);
+                int cells = now == null ? 0 : now.blocks();
+                LOG.info("[entropybot] strip {}: no path after {} cells; {} (the re-plan holds {})", s.key(), cells, cell,
+                        s.from() == null ? "the heading " + s.heading() + " at y " + s.y() : "this strip from fresh ground");
+                io.github.mojolowjo.entropybot.aa.moves.FactChange.stripNoPath(s, cells, st.why() + "; " + cell);
             }
             else io.github.mojolowjo.entropybot.aa.moves.FactChange.strip(s.key(), st.why());
         }

@@ -240,6 +240,21 @@ public final class FactChange {
                 "strip " + heading + " at feet y " + y + " ended on its yield: " + why);
     }
 
+    /**
+     * 0.39.z77 explore (run DC 01:37:05: "strip: no path (strip east feet y 16: 21 blocks, 0 clusters mined)" held the way's
+     * own key "strip ores|16|east"; NeedChain.World#withoutSources then dropped the whole strip way, north, south and west
+     * never offered, and the order climbed 105 s and explored 5 min on the surface): a strip from the feet whose fork ended
+     * "no path" INSIDE its tunnel ({@code cells} dug) is a fact about this HEADING at that Y, as {@link #stripBlocked} and
+     * {@link #stripYield} are: the order re-plans and every strip way at that Y takes its next heading (rule 1: the other
+     * headings are options with their prices; the climb and the surface explore come after them by price). A strip from
+     * fresh ground ({@code s.from()} set) keeps its own key ({@link #strip}), as before. Pure.
+     */
+    public static void stripNoPath(Step.Strip s, int cells, String why) {
+        if (s.from() != null) { strip(s.key(), why); return; }
+        last = new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.headingKey(s.y(), s.heading()),
+                "strip " + s.heading() + " at feet y " + s.y() + " found no path after " + cells + " cells: " + why);
+    }
+
     /** 0.39.z62: the source key a fact names itself (a blocked strip heading), null: the failed step's key applies. */
     public static String ownSourceKey(Fact f) {
         if (f != null && f.key().startsWith(WALK_TO)) return f.key().substring(WALK_TO.length());     // 0.39.z65 item 1
