@@ -48,6 +48,30 @@ public final class PricedAnswers {
     }
 
     /**
+     * 0.39.z77 noprogress (run DH 04:39:57: "walk to -22 16 1: UNREACHABLE (no path: Baritone's search made no progress)" ended
+     * the pickaxe's order and, a second later, the four armour orders: "no way to get it: playbook: descent to y 16:
+     * unreachable"): the chain's answer for a fork no-path reason. Only a search that ran to its end is a no-way:
+     * {@code unreachable} is the fork's EXHAUSTED stop (every move from the start tried, the moves the rules refuse among them).
+     * The fork's {@code noProgress} is a segment search stopped by its time or node budget with the start still its best node
+     * (IPricedPath.Step.of: any stop but EXHAUSTED) - not the search's end, so not known (rule 15), never unreachable:
+     * COMPUTING with {@link #NO_PROGRESS_WAIT}, which keeps the first-answer clock ({@link #waits}). The fork keeps that answer
+     * for its own start cell only, so the walk is searched again from the next cell the bot stands on; from the same cell,
+     * past pathCost.firstAnswerWaitS it is taken by Baritone's estimate ({@link #afterWait}) and walked on Baritone's fresh
+     * search (the price's DigDownGoal steering for a descent). {@code chunks}: chunks not loaded. Anything else: no answer,
+     * with the fork's reason. Pure.
+     */
+    public static PathPrice.Answer noPath(String reason, String unreachable, String noProgress, String chunks) {
+        if (unreachable.equals(reason)) return PathPrice.Answer.unreachable("no path: the complete search found none");
+        if (noProgress.equals(reason)) return PathPrice.Answer.computing(NO_PROGRESS_WAIT);
+        if (chunks.equals(reason)) return PathPrice.Answer.chunks(chunks);
+        return PathPrice.Answer.none(reason);
+    }
+
+    /** 0.39.z77 noprogress: the words of a search that stopped on its budget with no step past its start (not known). */
+    public static final String NO_PROGRESS_WAIT = "no progress: Baritone's search stopped on its budget with no step past the start - not the search's end"
+            + " (rule 15: not known, never unreachable); searched again from the next cell, or Baritone's estimate after the first-answer wait";
+
+    /**
      * 0.39.z76 send-back 3 (rule 18 amended, rule 22; run AU 01:57:53-02:02:53: walks "COMPUTING (queued: 4 in flight)" for
      * 5 min): a walk still not known ({@code a} COMPUTING) after {@code waitS} (pathCost.firstAnswerWaitS) of asks from the
      * same start is taken by Baritone's estimate ({@code estimateS}, its goal heuristic, no search) - ESTIMATED, "ranked, not

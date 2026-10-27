@@ -514,11 +514,8 @@ public final class LivePathPrice implements PathPrice {
             return Answer.priced(new Walk(TickPrice.walkS(a.ticks), TickPrice.walkS(lavaTicks(mc, a)), count(dug), dug));
         }
         if (!a.noPath) return Answer.none("budget: the search ran out before the goal (" + a + ")");
-        if (IPathCost.Answer.UNREACHABLE.equals(a.reason)) return Answer.unreachable("no path: the complete search found none");
-        if (baritone.api.pathing.calc.IPricedPath.NO_PROGRESS.equals(a.reason))       // 0.39.z46: a segment search went nowhere
-            return Answer.unreachable("no path: Baritone's search made no progress (" + a.reason + ")");
-        if (IPathCost.Answer.CHUNKS.equals(a.reason)) return Answer.chunks(IPathCost.Answer.CHUNKS);
-        return Answer.none(a.reason);
+        // 0.39.z77 noprogress (run DH 04:39:57): only the search's end is a no-way; "no progress" is not known (PricedAnswers.noPath)
+        return PricedAnswers.noPath(a.reason, IPathCost.Answer.UNREACHABLE, baritone.api.pathing.calc.IPricedPath.NO_PROGRESS, IPathCost.Answer.CHUNKS);
     }
 
     private static boolean fresh(Kept k, int[] me, int bag, long now) {
