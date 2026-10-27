@@ -305,6 +305,9 @@ public final class Steps {
 
     private java.util.Map<String, Integer> usesAt(int i) { return i >= 0 && i < uses.size() ? uses.get(i) : null; }
 
+    /** 0.39.z77 seen 3: the plan's own counts for step {@code i} (what the chain reserves for it), null: none known. */
+    public java.util.Map<String, Integer> usesOf(int i) { return usesAt(i); }
+
     /** {@code n} null entries (steps with no plan counts). */
     private static List<java.util.Map<String, Integer>> nulls(int n) {
         List<java.util.Map<String, Integer>> out = new java.util.ArrayList<>();

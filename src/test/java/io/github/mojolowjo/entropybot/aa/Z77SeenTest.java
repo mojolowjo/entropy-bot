@@ -52,7 +52,7 @@ class Z77SeenTest {
     static final String IRON_ORE = Z77PlaybookTest.IRON_ORE;
 
     /** The loot data's source blocks of a need word (the adapter's sourceBlocksOf): raw iron from the iron ores. */
-    static final Function<String, Set<String>> BLOCKS = w -> w.equals("minecraft:raw_iron") ? Set.of(IRON_ORE, "minecraft:deepslate_iron_ore") : Set.of();
+    static final Function<String, Set<String>> BLOCKS = w -> w.contains("minecraft:raw_iron") ? Set.of(IRON_ORE, "minecraft:deepslate_iron_ore") : Set.of();
 
     /**
      * Under ground at {@code feet} (64 - y of ground over them), a stone pickaxe in the bag; the walk is Baritone's fake path: a
@@ -304,6 +304,80 @@ class Z77SeenTest {
         assertSame(again, asked.get(asked.size() - 1));
         see(a, run, feet, 40_000);
         assertEquals(1, a.askedCount(), "now its re-price ran");
+    }
+
+    // ---- seen 3 (manager 2026-10-26 ~21:20, run CU): a vein asks only for an item still lacking, never while nothing walks ----
+
+    static final String RAW = "minecraft:raw_iron";
+
+    /** A run of {@code steps} with the plan's counts {@code uses}, every re-price kept; {@code asked} counts the re-prices. */
+    static Steps planRun(Z48ScenarioTest.Hands h, List<FactChange.Fact> asked, List<Step> steps, List<Map<String, Integer>> uses) {
+        Steps run = new Steps(h);
+        run.start("goal.iron_helmet", steps, uses, 0, (failed, fact, why) -> { asked.add(fact); return new Steps.Routine(null, "kept the running pick"); });
+        run.tick(1);
+        return run;
+    }
+
+    /** {@code ticks} AA ticks 250 ms apart from {@code t0}, the vein {@code c} seen on the first; the asks sent. */
+    static int seeFor(SeenAsk a, Steps run, long t0, int ticks, SeenAsk.Cell c, Map<String, Integer> bag, Map<String, Integer> furnace) {
+        int sent = 0;
+        for (int i = 0; i < ticks; i++) {
+            List<SeenAsk.Cell> fresh = i == 0 ? List.of(c) : List.of();
+            if (a.tick(run, fresh, new int[]{0, 26, 0}, BLOCKS, ExploreRules::smeltInputs, Seen.range(), t0 + 250L * i, Replan.everyMs(), bag, furnace) != null) sent++;
+            run.tick(2 + i);
+        }
+        return sent;
+    }
+
+    /**
+     * Run CU 21:00-21:05 (the slowtick probe "job smelting 8 iron"; 48 trip re-prices in 5 min): the smelt of 8 iron ingots
+     * runs at the furnace here, the trip's later leg still strips iron (7 more raw iron) - a vein seen while the smelt runs
+     * sends no ask (the smelt needs no walk: nothing to interrupt). The plan then walks to the furnace with its 8 raw iron
+     * already inside (the furnace job's input) and a collect of 8 left in the plan: the run lacks no raw iron (needs 8, the
+     * furnace holds 8) - the vein is a source, no re-price, said once. Was: one whole re-price per ask.
+     */
+    @Test
+    void cu_rawIronInTheFurnace_aVeinSeen_noReprice() {
+        Z77PlaybookTest.data();
+        Z48ScenarioTest.Hands h = new Z48ScenarioTest.Hands();
+        List<FactChange.Fact> asked = new ArrayList<>();
+        Step smelt = new Step.Smelt("minecraft:iron_ingot", 8, true), helmet = new Step.Craft("minecraft:iron_helmet", 1);
+        Step down = new Step.ToStrip(0, 16, 0, "strip"), strip = new Step.Strip(List.of(IRON_ORE), Map.of("iron", 7), 16, "east", 0);
+        Step smelt7 = new Step.Smelt("minecraft:iron_ingot", 7, true);
+        Steps atFurnace = planRun(h, asked, List.of(smelt, helmet, down, strip, smelt7),
+                java.util.Arrays.asList(Map.of(RAW, 8), Map.of("minecraft:iron_ingot", 5), null, null, Map.of(RAW, 7)));
+        SeenAsk a = new SeenAsk();
+        assertEquals(0, seeFor(a, atFurnace, 0, 30, iron(2, 26, 3), Map.of(), Map.of(RAW, 8)), "the smelt runs: no ask in 7 s");
+        assertEquals(0, asked.size());
+        assertEquals(1, a.waiting(), "the vein waits (the trip's later strip still lacks 7)");
+        // the walk to the furnace, its 8 raw iron in it already: covered
+        Step walk = new Step.Walk(2, 26, -15, 1), collect = new Step.Collect("raw_iron", 8, new int[]{4, 57, -15});
+        Z48ScenarioTest.Hands h2 = new Z48ScenarioTest.Hands();
+        List<FactChange.Fact> asked2 = new ArrayList<>();
+        Steps walking = planRun(h2, asked2, List.of(walk, collect, smelt, helmet), java.util.Arrays.asList(null, null, Map.of(RAW, 8), Map.of("minecraft:iron_ingot", 5)));
+        SeenAsk b = new SeenAsk();
+        assertEquals(0, seeFor(b, walking, 0, 30, iron(2, 26, 3), Map.of(), Map.of(RAW, 8)), "needs 8, the furnace holds 8: no ask");
+        assertEquals(0, asked2.size(), "no re-price");
+        assertEquals(List.of("seen iron at 2 26 3: a source, no re-price - the run lacks no iron (needs 8, the bag and the furnaces hold 8)"), b.notes(), "said once");
+        assertEquals(0, b.waiting());
+        assertEquals(0, h2.cancels, "the walk runs on");
+    }
+
+    /** Control: the same walk, the run still lacking 3 raw iron (5 in the bag, the furnace empty) - the ask fires as before. */
+    @Test
+    void cu_control_theRunStillLacks3RawIron_walking_theAskFires() {
+        Z77PlaybookTest.data();
+        Z48ScenarioTest.Hands h = new Z48ScenarioTest.Hands();
+        List<FactChange.Fact> asked = new ArrayList<>();
+        Step walk = new Step.Walk(2, 26, -15, 1), collect = new Step.Collect("raw_iron", 3, new int[]{4, 57, -15});
+        Step smelt = new Step.Smelt("minecraft:iron_ingot", 8, true), helmet = new Step.Craft("minecraft:iron_helmet", 1);
+        Steps walking = planRun(h, asked, List.of(walk, collect, smelt, helmet), java.util.Arrays.asList(null, null, Map.of(RAW, 8), Map.of("minecraft:iron_ingot", 5)));
+        assertArrayEquals(new int[]{8, 5}, SeenAsk.lack("iron", walking.steps(), 0, walking::usesOf, Map.of(RAW, 5), Map.of(), BLOCKS), "needs 8, holds 5: lacks 3");
+        SeenAsk a = new SeenAsk();
+        assertEquals(1, seeFor(a, walking, 0, 30, iron(2, 26, 3), Map.of(RAW, 5), Map.of()), "one ask");
+        assertEquals(1, asked.size(), "one re-price");
+        assertEquals("seen iron at 2 26 3 (4 away) for minecraft:raw_iron", asked.get(0).text());
+        assertTrue(a.notes().isEmpty());
     }
 
     // ---- folded in: explore until iron_ingot ----

@@ -201,15 +201,93 @@ public final class SeenAsk {
     public io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact tick(io.github.mojolowjo.entropybot.aa.moves.Steps st, List<Cell> fresh, int[] feet,
                                                                           Function<String, Set<String>> blocksOf, Function<String, List<String>> smeltInputs, int reach,
                                                                           long nowMs, long everyMs) {
+        return tick(st, fresh, feet, blocksOf, smeltInputs, reach, nowMs, everyMs, null, null);
+    }
+
+    /**
+     * 0.39.z77 seen 3: as above, with the bag and the furnaces' inputs ({@code bag}, {@code furnace}: item id -> count; null:
+     * not read, counted as none). While the running step needs no walk ({@link #holds}) nothing is sent - the veins wait. At the
+     * send, a waiting vein whose family the run no longer lacks ({@link #lack}) is a source and nothing else: dropped, said
+     * once ({@link #notes}), marked for the run.
+     */
+    public io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact tick(io.github.mojolowjo.entropybot.aa.moves.Steps st, List<Cell> fresh, int[] feet,
+                                                                          Function<String, Set<String>> blocksOf, Function<String, List<String>> smeltInputs, int reach,
+                                                                          long nowMs, long everyMs, Map<String, Integer> bag, Map<String, Integer> furnace) {
         run(st.runId());
         if (fresh != null) for (Cell c : fresh) offer(c, feet, st.steps(), st.index(), blocksOf, smeltInputs, reach);
         if (flightFact != null) {
             if (st.seenRan(flightFact)) ended(true);
             else if (!st.seenAsking(flightFact)) ended(false);
         }
+        int at = st.index();
+        if (at < 0 || at >= st.steps().size() || holds(st.steps().get(at))) return null;
+        if (flightFact == null && !pending.isEmpty() && nowMs - lastAt >= everyMs) {
+            for (java.util.Iterator<Wait> it = pending.iterator(); it.hasNext(); ) {
+                Wait w = it.next();
+                Cell c = w.cell();
+                String word = wants(c.family(), st.steps(), at, blocksOf, smeltInputs);
+                int[] nh = lack(c.family(), st.steps(), at, st::usesOf, bag, furnace, blocksOf);
+                if (word != null && !(nh[0] > 0 && nh[1] >= nh[0])) continue;
+                it.remove();
+                asked.addLast(c);
+                notes.add("seen " + c.family() + " at " + c.x() + " " + c.y() + " " + c.z() + ": a source, no re-price - "
+                        + (word == null ? "no step left gets " + c.family() : "the run lacks no " + c.family() + " (needs " + nh[0] + ", the bag and the furnaces hold " + nh[1] + ")"));
+            }
+            while (asked.size() > KEEP) asked.removeFirst();
+        }
         var f = take(nowMs, everyMs);
         if (f != null) st.repriceAtNextStep(f);
         return f;
+    }
+
+    private final List<String> notes = new java.util.ArrayList<>();
+
+    /** 0.39.z77 seen 3: the lines of the veins dropped as covered since the last call (rule 7: a "no" is said). */
+    public List<String> notes() {
+        List<String> out = List.copyOf(notes);
+        notes.clear();
+        return out;
+    }
+
+    /**
+     * 0.39.z77 seen 3 (manager's ruling 2026-10-26 ~21:20; run CU: the bot waiting at the furnace): a running step that needs
+     * no walk - a craft, a smelt or cook at a station here, the take of a smelt's output, a placement, the stand - has nothing
+     * a vein could interrupt: no ask is sent while it runs (the veins wait for the next step).
+     */
+    public static boolean holds(Step s) {
+        return s instanceof Step.Craft || s instanceof Step.Smelt sm && sm.here() || s instanceof Step.Cook || s instanceof Step.SmeltCollect
+                || s instanceof Step.PlaceNear || s instanceof Step.AwaitPaths;
+    }
+
+    /**
+     * 0.39.z77 seen 3 (pure): {need, have} of the family's items for the run from {@code from} on - need: what the steps take of
+     * the words the family's blocks feed (the chain's own counts, StepNeeds with the plan's uses: its reservations); have:
+     * the bag's and the furnaces' inputs of the items those words take. need > 0 and have >= need: the run lacks none of it
+     * (a vein of it changes nothing). need 0 (nothing takes it: the order's own item, a strip's count): lacking while a step
+     * gets it ({@link #wants}).
+     */
+    public static int[] lack(String family, List<Step> steps, int from, Function<Integer, Map<String, Integer>> usesOf,
+                             Map<String, Integer> bag, Map<String, Integer> furnace, Function<String, Set<String>> blocksOf) {
+        java.util.Set<String> fed = new java.util.LinkedHashSet<>();
+        int need = 0;
+        for (int i = Math.max(0, from); steps != null && i < steps.size(); i++) {
+            var n = io.github.mojolowjo.entropybot.aa.moves.StepNeeds.of(steps.get(i)).withUses(usesOf == null ? null : usesOf.apply(i));
+            for (Map<String, Integer> m : List.of(n.consumes(), n.tagUses()))
+                for (var e : m.entrySet()) {
+                    if (e.getValue() == null || e.getValue() <= 0 || !gives(e.getKey(), family, blocksOf)) continue;
+                    fed.add(e.getKey());
+                    need += e.getValue();
+                }
+        }
+        int have = 0;
+        for (Map<String, Integer> m : java.util.Arrays.asList(bag, furnace)) {
+            if (m == null) continue;
+            for (var e : m.entrySet()) {
+                if (e.getValue() == null || e.getValue() <= 0) continue;
+                for (String w : fed) if (w.equals(e.getKey()) || NeedChain.gives(w, e.getKey())) { have += e.getValue(); break; }
+            }
+        }
+        return new int[]{need, have};
     }
 
     /** Tests and aa status: veins waiting, asked. */

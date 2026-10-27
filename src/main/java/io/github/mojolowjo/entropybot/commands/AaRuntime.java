@@ -2300,8 +2300,14 @@ public final class AaRuntime implements JobPort {
             var cell = f.cell();
             cells.add(new io.github.mojolowjo.entropybot.aa.SeenAsk.Cell(cell.family(), cell.x(), cell.y(), cell.z()));
         }
+        // 0.39.z77 seen 3 (run CU 21:00-21:05): a vein asks only while the run still lacks its family after the bag and the
+        // furnaces' inputs (the jobs' remaining input in this dimension), and never while the running step needs no walk
+        Map<String, Integer> furnace = new java.util.HashMap<>();
+        for (var j : c.crafting.furnaces().all())
+            if (j.input != null && dim != null && dim.equals(j.dim) && j.remaining() > 0) furnace.merge(j.input, j.remaining(), Integer::sum);
         var asked = seenAsk.tick(c.stepRun.steps, cells, Jobs.here(p), this::sourceBlocksOf, io.github.mojolowjo.entropybot.cave.ExploreRules::smeltInputs,
-                io.github.mojolowjo.entropybot.sense.Seen.range(), System.currentTimeMillis(), io.github.mojolowjo.entropybot.aa.Replan.everyMs());
+                io.github.mojolowjo.entropybot.sense.Seen.range(), System.currentTimeMillis(), io.github.mojolowjo.entropybot.aa.Replan.everyMs(), liveBag(), furnace);
+        for (String n : seenAsk.notes()) LOG.info("[entropybot] aa: {}", n);
         if (asked != null) LOG.info("[entropybot] aa: {} - the order is priced again where the step runs", asked.text());
     }
 
