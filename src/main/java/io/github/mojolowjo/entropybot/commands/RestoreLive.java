@@ -289,7 +289,7 @@ public final class RestoreLive {
         if (mc.level == null) { LOG.warn("[entropybot] stations: the {} at {} not noted: not in a world", block, at); return; }
         io.github.mojolowjo.entropybot.restore.Ledger.Entry e = book.ledger.at(Guard.dimOf(mc.level), cell[0], cell[1], cell[2]);
         if (e == null) LOG.warn("[entropybot] stations: the {} at {} not noted as mine: {}", block, at, readOnly ? loadNote : "the ledger did not take it");
-        else if (!why.equals(e.why)) LOG.warn("[entropybot] stations: the {} at {} not noted as mine: the ledger already holds that cell as \"{}\" ({})", block, at, e.why, e.block);
+        else if (!why.equals(e.why) || !block.equals(e.block)) LOG.warn("[entropybot] stations: the {} at {} not noted as mine: the ledger already holds that cell as \"{}\" ({})", block, at, e.why, e.block);
     }
 
     /** station-memory: the station record at the cell leaves the ledger (the bot arrived and it is gone); the log line. */
@@ -333,6 +333,9 @@ public final class RestoreLive {
         int n = 0;
         for (int[] p : cells) {
             stationRemoved.remove(dim + " " + p[0] + " " + p[1] + " " + p[2]);     // 0.33.0 review: a new placement of mine
+            // 0.39.z77 take (run CY 23:40:56): my station on the cell of my other station takes its record (the place step cleared it)
+            io.github.mojolowjo.entropybot.restore.Ledger.Entry old = book.ledger.dropReplacedStation(dim, p[0], p[1], p[2], block, why);
+            if (old != null) LOG.info("[entropybot] stations: my {} at {} {} {} replaces my {} there (its record goes)", block, p[0], p[1], p[2], old.block);
             if (book.ledger.add(p[0], p[1], p[2], dim, block, block, List.of(), why, job, label, why, Core.INSTANCE.tick(), System.currentTimeMillis()) != null) n++;
         }
         if (n > 0) {
@@ -499,14 +502,17 @@ public final class RestoreLive {
             Commands cm = c;
             if (cm == null || mc.level == null || readOnly || !cm.jobs.running() || itemPath == null) return;
             String dim = Guard.dimOf(mc.level);
-            if (book.ledger.at(dim, pos.getX(), pos.getY(), pos.getZ()) != null) return;
+            String noteWhy = io.github.mojolowjo.entropybot.clear.OwnStations.station(itemPath) ? io.github.mojolowjo.entropybot.restore.Ledger.STATION : PLACED;
+            io.github.mojolowjo.entropybot.restore.Ledger.Entry held = book.ledger.at(dim, pos.getX(), pos.getY(), pos.getZ());
+            // 0.39.z77 take: a held cell keeps its note, except my station's record when my new station replaces it (noteBuilt)
+            if (held != null && !io.github.mojolowjo.entropybot.restore.Ledger.stationReplaced(held, "minecraft:" + itemPath, noteWhy)) return;
             List<int[]> cell = List.of(new int[]{pos.getX(), pos.getY(), pos.getZ()});
             if (scaffold(itemPath) && io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.intent() == io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL) {
                 if (io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.dug(dim, pos.getX(), pos.getY(), pos.getZ())) return;     // a refill of my own hole
                 noteBuilt(cell, "minecraft:" + itemPath, io.github.mojolowjo.entropybot.restore.PlacedPlan.LITTER);
                 return;
             }
-            noteBuilt(cell, "minecraft:" + itemPath, io.github.mojolowjo.entropybot.clear.OwnStations.station(itemPath) ? "built: station" : PLACED);
+            noteBuilt(cell, "minecraft:" + itemPath, noteWhy);
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] restore: the placement note at {} {} {} failed: {}", pos.getX(), pos.getY(), pos.getZ(), e.toString());
         }

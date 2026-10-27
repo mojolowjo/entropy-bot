@@ -163,6 +163,31 @@ public final class Ledger {
         return out;
     }
 
+    /**
+     * 0.39.z77 take (run CY 23:39:14 and 23:40:56: the place step put my furnace on the cell of my own crafting table; the
+     * table's record kept the cell, the furnace's note was dropped, the station-stale check then forgot the table's record
+     * and my furnace 13 m away was "a wild station": the smelt walked 49 m to the surface furnace): a station of mine put
+     * on a cell whose record is a station of mine of another block replaces that record. True when {@code old} is such a
+     * record for {@code block} placed as {@code why}. Pure.
+     */
+    public static boolean stationReplaced(Entry old, String block, String why) {
+        return old != null && block != null && STATION.equals(why) && STATION.equals(old.why) && !block.equals(old.block);
+    }
+
+    /** The note of a station I placed. */
+    public static final String STATION = "built: station";
+
+    /**
+     * 0.39.z77 take: drops the cell's record when the new station of mine replaces it ({@link #stationReplaced}), so the
+     * next {@link #add} notes the new block. Returns the dropped record, or null (nothing replaced: the first note stays).
+     */
+    public synchronized Entry dropReplacedStation(String dim, int x, int y, int z, String block, String why) {
+        Entry old = at(dim, x, y, z);
+        if (!stationReplaced(old, block, why)) return null;
+        list.remove(old);
+        return old;
+    }
+
     public synchronized Entry at(String dim, int x, int y, int z) {
         for (Entry e : list) if (e.x == x && e.y == y && e.z == z && e.dim.equals(dim)) return e;
         return null;
