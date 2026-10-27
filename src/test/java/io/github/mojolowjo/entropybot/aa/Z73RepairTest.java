@@ -67,19 +67,29 @@ class Z73RepairTest {
     }
 
     /**
-     * Test 14 (kernel skip): [collect stick 4, craft crafting_table 1, craft iron_pickaxe 1]; the bag holds 4 sticks, a table
-     * and 3 iron ingots: the latest kernel that holds is step 3's (3 ingots + 2 sticks, and what steps 1-2 were for kept: 4
-     * sticks, 1 table) - steps 1-2 are skipped, each said.
+     * Test 14 (kernel skip): [collect stick 2, craft crafting_table 1, craft iron_pickaxe 1]; the bag holds 2 sticks, 4
+     * planks, a table and 3 iron ingots: the latest kernel that holds is step 2's (4 planks, 3 ingots + 2 sticks; step 1's
+     * output all taken by them) - step 1 is skipped, said; step 3's would skip the table's craft, which no later step's
+     * counted needs take (0.39.z77 skip).
      */
     @Test
     void t14_theLatestHoldingKernelSkipsAhead() {
+        // 0.39.z77 SHAPE CHANGE (skip, run CC): steps 1-2 were skipped on 4 sticks + a table in the bag; the table and the 2
+        // sticks the pickaxe does not take are no later step's counted use - planned on top of the bag, the bag of now
+        // cannot show them: the table's craft runs. Collect 2 sticks (all taken by the pickaxe): step 1 alone is skipped.
         Hands h = pickaxeHands();
-        h.bag.putAll(Map.of(STICK, 4, TABLE, 1, INGOT, 3));
+        h.bag.putAll(Map.of(STICK, 2, TABLE, 1, INGOT, 3, "minecraft:oak_planks", 4));
         Steps run = new Steps(h);
-        run.start("goal.iron_pickaxe", List.of(new Step.Collect("stick", 4), new Step.Craft("crafting_table", 1), new Step.Craft("iron_pickaxe", 1)), 0, (f, fact, why) -> null);
-        assertEquals(List.of("craft iron_pickaxe 1"), h.started);
-        assertEquals(List.of("step 1/3 collect stick 4 skipped: 4 stick already in the bag", "step 2/3 craft crafting_table 1 skipped: 1 crafting_table already in the bag"), h.logged);
-        assertTrue(run.why().contains("(skipped steps 1-2: "), run.why());
+        run.start("goal.iron_pickaxe", List.of(new Step.Collect("stick", 2), new Step.Craft("crafting_table", 1), new Step.Craft("iron_pickaxe", 1)), 0, (f, fact, why) -> null);
+        assertEquals(List.of("craft crafting_table 1"), h.started);
+        assertEquals(List.of("step 1/3 collect stick 2 skipped: 2 stick already in the bag"), h.logged);
+        assertTrue(run.why().contains("(skipped steps 1: "), run.why());
+
+        Hands h4 = pickaxeHands();
+        h4.bag.putAll(Map.of(STICK, 4, TABLE, 1, INGOT, 3));
+        new Steps(h4).start("goal.iron_pickaxe", List.of(new Step.Collect("stick", 4), new Step.Craft("crafting_table", 1), new Step.Craft("iron_pickaxe", 1)), 0);   // no order: the planks shortage said, not held
+        assertEquals(List.of("collect stick 4"), h4.started, "the old shape: nothing skipped");
+        assertTrue(h4.logged.isEmpty(), h4.logged.toString());
 
         // the table missing: what step 2 was for is not in the bag - step 1 alone? its kernel needs 4 planks (none): no skip
         Hands h2 = pickaxeHands();
@@ -98,9 +108,11 @@ class Z73RepairTest {
         run.start("k", List.of(new Step.Explore(5, "minecraft:iron_ore"), new Step.Collect("stick", 4), new Step.Craft("iron_pickaxe", 1)), 0, (f, fact, why) -> null);
         assertEquals(List.of("explore 5 until minecraft:iron_ore"), h.started, h.logged.toString());
 
+        // 0.39.z77 SHAPE CHANGE (skip, run CC): collect stick 2 (was 4: the 2 the pickaxe does not take were planned on top
+        // of the bag, not skipped)
         Hands h2 = pickaxeHands();
         h2.bag.putAll(Map.of(STICK, 4, INGOT, 3));
-        new Steps(h2).start("k", List.of(new Step.Collect("stick", 4), new Step.Explore(5, "minecraft:iron_ore"), new Step.Craft("iron_pickaxe", 1)), 0, (f, fact, why) -> null);
+        new Steps(h2).start("k", List.of(new Step.Collect("stick", 2), new Step.Explore(5, "minecraft:iron_ore"), new Step.Craft("iron_pickaxe", 1)), 0, (f, fact, why) -> null);
         assertEquals(List.of("explore 5 until minecraft:iron_ore"), h2.started, "the collect before it skipped, the explore runs");
     }
 

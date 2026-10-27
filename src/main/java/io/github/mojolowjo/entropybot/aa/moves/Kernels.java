@@ -13,9 +13,13 @@ import java.util.Map;
  * <ul>
  * <li>The suffix's needs: its consumes (plain items and counted slots, {@link StepNeeds}) less what its own earlier steps
  *     make ({@link DryRun#produces}); its tool: the highest tier a suffix step needs that no earlier suffix step makes.</li>
- * <li>Skipping steps cur..j-1 keeps what they were for: the bag must hold, per need word, the larger of the suffix's need
- *     and what the skipped steps would have left in it (their net output - a spare tool, a table crafted for later), and a
- *     tool the suffix uses that the skipped steps make counts one more of it (the one the suffix wears).</li>
+ * <li>Skipping steps cur..j-1 keeps what they were for: the bag must hold the suffix's need (the dry run's bag at j), and
+ *     the skipped steps' net output must all be taken by the suffix's readable needs. 0.39.z77 skip (run CC 16:41:54:
+ *     "collect raw_iron 2 skipped: 2 raw_iron already in the bag", the 2 it carried for the helmet; the seen vein walked
+ *     past): the chain is net of the bag, so an output no later readable step takes (for the steps an explore stands for,
+ *     a later leg, the order's own count, a station, a spare tool) was planned ON TOP of what the bag holds at that step -
+ *     the bag of now cannot show it (the skipped step itself is what puts it there): not skipped, never judged against the
+ *     live bag a second time.</li>
  * <li>A skipped step's output must be known: an explore, a mine, a strip, an unexpanded plan is never skipped past (rule
  *     15); a placement is never skipped (its effect is a station in the world, which the bag cannot show); a leg only
  *     with the step it leads to.</li>
@@ -57,16 +61,9 @@ public final class Kernels {
         for (int j = steps.size() - 1; j > cur; j--) {
             if (!skippable(steps, cur, j)) continue;
             Map<String, Integer> need = required(steps, cur, j, needs);
-            if (need == null) continue;
+            if (need == null) continue;          // not readable, or an output no later step takes (planned on top of the bag)
             String[] tool = toolNeed(steps, cur, j, needs);
             if (tool == null) continue;          // not known
-            if (!tool[0].isEmpty()) {            // a tool the skipped steps make and the suffix wears: one more of it (the spare kept)
-                int t = Integer.parseInt(tool[1]);
-                for (int i = cur; i < j; i++) {
-                    Map<String, Integer> p = DryRun.produces(steps.get(i));
-                    if (p != null) for (String w : p.keySet()) if (MiningTiers.toolTier(w, tool[0]) >= t) need.merge(w, 1, Integer::sum);
-                }
-            }
             boolean ok = holds(need, items);
             if (ok && !tool[0].isEmpty() && bag.bestTier(tool[0]) < Integer.parseInt(tool[1])) ok = false;
             if (ok) return new Skip(j, said(steps, cur, j, items));
@@ -107,8 +104,11 @@ public final class Kernels {
     }
 
     /**
-     * Per need word what the bag must hold to start at j instead of cur: max(the suffix's need from the bag, the skipped
-     * steps' net output). Null: a suffix step's needs are not readable (rule 15).
+     * Per need word what the bag must hold to start at j instead of cur: the suffix's need from the bag (its uses less what
+     * its own earlier steps make - the dry run's bag at j). Null: a suffix step's needs are not readable (rule 15), or
+     * 0.39.z77 skip: some of the skipped steps' net output is left after the suffix's uses take it (taken after the
+     * suffix's own makes) - it is for something past the readable steps, planned on top of the bag at cur, so the bag of
+     * now cannot show it (run CC 16:41:54: [collect raw_iron 2, up, explore 5 until raw_iron] on 2 raw_iron carried).
      */
     static Map<String, Integer> required(List<Step> steps, int cur, int j, List<StepNeeds> needs) {
         // the skipped steps' net output: what they make less what they use of their own making
@@ -119,7 +119,8 @@ public final class Kernels {
             Map<String, Integer> p = DryRun.produces(steps.get(i));
             if (p != null) p.forEach((w, c) -> made.merge(w, c, Integer::sum));
         }
-        // the suffix's need from the bag: its uses less what its own earlier steps make
+        // the suffix's need from the bag: its uses less what its own earlier steps make; what is left of it after its own
+        // makes takes the skipped output first (what the skipped steps were for)
         Map<String, Integer> avail = new LinkedHashMap<>(), need = new LinkedHashMap<>();
         for (int i = j; i < steps.size(); i++) {
             StepNeeds n = at(needs, i - cur);
@@ -127,19 +128,23 @@ public final class Kernels {
             for (var e : uses(n).entrySet()) {
                 int have = DryRun.count(avail, e.getKey()), take = Math.min(have, e.getValue());
                 DryRun.take(avail, e.getKey(), take);
-                if (e.getValue() > take) need.merge(e.getKey(), e.getValue() - take, Integer::sum);
+                int rest = e.getValue() - take;
+                if (rest > 0) {
+                    need.merge(e.getKey(), rest, Integer::sum);
+                    DryRun.take(made, e.getKey(), Math.min(DryRun.count(made, e.getKey()), rest));
+                }
             }
             Map<String, Integer> p = DryRun.produces(steps.get(i));
             if (p != null) p.forEach((w, c) -> avail.merge(w, c, Integer::sum));
         }
-        Map<String, Integer> out = new LinkedHashMap<>(need);
-        made.forEach((w, c) -> { if (c > 0) out.merge(w, c, Math::max); });
-        return out;
+        for (int c : made.values()) if (c > 0) return null;     // an output no readable later step takes: not skipped
+        return need;
     }
 
     /**
-     * The suffix's tool: {kind, tier} ("" kind: none needed or made by the suffix itself); a tool the skipped steps make that
-     * meets it is counted in the bag as one more of that item (it is worn by the suffix). Null: not known.
+     * The suffix's tool: {kind, tier} ("" kind: none needed or made by the suffix itself); the bag's best must meet it. A
+     * tool the skipped steps make is never skipped (0.39.z77 skip: no later step's counted uses take it - {@link #required}).
+     * Null: not known.
      */
     static String[] toolNeed(List<Step> steps, int cur, int j, List<StepNeeds> needs) {
         String kind = "";
