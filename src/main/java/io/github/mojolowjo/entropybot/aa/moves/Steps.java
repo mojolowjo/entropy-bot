@@ -495,6 +495,7 @@ public final class Steps {
         droppedHere.clear();
         runTries.clear();
         replanFact = null;
+        seenWait = null;                         // 0.39.z77 seen: an ask is the run's
         needs = StepNeeds.NONE;
         if (this.steps.isEmpty()) {
             phase = Phase.FAILED;
@@ -871,7 +872,28 @@ public final class Steps {
      * 0.39.z41 (owner 2026-10-23): a walk's complete path landed while this run runs: the order is priced again at the next
      * step's start (a running step is never cut). No replanner: nothing to price, said nowhere (no order behind the run).
      */
-    public void repriceAtNextStep(FactChange.Fact f) { if (phase == Phase.RUNNING && replanner != null) priceAsk = f; }
+    public void repriceAtNextStep(FactChange.Fact f) {
+        if (phase != Phase.RUNNING || replanner == null || f == null) return;
+        // 0.39.z77 seen: a seen source's ask is a price too - a landed path never overwrites one waiting; a landed path while
+        // the seen source's walk waited on its price asks the seen fact again (its walk may be priced now)
+        if (!FactChange.isSeen(f) && FactChange.isSeen(priceAsk)) return;
+        priceAsk = !FactChange.isSeen(f) && seenWait != null && f.key().equals(FactChange.PRICE + "walk") ? seenWait : f;
+    }
+
+    /** 0.39.z77 seen: the seen fact whose re-price waited on its walk's price ({@link FactChange#SEEN_WAITS}), null: none. */
+    private FactChange.Fact seenWait;
+
+    /**
+     * 0.39.z77 seen (owner 2026-10-26: the trigger is the fact itself; runs BZ/CC: walk, up, explore and strip steps passed
+     * 12 veins): the running steps a seen source re-prices where they run - the ones that move the bot past ore (walks, the
+     * strip, explores, the stand). A collect or a mine digs ore already; a craft, smelt or place is short: those wait for the
+     * step boundary, as any price.
+     */
+    static boolean seenRepricesRunning(Step s) {
+        return s instanceof Step.Walk || s instanceof Step.ToStation || s instanceof Step.ToSurface || s instanceof Step.ToStrip
+                || s instanceof Step.ToBand || s instanceof Step.Climb || s instanceof Step.Strip || s instanceof Step.Explore
+                || s instanceof Step.FindCave || s instanceof Step.AwaitPaths;
+    }
 
     /**
      * The re-price at a step boundary: the order's planner on the facts of now; other steps than the ones left switch the
@@ -901,6 +923,10 @@ public final class Steps {
             why = stage() + ": the re-price failed: " + e + " (the run goes on as planned)";
             return false;
         }
+        // 0.39.z77 seen: an answer that waits on the seen source's walk keeps the fact for the next landed path; any other
+        // answer (a price, kept or switched) ends that ask
+        if (FactChange.isSeen(f))
+            seenWait = r != null && (r.steps() == null ? r.why() != null && r.why().startsWith(FactChange.SEEN_WAITS) : waitsOnPaths(r.steps())) ? f : null;
         List<Step> left = steps.subList(idx, steps.size());
         // 0.39.z70 (D2 3.1, design 1.8): the same steps by identity (a record's array field compares by reference)
         if (r == null || r.steps() == null || r.steps().isEmpty() || StepId.same(r.steps(), left)) {
@@ -1313,7 +1339,10 @@ public final class Steps {
         // found source (FactChange.found) or a landed path, and ends only when the planner picks other steps - its done-test
         // is the planner's own test of what it found, not a second one
         // 0.39.z76 send-back 3 (rule 22): the standing step is priced again on each landing where it stands, as the until-explore
-        if (priceAsk != null && (s instanceof Step.AwaitPaths || s instanceof Step.Explore ex0 && ex0.until() != null) && reprice(true)) return phase;
+        // 0.39.z77 seen (run CC 16:39:47: iron seen 2.2 blocks from a walk, the walk ended 39 blocks away): a seen source re-prices
+        // the moving step where it runs (seenRepricesRunning) - the cheaper of collecting it now and finishing the step runs
+        if (priceAsk != null && (s instanceof Step.AwaitPaths || s instanceof Step.Explore ex0 && ex0.until() != null
+                || FactChange.isSeen(priceAsk) && seenRepricesRunning(s)) && reprice(true)) return phase;
         Car.Status st;
         FactChange.Fact threw = null;
         try {

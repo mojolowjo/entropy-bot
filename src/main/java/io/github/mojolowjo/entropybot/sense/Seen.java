@@ -112,18 +112,46 @@ public final class Seen {
 
     // ---- the store ----
 
-    /** Notes a sighting; true when the cell is new (the caller logs "seen iron at ..."). */
+    /** Notes a sighting; true when the cell is new (the caller logs "seen iron at ..."). 0.39.z77 seen: a new cell is queued ({@link #drainFresh}). */
     public synchronized boolean saw(String dim, int x, int y, int z, String family, long now) {
         LinkedHashMap<Long, Cell> m = dims.computeIfAbsent(dim, k -> new LinkedHashMap<>());
         long k = key(x, y, z);
         boolean fresh = m.remove(k) == null;          // a re-seen cell moves to the newest end
-        m.put(k, new Cell(x, y, z, family, now));
+        Cell c = new Cell(x, y, z, family, now);
+        m.put(k, c);
         if (fresh) {
             if (caving && family != null) caveOres.merge(family, 1.0, Double::sum);
             while (m.size() > MAX) m.remove(m.keySet().iterator().next());
+            queue(dim, c);
         }
         dirty = true;
         return fresh;
+    }
+
+    /** 0.39.z77 seen: one new source cell for the seen trigger (its dimension and the cell). */
+    public record Fresh(String dim, Cell cell) {}
+
+    /** 0.39.z77 seen: new cells waiting for the AA tick (the oldest go first past {@link #FRESH_MAX}). */
+    private final java.util.ArrayDeque<Fresh> news = new java.util.ArrayDeque<>();
+    static final int FRESH_MAX = 64; // structural: a few seconds of sightings between two AA ticks
+
+    private void queue(String dim, Cell c) {
+        if (c.family() == null) return;
+        news.addLast(new Fresh(dim, c));
+        while (news.size() > FRESH_MAX) news.removeFirst();
+    }
+
+    /**
+     * 0.39.z77 seen: the exposed-face patch (fair play off: an ore counts once a face is open, no ray needed) - a block opened
+     * next to an indexed ore cell makes that cell a new source: queued as a sighting is, never marked seen (the ray says that).
+     */
+    public synchronized void exposed(String dim, int x, int y, int z, String family, long now) { queue(dim, new Cell(x, y, z, family, now)); }
+
+    /** 0.39.z77 seen: the new source cells since the last call, oldest first (the AA tick's seen trigger takes them once). */
+    public synchronized List<Fresh> drainFresh() {
+        List<Fresh> out = new ArrayList<>(news);
+        news.clear();
+        return out;
     }
 
     public synchronized boolean has(String dim, int x, int y, int z) {

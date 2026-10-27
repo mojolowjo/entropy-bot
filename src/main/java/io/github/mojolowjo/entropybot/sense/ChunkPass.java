@@ -168,6 +168,9 @@ public final class ChunkPass {
                 Seen sn = seen();
                 if (sn != null) sn.mined(dim, x, y, z);
             }
+            // 0.39.z77 seen: with fair play off an ore is a source once a face is open - a block opened next to indexed ore cells
+            // is their sighting for the seen trigger (fair on: the ray's Seen.saw says it, SeenRuntime)
+            if (!Seen.fair() && open(to) && !open(from)) exposedNext(x, y, z);
             if (s == null || !live.contains(k)) {
                 beforeRead++;              // its read is pending (or it is not loaded): the read covers this change
                 if (!schedule.isPending(cx, cz)) schedule.missed(cx, cz, System.currentTimeMillis());
@@ -194,6 +197,18 @@ public final class ChunkPass {
             error("block change", t);
             try { schedule.missed(x >> 4, z >> 4, System.currentTimeMillis()); } catch (Throwable caught) { Quiet.warn("ChunkPass.blockChanged failed, carrying on with the fallback", caught); }
         }
+    }
+
+    /** 0.39.z77 seen: a cell a player sees ore through (air or water; as SeenRuntime's open face). */
+    private static boolean open(BlockState s) { return s != null && (s.isAir() || s.getFluidState().is(net.minecraft.tags.FluidTags.WATER)); }
+
+    /** 0.39.z77 seen: the indexed ore cells touching x y z by a face, queued as new sources (Seen.exposed). */
+    private void exposedNext(int x, int y, int z) {
+        Seen sn = seen();
+        if (sn == null || dim == null) return;
+        long now = System.currentTimeMillis();
+        for (OreIndex.Hit h : index.nearest(dim, id -> true, x, y, z, 1, Seen.FACES.length, (a, b, c) -> Math.abs(a - x) + Math.abs(b - y) + Math.abs(c - z) == 1))
+            sn.exposed(dim, h.x(), h.y(), h.z(), h.family(), now);
     }
 
     // ---- tick ---------------------------------------------------------------------------------------------------------

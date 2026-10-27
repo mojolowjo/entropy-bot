@@ -65,6 +65,35 @@ public final class ExploreRules {
         return null;
     }
 
+    /**
+     * 0.39.z77 seen (run CC 16:42:08: "explore until iron_ingot" asked knownSource("iron_ingot"), "no block gives it", so the
+     * iron ore it passed never ended it): the until word read through the furnace (pure) - each part, then what smelts into
+     * it ({@code smeltInputs}: the recipe data's furnace inputs of a part, one level), joined by "|": "minecraft:iron_ingot" ->
+     * "minecraft:iron_ingot|minecraft:raw_iron|...". The source of an input (raw_iron: iron ore, by the loot data) ends the
+     * explore as the part's own would. Null word: null; no inputs: the word as it is.
+     */
+    public static String throughSmelts(String word, java.util.function.Function<String, List<String>> smeltInputs) {
+        if (word == null || smeltInputs == null) return word;
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        for (String part : word.split("\\|")) if (!part.isEmpty()) out.add(part);
+        for (String part : new ArrayList<>(out)) {
+            List<String> in = smeltInputs.apply(part);
+            if (in != null) for (String i : in) if (i != null && !i.isEmpty()) out.add(i);
+        }
+        return String.join("|", out);
+    }
+
+    /** 0.39.z77 seen: the furnace inputs of one item (every smelt recipe's ingredients, the recipe data's order); a tag or list word: none. */
+    public static List<String> smeltInputs(String word) {
+        List<String> out = new ArrayList<>();
+        if (word == null || !io.github.mojolowjo.entropybot.aa.NeedChain.plain(word)) return out;
+        for (var r : io.github.mojolowjo.entropybot.aa.brain.ItemWorth.recipes(word, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT)) {
+            for (String i : r.inputs()) if (!out.contains(i)) out.add(i);
+            if (r.options() != null) for (List<String> o : r.options()) if (o != null) for (String i : o) if (!out.contains(i)) out.add(i);
+        }
+        return out;
+    }
+
     /** 0.39.z51: the source a {@link #untilFound} line names, without its distance ("a source of X is known: stone at 1 2 3"); null for null. */
     public static String sourceOf(String known) {
         if (known == null) return null;

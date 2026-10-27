@@ -429,7 +429,7 @@ public final class Goals {
     public static io.github.mojolowjo.entropybot.aa.moves.Steps.Routine replan(Blackboard bb, Goal g, Step failed,
                                                                              io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact, String why,
                                                                              io.github.mojolowjo.entropybot.aa.moves.Steps.Remaining left) {
-        if (fact.price()) return reprice(bb, g, fact);
+        if (fact.price()) return reprice(bb, g, fact, failed);
         // 0.39.z77 SHAPE CHANGE (owner 2026-10-26 10:30: repair locally): a failed step of the trip is repaired inside its
         // leg - the gap for what it served, from the bag as it is, the trip's later steps kept (D2's repair; never priced
         // against a whole re-plan); only when no repair stands is the trip priced again from the bag (the same derivation,
@@ -516,21 +516,48 @@ public final class Goals {
      * old ones when they are the same, or when no way stands now: null steps with why), logged with the chain.
      */
     static io.github.mojolowjo.entropybot.aa.moves.Steps.Routine reprice(Blackboard bb, Goal g, io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact) {
+        return reprice(bb, g, fact, null);
+    }
+
+    /**
+     * 0.39.z77 seen: as above, {@code at} the running step (null: not known). A seen source ({@link
+     * io.github.mojolowjo.entropybot.aa.moves.FactChange#seen}) is a changed fact: it re-prices a running trip too, and the
+     * pick is said once per vein to the owner - "seen iron at x y z: collect now (N s) vs finish &lt;step&gt; (M s)" ({@link
+     * #seenLine}); while the walk to it is not priced yet, the answer waits (FactChange.SEEN_WAITS, logged only).
+     */
+    static io.github.mojolowjo.entropybot.aa.moves.Steps.Routine reprice(Blackboard bb, Goal g, io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact, Step at) {
+        boolean seen = io.github.mojolowjo.entropybot.aa.moves.FactChange.isSeen(fact);
         // 0.39.z77 answers (1) (manager: re-price only on a fact change - a failed step, a bag count off the plan): a landed
         // price never re-resolves the batch's running playbook; its legs go on as planned
         // (a playbook that ends in an explore is priced again as any explore: its find is the fact that picks the rest)
-        if (g.playbookRun && g.pricedWay && !g.pricedExplore) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "kept: the trip runs on (re-planned only on a changed fact)");
+        // 0.39.z77 seen: a seen source IS a changed fact (owner 2026-10-26: the trigger is the fact itself)
+        if (!seen && g.playbookRun && g.pricedWay && !g.pricedExplore) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "kept: the trip runs on (re-planned only on a changed fact)");
         if (g.n - have(bb.in.bag, g) <= 0) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
         BatchWay.forget(g);          // SHAPE CHANGE: a re-price asks the trip's walks again (a stand's estimates, a landed path)
         var ch = chain(bb, g);
         if (ch == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");
-        if (!ch.ok() || ch.steps().isEmpty()) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, ch.why());
+        if (!ch.ok() || ch.steps().isEmpty()) {
+            if (seen) bb.port.log(g.r.key() + ": " + fact.text() + ": no way priced now - the running step goes on (chain: " + ch.why() + ")");     // rule 7: said
+            return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, ch.why());
+        }
         // 0.39.z48 (S66, runs I/J: 12-24 "re-priced ... the pick changed" per run): the new way replaces the running pick
         // only when cheaper than what is left of it by replan.switchMarginS; else the running steps go on
         long now = bb.clock.now();
         double left = leftS(g, now);
         boolean newWay = !io.github.mojolowjo.entropybot.aa.moves.Steps.waitsOnPaths(ch.steps());
-        if (!switches(g.pricedWay, left, g.pricedExplore, newWay, ch.seconds(), ch.explore(), switchMarginS())) {
+        if (seen && !newWay) {
+            // 0.39.z77 seen: the walk to it is not priced yet - asked again on the next landed path (Steps), said then
+            String w = io.github.mojolowjo.entropybot.aa.moves.FactChange.SEEN_WAITS + fact.text() + " (chain: " + ch.why() + ")";
+            bb.port.log(g.r.key() + ": " + w);
+            return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, w);
+        }
+        boolean sw = switches(g.pricedWay, left, g.pricedExplore, newWay, ch.seconds(), ch.explore(), switchMarginS());
+        if (seen) {
+            String line = seenLine(fact, ch, left, at, sw);
+            bb.port.log(g.r.key() + ": " + line + " (chain: " + ch.why() + ")");
+            bb.port.tellOwner(line);
+        }
+        if (!sw) {
             String kept = "kept the running pick: the new way " + Math.round(ch.seconds()) + " s"
                     + (ch.explore() ? " (ends in an explore)" : "") + " vs " + (Double.isNaN(left) ? "?" : Math.round(left)) + " s left"
                     + (g.pricedExplore ? " (ends in an explore)" : "") + " (replan.switchMarginS " + Math.round(switchMarginS()) + ")";
@@ -580,6 +607,23 @@ public final class Goals {
         g.pricedS = g.pricedWay ? ch.seconds() : Double.NaN;
         g.pricedAtMs = nowMs;
         g.pricedExplore = g.pricedWay && ch.explore();
+    }
+
+    /**
+     * 0.39.z77 seen (pure): the owner's line for a seen source's re-price - "seen iron at 3 40 0: collect now (5 s) vs finish
+     * to y 16 (priced path) (78 s) - collect now" ({@code sw}: the new pick runs) or "... - the step runs on (replan.switchMarginS
+     * 10)". The new pick that does not take the seen vein says so: "collect now (not in the cheapest way: N s without it)". {@code left}
+     * NaN: "?" (no running price). {@code at} null: "the running step".
+     */
+    public static String seenLine(io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact, io.github.mojolowjo.entropybot.aa.NeedChain.Chain ch, double left, Step at, boolean sw) {
+        int[] cell = io.github.mojolowjo.entropybot.aa.moves.FactChange.seenCell(fact);
+        String fam = io.github.mojolowjo.entropybot.aa.moves.FactChange.seenFamily(fact);
+        String where = cell == null ? fact.text() : "seen " + fam + " at " + cell[0] + " " + cell[1] + " " + cell[2];
+        boolean uses = cell != null && io.github.mojolowjo.entropybot.aa.SeenAsk.takes(ch.steps(), cell);
+        String now = uses ? "collect now (" + Math.round(ch.seconds()) + " s)" : "collect now (not in the cheapest way: " + Math.round(ch.seconds()) + " s without it)";
+        String step = at == null ? "the running step" : at.text();
+        return where + ": " + now + " vs finish " + step + " (" + (Double.isNaN(left) ? "?" : Math.round(left)) + " s) - "
+                + (sw ? (uses ? "collect now" : "switched to " + (ch.steps().isEmpty() ? "nothing" : ch.steps().get(0).text())) : "the step runs on (replan.switchMarginS " + Math.round(switchMarginS()) + ")");
     }
 
     /** 0.39.z48: what is left of the running pick's price now (its price less the time since; NaN: none taken). */

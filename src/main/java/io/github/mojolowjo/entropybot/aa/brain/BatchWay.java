@@ -28,7 +28,8 @@ import java.util.function.BiFunction;
  * refused (a way priced 0 is never valid); a derivation that does not stand (a fact not loaded, rule 15; an item the data
  * gives no route for) falls back to the order's own chain as its one leg, said. The trip's line - its legs and what each
  * carries down - is said to the owner when the order takes it, before the bot moves; each leg is said as it starts (Goals).
- * <p>R3 (resolve time on the client tick): the trip is kept per order (each order's holds are its own), keyed by the open orders, the bag, the place
+ * <p>R3 (resolve time on the client tick): the trip is kept per order (each order's holds are its own), keyed by the open orders, the bag
+ * (0.39.z77 seen: only the counts of the items its legs reference, {@link #bagPart}), the place
  * (x and z in failures.moved cells, on the surface or under ground - 0.39.z77 carry: never the feet's Y) and the order's
  * holds; one that waits on paths is kept until the next path answer lands. Measured
  * on the AA tick's stopwatch ({@link TickLaps#playbook}: "probe aatick: ... | playbook N = M ms").
@@ -61,7 +62,7 @@ public final class BatchWay {
      * the ids of the open orders a leg with no way ends (those whose own items need that leg) when the others do not need it;
      * empty: the trip's verdict is every order's.
      */
-    record Trip(String key, long landed, boolean settled, Playbook pb, NeedChain.Chain chain, Map<Step, String> starts, String line, Set<String> ends) {
+    record Trip(String key, long landed, boolean settled, Playbook pb, NeedChain.Chain chain, Map<Step, String> starts, String line, Set<String> ends, Set<String> refs) {
         boolean holds(String k, long landedNow) { return key != null && key.equals(k) && (settled || landed == landedNow); }
     }
 
@@ -116,21 +117,88 @@ public final class BatchWay {
     static boolean tripOrder(Goals.Goal g) { return g.strip == null && !g.r.group(); }
 
     /**
-     * The trip's key (pure): the batch, its open orders, the bag, the place, the batch's holds. The place: x and z in
-     * failures.moved cells and where the legs are placed from - on the surface or under ground ({@code under}: the sensed
-     * depth over the feet, Jobs.underDepth, at least aaLadder.surfaceDepth, as Playbook.facts reads it). 0.39.z77 carry
-     * (run CB 16:04:24-16:05:34: the trip re-priced at every Y the bot passed, "here at y -20", "-16", "-15", ...): the
+     * The trip's key (pure): the batch, its open orders, the place, the batch's holds (the bag's part: {@link #bagPart}). The
+     * place: x and z in failures.moved cells and where the legs are placed from - on the surface or under ground ({@code under}:
+     * the sensed depth over the feet, Jobs.underDepth, at least aaLadder.surfaceDepth, as Playbook.facts reads it). 0.39.z77
+     * carry (run CB 16:04:24-16:05:34: the trip re-priced at every Y the bot passed, "here at y -20", "-16", "-15", ...): the
      * feet's Y is no fact the trip depends on - only a leg's place changing (the surface <-> under ground) re-prices it, once.
      */
-    static String tripKeyOf(String tk, List<Goals.Goal> open, Map<String, Integer> bag, int[] pos, boolean under, java.util.Collection<String> held) {
+    static String tripKeyOf(String tk, List<Goals.Goal> open, int[] pos, boolean under, java.util.Collection<String> held) {
         StringBuilder b = new StringBuilder(tk).append(" |");
         for (Goals.Goal o : open) b.append(' ').append(o.r.key()).append(':').append(o.n);
-        b.append(" | ").append(new TreeMap<>(bag));
         int cell = Math.max(1, (int) Math.round(Failures.movedV()));
         if (pos != null && pos.length >= 3) b.append(" | at ").append(Math.floorDiv(pos[0], cell)).append(',').append(Math.floorDiv(pos[2], cell));   // structural: x y z (y left out)
         b.append(under ? " under ground" : " on the surface");
         b.append(" | held ").append(new java.util.TreeSet<>(held));
         return b.toString();
+    }
+
+    /** 0.39.z77 seen: the {@link #refs} entry of a tool kind ("tool pickaxe"): the bag's tools of that kind count in the key. */
+    static final String TOOL = "tool ";
+    /** 0.39.z77 seen: the {@link #refs} entry of a burn the plan names no fuel item for: the bag's fuels count. */
+    static final String FUEL = "fuel";
+
+    /**
+     * 0.39.z77 seen, folded in (carry Report open (a); runs CB 16:04, CE 16:19-16:20: digging walks gained cobblestone or
+     * deepslate every block or two, a bag fact, so the trip was priced again about once per Y): the key's bag part (pure) -
+     * only the counts of the bag's items the trip's legs reference ({@code refs}: {@link #refs}; an item a word takes, a tool of
+     * a kind named, a fuel when a burn names none). Null refs (no trip priced: the order's own chain, no derivation): the
+     * whole bag, as before.
+     */
+    static String bagPart(Set<String> refs, Map<String, Integer> bag) {
+        if (bag == null) return " | bag ?";
+        if (refs == null) return " | bag " + new TreeMap<>(bag);
+        TreeMap<String, Integer> out = new TreeMap<>();
+        for (var e : bag.entrySet()) if (e.getValue() != null && e.getValue() > 0 && referenced(refs, e.getKey())) out.put(e.getKey(), e.getValue());
+        return " | bag " + out;
+    }
+
+    /** The bag's {@code item} is one the trip references. */
+    static boolean referenced(Set<String> refs, String item) {
+        for (String r : refs) {
+            if (r.startsWith(TOOL)) { if (MiningTiers.toolTier(item, r.substring(TOOL.length())) > 0) return true; continue; }
+            if (r.equals(FUEL)) { if (ItemWorth.fuels().containsKey(item)) return true; continue; }
+            if (r.equals(item) || NeedChain.gives(r, item)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 0.39.z77 seen (pure): what the trip's legs reference - the open orders' items, each leg's gets, and per step of the trip
+     * as priced ({@code whole}: every leg's steps) what it makes or gets (DryRun.produces), what it uses up (StepNeeds: the
+     * consumes, the tag slots, the plan's own counts, a station placed from the bag, the fuel), an explore's until words and
+     * the tool kinds the steps need; the pickaxe always (the planner prices every break and walk with the bag's best one).
+     * Null: a step's needs could not be read (the whole bag counts, said).
+     */
+    static Set<String> refs(List<Goals.Goal> open, Playbook pb, NeedChain.Chain whole) {
+        Set<String> out = new java.util.TreeSet<>();
+        out.add(TOOL + io.github.mojolowjo.entropybot.aa.moves.StepNeeds.TIER_TOOL);
+        for (Goals.Goal o : open) out.add(NeedChain.word(itemOf(o)));
+        if (pb != null && pb.ok()) for (Playbook.Leg l : pb.legs()) for (Playbook.Target t : l.gets()) out.add(NeedChain.word(t.item()));
+        if (whole == null) return out;
+        try {
+            for (int k = 0; k < whole.steps().size(); k++) {
+                Step s = whole.steps().get(k);
+                Map<String, Integer> made = io.github.mojolowjo.entropybot.aa.moves.DryRun.produces(s);
+                if (made != null) out.addAll(made.keySet());
+                if (s instanceof Step.PlaceNear p) out.add(NeedChain.word(p.item()));
+                if (s instanceof Step.Explore ex && ex.until() != null) for (String part : ex.until().split("\\|")) if (!part.isEmpty()) out.add(part);
+                var n = io.github.mojolowjo.entropybot.aa.moves.StepNeeds.of(s);
+                out.addAll(n.consumes().keySet());
+                out.addAll(n.tagUses().keySet());
+                if (n.hasTool()) out.add(TOOL + n.toolKind());
+                if (n.fuelTicks() > 0) out.add(FUEL);
+                Map<String, Integer> u = k < whole.uses().size() ? whole.uses().get(k) : null;
+                if (u != null) for (String w : u.keySet()) {
+                    if (w == null) continue;
+                    out.add(w.startsWith(NeedChain.FUEL_USE) ? NeedChain.word(w.substring(NeedChain.FUEL_USE.length())) : NeedChain.word(w));
+                }
+            }
+        } catch (RuntimeException e) {
+            io.github.mojolowjo.entropybot.Quiet.warn("BatchWay.refs: a step's needs could not be read - the whole bag keys the trip", e);
+            return null;
+        }
+        return out;
     }
 
     /** 0.39.z77 shape review 2: an order's own chain where no trip is derived, kept by the trip's key and the landings (per order). */
@@ -165,10 +233,11 @@ public final class BatchWay {
         held.addAll(others.keySet());
         boolean under = bb.in != null && bb.in.underDepth >= io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth();
         int[] pos = bb.in == null ? null : bb.in.pos;
-        String base = tripKeyOf(tk, open, w.bag(), pos, under, held);
+        String base = tripKeyOf(tk, open, pos, under, held);
         Trip kept = TRIPS.get(tk);
         // 0.39.z77 carry 2: the kept trip's own band Ys say whether the feet crossed one (its legs placed again)
-        Trip t = kept != null && kept.holds(base + bandPlace(kept.pb(), pos, under), landed(w)) ? kept : price(bb, g, tk, base, pos, under, open, w);
+        // 0.39.z77 seen: and its own references say which of the bag's counts it depends on
+        Trip t = kept != null && kept.holds(base + bagPart(kept.refs(), w.bag()) + bandPlace(kept.pb(), pos, under), landed(w)) ? kept : price(bb, g, tk, base, pos, under, open, w);
         // 0.39.z77 noway (run BU 13:34:23: the helmet's band leg had no way and ended the PICKAXE's order, never made): a leg's
         // no-way ends only the orders whose own items need it (with the leg's reasons, as an order's no-way always did); every
         // other order of the batch derives its trip again without them and runs on
@@ -210,7 +279,6 @@ public final class BatchWay {
         @SuppressWarnings("unchecked")
         BiFunction<String, Integer, Double> perSlab = bb.fact(PER_SLAB_FACT) instanceof BiFunction<?, ?, ?> f ? (BiFunction<String, Integer, Double>) f : null;
         Playbook pb = Playbook.derive(targets, Playbook.facts(w, perSlab));
-        String key = base + bandPlace(pb, pos, under);
         // an order alone whose trip is one leg: that leg IS the order's own chain (the same planner on the same facts; its
         // words and aa debug tree as before)
         boolean oneLeg = open.size() == 1 && pb.ok() && pb.legs().size() == 1;
@@ -220,7 +288,11 @@ public final class BatchWay {
                 : shape(tk, open.size(), pb, l == null ? null : l.chain(), l == null ? Map.of() : l.starts(), l == null ? null : l.whole());
         Map<Step, String> starts = l == null || s.chain() != l.chain() ? Map.of() : l.starts();
         Set<String> ends = l == null || s.chain() != l.chain() ? Set.of() : ends(open, l.failed(pb));
-        Trip t = new Trip(key, landed(w), s.settled(), pb, s.chain(), starts, s.line(), ends);
+        // 0.39.z77 seen: a priced trip is keyed by the bag's counts its legs reference; the order's own chain (or no trip, a
+        // trip that does not stand) by the whole bag, as before
+        Set<String> refs = l != null && s.chain() == l.chain() && l.chain().ok() ? refs(open, pb, l.whole() == null ? l.chain() : l.whole()) : null;
+        String key = base + bagPart(refs, w.bag()) + bandPlace(pb, pos, under);
+        Trip t = new Trip(key, landed(w), s.settled(), pb, s.chain(), starts, s.line(), ends, refs);
         TRIPS.put(tk, t);
         LEGS.put(tk, starts);
         if (sayAgain(tk, s.change()) && bb.port != null) {

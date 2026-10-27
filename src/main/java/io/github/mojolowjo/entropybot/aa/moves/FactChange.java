@@ -27,6 +27,50 @@ public final class FactChange {
      */
     public static Fact found(String text) { return new Fact(PRICE + "source", text); }
 
+    /** 0.39.z77 seen: the key start of {@link #seen} ("price seen iron at 3 40 0"). */
+    public static final String SEEN = PRICE + "seen ";
+
+    /**
+     * 0.39.z77 seen (owner 2026-10-26 ~17:05; runs BZ, CC: 24 veins near under-ground steps, 12 passed by, none priced within
+     * 90 s - CC 16:39:47 iron seen 2.2 blocks from a walk, the walk ended 39 blocks away): a source of a family the running
+     * order's steps need was seen near the bot (Seen.saw, or the exposed-face patch with fair play off) - the order is priced
+     * again where the running step runs (Steps.reprice(true)): "collect that vein now" against what is left of the running
+     * pick, the cheaper runs (Goals.reprice: replan.switchMarginS). A price, nothing is charged. {@code text}: the chat words.
+     */
+    public static Fact seen(String family, int x, int y, int z, String text) { return new Fact(SEEN + family + " at " + x + " " + y + " " + z, text); }
+
+    /** 0.39.z77 seen: the fact is a seen source's ({@link #seen}). */
+    public static boolean isSeen(Fact f) { return f != null && f.key() != null && f.key().startsWith(SEEN); }
+
+    /** 0.39.z77 seen: the seen cell of a {@link #seen} fact (x y z), null: none or not one. */
+    public static int[] seenCell(Fact f) {
+        if (!isSeen(f)) return null;
+        int at = f.key().lastIndexOf(" at ");
+        if (at < 0) return null;
+        String[] p = f.key().substring(at + " at ".length()).trim().split(" ");
+        if (p.length != 3) return null;            // structural: x y z
+        try {
+            return new int[]{Integer.parseInt(p[0]), Integer.parseInt(p[1]), Integer.parseInt(p[2])};
+        } catch (NumberFormatException e) {
+            io.github.mojolowjo.entropybot.Quiet.warn("FactChange.seenCell: no cell in " + f.key(), e);
+            return null;
+        }
+    }
+
+    /** 0.39.z77 seen: the seen fact's family ("iron"), null: not one. */
+    public static String seenFamily(Fact f) {
+        if (!isSeen(f)) return null;
+        int at = f.key().lastIndexOf(" at ");
+        return at < SEEN.length() ? null : f.key().substring(SEEN.length(), at);
+    }
+
+    /**
+     * 0.39.z77 seen (CC 16:41:51: the vein dropped as "walk: path not known yet (computing)"): the start of a seen re-price's
+     * answer while the walk to the seen source is not priced yet - Steps keeps the seen fact and asks it again on the next
+     * landed path (one landing, one ask), until the answer is a price.
+     */
+    public static final String SEEN_WAITS = "the seen source waits on its walk's price: ";
+
     private static Fact last;
 
     private FactChange() {}

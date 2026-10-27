@@ -846,7 +846,11 @@ final class Mining {
         ex.start = now();
         ex.dir = dir;
         ex.find = find;
-        ex.untilSource = untilSource;
+        // 0.39.z77 seen (run CC 16:42:08 "explore: for iron_ingot: ... no block gives it": the iron ore it passed never ended
+        // it): the until word is read through the furnace's recipes - "iron_ingot" is also what smelts into it (raw_iron, whose
+        // block the loot data names) - so a source of those ends the explore (the order is priced again on it, as for any find)
+        ex.untilSource = io.github.mojolowjo.entropybot.cave.ExploreRules.throughSmelts(untilSource, io.github.mojolowjo.entropybot.cave.ExploreRules::smeltInputs);
+        if (untilSource != null && !untilSource.equals(ex.untilSource)) LOG.info("[entropybot] explore: until {} - read as {} (what smelts into it too)", untilSource, ex.untilSource);
         // 0.39.z76 send-back 3 (rule 22: no placing inside an explore; run AU's placements came from the gathers' mine runs,
         // VeinMine mineWith allowPlace): the explore's walks price a placement out (the fork's walk lease, COST_INF) - the
         // next step's start puts walk.placePenalty back (StepHands.reserve -> RunThrowaway.walkPenalty)
