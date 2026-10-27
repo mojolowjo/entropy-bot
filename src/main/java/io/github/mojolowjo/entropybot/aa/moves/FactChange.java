@@ -215,22 +215,41 @@ public final class FactChange {
      * the order re-plans without it. 0.39.z78 strip: held by the strip's HEADING at its Y (NeedChain.stripHold of {@code key},
      * Step.Strip#key; a fresh start's from that start), the one strip key the strip ways and the playbook's strip read.
      */
-    public static void strip(String key, String why) {
-        // strip review 2 (which end holds what): a bag-caused end ("no pickaxe left", "bag full") is no fact about the heading -
-        // a bag fact, no hold: the order re-plans on the bag it has (a pickaxe first), the same try with the same bag parks
-        // (Steps' order tries); every other end - water / lava ahead, no path, a yield end, the walk down, a stop - is the
-        // heading's at its Y
-        if (bagCaused(why)) {
-            last = new Fact(BAG_STRIP, "strip at " + key + ": " + why + " (the bag's: no heading held; re-planned on the bag)");
+    public static void strip(String key, String forkEnd, String why) {
+        // strip re-review 3: this end's fact only - never an earlier one left in last
+        last = null;
+        // strip re-review 1 / 2 (which end holds what, StripEnd: the fork's documented ends, matched whole or by prefix): water /
+        // lava ahead and no path hold the heading at its Y; no pickaxe left and bag full are a bag fact (nothing held, the order
+        // re-plans on its bag, the same try with the same bag parks: Steps' order tries); stopped (the owner, a monitor, a
+        // reflex), lost control and done hold nothing; an end not in the list holds nothing and is said as unmapped (rule 7)
+        StripEnd e = StripEnd.of(forkEnd);
+        if (e == null) {
+            io.github.mojolowjo.entropybot.Quiet.line("strip at " + key + ": the fork's end \"" + forkEnd + "\" is not one IStripProcess lists: nothing held (unmapped; " + why + ")");
             return;
         }
+        switch (e.hold) {
+            case BAG -> last = new Fact(BAG_STRIP, "strip at " + key + ": " + why + " (the bag's: no heading held; re-planned on the bag)");
+            case HEADING -> heading(key, why);
+            case NONE -> { }
+        }
+    }
+
+    /**
+     * strip re-review 1: the strip's own yield end (StripYield: the tunnel is spent - its ore below the band's, or another
+     * way cheaper than going on here): the heading at its Y is held.
+     */
+    public static void stripSpent(String key, String why) {
+        last = null;
+        heading(key, why);
+    }
+
+    /** The heading hold of the strip {@code key}; a malformed key holds nothing and is said loud (strip review 1, rule 7). */
+    private static void heading(String key, String why) {
         // 0.39.z78 strip (run DS 15:14:33): held by the strip's heading at its Y (NeedChain.stripHold), the key the strip ways
         // and the playbook's strip ask - never the joined ore key no reader asked
         String hold = io.github.mojolowjo.entropybot.aa.NeedChain.stripHold(key);
         if (hold == null) {
-            // strip review 1 (rule 7): a malformed strip key holds nothing (no reader could ask it) - said loud, no fact written
-            io.github.mojolowjo.entropybot.Quiet.warn("FactChange.strip: not a strip key \"" + key + "\" - no hold written for: " + why,
-                    new IllegalArgumentException(key));
+            io.github.mojolowjo.entropybot.Quiet.line("strip: not a strip key \"" + key + "\" - no hold written for: " + why);
             return;
         }
         last = new Fact("source " + hold, "strip at " + key + ": " + why);
@@ -238,11 +257,6 @@ public final class FactChange {
 
     /** strip review 2: the key of a strip's bag-caused end (no source: nothing held, the bag decides). */
     public static final String BAG_STRIP = "bag strip";
-
-    /** strip review 2: the strip's end is the bag's (no pickaxe left, the bag full), not the heading's. Pure. */
-    public static boolean bagCaused(String why) {
-        return why != null && (why.contains("no pickaxe") || why.contains("bag full"));
-    }
 
     /**
      * 0.39.z62 item 1b (run S 04:57:30-35): a strip that ended with no new block in its heading - blocked at its start (a
@@ -276,7 +290,7 @@ public final class FactChange {
      * fresh ground ({@code s.from()} set) keeps its own key ({@link #strip}), as before. Pure.
      */
     public static void stripNoPath(Step.Strip s, int cells, String why) {
-        if (s.from() != null) { strip(s.key(), why); return; }
+        if (s.from() != null) { strip(s.key(), StripEnd.NO_PATH.reason, why); return; }
         last = new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.headingKey(s.y(), s.heading()),
                 "strip " + s.heading() + " at feet y " + s.y() + " found no path after " + cells + " cells: " + why);
     }

@@ -1621,7 +1621,9 @@ public final class StepHands implements Steps.Hands {
         }
         if (!b.getCustomGoalProcess().isActive() && !Core.INSTANCE.reflexes.hold()) {
             String why = "Baritone's walk ended at y " + p.blockPosition().getY() + " short of y " + t.y() + " (no path down to the band)";
-            io.github.mojolowjo.entropybot.aa.moves.FactChange.strip(t.strip(), why);    // the strip way dropped for the order, it re-plans
+            // strip re-review 1: the walk down names no cause along the heading - a walk that ended short (its own rule: the same
+            // target short again at the same feet parks the try; no heading held)
+            io.github.mojolowjo.entropybot.aa.moves.FactChange.walkShort(new int[]{t.x(), t.y(), t.z()}, Jobs.here(p), why);
             return Car.Status.failed(t.text() + ": " + why);
         }
         return Car.Status.running(t.text() + ": at y " + p.blockPosition().getY());

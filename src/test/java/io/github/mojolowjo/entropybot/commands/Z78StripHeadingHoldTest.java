@@ -64,7 +64,7 @@ class Z78StripHeadingHoldTest {
                 NeedChain.stripHold("minecraft:coal_ore,minecraft:deepslate_coal_ore,minecraft:deepslate_iron_ore,minecraft:iron_ore|16|west"));
         assertEquals(NeedChain.headingKey(16, "west"), NeedChain.stripHold(west.key()));
         // the fork's end words of DS 15:14:33.561, as StripStep holds them
-        FactChange.strip(west.key(), "strip: water ahead at 4 16 3 (strip west feet y 16: 1 blocks)");
+        FactChange.strip(west.key(), "water ahead at 4 16 3", "strip: water ahead at 4 16 3 (strip west feet y 16: 1 blocks)");
         FactChange.Fact f = FactChange.take();
         assertEquals("source " + NeedChain.headingKey(16, "west"), f.key(), "the heading key, the one strip hold");
         assertEquals(NeedChain.headingKey(16, "west"), FactChange.ownSourceKey(f));

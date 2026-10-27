@@ -71,7 +71,7 @@ class Z46PricedPathTest {
     @Test
     void s58_aStripEndShortIsTheStripsSourceFact() {
         Step.Strip st = new Step.Strip(List.of("minecraft:iron_ore"), Map.of("iron", 3), 16, "east", 0);
-        FactChange.strip(st.key(), "strip: no path (strip east feet y 16: 0 blocks)");
+        FactChange.strip(st.key(), "no path", "strip: no path (strip east feet y 16: 0 blocks)");
         FactChange.Fact f = FactChange.take();
         assertEquals("source " + NeedChain.sourceKey(st), f.key());
         assertTrue(f.text().contains("no path"), f.text());

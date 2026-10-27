@@ -69,7 +69,7 @@ class Z77WorldFactsTest {
     static void waterAhead(Blackboard bb, Goals.Goal pickaxe, int y, String heading, String water) {
         Step.Strip st = new Step.Strip(IRON, Map.of("iron", 3), y, heading, 0);
         String why = "strip: water ahead at " + water + " (strip " + heading + " feet y " + y + ": 6 blocks, 0 clusters mined)";
-        FactChange.strip(st.key(), why);
+        FactChange.strip(st.key(), "water ahead at " + water, why);
         Steps.Routine r = Goals.replan(bb, pickaxe, st, FactChange.take(), why);
         assertNotNull(r.steps(), r.why());
         assertTrue(Goals.droppedSources(pickaxe).containsKey(NeedChain.stripHold(st.key())), "the learner's own hold: its heading (0.39.z78 strip)");

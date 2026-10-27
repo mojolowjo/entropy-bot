@@ -69,7 +69,7 @@ class Z77DcHeadingTest {
         // held as its heading (NeedChain.stripHold) - in this scene the same no-path end through the way's key now strips south,
         // priced at y 16, with no climb and no explore
         assertEquals(NeedChain.headingKey(16, "east"), NeedChain.stripHold(band.key()));
-        FactChange.strip(eastStrip().key(), why);
+        FactChange.strip(eastStrip().key(), "no path", why);
         FactChange.Fact byWay = FactChange.take();
         Chain was = NeedChain.resolve("raw_iron", 12, dc(band).withoutSources(Map.of(FactChange.ownSourceKey(byWay), byWay.text())));
         assertTrue(was.ok() && !was.explore(), was.why());

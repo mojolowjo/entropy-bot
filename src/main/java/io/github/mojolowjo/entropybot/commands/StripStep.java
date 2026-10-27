@@ -358,7 +358,7 @@ final class StripStep {
                 Car.Status bad = dropMet(s, sp, now);
                 if (bad != null) {
                     yieldFact(s, now);
-                    io.github.mojolowjo.entropybot.aa.moves.FactChange.strip(s.key(), bad.why());
+                    io.github.mojolowjo.entropybot.aa.moves.FactChange.strip(s.key(), sp.lastEnd(), bad.why());     // strip re-review: the restart's own end decides
                     return bad;
                 }
                 // 0.39.z77 strip: the families left go on only while this strip is their cheapest way (the planner's prices)
@@ -369,7 +369,7 @@ final class StripStep {
                     String why = "strip: " + y.why();
                     LOG.info("[entropybot] strip {}: {} (the re-plan holds {})", s.key(), why, y.heading() ? "the heading " + s.heading() + " at y " + s.y() : "this strip's ores");
                     if (y.heading()) io.github.mojolowjo.entropybot.aa.moves.FactChange.stripYield(s.y(), s.heading(), why);
-                    else io.github.mojolowjo.entropybot.aa.moves.FactChange.strip(s.key(), why);
+                    else io.github.mojolowjo.entropybot.aa.moves.FactChange.stripSpent(s.key(), why);     // strip re-review: the tunnel spent
                     return Car.Status.failed(why);
                 }
             }
@@ -405,7 +405,7 @@ final class StripStep {
                         s.from() == null ? "the heading " + s.heading() + " at y " + s.y() : "this strip from fresh ground");
                 io.github.mojolowjo.entropybot.aa.moves.FactChange.stripNoPath(s, cells, st.why() + "; " + cell);
             }
-            else io.github.mojolowjo.entropybot.aa.moves.FactChange.strip(s.key(), st.why());
+            else io.github.mojolowjo.entropybot.aa.moves.FactChange.strip(s.key(), sp.lastEnd(), st.why());     // strip re-review: by the fork's end (StripEnd)
         }
         return st;
     }
