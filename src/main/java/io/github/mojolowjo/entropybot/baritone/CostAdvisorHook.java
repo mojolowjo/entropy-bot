@@ -232,6 +232,13 @@ public final class CostAdvisorHook {
             pr.stats.deny(PolicyStats.SITE_ASTAR_COST, sv.reason());
             return refused(t, x, y, z, state, in, "break", sv.rule(), sv.reason());
         }
+        // 0.39.z77 keepout (RULES 16): a keep-out / no-break cell is refused for every intent, MINE included (MINE never
+        // asks pr.judge below); the snapshot is non-null here (pathStructure refused a null one)
+        BreakPolicy.Verdict kv = BreakPolicy.pathProtect(s, dim, x, y, z);
+        if (!kv.allowed()) {
+            pr.stats.deny(PolicyStats.SITE_ASTAR_COST, kv.reason());
+            return refused(t, x, y, z, state, in, "break", kv.rule(), kv.reason());
+        }
         // lava distance (0.39.z40): a break that opens lava onto the bot (lava in the cell or at a face: the fork burrow's test)
         // is refused for every intent, unless the bot starts this calculation in lava (the reflex's dig-out leg)
         var lava = lava(at);

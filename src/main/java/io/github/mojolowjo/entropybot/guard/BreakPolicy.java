@@ -218,6 +218,19 @@ public final class BreakPolicy {
         return structure(s.policy(), dim, x, y, z, sf.structure(), sf.placedByMe());
     }
 
+    /**
+     * 0.39.z77 keepout (RULES 16, J2 review of 673b344d: MINE's cost answer never asked {@link #judge}): the path's
+     * keep-out / no-break ask, the same for every intent (CostAdvisorHook, before its intent switch, like
+     * {@link #pathStructure}). A cell in a protect box is refused, the rule its type word ("keep-out" / "no-break") and the
+     * reason the box; no snapshot refuses ("no snapshot"); elsewhere open (the rest of the hook decides).
+     */
+    public static Verdict pathProtect(Snapshot s, String dim, int x, int y, int z) {
+        if (s == null) return Verdict.floor("no snapshot");
+        Box pr = s.policy().protectAt(dim, x, y, z);
+        if (pr == null) return Verdict.ok(1, "no keep-out or no-break here");
+        return new Verdict(false, Double.POSITIVE_INFINITY, "in " + (pr.name == null ? "box" : pr.name) + " (" + pr.type.word() + ")", true, pr.type.word());
+    }
+
     /** The verdict is a refusal of this rule (for the notes in aa why). */
     public static boolean structureRefusal(Verdict v) {
         return v != null && !v.allowed() && v.kind() == Kind.STRUCTURE;
