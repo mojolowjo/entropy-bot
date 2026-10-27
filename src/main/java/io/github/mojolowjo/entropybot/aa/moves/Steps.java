@@ -940,6 +940,19 @@ public final class Steps {
             seenRan = f;                         // 0.39.z77 seen 2: its re-price ran (the asker marks its veins asked)
         }
         List<Step> left = steps.subList(idx, steps.size());
+        // 0.39.z77 stand (run CS 19:33:43.8-19:34:08: the descent walk's answer landed "unreachable", 0 walks computing, and the
+        // stand stood out its 30 s; ~24 s lost per order, five orders): the answer the stand waits for has landed when the
+        // order's price no longer stands on a walk (no way now, kept, met - anything but a stand or a seen source still
+        // waiting on its walk). The stand ends then, as at its wait's end: a price fact, the order priced again (failOrReplan)
+        if (running && at instanceof Step.AwaitPaths && r != null && (r.steps() == null || r.steps().isEmpty())
+                && !(r.why() != null && r.why().startsWith(FactChange.SEEN_WAITS))) {
+            pushReserve(held);                   // the stand's end re-plan releases the table itself
+            String landed = StandWait.landedWords(f.text(), r.why());
+            safeCancel(landed);
+            hands.log(at.text() + ": " + landed);
+            failOrReplan(landed, FactChange.priced(landed));
+            return true;
+        }
         // 0.39.z70 (D2 3.1, design 1.8): the same steps by identity (a record's array field compares by reference)
         if (r == null || r.steps() == null || r.steps().isEmpty() || StepId.same(r.steps(), left)) {
             pushReserve(held);                   // the run goes on as planned: its table back

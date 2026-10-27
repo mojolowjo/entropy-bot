@@ -75,5 +75,15 @@ public final class StandWait {
                 + " the walks still not known taken by Baritone's estimate (ranked, not priced; rule 18 as amended)";
     }
 
+    /**
+     * 0.39.z77 stand (run CS 19:33:43.8: the walk's answer landed, the stand stood 24 s more): the end line when the answer the
+     * stand waits for landed before its wait was over ({@code landed}: what landed; {@code price}: the order's price then, null:
+     * none said) - the stand ends now and the order is priced again. Pure.
+     */
+    public static String landedWords(String landed, String price) {
+        return "the walks' answer landed (" + landed + ")" + (price == null || price.isBlank() ? "" : "; the order's price now: " + price)
+                + ": the stand ends now, the order is priced again";
+    }
+
     private static String secs(long ticks) { return String.format(java.util.Locale.ROOT, "%.1f", ticks / (double) GameTimes.TPS); }
 }
