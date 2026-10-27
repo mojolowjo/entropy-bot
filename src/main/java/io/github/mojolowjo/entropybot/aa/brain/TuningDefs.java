@@ -987,6 +987,7 @@ final class TuningDefs {
         Tuning.def("debug.slowTickMs", 50, "0.39.z56 item 3 (a client tick is 50 ms at 20 TPS)", "a client tick longer than this (ms) gets its own 'probe slowtick:' line while debug.loadProbe is on");
         Tuning.def("debug.probeEveryTicks", 20, "0.39.z56 items 1 and 3 (once a second)", "client ticks between a step probe's still lines and between load lines");
         Tuning.def("debug.stepProbePhaseGapTicks", 5, "0.39.z56 item 1 (an interact's 'aiming at ...' words change every tick)", "the fewest client ticks between two step phase lines; the changes in between are counted on the next line");
+        Tuning.def("debug.stripRefuseMaxLines", 500, "0.39.z77 mineintent (run DB 01:08:24: a strip searched as TRAVEL; a no-path search may refuse thousands of cells)", "the most probe strip refuse lines one search says while a strip runs with debug.walkProbe or debug.stepProbe on; the next line says the rest are not printed");
         Tuning.def("cave.mergeM", 8, "0.39.z50 (owner: one feature = one candidate)", "candidates within this many blocks merge into one, the lowest point kept");
         Tuning.def("cave.slopeMin", 1, "0.39.z50 (the z46 rule's falling at least 1)", "a mouth's gentle side rises at least this before any cave pattern exists");
         Tuning.def("cave.depthMin", 1, "0.39.z50", "a hole's depth (rim to its floor) at least this before any cave pattern exists");

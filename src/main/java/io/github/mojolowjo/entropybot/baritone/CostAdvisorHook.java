@@ -10,6 +10,7 @@ import io.github.mojolowjo.entropybot.guard.Guard;
 import io.github.mojolowjo.entropybot.guard.MixinFlags;
 import io.github.mojolowjo.entropybot.guard.PolicyRuntime;
 import io.github.mojolowjo.entropybot.guard.PolicyStats;
+import io.github.mojolowjo.entropybot.guard.StripSearch;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.level.block.state.BlockState;
 import org.slf4j.Logger;
@@ -39,9 +40,10 @@ public final class CostAdvisorHook {
      * keep-out box walks out by the shortest way: that box is dear, not impassable, for this calculation).
      */
     public record Token(BreakPolicy.Snapshot snapshot, Intent intent, String dim, BreakPolicy.Where me,
-                        io.github.mojolowjo.entropybot.guard.Policy areas, int[] at, int lavaReach, double lavaPenalty) {
+                        io.github.mojolowjo.entropybot.guard.Policy areas, int[] at, int lavaReach, double lavaPenalty,
+                        StripSearch.Said said) {
         public Token(BreakPolicy.Snapshot snapshot, Intent intent, String dim, BreakPolicy.Where me) {
-            this(snapshot, intent, dim, me, null, null, 0, 0);
+            this(snapshot, intent, dim, me, null, null, 0, 0, null);
         }
 
         /** The token has keep-out or danger boxes to price (moveMultiplier). */
@@ -152,7 +154,25 @@ public final class CostAdvisorHook {
             reach = io.github.mojolowjo.entropybot.guard.LavaNear.reach();
             pen = io.github.mojolowjo.entropybot.guard.LavaNear.penalty();
         } catch (RuntimeException caught) { Quiet.warn("CostAdvisorHook.begin: the lava Tuning could not be read, no lava price this calculation", caught); }
-        return new Token(pr.snapshot(), pr.intentNow(), dim, pr.where(), areas, at, reach, pen);
+        // 0.39.z77 mineintent: while a strip runs with its probe on, the search carries its own said set (one line per cell)
+        return new Token(pr.snapshot(), pr.intentNow(), dim, pr.where(), areas, at, reach, pen, StripSearch.INSTANCE.forSearch());
+    }
+
+    /**
+     * 0.39.z77 mineintent: a refused cell during a strip's search, said once per cell per search behind the strip's probe
+     * (StripSearch; off by default); returns COST_INF. Pathfinder thread: the line goes to the log only.
+     */
+    private static double refused(Token t, int x, int y, int z, BlockState state, Intent in, String action, String rule, String reason) {
+        StripSearch ss = StripSearch.INSTANCE;
+        if (!ss.probing()) return COST_INF;
+        try {
+            String block = state == null ? null : net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+            String l = ss.refuse(t == null ? null : t.said(), x, y, z, block, in, action, rule, reason, COST_INF);
+            if (l != null) LOG.info("[entropybot] {}", l);
+        } catch (RuntimeException e) {
+            PolicyRuntime.INSTANCE.stats.error("advisor strip refuse probe: " + e);
+        }
+        return COST_INF;
     }
 
     /**
@@ -203,14 +223,14 @@ public final class CostAdvisorHook {
         String dim = t != null ? t.dim() : dimIfNoToken;
         BreakPolicy.Snapshot s = t != null ? t.snapshot() : pr.snapshot();
         BreakPolicy.Where me = t != null ? t.me() : pr.where();
-        if (in == null || in == Intent.NONE) return COST_INF;                     // walking only (the route map's context)
+        if (in == null || in == Intent.NONE) return refused(t, x, y, z, state, in, "break", "walking only", null);   // the route map's context
         // STRUCTURE_BLOCKS (RULES 16): every intent's path refuses the cell BreakPolicy refuses for a structure block
         // (Baritone's blocksToDisallowBreaking stays empty: block types never refuse by themselves, this hook does per cell);
         // a null snapshot refuses here too ("no snapshot", BreakPolicy.pathStructure), never NaN or open
         BreakPolicy.Verdict sv = pr.structureVerdict(s, dim, at, x, y, z);
         if (!sv.allowed()) {
             pr.stats.deny(PolicyStats.SITE_ASTAR_COST, sv.reason());
-            return COST_INF;
+            return refused(t, x, y, z, state, in, "break", sv.rule(), sv.reason());
         }
         // lava distance (0.39.z40): a break that opens lava onto the bot (lava in the cell or at a face: the fork burrow's test)
         // is refused for every intent, unless the bot starts this calculation in lava (the reflex's dig-out leg)
@@ -218,14 +238,14 @@ public final class CostAdvisorHook {
         if (io.github.mojolowjo.entropybot.guard.LavaNear.opensLava(lava, x, y, z)
                 && !(t != null && t.at() != null && (lava.at(t.at()[0], t.at()[1], t.at()[2]) || lava.at(t.at()[0], t.at()[1] + 1, t.at()[2])))) {
             pr.stats.deny(PolicyStats.SITE_ASTAR_COST, "the break opens lava");
-            return COST_INF;
+            return refused(t, x, y, z, state, in, "break", "lava", "the break opens lava");
         }
-        if (dim == null) return in == Intent.TRAVEL ? COST_INF : Double.NaN;      // fail closed for travel
+        if (dim == null) return in == Intent.TRAVEL ? refused(t, x, y, z, state, in, "break", "no dimension", "fail closed for travel") : Double.NaN;
         double wet = wetMult(at, x, y, z);                                        // wetbreak: 1 dry, 5 beside water, 25 deep
         switch (in) {
             case TRAVEL -> {
                 BreakPolicy.Verdict v = pr.judge(PolicyStats.SITE_ASTAR_COST, BreakPolicy.Action.BREAK, in, dim, x, y, z, pr.facts(at, dim, x, y, z, false), me, s);
-                return v.allowed() ? v.multiplier() * wet : COST_INF;
+                return v.allowed() ? v.multiplier() * wet : refused(t, x, y, z, state, in, "break", v.rule(), v.reason());
             }
             case MINE -> {
                 // phase 1: mining keeps Baritone's rules, except the owner's: no digging down from in the water
@@ -237,13 +257,13 @@ public final class CostAdvisorHook {
                     // aa-water (1f): the risk from this cell's own depth below the water surface and the air now
                     if (me == null || !me.inWater()) {
                         pr.stats.deny(PolicyStats.SITE_ASTAR_COST, "digging down from in the water");
-                        return COST_INF;
+                        return refused(t, x, y, z, state, in, "break", "water", "digging down from in the water");
                     }
                     int depth = 1 + PolicyRuntime.waterColumn(at, x, y + 1, z);
                     double m = io.github.mojolowjo.entropybot.guard.DrownRisk.breakMult(depth, me.air(), me.pickTier());
                     if (Double.isInfinite(m)) {
                         pr.stats.deny(PolicyStats.SITE_ASTAR_COST, "digging down from in the water");
-                        return COST_INF;
+                        return refused(t, x, y, z, state, in, "break", "drown risk", "digging down from in the water");
                     }
                     return m;                                                // its own drowning price (no double count)
                 }
@@ -290,21 +310,21 @@ public final class CostAdvisorHook {
         if (!PolicyRuntime.LIVE) return Double.NaN;
         Token t = token instanceof Token tk ? tk : null;
         Intent in = t != null ? t.intent() : pr.intentNow();
-        if (in == null || in == Intent.NONE) return COST_INF;
+        if (in == null || in == Intent.NONE) return refused(t, x, y, z, current, in, "place", "walking only", null);
         if (in == Intent.RESTORE) return Double.NaN;
         try {
             String dim = t != null ? t.dim() : dimIfNoToken;
             BreakPolicy.Snapshot s = t != null ? t.snapshot() : pr.snapshot();
             BreakPolicy.Where me = t != null ? t.me() : pr.where();
-            if (dim == null || s == null) return in == Intent.TRAVEL ? COST_INF : Double.NaN;      // fail closed for travel
+            if (dim == null || s == null) return in == Intent.TRAVEL ? refused(t, x, y, z, current, in, "place", "no dimension or snapshot", "fail closed for travel") : Double.NaN;
             BreakPolicy.Verdict v = BreakPolicy.judge(s, new BreakPolicy.Ask(BreakPolicy.Action.PLACE, in, dim, x, y, z, pr.placeFacts(at, dim, x, y, z), me));
             // the click veto (Guard.vetoPolicyPlace) asks the same policy with the same intent, so a deny here is a deny there
-            if (!v.allowed()) { pr.stats.deny(PolicyStats.SITE_ASTAR_PLACE, v.reason()); return COST_INF; }
+            if (!v.allowed()) { pr.stats.deny(PolicyStats.SITE_ASTAR_PLACE, v.reason()); return refused(t, x, y, z, current, in, "place", v.rule(), v.reason()); }
             double wet = 1;
             // aa-water (1f): placing into a water cell while I am in the water costs its drowning risk (cell depth, air now)
             if (me != null && me.inWater() && current != null && PolicyRuntime.fluidOf(current) == BreakPolicy.Fluid.WATER) {
                 wet = io.github.mojolowjo.entropybot.guard.DrownRisk.placeMult(PolicyRuntime.waterColumn(at, x, y, z), me.air());
-                if (Double.isInfinite(wet)) { pr.stats.deny(PolicyStats.SITE_ASTAR_PLACE, "placing under water: no air to come back"); return COST_INF; }
+                if (Double.isInfinite(wet)) { pr.stats.deny(PolicyStats.SITE_ASTAR_PLACE, "placing under water: no air to come back"); return refused(t, x, y, z, current, in, "place", "drown risk", "placing under water: no air to come back"); }
             }
             return baritoneCost * v.multiplier() * wet;
         } catch (Throwable e) {

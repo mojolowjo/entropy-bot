@@ -22,6 +22,9 @@ public final class ProbeLines {
     /** 0.39.z56 item 1: the step probe is on (Tuning debug.stepProbe 1; StepProbe's gate). */
     public static boolean stepOn() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("debug.stepProbe") >= 1; }
 
+    /** 0.39.z77 mineintent: the strip's refuse probe is on (the strip probe debug.walkProbe, or debug.stepProbe; both off by default). */
+    public static boolean stripRefuseOn() { return on() || stepOn(); }
+
     /** 0.39.z56 item 3: the load probe is on (Tuning debug.loadProbe 1; LoadProbe's gate). */
     public static boolean loadOn() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("debug.loadProbe") >= 1; }
 

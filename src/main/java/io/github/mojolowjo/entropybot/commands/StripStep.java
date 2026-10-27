@@ -210,10 +210,31 @@ final class StripStep {
         List<String> live = StripYield.liveOres(s.ores(), s.amounts(), from == null ? Map.of() : from.picked(), StripStep::family);
         running = live.isEmpty() ? s.ores() : live;
         b.getStripProcess().probe(WalkProbe.on());          // 0.39.z64 item 1: the "probe strip:" lines (debug.walkProbe)
-        b.getStripProcess().strip(new BlockOptionalMetaLookup(running.toArray(String[]::new)), s.y(), d, of(from));
-        if (!b.getStripProcess().isActive()) return "error: the strip did not start: " + b.getStripProcess().lastEnd();
+        // 0.39.z77 mineintent (run DB 01:08:24: "travel may place" inside a strip): the strip's searches are priced as MINE,
+        // not on the walk's TRAVEL left before it; the intent before it goes back at the strip's end
+        SEARCH.begin(STORE, ProbeLines.stripRefuseOn());
+        try {
+            b.getStripProcess().strip(new BlockOptionalMetaLookup(running.toArray(String[]::new)), s.y(), d, of(from));
+        } catch (RuntimeException e) {
+            SEARCH.end(STORE);
+            throw e;
+        }
+        if (!b.getStripProcess().isActive()) {
+            SEARCH.end(STORE);
+            return "error: the strip did not start: " + b.getStripProcess().lastEnd();
+        }
         return null;
     }
+
+    /** 0.39.z77 mineintent: the strip's own search intent (MINE while it runs) and its refuse probe. */
+    private static final io.github.mojolowjo.entropybot.guard.StripSearch SEARCH = io.github.mojolowjo.entropybot.guard.StripSearch.INSTANCE;
+
+    /** The job intent as the strip sets and puts it back (PolicyRuntime's). */
+    private static final io.github.mojolowjo.entropybot.guard.StripSearch.Store STORE = new io.github.mojolowjo.entropybot.guard.StripSearch.Store() {
+        @Override public io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent intent() { return io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.intent(); }
+        @Override public String by() { return io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.intentBy(); }
+        @Override public void set(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent i, String by) { io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(i, by); }
+    };
 
     /** An ore id's count key (the fork's picked counts, the order's amounts). */
     private static String family(String ore) { return StripOrder.countKey(ore, OreSpec::family); }
@@ -238,6 +259,7 @@ final class StripStep {
         for (String o : running) if (!live.contains(o)) gone.add(family(o));
         Direction d = Direction.byName(s.heading());
         sp.cancel();
+        SEARCH.hold(STORE, ProbeLines.stripRefuseOn());     // 0.39.z77 mineintent: the next segment's searches are MINE too
         sp.strip(new BlockOptionalMetaLookup(live.toArray(String[]::new)), s.y(), d, of(now));
         running = live;
         LOG.info("[entropybot] strip: {} met ({}): left the strip; it digs on for {}", String.join(", ", gone),
@@ -284,8 +306,23 @@ final class StripStep {
     /**
      * The step's status: the order's end rule first (amounts met, bag full), then the fork's own end; the progress is
      * saved whenever it moved (and at every end; an order done by its amounts or the tunnel's end clears it).
+     * 0.39.z77 mineintent: while it runs and no reflex holds the bot, the search intent stays MINE (a next segment, an
+     * intent set meanwhile); at any end the intent before the strip goes back.
      */
     static Car.Status status(Step.Strip s, boolean holding) {
+        Car.Status st;
+        try {
+            st = statusOf(s, holding);
+        } catch (RuntimeException e) {
+            SEARCH.end(STORE);
+            throw e;
+        }
+        if (st.state() != Car.State.RUNNING) SEARCH.end(STORE);
+        else if (!holding) SEARCH.hold(STORE, ProbeLines.stripRefuseOn());
+        return st;
+    }
+
+    private static Car.Status statusOf(Step.Strip s, boolean holding) {
         IBaritone b = Jobs.baritone();
         if (b == null) return Car.Status.failed("baritone not loaded");
         var sp = b.getStripProcess();
@@ -353,7 +390,9 @@ final class StripStep {
             else if (StripOrder.NO_PATH.equals(sp.lastEnd())) {
                 String cell = nextCellRule(goalCell);
                 int cells = now == null ? 0 : now.blocks();
-                LOG.info("[entropybot] strip {}: no path after {} cells; {} (the re-plan holds {})", s.key(), cells, cell,
+                // 0.39.z77 mineintent: the intent the strip's searches ran on, beside the next cell's MINE answer
+                LOG.info("[entropybot] strip {}: no path after {} cells; {}; searched as {} (the re-plan holds {})", s.key(), cells, cell,
+                        io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.intent().name().toLowerCase(java.util.Locale.ROOT),
                         s.from() == null ? "the heading " + s.heading() + " at y " + s.y() : "this strip from fresh ground");
                 io.github.mojolowjo.entropybot.aa.moves.FactChange.stripNoPath(s, cells, st.why() + "; " + cell);
             }
@@ -574,6 +613,7 @@ final class StripStep {
     static void cancel() {
         IBaritone b = Jobs.baritone();
         if (b != null && b.getStripProcess().isActive()) b.getStripProcess().cancel();
+        SEARCH.end(STORE);                                  // 0.39.z77 mineintent: the intent before the strip back
     }
 
     /** Wires aa goals' progress lookup (Goals.line) to the saved file. */
