@@ -32,9 +32,10 @@ import static org.junit.jupiter.api.Assertions.*;
  * ahead (22:37:58 west at y 17 from the feet 9 17 1; 22:42:18 north at y 16 from 16 16 -23), the pickaxe order was met at
  * 22:42:19 and its held sources went with it, and the helmet ran both strips again at 22:43:18 / 22:43:21 (feet 10 17 -16) to
  * the same water. A source fact one order learned is the world's: it holds for every other order while the feet are within
- * failures.moved (16) of where it was learned. Hand distances: 16 16 -23 -> 10 17 -16 = sqrt(36 + 1 + 49) = 9.3 (held);
- * 9 17 1 -> 9 17 -8 = 9 (held); 9 17 1 -> 10 17 -16 = sqrt(1 + 0 + 289) = 17.0 (more than 16: tried again - CX's own
- * y 17 re-try was from just past failures.moved, so this fix would not have stopped that one; the y 16 one it would).
+ * failures.moved (16) of where it was learned. 0.39.z77 world 2 (manager 2026-10-26): a strip fact is about its tunnel key
+ * (the fork resumes the saved tunnel from anywhere) and never lifts on the distance - only its cause gone, or a strip from
+ * fresh ground at another spot (another key). Hand distances: 16 16 -23 -> 10 17 -16 = sqrt(36 + 1 + 49) = 9.3;
+ * 9 17 1 -> 9 17 -8 = 9; 9 17 1 -> 10 17 -16 = sqrt(1 + 0 + 289) = 17.0 (CX 22:43:21: past failures.moved, still held).
  */
 class Z77WorldFactsTest {
 
@@ -92,17 +93,17 @@ class Z77WorldFactsTest {
         assertNotEquals("west", heading(c), "the strip west at y 17 is out for the helmet too: " + c.why());
         assertTrue(c.why().contains("water ahead at 8 17 0") && c.why().contains("(a world fact: minecraft:raw_iron learned it at 9 17 1)"), c.why());
         FakePort port = (FakePort) bb.port;
-        long said = port.log.stream().filter(l -> l.contains("held here as a world fact") && l.contains("|17|west")).count();
+        long said = port.log.stream().filter(l -> l.contains("held as a world fact") && l.contains("|17|west") && l.contains("only when its cause is gone")).count();
         assertEquals(1, said, port.log.toString());
         assertTrue(port.log.stream().anyMatch(l -> l.startsWith("minecraft:iron_ore: strip ") && l.contains("water ahead at 8 17 0")
                 && l.contains("minecraft:raw_iron learned it at 9 17 1")), port.log.toString());
         Goals.chain(bb, helmet);
-        assertEquals(1, port.log.stream().filter(l -> l.contains("held here as a world fact")).count(), "said once per order and key");
+        assertEquals(1, port.log.stream().filter(l -> l.contains("held as a world fact")).count(), "said once per order and key");
     }
 
-    /** The control: the bot more than failures.moved from the cell (CX's helmet feet 10 17 -16, 17.0 blocks) - the heading is tried again. */
+    /** CX 22:43:21 exactly: the helmet at 10 17 -16, 17.0 blocks from where the y 17 west strip met water - still not re-tried. */
     @Test
-    void movedMoreThanFailuresMovedTheHeadingIsTriedAgain() {
+    void theStripFactHoldsPastFailuresMoved() {
         ScenariosTest.world("wooden", "stone");
         Clock.Fake clock = new Clock.Fake(10_000_000);
         Blackboard bb = bb(band(17, "west"), clock);
@@ -112,10 +113,30 @@ class Z77WorldFactsTest {
         assertEquals(16.0, Failures.movedV());
         bb.in.pos = new int[]{10, 17, -16};                               // sqrt(1 + 289) = 17.03 > 16
         Goals.Goal helmet = Goals.draft(DebugTreeTest.item("iron_ore"), 5, 0, clock.now());
-        assertEquals("west", heading(Goals.chain(bb, helmet)), "another try from there");
-        assertNotEquals("west", heading(Goals.chain(bb, pickaxe)), "the learner's own hold stays for its life, as before");
+        Chain c = Goals.chain(bb, helmet);
+        assertNotEquals("west", heading(c), "the tunnel key is the fact, not the feet: " + c.why());
+        assertTrue(c.why().contains("(a world fact: minecraft:raw_iron learned it at 9 17 1)"), c.why());
     }
 
+    /** The control: a strip from fresh ground at another spot (StripBand.freshAt: another key) is tried. */
+    @Test
+    void aFreshStartStripFromAnotherSpotIsTried() {
+        ScenariosTest.world("wooden", "stone");
+        Clock.Fake clock = new Clock.Fake(10_000_000);
+        Blackboard bb = bb(band(17, "west"), clock);
+        bb.in.pos = new int[]{9, 17, 1};
+        Goals.Goal pickaxe = Goals.draft(DebugTreeTest.item("raw_iron"), 3, 0, clock.now());
+        waterAhead(bb, pickaxe, 17, "west", "8 17 0");
+        StripBand fresh = band(17, "west").freshAt(9, -40, 41, "west");     // fresh ground 41 blocks on
+        assertNotEquals(band(17, "west").key(), fresh.key());
+        bb.fact(NeedChain.WORLD_FACT, (Supplier<NeedChain.World>) () -> Z62RunSTest.world(Map.of("minecraft:stone_pickaxe", 1), fresh));
+        Goals.Goal helmet = Goals.draft(DebugTreeTest.item("iron_ore"), 5, 0, clock.now());
+        Chain c = Goals.chain(bb, helmet);
+        Step.Strip st = (Step.Strip) c.steps().stream().filter(s -> s instanceof Step.Strip).findFirst().orElse(null);
+        assertNotNull(st, c.why());
+        assertEquals("west", st.heading(), c.why());
+        assertNotNull(st.from(), "the fresh start's own tunnel: " + st.text());
+    }
     /** CX 22:43:18: the north strip at y 16 (learned at 16 16 -23), the helmet at 10 17 -16 (9.3 blocks): held. */
     @Test
     void theCxNorthStripIsHeldFromTheHelmetsFeet() {
@@ -151,8 +172,15 @@ class Z77WorldFactsTest {
         assertEquals(List.of("collect raw_iron at 20 28 19"), List.copyOf(w.heldFor(Set.of(), in).keySet()));
         in.pos = new int[]{20, 28, 36};                                     // 17 blocks off
         assertTrue(w.heldFor(Set.of(), in).isEmpty());
+        String strip = NeedChain.STRIP_KEY + "minecraft:deepslate_iron_ore,minecraft:iron_ore|17|west", heading = NeedChain.headingKey(17, "west");
+        in.pos = new int[]{9, 17, 1};
+        assertTrue(w.learned(strip, "strip: water ahead at 8 17 0", "a", in));
+        assertTrue(w.learned(heading, "blocked at its start", "a", in));
+        in.pos = new int[]{9, 17, 200};                                     // far off: a strip fact never lifts on distance
+        assertEquals(java.util.Set.of(strip, heading), w.heldFor(Set.of(), in).keySet());
+        assertTrue(w.sayOnce("o", "helmet", strip, "x").contains("only when its cause is gone"));
         in.pos = null;
         in.bag = Map.of("cobblestone", 5);
-        assertEquals(2, w.heldAt(in).size(), "feet not known: held (rule 15)");
+        assertEquals(4, w.heldAt(in).size(), "feet not known: held (rule 15)");
     }
 }

@@ -19,7 +19,8 @@ import java.util.Set;
  * failures.moved of that cell - the batch's open orders and later orders of the run (the AA's blackboard).
  *
  * <p>Lifted as the order holds are: the feet more than failures.moved from the cell (a try from there is another try), or
- * the cause gone (a missing-item fact once the bag's total rose, Failures#sweep's rule). The order that learned it keeps
+ * the cause gone (a missing-item fact once the bag's total rose, Failures#sweep's rule). 0.39.z77 world 2: a strip fact
+ * is about its tunnel key and lifts only when its cause is gone ({@link #stripFact}). The order that learned it keeps
  * its own hold as before (Goals#droppedSources). Not shared: a fact learned with the feet not known (no world position to
  * key it by, rule 15) and the climb way (its one more try is per order, Goals#parkedTick). In memory only.
  * Pure (JUnit: Z77WorldFactsTest). Loader notes: none.
@@ -55,10 +56,25 @@ public final class WorldFacts {
         return true;
     }
 
-    /** Lifted: the feet more than failures.moved from the cell, or a missing-item fact with the bag's total risen. Feet unknown: held. */
+    /**
+     * 0.39.z77 world 2 (manager 2026-10-26, run CX 22:43:21: the helmet 17.0 blocks from the pickaxe's water-ahead strip ran
+     * it to the same water in 0.0 s - the fork's strip resumes its saved tunnel by its key from anywhere): a strip fact
+     * (the way's key "strip ores|Y|heading[|from area ax,az]", or a heading blocked at its Y "strip heading y Y h") is about
+     * that tunnel key, never about where the bot stands; it lifts only when its cause is gone. A strip from fresh ground at
+     * another spot ({@code StripBand#freshAt}) is another key, so it is tried.
+     */
+    static boolean stripFact(String key) {
+        return key != null && (key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STRIP_KEY)
+                || key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STRIP_HEADING));
+    }
+
+    /**
+     * Lifted: the cause gone (a missing-item fact with the bag's total risen); any fact but a strip fact also once the feet
+     * are more than failures.moved from the cell. Feet unknown: held.
+     */
     static boolean lifted(Rec r, Inputs in) {
         if (in == null) return false;
-        if (in.pos != null && in.pos.length >= 3 && Failures.moved(r.cell(), in.pos) > Failures.movedV()) return true;     // structural: x y z
+        if (!stripFact(r.key()) && in.pos != null && in.pos.length >= 3 && Failures.moved(r.cell(), in.pos) > Failures.movedV()) return true;     // structural: x y z
         return Failures.Cause.of(r.reason()) == Failures.Cause.NO_ITEM && r.items() >= 0 && Failures.items(in) > r.items();
     }
 
@@ -91,6 +107,9 @@ public final class WorldFacts {
      */
     public String sayOnce(String order, String orderWord, String key, String why) {
         if (!said.add(order + "|" + key)) return null;
+        if (stripFact(key))
+            return orderWord + ": " + key + " held as a world fact: " + why + "; that tunnel is tried again only when its cause is gone"
+                    + " (a strip from fresh ground elsewhere is another tunnel)";
         return orderWord + ": " + key + " held here as a world fact: " + why + "; tried again once the bot is more than "
                 + Math.round(Failures.movedV()) + " blocks from there (failures.moved)";
     }

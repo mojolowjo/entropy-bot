@@ -93,7 +93,7 @@ public final class NeedChain {
      * below the feet), {@code perSlab} the expected ore blocks per chunk in the slab at y, {@code x z feetY} where the bot
      * stands, {@code heading} where it faces, {@code host} the block a strip at y digs through (its break is priced).
      */
-    static final String STRIP_KEY = "strip ";
+    public static final String STRIP_KEY = "strip ";     // 0.39.z77 world 2: public (WorldFacts: a strip key lifts by its cause only)
 
     /**
      * 0.39.z44 (CAVE_DETECTION option 1): what the way "mine in the cave" is priced on: the nearest known cave mouth (a
