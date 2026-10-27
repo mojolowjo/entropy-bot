@@ -36,8 +36,8 @@ import java.util.Set;
  * name of ours): the block tags the ruling names, a block entity, a recipe type's station (the recipes' toast symbol),
  * and "a crafting recipe makes it and world gen never places it" (the configured features - their block states and, since
  * 0.39.z77, the plain block ids they name, so dripstone_block is terrain - and the noise settings' surface rules; since
- * 0.39.z77 natural 2 also a tag the jars' carvers name (raw_iron_block / raw_copper_block: the ore veins) and a loot table
- * that drops an ore family's item, the loot book from {@link #loot}; no override file), read
+ * 0.39.z77 natural 2 also a tag the jars' carvers name (raw_iron_block / raw_copper_block: the ore veins); no override
+ * file; natural 3: drops are no terrain test), read
  * from the client's jars by WorldGenReader on singleplayer and
  * on a server alike since 0.39.z26 (2); the integrated server's registries are only a check). Ores ({@code c:ores}), logs ({@code #logs}) and planks ({@code #planks}, owner 2026-10-23) are
  * never structure blocks.
@@ -68,14 +68,9 @@ public final class StructureTable {
     private static volatile boolean warnedNotLoaded;
     /** The world-gen set the table was built with (null: not loaded yet). */
 
-    private static volatile boolean warnedGen, warnedNoData, checked, warnedRecipes, warnedLoot, warnedTag;
-    /** 0.39.z77 natural 2: the loot book the third leg reads (AaRuntime publishes it when it lands; from the jars, one per session's packs). */
-    private static volatile io.github.mojolowjo.entropybot.aa.brain.LootBook loot;
+    private static volatile boolean warnedGen, warnedNoData, checked, warnedRecipes, warnedTag;
     /** 0.39.z77 natural 2: why each structure block is one (the rule line and the dropped list); empty while not built. */
     private static volatile Map<Block, String> whys = Map.of();
-
-    /** 0.39.z77 natural 2: the landed loot book (game thread); the table is built again with it on the next tick. */
-    public static void loot(io.github.mojolowjo.entropybot.aa.brain.LootBook book) { loot = book; }
 
     /** Why the block is a structure block ({@link WorldGenFiles#structureWhy}); null when it is not one or the table is not built. Any thread. */
     public static String why(Block b) { return whys.get(b); }
@@ -98,10 +93,6 @@ public final class StructureTable {
             if (failed != null) Quiet.line("structure facts: the world-gen read failed (" + failed + ") - crafted blocks answer not loaded and are refused; it is read again on the next join");
             else Quiet.line("structure facts: world-gen blocks not loaded yet (reading " + (j < 0 ? "the" : String.valueOf(j)) + " jars in the background) - crafted blocks are refused as not loaded yet until the read is done");
         }
-        if (s == Structure.NOT_LOADED && retry.builtGen != null && usable(loot) == null && !warnedLoot) {
-            warnedLoot = true;
-            Quiet.line("structure facts: the loot book is not in yet (read when AA runs) - a crafted block no world-gen feature or carver tag names is refused as not loaded until its ore-loot check can run");
-        }
         return s == null ? Structure.NOT_LOADED : s;
     }
 
@@ -116,10 +107,9 @@ public final class StructureTable {
             }
             int n = lv.getRecipeManager().getRecipes().size();
             Set<String> gen = WorldGenReader.blocks;
-            var book = usable(loot);
-            if (lv == builtFor && retry.current(n, gen, book)) return;
+            if (lv == builtFor && retry.current(n, gen)) return;
             if (lv != builtFor) {
-                table = null; whys = Map.of(); warnedNotLoaded = false; warnedGen = false; checked = false; retry.reset(); warnedRecipes = false; warnedLoot = false; warnedTag = false; OwnPlaced.newWorld();
+                table = null; whys = Map.of(); warnedNotLoaded = false; warnedGen = false; checked = false; retry.reset(); warnedRecipes = false; warnedTag = false; OwnPlaced.newWorld();
                 var files = io.github.mojolowjo.entropybot.Core.INSTANCE.files();
                 WorldGenReader.start(files == null ? null : files.root(), net.minecraft.SharedConstants.getCurrentVersion().getName());
                 gen = null;                           // the new world's read: not loaded until it is done
@@ -127,7 +117,7 @@ public final class StructureTable {
             builtFor = lv;
             if (n == 0) return;                       // the recipes are not in yet: stays not loaded, asked again next tick
             Set<String> g = gen, ct = gen == null ? null : WorldGenReader.carverTags;   // set before blocks by the reader
-            boolean ok = retry.attempt(n, gen, book, () -> build(lv, g, ct, book));
+            boolean ok = retry.attempt(n, gen, () -> build(lv, g, ct));
             table = retry.value;
             if (!ok) return;
             if (gen != null && !checked) {            // 0.39.z26 fix (9): off the game tick, on the jars thread (it only logs)
@@ -145,15 +135,10 @@ public final class StructureTable {
         }
     }
 
-    /** The loot book the third leg may read: landed, ready and not a failed read; null = not loaded (rule 15). */
-    private static io.github.mojolowjo.entropybot.aa.brain.LootBook usable(io.github.mojolowjo.entropybot.aa.brain.LootBook b) {
-        return b == null || !b.ready() || b.origin.startsWith("read failed") ? null : b;
-    }
-
-    private static Map<Block, Structure> build(Level lv, Set<String> gen, Set<String> carverTagIds, io.github.mojolowjo.entropybot.aa.brain.LootBook book) {
+    private static Map<Block, Structure> build(Level lv, Set<String> gen, Set<String> carverTagIds) {
         if (gen != null && WorldGenReader.noData && !warnedNoData) {
             warnedNoData = true;
-            Quiet.line("structure facts: no world-gen data in " + WorldGenReader.jars + " jars: crafted blocks no carver tag or ore loot clears are refused outside areas");
+            Quiet.line("structure facts: no world-gen data in " + WorldGenReader.jars + " jars: crafted blocks no carver tag holds are refused outside areas");
         }
         // 0.39.z77 natural 2, leg (2): the carvers' tags, the game's synced block tags
         List<TagKey<Block>> carver = null;
@@ -164,18 +149,6 @@ public final class StructureTable {
                 if (rl != null) carver.add(TagKey.create(Registries.BLOCK, rl));
                 else if (!warnedTag) { warnedTag = true; Quiet.line("structure facts: a carver names the tag #" + t + ", not a valid id - left out"); }
             }
-        }
-        // leg (3): an ore family's items (every drop of a c:ores block, the loot book from the jars); null: not loaded
-        Map<String, Set<String>> drops = null;
-        Set<String> oreItems = null;
-        if (book != null) {
-            drops = new java.util.HashMap<>();
-            for (var s : book.all())
-                if (s.kind() == io.github.mojolowjo.entropybot.aa.brain.LootBook.Kind.BLOCK && s.chance() > 0) drops.computeIfAbsent(s.from(), k -> new HashSet<>()).add(s.item());
-            List<String> ores = new java.util.ArrayList<>();
-            for (Block b : BuiltInRegistries.BLOCK) if (b.defaultBlockState().is(Tags.Blocks.ORES)) ores.add(BuiltInRegistries.BLOCK.getKey(b).toString());
-            Map<String, Set<String>> d = drops;
-            oreItems = WorldGenFiles.oreItems(ores, o -> d.getOrDefault(o, Set.of()));
         }
         Set<Item> stations = new HashSet<>(), crafted = new HashSet<>(), unread = new HashSet<>();
         int failed = 0;
@@ -205,7 +178,7 @@ public final class StructureTable {
         }
         Map<Block, Structure> out = new IdentityHashMap<>();
         Map<Block, String> why = new IdentityHashMap<>();
-        int yes = 0, tagged = 0, be = 0, st = 0, cr = 0, byGen = 0, byCarver = 0, byLoot = 0, waiting = 0;
+        int yes = 0, tagged = 0, be = 0, st = 0, cr = 0, byGen = 0, byCarver = 0, waiting = 0;
         for (Block b : BuiltInRegistries.BLOCK) {
             BlockState s = b.defaultBlockState();
             TagKey<Block> tag = null;
@@ -215,8 +188,7 @@ public final class StructureTable {
             boolean station = it != Items.AIR && stations.contains(it);
             boolean craft = it != Items.AIR && crafted.contains(it);
             String id = BuiltInRegistries.BLOCK.getKey(b).toString();
-            Boolean ore = oreItems == null ? null : !Collections.disjoint(drops.getOrDefault(id, Set.of()), oreItems);
-            Structure v = WorldGenFiles.classify(STRUCTURE_TAGS, NEVER_TAGS, s::is, carver, entity, station, craft, it != Items.AIR && unread.contains(it), gen, ore, id);
+            Structure v = WorldGenFiles.classify(STRUCTURE_TAGS, NEVER_TAGS, s::is, carver, entity, station, craft, it != Items.AIR && unread.contains(it), gen, id);
             out.put(b, v);
             if (v == Structure.YES) {
                 yes++;
@@ -224,16 +196,14 @@ public final class StructureTable {
                 why.put(b, WorldGenFiles.structureWhy(tag == null ? null : tag.location().toString(), entity, station));
             } else if (v == Structure.NO && craft && tag == null && !entity && !station) {
                 if (gen != null && gen.contains(id)) byGen++;
-                else if (Boolean.TRUE.equals(ore)) byLoot++;
                 else if (carver != null && carver.stream().anyMatch(s::is)) byCarver++;
             } else if (v == Structure.NOT_LOADED) waiting++;
         }
         whys = Collections.unmodifiableMap(why);
         LOG.info("[entropybot] structure facts: {} of {} blocks are structure blocks ({} by tag, {} block entity, {} station, {} crafted and {}; never: c:ores, #logs, #planks); "
-                        + "crafted blocks kept as terrain: {} named by the jars' world gen, {} in a carver tag {}, {} dropping an ore family's item; {} not loaded; world gen: {}; loot book: {}",
-                yes, out.size(), tagged, be, st, cr, WorldGenFiles.NOT_PLACED, byGen, byCarver, carverTagIds == null ? "(not loaded)" : carverTagIds, byLoot, waiting,
-                gen == null ? "not loaded yet (crafted blocks answer not loaded)" : gen.size() + " blocks placed (from the jars)",
-                book == null ? "not in yet (crafted blocks no other source clears answer not loaded)" : oreItems.size() + " ore family items");
+                        + "crafted blocks kept as terrain: {} named by the jars' world gen, {} in a carver tag {}; {} not loaded; world gen: {}",
+                yes, out.size(), tagged, be, st, cr, WorldGenFiles.NOT_PLACED, byGen, byCarver, carverTagIds == null ? "(not loaded)" : carverTagIds, waiting,
+                gen == null ? "not loaded yet (crafted blocks answer not loaded)" : gen.size() + " blocks placed (from the jars)");
         return Collections.unmodifiableMap(out);
     }
 

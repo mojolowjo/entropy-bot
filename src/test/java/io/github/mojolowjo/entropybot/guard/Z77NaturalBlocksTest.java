@@ -31,8 +31,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>0.39.z77 natural 2 (manager 2026-10-26): no override file (a name list); a crafted block is never a structure block
  * when (1) the jars' world gen names it, (2) it is in a tag a carver of the jars names (vanilla's
  * #overworld_carver_replaceables holds the ore veins' raw_iron_block / raw_copper_block; the 1.21.1 jar has no ore-vein
- * JSON or tag, the veins are the noise router's code), or (3) its loot drops an ore family's item. Glowstone is named by
- * none of them (GlowstoneFeature places it in code) and stays refused, saying so.
+ * JSON or tag, the veins are the noise router's code). Natural 3: drops are no terrain test (redstone_wire drops
+ * redstone_ore's item and stays a structure block, rule 16). Glowstone is named by neither source (GlowstoneFeature
+ * places it in code) and stays refused, saying so.
  * The fixture files are the vanilla 1.21.1 shapes (trimmed to the keys that hold blocks).
  */
 class Z77NaturalBlocksTest {
@@ -88,14 +89,6 @@ class Z77NaturalBlocksTest {
     static final List<String> STRUCTURE_TAGS = List.of("minecraft:stairs", "minecraft:impermeable", "minecraft:candles", "minecraft:buttons");
     static final List<String> NEVER_TAGS = List.of("c:ores");
 
-    /** The fixture's block loot (the loot book from the jars): block -> the items it drops, as vanilla's tables. */
-    static final Map<String, Set<String>> DROPS = Map.of(
-            "minecraft:coal_ore", Set.of("minecraft:coal", "minecraft:coal_ore"), "minecraft:iron_ore", Set.of("minecraft:raw_iron", "minecraft:iron_ore"),
-            "minecraft:redstone_ore", Set.of("minecraft:redstone", "minecraft:redstone_ore"), "minecraft:redstone_wire", Set.of("minecraft:redstone"),
-            "minecraft:glowstone", Set.of("minecraft:glowstone_dust"), "minecraft:raw_iron_block", Set.of("minecraft:raw_iron_block"),
-            "minecraft:raw_copper_block", Set.of("minecraft:raw_copper_block"), "minecraft:dripstone_block", Set.of("minecraft:dripstone_block"),
-            "minecraft:polished_andesite", Set.of("minecraft:polished_andesite"));
-
     /**
      * The fixture's block universe with the game's facts as vanilla 1.21.1 has them: {block entity, station, crafting
      * recipe}. Crafted: dripstone_block (4 pointed dripstone), amethyst_block (4 shards), moss_carpet (2 moss), andesite /
@@ -122,19 +115,16 @@ class Z77NaturalBlocksTest {
         return withRegistry ? WorldGenFiles.read(es, registry::contains) : WorldGenFiles.read(es);
     }
 
-    static final Set<String> ORE_ITEMS = WorldGenFiles.oreItems(TAGS.get("c:ores"), b -> DROPS.getOrDefault(b, Set.of()));
-
-    /** StructureTable's rule over the fixture; {@code r} null: the world-gen read not done; {@code loot} false: the loot book not in. */
-    static Structure fact(String id, WorldGenFiles.Read r, boolean loot) {
+    /** StructureTable's rule over the fixture; {@code r} null: the world-gen read not done. */
+    static Structure fact(String id, WorldGenFiles.Read r) {
         boolean[] f = universe().get(id);
-        Boolean ore = loot ? !Collections.disjoint(DROPS.getOrDefault(id, Set.of()), ORE_ITEMS) : null;
         return WorldGenFiles.classify(STRUCTURE_TAGS, NEVER_TAGS, t -> TAGS.getOrDefault(t, Set.of()).contains(id),
-                r == null ? null : List.copyOf(r.carverTags()), f[0], f[1], f[2], false, r == null ? null : r.blocks(), ore, id);
+                r == null ? null : List.copyOf(r.carverTags()), f[0], f[1], f[2], false, r == null ? null : r.blocks(), id);
     }
 
     static Set<String> structureSet(WorldGenFiles.Read r) {
         Set<String> out = new TreeSet<>();
-        for (String id : universe().keySet()) if (fact(id, r, true) == Structure.YES) out.add(id);
+        for (String id : universe().keySet()) if (fact(id, r) == Structure.YES) out.add(id);
         return out;
     }
 
@@ -145,9 +135,9 @@ class Z77NaturalBlocksTest {
         assertEquals(Structure.YES, WorldGenFiles.fact(false, false, false, false, true, namesOnly, "minecraft:dripstone_block"), "crafted and, by the state Names alone, never world-gen: CJ's refusal");
     }
 
-    /** The manager's test: the structure set holds no block any of the three sources names. */
+    /** The manager's test: the structure set holds no block either source names. */
     @Test
-    void noStructureBlockIsNamedByAnyOfTheThreeSources() {
+    void noStructureBlockIsNamedByEitherSource() {
         WorldGenFiles.Read r = read(true);
         assertTrue(r.blocks().contains("minecraft:dripstone_block"), "named by glow_lichen's can_be_placed_on: terrain world gen grows on");
         assertEquals(Set.of("minecraft:overworld_carver_replaceables"), r.carverTags(), "the carver's replaceable tag, from its JSON");
@@ -156,37 +146,44 @@ class Z77NaturalBlocksTest {
         for (String id : structure) {
             assertFalse(text.contains("\"" + id + "\""), id + ": a structure block the world-gen features name");
             for (String t : r.carverTags()) assertFalse(TAGS.getOrDefault(t, Set.of()).contains(id) && !universe().get(id)[0], id + ": in the carver tag #" + t);
-            assertTrue(Collections.disjoint(DROPS.getOrDefault(id, Set.of()), ORE_ITEMS), id + ": drops an ore family's item");
         }
         assertEquals(Set.of("minecraft:candle", "minecraft:crafting_table", "minecraft:crimson_button", "minecraft:glass", "minecraft:glowstone", "minecraft:oak_stairs",
-                        "minecraft:orange_stained_glass", "minecraft:polished_andesite", "minecraft:suspicious_gravel"), structure,
+                        "minecraft:orange_stained_glass", "minecraft:polished_andesite", "minecraft:redstone_wire", "minecraft:suspicious_gravel"), structure,
                 "the built things stay structure blocks, and glowstone (no source names it); the carver's debug states do not count as terrain");
         for (String id : List.of("minecraft:dripstone_block", "minecraft:amethyst_block", "minecraft:moss_carpet", "minecraft:amethyst_cluster", "minecraft:pointed_dripstone"))
-            assertEquals(Structure.NO, fact(id, r, true), id + ": (1) the world-gen names");
+            assertEquals(Structure.NO, fact(id, r), id + ": (1) the world-gen names");
         for (String id : List.of("minecraft:raw_iron_block", "minecraft:raw_copper_block"))
-            assertEquals(Structure.NO, fact(id, r, true), id + ": (2) the ore veins' block, in the carver tag");
-        assertEquals(Structure.NO, fact("minecraft:redstone_wire", r, true), "(3) drops redstone, redstone_ore's item");
-        assertEquals(Structure.YES, fact("minecraft:suspicious_gravel", r, true), "a block entity in the carver tag stays a structure block");
+            assertEquals(Structure.NO, fact(id, r), id + ": (2) the ore veins' block, in the carver tag");
+        assertEquals(Structure.YES, fact("minecraft:suspicious_gravel", r), "a block entity in the carver tag stays a structure block");
+    }
+
+    /** Natural 3: drops are no terrain test. redstone_wire drops redstone like redstone_ore does, and it is what rule 16 protects. */
+    @Test
+    void redstoneWireStaysAStructureOutsideAreas() {
+        Structure s = fact("minecraft:redstone_wire", read(true));
+        assertEquals(Structure.YES, s);
+        assertEquals(BreakPolicy.STRUCTURE_OUTSIDE, BreakPolicy.judge(Snapshot.of(Policy.EMPTY, false),
+                new Ask(Action.BREAK, Intent.MINE, OW, 6, 16, 25, cell("minecraft:redstone_wire", s), Where.DRY)).reason());
     }
 
     @Test
     void glowstoneStaysRefusedAndSaysWhy() {
         WorldGenFiles.Read r = read(true);
-        assertEquals(Structure.YES, fact("minecraft:glowstone", r, true));
+        assertEquals(Structure.YES, fact("minecraft:glowstone", r));
         assertEquals("not placed by any feature the jars name", WorldGenFiles.structureWhy(null, false, false), "the dropped list's reason (PolicyRuntime's rule line)");
         assertEquals("tag #minecraft:stairs", WorldGenFiles.structureWhy("minecraft:stairs", false, false));
     }
 
     @Test
     void eachSourceNotLoadedIsNotLoadedNeverNo() {
-        WorldGenFiles.Read r = read(true);
-        assertEquals(Structure.NOT_LOADED, fact("minecraft:glowstone", r, false), "no source names it and the loot book is not in: not loaded (rule 15)");
-        assertEquals(Structure.NO, fact("minecraft:dripstone_block", r, false), "one source says yes: terrain without the loot book");
-        assertEquals(Structure.NO, fact("minecraft:raw_iron_block", r, false), "the carver tag says yes");
-        assertEquals(Structure.NOT_LOADED, fact("minecraft:raw_iron_block", null, true), "the world-gen read not done: the carver tags are not known either");
-        assertEquals(Structure.YES, fact("minecraft:oak_stairs", null, false), "a tag needs no world-gen source");
-        assertNull(WorldGenFiles.natural(Set.of(), Boolean.FALSE, null, "x"));
-        assertEquals(Boolean.FALSE, WorldGenFiles.natural(Set.of(), Boolean.FALSE, Boolean.FALSE, "x"));
+        assertEquals(Structure.NOT_LOADED, fact("minecraft:glowstone", null), "the world-gen read not done: a crafted block is not loaded (rule 15)");
+        assertEquals(Structure.NOT_LOADED, fact("minecraft:raw_iron_block", null), "the carver tags come with the same read: not known either");
+        assertEquals(Structure.YES, fact("minecraft:oak_stairs", null), "a tag needs no world-gen source");
+        assertEquals(Structure.YES, fact("minecraft:glowstone", read(true)), "once loaded, no extra wait: glowstone is a structure block at once");
+        assertNull(WorldGenFiles.natural(null, Boolean.FALSE, "x"));
+        assertNull(WorldGenFiles.natural(Set.of(), null, "x"));
+        assertEquals(Boolean.TRUE, WorldGenFiles.natural(null, Boolean.TRUE, "x"), "one source says yes: terrain");
+        assertEquals(Boolean.FALSE, WorldGenFiles.natural(Set.of(), Boolean.FALSE, "x"));
     }
 
     @Test
@@ -231,7 +228,7 @@ class Z77NaturalBlocksTest {
         Snapshot sp = Snapshot.of(Policy.EMPTY, false);
         WorldGenFiles.Read r = read(true);
         for (String id : List.of("minecraft:dripstone_block", "minecraft:raw_copper_block")) {
-            Structure s = fact(id, r, true);
+            Structure s = fact(id, r);
             for (Intent in : List.of(Intent.MINE, Intent.TRAVEL)) {
                 Verdict v = BreakPolicy.judge(sp, new Ask(Action.BREAK, in, OW, 6, 16, 25, cell(id, s), Where.DRY));
                 assertTrue(v.allowed(), id + " " + in + ": " + v.text());
@@ -242,7 +239,7 @@ class Z77NaturalBlocksTest {
         Structure before = WorldGenFiles.fact(false, false, false, false, true, read(false).blocks(), "minecraft:dripstone_block");
         assertEquals(BreakPolicy.STRUCTURE_OUTSIDE, BreakPolicy.pathStructure(sp, OW, 6, 16, 25, BreakPolicy.cellStructure(true, before, OW, 6, 16, 25)).reason());
         // control: a built block in the same cell is still refused
-        Structure built = fact("minecraft:polished_andesite", r, true);
+        Structure built = fact("minecraft:polished_andesite", r);
         assertEquals(BreakPolicy.STRUCTURE_OUTSIDE, BreakPolicy.judge(sp, new Ask(Action.BREAK, Intent.MINE, OW, 6, 16, 25, cell("minecraft:polished_andesite", built), Where.DRY)).reason());
     }
 }

@@ -179,6 +179,6 @@ public final class WorldGenReader {
     /** An old {@code worldgen-override.json} left in the folder is said, never read (a name list, rule 4). */
     private static void oldOverride(Path dir) {
         if (dir != null && Files.isRegularFile(dir.resolve(OLD_OVERRIDE)))
-            LOG.warn("[entropybot] structure facts: {} is no longer read (0.39.z77: a name list, rule 4) - the jars' world-gen, carver tags and ore loot decide", dir.resolve(OLD_OVERRIDE));
+            LOG.warn("[entropybot] structure facts: {} is no longer read (0.39.z77: a name list, rule 4) - the jars' world-gen and carver tags decide", dir.resolve(OLD_OVERRIDE));
     }
 }

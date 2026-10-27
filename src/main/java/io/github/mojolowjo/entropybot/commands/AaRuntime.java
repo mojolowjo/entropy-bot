@@ -3426,7 +3426,6 @@ public final class AaRuntime implements JobPort {
         var landed = lootReader.poll();       // loot-book-bg: the background read is done: published here, on the game thread, in one step
         if (landed != null) {
             bb.fact(io.github.mojolowjo.entropybot.aa.brain.LootBook.FACT, landed);
-            io.github.mojolowjo.entropybot.guard.StructureTable.loot(landed);   // 0.39.z77 natural 2: the structure fact's ore-loot leg
             lootFailed = landed.origin.startsWith("read failed");
             LOG.info("[entropybot] aa: loot book for this world: {} - orders waiting on it are priced again", landed.counts());     // a failed read says "read failed" here and warns above
         }

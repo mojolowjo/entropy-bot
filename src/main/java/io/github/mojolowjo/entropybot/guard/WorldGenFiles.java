@@ -424,15 +424,16 @@ public final class WorldGenFiles {
     }
 
     /**
-     * 0.39.z77 natural 2 (manager 2026-10-26): StructureTable's per-block rule with the three world-gen sources. A crafted
+     * 0.39.z77 natural 2 / 3 (manager 2026-10-26): StructureTable's per-block rule with the two world-gen sources. A crafted
      * block is never a structure block when one holds: (1) the jars' world-gen names it ({@code gen}: {@link #read});
-     * (2) it is in a tag a carver of the jars names ({@code carverTags}, null: the read is not done); (3) its loot drops an
-     * ore family's item ({@code dropsOre}, null: the loot book is not loaded). A tag, a block entity or a station stays
-     * a structure block either way (vanilla's carver tag holds suspicious_gravel / suspicious_sand, block entities).
+     * (2) it is in a tag a carver of the jars names ({@code carverTags}, null: the read is not done). Drops are not a
+     * terrain test (natural 3: redstone_wire drops redstone_ore's item and is exactly what rule 16 protects). A tag, a
+     * block entity or a station stays a structure block either way (vanilla's carver tag holds suspicious_gravel /
+     * suspicious_sand, block entities).
      */
     public static <T> BreakPolicy.Structure classify(java.util.List<T> structureTags, java.util.List<T> neverTags, java.util.function.Predicate<T> inTag,
                                                      java.util.List<T> carverTags, boolean entity, boolean station, boolean crafted, boolean unread,
-                                                     Set<String> gen, Boolean dropsOre, String id) {
+                                                     Set<String> gen, String id) {
         if (unread) return BreakPolicy.Structure.NOT_LOADED;
         boolean tagged = false, never = false;
         for (T t : structureTags) if (inTag.test(t)) { tagged = true; break; }
@@ -442,22 +443,15 @@ public final class WorldGenFiles {
             carver = false;
             for (T t : carverTags) if (inTag.test(t)) { carver = true; break; }
         }
-        return BreakPolicy.structureOf(true, tagged, never, entity, station, crafted, natural(gen, carver, dropsOre, id));
+        return BreakPolicy.structureOf(true, tagged, never, entity, station, crafted, natural(gen, carver, id));
     }
 
-    /** The three sources' answer (rule 15): one says yes = natural; else one not loaded = not loaded (null); else no. */
-    public static Boolean natural(Set<String> gen, Boolean inCarverTag, Boolean dropsOre, String id) {
+    /** The two sources' answer (rule 15): one says yes = natural; else one not loaded = not loaded (null); else no. */
+    public static Boolean natural(Set<String> gen, Boolean inCarverTag, String id) {
         Boolean named = gen == null ? null : gen.contains(id);
-        if (Boolean.TRUE.equals(named) || Boolean.TRUE.equals(inCarverTag) || Boolean.TRUE.equals(dropsOre)) return Boolean.TRUE;
-        if (named == null || inCarverTag == null || dropsOre == null) return null;
+        if (Boolean.TRUE.equals(named) || Boolean.TRUE.equals(inCarverTag)) return Boolean.TRUE;
+        if (named == null || inCarverTag == null) return null;
         return Boolean.FALSE;
-    }
-
-    /** The items an ore family drops: every drop of every block in {@code ores} (the game's c:ores, its loot from the jars). */
-    public static Set<String> oreItems(Collection<String> ores, java.util.function.Function<String, ? extends Collection<String>> dropsOf) {
-        Set<String> out = new HashSet<>();
-        for (String o : ores) out.addAll(dropsOf.apply(o));
-        return Set.copyOf(out);
     }
 
     /** Why a block is a structure block (the rule line, the dropped list): its tag, a block entity, a station, or {@link #NOT_PLACED}. */
