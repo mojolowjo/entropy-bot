@@ -162,6 +162,25 @@ class D6NodesTest {
         assertTrue(d != null);
     }
 
+    // ---- a node that cannot be kept (it read the unreachable facts whole: the climb) still dirties its request ----
+
+    @Test
+    void aNodeThatCannotBeKept_itsFactsStillDirtyTheRequest() {
+        ScenariosTest.world("wooden", "stone", "iron");
+        Map<String, PathPrice.Answer> over = new HashMap<>();
+        over.put("0,84,0", PathPrice.Answer.unreachable("no path A"));
+        PathPrice paths = (x, y, z, dist) -> over.getOrDefault(x + "," + y + "," + z, PathPrice.Answer.priced(new PathPrice.Walk(FakePaths.walkS(dist))));
+        // 20 blocks under ground, nothing known of the need: the explore from the surface - the walk up has no path, so the climb
+        Supplier<World> world = () -> ScenariosTest.w(Map.of("minecraft:stone_pickaxe", 1), false, false, Map.of()).withPath(paths)
+                .withWhere(new NeedChain.WhereFacts(w -> io.github.mojolowjo.entropybot.aa.brain.GenWhere.unknown("test"), () -> new NeedChain.Surface(20, 0, 84, 0, 20),
+                        () -> new int[]{0, 64, 0}, () -> null));
+        Chain a = both(() -> NeedChain.resolve("oak_log", 1, world.get()));
+        assertTrue(a.why().contains("no path A"), a.why());
+        over.put("0,84,0", PathPrice.Answer.unreachable("no path B"));
+        Chain b = both(() -> NeedChain.resolve("oak_log", 1, world.get()));
+        assertTrue(b.why().contains("no path B"), "not the kept chain: " + b.why());
+    }
+
     // ---- the request kept across a changed unused fact, and the effects run again on a reuse ----
 
     @Test

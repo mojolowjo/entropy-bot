@@ -1588,7 +1588,12 @@ public final class NeedChain {
         n.size = f.size;
         c.run.computed++;
         if (f.keep) up.child(ck, n);
-        else up.size += f.size;
+        else {
+            // not kept (it read what no key holds): its parent is not kept either, but its facts become the parent's own,
+            // so the request's check (the root is kept) still covers every fact of its tree
+            up.size += f.size;
+            for (var r : PlanNodes.allReads(n).entrySet()) up.reads.putIfAbsent(r.getKey(), r.getValue());
+        }
         return new Made(n, o);
     }
 
