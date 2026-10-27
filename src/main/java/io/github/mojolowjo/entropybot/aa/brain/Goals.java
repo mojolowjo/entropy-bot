@@ -1045,12 +1045,18 @@ public final class Goals {
             long t0 = laps.now();
             var c = g.r.group() ? io.github.mojolowjo.entropybot.aa.NeedChain.resolveAll(g.r.key(), g.r.ids(), g.n, wf)
                     : io.github.mojolowjo.entropybot.aa.NeedChain.resolve(g.r.ids().isEmpty() ? g.r.key() : g.r.ids().get(0), g.n, wf);
-            if (t0 != 0) laps.resolved(laps.now() - t0);
+            if (t0 != 0) {
+                laps.resolved(laps.now() - t0);
+                var st = io.github.mojolowjo.entropybot.aa.PlanNodes.last();      // 0.39.z78 D6 (run DT): this thread's node counts
+                laps.resolvedNodes(st.nodes(), st.resolved(), st.reused());
+            }
             return c;
         };
         // 0.39.z77 trip (run CU 21:02-21:06): the waiting test (batch false) reads the batch's kept trip while its running step
         // needs no walk (BatchWay.hold); the flag was unused since the SHAPE CHANGE, so every tick's test derived the trip
-        var ch = BatchWay.tripOrder(g) ? BatchWay.trip(bb, g, world, own, !batch) : own.get();
+        // 0.39.z78 D6 (run DT): the one-leg trip's own chain is asked of the planner worker when one is installed (OwnAsk)
+        var ask = new BatchWay.OwnAsk(g.r.group() ? g.r.key() : g.r.ids().isEmpty() ? g.r.key() : g.r.ids().get(0), g.r.ids(), g.n, g.r.group());
+        var ch = BatchWay.tripOrder(g) ? BatchWay.trip(bb, g, world, own, !batch, ask) : own.get();
         // 0.39.z41: a source Baritone's complete search found unreachable is the z33 source fact: dropped for the order's life
         for (var e : ch.unreachable().entrySet()) {
             g.sources.failedFor(g.id(), e.getKey(), e.getValue(), bb.clock.now(), null, ORDER_LIFE_MS);

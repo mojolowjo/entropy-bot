@@ -36,6 +36,9 @@ public final class TickLaps {
         ns.clear();
         resolves = 0;
         resolveNs = 0;
+        clientNodes = 0;
+        clientResolved = 0;
+        clientReused = 0;
         playbooks = 0;
         playbookNs = 0;
         split.clear();
@@ -62,6 +65,17 @@ public final class TickLaps {
         if (!on) return;
         resolves++;
         resolveNs += Math.max(0, nanos);
+    }
+
+    /** 0.39.z78 D6 (run DT): this tick's resolves on the client thread, their node counts summed (PlanNodes.last of this thread). */
+    private int clientNodes, clientResolved, clientReused;
+
+    /** 0.39.z78 D6 (run DT): a resolve on the client tick read {@code nodes}, resolved {@code resolved} of them again and reused {@code reused}. */
+    public void resolvedNodes(int nodes, int resolved, int reused) {
+        if (!on) return;
+        clientNodes += nodes;
+        clientResolved += resolved;
+        clientReused += reused;
     }
 
     private int playbooks;
@@ -149,6 +163,8 @@ public final class TickLaps {
         if (named == 0) b.append(" no section over 0.1 ms");
         if (others > 0) b.append(String.format(Locale.ROOT, ", others %.1f", others));
         b.append(String.format(Locale.ROOT, " | resolves %d = %.1f ms", resolves, resolveNs / 1e6));     // structural: ns per ms
+        // 0.39.z78 D6 (run DT): the client thread's own node counts (the "planner:" part is the worker's)
+        if (resolves > 0) b.append(String.format(Locale.ROOT, " (client nodes %d, re-resolved %d, reused %d)", clientNodes, clientResolved, clientReused));
         if (playbooks > 0) b.append(String.format(Locale.ROOT, " | playbook %d = %.1f ms", playbooks, playbookNs / 1e6));     // structural: ns per ms
         if (playbooks > 0) {
             // 0.39.z78 D6 (run DP): where the playbook's client time went this tick; rest: shape, refs, the line

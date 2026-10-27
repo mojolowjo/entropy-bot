@@ -58,6 +58,8 @@ public final class PlannerPort implements BatchWay.Planner {
         PlannerWorker.Done applied;
         Playbook appliedPb;
         Set<String> appliedKept;
+        /** 0.39.z78 D6 (run DT): an order's own chain request (null: the trip's legs) - asked and applied as the legs are. */
+        BatchWay.OwnAsk own, appliedOwn;
     }
 
     /** structural: results of one trip dropped in a row before the trip stands with the reason (a fetch round or two is normal) */
@@ -85,12 +87,28 @@ public final class PlannerPort implements BatchWay.Planner {
     }
 
     @Override
-    public NeedChain.Legs legs(String key, Playbook pb, Set<String> kept, NeedChain.World w) {
+    public NeedChain.Legs legs(String key, Playbook pb, Set<String> kept, NeedChain.World w) { return ask(key, pb, kept, null, w); }
+
+    /**
+     * 0.39.z78 D6 (run DT 16:25:09-21: the one-leg trip's own chain, 2.1-2.2 s on the client tick at each landing): an order's
+     * own chain on the worker - the same protocol as the legs (snapshot, the live check, the kept applied result, the drop
+     * cap's stand); the chain, or the thinking stand (NeedChain.thinking) while the worker resolves.
+     */
+    @Override
+    public NeedChain.Chain own(String key, BatchWay.OwnAsk own, NeedChain.World w) { return ask(key, null, Set.of(), own, w).chain(); }
+
+    /** The request here, on the client tick (rule 7: the worker threw): the legs, or the own chain as legs. */
+    private static NeedChain.Legs here(Playbook pb, Set<String> kept, BatchWay.OwnAsk own, NeedChain.World w) {
+        if (own != null) return new NeedChain.Legs(own.resolve(w), Map.of(), -1);
+        return NeedChain.keepingFuel(kept, () -> NeedChain.resolvePlaybookLegs(pb, w));
+    }
+
+    private NeedChain.Legs ask(String key, Playbook pb, Set<String> kept, BatchWay.OwnAsk own, NeedChain.World w) {
         State s = states.computeIfAbsent(key, k -> new State());
         PlannerWorker.Done d = worker.poll(key);
         if (d != null) s.ready = d;
         Map<PlanNodes.Fact, Object> live = new HashMap<>();
-        boolean same = s.version >= 0 && Deep.equal(pb, s.pb) && Deep.equal(kept, s.kept);
+        boolean same = s.version >= 0 && Deep.equal(pb, s.pb) && Deep.equal(kept, s.kept) && Deep.equal(own, s.own);
         PlannerWorker.Done r = s.ready;
         s.ready = null;
         if (r != null && same && r.job().version() == s.version) {
@@ -101,7 +119,7 @@ public final class PlannerPort implements BatchWay.Planner {
                 if (r.error() instanceof RuntimeException) {
                     // rule 7: the worker could not resolve it - said, and resolved here as before D6
                     log.accept("planner: the trip " + key + " could not be resolved off the render thread (" + r.error() + "): resolved on the client tick");
-                    return NeedChain.keepingFuel(kept, () -> NeedChain.resolvePlaybookLegs(pb, w));
+                    return here(pb, kept, own, w);
                 }
                 // review: a stack overflow or out of memory is not tried again on the render thread (its stack is the smaller):
                 // the trip fails with the reason, said loud; a new request (a changed fact) asks the worker again
@@ -124,6 +142,7 @@ public final class PlannerPort implements BatchWay.Planner {
                 s.applied = r;
                 s.appliedPb = pb;
                 s.appliedKept = Set.copyOf(kept);
+                s.appliedOwn = own;
                 lastApplyNs = System.nanoTime() - t0;
                 lastResolveNs = r.resolveNs();
                 lastStats = r.read().stats();
@@ -162,7 +181,7 @@ public final class PlannerPort implements BatchWay.Planner {
             // re-priced the trip - 435 trip lines, a stand every ~250 ms): the result last applied for this very request
             // (the same playbook, the same kept fuels) is checked live first; while every fact it read holds it is the answer
             // again (its effects run again, fresh step objects: as a resolve now would give) - no worker round, no stand
-            if (s.applied != null && !worker.busy(key) && Deep.equal(pb, s.appliedPb) && Deep.equal(kept, s.appliedKept)) {
+            if (s.applied != null && !worker.busy(key) && Deep.equal(pb, s.appliedPb) && Deep.equal(kept, s.appliedKept) && Deep.equal(own, s.appliedOwn)) {
                 long c0 = System.nanoTime();
                 List<String> changed = epochHolds(s.applied, w) ? check(s.applied, w, live) : List.of("game data");
                 io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.split("check", System.nanoTime() - c0);
@@ -182,9 +201,10 @@ public final class PlannerPort implements BatchWay.Planner {
         long t0 = System.nanoTime();
         s.pb = pb;
         s.kept = Set.copyOf(kept);
+        s.own = own;
         s.version = ++version;
         PlannerSnapshot snap = PlannerSnapshot.take(w, s.keys, live, s.version, tick.getAsLong());
-        worker.submit(new PlannerWorker.Job(key, s.version, pb, s.kept, snap));
+        worker.submit(new PlannerWorker.Job(key, s.version, pb, s.kept, snap, own));
         lastSnapNs = System.nanoTime() - t0;
         io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.split("snapshot", lastSnapNs);
         return NeedChain.thinking(s.waitWords);

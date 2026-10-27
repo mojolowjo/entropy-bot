@@ -675,7 +675,7 @@ class Z77PlaybookTest {
         laps.split("check", 2_000_000);
         now[0] = 30_000_000;
         String l = laps.line(7, 20);
-        assertTrue(l.endsWith("| resolves 1 = 3.0 ms | playbook 2 = 7.5 ms | playbook split: derive 1.0, check 2.0, snapshot 0.0, apply 0.0, rest 4.5 ms"), l);
+        assertTrue(l.endsWith("| resolves 1 = 3.0 ms (client nodes 0, re-resolved 0, reused 0) | playbook 2 = 7.5 ms | playbook split: derive 1.0, check 2.0, snapshot 0.0, apply 0.0, rest 4.5 ms"), l);
         // 0.39.z78 run DQ: the live fact asks by field, the dearest first, five named
         laps.begin(true);
         for (String f : List.of("price", "price", "strip", "seen", "cave", "where", "feet")) laps.ask(f, "price".equals(f) ? 3_000_000 : "feet".equals(f) ? 100_000 : 1_000_000);

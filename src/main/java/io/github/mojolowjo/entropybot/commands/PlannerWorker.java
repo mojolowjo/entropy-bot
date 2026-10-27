@@ -22,7 +22,10 @@ import java.util.function.Function;
  */
 public final class PlannerWorker {
     /** One request: the trip {@code key}, its version (the port's counter), the playbook, the kept fuels, the facts. */
-    public record Job(String key, long version, Playbook pb, Set<String> keptFuel, PlannerSnapshot snap) {}
+    public record Job(String key, long version, Playbook pb, Set<String> keptFuel, PlannerSnapshot snap, io.github.mojolowjo.entropybot.aa.brain.BatchWay.OwnAsk own) {
+        /** The trip's legs (no own chain). */
+        public Job(String key, long version, Playbook pb, Set<String> keptFuel, PlannerSnapshot snap) { this(key, version, pb, keptFuel, snap, null); }
+    }
 
     /**
      * One result: its request, the legs, the record of what it read, the resolve time on the worker; {@code error}: it threw
@@ -55,12 +58,15 @@ public final class PlannerWorker {
     /** Tests: {@code resolver} in place of NeedChain. */
     public PlannerWorker(Function<Job, Done> resolver) { this.resolver = resolver; }
 
-    static Done resolve(Job j) {
+    /** The live resolve of {@code j} (tests wrap it to watch the worker). */
+    public static Done resolve(Job j) {
         long t0 = System.nanoTime();
         Object start = NeedChain.dataEpoch(j.snap().world());
         try {
+            // 0.39.z78 D6 (run DT): an order's own chain (Goals' own supplier as a request), else the trip's legs
             NeedChain.Legs l = NeedChain.offThread(j.snap().extras(), j.snap().bag(),
-                    () -> NeedChain.keepingFuel(j.keptFuel(), () -> NeedChain.resolvePlaybookLegs(j.pb(), j.snap().world())));
+                    () -> j.own() != null ? new NeedChain.Legs(j.own().resolve(j.snap().world()), Map.of(), -1)
+                            : NeedChain.keepingFuel(j.keptFuel(), () -> NeedChain.resolvePlaybookLegs(j.pb(), j.snap().world())));
             return new Done(j, l, NeedChain.lastRead(), System.nanoTime() - t0, null, start, NeedChain.dataEpoch(j.snap().world()));
         } catch (RuntimeException | Error e) {        // rule 7: any failure is posted and said by the port, never a dead thread
             return new Done(j, null, NeedChain.Read.NONE, System.nanoTime() - t0, e, start, null);

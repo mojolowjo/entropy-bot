@@ -70,6 +70,36 @@ public final class BatchWay {
 
         /** A result for the trip {@code key}'s request has arrived (its kept thinking stand is priced again to take it). */
         boolean ready(String key);
+
+        /**
+         * 0.39.z78 D6 (run DT 16:25:09-21: the one-leg trip's own chain resolved on the client tick, 2.1-2.2 s each landing):
+         * the order's own chain {@code ask} for {@code key} on {@code w}, as {@link #legs} - the applied worker result when
+         * its facts hold now, else the thinking stand (NeedChain.thinking).
+         */
+        NeedChain.Chain own(String key, OwnAsk ask, NeedChain.World w);
+    }
+
+    /**
+     * 0.39.z78 D6 (run DT): an order's own chain as the worker resolves it - NeedChain.resolveAll({@code what}, {@code ids},
+     * {@code n}) for a group, else NeedChain.resolve({@code what}, {@code n}) - Goals' own supplier as a request.
+     */
+    public record OwnAsk(String what, List<String> ids, int n, boolean group) {
+        public OwnAsk {
+            ids = ids == null ? List.of() : List.copyOf(ids);
+        }
+
+        /** The chain on {@code w} (the worker's resolve, or Goals' own on the tick). */
+        public NeedChain.Chain resolve(NeedChain.World w) {
+            return group ? NeedChain.resolveAll(what, ids, n, w) : NeedChain.resolve(what, n, w);
+        }
+    }
+
+    /**
+     * 0.39.z78 D6 (run DT): the stand a thinking own chain is (the trip's own words for a leg not priced yet, shape):
+     * "trip: stand (not priced yet: the planner waits on its answer (...))", the bot standing (rule 22).
+     */
+    static NeedChain.Chain ownStand(NeedChain.Chain thinking) {
+        return new NeedChain.Chain(List.of(new Step.AwaitPaths(NeedChain.firstAnswerWaitS())), 0, STAND + thinking.missing() + ")", true, null);
     }
 
     /** The start of a trip line ("trip b1 (6 orders): ..."). */
@@ -253,10 +283,22 @@ public final class BatchWay {
 
     private static final Map<String, Own> OWN = new ConcurrentHashMap<>();
 
-    private static NeedChain.Chain own(Goals.Goal g, String key, long landed, java.util.function.Supplier<NeedChain.Chain> own) {
+    /** 0.39.z78 D6: the planner key of an order's own chain ("own " + the order's id), apart from the trips' keys. */
+    public static final String OWN_KEY = "own ";
+
+    private static NeedChain.Chain own(Blackboard bb, Goals.Goal g, String key, long landed, java.util.function.Supplier<NeedChain.Chain> own,
+                                       OwnAsk ask, NeedChain.World w) {
         Own o = OWN.get(g.id());
         if (o != null && o.key().equals(key) && (o.settled() || o.landed() == landed)) return o.chain();
-        NeedChain.Chain c = own.get();
+        // 0.39.z78 D6 (run DT 16:25:09-21: 2.1-2.2 s on the client tick at each landing): with the planner worker installed the
+        // own chain is asked of it as the trip's legs are - its applied result (kept below as before), or the thinking stand
+        // while it resolves (never kept: the next ask takes the result); without it, resolved here as before
+        Planner port = ask != null && bb.fact(PLANNER_FACT) instanceof Planner pp ? pp : null;
+        NeedChain.Chain c;
+        if (port != null) {
+            c = port.own(OWN_KEY + g.id(), ask, w);
+            if (NeedChain.thinking(c)) return ownStand(c);
+        } else c = own.get();
         PRICED.merge("own " + g.id(), 1, Integer::sum);
         if (c != null) OWN.put(g.id(), new Own(key, landed, !c.waiting() && !Steps.waitsOnPaths(c.steps()), c));
         return c;
@@ -270,14 +312,19 @@ public final class BatchWay {
      * order's dropped sources), so the six orders' per-tick tests share one price and a landed path re-prices it once.
      */
     static NeedChain.Chain trip(Blackboard bb, Goals.Goal g, NeedChain.World w0, java.util.function.Supplier<NeedChain.Chain> own) {
-        return trip(bb, g, w0, own, false);
+        return trip(bb, g, w0, own, false, null);
+    }
+
+    static NeedChain.Chain trip(Blackboard bb, Goals.Goal g, NeedChain.World w0, java.util.function.Supplier<NeedChain.Chain> own, boolean waitTest) {
+        return trip(bb, g, w0, own, waitTest, null);
     }
 
     /**
      * 0.39.z77 trip: as above; {@code waitTest} - the brain's per-tick waiting test asks (Goals.ownChain): while the batch's
      * running step needs no walk it reads the kept trip ({@link #hold}); every other ask derives by the key, as before.
      */
-    static NeedChain.Chain trip(Blackboard bb, Goals.Goal g, NeedChain.World w0, java.util.function.Supplier<NeedChain.Chain> own, boolean waitTest) {
+    static NeedChain.Chain trip(Blackboard bb, Goals.Goal g, NeedChain.World w0, java.util.function.Supplier<NeedChain.Chain> own, boolean waitTest,
+                                OwnAsk ask) {
         List<Goals.Goal> open = open(bb, g);
         if (open.isEmpty()) open = List.of(g);
         String tk = tripKey(g);
@@ -319,9 +366,9 @@ public final class BatchWay {
                 if (bb.port != null) Goals.park(bb, o, NO_WAY + t.chain().why());
                 gone &= o.parked != null;
             }
-            if (!t.ends().contains(g.id()) && gone) return trip(bb, g, w0, own, waitTest);     // the ended orders parked: the key changes
+            if (!t.ends().contains(g.id()) && gone) return trip(bb, g, w0, own, waitTest, ask);     // the ended orders parked: the key changes
         }
-        return t.chain() != null ? t.chain() : own(g, t.key(), landed(w), own);
+        return t.chain() != null ? t.chain() : own(bb, g, t.key(), landed(w), own, ask, w0);     // the own chain's world: the order's (Goals.chainWorld)
     }
 
     /** 0.39.z77 trip: the batch {@code tk}'s order whose typed run runs now ({@code run}), null: none or another batch's. */
