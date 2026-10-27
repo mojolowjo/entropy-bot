@@ -279,7 +279,7 @@ public final class BatchWay {
         // kept the trip priced without it)
         java.util.Set<String> held = new java.util.TreeSet<>(Goals.droppedSources(g, pos).keySet());
         held.addAll(others.keySet());
-        held.addAll(WorldFacts.of(bb).heldAt(bb.in).keySet());
+        held.addAll(WorldFacts.of(bb).heldAt(bb).keySet());     // 0.39.z77 world 3: by state (hysteresis), never the raw distance
         boolean under = bb.in != null && bb.in.underDepth >= io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth();
         String base = tripKeyOf(tk, open, pos, under, held);
         Trip kept = TRIPS.get(tk);

@@ -93,7 +93,7 @@ class Z77WorldFactsTest {
         assertNotEquals("west", heading(c), "the strip west at y 17 is out for the helmet too: " + c.why());
         assertTrue(c.why().contains("water ahead at 8 17 0") && c.why().contains("(a world fact: minecraft:raw_iron learned it at 9 17 1)"), c.why());
         FakePort port = (FakePort) bb.port;
-        long said = port.log.stream().filter(l -> l.contains("held as a world fact") && l.contains("|17|west") && l.contains("only when its cause is gone")).count();
+        long said = port.log.stream().filter(l -> l.contains("held as a world fact") && l.contains("|17|west") && l.contains("tried again when its cause is gone")).count();
         assertEquals(1, said, port.log.toString());
         assertTrue(port.log.stream().anyMatch(l -> l.startsWith("minecraft:iron_ore: strip ") && l.contains("water ahead at 8 17 0")
                 && l.contains("minecraft:raw_iron learned it at 9 17 1")), port.log.toString());
@@ -153,6 +153,120 @@ class Z77WorldFactsTest {
         assertTrue(c.why().contains("water ahead at 18 16 -23") && c.why().contains("(a world fact: minecraft:raw_iron learned it at 16 16 -23)"), c.why());
     }
 
+    // ---- 0.39.z77 world 3 (review): a heading by its start, the cause re-read, hysteresis, the first cell ----
+
+    static StripBand bandAt(int y, String first, int x, int z) {
+        List<OreBand.Feature> fs = Z43StripWayTest.iron();
+        return new StripBand(IRON, -64, 384, y, OreBand.perSlab(fs, y), x, z, y, first, "minecraft:stone", StripOrder.headingOrder(null, first));
+    }
+
+    /** Review 1: a heading blocked at its start is kept by that start (the square "area 0,0" of 9 17 1); from another start it is tried. */
+    @Test
+    void aBlockedHeadingHoldsOnlyFromItsOwnStart() {
+        ScenariosTest.world("wooden", "stone");
+        Clock.Fake clock = new Clock.Fake(10_000_000);
+        Blackboard bb = bb(band(17, "west"), clock);
+        bb.in.pos = new int[]{9, 17, 1};
+        Goals.Goal pickaxe = Goals.draft(DebugTreeTest.item("raw_iron"), 3, 0, clock.now());
+        Step.Strip st = new Step.Strip(IRON, Map.of("iron", 3), 17, "west", 0);
+        FactChange.stripBlocked(17, "west", "strip: no path (strip west feet y 17: 0 blocks, 0 clusters mined)");
+        assertNotNull(Goals.replan(bb, pickaxe, st, FactChange.take(), "strip: no path").steps());
+        assertEquals("area 0,0", NeedChain.stripStart(band(17, "west")));
+        Goals.Goal helmet = Goals.draft(DebugTreeTest.item("iron_ore"), 5, 0, clock.now());
+        Chain c = Goals.chain(bb, helmet);
+        assertEquals("north", heading(c), "west from the same start is out: " + c.why());
+        assertTrue(c.why().contains(NeedChain.headingFrom(NeedChain.headingKey(17, "west"), "area 0,0")), c.why());
+        // the bot's column 41 blocks on (another start, "area 0,-3"): the same heading at the same Y is another tunnel
+        StripBand other = bandAt(17, "west", 9, -40);
+        bb.fact(NeedChain.WORLD_FACT, (Supplier<NeedChain.World>) () -> Z62RunSTest.world(Map.of("minecraft:stone_pickaxe", 1), other));
+        bb.in.pos = new int[]{9, 17, -40};
+        assertEquals("west", heading(Goals.chain(bb, helmet)), "tried from another start");
+    }
+
+    /** Review 1: the water cell re-read - loaded, in range and no longer fluid - lifts the strip fact (removed); no answer holds it. */
+    @Test
+    void theWaterCellSeenDryLiftsTheStripFact() {
+        ScenariosTest.world("wooden", "stone");
+        Clock.Fake clock = new Clock.Fake(10_000_000);
+        Blackboard bb = bb(band(17, "west"), clock);
+        Boolean[] answer = {null};
+        List<String> asked = new java.util.ArrayList<>();
+        bb.fact(WorldFacts.FLUID_FACT, (java.util.function.Function<int[], Boolean>) c -> { asked.add(c[0] + " " + c[1] + " " + c[2]); return answer[0]; });
+        bb.in.pos = new int[]{9, 17, 1};
+        Goals.Goal pickaxe = Goals.draft(DebugTreeTest.item("raw_iron"), 3, 0, clock.now());
+        waterAhead(bb, pickaxe, 17, "west", "8 17 0");
+        bb.in.pos = new int[]{10, 17, -16};
+        Goals.Goal helmet = Goals.draft(DebugTreeTest.item("iron_ore"), 5, 0, clock.now());
+        assertNotEquals("west", heading(Goals.chain(bb, helmet)), "not loaded / out of range: no answer, held");
+        assertTrue(asked.contains("8 17 0"), "the cause cell is the one asked: " + asked);
+        answer[0] = Boolean.TRUE;
+        assertNotEquals("west", heading(Goals.chain(bb, helmet)), "still water: held");
+        answer[0] = Boolean.FALSE;
+        assertEquals("west", heading(Goals.chain(bb, helmet)), "the water is gone: the tunnel is tried again");
+        answer[0] = Boolean.TRUE;
+        assertEquals("west", heading(Goals.chain(bb, helmet)), "removed, not held again until an order meets it again");
+        assertEquals(0, WorldFacts.of(bb).size());
+    }
+
+    /**
+     * Review 2: feet jittering across failures.moved (15 / 17 blocks from where the station walk failed, Y only, so the
+     * trip's place cell stays) for 20 ticks re-derive the trip at most once. Control: 15 / 25 (past failures.moved + 8)
+     * flips the hold and the trip every tick.
+     */
+    @Test
+    void feetJitteringAtTheEdgeDoNotChurnTheTrip() {
+        assertTrue(jitterDerivations(33) <= 1, "hysteresis: at most 1 re-derivation in 20 ticks");
+        assertTrue(jitterDerivations(41) >= 10, "control: past the margin every flip re-derives");
+    }
+
+    static int jitterDerivations(int farY) {
+        ScenariosTest.world("wooden", "stone");
+        Clock.Fake clock = new Clock.Fake(10_000_000);
+        Blackboard bb = new Blackboard(clock, new FakePort(), new Tracer());
+        bb.fact(NeedChain.WORLD_FACT, (Supplier<NeedChain.World>) Z65RunVTest::farTableWorld);
+        bb.in.pos = new int[]{-261, 16, 22};
+        Goals.Goal g = Goals.draft(DebugTreeTest.item("stone_pickaxe"), 1, 0, clock.now());
+        Step.ToStation walk = new Step.ToStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT, "crafting_table", -261, 75, 21);
+        FactChange.stationWalk("crafting_table", -261, 75, 21, "the walk to it ended short: couldn't get there");
+        assertNotNull(Goals.replan(bb, g, walk, FactChange.take(), "couldn't get there").steps());
+        Goals.Goal next = Goals.draft(DebugTreeTest.item("iron_ore"), 1, 0, clock.now());
+        String tk = io.github.mojolowjo.entropybot.aa.brain.BatchWay.tripKey(next);
+        bb.in.pos = new int[]{-261, 31, 22};                                 // 15 blocks
+        Goals.chain(bb, next);
+        int before = io.github.mojolowjo.entropybot.aa.brain.BatchWay.priced(tk);
+        for (int t = 0; t < 20; t++) {
+            bb.in.pos = new int[]{-261, t % 2 == 0 ? farY : 31, 22};
+            Goals.chain(bb, next);
+        }
+        int n = io.github.mojolowjo.entropybot.aa.brain.BatchWay.priced(tk) - before;
+        io.github.mojolowjo.entropybot.aa.brain.BatchWay.clear();
+        return n;
+    }
+
+    /** Review 3: the same key learned again while it holds keeps its first cell; once lifted, learned anew. Distance with hysteresis. */
+    @Test
+    void theFirstCellIsKeptAndTheDistanceHasHysteresis() {
+        WorldFacts w = new WorldFacts();
+        Inputs in = new Inputs();
+        in.pos = new int[]{20, 28, 19};
+        assertTrue(w.learned("collect raw_iron at 20 28 19", "no progress at 20 28 19", "a", in));     // run CS 19:33
+        in.pos = new int[]{20, 28, 29};                                     // 10 on: learned again
+        assertTrue(w.learned("collect raw_iron at 20 28 19", "no progress at 20 28 19", "b", in));
+        assertTrue(w.heldAt(in, null).get("collect raw_iron at 20 28 19").contains("a learned it at 20 28 19"), "the first cell, the first learner");
+        in.pos = new int[]{20, 28, 36};                                     // 17 off: inside the band, still held
+        assertEquals(1, w.heldAt(in, null).size());
+        in.pos = new int[]{20, 28, 44};                                     // 25 off: past 16 + 8, lifted
+        assertTrue(w.heldAt(in, null).isEmpty());
+        in.pos = new int[]{20, 28, 36};                                     // 17 again: stays lifted
+        assertTrue(w.heldAt(in, null).isEmpty());
+        in.pos = new int[]{20, 28, 34};                                     // 15: held again
+        assertEquals(1, w.heldAt(in, null).size());
+        in.pos = new int[]{20, 28, 60};
+        w.heldAt(in, null);
+        assertTrue(w.learned("collect raw_iron at 20 28 19", "no progress", "c", in), "lifted here: a fact learned anew");
+        assertTrue(w.heldAt(in, null).get("collect raw_iron at 20 28 19").contains("c learned it at 20 28 60"));
+    }
+
     /** The store's own rules: what is shared, what lifts it. */
     @Test
     void sharedLiftedAndNotShared() {
@@ -162,25 +276,23 @@ class Z77WorldFactsTest {
         in.pos = new int[]{20, 28, 19};
         assertFalse(w.learned(NeedChain.CLIMB_KEY, "the climb up failed", "goal.a", in), "the climb's one more try is per order");
         in.bag = Map.of("cobblestone", 5);
-        assertTrue(w.learned("collect raw_iron at 20 28 19", "no progress at 20 28 19", "a", in));     // run CS 19:33
+        assertTrue(w.learned("collect raw_iron at 20 28 19", "no progress at 20 28 19", "a", in));
         assertTrue(w.learned("collect torch", "i have no coal", "a", in));
         Set<String> own = Set.of("collect raw_iron at 20 28 19", "collect torch");
-        assertEquals(Map.of(), w.heldFor(own, in), "the learner keeps its own holds (its own rules), not these");
-        assertEquals(2, w.heldFor(Set.of(), in).size(), "any other order - aa want of the same item again too (same id, none of its own)");
-        assertTrue(w.heldFor(Set.of(), in).get("collect raw_iron at 20 28 19").startsWith("no progress at 20 28 19 (a world fact: a learned it at 20 28 19)"));
-        in.bag = Map.of("cobblestone", 5, "coal", 1);                       // the cause gone: the bag's total rose
-        assertEquals(List.of("collect raw_iron at 20 28 19"), List.copyOf(w.heldFor(Set.of(), in).keySet()));
-        in.pos = new int[]{20, 28, 36};                                     // 17 blocks off
-        assertTrue(w.heldFor(Set.of(), in).isEmpty());
+        assertEquals(Map.of(), w.heldFor(own, in, null), "the learner keeps its own holds (its own rules), not these");
+        assertEquals(2, w.heldAt(in, null).size(), "any other order - aa want of the same item again too (same id, none of its own)");
+        assertTrue(w.heldAt(in, null).get("collect raw_iron at 20 28 19").startsWith("no progress at 20 28 19 (a world fact: a learned it at 20 28 19)"));
+        in.bag = Map.of("cobblestone", 5, "coal", 1);                       // the cause gone: the bag's total rose - removed
+        assertEquals(List.of("collect raw_iron at 20 28 19"), List.copyOf(w.heldAt(in, null).keySet()));
+        assertEquals(1, w.size());
         String strip = NeedChain.STRIP_KEY + "minecraft:deepslate_iron_ore,minecraft:iron_ore|17|west", heading = NeedChain.headingKey(17, "west");
         in.pos = new int[]{9, 17, 1};
         assertTrue(w.learned(strip, "strip: water ahead at 8 17 0", "a", in));
-        assertTrue(w.learned(heading, "blocked at its start", "a", in));
+        assertTrue(w.learned(heading, "blocked at its start", "a", in, "area 0,0"));
         in.pos = new int[]{9, 17, 200};                                     // far off: a strip fact never lifts on distance
-        assertEquals(java.util.Set.of(strip, heading), w.heldFor(Set.of(), in).keySet());
-        assertTrue(w.sayOnce("o", "helmet", strip, "x").contains("only when its cause is gone"));
+        assertEquals(Set.of(strip, NeedChain.headingFrom(heading, "area 0,0")), w.heldAt(in, null).keySet());
+        assertTrue(w.sayOnce("o", "helmet", strip, "x").contains("when its cause is gone"));
         in.pos = null;
-        in.bag = Map.of("cobblestone", 5);
-        assertEquals(4, w.heldAt(in).size(), "feet not known: held (rule 15)");
+        assertEquals(2, w.heldAt(in, null).size(), "feet not known: the strip facts held (rule 15)");
     }
 }

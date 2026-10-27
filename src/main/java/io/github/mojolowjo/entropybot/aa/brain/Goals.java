@@ -454,7 +454,12 @@ public final class Goals {
         // 0.39.z77 walk: a held walk target keeps it too (the same per-position hold)
         if (sourceFact) g.sources.failedFor(g.id(), src, fact.text(), bb.clock.now(), positional(src) ? bb.in : null, ORDER_LIFE_MS);
         // 0.39.z77 world (run CX 22:43:18: the met pickaxe's water-ahead strip re-tried by the helmet): the fact is the world's
-        if (sourceFact) WorldFacts.of(bb).learned(src, fact.text(), g.r.key(), bb.in);
+        // 0.39.z77 world 3 (review 1): a heading fact is kept by the tunnel's start too - the strip's fresh start, else the
+        // square of the feet's column (where a strip from the feet starts, NeedChain.stripStart)
+        int[] feet = bb.in == null ? null : bb.in.pos;
+        String start = failed instanceof io.github.mojolowjo.entropybot.aa.moves.Step.Strip st && st.from() != null ? st.from()
+                : feet == null || feet.length < 3 ? null : "area " + StripAreas.square(feet[0], feet[2]);     // structural: x y z
+        if (sourceFact) WorldFacts.of(bb).learned(src, fact.text(), g.r.key(), bb.in, start);
         var ch = runChain(bb, g);
         if (ch == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");
         // 0.39.z73 (D2 3.4): the repair, priced against this full re-plan
@@ -963,7 +968,7 @@ public final class Goals {
         int[] pos = bb.in == null ? null : bb.in.pos;
         var dropped = droppedSources(g, pos);
         // 0.39.z77 world (manager 2026-10-26; run CX 22:43:18, run CS 19:33-19:37): another order's source fact holds here too
-        for (var e : WorldFacts.of(bb).heldFor(droppedSources(g).keySet(), bb.in).entrySet()) {
+        for (var e : WorldFacts.of(bb).heldFor(bb, droppedSources(g).keySet()).entrySet()) {
             if (dropped.putIfAbsent(e.getKey(), e.getValue()) != null || bb.port == null) continue;
             String line = WorldFacts.of(bb).sayOnce(g.id() + " " + g.given, g.r.key(), e.getKey(), e.getValue());
             if (line != null) bb.port.log(line);

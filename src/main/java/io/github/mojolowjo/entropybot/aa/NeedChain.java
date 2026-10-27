@@ -155,6 +155,17 @@ public final class NeedChain {
     public static String headingKey(int y, String heading) { return STRIP_HEADING + "y " + y + " " + heading; }
 
     /**
+     * 0.39.z77 world 3 (review 1): a heading fact kept by the tunnel's start too ("strip heading y Y h|from area ax,az"):
+     * the world fact another order learned (WorldFacts) skips that heading only for a strip from the same start.
+     */
+    public static String headingFrom(String headingKey, String start) { return headingKey + "|from " + start; }
+
+    /** 0.39.z77 world 3: a strip way's start - a fresh start's own area, else the square of the column it starts from. */
+    public static String stripStart(StripBand b) {
+        return b.fresh() ? b.from() : "area " + io.github.mojolowjo.entropybot.aa.brain.StripAreas.square(b.x(), b.z());
+    }
+
+    /**
      * 0.39.z67 item 1 (run Y 09:26:14 / 09:31:16: "place crafting_table near me: no cell within 3 blocks; none to clear either"
      * swimming at sea level, re-planned to the same "place near me" at the same spot, the order stopped): a place-near that
      * failed is a fact about WHERE it failed: held for the order under this key ("place at x y z", the feet then).
@@ -452,6 +463,7 @@ public final class NeedChain {
                 // (its key: lava, no path down to the band, a tunnel that ended short) drops the way as before
                 for (String hd : r.headings()) {
                     if (keyWhy.containsKey(headingKey(r.y(), hd))) continue;
+                    if (keyWhy.containsKey(headingFrom(headingKey(r.y(), hd), stripStart(r)))) continue;    // 0.39.z77 world 3: from this start
                     StripBand t = r.toward(hd);
                     return keyWhy.containsKey(t.key()) ? null : t;
                 }

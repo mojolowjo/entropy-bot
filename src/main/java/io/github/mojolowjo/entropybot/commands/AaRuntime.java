@@ -101,6 +101,7 @@ public final class AaRuntime implements JobPort {
         bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.SURFACE_FACTS, perTick(new io.github.mojolowjo.entropybot.aa.FactsMemo<>(0), timed("surface", this::surfaceFacts)));
         bb.fact(io.github.mojolowjo.entropybot.aa.NeedChain.WORLD_FACT, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.NeedChain.World>) this::needWorld);
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.NOT_READY_FACT, (java.util.function.Supplier<String>) this::sensesNotReady);   // 0.39.z36
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.WorldFacts.FLUID_FACT, (java.util.function.Function<int[], Boolean>) AaRuntime::fluidAt);   // 0.39.z77 world 3
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.BatchWay.PER_SLAB_FACT, (java.util.function.BiFunction<String, Integer, Double>) this::perSlabAt);   // 0.39.z77 J2
         io.github.mojolowjo.entropybot.aa.brain.BatchWay.clear();     // 0.39.z77 review 5: a new runtime's "b1" never inherits an old b1's verdict
         bb.fact(io.github.mojolowjo.entropybot.aa.FoodOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts>) this::foodFacts);
@@ -1227,6 +1228,21 @@ public final class AaRuntime implements JobPort {
      * 0.39.z47: the reason an open order dropped this source (z33's Goal.sources, by the chain's source key), null when no
      * order dropped it. The chain's explore does not end on a dropped source (ExploreRules.untilFound).
      */
+    /**
+     * 0.39.z77 world 3 (review 1): a world fact's cause re-read (WorldFacts.FLUID_FACT) - is the cell {x, y, z} fluid (water,
+     * lava; vanilla ClientLevel#getFluidState), null when it is not loaded (ClientLevel#isLoaded) or farther from the eyes
+     * than seen.range (the fair-play sight distance, sense/Seen): no answer, the fact holds (rule 15). Client thread.
+     */
+    static Boolean fluidAt(int[] c) {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer p = mc.player;
+        if (p == null || mc.level == null || c == null || c.length < 3) return null;     // structural: x y z
+        if (!io.github.mojolowjo.entropybot.sense.Seen.inRange(p.getX(), p.getEyeY(), p.getZ(), c[0], c[1], c[2])) return null;
+        net.minecraft.core.BlockPos at = new net.minecraft.core.BlockPos(c[0], c[1], c[2]);
+        if (!mc.level.isLoaded(at)) return null;
+        return !mc.level.getFluidState(at).isEmpty();
+    }
+
     String droppedByOrder(String part, io.github.mojolowjo.entropybot.aa.NeedChain.Spot sp) {
         if (bb == null || sp == null) return null;
         String key = io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(part, sp), spot = io.github.mojolowjo.entropybot.aa.NeedChain.spotKey(part, sp);
@@ -1237,7 +1253,7 @@ public final class AaRuntime implements JobPort {
             if (why != null) return why;
         }
         // 0.39.z77 world: a source another order dropped here (a world fact) ends no explore either, its order met or not
-        var world = io.github.mojolowjo.entropybot.aa.brain.WorldFacts.of(bb).heldAt(bb.in);
+        var world = io.github.mojolowjo.entropybot.aa.brain.WorldFacts.of(bb).heldAt(bb);
         String why = world.get(key);
         return why != null ? why : world.get(spot);
     }

@@ -7,6 +7,9 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 0.39.z77 world (manager's ruling 2026-10-26 ~23:00; run CX 22:42:18 -> 22:43:18: the pickaxe's strip north at y 16 met
@@ -14,25 +17,47 @@ import java.util.Set;
  * Failures per order) went off the goal list with it, so the helmet ran the same strip to the same water; run CS
  * 19:33-19:37: each order took the same seen ore 20 28 19 to the same no-progress): a source fact one order learned - water
  * or lava ahead on a heading at a Y, no path from a cell, no progress at a source, an unreachable spot - is a fact about the
- * WORLD, not about the order. Kept here by its source key with the cell the feet stood on when it was learned and the
- * order that learned it; every other order's chain (Goals.chainWorld) prices without it while the feet are within
- * failures.moved of that cell - the batch's open orders and later orders of the run (the AA's blackboard).
+ * WORLD, not about the order. Kept here by its source key with the cell the feet stood on when it was FIRST learned and the
+ * order that learned it; every other order's chain (Goals.chainWorld) prices without it while it holds - the batch's open
+ * orders and later orders of the run (the AA's blackboard; a new world is a new run).
  *
- * <p>Lifted as the order holds are: the feet more than failures.moved from the cell (a try from there is another try), or
- * the cause gone (a missing-item fact once the bag's total rose, Failures#sweep's rule). 0.39.z77 world 2: a strip fact
- * is about its tunnel key and lifts only when its cause is gone ({@link #stripFact}). The order that learned it keeps
- * its own hold as before (Goals#droppedSources). Not shared: a fact learned with the feet not known (no world position to
- * key it by, rule 15) and the climb way (its one more try is per order, Goals#parkedTick). In memory only.
- * Pure (JUnit: Z77WorldFactsTest). Loader notes: none.
+ * <p>When it holds (0.39.z77 world 3, review):
+ * <ul>
+ * <li>Any fact: gone (removed) when its cause is gone - a missing-item fact once the bag's total rose (Failures#sweep's
+ * rule); a fact naming "water/lava ahead at x y z" once that cell reads not fluid while loaded and in sight range
+ * ({@link #FLUID_FACT}, the game side's answer; not loaded or out of range: no answer, rule 15).</li>
+ * <li>A strip fact ({@link #stripFact}) is about its tunnel, never the bot's distance: the way key names the tunnel
+ * (ores, Y, heading, a fresh start's area); a heading blocked or ended at its Y is kept by the tunnel's start as well
+ * ({@link #scoped}: "|from area ax,az"), so the same heading from another start is another fact. Lifts: the cause re-read,
+ * a fresh start elsewhere (another key), the run's end.</li>
+ * <li>Any other fact holds by distance with hysteresis: held within failures.moved of the cell, lifted only beyond
+ * failures.moved + {@link #MARGIN}, held again only within failures.moved - feet jittering at the edge never flip it
+ * (the batch trip's key reads these, BatchWay.trip).</li>
+ * </ul>
+ * The order that learned it keeps its own hold as before (Goals#droppedSources). Not shared: a fact learned with the feet
+ * not known (no world position, rule 15) and the climb way (its one more try is per order, Goals#parkedTick). A read
+ * refreshes the states (the removals, the hysteresis). In memory only. Pure (JUnit: Z77WorldFactsTest). Loader notes:
+ * none here; the fluid answer is AaRuntime#fluidAt (vanilla ClientLevel#isLoaded / #getFluidState).
  */
 public final class WorldFacts {
     /** The blackboard fact holding the run's world facts. */
     public static final String FACT = "aa.worldFacts";
+    /** The blackboard fact: cell {x, y, z} -> fluid there (TRUE / FALSE), null: not loaded or out of sight range. */
+    public static final String FLUID_FACT = "aa.worldFacts.fluidAt";
 
-    /** One fact: its source key, the learner's reason, the feet then, the bag's total then, the order that learned it. */
-    public record Rec(String key, String reason, int[] cell, int items, String order) {}
+    /** structural: the hysteresis band past failures.moved (blocks) before a distance-held fact lifts; feet jitter ~1-2 blocks. */
+    static final double MARGIN = 8; // structural: hysteresis band (review 2's "larger structural margin")
 
-    private final Map<String, Rec> map = new LinkedHashMap<>();
+    /** One fact: its store key, the learner's reason, the feet when first learned, the bag's total then, the learner, the cause cell (null: none named). */
+    public record Rec(String key, String reason, int[] cell, int items, String order, int[] cause) {}
+
+    private static final class Entry {
+        final Rec rec;
+        boolean in = true;           // the hysteresis state (distance facts): held now
+        Entry(Rec r) { rec = r; }
+    }
+
+    private final Map<String, Entry> map = new LinkedHashMap<>();
     /** "order id|key" said once: the line that another order's fact holds here. */
     private final Set<String> said = new HashSet<>();
 
@@ -49,19 +74,11 @@ public final class WorldFacts {
         return key != null && !key.isBlank() && !io.github.mojolowjo.entropybot.aa.NeedChain.CLIMB_KEY.equals(key);
     }
 
-    /** {@code order} (its word) learned {@code key} ({@code reason}) with the senses {@code in}; false: not shared (the climb, or no feet). */
-    public boolean learned(String key, String reason, String order, Inputs in) {
-        if (!shared(key) || in == null || in.pos == null || in.pos.length < 3) return false;     // structural: x y z
-        map.put(key, new Rec(key, reason, in.pos.clone(), Failures.items(in), order));
-        return true;
-    }
-
     /**
      * 0.39.z77 world 2 (manager 2026-10-26, run CX 22:43:21: the helmet 17.0 blocks from the pickaxe's water-ahead strip ran
      * it to the same water in 0.0 s - the fork's strip resumes its saved tunnel by its key from anywhere): a strip fact
-     * (the way's key "strip ores|Y|heading[|from area ax,az]", or a heading blocked at its Y "strip heading y Y h") is about
-     * that tunnel key, never about where the bot stands; it lifts only when its cause is gone. A strip from fresh ground at
-     * another spot ({@code StripBand#freshAt}) is another key, so it is tried.
+     * (the way's key "strip ores|Y|heading[|from area ax,az]", or a heading at its Y "strip heading y Y h") is about the
+     * tunnel, never about where the bot stands.
      */
     static boolean stripFact(String key) {
         return key != null && (key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STRIP_KEY)
@@ -69,13 +86,57 @@ public final class WorldFacts {
     }
 
     /**
-     * Lifted: the cause gone (a missing-item fact with the bag's total risen); any fact but a strip fact also once the feet
-     * are more than failures.moved from the cell. Feet unknown: held.
+     * 0.39.z77 world 3 (review 1): the store key - a heading fact ("strip heading y Y h") with its tunnel's start
+     * ({@code start}: "area ax,az", NeedChain#stripStart) appended (NeedChain#headingFrom), every other key as it is.
      */
-    static boolean lifted(Rec r, Inputs in) {
-        if (in == null) return false;
-        if (!stripFact(r.key()) && in.pos != null && in.pos.length >= 3 && Failures.moved(r.cell(), in.pos) > Failures.movedV()) return true;     // structural: x y z
-        return Failures.Cause.of(r.reason()) == Failures.Cause.NO_ITEM && r.items() >= 0 && Failures.items(in) > r.items();
+    static String scoped(String key, String start) {
+        if (key == null || !key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STRIP_HEADING) || start == null) return key;
+        return io.github.mojolowjo.entropybot.aa.NeedChain.headingFrom(key, start);
+    }
+
+    private static final Pattern CAUSE = Pattern.compile("(?:water|lava) ahead at (-?\\d+) (-?\\d+) (-?\\d+)");
+
+    /** The cell a reason names as its cause ("water ahead at 8 17 0"), null: none. */
+    static int[] causeCell(String reason) {
+        if (reason == null) return null;
+        Matcher m = CAUSE.matcher(reason);
+        return m.find() ? new int[]{Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)), Integer.parseInt(m.group(3))} : null;
+    }
+
+    /**
+     * {@code order} (its word) learned {@code key} ({@code reason}) with the senses {@code in}, the tunnel's start
+     * {@code start} for a heading fact (null: none); false: not shared (the climb, no feet). The same key learned again
+     * while it holds keeps its first cell (review 3: the hold's centre never walks with the bot); one that no longer holds
+     * here (lifted by distance) is a fact learned anew.
+     */
+    public boolean learned(String key, String reason, String order, Inputs in, String start) {
+        if (!shared(key) || in == null || in.pos == null || in.pos.length < 3) return false;     // structural: x y z
+        String k = scoped(key, start);
+        Entry e = map.get(k);
+        if (e != null && e.in) return true;
+        map.put(k, new Entry(new Rec(k, reason, in.pos.clone(), Failures.items(in), order, causeCell(reason))));
+        return true;
+    }
+
+    public boolean learned(String key, String reason, String order, Inputs in) { return learned(key, reason, order, in, null); }
+
+    /** Refreshes every entry on {@code in} and {@code fluid}: the causes gone are removed, the distance states moved. */
+    void refresh(Inputs in, Function<int[], Boolean> fluid) {
+        map.values().removeIf(e -> gone(e.rec, in, fluid));
+        if (in == null || in.pos == null || in.pos.length < 3) return;         // structural: x y z; feet unknown: states kept
+        for (Entry e : map.values()) {
+            if (stripFact(e.rec.key())) continue;
+            double d = Failures.moved(e.rec.cell(), in.pos);
+            if (d <= Failures.movedV()) e.in = true;
+            else if (d > Failures.movedV() + MARGIN) e.in = false;
+        }
+    }
+
+    /** The cause is gone: a missing-item fact with the bag's total risen, or the named cause cell read not fluid. */
+    static boolean gone(Rec r, Inputs in, Function<int[], Boolean> fluid) {
+        if (in != null && Failures.Cause.of(r.reason()) == Failures.Cause.NO_ITEM && r.items() >= 0 && Failures.items(in) > r.items()) return true;
+        if (r.cause() == null || fluid == null) return false;
+        return Boolean.FALSE.equals(fluid.apply(r.cause().clone()));
     }
 
     /** The reason another order reads: the learner's reason, who learned it and where. */
@@ -83,23 +144,29 @@ public final class WorldFacts {
         return r.reason() + " (a world fact: " + r.order() + " learned it at " + r.cell()[0] + " " + r.cell()[1] + " " + r.cell()[2] + ")";
     }
 
+    @SuppressWarnings("unchecked")
+    static Function<int[], Boolean> fluid(Blackboard bb) {
+        return bb.fact(FLUID_FACT) instanceof Function<?, ?> f ? (Function<int[], Boolean>) f : null;
+    }
+
     /**
-     * The facts held now for an order whose own held keys are {@code own} (key -> reason): every held fact but the order's
-     * own keys - those keep the order's own rules (Goals#droppedSources; a station back once closer). By key, never by the
-     * order's id: aa want of the same item again is a new order with the same id and none of its own.
+     * The facts held now for an order whose own held keys are {@code own} (store key -> reason): every held fact but the
+     * order's own keys - those keep the order's own rules (Goals#droppedSources; a station back once closer). By key, never
+     * by the order's id: aa want of the same item again is a new order with the same id and none of its own.
      */
-    public Map<String, String> heldFor(Set<String> own, Inputs in) {
+    public Map<String, String> heldFor(Set<String> own, Inputs in, Function<int[], Boolean> fluid) {
+        refresh(in, fluid);
         Map<String, String> out = new LinkedHashMap<>();
-        for (Rec r : map.values()) if (!own.contains(r.key()) && !lifted(r, in)) out.put(r.key(), text(r));
+        for (Entry e : map.values()) if (e.in && !own.contains(e.rec.key())) out.put(e.rec.key(), text(e.rec));
         return out;
     }
 
-    /** Every fact held now, whoever learned it (key -> reason): the batch's trip key and an explore's end read these. */
-    public Map<String, String> heldAt(Inputs in) {
-        Map<String, String> out = new LinkedHashMap<>();
-        for (Rec r : map.values()) if (!lifted(r, in)) out.put(r.key(), text(r));
-        return out;
-    }
+    public Map<String, String> heldFor(Blackboard bb, Set<String> own) { return heldFor(own, bb.in, fluid(bb)); }
+
+    /** Every fact held now, whoever learned it (store key -> reason): the batch's trip key and an explore's end read these. */
+    public Map<String, String> heldAt(Inputs in, Function<int[], Boolean> fluid) { return heldFor(Set.of(), in, fluid); }
+
+    public Map<String, String> heldAt(Blackboard bb) { return heldAt(bb.in, fluid(bb)); }
 
     /**
      * The line saying that {@code key}, another order's fact, holds for {@code orderWord} here - once per order and key
@@ -108,10 +175,10 @@ public final class WorldFacts {
     public String sayOnce(String order, String orderWord, String key, String why) {
         if (!said.add(order + "|" + key)) return null;
         if (stripFact(key))
-            return orderWord + ": " + key + " held as a world fact: " + why + "; that tunnel is tried again only when its cause is gone"
-                    + " (a strip from fresh ground elsewhere is another tunnel)";
+            return orderWord + ": " + key + " held as a world fact: " + why + "; that tunnel is tried again when its cause is gone"
+                    + " (the water or lava cell seen without it), from another start, or in the next run";
         return orderWord + ": " + key + " held here as a world fact: " + why + "; tried again once the bot is more than "
-                + Math.round(Failures.movedV()) + " blocks from there (failures.moved)";
+                + Math.round(Failures.movedV() + MARGIN) + " blocks from there (failures.moved + " + Math.round(MARGIN) + ")";
     }
 
     public int size() { return map.size(); }
