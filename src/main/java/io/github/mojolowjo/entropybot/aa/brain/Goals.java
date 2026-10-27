@@ -577,11 +577,6 @@ public final class Goals {
             return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, w);
         }
         boolean sw = switches(g.pricedWay, left, g.pricedExplore, newWay, ch.seconds(), ch.explore(), switchMarginS());
-        // 0.39.z77 seen 4 (run DA 00:30:22, 00:34:32: both seen switches went to ways that did not take the vein - the known
-        // cave, a spot 58 m off - the second at 742 s over 415 s left by the z49 explore rule): a seen ask asks "collect this
-        // vein now or finish the step"; a cheapest way that does not take the vein answers "finish" - other ways switch on
-        // their own facts (the explore's find, a landing, a failure)
-        if (seen && sw && !io.github.mojolowjo.entropybot.aa.SeenAsk.takes(ch.steps(), io.github.mojolowjo.entropybot.aa.moves.FactChange.seenCell(fact))) sw = false;
         if (seen) {
             String line = seenLine(fact, ch, left, at, sw);
             bb.port.log(g.r.key() + ": " + line + " (chain: " + ch.why() + ")");
@@ -642,8 +637,7 @@ public final class Goals {
     /**
      * 0.39.z77 seen (pure): the owner's line for a seen source's re-price - "seen iron at 3 40 0: collect now (5 s) vs finish
      * to y 16 (priced path) (78 s) - collect now" ({@code sw}: the new pick runs) or "... - the step runs on (replan.switchMarginS
-     * 10)". The new pick that does not take the seen vein says so: "collect now (not in the cheapest way: N s without it)" - and
-     * (0.39.z77 seen 4) the step runs on: "the step runs on (a seen vein switches only to collect it)". {@code left}
+     * 10)". The new pick that does not take the seen vein says so: "collect now (not in the cheapest way: N s without it)". {@code left}
      * NaN: "?" (no running price). {@code at} null: "the running step".
      */
     public static String seenLine(io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact, io.github.mojolowjo.entropybot.aa.NeedChain.Chain ch, double left, Step at, boolean sw) {
@@ -654,8 +648,7 @@ public final class Goals {
         String now = uses ? "collect now (" + Math.round(ch.seconds()) + " s)" : "collect now (not in the cheapest way: " + Math.round(ch.seconds()) + " s without it)";
         String step = at == null ? "the running step" : at.text();
         return where + ": " + now + " vs finish " + step + " (" + (Double.isNaN(left) ? "?" : Math.round(left)) + " s) - "
-                + (sw ? "collect now" : uses ? "the step runs on (replan.switchMarginS " + Math.round(switchMarginS()) + ")"
-                : "the step runs on (a seen vein switches only to collect it)");
+                + (sw ? (uses ? "collect now" : "switched to " + (ch.steps().isEmpty() ? "nothing" : ch.steps().get(0).text())) : "the step runs on (replan.switchMarginS " + Math.round(switchMarginS()) + ")");
     }
 
     /** 0.39.z48: what is left of the running pick's price now (its price less the time since; NaN: none taken). */

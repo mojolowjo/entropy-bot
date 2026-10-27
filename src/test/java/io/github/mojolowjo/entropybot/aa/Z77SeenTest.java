@@ -52,7 +52,7 @@ class Z77SeenTest {
     static final String IRON_ORE = Z77PlaybookTest.IRON_ORE;
 
     /** The loot data's source blocks of a need word (the adapter's sourceBlocksOf): raw iron from the iron ores. */
-    static final Function<String, Set<String>> BLOCKS = w -> w.contains("raw_iron") ? Set.of(IRON_ORE, "minecraft:deepslate_iron_ore") : Set.of();
+    static final Function<String, Set<String>> BLOCKS = w -> w.contains("minecraft:raw_iron") ? Set.of(IRON_ORE, "minecraft:deepslate_iron_ore") : Set.of();
 
     /**
      * Under ground at {@code feet} (64 - y of ground over them), a stone pickaxe in the bag; the walk is Baritone's fake path: a
@@ -166,7 +166,7 @@ class Z77SeenTest {
         run.tick(2);
         assertEquals(0, h.cancels, "the walk runs on: " + port.log);
         assertEquals(List.of(run.steps().get(0).text()), h.started, "never restarted");
-        assertEquals(List.of("seen iron at 0 40 20: collect now (not in the cheapest way: 75 s without it) vs finish to y 16 (priced path) (75 s) - the step runs on (a seen vein switches only to collect it)"),
+        assertEquals(List.of("seen iron at 0 40 20: collect now (not in the cheapest way: 75 s without it) vs finish to y 16 (priced path) (75 s) - the step runs on (replan.switchMarginS 10)"),
                 port.told.stream().filter(l -> l.startsWith("seen ")).toList(), "said once");
         assertNull(see(a, run, feet, 60_000, iron(1, 40, 21)), "the same vein: asked once");
         run.tick(3);
@@ -378,53 +378,6 @@ class Z77SeenTest {
         assertEquals(1, asked.size(), "one re-price");
         assertEquals("seen iron at 2 26 3 (4 away) for minecraft:raw_iron", asked.get(0).text());
         assertTrue(a.notes().isEmpty());
-    }
-
-    // ---- seen 4 (manager 2026-10-27 ~00:55, run DA): a seen switch is a switch to collect the vein ----
-
-    /**
-     * Run DA 00:34:32 ("seen iron at 33 54 -12: collect now (not in the cheapest way: 742 s without it) vs finish explore 5
-     * until raw_iron (415 s) - switched to collect raw_iron 19" - a spot 58 m off, not the vein; 00:30:22 the same shape
-     * with the known cave): the order raw_iron 3 explores (no strip way here, no source known). A vein is seen 19 blocks off,
-     * its walk 40 blocks of tunnel; with it a 3-block spot 5 blocks off becomes known too. The re-price's cheapest way digs
-     * the near spot, not the vein - by the z49 rule a priced way over an explore would switch at any price; the seen ask's
-     * question was the vein, so the explore runs on, said once. The near spot is the explore's own find (its until check).
-     */
-    @Test
-    void da_aSeenVeinNotInTheCheapestWay_theExploreRunsOn() {
-        Z77PlaybookTest.data();
-        int[] feet = {0, 40, 0};
-        World[] w = {under(feet, Map.of(), Set.of()).withStrip(x -> null)};
-        FakePort port = new FakePort();
-        List<Goals.Goal> gs = new ArrayList<>();
-        Blackboard bb = board(port, w, feet, gs);
-        Goals.Goal g = gs.get(0);
-        var rt = Goals.routine(bb, g);
-        assertNotNull(rt.steps(), rt.why());
-        assertTrue(rt.steps().get(0) instanceof Step.ToSurface && rt.steps().get(1) instanceof Step.Explore ex && ex.until() != null,
-                "the order goes up and explores (DA: climb, explore 5 until raw_iron): " + rt.steps());
-        assertTrue(g.pricedExplore, "its pick ends in an explore");
-        Z48ScenarioTest.Hands h = new Z48ScenarioTest.Hands();
-        Steps run = new Steps(h);
-        run.start("goal.raw_iron", rt.steps(), rt.uses(), 0, Goals.replanner(bb, g));
-        h.done = rt.steps().get(0).text();
-        run.tick(1);
-        assertTrue(run.steps().get(run.index()) instanceof Step.Explore, "the explore runs: " + h.started);
-        w[0] = under(feet, Map.of("raw_iron", List.of(new Spot(5, 40, 0, 5, IRON_ORE, 3), new Spot(0, 40, 19, 19, IRON_ORE, 1))), Set.of("0 40 19")).withStrip(x -> null);
-        SeenAsk a = new SeenAsk();
-        FactChange.Fact f = see(a, run, feet, 0, iron(0, 40, 19));
-        assertEquals("seen iron at 0 40 19 (19 away) for raw_iron", f.text(), "the explore until raw_iron needs iron");
-        run.tick(2);
-        assertEquals(0, h.cancels, "the explore runs on: " + port.told);
-        // the cheapest way: the near spot, 5 / 4.317 + 3 x 1.15 = 4.6 s; the vein 19 m: 48 s of tunnel + 1.15 (dropped, dearer)
-        assertEquals(List.of("seen iron at 0 40 19: collect now (not in the cheapest way: 5 s without it) vs finish explore 5 until raw_iron (456 s) - the step runs on (a seen vein switches only to collect it)"),
-                port.told.stream().filter(l -> l.startsWith("seen ")).toList(), "said once");
-        assertTrue(Goals.switches(true, 456, true, true, 742, false, Goals.switchMarginS()), "was: the z49 rule switches a priced way over an explore at any price (DA: 742 s over 415 s)");
-        // the near spot is the explore's own find (Mining's until check, FactChange.found): that path switches, as before
-        run.repriceAtNextStep(FactChange.found("a source of raw_iron is known: iron_ore at 5 40 0 (5 away)"));
-        run.tick(3);
-        assertEquals(1, h.cancels, "the explore's find switches it: " + port.log);
-        assertTrue(run.steps().get(run.index()) instanceof Step.Collect c && c.at()[0] == 5, run.steps().toString());
     }
 
     // ---- folded in: explore until iron_ingot ----
