@@ -317,6 +317,15 @@ public final class StepMonitor {
             String k = io.github.mojolowjo.entropybot.aa.NeedChain.exploreFrozenKey(feet);
             return new Look(Verdict.REPLAN, why, FactChange.noProgress(k, why + " at " + step.text()));
         }
+        // 0.39.z77 spot (run DC 01:35:36: "no progress 30 s ... at collect raw_iron 4" at -10 23 23 held the ITEM key "collect
+        // raw_iron" for the order and as a world fact - every raw_iron spot out, the iron seen at 13 19 12 at 01:36:55 never
+        // offered, the order climbed and explored): a collect that stalls is a fact about WHERE it stalled - the spot the chain
+        // priced (its at), else the feet - held as that spot's near-collect key (the item's spots within failures.moved of it
+        // out, z75 review 2 / z76 send-back 2); a spot farther off stays a way. No position known: the item key, as before
+        if (step instanceof Step.Collect k) {
+            int[] at = k.at() != null && k.at().length >= 3 ? k.at() : feet != null && feet.length >= 3 ? feet : null;     // structural: x y z
+            if (at != null) return new Look(Verdict.REPLAN, why, FactChange.noProgress(io.github.mojolowjo.entropybot.aa.NeedChain.nearKey(k.item(), at), why + " at " + step.text()));
+        }
         String src = io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(step);
         FactChange.Fact f = src != null ? FactChange.noProgress(src, why + " at " + step.text())
                 : new FactChange.Fact("step " + StepId.of(step).text(), why + " at " + step.text());
