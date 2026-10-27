@@ -14,7 +14,10 @@ class SafetyNetTest {
     void theRestoreListLeavesBreakingAndPlacingToTheForkProcesses() {
         // 0.39.z8 (owner 2026-10-22, "remove the old job habit"): allowBreak / allowPlace / allowBreakAnyway are each
         // fork process's own for its run; "stop" never flips them
-        assertEquals(List.of("allowInventory", "buildIgnoreExisting"), SafetyRules.RESTORE_FALSE);
+        // 0.39.z77 hotbar: allowInventory is the fork run lease's too (Baritone reaches into the bag for its tool)
+        assertEquals(List.of("buildIgnoreExisting"), SafetyRules.RESTORE_FALSE);
+        assertFalse(SafetyRules.RESTORE_FALSE.contains("allowInventory") || SafetyRules.RESTORE_RESET.contains("allowInventory")
+                || SafetyRules.RESTORE_FALSE_IF_PRESENT.contains("allowInventory"), "no stop restore turns the lease's allowInventory off");
         assertEquals(List.of("lavaCellCost"), SafetyRules.RESTORE_RESET);
         assertEquals(List.of("backfill", "allowBreakNextToWater", "allowBreakNextToLava", "pathUnderWater"),SafetyRules.RESTORE_FALSE_IF_PRESENT);
     }

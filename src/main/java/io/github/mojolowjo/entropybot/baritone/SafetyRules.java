@@ -23,9 +23,13 @@ public final class SafetyRules {
      * What {@code restore()} puts back, in this order (the bridge's restoreSafeSettings): the booleans to false, the
      * resets to their defaults, then the protected list and the FIXED_OFF settings. 0.39.z8 (owner 2026-10-22, "remove
      * the old job habit"): allowBreak, allowPlace and allowBreakAnyway are not here: each fork process owns them for its
-     * own run and puts them back at its end.
+     * own run and puts them back at its end. 0.39.z77 hotbar (owner 2026-10-26, RULES rule 2: Baritone may reach into the
+     * bag for the tool a move needs): allowInventory is not here either. It came from the bridge's restoreSafeSettings
+     * (the zone build's leftover, Baritone's default false put back with the build's other settings), never an item-safety
+     * rule; the fork's run lease holds it for every run and puts it back at the last release, and the fork's tool reach
+     * leaves a reserved bag tool alone.
      */
-    public static final List<String> RESTORE_FALSE = List.of("allowInventory", "buildIgnoreExisting");
+    public static final List<String> RESTORE_FALSE = List.of("buildIgnoreExisting");
     public static final List<String> RESTORE_RESET = List.of("lavaCellCost");     // 0.39.s5: the reflex lava wade
     public static final List<String> RESTORE_FALSE_IF_PRESENT = List.of("backfill", "allowBreakNextToWater", "allowBreakNextToLava", "pathUnderWater");   // 0.36.8: our fork's mine-job setting
 

@@ -647,7 +647,7 @@ final class DigCommands {
         Settings s = BaritoneAPI.getSettings();
         io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.BUILD, "build");
         s.buildIgnoreExisting.value = true;
-        s.allowInventory.value = true;
+        // 0.39.z77 hotbar: allowInventory is the fork run lease's (the builder run holds it)
         Clearing.applyLook(bs);
         Clearing.fallOn(bs);
         var cm = b.getCommandManager();

@@ -1296,7 +1296,7 @@ public final class Clearing {
         // B7d review: the build's own settings back too (the bridge's restoreSafeSettings reset all four)
         try {
             baritone.api.Settings s = BaritoneAPI.getSettings();
-            s.allowInventory.value = false;
+            // 0.39.z77 hotbar: allowInventory is the fork run lease's (the builder run holds it)
             s.buildIgnoreExisting.value = false;
         } catch (Throwable caught) { Quiet.warn("Clearing.endBuild failed, carrying on with the fallback", caught); }
         bs.leases.releaseAll();

@@ -246,7 +246,7 @@ final class SchematicBuild {
             st.layerHeight.value = 1;
             io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.BUILD, "build");
             st.buildIgnoreExisting.value = true;
-            st.allowInventory.value = true;
+            // 0.39.z77 hotbar: allowInventory is the fork run lease's (the builder run holds it)
             Clearing.applyLook(bs);
             Clearing.fallOn(bs);
             b.getCommandManager().execute("sel clear");

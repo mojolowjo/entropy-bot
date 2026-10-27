@@ -289,7 +289,7 @@ public final class BuilderDig {
         st.layerHeight.value = 1;
         st.breakFromAbove.value = true;
         st.buildIgnoreExisting.value = false;
-        st.allowInventory.value = true;
+        // 0.39.z77 hotbar: allowInventory is the fork run lease's (the builder run holds it)
         // live check 2026-10-13: with it on, the in-place click on a block it already looks at never lands in this pack
         st.remainWithExistingLookDirection.value = false;
         // live probe 2026-10-13 (plan section 9): the aim jitter (randomLooking113, about 1 degree a tick) makes a block seen
@@ -303,7 +303,7 @@ public final class BuilderDig {
     static void restoreSettings(State s) {
         try {
             Settings st = BaritoneAPI.getSettings();
-            st.allowInventory.value = false;
+            // 0.39.z77 hotbar: allowInventory is the fork run lease's (the builder run holds it)
             st.buildIgnoreExisting.value = false;
             if (s.saved != null) {
                 st.buildInLayers.value = s.saved.buildInLayers;
