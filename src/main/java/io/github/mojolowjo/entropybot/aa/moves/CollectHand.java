@@ -59,6 +59,19 @@ public final class CollectHand {
     }
 
     /**
+     * 0.39.z77 J2 E4, for the mine and (review of 4e5e57e1) the vein after its walk: Baritone's goal cells ({@code goals})
+     * all more than {@code moved} (failures.moved) from the priced spot - it goes for other blocks, not the priced ones: the
+     * step's failure text, the spot's near-collect fact said; null: no spot, no goal cell, or one near it (rule 15).
+     */
+    public static String targetAway(Step.Collect spot, java.util.List<int[]> goals, double moved, Hand hand, String what, int got, int want) {
+        if (spot == null || !spot.targetAway(goals, moved)) return null;
+        String why = what + ": Baritone's " + hand.name + " goes for blocks away from the priced spot " + spot.spot() + " (its " + goals.size() + " goal cell"
+                + (goals.size() == 1 ? "" : "s") + " all more than failures.moved " + Math.round(moved) + " from it), got " + got + " of " + want;
+        FactChange.nearCollect(spot.item(), spot.at(), why);
+        return why;
+    }
+
+    /**
      * The walk to the priced spot before the vein ended with the feet not by it: the step's failure text, the spot's
      * near-collect fact said ({@code baritone}: Baritone's last word on the walk, null: none).
      */

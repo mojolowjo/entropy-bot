@@ -55,6 +55,21 @@ class CollectHandTest {
         assertNull(CollectHand.veinNoneInView(k, "cluster 6 blocks: picked up 4 of 6", new int[]{13, 40, 5}, "c", 1, 3), "a short pickup: ChopEnd's words");
     }
 
+    /** Review of 4e5e57e1: a vein whose goal cells all drift from the priced spot raises the spot's near-collect fact, as the mine's. */
+    @Test
+    void aVeinGoingForBlocksAwayFromTheSpot_isTheSpotsFact_asTheMines() {
+        Step.Collect k = new Step.Collect("raw_iron", 3, new int[]{12, 40, 5});
+        String why = CollectHand.targetAway(k, java.util.List.of(new int[]{40, 40, 5}, new int[]{41, 39, 5}), 16, CollectHand.Hand.VEIN, "collect 3 raw_iron", 1, 3);
+        assertNotNull(why);
+        assertEquals("collect 3 raw_iron: Baritone's vein goes for blocks away from the priced spot 12 40 5 (its 2 goal cells all more than failures.moved 16 from it), got 1 of 3", why);
+        assertEquals(why, FactChange.take().text(), "the near-collect fact is written");
+        assertNull(CollectHand.targetAway(k, java.util.List.of(new int[]{40, 40, 5}, new int[]{14, 40, 5}), 16, CollectHand.Hand.VEIN, "c", 1, 3), "one goal cell near the spot: no claim");
+        assertNull(CollectHand.targetAway(k, java.util.List.of(), 16, CollectHand.Hand.VEIN, "c", 1, 3), "no goal cell (a break in reach): no claim");
+        assertNull(FactChange.take());
+        String mine = CollectHand.targetAway(k, java.util.List.of(new int[]{40, 40, 5}), 16, CollectHand.Hand.MINE, "collect 3 raw_iron", 0, 3);
+        assertTrue(mine.startsWith("collect 3 raw_iron: Baritone's mine goes for blocks away from the priced spot 12 40 5 (its 1 goal cell all"), "the mine's words unchanged: " + mine);
+    }
+
     @Test
     void theWalkToTheSpotEndingShort_isTheSpotsFact() {
         Step.Collect k = new Step.Collect("raw_iron", 3, new int[]{12, 40, 5});

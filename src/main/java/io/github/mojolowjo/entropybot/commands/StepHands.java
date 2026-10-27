@@ -1363,13 +1363,11 @@ public final class StepHands implements Steps.Hands {
         // 0.39.z77 J2 E4 (run AP 00:07:24): the mine's own goal - every block it goes for - more than failures.moved from the
         // priced spot: the same spot's fact before the feet show it (no new comparison, rule 14)
         if (collectSpot != null && b != null && !Core.INSTANCE.reflexes.hold()) {
-            List<int[]> goals = goalCells(b.getPathingBehavior().getGoal());
-            if (collectSpot.targetAway(goals, io.github.mojolowjo.entropybot.aa.brain.Failures.movedV())) {
+            String why = io.github.mojolowjo.entropybot.aa.moves.CollectHand.targetAway(collectSpot, goalCells(b.getPathingBehavior().getGoal()),
+                    io.github.mojolowjo.entropybot.aa.brain.Failures.movedV(), io.github.mojolowjo.entropybot.aa.moves.CollectHand.Hand.MINE, miningWhat, got, want);
+            if (why != null) {
                 b.getMineProcess().cancel();
                 endMining();
-                String why = miningWhat + ": Baritone's mine goes for blocks away from the priced spot " + collectSpot.spot() + " (its " + goals.size() + " goal cell"
-                        + (goals.size() == 1 ? "" : "s") + " all more than failures.moved " + Math.round(io.github.mojolowjo.entropybot.aa.brain.Failures.movedV()) + " from it), got " + got + " of " + want;
-                io.github.mojolowjo.entropybot.aa.moves.FactChange.nearCollect(collectSpot.item(), collectSpot.at(), why);
                 return Car.Status.failed(why);
             }
         }
@@ -1424,6 +1422,17 @@ public final class StepHands implements Steps.Hands {
             if (end != null) return Car.Status.failed(end);
             LOG.info("[entropybot] steps: {} - at the priced spot {}: Baritone's vein on what is in view", miningWhat, collectSpot.spot());
             return Car.Status.running(miningWhat + ": " + got + " of " + want + " (Baritone's vein)");
+        }
+        // review of 4e5e57e1: the mine's E4 guard for the vein too (after its walk) - its goal cells all away from the priced
+        // spot: the spot's near-collect fact, the vein stopped
+        if (!Core.INSTANCE.reflexes.hold()) {
+            String away = io.github.mojolowjo.entropybot.aa.moves.CollectHand.targetAway(collectSpot, goalCells(b.getPathingBehavior().getGoal()),
+                    io.github.mojolowjo.entropybot.aa.brain.Failures.movedV(), io.github.mojolowjo.entropybot.aa.moves.CollectHand.Hand.VEIN, miningWhat, got, want);
+            if (away != null) {
+                b.getVeinProcess().cancel();
+                endMining();
+                return Car.Status.failed(away);
+            }
         }
         if (b.getVeinProcess().isActive() || Core.INSTANCE.reflexes.hold()) return Car.Status.running(miningWhat + ": " + got + " of " + want + " (Baritone's vein)");
         endMining();
