@@ -90,8 +90,12 @@ public final class BatchWay {
      * 0.39.z77 trip: the order whose typed run runs ({@code order}: its goal id, the run's desire), its running step, that
      * step's planned counts ({@code uses}: Chain#uses; null: not known) and the furnaces' remaining inputs ({@code furnace}:
      * item id -> count, this dimension; null: not read). AaRuntime publishes it each AA tick, before the tree.
+     * 0.39.z77 trip 2 (run CV 22:03-22:06): {@code goal} - the order itself (null: found on the goal list by id). Goals.done
+     * takes a met order off the list, also one whose desire carries the run on, so a lookup by id found no runner then.
      */
-    public record Run(String order, Step step, Map<String, Integer> uses, Map<String, Integer> furnace) {}
+    public record Run(String order, Goals.Goal goal, Step step, Map<String, Integer> uses, Map<String, Integer> furnace) {
+        public Run(String order, Step step, Map<String, Integer> uses, Map<String, Integer> furnace) { this(order, null, step, uses, furnace); }
+    }
 
     /** 0.39.z77 trip: per batch, the running step the waiting test held the kept trip for (by identity) and its facts then. */
     private record Hold(Step step, String facts) {}
@@ -297,7 +301,10 @@ public final class BatchWay {
 
     /** 0.39.z77 trip: the batch {@code tk}'s order whose typed run runs now ({@code run}), null: none or another batch's. */
     static Goals.Goal runner(Blackboard bb, String tk, Run run) {
-        if (run == null || run.order() == null || !(bb.fact(Goals.FACT) instanceof List<?>)) return null;
+        if (run == null) return null;
+        // 0.39.z77 trip 2 (run CV 22:03:00: the met chestplate carried the run on off the goal list; "playbook 2" each tick)
+        if (run.goal() != null) return tk.equals(tripKey(run.goal())) ? run.goal() : null;
+        if (run.order() == null || !(bb.fact(Goals.FACT) instanceof List<?>)) return null;
         for (Goals.Goal o : Goals.of(bb)) if (run.order().equals(o.id()) && tk.equals(tripKey(o))) return o;
         return null;
     }

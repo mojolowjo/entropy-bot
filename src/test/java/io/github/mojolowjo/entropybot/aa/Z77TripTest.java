@@ -181,6 +181,50 @@ class Z77TripTest {
         assertEquals(p1 + 20, BatchWay.priced("b1"), "the runner's key and the next order's: two derivations a tick (was)");
     }
 
+    // ---- trip 2: run CV - the met runner off the goal list ----
+
+    /**
+     * Run CV 22:03:00-22:06:44 ("iron_chestplate: met inside the batch's playbook run", then "playbook 2" on all 92 AA ticks,
+     * 72 of them during `mine cave iron 2 10m`, 7 during `smelt iron_ingot 7 here`): Goals.done takes the met runner off the
+     * goal list while its desire carries the run on. The run fact names the order itself, so its holds are in every ask's
+     * key: a walking step with nothing changing derives nothing in 10 ticks; the smelt with landings and ingots is held (0).
+     * Control - the runner looked up by id only (trip 1): not found off the list, two keys, two derivations a tick.
+     */
+    @Test
+    void cv_theMetRunnerOffTheGoalList_oneKeyAndTheSmeltHeld() {
+        Cu cu = cu();
+        Goals.Goal runner = cu.helmet();
+        Chain ch = Goals.chain(cu.bb(), cu.gs().get(3));
+        assertTrue(Goals.done(cu.bb()).contains(runner), "the met order leaves the goal list");
+        assertFalse(Goals.of(cu.bb()).contains(runner));
+        Step walk = new Step.Walk(22, 9, 5, 0);
+        cu.bb().fact(BatchWay.RUN_FACT, new BatchWay.Run(runner.id(), runner, walk, null, null));
+        cu.tick();
+        int p0 = BatchWay.priced("b1");
+        for (int t = 0; t < 10; t++) cu.tick();
+        assertEquals(p0, BatchWay.priced("b1"), "the runner's holds in every key: kept while walking");
+        // the smelt here, paths landing and the bag gaining ingots: held
+        int at = smeltAt(ch);
+        assertTrue(at >= 0, ch.steps().toString());
+        Step smelt = ch.steps().get(at);
+        cu.bb().fact(BatchWay.RUN_FACT, new BatchWay.Run(runner.id(), runner, smelt, ch.uses().get(at), Map.of("minecraft:raw_iron", 7)));
+        cu.tick();
+        int p1 = BatchWay.priced("b1");
+        for (int t = 1; t <= 7; t++) {
+            cu.paths().landed++;
+            cu.bag(cuBag(12, t));
+            cu.bb().fact(BatchWay.RUN_FACT, new BatchWay.Run(runner.id(), runner, smelt, ch.uses().get(at), Map.of("minecraft:raw_iron", 7 - t + 1)));
+            cu.tick();
+        }
+        assertEquals(p1, BatchWay.priced("b1"), "the smelt held: no derivation");
+        // control: the runner by id only - off the goal list it is not found (CV)
+        cu.bb().fact(BatchWay.RUN_FACT, new BatchWay.Run(runner.id(), walk, null, null));
+        cu.tick();
+        int p2 = BatchWay.priced("b1");
+        for (int t = 0; t < 10; t++) cu.tick();
+        assertEquals(p2 + 20, BatchWay.priced("b1"), "by id only: two keys, two derivations a tick (CV's playbook 2)");
+    }
+
     // ---- scenario 2: the fuel the trip burns stays ----
 
     static List<String> fuels(Chain c) {

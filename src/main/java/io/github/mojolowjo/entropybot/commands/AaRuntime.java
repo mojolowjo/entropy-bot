@@ -2326,7 +2326,11 @@ public final class AaRuntime implements JobPort {
         var st = c.stepRun.steps;
         int at = st.index();
         if (at < 0 || at >= st.steps().size()) return null;
-        return new io.github.mojolowjo.entropybot.aa.brain.BatchWay.Run(taskReplan.desire(), st.steps().get(at), st.usesOf(at),
+        // 0.39.z77 trip 2 (run CV 22:03:00-22:06:44): the order itself - on the goal list, or carried on after Goals.done took it off
+        String id = taskReplan.desire();
+        io.github.mojolowjo.entropybot.aa.brain.Goals.Goal goal = carried.get(id);
+        for (var g : io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb)) if (g.id().equals(id)) goal = g;
+        return new io.github.mojolowjo.entropybot.aa.brain.BatchWay.Run(id, goal, st.steps().get(at), st.usesOf(at),
                 furnaceInputs(io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.dim()));
     }
 
@@ -3619,6 +3623,12 @@ public final class AaRuntime implements JobPort {
     /** 0.39.z77 answers (1): met orders whose desire still runs their batch's playbook (removed once that run ends). */
     private final java.util.Set<String> carrying = new java.util.LinkedHashSet<>();
 
+    /**
+     * 0.39.z77 trip 2 (run CV 22:03-22:06): the carried orders themselves by id - Goals.done takes a met order off the goal
+     * list, so the trip's runner (BatchWay.Run) is read from here while its desire carries the run on.
+     */
+    private final Map<String, io.github.mojolowjo.entropybot.aa.brain.Goals.Goal> carried = new java.util.HashMap<>();
+
     private void goalsTick(LocalPlayer p, long tick) {
         buildsTick(p, tick);
         if (!carrying.isEmpty()) {
@@ -3627,6 +3637,7 @@ public final class AaRuntime implements JobPort {
                 String id = it.next();
                 if (run != null && run.id.equals(id)) continue;
                 it.remove();
+                carried.remove(id);
                 tree.brain.remove(id, "goal reached (its batch's playbook run ended)");
             }
         }
@@ -3640,6 +3651,7 @@ public final class AaRuntime implements JobPort {
             if (io.github.mojolowjo.entropybot.aa.brain.Goals.carriesOn(g, run == null ? null : run.id)) {
                 // 0.39.z77 answers (1): the "got" is a fact inside the batch's running playbook, not the end of its run
                 carrying.add(g.id());
+                carried.put(g.id(), g);
                 LOG.info("[entropybot] aa: {}: met inside the batch's playbook run - the run carries on (its legs keep their numbers)", g.r.key());
             } else tree.brain.remove(g.id(), "goal reached");
             String msg = "got " + io.github.mojolowjo.entropybot.aa.brain.Goals.have(bb.in.bag, g) + " " + g.r.key() + " (goal " + g.n + " done)";
