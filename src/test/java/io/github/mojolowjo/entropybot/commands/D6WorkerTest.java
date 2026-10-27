@@ -306,26 +306,41 @@ class D6WorkerTest {
     // ---- run DQ diagnosis ----
 
     /**
-     * Run DQ (c): one walk priced anew (the near tree's) dirties the nodes that read it, and every later node whose entry
-     * state (the steps and seconds so far) took that walk's time misses its exact key too - the re-resolved count passes the
-     * dirty count. Printed ("D6 cascade: ..."); this documents the state of 4c7c3762, it is no target.
+     * Run DR round, option C (manager 2026-10-27: "nodes keep their sums"; run DQ: one walk re-priced re-resolved 78 of 79
+     * nodes): the near tree's walk priced anew - its tree still the pick - re-resolves exactly the nodes that read that walk
+     * and their ancestors (the paths to the root, from the kept tree), every later node reused with its own sums; the trip
+     * is the old resolve's on the new facts. Printed ("D6 sums: ...").
      */
     @Test
-    void runDQ_aChangedWalk_reResolvesPastItsDirtyNodes() {
+    void optionC_oneWalkRePriced_reResolvesOnlyItsPathsToTheRoot() {
         data();
         PlanNodes.forgetMine();
         PlanNodes.on(true);
         Live live = new Live();
         Playbook pb = Playbook.derive(KIT, Playbook.facts(live.world(), null));
-        NeedChain.resolvePlaybookLegs(pb, live.world());
+        NeedChain.Legs before = NeedChain.resolvePlaybookLegs(pb, live.world());
         NeedChain.resolvePlaybookLegs(pb, live.world());
         PlanNodes.Stats same = PlanNodes.last();
-        live.walks.put("12,64,0", PathPrice.Answer.priced(new PathPrice.Walk(41.0)));
-        NeedChain.resolvePlaybookLegs(pb, live.world());
+        java.util.function.Predicate<PlanNodes.Fact> nearWalk = f -> f.field().equals("price") && f.key() instanceof NeedChain.PathKey k && k.x() == 12 && k.z() == 0;
+        int paths = PlanNodes.touchedBy(nearWalk);
+        double was = 12 / Unit.WALK_BPS;
+        live.walks.put("12,64,0", PathPrice.Answer.priced(new PathPrice.Walk(was + 0.5)));     // dearer, still the nearest tree's win
+        NeedChain.Legs l = NeedChain.resolvePlaybookLegs(pb, live.world());
         PlanNodes.Stats moved = PlanNodes.last();
-        System.out.printf("D6 cascade: nothing changed: %s; the near tree's walk priced anew: %s%n", same.text(), moved.text());
+        System.out.printf("D6 sums: nothing changed: %s; the near tree's walk priced anew: %s (its paths to the root: %d nodes)%n", same.text(), moved.text(), paths);
         assertEquals(0, same.dirty(), same.text());
-        assertTrue(moved.dirty() > 0 && moved.resolved() > moved.dirty(), moved.text());
+        assertTrue(paths > 0 && paths < moved.nodes(), "the walk is read below the root: " + paths + " of " + moved.nodes());
+        assertEquals(paths, moved.resolved(), "only the walk's nodes and their ancestors resolved again: " + moved.text());
+        assertEquals(before.chain().steps().size(), l.chain().steps().size(), "the same pick");
+        assertTrue(Deep.equal(l, PlanNodes.old(() -> NeedChain.resolvePlaybookLegs(pb, live.world()))), "the old resolve's trip on the new facts");
+        // verify mode: every node reused with its own sums is resolved again and must be equal, exactly
+        PlanNodes.verify(true);
+        try {
+            live.walks.put("12,64,0", PathPrice.Answer.priced(new PathPrice.Walk(was + 0.25)));
+            NeedChain.resolvePlaybookLegs(pb, live.world());
+        } finally {
+            PlanNodes.verify(false);
+        }
     }
 
     // ---- run DP ----

@@ -810,6 +810,50 @@ public final class NeedChain {
         /** 0.39.z78 D6: the open node reads something no node can be keyed by (it is resolved again each time). */
         void notKept() { if (run != null && run.top != null) run.top.keep = false; }
 
+        /**
+         * 0.39.z78 D6 (run DR round, option C: nodes keep their sums): {@code s} more seconds priced, on the {@link #grid}
+         * (so every sum is exact in any order: a node's own seconds are the same whatever came before it).
+         */
+        void addS(double s) { seconds += grid(s); }
+
+        /**
+         * 0.39.z78 D6 (option C): the walk back {@link #away} read - the open node's fact while it has not set it itself (its
+         * key then holds it); a node that never read it before setting it is keyed without it.
+         */
+        double away() {
+            if (run != null && run.top != null && !run.top.awayWritten) run.top.awayRead = true;
+            return away;
+        }
+
+        /** 0.39.z78 D6 (option C): the walk back set (the open node's own; a reuse sets it only when the node did). */
+        void setAway(double v) {
+            if (run != null && run.top != null) run.top.awayWritten = true;
+            away = v;
+        }
+
+        /**
+         * 0.39.z78 D6 (option C): any dropped line matches the read {@code dep} ({@link #dropTest}: "head ", "dearer " or
+         * "exact " and its text). A read of the lines before the open node is its fact (kept as present or not), unless a line
+         * of its own matches.
+         */
+        boolean droppedHas(String dep) {
+            java.util.function.Predicate<String> test = dropTest(dep);
+            boolean own = false, before = false;
+            int at = run != null && run.top != null ? Math.min(run.top.droppedAt, dropped.size()) : 0;
+            for (int i = 0; i < dropped.size(); i++) {
+                if (!test.test(dropped.get(i))) continue;
+                if (i < at) before = true; else own = true;
+            }
+            if (run != null && run.top != null && !own) run.top.dropReads.putIfAbsent(dep, before);
+            return own || before;
+        }
+
+        /** 0.39.z78 D6 (option C): the steps before the open node were read (each open node's key then holds them). */
+        void prefixRead() {
+            if (run == null) return;
+            for (PlanNodes.Frame f = run.top; f != null; f = f.up) f.prefixRead = true;
+        }
+
         /** 0.39.z78 D6: needChain.maxTrials passed - the check counted in the open node (its trial bound, PlanNodes.Node#bound). */
         boolean overBound() {
             boolean over = trials > maxTrials();
@@ -920,11 +964,11 @@ public final class NeedChain {
                     String down, int downAt, boolean tableDown, boolean furnaceDown, Map<String, Integer> upBag, Object track) {}
 
         /** 0.39.z78 D6: the open node's bag writes as a snapshot keeps them ({@link Snap#track}). */
-        private record Track(PlanNodes.Frame frame, Set<String> written, LinkedHashSet<String> created) {}
+        private record Track(PlanNodes.Frame frame, Set<String> written, LinkedHashSet<String> created, boolean awayWritten) {}
 
         private Object track() {
             if (run == null || run.top == null) return null;
-            return new Track(run.top, new java.util.HashSet<>(run.top.written), new LinkedHashSet<>(run.top.created));
+            return new Track(run.top, new java.util.HashSet<>(run.top.written), new LinkedHashSet<>(run.top.created), run.top.awayWritten);
         }
 
         private void untrack(Object t) {
@@ -932,6 +976,7 @@ public final class NeedChain {
             if (t instanceof Track k && k.frame() == run.top) {
                 run.top.written = new java.util.HashSet<>(k.written());
                 run.top.created = new LinkedHashSet<>(k.created());
+                run.top.awayWritten = k.awayWritten();      // 0.39.z78 D6 (option C): the walk back as it was set then
             } else if (run.top != null) { run.top.keep = false; run.top.sound = false; }   // another node's snapshot: never expected; nothing kept
         }
 
@@ -1408,16 +1453,59 @@ public final class NeedChain {
         @Override public int hashCode() { return System.identityHashCode(o); }
     }
 
+    /** structural: the seconds' grid, 2^20 a second (about a microsecond; sums on it are exact below 2^33 s) */
+    private static final double GRID = 1048576.0;
+
+    /**
+     * 0.39.z78 D6 (run DR round, option C: nodes keep their sums): {@code s} on the seconds' grid - every add to the chain's
+     * seconds goes on it, so a node's own seconds (after minus entry) do not depend on what came before it; not finite: as is.
+     */
+    static double grid(double s) { return Double.isFinite(s) ? Math.rint(s * GRID) / GRID : s; }
+
+    /** 0.39.z78 D6 (option C): the reads of the dropped lines ({@link Ctx#droppedHas}): a line starting with, one that lost on seconds, the line itself. */
+    private static final String DROP_HEAD = "head ", DROP_DEARER = "dearer ", DROP_EXACT = "exact ";
+
+    private static java.util.function.Predicate<String> dropTest(String dep) {
+        if (dep.startsWith(DROP_HEAD)) { String h = dep.substring(DROP_HEAD.length()); return d -> d.startsWith(h); }
+        if (dep.startsWith(DROP_DEARER)) { String h = dep.substring(DROP_DEARER.length()); return d -> d.startsWith(h) && d.contains("dearer than"); }
+        if (dep.startsWith(DROP_EXACT)) { String x = dep.substring(DROP_EXACT.length()); return d -> d.equals(x); }
+        throw new IllegalStateException("D6: no such dropped read: " + dep);
+    }
+
+    /** 0.39.z78 D6 (option C): a node's dropped reads hold on {@code lines} (the lines before it now). */
+    private static boolean dropsHold(Map<String, Boolean> reads, List<String> lines) {
+        for (var e : reads.entrySet()) {
+            var t = dropTest(e.getKey());
+            boolean has = false;
+            for (String d : lines) if (t.test(d)) { has = true; break; }
+            if (has != e.getValue()) return false;
+        }
+        return true;
+    }
+
+    /** 0.39.z78 D6 (option C): the place-near test reads the steps before it ({@link Ctx#prefixRead}); always true. */
+    private static boolean prefixRead(Ctx c) {
+        c.prefixRead();
+        return true;
+    }
+
     /** 0.39.z78 D6: a node's key state - everything of the Ctx a node's code reads but the bag and the walk memo (those by word). */
-    private record Entry(List<Step> steps, Map<String, Integer> leafAt, Map<String, Integer> taken, List<String> dropped, double seconds, double away,
+    /*
+     * 0.39.z78 D6 (run DR round, option C - manager 2026-10-27: "nodes keep their sums"; run DQ: one walk re-priced re-resolved
+     * 78 of 79 nodes): the key holds no seconds, no dropped lines and no spare lines from before the node (its result keeps its
+     * own: Out), the steps before it only as their number - unless it read or changed them ({@code steps} then the list:
+     * Node#fullSteps) - and the walk back ({@code away}) only when it read it before setting it (else null).
+     */
+    private record Entry(Object steps, Map<String, Integer> leafAt, Map<String, Integer> taken, Double away,
                          boolean tableReady, boolean furnaceReady, boolean stuck, String unknown, String pickItem, int pickTier, boolean tableWalked,
-                         boolean furnaceWalked, int pickWorn, boolean pickMade, boolean pickOut, List<String> spares, boolean atRoom, String down, int downAt,
+                         boolean furnaceWalked, int pickWorn, boolean pickMade, boolean pickOut, boolean atRoom, String down, int downAt,
                          boolean tableDown, boolean furnaceDown, Map<String, Integer> upBag, List<String> path, int pathsWaiting, Map<String, Integer> aside,
                          boolean hoisting, boolean bandPick, Burn burned, String fail, String loopOn, Set<String> keptFuel) {}
 
     /** A cheap hash of an entry state (its sizes and scalars; equal entries hash equal, a clash is settled by Deep.equal). */
     private static int hashOf(Entry e) {
-        int h = java.util.Objects.hash(e.steps().size(), e.dropped().size(), e.spares().size(), e.seconds(), e.away(), e.pickItem(), e.pickTier(), e.pickWorn(),
+        int steps = e.steps() instanceof List<?> l ? l.size() : (Integer) e.steps();
+        int h = java.util.Objects.hash(steps, e.pickItem(), e.pickTier(), e.pickWorn(),
                 e.down(), e.downAt(), e.path(), e.pathsWaiting(), e.fail(), e.loopOn(), e.unknown(), e.leafAt().size(), e.taken().size());
         int flags = (e.tableReady() ? 1 : 0) | (e.furnaceReady() ? 2 : 0) | (e.stuck() ? 4 : 0) | (e.tableWalked() ? 8 : 0) | (e.furnaceWalked() ? 16 : 0)    // structural: bits
                 | (e.pickMade() ? 32 : 0) | (e.pickOut() ? 64 : 0) | (e.atRoom() ? 128 : 0) | (e.tableDown() ? 256 : 0) | (e.furnaceDown() ? 512 : 0)       // structural: bits
@@ -1425,12 +1513,52 @@ public final class NeedChain {
         return 31 * h + flags;                                                                                                                              // structural: a hash's multiplier
     }
 
-    private static Entry entry(Ctx c, Ctx.Snap s) {
-        Set<String> kept = KEPT_FUEL.get();
-        return new Entry(s.steps(), s.leafAt(), s.taken(), s.dropped(), s.seconds(), s.away(), s.tableReady(), s.furnaceReady(), s.stuck(), s.unknown(),
-                s.pickItem(), s.pickTier(), s.tableWalked(), s.furnaceWalked(), s.pickWorn(), s.pickMade(), s.pickOut(), s.spares(), s.atRoom(), s.down(),
-                s.downAt(), s.tableDown(), s.furnaceDown(), s.upBag(), List.copyOf(c.path), c.pathsWaiting, new LinkedHashMap<>(c.aside), c.hoisting,
-                c.bandPick, c.burned, c.fail, c.loopOn, kept == null ? Set.of() : new TreeSet<>(kept));
+    /**
+     * 0.39.z78 D6 (option C): one entry state (the snapshot {@code s} and the Ctx's other key fields, read when the node is
+     * entered) in the four forms a node can be keyed by ({@code fullSteps}: the steps' list, else their number; {@code
+     * awayRead}: the walk back), each built once.
+     */
+    private static final class Entries {
+        private final Ctx.Snap s;
+        private final List<String> path;
+        private final int pathsWaiting;
+        private final Map<String, Integer> aside;
+        private final boolean hoisting, bandPick;
+        private final Burn burned;
+        private final String fail, loopOn;
+        private final Set<String> kept;
+        private final Entry[] e = new Entry[4];          // structural: two flags, four forms
+
+        Entries(Ctx c, Ctx.Snap s) {
+            this.s = s;
+            path = List.copyOf(c.path);
+            pathsWaiting = c.pathsWaiting;
+            aside = new LinkedHashMap<>(c.aside);
+            hoisting = c.hoisting;
+            bandPick = c.bandPick;
+            burned = c.burned;
+            fail = c.fail;
+            loopOn = c.loopOn;
+            Set<String> k = KEPT_FUEL.get();
+            kept = k == null ? Set.of() : new TreeSet<>(k);
+        }
+
+        Entry of(boolean fullSteps, boolean awayRead) {
+            int i = (fullSteps ? 2 : 0) + (awayRead ? 1 : 0);
+            if (e[i] == null) e[i] = new Entry(fullSteps ? s.steps() : (Object) s.steps().size(), s.leafAt(), s.taken(), awayRead ? s.away() : null,
+                    s.tableReady(), s.furnaceReady(), s.stuck(), s.unknown(), s.pickItem(), s.pickTier(), s.tableWalked(), s.furnaceWalked(), s.pickWorn(),
+                    s.pickMade(), s.pickOut(), s.atRoom(), s.down(), s.downAt(), s.tableDown(), s.furnaceDown(), s.upBag(), path, pathsWaiting, aside,
+                    hoisting, bandPick, burned, fail, loopOn, kept);
+            return e[i];
+        }
+
+        Entry of(PlanNodes.Node n) { return of(n.fullSteps, n.awayRead); }
+    }
+
+    /** 0.39.z78 D6 (option C): {@code n} stands at this entry - its form's key, and its dropped reads hold on the lines now. */
+    private static boolean sameEntry(Ctx c, PlanNodes.Node n, Entries es) {
+        Entry e = es.of(n);
+        return n.entryHash == hashOf(e) && Deep.equal(n.entry, e) && dropsHold(n.dropReads, c.dropped);
     }
 
     /** 0.39.z78 D6: what a need had read when its ways were made (a way's closure was built from it): facts, bag, scans, walk memo. */
@@ -1461,12 +1589,17 @@ public final class NeedChain {
                        boolean hoisting, boolean bandPick, List<Map.Entry<String, Integer>> bagOut, int made, Map<String, Walked> walkOut,
                        List<Object[]> unreach, List<String> waited, int trialsOff, int[] stepMap, List<Step> newSteps,
                        Map<Integer, Map<String, Integer>> entryUses, Map<Integer, Map<String, Integer>> newUses, Map<Integer, Object> newMarks,
-                       String altId, Burn altBurned, int rankDelta) {}
+                       String altId, Burn altBurned, int rankDelta, double ownS, List<String> droppedAdd, List<String> sparesAdd, boolean awayWritten) {}
 
+    /*
+     * 0.39.z78 D6 (option C): {@code ownS} - its own seconds (after minus entry, on the grid); {@code droppedAdd} /
+     * {@code sparesAdd} - the dropped and spare lines it added (the ones before it are not its); {@code awayWritten} - it set
+     * the walk back ({@code after}'s then counts); {@code newMarks}' seconds are its own too (from its entry).
+     */
     private static Out out(Ctx c, PlanNodes.Frame f, Ctx.Snap entry, Object value, Alt alt, int rankAt) {
-        Ctx.Snap after = new Ctx.Snap(null, null, new LinkedHashMap<>(c.leafAt), new LinkedHashMap<>(c.taken), new ArrayList<>(c.dropped), c.seconds, c.away,
+        Ctx.Snap after = new Ctx.Snap(null, null, new LinkedHashMap<>(c.leafAt), new LinkedHashMap<>(c.taken), List.of(), c.seconds, c.away,
                 c.tableReady, c.furnaceReady, c.stuck, c.unknown, c.pickItem, c.pickTier, c.tableWalked, c.furnaceWalked, c.pickWorn, c.pickMade, c.pickOut,
-                new ArrayList<>(c.spares), c.atRoom, c.down, c.downAt, c.tableDown, c.furnaceDown, c.upBag == null ? null : new LinkedHashMap<>(c.upBag), null);
+                List.of(), c.atRoom, c.down, c.downAt, c.tableDown, c.furnaceDown, c.upBag == null ? null : new LinkedHashMap<>(c.upBag), null);
         Map<Step, Integer> at = new java.util.IdentityHashMap<>();
         for (int j = 0; j < entry.steps().size(); j++) at.putIfAbsent(entry.steps().get(j), j);
         int[] map = new int[c.steps.size()];
@@ -1492,7 +1625,8 @@ public final class NeedChain {
             Step y = news.get(k);
             Integer src = null;
             while ((y = c.markFrom.get(y)) != null) { Integer j = at.get(y); if (j != null) { src = j; break; } }
-            marks.put(k, src != null ? (Object) src : c.addedAt.get(news.get(k)));
+            Double m = c.addedAt.get(news.get(k));
+            marks.put(k, src != null ? (Object) src : m == null ? null : (Object) (m - entry.seconds()));     // option C: its own seconds
         }
         List<Map.Entry<String, Integer>> bagOut = new ArrayList<>();
         for (String k : f.written) if (!f.created.contains(k)) bagOut.add(new java.util.AbstractMap.SimpleImmutableEntry<>(k, c.bag.raw(k)));
@@ -1502,7 +1636,39 @@ public final class NeedChain {
         for (String k : f.walkWrites) walkOut.put(k, c.walks.get(k));
         return new Out(value, after, c.fail, c.loopOn, c.pathsWaiting, c.burned, new LinkedHashMap<>(c.aside), c.hoisting, c.bandPick, bagOut, made, walkOut,
                 List.copyOf(f.unreach), List.copyOf(c.waited.subList(f.waitedAt, c.waited.size())), c.trials - f.entryTrials, map, news, entryUses, newUses, marks,
-                alt == null ? null : alt.id, alt == null ? null : alt.burned, alt == null || alt.rk == null ? 0 : alt.rk.asked - rankAt);
+                alt == null ? null : alt.id, alt == null ? null : alt.burned, alt == null || alt.rk == null ? 0 : alt.rk.asked - rankAt,
+                c.seconds - entry.seconds(), List.copyOf(c.dropped.subList(Math.min(entry.dropped().size(), c.dropped.size()), c.dropped.size())),
+                List.copyOf(c.spares.subList(Math.min(entry.spares().size(), c.spares.size()), c.spares.size())), f.awayWritten);
+    }
+
+    /** 0.39.z78 D6 (option C): {@code now} still starts with {@code before} (a node only adds lines after the ones it entered with). */
+    private static boolean startsWith(List<String> now, List<String> before) {
+        return now.size() >= before.size() && now.subList(0, before.size()).equals(before);
+    }
+
+    /** 0.39.z78 D6 (option C): the step map keeps the {@code n} entry steps in order and adds only its own after them. */
+    private static boolean keepsPrefix(int[] map, int n) {
+        if (map.length < n) return false;
+        for (int i = 0; i < map.length; i++) if (i < n ? map[i] != i : map[i] >= 0) return false;
+        return true;
+    }
+
+    /** 0.39.z78 D6 (option C): a line of {@code lines[from, to)} matches the dropped read {@code dep}. */
+    private static boolean ownHas(List<String> lines, int from, int to, String dep) {
+        var t = dropTest(dep);
+        for (int i = Math.max(0, from); i < Math.min(to, lines.size()); i++) if (t.test(lines.get(i))) return true;
+        return false;
+    }
+
+    /**
+     * 0.39.z78 D6 (option C): a node's reads that are its parent's too - the walk back read before the parent set it, the
+     * dropped lines read before the parent's own lines up to the node ({@code at}); its walk-back write is the parent's.
+     */
+    private static void sumsUp(Ctx c, PlanNodes.Frame p, boolean awayRead, boolean awayWritten, boolean prefixRead, Map<String, Boolean> dropReads, int at) {
+        if (awayRead && !p.awayWritten) p.awayRead = true;
+        if (awayWritten) p.awayWritten = true;
+        if (prefixRead) p.prefixRead = true;
+        for (var d : dropReads.entrySet()) if (!ownHas(c.dropped, p.droppedAt, at, d.getKey())) p.dropReads.putIfAbsent(d.getKey(), d.getValue());
     }
 
     /** 0.39.z78 D6: a kept node's facts hold here: the trial bound, the walk memo, the bag words, the World's answers. */
@@ -1519,43 +1685,41 @@ public final class NeedChain {
     private static Object node(Ctx c, String kind, Object key, Supplier<Object> body) {
         PlanNodes.Frame up = c.run.top;
         Ctx.Snap s = c.snap();
-        Entry e = entry(c, s);
+        Entries es = new Entries(c, s);
         Object ck = List.of(kind, key);
-        int h = hashOf(e);
         PlanNodes.Node old = null;
         for (PlanNodes.Node n : up.candidates(ck)) {
-            if (n.entryHash != h || !Deep.equal(n.entry, e)) continue;
+            if (!sameEntry(c, n, es)) continue;
             if (valid(c, n)) return reuse(c, n, ck, s, null, body, null);
             old = n;
             c.run.dirty++;
             break;
         }
-        return compute(c, kind, key, ck, e, s, old, body, null, null).out().value();
+        return compute(c, kind, key, ck, es, s, old, body, null, null).out().value();
     }
 
     /** 0.39.z78 D6: way {@code i} of a choose ({@code ordinal}: its number in the open node) as a node, priced from {@code s0}. */
     private static String way(Ctx c, Alt a, int i, int ordinal, Ctx.Snap s0, Prefix prefix) {
         PlanNodes.Frame up = c.run.top;
-        Entry e = entry(c, s0);
+        Entries es = new Entries(c, s0);
         Object ck = List.of(ordinal, i, a.label);
-        int h = hashOf(e);
         Integer rank = a.rk == null ? null : a.rk.asked;
         PlanNodes.Node old = null;
         for (PlanNodes.Node n : up.candidates(ck)) {
-            if (n.entryHash != h || !java.util.Objects.equals(n.extra, rank) || !Deep.equal(n.entry, e) || !Deep.equal(n.prefix, prefix)) continue;
+            if (!java.util.Objects.equals(n.extra, rank) || !sameEntry(c, n, es) || !Deep.equal(n.prefix, prefix)) continue;
             if (valid(c, n)) return (String) reuse(c, n, ck, s0, a, a.run::get, prefix);
             old = n;
             c.run.dirty++;
             break;
         }
-        return (String) compute(c, "way", ck, ck, e, s0, old, a.run::get, a, prefix).out().value();
+        return (String) compute(c, "way", ck, ck, es, s0, old, a.run::get, a, prefix).out().value();
     }
 
     private record Made(PlanNodes.Node node, Out out) {}
 
     /** Resolves a node by its code in a frame of its own; kept as the open node's child {@code ck} (when its reads can key it). */
-    private static Made compute(Ctx c, String kind, Object key, Object ck, Entry e, Ctx.Snap s, PlanNodes.Node old, Supplier<Object> body, Alt alt, Prefix prefix) {
-        PlanNodes.Node n = new PlanNodes.Node(kind, key, e, hashOf(e));
+    private static Made compute(Ctx c, String kind, Object key, Object ck, Entries es, Ctx.Snap s, PlanNodes.Node old, Supplier<Object> body, Alt alt, Prefix prefix) {
+        PlanNodes.Node n = new PlanNodes.Node(kind, key, null, 0);
         n.resolves = old == null ? 1 : old.resolves + 1;
         n.reused = old == null ? 0 : old.reused;
         n.prefix = prefix;
@@ -1567,6 +1731,9 @@ public final class NeedChain {
         f.entryTrials = c.trials;
         f.entryBag = s.bag();
         f.waitedAt = c.waited.size();
+        f.droppedAt = c.dropped.size();
+        f.sparesAt = c.spares.size();
+        f.upWroteAway = up.awayWritten;
         Object v;
         try {
             v = body.get();
@@ -1577,6 +1744,19 @@ public final class NeedChain {
         }
         Out o = out(c, f, s, v, alt, rankAt);
         c.run.close();
+        // 0.39.z78 D6 (option C): its key's form, and its reads of the walk back and the dropped lines are its parent's too
+        n.prefixRead = f.prefixRead;
+        n.fullSteps = f.prefixRead || !keepsPrefix(o.stepMap(), s.steps().size());
+        n.awayRead = f.awayRead;
+        n.dropReads = f.dropReads.isEmpty() ? Map.of() : new LinkedHashMap<>(f.dropReads);
+        n.entry = es.of(n);
+        n.entryHash = hashOf((Entry) n.entry);
+        sumsUp(c, up, f.awayRead && !f.upWroteAway, f.awayWritten, f.prefixRead, f.dropReads, f.droppedAt);
+        // its own sums are its result only when its seconds are finite and it only added lines after the ones it entered with
+        if (!Double.isFinite(s.seconds()) || !Double.isFinite(c.seconds) || !startsWith(c.dropped, s.dropped()) || !startsWith(c.spares, s.spares())) {
+            f.keep = false;
+            up.keep = false;
+        }
         n.out = o;
         n.reads = new LinkedHashMap<>(f.reads);
         n.bagReads = new LinkedHashMap<>(f.bagReads);
@@ -1618,6 +1798,8 @@ public final class NeedChain {
         Out o = (Out) n.out;
         PlanNodes.Frame f = c.run.top;
         int trials = c.trials;
+        double s0 = c.seconds;                                // option C: its own seconds and marks go on from here
+        int dropAt = c.dropped.size();
         List<Step> cur = new ArrayList<>(c.steps);
         Step[] fresh = new Step[o.newSteps().size()];
         for (int k = 0; k < fresh.length; k++) {
@@ -1627,22 +1809,24 @@ public final class NeedChain {
                 Double mark = c.addedAt.get(cur.get(j));
                 if (mark != null) c.addedAt.put(fresh[k], mark);
                 c.markFrom.put(fresh[k], cur.get(j));
-            } else if (m instanceof Double d) c.addedAt.put(fresh[k], d);
+            } else if (m instanceof Double d) c.addedAt.put(fresh[k], s0 + d);
         }
         List<Step> fin = new ArrayList<>(o.stepMap().length);
         for (int v : o.stepMap()) fin.add(v >= 0 ? cur.get(v) : fresh[-v - 1]);
         Ctx.Snap a = o.after();
-        c.seconds = a.seconds();
+        c.seconds = s0 + o.ownS();
         c.steps.clear();
         c.steps.addAll(fin);
         c.leafAt.clear(); c.leafAt.putAll(a.leafAt());
         c.taken.clear(); c.taken.putAll(a.taken());
-        c.dropped = new ArrayList<>(a.dropped());
-        c.away = a.away(); c.tableReady = a.tableReady(); c.furnaceReady = a.furnaceReady(); c.stuck = a.stuck();
+        c.dropped.addAll(o.droppedAdd());
+        if (o.awayWritten()) c.away = a.away();
+        c.tableReady = a.tableReady(); c.furnaceReady = a.furnaceReady(); c.stuck = a.stuck();
         c.unknown = a.unknown(); c.pickItem = a.pickItem(); c.pickTier = a.pickTier();
         c.tableWalked = a.tableWalked(); c.furnaceWalked = a.furnaceWalked();
         c.pickWorn = a.pickWorn(); c.pickMade = a.pickMade(); c.pickOut = a.pickOut();
-        c.spares = new ArrayList<>(a.spares());
+        c.spares.addAll(o.sparesAdd());
+        sumsUp(c, f, n.awayRead, o.awayWritten(), n.prefixRead, n.dropReads, dropAt);
         c.atRoom = a.atRoom();
         c.down = a.down(); c.downAt = a.downAt(); c.tableDown = a.tableDown(); c.furnaceDown = a.furnaceDown();
         c.upBag = a.upBag() == null ? null : new LinkedHashMap<>(a.upBag());
@@ -1734,7 +1918,7 @@ public final class NeedChain {
         while (f.unreach.size() > unreachN) f.unreach.remove(f.unreach.size() - 1);
         while (f.effects.size() > effN) f.effects.remove(f.effects.size() - 1);
         f.uses.clear(); f.uses.putAll(fuses0);
-        Made m = compute(c, n.kind, n.key, ck, (Entry) n.entry, s, n, body, alt, prefix);
+        Made m = compute(c, n.kind, n.key, ck, new Entries(c, s), s, n, body, alt, prefix);
         m.node().resolves = n.resolves;                     // a check, not a resolve: the counts are the kept node's
         m.node().reused = n.reused + 1;
         c.run.computed--;
@@ -2425,14 +2609,14 @@ public final class NeedChain {
         int wear = walkBreaks + tunnelBreaks + oreTotal;
         String spare = spareTools(c, wear, tier);
         if (c.pickItem != null && spare == null) c.pickWorn += wear;
-        c.seconds += walkS + digS;
+        c.addS(walkS + digS);
         Step.Strip whole = new Step.Strip(ores, amounts, y, first.heading(), 0, null);
         for (var e : perCell.entrySet()) c.effect(new Predicted(whole.key(), e.getKey(), e.getValue()));
         int legAt = c.steps.size();
         if (firstLeg && first.feetY() != y) c.steps.add(new Step.ToStrip(first.x(), y, first.z(), whole.key()));
         List<Step> legs = stripLegs(whole, digS);
         c.steps.addAll(legs);
-        if (firstLeg && first.feetY() != y) { c.down = "the playbook's descent to y " + y; c.downAt = legAt; c.away = 0; c.upBag = new LinkedHashMap<>(c.bag); }
+        if (firstLeg && first.feetY() != y) { c.down = "the playbook's descent to y " + y; c.downAt = legAt; c.setAway(0); c.upBag = new LinkedHashMap<>(c.bag); }
         else if (!firstLeg) {
             c.down = "the playbook's descent to y " + y;
             // 0.39.z77 legs (send-back 2; runs BJ 10:38:28 "take the crafting_table 83 m: walk: path not known yet", BK): the strip
@@ -2442,7 +2626,7 @@ public final class NeedChain {
             c.tableDown = false;
             c.furnaceDown = false;
         }
-        else c.away = walkS;
+        else c.setAway(walkS);
         for (var e : gains.entrySet()) c.bag.merge(e.getKey(), e.getValue(), Integer::sum);
         // 0.39.z77 answers (2): the tunnel's own blocks come with the bot (the host's drop by the loot data, one a break): the
         // descent carries the blocks the climb back up and a furnace down there take (Deposit handles a full bag)
@@ -2897,7 +3081,7 @@ public final class NeedChain {
     private static void drop(Ctx c, String label, String why) {
         String head = label + ": ";
         if (waitsHere(why)) c.waited.add(head + why);     // 0.39.z77 pending: counted before the list's dedupe
-        for (String d : c.dropped) if (d.startsWith(head)) return;
+        if (c.droppedHas(DROP_HEAD + head)) return;      // 0.39.z78 D6 (option C): the dedupe's read of the lines before is a fact
         c.dropped.add(head + why);
     }
 
@@ -3238,7 +3422,7 @@ public final class NeedChain {
                 used(c, Map.of(slot, e.getValue() * pieces));     // 0.39.z61: each craft's own count of the slot word
                 c.bag.merge(e.getKey(), n, Integer::sum);
             }
-            c.seconds += Price.craftS() * batches;
+            c.addS(Price.craftS() * batches);
             return verb + String.join(" + ", parts);
         }
         self.id = out;
@@ -3246,10 +3430,10 @@ public final class NeedChain {
         int made = batches * g.outCount();
         if (craft) {
             c.steps.add(new Step.Craft(out != null ? sh(out) : shw(w.word), made));
-            c.seconds += Price.craftS() * batches;
+            c.addS(Price.craftS() * batches);
         } else {
             c.steps.add(new Step.Smelt(out != null ? sh(out) : shw(w.word), made, true));
-            c.seconds += batches * smeltTicks() / GameTimes.TPS;
+            c.addS(batches * smeltTicks() / GameTimes.TPS);
         }
         if (fuel != null) slotUses.merge(FUEL_USE + fuel.word(), fuel.n(), Integer::sum);     // 0.39.z75 item 2
         used(c, slotUses);
@@ -3366,9 +3550,9 @@ public final class NeedChain {
         a.run = () -> {
             String leg = c.down;
             int at = c.downAt, s0 = c.steps.size();
-            double away0 = c.away;
+            double away0 = c.away();
             c.down = null;                                   // priced where the walks are priced from: the base, before the leg
-            c.away = 0;
+            c.setAway(0);
             c.hoisting = true;
             int moved = 0;
             // 0.39.z77 legs (send-back 2; run BK 10:57:13): up there, before the leg, the bag holds only what it held at the
@@ -3419,7 +3603,7 @@ public final class NeedChain {
                 putBack(c, late);
                 c.down = leg;
                 c.downAt = at + moved;
-                c.away = away0;
+                c.setAway(away0);
                 c.hoisting = false;
             }
         };
@@ -3493,7 +3677,7 @@ public final class NeedChain {
         }
         c.steps.add(new Step.Craft(sh(item), batches * rec.outCount()));
         used(c, slotUses);
-        c.seconds += Price.craftS() * batches;
+        c.addS(Price.craftS() * batches);
         c.note(() -> "craft: " + sh(item) + " x" + batches * rec.outCount() + " (" + batches + " crafts): " + s(Price.craftS() * batches));
         c.bag.merge(item, batches * rec.outCount(), Integer::sum);
         return "craft: " + String.join(" + ", parts);
@@ -3524,7 +3708,7 @@ public final class NeedChain {
         walkBack(c);
         c.steps.add(new Step.Smelt(sh(item), k * rec.outCount(), true));
         used(c, smeltUses(input, k, fuel));                        // 0.39.z61: the input by its word; z75 item 2: the planned fuel, counted
-        c.seconds += k * smeltTicks() / GameTimes.TPS;
+        c.addS(k * smeltTicks() / GameTimes.TPS);
         c.note(() -> "smelt " + sh(item) + " x" + k * rec.outCount() + ": " + s(k * smeltTicks() / GameTimes.TPS));
         c.bag.merge(item, k * rec.outCount(), Integer::sum);
         return "smelt " + String.join(" + ", parts);
@@ -3637,8 +3821,9 @@ public final class NeedChain {
         for (var lv : levels.entrySet()) {
             if (!first) {                                       // the failed level's reasons stay listed
                 List<String> said = new ArrayList<>(c.dropped);
+                int had = before.dropped().size();               // 0.39.z78 D6: the lines up to then are the restored ones (only appends)
                 c.restore(before);
-                for (String d : said) if (!c.dropped.contains(d)) c.dropped.add(d);
+                for (String d : said.subList(Math.min(had, said.size()), said.size())) if (!c.droppedHas(DROP_EXACT + d)) c.dropped.add(d);
             }
             first = false;
             List<Alt> tryAlts = new ArrayList<>(alts);
@@ -3712,9 +3897,7 @@ public final class NeedChain {
 
     /** 0.39.z51: the way {@code label} was priced and lost on seconds (its dropped line says "dearer than"). */
     private static boolean stoodPriced(Ctx c, String label) {
-        String head = label + ": ";
-        for (String d : c.dropped) if (d.startsWith(head) && d.contains("dearer than")) return true;
-        return false;
+        return c.droppedHas(DROP_DEARER + label + ": ");    // 0.39.z78 D6 (option C): a read of the dropped lines (a fact before the node)
     }
 
     /**
@@ -3833,17 +4016,17 @@ public final class NeedChain {
         // order): the station goes near a cell with room from facts, reached by its priced walk (rule 18); Baritone still
         // picks the cell there (rule 2)
         String room = null;
-        if (c.w.rooms().hereFailed() != null && !c.atRoom && placesHere(c.steps)) {
+        if (c.w.rooms().hereFailed() != null && !c.atRoom && prefixRead(c) && placesHere(c.steps)) {
             room = roomWalk(c, item);
             if (room == null) return null;
         }
         c.steps.add(new Step.PlaceNear(sh(item)));
-        c.seconds += Price.placeS();
+        c.addS(Price.placeS());
         c.note(() -> "place " + sh(item) + " near me: " + s(Price.placeS()));
         c.bag.merge(item, -1, Integer::sum);
         if (c.down != null) { if (table) c.tableDown = true; else c.furnaceDown = true; }        // 0.39.z75: down there, not at the base
         else if (table) { c.tableReady = true; c.tableWalked = true; } else { c.furnaceReady = true; c.furnaceWalked = true; }
-        c.away = 0;                                       // placed near where the bot stands
+        c.setAway(0);                                       // placed near where the bot stands
         return label + " <- " + (made == null ? "in the bag, placed" : made + ", placed") + (room == null ? "" : " " + room);
     }
 
@@ -3898,7 +4081,7 @@ public final class NeedChain {
             if (o != null && o.fail() == null) drop(c, "place " + sh(item) + " near the cell with room at " + sp.x() + " " + sp.y() + " " + sp.z(), s(o.seconds()));
         }
         c.steps.add(new Step.Walk(at.x(), at.y(), at.z(), roomNear()));
-        c.seconds += w.seconds();
+        c.addS(w.seconds());
         c.atRoom = true;
         c.note(() -> "place " + sh(item) + ": placing near me failed here (" + here + "): near the cell with room at " + at.x() + " " + at.y() + " " + at.z() + ", " + s(w.seconds()));
         return noted("near the cell with room at " + at.x() + " " + at.y() + " " + at.z(), w);
@@ -3921,10 +4104,10 @@ public final class NeedChain {
         // penalty, z63's ClimbGoal steering a climb), never the use's own search; a walk of 0 s (already by it): no step
         String item = ItemWorth.stationOf(kind);
         if (wk.seconds() > 0) c.steps.add(new Step.ToStation(kind, item == null ? label : sh(item), at.x(), at.y(), at.z()));
-        double walkS = Math.max(c.away, wk.seconds());
+        double walkS = Math.max(c.away(), wk.seconds());
         double bonus = Math.min(walkS, Math.max(0, at.bonusS()));       // a use-stations station: seconds off its walk (never below 0)
-        c.seconds += walkS - bonus;
-        c.away = 0;
+        c.addS(walkS - bonus);
+        c.setAway(0);
         // 0.39.z30, rule 15: a remembered station in a chunk not loaded is priced as remembered; the step verifies it on
         // arrival (not the station: the fact becomes none and the order re-plans)
         boolean main = c.w.isMain(at);                                  // main-stations (0.39.z35): the owner's main of the kind
@@ -3935,7 +4118,7 @@ public final class NeedChain {
 
     /** Back to the stations after a trip to a new source: the same walk as the trip there (its path, or its line). */
     private static void walkBack(Ctx c) {
-        if (c.away > 0) { c.seconds += c.away; c.away = 0; }
+        if (c.away() > 0) { c.addS(c.away()); c.setAway(0); }
     }
 
     /**
@@ -4164,10 +4347,10 @@ public final class NeedChain {
         }
         c.steps.add(new Step.Walk(sp.x(), sp.y(), sp.z(), stationNear()));
         c.steps.add(new Step.TakeStation(shw(gives), sp.x(), sp.y(), sp.z()));
-        c.seconds += wk.seconds();
-        c.away = wk.seconds();
+        c.addS(wk.seconds());
+        c.setAway(wk.seconds());
         double each = breakS(c, gives, sp);
-        c.seconds += each;
+        c.addS(each);
         if (c.pickItem != null && tier >= 1) c.pickWorn += 1;       // game fact: a pickaxe loses 1 durability per block mined
         c.taken.merge(sp.key(), 1, Integer::sum);
         c.bag.merge(gives, 1, Integer::sum);
@@ -4549,11 +4732,11 @@ public final class NeedChain {
                     continue;
                 }
                 if (firstWalk == null) firstWalk = wk;
-                c.seconds += wk.seconds();
-                c.away = wk.seconds();
+                c.addS(wk.seconds());
+                c.setAway(wk.seconds());
             }
             double each = breakS(c, gives, sp);
-            c.seconds += each * take;
+            c.addS(each * take);
             final int took = take;
             c.note(() -> "break " + shw(blockOf(gives, sp)) + " x" + took + ": tool " + (c.pickItem == null || tierOf(gives, sp) < 1 ? "hand" : sh(c.pickItem)) + ", " + s(each) + " each = " + s(each * took));
             // 0.39.z74 item 1 (run AC 16:51:46: "stick 5 m: 11.9 s" won over "stick from #planks: 28.6 s"; the leaves gave 1 stick
@@ -4564,7 +4747,7 @@ public final class NeedChain {
             Walked spotWalk = c.walk(sp.key());
             if (per < 1 && take > 1 && spotWalk != null && spotWalk.fail() == null && spotWalk.seconds() > 0) {
                 double again = spotWalk.seconds() * (take - 1);
-                c.seconds += again;
+                c.addS(again);
                 c.note(() -> shw(blockOf(gives, sp)) + " gives " + shw(gives) + " by chance (" + String.format(java.util.Locale.ROOT, "%.3f", per) + " a block, the loot data): " + (took - 1) + " more trips of " + s(spotWalk.seconds()) + " = " + s(again));
             }
             if (c.pickItem != null && tierOf(gives, sp) >= 1) c.pickWorn += take;     // 0.39.z33: one use a block (game fact: a pickaxe loses 1 durability per block mined)
@@ -4716,8 +4899,8 @@ public final class NeedChain {
         c.steps.add(new Step.HuntAt(s.from(), kills, new int[]{m.x(), m.z()}, sh(item), lack));
         Walked wk = walk(c, m.x(), m.y(), m.z(), m.dist());
         if (c.fail != null) return null;                    // 0.39.z41: no price for the walk
-        c.seconds += wk.seconds() + kills * killS;
-        c.away = wk.seconds();
+        c.addS(wk.seconds() + kills * killS);
+        c.setAway(wk.seconds());
         c.bag.merge(item, lack, Integer::sum);
         return noted("hunt " + kills + " " + sh(s.from()) + " seen " + Math.round(m.dist()) + " m", wk);
     }
@@ -4890,13 +5073,13 @@ public final class NeedChain {
         // (the fork's GoalBlock digs the feet and the head cell), so the tunnel wears the pickaxe twice per cell dug
         int wear = wk.pickBreaks() + tunnelBreaks + oreBlocks;
         String spare = spareTools(c, wear, tier);
-        c.seconds += wk.seconds() + digS;
+        c.addS(wk.seconds() + digS);
         // 0.39.z75 item 1 (D4 1; run AE 17:27:35: the furnace placed at y 16 zeroed the walk back, the table up there priced
         // 0 s): a strip at another level than the feet leaves the bot down there - the walk back up is no mirror of the way
         // down (a dug shaft is not walked up, D4 2) and no path from there is priced: later walks are "not known" (walk) and
         // later needs are met there or before the leg (beforeDown). A strip at the feet's own level stays as before.
         boolean level = sb.feetY() != sb.y();
-        c.away = level ? 0 : wk.seconds();
+        c.setAway(level ? 0 : wk.seconds());
         if (c.pickItem != null && spare == null) c.pickWorn += wear;
         Map<String, Integer> amounts = Map.of(io.github.mojolowjo.entropybot.aa.brain.StripOrder.countKey(ore, io.github.mojolowjo.entropybot.cave.OreSpec::family), oreBlocks);
         Step.Strip strip = new Step.Strip(sb.ores(), amounts, sb.y(), sb.heading(), 0, sb.from());
@@ -5163,8 +5346,8 @@ public final class NeedChain {
             return null;
         }
         double exploreS = minutes * 60, oreS = oreBlocks * blockBreakS(c, cw.ore());  // structural: seconds per minute
-        c.seconds += wk.seconds() + confirmS + exploreS + oreS;
-        c.away = wk.seconds() + exploreS;
+        c.addS(wk.seconds() + confirmS + exploreS + oreS);
+        c.setAway(wk.seconds() + exploreS);
         if (c.pickItem != null) c.pickWorn += oreBlocks;
         c.steps.add(new Step.Walk(cw.x(), cw.y(), cw.z(), 0));
         c.steps.add(new Step.Mine(cw.family(), oreBlocks, Step.Mine.How.CAVE, (int) Math.ceil(max)));
@@ -5390,7 +5573,7 @@ public final class NeedChain {
         }
         double sec = Unit.seconds(over.depth() * RungOptions.climbBlock() + RungOptions.climbFix());
         c.steps.add(new Step.Climb());
-        c.seconds += sec;
+        c.addS(sec);
         final String line = "climb up " + over.depth() + " with " + Math.min(blocks, over.depth()) + " blocks from the bag" + (pick ? " and the " + sh(c.pickItem) : "")
                 + ": " + s(sec) + " (the walk up out: " + walk + ")";
         c.note(() -> line);
@@ -5488,7 +5671,7 @@ public final class NeedChain {
         String head = (feet[1] > ty ? "dig down" : "walk") + " to y " + ty;
         if (digs <= 0) {
             c.steps.add(tb);
-            c.seconds += handS;
+            c.addS(handS);
             return noted(head, wk);
         }
         if (c.pickItem != null) {
@@ -5499,7 +5682,7 @@ public final class NeedChain {
             if (spare == null) c.pickWorn += digs;
             c.steps.add(tb);
             double s = Math.max(0, handS - saved);
-            c.seconds += s;
+            c.addS(s);
             return head + " with " + sh(c.pickItem) + " (" + digs + " blocks to break" + (saved > 0 ? ", " + s(saved) + " saved on the hand price" : "") + "): " + s(s)
                     + (spare == null ? "" : " + " + spare);
         }
@@ -5537,7 +5720,7 @@ public final class NeedChain {
                 if (withS < handS) {
                     if (spare == null) c.pickWorn += digs;
                     c.steps.add(tb);
-                    c.seconds = s0 + withS;
+                    c.seconds = s0 + grid(withS);
                     final double fp = pickS, fw = withS, fs = saved;
                     c.note(() -> "band walk: " + digs + " blocks to break - the pickaxe first " + s(fp) + " + the walk " + s(handS - fs) + " = " + s(fw) + " beats by hand " + s(handS));
                     return head + " with " + sh(c.pickItem) + " made first (" + digs + " blocks to break; pickaxe " + s(pickS) + " + walk " + s(handS - saved) + " = " + s(withS)
@@ -5547,7 +5730,7 @@ public final class NeedChain {
             }
         }
         c.steps.add(tb);
-        c.seconds += handS;
+        c.addS(handS);
         final double fw = withS;
         c.note(() -> "band walk: " + digs + " blocks to break by hand " + s(handS) + (Double.isNaN(fw) ? "" : " (the pickaxe first " + s(fw) + ")"));
         return head + " by hand (" + digs + " blocks to break" + (Double.isNaN(withS) ? "" : "; the pickaxe first " + s(withS)) + "): " + s(handS);
@@ -5616,7 +5799,7 @@ public final class NeedChain {
             return null;
         }
         c.steps.add(new Step.ToSurface(s.x(), s.y(), s.z()));
-        c.seconds += wk.seconds();
+        c.addS(wk.seconds());
         return noted("walk up to the surface at " + s.x() + " " + s.y() + " " + s.z() + " first (" + s.depth() + " under ground)", wk);
     }
 

@@ -66,8 +66,8 @@ class FoodAndSwordTest {
         assertNull(AaDesires.swordsMissing());
         NeedChain.Chain c = NeedChain.of(new Step.Obtain(AaDesires.SWORDS, 1), io.github.mojolowjo.entropybot.aa.FakePaths.paths(new NeedChain.World(bag, true, w -> null)));
         assertTrue(c.ok(), c.why());
-        assertEquals(0.3, c.seconds(), 1e-9, "one craft: 0.3 s");
-        assertEquals(io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(0.3), c.cost(), 1e-9, "cost is walk-blocks (0.3 s x 4.317 = 1.2951), not seconds");
+        assertEquals(0.3, c.seconds(), 1e-6, "one craft: 0.3 s");      // 0.39.z78 D6: the chain's seconds sit on a 2^-20 s grid
+        assertEquals(io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(0.3), c.cost(), 1e-5, "cost is walk-blocks (0.3 s x 4.317 = 1.2951), not seconds");
         assertTrue(c.why().startsWith("swords <- 1 wooden_sword <- craft: 2 oak_planks + 1 stick: 0.3 s"), c.why());
         assertEquals(List.of("wooden_sword"), c.steps().stream().map(x -> ((Step.Craft) x).item()).toList());
         assertEquals(1, c.steps().stream().filter(x -> x instanceof Step.Craft).count(), c.steps().toString());

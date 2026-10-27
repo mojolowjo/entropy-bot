@@ -108,8 +108,16 @@ public final class PlanNodes {
     static final class Node {
         final String kind;
         final Object key;
-        final Object entry;
-        final int entryHash;
+        /** The state it was entered in, as its form keys it (set when it is computed). */
+        Object entry;
+        int entryHash;
+        /**
+         * 0.39.z78 D6 (option C, nodes keep their sums): its key holds the steps before it as a list (it read or changed
+         * them), else their number; {@code awayRead}: its key holds the walk back (read before set).
+         */
+        boolean fullSteps, awayRead, prefixRead;
+        /** 0.39.z78 D6 (option C): its reads of the dropped lines before it (the read's key -> present), checked on a reuse. */
+        Map<String, Boolean> dropReads = Map.of();
         /** Facts its own code read (its children keep theirs: a check walks them, {@link Run#hold}), in the order first read. */
         Map<Fact, Object> reads = Map.of();
         /** A way node: what its need had read when the ways were made (the way's closure was built from it). */
@@ -162,6 +170,14 @@ public final class PlanNodes {
         boolean bound, keep = true;
         /** False: its bag record is not consistent (a snapshot of another node's restored): not even the root is kept. */
         boolean sound = true;
+        /**
+         * 0.39.z78 D6 (option C): the walk back read before this node set it / set by it (a restore puts the flag back with
+         * the bag's writes) / set by the parent before this node opened; the steps before it read; the dropped lines' reads
+         * before it (key -> present) and where its own lines start; where its own spare lines start.
+         */
+        boolean awayRead, awayWritten, upWroteAway, prefixRead;
+        final LinkedHashMap<String, Boolean> dropReads = new LinkedHashMap<>();
+        int droppedAt, sparesAt;
         final Map<Object, List<Node>> children = new LinkedHashMap<>();
 
         Frame(Node node, Frame up) {
@@ -414,6 +430,24 @@ public final class PlanNodes {
 
     /** The calling thread's last resolve's counts. */
     public static Stats last() { return MINE.get().last; }
+
+    /**
+     * 0.39.z78 D6 (option C), tests: in this thread's most recent request tree, the nodes that read a fact {@code which}
+     * matches themselves, and their ancestors - what a change of that fact alone must resolve again (the paths to the root).
+     */
+    public static int touchedBy(Predicate<Fact> which) {
+        Node r = null;
+        for (Node n : MINE.get().roots.values()) r = n;            // access order: the last is the newest
+        return r == null ? 0 : touched(r, which);
+    }
+
+    private static int touched(Node n, Predicate<Fact> which) {
+        int below = 0;
+        for (List<Node> l : n.children.values()) for (Node k : l) below += touched(k, which);
+        boolean own = false;
+        for (Fact f : n.reads.keySet()) if (which.test(f)) { own = true; break; }
+        return below + (own || below > 0 ? 1 : 0);
+    }
 
     void last(Stats s) { last = s; }
 

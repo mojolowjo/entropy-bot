@@ -122,13 +122,14 @@ class D6ReplayTest {
             long until = System.nanoTime() + 30_000_000_000L;
             while (System.nanoTime() < until) {
                 asks++;
+                long seen = worker.landed();                 // read before the ask: a fast answer is not missed (the wait ran out at 30 s)
                 l = port.legs("b1", pb, java.util.Set.of(), f.world(book));
                 if (!NeedChain.thinking(l.chain())) break;
-                long seen = worker.landed();
                 while (worker.landed() == seen && System.nanoTime() < until) Thread.sleep(1);
             }
             assertNotNull(l);
-            assertFalse(NeedChain.thinking(l.chain()), "the planner answered within 30 s at " + e.get("t").getAsString());
+            assertFalse(NeedChain.thinking(l.chain()), "the planner answered within 30 s at " + e.get("t").getAsString() + ": " + l.chain().why() + " | "
+                    + port.probe() + " | log " + log.subList(Math.max(0, log.size() - 6), log.size()));
             World w = f.world(book);
             NeedChain.Legs old = PlanNodes.old(() -> NeedChain.resolvePlaybookLegs(pb, w));
             assertTrue(Deep.equal(old, l), "runDL " + e.get("t").getAsString() + ": the applied trip differs: " + D6NodesTest.diff(old, l));
