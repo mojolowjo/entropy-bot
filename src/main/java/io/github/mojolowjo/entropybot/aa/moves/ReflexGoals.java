@@ -10,7 +10,8 @@ import baritone.api.pathing.goals.GoalYLevel;
  *
  * <p>Loader notes: Baritone API {@link Goal} only. {@link Cells} reads the client level; Baritone calls a goal from its
  * path thread (it reads the client chunks from there itself too), so the reader only calls {@code getBlockState} /
- * {@code getFluidState}. Pure parts (the tests): {@link #breathes} and {@link #wet} over a {@link Cells}.
+ * {@code getFluidState}. Pure parts (the tests): {@link #breathes} and {@link #wet} over a {@link Cells}; the climb's
+ * {@link #digLevelTicks} over Baritone's API {@code ActionCosts} (JUnit: Z77ClimbDigUpTest).
  */
 public final class ReflexGoals {
     /** The world as the goals see it. */
@@ -76,23 +77,53 @@ public final class ReflexGoals {
 
     /**
      * 0.39.z77 round fix (run BI 15:51 / 22:41: the climb ran deleted owner verbs, "goto" and "dig"; rule 2): the climb's one
-     * goal - the feet under open sky, anywhere; the heuristic pulls up toward {@code upTo} (Baritone's own Y-level cost), so the
-     * search digs and pillars up first. Baritone picks the cells, the digs and the placements.
+     * goal - the feet under open sky, anywhere; the heuristic pulls up toward {@code upTo}, so the search digs and pillars up
+     * first. Baritone picks the cells, the digs and the placements.
+     *
+     * <p>0.39.z77 climb (run CM 17:36-17:43, "Baritone's climb goal ended at -45 -9 -46 with 59 blocks over the feet" 0.5 s
+     * after the goal was set, five times): the heuristic was Baritone's Y-level cost, 3.17 ticks a level, while a dug level
+     * costs ~300-450 here (deepslate 24.5 ticks a cell x the policy's travel 6, two or three cells a stair level). A* keeps a
+     * partial path only for a node whose heuristic + cost / coefficient (1.5..10) beats the start's, so no node ever did and
+     * the search ended with no path. Now each level is priced at {@code levelTicks} ({@link #digLevelTicks}: the column's own
+     * dearest dug level), so a level dug up is progress and Baritone's partial paths go up segment by segment.
      */
     public static final class UnderSky implements Goal {
         private final SkyCells cells;
         private final int upTo;
+        private final double levelTicks;
 
-        public UnderSky(SkyCells cells, int upTo) {
+        /** {@code levelTicks}: the ticks of one dug level up here ({@link #digLevelTicks}); never below Baritone's own jump. */
+        public UnderSky(SkyCells cells, int upTo, double levelTicks) {
             this.cells = cells;
             this.upTo = upTo;
+            this.levelTicks = Math.max(GoalYLevel.calculate(1, 0), levelTicks);
         }
 
         @Override public boolean isInGoal(int x, int y, int z) { return underSky(cells, x, y, z); }
 
-        @Override public double heuristic(int x, int y, int z) { return y >= upTo ? 0 : GoalYLevel.calculate(upTo, y); }
+        @Override public double heuristic(int x, int y, int z) { return y >= upTo ? 0 : (upTo - y) * levelTicks; }
 
-        @Override public String toString() { return "UnderSky (feet under open sky, pull up to y " + upTo + ")"; }
+        public double levelTicks() { return levelTicks; }
+
+        @Override public String toString() { return "UnderSky (feet under open sky, pull up to y " + upTo + ", " + Math.round(levelTicks) + " ticks a level)"; }
+    }
+
+    /**
+     * structural: a staircase level (Baritone's MovementAscend) breaks at most three cells - the step's feet and head cells
+     * and the cell over the bot's own head; a pillar level breaks one and places one.
+     */
+    static final int STAIR_CELLS = 3; // structural: Baritone's ascend geometry
+
+    /**
+     * 0.39.z77 climb (pure): the ticks of one level dug up through cells that cost at most {@code dearestCellTicks} each as
+     * Baritone prices a break (its mining ticks + blockBreakAdditionalPenalty, times the cost hook's multiplier): a staircase
+     * level's walk and jump plus {@link #STAIR_CELLS} such cells - at least what any one level up costs Baritone there, so a
+     * node a level higher always beats the start at Baritone's first coefficient (1.5). 0 or less: no solid cell over the
+     * feet (Baritone's walk and jump only).
+     */
+    public static double digLevelTicks(double dearestCellTicks) {
+        return baritone.api.pathing.movement.ActionCosts.JUMP_ONE_BLOCK_COST + baritone.api.pathing.movement.ActionCosts.WALK_ONE_BLOCK_COST
+                + STAIR_CELLS * Math.max(0, dearestCellTicks);
     }
 
     /**

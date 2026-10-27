@@ -682,10 +682,60 @@ public final class StepHands implements Steps.Hands {
         // shape review 1 (rule 15): the surface not known (depth -1) - the goal still pulls up; "out" is only a known surface
         int upTo = io.github.mojolowjo.entropybot.world.SurfaceHeight.known(top) && top > me[1] ? top : me[1] + Math.max(1, depth);
         io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "climb");
-        b.getCustomGoalProcess().setGoalAndPath(new io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.UnderSky(SKY_CELLS, upTo));
+        // 0.39.z77 climb (run CM 17:36-17:43): each level of the goal's heuristic is the column's own dearest dug level, so
+        // Baritone's search counts a level dug up as progress (ReflexGoals.UnderSky)
+        String[] dearest = new String[1];
+        double cell = dearestClimbCell(p, me, upTo, dearest);
+        var goal = new io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.UnderSky(SKY_CELLS, upTo, io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.digLevelTicks(cell));
+        b.getCustomGoalProcess().setGoalAndPath(goal);
         climbing = true;
-        LOG.info("[entropybot] steps: climb - Baritone's goal: the feet under open sky (pull up to y {}; {} over the feet at {})", upTo, depth < 0 ? "the surface not known" : depth + " blocks", Jobs.fmt(me));
+        LOG.info("[entropybot] steps: climb - Baritone's goal: the feet under open sky (pull up to y {}; {} over the feet at {}; a dug level priced {} ticks: {})",
+                upTo, depth < 0 ? "the surface not known" : depth + " blocks", Jobs.fmt(me), Math.round(goal.levelTicks()), dearest[0]);
         return null;
+    }
+
+    /**
+     * 0.39.z77 climb: Baritone's price of the dearest cell to break in the column over the head (feet + 2 .. upTo + 1), as its
+     * search prices a break - the mining ticks with the best hotbar item (Baritone's ToolSet reads the hotbar) plus its
+     * blockBreakAdditionalPenalty, times the cost hook's TRAVEL multiplier for that cell (BreakPolicy, the climb's intent);
+     * open, fluid, unbreakable and refused cells are left out (Baritone goes round them). {@code said[0]}: the words for the
+     * log line. 0: no such cell. Loader notes: vanilla BlockState#getCollisionShape / getDestroySpeed, Inventory hotbar
+     * slots (getSelectionSize), GameTimesLive (ItemStack#getDestroySpeed); Baritone's Settings.
+     */
+    private static double dearestClimbCell(LocalPlayer p, int[] me, int upTo, String[] said) {
+        var lv = p.level();
+        var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
+        String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(lv);
+        double penalty = baritone.api.BaritoneAPI.getSettings().blockBreakAdditionalPenalty.value;
+        java.util.Map<net.minecraft.world.level.block.state.BlockState, Double> ticksOf = new java.util.HashMap<>();
+        double dearest = 0;
+        said[0] = "no solid cell over the feet";
+        int top = Math.min(upTo + 1, lv.getMaxBuildHeight() - 1);
+        for (int y = me[1] + 2; y <= top; y++) {
+            BlockPos q = new BlockPos(me[0], y, me[2]);
+            if (!lv.isLoaded(q)) { said[0] += " (the column is loaded up to y " + (y - 1) + ")"; break; }
+            var st = lv.getBlockState(q);
+            if (st.getCollisionShape(lv, q).isEmpty() || !st.getFluidState().isEmpty() || st.getDestroySpeed(lv, q) < 0) continue;
+            double ticks = ticksOf.computeIfAbsent(st, s -> {
+                double best = io.github.mojolowjo.entropybot.commands.GameTimesLive.breakSeconds(p, s, net.minecraft.world.item.ItemStack.EMPTY);
+                for (int i = 0; i < net.minecraft.world.entity.player.Inventory.getSelectionSize(); i++) {
+                    var it = p.getInventory().getItem(i);
+                    if (!it.isEmpty()) best = Math.min(best, io.github.mojolowjo.entropybot.commands.GameTimesLive.breakSeconds(p, s, it));
+                }
+                return best * io.github.mojolowjo.entropybot.aa.brain.GameTimes.TPS;
+            });
+            if (Double.isInfinite(ticks)) continue;
+            var v = pr.judge("climb", io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.BREAK, io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, dim, me[0], y, me[2],
+                    pr.facts(lv, q, false), pr.where());
+            if (!v.allowed()) continue;
+            double cost = (ticks + penalty) * v.multiplier();
+            if (cost > dearest) {
+                dearest = cost;
+                said[0] = "dearest cell " + BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath() + " at y " + y + ": " + Math.round(ticks) + " ticks + " + Math.round(penalty)
+                        + " x" + String.format(java.util.Locale.ROOT, "%.2f", v.multiplier()) + " (" + v.rule() + ")";
+            }
+        }
+        return dearest;
     }
 
     private Car.Status climbStatus(LocalPlayer p) {

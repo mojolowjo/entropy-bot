@@ -144,6 +144,9 @@ public final class Failures {
     /** Forget a desire and all its options (aa drop). */
     public void forget(String desire) { map.values().removeIf(r -> r.desire().equals(desire)); }
 
+    /** 0.39.z77 climb: forget one option of a desire (an order's held climb, tried once more). True: it was held. */
+    public boolean forget(String desire, String option) { return map.remove(key(desire, option)) != null; }
+
     /** Lifts every hold whose cause is gone; the lifted "desire/option CAUSE" texts. */
     public List<String> sweep(Inputs in) {
         List<String> out = new ArrayList<>();

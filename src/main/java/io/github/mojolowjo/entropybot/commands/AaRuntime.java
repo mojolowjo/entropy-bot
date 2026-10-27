@@ -3592,6 +3592,9 @@ public final class AaRuntime implements JobPort {
             c.whisper(c.owner(), "aa: " + msg);
         }
         io.github.mojolowjo.entropybot.aa.brain.Goals.retryLoopParks(bb);     // 0.39.z70 (R1 = c): said by Goals (log + whisper)
+        // 0.39.z77 climb (run CM 17:43-17:48, rule 7): every order parked - under ground the waiting ones try the climb way once,
+        // and the all-parked line (each park and its wake) is said once; said by Goals (log + whisper)
+        io.github.mojolowjo.entropybot.aa.brain.Goals.parkedTick(bb, bb.in.underDepth >= io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth());
     }
 
     // ---- B7: schematic builds (2.12) ----

@@ -107,6 +107,84 @@ public final class Goals {
 
         /** 0.39.z77 met: the order was taken off the goals as met ({@link #done}); a later end of its run is no stop ({@link #runFailed}). */
         public boolean met;
+
+        /** 0.39.z77 climb: the one more try on the climb way (every order parked under ground) was taken; once per order. */
+        public boolean climbRetried;
+    }
+
+    // ---- 0.39.z77 climb (run CM 17:43:10-17:48:31: every order parked under ground, 5 min idle, no line said why) ----
+
+    /** The fact holding the all-parked line last said (said again only when it changes). */
+    static final String ALL_PARKED_SAID = "aa.allParkedSaid";
+
+    /** structural: a park's reason is cut to this many characters in the all-parked line (the whole reason was said at the park). */
+    static final int PARK_REASON_CHARS = 120; // structural: text length
+
+    /** The order holds a failed climb (its source key {@link io.github.mojolowjo.entropybot.aa.NeedChain#CLIMB_KEY}). */
+    static boolean climbHeld(Goal g) { return droppedSources(g).containsKey(io.github.mojolowjo.entropybot.aa.NeedChain.CLIMB_KEY); }
+
+    /**
+     * 0.39.z77 climb (pure): what would wake a parked order - the honest-loop park's facts (a need rises, it moves
+     * failures.moved, a new source), the one more try on the climb way for an order whose climb failed (taken when every
+     * order is parked under ground), else nothing but the owner's word.
+     */
+    public static String wake(Goal g) {
+        if (g.loopPark != null && !g.loopRetried)
+            return "wakes when a need in the bag rises, it moves " + Math.round(Failures.movedV()) + " blocks or a new source is seen";
+        if (!g.climbRetried && climbHeld(g)) return "tries once more on the climb way when every order is parked under ground";
+        return "no wake by itself (aa want " + g.r.word().trim() + " again)";
+    }
+
+    /**
+     * 0.39.z77 climb (pure; rule 7): every open order is parked - one line naming each park (its reason's head) and what would
+     * wake it; null: none open, or one is not parked (it runs, or waits on a said reason of its own).
+     */
+    public static String allParked(List<Goal> goals) {
+        if (goals == null || goals.isEmpty()) return null;
+        List<String> parts = new ArrayList<>();
+        for (Goal g : goals) {
+            if (g.parked == null) return null;
+            String why = g.parked.length() > PARK_REASON_CHARS ? g.parked.substring(0, PARK_REASON_CHARS) + "..." : g.parked;
+            parts.add(g.r.key() + ": " + why + " - " + wake(g));
+        }
+        return "every order is parked, nothing runs: " + String.join("; ", parts);
+    }
+
+    /**
+     * 0.39.z77 climb (run CM: the bot 59 blocks under ground, every order parked on its failed climb or the honest loop;
+     * moving was the only fact that could wake them and it could not move): with every order parked and the feet
+     * {@code underGround}, each parked order that waits on moving (the honest loop) or whose climb failed tries once more -
+     * its held climb is forgotten, so its chain offers the climb way again (NeedChain.climbUp). Once per order; said in the
+     * log and the whisper. Then the all-parked line ({@link #allParked}) is said once while it holds (rule 7). The lines said.
+     */
+    public static List<String> parkedTick(Blackboard bb, boolean underGround) {
+        List<String> out = new ArrayList<>();
+        if (!(bb.fact(FACT) instanceof List<?>)) return out;
+        List<Goal> goals = of(bb);
+        if (underGround && allParked(goals) != null) {
+            for (Goal g : goals) {
+                boolean movesOnly = g.loopPark != null && !g.loopRetried;
+                if (g.climbRetried || !(movesOnly || climbHeld(g))) continue;
+                g.climbRetried = true;
+                g.sources.forget(g.id(), io.github.mojolowjo.entropybot.aa.NeedChain.CLIMB_KEY);
+                String line = "order " + g.r.key() + " tries once more on the climb way: every order is parked and the bot is "
+                        + (bb.in == null ? "?" : String.valueOf(bb.in.underDepth)) + " blocks under ground, where nothing it waits on can change (it parked on: " + g.parked + ")";
+                g.parked = null;
+                g.loopPark = null;
+                g.tries.clear();                 // the try asks its questions afresh (as the R1 try)
+                bb.port.log(line);
+                bb.port.tellOwner(line);
+                out.add(line);
+            }
+        }
+        String all = allParked(goals);
+        if (all == null) { bb.fact(ALL_PARKED_SAID, null); return out; }
+        if (all.equals(bb.fact(ALL_PARKED_SAID))) return out;
+        bb.fact(ALL_PARKED_SAID, all);
+        bb.port.log(all);
+        bb.port.tellOwner(all);
+        out.add(all);
+        return out;
     }
 
     /**
