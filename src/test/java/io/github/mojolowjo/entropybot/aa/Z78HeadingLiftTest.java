@@ -6,6 +6,7 @@ import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Clock;
 import io.github.mojolowjo.entropybot.aa.moves.FactChange;
 import io.github.mojolowjo.entropybot.aa.moves.Step;
+import io.github.mojolowjo.entropybot.aa.moves.Steps;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -35,5 +36,28 @@ class Z78HeadingLiftTest {
         assertFalse(Goals.droppedSources(g, new int[]{7, 16, 30}).containsKey(key), "27 blocks (past 16 + 8): lifted, west may be tried from here");
         assertFalse(Goals.droppedSources(g, new int[]{7, 16, 23}).containsKey(key), "back to 20: still lifted (the band)");
         assertTrue(Goals.droppedSources(g, new int[]{7, 16, 10}).containsKey(key), "back within 16: held again");
+    }
+
+    /** Strip review 2: a bag-caused end ("no pickaxe left") holds no heading - a bag fact; the re-plan strips west again on the bag. */
+    @Test
+    void noPickaxeLeft_holdsNoHeading_theBagDecides() {
+        ScenariosTest.world("wooden", "stone");
+        Clock.Fake clock = new Clock.Fake(10_000_000);
+        Blackboard bb = Z77WorldFactsTest.bb(Z77WorldFactsTest.band(16, "west"), clock);
+        bb.in.pos = new int[]{7, 16, 3};
+        Goals.Goal g = Goals.draft(DebugTreeTest.item("raw_iron"), 3, 0, clock.now());
+        Step.Strip st = new Step.Strip(Z62RunSTest.IRON, Map.of("iron", 3), 16, "west", 0);
+        FactChange.strip(st.key(), "strip: no pickaxe left (strip west feet y 16: 12 blocks, 0 clusters mined)");
+        FactChange.Fact f = FactChange.take();
+        assertEquals(FactChange.BAG_STRIP, f.key(), "a bag fact, no source");
+        assertNull(FactChange.ownSourceKey(f));
+        Steps.Routine r = Goals.replan(bb, g, st, f, "strip: no pickaxe left");
+        assertNotNull(r.steps(), r.why());
+        assertFalse(Goals.droppedSources(g).containsKey(NeedChain.headingKey(16, "west")), "no heading held for the order");
+        assertEquals(0, io.github.mojolowjo.entropybot.aa.brain.WorldFacts.of(bb).size(), "nor for the other orders");
+        assertEquals("west", Z77WorldFactsTest.heading(Goals.chain(bb, g)), "west stays open: the bag (a pickaxe in it) decides");
+        // water ahead, by contrast, is the heading's
+        FactChange.strip(st.key(), "strip: water ahead at 4 16 3 (strip west feet y 16: 1 blocks)");
+        assertEquals("source " + NeedChain.headingKey(16, "west"), FactChange.take().key());
     }
 }

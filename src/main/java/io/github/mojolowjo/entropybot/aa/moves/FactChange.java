@@ -216,10 +216,32 @@ public final class FactChange {
      * Step.Strip#key; a fresh start's from that start), the one strip key the strip ways and the playbook's strip read.
      */
     public static void strip(String key, String why) {
+        // strip review 2 (which end holds what): a bag-caused end ("no pickaxe left", "bag full") is no fact about the heading -
+        // a bag fact, no hold: the order re-plans on the bag it has (a pickaxe first), the same try with the same bag parks
+        // (Steps' order tries); every other end - water / lava ahead, no path, a yield end, the walk down, a stop - is the
+        // heading's at its Y
+        if (bagCaused(why)) {
+            last = new Fact(BAG_STRIP, "strip at " + key + ": " + why + " (the bag's: no heading held; re-planned on the bag)");
+            return;
+        }
         // 0.39.z78 strip (run DS 15:14:33): held by the strip's heading at its Y (NeedChain.stripHold), the key the strip ways
         // and the playbook's strip ask - never the joined ore key no reader asked
         String hold = io.github.mojolowjo.entropybot.aa.NeedChain.stripHold(key);
-        last = new Fact("source " + (hold != null ? hold : io.github.mojolowjo.entropybot.aa.NeedChain.STRIP_KEY + key), "strip at " + key + ": " + why);
+        if (hold == null) {
+            // strip review 1 (rule 7): a malformed strip key holds nothing (no reader could ask it) - said loud, no fact written
+            io.github.mojolowjo.entropybot.Quiet.warn("FactChange.strip: not a strip key \"" + key + "\" - no hold written for: " + why,
+                    new IllegalArgumentException(key));
+            return;
+        }
+        last = new Fact("source " + hold, "strip at " + key + ": " + why);
+    }
+
+    /** strip review 2: the key of a strip's bag-caused end (no source: nothing held, the bag decides). */
+    public static final String BAG_STRIP = "bag strip";
+
+    /** strip review 2: the strip's end is the bag's (no pickaxe left, the bag full), not the heading's. Pure. */
+    public static boolean bagCaused(String why) {
+        return why != null && (why.contains("no pickaxe") || why.contains("bag full"));
     }
 
     /**

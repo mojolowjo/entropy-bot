@@ -65,9 +65,16 @@ class Z77DcHeadingTest {
         assertEquals(NeedChain.headingKey(16, "east"), FactChange.ownSourceKey(f), "the heading, not the way's key, is held");
         assertTrue(f.text().contains("found no path after 21 cells: " + why), f.text());
 
-        // run DC held the way's own key (no strip at all, the climb and the surface explore); 0.39.z78 strip: no hold of that
-        // form is written any more - the way's key is held as its heading (NeedChain.stripHold)
+        // run DC held the way's own key (no strip at all, the climb and the surface explore); 0.39.z78 strip: the way's key is
+        // held as its heading (NeedChain.stripHold) - in this scene the same no-path end through the way's key now strips south,
+        // priced at y 16, with no climb and no explore
         assertEquals(NeedChain.headingKey(16, "east"), NeedChain.stripHold(band.key()));
+        FactChange.strip(eastStrip().key(), why);
+        FactChange.Fact byWay = FactChange.take();
+        Chain was = NeedChain.resolve("raw_iron", 12, dc(band).withoutSources(Map.of(FactChange.ownSourceKey(byWay), byWay.text())));
+        assertTrue(was.ok() && !was.explore(), was.why());
+        assertEquals("south", Z62RunSTest.strip(was).heading(), "the next heading, not the climb: " + was.why());
+        assertTrue(was.steps().stream().noneMatch(s -> s instanceof Step.Climb || s instanceof Step.Explore), was.why());
 
         // the fix: the order's own hold (the heading) - the strip south at y 16, priced, no explore
         Chain now = NeedChain.resolve("raw_iron", 12, dc(band).withoutSources(Map.of(FactChange.ownSourceKey(f), f.text())));
