@@ -56,7 +56,8 @@ import java.util.function.ToDoubleFunction;
  * job's rule); a recipe way runs with what the bag holds of its own need set aside (counted once).
  * An item already on the path is a loop: that way is dropped. A way that ends in an explore never competes with one that
  * does not. Every loser goes to the dropped list with its seconds or its reason. Rough prices (RULES 14): walk, break,
- * craft, place, smelt, kill. Pure (JUnit: NeedChainTest, ScenariosTest). Loader notes: none (the facts come from
+ * craft, place, smelt, kill. 0.39.z78 D6: every resolve is a tree of nodes that keep their sums ({@link PlanNodes}; the hooks:
+ * {@code Facts}, {@code TrackedBag}, {@code node}, {@code way}, {@code root}). Pure (JUnit: NeedChainTest, ScenariosTest, D6NodesTest). Loader notes: none (the facts come from
  * {@code AaRuntime.needWorld}).
  */
 public final class NeedChain {
@@ -610,6 +611,9 @@ public final class NeedChain {
 
         boolean item() { return tags.isEmpty() && items.size() == 1; }
 
+        /** 0.39.z78 D6: the key of a bag scan by {@link #has} (one predicate per need word). */
+        String scanKey() { return "has " + word; }
+
         String id() { return items.iterator().next(); }
 
         /** The bag entry counts for this need: a member (the game's tag index), or the token a way of this need made. */
@@ -733,10 +737,14 @@ public final class NeedChain {
 
     private static final class Ctx {
         final Trace trace = TRACE.get();
-        final World w;
-        final Map<String, Integer> bag = new LinkedHashMap<>();
+        final Facts w;
+        /** 0.39.z78 D6: this resolve's node run (the reads, the open node); null: the resolve as before D6 (PlanNodes.old, a trace). */
+        final PlanNodes.Run run;
+        final TrackedBag bag = new TrackedBag();
         /** 0.39.z73 (D2 3.4): each step object -> {@link #seconds} when it was first added (Chain#stepSeconds; never restored). */
         final Map<Step, Double> addedAt = new java.util.IdentityHashMap<>();
+        /** 0.39.z78 D6: a step whose add mark was copied from the step it replaced ({@link Marked#set}) -> that step. */
+        final Map<Step, Step> markFrom = new java.util.IdentityHashMap<>();
         final List<Step> steps = new Marked();
 
         /** The chain's steps, each marked with the seconds priced so far when it first came in (a restore re-adds the same objects). */
@@ -754,9 +762,69 @@ public final class NeedChain {
             @Override public Step set(int i, Step s) {
                 Step old = super.set(i, s);
                 Double m = old == null ? null : addedAt.get(old);     // a merged leaf keeps its place in the split
-                if (m != null) addedAt.putIfAbsent(s, m);
+                if (m != null && addedAt.putIfAbsent(s, m) == null) markFrom.put(s, old);
                 return old;
             }
+        }
+
+        boolean caching() { return run != null; }
+
+        /** 0.39.z78 D6: the walk memo's entry {@code key} (read by the open node). */
+        Walked walk(String key) {
+            Walked v = walks.get(key);
+            if (run != null && run.top != null) {
+                PlanNodes.Frame f = run.top;
+                if (!f.walkWrites.contains(key) && !f.walkReads.containsKey(key)) f.walkReads.put(key, PlanNodes.box(v));
+            }
+            return v;
+        }
+
+        /** 0.39.z78 D6: the walk memo's entry {@code key} set (written by the open node). */
+        void walk(String key, Walked v) {
+            if (run != null && run.top != null) {
+                PlanNodes.Frame f = run.top;
+                if (!f.walkWrites.contains(key) && !f.walkReads.containsKey(key)) f.walkReads.put(key, PlanNodes.box(walks.get(key)));
+                f.walkWrites.add(key);
+            }
+            walks.put(key, v);
+        }
+
+        /** 0.39.z78 D6: an unreachable source fact (kept with the open node, put again when it is reused). */
+        void unreach(String key, String why) {
+            if (run != null && run.top != null) run.top.unreach.add(new Object[]{key, why});
+            unreachable.put(key, why);
+        }
+
+        /** 0.39.z78 D6: the unreachable facts read whole - the open node's result depends on what came before it: not kept. */
+        Map<String, String> unreachableRead() {
+            notKept();
+            return unreachable;
+        }
+
+        /** 0.39.z78 D6: the step's counted uses (kept with the open node). */
+        void use(Step s, Map<String, Integer> u) {
+            if (run != null && run.top != null) run.top.uses.put(s, u);
+            uses.put(s, u);
+        }
+
+        /** 0.39.z78 D6: the open node reads something no node can be keyed by (it is resolved again each time). */
+        void notKept() { if (run != null && run.top != null) run.top.keep = false; }
+
+        /** 0.39.z78 D6: needChain.maxTrials passed - the check counted in the open node (its trial bound, PlanNodes.Node#bound). */
+        boolean overBound() {
+            boolean over = trials > maxTrials();
+            if (run != null && run.top != null) {
+                PlanNodes.Frame f = run.top;
+                f.maxOff = Math.max(f.maxOff, trials - f.entryTrials);
+                if (over) f.bound = true;
+            }
+            return over;
+        }
+
+        /** 0.39.z78 D6: an effect (a write outside the planner's state): run now, or kept for the apply on the worker. */
+        void effect(PlanNodes.Effect e) {
+            if (run != null) run.effect(e);
+            else e.run(w.raw().path());
         }
         final Map<String, Integer> leafAt = new LinkedHashMap<>();   // spot key -> index of its collect step
         final Map<String, Integer> taken = new LinkedHashMap<>();    // spot key -> blocks taken from it
@@ -816,16 +884,21 @@ public final class NeedChain {
          */
         final List<String> waited = new ArrayList<>();
 
-        Ctx(World w) {
-            this.w = w;
-            for (var e : w.bag().entrySet()) if (e.getValue() > 0) bag.merge(e.getKey(), e.getValue(), Integer::sum);
-            dropped.addAll(w.held());                  // 0.39.z33: the sources the order dropped, with their reasons
-            tableReady = w.tableNear();
-            furnaceReady = w.furnaceNear();
-            for (var e : w.bag().entrySet()) {
-                if (e.getValue() <= 0) continue;
-                int t = MiningTiers.toolTier(e.getKey(), "pickaxe");
-                if (t > pickTier) { pickTier = t; pickItem = e.getKey(); }
+        Ctx(World w) { this(w, null); }
+
+        /** 0.39.z78 D6: {@code run} - the node run (its root node already open, so the bag and the flags read here are its facts). */
+        Ctx(World w, PlanNodes.Run run) {
+            this.run = run;
+            this.w = new Facts(w, run);
+            bag.rawSet(initialBag(w));
+            bag.run = run;
+            dropped.addAll(this.w.held());             // 0.39.z33: the sources the order dropped, with their reasons
+            tableReady = this.w.tableNear();
+            furnaceReady = this.w.furnaceNear();
+            // 0.39.z78 D6: the bag's pickaxes by their scan (a word that is no pickaxe never raised the tier: the same pick)
+            for (String k : bag.scan(PICKAXES, PICKAXES_SCAN)) {
+                int t = MiningTiers.toolTier(k, "pickaxe");
+                if (t > pickTier) { pickTier = t; pickItem = k; }
             }
         }
 
@@ -837,11 +910,30 @@ public final class NeedChain {
         /** What the bag holds of the item for this need: less what an outer need already counted as had (0.39.z75 item 3). */
         int have(String item) { return Math.max(0, bag.getOrDefault(item, 0) - aside.getOrDefault(item, 0)); }
 
-        /** Everything a way changes, to put back when the way is dropped. */
+        /**
+         * Everything a way changes, to put back when the way is dropped. 0.39.z78 D6: {@code track} - the open node's bag writes
+         * then (which words it wrote and made), put back with the bag; not part of any node's key.
+         */
         record Snap(Map<String, Integer> bag, List<Step> steps, Map<String, Integer> leafAt, Map<String, Integer> taken, List<String> dropped,
                     double seconds, double away, boolean tableReady, boolean furnaceReady, boolean stuck, String unknown, String pickItem, int pickTier,
                     boolean tableWalked, boolean furnaceWalked, int pickWorn, boolean pickMade, boolean pickOut, List<String> spares, boolean atRoom,
-                    String down, int downAt, boolean tableDown, boolean furnaceDown, Map<String, Integer> upBag) {}
+                    String down, int downAt, boolean tableDown, boolean furnaceDown, Map<String, Integer> upBag, Object track) {}
+
+        /** 0.39.z78 D6: the open node's bag writes as a snapshot keeps them ({@link Snap#track}). */
+        private record Track(PlanNodes.Frame frame, Set<String> written, LinkedHashSet<String> created) {}
+
+        private Object track() {
+            if (run == null || run.top == null) return null;
+            return new Track(run.top, new java.util.HashSet<>(run.top.written), new LinkedHashSet<>(run.top.created));
+        }
+
+        private void untrack(Object t) {
+            if (run == null || run.top == null) return;
+            if (t instanceof Track k && k.frame() == run.top) {
+                run.top.written = new java.util.HashSet<>(k.written());
+                run.top.created = new LinkedHashSet<>(k.created());
+            } else if (run.top != null) { run.top.keep = false; run.top.sound = false; }   // another node's snapshot: never expected; nothing kept
+        }
 
         /**
          * 0.39.z65 item 2 (run V 07:13:11: one stone pickaxe, no spare, and the reason only in aa debug): the spare-tool
@@ -856,13 +948,14 @@ public final class NeedChain {
         }
 
         Snap snap() {
-            return new Snap(new LinkedHashMap<>(bag), new ArrayList<>(steps), new LinkedHashMap<>(leafAt), new LinkedHashMap<>(taken), new ArrayList<>(dropped),
+            return new Snap(bag.rawCopy(), new ArrayList<>(steps), new LinkedHashMap<>(leafAt), new LinkedHashMap<>(taken), new ArrayList<>(dropped),
                     seconds, away, tableReady, furnaceReady, stuck, unknown, pickItem, pickTier, tableWalked, furnaceWalked, pickWorn, pickMade, pickOut, new ArrayList<>(spares), atRoom,
-                    down, downAt, tableDown, furnaceDown, upBag == null ? null : new LinkedHashMap<>(upBag));
+                    down, downAt, tableDown, furnaceDown, upBag == null ? null : new LinkedHashMap<>(upBag), track());
         }
 
         void restore(Snap s) {
-            bag.clear(); bag.putAll(s.bag());
+            bag.rawSet(s.bag());
+            untrack(s.track());
             steps.clear(); steps.addAll(s.steps());
             leafAt.clear(); leafAt.putAll(s.leafAt());
             taken.clear(); taken.putAll(s.taken());
@@ -879,11 +972,815 @@ public final class NeedChain {
         }
     }
 
+    // ---- 0.39.z78 D6: the planner's nodes keep their sums (PlanNodes; docs/designs/D6-planner-incremental.md) ----
+
+    /**
+     * 0.39.z78 D6: the simulated bag of one resolve - every read and write told to the open node (a word read before the
+     * node wrote it is its fact; a scan by a predicate keeps the matching words; any other walk over the bag is a read of
+     * the whole bag). With no run (the old resolve) a plain map. The {@code raw} methods are the planner's own bookkeeping
+     * (a snapshot, a restore), never a read.
+     */
+    static final class TrackedBag extends LinkedHashMap<String, Integer> {
+        PlanNodes.Run run;
+
+        private PlanNodes.Frame top() { return run == null ? null : run.top; }
+
+        Integer raw(String k) { return super.get(k); }
+
+        LinkedHashMap<String, Integer> rawCopy() {
+            LinkedHashMap<String, Integer> m = new LinkedHashMap<>();
+            for (var e : super.entrySet()) m.put(e.getKey(), e.getValue());
+            return m;
+        }
+
+        void rawSet(Map<String, Integer> m) {
+            super.clear();
+            for (var e : m.entrySet()) super.put(e.getKey(), e.getValue());
+        }
+
+        void rawPut(String k, Integer v) { super.put(k, v); }
+
+        /** The words matching {@code p}, in the bag's order (nothing told). */
+        List<String> rawScan(java.util.function.Predicate<String> p) {
+            List<String> out = new ArrayList<>();
+            for (String k : super.keySet()) if (p.test(k)) out.add(k);
+            return out;
+        }
+
+        /** The words matching {@code p}, in the bag's order; the open node keeps the scan ({@code key}: one per predicate). */
+        List<String> scan(java.util.function.Predicate<String> p, Object key) {
+            List<String> out = rawScan(p);
+            PlanNodes.Frame f = top();
+            if (f != null && !f.scans.containsKey(key)) {
+                List<String> w = new ArrayList<>();
+                for (String k : out) if (!f.created.contains(k)) w.add(k);
+                f.scans.put(key, new PlanNodes.Scan(p, w));
+            }
+            return out;
+        }
+
+        private void read(Object k) {
+            PlanNodes.Frame f = top();
+            if (f == null || !(k instanceof String s)) return;
+            if (!f.written.contains(s) && !f.bagReads.containsKey(s)) f.bagReads.put(s, super.get(s));
+        }
+
+        private void wrote(String k, boolean made) {
+            PlanNodes.Frame f = top();
+            if (f == null) return;
+            f.written.add(k);
+            if (made) f.created.add(k);
+        }
+
+        private void whole() {
+            PlanNodes.Frame f = top();
+            if (f != null) f.whole = true;
+        }
+
+        @Override public Integer get(Object k) { read(k); return super.get(k); }
+
+        @Override public Integer getOrDefault(Object k, Integer d) { read(k); return super.getOrDefault(k, d); }
+
+        @Override public boolean containsKey(Object k) { read(k); return super.containsKey(k); }
+
+        @Override public Integer merge(String k, Integer v, java.util.function.BiFunction<? super Integer, ? super Integer, ? extends Integer> fn) {
+            read(k);
+            boolean had = super.containsKey(k);
+            Integer r = super.merge(k, v, fn);
+            wrote(k, !had);
+            return r;
+        }
+
+        @Override public Integer put(String k, Integer v) {
+            read(k);
+            boolean had = super.containsKey(k);
+            Integer r = super.put(k, v);
+            wrote(k, !had);
+            return r;
+        }
+
+        @Override public Set<Map.Entry<String, Integer>> entrySet() { whole(); return super.entrySet(); }
+
+        @Override public Set<String> keySet() { whole(); return super.keySet(); }
+
+        @Override public java.util.Collection<Integer> values() { whole(); return super.values(); }
+
+        @Override public void forEach(java.util.function.BiConsumer<? super String, ? super Integer> a) { whole(); super.forEach(a); }
+
+        /** Never used by the planner: the open node is not kept (its bag change is not traced word by word). */
+        @Override public Integer remove(Object k) { untraced(); return super.remove(k); }
+
+        @Override public void putAll(Map<? extends String, ? extends Integer> m) { untraced(); super.putAll(m); }
+
+        @Override public void clear() { untraced(); super.clear(); }      // (rawSet is the planner's restore)
+
+        @Override public Integer putIfAbsent(String k, Integer v) { untraced(); return super.putIfAbsent(k, v); }
+
+        private void untraced() {
+            PlanNodes.Frame f = top();
+            if (f != null) { f.keep = false; f.whole = true; }
+        }
+    }
+
+    /** 0.39.z78 D6: the bag a resolve starts from - the World's words held (a count above 0), in its order (as Ctx always copied it). */
+    static LinkedHashMap<String, Integer> initialBag(World w) {
+        LinkedHashMap<String, Integer> b = new LinkedHashMap<>();
+        for (var e : w.bag().entrySet()) if (e.getValue() > 0) b.merge(e.getKey(), e.getValue(), Integer::sum);
+        return b;
+    }
+
+    /** 0.39.z78 D6: the bag scans (one predicate each): the pickaxes, the fuels, the hits stronger than the bare hand. */
+    static final java.util.function.Predicate<String> PICKAXES = k -> MiningTiers.toolTier(k, "pickaxe") > 0;
+    static final String PICKAXES_SCAN = "pickaxes";
+    static final String FUELS_SCAN = "fuels";
+    static final java.util.function.Predicate<String> HITS = k -> !(ItemWorth.facts(k).attack() <= HAND_DAMAGE);
+    static final String HITS_SCAN = "hits";
+
+    /** 0.39.z78 D6: the item burns in a furnace (the fuel table, with or without its namespace: CraftPlanner's own test). */
+    static boolean burns(String id) { return io.github.mojolowjo.entropybot.craft.CraftPlanner.burnTicks(ItemWorth.fuels(), id) > 0; }
+
+    /**
+     * 0.39.z78 D6: the two facts the planner read outside the World before D6 - the strip areas' faces and ores
+     * (StripAreas) and the owner's main stations (Nearby / MainStations). Live: those classes; the worker's snapshot: copies.
+     */
+    public interface Extras {
+        io.github.mojolowjo.entropybot.aa.brain.StripAreas.Yield along(int x, int y, int z, String heading, java.util.Collection<String> ores);
+
+        int[] freshStart(int x, int y, int z, String heading);
+
+        boolean isMain(Spot sp);
+
+        Extras LIVE = new Extras() {
+            @Override public io.github.mojolowjo.entropybot.aa.brain.StripAreas.Yield along(int x, int y, int z, String heading, java.util.Collection<String> ores) {
+                return io.github.mojolowjo.entropybot.aa.brain.StripAreas.along(x, y, z, heading, ores);
+            }
+
+            @Override public int[] freshStart(int x, int y, int z, String heading) { return io.github.mojolowjo.entropybot.aa.brain.StripAreas.freshStart(x, y, z, heading); }
+
+            @Override public boolean isMain(Spot sp) { return Nearby.isMain(null, sp, null); }
+        };
+    }
+
+    private static final ThreadLocal<Extras> EXTRAS = new ThreadLocal<>();
+    private static final ThreadLocal<Boolean> DEFER = ThreadLocal.withInitial(() -> Boolean.FALSE);
+
+    private static Extras extras() { Extras x = EXTRAS.get(); return x == null ? Extras.LIVE : x; }
+
+    /**
+     * 0.39.z78 D6 (the planner worker, off the render thread): {@code run} with {@code extras} as the facts read outside the
+     * World and the effects kept, not run - {@link #deferred} hands them over for the client tick's apply.
+     */
+    public static <T> T offThread(Extras extras, Supplier<T> run) {
+        Extras was = EXTRAS.get();
+        boolean d = DEFER.get();
+        EXTRAS.set(extras);
+        DEFER.set(Boolean.TRUE);
+        try {
+            return run.get();
+        } finally {
+            if (was == null) EXTRAS.remove(); else EXTRAS.set(was);
+            DEFER.set(d);
+        }
+    }
+
+    /** 0.39.z78 D6: one resolve's record - every fact it read, its bag words, its kept effects, its counts. */
+    public record Read(Map<PlanNodes.Fact, Object> facts, Map<String, Integer> bag, Map<Object, PlanNodes.Scan> scans, Map<String, Integer> wholeBag,
+                       List<PlanNodes.Effect> effects, PlanNodes.Stats stats) {
+        public static final Read NONE = new Read(Map.of(), Map.of(), Map.of(), null, List.of(), PlanNodes.Stats.NONE);
+
+        /** Every fact and bag word it read has the same answer on {@code w} now (asked once each). */
+        public boolean same(World w, Extras x) { return changed(w, x) == null; }
+
+        /** The first fact that changed on {@code w} ("seen minecraft:iron_ore"), null: none. */
+        public String changed(World w, Extras x) {
+            Extras xx = x == null ? Extras.LIVE : x;
+            for (var e : facts.entrySet()) {
+                Object now = Facts.ask(w, xx, e.getKey());
+                if (!Deep.equal(PlanNodes.unbox(e.getValue()), now)) return e.getKey().field() + " " + e.getKey().key();
+            }
+            return bagChanged(initialBag(w), bag, scans, wholeBag);
+        }
+    }
+
+    private static final ThreadLocal<Read> LAST = ThreadLocal.withInitial(() -> Read.NONE);
+
+    /** 0.39.z78 D6: the calling thread's last resolve's record ({@link Read}). */
+    public static Read lastRead() { return LAST.get(); }
+
+    /** The first bag word that differs on {@code bag} from what a node read ("bag minecraft:coal"), null: none. */
+    private static String bagChanged(Map<String, Integer> bag, Map<String, Integer> reads, Map<Object, PlanNodes.Scan> scans, Map<String, Integer> whole) {
+        for (var e : reads.entrySet()) if (!java.util.Objects.equals(bag.get(e.getKey()), e.getValue())) return "bag " + e.getKey();
+        for (var e : scans.entrySet()) {
+            List<String> now = new ArrayList<>();
+            for (String k : bag.keySet()) if (e.getValue().test().test(k)) now.add(k);
+            if (!now.equals(e.getValue().words())) return "bag " + e.getKey();
+        }
+        if (whole != null && !Deep.equal(new ArrayList<>(bag.entrySet()), new ArrayList<>(whole.entrySet()))) return "bag (all of it)";
+        return null;
+    }
+
+    /** 0.39.z78 D6: a walk's ask as a fact's key (x y z, the straight metres the chain gave, the feet in the cell or by it). */
+    record PathKey(int x, int y, int z, double dist, boolean into) {}
+
+    /**
+     * 0.39.z78 D6: the World one resolve reads, each answer told to the open node ({@link PlanNodes.Run#read}) - the
+     * snapshot's contract: whatever the planner reads goes through here (the World's functions, its plain facts, and the two
+     * facts it read outside the World, {@link Extras}). With no run: the World's own functions, as before D6.
+     */
+    static final class Facts {
+        private final World w;
+        private final PlanNodes.Run run;
+        private final Extras extras;
+        private final Function<String, List<Spot>> seenAll;
+        private final Function<String, List<Mob>> mobs;
+        private final Function<String, int[]> band;
+        private final Function<String, Spot> stationAt;
+        private final Function<String, Integer> usesLeft;
+        private final Function<String, StripBand> strip;
+        private final Function<String, CaveWay> cave;
+        private final PathPrice path;
+        private final WhereFacts where;
+
+        Facts(World w, PlanNodes.Run run) {
+            this.w = w;
+            this.run = run;
+            this.extras = extras();
+            if (run == null) {
+                seenAll = w.seenAll(); mobs = w.mobs(); band = w.band(); stationAt = w.stationAt(); usesLeft = w.usesLeft();
+                strip = w.strip(); cave = w.cave(); path = w.path(); where = w.where();
+                return;
+            }
+            seenAll = k -> rec("seen", k, w.seenAll().apply(k));
+            mobs = k -> rec("mobs", k, w.mobs().apply(k));
+            band = k -> rec("band", k, w.band().apply(k));
+            stationAt = k -> rec("station", k, w.stationAt().apply(k));
+            usesLeft = k -> rec("uses", k, w.usesLeft().apply(k));
+            strip = k -> rec("strip", k, w.strip().apply(k));
+            cave = k -> rec("cave", k, w.cave().apply(k));
+            path = w.path() == null ? null : new Recorded(w.path());
+            WhereFacts wf = w.where();
+            where = new WhereFacts(k -> rec("where", k, wf.of().apply(k)), () -> rec("surface", null, wf.surface().get()),
+                    () -> rec("feet", null, wf.feet().get()), () -> rec("base", null, wf.base().get()));
+        }
+
+        private <T> T rec(String field, Object key, T v) {
+            if (run != null) run.read(new PlanNodes.Fact(field, key), v);
+            return v;
+        }
+
+        /** The World itself (nothing told): an effect's own provider. */
+        World raw() { return w; }
+
+        Function<String, List<Spot>> seenAll() { return seenAll; }
+        Function<String, List<Mob>> mobs() { return mobs; }
+        Function<String, int[]> band() { return band; }
+        Function<String, Spot> stationAt() { return stationAt; }
+        Function<String, Integer> usesLeft() { return usesLeft; }
+        Function<String, StripBand> strip() { return strip; }
+        Function<String, CaveWay> cave() { return cave; }
+        WhereFacts where() { return where; }
+
+        /** The loot data: read-only data, the cache's epoch (a new or newly read book forgets every node). */
+        LootBook loot() { return w.loot(); }
+
+        PathPrice path() { return rec("path provider", null, w.path() != null) ? path : null; }
+        double horizonBlocks() { return rec("horizon", null, w.horizonBlocks()); }
+        List<String> held() { return rec("held", null, w.held()); }
+        Rooms rooms() { return rec("rooms", null, w.rooms()); }
+        boolean tableNear() { return rec("tableNear", null, w.tableNear()); }
+        boolean furnaceNear() { return rec("furnaceNear", null, w.furnaceNear()); }
+
+        io.github.mojolowjo.entropybot.aa.brain.StripAreas.Yield along(int x, int y, int z, String heading, java.util.Collection<String> ores) {
+            return rec("areas along", List.of(x, y, z, heading, List.copyOf(ores)), extras.along(x, y, z, heading, ores));
+        }
+
+        int[] freshStart(int x, int y, int z, String heading) { return rec("fresh start", List.of(x, y, z, heading), extras.freshStart(x, y, z, heading)); }
+
+        boolean isMain(Spot sp) { return rec("main", sp, sp != null && extras.isMain(sp)); }
+
+        /** A fact's answer on {@code w} now (the check of a kept node; nothing told). */
+        @SuppressWarnings("unchecked")
+        static Object ask(World w, Extras x, PlanNodes.Fact f) {
+            Object k = f.key();
+            PathPrice p = w.path();
+            return switch (f.field()) {
+                case "seen" -> w.seenAll().apply((String) k);
+                case "mobs" -> w.mobs().apply((String) k);
+                case "band" -> w.band().apply((String) k);
+                case "station" -> w.stationAt().apply((String) k);
+                case "uses" -> w.usesLeft().apply((String) k);
+                case "strip" -> w.strip().apply((String) k);
+                case "cave" -> w.cave().apply((String) k);
+                case "where" -> w.where().of().apply((String) k);
+                case "surface" -> w.where().surface().get();
+                case "feet" -> w.where().feet().get();
+                case "base" -> w.where().base().get();
+                case "path provider" -> p != null;
+                case "horizon" -> w.horizonBlocks();
+                case "held" -> w.held();
+                case "rooms" -> w.rooms();
+                case "tableNear" -> w.tableNear();
+                case "furnaceNear" -> w.furnaceNear();
+                case "price" -> {
+                    PathKey q = (PathKey) k;
+                    yield p == null ? null : q.into() ? p.priceInto(q.x(), q.y(), q.z(), q.dist()) : p.price(q.x(), q.y(), q.z(), q.dist());
+                }
+                case "estimate" -> { List<Integer> q = (List<Integer>) k; yield p == null ? null : p.estimate(q.get(0), q.get(1), q.get(2)); }
+                case "toBlock" -> { List<Integer> q = (List<Integer>) k; yield p == null ? null : p.toBlock(q.get(0), q.get(1), q.get(2)); }
+                case "pending" -> p != null && p.pending();
+                case "landed" -> p == null ? 0L : p.landed();
+                case "first answers pending" -> p == null ? -1 : p.firstAnswersPending();
+                case "areas along" -> {
+                    List<Object> q = (List<Object>) k;
+                    yield x.along((Integer) q.get(0), (Integer) q.get(1), (Integer) q.get(2), (String) q.get(3), (List<String>) q.get(4));
+                }
+                case "fresh start" -> { List<Object> q = (List<Object>) k; yield x.freshStart((Integer) q.get(0), (Integer) q.get(1), (Integer) q.get(2), (String) q.get(3)); }
+                case "main" -> k != null && x.isMain((Spot) k);
+                default -> throw new IllegalStateException("D6: no such planner fact: " + f.field());
+            };
+        }
+
+        /** The World's path provider, each answer told to the open node (an effect: the ranked-out walks). */
+        private final class Recorded implements PathPrice {
+            private final PathPrice p;
+
+            Recorded(PathPrice p) { this.p = p; }
+
+            @Override public Answer price(int x, int y, int z, double dist) { return rec("price", new PathKey(x, y, z, dist, false), p.price(x, y, z, dist)); }
+
+            @Override public Answer priceInto(int x, int y, int z, double dist) { return rec("price", new PathKey(x, y, z, dist, true), p.priceInto(x, y, z, dist)); }
+
+            @Override public double estimate(int x, int y, int z) { return rec("estimate", List.of(x, y, z), p.estimate(x, y, z)); }
+
+            @Override public Walk toBlock(int x, int y, int z) { return rec("toBlock", List.of(x, y, z), p.toBlock(x, y, z)); }
+
+            @Override public void rankedOut(int x, int y, int z) { p.rankedOut(x, y, z); }
+
+            @Override public boolean pending() { return rec("pending", null, p.pending()); }
+
+            @Override public long landed() { return rec("landed", null, p.landed()); }
+
+            @Override public int firstAnswersPending() { return rec("first answers pending", null, p.firstAnswersPending()); }
+        }
+    }
+
+    // the effects (writes outside the planner's state)
+
+    /** 0.39.z78 D6: StripYield.priced as an effect. */
+    private record YieldPriced(String key, String family, double perSlab, double cellS) implements PlanNodes.Effect {
+        @Override public void run(PathPrice p) { io.github.mojolowjo.entropybot.aa.brain.StripYield.priced(key, family, perSlab, cellS); }
+    }
+
+    /** 0.39.z78 D6: StripYield.other as an effect. */
+    private record YieldOther(String key, String family, double seconds, String words, boolean strip) implements PlanNodes.Effect {
+        @Override public void run(PathPrice p) { io.github.mojolowjo.entropybot.aa.brain.StripYield.other(key, family, seconds, words, strip); }
+    }
+
+    /** 0.39.z78 D6: StripOrder.predicted as an effect. */
+    private record Predicted(String key, String family, double perCell) implements PlanNodes.Effect {
+        @Override public void run(PathPrice p) { io.github.mojolowjo.entropybot.aa.brain.StripOrder.predicted(key, family, perCell); }
+    }
+
+    /** 0.39.z78 D6: a walk ranked out of the priced ways (PathPrice#rankedOut) as an effect. */
+    private record RankedOut(int x, int y, int z) implements PlanNodes.Effect {
+        @Override public void run(PathPrice p) { if (p != null) p.rankedOut(x, y, z); }
+    }
+
+    /** 0.39.z78 D6: the game data a resolve is priced from (another epoch forgets every kept node). */
+    private static Object epoch(World w) {
+        LootBook b = w.loot();
+        return List.of(ItemWorth.version(), new Same(MiningTiers.source()), MiningTiers.ready(), io.github.mojolowjo.entropybot.aa.brain.Tuning.version(),
+                new Same(b), b != null && b.ready());
+    }
+
+    /** An object compared by identity (the data sources have no value of their own). */
+    private static final class Same {
+        final Object o;
+        Same(Object o) { this.o = o; }
+        @Override public boolean equals(Object x) { return x instanceof Same s && s.o == o; }
+        @Override public int hashCode() { return System.identityHashCode(o); }
+    }
+
+    /** 0.39.z78 D6: a node's key state - everything of the Ctx a node's code reads but the bag and the walk memo (those by word). */
+    private record Entry(List<Step> steps, Map<String, Integer> leafAt, Map<String, Integer> taken, List<String> dropped, double seconds, double away,
+                         boolean tableReady, boolean furnaceReady, boolean stuck, String unknown, String pickItem, int pickTier, boolean tableWalked,
+                         boolean furnaceWalked, int pickWorn, boolean pickMade, boolean pickOut, List<String> spares, boolean atRoom, String down, int downAt,
+                         boolean tableDown, boolean furnaceDown, Map<String, Integer> upBag, List<String> path, int pathsWaiting, Map<String, Integer> aside,
+                         boolean hoisting, boolean bandPick, Burn burned, String fail, String loopOn, Set<String> keptFuel) {}
+
+    /** A cheap hash of an entry state (its sizes and scalars; equal entries hash equal, a clash is settled by Deep.equal). */
+    private static int hashOf(Entry e) {
+        int h = java.util.Objects.hash(e.steps().size(), e.dropped().size(), e.spares().size(), e.seconds(), e.away(), e.pickItem(), e.pickTier(), e.pickWorn(),
+                e.down(), e.downAt(), e.path(), e.pathsWaiting(), e.fail(), e.loopOn(), e.unknown(), e.leafAt().size(), e.taken().size());
+        int flags = (e.tableReady() ? 1 : 0) | (e.furnaceReady() ? 2 : 0) | (e.stuck() ? 4 : 0) | (e.tableWalked() ? 8 : 0) | (e.furnaceWalked() ? 16 : 0)    // structural: bits
+                | (e.pickMade() ? 32 : 0) | (e.pickOut() ? 64 : 0) | (e.atRoom() ? 128 : 0) | (e.tableDown() ? 256 : 0) | (e.furnaceDown() ? 512 : 0)       // structural: bits
+                | (e.hoisting() ? 1024 : 0) | (e.bandPick() ? 2048 : 0);                                                                                    // structural: bits
+        return 31 * h + flags;                                                                                                                              // structural: a hash's multiplier
+    }
+
+    private static Entry entry(Ctx c, Ctx.Snap s) {
+        Set<String> kept = KEPT_FUEL.get();
+        return new Entry(s.steps(), s.leafAt(), s.taken(), s.dropped(), s.seconds(), s.away(), s.tableReady(), s.furnaceReady(), s.stuck(), s.unknown(),
+                s.pickItem(), s.pickTier(), s.tableWalked(), s.furnaceWalked(), s.pickWorn(), s.pickMade(), s.pickOut(), s.spares(), s.atRoom(), s.down(),
+                s.downAt(), s.tableDown(), s.furnaceDown(), s.upBag(), List.copyOf(c.path), c.pathsWaiting, new LinkedHashMap<>(c.aside), c.hoisting,
+                c.bandPick, c.burned, c.fail, c.loopOn, kept == null ? Set.of() : new TreeSet<>(kept));
+    }
+
+    /** 0.39.z78 D6: what a need had read when its ways were made (a way's closure was built from it): facts, bag, scans, walk memo. */
+    private record Prefix(List<Map.Entry<PlanNodes.Fact, Object>> facts, List<Map.Entry<String, Integer>> bag, List<Map.Entry<Object, List<String>>> scans,
+                          List<Map.Entry<String, Object>> walks, List<Object> made) {}
+
+    private static Prefix prefixOf(PlanNodes.Frame f) {
+        List<Map.Entry<PlanNodes.Fact, Object>> fs = new ArrayList<>(f.reads.size());
+        for (var e : f.reads.entrySet()) fs.add(new java.util.AbstractMap.SimpleImmutableEntry<>(e.getKey(), e.getValue()));
+        List<Map.Entry<String, Integer>> bs = new ArrayList<>(f.bagReads.size());
+        for (var e : f.bagReads.entrySet()) bs.add(new java.util.AbstractMap.SimpleImmutableEntry<>(e.getKey(), e.getValue()));
+        List<Map.Entry<Object, List<String>>> ss = new ArrayList<>(f.scans.size());
+        for (var e : f.scans.entrySet()) ss.add(new java.util.AbstractMap.SimpleImmutableEntry<>(e.getKey(), List.copyOf(e.getValue().words())));
+        List<Map.Entry<String, Object>> ws = new ArrayList<>(f.walkReads.size());
+        for (var e : f.walkReads.entrySet()) ws.add(new java.util.AbstractMap.SimpleImmutableEntry<>(e.getKey(), e.getValue()));
+        List<Object> made = new ArrayList<>();                 // what its children so far gave (a way's closure may hold it)
+        for (var e : f.children.entrySet()) for (PlanNodes.Node n : e.getValue()) made.add(List.of(e.getKey(), n.out instanceof Out o ? PlanNodes.box(o.value()) : PlanNodes.NULL));
+        return new Prefix(fs, bs, ss, ws, made);
+    }
+
+    /**
+     * 0.39.z78 D6: what a node left. {@code after}: the Ctx's state then (its bag and steps are not used: {@code bagOut}
+     * holds the words it wrote, the old ones first then the new ones in the bag's order from {@code made}; {@code stepMap}
+     * says per step after it: its entry index (>= 0) or -(k+1), the k-th of {@code newSteps}); the walk memo, the
+     * unreachable facts, the waits, the uses and add marks it wrote; the trials it priced; a way's own fields after it.
+     */
+    private record Out(Object value, Ctx.Snap after, String fail, String loopOn, int pathsWaiting, Burn burned, Map<String, Integer> aside,
+                       boolean hoisting, boolean bandPick, List<Map.Entry<String, Integer>> bagOut, int made, Map<String, Walked> walkOut,
+                       List<Object[]> unreach, List<String> waited, int trialsOff, int[] stepMap, List<Step> newSteps,
+                       Map<Integer, Map<String, Integer>> entryUses, Map<Integer, Map<String, Integer>> newUses, Map<Integer, Object> newMarks,
+                       String altId, Burn altBurned, int rankDelta) {}
+
+    private static Out out(Ctx c, PlanNodes.Frame f, Ctx.Snap entry, Object value, Alt alt, int rankAt) {
+        Ctx.Snap after = new Ctx.Snap(null, null, new LinkedHashMap<>(c.leafAt), new LinkedHashMap<>(c.taken), new ArrayList<>(c.dropped), c.seconds, c.away,
+                c.tableReady, c.furnaceReady, c.stuck, c.unknown, c.pickItem, c.pickTier, c.tableWalked, c.furnaceWalked, c.pickWorn, c.pickMade, c.pickOut,
+                new ArrayList<>(c.spares), c.atRoom, c.down, c.downAt, c.tableDown, c.furnaceDown, c.upBag == null ? null : new LinkedHashMap<>(c.upBag), null);
+        Map<Step, Integer> at = new java.util.IdentityHashMap<>();
+        for (int j = 0; j < entry.steps().size(); j++) at.putIfAbsent(entry.steps().get(j), j);
+        int[] map = new int[c.steps.size()];
+        List<Step> news = new ArrayList<>();
+        Map<Step, Integer> newAt = new java.util.IdentityHashMap<>();
+        for (int i = 0; i < c.steps.size(); i++) {
+            Step s = c.steps.get(i);
+            Integer j = at.get(s);
+            if (j != null) { map[i] = j; continue; }
+            Integer k = newAt.get(s);
+            if (k == null) { k = news.size(); news.add(s); newAt.put(s, k); }
+            map[i] = -(k + 1);
+        }
+        Map<Integer, Map<String, Integer>> entryUses = new LinkedHashMap<>(), newUses = new LinkedHashMap<>();
+        for (Object o : f.uses.keySet()) {
+            Step s = (Step) o;
+            Integer j = at.get(s);
+            if (j != null) entryUses.put(j, c.uses.get(s));
+            else { Integer k = newAt.get(s); if (k != null) newUses.put(k, c.uses.get(s)); }
+        }
+        Map<Integer, Object> marks = new LinkedHashMap<>();
+        for (int k = 0; k < news.size(); k++) {
+            Step y = news.get(k);
+            Integer src = null;
+            while ((y = c.markFrom.get(y)) != null) { Integer j = at.get(y); if (j != null) { src = j; break; } }
+            marks.put(k, src != null ? (Object) src : c.addedAt.get(news.get(k)));
+        }
+        List<Map.Entry<String, Integer>> bagOut = new ArrayList<>();
+        for (String k : f.written) if (!f.created.contains(k)) bagOut.add(new java.util.AbstractMap.SimpleImmutableEntry<>(k, c.bag.raw(k)));
+        int made = bagOut.size();
+        for (String k : c.bag.rawScan(f.created::contains)) bagOut.add(new java.util.AbstractMap.SimpleImmutableEntry<>(k, c.bag.raw(k)));
+        Map<String, Walked> walkOut = new LinkedHashMap<>();
+        for (String k : f.walkWrites) walkOut.put(k, c.walks.get(k));
+        return new Out(value, after, c.fail, c.loopOn, c.pathsWaiting, c.burned, new LinkedHashMap<>(c.aside), c.hoisting, c.bandPick, bagOut, made, walkOut,
+                List.copyOf(f.unreach), List.copyOf(c.waited.subList(f.waitedAt, c.waited.size())), c.trials - f.entryTrials, map, news, entryUses, newUses, marks,
+                alt == null ? null : alt.id, alt == null ? null : alt.burned, alt == null || alt.rk == null ? 0 : alt.rk.asked - rankAt);
+    }
+
+    /** 0.39.z78 D6: a kept node's facts hold here: the trial bound, the walk memo, the bag words, the World's answers. */
+    private static boolean valid(Ctx c, PlanNodes.Node n) {
+        if (n.maxOff >= 0 && c.trials != n.entryTrials && (n.bound || c.trials + n.maxOff > maxTrials())) return false;
+        for (var e : n.walkReads.entrySet()) if (!Deep.equal(c.walks.get(e.getKey()), PlanNodes.unbox(e.getValue()))) return false;
+        for (var e : n.bagReads.entrySet()) if (!java.util.Objects.equals(c.bag.raw(e.getKey()), e.getValue())) return false;
+        for (var s : n.scans.values()) if (!c.bag.rawScan(s.test()).equals(s.words())) return false;
+        if (n.wholeBag != null && !Deep.equal(c.bag.rawCopy(), n.wholeBag)) return false;
+        return c.run.hold(n);
+    }
+
+    /** 0.39.z78 D6: a need ({@code obtain}, {@code needTag}) as a node: reused when its facts hold, else resolved by {@code body}. */
+    private static Object node(Ctx c, String kind, Object key, Supplier<Object> body) {
+        PlanNodes.Frame up = c.run.top;
+        Ctx.Snap s = c.snap();
+        Entry e = entry(c, s);
+        Object ck = List.of(kind, key);
+        int h = hashOf(e);
+        PlanNodes.Node old = null;
+        for (PlanNodes.Node n : up.candidates(ck)) {
+            if (n.entryHash != h || !Deep.equal(n.entry, e)) continue;
+            if (valid(c, n)) return reuse(c, n, ck, s, null, body, null);
+            old = n;
+            c.run.dirty++;
+            break;
+        }
+        return compute(c, kind, key, ck, e, s, old, body, null, null).out().value();
+    }
+
+    /** 0.39.z78 D6: way {@code i} of a choose ({@code ordinal}: its number in the open node) as a node, priced from {@code s0}. */
+    private static String way(Ctx c, Alt a, int i, int ordinal, Ctx.Snap s0, Prefix prefix) {
+        PlanNodes.Frame up = c.run.top;
+        Entry e = entry(c, s0);
+        Object ck = List.of(ordinal, i, a.label);
+        int h = hashOf(e);
+        Integer rank = a.rk == null ? null : a.rk.asked;
+        PlanNodes.Node old = null;
+        for (PlanNodes.Node n : up.candidates(ck)) {
+            if (n.entryHash != h || !java.util.Objects.equals(n.extra, rank) || !Deep.equal(n.entry, e) || !Deep.equal(n.prefix, prefix)) continue;
+            if (valid(c, n)) return (String) reuse(c, n, ck, s0, a, a.run::get, prefix);
+            old = n;
+            c.run.dirty++;
+            break;
+        }
+        return (String) compute(c, "way", ck, ck, e, s0, old, a.run::get, a, prefix).out().value();
+    }
+
+    private record Made(PlanNodes.Node node, Out out) {}
+
+    /** Resolves a node by its code in a frame of its own; kept as the open node's child {@code ck} (when its reads can key it). */
+    private static Made compute(Ctx c, String kind, Object key, Object ck, Entry e, Ctx.Snap s, PlanNodes.Node old, Supplier<Object> body, Alt alt, Prefix prefix) {
+        PlanNodes.Node n = new PlanNodes.Node(kind, key, e, hashOf(e));
+        n.resolves = old == null ? 1 : old.resolves + 1;
+        n.reused = old == null ? 0 : old.reused;
+        n.prefix = prefix;
+        n.extra = alt == null || alt.rk == null ? null : alt.rk.asked;
+        int rankAt = alt == null || alt.rk == null ? 0 : alt.rk.asked;
+        PlanNodes.Frame up = c.run.top;
+        PlanNodes.Frame f = c.run.open(n);
+        f.old = old;
+        f.entryTrials = c.trials;
+        f.entryBag = s.bag();
+        f.waitedAt = c.waited.size();
+        Object v;
+        try {
+            v = body.get();
+        } catch (RuntimeException | Error x) {
+            c.run.close();
+            up.keep = false;
+            throw x;
+        }
+        Out o = out(c, f, s, v, alt, rankAt);
+        c.run.close();
+        n.out = o;
+        n.reads = new LinkedHashMap<>(f.reads);
+        n.bagReads = new LinkedHashMap<>(f.bagReads);
+        n.scans = new LinkedHashMap<>(f.scans);
+        n.wholeBag = f.whole ? f.entryBag : null;
+        n.walkReads = new LinkedHashMap<>(f.walkReads);
+        n.entryTrials = f.entryTrials;
+        n.maxOff = f.maxOff;
+        n.bound = f.bound;
+        n.effects = List.copyOf(f.effects);
+        n.children = f.children;
+        n.size = f.size;
+        c.run.computed++;
+        if (f.keep) up.child(ck, n);
+        else up.size += f.size;
+        return new Made(n, o);
+    }
+
+    /**
+     * Applies a kept node: the state it left (its steps fresh copies, their uses and add marks re-keyed; the bag words,
+     * walk memo, unreachable facts and waits it wrote; the trials it priced; a way's own fields), its effects run again,
+     * its reads and writes the open node's. Verify mode (tests): computed again as well, and the two compared.
+     */
+    private static Object reuse(Ctx c, PlanNodes.Node n, Object ck, Ctx.Snap s, Alt alt, Supplier<Object> body, Prefix prefix) {
+        if (PlanNodes.verifying()) return verifyReuse(c, n, ck, s, alt, body, prefix);
+        Object v = apply(c, n, alt);
+        n.reused++;
+        c.run.reusedN++;
+        c.run.top.child(ck, n);
+        return v;
+    }
+
+    private static Object apply(Ctx c, PlanNodes.Node n, Alt alt) {
+        Out o = (Out) n.out;
+        PlanNodes.Frame f = c.run.top;
+        int trials = c.trials;
+        List<Step> cur = new ArrayList<>(c.steps);
+        Step[] fresh = new Step[o.newSteps().size()];
+        for (int k = 0; k < fresh.length; k++) {
+            fresh[k] = Deep.fresh(o.newSteps().get(k));
+            Object m = o.newMarks().get(k);
+            if (m instanceof Integer j) {
+                Double mark = c.addedAt.get(cur.get(j));
+                if (mark != null) c.addedAt.put(fresh[k], mark);
+                c.markFrom.put(fresh[k], cur.get(j));
+            } else if (m instanceof Double d) c.addedAt.put(fresh[k], d);
+        }
+        List<Step> fin = new ArrayList<>(o.stepMap().length);
+        for (int v : o.stepMap()) fin.add(v >= 0 ? cur.get(v) : fresh[-v - 1]);
+        Ctx.Snap a = o.after();
+        c.seconds = a.seconds();
+        c.steps.clear();
+        c.steps.addAll(fin);
+        c.leafAt.clear(); c.leafAt.putAll(a.leafAt());
+        c.taken.clear(); c.taken.putAll(a.taken());
+        c.dropped = new ArrayList<>(a.dropped());
+        c.away = a.away(); c.tableReady = a.tableReady(); c.furnaceReady = a.furnaceReady(); c.stuck = a.stuck();
+        c.unknown = a.unknown(); c.pickItem = a.pickItem(); c.pickTier = a.pickTier();
+        c.tableWalked = a.tableWalked(); c.furnaceWalked = a.furnaceWalked();
+        c.pickWorn = a.pickWorn(); c.pickMade = a.pickMade(); c.pickOut = a.pickOut();
+        c.spares = new ArrayList<>(a.spares());
+        c.atRoom = a.atRoom();
+        c.down = a.down(); c.downAt = a.downAt(); c.tableDown = a.tableDown(); c.furnaceDown = a.furnaceDown();
+        c.upBag = a.upBag() == null ? null : new LinkedHashMap<>(a.upBag());
+        c.fail = o.fail(); c.loopOn = o.loopOn(); c.pathsWaiting = o.pathsWaiting(); c.burned = o.burned();
+        c.aside.clear(); c.aside.putAll(o.aside());
+        c.hoisting = o.hoisting(); c.bandPick = o.bandPick();
+        List<String> written = new ArrayList<>(), made = new ArrayList<>();
+        for (int i = 0; i < o.bagOut().size(); i++) {
+            var e = o.bagOut().get(i);
+            c.bag.rawPut(e.getKey(), e.getValue());
+            written.add(e.getKey());
+            if (i >= o.made()) made.add(e.getKey());
+        }
+        for (var e : o.walkOut().entrySet()) c.walks.put(e.getKey(), e.getValue());
+        for (Object[] u : o.unreach()) { c.unreachable.put((String) u[0], (String) u[1]); f.unreach.add(u); }
+        c.waited.addAll(o.waited());
+        c.trials = trials + o.trialsOff();
+        for (var e : o.entryUses().entrySet()) { Step st = cur.get(e.getKey()); c.uses.put(st, e.getValue()); f.uses.put(st, e.getValue()); }
+        for (var e : o.newUses().entrySet()) { Step st = fresh[e.getKey()]; c.uses.put(st, e.getValue()); f.uses.put(st, e.getValue()); }
+        if (alt != null) {
+            alt.id = o.altId();
+            alt.burned = o.altBurned();
+            if (alt.rk != null) alt.rk.asked += o.rankDelta();
+        }
+        PlanNodes.reusedInto(n, f, trials, written, made, o.walkOut().keySet());
+        for (PlanNodes.Effect e : n.effects) c.run.effect(e);
+        return o.value();
+    }
+
+    /** 0.39.z78 D6: a snapshot as a node keeps it (no open node's bag writes in it). */
+    private static Ctx.Snap untracked(Ctx.Snap s) {
+        return new Ctx.Snap(s.bag(), s.steps(), s.leafAt(), s.taken(), s.dropped(), s.seconds(), s.away(), s.tableReady(), s.furnaceReady(), s.stuck(),
+                s.unknown(), s.pickItem(), s.pickTier(), s.tableWalked(), s.furnaceWalked(), s.pickWorn(), s.pickMade(), s.pickOut(), s.spares(), s.atRoom(), s.down(),
+                s.downAt(), s.tableDown(), s.furnaceDown(), s.upBag(), null);
+    }
+
+    /** 0.39.z78 D6, tests: everything a node can change, by value (steps by value, their uses and marks by position). */
+    private record Full(List<Step> steps, Map<String, Integer> bag, Ctx.Snap snap, List<Map<String, Integer>> uses, List<Double> marks,
+                        Map<String, Walked> walks, Map<String, String> unreachable, List<String> waited, int trials, String fail, String loopOn,
+                        int pathsWaiting, Burn burned, Map<String, Integer> aside, boolean hoisting, boolean bandPick, String altId, Burn altBurned,
+                        Integer rank) {}
+
+    private static Full full(Ctx c, Alt alt) {
+        List<Map<String, Integer>> u = new ArrayList<>();
+        List<Double> m = new ArrayList<>();
+        for (Step s : c.steps) { u.add(c.uses.get(s)); m.add(c.addedAt.get(s)); }
+        Ctx.Snap noTrack = untracked(c.snap());
+        return new Full(new ArrayList<>(c.steps), c.bag.rawCopy(), noTrack, u, m, new LinkedHashMap<>(c.walks), new LinkedHashMap<>(c.unreachable),
+                new ArrayList<>(c.waited), c.trials, c.fail, c.loopOn, c.pathsWaiting, c.burned, new LinkedHashMap<>(c.aside), c.hoisting, c.bandPick,
+                alt == null ? null : alt.id, alt == null ? null : alt.burned, alt == null || alt.rk == null ? null : alt.rk.asked);
+    }
+
+    /** Tests (PlanNodes.verify): the kept node applied, the state put back, the node computed again; the two must be equal. */
+    private static Object verifyReuse(Ctx c, PlanNodes.Node n, Object ck, Ctx.Snap s, Alt alt, Supplier<Object> body, Prefix prefix) {
+        PlanNodes.Frame f = c.run.top;
+        List<Step> steps0 = new ArrayList<>(c.steps);
+        Map<Step, Double> marks0 = new java.util.IdentityHashMap<>(c.addedAt);
+        Map<Step, Map<String, Integer>> uses0 = new java.util.IdentityHashMap<>(c.uses);
+        Map<String, Walked> walks0 = new LinkedHashMap<>(c.walks);
+        Map<String, String> unreach0 = new LinkedHashMap<>(c.unreachable);
+        List<String> waited0 = new ArrayList<>(c.waited);
+        Ctx.Snap snap0 = c.snap();
+        int trials0 = c.trials, pw0 = c.pathsWaiting;
+        String fail0 = c.fail, loop0 = c.loopOn;
+        Burn burned0 = c.burned;
+        Map<String, Integer> aside0 = new LinkedHashMap<>(c.aside);
+        boolean hoist0 = c.hoisting, band0 = c.bandPick;
+        String id0 = alt == null ? null : alt.id;
+        Burn ab0 = alt == null ? null : alt.burned;
+        int rank0 = alt == null || alt.rk == null ? 0 : alt.rk.asked;
+        Set<String> walkW0 = new LinkedHashSet<>(f.walkWrites);
+        int unreachN = f.unreach.size(), effN = f.effects.size();
+        Map<Object, Object> fuses0 = new java.util.IdentityHashMap<>(f.uses);
+        Object kept = apply(c, n, alt);
+        Full a = full(c, alt);
+        // put everything back
+        c.restore(snap0);
+        c.steps.clear(); c.steps.addAll(steps0);
+        c.addedAt.clear(); c.addedAt.putAll(marks0);
+        c.uses.clear(); c.uses.putAll(uses0);
+        c.walks.clear(); c.walks.putAll(walks0);
+        c.unreachable.clear(); c.unreachable.putAll(unreach0);
+        c.waited.clear(); c.waited.addAll(waited0);
+        c.trials = trials0; c.pathsWaiting = pw0; c.fail = fail0; c.loopOn = loop0; c.burned = burned0;
+        c.aside.clear(); c.aside.putAll(aside0);
+        c.hoisting = hoist0; c.bandPick = band0;
+        if (alt != null) { alt.id = id0; alt.burned = ab0; if (alt.rk != null) alt.rk.asked = rank0; }
+        f.walkWrites.clear(); f.walkWrites.addAll(walkW0);
+        while (f.unreach.size() > unreachN) f.unreach.remove(f.unreach.size() - 1);
+        while (f.effects.size() > effN) f.effects.remove(f.effects.size() - 1);
+        f.uses.clear(); f.uses.putAll(fuses0);
+        Made m = compute(c, n.kind, n.key, ck, (Entry) n.entry, s, n, body, alt, prefix);
+        m.node().resolves = n.resolves;                     // a check, not a resolve: the counts are the kept node's
+        m.node().reused = n.reused + 1;
+        c.run.computed--;
+        c.run.reusedN++;
+        Full b = full(c, alt);
+        if (!Deep.equal(kept, m.out().value()) || !Deep.equal(a, b))
+            throw new AssertionError("D6 verify: the kept node " + n.kind + " " + n.key + " differs from its resolve again:\n kept    " + kept + " / " + a
+                    + "\n resolve " + m.out().value() + " / " + b);
+        return m.out().value();
+    }
+
+    /**
+     * 0.39.z78 D6: a request (a resolve entry point) as the root node: kept per request ({@code kind}, {@code args}, the trip's
+     * kept fuels); reused when every fact it read (the World's answers, the bag words, the stations near, the holds) holds on
+     * {@code w} - the stored result handed out as fresh copies ({@code fresh}) - else resolved by {@code body}, its kept
+     * children reused where their facts hold. {@link PlanNodes#old}, a trace (aa debug), or no World: {@code body} as before D6.
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> T root(String kind, Object args, World w, Function<Ctx, T> body, java.util.function.UnaryOperator<T> fresh) {
+        if (PlanNodes.isOld() || TRACE.get() != null || w == null) return body.apply(new Ctx(w));
+        PlanNodes p = PlanNodes.mine();
+        p.epoch(epoch(w));
+        Extras x = extras();
+        PlanNodes.Run run = p.new Run(f -> Facts.ask(w, x, f), w.path(), DEFER.get());
+        Set<String> kept = KEPT_FUEL.get();
+        Object rk = java.util.Arrays.asList(kind, args, kept == null ? Set.of() : new TreeSet<>(kept));
+        PlanNodes.Node r = p.root(rk);
+        LinkedHashMap<String, Integer> bag0 = initialBag(w);
+        if (r != null && bagChanged(bag0, r.bagReads, r.scans, r.wholeBag) == null && run.hold(r)) {
+            T out = fresh.apply((T) r.out);
+            for (PlanNodes.Effect e : r.effects) run.effect(e);
+            r.reused++;
+            if (PlanNodes.verifying()) {
+                T again = PlanNodes.old(() -> body.apply(new Ctx(w)));
+                if (!Deep.equal(out, again)) throw new AssertionError("D6 verify: the kept request " + rk + " differs from its resolve again:\n kept    " + out + "\n resolve " + again);
+            }
+            PlanNodes.Stats st = new PlanNodes.Stats(r.size, 0, r.size, 0);
+            p.last(st);
+            LAST.set(new Read(PlanNodes.allReads(r), r.bagReads, r.scans, r.wholeBag, r.effects, st));
+            return out;
+        }
+        PlanNodes.Node n = new PlanNodes.Node("root", rk, List.of(), 0);
+        n.resolves = r == null ? 1 : r.resolves + 1;
+        n.reused = r == null ? 0 : r.reused;
+        PlanNodes.Frame f = run.open(n);
+        f.old = r;
+        f.entryBag = bag0;
+        T out;
+        try {
+            out = body.apply(new Ctx(w, run));
+        } finally {
+            run.top = null;
+        }
+        n.out = out;
+        n.reads = new LinkedHashMap<>(f.reads);
+        n.bagReads = new LinkedHashMap<>(f.bagReads);
+        n.scans = new LinkedHashMap<>(f.scans);
+        n.wholeBag = f.whole ? bag0 : null;
+        n.effects = List.copyOf(f.effects);
+        n.children = f.children;
+        n.size = f.size;
+        if (f.sound) p.root(rk, n);                         // the root: every fact it read came from the World (its children may not be kept)
+        run.computed++;
+        PlanNodes.Stats st = new PlanNodes.Stats(f.size, run.computed, run.reusedN, run.dirty + (r == null ? 0 : 1));
+        p.last(st);
+        LAST.set(new Read(PlanNodes.allReads(n), n.bagReads, n.scans, n.wholeBag, run.defer ? List.copyOf(run.deferred) : List.of(), st));
+        return out;
+    }
+
+    /** 0.39.z78 D6: a chain with fresh step objects (every resolve hands out its own, as before D6). */
+    static Chain fresh(Chain ch) { return fresh(ch, new java.util.IdentityHashMap<>()); }
+
+    private static Chain fresh(Chain ch, Map<Step, Step> map) {
+        if (ch == null) return null;
+        List<Step> st = new ArrayList<>(ch.steps().size());
+        for (Step s : ch.steps()) st.add(map.computeIfAbsent(s, Deep::fresh));
+        return new Chain(st, ch.cost(), ch.why(), ch.explore(), ch.missing(), ch.dropped(), ch.unreachable(), ch.uses(), ch.spares(), ch.stepSeconds());
+    }
+
+    /** 0.39.z78 D6: a playbook's legs with fresh step objects (the chain, the whole trip and the leg starts share them, by identity). */
+    static Legs fresh(Legs l) {
+        if (l == null) return null;
+        Map<Step, Step> map = new java.util.IdentityHashMap<>();
+        Chain ch = fresh(l.chain(), map);
+        Chain whole = l.whole() == l.chain() ? ch : fresh(l.whole(), map);
+        Map<Step, String> starts = new java.util.IdentityHashMap<>();
+        for (var e : l.starts().entrySet()) starts.put(map.computeIfAbsent(e.getKey(), Deep::fresh), e.getValue());
+        return new Legs(ch, starts, l.failedLeg(), whole);
+    }
+
     /** Rule 1 (have it): what the bag holds of the need, mixed members summed. */
     private static int have(Ctx c, Want w) {
         if (w.item()) return c.have(w.id());
         int n = 0;
-        for (var e : c.bag.entrySet()) if (e.getValue() > 0 && w.has(e.getKey())) n += c.have(e.getKey());   // z75 item 3: less what is set aside
+        for (String k : c.bag.scan(w::has, w.scanKey())) {           // 0.39.z78 D6: the need's members, scanned (the same sum)
+            Integer v = c.bag.get(k);
+            if (v != null && v > 0) n += c.have(k);                  // z75 item 3: less what is set aside
+        }
         return n;
     }
 
@@ -895,10 +1792,11 @@ public final class NeedChain {
      */
     private static Map<String, Integer> setAside(Ctx c, Want w) {
         Map<String, Integer> out = new LinkedHashMap<>();
-        for (var e : c.bag.entrySet()) {
-            if (e.getValue() <= 0 || !w.has(e.getKey())) continue;
-            int k = c.have(e.getKey());
-            if (k > 0) out.put(e.getKey(), k);
+        for (String key : c.bag.scan(w::has, w.scanKey())) {        // 0.39.z78 D6: scanned, in the bag's order
+            Integer v = c.bag.get(key);
+            if (v == null || v <= 0) continue;
+            int k = c.have(key);
+            if (k > 0) out.put(key, k);
         }
         for (var e : out.entrySet()) c.aside.merge(e.getKey(), e.getValue(), Integer::sum);
         return out;
@@ -926,7 +1824,7 @@ public final class NeedChain {
         }
         List<String> keys = new ArrayList<>();
         if (prefer != null && w.has(prefer)) keys.add(prefer);
-        for (String k : c.bag.keySet()) if (!keys.contains(k) && w.has(k)) keys.add(k);
+        for (String k : c.bag.scan(w::has, w.scanKey())) if (!keys.contains(k)) keys.add(k);     // 0.39.z78 D6: scanned
         int left = n;
         for (String k : keys) {
             int t = Math.min(left, c.have(k));
@@ -954,7 +1852,7 @@ public final class NeedChain {
     /** What a take of {@code n} from the bag would name: one kind when one kind covers it, else the need word. */
     private static String bagName(Ctx c, Want w, int n) {
         if (w.item()) return w.id();
-        for (var e : c.bag.entrySet()) if (c.have(e.getKey()) > 0 && w.has(e.getKey())) return c.have(e.getKey()) >= n ? e.getKey() : w.word;
+        for (String k : c.bag.scan(w::has, w.scanKey())) if (c.have(k) > 0) return c.have(k) >= n ? k : w.word;   // 0.39.z78 D6: scanned
         return w.word;
     }
 
@@ -970,7 +1868,10 @@ public final class NeedChain {
      * ("#minecraft:planks", or an id the game has no item for but a tag of: "planks"): any member (TAG_NEEDS).
      */
     public static Chain resolve(String what, int n, World w) {
-        Ctx c = new Ctx(w);
+        return root("resolve", java.util.Arrays.asList(what, n), w, c -> resolveIn(c, what, n), NeedChain::fresh);    // 0.39.z78 D6: a request node
+    }
+
+    private static Chain resolveIn(Ctx c, String what, int n) {
         String tag = tagOf(what);
         if (tag != null) {
             String name = sh(tag);
@@ -1004,7 +1905,12 @@ public final class NeedChain {
      * item, game fact), so 8 cooked beef beat 8 raw when a furnace is at hand.
      */
     public static Chain resolveAny(String label, List<String> items, int n, World w, ToDoubleFunction<String> energy) {
-        Ctx c = new Ctx(w);
+        // 0.39.z78 D6: a request node (the energy is the game's data by the caller's function, its class the key)
+        return root("any", java.util.Arrays.asList(label, items == null ? null : List.copyOf(items), n, energy == null ? null : energy.getClass().getName()), w,
+                c -> resolveAnyIn(c, label, items, n, energy), NeedChain::fresh);
+    }
+
+    private static Chain resolveAnyIn(Ctx c, String label, List<String> items, int n, ToDoubleFunction<String> energy) {
         List<String> ids = new ArrayList<>();
         for (String i : items) ids.add(id(i));
         if (ids.isEmpty()) return finish(c, label, label + ": the game's data names no member");
@@ -1023,7 +1929,10 @@ public final class NeedChain {
      * member stands without one. When every member ends in an explore the chain is the first one's, ending in that explore.
      */
     public static Chain resolveAll(String group, List<String> items, int n, World w) {
-        Ctx c = new Ctx(w);
+        return root("all", java.util.Arrays.asList(group, items == null ? null : List.copyOf(items), n), w, c -> resolveAllIn(c, group, items, n), NeedChain::fresh);   // 0.39.z78 D6
+    }
+
+    private static Chain resolveAllIn(Ctx c, String group, List<String> items, int n) {
         List<String> phrases = new ArrayList<>(), waiting = new ArrayList<>();
         Map<String, String> unknown = new LinkedHashMap<>();
         String wait = null;          // loot-book-bg: a member that waits on the loot book
@@ -1056,7 +1965,10 @@ public final class NeedChain {
 
     /** The cheapest pickaxe of at least {@code tier} (the game's pickaxes tag) as a chain of its own: what a dig of a block that asks for that tier pulls in. */
     public static Chain resolveTool(int tier, World w) {
-        Ctx c = new Ctx(w);
+        return root("tool", List.of(tier), w, c -> resolveToolIn(c, tier), NeedChain::fresh);        // 0.39.z78 D6: a request node
+    }
+
+    private static Chain resolveToolIn(Ctx c, int tier) {
         String phrase = tier > c.pickTier ? cheapestPickaxe(c, tier) : null;
         return finish(c, "pickaxe", phrase == null ? "a pickaxe of tier " + tier + " is in the bag" : "pickaxe <- " + phrase);
     }
@@ -1104,7 +2016,10 @@ public final class NeedChain {
     }
 
     public static Legs resolvePlaybookLegs(Playbook pb, World w) {
-        Ctx c = new Ctx(w);
+        return root("playbook", java.util.Arrays.asList(pb), w, c -> playbookLegsIn(c, pb), NeedChain::fresh);      // 0.39.z78 D6: a request node
+    }
+
+    private static Legs playbookLegsIn(Ctx c, Playbook pb) {
         List<java.util.Set<Step>> added = new ArrayList<>();
         int[] failedLeg = {-1};
         List<Step> priced = new ArrayList<>();                  // 0.39.z77 carry: every leg's steps, before the explore's cut
@@ -1426,7 +2341,7 @@ public final class NeedChain {
             double slab = ps != null && ps > 0 ? ps : sb.perSlab();
             // 0.39.z77 spares: the strip way's own dig estimate (stripDig: the band x the areas along the heading); the
             // tunnel's start is known for the first descent only (a later one starts where the last leg left the bot: x 1)
-            StripDig sd = stripDig(slab, oreBlocks, firstLeg ? new int[]{first.x(), first.z()} : null, y, first.heading(), sb.ores());
+            StripDig sd = stripDig(c.w, slab, oreBlocks, firstLeg ? new int[]{first.x(), first.z()} : null, y, first.heading(), sb.ores());
             double bpo = sd.bpo();
             int dug = sd.cells();
             double oreS = blockBreakS(c, ore);
@@ -1448,7 +2363,7 @@ public final class NeedChain {
         // descent only - the strip that runs next (a later one at the same Y shares its key and is priced again from there)
         if (firstLeg) {
             String key = new Step.Strip(ores, amounts, y, first.heading(), 0, null).key();
-            for (var e : slabs.entrySet()) io.github.mojolowjo.entropybot.aa.brain.StripYield.priced(key, e.getKey(), e.getValue(), baritone.api.process.IStripProcess.TUNNEL_HEIGHT * hostS);
+            for (var e : slabs.entrySet()) c.effect(new YieldPriced(key, e.getKey(), e.getValue(), baritone.api.process.IStripProcess.TUNNEL_HEIGHT * hostS));
             otherWays(c, key, lacks, familyOf);
         }
         int tunnelBreaks = baritone.api.process.IStripProcess.TUNNEL_HEIGHT * tunnelCells;
@@ -1459,7 +2374,7 @@ public final class NeedChain {
         if (c.pickItem != null && spare == null) c.pickWorn += wear;
         c.seconds += walkS + digS;
         Step.Strip whole = new Step.Strip(ores, amounts, y, first.heading(), 0, null);
-        for (var e : perCell.entrySet()) io.github.mojolowjo.entropybot.aa.brain.StripOrder.predicted(whole.key(), e.getKey(), e.getValue());
+        for (var e : perCell.entrySet()) c.effect(new Predicted(whole.key(), e.getKey(), e.getValue()));
         int legAt = c.steps.size();
         if (firstLeg && first.feetY() != y) c.steps.add(new Step.ToStrip(first.x(), y, first.z(), whole.key()));
         List<Step> legs = stripLegs(whole, digS);
@@ -1507,7 +2422,7 @@ public final class NeedChain {
             String id0 = id(e.getKey());
             if (ItemWorth.fuels().getOrDefault(id0, 0) <= 0 && c.w.seenAll().apply(id0).isEmpty() && (c.w.cave() == null || c.w.cave().apply(id0) == null)) {
                 // nothing seen and no cave known: its ways end in an explore (no price) - not priced, no walk asked for it
-                io.github.mojolowjo.entropybot.aa.brain.StripYield.other(key, fam, Double.NaN, "no source of " + shw(id0) + " seen and no cave known (an explore: no price)", false);
+                c.effect(new YieldOther(key, fam, Double.NaN, "no source of " + shw(id0) + " seen and no cave known (an explore: no price)", false));
                 continue;
             }
             Ctx.Snap s0 = c.snap();
@@ -1548,7 +2463,7 @@ public final class NeedChain {
             final String w = words;
             final double sv = secs;
             c.note(() -> "the other way for " + fam + ": " + (Double.isNaN(sv) ? "not priced (" + w + ")" : s(sv) + " (" + w + ")"));
-            io.github.mojolowjo.entropybot.aa.brain.StripYield.other(key, fam, sv, w, false);
+            c.effect(new YieldOther(key, fam, sv, w, false));
         }
     }
 
@@ -1584,7 +2499,10 @@ public final class NeedChain {
 
     /** 0.39.z77 J2: {@link #resolve} of an item with the simulated bag it leaves (item id -> count; a way's own tokens left out). */
     public static Priced resolveWithBag(String what, int n, World w) {
-        Ctx c = new Ctx(w);
+        return root("with bag", java.util.Arrays.asList(what, n), w, c -> withBagIn(c, what, n), pr -> new Priced(fresh(pr.chain()), pr.bagAfter()));   // 0.39.z78 D6
+    }
+
+    private static Priced withBagIn(Ctx c, String what, int n) {
         String item = id(what);
         String phrase = obtain(c, item, n);
         Chain ch = finish(c, sh(item), phrase == null ? sh(item) + " is in the bag" : sh(item) + " <- " + phrase);
@@ -1665,7 +2583,7 @@ public final class NeedChain {
 
     /** 0.39.z61: the step just added used {@code used} (need word -> count) from the simulated bag. */
     private static void used(Ctx c, Map<String, Integer> used) {
-        if (!c.steps.isEmpty() && !used.isEmpty()) c.uses.put(c.steps.get(c.steps.size() - 1), java.util.Collections.unmodifiableMap(new LinkedHashMap<>(used)));
+        if (!c.steps.isEmpty() && !used.isEmpty()) c.use(c.steps.get(c.steps.size() - 1), java.util.Collections.unmodifiableMap(new LinkedHashMap<>(used)));
     }
 
     /** One way to get a requirement: what runs it on the simulated bag, its name for the dropped list, and what breaks a tie. */
@@ -1684,6 +2602,8 @@ public final class NeedChain {
         Burn burned;
         /** 0.39.z77 strip: a strip way ({@link #stripAlts}): its rivals' best price is kept for its yield check ({@link #stripRivals}). */
         boolean strip;
+        /** 0.39.z78 D6: the rank budget the way runs under ({@link Ranks}; null: none) - part of its node's key. */
+        Ranks rk;
         Alt(String label, Supplier<String> run) { this.label = label; this.run = run; }
         double value(double seconds) { return rate == null ? seconds : rate.applyAsDouble(seconds); }
     }
@@ -1705,17 +2625,20 @@ public final class NeedChain {
         List<Trace.Node> nodes = new ArrayList<>();          // aa debug: each trial's node (empty outside a trace)
         int stepsAt = c.steps.size();
         int skipped = -1;
+        // 0.39.z78 D6: each way a node of the open one (its number of choose there, what that had read when the ways were made)
+        int ordinal = c.caching() ? c.run.top.chooses++ : 0;
+        Prefix prefix = c.caching() ? prefixOf(c.run.top) : null;
         Trace.Node waysNode = c.trace == null ? null : c.trace.push("ways for " + (self == null ? "this requirement" : shw(self)) + " (" + alts.size() + ")", false);
         try {
             for (int i = 0; i < alts.size(); i++) {
-                if (c.trials > maxTrials() && trials.stream().anyMatch(t -> t.fail() == null && !t.stuck())) { skipped = i; break; }
+                if (c.overBound() && trials.stream().anyMatch(t -> t.fail() == null && !t.stuck())) { skipped = i; break; }
                 Ctx.Snap s0 = c.snap();
                 double base = c.seconds;
                 c.trials++;
                 if (c.trace != null) nodes.add(c.trace.push("way " + alts.get(i).label, true));
                 String p;
                 try {
-                    p = alts.get(i).run.get();
+                    p = c.caching() ? way(c, alts.get(i), i, ordinal, s0, prefix) : alts.get(i).run.get();
                 } finally {
                     if (c.trace != null) c.trace.pop();
                 }
@@ -1837,21 +2760,21 @@ public final class NeedChain {
             List<Step> after = t.after().steps();
             for (int i = Math.max(0, base); i < after.size() && st == null; i++) if (after.get(i) instanceof Step.Strip s) st = s;
             if (st == null || st.amounts().size() != 1) continue;
-            rival(st.key(), st.amounts().keySet().iterator().next(), trials, t);
+            rival(c, st.key(), st.amounts().keySet().iterator().next(), trials, t);
         }
         if (any || self == null || c.hoisting || c.down != null || trials.isEmpty() || c.w.seenAll().apply(self).isEmpty()) return;
         StripBand sb = c.w.strip().apply(self);
         if (sb == null || sb.ores().isEmpty()) return;
         String key = new Step.Strip(sb.ores(), Map.of(), sb.y(), sb.heading(), 0, sb.from()).key();
-        rival(key, io.github.mojolowjo.entropybot.aa.brain.StripOrder.countKey(sb.ores().get(0), io.github.mojolowjo.entropybot.cave.OreSpec::family), trials, null);
+        rival(c, key, io.github.mojolowjo.entropybot.aa.brain.StripOrder.countKey(sb.ores().get(0), io.github.mojolowjo.entropybot.cave.OreSpec::family), trials, null);
     }
 
     /** The best priced trial but {@code not} kept as the other way of strip {@code key}'s {@code family} (NaN: none priced). */
-    private static void rival(String key, String family, List<Trial> trials, Trial not) {
+    private static void rival(Ctx c, String key, String family, List<Trial> trials, Trial not) {
         Trial best = null;
         for (Trial o : trials) if (o != not && o.fail() == null && !o.stuck() && (best == null || o.seconds() < best.seconds())) best = o;
-        io.github.mojolowjo.entropybot.aa.brain.StripYield.other(key, family, best == null ? Double.NaN : best.seconds(),
-                best == null ? "no other way priced" : best.alt().label, best != null && best.alt().strip);
+        c.effect(new YieldOther(key, family, best == null ? Double.NaN : best.seconds(),
+                best == null ? "no other way priced" : best.alt().label, best != null && best.alt().strip));
     }
 
     /** 0.39.z77 choose: the start of the dropped reason of an explore held back while another way has no answer yet. */
@@ -1981,6 +2904,14 @@ public final class NeedChain {
         if (c.dead() || n <= 0) return c.fail != null ? null : new Got(w.word, n, null);
         int have = have(c, w);
         if (have >= n) return new Got(bagName(c, w, n), n, null);
+        // 0.39.z78 D6: the need is a node (kept with what it read; reused while that holds)
+        if (c.caching()) return (Got) node(c, "tag", List.of(w.word, n), () -> tagWays(c, w, n));
+        return tagWays(c, w, n);
+    }
+
+    /** {@link #needTag} past the bag check: the ways of the tag need, priced. */
+    private static Got tagWays(Ctx c, Want w, int n) {
+        int have = have(c, w);
         int lack = n - have;
         if (c.path.contains(w.word)) {
             c.fail = "loop: " + shw(w.word) + " needs itself (a recipe loop: " + String.join(" > ", c.path.stream().map(NeedChain::shw).toList()) + " > " + shw(w.word) + ")";
@@ -2297,6 +3228,14 @@ public final class NeedChain {
         if (c.dead() || n <= 0) return null;
         int have = c.have(item);
         if (have >= n) return null;
+        // 0.39.z78 D6: the need is a node (kept with what it read; reused while that holds)
+        if (c.caching()) return (String) node(c, "obtain", List.of(item, n), () -> obtainWays(c, item, n));
+        return obtainWays(c, item, n);
+    }
+
+    /** {@link #obtain} past the bag check: the ways of the item, priced. */
+    private static String obtainWays(Ctx c, String item, int n) {
+        int have = c.have(item);
         int lack = n - have;
         if (c.path.contains(item)) {
             c.fail = "loop: " + sh(item) + " needs itself (a recipe loop: " + String.join(" > ", c.path.stream().map(NeedChain::shw).toList()) + " > " + sh(item) + ")";
@@ -2412,7 +3351,10 @@ public final class NeedChain {
                     c.steps.subList(s0, c.steps.size()).clear();
                     c.steps.addAll(at, mv);
                     Double mark = at + moved < c.steps.size() ? c.addedAt.get(c.steps.get(at + moved)) : null;
-                    if (mark != null) for (Step s : mv) c.addedAt.put(s, mark);     // their seconds go with the leg's (stepSeconds)
+                    if (mark != null) for (Step s : mv) {
+                        c.addedAt.put(s, mark);                  // their seconds go with the leg's (stepSeconds)
+                        c.markFrom.put(s, c.steps.get(at + moved));   // 0.39.z78 D6: a mark copied from that step (re-keyed on a reuse)
+                    }
                     for (var e : c.leafAt.entrySet()) {
                         int i = e.getValue();
                         if (i >= s0) e.setValue(at + (i - s0));
@@ -2569,7 +3511,8 @@ public final class NeedChain {
         // cheapest by worth), so the chain says the fuel the furnace gets
         c.burned = null;
         Map<String, Integer> free = new LinkedHashMap<>();         // z75 item 3: less what an outer need set aside
-        for (String id : c.bag.keySet()) if (c.have(id) > 0) free.put(id, c.have(id));
+        // 0.39.z78 D6: the bag's fuels, scanned - pickFuel and the kept fuels skip every item with no burn ticks, so the pick is the same
+        for (String id : c.bag.scan(NeedChain::burns, FUELS_SCAN)) if (c.have(id) > 0) free.put(id, c.have(id));
         // 0.39.z77 trip: the fuel the trip burned before, while the bag covers it (keepingFuel)
         var kept = keptFuel(free, k);
         var inBag = kept != null ? kept : io.github.mojolowjo.entropybot.craft.CraftPlanner.pickFuel(free, k);
@@ -2801,7 +3744,7 @@ public final class NeedChain {
         double placeS = c.seconds - t0;
         boolean placeStands = c.fail == null && !c.stuck;
         String pw = "place a new " + label + " near me", kw = "walk to the known " + label + " " + Math.round(far.dist()) + " m" + (far.unloaded() ? " (" + UNVERIFIED + ")" : "")
-                + (Nearby.isMain(null, far, null) ? " (" + Nearby.MAIN + " -" + Math.round(Math.max(0, far.bonusS())) + " s)" : "");
+                + (c.w.isMain(far) ? " (" + Nearby.MAIN + " -" + Math.round(Math.max(0, far.bonusS())) + " s)" : "");
         if (placeStands && walkFail != null) {
             drop(c, kw, walkFail);
             c.note(() -> "station " + label + ": " + kw + " " + walkFail + " vs " + pw + " " + s(placeS) + " -> placed");
@@ -2898,7 +3841,7 @@ public final class NeedChain {
         final Spot at = best;
         final Walked w = bestW;
         for (Spot sp : cells) if (sp != at) {
-            Walked o = c.walks.get(sp.x() + "," + sp.y() + "," + sp.z());
+            Walked o = c.walk(sp.x() + "," + sp.y() + "," + sp.z());
             if (o != null && o.fail() == null) drop(c, "place " + sh(item) + " near the cell with room at " + sp.x() + " " + sp.y() + " " + sp.z(), s(o.seconds()));
         }
         c.steps.add(new Step.Walk(at.x(), at.y(), at.z(), roomNear()));
@@ -2931,7 +3874,7 @@ public final class NeedChain {
         c.away = 0;
         // 0.39.z30, rule 15: a remembered station in a chunk not loaded is priced as remembered; the step verifies it on
         // arrival (not the station: the fact becomes none and the order re-plans)
-        boolean main = Nearby.isMain(null, at, null);                   // main-stations (0.39.z35): the owner's main of the kind
+        boolean main = c.w.isMain(at);                                  // main-stations (0.39.z35): the owner's main of the kind
         return noted("at the " + label + " " + Math.round(at.dist()) + " m" + (main ? " (" + Nearby.MAIN + ")" : "")
                 + (bonus > 0 ? " (" + (main ? Nearby.MAIN + (bonus > MainStations.bonusS() ? " + " + io.github.mojolowjo.entropybot.guard.AreaTags.USE_STATIONS : "") : io.github.mojolowjo.entropybot.guard.AreaTags.USE_STATIONS) + " -" + Math.round(bonus) + " s)" : "")
                 + (at.unloaded() ? " (" + UNVERIFIED + ")" : ""), wk);
@@ -2974,7 +3917,7 @@ public final class NeedChain {
             return out;
         }
         String key = (into ? "in:" : "") + x + "," + y + "," + z;
-        Walked out = c.walks.get(key);
+        Walked out = c.walk(key);
         if (out != null) walkNote(c, x, y, z, dist, "priced before in this pass", out);
         else {
             PathPrice pp = c.w.path();
@@ -2986,7 +3929,7 @@ public final class NeedChain {
                 String stood = stoodHere(c);
                 if (stood != null) out = new Walked(Double.NaN, "", "walk: dropped, " + out.fail().substring("walk: ".length()) + " after the stands here (" + stood + ")", PathPrice.Kind.NONE);
             }
-            c.walks.put(key, out);
+            c.walk(key, out);
             walkNote(c, x, y, z, dist, out.fail() == null ? "Baritone path, complete" : out.fail(), out);
         }
         if (out.fail() != null) c.fail = out.fail();
@@ -3070,7 +4013,9 @@ public final class NeedChain {
             List<Spot> order = new ArrayList<>();
             order.add(first);
             for (Spot o : spots) if (o != first) order.add(o);
-            alts.add(new Alt((tree(word, first) ? "tree " : shw(gives) + " ") + Math.round(first.dist()) + " m", rk.run(first, () -> sourceFrom(c, word, gives, lack, order))));
+            Alt a = new Alt((tree(word, first) ? "tree " : shw(gives) + " ") + Math.round(first.dist()) + " m", rk.run(first, () -> sourceFrom(c, word, gives, lack, order)));
+            a.rk = rk;                                       // 0.39.z78 D6
+            alts.add(a);
         }
         return alts;
     }
@@ -3107,13 +4052,13 @@ public final class NeedChain {
             return () -> {
                 if (asked >= top) {
                     PathPrice pp = c.w.path();
-                    if (pp != null) pp.rankedOut(first.x(), first.y(), first.z());
+                    if (pp != null) c.effect(new RankedOut(first.x(), first.y(), first.z()));
                     c.fail = RANKED + " number " + (order.indexOf(first) + 1) + " of " + order.size() + " by Baritone's estimate (no search, not a price): only the top "
                             + top + " ways get a priced path (pathCost.pricedTop, rule 18)";
                     return null;
                 }
                 String p = way.get();
-                Walked wk = c.walks.get(first.x() + "," + first.y() + "," + first.z());
+                Walked wk = c.walk(first.x() + "," + first.y() + "," + first.z());
                 if (wk != null && wk.kind() != PathPrice.Kind.UNREACHABLE && (wk.fail() == null || !wk.fail().startsWith(PathPrice.NO_ESTIMATE))) asked++;   // z76: no estimate frees it too
                 return p;
             };
@@ -3161,7 +4106,7 @@ public final class NeedChain {
         }
         Walked wk = walk(c, sp.x(), sp.y(), sp.z(), sp.dist());
         if (c.fail != null) {
-            if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreachable.put(spotKey(word, sp), wk.fail());   // 0.39.z69 fix 1: that spot only
+            if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreach(spotKey(word, sp), wk.fail());   // 0.39.z69 fix 1: that spot only
             return null;
         }
         c.steps.add(new Step.Walk(sp.x(), sp.y(), sp.z(), stationNear()));
@@ -3215,6 +4160,7 @@ public final class NeedChain {
             String gives = givesOf(c, first, w);
             Alt a = new Alt("tree " + Math.round(first.dist()) + " m", rk.run(first, () -> sourceFrom(c, w.word, gives, lack, order)));
             a.id = gives;
+            a.rk = rk;                                       // 0.39.z78 D6
             alts.add(a);
         }
         for (var e : dig.entrySet()) {
@@ -3540,7 +4486,7 @@ public final class NeedChain {
                 c.note(() -> "source: known " + shw(blockOf(gives, sp)) + " at " + sp.x() + " " + sp.y() + " " + sp.z() + ", " + Math.round(sp.dist()) + " m" + (sp.count() > 0 ? ", " + sp.count() + " blocks" : ""));
                 Walked wk = walk(c, sp.x(), sp.y(), sp.z(), sp.dist());
                 if (c.fail != null) {                       // 0.39.z41: no price for this walk
-                    if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreachable.put(spotKey(word, sp), wk.fail());   // the z33 source fact; z69 fix 1: that spot only
+                    if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreach(spotKey(word, sp), wk.fail());   // the z33 source fact; z69 fix 1: that spot only
                     if (sp == first) return null;           // the way's own spot: the way cannot be picked
                     String why = c.fail;                    // a further spot: this way goes on without it (its walk is not a price)
                     c.fail = null;
@@ -3562,7 +4508,7 @@ public final class NeedChain {
             // each its own trip - every block after the first is charged the spot's walk again (the walk already priced; rule
             // 14: the same rough numbers, no finer term). A block that drops the item for sure is one patch, as before.
             double per = perBlock(c, gives, sp.block());
-            Walked spotWalk = c.walks.get(sp.key());
+            Walked spotWalk = c.walk(sp.key());
             if (per < 1 && take > 1 && spotWalk != null && spotWalk.fail() == null && spotWalk.seconds() > 0) {
                 double again = spotWalk.seconds() * (take - 1);
                 c.seconds += again;
@@ -3633,10 +4579,10 @@ public final class NeedChain {
         c.pickItem = null;
         c.pickTier = 0;
         c.pickWorn = 0;
-        for (var e : c.bag.entrySet()) {
-            if (c.have(e.getKey()) <= 0) continue;           // z77 legs review: less what is set aside (a later leg's holdings up there)
-            int t = MiningTiers.toolTier(e.getKey(), "pickaxe");
-            if (t > c.pickTier) { c.pickTier = t; c.pickItem = e.getKey(); c.pickOut = false; }
+        for (String k : c.bag.scan(PICKAXES, PICKAXES_SCAN)) {      // 0.39.z78 D6: scanned (no other word raised the tier from 0)
+            if (c.have(k) <= 0) continue;                    // z77 legs review: less what is set aside (a later leg's holdings up there)
+            int t = MiningTiers.toolTier(k, "pickaxe");
+            if (t > c.pickTier) { c.pickTier = t; c.pickItem = k; c.pickOut = false; }
         }
         String p = c.pickTier >= tier && c.pickItem != null && !c.pickItem.equals(tool) ? sh(c.pickItem) + " (in the bag)" : cheapestPickaxe(c, tier);
         if (c.fail != null) {
@@ -3708,7 +4654,11 @@ public final class NeedChain {
         ItemWorth.Mob kind = ItemWorth.mob(s.from());
         double hp = kind == null || Double.isNaN(kind.health()) ? Tuning.get("needChain.unknownMobHp") : kind.health();
         double dmg = HAND_DAMAGE;
-        for (var e : c.bag.entrySet()) if (e.getValue() > 0) dmg = Math.max(dmg, ItemWorth.facts(e.getKey()).attack());
+        // 0.39.z78 D6: scanned - a word whose attack is no more than the bare hit never raised it (NaN is kept in: it would)
+        for (String k : c.bag.scan(HITS, HITS_SCAN)) {
+            Integer v = c.bag.get(k);
+            if (v != null && v > 0) dmg = Math.max(dmg, ItemWorth.facts(k).attack());
+        }
         double killS = Math.ceil(hp / dmg - 1e-9) * HIT_S;  // structural: epsilon
         c.steps.add(new Step.HuntAt(s.from(), kills, new int[]{m.x(), m.z()}, sh(item), lack));
         Walked wk = walk(c, m.x(), m.y(), m.z(), m.dist());
@@ -3773,7 +4723,7 @@ public final class NeedChain {
             String leg = bandLeg(c, new int[]{top, top});
             if (leg == null && c.fail != null) return null;
             if (BAND_DROPPED.equals(leg)) { c.fail = "no path down to " + shw(base.block()) + " under the feet"; return null; }
-            c.walks.put(probe.key(), new Walked(0, "in reach from the hole the walk down made", null, PathPrice.Kind.PRICED));
+            c.walk(probe.key(), new Walked(0, "in reach from the hole the walk down made", null, PathPrice.Kind.PRICED));
             String how = sourceFrom(c, word, g, lack, List.of(probe));
             if (how == null) return null;
             return "dig down " + depth + " to " + base.text() + assumed + (pre == null ? "" : " with " + pre) + (leg == null || leg.isEmpty() ? "" : ": " + leg) + ", then " + how;
@@ -3805,10 +4755,10 @@ public final class NeedChain {
         // areas' yield; the cheapest wins (rule 1). Review 4: each is its own Alt, priced on a snapshot (choose): a walk not
         // known yet (computing, chunks) or failing drops that Alt only, never the strip from the feet; the walks are new goals
         // to the fork's queue, so they rank FIRST (below the running step's walk, PathMemory.Prio) and REST once answered
-        var seen = io.github.mojolowjo.entropybot.aa.brain.StripAreas.along(sb.x(), sb.y(), sb.z(), sb.heading(), sb.ores());
+        var seen = c.w.along(sb.x(), sb.y(), sb.z(), sb.heading(), sb.ores());
         if (io.github.mojolowjo.entropybot.aa.brain.StripAreas.judged(seen)) {
             for (String h : io.github.mojolowjo.entropybot.aa.brain.StripOrder.HEADINGS) {
-                int[] at = io.github.mojolowjo.entropybot.aa.brain.StripAreas.freshStart(sb.x(), sb.y(), sb.z(), h);
+                int[] at = c.w.freshStart(sb.x(), sb.y(), sb.z(), h);
                 if (at == null) continue;
                 StripBand f = sb.freshAt(at[0], at[1], at[2], h);
                 if (heldKey(c, f.key())) continue;
@@ -3858,7 +4808,7 @@ public final class NeedChain {
         // the straight metres (a hint; the price is Baritone's path): down to the band, plus the way to a fresh start
         Walked wk = walk(c, sb.x(), sb.y(), sb.z(), Math.abs(sb.feetY() - sb.y()) + sb.freshDist());
         if (c.fail != null) {
-            if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreachable.put(sb.key(), wk.fail());   // the z33 source fact: the band dropped
+            if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreach(sb.key(), wk.fail());   // the z33 source fact: the band dropped
             return null;
         }
         String ore = sb.ores().get(0);
@@ -3871,7 +4821,7 @@ public final class NeedChain {
         if (oreBlocks <= 0) { c.fail = "strip at y " + sb.y() + ": 0 ore for " + lack + " " + shw(gives) + " (nothing to dig)"; return null; }
         // 0.39.z64 item 4: the areas along this heading as seen (faces, the wanted ores on them) scale the band's estimate;
         // 0.39.z77 spares: the one dig estimate (stripDig) the seconds and the wear are both priced from
-        StripDig sd = stripDig(sb.perSlab(), oreBlocks, new int[]{sb.x(), sb.z()}, sb.y(), sb.heading(), sb.ores());
+        StripDig sd = stripDig(c.w, sb.perSlab(), oreBlocks, new int[]{sb.x(), sb.z()}, sb.y(), sb.heading(), sb.ores());
         double band = sd.band(), scale = sd.scale(), bpo = sd.bpo();
         var seen = sd.seen();
         int dug = sd.cells();
@@ -3898,10 +4848,10 @@ public final class NeedChain {
         Map<String, Integer> amounts = Map.of(io.github.mojolowjo.entropybot.aa.brain.StripOrder.countKey(ore, io.github.mojolowjo.entropybot.cave.OreSpec::family), oreBlocks);
         Step.Strip strip = new Step.Strip(sb.ores(), amounts, sb.y(), sb.heading(), 0, sb.from());
         // 0.39.z77 spares 3: the price's ore a cell, for the strip end's yield line (measured against it)
-        io.github.mojolowjo.entropybot.aa.brain.StripOrder.predicted(strip.key(), amounts.keySet().iterator().next(), 1 / bpo);
+        c.effect(new Predicted(strip.key(), amounts.keySet().iterator().next(), 1 / bpo));
         // 0.39.z77 strip: the band and a cell's seconds, for the strip's own yield check (StripYield.check); its rivals' best
         // price comes from the choice it is priced in (choose)
-        io.github.mojolowjo.entropybot.aa.brain.StripYield.priced(strip.key(), amounts.keySet().iterator().next(), sb.perSlab(), baritone.api.process.IStripProcess.TUNNEL_HEIGHT * hostS);
+        c.effect(new YieldPriced(strip.key(), amounts.keySet().iterator().next(), sb.perSlab(), baritone.api.process.IStripProcess.TUNNEL_HEIGHT * hostS));
         // 0.39.z46 (S58): the first leg is the priced path down to the band's peak (the walk the price above searched);
         // 0.39.z64 item 4: a strip from fresh ground walks to its start first
         int legAt = c.steps.size();
@@ -3942,9 +4892,14 @@ public final class NeedChain {
      * 0.39.z77 strip: public - the running strip's yield check prices a tunnel from the feet in another heading by it (StripStep).
      */
     public static StripDig stripDig(double perSlab, int oreBlocks, int[] start, int y, String heading, List<String> ores) {
+        return stripDig(null, perSlab, oreBlocks, start, y, heading, ores);
+    }
+
+    /** 0.39.z78 D6: {@code f} - the resolve's facts the areas are read from (null: the live areas, StripAreas). */
+    private static StripDig stripDig(Facts f, double perSlab, int oreBlocks, int[] start, int y, String heading, List<String> ores) {
         double band = io.github.mojolowjo.entropybot.aa.brain.OreBand.blocksPerOre(perSlab);
         var seen = start == null || heading == null ? io.github.mojolowjo.entropybot.aa.brain.StripAreas.Yield.NONE
-                : io.github.mojolowjo.entropybot.aa.brain.StripAreas.along(start[0], y, start[1], heading, ores);
+                : f != null ? f.along(start[0], y, start[1], heading, ores) : io.github.mojolowjo.entropybot.aa.brain.StripAreas.along(start[0], y, start[1], heading, ores);
         double scale = io.github.mojolowjo.entropybot.aa.brain.StripAreas.factor(io.github.mojolowjo.entropybot.aa.brain.StripAreas.perFace(perSlab), seen);
         double bpo = Math.min(Tuning.get("strip.maxBlocksPerOre"), band * scale);
         int cells = (int) Math.ceil(Math.max(0, oreBlocks) * bpo - 1e-9);   // structural: epsilon
@@ -3989,12 +4944,13 @@ public final class NeedChain {
         }
         // z62 review 1: the bag's other pickaxes that dig this tier count first (their uses left; the one in hand excluded)
         int others = 0, otherCount = 0;
-        for (var e : c.bag.entrySet()) {
+        // 0.39.z78 D6: scanned by the same tier test (a word below the tier was skipped)
+        for (String key : c.bag.scan(t -> MiningTiers.toolTier(t, "pickaxe") >= tier, "pickaxe tier >= " + tier)) {
             // z77 legs review: less what is set aside; 0.39.z77 spares 2 (review 2): the one in hand is one of the bag's only
             // when it is in the simulated bag - spares made and worn in an earlier way are out of it (c.pickOut)
-            int k = c.have(e.getKey()) - (e.getKey().equals(tool) && !c.pickOut ? 1 : 0);
-            if (k <= 0 || MiningTiers.toolTier(e.getKey(), "pickaxe") < tier) continue;
-            Integer u = c.w.usesLeft().apply(e.getKey());
+            int k = c.have(key) - (key.equals(tool) && !c.pickOut ? 1 : 0);
+            if (k <= 0) continue;
+            Integer u = c.w.usesLeft().apply(key);
             int each = u == null ? io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN : u;
             if (each == io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED) return null;     // one never wears out
             if (each == io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN) continue;          // not counted (rule 15): said below
@@ -4078,7 +5034,7 @@ public final class NeedChain {
      * seen source; the scorer picks by price, no "prefer caves" rule.
      */
     private static List<Alt> caveAlts(Ctx c, String word, String gives, int lack) {
-        CaveWay cw = caveOffered(c.w, word);
+        CaveWay cw = caveOffered(c.w.cave(), word);
         if (cw == null) return List.of();
         Alt a = new Alt((cw.candidate() ? "cave candidate " : "cave mouth ") + Math.round(cw.dist()) + " m", () -> cave(c, word, gives, lack, cw));
         a.id = gives;
@@ -4091,8 +5047,13 @@ public final class NeedChain {
      * ({@link #caveSource}).
      */
     static CaveWay caveOffered(World w, String word) {
-        if (w == null || word == null) return null;
-        CaveWay cw = w.cave().apply(word);
+        return w == null ? null : caveOffered(w.cave(), word);
+    }
+
+    /** 0.39.z78 D6: the same test on a cave lookup (the resolve's recorded one). */
+    private static CaveWay caveOffered(Function<String, CaveWay> cave, String word) {
+        if (cave == null || word == null) return null;
+        CaveWay cw = cave.apply(word);
         return cw == null || cw.ore() == null || !(cw.perMin() > 0) ? null : cw;
     }
 
@@ -4134,7 +5095,7 @@ public final class NeedChain {
         }
         Walked wk = walk(c, cw.x(), cw.y(), cw.z(), cw.dist());
         if (c.fail != null) {
-            if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreachable.put(cw.key(), wk.fail());
+            if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreach(cw.key(), wk.fail());
             return null;
         }
         gives = memberOf(c, gives, cw.ore());                   // J3-mod item 1: the member the ore drops names the bag's gain
@@ -4363,11 +5324,11 @@ public final class NeedChain {
      */
     private static String climbUp(Ctx c, Surface over) {
         String walk = heldLine(c, SURFACE_AT);
-        if (walk == null) for (var e : c.unreachable.entrySet()) if (e.getKey().startsWith(SURFACE_AT)) { walk = e.getKey() + ": " + e.getValue(); break; }
+        if (walk == null) for (var e : c.unreachableRead().entrySet()) if (e.getKey().startsWith(SURFACE_AT)) { walk = e.getKey() + ": " + e.getValue(); break; }
         if (walk == null) walk = "no priced walk up";
         String climbed = heldLine(c, CLIMB_KEY);
         int blocks = 0;
-        for (var e : c.bag.entrySet()) if (c.have(e.getKey()) > 0 && ItemWorth.stoneLike(e.getKey())) blocks += c.have(e.getKey());
+        for (String k : c.bag.scan(ItemWorth::stoneLike, "stone-like")) if (c.have(k) > 0) blocks += c.have(k);   // 0.39.z78 D6: scanned
         boolean pick = c.pickTier >= 1;      // structural: any pickaxe (the bot's tier scale: 1 = the least pickaxe)
         if (climbed != null) { c.fail = noWalkUp(over) + " - the walk up: " + walk + "; the climb: " + climbed; return null; }
         if (!pick && blocks < over.depth()) {
@@ -4464,7 +5425,7 @@ public final class NeedChain {
         Walked wk = walk(c, feet[0], ty, feet[2], Math.abs(feet[1] - ty), true);     // z76 send-back 2: the feet end IN the band (run AN)
         if (c.fail != null) {
             if (wk.kind() != PathPrice.Kind.UNREACHABLE) return null;
-            c.unreachable.put(io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(band[0], band[1]), wk.fail());
+            c.unreach(io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(band[0], band[1]), wk.fail());
             c.fail = null;
             c.note(() -> "band walk: no path into " + tb.text() + " (" + wk.fail() + "): the explore runs from here");
             return BAND_DROPPED;
@@ -4596,7 +5557,7 @@ public final class NeedChain {
         Walked wk = walk(c, s.x(), s.y(), s.z(), s.dist());
         if (c.fail != null) {
             if (wk.kind() != PathPrice.Kind.UNREACHABLE) return null;
-            c.unreachable.put(surfaceKey(s.x(), s.y(), s.z()), wk.fail());
+            c.unreach(surfaceKey(s.x(), s.y(), s.z()), wk.fail());
             c.fail = null;
             c.note(() -> "surface: no path up to " + s.x() + " " + s.y() + " " + s.z() + " (" + wk.fail() + "): the explore runs from here");
             return null;

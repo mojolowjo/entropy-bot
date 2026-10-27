@@ -225,13 +225,20 @@ public final class Tuning {
         name = e.name();
         if (Double.isNaN(v) || Double.isInfinite(v) || v < 0) return "error: " + name + " must be a number 0 or more";
         ALL.put(name, new Entry(e.name(), e.def(), v, e.run(), e.why()));
+        version++;
         return "ok: " + name + " " + fmt(v) + (v == e.def() ? " (the default)" : " (default " + fmt(e.def()) + ")");
     }
 
     /** All back to the defaults (a new world). */
     public static void reset() {
         for (Entry e : List.copyOf(ALL.values())) ALL.put(e.name(), new Entry(e.name(), e.def(), e.def(), e.run(), e.why()));
+        version++;
     }
+
+    private static volatile long version;
+
+    /** 0.39.z78 D6: bumped on every set and reset - the planner's kept nodes are priced by these numbers (PlanNodes' epoch). */
+    public static long version() { return version; }
 
     /** The tuned (not default) values, for the world's file. */
     public static Map<String, Double> changed() {
