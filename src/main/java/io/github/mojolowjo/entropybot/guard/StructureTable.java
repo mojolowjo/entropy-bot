@@ -34,8 +34,9 @@ import java.util.Set;
 /**
  * STRUCTURE_BLOCKS.md (owner 2026-10-23, RULES 16): the structure fact of every block, from the game's data only (no
  * name of ours): the block tags the ruling names, a block entity, a recipe type's station (the recipes' toast symbol),
- * and "a crafting recipe makes it and world gen never places it" (the configured features and the noise settings'
- * surface rules and the structure templates' palettes, read from the client's jars by WorldGenReader on singleplayer and
+ * and "a crafting recipe makes it and world gen never places it" (the configured features - their block states and, since
+ * 0.39.z77, the plain block ids they name, so dripstone_block is terrain - and the noise settings' surface rules, read
+ * from the client's jars by WorldGenReader on singleplayer and
  * on a server alike since 0.39.z26 (2); the integrated server's registries are only a check). Ores ({@code c:ores}), logs ({@code #logs}) and planks ({@code #planks}, owner 2026-10-23) are
  * never structure blocks.
  *
@@ -207,7 +208,7 @@ public final class StructureTable {
         int failed = 0;
         for (ConfiguredFeature<?, ?> f : ra.registryOrThrow(Registries.CONFIGURED_FEATURE)) {
             var j = ConfiguredFeature.DIRECT_CODEC.encodeStart(ops, f).result();
-            if (j.isPresent()) WorldGenFiles.collect(j.get(), names); else failed++;
+            if (j.isPresent()) { WorldGenFiles.collect(j.get(), names); WorldGenFiles.blockIds(j.get(), WorldGenReader::isBlock, names); } else failed++;
         }
         for (NoiseGeneratorSettings n : ra.registryOrThrow(Registries.NOISE_SETTINGS)) {
             var j = NoiseGeneratorSettings.DIRECT_CODEC.encodeStart(ops, n).result();

@@ -100,7 +100,7 @@ public final class WorldGenReader {
                     List<WorldGenFiles.Entry> json = new ArrayList<>();
                     try (var rm = packs.open()) {
                         for (String d : dirs()) add(rm.listResources(d, rl -> rl.getPath().endsWith(".json")), json);
-                        r = WorldGenFiles.read(json);
+                        r = WorldGenFiles.read(json, WorldGenReader::isBlock);
                     }
                     if (cache != null) {
                         try {
@@ -118,7 +118,7 @@ public final class WorldGenReader {
                         from, oreRead.placed().size(), oreRead.biomes().size(), oreRead.modifiers().size(), oreRead.placers().size(),
                         oreRead.unread() == 0 ? "" : "; " + oreRead.unread() + " entries not read (first: " + oreRead.firstUnread() + ")");
                 s = r.blocks();
-                LOG.info("[entropybot] structure facts: world gen places {} blocks (from the {}: {} packs, {} files, {} skipped{}; configured features and noise settings only; structure templates are not read: villages and fossils are built things, their blocks stay structure blocks); {} ms",
+                LOG.info("[entropybot] structure facts: world gen places {} blocks (from the {}: {} packs, {} files, {} skipped{}; configured features (block states and plain block ids) and noise settings only; structure templates are not read: villages and fossils are built things, their blocks stay structure blocks); {} ms",
                         s.size(), from, jars, r.files(), r.bad(), r.firstBad() == null ? "" : ", first: " + r.firstBad(), (System.nanoTime() - t0) / 1_000_000);  // structural: ns to ms
             } catch (RuntimeException | Error e) {
                 // its own state FAILED: crafted blocks answer not loaded with this reason (never the empty set); read again on the next join
@@ -137,6 +137,16 @@ public final class WorldGenReader {
                 blocks = s;
             }
         });
+    }
+
+    /**
+     * 0.39.z77 natural: a block id of the game's block registry (WorldGenFiles.blockIds). The built-in registry, the same on
+     * singleplayer and a server (rule 19: not the integrated server's world-gen registries), frozen at startup, so a
+     * read from the jars thread is safe. Loader notes: vanilla BuiltInRegistries / ResourceLocation.tryParse.
+     */
+    static boolean isBlock(String id) {
+        ResourceLocation rl = ResourceLocation.tryParse(id);
+        return rl != null && net.minecraft.core.registries.BuiltInRegistries.BLOCK.containsKey(rl);
     }
 
     /** The folders of the one read: the block-state names and the ore placements. */

@@ -27,7 +27,8 @@ import io.github.mojolowjo.entropybot.aa.brain.GenWhere;
  * 0.39.z26 (2): the pure half of the world-gen block read (the structure fact's "crafted and not world-gen" leg). The block
  * ids world gen places, from the data the client's jars carry (the same data packs the loot book reads, JarPacks): every
  * block state's {@code "Name"} in {@code data/<ns>/worldgen/configured_feature/*.json} and
- * {@code data/<ns>/worldgen/noise_settings/*.json} (the same JSON the registries' codecs write). 0.39.z26 (3): the structure
+ * {@code data/<ns>/worldgen/noise_settings/*.json} (the same JSON the registries' codecs write), and since 0.39.z77 the plain
+ * block ids the configured features name ({@link #blockIds}: dripstone_block). 0.39.z26 (3): the structure
  * templates ({@code data/<ns>/structure/*.nbt}) are not read: villages and fossils are built things, so their blocks stay
  * structure blocks (STRUCTURE_BLOCKS.md). Then the cache file (per mod list) and the owner's override
  * file. No name of ours: every id comes from the files.
@@ -46,7 +47,7 @@ public final class WorldGenFiles {
             "dimension", "worldgen/world_preset");     // 0.39.z74 item 4: which noise settings each dimension generates with
     /** The owner's correction, in the entropybot folder: {"<block id>": true (world gen places it) | false (it does not)}. */
     public static final String OVERRIDE_FILE = "worldgen-override.json";
-    static final int CACHE_VERSION = 6;  // structural: the cache file's format version (2: no template blocks; 3: the ore placements; 4: the "where" placers; 5: vein size and air-exposure discard; 6: the base blocks)
+    static final int CACHE_VERSION = 7;  // structural: the cache file's format version (2: no template blocks; 3: the ore placements; 4: the "where" placers; 5: vein size and air-exposure discard; 6: the base blocks; 7: the configured features' plain block ids)
 
     /** One file of the read: its id ("ns:path" under data/ns) and how to open it. */
     public interface Entry {
@@ -107,8 +108,18 @@ public final class WorldGenFiles {
         }
     }
 
-    /** Reads the JSON entries' block-state names into one set and the ore placements; a broken file is counted, never thrown. */
-    public static Read read(Collection<? extends Entry> json) {
+    /**
+     * The read without the game's block registry (the ore / placement tests): block-state names only, no plain block ids
+     * ({@link #blockIds}). The mod's read (WorldGenReader) always passes the registry.
+     */
+    public static Read read(Collection<? extends Entry> json) { return read(json, null); }
+
+    /**
+     * Reads the JSON entries' block-state names into one set, plus the plain block ids the configured features name
+     * ({@link #blockIds}; {@code isBlock}: the game's block registry, null: not taken), and the ore placements; a broken
+     * file is counted, never thrown.
+     */
+    public static Read read(Collection<? extends Entry> json, java.util.function.Predicate<String> isBlock) {
         Set<String> names = new HashSet<>();
         int files = 0, bad = 0;
         String firstBad = null;
@@ -121,6 +132,7 @@ public final class WorldGenFiles {
                 String dir = dirOf(e.id());
                 String id = shortId(e.id(), dir);
                 if (dir == null || JSON_DIRS.contains(dir)) collect(j, names);
+                if ("worldgen/configured_feature".equals(dir) && isBlock != null) blockIds(j, isBlock, names);   // 0.39.z77 natural
                 if ("worldgen/configured_feature".equals(dir)) configured.put(id, j);
                 else if ("worldgen/placed_feature".equals(dir)) placed.put(id, j);
                 else if ("worldgen/biome".equals(dir)) biomes.put(id, j);
@@ -399,6 +411,33 @@ public final class WorldGenFiles {
         for (var en : e.getAsJsonObject().entrySet()) {
             if (en.getKey().equals("Name") && en.getValue().isJsonPrimitive()) names.add(en.getValue().getAsString());
             else collect(en.getValue(), names);
+        }
+    }
+
+    /**
+     * 0.39.z77 natural (run CJ 17:25: the strip's next cell, a dripstone_block, refused as "structure block outside my
+     * areas"; dripstone_block has a crafting recipe, so only the world-gen leg keeps it terrain): the block ids a configured
+     * feature names in plain form, beside the block-state {@code Name}s {@link #collect} takes. The game's feature configs
+     * write some blocks by id, not as a state ({@code BuiltInRegistries.BLOCK.byNameCodec()} or a block holder set:
+     * MultifaceGrowthConfiguration's {@code block} and {@code can_be_placed_on}, SpringConfiguration's {@code valid_blocks},
+     * a matching_blocks predicate's {@code blocks}), and some feature types place their blocks in code (DripstoneClusterFeature
+     * and DripstoneUtils set dripstone_block and pointed_dripstone; their configs hold numbers only), so the data names
+     * dripstone_block only as ground the glow_lichen and sculk_vein features grow on. A block world gen's own data names as
+     * part of the generated world is terrain, never a "crafted and not world-gen" structure block. Every string value
+     * that is a block id ({@code isBlock}: the game's block registry) is taken, except a codec type id (a key ending in
+     * "type": the feature, provider and predicate types).
+     */
+    public static void blockIds(JsonElement e, java.util.function.Predicate<String> isBlock, Set<String> names) {
+        if (e == null) return;
+        if (e.isJsonArray()) { for (JsonElement c : e.getAsJsonArray()) blockIds(c, isBlock, names); return; }
+        if (e.isJsonPrimitive()) {
+            if (e.getAsJsonPrimitive().isString() && isBlock.test(e.getAsString())) names.add(e.getAsString());
+            return;
+        }
+        if (!e.isJsonObject()) return;
+        for (var en : e.getAsJsonObject().entrySet()) {
+            if (en.getKey().endsWith("type")) continue;
+            blockIds(en.getValue(), isBlock, names);
         }
     }
 
