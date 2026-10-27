@@ -3,6 +3,7 @@ package io.github.mojolowjo.entropybot.aa;
 import io.github.mojolowjo.entropybot.aa.NeedChain.Chain;
 import io.github.mojolowjo.entropybot.aa.NeedChain.Spot;
 import io.github.mojolowjo.entropybot.aa.NeedChain.World;
+import io.github.mojolowjo.entropybot.aa.Playbook.Target;
 import io.github.mojolowjo.entropybot.aa.brain.BatchWay;
 import io.github.mojolowjo.entropybot.aa.brain.GenWhere;
 import io.github.mojolowjo.entropybot.aa.brain.Goals;
@@ -13,6 +14,7 @@ import io.github.mojolowjo.entropybot.aa.core.Clock;
 import io.github.mojolowjo.entropybot.aa.core.FakePort;
 import io.github.mojolowjo.entropybot.aa.moves.FactChange;
 import io.github.mojolowjo.entropybot.aa.moves.Step;
+import io.github.mojolowjo.entropybot.aa.moves.Steps;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -138,6 +140,38 @@ class Z77CarryTest {
         assertTrue(s.line().contains("stand: " + NeedChain.NOT_PRICED + "leg 2/4 (at band [iron_ingot 3, iron_pickaxe 1])" + NeedChain.WAITS_ON + "an answer before going down"), s.line());
     }
 
+    /**
+     * Carry 2 (review item 3): the stand above is bounded by the two-stands rule (Steps, review 6 / round fix 2) also when its
+     * cause is a fact not loaded, not a walk. The second stand's hold ("stood at 0 64 0") drops only the walks not known; the
+     * table's structure fact is still not loaded, so the drop's re-plan stands again - no third stand: the run ends after two,
+     * said ("no third stand there"), zero movement.
+     */
+    @Test
+    void ce_theStandOnAFactNotLoaded_endsAfterTwoStands() {
+        Z77PlaybookTest.data();
+        Map<String, Integer> bag = new java.util.HashMap<>(CE_BAG);
+        bag.put("minecraft:torch", 4);
+        World w = ce(false, bag);
+        List<Target> five = Z77PlaybookTest.KIT.subList(1, Z77PlaybookTest.KIT.size());
+        World held = w.withoutSources(Map.of(NeedChain.stoodKey(new int[]{0, 64, 0}), "stood 2 times at 0 64 0 with walks' paths still not known"));
+        BatchWay.Shaped again = shaped(Playbook.derive(five, Playbook.facts(held, null)), held, 5);
+        assertEquals(List.of(new Step.AwaitPaths(NeedChain.firstAnswerWaitS())), again.chain().steps(), "the hold drops walks only: " + again.line());
+        assertTrue(again.line().contains(NeedChain.SOURCE_NOT_LOADED), "the cause is the fact not loaded: " + again.line());
+        Z76StandTest.FeetHands h = new Z76StandTest.FeetHands();
+        Steps run = new Steps(h);
+        Steps.Replanner planner = (failed, fact, why) -> {
+            World at = fact.key().startsWith("source " + NeedChain.STOOD_AT) ? held : w;
+            BatchWay.Shaped s = shaped(Playbook.derive(five, Playbook.facts(at, null)), at, 5);
+            return new Steps.Routine(s.chain().steps(), s.chain().why());
+        };
+        run.start("goal.iron_pickaxe", shaped(Playbook.derive(five, Playbook.facts(w, null)), w, 5).chain().steps(), 0, planner);
+        Z76StandTest.tick(run, h, 20 * 30 * 4);
+        assertFalse(run.running(), "bounded");
+        assertTrue(run.why().contains("stood 2 times") && run.why().contains("no third stand there"), run.why());
+        assertEquals(2, h.started.size(), "two stands, never a third: " + h.started);
+        assertArrayEquals(new int[]{0, 64, 0}, h.feet, "zero movement");
+    }
+
     // ---- scenario 2: the trip is re-priced on a fact, never on each Y ----
 
     /** The kit world whose feet are {@code feet} (the surface at y 64 over them: the depth 64 - y). */
@@ -161,8 +195,9 @@ class Z77CarryTest {
     /**
      * CB 16:04:24-16:05:34 ("here at y -20", "-16", "-15", ...): the bot goes down 20 Y under ground (y 40 to 20), nothing
      * else changes - the trip is priced once, never per Y (was: once per failures.moved 16 Y cell, y 31 re-priced it). From
-     * the surface to the band (y 64 to 16) the legs' place changes once - on the surface, then under ground (y 61, 3 blocks
-     * of ground: aaLadder.surfaceDepth) - one re-price (was: four, one per 16 Y cell).
+     * the surface down to the band (y 64 to 17, just above its Y 16) the legs' place changes once - on the surface, then under
+     * ground (y 61, 3 blocks of ground: aaLadder.surfaceDepth) - one re-price (was: four, one per 16 Y cell; into the band's
+     * Y itself: cb_diggingIntoTheBandY).
      */
     @Test
     void cb_descending20Y_noRepricePerY_theSurfaceToTheBand_oneReprice() {
@@ -174,12 +209,36 @@ class Z77CarryTest {
         descend(bb, gs, feet, 40, 20);
         assertEquals(1, BatchWay.priced("b1"), "20 Y down under ground, nothing else changed: one price");
         BatchWay.clear();
-        descend(bb, gs, feet, 64, 16);
+        descend(bb, gs, feet, 64, 17);
         assertEquals(2, BatchWay.priced("b1"), "the surface, then under ground: one re-price");
         // a fact the trip depends on still re-prices it: the bag
         World w2 = moving(feet).withBag(Z77PlaybookTest.kitBag(10));
         bb.fact(NeedChain.WORLD_FACT, (java.util.function.Supplier<World>) () -> w2);
         for (Goals.Goal g : gs) Goals.chain(bb, g);
         assertEquals(3, BatchWay.priced("b1"), "the bag changed: priced again");
+    }
+
+    /**
+     * Carry 2 (review items 1, 2): under ground Playbook.facts places the legs from the feet's Y - at the band's own Y the
+     * descent is the strip here. Digging down from y 24 INTO the band Y 16 is a leg's place changing: one re-price, at y 16,
+     * and the trip's line says "strip here at y 16"; the Ys above it re-price nothing.
+     */
+    @Test
+    void cb_diggingIntoTheBandY_onePrice_theDescentIsTheStripHere() {
+        Z77PlaybookTest.data();
+        int[] feet = {0, 24, 0};
+        World w = moving(feet);
+        List<Goals.Goal> gs = new ArrayList<>();
+        FakePort port = new FakePort();
+        Blackboard bb = Z77PlaybookTest.batchBoard(port, new Clock.Fake(10_000_000), () -> w, gs);
+        descend(bb, gs, feet, 24, 17);
+        assertEquals(1, BatchWay.priced("b1"), "above the band: one price");
+        assertTrue(port.log.stream().anyMatch(l -> l.contains("2 descent to y 16")), port.log.toString());
+        descend(bb, gs, feet, 16, 16);
+        assertEquals(2, BatchWay.priced("b1"), "into the band's Y: one re-price");
+        String last = port.log.stream().filter(l -> l.contains(BatchWay.TRIP + "b1")).reduce((x, y) -> y).orElse("");
+        assertTrue(last.contains("strip here at y 16") && !last.contains("descent to y 16"), last);
+        descend(bb, gs, feet, 16, 16);
+        assertEquals(2, BatchWay.priced("b1"), "kept at the band's Y");
     }
 }

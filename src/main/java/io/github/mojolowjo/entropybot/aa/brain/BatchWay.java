@@ -163,9 +163,12 @@ public final class BatchWay {
         NeedChain.World w = others.isEmpty() ? w0 : w0.withoutSources(others);
         java.util.Set<String> held = new java.util.TreeSet<>(mine.keySet());
         held.addAll(others.keySet());
-        String key = tripKeyOf(tk, open, w.bag(), bb.in == null ? null : bb.in.pos, bb.in != null && bb.in.underDepth >= io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth(), held);
+        boolean under = bb.in != null && bb.in.underDepth >= io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth();
+        int[] pos = bb.in == null ? null : bb.in.pos;
+        String base = tripKeyOf(tk, open, w.bag(), pos, under, held);
         Trip kept = TRIPS.get(tk);
-        Trip t = kept != null && kept.holds(key, landed(w)) ? kept : price(bb, g, tk, key, open, w);
+        // 0.39.z77 carry 2: the kept trip's own band Ys say whether the feet crossed one (its legs placed again)
+        Trip t = kept != null && kept.holds(base + bandPlace(kept.pb(), pos, under), landed(w)) ? kept : price(bb, g, tk, base, pos, under, open, w);
         // 0.39.z77 noway (run BU 13:34:23: the helmet's band leg had no way and ended the PICKAXE's order, never made): a leg's
         // no-way ends only the orders whose own items need it (with the leg's reasons, as an order's no-way always did); every
         // other order of the batch derives its trip again without them and runs on
@@ -178,11 +181,28 @@ public final class BatchWay {
             }
             if (!t.ends().contains(g.id()) && gone) return trip(bb, g, w0, own);     // the ended orders parked: the key changes
         }
-        return t.chain() != null ? t.chain() : own(g, key, landed(w), own);
+        return t.chain() != null ? t.chain() : own(g, t.key(), landed(w), own);
     }
 
-    /** The trip of the batch {@code tk} priced now on {@code w} for its {@code open} orders, kept under {@code key}. */
-    private static Trip price(Blackboard bb, Goals.Goal g, String tk, String key, List<Goals.Goal> open, NeedChain.World w) {
+    /**
+     * 0.39.z77 carry 2 (pure; review of carry 1: under ground Playbook.facts places the legs from the feet's Y - a descent at
+     * the feet's own Y is the strip here, one above them the strip from below): where the feet stand against each band Y the
+     * trip's descents use - above, at, below ("| band 16 at") - so digging down INTO a band Y re-prices the trip once, and
+     * the Y in between does not. On the surface (legs placed as from the surface), no trip, or no feet: nothing.
+     */
+    static String bandPlace(Playbook pb, int[] pos, boolean under) {
+        if (!under || pb == null || !pb.ok() || pos == null || pos.length < 3) return "";     // structural: x y z
+        StringBuilder b = new StringBuilder();
+        Set<Integer> seen = new LinkedHashSet<>();
+        for (Playbook.Leg l : pb.legs()) {
+            if (l.kind() != Playbook.Kind.DESCENT || !seen.add(l.y())) continue;
+            b.append(" | band ").append(l.y()).append(pos[1] > l.y() ? " above" : pos[1] == l.y() ? " at" : " below");
+        }
+        return b.toString();
+    }
+
+    /** The trip of the batch {@code tk} priced now on {@code w} for its {@code open} orders, kept under {@code base} and its band place. */
+    private static Trip price(Blackboard bb, Goals.Goal g, String tk, String base, int[] pos, boolean under, List<Goals.Goal> open, NeedChain.World w) {
         PRICED.merge(tk, 1, Integer::sum);
         long t0 = TickLaps.AA.now();
         List<Playbook.Target> targets = new ArrayList<>();
@@ -190,6 +210,7 @@ public final class BatchWay {
         @SuppressWarnings("unchecked")
         BiFunction<String, Integer, Double> perSlab = bb.fact(PER_SLAB_FACT) instanceof BiFunction<?, ?, ?> f ? (BiFunction<String, Integer, Double>) f : null;
         Playbook pb = Playbook.derive(targets, Playbook.facts(w, perSlab));
+        String key = base + bandPlace(pb, pos, under);
         // an order alone whose trip is one leg: that leg IS the order's own chain (the same planner on the same facts; its
         // words and aa debug tree as before)
         boolean oneLeg = open.size() == 1 && pb.ok() && pb.legs().size() == 1;
