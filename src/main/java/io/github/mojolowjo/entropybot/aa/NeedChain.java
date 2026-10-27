@@ -2579,7 +2579,9 @@ public final class NeedChain {
         }
         List<Alt> alts = new ArrayList<>(), woodAlts = new ArrayList<>();
         Map<Alt, Double> wood = new java.util.HashMap<>();
-        for (var e : classes.entrySet()) {
+        for (var cls : classes.entrySet()) {
+            // 0.39.z77 fuel: the class's members of more wood a piece than its least-wood member are out of its word
+            var e = Map.entry(cls.getKey(), leastWood(c, cls.getKey(), cls.getValue()));
             int count = (int) Math.ceil(k * smeltTicks() / e.getKey());
             String cw = classWord(e.getValue());
             boolean plain = new Want(cw).item() || cw.indexOf('|') < 0;
@@ -2660,6 +2662,41 @@ public final class NeedChain {
         }
         c.burned = win.alt().burned;
         return win.phrase();
+    }
+
+    /**
+     * 0.39.z77 fuel (run DH 04:38:11: "craft dark_oak_slab 114 > craft composter 16" for 24 smelts, where 16 planks burn the
+     * same): the members of one burn class burn the same ticks a piece, so the wood a piece ({@link
+     * io.github.mojolowjo.entropybot.craft.FuelWood#planks}, from the recipe data) is the wood per burn tick. A member made of
+     * known wood that consumes more a piece than the class's least-wood member is left out of the class's word (the way then
+     * makes the least-wood member; which member a tag way makes is chosen by seconds alone, so it must not be offered), said
+     * in the dropped list. Members of no wood or of unknown wood stay (nothing to compare: rule 15). No wood member: as is.
+     */
+    private static Set<String> leastWood(Ctx c, int ticks, Set<String> items) {
+        Map<String, Double> wood = new java.util.HashMap<>();
+        double least = Double.POSITIVE_INFINITY;
+        for (String m : items) {
+            double p = io.github.mojolowjo.entropybot.craft.FuelWood.planks(m);
+            wood.put(m, p);
+            if (p > 0 && !Double.isInfinite(p)) least = Math.min(least, p);
+        }
+        if (Double.isInfinite(least)) return items;
+        Set<String> kept = new TreeSet<>();
+        Map<String, Double> out = new TreeMap<>();
+        for (String m : items) {
+            double p = wood.get(m);
+            if (p > least + 1e-9 && !Double.isInfinite(p)) out.put(m, p);   // structural: float epsilon
+            else kept.add(m);
+        }
+        if (out.isEmpty()) return items;
+        List<String> said = new ArrayList<>();
+        for (var o : out.entrySet()) {
+            if (said.size() == 6) { said.add("+" + (out.size() - 6) + " more"); break; }   // structural: the line's length
+            said.add(String.format(java.util.Locale.ROOT, "%s %.1f", sh(o.getKey()), o.getValue()));
+        }
+        drop(c, "burn " + ticks + " ticks", String.format(java.util.Locale.ROOT,
+                "%d items left out by the planks of wood a piece vs %.1f (the least of the class): %s", out.size(), least, String.join(", ", said)));
+        return kept;
     }
 
     /**

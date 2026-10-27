@@ -183,8 +183,9 @@ class Z75UndergroundFuelTest {
      * The chain's burn counts the same rule (z75 review 2, by hand). 3 smelts = 600 ticks; the bag holds 1 oak plank + 1
      * crafting table (both 300 ticks: 600 mixed, 300 of one kind) and no coal; a tree 10 m (4 logs). No kind in the bag covers
      * it (pickFuel: 2 of one kind), so the 300-tick class - the least wood, 2 x 1 plank - is made anew as one kind: the
-     * tree, walk 10 m 3.01 + 4 logs x 3.0 = 15.01 s, the walk back to the furnace 3.01 s, 2 oak_log burned (counted on the
-     * smelt step); the smelts 3 x 10 s = 30 s: 48.02 s. The charcoal way (the same tree + a smelt 10 s = 28.02 s) loses.
+     * tree, walk 10 m 3.01 + 4 logs x 3.0 = 15.01 s, the walk back to the furnace 3.01 s; the smelts 3 x 10 s = 30 s.
+     * 0.39.z77 fuel: the logs (4 planks of wood a piece, 300 ticks like a plank) are out of the class's word, so 1 log is
+     * crafted to 4 planks (0.3 s) and 2 oak_planks burn (counted on the smelt step), never 2 logs (8 planks of wood): 48.32 s.
      * The dry run of the plan on that bag finds no shortage.
      */
     @Test
@@ -193,12 +194,12 @@ class Z75UndergroundFuelTest {
         Map<String, Integer> bag = Map.of("minecraft:raw_iron", 3, PLANKS, 1, TABLE, 1);
         Chain c = NeedChain.resolve("iron_ingot", 3, ScenariosTest.w(bag, true, true, Map.of("oak_log", List.of(ScenariosTest.tree(10, 4)))));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(List.of(new Step.ChopTree(new int[]{10, 64, 0}, 2, null).text(), new Step.Smelt("iron_ingot", 3, true).text()),
+        assertEquals(List.of(new Step.ChopTree(new int[]{10, 64, 0}, 1, null).text(), "craft oak_planks 4", new Step.Smelt("iron_ingot", 3, true).text()),
                 c.steps().stream().map(Step::text).toList(), c.why());
-        assertEquals(15.01 + 3.01 + 30, c.seconds(), 0.05, c.why());
+        assertEquals(15.01 + 0.3 + 3.01 + 30, c.seconds(), 0.05, c.why());
         int at = index(c, Step.Smelt.class);
         StepNeeds n = StepNeeds.of(c.steps().get(at)).withUses(c.uses().get(at));
-        assertEquals(Map.of("minecraft:raw_iron", 3, "minecraft:oak_log", 2), n.consumes(), n.text());
+        assertEquals(Map.of("minecraft:raw_iron", 3, PLANKS, 2), n.consumes(), n.text());
         assertEquals(0, n.fuelTicks());
         List<StepNeeds> all = new java.util.ArrayList<>();
         for (int i = 0; i < c.steps().size(); i++) all.add(StepNeeds.of(c.steps().get(i)).withUses(c.uses().get(i)));
