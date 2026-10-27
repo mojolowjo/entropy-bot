@@ -13,7 +13,8 @@ import java.util.function.Function;
  * <li>the next walk ({@link Step.Walk}, {@link Step.ToStrip}): its kept path's first cells near the feet (feet and head
  *     height), from {@code walkCells} (the fork's kept price for that goal; none known: nothing kept for it);</li>
  * <li>a strip that starts at the feet ({@link Step.Strip} at the feet's Y, no walk before it): its tunnel's first cells in
- *     its heading, feet and head height, out to the placing radius plus one.</li>
+ *     its heading, feet and head height, out to the placing radius plus one;</li>
+ * <li>0.39.z77 craft: my stations near the feet that a later craft or smelt step uses ({@link #stations}).</li>
  * </ul>
  * The scan stops at the first walk or strip (after it the bot stands elsewhere). Pure (JUnit: Z62RunSTest).
  * Loader notes: none.
@@ -57,6 +58,49 @@ public final class KeepClear {
             }
         }
         return out;
+    }
+
+    /**
+     * 0.39.z77 craft (run DA 00:35:52-00:37:17: the furnace's place-near had no free cell in the y 16 tunnel, and the
+     * fork's room pass cleared the cell nearest the feet, which held the crafting table the chain had just placed and
+     * priced "craft oak_slab 12" on. The craft then walked 77 m to the only other table): my stations within reach
+     * (as {@link #cells}: one cell past the placing radius) whose block a station step after the placement uses
+     * ({@link StepWait#kindOf}: craft -> the crafting kind, smelt -> the smelting kind). This applies until the first
+     * walk or strip (after it the bot stands elsewhere). It is a CONSTRAINT for Baritone's pick (the leg's cell check
+     * refuses them), so the fork still picks the cell. A kind whose blocks are not loaded ({@code blocksOfKind} null)
+     * keeps every station of mine within reach. A wrongly kept cell only makes the placement fail loudly and re-plan,
+     * while a wrongly broken station costs the walk. Pure (JUnit: Z77CraftKeepsTableTest).
+     * @param blocksOfKind a recipe kind -> its station blocks (null: not loaded)
+     * @param mine         my recorded stations ({@code OwnStations.placed()})
+     */
+    public static List<int[]> stations(List<? extends Step> steps, int from, int[] feet, int radius,
+                                       Function<String, java.util.Set<String>> blocksOfKind, List<io.github.mojolowjo.entropybot.clear.OwnStations.Placed> mine) {
+        List<int[]> out = new ArrayList<>();
+        if (steps == null || feet == null || mine == null || mine.isEmpty()) return out;
+        java.util.Set<String> used = new java.util.HashSet<>();
+        boolean any = false;          // a station step whose kind has no loaded blocks: keep every station of mine
+        for (int i = Math.max(0, from); i < steps.size(); i++) {
+            Step s = steps.get(i);
+            if (leaves(s)) break;
+            String kind = StepWait.kindOf(s);
+            if (kind == null) continue;
+            java.util.Set<String> ids = blocksOfKind == null ? null : blocksOfKind.apply(kind);
+            if (ids == null) any = true;
+            else used.addAll(ids);
+        }
+        if (!any && used.isEmpty()) return out;
+        int reach = Math.max(1, radius) + 1;       // structural: one cell past the placing radius, as cells()
+        for (var m : mine) {
+            if (m == null) continue;
+            if (Math.abs(m.x() - feet[0]) > reach || Math.abs(m.y() - feet[1]) > reach || Math.abs(m.z() - feet[2]) > reach) continue;
+            if (any || used.contains(m.block())) add(out, m.x(), m.y(), m.z());
+        }
+        return out;
+    }
+
+    /** The bot stands elsewhere after this step (a walk or a strip): the scans stop here. */
+    private static boolean leaves(Step s) {
+        return s instanceof Step.Walk || s instanceof Step.ToStrip || s instanceof Step.ToStation || s instanceof Step.ToSurface || s instanceof Step.Strip;
     }
 
     private static void add(List<int[]> out, int x, int y, int z) {

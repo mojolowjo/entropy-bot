@@ -1374,14 +1374,20 @@ public final class StepHands implements Steps.Hands {
 
     /**
      * 0.39.z62 item 1a: the cells to keep free for the steps after the running one (KeepClear over the running run's steps;
-     * a walk's cells from the fork's kept price for its goal). Empty when no typed run runs here (an owner verb).
+     * a walk's cells from the fork's kept price for its goal; 0.39.z77 craft: my stations a later craft / smelt uses). Empty
+     * when no typed run runs here (an owner verb).
      */
     private List<int[]> keepClear(LocalPlayer p) {
         var run = c.stepRun.steps;
         int idx = run.index();
         if (idx < 0) return List.of();
         IBaritone b = Jobs.baritone();
-        return io.github.mojolowjo.entropybot.aa.moves.KeepClear.cells(run.steps(), idx + 1, Jobs.here(p), Tuning.i("steps.placeNearR"), goal -> {
+        int[] feet = Jobs.here(p);
+        int r = Tuning.i("steps.placeNearR");
+        // 0.39.z77 craft (run DA 00:35:53): my station a later craft / smelt uses is never the cell the fork clears
+        List<int[]> keep = new ArrayList<>(io.github.mojolowjo.entropybot.aa.moves.KeepClear.stations(run.steps(), idx + 1, feet, r,
+                c.nearby::blocksOfKind, io.github.mojolowjo.entropybot.clear.OwnStations.placed()));
+        List<int[]> walk = io.github.mojolowjo.entropybot.aa.moves.KeepClear.cells(run.steps(), idx + 1, feet, r, goal -> {
             if (b == null) return null;
             List<int[]> out = new ArrayList<>();
             try {
@@ -1392,6 +1398,12 @@ public final class StepHands implements Steps.Hands {
             }
             return out;
         });
+        for (int[] w : walk) {
+            boolean dup = false;
+            for (int[] o : keep) if (o[0] == w[0] && o[1] == w[1] && o[2] == w[2]) { dup = true; break; }
+            if (!dup) keep.add(w);
+        }
+        return keep;
     }
 
     private static String keepText(List<int[]> cells) {
