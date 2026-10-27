@@ -52,6 +52,8 @@ public final class PlannerPort implements BatchWay.Planner {
         String waitWords = "thinking: the first resolve of this trip";
         /** Results of this trip dropped in a row since its last apply (past ROUNDS the stand says why). */
         int dropsInRow;
+        /** Review (b): the tick the cap's line was last said (said again every RESAY_S while the streak lasts). */
+        long capSaidAt;
         /** 0.39.z78 D6 (run DP): the result last applied, for its playbook and kept fuels - a new ask of the same is checked against it first. */
         PlannerWorker.Done applied;
         Playbook appliedPb;
@@ -60,6 +62,9 @@ public final class PlannerPort implements BatchWay.Planner {
 
     /** structural: results of one trip dropped in a row before the trip stands with the reason (a fetch round or two is normal) */
     static final int ROUNDS = 8;
+
+    /** structural: seconds between the cap's line said again while a trip stands past the cap (a person reads the log) */
+    static final int RESAY_S = 30;
 
     public PlannerPort(PlannerWorker worker, LongSupplier tick, Consumer<String> log) {
         this.worker = worker;
@@ -139,10 +144,14 @@ public final class PlannerPort implements BatchWay.Planner {
             // priced yet", rule 15), said loud once a streak, and asks the worker again as on any drop
             s.waitWords = "thinking: " + (data ? r.read().dirty(live, w) + " nodes dirty" : "the game data changed");
             if (++s.dropsInRow >= ROUNDS) {
-                if (s.dropsInRow == ROUNDS) {
+                // review (b): nothing else bounds this stand (its AwaitPaths re-prices every pathCost.firstAnswerWaitS, a price
+                // fact, never a park) - the reason is said again every RESAY_S while the streak lasts
+                long now = tick.getAsLong();
+                if (s.dropsInRow == ROUNDS || now - s.capSaidAt >= RESAY_S * io.github.mojolowjo.entropybot.aa.brain.GameTimes.TPS) {
                     log.accept("planner: trip " + key + ": " + s.dropsInRow + " results in a row dropped (the facts kept changing while it thought; last: "
                             + changed.get(0) + "): the trip stands until a result holds (rule 22; rule 15: never a stale price)");
-                    caps++;
+                    if (s.dropsInRow == ROUNDS) caps++;
+                    s.capSaidAt = now;
                 }
                 s.waitWords = "thinking: the facts keep changing while it thinks (" + s.dropsInRow + " results in a row dropped; last: " + changed.get(0) + ")";
             }

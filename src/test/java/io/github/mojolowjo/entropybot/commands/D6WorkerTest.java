@@ -303,6 +303,31 @@ class D6WorkerTest {
         assertTrue(Deep.equal(a, PlanNodes.old(() -> NeedChain.resolvePlaybookLegs(pb, live.world()))), "the facts of now, never a stale price");
     }
 
+    /** Review (b): a stand past the cap that never settles says its reason again every RESAY_S (nothing else bounds it). */
+    @Test
+    void pastTheCap_theReasonIsSaidAgainEvery30s_whileTheFactsKeepChanging() throws InterruptedException {
+        data();
+        Live live = new Live();
+        List<String> log = new ArrayList<>();
+        long[] tick = {0};
+        PlannerWorker worker = new PlannerWorker();
+        PlannerPort port = new PlannerPort(worker, () -> tick[0], log::add);
+        Playbook pb = Playbook.derive(KIT, Playbook.facts(live.world(), null));
+        untilApplied(port, worker, pb, live, 30);
+        java.util.function.Predicate<String> said = x -> x.contains("results in a row dropped") && x.contains("the trip stands until a result holds");
+        for (int i = 0; i < PlannerPort.ROUNDS + 6; i++) {
+            if (i == PlannerPort.ROUNDS + 3) tick[0] = (long) PlannerPort.RESAY_S * 20;     // 30 s of ticks later, still not settled
+            live.walks.put("12,64,0", PathPrice.Answer.priced(new PathPrice.Walk(10 + i)));
+            long seen = worker.landed();
+            assertTrue(NeedChain.thinking(port.legs("b1", pb, Set.of(), live.world()).chain()));
+            awaitLanding(worker, seen);
+        }
+        live.walks.put("12,64,0", PathPrice.Answer.priced(new PathPrice.Walk(99)));
+        port.legs("b1", pb, Set.of(), live.world());
+        assertEquals(2, log.stream().filter(said).count(), "once at the cap, once 30 s later: " + log);
+        assertTrue(port.probe().contains("stood past the cap 1"), "one streak: " + port.probe());
+    }
+
     // ---- run DQ diagnosis ----
 
     /**
