@@ -13,9 +13,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * aim on the index.
  */
 class J6CaveLabelsTest {
-    static CaveLabels.Label yes(int rim, int reach) { return new CaveLabels.Label(rim, 60, reach, rim, reach, "small", "stone", true, 42L, 1, "w"); }
+    static CaveLabels.Label yes(int rim, int reach) { return new CaveLabels.Label(rim, 60, reach, rim, reach, "small", "stone", true, 42L, 1, "w", CaveLabels.MEASURE, List.of()); }
 
-    static CaveLabels.Label no(int x, int rim, int reach) { return new CaveLabels.Label(x, 70, 0, rim, reach, "small", "high", false, 42L, 1, "w"); }
+    /** A label of the old measure (9710ddad / 2f215a09: the rim summed over the volume, no cells). */
+    static CaveLabels.Label oldYes(int x, int rim, int reach) { return new CaveLabels.Label(x, 61, 0, rim, reach, "small", "stone", true, 42L, 1, "w", 1, List.of()); }
+
+    static CaveLabels.Label no(int x, int rim, int reach) { return new CaveLabels.Label(x, 70, 0, rim, reach, "small", "high", false, 42L, 1, "w", CaveLabels.MEASURE, List.of()); }
 
     @Test
     void noLabels_theDefaults() {
@@ -80,8 +83,8 @@ class J6CaveLabelsTest {
     void theFileRoundTrip_aBrokenEntryCounted_aRelabelReplaces() {
         CaveLabels a = new CaveLabels();
         a.add(yes(4, 7));
-        a.add(new CaveLabels.Label(5, 60, 9, 1, -1, "small", "high", false, null, 2, "w"));
-        a.add(new CaveLabels.Label(4, 60, 7, 4, 7, "small", "stone", false, 42L, 3, "w"));   // the same entry, now "no"
+        a.add(new CaveLabels.Label(5, 60, 9, 1, -1, "small", "high", false, null, 2, "w", CaveLabels.MEASURE, List.of(Sightings.cell(5, 60, 9))));
+        a.add(new CaveLabels.Label(4, 60, 7, 4, 7, "small", "stone", false, 42L, 3, "w", CaveLabels.MEASURE, List.of()));   // the same entry, now "no"
         assertEquals(2, a.all().size());
         int[] bad = {0};
         CaveLabels b = CaveLabels.read(a.toJson(), bad);
@@ -94,13 +97,49 @@ class J6CaveLabelsTest {
         assertEquals(1, bad[0]);
     }
 
+    /** Run EF: the old measure's labels count for the verdict, never for the derivation; the check says them. */
+    @Test
+    void oldMeasureLabels_countForTheVerdict_notForTheDerivation() {
+        List<CaveLabels.Label> l = List.of(oldYes(1, 4719, 17), oldYes(2, 900, 9), oldYes(3, 50, 8), oldYes(4, 40, 7), oldYes(5, 30, 6), yes(2, 4));
+        CaveLabels.Floor f = CaveLabels.derive(l);
+        assertFalse(f.derived(), "5 old labels and 1 new: under 5 that derive");
+        assertEquals(1, f.yes());
+        String t = CaveLabels.checkText(l, f, null);
+        assertTrue(t.contains("the floor passes 5 of 6 caves"), t);
+        assertTrue(t.contains("old measure: 5 label(s) (one rim summed over the whole volume, no opening cells): counted for the verdict, not used to derive the floor"), t);
+        assertTrue(t.contains("missed cave at 2 60 4: rim 2, reach 4"), t);
+        int[] bad = {0};
+        var read = CaveLabels.read("{\"labels\":[{\"x\":-78,\"y\":60,\"z\":52,\"rim\":4719,\"reach\":17,\"size\":\"large\",\"depth\":\"stone\",\"verdict\":\"yes\",\"at\":1}]}", bad);
+        assertTrue(read.all().get(0).old(), "a 9710ddad label (no measure field): the old measure");
+        assertTrue(read.all().get(0).cells().isEmpty());
+    }
+
+    /** Run EF: an opening's cells are stored (plain when few, deflated when many) and read back for an offline re-measure. */
+    @Test
+    void theOpeningsCellsRoundTrip_plainAndPacked() {
+        List<Long> few = List.of(Sightings.cell(1, 2, 3), Sightings.cell(-4, 60, 9)), many = new ArrayList<>();
+        for (int i = 0; i < 1000; i++) many.add(Sightings.cell(i, 40 + i % 7, -i));
+        CaveLabels a = new CaveLabels();
+        a.add(new CaveLabels.Label(1, 2, 3, 2, 5, "small", "stone", true, 7L, 1, "w", CaveLabels.MEASURE, few));
+        a.add(new CaveLabels.Label(9, 2, 3, 1000, 5, "large", "stone", true, 7L, 1, "w", CaveLabels.MEASURE, many));
+        String json = a.toJson();
+        assertTrue(json.contains("\"cells\":[[1,2,3],[-4,60,9]]"), json.substring(0, Math.min(300, json.length())));
+        assertTrue(json.contains("\"cellsZ\":"), "1000 cells: packed");
+        int[] bad = {0};
+        var b = CaveLabels.read(json, bad);
+        assertEquals(0, bad[0]);
+        assertEquals(few, b.all().get(0).cells());
+        assertEquals(many, b.all().get(1).cells());
+        assertFalse(b.all().get(1).old());
+    }
+
     /** The label aim: the crosshair's air, the block beside a volume, the opening nearest the eyes, or nothing. */
     @Test
     void theLabelAimFindsTheVolume_anyVolume_orSaysNone() {
         CaveIndex i = J6CaveIndexTest.index();
         var s = i.labelSpot(CaveIndex.path(0.5, 51.5, 4.5, 6.5, 51.5, 4.5), null, 0.5, 51.5, 4.5, 4.5);
         assertNotNull(s);
-        assertEquals(List.of(2, 50, 4), List.of(s.x(), s.y(), s.z()), "A: its entry the opening cell nearest the eyes");
+        assertEquals(List.of(2, 51, 4), List.of(s.x(), s.y(), s.z()), "A: its entry the opening cell nearest the eyes");
         assertEquals(6, s.rim());
         assertEquals(10, s.reach());
         assertTrue(s.cave());

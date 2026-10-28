@@ -101,6 +101,7 @@ public final class ChunkPass {
 
     /** 0.39.z78 J6: the cave index of this dimension (the chunks read this session) and the rays at it. */
     private final CaveIndex caveIndex = new CaveIndex();
+    { caveIndex.measureEvery(1_000_000_000L); }       // structural: the openings measured again at most once a second while chunks load (run EF)
     private final CaveRays caveRays = new CaveRays();
 
     public CaveIndex caveIndex() { return caveIndex; }

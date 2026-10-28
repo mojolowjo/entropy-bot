@@ -202,7 +202,7 @@ class J6CaveIndexTest {
         assertEquals(1, tl.noOpening(), "B");
         String t = CaveList.text(List.of(), java.util.Map.of(), tl, 64, i.counts(), "rays: test", 0, 64, 0);
         assertTrue(t.contains("index caves within 64 (the index's truth, a debug read; never a way or a target): 2"), t);
-        assertTrue(t.contains("volume at 2 50 4: ") && t.contains("size small, depth stone, rim 1, air 0, not known"), t);
+        assertTrue(t.contains("volume at 2 52 4: ") && t.contains("size small, depth stone, rim 1, air 0, not known"), t);
         assertTrue(t.contains("  dips 0, no opening 1"), t);
         assertTrue(t.contains("cave index: volumes 3 (caves 2, dips 0, no opening 1), rim credits 1, air credits 0, known 0"), t);
         // rule 17: nothing in the planner reads the truth - only aa cave list and aa debug call it
@@ -237,6 +237,77 @@ class J6CaveIndexTest {
         assertTrue(t.endsWith("  dips 0, no opening 1"), t);
         assertEquals("W", CaveList.compass(-106, 3));
         assertEquals("NE", CaveList.compass(5, -5));
+    }
+
+    /**
+     * Run EF (the owner's first label: "rim 4719, reach 17" - the rim summed over the whole volume): each opening is
+     * measured on its own. Three separate 1-cell holes over one tunnel are no cave (rim 1 each), though the old summed
+     * measure (rim 3, reach 10) passed it; one 3-cell hole reaching 6 down is.
+     */
+    @Test
+    void threeSeparateOneCellHolesAreNoCave_oneThreeCellHoleReachingSixIs() {
+        int[] holes = new int[256];
+        for (int c = 0; c < 256; c++) { int x = c & 15, z = c >> 4; holes[c] = z == 5 && (x == 3 || x == 7 || x == 11) ? 60 : 64; }
+        CaveIndex i = new CaveIndex();                       // a tunnel y 60 at z 6, x 2..12, each hole beside one of its cells; a shaft at x 12 to y 50
+        i.put(CaveIndex.runs(0, 0, holes, -64, (x, y, z) -> z == 6 && ((x >= 2 && x <= 12 && y == 60) || (x == 12 && y >= 50 && y <= 60))));
+        int v = i.volumeAt(5, 60, 6);
+        assertEquals(3, i.summedRim(v), "the old measure: 3 sky-adjacent cells summed");
+        assertFalse(i.isCave(v), "three openings of 1 cell each: no cave");
+        assertEquals(CaveIndex.Credit.DIP, i.credit(5, 60, 6).what());
+        var spot = i.labelSpot(List.of(), null, 3.5, 61.6, 4.5, 4.5);
+        assertEquals(1, spot.rim(), "the label measures one opening: rim 1");
+        assertEquals(10, spot.reach(), "its reach: 60 - 50");
+        assertEquals(1, spot.cells().size());
+
+        int[] holed = new int[256];
+        for (int c = 0; c < 256; c++) holed[c] = (c >> 4) == 5 && (c & 15) >= 5 && (c & 15) <= 7 ? 58 : 64;
+        CaveIndex h = new CaveIndex();
+        h.put(CaveIndex.runs(0, 0, holed, -64, (x, y, z) -> z == 5 && ((x >= 8 && x <= 12 && y >= 58 && y <= 60) || (x == 12 && y >= 52 && y <= 60))));
+        int t = h.volumeAt(10, 59, 5);
+        assertTrue(h.isCave(t), "one opening of 3 cells, 6 down: a cave");
+        var s = h.labelSpot(List.of(), null, 7.5, 59.6, 5.5, 4.5);
+        assertEquals(3, s.rim());
+        assertEquals(6, s.reach());
+        assertEquals(java.util.Set.of(Sightings.cell(8, 58, 5), Sightings.cell(8, 59, 5), Sightings.cell(8, 60, 5)), java.util.Set.copyOf(s.cells()), "the opening's cells, for the label");
+    }
+
+    /**
+     * Run EG: two volumes credited 2 and 2, joined by a chunk load between them: one volume with 4 credits, known; and a
+     * known cave's credits survive its chunks unloading and coming back (22:52-22:54: "rim 0, air 0, known").
+     */
+    @Test
+    void twoVolumesCredited2And2_mergeByAChunkLoad_oneVolume4Credits_known_andTheCreditsSurviveAReload() {
+        int[] c0 = new int[256], c1 = new int[256], c2 = new int[256];
+        for (int c = 0; c < 256; c++) { c0[c] = (c & 15) <= 1 ? 50 : SURFACE; c1[c] = SURFACE; c2[c] = (c & 15) >= 14 ? 50 : SURFACE; }
+        CaveIndex.CellTest tunnel = (x, y, z) -> z >= 8 && z <= 9 && ((x >= 2 && x <= 45 && y >= 51 && y <= 53) || ((x == 4 || x == 5 || x == 42 || x == 43) && y >= 40 && y <= 53));
+        CaveIndex i = new CaveIndex();
+        i.put(CaveIndex.runs(0, 0, c0, -64, tunnel));        // P: x 2..15, its opening at x 2
+        i.put(CaveIndex.runs(2, 0, c2, -64, tunnel));        // Q: x 32..45, its opening at x 45
+        int p = i.volumeAt(6, 52, 8), q = i.volumeAt(40, 52, 8);
+        assertTrue(p != q && i.isCave(p) && i.isCave(q));
+        i.credit(6, 52, 8); i.credit(7, 52, 9);
+        i.credit(40, 52, 8); i.credit(41, 52, 9);
+        assertEquals(2, i.volume(p).credits().size());
+        assertTrue(i.drainKnown().isEmpty(), "2 and 2: not known");
+        i.put(CaveIndex.runs(1, 0, c1, -64, tunnel));        // the chunk between loads: one volume
+        int v = i.volumeAt(6, 52, 8);
+        assertEquals(v, i.volumeAt(40, 52, 8));
+        assertEquals(4, i.volume(v).credits().size(), "the credits followed the union");
+        List<CaveIndex.Known> k = i.drainKnown();
+        assertEquals(1, k.size(), "4 credits: known");
+        assertTrue(i.isKnown(v));
+        assertEquals(4, k.get(0).hits().size());
+        assertTrue(i.drainKnown().isEmpty(), "said once");
+        assertTrue(i.counts().endsWith("rim credits 0, air credits 4, known 1"), i.counts());
+        i.remove(0, 0); i.remove(1, 0); i.remove(2, 0);     // the owner teleports away
+        assertTrue(i.counts().endsWith("known 0"), i.counts());
+        i.put(CaveIndex.runs(0, 0, c0, -64, tunnel));
+        i.put(CaveIndex.runs(1, 0, c1, -64, tunnel));
+        i.put(CaveIndex.runs(2, 0, c2, -64, tunnel));        // and back
+        int w = i.volumeAt(6, 52, 8);
+        assertTrue(i.isKnown(w), "known stays known");
+        assertEquals(4, i.volume(w).credits().size(), "its credits came back with its chunks (were: air 0)");
+        assertTrue(i.counts().endsWith("air credits 4, known 1"), i.counts());
     }
 
     /** The owner's definition, (b) alone: a tunnel with a wide opening that goes only 4 below it is a dip. */
@@ -361,7 +432,7 @@ class J6CaveIndexTest {
         assertEquals(CaveIndex.TARGET_RAYS, i.volume(i.volumeAt(5, 51, 4)).credits().size());
         assertEquals(1, o.size(), "one credit: A's opening is a target (D: no credit; B is closed: no opening)");
         assertEquals(2, o.get(0)[0]);
-        assertEquals(50, o.get(0)[1]);
+        assertEquals(52, o.get(0)[1], "the opening's cell nearest the asker (run EF: any cell of the opening)");
         assertEquals(CaveIndex.Credit.DIP, i.credit(11, 21, 11).what(), "B closed: no cave, no credit");
         assertEquals(1, i.openings(0, 64, 0, 64).size());
         i.credit(6, 52, 4);

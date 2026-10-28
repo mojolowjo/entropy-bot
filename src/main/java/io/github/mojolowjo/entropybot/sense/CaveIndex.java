@@ -28,8 +28,9 @@ import java.util.Set;
  * over each opening column, {@link #targets}). Only the AIR credits make it known.</li>
  * <li>Run ED (21:38-21:56, 189 of 209 known caves "SMALL, HIGH" at y 64-79: air under tree crowns and ledges): a volume
  * is a cave only by the owner's definition ("most caves have a few air blocks at the opening which continue downwards";
- * {@link #isCave}): its opening - its cells beside a sky-lit column - holds {@link #MIN_RIM} cells, and its lowest cell
- * lies {@link #MIN_REACH} blocks below the opening's lowest cell. A volume with no opening is no cave. The rest are dips:
+ * {@link #isCave}): one of its openings ({@link Opening}: a connected set of its cells beside a sky-lit column, run EF:
+ * each measured on its own) holds {@link #MIN_RIM} cells, and its lowest cell lies {@link #MIN_REACH} blocks below that
+ * opening's lowest cell; that opening is its entry (the largest, when several pass). A volume with no opening is no cave. The rest are dips:
  * never credited, never a ray's target, never an opening. The surface the runs lie under is the ground ({@link #ground}: leaves are no roof), so the air under a
  * crown is not indexed at all.</li>
  * </ul>
@@ -57,7 +58,7 @@ public final class CaveIndex {
     /**
      * Run ED, the owner's definition (a), the DEFAULT until the owner's labels derive the floor ({@link CaveLabels#derive}):
      * the air cells a cave's opening holds at least (its cells beside a sky-lit
-     * column, summed over the volume). The cave carver's tunnel is 2+ cells wide (configured_carver/cave.json and
+     * column, one opening's - a connected set; run EF: never summed over the volume). The cave carver's tunnel is 2+ cells wide (configured_carver/cave.json and
      * CaveWorldCarver, 1.21: horizontal radius (1.5 + sin x thickness) x 0.7..1.4, so at least 1.5 x 0.7 = 1.05 a side;
      * vertical x 0.8..1.3) - where it breaks the surface its face shows more than two cells; a one-block hole or a
      * two-cell dip shows fewer.
@@ -177,11 +178,15 @@ public final class CaveIndex {
         chunks.clear();
         credited.clear();
         rimSeen.clear();
+        mergedKnown.clear();
         knownCells.clear();
         credits.clear();
         known.clear();
         next = 0;
         dirty = false;
+        openingsAll = List.of();
+        byRoot = new HashMap<>();
+        shapeDirty = rootsDirty = true;
     }
 
     /** The bytes the index holds (approx: the arrays' payloads and headers, the union-find's arrays), for the memory statement. */
@@ -213,13 +218,14 @@ public final class CaveIndex {
         if (n > 0) start[256] = at;
         Chunk ch = new Chunk(r.cx(), r.cz(), r.surface().clone(), start, lo, hi);
         chunks.put(k, ch);
+        shapeDirty = rootsDirty = true;
         if (dirty) return;                                                        // the rebuild joins it
         link(ch);
     }
 
     /** The chunk unloaded: its runs leave the index (its unknown volumes are gone with it; a known cave stays in Sightings). */
     public synchronized void remove(int cx, int cz) {
-        if (chunks.remove(chunkKey(cx, cz)) != null) dirty = true;
+        if (chunks.remove(chunkKey(cx, cz)) != null) { dirty = true; shapeDirty = rootsDirty = true; }
     }
 
     private void link(Chunk ch) {
@@ -246,6 +252,13 @@ public final class CaveIndex {
             if (s != null) opened(s, i);
         }
         for (long c : knownCells) { int r = runAt(c); if (r >= 0) known.add(find(r)); }     // a known cave marked before its chunk came
+        for (long c : credited) {                                                // run EG: the credits of cells in this chunk (a reload) find their volume again
+            int[] p = Sightings.cellOf(c);
+            if (p[0] >> 4 != ch.cx || p[2] >> 4 != ch.cz) continue;
+            int r = runAt(c);
+            if (r >= 0) credits.computeIfAbsent(find(r), x -> new LinkedHashSet<>()).add(c);
+        }
+        mergedCheck();
     }
 
     /** After a removal: the union-find again from the chunks held; credits and known marks by their cells (lazily). */
@@ -272,9 +285,12 @@ public final class CaveIndex {
         }
         for (Chunk ch : all) java.util.Arrays.fill(ch.rim, 0);
         for (Chunk ch : all) for (int c = 0; c < 256; c++) opened(ch, c);
-        credited.removeIf(c -> runAt(c) < 0);
-        rimSeen.removeIf(c -> runAt(c) < 0);                                     // an unloaded unknown volume's credits go with it
-        for (long c : credited) credits.computeIfAbsent(find(runAt(c)), x -> new LinkedHashSet<>()).add(c);
+        // run EG (22:52-22:54: known caves showed "rim 0, air 0" after the owner's teleports): an unloaded UNKNOWN volume's
+        // credits go with it; a known cave's credited cells (knownCells) stay and find their volume when its chunk returns
+        credited.removeIf(c -> runAt(c) < 0 && !knownCells.contains(c));
+        rimSeen.removeIf(c -> runAt(c) < 0 && !knownCells.contains(c));
+        for (long c : credited) { int r = runAt(c); if (r >= 0) credits.computeIfAbsent(find(r), x -> new LinkedHashSet<>()).add(c); }
+        mergedCheck();
         for (long c : knownCells) { int r = runAt(c); if (r >= 0) known.add(find(r)); }
     }
 
@@ -320,6 +336,10 @@ public final class CaveIndex {
         Set<Long> cb = credits.remove(rb);
         if (cb != null) credits.computeIfAbsent(ra, k -> new LinkedHashSet<>()).addAll(cb);
         if (known.remove(rb)) known.add(ra);
+        // run EG: two credited volumes joined - their credits are one set now; at KNOWN_RAYS the volume is known
+        // ({@link #drainKnown}: the caller stores the fact)
+        Set<Long> cr = credits.get(ra);
+        if (cr != null && cr.size() >= KNOWN_RAYS && !known.contains(ra)) mergedKnown.add(cr.iterator().next());
     }
 
     /** The runs of two side-by-side columns that share a Y are one volume. */
@@ -349,8 +369,8 @@ public final class CaveIndex {
     }
 
     /**
-     * Run ED, the owner's definition: the volume of {@code root} is a cave - its opening holds {@link #MIN_RIM} cells and
-     * its air goes {@link #MIN_REACH} blocks below the opening's lowest cell. Not: a dip (never credited, never a target,
+     * Run ED, the owner's definition (run EF: per opening): the volume of {@code root} is a cave - one of its openings holds
+     * the floor's rim cells and its air goes the floor's reach below that opening's lowest cell. Not: a dip (never credited, never a target,
      * never an opening). A dip may become a cave when more of it loads (its opening in a chunk not read yet).
      */
     public synchronized boolean isCave(int root) {
@@ -360,8 +380,114 @@ public final class CaveIndex {
     }
 
     private boolean cave(int r) {
-        return rimN[r] >= floorRim && rimLow[r] != Integer.MAX_VALUE && (long) rimLow[r] - minY[r] >= floorReach;
+        measure();
+        List<Opening> l = byRoot.get(r);
+        if (l == null) return false;
+        for (Opening o : l) if (passes(o, r)) return true;
+        return false;
     }
+
+    // ---- run EF (the manager's rim fix): each opening measured on its own ----
+
+    /**
+     * One opening of a volume: a connected set (six sides) of its air cells beside a sky-lit column ({@link #cell}
+     * packed), its lowest cell's y. Its rim is its cell count; its reach how far the volume's air goes below that lowest
+     * cell. Was (73ee3a9c..2f215a09): one rim summed over every sky-adjacent cell of the volume (the owner's first label:
+     * "rim 4719") and the reach from the lowest of them - three 1-cell holes passed rim 3.
+     */
+    public record Opening(List<Long> cells, int lowY) {
+        public int rim() { return cells.size(); }
+    }
+
+    private List<Opening> openingsAll = List.of();
+    private Map<Integer, List<Opening>> byRoot = new HashMap<>();
+    private boolean shapeDirty = true, rootsDirty = true;
+    private long measuredAt, measureEveryNs;
+
+    /** The openings are measured again at most this often while chunks load (ChunkPass: a second); 0 (tests): at every change. */
+    public synchronized void measureEvery(long ns) { measureEveryNs = Math.max(0, ns); }
+
+    private boolean passes(Opening o, int r) { return o.rim() >= floorRim && (long) o.lowY() - minY[r] >= floorReach; }
+
+    /** The volume's opening that decides it: the largest passing one, else the largest (null: no opening). */
+    private Opening best(int r) {
+        measure();
+        List<Opening> l = byRoot.get(r);
+        if (l == null) return null;
+        for (Opening o : l) if (passes(o, r)) return o;
+        return l.get(0);
+    }
+
+    private void measure() {
+        fresh();
+        if (shapeDirty && (measuredAt == 0 || measureEveryNs <= 0 || System.nanoTime() - measuredAt >= measureEveryNs)) remeasure();
+        else if (rootsDirty) rekey();
+    }
+
+    /** Every opening of the loaded index: the opening cells, then their connected sets. */
+    private void remeasure() {
+        Set<Long> open = new HashSet<>();
+        for (Chunk ch : chunks.values()) {
+            if (ch.lo.length == 0) continue;
+            for (int c = 0; c < 256; c++) {
+                if (ch.start[c] == ch.start[c + 1]) continue;
+                int tx = (ch.cx << 4) + (c & 15), tz = (ch.cz << 4) + (c >> 4), s = sky(tx, tz);
+                for (int i = ch.start[c]; i < ch.start[c + 1]; i++)
+                    for (int y = Math.max(ch.lo[i], s); y <= ch.hi[i]; y++) open.add(cell(tx, y, tz));
+            }
+        }
+        List<Opening> out = new ArrayList<>();
+        Set<Long> seen = new HashSet<>();
+        java.util.ArrayDeque<Long> q = new java.util.ArrayDeque<>();
+        for (long start : open) {
+            if (!seen.add(start)) continue;
+            List<Long> comp = new ArrayList<>();
+            int low = Integer.MAX_VALUE;
+            q.add(start);
+            while (!q.isEmpty()) {
+                long c = q.poll();
+                comp.add(c);
+                int[] p = Sightings.cellOf(c);
+                low = Math.min(low, p[1]);
+                for (int[] d : SIX) {
+                    long n = cell(p[0] + d[0], p[1] + d[1], p[2] + d[2]);
+                    if (open.contains(n) && seen.add(n)) q.add(n);
+                }
+            }
+            out.add(new Opening(List.copyOf(comp), low));
+        }
+        openingsAll = out;
+        measuredAt = Math.max(1, System.nanoTime());
+        shapeDirty = false;
+        rekey();
+    }
+
+    /** The openings by their volume's root now (an opening whose cells left the index is dropped). */
+    private void rekey() {
+        Map<Integer, List<Opening>> m = new HashMap<>();
+        for (Opening o : openingsAll) {
+            int r = runAt(o.cells().get(0));
+            if (r >= 0) m.computeIfAbsent(find(r), k -> new ArrayList<>()).add(o);
+        }
+        for (List<Opening> l : m.values()) l.sort((a, b) -> Integer.compare(b.rim(), a.rim()));
+        byRoot = m;
+        rootsDirty = false;
+    }
+
+    /** The cell of {@code o} nearest x y z. */
+    private static int[] nearest(Opening o, double x, double y, double z) {
+        int[] best = null;
+        double bd = Double.MAX_VALUE;
+        for (long c : o.cells()) {
+            int[] p = Sightings.cellOf(c);
+            double dd = sq(p[0] + 0.5 - x) + sq(p[1] + 0.5 - y) + sq(p[2] + 0.5 - z);
+            if (dd < bd) { bd = dd; best = p; }
+        }
+        return best;
+    }
+
+    /** The old measure, for a test: every sky-adjacent cell of the volume summed (no opening: 0). */
+    synchronized int summedRim(int root) { fresh(); return root < 0 ? 0 : rimN[find(root)]; }
 
     private int runAt(long c) { int[] p = Sightings.cellOf(c); return runAt(p[0], p[1], p[2]); }
 
@@ -438,11 +564,49 @@ public final class CaveIndex {
         Set<Long> cs = credits.computeIfAbsent(root, k -> new LinkedHashSet<>());
         cs.add(c);
         if (cs.size() < KNOWN_RAYS) return new Result(Credit.CREDITED, root, null);
+        return new Result(Credit.KNOWN, root, makeKnown(root));
+    }
+
+    /** The volume of {@code root} becomes known: its credited cells and its rim credits' cells kept by cell (known stays known). */
+    private Known makeKnown(int root) {
+        Set<Long> cs = credits.get(root);
         known.add(root);
         knownCells.addAll(cs);
+        for (long c : rimSeen) { int q = runAt(c); if (q >= 0 && find(q) == root) knownCells.add(c); }
         int[] entry = entry(cs);
         double walk = io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps(), cap = io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.exploreMinutes");
-        return new Result(Credit.KNOWN, root, new Known(entry[0], entry[1], entry[2], Size.of(cells[root], walk, cap), Depth.of(minY[root]), List.copyOf(cs)));
+        return new Known(entry[0], entry[1], entry[2], Size.of(cells[root], walk, cap), Depth.of(minY[root]), List.copyOf(cs));
+    }
+
+    /** Run EG: after a rebuild or a chunk's credits found their volume - any volume at KNOWN_RAYS credits not known yet is due. */
+    private void mergedCheck() {
+        for (var e : credits.entrySet())
+            if (e.getValue().size() >= KNOWN_RAYS && !known.contains(e.getKey()) && find(e.getKey()) == e.getKey()) mergedKnown.add(e.getValue().iterator().next());
+    }
+
+    /** Run EG: a credited cell of each volume a merge took to KNOWN_RAYS credits (drained by {@link #drainKnown}). */
+    private final Set<Long> mergedKnown = new LinkedHashSet<>();
+
+    /**
+     * Run EG: the volumes a merge (a chunk load joining two credited volumes) took to {@link #KNOWN_RAYS} credits become
+     * known caves now (each a cave by the floor; a dip stays credited, never known); the caller stores each fact
+     * (CaveRays: Sightings.knowCave, "sense: cave known").
+     */
+    public synchronized List<Known> drainKnown() {
+        fresh();
+        List<Known> out = new ArrayList<>();
+        if (mergedKnown.isEmpty()) return out;
+        List<Long> todo = new ArrayList<>(mergedKnown);
+        mergedKnown.clear();
+        for (long c : todo) {
+            int r = runAt(c);
+            if (r < 0) continue;
+            int root = find(r);
+            Set<Long> cs = credits.get(root);
+            if (known.contains(root) || cs == null || cs.size() < KNOWN_RAYS || !cave(root)) continue;
+            out.add(makeKnown(root));
+        }
+        return out;
     }
 
     /** The entry: of the seen (credited) cells, the one nearest its column's surface (the way in a player saw). */
@@ -523,9 +687,9 @@ public final class CaveIndex {
                         int root = find(ch.id[i]);
                         if (known.contains(root) || !cave(root)) continue;
                         if (credits.getOrDefault(root, Set.of()).size() < TARGET_RAYS && !rimRoots.contains(root)) continue;   // run EE: a rim credit counts
-                        int[] cell = {tx, Math.max(ch.lo[i], skyFrom), tz};
-                        int[] was = best.get(root);
-                        if (was == null || d2(cell, x, y, z) < d2(was, x, y, z)) best.put(root, cell);
+                        if (best.containsKey(root)) continue;
+                        Opening o = best(root);                                         // run EF: the passing opening is the entry
+                        if (o != null) best.put(root, nearest(o, x, y, z));
                     }
                 }
             }
@@ -590,7 +754,7 @@ public final class CaveIndex {
     }
 
     /** The volume a label names: its entry (the opening cell nearest the eyes, else the cell found), rim, reach (-1: no opening), size, depth. */
-    public record Spot(int x, int y, int z, int root, int rim, int reach, Size size, Depth depth, boolean cave) {}
+    public record Spot(int x, int y, int z, int root, int rim, int reach, Size size, Depth depth, boolean cave, List<Long> cells) {}
 
     /**
      * The owner's label aim (aa cave yes|no): the volume whose air the crosshair's ray passed last ({@code path}, the
@@ -626,33 +790,11 @@ public final class CaveIndex {
         }
         if (r < 0) return null;
         int root = find(r);
-        int[] entry = nearestOpening(root, ex, ey, ez, 32);                           // structural: two chunks around the eyes
-        if (entry == null) entry = at;
+        Opening o = best(root);                                                    // run EF: the opening that decides it
+        int[] entry = o == null ? at : nearest(o, ex, ey, ez);
         double walk = io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps(), cap = io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.exploreMinutes");
-        return new Spot(entry[0], entry[1], entry[2], root, rimN[root], rimLow[root] == Integer.MAX_VALUE ? -1 : rimLow[root] - minY[root],
-                Size.of(cells[root], walk, cap), Depth.of(minY[root]), cave(root));
-    }
-
-    private int[] nearestOpening(int root, double ex, double ey, double ez, int r) {
-        int[] best = null;
-        double bd = Double.MAX_VALUE;
-        int x0 = (int) Math.floor(ex), z0 = (int) Math.floor(ez);
-        for (int cx = (x0 - r) >> 4; cx <= (x0 + r) >> 4; cx++)
-            for (int cz = (z0 - r) >> 4; cz <= (z0 + r) >> 4; cz++) {
-                Chunk ch = chunks.get(chunkKey(cx, cz));
-                if (ch == null || ch.lo.length == 0) continue;
-                for (int c = 0; c < 256; c++) {
-                    int tx = (cx << 4) + (c & 15), tz = (cz << 4) + (c >> 4);
-                    int s = sky(tx, tz);
-                    for (int i = ch.start[c]; i < ch.start[c + 1]; i++) {
-                        if (s > ch.hi[i] || find(ch.id[i]) != root) continue;
-                        int y = Math.max(ch.lo[i], s);
-                        double dd = sq(tx + 0.5 - ex) + sq(y + 0.5 - ey) + sq(tz + 0.5 - ez);
-                        if (dd < bd) { bd = dd; best = new int[]{tx, y, tz}; }
-                    }
-                }
-            }
-        return best;
+        return new Spot(entry[0], entry[1], entry[2], root, o == null ? 0 : o.rim(), o == null ? -1 : o.lowY() - minY[root],
+                Size.of(cells[root], walk, cap), Depth.of(minY[root]), cave(root), o == null ? List.of() : o.cells());
     }
 
     private static double sq(double v) { return v * v; }
@@ -695,7 +837,6 @@ public final class CaveIndex {
     }
 
     private TruthList truthOf(List<Chunk> scan, int x, int y, int z, int r) {
-        Map<Integer, int[]> entry = new HashMap<>();
         Set<Integer> all = new HashSet<>();
         for (Chunk ch : scan) {
                 if (ch.lo.length == 0) continue;
@@ -703,15 +844,7 @@ public final class CaveIndex {
                 for (int c = 0; c < 256; c++) {
                     int tx = (cx << 4) + (c & 15), tz = (cz << 4) + (c >> 4);
                     if (r != Integer.MAX_VALUE && (Math.abs(tx - x) > r || Math.abs(tz - z) > r)) continue;
-                    int s = sky(tx, tz);
-                    for (int i = ch.start[c]; i < ch.start[c + 1]; i++) {
-                        int root = find(ch.id[i]);
-                        all.add(root);
-                        if (s > ch.hi[i] || !cave(root)) continue;
-                        int[] cell = {tx, Math.max(ch.lo[i], s), tz};
-                        int[] was = entry.get(root);
-                        if (was == null || d2(cell, x, y, z) < d2(was, x, y, z)) entry.put(root, cell);
-                    }
+                    for (int i = ch.start[c]; i < ch.start[c + 1]; i++) all.add(find(ch.id[i]));
                 }
         }
         Map<Integer, Integer> rim = new HashMap<>();
@@ -721,8 +854,8 @@ public final class CaveIndex {
         int dips = 0, none = 0;
         for (int root : all) {
             if (rimLow[root] == Integer.MAX_VALUE) { none++; continue; }
-            int[] e = entry.get(root);
-            if (!cave(root) || e == null) { if (!cave(root)) dips++; continue; }
+            if (!cave(root)) { dips++; continue; }
+            int[] e = nearest(best(root), x, y, z);                                    // run EF: the passing opening
             caves.add(new Truth(e[0], e[1], e[2], Size.of(cells[root], walk, cap), Depth.of(minY[root]), rim.getOrDefault(root, 0),
                     credits.getOrDefault(root, Set.of()).size(), known.contains(root), root));
         }

@@ -32,7 +32,12 @@ import java.util.function.Function;
  * own; the old {@code cave-patterns.json} (54 heightmap-patch labels) stays archived and unread. Nothing in the planner
  * reads the labels except through the derived floor (rule 17: the floor decides what the index calls a cave; the rays
  * still decide what is known). Offline: the JUnit {@code CaveLabelsOfflineCheck} prints the check for the file named by
- * the CAVE_LABELS environment variable. Pure (JUnit: J6CaveLabelsTest). Loader notes: none (ChunkPass reads and writes
+ * the CAVE_LABELS environment variable.
+ * <p>Run EF (the manager's rim fix): a label stores the MEASURED OPENING ({@link #MEASURE}): its rim (its cell count),
+ * its reach (below its own lowest cell) and its cells' coordinates (packed; deflated and base64 when over
+ * {@link #CELLS_PLAIN}), so a later fix can measure again offline from the file. Labels from 9710ddad / 2f215a09 carry
+ * one rim summed over the whole volume and no cells: the OLD measure - they count for the verdict in the check, never
+ * for the derivation, and the check says them. Pure (JUnit: J6CaveLabelsTest). Loader notes: none (ChunkPass reads and writes
  * the files; CaveLabel aims).
  */
 public final class CaveLabels {
@@ -48,10 +53,22 @@ public final class CaveLabels {
      * 0.84 a side), so a cave goes at least one more cell than that below its mouth.
      */
     public static final int HARD_REACH = 3; // structural: one cell past the carver's thinnest tunnel (the manager's ruling)
+    /** The label measure written now: one opening measured on its own, its cells stored (run EF); 1: the old summed rim. */
+    public static final int MEASURE = 2; // structural: a file format version, not a number of the world
+    /** Up to this many cells an opening's cells are written as plain [x, y, z]; more: deflated and base64 (a big opening). */
+    public static final int CELLS_PLAIN = 256; // structural: a file size bound
 
     /** One label: the volume's measurements at label time and the owner's verdict ({@code cave}: yes). */
-    public record Label(int x, int y, int z, int rim, int reach, String size, String depth, boolean cave, Long seed, long at, String world) {
+    public record Label(int x, int y, int z, int rim, int reach, String size, String depth, boolean cave, Long seed, long at, String world,
+                        int measure, List<Long> cells) {
+        public Label {
+            cells = cells == null ? List.of() : List.copyOf(cells);
+        }
+
         public String where() { return x + " " + y + " " + z; }
+
+        /** A label of the old measure (one rim summed over the volume, no cells): not used to derive the floor. */
+        public boolean old() { return measure < MEASURE; }
     }
 
     /** The floor: rim and reach, the yes labels it came from, derived (else the defaults). */
@@ -82,7 +99,7 @@ public final class CaveLabels {
     public static Floor derive(List<Label> labels) {
         int yes = 0, rim = Integer.MAX_VALUE, reach = Integer.MAX_VALUE;
         for (Label l : labels) {
-            if (!l.cave() || l.reach() < 0) continue;            // a yes with no opening says nothing of an opening's size
+            if (!l.cave() || l.reach() < 0 || l.old()) continue;  // a yes with no opening says nothing of an opening's size; the old measure summed
             yes++;
             rim = Math.min(rim, l.rim());
             reach = Math.min(reach, l.reach());
@@ -128,6 +145,9 @@ public final class CaveLabels {
                 labels.size(), c.yes(), c.no(), c.yesPass(), c.yes(), pct(c.recall()), c.noPass(), c.no(), pct(c.precision())));
         for (Label l : c.missed()) out.add("  missed cave at " + l.where() + ": " + measures(l) + why(l, f));
         for (Label l : c.wrong()) out.add("  passed non-cave at " + l.where() + ": " + measures(l));
+        int old = 0;
+        for (Label l : labels) if (l.old()) old++;
+        if (old > 0) out.add("old measure: " + old + " label(s) (one rim summed over the whole volume, no opening cells): counted for the verdict, not used to derive the floor");
         if (credits != null) {
             int rim = 0, air = 0, known = 0, unloaded = 0;
             for (Label l : labels) {
@@ -145,7 +165,7 @@ public final class CaveLabels {
     }
 
     private static String measures(Label l) {
-        return "rim " + l.rim() + ", reach " + (l.reach() < 0 ? "none (no opening)" : String.valueOf(l.reach())) + ", size " + l.size() + ", depth " + l.depth()
+        return (l.old() ? "(old measure) " : "") + "rim " + l.rim() + ", reach " + (l.reach() < 0 ? "none (no opening)" : String.valueOf(l.reach())) + ", size " + l.size() + ", depth " + l.depth()
                 + (l.world() == null ? "" : " (" + l.world() + ")");
     }
 
@@ -163,6 +183,51 @@ public final class CaveLabels {
 
     // ---- the file ----
 
+    private static List<Long> cellsOf(JsonObject j) {
+        List<Long> out = new ArrayList<>();
+        if (j.has("cells")) for (JsonElement e : j.getAsJsonArray("cells")) {
+            JsonArray q = e.getAsJsonArray();
+            out.add(Sightings.cell(q.get(0).getAsInt(), q.get(1).getAsInt(), q.get(2).getAsInt()));
+        }
+        else if (j.has("cellsZ")) out.addAll(unpack(j.get("cellsZ").getAsString()));
+        return out;
+    }
+
+    /** Packed cells, 8 bytes each, deflated, base64. */
+    static String pack(List<Long> cells) {
+        java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(8 * cells.size());           // structural: 8 bytes a long
+        for (long c : cells) b.putLong(c);
+        java.util.zip.Deflater d = new java.util.zip.Deflater(java.util.zip.Deflater.BEST_COMPRESSION);
+        d.setInput(b.array());
+        d.finish();
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        byte[] buf = new byte[4096];                                                       // structural: a copy buffer
+        while (!d.finished()) out.write(buf, 0, d.deflate(buf));
+        d.end();
+        return java.util.Base64.getEncoder().encodeToString(out.toByteArray());
+    }
+
+    static List<Long> unpack(String s) {
+        try {
+            java.util.zip.Inflater in = new java.util.zip.Inflater();
+            in.setInput(java.util.Base64.getDecoder().decode(s));
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[4096];                                                   // structural: a copy buffer
+            while (!in.finished()) {
+                int n = in.inflate(buf);
+                if (n == 0 && (in.needsInput() || in.needsDictionary())) break;
+                out.write(buf, 0, n);
+            }
+            in.end();
+            java.nio.ByteBuffer b = java.nio.ByteBuffer.wrap(out.toByteArray());
+            List<Long> cells = new ArrayList<>();
+            while (b.remaining() >= 8) cells.add(b.getLong());                            // structural: 8 bytes a long
+            return cells;
+        } catch (java.util.zip.DataFormatException | IllegalArgumentException e) {
+            throw new IllegalArgumentException("cave-labels.json: the cellsZ of a label is not readable: " + e.getMessage(), e);   // read() counts it skipped
+        }
+    }
+
     public synchronized String toJson() {
         JsonArray a = new JsonArray();
         for (Label l : list) {
@@ -174,6 +239,17 @@ public final class CaveLabels {
             if (l.seed() != null) j.addProperty("seed", l.seed());
             j.addProperty("at", l.at());
             if (l.world() != null) j.addProperty("world", l.world());
+            j.addProperty("measure", l.measure());
+            if (l.cells().size() <= CELLS_PLAIN) {
+                JsonArray cs = new JsonArray();
+                for (long c : l.cells()) {
+                    int[] p = Sightings.cellOf(c);
+                    JsonArray q = new JsonArray();
+                    q.add(p[0]); q.add(p[1]); q.add(p[2]);
+                    cs.add(q);
+                }
+                j.add("cells", cs);
+            } else j.addProperty("cellsZ", pack(l.cells()));
             a.add(j);
         }
         JsonObject o = new JsonObject();
@@ -193,7 +269,8 @@ public final class CaveLabels {
                     JsonObject j = x.getAsJsonObject();
                     out.list.add(new Label(j.get("x").getAsInt(), j.get("y").getAsInt(), j.get("z").getAsInt(), j.get("rim").getAsInt(), j.get("reach").getAsInt(),
                             j.get("size").getAsString(), j.get("depth").getAsString(), "yes".equals(j.get("verdict").getAsString()),
-                            j.has("seed") ? j.get("seed").getAsLong() : null, j.get("at").getAsLong(), j.has("world") ? j.get("world").getAsString() : null));
+                            j.has("seed") ? j.get("seed").getAsLong() : null, j.get("at").getAsLong(), j.has("world") ? j.get("world").getAsString() : null,
+                            j.has("measure") ? j.get("measure").getAsInt() : 1, cellsOf(j)));
                 } catch (RuntimeException ex) {
                     skipped[0]++;
                 }

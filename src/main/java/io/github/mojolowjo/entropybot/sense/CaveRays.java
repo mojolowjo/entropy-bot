@@ -31,7 +31,7 @@ final class CaveRays {
 
     private final java.util.Map<Long, Long> blockedUntil = new java.util.HashMap<>();
     private final java.util.Set<Long> edgeSaid = new java.util.HashSet<>();
-    private long rays, credits, rims, known;
+    private long rays;
 
     void clear() {
         blockedUntil.clear();
@@ -44,6 +44,9 @@ final class CaveRays {
         Vec3 eye = p.getEyePosition();
         Vec3 look = p.getLookAngle();
         double ex = eye.x, ey = eye.y, ez = eye.z;
+        for (CaveIndex.Known k : index.drainKnown())                         // run EG: a merge took a volume to three credits
+            if (sg.knowCave(dim, k, now) != null)
+                LOG.info("[entropybot] sense: cave known at {} {} {} (size {}, depth {}; {} rays credited its parts, joined by a chunk load)", k.x(), k.y(), k.z(), k.size(), k.depth(), k.hits().size());
         List<int[]> cand = index.targets((int) Math.floor(ex), (int) Math.floor(ey), (int) Math.floor(ez), Seen.range(), CANDIDATES,
                 (x, y, z) -> blockedUntil.getOrDefault(Seen.key(x, y, z), 0L) <= now && Seen.inRange(ex, ey, ez, x, y, z) && Seen.inCone(ex, ey, ez, look.x, look.y, look.z, x, y, z));
         for (int[] c : cand) {
@@ -67,7 +70,6 @@ final class CaveRays {
                 // explore target, never a known cave
                 CaveIndex.Result rim = index.rimCredit(hx, hy, hz);
                 if (rim.what() == CaveIndex.Credit.RIM) {
-                    rims++;
                     LOG.info("[entropybot] sense: cave opening seen (its lip {} {} {}): a target for the explore, not known", hx, hy, hz);
                     if (res.what() == CaveIndex.Credit.NO_VOLUME || res.what() == CaveIndex.Credit.DIP) continue;
                 }
@@ -80,13 +82,11 @@ final class CaveRays {
                     blockedUntil.put(Seen.key(c[0], c[1], c[2]), now + SeenRuntime.RETRY_MS);
                 }
                 case DIP -> blockedUntil.put(Seen.key(c[0], c[1], c[2]), now + SeenRuntime.RETRY_MS);   // run ED: only a dip's air on the way
-                case CREDITED -> credits++;
+                case CREDITED -> { }
                 case ALREADY_KNOWN, RIM -> { }
                 case KNOWN -> {
-                    credits++;
                     CaveIndex.Known k = res.known();
                     if (sg.knowCave(dim, k, now) != null) {
-                        known++;
                         LOG.info("[entropybot] sense: cave known at {} {} {} (size {}, depth {}; {} rays credited it)", k.x(), k.y(), k.z(), k.size(), k.depth(), k.hits().size());
                     }
                 }
@@ -94,5 +94,6 @@ final class CaveRays {
         }
     }
 
-    String status() { return rays + " cave rays, " + rims + " rim credits, " + credits + " air credits, " + known + " caves known"; }
+    /** Run EG (rule 23: one counter, one reader): the rays fired; the credits and the known are the cave index's (its counts line). */
+    String status() { return rays + " cave rays (credits and known: the cave index line)"; }
 }

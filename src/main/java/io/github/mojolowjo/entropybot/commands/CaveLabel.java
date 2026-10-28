@@ -78,7 +78,7 @@ final class CaveLabel {
                 String world = files == null ? dim : files.worldRoot().getFileName() + " " + dim;
                 boolean yes = a.equals("yes");
                 pass.label(new CaveLabels.Label(s.x(), s.y(), s.z(), s.rim(), s.reach(), s.size().name().toLowerCase(java.util.Locale.ROOT),
-                        s.depth().name().toLowerCase(java.util.Locale.ROOT), yes, seed, System.currentTimeMillis(), world));
+                        s.depth().name().toLowerCase(java.util.Locale.ROOT), yes, seed, System.currentTimeMillis(), world, CaveLabels.MEASURE, s.cells()));   // run EF: the measured opening
                 return "labelled " + a + ": volume at " + s.x() + " " + s.y() + " " + s.z() + ": rim " + s.rim() + ", reach " + (s.reach() < 0 ? "none (no opening)" : s.reach())
                         + ", size " + s.size().name().toLowerCase(java.util.Locale.ROOT) + ", depth " + s.depth().name().toLowerCase(java.util.Locale.ROOT)
                         + "; the index called it " + (s.cave() ? "a cave" : "no cave") + (s.cave() == yes ? " (agrees)" : " (disagrees)") + "\n" + pass.floor().line();
