@@ -810,7 +810,7 @@ public final class StepHands implements Steps.Hands {
             default -> { }
         }
         lip = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.look(lip, Core.INSTANCE.tick(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(),
-                b.getPathingBehavior().getCurrent() != null, at);
+                b.getPathingBehavior().getCurrent() != null, at, StepSignalsLive.exhausted(b));   // J6c run ET: only an exhausted search counts
         if (lip.state() == io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.State.FAILED) {
             String why = "the walk to the cave's lip at " + Jobs.fmt(at) + ": " + lip.why();
             lip = null;
@@ -929,7 +929,7 @@ public final class StepHands implements Steps.Hands {
                 arrived(sg, cv, k, me);
             } else {
                 cv.hold = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.look(cv.hold, Core.INSTANCE.tick(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(),
-                        b.getPathingBehavior().getCurrent() != null, io.github.mojolowjo.entropybot.cave.ExploreRules.NEVER_REACHED);
+                        b.getPathingBehavior().getCurrent() != null, io.github.mojolowjo.entropybot.cave.ExploreRules.NEVER_REACHED, StepSignalsLive.exhausted(b));   // J6c run ET: only an exhausted search counts
                 if (cv.hold.state() == io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.State.FAILED) {
                     dropGoto(cv, cv.goalKey, cv.goalWhy, "the walk to it: " + cv.hold.why());
                     Jobs.cancel(b);

@@ -80,6 +80,30 @@ class J6cEtTest {
         assertTrue(b.dropped().stream().anyMatch(d -> d.startsWith("known cave 7 m: ") && d.contains("dearer than known cave 351 m")), "priced, never held short: " + b.dropped());
     }
 
+    /**
+     * (C) the target holds (the explore's, the lip's, the caving step's goto) read the same flag: a target whose walks end on
+     * CHUNKS is not failed by the count; the stall bound still ends it; an exhausted search fails it as before.
+     */
+    @Test
+    void aTargetWhoseWalksEndOnChunks_isNotFailedByTheCount() {
+        var T = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.class;
+        var target = new io.github.mojolowjo.entropybot.cave.ExploreRules.Target(-300, -236);   // a chunk target far off (never reached here)
+        var h = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.start(target, 0, ET, 0);
+        var chunks = h;
+        for (int s = 1; s <= 10; s++)
+            chunks = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.look(chunks, s * 20L, ET, s, false, null, false);
+        assertEquals(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.State.HELD, chunks.state(), "10 CHUNKS stops: not known, held - " + chunks.why());
+        var unkept = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.look(h, 200, ET, 10, false, null, null);
+        assertEquals(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.State.HELD, unkept.state(), "no calc kept: held");
+        var stalled = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.look(chunks, 20L * 200, ET, 200, false, null, false);
+        assertEquals(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.State.FAILED, stalled.state(), "the stall bound still ends it");
+        assertTrue(stalled.why().startsWith("no new best"), stalled.why());
+        var exhausted = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.look(h, 200, ET, 10, false, null, true);
+        assertEquals(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.State.FAILED, exhausted.state());
+        assertTrue(exhausted.why().startsWith("Baritone found no path"), exhausted.why());
+        assertNotNull(T);
+    }
+
     @Test
     void etsChunksStops_doNotFreeze_onlyAnExhaustedSearchIsANoPath() {
         var chunks = run(false, 20);

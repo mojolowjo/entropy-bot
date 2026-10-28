@@ -508,6 +508,16 @@ public final class ExploreRules {
          * otherwise only FAILED, on Baritone's no progress (no path, or no new best for monitor.stallS).
          */
         public static Held look(Held h, long now, int[] feet, long calcFailed, boolean executing, int[] cell) {
+            return look(h, now, feet, calcFailed, executing, cell, Boolean.TRUE);
+        }
+
+        /**
+         * 0.39.z78 J6c run ET (rule 23 (2), one reader with the step monitor and item 14): as above; the failed searches fail
+         * the target only when the fork's last calc EXHAUSTED the graph ({@code exhausted}: ICustomGoalProcess.lastCalc;
+         * false: a CHUNKS, budget or other stop; null: no calc kept) - otherwise not known, the target stays held (the stall
+         * bound, monitor.stallS, still ends it).
+         */
+        public static Held look(Held h, long now, int[] feet, long calcFailed, boolean executing, int[] cell, Boolean exhausted) {
             // (run EN: cell == NEVER_REACHED - withinReach reads no cell - the hold only fails or holds; its walk's goal decides arrival)
             if (h == null || h.state() != State.HELD) return h;
             if (feet != null && (cell != null ? withinReach(feet, cell) : arrived(feet[0], feet[2], h.target()))) return with(h, h.best(), h.bestAt(), h.calcAtBest(), 0, State.REACHED, "reached");
@@ -521,7 +531,7 @@ public final class ExploreRules {
             }
             int fails = (int) Math.max(0, calcFailed - calcAt);
             String from = feet == null ? "an unknown cell" : feet[0] + " " + feet[1] + " " + feet[2];
-            if (fails >= noPathFailsV() && !executing) return with(h, best, bestAt, calcAt, fails, State.FAILED, "Baritone found no path " + fails + " times from " + from);
+            if (fails >= noPathFailsV() && !executing && Boolean.TRUE.equals(exhausted)) return with(h, best, bestAt, calcAt, fails, State.FAILED, "Baritone found no path " + fails + " times from " + from);
             if (now - bestAt >= stallTicks())
                 return with(h, best, bestAt, calcAt, fails, State.FAILED, "no new best for " + (now - bestAt) / 20 + " s from " + from    // game fact: 20 ticks a second
                         + (Double.isNaN(best) ? "" : " (best " + Math.round(best) + " m)"));

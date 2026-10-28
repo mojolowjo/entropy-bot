@@ -88,7 +88,7 @@ public final class StepSignalsLive {
     }
 
     /** J6c run ET: the fork's last calc of the walk's failed search exhausted the graph (null: no calc kept, an older fork). */
-    private static Boolean exhausted(IBaritone b) {
+    static Boolean exhausted(IBaritone b) {
         try {
             var c = b.getCustomGoalProcess().lastCalc();
             return c == null ? null : c.exhausted();
