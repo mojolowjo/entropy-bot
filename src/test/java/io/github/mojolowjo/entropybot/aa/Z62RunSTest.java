@@ -98,6 +98,8 @@ class Z62RunSTest {
         Map<String, String> all = new java.util.HashMap<>();
         for (String h : StripOrder.HEADINGS) all.put(NeedChain.headingKey(16, h), "blocked");
         Chain shut = NeedChain.resolve("raw_iron", 3, w.withoutSources(all));
+        assertTrue(shut.ok() && !shut.explore(), shut.why());
+        assertTrue(shut.steps().stream().anyMatch(s -> s instanceof Step.Strip), "a next strip is priced: " + shut.steps());
         assertTrue(shut.steps().stream().filter(s -> s instanceof Step.Strip).allMatch(s -> ((Step.Strip) s).from() != null || ((Step.Strip) s).y() != 16), shut.steps().toString());
     }
 

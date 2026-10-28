@@ -103,6 +103,14 @@ public final class AaRuntime implements JobPort {
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.NOT_READY_FACT, (java.util.function.Supplier<String>) this::sensesNotReady);   // 0.39.z36
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.WorldFacts.FLUID_FACT, (java.util.function.Function<int[], Boolean>) AaRuntime::fluidAt);   // 0.39.z77 world 3
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.BLOCK_AT_FACT, (java.util.function.Function<int[], String>) Crafting::blockIdLoaded);   // 0.39.z78 J5: StationHolds' refusals
+        // 0.39.z78 dz review (rule 16): a strip from fresh ground never starts in a keep-out / no-break box - the break
+        // policy's box answer in the level's dimension (client thread: the planner's live facts; the worker reads copies).
+        // Loader notes: vanilla Minecraft#level, Level#dimension (Guard.dimOf)
+        io.github.mojolowjo.entropybot.aa.brain.StripAreas.refusal(cell -> {
+            var lv = Minecraft.getInstance().level;
+            return lv == null ? null : io.github.mojolowjo.entropybot.aa.brain.StripOrder.protectedAt(io.github.mojolowjo.entropybot.guard.Guard.INSTANCE.core.policy(),
+                    io.github.mojolowjo.entropybot.guard.Guard.dimOf(lv), cell[0], cell[1], cell[2]);
+        });
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.BatchWay.PER_SLAB_FACT, (java.util.function.BiFunction<String, Integer, Double>) this::perSlabAt);   // 0.39.z77 J2
         io.github.mojolowjo.entropybot.aa.brain.BatchWay.clear();     // 0.39.z77 review 5: a new runtime's "b1" never inherits an old b1's verdict
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.BatchWay.PLANNER_FACT, planner);     // 0.39.z78 D6: the trips are resolved off the render thread

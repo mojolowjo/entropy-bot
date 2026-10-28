@@ -115,6 +115,37 @@ class DzHeadingHeldTest {
         for (String h : StripOrder.HEADINGS) assertTrue(c.why().contains("fresh ground " + h + " from area"), h + ": " + c.why());
     }
 
+    /**
+     * dz review (rule 16): a fresh start whose cell or first tunnel cell lies in a keep-out / no-break box is never offered
+     * (never priced and walked to, then refused by the Guard at the dig); a box over every start of a heading leaves that
+     * heading out, said; a box over the nearer cells moves the start past it, the skipped cells said.
+     */
+    @Test
+    void aFreshStartInAKeepOutBoxIsNotOffered() {
+        ScenariosTest.world("wooden", "stone");
+        io.github.mojolowjo.entropybot.guard.Policy p = io.github.mojolowjo.entropybot.guard.Policy.parse(
+                "{\"areas\":[{\"name\":\"vault\",\"type\":\"keep-out\",\"x1\":-10,\"y1\":0,\"z1\":-200,\"x2\":20,\"y2\":40,\"z2\":-10},"
+                        + "{\"name\":\"shrine\",\"type\":\"no-break\",\"x1\":20,\"y1\":0,\"z1\":-5,\"x2\":30,\"y2\":40,\"z2\":9}],\"protect\":[]}");
+        java.util.function.Function<int[], String> refused = c -> StripOrder.protectedAt(p, "minecraft:overworld", c[0], c[1], c[2]);
+        assertEquals("in vault (keep-out)", refused.apply(new int[]{6, 16, -20}));
+        StripAreas.refusal(refused);
+        try {
+            Chain c = NeedChain.resolve("raw_iron", 3, Z62RunSTest.world(BAG, dz(Map.of())).withoutSources(water(StripOrder.HEADINGS)));
+            for (Step s : c.steps())
+                if (s instanceof Step.ToStrip t) {
+                    assertNull(refused.apply(new int[]{t.x(), t.y(), t.z()}), "the walk's start is outside every box: " + t.text());
+                    assertNull(StripOrder.startRefused(refused, t.x(), t.y(), t.z(), Step.class.cast(c.steps().get(c.steps().indexOf(s) + 1)) instanceof Step.Strip st ? st.heading() : "north"), t.text());
+                }
+            assertTrue(c.why().contains("fresh ground north: every area square within strip.freshStartBlocks past 16 blocks is seen or in a keep-out / no-break box"), c.why());
+            assertTrue(c.why().contains("fresh ground east (") && c.why().contains("nearer start cells): in a keep-out / no-break box, skipped (the break policy)"), c.why());
+            int[] east = StripAreas.freshStart(6 + 15, 16, 2, "east");
+            assertNotNull(east);
+            assertTrue(east[0] > 30 && east[3] > 0, "east starts past the shrine: " + java.util.Arrays.toString(east));
+        } finally {
+            StripAreas.refusal(null);
+        }
+    }
+
     /** The fresh starts shutAlts asks (failures.moved on, the first unseen square), each held by its own heading key. */
     static Map<String, String> freshHeld(StripBand band) {
         Map<String, String> out = new HashMap<>();

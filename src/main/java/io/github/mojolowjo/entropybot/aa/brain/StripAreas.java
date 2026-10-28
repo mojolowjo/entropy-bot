@@ -5,6 +5,7 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.function.Function;
 
 /**
  * 0.39.z64 item 4 (runs S-U: every strip heading restarted from the same origin, so run U's 251 cells covered one ~26x27
@@ -107,12 +108,30 @@ public final class StripAreas {
     public static synchronized int[] freshStart(int x, int y, int z, String heading) {
         int[] d = io.github.mojolowjo.entropybot.aa.WayUp.dir(heading);
         int reach = Math.max(1, Tuning.i("strip.freshStartBlocks"));
+        int skipped = 0;
+        Function<int[], String> r = refusal;
         for (int i = 1; i <= reach; i++) {
             int fx = x + i * d[0], fz = z + i * d[1];
-            if (!seen(fx, y, fz)) return new int[]{fx, fz, i};
+            if (seen(fx, y, fz)) continue;
+            // 0.39.z78 dz review (rule 16): a start whose cell or first tunnel cell lies in a keep-out / no-break box is
+            // skipped (never priced and walked to, then refused by the Guard at the dig); counted in the 4th value, said
+            String why = StripOrder.startRefused(r, fx, y, fz, heading);
+            if (why != null) {
+                skipped++;
+                continue;
+            }
+            return new int[]{fx, fz, i, skipped};
         }
         return null;
     }
+
+    /**
+     * 0.39.z78 dz review (rule 16): the break policy's box answer for a cell {x, y, z} (null: open), set by the game side
+     * (AaRuntime: Guard's policy in the level's dimension); null: no policy known, nothing skipped (tests, no world).
+     */
+    private static volatile Function<int[], String> refusal;
+
+    public static void refusal(Function<int[], String> f) { refusal = f; }
 
     /** The band's expected ore per block of the slab: perSlab over the slab's blocks (a chunk's 256 columns x the layers). */
     public static double perFace(double perSlab) {

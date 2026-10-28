@@ -5131,7 +5131,9 @@ public final class NeedChain {
         for (String h : io.github.mojolowjo.entropybot.aa.brain.StripOrder.HEADINGS) {
             int[] d = WayUp.dir(h);
             int[] at = c.w.freshStart(sb.x() + (away - 1) * d[0], sb.y(), sb.z() + (away - 1) * d[1], h);
-            if (at == null) { held.add("fresh ground " + h + ": every area square within strip.freshStartBlocks past " + away + " blocks is seen"); continue; }
+            if (at == null) { held.add("fresh ground " + h + ": every area square within strip.freshStartBlocks past " + away + " blocks is seen or in a keep-out / no-break box"); continue; }
+            // 0.39.z78 dz review (rule 16): the starts skipped in a keep-out / no-break box (StripAreas.freshStart) are said
+            if (at.length > 3 && at[3] > 0) held.add("fresh ground " + h + " (" + at[3] + " nearer start cells): in a keep-out / no-break box, skipped (the break policy)");     // structural: freshStart's 4th value, the skipped count
             StripBand f = sb.freshAt(at[0], at[1], at[2] + away - 1, h);
             String why = heldKey(c, f.key()) ? "its tunnel is held" : headingHeld(c.w.held(), f, f.y(), h);
             if (why != null) { held.add("fresh ground " + h + " from " + f.from() + ": " + why); continue; }

@@ -353,6 +353,32 @@ public final class StripOrder {
     }
 
     /**
+     * 0.39.z78 dz review (rule 16): the keep-out / no-break box at x y z ("in vault (keep-out)"), null: none - the one
+     * answer the break policy gives a box whatever the block (Policy#protectAt). Pure.
+     */
+    public static String protectedAt(io.github.mojolowjo.entropybot.guard.Policy p, String dim, int x, int y, int z) {
+        var box = (p == null ? io.github.mojolowjo.entropybot.guard.Policy.EMPTY : p).protectAt(dim, x, y, z);
+        return box == null ? null : "in " + (box.name == null ? "box" : box.name) + " (" + box.type.word() + ")";
+    }
+
+    /**
+     * 0.39.z78 dz review (rule 16): why a strip from fresh ground starting at (fx, y, fz) in {@code heading} may not be dug
+     * there - its start cell or its tunnel's first cell (feet and head height each) refused by {@code refused} (a cell
+     * {x, y, z} -&gt; the box's words, null: open); null: open. Pure.
+     */
+    public static String startRefused(Function<int[], String> refused, int fx, int y, int fz, String heading) {
+        if (refused == null) return null;
+        int[] d = io.github.mojolowjo.entropybot.aa.WayUp.dir(heading);
+        for (int step = 0; step <= 1; step++)                 // structural: the start cell and the tunnel's first cell
+            for (int dy = 0; dy <= 1; dy++) {                 // structural: feet and head height
+                int[] c = {fx + step * d[0], y + dy, fz + step * d[1]};
+                String why = refused.apply(c);
+                if (why != null) return c[0] + " " + c[1] + " " + c[2] + " " + why;
+            }
+        return null;
+    }
+
+    /**
      * j5s1 re-review (rule 16): why the strip may not break block {@code id} at {@code c}, first cell of a heading - a
      * keep-out / no-break box there FIRST, whatever the structure fact (BreakPolicy.structure answers "not a structure"
      * before its box check, so a box must not wait on it); then, for a block on blocksToAvoidBreaking ({@code avoided}),
