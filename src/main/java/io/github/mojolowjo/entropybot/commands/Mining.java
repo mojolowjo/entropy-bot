@@ -1260,6 +1260,16 @@ final class Mining {
             // "no path (no-break walk)" fails the target at once - the explore picks the next one (said once, the failed line)
             if (ex.hold.state() == ExploreRules.TargetHold.State.HELD && b != null && ExploreRules.noBreakNoPath(b.getCustomGoalProcess().lastEnd())) {
                 ex.hold = ExploreRules.TargetHold.failNow(ex.hold, "no path without breaking or placing (the no-break walk) from " + Jobs.fmt(me));
+                // run EI (2): the probe line of the failed no-break walk (debug.walkProbe), with the fork's calc detail
+                // (ICustomGoalProcess.lastNoBreakCalc, job-vein 5ca5424c: null before the first no-break "no path" end)
+                if (Tuning.get("debug.walkProbe") >= 1) {
+                    var calc = b.getCustomGoalProcess().lastNoBreakCalc();
+                    LOG.info("[entropybot] {}", ExploreRules.noBreakLine(me, ex.aimY != null ? "near " + ex.target.x() + " " + ex.aimY + " " + ex.target.z() + " (opening)"
+                            : (ex.surfaceGoal ? "the surface cell of " : "the column ") + ex.target.x() + " " + ex.target.z(), b.getCustomGoalProcess().lastEnd(),
+                            calc == null ? null : calc.type(), calc == null ? null : calc.nodesOpened(),
+                            calc == null || calc.best() == null ? null : calc.best().getX() + " " + calc.best().getY() + " " + calc.best().getZ()));
+                    if (calc != null) LOG.info("[entropybot] probe nobreak: fork says {}", calc.line());
+                }
                 // run EH (2): several no-break walks in a row find no path from these same feet - the bot is boxed in here: the
                 // explore ends at once with that fact (the next plan prices the way out first), not 20 tries and a freeze
                 ex.noBreakFails = java.util.Arrays.equals(ex.noBreakFrom, me) ? ex.noBreakFails + 1 : 1;

@@ -1233,7 +1233,7 @@ public final class StepHands implements Steps.Hands {
      */
     private String toSurface(LocalPlayer p, Step.ToSurface t) {
         int[] me = Jobs.here(p);
-        if (Jobs.belowSurface(p.level(), me[0], me[1], me[2]) == 0) { instant = "ok: already on the surface at " + Jobs.fmt(me); return null; }   // run EH: the one reader, a shaft is not the surface
+        if (me[0] == t.x() && me[1] == t.y() && me[2] == t.z()) { instant = "ok: already at the surface cell " + Jobs.fmt(me); return null; }   // run EI: the target reached, never a fact re-read
         String r = walk(new Step.Walk(t.x(), t.y(), t.z(), 0));
         return r == null ? null : "error: " + surfaceRefused(t, "the walk up did not start: " + r);
     }
@@ -1241,25 +1241,18 @@ public final class StepHands implements Steps.Hands {
     /** 0.39.z68: done at the cell or as soon as the feet stand under open sky; ended failed, it is the walk up's fact (a re-plan). */
     private Car.Status toSurfaceStatus(LocalPlayer p, Step.ToSurface t) {
         if (instant != null) return Car.Status.done(instant);
-        int[] me = Jobs.here(p);
-        if (Jobs.belowSurface(p.level(), me[0], me[1], me[2]) == 0) {                    // run EH: standing on the surface, not "open sky"
-            if (walkJob != null && c.jobs.running() && c.jobs.job == walkJob) c.jobs.finish("done: on the surface at " + Jobs.fmt(me));
-            LOG.info("[entropybot] steps: {} - on the surface at {} (under open sky)", t.text(), Jobs.fmt(me));
-            return Car.Status.done("ok: on the surface at " + Jobs.fmt(me));
-        }
+        // 0.39.z78 J6b run EI (the manager's fix; 01:07:44.919 "on the surface at 9 64 4" mid-path, the walk's own cut at 9 65 3
+        // fooling the re-read): the walk up ends ONLY when Baritone's walk to its target cell ends - reached, or its own fact
+        // (ended short: the walk up's fact, held for the order); never on a "below the surface" fact re-read mid-path
         Car.Status st = requestStatus();
-        // 0.39.z77 round fix 5 (run BG 09:07:39-09:23:30, 321 re-plans: "up to the surface at -28 23 -49" - an open-sky cell at the
-        // foot of a shaft next to the feet - ended "ok: arrived near -28 22 -48" under 47 blocks of rock every 3 s, the explore
-        // failed "under ground" and the re-plan walked "up" again, until the order's timeout): a walk up that ends with the feet
-        // still under ground (NeedChain.walkUpShort) did not reach the surface - the walk up's fact, held for the order
         if (st.state() == Car.State.DONE) {
-            String short_ = io.github.mojolowjo.entropybot.aa.NeedChain.walkUpShort(Jobs.belowSurface(p.level(), me[0], me[1], me[2]), io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth(), Jobs.fmt(me));
-            if (short_ != null) return Car.Status.failed(surfaceRefused(t, short_));
+            int[] me = Jobs.here(p);
+            LOG.info("[entropybot] steps: {} - at the surface cell (feet {})", t.text(), Jobs.fmt(me));
+            return st;
         }
         if (st.state() != Car.State.FAILED) return st;
         return Car.Status.failed(surfaceRefused(t, "the walk up ended short: " + (st.why() == null ? "no reason" : st.why())));
     }
-
     private String surfaceRefused(Step.ToSurface t, String why0) {
         String why = why0.replace(": error: ", ": ");
         io.github.mojolowjo.entropybot.aa.moves.FactChange.surface(t.x(), t.y(), t.z(), why);

@@ -616,6 +616,15 @@ public final class AaRuntime implements JobPort {
         return sky;
     }
 
+    /** Run EI: a cell a player stands in under open sky (feet and head open, solid ground under, the sky seen). */
+    private static boolean standableSky(net.minecraft.world.level.Level lv, int x, int y, int z) {
+        var m = new net.minecraft.core.BlockPos.MutableBlockPos(x, y, z);
+        if (!lv.isLoaded(m) || !lv.canSeeSky(m) || !openCell(lv, x, y, z) || !openCell(lv, x, y + 1, z)) return false;
+        m.set(x, y - 1, z);
+        var below = lv.getBlockState(m);
+        return !below.getCollisionShape(lv, m).isEmpty() && below.getFluidState().isEmpty();
+    }
+
     /**
      * 0.39.z68: the surface over the bot for the explore leaf (NeedChain.Surface): the depth below the surface (Jobs.belowSurface,
      * the one rule), then the nearest open-sky standing cell ({@link #skyCell}), else the column's leaf-free top. Null: no
@@ -632,7 +641,13 @@ public final class AaRuntime implements JobPort {
         int rock = Jobs.rockOverHead(lv, me[0], me[1], me[2]), hole = Jobs.holeDepth(lv, me[0], me[1], me[2]);
         int depth = io.github.mojolowjo.entropybot.world.SurfaceHeight.belowSurface(rock, hole);
         boolean inHole = hole > 0 && hole >= rock;
-        if (depth == 0) return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(0, me[0], me[1], me[2], 0);
+        // run EI (the manager's fix): no rock over the head - the surface leg's target is the ring's highest standable
+        // surface cell, nearest (SurfaceHeight.ringTarget): on flat ground the feet's own cell (no leg), in a pit the rim
+        if (rock == 0) {
+            int[] t = io.github.mojolowjo.entropybot.world.SurfaceHeight.ringTarget(me, (x, z) -> Jobs.surfaceNoLeaves(lv, x, z), (x, y, z) -> standableSky(lv, x, y, z));
+            if (t == null) return depth == 0 ? new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(0, me[0], me[1], me[2], 0) : null;
+            return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(depth, t[0], t[1], t[2], Math.sqrt(Jobs.distSq(me, t)), inHole);
+        }
         double[] best = {Double.MAX_VALUE};
         int[] sky = skyCell(lv, me, best);
         if (sky != null) return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(depth, sky[0], sky[1], sky[2], best[0], inHole);

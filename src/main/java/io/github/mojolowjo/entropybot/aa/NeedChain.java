@@ -5759,6 +5759,12 @@ public final class NeedChain {
         }
         // 0.39.z76 send-back 2 (run AO 20:37): an explore from here that froze is held by position - with no walk up and no band
         // leg to move the bot first, the same explore is no way again until the bot moved failures.moved (said, rule 7)
+        // run EI (the manager's fix): the explore from here walks to the surface ring's rim first whenever that is not here
+        // (an ordinary priced walk; ~0 on the surface: no leg), never gated on a "below the surface" test
+        if (upText == null && (legText == null || legText.isEmpty()) && c.down == null && over != null) {
+            upText = surfaceWalk(c);
+            if (upText == null && c.fail != null) return null;   // its path is not known yet: the way waits (rule 18)
+        }
         if (upText == null && (legText == null || legText.isEmpty())) {
             String froze = frozenHere(c), boxed = boxedHere(c);
             // run EH (3): a no-break freeze or boxed-in is answered by a way out - the walk up when below the surface, else the climb
@@ -6060,7 +6066,10 @@ public final class NeedChain {
             c.note(() -> "surface: where it is over the bot is not known (its column is not loaded): the explore runs from here");
             return null;
         }
-        if (s.depth() <= 0) return null;
+        // run EI (the manager's fix, rule 1): no "below the surface" gate - the leg is offered wherever its target is not the
+        // feet's own cell, priced by Baritone's path (on the surface: none, or a few blocks to the rim)
+        int[] feet = c.w.where().feet() == null ? null : c.w.where().feet().get();
+        if (s.dist() < 1 || (feet != null && feet.length >= 3 && feet[0] == s.x() && feet[1] == s.y() && feet[2] == s.z())) return null;   // structural: the target is here
         for (String h : c.w.held())
             if (h.startsWith(SURFACE_AT)) {
                 c.note(() -> "surface: the walk up failed in this order (" + h + "): the explore runs from here");

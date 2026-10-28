@@ -50,6 +50,36 @@ public final class SurfaceHeight {
         return d > 1 ? d : 0;                                                     // structural: a 1-block step walks out
     }
 
+    /**
+     * 0.39.z78 J6b run EI (the manager's fix): the surface leg's target - of the columns within {@link #RING} of the feet
+     * (a square, the feet's own column in it) whose leaf-free surface is known and whose surface cell a player can stand
+     * in ({@code standable}), the HIGHEST surface, the nearest of those to the feet; null: none known. A dig of our own
+     * (a one-cell notch, the shaft itself) is lower than the rim round it, so it is never the target. Pure.
+     */
+    public static int[] ringTarget(int[] feet, java.util.function.IntBinaryOperator surface, Column3 standable) {
+        int[] best = null;
+        long bd = Long.MAX_VALUE;
+        for (int dx = -RING; dx <= RING; dx++)
+            for (int dz = -RING; dz <= RING; dz++) {
+                int x = feet[0] + dx, z = feet[2] + dz, y = surface.applyAsInt(x, z);
+                if (!known(y) || !standable.test(x, y, z)) continue;
+                long d = (long) dx * dx + (long) (y - feet[1]) * (y - feet[1]) + (long) dz * dz;
+                if (best == null || y > best[1] || (y == best[1] && d < bd)) { best = new int[]{x, y, z}; bd = d; }
+            }
+        return best;
+    }
+
+    /**
+     * The ring's half-width: 3 columns each way - past the one-cell cuts our own digs leave round the feet (a shaft, the
+     * walk's notch: run EI 9 65 3) to the ground they were cut into, and no farther than a player looks for the rim of his
+     * own hole (the walk to it stays a few blocks).
+     */
+    public static final int RING = 3; // structural: one-cell digs round the feet and the rim past them
+
+    /** A cell test (x y z). */
+    @FunctionalInterface
+    public interface Column3 { boolean test(int x, int y, int z); }
+
     /** Run EH (rule 23: the ONE "below the surface" answer): the deeper of rock over the head and the hole round the feet. */
     public static int belowSurface(int rockDepth, int holeDepth) { return Math.max(Math.max(0, rockDepth), Math.max(0, holeDepth)); }
 }

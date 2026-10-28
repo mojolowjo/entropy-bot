@@ -318,6 +318,20 @@ public final class ExploreRules {
         return withinReach(feet, entry) && standable.test(feet[0], feet[1], feet[2]) && sees.test(feet[0], feet[1], feet[2]);
     }
 
+    /**
+     * Run EI (2): the "probe nobreak:" line of one failed no-break walk (debug.walkProbe): the feet, the goal, the fork's
+     * lastEnd, and its calc detail from lastNoBreakCalc ({@code calc} null: the fork kept none; {@code nodes} -1: not
+     * Baritone's A*; {@code best} null: not known - each said so).
+     * Pure.
+     */
+    public static String noBreakLine(int[] feet, String goal, String lastEnd, String calc, Integer nodes, String best) {
+        String none = "none (the fork kept no no-break calc)";
+        return "probe nobreak: feet " + (feet == null ? "-" : feet[0] + " " + feet[1] + " " + feet[2]) + " | goal " + goal + " | lastEnd " + lastEnd
+                + " | calc " + (calc == null ? none : calc)
+                + " | nodes opened " + (nodes == null ? "-" : nodes < 0 ? "unknown (not Baritone's A*)" : nodes)
+                + " | best node " + (best == null ? "unknown" : best);
+    }
+
     /** game fact: the survival block interaction range - a player at the opening could touch it. */
     public static final double OPENING_REACH = 4.5;
 

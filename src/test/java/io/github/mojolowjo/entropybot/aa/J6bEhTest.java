@@ -57,6 +57,39 @@ class J6bEhTest {
         assertEquals(-1, io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.climbDepth(-1, 0), "the surface not known: never done by it (rule 15)");
     }
 
+    /**
+     * Run EI (the manager's fix): the EI pit - the bot at 9 65 4, our own walk's cut lowered one neighbour (9 _ 3) to 65, the
+     * rim round it at 67: the surface leg's target is the ring's highest standable cell (the rim, never the notch), and the
+     * leg is priced though the old "below the surface" test reads 0 there (the gate is gone).
+     */
+    @Test
+    void theEiPit_theLegTargetsTheRim_andIsPricedWithoutTheGate() {
+        int[] feet = {9, 65, 4};
+        java.util.function.IntBinaryOperator surface = (x, z) -> (x == 9 && (z == 4 || z == 3)) ? 65 : 67;
+        int[] t = SurfaceHeight.ringTarget(feet, surface, (x, y, z) -> true);
+        assertEquals(67, t[1], "the rim's height, never the notch at 65");
+        assertEquals(List.of(8, 67, 4), List.of(t[0], t[1], t[2]), "the nearest rim cell");
+        int[] around = new int[8];
+        int i = 0;
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) if (dx != 0 || dz != 0) around[i++] = surface.applyAsInt(9 + dx, 4 + dz);
+        assertEquals(0, SurfaceHeight.belowSurface(0, SurfaceHeight.holeDepth(65, around)), "the old gate: 'on the surface' (the notch fooled it)");
+        Chain c = NeedChain.resolve("oak_log", 4, Z68ExploreWhereTest.logsWorld(new NeedChain.Surface(0, t[0], t[1], t[2], Math.sqrt(5), false)));
+        assertEquals(new Step.ToSurface(8, 67, 4), c.steps().get(0), "the leg to the rim is priced at depth 0: " + c.steps());
+        int[] flat = SurfaceHeight.ringTarget(new int[]{0, 64, 0}, (x, z) -> 64, (x, y, z) -> true);
+        assertArrayEquals(new int[]{0, 64, 0}, flat, "flat ground: the feet's own cell - no leg");
+        assertNull(SurfaceHeight.ringTarget(feet, (x, z) -> SurfaceHeight.NOT_KNOWN, (x, y, z) -> true), "nothing known: no target (rule 15)");
+    }
+
+    /** Run EI (2): the probe nobreak line with the fork's calc detail (lastNoBreakCalc); none kept, or not Baritone's A*, said so. */
+    @Test
+    void theProbeNobreakLine() {
+        String l = ExploreRules.noBreakLine(new int[]{9, 65, 4}, "the surface cell of -56 88", "no path (no-break walk)", null, null, null);
+        assertEquals("probe nobreak: feet 9 65 4 | goal the surface cell of -56 88 | lastEnd no path (no-break walk) | calc none (the fork kept no no-break calc)"
+                + " | nodes opened - | best node unknown", l);
+        assertTrue(ExploreRules.noBreakLine(null, "g", "e", "FAILURE", 12, "9 66 4").endsWith("calc FAILURE | nodes opened 12 | best node 9 66 4"));
+        assertTrue(ExploreRules.noBreakLine(null, "g", "e", "unknown", -1, null).endsWith("nodes opened unknown (not Baritone's A*) | best node unknown"));
+    }
+
     static NeedChain.World iron(NeedChain.Surface over, Map<String, String> held) {
         ScenariosTest.world("wooden", "stone");
         var w = ScenariosTest.w(Map.of("minecraft:stone_pickaxe", 1), false, false, Map.of())
