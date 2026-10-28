@@ -104,6 +104,15 @@ public final class ChunkPass {
 
     public CaveMouths mouths() { return mouths; }
 
+    /** 0.39.z78 J6: the cave index of this dimension (the chunks read this session) and the rays at it. */
+    private final CaveIndex caveIndex = new CaveIndex();
+    private final CaveRays caveRays = new CaveRays();
+
+    public CaveIndex caveIndex() { return caveIndex; }
+
+    /** 0.39.z78 J6: the cave rays' counts (sense status, aa cave list). */
+    public String caveRaysStatus() { return caveRays.status() + ", " + caveIndex.chunks() + " chunks indexed"; }
+
     /** AA_ROUND3 3/5: the seen ore cells of this world (Sightings kind ORE, sightings.json); null before the world files are known. */
     public Seen seen() {
         Sightings s = sightings();
@@ -250,6 +259,7 @@ public final class ChunkPass {
                 Sightings sg = sightings();
                 if (sg != null && dim != null) seenRt.tick(level, mc.player, index, sg.ore(), dim, tick, now);
                 if (sg != null && dim != null) sightRt.tick(level, mc.player, sg, dim, seenRt.budget, mouths, tick, now);
+                if (sg != null && dim != null) caveRays.tick(level, mc.player, caveIndex, sg, dim, seenRt.budget, tick, now);   // 0.39.z78 J6
             } catch (Throwable t) {
                 error("seen", t);
             }
@@ -266,6 +276,8 @@ public final class ChunkPass {
         schedule.clear();
         live.clear();
         mouths.clear();
+        caveIndex.clear();                                // 0.39.z78 J6: the index is this dimension's
+        caveRays.clear();
         index.markAllStale();
         dim = d;
         dimStartMs = now;
@@ -625,8 +637,44 @@ public final class ChunkPass {
         } catch (Throwable t) {
             error("cave candidates", t);
         }
+        try {
+            caveRuns(chunk, it.cx(), it.cz());
+        } catch (Throwable t) {
+            error("cave index", t);
+        }
         mapChunk(it.cx(), it.cz());
         if (old == null || old.stale || !changes.isEmpty()) dirty.mark(SummaryFiles.Dirty.key(dim, it.cx(), it.cz()), now);
+    }
+
+    /**
+     * 0.39.z78 J6: the chunk's air runs below its WORLD_SURFACE heights into the cave index (once a session per chunk: a
+     * chunk read again is kept as it was), then the known caves of Sightings that lie in it mark their volumes known (a
+     * reload keeps them known). The reads go by section (an all-air section answers at once). Bounded by the pass's time
+     * budget per tick, as the chunk reads. Loader notes: vanilla LevelChunk#getSections / #getMinSection,
+     * LevelChunkSection#hasOnlyAir / #getBlockState, BlockState#isAir; the heights from SurfaceHeightLive.worldSurface.
+     */
+    private void caveRuns(LevelChunk chunk, int cx, int cz) {
+        if (caveIndex.has(cx, cz)) return;
+        int[] surface = new int[256];
+        for (int lz = 0; lz < 16; lz++)
+            for (int lx = 0; lx < 16; lx++) surface[lx + 16 * lz] = io.github.mojolowjo.entropybot.world.SurfaceHeightLive.worldSurface(chunk, lx, lz);
+        var secs = chunk.getSections();
+        int minSec = chunk.getMinSection();
+        caveIndex.put(CaveIndex.runs(cx, cz, surface, chunk.getMinBuildHeight(), (x, y, z) -> {
+            int si = (y >> 4) - minSec;
+            if (si < 0 || si >= secs.length) return false;
+            var s = secs[si];
+            return s.hasOnlyAir() || s.getBlockState(x & 15, y & 15, z & 15).isAir();
+        }));
+        Sightings sg = sightings();
+        if (sg == null || dim == null) return;
+        for (Sightings.KnownCave k : sg.allKnownCaves(dim)) {
+            if (k.x() >> 4 == cx && k.z() >> 4 == cz) caveIndex.markKnown(k.x(), k.y(), k.z());
+            for (long h : k.hits()) {
+                int[] c = Sightings.cellOf(h);
+                if (c[0] >> 4 == cx && c[2] >> 4 == cz) caveIndex.markKnown(c[0], c[1], c[2]);
+            }
+        }
     }
 
     /** Self-audit: one loaded, patched chunk read again (round robin) and compared; a difference is counted, logged, replaced. */

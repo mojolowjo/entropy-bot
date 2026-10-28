@@ -192,6 +192,122 @@ public final class Sightings {
         return gone;
     }
 
+    // ---- 0.39.z78 J6: the known caves (CaveIndex volumes that KNOWN_RAYS sight rays credited), a stored fact ----
+
+    /**
+     * 0.39.z78 J6 (the owner's ruling 2026-10-27 late): a cave known by rays - its entry cell (where it touches the sky,
+     * nearest the rays that credited it), its cells and depth range (the index volume when it became known), when, the hit
+     * cells of the rays that credited it ({@link #cell} packed: the cells seen in it); {@code walked} / {@code oreOnWalk}:
+     * the caving step's last walk (0: not yet; {@link #CLOSED}: closed for good). Known stays known in this world.
+     */
+    public record KnownCave(int x, int y, int z, long cells, int minY, int maxY, long knownAt, List<Long> hits, long walked, int oreOnWalk) {
+        public static final int CLOSED = -1; // structural: a marker, not an ore count
+
+        public KnownCave {
+            hits = List.copyOf(hits);
+        }
+
+        /** Offered to the cave way at {@code now}: never walked; its last walk found ore; or {@code holdMs} since a walk with none. Closed: never. */
+        public boolean offered(long now, long holdMs) {
+            if (walked == 0) return true;
+            if (oreOnWalk == CLOSED) return false;
+            return oreOnWalk > 0 || now - walked >= holdMs;
+        }
+
+        public String where() { return x + " " + y + " " + z; }
+    }
+
+    private final Map<String, List<KnownCave>> knownCaves = new HashMap<>();
+
+    /** The known cave a CaveIndex credit made: stored (returned) once - a known cave with the same entry or a shared hit cell is that cave (null). */
+    public synchronized KnownCave knowCave(String dim, CaveIndex.Known k, long now) {
+        if (k == null) return null;
+        for (KnownCave c : knownCaves.getOrDefault(dim, List.of())) {
+            if (c.x() == k.x() && c.y() == k.y() && c.z() == k.z()) return null;
+            for (long h : k.hits()) if (c.hits().contains(h)) return null;
+        }
+        KnownCave c = new KnownCave(k.x(), k.y(), k.z(), k.cells(), k.minY(), k.maxY(), now, k.hits(), 0, 0);
+        List<KnownCave> l = knownCaves.computeIfAbsent(dim, d -> new ArrayList<>());
+        l.add(c);
+        while (l.size() > maxCaves()) l.remove(0);
+        cavesFound++;
+        dirty = true;
+        return c;
+    }
+
+    /** Every known cave of the dimension, walked ones included (aa cave list; the index marks their volumes known). */
+    public synchronized List<KnownCave> allKnownCaves(String dim) { return List.copyOf(knownCaves.getOrDefault(dim, List.of())); }
+
+    /** The known caves offered now ({@link KnownCave#offered}), nearest first from x y z (empty: none known). */
+    public synchronized List<KnownCave> knownCaves(String dim, int x, int y, int z, long now) {
+        long hold = walkedHoldMs();
+        List<KnownCave> out = new ArrayList<>();
+        for (KnownCave c : knownCaves.getOrDefault(dim, List.of())) if (c.offered(now, hold)) out.add(c);
+        out.sort((a, b) -> Long.compare(d2k(a, x, y, z), d2k(b, x, y, z)));
+        return out;
+    }
+
+    /** The known cave whose entry is x y z (null: none). */
+    public synchronized KnownCave knownCave(String dim, int x, int y, int z) {
+        for (KnownCave c : knownCaves.getOrDefault(dim, List.of())) if (c.x() == x && c.y() == y && c.z() == z) return c;
+        return null;
+    }
+
+    /** A caving step walked the known cave entered at x y z and got {@code ore} there ({@link KnownCave#CLOSED}: closed for good). */
+    public synchronized boolean walkedCave(String dim, int x, int y, int z, long now, int ore) {
+        List<KnownCave> l = knownCaves.getOrDefault(dim, List.of());
+        for (int i = 0; i < l.size(); i++) {
+            KnownCave c = l.get(i);
+            if (c.x() == x && c.y() == y && c.z() == z && c.oreOnWalk() != KnownCave.CLOSED) {
+                l.set(i, new KnownCave(c.x(), c.y(), c.z(), c.cells(), c.minY(), c.maxY(), c.knownAt(), c.hits(), Math.max(1, now), ore));
+                dirty = true;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static long d2k(KnownCave c, int x, int y, int z) {
+        long dx = c.x() - x, dy = c.y() - y, dz = c.z() - z;
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    private static JsonObject knownJson(Map<String, List<KnownCave>> m) {
+        JsonObject o = new JsonObject();
+        for (Map.Entry<String, List<KnownCave>> d : new TreeMap<>(m).entrySet()) {
+            JsonArray a = new JsonArray();
+            for (KnownCave c : d.getValue()) {
+                JsonArray e = new JsonArray();
+                e.add(c.x()); e.add(c.y()); e.add(c.z()); e.add(c.cells()); e.add(c.minY()); e.add(c.maxY()); e.add(c.knownAt());
+                JsonArray h = new JsonArray();
+                for (Long x : c.hits()) h.add(x);
+                e.add(h);
+                e.add(c.walked()); e.add(c.oreOnWalk());
+                a.add(e);
+            }
+            o.add(d.getKey(), a);
+        }
+        return o;
+    }
+
+    private static void readKnown(JsonObject o, Sightings s, int[] skipped) {
+        try {
+            if (!o.has("knownCaves")) return;
+            for (Map.Entry<String, JsonElement> d : o.getAsJsonObject("knownCaves").entrySet())
+                for (JsonElement e : d.getValue().getAsJsonArray()) {
+                    try {
+                        JsonArray a = e.getAsJsonArray();
+                        List<Long> h = new ArrayList<>();
+                        for (JsonElement c : a.get(7).getAsJsonArray()) h.add(c.getAsLong());
+                        s.knownCaves.computeIfAbsent(d.getKey(), x -> new ArrayList<>()).add(new KnownCave(a.get(0).getAsInt(), a.get(1).getAsInt(), a.get(2).getAsInt(),
+                                a.get(3).getAsLong(), a.get(4).getAsInt(), a.get(5).getAsInt(), a.get(6).getAsLong(), h, a.get(8).getAsLong(), a.get(9).getAsInt()));
+                    } catch (RuntimeException ex) {
+                        Quiet.warn("Sightings.readKnown failed, carrying on with the fallback", ex); skipped[0]++; }
+                }
+        } catch (RuntimeException ex) {
+            Quiet.warn("Sightings.readKnown failed, carrying on with the fallback", ex); skipped[0]++; }
+    }
+
     // ---- 0.39.z51 items 1-2: the confirmation of a mouth, a stored fact ----
 
     /**
@@ -487,6 +603,7 @@ public final class Sightings {
             mf.add(d.getKey(), a);
         }
         o.add("mouthFacts", mf);
+        o.add("knownCaves", knownJson(knownCaves));          // 0.39.z78 J6: the caves known by rays
         return new Gson().toJson(o);
     }
 
@@ -547,6 +664,7 @@ public final class Sightings {
         read(o, "animals", Kind.ANIMAL, s.animals, skipped);
         read(o, "trees", Kind.TREE, s.trees, skipped);
         readFacts(o, s, skipped);
+        readKnown(o, s, skipped);
         try {
             if (o.has("walked")) s.walked = Math.max(0, o.get("walked").getAsDouble());
             if (o.has("cavesFound")) s.cavesFound = Math.max(0, o.get("cavesFound").getAsDouble());
