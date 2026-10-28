@@ -997,7 +997,7 @@ public final class AaRuntime implements JobPort {
     /**
      * 0.39.z44: the cave way's facts for a need word (NeedChain.CaveWay): the nearest known cave mouth (Sightings, seen:
      * CAVE_DETECTION option 1), the first block that drops the word and the game tags as an ore (c:ores), and Seen's cave
-     * yield for its family (the Tuning prior blended in until caving minutes are measured). Null: no world, no mouth known,
+     * yield for its family (0.39.z78 J6c: the prior from the game data, CaveYield, until the cave is walked). Null: no world, no mouth known,
      * or no ore block gives the word.
      */
     io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay caveWay(String word) {
@@ -1020,6 +1020,9 @@ public final class AaRuntime implements JobPort {
         // (not done, or done with its ore seen and left), whose depth band holds where the ore generates; its unseen cells'
         // minutes, the ore seen there and left, the yield measured there once walked (the prior before)
         var where = whereOf(ore);
+        // 0.39.z78 J6c (owner: "take in account for modded as well"): the yield's placements are every one that places a block
+        // giving the need (the loot data's blocks, vanilla and modded), not the one ore block named here
+        var gen = whereOf(word);
         boolean bandKnown = where != null && where.kind() != io.github.mojolowjo.entropybot.aa.brain.GenWhere.Kind.NOT_LOADED && where.band();
         // run EM (rule 23 (1); run EM 04:01:48-04:06:24: the loop returned the nearest cave alone - a SMALL one the planner
         // dropped - and the LARGE 183 65 49 was never asked): EVERY known cave offered for the family, nearest first; the
@@ -1034,9 +1037,17 @@ public final class AaRuntime implements JobPort {
             if (f != null && f.stuck()) out = "its last walk gained nothing and nothing new is known of it since (stuck)";
             else if (f != null && !f.offeredFor(fam)) out = "explored to its end with no " + fam + " seen and left (done)";
             else if (bandKnown && !k.depth().overlaps(where.lo(), where.hi())) out = "its depth " + k.depth() + " is off where " + ore + " generates (" + where.lo() + ".." + where.hi() + ")";
-            double prior = sg.ore().caveRate(fam);
-            boolean walked = f != null && f.measured(prior);                // run EO: measured only past the floor (CaveRecord.measureFloorMinutes)
-            double rate = f == null ? prior : f.rate(prior);                  // review 2: measured once walked long enough
+            // 0.39.z78 J6c (the owner's rulings 2026-10-28): the prior from the game data - the cave's air-exposed blocks by Y x
+            // the share every jar's placements give the need's ore there, less the air-exposure discard (CaveYield); not
+            // known while its cells are read (the way waits, said); no placement: "no world-gen data for X" (not priced)
+            var ex = sg.caveExposure(dim, k.x(), k.y(), k.z());
+            var pr = io.github.mojolowjo.entropybot.aa.brain.CaveYield.of(word, gen, ex == null ? null : ex.byY(), ex == null ? 0 : ex.blocks(),
+                    ex != null && ex.open(), ex != null && ex.done(), f == null ? 0 : f.cellCount(), io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps());
+            double prior = pr.perMin();
+            // run EO: measured only past the floor (CaveRecord.measureFloorMinutes); the prior not known: a walk that saw ore is the evidence
+            boolean walked = f != null && (pr.known() ? f.measured(prior) : f.walkedMinutes() > 0 && f.oreSeenPerMinute() > 0);
+            double rate = walked ? f.oreSeenPerMinute() : prior;              // review 2: measured once walked long enough
+            if (out == null && !walked && !pr.known()) out = pr.noData() ? pr.why() + ": the cave way is not priced for it" : "its yield is " + pr.why();
             // run EM: the minutes it holds from its fed cells - the record's unseen part once fed; while it is being fed,
             // the index's volume now (O(1)) less what is seen; the size bucket only when nothing of it is fed (rule 15)
             long cells = -1;
@@ -1051,8 +1062,8 @@ public final class AaRuntime implements JobPort {
             // run EO (rule 23 (1)): the bot stands inside this cave's volume - its branches are the way from here, ranked first
             boolean inside = feetRoot >= 0 && feetRoot == idx.volumeAt(k.x(), k.y(), k.z());
             ways.add(new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(k.x(), k.y(), k.z(), Math.sqrt(Jobs.distSq(me, new int[]{k.x(), k.y(), k.z()})),
-                    ore, fam, rate, walked || sg.ore().caveMinutes() > 0, k.size(), unseen, leftKeys(sg.caveLeft(dim, k.x(), k.y(), k.z(), fam)), lips(pass, k, me))
-                    .withOut(out).withInside(inside));
+                    ore, fam, rate, walked, k.size(), unseen, leftKeys(sg.caveLeft(dim, k.x(), k.y(), k.z(), fam)), lips(pass, k, me))
+                    .withOut(out).withInside(inside).withBasis(walked ? null : pr.why()));
         }
         if (ways.isEmpty()) return null;
         ways.sort(java.util.Comparator.comparing((io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay w) -> !w.inside()));   // stable: the inside cave first, then nearest

@@ -689,8 +689,6 @@ safetyRules.netAt	100.0
 safetyRules.netEvery	200.0
 safetyRules.protectEvery	200.0
 seen.coneDeg	60.0
-seen.priorMin	2.0
-seen.priorRate	0.5
 seen.range	24.0
 seen.raysPerSec	128.0
 selfCheck.bagFull	2.0

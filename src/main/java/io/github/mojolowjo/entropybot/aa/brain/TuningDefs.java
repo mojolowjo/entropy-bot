@@ -600,8 +600,6 @@ final class TuningDefs {
         Tuning.def("seen.range", 24, "rm-constants 0.39.u2 (was Seen.RANGE)", "the range of Seen");
         Tuning.def("seen.raysPerSec", 128, "run EP (owner 2026-10-28: more rays to find caves)", "the rays per sec of Seen");
         Tuning.def("seen.coneDeg", 60, "rm-constants 0.39.u2 (was Seen.CONE_DEG)", "Half-angle of the view cone (degrees)");
-        Tuning.def("seen.priorRate", 0.5, "rm-constants 0.39.u2 (was Seen.PRIOR_RATE)", "The cave-yield prior");
-        Tuning.def("seen.priorMin", 2.0, "rm-constants 0.39.u2 (was Seen.PRIOR_MIN)", "The cave-yield prior");
         // selfCheck
         Tuning.def("selfCheck.worn", 0.10, "rm-constants 0.39.u2 (was SelfCheck.WORN)", "A tool with this share of its uses left or less is nearly broken");
         Tuning.def("selfCheck.bagLow", 4, "rm-constants 0.39.u2 (was SelfCheck.BAG_LOW)", "Free bag slots at or below this");

@@ -103,6 +103,17 @@ public final class CaveRecord {
     private Facts factsNow;
     /** Run EK: the cells touched since the last {@link #takeTouched} (the budget's JUnit). */
     private long touched;
+    /**
+     * 0.39.z78 J6c (the owner's ruling 1): the cave's AIR-EXPOSED blocks - the not-air blocks with a face on the index's air,
+     * found by {@link io.github.mojolowjo.entropybot.aa.Nearby#exposed} over the index's air answer ({@link CaveIndex#airAt})
+     * - counted once each, by Y; the cells not yet looked round, and the neighbours whose chunk is not indexed (by chunk:
+     * looked at again once it is; any left = the volume is OPEN at the loaded edge, ruling 2: a lower bound). In memory
+     * only, as the cells.
+     */
+    private final Set<Long> exposedSet = new HashSet<>();
+    private final TreeMap<Integer, Integer> exposedByY = new TreeMap<>();
+    private final ArrayDeque<Long> toExpose = new ArrayDeque<>();
+    private final Map<Long, Set<Long>> exposePending = new java.util.HashMap<>();
 
     CaveRecord(int x, int y, int z) { this.x = x; this.y = y; this.z = z; }
 
@@ -122,13 +133,77 @@ public final class CaveRecord {
     int recFeed(CaveIndex idx, int budget) {
         if (feed == null) feed = new CaveIndex.Feed();
         regroupSpent = 0;                                                   // 88b28290 review 1: a new tick (the one feeder's step)
+        tickBase = touched;                                                 // J6c: the tick's spend starts here
+        exposeAir = idx::airAt;
         int n = idx.feed(x, y, z, feed, budget, this::addCell);
         touched += n;
         return n;
     }
 
+    /** J6c: the index's air answer for the exposure step (set by the feeder), and the record's spend at the tick's start. */
+    private io.github.mojolowjo.entropybot.aa.Nearby.Open exposeAir;
+    private long tickBase;
+
+    /**
+     * J6c: one step of the air-exposed count with what the tick's budget leaves after the feed, the stand and the regroup
+     * (the walk's own reads come first; the prior waits, rule 15). Nothing to do, or no index given: nothing.
+     */
+    private void exposeStep() {
+        if (exposeAir == null || (toExpose.isEmpty() && exposePending.isEmpty())) return;
+        long left = BUDGET - Math.max(touched - tickBase, regroupSpent);
+        if (left > 0) regroupSpent += recExpose(exposeAir, (int) left);       // one tick budget with the regroup
+    }
+
+    /**
+     * 0.39.z78 J6c (the owner's rulings 1 and 2): one budgeted step of the air-exposed count - the neighbours of the cells
+     * not yet looked round, and the pending ones whose chunk {@code air} answers now; each a block where {@code air} says
+     * not air and {@link io.github.mojolowjo.entropybot.aa.Nearby#exposed} finds an open face. The neighbour tests spent
+     * ({@code budget} at most, one chunk's pending over).
+     */
+    int recExpose(io.github.mojolowjo.entropybot.aa.Nearby.Open air, int budget) {
+        int spent = 0;
+        if (!exposePending.isEmpty()) {
+            for (var it = exposePending.entrySet().iterator(); it.hasNext() && spent < budget; ) {
+                var e = it.next();
+                int[] p = Sightings.cellOf(e.getValue().iterator().next());
+                spent++;
+                if (air.open(p[0], p[1], p[2]) == null) continue;               // its chunk still not indexed
+                it.remove();
+                for (long b : e.getValue()) { classify(air, b); spent++; }
+            }
+        }
+        while (!toExpose.isEmpty() && spent < budget) {
+            int[] p = Sightings.cellOf(toExpose.poll());
+            for (int[] o : SIX) { classify(air, Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2])); spent++; }
+        }
+        touched += spent;
+        return spent;
+    }
+
+    private void classify(io.github.mojolowjo.entropybot.aa.Nearby.Open air, long b) {
+        if (exposedSet.contains(b)) return;
+        int[] p = Sightings.cellOf(b);
+        Boolean a = air.open(p[0], p[1], p[2]);
+        if (a == null) { exposePending.computeIfAbsent(CaveIndex.chunkKey(p[0] >> 4, p[2] >> 4), k -> new java.util.LinkedHashSet<>()).add(b); return; }
+        if (a || !Boolean.TRUE.equals(io.github.mojolowjo.entropybot.aa.Nearby.exposed(air, p[0], p[1], p[2]))) return;
+        exposedSet.add(b);
+        exposedByY.merge(p[1], 1, Integer::sum);
+    }
+
+    /**
+     * 0.39.z78 J6c: the air-exposed blocks by Y (a copy), their count; {@code open}: a neighbour's chunk is not indexed (the
+     * volume touches the loaded edge: at least this, ruling 2); {@code done}: the cells are fed and every one looked round.
+     */
+    public record Exposure(Map<Integer, Integer> byY, long blocks, boolean open, boolean done) {}
+
+    Exposure exposure() {
+        exposeStep();
+        return new Exposure(new TreeMap<>(exposedByY), exposedSet.size(), !exposePending.isEmpty(), loaded() && toExpose.isEmpty());
+    }
+
     private void addCell(long c) {
         if (!cells.add(c)) return;
+        toExpose.add(c);                                                        // J6c: looked round for air-exposed blocks
         version++;
         cellCount = Math.max(cellCount, cells.size());
         if (seen.contains(c)) {

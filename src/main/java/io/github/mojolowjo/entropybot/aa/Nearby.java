@@ -596,7 +596,18 @@ public final class Nearby {
      * legit sources: the block has an exposed face: one of its six neighbours is open ({@link Scan#open}). False: six solid
      * neighbours (buried); null: no open face known and a neighbour's chunk not loaded (rule 15: not counted, not "buried for sure").
      */
-    public static Boolean exposed(Scan s, int x, int y, int z) {
+    public static Boolean exposed(Scan s, int x, int y, int z) { return exposed((Open) s::open, x, y, z); }
+
+    /** 0.39.z78 J6c: a cell's open answer (TRUE open, FALSE solid, null not loaded) - {@link Scan#open}'s shape. */
+    @FunctionalInterface
+    public interface Open { Boolean open(int x, int y, int z); }
+
+    /**
+     * 0.39.z78 J6c (the owner's ruling 1, rule 23 (2): one reader of exposure): the same exposed-face test over any open
+     * answer - a source's (rule 17, {@link Scan#open}) and a known cave's air-exposed blocks (CaveRecord, the cave index's
+     * air). True: an open face; false: six closed; null: none open and a neighbour not known.
+     */
+    public static Boolean exposed(Open s, int x, int y, int z) {
         boolean unknown = false;
         for (int[] d : FACES) {
             Boolean o = s.open(x + d[0], y + d[1], z + d[2]);

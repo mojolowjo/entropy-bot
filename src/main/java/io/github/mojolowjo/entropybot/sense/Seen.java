@@ -31,9 +31,6 @@ public final class Seen {
     public static double coneDeg() { return Tuning.get("seen.coneDeg"); }
     /** Cells kept per dimension (the oldest seen go first past it). */
     public static final int MAX = 20_000; // structural
-    /** The cave-yield prior: this many ores of a family per minute, weighed as {@link #PRIOR_MIN} minutes of caving. */
-    public static double priorRate() { return Tuning.get("seen.priorRate"); }
-    public static double priorMin() { return Tuning.get("seen.priorMin"); }
 
     private static volatile boolean fair = true;
 
@@ -198,16 +195,20 @@ public final class Seen {
         if (minutes > 0) { caveMinutes += minutes; dirty = true; }
     }
 
-    /** Ores of a family seen per minute of caving, the prior blended in (never 0). */
+    /**
+     * Ores of a family seen per minute of caving, measured only (NaN: no caving measured). 0.39.z78 J6c: the hand prior
+     * (seen.priorRate 0.5 a minute, seen.priorMin) is deleted - a known cave's prior comes from the game data
+     * (aa.brain.CaveYield), its measured yield from its own record.
+     */
     public synchronized double caveRate(String family) {
-        return (caveOres.getOrDefault(family, 0.0) + priorRate() * priorMin()) / (caveMinutes + priorMin());
+        return caveMinutes > 0 ? caveOres.getOrDefault(family, 0.0) / caveMinutes : Double.NaN;
     }
 
     /** 0.39.z44: minutes of caving measured so far (0: the cave yield is the prior alone). */
     public synchronized double caveMinutes() { return caveMinutes; }
 
     public synchronized String caveText() {
-        return String.format(java.util.Locale.ROOT, "caving %.1f min, seen %s (prior %.1f/min a family)", caveMinutes, caveOres, priorRate());
+        return String.format(java.util.Locale.ROOT, "caving %.1f min, seen %s (a cave's prior: game data)", caveMinutes, caveOres);
     }
 
     public boolean dirty() { return dirty; }

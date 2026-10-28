@@ -739,6 +739,21 @@ public final class CaveIndex {
     private static final int[][] SIDES = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 
     /** The surface (WORLD_SURFACE: the first air over the top block) of column x z, MAX_VALUE: its chunk not held. */
+    /**
+     * 0.39.z78 J6c (the owner's ruling 1, 2026-10-28): the index's air answer at a cell - TRUE: air (an indexed air run, or
+     * at / above the column's ground: open to the sky); FALSE: not air (a solid block, or a fluid - the runs hold air only,
+     * rough, rule 14); null: its chunk is not indexed (not loaded: rule 15, not known). The open face test of the
+     * air-exposed blocks (CaveRecord's exposure, through Nearby.exposed).
+     */
+    public synchronized Boolean airAt(int x, int y, int z) {
+        Chunk ch = chunks.get(chunkKey(x >> 4, z >> 4));
+        if (ch == null) return null;
+        int c = (x & 15) + 16 * (z & 15);
+        if (y >= ch.surface[c]) return Boolean.TRUE;
+        for (int i = ch.start[c]; i < ch.start[c + 1]; i++) if (y >= ch.lo[i] && y <= ch.hi[i]) return Boolean.TRUE;
+        return Boolean.FALSE;
+    }
+
     private int surfaceAt(int x, int z) {
         Chunk ch = chunks.get(chunkKey(x >> 4, z >> 4));
         return ch == null ? Integer.MAX_VALUE : ch.surface[(x & 15) + 16 * (z & 15)];

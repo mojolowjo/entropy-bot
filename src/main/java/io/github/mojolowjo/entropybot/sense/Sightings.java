@@ -185,6 +185,18 @@ public final class Sightings {
         return r == null ? null : r.facts();
     }
 
+    /** 0.39.z78 J6c: the air-exposed blocks of the known cave at x y z (CaveRecord.Exposure); null: no known cave there. */
+    public synchronized CaveRecord.Exposure caveExposure(String dim, int x, int y, int z) {
+        CaveRecord r = rec(dim, x, y, z);
+        return r == null ? null : r.exposure();
+    }
+
+    /** 0.39.z78 J6c: one step of the known cave's air-exposed count over {@code air} (tests, a replay: the cells given whole). */
+    public synchronized int caveExpose(String dim, int x, int y, int z, io.github.mojolowjo.entropybot.aa.Nearby.Open air, int budget) {
+        CaveRecord r = rec(dim, x, y, z);
+        return r == null ? 0 : r.recExpose(air, budget);
+    }
+
     /** The branches not walked of the known cave at x y z (largest behind first; empty: not loaded, or none). */
     public synchronized List<CaveRecord.Group> caveFrontier(String dim, int x, int y, int z) {
         CaveRecord r = rec(dim, x, y, z);

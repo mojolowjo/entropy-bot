@@ -82,14 +82,14 @@ class SeenTest {
     @Test
     void caveYieldAndTheFile() {
         Seen s = new Seen();
-        double prior = s.caveRate("iron");
-        assertEquals(Seen.priorRate(), prior, 1e-9);
+        // 0.39.z78 J6c: no hand prior - nothing measured is not known (a cave's prior is the game data's, CaveYield)
+        assertTrue(Double.isNaN(s.caveRate("iron")));
         s.caving = true;
         s.saw("d", 1, 1, 1, "iron", 1);
         s.saw("d", 2, 1, 1, "iron", 1);
         s.caving = false;
         s.caveTime(2);
-        assertEquals((2 + Seen.priorRate() * Seen.priorMin()) / (2 + Seen.priorMin()), s.caveRate("iron"), 1e-9);
+        assertEquals(1.0, s.caveRate("iron"), 1e-9, "2 seen in 2 minutes, measured");
         // AA_ROUND3 5: the ore cells live in sightings.json (Sightings kind ORE)
         Sightings o = new Sightings();
         o.ore().saw("d", 4, 5, 6, "iron", 7);
