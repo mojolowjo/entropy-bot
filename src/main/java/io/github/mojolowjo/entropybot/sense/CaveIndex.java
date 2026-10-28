@@ -90,7 +90,7 @@ public final class CaveIndex {
             return switch (this) {
                 case SMALL -> 1;                                                 // structural: its upper edge, one minute
                 case MEDIUM -> (1 + capMinutes) / 2;                             // structural: the middle of its range
-                case LARGE -> capMinutes;
+                case LARGE -> Double.POSITIVE_INFINITY;                          // run EP: at least the cap - no bound known (the cap is the caving step's leg)
             };
         }
     }

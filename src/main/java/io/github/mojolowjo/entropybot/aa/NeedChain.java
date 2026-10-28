@@ -366,8 +366,21 @@ public final class NeedChain {
      * the hole round the feet), the surface cell to walk up to and its distance; {@code hole}: the depth is a hole round the
      * feet (a sky-open shaft) - priced as below the surface at any depth over a step.
      */
-    public record Surface(int depth, int x, int y, int z, double dist, boolean hole, int[] top, double topDist) {
+    public record Surface(int depth, int x, int y, int z, double dist, boolean hole, int[] top, double topDist, int baseTop) {
+        /** Run EP: the feet's column was not read for the base block (an old snapshot, a test's world): the assumed layer. */
+        public static final int BASE_NOT_READ = Integer.MIN_VALUE;
+        /** Run EP: the feet's column was read and holds no base block within the dig-down way's reach. */
+        public static final int BASE_NONE = Integer.MIN_VALUE + 1; // structural: a marker, never a y
+
+        public Surface(int depth, int x, int y, int z, double dist, boolean hole, int[] top, double topDist) { this(depth, x, y, z, dist, hole, top, topDist, BASE_NOT_READ); }
+
         public Surface(int depth, int x, int y, int z, double dist, boolean hole) { this(depth, x, y, z, dist, hole, null, 0); }
+
+        /**
+         * Run EP: with the feet column's first base-block layer as the loaded column shows it ({@code b}: its y; BASE_NONE:
+         * none within reach).
+         */
+        public Surface withBaseTop(int b) { return new Surface(depth, x, y, z, dist, hole, top, topDist, b); }
 
         public Surface(int depth, int x, int y, int z, double dist) { this(depth, x, y, z, dist, false); }
 
@@ -5124,6 +5137,27 @@ public final class NeedChain {
     static final int SURFACE_LAYER = 3; // game fact: SurfaceSystem's surface depth averages 3 blocks
 
     /**
+     * Run EP: how far under the feet column's top the dig-down way looks for the base block in the loaded column: a chunk
+     * section - past the surface layer's deepest (SurfaceSystem: noise x 2.75 + 3, about 6-7 at most) with a pond's or a
+     * lake's depth over it.
+     */
+    public static final int BASE_REACH = 16; // structural: a chunk section, past the surface layer and a lake's depth
+
+    /**
+     * Run EP: the first y, from the column's top block {@code top} down at most {@link #BASE_REACH}, whose block
+     * ({@code at}: y -> block id; null: not loaded) is the base block or its deep variant; Surface.BASE_NONE: none within
+     * reach (or the column not loaded there - rule 15: never assumed). Pure.
+     */
+    public static int baseTopIn(java.util.function.IntFunction<String> at, int top, String block, String deep) {
+        for (int y = top; y >= top - BASE_REACH; y--) {
+            String id = at.apply(y);
+            if (id == null) return Surface.BASE_NONE;
+            if (id.equals(block) || id.equals(deep)) return y;
+        }
+        return Surface.BASE_NONE;
+    }
+
+    /**
      * 0.39.z74 item 4 (run AD 17:10:08: charcoal's furnace needed "8 #stone_tool_materials <- explore ... (where it generates
      * is not known: stone is placed on the ground's top ...)", then the only torch way left was a 173 s coal strip): the
      * dimension's base block (its noise settings' default block, {@link io.github.mojolowjo.entropybot.aa.brain.GenWhere.Base})
@@ -5149,14 +5183,30 @@ public final class NeedChain {
             for (LootBook.Source d : drops) if (d.per() > 0 && want.has(d.item())) { gives = d.item(); break; }
         } else if (want.has(base.block())) gives = base.block();
         if (gives == null) return alts;
-        // z74 review 1: the column's own top from the surface fact (under open sky: the cell stands on the top block); what lies
-        // under the top block is not seen (rule 17: no x-ray), so the surface layer is assumed - SurfaceSystem's average, said
+        // z74 review 1: the column's own top from the surface fact (under open sky: the cell stands on the top block)
         int topBlock = s.y() - 1;
-        int ty = topBlock - SURFACE_LAYER;
-        if (base.deep() != null) ty = Math.max(ty, base.sureFrom());
+        int ty;
+        String assumed;
+        if (s.baseTop() == Surface.BASE_NONE) {
+            // run EP (rule 7): the loaded column holds no base-block layer within the way's reach - no such way, said
+            String why = shw(base.block()) + ": the feet's column holds no " + shw(base.block()) + " layer within " + BASE_REACH + " blocks of its top (the loaded column)";
+            Alt none = new Alt(shw(base.block()) + " (the base block)", () -> { c.fail = why; return null; });
+            alts.add(none);
+            return alts;
+        } else if (s.baseTop() != Surface.BASE_NOT_READ) {
+            // run EP (run EP 05:57:33: a pond at 231 62 85 - the assumed 3-deep layer said "dig down 0", the real stone 4-5
+            // down): the dig goes from the feet to the first layer of the base block AS THE LOADED COLUMN SHOWS IT (the feet
+            // stand on it), the pond's floor and the dirt over it included
+            ty = s.baseTop() + 1;
+            assumed = " (the feet's column: " + shw(base.block()) + " first at y " + s.baseTop() + ", the loaded column)";
+        } else {
+            // not read (an old snapshot, a test's world): the surface layer is assumed - SurfaceSystem's average, said
+            ty = topBlock - SURFACE_LAYER;
+            if (base.deep() != null) ty = Math.max(ty, base.sureFrom());
+            assumed = " (the column's top block at y " + topBlock + "; the surface layer under it assumed " + SURFACE_LAYER
+                    + " deep - SurfaceSystem's average, not seen)";
+        }
         int depth = feet[1] - ty, top = ty;
-        String assumed = " (the column's top block at y " + topBlock + "; the surface layer under it assumed " + SURFACE_LAYER
-                + " deep - SurfaceSystem's average, not seen)";
         String g = gives;
         alts.add(new Alt(shw(base.block()) + " (the base block, " + depth + " deep)", () -> {
             // the pickaxe its block asks for is made up here first (a station placed in the hole would have no room)
@@ -5614,12 +5664,12 @@ public final class NeedChain {
         if (!(per > 0)) return null;                                          // cave() says it, with its own reason
         int oreBlocks = (int) Math.ceil(lack / per - 1e-9);                  // structural: epsilon
         int toFind = Math.max(0, oreBlocks - freeLeft(cw.leftKeys(), c.taken).size());
-        double minutes = toFind / cw.perMin(), cap = Tuning.get("cave.exploreMinutes"), holds = cw.holdsMinutes(), max = Math.min(cap, holds);
+        double minutes = toFind / cw.perMin(), cap = Tuning.get("cave.exploreMinutes"), holds = cw.holdsMinutes(), max = holds;   // run EP: n / rate, no drop past the cap (the cap is the caving step's leg)
         if (toFind <= 0 || minutes <= max) return null;
         String yield = "yield ~" + String.format(java.util.Locale.ROOT, "%.2f", cw.perMin()) + " ore/min (" + (cw.measured() ? "measured" : "prior") + ")";
         return "known cave " + Math.round(cw.dist()) + " m at " + cw.x() + " " + cw.y() + " " + cw.z() + ", " + yield + ": " + toFind + " ore to find take ~" + Math.round(minutes) + " min, past "
-                + (holds < cap ? (cw.unseenMinutes() >= 0 ? "the ~" + Math.round(holds) + " min its unseen part holds"
-                : "the ~" + Math.round(holds) + " min a " + cw.size().name().toLowerCase(java.util.Locale.ROOT) + " cave holds") : "cave.exploreMinutes " + Math.round(cap))
+                + (cw.unseenMinutes() >= 0 ? "the ~" + Math.round(holds) + " min its unseen part holds"
+                : "the ~" + Math.round(holds) + " min a " + cw.size().name().toLowerCase(java.util.Locale.ROOT) + " cave holds")
                 + " - the next cave is asked";
     }
 
@@ -5704,14 +5754,14 @@ public final class NeedChain {
         // counted again here; the ones this way counts are taken for the rest of the chain
         List<String> free = freeLeft(cw.leftKeys(), c.taken);
         int toFind = Math.max(0, oreBlocks - free.size());
-        double minutes = toFind / cw.perMin(), cap = Tuning.get("cave.exploreMinutes"), holds = cw.holdsMinutes(), max = Math.min(cap, holds);
+        double minutes = toFind / cw.perMin(), cap = Tuning.get("cave.exploreMinutes"), holds = cw.holdsMinutes(), max = holds;   // run EP: n / rate, no drop past the cap (the cap is the caving step's leg)
         String yield = "yield ~" + String.format(java.util.Locale.ROOT, "%.2f", cw.perMin()) + " ore/min (" + (cw.measured() ? "measured" : "prior") + ")"
                 + (!free.isEmpty() ? ", " + free.size() + " seen there and left" : "");
         if (toFind > 0 && minutes > max) {
             // 0.39.z78 J6 / J6b: a known cave holds the minutes its unseen part (or, not known, its size) gives, never more than the cap
             c.fail = head + ", " + yield + ": " + toFind + " ore to find take ~" + Math.round(minutes) + " min, past "
-                    + (holds < cap ? (cw.unseenMinutes() >= 0 ? "the ~" + Math.round(holds) + " min its unseen part holds"
-                    : "the ~" + Math.round(holds) + " min a " + cw.size().name().toLowerCase(java.util.Locale.ROOT) + " cave holds") : "cave.exploreMinutes " + Math.round(cap));
+                    + (cw.unseenMinutes() >= 0 ? "the ~" + Math.round(holds) + " min its unseen part holds"
+                    : "the ~" + Math.round(holds) + " min a " + cw.size().name().toLowerCase(java.util.Locale.ROOT) + " cave holds");
             return null;
         }
         double exploreS = minutes * 60, oreS = oreBlocks * blockBreakS(c, cw.ore());  // structural: seconds per minute
@@ -5720,7 +5770,9 @@ public final class NeedChain {
         if (c.pickItem != null) c.pickWorn += oreBlocks;
         for (int i = 0; i < Math.min(oreBlocks, free.size()); i++) c.taken.merge(free.get(i), 1, Integer::sum);   // review 6: taken by this way
         if (lipAt != null) c.steps.add(new Step.ToCave(lipAt[0], lipAt[1], lipAt[2]));   // J6b run EF (1): to the lip, the entry in reach - never into the opening
-        c.steps.add(new Step.Cave(cw.x(), cw.y(), cw.z(), cw.family(), oreBlocks, (int) Math.max(1, Math.ceil(max))));   // J6b: the caving step (D12); at least a minute (the left ore's walk)
+        // run EP: the caving step's LEG - cave.exploreMinutes at most (or what the cave holds); the need unmet at its end, the
+        // order prices the cave again and enters it again until the need is met or the record is done (then it is out)
+        c.steps.add(new Step.Cave(cw.x(), cw.y(), cw.z(), cw.family(), oreBlocks, (int) Math.max(1, Math.ceil(Math.min(cap, holds)))));   // at least a minute (the left ore's walk)
         c.bag.merge(gives, Math.max(lack, (int) Math.floor(oreBlocks * per + 1e-9)), Integer::sum);  // structural: epsilon
         final String line = head + ", " + yield + " x " + oreBlocks + " ore"
                 + " -> " + s(wk.seconds() + confirmS + exploreS + oreS);

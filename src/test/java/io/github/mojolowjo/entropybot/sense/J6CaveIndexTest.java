@@ -528,7 +528,7 @@ class J6CaveIndexTest {
         assertEquals(CaveIndex.Size.LARGE, CaveIndex.Size.of(10400, walk, cap), "10400 cells: 10.04 min");
         assertEquals(1, CaveIndex.Size.SMALL.holdsMinutes(cap));
         assertEquals(5.5, CaveIndex.Size.MEDIUM.holdsMinutes(cap));
-        assertEquals(cap, CaveIndex.Size.LARGE.holdsMinutes(cap));
+        assertEquals(Double.POSITIVE_INFINITY, CaveIndex.Size.LARGE.holdsMinutes(cap), "run EP: at least the cap, no bound known (the cap is the caving step's leg)");
         assertEquals(CaveIndex.Depth.DEEPSLATE, CaveIndex.Depth.of(-1));
         assertEquals(CaveIndex.Depth.STONE, CaveIndex.Depth.of(0));
         assertEquals(CaveIndex.Depth.STONE, CaveIndex.Depth.of(62));
