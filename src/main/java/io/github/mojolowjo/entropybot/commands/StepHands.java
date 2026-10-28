@@ -955,7 +955,7 @@ public final class StepHands implements Steps.Hands {
 
     private String climb(LocalPlayer p) {
         int[] me = Jobs.here(p);
-        int depth = Jobs.underDepthKnown(p.level(), me[0], me[1], me[2]);
+        int depth = Jobs.rockOverHeadKnown(p.level(), me[0], me[1], me[2]);
         if (depth == 0) { instant = "ok: already under open sky at y " + me[1]; return null; }
         IBaritone b = Jobs.baritone();
         if (b == null) return "error: climb: baritone not loaded";
@@ -1022,7 +1022,7 @@ public final class StepHands implements Steps.Hands {
     private Car.Status climbStatus(LocalPlayer p) {
         if (instant != null) return Car.Status.done(instant);
         int[] me = Jobs.here(p);
-        int depth = Jobs.underDepthKnown(p.level(), me[0], me[1], me[2]);
+        int depth = Jobs.rockOverHeadKnown(p.level(), me[0], me[1], me[2]);
         IBaritone b = Jobs.baritone();
         if (b == null) { climbing = false; return Car.Status.failed("climb: baritone not loaded"); }
         String end = io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.climbEnd(depth, b.getCustomGoalProcess().isActive() || Core.INSTANCE.reflexes.hold(), Jobs.fmt(me));
@@ -1227,8 +1227,8 @@ public final class StepHands implements Steps.Hands {
 
     /**
      * 0.39.z68: the explore's walk up to the surface (the travel job on the chain's priced goal, as the station walk).
-     * Already under open sky (RestoreRules' under-ground rule over the leaf-free surface, Jobs.underDepth): done at once.
-     * Loader notes: vanilla Level#canSeeSky / heightmaps through Jobs.underDepth.
+     * Already on the surface (0.39.z78 EH: Jobs.belowSurface, the one reader - a sky-open shaft is not the surface): done at once.
+     * Loader notes: vanilla Level#canSeeSky / heightmaps through Jobs.belowSurface.
      */
     private String toSurface(LocalPlayer p, Step.ToSurface t) {
         int[] me = Jobs.here(p);

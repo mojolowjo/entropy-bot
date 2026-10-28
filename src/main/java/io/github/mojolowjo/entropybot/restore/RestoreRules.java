@@ -100,7 +100,7 @@ public final class RestoreRules {
      * non-leaf block over the column; sky seen or open just above = not under ground. Returns how far the first air over
      * the surface is above the feet ("surface N up"), or 0 when not under ground.
      */
-    public static int underDepth(boolean skyVisible, int surfaceY, int feetY) {
+    public static int rockOverHead(boolean skyVisible, int surfaceY, int feetY) {
         boolean sky = skyVisible || openAbove(surfaceY, feetY);
         return underground(sky, surfaceY, feetY) ? surfaceY + 1 - feetY : 0;
     }

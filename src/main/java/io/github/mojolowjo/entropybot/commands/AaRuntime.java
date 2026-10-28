@@ -569,7 +569,7 @@ public final class AaRuntime implements JobPort {
         if (p == null || mc.level == null || sensed == null) return null;
         net.minecraft.world.level.Level lv = mc.level;
         int[] me = Jobs.here(p);
-        int depth = Jobs.underDepth(lv, me[0], me[1], me[2]);
+        int depth = Jobs.rockOverHead(lv, me[0], me[1], me[2]);
         if (depth == 0) depth = Math.max(0, holeUp(lv, me));
         boolean shaft = depth > 0;
         for (int y = me[1] + 2; shaft && y <= me[1] + depth; y++) if (!openCell(lv, me[0], y, me[2])) shaft = false;
@@ -617,7 +617,7 @@ public final class AaRuntime implements JobPort {
     }
 
     /**
-     * 0.39.z68: the surface over the bot for the explore leaf (NeedChain.Surface): the depth under ground (Jobs.underDepth,
+     * 0.39.z68: the surface over the bot for the explore leaf (NeedChain.Surface): the depth below the surface (Jobs.belowSurface,
      * the one rule), then the nearest open-sky standing cell ({@link #skyCell}), else the column's leaf-free top. Null: no
      * player or the feet's chunk is not loaded (rule 15: not known, never "on the surface").
      */
@@ -629,7 +629,7 @@ public final class AaRuntime implements JobPort {
         int[] me = Jobs.here(p);
         if (!lv.hasChunkAt(new net.minecraft.core.BlockPos(me[0], me[1], me[2]))) return null;
         // run EH (rule 23): the one "below the surface" reader - rock over the head or the hole round the feet
-        int rock = Jobs.underDepth(lv, me[0], me[1], me[2]), hole = Jobs.holeDepth(lv, me[0], me[1], me[2]);
+        int rock = Jobs.rockOverHead(lv, me[0], me[1], me[2]), hole = Jobs.holeDepth(lv, me[0], me[1], me[2]);
         int depth = io.github.mojolowjo.entropybot.world.SurfaceHeight.belowSurface(rock, hole);
         boolean inHole = hole > 0 && hole >= rock;
         if (depth == 0) return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(0, me[0], me[1], me[2], 0);
@@ -1985,7 +1985,7 @@ public final class AaRuntime implements JobPort {
         if (!in.zombieSeen) in.zombieSeen = !mc.level.getEntitiesOfClass(net.minecraft.world.entity.monster.Zombie.class, p.getBoundingBox().inflate(24)).isEmpty();
         in.armorPoints = mc.player == null ? 0 : mc.player.getArmorValue();
         int[] me = Jobs.here(p);
-        in.underDepth = Jobs.underDepth(mc.level, me[0], me[1], me[2]);
+        in.underDepth = Jobs.belowSurface(mc.level, me[0], me[1], me[2]);   // 0.39.z78 J6b EH review (rule 23): the one "below the surface" reader
         in.pos = me;
         // AA_STEP3 A1: the world spawn for the death cost's walk back (client Level.getSharedSpawnPos, the level data)
         var sp = mc.level.getSharedSpawnPos();
@@ -2543,7 +2543,7 @@ public final class AaRuntime implements JobPort {
         try {
             int[] me = Jobs.here(p);
             net.minecraft.world.level.Level lv = mc.level;
-            int under = Jobs.underDepth(lv, me[0], me[1], me[2]), hole = holeUp(lv, me);
+            int under = Jobs.rockOverHead(lv, me[0], me[1], me[2]), hole = holeUp(lv, me);
             boolean out = under == 0 && hole == 0;
             // AA_ROUND3 1 (aa388): the levels are the hole's step-out level (holeExit), never "the first cell that sees the
             // sky" (every cell of a 1-wide shaft does); with ground overhead the scan to the first open sky cell
@@ -3072,7 +3072,7 @@ public final class AaRuntime implements JobPort {
 
     /** Out of the ground and out of any hole (the under-ground rule and the hole scan both say so). */
     private static boolean outNow(net.minecraft.world.level.Level lv, int[] me) {
-        return Jobs.underDepth(lv, me[0], me[1], me[2]) == 0 && holeUp(lv, me) == 0;     // review: -1 (walled in) is not out
+        return Jobs.rockOverHead(lv, me[0], me[1], me[2]) == 0 && holeUp(lv, me) == 0;     // review: -1 (walled in) is not out
     }
 
     private void clearEscape() {
@@ -3127,7 +3127,7 @@ public final class AaRuntime implements JobPort {
         try {
             int[] me = Jobs.here(p);
             net.minecraft.world.level.Level lv = mc.level;
-            boolean hole = Jobs.underDepth(lv, me[0], me[1], me[2]) == 0;     // aa372 gap: open to the sky, but at the bottom of a hole
+            boolean hole = Jobs.rockOverHead(lv, me[0], me[1], me[2]) == 0;     // aa372 gap: open to the sky, but at the bottom of a hole
             var f = surfaceFacts();
             if (f == null || f.depth() <= 0) { escapeResumeNow("already out"); return; }
             if (noPillar) f = new io.github.mojolowjo.entropybot.aa.RungOptions.SurfaceFacts(f.depth(), f.me(), false, f.throwaway(), false, f.pickaxe(),

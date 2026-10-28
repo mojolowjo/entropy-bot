@@ -125,7 +125,7 @@ public final class AaEscape {
     }
 
     /**
-     * @param depth     blocks of ground over the bot (Jobs.underDepth), or for a hole open to the sky the levels up to
+     * @param depth     blocks of rock over the bot's head (Jobs.rockOverHead: the escape's own rung, with its hole levels apart), or for a hole open to the sky the levels up to
      *                  where it can step out ({@link #holeExit}); 0 = out
      * @param shaftOpen every cell from above the head up to the surface is open (no block, no fluid)
      * @param throwaway throwaway blocks in the bag

@@ -788,7 +788,7 @@ public final class Jobs {
      * 0.39.z76 surface 2 (rule 15): the surface not known - 0 (no depth is claimed) plus the fact ({@link #surfaceNotKnown}),
      * said once per chunk; never a guessed depth.
      */
-    public static int underDepth(net.minecraft.world.level.Level lv, int x, int y, int z) {
+    public static int rockOverHead(net.minecraft.world.level.Level lv, int x, int y, int z) {
         int surface = surfaceNoLeaves(lv, x, z);
         // 0.39.z76 surface (rule 15): the surface not known - the sky test alone decides, and the reason is said once
         if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(surface)) {
@@ -797,21 +797,21 @@ public final class Jobs {
             return 0;
         }
         surfaceNotKnown = null;
-        return RestoreRules.underDepth(lv.canSeeSky(new BlockPos(x, y + 1, z)), surface, y);
+        return RestoreRules.rockOverHead(lv.canSeeSky(new BlockPos(x, y + 1, z)), surface, y);
     }
 
     /**
-     * 0.39.z77 shape review 1 (rule 15): as {@link #underDepth}, but -1 when the surface over the column is not known - for the
+     * 0.39.z77 shape review 1 (rule 15): as {@link #rockOverHead}, but -1 when the surface over the column is not known - for the
      * steps that end on "out on the surface" (the walk up, the climb), where "not known" must never read as "out".
      */
     /**
      * 0.39.z78 J6b run EH (rule 23): the ONE "below the surface" reader the planner's surface fact, the explore's under-ground
-     * test and the walk-up's done test read - SurfaceHeight.belowSurface of the rock over the head ({@link #underDepth}) and
+     * test and the walk-up's done test read - SurfaceHeight.belowSurface of the rock over the head ({@link #rockOverHead}) and
      * the hole round the feet (SurfaceHeight.holeDepth over the 8 neighbouring columns' leaf-free surfaces), so a sky-open
      * shaft counts. Loader notes: vanilla heightmaps through SurfaceHeightLive.noLeaves, Level#canSeeSky.
      */
     public static int belowSurface(net.minecraft.world.level.Level lv, int x, int y, int z) {
-        return io.github.mojolowjo.entropybot.world.SurfaceHeight.belowSurface(underDepth(lv, x, y, z), holeDepth(lv, x, y, z));
+        return io.github.mojolowjo.entropybot.world.SurfaceHeight.belowSurface(rockOverHead(lv, x, y, z), holeDepth(lv, x, y, z));
     }
 
     /** Run EH: SurfaceHeight.holeDepth at x y z from the 8 neighbouring columns' leaf-free surfaces. */
@@ -824,12 +824,12 @@ public final class Jobs {
         return io.github.mojolowjo.entropybot.world.SurfaceHeight.holeDepth(y, n);
     }
 
-    public static int underDepthKnown(net.minecraft.world.level.Level lv, int x, int y, int z) {
+    public static int rockOverHeadKnown(net.minecraft.world.level.Level lv, int x, int y, int z) {
         if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(surfaceNoLeaves(lv, x, z))) return -1;
-        return underDepth(lv, x, y, z);
+        return rockOverHead(lv, x, y, z);
     }
 
-    /** 0.39.z76 surface 2: the fact of the last {@link #underDepth} answer whose surface was not known (null: it was known). */
+    /** 0.39.z76 surface 2: the fact of the last {@link #rockOverHead} answer whose surface was not known (null: it was known). */
     private static volatile String surfaceNotKnown;
 
     public static String surfaceNotKnown() { return surfaceNotKnown; }

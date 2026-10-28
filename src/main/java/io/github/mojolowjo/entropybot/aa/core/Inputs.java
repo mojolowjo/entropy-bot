@@ -51,7 +51,11 @@ public final class Inputs {
     /** The level's day time (ticks), -1 unknown. */
     public long dayTime = -1;
     public boolean night, thunder, underGround, ownerOnline;
-    /** 0.36.3: blocks of ground over the bot (Jobs.underDepth, leaves not counted; 0 = at the surface). Not in the vector. */
+    /**
+     * 0.36.3: how far the bot stands below the surface - 0.39.z78 J6b EH review (rule 23): Jobs.belowSurface, the ONE reader
+     * (the rock over the head, or the hole round the feet: a sky-open shaft counts; leaves not counted; 0 = on the surface).
+     * The brain's exposure, the trip's under-ground key, the night work, the shelter and the ways read it. Not in the vector.
+     */
     public int underDepth;
     /** Night fix: the bot's armour points (0 = none; early game). Not in the vector. */
     public int armorPoints;

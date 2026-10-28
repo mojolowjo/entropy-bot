@@ -49,6 +49,9 @@ import java.util.function.BiFunction;
  * Pure (JUnit: Z77PlaybookTest, Z77RoundFixTest, Z77NoWayTest, Z77PendingTest, Z77CarryTest, Z77TripTest). Loader notes: none (the world, the ore-per-slab fact and the running step come from AaRuntime).
  */
 public final class BatchWay {
+    /** 0.39.z78 J6b EH review: the trip is under ground - in.underDepth (Jobs.belowSurface, the one reader) at least aaLadder.surfaceDepth. Pure. */
+    static boolean under(io.github.mojolowjo.entropybot.aa.core.Inputs in) { return in != null && in.underDepth >= io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth(); }
+
     private BatchWay() {}
 
     /** Blackboard fact: the adapter's ore per slab at a Y ({@code BiFunction<String, Integer, Double>}: need word, y; NaN: not known). */
@@ -196,7 +199,7 @@ public final class BatchWay {
     /**
      * The trip's key (pure): the batch, its open orders, the place, the batch's holds (the bag's part: {@link #bagPart}). The
      * place: x and z in failures.moved cells and where the legs are placed from - on the surface or under ground ({@code under}:
-     * the sensed depth over the feet, Jobs.underDepth, at least aaLadder.surfaceDepth, as Playbook.facts reads it). 0.39.z77
+     * the sensed depth below the surface, Jobs.belowSurface (0.39.z78 EH review: the one reader), at least aaLadder.surfaceDepth, as Playbook.facts reads it). 0.39.z77
      * carry (run CB 16:04:24-16:05:34: the trip re-priced at every Y the bot passed, "here at y -20", "-16", "-15", ...): the
      * feet's Y is no fact the trip depends on - only a leg's place changing (the surface <-> under ground) re-prices it, once.
      */
@@ -346,7 +349,7 @@ public final class BatchWay {
         held.addAll(others.keySet());
         held.addAll(WorldFacts.of(bb).heldAt(bb).keySet());     // 0.39.z77 world 3: by state (hysteresis), never the raw distance
         held.addAll(Goals.stationHolds(bb).keySet());           // 0.39.z78 J5 slice 1: the stations held (the one store)
-        boolean under = bb.in != null && bb.in.underDepth >= io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth();
+        boolean under = under(bb.in);
         String base = tripKeyOf(tk, open, pos, under, held);
         Trip kept = TRIPS.get(tk);
         Held h = waitTest ? hold(bb, tk, run, runner, kept) : Held.NONE;
