@@ -301,12 +301,28 @@ public final class StripOrder {
      * 0.39.z78 J5 1b (D5, rule 16; run DU 16:31:55-58: the bot's own band table on the strip's south line blocked that
      * heading as "a block Baritone will not break"): one break authority - a block on Baritone's blocksToAvoidBreaking (id
      * {@code id} at {@code c}) blocks a strip start only when BreakPolicy refuses it ({@code v}: BreakPolicy.structure for
-     * the cell - keep-out / no-break absolute, placed by me open, an area's break-structures tag open). Its structure fact not
-     * loaded yet: not known to be blocked (null, open: the strip says more - rule 15). Pure.
+     * the cell - placed by me open, an area's break-structures tag open). Its structure fact not loaded yet: not known to be
+     * blocked (null, open: the strip says more - rule 15). Keep-out / no-break come first, in {@link #breakRefused}. Pure.
      */
     public static String avoidedRefused(String id, int[] c, io.github.mojolowjo.entropybot.guard.BreakPolicy.Verdict v) {
         if (v == null || v.allowed() || io.github.mojolowjo.entropybot.guard.BreakPolicy.structureNotLoaded(v)) return null;
         return id + " at " + c[0] + " " + c[1] + " " + c[2] + ", which the break policy refuses: " + v.reason();
+    }
+
+    /**
+     * j5s1 re-review (rule 16): why the strip may not break block {@code id} at {@code c}, first cell of a heading - a
+     * keep-out / no-break box there FIRST, whatever the structure fact (BreakPolicy.structure answers "not a structure"
+     * before its box check, so a box must not wait on it); then, for a block on blocksToAvoidBreaking ({@code avoided}),
+     * BreakPolicy.structure ({@link #avoidedRefused}). Null: not refused here (the unbreakable test follows). Pure.
+     */
+    public static String breakRefused(String id, int[] c, io.github.mojolowjo.entropybot.guard.Policy p, String dim,
+                                      boolean avoided, io.github.mojolowjo.entropybot.guard.BreakPolicy.Structure s, boolean placedByMe) {
+        var pol = p == null ? io.github.mojolowjo.entropybot.guard.Policy.EMPTY : p;
+        var box = pol.protectAt(dim, c[0], c[1], c[2]);
+        if (box != null) return id + " at " + c[0] + " " + c[1] + " " + c[2] + ", in " + (box.name == null ? "box" : box.name)
+                + " (" + box.type.word() + "): never broken there";
+        if (!avoided) return null;
+        return avoidedRefused(id, c, io.github.mojolowjo.entropybot.guard.BreakPolicy.structure(pol, dim, c[0], c[1], c[2], s, placedByMe));
     }
 
     /**

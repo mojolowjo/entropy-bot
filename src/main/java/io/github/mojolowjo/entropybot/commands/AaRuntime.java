@@ -893,9 +893,9 @@ public final class AaRuntime implements JobPort {
 
     /**
      * 0.39.z62 item 1b: why a strip from the feet {@code me} in heading {@code h} is blocked at its first cell (feet and head
-     * height): a block on Baritone's blocksToAvoidBreaking (a station by default) that BreakPolicy refuses (0.39.z78 J5 1b:
-     * one break authority - the bot's own table in its own area is no longer a block "Baritone will not break"; keep-out /
-     * no-break stay absolute) or one no tool breaks (destroy speed below 0); null: open (an unloaded cell is not known to be
+     * height): a block inside a keep-out / no-break box (first, whatever its structure fact), a block on Baritone's
+     * blocksToAvoidBreaking (a station by default) that BreakPolicy.structure refuses (0.39.z78 J5 1b: one break authority -
+     * the bot's own table in its own area is no longer a block "Baritone will not break") or one no tool breaks (destroy speed below 0); null: open (an unloaded cell is not known to be
      * blocked: open, the strip says more). Loader notes: vanilla Level#getBlockState / BlockState#getDestroySpeed, Baritone's
      * Settings; the structure fact via PolicyRuntime.structureFacts (client level).
      */
@@ -907,11 +907,13 @@ public final class AaRuntime implements JobPort {
             if (!lv.isLoaded(q)) return null;
             var st = lv.getBlockState(q);
             String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString().replaceFirst("^minecraft:", "");
-            if (avoid.contains(st.getBlock())) {
-                var f = io.github.mojolowjo.entropybot.guard.PolicyRuntime.structureFacts(lv, gdim, q);
-                String refused = io.github.mojolowjo.entropybot.aa.brain.StripOrder.avoidedRefused(id, c,
-                        io.github.mojolowjo.entropybot.guard.BreakPolicy.structure(io.github.mojolowjo.entropybot.guard.Guard.INSTANCE.core.policy(),
-                                gdim, c[0], c[1], c[2], f.structure(), f.placedByMe()));
+            if (!st.isAir()) {
+                // j5s1 re-review (rule 16): keep-out / no-break first, whatever the structure fact; then the structure rule
+                // for a blocksToAvoidBreaking block (StripOrder.breakRefused)
+                boolean avoided = avoid.contains(st.getBlock());
+                var f = avoided ? io.github.mojolowjo.entropybot.guard.PolicyRuntime.structureFacts(lv, gdim, q) : null;
+                String refused = io.github.mojolowjo.entropybot.aa.brain.StripOrder.breakRefused(id, c, io.github.mojolowjo.entropybot.guard.Guard.INSTANCE.core.policy(),
+                        gdim, avoided, f == null ? null : f.structure(), f != null && f.placedByMe());
                 if (refused != null) return refused;
             }
             if (!st.isAir() && st.getDestroySpeed(lv, q) < 0) return id + " at " + c[0] + " " + c[1] + " " + c[2] + " cannot be broken";

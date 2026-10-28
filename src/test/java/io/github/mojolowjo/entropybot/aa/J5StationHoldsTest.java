@@ -193,5 +193,28 @@ class J5StationHoldsTest {
 
         assertNull(StripOrder.avoidedRefused("crafting_table", table, BreakPolicy.structure(Policy.EMPTY, OW, table[0], table[1], table[2], BreakPolicy.Structure.NOT_LOADED, true)),
                 "its structure fact not loaded: not known to be blocked (rule 15)");
+        // the start's own answer (AaRuntime.startBlocked -> StripOrder.breakRefused): the bot's own avoided table, no box: open
+        assertNull(StripOrder.breakRefused("crafting_table", table, Policy.EMPTY, OW, true, BreakPolicy.Structure.YES, true));
+        assertNull(StripOrder.breakRefused("stone", table, Policy.EMPTY, OW, false, null, false), "a plain block, no box: open");
+    }
+
+    /**
+     * j5s1 re-review (rule 16): keep-out / no-break block the strip start whatever the structure fact - BreakPolicy.structure
+     * answers "not a structure" (structure NO) before its box check, so the box is asked first.
+     */
+    @Test
+    void du3_aTableInAKeepOutOrNoBreakBoxBlocksTheStartWhateverItsStructureFact() {
+        int[] feet = {-373, 16, 351}, table = {-373, 16, 352};
+        Policy keepOut = Policy.parse("{\"areas\":[{\"name\":\"vault\",\"type\":\"keep-out\",\"x1\":-380,\"y1\":0,\"z1\":340,\"x2\":-360,\"y2\":40,\"z2\":360}],\"protect\":[]}");
+        Policy noBreak = Policy.parse("{\"areas\":[{\"name\":\"shrine\",\"type\":\"no-break\",\"x1\":-380,\"y1\":0,\"z1\":340,\"x2\":-360,\"y2\":40,\"z2\":360}],\"protect\":[]}");
+        for (Policy p : List.of(keepOut, noBreak)) {
+            Function<int[], String> cell = c -> java.util.Arrays.equals(c, table)
+                    ? StripOrder.breakRefused("crafting_table", c, p, OW, true, BreakPolicy.Structure.NO, true)
+                    : null;
+            String why = StripOrder.startBlocked(feet, "south", cell);
+            assertNotNull(why, "the bot's own table (structure NO) in a box: blocked at the start");
+            assertTrue(why.startsWith("crafting_table at -373 16 352, in ") && why.endsWith("): never broken there"), why);
+            assertNotNull(StripOrder.breakRefused("stone", table, p, OW, false, null, false), "any block in the box: blocked");
+        }
     }
 }
