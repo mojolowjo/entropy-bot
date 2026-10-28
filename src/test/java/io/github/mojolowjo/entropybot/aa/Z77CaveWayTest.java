@@ -125,7 +125,7 @@ class Z77CaveWayTest {
         assertTrue(ExploreRules.untilEnds(known, null, 1) && ExploreRules.askAgain(known, null), "new since the start: the order is priced again");
         Chain replan = NeedChain.resolve("raw_iron", 3, after);
         assertTrue(replan.ok() && !replan.explore() && caveMined(replan), "the re-plan takes the cave way: " + replan.why());
-        assertTrue(replan.steps().get(0) instanceof Step.Walk k && k.x() == 20 && k.y() == 21 && k.z() == -10, replan.steps().toString());
+        assertTrue(replan.steps().get(0) instanceof Step.ToCave k && k.x() == 20 && k.y() == 21 && k.z() == -10, "J6b run EF: the walk to the lip: " + replan.steps());
     }
 
     /** A cave the order dropped (no path to its mouth) or one only a candidate ends no explore; a seen source still does, first. */

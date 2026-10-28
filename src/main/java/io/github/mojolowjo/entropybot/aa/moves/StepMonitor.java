@@ -57,6 +57,7 @@ public final class StepMonitor {
             case Step.ToStrip w -> Kind.WALK;
             case Step.ToBand w -> Kind.WALK;
             case Step.ToStation w -> Kind.WALK;
+            case Step.ToCave w -> Kind.WALK;                 // J6b run EF: the walk to a cave's lip
             case Step.ToSurface w -> Kind.WALK;
             case Step.StripBack w -> Kind.WALK;
             case Step.Climb w -> Kind.WALK;

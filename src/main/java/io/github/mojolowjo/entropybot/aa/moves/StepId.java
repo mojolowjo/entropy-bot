@@ -21,6 +21,7 @@ public record StepId(String kind, String target) {
         return switch (s) {
             case Step.Walk w -> new StepId("walk", cell(w.x(), w.y(), w.z()) + " near " + w.near());
             case Step.ToStation w -> new StepId("toStation", w.kind() + " " + w.name() + " " + cell(w.x(), w.y(), w.z()));
+            case Step.ToCave w -> new StepId("toCave", cell(w.x(), w.y(), w.z()));
             case Step.MineAt m -> new StepId("mineAt", m.family() + " " + cell(m.x(), m.y(), m.z()) + (m.dig() ? " dig" : " walk"));
             case Step.Mine m -> new StepId("mine", m.family() + " " + m.n() + " " + m.how() + " " + m.minutes() + "m");
             case Step.Cave k -> new StepId("cave", k.family() + " " + k.n() + " " + k.x() + " " + k.y() + " " + k.z() + " " + k.minutes() + "m");

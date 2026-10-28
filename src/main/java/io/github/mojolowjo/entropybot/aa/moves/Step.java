@@ -59,6 +59,16 @@ public sealed interface Step {
      * {@code minutes} inside - the caving step (StepHands over Baritone): its record's nearest branch walked, seen ore in
      * reach mined by the vein; it ends on the need met, the cave done, the minutes, or Baritone's no progress.
      */
+    /**
+     * 0.39.z78 J6b run EF (00:16:31 "goto -45 60 78: couldn't get there (goal is walled in ...)", 00:18:30 "ended short at
+     * -45 60 77" twice: the chain's Step.Walk went INTO the opening cell, an air cell at the rim with nothing to stand on):
+     * the walk to a known cave's lip - done once its entry cell x y z is within reach from where the bot stands (the
+     * fork's reach goal, GoalReachBlock), never a goto into the opening. The caving step enters from there.
+     */
+    record ToCave(int x, int y, int z) implements Step {
+        public String text() { return "goto the cave's lip at " + x + " " + y + " " + z + " (its entry in reach)"; }
+    }
+
     record Cave(int x, int y, int z, String family, int n, int minutes) implements Step {
         public String text() { return "cave " + family + " " + n + " at " + x + " " + y + " " + z + (minutes > 0 ? " for " + minutes + " min" : ""); }
     }

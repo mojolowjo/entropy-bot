@@ -971,9 +971,17 @@ public final class AaRuntime implements JobPort {
             double unseen = f == null || f.cellCount() <= 0 ? -1
                     : f.unseen() / (double) io.github.mojolowjo.entropybot.sense.CaveIndex.CROSS_SECTION / io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps() / 60.0;   // structural: seconds a minute
             return new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(k.x(), k.y(), k.z(), Math.sqrt(Jobs.distSq(me, new int[]{k.x(), k.y(), k.z()})),
-                    ore, fam, rate, walked || sg.ore().caveMinutes() > 0, k.size(), unseen, leftKeys(sg.caveLeft(dim, k.x(), k.y(), k.z(), fam)));
+                    ore, fam, rate, walked || sg.ore().caveMinutes() > 0, k.size(), unseen, leftKeys(sg.caveLeft(dim, k.x(), k.y(), k.z(), fam)), lips(pass, k, me));
         }
         return null;
+    }
+
+    /** J6b run EF (3): the cave's entry first, then up to 3 other openings of its volume (the next lips to try). */
+    private static List<int[]> lips(io.github.mojolowjo.entropybot.sense.ChunkPass pass, io.github.mojolowjo.entropybot.sense.Sightings.KnownCave k, int[] me) {
+        List<int[]> out = new ArrayList<>();
+        out.add(new int[]{k.x(), k.y(), k.z()});
+        out.addAll(pass.caveIndex().otherOpenings(k.x(), k.y(), k.z(), me[0], me[1], me[2], 3));   // structural: a few other openings, nearest first
+        return out;
     }
 
     /** J6b review 6: the record's left ore cells as the planner's spot keys ("x,y,z", NeedChain.Spot.key: what a collect way takes). */

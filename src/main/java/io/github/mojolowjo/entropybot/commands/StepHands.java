@@ -180,6 +180,7 @@ public final class StepHands implements Steps.Hands {
         return switch (s) {
             case Step.Walk w -> travel;
             case Step.ToStation t -> travel;
+            case Step.ToCave t -> travel;
             case Step.ToSurface t -> travel;
             case Step.StripBack k -> travel;
             case Step.Explore k -> Mining.exploreWalking();
@@ -355,6 +356,7 @@ public final class StepHands implements Steps.Hands {
             return switch (s) {
                 case Step.Walk w -> walk(w);
                 case Step.ToStation t -> toStation(t);     // 0.39.z65 item 1: the chain's priced walk
+                case Step.ToCave t -> toCave(p, t);         // J6b run EF: to the cave's lip (a reach goal)
                 case Step.ToSurface t -> toSurface(p, t);  // 0.39.z68: the explore's priced walk up
                 case Step.ChopTree t -> chop(p, t);
                 case Step.Collect k -> collect(p, k);
@@ -423,6 +425,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.Climb k -> climbStatus(p);
                 case Step.AwaitPaths a -> standStatus(a);     // 0.39.z76 send-back 3 (rule 22)
                 case Step.ToStation t -> toStationStatus(t);
+                case Step.ToCave t -> toCaveStatus(p, t);
                 case Step.ToSurface t -> toSurfaceStatus(p, t);
                 case Step.Walk w -> walkStatus(w);
                 default -> requestStatus();
@@ -467,6 +470,11 @@ public final class StepHands implements Steps.Hands {
                 IBaritone b = Jobs.baritone();
                 if (b != null) Jobs.cancel(b);
                 caveEnd(io.github.mojolowjo.entropybot.cave.CaveWalk.End.STOPPED, why);   // review: an owner stop or a re-plan, its own end
+            }
+            if (step instanceof Step.ToCave && lip != null) {
+                lip = null;
+                IBaritone b = Jobs.baritone();
+                if (b != null) Jobs.cancel(b);
             }
             if (step instanceof Step.Climb && climbing) {
                 climbing = false;
@@ -659,6 +667,86 @@ public final class StepHands implements Steps.Hands {
         Car.Status st = vein.poll(p.level());
         if (st.state() != Car.State.RUNNING) vein = null;
         return st;
+    }
+
+    // ---- 0.39.z78 J6b run EF: the walk to a known cave's lip - its entry within reach, never a goto into the opening ----
+
+    /** The running lip walk's hold (null: none). */
+    private io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.Held lip;
+    private boolean lipReachGoal;
+    private long lipGoalAt;
+
+    /**
+     * The lip walk's start: already in reach - done. Else Baritone's goal is the fork's reach goal on the entry cell (a
+     * standable cell, not the entry nor the cell over it, the entry's centre within reach of the eye, a face of it seen),
+     * built on the game thread from the loaded world; its chunk not loaded yet, or no such cell: near the entry (GoalNear 3)
+     * until the reach goal can be built. The cave way's lease (breaking and placing as priced). Loader notes: the fork's
+     * GoalReachBlock (api), Baritone's custom goal process; vanilla Level#clip, BlockState#isCollisionShapeFullBlock.
+     */
+    private String toCave(LocalPlayer p, Step.ToCave t) {
+        int[] me = Jobs.here(p), at = {t.x(), t.y(), t.z()};
+        if (io.github.mojolowjo.entropybot.cave.ExploreRules.withinReach(me, at)) { instant = "ok: at the cave's lip, its entry " + Jobs.fmt(at) + " in reach"; return null; }
+        IBaritone b = Jobs.baritone();
+        if (b == null) return "error: " + t.text() + ": baritone not loaded";
+        b.getCustomGoalProcess().setGoalAndPath(lipGoal(p, at));
+        lip = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.start(new io.github.mojolowjo.entropybot.cave.ExploreRules.Target(t.x(), t.z()), Core.INSTANCE.tick(), me,
+                io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed());
+        LOG.info("[entropybot] cave: to the lip of the known cave at {} ({})", Jobs.fmt(at), lipReachGoal ? "the reach goal: a standable cell its entry is in reach from" : "near it until its chunk is loaded");
+        return null;
+    }
+
+    private baritone.api.pathing.goals.Goal lipGoal(LocalPlayer p, int[] at) {
+        var lv = p.level();
+        BlockPos q = new BlockPos(at[0], at[1], at[2]);
+        lipReachGoal = false;
+        if (!lv.isLoaded(q)) return new GoalNear(q, 3);                          // structural: near the entry until it loads
+        var goal = new baritone.api.pathing.goals.GoalReachBlock(q, io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH, 1.62,   // game fact: eye height 1.62
+                (x, y, z) -> standable(lv, x, y, z),
+                (x, y, z) -> {
+                    var from = new net.minecraft.world.phys.Vec3(x + 0.5, y + 1.62, z + 0.5);   // game fact: eye height 1.62
+                    var to = new net.minecraft.world.phys.Vec3(at[0] + 0.5, at[1] + 0.5, at[2] + 0.5);
+                    var r = lv.clip(new net.minecraft.world.level.ClipContext(from, to, net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.NONE, p));
+                    return r.getType() == net.minecraft.world.phys.HitResult.Type.MISS;    // the eye sees the entry's air
+                });
+        if (goal.isEmpty()) return new GoalNear(q, 3);                           // structural: no cell yet - nearer first
+        lipReachGoal = true;
+        return goal;
+    }
+
+    /** A cell a player can stand in: its feet and head open (no collision), something solid under it. */
+    private static boolean standable(net.minecraft.world.level.Level lv, int x, int y, int z) {
+        BlockPos f = new BlockPos(x, y, z), h = f.above(), u = f.below();
+        if (!lv.isLoaded(f)) return false;
+        return lv.getBlockState(f).getCollisionShape(lv, f).isEmpty() && lv.getBlockState(h).getCollisionShape(lv, h).isEmpty()
+                && !lv.getBlockState(u).getCollisionShape(lv, u).isEmpty() && lv.getFluidState(f).isEmpty();
+    }
+
+    /** Done with the entry in reach; Baritone's no progress: the walk's fact (FactChange.walkShort on the ENTRY - the planner tries the cave's next opening). */
+    private Car.Status toCaveStatus(LocalPlayer p, Step.ToCave t) {
+        if (instant != null) return Car.Status.done(instant);
+        int[] me = Jobs.here(p), at = {t.x(), t.y(), t.z()};
+        IBaritone b = Jobs.baritone();
+        if (b == null || lip == null) return Car.Status.failed(t.text() + ": no walk state");
+        if (io.github.mojolowjo.entropybot.cave.ExploreRules.withinReach(me, at)) {
+            Jobs.cancel(b);
+            lip = null;
+            LOG.info("[entropybot] cave: at the lip of the known cave at {} (feet {}, its entry in reach)", Jobs.fmt(at), Jobs.fmt(me));
+            return Car.Status.done("ok: at the cave's lip at " + Jobs.fmt(me) + ", its entry " + Jobs.fmt(at) + " in reach");
+        }
+        lip = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.look(lip, Core.INSTANCE.tick(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(),
+                b.getPathingBehavior().getCurrent() != null, at);
+        if (lip.state() == io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.State.FAILED) {
+            String why = "the walk to the cave's lip at " + Jobs.fmt(at) + ": " + lip.why();
+            lip = null;
+            Jobs.cancel(b);
+            io.github.mojolowjo.entropybot.aa.moves.FactChange.walkShort(at, me, why);   // run EF (3): the hold names this entry; the next plan tries another opening
+            return Car.Status.failed(why);
+        }
+        if ((Jobs.idle(b) || (!lipReachGoal && p.level().isLoaded(new BlockPos(at[0], at[1], at[2])))) && Core.INSTANCE.tick() - lipGoalAt >= 20) {     // structural: once a second in ticks
+            b.getCustomGoalProcess().setGoalAndPath(lipGoal(p, at));
+            lipGoalAt = Core.INSTANCE.tick();
+        }
+        return Car.Status.running("to the cave's lip at " + Jobs.fmt(at));
     }
 
     // ---- 0.39.z78 J6b (D12): the caving step - a KNOWN cave walked on its record (the one store), Baritone the car ----

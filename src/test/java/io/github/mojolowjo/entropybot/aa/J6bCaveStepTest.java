@@ -173,6 +173,41 @@ class J6bCaveStepTest {
         assertEquals(ctl.seconds(), c.seconds(), 1e-9, "the collect priced as with no cave at all: its 3 ore all counted - " + c.why());
     }
 
+    /**
+     * Run EF (1)+(2): an opening cell above a 4-block drop, the bot at the lip - the walk is done there (the entry in
+     * reach; never a goto into the opening), and the caving step goes on down the drop to its first branch (Baritone
+     * digs or descends, the cave way's lease).
+     */
+    @Test
+    void anOpeningAboveADrop_theWalkIsDoneAtTheLip_theCaveStepDescends() {
+        int[] entry = {5, 64, 5}, lip = {4, 64, 5};                     // the lip: the ground beside the hole, feet at y 64
+        assertTrue(ExploreRules.withinReach(lip, entry), "the entry in reach from the lip: the walk is done");
+        assertFalse(ExploreRules.withinReach(new int[]{-2, 64, 5}, entry), "7 blocks off: walking");
+        Sightings s = new Sightings();
+        s.knowCave("d", new CaveIndex.Known(5, 64, 5, CaveIndex.Size.SMALL, CaveIndex.Depth.HIGH, List.of(Sightings.cell(5, 63, 5))), 1);
+        List<Long> cells = new java.util.ArrayList<>();
+        for (int y = 60; y <= 64; y++) cells.add(Sightings.cell(5, y, 5));          // the 4-block drop under the opening
+        for (int x = 6; x <= 30; x++) cells.add(Sightings.cell(x, 60, 5));         // the tunnel at its foot
+        s.caveCells("d", 5, 64, 5, cells);
+        s.caveStood("d", 5, 64, 5, lip[0], lip[1], lip[2], 1);
+        var next = CaveWalk.next(0, 3, 0, 10, s.caveFacts("d", 5, 64, 5), s.caveFrontier("d", 5, 64, 5), List.of(), lip, 4.5);
+        assertTrue(next instanceof CaveWalk.Goto, "from the lip: into the cave - " + next);
+        assertTrue(((CaveWalk.Goto) next).cell()[1] <= 60, "down the drop: " + java.util.Arrays.toString(((CaveWalk.Goto) next).cell()));
+    }
+
+    /** Run EF (3): a cave whose first opening is held tries its next opening; only every opening held drops the cave. */
+    @Test
+    void anOpeningHeld_theNextOpeningIsTried_beforeTheWholeCave() {
+        CaveWay cw = new CaveWay(-45, 60, 78, 1, "minecraft:iron_ore", "iron", 0.5, false, CaveIndex.Size.LARGE, 8, List.of(),
+                List.of(new int[]{-45, 60, 78}, new int[]{-40, 58, 90}));
+        CaveWay next = cw.without(k -> k.equals(CaveWay.keyOf(new int[]{-45, 60, 78})));
+        assertNotNull(next);
+        assertArrayEquals(new int[]{-40, 58, 90}, next.targets().get(0), "the next opening");
+        assertEquals(List.of(-45, 60, 78), List.of(next.x(), next.y(), next.z()), "the record's key stays the known cave's entry");
+        assertNull(cw.without(k -> true), "every opening held: no cave way");
+        assertEquals("known cave -40,58,90", CaveWay.keyOf(new int[]{-40, 58, 90}), "the hold names the cell");
+    }
+
     /** Item 5 (a): an unexplored chunk is walked to as its surface cell; not loaded yet: the column goal. */
     @Test
     void noCreditedOpening_anUnexploredSurfaceCell() {

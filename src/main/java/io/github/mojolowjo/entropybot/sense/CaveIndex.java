@@ -880,6 +880,25 @@ public final class CaveIndex {
         return new int[]{rim, credits.getOrDefault(root, Set.of()).size(), known.contains(root) ? 1 : 0};
     }
 
+    /**
+     * J6b run EF (3): the other openings of the volume x y z is in - each opening's cell nearest fx fy fz, nearest first, at
+     * most {@code max}, the opening holding x y z left out (the cave way's next lips when the first is unreachable).
+     */
+    public synchronized List<int[]> otherOpenings(int x, int y, int z, int fx, int fy, int fz, int max) {
+        fresh();
+        int r = runAt(x, y, z);
+        if (r < 0) return List.of();
+        measure();
+        long at = cell(x, y, z);
+        List<int[]> out = new ArrayList<>();
+        for (Opening o : byRoot.getOrDefault(find(r), List.of())) {
+            if (o.cells().contains(at)) continue;
+            out.add(nearest(o, fx + 0.5, fy + 0.5, fz + 0.5));
+        }
+        out.sort((a, b) -> Long.compare(d2(a, fx, fy, fz), d2(b, fx, fy, fz)));
+        return out.size() > max ? new ArrayList<>(out.subList(0, max)) : out;
+    }
+
     /** One cave of {@link #truth}: its opening cell nearest the bot, size bucket, depth band, rim and air credits, known. */
     public record Truth(int x, int y, int z, Size size, Depth depth, int rim, int air, boolean known, int root) {}
 

@@ -33,7 +33,7 @@ class J6CaveWayTest {
         Chain c = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(cw));
         assertTrue(c.ok() && !c.explore(), c.why());
         assertTrue(Z77CaveWayTest.caveMined(c), c.steps().toString());
-        assertTrue(c.steps().contains(new Step.Walk(20, 21, -10, 0)), "the walk to its entry: " + c.steps());
+        assertTrue(c.steps().contains(new Step.ToCave(20, 21, -10)), "J6b run EF: the walk to its lip (the entry in reach): " + c.steps());
         Step.Cave m = (Step.Cave) c.steps().stream().filter(s -> s instanceof Step.Cave).findFirst().orElseThrow();
         assertEquals((int) Math.ceil(Math.min(Tuning.get("cave.exploreMinutes"), cw.holdsMinutes())), m.minutes(), "the minutes: its size or the cap");
         assertEquals(java.util.List.of(20, 21, -10), java.util.List.of(m.x(), m.y(), m.z()), "the caving step at the known cave's entry");
@@ -63,7 +63,8 @@ class J6CaveWayTest {
             }
         for (var c : CaveWay.class.getRecordComponents())
             // J6b review 6: leftKeys are the SEEN ORE spots left there (what a collect way sees anyway, by sight), never the cave's cells
-            assertFalse(!c.getName().equals("leftKeys") && (java.util.Collection.class.isAssignableFrom(c.getType()) || c.getType().isArray()), "CaveWay." + c.getName() + " is a list");
+            // J6b run EF (3): entries are the cave's OPENING cells to walk to the lip of (walk targets), never its volume's cells
+            assertFalse(!c.getName().equals("leftKeys") && !c.getName().equals("entries") && (java.util.Collection.class.isAssignableFrom(c.getType()) || c.getType().isArray()), "CaveWay." + c.getName() + " is a list");
         assertTrue(java.util.Arrays.stream(io.github.mojolowjo.entropybot.sense.Sightings.KnownCave.class.getRecordComponents()).anyMatch(c -> c.getType() == CaveIndex.Size.class));
         assertTrue(java.util.Arrays.stream(io.github.mojolowjo.entropybot.sense.Sightings.KnownCave.class.getRecordComponents()).anyMatch(c -> c.getType() == CaveIndex.Depth.class));
     }

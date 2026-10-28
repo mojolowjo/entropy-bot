@@ -106,9 +106,32 @@ public final class NeedChain {
     static final String CAVE_KEY = "known cave ";
 
     public record CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured,
-                          io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys) {
+                          io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys, List<int[]> entries) {
         public CaveWay {
             leftKeys = leftKeys == null ? List.of() : List.copyOf(leftKeys);
+            entries = entries == null ? List.of() : List.copyOf(entries);
+        }
+
+        public CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured,
+                       io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys) {
+            this(x, y, z, dist, ore, family, perMin, measured, size, unseenMinutes, leftKeys, List.of());
+        }
+
+        /**
+         * J6b run EF (3): the cells the walk may go to the lip of, in order - the known cave's entry first, then the other
+         * openings of its volume (a hold on one names that cell; the next is tried before the whole cave is held).
+         */
+        public List<int[]> targets() { return entries.isEmpty() ? List.of(new int[]{x, y, z}) : entries; }
+
+        /** The hold key of one walk target (rule 23 (1): the hold names the cell). */
+        public static String keyOf(int[] t) { return CAVE_KEY + t[0] + "," + t[1] + "," + t[2]; }
+
+        /** The way with only the targets not held ({@code held}: a key the order holds); null: every one held. */
+        public CaveWay without(java.util.function.Predicate<String> held) {
+            List<int[]> left = new ArrayList<>();
+            for (int[] t : targets()) if (!held.test(keyOf(t))) left.add(t);
+            if (left.isEmpty()) return null;
+            return new CaveWay(x, y, z, dist, ore, family, perMin, measured, size, unseenMinutes, leftKeys, left);
         }
 
         /** J6b: the ore cells of the family seen there and left (their spot keys "x,y,z": the same keys a collect way takes). */
@@ -556,7 +579,7 @@ public final class NeedChain {
             Function<String, CaveWay> cv = cave;
             Function<String, CaveWay> caveLess = word -> {             // 0.39.z44: a mouth with no path is dropped for the order
                 CaveWay r = cv.apply(word);
-                return r != null && keyWhy.containsKey(r.key()) ? null : r;
+                return r == null ? null : r.without(keyWhy::containsKey);       // J6b run EF (3): each opening held on its own
             };
             // 0.39.z65 review 1: a known station whose priced walk failed in this order ("station at x y z") is out for the
             // order: no position, and not "near" either (the chain then prices placing a new one here)
@@ -5523,11 +5546,20 @@ public final class NeedChain {
             if (c.fail != null) return null;
             if (c.stuck) return head + " (after " + pre + ")";
         }
-        Walked wk = walk(c, cw.x(), cw.y(), cw.z(), cw.dist());
-        if (c.fail != null) {
-            if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreach(cw.key(), wk.fail());
-            return null;
+        // J6b run EF (3): the walk to the lip of the first opening that has a path; an unreachable one is held by its own
+        // cell (rule 23 (1)) and the next opening of the cave is priced before the whole cave is out
+        Walked wk = null;
+        int[] lipAt = null;
+        List<int[]> tgs = cw.targets();
+        for (int i = 0; i < tgs.size(); i++) {
+            int[] t = tgs.get(i);
+            wk = walk(c, t[0], t[1], t[2], cw.dist());
+            if (c.fail == null) { lipAt = t; break; }
+            if (wk.kind() != PathPrice.Kind.UNREACHABLE) return null;
+            c.unreach(CaveWay.keyOf(t), wk.fail());
+            if (i + 1 < tgs.size()) { c.note(() -> head + ": the opening at " + t[0] + " " + t[1] + " " + t[2] + " unreachable, the next one priced"); c.fail = null; }
         }
+        if (lipAt == null) return null;
         gives = memberOf(c, gives, cw.ore());                   // J3-mod item 1: the member the ore drops names the bag's gain
         double per = perBlock(c, gives, cw.ore());
         if (!(per > 0)) { c.fail = head + ": the yield of " + shw(gives) + " from " + shw(cw.ore()) + " is not known (no loot entry; rule 15)"; return null; }   // z75 metric fix A
@@ -5554,7 +5586,7 @@ public final class NeedChain {
         c.setAway(wk.seconds() + exploreS);
         if (c.pickItem != null) c.pickWorn += oreBlocks;
         for (int i = 0; i < Math.min(oreBlocks, free.size()); i++) c.taken.merge(free.get(i), 1, Integer::sum);   // review 6: taken by this way
-        c.steps.add(new Step.Walk(cw.x(), cw.y(), cw.z(), 0));
+        c.steps.add(new Step.ToCave(lipAt[0], lipAt[1], lipAt[2]));   // J6b run EF (1): to the lip, the entry in reach - never into the opening
         c.steps.add(new Step.Cave(cw.x(), cw.y(), cw.z(), cw.family(), oreBlocks, (int) Math.max(1, Math.ceil(max))));   // J6b: the caving step (D12); at least a minute (the left ore's walk)
         c.bag.merge(gives, Math.max(lack, (int) Math.floor(oreBlocks * per + 1e-9)), Integer::sum);  // structural: epsilon
         final String line = head + ", " + yield + " x " + oreBlocks + " ore"
