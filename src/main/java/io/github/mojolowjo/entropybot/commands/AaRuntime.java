@@ -1060,7 +1060,10 @@ public final class AaRuntime implements JobPort {
             double unseen = cells < 0 ? -1
                     : cells / (double) io.github.mojolowjo.entropybot.sense.CaveIndex.CROSS_SECTION / io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps() / 60.0;   // structural: seconds a minute
             // run EO (rule 23 (1)): the bot stands inside this cave's volume - its branches are the way from here, ranked first
-            boolean inside = feetRoot >= 0 && feetRoot == idx.volumeAt(k.x(), k.y(), k.z());
+            // run ES (rule 23 (2); 08:49:56 / 08:52:37: the feet in a mined ore cell beside the cave - the index never takes in a dug
+            // cell - priced a lip walk from deep inside): also the record's own reader of "in the cave", the stand's
+            // (CaveRecord.cellInReach: a cave cell within the eyes' reach of the feet)
+            boolean inside = (feetRoot >= 0 && feetRoot == idx.volumeAt(k.x(), k.y(), k.z())) || sg.caveHolds(dim, k.x(), k.y(), k.z(), me[0], me[1], me[2]);
             ways.add(new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(k.x(), k.y(), k.z(), Math.sqrt(Jobs.distSq(me, new int[]{k.x(), k.y(), k.z()})),
                     ore, fam, rate, walked, k.size(), unseen, leftKeys(sg.caveLeft(dim, k.x(), k.y(), k.z(), fam)), lips(pass, k, me))
                     .withOut(out).withInside(inside).withBasis(walked ? null : pr.why()));

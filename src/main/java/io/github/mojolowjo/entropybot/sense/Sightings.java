@@ -185,6 +185,16 @@ public final class Sightings {
         return r == null ? null : r.facts();
     }
 
+    /**
+     * 0.39.z78 run ES (rule 23 (2)): the feet fx fy fz are in the known cave at x y z - a cell of its record, or a cave cell
+     * within the eyes' reach of them (CaveRecord.cellInReach, the stand's own reader: a cell the bot dug beside the cave
+     * counts, the index never takes it in). False: no record, or none in reach (rule 15: its cells not fed yet).
+     */
+    public synchronized boolean caveHolds(String dim, int x, int y, int z, int fx, int fy, int fz) {
+        CaveRecord r = rec(dim, x, y, z);
+        return r != null && r.holdsFeet(fx, fy, fz);
+    }
+
     /** 0.39.z78 J6c: the air-exposed blocks of the known cave at x y z (CaveRecord.Exposure); null: no known cave there. */
     public synchronized CaveRecord.Exposure caveExposure(String dim, int x, int y, int z) {
         CaveRecord r = rec(dim, x, y, z);

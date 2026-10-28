@@ -340,6 +340,12 @@ public final class CaveRecord {
      * Run EK: the cave cell nearest the feet within the eyes' reach of them ({@link io.github.mojolowjo.entropybot.cave.ExploreRules#withinReach},
      * the lip walk's own reach); MIN_VALUE: none. A cube of the reach round the feet (9 x 9 x 9 cells at most).
      */
+    /** Run ES: the feet are in this cave - one of its cells, or one within the eyes' reach ({@link #cellInReach}); no cells: false. */
+    boolean holdsFeet(int fx, int fy, int fz) {
+        if (cells.isEmpty()) return false;
+        return cells.contains(Sightings.cell(fx, fy, fz)) || cellInReach(fx, fy, fz) != Long.MIN_VALUE;
+    }
+
     long cellInReach(int fx, int fy, int fz) {
         int r = (int) Math.ceil(io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH);
         long best = Long.MIN_VALUE, bd = Long.MAX_VALUE;
