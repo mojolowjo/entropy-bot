@@ -145,6 +145,8 @@ class J6bEhTest {
         Chain deepBoxed = NeedChain.resolve("raw_iron", 3, iron(new NeedChain.Surface(5, 9, 67, 1, 5.1, true), Map.of(NeedChain.boxedInKey(feet), "boxed")));
         assertEquals(new Step.ToSurface(9, 67, 1), deepBoxed.steps().get(0), "boxed in the shaft: the walk up first - " + deepBoxed.steps());
         Chain flat = NeedChain.resolve("raw_iron", 3, iron(new NeedChain.Surface(0, 8, 62, 1, 0), Map.of(NeedChain.boxedInKey(feet), "walls")));
+        // fc cause 2 (run FC): never the plain no-break explore from here first - here the band leg moves the bot (the leased
+        // explore when no leg does: FcTest)
         assertFalse(flat.ok() && flat.steps().get(0) instanceof Step.Explore, "boxed in: never the no-break explore from here first - " + flat.steps());
         FactChange.boxedIn(feet, "x");
         assertEquals(NeedChain.boxedInKey(feet), FactChange.ownSourceKey(FactChange.take()), "the fact keys the feet");

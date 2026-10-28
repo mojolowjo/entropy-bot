@@ -69,14 +69,21 @@ public final class CaveRecord {
 
     /**
      * A branch: its seen frontier cells (first: the one the walk goes to), their count, the unseen cells behind - counted
-     * up to {@link #BRANCH_MIN} + 1 (run EK: "more than BRANCH_MIN" is all any reader asks).
+     * up to {@link #BRANCH_MIN} + 1 (run EK: "more than BRANCH_MIN" is all any reader asks). 0.39.z78 fc (run FC, cause 3):
+     * {@code unseen} - those unseen index cells behind it (the same cells the count is of, nearest the group first): the
+     * walk's reach goal spans them, so a stand that SEES behind the frontier is the goal - never the seen frontier cells,
+     * whose goal holds where they were seen ("arrived, nothing new"). Rule 17: index cells as goal cells, never a read of
+     * their block states.
      */
-    public record Group(long first, int size, int behind, List<Long> cells) {
+    public record Group(long first, int size, int behind, List<Long> cells, List<Long> unseen) {
         public Group {
             cells = cells == null || cells.isEmpty() ? List.of(first) : List.copyOf(cells);
+            unseen = unseen == null ? List.of() : List.copyOf(unseen);
         }
 
-        public Group(long first, int size, int behind) { this(first, size, behind, List.of(first)); }
+        public Group(long first, int size, int behind, List<Long> cells) { this(first, size, behind, cells, List.of()); }
+
+        public Group(long first, int size, int behind) { this(first, size, behind, List.of(first), List.of()); }
     }
 
     /**
@@ -523,7 +530,8 @@ public final class CaveRecord {
                     }
                 }
                 if (q.isEmpty()) {
-                    out.add(new Group(group.get(0), group.size(), behind(group), group.subList(0, Math.min(GROUP_CELLS, group.size()))));
+                    List<Long> un = behind(group);
+                    out.add(new Group(group.get(0), group.size(), un.size(), group.subList(0, Math.min(GROUP_CELLS, group.size())), un));
                     q = null;
                 }
             }
@@ -533,16 +541,19 @@ public final class CaveRecord {
         List<Group> result() { return List.copyOf(out); }
     }
 
-    /** The unseen cells connected (through unseen cave air) to the group, counted up to BRANCH_MIN + 1 (run EK: the cap). */
-    private int behind(List<Long> group) {
-        Set<Long> got = new HashSet<>();
+    /**
+     * The unseen cells connected (through unseen cave air) to the group, up to BRANCH_MIN + 1 (run EK: the cap), in the
+     * order found - the ones touching the group first (fc: the branch goal's cells, Group#unseen; their count is behind).
+     */
+    private List<Long> behind(List<Long> group) {
+        java.util.LinkedHashSet<Long> got = new java.util.LinkedHashSet<>();
         ArrayDeque<Long> q = new ArrayDeque<>();
         for (long c : group) {
             touched++;
             int[] p = Sightings.cellOf(c);
             for (int[] o : SIX) {
                 long n = Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2]);
-                if (cells.contains(n) && !seen.contains(n) && got.add(n)) { q.add(n); if (got.size() > BRANCH_MIN) return got.size(); }
+                if (cells.contains(n) && !seen.contains(n) && got.add(n)) { q.add(n); if (got.size() > BRANCH_MIN) return List.copyOf(got); }
             }
         }
         while (!q.isEmpty()) {
@@ -550,10 +561,10 @@ public final class CaveRecord {
             touched++;
             for (int[] o : SIX) {
                 long n = Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2]);
-                if (cells.contains(n) && !seen.contains(n) && got.add(n)) { q.add(n); if (got.size() > BRANCH_MIN) return got.size(); }
+                if (cells.contains(n) && !seen.contains(n) && got.add(n)) { q.add(n); if (got.size() > BRANCH_MIN) return List.copyOf(got); }
             }
         }
-        return got.size();
+        return List.copyOf(got);
     }
 
     /**

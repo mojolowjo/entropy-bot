@@ -40,21 +40,44 @@ public final class CaveWalk {
      * Walk to the cell ({@code why}: "the seen iron at ...", "the branch at ... (more than 8 cells behind)"). Run EN: the
      * step's goal is a reach goal over {@code cells} (the ore, the unseen cell, or the branch's frontier cells) - a stand
      * Baritone picks from which one of them is in reach and in sight, never the cell itself (rule 2); {@code key} the
-     * drop key (the cell, or the branch's first cell). J6d (run EV): {@code ore} - the walk is to a seen ore (its arrival
-     * mines it, never drops it "arrived, nothing new"); false - a branch or an unseen cell.
+     * drop key (the cell, or the branch's first cell). J6d (run EV): {@code kind} ORE - the walk is to a seen ore (its
+     * arrival mines it, never drops it "arrived, nothing new"); BRANCH - fc (run FC): its cells are the unseen index cells
+     * behind the branch's frontier (CaveRecord.Group#unseen); CELL - an unseen cell (the first target by the entry).
      */
-    public record Goto(int[] cell, String why, List<int[]> cells, long key, boolean ore) implements Next {
+    public record Goto(int[] cell, String why, List<int[]> cells, long key, Kind kind) implements Next {
+        public enum Kind { ORE, BRANCH, CELL }
+
         public Goto {
             cells = cells == null || cells.isEmpty() ? List.of(cell) : List.copyOf(cells);
         }
 
-        public Goto(int[] cell, String why, List<int[]> cells, long key) { this(cell, why, cells, key, false); }
+        public Goto(int[] cell, String why, List<int[]> cells, long key) { this(cell, why, cells, key, Kind.CELL); }
 
-        public Goto(int[] cell, String why) { this(cell, why, List.of(cell), Sightings.cell(cell[0], cell[1], cell[2]), false); }
+        public Goto(int[] cell, String why) { this(cell, why, List.of(cell), Sightings.cell(cell[0], cell[1], cell[2]), Kind.CELL); }
 
         /** J6d: the walk to a seen ore (one cell, its own key). */
-        public static Goto toOre(int[] cell, String why) { return new Goto(cell, why, List.of(cell), Sightings.cell(cell[0], cell[1], cell[2]), true); }
+        public static Goto toOre(int[] cell, String why) { return new Goto(cell, why, List.of(cell), Sightings.cell(cell[0], cell[1], cell[2]), Kind.ORE); }
+
+        /** J6d: the walk is to a seen ore. */
+        public boolean ore() { return kind == Kind.ORE; }
+
+        /** fc: the walk is to see behind a branch's frontier. */
+        public boolean branch() { return kind == Kind.BRANCH; }
     }
+
+    /**
+     * fc (run FC, cause 3): the cells a branch's reach goal spans - the unseen index cells behind its frontier (nearest the
+     * feet first, {@link #REACH_CELLS} of them); a group that names none (a record of before fc): its frontier cells as
+     * before. Pure.
+     */
+    public static List<int[]> branchCells(CaveRecord.Group g, int[] feet) {
+        List<int[]> cells = new java.util.ArrayList<>();
+        for (long k : g.unseen().isEmpty() ? g.cells() : g.unseen()) cells.add(Sightings.cellOf(k));
+        return nearest(cells, feet, REACH_CELLS);
+    }
+
+    /** fc: the drop of a branch whose reach goal over the unseen cells behind it is empty (said once, the key dropped). */
+    public static String noStandSees(int cells) { return "no stand sees behind it (no standable cell within reach and sight of its " + cells + " unseen cell(s))"; }
 
     /**
      * J6d (run EV: ore seen 36, mined 0 - the seen-ore gotos were dropped "arrived, nothing new", then skipped): the drop
@@ -149,10 +172,9 @@ public final class CaveWalk {
         }
         if (best != null) {
             int[] c = Sightings.cellOf(best.first());
-            List<int[]> cells = new java.util.ArrayList<>();
-            for (long k : best.cells()) cells.add(Sightings.cellOf(k));
+            // fc (run FC, cause 3): the goal spans the unseen cells behind the frontier - a stand that sees behind it
             return new Goto(c, "the branch at " + c[0] + " " + c[1] + " " + c[2] + " (more than " + CaveRecord.BRANCH_MIN + " cells behind)",
-                    nearest(cells, feet, REACH_CELLS), best.first());
+                    branchCells(best, feet), best.first(), Goto.Kind.BRANCH);
         }
         // 88b28290 review 3: while the cells are read, done is the saved measure (maybe a past session's): never trusted - wait
         if (facts != null && facts.filling()) return new Wait("reading the cave's cells from the index (its first pass, CaveRecord.BUDGET a tick)");

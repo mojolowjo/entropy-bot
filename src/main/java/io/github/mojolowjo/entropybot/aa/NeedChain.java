@@ -3319,7 +3319,7 @@ public final class NeedChain {
         }
         if (words.size() == own) return;
         String until = String.join("|", words);
-        for (int i = base; i < c.steps.size(); i++) if (c.steps.get(i) instanceof Step.Explore e && e.until() != null) c.steps.set(i, new Step.Explore(e.minutes(), until));
+        for (int i = base; i < c.steps.size(); i++) if (c.steps.get(i) instanceof Step.Explore e && e.until() != null) c.steps.set(i, new Step.Explore(e.minutes(), until, e.leased()));
     }
 
     private static void untilWords(List<Step> steps, int from, Set<String> into) {
@@ -3473,7 +3473,7 @@ public final class NeedChain {
             String own = shw(w.word);
             Set<String> words = new LinkedHashSet<>(List.of(e.until().split("\\|")));
             if (!words.add(own)) continue;
-            c.steps.set(i, new Step.Explore(e.minutes(), String.join("|", words)));
+            c.steps.set(i, new Step.Explore(e.minutes(), String.join("|", words), e.leased()));
         }
     }
 
@@ -6109,6 +6109,7 @@ public final class NeedChain {
             upText = surfaceWalk(c);
             if (upText == null && c.fail != null) return null;   // its path is not known yet: the way waits (rule 18)
         }
+        boolean leased = false;                              // fc cause 2: the explore's first walk under the ordinary lease
         if (upText == null && (legText == null || legText.isEmpty())) {
             String froze = frozenHere(c), boxed = boxedHere(c);
             // run EH (3): a no-break freeze or boxed-in is answered by a way out - the walk up when below the surface, else the climb
@@ -6119,18 +6120,27 @@ public final class NeedChain {
                 upText = surfaceWalk(c, true);
                 if (upText == null && c.fail != null) return null;
                 if (upText == null && over.depth() > 0) upText = climbUp(c, over);
+                else if (upText == null) c.note(() -> CLIMB_DEPTH_0);
                 if (upText != null) { froze = null; boxed = null; }
             }
+            // fc cause 2 (rule 1, rule 7; run FC 14:48:21-14:52: boxed in at 43 47 5 on a plank floor over a pit under open sky,
+            // the ring's top the feet, depth 0 - "no way out is priced", every order stopped "no way to get it"): the way out is
+            // a WAY - the explore from here whose FIRST walk runs under the ordinary lease (Baritone may break and place its way
+            // to the explore's own next target), the no-break explore from where it ends; never a stop (was: c.fail for both)
             if (froze == null && boxed != null) {
-                c.fail = "the explore from here was boxed in (" + boxed + ") and no way out is priced from here (no walk up, no climb)";
-                return null;
+                final String why = boxed;
+                leased = true;
+                c.note(() -> "explore: boxed in (" + why + "), no walk up and no climb from here: " + LEASED_EXPLORE);
+                upText = (upText == null ? "" : upText + "; ") + "boxed in here: " + LEASED_EXPLORE;
             }
+            // a FROZEN explore (its target failed from here, run AO) stays held by position as before (Z76 send-back 2): the
+            // bot moved by another way lifts it; a boxed-in with a freeze too is the freeze's hold
             if (froze != null) {
                 c.fail = "the explore from here froze (" + froze + "); held for this order until the bot moves failures.moved";
                 return null;
             }
         }
-        c.steps.add(new Step.Explore(exploreMinutes(), shw(word)));      // live-facts: it ends once a source of the need is known
+        c.steps.add(new Step.Explore(exploreMinutes(), shw(word), leased));      // live-facts: it ends once a source of the need is known
         c.stuck = true;
         if (c.unknown == null) c.unknown = word;
         String out = "explore (" + reason + (band == null ? "" : "; it generates at Y " + band[0] + ".." + band[1] + ", going there first"
@@ -6409,6 +6419,13 @@ public final class NeedChain {
      */
     private static String surfaceWalk(Ctx c) { return surfaceWalk(c, false); }
 
+    /** fc cause 2: the surface leg's refusing test, said (rule 7): the ring's top is the feet's own cell. */
+    static final String SURFACE_IS_HERE = "surface: the ring's top is the feet's own cell";
+    /** fc cause 2: the climb's refusing test, said: no ground over the feet. */
+    static final String CLIMB_DEPTH_0 = "climb: no ground over the feet (depth 0): no climb";
+    /** fc cause 2: the boxed-in way out when neither the walk up nor the climb applies - the explore whose first walk may break and place. */
+    static final String LEASED_EXPLORE = "the explore from here, its first walk under the ordinary lease (Baritone may break and place its way to the next target)";
+
     /**
      * Run EM: {@code boxed} - the boxed-in (or frozen) explore's way out: the walk to the ring's top even where 1-block
      * steps reach it ({@link Surface#top}), at any depth (rule 1); else the leg as above.
@@ -6423,7 +6440,11 @@ public final class NeedChain {
         // run EI (the manager's fix, rule 1): no "below the surface" gate - the leg is offered wherever its target is not the
         // feet's own cell, priced by Baritone's path (on the surface: none, or a few blocks to the rim)
         int[] feet = c.w.where().feet() == null ? null : c.w.where().feet().get();
-        if (s.dist() < 1 || (feet != null && feet.length >= 3 && feet[0] == s.x() && feet[1] == s.y() && feet[2] == s.z())) return null;   // structural: the target is here
+        if (s.dist() < 1 || (feet != null && feet.length >= 3 && feet[0] == s.x() && feet[1] == s.y() && feet[2] == s.z())) {   // structural: the target is here
+            // fc cause 2 (rule 7; run FC 14:48:21: this null was silent and the boxed line said "no walk up" with no reason)
+            if (boxed) c.note(() -> SURFACE_IS_HERE + " (" + s.x() + " " + s.y() + " " + s.z() + "): no walk up");
+            return null;
+        }
         for (String h : c.w.held())
             if (h.startsWith(SURFACE_AT)) {
                 c.note(() -> "surface: the walk up failed in this order (" + h + "): the explore runs from here");

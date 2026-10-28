@@ -741,6 +741,15 @@ final class Mining {
         /** Run EH (2): the feet the last no-break walks found no path from, and how many in a row from there. */
         int[] noBreakFrom;
         int noBreakFails;
+        /**
+         * fc cause 2 (run FC 14:48:21: boxed in at 43 47 5 on a plank floor over a pit under open sky - the ring's top was the
+         * feet, no climb at depth 0, "no way out is priced", every order stopped): the explore's FIRST walk runs under the
+         * ORDINARY lease (Baritone may break and place its way to the explore's own next target, walk.placePenalty); the
+         * no-break explore goes on from where that walk ends (Step.Explore#leased). False once the first target ended.
+         */
+        boolean leasedFirst;
+        /** fc cause 2: the leased first walk's goal was set (said once). */
+        boolean leasedSaid;
         /** 569bb820 review: the not-known no-break end said already (the fork's calc of it; one line per end). */
         Object noBreakSaid;
 
@@ -826,10 +835,15 @@ final class Mining {
      * V1b: "explore [north|south|east|west] [minutes]": never-seen land (explored.json; never into a keep-out area),
      * then home. The report names the new points of interest.
      */
-    String explore(LocalPlayer p, String rest) {
+    String explore(LocalPlayer p, String rest) { return explore(p, rest, false); }
+
+    /** fc cause 2: {@code leased} - the explore's first walk under the ordinary lease (Step.Explore#leased, the boxed-in way out). */
+    String explore(LocalPlayer p, String rest, boolean leased) {
         io.github.mojolowjo.entropybot.vocab.ExploreWords.Args a = io.github.mojolowjo.entropybot.vocab.ExploreWords.parse(rest, io.github.mojolowjo.entropybot.vocab.ExploreWords.defaultMinutes());
         if (a.error() != null) return a.error();
-        return startExplore(p, a.dir(), a.minutes(), null, a.gather(), a.until());
+        String r = startExplore(p, a.dir(), a.minutes(), null, a.gather(), a.until());
+        if (leased && lastEx != null) lastEx.leasedFirst = true;
+        return r;
     }
 
     /** V1b: "find cave|<poi kind>|<biome> [minutes]": a known one answers at once; else explore until one turns up. */
@@ -1297,7 +1311,9 @@ final class Mining {
                 if (ExploreRules.boxedIn(ex.noBreakFails)) {
                     String why = "boxed in at " + Jobs.fmt(me) + ": " + ex.noBreakFails + " no-break walks in a row found no path from here (no way out without breaking or placing)";
                     io.github.mojolowjo.entropybot.aa.moves.FactChange.boxedIn(me, why);
-                    LOG.info("[entropybot] explore: {} - the explore ends; the next plan prices the way out first", why);
+                    // fc cause 2 (rule 7): what the next plan does is said by the plan - a walk up, a climb, or an explore whose first
+                    // walk may break and place (was: "prices the way out first", false in run FC where nothing was priced)
+                    LOG.info("[entropybot] explore: {} - the explore ends with that fact; the next plan prices a walk up, a climb, or an explore whose first walk may break and place", why);
                     Jobs.cancel(b);
                     notes().flush();
                     return why;
@@ -1306,7 +1322,7 @@ final class Mining {
             if (ex.hold.state() == ExploreRules.TargetHold.State.HELD) {
                 boolean surfaceNow = ex.aimY == null && !ex.surfaceGoal && io.github.mojolowjo.entropybot.world.SurfaceHeight.known(Jobs.surfaceNoLeaves(p.level(), ex.target.x(), ex.target.z()));
                 if (b != null && (Jobs.idle(b) || surfaceNow) && now() - ex.targetAt >= 20) {     // structural: once a second in ticks
-                    b.getCustomGoalProcess().setGoalAndPathNoBreak(exploreGoal(ex));   // J6b item 5: never breaking, never placing
+                    setExploreGoal(b, ex);   // J6b item 5: never breaking, never placing; fc cause 2: the leased first walk may
                     if (surfaceNow) LOG.info("[entropybot] explore: the target column {} {} loaded: the walk's goal is its surface cell now", ex.target.x(), ex.target.z());
                     ex.targetAt = now();
                 }
@@ -1336,6 +1352,7 @@ final class Mining {
         ex.aimCell = null;
         ex.aimY = null;
         ex.target = null;
+        if (ex.leasedSaid) ex.leasedFirst = false;        // fc cause 2: the leased FIRST walk ended (reached or failed): no-break from here on
         // 0.39.z68 (owner 2026-10-25): where the target generates (GenWhere from the jars' world-gen data), read once per run
         if (ex.untilSource != null && !ex.whereRead && commands.aaRuntime != null) {
             boolean first = ex.where == null;
@@ -1489,11 +1506,29 @@ final class Mining {
             return "next";
         }
         if (b != null) {
-            b.getCustomGoalProcess().setGoalAndPathNoBreak(exploreGoal(ex));      // J6b item 5: never breaking, never placing
+            setExploreGoal(b, ex);      // J6b item 5: never breaking, never placing; fc cause 2: the leased first walk may
         }
         ex.targetAt = now();
         ex.hold = ExploreRules.TargetHold.start(ex.target, now(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed());   // 0.39.z72
         return "wait";
+    }
+
+    /**
+     * The explore's walk goal: the no-break walk (J6b item 5: an explore never breaks nor places), except fc cause 2 - the
+     * explore's FIRST walk of a run the plan marked leased (Step.Explore#leased: boxed in here with no walk up and no climb)
+     * runs under the ordinary lease: Baritone may break and place its way to the explore's own next target (walk.placePenalty).
+     * Said once. Loader notes: the fork's ICustomGoalProcess setGoalAndPath / setGoalAndPathNoBreak.
+     */
+    private void setExploreGoal(IBaritone b, ExRun ex) {
+        if (ex.leasedFirst) {
+            if (!ex.leasedSaid) {
+                LOG.info("[entropybot] explore: boxed in here - the first walk to {} {} runs under the ordinary lease (Baritone may break and place); the no-break explore goes on from where it ends", ex.target.x(), ex.target.z());
+                ex.leasedSaid = true;
+            }
+            b.getCustomGoalProcess().setGoalAndPath(exploreGoal(ex));
+            return;
+        }
+        b.getCustomGoalProcess().setGoalAndPathNoBreak(exploreGoal(ex));
     }
 
     // ==== mine <block> [n] [dig]: the per-ore steps, or Baritone's mine (no index, or not an ore) ====

@@ -44,6 +44,9 @@ public final class StepMonitor {
     /** Ticks between looks (Tuning monitor.everyTicks). */
     public static long everyTicks() { return Math.max(1, Tuning.l("monitor.everyTicks")); }
 
+    /** fc cause 1: the words of a look that holds the clock while a Baritone search computes. */
+    public static final String SEARCHING = "Baritone's search is computing from ";
+
     /** Ticks with no new best before a stall (Tuning monitor.stallS x 20 ticks a second, a game fact). */
     public static long stallTicks() { return Math.round(20 * Tuning.get("monitor.stallS")); }
 
@@ -278,6 +281,16 @@ public final class StepMonitor {
                 : null;
         if (failsCount && notKnown == null)
             return replan("Baritone found no path " + fails + " times from " + at(sig.feet()) + (Double.isNaN(g) ? "" : " (goal heuristic " + num(g) + ", best " + num(bestGoal) + "; Baritone's estimate, not metres)") + ", nothing executing", sig.feet());
+        // 0.39.z78 fc cause 1 (run EW 12:28:01: "no progress 30 s ... Baritone not executing, a search running" stopped the
+        // caving step while Baritone searched from 2 17 15; rule 15: a search still computing is not known, never a stall):
+        // the clock holds while a search runs and nothing executes - as the furnace's clock and the first-answer wait hold
+        // it. Its own bounds: the step's own walk holds (ExploreRules.TargetHold's stall bound, the caving goto's drop) and
+        // the step watch steps.stepMaxS; an exhausted search still ends it above (the no-path verdict)
+        if (sig.calcRunning() && !sig.executing()) {
+            lastProgress = now;
+            return cont(SEARCHING + at(sig.feet()) + " (the clock holds; rule 15; bounded by the step's own walk hold and steps.stepMaxS)"
+                    + (notKnown == null ? "" : "; " + notKnown));
+        }
         long quiet = now - lastProgress;
         if (quiet >= stallTicks()) return replan("no progress " + quiet / 20 + " s: " + bests(sig), sig.feet());     // game fact: 20 ticks a second
         stalled = moved.isEmpty();
