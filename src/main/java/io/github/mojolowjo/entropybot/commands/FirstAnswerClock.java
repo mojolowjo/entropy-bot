@@ -33,6 +33,14 @@ final class FirstAnswerClock {
      */
     PathPrice.Answer answer(String key, PathPrice.Answer a, long now, int waitS, DoubleSupplier estimateS) {
         if (!PricedAnswers.waits(a)) { clocks.remove(key); return a; }
+        // 0.39.z78 J6c run EU (1a; 10:39:58-10:40:37: two lip walks "chunks not loaded" stood 30 s on nothing - 0 walks
+        // computing): a walk into chunks not loaded has no search to wait on - it is ranked at once by Baritone's own goal
+        // heuristic (the fork's IPathEstimate: no world read, valid without the chunks), "estimate, chunks not loaded",
+        // never a price (rule 18 as amended); no estimate: the wait as before
+        if (a.kind() == PathPrice.Kind.CHUNKS) {
+            PathPrice.Answer e = PricedAnswers.chunksEstimate(a, estimateS.getAsDouble());
+            if (e != null) { clocks.remove(key); return e; }
+        }
         long wait = (long) Math.max(0, waitS) * GameTimes.TPS;
         long[] c = clocks.get(key);
         if (c == null || now - c[1] > wait) {              // a new wait: first asked, or not asked for longer than the wait

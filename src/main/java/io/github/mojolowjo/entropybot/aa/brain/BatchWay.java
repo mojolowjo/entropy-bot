@@ -102,7 +102,7 @@ public final class BatchWay {
      * "trip: stand (not priced yet: the planner waits on its answer (...))", the bot standing (rule 22).
      */
     static NeedChain.Chain ownStand(NeedChain.Chain thinking) {
-        return new NeedChain.Chain(List.of(new Step.AwaitPaths(NeedChain.firstAnswerWaitS())), 0, STAND + thinking.missing() + ")", true, null);
+        return new NeedChain.Chain(List.of(new Step.AwaitPaths(NeedChain.firstAnswerWaitS(), true)), 0, STAND + thinking.missing() + ")", true, null);   // J6c run EU (1b): the worker's stand
     }
 
     /** The start of a trip line ("trip b1 (6 orders): ..."). */

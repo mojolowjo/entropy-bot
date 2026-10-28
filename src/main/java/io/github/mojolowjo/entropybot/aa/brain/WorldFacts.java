@@ -76,8 +76,20 @@ public final class WorldFacts {
      * every order there; its one more try (Goals#parkedTick) forgets it here as well ({@link #forget}).
      */
     static boolean shared(String key) {
-        return key != null && !key.isBlank();
+        return key != null && !key.isBlank() && !standHold(key);
     }
+
+    /**
+     * 0.39.z78 J6c run EU (1c; 10:40:37: "stood at -92 79 -218" and "step stand while paths compute ... stuck 40 s" held for
+     * all four armour orders): a stand's hold is the order's own wait, never a world outcome - the stood cell
+     * (NeedChain.stoodKey) and the stand step's own key. Not shared.
+     */
+    static boolean standHold(String key) {
+        return key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STOOD_AT) || key.startsWith("step " + STAND_TEXT);
+    }
+
+    /** The stand step's text start (Step.AwaitPaths#text). */
+    private static final String STAND_TEXT = "stand while paths compute";
 
     /** 0.39.z78 run EJ: {@code key} is no longer held for any order (the climb's one more try); said again if learned again. */
     public void forget(String key) {

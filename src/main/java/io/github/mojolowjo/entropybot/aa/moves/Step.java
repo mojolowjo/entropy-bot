@@ -305,9 +305,13 @@ public sealed interface Step {
      * there. Past the wait the step says so and the order is priced again, the walks still not known now taken by Baritone's
      * estimate ("ranked, not priced", rule 18 as amended). Replaces the deleted "explore while paths compute".
      */
-    record AwaitPaths(int waitS) implements Step {
+    record AwaitPaths(int waitS, boolean planner) implements Step {
+        public AwaitPaths(int waitS) { this(waitS, false); }
+
         public String text() { return "stand while paths compute (up to " + waitS + " s)"; }
     }
+    // 0.39.z78 J6c run EU (1b, rule 23 (2): one reader of "stood"): {@code planner} - the stand is the planner worker's
+    // "thinking" (BatchWay.ownStand: no path asked, the plan not answered yet); the step machine never counts it as a stand
 
     // ---- rm-execution2: the kinds the remaining option sets and desires run ----
 

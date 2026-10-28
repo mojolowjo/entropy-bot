@@ -1170,11 +1170,12 @@ public final class Steps {
         // 0.39.z77 review 6 (E0's bound): stands end with a price fact and no try is counted, so the bound is the place: after
         // two stands in a row from the same cell (2 x pathCost.firstAnswerWaitS; every walk asked in the first is answered by
         // its estimate or drops by then, PricedAnswers), a third stand there is not started - the run ends with the reason
-        if (reprice && failed instanceof Step.AwaitPaths) {
+        // J6c run EU (1b, rule 23 (2)): only a path stand counts - the planner worker's "thinking" stand never does
+        if (reprice && failed instanceof Step.AwaitPaths fa && !fa.planner()) {
             int[] at = startFeet;
             if (at != null && standCell != null && java.util.Arrays.equals(at, standCell)) standsInRow++;
             else { standsInRow = 1; standCell = at == null ? null : at.clone(); }
-            if (standsInRow >= 2 && r.steps().get(0) instanceof Step.AwaitPaths) {
+            if (standsInRow >= 2 && r.steps().get(0) instanceof Step.AwaitPaths next && !next.planner()) {
                 // 0.39.z77 round fix 2 (run BH 09:32:11-09:34:12: each order stopped in turn at its stand; manager: a stand's
                 // end drops the WAY, never the order): the walks still not known from here are dropped for this order (a source
                 // fact keyed by the cell, NeedChain.stoodKey: "no estimate" for each, rule 15) and the order is priced again - the
@@ -1190,7 +1191,7 @@ public final class Steps {
                     } catch (RuntimeException e) {
                         r2 = new Routine(null, "the re-plan: " + e);
                     }
-                    if (r2 != null && r2.steps() != null && !r2.steps().isEmpty() && !(r2.steps().get(0) instanceof Step.AwaitPaths)) {
+                    if (r2 != null && r2.steps() != null && !r2.steps().isEmpty() && !(r2.steps().get(0) instanceof Step.AwaitPaths a2 && !a2.planner())) {
                         hands.log(stood + ": the walks not known from here dropped for this order, priced again - " + r2.steps().get(0).text() + " next");
                         r = r2;
                         fact = drop;

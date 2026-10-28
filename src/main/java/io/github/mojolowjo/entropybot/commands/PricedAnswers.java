@@ -110,6 +110,19 @@ public final class PricedAnswers {
      * same wait). Was COMPUTING only: a CHUNKS answer reset the clock, the next ask (COMPUTING, after the answer aged out)
      * started it again, so no estimate ever came and no way ever dropped. Pure.
      */
+    /**
+     * 0.39.z78 J6c run EU (1a): a CHUNKS answer ranked by Baritone's estimate ({@code estimateS}: its goal heuristic from the
+     * feet, seconds) - ESTIMATED with {@link #CHUNKS_ESTIMATE}; null: no usable estimate (NaN, infinite) or not a CHUNKS
+     * answer. Pure.
+     */
+    public static PathPrice.Answer chunksEstimate(PathPrice.Answer a, double estimateS) {
+        if (a == null || a.kind() != PathPrice.Kind.CHUNKS || !(estimateS >= 0) || Double.isInfinite(estimateS)) return null;
+        return PathPrice.Answer.estimated(new PathPrice.Walk(estimateS), CHUNKS_ESTIMATE);
+    }
+
+    /** J6c run EU (1a): the words of a walk into chunks not loaded, ranked by Baritone's estimate. */
+    public static final String CHUNKS_ESTIMATE = "estimate, chunks not loaded: Baritone's goal heuristic, ranked, not priced; the full path is computed on the way";
+
     public static boolean waits(PathPrice.Answer a) {
         return a != null && (a.kind() == PathPrice.Kind.COMPUTING || a.kind() == PathPrice.Kind.CHUNKS);
     }
