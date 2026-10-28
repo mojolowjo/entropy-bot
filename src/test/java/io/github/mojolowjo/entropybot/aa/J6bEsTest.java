@@ -39,11 +39,11 @@ class J6bEsTest {
     @Test
     void theFeetInADugOreCellBesideTheCave_areInside() {
         Sightings s = cave();
-        assertTrue(s.caveHolds(D, -43, 67, -39, -51, 17, -41), "the mined iron_ore cell -51 17 -41 (08:49:56): its passage in reach");
-        assertTrue(s.caveHolds(D, -43, 67, -39, -52, 17, -42), "the second try's -52 17 -42 (08:52:37)");
-        assertTrue(s.caveHolds(D, -43, 67, -39, -50, 36, -40), "the shaft's foot: a cell of the cave");
-        assertFalse(s.caveHolds(D, -43, 67, -39, -10, 65, 69), "far off: not in it");
-        assertFalse(new Sightings().caveHolds(D, -43, 67, -39, -51, 17, -41), "no known cave: not in it");
+        assertTrue(s.caveHolds(D, -43, 67, -39, -51, 17, -41, SEES, NO_INDEX), "the mined iron_ore cell -51 17 -41 (08:49:56): its passage in reach");
+        assertTrue(s.caveHolds(D, -43, 67, -39, -52, 17, -42, SEES, NO_INDEX), "the second try's -52 17 -42 (08:52:37)");
+        assertTrue(s.caveHolds(D, -43, 67, -39, -50, 36, -40, SEES, NO_INDEX), "the shaft's foot: a cell of the cave");
+        assertFalse(s.caveHolds(D, -43, 67, -39, -10, 65, 69, SEES, NO_INDEX), "far off: not in it");
+        assertFalse(new Sightings().caveHolds(D, -43, 67, -39, -51, 17, -41, SEES, () -> true), "no known cave: not in it");
     }
 
     /** Inside: its branches from here (the caving step), never the lip walk the chestplate ran into the shaft. */
@@ -56,5 +56,44 @@ class J6bEsTest {
         assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Cave), "the caving step: " + c.steps());
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.ToCave), "no lip walk: " + c.steps());
         assertTrue(c.why().contains("the bot is inside it"), c.why());
+    }
+    /** Every cell in sight (an open pocket), and an index that says nothing (the record is fed: never asked). */
+    static final java.util.function.Predicate<int[]> SEES = c -> true;
+    static final java.util.function.BooleanSupplier NO_INDEX = () -> { throw new AssertionError("the index's volume is asked although the record is fed"); };
+
+    /**
+     * Review of 2394a868 (2): reach AND sight, as GoalReachBlock - a bot outside a wall with a cave cell within 4.5 of its
+     * eyes is NOT inside; the lip walk is priced. The wall: every ray from the feet blocked.
+     */
+    @Test
+    void aWallBetween_isNotInside_theLipWalkIsPriced() {
+        Sightings s = cave();
+        int[] outside = {-51, 17, -43};                                                   // 3 from the passage at z -40, rock between
+        assertFalse(s.caveHolds(D, -43, 67, -39, outside[0], outside[1], outside[2], c -> false, NO_INDEX), "in reach, not in sight: outside");
+        assertTrue(s.caveHolds(D, -43, 67, -39, outside[0], outside[1], outside[2], SEES, NO_INDEX), "the same cell in sight: inside");
+        var over = new NeedChain.Surface(48, -51, 65, -41, 3, false);
+        CaveWay out = new CaveWay(-43, 67, -39, 51, "minecraft:iron_ore", "iron", 7.86, true, CaveIndex.Size.LARGE, 30, List.of(), List.of(new int[]{-43, 67, -39})).withInside(false);
+        Chain c = NeedChain.resolve("raw_iron", 3, J6bEhTest.iron(over, Map.of()).withCave(w -> w.contains("raw_iron") || w.contains("iron_ore") ? out : null));
+        assertTrue(c.steps().stream().anyMatch(st -> st instanceof Step.ToCave), "not inside: the lip walk is priced: " + c.steps());
+    }
+
+    /** Review of 2394a868 (1, rule 23 (2)): the record is the one reader; the index's volume only while the record is unfed. */
+    @Test
+    void theRecordIsTheReader_theIndexOnlyWhileUnfed() {
+        Sightings s = new Sightings();
+        assertNotNull(s.knowCave(D, new CaveIndex.Known(-43, 67, -39, CaveIndex.Size.LARGE, CaveIndex.Depth.STONE, List.of(Sightings.cell(-43, 66, -39))), 1));
+        assertTrue(s.caveHolds(D, -43, 67, -39, -50, 36, -40, SEES, () -> true), "unfed: the index's volume says it");
+        assertFalse(s.caveHolds(D, -43, 67, -39, -50, 36, -40, SEES, () -> false));
+        Sightings fed = cave();
+        assertFalse(fed.caveHolds(D, -43, 67, -39, -10, 65, 69, SEES, () -> true), "fed: the record alone - the index's yes is never read");
+    }
+
+    /** Review of 503b6d5d (3): the start cell's read warns once per cause, never per tick. */
+    @Test
+    void theStartCellsWarning_oncePerCause() {
+        java.util.Set<String> said = new java.util.HashSet<>();
+        assertTrue(io.github.mojolowjo.entropybot.commands.ProbeLines.firstCause(said, new NoSuchMethodError("pathStart")));
+        assertFalse(io.github.mojolowjo.entropybot.commands.ProbeLines.firstCause(said, new NoSuchMethodError("pathStart")), "the same cause again: not said");
+        assertTrue(io.github.mojolowjo.entropybot.commands.ProbeLines.firstCause(said, new ClassCastException()), "another cause: said once");
     }
 }

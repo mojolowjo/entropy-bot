@@ -240,6 +240,10 @@ public final class StepHands implements Steps.Hands {
     /** J6b item 14: the cell Baritone's searches start from and whether it has a floor under it. */
     record Start(int[] cell, boolean standable) {}
 
+    /** Review of 503b6d5d: the causes searchStart has said already (one line per cause, never per tick). */
+    private static final java.util.Set<String> START_WARNED = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+
     /**
      * 0.39.z78 J6b queue item 14 (run ER 07:37:48: the band leg's cell was the column of the floorless edge cell -10 61 69,
      * the priced search stopped on its budget): the cell Baritone's searches start from - the fork's own reader,
@@ -256,7 +260,8 @@ public final class StepHands implements Steps.Hands {
                 return new Start(new int[]{s.x, s.y, s.z}, baritone.pathing.movement.MovementHelper.canWalkOn(b.getPlayerContext(), s.below()));
             }
         } catch (RuntimeException | LinkageError e) {
-            io.github.mojolowjo.entropybot.Quiet.warn("StepHands.searchStart: Baritone's start cell could not be read; the feet instead", e);
+            // review of 503b6d5d: read per tick and per ask - said once per cause (the next fork's start-cell API replaces this read)
+            if (ProbeLines.firstCause(START_WARNED, e)) io.github.mojolowjo.entropybot.Quiet.warn("StepHands.searchStart: Baritone's start cell could not be read (" + e.getClass().getSimpleName() + "); the feet instead", e);
         }
         BlockPos under = new BlockPos(feet[0], feet[1] - 1, feet[2]);
         return new Start(feet, p.level().isLoaded(under) && !p.level().getBlockState(under).getCollisionShape(p.level(), under).isEmpty());
@@ -1061,7 +1066,7 @@ public final class StepHands implements Steps.Hands {
     }
 
     /** Run EN: the eyes at feet cell x y z see the cell - nothing collides between, or the first hit is the cell itself (an ore's face). */
-    private static boolean seesCell(LocalPlayer p, int x, int y, int z, int[] c) {
+    static boolean seesCell(LocalPlayer p, int x, int y, int z, int[] c) {
         var lv = p.level();
         var from = new net.minecraft.world.phys.Vec3(x + 0.5, y + 1.62, z + 0.5);   // game fact: eye height 1.62
         var to = new net.minecraft.world.phys.Vec3(c[0] + 0.5, c[1] + 0.5, c[2] + 0.5);

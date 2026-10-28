@@ -340,11 +340,33 @@ public final class CaveRecord {
      * Run EK: the cave cell nearest the feet within the eyes' reach of them ({@link io.github.mojolowjo.entropybot.cave.ExploreRules#withinReach},
      * the lip walk's own reach); MIN_VALUE: none. A cube of the reach round the feet (9 x 9 x 9 cells at most).
      */
-    /** Run ES: the feet are in this cave - one of its cells, or one within the eyes' reach ({@link #cellInReach}); no cells: false. */
-    boolean holdsFeet(int fx, int fy, int fz) {
+    /**
+     * Run ES (review of 2394a868): the feet are in this cave - one of its cells, or a cave cell within the eyes' reach that
+     * the eyes SEE ({@code sees}: the cell {x, y, z} is in sight from the feet - GoalReachBlock's rule: reach AND sight; a
+     * wall between is outside). The nearest {@link #SIGHT_TRIES} cells in reach are tried, nearest first. No cells: false.
+     */
+    boolean holdsFeet(int fx, int fy, int fz, java.util.function.Predicate<int[]> sees) {
         if (cells.isEmpty()) return false;
-        return cells.contains(Sightings.cell(fx, fy, fz)) || cellInReach(fx, fy, fz) != Long.MIN_VALUE;
+        if (cells.contains(Sightings.cell(fx, fy, fz))) return true;
+        int r = (int) Math.ceil(io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH);
+        int[] feet = {fx, fy, fz};
+        List<long[]> near = new ArrayList<>();                                  // {cell, distance squared}
+        for (int dy = -r; dy <= r + 2; dy++)                                        // structural: the eyes 1.62 over the feet
+            for (int dx = -r; dx <= r; dx++)
+                for (int dz = -r; dz <= r; dz++) {
+                    long c = Sightings.cell(fx + dx, fy + dy, fz + dz);
+                    touched++;
+                    if (cells.contains(c) && io.github.mojolowjo.entropybot.cave.ExploreRules.withinReach(feet, new int[]{fx + dx, fy + dy, fz + dz}))
+                        near.add(new long[]{c, (long) dx * dx + (long) dy * dy + (long) dz * dz});
+                }
+        near.sort(java.util.Comparator.comparingLong(a -> a[1]));
+        for (int i = 0; i < near.size() && i < SIGHT_TRIES; i++)
+            if (sees == null || sees.test(Sightings.cellOf(near.get(i)[0]))) return true;
+        return false;
     }
+
+    /** Review of 2394a868: the cave cells in reach whose sight is tried at most (the nearest; a ray each). */
+    static final int SIGHT_TRIES = 8; // structural: a few rays, the nearest cells of the reach cube
 
     long cellInReach(int fx, int fy, int fz) {
         int r = (int) Math.ceil(io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH);

@@ -187,12 +187,18 @@ public final class Sightings {
 
     /**
      * 0.39.z78 run ES (rule 23 (2)): the feet fx fy fz are in the known cave at x y z - a cell of its record, or a cave cell
-     * within the eyes' reach of them (CaveRecord.cellInReach, the stand's own reader: a cell the bot dug beside the cave
-     * counts, the index never takes it in). False: no record, or none in reach (rule 15: its cells not fed yet).
+     * within the eyes' reach of them that the eyes see ({@code sees}; CaveRecord.holdsFeet: a cell the bot dug beside the
+     * cave counts, the index never takes it in; a wall between is outside). Its record not fed yet: {@code unfed} (the
+     * index's volume of the feet). False: no record, or none in reach and sight.
      */
-    public synchronized boolean caveHolds(String dim, int x, int y, int z, int fx, int fy, int fz) {
+    public synchronized boolean caveHolds(String dim, int x, int y, int z, int fx, int fy, int fz,
+                                          java.util.function.Predicate<int[]> sees, java.util.function.BooleanSupplier unfed) {
         CaveRecord r = rec(dim, x, y, z);
-        return r != null && r.holdsFeet(fx, fy, fz);
+        if (r == null) return false;
+        // review of 2394a868 (rule 23 (2)): the record is THE reader; the index's volume only while the record has no cells
+        // fed (unfed: the feet's volume is the cave's, CaveIndex.volumeAt)
+        if (r.cellsSoFar() == 0) return unfed != null && unfed.getAsBoolean();
+        return r.holdsFeet(fx, fy, fz, sees);
     }
 
     /** 0.39.z78 J6c: the air-exposed blocks of the known cave at x y z (CaveRecord.Exposure); null: no known cave there. */

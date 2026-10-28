@@ -1068,7 +1068,9 @@ public final class AaRuntime implements JobPort {
             // run ES (rule 23 (2); 08:49:56 / 08:52:37: the feet in a mined ore cell beside the cave - the index never takes in a dug
             // cell - priced a lip walk from deep inside): also the record's own reader of "in the cave", the stand's
             // (CaveRecord.cellInReach: a cave cell within the eyes' reach of the feet)
-            boolean inside = (feetRoot >= 0 && feetRoot == idx.volumeAt(k.x(), k.y(), k.z())) || sg.caveHolds(dim, k.x(), k.y(), k.z(), me[0], me[1], me[2]);
+            // review of 2394a868: the record alone (in reach AND in sight, as GoalReachBlock), the index's volume only while unfed
+            boolean inside = sg.caveHolds(dim, k.x(), k.y(), k.z(), me[0], me[1], me[2], c -> StepHands.seesCell(p, me[0], me[1], me[2], c),
+                    () -> feetRoot >= 0 && feetRoot == idx.volumeAt(k.x(), k.y(), k.z()));
             ways.add(new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(k.x(), k.y(), k.z(), Math.sqrt(Jobs.distSq(me, new int[]{k.x(), k.y(), k.z()})),
                     ore, fam, rate, walked, k.size(), unseen, leftKeys(sg.caveLeft(dim, k.x(), k.y(), k.z(), fam)), lips(pass, k, me))
                     .withOut(out).withInside(inside).withBasis(walked ? null : pr.why()));
