@@ -112,11 +112,6 @@ public final class ExploreWords {
 
     public interface BiPred { boolean test(int x, int z); }
 
-    /** 0.23.1: a chunk counts as seen when explored.json has it or the map has a painted tile there (null: not known yet = seen). */
-    public static boolean seen(boolean explored, Boolean painted) {
-        return explored || painted == null || painted;
-    }
-
     /** 0.23.1: the report's tail for what explore/find took on the way: "; took 12 oak_log, 4 coal" ("" for nothing). */
     public static String took(java.util.Map<String, Integer> took) {
         if (took == null || took.isEmpty()) return "";
