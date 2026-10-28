@@ -56,8 +56,15 @@ public final class WalkProbe {
     /** The probe is on (Tuning debug.walkProbe 1). */
     public static boolean on() { return ProbeLines.on(); }
 
+    /** Run EQ: the step the probe covers is a place-near (its line carries the fork's face check). */
+    private static volatile boolean placeStep;
+
     /** StepHands: a walk step started (its text); null = no walk step runs. Cheap: one field. */
-    static void step(String text) {
+    static void step(String text) { step(text, false); }
+
+    /** Run EQ: as above; {@code place}: a place-near step (the walk line adds the fork's face check). */
+    static void step(String text, boolean place) {
+        placeStep = text != null && place;
         step = text;
         walkAnswer = "-";
         lastEvent = null;
@@ -115,7 +122,15 @@ public final class WalkProbe {
         } catch (LinkageError e) {
             calc = "not readable from this fork: " + e;          // rule 15: said, not guessed
         }
-        return line + ProbeLines.lastCalc(calc);
+        if (!placeStep) return line + ProbeLines.lastCalc(calc);
+        // run EQ: a place step's leg - the fork's last failed face check (IBuilderProcess.legFaceCheck, job-vein d1d15445)
+        String face;
+        try {
+            face = ProbeLines.faceCheck(b.getBuilderProcess().legFaceCheck());
+        } catch (LinkageError e) {
+            face = " | face check not readable from this fork: " + e;   // rule 15: said, not guessed
+        }
+        return line + ProbeLines.lastCalc(calc) + face;
     }
 
     /**

@@ -73,6 +73,30 @@ class J6bEqTest {
     /** The EQ scenario: the chestplate's stall re-plans it and is a world fact; the leggings never price that place-near. */
     @Test
     void theChestplatesStall_stopsTheLeggingsIdenticalStep() {
+        scenario(stalled(), "place furnace near me failed at -52 17 -41: no progress 30 s");
+    }
+
+    /**
+     * The fork's named end (job-vein 64d1bba3: every near cell's face check failed, the bot's own body in the way; no
+     * GoalPlace stand on the block): the place step's FAILED reason is the same place fact (StepHands.placeNearStatus ->
+     * FactChange.placeFailed at the feet), so the next way runs and no order places near me here again.
+     */
+    @Test
+    void theForksNamedEnd_isTheStepFact_theNextWayRuns() {
+        String end = "gave up at place furnace near me: no cell near -52 17 -41 with a face to place on"
+                + " (face check at -52 17 -42: the block would collide with an entity (the bot's own body or a mob))";
+        FactChange.placeFailed("minecraft:furnace", end, FEET);
+        scenario(FactChange.take(), "place furnace near me failed at -52 17 -41: " + end);
+    }
+
+    /** Run EQ: the walk probe's face-check part on a place step. */
+    @Test
+    void theFaceCheckProbePart() {
+        assertEquals(" | face check every face passed (none failed in this leg)", io.github.mojolowjo.entropybot.commands.ProbeLines.faceCheck(null));
+        assertEquals(" | face check face check at -52 17 -42: no face", io.github.mojolowjo.entropybot.commands.ProbeLines.faceCheck("face check at -52 17 -42: no face"));
+    }
+
+    private static void scenario(FactChange.Fact f, String said) {
         ScenariosTest.world("wooden", "stone");
         Clock.Fake clock = new Clock.Fake(10_000_000);
         Blackboard bb = new Blackboard(clock, new FakePort(), new Tracer());
@@ -84,7 +108,6 @@ class J6bEqTest {
         Chain before = Goals.chain(bb, legs);
         assertEquals(new Step.PlaceNear("furnace"), before.steps().get(0), "before: place furnace near me: " + before.steps());
 
-        FactChange.Fact f = stalled();
         Steps.Routine r = Goals.replan(bb, chest, new Step.PlaceNear("furnace"), f, "no progress 30 s");
         assertNotNull(r, "re-planned");
         assertTrue(Goals.droppedSources(chest).containsKey("place at -52 17 -41"), "the chestplate holds it: " + Goals.droppedSources(chest));
@@ -93,7 +116,7 @@ class J6bEqTest {
         Chain after = Goals.chain(bb, legs);
         assertNotNull(after);
         assertTrue(after.steps().stream().noneMatch(s -> s instanceof Step.PlaceNear), "the leggings never place near me here again: " + after.steps());
-        assertTrue((after.why() + " | " + after.missing()).contains("place furnace near me failed at -52 17 -41: no progress 30 s"),
+        assertTrue((after.why() + " | " + after.missing()).contains(said),
                 "said with the chestplate's reason: " + after.why() + " | " + after.missing());
 
         // far from it (past failures.moved + the margin): placing near me there is a way again

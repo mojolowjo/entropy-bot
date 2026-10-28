@@ -130,7 +130,7 @@ class J6bEnTest {
         assertEquals(" | last calc none (no 'no path' end in this walk)", io.github.mojolowjo.entropybot.commands.ProbeLines.lastCalc(null));
         assertEquals(" | last calc calc FAILURE, nodes 120, best -59 62 72", io.github.mojolowjo.entropybot.commands.ProbeLines.lastCalc("calc FAILURE, nodes 120, best -59 62 72"));
         String src = java.nio.file.Files.readString(java.nio.file.Path.of("src/main/java/io/github/mojolowjo/entropybot/commands/StepHands.java"));
-        assertTrue(src.contains("|| s instanceof Step.ToCave || s instanceof Step.Cave ? s.text() : null"), "the walk probe covers the lip and the caving step");
+        assertTrue(src.contains("|| s instanceof Step.ToCave || s instanceof Step.Cave || s instanceof Step.PlaceNear ? s.text() : null"), "the walk probe covers the lip and the caving step (and run EQ's place step)");
     }
 
     /** One arrived reader: the caving step sets no GoalNear and reads no eye-reach "reached" (rule 23 (2)). */

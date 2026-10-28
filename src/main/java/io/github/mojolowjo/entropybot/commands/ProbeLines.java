@@ -143,6 +143,14 @@ public final class ProbeLines {
         return " | last calc " + (line == null ? "none (no 'no path' end in this walk)" : line);
     }
 
+    /**
+     * Run EQ: a place step's walk line part - the fork's last face check that found no usable face
+     * (IBuilderProcess.legFaceCheck, job-vein d1d15445; null: every face check passed). Pure.
+     */
+    public static String faceCheck(String line) {
+        return " | face check " + (line == null ? "every face passed (none failed in this leg)" : line);
+    }
+
     private static String flag(Boolean b) { return b == null ? "not read (Baritone not loaded)" : b.toString(); }
 
     /** The phase line: what changed from {@code was} to {@code now} (the step's start when {@code was} is null); {@code folded}: changes not printed since the last line. */

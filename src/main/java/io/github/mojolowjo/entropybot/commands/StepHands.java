@@ -339,7 +339,8 @@ public final class StepHands implements Steps.Hands {
         step = s;
         // 0.39.z54 B: the walk probe's step (one field; the probe itself reads Tuning debug.walkProbe)
         WalkProbe.step(s instanceof Step.ToStrip || s instanceof Step.ToBand || s instanceof Step.Walk || s instanceof Step.ToStation || s instanceof Step.ToSurface
-                || s instanceof Step.ToCave || s instanceof Step.Cave ? s.text() : null);     // run EN: the lip and the caving walks too
+                || s instanceof Step.ToCave || s instanceof Step.Cave || s instanceof Step.PlaceNear ? s.text() : null,     // run EN: the lip and the caving walks too
+                s instanceof Step.PlaceNear);            // run EQ: the place step's leg, with the fork's face check
         StepProbe.begin(s);                      // 0.39.z56 item 1: every step kind (one field; the probe reads Tuning debug.stepProbe)
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null) return "error: not in a world";
