@@ -93,7 +93,7 @@ public final class FactChange {
      * 0.39.z65 review 1 (Opus Design): the chain's priced walk to the known station at {@code at} ("x y z") failed (or did not
      * start): a source fact keyed {@link io.github.mojolowjo.entropybot.aa.NeedChain#stationKey}; 0.39.z78 J5 slice 1: held
      * in the one station store (Goals.replan -> aa.brain.StationHolds.walkFailed: for every order, named by this one, back
-     * once the bot stands failures.moved + the band closer), the order re-plans with the station out (the next known one or
+     * once the bot stands more than failures.moved + the band away from where the walk failed), the order re-plans with the station out (the next known one or
      * a new one placed here). A walk not needed (the station in reach) ends done and holds nothing (StepHands.toStation).
      */
     public static void stationWalk(String name, int x, int y, int z, String why) {

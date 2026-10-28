@@ -111,17 +111,38 @@ class J5StationHoldsTest {
         assertTrue(Goals.noWayLeft(g, "x").contains("station at -261 75 21: " + said), Goals.noWayLeft(g, "x"));
     }
 
-    /** The walk hold's band: back failures.moved + 8 closer, held again within failures.moved closer (no flip at one edge). */
+    /**
+     * The walk hold's band, by the distance from where the walk failed (WorldFacts.refresh's band): back past failures.moved
+     * + 8 away, held again within failures.moved (no flip at one edge). Toward the station counts as away too.
+     */
     @Test
     void aWalkHoldLiftsByDistanceWithTheBand() {
         double m = Failures.movedV();
         int[] from = {0, 10, 0};
         StationHolds.INSTANCE.walkFailed("o", 0, 70, 0, "short", from);
         assertNotNull(StationHolds.INSTANCE.held(0, 70, 0, new int[]{0, (int) (10 + m + 4), 0}, null), "inside the band: still held");
-        assertNull(StationHolds.INSTANCE.held(0, 70, 0, new int[]{0, (int) (10 + m + 8), 0}, null), "failures.moved + 8 closer: back");
+        assertNull(StationHolds.INSTANCE.held(0, 70, 0, new int[]{0, (int) (10 + m + 9), 0}, null), "past failures.moved + 8 away: back");
         assertNull(StationHolds.INSTANCE.held(0, 70, 0, new int[]{0, (int) (10 + m + 4), 0}, null), "back inside the band: stays back");
-        assertNotNull(StationHolds.INSTANCE.held(0, 70, 0, new int[]{0, (int) (10 + m - 1), 0}, null), "under failures.moved closer: held again");
+        assertNotNull(StationHolds.INSTANCE.held(0, 70, 0, new int[]{0, (int) (10 + m - 1), 0}, null), "within failures.moved: held again");
         assertNotNull(StationHolds.INSTANCE.held(0, 70, 0, null, null), "feet not known: held (rule 15)");
+    }
+
+    /**
+     * j5s1 review (run DU: the walk failed 1-2 blocks from its table): a hold learned 2 blocks from the table lifts once the
+     * bot moves the band away from there and comes back within failures.moved of it - never held for good (the old gain
+     * toward the station could never pass the band from 2 blocks off).
+     */
+    @Test
+    void aHoldLearnedTwoBlocksFromItsTableLiftsAwayAndComesBackWithin() {
+        double m = Failures.movedV();
+        int[] table = {100, 64, 100}, from = {102, 64, 100};
+        StationHolds.INSTANCE.walkFailed("minecraft:stone_pickaxe", table[0], table[1], table[2], "the walk to it ended short: stopped 2 blocks away", from);
+        assertNotNull(StationHolds.INSTANCE.held(100, 64, 100, from, null), "where it failed: held");
+        int[] away = {(int) (102 + m + 9), 64, 100};
+        assertNull(StationHolds.INSTANCE.held(100, 64, 100, away, null), "past the band away: lifted");
+        assertTrue(StationHolds.INSTANCE.lines(away, null).isEmpty(), "aa why says nothing held");
+        assertNotNull(StationHolds.INSTANCE.held(100, 64, 100, new int[]{(int) (102 + m - 1), 64, 100}, null), "back within failures.moved: held again");
+        assertNull(StationHolds.INSTANCE.held(100, 64, 100, away, null), "and lifted again past the band");
     }
 
     /** The craft's refusals live in the one store, keyed by the block: a re-placed block is another station. */

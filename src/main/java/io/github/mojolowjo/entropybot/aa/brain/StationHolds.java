@@ -17,8 +17,8 @@ import java.util.function.Function;
  * the stations line (each held one said with its order and reason), the trip key, aa why and the explore end.
  * <ul>
  * <li>{@link #walkFailed}: the walk to the station ended short with the station out of reach - held for every order (a
- * world fact, named by the order that learned it), back once the bot stands failures.moved + the 8-block band closer to it
- * than where the walk failed, held again within failures.moved closer (the band WorldFacts and the order holds used).</li>
+ * world fact, named by the order that learned it), back once the bot stands more than failures.moved + the 8-block band
+ * away from where the walk failed, held again within failures.moved of it (by distance, WorldFacts.refresh's band).</li>
  * <li>{@link #refused}: the station never opened / its use was given up on from every stand - held for every order while
  * that block stands there (a re-placed block is another station: its block id keys it, as the refusal sets did).</li>
  * </ul>
@@ -44,7 +44,7 @@ public final class StationHolds {
     }
 
     private final Map<String, Hold> holds = new LinkedHashMap<>();
-    /** The walk holds the bot stands far enough closer to now (the band's lifted state, by key). */
+    /** The walk holds the bot stands far enough away from now (the band's lifted state, by key). */
     private final java.util.Set<String> back = new java.util.HashSet<>();
 
     /** The walk to the station at x y z ended short from {@code feet} with it out of reach ({@code order}: who learned it). */
@@ -74,10 +74,11 @@ public final class StationHolds {
                 String now = blockAt == null ? null : blockAt.apply(new int[]{h.x(), h.y(), h.z()});
                 if (now != null && !now.equals(h.block())) { it.remove(); continue; }     // another block there: another station
             } else if (feet != null && h.from() != null) {
-                int[] at = {h.x(), h.y(), h.z()};
-                double gain = Failures.moved(h.from(), at) - Failures.moved(feet, at);
-                if (gain >= Failures.movedV() + WorldFacts.MARGIN) back.add(h.key());
-                else if (gain < Failures.movedV()) back.remove(h.key());
+                // j5s1 review: by the distance from where the walk failed, as WorldFacts.refresh - never by the gain toward
+                // the station (a walk that failed within the band of its station could never gain enough: held for good)
+                double d = Failures.moved(h.from(), feet);
+                if (d > Failures.movedV() + WorldFacts.MARGIN) back.add(h.key());
+                else if (d <= Failures.movedV()) back.remove(h.key());
             }
             if (!back.contains(h.key())) out.put(h.key(), h.said());
         }

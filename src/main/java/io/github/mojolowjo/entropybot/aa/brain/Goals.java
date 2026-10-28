@@ -506,7 +506,7 @@ public final class Goals {
         // 0.39.z77 walk: a held walk target keeps it too (the same per-position hold)
         int[] feet = bb.in == null ? null : bb.in.pos;
         // 0.39.z78 J5 slice 1 (rule 23; audit D1, D8): a station walk's hold goes to the ONE station store (StationHolds) -
-        // held for every order, named by this one, back once the bot stands closer - never the order's sources nor the world
+        // held for every order, named by this one, back once the bot stands the band away from here - never the order's sources nor the world
         // facts as well
         boolean station = sourceFact && src.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STATION_AT);
         if (station) {
