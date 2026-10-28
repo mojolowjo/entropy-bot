@@ -254,7 +254,7 @@ public final class ChunkPass {
                 Sightings sg = sightings();
                 if (sg != null && dim != null) seenRt.tick(level, mc.player, index, sg.ore(), dim, tick, now);
                 if (sg != null && dim != null) sightRt.tick(level, mc.player, sg, dim, seenRt.budget, tick, now);
-                if (sg != null && dim != null) caveRays.tick(level, mc.player, caveIndex, sg, dim, seenRt.budget, tick, now);   // 0.39.z78 J6
+                if (sg != null && dim != null) { labels(); caveRays.tick(level, mc.player, caveIndex, sg, dim, seenRt.budget, tick, now); }   // 0.39.z78 J6 (the labels' floor first)
             } catch (Throwable t) {
                 error("seen", t);
             }
@@ -373,6 +373,74 @@ public final class ChunkPass {
             error("ore stats load", t);
             if (stats == null) stats = new OreStats();    // count in memory at least; the file is not overwritten unseen (see saveStats)
             return stats;
+        }
+    }
+
+    // ---- 0.39.z78 J6: the owner's cave labels (cave-labels.json, the global one and the world's) and the floor from them ----
+
+    private CaveLabels labels = new CaveLabels(), worldLabels = new CaveLabels();
+    private String labelRoot;
+    private CaveLabels.Floor floor = CaveLabels.derive(List.of());
+
+    /** The floor in force (aa cave check / aa cave yes|no). */
+    public CaveLabels.Floor floor() { labels(); return floor; }
+
+    /**
+     * The global labels (every world's: the floor reads them); loaded once per world, the floor derived and set on the
+     * cave index, its line said. A missing file is said once a world (rule 15: empty by absence). Never throws.
+     */
+    public CaveLabels labels() {
+        try {
+            io.github.mojolowjo.entropybot.io.BotFiles files = Core.INSTANCE.files();
+            if (files == null) return labels;
+            String r = files.worldRoot().toString();
+            if (r.equals(labelRoot)) return labels;
+            int[] skipped = new int[1];
+            Path gf = files.root().resolve("cave-labels.json"), wf = files.worldRoot().resolve("cave-labels.json");
+            CaveLabels g = java.nio.file.Files.isRegularFile(gf) ? CaveLabels.read(java.nio.file.Files.readString(gf), skipped) : new CaveLabels();
+            CaveLabels w = java.nio.file.Files.isRegularFile(wf) ? CaveLabels.read(java.nio.file.Files.readString(wf), skipped) : new CaveLabels();
+            if (skipped[0] > 0) LOG.warn("[entropybot] sense: cave-labels.json had {} unreadable part(s), skipped", skipped[0]);
+            if (!java.nio.file.Files.isRegularFile(gf)) LOG.info("[entropybot] sense: no cave labels yet ({} not found): the default floor until the owner labels (aa cave yes|no)", gf);
+            labels = g;
+            worldLabels = w;
+            labelRoot = r;
+            refloor();
+        } catch (Throwable t) {
+            error("cave labels load", t);
+            labelRoot = null;
+        }
+        return labels;
+    }
+
+    private void refloor() {
+        floor = CaveLabels.derive(labels.all());
+        int[] was = caveIndex.floor();
+        caveIndex.setFloor(floor.rim(), floor.reach());
+        if (was[0] != floor.rim() || was[1] != floor.reach() || labelRoot != null) LOG.info("[entropybot] sense: {}", floor.line());
+    }
+
+    /** A label (aa cave yes|no): into the global and the world's file, the floor derived again. Never throws. */
+    public void label(CaveLabels.Label l) {
+        try {
+            labels().add(l);
+            worldLabels.add(l);
+            refloor();
+            io.github.mojolowjo.entropybot.io.BotFiles files = Core.INSTANCE.files();
+            if (files == null) return;
+            String gj = labels.toJson(), wj = worldLabels.toJson();
+            labels.saved();
+            worldLabels.saved();
+            Path gf = files.root().resolve("cave-labels.json"), wf = files.worldRoot().resolve("cave-labels.json");
+            worker().execute(() -> {
+                try {
+                    files.writeAtomic(gf, gj);
+                    files.writeAtomic(wf, wj);
+                } catch (Throwable t) {
+                    LOG.warn("[entropybot] sense: couldn't write cave-labels.json: {}", t.toString());
+                }
+            });
+        } catch (Throwable t) {
+            error("cave label", t);
         }
     }
 

@@ -55,7 +55,8 @@ public final class CaveIndex {
     /** structural: the chunks a client can hold at the largest render distance, 32: (2 x 32 + 1)^2 - a guard, never reached with unloads. */
     static final int MAX_CHUNKS = 65 * 65;
     /**
-     * Run ED, the owner's definition (a): the air cells a cave's opening holds at least (its cells beside a sky-lit
+     * Run ED, the owner's definition (a), the DEFAULT until the owner's labels derive the floor ({@link CaveLabels#derive}):
+     * the air cells a cave's opening holds at least (its cells beside a sky-lit
      * column, summed over the volume). The cave carver's tunnel is 2+ cells wide (configured_carver/cave.json and
      * CaveWorldCarver, 1.21: horizontal radius (1.5 + sin x thickness) x 0.7..1.4, so at least 1.5 x 0.7 = 1.05 a side;
      * vertical x 0.8..1.3) - where it breaks the surface its face shows more than two cells; a one-block hole or a
@@ -63,7 +64,7 @@ public final class CaveIndex {
      */
     public static final int MIN_RIM = 3; // structural: a carver tunnel's face, 2+ wide (the manager's ruling)
     /**
-     * Run ED, the owner's definition (b): the blocks a cave's air goes down below its opening's lowest cell. A carver
+     * Run ED, the owner's definition (b), the DEFAULT until the labels derive it: the blocks a cave's air goes down below its opening's lowest cell. A carver
      * tunnel's radius is 1.5 x 0.7..1.4 (cave.json; the tunnel about 3 across), so the air that continues downward past
      * the mouth reaches at least 5 below it (the manager's ruling). An overhang or the air under a ledge goes no lower than
      * the ground at its mouth (0).
@@ -138,6 +139,16 @@ public final class CaveIndex {
     }
 
     private final Map<Long, Chunk> chunks = new HashMap<>();
+    /** The floor in force (the owner's labels derive it, CaveLabels.derive; the defaults MIN_RIM / MIN_REACH until then). */
+    private int floorRim = MIN_RIM, floorReach = MIN_REACH;
+
+    /** The floor derived from the owner's labels ({@link CaveLabels#derive}); a cave is what passes it. */
+    public synchronized void setFloor(int rim, int reach) {
+        floorRim = rim;
+        floorReach = reach;
+    }
+
+    public synchronized int[] floor() { return new int[]{floorRim, floorReach}; }
     private int[] parent = new int[1024];
     private long[] cells = new long[1024];
     private int[] minY = new int[1024], maxY = new int[1024];
@@ -349,7 +360,7 @@ public final class CaveIndex {
     }
 
     private boolean cave(int r) {
-        return rimN[r] >= MIN_RIM && rimLow[r] != Integer.MAX_VALUE && (long) rimLow[r] - minY[r] >= MIN_REACH;
+        return rimN[r] >= floorRim && rimLow[r] != Integer.MAX_VALUE && (long) rimLow[r] - minY[r] >= floorReach;
     }
 
     private int runAt(long c) { int[] p = Sightings.cellOf(c); return runAt(p[0], p[1], p[2]); }
@@ -576,6 +587,84 @@ public final class CaveIndex {
         }
         return "cave index: volumes " + n + " (caves " + caves + ", dips " + (n - caves - none) + ", no opening " + none + "), rim credits "
                 + rimSeen.size() + ", air credits " + credited.size() + ", known " + k;
+    }
+
+    /** The volume a label names: its entry (the opening cell nearest the eyes, else the cell found), rim, reach (-1: no opening), size, depth. */
+    public record Spot(int x, int y, int z, int root, int rim, int reach, Size size, Depth depth, boolean cave) {}
+
+    /**
+     * The owner's label aim (aa cave yes|no): the volume whose air the crosshair's ray passed last ({@code path}, the
+     * cells before the block it hit), else one beside the block it hit ({@code hit}, null: none), else the opening cell
+     * nearest the eyes within {@code reach}; null: no air volume here. Any volume - a dip too: the owner labels what the
+     * floor gets wrong. Pure.
+     */
+    public synchronized Spot labelSpot(List<int[]> path, int[] hit, double ex, double ey, double ez, double reach) {
+        fresh();
+        int r = -1;
+        int[] at = null;
+        if (path != null) for (int i = path.size() - 1; i >= 0 && r < 0; i--) { int[] p = path.get(i); r = runAt(p[0], p[1], p[2]); if (r >= 0) at = p; }
+        if (r < 0 && hit != null) {
+            double best = Double.MAX_VALUE;
+            for (int[] d : SIX) {
+                int[] n = {hit[0] + d[0], hit[1] + d[1], hit[2] + d[2]};
+                int q = runAt(n[0], n[1], n[2]);
+                double dd = sq(n[0] + 0.5 - ex) + sq(n[1] + 0.5 - ey) + sq(n[2] + 0.5 - ez);
+                if (q >= 0 && dd < best) { best = dd; r = q; at = n; }
+            }
+        }
+        int span = (int) Math.ceil(reach);
+        if (r < 0) {
+            double best = reach * reach;
+            for (int x = (int) Math.floor(ex) - span; x <= (int) Math.floor(ex) + span; x++)
+                for (int z = (int) Math.floor(ez) - span; z <= (int) Math.floor(ez) + span; z++)
+                    for (int y = (int) Math.floor(ey) - span; y <= (int) Math.floor(ey) + span; y++) {
+                        int q = runAt(x, y, z);
+                        if (q < 0 || sky(x, z) > y) continue;                          // an opening cell only
+                        double dd = sq(x + 0.5 - ex) + sq(y + 0.5 - ey) + sq(z + 0.5 - ez);
+                        if (dd <= best) { best = dd; r = q; at = new int[]{x, y, z}; }
+                    }
+        }
+        if (r < 0) return null;
+        int root = find(r);
+        int[] entry = nearestOpening(root, ex, ey, ez, 32);                           // structural: two chunks around the eyes
+        if (entry == null) entry = at;
+        double walk = io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps(), cap = io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.exploreMinutes");
+        return new Spot(entry[0], entry[1], entry[2], root, rimN[root], rimLow[root] == Integer.MAX_VALUE ? -1 : rimLow[root] - minY[root],
+                Size.of(cells[root], walk, cap), Depth.of(minY[root]), cave(root));
+    }
+
+    private int[] nearestOpening(int root, double ex, double ey, double ez, int r) {
+        int[] best = null;
+        double bd = Double.MAX_VALUE;
+        int x0 = (int) Math.floor(ex), z0 = (int) Math.floor(ez);
+        for (int cx = (x0 - r) >> 4; cx <= (x0 + r) >> 4; cx++)
+            for (int cz = (z0 - r) >> 4; cz <= (z0 + r) >> 4; cz++) {
+                Chunk ch = chunks.get(chunkKey(cx, cz));
+                if (ch == null || ch.lo.length == 0) continue;
+                for (int c = 0; c < 256; c++) {
+                    int tx = (cx << 4) + (c & 15), tz = (cz << 4) + (c >> 4);
+                    int s = sky(tx, tz);
+                    for (int i = ch.start[c]; i < ch.start[c + 1]; i++) {
+                        if (s > ch.hi[i] || find(ch.id[i]) != root) continue;
+                        int y = Math.max(ch.lo[i], s);
+                        double dd = sq(tx + 0.5 - ex) + sq(y + 0.5 - ey) + sq(tz + 0.5 - ez);
+                        if (dd < bd) { bd = dd; best = new int[]{tx, y, tz}; }
+                    }
+                }
+            }
+        return best;
+    }
+
+    private static double sq(double v) { return v * v; }
+
+    /** aa cave check: the credits of the volume at x y z this session - {rim credits, air credits, known 0/1}; null: no volume there (not loaded). */
+    public synchronized int[] creditsAt(int x, int y, int z) {
+        fresh();
+        int r = runAt(x, y, z);
+        if (r < 0) return null;
+        int root = find(r), rim = 0;
+        for (long c : rimSeen) { int q = runAt(c); if (q >= 0 && find(q) == root) rim++; }
+        return new int[]{rim, credits.getOrDefault(root, Set.of()).size(), known.contains(root) ? 1 : 0};
     }
 
     /** One cave of {@link #truth}: its opening cell nearest the bot, size bucket, depth band, rim and air credits, known. */
