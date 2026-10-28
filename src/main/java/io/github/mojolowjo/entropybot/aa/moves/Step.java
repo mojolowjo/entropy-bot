@@ -291,10 +291,17 @@ public sealed interface Step {
      * Walk new land for {@code minutes} (the explore verb: Baritone's explore goal), the want's way. live-facts: {@code until}
      * (an item id, null: none) ends it the moment a source of that item is known (a chain's explore for a missing source).
      */
-    record Explore(int minutes, String until) implements Step {
+    record Explore(int minutes, String until, boolean leased) implements Step {
         public Explore(int minutes) { this(minutes, null); }
 
-        public String text() { return "explore " + minutes + (until == null ? "" : " until " + until); }
+        public Explore(int minutes, String until) { this(minutes, until, false); }
+
+        /**
+         * 0.39.z78 fc cause 2 (run FC: boxed in at 43 47 5, no walk up, no climb, every order stopped): {@code leased} - the
+         * explore's FIRST walk runs under the ordinary lease (Baritone may break and place its way to the explore's own
+         * next target, walk.placePenalty); the no-break explore goes on from where it ends.
+         */
+        public String text() { return "explore " + minutes + (until == null ? "" : " until " + until) + (leased ? " (its first walk may break or place: boxed in)" : ""); }
     }
 
     /**

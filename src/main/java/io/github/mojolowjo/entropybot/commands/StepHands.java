@@ -1007,7 +1007,9 @@ public final class StepHands implements Steps.Hands {
                     stands += r.size();
                 }
                 if (parts.isEmpty()) {
-                    dropGoto(cv, g.key(), g.why(), "no standable cell within reach and sight of its " + g.cells().size() + " cell(s)");
+                    // fc (cause 3): a branch whose goal over the unseen cells behind it is empty - dropped once, said so
+                    dropGoto(cv, g.key(), g.why(), g.branch() ? io.github.mojolowjo.entropybot.cave.CaveWalk.noStandSees(g.cells().size())
+                            : "no standable cell within reach and sight of its " + g.cells().size() + " cell(s)");
                     return null;                                                         // the next one, this tick
                 }
                 cv.goal = g.cell().clone();
@@ -1272,7 +1274,7 @@ public final class StepHands implements Steps.Hands {
             case Step.FindCave k -> c.stepJob(s.text(), () -> Mining.get().find(p, io.github.mojolowjo.entropybot.vocab.ExploreWords.find("cave " + k.minutes(), Commands.POI_KINDS, Commands::isBiome)));
             // 0.39.z76 send-back 3 (rule 22): a chain's explore is a priced way for one source - no gathering on the way (run AU:
             // the gathers' mine process placed blocks and ran GoalRunAwayFromMaintainY), no placing (Mining's explore lease)
-            case Step.Explore k -> c.stepJob(s.text(), () -> Mining.get().explore(p, k.minutes() + (k.until() == null ? "" : " until " + k.until()) + " gather off"));
+            case Step.Explore k -> c.stepJob(s.text(), () -> Mining.get().explore(p, k.minutes() + (k.until() == null ? "" : " until " + k.until()) + " gather off", k.leased()));   // fc cause 2: the leased first walk
             case Step.Dig d -> c.stepJob(s.text(), () -> DigCommands.dig(c, p, d.from()[0] + " " + d.from()[1] + " " + d.from()[2] + " " + d.to()[0] + " " + d.to()[1] + " " + d.to()[2]
                     + (d.ores() ? " ores" : "") + (d.viaEngine() ? " via engine" : ""), me));
             case Step.DigArea k -> c.stepJob(s.text(), () -> DigCommands.dig(c, p, k.box()[0] + " " + k.box()[1] + " " + k.box()[2] + " " + k.box()[3] + " +" + k.up(), me));
