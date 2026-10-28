@@ -74,7 +74,7 @@ public final class CaveRecord {
     /** Run EK: the seen cells that are cells of the volume (unseen() = cellCount - seenIn). */
     private int seenIn;
     /** Run EK: the seen volume cells with an unseen volume neighbour; {@link #groups} rebuilt only when it changed. */
-    private final Set<Long> frontierCells = new HashSet<>();
+    private final java.util.TreeSet<Long> frontierCells = new java.util.TreeSet<>();     // sorted: a regroup walks it in steps
     private boolean frontierChanged = true;
     private List<Group> groupsNow = List.of();
     private final Map<Long, Ore> ores = new LinkedHashMap<>();
@@ -109,6 +109,7 @@ public final class CaveRecord {
      */
     int recFeed(CaveIndex idx, int budget) {
         if (feed == null) feed = new CaveIndex.Feed();
+        regroupSpent = 0;                                                   // 88b28290 review 1: a new tick (the one feeder's step)
         int n = idx.feed(x, y, z, feed, budget, this::addCell);
         touched += n;
         return n;
@@ -165,7 +166,7 @@ public final class CaveRecord {
      * newly seen count.
      */
     int recStood(int fx, int fy, int fz, long now) {
-        if (lastAt != now) { lastAt = now; version++; }
+        if (lastAt != now) { lastAt = now; version++; regroupSpent = 0; }   // 88b28290 review 1: the stand is once a tick too
         long start = Sightings.cell(fx, fy, fz);
         if (!cells.contains(start)) start = cellInReach(fx, fy, fz);
         if (start == Long.MIN_VALUE) return 0;
@@ -315,31 +316,82 @@ public final class CaveRecord {
      */
     public List<Group> frontier() {
         if (!loaded()) return List.of();
-        if (!frontierChanged) return groupsNow;
-        frontierChanged = false;
-        List<Group> out = new ArrayList<>();
-        Set<Long> done = new HashSet<>();
-        for (long f : new java.util.TreeSet<>(frontierCells)) {
-            if (!done.add(f)) continue;
-            List<Long> group = new ArrayList<>();
-            ArrayDeque<Long> q = new ArrayDeque<>();
-            q.add(f);
-            while (!q.isEmpty()) {
-                long c = q.poll();
-                group.add(c);
-                touched++;
-                int[] p = Sightings.cellOf(c);
-                for (int[] o : SIX) {
-                    long n = Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2]);
-                    if (frontierCells.contains(n) && done.add(n)) q.add(n);
+        if (job == null && frontierChanged) {
+            frontierChanged = false;
+            job = new Regroup(frontierCells);
+        }
+        if (job != null) {
+            // 88b28290 review 1: a frontier of thousands (a long walk in a 200k cave) is regrouped in steps - all at once
+            // when it is small (BUDGET cells), else BUDGET cells a tick (spent counted from the tick's feed or stand)
+            int allow = job.size <= BUDGET ? Integer.MAX_VALUE : Math.max(0, BUDGET - regroupSpent);
+            long before = touched;
+            if (job.step(allow)) {
+                groupsNow = job.result();
+                groupsSaved = groupsNow.size();
+                job = null;
+            }
+            regroupSpent += (int) Math.min(Integer.MAX_VALUE, touched - before);
+        }
+        return groupsNow;
+    }
+
+    /** 88b28290 review 1: the regroup in progress (null: the groups are current), and the regroup cells spent this tick. */
+    private Regroup job;
+    private int regroupSpent;
+
+    /** Run EK / 88b28290 review 1: the frontier is being regrouped (its groups lag by a tick or a few; not done meanwhile). */
+    public boolean regrouping() { return job != null; }
+
+    /** One regroup of the frontier as it stood (its cells sorted once), resumable cell by cell. */
+    private final class Regroup {
+        /** The frontier as it stands (kept sorted: a TreeSet), walked from {@code cursor} up - never copied or sorted again. */
+        final int size;
+        long cursor = Long.MIN_VALUE;
+        boolean started;
+        final Set<Long> done = new HashSet<>();
+        final List<Group> out = new ArrayList<>();
+        ArrayDeque<Long> q;
+        List<Long> group;
+
+        Regroup(java.util.NavigableSet<Long> frontier) { size = frontier.size(); }
+
+        /** Up to {@code allow} cells touched; true: finished. */
+        boolean step(int allow) {
+            long start = touched;
+            while (touched - start < allow) {
+                if (q == null) {
+                    Long nx = started ? frontierCells.higher(cursor) : (frontierCells.isEmpty() ? null : frontierCells.first());
+                    started = true;
+                    while (nx != null && done.contains(nx)) { touched++; cursor = nx; nx = frontierCells.higher(nx); }
+                    if (nx == null) {
+                        out.sort((a, b) -> b.behind() != a.behind() ? Integer.compare(b.behind(), a.behind()) : Long.compare(a.first(), b.first()));
+                        return true;
+                    }
+                    cursor = nx;
+                    done.add(nx);
+                    q = new ArrayDeque<>();
+                    q.add(nx);
+                    group = new ArrayList<>();
+                }
+                while (!q.isEmpty() && touched - start < allow) {
+                    long c = q.poll();
+                    group.add(c);
+                    touched++;
+                    int[] p = Sightings.cellOf(c);
+                    for (int[] o : SIX) {
+                        long n = Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2]);
+                        if (frontierCells.contains(n) && done.add(n)) q.add(n);
+                    }
+                }
+                if (q.isEmpty()) {
+                    out.add(new Group(group.get(0), group.size(), behind(group)));
+                    q = null;
                 }
             }
-            out.add(new Group(group.get(0), group.size(), behind(group)));
+            return false;
         }
-        out.sort((a, b) -> b.behind() != a.behind() ? Integer.compare(b.behind(), a.behind()) : Long.compare(a.first(), b.first()));
-        groupsNow = List.copyOf(out);
-        groupsSaved = groupsNow.size();
-        return groupsNow;
+
+        List<Group> result() { return List.copyOf(out); }
     }
 
     /** The unseen cells connected (through unseen cave air) to the group, counted up to BRANCH_MIN + 1 (run EK: the cap). */
@@ -347,6 +399,7 @@ public final class CaveRecord {
         Set<Long> got = new HashSet<>();
         ArrayDeque<Long> q = new ArrayDeque<>();
         for (long c : group) {
+            touched++;
             int[] p = Sightings.cellOf(c);
             for (int[] o : SIX) {
                 long n = Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2]);
@@ -371,8 +424,10 @@ public final class CaveRecord {
      */
     public boolean done() {
         if (!loaded()) return doneSaved;
+        List<Group> gs = frontier();
+        if (job != null) return false;                                     // 88b28290 review 1: the groups lag the frontier: not known, not done
         boolean d = seenIn > 0;
-        for (Group g : frontier()) if (g.behind() > BRANCH_MIN) d = false;
+        for (Group g : gs) if (g.behind() > BRANCH_MIN) d = false;
         doneSaved = d;
         return d;
     }
@@ -447,7 +502,7 @@ public final class CaveRecord {
 
     /** Run EK: the facts, cached until a record write (a cell fed or seen, an ore, a walk) - the planner's asks read the cache. */
     Facts facts() {
-        if (factsNow != null && factsAt == version && !frontierChanged) return factsNow;
+        if (factsNow != null && factsAt == version && !frontierChanged && job == null) return factsNow;
         factsNow = new Facts(x, y, z, cellCount, unseen(), explored(), groups(), done(), oresByFamily(), walkedMinutes, oreSeenPerMinute(), lastAt, loaded(), line(), stuck(), filling());
         factsAt = version;
         return factsNow;

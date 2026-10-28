@@ -77,6 +77,46 @@ class J6bEkTest {
         assertEquals(0, s.caveFeed(D, idx, CaveRecord.BUDGET), "the index unchanged: nothing fed");
     }
 
+    /**
+     * 88b28290 review 1: a frontier of tens of thousands of cells (16 seen planes across EK's size of volume, 52,224 cells,
+     * every one beside unseen air) is regrouped in steps - each tick's regroup and reads under the budget, done never
+     * claimed while the groups lag, the 16 branches once it is through.
+     */
+    @Test
+    void aFrontierOfThousands_isRegroupedUnderTheBudget() {
+        CaveIndex idx = bigIndex();
+        Sightings s = knownAt(5, 30, 5);
+        for (int t = 0; t < 40 && !s.caveFacts(D, 5, 30, 5).loaded(); t++) s.caveFeed(D, idx, CaveRecord.BUDGET);
+        List<Long> planes = new ArrayList<>();
+        for (int x = 0; x < 64; x += 4) for (int z = 0; z < 64; z++) for (int y = 10; y <= 60; y++) planes.add(Sightings.cell(x, y, z));
+        s.caveSaw(D, 5, 30, 5, planes);
+        s.caveTouched(D, 5, 30, 5);
+        int ticks = 0;
+        boolean lagged = false;
+        while (ticks < 50) {
+            ticks++;
+            s.caveFeed(D, idx, CaveRecord.BUDGET);                                // the tick's feed (nothing new: it only starts the tick)
+            var f = s.caveFacts(D, 5, 30, 5);
+            s.caveFrontier(D, 5, 30, 5);
+            s.caveFacts(D, 5, 30, 5);
+            long t = s.caveTouched(D, 5, 30, 5);
+            assertTrue(t <= CaveRecord.BUDGET + 3264 + 64, "tick " + ticks + ": " + t + " cells touched (the budget, past it by one group's cells at most)");
+            assertFalse(f.done(), "never done while the groups lag or with 16 branches open");
+            if (f.groups() == 16) break;
+            lagged = true;
+        }
+        assertTrue(lagged, "52,224 frontier cells took more than one tick");
+        assertEquals(16, s.caveFacts(D, 5, 30, 5).groups(), "the 16 seen planes, each a branch (after " + ticks + " ticks)");
+    }
+
+    /** 88b28290 review 3: while the cells are read (filling), a saved done is never trusted - the step waits. */
+    @Test
+    void whileFilling_aSavedDoneIsNotTrusted() {
+        var filling = new CaveRecord.Facts(5, 30, 5, 208896, 0, 1, 0, true, java.util.Map.of(), 3, 0, 0, false, "x", false, true);
+        var next = CaveWalk.next(0, 1, 0, 10, filling, List.of(), List.of(), new int[]{5, 30, 5}, 4.5, null);
+        assertTrue(next instanceof CaveWalk.Wait, "filling with a past session's done: wait - " + next);
+    }
+
     /** The in-place sums and frontier agree with a whole count (a small cave, cells given whole, then seen). */
     @Test
     void theIncrementalSumsMatchAWholeCount() {
