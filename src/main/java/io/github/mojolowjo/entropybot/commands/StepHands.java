@@ -818,6 +818,8 @@ public final class StepHands implements Steps.Hands {
         /** Run EN: the walk's reach goal (its one arrived reader), the cells it is over, its drop key, when last set. */
         baritone.api.pathing.goals.Goal reach;
         List<int[]> reachCells = List.of();
+        /** d0682da0 review: each part of the goal (its own reach goal), the same index as reachCells. */
+        List<io.github.mojolowjo.entropybot.cave.ExploreRules.LipGoal> reachParts = List.of();
         long goalKey;
         long goalAt;
         /** Run EN: the gotos dropped in this step (an empty reach goal, no path) and their reasons, said at the end. */
@@ -942,12 +944,16 @@ public final class StepHands implements Steps.Hands {
                 // run EN (rule 2): the goal is a stand Baritone picks - a reach goal (the fork's GoalReachBlock) over each
                 // of the goto's cells, one goal for all (GoalComposite); never the cell itself (EN: a mid-air frontier cell)
                 List<baritone.api.pathing.goals.Goal> parts = new ArrayList<>();
+                List<int[]> partCells = new ArrayList<>();
+                List<io.github.mojolowjo.entropybot.cave.ExploreRules.LipGoal> partGoals = new ArrayList<>();
                 int stands = 0;
                 for (int[] c : g.cells()) {
                     var r = new baritone.api.pathing.goals.GoalReachBlock(new BlockPos(c[0], c[1], c[2]), io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH, 1.62,   // game fact: eye height 1.62
                             (x, y, z) -> standable(p.level(), x, y, z), (x, y, z) -> seesCell(p, x, y, z, c));
                     if (r.isEmpty()) continue;
                     parts.add(r);
+                    partCells.add(c);
+                    partGoals.add(lipGoalOf(r));
                     stands += r.size();
                 }
                 if (parts.isEmpty()) {
@@ -957,7 +963,8 @@ public final class StepHands implements Steps.Hands {
                 cv.goal = g.cell().clone();
                 cv.goalWhy = g.why();
                 cv.goalKey = g.key();
-                cv.reachCells = g.cells();
+                cv.reachCells = partCells;
+                cv.reachParts = partGoals;
                 cv.reach = parts.size() == 1 ? parts.get(0) : new baritone.api.pathing.goals.GoalComposite(parts.toArray(new baritone.api.pathing.goals.Goal[0]));
                 if (cv.reach.isInGoal(me[0], me[1], me[2])) {                            // in reach and sight already: seen, the next move next tick
                     arrivedAt(sg, cv, k, me);
@@ -973,16 +980,21 @@ public final class StepHands implements Steps.Hands {
         }
     }
 
-    /** Run EN: the walk arrived (in its reach goal): its cells are seen from here (the record), the goal is over. */
+    /**
+     * Run EN: the walk arrived (in its reach goal): the goal is over. d0682da0 review (rule 17): seen are only the cells
+     * whose OWN reach goal holds the feet (CaveWalk.seenFrom) - the composite holds when any one part does.
+     */
     private static void arrivedAt(io.github.mojolowjo.entropybot.sense.Sightings sg, Caving cv, Step.Cave k, int[] me) {
         List<Long> seen = new ArrayList<>();
-        for (int[] c : cv.reachCells) seen.add(io.github.mojolowjo.entropybot.sense.Sightings.cell(c[0], c[1], c[2]));
+        for (int[] c : io.github.mojolowjo.entropybot.cave.CaveWalk.seenFrom(cv.reachParts, cv.reachCells, me))
+            seen.add(io.github.mojolowjo.entropybot.sense.Sightings.cell(c[0], c[1], c[2]));
         sg.caveSaw(cv.dim, k.x(), k.y(), k.z(), seen);
-        LOG.info("[entropybot] cave: at {} (feet {}, in its reach goal: its cells in reach and in sight)", cv.goalWhy, Jobs.fmt(me));
+        LOG.info("[entropybot] cave: at {} (feet {}, in its reach goal: {} of its {} cell(s) in reach and in sight)", cv.goalWhy, Jobs.fmt(me), seen.size(), cv.reachCells.size());
         cv.reach = null;
         cv.goal = null;
         cv.hold = null;
         cv.reachCells = List.of();
+        cv.reachParts = List.of();
     }
 
     /** Run EN (rule 23 (1)): a goto dropped for the step with its reason (logged; said at the step's end); the next is picked. */
@@ -994,6 +1006,7 @@ public final class StepHands implements Steps.Hands {
         cv.goal = null;
         cv.hold = null;
         cv.reachCells = List.of();
+        cv.reachParts = List.of();
     }
 
     /** Run EN: the eyes at feet cell x y z see the cell - nothing collides between, or the first hit is the cell itself (an ore's face). */

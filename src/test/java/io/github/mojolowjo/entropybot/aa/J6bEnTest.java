@@ -106,6 +106,24 @@ class J6bEnTest {
         assertEquals(CaveRecord.GROUP_CELLS, g.get(0).cells().size(), "a few of its cells kept, never the whole group");
     }
 
+    /**
+     * d0682da0 review (rule 17): two branch cells in a tunnel, A 2 blocks from the feet, B 6 (out of reach): the composite
+     * goal holds the feet (A's part does), and only A is seen by this arrival - never B by assumption.
+     */
+    @Test
+    void anArrival_seesOnlyTheCellsWhoseOwnGoalHoldsTheFeet() {
+        Set<Long> solid = new HashSet<>();
+        for (int x = -10; x <= 20; x++) for (int z = -10; z <= 10; z++) for (int y = 45; y < 65; y++) solid.add(Sightings.cell(x, y, z));
+        for (int x = 0; x <= 9; x++) { solid.remove(Sightings.cell(x, 60, 0)); solid.remove(Sightings.cell(x, 61, 0)); }     // a 2-high tunnel
+        int[] a = {2, 60, 0}, b = {6, 60, 0}, feet = {0, 60, 0};
+        var ga = J6bCaveStepTest.reachGoal(a, solid);
+        var gb = J6bCaveStepTest.reachGoal(b, solid);
+        assertTrue(ga.isInGoal(0, 60, 0) && !gb.isEmpty() && !gb.isInGoal(0, 60, 0), "A in reach and sight from the feet, B not");
+        List<int[]> seen = CaveWalk.seenFrom(List.of(ga, gb), List.of(a, b), feet);
+        assertEquals(1, seen.size());
+        assertArrayEquals(a, seen.get(0), "only A is seen");
+    }
+
     /** The walk probe's last-calc part (the fork's lastCalc for any walk's "no path"; the lip and the caving walks now probed). */
     @Test
     void theWalkProbesLastCalc() throws java.io.IOException {

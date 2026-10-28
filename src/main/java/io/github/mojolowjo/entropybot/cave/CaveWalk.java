@@ -59,6 +59,18 @@ public final class CaveWalk {
      */
     public static final int REACH_CELLS = 4; // structural: a 2 x 2 tunnel's mouth, the build's cost on the game thread
 
+    /**
+     * d0682da0 review (rule 17: seen is what is seen): of a composite goal's parts ({@code parts}, each the reach goal of
+     * {@code cells}' cell at the same index), the cells whose OWN reach goal holds the feet - in reach and in sight from
+     * here; the others are not seen by this arrival. Pure.
+     */
+    public static List<int[]> seenFrom(List<ExploreRules.LipGoal> parts, List<int[]> cells, int[] feet) {
+        List<int[]> out = new java.util.ArrayList<>();
+        for (int i = 0; i < Math.min(parts.size(), cells.size()); i++)
+            if (feet != null && feet.length >= 3 && parts.get(i).isInGoal(feet[0], feet[1], feet[2])) out.add(cells.get(i));     // structural: x y z
+        return out;
+    }
+
     /** Run EN: the {@code n} cells of {@code cells} nearest {@code feet} (nearest first). Pure. */
     public static List<int[]> nearest(List<int[]> cells, int[] feet, int n) {
         List<int[]> out = new java.util.ArrayList<>(cells);
