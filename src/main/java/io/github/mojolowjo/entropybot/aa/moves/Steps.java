@@ -691,8 +691,29 @@ public final class Steps {
     private boolean notLoadedSaid;
     private StepMonitor.Verdict lastVerdict;
 
+    /** 0.39.z78 93fd77f5 review: the tick the outer watch first left the running step to the monitor (-1: not yet). */
+    private long monitoredSince = -1;
+
+    /**
+     * 0.39.z78 run EJ (rule 23 (2); run EJ 01:34:10-01:34:20: the climb re-started on the monitor's "no progress 30 s" and
+     * the brain's outer watch ended it 10 s later as "stuck 40 s", another fact, so the same failed climb counted as another
+     * try): the step monitor judges the running step now ({@link StepMonitor#judged}) - its verdict is the one stall reader
+     * of this step, the outer watch leaves it to it. False: no step runs, paused, the monitor is off for this step (an
+     * exempt kind, no signals) or its last look did not judge (not loaded, the step's own clock): the outer watch reads it.
+     * <p>93fd77f5 review (the bound): a judged step's bests can keep moving with no real progress - a break begun on a new
+     * cell is a new best (StepMonitor#stage, a best per cell), so the stall verdict may never come. The hand-off holds at
+     * most monitor.stallS from the first one for this step; past that the watch ends the step as before (its fact).
+     * Called by the watch when it fires (it starts the bound).
+     */
+    public boolean monitorJudges() {
+        if (!(phase == Phase.RUNNING && !paused && idx >= 0 && idx < steps.size() && monitorOn && monitor.judged())) return false;
+        if (monitoredSince < 0) monitoredSince = now;
+        return now - monitoredSince < StepMonitor.stallTicks();
+    }
+
     /** The step started (or started again): the monitor's bests from its signals now; no signals: off for this step. */
     private void startMonitor(Step s) {
+        monitoredSince = -1;                     // 93fd77f5 review: the hand-off's bound starts again with the step
         StepSignals sig = signalsNow(s);
         monitorOn = sig != null && StepMonitor.kind(s) != StepMonitor.Kind.EXEMPT;
         monitor.begin(s, sig, now);
@@ -1423,17 +1444,6 @@ public final class Steps {
      * ({@link io.github.mojolowjo.entropybot.aa.NeedChain#sourceKey}; a step with no source: its own words), so the order
      * re-plans without it. True: the run goes on re-planned; false: not running, or no re-plan (the run ended FAILED).
      */
-    /**
-     * 0.39.z78 run EJ (rule 23 (2); run EJ 01:34:10-01:34:20: the climb re-started on the monitor's "no progress 30 s" and
-     * the brain's outer watch ended it 10 s later as "stuck 40 s", another fact, so the same failed climb counted as another
-     * try): the step monitor judges the running step now ({@link StepMonitor#judged}) - its verdict is the one stall reader
-     * of this step, the outer watch leaves it to it. False: no step runs, paused, the monitor is off for this step (an
-     * exempt kind, no signals) or its last look did not judge (not loaded, the step's own clock): the outer watch reads it.
-     */
-    public boolean monitorJudges() {
-        return phase == Phase.RUNNING && !paused && idx >= 0 && idx < steps.size() && monitorOn && monitor.judged();
-    }
-
     public boolean noProgress(String text) {
         if (phase != Phase.RUNNING || paused || idx < 0 || idx >= steps.size()) return false;
         Step s = steps.get(idx);

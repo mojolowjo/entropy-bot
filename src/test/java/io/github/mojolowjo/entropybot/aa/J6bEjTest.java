@@ -97,6 +97,28 @@ class J6bEjTest {
         assertNull(pick.parked);
     }
 
+    /**
+     * 93fd77f5 review (the bound): a climb whose bests keep moving with no real progress - a break begun on a new cell every
+     * 10 s, never finished - is never stalled by the monitor; the outer watch's hand-off holds monitor.stallS from the first
+     * one, then the watch ends the step as before with the one climb fact.
+     */
+    @Test
+    void aWigglingJudgedStep_theHandOffIsBounded() {
+        Z71StepMonitorTest.Hands h = new Z71StepMonitorTest.Hands();
+        h.script = s -> Z71StepMonitorTest.sigAt(46.8, new int[]{-6, 56, 18}, true, 0, -1, 1, "-6 " + (57 + s / 10) + " 17", 0, -1, null);
+        Z71StepMonitorTest.Planner p = new Z71StepMonitorTest.Planner(h);
+        io.github.mojolowjo.entropybot.aa.moves.Steps run = new io.github.mojolowjo.entropybot.aa.moves.Steps(h);
+        run.start("goal.torch", List.of(new Step.Climb()), 0, p);
+        Z71StepMonitorTest.run(run, h, p, 40);
+        assertTrue(p.facts.isEmpty() && run.running(), "the wiggle: no stall verdict in 40 s");
+        assertTrue(run.monitorJudges(), "the watch at 40 s: left to the monitor (the bound starts)");
+        Z71StepMonitorTest.run(run, h, p, 80);
+        assertTrue(p.facts.isEmpty(), "still no stall verdict at 80 s: the monitor alone would never end it");
+        assertFalse(run.monitorJudges(), "the watch at 80 s: past monitor.stallS since the hand-off - the watch reads it again");
+        assertTrue(run.noProgress("stuck 40 s"));
+        assertEquals("source " + NeedChain.CLIMB_KEY, p.facts.get(0).key(), "ended as before, with the one climb fact");
+    }
+
     /** The probe lease line: the flags read now and the fork's RunLease.describe; Baritone not loaded: said. */
     @Test
     void theProbeLeaseLine() {
