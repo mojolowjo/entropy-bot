@@ -44,6 +44,19 @@ class J6bEhTest {
         assertEquals(20, SurfaceHeight.belowSurface(20, 0));
     }
 
+    /** 48c2209b review 1: a climb started at the bottom of a 5-deep sky-open shaft is not done until the feet stand on the surface. */
+    @Test
+    void aClimbInASkyOpenShaft_isNotDoneUntilTheFeetStandOnTheSurface() {
+        int[] around = {67, 67, 67, 67, 67, 67, 67, 67};
+        int inShaft = io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.climbDepth(0, SurfaceHeight.belowSurface(0, SurfaceHeight.holeDepth(62, around)));
+        assertEquals(5, inShaft, "no rock over the head, 5 below the ground round it");
+        assertNull(io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.climbEnd(inShaft, true, "8 62 1"), "climbing on (was: done at once, 'already under open sky')");
+        assertFalse(io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.climbEnd(inShaft, false, "8 62 1").startsWith("ok"), "Baritone stopped in the shaft: not done");
+        int onTop = io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.climbDepth(0, SurfaceHeight.belowSurface(0, SurfaceHeight.holeDepth(67, around)));
+        assertTrue(io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.climbEnd(onTop, true, "8 67 1").startsWith("ok: on the surface"), "the feet on the surface: done");
+        assertEquals(-1, io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.climbDepth(-1, 0), "the surface not known: never done by it (rule 15)");
+    }
+
     static NeedChain.World iron(NeedChain.Surface over, Map<String, String> held) {
         ScenariosTest.world("wooden", "stone");
         var w = ScenariosTest.w(Map.of("minecraft:stone_pickaxe", 1), false, false, Map.of())

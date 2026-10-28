@@ -570,7 +570,7 @@ public final class AaRuntime implements JobPort {
         net.minecraft.world.level.Level lv = mc.level;
         int[] me = Jobs.here(p);
         int depth = Jobs.rockOverHead(lv, me[0], me[1], me[2]);
-        if (depth == 0) depth = Math.max(0, holeUp(lv, me));
+        if (depth == 0) depth = Math.max(0, stepOutLevels(lv, me));
         boolean shaft = depth > 0;
         for (int y = me[1] + 2; shaft && y <= me[1] + depth; y++) if (!openCell(lv, me[0], y, me[2])) shaft = false;
         Map<String, Integer> bag = sensed.feas != null ? sensed.feas.bag : Map.of();
@@ -2543,8 +2543,8 @@ public final class AaRuntime implements JobPort {
         try {
             int[] me = Jobs.here(p);
             net.minecraft.world.level.Level lv = mc.level;
-            int under = Jobs.rockOverHead(lv, me[0], me[1], me[2]), hole = holeUp(lv, me);
-            boolean out = under == 0 && hole == 0;
+            int under = Jobs.rockOverHead(lv, me[0], me[1], me[2]), hole = stepOutLevels(lv, me);
+            boolean out = Jobs.belowSurface(lv, me[0], me[1], me[2]) == 0;     // EH review (rule 23): the one reader
             // AA_ROUND3 1 (aa388): the levels are the hole's step-out level (holeExit), never "the first cell that sees the
             // sky" (every cell of a 1-wide shaft does); with ground overhead the scan to the first open sky cell
             int levels = out ? 0 : io.github.mojolowjo.entropybot.aa.WayUp.returnLevels(under, hole, skyLevels(lv, me));
@@ -2845,15 +2845,19 @@ public final class AaRuntime implements JobPort {
             int[] me = Jobs.here(p);
             String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level);
             boolean dug = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.dug(dim, me[0], me[1], me[2]);
-            return AaEscape.holeStuck(msg, me[1], AaEscape.destOf(msg), dug, holeUp(mc.level, me));
+            return AaEscape.holeStuck(msg, me[1], AaEscape.destOf(msg), dug, stepOutLevels(mc.level, me));
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] aa: hole check failed: {}", e.toString());
             return false;
         }
     }
 
-    /** The levels up from the feet to where the bot can step out sideways (AaEscape.holeExit): 0 = here, -1 = none. */
-    private static int holeUp(net.minecraft.world.level.Level lv, int[] me) {
+    /**
+     * The LEVELS up from the feet to where the bot can step out sideways (AaEscape.holeExit): 0 = here, -1 = none - how
+     * many blocks a pillar or a stair needs (the escape's rung), not an under-ground test: whether the bot is below the
+     * surface is Jobs.belowSurface's (0.39.z78 EH review: renamed from holeUp; the out tests read the one reader).
+     */
+    private static int stepOutLevels(net.minecraft.world.level.Level lv, int[] me) {
         java.util.function.IntPredicate open = dy -> openCell(lv, me[0], me[1] + dy, me[2]);
         java.util.function.IntPredicate stepOut = dy -> {
             for (int[] s : new int[][]{{1, 0}, {-1, 0}, {0, 1}, {0, -1}})
@@ -3072,7 +3076,7 @@ public final class AaRuntime implements JobPort {
 
     /** Out of the ground and out of any hole (the under-ground rule and the hole scan both say so). */
     private static boolean outNow(net.minecraft.world.level.Level lv, int[] me) {
-        return Jobs.rockOverHead(lv, me[0], me[1], me[2]) == 0 && holeUp(lv, me) == 0;     // review: -1 (walled in) is not out
+        return Jobs.belowSurface(lv, me[0], me[1], me[2]) == 0;     // EH review (rule 23): out = on the surface, the one reader
     }
 
     private void clearEscape() {
@@ -3127,7 +3131,7 @@ public final class AaRuntime implements JobPort {
         try {
             int[] me = Jobs.here(p);
             net.minecraft.world.level.Level lv = mc.level;
-            boolean hole = Jobs.rockOverHead(lv, me[0], me[1], me[2]) == 0;     // aa372 gap: open to the sky, but at the bottom of a hole
+            boolean hole = Jobs.rockOverHead(lv, me[0], me[1], me[2]) == 0;     // aa372 gap: open to the sky (no rock over the head), but at the bottom of a hole
             var f = surfaceFacts();
             if (f == null || f.depth() <= 0) { escapeResumeNow("already out"); return; }
             if (noPillar) f = new io.github.mojolowjo.entropybot.aa.RungOptions.SurfaceFacts(f.depth(), f.me(), false, f.throwaway(), false, f.pickaxe(),

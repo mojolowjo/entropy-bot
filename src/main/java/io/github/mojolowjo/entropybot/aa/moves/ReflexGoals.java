@@ -131,6 +131,13 @@ public final class ReflexGoals {
      * column not known) and whether Baritone's goal still runs: null - climbing on; "ok: ..." - out (a KNOWN surface, 0
      * over the feet); else the failure (Baritone's goal ended under ground, or where the surface is not known - never "out").
      */
+    /**
+     * 0.39.z78 J6b EH review: the climb's depth for its done test - below the surface (Jobs.belowSurface, the one reader: a
+     * sky-open shaft counts), or -1 when the surface over the column is not known ({@code rockKnown} -1). Its goal stays
+     * "the head under open sky". Pure.
+     */
+    public static int climbDepth(int rockKnown, int belowSurface) { return rockKnown < 0 ? -1 : Math.max(0, belowSurface); }
+
     public static String climbEnd(int depth, boolean active, String at) {
         if (depth == 0) return "ok: on the surface at " + at + " (under open sky)";
         if (active) return null;

@@ -955,8 +955,9 @@ public final class StepHands implements Steps.Hands {
 
     private String climb(LocalPlayer p) {
         int[] me = Jobs.here(p);
-        int depth = Jobs.rockOverHeadKnown(p.level(), me[0], me[1], me[2]);
-        if (depth == 0) { instant = "ok: already under open sky at y " + me[1]; return null; }
+        // EH review: done is ON THE SURFACE (the one reader: a sky-open shaft is not), only the goal is "open sky"
+        int depth = io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.climbDepth(Jobs.rockOverHeadKnown(p.level(), me[0], me[1], me[2]), Jobs.belowSurface(p.level(), me[0], me[1], me[2]));
+        if (depth == 0) { instant = "ok: already on the surface at " + Jobs.fmt(me); return null; }
         IBaritone b = Jobs.baritone();
         if (b == null) return "error: climb: baritone not loaded";
         int top = Jobs.surfaceNoLeaves(p.level(), me[0], me[2]);
@@ -1022,7 +1023,7 @@ public final class StepHands implements Steps.Hands {
     private Car.Status climbStatus(LocalPlayer p) {
         if (instant != null) return Car.Status.done(instant);
         int[] me = Jobs.here(p);
-        int depth = Jobs.rockOverHeadKnown(p.level(), me[0], me[1], me[2]);
+        int depth = io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.climbDepth(Jobs.rockOverHeadKnown(p.level(), me[0], me[1], me[2]), Jobs.belowSurface(p.level(), me[0], me[1], me[2]));
         IBaritone b = Jobs.baritone();
         if (b == null) { climbing = false; return Car.Status.failed("climb: baritone not loaded"); }
         String end = io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.climbEnd(depth, b.getCustomGoalProcess().isActive() || Core.INSTANCE.reflexes.hold(), Jobs.fmt(me));
