@@ -715,7 +715,9 @@ public final class StepHands implements Steps.Hands {
      * reach of the eye, a face of it seen), built on the game thread from the loaded world; the step is done exactly when
      * the goal holds the feet ({@link io.github.mojolowjo.entropybot.cave.ExploreRules#lip}). The reach goal's cube not
      * loaded yet: an approach toward the entry's column (GoalXZ), never done; loaded and empty: the named fact
-     * ("no standable cell within reach and sight of the entry"), held on the entry so the plan tries the next opening.
+     * ("no standable cell within reach and sight of the entry") as the opening's source fact for the order and the world
+     * (run EY, FactChange.lipFailed), so the plan prices the cave's next opening or the next cave. The same lip test
+     * ({@link LipGoals}) is asked by the cave-way snapshot before any walk (run EY: the price had asked a stand-by goal).
      * The cave way's lease (breaking and placing as priced). Loader notes: the fork's GoalReachBlock / GoalXZ (api),
      * Baritone's custom goal process; vanilla Level#clip, Level#isLoaded, BlockState#getCollisionShape.
      */
@@ -740,46 +742,14 @@ public final class StepHands implements Steps.Hands {
         return null;
     }
 
-    /** The reach goal's cube (ceil(reach) + 1 each way) round the entry is loaded: its cells can be judged (rule 15). */
-    private static boolean lipCubeLoaded(net.minecraft.world.level.Level lv, int[] at) {
-        int r = (int) Math.ceil(io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH) + 1;   // the fork's cube (GoalReachBlock)
-        return lv.isLoaded(new BlockPos(at[0] - r, at[1], at[2] - r)) && lv.isLoaded(new BlockPos(at[0] + r, at[1], at[2] - r))
-                && lv.isLoaded(new BlockPos(at[0] - r, at[1], at[2] + r)) && lv.isLoaded(new BlockPos(at[0] + r, at[1], at[2] + r));
-    }
-
-    /** Run EL: the fork's reach goal on the entry; null while its cube is not loaded (the approach runs meanwhile). */
-    private static baritone.api.pathing.goals.GoalReachBlock reachGoal(LocalPlayer p, int[] at) {
-        var lv = p.level();
-        if (!lipCubeLoaded(lv, at)) return null;
-        return new baritone.api.pathing.goals.GoalReachBlock(new BlockPos(at[0], at[1], at[2]), io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH, 1.62,   // game fact: eye height 1.62
-                (x, y, z) -> standable(lv, x, y, z), (x, y, z) -> seesEntry(p, x, y, z, at));
-    }
+    /** Run EL / run EY: the fork's reach goal on the entry, the ONE lip test ({@link LipGoals}); null while its cube is not loaded. */
+    private static baritone.api.pathing.goals.GoalReachBlock reachGoal(LocalPlayer p, int[] at) { return LipGoals.reachGoal(p, at); }
 
     /** The reach goal as the pure lip rule reads it (null: none yet). */
-    private static io.github.mojolowjo.entropybot.cave.ExploreRules.LipGoal lipGoalOf(baritone.api.pathing.goals.GoalReachBlock g) {
-        if (g == null) return null;
-        return new io.github.mojolowjo.entropybot.cave.ExploreRules.LipGoal() {
-            @Override public boolean isEmpty() { return g.isEmpty(); }
-            @Override public boolean isInGoal(int x, int y, int z) { return g.isInGoal(x, y, z); }
-        };
-    }
+    private static io.github.mojolowjo.entropybot.cave.ExploreRules.LipGoal lipGoalOf(baritone.api.pathing.goals.GoalReachBlock g) { return LipGoals.lipGoalOf(g); }
 
-    /** The eyes at feet cell x y z see the entry's air (nothing that collides between, a fluid passed). */
-    private static boolean seesEntry(LocalPlayer p, int x, int y, int z, int[] at) {
-        var lv = p.level();
-        var from = new net.minecraft.world.phys.Vec3(x + 0.5, y + 1.62, z + 0.5);   // game fact: eye height 1.62
-        var to = new net.minecraft.world.phys.Vec3(at[0] + 0.5, at[1] + 0.5, at[2] + 0.5);
-        var r = lv.clip(new net.minecraft.world.level.ClipContext(from, to, net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.NONE, p));
-        return r.getType() == net.minecraft.world.phys.HitResult.Type.MISS;
-    }
-
-    /** A cell a player can stand in: its feet and head open (no collision), something solid under it. */
-    private static boolean standable(net.minecraft.world.level.Level lv, int x, int y, int z) {
-        BlockPos f = new BlockPos(x, y, z), h = f.above(), u = f.below();
-        if (!lv.isLoaded(f)) return false;
-        return lv.getBlockState(f).getCollisionShape(lv, f).isEmpty() && lv.getBlockState(h).getCollisionShape(lv, h).isEmpty()
-                && !lv.getBlockState(u).getCollisionShape(lv, u).isEmpty() && lv.getFluidState(f).isEmpty();
-    }
+    /** A cell a player can stand in (the one test, {@link LipGoals#standable}; the branch gotos' reach goals use it too). */
+    private static boolean standable(net.minecraft.world.level.Level lv, int x, int y, int z) { return LipGoals.standable(lv, x, y, z); }
 
     /**
      * Run EL: done exactly when the reach goal holds the feet (its one arrived reader); its cells loaded and none: the
@@ -815,21 +785,28 @@ public final class StepHands implements Steps.Hands {
             String why = "the walk to the cave's lip at " + Jobs.fmt(at) + ": " + lip.why();
             lip = null;
             Jobs.cancel(b);
-            io.github.mojolowjo.entropybot.aa.moves.FactChange.walkShort(at, me, why);   // run EF (3): the hold names this entry; the next plan tries another opening
+            // run EY (rule 23 (1)): the opening's own source fact - held for the order and, as a world fact, for every order
+            // (was walkShort: the running order's walk-short fact under a key the cave way never read, run EF (3)'s claim false)
+            io.github.mojolowjo.entropybot.aa.moves.FactChange.lipFailed(at, me, why);
             return Car.Status.failed(why);
         }
         return Car.Status.running("to the cave's lip at " + Jobs.fmt(at) + (lipGoal == null ? " (approaching: the reach goal's cells not loaded yet)" : ""));
     }
 
-    /** Run EL: the reach goal has no cell - the named fact, held on the entry (the next opening is tried). */
+    /**
+     * Run EL: the reach goal has no cell - the named fact. Run EY (rule 23 (1)): the opening's own source fact
+     * (FactChange.lipFailed), held for the order and for every order as a world fact, so the planner prices the cave's next
+     * opening or the next cave (was: a walk-short fact of the running order alone, and this line's "the next opening is tried"
+     * was false - five orders ran the same lip twice each).
+     */
     private Car.Status lipNoCell(int[] at, int[] me, IBaritone b) {
         String why = io.github.mojolowjo.entropybot.cave.ExploreRules.noLipCell(at) + " (the fork's reach goal, its cells loaded)";
         lipFail = null;
         lip = null;
         lipGoal = null;
         if (b != null) Jobs.cancel(b);
-        LOG.info("[entropybot] cave: {} - the next opening is tried", why);
-        io.github.mojolowjo.entropybot.aa.moves.FactChange.walkShort(at, me, why);
+        LOG.info("[entropybot] cave: {} - held for every order; the next opening or the next cave is priced", why);
+        io.github.mojolowjo.entropybot.aa.moves.FactChange.lipFailed(at, me, why);
         return Car.Status.failed(why);
     }
 

@@ -355,6 +355,25 @@ public final class ExploreRules {
         return "no standable cell within reach and sight of the entry " + entry[0] + " " + entry[1] + " " + entry[2];
     }
 
+    /** Run EY: the openings the cave way may walk to ({@code kept}) and the ones its lip test left out (opening key -> why). */
+    public record Lips(List<int[]> kept, java.util.Map<String, String> out) {}
+
+    /**
+     * Run EY (rule 23 (2); 13:30:45: the lip's price asked a stand-by goal on the entry and sent the bot to a lip with no
+     * standable cell): the cave-way snapshot asks the lip step's own test per opening ({@code lipOf}: APPROACH = the cube
+     * not loaded, not known - kept, rule 15; NO_CELL = no standable cell within reach and sight - left out with that reason,
+     * keyed as the cave way holds an opening; else kept). Pure.
+     */
+    public static Lips lipsWithStand(List<int[]> openings, java.util.function.Function<int[], Lip> lipOf) {
+        List<int[]> kept = new ArrayList<>();
+        java.util.Map<String, String> out = new java.util.LinkedHashMap<>();
+        for (int[] o : openings) {
+            if (lipOf.apply(o) == Lip.NO_CELL) out.put(io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay.keyOf(o), noLipCell(o) + " (the lip test, its cells loaded)");
+            else kept.add(o);
+        }
+        return new Lips(kept, out);
+    }
+
     /**
      * Run EI (2): the "probe nobreak:" line of one failed no-break walk (debug.walkProbe): the feet, the goal, the fork's
      * lastEnd, and its calc detail from lastNoBreakCalc ({@code calc} null: the fork kept none; {@code nodes} -1: not

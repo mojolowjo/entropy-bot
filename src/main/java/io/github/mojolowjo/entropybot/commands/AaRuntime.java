@@ -1073,9 +1073,15 @@ public final class AaRuntime implements JobPort {
             // review of 2394a868: the record alone (in reach AND in sight, as GoalReachBlock), the index's volume only while unfed
             boolean inside = sg.caveHolds(dim, k.x(), k.y(), k.z(), me[0], me[1], me[2], c -> StepHands.seesCell(p, me[0], me[1], me[2], c),
                     () -> feetRoot >= 0 && feetRoot == idx.volumeAt(k.x(), k.y(), k.z()));
+            // run EY (rule 23 (2)): the openings judged by the lip step's own test (LipGoals) before any walk is priced: one
+            // with no standable cell within reach and sight (its cells loaded) is left out with its reason; one whose cube is
+            // not loaded is not known and stays (rule 15); every opening out = the cave is out, said (rule 7)
+            var lp = io.github.mojolowjo.entropybot.cave.ExploreRules.lipsWithStand(lips(pass, k, me), o -> LipGoals.lipOf(p, o));
+            if (out == null && !inside && lp.kept().isEmpty() && !lp.out().isEmpty())
+                out = "no standable cell within reach and sight of any of its " + lp.out().size() + " known opening(s) (the lip test)";
             ways.add(new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(k.x(), k.y(), k.z(), Math.sqrt(Jobs.distSq(me, new int[]{k.x(), k.y(), k.z()})),
-                    ore, fam, expected, explored, k.size(), unseen, leftKeys(sg.caveLeft(dim, k.x(), k.y(), k.z(), fam)), lips(pass, k, me))
-                    .withOut(out).withInside(inside).withBasis(pr.why())
+                    ore, fam, expected, explored, k.size(), unseen, leftKeys(sg.caveLeft(dim, k.x(), k.y(), k.z(), fam)), lp.kept())
+                    .withOut(out).withInside(inside).withBasis(pr.why()).withLipOut(lp.out())
                     .withFrontier(sg.caveFirstUnseen(dim, k.x(), k.y(), k.z())));   // J6d: the price's second walk ends there (null: none measured)
         }
         if (ways.isEmpty()) return null;

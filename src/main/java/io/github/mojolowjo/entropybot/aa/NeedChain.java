@@ -109,28 +109,29 @@ public final class NeedChain {
      * seen / known cells (NaN: not measured). The count {@code expected} says is the share a cave under the need gives (the
      * ET build): how many of n it is asked for, never seconds.
      */
-    static final String CAVE_KEY = "known cave ";
+    public static final String CAVE_KEY = "known cave ";    // run EY: FactChange.ownSourceKey reads it too
 
     public record CaveWay(int x, int y, int z, double dist, String ore, String family, double expected, double explored,
                           io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys, List<int[]> entries,
-                          List<CaveWay> more, String out, boolean inside, String basis, int[] frontier) {
+                          List<CaveWay> more, String out, boolean inside, String basis, int[] frontier, Map<String, String> lipOut) {
         public CaveWay {
             leftKeys = leftKeys == null ? List.of() : List.copyOf(leftKeys);
             entries = entries == null ? List.of() : List.copyOf(entries);
             more = more == null ? List.of() : List.copyOf(more);
             frontier = frontier == null ? null : frontier.clone();
+            lipOut = lipOut == null ? Map.of() : Map.copyOf(lipOut);
         }
 
         public CaveWay(int x, int y, int z, double dist, String ore, String family, double expected, double explored,
                        io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys, List<int[]> entries,
                        List<CaveWay> more) {
-            this(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, null, false, null, null);
+            this(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, null, false, null, null, Map.of());
         }
 
         public CaveWay(int x, int y, int z, double dist, String ore, String family, double expected, double explored,
                        io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys, List<int[]> entries,
                        List<CaveWay> more, String out, boolean inside) {
-            this(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, out, inside, null, null);
+            this(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, out, inside, null, null, Map.of());
         }
 
         public CaveWay(int x, int y, int z, double dist, String ore, String family, double expected, double explored,
@@ -153,7 +154,16 @@ public final class NeedChain {
         }
 
         private CaveWay copy(List<int[]> entries, List<CaveWay> more, String out, boolean inside, String basis, int[] frontier) {
-            return new CaveWay(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, out, inside, basis, frontier);
+            return new CaveWay(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, out, inside, basis, frontier, lipOut);
+        }
+
+        /**
+         * Run EY (rules 7, 23 (2)): the openings the snapshot's lip test left out (opening key -> "no standable cell within
+         * reach and sight of the entry ..."): the planner says each, holds it (unreachable for every order) and prices the
+         * openings in {@code entries} only. {@code entries} never holds one of these.
+         */
+        public CaveWay withLipOut(Map<String, String> out) {
+            return new CaveWay(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, this.out, inside, basis, frontier, out);
         }
 
         /** J6c: the world-gen estimate's words ({@code basis}: CaveYield.Prior#why; null: none said). */
@@ -200,7 +210,10 @@ public final class NeedChain {
          * J6b run EF (3): the cells the walk may go to the lip of, in order - the known cave's entry first, then the other
          * openings of its volume (a hold on one names that cell; the next is tried before the whole cave is held).
          */
-        public List<int[]> targets() { return entries.isEmpty() ? List.of(new int[]{x, y, z}) : entries; }
+        public List<int[]> targets() {
+            // run EY: the entry itself only while the lip test has not left it out (an unjudged snapshot, a test's way)
+            return entries.isEmpty() ? (lipOut.containsKey(keyOf(new int[]{x, y, z})) ? List.of() : List.of(new int[]{x, y, z})) : entries;
+        }
 
         /** The hold key of one walk target (rule 23 (1): the hold names the cell). */
         public static String keyOf(int[] t) { return CAVE_KEY + t[0] + "," + t[1] + "," + t[2]; }
@@ -4712,6 +4725,10 @@ public final class NeedChain {
         // 0.39.z78 run EJ (rule 7): a climb's every end - the step monitor, the outer watch or the climb's own end
         // (FactChange.climb) - is the one climb fact, so the climb way (climbUp) reads it whoever ended it
         if (s instanceof Step.Climb) return CLIMB_KEY;
+        // 0.39.z78 run EY (rule 23 (1), (2)): the lip walk's end holds the OPENING by the one key the cave way filters its
+        // openings by (CaveWay.keyOf; was: a walk-short fact of the running order under another key, so the same lip was run by
+        // every order twice and parked each): the order holds it, the world fact holds it for every order
+        if (s instanceof Step.ToCave t) return CaveWay.keyOf(new int[]{t.x(), t.y(), t.z()});
         return null;
     }
 
@@ -5779,6 +5796,14 @@ public final class NeedChain {
         // cell (rule 23 (1)) and the next opening of the cave is priced before the whole cave is out
         Walked wk = null;
         int[] lipAt = null;
+        // run EY (rules 7, 23 (2)): an opening the snapshot's lip test left out (no standable cell within reach and sight of
+        // it, its cells loaded) is said and held - unreachable for this order and, through Goals, for every order - before
+        // any walk is priced to it (was: the price asked a stand-by goal on the entry, "complete", and the bot was sent)
+        for (var e : cw.lipOut().entrySet()) {
+            final String why = e.getValue();
+            c.unreach(e.getKey(), why);
+            c.note(() -> head + ": " + why + " - not walked to; the next opening or cave is priced");
+        }
         // run EO (rule 23 (1)): the bot stands INSIDE this cave's volume - its branches are the way from here: no lip walk
         if (cw.inside()) wk = new Walked(0, "the bot is inside it: its branches from here", null, PathPrice.Kind.PRICED);
         List<int[]> tgs = cw.inside() ? List.of() : bySum(c, cw);
@@ -5790,7 +5815,10 @@ public final class NeedChain {
             c.unreach(CaveWay.keyOf(t), wk.fail());
             if (i + 1 < tgs.size()) { c.note(() -> head + ": the opening at " + t[0] + " " + t[1] + " " + t[2] + " unreachable, the next one priced"); c.fail = null; }
         }
-        if (lipAt == null && !cw.inside()) return null;
+        if (lipAt == null && !cw.inside()) {
+            if (c.fail == null) c.fail = "no opening with a standable cell within reach and sight of it (the lip test left out " + cw.lipOut().size() + ": " + String.join("; ", cw.lipOut().values()) + ")";   // run EY (rule 7)
+            return null;
+        }
         Inner in = innerWalk(c, lipAt, cw);
         gives = memberOf(c, gives, cw.ore());                   // J3-mod item 1: the member the ore drops names the bag's gain
         double per = perBlock(c, gives, cw.ore());

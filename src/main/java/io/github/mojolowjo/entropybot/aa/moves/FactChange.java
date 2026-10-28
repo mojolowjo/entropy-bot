@@ -324,6 +324,7 @@ public final class FactChange {
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.NEAR)) return f.key().substring("source ".length());       // z75 review 2
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.EXPLORE_FROZEN)) return f.key().substring("source ".length());   // z76 send-back 2
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.BOXED_IN)) return f.key().substring("source ".length());   // J6b run EH (2)
+        if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.CAVE_KEY)) return f.key().substring("source ".length());   // run EY: the lip's opening
         String p = "source " + io.github.mojolowjo.entropybot.aa.NeedChain.STRIP_HEADING;
         return f != null && f.key().startsWith(p) ? f.key().substring("source ".length()) : null;
     }
@@ -360,6 +361,23 @@ public final class FactChange {
 
     /** 0.39.z77 walk: the hands say {@link #walkShortFact} (taken once, as every fact here). */
     public static void walkShort(int[] target, int[] feet, String why) { last = walkShortFact(target, feet, why); }
+
+    /**
+     * 0.39.z78 run EY (rule 23 (1); 13:30:45-13:32:54: the lip walk to the cave at 62 94 -354 ended "no standable cell within
+     * reach and sight of the entry", a walk-short fact of the running order only, and every one of five orders ran the same
+     * lip twice and parked): the lip walk's end - the reach goal empty or Baritone's no progress - is a SOURCE fact keyed by
+     * the opening itself ({@link io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay#keyOf}: the one key the cave way filters
+     * its openings by), so the order holds it, the world fact holds it for every order (Goals.replan), and the next opening or
+     * the next cave is priced. Pure.
+     */
+    public static Fact lipFailedFact(int[] entry, int[] feet, String why) {
+        String w = why == null ? "no reason" : why.replaceFirst("^error: ", "");
+        return new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay.keyOf(entry),
+                "the walk to the cave's lip at " + cell(entry) + " failed at " + cell(feet) + ": " + w);
+    }
+
+    /** Run EY: the lip step's hands say {@link #lipFailedFact} (taken once). */
+    public static void lipFailed(int[] entry, int[] feet, String why) { last = lipFailedFact(entry, feet, why); }
 
     /** 0.39.z77 walk: {@code f} is a walk that ended short ({@link #walkShortFact}). */
     public static boolean isWalkShort(Fact f) { return f != null && f.key().startsWith(WALK_SHORT); }
