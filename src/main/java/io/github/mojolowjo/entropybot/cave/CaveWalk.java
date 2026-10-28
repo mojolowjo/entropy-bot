@@ -11,7 +11,8 @@ import java.util.Locale;
  * <ol>
  * <li>the need met (the ore blocks mined) - ends, NEED_MET;</li>
  * <li>the step's minutes ({@code cave.exploreMinutes} at most, the cave way's cap) - ends, MINUTES;</li>
- * <li>a seen ore of the family left in reach of the eyes - mined by the vein (seen ore only, rule 17);</li>
+ * <li>a seen ore of the family left in reach of the eyes - mined by the vein (seen ore only, rule 17), its goto dropped
+ * or not (J6d, run EV);</li>
  * <li>a seen ore of the family left farther in - walked to;</li>
  * <li>the nearest branch (a frontier group with more than BRANCH_MIN unseen cells behind it), ranked by straight distance
  * (rule 18 as amended: ranked rough, Baritone's walk exact) - its first cell walked to;</li>
@@ -39,15 +40,28 @@ public final class CaveWalk {
      * Walk to the cell ({@code why}: "the seen iron at ...", "the branch at ... (more than 8 cells behind)"). Run EN: the
      * step's goal is a reach goal over {@code cells} (the ore, the unseen cell, or the branch's frontier cells) - a stand
      * Baritone picks from which one of them is in reach and in sight, never the cell itself (rule 2); {@code key} the
-     * drop key (the cell, or the branch's first cell).
+     * drop key (the cell, or the branch's first cell). J6d (run EV): {@code ore} - the walk is to a seen ore (its arrival
+     * mines it, never drops it "arrived, nothing new"); false - a branch or an unseen cell.
      */
-    public record Goto(int[] cell, String why, List<int[]> cells, long key) implements Next {
+    public record Goto(int[] cell, String why, List<int[]> cells, long key, boolean ore) implements Next {
         public Goto {
             cells = cells == null || cells.isEmpty() ? List.of(cell) : List.copyOf(cells);
         }
 
-        public Goto(int[] cell, String why) { this(cell, why, List.of(cell), Sightings.cell(cell[0], cell[1], cell[2])); }
+        public Goto(int[] cell, String why, List<int[]> cells, long key) { this(cell, why, cells, key, false); }
+
+        public Goto(int[] cell, String why) { this(cell, why, List.of(cell), Sightings.cell(cell[0], cell[1], cell[2]), false); }
+
+        /** J6d: the walk to a seen ore (one cell, its own key). */
+        public static Goto toOre(int[] cell, String why) { return new Goto(cell, why, List.of(cell), Sightings.cell(cell[0], cell[1], cell[2]), true); }
     }
+
+    /**
+     * J6d (run EV: ore seen 36, mined 0 - the seen-ore gotos were dropped "arrived, nothing new", then skipped): the drop
+     * of an arrival that saw nothing new is for the gotos that walk to SEE (branches, unseen cells), never a walk to a seen
+     * ore - its arrival is in reach of the ore, and the next move mines it. Pure.
+     */
+    public static boolean dropsOnNothingNew(boolean oreGoto, int seenAtGoal, int seenNow) { return !oreGoto && nothingNew(seenAtGoal, seenNow); }
 
     /** The step ends. */
     public record Stop(End end, String why) implements Next {}
@@ -100,12 +114,23 @@ public final class CaveWalk {
     /**
      * Run EN (rule 23 (1)): as above; {@code dropped} - the goto keys the step dropped (an empty reach goal, no path):
      * passed over, the next one taken; every one dropped and nothing else to do - NO_BRANCH ("no reachable branch").
+     * J6d (run EV): a seen ore left IN REACH of the feet is mined (the vein, from where the bot stands; Baritone picks the
+     * look and the click, rule 2) even when its goto was dropped - a drop is of a walk, and no walk is needed; the nearest
+     * in reach first. The caller leaves out of {@code left} the ore whose vein failed (said, rule 7).
      */
     public static Next next(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<CaveRecord.Group> frontier,
                             List<int[]> left, int[] feet, double reach, int[] firstUnseen, java.util.Set<Long> dropped) {
         if (need > 0 && mined >= need) return new Stop(End.NEED_MET, mined + " of " + need + " ore mined");
         if (capMinutes > 0 && minutesIn >= capMinutes) return new Stop(End.MINUTES, String.format(Locale.ROOT, "%.1f min inside, cave.exploreMinutes %.0f", minutesIn, capMinutes));
         int skipped = 0;
+        int[] inReach = null;
+        long rd = Long.MAX_VALUE;
+        for (int[] o : left) {
+            if (!ExploreRules.withinReach(feet, o)) continue;
+            long d = d2(o, feet);
+            if (d < rd) { rd = d; inReach = o; }
+        }
+        if (inReach != null) return new Mine(inReach);
         int[] near = null;
         long nd = Long.MAX_VALUE;
         for (int[] o : left) {
@@ -113,8 +138,7 @@ public final class CaveWalk {
             long d = d2(o, feet);
             if (d < nd) { nd = d; near = o; }
         }
-        if (near != null && ExploreRules.withinReach(feet, near)) return new Mine(near);
-        if (near != null) return new Goto(near, "the seen ore at " + near[0] + " " + near[1] + " " + near[2]);
+        if (near != null) return Goto.toOre(near, "the seen ore at " + near[0] + " " + near[1] + " " + near[2]);
         CaveRecord.Group best = null;
         long bd = Long.MAX_VALUE;
         for (CaveRecord.Group g : frontier) {
