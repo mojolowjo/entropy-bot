@@ -6,8 +6,8 @@ package io.github.mojolowjo.entropybot.aa.moves;
  * it" and the order stopped on the same try): a use of the bot's OWN station asks the fork to dig to it
  * (IInteractProcess.use(block, veto, digTo), job-vein d705dec7: Baritone picks the stand and digs the way, rule 2); an own
  * station is never held for "no stand within reach". A dig that could not reach it ends with the fork's named end "no path
- * digging to ..." - that is the next plan's fact (rule 7): the station's hold, by its cell ("source station at x y z"),
- * with the fork's words. Pure (JUnit: J6cEuTest). Loader notes: none (the fork's ends are its API's named words).
+ * digging to ..." (job-vein e4b81987: only on an exhausted search) - that is the next plan's fact (rule 7): the station's hold, by its cell ("source station at x y z"),
+ * with the fork's words. A budget stop ("path not known (<stop>)") is never a fact or a hold (rule 15): the step ends with the fork's words and the order is re-planned. Pure (JUnit: J6cEuTest). Loader notes: none (the fork's ends are its API's named words).
  */
 public final class UseEnds {
     private UseEnds() {}

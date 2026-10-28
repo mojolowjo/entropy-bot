@@ -113,6 +113,10 @@ class J6cEuTest {
         assertEquals("source " + NeedChain.stationKey(8, 61, 3), f.key(), "the station's own fact (the one station store, StationHolds)");
         assertTrue(f.text().equals("my station at 8 61 3: no path digging to furnace at 8 61 3 (breaking off)"), f.text());
         assertNull(io.github.mojolowjo.entropybot.aa.moves.UseEnds.fact(furnace, false, "no path digging to furnace at 8 61 3 (breaking off)"), "not mine: never asked to dig");
+        // job-vein e4b81987: a dig-to that stopped on its budget says "path not known (<stop>)" - never a fact or a hold (rule 15):
+        // the step ends with the fork's words and the order is re-planned
+        assertNull(io.github.mojolowjo.entropybot.aa.moves.UseEnds.fact(furnace, true, "path not known (TIME) digging to furnace at 8 61 3"), "a budget stop: no station fact");
+        assertNull(io.github.mojolowjo.entropybot.aa.moves.UseEnds.fact(furnace, true, "path not known (NODES)"), "nor any other not-known end");
     }
 
     /** (1c) A stand's hold is the order's own: never a world fact; a real source fact still is. */
