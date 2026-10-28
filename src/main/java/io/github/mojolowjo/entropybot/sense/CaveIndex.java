@@ -109,6 +109,15 @@ public final class CaveIndex {
         public static Depth of(int minY) {
             return minY < 0 ? DEEPSLATE : minY < 63 ? STONE : HIGH;           // game fact: deepslate below y 0, sea level 63
         }
+
+        /** J6b: the band holds some y of lo..hi (DEEPSLATE: under 0; STONE: 0..62; HIGH: 63 up - the edges of {@link #of}). */
+        public boolean overlaps(int lo, int hi) {
+            return switch (this) {
+                case DEEPSLATE -> lo < 0;
+                case STONE -> lo <= 62 && hi >= 0;                            // game fact: 0 up to under sea level 63
+                case HIGH -> hi >= 63;                                         // game fact: sea level 63
+            };
+        }
     }
 
     /** One chunk's columns (x + 16 z): the air runs below the surface, each {from, to} (inclusive), lowest first. */
@@ -220,13 +229,14 @@ public final class CaveIndex {
         Chunk ch = new Chunk(r.cx(), r.cz(), r.surface().clone(), start, lo, hi);
         chunks.put(k, ch);
         shapeDirty = rootsDirty = true;
+        version++;
         if (dirty) return;                                                        // the rebuild joins it
         link(ch);
     }
 
     /** The chunk unloaded: its runs leave the index (its unknown volumes are gone with it; a known cave stays in Sightings). */
     public synchronized void remove(int cx, int cz) {
-        if (chunks.remove(chunkKey(cx, cz)) != null) { dirty = true; shapeDirty = rootsDirty = true; }
+        if (chunks.remove(chunkKey(cx, cz)) != null) { dirty = true; shapeDirty = rootsDirty = true; version++; }
     }
 
     private void link(Chunk ch) {
@@ -504,6 +514,59 @@ public final class CaveIndex {
         int c = (x & 15) + 16 * (z & 15);
         for (int i = ch.start[c]; i < ch.start[c + 1]; i++) if (ch.lo[i] <= y && y <= ch.hi[i]) return ch.id[i];
         return -1;
+    }
+
+    private long version;
+
+    /** J6b: bumped at every chunk put or removed (a cave record's cells are refreshed when it moves). */
+    public synchronized long version() { return version; }
+
+    /**
+     * J6b (D12): the air cells of the volume x y z is in, over the chunks held ({@link #cell} packed; the cave record's map
+     * of a KNOWN cave - the owner's cheat, rule 17's ruling); empty: no volume there.
+     */
+    public synchronized List<Long> volumeCells(int x, int y, int z) {
+        fresh();
+        int r = runAt(x, y, z);
+        if (r < 0) return List.of();
+        int root = find(r);
+        List<Long> out = new ArrayList<>();
+        for (Chunk ch : chunks.values()) {
+            if (ch.lo.length == 0) continue;
+            for (int c = 0; c < 256; c++)
+                for (int i = ch.start[c]; i < ch.start[c + 1]; i++) {
+                    if (find(ch.id[i]) != root) continue;
+                    int tx = (ch.cx << 4) + (c & 15), tz = (ch.cz << 4) + (c >> 4);
+                    for (int yy = ch.lo[i]; yy <= ch.hi[i]; yy++) out.add(cell(tx, yy, tz));
+                }
+        }
+        return out;
+    }
+
+    /** J6b: {@link #volumeCells} for several cells in one pass over the chunks (each entry's list; empty: no volume there). */
+    public synchronized List<List<Long>> volumesCells(List<int[]> at) {
+        fresh();
+        Map<Integer, List<Long>> byRoot = new HashMap<>();
+        int[] roots = new int[at.size()];
+        for (int i = 0; i < at.size(); i++) {
+            int r = runAt(at.get(i)[0], at.get(i)[1], at.get(i)[2]);
+            roots[i] = r < 0 ? -1 : find(r);
+            if (roots[i] >= 0) byRoot.putIfAbsent(roots[i], new ArrayList<>());
+        }
+        if (!byRoot.isEmpty())
+            for (Chunk ch : chunks.values()) {
+                if (ch.lo.length == 0) continue;
+                for (int c = 0; c < 256; c++)
+                    for (int i = ch.start[c]; i < ch.start[c + 1]; i++) {
+                        List<Long> l = byRoot.get(find(ch.id[i]));
+                        if (l == null) continue;
+                        int tx = (ch.cx << 4) + (c & 15), tz = (ch.cz << 4) + (c >> 4);
+                        for (int yy = ch.lo[i]; yy <= ch.hi[i]; yy++) l.add(cell(tx, yy, tz));
+                    }
+            }
+        List<List<Long>> out = new ArrayList<>();
+        for (int r : roots) out.add(r < 0 ? List.of() : byRoot.get(r));
+        return out;
     }
 
     /** The volume x y z is in (its root), -1 none. */

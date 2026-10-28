@@ -78,6 +78,7 @@ public final class SeenAsk {
                 continue;
             }
             if (s instanceof Step.Mine m) { if (family.equals(familyWord(m.family()))) return m.family(); continue; }
+            if (s instanceof Step.Cave k) { if (family.equals(familyWord(k.family()))) return k.family(); continue; }
             if (s instanceof Step.MineAt m) { if (family.equals(familyWord(m.family()))) return m.family(); continue; }
             if (s instanceof Step.Explore ex) {
                 if (ex.until() == null) continue;

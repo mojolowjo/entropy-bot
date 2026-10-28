@@ -106,17 +106,24 @@ public final class NeedChain {
     static final String CAVE_KEY = "known cave ";
 
     public record CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured,
-                          io.github.mojolowjo.entropybot.sense.CaveIndex.Size size) {
+                          io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, int left) {
         public CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured) {
             this(x, y, z, dist, ore, family, perMin, measured, null);
         }
 
+        public CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured,
+                       io.github.mojolowjo.entropybot.sense.CaveIndex.Size size) {
+            this(x, y, z, dist, ore, family, perMin, measured, size, -1, 0);
+        }
+
         /**
-         * 0.39.z78 J6 (the manager's ruling): the minutes this cave holds, read from its size bucket
-         * ({@link io.github.mojolowjo.entropybot.sense.CaveIndex.Size#holdsMinutes}); no size known: no bound but the
-         * cave.exploreMinutes cap. Rough (rule 14).
+         * The minutes this cave holds: 0.39.z78 J6b (D12) its record's unseen cells walked ({@code unseenMinutes}: unseen
+         * cells / CROSS_SECTION / the walk's speed; the cave record, the one store); not known (no record cells yet): its
+         * size bucket (J6, {@link io.github.mojolowjo.entropybot.sense.CaveIndex.Size#holdsMinutes}); neither: no bound but
+         * the cave.exploreMinutes cap. Rough (rule 14).
          */
         public double holdsMinutes() {
+            if (unseenMinutes >= 0) return unseenMinutes;
             return size == null ? Double.POSITIVE_INFINITY : size.holdsMinutes(Tuning.get("cave.exploreMinutes"));
         }
 
@@ -2888,6 +2895,7 @@ public final class NeedChain {
                 case Step.Smelt k -> k.n() <= 0;
                 case Step.ChopTree t -> t.logs() <= 0;
                 case Step.Mine m -> m.n() <= 0;
+                case Step.Cave k -> k.n() <= 0;
                 case Step.Strip st -> st.amounts().values().stream().mapToInt(Integer::intValue).sum() <= 0;
                 default -> false;
             };
@@ -5518,12 +5526,17 @@ public final class NeedChain {
         if (!(per > 0)) { c.fail = head + ": the yield of " + shw(gives) + " from " + shw(cw.ore()) + " is not known (no loot entry; rule 15)"; return null; }   // z75 metric fix A
         int oreBlocks = (int) Math.ceil(lack / per - 1e-9);  // structural: epsilon
         if (oreBlocks <= 0) { c.fail = head + ": 0 ore for " + lack + " " + shw(gives) + " (nothing to mine)"; return null; }
-        double minutes = oreBlocks / cw.perMin(), cap = Tuning.get("cave.exploreMinutes"), holds = cw.holdsMinutes(), max = Math.min(cap, holds);
-        String yield = "yield ~" + String.format(java.util.Locale.ROOT, "%.2f", cw.perMin()) + " ore/min (" + (cw.measured() ? "measured" : "prior") + ")";
-        if (minutes > max) {
-            // 0.39.z78 J6: a known cave holds the minutes its size gives (CaveWay.holdsMinutes), never more than the cap
-            c.fail = head + ", " + yield + ": " + oreBlocks + " ore take ~" + Math.round(minutes) + " min, past "
-                    + (holds < cap ? "the ~" + Math.round(holds) + " min a " + cw.size().name().toLowerCase(java.util.Locale.ROOT) + " cave holds" : "cave.exploreMinutes " + Math.round(cap));
+        // 0.39.z78 J6b (D12): the ore the record saw there and left is mined first (no exploring for it); the rest is found
+        // at the yield, in the minutes the cave's unseen part holds, never past the cap
+        int toFind = Math.max(0, oreBlocks - Math.max(0, cw.left()));
+        double minutes = toFind / cw.perMin(), cap = Tuning.get("cave.exploreMinutes"), holds = cw.holdsMinutes(), max = Math.min(cap, holds);
+        String yield = "yield ~" + String.format(java.util.Locale.ROOT, "%.2f", cw.perMin()) + " ore/min (" + (cw.measured() ? "measured" : "prior") + ")"
+                + (cw.left() > 0 ? ", " + cw.left() + " seen there and left" : "");
+        if (toFind > 0 && minutes > max) {
+            // 0.39.z78 J6 / J6b: a known cave holds the minutes its unseen part (or, not known, its size) gives, never more than the cap
+            c.fail = head + ", " + yield + ": " + toFind + " ore to find take ~" + Math.round(minutes) + " min, past "
+                    + (holds < cap ? (cw.unseenMinutes() >= 0 ? "the ~" + Math.round(holds) + " min its unseen part holds"
+                    : "the ~" + Math.round(holds) + " min a " + cw.size().name().toLowerCase(java.util.Locale.ROOT) + " cave holds") : "cave.exploreMinutes " + Math.round(cap));
             return null;
         }
         double exploreS = minutes * 60, oreS = oreBlocks * blockBreakS(c, cw.ore());  // structural: seconds per minute
@@ -5531,7 +5544,7 @@ public final class NeedChain {
         c.setAway(wk.seconds() + exploreS);
         if (c.pickItem != null) c.pickWorn += oreBlocks;
         c.steps.add(new Step.Walk(cw.x(), cw.y(), cw.z(), 0));
-        c.steps.add(new Step.Mine(cw.family(), oreBlocks, Step.Mine.How.CAVE, (int) Math.ceil(max)));
+        c.steps.add(new Step.Cave(cw.x(), cw.y(), cw.z(), cw.family(), oreBlocks, (int) Math.max(1, Math.ceil(max))));   // J6b: the caving step (D12); at least a minute (the left ore's walk)
         c.bag.merge(gives, Math.max(lack, (int) Math.floor(oreBlocks * per + 1e-9)), Integer::sum);  // structural: epsilon
         final String line = head + ", " + yield + " x " + oreBlocks + " ore"
                 + " -> " + s(wk.seconds() + confirmS + exploreS + oreS);

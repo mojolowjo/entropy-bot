@@ -368,6 +368,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.Fish fs -> fish(p, fs);
                 case Step.KelpCut k -> kelpCut(p, k);
                 case Step.MineAt m -> mineAt(p, m);
+                case Step.Cave k -> caveStart(p, k);                   // 0.39.z78 J6b: the caving step (D12)
                 case Step.Strip st -> StripStep.start(st);              // the owner's strip order: the fork's StripProcess
                 case Step.Mine m when m.how() == Step.Mine.How.STRIP -> mineStrip(p, m);   // an AA strip leg: the same fork process (the old verb is gone)
                 case Step.Deposit d when d.order() != null -> depositLeg(p, d);           // the strip order's deposit leg (DepositLeg)
@@ -409,6 +410,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.TakeStation t -> takeStatus(p, t);
                 case Step.KelpCut k -> mineStatus(p);
                 case Step.MineAt m -> veinStatus(p, m);
+                case Step.Cave k -> caveStatus(p);
                 case Step.Strip st -> StripStep.status(st, Core.INSTANCE.reflexes.hold());
                 case Step.Mine m when m.how() == Step.Mine.How.STRIP && legStrip != null -> StripStep.status(legStrip, Core.INSTANCE.reflexes.hold());
                 case Step.Fish fs -> fishStatus(p);
@@ -459,6 +461,12 @@ public final class StepHands implements Steps.Hands {
             if (step instanceof Step.ToBand || step instanceof Step.ToStrip) {
                 IBaritone b = Jobs.baritone();
                 if (b != null) Jobs.cancel(b);
+            }
+            if (step instanceof Step.Cave && caving != null) {
+                if (caving.vein != null) caving.vein.stop();
+                IBaritone b = Jobs.baritone();
+                if (b != null) Jobs.cancel(b);
+                caveEnd(io.github.mojolowjo.entropybot.cave.CaveWalk.End.NO_PROGRESS, "stopped: " + why);
             }
             if (step instanceof Step.Climb && climbing) {
                 climbing = false;
@@ -651,6 +659,170 @@ public final class StepHands implements Steps.Hands {
         Car.Status st = vein.poll(p.level());
         if (st.state() != Car.State.RUNNING) vein = null;
         return st;
+    }
+
+    // ---- 0.39.z78 J6b (D12): the caving step - a KNOWN cave walked on its record (the one store), Baritone the car ----
+
+    /** The running caving step's state (null: none). */
+    private static final class Caving {
+        Step.Cave step;
+        String dim;
+        long startMs, version = -1;
+        int mined, oreSeen, seenAtStart;
+        int[] goal;
+        String goalWhy;
+        io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.Held hold;
+        VeinMine vein;
+        List<int[]> veinCells;
+        String fam;
+    }
+
+    private Caving caving;
+
+    /**
+     * Starts the caving step at the known cave's entry (the chain's walk brought the bot there): its record's cells from
+     * the cave index, the "cave: enters" line. Rule 15: sightings not loaded, or no known cave there, is a named error.
+     * Loader notes: Baritone's custom goal process (GoalNear), VeinMine (Baritone's MineProcess), vanilla Level reads.
+     */
+    private String caveStart(LocalPlayer p, Step.Cave k) {
+        var pass = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE;
+        var sg = pass.sightings();
+        String dim = pass.dim();
+        if (sg == null || dim == null) return "error: " + k.text() + ": the sightings are not loaded yet (rule 15)";
+        var f = sg.caveFacts(dim, k.x(), k.y(), k.z());
+        if (f == null) return "error: " + k.text() + ": no known cave there (aa cave list)";
+        if (Jobs.baritone() == null) return "error: " + k.text() + ": baritone not loaded";
+        caving = new Caving();
+        caving.step = k;
+        caving.dim = dim;
+        caving.startMs = System.currentTimeMillis();
+        caving.fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(k.family());
+        caveRefresh(p);
+        f = sg.caveFacts(dim, k.x(), k.y(), k.z());
+        caving.seenAtStart = f.cellCount() - f.unseen();
+        LOG.info("[entropybot] cave: the caving step enters the known cave {} for {} {} ore ({} min at most): {}", f.x() + " " + f.y() + " " + f.z(), k.n(), caving.fam,
+                k.minutes(), f.line());
+        return null;
+    }
+
+    /** The record's cells from the cave index when it changed (chunks loaded or left). */
+    private void caveRefresh(LocalPlayer p) {
+        var pass = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE;
+        var idx = pass.caveIndex();
+        long v = idx.version();
+        if (v == caving.version) return;
+        caving.version = v;
+        Step.Cave k = caving.step;
+        pass.sightings().caveCells(caving.dim, k.x(), k.y(), k.z(), idx.volumeCells(k.x(), k.y(), k.z()));
+    }
+
+    private Car.Status caveStatus(LocalPlayer p) {
+        Caving cv = caving;
+        if (cv == null) return Car.Status.failed("the caving step has no state");
+        var pass = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE;
+        var sg = pass.sightings();
+        var idx = pass.caveIndex();
+        Step.Cave k = cv.step;
+        int[] me = Jobs.here(p);
+        long nowMs = System.currentTimeMillis();
+        caveRefresh(p);
+        sg.caveStood(cv.dim, k.x(), k.y(), k.z(), me[0], me[1], me[2], nowMs);
+        // the ore seen round the feet (by sight: the ore index under aa fair) beside the cave's air goes into the record
+        int root = idx.volumeAt(k.x(), k.y(), k.z());
+        for (var h : pass.nearest(cv.dim, id -> true, me[0], me[1], me[2], io.github.mojolowjo.entropybot.sense.CaveRecord.SEE_STEPS + 2, 32,   // structural: the seen cells and their walls; a page of hits
+                (x, y, z) -> Mining.fairOk(cv.dim, x, y, z))) {
+            if (root < 0 || h.family() == null || !besideVolume(idx, root, h.x(), h.y(), h.z())) continue;
+            if (sg.caveOre(cv.dim, k.x(), k.y(), k.z(), io.github.mojolowjo.entropybot.sense.Sightings.cell(h.x(), h.y(), h.z()), h.family())) cv.oreSeen++;
+        }
+        IBaritone b = Jobs.baritone();
+        if (b == null) return caveEnd(io.github.mojolowjo.entropybot.cave.CaveWalk.End.NO_PROGRESS, "baritone not loaded");
+        if (cv.vein != null) {
+            Car.Status st = cv.vein.poll(p.level());
+            if (st.state() == Car.State.RUNNING) return Car.Status.running("caving: mining the seen ore (" + cv.mined + " of " + k.n() + ")");
+            for (int[] c : cv.veinCells) {
+                BlockPos q = new BlockPos(c[0], c[1], c[2]);
+                if (p.level().isLoaded(q) && !io.github.mojolowjo.entropybot.sense.KnownOre.family(BuiltInRegistries.BLOCK.getKey(p.level().getBlockState(q).getBlock()).toString(), cv.fam)) {
+                    sg.caveMined(cv.dim, k.x(), k.y(), k.z(), io.github.mojolowjo.entropybot.sense.Sightings.cell(c[0], c[1], c[2]));
+                    cv.mined++;
+                }
+            }
+            if (st.state() == Car.State.FAILED) LOG.info("[entropybot] cave: the vein at {} ended: {}", Jobs.fmt(cv.veinCells.get(0)), st.why());
+            cv.vein = null;
+            cv.veinCells = null;
+        }
+        if (cv.goal != null) {
+            cv.hold = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.look(cv.hold, Core.INSTANCE.tick(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(),
+                    b.getPathingBehavior().getCurrent() != null, cv.goal);
+            switch (cv.hold.state()) {
+                case HELD -> {
+                    if (Jobs.idle(b)) b.getCustomGoalProcess().setGoalAndPath(new GoalNear(new BlockPos(cv.goal[0], cv.goal[1], cv.goal[2]), 1));
+                    return Car.Status.running("caving: walking to " + cv.goalWhy + " (" + cv.mined + " of " + k.n() + " ore)");
+                }
+                case FAILED -> { return caveEnd(io.github.mojolowjo.entropybot.cave.CaveWalk.End.NO_PROGRESS, "the walk to " + cv.goalWhy + ": " + cv.hold.why()); }
+                case REACHED -> { cv.goal = null; cv.hold = null; }
+            }
+        }
+        var f = sg.caveFacts(cv.dim, k.x(), k.y(), k.z());
+        double minutes = (nowMs - cv.startMs) / 60000.0;                       // structural: ms a minute
+        var next = io.github.mojolowjo.entropybot.cave.CaveWalk.next(cv.mined, k.n(), minutes, k.minutes(), f, sg.caveFrontier(cv.dim, k.x(), k.y(), k.z()),
+                sg.caveLeft(cv.dim, k.x(), k.y(), k.z(), cv.fam), me, io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH);
+        switch (next) {
+            case io.github.mojolowjo.entropybot.cave.CaveWalk.Stop s -> { return caveEnd(s.end(), s.why()); }
+            case io.github.mojolowjo.entropybot.cave.CaveWalk.Mine m -> {
+                var level = p.level();
+                List<io.github.mojolowjo.entropybot.clear.Pos> cells = new ArrayList<>();
+                cv.veinCells = new ArrayList<>();
+                for (int[] cell : io.github.mojolowjo.entropybot.cave.MineRules.vein(m.cell(), n -> {
+                    BlockPos bq = new BlockPos(n[0], n[1], n[2]);
+                    return level.isLoaded(bq) && io.github.mojolowjo.entropybot.sense.KnownOre.family(BuiltInRegistries.BLOCK.getKey(level.getBlockState(bq).getBlock()).toString(), cv.fam);
+                }, io.github.mojolowjo.entropybot.cave.MineRules.atVein())) { cells.add(new io.github.mojolowjo.entropybot.clear.Pos(cell[0], cell[1], cell[2])); cv.veinCells.add(cell); }
+                if (cells.isEmpty()) {
+                    // the seen ore is gone (mined by someone, or never there): the record says so, the next move is picked
+                    sg.caveMined(cv.dim, k.x(), k.y(), k.z(), io.github.mojolowjo.entropybot.sense.Sightings.cell(m.cell()[0], m.cell()[1], m.cell()[2]));
+                    LOG.info("[entropybot] cave: the seen {} ore at {} is no longer there", cv.fam, Jobs.fmt(m.cell()));
+                    return Car.Status.running("caving: the seen ore is gone, picking the next move");
+                }
+                cv.vein = new VeinMine(cells, "cave: mine " + cv.fam + " at " + Jobs.fmt(m.cell()));
+                String bad = cv.vein.begin(level);
+                if (bad != null) { cv.vein = null; return caveEnd(io.github.mojolowjo.entropybot.cave.CaveWalk.End.NO_PROGRESS, "the vein at " + Jobs.fmt(m.cell()) + ": " + bad); }
+                return Car.Status.running("caving: mining the seen ore at " + Jobs.fmt(m.cell()));
+            }
+            case io.github.mojolowjo.entropybot.cave.CaveWalk.Goto g -> {
+                cv.goal = g.cell().clone();
+                cv.goalWhy = g.why();
+                cv.hold = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.start(new io.github.mojolowjo.entropybot.cave.ExploreRules.Target(g.cell()[0], g.cell()[2]),
+                        Core.INSTANCE.tick(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed());
+                b.getCustomGoalProcess().setGoalAndPath(new GoalNear(new BlockPos(g.cell()[0], g.cell()[1], g.cell()[2]), 1));
+                LOG.info("[entropybot] cave: to {} ({} of {} ore mined)", g.why(), cv.mined, k.n());
+                return Car.Status.running("caving: walking to " + g.why());
+            }
+        }
+    }
+
+    /** x y z (an ore block) is beside an air cell of the cave's volume. */
+    private static boolean besideVolume(io.github.mojolowjo.entropybot.sense.CaveIndex idx, int root, int x, int y, int z) {
+        return idx.volumeAt(x + 1, y, z) == root || idx.volumeAt(x - 1, y, z) == root || idx.volumeAt(x, y + 1, z) == root
+                || idx.volumeAt(x, y - 1, z) == root || idx.volumeAt(x, y, z + 1) == root || idx.volumeAt(x, y, z - 1) == root;
+    }
+
+    /** The step's end: the walk's minutes and ore into the record, the D12 end line (rule 7); the need met is done, else failed. */
+    private Car.Status caveEnd(io.github.mojolowjo.entropybot.cave.CaveWalk.End end, String why) {
+        Caving cv = caving;
+        caving = null;
+        if (cv == null) return Car.Status.failed("the caving step has no state");
+        IBaritone b = Jobs.baritone();
+        if (b != null) Jobs.cancel(b);
+        var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
+        Step.Cave k = cv.step;
+        double minutes = (System.currentTimeMillis() - cv.startMs) / 60000.0;   // structural: ms a minute
+        io.github.mojolowjo.entropybot.sense.CaveRecord.Facts after = null;
+        if (sg != null) {
+            sg.caveWalked(cv.dim, k.x(), k.y(), k.z(), minutes, cv.oreSeen, System.currentTimeMillis());
+            after = sg.caveFacts(cv.dim, k.x(), k.y(), k.z());
+        }
+        String line = io.github.mojolowjo.entropybot.cave.CaveWalk.endLine(k.x() + " " + k.y() + " " + k.z(), end, why, minutes, cv.seenAtStart, after, cv.oreSeen, cv.mined);
+        LOG.info("[entropybot] {}", line);
+        return end == io.github.mojolowjo.entropybot.cave.CaveWalk.End.NEED_MET ? Car.Status.done("ok: " + line) : Car.Status.failed(line);
     }
 
     // ---- kelp: Baritone's MineProcess on the game's kelp blocks, counted in the bag ----

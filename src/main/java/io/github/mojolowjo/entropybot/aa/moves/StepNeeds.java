@@ -161,6 +161,7 @@ public record StepNeeds(String toolKind, int minTier, Map<String, Integer> consu
         return switch (s) {
             case Step.Collect k -> io.github.mojolowjo.entropybot.aa.NeedChain.plain(k.item()) ? forItem(full(k.item())) : forMembers(k.item());
             case Step.Mine m -> m.how() == Step.Mine.How.STRIP ? NONE : forFamily(m.family());
+            case Step.Cave k -> forFamily(k.family());      // 0.39.z78 J6b: the caving step mines the family's ore
             case Step.Strip st -> forBlocks(st.ores());
             case Step.ChopTree t -> t.log() == null ? NONE : forBlocks(List.of(t.log()));
             case Step.TakeStation t -> forBlocks(List.of(full(t.item())));     // 0.39.z48: the station block's own tier

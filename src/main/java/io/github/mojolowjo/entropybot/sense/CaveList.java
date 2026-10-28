@@ -21,6 +21,23 @@ public final class CaveList {
         return text(known, credited, null, 0, null, rays, px, py, pz);
     }
 
+    /** J6b: as below, each known cave with its record's line ({@code record}: the store's facts; null: none). */
+    public static String text(List<Sightings.KnownCave> known, java.util.function.Function<Sightings.KnownCave, CaveRecord.Facts> record, Map<Integer, List<Long>> credited,
+                              CaveIndex.TruthList truth, int within, String counts, String rays, double px, double py, double pz) {
+        String t = text(known, credited, truth, within, counts, rays, px, py, pz);
+        if (record == null) return t;
+        StringBuilder b = new StringBuilder();
+        for (String line : t.split("\n", -1)) {
+            b.append(line).append('\n');
+            for (Sightings.KnownCave c : known)
+                if (line.startsWith("  " + c.where() + ": ")) {
+                    CaveRecord.Facts f = record.apply(c);
+                    if (f != null) b.append("    record: ").append(f.line()).append('\n');
+                }
+        }
+        return b.substring(0, b.length() - 1);
+    }
+
     /** As above, with the index's truth within {@code within} blocks ({@code truth} null: left out) and its counts line. */
     public static String text(List<Sightings.KnownCave> known, Map<Integer, List<Long>> credited, CaveIndex.TruthList truth, int within, String counts,
                               String rays, double px, double py, double pz) {

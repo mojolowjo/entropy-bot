@@ -46,7 +46,8 @@ class Z77CaveWayTest {
                 .withCave(word -> cw != null && (word.contains("raw_iron") || word.contains("iron_ore")) ? cw : null);
     }
 
-    static boolean caveMined(Chain c) { return c.steps().stream().anyMatch(s -> s instanceof Step.Mine m && m.how() == Step.Mine.How.CAVE); }
+    /** 0.39.z78 J6b: the cave way's step is the caving step (Step.Cave, D12). */
+    static boolean caveMined(Chain c) { return c.steps().stream().anyMatch(s -> s instanceof Step.Cave); }
 
     // ---- the cave way beside a seen ore ----
 

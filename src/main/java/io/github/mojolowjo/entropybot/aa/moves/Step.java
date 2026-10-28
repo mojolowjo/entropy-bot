@@ -55,6 +55,15 @@ public sealed interface Step {
     }
 
     /**
+     * 0.39.z78 J6b (D12): explore the KNOWN cave entered at x y z for {@code n} ore blocks of {@code family}, at most
+     * {@code minutes} inside - the caving step (StepHands over Baritone): its record's nearest branch walked, seen ore in
+     * reach mined by the vein; it ends on the need met, the cave done, the minutes, or Baritone's no progress.
+     */
+    record Cave(int x, int y, int z, String family, int n, int minutes) implements Step {
+        public String text() { return "cave " + family + " " + n + " at " + x + " " + y + " " + z + (minutes > 0 ? " for " + minutes + " min" : ""); }
+    }
+
+    /**
      * Baritone's own tree mining: its MineProcess on the log blocks ({@code log}: one block id, null = every block the
      * game tags as a log) until {@code logs} more are in the bag. {@code at}: the seen tree (Sightings) the walk before
      * it went to, or null (Baritone mines the nearest it knows).

@@ -45,7 +45,7 @@ final class CaveLabel {
         switch (a) {
             case "", "list" -> {
                 int within = (int) Math.floor(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.exploreTowardM"));
-                return io.github.mojolowjo.entropybot.sense.CaveList.text(sg.allKnownCaves(dim), idx.credited(), idx.truth(p.getBlockX(), p.getBlockY(), p.getBlockZ(), within),
+                return io.github.mojolowjo.entropybot.sense.CaveList.text(sg.allKnownCaves(dim), c -> sg.caveFacts(dim, c.x(), c.y(), c.z()), idx.credited(), idx.truth(p.getBlockX(), p.getBlockY(), p.getBlockZ(), within),
                         within, idx.counts(), pass.caveRaysStatus(), p.getX(), p.getY(), p.getZ());   // run EE: the index's truth (a debug read)
             }
             case "list all" -> {

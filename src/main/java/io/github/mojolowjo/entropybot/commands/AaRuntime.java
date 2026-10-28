@@ -957,10 +957,23 @@ public final class AaRuntime implements JobPort {
         // volume, Sightings.KnownCave), the one the caving step enters: its entry cell, its size for the minutes it holds
         var known = sg.knownCaves(dim, me[0], me[1], me[2], System.currentTimeMillis());
         String fam = io.github.mojolowjo.entropybot.cave.OreSpec.family(ore);
-        if (known.isEmpty()) return null;
-        var k = known.get(0);
-        return new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(k.x(), k.y(), k.z(), Math.sqrt(Jobs.distSq(me, new int[]{k.x(), k.y(), k.z()})),
-                ore, fam, sg.ore().caveRate(fam), sg.ore().caveMinutes() > 0, k.size());
+        // 0.39.z78 J6b (D12): the planner reads the cave RECORD (the one store): the nearest known cave offered for the family
+        // (not done, or done with its ore seen and left), whose depth band holds where the ore generates; its unseen cells'
+        // minutes, the ore seen there and left, the yield measured there once walked (the prior before)
+        var where = whereOf(ore);
+        boolean bandKnown = where != null && where.kind() != io.github.mojolowjo.entropybot.aa.brain.GenWhere.Kind.NOT_LOADED && where.band();
+        for (var k : known) {
+            var f = sg.caveFacts(dim, k.x(), k.y(), k.z());
+            if (f != null && !f.offeredFor(fam)) continue;
+            if (bandKnown && !k.depth().overlaps(where.lo(), where.hi())) continue;
+            boolean walked = f != null && f.walkedMinutes() > 0;
+            double rate = walked ? f.oreSeenPerMinute() : sg.ore().caveRate(fam);
+            double unseen = f == null || f.cellCount() <= 0 ? -1
+                    : f.unseen() / (double) io.github.mojolowjo.entropybot.sense.CaveIndex.CROSS_SECTION / io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps() / 60.0;   // structural: seconds a minute
+            return new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(k.x(), k.y(), k.z(), Math.sqrt(Jobs.distSq(me, new int[]{k.x(), k.y(), k.z()})),
+                    ore, fam, rate, walked || sg.ore().caveMinutes() > 0, k.size(), unseen, f == null ? 0 : f.left(fam));
+        }
+        return null;
     }
 
     /** 0.39.z78 J6: aa status: "caves: N known by rays (M volumes credited, K chunks indexed)". */
@@ -979,7 +992,7 @@ public final class AaRuntime implements JobPort {
         String dim = pass.dim();
         LocalPlayer p = Minecraft.getInstance().player;
         if (sg == null || dim == null || p == null) return cavesLine();
-        return cavesLine() + "\n" + io.github.mojolowjo.entropybot.sense.CaveList.text(sg.allKnownCaves(dim), pass.caveIndex().credited(),
+        return cavesLine() + "\n" + io.github.mojolowjo.entropybot.sense.CaveList.text(sg.allKnownCaves(dim), c -> sg.caveFacts(dim, c.x(), c.y(), c.z()), pass.caveIndex().credited(),
                 pass.caveIndex().truth(p.getBlockX(), p.getBlockY(), p.getBlockZ(), (int) Math.floor(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.exploreTowardM"))),
                 (int) Math.floor(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.exploreTowardM")), pass.caveIndex().counts(), pass.caveRaysStatus(), p.getX(), p.getY(), p.getZ());   // run EE: the index's truth (a debug read)
     }

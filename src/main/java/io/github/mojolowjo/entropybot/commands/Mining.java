@@ -744,6 +744,8 @@ final class Mining {
          */
         Integer aimY;
         boolean landFirst, landRead;
+        /** J6b item 5 (a): the chunk target's goal is its surface cell (false: the column goal, its column not loaded yet). */
+        boolean surfaceGoal;
 
         /**
          * 0.39.z76 send-back 1 (run AN 23:29:43-23:30:07: a gather on the way to cave candidate 117 13 213 dropped the target
@@ -791,7 +793,21 @@ final class Mining {
      */
     private static baritone.api.pathing.goals.Goal exploreGoal(ExRun ex) {
         if (ex.aimY != null) return new baritone.api.pathing.goals.GoalNear(new BlockPos(ex.target.x(), ex.aimY, ex.target.z()), 2);   // structural: within 2 blocks of the cell
+        // 0.39.z78 J6b item 5 (a) (the owner): a chunk target is a SURFACE goal - its column's leaf-free surface cell (the
+        // index's ground), so the walk does not dig down for it; Baritone still picks the path (rule 2). The column not
+        // loaded yet: the column goal (GoalXZ) until it loads (the held walk sets the surface goal then)
+        var lv = Minecraft.getInstance().level;
+        int[] cell = ExploreRules.surfaceCell(ex.target.x(), ex.target.z(), lv == null ? io.github.mojolowjo.entropybot.world.SurfaceHeight.NOT_KNOWN : Jobs.surfaceNoLeaves(lv, ex.target.x(), ex.target.z()));
+        ex.surfaceGoal = cell != null;
+        if (cell != null) return new baritone.api.pathing.goals.GoalNear(new BlockPos(cell[0], cell[1], cell[2]), 2);   // structural: within 2 blocks of the cell
         return new GoalXZ(ex.target.x(), ex.target.z());
+    }
+
+    /** J6b item 5: the explore aims at cave openings (the same test as the pick's: a band target, or an ore need not on the surface). */
+    private boolean caveAim(ExRun ex) {
+        if (ex.untilSource == null) return false;
+        boolean band = ex.where != null && ex.where.band(), surface = ex.where != null && ex.where.surface();
+        return band || (!surface && oreNeed(ex.untilSource));
     }
 
     /** 0.39.z48: one of the explore's until words is an ore need (a source block the game tags c:ores). */
@@ -1229,12 +1245,27 @@ final class Mining {
         // 0.39.z72 (D2 3.3, run P P6): the target is a held fact - held until reached or failed (no path monitor.noPathFails
         // times or no new best for monitor.stallS); Baritone idle alone is no failure: the same goal is set again (once a
         // second). Was (z56, Mining ~1079): given up 1 s after Baritone went idle and its chunk marked explored, never reached.
+        // 0.39.z78 J6b item 5 (b) (the owner): a rim credit landing mid-walk switches the target at once - the held chunk
+        // target yields to a credited opening this tick (the pick below takes it)
+        if (done == null && ex.target != null && ex.hold != null && ex.aimed == null && caveAim(ex)) {
+            int within = (int) Math.floor(Tuning.get("cave.exploreTowardM"));
+            final double moved = io.github.mojolowjo.entropybot.aa.brain.Failures.movedV();
+            int[] seen = ExploreRules.yieldTo(true, io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.caveIndex().openings(me[0], me[1], me[2], within),
+                    cell -> CAVE_VISITED.contains(Jobs.fmt(cell)) || ExploreRules.TargetHold.skipCell(ex.failed, cell[0], cell[2], me, moved) || frozenCell(cell, me));
+            if (seen != null) {
+                LOG.info("[entropybot] explore: a cave opening was seen at {} mid-walk: the walk to {} {} yields to it", Jobs.fmt(seen), ex.target.x(), ex.target.z());
+                if (b != null) Jobs.cancel(b);
+                ex.hold = null;
+            }
+        }
         if (done == null && ex.target != null && ex.hold != null) {
             ex.hold = ExploreRules.TargetHold.look(ex.hold, now(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(), b != null && b.getPathingBehavior().getCurrent() != null,
                     ex.aimed != null ? ex.aimCell : null);   // run ED: an opening is reached within reach of its cell
             if (ex.hold.state() == ExploreRules.TargetHold.State.HELD) {
-                if (b != null && Jobs.idle(b) && now() - ex.targetAt >= 20) {     // structural: once a second in ticks
+                boolean surfaceNow = ex.aimY == null && !ex.surfaceGoal && io.github.mojolowjo.entropybot.world.SurfaceHeight.known(Jobs.surfaceNoLeaves(p.level(), ex.target.x(), ex.target.z()));
+                if (b != null && (Jobs.idle(b) || surfaceNow) && now() - ex.targetAt >= 20) {     // structural: once a second in ticks
                     b.getCustomGoalProcess().setGoalAndPath(exploreGoal(ex));
+                    if (surfaceNow) LOG.info("[entropybot] explore: the target column {} {} loaded: the walk's goal is its surface cell now", ex.target.x(), ex.target.z());
                     ex.targetAt = now();
                 }
                 s.setStatus(s.label + " - walking to " + ex.target.x() + " " + ex.target.z() + " (" + ex.chunks + " chunks so far)");

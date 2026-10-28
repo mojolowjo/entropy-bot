@@ -271,6 +271,26 @@ public final class ExploreRules {
         return Math.sqrt(dx * dx + dy * dy + dz * dz) <= OPENING_REACH;
     }
 
+    /**
+     * 0.39.z78 J6b item 5 (a): a chunk target's surface cell - the column's leaf-free surface (SurfaceHeight.noLeaves: the
+     * first cell over its top non-leaf block, the cave index's ground), so the explore's walk ends on the surface and
+     * never digs down for it; null: not known (the column not loaded). Pure.
+     */
+    public static int[] surfaceCell(int x, int z, int surfaceY) {
+        return io.github.mojolowjo.entropybot.world.SurfaceHeight.known(surfaceY) ? new int[]{x, surfaceY, z} : null;
+    }
+
+    /**
+     * 0.39.z78 J6b item 5 (b): a walk to a chunk target ({@code holdingChunk}) yields to the first credited opening that
+     * {@code skip} does not name (visited, failed or frozen from near here); null: it walks on. A walk toward an opening
+     * never yields (it is already one). Pure.
+     */
+    public static int[] yieldTo(boolean holdingChunk, List<int[]> credited, Predicate<int[]> skip) {
+        if (!holdingChunk || credited == null) return null;
+        for (int[] c : credited) if (skip == null || !skip.test(c)) return c;
+        return null;
+    }
+
     /** game fact: the survival block interaction range - a player at the opening could touch it. */
     public static final double OPENING_REACH = 4.5;
 

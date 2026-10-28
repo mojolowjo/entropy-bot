@@ -34,8 +34,9 @@ class J6CaveWayTest {
         assertTrue(c.ok() && !c.explore(), c.why());
         assertTrue(Z77CaveWayTest.caveMined(c), c.steps().toString());
         assertTrue(c.steps().contains(new Step.Walk(20, 21, -10, 0)), "the walk to its entry: " + c.steps());
-        Step.Mine m = (Step.Mine) c.steps().stream().filter(s -> s instanceof Step.Mine x && x.how() == Step.Mine.How.CAVE).findFirst().orElseThrow();
+        Step.Cave m = (Step.Cave) c.steps().stream().filter(s -> s instanceof Step.Cave).findFirst().orElseThrow();
         assertEquals((int) Math.ceil(Math.min(Tuning.get("cave.exploreMinutes"), cw.holdsMinutes())), m.minutes(), "the minutes: its size or the cap");
+        assertEquals(java.util.List.of(20, 21, -10), java.util.List.of(m.x(), m.y(), m.z()), "the caving step at the known cave's entry");
     }
 
     @Test
