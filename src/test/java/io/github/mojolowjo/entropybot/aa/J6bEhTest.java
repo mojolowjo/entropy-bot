@@ -80,6 +80,20 @@ class J6bEhTest {
         assertNull(SurfaceHeight.ringTarget(feet, (x, z) -> SurfaceHeight.NOT_KNOWN, (x, y, z) -> true), "nothing known: no target (rule 15)");
     }
 
+    /** 857599bc review (cost): on a slope of 1-block steps no leg (the no-break explore walks up itself); in the EI pit a leg. */
+    @Test
+    void aSlopeOfOneBlockSteps_hasNoLeg_theEiPitHasOne() {
+        int[] feet = {0, 64, 0};
+        java.util.function.IntBinaryOperator slope = (x, z) -> 64 + x;   // one block up per column east
+        int[] top = SurfaceHeight.ringTarget(feet, slope, (x, y, z) -> true);
+        assertEquals(67, top[1], "the ring's local top, 3 up");
+        assertFalse(SurfaceHeight.legNeeded(feet, slope, top), "1-block steps: the no-break walk climbs them - no hops before the explore");
+        int[] pitFeet = {9, 65, 4};
+        java.util.function.IntBinaryOperator pit = (x, z) -> (x == 9 && (z == 4 || z == 3)) ? 65 : 67;
+        assertTrue(SurfaceHeight.legNeeded(pitFeet, pit, SurfaceHeight.ringTarget(pitFeet, pit, (x, y, z) -> true)), "the EI pit: a 2-block rise - the leg");
+        assertFalse(SurfaceHeight.legNeeded(pitFeet, pit, null), "no target: no leg");
+    }
+
     /** Run EI (2): the probe nobreak line with the fork's calc detail (lastNoBreakCalc); none kept, or not Baritone's A*, said so. */
     @Test
     void theProbeNobreakLine() {

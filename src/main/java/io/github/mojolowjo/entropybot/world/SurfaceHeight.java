@@ -70,6 +70,40 @@ public final class SurfaceHeight {
     }
 
     /**
+     * 857599bc review (cost): the surface leg is needed only where a no-break walk cannot go - the ring's highest surface
+     * ({@code target}) cannot be reached from the feet's column by steps of at most one block up between neighbouring
+     * known columns of the ring (drops are walked). On a slope of 1-block steps the no-break explore walks up itself, so
+     * no hops to the ring's local top before it; in a pit (a 2-block rise all round, a notch of our own inside) the leg.
+     * Pure.
+     */
+    public static boolean legNeeded(int[] feet, java.util.function.IntBinaryOperator surface, int[] target) {
+        if (feet == null || target == null) return false;
+        int side = 2 * RING + 1;
+        int[] h = new int[side * side];
+        for (int i = 0; i < h.length; i++) h[i] = surface.applyAsInt(feet[0] - RING + i % side, feet[2] - RING + i / side);
+        int start = RING * side + RING;
+        if (!known(h[start])) h[start] = feet[1];
+        boolean[] seen = new boolean[h.length];
+        java.util.ArrayDeque<Integer> q = new java.util.ArrayDeque<>();
+        q.add(start);
+        seen[start] = true;
+        while (!q.isEmpty()) {
+            int c = q.poll();
+            if (h[c] >= target[1]) return false;
+            int cx = c % side, cz = c / side;
+            for (int dx = -1; dx <= 1; dx++)
+                for (int dz = -1; dz <= 1; dz++) {
+                    int nx = cx + dx, nz = cz + dz, n = nz * side + nx;
+                    if ((dx == 0 && dz == 0) || nx < 0 || nz < 0 || nx >= side || nz >= side || seen[n] || !known(h[n])) continue;
+                    if (h[n] - h[c] > 1) continue;                                // structural: a 1-block step walks out
+                    seen[n] = true;
+                    q.add(n);
+                }
+        }
+        return true;
+    }
+
+    /**
      * The ring's half-width: 3 columns each way - past the one-cell cuts our own digs leave round the feet (a shaft, the
      * walk's notch: run EI 9 65 3) to the ground they were cut into, and no farther than a player looks for the rim of his
      * own hole (the walk to it stays a few blocks).

@@ -644,7 +644,11 @@ public final class AaRuntime implements JobPort {
         // run EI (the manager's fix): no rock over the head - the surface leg's target is the ring's highest standable
         // surface cell, nearest (SurfaceHeight.ringTarget): on flat ground the feet's own cell (no leg), in a pit the rim
         if (rock == 0) {
-            int[] t = io.github.mojolowjo.entropybot.world.SurfaceHeight.ringTarget(me, (x, z) -> Jobs.surfaceNoLeaves(lv, x, z), (x, y, z) -> standableSky(lv, x, y, z));
+            java.util.function.IntBinaryOperator ground = (x, z) -> Jobs.surfaceNoLeaves(lv, x, z);
+            int[] t = io.github.mojolowjo.entropybot.world.SurfaceHeight.ringTarget(me, ground, (x, y, z) -> standableSky(lv, x, y, z));
+            // 857599bc review: a leg only where a no-break walk cannot go (the ring's top more than 1 over the feet's surface)
+            if (t != null && !io.github.mojolowjo.entropybot.world.SurfaceHeight.legNeeded(me, ground, t))
+                return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(depth, me[0], me[1], me[2], 0, inHole);   // the feet: no leg
             if (t == null) return depth == 0 ? new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(0, me[0], me[1], me[2], 0) : null;
             return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(depth, t[0], t[1], t[2], Math.sqrt(Jobs.distSq(me, t)), inHole);
         }
