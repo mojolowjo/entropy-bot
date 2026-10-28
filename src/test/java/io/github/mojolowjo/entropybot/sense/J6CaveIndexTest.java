@@ -155,6 +155,7 @@ class J6CaveIndexTest {
         int t = h.volumeAt(10, 59, 5);
         assertTrue(h.isCave(t), "3 opening cells, its air 6 below them: a cave");
         assertEquals(CaveIndex.Credit.CREDITED, h.credit(10, 59, 5).what());
+        assertEquals(CaveIndex.Credit.RIM, h.rimCredit(8, 61, 5).what(), "the lip over the hole's face");
         assertEquals(1, h.openings(6, 64, 5, 16).size(), "a credited cave's opening is a target");
         assertEquals(8, h.openings(6, 64, 5, 16).get(0)[0]);
     }
@@ -310,6 +311,26 @@ class J6CaveIndexTest {
         assertTrue(i.counts().endsWith("air credits 4, known 1"), i.counts());
     }
 
+    /**
+     * c921e903 review (rule 17): a volume with two passing openings, a rim credit on A only - A is the target, never B
+     * (no ray saw B); B's lip stays a ray target, A's does not.
+     */
+    @Test
+    void twoPassingOpenings_aRimCreditOnAOnly_targetsANeverB() {
+        int[] cuts = new int[256];
+        for (int c = 0; c < 256; c++) cuts[c] = (c & 15) <= 1 || (c & 15) >= 14 ? 50 : SURFACE;
+        CaveIndex i = new CaveIndex();                       // tunnel z 8..9, y 51..53, x 2..13; A at x 2, B at x 13; a shaft at x 7..8 to y 40
+        i.put(CaveIndex.runs(0, 0, cuts, -64, (x, y, z) -> z >= 8 && z <= 9 && ((x >= 2 && x <= 13 && y >= 51 && y <= 53) || ((x == 7 || x == 8) && y >= 40 && y <= 53))));
+        assertTrue(i.isCave(i.volumeAt(5, 52, 8)));
+        assertEquals(CaveIndex.Credit.RIM, i.rimCredit(2, 54, 8).what(), "a ray ended on A's lip");
+        List<int[]> o = i.openings(7, 64, 8, 64);
+        assertEquals(1, o.size(), "only A");
+        assertEquals(2, o.get(0)[0], "A at x 2, never B at x 13");
+        List<int[]> t = i.targets(7, 64, 8, 64, 400, null);
+        assertTrue(t.stream().anyMatch(c -> c[0] == 13 && c[1] == 54), "B's lip is still a ray target");
+        assertFalse(t.stream().anyMatch(c -> c[0] == 2 && c[1] == 54), "A's lip seen: no more a target");
+    }
+
     /** The owner's definition, (b) alone: a tunnel with a wide opening that goes only 4 below it is a dip. */
     @Test
     void aWideOpeningThatGoesOnlyFourDownIsADip() {
@@ -428,11 +449,12 @@ class J6CaveIndexTest {
         CaveIndex i = index();
         assertTrue(i.openings(0, 64, 0, 64).isEmpty(), "no ray yet: not a target, the explore explores plainly");
         i.credit(9, 51, 5);
+        assertTrue(i.openings(0, 64, 0, 64).isEmpty(), "an air credit alone: no target (c921e903 review: the opening itself needs a rim credit)");
+        assertEquals(CaveIndex.Credit.RIM, i.rimCredit(2, 53, 4).what(), "a ray ended on the roof over A's opening cell 2 52 4");
         List<int[]> o = i.openings(0, 64, 0, 64);
         assertEquals(CaveIndex.TARGET_RAYS, i.volume(i.volumeAt(5, 51, 4)).credits().size());
-        assertEquals(1, o.size(), "one credit: A's opening is a target (D: no credit; B is closed: no opening)");
-        assertEquals(2, o.get(0)[0]);
-        assertEquals(52, o.get(0)[1], "the opening's cell nearest the asker (run EF: any cell of the opening)");
+        assertEquals(1, o.size(), "A's seen opening is a target (D: no credit; B is closed: no opening)");
+        assertEquals(List.of(2, 52, 4), List.of(o.get(0)[0], o.get(0)[1], o.get(0)[2]), "aimed at the credited cell beside the lip");
         assertEquals(CaveIndex.Credit.DIP, i.credit(11, 21, 11).what(), "B closed: no cave, no credit");
         assertEquals(1, i.openings(0, 64, 0, 64).size());
         i.credit(6, 52, 4);

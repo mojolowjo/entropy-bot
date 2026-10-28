@@ -324,6 +324,7 @@ public final class ChunkPass {
             failedWrites.clear();
             fromFiles.clear();
             filesLoaded.clear();
+            caveIndex.clear();                            // review c921e903: the cave index and its kept credits are the old world's (start() clears it again)
             dim = null;
             LOG.info("[entropybot] sense: world changed: ore index cleared, summaries load from {}", root());
         } catch (Throwable t) {

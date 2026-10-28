@@ -186,6 +186,7 @@ public final class CaveIndex {
         dirty = false;
         openingsAll = List.of();
         byRoot = new HashMap<>();
+        openingOf = new HashMap<>();
         shapeDirty = rootsDirty = true;
     }
 
@@ -401,6 +402,8 @@ public final class CaveIndex {
 
     private List<Opening> openingsAll = List.of();
     private Map<Integer, List<Opening>> byRoot = new HashMap<>();
+    /** Each opening cell's opening (the last measure). */
+    private Map<Long, Opening> openingOf = new HashMap<>();
     private boolean shapeDirty = true, rootsDirty = true;
     private long measuredAt, measureEveryNs;
 
@@ -456,7 +459,10 @@ public final class CaveIndex {
             }
             out.add(new Opening(List.copyOf(comp), low));
         }
+        Map<Long, Opening> of = new HashMap<>();
+        for (Opening o : out) for (long c : o.cells()) of.put(c, o);
         openingsAll = out;
+        openingOf = of;
         measuredAt = Math.max(1, System.nanoTime());
         shapeDirty = false;
         rekey();
@@ -638,7 +644,7 @@ public final class CaveIndex {
      */
     public synchronized List<int[]> targets(int x, int y, int z, int r, int n, CellTest ok) {
         fresh();
-        Set<Integer> rimRoots = rimRoots();
+        Set<Opening> rimOps = rimOpenings();
         List<int[]> out = new ArrayList<>();
         for (int cx = (x - r) >> 4; cx <= (x + r) >> 4; cx++)
             for (int cz = (z - r) >> 4; cz <= (z + r) >> 4; cz++) {
@@ -654,7 +660,8 @@ public final class CaveIndex {
                         if (ok == null || ok.test(tx, ty, tz)) out.add(new int[]{tx, ty, tz});
                         // run EE: the lip of an opening not yet seen - the roof block over the column's opening cells
                         // (solid: the run is maximal and lies under the ground), where a ray from afar ends
-                        if (sky(tx, tz) <= ch.hi[i] && !rimRoots.contains(rt) && (ok == null || ok.test(tx, ch.hi[i] + 1, tz)))
+                        Opening lipOf = openingOf.get(cell(tx, ch.hi[i], tz));        // the opening under this lip; its own rim credit only (review)
+                        if (sky(tx, tz) <= ch.hi[i] && (lipOf == null || !rimOps.contains(lipOf)) && (ok == null || ok.test(tx, ch.hi[i] + 1, tz)))
                             out.add(new int[]{tx, ch.hi[i] + 1, tz});
                     }
             }
@@ -663,46 +670,47 @@ public final class CaveIndex {
     }
 
     /**
-     * The openings near x y z: per cave not known yet that at least {@link #TARGET_RAYS} sight rays credited, through its
-     * air or on its lip ({@link #rimCredit}; a hole the bot has seen), its cell nearest x y z that touches a sky-lit column sideways (where a player sees a hole in a slope
-     * or a cliff side), within {@code r} (horizontal); nearest first. The explore for ore walks toward these; a volume no
-     * ray reached is never a target (the manager's ruling on J6 (a): that would be x-ray by proxy, rule 17) - none: the
-     * explore explores plainly.
+     * The openings near x y z (explore targets): each passing opening of a cave not known yet that holds a rim credit
+     * itself ({@link #TARGET_RAYS}: a ray ended on THAT opening's lip, {@link #rimCredit}), as its credited cell nearest
+     * x y z, within {@code r} (horizontal); nearest first. An opening no ray saw is never a target, even when another
+     * opening of its volume was seen (c921e903 review; the manager's ruling on J6 (a): x-ray by proxy, rule 17) - none:
+     * the explore explores plainly.
      */
     public synchronized List<int[]> openings(int x, int y, int z, int r) {
         fresh();
-        Set<Integer> rimRoots = rimRoots();
-        Map<Integer, int[]> best = new HashMap<>();
-        for (int cx = (x - r) >> 4; cx <= (x + r) >> 4; cx++)
-            for (int cz = (z - r) >> 4; cz <= (z + r) >> 4; cz++) {
-                Chunk ch = chunks.get(chunkKey(cx, cz));
-                if (ch == null || ch.lo.length == 0) continue;
-                for (int c = 0; c < 256; c++) {
-                    int tx = (cx << 4) + (c & 15), tz = (cz << 4) + (c >> 4);
-                    if (Math.abs(tx - x) > r || Math.abs(tz - z) > r) continue;
-                    int skyFrom = Integer.MAX_VALUE;
-                    for (int[] d : SIDES) skyFrom = Math.min(skyFrom, surfaceAt(tx + d[0], tz + d[1]));
-                    for (int i = ch.start[c]; i < ch.start[c + 1]; i++) {
-                        if (skyFrom == Integer.MAX_VALUE || skyFrom > ch.hi[i]) continue;
-                        int root = find(ch.id[i]);
-                        if (known.contains(root) || !cave(root)) continue;
-                        if (credits.getOrDefault(root, Set.of()).size() < TARGET_RAYS && !rimRoots.contains(root)) continue;   // run EE: a rim credit counts
-                        if (best.containsKey(root)) continue;
-                        Opening o = best(root);                                         // run EF: the passing opening is the entry
-                        if (o != null) best.put(root, nearest(o, x, y, z));
-                    }
-                }
-            }
+        measure();
+        // c921e903 review (rule 17, the manager's ruling): a target only at an opening that itself holds a rim credit - a
+        // ray ended on ITS lip - and it passes the floor; aimed at its credited cell (the seen air beside the lip). Another
+        // passing opening of the same volume that no ray saw is never a target.
+        Map<Opening, int[]> best = new java.util.IdentityHashMap<>();
+        for (long c : rimSeen) {
+            Opening o = openingOf.get(c);
+            int q = runAt(c);
+            if (o == null || q < 0) continue;
+            int root = find(q);
+            if (known.contains(root) || !passes(o, root)) continue;
+            int[] p = Sightings.cellOf(c);
+            if (Math.abs(p[0] - x) > r || Math.abs(p[2] - z) > r) continue;
+            int[] was = best.get(o);
+            if (was == null || d2(p, x, y, z) < d2(was, x, y, z)) best.put(o, p);
+        }
         List<int[]> out = new ArrayList<>(best.values());
         out.sort((a, b) -> Long.compare(d2(a, x, y, z), d2(b, x, y, z)));
         return out;
     }
-
     /** The lowest surface of the four side columns of x z (MAX_VALUE: none held): the sky a cell of x z touches from y up. */
     private int sky(int x, int z) {
         int s = Integer.MAX_VALUE;
         for (int[] d : SIDES) s = Math.min(s, surfaceAt(x + d[0], z + d[1]));
         return s;
+    }
+
+    /** c921e903 review (rule 17): the openings that hold a rim credit themselves (a ray ended on THEIR lip). */
+    private Set<Opening> rimOpenings() {
+        measure();
+        Set<Opening> out = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (long c : rimSeen) { Opening o = openingOf.get(c); if (o != null) out.add(o); }
+        return out;
     }
 
     /** The volumes with a rim credit (loaded cells only). */
