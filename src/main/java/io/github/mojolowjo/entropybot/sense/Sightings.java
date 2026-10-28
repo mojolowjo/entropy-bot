@@ -225,19 +225,41 @@ public final class Sightings {
      */
     public synchronized int caveFeed(String dim, CaveIndex idx, int budget) {
         int used = 0;
-        // J6c review: every record's tick starts here, the ones the budget loop does not reach too (their exposure step)
+        // J6c review of 98889d5f: ONE per-tick counter for every record - the feeds, the stands, the regroups and the
+        // air-exposed counts of all caves together stay under the budget; the tick starts here
+        tickSpend.spent = 0;
         Map<String, CaveRecord> rs = caveRecords.get(dim);
-        if (rs != null) for (CaveRecord r : rs.values()) r.recTick();
-        for (KnownCave k : allKnownCaves(dim)) {
-            if (used >= budget) break;
+        if (rs != null) for (CaveRecord r : rs.values()) r.recSpend(tickSpend);
+        List<KnownCave> caves = allKnownCaves(dim);
+        int feedBudget = Math.max(0, budget - CaveRecord.STAND_MAX);              // the stand later in the tick stays inside
+        for (KnownCave k : caves) {
+            if (used >= feedBudget) break;
             CaveRecord r = rec(dim, k.x(), k.y(), k.z());
             if (r == null) continue;
+            r.recSpend(tickSpend);                                              // made just now: the one counter too
             int was = r.cellCount();
-            used += r.recFeed(idx, budget - used);
+            used += r.recFeed(idx, feedBudget - used);
             if (r.cellCount() != was) dirty = true;
+        }
+        // J6c: the air-exposed counts, round-robin (each tick another cave first: none starves), from HALF of what the
+        // feeds left - the other half is the regroup's, later in the tick (the walk's own reads)
+        int share = Math.max(0, Math.min(budget, CaveRecord.BUDGET) - CaveRecord.STAND_MAX - (int) Math.min(Integer.MAX_VALUE, tickSpend.spent)) / 2;
+        if (!caves.isEmpty() && share > 0) {
+            exposeTurn = Math.floorMod(exposeTurn + 1, caves.size());
+            int spent = 0;
+            for (int i = 0; i < caves.size() && spent < share; i++) {
+                KnownCave k = caves.get((exposeTurn + i) % caves.size());
+                CaveRecord r = rec(dim, k.x(), k.y(), k.z());
+                if (r == null || !r.exposing()) continue;
+                spent += r.recExpose(idx::airAt, share - spent);
+            }
         }
         return used;
     }
+
+    /** J6c review: the one per-tick spend of every cave record (CaveRecord.Spend), and the exposure's round-robin turn. */
+    private final CaveRecord.Spend tickSpend = new CaveRecord.Spend(false);
+    private int exposeTurn = -1;
 
     /** Run EK (2): the known cave's unseen cell nearest its entry (CaveRecord#firstUnseen); null: none, or not loaded. */
     public synchronized int[] caveFirstUnseen(String dim, int x, int y, int z) {

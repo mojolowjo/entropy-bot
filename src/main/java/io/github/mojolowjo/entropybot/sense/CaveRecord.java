@@ -49,6 +49,12 @@ public final class CaveRecord {
      */
     public static final int SEE_STEPS = 6; // structural: a tunnel's width past the next bend, either way (estimate)
     /**
+     * J6c review of 98889d5f: the most cells one stand touches - the cells within {@link #SEE_STEPS} face steps (the 3D
+     * octahedron, (2r+1)(2r^2+2r+3)/3), each read and marked seen (two touches); the feeder leaves it out of the tick's
+     * budget so the stand after it stays inside.
+     */
+    public static final int STAND_MAX = 2 * (2 * SEE_STEPS + 1) * (2 * SEE_STEPS * SEE_STEPS + 2 * SEE_STEPS + 3) / 3; // structural: the octahedron of SEE_STEPS, two touches a cell
+    /**
      * Run EK: the cells (index runs and cells fed, cells searched) the record touches in one client tick at most. A
      * HashSet op on a boxed cell costs ~50-100 ns, so 16384 is ~1-2 ms - a few percent of the 50 ms tick - and a cave of
      * 209,647 cells is fed in about 13 ticks (under a second). A run is never split: one step may pass it by one run (at
@@ -132,36 +138,33 @@ public final class CaveRecord {
      */
     int recFeed(CaveIndex idx, int budget) {
         if (feed == null) feed = new CaveIndex.Feed();
-        recTick();
-        exposeAir = idx::airAt;
         int n = idx.feed(x, y, z, feed, budget, this::addCell);
         touched += n;
+        spend.spent += n;
         return n;
     }
 
     /**
-     * J6c review (1ce5ce19): a new tick for this record - the regroup's and the exposure's spend start again. The one
-     * feeder (Sightings.caveFeed) calls it for EVERY record of the dimension each tick, before its budget loop, so a record
-     * the loop does not reach (another cave's feed took the budget) still gets its tick: its exposure never starves.
+     * J6c review of 98889d5f: the cells spent this client tick by the feed, the stands, the regroups and the air-exposed
+     * counts of EVERY record - one counter (Sightings.caveFeed starts the tick and hands each record the store's one);
+     * BUDGET is the total. A record not in a store's feed keeps its own, started again by its own stand ({@code owned}).
      */
-    void recTick() {
-        regroupSpent = 0;                                                   // 88b28290 review 1: a new tick (the one feeder's step)
-        tickBase = touched;                                                 // J6c: the tick's spend starts here
+    static final class Spend {
+        long spent;
+        final boolean owned;
+        Spend(boolean owned) { this.owned = owned; }
     }
 
-    /** J6c: the index's air answer for the exposure step (set by the feeder), and the record's spend at the tick's start. */
-    private io.github.mojolowjo.entropybot.aa.Nearby.Open exposeAir;
-    private long tickBase;
+    private Spend spend = new Spend(true);
 
-    /**
-     * J6c: one step of the air-exposed count with what the tick's budget leaves after the feed, the stand and the regroup
-     * (the walk's own reads come first; the prior waits, rule 15). Nothing to do, or no index given: nothing.
-     */
-    private void exposeStep() {
-        if (exposeAir == null || (toExpose.isEmpty() && exposePending.isEmpty())) return;
-        long left = BUDGET - Math.max(touched - tickBase, regroupSpent);
-        if (left > 0) regroupSpent += recExpose(exposeAir, (int) left);       // one tick budget with the regroup
-    }
+    /** J6c review: the store's one per-tick counter for this record (Sightings.caveFeed). */
+    void recSpend(Spend shared) { spend = shared; }
+
+    /** J6c review: the cells this tick's one budget has left (0: none). */
+    static int left(Spend s) { return (int) Math.max(0, Math.min(Integer.MAX_VALUE, BUDGET - s.spent)); }
+
+    /** J6c review: the air-exposed count still has work (cells not looked round, or neighbours pending a chunk). */
+    boolean exposing() { return !toExpose.isEmpty() || !exposePending.isEmpty(); }
 
     /**
      * 0.39.z78 J6c (the owner's rulings 1 and 2): one budgeted step of the air-exposed count - the neighbours of the cells
@@ -186,6 +189,7 @@ public final class CaveRecord {
             for (int[] o : SIX) { classify(air, Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2])); spent++; }
         }
         touched += spent;
+        spend.spent += spent;
         return spent;
     }
 
@@ -206,7 +210,6 @@ public final class CaveRecord {
     public record Exposure(Map<Integer, Integer> byY, long blocks, boolean open, boolean done) {}
 
     Exposure exposure() {
-        exposeStep();
         return new Exposure(new TreeMap<>(exposedByY), exposedSet.size(), !exposePending.isEmpty(), loaded() && toExpose.isEmpty());
     }
 
@@ -262,11 +265,12 @@ public final class CaveRecord {
      * newly seen count.
      */
     int recStood(int fx, int fy, int fz, long now) {
-        if (lastAt != now) { lastAt = now; version++; regroupSpent = 0; }   // 88b28290 review 1: the stand is once a tick too
+        if (lastAt != now) { lastAt = now; version++; if (spend.owned) spend.spent = 0; }   // 88b28290 review 1: the stand is once a tick too (a record of its own)
         long start = Sightings.cell(fx, fy, fz);
         if (!cells.contains(start)) start = cellInReach(fx, fy, fz);
         if (start == Long.MIN_VALUE) return 0;
         int added = 0;
+        long before = touched;
         Map<Long, Integer> depth = new java.util.HashMap<>();
         ArrayDeque<Long> q = new ArrayDeque<>();
         depth.put(start, 0);
@@ -283,6 +287,7 @@ public final class CaveRecord {
                 if (cells.contains(n) && !depth.containsKey(n)) { depth.put(n, d + 1); q.add(n); }
             }
         }
+        spend.spent += touched - before;                                     // J6c review: the stand is in the tick's one budget
         return added;
     }
 
@@ -416,21 +421,22 @@ public final class CaveRecord {
         if (job != null) {
             // 88b28290 review 1: a frontier of thousands (a long walk in a 200k cave) is regrouped in steps - all at once
             // when it is small (BUDGET cells), else BUDGET cells a tick (spent counted from the tick's feed or stand)
-            int allow = job.size <= BUDGET ? Integer.MAX_VALUE : Math.max(0, BUDGET - regroupSpent);
+            // J6c review: from the one per-tick budget of every record (a small one whole while it fits what is left)
+            int left = left(spend);
+            int allow = job.size <= left ? Integer.MAX_VALUE : left;
             long before = touched;
-            if (job.step(allow)) {
+            if (allow > 0 && job.step(allow)) {                              // the tick's budget spent: the next tick
                 groupsNow = job.result();
                 groupsSaved = groupsNow.size();
                 job = null;
             }
-            regroupSpent += (int) Math.min(Integer.MAX_VALUE, touched - before);
+            spend.spent += touched - before;
         }
         return groupsNow;
     }
 
-    /** 88b28290 review 1: the regroup in progress (null: the groups are current), and the regroup cells spent this tick. */
+    /** 88b28290 review 1: the regroup in progress (null: the groups are current); its spend is in {@link #spend}. */
     private Regroup job;
-    private int regroupSpent;
 
     /** Run EK / 88b28290 review 1: the frontier is being regrouped (its groups lag by a tick or a few; not done meanwhile). */
     public boolean regrouping() { return job != null; }

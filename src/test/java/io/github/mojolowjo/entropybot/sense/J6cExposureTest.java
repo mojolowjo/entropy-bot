@@ -30,13 +30,13 @@ class J6cExposureTest {
         for (int t = 0; t < 40 && !s.caveFacts(D, 5, 30, 5).loaded(); t++) s.caveFeed(D, idx, CaveRecord.BUDGET);
         int ticks = 0;
         CaveRecord.Exposure ex = null;
-        while (ticks < 200) {
+        while (ticks < 400) {
             ticks++;
-            s.caveFeed(D, idx, CaveRecord.BUDGET);                               // the tick's start
             s.caveTouched(D, 5, 30, 5);
-            ex = s.caveExposure(D, 5, 30, 5);
+            s.caveFeed(D, idx, CaveRecord.BUDGET);                               // the tick: the feed, then the exposure's share
+            ex = s.caveExposure(D, 5, 30, 5);                                    // a read only
             long t = s.caveTouched(D, 5, 30, 5);
-            assertTrue(t <= CaveRecord.BUDGET + 5, "tick " + ticks + ": the exposure step touched " + t + " (the budget, past it by one cell's faces at most)");
+            assertTrue(t <= CaveRecord.BUDGET / 2 + 5, "tick " + ticks + ": the exposure touched " + t + " (its half of the budget, past it by one cell's faces at most)");
             if (ex.done()) break;
         }
         assertTrue(ex.done(), "every cell looked round in " + ticks + " ticks");
@@ -48,41 +48,45 @@ class J6cExposureTest {
     }
 
     /**
-     * J6c review (1ce5ce19): a FULLY FED volume's exposure completes over the following ticks while another cave's feed takes
-     * the whole budget (the feeder's loop never reaches it): every record's tick starts in Sightings.caveFeed, so its
-     * spend starts again each tick (was: only in its own feed step - "left" went to 0 and the count starved until the other
-     * feed ended). B: one chunk, y 10..60 (13,056 cells, ~78k face tests: several ticks); A: EK's volume, 13 ticks of feed.
+     * J6c review of 98889d5f: ONE per-tick budget for every cave - 10 known caves with their air-exposed counts pending,
+     * every cell any of them touches in a tick (the feeds, the counts, a stand and a regroup of the walked one) at most
+     * CaveRecord.BUDGET, and each count still completes (round-robin: each tick another cave first). Each cave: one chunk,
+     * y 10..60 (13,056 cells, ~78k face tests).
      */
     @Test
-    void aFullyFedVolume_itsExposureCompletes_whileAnotherCavesFeedTakesTheBudget() {
+    void tenCavesPending_everyTickUnderOneBudget_eachCompletes() {
         CaveIndex idx = new CaveIndex();
         int[] surface = new int[256];
         java.util.Arrays.fill(surface, 200);
-        int[][][] runs = new int[256][][];
-        for (int c = 0; c < 256; c++) runs[c] = new int[][]{{10, 60}};
-        idx.put(new CaveIndex.ChunkRuns(10, 0, surface, runs));               // B: x 160..175, z 0..15
-        Sightings s = J6bEkTest.knownAt(5, 30, 5);                            // A first: the feeder's loop reaches it first
-        assertNotNull(s.knowCave(D, new CaveIndex.Known(165, 30, 5, CaveIndex.Size.MEDIUM, CaveIndex.Depth.STONE, java.util.List.of(Sightings.cell(165, 30, 5))), 1));
-        for (int t = 0; t < 10 && !s.caveFacts(D, 165, 30, 5).loaded(); t++) s.caveFeed(D, idx, CaveRecord.BUDGET);
-        assertTrue(s.caveFacts(D, 165, 30, 5).loaded(), "B fed whole (A has no chunks yet)");
-        CaveIndex a = J6bEkTest.bigIndex();                                    // A's chunks load: its feed takes every tick's budget
-        for (int cx = 0; cx < 4; cx++) for (int cz = 0; cz < 4; cz++) {
-            int[][][] ar = new int[256][][];
-            for (int c = 0; c < 256; c++) ar[c] = new int[][]{{10, 60}};
-            idx.put(new CaveIndex.ChunkRuns(cx, cz, surface, ar));
+        Sightings s = new Sightings();
+        int[][] entry = new int[10][];
+        for (int i = 0; i < 10; i++) {
+            int cx = 10 + 2 * i;                                                 // a chunk apart: ten volumes
+            int[][][] runs = new int[256][][];
+            for (int c = 0; c < 256; c++) runs[c] = new int[][]{{10, 60}};
+            idx.put(new CaveIndex.ChunkRuns(cx, 0, surface, runs));
+            entry[i] = new int[]{cx * 16 + 5, 30, 5};
+            assertNotNull(s.knowCave(D, new CaveIndex.Known(entry[i][0], 30, 5, CaveIndex.Size.MEDIUM, CaveIndex.Depth.STONE, java.util.List.of(Sightings.cell(entry[i][0], 30, 5))), 1));
         }
-        assertNotNull(a);
         int ticks = 0;
-        CaveRecord.Exposure ex = null;
-        while (ticks < 8) {
+        boolean all = false;
+        while (ticks < 400 && !all) {
             ticks++;
-            assertTrue(s.caveFeed(D, idx, CaveRecord.BUDGET) >= CaveRecord.BUDGET, "A's feed takes the budget: the loop never reaches B");
-            ex = s.caveExposure(D, 165, 30, 5);
-            if (ex.done()) break;
+            for (int[] e : entry) s.caveTouched(D, e[0], e[1], e[2]);
+            int fed = s.caveFeed(D, idx, CaveRecord.BUDGET);                     // the tick's start: the feeds, the counts
+            long afterFeed = 0;
+            for (int[] e : entry) afterFeed += s.caveTouched(D, e[0], e[1], e[2]);
+            s.caveStood(D, entry[0][0], 30, 5, entry[0][0], 30, 5, ticks);       // the bot walking in the first one
+            s.caveFrontier(D, entry[0][0], 30, 5);                               // its regroup
+            long sum = afterFeed;
+            all = true;
+            for (int[] e : entry) {
+                sum += s.caveTouched(D, e[0], e[1], e[2]);
+                all &= s.caveExposure(D, e[0], e[1], e[2]).done();
+            }
+            assertTrue(sum <= CaveRecord.BUDGET + 256 + 51 + 5, "tick " + ticks + ": all caves together touched " + sum + " (one budget; one run or one chunk's runs and one cell's faces over at most; the feeds " + fed + ", feeds and counts " + afterFeed + ")");
         }
-        assertTrue(ex.done(), "B's exposure completed in " + ticks + " ticks while A feeds");
-        assertTrue(ticks > 1, "several ticks of it");
-        assertFalse(s.caveFacts(D, 5, 30, 5).loaded(), "A still feeding then");
-        assertEquals(2 * 256, ex.blocks(), "B's floor and roof");
+        assertTrue(all, "every cave's count completed in " + ticks + " ticks");
+        for (int[] e : entry) assertEquals(2 * 256, s.caveExposure(D, e[0], e[1], e[2]).blocks(), "each cave's floor and roof");
     }
 }
