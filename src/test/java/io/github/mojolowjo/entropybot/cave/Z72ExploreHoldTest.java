@@ -81,7 +81,7 @@ class Z72ExploreHoldTest {
                 Target t = goal[second[0]];
                 double d = t == null ? Double.NaN : Math.hypot(RUN_P[0] - t.x(), RUN_P[2] - t.z());
                 return new StepSignals(true, null, RUN_P, d, t == null ? null : "GoalXZ{x=" + t.x() + ",z=" + t.z() + "}", false, false, false, calc(second[0]),
-                        -1, -1, null, 0, 0, null);
+                        -1, -1, null, 0, 0, null, true);
             }
         });
         run.start("goal.iron", List.of(new Step.Explore(5, "minecraft:iron_ore")), 0, (failed, fact, why) -> {

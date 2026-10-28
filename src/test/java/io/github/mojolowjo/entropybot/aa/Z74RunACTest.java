@@ -98,7 +98,7 @@ class Z74RunACTest {
     // ---- 2 and 3: the monitor ----
 
     static StepSignals sig(double goal, long calcFailed, int made, long placed) {
-        return new StepSignals(true, null, new int[]{-155, 68, -92}, goal, "JankyComposite", false, false, false, calcFailed, made, -1, null, placed, -1, null);
+        return new StepSignals(true, null, new int[]{-155, 68, -92}, goal, "JankyComposite", false, false, false, calcFailed, made, -1, null, placed, -1, null, true);
     }
 
     static final class Hands implements Steps.Hands {
@@ -139,7 +139,7 @@ class Z74RunACTest {
         for (Step step : List.of(new Step.Walk(5, 64, 5, 0), new Step.Collect("cobblestone", 8))) {
             Hands h = new Hands();
             h.status = s -> Car.Status.running("on it");
-            h.script = s -> new StepSignals(true, null, new int[]{-155, 68, -92}, 20, "GoalBlock", false, false, false, s >= 7 ? 3 : s >= 4 ? 2 : s >= 2 ? 1 : 0, -1, -1, null, 0, -1, null);
+            h.script = s -> new StepSignals(true, null, new int[]{-155, 68, -92}, 20, "GoalBlock", false, false, false, s >= 7 ? 3 : s >= 4 ? 2 : s >= 2 ? 1 : 0, -1, -1, null, 0, -1, null, true);
             List<Integer> at = new ArrayList<>();
             List<String> why = new ArrayList<>();
             Steps run = new Steps(h);

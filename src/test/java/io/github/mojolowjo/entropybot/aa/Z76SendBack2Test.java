@@ -63,7 +63,7 @@ class Z76SendBack2Test {
     // ---- (b) the under-ground explore ----
 
     static StepSignals sig(String goalId, int[] feet, long calcFailed) {
-        return new StepSignals(true, null, feet, 100, goalId, false, false, false, calcFailed, -1, -1, null, 0, 0, null);
+        return new StepSignals(true, null, feet, 100, goalId, false, false, false, calcFailed, -1, -1, null, 0, 0, null, true);
     }
 
     /**

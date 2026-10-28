@@ -268,12 +268,21 @@ public final class StepMonitor {
         long fails = sig.calcFailed() - calcAtBest;
         // 0.39.z74 item 2: the builder's placeNear fails searches as part of its own pick of a cell (it ends with its own reason:
         // 'no cell within N blocks', 'cannot reach: ...'), so a placement never gets the no-path verdict; its stall rule stays
-        if (kind != Kind.PLACE && fails >= noPathFails() && !sig.executing())
+        // 0.39.z78 J6c run ET (rule 23 (2), one reader with item 14; 09:45:35-37: "no path 3 times from -80 99 -233" froze the
+        // explore while the fork said "stop CHUNKS"): the count is a no-path only when the fork's last calc EXHAUSTED the
+        // graph; a budget, CHUNKS or other stop is not known - never a fail (the stall rule still bounds the step)
+        boolean failsCount = kind != Kind.PLACE && fails >= noPathFails() && !sig.executing();
+        String notKnown = failsCount && !Boolean.TRUE.equals(sig.noPathExhausted())
+                ? "not known: " + fails + " failed searches from " + at(sig.feet()) + ", none an exhausted graph ("
+                    + (sig.noPathExhausted() == null ? "no calc kept" : "a budget, CHUNKS or other stop") + "; rule 15: never a no-path)"
+                : null;
+        if (failsCount && notKnown == null)
             return replan("Baritone found no path " + fails + " times from " + at(sig.feet()) + (Double.isNaN(g) ? "" : " (goal heuristic " + num(g) + ", best " + num(bestGoal) + "; Baritone's estimate, not metres)") + ", nothing executing", sig.feet());
         long quiet = now - lastProgress;
         if (quiet >= stallTicks()) return replan("no progress " + quiet / 20 + " s: " + bests(sig), sig.feet());     // game fact: 20 ticks a second
         stalled = moved.isEmpty();
-        return cont(moved.isEmpty() ? "no new best for " + quiet / 20 + " s" : String.join(", ", moved));     // game fact: 20 ticks a second
+        String said = moved.isEmpty() ? "no new best for " + quiet / 20 + " s" : String.join(", ", moved);     // game fact: 20 ticks a second
+        return cont(notKnown == null ? said : said + "; " + notKnown);
     }
 
     /**

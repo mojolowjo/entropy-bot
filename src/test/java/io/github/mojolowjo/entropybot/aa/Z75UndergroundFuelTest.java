@@ -531,7 +531,7 @@ class Z75UndergroundFuelTest {
                 @Override public int[] feet() { return new int[]{3, 16, -160}; }
                 @Override public io.github.mojolowjo.entropybot.aa.moves.StepSignals signals(Step s) {
                     int k = second[0];
-                    return new io.github.mojolowjo.entropybot.aa.moves.StepSignals(true, null, new int[]{3, 16, -160}, 220.6, "GoalXZ", false, false, false, k >= 7 ? 3 : k >= 4 ? 2 : k >= 2 ? 1 : 0, -1, -1, null, 0, -1, null);
+                    return new io.github.mojolowjo.entropybot.aa.moves.StepSignals(true, null, new int[]{3, 16, -160}, 220.6, "GoalXZ", false, false, false, k >= 7 ? 3 : k >= 4 ? 2 : k >= 2 ? 1 : 0, -1, -1, null, 0, -1, null, true);
                 }
                 @Override public void probe(String line) { lines.add(line); }
                 @Override public String stallFacts(Step s) { return "process Custom Goal (active) | pathing true, path 40 moves, at 0 | goal GoalXZ{x=200,z=-160} | feet 3 16 -160 | in fluid no | 600 ticks since the last move"; }

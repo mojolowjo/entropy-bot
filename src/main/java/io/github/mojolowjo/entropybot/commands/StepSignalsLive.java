@@ -87,6 +87,16 @@ public final class StepSignalsLive {
         return gm.getDestroyStage();
     }
 
+    /** J6c run ET: the fork's last calc of the walk's failed search exhausted the graph (null: no calc kept, an older fork). */
+    private static Boolean exhausted(IBaritone b) {
+        try {
+            var c = b.getCustomGoalProcess().lastCalc();
+            return c == null ? null : c.exhausted();
+        } catch (LinkageError e) {
+            return null;
+        }
+    }
+
     /**
      * The signals now. {@code notLoaded}: the hands' own rule-15 wait (the station fact not loaded), null: none;
      * {@code ownWait}: the step waits on its own clock (the furnace, the first-answer wait), null: none.
@@ -108,6 +118,6 @@ public final class StepSignalsLive {
         String cell = ds >= 0 && Minecraft.getInstance().hitResult instanceof net.minecraft.world.phys.BlockHitResult bh ? Jobs.fmt(new int[]{bh.getBlockPos().getX(), bh.getBlockPos().getY(), bh.getBlockPos().getZ()}) : null;
         int made = outWord == null ? -1 : Math.max(0, count(Gui.inventory(p), outWord) - outBase);
         return new StepSignals(true, null, f, d, g == null ? null : String.valueOf(g), in, b.getPathingBehavior().getCurrent() != null, b.getPathingBehavior().getInProgress().isPresent(),
-                io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(), made, ds, cell, placed, explores ? Mining.get().exploredChunks() : -1, ownWait);
+                io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(), made, ds, cell, placed, explores ? Mining.get().exploredChunks() : -1, ownWait, exhausted(b));
     }
 }

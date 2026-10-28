@@ -323,7 +323,7 @@ class Z76SendBack4Test {
     }
 
     static StepSignals sig(int[] feet, String goal, int stage, String cell) {
-        return new StepSignals(true, null, feet, 3.6, goal, false, true, false, 0, -1, stage, cell, 12, -1, null);
+        return new StepSignals(true, null, feet, 3.6, goal, false, true, false, 0, -1, stage, cell, 12, -1, null, true);
     }
 
     /** The looks, one a second; {@code stageSeen} false: the old live read (-1 always). */

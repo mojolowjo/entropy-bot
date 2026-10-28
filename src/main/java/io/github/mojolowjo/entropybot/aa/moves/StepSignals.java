@@ -18,18 +18,21 @@ package io.github.mojolowjo.entropybot.aa.moves;
  *     restart of the same block is no progress), null: not known; {@code exploredChunks}: the running explore's new chunks, -1: none;</li>
  * <li>{@code ownWait}: the step waits on a timed game process that has its own watch (a furnace cooking: furnaceJobs'
  *     due time and stall watch), its words; null: none.</li>
+ * <li>{@code noPathExhausted}: 0.39.z78 J6c run ET (rule 23 (2), one reader with item 14): the fork's last calc of the
+ *     walk's failed search exhausted the graph (ICustomGoalProcess.lastCalc#exhausted: the only true "no path"); false:
+ *     a budget, CHUNKS or other stop (not known); null: no calc kept (not known). The no-path verdict reads it.</li>
  * </ul>
  * Pure (JUnit: Z71StepMonitorTest). Loader notes: none (plain values; the adapter reads Baritone's API and vanilla).
  */
 public record StepSignals(boolean loaded, String notLoaded, int[] feet, double goalDist, String goalId, boolean inGoal, boolean executing,
                           boolean calcRunning, long calcFailed, int made, int destroyStage, String breakingCell, long placedCount,
-                          int exploredChunks, String ownWait) {
+                          int exploredChunks, String ownWait, Boolean noPathExhausted) {
     public StepSignals {
         feet = feet == null ? null : feet.clone();
     }
 
     /** Not loaded, with why (rule 15). */
     public static StepSignals notLoaded(String why) {
-        return new StepSignals(false, why == null ? "not known why" : why, null, Double.NaN, null, false, false, false, 0, -1, -1, null, 0, -1, null);
+        return new StepSignals(false, why == null ? "not known why" : why, null, Double.NaN, null, false, false, false, 0, -1, -1, null, 0, -1, null, null);
     }
 }
