@@ -883,12 +883,12 @@ public final class StepHands implements Steps.Hands {
         if (cv.vein != null) {
             Car.Status st = cv.vein.poll(p.level());
             if (st.state() == Car.State.RUNNING) return Car.Status.running("caving: mining the seen ore (" + cv.mined + " of " + k.n() + ")");
+            // the step's own count of its vein; the record hears every broken ore from ChunkPass.blockChanged (run ER: the
+            // one reader, rule 23 (2) - a capped list never decides what the record knows)
             for (int[] c : cv.veinCells) {
                 BlockPos q = new BlockPos(c[0], c[1], c[2]);
-                if (p.level().isLoaded(q) && !io.github.mojolowjo.entropybot.sense.KnownOre.family(BuiltInRegistries.BLOCK.getKey(p.level().getBlockState(q).getBlock()).toString(), cv.fam)) {
-                    sg.caveMined(cv.dim, k.x(), k.y(), k.z(), io.github.mojolowjo.entropybot.sense.Sightings.cell(c[0], c[1], c[2]));
+                if (p.level().isLoaded(q) && !io.github.mojolowjo.entropybot.sense.KnownOre.family(BuiltInRegistries.BLOCK.getKey(p.level().getBlockState(q).getBlock()).toString(), cv.fam))
                     cv.mined++;
-                }
             }
             if (st.state() == Car.State.FAILED) LOG.info("[entropybot] cave: the vein at {} ended: {}", Jobs.fmt(cv.veinCells.get(0)), st.why());
             cv.vein = null;
@@ -933,8 +933,10 @@ public final class StepHands implements Steps.Hands {
                     return level.isLoaded(bq) && io.github.mojolowjo.entropybot.sense.KnownOre.family(BuiltInRegistries.BLOCK.getKey(level.getBlockState(bq).getBlock()).toString(), cv.fam);
                 }, io.github.mojolowjo.entropybot.cave.MineRules.atVein())) { cells.add(new io.github.mojolowjo.entropybot.clear.Pos(cell[0], cell[1], cell[2])); cv.veinCells.add(cell); }
                 if (cells.isEmpty()) {
-                    // the seen ore is gone (mined by someone, or never there): the record says so, the next move is picked
-                    sg.caveMined(cv.dim, k.x(), k.y(), k.z(), io.github.mojolowjo.entropybot.sense.Sightings.cell(m.cell()[0], m.cell()[1], m.cell()[2]));
+                    // the seen ore is gone (mined by someone, or never there): the record says so, the next move is picked.
+                    // run ER: MineRules.vein tests its start cell now, so this fires; the same marking as a heard break
+                    // (Sightings.oreBroken: a change not heard - the chunk unloaded then - is the world read now)
+                    sg.oreBroken(cv.dim, m.cell()[0], m.cell()[1], m.cell()[2]);
                     LOG.info("[entropybot] cave: the seen {} ore at {} is no longer there", cv.fam, Jobs.fmt(m.cell()));
                     return Car.Status.running("caving: the seen ore is gone, picking the next move");
                 }

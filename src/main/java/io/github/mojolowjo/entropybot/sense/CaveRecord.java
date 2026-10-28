@@ -218,9 +218,12 @@ public final class CaveRecord {
     }
 
     /** An ore cell of the cave mined. */
-    void recMined(long cell) {
+    boolean recMined(long cell) {
         Ore o = ores.get(cell);
-        if (o != null && !o.mined()) { ores.put(cell, new Ore(o.family(), true)); version++; }
+        if (o == null || o.mined()) return false;
+        ores.put(cell, new Ore(o.family(), true));
+        version++;
+        return true;
     }
 
     /**

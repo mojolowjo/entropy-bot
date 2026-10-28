@@ -133,9 +133,15 @@ public final class MineRules {
     /** The at form's vein: at most this many cells, the target included. */
     public static int atVein() { return Tuning.i("mineRules.atVein"); }
 
-    /** The vein from start: start, then face-touching cells {@code sameOre} accepts, breadth first, at most max. Pure. */
+    /**
+     * The vein from start: start, then face-touching cells {@code sameOre} accepts, breadth first, at most max; empty when
+     * {@code sameOre} refuses the start itself (the ore there is gone). Pure.
+     */
     public static List<int[]> vein(int[] start, java.util.function.Predicate<int[]> sameOre, int max) {
         List<int[]> out = new ArrayList<>();
+        // 0.39.z78 J6c run ER (07:44:59: the seen ore -8 -5 62 was mined already; the vein still held it, so the caving step's
+        // "the seen ore is gone, next move" guard never fired and VeinMine ended the step): the start is tested like the rest
+        if (!sameOre.test(start.clone())) return out;
         java.util.ArrayDeque<int[]> todo = new java.util.ArrayDeque<>();
         java.util.Set<String> seen = new java.util.HashSet<>();
         todo.add(start.clone());

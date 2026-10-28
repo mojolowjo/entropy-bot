@@ -172,6 +172,9 @@ public final class ChunkPass {
             if (cf.family() != null && ct.family() == null) {           // AA_ROUND3 3: a mined ore leaves the seen cells
                 Seen sn = seen();
                 if (sn != null) sn.mined(dim, x, y, z);
+                // 0.39.z78 J6c run ER (rule 23 (2)): the cave records hear every broken ore here, whoever broke it
+                Sightings sg = sightings();
+                if (sg != null) sg.oreBroken(dim, x, y, z);
             }
             // 0.39.z77 seen: with fair play off an ore is a source once a face is open - a block opened next to indexed ore cells
             // is their sighting for the seen trigger (fair on: the ray's Seen.saw says it, SeenRuntime)

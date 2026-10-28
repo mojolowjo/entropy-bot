@@ -54,7 +54,7 @@ class MineRulesParseAtTest {
         assertArrayEquals(new int[]{0, 0, 0}, v.get(0));
         List<int[]> big = MineRules.vein(new int[]{0, 0, 0}, c -> true, MineRules.atVein());
         assertEquals(8, big.size());
-        assertEquals(1, MineRules.vein(new int[]{9, 9, 9}, c -> false, 8).size(), "the target itself always (dug already)");
+        assertEquals(0, MineRules.vein(new int[]{9, 9, 9}, c -> false, 8).size(), "0.39.z78 J6c run ER: the start is tested - no ore there, no vein");
     }
 
     @Test

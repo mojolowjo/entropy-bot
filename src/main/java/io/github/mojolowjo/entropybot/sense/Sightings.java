@@ -262,6 +262,24 @@ public final class Sightings {
         return true;
     }
 
+    /**
+     * 0.39.z78 J6c run ER (rule 23 (2); 07:41:17-07:41:30: the helmet's vein list was capped at 8 cells, Baritone's mine
+     * process broke the 9th iron block -8 -5 62 too, the record heard only the listed cells and kept it "left"; the
+     * chestplate's caving step walked to it at 07:44:59 and ended NO_PROGRESS): the ONE reader of mined ore for the cave
+     * records - an ore cell the world shows broken (ChunkPass.blockChanged: ore -> no ore; or the caving step reading the
+     * seen cell as no ore now) is mined in every record of {@code dim} that holds it, whoever broke it. True: a record
+     * changed.
+     */
+    public synchronized boolean oreBroken(String dim, int x, int y, int z) {
+        Map<String, CaveRecord> rs = dim == null ? null : caveRecords.get(dim);
+        if (rs == null) return false;
+        long cell = cell(x, y, z);
+        boolean any = false;
+        for (CaveRecord r : rs.values()) any |= r.recMined(cell);
+        if (any) dirty = true;
+        return any;
+    }
+
     /** An ore cell of the known cave at x y z mined. */
     public synchronized void caveMined(String dim, int x, int y, int z, long cell) {
         CaveRecord r = rec(dim, x, y, z);
