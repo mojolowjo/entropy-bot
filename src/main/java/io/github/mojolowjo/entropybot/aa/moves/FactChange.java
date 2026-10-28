@@ -368,7 +368,8 @@ public final class FactChange {
      * lip twice and parked): the lip walk's end - the reach goal empty or Baritone's no progress - is a SOURCE fact keyed by
      * the opening itself ({@link io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay#keyOf}: the one key the cave way filters
      * its openings by), so the order holds it, the world fact holds it for every order (Goals.replan), and the next opening or
-     * the next cave is priced. Pure.
+     * the next cave is priced. The world fact lifts by DISTANCE only (failures.moved + WorldFacts.MARGIN from where it was
+     * learned), as the climb and place facts do - not by a change at the entry (review of 795aa35a: said, not built). Pure.
      */
     public static Fact lipFailedFact(int[] entry, int[] feet, String why) {
         String w = why == null ? "no reason" : why.replaceFirst("^error: ", "");

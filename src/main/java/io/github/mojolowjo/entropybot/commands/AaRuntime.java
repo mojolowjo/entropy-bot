@@ -1036,7 +1036,12 @@ public final class AaRuntime implements JobPort {
         List<io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay> ways = new ArrayList<>();
         var idx = pass.caveIndex();
         int feetRoot = idx.volumeAt(me[0], me[1], me[2]);
+        // run EY review (cost): the lip test is asked for the openings of the nearest pathCost.pricedTop caves only - the ones
+        // the planner prices walks to (rule 18 as amended: the rest are ranked, never walked); a farther cave's openings are
+        // not judged (kept, not known) until it is among the nearest. known is nearest first (Sightings.knownCaves).
+        int judged = 0, judgeTop = (int) Math.max(1, Tuning.get("pathCost.pricedTop"));
         for (var k : known) {
+            boolean judgeLips = judged++ < judgeTop;
             var f = sg.caveFacts(dim, k.x(), k.y(), k.z());
             // run EO (rule 7): a cave left out is said with its reason (NeedChain.caveAlts), never dropped silently
             String out = null;
@@ -1076,7 +1081,8 @@ public final class AaRuntime implements JobPort {
             // run EY (rule 23 (2)): the openings judged by the lip step's own test (LipGoals) before any walk is priced: one
             // with no standable cell within reach and sight (its cells loaded) is left out with its reason; one whose cube is
             // not loaded is not known and stays (rule 15); every opening out = the cave is out, said (rule 7)
-            var lp = io.github.mojolowjo.entropybot.cave.ExploreRules.lipsWithStand(lips(pass, k, me), o -> LipGoals.lipOf(p, o));
+            var lp = judgeLips ? io.github.mojolowjo.entropybot.cave.ExploreRules.lipsWithStand(lips(pass, k, me), o -> LipGoals.lipOf(p, o))
+                    : new io.github.mojolowjo.entropybot.cave.ExploreRules.Lips(lips(pass, k, me), java.util.Map.of());
             if (out == null && !inside && lp.kept().isEmpty() && !lp.out().isEmpty())
                 out = "no standable cell within reach and sight of any of its " + lp.out().size() + " known opening(s) (the lip test)";
             ways.add(new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(k.x(), k.y(), k.z(), Math.sqrt(Jobs.distSq(me, new int[]{k.x(), k.y(), k.z()})),

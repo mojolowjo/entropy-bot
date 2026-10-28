@@ -15,8 +15,14 @@ import java.util.Map;
  * GoalReachBlock on the entry cell: a standable cell (feet and head open, something solid under, no fluid), the entry's
  * centre within {@link ExploreRules#OPENING_REACH} of the eye, a face of it seen (a collider-free ray). Built on the game
  * thread from the loaded world; the entry's cube not loaded = not known (rule 15). The snapshot's answer per opening is
- * kept for a second (structural) so a pick does not rebuild it per ask. Loader notes: the fork's GoalReachBlock (api);
- * vanilla Level#isLoaded, BlockState#getCollisionShape, Level#getFluidState, Level#clip.
+ * kept for a second (structural) so a pick does not rebuild it per ask, and asked for the nearest pathCost.pricedTop caves'
+ * openings only (AaRuntime.caveWay; an unloaded cube costs four isLoaded reads, a loaded one the cube's cells and a ray per
+ * standable cell). Rule 17 (review): the snapshot reads loaded-but-unseen blocks round an entry from afar - it only ever
+ * EXCLUDES an opening (no stand), never makes one a source; the step reads the same blocks at the lip. The hold a failed lip
+ * leaves (FactChange.lipFailed) lifts by DISTANCE only (WorldFacts: failures.moved + the margin from where it was learned),
+ * as the climb and place facts do; a changed world at the entry is seen again by this test once the bot is back near it.
+ * Loader notes: the fork's GoalReachBlock (api); vanilla Level#isLoaded, BlockState#getCollisionShape, Level#getFluidState,
+ * Level#clip.
  */
 public final class LipGoals {
     private LipGoals() {}
