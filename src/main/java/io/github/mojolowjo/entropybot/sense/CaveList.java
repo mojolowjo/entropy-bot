@@ -20,7 +20,8 @@ public final class CaveList {
         k.sort((a, b) -> Double.compare(d(a.x(), a.y(), a.z(), px, py, pz), d(b.x(), b.y(), b.z(), px, py, pz)));
         out.add(k.isEmpty() ? "known caves: none yet (a cave is known when " + CaveIndex.KNOWN_RAYS + " sight rays credit it)" : "known caves: " + k.size());
         for (Sightings.KnownCave c : k)
-            out.add(String.format(Locale.ROOT, "  %s: %.0f m, %d cells, y %d..%d, %d rays%s", c.where(), d(c.x(), c.y(), c.z(), px, py, pz), c.cells(), c.minY(), c.maxY(),
+            out.add(String.format(Locale.ROOT, "  %s: %.0f m, size %s, depth %s, %d rays%s", c.where(), d(c.x(), c.y(), c.z(), px, py, pz),
+                    c.size().name().toLowerCase(Locale.ROOT), c.depth().name().toLowerCase(Locale.ROOT),
                     c.hits().size(), c.walked() == 0 ? "" : c.oreOnWalk() == Sightings.KnownCave.CLOSED ? ", closed for good" : ", walked (" + c.oreOnWalk() + " ore)"));
         if (!credited.isEmpty()) {
             out.add("credited, not known yet: " + credited.size());

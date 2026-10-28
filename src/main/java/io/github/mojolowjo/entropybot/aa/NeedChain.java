@@ -98,30 +98,27 @@ public final class NeedChain {
 
     /**
      * 0.39.z44 (CAVE_DETECTION option 1): what the way "mine in the cave" is priced on: the nearest known cave (0.39.z78 J6:
-     * a Sightings fact - a cave index volume three sight rays credited, rule 17) at its entry x y z, {@code cells} its size
-     * (0: not known), {@code dist} straight metres away, the ore block
+     * a Sightings fact - a cave index volume three sight rays credited, rule 17) at its entry x y z (a cell a ray saw),
+     * {@code size} its size bucket from the index (null: not known; never the index's cells), {@code dist} straight metres away, the ore block
      * {@code ore} that gives the need, and the cave yield Seen learns for its family ({@code perMin} ore a minute of caving,
      * the Tuning prior blended in; {@code measured}: minutes of caving were measured).
      */
     static final String CAVE_KEY = "known cave ";
 
-    public record CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured, long cells) {
+    public record CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured,
+                          io.github.mojolowjo.entropybot.sense.CaveIndex.Size size) {
         public CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured) {
-            this(x, y, z, dist, ore, family, perMin, measured, 0);
+            this(x, y, z, dist, ore, family, perMin, measured, null);
         }
 
         /**
-         * 0.39.z78 J6: the minutes this cave holds (its size, the known cave's cells: the caving step walks it at the walk's
-         * speed, about {@link #CROSS_SECTION} cells passed a block walked); 0 cells (not known): no bound but the
+         * 0.39.z78 J6 (the manager's ruling): the minutes this cave holds, read from its size bucket
+         * ({@link io.github.mojolowjo.entropybot.sense.CaveIndex.Size#holdsMinutes}); no size known: no bound but the
          * cave.exploreMinutes cap. Rough (rule 14).
          */
         public double holdsMinutes() {
-            if (cells <= 0) return Double.POSITIVE_INFINITY;
-            return cells / (double) CROSS_SECTION / io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps() / 60.0;     // structural: seconds a minute
+            return size == null ? Double.POSITIVE_INFINITY : size.holdsMinutes(Tuning.get("cave.exploreMinutes"));
         }
-
-        /** structural (rough, rule 14): the cells of a cave passed a block walked through it - a tunnel two high and two wide. */
-        public static final int CROSS_SECTION = 4; // structural: two high, two wide (rough, rule 14)
 
         /** The source key of this way: a mouth with no path is dropped for the order. */
         public String key() { return CAVE_KEY + x + "," + y + "," + z; }
@@ -5526,7 +5523,7 @@ public final class NeedChain {
         if (minutes > max) {
             // 0.39.z78 J6: a known cave holds the minutes its size gives (CaveWay.holdsMinutes), never more than the cap
             c.fail = head + ", " + yield + ": " + oreBlocks + " ore take ~" + Math.round(minutes) + " min, past "
-                    + (holds < cap ? "the " + Math.round(holds) + " min its " + cw.cells() + " cells hold" : "cave.exploreMinutes " + Math.round(cap));
+                    + (holds < cap ? "the ~" + Math.round(holds) + " min a " + cw.size().name().toLowerCase(java.util.Locale.ROOT) + " cave holds" : "cave.exploreMinutes " + Math.round(cap));
             return null;
         }
         double exploreS = minutes * 60, oreS = oreBlocks * blockBreakS(c, cw.ore());  // structural: seconds per minute

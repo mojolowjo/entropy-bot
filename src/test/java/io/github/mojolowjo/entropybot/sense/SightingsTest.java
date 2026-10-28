@@ -58,10 +58,10 @@ class SightingsTest {
     void knownCavesOnceOfferedWalkedAndChance() {
         Sightings s = new Sightings();
         assertEquals(Sightings.priorCaves(), s.cavesPer100(), 1e-9);
-        CaveIndex.Known a = new CaveIndex.Known(0, 40, 0, 300, 30, 42, List.of(Sightings.cell(1, 40, 0), Sightings.cell(2, 41, 0), Sightings.cell(3, 40, 1)));
+        CaveIndex.Known a = new CaveIndex.Known(0, 40, 0, CaveIndex.Size.SMALL, CaveIndex.Depth.STONE, List.of(Sightings.cell(1, 40, 0), Sightings.cell(2, 41, 0), Sightings.cell(3, 40, 1)));
         assertNotNull(s.knowCave("d", a, 1));
-        assertNull(s.knowCave("d", new CaveIndex.Known(5, 40, 5, 300, 30, 42, List.of(Sightings.cell(2, 41, 0))), 2), "a shared hit: the same cave");
-        assertNotNull(s.knowCave("d", new CaveIndex.Known(40, 40, 0, 80, 38, 41, List.of(Sightings.cell(41, 40, 0))), 3));
+        assertNull(s.knowCave("d", new CaveIndex.Known(5, 40, 5, CaveIndex.Size.SMALL, CaveIndex.Depth.STONE, List.of(Sightings.cell(2, 41, 0))), 2), "a shared hit: the same cave");
+        assertNotNull(s.knowCave("d", new CaveIndex.Known(40, 40, 0, CaveIndex.Size.SMALL, CaveIndex.Depth.STONE, List.of(Sightings.cell(41, 40, 0))), 3));
         assertEquals(2, s.allKnownCaves("d").size());
         assertEquals(0, s.nearestCave("d", 2, 40, 2, 64).x());
         assertNull(s.nearestCave("d", 200, 40, 0, 64), "past 64");
@@ -103,7 +103,7 @@ class SightingsTest {
     void file() {
         Sightings s = new Sightings();
         s.ore().saw("d", 1, 2, 3, "iron", 4);
-        s.knowCave("d", new CaveIndex.Known(10, 40, 10, 120, 35, 41, List.of(Sightings.cell(11, 40, 10))), 5);
+        s.knowCave("d", new CaveIndex.Known(10, 40, 10, CaveIndex.Size.MEDIUM, CaveIndex.Depth.DEEPSLATE, List.of(Sightings.cell(11, 40, 10))), 5);
         s.walkedCave("d", 10, 40, 10, 6, 2);
         s.sawHerd("d", "modded:yak", 50, 70, 50, 3, 7, null);
         s.walked(40);
@@ -113,7 +113,8 @@ class SightingsTest {
         assertTrue(b.ore().has("d", 1, 2, 3));
         assertEquals(6, b.allKnownCaves("d").get(0).walked());
         assertEquals(2, b.allKnownCaves("d").get(0).oreOnWalk());
-        assertEquals(120, b.allKnownCaves("d").get(0).cells());
+        assertEquals(CaveIndex.Size.MEDIUM, b.allKnownCaves("d").get(0).size());
+        assertEquals(CaveIndex.Depth.DEEPSLATE, b.allKnownCaves("d").get(0).depth());
         List<Sightings.Rec> yak = b.animals("d", "modded:yak");
         assertEquals(1, yak.size());
         assertEquals(3, yak.get(0).count());
@@ -124,7 +125,7 @@ class SightingsTest {
         assertTrue(bad[0] > 0);
         // one bad entry is skipped, the rest load
         int[] bad2 = {0};
-        Sightings c = Sightings.fromJson("{\"knownCaves\":{\"d\":[[1,2,3,40,0,5,9,[7],0,0],[\"x\"]]}}", bad2);
+        Sightings c = Sightings.fromJson("{\"knownCaves\":{\"d\":[[1,2,3,\"SMALL\",\"STONE\",9,[7],0,0],[\"x\"]]}}", bad2);
         assertEquals(1, c.allKnownCaves("d").size());
         assertEquals(1, bad2[0]);
     }

@@ -115,12 +115,13 @@ public final class Sightings {
     // ---- 0.39.z78 J6: the known caves (CaveIndex volumes that KNOWN_RAYS sight rays credited), a stored fact ----
 
     /**
-     * 0.39.z78 J6 (the owner's ruling 2026-10-27 late): a cave known by rays - its entry cell (where it touches the sky,
-     * nearest the rays that credited it), its cells and depth range (the index volume when it became known), when, the hit
+     * 0.39.z78 J6 (the owner's ruling 2026-10-27 late): a cave known by rays - its entry cell (a cell the rays saw, the
+     * seen cell nearest its column's surface), its size bucket and depth band (from the index volume when it became known;
+     * never its cells - the manager's ruling: no cell list reaches the planner), when, the hit
      * cells of the rays that credited it ({@link #cell} packed: the cells seen in it); {@code walked} / {@code oreOnWalk}:
      * the caving step's last walk (0: not yet; {@link #CLOSED}: closed for good). Known stays known in this world.
      */
-    public record KnownCave(int x, int y, int z, long cells, int minY, int maxY, long knownAt, List<Long> hits, long walked, int oreOnWalk) {
+    public record KnownCave(int x, int y, int z, CaveIndex.Size size, CaveIndex.Depth depth, long knownAt, List<Long> hits, long walked, int oreOnWalk) {
         public static final int CLOSED = -1; // structural: a marker, not an ore count
 
         public KnownCave {
@@ -146,7 +147,7 @@ public final class Sightings {
             if (c.x() == k.x() && c.y() == k.y() && c.z() == k.z()) return null;
             for (long h : k.hits()) if (c.hits().contains(h)) return null;
         }
-        KnownCave c = new KnownCave(k.x(), k.y(), k.z(), k.cells(), k.minY(), k.maxY(), now, k.hits(), 0, 0);
+        KnownCave c = new KnownCave(k.x(), k.y(), k.z(), k.size(), k.depth(), now, k.hits(), 0, 0);
         List<KnownCave> l = knownCaves.computeIfAbsent(dim, d -> new ArrayList<>());
         l.add(c);
         while (l.size() > maxCaves()) l.remove(0);
@@ -179,7 +180,7 @@ public final class Sightings {
         for (int i = 0; i < l.size(); i++) {
             KnownCave c = l.get(i);
             if (c.x() == x && c.y() == y && c.z() == z && c.oreOnWalk() != KnownCave.CLOSED) {
-                l.set(i, new KnownCave(c.x(), c.y(), c.z(), c.cells(), c.minY(), c.maxY(), c.knownAt(), c.hits(), Math.max(1, now), ore));
+                l.set(i, new KnownCave(c.x(), c.y(), c.z(), c.size(), c.depth(), c.knownAt(), c.hits(), Math.max(1, now), ore));
                 dirty = true;
                 return true;
             }
@@ -198,7 +199,7 @@ public final class Sightings {
             JsonArray a = new JsonArray();
             for (KnownCave c : d.getValue()) {
                 JsonArray e = new JsonArray();
-                e.add(c.x()); e.add(c.y()); e.add(c.z()); e.add(c.cells()); e.add(c.minY()); e.add(c.maxY()); e.add(c.knownAt());
+                e.add(c.x()); e.add(c.y()); e.add(c.z()); e.add(c.size().name()); e.add(c.depth().name()); e.add(c.knownAt());
                 JsonArray h = new JsonArray();
                 for (Long x : c.hits()) h.add(x);
                 e.add(h);
@@ -218,9 +219,9 @@ public final class Sightings {
                     try {
                         JsonArray a = e.getAsJsonArray();
                         List<Long> h = new ArrayList<>();
-                        for (JsonElement c : a.get(7).getAsJsonArray()) h.add(c.getAsLong());
+                        for (JsonElement c : a.get(6).getAsJsonArray()) h.add(c.getAsLong());
                         s.knownCaves.computeIfAbsent(d.getKey(), x -> new ArrayList<>()).add(new KnownCave(a.get(0).getAsInt(), a.get(1).getAsInt(), a.get(2).getAsInt(),
-                                a.get(3).getAsLong(), a.get(4).getAsInt(), a.get(5).getAsInt(), a.get(6).getAsLong(), h, a.get(8).getAsLong(), a.get(9).getAsInt()));
+                                CaveIndex.Size.valueOf(a.get(3).getAsString()), CaveIndex.Depth.valueOf(a.get(4).getAsString()), a.get(5).getAsLong(), h, a.get(7).getAsLong(), a.get(8).getAsInt()));
                     } catch (RuntimeException ex) {
                         Quiet.warn("Sightings.readKnown failed, carrying on with the fallback", ex); skipped[0]++; }
                 }

@@ -960,7 +960,7 @@ public final class AaRuntime implements JobPort {
         if (known.isEmpty()) return null;
         var k = known.get(0);
         return new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(k.x(), k.y(), k.z(), Math.sqrt(Jobs.distSq(me, new int[]{k.x(), k.y(), k.z()})),
-                ore, fam, sg.ore().caveRate(fam), sg.ore().caveMinutes() > 0, k.cells());
+                ore, fam, sg.ore().caveRate(fam), sg.ore().caveMinutes() > 0, k.size());
     }
 
     /** 0.39.z78 J6: aa status: "caves: N known by rays (M volumes credited, K chunks indexed)". */

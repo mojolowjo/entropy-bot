@@ -141,6 +141,7 @@ public final class ChunkPass {
             if (level != Minecraft.getInstance().level) return;
             int cx = chunk.getPos().x, cz = chunk.getPos().z;
             schedule.unloaded(cx, cz);
+            caveIndex.remove(cx, cz);                     // 0.39.z78 J6: the index holds the loaded chunks only (its unknown volumes go; known caves stay in Sightings)
             live.remove(ChunkSummary.key(cx, cz));
             ChunkSummary s = dim == null ? null : index.get(dim, cx, cz);
             if (s != null) s.stale = true;
@@ -499,7 +500,7 @@ public final class ChunkPass {
     }
 
     /**
-     * 0.39.z78 J6: the chunk's air runs below its WORLD_SURFACE heights into the cave index (once a session per chunk: a
+     * 0.39.z78 J6: the chunk's air runs below its WORLD_SURFACE heights into the cave index (once while the chunk stays loaded: a
      * chunk read again is kept as it was), then the known caves of Sightings that lie in it mark their volumes known (a
      * reload keeps them known). The reads go by section (an all-air section answers at once). Bounded by the pass's time
      * budget per tick, as the chunk reads. Loader notes: vanilla LevelChunk#getSections / #getMinSection,

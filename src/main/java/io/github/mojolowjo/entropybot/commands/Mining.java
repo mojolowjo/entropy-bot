@@ -1281,8 +1281,9 @@ final class Mining {
         // never; an unknown one as before (an ore by the c:ores tag)
         if (done == null && ex.untilSource != null && (bandTarget || (!surfaceTarget && oreNeed(ex.untilSource)))) {
             int within = (int) Math.floor(Tuning.get("cave.exploreTowardM"));
-            // 0.39.z78 J6: the cave index's openings (the holes of volumes not known yet: the rays there decide) in place of
-            // the heightmap's candidates, and for a band target the known caves' entries too
+            // 0.39.z78 J6: the cave index's openings a sight ray has credited (CaveIndex.TARGET_RAYS: a hole the bot has seen;
+            // the manager's ruling - one no ray reached is never a target, rule 17) in place of the heightmap's candidates, and
+            // for a band target the known caves' entries; none: the explore explores plainly
             List<int[]> cells = new ArrayList<>(io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.caveIndex().openings(me[0], me[1], me[2], within));
             var sg = pass().sightings();
             if (bandTarget && sg != null) for (var m : sg.allKnownCaves(d))
