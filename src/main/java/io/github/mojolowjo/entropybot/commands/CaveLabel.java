@@ -25,7 +25,7 @@ import java.util.List;
 final class CaveLabel {
     private CaveLabel() {}
 
-    static final String USAGE = "usage: aa cave list | yes | no | check (list: the caves known by rays and the index near you; yes / no: label the volume at your crosshair or the opening nearest you; check: the floor against the labels)";
+    static final String USAGE = "usage: aa cave list [all] | yes | no | check (list: the caves known by rays and the index near you; list all: every index cave, no radius; yes / no: label the volume at your crosshair or the opening nearest you; check: the floor against the labels)";
 
     /** The crosshair's ray for a label: as far as the sight rays look. */
     static double aimRange() { return io.github.mojolowjo.entropybot.sense.Seen.range(); }
@@ -34,7 +34,7 @@ final class CaveLabel {
     static final double NEAR = 4.5;
 
     static String run(String arg) {
-        String a = arg == null ? "" : arg.trim().toLowerCase(java.util.Locale.ROOT);
+        String a = arg == null ? "" : arg.trim().replaceAll("\\s+", " ").toLowerCase(java.util.Locale.ROOT);
         ChunkPass pass = ChunkPass.INSTANCE;
         Minecraft mc = Minecraft.getInstance();
         var sg = pass.sightings();
@@ -47,6 +47,13 @@ final class CaveLabel {
                 int within = (int) Math.floor(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.exploreTowardM"));
                 return io.github.mojolowjo.entropybot.sense.CaveList.text(sg.allKnownCaves(dim), idx.credited(), idx.truth(p.getBlockX(), p.getBlockY(), p.getBlockZ(), within),
                         within, idx.counts(), pass.caveRaysStatus(), p.getX(), p.getY(), p.getZ());   // run EE: the index's truth (a debug read)
+            }
+            case "list all" -> {
+                // the owner's debug read (rule 17): every volume passing the floor, with his verdicts on them
+                java.util.Map<Integer, Boolean> labelled = new java.util.HashMap<>();
+                for (CaveLabels.Label l : pass.labels().all()) { int v = idx.volumeAt(l.x(), l.y(), l.z()); if (v >= 0) labelled.put(v, l.cave()); }
+                return io.github.mojolowjo.entropybot.sense.CaveList.allText(idx.truthAll(p.getBlockX(), p.getBlockY(), p.getBlockZ()), labelled, p.getX(), p.getY(), p.getZ())
+                        + "\n" + idx.counts();
             }
             case "check" -> {
                 List<CaveLabels.Label> all = pass.labels().all();

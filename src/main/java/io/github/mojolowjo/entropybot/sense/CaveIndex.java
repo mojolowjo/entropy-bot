@@ -668,7 +668,7 @@ public final class CaveIndex {
     }
 
     /** One cave of {@link #truth}: its opening cell nearest the bot, size bucket, depth band, rim and air credits, known. */
-    public record Truth(int x, int y, int z, Size size, Depth depth, int rim, int air, boolean known) {}
+    public record Truth(int x, int y, int z, Size size, Depth depth, int rim, int air, boolean known, int root) {}
 
     /** {@link #truth}'s answer: the caves nearest first, then the dips and the volumes with no opening within the radius. */
     public record TruthList(List<Truth> caves, int dips, int noOpening) {}
@@ -682,15 +682,27 @@ public final class CaveIndex {
      */
     public synchronized TruthList truth(int x, int y, int z, int r) {
         fresh();
+        List<Chunk> near = new ArrayList<>();
+        for (int cx = (x - r) >> 4; cx <= (x + r) >> 4; cx++)
+            for (int cz = (z - r) >> 4; cz <= (z + r) >> 4; cz++) { Chunk ch = chunks.get(chunkKey(cx, cz)); if (ch != null) near.add(ch); }
+        return truthOf(near, x, y, z, r);
+    }
+
+    /** As {@link #truth} over every chunk the index holds, no radius ({@code aa cave list all}; the same debug read, rule 17). */
+    public synchronized TruthList truthAll(int x, int y, int z) {
+        fresh();
+        return truthOf(new ArrayList<>(chunks.values()), x, y, z, Integer.MAX_VALUE);
+    }
+
+    private TruthList truthOf(List<Chunk> scan, int x, int y, int z, int r) {
         Map<Integer, int[]> entry = new HashMap<>();
         Set<Integer> all = new HashSet<>();
-        for (int cx = (x - r) >> 4; cx <= (x + r) >> 4; cx++)
-            for (int cz = (z - r) >> 4; cz <= (z + r) >> 4; cz++) {
-                Chunk ch = chunks.get(chunkKey(cx, cz));
-                if (ch == null || ch.lo.length == 0) continue;
+        for (Chunk ch : scan) {
+                if (ch.lo.length == 0) continue;
+                int cx = ch.cx, cz = ch.cz;
                 for (int c = 0; c < 256; c++) {
                     int tx = (cx << 4) + (c & 15), tz = (cz << 4) + (c >> 4);
-                    if (Math.abs(tx - x) > r || Math.abs(tz - z) > r) continue;
+                    if (r != Integer.MAX_VALUE && (Math.abs(tx - x) > r || Math.abs(tz - z) > r)) continue;
                     int s = sky(tx, tz);
                     for (int i = ch.start[c]; i < ch.start[c + 1]; i++) {
                         int root = find(ch.id[i]);
@@ -701,7 +713,7 @@ public final class CaveIndex {
                         if (was == null || d2(cell, x, y, z) < d2(was, x, y, z)) entry.put(root, cell);
                     }
                 }
-            }
+        }
         Map<Integer, Integer> rim = new HashMap<>();
         for (long c : rimSeen) { int q = runAt(c); if (q >= 0) rim.merge(find(q), 1, Integer::sum); }
         double walk = io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps(), cap = io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.exploreMinutes");
@@ -712,7 +724,7 @@ public final class CaveIndex {
             int[] e = entry.get(root);
             if (!cave(root) || e == null) { if (!cave(root)) dips++; continue; }
             caves.add(new Truth(e[0], e[1], e[2], Size.of(cells[root], walk, cap), Depth.of(minY[root]), rim.getOrDefault(root, 0),
-                    credits.getOrDefault(root, Set.of()).size(), known.contains(root)));
+                    credits.getOrDefault(root, Set.of()).size(), known.contains(root), root));
         }
         caves.sort((a, b) -> Long.compare(d2(new int[]{a.x(), a.y(), a.z()}, x, y, z), d2(new int[]{b.x(), b.y(), b.z()}, x, y, z)));
         return new TruthList(caves, dips, none);

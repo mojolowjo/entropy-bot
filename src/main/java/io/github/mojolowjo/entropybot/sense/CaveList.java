@@ -51,6 +51,33 @@ public final class CaveList {
         return String.join("\n", out);
     }
 
+    /**
+     * {@code aa cave list all}: EVERY index volume that passes the floor, nearest first, no radius - "x y z: N m W, size,
+     * depth, rim credits R, air credits A, known / not known, labelled yes / no / -" ({@code labelled}: a volume root to the
+     * owner's verdict on it); then the dips and the volumes with no opening. Rule 17: the owner's debug read only; nothing
+     * in the planner reads it.
+     */
+    public static String allText(CaveIndex.TruthList truth, Map<Integer, Boolean> labelled, double px, double py, double pz) {
+        List<String> out = new ArrayList<>();
+        out.add("index caves, every chunk held (the index's truth, a debug read; never a way or a target): " + (truth.caves().isEmpty() ? "none" : truth.caves().size()));
+        for (CaveIndex.Truth c : truth.caves()) {
+            Boolean v = labelled.get(c.root());
+            out.add(String.format(Locale.ROOT, "  %d %d %d: %.0f m %s, size %s, depth %s, rim credits %d, air credits %d, %s, labelled %s", c.x(), c.y(), c.z(),
+                    d(c.x(), c.y(), c.z(), px, py, pz), compass(c.x() + 0.5 - px, c.z() + 0.5 - pz), c.size().name().toLowerCase(Locale.ROOT),
+                    c.depth().name().toLowerCase(Locale.ROOT), c.rim(), c.air(), c.known() ? "known" : "not known", v == null ? "-" : v ? "yes" : "no"));
+        }
+        out.add("  dips " + truth.dips() + ", no opening " + truth.noOpening());
+        return String.join("\n", out);
+    }
+
+    /** The 8-point compass toward dx dz (+x east, +z south: Minecraft's axes); "here" when on the spot. */
+    static String compass(double dx, double dz) {
+        if (Math.abs(dx) < 0.5 && Math.abs(dz) < 0.5) return "here";     // structural: half a block, the same column
+        String[] names = {"E", "SE", "S", "SW", "W", "NW", "N", "NE"};
+        int i = (int) Math.floorMod(Math.round(Math.toDegrees(Math.atan2(dz, dx)) / 45.0), 8L);   // structural: 8 points of 45 degrees
+        return names[i];
+    }
+
     private static double d(int x, int y, int z, double px, double py, double pz) {
         double dx = x + 0.5 - px, dy = y - py, dz = z + 0.5 - pz;
         return Math.sqrt(dx * dx + dy * dy + dz * dz);

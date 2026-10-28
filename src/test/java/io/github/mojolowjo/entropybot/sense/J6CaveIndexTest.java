@@ -221,6 +221,24 @@ class J6CaveIndexTest {
         }
     }
 
+    /** aa cave list all: every cave the index holds, no radius, with distance, compass, credits, known and the owner's verdict. */
+    @Test
+    void theListAllHasEveryCaveWithItsDirectionAndVerdict() {
+        CaveIndex i = index();
+        var all = i.truthAll(0, 51, 4);
+        assertEquals(2, all.caves().size(), "A and D");
+        assertTrue(i.truth(500, 51, 500, 64).caves().isEmpty(), "the capped list from far away: none");
+        assertEquals(2, i.truthAll(500, 51, 500).caves().size(), "list all from far away: both");
+        int a = i.volumeAt(5, 51, 4);
+        String t = CaveList.allText(all, java.util.Map.of(a, true), 0.5, 51, 4.5);
+        assertTrue(t.startsWith("index caves, every chunk held (the index's truth, a debug read; never a way or a target): 2"), t);
+        assertTrue(t.contains("  2 50 4: 2 m E, size small, depth stone, rim credits 0, air credits 0, not known, labelled yes"), t);
+        assertTrue(t.contains("  2 50 10: 6 m S, size small, depth stone, rim credits 0, air credits 0, not known, labelled -"), t);
+        assertTrue(t.endsWith("  dips 0, no opening 1"), t);
+        assertEquals("W", CaveList.compass(-106, 3));
+        assertEquals("NE", CaveList.compass(5, -5));
+    }
+
     /** The owner's definition, (b) alone: a tunnel with a wide opening that goes only 4 below it is a dip. */
     @Test
     void aWideOpeningThatGoesOnlyFourDownIsADip() {

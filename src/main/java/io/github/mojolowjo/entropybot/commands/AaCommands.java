@@ -91,6 +91,7 @@ final class AaCommands {
         // ---- caves (0.39.z50, S71: the owner labels spots; the cave rule comes from the labelled patterns)
         v("cave", (c, aa, vb, a) -> CaveLabel.run(a),
                 f("caves", "cave list", "the caves known by rays, the index's caves near you, its counts"),
+                f("caves", "cave list all", "every index cave, nearest first, no radius (a debug read)"),
                 f("caves", "cave yes", "label the air volume at my crosshair (or the nearest opening) a cave"),
                 f("caves", "cave no", "label the air volume at my crosshair (or the nearest opening) not a cave"),
                 f("caves", "cave check", "the cave floor against your labels (precision, recall, misses)"));
