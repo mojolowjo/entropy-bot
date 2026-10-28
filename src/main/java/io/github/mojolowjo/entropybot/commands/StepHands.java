@@ -232,6 +232,36 @@ public final class StepHands implements Steps.Hands {
         return p == null ? null : Jobs.here(p);
     }
 
+    @Override public int[] standStart() {
+        LocalPlayer p = Minecraft.getInstance().player;
+        return p == null ? null : searchStart(Jobs.baritone(), p).cell();
+    }
+
+    /** J6b item 14: the cell Baritone's searches start from and whether it has a floor under it. */
+    record Start(int[] cell, boolean standable) {}
+
+    /**
+     * 0.39.z78 J6b queue item 14 (run ER 07:37:48: the band leg's cell was the column of the floorless edge cell -10 61 69,
+     * the priced search stopped on its budget): the cell Baritone's searches start from - the fork's own reader,
+     * PathingBehavior#pathStart (the supporting block when the feet stand off an edge; rule 23 (2): one reader with the
+     * search itself) - and whether it is standable (MovementHelper#canWalkOn the block under it). No Baritone or an older
+     * fork: the feet, standable by the block under them. Loader notes: Baritone's impl classes (the fork jar the mod builds
+     * against), vanilla LocalPlayer#blockPosition.
+     */
+    static Start searchStart(IBaritone b, LocalPlayer p) {
+        int[] feet = Jobs.here(p);
+        try {
+            if (b != null && b.getPathingBehavior() instanceof baritone.behavior.PathingBehavior pb) {
+                baritone.api.utils.BetterBlockPos s = pb.pathStart();
+                return new Start(new int[]{s.x, s.y, s.z}, baritone.pathing.movement.MovementHelper.canWalkOn(b.getPlayerContext(), s.below()));
+            }
+        } catch (RuntimeException | LinkageError e) {
+            io.github.mojolowjo.entropybot.Quiet.warn("StepHands.searchStart: Baritone's start cell could not be read; the feet instead", e);
+        }
+        BlockPos under = new BlockPos(feet[0], feet[1] - 1, feet[2]);
+        return new Start(feet, p.level().isLoaded(under) && !p.level().getBlockState(under).getCollisionShape(p.level(), under).isEmpty());
+    }
+
     /** 0.39.z70: the step machine's decision lines (the re-plan's plan diff) at info level. */
     @Override public void log(String line) { LOG.info("[entropybot] steps: {}", line); }
 
@@ -1995,10 +2025,19 @@ public final class StepHands implements Steps.Hands {
         } else if (y >= t.minY() && y <= t.maxY()) { instant = "ok: already at y " + y + " (band " + t.minY() + ".." + t.maxY() + ")"; return null; }
         IBaritone b = Jobs.baritone();
         if (b == null) return "error: baritone not loaded";
-        bandCell = new int[]{me[0], t.target(y), me[2]};
-        LOG.info("[entropybot] steps: {} - Baritone's priced path to {} (the band's nearest Y under the feet; walked once its complete path is known)", t.text(), Jobs.fmt(bandCell));
+        // J6b queue item 14 (run ER: the floorless edge cell -10 61 69): the leg's column is the cell Baritone's searches start
+        // from (its pathStart: the supporting block off an edge), standable or said
+        Start st = searchStart(b, p);
+        bandStart = st;
+        bandCell = new int[]{st.cell()[0], t.target(st.cell()[1]), st.cell()[2]};
+        if (t.until() != null) digFrom = st.cell().clone();
+        LOG.info("[entropybot] steps: {} - Baritone's priced path to {} (the band's nearest Y under the search's start {}{}; walked once its path is known)", t.text(), Jobs.fmt(bandCell),
+                Jobs.fmt(st.cell()), st.standable() ? "" : " - it has no floor: a no-path from it is not known, never the band's fact");
         return null;
     }
+
+    /** J6b item 14: the band leg's search start (its cell and floor). */
+    private Start bandStart;
 
     /** Run EP: the dig's start cell (the named fact's "under <cell>"). */
     private int[] digFrom;
@@ -2040,25 +2079,38 @@ public final class StepHands implements Steps.Hands {
         if (b == null) return Car.Status.failed("baritone not loaded");
         if (!bandWalking && bandCell != null) {
             io.github.mojolowjo.entropybot.aa.PathPrice.Answer a = LivePathPrice.INSTANCE.priceInto(bandCell[0], bandCell[1], bandCell[2], Math.abs(y - bandCell[1]));   // z76 send-back 2: the feet IN the band
-            switch (a.kind()) {
-                case PRICED -> {
+            // J6b queue item 14 (the manager's ER ruling, rule 15): a budget stop / an estimate is NOT KNOWN, never "no path";
+            // only a complete search's no-path from a standable start is the band's fact (BandLeg)
+            Start st = bandStart != null ? bandStart : searchStart(b, p);
+            var next = io.github.mojolowjo.entropybot.aa.moves.BandLeg.of(a, st.cell(), st.standable());
+            switch (next.act()) {
+                case WALK -> {
                     io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "to band");
                     LivePathPrice.walkInto(b, new BlockPos(bandCell[0], bandCell[1], bandCell[2]));   // z76 send-back 2 (run AN: ended at y 57 over 56..56)
                     bandWalking = true;
-                    return Car.Status.running(t.text() + ": walking the priced path to " + Jobs.fmt(bandCell));
+                    return Car.Status.running(t.text() + ": " + next.why() + " to " + Jobs.fmt(bandCell));
                 }
-                case COMPUTING, CHUNKS -> {
-                    return Car.Status.running(t.text() + ": the path to " + Jobs.fmt(bandCell) + " is not known yet (" + a.kind().name().toLowerCase(java.util.Locale.ROOT)
-                            + (a.reason() == null ? "" : ": " + a.reason()) + ")");
+                case WAIT -> {
+                    return Car.Status.running(t.text() + ": the path to " + Jobs.fmt(bandCell) + " is " + next.why());
+                }
+                case FACT -> {
+                    io.github.mojolowjo.entropybot.aa.moves.FactChange.band(t.minY(), t.maxY(), next.why());     // 0.39.z42: a fact change, the order re-plans
+                    return Car.Status.failed(t.text() + ": " + next.why());
                 }
                 default -> {
-                    String why = "no path into the band from y " + y + " (" + (a.reason() == null ? a.kind().name().toLowerCase(java.util.Locale.ROOT) : a.reason()) + ")";
-                    io.github.mojolowjo.entropybot.aa.moves.FactChange.band(t.minY(), t.maxY(), why);     // 0.39.z42: a fact change, the order re-plans
-                    return Car.Status.failed(t.text() + ": " + why);
+                    io.github.mojolowjo.entropybot.aa.moves.FactChange.bandNotKnown(t.minY(), t.maxY(), next.why());   // re-plans, nothing held
+                    return Car.Status.failed(t.text() + ": " + next.why());
                 }
             }
         }
         if (!b.getCustomGoalProcess().isActive() && !Core.INSTANCE.reflexes.hold()) {
+            // J6b item 14: the walk's own end is the band's fact only from a standable start; else not known (rule 15)
+            Start st = bandStart != null ? bandStart : searchStart(b, p);
+            if (!st.standable()) {
+                String why = "Baritone's goal ended at y " + y + ", its start " + Jobs.fmt(st.cell()) + " has no floor - not a true no-path (rule 15: not known)";
+                io.github.mojolowjo.entropybot.aa.moves.FactChange.bandNotKnown(t.minY(), t.maxY(), why);
+                return Car.Status.failed(t.text() + ": " + why);
+            }
             String why = "Baritone's goal ended at y " + y + " (no path into the band)";
             io.github.mojolowjo.entropybot.aa.moves.FactChange.band(t.minY(), t.maxY(), why);     // 0.39.z42: a fact change, the order re-plans
             return Car.Status.failed(t.text() + ": " + why);

@@ -795,10 +795,15 @@ public final class AaRuntime implements JobPort {
         return net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(lv.getBlockState(pos).getBlock()).toString().equals(id);
     }
 
-    /** 0.39.z69 item 1: the feet cell now for the explore leaf's band walk (null: no player). Loader notes: vanilla LocalPlayer#blockPosition (Jobs.here). */
+    /**
+     * 0.39.z69 item 1: the feet cell now for the explore leaf's band walk (null: no player). 0.39.z78 J6b queue item 14 (run
+     * ER: the floorless edge cell -10 61 69): the cell Baritone's searches start from (StepHands.searchStart: the fork's
+     * pathStart, the supporting block off an edge) - the column the band leg is priced and walked from, as the step walks it.
+     * Loader notes: vanilla LocalPlayer#blockPosition (Jobs.here); Baritone's impl PathingBehavior#pathStart.
+     */
     private static int[] feetNow() {
         LocalPlayer p = Minecraft.getInstance().player;
-        return p == null ? null : Jobs.here(p);
+        return p == null ? null : StepHands.searchStart(Jobs.baritone(), p).cell();
     }
 
     /** 0.39.z68: a supplier read once per world snapshot (the sky scan runs only when an explore leaf asks). */

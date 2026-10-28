@@ -218,6 +218,17 @@ public final class FactChange {
         last = new Fact("source " + bandKey(minY, maxY), why);
     }
 
+    /** 0.39.z78 J6b item 14: the prefix of {@link #bandNotKnown}'s key - never a source, never a world fact. */
+    public static final String NOT_KNOWN = "not known ";
+
+    /**
+     * 0.39.z78 J6b queue item 14 (rule 15): the band leg's path is NOT KNOWN (a budget stop, no estimate, a floorless start):
+     * the order re-plans on the facts of now; nothing is held for the order nor learned as a world fact (no "source " key).
+     */
+    public static void bandNotKnown(int minY, int maxY, String why) {
+        last = new Fact(NOT_KNOWN + bandKey(minY, maxY), why);
+    }
+
     /**
      * 0.39.z46: a strip way ended short (the strip's own end - "no path", lava, no pickaxe - or no path down to its band):
      * the order re-plans without it. 0.39.z78 strip: held by the strip's HEADING at its Y (NeedChain.stripHold of {@code key},

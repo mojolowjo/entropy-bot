@@ -91,6 +91,13 @@ public final class Steps {
          */
         default int[] feet() { return null; }
 
+        /**
+         * 0.39.z78 J6b queue item 14 (run ER 07:37:48: the band leg's cell was the floorless feet's column -10 61 69): the
+         * cell Baritone's searches start from - the fork's own reader (PathingBehavior#pathStart: the supporting block when
+         * the feet stand off an edge) - the band leg's column; null: not known. These hands: the feet.
+         */
+        default int[] standStart() { return feet(); }
+
         /** 0.39.z70: a decision line for the log (the re-plan's plan diff); these hands may drop it (tests). */
         default void log(String line) {}
 
@@ -430,6 +437,8 @@ public final class Steps {
     private Attempt lastFailed;
     /** 0.39.z70: the running step's start cell (Hands.feet at its start), null: not known. */
     private int[] startFeet;
+    /** J6b item 14: the search's start cell when the step started (Hands#standStart); null: not known. */
+    private int[] bandFrom;
     /** 0.39.z70: re-plans on a failure in this run, switches (re-plans and re-prices) in this run. */
     private int replans, switches;
     /** 0.39.z70: the source facts this run re-planned on (the park line when the order says nothing). */
@@ -491,6 +500,7 @@ public final class Steps {
         replanner = replan;
         lastFailed = null;
         startFeet = null;
+        bandFrom = null;
         standsInRow = 0;                         // 0.39.z77 round fix 2 (run BH: "stood 2, 3, 4, 5, 6 times" across orders): per run
         standCell = null;
         replans = 0;
@@ -538,6 +548,7 @@ public final class Steps {
         FactChange.clear();
         lookNeeds(s);
         startFeet = feetNow();                   // 0.39.z70: the Attempt's start cell
+        bandFrom = standNow();                   // J6b item 14: the band leg's column (the search's start cell)
         keepErr = null;
         // 0.39.z61 (D1 J2 3.4): the reserves of the steps from here, counted, to the lease; then the dry run of those steps on
         // the bag: a shortage is a bag fact that re-plans the order now, before the step runs (no order: said in the line)
@@ -1025,9 +1036,11 @@ public final class Steps {
      */
     public Ahead ahead() {
         if (phase != Phase.RUNNING || idx < 0 || idx >= steps.size()) return null;
-        if (steps.get(idx) instanceof Step.ToBand t && startFeet != null && startFeet.length >= 3            // structural: x y z
-                && (startFeet[1] < t.minY() || startFeet[1] > t.maxY()))
-            return new Ahead(new int[]{startFeet[0], t.target(startFeet[1]), startFeet[2]}, true);
+        // J6b item 14: the band leg's column is the search's start cell (StepHands.toBand reads the same), the step's start
+        int[] from = bandFrom != null ? bandFrom : startFeet;
+        if (steps.get(idx) instanceof Step.ToBand t && from != null && from.length >= 3            // structural: x y z
+                && (from[1] < t.minY() || from[1] > t.maxY()))
+            return new Ahead(new int[]{from[0], t.target(from[1]), from[2]}, true);
         int[] w = walkAhead(steps, idx);
         return w == null ? null : new Ahead(w, false);
     }
@@ -1249,6 +1262,16 @@ public final class Steps {
         return new Attempt(StepId.of(failed), key, feet, bag);
     }
 
+    /** J6b item 14: the search's start cell from the hands now (null: not known; a failure to read it: not known). */
+    private int[] standNow() {
+        try {
+            int[] f = hands.standStart();
+            return f == null ? null : f.clone();
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
     /** The feet from the hands now (null: not known; a failure to read them is not known either, said in the line). */
     private int[] feetNow() {
         try {
@@ -1353,6 +1376,7 @@ public final class Steps {
         if (phase != Phase.RUNNING) return;
         stepStart = now;
         startFeet = feetNow();                   // 0.39.z70: the step starts again from here
+        bandFrom = standNow();
         if (dryHold != null) return;             // 0.39.z62 item 3a: not started yet - the next tick looks again, then starts it
         String r;
         FactChange.Fact threw = null;
