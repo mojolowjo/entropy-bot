@@ -1985,7 +1985,11 @@ public final class StepHands implements Steps.Hands {
         int y = me[1];
         bandCell = null;
         bandWalking = false;
-        if (y >= t.minY() && y <= t.maxY()) { instant = "ok: already at y " + y + " (band " + t.minY() + ".." + t.maxY() + ")"; return null; }
+        digFrom = me.clone();
+        if (t.until() != null) {
+            String seen = baseUnderFeet(p, t);
+            if (seen != null) { instant = "ok: " + seen; return null; }
+        } else if (y >= t.minY() && y <= t.maxY()) { instant = "ok: already at y " + y + " (band " + t.minY() + ".." + t.maxY() + ")"; return null; }
         IBaritone b = Jobs.baritone();
         if (b == null) return "error: baritone not loaded";
         bandCell = new int[]{me[0], t.target(y), me[2]};
@@ -1993,11 +1997,40 @@ public final class StepHands implements Steps.Hands {
         return null;
     }
 
+    /** Run EP: the dig's start cell (the named fact's "under <cell>"). */
+    private int[] digFrom;
+
+    /**
+     * Run EP (rule 17): the block under the feet - the one the bot stands on, observed - is one of the step's {@code until}
+     * blocks: the done words; null: not (or not loaded). Only the observed state; no block under the top is read.
+     */
+    private static String baseUnderFeet(LocalPlayer p, Step.ToBand t) {
+        int[] me = Jobs.here(p);
+        BlockPos under = new BlockPos(me[0], me[1] - 1, me[2]);
+        if (!p.level().isLoaded(under)) return null;
+        String id = BuiltInRegistries.BLOCK.getKey(p.level().getBlockState(under).getBlock()).toString();
+        return t.doneOn(id) ? id.replace("minecraft:", "") + " seen under the feet at y " + under.getY() : null;
+    }
+
     private Car.Status toBandStatus(LocalPlayer p, Step.ToBand t) {
         if (instant != null) return Car.Status.done(instant);
         int y = Jobs.here(p)[1];
         IBaritone b = Jobs.baritone();
-        if (y >= t.minY() && y <= t.maxY()) {
+        if (t.until() != null) {
+            // run EP: done on the OBSERVED base block under the feet; the cap reached without it: the named fact
+            String seen = baseUnderFeet(p, t);
+            if (seen != null) {
+                if (b != null) Jobs.cancel(b);
+                return Car.Status.done("ok: " + seen);
+            }
+            if (y <= t.minY()) {
+                int[] from = digFrom == null ? Jobs.here(p) : digFrom;
+                String why = t.capFact(from);
+                if (b != null) Jobs.cancel(b);
+                io.github.mojolowjo.entropybot.aa.moves.FactChange.band(t.minY(), t.maxY(), why);     // the order re-plans without this dig
+                return Car.Status.failed(t.text() + ": " + why);
+            }
+        } else if (y >= t.minY() && y <= t.maxY()) {
             if (b != null) Jobs.cancel(b);
             return Car.Status.done("ok: at y " + y + " (band " + t.minY() + ".." + t.maxY() + ")");
         }

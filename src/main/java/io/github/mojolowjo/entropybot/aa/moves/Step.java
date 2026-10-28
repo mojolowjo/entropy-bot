@@ -478,8 +478,33 @@ public sealed interface Step {
      * one-planner: go to the height band {@code minY..maxY} where the wanted block generates (the catalog's worldgen): one
      * Baritone goal (GoalYLevel to the nearest Y in the band); done at once when the bot is in the band.
      */
-    record ToBand(int minY, int maxY) implements Step {
-        public String text() { return "to y " + minY + ".." + maxY; }
+    record ToBand(int minY, int maxY, String until) implements Step {
+        public ToBand(int minY, int maxY) { this(minY, maxY, null); }
+
+        /**
+         * Run EP (the manager's rule 17 ruling: a buried block is not knowledge, for a price either): the dig-down's step -
+         * down the feet's column toward {@code minY} (its cap) until a block of {@code until} (block ids, comma-separated:
+         * the dimension's default block and its deep variant) is OBSERVED under the feet; done on that observed state, never
+         * on the band; the cap reached without it: the named fact "no <block> within N blocks under <cell>".
+         */
+        public static ToBand digUntil(int capY, int estimateY, String blocks) { return new ToBand(capY, estimateY, blocks); }
+
+        /** Run EP: the dig is done - the block the feet stand on ({@code idUnderFeet}, observed) is one of {@code until}. Pure. */
+        public boolean doneOn(String idUnderFeet) {
+            if (until == null || idUnderFeet == null) return false;
+            for (String u : until.split(",")) if (u.equals(idUnderFeet)) return true;
+            return false;
+        }
+
+        /** Run EP: the dig reached its cap (the feet at or under {@code minY}) without the block - the named fact. Pure. */
+        public String capFact(int[] from) {
+            return "no " + until.split(",")[0].replace("minecraft:", "") + " within " + (from[1] - minY) + " blocks under " + from[0] + " " + from[1] + " " + from[2];
+        }
+
+        public String text() {
+            if (until != null) return "dig down until " + until.split(",")[0].replace("minecraft:", "") + " is seen (to y " + minY + " at most)";
+            return "to y " + minY + ".." + maxY;
+        }
 
         /**
          * 0.39.z65 item 3: the Y of the priced walk's cell from feet at {@code y} - the band's nearest Y, one inside each edge
@@ -489,6 +514,7 @@ public sealed interface Step {
          * this cell's path is bounded by the step watch (steps.stepMaxS: its timeout is the band's source fact, a re-plan).
          */
         public int target(int y) {
+            if (until != null) return minY;                                  // run EP: dig toward the cap; done when the block is seen
             boolean inset = maxY - minY >= 2;
             int lo = inset ? minY + 1 : minY, hi = inset ? maxY - 1 : maxY;
             return Math.max(lo, Math.min(hi, y));

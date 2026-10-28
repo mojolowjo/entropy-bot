@@ -366,21 +366,19 @@ public final class NeedChain {
      * the hole round the feet), the surface cell to walk up to and its distance; {@code hole}: the depth is a hole round the
      * feet (a sky-open shaft) - priced as below the surface at any depth over a step.
      */
-    public record Surface(int depth, int x, int y, int z, double dist, boolean hole, int[] top, double topDist, int baseTop) {
-        /** Run EP: the feet's column was not read for the base block (an old snapshot, a test's world): the assumed layer. */
-        public static final int BASE_NOT_READ = Integer.MIN_VALUE;
-        /** Run EP: the feet's column was read and holds no base block within the dig-down way's reach. */
-        public static final int BASE_NONE = Integer.MIN_VALUE + 1; // structural: a marker, never a y
+    public record Surface(int depth, int x, int y, int z, double dist, boolean hole, int[] top, double topDist, int floor) {
+        /** Run EP: the feet column's floor was not read (an old snapshot, a test's world): the column's top as before. */
+        public static final int FLOOR_NOT_READ = Integer.MIN_VALUE;
 
-        public Surface(int depth, int x, int y, int z, double dist, boolean hole, int[] top, double topDist) { this(depth, x, y, z, dist, hole, top, topDist, BASE_NOT_READ); }
+        public Surface(int depth, int x, int y, int z, double dist, boolean hole, int[] top, double topDist) { this(depth, x, y, z, dist, hole, top, topDist, FLOOR_NOT_READ); }
 
         public Surface(int depth, int x, int y, int z, double dist, boolean hole) { this(depth, x, y, z, dist, hole, null, 0); }
 
         /**
-         * Run EP: with the feet column's first base-block layer as the loaded column shows it ({@code b}: its y; BASE_NONE:
-         * none within reach).
+         * Run EP (rule 17: only what is seen): with the feet column's top block under any fluid over it - a pond's floor -
+         * read through the open (seen) water cells only, never a block under the top.
          */
-        public Surface withBaseTop(int b) { return new Surface(depth, x, y, z, dist, hole, top, topDist, b); }
+        public Surface withFloor(int f) { return new Surface(depth, x, y, z, dist, hole, top, topDist, f); }
 
         public Surface(int depth, int x, int y, int z, double dist) { this(depth, x, y, z, dist, false); }
 
@@ -5144,17 +5142,14 @@ public final class NeedChain {
     public static final int BASE_REACH = 16; // structural: a chunk section, past the surface layer and a lake's depth
 
     /**
-     * Run EP: the first y, from the column's top block {@code top} down at most {@link #BASE_REACH}, whose block
-     * ({@code at}: y -> block id; null: not loaded) is the base block or its deep variant; Surface.BASE_NONE: none within
-     * reach (or the column not loaded there - rule 15: never assumed). Pure.
+     * Run EP (the manager's rule 17 ruling): the feet column's floor - from its top cell ({@code top}: the heightmap's, a
+     * fluid counts there) down through the FLUID cells only ({@code fluid}: y -> the cell holds a fluid; an open, seen
+     * cell), the first that is not; that block's top face is seen through the water. No block under it is read. Pure.
      */
-    public static int baseTopIn(java.util.function.IntFunction<String> at, int top, String block, String deep) {
-        for (int y = top; y >= top - BASE_REACH; y--) {
-            String id = at.apply(y);
-            if (id == null) return Surface.BASE_NONE;
-            if (id.equals(block) || id.equals(deep)) return y;
-        }
-        return Surface.BASE_NONE;
+    public static int floorIn(java.util.function.IntPredicate fluid, int top) {
+        int y = top;
+        while (y > top - BASE_REACH && fluid.test(y)) y--;
+        return y;
     }
 
     /**
@@ -5184,29 +5179,20 @@ public final class NeedChain {
         } else if (want.has(base.block())) gives = base.block();
         if (gives == null) return alts;
         // z74 review 1: the column's own top from the surface fact (under open sky: the cell stands on the top block)
-        int topBlock = s.y() - 1;
-        int ty;
-        String assumed;
-        if (s.baseTop() == Surface.BASE_NONE) {
-            // run EP (rule 7): the loaded column holds no base-block layer within the way's reach - no such way, said
-            String why = shw(base.block()) + ": the feet's column holds no " + shw(base.block()) + " layer within " + BASE_REACH + " blocks of its top (the loaded column)";
-            Alt none = new Alt(shw(base.block()) + " (the base block)", () -> { c.fail = why; return null; });
-            alts.add(none);
-            return alts;
-        } else if (s.baseTop() != Surface.BASE_NOT_READ) {
-            // run EP (run EP 05:57:33: a pond at 231 62 85 - the assumed 3-deep layer said "dig down 0", the real stone 4-5
-            // down): the dig goes from the feet to the first layer of the base block AS THE LOADED COLUMN SHOWS IT (the feet
-            // stand on it), the pond's floor and the dirt over it included
-            ty = s.baseTop() + 1;
-            assumed = " (the feet's column: " + shw(base.block()) + " first at y " + s.baseTop() + ", the loaded column)";
-        } else {
-            // not read (an old snapshot, a test's world): the surface layer is assumed - SurfaceSystem's average, said
-            ty = topBlock - SURFACE_LAYER;
-            if (base.deep() != null) ty = Math.max(ty, base.sureFrom());
-            assumed = " (the column's top block at y " + topBlock + "; the surface layer under it assumed " + SURFACE_LAYER
-                    + " deep - SurfaceSystem's average, not seen)";
-        }
+        // run EP (the manager's rule 17 ruling: a buried block is not knowledge, for a price either): the PRICE is game data -
+        // the surface layer's depth (SurfaceSystem's average, rough: rule 14) under the column's top, a pond's floor when the
+        // feet stand in one (its water seen); the STEP digs until the base block is seen under the feet (Step.ToBand.digUntil)
+        boolean read = s.floor() != Surface.FLOOR_NOT_READ;
+        int topBlock = read ? s.floor() : s.y() - 1;
+        int ty = topBlock - SURFACE_LAYER;
+        if (base.deep() != null) ty = Math.max(ty, base.sureFrom());
+        if (read) ty = Math.min(ty, feet[1] - 1);                            // run EP: never a 0-block dig
+        String assumed = " (the column's top block at y " + topBlock + (read && topBlock < s.y() - 1 ? ", the pond's floor under its water" : "")
+                + "; the surface layer under it assumed " + SURFACE_LAYER + " deep - SurfaceSystem's average, not seen"
+                + (read ? "; the dig goes until " + shw(base.block()) + " is seen, " + BASE_REACH + " blocks at most" : "") + ")";
         int depth = feet[1] - ty, top = ty;
+        int capY = feet[1] - BASE_REACH;
+        String until = base.block() + (base.deep() == null ? "" : "," + base.deep());
         String g = gives;
         alts.add(new Alt(shw(base.block()) + " (the base block, " + depth + " deep)", () -> {
             // the pickaxe its block asks for is made up here first (a station placed in the hole would have no room)
@@ -5222,10 +5208,16 @@ public final class NeedChain {
             // same dig down was priced again - the same way twice, parked; five orders): a band entry that failed here is a
             // fact (the order's hold and the world fact, held by distance) - this way is out from here, the next option is priced
             String bandHeld = heldWhy(c, io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(top, top));
+            if (bandHeld == null && read) bandHeld = heldWhy(c, io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(capY, top));   // run EP: the dig's own named fact
             if (bandHeld != null) { c.fail = "dig down " + depth + " to " + shw(base.block()) + ": the walk into y " + top + " is held here (" + bandHeld + ")"; return null; }
+            int before = c.steps.size();
             String leg = bandLeg(c, new int[]{top, top});
             if (leg == null && c.fail != null) return null;
             if (BAND_DROPPED.equals(leg)) { c.fail = "no path down to " + shw(base.block()) + " under the feet"; return null; }
+            // run EP: the read column's step digs until the base block is SEEN under the feet (capped), the band leg's price kept
+            if (read)
+                for (int i = before; i < c.steps.size(); i++)
+                    if (c.steps.get(i) instanceof Step.ToBand b && b.minY() == top && b.maxY() == top) c.steps.set(i, Step.ToBand.digUntil(capY, top, until));
             c.walk(probe.key(), new Walked(0, "in reach from the hole the walk down made", null, PathPrice.Kind.PRICED));
             String how = sourceFrom(c, word, g, lack, List.of(probe));
             if (how == null) return null;

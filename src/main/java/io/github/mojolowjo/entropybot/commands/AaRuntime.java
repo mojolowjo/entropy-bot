@@ -642,28 +642,26 @@ public final class AaRuntime implements JobPort {
     /**
      * 0.39.z68: the surface over the bot for the explore leaf (NeedChain.Surface): the depth below the surface (Jobs.belowSurface,
      * the one rule), then the nearest open-sky standing cell ({@link #skyCell}), else the column's leaf-free top. Null: no
-     * player or the feet's chunk is not loaded (rule 15: not known, never "on the surface"). Run EP: with the feet column's
-     * first base-block layer as the loaded column shows it (NeedChain.baseTopIn from the column's leaf-free top down, a
-     * pond's floor included), for the dig-down way.
+     * player or the feet's chunk is not loaded (rule 15: not known, never "on the surface"). Run EP (the manager's rule 17
+     * ruling): with the feet column's floor - its top block under any fluid over it, read through the open water cells
+     * only (NeedChain.floorIn); no block under it is read.
      */
     io.github.mojolowjo.entropybot.aa.NeedChain.Surface surfaceOver() {
         var s = surfaceOver0();
         if (s == null) return null;
-        var base = baseHere();
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer p = mc.player;
-        if (base == null || p == null || mc.level == null) return s;
+        if (p == null || mc.level == null) return s;
         var lv = mc.level;
         int[] me = Jobs.here(p);
         int top = Jobs.surfaceNoLeaves(lv, me[0], me[2]);
         if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(top)) return s;
         var m = new net.minecraft.core.BlockPos.MutableBlockPos();
-        int baseTop = io.github.mojolowjo.entropybot.aa.NeedChain.baseTopIn(y -> {
+        int floor = io.github.mojolowjo.entropybot.aa.NeedChain.floorIn(y -> {
             m.set(me[0], y, me[2]);
-            if (!lv.isLoaded(m)) return null;
-            return net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(lv.getBlockState(m).getBlock()).toString();
-        }, top - 1, base.block(), base.deep());
-        return s.withBaseTop(baseTop);
+            return lv.isLoaded(m) && !lv.getFluidState(m).isEmpty();
+        }, top - 1);
+        return s.withFloor(floor);
     }
 
     private io.github.mojolowjo.entropybot.aa.NeedChain.Surface surfaceOver0() {

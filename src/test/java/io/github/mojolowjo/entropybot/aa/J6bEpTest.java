@@ -43,34 +43,50 @@ class J6bEpTest {
         };
     }
 
-    static NeedChain.World pond(int baseTop) {
+    static NeedChain.World pond(int floor) {
         GenWhere.Base b = new GenWhere.Base("minecraft:stone", 8, "minecraft:deepslate", "noise settings minecraft:overworld");
         return Z74RunACTest.world(Map.of("minecraft:wooden_pickaxe", 1), Map.of()).withWhere(new NeedChain.WhereFacts(w -> null,
-                () -> new NeedChain.Surface(0, 231, 63, 85, 0).withBaseTop(baseTop), () -> new int[]{231, 62, 85}, () -> b));
+                () -> new NeedChain.Surface(0, 231, 63, 85, 0).withFloor(floor), () -> new int[]{231, 62, 85}, () -> b));
     }
 
-    /** EP's pond: the loaded column's first stone at 58 under water and dirt - the dig is 3 blocks (the feet to 59) and runs. */
+    /**
+     * EP's pond (the manager's rule 17 ruling): the floor is read through the open water only (dirt at 61, seen through
+     * it); the PRICE is the game data's surface layer (3) under it - dig down 4, an estimate; the STEP digs until stone is
+     * SEEN under the feet: dirt 61, 60, 59 dug, the feet on the stone at 58 - done there.
+     */
     @Test
-    void epsPond_theDigGoesToTheStoneTheColumnShows() {
+    void epsPond_pricesTheEstimate_digsUntilStoneIsSeen() {
         Z74RunACTest.data();
-        int baseTop = NeedChain.baseTopIn(J6bEpTest::epColumn, 62, "minecraft:stone", "minecraft:deepslate");
-        assertEquals(58, baseTop, "the first stone under the water's top (62) and the dirt (59-61)");
-        Chain c = NeedChain.resolve("cobblestone", 2, pond(baseTop));
+        int floor = NeedChain.floorIn(y -> epColumn(y).equals("minecraft:water"), 62);
+        assertEquals(61, floor, "the pond's floor under its water (the water column is open and seen)");
+        Chain c = NeedChain.resolve("cobblestone", 2, pond(floor));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(new Step.ToBand(59, 59), c.steps().get(0), "the feet down 3 to stand on the stone: " + c.steps());
-        assertTrue(c.why().contains("dig down 3 to stone") && c.why().contains("stone first at y 58, the loaded column"), c.why());
-        assertFalse(c.why().contains("assumed 3 deep"), "never the assumed layer when the column was read");
+        Step.ToBand dig = (Step.ToBand) c.steps().get(0);
+        assertEquals(Step.ToBand.digUntil(62 - NeedChain.BASE_REACH, 58, "minecraft:stone,minecraft:deepslate"), dig, "the dig until stone is seen, " + NeedChain.BASE_REACH + " at most: " + c.steps());
+        assertTrue(c.why().contains("dig down 4 to stone") && c.why().contains("the pond's floor under its water") && c.why().contains("the dig goes until stone is seen"), c.why());
+        // the step, on the blocks as they are seen: the feet go down; done when the block they stand on is stone
+        List<Integer> dug = new ArrayList<>();
+        int feet = 62;
+        while (!dig.doneOn(epColumn(feet - 1))) { dug.add(feet - 1); feet--; }
+        assertEquals(List.of(61, 60, 59), dug, "dirt 61-59 dug");
+        assertEquals(59, feet, "the feet on the stone at 58: done");
     }
 
-    /** A read column with no base block within reach: no such way, said (rule 7). */
+    /** No stone within the cap: the step's named fact (the price never read the column). */
     @Test
-    void noBaseLayerWithinReach_noWay_said() {
-        Z74RunACTest.data();
-        assertEquals(NeedChain.Surface.BASE_NONE, NeedChain.baseTopIn(y -> "minecraft:dirt", 62, "minecraft:stone", "minecraft:deepslate"));
-        assertEquals(NeedChain.Surface.BASE_NONE, NeedChain.baseTopIn(y -> null, 62, "minecraft:stone", "minecraft:deepslate"), "not loaded: never assumed");
-        Chain c = NeedChain.resolve("cobblestone", 2, pond(NeedChain.Surface.BASE_NONE));
-        assertTrue(c.why().contains("holds no stone layer within " + NeedChain.BASE_REACH + " blocks of its top (the loaded column)"), c.why());
-        assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.ToBand b && b.minY() == 59), c.steps().toString());
+    void theCapHit_saysTheFact() {
+        Step.ToBand dig = Step.ToBand.digUntil(62 - NeedChain.BASE_REACH, 58, "minecraft:stone,minecraft:deepslate");
+        assertFalse(dig.doneOn("minecraft:dirt"));
+        assertTrue(dig.doneOn("minecraft:deepslate"));
+        assertEquals("no stone within 16 blocks under 231 62 85", dig.capFact(new int[]{231, 62, 85}));
+        assertEquals("dig down until stone is seen (to y 46 at most)", dig.text());
+        String src;
+        try {
+            src = java.nio.file.Files.readString(java.nio.file.Path.of("src/main/java/io/github/mojolowjo/entropybot/commands/AaRuntime.java"));
+        } catch (java.io.IOException e) {
+            throw new AssertionError(e);
+        }
+        assertFalse(src.contains("baseTopIn"), "no reader of unseen column blocks remains");
     }
 
     /** EP's chestplate (8 ore, 16 min at the prior): the LARGE cave stays priced at n / rate; its caving step is one leg of the cap. */
