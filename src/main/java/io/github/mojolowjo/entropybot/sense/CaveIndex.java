@@ -22,11 +22,17 @@ import java.util.Set;
  * band from the index (the owner's ruling: "its entry, its size and its depth") - never the index's cells or ore.</li>
  * <li>An opening becomes an explore target only with {@link #TARGET_RAYS} credits ({@link #openings}: a hole the bot has
  * seen; the manager's ruling on J6 (a)).</li>
+ * <li>Run ED (21:38-21:56, 189 of 209 known caves "SMALL, HIGH" at y 64-79: air under tree crowns and ledges): a volume
+ * is a cave only by the owner's definition ("most caves have a few air blocks at the opening which continue downwards";
+ * {@link #isCave}): its opening - its cells beside a sky-lit column - holds {@link #MIN_RIM} cells, and its lowest cell
+ * lies {@link #MIN_REACH} blocks below the opening's lowest cell. A volume with no opening is no cave. The rest are dips:
+ * never credited, never a ray's target, never an opening. The surface the runs lie under is the ground ({@link #ground}: leaves are no roof), so the air under a
+ * crown is not indexed at all.</li>
  * </ul>
  * <p>Memory: per chunk the columns' air runs below the surface, flattened (one start offset a column, then from / to / run
  * id a run). Measured ({@link #approxBytes}, J6CaveIndexTest): 1072 bytes a chunk with no cave air (its surface heights;
- * the run arrays shared), 2548 bytes a chunk of 32 runs; 12 bytes a run more, plus 20 bytes a run in the union-find - a
- * chunk of 300 runs about 12 kB, 625 chunks (render distance 12) about 7 MB. The index keeps the loaded
+ * the run arrays shared), 2820 bytes a chunk of 40 runs; 16 bytes a run more, plus 28 bytes a run in the union-find - a
+ * chunk of 300 runs about 15 kB, 625 chunks (render distance 12) about 9.5 MB. The index keeps the loaded
  * chunks only ({@link #remove} on unload drops them and their unknown volumes; the known ones stay in Sightings), and
  * {@link #MAX_CHUNKS} bounds it at the largest render distance. The union-find is rebuilt from the chunks held after a
  * removal (lazily, on the next ask); the credits and the known marks are kept by cell, so they follow the rebuild. A chunk
@@ -44,6 +50,21 @@ public final class CaveIndex {
     public static final int TARGET_RAYS = 1; // structural: the manager's ruling, 2026-10-27
     /** structural: the chunks a client can hold at the largest render distance, 32: (2 x 32 + 1)^2 - a guard, never reached with unloads. */
     static final int MAX_CHUNKS = 65 * 65;
+    /**
+     * Run ED, the owner's definition (a): the air cells a cave's opening holds at least (its cells beside a sky-lit
+     * column, summed over the volume). The cave carver's tunnel is 2+ cells wide (configured_carver/cave.json and
+     * CaveWorldCarver, 1.21: horizontal radius (1.5 + sin x thickness) x 0.7..1.4, so at least 1.5 x 0.7 = 1.05 a side;
+     * vertical x 0.8..1.3) - where it breaks the surface its face shows more than two cells; a one-block hole or a
+     * two-cell dip shows fewer.
+     */
+    public static final int MIN_RIM = 3; // structural: a carver tunnel's face, 2+ wide (the manager's ruling)
+    /**
+     * Run ED, the owner's definition (b): the blocks a cave's air goes down below its opening's lowest cell. A carver
+     * tunnel's radius is 1.5 x 0.7..1.4 (cave.json; the tunnel about 3 across), so the air that continues downward past
+     * the mouth reaches at least 5 below it (the manager's ruling). An overhang or the air under a ledge goes no lower than
+     * the ground at its mouth (0).
+     */
+    public static final int MIN_REACH = 5; // structural: a carver tunnel of ~3 past its mouth (the manager's ruling)
 
     /**
      * 0.39.z78 J6: a known cave's size, a bucket from the index's cells by the minutes the caving step walks them (cells /
@@ -91,7 +112,7 @@ public final class CaveIndex {
     public record Volume(int root, long cells, int minY, int maxY, Set<Long> credits) {}
 
     /** What a credit did: no volume there, credited, the volume known already, or made it a known cave now. */
-    public enum Credit { NO_VOLUME, CREDITED, ALREADY_KNOWN, KNOWN }
+    public enum Credit { NO_VOLUME, DIP, CREDITED, ALREADY_KNOWN, KNOWN }
 
     /** The known cave a credit made: its entry (a seen cell), its size bucket and depth band, the credited (seen) cells. */
     public record Known(int x, int y, int z, Size size, Depth depth, List<Long> hits) {}
@@ -108,13 +129,16 @@ public final class CaveIndex {
         final int[] start;          // 257: the runs of column c are [start[c], start[c+1])
         final int[] lo, hi;         // per run
         int[] id;                   // per run: its union-find node (rebuilt)
-        Chunk(int cx, int cz, int[] surface, int[] start, int[] lo, int[] hi) { this.cx = cx; this.cz = cz; this.surface = surface; this.start = start; this.lo = lo; this.hi = hi; this.id = lo.length == 0 ? NONE : new int[lo.length]; }
+        final int[] rim;            // per run: its cells beside a sky-lit column, counted so far (run ED)
+        Chunk(int cx, int cz, int[] surface, int[] start, int[] lo, int[] hi) { this.cx = cx; this.cz = cz; this.surface = surface; this.start = start; this.lo = lo; this.hi = hi; this.id = lo.length == 0 ? NONE : new int[lo.length]; this.rim = lo.length == 0 ? NONE : new int[lo.length]; }
     }
 
     private final Map<Long, Chunk> chunks = new HashMap<>();
     private int[] parent = new int[1024];
     private long[] cells = new long[1024];
     private int[] minY = new int[1024], maxY = new int[1024];
+    /** Per root (run ED): the lowest opening cell (beside a sky-lit column; MAX_VALUE: none) and the opening's cells. */
+    private int[] rimLow = new int[1024], rimN = new int[1024];
     private int next;
     private boolean dirty;
     /** The credited cells (packed) and the cells of known caves: kept by cell, mapped to volumes at each ask. */
@@ -148,10 +172,10 @@ public final class CaveIndex {
         for (Chunk c : chunks.values()) {
             b += 16 + 4L * 256;                                                   // structural: the surface array
             b += c.start == NO_COLUMNS ? 0 : 16 + 4L * 257;                      // structural: the column starts
-            b += c.lo.length == 0 ? 0 : 3 * (16 + 4L * c.lo.length);            // structural: from, to, id
+            b += c.lo.length == 0 ? 0 : 4 * (16 + 4L * c.lo.length);            // structural: from, to, id, rim
             b += 32;                                                              // structural: the chunk object
         }
-        return b + 20L * parent.length;                                           // structural: the union-find's four arrays, 20 bytes a node
+        return b + 28L * parent.length;                                           // structural: the union-find's six arrays, 28 bytes a node
     }
 
     /** A chunk's runs (indexed once while it stays loaded: a chunk held is kept as it was). */
@@ -196,6 +220,13 @@ public final class CaveIndex {
             if (n != null) join(ch, i, 0, n, i, 15);
             if (s != null) join(ch, i, 15, s, i, 0);
         }
+        for (int c = 0; c < 256; c++) opened(ch, c);
+        for (int i = 0; i < 16; i++) {                                           // the neighbours' edge columns see this chunk's sky now
+            if (w != null) opened(w, 15 + 16 * i);
+            if (e != null) opened(e, 16 * i);
+            if (n != null) opened(n, i + 16 * 15);
+            if (s != null) opened(s, i);
+        }
         for (long c : knownCells) { int r = runAt(c); if (r >= 0) known.add(find(r)); }     // a known cave marked before its chunk came
     }
 
@@ -221,6 +252,8 @@ public final class CaveIndex {
                 if (s != null) join(ch, i, 15, s, i, 0);
             }
         }
+        for (Chunk ch : all) java.util.Arrays.fill(ch.rim, 0);
+        for (Chunk ch : all) for (int c = 0; c < 256; c++) opened(ch, c);
         credited.removeIf(c -> runAt(c) < 0);                                     // an unloaded unknown volume's credits go with it
         for (long c : credited) credits.computeIfAbsent(find(runAt(c)), x -> new LinkedHashSet<>()).add(c);
         for (long c : knownCells) { int r = runAt(c); if (r >= 0) known.add(find(r)); }
@@ -233,12 +266,16 @@ public final class CaveIndex {
             cells = java.util.Arrays.copyOf(cells, len);
             minY = java.util.Arrays.copyOf(minY, len);
             maxY = java.util.Arrays.copyOf(maxY, len);
+            rimLow = java.util.Arrays.copyOf(rimLow, len);
+            rimN = java.util.Arrays.copyOf(rimN, len);
         }
         int i = next++;
         parent[i] = i;
         cells[i] = to - from + 1L;
         minY[i] = from;
         maxY[i] = to;
+        rimLow[i] = Integer.MAX_VALUE;
+        rimN[i] = 0;
         return i;
     }
 
@@ -259,6 +296,8 @@ public final class CaveIndex {
         cells[ra] += cells[rb];
         minY[ra] = Math.min(minY[ra], minY[rb]);
         maxY[ra] = Math.max(maxY[ra], maxY[rb]);
+        rimLow[ra] = Math.min(rimLow[ra], rimLow[rb]);
+        rimN[ra] += rimN[rb];
         Set<Long> cb = credits.remove(rb);
         if (cb != null) credits.computeIfAbsent(ra, k -> new LinkedHashSet<>()).addAll(cb);
         if (known.remove(rb)) known.add(ra);
@@ -273,6 +312,36 @@ public final class CaveIndex {
             if (a.hi[i] < b.hi[j]) i++;
             else j++;
         }
+    }
+
+    /** The runs of column c of the chunk beside a sky-lit column: their opening cells join their volume's rim (once each). */
+    private void opened(Chunk ch, int c) {
+        if (ch.lo.length == 0 || ch.start[c] == ch.start[c + 1]) return;
+        int tx = (ch.cx << 4) + (c & 15), tz = (ch.cz << 4) + (c >> 4);
+        int sky = Integer.MAX_VALUE;
+        for (int[] d : SIDES) sky = Math.min(sky, surfaceAt(tx + d[0], tz + d[1]));
+        for (int i = ch.start[c]; i < ch.start[c + 1]; i++)
+            if (sky <= ch.hi[i]) {
+                int from = Math.max(ch.lo[i], sky), n = ch.hi[i] - from + 1;
+                int r = find(ch.id[i]);
+                rimLow[r] = Math.min(rimLow[r], from);
+                if (n > ch.rim[i]) { rimN[r] += n - ch.rim[i]; ch.rim[i] = n; }
+            }
+    }
+
+    /**
+     * Run ED, the owner's definition: the volume of {@code root} is a cave - its opening holds {@link #MIN_RIM} cells and
+     * its air goes {@link #MIN_REACH} blocks below the opening's lowest cell. Not: a dip (never credited, never a target,
+     * never an opening). A dip may become a cave when more of it loads (its opening in a chunk not read yet).
+     */
+    public synchronized boolean isCave(int root) {
+        fresh();
+        if (root < 0 || root >= next) return false;
+        return cave(find(root));
+    }
+
+    private boolean cave(int r) {
+        return rimN[r] >= MIN_RIM && rimLow[r] != Integer.MAX_VALUE && (long) rimLow[r] - minY[r] >= MIN_REACH;
     }
 
     private int runAt(long c) { int[] p = Sightings.cellOf(c); return runAt(p[0], p[1], p[2]); }
@@ -322,11 +391,15 @@ public final class CaveIndex {
      */
     public synchronized Result creditRay(List<int[]> path) {
         fresh();
+        boolean dip = false;
         for (int i = path.size() - 1; i >= 0; i--) {
             int[] p = path.get(i);
-            if (runAt(p[0], p[1], p[2]) >= 0) return credit(p[0], p[1], p[2]);
+            int r = runAt(p[0], p[1], p[2]);
+            if (r < 0) continue;
+            if (!cave(find(r))) { dip = true; continue; }                        // run ED: a dip's air is passed over
+            return credit(p[0], p[1], p[2]);
         }
-        return new Result(Credit.NO_VOLUME, -1, null);
+        return new Result(dip ? Credit.DIP : Credit.NO_VOLUME, -1, null);
     }
 
     /**
@@ -340,6 +413,7 @@ public final class CaveIndex {
         if (r < 0) return new Result(Credit.NO_VOLUME, -1, null);
         int root = find(r);
         if (known.contains(root)) return new Result(Credit.ALREADY_KNOWN, root, null);
+        if (!cave(root)) return new Result(Credit.DIP, root, null);              // run ED: no floor, no cave
         long c = cell(x, y, z);
         credited.add(c);
         Set<Long> cs = credits.computeIfAbsent(root, k -> new LinkedHashSet<>());
@@ -387,7 +461,8 @@ public final class CaveIndex {
                 if (ch == null || ch.lo.length == 0) continue;
                 for (int c = 0; c < 256; c++)
                     for (int i = ch.start[c]; i < ch.start[c + 1]; i++) {
-                        if (known.contains(find(ch.id[i]))) continue;
+                        int rt = find(ch.id[i]);
+                        if (known.contains(rt) || !cave(rt)) continue;                // run ED: no ray at a dip
                         int tx = (cx << 4) + (c & 15), tz = (cz << 4) + (c >> 4);
                         if (Math.abs(tx - x) > r || Math.abs(tz - z) > r) continue;
                         int ty = Math.max(ch.lo[i], Math.min(ch.hi[i], y));
@@ -421,7 +496,7 @@ public final class CaveIndex {
                     for (int i = ch.start[c]; i < ch.start[c + 1]; i++) {
                         if (skyFrom == Integer.MAX_VALUE || skyFrom > ch.hi[i]) continue;
                         int root = find(ch.id[i]);
-                        if (known.contains(root) || credits.getOrDefault(root, Set.of()).size() < TARGET_RAYS) continue;
+                        if (known.contains(root) || !cave(root) || credits.getOrDefault(root, Set.of()).size() < TARGET_RAYS) continue;
                         int[] cell = {tx, Math.max(ch.lo[i], skyFrom), tz};
                         int[] was = best.get(root);
                         if (was == null || d2(cell, x, y, z) < d2(was, x, y, z)) best.put(root, cell);
@@ -472,6 +547,17 @@ public final class CaveIndex {
             out.add(new int[]{x, y, z});
         }
         return out;
+    }
+
+    /**
+     * Run ED: the ground of a column - the first cell above its highest block that is not air and not leaves (leaves are a
+     * tree's crown, no cave roof), scanning down from {@code worldSurface} (WORLD_SURFACE: the first air over the top block);
+     * {@code open} answers "air or leaves". The air under a crown lies above the ground: never indexed. Pure.
+     */
+    public static int ground(int x, int z, int worldSurface, int minY, CellTest open) {
+        int y = worldSurface - 1;
+        while (y >= minY && open.test(x, y, z)) y--;
+        return y + 1;
     }
 
     /**

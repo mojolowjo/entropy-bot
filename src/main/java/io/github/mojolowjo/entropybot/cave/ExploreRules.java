@@ -260,6 +260,20 @@ public final class ExploreRules {
         return out;
     }
 
+    /**
+     * Run ED (21:40:11: "toward cave opening -4 69 14 (5 m)", 72 ms later "ended 4 m from it" - the chunk target's
+     * exploreRules.arrived 24 blocks, x + z, read as arrival at an opening): the feet stand within reach of the opening
+     * cell - the eyes (feet + 1.62) to the cell's centre within {@link #OPENING_REACH}. Pure.
+     */
+    public static boolean withinReach(int[] feet, int[] cell) {
+        if (feet == null || cell == null || feet.length < 3 || cell.length < 3) return false;     // structural: x y z
+        double dx = cell[0] - feet[0], dy = cell[1] + 0.5 - (feet[1] + 1.62), dz = cell[2] - feet[2];   // game fact: eye height 1.62
+        return Math.sqrt(dx * dx + dy * dy + dz * dz) <= OPENING_REACH;
+    }
+
+    /** game fact: the survival block interaction range - a player at the opening could touch it. */
+    public static final double OPENING_REACH = 4.5;
+
     /** Arrived near a chunk target (within ARRIVED blocks, x + z)? */
     public static boolean arrived(int x, int z, Target t) {
         return Math.abs(x - t.x()) + Math.abs(z - t.z()) <= arrivedV();
@@ -376,8 +390,17 @@ public final class ExploreRules {
          * ({@code executing}: it follows a path - a failure of the global count on another goal is not this target's).
          */
         public static Held look(Held h, long now, int[] feet, long calcFailed, boolean executing) {
+            return look(h, now, feet, calcFailed, executing, null);
+        }
+
+        /**
+         * Run ED: as {@link #look(Held, long, int[], long, boolean)}; a cave opening's target ({@code cell} not null) is
+         * REACHED only within reach of that cell ({@link #withinReach}), never by the chunk target's 24 blocks; it ends
+         * otherwise only FAILED, on Baritone's no progress (no path, or no new best for monitor.stallS).
+         */
+        public static Held look(Held h, long now, int[] feet, long calcFailed, boolean executing, int[] cell) {
             if (h == null || h.state() != State.HELD) return h;
-            if (feet != null && arrived(feet[0], feet[2], h.target())) return with(h, h.best(), h.bestAt(), h.calcAtBest(), 0, State.REACHED, "reached");
+            if (feet != null && (cell != null ? withinReach(feet, cell) : arrived(feet[0], feet[2], h.target()))) return with(h, h.best(), h.bestAt(), h.calcAtBest(), 0, State.REACHED, "reached");
             double d = dist(feet, h.x(), h.z());
             double best = h.best();
             long bestAt = h.bestAt(), calcAt = h.calcAtBest();
@@ -416,6 +439,16 @@ public final class ExploreRules {
             if (f == null || f.from() == null || me == null) return false;
             double dx = me[0] - f.from()[0], dy = me[1] - f.from()[1], dz = me[2] - f.from()[2];
             return Math.sqrt(dx * dx + dy * dy + dz * dz) >= moved;
+        }
+
+        /**
+         * Run ED: a cave opening x z whose walk failed (or froze) from a cell the bot is still within {@code moved} of: the
+         * pick passes over it - it was not visited (a visited opening is one the bot stood at).
+         */
+        public static boolean skipCell(List<Failed> failed, int x, int z, int[] me, double moved) {
+            if (failed == null) return false;
+            for (Failed f : failed) if (f.x() == x && f.z() == z && !released(f, me, moved)) return true;     // unknown feet: still skipped (rule 15)
+            return false;
         }
 
         public static boolean skip(List<Failed> failed, int cx, int cz, int[] me, double moved) {

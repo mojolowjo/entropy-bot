@@ -68,6 +68,7 @@ final class CaveRays {
                                 hx, hy, hz, hx >> 4, hz >> 4);
                     blockedUntil.put(Seen.key(c[0], c[1], c[2]), now + SeenRuntime.RETRY_MS);
                 }
+                case DIP -> blockedUntil.put(Seen.key(c[0], c[1], c[2]), now + SeenRuntime.RETRY_MS);   // run ED: only a dip's air on the way
                 case CREDITED -> credits++;
                 case ALREADY_KNOWN -> { }
                 case KNOWN -> {

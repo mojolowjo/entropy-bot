@@ -20,11 +20,15 @@ class J6CaveIndexTest {
     /**
      * Chunk 0 0, ground to y 63, the surface at 64 everywhere but a dip: columns x 0..1 at z 0..15 have their surface at
      * y 50 (a ravine-like cut, open to the sky). Volume A: a tunnel at y 50..52, x 2..9, z 4..5 - its x 2 end opens on
-     * the cut at x 1 (surface 50). Volume B: a closed room at y 20..23, x 10..13, z 10..13, no opening.
+     * the cut at x 1 (surface 50: 6 opening cells, the lowest at y 50) - and a shaft at x 8..9 down to y 40 (10 below).
+     * Volume D, the same at z 10..11, x 2..5, its shaft at x 4..5. Volume B: a closed room at y 20..24, x 10..13,
+     * z 10..13, no opening (no cave by the owner's definition).
      */
     static CaveIndex.ChunkRuns chunk() {
-        return CaveIndex.runs(0, 0, cutSurface(), -64, (x, y, z) -> inA(x, y, z) || inB(x, y, z));
+        return CaveIndex.runs(0, 0, cutSurface(), -64, (x, y, z) -> inA(x, y, z) || inB(x, y, z) || inD(x, y, z));
     }
+
+    static boolean inD(int x, int y, int z) { return z >= 10 && z <= 11 && ((x >= 2 && x <= 5 && y >= 50 && y <= 52) || (x >= 4 && x <= 5 && y >= 40 && y <= 52)); }
 
     static int[] cutSurface() {
         int[] surface = new int[256];
@@ -32,9 +36,9 @@ class J6CaveIndexTest {
         return surface;
     }
 
-    static boolean inA(int x, int y, int z) { return x >= 2 && x <= 9 && z >= 4 && z <= 5 && y >= 50 && y <= 52; }
+    static boolean inA(int x, int y, int z) { return z >= 4 && z <= 5 && ((x >= 2 && x <= 9 && y >= 50 && y <= 52) || (x >= 8 && x <= 9 && y >= 40 && y <= 52)); }
 
-    static boolean inB(int x, int y, int z) { return x >= 10 && x <= 13 && z >= 10 && z <= 13 && y >= 20 && y <= 23; }
+    static boolean inB(int x, int y, int z) { return x >= 10 && x <= 13 && z >= 10 && z <= 13 && y >= 20 && y <= 24; }
 
     static CaveIndex index() {
         CaveIndex i = new CaveIndex();
@@ -55,8 +59,10 @@ class J6CaveIndexTest {
         CaveIndex i = index();
         int a = i.volumeAt(5, 51, 4), b = i.volumeAt(11, 21, 11);
         assertTrue(a >= 0 && b >= 0 && a != b, "two volumes");
-        assertEquals(8 * 2 * 3, i.volume(a).cells(), "A: 8 x 2 x 3 cells");
-        assertEquals(4 * 4 * 4, i.volume(b).cells());
+        assertEquals(8 * 2 * 3 + 2 * 2 * 10, i.volume(a).cells(), "A: 8 x 2 x 3 cells and its shaft 2 x 2 x 10");
+        assertEquals(4 * 4 * 5, i.volume(b).cells());
+        assertTrue(i.isCave(a), "A: 6 opening cells, its air 10 below the opening");
+        assertFalse(i.isCave(b), "B: no opening");
         assertEquals(CaveIndex.Credit.CREDITED, seen(i, 9, 51, 5).what());
         assertEquals(CaveIndex.Credit.CREDITED, seen(i, 6, 52, 4).what());
         CaveIndex.Result r = seen(i, 5, 51, 5);
@@ -65,8 +71,8 @@ class J6CaveIndexTest {
         assertEquals(3, k.hits().size());
         assertTrue(k.hits().contains(Sightings.cell(k.x(), k.y(), k.z())), "the entry is a cell a ray saw: " + k);
         assertEquals(List.of(6, 52, 4), List.of(k.x(), k.y(), k.z()), "of the seen cells the one nearest its column's surface");
-        assertEquals(CaveIndex.Size.SMALL, k.size(), "48 cells: well under a minute of walking");
-        assertEquals(CaveIndex.Depth.STONE, k.depth(), "its lowest cell y 50: between y 0 and sea level");
+        assertEquals(CaveIndex.Size.SMALL, k.size(), "88 cells: well under a minute of walking");
+        assertEquals(CaveIndex.Depth.STONE, k.depth(), "its lowest cell y 40: between y 0 and sea level");
         assertEquals(CaveIndex.Credit.ALREADY_KNOWN, seen(i, 7, 51, 4).what(), "known stays known");
     }
 
@@ -77,8 +83,11 @@ class J6CaveIndexTest {
      */
     @Test
     void threeRaysStoppedByAOneBlockWall_creditNothing() {
+        int[] twoCuts = new int[256];
+        for (int c = 0; c < 256; c++) twoCuts[c] = (c & 15) <= 1 || (c & 15) >= 14 ? 50 : SURFACE;   // C opens on the far cut (x 14)
         CaveIndex walled = new CaveIndex();
-        walled.put(CaveIndex.runs(0, 0, cutSurface(), -64, (x, y, z) -> x >= 3 && x <= 9 && z == 8 && y >= 51 && y <= 53));
+        walled.put(CaveIndex.runs(0, 0, twoCuts, -64, (x, y, z) -> inC(x, y, z) && x >= 3));
+        assertTrue(walled.isCave(walled.volumeAt(5, 52, 8)), "walled C is a cave (its far opening): the rays below are tested against a cave");
         double ex = 0.5, ey = 52.5, ez = 8.5;
         int[][] targets = {{5, 51, 8}, {6, 52, 8}, {7, 53, 8}};
         for (int[] t : targets) {
@@ -94,10 +103,70 @@ class J6CaveIndexTest {
         assertEquals(CaveIndex.Credit.NO_VOLUME, walled.credit(2, 52, 8).what(), "the wall's own cell is no cave cell (no credit beside air)");
 
         CaveIndex open = new CaveIndex();
-        open.put(CaveIndex.runs(0, 0, cutSurface(), -64, (x, y, z) -> x >= 2 && x <= 9 && z == 8 && y >= 51 && y <= 53));
+        open.put(CaveIndex.runs(0, 0, twoCuts, -64, J6CaveIndexTest::inC));
         CaveIndex.Result last = null;
         for (int[] t : targets) last = open.creditRay(CaveIndex.path(ex, ey, ez, t[0] + 0.5, t[1] + 0.5, t[2] + 0.5));
         assertEquals(CaveIndex.Credit.KNOWN, last.what(), "the wall gone: through the opening, three rays make it known");
+    }
+
+    /** Tunnel C: y 51..53, x 2..13, z 8..9, its shaft at x 10..11 down to y 40. */
+    static boolean inC(int x, int y, int z) { return z >= 8 && z <= 9 && ((x >= 2 && x <= 13 && y >= 51 && y <= 53) || (x >= 10 && x <= 11 && y >= 40 && y <= 53)); }
+
+    /**
+     * Run ED, the owner's definition ("a few air blocks at the opening which continue downwards"): a 2-cell dip under a
+     * tree is no cave - not indexed under the ground (leaves are no roof), and with the crown's WORLD_SURFACE as the
+     * surface a dip (its air 2 below its opening): no credit, no ray target, no opening; a 3-wide hole whose air reaches 6
+     * below it is a cave.
+     */
+    @Test
+    void aTwoCellDipUnderATreeIsNoCave_aThreeWideHoleGoingSixDownIs() {
+        // a crown of leaves y 67..69 over x 4..8, z 4..8; a trunk at 6 _ 6; the ground at 64; a 2-cell dip at 5 62..63 5
+        CaveIndex.CellTest leaves = (x, y, z) -> x >= 4 && x <= 8 && z >= 4 && z <= 8 && y >= 67 && y <= 69;
+        CaveIndex.CellTest trunk = (x, y, z) -> x == 6 && z == 6 && y >= 64 && y <= 68;
+        CaveIndex.CellTest dip = (x, y, z) -> x == 5 && z == 5 && (y == 62 || y == 63);
+        CaveIndex.CellTest air = (x, y, z) -> !leaves.test(x, y, z) && !trunk.test(x, y, z) && (y >= 64 || dip.test(x, y, z));
+        int[] worldSurface = new int[256], ground = new int[256];
+        for (int c = 0; c < 256; c++) {
+            int x = c & 15, z = c >> 4;
+            worldSurface[c] = x >= 4 && x <= 8 && z >= 4 && z <= 8 ? 70 : 64;
+            ground[c] = CaveIndex.ground(x, z, worldSurface[c], -64, (cx, cy, cz) -> air.test(cx, cy, cz) || leaves.test(cx, cy, cz));
+        }
+        assertEquals(62, ground[5 + 16 * 5], "the dip's column: its ground is the dip's floor");
+        assertEquals(64, ground[4 + 16 * 4], "under the crown: the ground, not the leaves");
+        CaveIndex g = new CaveIndex();
+        g.put(CaveIndex.runs(0, 0, ground, -64, air));
+        assertEquals(-1, g.volumeAt(5, 63, 5), "under the ground: nothing indexed");
+        assertEquals(-1, g.volumeAt(5, 65, 5));
+        CaveIndex w = new CaveIndex();                       // the crown's WORLD_SURFACE as the surface: the air under it is a volume
+        w.put(CaveIndex.runs(0, 0, worldSurface, -64, air));
+        int v = w.volumeAt(5, 63, 5);
+        assertTrue(v >= 0 && v == w.volumeAt(5, 65, 5), "the dip and the air under the crown: one volume");
+        assertFalse(w.isCave(v), "its air goes 2 below its opening (y 64): a dip");
+        assertEquals(CaveIndex.Credit.DIP, w.credit(5, 63, 5).what(), "never credited");
+        assertTrue(w.targets(5, 65, 5, 16, 50, null).isEmpty(), "never a ray's target");
+        assertTrue(w.openings(5, 65, 5, 16).isEmpty(), "never an opening");
+
+        // a hole open to the sky at x 5..7 z 5 down to y 58; under the rock from x 8 a tunnel y 58..60 at z 5 (its face on
+        // the hole: 3 cells), x 8..12, then a shaft at x 12 down to y 52 - 6 below the opening's lowest cell
+        int[] holed = new int[256];
+        for (int c = 0; c < 256; c++) holed[c] = (c >> 4) == 5 && (c & 15) >= 5 && (c & 15) <= 7 ? 58 : 64;
+        CaveIndex h = new CaveIndex();
+        h.put(CaveIndex.runs(0, 0, holed, -64, (x, y, z) -> z == 5 && ((x >= 8 && x <= 12 && y >= 58 && y <= 60) || (x == 12 && y >= 52 && y <= 60))));
+        int t = h.volumeAt(10, 59, 5);
+        assertTrue(h.isCave(t), "3 opening cells, its air 6 below them: a cave");
+        assertEquals(CaveIndex.Credit.CREDITED, h.credit(10, 59, 5).what());
+        assertEquals(1, h.openings(6, 64, 5, 16).size(), "a credited cave's opening is a target");
+        assertEquals(8, h.openings(6, 64, 5, 16).get(0)[0]);
+    }
+
+    /** The owner's definition, (b) alone: a tunnel with a wide opening that goes only 4 below it is a dip. */
+    @Test
+    void aWideOpeningThatGoesOnlyFourDownIsADip() {
+        int[] holed = new int[256];
+        for (int c = 0; c < 256; c++) holed[c] = (c >> 4) == 5 && (c & 15) >= 5 && (c & 15) <= 7 ? 58 : 64;
+        CaveIndex h = new CaveIndex();
+        h.put(CaveIndex.runs(0, 0, holed, -64, (x, y, z) -> z == 5 && ((x >= 8 && x <= 12 && y >= 58 && y <= 60) || (x == 12 && y >= 54 && y <= 60))));
+        assertFalse(h.isCave(h.volumeAt(10, 59, 5)), "4 below its opening: a dip");
     }
 
     @Test
@@ -120,6 +189,7 @@ class J6CaveIndexTest {
         assertEquals(CaveIndex.Credit.NO_VOLUME, i.credit(40, 51, 40).what(), "a chunk not read (an edge)");
         assertEquals(CaveIndex.Credit.NO_VOLUME, i.credit(5, 30, 8).what(), "solid rock");
         assertEquals(CaveIndex.Credit.NO_VOLUME, i.credit(5, 53, 5).what(), "the roof over A: rock beside air credits nothing");
+        assertEquals(CaveIndex.Credit.DIP, i.credit(11, 21, 11).what(), "the closed room B: no opening, no cave");
         assertEquals(CaveIndex.Credit.NO_VOLUME, i.creditRay(CaveIndex.path(0.5, 60.5, 8.5, 1.5, 60.5, 8.5)).what(), "only open sky on the path");
     }
 
@@ -178,13 +248,13 @@ class J6CaveIndexTest {
         assertTrue(i.credited().isEmpty(), "A's credit went with its chunk");
         i.put(chunk());
         assertTrue(i.volume(i.volumeAt(5, 51, 4)).credits().isEmpty(), "A again: no credit carried over");
-        assertTrue(i.isKnown(i.volumeAt(11, 21, 11)), "B again: known");
+        assertTrue(i.isKnown(i.volumeAt(11, 21, 11)), "B again: known (a known mark stays)");
     }
 
     /**
      * The measured size a chunk takes ({@link CaveIndex#approxBytes}): a chunk with no cave air shares its run arrays
-     * (1072 bytes: its surface heights); the A + B chunk with its 32 runs 2548 bytes (+ 12 bytes a run, + the 257 column
-     * starts); the union-find 20 bytes a node.
+     * (1072 bytes: its surface heights); the A + B + D chunk with its 40 runs 2820 bytes (+ 16 bytes a run, + the 257
+     * column starts); the union-find 28 bytes a node.
      */
     @Test
     void theBytesAChunkTakes() {
@@ -194,7 +264,7 @@ class J6CaveIndexTest {
         assertEquals(1072, none.approxBytes() - base, "no cave air: the surface heights only, the run arrays shared");
         CaveIndex ab = new CaveIndex();
         ab.put(chunk());
-        assertEquals(2548, ab.approxBytes() - base, "32 runs");
+        assertEquals(2820, ab.approxBytes() - base, "40 runs");
     }
 
     /**
@@ -209,11 +279,11 @@ class J6CaveIndexTest {
         i.credit(9, 51, 5);
         List<int[]> o = i.openings(0, 64, 0, 64);
         assertEquals(CaveIndex.TARGET_RAYS, i.volume(i.volumeAt(5, 51, 4)).credits().size());
-        assertEquals(1, o.size(), "one credit: A's opening is a target (B is closed: no opening)");
+        assertEquals(1, o.size(), "one credit: A's opening is a target (D: no credit; B is closed: no opening)");
         assertEquals(2, o.get(0)[0]);
         assertEquals(50, o.get(0)[1]);
-        i.credit(11, 21, 11);
-        assertEquals(1, i.openings(0, 64, 0, 64).size(), "B credited but closed: still no opening");
+        assertEquals(CaveIndex.Credit.DIP, i.credit(11, 21, 11).what(), "B closed: no cave, no credit");
+        assertEquals(1, i.openings(0, 64, 0, 64).size());
         i.credit(6, 52, 4);
         assertEquals(CaveIndex.Credit.KNOWN, i.credit(5, 51, 4).what(), "three: a known cave");
         assertTrue(i.openings(0, 64, 0, 64).isEmpty(), "known: no more an opening to explore toward");
@@ -223,7 +293,7 @@ class J6CaveIndexTest {
     @Test
     void theCaveListSaysTheKnownAndTheCredited() {
         CaveIndex i = index();
-        i.credit(11, 21, 11);                                // one ray into B
+        i.credit(3, 51, 10);                                 // one ray into D
         seen(i, 9, 51, 5);
         seen(i, 6, 52, 4);
         CaveIndex.Known k = seen(i, 5, 51, 5).known();
@@ -232,7 +302,7 @@ class J6CaveIndexTest {
         String t = CaveList.text(s.allKnownCaves("d"), i.credited(), "rays: test", 0, 64, 0);
         assertTrue(t.startsWith("known caves: 1\n  " + k.x() + " " + k.y() + " " + k.z() + ": "), t);
         assertTrue(t.contains("size small, depth stone, 3 rays"), t);
-        assertTrue(t.contains("credited, not known yet: 1") && t.contains(": 1 of 3 rays (first at 11 21 11)"), t);
+        assertTrue(t.contains("credited, not known yet: 1") && t.contains(": 1 of 3 rays (first at 3 51 10)"), t);
         assertTrue(CaveList.text(List.of(), java.util.Map.of(), "r", 0, 0, 0).startsWith("known caves: none yet"));
     }
 

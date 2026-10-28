@@ -734,6 +734,8 @@ final class Mining {
         boolean whereRead;
         /** 0.39.z48: the cave candidate the current target walks toward ("x y z"), null: a chunk target. */
         String aimed;
+        /** Run ED: the cave opening cell the target walks toward (x y z), null: a chunk target - reached only within reach of it. */
+        int[] aimCell;
 
         /**
          * 0.39.z77 J2 E2: the Y of an under-ground target (a cave cell in the band: a cell goal, GoalNear), null: a GoalXZ
@@ -753,6 +755,7 @@ final class Mining {
             target = null;
             hold = null;
             aimed = null;
+            aimCell = null;
             aimY = null;
         }
         /** 0.23.1: gathering on the way (explore ... gather off = false); the bot's spot. */
@@ -1050,6 +1053,14 @@ final class Mining {
         }
     }
 
+    /** Run ED: a cave opening whose walk froze from near here (FROZEN, by its cell). */
+    private static boolean frozenCell(int[] cell, int[] me) {
+        synchronized (FROZEN) {
+            pruneFrozen(me);
+            return ExploreRules.TargetHold.skipCell(FROZEN, cell[0], cell[2], me, io.github.mojolowjo.entropybot.aa.brain.Failures.movedV());
+        }
+    }
+
     /** z75 review 2: the held targets the bot now stands failures.moved from are released (they would not apply any more). */
     private static void pruneFrozen(int[] me) {
         if (me != null) FROZEN.removeIf(f -> ExploreRules.TargetHold.released(f, me, io.github.mojolowjo.entropybot.aa.brain.Failures.movedV()));
@@ -1095,7 +1106,7 @@ final class Mining {
             FROZEN.add(new ExploreRules.TargetHold.Failed(ex.target.x(), ex.target.z(), feet, "frozen: " + why));
             while (FROZEN.size() > FROZEN_MAX) FROZEN.remove(0);
         }
-        if (ex.aimed != null) CAVE_VISITED.add(ex.aimed);
+        // run ED: a frozen walk toward an opening never stood at it - not visited (FROZEN skips it from near here)
         LOG.info("[entropybot] explore: target {} {} held from {} {} {} (the monitor ended the explore: {}); the next explore from here picks another",
                 ex.target.x(), ex.target.z(), feet[0], feet[1], feet[2], why);
     }
@@ -1219,7 +1230,8 @@ final class Mining {
         // times or no new best for monitor.stallS); Baritone idle alone is no failure: the same goal is set again (once a
         // second). Was (z56, Mining ~1079): given up 1 s after Baritone went idle and its chunk marked explored, never reached.
         if (done == null && ex.target != null && ex.hold != null) {
-            ex.hold = ExploreRules.TargetHold.look(ex.hold, now(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(), b != null && b.getPathingBehavior().getCurrent() != null);
+            ex.hold = ExploreRules.TargetHold.look(ex.hold, now(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(), b != null && b.getPathingBehavior().getCurrent() != null,
+                    ex.aimed != null ? ex.aimCell : null);   // run ED: an opening is reached within reach of its cell
             if (ex.hold.state() == ExploreRules.TargetHold.State.HELD) {
                 if (b != null && Jobs.idle(b) && now() - ex.targetAt >= 20) {     // structural: once a second in ticks
                     b.getCustomGoalProcess().setGoalAndPath(exploreGoal(ex));
@@ -1236,15 +1248,19 @@ final class Mining {
                 if (b != null) Jobs.cancel(b);
             }
         }
+        boolean stood = ex.hold != null && ex.hold.state() == ExploreRules.TargetHold.State.REACHED;
         ex.hold = null;
         if (ex.aimed != null && ex.target != null) {     // z76 send-back 1: never a candidate without its target (run AN NPE)
-            // 0.39.z48 (S65): the walk toward a cave candidate ended (there, or Baritone got no nearer): visited, never aimed
-            // at again; its confirmation was the rays' (within cave.confirmM)
-            CAVE_VISITED.add(ex.aimed);
-            LOG.info("[entropybot] explore: walk toward cave opening {} ended {} m from it", ex.aimed,
-                    Math.round(Math.hypot(me[0] - ex.target.x(), me[2] - ex.target.z())));
+            // run ED: visited = the bot stood within reach of the opening (REACHED); a walk that failed is in ex.failed (passed
+            // over from near here, TargetHold.skipCell); one cut by the explore's own end is neither
+            long m = me == null || ex.aimCell == null ? -1 : Math.round(Math.sqrt(Jobs.distSq(me, ex.aimCell)));
+            if (stood) {
+                CAVE_VISITED.add(ex.aimed);
+                LOG.info("[entropybot] explore: reached cave opening {} (stood {} m from it): visited", ex.aimed, m);
+            } else LOG.info("[entropybot] explore: walk toward cave opening {} ended {} m from it, not reached (not visited)", ex.aimed, m);
         }
         ex.aimed = null;
+        ex.aimCell = null;
         ex.aimY = null;
         ex.target = null;
         // 0.39.z68 (owner 2026-10-25): where the target generates (GenWhere from the jars' world-gen data), read once per run
@@ -1307,11 +1323,14 @@ final class Mining {
             // 0.39.z77 J2 E2: from under ground only the cells in the target's band (its placer band nearest the feet)
             var inBand = under ? (bandTarget ? ex.where.preferred(me[1]) : null) : null;
             if (under) cells = inBand == null ? new ArrayList<>() : ExploreRules.inBand(cells, inBand.lo(), inBand.hi());
-            int[] aim = ExploreRules.toward(cells, cell -> CAVE_VISITED.contains(Jobs.fmt(cell)));
+            final double moved = io.github.mojolowjo.entropybot.aa.brain.Failures.movedV();
+            int[] aim = ExploreRules.toward(cells, cell -> CAVE_VISITED.contains(Jobs.fmt(cell))
+                    || ExploreRules.TargetHold.skipCell(ex.failed, cell[0], cell[2], me, moved) || frozenCell(cell, me));   // run ED: failed from here: passed over
             if (aim != null) {
                 ex.aimed = Jobs.fmt(aim);
                 ex.target = new ExploreRules.Target(aim[0], aim[2]);
-                if (under) ex.aimY = aim[1];
+                ex.aimCell = aim.clone();
+                ex.aimY = aim[1];                                // run ED: a cell goal (GoalNear) at the opening, on the surface too
                 ex.targetWhy = "toward cave opening " + ex.aimed + " (the nearest unvisited within cave.exploreTowardM" + (bandTarget ? ", ranked by the band" : "")
                         + (under ? "; under ground: a cell in the band, its own Y" : "") + ")";
                 LOG.info("[entropybot] explore: toward cave opening {} ({} m; cave.exploreTowardM {}){}", ex.aimed,

@@ -503,16 +503,28 @@ public final class ChunkPass {
      * 0.39.z78 J6: the chunk's air runs below its WORLD_SURFACE heights into the cave index (once while the chunk stays loaded: a
      * chunk read again is kept as it was), then the known caves of Sightings that lie in it mark their volumes known (a
      * reload keeps them known). The reads go by section (an all-air section answers at once). Bounded by the pass's time
-     * budget per tick, as the chunk reads. Loader notes: vanilla LevelChunk#getSections / #getMinSection,
-     * LevelChunkSection#hasOnlyAir / #getBlockState, BlockState#isAir; the heights from SurfaceHeightLive.worldSurface.
+     * budget per tick, as the chunk reads. Run ED: the runs lie under the ground (CaveIndex.ground: down from WORLD_SURFACE
+     * past air and leaves). Loader notes: vanilla LevelChunk#getSections / #getMinSection, LevelChunkSection#hasOnlyAir /
+     * #getBlockState, BlockState#isAir / #is(BlockTags.LEAVES) (modded leaves join the vanilla tag); the heights from
+     * SurfaceHeightLive.worldSurface.
      */
     private void caveRuns(LevelChunk chunk, int cx, int cz) {
         if (caveIndex.has(cx, cz)) return;
-        int[] surface = new int[256];
-        for (int lz = 0; lz < 16; lz++)
-            for (int lx = 0; lx < 16; lx++) surface[lx + 16 * lz] = io.github.mojolowjo.entropybot.world.SurfaceHeightLive.worldSurface(chunk, lx, lz);
         var secs = chunk.getSections();
         int minSec = chunk.getMinSection();
+        int[] surface = new int[256];
+        // run ED: the ground under the crowns (leaves are no cave roof: CaveIndex.ground)
+        CaveIndex.CellTest open = (x, y, z) -> {
+            int si = (y >> 4) - minSec;
+            if (si < 0 || si >= secs.length) return true;
+            var s = secs[si];
+            if (s.hasOnlyAir()) return true;
+            var st = s.getBlockState(x & 15, y & 15, z & 15);
+            return st.isAir() || st.is(net.minecraft.tags.BlockTags.LEAVES);
+        };
+        for (int lz = 0; lz < 16; lz++)
+            for (int lx = 0; lx < 16; lx++)
+                surface[lx + 16 * lz] = CaveIndex.ground((cx << 4) + lx, (cz << 4) + lz, io.github.mojolowjo.entropybot.world.SurfaceHeightLive.worldSurface(chunk, lx, lz), chunk.getMinBuildHeight(), open);
         caveIndex.put(CaveIndex.runs(cx, cz, surface, chunk.getMinBuildHeight(), (x, y, z) -> {
             int si = (y >> 4) - minSec;
             if (si < 0 || si >= secs.length) return false;
