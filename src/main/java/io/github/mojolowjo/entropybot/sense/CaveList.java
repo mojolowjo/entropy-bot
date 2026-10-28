@@ -24,15 +24,28 @@ public final class CaveList {
     /** J6b: as below, each known cave with its record's line ({@code record}: the store's facts; null: none). */
     public static String text(List<Sightings.KnownCave> known, java.util.function.Function<Sightings.KnownCave, CaveRecord.Facts> record, Map<Integer, List<Long>> credited,
                               CaveIndex.TruthList truth, int within, String counts, String rays, double px, double py, double pz) {
+        return text(known, record, null, credited, truth, within, counts, rays, px, py, pz);
+    }
+
+    /**
+     * 0.39.z78 J6d: as above, each known cave also with {@code info}'s line (null, or a null line: none) - the world-gen
+     * estimate for an item (aa cave list &lt;item&gt;: information only, never in the price), the explored share, the end
+     * of the price's second walk; or, with no item, the air-exposed blocks the estimate is made from.
+     */
+    public static String text(List<Sightings.KnownCave> known, java.util.function.Function<Sightings.KnownCave, CaveRecord.Facts> record,
+                              java.util.function.Function<Sightings.KnownCave, String> info, Map<Integer, List<Long>> credited,
+                              CaveIndex.TruthList truth, int within, String counts, String rays, double px, double py, double pz) {
         String t = text(known, credited, truth, within, counts, rays, px, py, pz);
-        if (record == null) return t;
+        if (record == null && info == null) return t;
         StringBuilder b = new StringBuilder();
         for (String line : t.split("\n", -1)) {
             b.append(line).append('\n');
             for (Sightings.KnownCave c : known)
                 if (line.startsWith("  " + c.where() + ": ")) {
-                    CaveRecord.Facts f = record.apply(c);
+                    CaveRecord.Facts f = record == null ? null : record.apply(c);
                     if (f != null) b.append("    record: ").append(f.line()).append('\n');
+                    String i = info == null ? null : info.apply(c);
+                    if (i != null) b.append("    ").append(i).append('\n');
                 }
         }
         return b.substring(0, b.length() - 1);

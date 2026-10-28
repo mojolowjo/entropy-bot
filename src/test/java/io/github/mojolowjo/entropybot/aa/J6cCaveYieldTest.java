@@ -96,17 +96,23 @@ class J6cCaveYieldTest {
         assertTrue(ps.why().startsWith("game data: ") && ps.why().contains("air-exposed blocks"), ps.why());
     }
 
-    /** Above the iron band (y 120: middle tops at 56, small at 72): ~0 for iron, said with its basis, never dropped silently. */
+    /**
+     * Above the iron band (y 120: middle tops at 56, small at 72): ~0 for iron, said with its basis, never dropped silently.
+     * J6d: the one data fact kept - the ore generates nowhere in its Y range, so the cave is no source (CaveYield.noSource);
+     * one seen there and left keeps it a source.
+     */
     @Test
     void aCaveAboveTheBand_getsZeroForIron_said() {
         Set<Long> t = tube(0, 120, 40);
         CaveYield.Prior p = prior(cave(t, 0, 120, airOf(t)), 0, 120, "raw_iron", iron());
         assertTrue(p.known());
-        assertEquals(0, p.perMin(), 1e-12);
-        NeedChain.CaveWay w = new NeedChain.CaveWay(0, 120, 0, 30, "minecraft:iron_ore", "iron", p.perMin(), false).withBasis(p.why());
-        String out = NeedChain.caveOut(w);
-        assertNotNull(out);
-        assertTrue(out.startsWith("its yield is 0.00 ore a minute (prior, game data: 0.0 raw_iron ore expected in 328 air-exposed blocks"), out);
+        assertEquals(0, p.expected(), 1e-12);
+        String why = CaveYield.noSource(p, "minecraft:raw_iron", 0);
+        assertNotNull(why);
+        assertTrue(why.startsWith("no raw_iron generates in its Y range (game data: 0.0 raw_iron ore expected in 328 air-exposed blocks"), why);
+        NeedChain.CaveWay w = new NeedChain.CaveWay(0, 120, 0, 30, "minecraft:iron_ore", "iron", 0, Double.NaN).withBasis(p.why()).withOut(why);
+        assertEquals(why, NeedChain.caveOut(w));
+        assertNull(CaveYield.noSource(p, "minecraft:raw_iron", 1), "one seen and left: a source");
     }
 
     /** Ruling 2: a volume touching the loaded edge is open - at least this; priced again as the chunk loads. */

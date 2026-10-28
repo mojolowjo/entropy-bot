@@ -77,6 +77,13 @@ public interface PathPrice {
     default double estimate(int x, int y, int z) { return Double.NaN; }
 
     /**
+     * 0.39.z78 J6d (the cave's price: the walk from its lip to the record's nearest unseen cell): Baritone's estimate of the
+     * walk from cell {@code from} (x y z, not the feet) to stand by x y z - the same goal heuristic as {@link #estimate}, no
+     * search, in seconds; a rank, never a priced path. NaN: not known (no estimate here).
+     */
+    default double estimateFrom(int[] from, int x, int y, int z) { return Double.NaN; }
+
+    /**
      * 0.39.z76 J3-mod item 2: the chain ranked the walk to x y z out of the ways it prices (pathCost.pricedTop) - it was not
      * asked; the live provider withdraws a pending ask of it that nobody asked again (IPricedPath.cancel). Game thread.
      */

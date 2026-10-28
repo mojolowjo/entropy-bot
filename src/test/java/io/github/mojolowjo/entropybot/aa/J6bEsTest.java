@@ -50,7 +50,7 @@ class J6bEsTest {
     @Test
     void inside_itsBranchesFromHere_notALipWalk() {
         var over = new NeedChain.Surface(48, -51, 65, -41, 3, false);
-        CaveWay in = new CaveWay(-43, 67, -39, 51, "minecraft:iron_ore", "iron", 7.86, true, CaveIndex.Size.LARGE, 30, List.of(), List.of(new int[]{-43, 67, -39})).withInside(true);
+        CaveWay in = new CaveWay(-43, 67, -39, 51, "minecraft:iron_ore", "iron", Double.NaN, Double.NaN, CaveIndex.Size.LARGE, 30, List.of(), List.of(new int[]{-43, 67, -39})).withInside(true);
         Chain c = NeedChain.resolve("raw_iron", 3, J6bEhTest.iron(over, Map.of()).withCave(w -> w.contains("raw_iron") || w.contains("iron_ore") ? in : null));
         assertTrue(c.ok(), c.why());
         assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Cave), "the caving step: " + c.steps());
@@ -72,7 +72,7 @@ class J6bEsTest {
         assertFalse(s.caveHolds(D, -43, 67, -39, outside[0], outside[1], outside[2], c -> false, NO_INDEX), "in reach, not in sight: outside");
         assertTrue(s.caveHolds(D, -43, 67, -39, outside[0], outside[1], outside[2], SEES, NO_INDEX), "the same cell in sight: inside");
         var over = new NeedChain.Surface(48, -51, 65, -41, 3, false);
-        CaveWay out = new CaveWay(-43, 67, -39, 51, "minecraft:iron_ore", "iron", 7.86, true, CaveIndex.Size.LARGE, 30, List.of(), List.of(new int[]{-43, 67, -39})).withInside(false);
+        CaveWay out = new CaveWay(-43, 67, -39, 51, "minecraft:iron_ore", "iron", Double.NaN, Double.NaN, CaveIndex.Size.LARGE, 30, List.of(), List.of(new int[]{-43, 67, -39})).withInside(false);
         Chain c = NeedChain.resolve("raw_iron", 3, J6bEhTest.iron(over, Map.of()).withCave(w -> w.contains("raw_iron") || w.contains("iron_ore") ? out : null));
         assertTrue(c.steps().stream().anyMatch(st -> st instanceof Step.ToCave), "not inside: the lip walk is priced: " + c.steps());
     }

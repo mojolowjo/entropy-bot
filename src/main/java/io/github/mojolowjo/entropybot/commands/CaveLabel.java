@@ -25,7 +25,7 @@ import java.util.List;
 final class CaveLabel {
     private CaveLabel() {}
 
-    static final String USAGE = "usage: aa cave list [all] | yes | no | check (list: the caves known by rays and the index near you; list all: every index cave, no radius; yes / no: label the volume at your crosshair or the opening nearest you; check: the floor against the labels)";
+    static final String USAGE = "usage: aa cave list [all | <item>] | yes | no | check (list: the caves known by rays and the index near you; list all: every index cave, no radius; list <item>: each known cave's world-gen estimate for the item, its explored share and its price's walk in; yes / no: label the volume at your crosshair or the opening nearest you; check: the floor against the labels)";
 
     /** The crosshair's ray for a label: as far as the sight rays look. */
     static double aimRange() { return io.github.mojolowjo.entropybot.sense.Seen.range(); }
@@ -33,7 +33,10 @@ final class CaveLabel {
     /** structural: the reach for "the opening nearest the eyes" - the survival block interaction range (a game fact). */
     static final double NEAR = 4.5;
 
-    static String run(String arg) {
+    static String run(String arg) { return run(arg, null); }
+
+    /** J6d: {@code aa} - the runtime whose cave way (AaRuntime#caveWay) {@code aa cave list <item>} reads; null: none. */
+    static String run(String arg, AaRuntime aa) {
         String a = arg == null ? "" : arg.trim().replaceAll("\\s+", " ").toLowerCase(java.util.Locale.ROOT);
         ChunkPass pass = ChunkPass.INSTANCE;
         Minecraft mc = Minecraft.getInstance();
@@ -45,7 +48,12 @@ final class CaveLabel {
         switch (a) {
             case "", "list" -> {
                 int within = (int) Math.floor(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.exploreTowardM"));
-                return io.github.mojolowjo.entropybot.sense.CaveList.text(sg.allKnownCaves(dim), c -> sg.caveFacts(dim, c.x(), c.y(), c.z()), idx.credited(), idx.truth(p.getBlockX(), p.getBlockY(), p.getBlockZ(), within),
+                // J6d: each cave's air-exposed blocks (the world-gen estimate's base; information only)
+                java.util.function.Function<io.github.mojolowjo.entropybot.sense.Sightings.KnownCave, String> exposed = c -> {
+                    var ex = sg.caveExposure(dim, c.x(), c.y(), c.z());
+                    return ex == null ? null : "air-exposed blocks " + ex.blocks() + (ex.done() ? "" : " so far (still being read)") + " - aa cave list <item>: the world-gen estimate for an item";
+                };
+                return io.github.mojolowjo.entropybot.sense.CaveList.text(sg.allKnownCaves(dim), c -> sg.caveFacts(dim, c.x(), c.y(), c.z()), exposed, idx.credited(), idx.truth(p.getBlockX(), p.getBlockY(), p.getBlockZ(), within),
                         within, idx.counts(), pass.caveRaysStatus(), p.getX(), p.getY(), p.getZ());   // run EE: the index's truth (a debug read)
             }
             case "list all" -> {
@@ -84,7 +92,25 @@ final class CaveLabel {
                         + "; the index called it " + (s.cave() ? "a cave" : "no cave") + (s.cave() == yes ? " (agrees)" : " (disagrees)") + "\n" + pass.floor().line();
             }
             default -> {
-                return USAGE;
+                if (!a.startsWith("list ")) return USAGE;
+                // J6d: aa cave list <item> - each known cave as the planner's cave way sees it for the item: the world-gen
+                // estimate in its unseen part and the explored share (information only, never in the price), the end of the
+                // price's second walk, or why it is out (rule 7)
+                String item = a.substring("list ".length()).trim();
+                String word = item.contains(":") ? item : "minecraft:" + item;
+                var cw = aa == null ? null : aa.caveWay(word);
+                if (cw == null) return "aa cave list " + item + ": no cave way for " + item + " (no world, no known cave, or no ore block tagged c:ores gives it)";
+                java.util.Map<String, io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay> byCell = new java.util.HashMap<>();
+                for (var w : cw.all()) byCell.put(w.x() + " " + w.y() + " " + w.z(), w);
+                int within = (int) Math.floor(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.exploreTowardM"));
+                return io.github.mojolowjo.entropybot.sense.CaveList.text(sg.allKnownCaves(dim), c -> sg.caveFacts(dim, c.x(), c.y(), c.z()), c -> {
+                            var w = byCell.get(c.x() + " " + c.y() + " " + c.z());
+                            if (w == null) return null;
+                            String u = w.frontier() == null ? "no unseen cell measured" : "its nearest unseen cell " + w.frontier()[0] + " " + w.frontier()[1] + " " + w.frontier()[2];
+                            return "for " + item + ": " + w.infoLine() + "; " + u + (w.inside() ? "; the bot is inside it" : "")
+                                    + (io.github.mojolowjo.entropybot.aa.NeedChain.caveOut(w) == null ? "" : "; out: " + io.github.mojolowjo.entropybot.aa.NeedChain.caveOut(w));
+                        }, idx.credited(), idx.truth(p.getBlockX(), p.getBlockY(), p.getBlockZ(), within),
+                        within, idx.counts(), pass.caveRaysStatus(), p.getX(), p.getY(), p.getZ());
             }
         }
     }

@@ -59,4 +59,15 @@ public final class CaveYield {
                 + (open ? "; open at the loaded edge - at least this, priced again as its chunks load" : "");
         return new Prior(perMin, expected, blocks, minutes, open, false, why);
     }
+
+    /**
+     * 0.39.z78 J6d: the one data fact the cave way keeps from the estimate (information otherwise, never a price): the
+     * need's ore generates nowhere in the cave's air-exposed Ys (expected 0 from a known prior) and none of it is seen there
+     * and left - the cave is no source for it, said with the game data's words; null: a source (or not known yet, rule 15).
+     */
+    public static String noSource(Prior p, String word, int seenLeft) {
+        if (p == null || !p.known() || p.expected() > 0 || seenLeft > 0) return null;
+        String w = word == null ? "?" : word.replaceFirst("^minecraft:", "");
+        return "no " + w + " generates in its Y range (" + p.why() + ")";
+    }
 }

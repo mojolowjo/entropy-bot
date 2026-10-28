@@ -30,35 +30,38 @@ class J6bEmTest {
         Tuning.reset();
     }
 
-    static CaveWay cw(int x, int y, int z, double dist, CaveIndex.Size size, double unseenMinutes) {
-        return new CaveWay(x, y, z, dist, "minecraft:iron_ore", "iron", 0.5, false, size, unseenMinutes, List.of());
+    /** J6d: {@code expected} - the world-gen count of iron in its unseen part (NaN: not known - it holds the need). */
+    static CaveWay cw(int x, int y, int z, double dist, CaveIndex.Size size, double unseenMinutes, double expected) {
+        return new CaveWay(x, y, z, dist, "minecraft:iron_ore", "iron", expected, Double.NaN, size, unseenMinutes, List.of());
     }
 
+    static CaveWay cw(int x, int y, int z, double dist, CaveIndex.Size size, double unseenMinutes) { return cw(x, y, z, dist, size, unseenMinutes, Double.NaN); }
+
     /**
-     * EM's nine caves from where the explore was boxed in: the six SMALL ones nearest (each holds 1 min; 3 ore at the
-     * 0.5/min prior take 6), then 187 60 65 (its fed record holds ~0 min), then the LARGE 183 65 49 and -59 63 71: the
-     * short seven are dropped with their reasons, the two LARGE priced, and 183 65 49 (the nearer) is picked.
+     * EM's nine caves from where the explore was boxed in: the six SMALL ones nearest (J6d: each holds ~1 iron by the
+     * world-gen count), then 187 60 65 (its fed record holds ~0), then the LARGE 183 65 49 and -59 63 71 (not known yet: they
+     * hold the need).
      */
     @Test
     void emsNineCaves_theSmallOnesDropped_183_65_49_pricedAndPicked() {
         List<CaveWay> ranked = List.of(
-                cw(-4, 76, 404, 5, CaveIndex.Size.SMALL, -1), cw(-3, 75, 420, 20, CaveIndex.Size.SMALL, -1), cw(-9, 65, 393, 12, CaveIndex.Size.SMALL, -1),
-                cw(144, 70, 351, 30, CaveIndex.Size.SMALL, -1), cw(179, 68, 361, 40, CaveIndex.Size.SMALL, -1), cw(193, 64, 307, 50, CaveIndex.Size.SMALL, -1),
-                cw(187, 60, 65, 60, CaveIndex.Size.SMALL, 0.02), cw(183, 65, 49, 70, CaveIndex.Size.LARGE, -1), cw(-59, 63, 71, 300, CaveIndex.Size.LARGE, -1));
+                cw(-4, 76, 404, 5, CaveIndex.Size.SMALL, -1, 1.0), cw(-3, 75, 420, 20, CaveIndex.Size.SMALL, -1, 1.0), cw(-9, 65, 393, 12, CaveIndex.Size.SMALL, -1, 1.0),
+                cw(144, 70, 351, 30, CaveIndex.Size.SMALL, -1, 1.0), cw(179, 68, 361, 40, CaveIndex.Size.SMALL, -1, 1.0), cw(193, 64, 307, 50, CaveIndex.Size.SMALL, -1, 1.0),
+                cw(187, 60, 65, 60, CaveIndex.Size.SMALL, 0.02, 0.0), cw(183, 65, 49, 70, CaveIndex.Size.LARGE, -1), cw(-59, 63, 71, 300, CaveIndex.Size.LARGE, -1));
         CaveWay all = ranked.get(0).withMore(ranked.subList(1, ranked.size()));
         assertEquals(9, all.all().size());
         Chain c = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(all));
         assertTrue(Z77CaveWayTest.caveMined(c), "a cave way runs: " + c.why());
         String why = c.why();
-        // 0.39.z78 J6c run ET (B, rule 23 (1)): the SMALL caves are no longer dropped - each gives its share (0.5 / min over
-        // its minute: 1 ore) and the rest comes from the next way; three of them (5 m, 20 m, 12 m: 374.6 s) beat 183 65 49's
-        // 3 ore at 0.5 / min (6 min) on price - the LARGE one is still priced (rule 1), never ranked out by the shares
+        // 0.39.z78 J6c run ET (B, rule 23 (1)): the SMALL caves are no longer dropped - each gives its share (1 ore) and the
+        // rest comes from the next way; J6d: three of them (5 m, 20 m, 12 m of walks) beat 183 65 49's 70 m walk on price -
+        // the LARGE one is still priced (rule 1), never ranked out by the shares
         List<Step.Cave> legs = c.steps().stream().filter(s -> s instanceof Step.Cave).map(s -> (Step.Cave) s).toList();
         assertEquals(List.of(-4, 76, 404), List.of(legs.get(0).x(), legs.get(0).y(), legs.get(0).z()), "the nearest small cave first: " + why);
         assertTrue(legs.stream().allMatch(l -> l.n() == 1), "a share each: " + c.steps());
         assertTrue(why.contains("1 of 3 ore from the cave, the other 2 from: "), why);
-        assertTrue(c.dropped().stream().anyMatch(d -> d.startsWith("known cave 70 m: ") && d.contains(" s (dearer than")), "183 65 49 priced, lost on price: " + c.dropped());
-        assertTrue(why.contains("known cave 60 m at 187 60 65") && why.contains("min its unseen part holds - the next cave is asked"), "the fed record's ~0 min: still out, said: " + why);
+        assertTrue(c.dropped().stream().anyMatch(d -> d.startsWith("known cave 70 m: ")), "183 65 49 said (priced at 3 ore; for the last 1 the smalls hold it and the top two are priced): " + c.dropped());
+        assertTrue(why.contains("known cave 60 m at 187 60 65") && why.contains("its unseen part holds ~0 by the world-gen estimate - the next cave is asked"), "the fed record's ~0: still out, said: " + why);
     }
 
     /** More caves holding the need than the top two: the rest are ranked out, said (rule 18 as amended). */

@@ -27,8 +27,8 @@ import java.util.TreeMap;
  * <li>{@code ores}: the ore cells seen in the cave (the ore index, by sight: rule 17), by family, left or mined.</li>
  * <li>{@code done}: THE done reader (rule 23 (2)): something seen and no frontier group with more than
  * {@link #BRANCH_MIN} unseen cells behind it; the caving step asks it.</li>
- * <li>{@code lastAt}, {@code walkedMinutes}, {@link #oreSeenPerMinute} (the measured yield the cave way prices with
- * once the cave has been walked).</li>
+ * <li>{@code lastAt}, {@code walkedMinutes}, {@link #oreSeenPerMinute} (the ore seen a minute walked here - a record
+ * fact; 0.39.z78 J6d: no price reads it, the cave way is priced by its walks).</li>
  * </ul>
  * 0.39.z78 run EK (the manager's fix; 02:30:20-02:46:19: every caving tick 7-70 s - the whole 209,647-cell volume
  * flooded for every branch, several times a tick, and on every planner ask): no reader walks the record whole. The sums
@@ -387,9 +387,21 @@ public final class CaveRecord {
     /**
      * Run EK (2): the step's first target - the unseen cave cell nearest the ENTRY through the cave's air (the entry
      * itself while unseen), searched from the entry's cell (or the cave cell nearest it) over {@link #BUDGET} cells at
-     * most; null: none within the budget, or the cells not loaded.
+     * most; null: none within the budget, or the cells not loaded. J6d: cached until a record write (the planner's cave way
+     * asks it for every known cave - its price's second walk ends there).
      */
     public int[] firstUnseen() {
+        if (firstUnseenAt == version) return firstUnseenNow == null ? null : firstUnseenNow.clone();
+        int[] u = firstUnseenSearch();
+        firstUnseenNow = u;
+        firstUnseenAt = version;
+        return u == null ? null : u.clone();
+    }
+
+    private int[] firstUnseenNow;
+    private long firstUnseenAt = -1;
+
+    private int[] firstUnseenSearch() {
         long start = Sightings.cell(x, y, z);
         if (!cells.contains(start)) start = cellInReach(x, y, z);
         if (start == Long.MIN_VALUE) return null;
@@ -623,25 +635,8 @@ public final class CaveRecord {
         /** A way for the family: not stuck (review 4), and not done - or done with its ore seen and left. */
         public boolean offeredFor(String family) { return !stuck && (!done || left(family) > 0); }
 
-        /** The cave way's yield: the one measured here once walked long enough ({@link #measured}, review 2), else {@code prior}. */
-        public double rate(double prior) { return measured(prior) ? oreSeenPerMinute : prior; }
-
-        /**
-         * Run EO (rule 15; run EO 05:13:44: a 0.5-min walk that saw no ore made the cave's yield 0 and the cave was dropped
-         * silently): the yield is MEASURED only once the minutes walked here are at least the minutes the prior expects
-         * one ore in ({@link #measureFloorMinutes}); under that floor a walk that saw nothing says nothing - not measured,
-         * the prior holds.
-         */
-        public boolean measured(double prior) { return walkedMinutes > 0 && walkedMinutes >= measureFloorMinutes(prior); }
-    }
-
-    /**
-     * Run EO: the floor of minutes walked before a cave's yield counts as measured - the time the prior yield
-     * ({@code prior} ore a minute) expects ONE ore in (1 / prior): less walked, zero seen is no evidence. Structural: one
-     * expected ore, from the prior itself (no knob). A prior of 0 or not known: never measured by a walk of no ore.
-     */
-    public static double measureFloorMinutes(double prior) {
-        return prior > 0 ? 1.0 / prior : Double.POSITIVE_INFINITY;    // structural: the minutes one expected ore takes
+        // 0.39.z78 J6d (rule 14): the measured yield (rate, measured, measureFloorMinutes) is deleted with the cave way's
+        // rate - the price is the walks; oreSeenPerMinute stays a record fact (the step's end line), read by no price
     }
 
     /** Run EK: the facts, cached until a record write (a cell fed or seen, an ore, a walk) - the planner's asks read the cache. */

@@ -48,21 +48,21 @@ class J6cEtTest {
     /**
      * (B) ET 09:50:41: six known caves; five small ones were dropped "3 ore to find take ~N min, past the ~M min its unseen
      * part holds" (J6c's prior: they hold 0.1-1.3 iron). Rule 23 (1): a cave that holds less than the need gives its share
-     * (round(rate x the minutes it holds)) and the rest is priced from the next way; one that holds ~0 is still out, said.
-     * ET's numbers: the 7 m cave 0.45 / min over 1.5 min (1 ore), the 351 m one 0.64 / min over 1062 min, -103 76 -278
-     * 0.19 / min over 0.4 min (0 ore).
+     * (J6d: round(the world-gen count in its unseen part)) and the rest is priced from the next way; one that holds ~0 is
+     * still out, said. ET's numbers: the 7 m cave 0.7 iron (1 ore), the 351 m one 677.7, -103 76 -278 0.1 (0 ore), -93 72
+     * -244 1.3, -213 74 -194 1.1.
      */
     @Test
     void etsSmallCaves_giveTheirShare_theRestFromTheNextWay() {
         var over = new NeedChain.Surface(11, -77, 98, -236, 3, false);
-        NeedChain.CaveWay small = new NeedChain.CaveWay(-77, 94, -236, 7, "minecraft:iron_ore", "iron", 0.45, false, io.github.mojolowjo.entropybot.sense.CaveIndex.Size.SMALL, 1.5, List.of(), List.of(new int[]{-77, 94, -236}));
-        NeedChain.CaveWay none = new NeedChain.CaveWay(-103, 76, -278, 232, "minecraft:iron_ore", "iron", 0.19, false, io.github.mojolowjo.entropybot.sense.CaveIndex.Size.SMALL, 0.4, List.of(), List.of(new int[]{-103, 76, -278}));
-        NeedChain.CaveWay big = new NeedChain.CaveWay(102, 15, -384, 351, "minecraft:iron_ore", "iron", 0.64, false, io.github.mojolowjo.entropybot.sense.CaveIndex.Size.LARGE, 1062.3, List.of(), List.of(new int[]{102, 15, -384}));
+        NeedChain.CaveWay small = new NeedChain.CaveWay(-77, 94, -236, 7, "minecraft:iron_ore", "iron", 0.7, Double.NaN, io.github.mojolowjo.entropybot.sense.CaveIndex.Size.SMALL, 1.5, List.of(), List.of(new int[]{-77, 94, -236}));
+        NeedChain.CaveWay none = new NeedChain.CaveWay(-103, 76, -278, 232, "minecraft:iron_ore", "iron", 0.1, Double.NaN, io.github.mojolowjo.entropybot.sense.CaveIndex.Size.SMALL, 0.4, List.of(), List.of(new int[]{-103, 76, -278}));
+        NeedChain.CaveWay big = new NeedChain.CaveWay(102, 15, -384, 351, "minecraft:iron_ore", "iron", 677.7, Double.NaN, io.github.mojolowjo.entropybot.sense.CaveIndex.Size.LARGE, 1062.3, List.of(), List.of(new int[]{102, 15, -384}));
         assertEquals(1, NeedChain.caveShare(small));
         assertEquals(0, NeedChain.caveShare(none));
         // ET's small caves alone (no large one): 1 from the 7 m cave, the rest from the next caves (1 each)
-        NeedChain.CaveWay c241 = new NeedChain.CaveWay(-93, 72, -244, 241, "minecraft:iron_ore", "iron", 0.94, false, io.github.mojolowjo.entropybot.sense.CaveIndex.Size.SMALL, 1.4, List.of(), List.of(new int[]{-93, 72, -244}));
-        NeedChain.CaveWay c368 = new NeedChain.CaveWay(-213, 74, -194, 368, "minecraft:iron_ore", "iron", 1.02, false, io.github.mojolowjo.entropybot.sense.CaveIndex.Size.SMALL, 1.1, List.of(), List.of(new int[]{-213, 74, -194}));
+        NeedChain.CaveWay c241 = new NeedChain.CaveWay(-93, 72, -244, 241, "minecraft:iron_ore", "iron", 1.3, Double.NaN, io.github.mojolowjo.entropybot.sense.CaveIndex.Size.SMALL, 1.4, List.of(), List.of(new int[]{-93, 72, -244}));
+        NeedChain.CaveWay c368 = new NeedChain.CaveWay(-213, 74, -194, 368, "minecraft:iron_ore", "iron", 1.1, Double.NaN, io.github.mojolowjo.entropybot.sense.CaveIndex.Size.SMALL, 1.1, List.of(), List.of(new int[]{-213, 74, -194}));
         NeedChain.CaveWay smalls = small.withMore(List.of(none, c241, c368));
         NeedChain.Chain c = NeedChain.resolve("raw_iron", 3, J6bEhTest.iron(over, java.util.Map.of()).withCave(w -> w.contains("raw_iron") || w.contains("iron_ore") ? smalls : null));
         assertTrue(c.ok(), c.why());
@@ -72,7 +72,7 @@ class J6cEtTest {
         assertTrue(legs.stream().allMatch(l -> l.n() == 1), c.steps().toString());
         assertTrue(c.why().contains("1 of 3 ore from the cave, the other 2 from: in the cave: known cave 241 m"), c.why());
         String all = c.why() + " | " + c.dropped();
-        assertTrue(all.contains("known cave 232 m at -103 76 -278") && all.contains("past the ~0 min its unseen part holds"), "the cave holding ~0 is out, said: " + all);
+        assertTrue(all.contains("known cave 232 m at -103 76 -278") && all.contains("its unseen part holds ~0 by the world-gen estimate"), "the cave holding ~0 is out, said: " + all);
         // with the large 351 m cave beside them: the 7 m share is priced (its rest from the 351 m), and loses on price only
         NeedChain.CaveWay withBig = small.withMore(List.of(none, big));
         NeedChain.Chain b = NeedChain.resolve("raw_iron", 3, J6bEhTest.iron(over, java.util.Map.of()).withCave(w -> w.contains("raw_iron") || w.contains("iron_ore") ? withBig : null));

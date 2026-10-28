@@ -97,68 +97,90 @@ public final class NeedChain {
     public static final String STRIP_KEY = "strip ";     // 0.39.z77 world 2: public (WorldFacts: a strip key lifts by its cause only)
 
     /**
-     * 0.39.z44 (CAVE_DETECTION option 1): what the way "mine in the cave" is priced on: the nearest known cave (0.39.z78 J6:
-     * a Sightings fact - a cave index volume three sight rays credited, rule 17) at its entry x y z (a cell a ray saw),
-     * {@code size} its size bucket from the index (null: not known; never the index's cells), {@code dist} straight metres away, the ore block
-     * {@code ore} that gives the need, and the cave yield Seen learns for its family ({@code perMin} ore a minute of caving,
-     * 0.39.z78 J6c: before the cave is walked, the prior from the game data - CaveYield, its words in {@code basis}; {@code measured}: this cave was walked long enough).
+     * 0.39.z44 (CAVE_DETECTION option 1): what the way "mine in the cave" is priced on: a known cave (0.39.z78 J6: a Sightings
+     * fact - a cave index volume three sight rays credited, rule 17) at its entry x y z (a cell a ray saw), {@code size} its
+     * size bucket from the index (null: not known; never the index's cells), {@code dist} straight metres away, the ore block
+     * {@code ore} that gives the need.
+     * <p>0.39.z78 J6d (owner 2026-10-28: "cost should be distance from cave, how much have we explored; leave time per block
+     * out for now"): the price is the walks only - Baritone's walk to the lip, then the walk from the lip to {@code frontier},
+     * the record's unseen cell nearest the entry (CaveRecord#firstUnseen; null: none measured yet). Information only, never
+     * in the price: {@code expected} - the world-gen estimate of the need's ore in the cave's unseen part (J6c's air-exposed
+     * blocks x every jar's placements, CaveYield; NaN: not known yet) with its words {@code basis}; {@code explored} - e =
+     * seen / known cells (NaN: not measured). The count {@code expected} says is the share a cave under the need gives (the
+     * ET build): how many of n it is asked for, never seconds.
      */
     static final String CAVE_KEY = "known cave ";
 
-    public record CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured,
+    public record CaveWay(int x, int y, int z, double dist, String ore, String family, double expected, double explored,
                           io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys, List<int[]> entries,
-                          List<CaveWay> more, String out, boolean inside, String basis) {
+                          List<CaveWay> more, String out, boolean inside, String basis, int[] frontier) {
         public CaveWay {
             leftKeys = leftKeys == null ? List.of() : List.copyOf(leftKeys);
             entries = entries == null ? List.of() : List.copyOf(entries);
             more = more == null ? List.of() : List.copyOf(more);
+            frontier = frontier == null ? null : frontier.clone();
         }
 
-        public CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured,
+        public CaveWay(int x, int y, int z, double dist, String ore, String family, double expected, double explored,
                        io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys, List<int[]> entries,
                        List<CaveWay> more) {
-            this(x, y, z, dist, ore, family, perMin, measured, size, unseenMinutes, leftKeys, entries, more, null, false, null);
+            this(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, null, false, null, null);
         }
 
-        public CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured,
+        public CaveWay(int x, int y, int z, double dist, String ore, String family, double expected, double explored,
                        io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys, List<int[]> entries,
                        List<CaveWay> more, String out, boolean inside) {
-            this(x, y, z, dist, ore, family, perMin, measured, size, unseenMinutes, leftKeys, entries, more, out, inside, null);
+            this(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, out, inside, null, null);
         }
+
+        public CaveWay(int x, int y, int z, double dist, String ore, String family, double expected, double explored,
+                       io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys, List<int[]> entries) {
+            this(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, List.of());
+        }
+
+        public CaveWay(int x, int y, int z, double dist, String ore, String family, double expected, double explored,
+                       io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys) {
+            this(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, List.of());
+        }
+
+        public CaveWay(int x, int y, int z, double dist, String ore, String family, double expected, double explored) {
+            this(x, y, z, dist, ore, family, expected, explored, null);
+        }
+
+        public CaveWay(int x, int y, int z, double dist, String ore, String family, double expected, double explored,
+                       io.github.mojolowjo.entropybot.sense.CaveIndex.Size size) {
+            this(x, y, z, dist, ore, family, expected, explored, size, -1, List.of());
+        }
+
+        private CaveWay copy(List<int[]> entries, List<CaveWay> more, String out, boolean inside, String basis, int[] frontier) {
+            return new CaveWay(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, out, inside, basis, frontier);
+        }
+
+        /** J6c: the world-gen estimate's words ({@code basis}: CaveYield.Prior#why; null: none said). */
+        public CaveWay withBasis(String why) { return copy(entries, more, out, inside, why, frontier); }
+
+        /** J6d: the record's unseen cell nearest the entry - the end of the price's second walk (null: none measured). */
+        public CaveWay withFrontier(int[] cell) { return copy(entries, more, out, inside, basis, cell); }
 
         /**
-         * 0.39.z78 J6c: the words of the yield prior ({@code basis}: the game data it comes from, CaveYield.Prior#why; null:
-         * none said) - the cave way's yield line names it.
+         * J6d (information only, never in the price): "world-gen ~2.3 iron in its unseen part (game data: ...), explored 40%"
+         * - aa why and aa cave list.
          */
-        public CaveWay withBasis(String why) {
-            return new CaveWay(x, y, z, dist, ore, family, perMin, measured, size, unseenMinutes, leftKeys, entries, more, out, inside, why);
-        }
-
-        /** J6c: "measured", or "prior" with its basis when said. */
-        public String yieldBasis() { return measured ? "measured" : basis == null ? "prior" : "prior, " + basis; }
-
-        public CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured,
-                       io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys, List<int[]> entries) {
-            this(x, y, z, dist, ore, family, perMin, measured, size, unseenMinutes, leftKeys, entries, List.of());
+        public String infoLine() {
+            String gen = expected >= 0 ? String.format(java.util.Locale.ROOT, "world-gen ~%.1f %s in its unseen part", expected, family)
+                    : "world-gen not known yet";
+            String e = explored >= 0 ? "explored " + Math.round(explored * 100) + "%" : "explored not measured";   // structural: a percent
+            return gen + (basis == null ? "" : " (" + basis + ")") + ", " + e;
         }
 
         /**
          * Run EO (rule 7): this cave said as out of the planner's ways with {@code why} (stuck, done with none left, its
          * depth band off the ore's) - listed with its reason, never priced; {@code null}: offered.
          */
-        public CaveWay withOut(String why) {
-            return new CaveWay(x, y, z, dist, ore, family, perMin, measured, size, unseenMinutes, leftKeys, entries, more, why, inside, basis);
-        }
+        public CaveWay withOut(String why) { return copy(entries, more, why, inside, basis, frontier); }
 
         /** Run EO (rule 23 (1)): the bot stands inside this cave's volume - its branches are the way, no lip walk. */
-        public CaveWay withInside(boolean in) {
-            return new CaveWay(x, y, z, dist, ore, family, perMin, measured, size, unseenMinutes, leftKeys, entries, more, out, in, basis);
-        }
-
-        public CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured,
-                       io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys) {
-            this(x, y, z, dist, ore, family, perMin, measured, size, unseenMinutes, leftKeys, List.of());
-        }
+        public CaveWay withInside(boolean in) { return copy(entries, more, out, in, basis, frontier); }
 
         /**
          * Run EM (rule 23 (1); run EM 04:01:48-04:06:24: the nearest cave alone was asked, a SMALL one dropped, and the
@@ -166,15 +188,13 @@ public final class NeedChain {
          */
         public List<CaveWay> all() {
             List<CaveWay> out = new ArrayList<>();
-            out.add(new CaveWay(x, y, z, dist, ore, family, perMin, measured, size, unseenMinutes, leftKeys, entries, List.of(), this.out, inside, basis));
+            out.add(copy(entries, List.of(), this.out, inside, basis, frontier));
             out.addAll(more);
             return out;
         }
 
         /** This cave with {@code next} as the caves after it. */
-        public CaveWay withMore(List<CaveWay> next) {
-            return new CaveWay(x, y, z, dist, ore, family, perMin, measured, size, unseenMinutes, leftKeys, entries, next, out, inside, basis);
-        }
+        public CaveWay withMore(List<CaveWay> next) { return copy(entries, next, out, inside, basis, frontier); }
 
         /**
          * J6b run EF (3): the cells the walk may go to the lip of, in order - the known cave's entry first, then the other
@@ -194,8 +214,7 @@ public final class NeedChain {
             for (CaveWay w : all()) {
                 List<int[]> left = new ArrayList<>();
                 for (int[] t : w.targets()) if (!held.test(keyOf(t))) left.add(t);
-                if (!left.isEmpty() || w.inside) out.add(new CaveWay(w.x, w.y, w.z, w.dist, w.ore, w.family, w.perMin, w.measured, w.size, w.unseenMinutes, w.leftKeys,
-                        left.isEmpty() ? w.entries : left, List.of(), w.out, w.inside, w.basis));     // run EO: inside, no opening is walked to
+                if (!left.isEmpty() || w.inside) out.add(w.copy(left.isEmpty() ? w.entries : left, List.of(), w.out, w.inside, w.basis, w.frontier));   // run EO: inside, no opening is walked to
             }
             if (out.isEmpty()) return null;
             return out.get(0).withMore(out.subList(1, out.size()));
@@ -204,20 +223,11 @@ public final class NeedChain {
         /** J6b: the ore cells of the family seen there and left (their spot keys "x,y,z": the same keys a collect way takes). */
         public int left() { return leftKeys.size(); }
 
-        public CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured) {
-            this(x, y, z, dist, ore, family, perMin, measured, null);
-        }
-
-        public CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured,
-                       io.github.mojolowjo.entropybot.sense.CaveIndex.Size size) {
-            this(x, y, z, dist, ore, family, perMin, measured, size, -1, List.of());
-        }
-
         /**
-         * The minutes this cave holds: 0.39.z78 J6b (D12) its record's unseen cells walked ({@code unseenMinutes}: unseen
-         * cells / CROSS_SECTION / the walk's speed; the cave record, the one store); not known (no record cells yet): its
-         * size bucket (J6, {@link io.github.mojolowjo.entropybot.sense.CaveIndex.Size#holdsMinutes}); neither: no bound but
-         * the cave.exploreMinutes cap. Rough (rule 14).
+         * The minutes this cave holds - the caving step's leg, never a price (J6d): 0.39.z78 J6b (D12) its record's unseen
+         * cells walked ({@code unseenMinutes}: unseen cells / CROSS_SECTION / the walk's speed; the cave record, the one
+         * store); not known (no record cells yet): its size bucket (J6, {@link io.github.mojolowjo.entropybot.sense.CaveIndex.Size#holdsMinutes});
+         * neither: no bound but the cave.exploreMinutes cap. Rough (rule 14).
          */
         public double holdsMinutes() {
             if (unseenMinutes >= 0) return unseenMinutes;
@@ -1573,6 +1583,7 @@ public final class NeedChain {
                     yield p == null ? null : q.into() ? p.priceInto(q.x(), q.y(), q.z(), q.dist()) : p.price(q.x(), q.y(), q.z(), q.dist());
                 }
                 case "estimate" -> { List<Integer> q = (List<Integer>) k; yield p == null ? null : p.estimate(q.get(0), q.get(1), q.get(2)); }
+                case "estimateFrom" -> { List<Integer> q = (List<Integer>) k; yield p == null ? null : p.estimateFrom(new int[]{q.get(0), q.get(1), q.get(2)}, q.get(3), q.get(4), q.get(5)); }
                 case "toBlock" -> { List<Integer> q = (List<Integer>) k; yield p == null ? null : p.toBlock(q.get(0), q.get(1), q.get(2)); }
                 case "pending" -> p != null && p.pending();
                 case "landed" -> p == null ? 0L : p.landed();
@@ -1598,6 +1609,10 @@ public final class NeedChain {
             @Override public Answer priceInto(int x, int y, int z, double dist) { return rec("price", new PathKey(x, y, z, dist, true), p.priceInto(x, y, z, dist)); }
 
             @Override public double estimate(int x, int y, int z) { return rec("estimate", List.of(x, y, z), p.estimate(x, y, z)); }
+
+            @Override public double estimateFrom(int[] from, int x, int y, int z) {
+                return rec("estimateFrom", List.of(from[0], from[1], from[2], x, y, z), p.estimateFrom(from, x, y, z));
+            }
 
             @Override public Walk toBlock(int x, int y, int z) { return rec("toBlock", List.of(x, y, z), p.toBlock(x, y, z)); }
 
@@ -4747,6 +4762,7 @@ public final class NeedChain {
             @Override public Answer price(int x, int y, int z, double dist) { String w = why(x, y, z); return w != null ? Answer.unreachable(w) : p.price(x, y, z, dist); }
             @Override public Answer priceInto(int x, int y, int z, double dist) { String w = why(x, y, z); return w != null ? Answer.unreachable(w) : p.priceInto(x, y, z, dist); }
             @Override public double estimate(int x, int y, int z) { return why(x, y, z) != null ? Double.NaN : p.estimate(x, y, z); }
+            @Override public double estimateFrom(int[] from, int x, int y, int z) { return p.estimateFrom(from, x, y, z); }
             @Override public Walk toBlock(int x, int y, int z) { return why(x, y, z) != null ? null : p.toBlock(x, y, z); }
             @Override public void rankedOut(int x, int y, int z) { p.rankedOut(x, y, z); }
             @Override public boolean pending() { return p.pending(); }
@@ -5629,13 +5645,12 @@ public final class NeedChain {
      */
     /**
      * Run EO (rule 7): why a known cave is no way for the planner (said as the way's drop), null: offered - the record's
-     * own out (stuck, done with none left, its band), no ore of the need known for it, or no yield above 0.
+     * own out (stuck, done with none left, its band, no world-gen ore in its Y range), no ore of the need known for it.
      */
-    static String caveOut(CaveWay k) {
+    public static String caveOut(CaveWay k) {
         if (k.out() != null) return k.out();
         if (k.ore() == null) return "no ore of the need is known to give it there";
-        if (!(k.perMin() > 0)) return "its yield is " + String.format(java.util.Locale.ROOT, "%.2f", k.perMin()) + " ore a minute (" + k.yieldBasis() + ")";
-        return null;
+        return null;                                                         // J6d: no yield test (the price is the walks)
     }
 
     private static List<Alt> caveAlts(Ctx c, String word, String gives, int lack) {
@@ -5686,26 +5701,23 @@ public final class NeedChain {
 
     /**
      * Run EM: the cave's holds test before any path is asked - the reason the cave cannot give {@code lack} of
-     * {@code gives} in the minutes it holds (its record's unseen part, else its size; never past the cap), null: it can.
-     * The same numbers {@link #cave} prices with.
+     * {@code gives}, null: it can. 0.39.z78 J6d: its unseen part's world-gen count (CaveWay#expected, information - never a
+     * price) is what it holds; not known yet: it holds the need (rule 15: not known is not "none"). A cave under the need
+     * gives its share (the ET build): out only when it gives none. The same numbers {@link #cave} uses.
      */
     private static String caveHoldsShort(Ctx c, String gives, int lack, CaveWay cw) {
         String g = memberOf(c, gives, cw.ore());
         double per = perBlock(c, g, cw.ore());
         if (!(per > 0)) return null;                                          // cave() says it, with its own reason
         int oreBlocks = (int) Math.ceil(lack / per - 1e-9);                  // structural: epsilon
-        int toFind = Math.max(0, oreBlocks - freeLeft(cw.leftKeys(), c.taken).size());
-        double minutes = toFind / cw.perMin(), cap = Tuning.get("cave.exploreMinutes"), holds = cw.holdsMinutes(), max = holds;   // run EP: n / rate, no drop past the cap (the cap is the caving step's leg)
-        if (toFind <= 0 || minutes <= max) return null;
-        // J6c run ET (B): a cave that holds less than the need still gives its share (cave): out only when it gives none
-        if (partOk(gives) && (caveShare(cw) >= 1 || !freeLeft(cw.leftKeys(), c.taken).isEmpty())) return null;
-        String yield = "yield ~" + String.format(java.util.Locale.ROOT, "%.2f", cw.perMin()) + " ore/min (" + cw.yieldBasis() + ")";
-        return "known cave " + Math.round(cw.dist()) + " m at " + cw.x() + " " + cw.y() + " " + cw.z() + ", " + yield + ": " + toFind + " ore to find take ~" + Math.round(minutes) + " min, past "
-                + (cw.unseenMinutes() >= 0 ? "the ~" + Math.round(holds) + " min its unseen part holds"
-                : "the ~" + Math.round(holds) + " min a " + cw.size().name().toLowerCase(java.util.Locale.ROOT) + " cave holds")
-                + " - the next cave is asked";
+        List<String> free = freeLeft(cw.leftKeys(), c.taken);
+        int toFind = Math.max(0, oreBlocks - free.size());
+        int share = caveShare(cw);
+        if (toFind <= 0 || share < 0 || toFind <= share) return null;
+        if (partOk(gives) && (share >= 1 || !free.isEmpty())) return null;
+        return "known cave " + Math.round(cw.dist()) + " m at " + cw.x() + " " + cw.y() + " " + cw.z() + " (" + cw.infoLine() + "): " + toFind
+                + " ore to find, its unseen part holds ~" + share + " by the world-gen estimate - the next cave is asked";
     }
-
     /**
      * 0.39.z77 cave: the planner's own cave test - the cave way {@code w} offers for {@code word} (a mouth known, an ore block
      * that gives the word, a yield above 0); null: none. One test for the ways ({@link #caveAlts}) and the explore's end
@@ -5739,20 +5751,23 @@ public final class NeedChain {
     }
 
     /**
-     * The cave way's price (rule 14, rough): the pickaxe the ore asks for first (as the strip), the walk to the mouth
-     * (Baritone's complete path, rule 18; not known yet: the way waits; no path: the mouth is dropped for the order), then
-     * the minutes the cave yield says the ore blocks take (ore blocks / ore a minute) plus their breaks. Past
-     * {@code cave.exploreMinutes} the way does not stand (the cave job stops there). Not priced: the walk inside the cave
-     * (it is in the yield's minutes), the torches.
+     * The cave way's price (rule 14, rough). 0.39.z78 J6d (owner 2026-10-28: "cost should be distance from cave, how much
+     * have we explored; leave time per block out for now"): the walks only - the pickaxe the ore asks for first (as the
+     * strip), Baritone's walk to the lip (rule 18: the complete path; not known yet: the way waits; no path: that opening is
+     * held and the next one priced), then the walk from the lip to the record's unseen cell nearest the entry, ranked by
+     * Baritone's estimate (rule 18 as amended: the fork prices paths from the feet only, so this walk is an estimate until
+     * the bot stands at the lip). A fresh cave's second walk is ~0; a walked cave's grows with what is explored. No time per
+     * ore found (J6c's minutes at a rate), no density, no yield; the ore blocks' breaks stay - the same break every way that
+     * mines the ore pays (a seen vein's collect too), so a near vein and a cave compare on the same act. One volume with two
+     * openings: the openings in the order of their estimated sums, the first
+     * with a path priced (the smaller sum). A cave whose unseen part holds fewer than n (the world-gen count) gives its share
+     * and the rest is priced from the next way (the ET build). Not priced: the torches.
      */
     private static String cave(Ctx c, String word, String gives, int lack, CaveWay cw) {
         MiningTiers.Source src = MiningTiers.source();
         if (src == null) { c.fail = "cave: the pickaxe tier of " + shw(cw.ore()) + " is not known (no mining data loaded yet)"; return null; }
         int tier = src.blockTier(cw.ore());
         if (tier == MiningTiers.UNKNOWN) { c.fail = "cave: the pickaxe tier of " + shw(cw.ore()) + " is not known"; return null; }
-        // 0.39.z78 J6: no unconfirmed candidate any more (the heightmap's shapes are deleted): a known cave needs no check on
-        // the way, the rays knew it
-        double confirmS = 0;
         String head = "known cave " + Math.round(cw.dist()) + " m";
         String pre = null;
         if (tier > c.pickTier) {
@@ -5766,7 +5781,7 @@ public final class NeedChain {
         int[] lipAt = null;
         // run EO (rule 23 (1)): the bot stands INSIDE this cave's volume - its branches are the way from here: no lip walk
         if (cw.inside()) wk = new Walked(0, "the bot is inside it: its branches from here", null, PathPrice.Kind.PRICED);
-        List<int[]> tgs = cw.inside() ? List.of() : cw.targets();
+        List<int[]> tgs = cw.inside() ? List.of() : bySum(c, cw);
         for (int i = 0; i < tgs.size(); i++) {
             int[] t = tgs.get(i);
             wk = walk(c, t[0], t[1], t[2], cw.dist());
@@ -5776,39 +5791,33 @@ public final class NeedChain {
             if (i + 1 < tgs.size()) { c.note(() -> head + ": the opening at " + t[0] + " " + t[1] + " " + t[2] + " unreachable, the next one priced"); c.fail = null; }
         }
         if (lipAt == null && !cw.inside()) return null;
+        Inner in = innerWalk(c, lipAt, cw);
         gives = memberOf(c, gives, cw.ore());                   // J3-mod item 1: the member the ore drops names the bag's gain
         double per = perBlock(c, gives, cw.ore());
         if (!(per > 0)) { c.fail = head + ": the yield of " + shw(gives) + " from " + shw(cw.ore()) + " is not known (no loot entry; rule 15)"; return null; }   // z75 metric fix A
         int oreBlocks = (int) Math.ceil(lack / per - 1e-9);  // structural: epsilon
         if (oreBlocks <= 0) { c.fail = head + ": 0 ore for " + lack + " " + shw(gives) + " (nothing to mine)"; return null; }
-        // 0.39.z78 J6b (D12): the ore the record saw there and left is mined first (no exploring for it); the rest is found
-        // at the yield, in the minutes the cave's unseen part holds, never past the cap
+        // 0.39.z78 J6b (D12): the ore the record saw there and left is mined first (no exploring for it)
         // J6b review 6 (no double count): a seen ore the chain already takes by another way (a collect, c.taken) is not
         // counted again here; the ones this way counts are taken for the rest of the chain
         List<String> free = freeLeft(cw.leftKeys(), c.taken);
         int toFind = Math.max(0, oreBlocks - free.size());
-        double minutes = toFind / cw.perMin(), cap = Tuning.get("cave.exploreMinutes"), holds = cw.holdsMinutes(), max = holds;   // run EP: n / rate, no drop past the cap (the cap is the caving step's leg)
-        String yield = "yield ~" + String.format(java.util.Locale.ROOT, "%.2f", cw.perMin()) + " ore/min (" + cw.yieldBasis() + ")"
-                + (!free.isEmpty() ? ", " + free.size() + " seen there and left" : "");
-        // 0.39.z78 J6c run ET (B, rule 23 (1)): a cave that holds LESS than the need is no drop - it gives its share (the ore
-        // its unseen part holds at the yield, min(expected, n)) and the rest of the need is priced from the next way
+        double cap = Tuning.get("cave.exploreMinutes"), holds = cw.holdsMinutes();
+        String info = cw.infoLine() + (!free.isEmpty() ? ", " + free.size() + " seen there and left" : "");
+        // 0.39.z78 J6c run ET (B, rule 23 (1)): a cave that holds LESS than the need is no drop - it gives its share (J6d: the
+        // ore its unseen part holds by the world-gen count) and the rest of the need is priced from the next way
         int caveBlocks = oreBlocks;
-        if (toFind > 0 && minutes > max) {
-            int share = caveShare(cw);
+        int share = caveShare(cw);
+        if (toFind > 0 && share >= 0 && toFind > share) {
             if (!partOk(word) || (share < 1 && free.isEmpty())) {
-                // 0.39.z78 J6 / J6b: a known cave holds the minutes its unseen part (or, not known, its size) gives, never more than the cap
-                c.fail = head + ", " + yield + ": " + toFind + " ore to find take ~" + Math.round(minutes) + " min, past "
-                        + (cw.unseenMinutes() >= 0 ? "the ~" + Math.round(holds) + " min its unseen part holds"
-                        : "the ~" + Math.round(holds) + " min a " + cw.size().name().toLowerCase(java.util.Locale.ROOT) + " cave holds");
+                c.fail = head + " (" + info + "): " + toFind + " ore to find, its unseen part holds ~" + share + " by the world-gen estimate";
                 return null;
             }
-            toFind = Math.min(toFind, share);
-            minutes = toFind / cw.perMin();
-            caveBlocks = Math.min(oreBlocks, free.size()) + toFind;
+            caveBlocks = Math.min(oreBlocks, free.size()) + share;
         }
-        double exploreS = minutes * 60, oreS = caveBlocks * blockBreakS(c, cw.ore());  // structural: seconds per minute
-        c.addS(wk.seconds() + confirmS + exploreS + oreS);
-        c.setAway(wk.seconds() + exploreS);
+        double walkS = wk.seconds() + in.seconds(), oreS = caveBlocks * blockBreakS(c, cw.ore());
+        c.addS(walkS + oreS);
+        c.setAway(walkS);
         if (c.pickItem != null) c.pickWorn += caveBlocks;
         for (int i = 0; i < Math.min(caveBlocks, free.size()); i++) c.taken.merge(free.get(i), 1, Integer::sum);   // review 6: taken by this way
         if (lipAt != null) c.steps.add(new Step.ToCave(lipAt[0], lipAt[1], lipAt[2]));   // J6b run EF (1): to the lip, the entry in reach - never into the opening
@@ -5817,8 +5826,8 @@ public final class NeedChain {
         c.steps.add(new Step.Cave(cw.x(), cw.y(), cw.z(), cw.family(), caveBlocks, (int) Math.max(1, Math.ceil(Math.min(cap, holds)))));   // at least a minute (the left ore's walk)
         int got = caveBlocks == oreBlocks ? Math.max(lack, (int) Math.floor(oreBlocks * per + 1e-9)) : (int) Math.floor(caveBlocks * per + 1e-9);  // structural: epsilon
         c.bag.merge(gives, got, Integer::sum);
-        final String line = head + ", " + yield + " x " + caveBlocks + " ore"
-                + " -> " + s(wk.seconds() + confirmS + exploreS + oreS);
+        final String line = head + ": " + (cw.inside() ? "inside it" : "the walk to its lip " + s(wk.seconds())) + " + the walk in " + in.line()
+                + " + " + caveBlocks + " ore broken " + s(oreS) + " -> " + s(walkS + oreS) + " (" + info + ")";
         c.note(() -> "source: " + shw(word) + " in the cave: " + line);
         String rest = null;
         if (caveBlocks < oreBlocks) {
@@ -5846,26 +5855,70 @@ public final class NeedChain {
         return noted("in the cave: " + line + (pre == null ? "" : " with " + pre) + part, wk);
     }
 
+    /** J6d: the price's second walk - its seconds and its words ("to the unseen cell at x y z: Baritone's estimate 4 s"). */
+    private record Inner(double seconds, String line) {}
+
     /**
-     * 0.39.z78 J6c run ET (B): the ore a known cave gives toward a need it holds less than - what its unseen part holds at
-     * its yield, rounded (min(expected, n) is taken by the caller); 0: none.
+     * J6d: the walk from {@code from} (the lip; null: the bot is inside - from the feet) to the record's unseen cell nearest
+     * the entry (CaveWay#frontier): Baritone's estimate (rule 18 as amended), never under the straight walk from the lip
+     * (as {@link #estimateFloor}); no estimate here: the straight metres, said. No unseen cell measured: 0, said.
      */
-    static int caveShare(CaveWay cw) {
-        double holds = cw.holdsMinutes();
-        if (!(cw.perMin() > 0) || !(holds > 0) || Double.isInfinite(holds)) return 0;
-        return (int) Math.round(cw.perMin() * holds);
+    private static Inner innerWalk(Ctx c, int[] from, CaveWay cw) {
+        int[] u = cw.frontier();
+        if (u == null) return new Inner(0, "0 s (no unseen cell of its record measured past the entry)");
+        String to = "to the unseen cell at " + u[0] + " " + u[1] + " " + u[2];
+        PathPrice pp = c.w.path();
+        double est = pp == null ? Double.NaN : from == null ? pp.estimate(u[0], u[1], u[2]) : pp.estimateFrom(from, u[0], u[1], u[2]);
+        int[] base = from != null ? from : new int[]{cw.x(), cw.y(), cw.z()};
+        double m = Math.sqrt(d2(base, u));
+        double straight = io.github.mojolowjo.entropybot.aa.brain.Unit.seconds(m);
+        if (Double.isNaN(est)) return new Inner(straight, to + ": no estimate here, the straight " + Math.round(m) + " m from " + (from != null ? "the lip" : "the entry") + " " + s(straight));
+        if (from != null && est < straight) return new Inner(straight, to + ": Baritone's estimate " + s(est) + ", at least the straight " + Math.round(m) + " m " + s(straight));
+        return new Inner(est, to + ": Baritone's estimate " + s(est));
     }
 
-    /** J6c run ET (B): the cave holds less than the need (its unseen part's minutes at its yield) - it gives its share only. */
+    /**
+     * J6d ("one volume with two entrances takes the smaller sum"): the cave's openings in the order of their estimated sums
+     * (Baritone's estimate from the feet to the lip + the estimate from the lip to the unseen cell nearest the entry; rule 18
+     * as amended: ranked rough, the walk to the first with a path priced exact); one opening, or one with no estimate: the
+     * given order (the entry first; rule 15: one unit for all). Ties keep the given order.
+     */
+    private static List<int[]> bySum(Ctx c, CaveWay cw) {
+        List<int[]> tgs = cw.targets();
+        PathPrice pp = c.w.path();
+        if (tgs.size() < 2 || pp == null) return tgs;
+        Map<int[], Double> sum = new java.util.IdentityHashMap<>();
+        for (int[] t : tgs) {
+            double a = pp.estimate(t[0], t[1], t[2]);
+            if (Double.isNaN(a)) return tgs;
+            sum.put(t, a + innerWalk(c, t, cw).seconds());
+        }
+        List<int[]> out = new ArrayList<>(tgs);
+        out.sort(Comparator.comparingDouble(sum::get));
+        return out;
+    }
+
+    private static long d2(int[] a, int[] b) {
+        long dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    /**
+     * 0.39.z78 J6d: the ore a known cave's unseen part holds by the world-gen estimate (CaveWay#expected, rounded) - the
+     * share a cave under the need gives (the ET build); information otherwise, never a price. -1: not known yet.
+     */
+    static int caveShare(CaveWay cw) { return cw.expected() >= 0 ? (int) Math.round(cw.expected()) : -1; }
+
+    /** J6c run ET (B): the cave holds less than the need (J6d: its unseen part's world-gen count) - it gives its share only. */
     private static boolean caveGivesPart(Ctx c, String gives, int lack, CaveWay cw) {
         String g = memberOf(c, gives, cw.ore());
         double per = perBlock(c, g, cw.ore());
         if (!(per > 0)) return false;
         int oreBlocks = (int) Math.ceil(lack / per - 1e-9);                  // structural: epsilon
         int toFind = Math.max(0, oreBlocks - freeLeft(cw.leftKeys(), c.taken).size());
-        return toFind > 0 && toFind / cw.perMin() > cw.holdsMinutes();
+        int share = caveShare(cw);
+        return toFind > 0 && share >= 0 && toFind > share;
     }
-
     /** J6c run ET (B): a cave's share and the rest from the next way, for an item need (a tag need's rest is not priced). */
     private static boolean partOk(String word) { return word != null && !word.startsWith("#"); }
 

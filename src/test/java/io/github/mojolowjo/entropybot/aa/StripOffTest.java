@@ -59,7 +59,7 @@ class StripOffTest {
         assertFalse(strips(vein), vein.why());
         assertTrue(vein.ok() && !vein.explore() && vein.steps().stream().anyMatch(s -> s instanceof Step.Collect || s instanceof Step.MineAt), "the seen vein: " + vein.steps());
 
-        Chain cave = NeedChain.resolve("raw_iron", 12, world(Z77CaveWayTest.cave(30, 3)));
+        Chain cave = NeedChain.resolve("raw_iron", 12, world(Z77CaveWayTest.cave(30)));
         assertFalse(strips(cave), cave.why());
         assertTrue(Z77CaveWayTest.caveMined(cave), "the cave way: " + cave.steps());
         // the batch's derivation: commands.StripOffBatchTest (the kit world with its "where" facts)

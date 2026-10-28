@@ -157,6 +157,21 @@ public final class LivePathPrice implements PathPrice {
         }
     }
 
+    /** J6d: as {@link #estimate}, from the cell {@code from} instead of the feet (the fork's IPathEstimate takes any start). Game thread. */
+    @Override
+    public double estimateFrom(int[] from, int x, int y, int z) {
+        if (from == null || from.length < 3) return Double.NaN;                 // structural: x y z
+        IBaritone b = Jobs.baritone();
+        if (b == null) return Double.NaN;
+        try {
+            double t = b.getPathEstimate().estimate(goal(new BlockPos(x, y, z)), new BlockPos(from[0], from[1], from[2]));
+            return Double.isNaN(t) || Double.isInfinite(t) ? Double.NaN : TickPrice.walkS(t);
+        } catch (LinkageError e) {
+            none("this Baritone has no IBaritone.getPathEstimate (an older fork? install the entropy fork J3): the walk inside a cave is ranked by the straight metres; " + e);
+            return Double.NaN;
+        }
+    }
+
     @Override public void rankedOut(int x, int y, int z) { window.rankedOut(x + "," + y + "," + z); }
 
     /**

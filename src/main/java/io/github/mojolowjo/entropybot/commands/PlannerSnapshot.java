@@ -146,6 +146,11 @@ public final class PlannerSnapshot {
             return v == null ? Double.NaN : (Double) v;
         }
 
+        @Override public double estimateFrom(int[] from, int x, int y, int z) {
+            Object v = get(a, new PlanNodes.Fact("estimateFrom", List.of(from[0], from[1], from[2], x, y, z)), Double.NaN);
+            return v == null ? Double.NaN : (Double) v;
+        }
+
         @Override public Walk toBlock(int x, int y, int z) { return (Walk) get(a, new PlanNodes.Fact("toBlock", List.of(x, y, z)), null); }
 
         /** The worker posts nothing: a ranked-out walk is an effect, run on the client tick when the result is applied. */

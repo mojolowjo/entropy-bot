@@ -96,26 +96,15 @@ class J6bEoTest {
         assertTrue(next instanceof CaveWalk.Goto g && g.key() == other, "the next branch, never -51 51 81 again: " + next);
     }
 
-    /** The 0.5-min walk with no ore: not measured (the prior holds, 2 min floor at 0.5 ore/min); 2.5 min: measured 0, and said. */
+    /**
+     * J6d (the measured yield deleted with the rate): a walk that saw no ore changes no price - the cave stays offered at
+     * its walks (run EO's "yield 0" drop cannot happen); a walk that gained nothing at all is the record's stuck, said.
+     */
     @Test
-    void aHalfMinuteWalk_isNotMeasured_theCaveStaysOffered() {
-        double prior = 0.5;
-        assertEquals(2.0, CaveRecord.measureFloorMinutes(prior), 1e-9, "the minutes one ore takes at the prior");
-        Sightings s = new Sightings();
-        s.knowCave(D, new CaveIndex.Known(-45, 60, 78, CaveIndex.Size.LARGE, CaveIndex.Depth.DEEPSLATE, List.of(Sightings.cell(-45, 60, 78))), 1);
-        s.caveWalked(D, -45, 60, 78, 0.5, 0, 10);
-        var f = s.caveFacts(D, -45, 60, 78);
-        assertFalse(f.measured(prior), "0.5 min: not measured");
-        assertEquals(prior, f.rate(prior), 1e-9, "the prior holds, never 0");
-        Chain c = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", f.rate(prior), f.measured(prior), CaveIndex.Size.LARGE, -1, List.of())));
+    void aWalkWithNoOre_changesNoPrice_theCaveStaysOffered() {
+        Chain c = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", Double.NaN, 0.4, CaveIndex.Size.LARGE, -1, List.of())));
         assertTrue(Z77CaveWayTest.caveMined(c), "the cave stays offered: " + c.why());
-        s.caveWalked(D, -45, 60, 78, 2.0, 0, 20);
-        var g = s.caveFacts(D, -45, 60, 78);
-        assertTrue(g.measured(prior));
-        assertEquals(0, g.rate(prior), 1e-9, "2.5 min with no ore: measured 0");
-        Chain zero = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", g.rate(prior), true, CaveIndex.Size.LARGE, -1, List.of())));
-        assertTrue(zero.why().contains("known cave 30 m at 20 21 -10: its yield is 0.00 ore a minute (measured)"), "said, never silent: " + zero.why());
-        Chain stuck = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", 0.5, false, CaveIndex.Size.LARGE, -1, List.of())
+        Chain stuck = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", Double.NaN, 0.4, CaveIndex.Size.LARGE, -1, List.of())
                 .withOut("its last walk gained nothing and nothing new is known of it since (stuck)")));
         assertTrue(stuck.why().contains("known cave 30 m at 20 21 -10: its last walk gained nothing"), stuck.why());
     }
@@ -124,7 +113,7 @@ class J6bEoTest {
     @Test
     void insideTheKnownCave_itsBranches_notTheSurfaceLeg() {
         var over = new NeedChain.Surface(15, -58, 52, 72, 1.4, false);
-        CaveWay in = new CaveWay(-45, 60, 78, 18, "minecraft:iron_ore", "iron", 0.5, false, CaveIndex.Size.LARGE, 30, List.of(), List.of(new int[]{-45, 60, 78})).withInside(true);
+        CaveWay in = new CaveWay(-45, 60, 78, 18, "minecraft:iron_ore", "iron", Double.NaN, Double.NaN, CaveIndex.Size.LARGE, 30, List.of(), List.of(new int[]{-45, 60, 78})).withInside(true);
         Chain c = NeedChain.resolve("raw_iron", 3, J6bEhTest.iron(over, Map.of()).withCave(w -> w.contains("raw_iron") || w.contains("iron_ore") ? in : null));
         assertTrue(c.ok(), c.why());
         assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Cave), "the caving step: " + c.steps());

@@ -89,17 +89,17 @@ class J6bEpTest {
         assertFalse(src.contains("baseTopIn"), "no reader of unseen column blocks remains");
     }
 
-    /** EP's chestplate (8 ore, 16 min at the prior): the LARGE cave stays priced at n / rate; its caving step is one leg of the cap. */
+    /** EP's chestplate (8 ore): the LARGE cave stays priced (J6d: by its walks); its caving step is one leg of the cap. */
     @Test
     void epsChestplate_theLargeCaveIsPriced_theStepIsOneLeg() {
-        CaveWay large = new CaveWay(179, 62, 51, 62, "minecraft:iron_ore", "iron", 0.5, false, CaveIndex.Size.LARGE, -1, List.of());
+        CaveWay large = new CaveWay(179, 62, 51, 62, "minecraft:iron_ore", "iron", Double.NaN, Double.NaN, CaveIndex.Size.LARGE, -1, List.of());
         Chain c = NeedChain.resolve("raw_iron", 8, Z77CaveWayTest.world(large));
         assertTrue(Z77CaveWayTest.caveMined(c), "priced, never 'past cave.exploreMinutes': " + c.why());
         assertFalse(c.why().contains("past cave.exploreMinutes"), c.why());
         Step.Cave k = (Step.Cave) c.steps().stream().filter(s -> s instanceof Step.Cave).findFirst().orElseThrow();
         assertEquals(8, k.n());
         assertEquals((int) Tuning.get("cave.exploreMinutes"), k.minutes(), "the leg: cave.exploreMinutes");
-        assertTrue(c.why().contains("x 8 ore"), c.why());
+        assertTrue(c.why().contains("+ 8 ore broken"), c.why());
     }
 
     /**
@@ -117,7 +117,7 @@ class J6bEpTest {
         s.caveWalked("d", 0, 40, 0, 10, 2, 2, true);                    // the leg's end: 10 min, 2 ore seen, the need unmet
         var f = s.caveFacts("d", 0, 40, 0);
         assertTrue(f.offeredFor("iron") && !f.done(), "offered again: the next leg");
-        assertEquals(0.2, f.rate(0.5), 1e-9, "10 min walked: measured (past the 2 min floor)");
+        assertEquals(0.2, f.oreSeenPerMinute(), 1e-9, "10 min walked, 2 ore seen: a record fact (J6d: no price reads it)");
         s.caveSaw("d", 0, 40, 0, cells);
         assertFalse(s.caveFacts("d", 0, 40, 0).offeredFor("iron"), "done, no iron left: out (not looped)");
     }

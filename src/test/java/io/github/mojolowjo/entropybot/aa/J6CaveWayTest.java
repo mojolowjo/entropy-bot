@@ -24,8 +24,8 @@ class J6CaveWayTest {
         Tuning.reset();
     }
 
-    /** A known cave of size {@code size} 30 m off at its entry 20 21 -10, its yield 3 ore a minute (measured). */
-    static CaveWay known(CaveIndex.Size size) { return new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", 3, true, size); }
+    /** A known cave of size {@code size} 30 m off at its entry 20 21 -10 (J6d: its world-gen count not known yet - it holds the need). */
+    static CaveWay known(CaveIndex.Size size) { return new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", Double.NaN, Double.NaN, size); }
 
     @Test
     void aKnownCaveBigEnough_isTheCaveWay_walkedToItsEntry_boundByItsSize() {
@@ -41,13 +41,14 @@ class J6CaveWayTest {
 
     @Test
     void aKnownCaveTooSmallForTheLack_givesItsShare_theRestFromTheNextWay() {
-        CaveWay small = known(CaveIndex.Size.SMALL);        // under a minute of walking
+        // J6d: its unseen part holds ~3 iron by the world-gen count (information; the share's count)
+        CaveWay small = new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", 3.2, 0.1, CaveIndex.Size.SMALL);
         assertEquals(1, small.holdsMinutes(), "a small cave holds its upper edge, one minute");
-        // 0.39.z78 J6c run ET (B, rule 23 (1)): was "no way" - now its share (the yield over the minute it holds) and the
-        // rest of the need from the next way (here the explore)
+        // 0.39.z78 J6c run ET (B, rule 23 (1)): was "no way" - now its share and the rest of the need from the next way (here
+        // the explore)
         Chain c = NeedChain.resolve("raw_iron", 12, Z77CaveWayTest.world(small));
         int share = NeedChain.caveShare(small);
-        assertTrue(share >= 1 && share < 12, "a share of the lack: " + share);
+        assertEquals(3, share, "a share of the lack: the world-gen ~3.2, rounded");
         Step.Cave m = (Step.Cave) c.steps().stream().filter(s -> s instanceof Step.Cave).findFirst().orElseThrow();
         assertEquals(share, m.n(), "the caving step mines its share: " + c.steps());
         assertTrue(c.why().contains(share + " of 12 ore from the cave, the other " + (12 - share) + " from: "), c.why());
@@ -70,7 +71,9 @@ class J6CaveWayTest {
             // J6b review 6: leftKeys are the SEEN ORE spots left there (what a collect way sees anyway, by sight), never the cave's cells
             // J6b run EF (3): entries are the cave's OPENING cells to walk to the lip of (walk targets), never its volume's cells
             // run EM: more is the OTHER known caves ranked after this one (each a CaveWay of the same facts), never cells
-            assertFalse(!c.getName().equals("leftKeys") && !c.getName().equals("entries") && !c.getName().equals("more") && (java.util.Collection.class.isAssignableFrom(c.getType()) || c.getType().isArray()), "CaveWay." + c.getName() + " is a list");
+            // J6d: frontier is ONE cell - the end of the price's second walk (a walk target, x y z), never the volume's cells
+            assertFalse(!c.getName().equals("leftKeys") && !c.getName().equals("entries") && !c.getName().equals("more") && !c.getName().equals("frontier")
+                    && (java.util.Collection.class.isAssignableFrom(c.getType()) || c.getType().isArray()), "CaveWay." + c.getName() + " is a list");
         assertTrue(java.util.Arrays.stream(io.github.mojolowjo.entropybot.sense.Sightings.KnownCave.class.getRecordComponents()).anyMatch(c -> c.getType() == CaveIndex.Size.class));
         assertTrue(java.util.Arrays.stream(io.github.mojolowjo.entropybot.sense.Sightings.KnownCave.class.getRecordComponents()).anyMatch(c -> c.getType() == CaveIndex.Depth.class));
     }

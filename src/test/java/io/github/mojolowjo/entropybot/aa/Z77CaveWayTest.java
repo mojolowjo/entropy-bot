@@ -23,7 +23,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * was no source in its until test). Now the cave way is priced beside any seen ore (the scorer picks by price), and an explore
  * for the ore ends on a confirmed cave the planner offers (NeedChain.caveSource, the test the ways use).
  * <p>Hand numbers (TIME_MODEL, the fake walk = straight metres x 1.3 / 4.317): 8 m 2.41 s, 30 m 9.03 s, 200 m 60.23 s; an iron
- * ore with the stone pickaxe 1.15 s; a cave way for 3 ore = walk + 3 / yield min + 3 x 1.15.
+ * ore with the stone pickaxe 1.15 s. 0.39.z78 J6d: a cave way is its walks only - to the lip + from the lip to the record's
+ * nearest unseen cell (none here: a fresh cave, 0) - plus the ore's breaks (as every way that mines it), so the cave 30 m
+ * is 9.03 + 3.45 = 12.48 s for the whole need (its world-gen count not known: it holds the need).
  */
 class Z77CaveWayTest {
     @AfterEach
@@ -37,8 +39,8 @@ class Z77CaveWayTest {
     static final Spot NEAR = new Spot(8, 64, 0, 8, "minecraft:iron_ore", 1);
     static final double TOL = 0.1;
 
-    /** A confirmed cave {@code dist} m away at 20 21 -10 with iron ore, its yield {@code perMin} ore a minute (measured). */
-    static CaveWay cave(double dist, double perMin) { return new CaveWay(20, 21, -10, dist, "minecraft:iron_ore", "iron", perMin, true); }
+    /** A known fresh cave {@code dist} m away at 20 21 -10 with iron ore (J6d: its world-gen count and explored share not known). */
+    static CaveWay cave(double dist) { return new CaveWay(20, 21, -10, dist, "minecraft:iron_ore", "iron", Double.NaN, Double.NaN); }
 
     static NeedChain.World world(CaveWay cw, Spot... seen) {
         ScenariosTest.world("wooden", "stone");
@@ -51,43 +53,43 @@ class Z77CaveWayTest {
 
     // ---- the cave way beside a seen ore ----
 
-    /** BW 14:22:14: one raw_iron seen (1 block) + a confirmed iron cave 30 m: the cave way is priced and wins: 9.03 + 60 + 3.45 = 72.48 s. */
+    /** BW 14:22:14: one raw_iron seen (1 block) + a confirmed iron cave 30 m: the cave way is priced and wins: J6d, 9.03 + 3.45 s. */
     @Test
     void oneOreSeen_aConfirmedCaveNear_theCaveWayIsPricedAndWins() {
-        Chain c = NeedChain.resolve("raw_iron", 3, world(cave(30, 3), NEAR));
+        Chain c = NeedChain.resolve("raw_iron", 3, world(cave(30), NEAR));
         assertTrue(c.ok() && !c.explore(), c.why());
         assertTrue(caveMined(c), "the cave way runs: " + c.steps());
-        assertEquals(72.48, c.seconds(), TOL, c.why());
+        assertEquals(12.48, c.seconds(), TOL, c.why());
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Explore), c.steps().toString());
-        assertTrue(c.why().contains("in the cave: known cave 30 m, yield ~3.00 ore/min (measured) x 3 ore"), c.why());
+        assertTrue(c.why().contains("in the cave: known cave 30 m: the walk to its lip 9.0 s + the walk in 0 s (no unseen cell of its record measured past the entry) + 3 ore broken ") && c.why().contains(" -> 12.5 s (world-gen not known yet, explored not measured)"), c.why());
     }
 
     /** The same with the seen ore HELD for the order (BW: no progress): the cave way still stands and wins. */
     @Test
     void theSeenOreHeld_theCaveWayWins() {
-        NeedChain.World w = world(cave(30, 3), NEAR).withoutSources(Map.of(NeedChain.spotKey("minecraft:raw_iron", NEAR), "no progress"));
+        NeedChain.World w = world(cave(30), NEAR).withoutSources(Map.of(NeedChain.spotKey("minecraft:raw_iron", NEAR), "no progress"));
         Chain c = NeedChain.resolve("raw_iron", 3, w);
         assertTrue(c.ok() && !c.explore() && caveMined(c), c.why());
-        assertEquals(72.48, c.seconds(), TOL, c.why());
+        assertEquals(12.48, c.seconds(), TOL, c.why());
     }
 
-    /** By price, no "prefer caves": 3 ore seen 8 m (2.41 + 3.45 = 5.86 s) beat the cave (72.48 s), which is listed with its seconds. */
+    /** By price, no "prefer caves": 3 ore seen 8 m (2.41 + 3.45 = 5.86 s) beat the cave (12.48 s), which is listed with its seconds. */
     @Test
     void aCheaperSeenOre_beatsTheCave() {
         Spot near3 = new Spot(8, 64, 0, 8, "minecraft:iron_ore", 3);
-        Chain c = NeedChain.resolve("raw_iron", 3, world(cave(30, 3), near3));
+        Chain c = NeedChain.resolve("raw_iron", 3, world(cave(30), near3));
         assertTrue(c.ok() && !caveMined(c), c.why());
         assertEquals(5.86, c.seconds(), TOL, c.why());
-        assertTrue(c.dropped().stream().anyMatch(d -> d.startsWith("known cave 30 m") && d.contains("72.")), c.dropped().toString());
+        assertTrue(c.dropped().stream().anyMatch(d -> d.startsWith("known cave 30 m") && d.contains("12.5")), c.dropped().toString());
     }
 
-    /** And the other way round: 3 ore seen 200 m (60.23 + 3.45 = 63.68 s) lose to a cave 30 m at 6 ore/min (9.03 + 30 + 3.45 = 42.48 s). */
+    /** And the other way round: 3 ore seen 200 m (60.23 + 3.45 = 63.68 s) lose to a cave 30 m (12.48 s). */
     @Test
     void aFarSeenOre_losesToANearCave() {
         Spot far3 = new Spot(200, 64, 0, 200, "minecraft:iron_ore", 3);
-        Chain c = NeedChain.resolve("raw_iron", 3, world(cave(30, 6), far3));
+        Chain c = NeedChain.resolve("raw_iron", 3, world(cave(30), far3));
         assertTrue(c.ok() && caveMined(c), c.why());
-        assertEquals(42.48, c.seconds(), TOL, c.why());
+        assertEquals(12.48, c.seconds(), TOL, c.why());
     }
 
     /** Control: no cave known - as before, the seen ore is dug and the rest explored. */
@@ -118,7 +120,7 @@ class Z77CaveWayTest {
         assertTrue(plan.ok() && plan.explore(), "the explore runs while no cave is known: " + plan.why());
         assertNull(until(before), "nothing new: the explore runs on");
 
-        NeedChain.World after = world(cave(76, 3), NEAR).withoutSources(held);
+        NeedChain.World after = world(cave(76), NEAR).withoutSources(held);
         String known = until(after);
         assertNotNull(known, "the confirmed cave ends the explore");
         assertTrue(known.startsWith("a source of raw_iron is known: a cave with iron_ore at 20 21 -10 (76 away)"), known);
@@ -131,10 +133,10 @@ class Z77CaveWayTest {
     /** A cave the order dropped (no path to its mouth) or one only a candidate ends no explore; a seen source still does, first. */
     @Test
     void aDroppedCaveOrACandidate_endsNoExplore() {
-        CaveWay cw = cave(76, 3);
+        CaveWay cw = cave(76);
         NeedChain.World dropped = world(cw, NEAR).withoutSources(Map.of(cw.key(), "unreachable"));
         assertNull(until(dropped), "the order dropped the cave");
-        assertNull(NeedChain.caveSource(world(cave(76, 0), NEAR), "raw_iron"), "no yield: no cave way, no end");
+        assertNull(NeedChain.caveSource(world(cave(76).withOut("no raw_iron generates in its Y range (game data)"), NEAR), "raw_iron"), "no source by the game data: no cave way, no end");
         String seen = ExploreRules.untilFound("raw_iron", part -> NEAR, (part, s) -> null, part -> NeedChain.caveSource(world(cw, NEAR), part));
         assertTrue(seen.startsWith("a source of raw_iron is known: iron_ore at 8 64 0"), seen);
     }

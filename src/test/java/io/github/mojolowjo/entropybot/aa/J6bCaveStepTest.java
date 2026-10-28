@@ -60,31 +60,32 @@ class J6bCaveStepTest {
         assertEquals("cave: the caving step at 0 40 0 ended - DONE (explored): 2.4 min inside, cells seen 40 -> 120 of 200 (explored 60%), ore seen 4 / mined 3, branches left 2", l);
     }
 
-    /** The cave way from the record: ore seen and left is mined first; the rest at the measured yield in what the unseen part holds. */
+    /** The cave way from the record: ore seen and left is mined first; the rest in what the unseen part holds (J6d: its world-gen count). */
     @Test
     void theCaveWayIsPricedFromTheRecord() {
-        CaveWay left = new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", 0.5, true, CaveIndex.Size.SMALL, 0.2, List.of("21,20,-10", "22,20,-10", "23,20,-10"));
+        CaveWay left = new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", 0.0, 0.9, CaveIndex.Size.SMALL, 0.2, List.of("21,20,-10", "22,20,-10", "23,20,-10"));
         Chain c = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(left));
         assertTrue(Z77CaveWayTest.caveMined(c), "3 seen and left there: a way though its unseen part holds 0.2 min - " + c.why());
         Step.Cave k = (Step.Cave) c.steps().stream().filter(s -> s instanceof Step.Cave).findFirst().orElseThrow();
         assertEquals(1, k.minutes(), "at least a minute for the walk to the left ore");
-        CaveWay little = new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", 0.5, true, CaveIndex.Size.LARGE, 0.2, List.of());
+        CaveWay little = new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", 0.0, 0.9, CaveIndex.Size.LARGE, 0.2, List.of());
         Chain d = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(little));
         assertFalse(Z77CaveWayTest.caveMined(d));
-        assertTrue(d.why().contains("min its unseen part holds"), "the record's unseen part, not the size bucket: " + d.why());
-        CaveWay measured = new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", 3, true, CaveIndex.Size.LARGE, 8, List.of());
-        Chain e = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(measured));
+        assertTrue(d.why().contains("its unseen part holds ~0 by the world-gen estimate"), "the record's unseen part's count: " + d.why());
+        CaveWay rich = new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", 5, 0.2, CaveIndex.Size.LARGE, 8, List.of());
+        Chain e = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(rich));
         assertTrue(Z77CaveWayTest.caveMined(e), e.why());
-        assertTrue(e.why().contains("yield ~3.00 ore/min (measured)"), e.why());
+        assertTrue(e.why().contains("world-gen ~5.0 iron in its unseen part, explored 20%"), e.why());
     }
 
-    /** J6b review 2: the cave way's yield is the one measured there once walked, the prior before. */
+    /** J6d (rule 14, "Deleted"): the measured yield is gone from the price path - no rate is read by the planner or the cave way's facts. */
     @Test
-    void theMeasuredYieldAfterTheFirstWalk() {
-        var never = new CaveRecord.Facts(0, 40, 0, 200, 80, 0.6, 2, false, Map.of(), 0, Double.NaN, 0, true, "t");
-        assertEquals(0.3, never.rate(0.3), 1e-9, "never walked: the prior");
-        var walked = new CaveRecord.Facts(0, 40, 0, 200, 80, 0.6, 2, false, Map.of(), 4, 0.5, 0, true, "t");
-        assertEquals(0.5, walked.rate(0.3), 1e-9, "walked: the measured 0.5 a minute");
+    void noMeasuredYieldInThePricePath() throws Exception {
+        for (String f : List.of("src/main/java/io/github/mojolowjo/entropybot/aa/NeedChain.java", "src/main/java/io/github/mojolowjo/entropybot/commands/AaRuntime.java")) {
+            String src = java.nio.file.Files.readString(java.nio.file.Path.of(f));
+            assertFalse(src.contains("oreSeenPerMinute") || src.contains("perMin()") || src.contains(".rate(") || src.contains("measureFloorMinutes"), f);
+        }
+        assertTrue(java.util.Arrays.stream(CaveRecord.Facts.class.getMethods()).noneMatch(m -> m.getName().equals("rate") || m.getName().equals("measured")));
     }
 
     /** J6b review 1 and 4: a cave done with none of the family left is no way; a walk that gained nothing holds it until something new is known. */
@@ -166,7 +167,7 @@ class J6bCaveStepTest {
     @Test
     void theCaveWayLosesToACollect_theOreStillCountedByTheCollect() {
         var near3 = new NeedChain.Spot(8, 64, 0, 8, "minecraft:iron_ore", 3);
-        CaveWay cw = new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", 3, true, CaveIndex.Size.LARGE, 8, List.of("8,64,0"));
+        CaveWay cw = new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", 5, 0.2, CaveIndex.Size.LARGE, 8, List.of("8,64,0"));
         Chain c = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(cw, near3));
         assertTrue(c.ok() && !Z77CaveWayTest.caveMined(c), c.why());
         Chain ctl = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(null, near3));
@@ -283,7 +284,7 @@ class J6bCaveStepTest {
     /** Run EF (3): a cave whose first opening is held tries its next opening; only every opening held drops the cave. */
     @Test
     void anOpeningHeld_theNextOpeningIsTried_beforeTheWholeCave() {
-        CaveWay cw = new CaveWay(-45, 60, 78, 1, "minecraft:iron_ore", "iron", 0.5, false, CaveIndex.Size.LARGE, 8, List.of(),
+        CaveWay cw = new CaveWay(-45, 60, 78, 1, "minecraft:iron_ore", "iron", Double.NaN, Double.NaN, CaveIndex.Size.LARGE, 8, List.of(),
                 List.of(new int[]{-45, 60, 78}, new int[]{-40, 58, 90}));
         CaveWay next = cw.without(k -> k.equals(CaveWay.keyOf(new int[]{-45, 60, 78})));
         assertNotNull(next);
