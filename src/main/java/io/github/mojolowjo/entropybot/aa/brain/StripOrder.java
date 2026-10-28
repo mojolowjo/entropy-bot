@@ -103,6 +103,49 @@ public final class StripOrder {
         return bagFull ? Car.Status.done(BAG_FULL + (amounts.isEmpty() && picked.isEmpty() ? "" : " (" + counts(amounts, picked) + ")")) : null;
     }
 
+    // ---- 0.39.z78 dw (run DW 18:00:03-18:07:59): the legs of one strip count as one ----
+    // NeedChain.stripLegs splits a strip priced past steps.stepMaxS into legs, each with its share of the amounts (a time
+    // slice for the step watch). Each leg's end rule counted only its own finds against its own share, so a leg that found
+    // more than its share (iron 5/2, 6/2) left the later legs asking their full shares again: the strip for raw_iron 11
+    // found 13 by its third leg and dug four more legs (7 min) for iron the batch already had. Now a leg's finds past its
+    // share carry to the next leg of the same strip: the met test reads what is left of the whole, a leg already covered
+    // ends met at its start (nothing dug, nothing deposited, no walk back), so the strip that finds it all ends them all.
+
+    /**
+     * The finds carried into a strip leg ({@code serial}, key {@code key}): the last leg's surplus {@code carried} when it is
+     * the next leg of the same strip ({@code lastKey} equal, serial one past {@code lastSerial}; legs are numbered 1..n by
+     * NeedChain.stripLegs, a whole strip is 0 and an owner's order its time, so neither carries); else none. Pure.
+     */
+    public static Map<String, Integer> carriedInto(String key, long serial, String lastKey, long lastSerial, Map<String, Integer> carried) {
+        if (carried == null || carried.isEmpty() || key == null || !key.equals(lastKey) || serial < 2 || serial != lastSerial + 1) return Map.of();
+        return Map.copyOf(carried);
+    }
+
+    /** What this leg still needs: its amounts less the finds carried in (0 when covered: met), per count key. Pure. */
+    public static Map<String, Integer> need(Map<String, Integer> amounts, Map<String, Integer> carried) {
+        if (carried == null || carried.isEmpty()) return amounts;
+        Map<String, Integer> out = new java.util.LinkedHashMap<>();
+        for (Map.Entry<String, Integer> e : amounts.entrySet()) out.put(e.getKey(), Math.max(0, e.getValue() - carried.getOrDefault(e.getKey(), 0)));
+        return out;
+    }
+
+    /** The finds of a met leg past what it needed ({@code need}, {@code picked}): carried to the next leg. Pure. */
+    public static Map<String, Integer> surplus(Map<String, Integer> need, Map<String, Integer> picked) {
+        Map<String, Integer> out = new java.util.TreeMap<>();
+        for (Map.Entry<String, Integer> e : need.entrySet()) {
+            int over = picked.getOrDefault(e.getKey(), 0) - e.getValue();
+            if (over > 0) out.put(e.getKey(), over);
+        }
+        return out;
+    }
+
+    /** A leg whose need the earlier legs' finds cover: its DONE words (an order met: the deposit leg and walk back pass); null: it digs. Pure. */
+    public static Car.Status metAtStart(Map<String, Integer> amounts, Map<String, Integer> carried) {
+        if (amounts.isEmpty() || carried == null || carried.isEmpty()) return null;
+        for (Map.Entry<String, Integer> e : amounts.entrySet()) if (carried.getOrDefault(e.getKey(), 0) < e.getValue()) return null;
+        return Car.Status.done("ok: strip: amounts met by the earlier legs' finds (" + counts(amounts, carried) + ")");
+    }
+
     /** The strip job's bag-full end (the order is not met: the deposit leg follows). */
     public static final String BAG_FULL = "ok: strip: bag full";
 

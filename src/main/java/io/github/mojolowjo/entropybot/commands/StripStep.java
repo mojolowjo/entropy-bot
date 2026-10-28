@@ -188,6 +188,8 @@ final class StripStep {
 
     /** Starts the fork's strip, resumed from this order's saved progress; null = started, else "error: ...". */
     static String start(Step.Strip s) {
+        startMet = null;
+        carrySet = false;
         IBaritone b = Jobs.baritone();
         if (b == null) return "error: baritone not loaded";
         Direction d = Direction.byName(s.heading());
@@ -197,6 +199,20 @@ final class StripStep {
             from = load(s);
         } catch (RuntimeException e) {
             return "error: " + e.getMessage();
+        }
+        // 0.39.z78 dw: the earlier legs' finds past their shares count for this leg (StripOrder.carriedInto); a leg they
+        // cover ends met here - nothing started, its deposit leg and walk back pass (the order met)
+        carried = StripOrder.carriedInto(s.key(), s.serial(), carryKey, carrySerial, carried);
+        carryKey = s.key();
+        carrySerial = s.serial();
+        Car.Status covered = StripOrder.metAtStart(s.amounts(), carried);
+        if (covered != null) {
+            carried = StripOrder.surplus(s.amounts(), carried);
+            carrySet = true;
+            startMet = covered;
+            ended(s, covered);
+            LOG.info("[entropybot] strip {} (leg {}): {} - not started", s.key(), s.serial(), covered.why());
+            return null;
         }
         lastSaved = from;
         startBlocks = from == null ? 0 : from.blocks();      // 0.39.z62 item 1b: what this start resumes from
@@ -210,7 +226,7 @@ final class StripStep {
         goalCell = null;
         onNote = null;
         // 0.39.z77 strip: a family already met leaves the strip from its start (its ores out of the fork's set)
-        List<String> live = StripYield.liveOres(s.ores(), s.amounts(), from == null ? Map.of() : from.picked(), StripStep::family);
+        List<String> live = StripYield.liveOres(s.ores(), need(s), from == null ? Map.of() : from.picked(), StripStep::family);
         running = live.isEmpty() ? s.ores() : live;
         b.getStripProcess().probe(WalkProbe.on());          // 0.39.z64 item 1: the "probe strip:" lines (debug.walkProbe)
         // 0.39.z77 mineintent (run DB 01:08:24: "travel may place" inside a strip): the strip's searches are priced as MINE,
@@ -247,6 +263,20 @@ final class StripStep {
     /** An ore id's count key (the fork's picked counts, the order's amounts). */
     private static String family(String ore) { return StripOrder.countKey(ore, OreSpec::family); }
 
+    // ---- 0.39.z78 dw: one strip's legs count as one (StripOrder.carriedInto / need / surplus) ----
+    /** The finds past their shares carried into the running leg (count key -> n). */
+    private static Map<String, Integer> carried = Map.of();
+    /** The last leg started: its strip key and serial (the next leg of it carries). */
+    private static String carryKey;
+    private static long carrySerial;
+    /** The running leg's end set what it carries on (else any other end carries nothing). */
+    private static boolean carrySet;
+    /** The running leg was covered by the earlier legs' finds: its DONE, never started (null: it runs). */
+    private static Car.Status startMet;
+
+    /** What the running leg still needs: its amounts less the finds carried in. */
+    private static Map<String, Integer> need(Step.Strip s) { return StripOrder.need(s.amounts(), carried); }
+
     /** 0.39.z77 strip: the ores the fork's strip digs for now (the families not met yet). */
     private static List<String> running = List.of();
     /** 0.39.z77 strip: the tunnel's blocks at the last yield check (-1: none since the start). */
@@ -261,7 +291,7 @@ final class StripStep {
      * changed; else the failed status (the fork did not take the new set).
      */
     private static Car.Status dropMet(Step.Strip s, IStripProcess sp, StripOrder.Saved now) {
-        List<String> live = StripYield.liveOres(s.ores(), s.amounts(), now.picked(), StripStep::family);
+        List<String> live = StripYield.liveOres(s.ores(), need(s), now.picked(), StripStep::family);
         if (live.isEmpty() || live.size() >= running.size()) return null;
         java.util.Set<String> gone = new java.util.TreeSet<>();
         for (String o : running) if (!live.contains(o)) gone.add(family(o));
@@ -271,7 +301,7 @@ final class StripStep {
         sp.strip(new BlockOptionalMetaLookup(live.toArray(String[]::new)), s.y(), d, of(now));
         running = live;
         LOG.info("[entropybot] strip: {} met ({}): left the strip; it digs on for {}", String.join(", ", gone),
-                StripOrder.counts(s.amounts(), now.picked()), String.join(", ", live.stream().map(StripStep::family).distinct().toList()));
+                StripOrder.counts(need(s), now.picked()), String.join(", ", live.stream().map(StripStep::family).distinct().toList()));
         if (!sp.isActive()) return Car.Status.failed("strip: the strip did not go on without the met ores: " + sp.lastEnd() + " (" + sp.status() + ")");
         return null;
     }
@@ -297,7 +327,7 @@ final class StripStep {
             // 0.39.z77 strip 2 (run CS 19:32:56): the same band prior as this strip, never better but for ore seen there
             return StripYield.sameBand(sd.cells(), left, sd.band(), sd.seen().ores() > 0);
         };
-        StripYield.Verdict v = StripYield.verdict(s.amounts(), now.picked(), now.blocks(), StripYield.prior(s.key(), StripOrder.predicted(s.key())), facts, s.heading(), cells);
+        StripYield.Verdict v = StripYield.verdict(need(s), now.picked(), now.blocks(), StripYield.prior(s.key(), StripOrder.predicted(s.key())), facts, s.heading(), cells);
         String was = onNote;
         onNote = v == null ? null : v.on();
         if (onNote != null && was == null) LOG.info("[entropybot] strip {}: {}", s.key(), onNote);
@@ -318,12 +348,17 @@ final class StripStep {
      * intent set meanwhile); at any end the intent before the strip goes back.
      */
     static Car.Status status(Step.Strip s, boolean holding) {
+        if (startMet != null) return startMet;               // 0.39.z78 dw: covered by the earlier legs, never started
         Car.Status st;
         try {
             st = statusOf(s, holding);
         } catch (RuntimeException e) {
             endSearch();
             throw e;
+        }
+        if (st.state() != Car.State.RUNNING && !carrySet) {   // 0.39.z78 dw: any end but the end rule's carries nothing on
+            carried = Map.of();
+            carrySet = true;
         }
         if (st.state() != Car.State.RUNNING) endSearch();
         else if (!holding) SEARCH.hold(STORE, ProbeLines.stripRefuseOn());
@@ -347,8 +382,11 @@ final class StripStep {
         }
         Map<String, Integer> picked = now == null ? Map.of() : now.picked();
         if (sp.isActive()) {
-            Car.Status end = StripOrder.endRule(s.amounts(), picked, bagFull(Minecraft.getInstance().player));
+            Map<String, Integer> need = need(s);              // 0.39.z78 dw: the leg's amounts less the earlier legs' surplus
+            Car.Status end = StripOrder.endRule(need, picked, bagFull(Minecraft.getInstance().player));
             if (end != null) {
+                carried = StripOrder.orderMet(end.why()) ? StripOrder.surplus(need, picked) : Map.of();
+                carrySet = true;
                 sp.cancel();
                 yieldFact(s, now);
                 ended(s, end);
