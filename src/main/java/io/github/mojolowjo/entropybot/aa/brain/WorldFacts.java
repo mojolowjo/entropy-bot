@@ -85,11 +85,8 @@ public final class WorldFacts {
      * (NeedChain.stoodKey) and the stand step's own key. Not shared.
      */
     static boolean standHold(String key) {
-        return key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STOOD_AT) || key.startsWith("step " + STAND_TEXT);
+        return key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STOOD_AT) || key.startsWith("step " + io.github.mojolowjo.entropybot.aa.moves.Step.AwaitPaths.TEXT);
     }
-
-    /** The stand step's text start (Step.AwaitPaths#text). */
-    private static final String STAND_TEXT = "stand while paths compute";
 
     /** 0.39.z78 run EJ: {@code key} is no longer held for any order (the climb's one more try); said again if learned again. */
     public void forget(String key) {

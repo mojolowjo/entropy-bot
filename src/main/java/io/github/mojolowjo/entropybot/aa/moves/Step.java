@@ -308,7 +308,10 @@ public sealed interface Step {
     record AwaitPaths(int waitS, boolean planner) implements Step {
         public AwaitPaths(int waitS) { this(waitS, false); }
 
-        public String text() { return "stand while paths compute (up to " + waitS + " s)"; }
+        /** The stand's words (its text's start; WorldFacts reads a stand's hold by it - one source). */
+        public static final String TEXT = "stand while paths compute";
+
+        public String text() { return TEXT + " (up to " + waitS + " s)"; }
     }
     // 0.39.z78 J6c run EU (1b, rule 23 (2): one reader of "stood"): {@code planner} - the stand is the planner worker's
     // "thinking" (BatchWay.ownStand: no path asked, the plan not answered yet); the step machine never counts it as a stand
