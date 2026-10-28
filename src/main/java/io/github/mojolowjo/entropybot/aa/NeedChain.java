@@ -5932,16 +5932,12 @@ public final class NeedChain {
         return free;
     }
 
-    /** One block's break by the game's formula with the pickaxe in hand when its tier asks for one (as {@link #breakS}). */
-    private static double blockBreakS(Ctx c, String block) {
-        double hardness = ItemWorth.facts(block).hardness();
-        if (hardness <= 0) return TickPrice.breakS(Tuning.get("needChain.unknownBreakS"));
-        MiningTiers.Source src = MiningTiers.source();
-        int tier = src == null ? 0 : Math.max(0, src.blockTier(block));
-        if (tier < 1) return TickPrice.breakS(GameTimes.breakSeconds(hardness, 1, true));
-        double speed = c.pickItem == null ? 1 : Math.max(1, ItemWorth.facts(c.pickItem).digSpeed());
-        return TickPrice.breakS(GameTimes.breakSeconds(hardness, speed, c.pickTier >= tier));
-    }
+    /**
+     * One block's break by the game's formula with the pickaxe in hand when its tier asks for one. 0.39.z78 J6d (the
+     * manager's ruling: n x B is the game's time to break the ore blocks themselves, rule 3 - the same term in every way that
+     * mines ore): {@link #breakS} itself, the one source - the cave, the strip and a seen vein's collect break an ore alike.
+     */
+    private static double blockBreakS(Ctx c, String block) { return breakS(c, block, new Spot(0, 0, 0, 0, block, 1)); }
 
     /** 0.39.z42: no way of the requirement stands and the reason is a walk whose path is not known (computing, chunks not loaded). */
     private static boolean waitsOnPaths(Ctx c) {

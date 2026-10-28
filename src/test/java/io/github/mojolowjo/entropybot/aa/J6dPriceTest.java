@@ -73,6 +73,31 @@ class J6dPriceTest {
     }
 
     /**
+     * Scenario 1 at ET's 09:51 feet (the manager's ruling (b)): the same six caves now 123 / 232 / 232 / 241 / 351 / 368 m
+     * off. The small ones' shares and their rest (232 + 241 + 351 m of walks) are never under the 351 m cave alone, so the
+     * large one is taken for the whole need and the near small caves are said with their reason (dearer, or ~0). A near
+     * small cave wins only when it covers the need, or when the next way is cheaper from there (scenario 1 at 09:44).
+     */
+    @Test
+    void scenario1_etAt0951_theLargeCaveAlone_theSmallOnesSaid() {
+        Object[][] at = {{-14, 73, -415, 123.0, 0.4}, {-103, 76, -278, 232.0, 0.1}, {-77, 94, -236, 232.0, 0.7}, {-93, 72, -244, 241.0, 1.3},
+                {102, 15, -384, 351.0, 677.7}, {-213, 74, -194, 368.0, 1.1}};
+        List<CaveWay> ways = new java.util.ArrayList<>();
+        for (Object[] a : at)
+            ways.add(cave((Integer) a[0], (Integer) a[1], (Integer) a[2], (Double) a[3], (Double) a[4], Double.NaN, (Integer) a[0] == 102 ? CaveIndex.Size.LARGE : CaveIndex.Size.SMALL, null));
+        CaveWay all = ways.get(0).withMore(ways.subList(1, ways.size()));
+        var over = new NeedChain.Surface(11, -77, 98, -236, 3, false);
+        Chain c = NeedChain.resolve("raw_iron", 3, J6bEhTest.iron(over, Map.of()).withCave(w -> w.contains("raw_iron") || w.contains("iron_ore") ? all : null));
+        assertTrue(c.ok(), c.why());
+        List<Step.Cave> legs = c.steps().stream().filter(s -> s instanceof Step.Cave).map(s -> (Step.Cave) s).toList();
+        assertEquals(1, legs.size(), "the large cave alone: " + c.steps());
+        assertEquals(List.of(102, 15, -384, 3), List.of(legs.get(0).x(), legs.get(0).y(), legs.get(0).z(), legs.get(0).n()), c.steps().toString());
+        String said = c.why() + " | " + c.dropped();
+        assertTrue(c.dropped().stream().anyMatch(x -> x.startsWith("known cave 232 m (2): ") && x.contains("dearer than known cave 351 m")), "the 7 m cave of 09:44, said: " + c.dropped());
+        assertTrue(said.contains("known cave 123 m at -14 73 -415") && said.contains("its unseen part holds ~0 by the world-gen estimate"), said);
+    }
+
+    /**
      * Scenario 2, ES's walked cave (-43 67 -39, explored 60%: its nearest unseen cell is the shaft's foot -50 36 -40, 32 m
      * in) prices higher than a fresh cave at the same 51 m (its unseen cells start at the entry: the walk in ~0); with both
      * known the fresh one is taken.
