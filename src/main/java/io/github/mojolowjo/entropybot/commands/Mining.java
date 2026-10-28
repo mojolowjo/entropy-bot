@@ -1419,9 +1419,11 @@ final class Mining {
             // V1b: the nearest never-seen chunk (that way, with a direction); never a spot the policy refuses
             final int y = me[1];
             int[] c = io.github.mojolowjo.entropybot.vocab.ExploreWords.next(me[0] >> 4, me[2] >> 4, ex.sx, ex.sz, ex.dir,
-                    // 0.23.1: unvisited = not in explored.json AND no painted map tile (a tile still loading counts as seen this round)
-                    (cx, cz) -> io.github.mojolowjo.entropybot.vocab.ExploreWords.seen(notes().explored(ExploreRules.key(d, cx, cz)),
-                            core.terrain() == null ? Boolean.FALSE : core.terrain().painted(d, cx, cz))
+                    // 0.39.z78 run EP (owner 2026-10-28, rule 17): covered = in explored.json, which is written only for the chunks
+                    // within exploreRules.seen of the feet (the bot walked there). Was (0.23.1): a painted terrain-map tile counted
+                    // too, and the map paints every chunk the client LOADS - at render distance 4 that marked 64-80 m around the
+                    // bot covered unwalked and unseen, so the explore never aimed at that land again
+                    (cx, cz) -> notes().explored(ExploreRules.key(d, cx, cz))
                             // 0.39.z72: a target that failed from near here is passed over (a fact about where it failed)
                             || ExploreRules.TargetHold.skip(ex.failed, cx, cz, me, io.github.mojolowjo.entropybot.aa.brain.Failures.movedV())
                             || frozenSkip(cx, cz, me),
