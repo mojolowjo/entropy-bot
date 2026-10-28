@@ -289,6 +289,34 @@ public final class OreBand {
         return best != null ? best : above;
     }
 
+    /**
+     * 0.39.z78 dz (run DZ: every heading at y 16 held by water, the band's other levels never asked): the band's other strip
+     * levels from the same cell - the layer with the most ore in its slab under {@code y}, and the one over it at or below
+     * {@code ceiling} (the feet: a strip there is dug down to, never up into the unknown), each at least a slab
+     * ({@link #slab}) from {@code y} so its tunnel sees other rock; within the features' range, ore there (> 0). Ordered by
+     * the slab's ore, most first; empty: none. Pure.
+     */
+    public static Map<Integer, Double> otherYs(List<Feature> fs, int y, int ceiling) {
+        Map<Integer, Double> out = new java.util.LinkedHashMap<>();
+        if (fs == null || fs.isEmpty()) return out;
+        int lo = Integer.MAX_VALUE, hi = Integer.MIN_VALUE;
+        for (Feature f : fs) { lo = Math.min(lo, f.lo()); hi = Math.max(hi, f.hi()); }
+        int gap = Math.max(1, slab());
+        Integer below = null, above = null;
+        double nb = 0, na = 0;
+        for (int yy = lo; yy <= Math.min(hi, ceiling); yy++) {
+            double n = perSlab(fs, yy);
+            if (!(n > 0)) continue;
+            if (yy <= y - gap && n > nb) { nb = n; below = yy; }
+            if (yy >= y + gap && n > na) { na = n; above = yy; }
+        }
+        boolean belowFirst = below != null && (above == null || nb >= na);
+        if (belowFirst) out.put(below, nb);
+        if (above != null) out.put(above, na);
+        if (below != null && !belowFirst) out.put(below, nb);
+        return out;
+    }
+
     /** Blocks dug per ore block found (the slab's blocks over its expected ore), capped by {@code strip.maxBlocksPerOre}. */
     public static double blocksPerOre(double perSlab) {
         double cap = Tuning.get("strip.maxBlocksPerOre");

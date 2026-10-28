@@ -85,7 +85,9 @@ class Z78StripHeadingHoldTest {
         // the band's strip way is left out (every heading held): the derivation says so with the holds (rule 7)
         Playbook pb = Playbook.derive(D6WorkerTest.KIT, Playbook.facts(held, null));
         assertFalse(pb.ok());
-        assertTrue(pb.why().contains("every heading of its band is held: " + NeedChain.headingKey(16, "west") + ": water ahead (test)"), pb.why());
+        // 0.39.z78 dz: never "no strip way here" from the batch - the order's own chain prices the other starts and levels
+        assertTrue(pb.why().contains("no batch strip from this start (strip holds known: " + NeedChain.headingKey(16, "west") + ": water ahead (test)"), pb.why());
+        assertFalse(pb.why().contains("no strip way here"), pb.why());
         // and the trip's own strip leg, given a derivation, drops every held heading with its reason
         Playbook open = Playbook.derive(D6WorkerTest.KIT, Playbook.facts(w, null));
         NeedChain.Legs l = PlanNodes.old(() -> NeedChain.resolvePlaybookLegs(open, held));

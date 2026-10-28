@@ -87,11 +87,14 @@ class Z77DcHeadingTest {
         String world = NeedChain.headingFrom(NeedChain.headingKey(16, "east"), NeedChain.stripStart(band));
         assertEquals("south", Z62RunSTest.strip(NeedChain.resolve("raw_iron", 12, dc(band).withoutSources(Map.of(world, f.text())))).heading());
 
-        // every heading ended so at y 16: no strip way, and only then the climb and the surface explore
+        // every heading ended so at y 16 from this start: 0.39.z78 dz - the next options are priced (a strip from fresh ground,
+        // another start; the band's other levels), never the climb and the surface explore while one stands
         Map<String, String> all = new java.util.HashMap<>();
         for (String h : band.headings()) all.put(NeedChain.headingKey(16, h), "no path");
-        Chain none = NeedChain.resolve("raw_iron", 12, dc(band).withoutSources(all));
-        assertTrue(none.explore() && none.steps().stream().noneMatch(s -> s instanceof Step.Strip), none.why());
+        Chain next = NeedChain.resolve("raw_iron", 12, dc(band).withoutSources(all));
+        assertTrue(next.ok() && !next.explore(), next.why());
+        Step.Strip s = Z62RunSTest.strip(next);
+        assertTrue(s.from() != null || s.y() != 16, "another start or another level: " + s.text());
     }
 
     /** A strip from fresh ground is held by its heading from its own start (its tunnel only); 0.39.z78 strip: the one key form. */

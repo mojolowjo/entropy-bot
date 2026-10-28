@@ -119,8 +119,12 @@ class Z43StripWayTest {
         Chain c = NeedChain.resolve("raw_iron", 3, w);
         Step st = c.steps().stream().filter(s -> s instanceof Step.Strip).findFirst().orElseThrow();
         Chain again = NeedChain.resolve("raw_iron", 3, w.withoutSources(Map.of(NeedChain.sourceKey(st), "strip: lava ahead")));
-        assertTrue(again.explore(), again.why());
-        assertTrue(again.steps().stream().noneMatch(s -> s instanceof Step.Strip), again.steps().toString());
+        // 0.39.z78 dz: the failed strip is out; its start held in its one heading, the next option is priced - a strip from
+        // fresh ground (another start, its own tunnel), never the same strip again
+        assertTrue(again.ok() && !again.explore(), again.why());
+        assertTrue(again.steps().stream().noneMatch(s -> s instanceof Step.Strip x && x.key().equals(((Step.Strip) st).key())), again.steps().toString());
+        assertTrue(again.steps().stream().filter(s -> s instanceof Step.Strip).allMatch(s -> ((Step.Strip) s).from() != null), again.steps().toString());
+        assertTrue(again.why().contains("dropped: strip heading y 16 east: strip: lava ahead"), again.why());
     }
 
     /** S53: the bag lacks a pickaxe: the chain makes the stone pickaxe first, then strips. */

@@ -181,10 +181,12 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
             for (var d : w.loot().blockDrops(base.block())) if (d.per() > 0 && NeedChain.gives(word, d.item())) return true;
             return false;
         };
-        Function<String, List<String>> ores = word -> { var sb = w.strip().apply(word); return sb == null ? null : sb.ores(); };
-        Function<String, Integer> y = word -> { var sb = w.strip().apply(word); return sb == null ? null : sb.y(); };
+        // 0.39.z78 dz: a band shut at the batch's start (every heading held there) is no strip for the batch's one tunnel;
+        // the order's own chain prices its other starts and levels (NeedChain.shutAlts)
+        Function<String, List<String>> ores = word -> { var sb = w.strip().apply(word); return sb == null || sb.isShut() ? null : sb.ores(); };
+        Function<String, Integer> y = word -> { var sb = w.strip().apply(word); return sb == null || sb.isShut() ? null : sb.y(); };
         BiFunction<String, Integer, Double> ps = perSlab != null ? perSlab
-                : (word, yy) -> { var sb = w.strip().apply(word); return sb != null && sb.y() == yy ? sb.perSlab() : Double.NaN; };
+                : (word, yy) -> { var sb = w.strip().apply(word); return sb != null && !sb.isShut() && sb.y() == yy ? sb.perSlab() : Double.NaN; };
         int tier = 0;
         for (var e : w.bag().entrySet()) if (e.getValue() > 0) tier = Math.max(tier, MiningTiers.toolTier(e.getKey(), "pickaxe"));
         // 0.39.z77 legs 2 (manager 2026-10-26, run BJ 10:39:15: a trip re-priced at y -59 called its legs "surface"): where the
@@ -465,8 +467,11 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
             int need = 0;
             for (String l : leaves) {
                 Integer tl = tiers.computeIfAbsent(l, k -> tierOf(f, k));
-                if (tl == null) return no(batch, NeedChain.shw(l) + ": no strip way here (" + (f.stripHolds().isEmpty() ? "no world-gen band of its blocks at or below the feet, or none read; rule 15"
-                        : "every heading of its band is held: " + String.join("; ", f.stripHolds()) + " - or no world-gen band of its blocks here") + ")");
+                // 0.39.z78 dz (rule 7): with holds known, the batch has no strip from ITS start - never "no strip way here":
+                // the order's own chain prices the other start cells and levels and says "no strip way here" only when
+                // every one of them is held or refused (NeedChain.shutAlts)
+                if (tl == null) return no(batch, NeedChain.shw(l) + (f.stripHolds().isEmpty() ? ": no strip way here (no world-gen band of its blocks at or below the feet, or none read; rule 15)"
+                        : ": no batch strip from this start (strip holds known: " + String.join("; ", f.stripHolds()) + "; the order's own chain prices the other start cells and levels)"));
                 if (tl == MiningTiers.UNKNOWN) return no(batch, NOT_LOADED + "the pickaxe tier of " + NeedChain.shw(l) + "'s blocks");
                 if (tl > p0 && covering(gates, tl, tiers) == null) need = Math.max(need, tl);
             }

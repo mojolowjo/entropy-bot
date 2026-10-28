@@ -93,10 +93,12 @@ class Z62RunSTest {
         assertEquals(NeedChain.headingKey(16, "south"), NeedChain.stripHold(band("east").toward("south").key()), "the way's key is held as its heading");
         Map<String, String> both = Map.of(NeedChain.headingKey(16, "east"), "x", NeedChain.stripHold(band("east").toward("south").key()), "lava ahead");
         assertEquals("west", strip(NeedChain.resolve("raw_iron", 3, w.withoutSources(both))).heading());
-        // every heading blocked: no strip way
+        // every heading blocked at this start: no strip from the feet - 0.39.z78 dz: the next options (fresh ground, the
+        // band's other levels) are priced instead, each its own tunnel
         Map<String, String> all = new java.util.HashMap<>();
         for (String h : StripOrder.HEADINGS) all.put(NeedChain.headingKey(16, h), "blocked");
-        assertTrue(NeedChain.resolve("raw_iron", 3, w.withoutSources(all)).steps().stream().noneMatch(s -> s instanceof Step.Strip));
+        Chain shut = NeedChain.resolve("raw_iron", 3, w.withoutSources(all));
+        assertTrue(shut.steps().stream().filter(s -> s instanceof Step.Strip).allMatch(s -> ((Step.Strip) s).from() != null || ((Step.Strip) s).y() != 16), shut.steps().toString());
     }
 
     /**

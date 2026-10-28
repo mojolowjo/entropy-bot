@@ -119,10 +119,16 @@ public final class NeedChain {
      * in this list is the strip way then ({@link World#withoutSources}).
      */
     public record StripBand(List<String> ores, int minY, int maxY, int y, double perSlab, int x, int z, int feetY, String heading, String host,
-                            List<String> headings, int freshDist) {
+                            List<String> headings, int freshDist, Map<Integer, Double> otherYs, List<String> shut) {
         public StripBand {
             ores = List.copyOf(ores);
             headings = headings == null || headings.isEmpty() ? List.of(heading) : List.copyOf(headings);
+            otherYs = otherYs == null ? Map.of() : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(otherYs));
+            shut = shut == null ? List.of() : List.copyOf(shut);
+        }
+        public StripBand(List<String> ores, int minY, int maxY, int y, double perSlab, int x, int z, int feetY, String heading, String host,
+                         List<String> headings, int freshDist) {
+            this(ores, minY, maxY, y, perSlab, x, z, feetY, heading, host, headings, freshDist, Map.of(), List.of());
         }
         public StripBand(List<String> ores, int minY, int maxY, int y, double perSlab, int x, int z, int feetY, String heading, String host,
                          List<String> headings) {
@@ -141,9 +147,19 @@ public final class NeedChain {
         /** A strip from fresh ground: {@code freshDist} blocks from the origin along its heading (0: from the feet's column). */
         public boolean fresh() { return freshDist > 0; }
         /** The same strip way in heading {@code h} (its list unchanged). */
-        public StripBand toward(String h) { return new StripBand(ores, minY, maxY, y, perSlab, x, z, feetY, h, host, headings, freshDist); }
+        public StripBand toward(String h) { return new StripBand(ores, minY, maxY, y, perSlab, x, z, feetY, h, host, headings, freshDist, otherYs, List.of()); }
         /** 0.39.z64 item 4: the strip from fresh ground at (fx, fz), {@code dist} blocks away, heading {@code h}: a walk there first. */
-        public StripBand freshAt(int fx, int fz, int dist, String h) { return new StripBand(ores, minY, maxY, y, perSlab, fx, fz, feetY, h, host, List.of(h), Math.max(1, dist)); }
+        public StripBand freshAt(int fx, int fz, int dist, String h) { return new StripBand(ores, minY, maxY, y, perSlab, fx, fz, feetY, h, host, List.of(h), Math.max(1, dist), Map.of(), List.of()); }
+        /**
+         * 0.39.z78 dz (runs DZ 19:10:15-19:28:38, DY): every heading of this band at its start is held ({@code why}: each
+         * "heading: reason") - the strip from the feet is no way, but the band is still there: {@link NeedChain#stripAlts}
+         * offers strips from fresh ground (another start cell) and the band's other Y levels from this cell, each priced.
+         */
+        public StripBand shutWith(List<String> why) { return new StripBand(ores, minY, maxY, y, perSlab, x, z, feetY, heading, host, headings, freshDist, otherYs, why == null || why.isEmpty() ? List.of("every heading held") : why); }
+        /** 0.39.z78 dz: every heading at the start is held (the strip from the feet is no way here). */
+        public boolean isShut() { return !shut.isEmpty(); }
+        /** 0.39.z78 dz: the same band at its other level {@code y2} ({@code ps}: its ore per slab), from the same cell, every heading tried again. */
+        public StripBand atY(int y2, double ps) { return new StripBand(ores, minY, maxY, y2, ps, x, z, feetY, headings.get(0), host, headings, freshDist, Map.of(), List.of()); }
     }
 
     /**
@@ -494,17 +510,22 @@ public final class NeedChain {
             Function<String, StripBand> st = strip;
             Function<String, StripBand> stripLess = word -> {           // 0.39.z43: the same dropped band drops its strip way
                 StripBand r = st.apply(word);
-                if (r == null) return null;
+                if (r == null || r.isShut()) return r;          // 0.39.z78 dz: shut already (every start cell blocked, AaRuntime)
                 // 0.39.z62 item 1b: a heading blocked at this Y is skipped for the next open one; the strip itself dropped
                 // (its key: lava, no path down to the band, a tunnel that ended short) drops the way as before
                 // 0.39.z78 strip (run DS): every strip hold is its heading key (stripHold), so this is its one reader; the old
                 // per-word way-key check is deleted - no hold of that form is written any more (it never matched the playbook's
                 // joined strip, the run DS loop)
+                List<String> why = new ArrayList<>();
                 for (String hd : r.headings()) {
-                    if (headingHeld(keyWhy, r, hd) != null) continue;
+                    String held = headingHeld(keyWhy, r, hd);
+                    if (held != null) { why.add(hd + ": " + held); continue; }
                     return r.toward(hd);
                 }
-                return null;
+                // 0.39.z78 dz (run DZ 19:10:15-19:28:38: water held all four headings at y 16 for a strip from the feet, and
+                // the way was null from anywhere - its fresh starts and the band's other levels were never asked): every
+                // heading held here is a fact about THIS start; the band stays, shut, so the strip way prices the next options
+                return r.shutWith(why);
             };
             Function<String, CaveWay> cv = cave;
             Function<String, CaveWay> caveLess = word -> {             // 0.39.z44: a mouth with no path is dropped for the order
@@ -2555,6 +2576,12 @@ public final class NeedChain {
             int lack = t.n() - have(c, new Want(w));
             if (lack <= 0) continue;
             StripBand sb = c.w.strip().apply(w);
+            if (sb != null && sb.isShut()) {
+                // 0.39.z78 dz: every heading at the batch's start held - the batch's one strip is no way from here; the
+                // order's own chain prices the other starts and levels (shutAlts)
+                c.fail = "no strip at y " + sb.y() + " for " + shw(w) + " from here: every heading is held (" + String.join("; ", sb.shut()) + ")";
+                return null;
+            }
             if (sb == null || sb.ores().isEmpty()) {
                 // 0.39.z78 strip: every heading of the band held (its ways leave it out, World#withoutSources): said with the holds
                 List<String> holds = new ArrayList<>();
@@ -3069,7 +3096,7 @@ public final class NeedChain {
         }
         if (any || self == null || c.hoisting || c.down != null || trials.isEmpty() || c.w.seenAll().apply(self).isEmpty()) return;
         StripBand sb = c.w.strip().apply(self);
-        if (sb == null || sb.ores().isEmpty()) return;
+        if (sb == null || sb.ores().isEmpty() || sb.isShut()) return;
         String key = new Step.Strip(sb.ores(), Map.of(), sb.y(), sb.heading(), 0, sb.from()).key();
         rival(c, key, io.github.mojolowjo.entropybot.aa.brain.StripOrder.countKey(sb.ores().get(0), io.github.mojolowjo.entropybot.cave.OreSpec::family), trials, null);
     }
@@ -5026,6 +5053,11 @@ public final class NeedChain {
                 pre = cheapestPickaxe(c, tier);
                 if (c.fail != null || c.stuck) return pre == null ? null : "dig down " + depth + " to " + shw(base.block()) + " (after " + pre + ")";
             }
+            // 0.39.z78 dz (run DP 12:55:37: "to y 53..53" from the low spot 18 57 -20 failed, was dropped for the order and the
+            // same dig down was priced again - the same way twice, parked; five orders): a band entry that failed here is a
+            // fact (the order's hold and the world fact, held by distance) - this way is out from here, the next option is priced
+            String bandHeld = heldWhy(c, io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(top, top));
+            if (bandHeld != null) { c.fail = "dig down " + depth + " to " + shw(base.block()) + ": the walk into y " + top + " is held here (" + bandHeld + ")"; return null; }
             String leg = bandLeg(c, new int[]{top, top});
             if (leg == null && c.fail != null) return null;
             if (BAND_DROPPED.equals(leg)) { c.fail = "no path down to " + shw(base.block()) + " under the feet"; return null; }
@@ -5051,6 +5083,7 @@ public final class NeedChain {
             c.note(() -> "strip for " + shw(word) + ": not offered before going down (the chain's one leg to another level is the other strip)");
             return List.of();
         }
+        if (sb.isShut()) return shutAlts(c, word, gives, lack, sb);       // 0.39.z78 dz: the next options from a held start
         Alt a = new Alt("strip at y " + sb.y(), () -> strip(c, word, gives, lack, sb));
         a.id = gives;
         a.strip = true;
@@ -5075,6 +5108,69 @@ public final class NeedChain {
             }
         }
         return out;
+    }
+
+    /**
+     * 0.39.z78 dz (rules 23 and 1, manager 2026-10-27; run DZ 19:10:15-19:28:38: water ahead held all four headings at y 16,
+     * the strip way was gone from anywhere - the fork resumes a from-the-feet tunnel by its key from anywhere, so those holds
+     * are rightly unscoped - and the orders explored overland for 13 min): a band whose every heading at its start is held
+     * ({@link StripBand#isShut}) offers the NEXT options, each priced like any strip (rule 1):
+     * <ul>
+     * <li>(a) a strip from fresh ground in each heading - another start cell, at least failures.moved from this one (the
+     * first unseen area square past it, StripAreas.freshStart, within strip.freshStartBlocks of there): its own tunnel key
+     * ("|from area"), a priced walk there first (StripBand#freshAt, ToStrip);</li>
+     * <li>(b) the band's other levels from this cell ({@link StripBand#otherYs}: the best slab under and over the held Y,
+     * a slab apart, at or below the feet), each with its first heading not held at that Y.</li>
+     * </ul>
+     * Each one held or refused is said in the dropped ways; none left: "no strip way here" with every reason (rule 7).
+     */
+    private static List<Alt> shutAlts(Ctx c, String word, String gives, int lack, StripBand sb) {
+        List<Alt> out = new ArrayList<>();
+        List<String> held = new ArrayList<>(sb.shut());
+        int away = (int) Math.ceil(io.github.mojolowjo.entropybot.aa.brain.Failures.movedV());
+        for (String h : io.github.mojolowjo.entropybot.aa.brain.StripOrder.HEADINGS) {
+            int[] d = WayUp.dir(h);
+            int[] at = c.w.freshStart(sb.x() + (away - 1) * d[0], sb.y(), sb.z() + (away - 1) * d[1], h);
+            if (at == null) { held.add("fresh ground " + h + ": every area square within strip.freshStartBlocks past " + away + " blocks is seen"); continue; }
+            StripBand f = sb.freshAt(at[0], at[1], at[2] + away - 1, h);
+            String why = heldKey(c, f.key()) ? "its tunnel is held" : headingHeld(c.w.held(), f, f.y(), h);
+            if (why != null) { held.add("fresh ground " + h + " from " + f.from() + ": " + why); continue; }
+            Alt fa = new Alt("strip at y " + sb.y() + " from fresh ground " + f.freshDist() + " m " + h + " (every heading held at the start)", () -> strip(c, word, gives, lack, f));
+            fa.id = gives;
+            fa.strip = true;
+            out.add(fa);
+        }
+        for (var e : sb.otherYs().entrySet()) {
+            StripBand o = sb.atY(e.getKey(), e.getValue());
+            String open = null;
+            List<String> no = new ArrayList<>();
+            for (String h : o.headings()) {
+                String why = headingHeld(c.w.held(), o, o.y(), h);
+                if (why == null) { open = h; break; }
+                no.add(h + ": " + why);
+            }
+            if (open == null) { held.add("y " + o.y() + ": every heading held (" + String.join("; ", no) + ")"); continue; }
+            StripBand oy = o.toward(open);
+            Alt ya = new Alt("strip at y " + oy.y() + " (the band's other level; every heading held at y " + sb.y() + ")", () -> strip(c, word, gives, lack, oy));
+            ya.id = gives;
+            ya.strip = true;
+            out.add(ya);
+        }
+        // each held start said with its own label (the dropped list keeps one line a label): "strip for raw_iron at y 16
+        // held: west: <why>", "... held: fresh ground north from area 0,-1: <why>", "... held: y 11: every heading held (...)"
+        for (String h : held) {
+            int cut = h.indexOf(": ");
+            drop(c, "strip for " + shw(word) + " at y " + sb.y() + " held: " + (cut < 0 ? h : h.substring(0, cut)), cut < 0 ? "held" : h.substring(cut + 2));
+        }
+        if (out.isEmpty()) c.note(() -> "no strip way here for " + shw(word) + ": every start cell and Y held or refused (" + String.join("; ", held) + ")");
+        return out;
+    }
+
+    /** 0.39.z78 dz: the reason a source key is held for the order (World.held's "key: why" lines), null: not held. */
+    private static String heldWhy(Ctx c, String key) {
+        if (c.w.held() == null) return null;
+        for (String h : c.w.held()) if (h.startsWith(key + ": ")) return h.substring(key.length() + 2);
+        return null;
     }
 
     /** A source key held for the order (World.held's "key: why" lines). */

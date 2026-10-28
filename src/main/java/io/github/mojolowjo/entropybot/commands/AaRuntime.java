@@ -877,10 +877,16 @@ public final class AaRuntime implements JobPort {
             if (why == null) open.add(h);
             else shut.add(h + " (" + why + ")");
         }
+        // 0.39.z78 dz: the band's other levels from this cell (a slab apart, at or below the feet), for a start whose every
+        // heading is held or blocked (NeedChain.shutAlts)
+        var otherYs = io.github.mojolowjo.entropybot.aa.brain.OreBand.otherYs(fs, y, inRock ? me[1] : Math.min(me[1], y));
         if (open.isEmpty()) {
             String said = "shut " + me[0] + "," + me[1] + "," + me[2];
-            if (stripAirSaid.add(said)) LOG.info("[entropybot] aa: strip at y {} for {}: every heading is blocked at its start here: {}", y, word, String.join(", ", shut));
-            return null;
+            if (stripAirSaid.add(said)) LOG.info("[entropybot] aa: strip at y {} for {}: every heading is blocked at its start here: {} - the strip way prices fresh ground and the band's other levels", y, word, String.join(", ", shut));
+            StripStep.areasLoaded();
+            // 0.39.z78 dz (rule 1): a start blocked in every heading is a fact about this cell - the band stays, shut
+            return new io.github.mojolowjo.entropybot.aa.NeedChain.StripBand(ores, lo, hi, y,
+                    io.github.mojolowjo.entropybot.aa.brain.OreBand.perSlab(fs, y), me[0], me[2], me[1], order.get(0), host, order, 0, otherYs, shut);
         }
         if (!shut.isEmpty()) {
             String said = "shut " + me[0] + "," + me[1] + "," + me[2] + " " + shut;
@@ -888,7 +894,7 @@ public final class AaRuntime implements JobPort {
         }
         StripStep.areasLoaded();                         // 0.39.z64 item 4: this world's seen strip areas price the way
         return new io.github.mojolowjo.entropybot.aa.NeedChain.StripBand(ores, lo, hi, y,
-                io.github.mojolowjo.entropybot.aa.brain.OreBand.perSlab(fs, y), me[0], me[2], me[1], open.get(0), host, open);
+                io.github.mojolowjo.entropybot.aa.brain.OreBand.perSlab(fs, y), me[0], me[2], me[1], open.get(0), host, open, 0, otherYs, null);
     }
 
     /**
