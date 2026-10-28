@@ -502,8 +502,25 @@ public final class CaveRecord {
         /** A way for the family: not stuck (review 4), and not done - or done with its ore seen and left. */
         public boolean offeredFor(String family) { return !stuck && (!done || left(family) > 0); }
 
-        /** The cave way's yield: the one measured here once walked (review 2), else {@code prior}. */
-        public double rate(double prior) { return walkedMinutes > 0 ? oreSeenPerMinute : prior; }
+        /** The cave way's yield: the one measured here once walked long enough ({@link #measured}, review 2), else {@code prior}. */
+        public double rate(double prior) { return measured(prior) ? oreSeenPerMinute : prior; }
+
+        /**
+         * Run EO (rule 15; run EO 05:13:44: a 0.5-min walk that saw no ore made the cave's yield 0 and the cave was dropped
+         * silently): the yield is MEASURED only once the minutes walked here are at least the minutes the prior expects
+         * one ore in ({@link #measureFloorMinutes}); under that floor a walk that saw nothing says nothing - not measured,
+         * the prior holds.
+         */
+        public boolean measured(double prior) { return walkedMinutes > 0 && walkedMinutes >= measureFloorMinutes(prior); }
+    }
+
+    /**
+     * Run EO: the floor of minutes walked before a cave's yield counts as measured - the time the prior yield
+     * ({@code prior} ore a minute) expects ONE ore in (1 / prior): less walked, zero seen is no evidence. Structural: one
+     * expected ore, from the prior itself (no knob). A prior of 0 or not known: never measured by a walk of no ore.
+     */
+    public static double measureFloorMinutes(double prior) {
+        return prior > 0 ? 1.0 / prior : Double.POSITIVE_INFINITY;    // structural: the minutes one expected ore takes
     }
 
     /** Run EK: the facts, cached until a record write (a cell fed or seen, an ore, a walk) - the planner's asks read the cache. */

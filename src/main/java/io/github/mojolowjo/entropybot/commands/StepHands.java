@@ -822,6 +822,8 @@ public final class StepHands implements Steps.Hands {
         List<io.github.mojolowjo.entropybot.cave.ExploreRules.LipGoal> reachParts = List.of();
         long goalKey;
         long goalAt;
+        /** Run EO: the record's seen cells when the goal was set (an arrival that adds none drops the goto). */
+        int seenAtGoal;
         /** Run EN: the gotos dropped in this step (an empty reach goal, no path) and their reasons, said at the end. */
         final java.util.Set<Long> dropped = new java.util.HashSet<>();
         final List<String> drops = new ArrayList<>();
@@ -895,7 +897,7 @@ public final class StepHands implements Steps.Hands {
             // run EN (rules 2, 23 (2)): the walk's one arrived reader is its reach goal; the cells it is over are then in
             // reach and in sight - seen (the record's caveSaw), so the frontier moves on
             if (cv.reach.isInGoal(me[0], me[1], me[2])) {
-                arrivedAt(sg, cv, k, me);
+                arrived(sg, cv, k, me);
             } else {
                 cv.hold = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.look(cv.hold, Core.INSTANCE.tick(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(),
                         b.getPathingBehavior().getCurrent() != null, io.github.mojolowjo.entropybot.cave.ExploreRules.NEVER_REACHED);
@@ -965,9 +967,10 @@ public final class StepHands implements Steps.Hands {
                 cv.goalKey = g.key();
                 cv.reachCells = partCells;
                 cv.reachParts = partGoals;
+                cv.seenAtGoal = f == null ? 0 : f.cellCount() - f.unseen();
                 cv.reach = parts.size() == 1 ? parts.get(0) : new baritone.api.pathing.goals.GoalComposite(parts.toArray(new baritone.api.pathing.goals.Goal[0]));
                 if (cv.reach.isInGoal(me[0], me[1], me[2])) {                            // in reach and sight already: seen, the next move next tick
-                    arrivedAt(sg, cv, k, me);
+                    arrived(sg, cv, k, me);
                     return Car.Status.running("caving: " + g.why() + " in sight from here");
                 }
                 cv.hold = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.start(new io.github.mojolowjo.entropybot.cave.ExploreRules.Target(g.cell()[0], g.cell()[2]),
@@ -978,6 +981,21 @@ public final class StepHands implements Steps.Hands {
                 return Car.Status.running("caving: walking to " + g.why());
             }
         }
+    }
+
+    /**
+     * Run EO (rule 23 (1); run EO 05:13:14-44: "at the branch at -51 51 81" 611 times, the feet still, nothing new seen -
+     * its frontier cell sat at the stand's SEE_STEPS edge): an arrival that adds no seen cell to the record (since the goal
+     * was set) drops that goto "arrived, nothing new" - the same list as the no-path drop - and the next one is walked.
+     */
+    private static void arrived(io.github.mojolowjo.entropybot.sense.Sightings sg, Caving cv, Step.Cave k, int[] me) {
+        long key = cv.goalKey;
+        String what = cv.goalWhy;
+        arrivedAt(sg, cv, k, me);
+        var after = sg.caveFacts(cv.dim, k.x(), k.y(), k.z());
+        int seenNow = after == null ? cv.seenAtGoal : after.cellCount() - after.unseen();
+        if (io.github.mojolowjo.entropybot.cave.CaveWalk.nothingNew(cv.seenAtGoal, seenNow))
+            dropGoto(cv, key, what, "arrived, nothing new (its stand sees no cell not seen before)");
     }
 
     /**

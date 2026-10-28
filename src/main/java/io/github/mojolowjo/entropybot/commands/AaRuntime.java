@@ -1006,12 +1006,17 @@ public final class AaRuntime implements JobPort {
         // planner ranks them, drops one that holds under the need with its reason and asks the next (NeedChain.caveAlts)
         List<io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay> ways = new ArrayList<>();
         var idx = pass.caveIndex();
+        int feetRoot = idx.volumeAt(me[0], me[1], me[2]);
         for (var k : known) {
             var f = sg.caveFacts(dim, k.x(), k.y(), k.z());
-            if (f != null && !f.offeredFor(fam)) continue;
-            if (bandKnown && !k.depth().overlaps(where.lo(), where.hi())) continue;
-            boolean walked = f != null && f.walkedMinutes() > 0;
-            double rate = f == null ? sg.ore().caveRate(fam) : f.rate(sg.ore().caveRate(fam));   // review 2: measured once walked
+            // run EO (rule 7): a cave left out is said with its reason (NeedChain.caveAlts), never dropped silently
+            String out = null;
+            if (f != null && f.stuck()) out = "its last walk gained nothing and nothing new is known of it since (stuck)";
+            else if (f != null && !f.offeredFor(fam)) out = "explored to its end with no " + fam + " seen and left (done)";
+            else if (bandKnown && !k.depth().overlaps(where.lo(), where.hi())) out = "its depth " + k.depth() + " is off where " + ore + " generates (" + where.lo() + ".." + where.hi() + ")";
+            double prior = sg.ore().caveRate(fam);
+            boolean walked = f != null && f.measured(prior);                // run EO: measured only past the floor (CaveRecord.measureFloorMinutes)
+            double rate = f == null ? prior : f.rate(prior);                  // review 2: measured once walked long enough
             // run EM: the minutes it holds from its fed cells - the record's unseen part once fed; while it is being fed,
             // the index's volume now (O(1)) less what is seen; the size bucket only when nothing of it is fed (rule 15)
             long cells = -1;
@@ -1023,10 +1028,14 @@ public final class AaRuntime implements JobPort {
             }
             double unseen = cells < 0 ? -1
                     : cells / (double) io.github.mojolowjo.entropybot.sense.CaveIndex.CROSS_SECTION / io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps() / 60.0;   // structural: seconds a minute
+            // run EO (rule 23 (1)): the bot stands inside this cave's volume - its branches are the way from here, ranked first
+            boolean inside = feetRoot >= 0 && feetRoot == idx.volumeAt(k.x(), k.y(), k.z());
             ways.add(new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(k.x(), k.y(), k.z(), Math.sqrt(Jobs.distSq(me, new int[]{k.x(), k.y(), k.z()})),
-                    ore, fam, rate, walked || sg.ore().caveMinutes() > 0, k.size(), unseen, leftKeys(sg.caveLeft(dim, k.x(), k.y(), k.z(), fam)), lips(pass, k, me)));
+                    ore, fam, rate, walked || sg.ore().caveMinutes() > 0, k.size(), unseen, leftKeys(sg.caveLeft(dim, k.x(), k.y(), k.z(), fam)), lips(pass, k, me))
+                    .withOut(out).withInside(inside));
         }
         if (ways.isEmpty()) return null;
+        ways.sort(java.util.Comparator.comparing((io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay w) -> !w.inside()));   // stable: the inside cave first, then nearest
         return ways.get(0).withMore(ways.subList(1, ways.size()));
     }
 

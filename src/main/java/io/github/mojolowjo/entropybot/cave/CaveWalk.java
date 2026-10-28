@@ -71,6 +71,9 @@ public final class CaveWalk {
         return out;
     }
 
+    /** Run EO: an arrival that added no seen cell to the record since the goal was set ("arrived, nothing new"). Pure. */
+    public static boolean nothingNew(int seenAtGoal, int seenNow) { return seenNow <= seenAtGoal; }
+
     /** Run EN: the {@code n} cells of {@code cells} nearest {@code feet} (nearest first). Pure. */
     public static List<int[]> nearest(List<int[]> cells, int[] feet, int n) {
         List<int[]> out = new java.util.ArrayList<>(cells);

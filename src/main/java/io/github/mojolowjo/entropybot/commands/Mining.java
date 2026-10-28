@@ -1375,7 +1375,19 @@ final class Mining {
             }
             // 0.39.z77 J2 E2: from under ground only the cells in the target's band (its placer band nearest the feet)
             var inBand = under ? (bandTarget ? ex.where.preferred(me[1]) : null) : null;
+            // run EO: a known cave is in the band by its VOLUME's Y range (the index's minY..maxY), never by its entry's Y alone
+            List<int[]> knownInBand = new ArrayList<>();
+            if (under && inBand != null && sg != null) {
+                var cidx = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.caveIndex();
+                for (var m : sg.allKnownCaves(d)) {
+                    if (Jobs.distSq(me, new int[]{m.x(), m.y(), m.z()}) > (long) within * within) continue;
+                    int root = cidx.volumeAt(m.x(), m.y(), m.z());
+                    var v = root < 0 ? null : cidx.volume(root);
+                    if (v != null && v.minY() <= inBand.hi() && v.maxY() >= inBand.lo() && (m.y() < inBand.lo() || m.y() > inBand.hi())) knownInBand.add(new int[]{m.x(), m.y(), m.z()});
+                }
+            }
             if (under) cells = inBand == null ? new ArrayList<>() : ExploreRules.inBand(cells, inBand.lo(), inBand.hi());
+            if (!knownInBand.isEmpty()) { cells = new ArrayList<>(cells); cells.addAll(knownInBand); }
             final double moved = io.github.mojolowjo.entropybot.aa.brain.Failures.movedV();
             int[] aim = ExploreRules.toward(cells, cell -> CAVE_VISITED.contains(Jobs.fmt(cell))
                     || ExploreRules.TargetHold.skipCell(ex.failed, cell[0], cell[2], me, moved) || frozenCell(cell, me));   // run ED: failed from here: passed over
