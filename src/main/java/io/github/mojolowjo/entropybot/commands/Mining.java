@@ -741,6 +741,8 @@ final class Mining {
         /** Run EH (2): the feet the last no-break walks found no path from, and how many in a row from there. */
         int[] noBreakFrom;
         int noBreakFails;
+        /** 569bb820 review: the not-known no-break end said already (the fork's calc of it; one line per end). */
+        Object noBreakSaid;
 
         /**
          * 0.39.z76 send-back 1 (run AN 23:29:43-23:30:07: a gather on the way to cave candidate 117 13 213 dropped the target
@@ -1258,7 +1260,25 @@ final class Mining {
                     ex.aimed != null ? ex.aimCell : null);   // run ED: an opening is reached within reach of its cell
             // J6b item 5 (the owner: "when exploring it should not break blocks"): the walk is the fork's no-break walk; its
             // "no path (no-break walk)" fails the target at once - the explore picks the next one (said once, the failed line)
-            if (ex.hold.state() == ExploreRules.TargetHold.State.HELD && b != null && ExploreRules.noBreakNoPath(b.getCustomGoalProcess().lastEnd())) {
+            // 569bb820 review (rule 15; job-vein a2d4e1c8): only an EXHAUSTED no-break search fails the target; a budget stop
+            // or another stop is not known - the hold walks it again (its own stall bound), said once per end
+            ExploreRules.NoBreakEnd nbEnd = ExploreRules.NoBreakEnd.NONE;
+            baritone.api.process.ICustomGoalProcess.WalkCalc nbCalc = null;
+            if (ex.hold.state() == ExploreRules.TargetHold.State.HELD && b != null) {
+                try {
+                    nbCalc = b.getCustomGoalProcess().lastCalc();
+                } catch (LinkageError e) {
+                    nbCalc = null;                       // an older fork: the stop is not known
+                }
+                nbEnd = ExploreRules.noBreakEnd(b.getCustomGoalProcess().lastEnd(), nbCalc == null ? null : nbCalc.noBreak(), nbCalc == null ? null : nbCalc.exhausted());
+            }
+            Object nbKey = nbCalc == null ? (Object) "no calc kept" : nbCalc;
+            if (nbEnd == ExploreRules.NoBreakEnd.NOT_KNOWN && ex.noBreakSaid != nbKey) {
+                ex.noBreakSaid = nbKey;
+                LOG.info("[entropybot] explore: the no-break walk to {} {} ended without an exhausted search ({}) - not known (rule 15): walked again, the target held",
+                        ex.target.x(), ex.target.z(), nbCalc == null ? "no calc kept" : nbCalc.line());
+            }
+            if (nbEnd == ExploreRules.NoBreakEnd.NO_PATH) {
                 ex.hold = ExploreRules.TargetHold.failNow(ex.hold, "no path without breaking or placing (the no-break walk) from " + Jobs.fmt(me));
                 // run EI (2): the probe line of the failed no-break walk (debug.walkProbe), with the fork's calc detail
                 // (ICustomGoalProcess.lastNoBreakCalc, job-vein 5ca5424c: null before the first no-break "no path" end)

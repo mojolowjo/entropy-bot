@@ -297,6 +297,21 @@ public final class ExploreRules {
      */
     public static boolean noBreakNoPath(String lastEnd) { return lastEnd != null && lastEnd.startsWith("no path") && lastEnd.contains("no-break"); }
 
+    /** 569bb820 review: what a no-break walk's end means for the explore target. */
+    public enum NoBreakEnd { NONE, NO_PATH, NOT_KNOWN }
+
+    /**
+     * 569bb820 review (rule 15; job-vein a2d4e1c8): the no-break walk ended "no path" ({@link #noBreakNoPath} on the fork's
+     * lastEnd: that it ended so) - a NO_PATH for the target only when the fork's last calc of that walk was a no-break one
+     * that EXHAUSTED the graph ({@code noBreak} / {@code exhausted}: ICustomGoalProcess.WalkCalc; null: no calc kept); a
+     * budget stop, another stop or no calc: NOT_KNOWN (the target is walked again or the next one taken, said). Not such an
+     * end: NONE. Pure.
+     */
+    public static NoBreakEnd noBreakEnd(String lastEnd, Boolean noBreak, Boolean exhausted) {
+        if (!noBreakNoPath(lastEnd)) return NoBreakEnd.NONE;
+        return Boolean.TRUE.equals(noBreak) && Boolean.TRUE.equals(exhausted) ? NoBreakEnd.NO_PATH : NoBreakEnd.NOT_KNOWN;
+    }
+
     /**
      * Run EH (2): the no-break walks in a row from the same feet that found no path, at which the bot counts as boxed in:
      * three targets, each its own chunk - a hill hides one or two of them, never every way out.

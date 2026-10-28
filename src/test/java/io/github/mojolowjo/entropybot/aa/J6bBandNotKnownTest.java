@@ -81,6 +81,29 @@ class J6bBandNotKnownTest {
         assertTrue(BandLeg.walkEnd(true, EDGE, false, 61).contains("has no floor"), "no floor: not known even exhausted");
     }
 
+    /** 569bb820 review (1): neither flag (CHUNKS / CANCELLED / ERROR stops) is not known, the reason carried - never none. */
+    @Test
+    void neitherFlag_isNotKnown_theReasonCarried() {
+        for (String r : List.of("cancelled", "error", "chunks")) {
+            var a = io.github.mojolowjo.entropybot.commands.PricedAnswers.noPath(r, false, false, "chunks not loaded");
+            assertEquals(PathPrice.Kind.COMPUTING, a.kind(), r + ": " + a);
+            assertTrue(a.reason().startsWith(io.github.mojolowjo.entropybot.commands.PricedAnswers.OTHER_STOP) && a.reason().endsWith("(" + r + ")"), a.reason());
+            assertEquals(BandLeg.Act.WAIT, BandLeg.of(a, START, true).act(), "never the band's fact");
+        }
+    }
+
+    /** 569bb820 review (2): an explore target fails on a no-break walk's end only when that search exhausted the graph. */
+    @Test
+    void aNoBreakEnd_failsTheTarget_onlyWhenExhausted() {
+        var E = io.github.mojolowjo.entropybot.cave.ExploreRules.NoBreakEnd.class;
+        assertEquals(io.github.mojolowjo.entropybot.cave.ExploreRules.NoBreakEnd.NO_PATH, io.github.mojolowjo.entropybot.cave.ExploreRules.noBreakEnd("no path (no-break walk)", true, true));
+        assertEquals(io.github.mojolowjo.entropybot.cave.ExploreRules.NoBreakEnd.NOT_KNOWN, io.github.mojolowjo.entropybot.cave.ExploreRules.noBreakEnd("no path (no-break walk)", true, false), "a budget stop: not known");
+        assertEquals(io.github.mojolowjo.entropybot.cave.ExploreRules.NoBreakEnd.NOT_KNOWN, io.github.mojolowjo.entropybot.cave.ExploreRules.noBreakEnd("no path (no-break walk)", null, null), "no calc kept: not known");
+        assertEquals(io.github.mojolowjo.entropybot.cave.ExploreRules.NoBreakEnd.NOT_KNOWN, io.github.mojolowjo.entropybot.cave.ExploreRules.noBreakEnd("no path (no-break walk)", false, true), "the calc of another (breaking) walk: not this one's");
+        assertEquals(io.github.mojolowjo.entropybot.cave.ExploreRules.NoBreakEnd.NONE, io.github.mojolowjo.entropybot.cave.ExploreRules.noBreakEnd("arrived", true, true));
+        assertNotNull(E);
+    }
+
     /** ER: the not-known band leg re-plans the pickaxe; nothing held for it, no world fact for the boots (was: all four held it). */
     @Test
     void aNotKnownBandLeg_noWorldFact_theOtherOrdersStillPriceIt() {

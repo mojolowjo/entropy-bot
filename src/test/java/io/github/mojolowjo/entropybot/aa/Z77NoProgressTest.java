@@ -72,7 +72,10 @@ class Z77NoProgressTest {
         assertEquals(PathPrice.Kind.UNREACHABLE, fork(IPathCost.Answer.UNREACHABLE).kind());
         assertFalse(NeedChain.waitsHere(NeedChain.walked(fork(IPathCost.Answer.UNREACHABLE)).fail()));
         assertEquals(PathPrice.Kind.CHUNKS, fork(IPathCost.Answer.CHUNKS).kind());
-        assertEquals(new PathPrice.Answer(null, PathPrice.Kind.NONE, "error"), fork("error"), "any other reason: no answer, the fork's words");
+        // 569bb820 review (rule 15): a stop neither exhausted nor on a budget (an error, a cancel) is not known, its words carried
+        PathPrice.Answer err = fork("error");
+        assertEquals(PathPrice.Kind.COMPUTING, err.kind(), err.toString());
+        assertEquals(PricedAnswers.OTHER_STOP + " (error)", err.reason());
     }
 
     /** DH's facts: the descent's search made no progress - no leg's no-way, the trip stands, no order ends. */

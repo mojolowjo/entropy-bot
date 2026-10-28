@@ -69,8 +69,13 @@ public final class PricedAnswers {
         if (Boolean.TRUE.equals(budget)) return PathPrice.Answer.computing(NO_PROGRESS_WAIT);
         if (chunks.equals(reason)) return PathPrice.Answer.chunks(chunks);
         if (exhausted == null) return PathPrice.Answer.computing(NO_STOP_KEPT + " (" + reason + ")");
-        return PathPrice.Answer.none(reason);
+        // 569bb820 review (rule 15): neither flag (the fork's CHUNKS / CANCELLED / ERROR stops) says nothing about a path -
+        // not known, the reason carried; never a none / no-path answer
+        return PathPrice.Answer.computing(OTHER_STOP + " (" + reason + ")");
     }
+
+    /** 569bb820 review: a stop that is neither the graph exhausted nor a budget - not known (rule 15). */
+    public static final String OTHER_STOP = "not known: the search stopped neither exhausted nor on its budget (rule 15: says nothing about a path)";
 
     /** J6b: the search's stop is not known (the fork kept no last calc for the goal) - not known, never "no path" (rule 15). */
     public static final String NO_STOP_KEPT = "not known: the fork kept no stop for this search (rule 15: never 'no path' without the graph exhausted)";
