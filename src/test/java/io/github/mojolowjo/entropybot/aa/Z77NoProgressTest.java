@@ -48,7 +48,9 @@ class Z77NoProgressTest {
 
     /** The chain's answer for the fork's no-path reason, as LivePathPrice gives it. */
     static PathPrice.Answer fork(String reason) {
-        return PricedAnswers.noPath(reason, IPathCost.Answer.UNREACHABLE, IPricedPath.NO_PROGRESS, IPathCost.Answer.CHUNKS);
+        // J6b (job-vein a2d4e1c8): the fork's flags with its reason - "unreachable" is an exhausted graph, "no progress" a budget stop
+        boolean exhausted = IPathCost.Answer.UNREACHABLE.equals(reason), budget = IPricedPath.NO_PROGRESS.equals(reason);
+        return PricedAnswers.noPath(reason, exhausted, budget, IPathCost.Answer.CHUNKS);
     }
 
     /** The kit world; the descent's walk (the only one below y 60) answers {@code descent}, every other walk priced. */

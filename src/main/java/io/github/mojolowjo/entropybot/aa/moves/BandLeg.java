@@ -26,6 +26,20 @@ public final class BandLeg {
     public record Next(Act act, String why) {}
 
     /**
+     * 0.39.z78 J6b (job-vein a2d4e1c8): the band walk's own end (Baritone's goal ended outside the band) - the band's fact
+     * only when its last calc EXHAUSTED the graph from a standable start: null then; otherwise the not-known words
+     * ({@code exhausted} null: no calc kept; false: a budget stop or another end).
+     */
+    public static String walkEnd(Boolean exhausted, int[] start, boolean standable, int y) {
+        String at = start == null ? "an unknown cell" : start[0] + " " + start[1] + " " + start[2];
+        if (!standable) return "Baritone's goal ended at y " + y + ", its start " + at + " has no floor - not a true no-path (rule 15: not known)";
+        if (!Boolean.TRUE.equals(exhausted))
+            return "Baritone's goal ended at y " + y + " without an exhausted search (" + (exhausted == null ? "no calc kept" : "a budget stop or another end")
+                    + ") - not a no-path (rule 15: not known)";
+        return null;
+    }
+
+    /**
      * The leg's next act on the answer {@code kind} ({@code reason}: its words) for the search started at {@code start}
      * ({@code standable}: a floor under it).
      */

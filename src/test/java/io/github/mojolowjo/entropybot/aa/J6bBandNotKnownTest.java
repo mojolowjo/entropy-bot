@@ -58,6 +58,29 @@ class J6bBandNotKnownTest {
         assertTrue(floorless.why().contains("-10 61 69") && floorless.why().contains("no floor"), floorless.why());
     }
 
+    /**
+     * job-vein a2d4e1c8: "no path" only from the fork's exhausted flag - a budget stop is not known, whatever the reason's
+     * words; no calc kept is not known too; the walk's own end the same.
+     */
+    @Test
+    void aBudgetStop_isNotKnown_anExhaustedSearch_isNoPath() {
+        var budget = io.github.mojolowjo.entropybot.commands.PricedAnswers.noPath("unreachable", false, true, "chunks not loaded");
+        assertEquals(PathPrice.Kind.COMPUTING, budget.kind(), "a budget stop, even with the 'unreachable' words: not known - " + budget);
+        assertEquals(BandLeg.Act.WAIT, BandLeg.of(budget, START, true).act());
+        var exhausted = io.github.mojolowjo.entropybot.commands.PricedAnswers.noPath("no progress", true, false, "chunks not loaded");
+        assertEquals(PathPrice.Kind.UNREACHABLE, exhausted.kind(), "the graph exhausted: no path, whatever the words - " + exhausted);
+        assertEquals(BandLeg.Act.FACT, BandLeg.of(exhausted, START, true).act());
+        var unkept = io.github.mojolowjo.entropybot.commands.PricedAnswers.noPath("unreachable", null, null, "chunks not loaded");
+        assertEquals(PathPrice.Kind.COMPUTING, unkept.kind(), "no calc kept: not known - " + unkept);
+        assertTrue(unkept.reason().startsWith(io.github.mojolowjo.entropybot.commands.PricedAnswers.NO_STOP_KEPT), unkept.reason());
+        assertEquals(PathPrice.Kind.CHUNKS, io.github.mojolowjo.entropybot.commands.PricedAnswers.noPath("chunks not loaded", false, false, "chunks not loaded").kind());
+        // the walk's end
+        assertNull(BandLeg.walkEnd(true, START, true, 61), "exhausted from a standable start: the band's fact");
+        assertTrue(BandLeg.walkEnd(false, START, true, 61).contains("a budget stop"), "a budget stop: not known");
+        assertTrue(BandLeg.walkEnd(null, START, true, 61).contains("no calc kept"));
+        assertTrue(BandLeg.walkEnd(true, EDGE, false, 61).contains("has no floor"), "no floor: not known even exhausted");
+    }
+
     /** ER: the not-known band leg re-plans the pickaxe; nothing held for it, no world fact for the boots (was: all four held it). */
     @Test
     void aNotKnownBandLeg_noWorldFact_theOtherOrdersStillPriceIt() {

@@ -392,7 +392,16 @@ public final class LivePathPrice implements PathPrice {
      * (IPricedPath.landingOf) and summed for that landing's tails - a re-search reads it again.
      */
     private Answer answer(Minecraft mc, IBaritone b, IPathCost.Answer a, String key, BlockPos pos) {
-        if (a == null || a.noPath || !a.complete) return answer(mc, a);
+        if (a == null || a.noPath || !a.complete) {
+            // J6b (job-vein a2d4e1c8): the priced search's own stop decides "no path" (exhausted) or "not known" (budget)
+            baritone.api.pathing.calc.IPricedPath.SearchCalc calc = null;
+            try {
+                calc = b.getPricedPath().lastCalc(goalOf(key));
+            } catch (LinkageError e) {
+                calc = null;                             // an older fork: the stop is not known (PricedAnswers.NO_STOP_KEPT)
+            }
+            return answer(mc, a, calc);
+        }
         java.util.List<int[]> cells = new java.util.ArrayList<>(a.path.size());
         for (BlockPos q : a.path) cells.add(new int[]{q.getX(), q.getY(), q.getZ()});
         long landing;
@@ -482,7 +491,7 @@ public final class LivePathPrice implements PathPrice {
         if (err != null) {
             LOG.warn("[entropybot] path cost to {}: the background search threw", key, err);
             out = Answer.none("the search threw: " + err);
-        } else out = answer(mc, a);
+        } else out = answer(mc, a, null);                    // the z41 route keeps no calc: a no-path is not known
         // 0.39.z54 B (run M: the walk vs the price; 38 "no progress" answers): the probe's lines, nothing built when off
         if (WalkProbe.on() && a != null) {
             BlockPos goal = posOf(key);
@@ -498,15 +507,16 @@ public final class LivePathPrice implements PathPrice {
     }
 
     /** Baritone's answer as the chain's: complete -> the price; noPath -> its reason, by kind; "about" -> not a price. */
-    private static Answer answer(Minecraft mc, IPathCost.Answer a) {
+    private static Answer answer(Minecraft mc, IPathCost.Answer a, baritone.api.pathing.calc.IPricedPath.SearchCalc calc) {
         if (a == null) return Answer.none("the search gave no answer");
         if (!a.noPath && a.complete) {
             var dug = pickBreaks(mc, a.path);
             return Answer.priced(new Walk(TickPrice.walkS(a.ticks), TickPrice.walkS(lavaTicks(mc, a)), count(dug), dug));
         }
         if (!a.noPath) return Answer.none("budget: the search ran out before the goal (" + a + ")");
-        // 0.39.z77 noprogress (run DH 04:39:57): only the search's end is a no-way; "no progress" is not known (PricedAnswers.noPath)
-        return PricedAnswers.noPath(a.reason, IPathCost.Answer.UNREACHABLE, baritone.api.pathing.calc.IPricedPath.NO_PROGRESS, IPathCost.Answer.CHUNKS);
+        // 0.39.z77 noprogress (run DH 04:39:57): only the search's end is a no-way; J6b (a2d4e1c8): from the fork's flags, never
+        // the reason's words (PricedAnswers.noPath); no calc kept: not known
+        return PricedAnswers.noPath(a.reason, calc == null ? null : calc.exhausted(), calc == null ? null : calc.budget(), IPathCost.Answer.CHUNKS);
     }
 
     private static boolean fresh(Kept k, int[] me, int bag, long now) {

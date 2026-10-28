@@ -58,14 +58,22 @@ public final class PricedAnswers {
      * for its own start cell only, so the walk is searched again from the next cell the bot stands on; from the same cell,
      * past pathCost.firstAnswerWaitS it is taken by Baritone's estimate ({@link #afterWait}) and walked on Baritone's fresh
      * search (the price's DigDownGoal steering for a descent). {@code chunks}: chunks not loaded. Anything else: no answer,
-     * with the fork's reason. Pure.
+     * with the fork's reason. 0.39.z78 J6b (job-vein a2d4e1c8): decided from the flags of the fork's last calc of the search
+     * ({@code exhausted} / {@code budget}, IPricedPath.SearchCalc; null: no calc kept - not known), never from the reason's
+     * words. Pure.
      */
-    public static PathPrice.Answer noPath(String reason, String unreachable, String noProgress, String chunks) {
-        if (unreachable.equals(reason)) return PathPrice.Answer.unreachable("no path: the complete search found none");
-        if (noProgress.equals(reason)) return PathPrice.Answer.computing(NO_PROGRESS_WAIT);
+    public static PathPrice.Answer noPath(String reason, Boolean exhausted, Boolean budget, String chunks) {
+        // 0.39.z78 J6b (job-vein a2d4e1c8, the manager's ER ruling, rule 15): "no path" ONLY from the fork's flag - the
+        // graph exhausted (IPricedPath.SearchCalc#exhausted); a budget stop is not known; never the reason's words
+        if (Boolean.TRUE.equals(exhausted)) return PathPrice.Answer.unreachable("no path: the complete search found none");   // the graph exhausted
+        if (Boolean.TRUE.equals(budget)) return PathPrice.Answer.computing(NO_PROGRESS_WAIT);
         if (chunks.equals(reason)) return PathPrice.Answer.chunks(chunks);
+        if (exhausted == null) return PathPrice.Answer.computing(NO_STOP_KEPT + " (" + reason + ")");
         return PathPrice.Answer.none(reason);
     }
+
+    /** J6b: the search's stop is not known (the fork kept no last calc for the goal) - not known, never "no path" (rule 15). */
+    public static final String NO_STOP_KEPT = "not known: the fork kept no stop for this search (rule 15: never 'no path' without the graph exhausted)";
 
     /** 0.39.z77 noprogress: the words of a search that stopped on its budget with no step past its start (not known). */
     public static final String NO_PROGRESS_WAIT = "no progress: Baritone's search stopped on its budget with no step past the start - not the search's end"

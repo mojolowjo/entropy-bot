@@ -240,33 +240,26 @@ public final class StepHands implements Steps.Hands {
     /** J6b item 14: the cell Baritone's searches start from and whether it has a floor under it. */
     record Start(int[] cell, boolean standable) {}
 
-    /** Review of 503b6d5d: the causes searchStart has said already (one line per cause, never per tick). */
-    private static final java.util.Set<String> START_WARNED = java.util.concurrent.ConcurrentHashMap.newKeySet();
-
-
     /**
      * 0.39.z78 J6b queue item 14 (run ER 07:37:48: the band leg's cell was the column of the floorless edge cell -10 61 69,
-     * the priced search stopped on its budget): the cell Baritone's searches start from - the fork's own reader,
-     * PathingBehavior#pathStart (the supporting block when the feet stand off an edge; rule 23 (2): one reader with the
-     * search itself) - and whether it is standable (MovementHelper#canWalkOn the block under it). No Baritone or an older
-     * fork: the feet, standable by the block under them. Loader notes: Baritone's impl classes (the fork jar the mod builds
-     * against), vanilla LocalPlayer#blockPosition.
+     * the priced search stopped on its budget): the cell Baritone's searches start from - the fork's API,
+     * IPathingBehavior#searchStart (job-vein a2d4e1c8: its pathStart, the supporting block when the feet stand off an edge;
+     * rule 23 (2): one reader with the search itself) - and whether it is standable (a block with a collision shape under
+     * it). Not given (no Baritone, an older fork, no player): the feet. Loader notes: the fork's API; vanilla
+     * LocalPlayer#blockPosition, BlockState#getCollisionShape.
      */
     static Start searchStart(IBaritone b, LocalPlayer p) {
-        int[] feet = Jobs.here(p);
+        int[] cell = Jobs.here(p);
+        baritone.api.utils.BetterBlockPos s = null;
         try {
-            if (b != null && b.getPathingBehavior() instanceof baritone.behavior.PathingBehavior pb) {
-                baritone.api.utils.BetterBlockPos s = pb.pathStart();
-                return new Start(new int[]{s.x, s.y, s.z}, baritone.pathing.movement.MovementHelper.canWalkOn(b.getPlayerContext(), s.below()));
-            }
-        } catch (RuntimeException | LinkageError e) {
-            // review of 503b6d5d: read per tick and per ask - said once per cause (the next fork's start-cell API replaces this read)
-            if (ProbeLines.firstCause(START_WARNED, e)) io.github.mojolowjo.entropybot.Quiet.warn("StepHands.searchStart: Baritone's start cell could not be read (" + e.getClass().getSimpleName() + "); the feet instead", e);
+            s = b == null ? null : b.getPathingBehavior().searchStart();
+        } catch (LinkageError e) {
+            s = null;                                    // an older fork (no searchStart): the feet, said by the step's own line
         }
-        BlockPos under = new BlockPos(feet[0], feet[1] - 1, feet[2]);
-        return new Start(feet, p.level().isLoaded(under) && !p.level().getBlockState(under).getCollisionShape(p.level(), under).isEmpty());
+        if (s != null) cell = new int[]{s.x, s.y, s.z};
+        BlockPos under = new BlockPos(cell[0], cell[1] - 1, cell[2]);
+        return new Start(cell, p.level().isLoaded(under) && !p.level().getBlockState(under).getCollisionShape(p.level(), under).isEmpty());
     }
-
     /** 0.39.z70: the step machine's decision lines (the re-plan's plan diff) at info level. */
     @Override public void log(String line) { LOG.info("[entropybot] steps: {}", line); }
 
@@ -2111,10 +2104,17 @@ public final class StepHands implements Steps.Hands {
         if (!b.getCustomGoalProcess().isActive() && !Core.INSTANCE.reflexes.hold()) {
             // J6b item 14: the walk's own end is the band's fact only from a standable start; else not known (rule 15)
             Start st = bandStart != null ? bandStart : searchStart(b, p);
-            if (!st.standable()) {
-                String why = "Baritone's goal ended at y " + y + ", its start " + Jobs.fmt(st.cell()) + " has no floor - not a true no-path (rule 15: not known)";
-                io.github.mojolowjo.entropybot.aa.moves.FactChange.bandNotKnown(t.minY(), t.maxY(), why);
-                return Car.Status.failed(t.text() + ": " + why);
+            // J6b (job-vein a2d4e1c8): the walk's own last calc decides - only an exhausted graph is "no path"
+            baritone.api.process.ICustomGoalProcess.WalkCalc wc;
+            try {
+                wc = b.getCustomGoalProcess().lastCalc();
+            } catch (LinkageError e) {
+                wc = null;                               // an older fork: the stop is not known
+            }
+            String nk = io.github.mojolowjo.entropybot.aa.moves.BandLeg.walkEnd(wc == null ? null : wc.exhausted(), st.cell(), st.standable(), y);
+            if (nk != null) {
+                io.github.mojolowjo.entropybot.aa.moves.FactChange.bandNotKnown(t.minY(), t.maxY(), nk);
+                return Car.Status.failed(t.text() + ": " + nk);
             }
             String why = "Baritone's goal ended at y " + y + " (no path into the band)";
             io.github.mojolowjo.entropybot.aa.moves.FactChange.band(t.minY(), t.maxY(), why);     // 0.39.z42: a fact change, the order re-plans

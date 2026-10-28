@@ -151,14 +151,6 @@ public final class ProbeLines {
         return " | face check " + (line == null ? "every face passed (none failed in this leg)" : line);
     }
 
-    /**
-     * Review of 503b6d5d: {@code e}'s cause (its class) is new to {@code said} - say it now; the same cause again: not (a
-     * read per tick and per ask warns once per cause). Pure.
-     */
-    public static boolean firstCause(java.util.Set<String> said, Throwable e) {
-        return said.add(e == null ? "null" : e.getClass().getName());
-    }
-
     private static String flag(Boolean b) { return b == null ? "not read (Baritone not loaded)" : b.toString(); }
 
     /** The phase line: what changed from {@code was} to {@code now} (the step's start when {@code was} is null); {@code folded}: changes not printed since the last line. */

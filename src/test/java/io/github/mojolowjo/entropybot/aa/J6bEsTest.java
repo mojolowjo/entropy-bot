@@ -87,13 +87,4 @@ class J6bEsTest {
         Sightings fed = cave();
         assertFalse(fed.caveHolds(D, -43, 67, -39, -10, 65, 69, SEES, () -> true), "fed: the record alone - the index's yes is never read");
     }
-
-    /** Review of 503b6d5d (3): the start cell's read warns once per cause, never per tick. */
-    @Test
-    void theStartCellsWarning_oncePerCause() {
-        java.util.Set<String> said = new java.util.HashSet<>();
-        assertTrue(io.github.mojolowjo.entropybot.commands.ProbeLines.firstCause(said, new NoSuchMethodError("pathStart")));
-        assertFalse(io.github.mojolowjo.entropybot.commands.ProbeLines.firstCause(said, new NoSuchMethodError("pathStart")), "the same cause again: not said");
-        assertTrue(io.github.mojolowjo.entropybot.commands.ProbeLines.firstCause(said, new ClassCastException()), "another cause: said once");
-    }
 }
