@@ -692,7 +692,7 @@ seen.coneDeg	60.0
 seen.priorMin	2.0
 seen.priorRate	0.5
 seen.range	24.0
-seen.raysPerSec	64.0
+seen.raysPerSec	128.0
 selfCheck.bagFull	2.0
 selfCheck.bagLow	4.0
 selfCheck.companionStaleMs	120000.0
