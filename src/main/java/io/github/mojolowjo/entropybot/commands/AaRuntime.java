@@ -606,6 +606,7 @@ public final class AaRuntime implements JobPort {
                 double d = Math.sqrt(Jobs.distSq(me, new int[]{x, y, z}));
                 m.set(x, y, z);
                 if (d >= best[0] || !lv.canSeeSky(m) || !openCell(lv, x, y, z) || !openCell(lv, x, y + 1, z)) continue;     // review: no roof (the Nether)
+                if (Jobs.holeDepth(lv, x, y, z) > 0) continue;                    // run EH: a cell in a hole is no surface to walk up to
                 m.set(x, y - 1, z);
                 var below = lv.getBlockState(m);
                 if (below.getCollisionShape(lv, m).isEmpty() || !below.getFluidState().isEmpty()) continue;
@@ -627,16 +628,19 @@ public final class AaRuntime implements JobPort {
         var lv = mc.level;
         int[] me = Jobs.here(p);
         if (!lv.hasChunkAt(new net.minecraft.core.BlockPos(me[0], me[1], me[2]))) return null;
-        int depth = Jobs.underDepth(lv, me[0], me[1], me[2]);
+        // run EH (rule 23): the one "below the surface" reader - rock over the head or the hole round the feet
+        int rock = Jobs.underDepth(lv, me[0], me[1], me[2]), hole = Jobs.holeDepth(lv, me[0], me[1], me[2]);
+        int depth = io.github.mojolowjo.entropybot.world.SurfaceHeight.belowSurface(rock, hole);
+        boolean inHole = hole > 0 && hole >= rock;
         if (depth == 0) return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(0, me[0], me[1], me[2], 0);
         double[] best = {Double.MAX_VALUE};
         int[] sky = skyCell(lv, me, best);
-        if (sky != null) return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(depth, sky[0], sky[1], sky[2], best[0]);
+        if (sky != null) return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(depth, sky[0], sky[1], sky[2], best[0], inHole);
         // 0.39.z76 send-back 2 (runs AK, AL, AO: every "surface at x -64 z: unreachable" - the walk up aimed at the bottom of the
         // world, so no surface explore ever walked up first): the client keeps only MOTION_BLOCKING / WORLD_SURFACE (Jobs.surfaceNoLeaves)
         int top = Jobs.surfaceNoLeaves(lv, me[0], me[2]);
         if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(top)) return null;     // z76 surface (rule 15): not known, never y -64
-        return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(depth, me[0], top, me[2], Math.abs(top - me[1]));
+        return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(depth, me[0], top, me[2], Math.abs(top - me[1]), inHole);
     }
 
     /**

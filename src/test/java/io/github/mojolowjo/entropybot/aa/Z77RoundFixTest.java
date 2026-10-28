@@ -215,7 +215,11 @@ class Z77RoundFixTest {
         assertEquals(new Step.ToSurface(-181, 64, 27), NeedChain.resolve("raw_iron", 3, w).steps().get(0), "the walk up as before");
         FactChange.exploreHere(new int[]{-181, 16, 27}, "under ground: no target from here");
         FactChange.Fact f = FactChange.take();
-        Chain c = NeedChain.resolve("raw_iron", 3, w.withoutSources(Map.of(f.key().substring("source ".length()), f.text())));
+        // 0.39.z78 J6b run EH (3): the freeze is answered by the walk up first (its done test the one below-the-surface reader:
+        // a walk up that "arrives" under rock is short, run BG cannot recur); with that walk up held too, the climb
+        Chain c0 = NeedChain.resolve("raw_iron", 3, w.withoutSources(Map.of(f.key().substring("source ".length()), f.text())));
+        assertEquals(new Step.ToSurface(-181, 64, 27), c0.steps().get(0), "the freeze answered by the walk up: " + c0.steps());
+        Chain c = NeedChain.resolve("raw_iron", 3, w.withoutSources(Map.of(f.key().substring("source ".length()), f.text(), "surface at -181 64 27", "the walk up ended under ground")));
         assertTrue(c.ok() && c.explore(), c.why());
         assertEquals(List.of(new Step.Climb(), new Step.Explore(NeedChain.exploreMinutes(), "raw_iron")), c.steps());
         assertEquals((48 * 3 + 10) / Unit.WALK_BPS + NeedChain.exploreS(), c.seconds(), 0.1, c.why());

@@ -311,7 +311,14 @@ public final class NeedChain {
      * one under-ground rule), and the cell to walk up to (the nearest open-sky standing cell, else the column's top);
      * {@code dist}: its straight metres from the feet (a hint; the price is Baritone's path, rule 18).
      */
-    public record Surface(int depth, int x, int y, int z, double dist) {}
+    /**
+     * The surface over the bot: {@code depth} below it (run EH: Jobs.belowSurface, the one reader - the rock over the head or
+     * the hole round the feet), the surface cell to walk up to and its distance; {@code hole}: the depth is a hole round the
+     * feet (a sky-open shaft) - priced as below the surface at any depth over a step.
+     */
+    public record Surface(int depth, int x, int y, int z, double dist, boolean hole) {
+        public Surface(int depth, int x, int y, int z, double dist) { this(depth, x, y, z, dist, false); }
+    }
 
     /**
      * 0.39.z68 (owner 2026-10-25: "if it's wood - go to surface to explore, if it's ore, explore for caves"): the facts the
@@ -5701,14 +5708,17 @@ public final class NeedChain {
         // kind, no band leg from down here (a strip at the feet, the way before any explore, did not stand). No walk up to be
         // had (held for the order, no path, not known): no explore from here either, said (rule 7)
         Surface over = c.down != null ? null : c.w.where().surface().get();
-        boolean under = over != null && over.depth() >= AaLadder.surfaceDepth();
+        // run EH (the owner's ruling): a hole round the feet (a sky-open shaft) is below the surface too, at any depth over a step
+        boolean under = over != null && (over.depth() >= AaLadder.surfaceDepth() || over.hole() && over.depth() > 0);
         if (under && !(where != null && where.surface())) {
             // 0.39.z77 round fix 5 (run BG: the walk up "done" next to the feet, the explore failed "under ground" from the same
             // cell 317 times): an explore from here already failed under ground - a walk up that leaves the bot here is no walk
             // up; the climb (its own priced row) or the stop, said
-            String froze = frozenHere(c);
-            String up = froze != null ? null : surfaceWalk(c);
-            if (froze != null) c.note(() -> "surface: the explore from here failed under ground (" + froze + "): no walk up from here, the climb");
+            // run EH (3): a freeze or a boxed-in here is answered by the walk up first (the ordinary walk lease: Baritone may dig
+            // steps out), never a hold the bot cannot lift; held walk ups (surfaceWalk) fall to the climb
+            String froze = frozenHere(c), boxed = boxedHere(c);
+            String up = surfaceWalk(c);
+            if (up == null && (froze != null || boxed != null)) c.note(() -> "surface: the explore from here " + (boxed != null ? "was boxed in (" + boxed + ")" : "failed under ground (" + froze + ")") + ": the climb");
             if (up == null && c.fail != null) return null;      // the walk up waits on its path (rule 18)
             if (up == null) up = climbUp(c, over);           // 0.39.z77 answers (2): the climb with the bag's blocks, priced
             if (up == null) return null;
@@ -5750,7 +5760,18 @@ public final class NeedChain {
         // 0.39.z76 send-back 2 (run AO 20:37): an explore from here that froze is held by position - with no walk up and no band
         // leg to move the bot first, the same explore is no way again until the bot moved failures.moved (said, rule 7)
         if (upText == null && (legText == null || legText.isEmpty())) {
-            String froze = frozenHere(c);
+            String froze = frozenHere(c), boxed = boxedHere(c);
+            // run EH (3): a no-break freeze or boxed-in is answered by a way out - the walk up when below the surface, else the climb
+            if ((froze != null || boxed != null) && over != null && over.depth() > 0) {
+                upText = surfaceWalk(c);
+                if (upText == null && c.fail != null) return null;
+                if (upText == null) upText = climbUp(c, over);
+                if (upText != null) { froze = null; boxed = null; }
+            }
+            if (froze == null && boxed != null) {
+                c.fail = "the explore from here was boxed in (" + boxed + ") and no way out is priced from here (no walk up, no climb)";
+                return null;
+            }
             if (froze != null) {
                 c.fail = "the explore from here froze (" + froze + "); held for this order until the bot moves failures.moved";
                 return null;
@@ -5851,6 +5872,14 @@ public final class NeedChain {
      * frozen explore within failures.moved of the feet ("explore frozen at x y z: why"), null: none, or the feet not known.
      */
     static String frozenHere(Ctx c) { return heldNear(c, EXPLORE_FROZEN); }
+
+    /** Run EH (2): the key of a no-break explore that found no path from {@code feet} ("boxed in at x y z"). */
+    public static final String BOXED_IN = "boxed in at ";
+
+    public static String boxedInKey(int[] feet) { return BOXED_IN + feet[0] + " " + feet[1] + " " + feet[2]; }
+
+    /** Run EH (2): a boxed-in explore within failures.moved of the feet (its held fact), null: none. */
+    static String boxedHere(Ctx c) { return heldNear(c, BOXED_IN); }
 
     /** 0.39.z77 round fix 2: the held stands within failures.moved of the feet ("stood at x y z: why"), null: none. */
     static String stoodHere(Ctx c) { return heldNear(c, STOOD_AT); }

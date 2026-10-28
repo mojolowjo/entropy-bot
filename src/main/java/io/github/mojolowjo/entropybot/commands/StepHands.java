@@ -1232,7 +1232,7 @@ public final class StepHands implements Steps.Hands {
      */
     private String toSurface(LocalPlayer p, Step.ToSurface t) {
         int[] me = Jobs.here(p);
-        if (Jobs.underDepthKnown(p.level(), me[0], me[1], me[2]) == 0) { instant = "ok: already under open sky at y " + me[1]; return null; }
+        if (Jobs.belowSurface(p.level(), me[0], me[1], me[2]) == 0) { instant = "ok: already on the surface at " + Jobs.fmt(me); return null; }   // run EH: the one reader, a shaft is not the surface
         String r = walk(new Step.Walk(t.x(), t.y(), t.z(), 0));
         return r == null ? null : "error: " + surfaceRefused(t, "the walk up did not start: " + r);
     }
@@ -1241,7 +1241,7 @@ public final class StepHands implements Steps.Hands {
     private Car.Status toSurfaceStatus(LocalPlayer p, Step.ToSurface t) {
         if (instant != null) return Car.Status.done(instant);
         int[] me = Jobs.here(p);
-        if (Jobs.underDepthKnown(p.level(), me[0], me[1], me[2]) == 0) {
+        if (Jobs.belowSurface(p.level(), me[0], me[1], me[2]) == 0) {                    // run EH: standing on the surface, not "open sky"
             if (walkJob != null && c.jobs.running() && c.jobs.job == walkJob) c.jobs.finish("done: on the surface at " + Jobs.fmt(me));
             LOG.info("[entropybot] steps: {} - on the surface at {} (under open sky)", t.text(), Jobs.fmt(me));
             return Car.Status.done("ok: on the surface at " + Jobs.fmt(me));
@@ -1252,7 +1252,7 @@ public final class StepHands implements Steps.Hands {
         // failed "under ground" and the re-plan walked "up" again, until the order's timeout): a walk up that ends with the feet
         // still under ground (NeedChain.walkUpShort) did not reach the surface - the walk up's fact, held for the order
         if (st.state() == Car.State.DONE) {
-            String short_ = io.github.mojolowjo.entropybot.aa.NeedChain.walkUpShort(Jobs.underDepthKnown(p.level(), me[0], me[1], me[2]), io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth(), Jobs.fmt(me));
+            String short_ = io.github.mojolowjo.entropybot.aa.NeedChain.walkUpShort(Jobs.belowSurface(p.level(), me[0], me[1], me[2]), io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth(), Jobs.fmt(me));
             if (short_ != null) return Car.Status.failed(surfaceRefused(t, short_));
         }
         if (st.state() != Car.State.FAILED) return st;

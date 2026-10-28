@@ -33,4 +33,23 @@ public final class SurfaceHeight {
     }
 
     public static boolean known(int surfaceY) { return surfaceY != NOT_KNOWN; }
+
+    /**
+     * 0.39.z78 J6b run EH (the owner's ruling; 00:40:19 the bot at the bottom of its own 1x1 shaft, 5 deep, OPEN to the sky,
+     * counted "on the surface" by the rock-over-the-head test): how far the feet stand below the ground round them - the
+     * LOWEST known surface of the 8 neighbouring columns ({@code neighbours}, {@link #NOT_KNOWN} left out) less the feet's
+     * y, when that is more than a step (a player walks out over a 1-block step; 2 or more on every side walls him in
+     * without breaking or placing: no stair, no pillar). 0: on the ground, a step or less below it, or no neighbour known
+     * (rule 15: no depth claimed). Pure (JUnit: J6bEhTest).
+     */
+    public static int holeDepth(int feetY, int[] neighbours) {
+        int lowest = Integer.MAX_VALUE;
+        for (int s : neighbours) if (known(s)) lowest = Math.min(lowest, s);
+        if (lowest == Integer.MAX_VALUE) return 0;
+        int d = lowest - feetY;
+        return d > 1 ? d : 0;                                                     // structural: a 1-block step walks out
+    }
+
+    /** Run EH (rule 23: the ONE "below the surface" answer): the deeper of rock over the head and the hole round the feet. */
+    public static int belowSurface(int rockDepth, int holeDepth) { return Math.max(Math.max(0, rockDepth), Math.max(0, holeDepth)); }
 }

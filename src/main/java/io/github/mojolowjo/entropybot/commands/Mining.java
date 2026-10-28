@@ -738,6 +738,9 @@ final class Mining {
         boolean landFirst, landRead;
         /** J6b item 5 (a): the chunk target's goal is its surface cell (false: the column goal, its column not loaded yet). */
         boolean surfaceGoal;
+        /** Run EH (2): the feet the last no-break walks found no path from, and how many in a row from there. */
+        int[] noBreakFrom;
+        int noBreakFails;
 
         /**
          * 0.39.z76 send-back 1 (run AN 23:29:43-23:30:07: a gather on the way to cave candidate 117 13 213 dropped the target
@@ -1255,8 +1258,21 @@ final class Mining {
                     ex.aimed != null ? ex.aimCell : null);   // run ED: an opening is reached within reach of its cell
             // J6b item 5 (the owner: "when exploring it should not break blocks"): the walk is the fork's no-break walk; its
             // "no path (no-break walk)" fails the target at once - the explore picks the next one (said once, the failed line)
-            if (ex.hold.state() == ExploreRules.TargetHold.State.HELD && b != null && ExploreRules.noBreakNoPath(b.getCustomGoalProcess().lastEnd()))
+            if (ex.hold.state() == ExploreRules.TargetHold.State.HELD && b != null && ExploreRules.noBreakNoPath(b.getCustomGoalProcess().lastEnd())) {
                 ex.hold = ExploreRules.TargetHold.failNow(ex.hold, "no path without breaking or placing (the no-break walk) from " + Jobs.fmt(me));
+                // run EH (2): several no-break walks in a row find no path from these same feet - the bot is boxed in here: the
+                // explore ends at once with that fact (the next plan prices the way out first), not 20 tries and a freeze
+                ex.noBreakFails = java.util.Arrays.equals(ex.noBreakFrom, me) ? ex.noBreakFails + 1 : 1;
+                ex.noBreakFrom = me.clone();
+                if (ExploreRules.boxedIn(ex.noBreakFails)) {
+                    String why = "boxed in at " + Jobs.fmt(me) + ": " + ex.noBreakFails + " no-break walks in a row found no path from here (no way out without breaking or placing)";
+                    io.github.mojolowjo.entropybot.aa.moves.FactChange.boxedIn(me, why);
+                    LOG.info("[entropybot] explore: {} - the explore ends; the next plan prices the way out first", why);
+                    Jobs.cancel(b);
+                    notes().flush();
+                    return why;
+                }
+            }
             if (ex.hold.state() == ExploreRules.TargetHold.State.HELD) {
                 boolean surfaceNow = ex.aimY == null && !ex.surfaceGoal && io.github.mojolowjo.entropybot.world.SurfaceHeight.known(Jobs.surfaceNoLeaves(p.level(), ex.target.x(), ex.target.z()));
                 if (b != null && (Jobs.idle(b) || surfaceNow) && now() - ex.targetAt >= 20) {     // structural: once a second in ticks
@@ -1316,7 +1332,7 @@ final class Mining {
         // 0.39.z77 J2 E2 (runs AX 14:23, BC 06:24:02: "no path 3 times from -181 16 27" - GoalXZ targets through the rock over
         // the bot): a chain explore under aaLadder.surfaceDepth of ground aims only at cave cells IN the target's band within
         // cave.exploreTowardM, as a cell goal (Baritone may dig to it); never a never-seen chunk from down there (rule 22)
-        int depthNow = ex.untilSource == null ? 0 : Jobs.underDepth(p.level(), me[0], me[1], me[2]);
+        int depthNow = ex.untilSource == null ? 0 : Jobs.belowSurface(p.level(), me[0], me[1], me[2]);   // run EH (rule 23): the one reader
         boolean under = ex.untilSource != null && depthNow >= io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth();
         // 0.39.z48 (owner 2026-10-24, item 6): an ore need's explore aims at the nearest unvisited cave candidate within
         // cave.exploreTowardM (dropped ones are out of the list) before the next unexplored chunk. 0.39.z68: a band target

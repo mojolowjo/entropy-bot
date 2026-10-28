@@ -147,6 +147,14 @@ public final class FactChange {
      * there (no cave cell in the band; a never-seen chunk would be a goal through rock): the explore from here is held by
      * position ({@link io.github.mojolowjo.entropybot.aa.NeedChain#exploreFrozenKey}); the order re-plans (the walk up first).
      */
+    /**
+     * 0.39.z78 J6b run EH (2): a no-break explore found no path from where it stands - "boxed in at x y z", a source fact
+     * the next plan prices (its walk up first, NeedChain.boxedHere), never a hold the bot cannot lift.
+     */
+    public static void boxedIn(int[] feet, String why) {
+        last = new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.boxedInKey(feet), why);
+    }
+
     public static void exploreHere(int[] feet, String why) {
         if (feet == null || feet.length < 3) { last = new Fact("explore under ground", why); return; }     // structural: x y z
         last = new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.exploreFrozenKey(feet), why);
@@ -301,6 +309,7 @@ public final class FactChange {
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.PLACE_AT)) return f.key().substring("source ".length());   // 0.39.z67 item 1
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.NEAR)) return f.key().substring("source ".length());       // z75 review 2
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.EXPLORE_FROZEN)) return f.key().substring("source ".length());   // z76 send-back 2
+        if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.BOXED_IN)) return f.key().substring("source ".length());   // J6b run EH (2)
         String p = "source " + io.github.mojolowjo.entropybot.aa.NeedChain.STRIP_HEADING;
         return f != null && f.key().startsWith(p) ? f.key().substring("source ".length()) : null;
     }

@@ -804,6 +804,26 @@ public final class Jobs {
      * 0.39.z77 shape review 1 (rule 15): as {@link #underDepth}, but -1 when the surface over the column is not known - for the
      * steps that end on "out on the surface" (the walk up, the climb), where "not known" must never read as "out".
      */
+    /**
+     * 0.39.z78 J6b run EH (rule 23): the ONE "below the surface" reader the planner's surface fact, the explore's under-ground
+     * test and the walk-up's done test read - SurfaceHeight.belowSurface of the rock over the head ({@link #underDepth}) and
+     * the hole round the feet (SurfaceHeight.holeDepth over the 8 neighbouring columns' leaf-free surfaces), so a sky-open
+     * shaft counts. Loader notes: vanilla heightmaps through SurfaceHeightLive.noLeaves, Level#canSeeSky.
+     */
+    public static int belowSurface(net.minecraft.world.level.Level lv, int x, int y, int z) {
+        return io.github.mojolowjo.entropybot.world.SurfaceHeight.belowSurface(underDepth(lv, x, y, z), holeDepth(lv, x, y, z));
+    }
+
+    /** Run EH: SurfaceHeight.holeDepth at x y z from the 8 neighbouring columns' leaf-free surfaces. */
+    public static int holeDepth(net.minecraft.world.level.Level lv, int x, int y, int z) {
+        int[] n = new int[8];
+        int i = 0;
+        for (int dx = -1; dx <= 1; dx++)
+            for (int dz = -1; dz <= 1; dz++)
+                if (dx != 0 || dz != 0) n[i++] = surfaceNoLeaves(lv, x + dx, z + dz);
+        return io.github.mojolowjo.entropybot.world.SurfaceHeight.holeDepth(y, n);
+    }
+
     public static int underDepthKnown(net.minecraft.world.level.Level lv, int x, int y, int z) {
         if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(surfaceNoLeaves(lv, x, z))) return -1;
         return underDepth(lv, x, y, z);

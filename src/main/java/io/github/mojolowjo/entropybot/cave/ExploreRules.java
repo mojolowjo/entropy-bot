@@ -297,6 +297,15 @@ public final class ExploreRules {
      */
     public static boolean noBreakNoPath(String lastEnd) { return lastEnd != null && lastEnd.startsWith("no path") && lastEnd.contains("no-break"); }
 
+    /**
+     * Run EH (2): the no-break walks in a row from the same feet that found no path, at which the bot counts as boxed in:
+     * three targets, each its own chunk - a hill hides one or two of them, never every way out.
+     */
+    public static final int BOXED_TRIES = 3; // structural: three separate targets from the same feet
+
+    /** Run EH (2): that many no-break no-path ends in a row from the same feet - boxed in. Pure. */
+    public static boolean boxedIn(int failsHere) { return failsHere >= BOXED_TRIES; }
+
     /** A world fact about one cell (the lip test's stand and sight, from the level; tests give their own). */
     @FunctionalInterface
     public interface CellTest { boolean test(int x, int y, int z); }
