@@ -63,19 +63,57 @@ class J6bCaveStepTest {
     /** The cave way from the record: ore seen and left is mined first; the rest at the measured yield in what the unseen part holds. */
     @Test
     void theCaveWayIsPricedFromTheRecord() {
-        CaveWay left = new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", 0.5, true, CaveIndex.Size.SMALL, 0.2, 3);
+        CaveWay left = new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", 0.5, true, CaveIndex.Size.SMALL, 0.2, List.of("21,20,-10", "22,20,-10", "23,20,-10"));
         Chain c = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(left));
         assertTrue(Z77CaveWayTest.caveMined(c), "3 seen and left there: a way though its unseen part holds 0.2 min - " + c.why());
         Step.Cave k = (Step.Cave) c.steps().stream().filter(s -> s instanceof Step.Cave).findFirst().orElseThrow();
         assertEquals(1, k.minutes(), "at least a minute for the walk to the left ore");
-        CaveWay little = new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", 0.5, true, CaveIndex.Size.LARGE, 0.2, 0);
+        CaveWay little = new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", 0.5, true, CaveIndex.Size.LARGE, 0.2, List.of());
         Chain d = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(little));
         assertFalse(Z77CaveWayTest.caveMined(d));
         assertTrue(d.why().contains("min its unseen part holds"), "the record's unseen part, not the size bucket: " + d.why());
-        CaveWay measured = new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", 3, true, CaveIndex.Size.LARGE, 8, 0);
+        CaveWay measured = new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", 3, true, CaveIndex.Size.LARGE, 8, List.of());
         Chain e = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(measured));
         assertTrue(Z77CaveWayTest.caveMined(e), e.why());
         assertTrue(e.why().contains("yield ~3.00 ore/min (measured)"), e.why());
+    }
+
+    /** J6b review 2: the cave way's yield is the one measured there once walked, the prior before. */
+    @Test
+    void theMeasuredYieldAfterTheFirstWalk() {
+        var never = new CaveRecord.Facts(0, 40, 0, 200, 80, 0.6, 2, false, Map.of(), 0, Double.NaN, 0, true, "t");
+        assertEquals(0.3, never.rate(0.3), 1e-9, "never walked: the prior");
+        var walked = new CaveRecord.Facts(0, 40, 0, 200, 80, 0.6, 2, false, Map.of(), 4, 0.5, 0, true, "t");
+        assertEquals(0.5, walked.rate(0.3), 1e-9, "walked: the measured 0.5 a minute");
+    }
+
+    /** J6b review 1 and 4: a cave done with none of the family left is no way; a walk that gained nothing holds it until something new is known. */
+    @Test
+    void doneWithNoneLeftIsNoWay_aWalkThatGainedNothingIsHeldUntilSomethingNew() {
+        Sightings s = new Sightings();
+        s.knowCave("d", new CaveIndex.Known(0, 40, 0, CaveIndex.Size.SMALL, CaveIndex.Depth.STONE, List.of(Sightings.cell(1, 40, 0))), 1);
+        List<Long> cells = new java.util.ArrayList<>();
+        for (int x = 0; x < 30; x++) cells.add(Sightings.cell(x, 40, 0));
+        s.caveCells("d", 0, 40, 0, cells);
+        s.caveStood("d", 0, 40, 0, 0, 40, 0, 1);
+        assertTrue(s.caveFacts("d", 0, 40, 0).offeredFor("iron"));
+        s.caveWalked("d", 0, 40, 0, 2, 0, 2, false);                  // a MINUTES / NO_PROGRESS end that saw nothing new
+        assertFalse(s.caveFacts("d", 0, 40, 0).offeredFor("iron"), "held: no loop back into the same cave");
+        s.caveStood("d", 0, 40, 0, 6, 40, 0, 3);                       // something new is seen of it (passing by)
+        assertTrue(s.caveFacts("d", 0, 40, 0).offeredFor("iron"), "lifted by a new fact");
+        s.caveSaw("d", 0, 40, 0, cells);
+        assertFalse(s.caveFacts("d", 0, 40, 0).offeredFor("iron"), "done, no iron seen: no way");
+        s.caveOre("d", 0, 40, 0, Sightings.cell(5, 41, 0), "iron");
+        assertTrue(s.caveFacts("d", 0, 40, 0).offeredFor("iron"), "done, iron seen and left: a way for iron");
+        assertFalse(s.caveFacts("d", 0, 40, 0).offeredFor("gold"));
+    }
+
+    /** J6b review 6: a seen ore the chain takes by a collect way is not counted again by the cave way. */
+    @Test
+    void aSeenOreTakenByACollectWayIsNotCountedAgainByTheCaveWay() {
+        List<String> left = List.of("21,20,-10", "22,20,-10", "23,20,-10");
+        assertEquals(left, NeedChain.freeLeft(left, Map.of()));
+        assertEquals(List.of("21,20,-10", "23,20,-10"), NeedChain.freeLeft(left, Map.of("22,20,-10", 1)), "taken by the collect: out");
     }
 
     /** Item 5 (a): an unexplored chunk is walked to as its surface cell; not loaded yet: the column goal. */

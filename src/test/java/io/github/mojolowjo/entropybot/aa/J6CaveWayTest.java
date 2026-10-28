@@ -62,7 +62,8 @@ class J6CaveWayTest {
                 assertFalse(c.getName().equals("minY") || c.getName().equals("maxY"), r.getSimpleName() + "." + c.getName());
             }
         for (var c : CaveWay.class.getRecordComponents())
-            assertFalse(java.util.Collection.class.isAssignableFrom(c.getType()) || c.getType().isArray(), "CaveWay." + c.getName() + " is a list");
+            // J6b review 6: leftKeys are the SEEN ORE spots left there (what a collect way sees anyway, by sight), never the cave's cells
+            assertFalse(!c.getName().equals("leftKeys") && (java.util.Collection.class.isAssignableFrom(c.getType()) || c.getType().isArray()), "CaveWay." + c.getName() + " is a list");
         assertTrue(java.util.Arrays.stream(io.github.mojolowjo.entropybot.sense.Sightings.KnownCave.class.getRecordComponents()).anyMatch(c -> c.getType() == CaveIndex.Size.class));
         assertTrue(java.util.Arrays.stream(io.github.mojolowjo.entropybot.sense.Sightings.KnownCave.class.getRecordComponents()).anyMatch(c -> c.getType() == CaveIndex.Depth.class));
     }

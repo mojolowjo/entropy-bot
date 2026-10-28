@@ -466,7 +466,7 @@ public final class StepHands implements Steps.Hands {
                 if (caving.vein != null) caving.vein.stop();
                 IBaritone b = Jobs.baritone();
                 if (b != null) Jobs.cancel(b);
-                caveEnd(io.github.mojolowjo.entropybot.cave.CaveWalk.End.NO_PROGRESS, "stopped: " + why);
+                caveEnd(io.github.mojolowjo.entropybot.cave.CaveWalk.End.STOPPED, why);   // review: an owner stop or a re-plan, its own end
             }
             if (step instanceof Step.Climb && climbing) {
                 climbing = false;
@@ -817,7 +817,11 @@ public final class StepHands implements Steps.Hands {
         double minutes = (System.currentTimeMillis() - cv.startMs) / 60000.0;   // structural: ms a minute
         io.github.mojolowjo.entropybot.sense.CaveRecord.Facts after = null;
         if (sg != null) {
-            sg.caveWalked(cv.dim, k.x(), k.y(), k.z(), minutes, cv.oreSeen, System.currentTimeMillis());
+            var before = sg.caveFacts(cv.dim, k.x(), k.y(), k.z());
+            int seenNow = before == null ? cv.seenAtStart : before.cellCount() - before.unseen();
+            // review 4: a walk that saw no cell and mined no ore holds the cave until something new is known (no loop); a stop judges nothing
+            boolean gained = end == io.github.mojolowjo.entropybot.cave.CaveWalk.End.STOPPED || seenNow > cv.seenAtStart || cv.mined > 0;
+            sg.caveWalked(cv.dim, k.x(), k.y(), k.z(), minutes, cv.oreSeen, System.currentTimeMillis(), gained);
             after = sg.caveFacts(cv.dim, k.x(), k.y(), k.z());
         }
         String line = io.github.mojolowjo.entropybot.cave.CaveWalk.endLine(k.x() + " " + k.y() + " " + k.z(), end, why, minutes, cv.seenAtStart, after, cv.oreSeen, cv.mined);

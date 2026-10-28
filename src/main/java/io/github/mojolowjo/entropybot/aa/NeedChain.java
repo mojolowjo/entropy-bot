@@ -106,14 +106,21 @@ public final class NeedChain {
     static final String CAVE_KEY = "known cave ";
 
     public record CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured,
-                          io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, int left) {
+                          io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys) {
+        public CaveWay {
+            leftKeys = leftKeys == null ? List.of() : List.copyOf(leftKeys);
+        }
+
+        /** J6b: the ore cells of the family seen there and left (their spot keys "x,y,z": the same keys a collect way takes). */
+        public int left() { return leftKeys.size(); }
+
         public CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured) {
             this(x, y, z, dist, ore, family, perMin, measured, null);
         }
 
         public CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured,
                        io.github.mojolowjo.entropybot.sense.CaveIndex.Size size) {
-            this(x, y, z, dist, ore, family, perMin, measured, size, -1, 0);
+            this(x, y, z, dist, ore, family, perMin, measured, size, -1, List.of());
         }
 
         /**
@@ -5528,10 +5535,13 @@ public final class NeedChain {
         if (oreBlocks <= 0) { c.fail = head + ": 0 ore for " + lack + " " + shw(gives) + " (nothing to mine)"; return null; }
         // 0.39.z78 J6b (D12): the ore the record saw there and left is mined first (no exploring for it); the rest is found
         // at the yield, in the minutes the cave's unseen part holds, never past the cap
-        int toFind = Math.max(0, oreBlocks - Math.max(0, cw.left()));
+        // J6b review 6 (no double count): a seen ore the chain already takes by another way (a collect, c.taken) is not
+        // counted again here; the ones this way counts are taken for the rest of the chain
+        List<String> free = freeLeft(cw.leftKeys(), c.taken);
+        int toFind = Math.max(0, oreBlocks - free.size());
         double minutes = toFind / cw.perMin(), cap = Tuning.get("cave.exploreMinutes"), holds = cw.holdsMinutes(), max = Math.min(cap, holds);
         String yield = "yield ~" + String.format(java.util.Locale.ROOT, "%.2f", cw.perMin()) + " ore/min (" + (cw.measured() ? "measured" : "prior") + ")"
-                + (cw.left() > 0 ? ", " + cw.left() + " seen there and left" : "");
+                + (!free.isEmpty() ? ", " + free.size() + " seen there and left" : "");
         if (toFind > 0 && minutes > max) {
             // 0.39.z78 J6 / J6b: a known cave holds the minutes its unseen part (or, not known, its size) gives, never more than the cap
             c.fail = head + ", " + yield + ": " + toFind + " ore to find take ~" + Math.round(minutes) + " min, past "
@@ -5543,6 +5553,7 @@ public final class NeedChain {
         c.addS(wk.seconds() + confirmS + exploreS + oreS);
         c.setAway(wk.seconds() + exploreS);
         if (c.pickItem != null) c.pickWorn += oreBlocks;
+        for (int i = 0; i < Math.min(oreBlocks, free.size()); i++) c.taken.merge(free.get(i), 1, Integer::sum);   // review 6: taken by this way
         c.steps.add(new Step.Walk(cw.x(), cw.y(), cw.z(), 0));
         c.steps.add(new Step.Cave(cw.x(), cw.y(), cw.z(), cw.family(), oreBlocks, (int) Math.max(1, Math.ceil(max))));   // J6b: the caving step (D12); at least a minute (the left ore's walk)
         c.bag.merge(gives, Math.max(lack, (int) Math.floor(oreBlocks * per + 1e-9)), Integer::sum);  // structural: epsilon
@@ -5550,6 +5561,16 @@ public final class NeedChain {
                 + " -> " + s(wk.seconds() + confirmS + exploreS + oreS);
         c.note(() -> "source: " + shw(word) + " in the cave: " + line);
         return noted("in the cave: " + line + (pre == null ? "" : " with " + pre), wk);
+    }
+
+    /**
+     * J6b review 6: the cave's seen-and-left ore cells the chain has not taken yet by another way ({@code taken}: spot key ->
+     * blocks taken, a collect way's; a seen ore cell is one block). Pure.
+     */
+    static List<String> freeLeft(List<String> leftKeys, Map<String, Integer> taken) {
+        List<String> free = new ArrayList<>();
+        for (String k : leftKeys) if (taken.getOrDefault(k, 0) < 1) free.add(k);
+        return free;
     }
 
     /** One block's break by the game's formula with the pickaxe in hand when its tier asks for one (as {@link #breakS}). */

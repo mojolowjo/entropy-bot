@@ -967,13 +967,20 @@ public final class AaRuntime implements JobPort {
             if (f != null && !f.offeredFor(fam)) continue;
             if (bandKnown && !k.depth().overlaps(where.lo(), where.hi())) continue;
             boolean walked = f != null && f.walkedMinutes() > 0;
-            double rate = walked ? f.oreSeenPerMinute() : sg.ore().caveRate(fam);
+            double rate = f == null ? sg.ore().caveRate(fam) : f.rate(sg.ore().caveRate(fam));   // review 2: measured once walked
             double unseen = f == null || f.cellCount() <= 0 ? -1
                     : f.unseen() / (double) io.github.mojolowjo.entropybot.sense.CaveIndex.CROSS_SECTION / io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps() / 60.0;   // structural: seconds a minute
             return new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(k.x(), k.y(), k.z(), Math.sqrt(Jobs.distSq(me, new int[]{k.x(), k.y(), k.z()})),
-                    ore, fam, rate, walked || sg.ore().caveMinutes() > 0, k.size(), unseen, f == null ? 0 : f.left(fam));
+                    ore, fam, rate, walked || sg.ore().caveMinutes() > 0, k.size(), unseen, leftKeys(sg.caveLeft(dim, k.x(), k.y(), k.z(), fam)));
         }
         return null;
+    }
+
+    /** J6b review 6: the record's left ore cells as the planner's spot keys ("x,y,z", NeedChain.Spot.key: what a collect way takes). */
+    private static List<String> leftKeys(List<int[]> cells) {
+        List<String> out = new ArrayList<>();
+        for (int[] c : cells) out.add(c[0] + "," + c[1] + "," + c[2]);
+        return out;
     }
 
     /** 0.39.z78 J6: aa status: "caves: N known by rays (M volumes credited, K chunks indexed)". */

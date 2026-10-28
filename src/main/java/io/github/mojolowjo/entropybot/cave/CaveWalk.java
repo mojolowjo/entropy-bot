@@ -23,7 +23,7 @@ import java.util.Locale;
 public final class CaveWalk {
     private CaveWalk() {}
 
-    public enum End { NEED_MET, MINUTES, DONE, NOT_LOADED, NO_PROGRESS }
+    public enum End { NEED_MET, MINUTES, DONE, NOT_LOADED, NO_PROGRESS, STOPPED }
 
     public sealed interface Next permits Mine, Goto, Stop {}
 

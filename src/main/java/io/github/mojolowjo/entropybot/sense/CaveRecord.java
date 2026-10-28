@@ -62,6 +62,8 @@ public final class CaveRecord {
     private int oreSeenWalking;
     private boolean doneSaved;
     private int groupsSaved = -1;
+    /** J6b review 4: a walk that gained nothing (no cell seen, no ore mined) - the counts it left; -1: none. */
+    private int stuckSeen = -1, stuckOre = -1, stuckCells = -1;
 
     CaveRecord(int x, int y, int z) { this.x = x; this.y = y; this.z = z; }
 
@@ -125,12 +127,21 @@ public final class CaveRecord {
         if (o != null && !o.mined()) ores.put(cell, new Ore(o.family(), true));
     }
 
-    /** A caving walk ended: its minutes inside and the ore cells it saw. */
-    void recWalked(double minutes, int oreSeen, long now) {
+    /**
+     * A caving walk ended: its minutes inside and the ore cells it saw. {@code gained} false (J6b review 4: no cell seen
+     * and no ore mined): the cave is not offered again until something new is known of it - a cell seen, an ore seen, more
+     * cells from the index ({@link #stuck}); so a walk that cannot get on never loops.
+     */
+    void recWalked(double minutes, int oreSeen, long now, boolean gained) {
         walkedMinutes += Math.max(0, minutes);
         oreSeenWalking += Math.max(0, oreSeen);
         lastAt = now;
+        if (gained) { stuckSeen = stuckOre = stuckCells = -1; }
+        else { stuckSeen = seen.size(); stuckOre = ores.size(); stuckCells = cellCount; }
     }
+
+    /** The last walk gained nothing and nothing new is known of the cave since (review 4). */
+    public boolean stuck() { return stuckSeen >= 0 && seen.size() == stuckSeen && ores.size() == stuckOre && cellCount == stuckCells; }
 
     private void summarise() {
         if (cells.isEmpty()) return;
@@ -259,7 +270,7 @@ public final class CaveRecord {
     public double oreSeenPerMinute() { return walkedMinutes > 0 ? oreSeenWalking / walkedMinutes : Double.NaN; }
 
     /** The record as offered for {@code family}: not done, or done with ore of it seen and left. */
-    public boolean offeredFor(String family) { return !done() || !left(family).isEmpty(); }
+    public boolean offeredFor(String family) { return !stuck() && (!done() || !left(family).isEmpty()); }
 
     /** "x y z: explored 60%, 2 branches, iron 3 left 1 mined, walked 4 min" (aa cave list, aa why, the step's end line). */
     public String line() {
@@ -272,14 +283,23 @@ public final class CaveRecord {
 
     /** A copy of what the record says now, for readers off the store's lock (the planner, aa cave list, aa why). */
     public record Facts(int x, int y, int z, int cellCount, int unseen, double explored, int groups, boolean done, Map<String, int[]> ores,
-                        double walkedMinutes, double oreSeenPerMinute, long lastAt, boolean loaded, String line) {
+                        double walkedMinutes, double oreSeenPerMinute, long lastAt, boolean loaded, String line, boolean stuck) {
+        public Facts(int x, int y, int z, int cellCount, int unseen, double explored, int groups, boolean done, Map<String, int[]> ores,
+                     double walkedMinutes, double oreSeenPerMinute, long lastAt, boolean loaded, String line) {
+            this(x, y, z, cellCount, unseen, explored, groups, done, ores, walkedMinutes, oreSeenPerMinute, lastAt, loaded, line, false);
+        }
+
         public int left(String family) { int[] v = ores.get(family); return v == null ? 0 : v[0]; }
 
-        public boolean offeredFor(String family) { return !done || left(family) > 0; }
+        /** A way for the family: not stuck (review 4), and not done - or done with its ore seen and left. */
+        public boolean offeredFor(String family) { return !stuck && (!done || left(family) > 0); }
+
+        /** The cave way's yield: the one measured here once walked (review 2), else {@code prior}. */
+        public double rate(double prior) { return walkedMinutes > 0 ? oreSeenPerMinute : prior; }
     }
 
     Facts facts() {
-        return new Facts(x, y, z, cellCount, unseen(), explored(), groups(), done(), oresByFamily(), walkedMinutes, oreSeenPerMinute(), lastAt, loaded(), line());
+        return new Facts(x, y, z, cellCount, unseen(), explored(), groups(), done(), oresByFamily(), walkedMinutes, oreSeenPerMinute(), lastAt, loaded(), line(), stuck());
     }
 
     // ---- the file (the store's) ----
@@ -302,6 +322,7 @@ public final class CaveRecord {
         j.addProperty("oreSeenWalking", oreSeenWalking);
         j.addProperty("done", doneSaved);
         j.addProperty("groups", groupsSaved);
+        j.addProperty("stuckSeen", stuckSeen); j.addProperty("stuckOre", stuckOre); j.addProperty("stuckCells", stuckCells);
         return j;
     }
 
@@ -318,6 +339,7 @@ public final class CaveRecord {
         r.oreSeenWalking = j.get("oreSeenWalking").getAsInt();
         r.doneSaved = j.get("done").getAsBoolean();
         r.groupsSaved = j.get("groups").getAsInt();
+        if (j.has("stuckSeen")) { r.stuckSeen = j.get("stuckSeen").getAsInt(); r.stuckOre = j.get("stuckOre").getAsInt(); r.stuckCells = j.get("stuckCells").getAsInt(); }
         return r;
     }
 }
