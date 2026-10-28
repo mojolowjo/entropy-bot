@@ -95,6 +95,28 @@ public final class CaveLabels {
         dirty = true;
     }
 
+    /** A label replaced by another (a re-measure: its entry may move to the measured opening's cell). */
+    public synchronized void replace(Label old, Label now) {
+        list.remove(old);
+        list.removeIf(o -> o.x() == now.x() && o.y() == now.y() && o.z() == now.z() && java.util.Objects.equals(o.world(), now.world()));
+        list.add(now);
+        dirty = true;
+    }
+
+    /**
+     * The owner's ruling after his first labels: an old-measure label is never relabelled by hand - when its volume is in
+     * the index (its entry cell is an index cell) it is measured again per opening ({@link CaveIndex#labelSpot} at that
+     * cell: the volume's deciding opening, its rim, reach and cells) and promoted to {@link #MEASURE}; his verdict, the
+     * seed, the time and the world stay. Null: not an old label, or its volume not loaded (it stays old). Pure.
+     */
+    public static Label remeasure(Label old, CaveIndex idx) {
+        if (old == null || !old.old() || idx.volumeAt(old.x(), old.y(), old.z()) < 0) return null;
+        CaveIndex.Spot s = idx.labelSpot(List.of(new int[]{old.x(), old.y(), old.z()}), null, old.x() + 0.5, old.y() + 0.5, old.z() + 0.5, 0);
+        if (s == null) return null;
+        return new Label(s.x(), s.y(), s.z(), s.rim(), s.reach(), s.size().name().toLowerCase(Locale.ROOT), s.depth().name().toLowerCase(Locale.ROOT),
+                old.cave(), old.seed(), old.at(), old.world(), MEASURE, s.cells());
+    }
+
     /** The floor from the yes labels (see the class note). Pure. */
     public static Floor derive(List<Label> labels) {
         int yes = 0, rim = Integer.MAX_VALUE, reach = Integer.MAX_VALUE;
@@ -136,7 +158,10 @@ public final class CaveLabels {
      * misses with their rim and reach), then the credits the labelled caves got ({@code credits}: a label to {rim credits,
      * air credits, known 0/1}, null: its volume not loaded; the whole {@code credits} null: offline, the line left out).
      */
-    public static String checkText(List<Label> labels, Floor f, Function<Label, int[]> credits) {
+    public static String checkText(List<Label> labels, Floor f, Function<Label, int[]> credits) { return checkText(labels, f, credits, 0); }
+
+    /** As above; {@code remeasured}: the old-measure labels promoted this session (said when any). */
+    public static String checkText(List<Label> labels, Floor f, Function<Label, int[]> credits, int remeasured) {
         if (labels.isEmpty()) return "cave check: no labels yet (aa cave yes|no at a volume's opening)\n" + f.line();
         Check c = check(labels, f);
         List<String> out = new ArrayList<>();
@@ -147,7 +172,8 @@ public final class CaveLabels {
         for (Label l : c.wrong()) out.add("  passed non-cave at " + l.where() + ": " + measures(l));
         int old = 0;
         for (Label l : labels) if (l.old()) old++;
-        if (old > 0) out.add("old measure: " + old + " label(s) (one rim summed over the whole volume, no opening cells): counted for the verdict, not used to derive the floor");
+        if (remeasured > 0) out.add(remeasured + " labels re-measured (old measure -> per opening, from the index; your verdicts kept)");
+        if (old > 0) out.add("old measure: " + old + " label(s) (one rim summed over the whole volume, no opening cells; their volume not loaded yet): counted for the verdict, not used to derive the floor");
         if (credits != null) {
             int rim = 0, air = 0, known = 0, unloaded = 0;
             for (Label l : labels) {

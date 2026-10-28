@@ -106,12 +106,40 @@ class J6CaveLabelsTest {
         assertEquals(1, f.yes());
         String t = CaveLabels.checkText(l, f, null);
         assertTrue(t.contains("the floor passes 5 of 6 caves"), t);
-        assertTrue(t.contains("old measure: 5 label(s) (one rim summed over the whole volume, no opening cells): counted for the verdict, not used to derive the floor"), t);
+        assertTrue(t.contains("old measure: 5 label(s) (one rim summed over the whole volume, no opening cells; their volume not loaded yet): counted for the verdict, not used to derive the floor"), t);
+        assertTrue(CaveLabels.checkText(l, f, null, 3).contains("3 labels re-measured (old measure -> per opening, from the index; your verdicts kept)"));
         assertTrue(t.contains("missed cave at 2 60 4: rim 2, reach 4"), t);
         int[] bad = {0};
         var read = CaveLabels.read("{\"labels\":[{\"x\":-78,\"y\":60,\"z\":52,\"rim\":4719,\"reach\":17,\"size\":\"large\",\"depth\":\"stone\",\"verdict\":\"yes\",\"at\":1}]}", bad);
         assertTrue(read.all().get(0).old(), "a 9710ddad label (no measure field): the old measure");
         assertTrue(read.all().get(0).cells().isEmpty());
+    }
+
+    /**
+     * The owner's ruling: an old-measure label is re-measured per opening when its volume is in the index and promoted -
+     * his verdict, seed, time and world kept; one whose volume is not loaded stays old.
+     */
+    @Test
+    void anOldLabelIsReMeasuredWhenItsVolumeIsLoaded_theVerdictKept() {
+        CaveIndex i = J6CaveIndexTest.index();
+        CaveLabels.Label old = new CaveLabels.Label(2, 50, 4, 4719, 17, "large", "deepslate", true, 99L, 5, "New_World_1_ minecraft:overworld", 1, List.of());
+        CaveLabels.Label now = CaveLabels.remeasure(old, i);
+        assertNotNull(now);
+        assertEquals(CaveLabels.MEASURE, now.measure());
+        assertEquals(6, now.rim(), "A's opening: 6 cells, not 4719");
+        assertEquals(10, now.reach());
+        assertEquals(6, now.cells().size());
+        assertTrue(now.cave());
+        assertEquals(99L, now.seed());
+        assertEquals(5, now.at());
+        assertEquals(old.world(), now.world());
+        assertEquals("small", now.size());
+        assertNull(CaveLabels.remeasure(new CaveLabels.Label(400, 50, 400, 3, 0, "small", "high", true, 99L, 5, "w", 1, List.of()), i), "its volume not loaded: stays old");
+        assertNull(CaveLabels.remeasure(now, i), "a new-measure label is not measured again");
+        CaveLabels set = new CaveLabels();
+        set.add(old);
+        set.replace(old, now);
+        assertEquals(List.of(now), set.all());
     }
 
     /** Run EF: an opening's cells are stored (plain when few, deflated when many) and read back for an offline re-measure. */

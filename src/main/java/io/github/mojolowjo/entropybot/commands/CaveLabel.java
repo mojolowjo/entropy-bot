@@ -57,7 +57,7 @@ final class CaveLabel {
             }
             case "check" -> {
                 List<CaveLabels.Label> all = pass.labels().all();
-                return CaveLabels.checkText(all, pass.floor(), l -> idx.creditsAt(l.x(), l.y(), l.z()));
+                return CaveLabels.checkText(all, pass.floor(), l -> idx.creditsAt(l.x(), l.y(), l.z()), pass.labelsRemeasured());
             }
             case "yes", "no" -> {
                 Vec3 eye = p.getEyePosition(), to = eye.add(p.getLookAngle().scale(aimRange()));

@@ -255,7 +255,7 @@ public final class ChunkPass {
                 Sightings sg = sightings();
                 if (sg != null && dim != null) seenRt.tick(level, mc.player, index, sg.ore(), dim, tick, now);
                 if (sg != null && dim != null) sightRt.tick(level, mc.player, sg, dim, seenRt.budget, tick, now);
-                if (sg != null && dim != null) { labels(); caveRays.tick(level, mc.player, caveIndex, sg, dim, seenRt.budget, tick, now); }   // 0.39.z78 J6 (the labels' floor first)
+                if (sg != null && dim != null) { labels(); if (tick % 20 == 0) remeasureLabels(); caveRays.tick(level, mc.player, caveIndex, sg, dim, seenRt.budget, tick, now); }   // structural: a second in ticks   // 0.39.z78 J6 (the labels' floor first)
             } catch (Throwable t) {
                 error("seen", t);
             }
@@ -419,6 +419,56 @@ public final class ChunkPass {
         int[] was = caveIndex.floor();
         caveIndex.setFloor(floor.rim(), floor.reach());
         if (was[0] != floor.rim() || was[1] != floor.reach() || labelRoot != null) LOG.info("[entropybot] sense: {}", floor.line());
+    }
+
+    private int labelsRemeasured;
+
+    /** The old-measure labels promoted this session (aa cave check). */
+    public int labelsRemeasured() { return labelsRemeasured; }
+
+    /**
+     * The owner's ruling: his old-measure labels are never relabelled by hand - each one of this world whose volume is in
+     * the index is measured again per opening and promoted (CaveLabels.remeasure; his verdict kept), the files written and
+     * the floor derived again; one whose volume is not loaded stays old until it is. Said per label. Never throws.
+     */
+    private void remeasureLabels() {
+        try {
+            io.github.mojolowjo.entropybot.io.BotFiles files = Core.INSTANCE.files();
+            if (files == null || dim == null) return;
+            String world = files.worldRoot().getFileName() + " " + dim;
+            boolean any = false;
+            for (CaveLabels.Label l : labels().all()) {
+                if (!l.old() || !world.equals(l.world())) continue;
+                CaveLabels.Label now = CaveLabels.remeasure(l, caveIndex);
+                if (now == null) continue;
+                labels.replace(l, now);
+                for (CaveLabels.Label w : worldLabels.all()) if (w.equals(l)) worldLabels.replace(w, now);
+                labelsRemeasured++;
+                any = true;
+                LOG.info("[entropybot] sense: cave label at {} re-measured per opening: rim {} -> {}, reach {} -> {} (verdict {} kept){}", l.where(), l.rim(), now.rim(),
+                        l.reach(), now.reach(), l.cave() ? "yes" : "no", now.where().equals(l.where()) ? "" : "; its entry now " + now.where());
+            }
+            if (any) { refloor(); saveLabels(); }
+        } catch (Throwable t) {
+            error("cave labels re-measure", t);
+        }
+    }
+
+    private void saveLabels() {
+        io.github.mojolowjo.entropybot.io.BotFiles files = Core.INSTANCE.files();
+        if (files == null) return;
+        String gj = labels.toJson(), wj = worldLabels.toJson();
+        labels.saved();
+        worldLabels.saved();
+        Path gf = files.root().resolve("cave-labels.json"), wf = files.worldRoot().resolve("cave-labels.json");
+        worker().execute(() -> {
+            try {
+                files.writeAtomic(gf, gj);
+                files.writeAtomic(wf, wj);
+            } catch (Throwable t) {
+                LOG.warn("[entropybot] sense: couldn't write cave-labels.json: {}", t.toString());
+            }
+        });
     }
 
     /** A label (aa cave yes|no): into the global and the world's file, the floor derived again. Never throws. */

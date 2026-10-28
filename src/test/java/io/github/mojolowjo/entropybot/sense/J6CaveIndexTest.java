@@ -331,6 +331,29 @@ class J6CaveIndexTest {
         assertFalse(t.stream().anyMatch(c -> c[0] == 2 && c[1] == 54), "A's lip seen: no more a target");
     }
 
+    /**
+     * The owner's label 733 68 1663 (yes; the index: no cave): a real cave can enter LEVEL and drop further in. The reach
+     * is the volume's lowest cell below the opening's lowest cell, wherever in the volume that lies - so a 3-wide level
+     * tunnel into a hillside that drops 6 after 6 blocks is a cave; a 3-wide overhang 2 deep with no drop is not.
+     */
+    @Test
+    void aLevelEntryThatDropsFurtherInIsACave_anOverhangWithNoDropIsNot() {
+        int[] hill = new int[256];
+        for (int c = 0; c < 256; c++) hill[c] = (c & 15) >= 4 ? 70 : 64;          // the hillside from x 4
+        CaveIndex level = new CaveIndex();                   // 3 wide (z 4..6), 2 tall (y 64..65), level x 4..9, then a pit x 10..12 down to y 58
+        level.put(CaveIndex.runs(0, 0, hill, -64, (x, y, z) -> z >= 4 && z <= 6 && ((x >= 4 && x <= 9 && y >= 64 && y <= 65) || (x >= 10 && x <= 12 && y >= 58 && y <= 65))));
+        int v = level.volumeAt(6, 64, 5);
+        var s = level.labelSpot(List.of(), null, 2.5, 65.6, 5.5, 4.5);
+        assertEquals(6, s.rim(), "the face: 3 wide, 2 tall");
+        assertEquals(6, s.reach(), "level at the mouth, 6 down further in");
+        assertTrue(level.isCave(v), "a level entry that drops: a cave");
+        CaveIndex over = new CaveIndex();                    // 3 wide, 2 deep (x 4..5), 2 tall, no drop
+        over.put(CaveIndex.runs(0, 0, hill, -64, (x, y, z) -> z >= 4 && z <= 6 && x >= 4 && x <= 5 && y >= 64 && y <= 65));
+        var o = over.labelSpot(List.of(), null, 2.5, 65.6, 5.5, 4.5);
+        assertEquals(0, o.reach(), "no drop");
+        assertFalse(over.isCave(over.volumeAt(4, 64, 5)), "an overhang 2 deep: no cave");
+    }
+
     /** The owner's definition, (b) alone: a tunnel with a wide opening that goes only 4 below it is a dip. */
     @Test
     void aWideOpeningThatGoesOnlyFourDownIsADip() {
