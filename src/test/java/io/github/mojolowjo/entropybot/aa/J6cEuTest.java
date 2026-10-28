@@ -94,6 +94,27 @@ class J6cEuTest {
         assertTrue(bounded.why().contains("no third stand there"), bounded.why());
     }
 
+    /**
+     * (2) EU 10:45:13: the helmet's smelt at the bot's OWN furnace 8 61 3 (buried: "no stand within reach: no standable
+     * cell within 4.5 m of furnace at 8 61 3 sees a face of it"). An own station's use digs to it (the fork's digTo, rule
+     * 16); a reached one ends done and leaves no fact; "no stand within reach" is never an own station's hold; a dig that
+     * found no way is the next plan's station fact, with the fork's words (rule 7).
+     */
+    @Test
+    void theHelmetsSmelt_atItsOwnBuriedFurnace_digsToIt() {
+        int[] furnace = {8, 61, 3};
+        assertTrue(io.github.mojolowjo.entropybot.aa.moves.UseEnds.digTo(true), "own: the use digs to it");
+        assertFalse(io.github.mojolowjo.entropybot.aa.moves.UseEnds.digTo(false), "not mine: the use as before");
+        assertNull(io.github.mojolowjo.entropybot.aa.moves.UseEnds.fact(furnace, true, "dug to and opened furnace at 8 61 3"), "reached: the smelt runs, no fact");
+        assertNull(io.github.mojolowjo.entropybot.aa.moves.UseEnds.fact(furnace, true, "no stand within reach: no standable cell within 4.5 m of furnace at 8 61 3 sees a face of it (from 8 62 3)"),
+                "never held for 'no stand within reach'");
+        FactChange.Fact f = io.github.mojolowjo.entropybot.aa.moves.UseEnds.fact(furnace, true, "no path digging to furnace at 8 61 3 (breaking off)");
+        assertNotNull(f);
+        assertEquals("source " + NeedChain.stationKey(8, 61, 3), f.key(), "the station's own fact (the one station store, StationHolds)");
+        assertTrue(f.text().equals("my station at 8 61 3: no path digging to furnace at 8 61 3 (breaking off)"), f.text());
+        assertNull(io.github.mojolowjo.entropybot.aa.moves.UseEnds.fact(furnace, false, "no path digging to furnace at 8 61 3 (breaking off)"), "not mine: never asked to dig");
+    }
+
     /** (1c) A stand's hold is the order's own: never a world fact; a real source fact still is. */
     @Test
     void standHolds_areNeverWorldFacts() {

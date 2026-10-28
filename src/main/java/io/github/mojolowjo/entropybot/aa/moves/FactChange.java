@@ -218,6 +218,9 @@ public final class FactChange {
         last = new Fact("source " + bandKey(minY, maxY), why);
     }
 
+    /** 0.39.z78 J6c run EU (2): a typed fact the hands found (UseEnds), the step's own fact. */
+    public static void set(Fact f) { if (f != null) last = f; }
+
     /** 0.39.z78 J6b item 14: the prefix of {@link #bandNotKnown}'s key - never a source, never a world fact. */
     public static final String NOT_KNOWN = "not known ";
 

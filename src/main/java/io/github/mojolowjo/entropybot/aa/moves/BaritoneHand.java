@@ -220,7 +220,11 @@ final class BaritoneHand implements JobHands.Hand {
             String dim = Guard.dimOf(lv);
             interact = b().getInteractProcess();
             stuckWindow(interact);
-            interact.use(pos(on), f -> standVerdict(dim, f));
+            // 0.39.z78 J6c run EU (2; rule 16, the DU-2 ruling for every own station): the bot's OWN station is reached by
+            // digging to it when no stand in reach sees a face (the fork's digTo: Baritone picks the stand and digs, rule 2)
+            useOwn = on != null && io.github.mojolowjo.entropybot.clear.OwnStations.mineAt(on[0], on[1], on[2]);
+            useCell = on == null ? null : on.clone();
+            interact.use(pos(on), f -> standVerdict(dim, f), UseEnds.digTo(useOwn));
             useRun = interact.run();
         } catch (LinkageError e) {
             interact = null;
@@ -235,11 +239,21 @@ final class BaritoneHand implements JobHands.Hand {
         }
     }
 
+    /** J6c run EU (2): the running use is of an own station (digTo given), and its cell. */
+    private boolean useOwn;
+    private int[] useCell;
+
     private Car.Status useStatus() {
         if (interact.run() != useRun) return Car.Status.failed("another use took the interact process (run " + interact.run() + ", mine " + useRun + ")");
         return switch (interact.status()) {
             case DONE -> Car.Status.done(interact.why());
-            case FAILED -> interact.end() == baritone.api.process.LegEnd.LOST_CONTROL ? Car.Status.lost(interact.why()) : Car.Status.failed(interact.why());
+            case FAILED -> {
+                if (interact.end() == baritone.api.process.LegEnd.LOST_CONTROL) yield Car.Status.lost(interact.why());
+                // J6c run EU (2, rule 7): an own station the dig to it could not reach is the next plan's fact (the station's hold)
+                FactChange.Fact f = UseEnds.fact(useCell, useOwn, interact.why());
+                if (f != null) FactChange.set(f);
+                yield Car.Status.failed(interact.why());
+            }
             case IDLE -> Car.Status.failed("never started");
             default -> Car.Status.running(interact.why());
         };
