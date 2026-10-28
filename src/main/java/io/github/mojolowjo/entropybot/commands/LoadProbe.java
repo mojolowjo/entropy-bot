@@ -50,6 +50,8 @@ public final class LoadProbe {
     private static final List<String> eventsThisTick = new ArrayList<>();
     private static long calcs, calcFails, landedSeen, startedSeen, landedTick, written = -1, gcCount = -1, gcMs;
     private static long[] segSeen;
+    /** D11: the fork's join counts at the last line (IPricedPath.joinCounts). */
+    private static long[] joinSeen;
 
     /** EntropyBot, ClientTickEvent.Pre at HIGHEST: the tick's start, and the one flag read of this tick. */
     public static void preTick() {
@@ -176,7 +178,7 @@ public final class LoadProbe {
         long ds = started - startedSeen, dl = landed - landedSeen;
         startedSeen = started;
         landedSeen = landed;
-        long[] seg = null;
+        long[] seg = null, joins = null;
         var b = Jobs.baritone();
         if (b != null) {
             long[] now = b.getPricedPath().searchCounts();
@@ -184,6 +186,16 @@ public final class LoadProbe {
                 seg = segSeen == null ? new long[]{0, 0, 0} : new long[]{now[0] - segSeen[0], now[1] - segSeen[1], now[2] - segSeen[2]};
                 segSeen = now;
             } else seg = new long[]{-1, -1, -1};
+            // D11: the re-join counts since the last line (an older fork without them: left out)
+            try {
+                long[] j = b.getPricedPath().joinCounts();
+                if (j != null && j.length >= 4 && j[0] >= 0) {
+                    joins = joinSeen == null ? new long[]{0, 0, 0, 0} : new long[]{j[0] - joinSeen[0], j[1] - joinSeen[1], j[2] - joinSeen[2], j[3] - joinSeen[3]};
+                    joinSeen = j;
+                }
+            } catch (LinkageError e) {
+                joins = null;
+            }
         }
         long[] rec = Core.INSTANCE.recorder.loadCounts();
         long[] recLine = null;
@@ -204,6 +216,6 @@ public final class LoadProbe {
         calcs = 0;
         calcFails = 0;
         return new ProbeLines.LoadFacts(mc.getFps(), window.takeLine(), ds, dl, LivePathPrice.INSTANCE.inFlight(), seg, c, f, recLine,
-                heap.getUsed() >> 20, heap.getMax() >> 20, dn, dms);      // structural: bytes to MB
+                heap.getUsed() >> 20, heap.getMax() >> 20, dn, dms, joins);      // structural: bytes to MB
     }
 }

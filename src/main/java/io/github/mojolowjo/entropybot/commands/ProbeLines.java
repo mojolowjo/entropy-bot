@@ -227,9 +227,16 @@ public final class ProbeLines {
 
     /** The load line's other facts, as counts since the last line where a "+" is shown. */
     public record LoadFacts(int fps, String window, long pricedStarted, long pricedLanded, int pricedInFlight,
-                            long[] segs, long calcs, long calcFails, long[] recorder, long heapUsedMb, long heapMaxMb, long gcCount, long gcMs) {
+                            long[] segs, long calcs, long calcFails, long[] recorder, long heapUsedMb, long heapMaxMb, long gcCount, long gcMs, long[] joins) {
+        public LoadFacts(int fps, String window, long pricedStarted, long pricedLanded, int pricedInFlight,
+                         long[] segs, long calcs, long calcFails, long[] recorder, long heapUsedMb, long heapMaxMb, long gcCount, long gcMs) {
+            this(fps, window, pricedStarted, pricedLanded, pricedInFlight, segs, calcs, calcFails, recorder, heapUsedMb, heapMaxMb, gcCount, gcMs, null);
+        }
+
         public String line(long tick) {
             String fork = segs == null || segs[0] < 0 ? "fork counts not in this jar" : "fork segments started +" + segs[0] + " landed +" + segs[1] + ", nodes opened +" + segs[2];
+            // D11 (the re-join): re-joins asked, join searches started / landed and spliced / failed (IPricedPath.joinCounts)
+            if (joins != null && joins.length >= 4 && joins[0] >= 0) fork += "; re-joins +" + joins[0] + " (join searches started +" + joins[1] + " landed +" + joins[2] + " failed +" + joins[3] + ")";
             String rec = recorder == null ? "recorder off" : "recorder queue " + recorder[0] + ", lines written +" + recorder[1] + String.format(Locale.ROOT, ", disk %.1f MB", recorder[2] / 1048576.0);
             return "t=" + tick + " | fps " + fps + " | " + window
                     + " | priced paths started +" + pricedStarted + " landed +" + pricedLanded + " in flight " + pricedInFlight + "; " + fork

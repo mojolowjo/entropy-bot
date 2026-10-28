@@ -341,7 +341,12 @@ public final class BatchWay {
         Map<String, String> mine = Goals.droppedSources(g), others = new TreeMap<>();
         for (Goals.Goal o : holders) for (var e : Goals.droppedSources(o).entrySet()) if (!mine.containsKey(e.getKey())) others.put(e.getKey(), e.getValue());
         NeedChain.World w = others.isEmpty() ? w0 : w0.withoutSources(others);
-        int[] pos = bb.in == null ? null : bb.in.pos;
+        // D11 (the anchor rule): the trip is keyed and its legs placed from where the running step ENDS, not the live feet -
+        // the next legs start there (z75); walking inside one step changes nothing (run EV: 2,037 results dropped as the Y moved)
+        int[] feet = bb.in == null ? null : bb.in.pos;
+        Step runningStep = run == null ? null : run.step();
+        int[] pos = anchorOf(runningStep, feet);
+        if (pos != feet) w = w.withFeetAt(pos);
         // 0.39.z77 world: the holds as w0 applied them (Goals.chainWorld: the asker's own by position, the world facts held
         // here), so a hold lifted by moving re-keys the trip (was: the asker's own keys by name, a station back once closer
         // kept the trip priced without it)
@@ -349,7 +354,7 @@ public final class BatchWay {
         held.addAll(others.keySet());
         held.addAll(WorldFacts.of(bb).heldAt(bb).keySet());     // 0.39.z77 world 3: by state (hysteresis), never the raw distance
         held.addAll(Goals.stationHolds(bb).keySet());           // 0.39.z78 J5 slice 1: the stations held (the one store)
-        boolean under = under(bb.in);
+        boolean under = anchorUnder(runningStep, under(bb.in));
         String base = tripKeyOf(tk, open, pos, under, held);
         Trip kept = TRIPS.get(tk);
         Held h = waitTest ? hold(bb, tk, run, runner, kept) : Held.NONE;
@@ -373,6 +378,33 @@ public final class BatchWay {
             if (!t.ends().contains(g.id()) && gone) return trip(bb, g, w0, own, waitTest, ask);     // the ended orders parked: the key changes
         }
         return t.chain() != null ? t.chain() : own(bb, g, t.key(), landed(w), own, ask, w0);     // the own chain's world: the order's (Goals.chainWorld)
+    }
+
+    /**
+     * D11 (the anchor rule; pure): where the running step {@code step} leaves the bot - a walk's, a station's, a cave lip's, a
+     * surface cell's or a caving step's cell; a band leg's column at the band's middle Y; any other step (a craft, a smelt, a
+     * stand, a climb whose top is not known, a strip) and no step: the feet themselves ({@code feet} returned as given).
+     */
+    static int[] anchorOf(Step step, int[] feet) {
+        if (step == null || feet == null || feet.length < 3) return feet;     // structural: x y z
+        if (step instanceof Step.Walk s) return new int[]{s.x(), s.y(), s.z()};
+        if (step instanceof Step.ToStation s) return new int[]{s.x(), s.y(), s.z()};
+        if (step instanceof Step.ToCave s) return new int[]{s.x(), s.y(), s.z()};
+        if (step instanceof Step.ToSurface s) return new int[]{s.x(), s.y(), s.z()};
+        if (step instanceof Step.Cave s) return new int[]{s.x(), s.y(), s.z()};
+        if (step instanceof Step.ToStrip s) return new int[]{s.x(), s.y(), s.z()};
+        if (step instanceof Step.ToBand s) return new int[]{feet[0], (s.minY() + s.maxY()) / 2, feet[2]};   // structural: the band's middle
+        return feet;
+    }
+
+    /**
+     * D11 (pure): whether the trip is under ground at the anchor - a surface walk or a climb ends on the surface, a band or strip
+     * leg under ground; any other step keeps the live reading ({@code liveUnder}: {@link #under}).
+     */
+    static boolean anchorUnder(Step step, boolean liveUnder) {
+        if (step instanceof Step.ToSurface || step instanceof Step.Climb) return false;
+        if (step instanceof Step.ToBand || step instanceof Step.ToStrip || step instanceof Step.Strip) return true;
+        return liveUnder;
     }
 
     /** 0.39.z77 trip: the batch {@code tk}'s order whose typed run runs now ({@code run}), null: none or another batch's. */

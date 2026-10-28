@@ -609,6 +609,17 @@ public final class NeedChain {
         /** 0.39.z68: where explore targets generate and the surface over the bot ({@link WhereFacts}). */
         public World withWhere(WhereFacts w) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, w); }
 
+        /**
+         * D11 (the anchor rule; z75's "later steps priced from where the bot will be"): the same world with the FEET fact at
+         * {@code pos} - a waiting trip's legs are placed from the running step's end cell, never the live feet (run EV: 2,037
+         * "re-planned while thinking" as the feet's Y moved 31 -> -33 inside one step). The surface fact stays the live one.
+         */
+        public World withFeetAt(int[] pos) {
+            if (pos == null || where == null) return this;
+            int[] p = pos.clone();
+            return withWhere(new WhereFacts(where.of(), where.surface(), () -> p, where.base()));
+        }
+
         /** 0.39.z77 J2: the same world with another bag (a chain priced from the bag another left). */
         public World withBag(Map<String, Integer> b) { return new World(b, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where); }
 

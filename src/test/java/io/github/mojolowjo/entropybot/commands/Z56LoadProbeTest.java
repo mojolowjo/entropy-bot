@@ -26,6 +26,10 @@ class Z56LoadProbeTest {
                 + " | Baritone path calcs started +2 failed +1 | recorder queue 17, lines written +340, disk 50.0 MB | heap 900/4096 MB | GC +3 in 41 ms", l);
         String old = new ProbeLines.LoadFacts(60, "w", 0, 0, 0, new long[]{-1, -1, -1}, 0, 0, null, 1, 2, 0, 0).line(1);
         assertTrue(old.contains("fork counts not in this jar") && old.contains("recorder off"), old);
+        // D11: the re-join counts (a fork with them), left out for a fork without
+        String joins = new ProbeLines.LoadFacts(60, "w", 0, 0, 0, new long[]{4, 4, 100}, 0, 0, null, 1, 2, 0, 0, new long[]{3, 3, 2, 1}).line(1);
+        assertTrue(joins.contains("nodes opened +100; re-joins +3 (join searches started +3 landed +2 failed +1)"), joins);
+        assertFalse(new ProbeLines.LoadFacts(60, "w", 0, 0, 0, new long[]{4, 4, 100}, 0, 0, null, 1, 2, 0, 0, new long[]{-1}).line(1).contains("re-joins"));
     }
 
     @Test
