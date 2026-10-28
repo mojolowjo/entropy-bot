@@ -19,7 +19,8 @@ import java.util.List;
  * passed before the block that stopped it ({@link CaveIndex#path}) credit the volume whose air it went through
  * ({@link CaveIndex#creditRay}: the last cave cell on it); a ray stopped by rock in front of the air credits nothing (rule
  * 17); at {@link CaveIndex#KNOWN_RAYS} credits it is a known cave in Sightings ("sense: cave known
- * at ..."). A ray ending in a chunk the index has not read is said once per chunk (rule 7); a ray stopped by rock is
+ * at ..."). Run EE: a ray that ends on a block beside a cave's opening cell is a RIM credit ({@link CaveIndex#rimCredit}:
+ * the opening an explore target, "sense: cave opening seen"). A ray ending in a chunk the index has not read is said once per chunk (rule 7); a ray stopped by rock is
  * tried again after {@link SeenRuntime#RETRY_MS}. Loader notes: vanilla client only ({@code Level.clip},
  * {@code ClipContext}; Mojang names), called from ChunkPass's tick. Errors: the caller's wrapper counts and logs them.
  */
@@ -30,7 +31,7 @@ final class CaveRays {
 
     private final java.util.Map<Long, Long> blockedUntil = new java.util.HashMap<>();
     private final java.util.Set<Long> edgeSaid = new java.util.HashSet<>();
-    private long rays, credits, known;
+    private long rays, credits, rims, known;
 
     void clear() {
         blockedUntil.clear();
@@ -61,6 +62,16 @@ final class CaveRays {
                 path.removeIf(q -> q[0] == bx && q[1] == by && q[2] == bz);   // the block that stopped it was not seen through
             } else path = CaveIndex.path(ex, ey, ez, to.x, to.y, to.z);
             CaveIndex.Result res = index.creditRay(path);
+            if (r.getType() == HitResult.Type.BLOCK) {
+                // run EE (the manager's ruling): the end block beside a cave's opening cell - the lip of the hole seen; an
+                // explore target, never a known cave
+                CaveIndex.Result rim = index.rimCredit(hx, hy, hz);
+                if (rim.what() == CaveIndex.Credit.RIM) {
+                    rims++;
+                    LOG.info("[entropybot] sense: cave opening seen (its lip {} {} {}): a target for the explore, not known", hx, hy, hz);
+                    if (res.what() == CaveIndex.Credit.NO_VOLUME || res.what() == CaveIndex.Credit.DIP) continue;
+                }
+            }
             switch (res.what()) {
                 case NO_VOLUME -> {
                     if (!index.has(hx >> 4, hz >> 4) && edgeSaid.add(CaveIndex.chunkKey(hx >> 4, hz >> 4)))
@@ -70,7 +81,7 @@ final class CaveRays {
                 }
                 case DIP -> blockedUntil.put(Seen.key(c[0], c[1], c[2]), now + SeenRuntime.RETRY_MS);   // run ED: only a dip's air on the way
                 case CREDITED -> credits++;
-                case ALREADY_KNOWN -> { }
+                case ALREADY_KNOWN, RIM -> { }
                 case KNOWN -> {
                     credits++;
                     CaveIndex.Known k = res.known();
@@ -83,5 +94,5 @@ final class CaveRays {
         }
     }
 
-    String status() { return rays + " cave rays, " + credits + " credits, " + known + " caves known"; }
+    String status() { return rays + " cave rays, " + rims + " rim credits, " + credits + " air credits, " + known + " caves known"; }
 }

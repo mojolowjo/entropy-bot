@@ -22,6 +22,8 @@ final class CaveLabel {
         String dim = pass.dim();
         if (mc.player == null || sg == null || dim == null) return "aa cave list: no world (the known caves are this world's)";
         var p = mc.player;
-        return io.github.mojolowjo.entropybot.sense.CaveList.text(sg.allKnownCaves(dim), pass.caveIndex().credited(), pass.caveRaysStatus(), p.getX(), p.getY(), p.getZ());
+        return io.github.mojolowjo.entropybot.sense.CaveList.text(sg.allKnownCaves(dim), pass.caveIndex().credited(),
+                pass.caveIndex().truth(p.getBlockX(), p.getBlockY(), p.getBlockZ(), (int) Math.floor(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.exploreTowardM"))),
+                (int) Math.floor(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.exploreTowardM")), pass.caveIndex().counts(), pass.caveRaysStatus(), p.getX(), p.getY(), p.getZ());   // run EE: the index's truth (a debug read)
     }
 }

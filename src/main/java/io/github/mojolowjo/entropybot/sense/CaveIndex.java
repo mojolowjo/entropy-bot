@@ -21,7 +21,11 @@ import java.util.Set;
  * rays saw (the credited cell nearest its column's surface), its SIZE a {@link Size} bucket and its DEPTH a {@link Depth}
  * band from the index (the owner's ruling: "its entry, its size and its depth") - never the index's cells or ore.</li>
  * <li>An opening becomes an explore target only with {@link #TARGET_RAYS} credits ({@link #openings}: a hole the bot has
- * seen; the manager's ruling on J6 (a)).</li>
+ * seen; the manager's ruling on J6 (a)). Run EE (2236 rays, 0 credits, no "toward cave opening" line: a ray from afar to
+ * under-ground air ends on the ground first - chicken and egg) - the manager's ruling: a RIM credit ({@link #rimCredit})
+ * also makes it a target: a ray that ends on a solid block beside an opening cell (an air cell of a cave beside a
+ * sky-lit column) saw the lip of the hole, as a player sees it across a valley; the rays aim at those lips too (the roof
+ * over each opening column, {@link #targets}). Only the AIR credits make it known.</li>
  * <li>Run ED (21:38-21:56, 189 of 209 known caves "SMALL, HIGH" at y 64-79: air under tree crowns and ledges): a volume
  * is a cave only by the owner's definition ("most caves have a few air blocks at the opening which continue downwards";
  * {@link #isCave}): its opening - its cells beside a sky-lit column - holds {@link #MIN_RIM} cells, and its lowest cell
@@ -112,7 +116,7 @@ public final class CaveIndex {
     public record Volume(int root, long cells, int minY, int maxY, Set<Long> credits) {}
 
     /** What a credit did: no volume there, credited, the volume known already, or made it a known cave now. */
-    public enum Credit { NO_VOLUME, DIP, CREDITED, ALREADY_KNOWN, KNOWN }
+    public enum Credit { NO_VOLUME, DIP, CREDITED, ALREADY_KNOWN, KNOWN, RIM }
 
     /** The known cave a credit made: its entry (a seen cell), its size bucket and depth band, the credited (seen) cells. */
     public record Known(int x, int y, int z, Size size, Depth depth, List<Long> hits) {}
@@ -143,6 +147,8 @@ public final class CaveIndex {
     private boolean dirty;
     /** The credited cells (packed) and the cells of known caves: kept by cell, mapped to volumes at each ask. */
     private final Set<Long> credited = new LinkedHashSet<>(), knownCells = new HashSet<>();
+    /** Run EE: the opening cells a ray's end block lay beside (rim credits, by cell; mapped to volumes at each ask). */
+    private final Set<Long> rimSeen = new LinkedHashSet<>();
     /** Volume root -> its credited cells, and the known roots: derived (rebuilt with the union-find). */
     private final Map<Integer, Set<Long>> credits = new HashMap<>();
     private final Set<Integer> known = new HashSet<>();
@@ -159,6 +165,7 @@ public final class CaveIndex {
     public synchronized void clear() {
         chunks.clear();
         credited.clear();
+        rimSeen.clear();
         knownCells.clear();
         credits.clear();
         known.clear();
@@ -254,7 +261,8 @@ public final class CaveIndex {
         }
         for (Chunk ch : all) java.util.Arrays.fill(ch.rim, 0);
         for (Chunk ch : all) for (int c = 0; c < 256; c++) opened(ch, c);
-        credited.removeIf(c -> runAt(c) < 0);                                     // an unloaded unknown volume's credits go with it
+        credited.removeIf(c -> runAt(c) < 0);
+        rimSeen.removeIf(c -> runAt(c) < 0);                                     // an unloaded unknown volume's credits go with it
         for (long c : credited) credits.computeIfAbsent(find(runAt(c)), x -> new LinkedHashSet<>()).add(c);
         for (long c : knownCells) { int r = runAt(c); if (r >= 0) known.add(find(r)); }
     }
@@ -448,12 +456,14 @@ public final class CaveIndex {
     }
 
     /**
-     * The rays' targets near the eyes: per run within {@code r} (horizontal) of x z of a volume not known, the run's cell
-     * nearest the eye's Y; nearest first, at most {@code n}. {@code ok}: a cell's further test (the view cone, a recent
+     * The rays' targets near the eyes: per run within {@code r} (horizontal) of x z of a cave not known, the run's cell
+     * nearest the eye's Y, and for a run with opening cells of a cave not rim-credited yet the roof block over them (its
+     * lip, run EE); nearest first, at most {@code n}. {@code ok}: a cell's further test (the view cone, a recent
      * blocked ray). Where to LOOK, never where to go (rule 17).
      */
     public synchronized List<int[]> targets(int x, int y, int z, int r, int n, CellTest ok) {
         fresh();
+        Set<Integer> rimRoots = rimRoots();
         List<int[]> out = new ArrayList<>();
         for (int cx = (x - r) >> 4; cx <= (x + r) >> 4; cx++)
             for (int cz = (z - r) >> 4; cz <= (z + r) >> 4; cz++) {
@@ -466,8 +476,11 @@ public final class CaveIndex {
                         int tx = (cx << 4) + (c & 15), tz = (cz << 4) + (c >> 4);
                         if (Math.abs(tx - x) > r || Math.abs(tz - z) > r) continue;
                         int ty = Math.max(ch.lo[i], Math.min(ch.hi[i], y));
-                        if (ok != null && !ok.test(tx, ty, tz)) continue;
-                        out.add(new int[]{tx, ty, tz});
+                        if (ok == null || ok.test(tx, ty, tz)) out.add(new int[]{tx, ty, tz});
+                        // run EE: the lip of an opening not yet seen - the roof block over the column's opening cells
+                        // (solid: the run is maximal and lies under the ground), where a ray from afar ends
+                        if (sky(tx, tz) <= ch.hi[i] && !rimRoots.contains(rt) && (ok == null || ok.test(tx, ch.hi[i] + 1, tz)))
+                            out.add(new int[]{tx, ch.hi[i] + 1, tz});
                     }
             }
         out.sort((a, b) -> Long.compare(d2(a, x, y, z), d2(b, x, y, z)));
@@ -475,14 +488,15 @@ public final class CaveIndex {
     }
 
     /**
-     * The openings near x y z: per volume not known yet that at least {@link #TARGET_RAYS} sight rays credited (a hole the
-     * bot has seen), its cell nearest x y z that touches a sky-lit column sideways (where a player sees a hole in a slope
+     * The openings near x y z: per cave not known yet that at least {@link #TARGET_RAYS} sight rays credited, through its
+     * air or on its lip ({@link #rimCredit}; a hole the bot has seen), its cell nearest x y z that touches a sky-lit column sideways (where a player sees a hole in a slope
      * or a cliff side), within {@code r} (horizontal); nearest first. The explore for ore walks toward these; a volume no
      * ray reached is never a target (the manager's ruling on J6 (a): that would be x-ray by proxy, rule 17) - none: the
      * explore explores plainly.
      */
     public synchronized List<int[]> openings(int x, int y, int z, int r) {
         fresh();
+        Set<Integer> rimRoots = rimRoots();
         Map<Integer, int[]> best = new HashMap<>();
         for (int cx = (x - r) >> 4; cx <= (x + r) >> 4; cx++)
             for (int cz = (z - r) >> 4; cz <= (z + r) >> 4; cz++) {
@@ -496,7 +510,8 @@ public final class CaveIndex {
                     for (int i = ch.start[c]; i < ch.start[c + 1]; i++) {
                         if (skyFrom == Integer.MAX_VALUE || skyFrom > ch.hi[i]) continue;
                         int root = find(ch.id[i]);
-                        if (known.contains(root) || !cave(root) || credits.getOrDefault(root, Set.of()).size() < TARGET_RAYS) continue;
+                        if (known.contains(root) || !cave(root)) continue;
+                        if (credits.getOrDefault(root, Set.of()).size() < TARGET_RAYS && !rimRoots.contains(root)) continue;   // run EE: a rim credit counts
                         int[] cell = {tx, Math.max(ch.lo[i], skyFrom), tz};
                         int[] was = best.get(root);
                         if (was == null || d2(cell, x, y, z) < d2(was, x, y, z)) best.put(root, cell);
@@ -506,6 +521,112 @@ public final class CaveIndex {
         List<int[]> out = new ArrayList<>(best.values());
         out.sort((a, b) -> Long.compare(d2(a, x, y, z), d2(b, x, y, z)));
         return out;
+    }
+
+    /** The lowest surface of the four side columns of x z (MAX_VALUE: none held): the sky a cell of x z touches from y up. */
+    private int sky(int x, int z) {
+        int s = Integer.MAX_VALUE;
+        for (int[] d : SIDES) s = Math.min(s, surfaceAt(x + d[0], z + d[1]));
+        return s;
+    }
+
+    /** The volumes with a rim credit (loaded cells only). */
+    private Set<Integer> rimRoots() {
+        Set<Integer> out = new HashSet<>();
+        for (long c : rimSeen) { int r = runAt(c); if (r >= 0) out.add(find(r)); }
+        return out;
+    }
+
+    private static final int[][] SIX = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+
+    /**
+     * Run EE (the manager's ruling): a sight ray ended on the solid block x y z. Beside it an opening cell of a cave not
+     * known (an air cell of the cave beside a sky-lit column): the ray saw the lip of that hole - a RIM credit, which makes
+     * the opening an explore target ({@link #openings}) and never makes the cave known. The opening cell is sky-exposed,
+     * not air behind a wall (rule 17). No such cell: NO_VOLUME; the same opening cell again: ALREADY_KNOWN.
+     */
+    public synchronized Result rimCredit(int x, int y, int z) {
+        fresh();
+        if (runAt(x, y, z) >= 0) return new Result(Credit.NO_VOLUME, -1, null);   // an air cell is no block
+        for (int[] d : SIX) {
+            int ax = x + d[0], ay = y + d[1], az = z + d[2];
+            int r = runAt(ax, ay, az);
+            if (r < 0 || sky(ax, az) > ay) continue;                              // not an opening cell
+            int root = find(r);
+            if (known.contains(root) || !cave(root)) continue;
+            boolean first = rimSeen.add(cell(ax, ay, az));
+            return new Result(first ? Credit.RIM : Credit.ALREADY_KNOWN, root, null);      // ALREADY_KNOWN: this lip was seen before
+        }
+        return new Result(Credit.NO_VOLUME, -1, null);
+    }
+
+    /**
+     * Run EE probe: "cave index: volumes N (caves C, dips D, no opening O), rim credits R, air credits A, known M" - the
+     * volumes of the loaded chunks, the credited cells (rim, air) and the known volumes.
+     */
+    public synchronized String counts() {
+        fresh();
+        int n = 0, caves = 0, none = 0, k = 0;
+        for (int i = 0; i < next; i++) {
+            if (find(i) != i) continue;
+            n++;
+            if (rimLow[i] == Integer.MAX_VALUE) none++;
+            else if (cave(i)) caves++;
+            if (known.contains(i)) k++;
+        }
+        return "cave index: volumes " + n + " (caves " + caves + ", dips " + (n - caves - none) + ", no opening " + none + "), rim credits "
+                + rimSeen.size() + ", air credits " + credited.size() + ", known " + k;
+    }
+
+    /** One cave of {@link #truth}: its opening cell nearest the bot, size bucket, depth band, rim and air credits, known. */
+    public record Truth(int x, int y, int z, Size size, Depth depth, int rim, int air, boolean known) {}
+
+    /** {@link #truth}'s answer: the caves nearest first, then the dips and the volumes with no opening within the radius. */
+    public record TruthList(List<Truth> caves, int dips, int noOpening) {}
+
+    /**
+     * The owner's debug read (aa cave list, the manager's ruling after run EE): every index volume with a cell within
+     * {@code r} (horizontal) of x z, nearest first; the caves (passing the floor, {@link #isCave}) one by one, the dips and
+     * the volumes with no opening counted. The truth from the index, so an empty list at a real cave says the floor or the
+     * index is wrong, not the rays. Rule 17: a debug read only - never a way, a target or a fact; nothing in the planner
+     * reads it (J6CaveIndexTest greps for it).
+     */
+    public synchronized TruthList truth(int x, int y, int z, int r) {
+        fresh();
+        Map<Integer, int[]> entry = new HashMap<>();
+        Set<Integer> all = new HashSet<>();
+        for (int cx = (x - r) >> 4; cx <= (x + r) >> 4; cx++)
+            for (int cz = (z - r) >> 4; cz <= (z + r) >> 4; cz++) {
+                Chunk ch = chunks.get(chunkKey(cx, cz));
+                if (ch == null || ch.lo.length == 0) continue;
+                for (int c = 0; c < 256; c++) {
+                    int tx = (cx << 4) + (c & 15), tz = (cz << 4) + (c >> 4);
+                    if (Math.abs(tx - x) > r || Math.abs(tz - z) > r) continue;
+                    int s = sky(tx, tz);
+                    for (int i = ch.start[c]; i < ch.start[c + 1]; i++) {
+                        int root = find(ch.id[i]);
+                        all.add(root);
+                        if (s > ch.hi[i] || !cave(root)) continue;
+                        int[] cell = {tx, Math.max(ch.lo[i], s), tz};
+                        int[] was = entry.get(root);
+                        if (was == null || d2(cell, x, y, z) < d2(was, x, y, z)) entry.put(root, cell);
+                    }
+                }
+            }
+        Map<Integer, Integer> rim = new HashMap<>();
+        for (long c : rimSeen) { int q = runAt(c); if (q >= 0) rim.merge(find(q), 1, Integer::sum); }
+        double walk = io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps(), cap = io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.exploreMinutes");
+        List<Truth> caves = new ArrayList<>();
+        int dips = 0, none = 0;
+        for (int root : all) {
+            if (rimLow[root] == Integer.MAX_VALUE) { none++; continue; }
+            int[] e = entry.get(root);
+            if (!cave(root) || e == null) { if (!cave(root)) dips++; continue; }
+            caves.add(new Truth(e[0], e[1], e[2], Size.of(cells[root], walk, cap), Depth.of(minY[root]), rim.getOrDefault(root, 0),
+                    credits.getOrDefault(root, Set.of()).size(), known.contains(root)));
+        }
+        caves.sort((a, b) -> Long.compare(d2(new int[]{a.x(), a.y(), a.z()}, x, y, z), d2(new int[]{b.x(), b.y(), b.z()}, x, y, z)));
+        return new TruthList(caves, dips, none);
     }
 
     @FunctionalInterface

@@ -159,6 +159,68 @@ class J6CaveIndexTest {
         assertEquals(8, h.openings(6, 64, 5, 16).get(0)[0]);
     }
 
+    /**
+     * Run EE (2236 rays, 0 credits: a ray from afar to under-ground air ends on the ground first), the manager's ruling: a
+     * hole in a hillside 30 m away - rays that end on its lip (a block beside an opening cell) make it a target, no ray
+     * went through its air so it is not known; the bot walks to it and three rays in make it known.
+     */
+    @Test
+    void aHillsideHoleThirtyMetresOff_itsLipSeen_isATargetNotKnown_threeRaysInMakeItKnown() {
+        int[] hill = new int[256];
+        for (int c = 0; c < 256; c++) hill[c] = 64;
+        CaveIndex.CellTest cave = (x, y, z) -> z >= 5 && z <= 6 && ((x >= 20 && x <= 30 && y >= 64 && y <= 66) || (x >= 28 && x <= 29 && y >= 55 && y <= 66));
+        CaveIndex i = new CaveIndex();
+        i.put(CaveIndex.runs(0, 0, hill, -64, (x, y, z) -> false));                     // the valley, x 0..15
+        int[] h2 = new int[256];
+        for (int c = 0; c < 256; c++) h2[c] = (c & 15) >= 4 ? 70 : 64;                   // the hill from x 20 (chunk 1: x 16..31)
+        i.put(CaveIndex.runs(1, 0, h2, -64, cave));
+        int v = i.volumeAt(25, 65, 5);
+        assertTrue(i.isCave(v), "6 opening cells at x 20, its air 9 below them");
+        assertTrue(i.openings(-10, 65, 5, 64).isEmpty(), "no ray yet: no target");
+        List<int[]> t = i.targets(-10, 65, 5, 64, 400, null);
+        assertTrue(t.stream().anyMatch(c -> c[0] == 20 && c[1] == 67 && c[2] == 5), "the lip over the opening is a ray target");
+        assertEquals(CaveIndex.Credit.NO_VOLUME, i.rimCredit(25, 67, 5).what(), "the roof over unseen air (no opening cell beside it): nothing");
+        assertEquals(CaveIndex.Credit.RIM, i.rimCredit(20, 67, 5).what(), "a ray from 30 m ended on the lip");
+        assertEquals(CaveIndex.Credit.ALREADY_KNOWN, i.rimCredit(20, 67, 5).what(), "the same lip again");
+        assertEquals(1, i.openings(-10, 65, 5, 64).size(), "the lip seen: a target");
+        assertFalse(i.isKnown(v), "no ray through its air: not known");
+        assertTrue(i.volume(v).credits().isEmpty(), "no air credit");
+        assertFalse(i.targets(-10, 65, 5, 64, 400, null).stream().anyMatch(c -> c[1] == 67), "its lip seen: no more lip targets");
+        CaveIndex.Result last = null;                                                  // walked to the mouth: three rays in
+        for (int[] in : new int[][]{{25, 65, 5}, {26, 66, 6}, {27, 64, 5}}) last = i.creditRay(CaveIndex.path(18.5, 65.6, 5.5, in[0] + 0.5, in[1] + 0.5, in[2] + 0.5));
+        assertEquals(CaveIndex.Credit.KNOWN, last.what(), "three rays through its air: known");
+        assertTrue(i.counts().startsWith("cave index: volumes 1 (caves 1, dips 0, no opening 0), rim credits 1, air credits 3, known 1"), i.counts());
+    }
+
+    /** aa cave list's truth part (run EE, a debug read): each cave within the radius with its fields; dips and no-opening counted. */
+    @Test
+    void theIndexTruthListsEachCaveWithItsFields_andNoPlannerReadsIt() throws java.io.IOException {
+        CaveIndex i = index();
+        i.rimCredit(2, 53, 4);                               // the roof over A's opening at x 2
+        var tl = i.truth(0, 64, 0, 64);
+        assertEquals(2, tl.caves().size(), "A and D");
+        assertEquals(1, tl.noOpening(), "B");
+        String t = CaveList.text(List.of(), java.util.Map.of(), tl, 64, i.counts(), "rays: test", 0, 64, 0);
+        assertTrue(t.contains("index caves within 64 (the index's truth, a debug read; never a way or a target): 2"), t);
+        assertTrue(t.contains("volume at 2 50 4: ") && t.contains("size small, depth stone, rim 1, air 0, not known"), t);
+        assertTrue(t.contains("  dips 0, no opening 1"), t);
+        assertTrue(t.contains("cave index: volumes 3 (caves 2, dips 0, no opening 1), rim credits 1, air credits 0, known 0"), t);
+        // rule 17: nothing in the planner reads the truth - only aa cave list and aa debug call it
+        java.util.Set<String> callers = new java.util.TreeSet<>();
+        try (var files = java.nio.file.Files.walk(java.nio.file.Path.of("src/main/java"))) {
+            for (var f : (Iterable<java.nio.file.Path>) files.filter(p -> p.toString().endsWith(".java"))::iterator) {
+                String src = java.nio.file.Files.readString(f);
+                if ((src.contains(".truth(") || src.contains("TruthList") || src.contains("CaveIndex.Truth")) && !f.endsWith("CaveIndex.java") && !f.endsWith("CaveList.java"))
+                    callers.add(f.getFileName().toString());
+            }
+        }
+        assertEquals(java.util.Set.of("AaRuntime.java", "CaveLabel.java"), callers, "the truth's readers: aa debug and aa cave list only");
+        try (var files = java.nio.file.Files.walk(java.nio.file.Path.of("src/main/java/io/github/mojolowjo/entropybot/aa"))) {
+            for (var f : (Iterable<java.nio.file.Path>) files.filter(p -> p.toString().endsWith(".java"))::iterator)
+                assertFalse(java.nio.file.Files.readString(f).contains("truth("), f + " reads the index's truth");
+        }
+    }
+
     /** The owner's definition, (b) alone: a tunnel with a wide opening that goes only 4 below it is a dip. */
     @Test
     void aWideOpeningThatGoesOnlyFourDownIsADip() {

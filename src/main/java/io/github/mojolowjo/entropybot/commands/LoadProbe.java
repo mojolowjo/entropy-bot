@@ -114,7 +114,8 @@ public final class LoadProbe {
             if (lastLine < 0 || t - lastLine >= ProbeLines.everyTicks()) {
                 lastLine = t;
                 var pl = planner;
-                LOG.info("[entropybot] probe load: {} | {}{}", facts().line(t), ProbeLines.asks(askDelta()), pl == null ? "" : " | " + pl.get());
+                LOG.info("[entropybot] probe load: {} | {}{} | {}", facts().line(t), ProbeLines.asks(askDelta()), pl == null ? "" : " | " + pl.get(),
+                        io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.caveIndex().counts());   // run EE: the cave index's counts
             }
         } catch (RuntimeException | LinkageError e) {
             Quiet.warn("LoadProbe.postTick: the load line could not be written", e);
