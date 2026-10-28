@@ -470,6 +470,8 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
                 // 0.39.z78 dz (rule 7): with holds known, the batch has no strip from ITS start - never "no strip way here":
                 // the order's own chain prices the other start cells and levels and says "no strip way here" only when
                 // every one of them is held or refused (NeedChain.shutAlts)
+                if (tl == null && !io.github.mojolowjo.entropybot.aa.brain.StripWays.on())       // 0.39.z78 strip-off: the owner's switch
+                    return no(batch, NeedChain.shw(l) + ": " + io.github.mojolowjo.entropybot.aa.brain.StripWays.OFF + "; the order's own chain prices caves, seen veins and the explore");
                 if (tl == null) return no(batch, NeedChain.shw(l) + (f.stripHolds().isEmpty() ? ": no strip way here (no world-gen band of its blocks at or below the feet, or none read; rule 15)"
                         : ": no batch strip from this start (strip holds known: " + String.join("; ", f.stripHolds()) + "; the order's own chain prices the other start cells and levels)"));
                 if (tl == MiningTiers.UNKNOWN) return no(batch, NOT_LOADED + "the pickaxe tier of " + NeedChain.shw(l) + "'s blocks");

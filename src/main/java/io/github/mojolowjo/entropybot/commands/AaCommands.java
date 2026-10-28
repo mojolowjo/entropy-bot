@@ -137,6 +137,7 @@ final class AaCommands {
         v("on", (c, aa, vb, a) -> aa.turnOn(), f(T, "on", "AA drives (saved, survives a restart)"));
         v("off", (c, aa, vb, a) -> aa.turnOff("aa off"), f(T, "off", "AA stops driving"));
         v("fair", (c, aa, vb, a) -> aa.fair(a), f(T, "fair on|off", "on: only ore I have seen counts; off: the whole chunk index"));
+        v("ways", (c, aa, vb, a) -> aa.ways(a), f(T, "ways strip on|off", "whether the planner may strip mine (saved per world; default off)"));     // 0.39.z78 strip-off
         v("like", (c, aa, vb, a) -> aa.like(a), f(T, "like [<key> <n>]", "the personality (want weights, upkeep, sleep, margin): list or set one"));
         v("replan", (c, aa, vb, a) -> aa.replan(a), f(T, "replan on|off", "whether a task is planned again when its facts change"));
         v("horizon", (c, aa, vb, a) -> aa.horizon(a), f(T, "horizon [seconds]", "how far ahead the sequencer plans (saved)"));

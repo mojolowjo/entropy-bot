@@ -715,7 +715,7 @@ public final class AaRuntime implements JobPort {
         return new io.github.mojolowjo.entropybot.aa.NeedChain.World(in.bag, in.tableKnown, in.furnaceKnown,
                 // 0.39.z77 stone (run CF 16:55:38): the lookup passes over the order's held spots (NeedChain.Lookup), the next nearest counts
                 (io.github.mojolowjo.entropybot.aa.NeedChain.Lookup) (item, skip) -> { var s = nearestSource(item, skip); return s == null ? List.of() : List.of(s); },
-                this::animalsKnown, currentLootBook(), this::band, 0, LivePathPrice.INSTANCE, this::stationAt).withUses(AaRuntime::usesLeft).withStrip(this::strip).withCave(this::caveWay)
+                this::animalsKnown, currentLootBook(), this::band, 0, LivePathPrice.INSTANCE, this::stationAt).withUses(AaRuntime::usesLeft).withStrip(io.github.mojolowjo.entropybot.aa.brain.StripWays.gate(this::strip)).withCave(this::caveWay)
                 .withRooms(rooms(in.pos))
                 .withWhere(new io.github.mojolowjo.entropybot.aa.NeedChain.WhereFacts(this::whereOf, once(this::surfaceOver), AaRuntime::feetNow, AaRuntime::baseHere))   // 0.39.z68; z69: the feet; z74: the base block
                 // 0.39.z75 take 2 (run AJ 20:23:41 / 20:24:55): a station take short twice at one cell is out for every order
@@ -1500,7 +1500,32 @@ public final class AaRuntime implements JobPort {
         io.github.mojolowjo.entropybot.aa.brain.Only.set(io.github.mojolowjo.entropybot.aa.AaSwitch.mode(s));     // orders-tier: no saved choice = orders only
         offReason = null;
         if (!on()) lookRestore();
-        return "aa " + (on() ? "on" : "off") + " in this world, " + io.github.mojolowjo.entropybot.aa.brain.Only.modeText();
+        // 0.39.z78 strip-off (owner 2026-10-27): this world's strip way switch, no saved answer = off
+        io.github.mojolowjo.entropybot.aa.brain.StripWays.set(s.has(WAYS_STRIP) && s.get(WAYS_STRIP).getAsBoolean());
+        return "aa " + (on() ? "on" : "off") + " in this world, " + io.github.mojolowjo.entropybot.aa.brain.Only.modeText()
+                + ", strip way " + (io.github.mojolowjo.entropybot.aa.brain.StripWays.on() ? "on" : "off");
+    }
+
+    /** 0.39.z78 strip-off: the world switch's key of the strip way (aa ways strip on|off). */
+    private static final String WAYS_STRIP = "waysStrip";
+
+    /**
+     * 0.39.z78 strip-off (owner 2026-10-27): aa ways strip on|off - whether the planner may offer a strip way (saved in this
+     * world's switch, as aa only; no saved answer: off). Off: no strip way, the batch derives without the strip leg, said once
+     * per order. The owner's own strip order (aa want strip ...) is not gated.
+     */
+    String ways(String arg) {
+        String a = arg == null ? "" : arg.trim().toLowerCase(java.util.Locale.ROOT).replaceAll("\\s+", " ");
+        String state = "strip way " + (io.github.mojolowjo.entropybot.aa.brain.StripWays.on() ? "on" : "off");
+        if (a.isEmpty() || a.equals("strip")) return state;
+        if (!a.equals("strip on") && !a.equals("strip off")) return "usage: aa ways strip on|off (" + state + ")";
+        boolean v = a.endsWith("on");
+        io.github.mojolowjo.entropybot.aa.brain.StripWays.set(v);
+        sw().addProperty(WAYS_STRIP, v);
+        c.saved();
+        knownDue = true;                  // the orders are priced again with the switch
+        LOG.info("[entropybot] aa: ways strip {}", v ? "on" : "off");
+        return "ok: aa ways strip " + (v ? "on - the planner may strip mine again" : "off - " + io.github.mojolowjo.entropybot.aa.brain.StripWays.OFF);
     }
 
     /** aa only <need>|off: the watched need, saved in this world's switch (off: the full set of needs). */

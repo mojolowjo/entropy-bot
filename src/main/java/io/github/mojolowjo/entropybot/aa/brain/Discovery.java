@@ -188,7 +188,8 @@ public final class Discovery {
         double per = tunnelPerOre(f.density());
         String dens = f.density() <= 0 ? "density not learned" : String.format(Locale.ROOT, "%.4f per block learned", f.density());
         var stair = f.mineMarked() || down == 0 ? null : stairHeading(f, dropped);
-        if (!f.mineMarked() && down > 0 && f.downs() != null && stair == null) dropped.add("strip at Y: no staircase heading down may be dug (the policy or the ground refuses each)");
+        if (!StripWays.on()) dropped.add("strip at Y: " + StripWays.OFF);       // 0.39.z78 strip-off: the owner's switch
+        else if (!f.mineMarked() && down > 0 && f.downs() != null && stair == null) dropped.add("strip at Y: no staircase heading down may be dug (the policy or the ground refuses each)");
         else {
             // the way down: a staircase digs about 2 blocks per level and walks it, plus its heading's ground (AA_ROUND3 4)
             var g = stair == null ? null : io.github.mojolowjo.entropybot.aa.WayUp.ground(stair);

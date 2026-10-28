@@ -419,6 +419,7 @@ public final class IronOptions {
             else ranked.add(scored(Way.CAVE, null, f.caveDist() + caveTime(), "a known cave " + f.caveDist() + " away", m));
         } else dropped.add("cave: none known");
         if (f.fair() != null) { /* the strip row came with the discovery ways */ }
+        else if (!io.github.mojolowjo.entropybot.aa.brain.StripWays.on()) dropped.add("strip: " + io.github.mojolowjo.entropybot.aa.brain.StripWays.OFF);     // 0.39.z78 strip-off
         else if (f.stripAllowed()) {
             if (m.blocked(Way.STRIP, null, now)) dropped.add("strip: " + m.reason(Way.STRIP, null));
             else ranked.add(scored(Way.STRIP, null, stripTime() + wear(f, stripBreaks()), "a mine is marked" + wearWhy(f, stripBreaks()), m));

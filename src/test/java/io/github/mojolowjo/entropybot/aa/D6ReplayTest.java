@@ -253,6 +253,7 @@ class D6ReplayTest {
     }
 
     private static void replay(String run) {
+        io.github.mojolowjo.entropybot.aa.brain.StripWays.set(true);     // 0.39.z78 strip-off: the replay prices with strips on (identical)
         Z77PlaybookTest.data();
         PlanNodes.forgetMine();
         PlanNodes.on(true);

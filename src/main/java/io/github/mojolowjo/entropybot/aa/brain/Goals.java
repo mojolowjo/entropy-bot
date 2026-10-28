@@ -1029,6 +1029,8 @@ public final class Goals {
     static io.github.mojolowjo.entropybot.aa.NeedChain.World chainWorld(Blackboard bb, Goal g) {
         var world = world(bb);
         if (world == null) return null;
+        // 0.39.z78 strip-off (rule 7): the strip way off is said once per order (the World's strip facts answer none, StripWays)
+        if (bb.port != null && StripWays.sayOnce(g.id() + " " + g.given)) bb.port.log(g.r.key() + ": " + StripWays.OFF);
         int[] pos = bb.in == null ? null : bb.in.pos;
         var dropped = droppedSources(g, pos);
         // 0.39.z77 world (manager 2026-10-26; run CX 22:43:18, run CS 19:33-19:37): another order's source fact holds here too
