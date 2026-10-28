@@ -454,9 +454,13 @@ public final class Goals {
 
     /** The stations held now from the feet (StationHolds, the one store), key -&gt; how it is said. */
     @SuppressWarnings("unchecked")
-    public static Map<String, String> stationHolds(Blackboard bb) {
+    public static Map<String, String> stationHolds(Blackboard bb) { return stationHolds(bb, bb.in == null ? null : bb.in.pos); }
+
+    /** D11 (the anchor rule): the stations held at {@code pos} - a trip reads them at the running step's end, not the live feet. */
+    @SuppressWarnings("unchecked")
+    public static Map<String, String> stationHolds(Blackboard bb, int[] pos) {
         var f = bb.fact(BLOCK_AT_FACT) instanceof java.util.function.Function<?, ?> fn ? (java.util.function.Function<int[], String>) fn : null;
-        return StationHolds.INSTANCE.heldAt(bb.in == null ? null : bb.in.pos, f);
+        return StationHolds.INSTANCE.heldAt(pos, f);
     }
 
     /** 0.39.z65 review 1 (pure): a station key (0.39.z77: or a walk target) held from {@code from} is released at {@code now} ({@code failures.moved} closer). */

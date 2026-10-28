@@ -29,7 +29,8 @@ class Z56LoadProbeTest {
         // D11: the re-join counts (a fork with them), left out for a fork without
         String joins = new ProbeLines.LoadFacts(60, "w", 0, 0, 0, new long[]{4, 4, 100}, 0, 0, null, 1, 2, 0, 0, new long[]{3, 3, 2, 1}).line(1);
         assertTrue(joins.contains("nodes opened +100; re-joins +3 (join searches started +3 landed +2 failed +1)"), joins);
-        assertFalse(new ProbeLines.LoadFacts(60, "w", 0, 0, 0, new long[]{4, 4, 100}, 0, 0, null, 1, 2, 0, 0, new long[]{-1}).line(1).contains("re-joins"));
+        assertTrue(new ProbeLines.LoadFacts(60, "w", 0, 0, 0, new long[]{4, 4, 100}, 0, 0, null, 1, 2, 0, 0, new long[]{-1}).line(1).contains("re-joins not readable in this fork jar"));
+        assertFalse(old.contains("re-joins"), "no join facts given (the old constructor): nothing said");
     }
 
     @Test

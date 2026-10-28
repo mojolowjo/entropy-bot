@@ -352,8 +352,9 @@ public final class BatchWay {
         // kept the trip priced without it)
         java.util.Set<String> held = new java.util.TreeSet<>(Goals.droppedSources(g, pos).keySet());
         held.addAll(others.keySet());
-        held.addAll(WorldFacts.of(bb).heldAt(bb).keySet());     // 0.39.z77 world 3: by state (hysteresis), never the raw distance
-        held.addAll(Goals.stationHolds(bb).keySet());           // 0.39.z78 J5 slice 1: the stations held (the one store)
+        // D11 review 1 (rule 23): the holds read at the ANCHOR too - the key must not move with the live feet through them
+        held.addAll(WorldFacts.of(bb).heldAt(bb.in, pos, WorldFacts.fluid(bb)).keySet());     // 0.39.z77 world 3: by state (hysteresis), never the raw distance
+        held.addAll(Goals.stationHolds(bb, pos).keySet());           // 0.39.z78 J5 slice 1: the stations held (the one store)
         boolean under = anchorUnder(runningStep, under(bb.in));
         String base = tripKeyOf(tk, open, pos, under, held);
         Trip kept = TRIPS.get(tk);
@@ -381,9 +382,11 @@ public final class BatchWay {
     }
 
     /**
-     * D11 (the anchor rule; pure): where the running step {@code step} leaves the bot - a walk's, a station's, a cave lip's, a
-     * surface cell's or a caving step's cell; a band leg's column at the band's middle Y; any other step (a craft, a smelt, a
-     * stand, a climb whose top is not known, a strip) and no step: the feet themselves ({@code feet} returned as given).
+     * D11 (the anchor rule; pure): where the running step {@code step} leaves the bot - a walk's, a station's, a cave lip's or
+     * a surface cell; a band leg's end: the feet's own column (the leg digs straight down it, so x and z ARE the end's) at the
+     * band's middle Y (structural; the live Y is what moved in run EV); any other step (a craft, a smelt, a stand, a climb
+     * whose top is not known, a strip) and no step: the feet themselves ({@code feet} returned as given). Assumption (D11
+     * review 1): a CAVING step is anchored at the cave's entry cell - where it ends inside the cave is not known in advance.
      */
     static int[] anchorOf(Step step, int[] feet) {
         if (step == null || feet == null || feet.length < 3) return feet;     // structural: x y z

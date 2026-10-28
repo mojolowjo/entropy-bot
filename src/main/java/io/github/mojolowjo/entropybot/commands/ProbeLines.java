@@ -237,6 +237,7 @@ public final class ProbeLines {
             String fork = segs == null || segs[0] < 0 ? "fork counts not in this jar" : "fork segments started +" + segs[0] + " landed +" + segs[1] + ", nodes opened +" + segs[2];
             // D11 (the re-join): re-joins asked, join searches started / landed and spliced / failed (IPricedPath.joinCounts)
             if (joins != null && joins.length >= 4 && joins[0] >= 0) fork += "; re-joins +" + joins[0] + " (join searches started +" + joins[1] + " landed +" + joins[2] + " failed +" + joins[3] + ")";
+            else if (joins != null) fork += "; re-joins not readable in this fork jar";   // D11 review 1 (rule 7): said, never left out
             String rec = recorder == null ? "recorder off" : "recorder queue " + recorder[0] + ", lines written +" + recorder[1] + String.format(Locale.ROOT, ", disk %.1f MB", recorder[2] / 1048576.0);
             return "t=" + tick + " | fps " + fps + " | " + window
                     + " | priced paths started +" + pricedStarted + " landed +" + pricedLanded + " in flight " + pricedInFlight + "; " + fork

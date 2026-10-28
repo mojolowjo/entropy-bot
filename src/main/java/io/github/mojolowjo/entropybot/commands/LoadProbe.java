@@ -186,15 +186,15 @@ public final class LoadProbe {
                 seg = segSeen == null ? new long[]{0, 0, 0} : new long[]{now[0] - segSeen[0], now[1] - segSeen[1], now[2] - segSeen[2]};
                 segSeen = now;
             } else seg = new long[]{-1, -1, -1};
-            // D11: the re-join counts since the last line (an older fork without them: left out)
+            // D11: the re-join counts since the last line; an older fork without them says so (rule 7: never a silent omission)
             try {
                 long[] j = b.getPricedPath().joinCounts();
                 if (j != null && j.length >= 4 && j[0] >= 0) {
                     joins = joinSeen == null ? new long[]{0, 0, 0, 0} : new long[]{j[0] - joinSeen[0], j[1] - joinSeen[1], j[2] - joinSeen[2], j[3] - joinSeen[3]};
                     joinSeen = j;
-                }
+                } else joins = new long[]{-1};
             } catch (LinkageError e) {
-                joins = null;
+                joins = new long[]{-1};
             }
         }
         long[] rec = Core.INSTANCE.recorder.loadCounts();

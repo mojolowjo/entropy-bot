@@ -148,12 +148,15 @@ public final class WorldFacts {
     public boolean learned(String key, String reason, String order, Inputs in) { return learned(key, reason, order, in, null); }
 
     /** Refreshes every entry on {@code in} and {@code fluid}: the causes gone are removed, the distance states moved. */
-    void refresh(Inputs in, Function<int[], Boolean> fluid) {
+    void refresh(Inputs in, Function<int[], Boolean> fluid) { refresh(in, in == null ? null : in.pos, fluid); }
+
+    /** D11 (the anchor rule): as above, the distance states moved against {@code pos} (the running step's end for a trip). */
+    void refresh(Inputs in, int[] pos, Function<int[], Boolean> fluid) {
         map.values().removeIf(e -> gone(e.rec, in, fluid));
-        if (in == null || in.pos == null || in.pos.length < 3) return;         // structural: x y z; feet unknown: states kept
+        if (pos == null || pos.length < 3) return;         // structural: x y z; feet unknown: states kept
         for (Entry e : map.values()) {
             if (stripFact(e.rec.key())) continue;
-            double d = Failures.moved(e.rec.cell(), in.pos);
+            double d = Failures.moved(e.rec.cell(), pos);
             if (d <= Failures.movedV()) e.in = true;
             else if (d > Failures.movedV() + MARGIN) e.in = false;
         }
@@ -192,6 +195,17 @@ public final class WorldFacts {
 
     /** Every fact held now, whoever learned it (store key -> reason): the batch's trip key and an explore's end read these. */
     public Map<String, String> heldAt(Inputs in, Function<int[], Boolean> fluid) { return heldFor(Set.of(), in, fluid); }
+
+    /**
+     * D11 (the anchor rule, rule 23): every fact held at {@code pos} - the running step's END cell for a trip's key, never
+     * the live feet (D11 review 1: the key moved with the feet through these holds while the legs were anchored).
+     */
+    public Map<String, String> heldAt(Inputs in, int[] pos, Function<int[], Boolean> fluid) {
+        refresh(in, pos, fluid);
+        Map<String, String> out = new LinkedHashMap<>();
+        for (Entry e : map.values()) if (e.in) out.put(e.rec.key(), text(e.rec));
+        return out;
+    }
 
     public Map<String, String> heldAt(Blackboard bb) { return heldAt(bb.in, fluid(bb)); }
 
