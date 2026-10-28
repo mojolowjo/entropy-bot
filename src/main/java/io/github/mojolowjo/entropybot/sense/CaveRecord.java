@@ -65,7 +65,19 @@ public final class CaveRecord {
      * A branch: its seen frontier cells (first: the one the walk goes to), their count, the unseen cells behind - counted
      * up to {@link #BRANCH_MIN} + 1 (run EK: "more than BRANCH_MIN" is all any reader asks).
      */
-    public record Group(long first, int size, int behind) {}
+    public record Group(long first, int size, int behind, List<Long> cells) {
+        public Group {
+            cells = cells == null || cells.isEmpty() ? List.of(first) : List.copyOf(cells);
+        }
+
+        public Group(long first, int size, int behind) { this(first, size, behind, List.of(first)); }
+    }
+
+    /**
+     * Run EN: the frontier cells a group keeps for the step's reach goal (its first ones from {@code first}, through the
+     * group): enough for the few nearest the feet the goal is built over (CaveWalk.REACH_CELLS), never the whole group.
+     */
+    public static final int GROUP_CELLS = 16; // structural: a few times the reach goal's cells, the branch's mouth
 
     public final int x, y, z;
     private final Set<Long> seen = new HashSet<>();
@@ -378,7 +390,7 @@ public final class CaveRecord {
                     }
                 }
                 if (q.isEmpty()) {
-                    out.add(new Group(group.get(0), group.size(), behind(group)));
+                    out.add(new Group(group.get(0), group.size(), behind(group), group.subList(0, Math.min(GROUP_CELLS, group.size()))));
                     q = null;
                 }
             }

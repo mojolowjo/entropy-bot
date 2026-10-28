@@ -102,10 +102,20 @@ public final class WalkProbe {
         String control = b.getPathingControlManager().mostRecentInControl().map(pr -> pr.displayName()).orElse("none");
         var priced = b.getPricedPath();
         String origin = path == null ? "-" : priced.fromKept(path) ? "kept" : "fresh";
-        return new ProbeLines.Walk(tick, feet(), s, String.valueOf(pb.getGoal()), control, b.getCustomGoalProcess().isActive(), path != null,
+        String line = new ProbeLines.Walk(tick, feet(), s, String.valueOf(pb.getGoal()), control, b.getCustomGoalProcess().isActive(), path != null,
                 path == null ? null : at(path.getSrc()), path == null ? null : at(path.getDest()), pos, path == null ? 0 : path.length(),
                 pb.getInProgress().isPresent(), origin, priced.offerCounts(), walkAnswer, move, facts,
                 String.valueOf(io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.intentNow()), Core.INSTANCE.reflexes.hold()).line();
+        // run EN: the fork's last calc of this walk's "no path" end (ICustomGoalProcess.lastCalc, job-vein 4c96772f; any
+        // custom-goal walk, reset at each new walk): its type, nodes, best node, start feet, goal
+        String calc;
+        try {
+            var wc = b.getCustomGoalProcess().lastCalc();
+            calc = wc == null ? null : wc.line();
+        } catch (LinkageError e) {
+            calc = "not readable from this fork: " + e;          // rule 15: said, not guessed
+        }
+        return line + ProbeLines.lastCalc(calc);
     }
 
     /**

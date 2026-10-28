@@ -338,7 +338,8 @@ public final class StepHands implements Steps.Hands {
     private String start0(Step s) {
         step = s;
         // 0.39.z54 B: the walk probe's step (one field; the probe itself reads Tuning debug.walkProbe)
-        WalkProbe.step(s instanceof Step.ToStrip || s instanceof Step.ToBand || s instanceof Step.Walk || s instanceof Step.ToStation || s instanceof Step.ToSurface ? s.text() : null);
+        WalkProbe.step(s instanceof Step.ToStrip || s instanceof Step.ToBand || s instanceof Step.Walk || s instanceof Step.ToStation || s instanceof Step.ToSurface
+                || s instanceof Step.ToCave || s instanceof Step.Cave ? s.text() : null);     // run EN: the lip and the caving walks too
         StepProbe.begin(s);                      // 0.39.z56 item 1: every step kind (one field; the probe reads Tuning debug.stepProbe)
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null) return "error: not in a world";
@@ -814,6 +815,14 @@ public final class StepHands implements Steps.Hands {
         int[] goal;
         String goalWhy;
         io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.Held hold;
+        /** Run EN: the walk's reach goal (its one arrived reader), the cells it is over, its drop key, when last set. */
+        baritone.api.pathing.goals.Goal reach;
+        List<int[]> reachCells = List.of();
+        long goalKey;
+        long goalAt;
+        /** Run EN: the gotos dropped in this step (an empty reach goal, no path) and their reasons, said at the end. */
+        final java.util.Set<Long> dropped = new java.util.HashSet<>();
+        final List<String> drops = new ArrayList<>();
         VeinMine vein;
         List<int[]> veinCells;
         String fam;
@@ -880,25 +889,35 @@ public final class StepHands implements Steps.Hands {
             cv.vein = null;
             cv.veinCells = null;
         }
-        if (cv.goal != null) {
-            cv.hold = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.look(cv.hold, Core.INSTANCE.tick(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(),
-                    b.getPathingBehavior().getCurrent() != null, cv.goal);
-            switch (cv.hold.state()) {
-                case HELD -> {
-                    if (Jobs.idle(b)) b.getCustomGoalProcess().setGoalAndPath(new GoalNear(new BlockPos(cv.goal[0], cv.goal[1], cv.goal[2]), 1));
+        if (cv.reach != null) {
+            // run EN (rules 2, 23 (2)): the walk's one arrived reader is its reach goal; the cells it is over are then in
+            // reach and in sight - seen (the record's caveSaw), so the frontier moves on
+            if (cv.reach.isInGoal(me[0], me[1], me[2])) {
+                arrivedAt(sg, cv, k, me);
+            } else {
+                cv.hold = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.look(cv.hold, Core.INSTANCE.tick(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(),
+                        b.getPathingBehavior().getCurrent() != null, io.github.mojolowjo.entropybot.cave.ExploreRules.NEVER_REACHED);
+                if (cv.hold.state() == io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.State.FAILED) {
+                    dropGoto(cv, cv.goalKey, cv.goalWhy, "the walk to it: " + cv.hold.why());
+                    Jobs.cancel(b);
+                } else {
+                    if (Jobs.idle(b) && Core.INSTANCE.tick() - cv.goalAt >= 20) {           // structural: once a second in ticks
+                        b.getCustomGoalProcess().setGoalAndPath(cv.reach);
+                        cv.goalAt = Core.INSTANCE.tick();
+                    }
                     return Car.Status.running("caving: walking to " + cv.goalWhy + " (" + cv.mined + " of " + k.n() + " ore)");
                 }
-                case FAILED -> { return caveEnd(io.github.mojolowjo.entropybot.cave.CaveWalk.End.NO_PROGRESS, "the walk to " + cv.goalWhy + ": " + cv.hold.why()); }
-                case REACHED -> { cv.goal = null; cv.hold = null; }
             }
         }
         var f = sg.caveFacts(cv.dim, k.x(), k.y(), k.z());
         double minutes = (nowMs - cv.startMs) / 60000.0;                       // structural: ms a minute
         var next = io.github.mojolowjo.entropybot.cave.CaveWalk.next(cv.mined, k.n(), minutes, k.minutes(), f, sg.caveFrontier(cv.dim, k.x(), k.y(), k.z()),
                 sg.caveLeft(cv.dim, k.x(), k.y(), k.z(), cv.fam), me, io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH,
-                sg.caveFirstUnseen(cv.dim, k.x(), k.y(), k.z()));     // run EK (2): the step's first target, by the entry
+                sg.caveFirstUnseen(cv.dim, k.x(), k.y(), k.z()), cv.dropped);     // run EK (2): the first target, by the entry; run EN: the dropped passed over
         switch (next) {
-            case io.github.mojolowjo.entropybot.cave.CaveWalk.Stop s -> { return caveEnd(s.end(), s.why()); }
+            case io.github.mojolowjo.entropybot.cave.CaveWalk.Stop s -> {
+                return caveEnd(s.end(), s.why() + (cv.drops.isEmpty() ? "" : "; dropped: " + String.join("; ", cv.drops)));
+            }
             case io.github.mojolowjo.entropybot.cave.CaveWalk.Wait w -> { return Car.Status.running("caving: " + w.why()); }
             case io.github.mojolowjo.entropybot.cave.CaveWalk.Mine m -> {
                 var level = p.level();
@@ -920,15 +939,71 @@ public final class StepHands implements Steps.Hands {
                 return Car.Status.running("caving: mining the seen ore at " + Jobs.fmt(m.cell()));
             }
             case io.github.mojolowjo.entropybot.cave.CaveWalk.Goto g -> {
+                // run EN (rule 2): the goal is a stand Baritone picks - a reach goal (the fork's GoalReachBlock) over each
+                // of the goto's cells, one goal for all (GoalComposite); never the cell itself (EN: a mid-air frontier cell)
+                List<baritone.api.pathing.goals.Goal> parts = new ArrayList<>();
+                int stands = 0;
+                for (int[] c : g.cells()) {
+                    var r = new baritone.api.pathing.goals.GoalReachBlock(new BlockPos(c[0], c[1], c[2]), io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH, 1.62,   // game fact: eye height 1.62
+                            (x, y, z) -> standable(p.level(), x, y, z), (x, y, z) -> seesCell(p, x, y, z, c));
+                    if (r.isEmpty()) continue;
+                    parts.add(r);
+                    stands += r.size();
+                }
+                if (parts.isEmpty()) {
+                    dropGoto(cv, g.key(), g.why(), "no standable cell within reach and sight of its " + g.cells().size() + " cell(s)");
+                    return Car.Status.running("caving: " + g.why() + " dropped (no stand in reach and sight), the next one is picked");
+                }
                 cv.goal = g.cell().clone();
                 cv.goalWhy = g.why();
+                cv.goalKey = g.key();
+                cv.reachCells = g.cells();
+                cv.reach = parts.size() == 1 ? parts.get(0) : new baritone.api.pathing.goals.GoalComposite(parts.toArray(new baritone.api.pathing.goals.Goal[0]));
+                if (cv.reach.isInGoal(me[0], me[1], me[2])) {                            // in reach and sight already: seen, the next move next tick
+                    arrivedAt(sg, cv, k, me);
+                    return Car.Status.running("caving: " + g.why() + " in sight from here");
+                }
                 cv.hold = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.start(new io.github.mojolowjo.entropybot.cave.ExploreRules.Target(g.cell()[0], g.cell()[2]),
                         Core.INSTANCE.tick(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed());
-                b.getCustomGoalProcess().setGoalAndPath(new GoalNear(new BlockPos(g.cell()[0], g.cell()[1], g.cell()[2]), 1));
-                LOG.info("[entropybot] cave: to {} ({} of {} ore mined)", g.why(), cv.mined, k.n());
+                b.getCustomGoalProcess().setGoalAndPath(cv.reach);
+                cv.goalAt = Core.INSTANCE.tick();
+                LOG.info("[entropybot] cave: to {} - the reach goal over {} cell(s): {} standable cells in reach and sight ({} of {} ore mined)", g.why(), parts.size(), stands, cv.mined, k.n());
                 return Car.Status.running("caving: walking to " + g.why());
             }
         }
+    }
+
+    /** Run EN: the walk arrived (in its reach goal): its cells are seen from here (the record), the goal is over. */
+    private static void arrivedAt(io.github.mojolowjo.entropybot.sense.Sightings sg, Caving cv, Step.Cave k, int[] me) {
+        List<Long> seen = new ArrayList<>();
+        for (int[] c : cv.reachCells) seen.add(io.github.mojolowjo.entropybot.sense.Sightings.cell(c[0], c[1], c[2]));
+        sg.caveSaw(cv.dim, k.x(), k.y(), k.z(), seen);
+        LOG.info("[entropybot] cave: at {} (feet {}, in its reach goal: its cells in reach and in sight)", cv.goalWhy, Jobs.fmt(me));
+        cv.reach = null;
+        cv.goal = null;
+        cv.hold = null;
+        cv.reachCells = List.of();
+    }
+
+    /** Run EN (rule 23 (1)): a goto dropped for the step with its reason (logged; said at the step's end); the next is picked. */
+    private static void dropGoto(Caving cv, long key, String what, String why) {
+        cv.dropped.add(key);
+        cv.drops.add(what + ": " + why);
+        LOG.info("[entropybot] cave: {} dropped: {} - the next one is picked", what, why);
+        cv.reach = null;
+        cv.goal = null;
+        cv.hold = null;
+        cv.reachCells = List.of();
+    }
+
+    /** Run EN: the eyes at feet cell x y z see the cell - nothing collides between, or the first hit is the cell itself (an ore's face). */
+    private static boolean seesCell(LocalPlayer p, int x, int y, int z, int[] c) {
+        var lv = p.level();
+        var from = new net.minecraft.world.phys.Vec3(x + 0.5, y + 1.62, z + 0.5);   // game fact: eye height 1.62
+        var to = new net.minecraft.world.phys.Vec3(c[0] + 0.5, c[1] + 0.5, c[2] + 0.5);
+        var r = lv.clip(new net.minecraft.world.level.ClipContext(from, to, net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.NONE, p));
+        if (r.getType() == net.minecraft.world.phys.HitResult.Type.MISS) return true;
+        return r instanceof net.minecraft.world.phys.BlockHitResult bh && bh.getBlockPos().getX() == c[0] && bh.getBlockPos().getY() == c[1] && bh.getBlockPos().getZ() == c[2];
     }
 
     /** x y z (an ore block) is beside an air cell of the cave's volume. */

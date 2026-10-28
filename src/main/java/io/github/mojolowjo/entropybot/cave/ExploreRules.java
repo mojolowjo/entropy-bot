@@ -357,6 +357,12 @@ public final class ExploreRules {
     /** game fact: the survival block interaction range - a player at the opening could touch it. */
     public static final double OPENING_REACH = 4.5;
 
+    /**
+     * Run EN (rule 23 (2)): the cell a {@link TargetHold} is given when its walk's own reach goal decides arrival - no cell,
+     * so the hold never says REACHED (no eye-reach "reached"); it only holds or fails (no path, no new best).
+     */
+    public static final int[] NEVER_REACHED = new int[0];
+
     /** Arrived near a chunk target (within ARRIVED blocks, x + z)? */
     public static boolean arrived(int x, int z, Target t) {
         return Math.abs(x - t.x()) + Math.abs(z - t.z()) <= arrivedV();
@@ -487,6 +493,7 @@ public final class ExploreRules {
          * otherwise only FAILED, on Baritone's no progress (no path, or no new best for monitor.stallS).
          */
         public static Held look(Held h, long now, int[] feet, long calcFailed, boolean executing, int[] cell) {
+            // (run EN: cell == NEVER_REACHED - withinReach reads no cell - the hold only fails or holds; its walk's goal decides arrival)
             if (h == null || h.state() != State.HELD) return h;
             if (feet != null && (cell != null ? withinReach(feet, cell) : arrived(feet[0], feet[2], h.target()))) return with(h, h.best(), h.bestAt(), h.calcAtBest(), 0, State.REACHED, "reached");
             double d = dist(feet, h.x(), h.z());

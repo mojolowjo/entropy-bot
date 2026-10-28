@@ -138,6 +138,11 @@ public final class ProbeLines {
                 + " | allowInventory " + flag(inv) + " | fork lease " + (fork == null ? "not read (Baritone not loaded)" : fork);
     }
 
+    /** Run EN: the walk line's last-calc part (the fork's WalkCalc.line(); null: no "no path" end in this walk yet). Pure. */
+    public static String lastCalc(String line) {
+        return " | last calc " + (line == null ? "none (no 'no path' end in this walk)" : line);
+    }
+
     private static String flag(Boolean b) { return b == null ? "not read (Baritone not loaded)" : b.toString(); }
 
     /** The phase line: what changed from {@code was} to {@code now} (the step's start when {@code was} is null); {@code folded}: changes not printed since the last line. */

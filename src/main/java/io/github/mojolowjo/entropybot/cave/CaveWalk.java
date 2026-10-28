@@ -25,7 +25,7 @@ import java.util.Locale;
 public final class CaveWalk {
     private CaveWalk() {}
 
-    public enum End { NEED_MET, MINUTES, DONE, NOT_LOADED, NO_PROGRESS, STOPPED }
+    public enum End { NEED_MET, MINUTES, DONE, NOT_LOADED, NO_PROGRESS, NO_BRANCH, STOPPED }
 
     public sealed interface Next permits Mine, Goto, Stop, Wait {}
 
@@ -35,11 +35,36 @@ public final class CaveWalk {
     /** Mine the seen ore cell (its vein). */
     public record Mine(int[] cell) implements Next {}
 
-    /** Walk to the cell ({@code why}: "the seen iron at ...", "the branch at ... (N cells behind)"). */
-    public record Goto(int[] cell, String why) implements Next {}
+    /**
+     * Walk to the cell ({@code why}: "the seen iron at ...", "the branch at ... (more than 8 cells behind)"). Run EN: the
+     * step's goal is a reach goal over {@code cells} (the ore, the unseen cell, or the branch's frontier cells) - a stand
+     * Baritone picks from which one of them is in reach and in sight, never the cell itself (rule 2); {@code key} the
+     * drop key (the cell, or the branch's first cell).
+     */
+    public record Goto(int[] cell, String why, List<int[]> cells, long key) implements Next {
+        public Goto {
+            cells = cells == null || cells.isEmpty() ? List.of(cell) : List.copyOf(cells);
+        }
+
+        public Goto(int[] cell, String why) { this(cell, why, List.of(cell), Sightings.cell(cell[0], cell[1], cell[2])); }
+    }
 
     /** The step ends. */
     public record Stop(End end, String why) implements Next {}
+
+    /**
+     * Run EN: the frontier cells the branch's reach goal is built over - the nearest to the feet of the group's kept
+     * cells. 4: a branch's mouth is a few adjacent cells (a carver tunnel 2 x 2); each reach goal tests a cube of about
+     * 13 x 13 x 15 cells with a sight ray each on the game thread, so 4 keep the build under ~10,000 tests once per branch.
+     */
+    public static final int REACH_CELLS = 4; // structural: a 2 x 2 tunnel's mouth, the build's cost on the game thread
+
+    /** Run EN: the {@code n} cells of {@code cells} nearest {@code feet} (nearest first). Pure. */
+    public static List<int[]> nearest(List<int[]> cells, int[] feet, int n) {
+        List<int[]> out = new java.util.ArrayList<>(cells);
+        out.sort((a, b) -> Long.compare(d2(a, feet), d2(b, feet)));
+        return out.size() > n ? out.subList(0, n) : out;
+    }
 
     /**
      * The next move. {@code mined}/{@code need}: ore blocks; {@code minutesIn}/{@code capMinutes}: the step's time inside;
@@ -54,29 +79,50 @@ public final class CaveWalk {
     /** As above; {@code firstUnseen}: the record's unseen cell nearest the entry (CaveRecord#firstUnseen; null: none). */
     public static Next next(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<CaveRecord.Group> frontier,
                             List<int[]> left, int[] feet, double reach, int[] firstUnseen) {
+        return next(mined, need, minutesIn, capMinutes, facts, frontier, left, feet, reach, firstUnseen, java.util.Set.of());
+    }
+
+    /**
+     * Run EN (rule 23 (1)): as above; {@code dropped} - the goto keys the step dropped (an empty reach goal, no path):
+     * passed over, the next one taken; every one dropped and nothing else to do - NO_BRANCH ("no reachable branch").
+     */
+    public static Next next(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<CaveRecord.Group> frontier,
+                            List<int[]> left, int[] feet, double reach, int[] firstUnseen, java.util.Set<Long> dropped) {
         if (need > 0 && mined >= need) return new Stop(End.NEED_MET, mined + " of " + need + " ore mined");
         if (capMinutes > 0 && minutesIn >= capMinutes) return new Stop(End.MINUTES, String.format(Locale.ROOT, "%.1f min inside, cave.exploreMinutes %.0f", minutesIn, capMinutes));
+        int skipped = 0;
         int[] near = null;
         long nd = Long.MAX_VALUE;
-        for (int[] o : left) { long d = d2(o, feet); if (d < nd) { nd = d; near = o; } }
+        for (int[] o : left) {
+            if (dropped.contains(Sightings.cell(o[0], o[1], o[2]))) { skipped++; continue; }
+            long d = d2(o, feet);
+            if (d < nd) { nd = d; near = o; }
+        }
         if (near != null && ExploreRules.withinReach(feet, near)) return new Mine(near);
         if (near != null) return new Goto(near, "the seen ore at " + near[0] + " " + near[1] + " " + near[2]);
         CaveRecord.Group best = null;
         long bd = Long.MAX_VALUE;
         for (CaveRecord.Group g : frontier) {
             if (g.behind() <= CaveRecord.BRANCH_MIN) continue;
+            if (dropped.contains(g.first())) { skipped++; continue; }
             long d = d2(Sightings.cellOf(g.first()), feet);
             if (d < bd) { bd = d; best = g; }
         }
         if (best != null) {
             int[] c = Sightings.cellOf(best.first());
-            return new Goto(c, "the branch at " + c[0] + " " + c[1] + " " + c[2] + " (more than " + CaveRecord.BRANCH_MIN + " cells behind)");
+            List<int[]> cells = new java.util.ArrayList<>();
+            for (long k : best.cells()) cells.add(Sightings.cellOf(k));
+            return new Goto(c, "the branch at " + c[0] + " " + c[1] + " " + c[2] + " (more than " + CaveRecord.BRANCH_MIN + " cells behind)",
+                    nearest(cells, feet, REACH_CELLS), best.first());
         }
         // 88b28290 review 3: while the cells are read, done is the saved measure (maybe a past session's): never trusted - wait
         if (facts != null && facts.filling()) return new Wait("reading the cave's cells from the index (its first pass, CaveRecord.BUDGET a tick)");
         if (facts != null && facts.done()) return new Stop(End.DONE, "the cave is explored to its end (the record: something seen, no branch of more than " + CaveRecord.BRANCH_MIN + " cells left)");
         if (facts != null && !facts.loaded()) return new Stop(End.NOT_LOADED, "the cave's cells are not loaded (its chunks: the record cannot say where to go)");
-        if (firstUnseen != null) return new Goto(firstUnseen, "the unseen cell nearest the entry at " + firstUnseen[0] + " " + firstUnseen[1] + " " + firstUnseen[2]);
+        if (firstUnseen != null && !dropped.contains(Sightings.cell(firstUnseen[0], firstUnseen[1], firstUnseen[2])))
+            return new Goto(firstUnseen, "the unseen cell nearest the entry at " + firstUnseen[0] + " " + firstUnseen[1] + " " + firstUnseen[2]);
+        if (firstUnseen != null) skipped++;
+        if (skipped > 0) return new Stop(End.NO_BRANCH, "no reachable branch (" + skipped + " dropped)");
         return new Stop(End.NO_PROGRESS, "no branch and no unseen cell near the entry within CaveRecord.BUDGET cells, yet the record is not done");
     }
 
