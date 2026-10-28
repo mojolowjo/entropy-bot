@@ -198,12 +198,24 @@ public final class WorldFacts {
 
     /**
      * D11 (the anchor rule, rule 23): every fact held at {@code pos} - the running step's END cell for a trip's key, never
-     * the live feet (D11 review 1: the key moved with the feet through these holds while the legs were anchored).
+     * the live feet (D11 review 1: the key moved with the feet through these holds while the legs were anchored). A READ, not a
+     * refresh (review 2): the hysteresis state {@code in} stays the live feet's; at the anchor a fact is held within
+     * failures.moved, not held past the margin, and in the band between it keeps the live state.
      */
-    public Map<String, String> heldAt(Inputs in, int[] pos, Function<int[], Boolean> fluid) {
-        refresh(in, pos, fluid);
+    public Map<String, String> heldAt(Inputs in, int[] pos, Function<int[], Boolean> fluid) { return heldFor(Set.of(), in, pos, fluid); }
+
+    /** D11: as {@link #heldFor(Set, Inputs, Function)} read at {@code pos} without moving the live hysteresis state. */
+    public Map<String, String> heldFor(Set<String> own, Inputs in, int[] pos, Function<int[], Boolean> fluid) {
         Map<String, String> out = new LinkedHashMap<>();
-        for (Entry e : map.values()) if (e.in) out.put(e.rec.key(), text(e.rec));
+        for (Entry e : map.values()) {
+            if (own.contains(e.rec.key()) || gone(e.rec, in, fluid)) continue;
+            boolean held = e.in;
+            if (!stripFact(e.rec.key()) && pos != null && pos.length >= 3) {       // structural: x y z
+                double d = Failures.moved(e.rec.cell(), pos);
+                held = d <= Failures.movedV() || (d <= Failures.movedV() + MARGIN && e.in);
+            }
+            if (held) out.put(e.rec.key(), text(e.rec));
+        }
         return out;
     }
 

@@ -1047,21 +1047,30 @@ public final class Goals {
 
     /** The goal's chain on the world fact now (null: no world facts yet). */
     /** 0.39.z73: the order's world of now - the planner's facts with the order's dropped sources and failed places applied; null: none yet. */
-    static io.github.mojolowjo.entropybot.aa.NeedChain.World chainWorld(Blackboard bb, Goal g) {
+    static io.github.mojolowjo.entropybot.aa.NeedChain.World chainWorld(Blackboard bb, Goal g) { return chainWorld(bb, g, bb.in == null ? null : bb.in.pos); }
+
+    /**
+     * D11 (the anchor rule, review 2): the order's world with every hold read at {@code pos} - the live feet for the order's own
+     * chain, the running step's END cell for a batch trip (BatchWay.trip), so a trip's key and its legs read the same holds.
+     * The live hysteresis state is moved only by the live feet's read (WorldFacts.heldFor(bb, own)).
+     */
+    static io.github.mojolowjo.entropybot.aa.NeedChain.World chainWorld(Blackboard bb, Goal g, int[] pos) {
         var world = world(bb);
         if (world == null) return null;
         // 0.39.z78 strip-off (rule 7): the strip way off is said once per order (the World's strip facts answer none, StripWays)
         if (bb.port != null && StripWays.sayOnce(g.id() + " " + g.given)) bb.port.log(g.r.key() + ": " + StripWays.OFF);
-        int[] pos = bb.in == null ? null : bb.in.pos;
+        boolean live = bb.in == null || pos == bb.in.pos;
         var dropped = droppedSources(g, pos);
         // 0.39.z77 world (manager 2026-10-26; run CX 22:43:18, run CS 19:33-19:37): another order's source fact holds here too
-        for (var e : WorldFacts.of(bb).heldFor(bb, droppedSources(g).keySet()).entrySet()) {
+        var facts = live ? WorldFacts.of(bb).heldFor(bb, droppedSources(g).keySet())
+                : WorldFacts.of(bb).heldFor(droppedSources(g).keySet(), bb.in, pos, WorldFacts.fluid(bb));
+        for (var e : facts.entrySet()) {
             if (dropped.putIfAbsent(e.getKey(), e.getValue()) != null || bb.port == null) continue;
             String line = WorldFacts.of(bb).sayOnce(g.id() + " " + g.given, g.r.key(), e.getKey(), e.getValue());
             if (line != null) bb.port.log(line);
         }
         // 0.39.z78 J5 slice 1: the stations held (StationHolds, the one store) - the chain prices without them and lists each
-        for (var e : stationHolds(bb).entrySet()) dropped.putIfAbsent(e.getKey(), e.getValue());
+        for (var e : stationHolds(bb, pos).entrySet()) dropped.putIfAbsent(e.getKey(), e.getValue());
         // 0.39.z33 (z65: a station back once closer); 0.39.z67 item 1: a place-near that failed holds its spot (near it: a cell with room)
         return world.withoutSources(dropped).withPlaceFailures(dropped, pos);
     }

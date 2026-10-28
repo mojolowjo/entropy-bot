@@ -340,13 +340,19 @@ public final class BatchWay {
         if (runner != null && !holders.contains(runner)) holders.add(runner);
         Map<String, String> mine = Goals.droppedSources(g), others = new TreeMap<>();
         for (Goals.Goal o : holders) for (var e : Goals.droppedSources(o).entrySet()) if (!mine.containsKey(e.getKey())) others.put(e.getKey(), e.getValue());
-        NeedChain.World w = others.isEmpty() ? w0 : w0.withoutSources(others);
         // D11 (the anchor rule): the trip is keyed and its legs placed from where the running step ENDS, not the live feet -
-        // the next legs start there (z75); walking inside one step changes nothing (run EV: 2,037 results dropped as the Y moved)
+        // the next legs start there (z75); walking inside one step changes nothing (run EV: 2,037 results dropped as the Y moved).
+        // Review 2 (rule 23): the trip's WORLD reads its holds at the anchor too (Goals.chainWorld(bb, g, pos)), so the key and
+        // the legs read the same holds; the order's own chain keeps the live world (w0)
         int[] feet = bb.in == null ? null : bb.in.pos;
         Step runningStep = run == null ? null : run.step();
         int[] pos = anchorOf(runningStep, feet);
-        if (pos != feet) w = w.withFeetAt(pos);
+        NeedChain.World anchored = w0;
+        if (pos != feet) {
+            NeedChain.World at = Goals.chainWorld(bb, g, pos);
+            if (at != null) anchored = at.withFeetAt(pos);
+        }
+        NeedChain.World w = others.isEmpty() ? anchored : anchored.withoutSources(others);
         // 0.39.z77 world: the holds as w0 applied them (Goals.chainWorld: the asker's own by position, the world facts held
         // here), so a hold lifted by moving re-keys the trip (was: the asker's own keys by name, a station back once closer
         // kept the trip priced without it)
