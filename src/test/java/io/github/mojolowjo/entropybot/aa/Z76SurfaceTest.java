@@ -47,19 +47,6 @@ class Z76SurfaceTest {
         assertTrue(SurfaceHeight.known(MIN + 1));
     }
 
-    /**
-     * The cave rule on the real surface: an air pocket at y 60 under a surface of 80 is "dark" (with -64, as the client's
-     * missing heightmap read, it never was); a side column not known (NOT_KNOWN in the max) never counts as ground 6+ higher.
-     */
-    @Test
-    void theCaveRuleSeesTheSurface() {
-        assertEquals("dark", Sightings.caveRule(true, 0, 0, 60, 80, null, false));
-        assertNull(Sightings.caveRule(true, 0, 0, 60, MIN, null, false), "the old -64 reading: never a dark cave");
-        int nk = SurfaceHeight.NOT_KNOWN;
-        assertNull(Sightings.caveRule(true, 15, 0, 70, 70, new int[]{nk, nk, nk, nk}, false), "sides not known: no ravine");
-        assertEquals("ravine", Sightings.caveRule(true, 15, 0, 70, 70, new int[]{80, 80, nk, nk}, false));
-    }
-
     /** Review: the running band walk is "in:x,y,z" (feet IN the band's cell), told and spared by that key, not "x,y,z". */
     @Test
     void theRunningBandWalkKeepsItsOwnKey() {

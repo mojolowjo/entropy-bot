@@ -9,7 +9,6 @@ import io.github.mojolowjo.entropybot.aa.brain.TestData;
 import io.github.mojolowjo.entropybot.aa.moves.FactChange;
 import io.github.mojolowjo.entropybot.aa.moves.Step;
 import io.github.mojolowjo.entropybot.aa.moves.Steps;
-import io.github.mojolowjo.entropybot.sense.CaveMouths;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -82,21 +81,5 @@ class Z49ScenarioTest {
         assertTrue(c.ok(), c.why());
         assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.PlaceNear), c.steps().toString());
         assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Smelt), c.steps().toString());
-    }
-
-    // ---- item 3: the candidate's numbers ----
-
-    @Test
-    void candidateLinesCarryTheShapeNumbers() {
-        // x 0..8 slopes down 1 a column to x 8 at 70; x 9.. jumps to 76 (the cliff)
-        int[] top = new int[256];
-        for (int lz = 0; lz < 16; lz++)
-            for (int lx = 0; lx < 16; lx++) top[lx + 16 * lz] = lx <= 8 ? 70 + (8 - lx) : 76;
-        List<CaveMouths.Candidate> l = CaveMouths.candidates(0, 0, top);
-        assertFalse(l.isEmpty());
-        String w = CaveMouths.where(l.get(0));
-        assertTrue(w.contains("mouth: slope -x ") && w.contains(" cols steps ") && w.contains("cliff +x +6"), w);
-        assertEquals("depth 0 to its lowest air, sky 15 there / 15 one above, water no", CaveMouths.holeNumbers(0, 15, 15, false));
-        assertEquals("cliffs +z +6 / -z +5", CaveMouths.shapeNumbers("ravine", "+z", 6, "-z", 5, null));
     }
 }

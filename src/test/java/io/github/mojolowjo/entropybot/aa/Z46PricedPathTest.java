@@ -76,49 +76,6 @@ class Z46PricedPathTest {
         assertEquals("source " + NeedChain.sourceKey(st), f.key());
         assertTrue(f.text().contains("no path"), f.text());
     }
-
-    // ---- cave candidates from the heightmap's shape (owner 2026-10-24) ----
-
-    /** A flat chunk at y 64 with a line along x (lz 8) set from {@code line} starting at lx 2. */
-    static int[] chunk(int... line) {
-        int[] top = new int[256];
-        java.util.Arrays.fill(top, 64);
-        for (int lz = 0; lz < 16; lz++) for (int i = 0; i < line.length; i++) top[2 + i + 16 * lz] = line[i];
-        return top;
-    }
-
-    @Test
-    void aSlopedMouthUnderASixBlockCliffIsACandidate() {
-        // 64 63 62 61 (gentle, 1 a column) then the low point 60, then the cliff 66
-        var c = io.github.mojolowjo.entropybot.sense.CaveMouths.candidates(0, 0, chunk(64, 63, 62, 61, 60, 66, 66, 66));
-        assertFalse(c.isEmpty());
-        assertEquals("mouth", c.get(0).shape());
-        assertEquals(6, c.get(0).x());
-        assertEquals(61, c.get(0).y(), "the air over the low point");
-    }
-
-    @Test
-    void aPondLikeDipIsNoCandidate() {
-        assertTrue(io.github.mojolowjo.entropybot.sense.CaveMouths.candidates(0, 0, chunk(64, 63, 62, 61, 62, 63, 64)).isEmpty());
-    }
-
-    @Test
-    void aTwoSidedEightBlockCutIsARavine() {
-        var c = io.github.mojolowjo.entropybot.sense.CaveMouths.candidates(0, 0, chunk(72, 72, 64, 64, 72, 72));
-        assertFalse(c.isEmpty());
-        assertEquals("ravine", c.get(0).shape());
-    }
-
-    @Test
-    void onlyCandidatesWithinConfirmMGetARay() {
-        var m = new io.github.mojolowjo.entropybot.sense.CaveMouths();
-        m.put(0, 0, List.of(new io.github.mojolowjo.entropybot.sense.CaveMouths.Candidate(10, 64, 0, "mouth"),
-                new io.github.mojolowjo.entropybot.sense.CaveMouths.Candidate(100, 64, 0, "mouth")));
-        var near = m.toConfirm(0.5, 64.5, 0.5);
-        assertEquals(1, near.size());
-        assertEquals(10, near.get(0).x());
-    }
-
     /** A fake run: every step runs until told; the explore never ends by itself. */
     static final class Hands implements Steps.Hands {
         final List<String> ran = new ArrayList<>(), cancelled = new ArrayList<>();

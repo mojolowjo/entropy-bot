@@ -58,7 +58,7 @@ class Z77CaveWayTest {
         assertTrue(caveMined(c), "the cave way runs: " + c.steps());
         assertEquals(72.48, c.seconds(), TOL, c.why());
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Explore), c.steps().toString());
-        assertTrue(c.why().contains("in the cave: cave mouth 30 m, yield ~3.00 ore/min (measured) x 3 ore"), c.why());
+        assertTrue(c.why().contains("in the cave: known cave 30 m, yield ~3.00 ore/min (measured) x 3 ore"), c.why());
     }
 
     /** The same with the seen ore HELD for the order (BW: no progress): the cave way still stands and wins. */
@@ -77,7 +77,7 @@ class Z77CaveWayTest {
         Chain c = NeedChain.resolve("raw_iron", 3, world(cave(30, 3), near3));
         assertTrue(c.ok() && !caveMined(c), c.why());
         assertEquals(5.86, c.seconds(), TOL, c.why());
-        assertTrue(c.dropped().stream().anyMatch(d -> d.startsWith("cave mouth 30 m") && d.contains("72.")), c.dropped().toString());
+        assertTrue(c.dropped().stream().anyMatch(d -> d.startsWith("known cave 30 m") && d.contains("72.")), c.dropped().toString());
     }
 
     /** And the other way round: 3 ore seen 200 m (60.23 + 3.45 = 63.68 s) lose to a cave 30 m at 6 ore/min (9.03 + 30 + 3.45 = 42.48 s). */
@@ -133,8 +133,6 @@ class Z77CaveWayTest {
         CaveWay cw = cave(76, 3);
         NeedChain.World dropped = world(cw, NEAR).withoutSources(Map.of(cw.key(), "unreachable"));
         assertNull(until(dropped), "the order dropped the cave");
-        CaveWay cand = new CaveWay(20, 21, -10, 76, "minecraft:iron_ore", "iron", 3, false, true);
-        assertNull(until(world(cand, NEAR)), "a candidate is the explore's aim, not its end");
         assertNull(NeedChain.caveSource(world(cave(76, 0), NEAR), "raw_iron"), "no yield: no cave way, no end");
         String seen = ExploreRules.untilFound("raw_iron", part -> NEAR, (part, s) -> null, part -> NeedChain.caveSource(world(cw, NEAR), part));
         assertTrue(seen.startsWith("a source of raw_iron is known: iron_ore at 8 64 0"), seen);

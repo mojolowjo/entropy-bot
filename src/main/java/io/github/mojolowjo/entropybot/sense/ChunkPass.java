@@ -99,11 +99,6 @@ public final class ChunkPass {
 
     private final SightingsRuntime sightRt = new SightingsRuntime();
 
-    /** 0.39.z44: the cave-mouth candidates of the loaded chunks (the heightmap rule, memory only). */
-    private final CaveMouths mouths = new CaveMouths();
-
-    public CaveMouths mouths() { return mouths; }
-
     /** 0.39.z78 J6: the cave index of this dimension (the chunks read this session) and the rays at it. */
     private final CaveIndex caveIndex = new CaveIndex();
     private final CaveRays caveRays = new CaveRays();
@@ -147,7 +142,6 @@ public final class ChunkPass {
             int cx = chunk.getPos().x, cz = chunk.getPos().z;
             schedule.unloaded(cx, cz);
             live.remove(ChunkSummary.key(cx, cz));
-            mouths.drop(cx, cz);
             ChunkSummary s = dim == null ? null : index.get(dim, cx, cz);
             if (s != null) s.stale = true;
         } catch (Throwable t) {
@@ -258,7 +252,7 @@ public final class ChunkPass {
             try {
                 Sightings sg = sightings();
                 if (sg != null && dim != null) seenRt.tick(level, mc.player, index, sg.ore(), dim, tick, now);
-                if (sg != null && dim != null) sightRt.tick(level, mc.player, sg, dim, seenRt.budget, mouths, tick, now);
+                if (sg != null && dim != null) sightRt.tick(level, mc.player, sg, dim, seenRt.budget, tick, now);
                 if (sg != null && dim != null) caveRays.tick(level, mc.player, caveIndex, sg, dim, seenRt.budget, tick, now);   // 0.39.z78 J6
             } catch (Throwable t) {
                 error("seen", t);
@@ -275,7 +269,6 @@ public final class ChunkPass {
         writeDue(now, true);
         schedule.clear();
         live.clear();
-        mouths.clear();
         caveIndex.clear();                                // 0.39.z78 J6: the index is this dimension's
         caveRays.clear();
         index.markAllStale();
@@ -382,103 +375,6 @@ public final class ChunkPass {
         }
     }
 
-    // ---- cave patterns (0.39.z50, S70): labelled spots, the world's cave-patterns.json and the global one ----
-
-    private CavePatterns patterns = new CavePatterns(), worldPatterns = new CavePatterns();
-    private String patRoot;
-    private long shapesVotedOut, canopyCapped;
-    private boolean noPatternsSaid, canopyCappedSaid;
-
-    /** Shapes the patterns' vote turned down (sense status / aa cave list). */
-    public long shapesVotedOut() { return shapesVotedOut; }
-
-    /** 0.39.z54 A3: columns whose leaves / logs / air ran past cave.canopyMaxDepth (the heightmap top kept; aa cave list). */
-    public long canopyCapped() { return canopyCapped; }
-
-    /**
-     * 0.39.z54 A3: a cell the ground walk passes: air, or a block in the {@code #minecraft:leaves} or {@code #minecraft:logs}
-     * tag (the game's tags, never a list; modded trees that tag their blocks count too). Loader notes: vanilla
-     * {@code BlockState.is(TagKey)} / {@code BlockTags}, the same on both loaders.
-     */
-    public static boolean canopy(net.minecraft.world.level.block.state.BlockState s) {
-        return s.isAir() || s.is(net.minecraft.tags.BlockTags.LEAVES) || s.is(net.minecraft.tags.BlockTags.LOGS);
-    }
-
-    /**
-     * The patterns that vote: the global file in the game folder (every world's owner labels; 0.39.z54 A5, owner: no label
-     * data ships in the public jar, so no seed: a fresh install has no file and the Tuning defaults hold until the owner
-     * labels); the world's own file keeps this world's labels. The rule line is said once per world. Never throws.
-     */
-    public CavePatterns patterns() {
-        try {
-            io.github.mojolowjo.entropybot.io.BotFiles files = Core.INSTANCE.files();
-            if (files == null) return patterns;
-            String r = files.worldRoot().toString();
-            if (r.equals(patRoot)) return patterns;
-            savePatterns();
-            CavePatterns g = new CavePatterns(), w = new CavePatterns();
-            int[] skipped = new int[1];
-            Path gf = files.root().resolve("cave-patterns.json"), wf = files.worldRoot().resolve("cave-patterns.json");
-            if (java.nio.file.Files.isRegularFile(gf)) g.read(java.nio.file.Files.readString(gf), skipped);
-            else if (!noPatternsSaid) {
-                noPatternsSaid = true;                    // said once a session (rule 15: the file is empty-by-absence, said)
-                LOG.info("[entropybot] sense: no cave patterns yet ({} not found): the Tuning defaults until the owner labels (aa cave yes|no|hill|cliff); a mouth with the darkest sky alone stays a candidate until then (the vote is 0 vs 0)", gf);
-            }
-            if (java.nio.file.Files.isRegularFile(wf)) w.read(java.nio.file.Files.readString(wf), skipped);
-            if (skipped[0] > 0) LOG.warn("[entropybot] sense: cave-patterns.json had {} unreadable part(s), skipped", skipped[0]);
-            // 0.39.z54 A1 (owner's ruling 2026-10-24: the bot's verdicts weigh nothing while calibrating): older files keep
-            // the bot's entries (read, never rewritten away); said once per load with what they weigh
-            int bot = g.botEntries();
-            if (bot > 0) LOG.info("[entropybot] sense: cave-patterns.json: {} bot entries read, weighing cave.botLabelWeight {}{}", bot,
-                    io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.botLabelWeight"),
-                    io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.botLabelWeight") <= 0 ? " (ignored: only the owner's labels vote and shape the rule)" : "");
-            g.saved();
-            w.saved();
-            patterns = g;
-            worldPatterns = w;
-            patRoot = r;
-            LOG.info("[entropybot] sense: {}", g.rule().line());
-        } catch (Throwable t) {
-            error("cave patterns load", t);
-            patRoot = null;
-        }
-        return patterns;
-    }
-
-    /** A labelled spot (aa cave; z54 A1: the owner's only, the bot writes none): into the global and the world's file. Never throws. */
-    public void label(CavePatterns.Patch p) {
-        try {
-            patterns().add(p);
-            worldPatterns.add(p);
-            savePatterns();
-        } catch (Throwable t) {
-            error("cave label", t);
-        }
-    }
-
-    private void savePatterns() {
-        try {
-            io.github.mojolowjo.entropybot.io.BotFiles files = Core.INSTANCE.files();
-            if (files == null || patRoot == null || !patRoot.equals(files.worldRoot().toString())) return;
-            CavePatterns g = patterns, w = worldPatterns;
-            if (!g.dirty() && !w.dirty()) return;
-            String gj = g.toJson(), wj = w.toJson();
-            g.saved();
-            w.saved();
-            Path gf = files.root().resolve("cave-patterns.json"), wf = files.worldRoot().resolve("cave-patterns.json");
-            worker().execute(() -> {
-                try {
-                    files.writeAtomic(gf, gj);
-                    files.writeAtomic(wf, wj);
-                } catch (Throwable t) {
-                    LOG.warn("[entropybot] sense: couldn't write cave-patterns.json: {}", t.toString());
-                }
-            });
-        } catch (Throwable t) {
-            error("cave patterns save", t);
-        }
-    }
-
     // ---- sightings (AA_ROUND3 5): ore cells, caves and animals the bot has seen, per world (sightings.json) ----
 
     private Sightings sightings;
@@ -541,7 +437,6 @@ public final class ChunkPass {
 
     private void saveStats() {
         saveSightings();
-        savePatterns();
         try {
             OreStats st = stats;
             io.github.mojolowjo.entropybot.io.BotFiles files = Core.INSTANCE.files();
@@ -593,49 +488,6 @@ public final class ChunkPass {
             if (st != null) st.addChunk(fresh);
         } catch (Throwable t) {
             error("ore stats", t);
-        }
-        try {
-            // 0.39.z44: the cave-mouth candidates of this chunk from its 256 surface heights (no block reads)
-            int[] top = new int[256];
-            boolean[] water = new boolean[256];
-            net.minecraft.core.BlockPos.MutableBlockPos q = new net.minecraft.core.BlockPos.MutableBlockPos();
-            for (int lz = 0; lz < 16; lz++)
-                for (int lx = 0; lx < 16; lx++) {
-                    int hm = io.github.mojolowjo.entropybot.world.SurfaceHeightLive.worldSurface(chunk, lx, lz);
-                    // 0.39.z48 (item 5): a water column: its top (surface) block holds water (CaveMouths#shapes says why
-                    // the client's two heightmaps cannot tell it); never a candidate
-                    q.set((it.cx() << 4) + lx, hm - 1, (it.cz() << 4) + lz);
-                    water[lx + 16 * lz] = chunk.getBlockState(q).getFluidState().is(net.minecraft.tags.FluidTags.WATER);
-                    // 0.39.z54 A3: the shape test reads the ground, leaves / logs / air stripped from the column top (this
-                    // chunk's own blocks: loaded by definition here)
-                    final int bx = (it.cx() << 4) + lx, bz = (it.cz() << 4) + lz;
-                    final int minY = chunk.getMinBuildHeight();
-                    java.util.function.IntPredicate canopy = y -> { if (y < minY) return false; q.set(bx, y, bz); return canopy(chunk.getBlockState(q)); };
-                    int g = CaveMouths.ground(hm, canopy);
-                    if (CaveMouths.canopyCapped(hm, g, canopy)) canopyCapped++;
-                    top[lx + 16 * lz] = g;
-                }
-            if (canopyCapped > 0 && !canopyCappedSaid) {
-                canopyCappedSaid = true;
-                LOG.info("[entropybot] sense: a column ran past cave.canopyMaxDepth {} cells of leaves, logs and air: its heightmap top is kept for the cave shape test (count in sense status)",
-                        io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.canopyMaxDepth"));
-            }
-            // 0.39.z50: the rule the cave patterns give (Tuning defaults before any), then the patterns' vote on each
-            // shape's 9 x 9 surface patch (the heightmap only, rule 17): a shape the not-a-cave side wins is no candidate
-            CavePatterns pat = patterns();
-            CaveMouths.Shapes sh = CaveMouths.shapes(it.cx(), it.cz(), top, water, pat.rule());
-            List<CaveMouths.Candidate> kept = new ArrayList<>();
-            for (CaveMouths.Candidate cd : sh.candidates()) {
-                int[] ws = SightingsRuntime.patch(level, cd.x(), cd.z());
-                if (ws == null) continue;      // z54 review 2 (rule 15): its column is not loaded: no vote, no candidate this read
-                CavePatterns.Vote v = pat.vote(ws, 0, 0, 0, false, null);
-                if (v.cave()) kept.add(new CaveMouths.Candidate(cd.x(), cd.y(), cd.z(), cd.shape(), cd.numbers() + (cd.numbers().isEmpty() ? "" : "; ") + v.line()));
-                else shapesVotedOut++;
-            }
-            mouths.put(it.cx(), it.cz(), kept);
-            mouths.putFlooded(it.cx(), it.cz(), sh.flooded());
-        } catch (Throwable t) {
-            error("cave candidates", t);
         }
         try {
             caveRuns(chunk, it.cx(), it.cz());

@@ -53,32 +53,20 @@ class SightingsTest {
         assertEquals(Sightings.key(Sightings.Kind.CAVE, "dark", 8, 40, 9), Sightings.key(Sightings.Kind.CAVE, "dark", 11, 41, 11));
     }
 
+    /** 0.39.z78 J6: the known caves (the dark-cell caves and the mouths are deleted): stored once, offered, walked, the chance learned. */
     @Test
-    void caveRule() {
-        int[] flat = {64, 64, 64, 64}, ravine = {80, 81, 64, 64};
-        assertEquals("dark", Sightings.caveRule(true, 3, 0, 40, 64, null, false));
-        assertNull(Sightings.caveRule(true, 3, 4, 40, 64, null, false), "a lit room (torches) is no cave");
-        assertNull(Sightings.caveRule(true, 12, 0, 62, 64, null, false), "under an overhang, sky light high");
-        assertNull(Sightings.caveRule(false, 0, 0, 40, 64, null, false), "not 2 high");
-        assertNull(Sightings.caveRule(true, 0, 0, 40, 64, null, true), "my own shaft never counts");
-        assertEquals("ravine", Sightings.caveRule(true, 15, 0, 70, 70, ravine, false));
-        assertNull(Sightings.caveRule(true, 15, 0, 63, 64, flat, false), "flat ground");
-        assertNull(Sightings.caveRule(true, 15, 0, 70, 70, new int[]{80, 60, 60, 60}, false), "a cliff on one side only");
-    }
-
-    @Test
-    void cavesMergeExhaustAndChance() {
+    void knownCavesOnceOfferedWalkedAndChance() {
         Sightings s = new Sightings();
-        double prior = s.cavesPer100();
-        assertEquals(Sightings.priorCaves(), prior, 1e-9);
-        assertNotNull(s.sawCave("d", 0, 40, 0, 1));
-        assertNull(s.sawCave("d", 5, 40, 5, 2), "within 16: the same opening");
-        assertNotNull(s.sawCave("d", 40, 40, 0, 3));
-        assertEquals(2, s.caves("d").size());
+        assertEquals(Sightings.priorCaves(), s.cavesPer100(), 1e-9);
+        CaveIndex.Known a = new CaveIndex.Known(0, 40, 0, 300, 30, 42, List.of(Sightings.cell(1, 40, 0), Sightings.cell(2, 41, 0), Sightings.cell(3, 40, 1)));
+        assertNotNull(s.knowCave("d", a, 1));
+        assertNull(s.knowCave("d", new CaveIndex.Known(5, 40, 5, 300, 30, 42, List.of(Sightings.cell(2, 41, 0))), 2), "a shared hit: the same cave");
+        assertNotNull(s.knowCave("d", new CaveIndex.Known(40, 40, 0, 80, 38, 41, List.of(Sightings.cell(41, 40, 0))), 3));
+        assertEquals(2, s.allKnownCaves("d").size());
         assertEquals(0, s.nearestCave("d", 2, 40, 2, 64).x());
         assertNull(s.nearestCave("d", 200, 40, 0, 64), "past 64");
-        assertEquals(1, s.exhaust("d", 0, 40, 0, 9));
-        assertEquals(40, s.nearestCave("d", 2, 40, 2, 64).x(), "an exhausted cave is offered no more");
+        assertTrue(s.walkedCave("d", 0, 40, 0, System.currentTimeMillis(), 0));
+        assertEquals(40, s.nearestCave("d", 2, 40, 2, 64).x(), "walked with no ore: held cave.walkedHoldS");
         s.walked(30);
         s.walked(500);                  // a teleport is not a walk
         assertEquals((2 + Sightings.priorCaves() * Sightings.priorHundreds()) / (0.3 + Sightings.priorHundreds()), s.cavesPer100(), 1e-9);
@@ -109,36 +97,35 @@ class SightingsTest {
         assertEquals(1, Sightings.confidence(hit, 9000), 1e-9);
         assertEquals(4, hit.count());
         assertNull(s.visit("d", "minecraft:cow", 500, 500, false, 0, 9000), "no sighting there");
-        // caves and ore do not decay
-        var cave = s.sawCave("d", 0, 30, 0, 0);
-        assertEquals(1, Sightings.confidence(cave, 10 * Sightings.halfLifeMs()), 1e-9);
     }
 
     @Test
     void file() {
         Sightings s = new Sightings();
         s.ore().saw("d", 1, 2, 3, "iron", 4);
-        s.sawCave("d", 10, 40, 10, 5);
-        s.exhaust("d", 10, 40, 10, 6);
+        s.knowCave("d", new CaveIndex.Known(10, 40, 10, 120, 35, 41, List.of(Sightings.cell(11, 40, 10))), 5);
+        s.walkedCave("d", 10, 40, 10, 6, 2);
         s.sawHerd("d", "modded:yak", 50, 70, 50, 3, 7, null);
         s.walked(40);
         int[] bad = {0};
         Sightings b = Sightings.fromJson(s.toJson(), bad);
         assertEquals(0, bad[0]);
         assertTrue(b.ore().has("d", 1, 2, 3));
-        assertEquals(6, b.caves("d").get(0).exhausted());
+        assertEquals(6, b.allKnownCaves("d").get(0).walked());
+        assertEquals(2, b.allKnownCaves("d").get(0).oreOnWalk());
+        assertEquals(120, b.allKnownCaves("d").get(0).cells());
         List<Sightings.Rec> yak = b.animals("d", "modded:yak");
         assertEquals(1, yak.size());
         assertEquals(3, yak.get(0).count());
         assertEquals(s.cavesPer100(), b.cavesPer100(), 1e-9);
         assertFalse(b.dirty());
         // broken text: an empty memory, counted
-        assertEquals(0, Sightings.fromJson("{oops", bad).caves("d").size());
+        assertEquals(0, Sightings.fromJson("{oops", bad).allKnownCaves("d").size());
         assertTrue(bad[0] > 0);
         // one bad entry is skipped, the rest load
         int[] bad2 = {0};
-        Sightings c = Sightings.fromJson("{\"caves\":{\"d\":[[\"cave\",1,2,3,4,1,1.0,0],[\"x\"]]}}", bad2);
-        assertEquals(1, c.caves("d").size());
+        Sightings c = Sightings.fromJson("{\"knownCaves\":{\"d\":[[1,2,3,40,0,5,9,[7],0,0],[\"x\"]]}}", bad2);
+        assertEquals(1, c.allKnownCaves("d").size());
         assertEquals(1, bad2[0]);
     }
 

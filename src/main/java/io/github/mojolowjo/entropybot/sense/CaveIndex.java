@@ -276,6 +276,37 @@ public final class CaveIndex {
         return out.size() > n ? new ArrayList<>(out.subList(0, n)) : out;
     }
 
+    /**
+     * The openings near x y z: per volume not known yet, its cell nearest x y z that touches a sky-lit column sideways (where
+     * a player sees a hole in a slope or a cliff side), within {@code r} (horizontal); nearest first. The explore for ore
+     * walks toward these - the rays there decide what is a cave (they replaced the heightmap's candidates).
+     */
+    public synchronized List<int[]> openings(int x, int y, int z, int r) {
+        Map<Integer, int[]> best = new HashMap<>();
+        for (int cx = (x - r) >> 4; cx <= (x + r) >> 4; cx++)
+            for (int cz = (z - r) >> 4; cz <= (z + r) >> 4; cz++) {
+                Chunk ch = chunks.get(chunkKey(cx, cz));
+                if (ch == null) continue;
+                for (int c = 0; c < 256; c++) {
+                    int tx = (cx << 4) + (c & 15), tz = (cz << 4) + (c >> 4);
+                    if (Math.abs(tx - x) > r || Math.abs(tz - z) > r) continue;
+                    int skyFrom = Integer.MAX_VALUE;
+                    for (int[] d : SIDES) skyFrom = Math.min(skyFrom, surfaceAt(tx + d[0], tz + d[1]));
+                    for (int i = 0; i < ch.lo[c].length; i++) {
+                        if (skyFrom == Integer.MAX_VALUE || skyFrom > ch.hi[c][i]) continue;
+                        int root = find(ch.id[c][i]);
+                        if (known.contains(root)) continue;
+                        int[] cell = {tx, Math.max(ch.lo[c][i], skyFrom), tz};
+                        int[] was = best.get(root);
+                        if (was == null || d2(cell, x, y, z) < d2(was, x, y, z)) best.put(root, cell);
+                    }
+                }
+            }
+        List<int[]> out = new ArrayList<>(best.values());
+        out.sort((a, b) -> Long.compare(d2(a, x, y, z), d2(b, x, y, z)));
+        return out;
+    }
+
     @FunctionalInterface
     public interface CellTest { boolean test(int x, int y, int z); }
 
@@ -284,10 +315,10 @@ public final class CaveIndex {
         return dx * dx + dy * dy + dz * dz;
     }
 
-    /** The volumes credited and not known yet (aa cave list): root -> its credits. */
-    public synchronized Map<Integer, Integer> credited() {
-        Map<Integer, Integer> out = new java.util.TreeMap<>();
-        for (var e : credits.entrySet()) if (find(e.getKey()) == e.getKey() && !known.contains(e.getKey())) out.put(e.getKey(), e.getValue().size());
+    /** The volumes credited and not known yet (aa cave list): root -> its credited cells ({@link #cell} packed). */
+    public synchronized Map<Integer, List<Long>> credited() {
+        Map<Integer, List<Long>> out = new java.util.TreeMap<>();
+        for (var e : credits.entrySet()) if (find(e.getKey()) == e.getKey() && !known.contains(e.getKey())) out.put(e.getKey(), List.copyOf(e.getValue()));
         return out;
     }
 

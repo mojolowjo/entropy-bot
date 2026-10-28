@@ -20,8 +20,9 @@ import java.util.TreeMap;
  * AA_ROUND3 5: one memory of what the bot has legitimately seen, per world ({@code sightings.json}). Three kinds:
  * <ul>
  * <li>ORE: the seen ore cells of section 3 ({@link Seen}: fair play; mined = removed, no decay).</li>
- * <li>CAVE: cave openings, ravines and dark holes (no decay: openings do not move; a cave entered and found empty of
- *     ore is marked {@code exhausted} with its time and offered no more).</li>
+ * <li>CAVE (0.39.z78 J6, the owner's ruling 2026-10-27 late): the caves known by rays ({@link KnownCave}: a CaveIndex
+ *     volume {@link CaveIndex#KNOWN_RAYS} sight rays credited; its entry, size, depth, the hit cells; known stays known;
+ *     a walk with no ore holds it cave.walkedHoldS). The dark-cell openings and the heightmap mouths are deleted.</li>
  * <li>TREE (aa-trees): a log column standing on dirt with leaves by it, seen (x y z = its lowest log; no decay; a visit that
  *     finds it gone or unreachable marks it {@code exhausted}, offered no more).</li>
  * <li>ANIMAL: herds by entity type (position, count, time); the confidence halves every {@link #HALF_LIFE_MS} of game
@@ -61,7 +62,7 @@ public final class Sightings {
     }
 
     private final Seen ore;
-    private final Map<String, List<Rec>> caves = new HashMap<>(), animals = new HashMap<>(), trees = new HashMap<>();
+    private final Map<String, List<Rec>> animals = new HashMap<>(), trees = new HashMap<>();
     private final Map<Long, Long> pending = new HashMap<>();
     private double walked, cavesFound;
     private volatile boolean dirty;
@@ -103,93 +104,12 @@ public final class Sightings {
         return (((long) k.ordinal()) << 60) ^ ((long) (id == null ? 0 : id.hashCode()) << 32) ^ Seen.key(x >> 2, y >> 2, z >> 2);
     }
 
-    // ---- caves ----
+    // ---- caves: 0.39.z78 J6 - the dark-cell sightings and the heightmap mouths are deleted; a cave is known by rays ----
 
-    /**
-     * The cave candidate rule for an air cell the ray reached: "dark" = air 2 high, sky light under 8, block light 0,
-     * below the surface heightmap (a roof over it); "ravine" = air 2 high, open to the sky, with ground 6+ higher on
-     * both sides along one axis (sideMax: the highest surface within 5 blocks on -x, +x, -z, +z). A cell the bot dug
-     * itself is never a cave (its own shaft or mine). Null = no cave.
-     */
-    public static String caveRule(boolean air2, int sky, int block, int y, int surfaceY, int[] sideMax, boolean ownDug) {
-        if (!air2 || ownDug) return null;
-        if (y < surfaceY - 1) return sky < 8 && block == 0 ? "dark" : null;
-        if (sideMax == null || sideMax.length < 4) return null;
-        boolean xs = sideMax[0] >= y + 6 && sideMax[1] >= y + 6, zs = sideMax[2] >= y + 6 && sideMax[3] >= y + 6;
-        return xs || zs ? "ravine" : null;
-    }
-
-    /** A confirmed cave opening: a new record (returned) unless one lies within {@link #MERGE} (null). */
-    public synchronized Rec sawCave(String dim, int x, int y, int z, long now) {
-        List<Rec> l = caves.computeIfAbsent(dim, k -> new ArrayList<>());
-        for (Rec r : l) if (d2(r, x, y, z) <= (long) merge() * merge()) return null;
-        Rec r = new Rec(Kind.CAVE, "cave", x, y, z, now, 1, 1, 0);
-        l.add(r);
-        cavesFound++;
-        while (l.size() > maxCaves()) l.remove(0);
-        dirty = true;
-        return r;
-    }
-
-    /** The nearest cave not exhausted within {@code max} (3D) of x y z, or null. */
-    public synchronized Rec nearestCave(String dim, int x, int y, int z, int max) {
-        Rec best = null;
-        long bd = (long) max * max;
-        for (Rec r : caves.getOrDefault(dim, List.of())) {
-            if (r.exhausted() > 0) continue;
-            long d = d2(r, x, y, z);
-            if (d <= bd) { bd = d; best = r; }
-        }
-        return best;
-    }
-
-    /** The caves within {@link #MERGE} of x y z were entered and held no ore: offered no more. How many. */
-    public synchronized int exhaust(String dim, int x, int y, int z, long now) {
-        int n = 0;
-        List<Rec> l = caves.getOrDefault(dim, List.of());
-        for (int i = 0; i < l.size(); i++) {
-            Rec r = l.get(i);
-            if (r.exhausted() == 0 && d2(r, x, y, z) <= (long) merge() * merge()) {
-                l.set(i, new Rec(r.kind(), r.id(), r.x(), r.y(), r.z(), r.at(), r.count(), r.conf(), now));
-                n++;
-            }
-        }
-        if (n > 0) dirty = true;
-        return n;
-    }
-
-    public synchronized List<Rec> caves(String dim) { return new ArrayList<>(caves.getOrDefault(dim, List.of())); }
-
-    /** 0.39.z44: the id of a cave mouth record ({@link CaveMouths}: a heightmap hole confirmed by sight). */
-    public static final String MOUTH = "mouth";
-
-    /**
-     * 0.39.z44: a confirmed cave mouth at x y z, seen from {@code seenFrom} blocks (kept in the record's count): a new record
-     * (returned) unless a mouth lies within {@link #merge()} (null).
-     */
-    public synchronized Rec sawMouth(String dim, int x, int y, int z, int seenFrom, long now) {
-        List<Rec> l = caves.computeIfAbsent(dim, k -> new ArrayList<>());
-        for (Rec r : l) if (MOUTH.equals(r.id()) && d2(r, x, y, z) <= (long) merge() * merge()) return null;
-        Rec r = new Rec(Kind.CAVE, MOUTH, x, y, z, now, Math.max(0, seenFrom), 1, 0);
-        l.add(r);
-        while (l.size() > maxCaves()) l.remove(0);
-        dirty = true;
-        return r;
-    }
-
-    /** 0.39.z44: the known mouths (not exhausted), nearest first from x y z. */
-    public synchronized List<Rec> mouths(String dim, int x, int y, int z) {
-        List<Rec> out = new ArrayList<>();
-        for (Rec r : caves.getOrDefault(dim, List.of())) if (MOUTH.equals(r.id()) && r.exhausted() == 0) out.add(r);
-        out.sort((a, b) -> Long.compare(d2(a, x, y, z), d2(b, x, y, z)));
-        return out;
-    }
-
-    /** 0.39.z44 (rule 15, gone): the mouth record at exactly x y z is forgotten; true when there was one. */
-    public synchronized boolean forgetMouth(String dim, int x, int y, int z) {
-        boolean gone = caves.getOrDefault(dim, new ArrayList<>()).removeIf(r -> MOUTH.equals(r.id()) && r.x() == x && r.y() == y && r.z() == z);
-        if (gone) dirty = true;
-        return gone;
+    /** The nearest known cave offered now ({@link KnownCave#offered}) within {@code max} (3D) of x y z, or null. */
+    public synchronized KnownCave nearestCave(String dim, int x, int y, int z, int max) {
+        for (KnownCave c : knownCaves(dim, x, y, z, System.currentTimeMillis())) return d2k(c, x, y, z) <= (long) max * max ? c : null;
+        return null;
     }
 
     // ---- 0.39.z78 J6: the known caves (CaveIndex volumes that KNOWN_RAYS sight rays credited), a stored fact ----
@@ -308,41 +228,7 @@ public final class Sightings {
             Quiet.warn("Sightings.readKnown failed, carrying on with the fallback", ex); skipped[0]++; }
     }
 
-    // ---- 0.39.z51 items 1-2: the confirmation of a mouth, a stored fact ----
-
-    /**
-     * 0.39.z51: a mouth's confirmation (run L: the "confirmed" line 101 times in 11 min for one mouth): the candidate cell
-     * x y z, when it was confirmed, the hole's floor cell (fx fy fz: the first air over its floor) and the dark pocket cells
-     * the z50 fill found ({@link #cell} packed); {@code walked}: when a caving step walked its pocket (0 = not yet).
-     */
-    public record MouthFact(int x, int y, int z, long confirmedAt, int fx, int fy, int fz, List<Long> pocket, long walked, int oreOnWalk) {
-        /** z53: oreOnWalk for a mouth closed for good (S1: in a protect box): never offered again. */
-        public static final int CLOSED = -1; // structural: a marker, not an ore count
-
-        public MouthFact {
-            pocket = List.copyOf(pocket);
-        }
-
-        public MouthFact(int x, int y, int z, long confirmedAt, int fx, int fy, int fz, List<Long> pocket, long walked) {
-            this(x, y, z, confirmedAt, fx, fy, fz, pocket, walked, 0);
-        }
-
-        /**
-         * z53 (review of 7b16ad9): offered to the cave way at {@code now}: never walked; walked and it yielded ore on its last
-         * walk; walked with 0 ore and {@code holdMs} has passed since. Closed for good: never.
-         */
-        public boolean offered(long now, long holdMs) {
-            if (walked == 0) return true;
-            if (oreOnWalk == CLOSED) return false;
-            return oreOnWalk > 0 || now - walked >= holdMs;
-        }
-
-        public String where() { return x + " " + y + " " + z; }
-    }
-
-    private final Map<String, List<MouthFact>> mouthFacts = new HashMap<>();
-
-    /** The radius within which two mouth candidates are one feature ({@code cave.mergeM}): one fact for both. */
+    /** The radius within which two caves are one feature ({@code cave.mergeM}): the caving step's visit log merges by it. */
     public static int factMerge() { return Tuning.i("cave.mergeM"); }
 
     /** A cell packed in one long (x, z 26 bits, y 12 bits; BlockPos.asLong's layout). */
@@ -355,75 +241,8 @@ public final class Sightings {
         return new int[]{(int) (c >> 38), (int) (c << 52 >> 52), (int) (c << 26 >> 38)};
     }
 
-    /**
-     * The confirmation of the mouth at x y z: stored (returned) once; a fact within {@link #factMerge()} (horizontal) already
-     * holds it (one feature, z50's merge): null, the stored fact is kept as it is.
-     */
-    public synchronized MouthFact confirmMouth(String dim, int x, int y, int z, long at, int fx, int fy, int fz, List<Long> pocket) {
-        if (mouthFact(dim, x, y, z) != null) return null;
-        MouthFact f = new MouthFact(x, y, z, at, fx, fy, fz, pocket == null ? List.of() : pocket, 0);
-        List<MouthFact> l = mouthFacts.computeIfAbsent(dim, k -> new ArrayList<>());
-        l.add(f);
-        while (l.size() > maxCaves()) l.remove(0);
-        dirty = true;
-        return f;
-    }
-
-    /** The stored confirmation of the mouth at (or merged with, {@link #factMerge()}) x y z; null: none stored. */
-    public synchronized MouthFact mouthFact(String dim, int x, int y, int z) {
-        long m = (long) factMerge() * factMerge();
-        for (MouthFact f : mouthFacts.getOrDefault(dim, List.of())) {
-            long dx = f.x() - x, dz = f.z() - z;
-            if (dx * dx + dz * dz <= m) return f;
-        }
-        return null;
-    }
-
-    /** Tuning {@code cave.walkedHoldS} in ms: a mouth walked with no ore is held this long (z53). */
+    /** Tuning {@code cave.walkedHoldS} in ms: a known cave walked with no ore is held this long. */
     public static long walkedHoldMs() { return Tuning.l("cave.walkedHoldS") * 1000L; }
-
-    /** The confirmed mouths offered now ({@link MouthFact#offered}), nearest first from x y z (empty: none known). */
-    public synchronized List<MouthFact> confirmedMouths(String dim, int x, int y, int z) {
-        return confirmedMouths(dim, x, y, z, System.currentTimeMillis());
-    }
-
-    public synchronized List<MouthFact> confirmedMouths(String dim, int x, int y, int z, long now) {
-        long hold = walkedHoldMs();
-        List<MouthFact> out = new ArrayList<>();
-        for (MouthFact f : mouthFacts.getOrDefault(dim, List.of())) if (f.offered(now, hold)) out.add(f);
-        out.sort((a, b) -> Long.compare(d2f(a, x, y, z), d2f(b, x, y, z)));
-        return out;
-    }
-
-    /** 0.39.z52 (aa cave list): every stored mouth of the dimension, walked ones included. */
-    public synchronized List<MouthFact> allMouths(String dim) { return List.copyOf(mouthFacts.getOrDefault(dim, List.of())); }
-
-    /** z51 form: a walk with no ore counted (held {@code cave.walkedHoldS}). */
-    public synchronized boolean walkedMouth(String dim, int x, int y, int z, long now) {
-        return walkedMouth(dim, x, y, z, now, 0);
-    }
-
-    /**
-     * A caving step walked the pocket of the mouth at x y z and got {@code ore} there ({@link MouthFact#CLOSED}: closed for
-     * good). The fact keeps walkedAt and oreOnWalk; {@link MouthFact#offered} reads them. True when there was one.
-     */
-    public synchronized boolean walkedMouth(String dim, int x, int y, int z, long now, int ore) {
-        List<MouthFact> l = mouthFacts.getOrDefault(dim, List.of());
-        for (int i = 0; i < l.size(); i++) {
-            MouthFact f = l.get(i);
-            if (f.x() == x && f.y() == y && f.z() == z && f.oreOnWalk() != MouthFact.CLOSED) {
-                l.set(i, new MouthFact(f.x(), f.y(), f.z(), f.confirmedAt(), f.fx(), f.fy(), f.fz(), f.pocket(), Math.max(1, now), ore));
-                dirty = true;
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static long d2f(MouthFact f, int x, int y, int z) {
-        long dx = f.x() - x, dy = f.y() - y, dz = f.z() - z;
-        return dx * dx + dy * dy + dz * dz;
-    }
 
     /** Blocks walked on the surface (the explore chance's denominator). */
     public synchronized void walked(double blocks) {
@@ -563,8 +382,8 @@ public final class Sightings {
         for (Rec r : animals.getOrDefault(dim, List.of()))
             a.add(r.id().replaceFirst("^minecraft:", "") + " x" + r.count() + " at " + r.x() + " " + r.z() + String.format(Locale.ROOT, " (%.2f)", confidence(r, gameNow)));
         int open = 0, ex = 0;
-        for (Rec r : caves.getOrDefault(dim, List.of())) if (r.exhausted() > 0) ex++; else open++;
-        return "sightings: " + ore.size(dim) + " ore cells, " + open + " caves (" + ex + " exhausted), "
+        for (KnownCave c : knownCaves.getOrDefault(dim, List.of())) if (c.walked() > 0 && c.oreOnWalk() <= 0) ex++; else open++;
+        return "sightings: " + ore.size(dim) + " ore cells, " + open + " known caves (" + ex + " walked with no ore), "
                 + String.format(Locale.ROOT, "%.2f caves per 100 blocks walked (%.0f walked)", cavesPer100(), walked) + ", " + treeCount(dim) + " trees"
                 + (a.isEmpty() ? ", no animals seen yet" : ", animals: " + String.join(", ", a.subList(Math.max(0, a.size() - 6), a.size())));
     }
@@ -583,47 +402,12 @@ public final class Sightings {
     public synchronized String toJson() {
         JsonObject o = new JsonObject();
         o.add("ore", ore.toJson());
-        o.add("caves", recs(caves));
         o.add("animals", recs(animals));
         o.add("trees", recs(trees));
         o.addProperty("walked", walked);
         o.addProperty("cavesFound", cavesFound);
-        JsonObject mf = new JsonObject();                    // 0.39.z51: the mouths' confirmations
-        for (Map.Entry<String, List<MouthFact>> d : new TreeMap<>(mouthFacts).entrySet()) {
-            JsonArray a = new JsonArray();
-            for (MouthFact f : d.getValue()) {
-                JsonArray e = new JsonArray();
-                e.add(f.x()); e.add(f.y()); e.add(f.z()); e.add(f.confirmedAt()); e.add(f.fx()); e.add(f.fy()); e.add(f.fz()); e.add(f.walked());
-                JsonArray pk = new JsonArray();
-                for (Long c : f.pocket()) pk.add(c);
-                e.add(pk);
-                e.add(f.oreOnWalk());                        // z53: index 9 (older files: 0)
-                a.add(e);
-            }
-            mf.add(d.getKey(), a);
-        }
-        o.add("mouthFacts", mf);
         o.add("knownCaves", knownJson(knownCaves));          // 0.39.z78 J6: the caves known by rays
         return new Gson().toJson(o);
-    }
-
-    private static void readFacts(JsonObject o, Sightings s, int[] skipped) {
-        try {
-            if (!o.has("mouthFacts")) return;
-            for (Map.Entry<String, JsonElement> d : o.getAsJsonObject("mouthFacts").entrySet())
-                for (JsonElement e : d.getValue().getAsJsonArray()) {
-                    try {
-                        JsonArray a = e.getAsJsonArray();
-                        List<Long> pk = new ArrayList<>();
-                        for (JsonElement c : a.get(8).getAsJsonArray()) pk.add(c.getAsLong());
-                        s.mouthFacts.computeIfAbsent(d.getKey(), x -> new ArrayList<>()).add(new MouthFact(a.get(0).getAsInt(), a.get(1).getAsInt(), a.get(2).getAsInt(),
-                                a.get(3).getAsLong(), a.get(4).getAsInt(), a.get(5).getAsInt(), a.get(6).getAsInt(), pk, a.get(7).getAsLong(),
-                                a.size() > 9 ? a.get(9).getAsInt() : 0));
-                    } catch (RuntimeException ex) {
-                        Quiet.warn("Sightings.readFacts failed, carrying on with the fallback", ex); skipped[0]++; }
-                }
-        } catch (RuntimeException ex) {
-            Quiet.warn("Sightings.readFacts failed, carrying on with the fallback", ex); skipped[0]++; }
     }
 
     private static JsonObject recs(Map<String, List<Rec>> m) {
@@ -660,10 +444,8 @@ public final class Sightings {
             return new Sightings();
         }
         Sightings s = new Sightings(o.has("ore") ? Seen.fromJson(o.get("ore"), skipped) : new Seen());
-        read(o, "caves", Kind.CAVE, s.caves, skipped);
         read(o, "animals", Kind.ANIMAL, s.animals, skipped);
         read(o, "trees", Kind.TREE, s.trees, skipped);
-        readFacts(o, s, skipped);
         readKnown(o, s, skipped);
         try {
             if (o.has("walked")) s.walked = Math.max(0, o.get("walked").getAsDouble());

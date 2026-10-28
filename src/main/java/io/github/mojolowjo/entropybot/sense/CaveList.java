@@ -1,56 +1,40 @@
 package io.github.mojolowjo.entropybot.sense;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 /**
- * 0.39.z52 (owner's labelling walk): {@code aa cave list} - the rule line, then every candidate and mouth the bot knows,
- * nearest to the owner first: coordinates, verdict (candidate / dropped: reason / mouth), the shape numbers, and whether
- * the owner has labelled it (an owner patch within {@code cave.mergeM}, horizontal). Pure; the command gathers the entries.
+ * 0.39.z78 J6: the text of {@code aa cave list} - the known caves (Sightings, known by rays) nearest the owner first, each
+ * with its entry, size, depth, the rays that credited it and its last walk; then the index volumes credited but not known
+ * yet ("2 of 3 rays"); then the rays' counts. Was the heightmap candidates, the mouths and the label patterns (deleted
+ * with them). Pure (JUnit: J6CaveIndexTest). Loader notes: none.
  */
 public final class CaveList {
     private CaveList() {}
 
-    public record Entry(int x, int y, int z, String verdict, String numbers) {}
-
-    /** A heightmap candidate; {@code dropReason} null = not dropped (still a candidate). */
-    public static Entry candidate(int x, int y, int z, String numbers, String dropReason) {
-        return new Entry(x, y, z, dropReason == null ? "candidate" : "dropped: " + dropReason, numbers == null || numbers.isEmpty() ? "no shape numbers" : numbers);
-    }
-
-    /** 0.39.z54 A4: a candidate whose hole passed but stays a candidate (the darkest sky alone): the reason. */
-    public static Entry held(int x, int y, int z, String numbers, String reason) {
-        return new Entry(x, y, z, "candidate: " + reason, numbers == null || numbers.isEmpty() ? "no shape numbers" : numbers);
-    }
-
-    /** A confirmed mouth (its stored fact). */
-    public static Entry mouth(int x, int y, int z, int pocketCells, int fx, int fy, int fz, boolean walked) {
-        return new Entry(x, y, z, "mouth" + (walked ? " (pocket walked)" : ""), pocketCells + " pocket cells, floor " + fx + " " + fy + " " + fz);
-    }
-
-    public static String text(String ruleLine, List<Entry> entries, List<CavePatterns.Patch> patterns, double px, double py, double pz) {
-        StringBuilder b = new StringBuilder(ruleLine);
-        if (entries.isEmpty()) return b.append("\nno candidate or mouth known (none in the loaded chunks, none confirmed)").toString();
-        List<Entry> l = new ArrayList<>(entries);
-        l.sort(Comparator.comparingDouble(e -> d2(e, px, py, pz)));
-        b.append("\n").append(l.size()).append(" known, nearest first (label one: fly there, aa cave yes|no|hill|cliff)");
-        double m = io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.mergeM");
-        for (Entry e : l) {
-            String lab = "not labelled";
-            for (CavePatterns.Patch p : patterns) {
-                if (!p.owner()) continue;
-                double dx = p.x() - e.x(), dz = p.z() - e.z();
-                if (dx * dx + dz * dz <= m * m) { lab = "labelled " + p.label() + " by owner"; break; }
+    public static String text(List<Sightings.KnownCave> known, Map<Integer, List<Long>> credited, String rays, double px, double py, double pz) {
+        List<String> out = new ArrayList<>();
+        List<Sightings.KnownCave> k = new ArrayList<>(known);
+        k.sort((a, b) -> Double.compare(d(a.x(), a.y(), a.z(), px, py, pz), d(b.x(), b.y(), b.z(), px, py, pz)));
+        out.add(k.isEmpty() ? "known caves: none yet (a cave is known when " + CaveIndex.KNOWN_RAYS + " sight rays credit it)" : "known caves: " + k.size());
+        for (Sightings.KnownCave c : k)
+            out.add(String.format(Locale.ROOT, "  %s: %.0f m, %d cells, y %d..%d, %d rays%s", c.where(), d(c.x(), c.y(), c.z(), px, py, pz), c.cells(), c.minY(), c.maxY(),
+                    c.hits().size(), c.walked() == 0 ? "" : c.oreOnWalk() == Sightings.KnownCave.CLOSED ? ", closed for good" : ", walked (" + c.oreOnWalk() + " ore)"));
+        if (!credited.isEmpty()) {
+            out.add("credited, not known yet: " + credited.size());
+            for (var e : credited.entrySet()) {
+                int[] f = Sightings.cellOf(e.getValue().get(0));
+                out.add("  volume #" + e.getKey() + ": " + e.getValue().size() + " of " + CaveIndex.KNOWN_RAYS + " rays (first at " + f[0] + " " + f[1] + " " + f[2] + ")");
             }
-            b.append("\n").append(e.x()).append(' ').append(e.y()).append(' ').append(e.z()).append(" (").append(Math.round(Math.sqrt(d2(e, px, py, pz))))
-                    .append(" m): ").append(e.verdict()).append("; ").append(e.numbers()).append("; ").append(lab);
         }
-        return b.toString();
+        out.add(rays);
+        return String.join("\n", out);
     }
 
-    private static double d2(Entry e, double x, double y, double z) {
-        double dx = e.x() + 0.5 - x, dy = e.y() + 0.5 - y, dz = e.z() + 0.5 - z;
-        return dx * dx + dy * dy + dz * dz;
+    private static double d(int x, int y, int z, double px, double py, double pz) {
+        double dx = x + 0.5 - px, dy = y - py, dz = z + 0.5 - pz;
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 }

@@ -9,7 +9,6 @@ import io.github.mojolowjo.entropybot.aa.moves.FactChange;
 import io.github.mojolowjo.entropybot.aa.moves.Step;
 import io.github.mojolowjo.entropybot.aa.moves.Steps;
 import io.github.mojolowjo.entropybot.cave.ExploreRules;
-import io.github.mojolowjo.entropybot.sense.CaveMouths;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -87,63 +86,6 @@ class Z48ScenarioTest {
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.TakeStation || s instanceof Step.Collect), c.steps().toString());
     }
 
-    // ---- S64: the floor of the hole's own air column ----
-
-    private static String verdict(int airCells, boolean waterFloor, int skyFloor, int skyAbove) {
-        boolean[] air = new boolean[airCells + 1];
-        boolean[] water = new boolean[airCells + 1];
-        int[] sky = new int[airCells + 1];
-        for (int i = 0; i < airCells; i++) { air[i] = true; sky[i] = 15; }
-        if (airCells >= 2) sky[airCells - 2] = skyAbove;
-        sky[airCells - 1] = skyFloor;
-        water[airCells] = waterFloor;
-        return CaveMouths.floorVerdict(air, water, sky);
-    }
-
-    @Test
-    void s64ADryHoleDarkAtItsFloorIsACave() {
-        assertNull(verdict(6, false, 0, 3));
-        assertEquals(5, CaveMouths.floor(new boolean[]{true, true, true, true, true, true, false}));
-    }
-
-    @Test
-    void s64AHoleLitToItsFloorIsDropped() {
-        String v = verdict(6, false, 15, 15);
-        assertNotNull(v);
-        assertTrue(v.startsWith("lit to the floor"), v);
-    }
-
-    @Test
-    void s64APondIsDropped() {
-        String v = verdict(2, true, 0, 0);
-        assertNotNull(v);
-        assertTrue(v.contains("water"), v);
-        assertEquals("the candidate cell is not air", CaveMouths.floorVerdict(new boolean[]{false}, new boolean[]{false}, new int[]{0}));
-    }
-
-    // ---- item 5: a lake gives no candidate ----
-
-    /** A hole with a 6-high cliff on one side and a gentle slope on the other: a mouth on dry ground. */
-    private static int[] mouthTop() {
-        // x 0..8 slopes down 1 a column to x 8 at 70; x 9.. jumps to 76 (the cliff)
-        int[] top = new int[256];
-        for (int lz = 0; lz < 16; lz++)
-            for (int lx = 0; lx < 16; lx++) top[lx + 16 * lz] = lx <= 8 ? 70 + (8 - lx) : 76;
-        return top;
-    }
-
-    @Test
-    void lakeColumnsAreNeverCandidates() {
-        int[] top = mouthTop();
-        assertFalse(CaveMouths.candidates(0, 0, top).isEmpty(), "the dry shape is a candidate");
-        boolean[] water = new boolean[256];
-        java.util.Arrays.fill(water, true);
-        CaveMouths.Shapes sh = CaveMouths.shapes(0, 0, top, water);
-        assertTrue(sh.candidates().isEmpty(), sh.candidates().toString());
-        assertFalse(sh.flooded().isEmpty(), "the flooded hole is noted");
-        assertTrue(sh.flooded().get(0).shape().startsWith("flooded "));
-    }
-
     // ---- S65: the explore aims at the nearest unvisited candidate ----
 
     @Test
@@ -153,17 +95,6 @@ class Z48ScenarioTest {
         Set<String> visited = Set.of("10 60 0");
         assertArrayEquals(new int[]{40, 58, 5}, ExploreRules.toward(nearestFirst, c -> visited.contains(c[0] + " " + c[1] + " " + c[2])));
         assertNull(ExploreRules.toward(List.of(), c -> false), "none: the next unexplored chunk as before");
-    }
-
-    @Test
-    void s65ADroppedCandidateIsNeverListedAgain() {
-        CaveMouths m = new CaveMouths();
-        m.put(0, 0, List.of(new CaveMouths.Candidate(4, 60, 4, "mouth"), new CaveMouths.Candidate(12, 61, 12, "mouth")));
-        assertEquals(2, m.near(0, 60, 0, 128).size());
-        m.refuse(4, 60, 4);
-        assertEquals(1, m.near(0, 60, 0, 128).size());
-        m.put(0, 0, List.of(new CaveMouths.Candidate(4, 60, 4, "mouth")));     // the chunk read again
-        assertTrue(m.near(0, 60, 0, 128).isEmpty());
     }
 
     // ---- S66: the re-price margin ----

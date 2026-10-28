@@ -97,19 +97,17 @@ public final class NeedChain {
     public static final String STRIP_KEY = "strip ";     // 0.39.z77 world 2: public (WorldFacts: a strip key lifts by its cause only)
 
     /**
-     * 0.39.z44 (CAVE_DETECTION option 1): what the way "mine in the cave" is priced on: the nearest known cave mouth (a
-     * Sightings fact: a heightmap hole confirmed by sight, rule 17) at x y z, {@code dist} straight metres away, the ore block
+     * 0.39.z44 (CAVE_DETECTION option 1): what the way "mine in the cave" is priced on: the nearest known cave (0.39.z78 J6:
+     * a Sightings fact - a cave index volume three sight rays credited, rule 17) at its entry x y z, {@code cells} its size
+     * (0: not known), {@code dist} straight metres away, the ore block
      * {@code ore} that gives the need, and the cave yield Seen learns for its family ({@code perMin} ore a minute of caving,
      * the Tuning prior blended in; {@code measured}: minutes of caving were measured).
      */
-    static final String CAVE_KEY = "cave mouth ";
+    static final String CAVE_KEY = "known cave ";
 
-    public record CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured, boolean candidate, long cells) {
-        public CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured, boolean candidate) {
-            this(x, y, z, dist, ore, family, perMin, measured, candidate, 0);
-        }
+    public record CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured, long cells) {
         public CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured) {
-            this(x, y, z, dist, ore, family, perMin, measured, false);
+            this(x, y, z, dist, ore, family, perMin, measured, 0);
         }
 
         /**
@@ -5457,7 +5455,7 @@ public final class NeedChain {
     private static List<Alt> caveAlts(Ctx c, String word, String gives, int lack) {
         CaveWay cw = caveOffered(c.w.cave(), word);
         if (cw == null) return List.of();
-        Alt a = new Alt((cw.candidate() ? "cave candidate " : "cave mouth ") + Math.round(cw.dist()) + " m", () -> cave(c, word, gives, lack, cw));
+        Alt a = new Alt("known cave " + Math.round(cw.dist()) + " m", () -> cave(c, word, gives, lack, cw));
         a.id = gives;
         return List.of(a);
     }
@@ -5487,7 +5485,7 @@ public final class NeedChain {
      */
     public static Spot caveSource(World w, String word) {
         CaveWay cw = caveOffered(w, word);
-        if (cw == null || cw.candidate()) return null;
+        if (cw == null) return null;
         return new Spot(cw.x(), cw.y(), cw.z(), cw.dist(), cw.ore(), 0, word);
     }
 
@@ -5503,11 +5501,10 @@ public final class NeedChain {
         if (src == null) { c.fail = "cave: the pickaxe tier of " + shw(cw.ore()) + " is not known (no mining data loaded yet)"; return null; }
         int tier = src.blockTier(cw.ore());
         if (tier == MiningTiers.UNKNOWN) { c.fail = "cave: the pickaxe tier of " + shw(cw.ore()) + " is not known"; return null; }
-        // 0.39.z47 (owner's ruling, z46 left it out): an unconfirmed candidate (the heightmap's shape) is walked to and
-        // confirmed by sight within cave.confirmM on the way; its price adds Tuning cave.candidatePriorS for that check, so
-        // it wins over the band strip only when it is near; one that fails the check is dropped there (CaveMouths, said once)
-        double confirmS = cw.candidate() ? Tuning.get("cave.candidatePriorS") : 0;
-        String head = (cw.candidate() ? "cave candidate " : "cave mouth ") + Math.round(cw.dist()) + " m" + (cw.candidate() ? " (to confirm)" : "");
+        // 0.39.z78 J6: no unconfirmed candidate any more (the heightmap's shapes are deleted): a known cave needs no check on
+        // the way, the rays knew it
+        double confirmS = 0;
+        String head = "known cave " + Math.round(cw.dist()) + " m";
         String pre = null;
         if (tier > c.pickTier) {
             pre = cheapestPickaxe(c, tier);
@@ -5539,7 +5536,7 @@ public final class NeedChain {
         c.steps.add(new Step.Walk(cw.x(), cw.y(), cw.z(), 0));
         c.steps.add(new Step.Mine(cw.family(), oreBlocks, Step.Mine.How.CAVE, (int) Math.ceil(max)));
         c.bag.merge(gives, Math.max(lack, (int) Math.floor(oreBlocks * per + 1e-9)), Integer::sum);  // structural: epsilon
-        final String line = head + ", " + yield + " x " + oreBlocks + " ore" + (cw.candidate() ? " + confirm " + s(confirmS) : "")
+        final String line = head + ", " + yield + " x " + oreBlocks + " ore"
                 + " -> " + s(wk.seconds() + confirmS + exploreS + oreS);
         c.note(() -> "source: " + shw(word) + " in the cave: " + line);
         return noted("in the cave: " + line + (pre == null ? "" : " with " + pre), wk);

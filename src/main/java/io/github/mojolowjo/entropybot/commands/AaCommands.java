@@ -90,8 +90,7 @@ final class AaCommands {
                 f("stations", "deposit <x y z>", "that chest becomes the deposit's main"));
         // ---- caves (0.39.z50, S71: the owner labels spots; the cave rule comes from the labelled patterns)
         v("cave", (c, aa, vb, a) -> CaveLabel.run(a),
-                f("caves", "cave yes|no|hill|cliff", "label the spot under the crosshair (or where I stand): a cave, not one, a hill, a cliff"),
-                f("caves", "cave list", "the labelled cave patterns and the cave rule derived from them"));
+                f("caves", "cave list", "the caves known by rays (3 sight rays credit one) and the volumes credited so far"));
         // ---- status
         v("status", (c, aa, vb, a) -> aa.statusLine() + StripStep.liveLine() + aa.tuningLine() + "\n" + aa.reserveLine() + "\n" + io.github.mojolowjo.entropybot.aa.MainStations.now().line() + "\n" + aa.counts() + "\n" + aa.cavesLine() + "\n" + aa.lootLine() + "\n" + aa.gameDataLine() + (aa.on() ? "\n" + aa.brainCounters() + "\ndesires: " + String.join(" | ", aa.brainLines(5)) + "\n" + aa.goalsLine() + "\n" + aa.wantsLine() + "\nrungs: " + aa.ladderLine() + "\n" + aa.optionStatus() : ""),
                 f(S, "status", "who drives, the counters, the desires, goals and wants, each rung's reason"));

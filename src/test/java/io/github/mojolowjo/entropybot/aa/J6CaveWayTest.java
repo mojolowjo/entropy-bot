@@ -24,7 +24,7 @@ class J6CaveWayTest {
     }
 
     /** A known cave of {@code cells} cells 30 m off at its entry 20 21 -10, its yield 3 ore a minute (measured). */
-    static CaveWay known(long cells) { return new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", 3, true, false, cells); }
+    static CaveWay known(long cells) { return new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", 3, true, cells); }
 
     @Test
     void aKnownCaveBigEnough_isTheCaveWay_walkedToItsEntry_boundByItsSize() {

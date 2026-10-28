@@ -457,7 +457,7 @@ public final class AaRuntime implements JobPort {
             boolean own = pol != null && pol.typeAt(dim, me[0], me[1], me[2]) == io.github.mojolowjo.entropybot.guard.AreaType.BASE;
             var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
             var cave = sg == null ? null : sg.nearestCave(dim, me[0], me[1], me[2], io.github.mojolowjo.entropybot.aa.brain.Discovery.seenCaveWithin());
-            return new io.github.mojolowjo.entropybot.guard.Litter.Site(near, bb.in.pickTier, 3, 0, cave == null ? 0 : cave.conf(), Math.max(0, oreCount - 1), 0, own);
+            return new io.github.mojolowjo.entropybot.guard.Litter.Site(near, bb.in.pickTier, 3, 0, cave == null ? 0 : 1.0, Math.max(0, oreCount - 1), 0, own);     // 0.39.z78 J6: a known cave counts whole
         } catch (RuntimeException e) {
             LOG.debug("[entropybot] aa: litter site: {}", e.toString());
             return null;
@@ -960,41 +960,26 @@ public final class AaRuntime implements JobPort {
         if (known.isEmpty()) return null;
         var k = known.get(0);
         return new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(k.x(), k.y(), k.z(), Math.sqrt(Jobs.distSq(me, new int[]{k.x(), k.y(), k.z()})),
-                ore, fam, sg.ore().caveRate(fam), sg.ore().caveMinutes() > 0, false, k.cells());
+                ore, fam, sg.ore().caveRate(fam), sg.ore().caveMinutes() > 0, k.cells());
     }
 
-    /** 0.39.z44: aa status: "caves: N mouths known (M candidates)". */
+    /** 0.39.z78 J6: aa status: "caves: N known by rays (M volumes credited, K chunks indexed)". */
     String cavesLine() {
         var pass = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE;
         var sg = pass.sightings();
         String dim = pass.dim();
         if (sg == null || dim == null) return "caves: no world";
-        return "caves: " + sg.mouths(dim, 0, 0, 0).size() + " mouths known (" + pass.mouths().count() + " candidates)";
+        return "caves: " + sg.allKnownCaves(dim).size() + " known by rays (" + pass.caveIndex().credited().size() + " volumes credited, " + pass.caveIndex().chunks() + " chunks indexed)";
     }
 
-    /** 0.39.z44: aa debug: the known mouths with their distance, nearest first. */
+    /** 0.39.z78 J6: aa debug: the known caves nearest first, then the credited volumes (aa cave list's text). */
     String cavesDebug() {
         var pass = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE;
         var sg = pass.sightings();
         String dim = pass.dim();
         LocalPlayer p = Minecraft.getInstance().player;
         if (sg == null || dim == null || p == null) return cavesLine();
-        int[] me = Jobs.here(p);
-        List<String> l = new ArrayList<>();
-        for (var m : sg.mouths(dim, me[0], me[1], me[2]))
-            l.add(m.where() + " " + Math.round(Math.sqrt(Jobs.distSq(me, new int[]{m.x(), m.y(), m.z()}))) + " m (seen from " + m.count() + " m)");
-        List<String> v = io.github.mojolowjo.entropybot.sense.SightingsRuntime.verdicts();   // 0.39.z46: each candidate's last ray verdict
-        // 0.39.z49 (owner's cave check): the candidates no ray read yet, with the shape numbers the rule used (cave.exploreTowardM)
-        List<String> s = new ArrayList<>();
-        for (var c : pass.mouths().near(me[0], me[1], me[2], (int) Math.floor(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.exploreTowardM")))) {
-            String w = io.github.mojolowjo.entropybot.sense.CaveMouths.where(c);
-            boolean rayed = false;
-            for (String x : v) rayed |= x.startsWith(w);
-            if (!rayed) s.add(w + ": no ray yet, " + Math.round(Math.sqrt(Jobs.distSq(me, new int[]{c.x(), c.y(), c.z()}))) + " m");
-        }
-        List<String> all = new ArrayList<>(v);
-        all.addAll(s);
-        return cavesLine() + (l.isEmpty() ? "" : ": " + String.join(", ", l)) + (all.isEmpty() ? "" : "\n  candidate " + String.join("\n  candidate ", all));
+        return cavesLine() + "\n" + io.github.mojolowjo.entropybot.sense.CaveList.text(sg.allKnownCaves(dim), pass.caveIndex().credited(), pass.caveRaysStatus(), p.getX(), p.getY(), p.getZ());
     }
 
     /**

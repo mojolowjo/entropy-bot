@@ -1241,7 +1241,7 @@ final class Mining {
             // 0.39.z48 (S65): the walk toward a cave candidate ended (there, or Baritone got no nearer): visited, never aimed
             // at again; its confirmation was the rays' (within cave.confirmM)
             CAVE_VISITED.add(ex.aimed);
-            LOG.info("[entropybot] explore: walk toward cave candidate {} ended {} m from it", ex.aimed,
+            LOG.info("[entropybot] explore: walk toward cave opening {} ended {} m from it", ex.aimed,
                     Math.round(Math.hypot(me[0] - ex.target.x(), me[2] - ex.target.z())));
         }
         ex.aimed = null;
@@ -1281,11 +1281,11 @@ final class Mining {
         // never; an unknown one as before (an ore by the c:ores tag)
         if (done == null && ex.untilSource != null && (bandTarget || (!surfaceTarget && oreNeed(ex.untilSource)))) {
             int within = (int) Math.floor(Tuning.get("cave.exploreTowardM"));
-            var cands = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.mouths().near(me[0], me[1], me[2], within);
-            List<int[]> cells = new ArrayList<>();
-            for (var k : cands) cells.add(new int[]{k.x(), k.y(), k.z()});
+            // 0.39.z78 J6: the cave index's openings (the holes of volumes not known yet: the rays there decide) in place of
+            // the heightmap's candidates, and for a band target the known caves' entries too
+            List<int[]> cells = new ArrayList<>(io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.caveIndex().openings(me[0], me[1], me[2], within));
             var sg = pass().sightings();
-            if (bandTarget && sg != null) for (var m : sg.mouths(d, me[0], me[1], me[2]))
+            if (bandTarget && sg != null) for (var m : sg.allKnownCaves(d))
                 if (Jobs.distSq(me, new int[]{m.x(), m.y(), m.z()}) <= (long) within * within) cells.add(new int[]{m.x(), m.y(), m.z()});
             cells.sort(java.util.Comparator.comparingDouble(c2 -> Jobs.distSq(me, c2)));
             if (bandTarget) {
@@ -1311,9 +1311,9 @@ final class Mining {
                 ex.aimed = Jobs.fmt(aim);
                 ex.target = new ExploreRules.Target(aim[0], aim[2]);
                 if (under) ex.aimY = aim[1];
-                ex.targetWhy = "toward cave candidate " + ex.aimed + " (the nearest unvisited within cave.exploreTowardM" + (bandTarget ? ", ranked by the band" : "")
+                ex.targetWhy = "toward cave opening " + ex.aimed + " (the nearest unvisited within cave.exploreTowardM" + (bandTarget ? ", ranked by the band" : "")
                         + (under ? "; under ground: a cell in the band, its own Y" : "") + ")";
-                LOG.info("[entropybot] explore: toward cave candidate {} ({} m; cave.exploreTowardM {}){}", ex.aimed,
+                LOG.info("[entropybot] explore: toward cave opening {} ({} m; cave.exploreTowardM {}){}", ex.aimed,
                         Math.round(Math.sqrt(Jobs.distSq(me, aim))), Math.round(Tuning.get("cave.exploreTowardM")), under ? " - a cell goal in the band (under ground)" : "");
             }
         }
@@ -1738,16 +1738,8 @@ final class Mining {
 
     /** The way out: to the entrance, then home (the walk step teleports when that's worth it); the report after the entrance. */
     private String caveFinish(Seq s, CaveRun cv, String why, boolean finished, boolean noCave) {
-        // AA_ROUND3 5: a cave entered that gave no ore: its seen openings are exhausted (no more "explore cave" there)
-        if (cv.got() == 0 && cv.entrance != null) {
-            try {
-                var sg = pass().sightings();
-                int n = sg == null ? 0 : sg.exhaust(dim(), cv.entrance[0], cv.entrance[1], cv.entrance[2], System.currentTimeMillis());
-                if (n > 0) LOG.info("[entropybot] cave: no ore in {} - the cave opening{} seen at {} marked exhausted", cv.name, n == 1 ? "" : "s", Jobs.fmt(cv.entrance));
-            } catch (RuntimeException e) {
-                LOG.warn("[entropybot] cave: couldn't mark the sighting exhausted: {}", e.toString());
-            }
-        }
+        // 0.39.z78 J6: a known cave walked with no ore is held cave.walkedHoldS by its walk record (walkedCave below; the old
+        // "exhausted" opening sightings are deleted)
         // 0.39.z51: the mouth's pocket was walked to its end: its fact stays; z53 review 3: it stays offered while its last
         // walk yielded ore, a 0-ore walk holds it cave.walkedHoldS
         var sgw = pass().sightings();

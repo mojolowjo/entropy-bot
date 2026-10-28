@@ -112,6 +112,37 @@ class J6CaveIndexTest {
         assertEquals(8, i.volume(i.volumeAt(12, 30, 8)).cells());
     }
 
+    /** The openings the explore walks toward: A's hole in the cut (x 2 at y 50), not the closed room B; a known A none. */
+    @Test
+    void theOpeningsAreTheHolesOfVolumesNotKnown() {
+        CaveIndex i = index();
+        List<int[]> o = i.openings(0, 64, 0, 64);
+        assertEquals(1, o.size(), "B is closed: no opening");
+        assertEquals(2, o.get(0)[0]);
+        assertEquals(50, o.get(0)[1]);
+        i.credit(9, 51, 5);
+        i.credit(6, 52, 4);
+        i.credit(5, 51, 4);
+        assertTrue(i.openings(0, 64, 0, 64).isEmpty(), "known: no more an opening to explore toward");
+    }
+
+    /** aa cave list: the known caves nearest first with their size, depth and rays, then the volumes credited so far. */
+    @Test
+    void theCaveListSaysTheKnownAndTheCredited() {
+        CaveIndex i = index();
+        i.credit(11, 21, 11);                                // one ray into B
+        i.credit(9, 51, 5);
+        i.credit(6, 52, 4);
+        CaveIndex.Known k = i.credit(5, 51, 4).known();
+        Sightings s = new Sightings();
+        s.knowCave("d", k, 1);
+        String t = CaveList.text(s.allKnownCaves("d"), i.credited(), "rays: test", 0, 64, 0);
+        assertTrue(t.startsWith("known caves: 1\n  " + k.x() + " " + k.y() + " " + k.z() + ": "), t);
+        assertTrue(t.contains("48 cells, y 50..52, 3 rays"), t);
+        assertTrue(t.contains("credited, not known yet: 1") && t.contains(": 1 of 3 rays (first at 11 21 11)"), t);
+        assertTrue(CaveList.text(List.of(), java.util.Map.of(), "r", 0, 0, 0).startsWith("known caves: none yet"));
+    }
+
     /** The rays' targets: one per run near the eyes, nearest first, the known left out. */
     @Test
     void targetsAreTheRunsNearTheEyes() {
