@@ -195,6 +195,16 @@ class J6bCaveStepTest {
         assertTrue(((CaveWalk.Goto) next).cell()[1] <= 60, "down the drop: " + java.util.Arrays.toString(((CaveWalk.Goto) next).cell()));
     }
 
+    /** 94b82de3 review 2: the lip walk is done only in reach AND standing AND in sight - never by distance alone. */
+    @Test
+    void theLipIsReached_inReachStandingAndInSight() {
+        int[] entry = {5, 64, 5}, lip = {4, 64, 5};
+        assertTrue(ExploreRules.atLip(lip, entry, (x, y, z) -> true, (x, y, z) -> true));
+        assertFalse(ExploreRules.atLip(lip, entry, (x, y, z) -> false, (x, y, z) -> true), "in reach, nothing to stand on (a GoalNear 3 cell in the air)");
+        assertFalse(ExploreRules.atLip(lip, entry, (x, y, z) -> true, (x, y, z) -> false), "in reach behind a wall: not in sight");
+        assertFalse(ExploreRules.atLip(new int[]{-2, 64, 5}, entry, (x, y, z) -> true, (x, y, z) -> true), "out of reach");
+    }
+
     /** Run EF (3): a cave whose first opening is held tries its next opening; only every opening held drops the cave. */
     @Test
     void anOpeningHeld_theNextOpeningIsTried_beforeTheWholeCave() {

@@ -881,22 +881,36 @@ public final class CaveIndex {
     }
 
     /**
-     * J6b run EF (3): the other openings of the volume x y z is in - each opening's cell nearest fx fy fz, nearest first, at
-     * most {@code max}, the opening holding x y z left out (the cave way's next lips when the first is unreachable).
+     * J6b run EF (3): the other openings of the volume x y z is in, each as its STABLE cell ({@link #stableCell}: the same
+     * cell wherever the bot stands, so a hold on it keys the opening, 94b82de3 review 1), nearest first from fx fy fz, at
+     * most {@code max}; the opening holding x y z left out (the cave way's next lips when the first is unreachable).
+     * Only openings that pass the floor (review 3). These need no ray-seen lip: allowed for a KNOWN cave only (D12, the
+     * owner's cheat - its volume's cells are the bot's map); the caller passes a known cave's entry.
      */
     public synchronized List<int[]> otherOpenings(int x, int y, int z, int fx, int fy, int fz, int max) {
         fresh();
         int r = runAt(x, y, z);
         if (r < 0) return List.of();
         measure();
+        int root = find(r);
         long at = cell(x, y, z);
         List<int[]> out = new ArrayList<>();
-        for (Opening o : byRoot.getOrDefault(find(r), List.of())) {
-            if (o.cells().contains(at)) continue;
-            out.add(nearest(o, fx + 0.5, fy + 0.5, fz + 0.5));
+        for (Opening o : byRoot.getOrDefault(root, List.of())) {
+            if (o.cells().contains(at) || !passes(o, root)) continue;
+            out.add(stableCell(o));
         }
         out.sort((a, b) -> Long.compare(d2(a, fx, fy, fz), d2(b, fx, fy, fz)));
         return out.size() > max ? new ArrayList<>(out.subList(0, max)) : out;
+    }
+
+    /** An opening's stable cell: its lowest cell, ties by x then z (the same for every asker). */
+    static int[] stableCell(Opening o) {
+        int[] best = null;
+        for (long c : o.cells()) {
+            int[] p = Sightings.cellOf(c);
+            if (best == null || p[1] < best[1] || (p[1] == best[1] && (p[0] < best[0] || (p[0] == best[0] && p[2] < best[2])))) best = p;
+        }
+        return best;
     }
 
     /** One cave of {@link #truth}: its opening cell nearest the bot, size bucket, depth band, rim and air credits, known. */

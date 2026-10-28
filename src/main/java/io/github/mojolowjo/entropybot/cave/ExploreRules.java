@@ -297,6 +297,18 @@ public final class ExploreRules {
      */
     public static boolean noBreakNoPath(String lastEnd) { return lastEnd != null && lastEnd.startsWith("no path") && lastEnd.contains("no-break"); }
 
+    /** A world fact about one cell (the lip test's stand and sight, from the level; tests give their own). */
+    @FunctionalInterface
+    public interface CellTest { boolean test(int x, int y, int z); }
+
+    /**
+     * 94b82de3 review 2: the walk to a cave's lip is done when the entry is in reach of the eyes AND the feet stand on a
+     * standable cell AND the eyes see the entry's air (the reach goal's own predicate) - never by distance alone. Pure.
+     */
+    public static boolean atLip(int[] feet, int[] entry, CellTest standable, CellTest sees) {
+        return withinReach(feet, entry) && standable.test(feet[0], feet[1], feet[2]) && sees.test(feet[0], feet[1], feet[2]);
+    }
+
     /** game fact: the survival block interaction range - a player at the opening could touch it. */
     public static final double OPENING_REACH = 4.5;
 

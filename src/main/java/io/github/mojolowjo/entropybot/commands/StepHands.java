@@ -685,7 +685,7 @@ public final class StepHands implements Steps.Hands {
      */
     private String toCave(LocalPlayer p, Step.ToCave t) {
         int[] me = Jobs.here(p), at = {t.x(), t.y(), t.z()};
-        if (io.github.mojolowjo.entropybot.cave.ExploreRules.withinReach(me, at)) { instant = "ok: at the cave's lip, its entry " + Jobs.fmt(at) + " in reach"; return null; }
+        if (atLip(p, me, at)) { instant = "ok: at the cave's lip, its entry " + Jobs.fmt(at) + " in reach and in sight"; return null; }
         IBaritone b = Jobs.baritone();
         if (b == null) return "error: " + t.text() + ": baritone not loaded";
         b.getCustomGoalProcess().setGoalAndPath(lipGoal(p, at));
@@ -701,16 +701,25 @@ public final class StepHands implements Steps.Hands {
         lipReachGoal = false;
         if (!lv.isLoaded(q)) return new GoalNear(q, 3);                          // structural: near the entry until it loads
         var goal = new baritone.api.pathing.goals.GoalReachBlock(q, io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH, 1.62,   // game fact: eye height 1.62
-                (x, y, z) -> standable(lv, x, y, z),
-                (x, y, z) -> {
-                    var from = new net.minecraft.world.phys.Vec3(x + 0.5, y + 1.62, z + 0.5);   // game fact: eye height 1.62
-                    var to = new net.minecraft.world.phys.Vec3(at[0] + 0.5, at[1] + 0.5, at[2] + 0.5);
-                    var r = lv.clip(new net.minecraft.world.level.ClipContext(from, to, net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.NONE, p));
-                    return r.getType() == net.minecraft.world.phys.HitResult.Type.MISS;    // the eye sees the entry's air
-                });
+                (x, y, z) -> standable(lv, x, y, z), (x, y, z) -> seesEntry(p, x, y, z, at));
         if (goal.isEmpty()) return new GoalNear(q, 3);                           // structural: no cell yet - nearer first
         lipReachGoal = true;
         return goal;
+    }
+
+    /** Review 2: the lip test with the reach goal's own stand and sight predicates. */
+    private static boolean atLip(LocalPlayer p, int[] me, int[] at) {
+        var lv = p.level();
+        return io.github.mojolowjo.entropybot.cave.ExploreRules.atLip(me, at, (x, y, z) -> standable(lv, x, y, z), (x, y, z) -> seesEntry(p, x, y, z, at));
+    }
+
+    /** The eyes at feet cell x y z see the entry's air (nothing that collides between, a fluid passed). */
+    private static boolean seesEntry(LocalPlayer p, int x, int y, int z, int[] at) {
+        var lv = p.level();
+        var from = new net.minecraft.world.phys.Vec3(x + 0.5, y + 1.62, z + 0.5);   // game fact: eye height 1.62
+        var to = new net.minecraft.world.phys.Vec3(at[0] + 0.5, at[1] + 0.5, at[2] + 0.5);
+        var r = lv.clip(new net.minecraft.world.level.ClipContext(from, to, net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.NONE, p));
+        return r.getType() == net.minecraft.world.phys.HitResult.Type.MISS;
     }
 
     /** A cell a player can stand in: its feet and head open (no collision), something solid under it. */
@@ -727,7 +736,7 @@ public final class StepHands implements Steps.Hands {
         int[] me = Jobs.here(p), at = {t.x(), t.y(), t.z()};
         IBaritone b = Jobs.baritone();
         if (b == null || lip == null) return Car.Status.failed(t.text() + ": no walk state");
-        if (io.github.mojolowjo.entropybot.cave.ExploreRules.withinReach(me, at)) {
+        if (atLip(p, me, at)) {                                                // review 2: in reach, standing, in sight
             Jobs.cancel(b);
             lip = null;
             LOG.info("[entropybot] cave: at the lip of the known cave at {} (feet {}, its entry in reach)", Jobs.fmt(at), Jobs.fmt(me));

@@ -354,6 +354,23 @@ class J6CaveIndexTest {
         assertFalse(over.isCave(over.volumeAt(4, 64, 5)), "an overhang 2 deep: no cave");
     }
 
+    /**
+     * 94b82de3 review 1 and 3: a known cave's other openings are offered by a STABLE cell (the same wherever the bot
+     * stands, so a hold on it keys the opening), and only those that pass the floor (a 1-cell hole is not offered).
+     */
+    @Test
+    void otherOpenings_aStableCellWhereverTheBotStands_onlyThosePassingTheFloor() {
+        int[] cuts = new int[256];
+        for (int c = 0; c < 256; c++) cuts[c] = (c & 15) <= 1 || (c & 15) >= 14 ? 50 : SURFACE;
+        cuts[8 + 16 * 7] = 53;                                // a 1-cell hole over the tunnel at x 8 (z 7 beside z 8)
+        CaveIndex i = new CaveIndex();
+        i.put(CaveIndex.runs(0, 0, cuts, -64, (x, y, z) -> z >= 8 && z <= 9 && ((x >= 2 && x <= 13 && y >= 51 && y <= 53) || ((x == 7 || x == 8) && y >= 40 && y <= 53))));
+        List<int[]> near = i.otherOpenings(2, 52, 8, 0, 64, 0, 3), far = i.otherOpenings(2, 52, 8, 40, 70, 40, 3);
+        assertEquals(1, near.size(), "B only: the 1-cell hole fails the floor - " + near.size());
+        assertArrayEquals(new int[]{13, 51, 8}, near.get(0), "B's lowest cell");
+        assertArrayEquals(near.get(0), far.get(0), "the same cell from anywhere: the hold keys the opening");
+    }
+
     /** The owner's definition, (b) alone: a tunnel with a wide opening that goes only 4 below it is a dip. */
     @Test
     void aWideOpeningThatGoesOnlyFourDownIsADip() {
