@@ -4680,6 +4680,19 @@ public final class NeedChain {
         return null;
     }
 
+    /**
+     * 0.39.z78 run EQ (rule 23 (1); 06:49-06:55: each of five orders ran the same "place furnace near me" from the same
+     * feet to the same no-progress, parked one by one - the stall's key was "step place furnace near me", no source key, so
+     * no world fact): {@link #sourceKey(Step)} with the feet when it ended ({@code feet}; null: not known). A place-near
+     * is a fact about WHERE it failed - {@link #placeKey} of the feet, the key the fork's own end holds too
+     * (FactChange#placeFailed), so the order holds it, the world fact holds it by distance for every order (WorldFacts) and
+     * every chain reads it ({@link World#withPlaceFailures}). No feet: no key (rule 15), the step's own fallback.
+     */
+    public static String sourceKey(Step s, int[] feet) {
+        if (s instanceof Step.PlaceNear) return feet != null && feet.length >= 3 ? placeKey(feet[0], feet[1], feet[2]) : null;   // structural: x y z
+        return sourceKey(s);
+    }
+
     /** 0.39.z65 review 1: the source key of a known station used at its cell ("station at x y z"; a take is "take at"). */
     public static String stationKey(int x, int y, int z) { return STATION_AT + x + " " + y + " " + z; }
 

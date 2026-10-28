@@ -339,6 +339,11 @@ public final class StepMonitor {
             int[] at = k.at() != null && k.at().length >= 3 ? k.at() : feet != null && feet.length >= 3 ? feet : null;     // structural: x y z
             if (at != null) return new Look(Verdict.REPLAN, why, FactChange.noProgress(io.github.mojolowjo.entropybot.aa.NeedChain.nearKey(k.item(), at), why + " at " + step.text()));
         }
+        // 0.39.z78 run EQ (rule 23 (1)): a place-near that stalls is the place fact of where it stalled - the same key and
+        // words as the fork's own end (FactChange.placeFailed), held for every order by distance
+        if (step instanceof Step.PlaceNear pn && feet != null && feet.length >= 3)     // structural: x y z
+            return new Look(Verdict.REPLAN, why, FactChange.noProgress(io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(step, feet),
+                    "place " + pn.item().replaceFirst("^minecraft:", "") + " near me failed at " + feet[0] + " " + feet[1] + " " + feet[2] + ": " + why));
         String src = io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(step);
         FactChange.Fact f = src != null ? FactChange.noProgress(src, why + " at " + step.text())
                 : new FactChange.Fact("step " + StepId.of(step).text(), why + " at " + step.text());
