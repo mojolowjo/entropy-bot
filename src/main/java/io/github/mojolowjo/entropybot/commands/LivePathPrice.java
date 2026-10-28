@@ -79,23 +79,14 @@ public final class LivePathPrice implements PathPrice {
         Answer a = ask0(x, y, z, into);
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.player == null || mc.level == null) return a;
-        String key = key(x, y, z, into);
-        if (!PricedAnswers.waits(a)) { firstAsked.remove(key); return a; }      // 0.39.z77 round fix 1: CHUNKS keeps the clock too (run BH)
-        int[] me = Jobs.here(mc.player);
-        long now = mc.level.getGameTime();
-        long[] t0 = firstAsked.get(key);
-        if (t0 == null || AskSweep.dist(me, new int[]{(int) t0[1], (int) t0[2], (int) t0[3]}) > io.github.mojolowjo.entropybot.aa.brain.Failures.movedV()) {
-            if (firstAsked.size() > ASKED_AT_MAX) firstAsked.clear();
-            firstAsked.put(key, new long[]{now, me[0], me[1], me[2]});
-            return a;
-        }
-        int waitS = io.github.mojolowjo.entropybot.aa.NeedChain.firstAnswerWaitS();
-        if (now - t0[0] < (long) waitS * io.github.mojolowjo.entropybot.aa.brain.GameTimes.TPS) return a;
-        return PricedAnswers.afterWait(a, now - t0[0], waitS, estimate(x, y, z));
+        // 0.39.z77 round fix 1: CHUNKS keeps the clock too (run BH); 0.39.z78 ea (run EA 20:19:51-20:20:48): the clock is the
+        // walk's, wherever the bot stands - a move no longer starts it again (FirstAnswerClock)
+        return firstAsked.answer(key(x, y, z, into), a, mc.level.getGameTime(), io.github.mojolowjo.entropybot.aa.NeedChain.firstAnswerWaitS(),
+                () -> estimate(x, y, z));
     }
 
-    /** 0.39.z76 send-back 3: per ask key, when (game tick) and from where (x y z) it was first answered COMPUTING. */
-    private final Map<String, long[]> firstAsked = new HashMap<>();
+    /** 0.39.z76 send-back 3 / 0.39.z78 ea: the walks' first-answer clocks. */
+    private final FirstAnswerClock firstAsked = new FirstAnswerClock(ASKED_AT_MAX);
 
     /** structural: a memory bound on the clocks kept (a chain asks a few dozen) */
     private static final int ASKED_AT_MAX = 1024;
