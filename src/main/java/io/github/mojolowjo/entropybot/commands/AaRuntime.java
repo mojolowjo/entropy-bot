@@ -953,14 +953,14 @@ public final class AaRuntime implements JobPort {
             if (io.github.mojolowjo.entropybot.aa.brain.ItemWorth.hasTag(b, "c:ores")) { ore = b; break; }
         if (ore == null) return null;
         int[] me = Jobs.here(p);
-        // 0.39.z51 item 1: the cave way stands only on a CONFIRMED mouth (its stored fact, pocket not walked yet), the one
-        // the caving step enters; an unconfirmed candidate is no cave way (the explore aims at candidates, the rays confirm)
-        var mouths = sg.confirmedMouths(dim, me[0], me[1], me[2]);
+        // 0.39.z78 J6 (the owner's ruling 2026-10-27 late): the cave way stands on a KNOWN cave (the rays credited its index
+        // volume, Sightings.KnownCave), the one the caving step enters: its entry cell, its size for the minutes it holds
+        var known = sg.knownCaves(dim, me[0], me[1], me[2], System.currentTimeMillis());
         String fam = io.github.mojolowjo.entropybot.cave.OreSpec.family(ore);
-        if (mouths.isEmpty()) return null;
-        var m = mouths.get(0);
-        return new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(m.fx(), m.fy(), m.fz(), Math.sqrt(Jobs.distSq(me, new int[]{m.fx(), m.fy(), m.fz()})),
-                ore, fam, sg.ore().caveRate(fam), sg.ore().caveMinutes() > 0);
+        if (known.isEmpty()) return null;
+        var k = known.get(0);
+        return new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(k.x(), k.y(), k.z(), Math.sqrt(Jobs.distSq(me, new int[]{k.x(), k.y(), k.z()})),
+                ore, fam, sg.ore().caveRate(fam), sg.ore().caveMinutes() > 0, false, k.cells());
     }
 
     /** 0.39.z44: aa status: "caves: N mouths known (M candidates)". */

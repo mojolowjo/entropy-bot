@@ -1408,7 +1408,7 @@ final class Mining {
         /** 0.28.0: known ore spots (the index) this run walked to already. */
         final Set<Long> knownTried = new HashSet<>();
         /** 0.39.z51 item 1: the confirmed mouth this run caves in, its pocket cells not walked yet, the mouths tried. */
-        io.github.mojolowjo.entropybot.sense.Sightings.MouthFact mouth;
+        io.github.mojolowjo.entropybot.sense.Sightings.KnownCave mouth;
         final List<int[]> pocket = new ArrayList<>();
         int pocketCells;
         final Set<String> mouthsTried = new HashSet<>();
@@ -1424,21 +1424,21 @@ final class Mining {
         // dark-corner test of its own, no cave named at an unconfirmed spot. None known: the step's named failure.
         var sg = pass().sightings();
         if (sg == null) return "error: " + CaveRules.NO_MOUTH + " (the sightings are not loaded yet)";   // rule 15: not loaded, never "none"
-        io.github.mojolowjo.entropybot.sense.Sightings.MouthFact mf;
+        io.github.mojolowjo.entropybot.sense.Sightings.KnownCave mf;
         if (m.at() != null && !m.at().isEmpty()) {
             Caves.Cave k = core.caves.get(m.at());
             if (k == null) return "error: I know no cave called " + m.at() + " (\"debug caves\" lists them)";
-            mf = sg.mouthFact(dim(), k.ex, k.ey, k.ez);
+            mf = sg.knownCave(dim(), k.ex, k.ey, k.ez);
             if (mf == null) return "error: " + CaveRules.NO_MOUTH + " at " + m.at() + " (" + k.ex + " " + k.ey + " " + k.ez + ")";
         } else {
-            var known = sg.confirmedMouths(dim(), me[0], me[1], me[2]);
-            if (known.isEmpty()) return "error: " + CaveRules.NO_MOUTH + " known (cave candidates are confirmed by sight within cave.confirmM)";
+            var known = sg.knownCaves(dim(), me[0], me[1], me[2], System.currentTimeMillis());
+            if (known.isEmpty()) return "error: " + CaveRules.NO_MOUTH + " known (a cave is known when 3 sight rays credit it: aa cave list)";
             mf = known.get(0);
         }
         Caves.Cave c = core.caves.atMouth(dim(), mf.x(), mf.y(), mf.z(), io.github.mojolowjo.entropybot.sense.Sightings.factMerge(), System.currentTimeMillis(), now());
-        int[] walkTo = new int[]{mf.fx(), mf.fy(), mf.fz()};
-        LOG.info("[entropybot] cave: entering the confirmed mouth {} as {}: floor {} {} {}, {} pocket cells ({} m away)", mf.where(), c.name,
-                mf.fx(), mf.fy(), mf.fz(), mf.pocket().size(), Math.round(Math.sqrt(Jobs.distSq(me, walkTo))));
+        int[] walkTo = new int[]{mf.x(), mf.y(), mf.z()};
+        LOG.info("[entropybot] cave: entering the known cave {} as {}: entry {} {} {}, {} cells seen in it ({} m away)", mf.where(), c.name,
+                mf.x(), mf.y(), mf.z(), mf.hits().size(), Math.round(Math.sqrt(Jobs.distSq(me, walkTo))));
         int minutes = m.minutes() > 0 ? m.minutes() : CaveRules.minutesV();
         CaveRun cv = new CaveRun();
         enterMouth(cv, mf, c);
@@ -1458,14 +1458,14 @@ final class Mining {
     }
 
     /** 0.39.z51 item 1: the run caves in this confirmed mouth now: its cave record, its floor cell, its pocket cells to walk. */
-    private void enterMouth(CaveRun cv, io.github.mojolowjo.entropybot.sense.Sightings.MouthFact mf, Caves.Cave c) {
+    private void enterMouth(CaveRun cv, io.github.mojolowjo.entropybot.sense.Sightings.KnownCave mf, Caves.Cave c) {
         cv.mouth = mf;
         cv.mouthsTried.add(mf.where());
         cv.name = c.name;
-        cv.entrance = new int[]{mf.fx(), mf.fy(), mf.fz()};
+        cv.entrance = new int[]{mf.x(), mf.y(), mf.z()};
         cv.pocket.clear();
-        cv.pocket.add(new int[]{mf.fx(), mf.fy(), mf.fz()});
-        for (Long k : mf.pocket()) cv.pocket.add(io.github.mojolowjo.entropybot.sense.Sightings.cellOf(k));
+        cv.pocket.add(new int[]{mf.x(), mf.y(), mf.z()});
+        for (Long k : mf.hits()) cv.pocket.add(io.github.mojolowjo.entropybot.sense.Sightings.cellOf(k));
         cv.pocketCells = cv.pocket.size();
     }
 
@@ -1676,25 +1676,25 @@ final class Mining {
         var sg = pass().sightings();
         // S1: closed for good; z53 review 4: otherwise the walk is recorded too (its ore: held when 0, cave.walkedHoldS)
         if (sg != null && cv.mouth != null)
-            sg.walkedMouth(d, cv.mouth.x(), cv.mouth.y(), cv.mouth.z(), System.currentTimeMillis(),
-                    closeForGood ? io.github.mojolowjo.entropybot.sense.Sightings.MouthFact.CLOSED : cv.got() - cv.visitStart);
-        io.github.mojolowjo.entropybot.sense.Sightings.MouthFact next = null;
+            sg.walkedCave(d, cv.mouth.x(), cv.mouth.y(), cv.mouth.z(), System.currentTimeMillis(),
+                    closeForGood ? io.github.mojolowjo.entropybot.sense.Sightings.KnownCave.CLOSED : cv.got() - cv.visitStart);
+        io.github.mojolowjo.entropybot.sense.Sightings.KnownCave next = null;
         if (sg != null)
-            for (var f : sg.confirmedMouths(d, me[0], me[1], me[2])) {
+            for (var f : sg.knownCaves(d, me[0], me[1], me[2], System.currentTimeMillis())) {
                 if (cv.mouthsTried.contains(f.where())) continue;
-                if (jobs.walkVerdict(f.fx(), f.fy(), f.fz()) != null || CaveRules.offLimits(prot, d, f.x(), f.y(), f.z()) != null || outsideFenced(d, f.x(), f.z())) continue;
+                if (jobs.walkVerdict(f.x(), f.y(), f.z()) != null || CaveRules.offLimits(prot, d, f.x(), f.y(), f.z()) != null || outsideFenced(d, f.x(), f.z())) continue;
                 next = f;
                 break;
             }
         if (next == null) return caveFinish(s, cv, CaveRules.NO_MOUTH + " left to try (" + why + ")", false, true);
         List<Seq.Step> steps = new ArrayList<>();
-        steps.add(Seq.Step.walk(new int[]{next.fx(), next.fy(), next.fz()}, true));
+        steps.add(Seq.Step.walk(new int[]{next.x(), next.y(), next.z()}, true));
         Seq.Step rs = new Seq.Step("caverestart");
         rs.pos = new int[]{next.x(), next.y(), next.z()};
         rs.why = why;
         steps.add(rs);
         spliceHere(s, steps);
-        s.setStatus(s.label + " - nothing more here (" + why + "), moving to the confirmed mouth " + next.where());
+        s.setStatus(s.label + " - nothing more here (" + why + "), moving to the known cave " + next.where());
         return "wait";
     }
 
@@ -1721,7 +1721,7 @@ final class Mining {
     /** 0.39.z51 item 1: the caving goes on in the confirmed mouth at the step's pos (its stored fact), never at a bare spot. */
     private String caveRestart(Seq s, Seq.Step st, LocalPlayer p, CaveRun cv) {
         var sg = pass().sightings();
-        var mf = sg == null || st.pos == null ? null : sg.mouthFact(dim(), st.pos[0], st.pos[1], st.pos[2]);
+        var mf = sg == null || st.pos == null ? null : sg.knownCave(dim(), st.pos[0], st.pos[1], st.pos[2]);
         if (mf == null) return caveFinish(s, cv, CaveRules.NO_MOUTH + (st.pos == null ? "" : " at " + Jobs.fmt(st.pos)) + (sg == null ? " (the sightings are not loaded)" : ""), false, true);
         Caves.Cave c = core.caves.atMouth(dim(), mf.x(), mf.y(), mf.z(), io.github.mojolowjo.entropybot.sense.Sightings.factMerge(), System.currentTimeMillis(), now());
         enterMouth(cv, mf, c);
@@ -1732,7 +1732,7 @@ final class Mining {
         cv.visitStart = cv.got();
         s.label = CaveRules.relabel(s.label, c.name);
         s.job().label = s.label;
-        LOG.info("[entropybot] cave: entering the confirmed mouth {} as {}: floor {}, {} pocket cells", mf.where(), c.name, Jobs.fmt(cv.entrance), cv.pocketCells);
+        LOG.info("[entropybot] cave: entering the known cave {} as {}: entry {}, {} cells seen in it", mf.where(), c.name, Jobs.fmt(cv.entrance), cv.pocketCells);
         return "next";
     }
 
@@ -1752,8 +1752,8 @@ final class Mining {
         // walk yielded ore, a 0-ore walk holds it cave.walkedHoldS
         var sgw = pass().sightings();
         int ore = cv.got() - cv.visitStart;
-        if (sgw != null && cv.mouth != null && finished && sgw.walkedMouth(dim(), cv.mouth.x(), cv.mouth.y(), cv.mouth.z(), System.currentTimeMillis(), ore))
-            LOG.info("[entropybot] cave: the pocket of the confirmed mouth {} is walked ({} ore); {}", cv.mouth.where(), ore,
+        if (sgw != null && cv.mouth != null && finished && sgw.walkedCave(dim(), cv.mouth.x(), cv.mouth.y(), cv.mouth.z(), System.currentTimeMillis(), ore))
+            LOG.info("[entropybot] cave: the seen cells of the known cave {} are walked ({} ore); {}", cv.mouth.where(), ore,
                     ore > 0 ? "still offered" : "held " + io.github.mojolowjo.entropybot.sense.Sightings.walkedHoldMs() / 1000 + " s");
         List<Seq.Step> steps = new ArrayList<>();
         if (cv.entrance != null) steps.add(Seq.Step.walk(cv.entrance.clone(), true));

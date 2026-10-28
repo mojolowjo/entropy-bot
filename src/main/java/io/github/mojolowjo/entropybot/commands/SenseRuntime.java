@@ -216,7 +216,10 @@ public final class SenseRuntime {
             f.isArea = n -> c.policyArea(n) != null;
             f.baseChests = !c.storage.baseChests(p, false).isEmpty();
             f.mineMarked = mineReady;
-            f.caveKnown = core.caves.size() > 0;
+            // 0.39.z78 J6 (audit D9: two cave stores): a cave is known in the one store - Sightings' caves known by rays
+            var sgc = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
+            String cdim = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.dim();
+            f.caveKnown = sgc != null && cdim != null && !sgc.allKnownCaves(cdim).isEmpty();
             f.oreKnown = Mining.indexReady() ? fam -> Mining.get().oreKnownNear(p, fam) : null;      // 0.28.0: the chunk pass's index
             String dim = Storage.dim();
             f.walkAllowed = q -> {

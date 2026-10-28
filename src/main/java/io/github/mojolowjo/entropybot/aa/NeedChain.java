@@ -104,10 +104,27 @@ public final class NeedChain {
      */
     static final String CAVE_KEY = "cave mouth ";
 
-    public record CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured, boolean candidate) {
+    public record CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured, boolean candidate, long cells) {
+        public CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured, boolean candidate) {
+            this(x, y, z, dist, ore, family, perMin, measured, candidate, 0);
+        }
         public CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured) {
             this(x, y, z, dist, ore, family, perMin, measured, false);
         }
+
+        /**
+         * 0.39.z78 J6: the minutes this cave holds (its size, the known cave's cells: the caving step walks it at the walk's
+         * speed, about {@link #CROSS_SECTION} cells passed a block walked); 0 cells (not known): no bound but the
+         * cave.exploreMinutes cap. Rough (rule 14).
+         */
+        public double holdsMinutes() {
+            if (cells <= 0) return Double.POSITIVE_INFINITY;
+            return cells / (double) CROSS_SECTION / io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps() / 60.0;     // structural: seconds a minute
+        }
+
+        /** structural (rough, rule 14): the cells of a cave passed a block walked through it - a tunnel two high and two wide. */
+        public static final int CROSS_SECTION = 4; // structural: two high, two wide (rough, rule 14)
+
         /** The source key of this way: a mouth with no path is dropped for the order. */
         public String key() { return CAVE_KEY + x + "," + y + "," + z; }
     }
@@ -5507,10 +5524,12 @@ public final class NeedChain {
         if (!(per > 0)) { c.fail = head + ": the yield of " + shw(gives) + " from " + shw(cw.ore()) + " is not known (no loot entry; rule 15)"; return null; }   // z75 metric fix A
         int oreBlocks = (int) Math.ceil(lack / per - 1e-9);  // structural: epsilon
         if (oreBlocks <= 0) { c.fail = head + ": 0 ore for " + lack + " " + shw(gives) + " (nothing to mine)"; return null; }
-        double minutes = oreBlocks / cw.perMin(), max = Tuning.get("cave.exploreMinutes");
+        double minutes = oreBlocks / cw.perMin(), cap = Tuning.get("cave.exploreMinutes"), holds = cw.holdsMinutes(), max = Math.min(cap, holds);
         String yield = "yield ~" + String.format(java.util.Locale.ROOT, "%.2f", cw.perMin()) + " ore/min (" + (cw.measured() ? "measured" : "prior") + ")";
         if (minutes > max) {
-            c.fail = head + ", " + yield + ": " + oreBlocks + " ore take ~" + Math.round(minutes) + " min, past cave.exploreMinutes " + Math.round(max);
+            // 0.39.z78 J6: a known cave holds the minutes its size gives (CaveWay.holdsMinutes), never more than the cap
+            c.fail = head + ", " + yield + ": " + oreBlocks + " ore take ~" + Math.round(minutes) + " min, past "
+                    + (holds < cap ? "the " + Math.round(holds) + " min its " + cw.cells() + " cells hold" : "cave.exploreMinutes " + Math.round(cap));
             return null;
         }
         double exploreS = minutes * 60, oreS = oreBlocks * blockBreakS(c, cw.ore());  // structural: seconds per minute
