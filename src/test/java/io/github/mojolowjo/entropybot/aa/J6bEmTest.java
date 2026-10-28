@@ -49,13 +49,16 @@ class J6bEmTest {
         assertEquals(9, all.all().size());
         Chain c = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(all));
         assertTrue(Z77CaveWayTest.caveMined(c), "a cave way runs: " + c.why());
-        Step.Cave k = (Step.Cave) c.steps().stream().filter(s -> s instanceof Step.Cave).findFirst().orElseThrow();
-        assertEquals(List.of(183, 65, 49), List.of(k.x(), k.y(), k.z()), "183 65 49 priced and picked: " + c.why());
         String why = c.why();
-        assertTrue(why.contains("known cave 5 m at -4 76 404") && why.contains("min a small cave holds - the next cave is asked"), "a SMALL cave dropped with its reason: " + why);
-        assertTrue(why.contains("known cave 60 m at 187 60 65") && why.contains("min its unseen part holds - the next cave is asked"), "the fed record's ~0 min: " + why);
-        for (String at : List.of("-4 76 404", "-3 75 420", "-9 65 393", "144 70 351", "179 68 361", "193 64 307"))
-            assertTrue(why.contains(" at " + at + ", yield"), "dropped, said: " + at);
+        // 0.39.z78 J6c run ET (B, rule 23 (1)): the SMALL caves are no longer dropped - each gives its share (0.5 / min over
+        // its minute: 1 ore) and the rest comes from the next way; three of them (5 m, 20 m, 12 m: 374.6 s) beat 183 65 49's
+        // 3 ore at 0.5 / min (6 min) on price - the LARGE one is still priced (rule 1), never ranked out by the shares
+        List<Step.Cave> legs = c.steps().stream().filter(s -> s instanceof Step.Cave).map(s -> (Step.Cave) s).toList();
+        assertEquals(List.of(-4, 76, 404), List.of(legs.get(0).x(), legs.get(0).y(), legs.get(0).z()), "the nearest small cave first: " + why);
+        assertTrue(legs.stream().allMatch(l -> l.n() == 1), "a share each: " + c.steps());
+        assertTrue(why.contains("1 of 3 ore from the cave, the other 2 from: "), why);
+        assertTrue(c.dropped().stream().anyMatch(d -> d.startsWith("known cave 70 m: ") && d.contains(" s (dearer than")), "183 65 49 priced, lost on price: " + c.dropped());
+        assertTrue(why.contains("known cave 60 m at 187 60 65") && why.contains("min its unseen part holds - the next cave is asked"), "the fed record's ~0 min: still out, said: " + why);
     }
 
     /** More caves holding the need than the top two: the rest are ranked out, said (rule 18 as amended). */

@@ -1068,6 +1068,8 @@ public final class NeedChain {
         }
         final Map<String, Integer> leafAt = new LinkedHashMap<>();   // spot key -> index of its collect step
         final Map<String, Integer> taken = new LinkedHashMap<>();    // spot key -> blocks taken from it
+        /** J6c run ET (B): the known caves a cave way is taking its share from while the rest of the need is priced (CaveWay.key). */
+        final Set<String> cavesTaking = new LinkedHashSet<>();
         final List<String> path = new ArrayList<>();
         List<String> dropped = new ArrayList<>();
         double seconds;       // everything priced so far, in seconds
@@ -3701,7 +3703,8 @@ public final class NeedChain {
         int have = c.have(item);
         if (have >= n) return null;
         // 0.39.z78 D6: the need is a node (kept with what it read; reused while that holds)
-        if (c.caching()) return (String) node(c, "obtain", List.of(item, n), () -> obtainWays(c, item, n));
+        // J6c run ET (B): a need asked while caves give their shares is another node (those caves are not its ways)
+        if (c.caching()) return (String) node(c, "obtain", c.cavesTaking.isEmpty() ? List.of(item, n) : List.of(item, n, List.copyOf(c.cavesTaking)), () -> obtainWays(c, item, n));
         return obtainWays(c, item, n);
     }
 
@@ -5640,6 +5643,7 @@ public final class NeedChain {
         if (raw == null) return List.of();
         List<Alt> said = new ArrayList<>();
         for (CaveWay k : raw.all()) {                                       // run EO (rule 7): every cave left out, with its reason
+            if (c.cavesTaking.contains(k.key())) continue;                  // J6c run ET (B): its share is taken, the rest asked
             String why = caveOut(k);
             if (why == null) continue;
             String out = "known cave " + Math.round(k.dist()) + " m at " + k.x() + " " + k.y() + " " + k.z() + ": " + why;
@@ -5653,17 +5657,22 @@ public final class NeedChain {
         // first); one that holds under the need is dropped with its reason and the next is asked; the first CAVES_PRICED
         // that hold it are priced in full (Baritone's walk to the lip), the rest ranked out, said
         List<Alt> alts = new ArrayList<>(said);
-        int priced = 0;
+        int priced = 0, pricedPart = 0;
         for (CaveWay k : cw.all()) {
+            if (c.cavesTaking.contains(k.key())) continue;                  // J6c run ET (B): its share is taken, the rest asked
             String name = "known cave " + Math.round(k.dist()) + " m";
             String shortOf = caveHoldsShort(c, gives, lack, k);
+            // J6c run ET (B): a cave giving only its share is ranked apart - the CAVES_PRICED nearest of those, beside the
+            // CAVES_PRICED nearest that hold the whole need (a share never ranks a whole cave out)
+            boolean part = shortOf == null && caveGivesPart(c, gives, lack, k);
             Alt a;
             if (shortOf != null) a = new Alt(name, () -> { c.fail = shortOf; return null; });
-            else if (priced >= CAVES_PRICED) {
-                String out = name + " at " + k.x() + " " + k.y() + " " + k.z() + ": ranked out - the " + CAVES_PRICED + " nearest that hold the need are priced (rule 18 as amended)";
+            else if ((part ? pricedPart : priced) >= CAVES_PRICED) {
+                String out = name + " at " + k.x() + " " + k.y() + " " + k.z() + ": ranked out - the " + CAVES_PRICED + " nearest that " + (part ? "give a share of" : "hold") + " the need are priced (rule 18 as amended)";
                 a = new Alt(name, () -> { c.fail = out; return null; });
             } else {
-                priced++;
+                if (part) pricedPart++;
+                else priced++;
                 a = new Alt(name, () -> cave(c, word, gives, lack, k));
             }
             a.id = gives;
@@ -5688,6 +5697,8 @@ public final class NeedChain {
         int toFind = Math.max(0, oreBlocks - freeLeft(cw.leftKeys(), c.taken).size());
         double minutes = toFind / cw.perMin(), cap = Tuning.get("cave.exploreMinutes"), holds = cw.holdsMinutes(), max = holds;   // run EP: n / rate, no drop past the cap (the cap is the caving step's leg)
         if (toFind <= 0 || minutes <= max) return null;
+        // J6c run ET (B): a cave that holds less than the need still gives its share (cave): out only when it gives none
+        if (partOk(gives) && (caveShare(cw) >= 1 || !freeLeft(cw.leftKeys(), c.taken).isEmpty())) return null;
         String yield = "yield ~" + String.format(java.util.Locale.ROOT, "%.2f", cw.perMin()) + " ore/min (" + cw.yieldBasis() + ")";
         return "known cave " + Math.round(cw.dist()) + " m at " + cw.x() + " " + cw.y() + " " + cw.z() + ", " + yield + ": " + toFind + " ore to find take ~" + Math.round(minutes) + " min, past "
                 + (cw.unseenMinutes() >= 0 ? "the ~" + Math.round(holds) + " min its unseen part holds"
@@ -5779,28 +5790,84 @@ public final class NeedChain {
         double minutes = toFind / cw.perMin(), cap = Tuning.get("cave.exploreMinutes"), holds = cw.holdsMinutes(), max = holds;   // run EP: n / rate, no drop past the cap (the cap is the caving step's leg)
         String yield = "yield ~" + String.format(java.util.Locale.ROOT, "%.2f", cw.perMin()) + " ore/min (" + cw.yieldBasis() + ")"
                 + (!free.isEmpty() ? ", " + free.size() + " seen there and left" : "");
+        // 0.39.z78 J6c run ET (B, rule 23 (1)): a cave that holds LESS than the need is no drop - it gives its share (the ore
+        // its unseen part holds at the yield, min(expected, n)) and the rest of the need is priced from the next way
+        int caveBlocks = oreBlocks;
         if (toFind > 0 && minutes > max) {
-            // 0.39.z78 J6 / J6b: a known cave holds the minutes its unseen part (or, not known, its size) gives, never more than the cap
-            c.fail = head + ", " + yield + ": " + toFind + " ore to find take ~" + Math.round(minutes) + " min, past "
-                    + (cw.unseenMinutes() >= 0 ? "the ~" + Math.round(holds) + " min its unseen part holds"
-                    : "the ~" + Math.round(holds) + " min a " + cw.size().name().toLowerCase(java.util.Locale.ROOT) + " cave holds");
-            return null;
+            int share = caveShare(cw);
+            if (!partOk(word) || (share < 1 && free.isEmpty())) {
+                // 0.39.z78 J6 / J6b: a known cave holds the minutes its unseen part (or, not known, its size) gives, never more than the cap
+                c.fail = head + ", " + yield + ": " + toFind + " ore to find take ~" + Math.round(minutes) + " min, past "
+                        + (cw.unseenMinutes() >= 0 ? "the ~" + Math.round(holds) + " min its unseen part holds"
+                        : "the ~" + Math.round(holds) + " min a " + cw.size().name().toLowerCase(java.util.Locale.ROOT) + " cave holds");
+                return null;
+            }
+            toFind = Math.min(toFind, share);
+            minutes = toFind / cw.perMin();
+            caveBlocks = Math.min(oreBlocks, free.size()) + toFind;
         }
-        double exploreS = minutes * 60, oreS = oreBlocks * blockBreakS(c, cw.ore());  // structural: seconds per minute
+        double exploreS = minutes * 60, oreS = caveBlocks * blockBreakS(c, cw.ore());  // structural: seconds per minute
         c.addS(wk.seconds() + confirmS + exploreS + oreS);
         c.setAway(wk.seconds() + exploreS);
-        if (c.pickItem != null) c.pickWorn += oreBlocks;
-        for (int i = 0; i < Math.min(oreBlocks, free.size()); i++) c.taken.merge(free.get(i), 1, Integer::sum);   // review 6: taken by this way
+        if (c.pickItem != null) c.pickWorn += caveBlocks;
+        for (int i = 0; i < Math.min(caveBlocks, free.size()); i++) c.taken.merge(free.get(i), 1, Integer::sum);   // review 6: taken by this way
         if (lipAt != null) c.steps.add(new Step.ToCave(lipAt[0], lipAt[1], lipAt[2]));   // J6b run EF (1): to the lip, the entry in reach - never into the opening
         // run EP: the caving step's LEG - cave.exploreMinutes at most (or what the cave holds); the need unmet at its end, the
         // order prices the cave again and enters it again until the need is met or the record is done (then it is out)
-        c.steps.add(new Step.Cave(cw.x(), cw.y(), cw.z(), cw.family(), oreBlocks, (int) Math.max(1, Math.ceil(Math.min(cap, holds)))));   // at least a minute (the left ore's walk)
-        c.bag.merge(gives, Math.max(lack, (int) Math.floor(oreBlocks * per + 1e-9)), Integer::sum);  // structural: epsilon
-        final String line = head + ", " + yield + " x " + oreBlocks + " ore"
+        c.steps.add(new Step.Cave(cw.x(), cw.y(), cw.z(), cw.family(), caveBlocks, (int) Math.max(1, Math.ceil(Math.min(cap, holds)))));   // at least a minute (the left ore's walk)
+        int got = caveBlocks == oreBlocks ? Math.max(lack, (int) Math.floor(oreBlocks * per + 1e-9)) : (int) Math.floor(caveBlocks * per + 1e-9);  // structural: epsilon
+        c.bag.merge(gives, got, Integer::sum);
+        final String line = head + ", " + yield + " x " + caveBlocks + " ore"
                 + " -> " + s(wk.seconds() + confirmS + exploreS + oreS);
         c.note(() -> "source: " + shw(word) + " in the cave: " + line);
-        return noted("in the cave: " + line + (pre == null ? "" : " with " + pre), wk);
+        String rest = null;
+        if (caveBlocks < oreBlocks) {
+            // the rest of the need from the next way: priced as the need itself (this cave taken: never asked again), its
+            // steps after the caving step
+            int restLack = lack - got;
+            int pi = c.path.lastIndexOf(word);
+            if (pi >= 0) c.path.remove(pi);
+            c.cavesTaking.add(cw.key());
+            try {
+                rest = obtain(c, gives, c.have(gives) + restLack);
+            } finally {
+                c.cavesTaking.remove(cw.key());
+                if (pi >= 0) c.path.add(pi, word);
+            }
+            if (c.fail != null) {
+                c.fail = head + ": " + caveBlocks + " of " + oreBlocks + " ore from the cave; the other " + restLack + " " + shw(gives) + ": " + c.fail;
+                return null;
+            }
+            final String r = rest;
+            final int fromCave = caveBlocks, all = oreBlocks;
+            c.note(() -> "source: " + shw(word) + ": " + fromCave + " of " + all + " from the cave, the rest from: " + r);
+        }
+        String part = caveBlocks < oreBlocks ? " - " + caveBlocks + " of " + oreBlocks + " ore from the cave, the other " + (oreBlocks - caveBlocks) + " from: " + (rest == null ? "the bag" : rest) : "";
+        return noted("in the cave: " + line + (pre == null ? "" : " with " + pre) + part, wk);
     }
+
+    /**
+     * 0.39.z78 J6c run ET (B): the ore a known cave gives toward a need it holds less than - what its unseen part holds at
+     * its yield, rounded (min(expected, n) is taken by the caller); 0: none.
+     */
+    static int caveShare(CaveWay cw) {
+        double holds = cw.holdsMinutes();
+        if (!(cw.perMin() > 0) || !(holds > 0) || Double.isInfinite(holds)) return 0;
+        return (int) Math.round(cw.perMin() * holds);
+    }
+
+    /** J6c run ET (B): the cave holds less than the need (its unseen part's minutes at its yield) - it gives its share only. */
+    private static boolean caveGivesPart(Ctx c, String gives, int lack, CaveWay cw) {
+        String g = memberOf(c, gives, cw.ore());
+        double per = perBlock(c, g, cw.ore());
+        if (!(per > 0)) return false;
+        int oreBlocks = (int) Math.ceil(lack / per - 1e-9);                  // structural: epsilon
+        int toFind = Math.max(0, oreBlocks - freeLeft(cw.leftKeys(), c.taken).size());
+        return toFind > 0 && toFind / cw.perMin() > cw.holdsMinutes();
+    }
+
+    /** J6c run ET (B): a cave's share and the rest from the next way, for an item need (a tag need's rest is not priced). */
+    private static boolean partOk(String word) { return word != null && !word.startsWith("#"); }
 
     /**
      * J6b review 6: the cave's seen-and-left ore cells the chain has not taken yet by another way ({@code taken}: spot key ->

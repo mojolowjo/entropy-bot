@@ -40,12 +40,17 @@ class J6CaveWayTest {
     }
 
     @Test
-    void aKnownCaveTooSmallForTheLack_isNoWay_saidWithItsSize() {
+    void aKnownCaveTooSmallForTheLack_givesItsShare_theRestFromTheNextWay() {
         CaveWay small = known(CaveIndex.Size.SMALL);        // under a minute of walking
         assertEquals(1, small.holdsMinutes(), "a small cave holds its upper edge, one minute");
+        // 0.39.z78 J6c run ET (B, rule 23 (1)): was "no way" - now its share (the yield over the minute it holds) and the
+        // rest of the need from the next way (here the explore)
         Chain c = NeedChain.resolve("raw_iron", 12, Z77CaveWayTest.world(small));
-        assertFalse(Z77CaveWayTest.caveMined(c), c.steps().toString());
-        assertTrue(c.why().contains("min a small cave holds"), c.why());
+        int share = NeedChain.caveShare(small);
+        assertTrue(share >= 1 && share < 12, "a share of the lack: " + share);
+        Step.Cave m = (Step.Cave) c.steps().stream().filter(s -> s instanceof Step.Cave).findFirst().orElseThrow();
+        assertEquals(share, m.n(), "the caving step mines its share: " + c.steps());
+        assertTrue(c.why().contains(share + " of 12 ore from the cave, the other " + (12 - share) + " from: "), c.why());
     }
 
     @Test
