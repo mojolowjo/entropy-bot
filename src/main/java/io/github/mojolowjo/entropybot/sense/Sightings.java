@@ -225,6 +225,9 @@ public final class Sightings {
      */
     public synchronized int caveFeed(String dim, CaveIndex idx, int budget) {
         int used = 0;
+        // J6c review: every record's tick starts here, the ones the budget loop does not reach too (their exposure step)
+        Map<String, CaveRecord> rs = caveRecords.get(dim);
+        if (rs != null) for (CaveRecord r : rs.values()) r.recTick();
         for (KnownCave k : allKnownCaves(dim)) {
             if (used >= budget) break;
             CaveRecord r = rec(dim, k.x(), k.y(), k.z());
@@ -290,14 +293,6 @@ public final class Sightings {
         for (CaveRecord r : rs.values()) any |= r.recMined(cell);
         if (any) dirty = true;
         return any;
-    }
-
-    /** An ore cell of the known cave at x y z mined. */
-    public synchronized void caveMined(String dim, int x, int y, int z, long cell) {
-        CaveRecord r = rec(dim, x, y, z);
-        if (r == null) return;
-        r.recMined(cell);
-        dirty = true;
     }
 
     /** A caving walk in the known cave at x y z ended: its minutes and the ore cells it saw (the measured yield). */

@@ -64,7 +64,7 @@ class J6bCaveRecordTest {
         assertTrue(s.caveOre(D, 0, 40, 0, b, "iron"));
         assertFalse(s.caveOre(D, 0, 40, 0, a, "iron"), "seen once");
         assertArrayEquals(new int[]{2, 0}, s.caveFacts(D, 0, 40, 0).ores().get("iron"));
-        s.caveMined(D, 0, 40, 0, a);
+        s.oreBroken(D, 50, 41, 0);                                    // a (J6c review: the one mined reader)
         assertArrayEquals(new int[]{1, 1}, s.caveFacts(D, 0, 40, 0).ores().get("iron"), "one left, one mined");
         assertEquals(1, s.caveLeft(D, 0, 40, 0, "iron").size());
         assertTrue(Double.isNaN(s.caveFacts(D, 0, 40, 0).oreSeenPerMinute()), "never walked: the prior prices it");
@@ -82,7 +82,7 @@ class J6bCaveRecordTest {
         assertFalse(k.offeredFor("gold"), "done, no gold seen: no way for gold");
         s.caveOre(D, 0, 40, 0, Sightings.cell(10, 41, 0), "iron");
         assertTrue(s.caveFacts(D, 0, 40, 0).offeredFor("iron"), "done, iron seen and left: offered for iron");
-        s.caveMined(D, 0, 40, 0, Sightings.cell(10, 41, 0));
+        s.oreBroken(D, 10, 41, 0);
         assertFalse(s.caveFacts(D, 0, 40, 0).offeredFor("iron"), "mined: none left");
         // a nook is no branch: one unseen cell behind a frontier leaves it done
         Sightings n = store();

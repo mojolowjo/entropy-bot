@@ -132,12 +132,21 @@ public final class CaveRecord {
      */
     int recFeed(CaveIndex idx, int budget) {
         if (feed == null) feed = new CaveIndex.Feed();
-        regroupSpent = 0;                                                   // 88b28290 review 1: a new tick (the one feeder's step)
-        tickBase = touched;                                                 // J6c: the tick's spend starts here
+        recTick();
         exposeAir = idx::airAt;
         int n = idx.feed(x, y, z, feed, budget, this::addCell);
         touched += n;
         return n;
+    }
+
+    /**
+     * J6c review (1ce5ce19): a new tick for this record - the regroup's and the exposure's spend start again. The one
+     * feeder (Sightings.caveFeed) calls it for EVERY record of the dimension each tick, before its budget loop, so a record
+     * the loop does not reach (another cave's feed took the budget) still gets its tick: its exposure never starves.
+     */
+    void recTick() {
+        regroupSpent = 0;                                                   // 88b28290 review 1: a new tick (the one feeder's step)
+        tickBase = touched;                                                 // J6c: the tick's spend starts here
     }
 
     /** J6c: the index's air answer for the exposure step (set by the feeder), and the record's spend at the tick's start. */

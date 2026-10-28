@@ -151,7 +151,7 @@ class J6bCaveStepTest {
         s.caveOre("d", 0, 40, 0, Sightings.cell(3, 41, 0), "iron");
         s.caveWalked("d", 0, 40, 0, 2, 0, 2, false);
         assertFalse(s.caveFacts("d", 0, 40, 0).offeredFor("iron"), "stuck");
-        s.caveMined("d", 0, 40, 0, Sightings.cell(3, 41, 0));
+        s.oreBroken("d", 3, 41, 0);
         assertFalse(s.caveFacts("d", 0, 40, 0).offeredFor("iron"), "a mined ore is no new knowledge: still stuck");
         s.caveWalked("d", 0, 40, 0, 1, 0, 3, null);                    // an owner stop
         assertFalse(s.caveFacts("d", 0, 40, 0).offeredFor("iron"), "a stop leaves the mark");
