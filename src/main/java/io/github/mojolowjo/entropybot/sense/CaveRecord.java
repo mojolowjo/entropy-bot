@@ -18,17 +18,22 @@ import java.util.TreeMap;
  * {@code rec...}; J6bCaveRecordTest greps that only Sightings calls them).
  * <ul>
  * <li>{@code cells}: the volume's air cells from the cave index (the owner's cheat for known caves, rule 17's ruling),
- * refreshed when its chunks load; only their count is persisted (the cells come back with the chunks).</li>
+ * fed in place as its chunks load ({@link #recFeed}, under {@link #BUDGET}); only their count is persisted.</li>
  * <li>{@code seen}: the cells the bot stood in or saw round it - the cave cells within {@link #SEE_STEPS} steps of the
- * feet through the cave's own air (a walker sees the tunnel round it; the rays do not fire at a known cave).</li>
- * <li>{@code frontier}: the seen cells with an unseen neighbour in the volume, grouped by connected run - a branch not
- * walked; each group with the unseen cells behind it (connected to it through unseen air).</li>
+ * feet through the cave's own air, from the cave cell nearest the feet within the eyes' reach ({@link #cellInReach}).</li>
+ * <li>{@code frontier}: the seen cells with an unseen neighbour in the volume, kept incrementally as cells arrive and
+ * are seen; grouped by connected run (a branch not walked), re-grouped only when it changed; each group with the unseen
+ * cells behind it counted up to {@link #BRANCH_MIN} + 1 (the only question asked of it: more than BRANCH_MIN?).</li>
  * <li>{@code ores}: the ore cells seen in the cave (the ore index, by sight: rule 17), by family, left or mined.</li>
- * <li>{@code done}: no frontier group has more than {@link #BRANCH_MIN} unseen cells behind it.</li>
+ * <li>{@code done}: THE done reader (rule 23 (2)): something seen and no frontier group with more than
+ * {@link #BRANCH_MIN} unseen cells behind it; the caving step asks it.</li>
  * <li>{@code lastAt}, {@code walkedMinutes}, {@link #oreSeenPerMinute} (the measured yield the cave way prices with
  * once the cave has been walked).</li>
  * </ul>
- * Pure (JUnit: J6bCaveRecordTest). Loader notes: none.
+ * 0.39.z78 run EK (the manager's fix; 02:30:20-02:46:19: every caving tick 7-70 s - the whole 209,647-cell volume
+ * flooded for every branch, several times a tick, and on every planner ask): no reader walks the record whole. The sums
+ * (cells seen in the volume) and the frontier change with each cell; the facts are cached until a record write
+ * ({@link #facts}); the cells come by budgeted steps. Pure (JUnit: J6bCaveRecordTest, J6bEkTest). Loader notes: none.
  */
 public final class CaveRecord {
     /**
@@ -43,19 +48,35 @@ public final class CaveRecord {
      * allows the cheat for known caves: "Fine with using cheats to remember where we have been").
      */
     public static final int SEE_STEPS = 6; // structural: a tunnel's width past the next bend, either way (estimate)
+    /**
+     * Run EK: the cells (index runs and cells fed, cells searched) the record touches in one client tick at most. A
+     * HashSet op on a boxed cell costs ~50-100 ns, so 16384 is ~1-2 ms - a few percent of the 50 ms tick - and a cave of
+     * 209,647 cells is fed in about 13 ticks (under a second). A run is never split: one step may pass it by one run (at
+     * most the world's height, 384 cells) or one chunk's run count.
+     */
+    public static final int BUDGET = 16384; // structural: ~1-2 ms of set work in a 50 ms client tick
 
     private static final int[][] SIX = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
 
     /** An ore cell seen in the cave: its family and whether it was mined. */
     public record Ore(String family, boolean mined) {}
 
-    /** A branch: its seen frontier cells (first: the one the walk goes to), their count, the unseen cells behind. */
+    /**
+     * A branch: its seen frontier cells (first: the one the walk goes to), their count, the unseen cells behind - counted
+     * up to {@link #BRANCH_MIN} + 1 (run EK: "more than BRANCH_MIN" is all any reader asks).
+     */
     public record Group(long first, int size, int behind) {}
 
     public final int x, y, z;
     private final Set<Long> seen = new HashSet<>();
-    private Set<Long> cells = Set.of();
+    private final Set<Long> cells = new HashSet<>();
     private int cellCount;
+    /** Run EK: the seen cells that are cells of the volume (unseen() = cellCount - seenIn). */
+    private int seenIn;
+    /** Run EK: the seen volume cells with an unseen volume neighbour; {@link #groups} rebuilt only when it changed. */
+    private final Set<Long> frontierCells = new HashSet<>();
+    private boolean frontierChanged = true;
+    private List<Group> groupsNow = List.of();
     private final Map<Long, Ore> ores = new LinkedHashMap<>();
     private long lastAt;
     private double walkedMinutes;
@@ -64,6 +85,12 @@ public final class CaveRecord {
     private int groupsSaved = -1;
     /** J6b review 4: a walk that gained nothing (no cell seen, no ore mined) - the counts it left; -1: none. */
     private int stuckSeen = -1, stuckOre = -1, stuckCells = -1;
+    /** Run EK: the index feed (null: cells given whole, recCells) and the facts' cache (by the record's version). */
+    private CaveIndex.Feed feed;
+    private long version, factsAt = -1;
+    private Facts factsNow;
+    /** Run EK: the cells touched since the last {@link #takeTouched} (the budget's JUnit). */
+    private long touched;
 
     CaveRecord(int x, int y, int z) { this.x = x; this.y = y; this.z = z; }
 
@@ -71,20 +98,76 @@ public final class CaveRecord {
 
     // ---- the store's writers (Sightings only) ----
 
-    /** The volume's cells from the index (refreshed when its chunks load; never shrinks in a session - unloaded parts stay). */
+    /** The volume's cells given whole (in place; never shrinks in a session - unloaded parts stay). */
     void recCells(Collection<Long> now) {
-        Set<Long> all = new HashSet<>(cells);
-        all.addAll(now);
-        cells = all;
-        cellCount = Math.max(cellCount, all.size());
-        summarise();
+        for (long c : now) addCell(c);
     }
 
-    /** The bot stands at x y z: the cave cells within SEE_STEPS through the cave's air are seen; the newly seen count. */
+    /**
+     * Run EK: one budgeted step of the volume's cells from the index (the chunks put since the last pass, a volume joined;
+     * in place, never copied). The cells touched this step ({@code budget} at most, one run or one chunk's run count over).
+     */
+    int recFeed(CaveIndex idx, int budget) {
+        if (feed == null) feed = new CaveIndex.Feed();
+        int n = idx.feed(x, y, z, feed, budget, this::addCell);
+        touched += n;
+        return n;
+    }
+
+    private void addCell(long c) {
+        if (!cells.add(c)) return;
+        version++;
+        cellCount = Math.max(cellCount, cells.size());
+        if (seen.contains(c)) {
+            seenIn++;
+            recheck(c);
+            return;
+        }
+        int[] p = Sightings.cellOf(c);
+        for (int[] o : SIX) {                                                   // a seen neighbour has an unseen one now
+            long n = Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2]);
+            if (seen.contains(n) && cells.contains(n) && frontierCells.add(n)) frontierChanged = true;
+        }
+    }
+
+    /** {@code s} is a frontier cell: seen, of the volume, with an unseen volume neighbour. */
+    private void recheck(long s) {
+        boolean f = false;
+        if (cells.contains(s) && seen.contains(s)) {
+            int[] p = Sightings.cellOf(s);
+            for (int[] o : SIX) {
+                long n = Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2]);
+                if (cells.contains(n) && !seen.contains(n)) { f = true; break; }
+            }
+        }
+        if (f ? frontierCells.add(s) : frontierCells.remove(s)) frontierChanged = true;
+    }
+
+    /** A cell seen: the sum and the frontier round it changed in place; true: new. */
+    private boolean markSeen(long c) {
+        if (!seen.add(c)) return false;
+        version++;
+        touched++;
+        if (!cells.contains(c)) return true;
+        seenIn++;
+        recheck(c);
+        int[] p = Sightings.cellOf(c);
+        for (int[] o : SIX) {
+            long n = Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2]);
+            if (cells.contains(n) && seen.contains(n)) recheck(n);              // c may have been its last unseen neighbour
+        }
+        return true;
+    }
+
+    /**
+     * The bot stands at x y z: the cave cells within SEE_STEPS through the cave's air are seen, from the feet's cell or
+     * the cave cell nearest the feet within the eyes' reach (run EK: the lip 3 x 2 from the entry sees into it); the
+     * newly seen count.
+     */
     int recStood(int fx, int fy, int fz, long now) {
-        lastAt = now;
+        if (lastAt != now) { lastAt = now; version++; }
         long start = Sightings.cell(fx, fy, fz);
-        if (!cells.contains(start)) start = nearestCell(fx, fy, fz);
+        if (!cells.contains(start)) start = cellInReach(fx, fy, fz);
         if (start == Long.MIN_VALUE) return 0;
         int added = 0;
         Map<Long, Integer> depth = new java.util.HashMap<>();
@@ -93,7 +176,8 @@ public final class CaveRecord {
         q.add(start);
         while (!q.isEmpty()) {
             long c = q.poll();
-            if (seen.add(c)) added++;
+            touched++;
+            if (markSeen(c)) added++;
             int d = depth.get(c);
             if (d >= SEE_STEPS) continue;
             int[] p = Sightings.cellOf(c);
@@ -102,15 +186,13 @@ public final class CaveRecord {
                 if (cells.contains(n) && !depth.containsKey(n)) { depth.put(n, d + 1); q.add(n); }
             }
         }
-        if (added > 0) summarise();
         return added;
     }
 
     /** Cells seen otherwise (a ray passed them): those of the cave count. */
     int recSee(Collection<Long> passed) {
         int added = 0;
-        for (long c : passed) if (cells.contains(c) && seen.add(c)) added++;
-        if (added > 0) summarise();
+        for (long c : passed) if (cells.contains(c) && markSeen(c)) added++;
         return added;
     }
 
@@ -118,13 +200,14 @@ public final class CaveRecord {
     boolean recOre(long cell, String family) {
         if (ores.containsKey(cell)) return false;
         ores.put(cell, new Ore(family, false));
+        version++;
         return true;
     }
 
     /** An ore cell of the cave mined. */
     void recMined(long cell) {
         Ore o = ores.get(cell);
-        if (o != null && !o.mined()) ores.put(cell, new Ore(o.family(), true));
+        if (o != null && !o.mined()) { ores.put(cell, new Ore(o.family(), true)); version++; }
     }
 
     /**
@@ -133,6 +216,7 @@ public final class CaveRecord {
      * cells from the index ({@link #stuck}); so a walk that cannot get on never loops.
      */
     void recWalked(double minutes, int oreSeen, long now, Boolean gained) {
+        version++;
         walkedMinutes += Math.max(0, minutes);
         oreSeenWalking += Math.max(0, oreSeen);
         lastAt = now;
@@ -147,65 +231,95 @@ public final class CaveRecord {
      */
     public boolean stuck() { return stuckSeen >= 0 && !(seen.size() > stuckSeen || ores.size() > stuckOre || cellCount > stuckCells); }
 
-    private void summarise() {
-        if (cells.isEmpty()) return;
-        List<Group> g = frontier();
-        groupsSaved = g.size();
-        boolean d = true;
-        for (Group x : g) if (x.behind() > BRANCH_MIN) d = false;
-        doneSaved = d && !seen.isEmpty();
-    }
-
-    private long nearestCell(int fx, int fy, int fz) {
+    /**
+     * Run EK: the cave cell nearest the feet within the eyes' reach of them ({@link io.github.mojolowjo.entropybot.cave.ExploreRules#withinReach},
+     * the lip walk's own reach); MIN_VALUE: none. A cube of the reach round the feet (9 x 9 x 9 cells at most).
+     */
+    long cellInReach(int fx, int fy, int fz) {
+        int r = (int) Math.ceil(io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH);
         long best = Long.MIN_VALUE, bd = Long.MAX_VALUE;
-        for (int dy = -2; dy <= 2; dy++)                                        // structural: the feet, a step either way
-            for (int dx = -1; dx <= 1; dx++)
-                for (int dz = -1; dz <= 1; dz++) {
+        int[] feet = {fx, fy, fz};
+        for (int dy = -r; dy <= r + 2; dy++)                                        // structural: the eyes 1.62 over the feet
+            for (int dx = -r; dx <= r; dx++)
+                for (int dz = -r; dz <= r; dz++) {
                     long c = Sightings.cell(fx + dx, fy + dy, fz + dz);
+                    touched++;
+                    if (!cells.contains(c) || !io.github.mojolowjo.entropybot.cave.ExploreRules.withinReach(feet, new int[]{fx + dx, fy + dy, fz + dz})) continue;
                     long d = (long) dx * dx + (long) dy * dy + (long) dz * dz;
-                    if (cells.contains(c) && d < bd) { bd = d; best = c; }
+                    if (d < bd) { bd = d; best = c; }
                 }
         return best;
     }
 
+    /** Run EK: the cell is one of the volume's (fed so far). */
+    boolean hasCell(long c) { return cells.contains(c); }
+
+    /** Run EK: a cell of the cave is within the eyes' reach of the feet (the lip walk is done only then). */
+    public boolean inReach(int fx, int fy, int fz) { return cellInReach(fx, fy, fz) != Long.MIN_VALUE; }
+
+    /**
+     * Run EK (2): the step's first target - the unseen cave cell nearest the ENTRY through the cave's air (the entry
+     * itself while unseen), searched from the entry's cell (or the cave cell nearest it) over {@link #BUDGET} cells at
+     * most; null: none within the budget, or the cells not loaded.
+     */
+    public int[] firstUnseen() {
+        long start = Sightings.cell(x, y, z);
+        if (!cells.contains(start)) start = cellInReach(x, y, z);
+        if (start == Long.MIN_VALUE) return null;
+        Set<Long> got = new HashSet<>();
+        ArrayDeque<Long> q = new ArrayDeque<>();
+        got.add(start);
+        q.add(start);
+        while (!q.isEmpty() && got.size() <= BUDGET) {
+            long c = q.poll();
+            touched++;
+            if (!seen.contains(c)) return Sightings.cellOf(c);
+            int[] p = Sightings.cellOf(c);
+            for (int[] o : SIX) {
+                long n = Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2]);
+                if (cells.contains(n) && got.add(n)) q.add(n);
+            }
+        }
+        return null;
+    }
+
     // ---- the readers ----
 
-    /** The cells are loaded (refreshed from the index this session): frontier and done are measured now. */
-    public boolean loaded() { return !cells.isEmpty(); }
+    /**
+     * The cells are loaded: given whole, or the index's first feed pass this session ran to its end - frontier and done
+     * are measured now. Run EK: while the first pass runs the record is {@link #filling}, not loaded (rule 15).
+     */
+    public boolean loaded() { return !cells.isEmpty() && (feed == null || feed.complete()); }
+
+    /** Run EK: the index's first feed pass is running (the cells so far: {@link #cellsSoFar}). */
+    public boolean filling() { return feed != null && !feed.complete() && feed.filling(); }
+
+    public int cellsSoFar() { return cells.size(); }
 
     public int cellCount() { return cellCount; }
 
     public int seenCount() { return seen.size(); }
 
-    /** The cells not seen yet (the cells' count less the seen ones, rough while not loaded). */
+    /** The cells not seen yet (the cells' count less the seen ones; rough while not loaded). O(1). */
     public int unseen() {
         if (!loaded()) return Math.max(0, cellCount - seen.size());
-        int in = 0;
-        for (long c : seen) if (cells.contains(c)) in++;
-        return Math.max(0, cellCount - in);
+        return Math.max(0, cellCount - seenIn);
     }
 
     /** Seen cells / cells (0: no cells known). */
     public double explored() { return cellCount == 0 ? 0 : (cellCount - unseen()) / (double) cellCount; }
 
     /**
-     * The branches not walked: the seen cells with an unseen neighbour in the volume, grouped by connected run, each with
-     * the unseen cells behind it; largest behind first. Empty while not loaded.
+     * The branches not walked: the frontier cells grouped by connected run, each with the unseen cells behind it (up to
+     * BRANCH_MIN + 1); the most behind first, then by cell. Rebuilt only when the frontier changed. Empty while not loaded.
      */
     public List<Group> frontier() {
         if (!loaded()) return List.of();
-        Set<Long> front = new HashSet<>();
-        for (long c : seen) {
-            if (!cells.contains(c)) continue;
-            int[] p = Sightings.cellOf(c);
-            for (int[] o : SIX) {
-                long n = Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2]);
-                if (cells.contains(n) && !seen.contains(n)) { front.add(c); break; }
-            }
-        }
+        if (!frontierChanged) return groupsNow;
+        frontierChanged = false;
         List<Group> out = new ArrayList<>();
         Set<Long> done = new HashSet<>();
-        for (long f : new java.util.TreeSet<>(front)) {
+        for (long f : new java.util.TreeSet<>(frontierCells)) {
             if (!done.add(f)) continue;
             List<Long> group = new ArrayList<>();
             ArrayDeque<Long> q = new ArrayDeque<>();
@@ -213,19 +327,22 @@ public final class CaveRecord {
             while (!q.isEmpty()) {
                 long c = q.poll();
                 group.add(c);
+                touched++;
                 int[] p = Sightings.cellOf(c);
                 for (int[] o : SIX) {
                     long n = Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2]);
-                    if (front.contains(n) && done.add(n)) q.add(n);
+                    if (frontierCells.contains(n) && done.add(n)) q.add(n);
                 }
             }
             out.add(new Group(group.get(0), group.size(), behind(group)));
         }
-        out.sort((a, b) -> Integer.compare(b.behind(), a.behind()));
-        return out;
+        out.sort((a, b) -> b.behind() != a.behind() ? Integer.compare(b.behind(), a.behind()) : Long.compare(a.first(), b.first()));
+        groupsNow = List.copyOf(out);
+        groupsSaved = groupsNow.size();
+        return groupsNow;
     }
 
-    /** The unseen cells connected (through unseen cave air) to the group. */
+    /** The unseen cells connected (through unseen cave air) to the group, counted up to BRANCH_MIN + 1 (run EK: the cap). */
     private int behind(List<Long> group) {
         Set<Long> got = new HashSet<>();
         ArrayDeque<Long> q = new ArrayDeque<>();
@@ -233,21 +350,32 @@ public final class CaveRecord {
             int[] p = Sightings.cellOf(c);
             for (int[] o : SIX) {
                 long n = Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2]);
-                if (cells.contains(n) && !seen.contains(n) && got.add(n)) q.add(n);
+                if (cells.contains(n) && !seen.contains(n) && got.add(n)) { q.add(n); if (got.size() > BRANCH_MIN) return got.size(); }
             }
         }
         while (!q.isEmpty()) {
             int[] p = Sightings.cellOf(q.poll());
+            touched++;
             for (int[] o : SIX) {
                 long n = Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2]);
-                if (cells.contains(n) && !seen.contains(n) && got.add(n)) q.add(n);
+                if (cells.contains(n) && !seen.contains(n) && got.add(n)) { q.add(n); if (got.size() > BRANCH_MIN) return got.size(); }
             }
         }
         return got.size();
     }
 
-    /** Explored to its end: no frontier group leads to more than BRANCH_MIN unseen cells (the last measure when not loaded). */
-    public boolean done() { return doneSaved; }
+    /**
+     * THE done reader (rule 23 (2); run EK 02:24:18: the step's own "no branch" fall-through ended a cave it had seen
+     * nothing of): loaded - something of the volume seen and no frontier group with more than BRANCH_MIN unseen cells
+     * behind; not loaded - the last measure.
+     */
+    public boolean done() {
+        if (!loaded()) return doneSaved;
+        boolean d = seenIn > 0;
+        for (Group g : frontier()) if (g.behind() > BRANCH_MIN) d = false;
+        doneSaved = d;
+        return d;
+    }
 
     /** The frontier groups at the last measure (-1: never measured). */
     public int groups() { return loaded() ? frontier().size() : groupsSaved; }
@@ -278,19 +406,34 @@ public final class CaveRecord {
 
     /** "x y z: explored 60%, 2 branches, iron 3 left 1 mined, walked 4 min" (aa cave list, aa why, the step's end line). */
     public String line() {
+        int g = groups();
+        int un = unseen();
         List<String> o = new ArrayList<>();
         for (var e : oresByFamily().entrySet()) o.add(e.getKey() + " " + e.getValue()[0] + " left " + e.getValue()[1] + " mined");
-        return where() + ": explored " + Math.round(explored() * 100) + "% (" + (cellCount - unseen()) + " of " + cellCount + " cells), "
-                + (groups() < 0 ? "branches not measured" : groups() + " branch" + (groups() == 1 ? "" : "es")) + (done() ? ", done" : "")
+        return where() + ": explored " + Math.round(explored() * 100) + "% (" + (cellCount - un) + " of " + cellCount + " cells)"
+                + (filling() ? " (reading its cells: " + cells.size() + " so far)" : "") + ", "
+                + (g < 0 ? "branches not measured" : g + " branch" + (g == 1 ? "" : "es")) + (done() ? ", done" : "")
                 + (o.isEmpty() ? ", no ore seen" : ", " + String.join(", ", o)) + (walkedMinutes > 0 ? String.format(java.util.Locale.ROOT, ", walked %.1f min", walkedMinutes) : "");
+    }
+
+    /** Run EK: the cells touched since the last call (the budget's measure), and the count starts again. */
+    long takeTouched() {
+        long t = touched;
+        touched = 0;
+        return t;
     }
 
     /** A copy of what the record says now, for readers off the store's lock (the planner, aa cave list, aa why). */
     public record Facts(int x, int y, int z, int cellCount, int unseen, double explored, int groups, boolean done, Map<String, int[]> ores,
-                        double walkedMinutes, double oreSeenPerMinute, long lastAt, boolean loaded, String line, boolean stuck) {
+                        double walkedMinutes, double oreSeenPerMinute, long lastAt, boolean loaded, String line, boolean stuck, boolean filling) {
+        public Facts(int x, int y, int z, int cellCount, int unseen, double explored, int groups, boolean done, Map<String, int[]> ores,
+                     double walkedMinutes, double oreSeenPerMinute, long lastAt, boolean loaded, String line, boolean stuck) {
+            this(x, y, z, cellCount, unseen, explored, groups, done, ores, walkedMinutes, oreSeenPerMinute, lastAt, loaded, line, stuck, false);
+        }
+
         public Facts(int x, int y, int z, int cellCount, int unseen, double explored, int groups, boolean done, Map<String, int[]> ores,
                      double walkedMinutes, double oreSeenPerMinute, long lastAt, boolean loaded, String line) {
-            this(x, y, z, cellCount, unseen, explored, groups, done, ores, walkedMinutes, oreSeenPerMinute, lastAt, loaded, line, false);
+            this(x, y, z, cellCount, unseen, explored, groups, done, ores, walkedMinutes, oreSeenPerMinute, lastAt, loaded, line, false, false);
         }
 
         public int left(String family) { int[] v = ores.get(family); return v == null ? 0 : v[0]; }
@@ -302,13 +445,18 @@ public final class CaveRecord {
         public double rate(double prior) { return walkedMinutes > 0 ? oreSeenPerMinute : prior; }
     }
 
+    /** Run EK: the facts, cached until a record write (a cell fed or seen, an ore, a walk) - the planner's asks read the cache. */
     Facts facts() {
-        return new Facts(x, y, z, cellCount, unseen(), explored(), groups(), done(), oresByFamily(), walkedMinutes, oreSeenPerMinute(), lastAt, loaded(), line(), stuck());
+        if (factsNow != null && factsAt == version && !frontierChanged) return factsNow;
+        factsNow = new Facts(x, y, z, cellCount, unseen(), explored(), groups(), done(), oresByFamily(), walkedMinutes, oreSeenPerMinute(), lastAt, loaded(), line(), stuck(), filling());
+        factsAt = version;
+        return factsNow;
     }
 
     // ---- the file (the store's) ----
 
     com.google.gson.JsonObject json() {
+        if (loaded()) done();                                               // the saved measure is the latest
         var j = new com.google.gson.JsonObject();
         j.addProperty("x", x); j.addProperty("y", y); j.addProperty("z", z);
         j.addProperty("cells", cellCount);

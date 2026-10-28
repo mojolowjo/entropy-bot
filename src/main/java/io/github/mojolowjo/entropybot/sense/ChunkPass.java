@@ -255,7 +255,7 @@ public final class ChunkPass {
                 Sightings sg = sightings();
                 if (sg != null && dim != null) seenRt.tick(level, mc.player, index, sg.ore(), dim, tick, now);
                 if (sg != null && dim != null) sightRt.tick(level, mc.player, sg, dim, seenRt.budget, tick, now);
-                if (sg != null && dim != null) { labels(); if (tick % 20 == 0) remeasureLabels(); if (tick % 100 == 0) refreshCaveRecords(sg); caveRays.tick(level, mc.player, caveIndex, sg, dim, seenRt.budget, tick, now); }   // structural: a second in ticks   // 0.39.z78 J6 (the labels' floor first)
+                if (sg != null && dim != null) { labels(); if (tick % 20 == 0) remeasureLabels(); refreshCaveRecords(sg);caveRays.tick(level, mc.player, caveIndex, sg, dim, seenRt.budget, tick, now); }   // structural: a second in ticks   // 0.39.z78 J6 (the labels' floor first)
             } catch (Throwable t) {
                 error("seen", t);
             }
@@ -421,23 +421,17 @@ public final class ChunkPass {
         if (was[0] != floor.rim() || was[1] != floor.reach() || labelRoot != null) LOG.info("[entropybot] sense: {}", floor.line());
     }
 
-    private long recordsVersion = -1;
-
     /**
-     * 0.39.z78 J6b (D12): the known caves' records take their volume's cells from the cave index when it changed (chunks
-     * loaded or left; every 5 s at most), so the cave way prices the unseen cells before the first visit. Never throws.
+     * 0.39.z78 J6b (D12): the known caves' records take their volume's cells from the cave index, so the cave way prices the
+     * unseen cells before the first visit. 0.39.z78 run EK (the manager's fix): every tick, one budgeted step for all of
+     * them (Sightings.caveFeed, CaveRecord.BUDGET cells at most: the chunks put since the last pass, in place) - never the
+     * whole volume copied on a tick. The one feeder (rule 23): the caving step reads the record, it does not feed it.
+     * Never throws.
      */
     private void refreshCaveRecords(Sightings sg) {
         try {
-            long v = caveIndex.version();
-            if (v == recordsVersion || dim == null) return;
-            recordsVersion = v;
-            List<Sightings.KnownCave> known = sg.allKnownCaves(dim);
-            List<int[]> at = new ArrayList<>();
-            for (Sightings.KnownCave k : known) at.add(new int[]{k.x(), k.y(), k.z()});
-            List<List<Long>> cells = caveIndex.volumesCells(at);
-            for (int i = 0; i < known.size(); i++)
-                if (!cells.get(i).isEmpty()) sg.caveCells(dim, known.get(i).x(), known.get(i).y(), known.get(i).z(), cells.get(i));
+            if (dim == null) return;
+            sg.caveFeed(dim, caveIndex, CaveRecord.BUDGET);
         } catch (Throwable t) {
             error("cave records refresh", t);
         }

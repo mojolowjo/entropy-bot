@@ -42,13 +42,13 @@ class J6bCaveRecordTest {
         List<CaveRecord.Group> f = s.caveFrontier(D, 0, 40, 0);
         assertEquals(1, f.size());
         assertEquals(Sightings.cell(CaveRecord.SEE_STEPS, 40, 0), f.get(0).first(), "the seen cell next to the unseen");
-        assertEquals(200 - 1 - CaveRecord.SEE_STEPS, f.get(0).behind(), "the whole cave behind it");
+        assertEquals(CaveRecord.BRANCH_MIN + 1, f.get(0).behind(), "the cave behind it, counted up to BRANCH_MIN + 1 (run EK: the cap)");
         List<Long> trunk = new ArrayList<>();
         for (int x = 0; x <= 119; x++) trunk.add(Sightings.cell(x, 40, 0));
         s.caveSaw(D, 0, 40, 0, trunk);                                  // the walk down the trunk: 120 seen
         f = s.caveFrontier(D, 0, 40, 0);
         assertEquals(2, f.size(), "two branches not walked");
-        assertEquals(List.of(40, 40), List.of(f.get(0).behind(), f.get(1).behind()));
+        assertEquals(List.of(CaveRecord.BRANCH_MIN + 1, CaveRecord.BRANCH_MIN + 1), List.of(f.get(0).behind(), f.get(1).behind()), "40 each, capped");
         assertTrue(f.stream().anyMatch(g -> g.first() == Sightings.cell(40, 40, 0)) && f.stream().anyMatch(g -> g.first() == Sightings.cell(100, 40, 0)));
         var k = s.caveFacts(D, 0, 40, 0);
         assertEquals(0.6, k.explored(), 1e-9);
@@ -121,7 +121,7 @@ class J6bCaveRecordTest {
     /** One store (rule 23): only Sightings writes a cave record, and nothing else makes one. */
     @Test
     void onlyTheStoreWritesTheRecord() throws java.io.IOException {
-        Pattern writer = Pattern.compile("\\.rec(Cells|Stood|See|Ore|Mined|Walked)\\(|new CaveRecord\\(");
+        Pattern writer = Pattern.compile("\\.rec(Cells|Feed|Stood|See|Ore|Mined|Walked)\\(|new CaveRecord\\(");
         List<String> bad = new ArrayList<>();
         try (var files = java.nio.file.Files.walk(java.nio.file.Path.of("src/main/java"))) {
             for (var f : (Iterable<java.nio.file.Path>) files.filter(p -> p.toString().endsWith(".java"))::iterator) {

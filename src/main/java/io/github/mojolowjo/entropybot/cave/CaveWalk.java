@@ -15,7 +15,9 @@ import java.util.Locale;
  * <li>a seen ore of the family left farther in - walked to;</li>
  * <li>the nearest branch (a frontier group with more than BRANCH_MIN unseen cells behind it), ranked by straight distance
  * (rule 18 as amended: ranked rough, Baritone's walk exact) - its first cell walked to;</li>
- * <li>none: the cave is done (DONE), or its cells are not loaded (NOT_LOADED: the record cannot say where to go).</li>
+ * <li>none: the record's own done (THE done reader, rule 23 (2); run EK 02:24:18: an empty frontier because nothing was
+ * seen yet is not done) - DONE; the cells being read from the index - Wait; not loaded - NOT_LOADED; else the unseen cell
+ * nearest the cave's entry ({@code firstUnseen}, the step's first target) - walked to; none - NO_PROGRESS, said.</li>
  * </ol>
  * Baritone's no progress on a walk ends the step too (NO_PROGRESS; the adapter's hold, ExploreRules.TargetHold). Torches
  * are not in this slice (D12 5). Pure (JUnit: J6bCaveStepTest). Loader notes: none (StepHands is the adapter).
@@ -25,7 +27,10 @@ public final class CaveWalk {
 
     public enum End { NEED_MET, MINUTES, DONE, NOT_LOADED, NO_PROGRESS, STOPPED }
 
-    public sealed interface Next permits Mine, Goto, Stop {}
+    public sealed interface Next permits Mine, Goto, Stop, Wait {}
+
+    /** Run EK: the record's cells are being read from the index (its first pass): the step waits, Baritone idle. */
+    public record Wait(String why) implements Next {}
 
     /** Mine the seen ore cell (its vein). */
     public record Mine(int[] cell) implements Next {}
@@ -43,6 +48,12 @@ public final class CaveWalk {
      */
     public static Next next(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<CaveRecord.Group> frontier,
                             List<int[]> left, int[] feet, double reach) {
+        return next(mined, need, minutesIn, capMinutes, facts, frontier, left, feet, reach, null);
+    }
+
+    /** As above; {@code firstUnseen}: the record's unseen cell nearest the entry (CaveRecord#firstUnseen; null: none). */
+    public static Next next(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<CaveRecord.Group> frontier,
+                            List<int[]> left, int[] feet, double reach, int[] firstUnseen) {
         if (need > 0 && mined >= need) return new Stop(End.NEED_MET, mined + " of " + need + " ore mined");
         if (capMinutes > 0 && minutesIn >= capMinutes) return new Stop(End.MINUTES, String.format(Locale.ROOT, "%.1f min inside, cave.exploreMinutes %.0f", minutesIn, capMinutes));
         int[] near = null;
@@ -59,10 +70,13 @@ public final class CaveWalk {
         }
         if (best != null) {
             int[] c = Sightings.cellOf(best.first());
-            return new Goto(c, "the branch at " + c[0] + " " + c[1] + " " + c[2] + " (" + best.behind() + " cells behind)");
+            return new Goto(c, "the branch at " + c[0] + " " + c[1] + " " + c[2] + " (more than " + CaveRecord.BRANCH_MIN + " cells behind)");
         }
+        if (facts != null && facts.done()) return new Stop(End.DONE, "the cave is explored to its end (the record: something seen, no branch of more than " + CaveRecord.BRANCH_MIN + " cells left)");
+        if (facts != null && facts.filling()) return new Wait("reading the cave's cells from the index (its first pass, CaveRecord.BUDGET a tick)");
         if (facts != null && !facts.loaded()) return new Stop(End.NOT_LOADED, "the cave's cells are not loaded (its chunks: the record cannot say where to go)");
-        return new Stop(End.DONE, "the cave is explored to its end (no branch of more than " + CaveRecord.BRANCH_MIN + " cells left)");
+        if (firstUnseen != null) return new Goto(firstUnseen, "the unseen cell nearest the entry at " + firstUnseen[0] + " " + firstUnseen[1] + " " + firstUnseen[2]);
+        return new Stop(End.NO_PROGRESS, "no branch and no unseen cell near the entry within CaveRecord.BUDGET cells, yet the record is not done");
     }
 
     /**

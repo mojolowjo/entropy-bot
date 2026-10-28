@@ -522,10 +522,10 @@ public final class CaveIndex {
     public synchronized long version() { return version; }
 
     /**
-     * J6b (D12): the air cells of the volume x y z is in, over the chunks held ({@link #cell} packed; the cave record's map
-     * of a KNOWN cave - the owner's cheat, rule 17's ruling); empty: no volume there.
+     * J6b (D12): the air cells of the volume x y z is in, over the chunks held ({@link #cell} packed); empty: no volume
+     * there. 0.39.z78 run EK: a whole scan - JUnit and offline checks only; the records are fed by {@link #feed}.
      */
-    public synchronized List<Long> volumeCells(int x, int y, int z) {
+    synchronized List<Long> volumeCells(int x, int y, int z) {
         fresh();
         int r = runAt(x, y, z);
         if (r < 0) return List.of();
@@ -543,30 +543,75 @@ public final class CaveIndex {
         return out;
     }
 
-    /** J6b: {@link #volumeCells} for several cells in one pass over the chunks (each entry's list; empty: no volume there). */
-    public synchronized List<List<Long>> volumesCells(List<int[]> at) {
-        fresh();
-        Map<Integer, List<Long>> byRoot = new HashMap<>();
-        int[] roots = new int[at.size()];
-        for (int i = 0; i < at.size(); i++) {
-            int r = runAt(at.get(i)[0], at.get(i)[1], at.get(i)[2]);
-            roots[i] = r < 0 ? -1 : find(r);
-            if (roots[i] >= 0) byRoot.putIfAbsent(roots[i], new ArrayList<>());
+    /**
+     * 0.39.z78 run EK: a cave record's feed of its volume's cells - where the pass over the chunks held stands (a snapshot
+     * of their keys at the pass's start, the chunk and run reached) and, per chunk, how many of its runs were the volume's
+     * when last fed (a chunk whose count is unchanged is passed over: its cells are in already).
+     */
+    public static final class Feed {
+        private long fedVersion = -1, passVersion;
+        private List<Long> keys;
+        private int pos, run = -1, col, pending;
+        private boolean onePass;
+        private final Map<Long, Integer> runsIn = new HashMap<>();
+
+        /** A whole pass ran to its end at least once (the record is loaded). */
+        public boolean complete() { return onePass; }
+
+        /** A pass is running. */
+        public boolean filling() { return keys != null; }
+    }
+
+    /**
+     * 0.39.z78 run EK (the manager's fix; run EK 02:30:20-02:46:19: the whole scan - every run of every chunk and the
+     * whole 209,647-cell volume - on every index change, for every known cave): one budgeted step of feeding the volume of
+     * x y z into {@code add}, from where {@code f} stands. A pass starts when the index changed since the last one; each
+     * chunk's runs of the volume are counted, and fed only when the count changed (a chunk new to the volume, or a volume
+     * joined to it). Returns the runs and cells touched ({@code budget} at most, past it by one chunk's run count or one
+     * run). The entry's chunk not held: nothing fed, the pass ends (not loaded).
+     */
+    public synchronized int feed(int x, int y, int z, Feed f, int budget, java.util.function.LongConsumer add) {
+        if (f.keys == null) {
+            if (f.fedVersion == version) return 0;
+            f.keys = new ArrayList<>(chunks.keySet());
+            f.pos = 0;
+            f.run = -1;
+            f.passVersion = version;
         }
-        if (!byRoot.isEmpty())
-            for (Chunk ch : chunks.values()) {
-                if (ch.lo.length == 0) continue;
-                for (int c = 0; c < 256; c++)
-                    for (int i = ch.start[c]; i < ch.start[c + 1]; i++) {
-                        List<Long> l = byRoot.get(find(ch.id[i]));
-                        if (l == null) continue;
-                        int tx = (ch.cx << 4) + (c & 15), tz = (ch.cz << 4) + (c >> 4);
-                        for (int yy = ch.lo[i]; yy <= ch.hi[i]; yy++) l.add(cell(tx, yy, tz));
-                    }
+        fresh();
+        int ops = 1;
+        int r = runAt(x, y, z);
+        if (r < 0) { f.keys = null; f.fedVersion = f.passVersion; return ops; }
+        int root = find(r);
+        while (f.pos < f.keys.size() && ops < budget) {
+            long key = f.keys.get(f.pos);
+            Chunk ch = chunks.get(key);
+            if (ch == null || ch.lo.length == 0) { f.pos++; f.run = -1; ops++; continue; }
+            if (f.run < 0) {
+                int n = 0;
+                for (int i = 0; i < ch.lo.length; i++) if (find(ch.id[i]) == root) n++;
+                ops += ch.lo.length;
+                Integer was = f.runsIn.get(key);
+                if (n == 0 || (was != null && was == n)) { f.pos++; continue; }
+                f.pending = n;
+                f.run = 0;
+                f.col = 0;
             }
-        List<List<Long>> out = new ArrayList<>();
-        for (int r : roots) out.add(r < 0 ? List.of() : byRoot.get(r));
-        return out;
+            while (f.run < ch.lo.length && ops < budget) {
+                int i = f.run;
+                while (ch.start[f.col + 1] <= i) f.col++;
+                ops++;
+                if (find(ch.id[i]) == root) {
+                    int tx = (ch.cx << 4) + (f.col & 15), tz = (ch.cz << 4) + (f.col >> 4);
+                    for (int yy = ch.lo[i]; yy <= ch.hi[i]; yy++) add.accept(cell(tx, yy, tz));
+                    ops += ch.hi[i] - ch.lo[i] + 1;
+                }
+                f.run++;
+            }
+            if (f.run >= ch.lo.length) { f.runsIn.put(key, f.pending); f.pos++; f.run = -1; }
+        }
+        if (f.pos >= f.keys.size()) { f.keys = null; f.fedVersion = f.passVersion; f.onePass = true; }
+        return ops;
     }
 
     /** The volume x y z is in (its root), -1 none. */

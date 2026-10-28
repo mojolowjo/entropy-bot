@@ -707,10 +707,18 @@ public final class StepHands implements Steps.Hands {
         return goal;
     }
 
-    /** Review 2: the lip test with the reach goal's own stand and sight predicates. */
+    /**
+     * Review 2: the lip test with the reach goal's own stand and sight predicates. Run EK (2): and the record says a cell
+     * of the cave is within the eyes' reach of the feet (Sightings.caveInReachOf, the same OPENING_REACH) - the record
+     * is the one reader of "at the cave", so the caving step's first stand sees into it; its cells not fed yet: not done
+     * (rule 15).
+     */
     private static boolean atLip(LocalPlayer p, int[] me, int[] at) {
         var lv = p.level();
-        return io.github.mojolowjo.entropybot.cave.ExploreRules.atLip(me, at, (x, y, z) -> standable(lv, x, y, z), (x, y, z) -> seesEntry(p, x, y, z, at));
+        if (!io.github.mojolowjo.entropybot.cave.ExploreRules.atLip(me, at, (x, y, z) -> standable(lv, x, y, z), (x, y, z) -> seesEntry(p, x, y, z, at))) return false;
+        var pass = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE;
+        var sg = pass.sightings();
+        return sg != null && pass.dim() != null && Boolean.TRUE.equals(sg.caveInReachOf(pass.dim(), at, me));
     }
 
     /** The eyes at feet cell x y z see the entry's air (nothing that collides between, a fluid passed). */
@@ -794,23 +802,11 @@ public final class StepHands implements Steps.Hands {
         caving.dim = dim;
         caving.startMs = System.currentTimeMillis();
         caving.fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(k.family());
-        caveRefresh(p);
         f = sg.caveFacts(dim, k.x(), k.y(), k.z());
         caving.seenAtStart = f.cellCount() - f.unseen();
         LOG.info("[entropybot] cave: the caving step enters the known cave {} for {} {} ore ({} min at most): {}", f.x() + " " + f.y() + " " + f.z(), k.n(), caving.fam,
                 k.minutes(), f.line());
         return null;
-    }
-
-    /** The record's cells from the cave index when it changed (chunks loaded or left). */
-    private void caveRefresh(LocalPlayer p) {
-        var pass = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE;
-        var idx = pass.caveIndex();
-        long v = idx.version();
-        if (v == caving.version) return;
-        caving.version = v;
-        Step.Cave k = caving.step;
-        pass.sightings().caveCells(caving.dim, k.x(), k.y(), k.z(), idx.volumeCells(k.x(), k.y(), k.z()));
     }
 
     private Car.Status caveStatus(LocalPlayer p) {
@@ -822,7 +818,7 @@ public final class StepHands implements Steps.Hands {
         Step.Cave k = cv.step;
         int[] me = Jobs.here(p);
         long nowMs = System.currentTimeMillis();
-        caveRefresh(p);
+        // run EK: the record's cells come from ChunkPass's one budgeted feeder (Sightings.caveFeed); the step only reads it
         sg.caveStood(cv.dim, k.x(), k.y(), k.z(), me[0], me[1], me[2], nowMs);
         // the ore seen round the feet (by sight: the ore index under aa fair) beside the cave's air goes into the record
         int root = idx.volumeAt(k.x(), k.y(), k.z());
@@ -862,9 +858,11 @@ public final class StepHands implements Steps.Hands {
         var f = sg.caveFacts(cv.dim, k.x(), k.y(), k.z());
         double minutes = (nowMs - cv.startMs) / 60000.0;                       // structural: ms a minute
         var next = io.github.mojolowjo.entropybot.cave.CaveWalk.next(cv.mined, k.n(), minutes, k.minutes(), f, sg.caveFrontier(cv.dim, k.x(), k.y(), k.z()),
-                sg.caveLeft(cv.dim, k.x(), k.y(), k.z(), cv.fam), me, io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH);
+                sg.caveLeft(cv.dim, k.x(), k.y(), k.z(), cv.fam), me, io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH,
+                sg.caveFirstUnseen(cv.dim, k.x(), k.y(), k.z()));     // run EK (2): the step's first target, by the entry
         switch (next) {
             case io.github.mojolowjo.entropybot.cave.CaveWalk.Stop s -> { return caveEnd(s.end(), s.why()); }
+            case io.github.mojolowjo.entropybot.cave.CaveWalk.Wait w -> { return Car.Status.running("caving: " + w.why()); }
             case io.github.mojolowjo.entropybot.cave.CaveWalk.Mine m -> {
                 var level = p.level();
                 List<io.github.mojolowjo.entropybot.clear.Pos> cells = new ArrayList<>();

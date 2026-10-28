@@ -48,7 +48,7 @@ class J6bCaveStepTest {
         assertTrue(((CaveWalk.Goto) toOre).why().startsWith("the seen ore at 60 40 1"), "a seen ore farther in: walked to before a branch");
         var branch = CaveWalk.next(0, 3, 1, 10, facts(true, false), two, List.of(), FEET, 4.5);
         assertArrayEquals(new int[]{40, 40, 0}, ((CaveWalk.Goto) branch).cell(), "the nearest branch (ranked rough, by straight distance)");
-        assertTrue(((CaveWalk.Goto) branch).why().contains("40 cells behind"));
+        assertTrue(((CaveWalk.Goto) branch).why().contains("more than " + CaveRecord.BRANCH_MIN + " cells behind"), "run EK: behind is asked only as more than BRANCH_MIN");
         var nook = CaveWalk.next(0, 3, 1, 10, facts(true, true), List.of(new CaveRecord.Group(Sightings.cell(40, 40, 0), 1, CaveRecord.BRANCH_MIN)), List.of(), FEET, 4.5);
         assertEquals(CaveWalk.End.DONE, ((CaveWalk.Stop) nook).end(), "a nook is no branch: done");
         assertEquals(CaveWalk.End.NOT_LOADED, ((CaveWalk.Stop) CaveWalk.next(0, 3, 1, 10, facts(false, false), List.of(), List.of(), FEET, 4.5)).end());

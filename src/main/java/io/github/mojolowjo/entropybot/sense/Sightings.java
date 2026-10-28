@@ -197,13 +197,63 @@ public final class Sightings {
         return r == null ? List.of() : r.left(family);
     }
 
-    /** The known cave at x y z: its volume's cells from the cave index (refreshed when its chunks load). */
+    /** The known cave at x y z: its volume's cells given whole (tests, a replay; in place). */
     public synchronized void caveCells(String dim, int x, int y, int z, java.util.Collection<Long> cells) {
         CaveRecord r = rec(dim, x, y, z);
         if (r == null || cells.isEmpty()) return;
         int was = r.cellCount();
         r.recCells(cells);
         if (r.cellCount() != was) dirty = true;
+    }
+
+    /**
+     * 0.39.z78 run EK (the manager's fix): one budgeted step of every known cave's record in {@code dim} taking its
+     * volume's cells from the cave index (CaveIndex#feed: the chunks put since the last pass, a volume joined), in place;
+     * {@code budget} cells touched at most for all of them this tick (CaveRecord.BUDGET). The cells touched.
+     */
+    public synchronized int caveFeed(String dim, CaveIndex idx, int budget) {
+        int used = 0;
+        for (KnownCave k : allKnownCaves(dim)) {
+            if (used >= budget) break;
+            CaveRecord r = rec(dim, k.x(), k.y(), k.z());
+            if (r == null) continue;
+            int was = r.cellCount();
+            used += r.recFeed(idx, budget - used);
+            if (r.cellCount() != was) dirty = true;
+        }
+        return used;
+    }
+
+    /** Run EK: a cell of the known cave at x y z is within the eyes' reach of the feet. */
+    public synchronized boolean caveInReach(String dim, int x, int y, int z, int fx, int fy, int fz) {
+        CaveRecord r = rec(dim, x, y, z);
+        return r != null && r.inReach(fx, fy, fz);
+    }
+
+    /**
+     * Run EK (2): the lip walk's done test - the record of the known cave whose entry or cells hold {@code target} (the
+     * walk's entry: the cave's own or another opening of its volume) says a cell of the cave is within the eyes' reach of
+     * the feet. Null: no record holds the target yet (its cells not fed: not known, rule 15).
+     */
+    public synchronized Boolean caveInReachOf(String dim, int[] target, int[] feet) {
+        Map<String, CaveRecord> m = caveRecords.get(dim);
+        if (m == null || target == null || feet == null) return null;
+        long t = cell(target[0], target[1], target[2]);
+        for (CaveRecord r : m.values())
+            if ((r.x == target[0] && r.y == target[1] && r.z == target[2] && r.loaded()) || r.hasCell(t)) return r.inReach(feet[0], feet[1], feet[2]);
+        return null;
+    }
+
+    /** Run EK (2): the known cave's unseen cell nearest its entry (CaveRecord#firstUnseen); null: none, or not loaded. */
+    public synchronized int[] caveFirstUnseen(String dim, int x, int y, int z) {
+        CaveRecord r = rec(dim, x, y, z);
+        return r == null ? null : r.firstUnseen();
+    }
+
+    /** Run EK: the cells the known cave's record touched since the last ask (its budget's measure; 0: no record). */
+    public synchronized long caveTouched(String dim, int x, int y, int z) {
+        CaveRecord r = rec(dim, x, y, z);
+        return r == null ? 0 : r.takeTouched();
     }
 
     /** The bot stands at fx fy fz in the known cave at x y z: the cells round it are seen; the newly seen count. */
