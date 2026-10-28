@@ -25,10 +25,11 @@ class StripOffBatchTest {
     }
 
     @AfterEach
-    void on() { StripWays.set(true); }
+    void off() { StripWays.set(false); }
 
     @Test
     void theKitWithStripsOff_noBatchStrip_saidAsTheSwitch_andTheOrdersChainHasNoStrip() {
+        StripWays.set(true);
         NeedChain.World live = Z78StripHeadingHoldTest.world();
         NeedChain.World w = live.withStrip(StripWays.gate(live.strip()));
         Playbook on = Playbook.derive(D6WorkerTest.KIT, Playbook.facts(w, null));

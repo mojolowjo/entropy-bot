@@ -190,6 +190,10 @@ final class StripStep {
     static String start(Step.Strip s) {
         startMet = null;
         carrySet = false;
+        // 0.39.z78 strip-off review: a planner's strip (a running routine's, a kept tail's) never starts while the strip way
+        // is off - nor resumes its saved tunnel; the order re-plans without it (Goals.repair keeps no strip tail then)
+        if (!io.github.mojolowjo.entropybot.aa.brain.StripWays.on() && io.github.mojolowjo.entropybot.aa.brain.StripWays.planned(s))
+            return "error: " + io.github.mojolowjo.entropybot.aa.brain.StripWays.OFF;
         IBaritone b = Jobs.baritone();
         if (b == null) return "error: baritone not loaded";
         Direction d = Direction.byName(s.heading());

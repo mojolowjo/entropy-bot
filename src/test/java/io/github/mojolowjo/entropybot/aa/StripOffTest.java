@@ -26,7 +26,7 @@ class StripOffTest {
 
     @AfterEach
     void clear() {
-        StripWays.set(true);
+        StripWays.set(false);
         TestData.clear();
         FactChange.clear();
         Tuning.reset();
@@ -46,6 +46,7 @@ class StripOffTest {
     @Test
     void stripsOff_aBatchLackingIronPricesCavesSeenVeinsOrTheExplore_neverAStrip() {
         // the control: on, the strip way is the price for 12 iron with nothing seen
+        StripWays.set(true);
         Chain on = NeedChain.resolve("raw_iron", 12, world(null));
         assertTrue(strips(on), on.why());
 

@@ -565,6 +565,8 @@ public final class Goals {
     /** 0.39.z77 SHAPE CHANGE: {@code margin} - a trip's repair is never priced against its whole re-plan (infinite). */
     static io.github.mojolowjo.entropybot.aa.moves.Repair.Pick repair(Blackboard bb, Goal g, io.github.mojolowjo.entropybot.aa.moves.Steps.Remaining left,
                                                                     io.github.mojolowjo.entropybot.aa.NeedChain.Chain full, String dropped, double margin) {
+        // 0.39.z78 strip-off review: with the strip way off, a tail that holds a strip is never kept - the full re-plan
+        if (!StripWays.on() && StripWays.holdsStrip(left.steps())) return null;
         var sp = io.github.mojolowjo.entropybot.aa.moves.Repair.split(left.steps());
         io.github.mojolowjo.entropybot.aa.NeedChain.Chain gap = null;
         double tail = Double.NaN;

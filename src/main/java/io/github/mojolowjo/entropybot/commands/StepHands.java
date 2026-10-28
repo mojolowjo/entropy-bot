@@ -617,6 +617,8 @@ public final class StepHands implements Steps.Hands {
     private Step.Strip legStrip;
 
     private String mineStrip(LocalPlayer p, Step.Mine m) {
+        // 0.39.z78 strip-off review: the old strip leg (an option row's strip mine) is a strip way too
+        if (!io.github.mojolowjo.entropybot.aa.brain.StripWays.on()) return "error: " + io.github.mojolowjo.entropybot.aa.brain.StripWays.OFF;
         String[] err = new String[1];
         legStrip = StripStep.resolve("strip " + m.family(), p, null, err);
         if (legStrip == null) return "error: " + err[0];

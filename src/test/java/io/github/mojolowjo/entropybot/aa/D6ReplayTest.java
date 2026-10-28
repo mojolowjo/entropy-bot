@@ -41,8 +41,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * pre-grid sums, run DJ's picks differ at such ties (40 of 263 trips; DK, DL, DQ none); that is accepted, not a regression.
  */
 class D6ReplayTest {
+    /** 0.39.z78 strip-off: the replay prices with the strip way on (its runs had it), identical. */
+    @org.junit.jupiter.api.BeforeEach
+    void stripsOn() { io.github.mojolowjo.entropybot.aa.brain.StripWays.set(true); }
+
     @AfterEach
     void off() {
+        io.github.mojolowjo.entropybot.aa.brain.StripWays.set(false);
         PlanNodes.verify(false);
         PlanNodes.defaultOn();
         PlanNodes.forgetMine();
