@@ -227,24 +227,41 @@ final class Crafting {
         return findBlockAround(c, needle, radius, dyMax, null);
     }
 
-    /**
-     * P2: crafting tables that answered a click without opening (in a Visual Workbench pack a plain
-     * {@code minecraft:crafting_table} set by a command has no block entity and never opens; the real ones are
-     * {@code visualworkbench:...}). Key: "x y z|block id", so a re-placed table counts again. Session memory.
+    /*
+     * 0.39.z78 J5 slice 1 (rule 23; audit D1, D8, B1): the craft's session refusal sets (P2's tables that answered a click
+     * without opening - in a Visual Workbench pack a plain minecraft:crafting_table set by a command never opens - and z48's
+     * stations whose use the fork gave up on from every stand) are deleted: a refusal is a hold in the one station store,
+     * StationHolds.refused, keyed by the block there (a re-placed block counts again), read by every reader.
      */
-    static final java.util.Set<String> DEAD_TABLES = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
-    /**
-     * 0.39.z48 (S62): stations whose use the fork gave up on from every stand it tried (its second try from another side
-     * included); refused like a dead table from then on, so the chain prices the next one or a new one. Key as DEAD_TABLES.
-     */
-    static final java.util.Set<String> UNUSABLE_STATIONS = java.util.concurrent.ConcurrentHashMap.newKeySet();
-
+    /** "x y z|block id" of a cell (the craft's failure words). */
     static String tableKey(int[] t) {
+        return Jobs.fmt(t) + "|" + blockId(t);
+    }
+
+    /** The block id at {@code t} now ("?": no level; null never). */
+    static String blockId(int[] t) {
         Minecraft mc = Minecraft.getInstance();
-        String id = mc.level == null ? "?" : String.valueOf(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(
+        return mc.level == null ? "?" : String.valueOf(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(
                 mc.level.getBlockState(new BlockPos(t[0], t[1], t[2])).getBlock()));
-        return Jobs.fmt(t) + "|" + id;
+    }
+
+    /** The block id at {@code t} now, null when not loaded (rule 15) - StationHolds' answer for a refusal's cell. */
+    static String blockIdLoaded(int[] t) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || !mc.level.isLoaded(new BlockPos(t[0], t[1], t[2]))) return null;
+        return blockId(t);
+    }
+
+    /** 0.39.z78 J5 slice 1: the station at {@code at} is held now (StationHolds: a walk hold or a refusal), from the feet now. */
+    static String held(int[] at) {
+        LocalPlayer p = Minecraft.getInstance().player;
+        return io.github.mojolowjo.entropybot.aa.brain.StationHolds.INSTANCE.held(at[0], at[1], at[2], p == null ? null : Jobs.here(p), Crafting::blockIdLoaded);
+    }
+
+    /** 0.39.z78 J5 slice 1: the station at {@code at} refused for every order ({@code why}), in the one store. */
+    static void refuse(int[] at, String why) {
+        io.github.mojolowjo.entropybot.aa.brain.StationHolds.INSTANCE.refused(at[0], at[1], at[2], blockId(at), why);
     }
 
     static int[] findBlockAround(int[] c, String needle, int radius, int dyMax, java.util.function.Predicate<int[]> skip) {
@@ -277,7 +294,7 @@ final class Crafting {
     /**
      * station-memory (0.39.z14): the known crafting table: the nearest one of the station memory at ANY distance (my own
      * placements and what Baritone's scan knows: NearbyLive.stations, the one fact), never an untrusted one nor one that
-     * answered no click (DEAD_TABLES). The craft step walks to it through InteractProcess. rule 15: a three-state fact
+     * answered no click (0.39.z78 J5: nor one held, StationHolds). The craft step walks to it through InteractProcess. rule 15: a three-state fact
      * (StationFact): known, none known anywhere, or not loaded (the asker waits).
      */
     StationFact findTable(LocalPlayer p) {
@@ -286,8 +303,18 @@ final class Crafting {
 
     /** The known stations of the recipe kind not refused (untrusted, or a dead table), nearest first; none; or not loaded. */
     StationFact knownStation(String kind) {
-        return commands.nearby.station(kind, at -> untrusted(at) || keptOut(at) || (!DEAD_TABLES.isEmpty() && DEAD_TABLES.contains(tableKey(at)))
-                || (!UNUSABLE_STATIONS.isEmpty() && UNUSABLE_STATIONS.contains(tableKey(at))));
+        // 0.39.z78 J5 slice 1: a held station (StationHolds: its walk failed out of reach, or it is refused) is no station here
+        // either - the craft, "table near" and the chain read the same holds; every one held: None with the holds said
+        return withHolds(commands.nearby.station(kind, at -> untrusted(at) || keptOut(at) || held(at) != null), kind);
+    }
+
+    /** 0.39.z78 J5 slice 1 (rule 7): every known station held - the None says each with its order and reason. */
+    private StationFact withHolds(StationFact f, String kind) {
+        if (!(f instanceof StationFact.None n) || !StationFact.REFUSED_ALL.equals(n.why())) return f;
+        List<String> said = new ArrayList<>();
+        if (commands.nearby.stations(kind) instanceof StationFact.Known all)
+            for (var s : all.spots()) { String h = held(new int[]{s.x(), s.y(), s.z()}); if (h != null) said.add(s.x() + " " + s.y() + " " + s.z() + " " + h); }
+        return said.isEmpty() ? f : new StationFact.None(StationFact.REFUSED_ALL + " (" + String.join("; ", said) + ")");
     }
 
     /** rule 15: the text of a not-loaded station fact ("stations: item data not loaded yet (...)"). */
@@ -344,7 +371,7 @@ final class Crafting {
     /**
      * 0.39.z77 furnace (run BN 11:39:27): a station block whose menu did not come after the open step's click and its one
      * retry ({@code why}: the interact's facts, OpenWait.reason) is refused from now on like a table whose use the fork gave
-     * up on (z48, {@link #UNUSABLE_STATIONS}); its fact (FactChange.stationUnusable) re-plans the order, and the chain prices
+     * up on (z48; 0.39.z78 J5: StationHolds.refused); its fact (FactChange.stationUnusable) re-plans the order, and the chain prices
      * the next known station against making / taking one from the bag and placing it near me (NeedChain.farStation, rule 1:
      * the walk stays the honest way when placing cannot be had). The step's failure words, or null: the block is no station
      * of a recipe kind (a chest: the plain failure) or its data is not loaded (rule 15: nothing refused on a guess).
@@ -353,7 +380,7 @@ final class Crafting {
         for (String kind : List.of(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT)) {
             if (!Boolean.TRUE.equals(stationMemory.isStation(kind, pos))) continue;
             String name = stationName(kind);
-            UNUSABLE_STATIONS.add(tableKey(pos));
+            refuse(pos, "the " + name + " never opened: " + why);
             io.github.mojolowjo.entropybot.aa.moves.FactChange.stationUnusable(kind, name, Jobs.fmt(pos), why);
             String line = why + " - the " + name + " at " + Jobs.fmt(pos) + " is refused from now on; the chain prices the " + name + " again";
             commands.log(line);
@@ -401,7 +428,7 @@ final class Crafting {
             }
         }
         // 0.39.z77 furnace: a furnace that never opened (openRefused) is no candidate either - the chain priced without it
-        out.removeIf(f -> untrusted(f) || keptOut(f) || (!UNUSABLE_STATIONS.isEmpty() && UNUSABLE_STATIONS.contains(tableKey(f))));
+        out.removeIf(f -> untrusted(f) || keptOut(f) || held(f) != null);     // 0.39.z78 J5 slice 1: the one station store
         out.sort(java.util.Comparator.comparingLong(f -> dist2(f, me)));
         return out;
     }
@@ -1607,7 +1634,7 @@ final class Crafting {
                         // end is the block itself refusing from the stands within reach (no face seen from two stands,
                         // nothing opened). Left: a second use of one table in one chain after a trip away has no ToStation
                         // (NeedChain.knownWalk prices the first use only), so a "no path" there still lands here, as before z65.
-                        UNUSABLE_STATIONS.add(tableKey(c.table));
+                        refuse(c.table, "its use failed from every stand the fork tried: " + v.why());
                         io.github.mojolowjo.entropybot.aa.moves.FactChange.stationUnusable(kind, name, Jobs.fmt(c.table), v.why());
                         return craftFail(s, st, CraftJob.couldNotOpenTable(v.why()) + " - the chain prices the table again");
                     case NONE:
@@ -1629,8 +1656,8 @@ final class Crafting {
                 io.github.mojolowjo.entropybot.aa.moves.FactChange.station(kind, name, Jobs.fmt(c.table));
                 return craftFail(s, st, "error: " + why + " - the chain prices the table again");
             }
-            // P2: this table answers clicks but never opens (see DEAD_TABLES): skip it from now on, try the next known one once
-            DEAD_TABLES.add(tableKey(c.table));
+            // P2: this table answers clicks but never opens: skip it from now on (0.39.z78 J5: a refusal in StationHolds), try the next known one once
+            refuse(c.table, "it answered clicks but never opened");
             StationFact next = c.deadRetried ? null : findTable(p);
             if (!(next instanceof StationFact.Known nk)) return craftFail(s, st, CraftJob.tableDidNotOpen(Jobs.fmt(c.table), tableKey(c.table)));
             int[] other = cell(nk);

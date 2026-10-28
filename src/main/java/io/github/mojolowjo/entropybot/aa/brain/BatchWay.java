@@ -345,6 +345,7 @@ public final class BatchWay {
         java.util.Set<String> held = new java.util.TreeSet<>(Goals.droppedSources(g, pos).keySet());
         held.addAll(others.keySet());
         held.addAll(WorldFacts.of(bb).heldAt(bb).keySet());     // 0.39.z77 world 3: by state (hysteresis), never the raw distance
+        held.addAll(Goals.stationHolds(bb).keySet());           // 0.39.z78 J5 slice 1: the stations held (the one store)
         boolean under = bb.in != null && bb.in.underDepth >= io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth();
         String base = tripKeyOf(tk, open, pos, under, held);
         Trip kept = TRIPS.get(tk);

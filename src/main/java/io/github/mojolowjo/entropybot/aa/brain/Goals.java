@@ -358,6 +358,8 @@ public final class Goals {
     public static String noWayLeft(Goal g, String chainWhy) {
         List<String> d = new ArrayList<>();
         for (var e : droppedSources(g).entrySet()) d.add(e.getKey() + ": " + e.getValue());
+        // 0.39.z78 J5 slice 1: the stations held (StationHolds), as every reader says them (feet not known here: all held)
+        for (String l : StationHolds.INSTANCE.lines(null, null)) d.add(l);
         return "no way left: " + (d.isEmpty() ? "no source dropped" : String.join("; ", d)) + " (chain: " + chainWhy + ")";
     }
 
@@ -423,6 +425,25 @@ public final class Goals {
         return key != null && (key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STATION_AT) || key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.WALK_TARGET));
     }
 
+    /** 0.39.z78 J5 slice 1 (pure): the cell {x, y, z} of a "station at x y z" key, null: not one. */
+    static int[] stationCell(String key) {
+        if (key == null || !key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STATION_AT)) return null;
+        String[] c = key.substring(io.github.mojolowjo.entropybot.aa.NeedChain.STATION_AT.length()).trim().split("\\s+");
+        if (c.length != 3) return null;     // structural: x y z
+        for (String n : c) if (!n.matches("-?\\d{1,9}")) return null;
+        return new int[]{Integer.parseInt(c[0]), Integer.parseInt(c[1]), Integer.parseInt(c[2])};
+    }
+
+    /** 0.39.z78 J5 slice 1: the blackboard fact - a cell {x, y, z} -&gt; the block id there now (null: not loaded), for StationHolds' refusals. */
+    public static final String BLOCK_AT_FACT = "aa.blockAt";
+
+    /** The stations held now from the feet (StationHolds, the one store), key -&gt; how it is said. */
+    @SuppressWarnings("unchecked")
+    public static Map<String, String> stationHolds(Blackboard bb) {
+        var f = bb.fact(BLOCK_AT_FACT) instanceof java.util.function.Function<?, ?> fn ? (java.util.function.Function<int[], String>) fn : null;
+        return StationHolds.INSTANCE.heldAt(bb.in == null ? null : bb.in.pos, f);
+    }
+
     /** 0.39.z65 review 1 (pure): a station key (0.39.z77: or a walk target) held from {@code from} is released at {@code now} ({@code failures.moved} closer). */
     public static boolean stationBack(String key, int[] from, int[] now) {
         return stationGain(key, from, now) >= Failures.movedV();
@@ -483,11 +504,20 @@ public final class Goals {
         if (g.n - have(bb.in.bag, g) <= 0 && !trip) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
         // 0.39.z65 review 1: a station's walk fact keeps where the bot stood (released once it stands failures.moved closer)
         // 0.39.z77 walk: a held walk target keeps it too (the same per-position hold)
+        int[] feet = bb.in == null ? null : bb.in.pos;
+        // 0.39.z78 J5 slice 1 (rule 23; audit D1, D8): a station walk's hold goes to the ONE station store (StationHolds) -
+        // held for every order, named by this one, back once the bot stands closer - never the order's sources nor the world
+        // facts as well
+        boolean station = sourceFact && src.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STATION_AT);
+        if (station) {
+            int[] at = stationCell(src);
+            if (at != null) StationHolds.INSTANCE.walkFailed(g.r.key(), at[0], at[1], at[2], fact.text(), feet);
+            sourceFact = at == null;                             // not a cell (never): held as any source, said
+        }
         if (sourceFact) g.sources.failedFor(g.id(), src, fact.text(), bb.clock.now(), positional(src) || headingHold(src) ? bb.in : null, ORDER_LIFE_MS);
         // 0.39.z77 world (run CX 22:43:18: the met pickaxe's water-ahead strip re-tried by the helmet): the fact is the world's
         // 0.39.z77 world 3 (review 1): a heading fact is kept by the tunnel's start too - the strip's fresh start, else the
         // square of the feet's column (where a strip from the feet starts, NeedChain.stripStart)
-        int[] feet = bb.in == null ? null : bb.in.pos;
         // 0.39.z78 strip: a heading fact that names its cause cell (water / lava ahead) is the tunnel's, whatever the start (the
         // fork resumes a tunnel by its key from anywhere): kept unscoped, lifted when that cell reads dry (WorldFacts.gone)
         String start = WorldFacts.causeCell(fact.text()) != null ? null
@@ -497,7 +527,7 @@ public final class Goals {
         var ch = runChain(bb, g);
         if (ch == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");
         // 0.39.z73 (D2 3.4): the repair, priced against this full re-plan
-        var pk = left == null ? null : repair(bb, g, left, ch, sourceFact ? src : null, trip ? Double.POSITIVE_INFINITY : switchMarginS());
+        var pk = left == null ? null : repair(bb, g, left, ch, sourceFact || station ? src : null, trip ? Double.POSITIVE_INFINITY : switchMarginS());
         if (pk != null) bb.port.log(g.r.key() + ": " + pk.line());
         if (pk != null && pk.repair()) {
             if (newSource) g.sourceReplans++;
@@ -1007,6 +1037,8 @@ public final class Goals {
             String line = WorldFacts.of(bb).sayOnce(g.id() + " " + g.given, g.r.key(), e.getKey(), e.getValue());
             if (line != null) bb.port.log(line);
         }
+        // 0.39.z78 J5 slice 1: the stations held (StationHolds, the one store) - the chain prices without them and lists each
+        for (var e : stationHolds(bb).entrySet()) dropped.putIfAbsent(e.getKey(), e.getValue());
         // 0.39.z33 (z65: a station back once closer); 0.39.z67 item 1: a place-near that failed holds its spot (near it: a cell with room)
         return world.withoutSources(dropped).withPlaceFailures(dropped, pos);
     }

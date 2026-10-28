@@ -923,9 +923,31 @@ public final class StepHands implements Steps.Hands {
      * (NeedChain.World.withoutSources drops it). Never a park.
      */
     private Car.Status toStationStatus(Step.ToStation t) {
+        if (instant != null) return Car.Status.done(instant);
         Car.Status st = requestStatus();
         if (st.state() != Car.State.FAILED) return st;
+        // 0.39.z78 J5 slice 1 (audit D2; run DU 16:29:01.344 "stopped 1 blocks away", run DT 16:19:41.301 two blocks under the
+        // furnace): the walk ended short but the station is in reach from where the bot stands - done, nothing held (a walk
+        // not needed is no fact about the station)
+        String reach = inReachOf(t);
+        if (reach != null) {
+            LOG.info("[entropybot] stations: the {} at {} {} {}: the walk ended short ({}) but it is in reach from here - done, not held", t.name(), t.x(), t.y(), t.z(), st.why());
+            return Car.Status.done(reach);
+        }
         return Car.Status.failed(stationRefused(t, "the walk to it ended short: " + (st.why() == null ? "no reason" : st.why())));
+    }
+
+    /**
+     * 0.39.z78 J5 slice 1: "ok: the &lt;station&gt; at x y z is in reach from here" when the station's block is within the
+     * player's block interaction range from the eye (StationReach, vanilla's own test), else null. Loader notes: vanilla
+     * Player#getEyePosition, Player#blockInteractionRange.
+     */
+    private static String inReachOf(Step.ToStation t) {
+        LocalPlayer p = Minecraft.getInstance().player;
+        if (p == null) return null;
+        var eye = p.getEyePosition();
+        boolean in = io.github.mojolowjo.entropybot.aa.moves.StationReach.inReach(new double[]{eye.x, eye.y, eye.z}, new int[]{t.x(), t.y(), t.z()}, p.blockInteractionRange());
+        return in ? "ok: the " + t.name() + " at " + t.x() + " " + t.y() + " " + t.z() + " is in reach from here" : null;
     }
 
     /**
@@ -971,14 +993,17 @@ public final class StepHands implements Steps.Hands {
 
     /** 0.39.z65 item 1: the station walk's start; a walk refused at its start is the station's fact as well. */
     private String toStation(Step.ToStation t) {
+        // 0.39.z78 J5 slice 1 (audit D2): already in reach - no walk, done
+        String reach = inReachOf(t);
+        if (reach != null) { instant = reach; return null; }
         String r = walk(new Step.Walk(t.x(), t.y(), t.z(), 0));
         return r == null ? null : "error: " + stationRefused(t, "the walk to it did not start: " + r);
     }
 
     /**
      * The station out for this order and its fact said (the order re-plans); the step's failure words. 0.39.z65 review 1:
-     * an order's source fact (FactChange.stationWalk, held in the order's Goals.sources), never the session-wide
-     * Crafting.UNUSABLE_STATIONS - a walk that failed from here says nothing about the station from elsewhere.
+     * a walk that failed from here says nothing about the station from elsewhere. 0.39.z78 J5: the fact
+     * (FactChange.stationWalk) lands in the one station store (Goals.replan -> StationHolds.walkFailed, lifted by distance).
      */
     private String stationRefused(Step.ToStation t, String why0) {
         int[] at = {t.x(), t.y(), t.z()};

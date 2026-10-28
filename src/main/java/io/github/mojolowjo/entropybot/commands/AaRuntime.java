@@ -102,6 +102,7 @@ public final class AaRuntime implements JobPort {
         bb.fact(io.github.mojolowjo.entropybot.aa.NeedChain.WORLD_FACT, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.NeedChain.World>) this::needWorld);
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.NOT_READY_FACT, (java.util.function.Supplier<String>) this::sensesNotReady);   // 0.39.z36
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.WorldFacts.FLUID_FACT, (java.util.function.Function<int[], Boolean>) AaRuntime::fluidAt);   // 0.39.z77 world 3
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.BLOCK_AT_FACT, (java.util.function.Function<int[], String>) Crafting::blockIdLoaded);   // 0.39.z78 J5: StationHolds' refusals
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.BatchWay.PER_SLAB_FACT, (java.util.function.BiFunction<String, Integer, Double>) this::perSlabAt);   // 0.39.z77 J2
         io.github.mojolowjo.entropybot.aa.brain.BatchWay.clear();     // 0.39.z77 review 5: a new runtime's "b1" never inherits an old b1's verdict
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.BatchWay.PLANNER_FACT, planner);     // 0.39.z78 D6: the trips are resolved off the render thread
@@ -892,18 +893,27 @@ public final class AaRuntime implements JobPort {
 
     /**
      * 0.39.z62 item 1b: why a strip from the feet {@code me} in heading {@code h} is blocked at its first cell (feet and head
-     * height): a block Baritone will not break (its own blocksToAvoidBreaking setting - a station by default) or one no tool
-     * breaks (destroy speed below 0); null: open (an unloaded cell is not known to be blocked: open, the strip says more).
-     * Loader notes: vanilla Level#getBlockState / BlockState#getDestroySpeed, Baritone's Settings.
+     * height): a block on Baritone's blocksToAvoidBreaking (a station by default) that BreakPolicy refuses (0.39.z78 J5 1b:
+     * one break authority - the bot's own table in its own area is no longer a block "Baritone will not break"; keep-out /
+     * no-break stay absolute) or one no tool breaks (destroy speed below 0); null: open (an unloaded cell is not known to be
+     * blocked: open, the strip says more). Loader notes: vanilla Level#getBlockState / BlockState#getDestroySpeed, Baritone's
+     * Settings; the structure fact via PolicyRuntime.structureFacts (client level).
      */
     private static String startBlocked(net.minecraft.world.level.Level lv, int[] me, String h) {
         var avoid = baritone.api.BaritoneAPI.getSettings().blocksToAvoidBreaking.value;
+        String gdim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(lv);
         return io.github.mojolowjo.entropybot.aa.brain.StripOrder.startBlocked(me, h, c -> {      // z62 review 4: the pure walk, tested
             var q = new net.minecraft.core.BlockPos(c[0], c[1], c[2]);
             if (!lv.isLoaded(q)) return null;
             var st = lv.getBlockState(q);
             String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString().replaceFirst("^minecraft:", "");
-            if (avoid.contains(st.getBlock())) return id + " at " + c[0] + " " + c[1] + " " + c[2] + ", which Baritone will not break (blocksToAvoidBreaking)";
+            if (avoid.contains(st.getBlock())) {
+                var f = io.github.mojolowjo.entropybot.guard.PolicyRuntime.structureFacts(lv, gdim, q);
+                String refused = io.github.mojolowjo.entropybot.aa.brain.StripOrder.avoidedRefused(id, c,
+                        io.github.mojolowjo.entropybot.guard.BreakPolicy.structure(io.github.mojolowjo.entropybot.guard.Guard.INSTANCE.core.policy(),
+                                gdim, c[0], c[1], c[2], f.structure(), f.placedByMe()));
+                if (refused != null) return refused;
+            }
             if (!st.isAir() && st.getDestroySpeed(lv, q) < 0) return id + " at " + c[0] + " " + c[1] + " " + c[2] + " cannot be broken";
             return null;
         });
@@ -1269,7 +1279,10 @@ public final class AaRuntime implements JobPort {
         // 0.39.z77 world: a source another order dropped here (a world fact) ends no explore either, its order met or not
         var world = io.github.mojolowjo.entropybot.aa.brain.WorldFacts.of(bb).heldAt(bb);
         String why = world.get(key);
-        return why != null ? why : world.get(spot);
+        if (why == null) why = world.get(spot);
+        if (why != null) return why;
+        // 0.39.z78 J5: a held station (StationHolds, the one station store) ends no explore either
+        return io.github.mojolowjo.entropybot.aa.brain.StationHolds.INSTANCE.held(sp.x(), sp.y(), sp.z(), feetNow(), Crafting::blockIdLoaded);
     }
 
     /**
@@ -1331,6 +1344,8 @@ public final class AaRuntime implements JobPort {
         for (var r : io.github.mojolowjo.entropybot.aa.Need.all(tree.ladder)) out.add(r.id.substring(6) + " options: " + r.options() + priced(r));      // round 4A N: every need as rows with prices
         out.addAll(io.github.mojolowjo.entropybot.aa.brain.Costs.lines(bb));      // aa-costs: the cost terms
         out.addAll(tree.brain.heldLines(bb.clock.now()));                          // AA_ROUND2 3: the failure holds
+        // 0.39.z78 J5: the held stations, from the one station store, each with its order and reason (rule 7)
+        out.addAll(io.github.mojolowjo.entropybot.aa.brain.StationHolds.INSTANCE.lines(feetNow(), Crafting::blockIdLoaded));
         return out;
     }
 
@@ -1655,6 +1670,7 @@ public final class AaRuntime implements JobPort {
             LocalPlayer p = mc.player;
             if (p == null || mc.level == null) {
                 planner.forget();           // 0.39.z78 D6: the trips' requests belong to that world
+                io.github.mojolowjo.entropybot.aa.brain.StationHolds.INSTANCE.reset();   // 0.39.z78 J5: the held stations belong to that world
                 roomCells.clear();          // 0.39.z67 item 1: the cells with room belong to that world
                 roomDim = null;
                 appendRun();                // the world unloaded: the run ends here
@@ -1869,17 +1885,8 @@ public final class AaRuntime implements JobPort {
         in.handStoneS = s.handStoneS;
         in.bedKnown = s.bedNear;
         in.bedInBag = s.bedInBag;
-        // 0.36.a6: a table/furnace seen at the camp or base counts wherever the bot is (AaLadder.campLatch, saved)
-        double camp = -1;
-        for (int[] m : new int[][]{s.campPos, s.basePos}) {
-            if (m == null) continue;
-            double d = Math.sqrt(Jobs.distSq(s.botPos, m));
-            camp = camp < 0 ? d : Math.min(camp, d);
-        }
-        boolean tLatch = latch("tableAtCamp", s.feas.table, camp), fLatch = latch("furnaceAtCamp", s.feas.furnace, camp);
-        // station-memory (0.39.z14): a station known anywhere (my placements, Baritone's scan: one lookup) counts, however far
-        tableSeenOrLatched = s.feas.table || tLatch;
-        furnaceSeenOrLatched = s.feas.furnace || fLatch;
+        // 0.39.z78 J5 slice 1 (rule 23; audit D6, B3): the camp latch (a table / furnace seen at the camp counted wherever the
+        // bot was) is deleted - "a table near" is the one station fact: the lookup less the held ones (stationFactsNow)
         stationFactsNow(in);
         in.tableInBag = io.github.mojolowjo.entropybot.aa.core.Inputs.has(bag, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.stationOf(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT));
         in.planks = io.github.mojolowjo.entropybot.aa.core.Inputs.tagged(bag, "minecraft:planks");
@@ -1973,19 +1980,6 @@ public final class AaRuntime implements JobPort {
     }
 
     private boolean ownerReadWarned;
-
-    /** A camp latch from brainData "aa" (AaLadder.campLatch); saved and logged once when it changes. */
-    private boolean latch(String key, boolean seen, double distToCamp) {
-        JsonObject d = data();
-        boolean was = d.has(key) && d.get(key).getAsBoolean();
-        boolean now = AaLadder.campLatch(was, seen, distToCamp);
-        if (now != was) {
-            d.addProperty(key, now);
-            c.saved();
-            LOG.info("[entropybot] aa: {} {}", key, now ? "noted (seen within " + AaLadder.campR() + " of the camp/base): it counts away from the camp too" : "dropped (no camp or base known)");
-        }
-        return now;
-    }
 
     /** 0.36.1 (review 6): the reflexes' target is a creeper within 10 (Reflexes.CREEPER_OVERRIDE), or a creeper duel runs. */
     private boolean creeperClose() {
@@ -2259,9 +2253,6 @@ public final class AaRuntime implements JobPort {
     /** The typed steps after the ore step, held while the return leg runs; the typed steps to go on with after an escape. */
     private List<io.github.mojolowjo.entropybot.aa.moves.Step> pendingReturnSteps, escapeResumeSteps;
     private String typedKey;
-    /** The last sense's "a station in view or latched at the camp" part of tableKnown / furnaceKnown. */
-    private boolean tableSeenOrLatched, furnaceSeenOrLatched;
-
     /**
      * station-memory (0.39.z14): a station known anywhere (my placements, Baritone's scan: one lookup) counts, however far.
      * 0.39.z30: also run right before a re-plan, so the chain reads the station memory of now, not of the last sense.
@@ -2271,8 +2262,10 @@ public final class AaRuntime implements JobPort {
         // refused" - yet a table in sight kept "a table near" true, so the chain priced the craft there at 0 s and never
         // priced making and placing a new one; the same way failed twice, parked): a sight or the camp latch counts only
         // while the station lookup does not refuse every known one (StationFact.near)
-        in.tableKnown = io.github.mojolowjo.entropybot.aa.StationFact.near(tableSeenOrLatched, c.crafting.knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT));
-        in.furnaceKnown = io.github.mojolowjo.entropybot.aa.StationFact.near(furnaceSeenOrLatched, c.crafting.knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT));
+        // 0.39.z78 J5 slice 1: the one "station near" fact - the station lookup less the held ones (StationHolds); no sight,
+        // no latch (StationFact.near)
+        in.tableKnown = io.github.mojolowjo.entropybot.aa.StationFact.near(c.crafting.knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT));
+        in.furnaceKnown = io.github.mojolowjo.entropybot.aa.StationFact.near(c.crafting.knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT));
     }
 
     /** 0.39.z30: a re-plan reads the facts of now: the senses again (the bag after the last step), the inputs filled from them. */

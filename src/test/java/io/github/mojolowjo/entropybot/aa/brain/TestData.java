@@ -201,7 +201,7 @@ public final class TestData implements ItemWorth.Source, MiningTiers.Source {
     /** Installs this as the item data and returns it. */
     public TestData install() { ItemWorth.use(this); MiningTiers.use(this); ToolGroup.use(List.of(new ToolGroup.Tier("wood", 2, 59), new ToolGroup.Tier("stone", 4, 131), new ToolGroup.Tier("iron", 6, 250), new ToolGroup.Tier("diamond", 8, 1561), new ToolGroup.Tier("gold", 12, 32), new ToolGroup.Tier("netherite", 9, 2031))); ItemWorth.resetWarnings(); return this; }
 
-    public static void clear() { ItemWorth.use(null); MiningTiers.use(null); ToolGroup.use(null); }
+    public static void clear() { ItemWorth.use(null); MiningTiers.use(null); ToolGroup.use(null); StationHolds.INSTANCE.reset(); }
 
     @Override public Facts facts(String id) { return facts.getOrDefault(id, Facts.NONE); }
     @Override public List<Recipe> recipes(String id) {

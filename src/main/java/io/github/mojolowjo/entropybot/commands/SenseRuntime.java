@@ -43,7 +43,7 @@ public final class SenseRuntime {
     private long storageSeq, bedAt = -60_001, ownerOffAt = -1;
     private boolean bedNearDay;
     private long nearAt = -60_001, feasErrAt = -60_001;
-    private boolean nearTrees, nearTable, nearFurnace;
+    private boolean nearTrees;
     private Map<String, Integer> lastTotals;
 
     SenseRuntime(Commands c) { this.c = c; }
@@ -225,14 +225,13 @@ public final class SenseRuntime {
             };
             if (s.now - nearAt > 60_000) {
                 nearAt = s.now;
-                net.minecraft.client.multiplayer.ClientLevel lv = Minecraft.getInstance().level;
                 nearTrees = c.planning.treeSeen();
-                nearTable = CampCommands.near(lv, s.botPos, "crafting_table");
-                nearFurnace = CampCommands.near(lv, s.botPos, "furnace");
             }
             f.trees = nearTrees;
-            f.table = nearTable;
-            f.furnace = nearFurnace;
+            // 0.39.z78 J5 slice 1 (rule 23; audit D6, B3): a table / furnace near is the one station fact - the station lookup
+            // less the held ones (Crafting.knownStation, StationHolds) - never the by-name sight once a minute that was here
+            f.table = c.crafting.knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT) instanceof io.github.mojolowjo.entropybot.aa.StationFact.Known;
+            f.furnace = c.crafting.knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT) instanceof io.github.mojolowjo.entropybot.aa.StationFact.Known;
             f.known = true;
         } catch (RuntimeException e) {
             if (s.now - feasErrAt > 60_000) {

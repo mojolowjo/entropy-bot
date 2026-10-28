@@ -298,6 +298,18 @@ public final class StripOrder {
     }
 
     /**
+     * 0.39.z78 J5 1b (D5, rule 16; run DU 16:31:55-58: the bot's own band table on the strip's south line blocked that
+     * heading as "a block Baritone will not break"): one break authority - a block on Baritone's blocksToAvoidBreaking (id
+     * {@code id} at {@code c}) blocks a strip start only when BreakPolicy refuses it ({@code v}: BreakPolicy.structure for
+     * the cell - keep-out / no-break absolute, placed by me open, an area's break-structures tag open). Its structure fact not
+     * loaded yet: not known to be blocked (null, open: the strip says more - rule 15). Pure.
+     */
+    public static String avoidedRefused(String id, int[] c, io.github.mojolowjo.entropybot.guard.BreakPolicy.Verdict v) {
+        if (v == null || v.allowed() || io.github.mojolowjo.entropybot.guard.BreakPolicy.structureNotLoaded(v)) return null;
+        return id + " at " + c[0] + " " + c[1] + " " + c[2] + ", which the break policy refuses: " + v.reason();
+    }
+
+    /**
      * 0.39.z76 sb4 review (run AV 02:40:45-02:41:36: six strips "no path (0 blocks)" with no reason in the log): the rule's
      * answer for each first cell (feet and head height) of a strip from {@code feet} in heading {@code h}, "first cells:
      * x y z: answer; x y z: answer", from {@code answer} (the break policy's verdict - its rule row and cost - for a cell; null:

@@ -247,7 +247,9 @@ final class NearbyLive {
         java.util.Set<String> ids = blocks instanceof StationBlocks.Answer.Of o ? o.ids() : java.util.Set.of();
         Nearby.Scan sc = scan();
         int unv = Nearby.unverified(sc, ids);                   // station-stale: records in unloaded chunks are kept, said here
-        return Nearby.stationsLine(stations(kind), sc.own(), ids, Nearby.scanR()) + (unv > 0 ? " (" + unv + " unverified: chunk not loaded)" : "");
+        StationFact f = stations(kind);
+        return Nearby.stationsLine(f, sc.own(), ids, Nearby.scanR()) + (unv > 0 ? " (" + unv + " unverified: chunk not loaded)" : "")
+                + io.github.mojolowjo.entropybot.aa.brain.StationHolds.INSTANCE.note(f instanceof StationFact.Known k ? k.spots() : List.of(), here(), Crafting::blockIdLoaded);   // 0.39.z78 J5 slice 1: each held one said
     }
 
     /** station-stale (0.39.z18), the owner's reset: every station record of mine in this world goes; the line with the count. */

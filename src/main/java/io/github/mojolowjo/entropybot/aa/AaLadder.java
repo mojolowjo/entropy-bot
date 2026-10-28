@@ -34,19 +34,8 @@ public final class AaLadder {
         return !tableInBag && planks >= 4;  // game fact: a crafting table takes 4 planks
     }
 
-    /** Seen within this many blocks of the camp or base mark, a table/furnace counts as the camp's (latched). */
-    public static int campR() { return Tuning.i("aaLadder.campR"); }
-
-    /**
-     * 0.36.a6: a table/furnace seen within {@link #CAMP_R} of the camp or base mark is latched and counts wherever the bot
-     * is. Cleared only when neither a camp nor a base is known any more.
-     *
-     * @param distToCamp blocks to the nearer of the camp and base marks, -1 when neither is known
-     */
-    public static boolean campLatch(boolean latched, boolean seenNear, double distToCamp) {
-        if (distToCamp < 0) return false;
-        return latched || (seenNear && distToCamp <= campR());
-    }
+    // 0.39.z78 J5 slice 1 (rule 23; audit D6, B3): the camp latch (0.36.a6: a table / furnace seen within aaLadder.campR of
+    // the camp counted wherever the bot was) is deleted with its knob - "a station near" is the station lookup alone.
 
     /** The shelter need's SUCCESS is remembered on the blackboard (the adapter persists it). */
     public static void noteShelter(Blackboard bb) { bb.fact(SHELTER_FACT, Boolean.TRUE); }

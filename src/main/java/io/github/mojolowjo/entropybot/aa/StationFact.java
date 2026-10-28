@@ -34,13 +34,13 @@ public sealed interface StationFact {
     String REFUSED_ALL = "every known one is refused (untrusted, or it never opened)";
 
     /**
-     * 0.39.z75 take (run AI 20:06:47): a station of the kind counts as near - one known by the lookup, or one in sight / the
-     * camp latch ({@code seenOrLatched}) unless the lookup refuses every known one (that one is the refused station). Pure.
+     * 0.39.z78 J5 slice 1 (rule 23; audit D6, B3; run DU 16:29:02): the one "a station of the kind near" fact - one known by
+     * the station lookup, which leaves out every held one (StationHolds) - never a sight by name or a camp latch (deleted:
+     * they kept "near" true for up to 60 s after the table was taken, or for a refused one). Not loaded: not near (rule 15:
+     * the chain waits on the item data, as before). Pure.
      */
-    static boolean near(boolean seenOrLatched, StationFact f) {
-        if (f instanceof Known) return true;
-        if (f instanceof None n && REFUSED_ALL.equals(n.why())) return false;
-        return seenOrLatched;
+    static boolean near(StationFact f) {
+        return f instanceof Known;
     }
 
     /** The line text of a not-loaded answer (stationsLine, the waiting step's status). */

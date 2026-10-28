@@ -430,9 +430,10 @@ class Z75UndergroundFuelTest {
      */
     @Test
     void take_aRefusedTableIsNotNearAndANewOneIsMade() {
-        assertFalse(io.github.mojolowjo.entropybot.aa.StationFact.near(true, new io.github.mojolowjo.entropybot.aa.StationFact.None(io.github.mojolowjo.entropybot.aa.StationFact.REFUSED_ALL)));
-        assertTrue(io.github.mojolowjo.entropybot.aa.StationFact.near(true, new io.github.mojolowjo.entropybot.aa.StationFact.None("no station placed or scanned")));
-        assertTrue(io.github.mojolowjo.entropybot.aa.StationFact.near(false, new io.github.mojolowjo.entropybot.aa.StationFact.Known(List.of(TABLE_1M))));
+        // 0.39.z78 J5 slice 1: "near" is the lookup alone (the by-name sight and the camp latch are gone, audit D6/B3)
+        assertFalse(io.github.mojolowjo.entropybot.aa.StationFact.near(new io.github.mojolowjo.entropybot.aa.StationFact.None(io.github.mojolowjo.entropybot.aa.StationFact.REFUSED_ALL)));
+        assertFalse(io.github.mojolowjo.entropybot.aa.StationFact.near(new io.github.mojolowjo.entropybot.aa.StationFact.None("no station placed or scanned")));
+        assertTrue(io.github.mojolowjo.entropybot.aa.StationFact.near(new io.github.mojolowjo.entropybot.aa.StationFact.Known(List.of(TABLE_1M))));
         ScenariosTest.world("wooden", "stone");
         Chain c = NeedChain.resolve("furnace", 1, ScenariosTest.w(Map.of("minecraft:oak_log", 1, "minecraft:cobblestone", 8), false, false, Map.of()));
         assertTrue(c.ok() && !c.explore(), c.why());

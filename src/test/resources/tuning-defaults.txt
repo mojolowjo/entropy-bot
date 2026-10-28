@@ -18,7 +18,6 @@ aaDesires.shortHoldMs	60000.0
 aaEscape.holeMaxUp	48.0
 aaEscape.maxPerTask	2.0
 aaEscape.plankReserve	6.0
-aaLadder.campR	24.0
 aaLadder.surfaceDepth	3.0
 aaLive.depthMax	40.0
 aaLive.switches	12.0

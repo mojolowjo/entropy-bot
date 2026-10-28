@@ -144,7 +144,10 @@ class Z65RunVTest {
         Steps.Routine r = Goals.replan(bb, g, walk, f, "couldn't get there");
         assertNotNull(r.steps(), r.why());
         assertFalse(r.steps().stream().anyMatch(s -> s instanceof Step.ToStation), "the table is out for this order: " + r.steps());
-        assertTrue(Goals.droppedSources(g).containsKey("station at -261 75 21"));
+        // 0.39.z78 J5 slice 1: held in the one station store (StationHolds), named by the order that learned it
+        var held = io.github.mojolowjo.entropybot.aa.brain.StationHolds.INSTANCE.heldAt(bb.in.pos, null);
+        assertTrue(held.getOrDefault("station at -261 75 21", "").startsWith("held for " + g.r.key() + ": "), held.toString());
+        assertFalse(Goals.droppedSources(g).containsKey("station at -261 75 21"), "not the order's sources as well");
         assertEquals(1, g.sourceReplans, "a new source: counted as a source drop");
         assertFalse(walksToTable(Goals.chain(bb, g)), "still out from the same spot");
 
@@ -158,7 +161,8 @@ class Z65RunVTest {
         bb.in.pos = new int[]{-261, 60, 22};
         assertTrue(walksToTable(Goals.chain(bb, g)), "usable again once the bot stands closer");
         assertTrue(walksToTable(Goals.chain(bb, next)), "usable again in the next order once the bot moved off the cell");
-        assertTrue(Goals.droppedSources(g).containsKey("station at -261 75 21"), "the record stays (a repeat is counted as a re-plan)");
+        assertTrue(io.github.mojolowjo.entropybot.aa.brain.StationHolds.INSTANCE.held(-261, 75, 21, new int[]{-261, 16, 22}, null) != null,
+                "the record stays: back at the failed walk's cell it holds again");
     }
 
     @Test

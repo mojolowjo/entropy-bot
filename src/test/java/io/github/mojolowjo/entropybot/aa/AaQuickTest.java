@@ -13,21 +13,12 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 0.36.a6 (aa371): the camp latch, the under-ground escape choice. */
+/** 0.36.a6 (aa371): the under-ground escape choice (the camp latch: deleted, 0.39.z78 J5 slice 1). */
 @org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class AaQuickTest {
     final Clock.Fake clock = new Clock.Fake(10_000_000);
     final FakePort port = new FakePort();
     final Blackboard bb = new Blackboard(clock, port, new Tracer());
-
-    @Test
-    void campLatch() {
-        assertTrue(AaLadder.campLatch(false, true, 10), "seen at the camp");
-        assertFalse(AaLadder.campLatch(false, true, 60), "seen far from the camp: not the camp's");
-        assertTrue(AaLadder.campLatch(true, false, 200), "away from the camp it still counts");
-        assertFalse(AaLadder.campLatch(true, false, -1), "no camp or base any more");
-        assertFalse(AaLadder.campLatch(false, false, 5));
-    }
 
     @Test
     void escapeChoice() {

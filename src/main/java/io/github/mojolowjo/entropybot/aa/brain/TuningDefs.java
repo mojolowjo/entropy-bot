@@ -23,7 +23,6 @@ final class TuningDefs {
         Tuning.def("aaEscape.plankReserve", 6, "rm-constants 0.39.u2 (was AaEscape.PLANK_RESERVE)", "Review 0.39.a4 4: planks kept back from placing (a crafting table 4 + sticks 2), so a pillar or a box never eats the next craft");
         // aaLadder
         Tuning.def("aaLadder.surfaceDepth", 3, "rm-constants 0.39.u2 (was AaLadder.SURFACE_DEPTH)", "Under this much ground a need whose work wants open ground prices a climb into its row (a tree's leaves never count)");
-        Tuning.def("aaLadder.campR", 24, "rm-constants 0.39.u2 (was AaLadder.CAMP_R)", "Seen within this many blocks of the camp or base mark, a table/furnace counts as the camp's (latched)");
         // aaLive
         Tuning.def("aaLive.switches", 12, "rm-constants 0.39.u2 (was AaLive.SWITCHES)", "the switches of AaLive");
         Tuning.def("aaLive.depthMax", 40, "rm-constants 0.39.u2 (was AaLive.DEPTH_MAX)", "the depth max of AaLive");
