@@ -77,7 +77,22 @@ public final class SurfaceHeight {
      * Pure.
      */
     public static boolean legNeeded(int[] feet, java.util.function.IntBinaryOperator surface, int[] target) {
+        return legNeeded(feet, surface, target, (x, z) -> false);
+    }
+
+    /** A column test (x z). */
+    @FunctionalInterface
+    public interface Column2 { boolean test(int x, int z); }
+
+    /**
+     * Run EM (the manager's fix; run EM 04:06:20-24: the feet rose up a water column at -4 _ 400 under the no-break walk and
+     * could not step out - "1-block steps reach the top" read the water's top as ground): as above, with {@code fluid} the
+     * columns whose top is a fluid - no step: never walked through, and from a fluid column of its own the feet step
+     * nowhere (the leg is needed whenever the ring's top is another column). Pure.
+     */
+    public static boolean legNeeded(int[] feet, java.util.function.IntBinaryOperator surface, int[] target, Column2 fluid) {
         if (feet == null || target == null) return false;
+        if (fluid.test(feet[0], feet[2])) return target[0] != feet[0] || target[2] != feet[2];
         int side = 2 * RING + 1;
         int[] h = new int[side * side];
         for (int i = 0; i < h.length; i++) h[i] = surface.applyAsInt(feet[0] - RING + i % side, feet[2] - RING + i / side);
@@ -95,6 +110,7 @@ public final class SurfaceHeight {
                 for (int dz = -1; dz <= 1; dz++) {
                     int nx = cx + dx, nz = cz + dz, n = nz * side + nx;
                     if ((dx == 0 && dz == 0) || nx < 0 || nz < 0 || nx >= side || nz >= side || seen[n] || !known(h[n])) continue;
+                    if (fluid.test(feet[0] - RING + nx, feet[2] - RING + nz)) continue;      // run EM: a fluid's top is no step
                     if (h[n] - h[c] > 1) continue;                                // structural: a 1-block step walks out
                     seen[n] = true;
                     q.add(n);

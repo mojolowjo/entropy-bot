@@ -616,6 +616,20 @@ public final class AaRuntime implements JobPort {
         return sky;
     }
 
+    /**
+     * Run EM: the column's top is a fluid - the leaf-free surface's cell or the block under it holds water or lava (the
+     * heightmap counts a fluid as ground); not loaded or not known: false (the ring's own test says not known).
+     */
+    private static boolean fluidTop(net.minecraft.world.level.Level lv, int x, int z) {
+        int y = Jobs.surfaceNoLeaves(lv, x, z);
+        if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(y)) return false;
+        var m = new net.minecraft.core.BlockPos.MutableBlockPos(x, y, z);
+        if (!lv.isLoaded(m)) return false;
+        if (!lv.getFluidState(m).isEmpty()) return true;
+        m.set(x, y - 1, z);
+        return !lv.getFluidState(m).isEmpty();
+    }
+
     /** Run EI: a cell a player stands in under open sky (feet and head open, solid ground under, the sky seen). */
     private static boolean standableSky(net.minecraft.world.level.Level lv, int x, int y, int z) {
         var m = new net.minecraft.core.BlockPos.MutableBlockPos(x, y, z);
@@ -647,8 +661,10 @@ public final class AaRuntime implements JobPort {
             java.util.function.IntBinaryOperator ground = (x, z) -> Jobs.surfaceNoLeaves(lv, x, z);
             int[] t = io.github.mojolowjo.entropybot.world.SurfaceHeight.ringTarget(me, ground, (x, y, z) -> standableSky(lv, x, y, z));
             // 857599bc review: a leg only where a no-break walk cannot go (the ring's top more than 1 over the feet's surface)
-            if (t != null && !io.github.mojolowjo.entropybot.world.SurfaceHeight.legNeeded(me, ground, t))
-                return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(depth, me[0], me[1], me[2], 0, inHole);   // the feet: no leg
+            // run EM: a column whose top is a fluid is no step (the no-break walk cannot climb out of water onto the rim)
+            io.github.mojolowjo.entropybot.world.SurfaceHeight.Column2 fluid = (x, z) -> fluidTop(lv, x, z);
+            if (t != null && !io.github.mojolowjo.entropybot.world.SurfaceHeight.legNeeded(me, ground, t, fluid))     // the feet: no leg; the top kept for a boxed-in way out (run EM)
+                return io.github.mojolowjo.entropybot.aa.NeedChain.Surface.noLeg(depth, me, inHole, t, Math.sqrt(Jobs.distSq(me, t)));
             if (t == null) return depth == 0 ? new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(0, me[0], me[1], me[2], 0) : null;
             return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(depth, t[0], t[1], t[2], Math.sqrt(Jobs.distSq(me, t)), inHole);
         }
@@ -985,18 +1001,33 @@ public final class AaRuntime implements JobPort {
         // minutes, the ore seen there and left, the yield measured there once walked (the prior before)
         var where = whereOf(ore);
         boolean bandKnown = where != null && where.kind() != io.github.mojolowjo.entropybot.aa.brain.GenWhere.Kind.NOT_LOADED && where.band();
+        // run EM (rule 23 (1); run EM 04:01:48-04:06:24: the loop returned the nearest cave alone - a SMALL one the planner
+        // dropped - and the LARGE 183 65 49 was never asked): EVERY known cave offered for the family, nearest first; the
+        // planner ranks them, drops one that holds under the need with its reason and asks the next (NeedChain.caveAlts)
+        List<io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay> ways = new ArrayList<>();
+        var idx = pass.caveIndex();
         for (var k : known) {
             var f = sg.caveFacts(dim, k.x(), k.y(), k.z());
             if (f != null && !f.offeredFor(fam)) continue;
             if (bandKnown && !k.depth().overlaps(where.lo(), where.hi())) continue;
             boolean walked = f != null && f.walkedMinutes() > 0;
             double rate = f == null ? sg.ore().caveRate(fam) : f.rate(sg.ore().caveRate(fam));   // review 2: measured once walked
-            double unseen = f == null || f.cellCount() <= 0 ? -1
-                    : f.unseen() / (double) io.github.mojolowjo.entropybot.sense.CaveIndex.CROSS_SECTION / io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps() / 60.0;   // structural: seconds a minute
-            return new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(k.x(), k.y(), k.z(), Math.sqrt(Jobs.distSq(me, new int[]{k.x(), k.y(), k.z()})),
-                    ore, fam, rate, walked || sg.ore().caveMinutes() > 0, k.size(), unseen, leftKeys(sg.caveLeft(dim, k.x(), k.y(), k.z(), fam)), lips(pass, k, me));
+            // run EM: the minutes it holds from its fed cells - the record's unseen part once fed; while it is being fed,
+            // the index's volume now (O(1)) less what is seen; the size bucket only when nothing of it is fed (rule 15)
+            long cells = -1;
+            if (f != null && f.loaded()) cells = f.unseen();
+            else if (f != null && f.cellCount() > 0) {
+                int root = idx.volumeAt(k.x(), k.y(), k.z());
+                var v = root < 0 ? null : idx.volume(root);
+                cells = v == null ? f.unseen() : Math.max(0, v.cells() - (f.cellCount() - f.unseen()));
+            }
+            double unseen = cells < 0 ? -1
+                    : cells / (double) io.github.mojolowjo.entropybot.sense.CaveIndex.CROSS_SECTION / io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps() / 60.0;   // structural: seconds a minute
+            ways.add(new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(k.x(), k.y(), k.z(), Math.sqrt(Jobs.distSq(me, new int[]{k.x(), k.y(), k.z()})),
+                    ore, fam, rate, walked || sg.ore().caveMinutes() > 0, k.size(), unseen, leftKeys(sg.caveLeft(dim, k.x(), k.y(), k.z(), fam)), lips(pass, k, me)));
         }
-        return null;
+        if (ways.isEmpty()) return null;
+        return ways.get(0).withMore(ways.subList(1, ways.size()));
     }
 
     /** J6b run EF (3): the cave's entry first, then up to 3 other openings of its volume (the next lips to try). */

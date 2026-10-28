@@ -106,15 +106,38 @@ public final class NeedChain {
     static final String CAVE_KEY = "known cave ";
 
     public record CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured,
-                          io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys, List<int[]> entries) {
+                          io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys, List<int[]> entries,
+                          List<CaveWay> more) {
         public CaveWay {
             leftKeys = leftKeys == null ? List.of() : List.copyOf(leftKeys);
             entries = entries == null ? List.of() : List.copyOf(entries);
+            more = more == null ? List.of() : List.copyOf(more);
+        }
+
+        public CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured,
+                       io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys, List<int[]> entries) {
+            this(x, y, z, dist, ore, family, perMin, measured, size, unseenMinutes, leftKeys, entries, List.of());
         }
 
         public CaveWay(int x, int y, int z, double dist, String ore, String family, double perMin, boolean measured,
                        io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys) {
             this(x, y, z, dist, ore, family, perMin, measured, size, unseenMinutes, leftKeys, List.of());
+        }
+
+        /**
+         * Run EM (rule 23 (1); run EM 04:01:48-04:06:24: the nearest cave alone was asked, a SMALL one dropped, and the
+         * LARGE 183 65 49 never priced): this cave and the other known caves after it, ranked nearest first.
+         */
+        public List<CaveWay> all() {
+            List<CaveWay> out = new ArrayList<>();
+            out.add(new CaveWay(x, y, z, dist, ore, family, perMin, measured, size, unseenMinutes, leftKeys, entries, List.of()));
+            out.addAll(more);
+            return out;
+        }
+
+        /** This cave with {@code next} as the caves after it. */
+        public CaveWay withMore(List<CaveWay> next) {
+            return new CaveWay(x, y, z, dist, ore, family, perMin, measured, size, unseenMinutes, leftKeys, entries, next);
         }
 
         /**
@@ -126,12 +149,19 @@ public final class NeedChain {
         /** The hold key of one walk target (rule 23 (1): the hold names the cell). */
         public static String keyOf(int[] t) { return CAVE_KEY + t[0] + "," + t[1] + "," + t[2]; }
 
-        /** The way with only the targets not held ({@code held}: a key the order holds); null: every one held. */
+        /**
+         * The way with only the targets not held ({@code held}: a key the order holds), for this cave and each after it;
+         * a cave with every opening held is out and the next one leads (run EM); null: every cave held.
+         */
         public CaveWay without(java.util.function.Predicate<String> held) {
-            List<int[]> left = new ArrayList<>();
-            for (int[] t : targets()) if (!held.test(keyOf(t))) left.add(t);
-            if (left.isEmpty()) return null;
-            return new CaveWay(x, y, z, dist, ore, family, perMin, measured, size, unseenMinutes, leftKeys, left);
+            List<CaveWay> out = new ArrayList<>();
+            for (CaveWay w : all()) {
+                List<int[]> left = new ArrayList<>();
+                for (int[] t : w.targets()) if (!held.test(keyOf(t))) left.add(t);
+                if (!left.isEmpty()) out.add(new CaveWay(w.x, w.y, w.z, w.dist, w.ore, w.family, w.perMin, w.measured, w.size, w.unseenMinutes, w.leftKeys, left));
+            }
+            if (out.isEmpty()) return null;
+            return out.get(0).withMore(out.subList(1, out.size()));
         }
 
         /** J6b: the ore cells of the family seen there and left (their spot keys "x,y,z": the same keys a collect way takes). */
@@ -316,8 +346,13 @@ public final class NeedChain {
      * the hole round the feet), the surface cell to walk up to and its distance; {@code hole}: the depth is a hole round the
      * feet (a sky-open shaft) - priced as below the surface at any depth over a step.
      */
-    public record Surface(int depth, int x, int y, int z, double dist, boolean hole) {
+    public record Surface(int depth, int x, int y, int z, double dist, boolean hole, int[] top, double topDist) {
+        public Surface(int depth, int x, int y, int z, double dist, boolean hole) { this(depth, x, y, z, dist, hole, null, 0); }
+
         public Surface(int depth, int x, int y, int z, double dist) { this(depth, x, y, z, dist, false); }
+
+        /** Run EM: the feet (no leg needed), with the ring's top kept for a boxed-in explore's way out ({@code top}, {@code topDist}). */
+        public static Surface noLeg(int depth, int[] feet, boolean hole, int[] top, double topDist) { return new Surface(depth, feet[0], feet[1], feet[2], 0, hole, top == null ? null : top.clone(), topDist); }
     }
 
     /**
@@ -5500,9 +5535,50 @@ public final class NeedChain {
     private static List<Alt> caveAlts(Ctx c, String word, String gives, int lack) {
         CaveWay cw = caveOffered(c.w.cave(), word);
         if (cw == null) return List.of();
-        Alt a = new Alt("known cave " + Math.round(cw.dist()) + " m", () -> cave(c, word, gives, lack, cw));
-        a.id = gives;
-        return List.of(a);
+        // run EM (rule 23 (1); rule 18 as amended): every known cave, ranked by the estimate (straight metres, nearest
+        // first); one that holds under the need is dropped with its reason and the next is asked; the first CAVES_PRICED
+        // that hold it are priced in full (Baritone's walk to the lip), the rest ranked out, said
+        List<Alt> alts = new ArrayList<>();
+        int priced = 0;
+        for (CaveWay k : cw.all()) {
+            String name = "known cave " + Math.round(k.dist()) + " m";
+            String shortOf = caveHoldsShort(c, gives, lack, k);
+            Alt a;
+            if (shortOf != null) a = new Alt(name, () -> { c.fail = shortOf; return null; });
+            else if (priced >= CAVES_PRICED) {
+                String out = name + " at " + k.x() + " " + k.y() + " " + k.z() + ": ranked out - the " + CAVES_PRICED + " nearest that hold the need are priced (rule 18 as amended)";
+                a = new Alt(name, () -> { c.fail = out; return null; });
+            } else {
+                priced++;
+                a = new Alt(name, () -> cave(c, word, gives, lack, k));
+            }
+            a.id = gives;
+            alts.add(a);
+        }
+        return alts;
+    }
+
+    /** Run EM: the known caves priced in full at most (the rest ranked by the estimate, rule 18 as amended). */
+    static final int CAVES_PRICED = 2; // structural: the top two of the ranking (rule 18 as amended, the manager's "top two")
+
+    /**
+     * Run EM: the cave's holds test before any path is asked - the reason the cave cannot give {@code lack} of
+     * {@code gives} in the minutes it holds (its record's unseen part, else its size; never past the cap), null: it can.
+     * The same numbers {@link #cave} prices with.
+     */
+    private static String caveHoldsShort(Ctx c, String gives, int lack, CaveWay cw) {
+        String g = memberOf(c, gives, cw.ore());
+        double per = perBlock(c, g, cw.ore());
+        if (!(per > 0)) return null;                                          // cave() says it, with its own reason
+        int oreBlocks = (int) Math.ceil(lack / per - 1e-9);                  // structural: epsilon
+        int toFind = Math.max(0, oreBlocks - freeLeft(cw.leftKeys(), c.taken).size());
+        double minutes = toFind / cw.perMin(), cap = Tuning.get("cave.exploreMinutes"), holds = cw.holdsMinutes(), max = Math.min(cap, holds);
+        if (toFind <= 0 || minutes <= max) return null;
+        String yield = "yield ~" + String.format(java.util.Locale.ROOT, "%.2f", cw.perMin()) + " ore/min (" + (cw.measured() ? "measured" : "prior") + ")";
+        return "known cave " + Math.round(cw.dist()) + " m at " + cw.x() + " " + cw.y() + " " + cw.z() + ", " + yield + ": " + toFind + " ore to find take ~" + Math.round(minutes) + " min, past "
+                + (holds < cap ? (cw.unseenMinutes() >= 0 ? "the ~" + Math.round(holds) + " min its unseen part holds"
+                : "the ~" + Math.round(holds) + " min a " + cw.size().name().toLowerCase(java.util.Locale.ROOT) + " cave holds") : "cave.exploreMinutes " + Math.round(cap))
+                + " - the next cave is asked";
     }
 
     /**
@@ -5518,7 +5594,10 @@ public final class NeedChain {
     private static CaveWay caveOffered(Function<String, CaveWay> cave, String word) {
         if (cave == null || word == null) return null;
         CaveWay cw = cave.apply(word);
-        return cw == null || cw.ore() == null || !(cw.perMin() > 0) ? null : cw;
+        if (cw == null) return null;
+        List<CaveWay> ok = new ArrayList<>();                                // run EM: each of the caves on its own
+        for (CaveWay k : cw.all()) if (k.ore() != null && k.perMin() > 0) ok.add(k);
+        return ok.isEmpty() ? null : ok.get(0).withMore(ok.subList(1, ok.size()));
     }
 
     /**
@@ -5771,10 +5850,13 @@ public final class NeedChain {
         if (upText == null && (legText == null || legText.isEmpty())) {
             String froze = frozenHere(c), boxed = boxedHere(c);
             // run EH (3): a no-break freeze or boxed-in is answered by a way out - the walk up when below the surface, else the climb
-            if ((froze != null || boxed != null) && over != null && over.depth() > 0) {
-                upText = surfaceWalk(c);
+            // run EM (rule 1; run EM 04:06:24-31: boxed in at -4 72 400 at depth 0 - no walk up, no climb, every order stopped):
+            // at ANY depth the walk to the ring's top (Baritone's ordinary lease may dig a step or place one), then the climb
+            // where there is ground over the feet
+            if ((froze != null || boxed != null) && over != null) {
+                upText = surfaceWalk(c, true);
                 if (upText == null && c.fail != null) return null;
-                if (upText == null) upText = climbUp(c, over);
+                if (upText == null && over.depth() > 0) upText = climbUp(c, over);
                 if (upText != null) { froze = null; boxed = null; }
             }
             if (froze == null && boxed != null) {
@@ -6063,8 +6145,15 @@ public final class NeedChain {
      * 15: said, the explore runs from here), a walk up already held for this order (its failure, said), or no path up
      * (unreachable: said, the explore runs from here). Null with {@code c.fail} set: the path is not known yet (the way waits).
      */
-    private static String surfaceWalk(Ctx c) {
-        Surface s = c.w.where().surface().get();
+    private static String surfaceWalk(Ctx c) { return surfaceWalk(c, false); }
+
+    /**
+     * Run EM: {@code boxed} - the boxed-in (or frozen) explore's way out: the walk to the ring's top even where 1-block
+     * steps reach it ({@link Surface#top}), at any depth (rule 1); else the leg as above.
+     */
+    private static String surfaceWalk(Ctx c, boolean boxed) {
+        Surface s0 = c.w.where().surface().get();
+        Surface s = s0 != null && boxed && s0.top() != null ? new Surface(s0.depth(), s0.top()[0], s0.top()[1], s0.top()[2], s0.topDist(), s0.hole()) : s0;
         if (s == null) {
             c.note(() -> "surface: where it is over the bot is not known (its column is not loaded): the explore runs from here");
             return null;
