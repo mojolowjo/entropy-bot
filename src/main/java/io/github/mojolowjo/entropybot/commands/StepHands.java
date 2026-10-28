@@ -673,52 +673,65 @@ public final class StepHands implements Steps.Hands {
 
     /** The running lip walk's hold (null: none). */
     private io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.Held lip;
-    private boolean lipReachGoal;
+    /** Run EL: the lip step's goal - the fork's reach goal on the entry (null: its cube's chunks not all loaded yet). */
+    private baritone.api.pathing.goals.GoalReachBlock lipGoal;
+    /** Run EL: the lip step's named fact found at its start (said by the first status). */
+    private String lipFail;
     private long lipGoalAt;
 
     /**
-     * The lip walk's start: already in reach - done. Else Baritone's goal is the fork's reach goal on the entry cell (a
-     * standable cell, not the entry nor the cell over it, the entry's centre within reach of the eye, a face of it seen),
-     * built on the game thread from the loaded world; its chunk not loaded yet, or no such cell: near the entry (GoalNear 3)
-     * until the reach goal can be built. The cave way's lease (breaking and placing as priced). Loader notes: the fork's
-     * GoalReachBlock (api), Baritone's custom goal process; vanilla Level#clip, BlockState#isCollisionShapeFullBlock.
+     * The lip walk's start. Run EL (rules 2, 23 (2)): the step's ONE "arrived" reader is its goal - the fork's
+     * GoalReachBlock on the entry cell (a standable cell, not the entry nor the cell over it, the entry's centre within
+     * reach of the eye, a face of it seen), built on the game thread from the loaded world; the step is done exactly when
+     * the goal holds the feet ({@link io.github.mojolowjo.entropybot.cave.ExploreRules#lip}). The reach goal's cube not
+     * loaded yet: an approach toward the entry's column (GoalXZ), never done; loaded and empty: the named fact
+     * ("no standable cell within reach and sight of the entry"), held on the entry so the plan tries the next opening.
+     * The cave way's lease (breaking and placing as priced). Loader notes: the fork's GoalReachBlock / GoalXZ (api),
+     * Baritone's custom goal process; vanilla Level#clip, Level#isLoaded, BlockState#getCollisionShape.
      */
     private String toCave(LocalPlayer p, Step.ToCave t) {
         int[] me = Jobs.here(p), at = {t.x(), t.y(), t.z()};
-        if (atLip(p, me, at)) { instant = "ok: at the cave's lip, its entry " + Jobs.fmt(at) + " in reach and in sight"; return null; }
         IBaritone b = Jobs.baritone();
         if (b == null) return "error: " + t.text() + ": baritone not loaded";
-        b.getCustomGoalProcess().setGoalAndPath(lipGoal(p, at));
+        lipFail = null;
+        lipGoal = reachGoal(p, at);
+        lipGoalAt = Core.INSTANCE.tick();
+        switch (io.github.mojolowjo.entropybot.cave.ExploreRules.lip(lipGoalOf(lipGoal), me)) {
+            case ARRIVED -> { instant = "ok: at the cave's lip at " + Jobs.fmt(me) + " (in the reach goal: its entry " + Jobs.fmt(at) + " in reach and in sight)"; return null; }
+            case NO_CELL -> { lipFail = io.github.mojolowjo.entropybot.cave.ExploreRules.noLipCell(at); return null; }
+            default -> { }
+        }
+        b.getCustomGoalProcess().setGoalAndPath(lipGoal != null ? lipGoal : new baritone.api.pathing.goals.GoalXZ(at[0], at[2]));
         lip = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.start(new io.github.mojolowjo.entropybot.cave.ExploreRules.Target(t.x(), t.z()), Core.INSTANCE.tick(), me,
                 io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed());
-        LOG.info("[entropybot] cave: to the lip of the known cave at {} ({})", Jobs.fmt(at), lipReachGoal ? "the reach goal: a standable cell its entry is in reach from" : "near it until its chunk is loaded");
+        LOG.info("[entropybot] cave: to the lip of the known cave at {} ({})", Jobs.fmt(at), lipGoal != null
+                ? "the reach goal: " + lipGoal.size() + " standable cells its entry is in reach and in sight from"
+                : "toward its column until the reach goal's cells are loaded (an approach: never done)");
         return null;
     }
 
-    private baritone.api.pathing.goals.Goal lipGoal(LocalPlayer p, int[] at) {
-        var lv = p.level();
-        BlockPos q = new BlockPos(at[0], at[1], at[2]);
-        lipReachGoal = false;
-        if (!lv.isLoaded(q)) return new GoalNear(q, 3);                          // structural: near the entry until it loads
-        var goal = new baritone.api.pathing.goals.GoalReachBlock(q, io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH, 1.62,   // game fact: eye height 1.62
-                (x, y, z) -> standable(lv, x, y, z), (x, y, z) -> seesEntry(p, x, y, z, at));
-        if (goal.isEmpty()) return new GoalNear(q, 3);                           // structural: no cell yet - nearer first
-        lipReachGoal = true;
-        return goal;
+    /** The reach goal's cube (ceil(reach) + 1 each way) round the entry is loaded: its cells can be judged (rule 15). */
+    private static boolean lipCubeLoaded(net.minecraft.world.level.Level lv, int[] at) {
+        int r = (int) Math.ceil(io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH) + 1;   // the fork's cube (GoalReachBlock)
+        return lv.isLoaded(new BlockPos(at[0] - r, at[1], at[2] - r)) && lv.isLoaded(new BlockPos(at[0] + r, at[1], at[2] - r))
+                && lv.isLoaded(new BlockPos(at[0] - r, at[1], at[2] + r)) && lv.isLoaded(new BlockPos(at[0] + r, at[1], at[2] + r));
     }
 
-    /**
-     * Review 2: the lip test with the reach goal's own stand and sight predicates. Run EK (2): and the record says a cell
-     * of the cave is within the eyes' reach of the feet (Sightings.caveInReachOf, the same OPENING_REACH) - the record
-     * is the one reader of "at the cave", so the caving step's first stand sees into it; its cells not fed yet: not done
-     * (rule 15).
-     */
-    private static boolean atLip(LocalPlayer p, int[] me, int[] at) {
+    /** Run EL: the fork's reach goal on the entry; null while its cube is not loaded (the approach runs meanwhile). */
+    private static baritone.api.pathing.goals.GoalReachBlock reachGoal(LocalPlayer p, int[] at) {
         var lv = p.level();
-        if (!io.github.mojolowjo.entropybot.cave.ExploreRules.atLip(me, at, (x, y, z) -> standable(lv, x, y, z), (x, y, z) -> seesEntry(p, x, y, z, at))) return false;
-        var pass = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE;
-        var sg = pass.sightings();
-        return sg != null && pass.dim() != null && Boolean.TRUE.equals(sg.caveInReachOf(pass.dim(), at, me));
+        if (!lipCubeLoaded(lv, at)) return null;
+        return new baritone.api.pathing.goals.GoalReachBlock(new BlockPos(at[0], at[1], at[2]), io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH, 1.62,   // game fact: eye height 1.62
+                (x, y, z) -> standable(lv, x, y, z), (x, y, z) -> seesEntry(p, x, y, z, at));
+    }
+
+    /** The reach goal as the pure lip rule reads it (null: none yet). */
+    private static io.github.mojolowjo.entropybot.cave.ExploreRules.LipGoal lipGoalOf(baritone.api.pathing.goals.GoalReachBlock g) {
+        if (g == null) return null;
+        return new io.github.mojolowjo.entropybot.cave.ExploreRules.LipGoal() {
+            @Override public boolean isEmpty() { return g.isEmpty(); }
+            @Override public boolean isInGoal(int x, int y, int z) { return g.isInGoal(x, y, z); }
+        };
     }
 
     /** The eyes at feet cell x y z see the entry's air (nothing that collides between, a fluid passed). */
@@ -738,17 +751,33 @@ public final class StepHands implements Steps.Hands {
                 && !lv.getBlockState(u).getCollisionShape(lv, u).isEmpty() && lv.getFluidState(f).isEmpty();
     }
 
-    /** Done with the entry in reach; Baritone's no progress: the walk's fact (FactChange.walkShort on the ENTRY - the planner tries the cave's next opening). */
+    /**
+     * Run EL: done exactly when the reach goal holds the feet (its one arrived reader); its cells loaded and none: the
+     * named fact; Baritone's no progress: the walk's fact - both FactChange.walkShort on the ENTRY, so the planner tries
+     * the cave's next opening. The goal is built again once a second while Baritone idles (the world may have changed).
+     */
     private Car.Status toCaveStatus(LocalPlayer p, Step.ToCave t) {
         if (instant != null) return Car.Status.done(instant);
         int[] me = Jobs.here(p), at = {t.x(), t.y(), t.z()};
+        if (lipFail != null) return lipNoCell(at, me, Jobs.baritone());
         IBaritone b = Jobs.baritone();
         if (b == null || lip == null) return Car.Status.failed(t.text() + ": no walk state");
-        if (atLip(p, me, at)) {                                                // review 2: in reach, standing, in sight
-            Jobs.cancel(b);
-            lip = null;
-            LOG.info("[entropybot] cave: at the lip of the known cave at {} (feet {}, its entry in reach)", Jobs.fmt(at), Jobs.fmt(me));
-            return Car.Status.done("ok: at the cave's lip at " + Jobs.fmt(me) + ", its entry " + Jobs.fmt(at) + " in reach");
+        boolean due = Core.INSTANCE.tick() - lipGoalAt >= 20;                   // structural: once a second in ticks
+        if (due && (lipGoal == null || Jobs.idle(b))) {
+            lipGoal = reachGoal(p, at);
+            lipGoalAt = Core.INSTANCE.tick();
+            if (lipGoal != null && !lipGoal.isEmpty() && !lipGoal.isInGoal(me[0], me[1], me[2])) b.getCustomGoalProcess().setGoalAndPath(lipGoal);
+            else if (lipGoal == null && Jobs.idle(b)) b.getCustomGoalProcess().setGoalAndPath(new baritone.api.pathing.goals.GoalXZ(at[0], at[2]));
+        }
+        switch (io.github.mojolowjo.entropybot.cave.ExploreRules.lip(lipGoalOf(lipGoal), me)) {
+            case ARRIVED -> {
+                Jobs.cancel(b);
+                lip = null;
+                LOG.info("[entropybot] cave: at the lip of the known cave at {} (feet {}, in the reach goal: its entry in reach and in sight)", Jobs.fmt(at), Jobs.fmt(me));
+                return Car.Status.done("ok: at the cave's lip at " + Jobs.fmt(me) + ", its entry " + Jobs.fmt(at) + " in reach and in sight");
+            }
+            case NO_CELL -> { return lipNoCell(at, me, b); }
+            default -> { }
         }
         lip = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.look(lip, Core.INSTANCE.tick(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(),
                 b.getPathingBehavior().getCurrent() != null, at);
@@ -759,11 +788,19 @@ public final class StepHands implements Steps.Hands {
             io.github.mojolowjo.entropybot.aa.moves.FactChange.walkShort(at, me, why);   // run EF (3): the hold names this entry; the next plan tries another opening
             return Car.Status.failed(why);
         }
-        if ((Jobs.idle(b) || (!lipReachGoal && p.level().isLoaded(new BlockPos(at[0], at[1], at[2])))) && Core.INSTANCE.tick() - lipGoalAt >= 20) {     // structural: once a second in ticks
-            b.getCustomGoalProcess().setGoalAndPath(lipGoal(p, at));
-            lipGoalAt = Core.INSTANCE.tick();
-        }
-        return Car.Status.running("to the cave's lip at " + Jobs.fmt(at));
+        return Car.Status.running("to the cave's lip at " + Jobs.fmt(at) + (lipGoal == null ? " (approaching: the reach goal's cells not loaded yet)" : ""));
+    }
+
+    /** Run EL: the reach goal has no cell - the named fact, held on the entry (the next opening is tried). */
+    private Car.Status lipNoCell(int[] at, int[] me, IBaritone b) {
+        String why = io.github.mojolowjo.entropybot.cave.ExploreRules.noLipCell(at) + " (the fork's reach goal, its cells loaded)";
+        lipFail = null;
+        lip = null;
+        lipGoal = null;
+        if (b != null) Jobs.cancel(b);
+        LOG.info("[entropybot] cave: {} - the next opening is tried", why);
+        io.github.mojolowjo.entropybot.aa.moves.FactChange.walkShort(at, me, why);
+        return Car.Status.failed(why);
     }
 
     // ---- 0.39.z78 J6b (D12): the caving step - a KNOWN cave walked on its record (the one store), Baritone the car ----

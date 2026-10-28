@@ -311,11 +311,33 @@ public final class ExploreRules {
     public interface CellTest { boolean test(int x, int y, int z); }
 
     /**
-     * 94b82de3 review 2: the walk to a cave's lip is done when the entry is in reach of the eyes AND the feet stand on a
-     * standable cell AND the eyes see the entry's air (the reach goal's own predicate) - never by distance alone. Pure.
+     * Run EL: the lip goal as the lip step reads it - in the game the fork's GoalReachBlock on the entry (a standable cell
+     * from which the entry is within reach of the eye and a face of it in sight; its cells built on the game thread).
      */
-    public static boolean atLip(int[] feet, int[] entry, CellTest standable, CellTest sees) {
-        return withinReach(feet, entry) && standable.test(feet[0], feet[1], feet[2]) && sees.test(feet[0], feet[1], feet[2]);
+    public interface LipGoal {
+        boolean isEmpty();
+
+        boolean isInGoal(int x, int y, int z);
+    }
+
+    /** Run EL: where the lip step stands. */
+    public enum Lip { APPROACH, WALKING, ARRIVED, NO_CELL }
+
+    /**
+     * Run EL (rules 2, 23 (2); run EL 03:22:57-03:23:58: a GoalNear 3 stand-in accepted the cell 3 over the entry while
+     * the lip test said no - two "arrived" readers): the lip step's ONE arrived reader is its goal. {@code goal} null (the
+     * entry's chunk not loaded): APPROACH - walking toward it, never done. Empty: NO_CELL - the step's named fact
+     * ({@link #noLipCell}). Else ARRIVED exactly when the goal holds the feet, WALKING otherwise. Pure.
+     */
+    public static Lip lip(LipGoal goal, int[] feet) {
+        if (goal == null) return Lip.APPROACH;
+        if (goal.isEmpty()) return Lip.NO_CELL;
+        return feet != null && feet.length >= 3 && goal.isInGoal(feet[0], feet[1], feet[2]) ? Lip.ARRIVED : Lip.WALKING;     // structural: x y z
+    }
+
+    /** Run EL: the lip step's named fact when its goal has no cell. */
+    public static String noLipCell(int[] entry) {
+        return "no standable cell within reach and sight of the entry " + entry[0] + " " + entry[1] + " " + entry[2];
     }
 
     /**

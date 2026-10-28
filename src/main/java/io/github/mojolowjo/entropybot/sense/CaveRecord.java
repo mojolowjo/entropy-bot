@@ -252,12 +252,6 @@ public final class CaveRecord {
         return best;
     }
 
-    /** Run EK: the cell is one of the volume's (fed so far). */
-    boolean hasCell(long c) { return cells.contains(c); }
-
-    /** Run EK: a cell of the cave is within the eyes' reach of the feet (the lip walk is done only then). */
-    public boolean inReach(int fx, int fy, int fz) { return cellInReach(fx, fy, fz) != Long.MIN_VALUE; }
-
     /**
      * Run EK (2): the step's first target - the unseen cave cell nearest the ENTRY through the cave's air (the entry
      * itself while unseen), searched from the entry's cell (or the cave cell nearest it) over {@link #BUDGET} cells at

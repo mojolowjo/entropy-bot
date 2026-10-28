@@ -195,14 +195,89 @@ class J6bCaveStepTest {
         assertTrue(((CaveWalk.Goto) next).cell()[1] <= 60, "down the drop: " + java.util.Arrays.toString(((CaveWalk.Goto) next).cell()));
     }
 
-    /** 94b82de3 review 2: the lip walk is done only in reach AND standing AND in sight - never by distance alone. */
+    /**
+     * Run EL: the lip goal for the JUnit - the fork's GoalReachBlock rule (GoalReachBlock.java: the cube ceil(reach) + 1
+     * each way and ceil(eye) + 1 more below, never the entry nor the cell over it, the entry's centre within reach of the
+     * eye, standable, a face in sight) mirrored here because BlockPos is not on the test classpath; the world a set of
+     * solid cells, the sight a ray marched from the eye to the entry's centre.
+     */
+    static ExploreRules.LipGoal reachGoal(int[] e, java.util.Set<Long> solid) {
+        double reach = ExploreRules.OPENING_REACH, eye = 1.62;
+        int r = (int) Math.ceil(reach) + 1, up = (int) Math.ceil(eye) + 1;
+        java.util.Set<Long> in = new java.util.HashSet<>();
+        for (int dx = -r; dx <= r; dx++)
+            for (int dz = -r; dz <= r; dz++)
+                for (int dy = -r - up; dy <= r; dy++) {
+                    int x = e[0] + dx, y = e[1] + dy, z = e[2] + dz;
+                    if (dx == 0 && dz == 0 && (dy == 0 || dy == 1)) continue;
+                    double ex = x + 0.5 - (e[0] + 0.5), ey = y + eye - (e[1] + 0.5), ez = z + 0.5 - (e[2] + 0.5);
+                    if (ex * ex + ey * ey + ez * ez > reach * reach) continue;
+                    boolean stand = !solid.contains(Sightings.cell(x, y, z)) && !solid.contains(Sightings.cell(x, y + 1, z)) && solid.contains(Sightings.cell(x, y - 1, z));
+                    if (stand && sees(x + 0.5, y + eye, z + 0.5, e, solid)) in.add(Sightings.cell(x, y, z));
+                }
+        return new ExploreRules.LipGoal() {
+            @Override public boolean isEmpty() { return in.isEmpty(); }
+            @Override public boolean isInGoal(int x, int y, int z) { return in.contains(Sightings.cell(x, y, z)); }
+        };
+    }
+
+    private static boolean sees(double ax, double ay, double az, int[] e, java.util.Set<Long> solid) {
+        double bx = e[0] + 0.5, by = e[1] + 0.5, bz = e[2] + 0.5;
+        int n = 400;
+        for (int i = 0; i <= n; i++) {
+            double t = i / (double) n;
+            int x = (int) Math.floor(ax + (bx - ax) * t), y = (int) Math.floor(ay + (by - ay) * t), z = (int) Math.floor(az + (bz - az) * t);
+            if (x == e[0] && y == e[1] && z == e[2]) return true;
+            if (solid.contains(Sightings.cell(x, y, z))) return false;
+        }
+        return true;
+    }
+
+    /** Solid ground below y 65 round {@code c} (16 each way), less the {@code air} cells. */
+    static java.util.Set<Long> ground(int[] c, List<int[]> air) {
+        java.util.Set<Long> s = new java.util.HashSet<>();
+        for (int x = c[0] - 16; x <= c[0] + 16; x++) for (int z = c[2] - 16; z <= c[2] + 16; z++) for (int y = c[1] - 16; y < 65; y++) s.add(Sightings.cell(x, y, z));
+        for (int[] a : air) s.remove(Sightings.cell(a[0], a[1], a[2]));
+        return s;
+    }
+
+    /**
+     * Run EL's geometry: the entry -34 62 80 with the opening cell -34 63 80 over it, the ground's top at 64; the bot at
+     * -34 65 80, 3 over the entry (in reach: 4.12), its eye ray down through the block it stands on. The reach goal has no
+     * cell, so it is not arrived: the step's named fact. (The deleted GoalNear 3 stand-in held it at distance 3.)
+     */
     @Test
-    void theLipIsReached_inReachStandingAndInSight() {
-        int[] entry = {5, 64, 5}, lip = {4, 64, 5};
-        assertTrue(ExploreRules.atLip(lip, entry, (x, y, z) -> true, (x, y, z) -> true));
-        assertFalse(ExploreRules.atLip(lip, entry, (x, y, z) -> false, (x, y, z) -> true), "in reach, nothing to stand on (a GoalNear 3 cell in the air)");
-        assertFalse(ExploreRules.atLip(lip, entry, (x, y, z) -> true, (x, y, z) -> false), "in reach behind a wall: not in sight");
-        assertFalse(ExploreRules.atLip(new int[]{-2, 64, 5}, entry, (x, y, z) -> true, (x, y, z) -> true), "out of reach");
+    void elsGeometry_theRimCellOverTheEntryIsNotArrived() {
+        int[] entry = {-34, 62, 80}, feet = {-34, 65, 80};
+        var goal = reachGoal(entry, ground(entry, List.of(entry, new int[]{-34, 63, 80})));
+        assertTrue(ExploreRules.withinReach(feet, entry), "in reach - the old test's reach part passed");
+        assertNotEquals(ExploreRules.Lip.ARRIVED, ExploreRules.lip(goal, feet));
+        assertEquals(ExploreRules.Lip.NO_CELL, ExploreRules.lip(goal, feet), "no standable cell sees the entry: the named fact");
+        assertEquals("no standable cell within reach and sight of the entry -34 62 80", ExploreRules.noLipCell(entry));
+        assertEquals(ExploreRules.Lip.APPROACH, ExploreRules.lip(null, feet), "the cube not loaded: an approach, never done");
+    }
+
+    /** An entry with exactly one valid rim cell (a side pocket at 1 60 0): arrived there and nowhere else. */
+    @Test
+    void anEntryWithOneValidRimCell_isArrivedOnlyThere() {
+        int[] entry = {0, 60, 0};
+        var goal = reachGoal(entry, ground(entry, List.of(entry, new int[]{0, 61, 0}, new int[]{1, 60, 0}, new int[]{1, 61, 0})));
+        assertFalse(goal.isEmpty());
+        assertEquals(ExploreRules.Lip.ARRIVED, ExploreRules.lip(goal, new int[]{1, 60, 0}), "the one rim cell");
+        for (int[] f : List.of(new int[]{0, 61, 0}, new int[]{1, 61, 0}, new int[]{0, 65, 0}, new int[]{1, 65, 0}, new int[]{2, 60, 0}))
+            assertEquals(ExploreRules.Lip.WALKING, ExploreRules.lip(goal, f), "not the goal's cell: walking on - " + java.util.Arrays.toString(f));
+    }
+
+    /** Run EL: the GoalNear stand-in is gone from the lip step (rule 23 (2): the reach goal is its one arrived reader). */
+    @Test
+    void theLipStepHasNoGoalNear() throws java.io.IOException {
+        String src = java.nio.file.Files.readString(java.nio.file.Path.of("src/main/java/io/github/mojolowjo/entropybot/commands/StepHands.java"));
+        int from = src.indexOf("private String toCave("), to = src.indexOf("// ---- 0.39.z78 J6b (D12): the caving step");
+        assertTrue(from > 0 && to > from, "the lip step's source found");
+        String lip = src.substring(from, to);
+        assertFalse(lip.contains("GoalNear"), "no GoalNear in the lip step");
+        assertFalse(lip.contains("atLip"), "no second arrived test");
+        assertTrue(lip.contains("ExploreRules.lip(lipGoalOf(lipGoal), me)"), "done read from the goal");
     }
 
     /** Run EF (3): a cave whose first opening is held tries its next opening; only every opening held drops the cave. */

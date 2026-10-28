@@ -145,10 +145,7 @@ class J6bEkTest {
         for (int x = -59; x >= -90; x--) for (int y = 60; y <= 63; y++) cells.add(Sightings.cell(x, y, 71));     // a tunnel west from the entry
         s.caveCells(D, -59, 63, 71, cells);
         int[] lip = {-56, 63, 73}, entry = {-59, 63, 71};
-        assertTrue(ExploreRules.withinReach(lip, entry), "EK's lip: the entry in reach");
-        assertEquals(Boolean.TRUE, s.caveInReachOf(D, entry, lip), "the record: a cave cell in reach of the feet - the lip walk is done");
-        assertEquals(Boolean.FALSE, s.caveInReachOf(D, entry, new int[]{-50, 63, 75}), "too far: walking on");
-        assertNull(s.caveInReachOf(D, new int[]{500, 63, 500}, lip), "no record holds that target: not known");
+        assertTrue(ExploreRules.withinReach(lip, entry), "EK's lip: the entry in reach (run EL: the lip goal decides arrival, J6bCaveStepTest)");
 
         var before = s.caveFacts(D, -59, 63, 71);
         assertFalse(before.done(), "nothing seen yet: not done");
