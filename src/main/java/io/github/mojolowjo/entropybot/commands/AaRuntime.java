@@ -2786,6 +2786,7 @@ public final class AaRuntime implements JobPort {
     @Override public NoProgress noProgress(long taskId, String text) {
         if (taskId != current || !typedRun || taskReplan == null) return NoProgress.NOT_MINE;
         if (!c.stepRun.steps.running()) return NoProgress.ENDED;
+        if (c.stepRun.steps.monitorJudges()) return NoProgress.MONITORED;      // 0.39.z78 run EJ (rule 23 (2)): the monitor is the one reader
         if (c.stepRun.steps.noProgress(text)) return NoProgress.REPLANNED;
         return c.stepRun.steps.running() ? NoProgress.NOT_MINE : NoProgress.ENDED;     // still running: paused (the watch as before)
     }

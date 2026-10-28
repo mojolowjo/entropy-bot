@@ -4608,6 +4608,9 @@ public final class NeedChain {
         if (s instanceof Step.Strip st) return stripHold(st.key());
         if (s instanceof Step.ToStrip t) return stripHold(t.strip());
         if (s instanceof Step.ToSurface t) return surfaceKey(t.x(), t.y(), t.z());   // 0.39.z68: no way up: explore from here
+        // 0.39.z78 run EJ (rule 7): a climb's every end - the step monitor, the outer watch or the climb's own end
+        // (FactChange.climb) - is the one climb fact, so the climb way (climbUp) reads it whoever ended it
+        if (s instanceof Step.Climb) return CLIMB_KEY;
         return null;
     }
 

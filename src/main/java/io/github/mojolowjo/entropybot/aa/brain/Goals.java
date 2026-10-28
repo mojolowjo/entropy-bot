@@ -131,10 +131,13 @@ public final class Goals {
      * failures.moved, a new source), the one more try on the climb way for an order whose climb failed (taken when every
      * order is parked under ground), else nothing but the owner's word.
      */
-    public static String wake(Goal g) {
+    public static String wake(Goal g) { return wake(g, false); }
+
+    /** {@link #wake(Goal)}; {@code worldClimb}: another order's failed climb holds here for it (a world fact, run EJ). */
+    static String wake(Goal g, boolean worldClimb) {
         if (g.loopPark != null && !g.loopRetried)
             return "wakes when a need in the bag rises, it moves " + Math.round(Failures.movedV()) + " blocks or a new source is seen";
-        if (!g.climbRetried && climbHeld(g)) return "tries once more on the climb way when every order is parked under ground";
+        if (!g.climbRetried && (climbHeld(g) || worldClimb)) return "tries once more on the climb way when every order is parked under ground";
         return "no wake by itself (aa want " + g.r.word().trim() + " again)";
     }
 
@@ -142,15 +145,23 @@ public final class Goals {
      * 0.39.z77 climb (pure; rule 7): every open order is parked - one line naming each park (its reason's head) and what would
      * wake it; null: none open, or one is not parked (it runs, or waits on a said reason of its own).
      */
-    public static String allParked(List<Goal> goals) {
+    public static String allParked(List<Goal> goals) { return allParked(goals, g -> false); }
+
+    /** {@link #allParked(List)}; {@code worldClimb}: the orders a world fact of a failed climb holds for (run EJ). */
+    static String allParked(List<Goal> goals, java.util.function.Predicate<Goal> worldClimb) {
         if (goals == null || goals.isEmpty()) return null;
         List<String> parts = new ArrayList<>();
         for (Goal g : goals) {
             if (g.parked == null) return null;
             String why = g.parked.length() > PARK_REASON_CHARS ? g.parked.substring(0, PARK_REASON_CHARS) + "..." : g.parked;
-            parts.add(g.r.key() + ": " + why + " - " + wake(g));
+            parts.add(g.r.key() + ": " + why + " - " + wake(g, worldClimb.test(g)));
         }
         return "every order is parked, nothing runs: " + String.join("; ", parts);
+    }
+
+    /** 0.39.z78 run EJ: the climb way's world fact (another order's failed climb here) holds for {@code g}. */
+    static boolean worldClimb(Blackboard bb, Goal g) {
+        return WorldFacts.of(bb).holds(io.github.mojolowjo.entropybot.aa.NeedChain.CLIMB_KEY, droppedSources(g).keySet(), bb.in, WorldFacts.fluid(bb));
     }
 
     /**
@@ -164,12 +175,16 @@ public final class Goals {
         List<String> out = new ArrayList<>();
         if (!(bb.fact(FACT) instanceof List<?>)) return out;
         List<Goal> goals = of(bb);
+        // 0.39.z78 run EJ (rule 7): a failed climb is a world fact - the orders it holds for (not their own) wait on it too
+        java.util.Set<Goal> byWorld = new java.util.HashSet<>();
+        for (Goal g : goals) if (worldClimb(bb, g)) byWorld.add(g);
         if (underGround && allParked(goals) != null) {
             for (Goal g : goals) {
                 boolean movesOnly = g.loopPark != null && !g.loopRetried;
-                if (g.climbRetried || !(movesOnly || climbHeld(g))) continue;
+                if (g.climbRetried || !(movesOnly || climbHeld(g) || byWorld.contains(g))) continue;
                 g.climbRetried = true;
                 g.sources.forget(g.id(), io.github.mojolowjo.entropybot.aa.NeedChain.CLIMB_KEY);
+                WorldFacts.of(bb).forget(io.github.mojolowjo.entropybot.aa.NeedChain.CLIMB_KEY);   // the one more try: for every order
                 String line = "order " + g.r.key() + " tries once more on the climb way: every order is parked and the bot is "
                         + (bb.in == null ? "?" : String.valueOf(bb.in.underDepth)) + " blocks under ground, where nothing it waits on can change (it parked on: " + g.parked + ")";
                 g.parked = null;
@@ -180,7 +195,7 @@ public final class Goals {
                 out.add(line);
             }
         }
-        String all = allParked(goals);
+        String all = allParked(goals, g -> !g.climbRetried && worldClimb(bb, g));
         if (all == null) { bb.fact(ALL_PARKED_SAID, null); return out; }
         if (all.equals(bb.fact(ALL_PARKED_SAID))) return out;
         bb.fact(ALL_PARKED_SAID, all);

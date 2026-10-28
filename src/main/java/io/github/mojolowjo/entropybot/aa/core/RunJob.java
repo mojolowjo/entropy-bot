@@ -110,6 +110,12 @@ public final class RunJob extends Node {
             }
             // 0.39.z70 (D2 3.1, run O P5): the typed run already ended (or ended in the watch's re-plan): no cancel, no
             // "no progress" end - the next poll reads the run's own end and its reason
+            if (np == JobPort.NoProgress.MONITORED) {       // 0.39.z78 run EJ (rule 23 (2)): the step monitor is the one reader
+                bb.port.log("watch " + s + "s in " + running.kind() + ": left to the step monitor, which judges the running step (monitor.stallS)");
+                lastProgressAt = now;
+                lastProgress = bb.port.progress(taskId);
+                return Status.RUNNING;
+            }
             if (np == JobPort.NoProgress.ENDED) {
                 bb.port.log("watch " + s + "s in " + running.kind() + ": the typed run has ended; its own end is read next");
                 lastProgressAt = now;

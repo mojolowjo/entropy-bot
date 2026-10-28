@@ -36,7 +36,7 @@ import java.util.regex.Pattern;
  * (the batch trip's key reads these, BatchWay.trip).</li>
  * </ul>
  * The order that learned it keeps its own hold as before (Goals#droppedSources). Not shared: a fact learned with the feet
- * not known (no world position, rule 15) and the climb way (its one more try is per order, Goals#parkedTick). A read
+ * not known (no world position, rule 15). The climb way is shared since run EJ (its one more try forgets it, Goals#parkedTick). A read
  * refreshes the states (the removals, the hysteresis). In memory only. Pure (JUnit: Z77WorldFactsTest). Loader notes:
  * none here; the fluid answer is AaRuntime#fluidAt (vanilla ClientLevel#isLoaded / #getFluidState).
  */
@@ -70,9 +70,25 @@ public final class WorldFacts {
         return w;
     }
 
-    /** The key is a world fact (shared): every source key but the climb way's. */
+    /**
+     * The key is a world fact (shared): every source key. 0.39.z78 run EJ (rule 7; run EJ 01:33:40-01:47:52: six orders each
+     * ran the same failed climb at -6 56 18, 36 tries): the climb way's key too - one failed climb at a cell is one fact for
+     * every order there; its one more try (Goals#parkedTick) forgets it here as well ({@link #forget}).
+     */
     static boolean shared(String key) {
-        return key != null && !key.isBlank() && !io.github.mojolowjo.entropybot.aa.NeedChain.CLIMB_KEY.equals(key);
+        return key != null && !key.isBlank();
+    }
+
+    /** 0.39.z78 run EJ: {@code key} is no longer held for any order (the climb's one more try); said again if learned again. */
+    public void forget(String key) {
+        if (key == null) return;
+        map.remove(key);
+        said.removeIf(s -> s.endsWith("|" + key));
+    }
+
+    /** 0.39.z78 run EJ: {@code key} is held now for an order whose own held keys are {@code own}. */
+    public boolean holds(String key, Set<String> own, Inputs in, Function<int[], Boolean> fluid) {
+        return key != null && heldFor(own, in, fluid).containsKey(key);
     }
 
     /**

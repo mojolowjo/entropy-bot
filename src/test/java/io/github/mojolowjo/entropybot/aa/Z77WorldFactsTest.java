@@ -316,7 +316,8 @@ class Z77WorldFactsTest {
         Inputs in = new Inputs();
         assertFalse(w.learned("collect raw_iron", "no progress", "goal.a", in), "no feet known: no world position to key it by");
         in.pos = new int[]{20, 28, 19};
-        assertFalse(w.learned(NeedChain.CLIMB_KEY, "the climb up failed", "goal.a", in), "the climb's one more try is per order");
+        assertTrue(w.learned(NeedChain.CLIMB_KEY, "the climb up failed", "goal.a", in), "0.39.z78 run EJ (rule 7): a failed climb is a world fact");
+        w.forget(NeedChain.CLIMB_KEY);                                      // its one more try lifts it for every order (J6bEjTest)
         in.bag = Map.of("cobblestone", 5);
         assertTrue(w.learned("collect raw_iron at 20 28 19", "no progress at 20 28 19", "a", in));
         assertTrue(w.learned("collect torch", "i have no coal", "a", in));

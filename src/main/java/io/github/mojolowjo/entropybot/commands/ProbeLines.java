@@ -128,6 +128,18 @@ public final class ProbeLines {
         public String text() { return "status " + status + " | hands " + hands + " | in control " + control + " | goal " + goal; }
     }
 
+    /**
+     * 0.39.z78 run EJ (3): the "probe lease:" line beside the step's start line and on each cancel (debug.stepProbe): the
+     * break / place / inventory flags as Baritone's settings read now ({@code null}: not read - Baritone not loaded) and the
+     * fork's lease state with its holders (RunLease.describe; {@code null}: not read - Baritone not loaded). Pure.
+     */
+    public static String leaseLine(long tick, String kind, String step, String when, Boolean brk, Boolean place, Boolean inv, String fork) {
+        return "probe lease: t=" + tick + " | " + kind + " " + step + " | at " + when + " | allowBreak " + flag(brk) + " | allowPlace " + flag(place)
+                + " | allowInventory " + flag(inv) + " | fork lease " + (fork == null ? "not read (Baritone not loaded)" : fork);
+    }
+
+    private static String flag(Boolean b) { return b == null ? "not read (Baritone not loaded)" : b.toString(); }
+
     /** The phase line: what changed from {@code was} to {@code now} (the step's start when {@code was} is null); {@code folded}: changes not printed since the last line. */
     public static String phase(long tick, int[] feet, String kind, String step, Phase was, Phase now, int folded) {
         StringBuilder b = new StringBuilder("t=" + tick + " feet " + at(feet) + " | " + kind + " " + step + " | ");

@@ -125,6 +125,8 @@ public final class StepMonitor {
     private Step step;
     private Kind kind = Kind.EXEMPT;
     private boolean based, stalled;
+    /** 0.39.z78 run EJ: the last look judged the step's progress (loaded signals, no clock of its own, past the first look). */
+    private boolean judged;
     private long startTick, lastProgress, calcAtBest;
     private int[] startFeet;
     private double bestGoal = Double.NaN, bestFar;
@@ -176,9 +178,17 @@ public final class StepMonitor {
 
     public Kind kind() { return kind; }
 
+    /**
+     * 0.39.z78 run EJ (rule 23 (2): one reader of "no progress"): the last look judged the running step - its signals were
+     * loaded, it had no clock of its own and its bests were set - so this monitor's verdict is the step's stall reader and the
+     * outer watch leaves the step to it (JobPort.NoProgress#MONITORED).
+     */
+    public boolean judged() { return judged; }
+
     /** One look at {@code now} (ticks) on {@code sig}. */
     public Look look(StepSignals sig, long now) {
         stalled = false;
+        judged = false;
         if (step == null) return cont("no step runs");
         if (kind == Kind.EXEMPT) return cont(Step.verb(step) + " is not judged (it may stand still on purpose)");
         if (sig == null) return cont("no signals from these hands");
@@ -195,6 +205,7 @@ public final class StepMonitor {
             calcAtBest = sig.calcFailed();
             return cont("waiting on its own clock: " + sig.ownWait());
         }
+        judged = true;
         List<String> moved = new ArrayList<>();
         // 0.39.z74 item 2 (run AC 16:54:07: 'place furnace near me: ... (goal 6906.7, best 6906.7)'): a placement's Baritone
         // goal is the builder's own composite search over candidate cells, not a distance to anything the step does - left out

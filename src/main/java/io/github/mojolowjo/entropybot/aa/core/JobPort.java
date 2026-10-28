@@ -123,7 +123,14 @@ public interface JobPort {
     default NoProgress noProgress(long taskId, String text) { return NoProgress.NOT_MINE; }
 
     /** 0.39.z70: what the no-progress watch found ({@link #noProgress}). */
-    enum NoProgress { REPLANNED, ENDED, NOT_MINE }
+    enum NoProgress {
+        REPLANNED, ENDED, NOT_MINE,
+        /**
+         * 0.39.z78 run EJ (rule 23 (2)): the step monitor judges the running step - its verdict is the one stall reader; the
+         * watch neither cancels nor says "stuck", its clock starts again.
+         */
+        MONITORED
+    }
 
     /** A line for the game log ("[entropybot] aa: ..."). */
     default void log(String line) {}

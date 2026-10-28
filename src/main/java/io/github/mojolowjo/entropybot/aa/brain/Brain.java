@@ -861,7 +861,9 @@ public final class Brain extends Node {
             // 0.39.z70 (D2 3.1, run O P5): an ended typed run is not halted here either; its task reads the run's own end next
             if (np != io.github.mojolowjo.entropybot.aa.core.JobPort.NoProgress.NOT_MINE) {
                 bb.port.log("brain: " + cur.id + " stuck " + secs + " s" + (fast ? " (no move, no bag change)" : "")
-                        + (np == io.github.mojolowjo.entropybot.aa.core.JobPort.NoProgress.REPLANNED ? " - re-planned on the step's source fact" : " - the typed run has ended; its own end is read next"));
+                        + (np == io.github.mojolowjo.entropybot.aa.core.JobPort.NoProgress.REPLANNED ? " - re-planned on the step's source fact"
+                        : np == io.github.mojolowjo.entropybot.aa.core.JobPort.NoProgress.MONITORED ? " - left to the step monitor, which judges the running step (monitor.stallS; rule 23: one reader)"
+                        : " - the typed run has ended; its own end is read next"));
                 sig = progressSig(bb);
                 moveSig = moveSigOf(bb);
                 lastProgressAt = now;

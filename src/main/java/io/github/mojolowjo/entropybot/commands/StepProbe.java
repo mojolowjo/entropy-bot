@@ -139,6 +139,7 @@ public final class StepProbe {
             lastPhaseTick = t;
             folded = 0;
             LOG.info("[entropybot] probe step: {} | needs {}", ProbeLines.phase(t, f, kind, s.text(), null, now, 0), n.none() ? "none" : n.text());
+            LOG.info("[entropybot] {}", lease(t, s, "the step's start", b));     // 0.39.z78 run EJ (3)
             return;
         }
         if (!now.equals(lastPhase)) {
@@ -212,12 +213,35 @@ public final class StepProbe {
     /** A cancel the mod sends, with its calling frames, while a step runs (not said here when the walk probe says it). */
     static void cancelled(String who, String frames) {
         Step s = step;
-        if (s == null || !on() || WalkProbe.covers()) return;
+        if (s == null || !on()) return;
         try {
-            LOG.info("[entropybot] probe step: t={} feet {} | {} {} | CANCEL by {} ({})", tick, ProbeLines.at(feet()), Step.verb(s), s.text(), who, frames);
-        } catch (RuntimeException e) {
+            if (!WalkProbe.covers()) LOG.info("[entropybot] probe step: t={} feet {} | {} {} | CANCEL by {} ({})", tick, ProbeLines.at(feet()), Step.verb(s), s.text(), who, frames);
+            LOG.info("[entropybot] {}", lease(tick, s, "the cancel by " + who, Jobs.baritone()));     // 0.39.z78 run EJ (3): the lease at the failure too
+        } catch (RuntimeException | LinkageError e) {
             Quiet.warn("StepProbe.cancelled: the cancel line could not be written", e);
         }
+    }
+
+    /**
+     * 0.39.z78 run EJ (3): the lease line - Baritone's break / place / inventory settings now and the fork's own lease state
+     * (baritone.process.RunLease.describe, job-vein 2e8f40a0: "break B, place P, inventory I, holders [...]"; read-only, the
+     * main jar). A fork without it: said, never thrown.
+     */
+    private static String lease(long t, Step s, String when, IBaritone b) {
+        Boolean brk = null, place = null, inv = null;
+        String fork = null;
+        if (b != null) {
+            var st = baritone.api.BaritoneAPI.getSettings();
+            brk = st.allowBreak.value;
+            place = st.allowPlace.value;
+            inv = st.allowInventory.value;
+            try {
+                fork = baritone.process.RunLease.describe();
+            } catch (RuntimeException | LinkageError e) {
+                fork = "not readable from this fork: " + e;          // rule 15: said, not guessed
+            }
+        }
+        return ProbeLines.leaseLine(t, Step.verb(s), s.text(), when, brk, place, inv, fork);
     }
 
     /** True while a step runs and the probe is on (WalkProbe asks before it builds a cancel's frames for us). */
