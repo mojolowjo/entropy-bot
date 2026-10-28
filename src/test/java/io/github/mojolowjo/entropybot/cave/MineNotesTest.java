@@ -175,30 +175,4 @@ class MineNotesTest {
         assertEquals("ended where I started, at 1 64 2", ExploreRules.travel(new int[]{0, 64, 0}, new int[]{1, 64, 2}));
     }
 
-    /** The cave records "mine cave" leans on: a new cave here, carrying on in a known one, closing one with nothing in it. */
-    @Test
-    void caveMemoryForTheMoves(@TempDir Path dir) {
-        Caves caves = new Caves();
-        caves.load(new BotFiles(dir));
-        Caves.Cave a = caves.pick("", OW, 0, 40, 0, 1, 1);
-        assertEquals("cave_1", a.name);
-        assertTrue(a.visited.isEmpty(), "new: this job owns it");
-        caves.visit(a, 3, 40, 0, 2, 2);
-        assertEquals(3, a.furthest);
-        assertSame(a, caves.pick("", OW, 10, 40, 0, 3, 3), "an unfinished cave within 64: carries on there");
-        // no cave here: a cave this job made is closed for good, so the next pick makes a new one
-        caves.finish(a, false, 4, 4);
-        Caves.Cave b = caves.pick("", OW, 10, 40, 0, 5, 5);
-        assertEquals("cave_2", b.name);
-        assertNull(caves.pick("cave_9", OW, 0, 0, 0, 6, 6), "an unknown name");
-        assertSame(a, caves.pick("cave_1", OW, 500, 40, 0, 7, 7), "a finished cave by name");
-        // the known caves as the move sees them
-        List<CaveRules.Known> known = new ArrayList<>();
-        caves.toJson(false).getAsJsonObject("caves").entrySet().forEach(e -> {
-            JsonObject v = e.getValue().getAsJsonObject(), en = v.getAsJsonObject("entrance");
-            known.add(new CaveRules.Known(e.getKey(), v.get("dim").getAsString(), en.get("x").getAsInt(), en.get("y").getAsInt(), en.get("z").getAsInt(), v.get("frontierLeft").getAsBoolean()));
-        });
-        assertEquals("cave_2", CaveRules.nearestKnown(known, OW, 0, 40, 0, Set.of(), k -> false).name(), "the closed one is never picked");
-        assertNull(CaveRules.nearestKnown(known, OW, 0, 40, 0, Set.of("cave_2"), k -> false));
-    }
 }

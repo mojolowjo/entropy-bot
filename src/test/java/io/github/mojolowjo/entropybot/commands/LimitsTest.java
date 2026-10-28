@@ -3,7 +3,6 @@ package io.github.mojolowjo.entropybot.commands;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import io.github.mojolowjo.entropybot.cave.Caves;
 import io.github.mojolowjo.entropybot.io.BotFiles;
 import io.github.mojolowjo.entropybot.memory.Knowledge;
 import io.github.mojolowjo.entropybot.memory.Limits;
@@ -90,81 +89,6 @@ class LimitsTest {
         assertEquals(Limits.RS_READINGS, k.rs().size());
         assertTrue(k.rs().containsKey("0 0 0"));
         assertEquals("0 0 0", k.rsGrid());
-    }
-
-    @Test
-    void cavesPastTheCapsDropTheOldestFinishedFirst() {
-        Caves c = new Caves();
-        c.load(new BotFiles(dir));
-        Caves.Cave first = c.pick(null, OW, 0, 0, 0, 1, 1);      // the oldest, but with frontier left
-        for (int i = 1; i < Caves.MAX_CAVES; i++) {
-            Caves.Cave cv = c.pick(null, OW, i * 1000, 0, 0, 10 + i, 1);
-            c.finish(cv, false, 10 + i, 1);
-        }
-        assertEquals(Caves.MAX_CAVES, c.toJson(false).getAsJsonObject("caves").size());
-        Caves.Cave n = c.pick(null, OW, 999_000, 0, 0, 5000, 2);
-        JsonObject all = c.toJson(false).getAsJsonObject("caves");
-        assertEquals(Caves.MAX_CAVES, all.size());
-        assertTrue(all.has(first.name), "a cave with frontier left outlives the finished ones");
-        assertTrue(all.has(n.name));
-        assertFalse(all.has("cave_2"), "the oldest finished cave went");
-    }
-
-    @Test
-    void caveCellsInAllStayUnderTheBudgetAndTheCurrentCaveStays() {
-        Caves c = new Caves();
-        c.load(new BotFiles(dir));
-        List<Caves.Cave> made = new ArrayList<>();
-        for (int k = 0; k < 6; k++) {
-            Caves.Cave cv = c.pick(null, OW, k * 5000, 0, 0, k, k);
-            for (long i = 0; cv.visited.size() < Caves.MAX_CELLS / 4; i++) cv.visited.add(i * 31 + k);
-            c.visit(cv, k * 5000, 0, 0, k, k);
-            made.add(cv);
-        }
-        long cells = 0;
-        JsonObject all = c.toJson(false).getAsJsonObject("caves");
-        for (String name : all.keySet()) cells += all.getAsJsonObject(name).get("explored").getAsLong();
-        assertTrue(cells <= Caves.MAX_CELLS, cells + " cells");
-        assertTrue(all.has(made.get(5).name), "the cave being explored stays");
-        assertFalse(all.has(made.get(0).name), "the oldest went");
-        // one cave stops growing at its own cap
-        Caves.Cave big = made.get(5);
-        for (int s = 0; s < 3000; s++) c.visit(big, s * 9, 0, 0, 99, 99);
-        assertTrue(big.visited.size() <= Caves.MAX_VISITED + 27);
-    }
-
-    static JsonObject caveJson(long updated, int cells) {
-        JsonObject c = new JsonObject(), e = new JsonObject();
-        c.addProperty("dim", OW);
-        e.addProperty("x", 0);
-        e.addProperty("y", 0);
-        e.addProperty("z", 0);
-        c.add("entrance", e);
-        c.addProperty("updated", updated);
-        JsonArray v = new JsonArray();
-        for (long i = 0; i < cells; i++) v.add(i * 7 + updated);
-        c.add("visited", v);
-        return c;
-    }
-
-    @Test
-    void aCaveFromBeforeTheCapsBiggerThanTheBudgetIsKeptAtLoad() throws Exception {
-        // a cave of 25000 cells (the old per-cave cap was 40000), alone over the whole 20000 budget
-        JsonObject file = new JsonObject(), cs = new JsonObject();
-        cs.add("cave_1", caveJson(100, Caves.MAX_CELLS + 5000));
-        file.add("caves", cs);
-        Files.writeString(dir.resolve(Caves.FILE), file.toString());
-        Caves c = new Caves();
-        c.load(new BotFiles(dir));
-        assertNotNull(c.get("cave_1"), "never every cave dropped");
-        // with an older small cave next to it, the latest (the big one) stays and the older goes
-        cs.add("cave_2", caveJson(50, 100));
-        Files.writeString(dir.resolve(Caves.FILE), file.toString());
-        Caves d = new Caves();
-        String line = d.load(new BotFiles(dir));
-        assertNotNull(d.get("cave_1"));
-        assertNull(d.get("cave_2"));
-        assertTrue(line.contains("dropped the 1 oldest"), line);
     }
 
     @Test

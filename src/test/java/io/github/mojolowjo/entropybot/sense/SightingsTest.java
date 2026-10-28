@@ -65,8 +65,7 @@ class SightingsTest {
         assertEquals(2, s.allKnownCaves("d").size());
         assertEquals(0, s.nearestCave("d", 2, 40, 2, 64).x());
         assertNull(s.nearestCave("d", 200, 40, 0, 64), "past 64");
-        assertTrue(s.walkedCave("d", 0, 40, 0, System.currentTimeMillis(), 0));
-        assertEquals(40, s.nearestCave("d", 2, 40, 2, 64).x(), "walked with no ore: held cave.walkedHoldS");
+        assertEquals(0, s.knownCaves("d", 2, 40, 2, 0).get(0).x(), "J6b: every known cave, nearest first (its record says whether it is a way)");
         s.walked(30);
         s.walked(500);                  // a teleport is not a walk
         assertEquals((2 + Sightings.priorCaves() * Sightings.priorHundreds()) / (0.3 + Sightings.priorHundreds()), s.cavesPer100(), 1e-9);
@@ -104,15 +103,15 @@ class SightingsTest {
         Sightings s = new Sightings();
         s.ore().saw("d", 1, 2, 3, "iron", 4);
         s.knowCave("d", new CaveIndex.Known(10, 40, 10, CaveIndex.Size.MEDIUM, CaveIndex.Depth.DEEPSLATE, List.of(Sightings.cell(11, 40, 10))), 5);
-        s.walkedCave("d", 10, 40, 10, 6, 2);
+        s.caveWalked("d", 10, 40, 10, 6, 2, 9);
         s.sawHerd("d", "modded:yak", 50, 70, 50, 3, 7, null);
         s.walked(40);
         int[] bad = {0};
         Sightings b = Sightings.fromJson(s.toJson(), bad);
         assertEquals(0, bad[0]);
         assertTrue(b.ore().has("d", 1, 2, 3));
-        assertEquals(6, b.allKnownCaves("d").get(0).walked());
-        assertEquals(2, b.allKnownCaves("d").get(0).oreOnWalk());
+        assertEquals(6, b.caveFacts("d", 10, 40, 10).walkedMinutes(), 1e-9, "J6b: the walk is the record's");
+        assertEquals(2 / 6.0, b.caveFacts("d", 10, 40, 10).oreSeenPerMinute(), 1e-9);
         assertEquals(CaveIndex.Size.MEDIUM, b.allKnownCaves("d").get(0).size());
         assertEquals(CaveIndex.Depth.DEEPSLATE, b.allKnownCaves("d").get(0).depth());
         List<Sightings.Rec> yak = b.animals("d", "modded:yak");

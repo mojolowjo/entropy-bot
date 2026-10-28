@@ -365,7 +365,10 @@ public final class TunnelView {
         boolean changed = false;
         if (kind(level, feet) == Shell.OPEN) changed |= known.add(dim, feet.getX(), feet.getY(), feet.getZ());
         if (kind(level, head) == Shell.OPEN) changed |= known.add(dim, head.getX(), head.getY(), head.getZ());
-        int radius = Core.INSTANCE.caves.visitedAt(dim, feet.getX(), feet.getY(), feet.getZ()) ? SIGHT_CAVE : SIGHT_ELSEWHERE;
+        // 0.39.z78 J6b: in a KNOWN cave's volume (the cave index; caves.json is deleted)
+        var idx = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.caveIndex();
+        int vol = idx.volumeAt(feet.getX(), feet.getY(), feet.getZ());
+        int radius = vol >= 0 && idx.isKnown(vol) ? SIGHT_CAVE : SIGHT_ELSEWHERE;
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
         List<Long> seen = Sight.seen(eye.x, eye.y, eye.z, radius, SIGHT_MAX, (x, y, z) -> kind(level, m.set(x, y, z)),
                 (x, y, z) -> !level.canSeeSky(m.set(x, y, z)));

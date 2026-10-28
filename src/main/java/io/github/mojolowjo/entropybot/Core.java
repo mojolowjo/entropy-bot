@@ -10,7 +10,6 @@ import io.github.mojolowjo.entropybot.events.EventRing;
 import io.github.mojolowjo.entropybot.guard.Guard;
 import io.github.mojolowjo.entropybot.guard.MixinFlags;
 import io.github.mojolowjo.entropybot.io.BotFiles;
-import io.github.mojolowjo.entropybot.cave.Caves;
 import io.github.mojolowjo.entropybot.memory.Knowledge;
 import io.github.mojolowjo.entropybot.poi.Pois;
 import net.minecraft.client.Minecraft;
@@ -32,7 +31,6 @@ public final class Core {
     public final EngineProcess engine = new EngineProcess();
     public final Knowledge knowledge = new Knowledge();
     public final Pois pois = new Pois();
-    public final Caves caves = new Caves();
     /** B7d (D3): the listed ores and the explored chunks (ores.json, explored.json; moved over from memory.json once). */
     public final io.github.mojolowjo.entropybot.cave.MineNotes mineNotes = new io.github.mojolowjo.entropybot.cave.MineNotes();
     public final io.github.mojolowjo.entropybot.engine.Reconnect reconnect = new io.github.mojolowjo.entropybot.engine.Reconnect(events);
@@ -139,7 +137,6 @@ public final class Core {
     private void flushWorld() {
         knowledge.flush();
         pois.flushIfDue(Long.MAX_VALUE);
-        caves.flushIfDue(Long.MAX_VALUE);
         mineNotes.flush();
         commands.flushWorld();
         io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.save(true);
@@ -151,7 +148,6 @@ public final class Core {
     private void reloadWorld(BotFiles f) {
         LOG.info("[entropybot] world: knowledge: {}", knowledge.load(f));
         LOG.info("[entropybot] world: points of interest: {}", pois.load(f));
-        LOG.info("[entropybot] world: caves: {}", caves.load(f));
         LOG.info("[entropybot] world: mine notes: {}", mineNotes.load(f, null));
         io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.load(f.worldRoot());
         io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.load(f.worldRoot());
@@ -228,7 +224,6 @@ public final class Core {
                 keyPending = false;
                 LOG.info("[entropybot] knowledge: {}", knowledge.load(files));
                 LOG.info("[entropybot] points of interest: {}", pois.load(files));
-                LOG.info("[entropybot] caves: {}", caves.load(files));
                 LOG.info("[entropybot] mine notes: {}", mineNotes.load(files, new BotFiles(mc.gameDirectory.toPath().resolve("kubejs/bridge"))));
                 // S1: and when the game quits from inside a world (no tick runs after that)
                 Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -268,8 +263,6 @@ public final class Core {
             // package H: what the caps dropped, in the log
             String pruned = knowledge.takePruneNote();
             if (pruned != null) LOG.info("[entropybot] knowledge: {}", pruned);
-            pruned = caves.takePruneNote();
-            if (pruned != null) LOG.info("[entropybot] caves: {}", pruned);
             if (lp) io.github.mojolowjo.entropybot.commands.LoadProbe.mark(2);
             io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.tick(tick);      // 0.28.0: the one chunk pass (POIs, map, ore index; never throws)
             if (lp) io.github.mojolowjo.entropybot.commands.LoadProbe.mark(3);
@@ -280,7 +273,6 @@ public final class Core {
                 if (tick % 12000 == 0) LOG.info("[entropybot] {}", terrain.status());
             }
             pois.flushIfDue(tick);
-            caves.flushIfDue(tick);
             mineNotes.flushIfDue(tick);
             pruned = mineNotes.takePruneNote();
             if (pruned != null) LOG.info("[entropybot] mine notes: {}", pruned);

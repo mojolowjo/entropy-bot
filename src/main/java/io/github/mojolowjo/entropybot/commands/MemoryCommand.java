@@ -4,7 +4,6 @@ import io.github.mojolowjo.entropybot.Quiet;
 
 import com.google.gson.JsonObject;
 import io.github.mojolowjo.entropybot.Core;
-import io.github.mojolowjo.entropybot.cave.Caves;
 import io.github.mojolowjo.entropybot.cave.MineNotes;
 import io.github.mojolowjo.entropybot.memory.Knowledge;
 import io.github.mojolowjo.entropybot.poi.Pois;
@@ -57,7 +56,6 @@ public final class MemoryCommand {
         out.add(store(root, Knowledge.RS, core.knowledge.rs().size() + " RS readings", kn, start));
         for (JsonStore js : c.stores()) out.add(store(root, js.name(), what(js), js.loadNote(), start));
         out.add(store(root, Pois.FILE, core.pois.size() + " points of interest", null, start));
-        out.add(store(root, Caves.FILE, core.caves.size() + " caves", null, start));
         out.add(store(root, MineNotes.ORES, core.mineNotes.oreCount() + " listed ores", null, start));
         out.add(store(root, MineNotes.EXPLORED, core.mineNotes.exploredCount() + " explored chunks", null, start));
         return out;

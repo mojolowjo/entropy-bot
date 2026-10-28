@@ -170,22 +170,8 @@ final class TuningDefs {
         Tuning.def("builderReport.stallSeconds", 60, "rm-constants 0.39.u2 (was BuilderReport.STALL_SECONDS)", "the stall seconds of BuilderReport");
         // campCommands
         // caveRules
-        Tuning.def("caveRules.minutes", 30, "rm-constants 0.39.u2 (was CaveRules.MINUTES)", "the minutes of CaveRules");
-        Tuning.def("caveRules.fromEntrance", 160, "rm-constants 0.39.u2 (was CaveRules.FROM_ENTRANCE)", "the from entrance of CaveRules");
-        Tuning.def("caveRules.free", 4, "rm-constants 0.39.u2 (was CaveRules.FREE)", "the free of CaveRules");
-        Tuning.def("caveRules.moves", 3, "rm-constants 0.39.u2 (was CaveRules.MOVES)", "the moves of CaveRules");
-        Tuning.def("caveRules.misses", 4, "rm-constants 0.39.u2 (was CaveRules.MISSES)", "the misses of CaveRules");
-        Tuning.def("caveRules.veinCells", 8, "rm-constants 0.39.u2 (was CaveRules.VEIN_CELLS)", "the vein cells of CaveRules");
-        Tuning.def("caveRules.veinReach", 16, "rm-constants 0.39.u2 (was CaveRules.VEIN_REACH)", "the vein reach of CaveRules");
-        Tuning.def("caveRules.veinSpread", 4, "rm-constants 0.39.u2 (was CaveRules.VEIN_SPREAD)", "the vein spread of CaveRules");
-        Tuning.def("caveRules.walkTicks", 1200, "rm-constants 0.39.u2 (was CaveRules.WALK_TICKS)", "The walk to a frontier");
         // caveSearch
-        Tuning.def("caveSearch.maxNodes", 12000, "rm-constants 0.39.u2 (was CaveSearch.MAX_NODES)", "the max nodes of CaveSearch");
-        Tuning.def("caveSearch.maxReach", 48, "rm-constants 0.39.u2 (was CaveSearch.MAX_REACH)", "the max reach of CaveSearch");
-        Tuning.def("caveSearch.maxOres", 24, "rm-constants 0.39.u2 (was CaveSearch.MAX_ORES)", "the max ores of CaveSearch");
-        Tuning.def("caveSearch.minFrontier", 6, "rm-constants 0.39.u2 (was CaveSearch.MIN_FRONTIER)", "the min frontier of CaveSearch");
         // caves
-        Tuning.def("caves.pickWithin", 64, "rm-constants 0.39.u2 (was Caves.PICK_WITHIN)", "Package H: the cells of one cave, of all caves together, and the number of caves (memory/Limits)");
         // chains
         Tuning.def("chains.runResumeMs", 12L * 3600 * 1000, "rm-constants 0.39.u2 (was Chains.RUN_RESUME_MS)", "the run resume ms of Chains");
         // chunkSummary
@@ -798,10 +784,6 @@ final class TuningDefs {
         Tuning.def("aaTree.pauseWindowMs", 60_000, "rm-constants 0.39.u2 (inline literal in AaTree)", "milliseconds a reflex pause counts toward the paused sum");
         Tuning.def("breakPolicy.diveRiskK", 4, "rm-constants 0.39.u2 (inline literal in BreakPolicy)", "weight of the dive risk squared in the break price");
         Tuning.def("buildCount.fractionDiv", 10L, "rm-constants 0.39.u2 (inline literal in BuildCount)", "a build counts as done when it holds at least 1/this of what it needs");
-        Tuning.def("caveRules.lowFood", 8, "rm-constants 0.39.u2 (inline literal in CaveRules)", "food under which a cave trip is not started without food in the bag");
-        Tuning.def("caveRules.lowHealth", 10, "rm-constants 0.39.u2 (inline literal in CaveRules)", "health under which a cave trip is not started");
-        Tuning.def("caveSearch.maxDrop", 3, "rm-constants 0.39.u2 (inline literal in CaveSearch)", "blocks a cave path may drop in one step");
-        Tuning.def("caves.probeStep", 4, "rm-constants 0.39.u2 (inline literal in Caves)", "blocks between the cells probed round a cave opening");
         Tuning.def("clearEngine.breakSlack", 30, "rm-constants 0.39.u2 (inline literal in ClearEngine)", "ticks of slack added to the expected break time");
         Tuning.def("clearEngine.failTries", 4, "rm-constants 0.39.u2 (inline literal in ClearEngine)", "tries at one block before it is skipped");
         Tuning.def("clearEngine.failWindow", 10, "rm-constants 0.39.u2 (inline literal in ClearEngine)", "blocks broken since a try within which a failure still counts");
@@ -967,7 +949,6 @@ final class TuningDefs {
         Tuning.def("debug.toolProbe", 0, "0.39.z77 hotbar (to-do candidate-strip-pace, runs CW-DI: no log line named the tool in hand while a strip dug; DI strip 1 4.9 s/cell with the stone pickaxe in the bag)", "1: one '[entropybot] probe tool:' line per break stage of the block being broken (the stage, the block, the item in hand and its speed, the bag's fastest item for that block and its slot, LOWER when the bag holds a faster one), in latest.log; 0: off, no cost");
         Tuning.def("debug.stripRefuseMaxLines", 500, "0.39.z77 mineintent (run DB 01:08:24: a strip searched as TRAVEL; a no-path search may refuse thousands of cells)", "the most probe strip refuse lines one search says while a strip runs with debug.walkProbe or debug.stepProbe on; the next line says the rest are not printed");
         Tuning.def("cave.mergeM", 8, "0.39.z50 (owner: one feature = one candidate)", "candidates within this many blocks merge into one, the lowest point kept");
-        Tuning.def("cave.walkedHoldS", 600, "0.39.z53 note (review of 7b16ad9: a walked mouth offered no more)", "a mouth whose pocket was walked with no ore is held this many seconds, then offered again; one that yielded ore stays offered");
         Tuning.def("cave.exploreMinutes", 10, "0.39.z44", "the minutes the mine-in-the-cave way explores a mouth for the ore at most");
         Tuning.def("replan.unchangedHoldS", 15, "0.39.z51 (run L: 66 explore-until-stone starts in ~5 s, 2 a second)", "an explore whose until-source was already known when it started (nothing changed) holds this many seconds before it ends on that source; the order's re-price still cancels it the moment its pick changes");
         Tuning.def("worth.bedSpan", 60, "rm-constants 0.39.u2 (inline literal in Worth)", "the bed worth span (scaled by the night danger)");

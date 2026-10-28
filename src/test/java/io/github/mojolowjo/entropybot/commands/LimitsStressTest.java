@@ -2,7 +2,6 @@ package io.github.mojolowjo.entropybot.commands;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import io.github.mojolowjo.entropybot.cave.Caves;
 import io.github.mojolowjo.entropybot.events.EventRing;
 import io.github.mojolowjo.entropybot.guard.Box;
 import io.github.mojolowjo.entropybot.guard.GuardCore;
@@ -121,54 +120,6 @@ class LimitsStressTest {
             row("pois", size, "write pois.json", ms(7, () -> new BotFiles(dir).writeJson("pois.json", p.toJson().toString())));
             rowKb("pois", size, "pois.json size", p.toJson().toString().length());
         }
-    }
-
-    @Test
-    void caves() {
-        // one cave with more and more cells (the per-cave cap), then many caves (the file holds every cave's cells).
-        // The cells are added to the sets directly (visit() stops at the caps, pick() prunes whole caves).
-        for (int cells : new int[]{5000, 10000, 20000, 40000, 80000}) {
-            Caves c = new Caves();
-            c.load(new BotFiles(dir.resolve("cave" + cells)));
-            Caves.Cave cv = c.pick(null, OW, 0, 0, 0, 1, 1);
-            for (long i = 0; i < cells; i++) cv.visited.add(i * 7919);
-            row("cave cells", cells, "write caves.json (every 5 s caving)", ms(7, () -> new BotFiles(dir).writeJson("caves.json", c.toJson(true).toString())));
-            rowKb("cave cells", cells, "caves.json size", c.toJson(true).toString().length());
-        }
-        // many caves of 2000 cells: caves.json in the shape toJson(true) writes (the store prunes past its caps, so the
-        // file is built here)
-        for (int n : new int[]{10, 20, 50, 100, 200}) {
-            JsonObject cs = new JsonObject();
-            for (int k = 0; k < n; k++) {
-                JsonObject cv = new JsonObject();
-                cv.addProperty("dim", OW);
-                JsonArray v = new JsonArray();
-                for (long i = 0; i < 2000; i++) v.add(i * 7919 + k);
-                cv.add("visited", v);
-                cs.add("cave_" + k, cv);
-            }
-            JsonObject file = new JsonObject();
-            file.add("caves", cs);
-            row("caves", n, "write caves.json, 2000 cells each", ms(5, () -> new BotFiles(dir).writeJson("caves.json", file.toString())));
-            rowKb("caves", n, "caves.json size, 2000 cells each", file.toString().length());
-        }
-        // the store: caves keep coming, each visited for 2000 cells; it stays at its caps
-        Caves c = new Caves();
-        c.load(new BotFiles(dir.resolve("capped")));
-        long t0 = System.nanoTime();
-        for (int k = 0; k < 200; k++) {
-            Caves.Cave cv = c.pick(null, OW, k * 1000, 0, 0, k, k);
-            for (int s = 0; s < 80; s++) c.visit(cv, k * 1000 + (s % 20) * 9, (s / 20) * 9, 0, k, k);
-            for (long i = 0; cv.visited.size() < 2000; i++) cv.visited.add(i * 7919 + k * 13L);
-            c.visit(cv, k * 1000, 0, 0, k, k);
-        }
-        row("caves", 200, "200 caves picked + visited (prunes)", (System.nanoTime() - t0) / 1e6);
-        int[] cells = {0};
-        int caves = c.toJson(false).getAsJsonObject("caves").size();
-        c.toJson(false).getAsJsonObject("caves").entrySet().forEach(e -> cells[0] += e.getValue().getAsJsonObject().get("explored").getAsInt());
-        rowKb("caves", caves, "caves.json at the caps (" + cells[0] + " cells)", c.toJson(true).toString().length());
-        row("caves", caves, "write caves.json at the caps", ms(5, () -> new BotFiles(dir).writeJson("caves.json", c.toJson(true).toString())));
-        row("caves", caves, "pick() at the caps", ms(15, () -> c.pick(null, OW, 5, 0, 5, 1, 1)));
     }
 
     @Test

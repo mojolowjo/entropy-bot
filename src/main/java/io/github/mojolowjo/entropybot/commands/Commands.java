@@ -1646,20 +1646,23 @@ public final class Commands implements Chains.Env {
                 + (pd.equals(dim) ? " (" + Math.round(Math.sqrt(distSq(p, x, y, z))) + "m)" : " (" + pd + ")");
     }
 
+    /**
+     * 0.39.z78 J6b (rule 23: one store, one reader): the known caves' records (Sightings, D12) - caves.json and its names
+     * are deleted; a cave is its entry.
+     */
     String cavesCommand(String rest) {
         List<String> w = Texts.words(rest);
-        if (!w.isEmpty() && w.get(0).equals("rename") && w.size() == 3) {
-            if (!w.get(2).matches("^[a-z0-9_-]{1,24}$")) return "error: a cave name is letters, digits, _ and -";
-            return core.caves.rename(w.get(1), w.get(2), core.tick());
-        }
-        JsonObject o = core.caves.toJson(false).getAsJsonObject("caves");
+        if (!w.isEmpty() && w.get(0).equals("rename")) return "error: caves have no names any more (0.39.z78 J6b: a known cave is its entry; aa cave list)";
+        var pass = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE;
+        var sg = pass.sightings();
+        String dim = pass.dim();
+        if (sg == null || dim == null) return "caves: the sightings are not loaded yet";
         List<String> out = new ArrayList<>();
-        for (Map.Entry<String, JsonElement> e : o.entrySet()) {
-            JsonObject v = e.getValue().getAsJsonObject(), en = v.getAsJsonObject("entrance");
-            out.add(e.getKey() + " at " + en.get("x").getAsInt() + " " + en.get("y").getAsInt() + " " + en.get("z").getAsInt() + " ("
-                    + (v.get("frontierLeft").getAsBoolean() ? "got " + v.get("furthest").getAsInt() + " blocks in" : "finished") + ")");
+        for (var k : sg.allKnownCaves(dim)) {
+            var f = sg.caveFacts(dim, k.x(), k.y(), k.z());
+            if (f != null) out.add(f.line());
         }
-        return out.isEmpty() ? "no caves yet - \"mine cave <ores>\" in one" : String.join(" | ", out);
+        return out.isEmpty() ? "no known caves yet (a cave is known when 3 sight rays credit it: aa cave list)" : String.join(" | ", out);
     }
 
     /** "here" for a PM: the sender's spot when the bot can see them, else the bot's. */

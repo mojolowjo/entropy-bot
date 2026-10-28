@@ -22,7 +22,7 @@ import java.util.TreeMap;
  * <li>ORE: the seen ore cells of section 3 ({@link Seen}: fair play; mined = removed, no decay).</li>
  * <li>CAVE (0.39.z78 J6, the owner's ruling 2026-10-27 late): the caves known by rays ({@link KnownCave}: a CaveIndex
  *     volume {@link CaveIndex#KNOWN_RAYS} sight rays credited; its entry, size, depth, the hit cells; known stays known;
- *     a walk with no ore holds it cave.walkedHoldS). The dark-cell openings and the heightmap mouths are deleted.</li>
+ *     J6b: each with its {@link CaveRecord}, D12). The dark-cell openings and the heightmap mouths are deleted.</li>
  * <li>TREE (aa-trees): a log column standing on dirt with leaves by it, seen (x y z = its lowest log; no decay; a visit that
  *     finds it gone or unreachable marks it {@code exhausted}, offered no more).</li>
  * <li>ANIMAL: herds by entity type (position, count, time); the confidence halves every {@link #HALF_LIFE_MS} of game
@@ -106,7 +106,7 @@ public final class Sightings {
 
     // ---- caves: 0.39.z78 J6 - the dark-cell sightings and the heightmap mouths are deleted; a cave is known by rays ----
 
-    /** The nearest known cave offered now ({@link KnownCave#offered}) within {@code max} (3D) of x y z, or null. */
+    /** The nearest known cave within {@code max} (3D) of x y z, or null (J6b: whether it is worth a way is its record's). */
     public synchronized KnownCave nearestCave(String dim, int x, int y, int z, int max) {
         for (KnownCave c : knownCaves(dim, x, y, z, System.currentTimeMillis())) return d2k(c, x, y, z) <= (long) max * max ? c : null;
         return null;
@@ -118,21 +118,13 @@ public final class Sightings {
      * 0.39.z78 J6 (the owner's ruling 2026-10-27 late): a cave known by rays - its entry cell (a cell the rays saw, the
      * seen cell nearest its column's surface), its size bucket and depth band (from the index volume when it became known;
      * never its cells - the manager's ruling: no cell list reaches the planner), when, the hit
-     * cells of the rays that credited it ({@link #cell} packed: the cells seen in it); {@code walked} / {@code oreOnWalk}:
-     * the caving step's last walk (0: not yet; {@link #CLOSED}: closed for good). Known stays known in this world.
+     * cells of the rays that credited it ({@link #cell} packed: the cells seen in it). Known stays known in this world.
+     * 0.39.z78 J6b (rule 23): its walks are its {@link CaveRecord}'s (the walk fields and the cave.walkedHoldS hold are
+     * gone: a cave done with none of the family left is no way, CaveRecord.Facts#offeredFor).
      */
-    public record KnownCave(int x, int y, int z, CaveIndex.Size size, CaveIndex.Depth depth, long knownAt, List<Long> hits, long walked, int oreOnWalk) {
-        public static final int CLOSED = -1; // structural: a marker, not an ore count
-
+    public record KnownCave(int x, int y, int z, CaveIndex.Size size, CaveIndex.Depth depth, long knownAt, List<Long> hits) {
         public KnownCave {
             hits = List.copyOf(hits);
-        }
-
-        /** Offered to the cave way at {@code now}: never walked; its last walk found ore; or {@code holdMs} since a walk with none. Closed: never. */
-        public boolean offered(long now, long holdMs) {
-            if (walked == 0) return true;
-            if (oreOnWalk == CLOSED) return false;
-            return oreOnWalk > 0 || now - walked >= holdMs;
         }
 
         public String where() { return x + " " + y + " " + z; }
@@ -147,10 +139,14 @@ public final class Sightings {
             if (c.x() == k.x() && c.y() == k.y() && c.z() == k.z()) return null;
             for (long h : k.hits()) if (c.hits().contains(h)) return null;
         }
-        KnownCave c = new KnownCave(k.x(), k.y(), k.z(), k.size(), k.depth(), now, k.hits(), 0, 0);
+        KnownCave c = new KnownCave(k.x(), k.y(), k.z(), k.size(), k.depth(), now, k.hits());
         List<KnownCave> l = knownCaves.computeIfAbsent(dim, d -> new ArrayList<>());
         l.add(c);
-        while (l.size() > maxCaves()) l.remove(0);
+        while (l.size() > maxCaves()) {
+            KnownCave gone = l.remove(0);
+            Map<String, CaveRecord> rs = caveRecords.get(dim);
+            if (rs != null) rs.remove(gone.where());             // J6b: its record goes with it (one store)
+        }
         cavesFound++;
         dirty = true;
         return c;
@@ -159,11 +155,9 @@ public final class Sightings {
     /** Every known cave of the dimension, walked ones included (aa cave list; the index marks their volumes known). */
     public synchronized List<KnownCave> allKnownCaves(String dim) { return List.copyOf(knownCaves.getOrDefault(dim, List.of())); }
 
-    /** The known caves offered now ({@link KnownCave#offered}), nearest first from x y z (empty: none known). */
+    /** The known caves nearest first from x y z (empty: none known); J6b: which one is a way is its record's. */
     public synchronized List<KnownCave> knownCaves(String dim, int x, int y, int z, long now) {
-        long hold = walkedHoldMs();
-        List<KnownCave> out = new ArrayList<>();
-        for (KnownCave c : knownCaves.getOrDefault(dim, List.of())) if (c.offered(now, hold)) out.add(c);
+        List<KnownCave> out = new ArrayList<>(knownCaves.getOrDefault(dim, List.of()));
         out.sort((a, b) -> Long.compare(d2k(a, x, y, z), d2k(b, x, y, z)));
         return out;
     }
@@ -174,19 +168,6 @@ public final class Sightings {
         return null;
     }
 
-    /** A caving step walked the known cave entered at x y z and got {@code ore} there ({@link KnownCave#CLOSED}: closed for good). */
-    public synchronized boolean walkedCave(String dim, int x, int y, int z, long now, int ore) {
-        List<KnownCave> l = knownCaves.getOrDefault(dim, List.of());
-        for (int i = 0; i < l.size(); i++) {
-            KnownCave c = l.get(i);
-            if (c.x() == x && c.y() == y && c.z() == z && c.oreOnWalk() != KnownCave.CLOSED) {
-                l.set(i, new KnownCave(c.x(), c.y(), c.z(), c.size(), c.depth(), c.knownAt(), c.hits(), Math.max(1, now), ore));
-                dirty = true;
-                return true;
-            }
-        }
-        return false;
-    }
 
     // ---- 0.39.z78 J6b (D12): the cave records, beside the known caves - the one store (rule 23); only these methods write ----
 
@@ -307,7 +288,6 @@ public final class Sightings {
                 JsonArray h = new JsonArray();
                 for (Long x : c.hits()) h.add(x);
                 e.add(h);
-                e.add(c.walked()); e.add(c.oreOnWalk());
                 a.add(e);
             }
             o.add(d.getKey(), a);
@@ -325,7 +305,7 @@ public final class Sightings {
                         List<Long> h = new ArrayList<>();
                         for (JsonElement c : a.get(6).getAsJsonArray()) h.add(c.getAsLong());
                         s.knownCaves.computeIfAbsent(d.getKey(), x -> new ArrayList<>()).add(new KnownCave(a.get(0).getAsInt(), a.get(1).getAsInt(), a.get(2).getAsInt(),
-                                CaveIndex.Size.valueOf(a.get(3).getAsString()), CaveIndex.Depth.valueOf(a.get(4).getAsString()), a.get(5).getAsLong(), h, a.get(7).getAsLong(), a.get(8).getAsInt()));
+                                CaveIndex.Size.valueOf(a.get(3).getAsString()), CaveIndex.Depth.valueOf(a.get(4).getAsString()), a.get(5).getAsLong(), h));   // J6b: an older file's walk fields (7, 8) are left unread
                     } catch (RuntimeException ex) {
                         Quiet.warn("Sightings.readKnown failed, carrying on with the fallback", ex); skipped[0]++; }
                 }
@@ -346,9 +326,7 @@ public final class Sightings {
         return new int[]{(int) (c >> 38), (int) (c << 52 >> 52), (int) (c << 26 >> 38)};
     }
 
-    /** Tuning {@code cave.walkedHoldS} in ms: a known cave walked with no ore is held this long. */
-    public static long walkedHoldMs() { return Tuning.l("cave.walkedHoldS") * 1000L; }
-
+    
     /** Blocks walked on the surface (the explore chance's denominator). */
     public synchronized void walked(double blocks) {
         if (blocks > 0 && blocks < 64) { walked += blocks; dirty = true; }
@@ -487,8 +465,11 @@ public final class Sightings {
         for (Rec r : animals.getOrDefault(dim, List.of()))
             a.add(r.id().replaceFirst("^minecraft:", "") + " x" + r.count() + " at " + r.x() + " " + r.z() + String.format(Locale.ROOT, " (%.2f)", confidence(r, gameNow)));
         int open = 0, ex = 0;
-        for (KnownCave c : knownCaves.getOrDefault(dim, List.of())) if (c.walked() > 0 && c.oreOnWalk() <= 0) ex++; else open++;
-        return "sightings: " + ore.size(dim) + " ore cells, " + open + " known caves (" + ex + " walked with no ore), "
+        for (KnownCave c : knownCaves.getOrDefault(dim, List.of())) {
+            CaveRecord r = caveRecords.getOrDefault(dim, Map.of()).get(c.where());
+            if (r != null && r.done()) ex++; else open++;
+        }
+        return "sightings: " + ore.size(dim) + " ore cells, " + open + " known caves (" + ex + " explored to their end), "
                 + String.format(Locale.ROOT, "%.2f caves per 100 blocks walked (%.0f walked)", cavesPer100(), walked) + ", " + treeCount(dim) + " trees"
                 + (a.isEmpty() ? ", no animals seen yet" : ", animals: " + String.join(", ", a.subList(Math.max(0, a.size() - 6), a.size())));
     }

@@ -48,7 +48,7 @@ public final class CaveList {
         for (Sightings.KnownCave c : k)
             out.add(String.format(Locale.ROOT, "  %s: %.0f m, size %s, depth %s, %d rays%s", c.where(), d(c.x(), c.y(), c.z(), px, py, pz),
                     c.size().name().toLowerCase(Locale.ROOT), c.depth().name().toLowerCase(Locale.ROOT),
-                    c.hits().size(), c.walked() == 0 ? "" : c.oreOnWalk() == Sightings.KnownCave.CLOSED ? ", closed for good" : ", walked (" + c.oreOnWalk() + " ore)"));
+                    c.hits().size(), ""));
         if (!credited.isEmpty()) {
             out.add("credited, not known yet: " + credited.size());
             for (var e : credited.entrySet()) {
