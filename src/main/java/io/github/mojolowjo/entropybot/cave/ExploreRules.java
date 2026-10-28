@@ -291,6 +291,12 @@ public final class ExploreRules {
         return null;
     }
 
+    /**
+     * J6b item 5: the fork's no-break walk ended without a path ({@code ICustomGoalProcess.lastEnd()} "no path (no-break
+     * walk)": nothing reachable without breaking or placing). Pure.
+     */
+    public static boolean noBreakNoPath(String lastEnd) { return lastEnd != null && lastEnd.startsWith("no path") && lastEnd.contains("no-break"); }
+
     /** game fact: the survival block interaction range - a player at the opening could touch it. */
     public static final double OPENING_REACH = 4.5;
 
@@ -398,6 +404,11 @@ public final class ExploreRules {
 
         /** Ticks with no new best before a target fails (Tuning monitor.stallS x 20 ticks a second, a game fact). */
         public static long stallTicks() { return Math.round(20 * Tuning.get("monitor.stallS")); }
+
+        /** J6b item 5: the held target fails now ({@code why}: the no-break walk found no path); a REACHED or FAILED hold stays. */
+        public static Held failNow(Held h, String why) {
+            return h == null || h.state() != State.HELD ? h : with(h, h.best(), h.bestAt(), h.calcAtBest(), h.noPathFails(), State.FAILED, why);
+        }
 
         /** The target chosen at {@code now} from {@code feet} (null: not known), Baritone's failed-search count then. */
         public static Held start(Target t, long now, int[] feet, long calcFailed) {

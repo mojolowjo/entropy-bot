@@ -243,8 +243,11 @@ public final class Sightings {
     /** A caving walk in the known cave at x y z ended: its minutes and the ore cells it saw (the measured yield). */
     public synchronized void caveWalked(String dim, int x, int y, int z, double minutes, int oreSeen, long now) { caveWalked(dim, x, y, z, minutes, oreSeen, now, true); }
 
-    /** As above; {@code gained} false: the walk saw no cell and mined no ore - the cave is held until something new is known (review 4). */
-    public synchronized void caveWalked(String dim, int x, int y, int z, double minutes, int oreSeen, long now, boolean gained) {
+    /**
+     * As above; {@code gained} false: the walk saw no cell and mined no ore - the cave is held until something new is known
+     * (review 4); null: judge nothing (an owner stop: the mark stays as it was).
+     */
+    public synchronized void caveWalked(String dim, int x, int y, int z, double minutes, int oreSeen, long now, Boolean gained) {
         CaveRecord r = rec(dim, x, y, z);
         if (r == null) return;
         r.recWalked(minutes, oreSeen, now, gained);

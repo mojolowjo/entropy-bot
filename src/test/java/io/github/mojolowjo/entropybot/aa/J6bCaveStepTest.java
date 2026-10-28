@@ -116,6 +116,63 @@ class J6bCaveStepTest {
         assertEquals(List.of("21,20,-10", "23,20,-10"), NeedChain.freeLeft(left, Map.of("22,20,-10", 1)), "taken by the collect: out");
     }
 
+    /**
+     * Item 5, the owner's "when exploring it should not break blocks": a target behind a hill that the fork's no-break walk
+     * cannot reach ("no path (no-break walk)") fails at once and is passed over; the next target is picked.
+     */
+    @Test
+    void anUnreachableNoBreakTargetIsDropped_theNextOnePicked() {
+        assertTrue(ExploreRules.noBreakNoPath("no path (no-break walk)"));
+        assertFalse(ExploreRules.noBreakNoPath("no path"), "a plain walk's no path is not the no-break one");
+        assertFalse(ExploreRules.noBreakNoPath("arrived"));
+        assertFalse(ExploreRules.noBreakNoPath(""));
+        int[] feet = {0, 64, 0};
+        var hill = new ExploreRules.Target(40, 0);
+        var h = ExploreRules.TargetHold.start(hill, 0, feet, 0);
+        h = ExploreRules.TargetHold.failNow(h, "no path without breaking or placing (the no-break walk)");
+        assertEquals(ExploreRules.TargetHold.State.FAILED, h.state());
+        var failed = List.of(new ExploreRules.TargetHold.Failed(hill.x(), hill.z(), feet, h.why()));
+        assertTrue(ExploreRules.TargetHold.skip(failed, 40 >> 4, 0, feet, 32), "the hill's chunk is passed over from here");
+        List<int[]> openings = List.of(new int[]{40, 64, 0}, new int[]{-30, 66, 5});
+        assertArrayEquals(new int[]{-30, 66, 5}, ExploreRules.toward(openings, c -> ExploreRules.TargetHold.skipCell(failed, c[0], c[2], feet, 32)), "the next one");
+        assertEquals(ExploreRules.TargetHold.State.REACHED, ExploreRules.TargetHold.failNow(
+                ExploreRules.TargetHold.look(ExploreRules.TargetHold.start(hill, 0, new int[]{40, 64, 0}, 0), 1, new int[]{40, 64, 0}, 0, true), "x").state(), "a reached hold stays reached");
+    }
+
+    /** 57db13b7 review (a): only growth lifts the stuck mark; (b): an owner stop leaves it as it was. */
+    @Test
+    void theStuckMark_liftedOnlyByGrowth_keptByAStop() {
+        Sightings s = new Sightings();
+        s.knowCave("d", new CaveIndex.Known(0, 40, 0, CaveIndex.Size.SMALL, CaveIndex.Depth.STONE, List.of(Sightings.cell(1, 40, 0))), 1);
+        List<Long> cells = new java.util.ArrayList<>();
+        for (int x = 0; x < 30; x++) cells.add(Sightings.cell(x, 40, 0));
+        s.caveCells("d", 0, 40, 0, cells);
+        s.caveStood("d", 0, 40, 0, 0, 40, 0, 1);
+        s.caveOre("d", 0, 40, 0, Sightings.cell(3, 41, 0), "iron");
+        s.caveWalked("d", 0, 40, 0, 2, 0, 2, false);
+        assertFalse(s.caveFacts("d", 0, 40, 0).offeredFor("iron"), "stuck");
+        s.caveMined("d", 0, 40, 0, Sightings.cell(3, 41, 0));
+        assertFalse(s.caveFacts("d", 0, 40, 0).offeredFor("iron"), "a mined ore is no new knowledge: still stuck");
+        s.caveWalked("d", 0, 40, 0, 1, 0, 3, null);                    // an owner stop
+        assertFalse(s.caveFacts("d", 0, 40, 0).offeredFor("iron"), "a stop leaves the mark");
+        s.caveOre("d", 0, 40, 0, Sightings.cell(9, 39, 0), "iron");    // a new ore seen: growth
+        assertTrue(s.caveFacts("d", 0, 40, 0).offeredFor("iron"), "lifted by growth");
+    }
+
+    /**
+     * 57db13b7 review (c): each way is tried from the same snapshot and only the winner's marks stay (NeedChain.choose) -
+     * the cave way that counts the seen ore at 8 64 0 loses to collecting it, and the collect still counts all 3.
+     */
+    @Test
+    void theCaveWayLosesToACollect_theOreStillCountedByTheCollect() {
+        var near3 = new NeedChain.Spot(8, 64, 0, 8, "minecraft:iron_ore", 3);
+        CaveWay cw = new CaveWay(20, 21, -10, 30, "minecraft:iron_ore", "iron", 3, true, CaveIndex.Size.LARGE, 8, List.of("8,64,0"));
+        Chain c = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(cw, near3));
+        assertTrue(c.ok() && !Z77CaveWayTest.caveMined(c), c.why());
+        Chain ctl = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(null, near3));
+        assertEquals(ctl.seconds(), c.seconds(), 1e-9, "the collect priced as with no cave at all: its 3 ore all counted - " + c.why());
+    }
+
     /** Item 5 (a): an unexplored chunk is walked to as its surface cell; not loaded yet: the column goal. */
     @Test
     void noCreditedOpening_anUnexploredSurfaceCell() {

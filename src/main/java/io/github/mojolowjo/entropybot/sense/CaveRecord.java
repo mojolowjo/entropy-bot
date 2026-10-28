@@ -132,16 +132,20 @@ public final class CaveRecord {
      * and no ore mined): the cave is not offered again until something new is known of it - a cell seen, an ore seen, more
      * cells from the index ({@link #stuck}); so a walk that cannot get on never loops.
      */
-    void recWalked(double minutes, int oreSeen, long now, boolean gained) {
+    void recWalked(double minutes, int oreSeen, long now, Boolean gained) {
         walkedMinutes += Math.max(0, minutes);
         oreSeenWalking += Math.max(0, oreSeen);
         lastAt = now;
+        if (gained == null) return;                                       // 57db13b7 review (b): an owner stop leaves the mark as it was
         if (gained) { stuckSeen = stuckOre = stuckCells = -1; }
         else { stuckSeen = seen.size(); stuckOre = ores.size(); stuckCells = cellCount; }
     }
 
-    /** The last walk gained nothing and nothing new is known of the cave since (review 4). */
-    public boolean stuck() { return stuckSeen >= 0 && seen.size() == stuckSeen && ores.size() == stuckOre && cellCount == stuckCells; }
+    /**
+     * The last walk gained nothing and nothing new is known of the cave since (review 4). 57db13b7 review (a): only GROWTH
+     * lifts it - more cells seen, more ore seen, more cells from the index; a mined ore or a smaller count lifts nothing.
+     */
+    public boolean stuck() { return stuckSeen >= 0 && !(seen.size() > stuckSeen || ores.size() > stuckOre || cellCount > stuckCells); }
 
     private void summarise() {
         if (cells.isEmpty()) return;

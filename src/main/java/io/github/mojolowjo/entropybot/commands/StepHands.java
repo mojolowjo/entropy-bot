@@ -820,7 +820,7 @@ public final class StepHands implements Steps.Hands {
             var before = sg.caveFacts(cv.dim, k.x(), k.y(), k.z());
             int seenNow = before == null ? cv.seenAtStart : before.cellCount() - before.unseen();
             // review 4: a walk that saw no cell and mined no ore holds the cave until something new is known (no loop); a stop judges nothing
-            boolean gained = end == io.github.mojolowjo.entropybot.cave.CaveWalk.End.STOPPED || seenNow > cv.seenAtStart || cv.mined > 0;
+            Boolean gained = end == io.github.mojolowjo.entropybot.cave.CaveWalk.End.STOPPED ? null : (Boolean) (seenNow > cv.seenAtStart || cv.mined > 0);   // 57db13b7 review (b): a stop judges nothing
             sg.caveWalked(cv.dim, k.x(), k.y(), k.z(), minutes, cv.oreSeen, System.currentTimeMillis(), gained);
             after = sg.caveFacts(cv.dim, k.x(), k.y(), k.z());
         }

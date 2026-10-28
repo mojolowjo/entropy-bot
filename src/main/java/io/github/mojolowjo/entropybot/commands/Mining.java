@@ -1253,10 +1253,14 @@ final class Mining {
         if (done == null && ex.target != null && ex.hold != null) {
             ex.hold = ExploreRules.TargetHold.look(ex.hold, now(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(), b != null && b.getPathingBehavior().getCurrent() != null,
                     ex.aimed != null ? ex.aimCell : null);   // run ED: an opening is reached within reach of its cell
+            // J6b item 5 (the owner: "when exploring it should not break blocks"): the walk is the fork's no-break walk; its
+            // "no path (no-break walk)" fails the target at once - the explore picks the next one (said once, the failed line)
+            if (ex.hold.state() == ExploreRules.TargetHold.State.HELD && b != null && ExploreRules.noBreakNoPath(b.getCustomGoalProcess().lastEnd()))
+                ex.hold = ExploreRules.TargetHold.failNow(ex.hold, "no path without breaking or placing (the no-break walk) from " + Jobs.fmt(me));
             if (ex.hold.state() == ExploreRules.TargetHold.State.HELD) {
                 boolean surfaceNow = ex.aimY == null && !ex.surfaceGoal && io.github.mojolowjo.entropybot.world.SurfaceHeight.known(Jobs.surfaceNoLeaves(p.level(), ex.target.x(), ex.target.z()));
                 if (b != null && (Jobs.idle(b) || surfaceNow) && now() - ex.targetAt >= 20) {     // structural: once a second in ticks
-                    b.getCustomGoalProcess().setGoalAndPath(exploreGoal(ex));
+                    b.getCustomGoalProcess().setGoalAndPathNoBreak(exploreGoal(ex));   // J6b item 5: never breaking, never placing
                     if (surfaceNow) LOG.info("[entropybot] explore: the target column {} {} loaded: the walk's goal is its surface cell now", ex.target.x(), ex.target.z());
                     ex.targetAt = now();
                 }
@@ -1425,7 +1429,7 @@ final class Mining {
             return "next";
         }
         if (b != null) {
-            b.getCustomGoalProcess().setGoalAndPath(exploreGoal(ex));
+            b.getCustomGoalProcess().setGoalAndPathNoBreak(exploreGoal(ex));      // J6b item 5: never breaking, never placing
         }
         ex.targetAt = now();
         ex.hold = ExploreRules.TargetHold.start(ex.target, now(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed());   // 0.39.z72
