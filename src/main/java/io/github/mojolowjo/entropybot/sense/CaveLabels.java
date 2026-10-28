@@ -219,40 +219,9 @@ public final class CaveLabels {
         return out;
     }
 
-    /** Packed cells, 8 bytes each, deflated, base64. */
-    static String pack(List<Long> cells) {
-        java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(8 * cells.size());           // structural: 8 bytes a long
-        for (long c : cells) b.putLong(c);
-        java.util.zip.Deflater d = new java.util.zip.Deflater(java.util.zip.Deflater.BEST_COMPRESSION);
-        d.setInput(b.array());
-        d.finish();
-        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-        byte[] buf = new byte[4096];                                                       // structural: a copy buffer
-        while (!d.finished()) out.write(buf, 0, d.deflate(buf));
-        d.end();
-        return java.util.Base64.getEncoder().encodeToString(out.toByteArray());
-    }
+    static String pack(List<Long> cells) { return PackedCells.pack(cells); }
 
-    static List<Long> unpack(String s) {
-        try {
-            java.util.zip.Inflater in = new java.util.zip.Inflater();
-            in.setInput(java.util.Base64.getDecoder().decode(s));
-            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-            byte[] buf = new byte[4096];                                                   // structural: a copy buffer
-            while (!in.finished()) {
-                int n = in.inflate(buf);
-                if (n == 0 && (in.needsInput() || in.needsDictionary())) break;
-                out.write(buf, 0, n);
-            }
-            in.end();
-            java.nio.ByteBuffer b = java.nio.ByteBuffer.wrap(out.toByteArray());
-            List<Long> cells = new ArrayList<>();
-            while (b.remaining() >= 8) cells.add(b.getLong());                            // structural: 8 bytes a long
-            return cells;
-        } catch (java.util.zip.DataFormatException | IllegalArgumentException e) {
-            throw new IllegalArgumentException("cave-labels.json: the cellsZ of a label is not readable: " + e.getMessage(), e);   // read() counts it skipped
-        }
-    }
+    static List<Long> unpack(String s) { return PackedCells.unpack(s); }
 
     public synchronized String toJson() {
         JsonArray a = new JsonArray();

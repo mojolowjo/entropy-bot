@@ -188,6 +188,110 @@ public final class Sightings {
         return false;
     }
 
+    // ---- 0.39.z78 J6b (D12): the cave records, beside the known caves - the one store (rule 23); only these methods write ----
+
+    private final Map<String, Map<String, CaveRecord>> caveRecords = new HashMap<>();
+
+    /** The record of the known cave entered at x y z (made on first use); null: no known cave there. */
+    private CaveRecord rec(String dim, int x, int y, int z) {
+        if (knownCave(dim, x, y, z) == null) return null;
+        return caveRecords.computeIfAbsent(dim, d -> new HashMap<>()).computeIfAbsent(x + " " + y + " " + z, k -> new CaveRecord(x, y, z));
+    }
+
+    /** The record of the known cave at x y z as it stands (a copy); null: no known cave there. */
+    public synchronized CaveRecord.Facts caveFacts(String dim, int x, int y, int z) {
+        CaveRecord r = rec(dim, x, y, z);
+        return r == null ? null : r.facts();
+    }
+
+    /** The branches not walked of the known cave at x y z (largest behind first; empty: not loaded, or none). */
+    public synchronized List<CaveRecord.Group> caveFrontier(String dim, int x, int y, int z) {
+        CaveRecord r = rec(dim, x, y, z);
+        return r == null ? List.of() : r.frontier();
+    }
+
+    /** The ore cells of {@code family} seen in the known cave at x y z and not mined. */
+    public synchronized List<int[]> caveLeft(String dim, int x, int y, int z, String family) {
+        CaveRecord r = rec(dim, x, y, z);
+        return r == null ? List.of() : r.left(family);
+    }
+
+    /** The known cave at x y z: its volume's cells from the cave index (refreshed when its chunks load). */
+    public synchronized void caveCells(String dim, int x, int y, int z, java.util.Collection<Long> cells) {
+        CaveRecord r = rec(dim, x, y, z);
+        if (r == null || cells.isEmpty()) return;
+        int was = r.cellCount();
+        r.recCells(cells);
+        if (r.cellCount() != was) dirty = true;
+    }
+
+    /** The bot stands at fx fy fz in the known cave at x y z: the cells round it are seen; the newly seen count. */
+    public synchronized int caveStood(String dim, int x, int y, int z, int fx, int fy, int fz, long now) {
+        CaveRecord r = rec(dim, x, y, z);
+        if (r == null) return 0;
+        int n = r.recStood(fx, fy, fz, now);
+        if (n > 0) dirty = true;
+        return n;
+    }
+
+    /** Cells a ray passed in the known cave at x y z (the cave's count). */
+    public synchronized int caveSaw(String dim, int x, int y, int z, java.util.Collection<Long> passed) {
+        CaveRecord r = rec(dim, x, y, z);
+        if (r == null) return 0;
+        int n = r.recSee(passed);
+        if (n > 0) dirty = true;
+        return n;
+    }
+
+    /** An ore cell seen in the known cave at x y z (by sight); true: new. */
+    public synchronized boolean caveOre(String dim, int x, int y, int z, long cell, String family) {
+        CaveRecord r = rec(dim, x, y, z);
+        if (r == null || !r.recOre(cell, family)) return false;
+        dirty = true;
+        return true;
+    }
+
+    /** An ore cell of the known cave at x y z mined. */
+    public synchronized void caveMined(String dim, int x, int y, int z, long cell) {
+        CaveRecord r = rec(dim, x, y, z);
+        if (r == null) return;
+        r.recMined(cell);
+        dirty = true;
+    }
+
+    /** A caving walk in the known cave at x y z ended: its minutes and the ore cells it saw (the measured yield). */
+    public synchronized void caveWalked(String dim, int x, int y, int z, double minutes, int oreSeen, long now) {
+        CaveRecord r = rec(dim, x, y, z);
+        if (r == null) return;
+        r.recWalked(minutes, oreSeen, now);
+        dirty = true;
+    }
+
+    private static JsonObject recordsJson(Map<String, Map<String, CaveRecord>> m) {
+        JsonObject o = new JsonObject();
+        for (var d : new TreeMap<>(m).entrySet()) {
+            JsonArray a = new JsonArray();
+            for (CaveRecord r : new TreeMap<>(d.getValue()).values()) a.add(r.json());
+            o.add(d.getKey(), a);
+        }
+        return o;
+    }
+
+    private static void readRecords(JsonObject o, Sightings s, int[] skipped) {
+        try {
+            if (!o.has("caveRecords")) return;
+            for (Map.Entry<String, JsonElement> d : o.getAsJsonObject("caveRecords").entrySet())
+                for (JsonElement e : d.getValue().getAsJsonArray()) {
+                    try {
+                        CaveRecord r = CaveRecord.of(e.getAsJsonObject());
+                        s.caveRecords.computeIfAbsent(d.getKey(), x -> new HashMap<>()).put(r.where(), r);
+                    } catch (RuntimeException ex) {
+                        Quiet.warn("Sightings.readRecords: a cave record skipped", ex); skipped[0]++; }
+                }
+        } catch (RuntimeException ex) {
+            Quiet.warn("Sightings.readRecords failed, carrying on with the fallback", ex); skipped[0]++; }
+    }
+
     private static long d2k(KnownCave c, int x, int y, int z) {
         long dx = c.x() - x, dy = c.y() - y, dz = c.z() - z;
         return dx * dx + dy * dy + dz * dz;
@@ -408,6 +512,7 @@ public final class Sightings {
         o.addProperty("walked", walked);
         o.addProperty("cavesFound", cavesFound);
         o.add("knownCaves", knownJson(knownCaves));          // 0.39.z78 J6: the caves known by rays
+        o.add("caveRecords", recordsJson(caveRecords));      // 0.39.z78 J6b: their records (D12)
         return new Gson().toJson(o);
     }
 
@@ -448,6 +553,7 @@ public final class Sightings {
         read(o, "animals", Kind.ANIMAL, s.animals, skipped);
         read(o, "trees", Kind.TREE, s.trees, skipped);
         readKnown(o, s, skipped);
+        readRecords(o, s, skipped);
         try {
             if (o.has("walked")) s.walked = Math.max(0, o.get("walked").getAsDouble());
             if (o.has("cavesFound")) s.cavesFound = Math.max(0, o.get("cavesFound").getAsDouble());
