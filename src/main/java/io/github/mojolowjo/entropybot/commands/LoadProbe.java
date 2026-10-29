@@ -190,8 +190,8 @@ public final class LoadProbe {
             try {
                 long[] j = b.getPricedPath().joinCounts();
                 if (j != null && j.length >= 4 && j[0] >= 0) {
-                    // D11 fix: 8 from a fork with the failure kinds and the queued re-joins, 4 from the first D11 fork
-                    int n = j.length >= 8 ? 8 : 4;
+                    // D11 fix: 9 from a fork with the failure kinds and the queued re-joins, 4 from the first D11 fork
+                    int n = j.length >= 9 ? 9 : 4;
                     joins = new long[n];
                     if (joinSeen != null && joinSeen.length == n) for (int i = 0; i < n; i++) joins[i] = j[i] - joinSeen[i];
                     joinSeen = j;

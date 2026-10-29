@@ -239,7 +239,7 @@ public final class ProbeLines {
             if (joins != null && joins.length >= 4 && joins[0] >= 0) {
                 fork += "; re-joins +" + joins[0] + " (join searches started +" + joins[1] + " landed +" + joins[2] + " failed +" + joins[3];
                 // D11 fix (run FF: 74 failed joins the log could not explain): the failures by kind, and the re-joins queued for a slot
-                if (joins.length >= 8) fork += ": budget +" + joins[4] + " no path +" + joins[5] + " off the path +" + joins[6] + "; queued for a slot +" + joins[7];
+                if (joins.length >= 9) fork += ": budget +" + joins[4] + " no path +" + joins[5] + " off the path +" + joins[6] + " other +" + joins[8] + "; queued for a slot +" + joins[7];
                 fork += ")";
             } else if (joins != null) fork += "; re-joins not readable in this fork jar";   // D11 review 1 (rule 7): said, never left out
             String rec = recorder == null ? "recorder off" : "recorder queue " + recorder[0] + ", lines written +" + recorder[1] + String.format(Locale.ROOT, ", disk %.1f MB", recorder[2] / 1048576.0);

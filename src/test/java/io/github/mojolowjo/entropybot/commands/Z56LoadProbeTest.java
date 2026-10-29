@@ -29,9 +29,9 @@ class Z56LoadProbeTest {
         // D11: the re-join counts (a fork with them), left out for a fork without
         String joins = new ProbeLines.LoadFacts(60, "w", 0, 0, 0, new long[]{4, 4, 100}, 0, 0, null, 1, 2, 0, 0, new long[]{3, 3, 2, 1}).line(1);
         assertTrue(joins.contains("nodes opened +100; re-joins +3 (join searches started +3 landed +2 failed +1)"), joins);
-        // D11 fix: the failure kinds and the re-joins queued for a slot (a fork with the 8 counts)
-        String kinds = new ProbeLines.LoadFacts(60, "w", 0, 0, 0, new long[]{4, 4, 100}, 0, 0, null, 1, 2, 0, 0, new long[]{9, 6, 2, 4, 3, 1, 0, 5}).line(1);
-        assertTrue(kinds.contains("re-joins +9 (join searches started +6 landed +2 failed +4: budget +3 no path +1 off the path +0; queued for a slot +5)"), kinds);
+        // D11 fix: the failure kinds and the re-joins queued for a slot (a fork with the 9 counts)
+        String kinds = new ProbeLines.LoadFacts(60, "w", 0, 0, 0, new long[]{4, 4, 100}, 0, 0, null, 1, 2, 0, 0, new long[]{9, 6, 2, 4, 2, 1, 0, 5, 1}).line(1);
+        assertTrue(kinds.contains("re-joins +9 (join searches started +6 landed +2 failed +4: budget +2 no path +1 off the path +0 other +1; queued for a slot +5)"), kinds);
         assertTrue(new ProbeLines.LoadFacts(60, "w", 0, 0, 0, new long[]{4, 4, 100}, 0, 0, null, 1, 2, 0, 0, new long[]{-1}).line(1).contains("re-joins not readable in this fork jar"));
         assertFalse(old.contains("re-joins"), "no join facts given (the old constructor): nothing said");
     }

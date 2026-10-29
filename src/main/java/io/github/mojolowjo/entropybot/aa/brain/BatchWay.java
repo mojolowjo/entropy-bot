@@ -148,7 +148,8 @@ public final class BatchWay {
      * move with every block walked, so every waiting trip's result was dropped each step): the surface over the anchor
      * {@code pos} for trip {@code tk}, read ONCE per anchor through {@code read} and held in {@code cache} until the anchor
      * changes (a step's end cell does not move while the bot walks to it). Not known (null, the cell's chunk not loaded) is not
-     * held: read again next time, and the caller keeps the live surface for now. Pure given the reader.
+     * held: read again next time, and the caller keeps the live surface for now. Released when the trip has no anchor (the
+     * live-feet path of {@link #trip}: the step ended or was cancelled) and by {@link #clear}. Pure given the reader.
      */
     static NeedChain.Surface anchorSurface(Map<String, Object[]> cache, String tk, int[] pos, java.util.function.Function<int[], NeedChain.Surface> read) {
         Object[] c = cache.get(tk);
@@ -373,7 +374,11 @@ public final class BatchWay {
         Step runningStep = run == null ? null : run.step();
         int[] pos = anchorOf(runningStep, feet);
         NeedChain.World anchored = w0;
-        if (pos != feet) {
+        if (pos == feet) {
+            // D11 fix review: no anchor (no running step, a step that moves the bot nowhere known, a cancelled run) - the held
+            // anchor surface goes; a later anchor at the same cell reads the surface again (a shaft may have been dug there)
+            ANCHOR_SURFACE.remove(tk);
+        } else {
             NeedChain.World at = Goals.chainWorld(bb, g, pos);
             if (at != null) {
                 // D11 fix (run FF): the surface fact at the anchor too, read once per anchor (the live one moved every block)
