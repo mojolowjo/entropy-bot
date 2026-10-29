@@ -190,7 +190,10 @@ public final class LoadProbe {
             try {
                 long[] j = b.getPricedPath().joinCounts();
                 if (j != null && j.length >= 4 && j[0] >= 0) {
-                    joins = joinSeen == null ? new long[]{0, 0, 0, 0} : new long[]{j[0] - joinSeen[0], j[1] - joinSeen[1], j[2] - joinSeen[2], j[3] - joinSeen[3]};
+                    // D11 fix: 8 from a fork with the failure kinds and the queued re-joins, 4 from the first D11 fork
+                    int n = j.length >= 8 ? 8 : 4;
+                    joins = new long[n];
+                    if (joinSeen != null && joinSeen.length == n) for (int i = 0; i < n; i++) joins[i] = j[i] - joinSeen[i];
                     joinSeen = j;
                 } else joins = new long[]{-1};
             } catch (LinkageError e) {

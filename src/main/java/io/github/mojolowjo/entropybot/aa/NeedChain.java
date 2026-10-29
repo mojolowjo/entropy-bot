@@ -614,10 +614,17 @@ public final class NeedChain {
          * {@code pos} - a waiting trip's legs are placed from the running step's end cell, never the live feet (run EV: 2,037
          * "re-planned while thinking" as the feet's Y moved 31 -> -33 inside one step). The surface fact stays the live one.
          */
-        public World withFeetAt(int[] pos) {
+        public World withFeetAt(int[] pos) { return withFeetAt(pos, null); }
+
+        /**
+         * D11 fix (run FF: the "surface" fact dropped 6,801 waiting results - the live one's distance and cell move with every
+         * block the bot walks): the same world with the feet at {@code pos} and the surface fact {@code surface} - the surface
+         * over the ANCHOR, read once per anchor (BatchWay.anchorSurface); null: the live one as before.
+         */
+        public World withFeetAt(int[] pos, java.util.function.Supplier<Surface> surface) {
             if (pos == null || where == null) return this;
             int[] p = pos.clone();
-            return withWhere(new WhereFacts(where.of(), where.surface(), () -> p, where.base()));
+            return withWhere(new WhereFacts(where.of(), surface == null ? where.surface() : surface, () -> p, where.base()));
         }
 
         /** 0.39.z77 J2: the same world with another bag (a chain priced from the bag another left). */

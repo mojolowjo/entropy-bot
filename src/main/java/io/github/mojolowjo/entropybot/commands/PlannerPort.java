@@ -220,12 +220,23 @@ public final class PlannerPort implements BatchWay.Planner {
             PlanNodes.Fact f = e.getKey();
             Object now = timedAsk(w, f);
             live.put(f, now);
-            if (same(f, PlanNodes.unboxed(e.getValue()), now)) continue;
-            out.add((r.job().snap().copied(f) ? "" : MISS) + f.field() + (f.key() == null ? "" : " " + f.key()));
+            Object kept = PlanNodes.unboxed(e.getValue());
+            if (same(f, kept, now)) continue;
+            // D11 fix probe (run FF: 6,801 "surface" drops the log could not explain - the fact's key alone was said): old -> new
+            out.add((r.job().snap().copied(f) ? "" : MISS) + f.field() + (f.key() == null ? "" : " " + f.key()) + ": " + brief(kept) + " -> " + brief(now));
         }
         String bag = r.read().bagChanged(w);
         if (bag != null) out.add(bag);
         return out;
+    }
+
+    /** structural: a fact's value in the drop line is cut past this many characters (a list of cells can run long) */
+    static final int BRIEF = 160;
+
+    /** A fact's value for the drop line: arrays by content, anything else its own text, cut at {@link #BRIEF}. */
+    static String brief(Object v) {
+        String s = v == null ? "null" : v instanceof int[] a ? java.util.Arrays.toString(a) : v instanceof Object[] a ? java.util.Arrays.deepToString(a) : v.toString();
+        return s.length() <= BRIEF ? s : s.substring(0, BRIEF) + "...";
     }
 
     /** 0.39.z78 D6 (run DQ: the check and the snapshot at 100-160 ms): one live fact ask, its time told to the aatick line by field. */

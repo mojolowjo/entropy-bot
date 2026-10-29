@@ -132,7 +132,32 @@ public final class BatchWay {
     private static final Map<String, String> SAID = new ConcurrentHashMap<>(), TOLD = new ConcurrentHashMap<>();
 
     /** Tests and a new runtime: forget every trip. */
-    public static void clear() { TRIPS.clear(); LEGS.clear(); OWN.clear(); PRICED.clear(); SAID.clear(); TOLD.clear(); HOLDS.clear(); FUELS.clear(); }
+    public static void clear() { TRIPS.clear(); LEGS.clear(); OWN.clear(); PRICED.clear(); SAID.clear(); TOLD.clear(); HOLDS.clear(); FUELS.clear(); ANCHOR_SURFACE.clear(); }
+
+    /**
+     * D11 fix: Blackboard fact - the surface over a CELL ({@code Function<int[], NeedChain.Surface>}: AaRuntime.surfaceAt, the one
+     * surface reader run at a trip's anchor; null: not known). Not published (tests, replay): the trip keeps the live surface.
+     */
+    public static final String SURFACE_AT_FACT = "aa.surfaceAt";
+
+    /** D11 fix: per trip key, {the anchor last read, the surface over it} - read once per anchor, held until the anchor changes. */
+    private static final Map<String, Object[]> ANCHOR_SURFACE = new ConcurrentHashMap<>();
+
+    /**
+     * D11 fix (run FF: "re-planned while thinking: surface" 6,801 times in 25 minutes - the live surface fact's distance and cell
+     * move with every block walked, so every waiting trip's result was dropped each step): the surface over the anchor
+     * {@code pos} for trip {@code tk}, read ONCE per anchor through {@code read} and held in {@code cache} until the anchor
+     * changes (a step's end cell does not move while the bot walks to it). Not known (null, the cell's chunk not loaded) is not
+     * held: read again next time, and the caller keeps the live surface for now. Pure given the reader.
+     */
+    static NeedChain.Surface anchorSurface(Map<String, Object[]> cache, String tk, int[] pos, java.util.function.Function<int[], NeedChain.Surface> read) {
+        Object[] c = cache.get(tk);
+        if (c != null && java.util.Arrays.equals((int[]) c[0], pos)) return (NeedChain.Surface) c[1];
+        if (read == null) return null;
+        NeedChain.Surface s = read.apply(pos);
+        if (s != null) cache.put(tk, new Object[]{pos.clone(), s}); else cache.remove(tk);
+        return s;
+    }
 
     /** 0.39.z77 trip: Blackboard fact - the typed order run now ({@link Run}); null while no order's typed run runs. */
     public static final String RUN_FACT = "aa.tripRun";
@@ -350,7 +375,13 @@ public final class BatchWay {
         NeedChain.World anchored = w0;
         if (pos != feet) {
             NeedChain.World at = Goals.chainWorld(bb, g, pos);
-            if (at != null) anchored = at.withFeetAt(pos);
+            if (at != null) {
+                // D11 fix (run FF): the surface fact at the anchor too, read once per anchor (the live one moved every block)
+                @SuppressWarnings("unchecked")
+                var read = bb.fact(SURFACE_AT_FACT) instanceof java.util.function.Function<?, ?> f ? (java.util.function.Function<int[], NeedChain.Surface>) f : null;
+                NeedChain.Surface s = anchorSurface(ANCHOR_SURFACE, tk, pos, read);
+                anchored = at.withFeetAt(pos, s == null ? null : () -> s);
+            }
         }
         NeedChain.World w = others.isEmpty() ? anchored : anchored.withoutSources(others);
         // 0.39.z77 world: the holds as w0 applied them (Goals.chainWorld: the asker's own by position, the world facts held

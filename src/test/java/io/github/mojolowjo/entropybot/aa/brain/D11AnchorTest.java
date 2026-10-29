@@ -40,6 +40,30 @@ class D11AnchorTest {
         assertFalse(BatchWay.anchorUnder(null, false));
     }
 
+    /**
+     * D11 fix (run FF: "re-planned while thinking: surface" 6,801 times - the live surface fact over the feet changed every
+     * block): a trip's surface fact is the surface over its ANCHOR, read once per anchor and held until the anchor changes.
+     */
+    @Test
+    void theSurfaceOverTheAnchor_isReadOncePerAnchor_andNotKnownIsNotHeld() {
+        java.util.Map<String, Object[]> cache = new java.util.HashMap<>();
+        java.util.List<int[]> reads = new java.util.ArrayList<>();
+        var surface = new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(0, 9, 67, 1, 0);
+        java.util.function.Function<int[], io.github.mojolowjo.entropybot.aa.NeedChain.Surface> reader = p -> { reads.add(p.clone()); return p[1] < 0 ? null : surface; };
+        int[] anchor = {9, 67, 1};
+        assertSame(surface, BatchWay.anchorSurface(cache, "b1", anchor, reader));
+        assertSame(surface, BatchWay.anchorSurface(cache, "b1", new int[]{9, 67, 1}, reader), "the same anchor asked again: held, not read");
+        assertSame(surface, BatchWay.anchorSurface(cache, "b1", anchor, reader));
+        assertEquals(1, reads.size(), "one read per anchor");
+        assertSame(surface, BatchWay.anchorSurface(cache, "b1", new int[]{20, 64, 5}, reader));
+        assertEquals(2, reads.size(), "a new anchor: read again");
+        assertNull(BatchWay.anchorSurface(cache, "b1", new int[]{0, -70, 0}, reader), "not known (the chunk not loaded)");
+        assertNull(BatchWay.anchorSurface(cache, "b1", new int[]{0, -70, 0}, reader), "not held: asked again next time");
+        assertEquals(4, reads.size());
+        assertNull(BatchWay.anchorSurface(cache, "b2", anchor, null), "no reader published (tests, replay): none - the caller keeps the live surface");
+        assertTrue(cache.isEmpty() || !cache.containsKey("b2"));
+    }
+
     /** The EV case: the feet walk 31 -> 20 -> -33 inside one band leg; the trip's key does not move. */
     @Test
     void walkingInsideOneStep_keepsTheTripsKey() {

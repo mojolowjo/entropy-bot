@@ -114,6 +114,7 @@ public final class AaRuntime implements JobPort {
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.BatchWay.PER_SLAB_FACT, (java.util.function.BiFunction<String, Integer, Double>) this::perSlabAt);   // 0.39.z77 J2
         io.github.mojolowjo.entropybot.aa.brain.BatchWay.clear();     // 0.39.z77 review 5: a new runtime's "b1" never inherits an old b1's verdict
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.BatchWay.PLANNER_FACT, planner);     // 0.39.z78 D6: the trips are resolved off the render thread
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.BatchWay.SURFACE_AT_FACT, (java.util.function.Function<int[], io.github.mojolowjo.entropybot.aa.NeedChain.Surface>) this::surfaceAt);   // D11 fix: the surface over a trip's anchor
         LoadProbe.planner = planner::probe;                                                    // 0.39.z78 D6: its numbers on the load line
         bb.fact(io.github.mojolowjo.entropybot.aa.FoodOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts>) this::foodFacts);
         NeedFacts.install(bb, this);          // round 4A N wiring: the station, bed, base and bag facts (O's sets)
@@ -647,13 +648,21 @@ public final class AaRuntime implements JobPort {
      * only (NeedChain.floorIn); no block under it is read.
      */
     io.github.mojolowjo.entropybot.aa.NeedChain.Surface surfaceOver() {
-        var s = surfaceOver0();
-        if (s == null) return null;
+        LocalPlayer p = Minecraft.getInstance().player;
+        return p == null ? null : surfaceAt(Jobs.here(p));
+    }
+
+    /**
+     * D11 fix (run FF: a waiting trip's "surface" fact was the live one over the feet and changed every block): the same reader
+     * run at the cell {@code me} - the surface over a trip's ANCHOR (BatchWay.SURFACE_AT_FACT), read once per anchor. Null: no
+     * level or the cell's chunk is not loaded (rule 15).
+     */
+    io.github.mojolowjo.entropybot.aa.NeedChain.Surface surfaceAt(int[] me) {
         Minecraft mc = Minecraft.getInstance();
-        LocalPlayer p = mc.player;
-        if (p == null || mc.level == null) return s;
+        if (mc.level == null || me == null || me.length < 3) return null;     // structural: x y z
+        var s = surfaceAt0(mc.level, me);
+        if (s == null) return null;
         var lv = mc.level;
-        int[] me = Jobs.here(p);
         int top = Jobs.surfaceNoLeaves(lv, me[0], me[2]);
         if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(top)) return s;
         var m = new net.minecraft.core.BlockPos.MutableBlockPos();
@@ -664,12 +673,7 @@ public final class AaRuntime implements JobPort {
         return s.withFloor(floor);
     }
 
-    private io.github.mojolowjo.entropybot.aa.NeedChain.Surface surfaceOver0() {
-        Minecraft mc = Minecraft.getInstance();
-        LocalPlayer p = mc.player;
-        if (p == null || mc.level == null) return null;
-        var lv = mc.level;
-        int[] me = Jobs.here(p);
+    private io.github.mojolowjo.entropybot.aa.NeedChain.Surface surfaceAt0(net.minecraft.client.multiplayer.ClientLevel lv, int[] me) {
         if (!lv.hasChunkAt(new net.minecraft.core.BlockPos(me[0], me[1], me[2]))) return null;
         // run EH (rule 23): the one "below the surface" reader - rock over the head or the hole round the feet
         int rock = Jobs.rockOverHead(lv, me[0], me[1], me[2]), hole = Jobs.holeDepth(lv, me[0], me[1], me[2]);
