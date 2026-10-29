@@ -448,15 +448,29 @@ public final class Sightings {
     }
 
     /** A confirmed tree at its lowest log: a new record (returned) unless one lies within {@link #TREE_MERGE} (null). */
-    public synchronized Rec sawTree(String dim, int x, int y, int z, int logs, long now) {
+    public synchronized Rec sawTree(String dim, int x, int y, int z, int logs, long now) { return sawTree(dim, x, y, z, logs, now, null); }
+
+    /** A tree record's id while its wood was not read (records before the FV fix, and a sighting with no log block to read). */
+    public static final String TREE_NO_WOOD = "tree";
+
+    /**
+     * FV fix (runs FU 23:29:29 / FV 23:44:37, 2026-10-28: a seen tree whose chunk was not loaded was offered for every log kind
+     * - the planner named oak or birch planks after a tree that gave acacia, the craft was refused and the order parked): the
+     * wood the ray saw ({@code log}: the lowest log's block id, null: not read) is the record's id, so the tree serves its own
+     * kind while its chunk is away. {@link #treeWood} reads it back.
+     */
+    public synchronized Rec sawTree(String dim, int x, int y, int z, int logs, long now, String log) {
         List<Rec> l = trees.computeIfAbsent(dim, k -> new ArrayList<>());
         for (Rec r : l) if (r.exhausted() == 0 && d2(r, x, y, z) <= (long) treeMerge() * treeMerge()) return null;
-        Rec r = new Rec(Kind.TREE, "tree", x, y, z, now, Math.max(1, logs), 1, 0);
+        Rec r = new Rec(Kind.TREE, log == null || log.isBlank() ? TREE_NO_WOOD : log, x, y, z, now, Math.max(1, logs), 1, 0);
         l.add(r);
         while (l.size() > maxTrees()) l.remove(0);
         dirty = true;
         return r;
     }
+
+    /** The wood a tree record was seen with (its lowest log's block id), null: not read (rule 15: any log, until its chunk loads). */
+    public static String treeWood(Rec r) { return r == null || r.kind() != Kind.TREE || TREE_NO_WOOD.equals(r.id()) ? null : r.id(); }
 
     /** The seen trees (not exhausted) within {@code max} blocks (horizontal) of x z, nearest first. */
     public synchronized List<Rec> treesNear(String dim, int x, int z, int max) {

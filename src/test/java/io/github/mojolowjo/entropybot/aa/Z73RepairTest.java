@@ -212,6 +212,22 @@ class Z73RepairTest {
         assertTrue(Repair.pick(left, leftUses, sp, gap, 0.3, chain(List.of(new Step.Explore(5)), 200, List.of(200.0)), enough, 10, null).repair(), "2 sticks: the tail stands");
     }
 
+    /**
+     * FV fix, the dry run's answer: a walk that stops at a cut of unnamed wood says where it stopped (Outcome.stoppedAt / stop) -
+     * the repair still stands on it (D2 3.4, test 15: a strip gap's yield is not known either); the wood comes from the sighting.
+     */
+    @Test
+    void aDryRunThatStopsAtACut_saysWhere() {
+        Step cut = new Step.ChopTree(new int[]{-33, 66, -56}, 1, null), planks = new Step.Craft("oak_planks", 4);
+        var dry = io.github.mojolowjo.entropybot.aa.moves.DryRun.look(List.of(cut, planks), 0, List.of(StepNeeds.NONE, StepNeeds.NONE), Map.of(), true);
+        assertNull(dry.shortage());
+        assertEquals(0, dry.stoppedAt());
+        assertEquals("stopped at step 1 (cut 1 at -33 66 -56): its yield is not known, nothing after it checked", dry.stop());
+        var whole = io.github.mojolowjo.entropybot.aa.moves.DryRun.look(List.of(planks), 0, List.of(StepNeeds.NONE), Map.of(), true);
+        assertEquals(-1, whole.stoppedAt());
+        assertNull(whole.stop());
+    }
+
     /** Rule 15: no tail prices, a gap ending in an explore, no bag - each a full re-plan, said. */
     @Test
     void theRepairStepsAsideWhenSomethingIsNotKnown() {

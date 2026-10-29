@@ -103,9 +103,11 @@ public final class SightingsRuntime {
                         leaves = level.getBlockState(top.offset(dx, dy, dz)).is(BlockTags.LEAVES);
             if (!Sightings.treeRule(dirt, logs, leaves, false)) continue;
             if (!sg.confirm(Sightings.key(Sightings.Kind.TREE, "tree", base.getX(), base.getY(), base.getZ()), now)) continue;
-            if (sg.sawTree(dim, base.getX(), base.getY(), base.getZ(), logs, now) != null) {
+            // FV fix: the wood is read where it is seen (the lowest log's block), so the tree serves its own kind while its chunk is away
+            String wood = BuiltInRegistries.BLOCK.getKey(level.getBlockState(base).getBlock()).toString();
+            if (sg.sawTree(dim, base.getX(), base.getY(), base.getZ(), logs, now, wood) != null) {
                 trees++;
-                LOG.info("[entropybot] sense: seen tree at {} {} {} ({} logs)", base.getX(), base.getY(), base.getZ(), logs);
+                LOG.info("[entropybot] sense: seen tree at {} {} {} ({} logs, {})", base.getX(), base.getY(), base.getZ(), logs, wood);
             }
         }
     }

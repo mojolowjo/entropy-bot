@@ -8,6 +8,27 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** AA_ROUND3 5: the one sightings memory: rule, confirm-twice, decay per kind, visit outcomes, the cave chance, the file. */
 class SightingsTest {
+    /**
+     * FV fix (runs FU / FV 2026-10-28: a seen tree whose chunk was away was offered for every log kind; the planner named oak
+     * or birch planks after a tree that gave acacia): a tree is remembered with the wood the ray saw, the wood survives the
+     * file, and a record with none (older files, nothing read) says so with null - any kind, rule 15.
+     */
+    @Test
+    void aTreeIsRememberedWithItsWood() {
+        Sightings s = new Sightings();
+        var acacia = s.sawTree("d", 50, 64, 0, 5, 1000, "minecraft:acacia_log");
+        var unknown = s.sawTree("d", -40, 64, 10, 4, 3000);
+        assertEquals("minecraft:acacia_log", Sightings.treeWood(acacia));
+        assertNull(Sightings.treeWood(unknown), "no wood read: any kind");
+        assertNull(Sightings.treeWood(null));
+        Sightings back = Sightings.fromJson(s.toJson(), new int[1]);
+        var near = back.treesNear("d", 50, 0, 5);
+        assertEquals(1, near.size());
+        assertEquals("minecraft:acacia_log", Sightings.treeWood(near.get(0)), "the wood survives the file");
+        assertTrue(io.github.mojolowjo.entropybot.aa.Nearby.treeServes(java.util.Set.of("minecraft:acacia_log"), "minecraft:acacia_log"));
+        assertFalse(io.github.mojolowjo.entropybot.aa.Nearby.treeServes(java.util.Set.of("minecraft:oak_log"), "minecraft:acacia_log"), "an acacia tree is no oak source while its chunk is away");
+    }
+
     @Test
     void treeRuleAndMemory() {
         assertTrue(Sightings.treeRule(true, 4, true, false));

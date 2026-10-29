@@ -19,8 +19,13 @@ public final class WoodOptions {
     /** The farthest seen tree that counts as known (the sightings' reach). */
     public static int farMax() { return Tuning.i("woodOptions.farMax"); }
 
-    /** @param deny the policy's or a protect box's reason against cutting there (null: allowed) */
-    public record Tree(int x, int y, int z, double dist, String deny) {
+    /**
+     * @param deny the policy's or a protect box's reason against cutting there (null: allowed)
+     * @param log  FV fix: the wood the tree was seen with (its lowest log's block id; Sightings.treeWood), null: not read -
+     *             the tree then serves any log kind until its chunk loads (rule 15)
+     */
+    public record Tree(int x, int y, int z, double dist, String deny, String log) {
+        public Tree(int x, int y, int z, double dist, String deny) { this(x, y, z, dist, deny, null); }
         public String key() { return x + " " + y + " " + z; }
     }
 

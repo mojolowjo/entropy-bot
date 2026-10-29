@@ -42,8 +42,17 @@ public final class DryRun {
      * mine): the dry run's answer with where it stopped or what it skipped. {@code shortage}: the first one (null: none
      * found); {@code note}: what was and was not checked, in aa why's words ("checked steps 3-5; stopped at step 6 (strip
      * ...): its yield is not known, nothing after it checked; step 4 (craft ...) not checked: recipe guessed (...)").
+     * FV fix (run FV 23:44-23:46: a repair's gap "cut 1" of unnamed wood before a kept "craft oak_planks 4" stood, the cut
+     * gave acacia, the craft was refused twice and the order parked): {@code stoppedAt} the index (in the run) of the step
+     * whose yield is not known, where the walk stopped (-1: it walked to the end), {@code stop} its words - so a caller can
+     * tell "no shortage found" from "no shortage looked for" (rule 15).
      */
-    public record Outcome(Shortage shortage, String note) {}
+    public record Outcome(Shortage shortage, String note, int stoppedAt, String stop) {
+        Outcome(Shortage shortage, String note) { this(shortage, note, -1, null); }
+
+        /** The walk reached {@code last} (index in the run) with every step before it checked or skipped: nothing stopped it short of there. */
+        public boolean walkedTo(int last) { return stoppedAt < 0 || stoppedAt >= last; }
+    }
 
     /**
      * As {@link #check}, with the note. {@code judgeFirst} false (0.39.z62 item 3a, z61 review: a client bag a tick behind a
@@ -90,7 +99,7 @@ public final class DryRun {
             Map<String, Integer> made = produces(s);
             if (made == null) {                  // its yield is not known: nothing after it is checked
                 String stop = "stopped at step " + (i + 1) + " (" + s.text() + "): its yield is not known, nothing after it checked";
-                return new Outcome(null, noteOf(from, last, judgeFirst, stop, skipped));
+                return new Outcome(null, noteOf(from, last, judgeFirst, stop, skipped), i, stop);
             }
             for (var e : made.entrySet()) if (e.getValue() > 0) { b.merge(e.getKey(), e.getValue(), Integer::sum); changed = true; }
             if (changed) lastChange = i;

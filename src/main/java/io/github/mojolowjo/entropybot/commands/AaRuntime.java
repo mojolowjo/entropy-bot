@@ -1459,7 +1459,10 @@ public final class AaRuntime implements JobPort {
     /**
      * 0.39.z77 planks (run DH 04:38:13: an acacia tree offered for dark_oak_planks): the nearest such tree that serves a need for
      * these log blocks ({@code blocks}; null: any log) - one whose lowest log, read where its chunk is loaded, is one of them
-     * (Nearby.treeServes); the next tree when it is not.
+     * (Nearby.treeServes); the next tree when it is not. FV fix (runs FU 23:29:29 / FV 23:44:37: a tree whose chunk was away
+     * served every kind, the planner named oak or birch planks, the cut gave acacia, the craft was refused twice, the order
+     * parked): while the chunk is away the wood the tree was SEEN with (Sightings.treeWood) is read instead; a tree with no wood
+     * read serves any kind as before (rule 15). The spot names its log block when it is known (the planner's yield and planks by it).
      */
     private io.github.mojolowjo.entropybot.aa.NeedChain.Spot treeSighting(java.util.Set<String> blocks) {
         var trees = woodFacts();
@@ -1467,10 +1470,10 @@ public final class AaRuntime implements JobPort {
         var lv = Minecraft.getInstance().level;
         for (var t : trees.trees()) {
             if (t.deny() != null) continue;
-            String base = null;                              // not read: its chunk not loaded (or no level)
+            String base = t.log();                           // the wood seen with it (null: not read)
             net.minecraft.core.BlockPos q = new net.minecraft.core.BlockPos(t.x(), t.y(), t.z());
-            if (blocks != null && lv != null && lv.isLoaded(q)) base = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(lv.getBlockState(q).getBlock()).toString();
-            if (io.github.mojolowjo.entropybot.aa.Nearby.treeServes(blocks, base)) return new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(t.x(), t.y(), t.z(), t.dist(), null);
+            if (lv != null && lv.isLoaded(q)) base = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(lv.getBlockState(q).getBlock()).toString();
+            if (io.github.mojolowjo.entropybot.aa.Nearby.treeServes(blocks, base)) return new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(t.x(), t.y(), t.z(), t.dist(), base);
         }
         return null;
     }
@@ -3363,7 +3366,8 @@ public final class AaRuntime implements JobPort {
                 }
                 String deny = !c.workAllowed(adim, r.x(), r.y(), r.z()) ? c.policy.blockedText(adim, r.x(), r.z())
                         : io.github.mojolowjo.entropybot.cave.MineRules.protectNear(prot, adim, r.x(), r.y(), r.z(), io.github.mojolowjo.entropybot.cave.MineRules.protectMargin()) != null ? "a protected build is near" : null;
-                out.add(new io.github.mojolowjo.entropybot.aa.WoodOptions.Tree(r.x(), r.y(), r.z(), Math.hypot(r.x() - me[0], r.z() - me[2]), deny));
+                out.add(new io.github.mojolowjo.entropybot.aa.WoodOptions.Tree(r.x(), r.y(), r.z(), Math.hypot(r.x() - me[0], r.z() - me[2]), deny,
+                        io.github.mojolowjo.entropybot.sense.Sightings.treeWood(r)));      // FV fix: the wood seen with it
             }
             return new io.github.mojolowjo.entropybot.aa.WoodOptions.WoodFacts(0, out);
         } catch (RuntimeException e) {
