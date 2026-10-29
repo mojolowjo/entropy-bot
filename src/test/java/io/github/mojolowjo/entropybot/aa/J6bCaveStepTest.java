@@ -140,6 +140,23 @@ class J6bCaveStepTest {
                 ExploreRules.TargetHold.look(ExploreRules.TargetHold.start(hill, 0, new int[]{40, 64, 0}, 0), 1, new int[]{40, 64, 0}, 0, true), "x").state(), "a reached hold stays reached");
     }
 
+    /**
+     * FK fix (run FK 19:20:08-19:22:49: the caving step at 53 30 0 ended "stuck 40 s" twice with 0 cells gained, and the same
+     * cave was priced again from the same cell in between - the stop judged nothing - until the order parked): a stop for a
+     * stall judges the walk as any end; an owner's stop or the run's timeout still judges nothing.
+     */
+    @Test
+    void aStallStop_judgesTheWalk_anOwnerStopDoesNot() {
+        assertEquals(Boolean.FALSE, CaveWalk.judged(CaveWalk.End.STOPPED, "stuck 40 s at cave iron 2 at 46 57 -1 for 10 min", false), "the brain's stall: judged, nothing gained");
+        assertEquals(Boolean.TRUE, CaveWalk.judged(CaveWalk.End.STOPPED, "no new best for 30 s at cave iron 2 at 46 57 -1 for 10 min", true), "the monitor's stall with a cell seen: gained");
+        assertEquals(Boolean.FALSE, CaveWalk.judged(CaveWalk.End.STOPPED, "no progress 181 s", false));
+        assertNull(CaveWalk.judged(CaveWalk.End.STOPPED, "preempted by owner: goto", false), "an owner stop judges nothing");
+        assertNull(CaveWalk.judged(CaveWalk.End.STOPPED, "aa timeout after 1200s", false), "the run's timeout judges nothing");
+        assertNull(CaveWalk.judged(CaveWalk.End.STOPPED, null, false));
+        assertEquals(Boolean.FALSE, CaveWalk.judged(CaveWalk.End.MINUTES, "10 min", false), "any other end judges as before");
+        assertEquals(Boolean.TRUE, CaveWalk.judged(CaveWalk.End.NEED_MET, "3 of 3", true));
+    }
+
     /** 57db13b7 review (a): only growth lifts the stuck mark; (b): an owner stop leaves it as it was. */
     @Test
     void theStuckMark_liftedOnlyByGrowth_keptByAStop() {

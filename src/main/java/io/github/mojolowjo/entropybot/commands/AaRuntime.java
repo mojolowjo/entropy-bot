@@ -3885,6 +3885,7 @@ public final class AaRuntime implements JobPort {
                 carrying.add(g.id());
                 carried.put(g.id(), g);
                 LOG.info("[entropybot] aa: {}: met inside the batch's playbook run - the run carries on (its legs keep their numbers)", g.r.key());
+                if (bb.task() != null) bb.task().carriedOn(bb, bb.clock.now());     // FK fix: the run's timeout is per order, not per batch
             } else tree.brain.remove(g.id(), "goal reached");
             String msg = "got " + io.github.mojolowjo.entropybot.aa.brain.Goals.have(bb.in.bag, g) + " " + g.r.key() + " (goal " + g.n + " done)";
             LOG.info("[entropybot] aa: {}", msg);

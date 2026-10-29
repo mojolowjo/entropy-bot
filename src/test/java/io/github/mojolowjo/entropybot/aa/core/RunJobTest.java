@@ -88,6 +88,27 @@ class RunJobTest {
         assertTrue(port.incidents.get(0).startsWith("aa timeout TORCHES"));
     }
 
+    /**
+     * FK fix (run FK 19:20:08: the batch run started at 19:00 for the pickaxe, was carried on by four met orders and hit
+     * "timeout after 1200s" in the boots' healthy caving step): a run carried on to the next order restarts its clocks.
+     */
+    @Test
+    void aRunCarriedOnToTheNextOrder_restartsItsClocks() {
+        job.tick(bb);
+        clock.advance(60_000);
+        port.step(1);
+        assertEquals(Status.RUNNING, job.tick(bb));
+        job.carriedOn(bb, clock.now());                               // the pickaxe is met, the run goes on for the helmet
+        assertTrue(port.log.get(port.log.size() - 1).startsWith("carried on TORCHES after 60s"), port.log.toString());
+        clock.advance(60_000);
+        port.step(1);
+        assertEquals(Status.RUNNING, job.tick(bb), "120 s since the start, 60 s since the carry: no timeout");
+        clock.advance(45_000);
+        port.step(1);
+        assertEquals(Status.FAILURE, job.tick(bb), "105 s since the carry: the timeout as before");
+        assertEquals("timeout", job.reason());
+    }
+
     @Test
     void noProgressCancels() {
         job.tick(bb);

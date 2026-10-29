@@ -29,6 +29,19 @@ public final class RunJob extends Node {
         return new RunJob(id, kind, bb -> JobPort.TaskSpec.steps(kind, steps, source));
     }
 
+    /**
+     * FK fix (run FK 19:20:08: "timeout EXPLORE after 1200s" cancelled the boots' healthy caving step - the run had started at
+     * 19:00 for the pickaxe and was carried on by every met order since, z77 answers (1)): an order was met and its batch's
+     * run carries on for the next order - the run is that order's now, so its clocks start again (the timeout and the
+     * no-progress watch are per order's run, as before the carry). Said.
+     */
+    public void carriedOn(Blackboard bb, long now) {
+        if (taskId < 0 || running == null) return;
+        bb.port.log("carried on " + running.kind() + " after " + (now - startedAt) / 1000 + "s: the run is the next order's now, its clocks start again");   // structural: milliseconds per second
+        startedAt = lastProgressAt = now;
+        lastProgress = bb.port.progress(taskId);
+    }
+
     @Override protected Status run(Blackboard bb) {
         long now = bb.clock.now();
         if (taskId < 0) {

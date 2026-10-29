@@ -188,6 +188,26 @@ public final class CaveWalk {
     }
 
     /**
+     * FK fix (run FK 19:20:08-19:22:49: the caving step stood at 53 30 0 with every branch walk failing, was ended "stuck 40 s"
+     * twice and the same cave priced again from the same cell in between, then the order parked): what the ended walk says of
+     * the cave for the record's stuck mark ({@link CaveRecord#stuck}) - {@code gainedNow}: a cell seen or an ore mined this
+     * walk; null: judge nothing. A STOPPED end judges nothing when the stop came from outside the walk (an owner stop, aa off,
+     * the run's timeout: 57db13b7 review (b)) - but a stop for a STALL ({@link #stallStop}: the brain's "stuck N s", the step
+     * monitor's "no new best", the run's "no progress") is the walk's own verdict and judges it as any end. Pure.
+     */
+    public static Boolean judged(End end, String why, boolean gainedNow) {
+        if (end != End.STOPPED) return gainedNow;
+        return stallStop(why) ? (Boolean) gainedNow : null;
+    }
+
+    /** FK fix: the stop's reason is a stall verdict (Brain / StepMonitor / RunJob words), not an owner's or the run's end. */
+    public static boolean stallStop(String why) {
+        if (why == null) return false;
+        String w = why.toLowerCase(Locale.ROOT);
+        return w.contains("stuck ") || w.contains("no new best") || w.contains("no progress");
+    }
+
+    /**
      * D12's measure on the step's end line: "cave: the caving step at x y z ended - NEED_MET (3 of 3 ore mined): 2.4 min
      * inside, cells seen 40 -> 120 of 200 (explored 60%), ore seen 4 / mined 3, branches left 2".
      */
