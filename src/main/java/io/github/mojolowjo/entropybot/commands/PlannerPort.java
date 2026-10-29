@@ -216,12 +216,13 @@ public final class PlannerPort implements BatchWay.Planner {
     /** The facts and bag words of {@code r}'s resolve that differ on {@code w} now (asked once each, answers kept in {@code live}). */
     static List<String> check(PlannerWorker.Done r, NeedChain.World w, Map<PlanNodes.Fact, Object> live) {
         List<String> out = new ArrayList<>();
+        boolean cell = usesSurfaceCell(r);                               // item 25: the surface fact matters as far as the result used it
         for (var e : r.read().facts().entrySet()) {
             PlanNodes.Fact f = e.getKey();
             Object now = timedAsk(w, f);
             live.put(f, now);
             Object kept = PlanNodes.unboxed(e.getValue());
-            if (same(f, kept, now)) continue;
+            if (same(f, kept, now, cell)) continue;
             // D11 fix probe (run FF: 6,801 "surface" drops the log could not explain - the fact's key alone was said): old -> new
             out.add((r.job().snap().copied(f) ? "" : MISS) + f.field() + (f.key() == null ? "" : " " + f.key()) + ": " + brief(kept) + " -> " + brief(now));
         }
@@ -253,9 +254,42 @@ public final class PlannerPort implements BatchWay.Planner {
      * the batch's holds, the same set whoever of its orders asks, each asker's own first (BatchWay.trip; its trip key reads them
      * as a set): compared as a set. Everything else by value.
      */
-    static boolean same(PlanNodes.Fact f, Object kept, Object now) {
+    static boolean same(PlanNodes.Fact f, Object kept, Object now) { return same(f, kept, now, true); }
+
+    /**
+     * Queue item 25 (runs FG 655, FP 3,936 "surface" drops; FP: 176 results in a row dropped, 127 stands past the cap, the
+     * own trips starved for minutes): the live surface fact moves with every block the bot walks (its distance, the nearest
+     * sky cell), but a result that walks to no surface cell used only whether the bot is UNDER ground ({@code usesCell} false:
+     * no ToSurface step in it) - two surface facts with the same under-ground state are the same for it; a result with a walk
+     * up ({@code usesCell}) compares the cell, the depth, the hole and the floor, never the straight distance (rule 14: rough).
+     */
+    static boolean same(PlanNodes.Fact f, Object kept, Object now, boolean usesCell) {
         if ("held".equals(f.field()) && kept instanceof List<?> a && now instanceof List<?> b) return new java.util.TreeSet<Object>(a).equals(new java.util.TreeSet<Object>(b)) && a.size() == b.size();
+        if ("surface".equals(f.field()) && kept instanceof NeedChain.Surface a && now instanceof NeedChain.Surface b) return sameSurface(a, b, usesCell);
         return Deep.equal(kept, now);
+    }
+
+    /** Item 25 (pure): two surface facts agree for a result - see {@link #same(PlanNodes.Fact, Object, Object, boolean)}. */
+    static boolean sameSurface(NeedChain.Surface a, NeedChain.Surface b, boolean usesCell) {
+        if (surfaceUnder(a) != surfaceUnder(b) || a.hole() != b.hole()) return false;
+        if (!usesCell) return true;
+        return a.depth() == b.depth() && a.x() == b.x() && a.y() == b.y() && a.z() == b.z() && a.floor() == b.floor()
+                && java.util.Arrays.equals(a.top(), b.top()) && (a.dist() < 1) == (b.dist() < 1);   // structural: "the target is here" (NeedChain.surfaceWalk)
+    }
+
+    /** The explore leaf's own under-ground test (NeedChain: run EH's ruling - a hole round the feet is below the surface at any depth). */
+    static boolean surfaceUnder(NeedChain.Surface s) {
+        return s.depth() >= io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth() || s.hole() && s.depth() > 0;
+    }
+
+    /** Item 25: the result's steps walk to a surface cell (a ToSurface step) - then the surface fact's cell matters to it. */
+    static boolean usesSurfaceCell(PlannerWorker.Done r) {
+        NeedChain.Legs l = r.legs();
+        for (NeedChain.Chain c : new NeedChain.Chain[]{l == null ? null : l.chain(), l == null ? null : l.whole()}) {
+            if (c == null || c.steps() == null) continue;
+            for (io.github.mojolowjo.entropybot.aa.moves.Step s : c.steps()) if (s instanceof io.github.mojolowjo.entropybot.aa.moves.Step.ToSurface) return true;
+        }
+        return false;
     }
 
     /** The game data's epoch of {@code r} (snapshot, start, end) is the live one now. */
