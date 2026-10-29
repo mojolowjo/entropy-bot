@@ -4831,6 +4831,9 @@ public final class NeedChain {
         // openings by (CaveWay.keyOf; was: a walk-short fact of the running order under another key, so the same lip was run by
         // every order twice and parked each): the order holds it, the world fact holds it for every order
         if (s instanceof Step.ToCave t) return CaveWay.keyOf(new int[]{t.x(), t.y(), t.z()});
+        // GA fix (run GD 03:26:04: "stopped at step 2 (cave iron 4 at -34 62 80 for 10 min): timed out after 600 s" - the step
+        // watch's timeout had no source key for a caving step, so the run ended): the caving step holds its cave by the same key
+        if (s instanceof Step.Cave k) return CaveWay.keyOf(new int[]{k.x(), k.y(), k.z()});
         return null;
     }
 

@@ -352,5 +352,7 @@ class J6bCaveStepTest {
         FactChange.Fact m = FactChange.take();
         assertTrue(m.price(), "the minutes' end is a price, no try counted: " + m);
         assertTrue(m.text().contains("ran its minutes"), m.text());
+        // run GD 03:26:04: the step watch's "timed out after 600 s" on a caving step is the cave's source fact too (Steps reads sourceKey)
+        assertEquals(CaveWay.keyOf(entry), NeedChain.sourceKey(new Step.Cave(181, 61, 0, "iron", 4, 10)), "the caving step's own source key is its cave's");
     }
 }
