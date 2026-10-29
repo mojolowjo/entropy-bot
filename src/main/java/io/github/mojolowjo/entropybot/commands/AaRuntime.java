@@ -850,6 +850,12 @@ public final class AaRuntime implements JobPort {
             var s = stationAt(kind);
             if (s != null && !s.unloaded()) out.add(new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(s.x(), s.y(), s.z(), s.dist(), null));
         }
+        // D14 (the owner 2026-10-28: "prefer not placing one that gets buried"; run EU: the furnace at the bottom of the spawn
+        // shaft): below the surface, the surface cell over the bot (the one SurfaceHeight reader's) is a cell with room too -
+        // when the fork finds no cell with room here (LegRules.noRoomEnd -> the place fact), the chain walks up and places there
+        var over = surfaceOver();
+        if (over != null && (over.depth() > 0 || over.hole()) && over.dist() >= 1)
+            out.add(new io.github.mojolowjo.entropybot.aa.NeedChain.Spot(over.x(), over.y(), over.z(), over.dist(), null));
         return out;
     }
 
