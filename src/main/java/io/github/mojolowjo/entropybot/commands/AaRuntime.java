@@ -4017,13 +4017,16 @@ public final class AaRuntime implements JobPort {
         LivePathPrice.INSTANCE.orderStarted();        // 0.39.z58: the fork's "not answered yet in this order" class starts again
         lootCtx();
         long tAdd = System.nanoTime();
-        // one-planner: the order is priced by the one chain now; the line says the chain or the explore it starts
-        var ch = io.github.mojolowjo.entropybot.aa.brain.Goals.chain(bb, g);
-        long tChain = System.nanoTime();
+        // GC fix (runs FR 496, FS 482, FT 547, GC 478 ms: the one tick near or over 500 ms in every run is the first tick after
+        // "aa want" - the want splits probe put ~150 ms on the first order's chain ask and ~20 ms on each of the other five, all
+        // synchronous on the client tick for this reply's "chain:" words): the chain is no longer priced here. The planner
+        // prices the order at its first tick as it does anyway (the D6 worker, off the render thread) and says it then
+        // ("aa: <item>: the planner's answer ... (chain: ...)"); this reply says so (rule 7: aa why shows the chain).
+        long tChain = tAdd;
         // 0.39.z36 (rule 15): no world fact yet: said with what is not ready; the goal is kept and runs once the senses are
-        String lootLine = ch == null && io.github.mojolowjo.entropybot.aa.brain.Goals.world(bb) == null
+        String lootLine = io.github.mojolowjo.entropybot.aa.brain.Goals.world(bb) == null
                 ? "; " + io.github.mojolowjo.entropybot.aa.brain.Goals.notReady(bb) + " (the goal is kept: it starts when the senses are ready)"
-                : ch == null ? "; chain: none (a strip order runs its own loop)" : "; chain: " + ch.why();
+                : "; chain: priced at its first tick (aa why " + r.key() + " shows it)";
         tree.brain.add(io.github.mojolowjo.entropybot.aa.AaDesires.ownerGoal(g));
         knownDue = true;                              // review: known positions now, not in up to 10 s
         String blocked = io.github.mojolowjo.entropybot.aa.brain.Goals.blocked(bb, g);
