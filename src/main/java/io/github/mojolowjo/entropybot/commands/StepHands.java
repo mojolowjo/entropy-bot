@@ -1121,7 +1121,18 @@ public final class StepHands implements Steps.Hands {
         }
         String line = io.github.mojolowjo.entropybot.cave.CaveWalk.endLine(k.x() + " " + k.y() + " " + k.z(), end, why, minutes, cv.seenAtStart, after, cv.oreSeen, cv.mined);
         LOG.info("[entropybot] {}", line);
-        return end == io.github.mojolowjo.entropybot.cave.CaveWalk.End.NEED_MET ? Car.Status.done("ok: " + line) : Car.Status.failed(line);
+        if (end == io.github.mojolowjo.entropybot.cave.CaveWalk.End.NEED_MET) return Car.Status.done("ok: " + line);
+        // GA fix (runs FN, FZ, GA: a cave's end stopped the order - no fact, the run ended FAILED): the end is the order's fact -
+        // the cave explored to its end, no reachable branch, no progress: the cave's own source fact (held for the order, the next
+        // cave / strip / explore priced); its minutes run out: a price fact (priced again on the record). An owner's stop or a
+        // record not loaded stays a plain end (said; rule 15 for the latter).
+        int[] entry = {k.x(), k.y(), k.z()};
+        switch (end) {
+            case DONE, NO_BRANCH, NO_PROGRESS -> io.github.mojolowjo.entropybot.aa.moves.FactChange.caveEnded(entry, end.name(), why);
+            case MINUTES -> io.github.mojolowjo.entropybot.aa.moves.FactChange.caveMinutes(entry, why);
+            default -> { }
+        }
+        return Car.Status.failed(line);
     }
 
     // ---- kelp: Baritone's MineProcess on the game's kelp blocks, counted in the bag ----

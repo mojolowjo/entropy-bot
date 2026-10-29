@@ -396,6 +396,31 @@ public final class FactChange {
     /** Run EY: the lip step's hands say {@link #lipFailedFact} (taken once). */
     public static void lipFailed(int[] entry, int[] feet, String why) { last = lipFailedFact(entry, feet, why); }
 
+    /**
+     * GA fix (runs FN 20:23:41, FZ 01:30:05, GA 02:16:00-02:26:25: "order iron_pickaxe stopped: ... cave: the caving step at 181 61 0
+     * ended - NO_BRANCH" - five orders of one run stopped on a cave's end, no fact, so the run ended FAILED instead of
+     * re-planning): the caving step's end with the need unmet - the cave explored to its end (DONE), no reachable branch
+     * (NO_BRANCH), no progress - is a SOURCE fact keyed by the cave itself ({@link io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay#keyOf},
+     * as {@link #lipFailedFact}): the order holds that cave and prices the next cave, a strip or an explore. {@code end}: the
+     * end's name, {@code why}: the walk's own words. Pure.
+     */
+    public static Fact caveEndedFact(int[] entry, String end, String why) {
+        String w = why == null ? "no reason" : why.replaceFirst("^error: ", "");
+        return new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay.keyOf(entry),
+                "the caving step at " + cell(entry) + " ended - " + end + " (" + w + "): the cave is out for this order");
+    }
+
+    /** GA fix: the caving step's hands say {@link #caveEndedFact} (taken once). */
+    public static void caveEnded(int[] entry, String end, String why) { last = caveEndedFact(entry, end, why); }
+
+    /**
+     * GA fix: the caving step ran its minutes with the need unmet: a price fact (no try counted) - the order is priced again on
+     * the cave's record as the walk left it (its measured yield), the same cave or another by the price.
+     */
+    public static void caveMinutes(int[] entry, String why) {
+        last = priced("the caving step at " + cell(entry) + " ran its minutes (" + (why == null ? "" : why) + "): priced again on its record");
+    }
+
     /** 0.39.z77 walk: {@code f} is a walk that ended short ({@link #walkShortFact}). */
     public static boolean isWalkShort(Fact f) { return f != null && f.key().startsWith(WALK_SHORT); }
 

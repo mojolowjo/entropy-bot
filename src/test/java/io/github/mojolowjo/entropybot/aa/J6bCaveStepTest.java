@@ -330,4 +330,27 @@ class J6bCaveStepTest {
         assertNull(ExploreRules.yieldTo(true, List.of(), null), "none credited: the walk goes on");
         assertNull(ExploreRules.yieldTo(false, credited, null), "a walk toward an opening never yields");
     }
+
+    /**
+     * GA fix (runs FN, FZ, GA: five orders of one run stopped on "the caving step at 181 61 0 ended - NO_BRANCH", no fact): the
+     * caving step's end with the need unmet is the cave's own source fact - keyed as the cave way keys the cave (held for the
+     * order, the next cave / strip / explore priced) - and a run of minutes is a price fact (priced again on the record).
+     */
+    @Test
+    void aCaveEnd_isTheCavesSourceFact_notAStop() {
+        int[] entry = {181, 61, 0};
+        FactChange.Fact f = FactChange.caveEndedFact(entry, CaveWalk.End.NO_BRANCH.name(), "no reachable branch (10 dropped)");
+        assertEquals("source " + CaveWay.keyOf(entry), f.key(), "the cave's own key: the order holds the cave, the world fact for every order");
+        assertEquals("the caving step at 181 61 0 ended - NO_BRANCH (no reachable branch (10 dropped)): the cave is out for this order", f.text());
+        assertFalse(f.price());
+        FactChange.caveEnded(entry, CaveWalk.End.DONE.name(), "the cave is explored to its end");
+        FactChange.Fact taken = FactChange.take();
+        assertNotNull(taken);
+        assertTrue(taken.text().contains("ended - DONE"), taken.text());
+        assertNull(FactChange.take(), "taken once");
+        FactChange.caveMinutes(entry, "10 min");
+        FactChange.Fact m = FactChange.take();
+        assertTrue(m.price(), "the minutes' end is a price, no try counted: " + m);
+        assertTrue(m.text().contains("ran its minutes"), m.text());
+    }
 }
