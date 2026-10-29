@@ -1429,25 +1429,55 @@ public final class StepHands implements Steps.Hands {
      */
     private String toSurface(LocalPlayer p, Step.ToSurface t) {
         int[] me = Jobs.here(p);
+        instant = null;
+        surfaceTicks = 0;
         if (me[0] == t.x() && me[1] == t.y() && me[2] == t.z()) { instant = "ok: already at the surface cell " + Jobs.fmt(me); return null; }   // run EI: the target reached, never a fact re-read
-        String r = walk(new Step.Walk(t.x(), t.y(), t.z(), 0));
-        return r == null ? null : "error: " + surfaceRefused(t, "the walk up did not start: " + r);
+        IBaritone b = Jobs.baritone();
+        if (b == null) return "error: " + surfaceRefused(t, "the walk up did not start: baritone not loaded");
+        // FN fix (run FN 20:23-20:44: "up to the surface at 55 53 3 ... arrived near 56 53 3" 686 times - the travel job's
+        // GoalGetToBlock is met BESIDE the cell, the bot stayed under a 9-block overhang and the explore said "under ground" each
+        // time): the walk up is an INTO walk - the feet end IN the cell (LivePathPrice.walkInto, the band walk's; NeedChain
+        // priced that very goal, rule 18); Baritone walks and picks the path (rule 2)
+        io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "to the surface");
+        LivePathPrice.walkInto(b, new BlockPos(t.x(), t.y(), t.z()));
+        LOG.info("[entropybot] steps: {} - Baritone's walk into the cell (the feet end on it, never beside it)", t.text());
+        return null;
     }
 
-    /** 0.39.z68: done at the cell or as soon as the feet stand under open sky; ended failed, it is the walk up's fact (a re-plan). */
+    /** FN fix: the walk up's ticks since its start (Baritone's process is active from its next tick; structural). */
+    private int surfaceTicks;
+
+    /**
+     * 0.39.z68: done with the feet ON the surface cell; ended failed, it is the walk up's fact (a re-plan). FN fix: Baritone's
+     * walk ending with the feet elsewhere is "ended short" - the cell is out for the order (its last calc's words), never done.
+     */
     private Car.Status toSurfaceStatus(LocalPlayer p, Step.ToSurface t) {
         if (instant != null) return Car.Status.done(instant);
         // 0.39.z78 J6b run EI (the manager's fix; 01:07:44.919 "on the surface at 9 64 4" mid-path, the walk's own cut at 9 65 3
-        // fooling the re-read): the walk up ends ONLY when Baritone's walk to its target cell ends - reached, or its own fact
-        // (ended short: the walk up's fact, held for the order); never on a "below the surface" fact re-read mid-path
-        Car.Status st = requestStatus();
-        if (st.state() == Car.State.DONE) {
-            int[] me = Jobs.here(p);
+        // fooling the re-read): the walk up ends ONLY when the feet stand on its target cell, or Baritone's walk ends short (the
+        // walk up's fact, held for the order); never on a "below the surface" fact re-read mid-path
+        int[] me = Jobs.here(p);
+        IBaritone b = Jobs.baritone();
+        if (me[0] == t.x() && me[1] == t.y() && me[2] == t.z()) {
+            if (b != null) Jobs.cancel(b);
             LOG.info("[entropybot] steps: {} - at the surface cell (feet {})", t.text(), Jobs.fmt(me));
-            return st;
+            return Car.Status.done("ok: at the surface cell " + Jobs.fmt(me));
         }
-        if (st.state() != Car.State.FAILED) return st;
-        return Car.Status.failed(surfaceRefused(t, "the walk up ended short: " + (st.why() == null ? "no reason" : st.why())));
+        if (b == null) return Car.Status.failed(surfaceRefused(t, "baritone not loaded"));
+        surfaceTicks++;
+        if (b.getCustomGoalProcess().isActive() || Core.INSTANCE.reflexes.hold() || surfaceTicks <= 1) {   // structural: the process is active from the tick after its start
+            return Car.Status.running(t.text() + ": walking into " + t.x() + " " + t.y() + " " + t.z() + " (feet " + Jobs.fmt(me) + ")");
+        }
+        // J6b item 14 (rule 15): only an exhausted graph is "no path"; a budget or other stop is "not known" - either way this
+        // cell is out for the order and the next price takes another cell or the climb
+        String calc;
+        try {
+            var wc = b.getCustomGoalProcess().lastCalc();
+            calc = wc == null ? "no calc kept" : wc.exhausted() ? "no path (the graph exhausted)" : wc.budget() ? "not known (stop " + wc.stop() + ": a budget)" : "stop " + wc.stop();
+        } catch (LinkageError e) {
+            calc = "the stop is not known (an older fork)";
+        }
+        return Car.Status.failed(surfaceRefused(t, "the walk up ended short at " + Jobs.fmt(me) + ": Baritone's walk into the cell ended (" + calc + ")"));
     }
     private String surfaceRefused(Step.ToSurface t, String why0) {
         String why = why0.replace(": error: ", ": ");

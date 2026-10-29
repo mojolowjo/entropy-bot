@@ -64,6 +64,26 @@ class D11AnchorTest {
         assertTrue(cache.isEmpty() || !cache.containsKey("b2"));
     }
 
+    /**
+     * FM fix (run FM: every iron order "stopped at step N (stand while paths compute)" within two minutes - the FH stand was
+     * handed to the run without being taken as the order's pick, so the next re-price "kept" the old explore and ended the
+     * stand with a null-steps answer): a taken standing chain is no priced way, and the next priced way replaces it.
+     */
+    @Test
+    void aTakenStand_isTheOrdersPick_soTheNextPricedWayReplacesIt() {
+        Goals.Goal g = Goals.draft(new Thing.Result("minecraft:iron_pickaxe", "iron_pickaxe", false, List.of(), List.of(), 0, null, "iron_pickaxe", null), 1, 0, 1000);
+        var explore = new io.github.mojolowjo.entropybot.aa.NeedChain.Chain(List.of(new Step.Explore(5, "raw_iron")), 300, "explore", true, null, List.of(), Map.of(), List.of());
+        Goals.took(g, explore, 1000);
+        assertTrue(g.pricedWay && g.pricedExplore, "an explore chain is a priced way that ends in an explore");
+        var stand = new io.github.mojolowjo.entropybot.aa.NeedChain.Chain(List.of(new Step.AwaitPaths(30)), 0, "stand (paths computing)", true, null, List.of(), Map.of(), List.of());
+        Goals.took(g, stand, 2000);
+        assertFalse(g.pricedWay, "a stand is no way");
+        assertTrue(Double.isNaN(g.pricedS));
+        assertFalse(g.pricedExplore);
+        assertTrue(Goals.switches(g.pricedWay, Goals.leftS(g, 3000), g.pricedExplore, true, 49, false, 10), "the next priced way replaces the stand");
+        assertTrue(Goals.switches(g.pricedWay, Goals.leftS(g, 3000), g.pricedExplore, false, 0, true, 10), "a stand again replaces the stand (never 'kept')");
+    }
+
     /** The EV case: the feet walk 31 -> 20 -> -33 inside one band leg; the trip's key does not move. */
     @Test
     void walkingInsideOneStep_keepsTheTripsKey() {

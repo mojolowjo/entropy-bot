@@ -6468,7 +6468,10 @@ public final class NeedChain {
                 c.note(() -> "surface: the walk up failed in this order (" + h + "): the explore runs from here");
                 return null;
             }
-        Walked wk = walk(c, s.x(), s.y(), s.z(), s.dist());
+        // FN fix (run FN: "arrived near 56 53 3" beside the sky cell 55 53 3, 686 times, the explore still 9 under): the walk up
+        // is priced INTO the cell (the fork's GoalBlock, as the band walk) - the feet end on the surface cell, never beside it;
+        // StepHands.toSurface walks that very goal (rule 18)
+        Walked wk = walk(c, s.x(), s.y(), s.z(), s.dist(), true);
         if (c.fail != null) {
             if (wk.kind() != PathPrice.Kind.UNREACHABLE) return null;
             c.unreach(surfaceKey(s.x(), s.y(), s.z()), wk.fail());
