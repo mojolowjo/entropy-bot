@@ -48,10 +48,14 @@ public final class Only {
         // 0.39.z11 (owner 2026-10-22 "turn off the danger orders for now"): in orders-only mode the danger desire is
         // silent too (it pillared for the night with no order running); the true reflexes (air, lava, fire, creeper,
         // eat, drink) are outside the brain and stay. In every other mode danger keeps its full score.
+        // owner 2026-10-29: the report-back spot is the owner's fallback, in orders-only mode too: the idle desire keeps its score
+        // (its best option's) and the report-back option keeps its own; the other idle options, the wait among them, are
+        // silenced as before, so with no base place set the idle desire scores 0 and the bot stands as it did
+        if (id.equals(AaDesires.REPORT_BACK_ID) || id.equals(AaDesires.IDLE_ID)) return 1;
         if (n.equals(ORDERS)) return 0;          // structural: orders only silences every desire but the owner's
         if (id.equals(AaDesires.DANGER_ID)) return 1;
         if (is(id)) return 1;
-        if (id.equals(AaDesires.IDLE_ID) || id.equals(AaDesires.WAIT_ID)) return 1;      // chop C: idle stays a plain wait (the idle desire scores its best option)
+        if (id.equals(AaDesires.WAIT_ID)) return 1;      // chop C: idle stays a plain wait (the idle desire scores its best option)
         return Tuning.get("only.otherWeight");
     }
 

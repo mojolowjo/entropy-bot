@@ -31,6 +31,20 @@ public final class AaScorer implements Scorer {
     public static int lightTorches() { return Tuning.i("aaScorer.lightTorches"); }
     public static double lightScore() { return Tuning.get("aaScorer.lightScore"); }
     public static double waitScore() { return Tuning.get("aaScorer.waitScore"); }
+    /** Owner 2026-10-29: the report-back option's score (above the wait, under the stock-ups) and its "at the base" radius. */
+    public static double reportBackScore() { return Tuning.get("aaScorer.reportBackScore"); }
+    public static int reportBackNearM() { return Tuning.i("aaScorer.reportBackNearM"); }
+
+    /**
+     * Owner 2026-10-29 ("reporting back to a spot when it's done with whatever job we gave it; no spot: stand still as now"):
+     * a base place is set (`place base`; Inputs.basePos) and the feet stand farther than {@link #reportBackNearM} from it
+     * (straight line). No base or no feet known: false (rule 15: nothing to walk to). Pure.
+     */
+    public static boolean awayFromBase(Inputs in) {
+        if (in == null || in.basePos == null || in.pos == null || in.basePos.length < 3 || in.pos.length < 3) return false;   // structural: x y z
+        double dx = in.pos[0] - in.basePos[0], dy = in.pos[1] - in.basePos[1], dz = in.pos[2] - in.basePos[2];
+        return Math.sqrt(dx * dx + dy * dy + dz * dz) > reportBackNearM();
+    }
     public static double onFloor() { return Tuning.get("aaScorer.onFloor"); }
 
     final Band wood = new Band(woodLo(), woodHi()), stone = new Band(stoneLo(), stoneHi()), coal = new Band(coalLo(), coalHi()),
@@ -55,6 +69,7 @@ public final class AaScorer implements Scorer {
         s[TaskKind.DEPOSIT.ordinal()] = d;
         s[TaskKind.LIGHT.ordinal()] = in.night && !in.litTonight && in.torches >= lightTorches() ? lightScore() : -1;
         s[TaskKind.WAIT.ordinal()] = waitScore();
+        s[TaskKind.REPORT_BACK.ordinal()] = awayFromBase(in) ? reportBackScore() : -1;     // owner 2026-10-29: back to the base place when nothing else runs
         return s;
     }
 }

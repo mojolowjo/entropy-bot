@@ -296,6 +296,9 @@ public final class AaDesires {
     /** The idle wait option's id (idle.wait): the plain wait the brain falls back to. */
     public static final String WAIT_ID = "idle." + TaskKind.WAIT.name().toLowerCase(java.util.Locale.ROOT);
 
+    /** Owner 2026-10-29: the idle report-back option's id (idle.report_back): the walk back to the base place when nothing else runs. */
+    public static final String REPORT_BACK_ID = "idle." + TaskKind.REPORT_BACK.name().toLowerCase(java.util.Locale.ROOT);
+
     /**
      * Idle as one desire (UPKEEP, low, never urgent: an option scores at most {@code 100 x IDLE_SCALE} before the night
      * factor, which never makes it urgent). Inside it the idle options are an option set: a nested {@link Brain} scores

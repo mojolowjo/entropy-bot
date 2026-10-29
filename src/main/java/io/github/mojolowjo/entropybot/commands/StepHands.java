@@ -441,7 +441,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.ChopTree t -> mineStatus(p);
                 case Step.Collect k -> mineStatus(p);
                 case Step.TakeStation t -> takeStatus(p, t);
-                case Step.TakeNear t -> takeNearAs == null ? Car.Status.failed(t.text() + ": no station of mine was found at its start") : takeStatus(p, takeNearAs);
+                case Step.TakeNear t -> takeNearStatus(p, t);
                 case Step.KelpCut k -> mineStatus(p);
                 case Step.MineAt m -> veinStatus(p, m);
                 case Step.Cave k -> caveStatus(p);
@@ -1630,6 +1630,22 @@ public final class StepHands implements Steps.Hands {
         takeNearAs = new Step.TakeStation(t.item(), best.x(), best.y(), best.z());
         LOG.info("[entropybot] steps: {}: my {} at {} {} {} ({} m)", t.text(), t.item(), best.x(), best.y(), best.z(), Math.round(bd));
         return takeStation(p, takeNearAs);
+    }
+
+    /**
+     * The take's status; done: the ledger forgets the cell (run GG 04:22:54 / 04:30:15: a taken table's ledger entry stayed
+     * "built: station" with no block there, the next take near that cell found it "refused: no station any more" and nothing
+     * else within reach - the take failed and the order re-planned).
+     */
+    private Car.Status takeNearStatus(LocalPlayer p, Step.TakeNear t) {
+        if (takeNearAs == null) return Car.Status.failed(t.text() + ": no station of mine was found at its start");
+        Car.Status st = takeStatus(p, takeNearAs);
+        if (st.state() == Car.State.DONE) {
+            String line = io.github.mojolowjo.entropybot.clear.OwnStations.forget(takeNearAs.x(), takeNearAs.y(), takeNearAs.z(), "taken along (" + t.text() + ")");
+            if (line != null) LOG.info("[entropybot] steps: {}", line);
+            takeNearAs = null;
+        }
+        return st;
     }
 
     /** 0.39.z48: the next mine() runs the fork's component break whatever the block kind (a station take). */

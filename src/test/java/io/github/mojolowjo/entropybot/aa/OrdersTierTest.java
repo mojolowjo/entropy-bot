@@ -96,7 +96,11 @@ class OrdersTierTest {
         assertEquals(0, Only.apply(AaDesires.DANGER_ID, io.github.mojolowjo.entropybot.aa.brain.Desire.Kind.UPKEEP, 70), 1e-9);
         assertEquals(70, Only.apply("goal.x", io.github.mojolowjo.entropybot.aa.brain.Desire.Kind.OWNER, 70), 1e-9);
         assertEquals(0, Only.apply("needs.food", io.github.mojolowjo.entropybot.aa.brain.Desire.Kind.UPKEEP, 80), 1e-9);
-        assertEquals(0, Only.apply(AaDesires.IDLE_ID, io.github.mojolowjo.entropybot.aa.brain.Desire.Kind.UPKEEP, 5), 1e-9);
+        // owner 2026-10-29 (the report-back spot): the idle desire keeps its score in orders mode - it is its best option's, and
+        // of the options only the report-back scores there (the wait and the stock-ups are silenced), so idle = 0 with no base set
+        assertEquals(5, Only.apply(AaDesires.IDLE_ID, io.github.mojolowjo.entropybot.aa.brain.Desire.Kind.UPKEEP, 5), 1e-9);
+        assertEquals(0, Only.apply(AaDesires.WAIT_ID, io.github.mojolowjo.entropybot.aa.brain.Desire.Kind.UPKEEP, 10), 1e-9, "the wait is silent in orders mode");
+        assertEquals(20, Only.apply(AaDesires.REPORT_BACK_ID, io.github.mojolowjo.entropybot.aa.brain.Desire.Kind.UPKEEP, 20), 1e-9, "the owner's fallback runs");
         assertEquals(0, Only.apply("night.sleep", io.github.mojolowjo.entropybot.aa.brain.Desire.Kind.UPKEEP, 30), 1e-9);
         assertEquals(100, Only.apply("needs.food", io.github.mojolowjo.entropybot.aa.brain.Desire.Kind.UPKEEP, 100), 1e-9, "the owner's aa do");
     }

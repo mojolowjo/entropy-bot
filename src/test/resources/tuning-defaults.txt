@@ -63,6 +63,8 @@ aaScorer.ironLo	4.0
 aaScorer.lightScore	40.0
 aaScorer.lightTorches	8.0
 aaScorer.onFloor	12.0
+aaScorer.reportBackNearM	2.0
+aaScorer.reportBackScore	20.0
 aaScorer.stockTarget	64.0
 aaScorer.stoneHi	64.0
 aaScorer.stoneLo	32.0

@@ -41,7 +41,7 @@ class IdleToolTest {
         long idle = tree.brain.desires().stream().filter(d -> d.id.startsWith("idle")).count();
         assertEquals(1, idle, "one idle desire in the main list");
         var d = tree.brain.desires().stream().filter(x -> x.id.equals(AaDesires.IDLE_ID)).findFirst().orElseThrow();
-        assertTrue(d.node instanceof Brain b && b.desires().size() == 8, "the eight idle options under it");
+        assertTrue(d.node instanceof Brain b && b.desires().size() == 9, "the nine idle options under it (owner 2026-10-29: the report-back joined)");
         assertEquals(io.github.mojolowjo.entropybot.aa.brain.Desire.Exposure.ANY, d.exposure(), "no night exposure on the parent");
         assertTrue(((Brain) d.node).desires().stream().anyMatch(o -> o.exposure() != io.github.mojolowjo.entropybot.aa.brain.Desire.Exposure.ANY),
                 "the options keep their own exposure");
@@ -67,7 +67,7 @@ class IdleToolTest {
         JsonObject idle = null;
         for (var e : o.getAsJsonArray("desires")) if (e.getAsJsonObject().get("id").getAsString().equals("idle")) idle = e.getAsJsonObject();
         assertNotNull(idle);
-        assertEquals(8, idle.getAsJsonObject("options").getAsJsonArray("rows").size());
+        assertEquals(9, idle.getAsJsonObject("options").getAsJsonArray("rows").size());     // owner 2026-10-29: + the report-back option
         assertTrue(o.toString().contains("\"id\":\"idle.options\""), "the option set is one node in the tree");
     }
 

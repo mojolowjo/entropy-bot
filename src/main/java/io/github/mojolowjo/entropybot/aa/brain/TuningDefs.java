@@ -58,6 +58,8 @@ final class TuningDefs {
         Tuning.def("aaScorer.lightTorches", 8, "rm-constants 0.39.u2 (was AaScorer.LIGHT_TORCHES)", "the light torches of AaScorer");
         Tuning.def("aaScorer.lightScore", 40, "rm-constants 0.39.u2 (was AaScorer.LIGHT_SCORE)", "the light score of AaScorer");
         Tuning.def("aaScorer.waitScore", 10, "rm-constants 0.39.u2 (was AaScorer.WAIT_SCORE)", "the wait score of AaScorer");
+        Tuning.def("aaScorer.reportBackScore", 20, "owner 2026-10-29 (the report-back spot)", "the idle report-back option's score while a base place is set and the bot stands farther than aaScorer.reportBackNearM from it: above the wait, under the stock-ups");
+        Tuning.def("aaScorer.reportBackNearM", 2, "owner 2026-10-29 (the report-back spot)", "blocks from the base place that count as 'at it': the walk back's goal radius and the option's own test");
         Tuning.def("aaScorer.onFloor", 12, "rm-constants 0.39.u2 (was AaScorer.ON_FLOOR)", "the on floor of AaScorer");
         // aaTree
         Tuning.def("aaTree.calmMs", 3000, "rm-constants 0.39.u2 (was AaTree.CALM_MS)", "the calm ms of AaTree");

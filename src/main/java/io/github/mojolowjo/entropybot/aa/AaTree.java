@@ -164,7 +164,15 @@ public final class AaTree {
                 java.util.Map.entry(TaskKind.DEPOSIT, (Node) idleCd("idle.deposit.cd", RunJob.of("idle.deposit", TaskKind.DEPOSIT, List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Deposit()), "idle"))),
                 java.util.Map.entry(TaskKind.LIGHT, (Node) idleCd("idle.light.cd", oncePerNight(RunJob.of("idle.light", TaskKind.LIGHT, List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Light(io.github.mojolowjo.entropybot.aa.brain.Help.lightR())), "idle")))),
                 java.util.Map.entry(TaskKind.WAIT, (Node) new RunJob("idle.wait", TaskKind.WAIT, bb -> JobPort.TaskSpec.steps(TaskKind.WAIT, List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Wait((int) io.github.mojolowjo.entropybot.aa.brain.Brain.waitSeconds(bb.clock.now(),
-                        bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.NEXT_LAPSE_FACT) instanceof Long l ? l : 0))), "idle"))));
+                        bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.NEXT_LAPSE_FACT) instanceof Long l ? l : 0))), "idle"))),
+                // owner 2026-10-29 (the report-back spot): with nothing else to run and a base place set, the walk back to it
+                // (Baritone's path, GoalNear within aaScorer.reportBackNearM); no base: the option scores -1 and the wait stands
+                java.util.Map.entry(TaskKind.REPORT_BACK, (Node) idleCd("idle.report_back.cd", new RunJob(AaDesires.REPORT_BACK_ID, TaskKind.REPORT_BACK, bb -> {
+                    int[] base = bb.in.basePos;
+                    if (base == null || !AaScorer.awayFromBase(bb.in)) return null;
+                    bb.port.log("report back: walking to the base place " + base[0] + " " + base[1] + " " + base[2] + " (nothing else to run)");
+                    return JobPort.TaskSpec.steps(TaskKind.REPORT_BACK, List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Walk(base[0], base[1], base[2], AaScorer.reportBackNearM())), "idle");
+                }))));
         io.github.mojolowjo.entropybot.aa.brain.Brain brain = AaDesires.build(AaDesires.needs(), idle, scorer);
         MemoryFallback slot = new MemoryFallback("slot", "the task slot", owner, brain);
         GuardSelector root = new GuardSelector("root", "AA",
