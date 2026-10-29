@@ -200,12 +200,11 @@ public final class CaveWalk {
         return stallStop(why) ? (Boolean) gainedNow : null;
     }
 
-    /** FK fix: the stop's reason is a stall verdict (Brain / StepMonitor / RunJob words), not an owner's or the run's end. */
-    public static boolean stallStop(String why) {
-        if (why == null) return false;
-        String w = why.toLowerCase(Locale.ROOT);
-        return w.contains("stuck ") || w.contains("no new best") || w.contains("no progress");
-    }
+    /**
+     * FK fix: the stop's reason is a stall verdict (Brain / StepMonitor / RunJob), not an owner's or the run's end. Review
+     * (rule 23): the words are the writers' own constants ({@link io.github.mojolowjo.entropybot.aa.moves.FactChange#isStall}).
+     */
+    public static boolean stallStop(String why) { return io.github.mojolowjo.entropybot.aa.moves.FactChange.isStall(why); }
 
     /**
      * D12's measure on the step's end line: "cave: the caving step at x y z ended - NEED_MET (3 of 3 ore mined): 2.4 min

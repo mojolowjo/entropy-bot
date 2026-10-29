@@ -74,6 +74,19 @@ public final class FactChange {
      */
     public static final String SEEN_WAITS = "the seen source waits on its walk's price: ";
 
+    /**
+     * FK fix review (rule 23): the stall verdicts' words, written by their one writer each and read by {@link #isStall} -
+     * the brain's fast watch ("stuck N s", Brain), the step monitor's ("no new best for N s" / "no progress N s: ...",
+     * StepMonitor), the run's outer watch ("no progress N s", RunJob). A reworded writer changes the constant, never the match.
+     */
+    public static final String STALL_STUCK = "stuck ", STALL_NO_NEW_BEST = "no new best", STALL_NO_PROGRESS = "no progress";
+
+    /** FK fix: {@code text} is a stall verdict's (one of the three writers' words), not an owner's stop or a run's end. */
+    public static boolean isStall(String text) {
+        if (text == null) return false;
+        return text.contains(STALL_STUCK) || text.contains(STALL_NO_NEW_BEST) || text.contains(STALL_NO_PROGRESS);
+    }
+
     private static Fact last;
 
     private FactChange() {}

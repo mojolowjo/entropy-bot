@@ -114,7 +114,7 @@ public final class RunJob extends Node {
             // 0.39.z71 (D2 3.2): with monitor.stallS below this watch it fires only when the step monitor is off or broken: said
             bb.port.log("outer watch fired after " + s + " s in " + running.kind() + ": the step monitor said nothing");
             // 0.39.z46: an order's run re-plans on it (the step's target as the source fact) instead of parking
-            JobPort.NoProgress np = bb.port.noProgress(taskId, "no progress " + s + " s");
+            JobPort.NoProgress np = bb.port.noProgress(taskId, io.github.mojolowjo.entropybot.aa.moves.FactChange.STALL_NO_PROGRESS + " " + s + " s");   // FK fix review: the stall word
             if (np == JobPort.NoProgress.REPLANNED) {
                 bb.port.log("no progress " + s + "s in " + running.kind() + ": re-planned on the step's source fact");
                 lastProgressAt = now;
@@ -134,7 +134,7 @@ public final class RunJob extends Node {
                 lastProgressAt = now;
                 return Status.RUNNING;
             }
-            bb.port.cancel(taskId, "no progress " + s + "s");
+            bb.port.cancel(taskId, io.github.mojolowjo.entropybot.aa.moves.FactChange.STALL_NO_PROGRESS + " " + s + "s");   // FK fix review: the stall word
             bb.port.log("stuck " + running.kind() + ": no progress " + s + "s");
             bb.port.incident("aa stuck " + running.kind() + " \"" + running.chain() + "\": no progress " + s + "s");
             bb.tracer.outcome(now, "stuck");

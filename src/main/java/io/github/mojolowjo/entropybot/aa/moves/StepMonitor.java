@@ -292,9 +292,10 @@ public final class StepMonitor {
                     + (notKnown == null ? "" : "; " + notKnown));
         }
         long quiet = now - lastProgress;
-        if (quiet >= stallTicks()) return replan("no progress " + quiet / 20 + " s: " + bests(sig), sig.feet());     // game fact: 20 ticks a second
+        // FK fix review (rule 23): the stall words are FactChange's constants (CaveWalk.judged reads them through FactChange.isStall)
+        if (quiet >= stallTicks()) return replan(FactChange.STALL_NO_PROGRESS + " " + quiet / 20 + " s: " + bests(sig), sig.feet());     // game fact: 20 ticks a second
         stalled = moved.isEmpty();
-        String said = moved.isEmpty() ? "no new best for " + quiet / 20 + " s" : String.join(", ", moved);     // game fact: 20 ticks a second
+        String said = moved.isEmpty() ? FactChange.STALL_NO_NEW_BEST + " for " + quiet / 20 + " s" : String.join(", ", moved);     // game fact: 20 ticks a second
         return cont(notKnown == null ? said : said + "; " + notKnown);
     }
 

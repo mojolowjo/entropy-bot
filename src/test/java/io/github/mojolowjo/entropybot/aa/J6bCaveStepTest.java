@@ -155,6 +155,9 @@ class J6bCaveStepTest {
         assertNull(CaveWalk.judged(CaveWalk.End.STOPPED, null, false));
         assertEquals(Boolean.FALSE, CaveWalk.judged(CaveWalk.End.MINUTES, "10 min", false), "any other end judges as before");
         assertEquals(Boolean.TRUE, CaveWalk.judged(CaveWalk.End.NEED_MET, "3 of 3", true));
+        // review (rule 23): the writers' own words are what the read matches
+        assertTrue(FactChange.isStall(FactChange.STALL_STUCK + "40 s") && FactChange.isStall(FactChange.STALL_NO_NEW_BEST + " for 30 s") && FactChange.isStall(FactChange.STALL_NO_PROGRESS + " 181 s: goal 21.3"));
+        assertFalse(FactChange.isStall("re-priced: walk to 1 2 3: 10 s, complete - the pick changed"));
     }
 
     /** 57db13b7 review (a): only growth lifts the stuck mark; (b): an owner stop leaves it as it was. */
