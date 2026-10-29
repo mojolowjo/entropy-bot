@@ -72,6 +72,7 @@ public final class StepMonitor {
             case Step.Strip g -> Kind.GATHER;
             case Step.KelpCut g -> Kind.GATHER;
             case Step.TakeStation g -> Kind.GATHER;
+            case Step.TakeNear g -> Kind.GATHER;
             case Step.Craft j -> Kind.ITEM_JOB;
             case Step.Smelt j -> Kind.ITEM_JOB;
             case Step.Cook j -> Kind.ITEM_JOB;

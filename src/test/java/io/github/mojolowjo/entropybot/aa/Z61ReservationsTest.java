@@ -179,7 +179,8 @@ class Z61ReservationsTest {
         assertEquals(9, used(c, "minecraft:oak_planks"), c.steps() + " " + c.uses());
         assertEquals(3, used(c, "minecraft:oak_log"), c.steps() + " " + c.uses());
         for (int i = 0; i < c.steps().size(); i++)
-            if (!(c.steps().get(i) instanceof Step.Craft || c.steps().get(i) instanceof Step.Smelt)) assertNull(c.uses().get(i), c.steps().get(i).text());
+            if (c.steps().get(i) instanceof Step.TakeNear) assertTrue(c.uses().get(i).isEmpty(), "the table's take uses nothing: " + c.uses().get(i));   // owner 2026-10-29
+            else if (!(c.steps().get(i) instanceof Step.Craft || c.steps().get(i) instanceof Step.Smelt)) assertNull(c.uses().get(i), c.steps().get(i).text());
         List<StepNeeds> n = new ArrayList<>();
         for (int i = 0; i < c.steps().size(); i++) n.add(StepNeeds.of(c.steps().get(i)).withUses(c.uses().get(i)));
         Reservations r = Reservations.build(c.steps(), 0, n, List.of());

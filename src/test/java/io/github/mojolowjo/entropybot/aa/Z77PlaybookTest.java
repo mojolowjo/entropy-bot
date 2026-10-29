@@ -62,13 +62,17 @@ class Z77PlaybookTest {
         return d;
     }
 
-    static StripBand band(String ore) { return new StripBand(List.of(ore), 0, 31, 16, 256, 0, 0, 64, "east", STONE); }
+    static StripBand band(String ore) { return band(ore, STONE); }
+
+    static StripBand band(String ore, String base) { return new StripBand(List.of(ore), 0, 31, 16, 256, 0, 0, 64, "east", base); }
 
     /** The fake strip facts: the iron words strip iron ore, the coal words coal ore (a joined word by any of its parts). */
-    static StripBand strip(String word) {
+    static StripBand strip(String word) { return strip(word, STONE); }
+
+    static StripBand strip(String word, String base) {
         for (String p : word.split("\\|")) {
-            if (p.equals("minecraft:raw_iron") || p.equals(IRON_ORE)) return band(IRON_ORE);
-            if (p.equals("minecraft:coal") || p.equals("#minecraft:coals")) return band(COAL_ORE);
+            if (p.equals("minecraft:raw_iron") || p.equals(IRON_ORE)) return band(IRON_ORE, base);
+            if (p.equals("minecraft:coal") || p.equals("#minecraft:coals")) return band(COAL_ORE, base);
         }
         return null;
     }
@@ -91,11 +95,21 @@ class Z77PlaybookTest {
 
     static LootBook.Source src(String block, String item) { return new LootBook.Source(LootBook.Kind.BLOCK, block, item, 1, 1, false, null); }
 
-    static World world(Map<String, Integer> bag, Map<String, List<Spot>> seen) {
-        return ScenariosTest.w(bag, false, false, seen).withMobs(x -> List.of(), book()).withPath(PATHS).withStrip(Z77PlaybookTest::strip)
+    static World world(Map<String, Integer> bag, Map<String, List<Spot>> seen) { return world(bag, seen, STONE); }
+
+    /**
+     * {@code base}: the band's base block (the tunnel's blocks). Owner 2026-10-29 (the carried table): the no-way and pending
+     * tests' leg 5 lacks a FURNACE now (the one table is carried), so their world's base is tuff - no furnace material down
+     * there, the surface stone is the way (Z77NoWayTest, Z77PendingTest).
+     */
+    static World world(Map<String, Integer> bag, Map<String, List<Spot>> seen, String base) {
+        return ScenariosTest.w(bag, false, false, seen).withMobs(x -> List.of(), book()).withPath(PATHS).withStrip(w -> strip(w, base))
                 .withWhere(new NeedChain.WhereFacts(Z77PlaybookTest::where, () -> new NeedChain.Surface(0, 0, 64, 0, 0), () -> new int[]{0, 64, 0},
-                        () -> new GenWhere.Base(STONE, Integer.MIN_VALUE, null, "test")));
+                        () -> new GenWhere.Base(base, Integer.MIN_VALUE, null, "test")));
     }
+
+    /** A band base that makes no furnace (not stone crafting material). */
+    static final String TUFF = "minecraft:tuff";
 
     static Map<String, Integer> kitBag(int coal) {
         return Map.of("minecraft:stone_pickaxe", 1, "minecraft:stick", 64, "minecraft:crafting_table", 5, "minecraft:furnace", 5, "minecraft:coal", coal);
@@ -163,7 +177,7 @@ class Z77PlaybookTest {
         NeedChain.Legs legs = NeedChain.resolvePlaybookLegs(pb, w);
         Chain pc = legs.chain();
         assertTrue(pc.ok() && !pc.explore(), pc.why());
-        assertEquals(687.45, pc.seconds(), 0.1, pc.why());
+        assertEquals(694.95, pc.seconds(), 0.1, pc.why());       // 687.45 + the table taken along after leg 3's and leg 5's crafts (owner 2026-10-29: 2 x 3.75)
         assertEquals(1, count(pc, Step.ToStrip.class), "one descent: " + pc.steps());
         List<Step.Strip> strips = pc.steps().stream().filter(s -> s instanceof Step.Strip).map(s -> (Step.Strip) s).toList();
         assertEquals(2, strips.size(), pc.steps().toString());
@@ -178,7 +192,7 @@ class Z77PlaybookTest {
         assertTrue(sh.line().startsWith("trip b1 (6 orders): 5 legs - 1 surface: torch 4 | 2 descent to y 16: raw_iron 3, coal 1, carries "), sh.line());
         assertTrue(sh.line().contains(", carries ") && sh.line().contains("coal 4 (fuel)") && sh.line().contains("stick 2") && sh.line().contains("furnace 2") && sh.line().contains("crafting_table 2"),
                 "the smelts' fuel (27 x 200 / 1600, up), the pickaxe's sticks and two of each station (z77 legs: one again at the strip on's end) go down: " + sh.line());
-        assertTrue(sh.line().endsWith(" | 5 at the band: iron_ingot 24, iron_helmet 1, iron_chestplate 1, iron_leggings 1, iron_boots 1; priced 687 s"), sh.line());
+        assertTrue(sh.line().endsWith(" | 5 at the band: iron_ingot 24, iron_helmet 1, iron_chestplate 1, iron_leggings 1, iron_boots 1; priced 695 s"), sh.line());   // owner 2026-10-29: + the table's two takes
         List<String> said = new ArrayList<>();
         for (Step s : pc.steps()) if (legs.starts().containsKey(s)) said.add(legs.starts().get(s));
         assertEquals(LEG_LINES, said);
@@ -207,10 +221,10 @@ class Z77PlaybookTest {
         assertTrue(pb.why().contains("surface [torch 4, stone_pickaxe 1]"), pb.why());
         Chain pc = NeedChain.resolvePlaybook(pb, w);
         assertTrue(pc.ok() && pc.explore(), pc.why());
-        assertEquals(NeedChain.exploreS() + 716.25, pc.seconds(), 0.1, pc.why());
+        assertEquals(NeedChain.exploreS() + 716.25 + 7.5, pc.seconds(), 0.1, pc.why());      // owner 2026-10-29: + the table's takes (the surface pickaxe's, leg 3's)
         assertTrue(pc.steps().get(pc.steps().size() - 1) instanceof Step.Explore, pc.steps().toString());
         assertTrue(pc.steps().stream().noneMatch(s -> s instanceof Step.Strip), "the run's steps end at the explore: " + pc.steps());
-        assertTrue(BatchWay.shape("b1", 6, pb, pc, Map.of()).line().endsWith("; priced with its explore 1166 s"), "the trip's sum, said");
+        assertTrue(BatchWay.shape("b1", 6, pb, pc, Map.of()).line().endsWith("; priced with its explore 1174 s"), "the trip's sum, said");
     }
 
     /**
@@ -283,7 +297,7 @@ class Z77PlaybookTest {
         Playbook pb = Playbook.derive(KIT, Playbook.facts(w, null));
         Chain pc = NeedChain.resolvePlaybook(pb, w);
         assertTrue(pc.ok() && !pc.explore(), pc.why());
-        assertEquals(690.85, pc.seconds(), 0.1, pc.why());
+        assertEquals(698.35, pc.seconds(), 0.1, pc.why());       // 690.85 + the table's two takes (owner 2026-10-29)
         List<Step.Strip> strips = pc.steps().stream().filter(s -> s instanceof Step.Strip).map(s -> (Step.Strip) s).toList();
         assertEquals(3, strips.size(), "the pickaxe's strip, then two legs of the rest: " + pc.steps());
         for (Step.Strip s : strips) assertEquals(List.of(IRON_ORE, COAL_ORE), s.ores(), "both families in one strip");
@@ -425,7 +439,7 @@ class Z77PlaybookTest {
         Goals.Goal torch = gs.get(0);
         Chain ch = Goals.chain(bb, torch);
         assertTrue(ch.why().startsWith(NeedChain.PLAYBOOK), ch.why());
-        assertEquals(687.45, ch.seconds(), 0.1);
+        assertEquals(694.95, ch.seconds(), 0.1);                  // owner 2026-10-29: + the table's two takes
         assertEquals(1, port.log.stream().filter(l -> l.startsWith("torch: trip b1 (6 orders): 5 legs - ")).count(), port.log.toString());
         Goals.chain(bb, torch);                                  // the same bag and place: the kept trip, no second line
         assertEquals(1, port.log.stream().filter(l -> l.contains("trip b1 (")).count(), port.log.toString());

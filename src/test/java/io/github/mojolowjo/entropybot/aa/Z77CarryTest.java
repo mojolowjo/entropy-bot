@@ -74,7 +74,7 @@ class Z77CarryTest {
         assertTrue(b.chain().ok() && b.chain().explore(), b.chain().why());
         assertTrue(a.change().contains(CB_CARRY), a.change());
         assertEquals(a.change(), b.change(), "the re-price with its explore carries the same");
-        assertTrue(b.line().contains(CB_CARRY) && b.line().endsWith("; priced with its explore 1166 s"), b.line());
+        assertTrue(b.line().contains(CB_CARRY) && b.line().endsWith("; priced with its explore 1174 s"), b.line());     // owner 2026-10-29: + the table's takes (the surface pickaxe's, leg 3's)
         // the run is as before: its steps end at the explore, nothing goes down before it (the find re-prices the trip)
         assertTrue(b.chain().steps().get(b.chain().steps().size() - 1) instanceof Step.Explore, b.chain().steps().toString());
         assertEquals(0, count(b.chain(), Step.ToStrip.class) + count(b.chain(), Step.Strip.class), b.chain().steps().toString());

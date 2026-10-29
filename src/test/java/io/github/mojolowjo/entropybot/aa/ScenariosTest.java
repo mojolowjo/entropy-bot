@@ -107,7 +107,7 @@ class ScenariosTest {
         world("wooden", "stone", "iron", "golden");
         Chain c = NeedChain.resolve("cobblestone", 3, w(Map.of(), false, false, s4Seen()));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(37.05, c.seconds(), TOL, c.why());
+        assertEquals(40.85, c.seconds(), TOL, c.why());     // 37.05 + the table taken along after the pickaxe's craft (owner 2026-10-29: its break 3.8 s)
         String chain = chainPart(c.why());
         assertTrue(chain.startsWith("cobblestone <- dig cobblestone seen 12 m with wooden_pickaxe"), c.why());
         assertTrue(chain.contains("craft: 3 oak_planks") && chain.contains("2 stick") && chain.contains("table") && chain.contains("tree seen 30 m"), c.why());
@@ -129,10 +129,12 @@ class ScenariosTest {
         world("wooden", "stone", "iron", "golden");
         Chain c = NeedChain.resolve("stone_pickaxe", 1, w(Map.of(), false, false, s4Seen()));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(40.95, c.seconds(), TOL, c.why());
+        // owner 2026-10-29 (the carried table): the table is taken after the wooden pickaxe's craft (3.8 s) and placed again for the
+        // stone pickaxe's (0.15 s) instead of the walk back (3.6 s), then taken again at the end (3.8 s): 40.95 - 3.6 + 7.7 = 45.05
+        assertEquals(45.05, c.seconds(), TOL, c.why());
         assertTrue(c.why().startsWith("stone_pickaxe <- craft: 3 cobblestone <- dig cobblestone seen 12 m with wooden_pickaxe"), c.why());
         assertEquals(1, crafts(c, "stick"), "4 sticks made, 2 used, the 2 left are the stone pickaxe's: " + c.steps());
-        assertEquals("stone_pickaxe", ((Step.Craft) c.steps().get(c.steps().size() - 1)).item(), c.steps().toString());
+        assertEquals("stone_pickaxe", ((Step.Craft) c.steps().get(c.steps().size() - 2)).item(), c.steps().toString());   // then the table's take (owner 2026-10-29)
         assertFalse(chainPart(c.why()).contains("gold"), c.why());
     }
 
@@ -156,8 +158,8 @@ class ScenariosTest {
         Chain before = NeedChain.resolve("cobblestone", 3, w(Map.of(), false, false, seen));
         Chain after = NeedChain.resolve("cobblestone", 3, w(Map.of("minecraft:oak_log", 3), false, false, seen));
         assertTrue(after.ok() && !after.explore(), after.why());
-        assertEquals(10.05, after.seconds(), TOL, after.why());
-        assertEquals(27.0, before.seconds() - after.seconds(), TOL, "the tree term (9.0 + 6 x 3.0, the whole tree) is gone");
+        assertEquals(13.81, after.seconds(), TOL, after.why());      // 10.05 + the table taken along after the pickaxe's craft (owner 2026-10-29)
+        assertEquals(27.0, before.seconds() - after.seconds(), 0.05, "the tree term (9.0 + 6 x 3.0, the whole tree) is gone");
         assertTrue(after.steps().stream().noneMatch(s -> s instanceof Step.ChopTree), after.steps().toString());
         assertFalse(chainPart(after.why()).contains("tree"), after.why());
     }
@@ -189,14 +191,14 @@ class ScenariosTest {
         Spot stone16 = new Spot(0, 60, 16, 16, "minecraft:stone", 40);
         Chain c = NeedChain.resolve("stone_pickaxe", 1, w(Map.of(), false, false, Map.of("oak_log", List.of(tree(10, 6)), "cobblestone", List.of(stone16))));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(37.35, c.seconds(), TOL, c.why());
+        assertEquals(40.23, c.seconds(), TOL, c.why());     // owner 2026-10-29: the table taken after the wooden pickaxe, placed again for the stone one, taken at the end; no walk back
         assertFalse(c.why().contains("free cell") || c.why().contains("no free"), c.why());
         assertTrue(c.dropped().stream().noneMatch(d -> d.contains("cell")), c.dropped().toString());
         int chop = -1, table = -1, wooden = -1, dig = -1, stonePick = -1;
         for (int i = 0; i < c.steps().size(); i++) {
             Step s = c.steps().get(i);
             if (s instanceof Step.ChopTree) chop = i;
-            else if (s instanceof Step.PlaceNear p && p.item().equals("crafting_table")) table = i;
+            else if (s instanceof Step.PlaceNear p && p.item().equals("crafting_table")) { if (table < 0) table = i; }   // the first place; the carried table is placed again for the stone pickaxe (owner 2026-10-29)
             else if (s instanceof Step.Craft k && k.item().equals("wooden_pickaxe")) wooden = i;
             else if (s instanceof Step.Collect k && k.item().equals("cobblestone")) dig = i;
             else if (s instanceof Step.Craft k && k.item().equals("stone_pickaxe")) stonePick = i;
@@ -245,7 +247,7 @@ class ScenariosTest {
         assertEquals(16, (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("torch.target"));
         Chain c = NeedChain.resolve("torch", 16, w(Map.of(), false, false, Map.of("oak_log", List.of(tree(10, 6)), "coal", List.of(coal), "cobblestone", List.of(stone16))));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(39.48, c.seconds(), TOL, c.why());
+        assertEquals(43.23, c.seconds(), TOL, c.why());     // 39.48 + the table taken along after the pickaxe's craft (owner 2026-10-29)
         String chain = chainPart(c.why());
         assertFalse(chain.contains("stone_pickaxe") || chain.contains("furnace"), "wood tier digs coal ore: " + c.why());
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Smelt || s instanceof Step.Explore), c.steps().toString());
@@ -292,7 +294,10 @@ class ScenariosTest {
         List<String> group = io.github.mojolowjo.entropybot.aa.brain.ToolGroup.items("stone_tools");
         Chain c = NeedChain.resolveAll("stone_tools", group, 1, w(Map.of(), false, false, Map.of("oak_log", List.of(tree(10, 12)), "cobblestone", List.of(stone16))));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(1, c.steps().stream().filter(s -> s instanceof Step.PlaceNear p && p.item().equals("crafting_table")).count(), "one table: " + c.steps());
+        // owner 2026-10-29 (the carried table): one table, placed for the wooden pickaxe, taken for the trip to the stone, placed again for the five tools, taken at the end
+        assertEquals(1, crafts(c, "crafting_table"), "one table: " + c.steps());
+        assertEquals(2, c.steps().stream().filter(s -> s instanceof Step.PlaceNear p && p.item().equals("crafting_table")).count(), "placed twice (carried between): " + c.steps());
+        assertEquals(2, c.steps().stream().filter(s -> s instanceof Step.TakeNear).count(), "taken twice: " + c.steps());
         assertEquals(1, c.steps().stream().filter(s -> s instanceof Step.Collect k && k.item().equals("cobblestone")).count(), "one trip to the stone: " + c.steps());
         assertEquals(0, c.steps().stream().filter(s -> s instanceof Step.Walk).count(), "chop B2 (2026-10-22): no walk step before a block source, the collect paths itself: " + c.steps());
         assertTrue(c.steps().contains(new Step.Collect("cobblestone", 11)), "3 + 3 + 2 + 2 + 1 cobblestone: " + c.steps());
@@ -324,7 +329,9 @@ class ScenariosTest {
         world("wooden", "stone");
         Chain c = NeedChain.resolve("torch", 16, w(Map.of(), false, false, s12Seen()));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(104.85, c.seconds(), TOL, c.why());   // z51 item 4: the burn is 3 planks (3 planks of wood, not 3 logs = 12), the sticks one more craft 0.3
+        // z51 item 4: the burn is 3 planks (3 planks of wood, not 3 logs = 12), the sticks one more craft 0.3: 104.85; owner 2026-10-29: the table
+        // taken after the wooden pickaxe (3.75), placed again for the furnace's craft (0.15), taken after it (3.75), the walk back it replaced gone: 107.68
+        assertEquals(107.68, c.seconds(), TOL, c.why());
         String chain = chainPart(c.why());
         assertTrue(chain.startsWith("torch <- craft: 4 charcoal <- smelt 4 oak_log <- cut tree seen 10 m, walk 3.0 s (path) + furnace <- craft: 8 cobblestone"), c.why());
         assertTrue(chain.contains("burn 3 oak_planks (in the bag, the cheapest burn by worth)"), "z51: the least wood burns (planks, not logs), from the game's fuel table: " + c.why());
@@ -355,11 +362,11 @@ class ScenariosTest {
         seen.put("coal", List.of(new Spot(0, 40, 20, 20, "minecraft:coal_ore", 4)));
         Chain c = NeedChain.resolve("torch", 16, w(Map.of(), false, false, seen));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(57.48, c.seconds(), TOL, c.why());
+        assertEquals(61.23, c.seconds(), TOL, c.why());     // 57.48 + the table taken along after the pickaxe's craft (owner 2026-10-29)
         assertTrue(chainPart(c.why()).contains("4 coal <- dig coal seen 20 m with wooden_pickaxe"), c.why());
         assertFalse(chainPart(c.why()).contains("furnace"), c.why());
         String charcoal = c.dropped().stream().filter(d -> d.startsWith("charcoal: ")).findFirst().orElseThrow(() -> new AssertionError(c.dropped().toString()));
-        assertTrue(charcoal.startsWith("charcoal: 103.0 s (dearer than coal)"), charcoal);
+        assertTrue(charcoal.startsWith("charcoal: 105.9 s (dearer than coal)"), charcoal);     // owner 2026-10-29: the charcoal trial carries the table's take and re-place too
     }
 
     /** S14: the food need's world: the game's loot data says a cow drops 2 beef a kill, a wheat crop 1 wheat. */
@@ -763,12 +770,12 @@ class ScenariosTest {
         FakePath fake = new FakePath().asLine(tree).asLine(STONE_12).path(coal, 160);
         Chain c = NeedChain.resolve("torch", 16, w(Map.of(), false, false, seen).withPath(fake));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(87.64, c.seconds(), TOL, c.why());
+        assertEquals(91.39, c.seconds(), TOL, c.why());     // 87.64 + the table taken along after the pickaxe's craft (owner 2026-10-29)
         assertTrue(chainPart(c.why()).contains("with wooden_pickaxe (<- craft: 3 oak_planks"), "the dig keeps its pickaxe chain: " + c.why());
         assertTrue(chainPart(c.why()).contains("), walk 48.2 s (path)"), "the coal walk is Baritone's path: " + c.why());
         assertTrue(chainPart(c.why()).contains("cut tree seen 10 m, walk 3.0 s (path)"), c.why());
         String charcoal = c.dropped().stream().filter(d -> d.startsWith("charcoal: ")).findFirst().orElseThrow(() -> new AssertionError(c.dropped().toString()));
-        assertTrue(charcoal.startsWith("charcoal: 88.6 s (dearer than coal)"), charcoal);
+        assertTrue(charcoal.startsWith("charcoal: 92.7 s (dearer than coal)"), charcoal);      // owner 2026-10-29: the charcoal trial carries the table's take and re-place too
         // 0.39.z41: no path provider is no walk price at all (the line is gone): every way with a walk is "path not known";
         // 0.39.z42 (S48): the chain does not wait on them, it explores meanwhile
         Chain none = NeedChain.resolve("torch", 16, w(Map.of(), false, false, seen).withPath(null));
@@ -792,11 +799,11 @@ class ScenariosTest {
         FakePath fake = new FakePath().asLine(tree).asLine(STONE_12).path(coal, 200);
         Chain c = NeedChain.resolve("torch", 16, w(Map.of(), false, false, Map.of("oak_log", List.of(tree), "cobblestone", List.of(STONE_12), "coal", List.of(coal))).withPath(fake));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(102.44, c.seconds(), TOL, c.why());   // z51 item 4: S12 + 0.3 (planks burn, the sticks one more craft)
+        assertEquals(106.47, c.seconds(), TOL, c.why());   // z51 item 4: S12 + 0.3 (planks burn, the sticks one more craft); owner 2026-10-29: + the table's takes and re-place (as S12)
         assertTrue(chainPart(c.why()).startsWith("torch <- craft: 4 charcoal <- smelt 4 oak_log"), c.why());
         assertTrue(chainPart(c.why()).contains("dig cobblestone seen 12 m with wooden_pickaxe"), c.why());
         String coalWay = c.dropped().stream().filter(d -> d.startsWith("coal: ")).findFirst().orElseThrow(() -> new AssertionError(c.dropped().toString()));
-        assertTrue(coalWay.startsWith("coal: 110.2 s (dearer than charcoal)"), coalWay);
+        assertTrue(coalWay.startsWith("coal: 113.9 s (dearer than charcoal)"), coalWay);      // owner 2026-10-29: the coal trial carries the table's take too
     }
 
     /**
@@ -836,8 +843,9 @@ class ScenariosTest {
         Spot coal = new Spot(0, 40, 20, 20, "minecraft:coal_ore", 4);
         Chain c = NeedChain.resolve("coal", 4, w(Map.of(), false, false, Map.of("oak_log", List.of(tree(10, 6)), "coal", List.of(coal))));
         assertTrue(c.ok() && !c.explore(), c.why());
-        // the tree 3.01 + 18.0, the pickaxe chain 1.95, walk 20 m 6.02 + 4 x 2.25 = 9.0: 38.0 s; the dig alone would be 15.02
-        assertEquals(38.0, c.seconds(), TOL, c.why());
+        // the tree 3.01 + 18.0, the pickaxe chain 1.95, walk 20 m 6.02 + 4 x 2.25 = 9.0: 38.0 s; the dig alone would be 15.02;
+        // + the table taken along after the pickaxe's craft (owner 2026-10-29: 3.75 s) = 41.73
+        assertEquals(41.73, c.seconds(), TOL, c.why());
         assertTrue(c.why().contains("dig coal seen 20 m with wooden_pickaxe (<- "), c.why());
         assertPickaxeBeforeCollect(c, "coal");
     }

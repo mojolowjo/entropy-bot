@@ -92,7 +92,7 @@ class Z77BagAtTest {
         assertEquals(Map.of("minecraft:raw_iron", 3, ACACIA, 2), smelt.consumes(), smelt.text());
         DryRun.Outcome dry = DryRun.look(c.steps(), 0, needs(c), bag, true);
         assertNull(dry.shortage(), "the plan runs on its bag: " + dry.shortage() + " | " + c.why());
-        assertEquals(31.2, c.seconds(), 0.01, c.why());
+        assertEquals(34.2, c.seconds(), 0.01, c.why());      // owner 2026-10-29: + the table taken along after the furnace's craft (its break 3.75) - the walk back it replaced
     }
 
     /**

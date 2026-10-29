@@ -105,7 +105,7 @@ class ReplanOnFactTest {
         assertEquals(Steps.Phase.DONE, run.phase(), run.why());
         assertEquals(1, replans.size());
         Chain second = replans.get(0);
-        assertEquals(7.06, second.seconds(), TOL, second.why());
+        assertEquals(10.81, second.seconds(), TOL, second.why());    // 7.06 + the table taken along after the craft (owner 2026-10-29: 3.75 s)
         List<String> texts = second.steps().stream().map(Step::text).toList();
         int table = indexOf(texts, "crafting_table"), place = indexOfPlace(second.steps()), pick = indexOf(texts, "wooden_pickaxe");
         assertTrue(table >= 0 && place > table && pick > place, texts.toString());

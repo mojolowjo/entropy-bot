@@ -1006,6 +1006,77 @@ public final class NeedChain {
 
         boolean caching() { return run != null; }
 
+        /**
+         * Owner 2026-10-29 ("the crafting table keeps on itself"; run FV 23:43:51 "crafting table at -49 62 -33 unusable: no path",
+         * every run's walks back to a far table): a craft at the table this chain placed (a place-near of it after the last take
+         * of it) is followed at once by the table's take - priced at its break ({@link #breakS}: the block's hardness, no tool
+         * asked), the table back in the bag, the table no longer standing - so the next craft at a table places it near me again
+         * (0.15 s) instead of walking back. The next craft right at it ({@link #station}: nothing moved the bot) undoes the take:
+         * two crafts back to back leave it down. A table that was standing before this chain is not taken (not known to be mine).
+         */
+        void carryTable(Step craft) {
+            if (!(craft instanceof Step.Craft k)) return;
+            String table = sh(ItemWorth.stationOf(ItemWorth.CRAFT));
+            int n = steps.size();
+            if (!k.table()) {
+                // a craft in the hand's own grid right after the take (the bot stands where it is): the take moves after it -
+                // the table stays down through a run of crafts of any kind, taken after the last
+                if (n >= 2 && steps.get(n - 1) == craft && steps.get(n - 2) instanceof Step.TakeNear t && t.item().equals(table)) {
+                    steps.set(n - 2, craft);
+                    steps.set(n - 1, t);
+                    addedAt.put(t, seconds);
+                }
+                return;
+            }
+            if (!placedTableStands()) return;
+            takeTable();
+        }
+
+        /** The table standing now is one this chain placed: a place-near of it after the last take of it (none taken: any place). */
+        boolean placedTableStands() {
+            String table = sh(ItemWorth.stationOf(ItemWorth.CRAFT));
+            for (int i = steps.size() - 1; i >= 0; i--) {
+                Step s = steps.get(i);
+                if (s instanceof Step.TakeNear t && t.item().equals(table)) return false;
+                if (s instanceof Step.PlaceNear p && p.item().equals(table)) return true;
+            }
+            return false;
+        }
+
+        /** The table's take in seconds (its block's break by the game's hardness, no tool asked: 3.75 s for the table). */
+        double tableTakeS() {
+            String item = ItemWorth.stationOf(ItemWorth.CRAFT);
+            return breakS(this, item, new Spot(0, 0, 0, 0, item));
+        }
+
+        void takeTable() {
+            String item = ItemWorth.stationOf(ItemWorth.CRAFT);
+            double take = tableTakeS();
+            Step t = new Step.TakeNear(sh(item));
+            steps.add(t);
+            use(t, Map.of());                                  // the take uses nothing from the bag (its uses map exists, as every step's)
+            addS(take);
+            bag.merge(item, 1, Integer::sum);
+            if (down != null) tableDown = false; else { tableReady = false; tableWalked = false; }
+            note(() -> "table: picked up after the craft (the owner's rule: carried unless the next step crafts at it): " + s(take));
+        }
+
+        /**
+         * The next craft is at the table too (nothing moved the bot since the take went in: the take is the last step): the take
+         * comes out again - the table stays down between crafts back to back. True: undone, the table is in reach.
+         */
+        boolean undoTableTake() {
+            String table = sh(ItemWorth.stationOf(ItemWorth.CRAFT));
+            if (steps.isEmpty() || !(steps.get(steps.size() - 1) instanceof Step.TakeNear t && t.item().equals(table))) return false;
+            double take = tableTakeS();
+            steps.remove(steps.size() - 1);
+            seconds -= grid(take);
+            bag.merge(ItemWorth.stationOf(ItemWorth.CRAFT), -1, Integer::sum);
+            if (down != null) tableDown = true; else { tableReady = true; tableWalked = true; }
+            note(() -> "table: the next craft is at it too: left down (the take " + s(take) + " comes out)");
+            return true;
+        }
+
         /** 0.39.z78 D6: the walk memo's entry {@code key} (read by the open node). */
         Walked walk(String key) {
             Walked v = walks.get(key);
@@ -3670,6 +3741,7 @@ public final class NeedChain {
             take(c, new Want(e.getKey()), want, got.id()).forEach((k, v) -> used.merge(k, v, Integer::sum));
             slotUses.merge(word(e.getKey()), want, Integer::sum);      // 0.39.z61: the step's count by its slot word
         }
+        boolean tableUsed = false;                                  // owner 2026-10-29: the craft steps say they craft at the table (the carried table)
         if (craft) {
             boolean table = pieces > GRID_2X2;
             for (String m : g.made()) table |= ItemWorth.needsTable(m);
@@ -3679,6 +3751,7 @@ public final class NeedChain {
                 if (t != null) parts.add(t);
                 if (c.stuck) return verb + String.join(" + ", parts);
                 walkBack(c);
+                tableUsed = true;
             }
         } else {
             String f = station(c, ItemWorth.SMELT);
@@ -3699,28 +3772,35 @@ public final class NeedChain {
         if (split != null) {
             self.id = null;
             String slot = word(g.slots().keySet().iterator().next());
+            Step lastCraft = null;
             for (var e : split.entrySet()) {
                 int n = e.getValue() * g.outCount();
-                c.steps.add(new Step.Craft(e.getKey().equals(w.word) ? shw(w.word) : sh(e.getKey()), n));
+                lastCraft = new Step.Craft(e.getKey().equals(w.word) ? shw(w.word) : sh(e.getKey()), n, tableUsed);
+                c.steps.add(lastCraft);
                 used(c, Map.of(slot, e.getValue() * pieces));     // 0.39.z61: each craft's own count of the slot word
                 c.bag.merge(e.getKey(), n, Integer::sum);
             }
             c.addS(Price.craftS() * batches);
+            c.carryTable(lastCraft);                               // owner 2026-10-29: the table comes along after the craft
             return verb + String.join(" + ", parts);
         }
         self.id = out;
         String name = out != null ? out : w.word;
         int made = batches * g.outCount();
+        Step k;
         if (craft) {
-            c.steps.add(new Step.Craft(out != null ? sh(out) : shw(w.word), made));
+            k = new Step.Craft(out != null ? sh(out) : shw(w.word), made, tableUsed);
+            c.steps.add(k);
             c.addS(Price.craftS() * batches);
         } else {
-            c.steps.add(new Step.Smelt(out != null ? sh(out) : shw(w.word), made, true));
+            k = new Step.Smelt(out != null ? sh(out) : shw(w.word), made, true);
+            c.steps.add(k);
             c.addS(batches * smeltTicks() / GameTimes.TPS);
         }
         if (fuel != null) slotUses.merge(FUEL_USE + fuel.word(), fuel.n(), Integer::sum);     // 0.39.z75 item 2
         used(c, slotUses);
         c.bag.merge(name, made, Integer::sum);
+        c.carryTable(k);                                                                 // owner 2026-10-29: the table comes along after a craft at it
         return verb + String.join(" + ", parts);
     }
 
@@ -3952,18 +4032,21 @@ public final class NeedChain {
             takeAsStep(c, new Want(e.getKey()), want);                 // 0.39.z77 bagat: as the step's own check takes it
             slotUses.merge(word(e.getKey()), want, Integer::sum);      // 0.39.z61: the step's count by its slot word
         }
-        if (ItemWorth.needsTable(item) || rec.inputs().size() > GRID_2X2) {
+        boolean table = ItemWorth.needsTable(item) || rec.inputs().size() > GRID_2X2;
+        if (table) {
             String t = station(c, ItemWorth.CRAFT);
             if (c.fail != null) return null;
             if (t != null) parts.add(t);
             if (c.stuck) return "craft: " + String.join(" + ", parts);
             walkBack(c);
         }
-        c.steps.add(new Step.Craft(sh(item), batches * rec.outCount()));
+        Step k = new Step.Craft(sh(item), batches * rec.outCount(), table);           // owner 2026-10-29: says it crafts at the table (the carried table)
+        c.steps.add(k);
         used(c, slotUses);
         c.addS(Price.craftS() * batches);
         c.note(() -> "craft: " + sh(item) + " x" + batches * rec.outCount() + " (" + batches + " crafts): " + s(Price.craftS() * batches));
         c.bag.merge(item, batches * rec.outCount(), Integer::sum);
+        c.carryTable(k);                                                             // owner 2026-10-29: the table comes along after the craft
         return "craft: " + String.join(" + ", parts);
     }
 
@@ -4211,6 +4294,7 @@ public final class NeedChain {
     private static String station(Ctx c, String kind) {
         boolean table = ItemWorth.CRAFT.equals(kind);
         String label = table ? "table" : "furnace";
+        if (table && c.undoTableTake()) return null;         // owner 2026-10-29: crafts back to back leave the table down
         if (c.down != null) return downStation(c, kind, table, label);
         if (table ? c.tableReady : c.furnaceReady) {
             boolean walkedBefore = table ? c.tableWalked : c.furnaceWalked;
@@ -5023,9 +5107,9 @@ public final class NeedChain {
                         : new Step.Collect(((Step.Collect) prev).item(), ((Step.Collect) prev).n() + wanted, ((Step.Collect) prev).at()));
             } else {
                 // chop: no walk step before a block source (the cut/collect paths itself; the spot names the blocks and the price)
-                c.leafAt.put(sp.key(), c.steps.size());
                 c.steps.add(log ? new Step.ChopTree(new int[]{sp.x(), sp.y(), sp.z()}, wanted, null)
                         : new Step.Collect(shw(gives), wanted, new int[]{sp.x(), sp.y(), sp.z()}));   // z76 send-back 2: the priced spot named (run AP)
+                c.leafAt.put(sp.key(), c.steps.size() - 1);                       // after the add: the table's take may have come in before it
                 c.note(() -> "source: known " + shw(blockOf(gives, sp)) + " at " + sp.x() + " " + sp.y() + " " + sp.z() + ", " + Math.round(sp.dist()) + " m" + (sp.count() > 0 ? ", " + sp.count() + " blocks" : ""));
                 Walked wk = walk(c, sp.x(), sp.y(), sp.z(), sp.dist());
                 if (c.fail != null) {                       // 0.39.z41: no price for this walk

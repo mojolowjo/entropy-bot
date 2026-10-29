@@ -40,7 +40,8 @@ class FarStationWearUnreachableTest {
 
     /**
      * S37 by hand: bag 7 planks + 2 sticks, a wooden pickaxe wanted. Table 227 m: walk 227 x 1.3 / 4.317 = 68.4 s + craft
-     * 0.3; a new table: craft 0.3 + place 0.15 + pickaxe 0.3 = 0.75 s: placed, the walk dropped with its seconds.
+     * 0.3; a new table: craft 0.3 + place 0.15 + pickaxe 0.3 = 0.75 s, + the table taken along after the craft (owner
+     * 2026-10-29: its break 3.75 s) = 4.5 s: placed, the walk dropped with its seconds.
      */
     @Test
     void s37_aTableFarAwayLosesToPlacingANewOneFromTheBag() {
@@ -48,7 +49,7 @@ class FarStationWearUnreachableTest {
         Map<String, Integer> bag = Map.of("minecraft:oak_planks", 7, "minecraft:stick", 2);
         Chain c = NeedChain.resolve("wooden_pickaxe", 1, world(bag, new Spot(227, 70, 0, 227, "minecraft:crafting_table").notLoaded(), Map.of()));
         assertTrue(c.ok(), c.why());
-        assertEquals(0.75, c.seconds(), TOL, c.why());
+        assertEquals(4.5, c.seconds(), TOL, c.why());
         assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.PlaceNear), c.steps().toString());
         assertTrue(c.dropped().stream().anyMatch(d -> d.startsWith("walk to the known table 227 m (" + NeedChain.UNVERIFIED + "): 68.")), c.dropped().toString());
     }

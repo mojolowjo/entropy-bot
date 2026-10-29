@@ -44,7 +44,7 @@ class DebugTreeTest {
         assertTrue(t.contains("need: 3 more minecraft:cobblestone"), t);
         assertTrue(t.contains("chain: cobblestone <- dig cobblestone seen 12 m with wooden_pickaxe"), t);
         // the pickaxe requirement's ways, each with its verdict in the chain's words
-        assertTrue(t.matches("(?s).*way wooden_pickaxe -> picked: 2[89]\\.\\d s.*"), "wooden picked at S4's 28.95 s: " + t);
+        assertTrue(t.matches("(?s).*way wooden_pickaxe -> picked: 3[23]\\.\\d s.*"), "wooden picked at S4's 28.95 s + the table's take 3.75 (owner 2026-10-29): " + t);
         assertTrue(t.matches("(?s).*way golden_pickaxe -> dropped: no known source.*"), t);
         assertTrue(t.matches("(?s).*way iron_pickaxe -> dropped: no known source.*"), t);
         assertTrue(t.matches("(?s).*way stone_pickaxe -> dropped: loop.*"), t);

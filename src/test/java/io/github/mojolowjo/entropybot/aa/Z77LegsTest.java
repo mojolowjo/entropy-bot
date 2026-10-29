@@ -219,7 +219,8 @@ class Z77LegsTest {
         assertEquals(2, pc.steps().subList(down, pc.steps().size()).stream().filter(s -> s instanceof Step.PlaceNear p && p.item().contains("crafting_table")).count(),
                 "a table at leg 3 and one at the strip on's end: " + pc.steps());
         BatchWay.Shaped sh = BatchWay.shape("b1", 6, pb, pc, legs.starts());
-        assertTrue(sh.line().contains(", carries ") && sh.line().contains("oak_log 2") && sh.line().contains("stick 2"), "the logs go down: " + sh.line());
+        // owner 2026-10-29 (the carried table): the table taken after leg 3's craft is placed again at leg 5 - one log goes down (the sticks'), not two
+        assertTrue(sh.line().contains(", carries ") && sh.line().contains("oak_log 1") && sh.line().contains("stick 2"), "the logs go down: " + sh.line());
         assertNull(dryWalk(pc, w.bag()), "the trip's dry run: " + pc.why());
     }
 }

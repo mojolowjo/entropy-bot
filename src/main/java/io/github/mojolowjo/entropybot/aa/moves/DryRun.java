@@ -134,6 +134,7 @@ public final class DryRun {
             case Step.Craft k -> Map.of(NeedChain.word(k.item()), Math.max(0, k.n()));
             case Step.Smelt k -> Map.of(NeedChain.word(k.item()), Math.max(0, k.n()));
             case Step.TakeStation t -> Map.of(NeedChain.word(t.item()), 1);
+            case Step.TakeNear t -> Map.of(NeedChain.word(t.item()), 1);           // owner 2026-10-29: the carried table, back in the bag
             case Step.HuntAt h -> h.forItem() == null ? null : Map.of(NeedChain.word(h.forItem()), Math.max(0, h.forCount()));
             case Step.ChopTree t -> t.log() == null ? null : Map.of(NeedChain.word(t.log()), Math.max(0, t.logs()));
             case Step.Walk w -> Map.of();

@@ -217,9 +217,9 @@ class Z75UndergroundFuelTest {
         ScenariosTest.world("wooden", "stone");
         Chain c = NeedChain.resolve("wooden_pickaxe", 1, ScenariosTest.w(Map.of("minecraft:oak_log", 3), false, false, Map.of()));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(1.95, c.seconds(), 0.01, c.why());
+        assertEquals(1.95 + 3.75, c.seconds(), 0.01, c.why());     // owner 2026-10-29: + the table taken along after the craft (its break)
         assertEquals(List.of(new Step.Craft("oak_planks", 4), new Step.Craft("oak_planks", 4), new Step.Craft("stick", 4), new Step.Craft("oak_planks", 4),
-                new Step.Craft("crafting_table", 1), new Step.PlaceNear("crafting_table"), new Step.Craft("wooden_pickaxe", 1)), c.steps());
+                new Step.Craft("crafting_table", 1), new Step.PlaceNear("crafting_table"), new Step.Craft("wooden_pickaxe", 1), new Step.TakeNear("crafting_table")), c.steps());
     }
 
     /** z75 review 1: a partial bag plus a recipe - 6 planks with 2 in the bag: one craft from the log (4), 0.3 s; 6 sticks with 2: one craft, 0.3 s. */
@@ -446,8 +446,8 @@ class Z75UndergroundFuelTest {
         Chain held = NeedChain.resolve("stone_pickaxe", 1, w.withoutSources(Map.of("take at 1 76 0", "take crafting_table at 1 76 0: short by 1: the station still stands")));
         assertTrue(held.ok() && !held.explore(), held.why());
         assertTrue(held.steps().stream().noneMatch(s -> s instanceof Step.TakeStation), held.steps().toString());
-        assertEquals(List.of(new Step.Craft("oak_planks", 4), new Step.Craft("crafting_table", 1), new Step.PlaceNear("crafting_table"), new Step.Craft("stone_pickaxe", 1)), held.steps());
-        assertEquals(0.3 + 0.3 + 0.15 + 0.3, held.seconds(), 0.01, held.why());
+        assertEquals(List.of(new Step.Craft("oak_planks", 4), new Step.Craft("crafting_table", 1), new Step.PlaceNear("crafting_table"), new Step.Craft("stone_pickaxe", 1), new Step.TakeNear("crafting_table")), held.steps());
+        assertEquals(0.3 + 0.3 + 0.15 + 0.3 + 3.75, held.seconds(), 0.01, held.why());      // owner 2026-10-29: + the table taken along after the craft
     }
 
     /**
@@ -463,7 +463,7 @@ class Z75UndergroundFuelTest {
         ScenariosTest.world("wooden", "stone");
         Chain c = NeedChain.resolve("furnace", 1, ScenariosTest.w(Map.of("minecraft:oak_log", 1, "minecraft:cobblestone", 8), false, false, Map.of()));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(List.of(new Step.Craft("oak_planks", 4), new Step.Craft("crafting_table", 1), new Step.PlaceNear("crafting_table"), new Step.Craft("furnace", 1)), c.steps());
+        assertEquals(List.of(new Step.Craft("oak_planks", 4), new Step.Craft("crafting_table", 1), new Step.PlaceNear("crafting_table"), new Step.Craft("furnace", 1), new Step.TakeNear("crafting_table")), c.steps());
     }
 
     /**
@@ -632,8 +632,8 @@ class Z75UndergroundFuelTest {
         Chain next = NeedChain.resolve("stone_pickaxe", 1, w.withoutSources(held));
         assertTrue(next.ok() && !next.explore(), next.why());
         assertTrue(next.steps().stream().noneMatch(s -> s instanceof Step.TakeStation), next.steps().toString());
-        assertEquals(List.of(new Step.Craft("oak_planks", 4), new Step.Craft("crafting_table", 1), new Step.PlaceNear("crafting_table"), new Step.Craft("stone_pickaxe", 1)), next.steps());
-        assertEquals(1.05, next.seconds(), 0.01, next.why());
+        assertEquals(List.of(new Step.Craft("oak_planks", 4), new Step.Craft("crafting_table", 1), new Step.PlaceNear("crafting_table"), new Step.Craft("stone_pickaxe", 1), new Step.TakeNear("crafting_table")), next.steps());
+        assertEquals(1.05 + 3.75, next.seconds(), 0.01, next.why());    // owner 2026-10-29: + the table taken along after the craft
         assertTrue(holds.held(new int[]{(int) Math.ceil(moved), 76, 0}, stands, moved).isEmpty(), "moved failures.moved: released");
         holds.shortAt(1, 76, 0, TABLE, feet, "x");
         holds.shortAt(1, 76, 0, TABLE, feet, "x");

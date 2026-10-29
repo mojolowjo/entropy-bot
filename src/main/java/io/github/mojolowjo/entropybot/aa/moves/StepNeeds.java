@@ -165,6 +165,7 @@ public record StepNeeds(String toolKind, int minTier, Map<String, Integer> consu
             case Step.Strip st -> forBlocks(st.ores());
             case Step.ChopTree t -> t.log() == null ? NONE : forBlocks(List.of(t.log()));
             case Step.TakeStation t -> forBlocks(List.of(full(t.item())));     // 0.39.z48: the station block's own tier
+            case Step.TakeNear t -> forBlocks(List.of(full(t.item())));        // owner 2026-10-29: the carried table, the same
             case Step.Craft k -> recipeInputs(k.item(), k.n(), ItemWorth.CRAFT, bag);
             case Step.Smelt k -> withFuel(recipeInputs(k.item(), k.n(), ItemWorth.SMELT, bag), k.item(), k.n());
             case Step.Build b -> {

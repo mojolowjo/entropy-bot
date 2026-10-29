@@ -391,6 +391,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.ChopTree t -> chop(p, t);
                 case Step.Collect k -> collect(p, k);
                 case Step.TakeStation t -> takeStation(p, t);
+                case Step.TakeNear t -> takeNear(p, t);
                 case Step.HuntAt h -> hunt(p, h);
                 case Step.Build b -> build(b);
                 case Step.PlaceNear n -> placeNear(p, n);
@@ -440,6 +441,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.ChopTree t -> mineStatus(p);
                 case Step.Collect k -> mineStatus(p);
                 case Step.TakeStation t -> takeStatus(p, t);
+                case Step.TakeNear t -> takeNearAs == null ? Car.Status.failed(t.text() + ": no station of mine was found at its start") : takeStatus(p, takeNearAs);
                 case Step.KelpCut k -> mineStatus(p);
                 case Step.MineAt m -> veinStatus(p, m);
                 case Step.Cave k -> caveStatus(p);
@@ -1584,6 +1586,39 @@ public final class StepHands implements Steps.Hands {
         } finally {
             component = false;
         }
+    }
+
+    /** Owner 2026-10-29 (the carried table): the station of mine the running "take my X here" step resolved to (null: none found). */
+    private Step.TakeStation takeNearAs;
+
+    /**
+     * Owner 2026-10-29 ("the crafting table keeps on itself"): the nearest station block of mine of the step's kind within
+     * station.takeReachM of the feet (the ledger's placements, a refused one skipped: OwnStations.whyNot), then the take of
+     * that cell ({@link #takeStation}). None: the step fails saying so (the chain re-plans on the bag it has).
+     */
+    private String takeNear(LocalPlayer p, Step.TakeNear t) {
+        takeNearAs = null;
+        String id = t.item().contains(":") ? t.item() : "minecraft:" + t.item();
+        int[] here = Jobs.here(p);
+        double reach = Tuning.get("station.takeReachM");
+        io.github.mojolowjo.entropybot.clear.OwnStations.Placed best = null;
+        double bd = Double.MAX_VALUE;
+        List<String> refused = new ArrayList<>();
+        for (var q : io.github.mojolowjo.entropybot.clear.OwnStations.placed()) {
+            if (q == null || q.block() == null) continue;
+            String b = q.block().contains(":") ? q.block() : "minecraft:" + q.block();
+            if (!b.equals(id)) continue;
+            double d = Math.sqrt(Jobs.distSq(here, new int[]{q.x(), q.y(), q.z()}));
+            if (d > reach) continue;
+            String why = io.github.mojolowjo.entropybot.clear.OwnStations.whyNot(q.x(), q.y(), q.z());
+            if (why != null) { refused.add(q.x() + " " + q.y() + " " + q.z() + ": " + why); continue; }
+            if (d < bd) { bd = d; best = q; }
+        }
+        if (best == null) return "error: " + t.text() + ": no " + t.item() + " of mine within " + Math.round(reach) + " m of " + here[0] + " " + here[1] + " " + here[2]
+                + (refused.isEmpty() ? "" : " (refused: " + String.join("; ", refused) + ")");
+        takeNearAs = new Step.TakeStation(t.item(), best.x(), best.y(), best.z());
+        LOG.info("[entropybot] steps: {}: my {} at {} {} {} ({} m)", t.text(), t.item(), best.x(), best.y(), best.z(), Math.round(bd));
+        return takeStation(p, takeNearAs);
     }
 
     /** 0.39.z48: the next mine() runs the fork's component break whatever the block kind (a station take). */

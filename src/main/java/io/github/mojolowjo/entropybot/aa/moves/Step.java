@@ -172,9 +172,27 @@ public sealed interface Step {
         public String text() { return "take " + item + " at " + x + " " + y + " " + z; }
     }
 
-    /** Craft {@code n} of {@code item} (an item action: the craft job, no Baritone). */
-    record Craft(String item, int n) implements Step {
+    /**
+     * Craft {@code n} of {@code item} (an item action: the craft job, no Baritone). {@code table}: the recipe needs the crafting
+     * table (owner 2026-10-29, the carried table: the chain picks the table up after the last craft of a run at it).
+     */
+    record Craft(String item, int n, boolean table) implements Step {
+        public Craft(String item, int n) { this(item, n, false); }
         public String text() { return "craft " + item + " " + n; }
+
+        /** The same craft with or without the table flag (the flag is the recipe's own fact, not the step's identity). */
+        @Override public boolean equals(Object o) { return o instanceof Craft k && k.item.equals(item) && k.n == n; }
+        @Override public int hashCode() { return java.util.Objects.hash(item, n); }
+    }
+
+    /**
+     * Owner 2026-10-29 ("the crafting table keeps on itself": in the bag unless the next step crafts at it): break and pick up
+     * MY station block of {@code item} within reach of the feet (the one the chain placed near me for the crafts before this
+     * step; the ledger says which cells are mine). The hands find the cell; the fork's component break takes it (as
+     * {@link TakeStation}). No station of mine in reach: the step fails with that.
+     */
+    record TakeNear(String item) implements Step {
+        public String text() { return "take my " + item + " here"; }
     }
 
     /** Smelt {@code n} of {@code item} at a furnace ({@code here}: the one from the bag, on the spot). */

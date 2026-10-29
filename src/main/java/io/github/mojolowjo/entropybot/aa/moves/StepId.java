@@ -34,6 +34,7 @@ public record StepId(String kind, String target) {
                 yield new StepId("build", String.join(", ", c));
             }
             case Step.TakeStation t -> new StepId("takeStation", t.item() + " " + cell(t.x(), t.y(), t.z()));
+            case Step.TakeNear t -> new StepId("takeNear", t.item());
             case Step.Craft k -> new StepId("craft", k.item() + " " + k.n());
             case Step.Smelt k -> new StepId("smelt", k.item() + " " + k.n() + (k.here() ? " here" : ""));
             case Step.Cook k -> new StepId("cook", k.item() + " " + k.n());

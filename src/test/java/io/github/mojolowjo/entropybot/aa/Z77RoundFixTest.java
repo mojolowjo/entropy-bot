@@ -160,7 +160,7 @@ class Z77RoundFixTest {
         int explore = 0;
         for (int i = 0; i < pc.steps().size(); i++) if (pc.steps().get(i) instanceof Step.Explore) explore = i;
         assertTrue(explore > 0, "the torches before the explore: " + pc.steps());
-        assertEquals(NeedChain.exploreS() + 716.25, pc.seconds(), 0.1, pc.why());
+        assertEquals(NeedChain.exploreS() + 716.25 + 7.5, pc.seconds(), 0.1, pc.why());      // owner 2026-10-29: + the table's takes (the surface pickaxe's, leg 3's)
     }
 
     // ---- 4. run BF: no spare iron pickaxes ----

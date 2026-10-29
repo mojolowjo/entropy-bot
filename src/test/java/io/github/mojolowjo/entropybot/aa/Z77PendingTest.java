@@ -43,12 +43,13 @@ class Z77PendingTest {
         BatchWay.clear();
     }
 
-    static final Spot TREE = ScenariosTest.tree(20, 8);
+    /** Owner 2026-10-29 (the carried table): the surface source leg 5 waits on is stone for its furnace (was a tree for a second table). */
+    static final Spot STONE = new Spot(20, 64, 0, 20, "minecraft:stone", 40);
 
-    /** The kit world with one table and a tree 20 m whose walk answers {@code tree}; every other walk priced as Z77PlaybookTest's. */
-    static World bv(PathPrice.Answer tree) {
-        return Z77PlaybookTest.world(Z77NoWayTest.oneTable(), Map.of("oak_log", List.of(TREE)))
-                .withPath((x, y, z, d) -> y >= 60 && x >= 15 ? tree : Z77PlaybookTest.PATHS.price(x, y, z, d));
+    /** The kit world with one table and one furnace and stone 20 m whose walk answers {@code stone}; every other walk priced as Z77PlaybookTest's. */
+    static World bv(PathPrice.Answer stone) {
+        return Z77PlaybookTest.world(Z77NoWayTest.oneTable(), Map.of("cobblestone", List.of(STONE)), Z77PlaybookTest.TUFF)
+                .withPath((x, y, z, d) -> y >= 60 && x >= 15 ? stone : Z77PlaybookTest.PATHS.price(x, y, z, d));
     }
 
     static final PathPrice.Answer COMPUTING = PathPrice.Answer.computing("queued: pathCost.maxPending 4 searches in flight");

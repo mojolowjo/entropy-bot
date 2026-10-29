@@ -299,9 +299,12 @@ class Z73RepairTest {
         assertEquals(6.32, known.seconds(), 0.1);
         Chain make = NeedChain.resolve("wooden_pickaxe", 1, ReplanOnFactTest.world(bag, null, ReplanOnFactTest.TREE_10));
         sums(make);
-        assertEquals(7.06, make.seconds(), 0.1);
-        // the last step a craft of 0.3 s: its own share
-        assertEquals(0.3, make.stepSeconds().get(make.stepSeconds().size() - 1), 0.01, make.steps() + " " + make.stepSeconds());
+        assertEquals(10.81, make.seconds(), 0.1);           // 7.06 + the table taken along after the craft (owner 2026-10-29: 3.75 s)
+        // the last step the table's take of 3.75 s, the craft before it 0.3 s: their own shares
+        int n = make.stepSeconds().size();
+        assertTrue(make.steps().get(n - 1) instanceof Step.TakeNear, make.steps().toString());
+        assertEquals(3.75, make.stepSeconds().get(n - 1), 0.05, make.steps() + " " + make.stepSeconds());
+        assertEquals(0.3, make.stepSeconds().get(n - 2), 0.01, make.steps() + " " + make.stepSeconds());
         // an explore chain: its explore leg on its last step
         Chain ex = NeedChain.resolve("wooden_pickaxe", 1, ReplanOnFactTest.world(Map.of(), null, Map.of()));
         assertTrue(ex.ok() && ex.explore(), "the precondition: nothing known gives a log - the chain ends in an explore: " + ex.why());

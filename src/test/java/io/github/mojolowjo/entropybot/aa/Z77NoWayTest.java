@@ -36,8 +36,13 @@ class Z77NoWayTest {
     }
 
     /** The kit's bag with ONE table: the pickaxe's band leg places it; the armour's band leg (after the strip on) has none. */
+    /**
+     * One table, one furnace. Owner 2026-10-29 (the carried table): the one table is taken after leg 3's craft and placed again
+     * at leg 5, so the table is no longer what leg 5 lacks - the one FURNACE is: placed at leg 3, leg 5's smelts need their own,
+     * and in a tuff band (Z77PlaybookTest.TUFF) no furnace material is to be had down there.
+     */
     static Map<String, Integer> oneTable() {
-        return Map.of("minecraft:stone_pickaxe", 1, "minecraft:stick", 64, "minecraft:crafting_table", 1, "minecraft:furnace", 5, "minecraft:coal", 9);
+        return Map.of("minecraft:stone_pickaxe", 1, "minecraft:stick", 64, "minecraft:crafting_table", 1, "minecraft:furnace", 1, "minecraft:coal", 9);
     }
 
     /** Each leg serves the orders whose own items need it: the torches the surface, the pickaxe legs 2-3, the armour legs 4-5. */
@@ -61,7 +66,7 @@ class Z77NoWayTest {
     @Test
     void aBandLegsNoWayEndsOnlyTheOrdersThatNeedIt() {
         Z77PlaybookTest.data();
-        World w = Z77PlaybookTest.world(oneTable(), Map.of());
+        World w = Z77PlaybookTest.world(oneTable(), Map.of(), Z77PlaybookTest.TUFF);
         Playbook pb = Playbook.derive(Z77PlaybookTest.KIT, Playbook.facts(w, null));
         NeedChain.Legs legs = NeedChain.resolvePlaybookLegs(pb, w);
         assertFalse(legs.chain().ok(), legs.chain().why());
@@ -92,7 +97,7 @@ class Z77NoWayTest {
     @Test
     void anOrderThatNeedsTheLegGetsItsNoWay_theRestRunOn() {
         Z77PlaybookTest.data();
-        World w = Z77PlaybookTest.world(oneTable(), Map.of());
+        World w = Z77PlaybookTest.world(oneTable(), Map.of(), Z77PlaybookTest.TUFF);
         List<Goals.Goal> gs = new ArrayList<>();
         Blackboard bb = Z77PlaybookTest.batchBoard(new FakePort(), new Clock.Fake(10_000_000), () -> w, gs);
         Goals.Goal helmet = gs.get(2);
