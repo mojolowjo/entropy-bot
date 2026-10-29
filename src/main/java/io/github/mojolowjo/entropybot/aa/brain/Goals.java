@@ -647,7 +647,9 @@ public final class Goals {
         // the explore, and a side walk never lands "known" from a moving bot - 14 min lost): a FOUND source's re-price that
         // stands on paths hands the stand to the run (Steps takes it for an until-explore, rule 22: waiting is standing); the
         // stand's end re-plans with the landed price as any first-answer wait
-        if (io.github.mojolowjo.entropybot.aa.moves.FactChange.isFound(fact) && !newWay) {
+        // (review: the words are true for the until-explore alone - Steps takes the stand for it only; any other running step
+        // is kept below, said with the chain)
+        if (io.github.mojolowjo.entropybot.aa.moves.FactChange.isFound(fact) && !newWay && at instanceof Step.Explore ex && ex.until() != null) {
             String w = FOUND_STANDS + "(chain: " + ch.why() + ")";
             bb.port.log(g.r.key() + ": " + fact.text() + " - " + w);
             return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(ch.steps(), w, ch.uses());
