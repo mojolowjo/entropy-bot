@@ -643,6 +643,15 @@ public final class Goals {
             bb.port.log(g.r.key() + ": " + w);
             return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, w);
         }
+        // FH fix (run FH 17:46:00: the explore found a cave 10 m away, the chain stood on the lip walk's price, switches() kept
+        // the explore, and a side walk never lands "known" from a moving bot - 14 min lost): a FOUND source's re-price that
+        // stands on paths hands the stand to the run (Steps takes it for an until-explore, rule 22: waiting is standing); the
+        // stand's end re-plans with the landed price as any first-answer wait
+        if (io.github.mojolowjo.entropybot.aa.moves.FactChange.isFound(fact) && !newWay) {
+            String w = FOUND_STANDS + "(chain: " + ch.why() + ")";
+            bb.port.log(g.r.key() + ": " + fact.text() + " - " + w);
+            return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(ch.steps(), w, ch.uses());
+        }
         boolean sw = switches(g.pricedWay, left, g.pricedExplore, newWay, ch.seconds(), ch.explore(), switchMarginS());
         if (seen) {
             String line = seenLine(fact, ch, left, at, sw);
@@ -650,9 +659,10 @@ public final class Goals {
             bb.port.tellOwner(line);
         }
         if (!sw) {
+            // FH fix probe (rule 7): the chain kept out is said - the FH log could not show what the new way was
             String kept = "kept the running pick: the new way " + Math.round(ch.seconds()) + " s"
                     + (ch.explore() ? " (ends in an explore)" : "") + " vs " + (Double.isNaN(left) ? "?" : Math.round(left)) + " s left"
-                    + (g.pricedExplore ? " (ends in an explore)" : "") + " (replan.switchMarginS " + Math.round(switchMarginS()) + ")";
+                    + (g.pricedExplore ? " (ends in an explore)" : "") + " (replan.switchMarginS " + Math.round(switchMarginS()) + ") (chain: " + ch.why() + ")";
             bb.port.log(g.r.key() + ": " + fact.text() + " - " + kept);
             return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, kept);
         }
@@ -660,6 +670,9 @@ public final class Goals {
         bb.port.log(g.r.key() + ": " + fact.text() + " - priced again (chain: " + ch.why() + ")");
         return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(ch.steps(), null, ch.uses());
     }
+
+    /** FH fix: the start of a found source's re-price answer that stands on the source's walk (Steps takes the stand for an until-explore). */
+    public static final String FOUND_STANDS = "the found source's walk is not priced yet: the run stands for it (rule 22) ";
 
     /** 0.39.z48: the seconds a re-price must save to switch the running pick (Tuning replan.switchMarginS). */
     public static double switchMarginS() { return Tuning.get("replan.switchMarginS"); }

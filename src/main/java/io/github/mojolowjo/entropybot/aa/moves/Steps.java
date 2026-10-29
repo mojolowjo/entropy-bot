@@ -996,8 +996,12 @@ public final class Steps {
         }
         // 0.39.z48 (S66): a running step is never cut for another way; the one step whose end IS the paths' answer - the
         // explore while paths compute, z76 the standing step - ends only for a priced way (a new pick that waits on paths again runs on as it is)
-        if (running && waitsOnPaths(r.steps())) { pushReserve(held); return false; }
-        if (running) safeCancel("re-priced: " + f.text() + " - the pick changed");
+        // FH fix (run FH 17:46:00-17:50:45, rule 22): except an until-explore whose FOUND source's walk is not priced yet - a
+        // side walk never lands "known" from a moving bot (the fork prices from the feet; the explore leaves every landed
+        // start), so the explore takes the planner's stand; the stand's end re-plans with the landed price (StandWait)
+        boolean standsForFound = running && FactChange.isFound(f) && at instanceof Step.Explore ex && ex.until() != null && waitsOnPaths(r.steps());
+        if (running && waitsOnPaths(r.steps()) && !standsForFound) { pushReserve(held); return false; }
+        if (running) safeCancel("re-priced: " + f.text() + (standsForFound ? " - standing for its walk's price (rule 22)" : " - the pick changed"));
         String diff = planDiff(left, r.steps(), true);
         splice(idx, r.steps(), r.uses(), steps.size());
         replanFact = "re-priced: " + f.text() + " - switched to " + r.steps().get(0).text() + " first" + (released.isEmpty() ? "" : "; " + released) + "; " + diff;

@@ -379,6 +379,32 @@ class Z75UndergroundFuelTest {
         assertFalse(io.github.mojolowjo.entropybot.cave.ExploreRules.askAgain("a source of x is known: stone at 1 2 3 (5 away)", "a source of x is known: stone at 1 2 3 (8 away)"), "the same source: asked once");
     }
 
+    /**
+     * FH fix (run FH 17:46:00: "explore 5 until raw_iron" found a cave 10 m away, the planner's answer stood on the lip walk's
+     * price, the explore was kept and walked on for 14 minutes; a side walk never lands "known" from a moving bot): a FOUND
+     * source whose chain stands on paths cancels the until-explore for the stand (rule 22); a landed-path fact with the same
+     * standing answer keeps the explore as before (z48).
+     */
+    @Test
+    void fh_aFoundSourceWhoseWalkIsNotPricedYet_standsForIt() {
+        Z48ScenarioTest.Hands h = new Z48ScenarioTest.Hands();
+        io.github.mojolowjo.entropybot.aa.moves.Steps run = new io.github.mojolowjo.entropybot.aa.moves.Steps(h);
+        Step ex = new Step.Explore(5, "raw_iron"), craft = new Step.Craft("minecraft:iron_pickaxe", 1);
+        Step stand = new Step.AwaitPaths(30);
+        run.start("goal.iron_pickaxe", List.of(ex, craft), 0, (failed, fact, why) -> new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(List.of(stand, craft), "stands"));
+        // a landed path's re-price standing on paths: the explore runs on (z48)
+        run.repriceAtNextStep(FactChange.priced("walk to 1 2 3: 10 s, complete"));
+        run.tick(1);
+        assertEquals(0, h.cancels, "a landed path: a pick that waits on paths never cuts the running explore");
+        assertEquals(List.of(ex.text()), h.started);
+        // the found source's re-price standing on paths: the explore ends for the stand, said
+        run.repriceAtNextStep(FactChange.found("a source of raw_iron is known: a cave with deepslate_iron_ore at -45 65 -39 (10 away)"));
+        run.tick(2);
+        assertEquals(1, h.cancels, "the found source's walk is not priced yet: the explore stands for it");
+        assertEquals(stand.text(), h.started.get(h.started.size() - 1));
+        assertTrue(FactChange.isFound(FactChange.found("x")) && !FactChange.isFound(FactChange.priced("x")) && !FactChange.isFound(FactChange.seen("iron", 1, 2, 3, "x")));
+    }
+
     /** Project manager: a need of 0 is "have it" before any way; no chain ever carries a way of count 0 (the AH strip "for coal 0"). */
     @Test
     void fixA_noWayOfCountZero() {

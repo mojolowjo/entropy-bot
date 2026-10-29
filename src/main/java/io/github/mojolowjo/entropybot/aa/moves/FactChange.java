@@ -27,6 +27,9 @@ public final class FactChange {
      */
     public static Fact found(String text) { return new Fact(PRICE + "source", text); }
 
+    /** FH fix: the fact is a found source's ({@link #found}). */
+    public static boolean isFound(Fact f) { return f != null && (PRICE + "source").equals(f.key()); }
+
     /** 0.39.z77 seen: the key start of {@link #seen} ("price seen iron at 3 40 0"). */
     public static final String SEEN = PRICE + "seen ";
 
