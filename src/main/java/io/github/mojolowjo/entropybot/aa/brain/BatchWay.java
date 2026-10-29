@@ -420,7 +420,11 @@ public final class BatchWay {
             }
             if (!t.ends().contains(g.id()) && gone) return trip(bb, g, w0, own, waitTest, ask);     // the ended orders parked: the key changes
         }
-        return t.chain() != null ? t.chain() : own(bb, g, t.key(), landed(w), own, ask, w0);     // the own chain's world: the order's (Goals.chainWorld)
+        // the own chain's world: the order's (Goals.chainWorld). FR fix (run FR: 2,214 "feet" drops, 237 results in a row dropped
+        // on the own trips of the WAITING orders): the running order's own chain keeps the live world (its running step is priced
+        // from the feet, D11); every other order's own chain is priced at the anchor like a trip (z75: later steps from where the
+        // bot will be), so its facts stand still while the bot walks
+        return t.chain() != null ? t.chain() : own(bb, g, t.key(), landed(w), own, ask, g == runner ? w0 : anchored);
     }
 
     /**

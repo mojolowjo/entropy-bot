@@ -72,6 +72,7 @@ class Z70StepCheckTest {
                 @Override public String bestTool(String kind) { return null; }
                 @Override public int usesLeft(String id) { return io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED; }
                 @Override public int count(String id) { return bag.getOrDefault(id, 0); }
+                @Override public Map<String, Integer> items() { return bag; }        // FS fix: the whole bag is listable (Steps.movedSince)
             };
         }
     }
@@ -127,12 +128,19 @@ class Z70StepCheckTest {
                 + "walk ended at y 70 short of y 16 (re-plans this run: 1; dropped: strip iron_ore|16|west)", run.why());
     }
 
-    /** Test 3: A fails, re-planned to [B, A]; B ends DONE (progress); A fails the same way again - re-planned, not parked. */
+    /**
+     * Test 3: A fails, re-planned to [B, A]; B ends DONE (progress: the craft put sticks in the bag); A fails the same way again -
+     * re-planned, not parked. (FS fix: a step done with the feet AND the whole bag unchanged is no progress - FsParkMemoryTest.)
+     */
     @Test
     void t3_aDoneStepBetweenClearsTheMemory() {
         Hands h = new Hands();
         Step b = new Step.Craft("minecraft:stick", 4);
-        h.status = s -> s instanceof Step.ToStrip ? Car.Status.failed("walk ended at y 70") : Car.Status.done("ok");
+        h.status = s -> {
+            if (s instanceof Step.ToStrip) return Car.Status.failed("walk ended at y 70");
+            h.bag = Map.of("minecraft:stick", 4);                                 // the craft's sticks: the bag changed
+            return Car.Status.done("ok");
+        };
         h.fact = s -> stripFact("walk ended at y 70 short of y 16");
         int[] asked = {0};
         Steps run = new Steps(h);

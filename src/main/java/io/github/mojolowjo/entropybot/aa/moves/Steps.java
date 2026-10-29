@@ -435,6 +435,8 @@ public final class Steps {
      * re-planned, cleared when a later step ends DONE (progress was made); null: none.
      */
     private Attempt lastFailed;
+    /** FS fix: the whole bag (Bag.items) at the last failed try, for {@link #movedSince}; null: not listable (rule 15: counts as moved). */
+    private java.util.Map<String, Integer> lastFailedBag;
     /** 0.39.z70: the running step's start cell (Hands.feet at its start), null: not known. */
     private int[] startFeet;
     /** J6b item 14: the search's start cell when the step started (Hands#standStart); null: not known. */
@@ -811,7 +813,7 @@ public final class Steps {
             case COMPLETE -> {
                 hands.log(stage() + ": " + l.reason());
                 safeCancel(l.reason());
-                lastFailed = null;               // a step ended done (0.39.z70: progress was made)
+                if (lastFailed != null && movedSince(lastFailed)) lastFailed = null;   // a step ended done (0.39.z70: progress was made; FS fix: not when done in place)
                 lastStatus = l.reason();
                 next();
             }
@@ -1211,7 +1213,7 @@ public final class Steps {
                 }
             }
         }
-        if (!reprice) lastFailed = now;
+        if (!reprice) { lastFailed = now; lastFailedBag = bagItems(); }
         replans++;
         if (fact.key().startsWith("source ")) droppedHere.add(fact.key().substring("source ".length()));
         String diff = planDiff(steps.subList(idx, steps.size()), r.steps(), false);
@@ -1255,6 +1257,35 @@ public final class Steps {
      * 0.39.z70 (D2 3.1): the try of {@code failed} on the fact keyed {@code key}: its identity, the cell it started from and
      * the bag counts of its needs now (z67's place-near "failed at another cell" is a fact key of its own, so it is covered).
      */
+    /**
+     * FS fix: the bot or the bag has moved since the failed try {@code a} - the feet off its start cell, or the needs in the bag
+     * changed (both as the Attempt reads them). Not known (no feet, an unreadable bag) counts as moved (rule 15: never "the same").
+     */
+    /**
+     * FS fix (run FS 22:34-22:47: "up to the surface at 43 39 43 ... at the surface cell" 78 times, the explore after it failing
+     * "under ground" the same way; no park, because the walk up ending DONE cleared the failed try every loop): a step done IN
+     * PLACE is no progress - the feet still on the failed try's cell and the whole bag unchanged. Rule 15: a cell or bag not
+     * known counts as moved (cleared, as before).
+     */
+    private boolean movedSince(Attempt a) {
+        int[] f = feetNow();
+        if (a.feet() == null || f == null || f.length != 3) return true;                      // structural: x y z
+        if (!a.feet().equals(List.of(f[0], f[1], f[2]))) return true;
+        java.util.Map<String, Integer> bag = bagItems();
+        return lastFailedBag == null || bag == null || !lastFailedBag.equals(bag);
+    }
+
+    /** The whole bag now (Bag.items), copied; null: no hands' bag, not listable, or not readable (rule 15). */
+    private java.util.Map<String, Integer> bagItems() {
+        try {
+            StepNeeds.Bag b = hands.bag();
+            java.util.Map<String, Integer> items = b == null ? null : b.items();
+            return items == null ? null : new java.util.TreeMap<>(items);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
     private Attempt attempt(Step failed, String key) {
         java.util.SortedMap<String, Integer> bag;
         try {
@@ -1437,7 +1468,11 @@ public final class Steps {
             }
             case DONE -> {
                 ended("done");                   // 0.39.z56 item 2a
-                lastFailed = null;               // 0.39.z70 (D2 3.1): progress was made, the next failure is a new question
+                // 0.39.z70 (D2 3.1): progress was made, the next failure is a new question. FS fix (run FS 22:34-22:47: "up to the
+                // surface" ended done 78 times on the same cells and cleared this each time while the explore after it failed the
+                // same way, so the park never came): a step done IN PLACE - the feet still on the failed try's cell, the whole
+                // bag unchanged - is no progress; the failed try stays remembered until the bot or the bag has moved
+                if (lastFailed != null && movedSince(lastFailed)) lastFailed = null;
                 standsInRow = 0;                 // 0.39.z77 review 6: a step done: the stands' count starts again
                 lastStatus = st.why();
                 next();

@@ -3990,7 +3990,11 @@ public final class AaRuntime implements JobPort {
             return out.toString();
         }
         if (arg != null && arg.trim().equalsIgnoreCase("deposit")) return order("deposit", depositSteps());
+        // round 7 probe (runs FR/FS/FT: the one tick near 500 ms is the first tick after aa want, ~330 ms of it in this command):
+        // the want's own splits on its log line - resolve / add / chain / blocked / score - so the fix follows the numbers
+        long tStart = System.nanoTime();
         WantAsk ask = wantAsk(arg);
+        long tResolve = System.nanoTime();
         if (ask.refusal() != null) return ask.refusal();
         var a = ask.a();
         var r = ask.r();
@@ -4008,8 +4012,10 @@ public final class AaRuntime implements JobPort {
         g.tries.clear();                              // 0.39.z76 sb4 review 2: and its tries
         LivePathPrice.INSTANCE.orderStarted();        // 0.39.z58: the fork's "not answered yet in this order" class starts again
         lootCtx();
+        long tAdd = System.nanoTime();
         // one-planner: the order is priced by the one chain now; the line says the chain or the explore it starts
         var ch = io.github.mojolowjo.entropybot.aa.brain.Goals.chain(bb, g);
+        long tChain = System.nanoTime();
         // 0.39.z36 (rule 15): no world fact yet: said with what is not ready; the goal is kept and runs once the senses are
         String lootLine = ch == null && io.github.mojolowjo.entropybot.aa.brain.Goals.world(bb) == null
                 ? "; " + io.github.mojolowjo.entropybot.aa.brain.Goals.notReady(bb) + " (the goal is kept: it starts when the senses are ready)"
@@ -4017,11 +4023,18 @@ public final class AaRuntime implements JobPort {
         tree.brain.add(io.github.mojolowjo.entropybot.aa.AaDesires.ownerGoal(g));
         knownDue = true;                              // review: known positions now, not in up to 10 s
         String blocked = io.github.mojolowjo.entropybot.aa.brain.Goals.blocked(bb, g);
-        LOG.info("[entropybot] aa: owner goal {} x{} prio {}: {}{}", r.key(), g.n, g.prio, r.text(), blocked == null ? "" : " - parked: " + blocked);
+        long tBlocked = System.nanoTime();
+        long score = Math.round(io.github.mojolowjo.entropybot.aa.brain.Goals.score(bb, g));
+        long tScore = System.nanoTime();
+        LOG.info("[entropybot] aa: owner goal {} x{} prio {}: {}{} (want splits: resolve {} ms, add {} ms, chain {} ms, blocked {} ms, score {} ms)",
+                r.key(), g.n, g.prio, r.text(), blocked == null ? "" : " - parked: " + blocked,
+                ms(tResolve - tStart), ms(tAdd - tResolve), ms(tChain - tAdd), ms(tBlocked - tChain), ms(tScore - tBlocked));
         return "ok: goal " + r.key() + " x" + g.n + (g.prio > 0 ? " high" : g.prio < 0 ? " low" : "") + " (score "
-                + Math.round(io.github.mojolowjo.entropybot.aa.brain.Goals.score(bb, g)) + "): " + r.text()
+                + score + "): " + r.text()
                 + lootLine + (blocked != null ? " - parked: " + blocked : "") + (on() ? "" : " (aa is off: aa on to work on it)");
     }
+
+    private static long ms(long nanos) { return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(nanos); }
 
     /** 0.39.z28: aa want's words read once for aa want and aa debug want (one copy of the refusals): a refusal, else the parts. */
     record WantAsk(String refusal, io.github.mojolowjo.entropybot.aa.brain.Goals.Args a, io.github.mojolowjo.entropybot.aa.brain.Thing.Result r, String wantKey) {}
