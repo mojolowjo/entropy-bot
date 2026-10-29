@@ -5109,10 +5109,6 @@ public final class NeedChain {
                 c.steps.set(at, prev instanceof Step.ChopTree t ? new Step.ChopTree(t.at(), t.logs() + wanted, t.log())
                         : new Step.Collect(((Step.Collect) prev).item(), ((Step.Collect) prev).n() + wanted, ((Step.Collect) prev).at()));
             } else {
-                // chop: no walk step before a block source (the cut/collect paths itself; the spot names the blocks and the price)
-                c.steps.add(log ? new Step.ChopTree(new int[]{sp.x(), sp.y(), sp.z()}, wanted, null)
-                        : new Step.Collect(shw(gives), wanted, new int[]{sp.x(), sp.y(), sp.z()}));   // z76 send-back 2: the priced spot named (run AP)
-                c.leafAt.put(sp.key(), c.steps.size() - 1);                       // after the add: the table's take may have come in before it
                 c.note(() -> "source: known " + shw(blockOf(gives, sp)) + " at " + sp.x() + " " + sp.y() + " " + sp.z() + ", " + Math.round(sp.dist()) + " m" + (sp.count() > 0 ? ", " + sp.count() + " blocks" : ""));
                 Walked wk = walk(c, sp.x(), sp.y(), sp.z(), sp.dist());
                 if (c.fail != null) {                       // 0.39.z41: no price for this walk
@@ -5120,14 +5116,27 @@ public final class NeedChain {
                     if (sp == first) return null;           // the way's own spot: the way cannot be picked
                     String why = c.fail;                    // a further spot: this way goes on without it (its walk is not a price)
                     c.fail = null;
-                    c.leafAt.remove(sp.key());
-                    c.steps.remove(c.steps.size() - 1);
                     c.note(() -> "spot " + sp.x() + " " + sp.y() + " " + sp.z() + " left out: " + why);
                     continue;
                 }
                 if (firstWalk == null) firstWalk = wk;
                 c.addS(wk.seconds());
                 c.setAway(wk.seconds());
+                // FY fix (run FY 00:57-01:23: "collect 4 oak_planks: Baritone's mine knows no oak_planks in its sight (10 blocks of
+                // the feet) ... the priced spot -131 -35 -108 (124 m) is not what it goes for" 16 times, two orders lost; FV, FU,
+                // FR the same at 48-124 m): the collect hand is Baritone's mine, which takes the blocks in its sight - a spot
+                // beyond that sight needs the walk first. The walk is priced above; its step goes before the collect, to within
+                // the mine's sight of the spot (Step.Collect.MINE_SIGHT, the fork's own reach). A cut keeps no walk (the chop
+                // process finds its tree), a spot in sight neither (chop B2, 2026-10-22, stands for those). Appended, never
+                // inserted (D6's kept nodes replay their steps in the order they came in).
+                if (!log && sp.dist() > Step.Collect.MINE_SIGHT) {
+                    c.steps.add(new Step.Walk(sp.x(), sp.y(), sp.z(), Step.Collect.MINE_SIGHT));
+                    c.note(() -> "walk to the spot first: " + Math.round(sp.dist()) + " m is beyond the mine's sight (" + Step.Collect.MINE_SIGHT + ")");
+                }
+                // chop: no walk step before a cut (the chop paths itself; the spot names the blocks and the price)
+                c.steps.add(log ? new Step.ChopTree(new int[]{sp.x(), sp.y(), sp.z()}, wanted, null)
+                        : new Step.Collect(shw(gives), wanted, new int[]{sp.x(), sp.y(), sp.z()}));   // z76 send-back 2: the priced spot named (run AP)
+                c.leafAt.put(sp.key(), c.steps.size() - 1);
             }
             double each = breakS(c, gives, sp);
             c.addS(each * take);

@@ -299,7 +299,12 @@ class ScenariosTest {
         assertEquals(2, c.steps().stream().filter(s -> s instanceof Step.PlaceNear p && p.item().equals("crafting_table")).count(), "placed twice (carried between): " + c.steps());
         assertEquals(2, c.steps().stream().filter(s -> s instanceof Step.TakeNear).count(), "taken twice: " + c.steps());
         assertEquals(1, c.steps().stream().filter(s -> s instanceof Step.Collect k && k.item().equals("cobblestone")).count(), "one trip to the stone: " + c.steps());
-        assertEquals(0, c.steps().stream().filter(s -> s instanceof Step.Walk).count(), "chop B2 (2026-10-22): no walk step before a block source, the collect paths itself: " + c.steps());
+        // chop B2 (2026-10-22): no walk step before a block source in the mine's sight; FY fix (run FY, 2026-10-29): a spot beyond the
+        // mine's sight (here the stone 16 m) gets its walk first - one walk, before the one collect
+        assertEquals(1, c.steps().stream().filter(s -> s instanceof Step.Walk).count(), "one walk to the stone 16 m (beyond the mine's sight), none else: " + c.steps());
+        int walkAt = -1, collectAt = -1;
+        for (int i = 0; i < c.steps().size(); i++) { if (c.steps().get(i) instanceof Step.Walk) walkAt = i; if (c.steps().get(i) instanceof Step.Collect) collectAt = i; }
+        assertEquals(collectAt - 1, walkAt, "the walk right before the collect: " + c.steps());
         assertTrue(c.steps().contains(new Step.Collect("cobblestone", 11)), "3 + 3 + 2 + 2 + 1 cobblestone: " + c.steps());
         assertEquals(1, crafts(c, "wooden_pickaxe"), "the digging pickaxe is made once: " + c.steps());
         for (String t : List.of("stone_pickaxe", "stone_axe", "stone_hoe", "stone_sword", "stone_shovel")) assertEquals(1, crafts(c, t), t + ": " + c.steps());

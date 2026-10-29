@@ -94,7 +94,7 @@ class Z76TagMemberTest {
         World w = FakePaths.paths(new World(Map.of("minecraft:stone_pickaxe", 1), false, false, seen, null, null, null, 0)).withMobs(x -> List.of(), book);
         Chain c = NeedChain.resolve("#minecraft:coals", 2, w);
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(List.of(new Step.Collect("coal", 2)), c.steps(), "the member the ore drops: " + c.why());
+        assertEquals(List.of(new Step.Walk(12, 60, 3, Step.Collect.MINE_SIGHT), new Step.Collect("coal", 2)), c.steps(), "the member the ore drops (the spot 12 m: its walk first, FY fix): " + c.why());
     }
 
     /** Run AH: a stone spot for #stone_tool_materials (stone is no member; its drop, cobblestone, is): collect cobblestone. */
@@ -106,6 +106,6 @@ class Z76TagMemberTest {
         World w = FakePaths.paths(new World(Map.of("minecraft:wooden_pickaxe", 1), false, false, seen, null, null, null, 0)).withMobs(x -> List.of(), book);
         Chain c = NeedChain.resolve("#minecraft:stone_tool_materials", 3, w);
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(List.of(new Step.Collect("cobblestone", 3)), c.steps(), c.why());
+        assertEquals(List.of(new Step.Walk(12, 60, 3, Step.Collect.MINE_SIGHT), new Step.Collect("cobblestone", 3)), c.steps(), "the spot 12 m: its walk first (FY fix): " + c.why());
     }
 }

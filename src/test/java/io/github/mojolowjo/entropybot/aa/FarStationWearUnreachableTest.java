@@ -151,7 +151,9 @@ class FarStationWearUnreachableTest {
         assertTrue(first.ok() && !first.explore(), first.why());
         Steps run = new Steps(new Steps.Hands() {
             @Override public String start(Step s) {
-                if (s instanceof Step.Collect k) FactChange.unreachable(k.item(), "searched from 0 64 0", "Unable to find any path to stone, canceling mine");
+                // FY fix (2026-10-29): the stone 12 m is beyond the mine's sight, so its walk comes first; the walk's failure is the
+                // source's fact as the collect's would be (the hands say unreachable for the source either way)
+                if (s instanceof Step.Collect || s instanceof Step.Walk) FactChange.unreachable("cobblestone", "searched from 0 64 0", "Unable to find any path to stone, canceling mine");
                 return null;
             }
             @Override public Car.Status status(Step s) { return Car.Status.failed("collect: Baritone's mine process ended with 0 of 3: Unable to find any path to stone, canceling mine"); }
@@ -160,7 +162,8 @@ class FarStationWearUnreachableTest {
         Chain[] re = new Chain[1];
         run.start("owner goal", first.steps(), 0, (failed, fact, why) -> {
             assertTrue(fact.key().startsWith("source "), fact.key());
-            dropped.put(NeedChain.sourceKey(failed), fact.text());
+            // the source the failed step (the walk to the stone, or the collect) was for: held for the order as Goals.replan does
+            dropped.put(NeedChain.sourceKey(failed) != null ? NeedChain.sourceKey(failed) : "collect cobblestone", fact.text());
             re[0] = NeedChain.resolve("cobblestone", 3, world(bag, null, seen).withoutSources(dropped));
             return new Steps.Routine(List.of(new Step.Wait(1)), null);
         });

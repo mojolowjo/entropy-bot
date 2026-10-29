@@ -49,7 +49,10 @@ class NeedChainTest {
         assertTrue(chop >= 0 && table > chop && wooden > table && stone > wooden && last > stone, s.toString());
         assertEquals(s.size() - 2, last, "the stone pickaxe is the last craft; the table it crafted at comes along after it (owner 2026-10-29)");
         assertTrue(s.get(s.size() - 1) instanceof Step.TakeNear, s.toString());
-        assertTrue(s.stream().noneMatch(x -> x instanceof Step.Walk), "chop B2: no walk step before the cut, the chop paths itself: " + s);
+        // chop B2: no walk step before the cut (the chop paths itself); FY fix (2026-10-29): the stone 12 m is beyond the mine's sight,
+        // so its collect gets the one walk, right before it
+        assertEquals(1, s.stream().filter(x -> x instanceof Step.Walk).count(), "one walk, the stone's: " + s);
+        assertTrue(s.get(stone - 1) instanceof Step.Walk && s.get(chop + 1) instanceof Step.Craft, "the walk right before the collect, none before the cut: " + s);
         assertTrue(c.why().startsWith("stone_pickaxe <- craft: 3 cobblestone <- dig cobblestone seen 12 m"), c.why());
         assertTrue(c.why().contains("planks <- ") && c.why().contains("tree seen 30 m"), c.why());
         assertTrue(c.cost() > 0);
