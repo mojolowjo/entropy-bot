@@ -931,6 +931,7 @@ public final class StepHands implements Steps.Hands {
                     Jobs.cancel(b);
                 } else {
                     if (Jobs.idle(b) && Core.INSTANCE.tick() - cv.goalAt >= 20) {           // structural: once a second in ticks
+                        if (StepProbe.on()) LOG.info("[entropybot] probe cave: {}", caveHoldLine(b, cv, me));   // the stall probe (to-do/cave-walk-probe.md): Baritone's state before each re-set
                         b.getCustomGoalProcess().setGoalAndPath(cv.reach);
                         cv.goalAt = Core.INSTANCE.tick();
                     }
@@ -1029,6 +1030,15 @@ public final class StepHands implements Steps.Hands {
                 }
                 cv.hold = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.start(new io.github.mojolowjo.entropybot.cave.ExploreRules.Target(g.cell()[0], g.cell()[2]),
                         Core.INSTANCE.tick(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed());
+                if (StepProbe.on()) {
+                    // the stall probe (to-do/cave-walk-probe.md, the peer's line): the goto's first cell, how many cells it has, the
+                    // parts kept with the stands each, the feet, Baritone's state before this goal is set - so a drop or a stall
+                    // reads as geometry (few stands) or as pathing (stands, yet no calc)
+                    StringBuilder per = new StringBuilder();
+                    for (int i = 0; i < parts.size(); i++) per.append(i == 0 ? "" : ", ").append(Jobs.fmt(partCells.get(i))).append(" x").append(((baritone.api.pathing.goals.GoalReachBlock) parts.get(i)).size());
+                    LOG.info("[entropybot] probe cave: t={} feet {} | goto {} at {} ({} cells, branch {}) | parts {} of {} kept: {} | before the goal: {}",
+                            Core.INSTANCE.tick(), Jobs.fmt(me), g.why(), Jobs.fmt(g.cell()), g.cells().size(), g.branch(), parts.size(), g.cells().size(), per, caveHoldLine(b, cv, me));
+                }
                 b.getCustomGoalProcess().setGoalAndPath(cv.reach);
                 cv.goalAt = Core.INSTANCE.tick();
                 LOG.info("[entropybot] cave: to {} - the reach goal over {} cell(s): {} standable cells in reach and sight ({} of {} ore mined)", g.why(), parts.size(), stands, cv.mined, k.n());
@@ -1043,6 +1053,33 @@ public final class StepHands implements Steps.Hands {
      * was set) drops that goto "arrived, nothing new" - the same list as the no-path drop - and the next one is walked.
      * J6d (run EV): branch and unseen-cell gotos only; a walk to a seen ore arrives in its reach, and the next move mines it.
      */
+    /**
+     * The stall probe (to-do/cave-walk-probe.md; runs GD/GJ: the feet still for 30-40 s with a reach goal 5 blocks away set and
+     * "calc none"): Baritone's state as the caving step sees it - who is in control, the custom goal process active or not, a
+     * path executing or not, a calc in progress or not, the fork's last calc (ICustomGoalProcess.lastCalc), the last CALC_FAILED
+     * tick, the hold's state, the ticks since the goal was last set. Read-only; behind debug.stepProbe. Rule 15: a part this fork
+     * cannot give is said so, not guessed.
+     */
+    private static String caveHoldLine(IBaritone b, Caving cv, int[] me) {
+        var pb = b.getPathingBehavior();
+        String control = b.getPathingControlManager().mostRecentInControl().map(pr -> pr.displayName()).orElse("none");
+        String calc;
+        try {
+            var wc = b.getCustomGoalProcess().lastCalc();
+            calc = wc == null ? "none" : wc.line();
+        } catch (LinkageError e) {
+            calc = "not readable from this fork: " + e;
+        }
+        String event = io.github.mojolowjo.entropybot.baritone.BaritoneHook.lastCalc();
+        long t = Core.INSTANCE.tick();
+        return "t=" + t + " feet " + Jobs.fmt(me) + " | goal " + cv.goalWhy + " set " + (t - cv.goalAt) + " ticks ago | in control " + control
+                + " | custom goal active " + b.getCustomGoalProcess().isActive() + " | goal in process " + pb.getGoal()
+                + " | path " + (pb.getCurrent() != null ? "executing" : "none") + " | calc " + (pb.getInProgress().isPresent() ? "in progress" : "none")
+                + " | fork last calc " + calc + " | last path event " + (event == null ? "none since the hook was wired" : event)
+                + " | CALC_FAILED count " + io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed()
+                + " | hold " + (cv.hold == null ? "-" : cv.hold.state() + " " + cv.hold.why());
+    }
+
     private static void arrived(io.github.mojolowjo.entropybot.sense.Sightings sg, Caving cv, Step.Cave k, int[] me) {
         long key = cv.goalKey;
         String what = cv.goalWhy;
