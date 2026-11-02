@@ -81,6 +81,17 @@ class J6bCaveRecordTest {
         assertEquals(3, io.github.mojolowjo.entropybot.cave.CaveWalk.farThenNear(List.of(new int[]{99, 40, 0}), near).size(), "far first, then the near cells");
     }
 
+    /** Run GT fix: beside = a record cell among the six neighbours, whatever the index holds of the entry's chunk. */
+    @Test
+    void anOreIsBesideTheCave_whenARecordCellTouchesIt_byTheRecordsOwnCells() {
+        Sightings s = store();
+        assertTrue(s.caveBeside(D, 0, 40, 0, 50, 41, 0), "the trunk's roof at x 50");
+        assertTrue(s.caveBeside(D, 0, 40, 0, 40, 40, 41), "the end of branch A, one past its last cell");
+        assertFalse(s.caveBeside(D, 0, 40, 0, 50, 43, 0), "two blocks into the rock");
+        assertFalse(s.caveBeside(D, 0, 40, 0, 300, 40, 0), "far from the cave");
+        assertFalse(s.caveBeside(D, 9, 9, 9, 50, 41, 0), "no record there");
+    }
+
     @Test
     void oreSeenIsLeft_minedIsMined_theYieldIsMeasuredAfterTheFirstWalk() {
         Sightings s = store();

@@ -886,7 +886,8 @@ public final class StepHands implements Steps.Hands {
         // run EK: the record's cells come from ChunkPass's one budgeted feeder (Sightings.caveFeed); the step only reads it
         sg.caveStood(cv.dim, k.x(), k.y(), k.z(), me[0], me[1], me[2], nowMs);
         // the ore seen round the feet (by sight: the ore index under aa fair) beside the cave's air goes into the record
-        int root = idx.volumeAt(k.x(), k.y(), k.z());
+        // run GT fix (2026-11-01): "beside the cave" is the record's own cells (Sightings.caveBeside) - never CaveIndex.volumeAt(entry),
+        // which is -1 once the entry's chunk unloads (the index keeps loaded chunks only): 115 blocks in, every ore was rejected
         boolean probe = StepProbe.on();
         // run GT (2026-11-01: the record held iron 0 left while the sightings saw 24 iron veins, several within 5 blocks of
         // the feet for minutes): with the probe on, the page is read without the fair filter and every rejected hit is said
@@ -895,9 +896,8 @@ public final class StepHands implements Steps.Hands {
                 probe ? null : (x, y, z) -> Mining.fairOk(cv.dim, x, y, z))) {
             String why = null;
             if (probe && !Mining.fairOk(cv.dim, h.x(), h.y(), h.z())) why = "not fair (not seen by sight)";
-            else if (root < 0) why = "the entry has no volume (root -1)";
             else if (h.family() == null) why = "no ore family for " + h.id();
-            else if (!besideVolume(idx, root, h.x(), h.y(), h.z())) why = "not beside the cave's volume " + root + " (neighbours' volumes " + neighbourVolumes(idx, h.x(), h.y(), h.z()) + ")";
+            else if (!sg.caveBeside(cv.dim, k.x(), k.y(), k.z(), h.x(), h.y(), h.z())) why = "not beside the cave's cells (the index's neighbour volumes " + neighbourVolumes(idx, h.x(), h.y(), h.z()) + ", the entry's " + idx.volumeAt(k.x(), k.y(), k.z()) + ")";
             if (why != null) {
                 if (probe && cv.oreRejected.add(io.github.mojolowjo.entropybot.sense.Sightings.cell(h.x(), h.y(), h.z())))
                     LOG.info("[entropybot] probe cave ore: t={} feet {} | {} {} at {} {} {} ({} away) rejected: {}", Core.INSTANCE.tick(), Jobs.fmt(me), h.family(), h.id(), h.x(), h.y(), h.z(),
@@ -1165,11 +1165,6 @@ public final class StepHands implements Steps.Hands {
     /** Run GT probe: the six neighbours' volume ids (-1: none), for the "not beside the volume" line. */
     private static String neighbourVolumes(io.github.mojolowjo.entropybot.sense.CaveIndex idx, int x, int y, int z) {
         return idx.volumeAt(x + 1, y, z) + "," + idx.volumeAt(x - 1, y, z) + "," + idx.volumeAt(x, y + 1, z) + "," + idx.volumeAt(x, y - 1, z) + "," + idx.volumeAt(x, y, z + 1) + "," + idx.volumeAt(x, y, z - 1);
-    }
-
-    private static boolean besideVolume(io.github.mojolowjo.entropybot.sense.CaveIndex idx, int root, int x, int y, int z) {
-        return idx.volumeAt(x + 1, y, z) == root || idx.volumeAt(x - 1, y, z) == root || idx.volumeAt(x, y + 1, z) == root
-                || idx.volumeAt(x, y - 1, z) == root || idx.volumeAt(x, y, z + 1) == root || idx.volumeAt(x, y, z - 1) == root;
     }
 
     /** The step's end: the walk's minutes and ore into the record, the D12 end line (rule 7); the need met is done, else failed. */

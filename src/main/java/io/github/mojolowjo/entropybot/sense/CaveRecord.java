@@ -576,6 +576,17 @@ public final class CaveRecord {
      * before, and so on), the seeds last. Empty seeds or none unseen: empty. A walk to the deepest cells carries the bot
      * through the branch, and its sight on the way sees the layers between. Pure on the record's sets; touched counted.
      */
+    /**
+     * Run GT fix (2026-11-01: 115 blocks from the entry the record held iron 0 left while the eyes saw 24 veins - the feed
+     * tested "beside the cave" with CaveIndex.volumeAt(entry), and the index keeps loaded chunks only, so with the entry's
+     * chunk unloaded the root was -1 and every ore was rejected): an ore at x y z is beside this cave when one of its six
+     * neighbours is a cell of the record - the record's own cells, the one store (rule 23), loaded entry or not. Pure.
+     */
+    public boolean beside(int x, int y, int z) {
+        for (int[] o : SIX) if (cells.contains(Sightings.cell(x + o[0], y + o[1], z + o[2]))) return true;
+        return false;
+    }
+
     public List<int[]> farBehind(List<Long> seeds, int depth, int cap) {
         if (seeds == null || seeds.isEmpty() || depth <= 0 || cap <= 0) return List.of();
         java.util.LinkedHashSet<Long> got = new java.util.LinkedHashSet<>();

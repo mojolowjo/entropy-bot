@@ -137,7 +137,7 @@ class J6bEnTest {
     @Test
     void theCavingStepHasNoGoalNear_andNoReachedByReach() throws java.io.IOException {
         String src = java.nio.file.Files.readString(java.nio.file.Path.of("src/main/java/io/github/mojolowjo/entropybot/commands/StepHands.java"));
-        int from = src.indexOf("private Car.Status caveStatus("), to = src.indexOf("private static boolean besideVolume(");
+        int from = src.indexOf("private Car.Status caveStatus("), to = src.indexOf("private Car.Status caveEnd(");   // GT fix: besideVolume is gone (the record's cells decide)
         assertTrue(from > 0 && to > from);
         String cave = src.substring(from, to);
         assertFalse(cave.contains("GoalNear"), "no GoalNear in the caving step");
