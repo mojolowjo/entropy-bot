@@ -36,7 +36,9 @@ ore in reach, walk to a seen ore, walk to the nearest branch, else the record's 
 of the fork's `GoalReachBlock`s over unseen cells behind the frontier - since 2026-11-01 the FAR end of the branch first
 (`CaveRecord.farBehind`, `cave.farDepth` layers), the near cells after, so one walk carries the bot through the branch
 instead of one goal and one Baritone search a second (runs GP / GS). Arrival = Baritone's `isInGoal(feet)`; an arrival that
-saw nothing new drops the branch. `probe cave:` lines behind `debug.stepProbe` say each goal's parts and Baritone's state.
+saw nothing new drops the branch. `probe cave:` lines behind `debug.stepProbe` say each goal's parts and Baritone's state;
+`probe cave site:` lines (`StepHands.caveSiteLines`, 5 s into a held goal, then every 10 s) say the blocks around the feet,
+Baritone's own break setting and tool strengths, and per goal part its stands and the blocks on the eye's line to the cell.
 
 ## Where the facts come from
 | Fact | Class | Game API or file |
