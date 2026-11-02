@@ -839,6 +839,8 @@ public final class StepHands implements Steps.Hands {
         boolean goalOre;
         /** J6d: the seen ore whose vein FAILED with the ore still there - left out of the next moves, said at the end (rule 7). */
         final java.util.Set<Long> veinFailed = new java.util.HashSet<>();
+        /** Run GT probe: the ore hits said once as rejected by the record's feed (debug.stepProbe). */
+        final java.util.Set<Long> oreRejected = new java.util.HashSet<>();
         VeinMine vein;
         List<int[]> veinCells;
         int[] veinStart;
@@ -885,9 +887,23 @@ public final class StepHands implements Steps.Hands {
         sg.caveStood(cv.dim, k.x(), k.y(), k.z(), me[0], me[1], me[2], nowMs);
         // the ore seen round the feet (by sight: the ore index under aa fair) beside the cave's air goes into the record
         int root = idx.volumeAt(k.x(), k.y(), k.z());
+        boolean probe = StepProbe.on();
+        // run GT (2026-11-01: the record held iron 0 left while the sightings saw 24 iron veins, several within 5 blocks of
+        // the feet for minutes): with the probe on, the page is read without the fair filter and every rejected hit is said
+        // once per cell with its reason - not fair, no family, no root, not beside the volume (the six neighbours' volumes)
         for (var h : pass.nearest(cv.dim, id -> true, me[0], me[1], me[2], io.github.mojolowjo.entropybot.sense.CaveRecord.SEE_STEPS + 2, 32,   // structural: the seen cells and their walls; a page of hits
-                (x, y, z) -> Mining.fairOk(cv.dim, x, y, z))) {
-            if (root < 0 || h.family() == null || !besideVolume(idx, root, h.x(), h.y(), h.z())) continue;
+                probe ? null : (x, y, z) -> Mining.fairOk(cv.dim, x, y, z))) {
+            String why = null;
+            if (probe && !Mining.fairOk(cv.dim, h.x(), h.y(), h.z())) why = "not fair (not seen by sight)";
+            else if (root < 0) why = "the entry has no volume (root -1)";
+            else if (h.family() == null) why = "no ore family for " + h.id();
+            else if (!besideVolume(idx, root, h.x(), h.y(), h.z())) why = "not beside the cave's volume " + root + " (neighbours' volumes " + neighbourVolumes(idx, h.x(), h.y(), h.z()) + ")";
+            if (why != null) {
+                if (probe && cv.oreRejected.add(io.github.mojolowjo.entropybot.sense.Sightings.cell(h.x(), h.y(), h.z())))
+                    LOG.info("[entropybot] probe cave ore: t={} feet {} | {} {} at {} {} {} ({} away) rejected: {}", Core.INSTANCE.tick(), Jobs.fmt(me), h.family(), h.id(), h.x(), h.y(), h.z(),
+                            String.format(java.util.Locale.ROOT, "%.1f", Math.sqrt(h.d2())), why);
+                continue;
+            }
             if (sg.caveOre(cv.dim, k.x(), k.y(), k.z(), io.github.mojolowjo.entropybot.sense.Sightings.cell(h.x(), h.y(), h.z()), h.family())) cv.oreSeen++;
         }
         IBaritone b = Jobs.baritone();
@@ -1146,6 +1162,11 @@ public final class StepHands implements Steps.Hands {
     }
 
     /** x y z (an ore block) is beside an air cell of the cave's volume. */
+    /** Run GT probe: the six neighbours' volume ids (-1: none), for the "not beside the volume" line. */
+    private static String neighbourVolumes(io.github.mojolowjo.entropybot.sense.CaveIndex idx, int x, int y, int z) {
+        return idx.volumeAt(x + 1, y, z) + "," + idx.volumeAt(x - 1, y, z) + "," + idx.volumeAt(x, y + 1, z) + "," + idx.volumeAt(x, y - 1, z) + "," + idx.volumeAt(x, y, z + 1) + "," + idx.volumeAt(x, y, z - 1);
+    }
+
     private static boolean besideVolume(io.github.mojolowjo.entropybot.sense.CaveIndex idx, int root, int x, int y, int z) {
         return idx.volumeAt(x + 1, y, z) == root || idx.volumeAt(x - 1, y, z) == root || idx.volumeAt(x, y + 1, z) == root
                 || idx.volumeAt(x, y - 1, z) == root || idx.volumeAt(x, y, z + 1) == root || idx.volumeAt(x, y, z - 1) == root;
