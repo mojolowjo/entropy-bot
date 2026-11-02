@@ -65,6 +65,7 @@ left out of the step after 30 s. A place-near failure says its site (`StepHands.
 | chunk contents, ore index, column tops | `sense/ChunkPass`, `McChunkReader`, `OreIndex` | `ChunkEvent.Load/Unload`, `RecorderMixinClientLevel` for block changes |
 | what the bot has SEEN (ore, trees, herds, cave mouths) | `Seen`, `Sightings`, `SeenRuntime`, `SightingsRuntime` | `Level.clip` rays from the eyes, `getBrightness(SKY)`, heightmaps |
 | nearest tree / block set | `aa/Nearby`, `commands/NearbyLive` | Baritone `IWorldScanner.scanChunkRadius`, then the sightings |
+| known stations and chests (the deposit, the chain) | `aa/Nearby.lookup`, `aa/MainStations`, `commands/MainStationsLive` | my own placements (the ledger, any distance), the owner's mains (`aa deposit x y z`, `aa station main`: his say, usable outside his areas, run HQ), Baritone's scan; `guard/BreakPolicy.stationUse` refuses keep-out and wild stations |
 | a walk's price | `LivePathPrice`, fork `IPricedPath` | Baritone's A* on its executor, ticks -> seconds in `TickPrice` |
 | may this cell be broken / placed, at what cost | `guard/BreakPolicy`, `PolicyRuntime` | `Level` on the client thread, `BlockStateInterface` on the pathfinder thread |
 | hostiles and their reach | `threat/ThreatRuntime`, `ReachCache` | entity list, collision shapes, line of sight |

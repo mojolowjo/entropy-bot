@@ -241,12 +241,21 @@ public final class BreakPolicy {
      * use-stations: usable and preferred ({@link #stationPreferred}); inside any of the owner's areas (no-break included:
      * using is not breaking): usable; else a wild station: refused.
      */
-    public static Verdict stationUse(Policy p, String dim, int x, int y, int z, boolean placedByMe) {
+    public static Verdict stationUse(Policy p, String dim, int x, int y, int z, boolean placedByMe) { return stationUse(p, dim, x, y, z, placedByMe, false); }
+
+    /**
+     * Run HQ (2026-11-02, the helper test: the owner's chest set by "aa deposit 6 68 10" on the surface, the bot 190 blocks
+     * under ground with 65 raw iron: "deposit: no chest known" - the lookup refused the main as a wild station): a main the
+     * owner marked ({@code ownerMain}: aa deposit x y z, aa station main) is the owner's own say on that block - usable
+     * wherever it stands; keep-out still refuses it, use-stations still ranks it first.
+     */
+    public static Verdict stationUse(Policy p, String dim, int x, int y, int z, boolean placedByMe, boolean ownerMain) {
         Policy pol = p == null ? Policy.EMPTY : p;
         Box ko = pol.keepOutAt(dim, x, y, z);
         if (ko != null) return Verdict.deny("in " + (ko.name == null ? "box" : ko.name) + " (keep-out)", Kind.STATION);
         Box a = pol.innermostAreaAt(dim, x, y, z);
         if (a != null && a.has(AreaTags.USE_STATIONS)) return Verdict.ok(1, AreaTags.USE_STATIONS, Kind.USE_STATIONS);
+        if (ownerMain) return Verdict.ok(1, "the owner's main station (aa deposit x y z / aa station main)", Kind.STATION);
         if (placedByMe) return Verdict.ok(1, "station, placed by me", Kind.STATION);
         if (a != null || pol.protectAt(dim, x, y, z) != null) return Verdict.ok(1, "station, in my areas", Kind.STATION);
         return Verdict.deny("wild station (not placed by me, outside my areas)", Kind.STATION);

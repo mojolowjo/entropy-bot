@@ -154,10 +154,13 @@ final class DepositLeg {
             var a = LivePathPrice.INSTANCE.price(cell[0], cell[1], cell[2], Double.NaN);
             return a.walk() != null ? a.walk().seconds() : a.kind() == io.github.mojolowjo.entropybot.aa.PathPrice.Kind.COMPUTING ? Double.NaN : null;
         }, cell -> bonus.getOrDefault(DepositRule.at(cell), 0.0), bagChest != null, planks(p) >= 8);          // the chest recipe's input (8 planks), as the game's recipe has it
-        LOG.info("[entropybot] deposit: {}", ch.why());
+        // run HQ (rule 7, no silent failure): a chest known yet refused by the station rule ("every one known is refused: ...")
+        // was said as "no chest known"; the lookup's own reason rides along
+        String refused = f instanceof StationFact.None n && !io.github.mojolowjo.entropybot.aa.Nearby.NONE_KNOWN.equals(n.why()) ? " (" + n.why() + ")" : "";
+        LOG.info("[entropybot] deposit: {}{}", ch.why(), refused);
         return switch (ch.how()) {
             case WAIT -> Car.Status.running("deposit: " + ch.why());
-            case FAIL -> Car.Status.failed("deposit: " + ch.why());
+            case FAIL -> Car.Status.failed("deposit: " + ch.why() + refused);
             case KNOWN -> { chest = ch.at(); phase = Phase.USE; yield Car.Status.running("deposit: " + ch.why()); }
             case BAG -> goStart(p);
             case CRAFT -> {

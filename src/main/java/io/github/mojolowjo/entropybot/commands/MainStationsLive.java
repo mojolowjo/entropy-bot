@@ -180,7 +180,16 @@ final class MainStationsLive {
             var ids = c.nearby.blocksOfKind(MainStations.CONTAINER);
             if (ids == null) return "aa deposit: item data not loaded yet";
             if (!ids.contains(id)) return "aa deposit: " + id + " at " + a + " is no chest the deposit uses";
-            return mark(c, MainStations.CONTAINER, at, id);
+            String r = mark(c, MainStations.CONTAINER, at, id);
+            // run HQ (rule 7): the mark is said with whether the deposit's own lookup lists it now - a refused or unlisted main is
+            // said here, at the mark, not 20 minutes later as "no chest known"
+            StationFact f = c.nearby.containers();
+            boolean listed = f instanceof StationFact.Known k && k.spots().stream().anyMatch(s -> s.x() == at[0] && s.y() == at[1] && s.z() == at[2]);
+            return listed ? r : r + " - BUT the deposit's lookup does not list it: " + switch (f) {
+                case StationFact.None n -> n.why();
+                case StationFact.NotLoaded n -> n.why();
+                case StationFact.Known k -> "not among its " + k.spots().size() + " known chest(s)";
+            };
         }
         StationFact f = c.nearby.containers();
         return switch (f) {

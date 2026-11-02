@@ -83,11 +83,13 @@ public final class Nearby {
          * (NearbyLive) states the guard's policy and its dimension. No default that allows (0.39.z26 fix 4): a scan with no
          * policy refuses every station with the reason "no policy"; a scan never decides the rule itself.
          */
-        default io.github.mojolowjo.entropybot.guard.BreakPolicy.Verdict stationUse(int x, int y, int z, boolean mine) {
+        default io.github.mojolowjo.entropybot.guard.BreakPolicy.Verdict stationUse(int x, int y, int z, boolean mine) { return stationUse(x, y, z, mine, false); }
+        /** Run HQ: the same with {@code ownerMain} - the owner's marked main (aa deposit x y z, aa station main) is his own say on the block. */
+        default io.github.mojolowjo.entropybot.guard.BreakPolicy.Verdict stationUse(int x, int y, int z, boolean mine, boolean ownerMain) {
             io.github.mojolowjo.entropybot.guard.Policy p = stationPolicy();
             if (p == null) return new io.github.mojolowjo.entropybot.guard.BreakPolicy.Verdict(false, Double.POSITIVE_INFINITY, "no policy", false,
                     io.github.mojolowjo.entropybot.guard.BreakPolicy.Kind.STATION.word, io.github.mojolowjo.entropybot.guard.BreakPolicy.Kind.STATION);
-            return io.github.mojolowjo.entropybot.guard.BreakPolicy.stationUse(p, stationDim(), x, y, z, mine);
+            return io.github.mojolowjo.entropybot.guard.BreakPolicy.stationUse(p, stationDim(), x, y, z, mine, ownerMain);
         }
         /**
          * 0.39.z60 item 2 (runs Q 02:29:32 and R 03:35:34: "collect 4 torch" - Baritone's mine on the world's wall_torch /
@@ -170,7 +172,7 @@ public final class Nearby {
         };
     }
 
-    static final String NOT_LOADED = "item data not loaded yet", NONE_KNOWN = "none known";
+    public static final String NOT_LOADED = "item data not loaded yet", NONE_KNOWN = "none known";
 
     /**
      * station-race (0.39.z17, rule 15): the station fact of a kind from its block set: not loaded stays not loaded (no scan,
@@ -235,7 +237,7 @@ public final class Nearby {
                 continue;
             }
             if (!seen.add(key(p[0], p[1], p[2]))) continue;
-            if (!usable(s, p, false, first, skipped)) continue;
+            if (!usable(s, p, false, true, first, skipped)) continue;    // run HQ: the owner's mark is his say - never a wild station
             out.add(priced(s, new Spot(p[0], p[1], p[2], dist(p, me), m.block()), first, priced, blocks));
         }
         for (int[] p : s.find(blocks, scanR())) {
@@ -330,8 +332,10 @@ public final class Nearby {
     /** The word of a main in the lookup's notes and the chain's station lines ("(main)"). */
     public static final String MAIN = "main";
 
-    private static boolean usable(Scan s, int[] p, boolean mine, Set<String> first, List<String> skipped) {
-        var v = s.stationUse(p[0], p[1], p[2], mine);
+    private static boolean usable(Scan s, int[] p, boolean mine, Set<String> first, List<String> skipped) { return usable(s, p, mine, false, first, skipped); }
+
+    private static boolean usable(Scan s, int[] p, boolean mine, boolean ownerMain, Set<String> first, List<String> skipped) {
+        var v = s.stationUse(p[0], p[1], p[2], mine, ownerMain);
         if (v == null || !v.allowed()) {
             if (skipped != null) skipped.add(p[0] + " " + p[1] + " " + p[2] + ": " + (v == null ? "no station verdict" : v.reason()));
             return false;
