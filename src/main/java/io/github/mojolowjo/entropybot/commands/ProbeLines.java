@@ -28,6 +28,22 @@ public final class ProbeLines {
     /** 0.39.z77 hotbar: the tool probe is on (Tuning debug.toolProbe 1; ToolProbe's gate; off by default). */
     public static boolean toolOn() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("debug.toolProbe") >= 1; }
 
+    /** The stall site probe (runs GZ / HB, 2026-11-01): names as runs - "stone x4, air x2, lava"; "" for none. Pure. */
+    public static String runs(List<String> names) {
+        StringBuilder sb = new StringBuilder();
+        int i = 0;
+        while (i < names.size()) {
+            String n = names.get(i);
+            int j = i;
+            while (j < names.size() && names.get(j).equals(n)) j++;
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(n);
+            if (j - i > 1) sb.append(" x").append(j - i);
+            i = j;
+        }
+        return sb.toString();
+    }
+
     // ---- 0.39.z77 hotbar: the tool probe (candidate-strip-pace, runs CW-DI: no line named the tool in hand) ----
 
     /**

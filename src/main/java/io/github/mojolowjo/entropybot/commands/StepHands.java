@@ -830,6 +830,8 @@ public final class StepHands implements Steps.Hands {
         List<io.github.mojolowjo.entropybot.cave.ExploreRules.LipGoal> reachParts = List.of();
         long goalKey;
         long goalAt;
+        /** The stall site probe (runs GZ / HB): the tick this goto was set (goalAt moves with each re-set), the last site dump. */
+        long holdSince, siteAt = -1;
         /** Run EO: the record's seen cells when the goal was set (an arrival that adds none drops the goto). */
         int seenAtGoal;
         /** Run EN: the gotos dropped in this step (an empty reach goal, no path) and their reasons, said at the end. */
@@ -947,7 +949,14 @@ public final class StepHands implements Steps.Hands {
                     Jobs.cancel(b);
                 } else {
                     if (Jobs.idle(b) && Core.INSTANCE.tick() - cv.goalAt >= 20) {           // structural: once a second in ticks
-                        if (StepProbe.on()) LOG.info("[entropybot] probe cave: {}", caveHoldLine(b, cv, me));   // the stall probe (to-do/cave-walk-probe.md): Baritone's state before each re-set
+                        if (StepProbe.on()) {
+                            LOG.info("[entropybot] probe cave: {}", caveHoldLine(b, cv, me));   // the stall probe (to-do/cave-walk-probe.md): Baritone's state before each re-set
+                            long t = Core.INSTANCE.tick();
+                            if (t - cv.holdSince >= SITE_AFTER_TICKS && (cv.siteAt < 0 || t - cv.siteAt >= SITE_EVERY_TICKS)) {   // runs GZ / HB: the site, 5 s into a hold
+                                for (String line : caveSiteLines(p, b, cv, me)) LOG.info("[entropybot] probe cave site: {}", line);
+                                cv.siteAt = t;
+                            }
+                        }
                         b.getCustomGoalProcess().setGoalAndPath(cv.reach);
                         cv.goalAt = Core.INSTANCE.tick();
                     }
@@ -1072,6 +1081,8 @@ public final class StepHands implements Steps.Hands {
                 }
                 b.getCustomGoalProcess().setGoalAndPath(cv.reach);
                 cv.goalAt = Core.INSTANCE.tick();
+                cv.holdSince = cv.goalAt;
+                cv.siteAt = -1;
                 LOG.info("[entropybot] cave: to {} - the reach goal over {} cell(s) of {} tried ({} far behind it): {} standable cells in reach and sight ({} of {} ore mined)", g.why(), parts.size(), tried, farCount, stands, cv.mined, k.n());
                 return Car.Status.running("caving: walking to " + g.why());
             }
@@ -1109,6 +1120,123 @@ public final class StepHands implements Steps.Hands {
                 + " | fork last calc " + calc + " | last path event " + (event == null ? "none since the hook was wired" : event)
                 + " | CALC_FAILED count " + io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed()
                 + " | hold " + (cv.hold == null ? "-" : cv.hold.state() + " " + cv.hold.why());
+    }
+
+    /** structural: the site lines 5 s into a hold (ticks), then every 10 s; the stands said per part */
+    private static final int SITE_AFTER_TICKS = 100, SITE_EVERY_TICKS = 200, SITE_STANDS = 4;
+
+    /**
+     * The stall site probe (runs GZ / HB, 2026-11-01: the feet still 30-60 s, Baritone's search "stop TIME, best = the
+     * feet" every 2 s while the mod's goal had 7-20 standable cells 8-10 blocks away): what surrounds the feet, Baritone's
+     * break setting and tool strengths as its own CalculationContext reads them, and per goal part the cell, its stands
+     * (the same tests the goal was built from) with the block under each and lava or water beside, and the blocks on the
+     * eye's line to the cell. Read-only; behind debug.stepProbe. Rule 15: a part this fork cannot give is said so.
+     * Loader notes: Baritone's CalculationContext and ToolSet (the main jar, read-only), vanilla Level reads.
+     */
+    private static List<String> caveSiteLines(LocalPlayer p, IBaritone b, Caving cv, int[] me) {
+        List<String> out = new ArrayList<>();
+        var lv = p.level();
+        long t = Core.INSTANCE.tick();
+        StringBuilder around = new StringBuilder();
+        for (int dy = -1; dy <= 2; dy++) for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
+            String n = blockAt(lv, me[0] + dx, me[1] + dy, me[2] + dz);
+            if (n.equals("air")) continue;
+            if (around.length() > 0) around.append(", ");
+            around.append(dx).append(' ').append(dy).append(' ').append(dz).append(' ').append(n);
+        }
+        String lease;
+        try {
+            var cx = new baritone.pathing.movement.CalculationContext(b);
+            lease = "Baritone's context: allowBreak " + cx.allowBreak + ", breakBlockAdditionalCost " + cx.breakBlockAdditionalCost + " | fork lease " + baritone.process.RunLease.describe();
+        } catch (RuntimeException | LinkageError e) {
+            lease = "Baritone's context not readable from this fork: " + e;
+        }
+        out.add("t=" + t + " feet " + Jobs.fmt(me) + " | held " + (t - cv.holdSince) / 20 + " s | around the feet (dx dy dz, not air): "   // game fact: 20 ticks a second
+                + (around.length() == 0 ? "all air" : around) + " | " + lease);
+        List<baritone.api.pathing.goals.Goal> parts = cv.reach instanceof baritone.api.pathing.goals.GoalComposite gc ? List.of(gc.goals()) : cv.reach == null ? List.of() : List.of(cv.reach);
+        java.util.Set<String> kinds = new java.util.TreeSet<>();
+        int i = 0;
+        for (var g : parts) {
+            if (!(g instanceof baritone.api.pathing.goals.GoalReachBlock r)) continue;
+            int[] c = {r.x, r.y, r.z};
+            double d = Math.sqrt(sq(c[0] - me[0]) + sq(c[1] - me[1]) + sq(c[2] - me[2]));
+            List<String> ray = new ArrayList<>();                                   // the eye's line to the cell: the blocks it crosses
+            double fx = me[0] + 0.5, fy = me[1] + 1.62, fz = me[2] + 0.5, tx = c[0] + 0.5, ty = c[1] + 0.5, tz = c[2] + 0.5;   // game fact: eye height 1.62
+            int steps = (int) Math.ceil(d * 4) + 1;                                 // structural: 4 samples a block along the line
+            int lx = Integer.MIN_VALUE, ly = 0, lz = 0;
+            for (int s = 0; s <= steps; s++) {
+                double f = (double) s / steps;
+                int bx = (int) Math.floor(fx + (tx - fx) * f), by = (int) Math.floor(fy + (ty - fy) * f), bz = (int) Math.floor(fz + (tz - fz) * f);
+                if (bx == lx && by == ly && bz == lz) continue;
+                lx = bx; ly = by; lz = bz;
+                String n = blockAt(lv, bx, by, bz);
+                ray.add(n);
+                kinds.add(n);
+            }
+            StringBuilder st = new StringBuilder();
+            int stands = 0;
+            int rr = (int) Math.ceil(r.reach) + 1;
+            for (int dx = -rr; dx <= rr; dx++) for (int dz = -rr; dz <= rr; dz++) for (int dy = -rr - 3; dy <= rr; dy++) {   // structural: the goal's own cell box (eye height 1.62 rounds to 3 more below)
+                int sx = c[0] + dx, sy = c[1] + dy, sz = c[2] + dz;
+                if (!r.isInGoal(sx, sy, sz)) continue;
+                stands++;
+                if (stands <= SITE_STANDS) {
+                    if (st.length() > 0) st.append("; ");
+                    st.append(sx).append(' ').append(sy).append(' ').append(sz).append(" on ").append(blockAt(lv, sx, sy - 1, sz));
+                    String beside = fluidBeside(lv, sx, sy, sz);
+                    if (beside != null) st.append(" (").append(beside).append(")");
+                }
+            }
+            out.add("part " + i + ": cell " + Jobs.fmt(c) + " (" + Math.round(d) + " blocks away, chunk " + (lv.isLoaded(new BlockPos(c[0], c[1], c[2])) ? "loaded" : "NOT loaded")
+                    + ") | stands " + stands + (stands > SITE_STANDS ? " (first " + SITE_STANDS + ")" : "") + ": " + st + " | the eye's line to it: " + ProbeLines.runs(ray));
+            i++;
+        }
+        StringBuilder tools = new StringBuilder();                                 // Baritone's own tool strength per block kind on the lines
+        try {
+            var cx = new baritone.pathing.movement.CalculationContext(b);
+            for (String k : kinds) {
+                if (k.equals("air") || k.equals("unloaded") || k.contains(" (")) continue;
+                var block = BuiltInRegistries.BLOCK.get(net.minecraft.resources.ResourceLocation.withDefaultNamespace(k));
+                var state = block.defaultBlockState();
+                int slot = cx.toolSet.getBestSlot(block, false);
+                var item = p.getInventory().getItem(slot);
+                if (tools.length() > 0) tools.append(", ");
+                tools.append(k).append(": hardness ").append(state.getDestroySpeed(lv, BlockPos.ZERO)).append(", strength ").append(String.format(java.util.Locale.ROOT, "%.2f", cx.toolSet.getStrVsBlock(state)))
+                        .append(" with ").append(item.isEmpty() ? "the hand" : BuiltInRegistries.ITEM.getKey(item.getItem()).getPath()).append(" (hotbar ").append(slot + 1).append(")");
+            }
+        } catch (RuntimeException | LinkageError e) {
+            tools.append("not readable from this fork: ").append(e);
+        }
+        out.add("tools as Baritone's ToolSet reads them: " + (tools.length() == 0 ? "none (no block kind on the lines)" : tools));
+        return out;
+    }
+
+    private static double sq(double v) { return v * v; }
+
+    /** The block's short name at a cell, " (lava)" / " (water)" added for a fluid in a non-fluid block; "unloaded" when the chunk is not here. */
+    private static String blockAt(net.minecraft.world.level.Level lv, int x, int y, int z) {
+        BlockPos q = new BlockPos(x, y, z);
+        if (!lv.isLoaded(q)) return "unloaded";
+        String n = BuiltInRegistries.BLOCK.getKey(lv.getBlockState(q).getBlock()).getPath();
+        var fl = lv.getFluidState(q);
+        if (!fl.isEmpty() && !n.equals("water") && !n.equals("lava")) {
+            n = n + (BuiltInRegistries.FLUID.getKey(fl.getType()).getPath().contains("lava") ? " (lava)" : " (water)");
+        }
+        return n;
+    }
+
+    /** "lava beside" / "water beside": a fluid in one of the four horizontal neighbours, or under them, or under the cell; null when none. */
+    private static String fluidBeside(net.minecraft.world.level.Level lv, int x, int y, int z) {
+        String found = null;
+        for (int[] d : new int[][]{{1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}, {0, -1, 0}, {1, -1, 0}, {-1, -1, 0}, {0, -1, 1}, {0, -1, -1}}) {
+            BlockPos q = new BlockPos(x + d[0], y + d[1], z + d[2]);
+            if (!lv.isLoaded(q)) continue;
+            var fl = lv.getFluidState(q);
+            if (fl.isEmpty()) continue;
+            if (BuiltInRegistries.FLUID.getKey(fl.getType()).getPath().contains("lava")) return "lava beside";
+            found = "water beside";
+        }
+        return found;
     }
 
     private static void arrived(io.github.mojolowjo.entropybot.sense.Sightings sg, Caving cv, Step.Cave k, int[] me) {
