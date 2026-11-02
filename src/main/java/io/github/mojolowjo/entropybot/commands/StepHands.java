@@ -782,7 +782,7 @@ public final class StepHands implements Steps.Hands {
             default -> { }
         }
         lip = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.look(lip, Core.INSTANCE.tick(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(),
-                b.getPathingBehavior().getCurrent() != null, at, StepSignalsLive.exhausted(b));   // J6c run ET: only an exhausted search counts
+                b.getPathingBehavior().getCurrent() != null, at, StepSignalsLive.noWay(b));   // J6c run ET / run HB site1: an exhausted search, or a budget stop whose best stayed at the feet
         if (lip.state() == io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.State.FAILED) {
             String why = "the walk to the cave's lip at " + Jobs.fmt(at) + ": " + lip.why();
             lip = null;
@@ -943,7 +943,7 @@ public final class StepHands implements Steps.Hands {
                 arrived(sg, cv, k, me);
             } else {
                 cv.hold = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.look(cv.hold, Core.INSTANCE.tick(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(),
-                        b.getPathingBehavior().getCurrent() != null, io.github.mojolowjo.entropybot.cave.ExploreRules.NEVER_REACHED, StepSignalsLive.exhausted(b));   // J6c run ET: only an exhausted search counts
+                        b.getPathingBehavior().getCurrent() != null, io.github.mojolowjo.entropybot.cave.ExploreRules.NEVER_REACHED, StepSignalsLive.noWay(b));   // J6c run ET / run HB site1: an exhausted search, or a budget stop whose best stayed at the feet
                 if (cv.hold.state() == io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.State.FAILED) {
                     dropGoto(cv, cv.goalKey, cv.goalWhy, "the walk to it: " + cv.hold.why());
                     Jobs.cancel(b);
@@ -1122,8 +1122,8 @@ public final class StepHands implements Steps.Hands {
                 + " | hold " + (cv.hold == null ? "-" : cv.hold.state() + " " + cv.hold.why());
     }
 
-    /** structural: the site lines 5 s into a hold (ticks), then every 10 s; the stands said per part */
-    private static final int SITE_AFTER_TICKS = 100, SITE_EVERY_TICKS = 200, SITE_STANDS = 4;
+    /** structural: the site lines 5 s into a hold (ticks), then every 10 s; the stands said per part; the deepest drop counted */
+    private static final int SITE_AFTER_TICKS = 100, SITE_EVERY_TICKS = 200, SITE_STANDS = 4, SITE_DROP_MAX = 8;
 
     /**
      * The stall site probe (runs GZ / HB, 2026-11-01: the feet still 30-60 s, Baritone's search "stop TIME, best = the
@@ -1151,8 +1151,15 @@ public final class StepHands implements Steps.Hands {
         } catch (RuntimeException | LinkageError e) {
             lease = "Baritone's context not readable from this fork: " + e;
         }
+        StringBuilder drops = new StringBuilder();                                  // run HB site1: the feet stood at an edge each time - the drop at each side
+        for (int[] d : new int[][]{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+            int k = 0;
+            while (k < SITE_DROP_MAX && blockAt(lv, me[0] + d[0], me[1] - 1 - k, me[2] + d[1]).equals("air")) k++;
+            if (drops.length() > 0) drops.append(' ');
+            drops.append(k >= SITE_DROP_MAX ? SITE_DROP_MAX + "+" : String.valueOf(k));
+        }
         out.add("t=" + t + " feet " + Jobs.fmt(me) + " | held " + (t - cv.holdSince) / 20 + " s | around the feet (dx dy dz, not air): "   // game fact: 20 ticks a second
-                + (around.length() == 0 ? "all air" : around) + " | " + lease);
+                + (around.length() == 0 ? "all air" : around) + " | drop beside the feet (+x -x +z -z): " + drops + " | " + lease);
         List<baritone.api.pathing.goals.Goal> parts = cv.reach instanceof baritone.api.pathing.goals.GoalComposite gc ? List.of(gc.goals()) : cv.reach == null ? List.of() : List.of(cv.reach);
         java.util.Set<String> kinds = new java.util.TreeSet<>();
         int i = 0;

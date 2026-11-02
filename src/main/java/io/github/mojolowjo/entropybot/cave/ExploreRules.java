@@ -502,6 +502,16 @@ public final class ExploreRules {
         /** Ticks with no new best before a target fails (Tuning monitor.stallS x 20 ticks a second, a game fact). */
         public static long stallTicks() { return Math.round(20 * Tuning.get("monitor.stallS")); }
 
+        /**
+         * Run HB site1 (2026-11-01): a failed search found no way - the graph exhausted (run ET), or a budget stop whose best
+         * node stayed at the start feet (by Baritone's own weighting nothing it opened was nearer than where it stood: a drop,
+         * a cliff, a floor it never stands on between). A budget stop whose best moved is not known. Pure; the holds' one
+         * no-path fact (StepSignalsLive.noWay reads the fork's WalkCalc into it).
+         */
+        public static boolean noWay(boolean exhausted, boolean budget, boolean bestAtStart) {
+            return exhausted || (budget && bestAtStart);
+        }
+
         /** J6b item 5: the held target fails now ({@code why}: the no-break walk found no path); a REACHED or FAILED hold stays. */
         public static Held failNow(Held h, String why) {
             return h == null || h.state() != State.HELD ? h : with(h, h.best(), h.bestAt(), h.calcAtBest(), h.noPathFails(), State.FAILED, why);
@@ -532,9 +542,10 @@ public final class ExploreRules {
 
         /**
          * 0.39.z78 J6c run ET (rule 23 (2), one reader with the step monitor and item 14): as above; the failed searches fail
-         * the target only when the fork's last calc EXHAUSTED the graph ({@code exhausted}: ICustomGoalProcess.lastCalc;
-         * false: a CHUNKS, budget or other stop; null: no calc kept) - otherwise not known, the target stays held (the stall
-         * bound, monitor.stallS, still ends it).
+         * the target only when the fork's last calc found NO WAY ({@code exhausted}: StepSignalsLive.noWay - the graph
+         * exhausted, or, run HB site1 2026-11-01, a budget stop whose best node stayed at the start feet; false: a CHUNKS or
+         * other stop, a budget stop whose best moved; null: no calc kept) - otherwise not known, the target stays held (the
+         * stall bound, monitor.stallS, still ends it).
          */
         public static Held look(Held h, long now, int[] feet, long calcFailed, boolean executing, int[] cell, Boolean exhausted) {
             // (run EN: cell == NEVER_REACHED - withinReach reads no cell - the hold only fails or holds; its walk's goal decides arrival)

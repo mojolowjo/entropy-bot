@@ -1271,7 +1271,7 @@ final class Mining {
         }
         if (done == null && ex.target != null && ex.hold != null) {
             ex.hold = ExploreRules.TargetHold.look(ex.hold, now(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(), b != null && b.getPathingBehavior().getCurrent() != null,
-                    ex.aimed != null ? ex.aimCell : null, b == null ? null : StepSignalsLive.exhausted(b));   // run ED: an opening is reached within reach of its cell; J6c run ET: only an exhausted search counts
+                    ex.aimed != null ? ex.aimCell : null, b == null ? null : StepSignalsLive.noWay(b));   // run ED: an opening is reached within reach of its cell; J6c run ET / run HB site1: an exhausted search, or a budget stop whose best stayed at the feet
             // J6b item 5 (the owner: "when exploring it should not break blocks"): the walk is the fork's no-break walk; its
             // "no path (no-break walk)" fails the target at once - the explore picks the next one (said once, the failed line)
             // 569bb820 review (rule 15; job-vein a2d4e1c8): only an EXHAUSTED no-break search fails the target; a budget stop

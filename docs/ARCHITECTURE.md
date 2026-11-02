@@ -38,7 +38,12 @@ of the fork's `GoalReachBlock`s over unseen cells behind the frontier - since 20
 instead of one goal and one Baritone search a second (runs GP / GS). Arrival = Baritone's `isInGoal(feet)`; an arrival that
 saw nothing new drops the branch. `probe cave:` lines behind `debug.stepProbe` say each goal's parts and Baritone's state;
 `probe cave site:` lines (`StepHands.caveSiteLines`, 5 s into a held goal, then every 10 s) say the blocks around the feet,
-Baritone's own break setting and tool strengths, and per goal part its stands and the blocks on the eye's line to the cell.
+the drop at each side, Baritone's own break setting and tool strengths, and per goal part its stands and the blocks on the
+eye's line to the cell. A walk's goal is built over stands the mod judges (`LipGoals.standable`: feet and head open, solid
+under, no fluid) AND Baritone's own `MovementHelper.canWalkOn` / `canWalkThrough` (pointed dripstone is no floor to it). A
+held walk (`ExploreRules.TargetHold`, the explore target, the lip and the caving walk alike) fails after `monitor.noPathFails`
+failed searches that found no way (`StepSignalsLive.noWay`: the graph exhausted, or a budget stop whose best node stayed at
+the feet), else after `monitor.stallS` with no new best.
 
 ## Where the facts come from
 | Fact | Class | Game API or file |

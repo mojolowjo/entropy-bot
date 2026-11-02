@@ -60,13 +60,37 @@ public final class LipGoals {
         return r.getType() == net.minecraft.world.phys.HitResult.Type.MISS;
     }
 
-    /** A cell a player can stand in: its feet and head open (no collision), something solid under it, no fluid. */
+    /**
+     * A cell a player can stand in: its feet and head open (no collision), something solid under it, no fluid - AND a cell
+     * Baritone itself stands in (run HB site1, 2026-11-01: a branch goal's only stands were "on pointed_dripstone", a block
+     * the fork's MovementHelper.canWalkOn never takes (not a full cube), so Baritone's search failed on its budget with the
+     * feet as its best for 30 s; rule 2: the car picks the stand, so a stand it will not take is no stand). Baritone not
+     * loaded: the mod's test alone; an older fork without the reader: said once, the mod's test alone.
+     * Loader notes: the fork's MovementHelper.canWalkOn / canWalkThrough (the main jar, read-only; Baritone's settings read).
+     */
     static boolean standable(net.minecraft.world.level.Level lv, int x, int y, int z) {
         BlockPos f = new BlockPos(x, y, z), h = f.above(), u = f.below();
         if (!lv.isLoaded(f)) return false;
-        return lv.getBlockState(f).getCollisionShape(lv, f).isEmpty() && lv.getBlockState(h).getCollisionShape(lv, h).isEmpty()
-                && !lv.getBlockState(u).getCollisionShape(lv, u).isEmpty() && lv.getFluidState(f).isEmpty();
+        if (!(lv.getBlockState(f).getCollisionShape(lv, f).isEmpty() && lv.getBlockState(h).getCollisionShape(lv, h).isEmpty()
+                && !lv.getBlockState(u).getCollisionShape(lv, u).isEmpty() && lv.getFluidState(f).isEmpty())) return false;
+        var b = Jobs.baritone();
+        if (b == null) return true;
+        try {
+            var ctx = b.getPlayerContext();
+            return baritone.pathing.movement.MovementHelper.canWalkOn(ctx, u)
+                    && baritone.pathing.movement.MovementHelper.canWalkThrough(ctx, new baritone.api.utils.BetterBlockPos(x, y, z))
+                    && baritone.pathing.movement.MovementHelper.canWalkThrough(ctx, new baritone.api.utils.BetterBlockPos(x, y + 1, z));
+        } catch (RuntimeException | LinkageError e) {
+            if (!carStandWarned) {
+                carStandWarned = true;
+                LOG.warn("[entropybot] lip: Baritone's stand rule is not readable from this fork ({}); the mod's stand test alone from here on", e.toString());
+            }
+            return true;
+        }
     }
+
+    private static final org.slf4j.Logger LOG = com.mojang.logging.LogUtils.getLogger();
+    private static volatile boolean carStandWarned;
 
     /** structural: ticks an opening's snapshot answer is kept (a second) */
     private static final long KEEP_TICKS = 20;

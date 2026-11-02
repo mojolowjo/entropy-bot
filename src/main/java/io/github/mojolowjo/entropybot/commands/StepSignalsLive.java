@@ -98,6 +98,23 @@ public final class StepSignalsLive {
     }
 
     /**
+     * Run HB site1 (2026-11-01; round 15 GZ / HB: 8 held walks of 30 s each in 10 min, every one "calc FAILURE, stop TIME,
+     * best = the feet"): the walk's failed search found no way - the graph exhausted (run ET), OR it ran its failure budget
+     * out with its best node still the start feet: by Baritone's own weighting (AStarPathFinder bestSoFar, the first
+     * coefficient) not one of its ~38,000 nodes was nearer the goal than where it stood - a drop over 3, a cliff, a floor it
+     * never stands on (pointed dripstone) between. A budget stop whose best MOVED is still not known (run ET: a CHUNKS stop,
+     * a far goal). Null: no calc kept, or an older fork. The holds' one reader (rule 23).
+     */
+    static Boolean noWay(IBaritone b) {
+        try {
+            var c = b.getCustomGoalProcess().lastCalc();
+            return c == null ? null : io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.noWay(c.exhausted(), c.budget(), c.best() != null && c.best().equals(c.startFeet()));
+        } catch (LinkageError e) {
+            return null;
+        }
+    }
+
+    /**
      * The signals now. {@code notLoaded}: the hands' own rule-15 wait (the station fact not loaded), null: none;
      * {@code ownWait}: the step waits on its own clock (the furnace, the first-answer wait), null: none.
      */
