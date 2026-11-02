@@ -505,11 +505,15 @@ public final class ExploreRules {
         /**
          * Run HB site1 (2026-11-01): a failed search found no way - the graph exhausted (run ET), or a budget stop whose best
          * node stayed at the start feet (by Baritone's own weighting nothing it opened was nearer than where it stood: a drop,
-         * a cliff, a floor it never stands on between). A budget stop whose best moved is not known. Pure; the holds' one
+         * a cliff, a floor it never stands on between). Run HE (round 16, 2026-11-02 00:33-00:35, a park): a budget stop that
+         * REPEATS the one before it - the same start feet, the same goal, the same best node ({@code repeat}) - says nothing
+         * new: the search is deterministic from one spot over one world, so its second and third run from the same feet find
+         * the same best (15 of them in 30 s, best 3 m off, before "no new best for 30 s" ended each branch; five branches,
+         * stuck 40 s, parked). A budget stop whose best moved and that repeats nothing is not known. Pure; the holds' one
          * no-path fact (StepSignalsLive.noWay reads the fork's WalkCalc into it).
          */
-        public static boolean noWay(boolean exhausted, boolean budget, boolean bestAtStart) {
-            return exhausted || (budget && bestAtStart);
+        public static boolean noWay(boolean exhausted, boolean budget, boolean bestAtStart, boolean repeat) {
+            return exhausted || (budget && (bestAtStart || repeat));
         }
 
         /** J6b item 5: the held target fails now ({@code why}: the no-break walk found no path); a REACHED or FAILED hold stays. */

@@ -45,19 +45,27 @@ class J6bStallSiteTest {
     /**
      * Run HB site1 (8 held walks of 30 s each): the fork's failed search is a "no way" when the graph was exhausted (run ET), or
      * when a budget stop left its best node at the start feet; a budget stop whose best moved, a CHUNKS stop, or no calc kept
-     * is not known.
+     * is not known - unless (run HE, round 16, 2026-11-02: 15 identical failed searches in 30 s from -56 63 73, best -58 60 72,
+     * per branch; five branches, stuck 40 s, parked) the budget stop repeats the failed calc before it: the same start feet,
+     * goal and best node.
      */
     @Test
-    void noWay_isAnExhaustedGraph_orABudgetStopWhoseBestStayedAtTheFeet() {
-        // (exhausted, budget stop, best node = the start feet) as StepSignalsLive.noWay(IBaritone) reads them off the fork's WalkCalc
-        assertTrue(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.noWay(false, true, true), "HB 21:35:49: stop TIME, best = the feet");
-        assertFalse(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.noWay(false, true, false), "the best moved: not known (a far goal)");
-        assertFalse(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.noWay(false, false, true), "run ET: a CHUNKS stop is not known, best at the feet or not");
-        assertTrue(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.noWay(true, false, false), "the graph exhausted: no path, as before");
-        assertFalse(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.noWay(false, false, false), "GZ: the calc not this walk's (unknown stop, no best) - not known");
+    void noWay_isAnExhaustedGraph_orABudgetStopWhoseBestStayedAtTheFeet_orARepeatedBudgetStop() {
+        // (exhausted, budget stop, best node = the start feet, repeats the failed calc before) as StepSignalsLive.noWay(IBaritone) reads them off the fork's WalkCalc
+        assertTrue(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.noWay(false, true, true, false), "HB 21:35:49: stop TIME, best = the feet");
+        assertFalse(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.noWay(false, true, false, false), "the best moved, the first such search: not known (a far goal)");
+        assertTrue(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.noWay(false, true, false, true), "HE 00:33:10: stop TIME, best 3 m off, the same as the search before from the same feet: no way");
+        assertFalse(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.noWay(false, false, true, false), "run ET: a CHUNKS stop is not known, best at the feet or not");
+        assertFalse(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.noWay(false, false, false, true), "a repeated CHUNKS stop is still not known (the chunks may load)");
+        assertTrue(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.noWay(true, false, false, false), "the graph exhausted: no path, as before");
+        assertFalse(io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.noWay(false, false, false, false), "GZ: the calc not this walk's (unknown stop, no best) - not known");
         String src;
         try { src = Files.readString(Path.of("src/main/java/io/github/mojolowjo/entropybot/commands/StepSignalsLive.java")); } catch (IOException e) { throw new AssertionError(e); }
-        assertTrue(src.contains("return c == null ? null : io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.noWay(c.exhausted(), c.budget(), c.best() != null && c.best().equals(c.startFeet()));"), "no calc kept: null (not known); else the three facts off the WalkCalc");
+        assertTrue(src.contains("if (c == null) return null;"), "no calc kept: null (not known)");
+        assertTrue(src.contains("return io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.noWay(c.exhausted(), c.budget(), c.best() != null && c.best().equals(c.startFeet()), lastRepeat);"), "the four facts off the WalkCalc and the reader's memory");
+        assertTrue(src.contains("lastRepeat = p != null && c.budget() && p.budget() && java.util.Objects.equals(c.startFeet(), p.startFeet())"), "a repeat: both budget stops, the same start feet ...");
+        assertTrue(src.contains("&& java.util.Objects.equals(c.best(), p.best()) && java.util.Objects.equals(String.valueOf(c.goal()), String.valueOf(p.goal()));"), "... the same best node and the same goal");
+        assertTrue(src.contains("if (c != lastRead) {"), "judged once per new failed calc (the fork makes a new record per failure)");
     }
 
     /** The three holds (the explore target, the lip, the caving walk) read the one no-way fact; the stand test asks Baritone's own rule. */

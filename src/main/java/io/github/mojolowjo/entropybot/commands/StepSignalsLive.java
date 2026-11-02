@@ -103,16 +103,30 @@ public final class StepSignalsLive {
      * out with its best node still the start feet: by Baritone's own weighting (AStarPathFinder bestSoFar, the first
      * coefficient) not one of its ~38,000 nodes was nearer the goal than where it stood - a drop over 3, a cliff, a floor it
      * never stands on (pointed dripstone) between. A budget stop whose best MOVED is still not known (run ET: a CHUNKS stop,
-     * a far goal). Null: no calc kept, or an older fork. The holds' one reader (rule 23).
+     * a far goal) - unless it REPEATS the failed calc before it (run HE, round 16: the same start feet, the same goal, the
+     * same best node; 15 such in 30 s, each a new WalkCalc off a re-set goal): a search run again from the same spot over the
+     * same world finds the same best, so the repeat is this reader's no-way fact too. Null: no calc kept, or an older fork.
+     * The holds' one reader (rule 23); it keeps the last failed calc it read to see the repeat.
      */
     static Boolean noWay(IBaritone b) {
         try {
             var c = b.getCustomGoalProcess().lastCalc();
-            return c == null ? null : io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.noWay(c.exhausted(), c.budget(), c.best() != null && c.best().equals(c.startFeet()));
+            if (c == null) return null;
+            if (c != lastRead) {                                             // a new failed calc (the fork makes a new record per failure)
+                var p = lastRead;
+                lastRepeat = p != null && c.budget() && p.budget() && java.util.Objects.equals(c.startFeet(), p.startFeet())
+                        && java.util.Objects.equals(c.best(), p.best()) && java.util.Objects.equals(String.valueOf(c.goal()), String.valueOf(p.goal()));
+                lastRead = c;
+            }
+            return io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.noWay(c.exhausted(), c.budget(), c.best() != null && c.best().equals(c.startFeet()), lastRepeat);
         } catch (LinkageError e) {
             return null;
         }
     }
+
+    /** Run HE: the last failed calc this reader saw and whether it repeated the one before (see {@link #noWay}). */
+    private static baritone.api.process.ICustomGoalProcess.WalkCalc lastRead;
+    private static boolean lastRepeat;
 
     /**
      * The signals now. {@code notLoaded}: the hands' own rule-15 wait (the station fact not loaded), null: none;
