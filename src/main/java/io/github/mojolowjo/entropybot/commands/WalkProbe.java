@@ -267,7 +267,9 @@ public final class WalkProbe {
                 costSeen = cost;
                 placeSeen = place;
             }
-            LOG.info("[entropybot] probe unreachable: {}", ProbeLines.unreachable(from, at(goal), reason, failure, loaded, dc, dp));
+            // run HR: which rule refused the breaks (the cap, water, a falling block above...) - the hook's top reasons
+            LOG.info("[entropybot] probe unreachable: {}", ProbeLines.unreachable(from, at(goal), reason, failure, loaded, dc, dp,
+                    stats.topDenies(io.github.mojolowjo.entropybot.guard.PolicyStats.SITE_ASTAR_COST, 4)));
         } catch (RuntimeException | LinkageError e) {
             Quiet.warn("WalkProbe.unreachable: the line could not be read", e);
         }

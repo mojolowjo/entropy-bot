@@ -49,6 +49,14 @@ public final class PolicyStats {
 
     public long travelOverrides() { return allowedByTravel.values().stream().mapToLong(LongAdder::sum).sum(); }
 
+    /** Run HR (the walk probe): the top {@code n} refusal reasons at one site as "reason count", biggest first, the site prefix off. */
+    public List<String> topDenies(String site, int n) {
+        Map<String, LongAdder> m = new java.util.HashMap<>();
+        String pre = site + ": ";
+        for (var e : denies.entrySet()) if (e.getKey().startsWith(pre)) m.put(e.getKey().substring(pre.length()), e.getValue());
+        return top(m, n);
+    }
+
     /** The top n entries of a counter map as "key n", biggest first. */
     static List<String> top(Map<String, LongAdder> m, int n) {
         List<Map.Entry<String, Long>> es = new ArrayList<>();

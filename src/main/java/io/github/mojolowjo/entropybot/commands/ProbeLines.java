@@ -391,9 +391,19 @@ public final class ProbeLines {
      * one alone: the hook's counters are global).
      */
     public static String unreachable(int[] from, int[] goal, String reason, String failure, boolean goalChunkLoaded, long costDenies, long placeDenies) {
+        return unreachable(from, goal, reason, failure, goalChunkLoaded, costDenies, placeDenies, null);
+    }
+
+    /**
+     * Run HR (2026-11-02, 11 35 9: 9324 break refusals, best node the start, the reason unknown - the cap, water, a falling
+     * block above?): {@code breakReasons} - the hook's top break refusal reasons with their counts since the game started
+     * (PolicyStats; null: not read), so a search that found no step says WHICH rule refused the breaks.
+     */
+    public static String unreachable(int[] from, int[] goal, String reason, String failure, boolean goalChunkLoaded, long costDenies, long placeDenies, java.util.List<String> breakReasons) {
         return "from " + at(from) + " to " + at(goal) + " | " + reason
                 + " | " + (failure == null ? "no failure detail kept by the fork (segment, nodes and best node missing: IPricedPath.failure gave null)" : failure)
                 + " | goal chunk " + (goalChunkLoaded ? "loaded" : "NOT loaded")
-                + String.format(Locale.ROOT, " | cost hook refusals since the last probe line (all searches): break %d, place %d", costDenies, placeDenies);
+                + String.format(Locale.ROOT, " | cost hook refusals since the last probe line (all searches): break %d, place %d", costDenies, placeDenies)
+                + (breakReasons == null ? "" : " | break refusals by reason since start: " + (breakReasons.isEmpty() ? "none" : String.join("; ", breakReasons)));
     }
 }
