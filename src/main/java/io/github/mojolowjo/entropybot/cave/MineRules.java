@@ -391,6 +391,34 @@ public final class MineRules {
         return "stopped: stall: no progress for " + stallTicks() / 20 + " s mining " + shortId(target) + " at " + at + gains;  // game fact: 20 game ticks per second
     }
 
+    /**
+     * Run HD (round 16, 2026-11-02 00:09:51-00:16:46: the caving step's "mining the seen ore" ran Baritone's mine on iron its
+     * walk had failed to reach; the feet at -86 16 -101 for 7 min, the mine process active, the hands idle, no hold on that
+     * phase): a vein's progress clock. Progress is the feet on another cell, a block of the vein gone, or a break under way
+     * (the game's break stage 0-9); nothing of the three for {@code stallTicks} is the stall. The first look sets the clock.
+     * Pure (JUnit: J6bCaveProgressTest); the one reader is VeinMine.poll.
+     */
+    public static final class VeinWatch {
+        private long last = -1;
+        private int[] feet;
+        private int gone = -1;
+
+        /** True when nothing moved for {@code stallTicks} ticks: the feet, the gone count, no break stage. */
+        public boolean stalled(long now, int[] feetNow, int goneNow, int stage, long stallTicks) {
+            boolean moved = feet == null || feetNow == null || feet[0] != feetNow[0] || feet[1] != feetNow[1] || feet[2] != feetNow[2];   // structural: x y z
+            if (last < 0 || moved || goneNow != gone || stage >= 0) {
+                last = now;
+                feet = feetNow == null ? null : feetNow.clone();
+                gone = goneNow;
+                return false;
+            }
+            return now - last >= stallTicks;
+        }
+
+        /** Seconds since the last progress at {@code now}. */
+        public long quietS(long now) { return last < 0 ? 0 : (now - last) / 20; }   // game fact: 20 game ticks per second
+    }
+
     public static String noPickText(String target, String gains) {
         return "stopped: tool: I have no pickaxe left that can mine " + shortId(target) + gains;
     }

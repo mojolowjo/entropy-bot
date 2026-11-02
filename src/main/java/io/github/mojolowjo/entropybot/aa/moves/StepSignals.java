@@ -15,7 +15,8 @@ package io.github.mojolowjo.entropybot.aa.moves;
  *     known;</li>
  * <li>{@code destroyStage}: the game's break stage of the block being broken (0-9), -1: none; {@code placedCount}: blocks
  *     this client placed so far (a running count); {@code breakingCell}: "x y z" of that block (0.39.z71 review 1: a
- *     restart of the same block is no progress), null: not known; {@code exploredChunks}: the running explore's new chunks, -1: none;</li>
+ *     restart of the same block is no progress), null: not known; {@code exploredChunks}: the running explore's new chunks, or
+ *     (run HF, round 17) the caving step's cells seen - a count that rises as the step works, -1: none;</li>
  * <li>{@code ownWait}: the step waits on a timed game process that has its own watch (a furnace cooking: furnaceJobs'
  *     due time and stall watch), its words; null: none.</li>
  * <li>{@code noPathExhausted}: 0.39.z78 J6c run ET (rule 23 (2), one reader with item 14): the fork's last calc of the

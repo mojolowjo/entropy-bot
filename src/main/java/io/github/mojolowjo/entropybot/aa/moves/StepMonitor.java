@@ -21,7 +21,8 @@ import java.util.Locale;
  * <li>break stage: the block being broken reached a higher stage (a long strip between ores digs stone: each stage is
  *     progress, so 30 s never cuts a working tunnel);</li>
  * <li>placed: the client's placed-block count went up (a pillar, a build leg, a station);</li>
- * <li>explored: the running explore's new chunks went up.</li>
+ * <li>explored: the running explore's new chunks went up - or (run HF, round 17) the caving step's cells seen (its record's
+ *     count: the owner's rule, the step clears the cave; a step still seeing new cells is never a stall).</li>
  * </ul>
  * Verdicts ({@link Verdict}), each with its reason (rule 7): CONTINUE (what moved, the step's own wait, or "signals not
  * loaded: why" - rule 15, never REPLAN on unknown); COMPLETE (the step's done fact seen while its hands still run: the
@@ -257,7 +258,7 @@ public final class StepMonitor {
         if (sig.exploredChunks() >= 0) {
             if (bestChunks < 0 || sig.exploredChunks() < bestChunks) bestChunks = sig.exploredChunks();   // a new explore run started: its count is the start
             else if (sig.exploredChunks() > bestChunks) {
-                moved.add("explored " + (sig.exploredChunks() - bestChunks) + " new chunk(s)");
+                moved.add("explored " + (sig.exploredChunks() - bestChunks) + " new chunk(s) / cave cell(s)");     // run HF: the caving step's cells seen ride this signal
                 bestChunks = sig.exploredChunks();
                 chunksAt = now;
             }

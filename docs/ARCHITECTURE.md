@@ -44,7 +44,12 @@ under, no fluid) AND Baritone's own `MovementHelper.canWalkOn` / `canWalkThrough
 held walk (`ExploreRules.TargetHold`, the explore target, the lip and the caving walk alike) fails after `monitor.noPathFails`
 failed searches that found no way (`StepSignalsLive.noWay`: the graph exhausted, a budget stop whose best node stayed at
 the feet, or a budget stop that repeats the failed calc before it - the same start feet, goal and best node; the reader keeps
-the last failed calc it read), else after `monitor.stallS` with no new best.
+the last failed calc it read), else after `monitor.stallS` with no new best. The step monitor's progress signal for the
+caving step is its record's cells seen (`StepHands.caveSeen` into `StepSignalsLive.read`, the explore's chunk slot): the owner's
+rule (2026-11-02) is that the step clears the cave and notes every ore it sees, never leaving early on a poor count; the
+10-minute cap (`Step.Cave.minutes`) is the safety net. A seen ore's vein mine (`VeinMine`) has its own no-progress clock
+(`MineRules.VeinWatch`: the feet, the vein's gone count, a break stage; `monitor.stallS`), so an ore Baritone cannot reach is
+left out of the step after 30 s. A place-near failure says its site (`StepHands.placeSiteProbe`, behind `debug.stepProbe`).
 
 ## Where the facts come from
 | Fact | Class | Game API or file |

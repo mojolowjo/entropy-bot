@@ -130,9 +130,13 @@ public final class StepSignalsLive {
 
     /**
      * The signals now. {@code notLoaded}: the hands' own rule-15 wait (the station fact not loaded), null: none;
-     * {@code ownWait}: the step waits on its own clock (the furnace, the first-answer wait), null: none.
+     * {@code ownWait}: the step waits on its own clock (the furnace, the first-answer wait), null: none;
+     * {@code caveSeen}: run HF (round 17, 2026-11-02: the caving step in the cave 44 62 40 ended "no progress 30 s" at 3.5 min
+     * while it walked branch to branch and saw new cells the whole time - the feet never got farther from the start and the
+     * goal changed every few seconds): the caving step's cells seen (its record's count), the monitor's explored signal for
+     * it as an explore's chunks are; -1: not a caving step.
      */
-    StepSignals read(String notLoaded, String ownWait) {
+    StepSignals read(String notLoaded, String ownWait, int caveSeen) {
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null) return StepSignals.notLoaded("no player");
         if (notLoaded != null) return StepSignals.notLoaded(notLoaded);
@@ -149,6 +153,6 @@ public final class StepSignalsLive {
         String cell = ds >= 0 && Minecraft.getInstance().hitResult instanceof net.minecraft.world.phys.BlockHitResult bh ? Jobs.fmt(new int[]{bh.getBlockPos().getX(), bh.getBlockPos().getY(), bh.getBlockPos().getZ()}) : null;
         int made = outWord == null ? -1 : Math.max(0, count(Gui.inventory(p), outWord) - outBase);
         return new StepSignals(true, null, f, d, g == null ? null : String.valueOf(g), in, b.getPathingBehavior().getCurrent() != null, b.getPathingBehavior().getInProgress().isPresent(),
-                io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(), made, ds, cell, placed, explores ? Mining.get().exploredChunks() : -1, ownWait, exhausted(b));
+                io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed(), made, ds, cell, placed, explores ? Mining.get().exploredChunks() : caveSeen, ownWait, exhausted(b));
     }
 }

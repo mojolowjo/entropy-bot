@@ -273,7 +273,21 @@ public final class StepHands implements Steps.Hands {
     @Override public io.github.mojolowjo.entropybot.aa.moves.StepSignals signals(Step s) {
         if (s != step) return io.github.mojolowjo.entropybot.aa.moves.StepSignals.notLoaded("not the running step");
         String nl = dataWait.waiting() ? "the station fact is not loaded yet (the step waits for it)" : null;
-        return live.read(nl, ownWait(s));
+        return live.read(nl, ownWait(s), caveSeen(s));
+    }
+
+    /**
+     * Run HF (round 17, 2026-11-02; the owner: the step clears the cave, it never leaves early on a poor count): the caving
+     * step's progress for the monitor is its record's cells seen (the one feeder, Sightings.caveStood), read as an explore's
+     * chunks are - a step that still sees new cells is working, a step that sees none for monitor.stallS is not. -1: not the
+     * caving step, or no record (rule 15: the monitor then reads the other signals as before).
+     */
+    private int caveSeen(Step s) {
+        Caving cv = caving;
+        if (!(s instanceof Step.Cave k) || cv == null) return -1;
+        var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
+        var f = sg == null ? null : sg.caveFacts(cv.dim, k.x(), k.y(), k.z());
+        return f == null ? -1 : f.cellCount() - f.unseen();
     }
 
     /**
@@ -696,7 +710,7 @@ public final class StepHands implements Steps.Hands {
 
     private Car.Status veinStatus(LocalPlayer p, Step.MineAt m) {
         if (vein == null) return Car.Status.failed("the vein step has no state");
-        Car.Status st = vein.poll(p.level());
+        Car.Status st = vein.poll(p);
         if (st.state() != Car.State.RUNNING) vein = null;
         return st;
     }
@@ -911,7 +925,7 @@ public final class StepHands implements Steps.Hands {
         IBaritone b = Jobs.baritone();
         if (b == null) return caveEnd(io.github.mojolowjo.entropybot.cave.CaveWalk.End.NO_PROGRESS, "baritone not loaded");
         if (cv.vein != null) {
-            Car.Status st = cv.vein.poll(p.level());
+            Car.Status st = cv.vein.poll(p);                                   // run HD: the vein's own no-progress clock ends a mine on an ore Baritone cannot reach
             if (st.state() == Car.State.RUNNING) return Car.Status.running("caving: mining the seen ore (" + cv.mined + " of " + k.n() + ")");
             // the step's own count of its vein; the record hears every broken ore from ChunkPass.blockChanged (run ER: the
             // one reader, rule 23 (2) - a capped list never decides what the record knows)
@@ -2255,7 +2269,44 @@ public final class StepHands implements Steps.Hands {
         // 0.39.z60 item 3 (run R 03:52:52: the order stopped on "no cell within 3 blocks" with no re-plan): a typed fact, so
         // the order is planned again on the facts of now (rule 7) instead of parked
         io.github.mojolowjo.entropybot.aa.moves.FactChange.placeFailed(n.item(), r.why(), Jobs.here(p));   // 0.39.z67 item 1: where it failed
+        placeSiteProbe(p, n.item(), r.why());
         return "error: " + r.why();
+    }
+
+    /**
+     * Round 17 (2026-11-02; runs HF 01:10:09 and 01:14:56, HG 01:37:02, HH 01:56:03 and 02:13:13: two to four table placements
+     * failed per run, a minute of re-plan and walk each; the fork's ends "cannot reach: no stand spot beside any of the 1 free
+     * cells", "no cell within 3 blocks; none to clear either", "no cell with room" - at y 62 on the surface as under ground):
+     * what the site is at a place-near failure, behind debug.stepProbe, from the one world read the fork's own pick makes
+     * (LegRules: empty = replaceable and dry, a solid top = face sturdy up). Said, not fixed: the fix waits for the site
+     * (to-do/cave-walk-probe.md item 3).
+     */
+    private static void placeSiteProbe(LocalPlayer p, String item, String why) {
+        if (!StepProbe.on()) return;
+        var level = p.level();
+        int[] me = Jobs.here(p);
+        int r = Tuning.i("steps.placeNearR");
+        int cells = 0, free = 0, empty = 0, wet = 0, solid = 0, soft = 0;
+        for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) {
+            if (dx * dx + dz * dz > r * r) continue;
+            for (int dy = -1; dy <= 1; dy++) {                                           // structural: the fork's pick scans dy -1..1
+                BlockPos q = new BlockPos(me[0] + dx, me[1] + dy, me[2] + dz);
+                cells++;
+                var s = level.getBlockState(q);
+                boolean e = s.canBeReplaced() && s.getFluidState().isEmpty();
+                if (!s.getFluidState().isEmpty()) wet++;
+                else if (e) empty++;
+                else if (s.isFaceSturdy(level, q, net.minecraft.core.Direction.UP)) solid++;
+                else soft++;
+                var a = level.getBlockState(q.above());
+                if (e && a.canBeReplaced() && a.getFluidState().isEmpty() && level.getBlockState(q.below()).isFaceSturdy(level, q.below(), net.minecraft.core.Direction.UP)) free++;
+            }
+        }
+        BlockPos feet = new BlockPos(me[0], me[1], me[2]);
+        String in = BuiltInRegistries.BLOCK.getKey(level.getBlockState(feet).getBlock()).getPath();
+        String under = BuiltInRegistries.BLOCK.getKey(level.getBlockState(feet.below()).getBlock()).getPath();
+        LOG.info("[entropybot] probe place site: t={} feet {} in {} on {} sky {} | within {} (dy -1..1): {} cells: {} empty, {} wet, {} solid-topped, {} soft (leaves, slabs, plants); {} free (empty, empty above, solid under) | place {}: {}",
+                Core.INSTANCE.tick(), Jobs.fmt(me), in, under, level.canSeeSky(feet) ? "open" : "covered", r, cells, empty, wet, solid, soft, free, item.replaceFirst("^minecraft:", ""), why);
     }
 
     /**
@@ -2313,6 +2364,7 @@ public final class StepHands implements Steps.Hands {
             LocalPlayer pl = Minecraft.getInstance().player;
             // 0.39.z60 item 3: re-plan, never park; 0.39.z67 item 1: the fact names where it failed (null player: the plain fact)
             io.github.mojolowjo.entropybot.aa.moves.FactChange.placeFailed(n.item(), r.why(), pl == null ? null : Jobs.here(pl));
+            if (pl != null) placeSiteProbe(pl, n.item(), r.why());
             return Car.Status.failed(r.why());
         }
         return Car.Status.running(r.why());

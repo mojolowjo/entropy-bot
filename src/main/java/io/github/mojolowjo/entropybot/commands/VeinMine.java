@@ -85,8 +85,17 @@ final class VeinMine {
         return null;
     }
 
-    /** RUNNING while cells remain and Baritone mines, DONE when none holds its block any more, FAILED with the reason. */
-    Car.Status poll(Level level) {
+    /** Run HD: the vein's progress clock (MineRules.VeinWatch) - the feet, the gone count, a break under way. */
+    private final io.github.mojolowjo.entropybot.cave.MineRules.VeinWatch watch = new io.github.mojolowjo.entropybot.cave.MineRules.VeinWatch();
+
+    /**
+     * RUNNING while cells remain and Baritone mines, DONE when none holds its block any more, FAILED with the reason - the
+     * time limit, Baritone's process ended, or (run HD, round 16: 7 min on an ore the walk could not reach, the mine process
+     * active, the hands idle) no progress for monitor.stallS: the feet on the same cell, no block of the vein gone, no break
+     * under way (StepSignalsLive.destroyStage, the one stage read).
+     */
+    Car.Status poll(LocalPlayer p) {
+        Level level = p.level();
         int gone = 0;
         Map<String, Integer> now = new LinkedHashMap<>();
         for (int i = 0; i < cells.size(); i++) {
@@ -118,6 +127,13 @@ final class VeinMine {
         if (!b.getMineProcess().isActive() && !Core.INSTANCE.reflexes.hold()) {
             stop();
             return Car.Status.failed(label + ": Baritone's mine process ended with " + (total - gone) + " of " + total + " vein blocks left (none it could reach)");
+        }
+        int[] feet = Jobs.here(p);
+        long tick = Core.INSTANCE.tick();
+        if (!Core.INSTANCE.reflexes.hold() && watch.stalled(tick, feet, gone, StepSignalsLive.destroyStage(p), Math.round(20 * Tuning.get("monitor.stallS")))) {   // game fact: 20 game ticks per second
+            stop();
+            return Car.Status.failed(label + ": no progress for " + watch.quietS(tick) + " s: the feet still at " + Jobs.fmt(feet) + ", none of the " + (total - gone)
+                    + " vein blocks left gone, no break under way (Baritone's mine process active)");
         }
         return Car.Status.running(label + ": " + gone + " of " + total);
     }
@@ -170,7 +186,7 @@ final class VeinMine {
             seq.setStatus(v.label);
             return "wait";
         }
-        Car.Status s = v.poll(p.level());
+        Car.Status s = v.poll(p);
         switch (s.state()) {
             case RUNNING -> { return "wait"; }
             case DONE -> {
