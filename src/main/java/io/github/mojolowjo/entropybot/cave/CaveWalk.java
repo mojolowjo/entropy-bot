@@ -96,6 +96,25 @@ public final class CaveWalk {
      */
     public static final int REACH_CELLS = 4; // structural: a 2 x 2 tunnel's mouth, the build's cost on the game thread
 
+    /** Churn fix: the reach goals built for one branch goal at most (far cells that no stand sees cost a build each). */
+    public static final int REACH_TRIES = 8; // structural: twice REACH_CELLS - the far end tried, the near edge still reachable
+
+    /** Churn fix: the far flood's cell cap per layer of cave.farDepth (a 4 x 4 passage's layer). */
+    public static final int FAR_CELLS_PER_LAYER = 16; // structural: a passage's cross-section
+
+    /**
+     * Churn fix (runs GP / GS 2026-11-01: 287 and 296 goals in 4.5 caving minutes, each the branch's near edge): the cells a
+     * branch goal is built over, in the order tried - the far end first ({@code far}, deepest first, from CaveRecord#farBehind),
+     * then the near cells ({@code near}, the goto's own), no cell twice. Pure.
+     */
+    public static List<int[]> farThenNear(List<int[]> far, List<int[]> near) {
+        List<int[]> out = new java.util.ArrayList<>();
+        java.util.Set<Long> had = new java.util.HashSet<>();
+        for (List<int[]> l : List.of(far == null ? List.<int[]>of() : far, near == null ? List.<int[]>of() : near))
+            for (int[] c : l) if (had.add(Sightings.cell(c[0], c[1], c[2]))) out.add(c);
+        return out;
+    }
+
     /**
      * d0682da0 review (rule 17: seen is what is seen): of a composite goal's parts ({@code parts}, each the reach goal of
      * {@code cells}' cell at the same index), the cells whose OWN reach goal holds the feet - in reach and in sight from

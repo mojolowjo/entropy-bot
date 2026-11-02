@@ -919,6 +919,7 @@ strip.areaMinFaces	100.0
 strip.freshStartBlocks	48.0
 strip.areaMinFactor	0.5
 cave.exploreMinutes	10.0
+cave.farDepth	16.0
 pricedPath.on	1.0
 pricedPath.keepTicks	1200.0
 pricedPath.maxSegments	16.0

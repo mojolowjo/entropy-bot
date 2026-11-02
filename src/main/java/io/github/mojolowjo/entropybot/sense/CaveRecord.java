@@ -568,6 +568,43 @@ public final class CaveRecord {
     }
 
     /**
+     * Churn fix (runs GP / GS 2026-11-01: 287 and 296 branch goals in 4.5 caving minutes, one Baritone search a second, the
+     * goal being the branch's near edge - {@link #behind} stops at BRANCH_MIN + 1 cells, two or three blocks in, so the
+     * walk "arrives" after a step and the rest of the same branch is the next goal): the far end of ONE branch, read once
+     * per goal. A breadth-first flood from {@code seeds} (the branch's unseen cells) through unseen cells of the volume,
+     * {@code depth} layers at most, {@code cap} cells at most; the cells returned deepest layer first (then the layer
+     * before, and so on), the seeds last. Empty seeds or none unseen: empty. A walk to the deepest cells carries the bot
+     * through the branch, and its sight on the way sees the layers between. Pure on the record's sets; touched counted.
+     */
+    public List<int[]> farBehind(List<Long> seeds, int depth, int cap) {
+        if (seeds == null || seeds.isEmpty() || depth <= 0 || cap <= 0) return List.of();
+        java.util.LinkedHashSet<Long> got = new java.util.LinkedHashSet<>();
+        List<List<Long>> layers = new ArrayList<>();
+        List<Long> layer = new ArrayList<>();
+        for (long s : seeds) if (cells.contains(s) && !seen.contains(s) && got.add(s)) layer.add(s);
+        if (layer.isEmpty()) return List.of();
+        layers.add(layer);
+        for (int d = 1; d < depth && got.size() < cap; d++) {
+            List<Long> next = new ArrayList<>();
+            for (long c : layer) {
+                touched++;
+                int[] p = Sightings.cellOf(c);
+                for (int[] o : SIX) {
+                    long n = Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2]);
+                    if (cells.contains(n) && !seen.contains(n) && got.add(n)) { next.add(n); if (got.size() >= cap) break; }
+                }
+                if (got.size() >= cap) break;
+            }
+            if (next.isEmpty()) break;
+            layers.add(next);
+            layer = next;
+        }
+        List<int[]> out = new ArrayList<>(got.size());
+        for (int i = layers.size() - 1; i >= 0; i--) for (long c : layers.get(i)) out.add(Sightings.cellOf(c));
+        return out;
+    }
+
+    /**
      * THE done reader (rule 23 (2); run EK 02:24:18: the step's own "no branch" fall-through ended a cave it had seen
      * nothing of): loaded - something of the volume seen and no frontier group with more than BRANCH_MIN unseen cells
      * behind; not loaded - the last measure.

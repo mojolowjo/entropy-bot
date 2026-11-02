@@ -27,6 +27,17 @@ while AA is on. AA's own chain is named in `AaRuntime.CHAIN`; only AA starts and
    reason) is a `FactChange` the brain re-plans on.
 5. Files under `<game dir>/entropybot/aa/`: the snapshot and decision logs; `aa-debug.log` for `aa debug want`.
 
+### Caves (J6 / J6b, 0.39.z78)
+Caves are known by rays like ore: `sense/CaveIndex` (the air volumes per world, in the one store), credits from the sight
+rays, `aa cave list|yes|no|check`. A known cave is one way to an ore for the planner (`NeedChain.caveAlts`, the yield from
+world-gen data). Its step is `Step.Cave`, run by `StepHands.caveStatus` / `caveMove`: `sense/CaveRecord` holds the cave's
+cells, what is seen, the frontier groups (branches), the ore seen and mined; `cave/CaveWalk.next` picks the move (mine a seen
+ore in reach, walk to a seen ore, walk to the nearest branch, else the record's end). A branch's goal is a `GoalComposite`
+of the fork's `GoalReachBlock`s over unseen cells behind the frontier - since 2026-11-01 the FAR end of the branch first
+(`CaveRecord.farBehind`, `cave.farDepth` layers), the near cells after, so one walk carries the bot through the branch
+instead of one goal and one Baritone search a second (runs GP / GS). Arrival = Baritone's `isInGoal(feet)`; an arrival that
+saw nothing new drops the branch. `probe cave:` lines behind `debug.stepProbe` say each goal's parts and Baritone's state.
+
 ## Where the facts come from
 | Fact | Class | Game API or file |
 |---|---|---|

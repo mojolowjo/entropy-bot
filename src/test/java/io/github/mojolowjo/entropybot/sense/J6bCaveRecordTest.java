@@ -56,6 +56,31 @@ class J6bCaveRecordTest {
         assertFalse(k.done(), "40 cells behind each branch: more than BRANCH_MIN");
     }
 
+    /**
+     * Churn fix (runs GP / GS 2026-11-01): the far end of a branch - the flood behind the branch's seeds, deepest first; the
+     * trunk is a one-cell tube, so each layer is one cell and the depth reads plainly. Capped by cells; no unseen seed: empty.
+     */
+    @Test
+    void farBehind_isTheDeepestCellsFirst_depthAndCapHold_theNearCellsComeAfter() {
+        Sightings s = store();
+        s.caveStood(D, 0, 40, 0, 0, 40, 0, 10);
+        CaveRecord.Group g = s.caveFrontier(D, 0, 40, 0).get(0);
+        int s0 = CaveRecord.SEE_STEPS;
+        assertEquals(CaveRecord.BRANCH_MIN + 1, g.unseen().size(), "the seeds: the cells behind, capped");
+        List<int[]> far = s.caveFarBehind(D, 0, 40, 0, g.unseen(), 16, 16 * 16);
+        assertEquals(CaveRecord.BRANCH_MIN + 1 + 15, far.size(), "the seeds' layer plus 15 more layers of one cell each");
+        assertEquals(s0 + CaveRecord.BRANCH_MIN + 1 + 15, far.get(0)[0], "the deepest cell first");
+        int last = far.get(far.size() - 1)[0];
+        assertTrue(last >= s0 + 1 && last <= s0 + CaveRecord.BRANCH_MIN + 1, "the seeds' own layer comes last (within a layer: the flood's order), got x " + last);
+        assertEquals(12, s.caveFarBehind(D, 0, 40, 0, g.unseen(), 16, 12).size(), "the cap holds");
+        assertTrue(s.caveFarBehind(D, 0, 40, 0, List.of(Sightings.cell(1, 40, 0)), 16, 100).isEmpty(), "a seen seed floods nothing");
+        List<int[]> near = List.of(new int[]{s0 + 1, 40, 0}, new int[]{s0 + 2, 40, 0});
+        List<int[]> order = io.github.mojolowjo.entropybot.cave.CaveWalk.farThenNear(far, near);
+        assertEquals(far.size(), order.size(), "the near cells are already in the far list: no cell twice");
+        assertEquals(far.get(0)[0], order.get(0)[0]);
+        assertEquals(3, io.github.mojolowjo.entropybot.cave.CaveWalk.farThenNear(List.of(new int[]{99, 40, 0}), near).size(), "far first, then the near cells");
+    }
+
     @Test
     void oreSeenIsLeft_minedIsMined_theYieldIsMeasuredAfterTheFirstWalk() {
         Sightings s = store();

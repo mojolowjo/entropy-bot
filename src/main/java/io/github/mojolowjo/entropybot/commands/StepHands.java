@@ -999,8 +999,23 @@ public final class StepHands implements Steps.Hands {
                 List<baritone.api.pathing.goals.Goal> parts = new ArrayList<>();
                 List<int[]> partCells = new ArrayList<>();
                 List<io.github.mojolowjo.entropybot.cave.ExploreRules.LipGoal> partGoals = new ArrayList<>();
-                int stands = 0;
-                for (int[] c : g.cells()) {
+                int stands = 0, tried = 0, farCount = 0;
+                // churn fix (runs GP / GS: one goal and one Baritone search a second, the goal the branch's near edge): a branch's
+                // goal spans the FAR end of what lies behind it (CaveRecord.farBehind, deepest first, cave.farDepth layers), the
+                // near cells after - the first REACH_CELLS a stand sees, at most REACH_TRIES built (the build's cost); nearer
+                // cells only when no stand sees the far ones. Baritone still picks the stand and the path (rule 2).
+                List<int[]> candidates = g.cells();
+                if (g.branch()) {
+                    List<Long> seeds = new ArrayList<>();
+                    for (int[] c : g.cells()) seeds.add(io.github.mojolowjo.entropybot.sense.Sightings.cell(c[0], c[1], c[2]));
+                    int depth = Tuning.i("cave.farDepth");
+                    List<int[]> far = sg.caveFarBehind(cv.dim, k.x(), k.y(), k.z(), seeds, depth, depth * io.github.mojolowjo.entropybot.cave.CaveWalk.FAR_CELLS_PER_LAYER);
+                    candidates = io.github.mojolowjo.entropybot.cave.CaveWalk.farThenNear(far, g.cells());
+                    farCount = candidates.size() - g.cells().size();
+                }
+                for (int[] c : candidates) {
+                    if (parts.size() >= io.github.mojolowjo.entropybot.cave.CaveWalk.REACH_CELLS || tried >= io.github.mojolowjo.entropybot.cave.CaveWalk.REACH_TRIES) break;
+                    tried++;
                     var r = new baritone.api.pathing.goals.GoalReachBlock(new BlockPos(c[0], c[1], c[2]), io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH, 1.62,   // game fact: eye height 1.62
                             (x, y, z) -> standable(p.level(), x, y, z), (x, y, z) -> seesCell(p, x, y, z, c));
                     if (r.isEmpty()) continue;
@@ -1036,12 +1051,12 @@ public final class StepHands implements Steps.Hands {
                     // reads as geometry (few stands) or as pathing (stands, yet no calc)
                     StringBuilder per = new StringBuilder();
                     for (int i = 0; i < parts.size(); i++) per.append(i == 0 ? "" : ", ").append(Jobs.fmt(partCells.get(i))).append(" x").append(((baritone.api.pathing.goals.GoalReachBlock) parts.get(i)).size());
-                    LOG.info("[entropybot] probe cave: t={} feet {} | goto {} at {} ({} cells, branch {}) | parts {} of {} kept: {} | before the goal: {}",
-                            Core.INSTANCE.tick(), Jobs.fmt(me), g.why(), Jobs.fmt(g.cell()), g.cells().size(), g.branch(), parts.size(), g.cells().size(), per, caveHoldLine(b, cv, me));
+                    LOG.info("[entropybot] probe cave: t={} feet {} | goto {} at {} ({} near cells, {} far, branch {}) | parts {} of {} tried kept: {} | before the goal: {}",
+                            Core.INSTANCE.tick(), Jobs.fmt(me), g.why(), Jobs.fmt(g.cell()), g.cells().size(), farCount, g.branch(), parts.size(), tried, per, caveHoldLine(b, cv, me));
                 }
                 b.getCustomGoalProcess().setGoalAndPath(cv.reach);
                 cv.goalAt = Core.INSTANCE.tick();
-                LOG.info("[entropybot] cave: to {} - the reach goal over {} cell(s): {} standable cells in reach and sight ({} of {} ore mined)", g.why(), parts.size(), stands, cv.mined, k.n());
+                LOG.info("[entropybot] cave: to {} - the reach goal over {} cell(s) of {} tried ({} far behind it): {} standable cells in reach and sight ({} of {} ore mined)", g.why(), parts.size(), tried, farCount, stands, cv.mined, k.n());
                 return Car.Status.running("caving: walking to " + g.why());
             }
         }

@@ -220,6 +220,12 @@ public final class Sightings {
     }
 
     /** The ore cells of {@code family} seen in the known cave at x y z and not mined. */
+    /** Churn fix 2026-11-01: the far end of one branch (CaveRecord#farBehind), deepest cells first; no record: empty. */
+    public synchronized List<int[]> caveFarBehind(String dim, int x, int y, int z, List<Long> seeds, int depth, int cap) {
+        CaveRecord r = rec(dim, x, y, z);
+        return r == null ? List.of() : r.farBehind(seeds, depth, cap);
+    }
+
     public synchronized List<int[]> caveLeft(String dim, int x, int y, int z, String family) {
         CaveRecord r = rec(dim, x, y, z);
         return r == null ? List.of() : r.left(family);
