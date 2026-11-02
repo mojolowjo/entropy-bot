@@ -1038,6 +1038,7 @@ public final class StepHands implements Steps.Hands {
                     candidates = io.github.mojolowjo.entropybot.cave.CaveWalk.farThenNear(far, g.cells());
                     farCount = candidates.size() - g.cells().size();
                 }
+                int carNo0 = LipGoals.CAR_SAID_NO.get();                            // run HB site3 probe: the car's stand refusals this build
                 for (int[] c : candidates) {
                     if (parts.size() >= io.github.mojolowjo.entropybot.cave.CaveWalk.REACH_CELLS || tried >= io.github.mojolowjo.entropybot.cave.CaveWalk.REACH_TRIES) break;
                     tried++;
@@ -1049,10 +1050,11 @@ public final class StepHands implements Steps.Hands {
                     partGoals.add(lipGoalOf(r));
                     stands += r.size();
                 }
+                String carNo = StepProbe.on() ? " (the car refused " + (LipGoals.CAR_SAID_NO.get() - carNo0) + " stand(s) the mod's test took)" : "";   // run HB site3 probe
                 if (parts.isEmpty()) {
                     // fc (cause 3): a branch whose goal over the unseen cells behind it is empty - dropped once, said so
-                    dropGoto(cv, g.key(), g.why(), g.branch() ? io.github.mojolowjo.entropybot.cave.CaveWalk.noStandSees(g.cells().size())
-                            : "no standable cell within reach and sight of its " + g.cells().size() + " cell(s)");
+                    dropGoto(cv, g.key(), g.why(), (g.branch() ? io.github.mojolowjo.entropybot.cave.CaveWalk.noStandSees(g.cells().size())
+                            : "no standable cell within reach and sight of its " + g.cells().size() + " cell(s)") + carNo);
                     return null;                                                         // the next one, this tick
                 }
                 cv.goal = g.cell().clone();
@@ -1083,7 +1085,7 @@ public final class StepHands implements Steps.Hands {
                 cv.goalAt = Core.INSTANCE.tick();
                 cv.holdSince = cv.goalAt;
                 cv.siteAt = -1;
-                LOG.info("[entropybot] cave: to {} - the reach goal over {} cell(s) of {} tried ({} far behind it): {} standable cells in reach and sight ({} of {} ore mined)", g.why(), parts.size(), tried, farCount, stands, cv.mined, k.n());
+                LOG.info("[entropybot] cave: to {} - the reach goal over {} cell(s) of {} tried ({} far behind it): {} standable cells in reach and sight ({} of {} ore mined){}", g.why(), parts.size(), tried, farCount, stands, cv.mined, k.n(), carNo);
                 return Car.Status.running("caving: walking to " + g.why());
             }
         }

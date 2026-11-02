@@ -77,9 +77,11 @@ public final class LipGoals {
         if (b == null) return true;
         try {
             var ctx = b.getPlayerContext();
-            return baritone.pathing.movement.MovementHelper.canWalkOn(ctx, u)
+            boolean car = baritone.pathing.movement.MovementHelper.canWalkOn(ctx, u)
                     && baritone.pathing.movement.MovementHelper.canWalkThrough(ctx, new baritone.api.utils.BetterBlockPos(x, y, z))
                     && baritone.pathing.movement.MovementHelper.canWalkThrough(ctx, new baritone.api.utils.BetterBlockPos(x, y + 1, z));
+            if (!car) CAR_SAID_NO.incrementAndGet();                           // run HB site3 probe: the stands the car refused that the mod's test took
+            return car;
         } catch (RuntimeException | LinkageError e) {
             if (!carStandWarned) {
                 carStandWarned = true;
@@ -91,6 +93,8 @@ public final class LipGoals {
 
     private static final org.slf4j.Logger LOG = com.mojang.logging.LogUtils.getLogger();
     private static volatile boolean carStandWarned;
+    /** Run HB site3 probe (114 "no stand sees behind it" drops in 20 min, 9 before the car's rule): stands the car refused that the mod's test took, since start. */
+    static final java.util.concurrent.atomic.AtomicInteger CAR_SAID_NO = new java.util.concurrent.atomic.AtomicInteger();
 
     /** structural: ticks an opening's snapshot answer is kept (a second) */
     private static final long KEEP_TICKS = 20;
