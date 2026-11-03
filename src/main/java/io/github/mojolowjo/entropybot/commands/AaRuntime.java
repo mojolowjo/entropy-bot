@@ -1887,7 +1887,7 @@ public final class AaRuntime implements JobPort {
             }
             laps.lap("senses");
             escapeTick(p, mc);
-            if (tick % 20 == 3) io.github.mojolowjo.entropybot.engine.RunThrowaway.holdBag(p);    // run HV: the bag's junk blocks are throwaway for every walk (structural cadence: once a second)
+            if (tick % 20 == 0) io.github.mojolowjo.entropybot.engine.RunThrowaway.holdBag(p);    // run HV: the bag's junk blocks are throwaway for every walk (structural cadence: once a second; this tick runs every 5 client ticks - run HW: "== 3" never fired)
             laps.lap("escape");
             fill(bb.in, sensed, p, mc);
             stoodTick(p, mc);

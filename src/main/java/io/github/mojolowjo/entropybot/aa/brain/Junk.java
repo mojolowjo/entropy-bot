@@ -21,6 +21,9 @@ public final class Junk {
     /** A block the bot can place as filler (hardness from the data): what a build or shelter keeps in the bag. */
     public static boolean placeable(String id) {
         if (id == null || !ItemWorth.block(id) || Kit.kept(id)) return false;
+        // run HW (2026-11-02): a stone-like block (the base-stone tags, or a pickaxe/shovel block up to junk.hardBand with no ore,
+        // storage or block entity: cobbled deepslate at 3.5) is filler whatever its hardness says of its worth
+        if (ItemWorth.stoneLike(id)) return true;
         var w = ItemWorth.of(id);
         return w.known() && w.value() <= Tuning.get("junk.placeWorth") + 1e-9;
     }

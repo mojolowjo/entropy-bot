@@ -30,6 +30,16 @@ class JunkTest {
         assertTrue(Junk.placeable("moddium:slag"));
     }
 
+    @Test void aStoneLikeBlockIsPlaceableWhateverItsHardness() {
+        // run HW (2026-11-02): 90 cobbled deepslate (hardness 3.5, worth 0.035 over junk.placeWorth 0.02) in the bag and no pillar
+        TestData d = TestData.vanilla();
+        d.block("minecraft:cobbled_deepslate", 3.5, 0).block("minecraft:deepslate_bricks_hard", 9, 0);
+        d.stone.add("minecraft:cobbled_deepslate");
+        d.install();
+        assertTrue(Junk.placeable("cobbled_deepslate"), "stone-like: filler");
+        assertFalse(Junk.placeable("deepslate_bricks_hard"), "not stone-like and worth over the band: not filler");
+    }
+
     @Test void withoutDataNothingIsJunk() {
         TestData.clear();
         assertFalse(Junk.is("cobblestone"));
