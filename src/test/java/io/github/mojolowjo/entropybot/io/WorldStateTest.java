@@ -27,7 +27,8 @@ class WorldStateTest {
     void worldNames() {
         for (String n : new String[]{"areas.json", "areas.bak.json", "areas.bak-0.22.0.json", "places.json", "chests.broken.json", "rs.json",
                 "pois.json", "caves.json", "ores.json", "explored.json", "restore.json", "knownair.bin", "seenfaces.bin",
-                "sense/overworld/1.2.json", "map", "routes/trips.csv", "route/penalties.json"})
+                "sense/overworld/1.2.json", "map", "routes/trips.csv", "route/penalties.json",
+                "stations-main.json"})    // 2026-11-03: the main chest is the world's (run JX: one world's chest in every fresh world)
             assertTrue(WorldState.isWorldName(n), n);
         for (String n : new String[]{"fast.json", "fast-server.json", "pm.json", "commands.json", "owner.json", "brain.json", "blind.json",
                 "stock.json", "watch.json", "recorder/x.json", "brain/decisions.jsonl", "surface/overworld", "world.json", "actions.json"})

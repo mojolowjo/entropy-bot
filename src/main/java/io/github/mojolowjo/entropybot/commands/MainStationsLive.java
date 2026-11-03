@@ -178,8 +178,13 @@ final class MainStationsLive {
             if (!mc.level.isLoaded(new BlockPos(at[0], at[1], at[2]))) return "aa deposit: the chunk at " + a + " is not loaded: stand nearer to mark it";
             String id = BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(new BlockPos(at[0], at[1], at[2])).getBlock()).toString();
             var ids = c.nearby.blocksOfKind(MainStations.CONTAINER);
-            if (ids == null) return "aa deposit: item data not loaded yet";
-            if (!ids.contains(id)) return "aa deposit: " + id + " at " + a + " is no chest the deposit uses";
+            if (ids == null) {
+                // the world's first seconds (runs JS-JX, 2026-11-03: every unattended run's mark was lost to "item data not loaded
+                // yet"): a chest is a chest by its block entity (a game fact), so the mark is taken now; the list check below says
+                // the item data is still out
+                if (!(mc.level.getBlockEntity(new BlockPos(at[0], at[1], at[2])) instanceof net.minecraft.world.Container))
+                    return "aa deposit: item data not loaded yet, and " + id + " at " + a + " is no container block";
+            } else if (!ids.contains(id)) return "aa deposit: " + id + " at " + a + " is no chest the deposit uses";
             String r = mark(c, MainStations.CONTAINER, at, id);
             // run HQ (rule 7): the mark is said with whether the deposit's own lookup lists it now - a refused or unlisted main is
             // said here, at the mark, not 20 minutes later as "no chest known"

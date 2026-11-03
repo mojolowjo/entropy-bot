@@ -31,7 +31,8 @@ public final class WorldState {
 
     /** Base names (before the first dot) of the world's files at the root. */
     static final Set<String> FILES = Set.of("areas", "places", "chests", "rs", "pois", "caves", "ores", "explored",
-            "restore", "knownair", "seenfaces", "commands-world", "corpses", "trail");
+            "restore", "knownair", "seenfaces", "commands-world", "corpses", "trail",
+            "stations-main");    // 2026-11-03 (owner: "per world / server"): the main chest of one world leaked into every fresh world (run JX)
     /** 0.31.0: commands.json's world-bound keys (they live in the world's commands-world.json). */
     public static final Set<String> COMMANDS_WORLD_KEYS = Set.of("home", "mine", "mines", "minesMoved", "deaths", "lastDeath",
             "parked", "zone", "farm", "furnaces", "released", "releasedAt", "run", "aaSwitch");     // live-facts: AA's on/off is the world's (aa.AaSwitch)
