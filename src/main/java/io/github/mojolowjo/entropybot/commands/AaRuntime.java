@@ -1844,6 +1844,9 @@ public final class AaRuntime implements JobPort {
 
     // ---- the tick ----
 
+    /** run HV: the bag lease's own tick count (the client tick here is 2 mod 5). */
+    private int bagTicks;
+
     /** Every 5 client ticks from Commands.tick, in a world. Never throws. */
     void tick(long tick) {
         if (!on()) return;
@@ -1887,7 +1890,9 @@ public final class AaRuntime implements JobPort {
             }
             laps.lap("senses");
             escapeTick(p, mc);
-            if (tick % 20 == 0) io.github.mojolowjo.entropybot.engine.RunThrowaway.holdBag(p);    // run HV: the bag's junk blocks are throwaway for every walk (structural cadence: once a second; this tick runs every 5 client ticks - run HW: "== 3" never fired)
+            // run HV: the bag's junk blocks are throwaway for every walk; its own count (structural cadence: every 4th AA tick, once a
+            // second) - this tick runs on client ticks 2 mod 5 (Commands.tick), so runs HW / HX: "tick % 20 == 3 / == 0" never fired
+            if (bagTicks++ % 4 == 0) io.github.mojolowjo.entropybot.engine.RunThrowaway.holdBag(p);    // structural: every 4th AA tick (4 Hz) = once a second
             laps.lap("escape");
             fill(bb.in, sensed, p, mc);
             stoodTick(p, mc);
