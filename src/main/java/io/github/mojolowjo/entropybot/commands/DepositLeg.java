@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import baritone.api.IBaritone;
+import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.aa.StationFact;
 import io.github.mojolowjo.entropybot.aa.brain.DepositRule;
 import io.github.mojolowjo.entropybot.aa.brain.StripOrder;
@@ -40,7 +42,7 @@ import java.util.function.Supplier;
 final class DepositLeg {
     private static final Logger LOG = LoggerFactory.getLogger("entropybot");
 
-    enum Phase { CHOOSE, CRAFT, GO_START, PLACE, USE, PUT, COUNT }
+    enum Phase { CHOOSE, CRAFT, GO_START, PLACE, WALK, USE, PUT, COUNT }
 
     private final Commands c;
     private final Step.Deposit step;
@@ -129,6 +131,7 @@ final class DepositLeg {
                 yield Car.Status.running("deposit: placing a chest");
             }
             case PLACE -> place(p);
+            case WALK -> walk(p);
             case USE -> use(p);
             case PUT -> put(p);
             case COUNT -> count(p);
@@ -167,7 +170,7 @@ final class DepositLeg {
         return switch (ch.how()) {
             case WAIT -> Car.Status.running("deposit: " + ch.why());
             case FAIL -> Car.Status.failed("deposit: " + ch.why() + refused);
-            case KNOWN -> { chest = ch.at(); phase = Phase.USE; yield Car.Status.running("deposit: " + ch.why()); }
+            case KNOWN -> { chest = ch.at(); phase = Phase.WALK; yield Car.Status.running("deposit: " + ch.why()); }
             case BAG -> goStart(p);
             case CRAFT -> {
                 String r = hands.craft("minecraft:chest", 1);
@@ -202,6 +205,38 @@ final class DepositLeg {
         placed = true;
         phase = Phase.USE;
         return Car.Status.running("deposit: placed a chest at " + DepositRule.at(chest));
+    }
+
+    private boolean walking;
+
+    /**
+     * Run HU (2026-11-02, the HS world: the deposit's price found the chest 31 s away - a full path out of the cave - yet the
+     * use's own walk searched fresh with Baritone's 2 s budget from the same cell three times and found nothing): the
+     * known chest is walked on its PRICED path first (LivePathPrice.walk: the path the price kept, the same goal, one
+     * search; Baritone walks it, rule 2), the use's own short walk to a stand follows from beside it. A priced walk that
+     * ends short hands over to the use from where it stopped (its named end then says why).
+     */
+    private Car.Status walk(LocalPlayer p) {
+        BlockPos at = new BlockPos(chest[0], chest[1], chest[2]);
+        IBaritone b = Jobs.baritone();
+        if (b == null) { phase = Phase.USE; return Car.Status.running("deposit: baritone not loaded - the use walks itself"); }
+        if (LivePathPrice.goal(at).isInGoal(p.blockPosition())) {
+            if (walking) Jobs.cancel(b);
+            phase = Phase.USE;
+            return Car.Status.running("deposit: by the chest at " + DepositRule.at(chest));
+        }
+        if (!walking) {
+            io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "deposit");
+            boolean kept = LivePathPrice.walk(b, at);
+            walking = true;
+            return Car.Status.running("deposit: to the chest at " + DepositRule.at(chest) + (kept ? " on its priced path" : " (no kept path from here: Baritone searches)"));
+        }
+        if (!b.getCustomGoalProcess().isActive() && !Core.INSTANCE.reflexes.hold()) {
+            LOG.info("[entropybot] deposit: the walk to the chest at {} ended at {} short of it - the use walks from here", DepositRule.at(chest), Jobs.fmt(Jobs.here(p)));
+            phase = Phase.USE;
+            return Car.Status.running("deposit: the walk ended short of the chest at " + DepositRule.at(chest) + " - the use walks from here");
+        }
+        return Car.Status.running("deposit: to the chest at " + DepositRule.at(chest) + " - walking (" + Jobs.fmt(Jobs.here(p)) + ")");
     }
 
     private Car.Status use(LocalPlayer p) {
