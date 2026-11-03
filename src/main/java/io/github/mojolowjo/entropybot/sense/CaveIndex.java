@@ -760,6 +760,31 @@ public final class CaveIndex {
     }
 
     /**
+     * surface (owner 2026-11-02): the ground of column x z as indexed (the first air over the top block, leaves no roof; a
+     * ravine floor's column: its rim, {@link #rimmed}), MAX_VALUE: its chunk not indexed (rule 15). The guard's depth fact
+     * (PolicyRuntime.depthAt) reads it on the pathfinder thread.
+     */
+    public synchronized int groundAt(int x, int z) { return surfaceAt(x, z); }
+
+    /**
+     * surface (owner 2026-11-02: "treating the ravine as a cave mouth makes the most sense"): a column whose ground lies
+     * {@code drop} or more below the highest ground within {@code r} columns (inside the chunk: rule 14, rough at the
+     * chunk's edge) gets that rim as its ground, so the air between is indexed as cave air and the floor counts as under
+     * ground. A cliff's foot within r of its top gets the same. Pure; a new array.
+     */
+    public static int[] rimmed(int[] ground, int drop, int r) {
+        int[] out = ground.clone();
+        if (drop <= 0 || r <= 0) return out;
+        for (int c = 0; c < 256; c++) {
+            int x = c & 15, z = c >> 4, rim = ground[c];
+            for (int dz = Math.max(0, z - r); dz <= Math.min(15, z + r); dz++)
+                for (int dx = Math.max(0, x - r); dx <= Math.min(15, x + r); dx++) rim = Math.max(rim, ground[dx + 16 * dz]);
+            if (rim - ground[c] >= drop) out[c] = rim;
+        }
+        return out;
+    }
+
+    /**
      * The rays' targets near the eyes: per run within {@code r} (horizontal) of x z of a cave not known, the run's cell
      * nearest the eye's Y, and for a run with opening cells of a cave not rim-credited yet the roof block over them (its
      * lip, run EE); nearest first, at most {@code n}. {@code ok}: a cell's further test (the view cone, a recent

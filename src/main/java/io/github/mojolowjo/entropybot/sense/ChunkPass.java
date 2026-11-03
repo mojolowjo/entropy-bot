@@ -664,6 +664,8 @@ public final class ChunkPass {
         for (int lz = 0; lz < 16; lz++)
             for (int lx = 0; lx < 16; lx++)
                 surface[lx + 16 * lz] = CaveIndex.ground((cx << 4) + lx, (cz << 4) + lz, io.github.mojolowjo.entropybot.world.SurfaceHeightLive.worldSurface(chunk, lx, lz), chunk.getMinBuildHeight(), open);
+        // surface (owner 2026-11-02): a ravine is a cave mouth - its floor's columns take the rim as their ground (CaveIndex.rimmed)
+        surface = CaveIndex.rimmed(surface, io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.ravineDrop"), io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.ravineR"));
         caveIndex.put(CaveIndex.runs(cx, cz, surface, chunk.getMinBuildHeight(), (x, y, z) -> {
             int si = (y >> 4) - minSec;
             if (si < 0 || si >= secs.length) return false;

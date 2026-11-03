@@ -62,6 +62,24 @@ public final class BreakPolicy {
         public static double refill() { return Tuning.get("breakPolicy.refill"); }
         /** Travel breaks per walk, all restored by the ledger (owner's default); the multiplier grows toward it. */
         public static int travelCapV() { return Tuning.i("breakPolicy.travelCap"); }
+        /** surface (owner 2026-11-02): a TRAVEL / BUILD break in the surface layer (or of unknown depth) costs this much more. */
+        public static double surfaceBreak() { return Tuning.get("breakPolicy.surfaceBreak"); }
+        /** surface: blocks from the ground down that count as the surface layer. */
+        public static int surfaceDepth() { return Tuning.i("breakPolicy.surfaceDepth"); }
+        /** surface: under ground a TRAVEL / BUILD break under a falling block (gravel, sand) costs this much more instead of a refusal. */
+        public static double fallingAbove() { return Tuning.get("breakPolicy.fallingAbove"); }
+        /** surface: the travel cap grows by this many surface breaks per {@link #capPerBlocks} blocks walked on the job. */
+        public static int capPer() { return Tuning.i("breakPolicy.capPer"); }
+        public static int capPerBlocks() { return Tuning.i("breakPolicy.capPerBlocks"); }
+
+        /**
+         * The cap on this job: the owner's default, grown with the straight distance walked since the job began (owner
+         * 2026-11-02: "a thousand blocks away gives it very little room"). Pure.
+         */
+        public static int capFor(int base, int walked, int per, int perBlocks) {
+            if (perBlocks <= 0 || per <= 0 || walked <= 0) return base;
+            return Math.max(base, per * (walked / perBlocks));
+        }
     }
 
     /** 3.2: the rules behind one box (or behind the open-world floor, where no typed area holds). */
@@ -111,26 +129,34 @@ public final class BreakPolicy {
      * {@code dugByMe} = the bot itself broke this cell (the restore ledger or this job's breaks): a placement there is a refill.
      * STRUCTURE_BLOCKS (0.39.z26): {@code structure} = the block's structure fact from the game's data ({@link #structureOf});
      * {@code placedByMe} = the ledger says the bot placed the block there (asked only for a structure block).
+     * surface (owner 2026-11-02, run HT: the way out of the cave walled by refusals): {@code depth} = blocks below the
+     * column's ground (the cave index's ground: the first air over the top block; 1 = the top block itself), or
+     * {@link #DEPTH_UNKNOWN} (the chunk not indexed yet: rule 15, priced as the surface).
      */
     public record BlockFacts(boolean loaded, String id, boolean ore, boolean unbreakable,
                              Fluid inCell, Fluid above, Fluid sides, Fluid below, boolean fallingAbove, boolean torch, boolean dugByMe,
-                             Structure structure, boolean placedByMe) {
-        // 0.39.z26 fix (3, 12): no constructor defaults the structure fact; every facts value states it
-        public static final BlockFacts UNKNOWN = new BlockFacts(false, null, false, false, Fluid.NONE, Fluid.NONE, Fluid.NONE, Fluid.NONE, false, false, false, Structure.NOT_LOADED, false);
-        /** Plain stone with nothing around it: stated not a structure block. */
-        public static final BlockFacts STONE = new BlockFacts(true, "minecraft:stone", false, false, Fluid.NONE, Fluid.NONE, Fluid.NONE, Fluid.NONE, false, false, false, Structure.NO, false);
+                             Structure structure, boolean placedByMe, int depth) {
+        public static final int DEPTH_UNKNOWN = Integer.MIN_VALUE;
+        // 0.39.z26 fix (3, 12): no constructor defaults the structure fact; every facts value states it (the depth too)
+        public static final BlockFacts UNKNOWN = new BlockFacts(false, null, false, false, Fluid.NONE, Fluid.NONE, Fluid.NONE, Fluid.NONE, false, false, false, Structure.NOT_LOADED, false, DEPTH_UNKNOWN);
+        /** Plain stone with nothing around it, well under ground (depth 10): stated not a structure block. */
+        public static final BlockFacts STONE = new BlockFacts(true, "minecraft:stone", false, false, Fluid.NONE, Fluid.NONE, Fluid.NONE, Fluid.NONE, false, false, false, Structure.NO, false, 10);
 
-        public BlockFacts withAbove(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, f, sides, below, fallingAbove, torch, dugByMe, structure, placedByMe); }
-        public BlockFacts withSides(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, f, below, fallingAbove, torch, dugByMe, structure, placedByMe); }
-        public BlockFacts withBelow(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, f, fallingAbove, torch, dugByMe, structure, placedByMe); }
-        public BlockFacts withInCell(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, f, above, sides, below, fallingAbove, torch, dugByMe, structure, placedByMe); }
-        public BlockFacts withOre(boolean o) { return new BlockFacts(loaded, id, o, unbreakable, inCell, above, sides, below, fallingAbove, torch, dugByMe, structure, placedByMe); }
-        public BlockFacts withFallingAbove(boolean f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, f, torch, dugByMe, structure, placedByMe); }
-        public BlockFacts withUnbreakable(boolean u) { return new BlockFacts(loaded, id, ore, u, inCell, above, sides, below, fallingAbove, torch, dugByMe, structure, placedByMe); }
-        public BlockFacts withTorch(boolean t) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, t, dugByMe, structure, placedByMe); }
-        public BlockFacts withDug(boolean d) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, d, structure, placedByMe); }
-        public BlockFacts withStructure(Structure s) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, dugByMe, s, placedByMe); }
-        public BlockFacts withPlacedByMe(boolean m) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, dugByMe, structure, m); }
+        /** The surface layer (owner 2026-11-02: no random breaking or placing on the surface): the top {@link Costs#surfaceDepth} blocks, or a depth not known. */
+        public boolean surface() { return depth == DEPTH_UNKNOWN || depth < Costs.surfaceDepth(); }
+
+        public BlockFacts withAbove(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, f, sides, below, fallingAbove, torch, dugByMe, structure, placedByMe, depth); }
+        public BlockFacts withSides(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, f, below, fallingAbove, torch, dugByMe, structure, placedByMe, depth); }
+        public BlockFacts withBelow(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, f, fallingAbove, torch, dugByMe, structure, placedByMe, depth); }
+        public BlockFacts withInCell(Fluid f) { return new BlockFacts(loaded, id, ore, unbreakable, f, above, sides, below, fallingAbove, torch, dugByMe, structure, placedByMe, depth); }
+        public BlockFacts withOre(boolean o) { return new BlockFacts(loaded, id, o, unbreakable, inCell, above, sides, below, fallingAbove, torch, dugByMe, structure, placedByMe, depth); }
+        public BlockFacts withFallingAbove(boolean f) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, f, torch, dugByMe, structure, placedByMe, depth); }
+        public BlockFacts withUnbreakable(boolean u) { return new BlockFacts(loaded, id, ore, u, inCell, above, sides, below, fallingAbove, torch, dugByMe, structure, placedByMe, depth); }
+        public BlockFacts withTorch(boolean t) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, t, dugByMe, structure, placedByMe, depth); }
+        public BlockFacts withDug(boolean d) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, d, structure, placedByMe, depth); }
+        public BlockFacts withStructure(Structure s) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, dugByMe, s, placedByMe, depth); }
+        public BlockFacts withPlacedByMe(boolean m) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, dugByMe, structure, m, depth); }
+        public BlockFacts withDepth(int d) { return new BlockFacts(loaded, id, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, dugByMe, structure, placedByMe, d); }
     }
 
     // ---- STRUCTURE_BLOCKS.md (owner 2026-10-23, RULES 16): structure blocks and area tags ----
@@ -270,14 +296,19 @@ public final class BreakPolicy {
      * The bot: in water now (the drowning rule: no digging down with water over the cell while the bot itself is in
      * the water; from dry ground a cell under a pond is a wet side, not a dive); travel breaks made on this walk so far.
      */
-    public record Where(boolean inWater, int travelBreaks, int air, int waterAbove, int feetY, int pickTier) {
+    public record Where(boolean inWater, int travelBreaks, int air, int waterAbove, int feetY, int pickTier, int walked) {
         public static final Where DRY = new Where(false, 0);
         public static final Where WET = new Where(true, 0);
 
         /** Air unknown (0): a dive is never allowed (the old rule). */
-        public Where(boolean inWater, int travelBreaks) { this(inWater, travelBreaks, 0, 0, Integer.MIN_VALUE, DrownRisk.defaultTier()); }
+        public Where(boolean inWater, int travelBreaks) { this(inWater, travelBreaks, 0, 0, Integer.MIN_VALUE, DrownRisk.defaultTier(), 0); }
 
-        public Where(boolean inWater, int travelBreaks, int air, int waterAbove, int feetY) { this(inWater, travelBreaks, air, waterAbove, feetY, DrownRisk.defaultTier()); }
+        public Where(boolean inWater, int travelBreaks, int air, int waterAbove, int feetY) { this(inWater, travelBreaks, air, waterAbove, feetY, DrownRisk.defaultTier(), 0); }
+
+        /** surface (owner 2026-11-02): {@code travelBreaks} counts the job's SURFACE breaks; {@code walked} = the straight distance from where the job began. */
+        public Where(boolean inWater, int travelBreaks, int air, int waterAbove, int feetY, int pickTier) { this(inWater, travelBreaks, air, waterAbove, feetY, pickTier, 0); }
+
+        public Where withWalked(int w) { return new Where(inWater, travelBreaks, air, waterAbove, feetY, pickTier, w); }
 
         /** aa-costs: the drowning risk of digging one block down from here (DrownRisk). */
         public double diveRisk() { return DrownRisk.risk(1, waterAbove, air, pickTier); }
@@ -288,7 +319,7 @@ public final class BreakPolicy {
             return DrownRisk.risk(d, waterAbove, air, pickTier);
         }
 
-        public Where withBreaks(int n) { return new Where(inWater, n, air, waterAbove, feetY, pickTier); }
+        public Where withBreaks(int n) { return new Where(inWater, n, air, waterAbove, feetY, pickTier, walked); }
     }
 
     public record Ask(Action action, Intent intent, String dim, int x, int y, int z, BlockFacts block, Where me) {}
@@ -379,12 +410,25 @@ public final class BreakPolicy {
                 mult = r.travelMultiplier();
                 if (r.breakNatural() == Natural.TRAVEL_EXPENSIVE) mult = Math.max(mult, Costs.travelExpensive());
                 if (dive) return Verdict.deny("digging down from in the water", rule);
-                if (f.fallingAbove()) return Verdict.deny("a falling block above", rule);
+                // surface (owner 2026-11-02, run HT: 1446 "a falling block above" refusals walled the way out of the cave): on
+                // the surface a block under gravel or sand stays refused; under ground it costs (the stack falls, the bot digs on)
+                boolean surface = f.surface();
+                if (f.fallingAbove()) {
+                    if (surface) return Verdict.deny("a falling block above", rule);
+                    mult *= Costs.fallingAbove();
+                    rule += "+falling";
+                }
                 if (wet) { mult *= Costs.travelWaterSide(); rule += "+water"; }
-                if (a.intent() == Intent.TRAVEL) {              // a build's own cells are not travel breaks: no cap
-                    int cap = s.travelCap() > 0 ? s.travelCap() : Costs.travelCapV();
-                    if (me.travelBreaks() >= cap) return Verdict.deny("travel break cap " + cap + " reached on this walk", rule);
-                    if (me.travelBreaks() > 0) mult *= 1 + 2.0 * me.travelBreaks() / cap;
+                if (surface) {
+                    // the surface layer (or a depth not known: rule 15) is dear to break; a cave's walls are not
+                    mult *= Costs.surfaceBreak();
+                    rule += f.depth() == BlockFacts.DEPTH_UNKNOWN ? "+surface(depth not known)" : "+surface";
+                    if (a.intent() == Intent.TRAVEL) {              // a build's own cells are not travel breaks: no cap
+                        int base = s.travelCap() > 0 ? s.travelCap() : Costs.travelCapV();
+                        int cap = Costs.capFor(base, me.walked(), Costs.capPer(), Costs.capPerBlocks());
+                        if (me.travelBreaks() >= cap) return Verdict.deny("travel break cap " + cap + " (surface breaks) reached on this job", rule);
+                        if (me.travelBreaks() > 0) mult *= 1 + 2.0 * me.travelBreaks() / cap;
+                    }
                 }
             }
             case MINE -> {
@@ -419,7 +463,12 @@ public final class BreakPolicy {
         if (r.place() == PlaceRule.NEVER) return Verdict.deny("no placing in " + r.name(), "area");
         if (r.place() == PlaceRule.TORCHES && !f.torch()) return Verdict.deny("nothing but torches placed in " + r.name(), "area");
         double mult = a.intent() == Intent.TRAVEL ? Costs.travelPlace() : 1;
-        return Verdict.ok(mult, a.intent().name().toLowerCase(Locale.ROOT));
+        String rule = a.intent().name().toLowerCase(Locale.ROOT);
+        if (a.intent() == Intent.TRAVEL && f.surface()) {            // surface (owner 2026-11-02): no random placing on the surface either
+            mult *= Costs.surfaceBreak();
+            rule += f.depth() == BlockFacts.DEPTH_UNKNOWN ? "+surface(depth not known)" : "+surface";
+        }
+        return Verdict.ok(mult, rule);
     }
 
     static String fmt(double d) {

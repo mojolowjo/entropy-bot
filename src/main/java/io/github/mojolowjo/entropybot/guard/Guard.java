@@ -121,7 +121,8 @@ public final class Guard {
      */
     private boolean vetoTravelBreak(Level level, BlockPos pos, String dim, PolicyRuntime pr) {
         int x = pos.getX(), y = pos.getY(), z = pos.getZ();
-        GuardCore.TravelCheck t = core.checkTravelBreak(dim, x, y, z, infoFor(level, pos), pr.snapshot(), pr.facts(level, pos, false), pr.where());
+        BreakPolicy.BlockFacts facts = pr.facts(level, pos, false);
+        GuardCore.TravelCheck t = core.checkTravelBreak(dim, x, y, z, infoFor(level, pos), pr.snapshot(), facts, pr.where());
         GuardCore.Verdict v = t.guard();
         if (t.travel() == null) {
             // the fence decided alone (allowed, or the floor): exactly as before
@@ -135,7 +136,7 @@ public final class Guard {
         boolean terrain = io.github.mojolowjo.entropybot.restore.RestoreRules.natural(BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).toString());
         if (t.travel().allowed() && jobRunning && terrain) {
             pr.logTravelOverride(PolicyStats.SITE_CLICK, x, y, z, t.travel(), v.reason());
-            pr.markTravelBreak(dim + " " + x + " " + y + " " + z);
+            pr.markTravelBreak(dim + " " + x + " " + y + " " + z, facts.surface());     // surface: only a surface break counts toward the cap
             return false;
         }
         pr.stats.deny(PolicyStats.SITE_CLICK, t.travel().reason());

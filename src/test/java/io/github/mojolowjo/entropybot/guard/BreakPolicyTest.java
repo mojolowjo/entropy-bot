@@ -112,18 +112,55 @@ class BreakPolicyTest {
         assertEquals(20, brk(SP, Intent.TRAVEL, 0, 60, 0, BlockFacts.STONE.withSides(Fluid.WATER)).multiplier(), "camp x10 and water x2");
         // a waterlogged block is not a liquid in the cell (the adapter maps only LiquidBlock there); water above it is a wet side
         assertTrue(brk(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE.withAbove(Fluid.WATER).withSides(Fluid.WATER)).allowed());
-        assertEquals("a falling block above", brk(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE.withFallingAbove(true)).reason());
+        assertEquals("a falling block above", brk(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE.withDepth(1).withFallingAbove(true)).reason(), "on the surface");
         assertEquals("a liquid is not broken", brk(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE.withInCell(Fluid.WATER)).reason());
     }
 
     @Test
-    void travelCapGrowsThenDenies() {
-        assertEquals(6, brk(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE, new Where(false, 0)).multiplier());
-        assertEquals(12, brk(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE, new Where(false, 12)).multiplier(), 1e-9, "halfway: double");
-        Verdict at = brk(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE, new Where(false, 24));
+    void travelCapGrowsThenDenies_surfaceBreaksOnly() {
+        // surface (owner 2026-11-02): the cap is the surface layer's; a cave's walls (STONE: depth 10) are never capped
+        BlockFacts top = BlockFacts.STONE.withDepth(2);
+        assertEquals(48, brk(SP, Intent.TRAVEL, 1000, 60, 1000, top, new Where(false, 0)).multiplier(), 1e-9, "x6 travel, x8 surface");
+        assertEquals(96, brk(SP, Intent.TRAVEL, 1000, 60, 1000, top, new Where(false, 12)).multiplier(), 1e-9, "halfway: double");
+        Verdict at = brk(SP, Intent.TRAVEL, 1000, 60, 1000, top, new Where(false, 24));
         assertFalse(at.allowed());
-        assertEquals("travel break cap 24 reached on this walk", at.reason());
-        assertTrue(brk(SP, Intent.MINE, 1000, 60, 1000, BlockFacts.STONE, new Where(false, 24)).allowed(), "the cap is travel's only");
+        assertEquals("travel break cap 24 (surface breaks) reached on this job", at.reason());
+        assertTrue(brk(SP, Intent.MINE, 1000, 60, 1000, top, new Where(false, 24)).allowed(), "the cap is travel's only");
+        assertTrue(brk(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE, new Where(false, 24)).allowed(), "under ground: no cap");
+        assertEquals(6, brk(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE, new Where(false, 24)).multiplier(), 1e-9, "and no growth");
+        // the cap grows with the distance walked on the job: 4 per 50 blocks, never under the owner's 24
+        Where far = new Where(false, 24).withWalked(1000);
+        assertTrue(brk(SP, Intent.TRAVEL, 1000, 60, 1000, top, far).allowed(), "1000 blocks walked: the cap is 80");
+        assertEquals("travel break cap 80 (surface breaks) reached on this job", brk(SP, Intent.TRAVEL, 1000, 60, 1000, top, far.withBreaks(80)).reason());
+        assertEquals(24, BreakPolicy.Costs.capFor(24, 299, 4, 50), "under 300 blocks the default holds");
+        assertEquals(24, BreakPolicy.Costs.capFor(24, 0, 4, 0), "a zero divisor: the default");
+    }
+
+    @Test
+    void surfaceLayerIsDearAndKeepsItsGravelRule_underGroundGravelCosts() {
+        // surface (owner 2026-11-02, run HT): the top 4 blocks (or a depth not known) cost x8 to break or place for a walk
+        assertEquals(6, brk(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE.withDepth(4)).multiplier(), 1e-9, "depth 4: under ground");
+        Verdict top = brk(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE.withDepth(3));
+        assertEquals(48, top.multiplier(), 1e-9);
+        assertEquals("travel+surface", top.rule());
+        Verdict unknown = brk(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE.withDepth(BlockFacts.DEPTH_UNKNOWN));
+        assertEquals(48, unknown.multiplier(), 1e-9, "not known = priced as the surface (rule 15)");
+        assertEquals("travel+surface(depth not known)", unknown.rule());
+        // gravel above: refused on the surface, x3 under ground (the way out of the cave in run HT)
+        assertEquals("a falling block above", brk(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE.withDepth(1).withFallingAbove(true)).reason());
+        Verdict under = brk(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE.withFallingAbove(true));
+        assertTrue(under.allowed());
+        assertEquals(18, under.multiplier(), 1e-9, "x6 travel, x3 falling");
+        assertEquals("travel+falling", under.rule());
+        assertEquals("a falling block above", brk(SP, Intent.DIG_OUT, 1000, 60, 1000, BlockFacts.STONE.withFallingAbove(true)).reason(), "dig-out keeps its refusal");
+        // a BUILD's path: the same prices, no cap
+        assertEquals(48, brk(SP, Intent.BUILD, 1000, 60, 1000, BlockFacts.STONE.withDepth(1), new Where(false, 24)).multiplier(), 1e-9);
+        // placing: a walk's placement on the surface x3 x8, under ground x3, a refill as before
+        assertEquals(24, place(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE.withDepth(1)).multiplier(), 1e-9);
+        assertEquals("travel+surface", place(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE.withDepth(1)).rule());
+        assertEquals(3, place(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE).multiplier(), 1e-9);
+        assertEquals("travel+refill", place(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE.withDepth(1).withDug(true)).rule());
+        assertEquals(1, place(SP, Intent.MINE, 1000, 60, 1000, BlockFacts.STONE.withDepth(1)).multiplier(), 1e-9, "a mine's placement: not a walk's");
     }
 
     // ---- MINE

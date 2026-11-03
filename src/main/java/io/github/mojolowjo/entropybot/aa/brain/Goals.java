@@ -41,6 +41,9 @@ public final class Goals {
         /** orders-tier (0.39.z9): why the order stopped (said once; aa want again or aa drop clears it), null: it goes on. */
         public volatile String parked;
 
+        /** helper (owner 2026-11-02): the deposit to the main chest was weighed for this order's end (done or parked), once. */
+        public boolean depositWeighed;
+
         /** The owner's strip order (aa want strip ...): its one step; null for an item goal. */
         public Step.Strip strip;
 

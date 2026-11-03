@@ -157,7 +157,16 @@ final class TuningDefs {
         Tuning.def("breakPolicy.mineOre", 0.5, "rm-constants 0.39.u2 (was BreakPolicy.MINE_ORE)", "MINE: an ore is cheaper than the stone around it (go through the ore)");
         Tuning.def("breakPolicy.travelPlace", 3, "rm-constants 0.39.u2 (was BreakPolicy.TRAVEL_PLACE)", "TRAVEL placing: x3 (place cost 60 + walk)");
         Tuning.def("breakPolicy.refill", 0.05, "rm-constants 0.39.u2 (was BreakPolicy.REFILL)", "the refill of BreakPolicy");
-        Tuning.def("breakPolicy.travelCap", 24, "rm-constants 0.39.u2 (was BreakPolicy.TRAVEL_CAP)", "Travel breaks per walk, all restored by the ledger (owner's default)");
+        Tuning.def("breakPolicy.travelCap", 24, "rm-constants 0.39.u2 (was BreakPolicy.TRAVEL_CAP)", "Travel breaks per walk, all restored by the ledger (owner's default); surface (2026-11-02): surface breaks per job, grown by capPer per capPerBlocks walked");
+        // surface (owner 2026-11-02, run HT: the way out of the cave walled by "a falling block above" x1446): on the surface no random
+        // breaking or placing; in a cave he does not care. The depth is the cave index's ground minus the cell's y.
+        Tuning.def("breakPolicy.surfaceBreak", 8, "surface 2026-11-02 (owner: no random breaking or placing on the surface)", "TRAVEL / BUILD: a break or placement in the surface layer, or at a depth not known, costs this much more");
+        Tuning.def("breakPolicy.surfaceDepth", 4, "surface 2026-11-02", "blocks from the ground down that count as the surface layer");
+        Tuning.def("breakPolicy.fallingAbove", 3, "surface 2026-11-02 (run HT)", "TRAVEL / BUILD under ground: a break under gravel or sand costs this much more (the surface still refuses it)");
+        Tuning.def("breakPolicy.capPer", 4, "surface 2026-11-02 (owner: the cap should scale with the distance)", "the surface-break cap grows by this many per capPerBlocks walked on the job, never under travelCap");
+        Tuning.def("breakPolicy.capPerBlocks", 50, "surface 2026-11-02", "blocks walked (straight, from the job's start) per capPer more surface breaks");
+        Tuning.def("cave.ravineDrop", 10, "surface 2026-11-02 (owner: a ravine is a cave mouth)", "a column whose ground lies this far below the highest ground within cave.ravineR is indexed as cave air up to that rim (its floor counts as under ground)");
+        Tuning.def("cave.ravineR", 8, "surface 2026-11-02", "blocks around a column (inside its chunk) searched for the rim");
         // buildSpotter
         Tuning.def("buildSpotter.radius", 8, "rm-constants 0.39.u2 (was BuildSpotter.RADIUS)", "the radius of BuildSpotter");
         Tuning.def("buildSpotter.minBlocks", 6, "rm-constants 0.39.u2 (was BuildSpotter.MIN_BLOCKS)", "the min blocks of BuildSpotter");

@@ -3871,8 +3871,39 @@ public final class AaRuntime implements JobPort {
      */
     private final Map<String, io.github.mojolowjo.entropybot.aa.brain.Goals.Goal> carried = new java.util.HashMap<>();
 
+    /** helper (owner 2026-11-02): an order ended with some of its item in the bag and a main chest is set: the deposit waits for the job slot. */
+    private String depositDue;
+
+    /**
+     * helper (owner 2026-11-02: "retrieve items, and put them in a chest"): an item order that ended (done, or stopped with
+     * some of it in the bag) hands the bag to the main chest (aa deposit x y z) by itself - the owner gives one order, not
+     * two. Weighed once per order end; no main chest = nothing, said in the log (rule 7).
+     */
+    private void weighDeposit(io.github.mojolowjo.entropybot.aa.brain.Goals.Goal g, String how) {
+        if (g.depositWeighed) return;
+        g.depositWeighed = true;
+        if (g.strip != null) return;                                     // the strip order has its own deposit leg
+        int have = io.github.mojolowjo.entropybot.aa.brain.Goals.have(bb.in.bag, g);
+        var main = io.github.mojolowjo.entropybot.aa.MainStations.now().of(io.github.mojolowjo.entropybot.aa.MainStations.CONTAINER);
+        if (have <= 0) { LOG.info("[entropybot] aa: {} {}: nothing of it in the bag - no deposit", g.r.key(), how); return; }
+        if (main == null) { LOG.info("[entropybot] aa: {} {} with {} in the bag: no main chest set (aa deposit x y z) - it stays in the bag", g.r.key(), how, have); return; }
+        depositDue = g.r.key() + " " + how + " with " + have + " in the bag: the deposit to the main chest at " + main.at() + " follows";
+        LOG.info("[entropybot] aa: {} (when the job slot is free)", depositDue);
+    }
+
+    private void depositDueTick() {
+        if (depositDue == null || c.stepRun.running() || c.jobs.running() || chainRunning()) return;
+        String r = order("deposit", depositSteps());
+        if (r.startsWith("aa deposit: busy")) return;                    // the slot went to something else this tick: next tick
+        String why = depositDue;
+        depositDue = null;
+        if (r.startsWith("ok")) { LOG.info("[entropybot] aa: {} - started", why); c.whisper(c.owner(), "aa: " + why); }
+        else { LOG.info("[entropybot] aa: {} - but it could not start: {}", why, r); c.whisper(c.owner(), "aa: the deposit could not start: " + r); }
+    }
+
     private void goalsTick(LocalPlayer p, long tick) {
         buildsTick(p, tick);
+        depositDueTick();
         if (!carrying.isEmpty()) {
             var run = tree.brain.runningDesire();
             for (var it = carrying.iterator(); it.hasNext(); ) {
@@ -3900,7 +3931,9 @@ public final class AaRuntime implements JobPort {
             String msg = "got " + io.github.mojolowjo.entropybot.aa.brain.Goals.have(bb.in.bag, g) + " " + g.r.key() + " (goal " + g.n + " done)";
             LOG.info("[entropybot] aa: {}", msg);
             c.whisper(c.owner(), "aa: " + msg);
+            weighDeposit(g, "done");                                          // helper: the bag to the main chest
         }
+        for (var g : goals) if (g.parked != null) weighDeposit(g, "stopped");  // helper: a stopped order's bag goes to the chest too
         io.github.mojolowjo.entropybot.aa.brain.Goals.retryLoopParks(bb);     // 0.39.z70 (R1 = c): said by Goals (log + whisper)
         // 0.39.z77 climb (run CM 17:43-17:48, rule 7): every order parked - under ground the waiting ones try the climb way once,
         // and the all-parked line (each park and its wake) is said once; said by Goals (log + whisper)

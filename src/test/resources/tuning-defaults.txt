@@ -125,6 +125,11 @@ breakPolicy.mineOre	0.5
 breakPolicy.refill	0.05
 breakPolicy.travel	6.0
 breakPolicy.travelCap	24.0
+breakPolicy.surfaceBreak	8.0
+breakPolicy.surfaceDepth	4.0
+breakPolicy.fallingAbove	3.0
+breakPolicy.capPer	4.0
+breakPolicy.capPerBlocks	50.0
 breakPolicy.travelExpensive	10.0
 breakPolicy.travelPlace	3.0
 breakPolicy.travelWaterSide	2.0
@@ -920,6 +925,8 @@ strip.freshStartBlocks	48.0
 strip.areaMinFactor	0.5
 cave.exploreMinutes	10.0
 cave.farDepth	16.0
+cave.ravineDrop	10.0
+cave.ravineR	8.0
 pricedPath.on	1.0
 pricedPath.keepTicks	1200.0
 pricedPath.maxSegments	16.0

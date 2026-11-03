@@ -219,7 +219,7 @@ class Z77NaturalBlocksTest {
     }
 
     static BlockFacts cell(String id, Structure s) {
-        return new BlockFacts(true, id, false, false, Fluid.NONE, Fluid.NONE, Fluid.NONE, Fluid.NONE, false, false, false, s, false);
+        return new BlockFacts(true, id, false, false, Fluid.NONE, Fluid.NONE, Fluid.NONE, Fluid.NONE, false, false, false, s, false, 10);
     }
 
     /** CJ's strip: branch right at 18, feet 6 16 24, next cell 6 16 25 a dripstone_block, outside every area (singleplayer). */

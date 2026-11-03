@@ -85,8 +85,12 @@ public final class PolicyRuntime {
             var pl = mc == null ? null : mc.player;
             boolean wet = pl != null && pl.isInWater();
             // review: one snapshot, one volatile write (the pathfinder thread never sees a torn mix)
+            // surface (owner 2026-11-02): the straight distance walked since the job began grows the surface-break cap
+            int[] js = jobStart;
+            if (pl != null && js == null) jobStart = js = new int[]{pl.getBlockX(), pl.getBlockY(), pl.getBlockZ()};
+            int walked = pl == null || js == null ? 0 : (int) Math.round(Math.sqrt(Math.pow(pl.getBlockX() - js[0], 2) + Math.pow(pl.getBlockY() - js[1], 2) + Math.pow(pl.getBlockZ() - js[2], 2)));
             body = new Where(wet, 0, pl == null ? 300 : pl.getAirSupply(),
-                    pl == null || !wet ? 0 : waterAbove(pl.level(), pl.blockPosition()), pl == null ? Integer.MIN_VALUE : pl.blockPosition().getY(), pl == null ? DrownRisk.defaultTier() : pickTier(pl));
+                    pl == null || !wet ? 0 : waterAbove(pl.level(), pl.blockPosition()), pl == null ? Integer.MIN_VALUE : pl.blockPosition().getY(), pl == null ? DrownRisk.defaultTier() : pickTier(pl), walked);
             inWater = wet;
             Policy p = core.policy();
             if (snapshot == null || p != snapshotOf || mp != multiplayer) {
@@ -255,10 +259,34 @@ public final class PolicyRuntime {
         }
         // STRUCTURE_BLOCKS: the block's structure fact (StructureTable) and, for a structure block, whether I placed it
         BreakPolicy.StructureFacts sf = structureFacts(at, dim, x, y, z);
-        return new BlockFacts(true, id, ore, unbreakable, in, above, sides, below, falling, torch, false, sf.structure(), sf.placedByMe());
+        return new BlockFacts(true, id, ore, unbreakable, in, above, sides, below, falling, torch, false, sf.structure(), sf.placedByMe(), depthAt(x, y, z));
     }
 
     private static final int[][] SIDES = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+
+    // ---- surface (owner 2026-11-02): the depth of a cell below its column's ground ----
+
+    /** The ground of column x z (the first air over the top block, leaves no roof): the cave index's; MAX_VALUE: not indexed. */
+    public interface Ground { int at(int x, int z); }
+
+    private volatile Ground ground = (x, z) -> io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.caveIndex().groundAt(x, z);
+
+    /** Tests: another ground source. */
+    public void setGround(Ground g) { ground = g == null ? (x, z) -> Integer.MAX_VALUE : g; }
+
+    /**
+     * Blocks below the column's ground (1 = the top block), {@link BlockFacts#DEPTH_UNKNOWN} when the chunk is not in the
+     * cave index yet (rule 15: priced as the surface) or the read fails. Any thread (the index is synchronized).
+     */
+    public int depthAt(int x, int y, int z) {
+        try {
+            int g = ground.at(x, z);
+            return g == Integer.MAX_VALUE ? BlockFacts.DEPTH_UNKNOWN : g - y;
+        } catch (Throwable t) {
+            stats.error("depth: " + t);
+            return BlockFacts.DEPTH_UNKNOWN;
+        }
+    }
 
     /** The fluid of a state (a waterlogged block counts as water here: Baritone's adjacency rule does the same). */
     public static Fluid fluidOf(BlockState st) {
@@ -274,6 +302,8 @@ public final class PolicyRuntime {
 
     private volatile boolean inWater;
     private volatile Where body = new Where(false, 0, 300, 0, Integer.MIN_VALUE);
+    /** surface: the feet when the running job began (null: not seen yet); the walked distance is measured from here. */
+    private volatile int[] jobStart;
 
     /** aa-costs (director): the best pickaxe tier in the bag (DrownRisk's dig time), 0 none. */
     public static int pickTier(net.minecraft.world.entity.player.Player pl) {
@@ -344,16 +374,18 @@ public final class PolicyRuntime {
         travelBreaks = 0;
         lastTravelBreak = null;
         lastMarkedKey = null;
+        jobStart = null;
     }
 
     /**
-     * A travel break was let through at this key ("dim x y z"): counted once toward the cap (the click veto fires every
-     * tick of a multi-tick break; a repeat of the same cell is not a new break) and handed to the ledger.
+     * A travel break was let through at this key ("dim x y z"): counted once toward the cap when it is a SURFACE break
+     * (surface, owner 2026-11-02: a cave's walls are not capped; the click veto fires every tick of a multi-tick break; a
+     * repeat of the same cell is not a new break) and handed to the ledger either way.
      */
-    public void markTravelBreak(String key) {
+    public void markTravelBreak(String key, boolean surface) {
         if (key.equals(lastMarkedKey)) return;
         lastMarkedKey = key;
-        travelBreaks++;
+        if (surface) travelBreaks++;
         lastTravelBreak = key;
     }
 
@@ -394,7 +426,8 @@ public final class PolicyRuntime {
         sb.append(" | intent ").append(intent.name().toLowerCase()).append(" (").append(intentBy).append(")");
         if (s == null) sb.append(" | no snapshot yet");
         else sb.append(" | outside: ").append(s.outside().describe()).append(" | areas ").append(s.policy().areas.size()).append(", protect ").append(s.policy().protect.size())
-                .append(" | travel cap ").append(s.travelCap()).append(" (this walk: ").append(travelBreaks).append(")")
+                .append(" | travel cap ").append(BreakPolicy.Costs.capFor(s.travelCap(), body.walked(), BreakPolicy.Costs.capPer(), BreakPolicy.Costs.capPerBlocks()))
+                .append(" surface breaks (this job: ").append(travelBreaks).append(", walked ").append(body.walked()).append(")")
                 .append(" | dug cells ").append(dug.size()).append(" (refill x").append(BreakPolicy.fmt(BreakPolicy.Costs.refill())).append(")");
         sb.append(" | ").append(stats.summary());
         return sb.toString();

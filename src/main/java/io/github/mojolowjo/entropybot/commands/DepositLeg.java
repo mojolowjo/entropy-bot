@@ -57,6 +57,7 @@ final class DepositLeg {
     private boolean placed;
     private Map<String, Integer> before;
     private int putN;
+    private String saidWhy;
 
     DepositLeg(Commands c, Step.Deposit step, Hands hands, Supplier<Car.Status> request) {
         this.c = c;
@@ -157,7 +158,12 @@ final class DepositLeg {
         // run HQ (rule 7, no silent failure): a chest known yet refused by the station rule ("every one known is refused: ...")
         // was said as "no chest known"; the lookup's own reason rides along
         String refused = f instanceof StationFact.None n && !io.github.mojolowjo.entropybot.aa.Nearby.NONE_KNOWN.equals(n.why()) ? " (" + n.why() + ")" : "";
-        LOG.info("[entropybot] deposit: {}{}", ch.why(), refused);
+        // run HT: "the path ... is not known yet (computing)" was logged every tick; said once per change now
+        String line = ch.why() + refused;
+        if (!line.equals(saidWhy)) {
+            saidWhy = line;
+            LOG.info("[entropybot] deposit: {}", line);
+        }
         return switch (ch.how()) {
             case WAIT -> Car.Status.running("deposit: " + ch.why());
             case FAIL -> Car.Status.failed("deposit: " + ch.why() + refused);
