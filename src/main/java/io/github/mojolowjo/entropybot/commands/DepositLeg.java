@@ -153,14 +153,21 @@ final class DepositLeg {
         // main-stations (0.39.z35): the lookup's price bonus of each chest (the main's station.mainBonusS, a use-stations area's)
         java.util.Map<String, Double> bonus = new java.util.HashMap<>();
         if (f instanceof StationFact.Known k) for (var s : k.spots()) bonus.put(DepositRule.at(new int[]{s.x(), s.y(), s.z()}), s.bonusS());
+        List<String> noPath = new ArrayList<>();
         DepositRule.Choice ch = DepositRule.choose(known, cell -> {
-            // 0.39.z41: a complete path is the price; one still computed is NaN (the deposit waits for it); else no path
+            // 0.39.z41: a complete path is the price; one still computed is NaN (the deposit waits for it); else no path.
+            // Run HV (rule 18, rule 15): only a PRICED walk is a price - the ESTIMATED answer after the first-answer wait is
+            // Baritone's straight-line guess ("31 s away" from 100 blocks under ground with no path found): not known, said
             var a = LivePathPrice.INSTANCE.price(cell[0], cell[1], cell[2], Double.NaN);
-            return a.walk() != null ? a.walk().seconds() : a.kind() == io.github.mojolowjo.entropybot.aa.PathPrice.Kind.COMPUTING ? Double.NaN : null;
+            if (a.kind() == io.github.mojolowjo.entropybot.aa.PathPrice.Kind.PRICED && a.walk() != null) return a.walk().seconds();
+            if (a.kind() == io.github.mojolowjo.entropybot.aa.PathPrice.Kind.COMPUTING) return Double.NaN;
+            noPath.add(DepositRule.at(cell) + ": " + a.kind().name().toLowerCase(java.util.Locale.ROOT) + (a.reason() == null ? "" : " - " + a.reason()));
+            return null;
         }, cell -> bonus.getOrDefault(DepositRule.at(cell), 0.0), bagChest != null, planks(p) >= 8);          // the chest recipe's input (8 planks), as the game's recipe has it
         // run HQ (rule 7, no silent failure): a chest known yet refused by the station rule ("every one known is refused: ...")
         // was said as "no chest known"; the lookup's own reason rides along
         String refused = f instanceof StationFact.None n && !io.github.mojolowjo.entropybot.aa.Nearby.NONE_KNOWN.equals(n.why()) ? " (" + n.why() + ")" : "";
+        if (!noPath.isEmpty()) refused += " (" + String.join("; ", noPath) + ")";
         // run HT: "the path ... is not known yet (computing)" was logged every tick; said once per change now
         String line = ch.why() + refused;
         if (!line.equals(saidWhy)) {

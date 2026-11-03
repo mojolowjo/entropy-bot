@@ -429,16 +429,7 @@ public final class BaritoneCar implements Car {
 
     /** The bag's blocks the danger ways may place (AaEscape.pillarBlock: throwaway and planks). */
     private static List<Item> bagBlocks() {
-        List<Item> out = new ArrayList<>();
-        var p = Minecraft.getInstance().player;
-        if (p == null) return out;
-        for (int i = 0; i < 36; i++) {  // game fact: the player inventory has 36 slots
-            ItemStack s = p.getInventory().getItem(i);
-            if (s.isEmpty() || !(s.getItem() instanceof BlockItem)) continue;
-            String id = BuiltInRegistries.ITEM.getKey(s.getItem()).getPath();
-            if (io.github.mojolowjo.entropybot.aa.AaEscape.pillarBlock(id) && !out.contains(s.getItem())) out.add(s.getItem());
-        }
-        return out;
+        return io.github.mojolowjo.entropybot.engine.RunThrowaway.bagBlocks(Minecraft.getInstance().player);     // run HV: one reader
     }
 
     private static BlockPos pos(int[] c) {

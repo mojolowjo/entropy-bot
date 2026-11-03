@@ -182,4 +182,44 @@ public final class RunThrowaway {
         var l = lease("end of a throwaway run");
         if (l != null) l.end(run);
     }
+
+    /**
+     * The bag's blocks the bot may place as filler (AaEscape.pillarBlock: Junk.placeable from the item data - a cheap full
+     * block, not a kept kit item; planks included), as items. The danger ways' pillar and the standing bag lease use it.
+     */
+    public static List<Item> bagBlocks(net.minecraft.world.entity.player.Player p) {
+        List<Item> out = new ArrayList<>();
+        if (p == null) return out;
+        for (int i = 0; i < 36; i++) {  // game fact: the player inventory has 36 slots
+            var s = p.getInventory().getItem(i);
+            if (s.isEmpty() || !(s.getItem() instanceof net.minecraft.world.item.BlockItem)) continue;
+            String id = BuiltInRegistries.ITEM.getKey(s.getItem()).getPath();
+            if (io.github.mojolowjo.entropybot.aa.AaEscape.pillarBlock(id) && !out.contains(s.getItem())) out.add(s.getItem());
+        }
+        return out;
+    }
+
+    private static final Object BAG_RUN = new Object();
+    private static List<Item> bagHeld = List.of();
+
+    /**
+     * Run HV (2026-11-02, the HS world: the bot 100 blocks under ground with 90 cobbled deepslate, granite, diorite and
+     * andesite, the only way up a one-wide shaft; "spare throwaway in bag none" - Baritone's list is dirt, cobblestone,
+     * netherrack, stone - so no pillar was priced and every search from the pocket found no path): the bag's placeable
+     * junk blocks ({@link #bagBlocks}, the item data) are held as throwaway for EVERY walk through one standing lease,
+     * refreshed when the bag's set changes (the reserves still keep what a craft needs: the lease's spare). Client thread.
+     */
+    public static void holdBag(net.minecraft.world.entity.player.Player p) {
+        List<Item> now = bagBlocks(p);
+        if (now.equals(bagHeld)) return;
+        var l = lease("the bag's throwaway blocks");
+        if (l == null) return;
+        if (!bagHeld.isEmpty()) l.end(BAG_RUN);
+        bagHeld = now;
+        if (now.isEmpty()) return;
+        l.add(BAG_RUN, now);
+        List<String> names = new ArrayList<>();
+        for (Item it : now) names.add(BuiltInRegistries.ITEM.getKey(it).getPath());
+        LOG.info("[entropybot] run throwaway: the bag's placeable blocks are throwaway for every walk now: {}", String.join(", ", names));
+    }
 }
