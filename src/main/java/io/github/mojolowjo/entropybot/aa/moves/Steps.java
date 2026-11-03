@@ -981,8 +981,9 @@ public final class Steps {
         // stand stood out its 30 s; ~24 s lost per order, five orders): the answer the stand waits for has landed when the
         // order's price no longer stands on a walk (no way now, kept, met - anything but a stand or a seen source still
         // waiting on its walk). The stand ends then, as at its wait's end: a price fact, the order priced again (failOrReplan)
+        // 2026-11-03 (runs JU, JV, JW, JAB): an answer whose reason is a walk still computing keeps the stand standing (StandWait.stillComputing)
         if (running && at instanceof Step.AwaitPaths && r != null && (r.steps() == null || r.steps().isEmpty())
-                && !(r.why() != null && r.why().startsWith(FactChange.SEEN_WAITS))) {
+                && !(r.why() != null && r.why().startsWith(FactChange.SEEN_WAITS)) && !StandWait.stillComputing(r.why())) {
             pushReserve(held);                   // the stand's end re-plan releases the table itself
             String landed = StandWait.landedWords(f.text(), r.why());
             safeCancel(landed);

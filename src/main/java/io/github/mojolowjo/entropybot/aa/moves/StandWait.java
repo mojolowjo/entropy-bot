@@ -85,5 +85,15 @@ public final class StandWait {
                 + ": the stand ends now, the order is priced again";
     }
 
+    /**
+     * 2026-11-03 (runs JU, JV, JW, JAB: the order "stopped at step 1 (stand ...)" 1-60 s in, with the walk's price "not known
+     * yet (computing)"): a re-plan answer with no steps whose reason is a walk still computing is NOT the answer the stand waits
+     * for - the stand stands on (rule 15: not known is no verdict). The walks' count was 0 at that instant (the requests had
+     * not been registered yet), so the planner gave no stand of its own. Pure.
+     */
+    public static boolean stillComputing(String why) {
+        return why != null && why.contains(io.github.mojolowjo.entropybot.aa.PathPrice.NOT_KNOWN + " yet (computing");
+    }
+
     private static String secs(long ticks) { return String.format(java.util.Locale.ROOT, "%.1f", ticks / (double) GameTimes.TPS); }
 }

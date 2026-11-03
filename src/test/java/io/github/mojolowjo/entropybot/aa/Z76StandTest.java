@@ -193,4 +193,14 @@ class Z76StandTest {
         assertTrue(c.dropped().stream().anyMatch(d -> d.startsWith("tree 30 m: ") && d.contains("dearer")), c.dropped().toString());
         assertEquals(30 / io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps(), NeedChain.estimateFloor(NeedChain.walked(PathPrice.Answer.estimated(new PathPrice.Walk(0), "e")), 30).seconds(), 1e-9);
     }
+
+    /** 2026-11-03 (runs JU, JV, JW, JAB): a no-steps answer whose reason is a walk still computing keeps the stand standing. */
+    @Test
+    void aComputingAnswerKeepsTheStandStanding() {
+        assertTrue(io.github.mojolowjo.entropybot.aa.moves.StandWait.stillComputing("raw_iron: walk: path not known yet (computing) | dropped: raw_iron from raw_iron_block: loop"));
+        assertTrue(io.github.mojolowjo.entropybot.aa.moves.StandWait.stillComputing(NeedChain.COMPUTING));
+        assertFalse(io.github.mojolowjo.entropybot.aa.moves.StandWait.stillComputing("raw_iron: walk: path not known (chunks not loaded)"));
+        assertFalse(io.github.mojolowjo.entropybot.aa.moves.StandWait.stillComputing("unreachable: no path"));
+        assertFalse(io.github.mojolowjo.entropybot.aa.moves.StandWait.stillComputing(null));
+    }
 }
