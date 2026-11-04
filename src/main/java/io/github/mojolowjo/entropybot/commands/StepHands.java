@@ -1587,7 +1587,9 @@ public final class StepHands implements Steps.Hands {
     private String walk(Step.Walk w) {
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null) return "error: not in a world";
-        String r = follow(w.text(), () -> c.stepJob(w.text(), () -> c.walkTo(p, w.x(), w.y(), w.z())));
+        // run JAF (2026-11-04): a "near" walk (the chain's walk to within the mine's sight of a spot) goes to the cell itself,
+        // on Baritone's goal below - never walkTo's free-spot test for a cell inside a block (it ended the walk at its start)
+        String r = follow(w.text(), () -> c.stepJob(w.text(), () -> w.near() > 0 ? c.walkNearTo(p, w.x(), w.y(), w.z()) : c.walkTo(p, w.x(), w.y(), w.z())));
         if (r != null) return r;
         if (c.jobs.running() && "travel".equals(c.jobs.job.type)) {
             walkJob = c.jobs.job;

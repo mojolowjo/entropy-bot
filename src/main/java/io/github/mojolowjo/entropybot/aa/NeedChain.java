@@ -4912,6 +4912,17 @@ public final class NeedChain {
         return k.startsWith("collect ") ? k + " at " + sp.x() + " " + sp.y() + " " + sp.z() : k;
     }
 
+    /**
+     * run JAF (2026-11-04 14:26:18: "the walk to collect dirt failed: 5 64 -5 is inside dirt..." held "collect dirt" for the
+     * order, so no dirt spot counted again and three explores for dirt ran 15 min over dirt): the spot key of a Collect
+     * step that names its priced spot - the same form as {@link #spotKey(String, Spot)} ("collect dirt at 5 64 -5"), so a
+     * walk that failed on its way there holds that spot only. Null: no spot named (the item key applies).
+     */
+    public static String spotKey(io.github.mojolowjo.entropybot.aa.moves.Step.Collect k) {
+        if (k == null || k.at() == null) return null;
+        return "collect " + shw(word(k.item())) + " at " + k.at()[0] + " " + k.at()[1] + " " + k.at()[2];
+    }
+
     /** z75 review 2: the prefix of {@link #nearKey}. */
     public static final String NEAR = "near collect ";
 

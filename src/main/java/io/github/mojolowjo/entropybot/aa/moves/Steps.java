@@ -1361,7 +1361,11 @@ public final class Steps {
      */
     public static FactChange.Fact walkLeads(List<? extends Step> steps, int idx, String reason) {
         if (steps == null || idx < 0 || idx + 1 >= steps.size() || !(steps.get(idx) instanceof Step.Walk)) return null;
-        String src = io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(steps.get(idx + 1));
+        Step next = steps.get(idx + 1);
+        // run JAF (2026-11-04): a collect with a priced spot is held at that spot only ("collect dirt at 5 64 -5"), never the
+        // item for the order (z69 fix 1's rule for the walk's own unreachable answer; the item key held every dirt spot 15 min)
+        String src = next instanceof Step.Collect k && k.at() != null ? io.github.mojolowjo.entropybot.aa.NeedChain.spotKey(k)
+                : io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(next);
         return src == null ? null : FactChange.walkFor(src, reason.replaceFirst("^error: ", ""));
     }
 

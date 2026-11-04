@@ -1238,6 +1238,20 @@ public final class Commands implements Chains.Env {
         return jobs.startTravel("goto " + at, "going to " + at, null, null, false);
     }
 
+    /**
+     * run JAF (2026-11-04 14:26:18: "goto 5 64 -5 near 10" - the chain's walk to within the mine's sight of a dirt spot -
+     * ended "5 64 -5 is inside dirt and there's no free spot within 3 blocks" before Baritone was asked): a walk to within
+     * {@code near} of a cell is the travel to the cell itself; its goal is Baritone's (StepHands.walk: GoalNear for the far
+     * leg, the priced GoalGetToBlock otherwise), so {@link #walkTo}'s exact-cell conversions (the ground under a target in
+     * the air, the mod's free spot by a target inside a block) do not apply - the car picks the stand (RULES: no choosers).
+     */
+    String walkNearTo(LocalPlayer player, int gx, int gy, int gz) {
+        String at = gx + " " + gy + " " + gz;
+        String shaftNo = shaftRefusal(player, at);
+        if (shaftNo != null) return shaftNo;
+        return jobs.startTravel("goto " + at, "going to " + at, null, null, false);
+    }
+
     /** The walk to a player (in view, else the companion mod's fresh position), the travel job. */
     String comeTo(String from, LocalPlayer player) {
         Player target = Jobs.findPlayer(from);
