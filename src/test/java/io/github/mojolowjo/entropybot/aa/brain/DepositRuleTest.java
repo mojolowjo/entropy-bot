@@ -39,6 +39,27 @@ class DepositRuleTest {
         assertEquals("no chest known, and no chest or 8 planks in the bag", none.why());
     }
 
+    /** Run JAC (2026-11-03): the main chest 360 m off in unloaded chunks had only an estimate; the deposit crafted a chest instead. */
+    @Test
+    void aKnownChestWithOnlyAnEstimateIsWalkedToward() {
+        int[] far = {2, 72, 0}, farther = {400, 72, 0};
+        var c = DepositRule.choose(List.of(farther, far), p -> null, p -> 0.0, p -> p == far ? 180.0 : 400.0, false, true);
+        assertEquals(DepositRule.How.KNOWN, c.how());
+        assertArrayEquals(far, c.at());
+        assertTrue(c.estimated());
+        assertTrue(c.why().contains("estimate 180 s"), c.why());
+        // a priced chest still beats any estimate (rule 18: a rank is never a price)
+        int[] near = {0, 64, 10};
+        var pr = DepositRule.choose(List.of(far, near), p -> p == near ? 30.0 : null, p -> 0.0, p -> p == far ? 5.0 : null, false, true);
+        assertArrayEquals(near, pr.at());
+        assertFalse(pr.estimated());
+        // one still computed is waited for before any estimate is taken
+        var w = DepositRule.choose(List.of(far, near), p -> p == near ? Double.NaN : null, p -> 0.0, p -> 5.0, false, true);
+        assertEquals(DepositRule.How.WAIT, w.how());
+        // no estimate either: the old way (bag, craft, fail)
+        assertEquals(DepositRule.How.CRAFT, DepositRule.choose(List.of(far), p -> null, p -> 0.0, p -> null, false, true).how());
+    }
+
     @Test
     void notLoadedWaitsNeverNone() {
         assertEquals(DepositRule.How.WAIT, DepositRule.choose(null, p -> 1.0, true, true).how());

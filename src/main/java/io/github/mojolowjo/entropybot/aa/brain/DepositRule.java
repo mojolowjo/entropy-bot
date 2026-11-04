@@ -37,8 +37,13 @@ public final class DepositRule {
 
     public enum How { KNOWN, BAG, CRAFT, WAIT, FAIL }
 
-    /** The chest choice: KNOWN at {@code at}; BAG / CRAFT a new one; WAIT (not loaded); FAIL with {@code why}. */
-    public record Choice(How how, int[] at, String why) {}
+    /**
+     * The chest choice: KNOWN at {@code at}; BAG / CRAFT a new one; WAIT (not loaded); FAIL with {@code why}.
+     * {@code estimated} (run JAC): KNOWN on Baritone's estimate only - its path is not known yet, the walk prices it on the way.
+     */
+    public record Choice(How how, int[] at, String why, boolean estimated) {
+        public Choice(How how, int[] at, String why) { this(how, at, why, false); }
+    }
 
     /**
      * @param known     the known containers nearest-first by the line (null = the fact is not loaded yet)
@@ -55,22 +60,41 @@ public final class DepositRule {
      * station.mainBonusS): a price, not a rule (a main far beyond the bonus loses to a near one).
      */
     public static Choice choose(List<int[]> known, Function<int[], Double> pathCost, Function<int[], Double> bonusS, boolean chestInBag, boolean canCraft) {
+        return choose(known, pathCost, bonusS, k -> null, chestInBag, canCraft);
+    }
+
+    /**
+     * Run JAC (2026-11-03, rule 15: not known is not unreachable): the same with {@code estimateS} - Baritone's estimate of
+     * the walk to a chest whose path is not known (its chunks not loaded, 360 m off), null = no estimate. A priced chest
+     * wins; one still computed is waited for; else the known chest with the cheapest estimate less its bonus is walked
+     * toward, priced on the way ({@link Choice#estimated}); a new chest is made only when no known chest has an estimate
+     * either (the run crafted a chest from the planks it was to deposit, and failed: no table).
+     */
+    public static Choice choose(List<int[]> known, Function<int[], Double> pathCost, Function<int[], Double> bonusS,
+                                Function<int[], Double> estimateS, boolean chestInBag, boolean canCraft) {
         if (known == null) return new Choice(How.WAIT, null, "the chest memory is not loaded yet");
-        int[] best = null;
-        double bestCost = Double.MAX_VALUE, bestRaw = 0, bestBonus = 0;
+        int[] best = null, guess = null;
+        double bestCost = Double.MAX_VALUE, bestRaw = 0, bestBonus = 0, guessCost = Double.MAX_VALUE, guessRaw = 0;
         int noPath = 0, computing = 0;
         for (int[] k : known) {
             Double c = pathCost.apply(k);
-            if (c == null) { noPath++; continue; }
-            if (c.isNaN()) { computing++; continue; }
             Double b = bonusS.apply(k);
             double bb = b == null ? 0 : Math.max(0, b);
+            if (c == null) {
+                Double e = estimateS.apply(k);
+                if (e == null || e.isNaN()) { noPath++; continue; }
+                if (e - bb < guessCost) { guessCost = e - bb; guess = k; guessRaw = e; }
+                continue;
+            }
+            if (c.isNaN()) { computing++; continue; }
             if (c - bb < bestCost) { bestCost = c - bb; best = k; bestRaw = c; bestBonus = bb; }
         }
         if (best != null) return new Choice(How.KNOWN, best, "the known chest at " + at(best) + " (" + Math.round(bestRaw) + " s away"
                 + (bestBonus > 0 ? ", -" + Math.round(bestBonus) + " s bonus" : "") + ")");
         // 0.39.z41: a known chest whose path is still computed is waited for (it may be the nearest): no chest made meanwhile
         if (computing > 0) return new Choice(How.WAIT, null, "the path to " + computing + " known chest" + (computing == 1 ? "" : "s") + " is not known yet (computing)");
+        if (guess != null) return new Choice(How.KNOWN, guess, "the known chest at " + at(guess) + ": its path is not known (chunks not loaded), Baritone's estimate "
+                + Math.round(guessRaw) + " s - walking toward it, priced on the way", true);
         String note = noPath > 0 ? " (no path to the " + noPath + " known)" : "";
         if (chestInBag) return new Choice(How.BAG, null, "a chest from the bag" + note);
         if (canCraft) return new Choice(How.CRAFT, null, "a chest crafted from 8 planks" + note);

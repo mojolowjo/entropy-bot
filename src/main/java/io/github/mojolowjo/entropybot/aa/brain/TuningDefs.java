@@ -80,6 +80,7 @@ final class TuningDefs {
         // blueprint
         Tuning.def("blueprint.maxFails", 3, "rm-constants 0.39.u2 (was Blueprint.MAX_FAILS)", "Largest schematic AA takes (cells, air included)");
         Tuning.def("steps.placeNearR", 3, "one-planner 0.39.z1", "blocks within which the fork's placeNear picks the cell of a place-near step (a table, a furnace)");
+        Tuning.def("deposit.maxWalkSegments", 30, "run JAC (2026-11-03)", "the deposit's walk toward a known chest whose chunks are not loaded (Baritone's estimate, no priced path) restarts each time Baritone's segment ends nearer than it started; this many segments and still off, the use walks from there (a safety net)");
         Tuning.def("place.failedNearM", 8, "0.39.z67 item 1 (run Y 09:26:14 / 09:31:16)", "a place-near that failed holds its spot for the order: the bot within this many blocks of it does not place near me again (a cell with room within steps.placeNearR of it is none either); also the spacing of the kept solid-ground cells");
         Tuning.def("place.roomNear", 1, "0.39.z67 item 1 (run Y)", "the walk to a cell with room (solid ground stood on, a known station) ends within this many blocks of it (Baritone's GoalNear); the placeNear there picks the cell");
         Tuning.def("place.roomsKept", 8, "0.39.z67 item 1 (run Y)", "solid-ground cells the bot stood on that are kept as cells with room (each more than place.failedNearM from the last kept one; the oldest goes)");

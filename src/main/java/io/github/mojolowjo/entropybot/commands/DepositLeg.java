@@ -154,16 +154,29 @@ final class DepositLeg {
         java.util.Map<String, Double> bonus = new java.util.HashMap<>();
         if (f instanceof StationFact.Known k) for (var s : k.spots()) bonus.put(DepositRule.at(new int[]{s.x(), s.y(), s.z()}), s.bonusS());
         List<String> noPath = new ArrayList<>();
+        java.util.Map<String, io.github.mojolowjo.entropybot.aa.PathPrice.Answer> answers = new java.util.HashMap<>();
         DepositRule.Choice ch = DepositRule.choose(known, cell -> {
             // 0.39.z41: a complete path is the price; one still computed is NaN (the deposit waits for it); else no path.
             // Run HV (rule 18, rule 15): only a PRICED walk is a price - the ESTIMATED answer after the first-answer wait is
             // Baritone's straight-line guess ("31 s away" from 100 blocks under ground with no path found): not known, said
             var a = LivePathPrice.INSTANCE.price(cell[0], cell[1], cell[2], Double.NaN);
+            answers.put(DepositRule.at(cell), a);
             if (a.kind() == io.github.mojolowjo.entropybot.aa.PathPrice.Kind.PRICED && a.walk() != null) return a.walk().seconds();
             if (a.kind() == io.github.mojolowjo.entropybot.aa.PathPrice.Kind.COMPUTING) return Double.NaN;
             noPath.add(DepositRule.at(cell) + ": " + a.kind().name().toLowerCase(java.util.Locale.ROOT) + (a.reason() == null ? "" : " - " + a.reason()));
             return null;
-        }, cell -> bonus.getOrDefault(DepositRule.at(cell), 0.0), bagChest != null, planks(p) >= 8);          // the chest recipe's input (8 planks), as the game's recipe has it
+        }, cell -> bonus.getOrDefault(DepositRule.at(cell), 0.0), cell -> {
+            // Run JAC (rule 15): a chest whose path is not known because its chunks are not loaded (ESTIMATED after the
+            // first-answer wait, or CHUNKS) is walked toward on Baritone's estimate, never passed over for a new chest
+            var a = answers.get(DepositRule.at(cell));
+            if (a == null) return null;
+            if (a.kind() == io.github.mojolowjo.entropybot.aa.PathPrice.Kind.ESTIMATED && a.walk() != null) return a.walk().seconds();
+            if (a.kind() == io.github.mojolowjo.entropybot.aa.PathPrice.Kind.CHUNKS) {
+                double e = LivePathPrice.INSTANCE.estimate(cell[0], cell[1], cell[2]);
+                return Double.isNaN(e) ? null : e;
+            }
+            return null;
+        }, bagChest != null, planks(p) >= 8);          // the chest recipe's input (8 planks), as the game's recipe has it
         // run HQ (rule 7, no silent failure): a chest known yet refused by the station rule ("every one known is refused: ...")
         // was said as "no chest known"; the lookup's own reason rides along
         String refused = f instanceof StationFact.None n && !io.github.mojolowjo.entropybot.aa.Nearby.NONE_KNOWN.equals(n.why()) ? " (" + n.why() + ")" : "";
@@ -177,7 +190,7 @@ final class DepositLeg {
         return switch (ch.how()) {
             case WAIT -> Car.Status.running("deposit: " + ch.why());
             case FAIL -> Car.Status.failed("deposit: " + ch.why() + refused);
-            case KNOWN -> { chest = ch.at(); phase = Phase.WALK; yield Car.Status.running("deposit: " + ch.why()); }
+            case KNOWN -> { chest = ch.at(); estimated = ch.estimated(); phase = Phase.WALK; yield Car.Status.running("deposit: " + ch.why()); }
             case BAG -> goStart(p);
             case CRAFT -> {
                 String r = hands.craft("minecraft:chest", 1);
@@ -215,6 +228,10 @@ final class DepositLeg {
     }
 
     private boolean walking;
+    /** Run JAC: the chest was chosen on Baritone's estimate (its chunks not loaded); the walk is Baritone's own, segment by segment. */
+    private boolean estimated;
+    private BlockPos walkFrom;
+    private int walkStarts;
 
     /**
      * Run HU (2026-11-02, the HS world: the deposit's price found the chest 31 s away - a full path out of the cave - yet the
@@ -236,9 +253,23 @@ final class DepositLeg {
             io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "deposit");
             boolean kept = LivePathPrice.walk(b, at);
             walking = true;
+            walkFrom = p.blockPosition();
+            walkStarts++;
             return Car.Status.running("deposit: to the chest at " + DepositRule.at(chest) + (kept ? " on its priced path" : " (no kept path from here: Baritone searches)"));
         }
         if (!b.getCustomGoalProcess().isActive() && !Core.INSTANCE.reflexes.hold()) {
+            // Run JAC (rule 15): a walk toward a chest 360 m off in unloaded chunks ends at the edge of what Baritone could
+            // path; while it still got nearer and the chest is not in reach, the walk starts again from here (the next segment)
+            BlockPos here = p.blockPosition();
+            boolean nearer = walkFrom == null || here.distSqr(at) < walkFrom.distSqr(at) - 4;
+            int maxStarts = Tuning.i("deposit.maxWalkSegments");
+            if (estimated && nearer && here.distSqr(at) > 36 && walkStarts < maxStarts) {
+                LOG.info("[entropybot] deposit: the walk toward the chest at {} ended at {} ({} m off), nearer than its start - the next segment starts (start {})",
+                        DepositRule.at(chest), Jobs.fmt(Jobs.here(p)), Math.round(Math.sqrt(here.distSqr(at))), walkStarts + 1);
+                walking = false;
+                return Car.Status.running("deposit: toward the chest at " + DepositRule.at(chest) + " - next segment");
+            }
+            if (estimated && walkStarts >= maxStarts) LOG.info("[entropybot] deposit: {} walk segments toward the chest at {} and still {} m off - the use walks from here", walkStarts, DepositRule.at(chest), Math.round(Math.sqrt(here.distSqr(at))));
             LOG.info("[entropybot] deposit: the walk to the chest at {} ended at {} short of it - the use walks from here", DepositRule.at(chest), Jobs.fmt(Jobs.here(p)));
             phase = Phase.USE;
             return Car.Status.running("deposit: the walk ended short of the chest at " + DepositRule.at(chest) + " - the use walks from here");

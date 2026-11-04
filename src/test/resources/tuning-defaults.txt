@@ -885,6 +885,7 @@ nearby.scanY	10.0
 nearby.useStationsS	30.0
 only.otherWeight	0.0
 steps.placeNearR	3.0
+deposit.maxWalkSegments	30.0
 place.failedNearM	8.0
 place.roomNear	1.0
 place.roomsKept	8.0
