@@ -162,7 +162,44 @@ public final class Trail {
      * One on-ground feet cell at game tick {@code tick}; {@code out}: the bot is on the surface (the one below-surface reader).
      * Returns a line to log (opened, closed, cut, a one-way segment), null: nothing to say.
      */
-    public String offer(Cell f, long tick, boolean out, int jumpBlocks) {
+    public String offer(Cell f, long tick, boolean out, int jumpBlocks) { return offer(f, tick, out ? 0 : 1, jumpBlocks, 0, 1, 0); }
+
+    /** Job-price hysteresis: when the bot went under ground (-1: out) and came out (-1: under) by game tick; the open said. */
+    private long underSince = -1, outSince = -1;
+    private boolean openSaid;
+
+    /**
+     * Job-price (run JAO: 113 opens and clears in 13 minutes, often within one second, the bot at a cave lip flickering
+     * across the surface reader): {@code depth} below the surface (0: out). The trail records from the first cell under
+     * ground, but says "opened" only after {@code openAfterS} seconds under (trail.openAfterS) or {@code openDepth} deep
+     * (trail.openDepth); a pop-out before that resets it quietly. Open, it clears only after {@code clearAfterS} seconds
+     * out (trail.clearAfterS); a shorter pop-out keeps recording. One line per real open and clear.
+     */
+    public String offer(Cell f, long tick, int depth, int jumpBlocks, double openAfterS, int openDepth, double clearAfterS) {
+        if (state == State.NOT_LOADED || f == null) return null;
+        if (state == State.OPEN && !openSaid && underSince < 0 && outSince < 0) openSaid = true;   // loaded open from a file
+        if (state != State.OPEN) openSaid = false;                                // cleared from outside (the chest, the owner)
+        boolean out = depth <= 0;
+        if (out) { underSince = -1; if (outSince < 0) outSince = tick; }
+        else { outSince = -1; if (underSince < 0) underSince = tick; }
+        if (out) {
+            if (state == State.OPEN && openSaid && (tick - outSince) / (double) GameTimes.TPS < clearAfterS) return core(f, tick, false, jumpBlocks);
+            boolean quiet = state == State.OPEN && !openSaid;
+            String r = core(f, tick, true, jumpBlocks);
+            openSaid = false;
+            return quiet && r != null && r.startsWith("trail: cleared, out at") ? null : r;
+        }
+        String r = core(f, tick, false, jumpBlocks);
+        if (state != State.OPEN) { openSaid = false; return r; }
+        if (!openSaid && ((tick - underSince) / (double) GameTimes.TPS >= openAfterS || depth >= openDepth)) {
+            openSaid = true;
+            String o = "trail: opened under ground, the way down starts at " + start.text();
+            return r == null ? o : o + "; " + r;
+        }
+        return r;
+    }
+
+    private String core(Cell f, long tick, boolean out, int jumpBlocks) {
         if (state == State.NOT_LOADED || f == null) return null;
         if (segTick < 0) { segTick = tick; segBrk = brk; }  // loaded from a file: the tail's clock starts now
         String said = null;
@@ -186,7 +223,7 @@ public final class Trail {
             if (start == null) { start = last != null ? last : f; segFrom = start; }
             if (segFrom == null) segFrom = start;
             dirty = true;
-            said = "trail: opened under ground, the way down starts at " + start.text();
+            // job-price: the "opened" line is offer's, said once the stay under ground is real
         }
         Cell p = last;
         long pt = lastTick, pb = lastBrk;

@@ -71,9 +71,11 @@ public final class TrailRuntime {
             BlockPos f = p.blockPosition();
             if (!f.equals(lastFeet)) {
                 lastFeet = f;
-                boolean out = Jobs.belowSurface(mc.level, f.getX(), f.getY(), f.getZ()) == 0;
+                int depth = Jobs.belowSurface(mc.level, f.getX(), f.getY(), f.getZ());
                 int before = t.segs().size();
-                String line = t.offer(new Trail.Cell(f.getX(), f.getY(), f.getZ()), tick, out, Tuning.i("trail.jumpBlocks"));
+                // job-price (run JAO): hysteresis - a lip flicker neither opens nor clears (trail.openAfterS / openDepth / clearAfterS)
+                String line = t.offer(new Trail.Cell(f.getX(), f.getY(), f.getZ()), tick, depth, Tuning.i("trail.jumpBlocks"),
+                        Tuning.get("trail.openAfterS"), Tuning.i("trail.openDepth"), Tuning.get("trail.clearAfterS"));
                 if (line != null) LOG.info("[entropybot] {}", line);
                 if (probe() && t.segs().size() > before) {
                     var s = t.segs().get(t.segs().size() - 1);
