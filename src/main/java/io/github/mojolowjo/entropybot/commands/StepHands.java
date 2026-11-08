@@ -2678,6 +2678,7 @@ public final class StepHands implements Steps.Hands {
         int prevSegBroken = bandCell == null ? 0 : segBroken(p);       // job-tunnel2: the last segment's own blocks, read before its cell goes
         bandCell = null;
         bandWalking = false;
+        bandDirect = false;
         digFrom = me.clone();
         if (t.until() != null) {
             String seen = baseUnderFeet(p, t);
@@ -2713,9 +2714,37 @@ public final class StepHands implements Steps.Hands {
         bandSolid0 = solidYs(p, bandCell[0], bandCell[2], st.cell()[1] - 1, bandCell[1]);
         bandLeg = io.github.mojolowjo.entropybot.aa.moves.BandLegCount.start(bandLeg, prevSegBroken, st.cell()[1], bandCell[1], bandMs0, Tuning.get("band.legCarryS"));
         if (bandLeg.fromY() != st.cell()[1]) LOG.info("[entropybot] steps: {} - the leg counts on from its first start at y {} ({} blocks broken before this segment; band.legCarryS)", t.text(), bandLeg.fromY(), bandLeg.broken());
+        // job-dig2 (run JAU): a landed dig price of a column near the feet is reused - that column is dug, no new ask
+        if (y > bandCell[1]) {
+            double reuseM = Tuning.get("band.columnReuseM");
+            int[] col = io.github.mojolowjo.entropybot.aa.moves.BandDirect.reuse(LivePathPrice.INSTANCE.landedInto(), st.cell(), bandCell[1], reuseM);
+            if (col != null) {
+                LOG.info("[entropybot] steps: {} - {}", t.text(), io.github.mojolowjo.entropybot.aa.moves.BandDirect.reuseWords(col,
+                        io.github.mojolowjo.entropybot.aa.moves.BandDirect.horiz(col, st.cell())));
+                bandCell = col;
+                bandSolid0 = solidYs(p, bandCell[0], bandCell[2], st.cell()[1] - 1, bandCell[1]);
+                bandDirect(b, t, "a landed price of a column near the feet; Baritone's own path to it");
+                return null;
+            }
+        }
         LOG.info("[entropybot] steps: {} - Baritone's priced path to {} (the band's nearest Y under the search's start {}{}; walked once its path is known)", t.text(), Jobs.fmt(bandCell),
                 Jobs.fmt(st.cell()), st.standable() ? "" : " - it has no floor: a no-path from it is not known, never the band's fact");
         return null;
+    }
+
+    /** job-dig2: the leg digs on Baritone's own search (no price asked; the band price stands). */
+    private boolean bandDirect;
+
+    /**
+     * job-dig2 (run JAU): the dig goal handed to Baritone directly - GoalBlock at the band cell, the TRAVEL lease, Baritone's
+     * own search with its planAhead partial paths (no price ask, no 2000 ms timeout); the band price stays the leg's price.
+     */
+    private void bandDirect(IBaritone b, Step.ToBand t, String why) {
+        io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.aa.moves.BandLeg.INTENT, "to band");
+        b.getCustomGoalProcess().setGoalAndPath(LivePathPrice.into(new BlockPos(bandCell[0], bandCell[1], bandCell[2])));
+        bandWalking = true;
+        bandDirect = true;
+        LOG.info("[entropybot] steps: {} - {}", t.text(), io.github.mojolowjo.entropybot.aa.moves.BandDirect.words(bandCell[1], why));
     }
 
     /** job-digpace: the dry step's start (System ms; 0 = not stepping) and whether this leg tried it (once per leg). */
@@ -2825,6 +2854,11 @@ public final class StepHands implements Steps.Hands {
             // only a complete search's no-path from a standable start is the band's fact (BandLeg)
             Start st = bandStart != null ? bandStart : searchStart(b, p);
             var next = io.github.mojolowjo.entropybot.aa.moves.BandLeg.of(a, st.cell(), st.standable());
+            // job-dig2 (run JAU): not known, or still computing past band.askWaitS - Baritone digs on its own path, never an end
+            if (io.github.mojolowjo.entropybot.aa.moves.BandDirect.handOver(next.act(), System.currentTimeMillis() - bandMs0, Tuning.get("band.askWaitS"))) {
+                bandDirect(b, t, next.why());
+                return Car.Status.running(t.text() + ": digging on Baritone's own path to " + Jobs.fmt(bandCell) + " (the price not known yet)");
+            }
             switch (next.act()) {
                 case WALK -> {
                     io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.aa.moves.BandLeg.INTENT, "to band");
@@ -2857,6 +2891,11 @@ public final class StepHands implements Steps.Hands {
                 wc = null;                               // an older fork: the stop is not known
             }
             String nk = io.github.mojolowjo.entropybot.aa.moves.BandLeg.walkEnd(wc == null ? null : wc.exhausted(), st.cell(), st.standable(), y);
+            if (nk != null && !bandDirect && bandCell != null) {
+                // job-dig2 (run JAU 05:38:42): the priced walk's own search ran out - Baritone digs on, never an end
+                bandDirect(b, t, nk);
+                return Car.Status.running(t.text() + ": digging on Baritone's own path to " + Jobs.fmt(bandCell) + " (the price not known yet)");
+            }
             if (nk != null) {
                 io.github.mojolowjo.entropybot.aa.moves.FactChange.bandNotKnown(t.minY(), t.maxY(), nk);
                 return Car.Status.failed(t.text() + ": " + nk);

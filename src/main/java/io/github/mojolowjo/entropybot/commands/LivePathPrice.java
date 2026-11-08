@@ -57,6 +57,14 @@ public final class LivePathPrice implements PathPrice {
 
     public long started() { return started; }
 
+    /** job-dig2: the "into" cells whose priced path landed complete (game thread; newest last). */
+    private final java.util.ArrayDeque<int[]> landedInto = new java.util.ArrayDeque<>();
+    /** structural: a memory bound on the landed dig columns kept */
+    private static final int LANDED_INTO_MAX = 32;
+
+    /** job-dig2: a copy of the landed dig columns (BandDirect#reuse). Game thread. */
+    public java.util.List<int[]> landedInto() { return new java.util.ArrayList<>(landedInto); }
+
     /** 0.39.z56 item 3 (load probe): searches in flight now (game thread). */
     public int inFlight() { return inFlight.size() + pending.size(); }
 
@@ -427,6 +435,12 @@ public final class LivePathPrice implements PathPrice {
         }
         lastLanded = "walk to " + key.replace(',', ' ') + ": " + (out.walk() != null ? Math.round(out.walk().seconds()) + " s, complete" : out.kind() + " (" + out.reason() + ")");
         LOG.debug("[entropybot] path cost: {}", lastLanded);
+        if (key.startsWith(INTO) && out.kind() == Kind.PRICED) {     // job-dig2: a landed dig column, reused by the band leg
+            BlockPos c = posOf(key);
+            landedInto.removeIf(q -> q[0] == c.getX() && q[1] == c.getY() && q[2] == c.getZ());
+            landedInto.addLast(new int[]{c.getX(), c.getY(), c.getZ()});
+            while (landedInto.size() > LANDED_INTO_MAX) landedInto.removeFirst();
+        }
         if (out.kind() == Kind.NONE || out.kind() == Kind.UNREACHABLE) noPath.put(key, out.reason() == null ? "no path" : out.reason());
         else noPath.remove(key);
         landed++;

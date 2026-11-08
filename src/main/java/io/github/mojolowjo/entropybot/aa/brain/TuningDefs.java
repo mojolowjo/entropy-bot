@@ -81,7 +81,9 @@ final class TuningDefs {
         Tuning.def("blueprint.maxFails", 3, "rm-constants 0.39.u2 (was Blueprint.MAX_FAILS)", "Largest schematic AA takes (cells, air included)");
         Tuning.def("steps.bandProbeS", 0, "job-digpace (run JAT: 46 levels in 6 min, no line in between)", "the dig-down leg's probe: every this many s a line with y, levels, s, feet/head in water, on ground, Baritone active; 0 = off");
         Tuning.def("band.dryLevels", 4, "job-digpace (run JAT: dug from a lake)", "the dig-down leg's start column is dry when none of its first this many cells under the feet holds a fluid");
-        Tuning.def("band.dryStepM", 8, "job-digpace (run JAT)", "a wet start: the dig-down leg first walks to a dry standable cell within this many blocks (Baritone picks which)");
+        Tuning.def("band.askWaitS", 5, "job-dig2 (run JAU: two not-known dig ends parked the order)", "the dig-down leg's price ask still not known after this many seconds: Baritone digs on its own path, the band price stands");
+        Tuning.def("band.columnReuseM", 8, "job-dig2 (run JAU)", "a landed dig price of a column within this many blocks of the feet is reused: the leg digs that column, no new ask");
+        Tuning.def("band.dryStepM", 8,"job-digpace (run JAT)", "a wet start: the dig-down leg first walks to a dry standable cell within this many blocks (Baritone picks which)");
         Tuning.def("band.wetBreakFactor", 5, "job-digpace (run JAT)", "the dig-down price from a wet start is times this (a game fact: eyes in water, no Aqua Affinity, break speed / 5)");
         Tuning.def("steps.placeNearR", 3, "one-planner 0.39.z1", "blocks within which the fork's placeNear picks the cell of a place-near step (a table, a furnace)");
         Tuning.def("deposit.maxWalkSegments", 30, "run JAC (2026-11-03)", "the deposit's walk toward a known chest whose chunks are not loaded (Baritone's estimate, no priced path) restarts each time Baritone's segment ends nearer than it started; this many segments and still off, the use walks from there (a safety net)");

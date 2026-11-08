@@ -12,6 +12,9 @@ public final class FactChange {
     public record Fact(String key, String text) {
         /** 0.39.z41: a new price, not a failure: a walk's path became known (the order is priced again, nothing is charged). */
         public boolean price() { return key.startsWith(PRICE); }
+
+        /** job-dig2 (run JAU, rule 15): a NOT KNOWN end - never a failure, never counted by the park rule. */
+        public boolean notKnown() { return key.startsWith(NOT_KNOWN); }
     }
 
     /** 0.39.z41: the key of {@link #priced}. */

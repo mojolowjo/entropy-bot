@@ -1191,7 +1191,10 @@ public final class Steps {
         // 0.39.z77 J2 E0 (run AZ 05:13:31, S1 chestplate: "the same try failed again in this order (stand while paths compute)"):
         // a price fact - the standing step's wait over (StandWait), a landed path - is a re-price, never a try: no park and
         // no try counted on it (the walks then go by Baritone's estimate or drop "no estimate", NeedChain.walked)
-        boolean reprice = fact.price();
+        // job-dig2 (run JAU 05:38:44: two not-known dig ends parked the order): a NOT KNOWN end (rule 15) is no failure -
+        // it re-plans, and never counts toward "the same way failed twice" nor the order's tries
+        boolean reprice = fact.price() || fact.notKnown();
+        if (fact.notKnown()) hands.log("step " + failed.text() + " ended not known (" + fact.text() + "): re-planned, not counted as a failure (rule 15)");
         if (!reprice && now.sameAs(lastFailed)) {
             park(now, "the same way failed twice from the same place with the same bag: " + failed.text() + " - " + fact.text() + " (" + orderState() + ")");
             return;
