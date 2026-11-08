@@ -71,6 +71,21 @@ public final class Blackboard {
 
     public boolean flag(String key) { return Boolean.TRUE.equals(facts.get(key)); }
 
+    // ---- D1: the reservation ledger (rule 23: the one store of what the plan has claimed from the bag) ----
+
+    private io.github.mojolowjo.entropybot.aa.moves.Reservations reserved = io.github.mojolowjo.entropybot.aa.moves.Reservations.NONE;
+
+    /**
+     * D1 (job-d1): the running chain's reserves, counted per remaining step (crafts, places, fuel) plus the orders' targets.
+     * Written only by the step machine at each step start, at a re-plan's release and at the run's end (rebuilt from the plan,
+     * never edited); read by the deposit, a sub-chain's plan and aa why. NONE when no run holds the bag.
+     */
+    public io.github.mojolowjo.entropybot.aa.moves.Reservations reserved() { return reserved; }
+
+    public void reserved(io.github.mojolowjo.entropybot.aa.moves.Reservations r) {
+        reserved = r == null ? io.github.mojolowjo.entropybot.aa.moves.Reservations.NONE : r;
+    }
+
     // ---- the running task ----
 
     /** The reason the next start will log (a chooser sets it just before ticking its RunJob). */

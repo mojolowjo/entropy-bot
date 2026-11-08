@@ -80,11 +80,11 @@ class Z77SparesTest {
         Chain c = NeedChain.resolve("raw_iron", 3, deep(bag, iron16(), 0, id -> 131));
         assertTrue(c.ok(), c.why());
         assertEquals(0, Z62RunSTest.crafted(c, "stone_pickaxe"), c.spares());
-        assertTrue(c.spares().contains("stone_pickaxe: 2 spare stone_pickaxe would cover 667 blocks; tools.maxSpares 3 holds (3 held already: the bag's 393 uses / 131 a new one): 0 made, 143 blocks over, re-planned when a pickaxe breaks"), c.spares());
+        assertTrue(c.spares().contains("stone_pickaxe: 2 spare stone_pickaxe would cover 667 blocks; tools.maxSpares 3 holds (reserved: stone_pickaxe 3 for this strip: the bag's 393 uses / 131 a new one): 0 made, 143 blocks over, re-planned when a pickaxe breaks"), c.spares());
         Map<String, Integer> three = Map.of("minecraft:stone_pickaxe", 3, "minecraft:cobblestone", 20, "minecraft:stick", 10);
         Chain one = NeedChain.resolve("raw_iron", 3, deep(three, iron16(), 0, id -> 131));
         assertEquals(1, Z62RunSTest.crafted(one, "stone_pickaxe"), one.spares());
-        assertTrue(one.spares().contains("tools.maxSpares 3 holds (2 held already: the bag's 262 uses / 131 a new one): 1 made, 143 blocks over"), one.spares());
+        assertTrue(one.spares().contains("tools.maxSpares 3 holds (reserved: stone_pickaxe 2 for this strip: the bag's 262 uses / 131 a new one): 1 made, 143 blocks over"), one.spares());
     }
 
     /**

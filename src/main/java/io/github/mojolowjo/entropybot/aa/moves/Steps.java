@@ -72,6 +72,18 @@ public final class Steps {
         default void reserve(List<Reserves.Reserve<String>> reserves) {}
 
         /**
+         * D1 ledger (job-d1): the same table, whole, to the one store (Blackboard#reserved, rule 23), every time it is pushed.
+         * The table is rebuilt from the plan each time, so the ledger cannot drift from it.
+         */
+        default void ledger(Reservations table) {}
+
+        /**
+         * D1 ledger (job-d1): the chain for an Obtain planned on the bag less {@code later} - the reserves of the steps after
+         * it - so a sub-chain that needs a reserved item prices obtaining the shortfall, never takes a later step's count.
+         */
+        default Routine routine(Step.Obtain p, Reservations later) { return routine(p); }
+
+        /**
          * 0.39.z61 (owner's ruling 1 on D1, option c): the orders' ORDER reserves - the running order's target and every
          * finished order's items (safe from pillaring, usable as ingredients); empty: none.
          */
@@ -275,6 +287,16 @@ public final class Steps {
         }
     }
 
+    /**
+     * D1 ledger (job-d1): the chain reserves of the steps from {@code from} on, without the orders' (ruling 1 option c: an
+     * order's items are usable as ingredients) - what an Obtain's sub-chain must leave in the bag.
+     */
+    Reservations laterReserves(int from) {
+        List<StepNeeds> rest = new java.util.ArrayList<>();
+        for (int i = Math.max(0, from); i < steps.size(); i++) rest.add(needsAt(i));
+        return Reservations.build(steps, Math.max(0, from), rest, List.of());
+    }
+
     /** What went wrong building or setting the reserves (said in the step's start line), null: nothing. */
     private String keepErr;
 
@@ -288,6 +310,7 @@ public final class Steps {
         table = r == null ? Reservations.NONE : r;
         try {
             hands.reserve(table.list());
+            hands.ledger(table);
         } catch (RuntimeException e) {
             keepErr = "the reserves could not be set: " + e;
         }
@@ -1416,7 +1439,7 @@ public final class Steps {
             else {
                 Routine r;
                 try {
-                    r = hands.routine((Step.Obtain) s);
+                    r = hands.routine((Step.Obtain) s, laterReserves(idx + 1));   // D1: planned around the later steps' counts
                 } catch (RuntimeException e) {
                     r = new Routine(null, "the chain: " + e);
                 }

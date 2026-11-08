@@ -110,7 +110,7 @@ final class DepositLeg {
     /** null = started (or an instant end in {@code instant[0]}), else "error: ...". */
     String start(LocalPlayer p, String[] instant) {
         if (step.order() != null && StripStep.met(step.order())) { instant[0] = "ok: the strip order is met, nothing to deposit"; return null; }
-        if (DepositRule.toPut(bag(p)).isEmpty()) { instant[0] = "ok: deposit: nothing outside the kept set in the bag"; return null; }
+        if (DepositRule.toPut(bag(p), reserves()).isEmpty()) { instant[0] = "ok: deposit: nothing outside the kept set and the reserves in the bag" + heldWords(p); return null; }
         return null;
     }
 
@@ -360,11 +360,18 @@ final class DepositLeg {
     /** Every bag stack outside the kept set goes in by QUICK_MOVE (the game moves it into the chest's free room). */
     private Car.Status put(LocalPlayer p) {
         if (!Gui.open(p)) return Car.Status.failed("deposit: the chest at " + DepositRule.at(chest) + " closed before the items went in");
-        before = DepositRule.toPut(bag(p));
+        var rs = reserves();
+        List<DepositRule.Item> stacks = bag(p);
+        before = DepositRule.toPut(stacks, rs);
+        held = heldWords(p);
+        // D1 ledger: the slots in the bag's order (0..35, as bag(p) reads them); a stack the reserves keep stays
+        boolean[] in = DepositRule.goesIn(stacks, rs);
+        java.util.Set<Integer> goes = new java.util.HashSet<>();
+        for (int i = 0, k = 0; i < 36; i++) if (!p.getInventory().getItem(i).isEmpty()) { if (in[k]) goes.add(i); k++; }
         var menu = p.containerMenu;
         for (Slot s : menu.slots) {
             if (s.container != p.getInventory() || !s.hasItem()) continue;
-            if (DepositRule.kept(item(s.getItem()))) continue;
+            if (!goes.contains(s.getContainerSlot())) continue;
             Minecraft.getInstance().gameMode.handleInventoryMouseClick(menu.containerId, s.index, 0, ClickType.QUICK_MOVE, p);
         }
         phase = Phase.COUNT;
@@ -373,7 +380,7 @@ final class DepositLeg {
 
     /** One tick later: what is left, the chest noted, closed; the order's deposits saved. */
     private Car.Status count(LocalPlayer p) {
-        Map<String, Integer> left = DepositRule.toPut(bag(p));
+        Map<String, Integer> left = DepositRule.toPut(bag(p), reserves());
         int leftN = total(left);
         putN = Math.max(0, total(before) - leftN);
         c.storage.rememberOpen(p);
@@ -384,7 +391,24 @@ final class DepositLeg {
             return Car.Status.failed("deposit: " + putN + " items in, but the deposits were not saved: " + e.getMessage());
         }
         if (leftN > 0) return Car.Status.failed("deposit: " + DepositRule.full(chest, leftN));
-        return Car.Status.done("ok: deposited " + putN + " items at " + DepositRule.at(chest) + (placed ? " (a new chest)" : ""));
+        return Car.Status.done("ok: deposited " + putN + " items at " + DepositRule.at(chest) + (placed ? " (a new chest)" : "") + held);
+    }
+
+    /** The deposit's words for what the ledger kept in the bag, "" none. */
+    private String held = "";
+
+    /**
+     * D1 ledger (job-d1): the run's chain reserves from the board's one ledger (Blackboard#reserved): a deposit never takes a
+     * reserved count. The orders' reserves are not read here (ruling 1 option c: they only keep items from pillaring).
+     */
+    private List<baritone.api.process.Reserves.Reserve<String>> reserves() {
+        if (c.aaRuntime == null) { LOG.warn("[entropybot] deposit: the reserve ledger is not readable (aa not loaded): nothing held back"); return List.of(); }
+        return c.aaRuntime.bb.reserved().chain();
+    }
+
+    private String heldWords(LocalPlayer p) {
+        var h = DepositRule.heldBack(bag(p), reserves());
+        return h.isEmpty() ? "" : " (kept in the bag for the plan: " + h + "; " + c.aaRuntime.bb.reserved().ledgerText() + ")";
     }
 
     private static int total(Map<String, Integer> m) {

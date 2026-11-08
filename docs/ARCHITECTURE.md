@@ -27,6 +27,15 @@ while AA is on. AA's own chain is named in `AaRuntime.CHAIN`; only AA starts and
    reason) is a `FactChange` the brain re-plans on.
 5. Files under `<game dir>/entropybot/aa/`: the snapshot and decision logs; `aa-debug.log` for `aa debug want`.
 
+### Reservations ledger (D1)
+The run's counted reserves (`aa/moves/Reservations`: per remaining step its crafts' inputs, places, fuel ticks, plus the
+orders' targets) are built by `Steps` at every step start from the plan itself and pushed twice: to the fork's lease
+(`StepHands.reserve` -> `engine/RunThrowaway`, Baritone's throwaway) and to the one ledger, `Blackboard.reserved()`
+(`StepHands.ledger`). A re-plan's release and the run's end rewrite it, so it never drifts. Readers: `DepositLeg`
+(`DepositRule.goesIn`: a stack goes in only while the chain's reserves can spare it), an Obtain's sub-chain
+(`Steps.laterReserves` -> `AaRuntime.obtainSteps(o, later)`: planned on `Reservations.free(bag)`, so a reserved count
+is obtained, not taken). Probe: `probe reserve: reserved: stick 2 for craft stone_pickaxe 1, ...`.
+
 ### Path memory (D11)
 The fork keeps priced paths (`PathMemory`) and re-joins a kept path the feet left by one short search (build 1); the mod
 keeps no copy (rule 23). Waiting trips are priced at the running step's END cell (the anchor rule, `BatchWay`). The load

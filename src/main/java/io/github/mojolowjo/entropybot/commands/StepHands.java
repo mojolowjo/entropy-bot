@@ -634,6 +634,18 @@ public final class StepHands implements Steps.Hands {
         return c.aaRuntime.obtainSteps(o);
     }
 
+    /** D1 ledger (job-d1): the same, planned on the bag less the later steps' reserves. */
+    @Override public Steps.Routine routine(Step.Obtain o, io.github.mojolowjo.entropybot.aa.moves.Reservations later) {
+        if (c.aaRuntime == null) return new Steps.Routine(null, "no chain (aa not loaded)");
+        return c.aaRuntime.obtainSteps(o, later);
+    }
+
+    /** D1 ledger (job-d1): the pushed table to the board's one ledger (rule 23). */
+    @Override public void ledger(io.github.mojolowjo.entropybot.aa.moves.Reservations table) {
+        if (c.aaRuntime == null) { LOG.warn("[entropybot] reserves: the ledger was not written (aa not loaded): {}", table.ledgerText()); return; }
+        c.aaRuntime.bb.reserved(table);
+    }
+
     // ---- fish: cast and reel as item inputs on Baritone's look, in the one Steps machine ----
 
     private FishStep fishing;

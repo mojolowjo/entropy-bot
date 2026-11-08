@@ -1186,6 +1186,23 @@ public final class AaRuntime implements JobPort {
     }
 
     /**
+     * D1 ledger (job-d1): the chain for an Obtain on the bag less what the later steps of the run reserve
+     * ({@link io.github.mojolowjo.entropybot.aa.moves.Reservations#free}): a need that would take a reserved count is planned
+     * as obtaining the shortfall. The held counts are said in the plan's line.
+     */
+    io.github.mojolowjo.entropybot.aa.moves.Steps.Routine obtainSteps(io.github.mojolowjo.entropybot.aa.moves.Step.Obtain o, io.github.mojolowjo.entropybot.aa.moves.Reservations later) {
+        var rs = later == null ? List.<baritone.api.process.Reserves.Reserve<String>>of() : later.chain();
+        if (rs.isEmpty()) return obtainSteps(o);
+        var w = needWorld();
+        if (w == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");
+        var held = io.github.mojolowjo.entropybot.aa.moves.Reservations.held(rs, w.bag());
+        var ch = io.github.mojolowjo.entropybot.aa.NeedChain.of(o, w.withBag(io.github.mojolowjo.entropybot.aa.moves.Reservations.free(rs, w.bag())));
+        LOG.info("[entropybot] aa: {}: {} (planned around {}; held from the bag: {})", o.text(), ch.why(), later.ledgerText(), held.isEmpty() ? "nothing" : held);
+        if (!ch.ok()) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, ch.why());
+        return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(ch.steps(), null, ch.uses());
+    }
+
+    /**
      * 0.39.z61 (D1 J2; owner's ruling 1, option c): the orders' ORDER reserves for the run's lease - the running order's target
      * (the typed task's re-plan names its desire, "goal.&lt;key&gt;") and every finished order's items (Goals.orderReserves,
      * each lowered to what the bag still holds).
