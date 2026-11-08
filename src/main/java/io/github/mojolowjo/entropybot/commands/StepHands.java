@@ -1756,6 +1756,7 @@ public final class StepHands implements Steps.Hands {
         int[] me = Jobs.here(p);
         instant = null;
         surfaceTicks = 0;
+        surfaceLines0 = io.github.mojolowjo.entropybot.baritone.BaritoneHook.lines();   // job-surface: Baritone's lines since the start
         if (me[0] == t.x() && me[1] == t.y() && me[2] == t.z()) { instant = "ok: already at the surface cell " + Jobs.fmt(me); return null; }   // run EI: the target reached, never a fact re-read
         IBaritone b = Jobs.baritone();
         if (b == null) return "error: " + surfaceRefused(t, "the walk up did not start: baritone not loaded");
@@ -1771,6 +1772,8 @@ public final class StepHands implements Steps.Hands {
 
     /** FN fix: the walk up's ticks since its start (Baritone's process is active from its next tick; structural). */
     private int surfaceTicks;
+    /** job-surface: Baritone's line count when the walk up started (its end's reason reads the lines since). */
+    private long surfaceLines0;
 
     /**
      * 0.39.z68: done with the feet ON the surface cell; ended failed, it is the walk up's fact (a re-plan). FN fix: Baritone's
@@ -1795,14 +1798,18 @@ public final class StepHands implements Steps.Hands {
         }
         // J6b item 14 (rule 15): only an exhausted graph is "no path"; a budget or other stop is "not known" - either way this
         // cell is out for the order and the next price takes another cell or the climb
-        String calc;
+        // job-surface (run JAL: "(stop unknown)"; rule 7): the fork's path end and Baritone's last line since the start
+        io.github.mojolowjo.entropybot.aa.moves.WalkEndText.Calc calc;
         try {
             var wc = b.getCustomGoalProcess().lastCalc();
-            calc = wc == null ? "no calc kept" : wc.exhausted() ? "no path (the graph exhausted)" : wc.budget() ? "not known (stop " + wc.stop() + ": a budget)" : "stop " + wc.stop();
+            calc = wc == null ? io.github.mojolowjo.entropybot.aa.moves.WalkEndText.Calc.NONE
+                    : new io.github.mojolowjo.entropybot.aa.moves.WalkEndText.Calc(true, wc.exhausted(), wc.budget(), String.valueOf(wc.stop()));
         } catch (LinkageError e) {
-            calc = "the stop is not known (an older fork)";
+            calc = io.github.mojolowjo.entropybot.aa.moves.WalkEndText.Calc.NONE;   // an older fork: Baritone's line alone
         }
-        return Car.Status.failed(surfaceRefused(t, "the walk up ended short at " + Jobs.fmt(me) + ": Baritone's walk into the cell ended (" + calc + ")"));
+        String end = io.github.mojolowjo.entropybot.aa.moves.WalkEndText.of(Jobs.fmt(me), false, calc, surfaceLines0,
+                io.github.mojolowjo.entropybot.baritone.BaritoneHook.lines(), io.github.mojolowjo.entropybot.baritone.BaritoneHook.lastLine());
+        return Car.Status.failed(surfaceRefused(t, "the walk up " + end));
     }
     private String surfaceRefused(Step.ToSurface t, String why0) {
         String why = why0.replace(": error: ", ": ");

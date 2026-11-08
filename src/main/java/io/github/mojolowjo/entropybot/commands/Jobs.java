@@ -797,7 +797,16 @@ public final class Jobs {
             return 0;
         }
         surfaceNotKnown = null;
-        return RestoreRules.rockOverHead(lv.canSeeSky(new BlockPos(x, y + 1, z)), surface, y);
+        int d = RestoreRules.rockOverHead(lv.canSeeSky(new BlockPos(x, y + 1, z)), surface, y);
+        // job-surface (run JAL 01:43:18 "under ground (surface 7 up)" at a spawn said to be under a tree; probe, not theory):
+        // which block the leaf-free top stopped on, once per cell (debug.surfaceProbe 1)
+        if (d > 0 && io.github.mojolowjo.entropybot.aa.brain.Tuning.get("debug.surfaceProbe") >= 1 && SURFACE_PROBED.add(x + " " + y + " " + z)) {
+            var top = lv.getBlockState(new BlockPos(x, surface - 1, z));
+            LOG.info("[entropybot] probe surface: {} {} {} reads {} under ground: the leaf-free top stops on {} at y {} (MOTION_BLOCKING {}, WORLD_SURFACE {})",
+                    x, y, z, d, net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(top.getBlock()), surface - 1,
+                    io.github.mojolowjo.entropybot.world.SurfaceHeightLive.motionBlocking(lv, x, z), io.github.mojolowjo.entropybot.world.SurfaceHeightLive.worldSurface(lv, x, z));
+        }
+        return d;
     }
 
     /**
@@ -836,6 +845,8 @@ public final class Jobs {
 
     /** 0.39.z76 surface: the chunks whose unknown surface was said (once each). */
     private static final java.util.Set<String> SURFACE_UNKNOWN_SAID = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** job-surface: the cells whose under-ground top was probed (once each). */
+    private static final java.util.Set<String> SURFACE_PROBED = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     /** 0.32.3: "plan go": a plain walk to the plan's end; onJob gets the job id before the goal is set. */
     String startPlanGo(int[] e, String from, java.util.function.LongConsumer onJob) {
