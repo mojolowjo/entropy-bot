@@ -27,6 +27,8 @@ class OffThreadBuildTest {
         assertFalse(b.start("k", () -> "again", 5), "a build of the same key is not started twice");
         assertNull(b.poll("k"));
         assertTrue(b.building());
+        assertTrue(b.building("k"), "job-tick3: the key being built");
+        assertFalse(b.building("other"));
         w.runAll();
         var d = b.poll("k");
         assertNotNull(d);

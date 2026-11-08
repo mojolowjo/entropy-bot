@@ -335,4 +335,22 @@ class Z62RunSTest {
         assertNull(laps.line(1, 20), "off: nothing");
         assertEquals(0, laps.now());
     }
+
+    @Test
+    void theAaTickLineNamesTheTechTreeCalls() throws Exception {
+        // job-tick3 (run JAX: "tree" 785 ms over 22 aa ticks): the tech tree's calls said apart; another thread's are not this tick's
+        long[] t = {0};
+        TickLaps laps = new TickLaps(() -> t[0]);
+        laps.begin(true);
+        laps.tech("best", 120_000_000);
+        laps.tech("norm", 125_000_000);
+        laps.tech("norm", 1_000_000);
+        Thread other = new Thread(() -> laps.tech("share", 9_000_000));
+        other.start();
+        other.join();
+        t[0] += 130_000_000;
+        laps.lap("tree");
+        String l = laps.line(447, 20);
+        assertTrue(l.endsWith(" | tech tree: best 1 = 120.0, norm 2 = 126.0 ms"), l);
+    }
 }

@@ -63,6 +63,25 @@ class BrainB2Test {
     }
 
     @Test
+    void theNormMemoMatchesTheFreshValueAndFollowsTheBag() {
+        // job-tick3: norm's per-bag value memo gives the same answers as value()/best, and a new bag drops it
+        TechTree t = vanillaBits();
+        Set<String> a = Set.of("oak_planks", "stick");
+        List<String> ings = List.of("iron_ingot", "oak_planks", "spruce_planks", "stick", "raw_iron", "diamond");
+        double best = 0;
+        for (String i : ings) best = Math.max(best, t.value(i, a));
+        for (String i : ings) {
+            assertEquals(Math.min(1, t.value(i, a) / best), t.norm(i, a), 1e-9, i);
+            assertEquals(t.norm(i, a), t.norm("minecraft:" + i, a), 1e-9, "the memo keys on the full id");
+        }
+        Set<String> b = Set.of("oak_planks", "stick", "iron_pickaxe", "bucket");
+        assertTrue(t.value("iron_ingot", b) < t.value("iron_ingot", a));
+        double bestB = 0;
+        for (String i : ings) bestB = Math.max(bestB, t.value(i, b));
+        assertEquals(Math.min(1, t.value("oak_planks", b) / bestB), t.norm("oak_planks", b), 1e-9, "a new bag: worked out again");
+    }
+
+    @Test
     void ideasAreMakeableNowBestFirst() {
         TechTree t = vanillaBits();
         List<TechTree.Idea> ideas = t.ideas(Set.of("oak_planks", "stick", "iron_ingot"), 5);

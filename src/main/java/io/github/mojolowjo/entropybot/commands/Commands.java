@@ -588,8 +588,10 @@ public final class Commands implements Chains.Env {
             boolean dead = player.isDeadOrDying();
             if (dead && !wasDead) noteDeath(mc, player);
             wasDead = dead;
+            LoadProbe.lap("fast+view");                                                              // job-tick3: the laps of guard+commands
             if (tick % 5 == 0) processPms();
             if (tick % 5 == 0) pollCommand(mc, tick);
+            LoadProbe.lap("pms+command");
             // 0.23.3: a chain whose step's job just ended goes on the next tick (no gap between walks), else every 5 ticks
             if (tick % 5 == 3 || (chains.running() && !jobs.running() && !requests.busy())) {
                 try {
@@ -612,26 +614,30 @@ public final class Commands implements Chains.Env {
             if (tick % 600 == 31 && worldTicks > 400 && !aaOn()) {          // AA_CLEANUP 3: the stage for actions.json with AA off (AA senses itself)
                 try { senses.sense(); } catch (RuntimeException e) { LOG.warn("[entropybot] sense: {}", e.toString()); }
             }
-            long lpSteps = LoadProbe.active ? System.nanoTime() : 0;                                  // 0.39.z62 item 4: the slow tick names the step machine and AA apart
+            LoadProbe.lap("chains");
             stepRun.tick();                                                                          // rm-execution: the typed steps (AA's and the owner's verbs)
-            long lpAa = LoadProbe.active ? System.nanoTime() : 0;
+            LoadProbe.lap("steps");                                                                  // 0.39.z62 item 4: the step machine and AA apart
             if (tick % 5 == 2 && worldTicks > 400 && aaRuntime != null) { try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(io.github.mojolowjo.entropybot.aa.door.Driver.AA)) { aaRuntime.tick(tick); } }             // 0.36.0: AA at 4 Hz, never throws
-            if (lpSteps != 0) LoadProbe.inside(lpAa - lpSteps, System.nanoTime() - lpAa);
+            LoadProbe.lap("aa tick");
         if (worldTicks > 400) planning.tick(tick);                                                  // B3: actions.json when the state changed (every 5 s), never throws
+            LoadProbe.lap("planning");
             // B7e N: the idle self-check (whispers only what changed, at most every 30 min)
             if (tick % 200 == 77 && worldTicks > 1200) selfCheck.idleTick(player, !jobs.running() && !chains.running() && !requests.busy(), System.currentTimeMillis());
             if (tick % 25 == 0) sendOutbox(player);
+            LoadProbe.lap("selfcheck+outbox");
             try {
                 try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(jobs.driver())) { jobs.tick(player); }     // AA_CLEANUP 2: as the job's starter
             } catch (RuntimeException e) {
                 LOG.warn("[entropybot] job: {}", e.toString());
                 jobs.finish("error: " + e);
             }
+            LoadProbe.lap("jobs");
             try {
                 RestoreLive.INSTANCE.tick(player, tick);       // P1: pending breaks settled, restore.json written
             } catch (RuntimeException e) {
                 LOG.warn("[entropybot] restore: {}", e.toString());
             }
+            LoadProbe.lap("restore");
             {
                 // package B round 2: every tick, so a refill finds the gap between two breaks (HotbarKeeper spaces the swaps)
                 try {
@@ -642,6 +648,7 @@ public final class Commands implements Chains.Env {
                     LOG.warn("[entropybot] hotbar: {}", e.toString());
                 }
             }
+            LoadProbe.lap("hotbar");
             if (tick % 20 == 10) {
                 try {
                     storage.tick(player);
@@ -656,6 +663,7 @@ public final class Commands implements Chains.Env {
                     LOG.warn("[entropybot] furnace notes: {}", e.toString());
                 }
             }
+            LoadProbe.lap("containers+furnace");
             if (tick % 20 == 7) nearTick(mc, player);         // 0.21.2: the near-me zone follows the owner
             if (tick % 20 == 13 && vocab.hold != null) {
                 try {
@@ -671,11 +679,14 @@ public final class Commands implements Chains.Env {
                     LOG.warn("[entropybot] queue: {}", e.toString());
                 }
             }
+            LoadProbe.lap("near+hold+queue");
             if (tick % 200 == 150) pushPlaces();
             if (tick % 20 == 0) writeState(mc, tick);
+            LoadProbe.lap("places+state");
             brainStore.flushIfDue(tick);
             areaStore.flushIfDue(tick);
             pmStore.flushIfDue(tick);
+            LoadProbe.lap("store flushes");
         } catch (Throwable t) {
             errors++;
             if (errors <= 5 || errors % 1200 == 0) LOG.error("[entropybot] commands tick error #{}: {}", errors, t.toString());

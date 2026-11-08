@@ -3606,8 +3606,10 @@ public final class AaRuntime implements JobPort {
             var rm = mc.level.getRecipeManager();
             var all = rm.getRecipes();
             ItemDataKey key = new ItemDataKey(System.identityHashCode(mc.level), all.size());
+            io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.lap("brainFacts.recipeCount");
             publishItemData(itemData.poll(key));
-            if (all.size() != treeRecipes) {
+            io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.lap("brainFacts.swapIn");     // job-tick3: the swap-in apart (run JAX t=447: 19.4 ms)
+            if (all.size() != treeRecipes && !itemData.building(key)) {      // job-tick3: no recipe list copy per tick while it builds
                 var level = mc.level;
                 var holders = List.copyOf(all);
                 if (itemData.start(key, () -> buildItemData(level, holders), now))

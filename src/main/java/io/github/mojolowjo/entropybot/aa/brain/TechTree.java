@@ -47,6 +47,15 @@ public final class TechTree {
      * grid for the table). Each result counts once, with its {@link #weight}.
      */
     public synchronized double share(java.util.function.Predicate<Recipe> needs, Set<String> have) {
+        long t0 = io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.now();
+        try {
+            return share0(needs, have);
+        } finally {
+            if (t0 != 0) io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.tech("share", io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.now() - t0);
+        }
+    }
+
+    private double share0(java.util.function.Predicate<Recipe> needs, Set<String> have) {
         Set<String> h = norm(have);
         double all = 0, of = 0;
         Set<String> seen = new HashSet<>();
@@ -100,15 +109,36 @@ public final class TechTree {
 
     /** 0..1 against the best item in the graph. */
     public synchronized double norm(String item, Set<String> have) {
+        var laps = io.github.mojolowjo.entropybot.aa.core.TickLaps.AA;
+        long t0 = laps.now();
         Set<String> h = norm(have);
-        if (!h.equals(bestFor)) {          // the best is worked out once per bag
+        // job-tick3 (run JAX: "tree" 785 ms over 22 aa ticks): every item's value is worked out once per bag and knobs
+        // (the best pass fills the memo, so the scorer's later norm calls are lookups); exact: value() with a fresh path
+        // depends only on the bag, the depth, the discount and the weights
+        Object knobs = java.util.List.of(depthV(), discount(), Tuning.get("tech.keyWeight"));
+        if (!h.equals(bestFor) || !knobs.equals(bestKnobs)) {          // the best is worked out once per bag
+            valueMemo.clear();
             double b = 0;
-            for (String i : usedIn.keySet()) b = Math.max(b, value(i, h, depthV(), new HashSet<>()));
+            for (String i : usedIn.keySet()) b = Math.max(b, memoValue(i, h));
             bestFor = h;
+            bestKnobs = knobs;
             bestV = b;
+            if (t0 != 0) laps.tech("best", laps.now() - t0);
         }
         double best = bestV;
-        return best <= 0 ? 0 : Math.min(1, value(item, have) / best);
+        double out = best <= 0 ? 0 : Math.min(1, memoValue(id(item), h) / best);
+        if (t0 != 0) laps.tech("norm", laps.now() - t0);
+        return out;
+    }
+
+    private Object bestKnobs;
+    /** job-tick3: value(item) for {@link #bestFor} (cleared with it). */
+    private final Map<String, Double> valueMemo = new HashMap<>();
+
+    private double memoValue(String item, Set<String> h) {
+        Double v = valueMemo.get(item);
+        if (v == null) { v = value(item, h, depthV(), new HashSet<>()); valueMemo.put(item, v); }
+        return v;
     }
 
     /** An idea: an item to make next and its worth. */
@@ -118,7 +148,9 @@ public final class TechTree {
     public synchronized List<Idea> ideas(Set<String> have, int n) {
         // review: scored every tick; worked out once per bag (the adapter refreshes the bag at most every 10 s)
         if (have.equals(ideasFor) && ideasN >= n) return ideasLast.size() > n ? ideasLast.subList(0, n) : ideasLast;
+        long t0 = io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.now();
         List<Idea> r = ideas0(have, Math.max(n, 8));
+        if (t0 != 0) io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.tech("ideas", io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.now() - t0);
         ideasFor = have;
         ideasN = Math.max(n, 8);
         ideasLast = List.copyOf(r);
@@ -138,7 +170,9 @@ public final class TechTree {
      */
     public synchronized List<Idea> top(Set<String> have, int n) {
         if (have.equals(topFor) && topN >= n) return topLast.size() > n ? topLast.subList(0, n) : topLast;
+        long t0 = io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.now();
         List<Idea> r = ideas0(have, Math.max(n, 8), true);
+        if (t0 != 0) io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.tech("top", io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.now() - t0);
         topFor = have;
         topN = Math.max(n, 8);
         topLast = List.copyOf(r);
