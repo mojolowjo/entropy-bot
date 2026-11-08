@@ -21,6 +21,7 @@ public final class StandWait {
         start = now;
         said = false;
         reason = null;
+        segmentWay = null;
     }
 
     /** job-start: the stand's reason last said (null: none yet this stand). */
@@ -41,7 +42,50 @@ public final class StandWait {
 
     public boolean standing() { return start >= 0; }
 
-    public void end() { start = -1; }
+    public void end() { start = -1; segmentWay = null; }
+
+    // ---- job-segmod (runs JAN, JAO: 27 / 46 "still standing" lines): the stand walks its cheapest way's first segment ----
+
+    /** The way whose first segment the stand walks now (null: it stands still). */
+    private String segmentWay;
+
+    /** job-segmod: the gate {@code pathCost.firstSegmentWalk} (1 on, 0 the stand stands as before). */
+    public static boolean segmentWalkOn() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("pathCost.firstSegmentWalk") >= 0.5; }
+
+    /** job-segmod: {@code pathCost.firstSegmentMinCells}. */
+    public static int segmentMinCells() { return (int) Math.ceil(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("pathCost.firstSegmentMinCells")); }
+
+    /**
+     * job-segmod (rule 22: a first segment IS a partial price, Baritone's own best-so-far path; standing is for a price with no
+     * first segment yet): the stand walks the segment when the gate is on, the price search still runs and the segment has
+     * at least {@code minCells} cells. Pure.
+     */
+    public static boolean walksSegment(boolean on, boolean running, int cells, int minCells) {
+        return on && running && cells >= minCells;
+    }
+
+    /** The line said when the stand starts walking the segment. */
+    public static String segmentWords(int cells, String way) {
+        return "walking the first segment (" + cells + " cells) of " + way + " while its price computes";
+    }
+
+    /** The stand walks {@code way}'s first segment from now. */
+    public void walking(String way) { segmentWay = way; }
+
+    /** The way whose first segment is walked (null: standing still). */
+    public String walkingWay() { return segmentWay; }
+
+    /**
+     * job-segmod item 2: the walked way's price landed "no path" ({@code reason}: the fork's) - the walk ends (the caller
+     * cancels Baritone), the stand stands still again and the way is held as any no-path way (the chain's price). The line,
+     * or null when no segment is walked. Pure.
+     */
+    public String abandon(String reason) {
+        if (segmentWay == null) return null;
+        String l = "the first-segment walk of " + segmentWay + " ends: its price landed no path (" + reason + "); standing again, the way held as no path";
+        segmentWay = null;
+        return l;
+    }
 
     /** Game ticks stood so far (0 before {@link #begin}). */
     public long stood(long now) { return start < 0 ? 0 : Math.max(0, now - start); }
@@ -81,6 +125,8 @@ public final class StandWait {
         if (!over(now, a.waitS())) {
             String r = reasonChanged(computing);
             if (r != null) say.accept(a.text() + ": " + r + " (" + secs(stood(now)) + " s stood)");
+            if (segmentWay != null) return Car.Status.running(a.text() + ": walking the first segment of " + segmentWay + " while its price computes ("
+                    + secs(stood(now)) + " s of " + a.waitS() + "; rule 22: a partial price)");
             return Car.Status.running(a.text() + ": " + words(now, a.waitS(), computing));
         }
         String why = overWords(a.waitS());

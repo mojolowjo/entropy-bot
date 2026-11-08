@@ -188,6 +188,17 @@ public final class LoadProbe {
     }
 
     private static long[] cpuSeen;
+    private static long[] segmentSeen;
+
+    /** job-segmod: the fork's first-segment counts since the last line, read by name; {-1} when the jar lacks them (rule 7). */
+    static long[] segmentDelta(Object pricedPath) {
+        long[] r = ProbeLines.segmentCounts(pricedPath);
+        if (r == null) return new long[]{-1};
+        long[] d = new long[4];
+        if (segmentSeen != null) for (int i = 0; i < 4; i++) d[i] = r[i] - segmentSeen[i];
+        segmentSeen = r.clone();
+        return d;
+    }
 
     /** CPU job: the fork's cpu counts since the last line, read by name; {-1} when the jar lacks them (rule 7). */
     static long[] cpuDelta(Object pricedPath) {
@@ -205,7 +216,7 @@ public final class LoadProbe {
         long ds = started - startedSeen, dl = landed - landedSeen;
         startedSeen = started;
         landedSeen = landed;
-        long[] seg = null, joins = null, routes = null, cpu = null;
+        long[] seg = null, joins = null, routes = null, cpu = null, firstSegs = null;
         var b = Jobs.baritone();
         if (b != null) {
             long[] now = b.getPricedPath().searchCounts();
@@ -228,6 +239,7 @@ public final class LoadProbe {
             }
             routes = routeDelta(b.getPricedPath());
             cpu = cpuDelta(b.getPricedPath());
+            firstSegs = segmentDelta(b.getPricedPath());
         }
         long[] rec = Core.INSTANCE.recorder.loadCounts();
         long[] recLine = null;
@@ -248,6 +260,6 @@ public final class LoadProbe {
         calcs = 0;
         calcFails = 0;
         return new ProbeLines.LoadFacts(mc.getFps(), window.takeLine(), ds, dl, LivePathPrice.INSTANCE.inFlight(), seg, c, f, recLine,
-                heap.getUsed() >> 20, heap.getMax() >> 20, dn, dms, joins, routes, cpu);      // structural: bytes to MB
+                heap.getUsed() >> 20, heap.getMax() >> 20, dn, dms, joins, routes, cpu, firstSegs);      // structural: bytes to MB
     }
 }
