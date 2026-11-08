@@ -241,12 +241,30 @@ public final class ProbeLines {
         }
     }
 
+    /**
+     * D11 build 2: the fork's route-memory counts read by name (IPricedPath.routeCounts, not in the fork jar yet):
+     * {asked, reused, check failed changed, check failed not loaded, saved} since the game started; null when absent.
+     */
+    public static long[] routeCounts(Object pricedPath) {
+        try {
+            Object o = pricedPath.getClass().getMethod("routeCounts").invoke(pricedPath);
+            return o instanceof long[] a && a.length >= 5 && a[0] >= 0 ? a : null;
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
+            return null;
+        }
+    }
+
     /** The load line's other facts, as counts since the last line where a "+" is shown. */
     public record LoadFacts(int fps, String window, long pricedStarted, long pricedLanded, int pricedInFlight,
-                            long[] segs, long calcs, long calcFails, long[] recorder, long heapUsedMb, long heapMaxMb, long gcCount, long gcMs, long[] joins) {
+                            long[] segs, long calcs, long calcFails, long[] recorder, long heapUsedMb, long heapMaxMb, long gcCount, long gcMs, long[] joins, long[] routes) {
+        public LoadFacts(int fps, String window, long pricedStarted, long pricedLanded, int pricedInFlight,
+                         long[] segs, long calcs, long calcFails, long[] recorder, long heapUsedMb, long heapMaxMb, long gcCount, long gcMs, long[] joins) {
+            this(fps, window, pricedStarted, pricedLanded, pricedInFlight, segs, calcs, calcFails, recorder, heapUsedMb, heapMaxMb, gcCount, gcMs, joins, null);
+        }
+
         public LoadFacts(int fps, String window, long pricedStarted, long pricedLanded, int pricedInFlight,
                          long[] segs, long calcs, long calcFails, long[] recorder, long heapUsedMb, long heapMaxMb, long gcCount, long gcMs) {
-            this(fps, window, pricedStarted, pricedLanded, pricedInFlight, segs, calcs, calcFails, recorder, heapUsedMb, heapMaxMb, gcCount, gcMs, null);
+            this(fps, window, pricedStarted, pricedLanded, pricedInFlight, segs, calcs, calcFails, recorder, heapUsedMb, heapMaxMb, gcCount, gcMs, null, null);
         }
 
         public String line(long tick) {
@@ -258,6 +276,10 @@ public final class ProbeLines {
                 if (joins.length >= 9) fork += ": budget +" + joins[4] + " no path +" + joins[5] + " off the path +" + joins[6] + " other +" + joins[8] + "; queued for a slot +" + joins[7];
                 fork += ")";
             } else if (joins != null) fork += "; re-joins not readable in this fork jar";   // D11 review 1 (rule 7): said, never left out
+            // D11 build 2 (route memory, the fork's RouteStore): {asked, reused, check failed changed, check failed not loaded, saved}
+            if (routes != null && routes.length >= 5 && routes[0] >= 0)
+                fork += "; routes asked +" + routes[0] + " reused +" + routes[1] + " check failed: changed +" + routes[2] + " not loaded +" + routes[3] + "; saved +" + routes[4];
+            else if (routes != null) fork += "; routes not readable in this fork jar";     // rule 7: said, never left out
             String rec = recorder == null ? "recorder off" : "recorder queue " + recorder[0] + ", lines written +" + recorder[1] + String.format(Locale.ROOT, ", disk %.1f MB", recorder[2] / 1048576.0);
             return "t=" + tick + " | fps " + fps + " | " + window
                     + " | priced paths started +" + pricedStarted + " landed +" + pricedLanded + " in flight " + pricedInFlight + "; " + fork

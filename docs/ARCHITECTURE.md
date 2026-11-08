@@ -27,6 +27,12 @@ while AA is on. AA's own chain is named in `AaRuntime.CHAIN`; only AA starts and
    reason) is a `FactChange` the brain re-plans on.
 5. Files under `<game dir>/entropybot/aa/`: the snapshot and decision logs; `aa-debug.log` for `aa debug want`.
 
+### Path memory (D11)
+The fork keeps priced paths (`PathMemory`) and re-joins a kept path the feet left by one short search (build 1); the mod
+keeps no copy (rule 23). Waiting trips are priced at the running step's END cell (the anchor rule, `BatchWay`). The load
+line (`LoadProbe` -> `ProbeLines.LoadFacts`) says re-joins (`IPricedPath.joinCounts`) and route memory
+(`routeCounts`, read by name until the fork has build 2: "routes not readable in this fork jar" when absent).
+
 ### Caves (J6 / J6b, 0.39.z78)
 Caves are known by rays like ore: `sense/CaveIndex` (the air volumes per world, in the one store), credits from the sight
 rays, `aa cave list|yes|no|check`. A known cave is one way to an ore for the planner (`NeedChain.caveAlts`, the yield from

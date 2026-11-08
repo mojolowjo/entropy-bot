@@ -34,6 +34,12 @@ class Z56LoadProbeTest {
         assertTrue(kinds.contains("re-joins +9 (join searches started +6 landed +2 failed +4: budget +2 no path +1 off the path +0 other +1; queued for a slot +5)"), kinds);
         assertTrue(new ProbeLines.LoadFacts(60, "w", 0, 0, 0, new long[]{4, 4, 100}, 0, 0, null, 1, 2, 0, 0, new long[]{-1}).line(1).contains("re-joins not readable in this fork jar"));
         assertFalse(old.contains("re-joins"), "no join facts given (the old constructor): nothing said");
+        // D11 build 2: the route-memory counts, and a fork jar without them said
+        String routes = new ProbeLines.LoadFacts(60, "w", 0, 0, 0, new long[]{4, 4, 100}, 0, 0, null, 1, 2, 0, 0, new long[]{-1}, new long[]{5, 3, 1, 1, 2}).line(1);
+        assertTrue(routes.contains("routes asked +5 reused +3 check failed: changed +1 not loaded +1; saved +2"), routes);
+        assertTrue(new ProbeLines.LoadFacts(60, "w", 0, 0, 0, new long[]{4, 4, 100}, 0, 0, null, 1, 2, 0, 0, new long[]{-1}, new long[]{-1}).line(1).contains("routes not readable in this fork jar"));
+        // a fork object without routeCounts: {-1}, never a silent zero
+        assertNull(ProbeLines.routeCounts(new Object()));
     }
 
     @Test
