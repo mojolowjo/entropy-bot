@@ -647,13 +647,16 @@ public final class StepHands implements Steps.Hands {
             String l = stand.abandon(why);
             IBaritone b = Jobs.baritone();
             if (b != null) Jobs.cancel(b);
+            // job-segpick (run JAR 04:09:42): not walked as a segment again for pathCost.segmentRetryS (said here, once)
+            LivePathPrice.INSTANCE.holdSegment(segmentKey, gameTime());
             segmentKey = null;
-            LOG.info("[entropybot] steps: {}: {}", a.text(), l);
+            LOG.info("[entropybot] steps: {}: {}; not walked as a segment again for {} s (pathCost.segmentRetryS)", a.text(), l,
+                    io.github.mojolowjo.entropybot.aa.brain.Tuning.get("pathCost.segmentRetryS"));
             return;
         }
         boolean on = io.github.mojolowjo.entropybot.aa.moves.StandWait.segmentWalkOn();
         if (!on) return;
-        LivePathPrice.SegmentPick p = LivePathPrice.INSTANCE.cheapestFirstSegment();
+        LivePathPrice.SegmentPick p = LivePathPrice.INSTANCE.cheapestFirstSegment(gameTime());
         if (p == null || !io.github.mojolowjo.entropybot.aa.moves.StandWait.walksSegment(on, p.running(), p.cells(),
                 io.github.mojolowjo.entropybot.aa.moves.StandWait.segmentMinCells())) return;
         if (!LivePathPrice.INSTANCE.walkFirstSegment(p.key())) return;
