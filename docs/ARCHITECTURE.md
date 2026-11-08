@@ -96,7 +96,9 @@ exhausted search) hands Baritone the GoalBlock itself (`StepHands.bandDirect`, `
 TRAVEL lease, the band price stands); a landed dig column within `band.columnReuseM` of the feet
 (`LivePathPrice.landedInto`) is reused with no new ask; a NOT KNOWN end (`FactChange.Fact.notKnown`) never counts toward the
 park rule in `Steps`; job-dig3 (run JAV): `bandDirect` walks through `LivePathPrice.walkInto` (the fork's priced walk, so
-its search is steered by DigDownGoal; a bare `setGoalAndPath` skipped `PricedPath.searchGoal` and ended at its start), the
+its search is steered by DigDownGoal; a bare `setGoalAndPath` skipped `PricedPath.searchGoal` and ended at its start); job-steermod: it calls `LivePathPrice.walkIntoSteered`, the fork's
+`walk(goal, steerDig=true)` read by name (falls back to `walkInto`, said once), so a timed-out ask still digs steered; the
+load line says "dig steers +N" (`cpuCounts()[7]`), the
 dry-start rule reads the reused column too (`BandDirect.startDry`), and a dig leg ending not known `band.notKnownTries`
 times within `band.notKnownWindowS` at one column holds it (`aa/moves/BandHold`, a "column x z" band fact the side-step
 reads; `NeedChain` drops a band Y whose picked dig column is held);

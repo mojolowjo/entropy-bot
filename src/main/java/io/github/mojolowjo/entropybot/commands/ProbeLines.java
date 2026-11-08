@@ -320,7 +320,9 @@ public final class ProbeLines {
             // CPU job (IPricedPath.cpuCounts): {timed out, shared, joined, fluid hits, fluid fills, advisor hits, advisor asks}
             if (cpu != null && cpu.length >= 7 && cpu[0] >= 0)
                 fork += "; cpu: asks timed out +" + cpu[0] + ", shared +" + cpu[1] + ", joined +" + cpu[2] + "; fluid cache hits +" + cpu[3]
-                        + " fills +" + cpu[4] + "; advisor hits +" + cpu[5] + " of +" + cpu[6] + " asks";
+                        + " fills +" + cpu[4] + "; advisor hits +" + cpu[5] + " of +" + cpu[6] + " asks"
+                        // job-steermod: cpuCounts()[7], the steered dig walks (IPricedPath.walk(goal, steerDig))
+                        + (cpu.length >= 8 ? "; dig steers +" + cpu[7] : "; dig steers not counted in this fork jar");
             else if (cpu != null) fork += "; cpu counts not readable in this fork jar";    // rule 7: said, never left out
             // job-segmod (IPricedPath.segmentCounts): {offered, walked, replaced, abandoned}
             if (firstSegs != null && firstSegs.length >= 4 && firstSegs[0] >= 0)

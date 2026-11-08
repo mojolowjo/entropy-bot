@@ -594,6 +594,49 @@ public final class LivePathPrice implements PathPrice {
     /** 0.39.z76 send-back 2: the band walk - the feet end IN the cell ({@link #into}), on its priced path. */
     public static boolean walkInto(IBaritone b, BlockPos pos) { return walk(b, pos, into(pos)); }
 
+    /**
+     * job-steermod: the dig leg's direct dig - the fork's IPricedPath.walk(goal, steerDig=true) read by name, so a goal straight
+     * under the feet is searched with DigDownGoal even when its ask timed out or never landed. A jar without the two-argument
+     * walk falls back to {@link #walkInto} (said once, rule 7).
+     */
+    public static boolean walkIntoSteered(IBaritone b, BlockPos pos) {
+        if (!PathPrice.pricedPathOn()) return walkInto(b, pos);
+        baritone.api.pathing.goals.Goal g = into(pos);
+        Boolean kept = steeredWalk(b.getPricedPath(), g);
+        if (kept == null) {
+            if (!steerMissingSaid) {
+                steerMissingSaid = true;
+                LOG.info("[entropybot] path: this fork jar has no IPricedPath.walk(goal, steerDig) - the dig leg walks with walkInto (a timed-out ask searches the bare goal); install fork 95ce6474 or newer");
+            }
+            return walkInto(b, pos);
+        }
+        drops(b);
+        WalkProbe.walked(kept);
+        LOG.info("[entropybot] path: steered dig walk to {} {} {}: {}", pos.getX(), pos.getY(), pos.getZ(),
+                kept ? "the priced path (one search)" : "Baritone searches with DigDownGoal (steerDig)");
+        return kept;
+    }
+
+    private static boolean steerMissingSaid;
+
+    /** job-steermod: pricedPath.walk(goal, true) by name; null when the jar lacks it. */
+    static Boolean steeredWalk(Object pricedPath, baritone.api.pathing.goals.Goal g) {
+        java.lang.reflect.Method m;
+        try {
+            m = pricedPath.getClass().getMethod("walk", baritone.api.pathing.goals.Goal.class, boolean.class);
+        } catch (ReflectiveOperationException | LinkageError e) {
+            return null;
+        }
+        try {
+            return (Boolean) m.invoke(pricedPath, g, true);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            if (e.getCause() instanceof RuntimeException r) throw r;
+            throw new IllegalStateException("IPricedPath.walk(goal, steerDig) failed", e.getCause());
+        } catch (IllegalAccessException e) {
+            return null;
+        }
+    }
+
     private static boolean walk(IBaritone b, BlockPos pos, baritone.api.pathing.goals.Goal g) {
         if (!PathPrice.pricedPathOn()) {
             b.getCustomGoalProcess().setGoalAndPath(g);

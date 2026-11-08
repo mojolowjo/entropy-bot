@@ -204,8 +204,8 @@ public final class LoadProbe {
     static long[] cpuDelta(Object pricedPath) {
         long[] r = ProbeLines.cpuCounts(pricedPath);
         if (r == null) return new long[]{-1};
-        long[] d = new long[7];
-        if (cpuSeen != null) for (int i = 0; i < 7; i++) d[i] = r[i] - cpuSeen[i];
+        long[] d = new long[r.length];
+        if (cpuSeen != null) for (int i = 0; i < Math.min(r.length, cpuSeen.length); i++) d[i] = r[i] - cpuSeen[i];
         cpuSeen = r.clone();
         return d;
     }
