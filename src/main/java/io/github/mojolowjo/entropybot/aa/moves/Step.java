@@ -538,6 +538,7 @@ public sealed interface Step {
 
         public String text() {
             if (until != null) return "dig down until " + until.split(",")[0].replace("minecraft:", "") + " is seen (to y " + minY + " at most)";
+            if (minY == maxY) return "dig down to y " + minY;     // job-band: one Y (the band way's dig, the base block's)
             return "to y " + minY + ".." + maxY;
         }
 

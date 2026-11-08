@@ -69,7 +69,10 @@ down (each level's block broken by the game's formula, stone over y 0, deepslate
 the faces a dig opens a second (`band.facesPerBreak` / one break), the not-known density the `cave.orePerCellNotKnown`
 fallback, said. Its explore step is marked `Step.Explore.priced`; `choose` ranks a trial ending in priced explores only by
 its seconds (`NeedChain.pricedExplore`), so a surface cave and the band compare in seconds; a cave known in the band is the
-cave way at its Y. Pass three (run JAK): seen is looked at - the stand marks only cells in the eyes' cone and the
+cave way at its Y. The band way's steps do what its price says: (1) `Step.ToBand` at the peak's one Y ("dig down to y
+16", the band leg's Baritone path with its breaks, whose seconds replace the price's dig estimate), (2) a known cave whose
+Y is within `band.caveSpanY` of the peak and within `band.caveReachM` of the feet (`ToCave` + `Cave`), else the explore
+from where the dig leaves the bot (`c.down` set: the under-ground explore, priced). Pass three (run JAK): seen is looked at - the stand marks only cells in the eyes' cone and the
 ore rays' range (`Sightings.caveStood` with a `CaveRecord.Look`; `seen.coneDeg`, `seen.range`); arrival counts the passage's
 cells looked at against walked past (an open passage is walked again); the cave's ore intake reads the rays' range; a seen
 ore within `Step.Collect.MINE_SIGHT` (`CaveWalk.oreToMine`) pauses the walk and the vein (mineWith) takes it. A CAPPED

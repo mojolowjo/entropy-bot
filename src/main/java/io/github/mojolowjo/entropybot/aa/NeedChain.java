@@ -3976,8 +3976,7 @@ public final class NeedChain {
         if (!(per > 0)) { c.fail = "the band way: the yield of " + shw(item) + " from " + shw(where.block()) + " is not known (no loot entry; rule 15)"; return null; }
         int n = (int) Math.ceil(lack / per - 1e-9);          // structural: epsilon
         if (n <= 0) { c.fail = "the band way: 0 ore for " + lack + " " + shw(item); return null; }
-        // the band leg (exploreLeaf's bandLeg) prices the walk into the placements' union band; the dig is from where it leaves the bot
-        int fromY = Math.max(where.lo(), Math.min(where.hi(), feet[1]));
+        int fromY = feet[1];                                 // the dig starts at the feet (step 1 in this way)
         double faces = Tuning.get("band.facesPerBreak"), fallback = Tuning.get("cave.orePerCellNotKnown");
         double oreS = blockBreakS(c, where.block());
         io.github.mojolowjo.entropybot.cave.BandPrice.Price best = null;
@@ -3996,16 +3995,56 @@ public final class NeedChain {
             if (best == null || pr.seconds() < best.seconds()) best = pr;
         }
         if (best == null || !Double.isFinite(best.seconds())) { c.fail = "the band way: no finite price (" + (best == null ? "no peak" : best.line()) + ")"; return null; }
+        // step 1 (rule 7: the steps do what the price says): the dig to the band's Y - the existing band leg (Step.ToBand at
+        // that one Y, Baritone's priced path with its breaks under the ordinary lease; a no-path drops the way with its fact).
+        // Its seconds replace the price's own dig estimate (Baritone's cost is the better fact)
+        final int by = best.y();
         int at = c.steps.size();
-        String leaf = exploreLeaf(c, item, "no " + shw(item) + " source known; the band way priced");
-        if (leaf == null) return null;
-        for (int i = at; i < c.steps.size(); i++)
-            if (c.steps.get(i) instanceof Step.Explore e) c.steps.set(i, new Step.Explore(e.minutes(), e.until(), e.leased(), true));
-        if (!pricedExplore(c.steps, at)) { c.fail = "the band way: its explore did not stand (" + leaf + ")"; return null; }
-        c.addS(best.seconds());
-        final String line = best.line();
+        double s0 = c.seconds;
+        String leg = bandLeg(c, new int[]{by, by});
+        if (leg == null && c.fail != null) return null;
+        if (BAND_DROPPED.equals(leg)) { c.fail = "the band way: no path down to y " + by; return null; }
+        double legS = c.seconds - s0;
+        // step 2 at the band: a known cave with cells near that Y within band.caveReachM, else the explore from the band
+        CaveWay near = bandCave(c, item, by);
+        String atBand;
+        if (near != null) {
+            if (!near.inside() && !near.targets().isEmpty()) { int[] t = near.targets().get(0); c.steps.add(new Step.ToCave(t[0], t[1], t[2])); }
+            c.steps.add(new Step.Cave(near.x(), near.y(), near.z(), near.family(), n, (int) Math.max(1, Math.ceil(Tuning.get("cave.exploreMinutes")))));
+            c.bag.merge(item, lack, Integer::sum);             // a priced way: the need is met by its end (as the cave way)
+            atBand = "then the cave at " + near.x() + " " + near.y() + " " + near.z() + " (" + Math.round(near.dist()) + " m, its cells near y " + by + ")";
+        } else {
+            String prev = c.down;
+            c.down = "the dig to y " + by;                     // the explore runs from where the dig leaves the bot (exploreLeaf)
+            String leaf;
+            try { leaf = exploreLeaf(c, item, "no " + shw(item) + " source known; the band way priced"); }
+            finally { c.down = prev; }
+            if (leaf == null) return null;
+            for (int i = at; i < c.steps.size(); i++)
+                if (c.steps.get(i) instanceof Step.Explore e) c.steps.set(i, new Step.Explore(e.minutes(), e.until(), e.leased(), true));
+            atBand = "then " + leaf;
+        }
+        if (near == null && !pricedExplore(c.steps, at)) { c.fail = "the band way: its explore did not stand"; return null; }
+        c.addS(best.seconds() - best.downS());
+        final String line = best.line() + "; the dig priced by Baritone's path " + s(legS) + " in place of " + s(best.downS());
         c.note(() -> "source: " + shw(item) + " by the band way: " + line);
-        return leaf + " [band price: " + line + "]";
+        return "the band way: dig down to y " + by + (leg == null || leg.isEmpty() ? " (the feet are there)" : " (" + leg + ")") + ", " + atBand + " [band price: " + line + "]";
+    }
+
+    /**
+     * Job-band: a known cave offered for {@code item} (caveOut passes) whose Y is within band.caveSpanY of the band's Y
+     * {@code by} and within band.caveReachM of the feet; the nearest. Null: none.
+     */
+    private static CaveWay bandCave(Ctx c, String item, int by) {
+        CaveWay cw = caveOffered(c.w.cave(), item);
+        if (cw == null) return null;
+        double span = Tuning.get("band.caveSpanY"), reach = Tuning.get("band.caveReachM");
+        CaveWay best = null;
+        for (CaveWay k : cw.all()) {
+            if (c.cavesTaking.contains(k.key()) || Math.abs(k.y() - by) > span || k.dist() > reach) continue;
+            if (best == null || k.dist() < best.dist()) best = k;
+        }
+        return best;
     }
 
     /** Job-band: the block a level's dig breaks - stone over y 0, deepslate under (vanilla's overworld; GenWhere.Base not read here). */
