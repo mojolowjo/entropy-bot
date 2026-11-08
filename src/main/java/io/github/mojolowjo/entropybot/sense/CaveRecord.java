@@ -556,6 +556,7 @@ public final class CaveRecord {
             for (long c : cells) {                                              // the n nearest kept (a volume may be 200,000 cells)
                 if (seen.contains(c) || flood.contains(c)) continue;
                 int[] q = Sightings.cellOf(c);
+                if (!io.github.mojolowjo.entropybot.cave.Passages.walkable((px, py, pz) -> cells.contains(Sightings.cell(px, py, pz)), q[0], q[1], q[2])) continue;   // run EN: never a mid-air cell
                 if (ends.size() >= n && d2(q, feet) >= d2(ends.get(ends.size() - 1), feet)) continue;
                 ends.add(q);
                 ends.sort(java.util.Comparator.comparingLong(a -> d2(a, feet)));
