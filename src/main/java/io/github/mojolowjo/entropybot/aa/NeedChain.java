@@ -3980,10 +3980,22 @@ public final class NeedChain {
         double faces = Tuning.get("band.facesPerBreak"), fallback = Tuning.get("cave.orePerCellNotKnown");
         double oreS = blockBreakS(c, where.block());
         io.github.mojolowjo.entropybot.cave.BandPrice.Price best = null;
+        int[] bestSide = null;
+        String bestHeld = null;
         List<io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact.Peak> ps = new ArrayList<>();
         for (var p : where.peaks(false)) if (p.y() <= fromY) ps.add(p);
         if (ps.isEmpty()) ps = where.peaks(false);
+        List<String> outs = new ArrayList<>();
         for (var p : ps) {
+            // job-band2 (rule 7): a dig to this Y that ended short is held with its reason and its column (BandEnd): the next
+            // price digs band.sideStepM away from that column; an end naming no column holds the peak (another peak is tried)
+            String held = heldWhy(c, io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(p.y(), p.y()));
+            int[] side = null;
+            if (held != null) {
+                int[] col = io.github.mojolowjo.entropybot.aa.moves.BandEnd.heldColumn(held);
+                if (col == null) { outs.add("y " + p.y() + " held (" + held + ")"); continue; }
+                side = io.github.mojolowjo.entropybot.aa.moves.BandEnd.sideStep(feet, col, Tuning.get("band.sideStepM"));
+            }
             int lo = Math.min(fromY, p.y()), hi = Math.max(fromY, p.y());
             double down = 0;
             for (int y = lo; y < hi; y++) down += blockBreakS(c, bandBlock(y));
@@ -3992,27 +4004,48 @@ public final class NeedChain {
             var pr = io.github.mojolowjo.entropybot.cave.BandPrice.dig(fromY, p.y(), perBlock,
                     "game data: the placements' " + String.format(Locale.ROOT, "%.1f", where.curve(p.y(), false)) + " a chunk layer at y " + p.y() + " / 256",
                     n, down, back, blockBreakS(c, bandBlock(p.y())), faces, oreS, fallback);
-            if (best == null || pr.seconds() < best.seconds()) best = pr;
+            if (best == null || pr.seconds() < best.seconds()) { best = pr; bestSide = side; bestHeld = held; }
         }
-        if (best == null || !Double.isFinite(best.seconds())) { c.fail = "the band way: no finite price (" + (best == null ? "no peak" : best.line()) + ")"; return null; }
+        if (best == null || !Double.isFinite(best.seconds())) {
+            c.fail = "the band way: no finite price (" + (best == null ? "no peak" + (outs.isEmpty() ? "" : ": " + String.join("; ", outs)) : best.line()) + ")";
+            return null;
+        }
         // step 1 (rule 7: the steps do what the price says): the dig to the band's Y - the existing band leg (Step.ToBand at
         // that one Y, Baritone's priced path with its breaks under the ordinary lease; a no-path drops the way with its fact).
         // Its seconds replace the price's own dig estimate (Baritone's cost is the better fact)
         final int by = best.y();
         int at = c.steps.size();
+        String sideWords = "";
+        int[] digCol = {feet[0], feet[2]};
+        if (bestSide != null) {
+            // job-band2: the side-step walk to the other column (Baritone's path from the feet), then the dig there; the dig's
+            // own price stays the feet's column's (the fork prices from the feet only, rule 15: said in the line)
+            Walked sw = walk(c, bestSide[0], feet[1], bestSide[1], Math.hypot(bestSide[0] - feet[0], bestSide[1] - feet[2]));
+            if (c.fail != null) { c.fail = "the band way: the side-step to column " + bestSide[0] + " " + bestSide[1] + ": " + c.fail; return null; }
+            c.steps.add(new Step.Walk(bestSide[0], feet[1], bestSide[1], 0));
+            c.addS(sw.seconds());
+            digCol = bestSide;
+            sideWords = "side-step to column " + bestSide[0] + " " + bestSide[1] + " (" + s(sw.seconds()) + "; the dig to y " + by + " held: " + bestHeld
+                    + "; the dig priced at the feet's column), ";
+            at = c.steps.size();
+        }
         double s0 = c.seconds;
         String leg = bandLeg(c, new int[]{by, by});
         if (leg == null && c.fail != null) return null;
         if (BAND_DROPPED.equals(leg)) { c.fail = "the band way: no path down to y " + by; return null; }
         double legS = c.seconds - s0;
         // step 2 at the band: a known cave with cells near that Y within band.caveReachM, else the explore from the band
-        CaveWay near = bandCave(c, item, by);
+        int[] digEnd = {digCol[0], by, digCol[1]};
+        double oreDigS = best.seconds() - best.downS() - best.backS();       // the n ore dug at the band: what a cave's lip walk must beat
+        LipWalk lw = bandCave(c, item, by, digEnd, oreDigS);
+        CaveWay near = lw == null ? null : lw.cave();
         String atBand;
         if (near != null) {
+            c.addS(lw.seconds());                              // job-band2: the walk from the dig's end to the lip, priced
             if (!near.inside() && !near.targets().isEmpty()) { int[] t = near.targets().get(0); c.steps.add(new Step.ToCave(t[0], t[1], t[2])); }
             c.steps.add(new Step.Cave(near.x(), near.y(), near.z(), near.family(), n, (int) Math.max(1, Math.ceil(Tuning.get("cave.exploreMinutes")))));
             c.bag.merge(item, lack, Integer::sum);             // a priced way: the need is met by its end (as the cave way)
-            atBand = "then the cave at " + near.x() + " " + near.y() + " " + near.z() + " (" + Math.round(near.dist()) + " m, its cells near y " + by + ")";
+            atBand = "then the cave at " + near.x() + " " + near.y() + " " + near.z() + " (" + Math.round(near.dist()) + " m, its cells near y " + by + "; " + lw.line() + ")";
         } else {
             String prev = c.down;
             c.down = "the dig to y " + by;                     // the explore runs from where the dig leaves the bot (exploreLeaf)
@@ -4026,27 +4059,48 @@ public final class NeedChain {
         }
         if (near == null && !pricedExplore(c.steps, at)) { c.fail = "the band way: its explore did not stand"; return null; }
         c.addS(best.seconds() - best.downS());
-        final String line = best.line() + "; the dig priced by Baritone's path " + s(legS) + " in place of " + s(best.downS());
+        final String line = best.line() + "; the dig priced by Baritone's path " + s(legS) + " in place of " + s(best.downS())
+                + (near != null ? "; + " + lw.line() : "");
         c.note(() -> "source: " + shw(item) + " by the band way: " + line);
-        return "the band way: dig down to y " + by + (leg == null || leg.isEmpty() ? " (the feet are there)" : " (" + leg + ")") + ", " + atBand + " [band price: " + line + "]";
+        return "the band way: " + sideWords + "dig down to y " + by + (leg == null || leg.isEmpty() ? " (the feet are there)" : " (" + leg + ")") + ", " + atBand + " [band price: " + line + "]";
     }
 
+    /** job-band2: the band way's cave and the walk from the dig's end to its lip (seconds, words). */
+    record LipWalk(CaveWay cave, double seconds, String line) {}
+
     /**
-     * Job-band: a known cave offered for {@code item} (caveOut passes) whose Y is within band.caveSpanY of the band's Y
-     * {@code by} and within band.caveReachM of the feet; the nearest. Null: none.
+     * Job-band: a known cave offered for {@code item} (caveOut passes) at the band's Y {@code by} - job-band2: its Y span from
+     * its record (the record Y, its openings' and passages' ends: {@link io.github.mojolowjo.entropybot.cave.BandPrice#span};
+     * band.caveSpanY only widens a record that holds one Y), within band.caveReachM straight metres (the ring of caves asked
+     * for an estimate) - and priced: the walk from the dig's end cell {@code digEnd} to its lip by Baritone's estimate
+     * (estimateFrom; not known: the straight metres, said) plus the job-est dig charge per level when the lip is deeper
+     * ({@link #wayDownS}). Taken only when that walk is under {@code oreDigS} (the band's own dig for the ore: the reach in
+     * seconds, rule 18); the cheapest. Null: none.
      */
-    private static CaveWay bandCave(Ctx c, String item, int by) {
+    private static LipWalk bandCave(Ctx c, String item, int by, int[] digEnd, double oreDigS) {
         CaveWay cw = caveOffered(c.w.cave(), item);
         if (cw == null) return null;
-        double span = Tuning.get("band.caveSpanY"), reach = Tuning.get("band.caveReachM");
-        CaveWay best = null;
+        double slack = Tuning.get("band.caveSpanY"), reach = Tuning.get("band.caveReachM");
+        LipWalk best = null;
         for (CaveWay k : cw.all()) {
-            if (c.cavesTaking.contains(k.key()) || Math.abs(k.y() - by) > span || k.dist() > reach) continue;
-            if (best == null || k.dist() < best.dist()) best = k;
+            if (c.cavesTaking.contains(k.key()) || k.dist() > reach) continue;
+            List<int[]> pts = new ArrayList<>(k.entries());
+            if (k.passages() != null) for (var p : k.passages()) { pts.add(p.start()); pts.add(p.end()); }
+            int[] span = io.github.mojolowjo.entropybot.cave.BandPrice.span(k.y(), pts, slack);
+            if (by < span[0] || by > span[1]) continue;
+            int[] lip = !k.inside() && !k.targets().isEmpty() ? k.targets().get(0) : new int[]{k.x(), k.y(), k.z()};
+            double est = c.w.path() == null ? Double.NaN : c.w.path().estimateFrom(digEnd, lip[0], lip[1], lip[2]);
+            double straight = Math.sqrt(Math.pow(lip[0] - digEnd[0], 2) + Math.pow(lip[1] - digEnd[1], 2) + Math.pow(lip[2] - digEnd[2], 2));
+            double down = wayDownS(digEnd[1], lip[1], c.pickItem, c.pickTier);
+            var lp = io.github.mojolowjo.entropybot.cave.BandPrice.lip(est, Unit.seconds(straight), down, digEnd[1] - lip[1], span);
+            if (!(lp.seconds() < oreDigS)) {
+                c.note(() -> "band way: the cave at " + k.x() + " " + k.y() + " " + k.z() + " not taken: " + lp.line() + " is not under the band's dig for the ore " + s(oreDigS));
+                continue;
+            }
+            if (best == null || lp.seconds() < best.seconds()) best = new LipWalk(k, lp.seconds(), lp.line());
         }
         return best;
     }
-
     /** Job-band: the block a level's dig breaks - stone over y 0, deepslate under (vanilla's overworld; GenWhere.Base not read here). */
     static String bandBlock(int y) { return y < 0 ? "minecraft:deepslate" : DIG_DOWN_BLOCK; }
 

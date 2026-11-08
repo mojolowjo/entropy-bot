@@ -461,6 +461,18 @@ public final class PolicyRuntime {
                 + structureText(f, level, pos) : "not loaded");
     }
 
+    /**
+     * job-band2: the deny of one cell ("rule: reason"), as {@link #why} judges it; null: allowed, or no snapshot yet (said by
+     * the caller as not read). Client thread.
+     */
+    public String denied(Level level, String dim, int x, int y, int z, Action action, Intent in) {
+        Snapshot s = snapshot;
+        if (s == null) return null;
+        BlockFacts f = facts(level, new BlockPos(x, y, z), false).withDug(dug(dim, x, y, z));
+        BreakPolicy.Verdict v = BreakPolicy.judge(s, new BreakPolicy.Ask(action, in, dim, x, y, z, f, where()));
+        return v.allowed() ? null : v.rule() + ": " + v.reason();
+    }
+
     /** 0.39.z77 natural 2: a structure block says why it is one ("structure: not placed by any feature the jars name"). */
     private static String structureText(BlockFacts f, Level level, BlockPos pos) {
         String why = f.structure() == BreakPolicy.Structure.YES && level != null ? StructureTable.why(level.getBlockState(pos).getBlock()) : null;

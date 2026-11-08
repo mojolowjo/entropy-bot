@@ -2685,6 +2685,9 @@ public final class StepHands implements Steps.Hands {
         bandStart = st;
         bandCell = new int[]{st.cell()[0], t.target(st.cell()[1]), st.cell()[2]};
         if (t.until() != null) digFrom = st.cell().clone();
+        bandMs0 = System.currentTimeMillis();
+        bandLines0 = io.github.mojolowjo.entropybot.baritone.BaritoneHook.lines();
+        bandSolid0 = solidYs(p, bandCell[0], bandCell[2], st.cell()[1] - 1, bandCell[1]);
         LOG.info("[entropybot] steps: {} - Baritone's priced path to {} (the band's nearest Y under the search's start {}{}; walked once its path is known)", t.text(), Jobs.fmt(bandCell),
                 Jobs.fmt(st.cell()), st.standable() ? "" : " - it has no floor: a no-path from it is not known, never the band's fact");
         return null;
@@ -2728,7 +2731,7 @@ public final class StepHands implements Steps.Hands {
             }
         } else if (y >= t.minY() && y <= t.maxY()) {
             if (b != null) Jobs.cancel(b);
-            return Car.Status.done("ok: at y " + y + " (band " + t.minY() + ".." + t.maxY() + ")");
+            return Car.Status.done("ok: " + bandReached(p, t, y));
         }
         if (b == null) return Car.Status.failed("baritone not loaded");
         if (!bandWalking && bandCell != null) {
@@ -2748,8 +2751,9 @@ public final class StepHands implements Steps.Hands {
                     return Car.Status.running(t.text() + ": the path to " + Jobs.fmt(bandCell) + " is " + next.why());
                 }
                 case FACT -> {
-                    io.github.mojolowjo.entropybot.aa.moves.FactChange.band(t.minY(), t.maxY(), next.why());     // 0.39.z42: a fact change, the order re-plans
-                    return Car.Status.failed(t.text() + ": " + next.why());
+                    String why = bandStopped(p, t, next.why());               // job-band2: depth, cause, column
+                    io.github.mojolowjo.entropybot.aa.moves.FactChange.band(t.minY(), t.maxY(), why);     // 0.39.z42: a fact change, the order re-plans
+                    return Car.Status.failed(t.text() + ": " + why);
                 }
                 default -> {
                     io.github.mojolowjo.entropybot.aa.moves.FactChange.bandNotKnown(t.minY(), t.maxY(), next.why());   // re-plans, nothing held
@@ -2772,11 +2776,87 @@ public final class StepHands implements Steps.Hands {
                 io.github.mojolowjo.entropybot.aa.moves.FactChange.bandNotKnown(t.minY(), t.maxY(), nk);
                 return Car.Status.failed(t.text() + ": " + nk);
             }
-            String why = "Baritone's goal ended at y " + y + " (no path into the band)";
+            String fork = "Baritone's goal ended at y " + y + " (no path into the band); " + io.github.mojolowjo.entropybot.aa.moves.WalkEndText.reason(bandCalc(b), bandLines0,
+                    io.github.mojolowjo.entropybot.baritone.BaritoneHook.lines(), io.github.mojolowjo.entropybot.baritone.BaritoneHook.lastLine());
+            String why = bandStopped(p, t, fork);                                // job-band2 (rule 7): depth, cause, column
             io.github.mojolowjo.entropybot.aa.moves.FactChange.band(t.minY(), t.maxY(), why);     // 0.39.z42: a fact change, the order re-plans
             return Car.Status.failed(t.text() + ": " + why);
         }
         return Car.Status.running(t.text() + ": at y " + y);
+    }
+
+    /** job-band2: the band leg's start time, Baritone's line count then, and the solid cells of its column then (the Ys). */
+    private long bandMs0;
+    private long bandLines0;
+    private java.util.Set<Integer> bandSolid0 = java.util.Set.of();
+
+    /** job-band2: the fork's last calc, as WalkEndText reads it (NONE: an older fork or none kept). */
+    private static io.github.mojolowjo.entropybot.aa.moves.WalkEndText.Calc bandCalc(IBaritone b) {
+        try {
+            var wc = b.getCustomGoalProcess().lastCalc();
+            return wc == null ? io.github.mojolowjo.entropybot.aa.moves.WalkEndText.Calc.NONE
+                    : new io.github.mojolowjo.entropybot.aa.moves.WalkEndText.Calc(true, wc.exhausted(), wc.budget(), String.valueOf(wc.stop()));
+        } catch (LinkageError e) {
+            return io.github.mojolowjo.entropybot.aa.moves.WalkEndText.Calc.NONE;   // an older fork: Baritone's line alone
+        }
+    }
+
+    /** job-band2: the Ys of the column's solid (not air, not fluid), loaded cells from {@code top} down to {@code bottom}. */
+    private static java.util.Set<Integer> solidYs(LocalPlayer p, int x, int z, int top, int bottom) {
+        java.util.Set<Integer> out = new java.util.HashSet<>();
+        for (int y = top; y >= bottom; y--) {
+            BlockPos at = new BlockPos(x, y, z);
+            if (!p.level().isLoaded(at)) continue;
+            var st = p.level().getBlockState(at);
+            if (!st.isAir() && st.getFluidState().isEmpty()) out.add(y);
+        }
+        return out;
+    }
+
+    /** job-band2: "reached y 16 (48 levels, N s, M blocks broken)" - M: the column's solid cells at the start that are not now. */
+    private String bandReached(LocalPlayer p, Step.ToBand t, int y) {
+        int[] from = bandStart != null ? bandStart.cell() : digFrom;
+        int fromY = from == null ? y : from[1];
+        int broken = 0;
+        if (bandCell != null) {
+            var now = solidYs(p, bandCell[0], bandCell[2], fromY - 1, bandCell[1]);
+            for (int sy : bandSolid0) if (!now.contains(sy)) broken++;
+        }
+        String r = io.github.mojolowjo.entropybot.aa.moves.BandEnd.reached(fromY, y, (System.currentTimeMillis() - bandMs0) / 1000.0, broken);
+        LOG.info("[entropybot] steps: {} - {}", t.text(), r);
+        return r;
+    }
+
+    /**
+     * job-band2 (rule 7): a short end's words - the depth reached and the cause read from the column ahead (under the feet down
+     * to the leg's cell: water, lava, bedrock, a cell the cost advisor forbids) and the fork's end ({@code fork}); names the
+     * column, which the band way's next price side-steps (BandEnd.heldColumn). Loader notes: vanilla getBlockState /
+     * getFluidState / FluidTags; the mod's PolicyRuntime.denied (break, travel intent).
+     */
+    private String bandStopped(LocalPlayer p, Step.ToBand t, String fork) {
+        int[] me = Jobs.here(p);
+        int targetY = bandCell != null ? bandCell[1] : t.target(me[1]);
+        int[] from = bandStart != null ? bandStart.cell() : digFrom != null ? digFrom : me;
+        List<io.github.mojolowjo.entropybot.aa.moves.BandEnd.Cell> ahead = new ArrayList<>();
+        var lv = p.level();
+        String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(lv);
+        int step = targetY < me[1] ? -1 : 1;
+        int y0 = step < 0 ? me[1] - 1 : me[1] + 2;      // structural: under the feet going down; over the head going up
+        for (int y = y0; step < 0 ? y >= targetY : y <= targetY + 1; y += step) {
+            BlockPos at = new BlockPos(me[0], y, me[2]);
+            if (!lv.isLoaded(at)) break;
+            var st = lv.getBlockState(at);
+            var fl = st.getFluidState();
+            String fluid = fl.isEmpty() ? null : fl.is(net.minecraft.tags.FluidTags.LAVA) ? "lava" : fl.is(net.minecraft.tags.FluidTags.WATER) ? "water" : "fluid";
+            String id = BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
+            String denied = st.isAir() ? null : io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.denied(lv, dim, me[0], y, me[2],
+                    io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.BREAK, io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL);
+            ahead.add(new io.github.mojolowjo.entropybot.aa.moves.BandEnd.Cell(y, id, fluid, denied));
+        }
+        String cause = io.github.mojolowjo.entropybot.aa.moves.BandEnd.cause(me[0], me[2], ahead);
+        String w = io.github.mojolowjo.entropybot.aa.moves.BandEnd.stopped(me[0], me[2], from[1], me[1], targetY, cause, fork);
+        LOG.info("[entropybot] steps: {} - {}", t.text(), w);
+        return w;
     }
 
     // ---- 0.39.z46: to the strip's band: the priced path (one search), done when the feet stand by the cell ----

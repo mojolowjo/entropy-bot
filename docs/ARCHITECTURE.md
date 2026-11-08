@@ -71,8 +71,15 @@ fallback, said. Its explore step is marked `Step.Explore.priced`; `choose` ranks
 its seconds (`NeedChain.pricedExplore`), so a surface cave and the band compare in seconds; a cave known in the band is the
 cave way at its Y. The band way's steps do what its price says: (1) `Step.ToBand` at the peak's one Y ("dig down to y
 16", the band leg's Baritone path with its breaks, whose seconds replace the price's dig estimate), (2) a known cave whose
-Y is within `band.caveSpanY` of the peak and within `band.caveReachM` of the feet (`ToCave` + `Cave`), else the explore
-from where the dig leaves the bot (`c.down` set: the under-ground explore, priced). Pass three (run JAK): seen is looked at - the stand marks only cells in the eyes' cone and the
+recorded Y span (record Y, openings' and passages' ends, `cave/BandPrice.span`; a one-Y record widened by `band.caveSpanY`)
+holds the peak, within `band.caveReachM` of the feet, and whose lip walk from the dig's end (`BandPrice.lip`: Baritone's
+`estimateFrom`, floored by the straight walk, + `wayDownS` when the lip is deeper) is under the band's own dig for the ore;
+that walk is added to the price (`ToCave` + `Cave`), else the explore from where the dig leaves the bot (`c.down` set: the
+under-ground explore, priced). Job-band2 (rule 7): the leg's ends are `aa/moves/BandEnd` words, built in `StepHands`
+(`bandReached` / `bandStopped`): "reached y 16 (48 levels, N s, M blocks broken)", or "stopped at y .. of .. (column x z):
+cause; the fork: ..." with the cause read from the column ahead (water / lava cell, bedrock, `PolicyRuntime.denied`'s rule)
+and the fork's end (`WalkEndText.reason`); the band key is held with it, and the next `bandWay` price walks
+`band.sideStepM` to another column (`BandEnd.sideStep`, a `Step.Walk` first) or, for an end naming no column, tries another peak. Pass three (run JAK): seen is looked at - the stand marks only cells in the eyes' cone and the
 ore rays' range (`Sightings.caveStood` with a `CaveRecord.Look`; `seen.coneDeg`, `seen.range`); arrival counts the passage's
 cells looked at against walked past (an open passage is walked again); the cave's ore intake reads the rays' range; a seen
 ore within `Step.Collect.MINE_SIGHT` (`CaveWalk.oreToMine`) pauses the walk and the vein (mineWith) takes it. A CAPPED
