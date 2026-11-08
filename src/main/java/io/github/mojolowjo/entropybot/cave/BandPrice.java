@@ -52,5 +52,35 @@ public final class BandPrice {
         return new Price(secs, downS, backS, perOre, d, levels, bandY, known, line);
     }
 
+    /**
+     * job-band2: a known cave's Y span from its record - the record Y and the Ys of its points (openings, passage ends) -
+     * {lo, hi}; when the record holds one Y only (no point off it), widened by {@code slack} (band.caveSpanY) each way.
+     */
+    public static int[] span(int y, java.util.List<int[]> points, double slack) {
+        int lo = y, hi = y;
+        if (points != null) for (int[] p : points) if (p != null && p.length >= 3) { lo = Math.min(lo, p[1]); hi = Math.max(hi, p[1]); }   // structural: x y z
+        if (lo == hi) { int s = (int) Math.round(slack); lo -= s; hi += s; }
+        return new int[]{lo, hi};
+    }
+
+    /** job-band2: the walk from the dig's end to a cave's lip: seconds and words. */
+    public record Lip(double seconds, String line) {}
+
+    /**
+     * job-band2: the lip walk's price - Baritone's estimate from the dig's end ({@code estS}; NaN: not known, the straight
+     * metres' walk {@code straightS} instead, said) at least the straight walk (an estimate is a lower bound, rule 18), plus
+     * {@code downS} (the job-est dig charge) when the lip is {@code deeper} levels under the dig's end.
+     */
+    public static Lip lip(double estS, double straightS, double downS, int deeper, int[] span) {
+        boolean known = Double.isFinite(estS);
+        double walk = known ? Math.max(estS, straightS) : straightS;
+        double dig = deeper > 0 ? downS : 0;
+        String line = String.format(Locale.ROOT, "the walk to the lip %.0f s (%s)%s, the cave's y %d..%d", walk + dig,
+                known ? String.format(Locale.ROOT, "Baritone's estimate from the dig's end %.1f s, the straight walk %.1f s", estS, straightS)
+                        : String.format(Locale.ROOT, "no estimate: the straight walk %.1f s", straightS),
+                dig > 0 ? String.format(Locale.ROOT, " + %d levels down %.0f s", deeper, dig) : "", span[0], span[1]);
+        return new Lip(walk + dig, line);
+    }
+
     static String fmt(double v) { return String.format(Locale.ROOT, v >= 0.01 ? "%.3f" : "%.5f", v); }   // structural: the words' digits
 }

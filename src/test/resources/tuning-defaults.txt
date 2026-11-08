@@ -94,6 +94,7 @@ band.caveSpanY	8.0
 band.facesPerBreak	3.0
 band.foodOff	18.0
 band.foodOn	10.0
+band.sideStepM	6.0
 band.torchOff	16.0
 band.torchOn	8.0
 base.distGuess	16.0
