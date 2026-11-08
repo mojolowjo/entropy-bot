@@ -3976,6 +3976,14 @@ public final class NeedChain {
         if (!(per > 0)) { c.fail = "the band way: the yield of " + shw(item) + " from " + shw(where.block()) + " is not known (no loot entry; rule 15)"; return null; }
         int n = (int) Math.ceil(lack / per - 1e-9);          // structural: epsilon
         if (n <= 0) { c.fail = "the band way: 0 ore for " + lack + " " + shw(item); return null; }
+        // job-bandtool (run JAW 06:28-06:35: "dig down to y 16 by hand", 44 levels of stone at 7.5 s a block, no pickaxe):
+        // the ore's tool is a fact of the block (its harvest tier, the needs_*_tool tags; the loot data's match_tool), so the
+        // band way REQUIRES it - made first when the bag holds no pickaxe of that tier, as the strip and cave ways do. Every
+        // break below (the dig down, the ore, the tunnel) is then priced at that tool's speed; "by hand" is never offered.
+        boolean stuck0 = c.stuck;
+        String toolWords = bandTool(c, where.block());
+        if (toolWords == null) return null;
+        if (c.stuck && !stuck0) return "the band way (after " + toolWords.replaceAll(", $", "") + ")";   // the pickaxe's source is still to find
         int fromY = feet[1];                                 // the dig starts at the feet (step 1 in this way)
         double faces = Tuning.get("band.facesPerBreak"), fallback = Tuning.get("cave.orePerCellNotKnown");
         double oreS = blockBreakS(c, where.block());
@@ -4072,7 +4080,28 @@ public final class NeedChain {
         final String line = best.line() + "; the dig priced by Baritone's path " + s(legS) + " in place of " + s(best.downS())
                 + (near != null ? "; + " + lw.line() : "");
         c.note(() -> "source: " + shw(item) + " by the band way: " + line);
-        return "the band way: " + sideWords + "dig down to y " + by + (leg == null || leg.isEmpty() ? " (the feet are there)" : " (" + leg + ")") + ", " + atBand + " [band price: " + line + "]";
+        return "the band way: " + toolWords + sideWords + "dig down to y " + by + (leg == null || leg.isEmpty() ? " (the feet are there)" : " (" + leg + ")") + ", " + atBand + " [band price: " + line + "]";
+    }
+
+    /**
+     * job-bandtool: the pickaxe the band way's ore needs ({@code block}'s harvest tier from the mining data). "" when the
+     * block needs none or the bag holds one of that tier; else the cheapest pickaxe of that tier made first, its seconds
+     * charged, its phrase "with stone_pickaxe made first (N s; <- its chain), " (the parts in aa debug's node). Null with
+     * {@code c.fail}: the tier is not known (rule 15) or no such pickaxe can be had.
+     */
+    private static String bandTool(Ctx c, String block) {
+        MiningTiers.Source src = MiningTiers.source();
+        if (src == null) { c.fail = "the band way: " + MINING_WAIT; return null; }
+        int need = src.blockTier(block);
+        if (need == MiningTiers.UNKNOWN) { c.fail = "the band way: the pickaxe tier of " + shw(block) + " is not known (rule 15)"; return null; }
+        if (need < 1 || (c.pickItem != null && c.pickTier >= need)) return "";
+        double s0 = c.seconds;
+        String pre = cheapestPickaxe(c, need);
+        if (c.fail != null) { c.fail = "the band way: " + shw(block) + " drops only with a pickaxe of tier " + need + ": " + c.fail; return null; }
+        final double ps = c.seconds - s0;
+        final String fpre = pre;
+        c.note(() -> "band tool: " + shw(block) + " needs pickaxe tier " + need + " (game data): " + fpre + " = " + s(ps));
+        return "with " + sh(c.pickItem) + " made first (" + s(ps) + "; <- " + pre + "), ";
     }
 
     /** job-band2: the band way's cave and the walk from the dig's end to its lip (seconds, words). */

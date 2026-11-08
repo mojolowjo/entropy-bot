@@ -70,7 +70,10 @@ down (each level's block broken by the game's formula, stone over y 0, deepslate
 the faces a dig opens a second (`band.facesPerBreak` / one break), the not-known density the `cave.orePerCellNotKnown`
 fallback, said. Its explore step is marked `Step.Explore.priced`; `choose` ranks a trial ending in priced explores only by
 its seconds (`NeedChain.pricedExplore`), so a surface cave and the band compare in seconds; a cave known in the band is the
-cave way at its Y. The band way's steps do what its price says: (1) `Step.ToBand` at the peak's one Y ("dig down to y
+cave way at its Y. The band way requires the pickaxe tier the ore's block needs (MiningTiers, game data;
+`NeedChain.bandTool`, job-bandtool): with none of that tier in the bag the cheapest is made first and priced into the
+way ("with stone_pickaxe made first (N s; <- its chain)"), every break then at that tool's speed; it is never "by hand".
+The band way's steps do what its price says: (1) `Step.ToBand` at the peak's one Y ("dig down to y
 16", the band leg's Baritone path with its breaks, whose seconds replace the price's dig estimate), (2) a known cave whose
 recorded Y span (record Y, openings' and passages' ends, `cave/BandPrice.span`; a one-Y record widened by `band.caveSpanY`)
 holds the peak, within `band.caveReachM` of the feet, and whose lip walk from the dig's end (`BandPrice.lip`: Baritone's
