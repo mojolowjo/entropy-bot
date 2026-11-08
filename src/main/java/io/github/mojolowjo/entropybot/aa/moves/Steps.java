@@ -1163,6 +1163,7 @@ public final class Steps {
                 FactChange.Fact lead = walkLeads(steps, idx, reason, startFeet, feetNow());
                 if (lead != null) fact = lead;
             }
+            if (fact == null) fact = walkTargetFact(steps, idx, reason);     // job-walkend: no walk end stops the order
         }
         if (fact == null || replanner == null || idx < 0 || idx >= steps.size()) { fail(reason); return; }
         Step failed = steps.get(idx);
@@ -1438,6 +1439,21 @@ public final class Steps {
         String src = next instanceof Step.Collect k && k.at() != null ? io.github.mojolowjo.entropybot.aa.NeedChain.spotKey(k)
                 : io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(next);
         return src == null ? null : FactChange.walkFor(src, reason.replaceFirst("^error: ", ""));
+    }
+
+    /**
+     * job-walkend (run JBD 09:22:47: "goto -129 63 -26 near 1" before "place crafting_table near me" ended "goal is walled
+     * in" and the order STOPPED - a place-near has no source key, so {@link #walkLeads} gave null and the walk's end was no
+     * fact; rule 7): every walk end that is not "arrived" and has no fact of its own nor a next-step source is a fact keyed
+     * by the walk's own target cell ({@link FactChange#walkHeld}: "source walk target x y z", NeedChain.heldWalks prices
+     * every walk there unreachable), so the planner re-prices from here. Null: not a walk. Pure.
+     */
+    public static FactChange.Fact walkTargetFact(List<? extends Step> steps, int idx, String reason) {
+        if (steps == null || idx < 0 || idx >= steps.size() || !(steps.get(idx) instanceof Step.Walk w)) return null;
+        int[] t = {w.x(), w.y(), w.z()};
+        String why = reason == null ? "no reason" : reason.replaceFirst("^error: ", "");
+        return new FactChange.Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.walkTargetKey(t[0], t[1], t[2]),
+                "the walk to " + t[0] + " " + t[1] + " " + t[2] + " failed: " + why + " (the target held for this order)");
     }
 
     /**
