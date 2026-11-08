@@ -47,6 +47,8 @@ public final class StepHands implements Steps.Hands {
     private JobRequests.Request req;
     private String instant;
     private Jobs.Job walkJob;
+    /** job-walkend: the walk step whose walled-in end from the shaft was already turned into a dig (once per step). */
+    private Step.Walk shaftDug;
     private int startCount, want;
     private List<String> countIds = List.of();
     private boolean mining, chopping;
@@ -1839,6 +1841,33 @@ public final class StepHands implements Steps.Hands {
      */
     private Car.Status walkStatus(Step.Walk w) {
         Car.Status st = requestStatus();
+        // job-walkend (run JBD 09:22:47: "goto -129 63 -26 near 1: couldn't get there (goal is walled in ...)" from the bot's own
+        // 1x1 shaft at y 61): from inside its shaft a walled-in goal is a dig, not a walk - once per walk step, the same cell
+        // asked of Baritone with breaks allowed (the ordinary dig lease, setGoalAndPath on a GoalBlock), said once
+        if (st.state() == Car.State.FAILED && shaftDug != w) {
+            LocalPlayer p = Minecraft.getInstance().player;
+            int[] me = p == null ? null : Jobs.here(p);
+            int rock = me == null ? 0 : Jobs.rockOverHead(p.level(), me[0], me[1], me[2]);
+            int hole = me == null ? 0 : Jobs.holeDepth(p.level(), me[0], me[1], me[2]);
+            if (WalkEnd.shaftDig(st.why(), rock, hole)) {
+                shaftDug = w;
+                LOG.info("[entropybot] walk {}: the goal is walled in and I am in my shaft (rock over head {}, hole {}) - asking Baritone to dig to it (breaks allowed)", w.text(), rock, hole);
+                instant = null;
+                req = null;
+                String r = follow(w.text() + " (dig)", () -> c.stepJob(w.text() + " (dig)", () -> c.walkNearTo(p, w.x(), w.y(), w.z())));
+                if (r == null && c.jobs.running() && "travel".equals(c.jobs.job.type)) {
+                    walkJob = c.jobs.job;
+                    IBaritone b = Jobs.baritone();
+                    if (b != null) {
+                        baritone.api.pathing.goals.Goal g = new baritone.api.pathing.goals.GoalBlock(w.x(), w.y(), w.z());
+                        b.getCustomGoalProcess().setGoalAndPath(g);
+                        walkJob.goalObj = g;
+                    }
+                    return Car.Status.running(w.text() + " (digging to it from the shaft)");
+                }
+                if (r != null) return Car.Status.failed(st.why() + "; the dig to it from the shaft did not start: " + r);
+            }
+        }
         if (st.state() == Car.State.FAILED && walkJob != null && walkJob.shortEnd != null)
             io.github.mojolowjo.entropybot.aa.moves.FactChange.walkShort(new int[]{w.x(), w.y(), w.z()}, walkJob.shortEnd, st.why());
         return st;

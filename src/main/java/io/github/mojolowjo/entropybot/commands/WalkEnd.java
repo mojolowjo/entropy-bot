@@ -96,6 +96,15 @@ final class WalkEnd {
         return null;
     }
 
+    /**
+     * job-walkend (run JBD 09:22:47): a walk that ended "goal is walled in" while the bot stands in its own shaft (rock over
+     * the head or a hole round the feet, Jobs.rockOverHead / holeDepth; rule 15: 0 = not in one) is a dig to the cell, not
+     * a walk. Pure.
+     */
+    static boolean shaftDig(String why, int rockOverHead, int holeDepth) {
+        return why != null && why.contains("goal is walled in") && (rockOverHead > 0 || holeDepth > 0);
+    }
+
     private static String nextTo(int[] dest, String block) {
         return "ok: arrived next to " + xyz(dest) + " (the spot is inside " + block + ")";
     }
