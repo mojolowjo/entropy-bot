@@ -57,6 +57,13 @@ public final class Nearby {
          * null: its chunk is not loaded. No default: a scan states it.
          */
         Boolean open(int x, int y, int z);
+        /**
+         * job-sight: the cell is air for the mine's sight (air, cave air, or a passable block with no fluid); null: not
+         * loaded. Default: {@link #open} (a test scan states one answer for both).
+         */
+        default Boolean air(int x, int y, int z) { return open(x, y, z); }
+        /** job-sight: the reason the sightings store marked the cell covered (Baritone's mine saw none there); null: not marked. */
+        default String coveredMark(int x, int y, int z) { return null; }
         /** The most logs one chop takes as one tree (Baritone's chopComponentMax); unknown: no cap. */
         default int treeCap() { return Integer.MAX_VALUE; }  // structural: no cap known
         /** station-memory: the stations I placed myself (the ledger), any distance, loaded or not, as {x, y, z} with their block. */
@@ -542,8 +549,10 @@ public final class Nearby {
                     refused.merge(id + HELD, 1, Integer::sum);
                     continue;
                 }
-                return new Source(new Spot(p[0], p[1], p[2], dist(p, me), id, s.isLog(id) ? treeLogs(s.logs(scanR()), p, s.treeCap())
-                        : s.isOre(id) ? clusterSize(s, blocks, p) : 0), "baritone", buried, unloaded, refused);
+                Spot found = withCover(s, new Spot(p[0], p[1], p[2], dist(p, me), id, s.isLog(id) ? treeLogs(s.logs(scanR()), p, s.treeCap())
+                        : s.isOre(id) ? clusterSize(s, blocks, p) : 0), buried);
+                if (found == null) continue;                // job-sight: covered deeper than the cap, or marked with no cover: counted
+                return new Source(found, "baritone", buried, unloaded, refused);
             }
         }
         Spot f = fallback == null ? null : fallback.get();
@@ -555,6 +564,7 @@ public final class Nearby {
             if (may == NOT_KNOWN && waitFor == null) waitFor = f.notLoaded();
             if (may != COUNTS) f = null;
         }
+        if (f != null && s != null && f.block() != null) f = withCover(s, f, buried);   // job-sight: the same cover fact
         if (f != null && skip != null && skip.test(f)) {           // 0.39.z77 stone: a held sighting is passed over too
             refused.merge((f.block() == null ? "sighting" : f.block()) + HELD, 1, Integer::sum);
             f = null;
@@ -621,6 +631,51 @@ public final class Nearby {
             if (o == null) unknown = true;
         }
         return unknown ? null : false;
+    }
+
+    /** job-sight: the deepest cover a covered source is dug through (Tuning {@code sight.coverMax}); deeper: not counted, said. */
+    public static int coverMax() { return Tuning.i("sight.coverMax"); }
+
+    /** job-sight: the bucket key of a covered block left out ({@link Source#buried} words). */
+    static final String DEEPER = " covered deeper than sight.coverMax", MARKED_OPEN = " marked covered with nothing over it";
+
+    /**
+     * job-sight (run JAH 00:29: "dig cobblestone seen 5 m" was stone under grass; Baritone's mine takes only blocks it sees,
+     * so it ended "none in sight"): the spot's cover fact from the same chunk reads as the exposed rule ({@link Scan#air}).
+     * A face of air: exposed (0). Six closed faces, or the store's mark ({@link Scan#coveredMark}): covered, N = the closed
+     * cells straight over it up to the first air, {@code over} the first of them. A log keeps its chop (no cover). A read
+     * not loaded: the spot as it was (rule 15: priced by estimate). Null: covered deeper than {@link #coverMax}, or marked
+     * with air over it - counted in {@code buried} with the reason (rule 7), not a source.
+     */
+    public static Spot withCover(Scan s, Spot sp, java.util.Map<String, Integer> buried) {
+        if (s == null || sp == null || sp.block() == null || s.isLog(sp.block())) return sp;
+        int x = sp.x(), y = sp.y(), z = sp.z();
+        String mark = s.coveredMark(x, y, z);
+        if (mark != null && mark.startsWith(io.github.mojolowjo.entropybot.sense.Sightings.DIG_REFUSED)) {
+            if (buried != null) buried.merge(sp.block() + " covered, " + mark, 1, Integer::sum);
+            return null;
+        }
+        Boolean e = mark != null ? Boolean.FALSE : exposed((Open) s::air, x, y, z);
+        if (e == null) return sp;
+        if (e) return sp.covered(0, null);
+        int d = 0;
+        String over = null;
+        while (true) {
+            Boolean a = s.air(x, y + d + 1, z);
+            if (a == null) return sp;                       // the cover is not known (its chunk): priced by estimate
+            if (a) break;
+            if (over == null) over = s.blockAt(x, y + d + 1, z);
+            d++;
+            if (d > coverMax()) {
+                if (buried != null) buried.merge(sp.block() + DEEPER, 1, Integer::sum);
+                return null;
+            }
+        }
+        if (d == 0) {
+            if (buried != null) buried.merge(sp.block() + MARKED_OPEN + " (" + mark + ")", 1, Integer::sum);
+            return null;
+        }
+        return sp.covered(d, over);
     }
 
     public static int scanR() { return Tuning.i("nearby.scanR"); }

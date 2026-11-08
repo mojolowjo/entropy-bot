@@ -30,7 +30,7 @@ class NearbyExposureTest {
     void clear() { TestData.clear(); }
 
     /** A fixture cache: the cells of the scan's blocks, the open cells (air, water), everything else solid; unloaded x >= 1000. */
-    static final class World implements Nearby.Scan {
+    static class World implements Nearby.Scan {
         final Map<String, String> blocks = new HashMap<>();
         final Set<String> open = new HashSet<>();
         World put(int x, int y, int z, String id) { blocks.put(x + " " + y + " " + z, id); return this; }

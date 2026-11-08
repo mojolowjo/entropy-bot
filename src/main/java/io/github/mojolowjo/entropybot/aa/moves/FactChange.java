@@ -147,6 +147,14 @@ public final class FactChange {
     }
 
     /**
+     * job-sight: a collect spot newly marked covered in the sightings store - a price fact (no try counted, nothing held):
+     * the order is priced again and the spot comes back as a dig to it (Nearby.withCover reads the mark).
+     */
+    public static void covered(int[] at, String why) {
+        last = new Fact(PRICE + "covered " + at[0] + " " + at[1] + " " + at[2], why);
+    }
+
+    /**
      * 0.39.z76 send-back 2 (rule 7; run AN 23:30:07: an NPE inside the explore ended the step "error: ..." with no fact, so
      * the chestplate order stopped): a throw inside a step is that step's fact - keyed by the mod's frame it came from
      * ("threw at Mining.exploreStep0:1228"), its text the exception and the frame - and the order re-plans on it. 0.39.z76 sb4

@@ -37,10 +37,29 @@ public final class CollectHand {
      * ({@link FactChange#nearCollect}); null: another end, or no spot priced (the caller says the end as it is).
      */
     public static String mineNoneKnown(Step.Collect spot, String mineEnd, int[] feet, String what, int got, int want) {
+        return mineNoneKnown(spot, mineEnd, feet, what, got, want, null);
+    }
+
+    /** job-sight: the sightings store's covered mark (x y z, why): true when newly marked. */
+    @FunctionalInterface
+    public interface Cover { boolean mark(int x, int y, int z, String why); }
+
+    /**
+     * As above; job-sight (run JAH 00:29): a "none in sight" end at a spot the chunk read called exposed marks it covered
+     * in the store ({@code cover}) with that end - the planner re-prices once (a price fact, {@link FactChange#covered}),
+     * now as a dig to it. Already marked (or no store): the near-collect fact as before, so it is not priced again per
+     * re-sighting.
+     */
+    public static String mineNoneKnown(Step.Collect spot, String mineEnd, int[] feet, String what, int got, int want, Cover cover) {
         if (spot == null || spot.at() == null || !noneKnown(mineEnd)) return null;
         boolean sight = mineEnd.startsWith("none in sight");
         String why = what + ": Baritone's mine knows no " + spot.item() + (sight ? " in its sight (" + Step.Collect.MINE_SIGHT + " blocks of the feet)" : " in range")
                 + " and ended (its end: " + mineEnd + ") - the priced spot " + spot.spot() + " (" + Math.round(spot.dist(feet)) + " m) is not what it goes for, got " + got + " of " + want;
+        if (sight && cover != null && cover.mark(spot.at()[0], spot.at()[1], spot.at()[2], "none in sight: " + mineEnd)) {
+            String marked = why + "; the spot " + spot.spot() + " marked covered (priced again once, as a dig to it)";
+            FactChange.covered(spot.at(), marked);
+            return marked;
+        }
         FactChange.nearCollect(spot.item(), spot.at(), why);
         return why;
     }

@@ -70,17 +70,24 @@ public final class NeedChain {
      * many blocks there are (0: not counted, as many as needed; a tree: its connected logs, all of which the chop takes), and
      * {@code gives}: the item it yields when a tag need asked for it (the loot data; null: the item asked for, or the block).
      */
-    public record Spot(int x, int y, int z, double dist, String block, int count, String gives, double bonusS, boolean unloaded) {
+    public record Spot(int x, int y, int z, double dist, String block, int count, String gives, double bonusS, boolean unloaded, int cover, String coverBlock) {
+        /** job-sight: {@code cover} {@link #COVER_UNKNOWN}: not read (priced as before, rule 15); 0: exposed; N > 0: N blocks of {@code coverBlock} over it. */
+        public static final int COVER_UNKNOWN = -1;   // structural: a flag value, not a number
+        public Spot(int x, int y, int z, double dist, String block, int count, String gives, double bonusS, boolean unloaded) { this(x, y, z, dist, block, count, gives, bonusS, unloaded, COVER_UNKNOWN, null); }
         public Spot(int x, int y, int z, double dist, String block, int count, String gives, double bonusS) { this(x, y, z, dist, block, count, gives, bonusS, false); }
         /** 0.39.z30, rule 15: a remembered station whose chunk is not loaded: priced as remembered, the plan says "unverified". */
-        public Spot notLoaded() { return new Spot(x, y, z, dist, block, count, gives, bonusS, true); }
+        public Spot notLoaded() { return new Spot(x, y, z, dist, block, count, gives, bonusS, true, cover, coverBlock); }
+        /** job-sight: the same spot with its cover fact (0 exposed, N covered by N blocks of {@code over}). */
+        public Spot covered(int n, String over) { return new Spot(x, y, z, dist, block, count, gives, bonusS, unloaded, n, over); }
+        /** job-sight: the spot is covered (a dig to it before the mine can see it). */
+        public boolean isCovered() { return cover > 0; }
         public Spot(int x, int y, int z, double dist, String block, int count, String gives) { this(x, y, z, dist, block, count, gives, 0); }
         public Spot(int x, int y, int z, double dist, String block, int count) { this(x, y, z, dist, block, count, null); }
         public Spot(int x, int y, int z, double dist, String block) { this(x, y, z, dist, block, 0, null); }
         /** The same spot, yielding {@code item}. */
-        public Spot giving(String item) { return new Spot(x, y, z, dist, block, count, item, bonusS, unloaded); }
+        public Spot giving(String item) { return new Spot(x, y, z, dist, block, count, item, bonusS, unloaded, cover, coverBlock); }
         /** STRUCTURE_BLOCKS: a station's price bonus in seconds (a use-stations area), taken off its walk in the option's cost. */
-        public Spot withBonus(double s) { return new Spot(x, y, z, dist, block, count, gives, s, unloaded); }
+        public Spot withBonus(double s) { return new Spot(x, y, z, dist, block, count, gives, s, unloaded, cover, coverBlock); }
         String key() { return x + "," + y + "," + z; }
     }
 
@@ -5154,6 +5161,17 @@ public final class NeedChain {
                     c.steps.add(new Step.Walk(sp.x(), sp.y(), sp.z(), Step.Collect.MINE_SIGHT));
                     c.note(() -> "walk to the spot first: " + Math.round(sp.dist()) + " m is beyond the mine's sight (" + Step.Collect.MINE_SIGHT + ")");
                 }
+                // job-sight (run JAH 00:29): a covered spot is dug to first - the cover column over it on Baritone's builder
+                // (the dig hand: its own lease, keep-out / no-break refuse, water or lava end it "blocked by"), then the mine
+                // sees it. The price: each cover block's break (Baritone's cost, breakS) by the stored depth
+                if (!log && sp.isCovered()) {
+                    double cov = coverS(c, sp);
+                    c.addS(cov);
+                    c.steps.add(digTo(sp));
+                    c.note(() -> coverText(gives, sp) + ": " + s(cov));
+                } else if (!log && sp.cover() == 0) {
+                    c.note(() -> "dig " + shw(gives) + " seen " + Math.round(sp.dist()) + " m exposed at " + sp.x() + " " + sp.y() + " " + sp.z());
+                }
                 // chop: no walk step before a cut (the chop paths itself; the spot names the blocks and the price)
                 c.steps.add(log ? new Step.ChopTree(new int[]{sp.x(), sp.y(), sp.z()}, wanted, null)
                         : new Step.Collect(shw(gives), wanted, new int[]{sp.x(), sp.y(), sp.z()}));   // z76 send-back 2: the priced spot named (run AP)
@@ -5179,7 +5197,8 @@ public final class NeedChain {
             c.bag.merge(gives, got, Integer::sum);
             remaining -= got;
         }
-        String how = (log ? "cut tree" : "dig " + shw(gives)) + " seen " + Math.round(first.dist()) + " m" + (pre == null ? "" : " with " + pre);
+        String how = (!log && first.isCovered() ? coverText(gives, first) : (log ? "cut tree" : "dig " + shw(gives)) + " seen " + Math.round(first.dist()) + " m")
+                + (pre == null ? "" : " with " + pre);
         if (firstWalk != null) how = noted(how, firstWalk);
         if (remaining > 0) {
             String leaf = exploreLeaf(c, word, "not enough " + shw(word) + " known");
@@ -5195,6 +5214,23 @@ public final class NeedChain {
      * counted is the same unit (the fork's component rule mines it whole); an uncounted spot (count 0) stays "as many blocks
      * as needed".
      */
+    /** job-sight: the way's words for a covered spot: "dig to cobblestone at x y z, 2 blocks of dirt over it". */
+    static String coverText(String gives, Spot sp) {
+        return "dig to " + shw(gives) + " at " + sp.x() + " " + sp.y() + " " + sp.z() + ", " + sp.cover() + " block" + (sp.cover() == 1 ? "" : "s")
+                + " of " + (sp.coverBlock() == null ? "?" : shw(sp.coverBlock())) + " over it";
+    }
+
+    /** job-sight: the dig of the cover: each cover block's break (Baritone's cost of the cover block) by the depth. */
+    static double coverS(Ctx c, Spot sp) {
+        if (!sp.isCovered()) return 0;
+        return blockBreakS(c, sp.coverBlock() == null ? sp.block() : sp.coverBlock()) * sp.cover();
+    }
+
+    /** job-sight: the step that digs the cover column over a covered spot (Baritone's builder, the dig hand). */
+    static Step.Dig digTo(Spot sp) {
+        return new Step.Dig(new int[]{sp.x(), sp.y() + 1, sp.z()}, new int[]{sp.x(), sp.y() + sp.cover(), sp.z()}, false, false);
+    }
+
     private static int[] takeOf(Ctx c, String gives, Spot sp, int remaining, boolean log) {
         double per = perBlock(c, gives, sp.block());
         int blocksWanted = (int) Math.ceil(remaining / per - 1e-9);  // structural: epsilon
