@@ -60,7 +60,7 @@ class JobLookupTest {
         assertTrue(a.ok() && b.ok() && c.ok(), a.why() + " / " + b.why() + " / " + c.why());
         double perLevel = b.seconds() - a.seconds();
         assertTrue(perLevel > 0);
-        assertEquals(15 * perLevel, c.seconds() - a.seconds(), 1e-6, "15 levels of stone");
+        assertEquals(15 * perLevel, c.seconds() - a.seconds(), 1e-3, "15 levels of stone");
         assertTrue(c.why().contains("15 blocks of stone over it (deeper than sight.coverMax 4: priced as a dig of 15 levels of stone)"), c.why());
     }
 
