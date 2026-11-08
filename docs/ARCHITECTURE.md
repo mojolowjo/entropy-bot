@@ -81,13 +81,21 @@ cause; the fork: ..." with the cause read from the column ahead (water / lava ce
 and the fork's end (`WalkEndText.reason`); the band key is held with it, and the next `bandWay` price walks
 `band.sideStepM` to another column (`BandEnd.sideStep`, a `Step.Walk` first) or, for an end naming no column, tries another peak. Pass three (run JAK): seen is looked at - the stand marks only cells in the eyes' cone and the
 Job-tunnel: with no cave in reach, `Step.Tunnel` (`commands/TunnelStep`, rules in
-`cave/Tunnel`): one `GoalBlock` at the end of a 1 x 2 tunnel under the dig lease, Baritone picks every move and break;
+`cave/Tunnel`): one goal at the end of a 1 x 2 tunnel, Baritone picks every move and break. Job-tunnel2 (run JAT: a
+plain 51-block `GoalBlock` on Baritone's own search ended in 2 s at the start): the goal is capped at the loaded edge
+(`Tunnel.loadedSteps`, "to the loaded edge at x y z first, N of the L blocks", moved on as chunks load), priced into its cell
+and walked on that priced path (`LivePathPrice.priceInto` / `walkInto`, `BandLeg.of`) under the dig leg's lease
+(`BandLeg.INTENT`, TRAVEL); every short end (stopped short with the fork's end, no path, water / lava, cave air) is a SOURCE
+fact `FactChange.tunnelHeldFact` ("tunnel heading x y z h", "tunnel north from x y z held: ..."), never a price fact; the
+band way (`NeedChain.bandWay`) drops a peak whose four headings are held within `tunnel.heldNearM` of its dig end
+(`Tunnel.heldHeadings`). The dig leg's end counts the whole leg over re-plan restarts toward the same Y within
+`band.legCarryS` (`aa/moves/BandLegCount`);
 its length is the price's own faces model (`Tunnel.length`: n / ore per face / (2 x `band.facesPerBreak`), capped
 `tunnel.maxLength`); its heading is picked at the start by price (`Tunnel.pick`: headings tunnelled this order out, then
 the nearest never-seen chunk within `tunnel.unseenReachM`, rule 22, then seen density, then Baritone's estimate). Each tick
 (`Tunnel.next`): a seen ore in `MINE_SIGHT` pauses it for the vein; water or lava within `tunnel.fluidAheadM` ends it, the
 heading held; air within `tunnel.caveSeeM` that was not air at the start nor on Baritone's path ends it, "cave air at x y z:
-the cave step takes over" (a price fact, the order re-plans). The end line: blocks broken, faces exposed, ore seen and
+the cave step takes over" (the heading held, the order re-plans and prices the cave). The end line: blocks broken, faces exposed, ore seen and
 mined. The strip way stays off and is not used. Pass three (run JAK): seen is looked at - the stand marks only cells in the eyes' cone and the
 ore rays' range (`Sightings.caveStood` with a `CaveRecord.Look`; `seen.coneDeg`, `seen.range`); arrival counts the passage's
 cells looked at against walked past (an open passage is walked again); the cave's ore intake reads the rays' range; a seen

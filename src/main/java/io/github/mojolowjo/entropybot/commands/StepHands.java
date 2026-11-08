@@ -2675,6 +2675,7 @@ public final class StepHands implements Steps.Hands {
     private String toBand(LocalPlayer p, Step.ToBand t) {
         int[] me = Jobs.here(p);
         int y = me[1];
+        int prevSegBroken = bandCell == null ? 0 : segBroken(p);       // job-tunnel2: the last segment's own blocks, read before its cell goes
         bandCell = null;
         bandWalking = false;
         digFrom = me.clone();
@@ -2693,6 +2694,8 @@ public final class StepHands implements Steps.Hands {
         bandMs0 = System.currentTimeMillis();
         bandLines0 = io.github.mojolowjo.entropybot.baritone.BaritoneHook.lines();
         bandSolid0 = solidYs(p, bandCell[0], bandCell[2], st.cell()[1] - 1, bandCell[1]);
+        bandLeg = io.github.mojolowjo.entropybot.aa.moves.BandLegCount.start(bandLeg, prevSegBroken, st.cell()[1], bandCell[1], bandMs0, Tuning.get("band.legCarryS"));
+        if (bandLeg.fromY() != st.cell()[1]) LOG.info("[entropybot] steps: {} - the leg counts on from its first start at y {} ({} blocks broken before this segment; band.legCarryS)", t.text(), bandLeg.fromY(), bandLeg.broken());
         LOG.info("[entropybot] steps: {} - Baritone's priced path to {} (the band's nearest Y under the search's start {}{}; walked once its path is known)", t.text(), Jobs.fmt(bandCell),
                 Jobs.fmt(st.cell()), st.standable() ? "" : " - it has no floor: a no-path from it is not known, never the band's fact");
         return null;
@@ -2747,7 +2750,7 @@ public final class StepHands implements Steps.Hands {
             var next = io.github.mojolowjo.entropybot.aa.moves.BandLeg.of(a, st.cell(), st.standable());
             switch (next.act()) {
                 case WALK -> {
-                    io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "to band");
+                    io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.aa.moves.BandLeg.INTENT, "to band");
                     LivePathPrice.walkInto(b, new BlockPos(bandCell[0], bandCell[1], bandCell[2]));   // z76 send-back 2 (run AN: ended at y 57 over 56..56)
                     bandWalking = true;
                     return Car.Status.running(t.text() + ": " + next.why() + " to " + Jobs.fmt(bandCell));
@@ -2822,14 +2825,29 @@ public final class StepHands implements Steps.Hands {
     private String bandReached(LocalPlayer p, Step.ToBand t, int y) {
         int[] from = bandStart != null ? bandStart.cell() : digFrom;
         int fromY = from == null ? y : from[1];
-        int broken = 0;
-        if (bandCell != null) {
-            var now = solidYs(p, bandCell[0], bandCell[2], fromY - 1, bandCell[1]);
-            for (int sy : bandSolid0) if (!now.contains(sy)) broken++;
-        }
-        String r = io.github.mojolowjo.entropybot.aa.moves.BandEnd.reached(fromY, y, (System.currentTimeMillis() - bandMs0) / 1000.0, broken);   // structural: ms to s
+        int broken = segBroken(p);
+        long now = System.currentTimeMillis();
+        // job-tunnel2 (run JAT): the whole leg's counts - from its first start, over every segment the re-plans restarted
+        String r = bandLeg != null ? io.github.mojolowjo.entropybot.aa.moves.BandLegCount.reached(bandLeg, y, now, broken)
+                : io.github.mojolowjo.entropybot.aa.moves.BandEnd.reached(fromY, y, (now - bandMs0) / 1000.0, broken);   // structural: ms to s
+        bandLeg = null;
+        bandCell = null;                                               // the leg is over: nothing carried into the next
         LOG.info("[entropybot] steps: {} - {}", t.text(), r);
         return r;
+    }
+
+    /** job-tunnel2: the whole dig leg's counters (BandLegCount), carried over re-plan restarts toward the same Y. */
+    private io.github.mojolowjo.entropybot.aa.moves.BandLegCount.Leg bandLeg;
+
+    /** job-band2: the blocks this segment broke - its column's solid cells at its start that are not now. */
+    private int segBroken(LocalPlayer p) {
+        if (bandCell == null) return 0;
+        int[] from = bandStart != null ? bandStart.cell() : digFrom;
+        if (from == null) return 0;
+        var now = solidYs(p, bandCell[0], bandCell[2], from[1] - 1, bandCell[1]);
+        int broken = 0;
+        for (int sy : bandSolid0) if (!now.contains(sy)) broken++;
+        return broken;
     }
 
     /**

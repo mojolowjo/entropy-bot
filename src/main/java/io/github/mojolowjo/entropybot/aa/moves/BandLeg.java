@@ -23,6 +23,13 @@ public final class BandLeg {
 
     public enum Act { WALK, WAIT, FACT, NOT_KNOWN }
 
+    /**
+     * Job-tunnel2: the lease the dig leg's priced walk runs under (its breaks judged by BreakPolicy's TRAVEL row: allowed
+     * under ground at the rule set's travel multiplier; structure, keep-out, lava and the floor still refuse) - the band's
+     * tunnel step walks under the same one (TunnelStep).
+     */
+    public static final io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent INTENT = io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL;
+
     public record Next(Act act, String why) {}
 
     /**

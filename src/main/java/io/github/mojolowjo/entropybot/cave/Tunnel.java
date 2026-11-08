@@ -120,6 +120,60 @@ public final class Tunnel {
         return String.format(Locale.ROOT, "%s: %d block(s) broken, %d face(s) exposed, %d %s ore seen, %d mined", why, broken, faces, seen, family, mined);
     }
 
+    /**
+     * Job-tunnel2 (run JAT 05:14:13: a 51-block GoalBlock through rock ended in 2 s with nothing broken): the goal is capped at
+     * the loaded edge - the most steps {@code i <= length} with every step 1..i loaded ({@code loadedAt}: step i's cells are
+     * loaded). 0: the first step is not loaded.
+     */
+    public static int loadedSteps(int length, java.util.function.IntPredicate loadedAt) {
+        int n = 0;
+        for (int i = 1; i <= length; i++) {
+            if (!loadedAt.test(i)) break;
+            n = i;
+        }
+        return n;
+    }
+
+    /** Job-tunnel2: the words of a capped goal ("to the loaded edge at x y z first, N of the L blocks"). */
+    public static String edgeLine(int[] goal, int steps, int length) {
+        return "to the loaded edge at " + goal[0] + " " + goal[1] + " " + goal[2] + " first, " + steps + " of the " + length + " blocks";
+    }
+
+    /** Job-tunnel2: the key prefix of a held tunnel heading ("tunnel heading x y z north"), a source the order holds. */
+    public static final String HOLD = "tunnel heading ";
+
+    /** Job-tunnel2: the source key of the heading {@code heading} from {@code start}. */
+    public static String holdKey(int[] start, String heading) {
+        return HOLD + start[0] + " " + start[1] + " " + start[2] + " " + heading;
+    }
+
+    /** Job-tunnel2 (rule 7): the held heading's words - "tunnel north from x y z held: Baritone stopped short at x y z (the fork: ...)". */
+    public static String heldText(String heading, int[] start, String why) {
+        return "tunnel " + heading + " from " + start[0] + " " + start[1] + " " + start[2] + " held: " + why;
+    }
+
+    /**
+     * Job-tunnel2: the headings held near {@code at} (within {@code nearM} blocks of a held start, the same Y) among the
+     * order's held lines ("key: why"); the planner's band way drops a peak whose every heading is held.
+     */
+    public static Set<String> heldHeadings(java.util.Collection<String> held, int[] at, double nearM) {
+        Set<String> out = new java.util.TreeSet<>();
+        if (held == null || at == null) return out;
+        for (String h : held) {
+            if (h == null || !h.startsWith(HOLD)) continue;
+            int colon = h.indexOf(": ");
+            String[] p = (colon < 0 ? h.substring(HOLD.length()) : h.substring(HOLD.length(), colon)).trim().split("\\s+");
+            if (p.length != 4) continue;                                     // structural: x y z heading
+            try {
+                int x = Integer.parseInt(p[0]), y = Integer.parseInt(p[1]), z = Integer.parseInt(p[2]);
+                if (y == at[1] && Math.hypot(x - at[0], z - at[2]) <= nearM && heading(p[3]) != null) out.add(p[3]);
+            } catch (NumberFormatException e) {
+                continue;   // silent: not a cell, not a tunnel hold; the held line itself is said where it was written
+            }
+        }
+        return out;
+    }
+
     public static long key(int x, int y, int z) {
         return ((long) (x & 0x3FFFFFF) << 38) | ((long) (z & 0x3FFFFFF) << 12) | (y & 0xFFF);   // structural: the packed cell
     }
