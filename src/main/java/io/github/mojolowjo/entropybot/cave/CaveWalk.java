@@ -172,6 +172,44 @@ public final class CaveWalk {
             return notKnown();
         }
 
+        /**
+         * job-tick (run JAU: "planner asks cave 2 = 31.7 ms" on the client tick): {@link #of} keeps its answer per record and
+         * the record's inputs ({@code basis}: the placement fact object, read by identity; the counts by value). An unchanged
+         * record returns the SAME Density object, so the 512-sample curve runs once per record per Y-span/count change, not
+         * once per re-price. Thread-safe (the planner's worker and the tick both price caves).
+         */
+        public static final class Cache {
+            /** structural: the records kept (a few dozen caves are known at once); the least recently asked goes first */
+            public static final int CAP = 256;
+            private record In(Object basis, long blocks, long cells, int seenOre, long seenCells) {
+                @Override public boolean equals(Object o) {
+                    return o instanceof In i && basis == i.basis && blocks == i.blocks && cells == i.cells && seenOre == i.seenOre && seenCells == i.seenCells;
+                }
+                @Override public int hashCode() { return java.util.Objects.hash(System.identityHashCode(basis), blocks, cells, seenOre, seenCells); }
+            }
+            private record Kept(In in, Density d) {}
+            private final java.util.Map<Object, Kept> kept = new java.util.LinkedHashMap<>(16, 0.75f, true) {
+                @Override protected boolean removeEldestEntry(java.util.Map.Entry<Object, Kept> e) { return size() > CAP; }
+            };
+            private long built, hits;
+
+            /** {@link Density#of} for {@code record} (any value key: its position and ore family), kept until an input changes. */
+            public synchronized Density get(Object record, Object basis, java.util.function.IntToDoubleFunction perBlockAtY,
+                                            long blocks, long cells, int seenOre, long seenCells) {
+                In in = new In(perBlockAtY == null ? null : basis, blocks, cells, seenOre, seenCells);
+                Kept k = kept.get(record);
+                if (k != null && k.in.equals(in)) { hits++; return k.d; }
+                Density d = of(perBlockAtY, blocks, cells, seenOre, seenCells);
+                built++;
+                kept.put(record, new Kept(in, d));
+                return d;
+            }
+
+            public synchronized long built() { return built; }
+            public synchronized long hits() { return hits; }
+            public synchronized void clear() { kept.clear(); }
+        }
+
         /** No placement fact and no ore seen (rule 15): the Tuning fallback, said. */
         public static Density notKnown() {
             double f = Tuning.get("cave.orePerCellNotKnown");
