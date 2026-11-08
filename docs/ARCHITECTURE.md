@@ -44,7 +44,14 @@ walkable cells (feet and head air over a floor; joins down / up `cave.passageDro
 splits into arms of `cave.passageForkLayers` layers or more is a fork, shorter arms are folded bumps; each passage has its
 far end, length, width, unseen cells and ore faces (`Sightings.cavePassages`). Its price is seconds to its far end per ore
 expected (`CaveWalk.passagePrice`: `cave.passageSecPerCell`, `cave.orePerUnseenCell`); the walk is a `GoalNear`
-(`cave.passageNear`) at the far end, arrival sees the passage's cells; a seen ore in reach on the walk pauses it and is mined.
+(`cave.passageNear`) at the far end. Pass three (run JAK): seen is looked at - the stand marks only cells in the eyes' cone and the
+ore rays' range (`Sightings.caveStood` with a `CaveRecord.Look`; `seen.coneDeg`, `seen.range`); arrival counts the passage's
+cells looked at against walked past (an open passage is walked again); the cave's ore intake reads the rays' range; a seen
+ore within `Step.Collect.MINE_SIGHT` (`CaveWalk.oreToMine`) pauses the walk and the vein (mineWith) takes it. A CAPPED
+passage is priced with its share of the cells past the flood (`CaveWalk.beyondFlood`); its end, once stood at, is spent
+(`CaveWalk.spent`). With no passage left: DONE when all is seen, or the flood was whole (the rest said unreachable by
+walking), or capped and explored past `cave.doneExplored`; else NO_BRANCH. A DONE end is kept in the record
+(`Sightings.caveDone`, saved) so `done()` holds until more cells arrive.
 Seen-ore gotos keep the reach goals below. Pass two: a layer piece wider than `cave.passageRoomWidth` is a ROOM node whose
 exits are its arms; at the lip (no walkable cell under the feet) the flood starts at the nearest walkable cave cell within
 `cave.passageLipNear` (run JAJ: a lip 4 blocks off), and with none the step walks to the cave's mouth (said). The record keeps the step's last passage

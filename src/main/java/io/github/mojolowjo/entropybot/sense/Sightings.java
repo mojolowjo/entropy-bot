@@ -325,11 +325,31 @@ public final class Sightings {
     }
 
     /** The bot stands at fx fy fz in the known cave at x y z: the cells round it are seen; the newly seen count. */
-    public synchronized int caveStood(String dim, int x, int y, int z, int fx, int fy, int fz, long now) {
+    public synchronized int caveStood(String dim, int x, int y, int z, int fx, int fy, int fz, long now) { return caveStood(dim, x, y, z, fx, fy, fz, now, null); }
+
+    /** D15 pass three: as above, only the cells the eyes look at ({@code look}: the cone and the rays' range) seen. */
+    public synchronized int caveStood(String dim, int x, int y, int z, int fx, int fy, int fz, long now, CaveRecord.Look look) {
         CaveRecord r = rec(dim, x, y, z);
         if (r == null) return 0;
-        int n = r.recStood(fx, fy, fz, now);
+        int n = r.recStood(fx, fy, fz, now, look);
         if (n > 0) dirty = true;
+        return n;
+    }
+
+    /** D15 pass three: a caving step ended DONE in the known cave at x y z (CaveRecord#recDone): not offered again until it grows. */
+    public synchronized void caveDone(String dim, int x, int y, int z, String why) {
+        CaveRecord r = rec(dim, x, y, z);
+        if (r == null) return;
+        r.recDone(why);
+        dirty = true;
+    }
+
+    /** D15 pass three: the cells of {@code cells} the known cave at x y z holds as seen (a passage's looked-at count). */
+    public synchronized int caveSeenOf(String dim, int x, int y, int z, java.util.Collection<Long> cells) {
+        CaveRecord r = rec(dim, x, y, z);
+        if (r == null) return 0;
+        int n = 0;
+        for (long c : cells) if (r.wasSeen(c)) n++;
         return n;
     }
 

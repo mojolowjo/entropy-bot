@@ -218,7 +218,16 @@ public final class CaveRecord {
      * the cave cell nearest the feet within the eyes' reach (run EK: the lip 3 x 2 from the entry sees into it); the
      * newly seen count.
      */
-    int recStood(int fx, int fy, int fz, long now) {
+    int recStood(int fx, int fy, int fz, long now) { return recStood(fx, fy, fz, now, null); }
+
+    /** A cell the eyes look at (D15 pass three: in the view cone and the rays' range); x y z. */
+    public interface Look { boolean at(int x, int y, int z); }
+
+    /**
+     * D15 pass three (run JAK: 234 cells "seen" by a 3 s walk): as above, only the cells {@code look} answers for are
+     * marked seen - the eyes' cone and range, as the ore rays cover them; null: every cell of the stand (tests, a replay).
+     */
+    int recStood(int fx, int fy, int fz, long now, Look look) {
         if (lastAt != now) { lastAt = now; version++; if (spend.owned) spend.spent = 0; }   // 88b28290 review 1: the stand is once a tick too (a record of its own)
         long start = Sightings.cell(fx, fy, fz);
         if (!cells.contains(start)) start = cellInReach(fx, fy, fz);
@@ -232,7 +241,8 @@ public final class CaveRecord {
         while (!q.isEmpty()) {
             long c = q.poll();
             touched++;
-            if (markSeen(c)) added++;
+            if (look == null) { if (markSeen(c)) added++; }
+            else { int[] q0 = Sightings.cellOf(c); if (look.at(q0[0], q0[1], q0[2]) && markSeen(c)) added++; }
             int d = depth.get(c);
             if (d >= SEE_STEPS) continue;
             int[] p = Sightings.cellOf(c);
@@ -472,11 +482,28 @@ public final class CaveRecord {
      * says why, never done), and none of them open. Not loaded: the saved list.
      */
     public boolean done() {
+        if (doneWhy != null && cellCount <= doneCells) return true;              // D15 pass three: the step's DONE, until more cells arrive
         var ps = passages();
         if (ps == null || passagesWhy != null || ps.isEmpty()) return false;
         for (var p : ps) if (p.open()) return false;
         return true;
     }
+
+    /**
+     * D15 pass three (run JAK: a cave DONE at 12% was entered again): a caving step ended DONE here - {@code why} kept with
+     * the cell count then; {@link #done} holds until more cells of the cave arrive. Persisted.
+     */
+    private String doneWhy;
+    private int doneCells;
+
+    void recDone(String why) {
+        doneWhy = why == null ? "done" : why;
+        doneCells = cellCount;
+        version++;
+    }
+
+    /** The step's DONE reason (null: none). */
+    public String doneWhy() { return doneWhy; }
 
     /** The open passages at the last measure (-1: never measured). */
     public int groups() { return openPassages(); }
@@ -588,6 +615,7 @@ public final class CaveRecord {
             if (passagesWhy != null) j.addProperty("passagesWhy", passagesWhy);
         }
         j.addProperty("stuckSeen", stuckSeen); j.addProperty("stuckOre", stuckOre); j.addProperty("stuckCells", stuckCells);
+        if (doneWhy != null) { j.addProperty("doneWhy", doneWhy); j.addProperty("doneCells", doneCells); }
         return j;
     }
 
@@ -619,6 +647,7 @@ public final class CaveRecord {
             io.github.mojolowjo.entropybot.Quiet.line("cave: the record at " + r.where() + " is an old save (" + j.get("groups").getAsInt() + " frontier group(s), done "
                     + (j.has("done") && j.get("done").getAsBoolean()) + "): its groups are dropped, its passages are measured again when its cells load");
         }
+        if (j.has("doneWhy")) { r.doneWhy = j.get("doneWhy").getAsString(); r.doneCells = j.get("doneCells").getAsInt(); }
         if (j.has("stuckSeen")) { r.stuckSeen = j.get("stuckSeen").getAsInt(); r.stuckOre = j.get("stuckOre").getAsInt(); r.stuckCells = j.get("stuckCells").getAsInt(); }
         return r;
     }
