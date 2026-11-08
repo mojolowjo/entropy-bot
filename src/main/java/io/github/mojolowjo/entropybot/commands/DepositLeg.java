@@ -205,9 +205,7 @@ final class DepositLeg {
     }
 
     /** D4: the walk back by the trail (Baritone goals, newest first), the next one, and whether its walk runs. */
-    private java.util.List<io.github.mojolowjo.entropybot.aa.trail.Trail.Goal> trailGoals;
-    private int trailIdx;
-    private boolean trailWalking;
+    private TrailRuntime.Walker trail;
     private String saidTrail;
 
     /**
@@ -227,60 +225,34 @@ final class DepositLeg {
             if (a != null && a.walk() != null) s = a.walk().seconds();
         } else if (ch.how() == DepositRule.How.WAIT || !anyKnown) return null;     // computing: waited for; no chest known: nothing to go home to
         else kind = io.github.mojolowjo.entropybot.aa.PathPrice.Kind.UNREACHABLE;
-        var price = t.price(TrailRuntime.climb(p), Core.INSTANCE.tick());
+        // D4 pass two: the price goes on from the trail's start to the chosen chest (a stored route or the estimate), added once
+        var price = TrailRuntime.priced(p, t, ch.how() == DepositRule.How.KNOWN ? ch.at() : null);
         var pick = io.github.mojolowjo.entropybot.aa.trail.Trail.pick(kind, s, price);
         if (!pick.why().equals(saidTrail)) {
             saidTrail = pick.why();
             LOG.info("[entropybot] deposit: {}", pick.why());
         }
         if (pick.pick() != io.github.mojolowjo.entropybot.aa.trail.Trail.Pick.TRAIL) return null;
-        trailGoals = t.way(Tuning.i("trail.climbLegUp"));
-        trailIdx = 0;
-        trailWalking = false;
-        t.chosen++;
-        LOG.info("[entropybot] deposit: home by the trail first ({} goals to its start {}), then the chest is chosen again from there", trailGoals.size(), t.start().text());
+        trail = new TrailRuntime.Walker("deposit", t);
+        LOG.info("[entropybot] deposit: home by the trail first ({} goals to its start {}), then the chest is chosen again from there", trail.size(), t.start().text());
         phase = Phase.TRAIL;
         return Car.Status.running("deposit: " + pick.why());
     }
 
     /** D4: each trail goal walked by Baritone (GoalGetToBlock, its own path); one that ends short breaks the trail there, said (rule 7). */
     private Car.Status trailWalk(LocalPlayer p) {
-        var t = TrailRuntime.here();
-        IBaritone b = Jobs.baritone();
-        if (t == null || b == null || t.state() != io.github.mojolowjo.entropybot.aa.trail.Trail.State.OPEN || trailIdx >= trailGoals.size()) {
-            if (trailWalking && b != null) Jobs.cancel(b);
-            trailWalking = false;
-            if (t != null && t.state() == io.github.mojolowjo.entropybot.aa.trail.Trail.State.OPEN) {
-                String line = t.clear("back at its start by the walk back");
-                if (line != null) LOG.info("[entropybot] {}", line);
+        if (trail == null) { phase = Phase.CHOOSE; return Car.Status.running("deposit: no trail walk - choosing the chest"); }
+        var r = trail.tick(p);
+        switch (r.state()) {
+            case DONE -> { trail = null; phase = Phase.CHOOSE; return Car.Status.running("deposit: back at the trail's start - choosing the chest from here"); }
+            case BROKEN -> {
+                trail = null;
+                LOG.info("[entropybot] deposit: {} - the chest is priced again without the trail", r.line());
+                phase = Phase.CHOOSE;
+                return Car.Status.running("deposit: " + r.line());
             }
-            phase = Phase.CHOOSE;
-            return Car.Status.running("deposit: back at the trail's start - choosing the chest from here");
+            default -> { return Car.Status.running(r.line()); }
         }
-        var g = trailGoals.get(trailIdx);
-        BlockPos at = new BlockPos(g.at().x(), g.at().y(), g.at().z());
-        if (LivePathPrice.goal(at).isInGoal(p.blockPosition())) {
-            if (trailWalking) Jobs.cancel(b);
-            trailWalking = false;
-            trailIdx++;
-            t.walked++;
-            if (TrailRuntime.probe()) LOG.info("[entropybot] probe trail: walked to {} ({} of {}) | {}", g.at().text(), trailIdx, trailGoals.size(), TrailRuntime.counts(t));
-            return Car.Status.running("deposit: by the trail, at " + g.at().text());
-        }
-        if (!trailWalking) {
-            io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "deposit");
-            LivePathPrice.walk(b, at);
-            trailWalking = true;
-            return Car.Status.running("deposit: by the trail to " + g.at().text() + " (" + (trailIdx + 1) + " of " + trailGoals.size() + ")");
-        }
-        if (!b.getCustomGoalProcess().isActive() && !Core.INSTANCE.reflexes.hold()) {
-            trailWalking = false;
-            String line = t.breakAt(g, "Baritone's walk to " + g.at().text() + " ended at " + Jobs.fmt(Jobs.here(p)) + " short of it (no path, or a changed cell)");
-            LOG.info("[entropybot] deposit: {} - the chest is priced again without the trail", line);
-            phase = Phase.CHOOSE;
-            return Car.Status.running("deposit: " + line);
-        }
-        return Car.Status.running("deposit: by the trail to " + g.at().text() + " - walking (" + Jobs.fmt(Jobs.here(p)) + ")");
     }
 
     /** The tunnel start (the strip's saved progress) for the new chest; no saved start: here. */

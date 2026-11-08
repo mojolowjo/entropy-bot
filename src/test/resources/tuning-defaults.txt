@@ -890,6 +890,7 @@ deposit.maxWalkSegments	30.0
 trail.climbLegUp	4.0
 trail.jumpBlocks	8.0
 trail.saveS	30.0
+trail.routeReach	1.0
 debug.trailProbe	0.0
 estimate.freeDropLevels	3.0
 debug.wayProbe	0.0

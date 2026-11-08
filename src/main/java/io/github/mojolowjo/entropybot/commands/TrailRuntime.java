@@ -66,6 +66,7 @@ public final class TrailRuntime {
         Trail t = ts.of(io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level));
         t.loadedEmpty();
         noteForkRoute(t);
+        if (StepSignalsLive.destroyStage(p) >= 0) t.breakTick();     // D4 pass two: breaking time is kept apart from the walk's seconds
         if (p.onGround()) {
             BlockPos f = p.blockPosition();
             if (!f.equals(lastFeet)) {
@@ -143,6 +144,104 @@ public final class TrailRuntime {
         } catch (RuntimeException | LinkageError e) {
             LOG.info("[entropybot] trail: the stair level price was not read ({}); the pillar price alone", e.toString());
         }
-        return new Trail.Climb(pillar, stair);
+        int throwaway = 0;
+        try {
+            throwaway = io.github.mojolowjo.entropybot.aa.AaEscape.throwaway(io.github.mojolowjo.entropybot.gui.Gui.inventory(p));
+        } catch (RuntimeException | LinkageError e) {
+            LOG.info("[entropybot] trail: the bag's throwaway blocks were not read ({}); no pillar price", e.toString());
+        }
+        return new Trail.Climb(pillar, stair, throwaway);
+    }
+
+    private static boolean routesSaidMissing;
+
+    /**
+     * D4 pass two: the trail's return price from the feet, on to {@code target} from the trail's start, added once: the fork's
+     * stored route from the start to the target when one exists (IPricedPath.routeList, read by name; not readable: said once,
+     * rule 7) or Baritone's estimate from the start. {@code target} null: nothing on (the target is chosen at the start).
+     */
+    static Trail.Price priced(LocalPlayer p, Trail t, int[] target) {
+        Trail.Price pr = t.price(climb(p), Core.INSTANCE.tick());
+        if (pr == null || !pr.whole() || target == null || t.start() == null) return pr;
+        double ticks = Trail.routeTicks(routeList(), t.start(), target, Tuning.i("trail.routeReach"));
+        if (!Double.isNaN(ticks)) return pr.on(TickPrice.walkS(ticks), "the fork's stored route");
+        double e = LivePathPrice.INSTANCE.estimateFrom(t.start().arr(), target[0], target[1], target[2]);
+        return pr.on(e, Double.isNaN(e) ? "no stored route and no estimate from " + t.start().text() : "Baritone's estimate, no stored route");
+    }
+
+    /** The fork's stored routes (IPricedPath.routeList by name); empty: none or not readable (said once). */
+    @SuppressWarnings("unchecked")
+    static java.util.List<String> routeList() {
+        var b = Jobs.baritone();
+        if (b == null) return java.util.List.of();
+        try {
+            Object pp = b.getPricedPath();
+            Object o = pp.getClass().getMethod("routeList").invoke(pp);
+            if (o instanceof java.util.List<?> l) return (java.util.List<String>) l;
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
+            if (!routesSaidMissing) { routesSaidMissing = true; LOG.info("[entropybot] trail: the fork's stored routes (routeList) are not readable in this fork jar ({}); the way on is Baritone's estimate", e.toString()); }
+        }
+        return java.util.List.of();
+    }
+
+    /**
+     * D4: the walk back by the trail, one Baritone goal at a time (GoalGetToBlock, its own path, rule 2), newest first. One that
+     * ends short breaks the trail there with its reason (rule 7). Shared by the deposit and the walk up to the surface.
+     */
+    static final class Walker {
+        enum State { RUNNING, DONE, BROKEN }
+        record Tick(State state, String line) {}
+
+        private final String who;
+        private final java.util.List<Trail.Goal> goals;
+        private int idx;
+        private boolean walking;
+
+        Walker(String who, Trail t) {
+            this.who = who;
+            this.goals = t.way(Tuning.i("trail.climbLegUp"));
+            t.chosen++;
+        }
+
+        int size() { return goals.size(); }
+
+        void cancel() {
+            var b = Jobs.baritone();
+            if (walking && b != null) Jobs.cancel(b);
+            walking = false;
+        }
+
+        Tick tick(LocalPlayer p) {
+            Trail t = here();
+            baritone.api.IBaritone b = Jobs.baritone();
+            if (t == null || b == null || t.state() != Trail.State.OPEN || idx >= goals.size()) {
+                cancel();
+                if (t != null && t.state() == Trail.State.OPEN) {
+                    String line = t.clear("back at its start by the walk back");
+                    if (line != null) LOG.info("[entropybot] {}", line);
+                }
+                return new Tick(State.DONE, who + ": back at the trail's start");
+            }
+            var g = goals.get(idx);
+            BlockPos at = new BlockPos(g.at().x(), g.at().y(), g.at().z());
+            if (LivePathPrice.goal(at).isInGoal(p.blockPosition())) {
+                cancel();
+                idx++;
+                t.walked++;
+                if (probe()) LOG.info("[entropybot] probe trail: walked to {} ({} of {}) | {}", g.at().text(), idx, goals.size(), counts(t));
+                return new Tick(State.RUNNING, who + ": by the trail, at " + g.at().text());
+            }
+            if (!walking) {
+                io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, who);
+                LivePathPrice.walk(b, at);
+                walking = true;
+                return new Tick(State.RUNNING, who + ": by the trail to " + g.at().text() + " (" + (idx + 1) + " of " + goals.size() + ")");
+            }
+            if (!b.getCustomGoalProcess().isActive() && !Core.INSTANCE.reflexes.hold()) {
+                walking = false;
+                return new Tick(State.BROKEN, t.breakAt(g, "Baritone's walk to " + g.at().text() + " ended at " + Jobs.fmt(Jobs.here(p)) + " short of it (no path, or a changed cell)"));
+            }
+            return new Tick(State.RUNNING, who + ": by the trail to " + g.at().text() + " - walking (" + Jobs.fmt(Jobs.here(p)) + ")");
+        }
     }
 }
