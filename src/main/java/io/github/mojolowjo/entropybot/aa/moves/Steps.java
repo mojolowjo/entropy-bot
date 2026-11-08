@@ -1160,7 +1160,7 @@ public final class Steps {
             if (fact == null) fact = shortFact(s, reason);       // 0.39.z75: a step that ended short of its count
             // 0.39.z77 walk: a walk that led to a named source is that source's fact (z65) over its own short end
             if (fact == null || FactChange.isWalkShort(fact)) {
-                FactChange.Fact lead = walkLeads(steps, idx, reason);
+                FactChange.Fact lead = walkLeads(steps, idx, reason, startFeet, feetNow());
                 if (lead != null) fact = lead;
             }
         }
@@ -1418,6 +1418,19 @@ public final class Steps {
      * Null: not a walk, or nothing after it names a source (the run ends with the reason as before). Pure.
      */
     public static FactChange.Fact walkLeads(List<? extends Step> steps, int idx, String reason) {
+        return walkLeads(steps, idx, reason, null, null);
+    }
+
+    /**
+     * job-est2 (run JAY 07:22:25: "no path to -190 9 -47 - stuck at -170 26 -41, 27 blocks short" after a dig from y 62 to
+     * y 26): {@link #walkLeads} with the walk's start and end feet - a walk that went down more than
+     * {@code estimate.failedDigLevels} before it failed carries the depth reached in its fact (the spot is held, its dig is
+     * not repeated, rule 21's outcome as a fact). Null feet: the plain fact. Pure.
+     */
+    public static FactChange.Fact walkLeads(List<? extends Step> steps, int idx, String reason, int[] from, int[] to) {
+        int dug = from == null || to == null || from.length < 3 || to.length < 3 ? 0 : from[1] - to[1];     // structural: x y z
+        if (dug > io.github.mojolowjo.entropybot.aa.brain.Tuning.i("estimate.failedDigLevels"))
+            reason = reason + " (dug " + dug + " levels, from y " + from[1] + " to y " + to[1] + ": the spot held, the dig not repeated)";
         if (steps == null || idx < 0 || idx + 1 >= steps.size() || !(steps.get(idx) instanceof Step.Walk)) return null;
         Step next = steps.get(idx + 1);
         // run JAF (2026-11-04): a collect with a priced spot is held at that spot only ("collect dirt at 5 64 -5"), never the

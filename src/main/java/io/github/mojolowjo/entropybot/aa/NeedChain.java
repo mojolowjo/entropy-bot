@@ -3330,7 +3330,19 @@ public final class NeedChain {
         // lands. A priced way still wins at once (the winner is not stuck then). The two-stands bound (stoodHere: "stood at")
         // turns the walks still not known into final drops, so this never waits for ever.
         String heldBack = null;
-        if (win.stuck() && !stands(win, stepsAt)) {
+        boolean pendingOverPriced = false;
+        // job-est2 (run JAY 07:17:49: "dig oak_planks seen 70 m, walk 2205.7 s (path)" - a mineshaft's planks 53 levels down -
+        // won at once over the dark oak 2 m away whose walk was still computing; the bot dug 4.5 min and stopped 27 blocks
+        // short): a priced winner that digs down (a collect more than estimate.freeDropLevels under the feet, digsDown) and
+        // costs more than the stand's own wait (pathCost.firstAnswerWaitS) is not picked while another
+        // way has no answer yet - standing costs at most that wait, the winner more; past the wait the walks still not known
+        // go by Baritone's estimate (rule 18 amended, rule 23 (1)) and compete with it
+        if (!win.stuck() && win.seconds() > Tuning.get("pathCost.firstAnswerWaitS") && !stands(win, stepsAt) && digsDown(c, win, stepsAt)) {
+            for (Trial t : trials) if (t != win && noAnswerYet(t, stepsAt)) { pendingOverPriced = true; break; }
+        }
+        boolean holdPick = pendingOverPriced;
+        if (win.stuck() && !stands(win, stepsAt)) holdPick = true;
+        if (holdPick) {
             List<Trial> open = new ArrayList<>();
             for (Trial t : trials) if (t != win && noAnswerYet(t, stepsAt)) open.add(t);
             if (!open.isEmpty()) {
@@ -3340,7 +3352,8 @@ public final class NeedChain {
                 for (Trial t : open) if (t.fail() == null && (stand == null || best.compare(t, stand) < 0)) stand = t;
                 if (stand == null) {
                     for (Trial t : trials) {
-                        String why = t.fail() != null ? t.fail() : EXPLORE_HELD + shw(t.unknown()) + heldBack;
+                        String why = t.fail() != null ? t.fail() : !t.stuck() ? PRICED_HELD + s(t.seconds()) + ", over the stand's wait " + s(Tuning.get("pathCost.firstAnswerWaitS")) + heldBack
+                                : EXPLORE_HELD + shw(t.unknown()) + heldBack;
                         drop(c, t.alt().label, why);
                         verdict(nodes, t, "dropped: " + why);
                     }
@@ -3361,6 +3374,8 @@ public final class NeedChain {
             String why;
             if (t.fail() != null) why = t.fail();
             else if (heldBack != null && t.stuck() && !stands(t, stepsAt)) why = EXPLORE_HELD + shw(t.unknown()) + heldBack;
+            else if (heldBack != null && pendingOverPriced && !t.stuck() && t.seconds() > Tuning.get("pathCost.firstAnswerWaitS"))
+                why = PRICED_HELD + s(t.seconds()) + ", over the stand's wait " + s(Tuning.get("pathCost.firstAnswerWaitS")) + heldBack;
             else if (t.stuck()) why = "no known source for " + shw(t.unknown()) + (win.stuck() ? " (the explore ends when one is known too)" : "");
             else if (t.alt().rate != null) why = s(t.seconds()) + String.format(Locale.ROOT, ", %.2f s a point with the eating (dearer a point than %s, %.2f)", t.alt().value(t.seconds()), win.alt().label, win.alt().value(win.seconds()));
             else why = s(t.seconds()) + " (dearer than " + win.alt().label + (t.seconds() > horizonS ? ", past the horizon" : "") + ")";
@@ -3420,6 +3435,22 @@ public final class NeedChain {
 
     /** 0.39.z77 choose: the start of the dropped reason of an explore held back while another way has no answer yet. */
     public static final String EXPLORE_HELD = "ends in an explore (no known source for ";
+
+    /** job-est2 (run JAY): a priced way dearer than the stand's wait, held while another way has no answer yet. */
+    public static final String PRICED_HELD = "priced (";
+
+    /**
+     * job-est2 (run JAY): the way collects at a spot more than {@code estimate.freeDropLevels} under the feet (its walk digs
+     * down: the mineshaft's planks 53 levels under the bot). Feet not known: false (rule 15: no hold on an unknown).
+     */
+    private static boolean digsDown(Ctx c, Trial t, int base) {
+        int[] feet = c.w.where() == null || c.w.where().feet() == null ? null : c.w.where().feet().get();
+        if (feet == null || feet.length < 3) return false;      // structural: x y z
+        List<Step> st = t.after().steps();
+        for (int i = Math.max(0, base); i < st.size(); i++)
+            if (st.get(i) instanceof Step.Collect k && k.at() != null && k.at().length >= 3 && digLevels(feet[1], k.at()[1], 0) > 0) return true;   // structural: x y z
+        return false;
+    }
 
     /** 0.39.z77 choose: the trial stands on walks still computing (its steps since {@code base} hold the standing step). */
     private static boolean stands(Trial t, int base) {
