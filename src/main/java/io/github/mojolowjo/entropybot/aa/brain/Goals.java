@@ -174,7 +174,10 @@ public final class Goals {
      * its held climb is forgotten, so its chain offers the climb way again (NeedChain.climbUp). Once per order; said in the
      * log and the whisper. Then the all-parked line ({@link #allParked}) is said once while it holds (rule 7). The lines said.
      */
-    public static List<String> parkedTick(Blackboard bb, boolean underGround) {
+    public static List<String> parkedTick(Blackboard bb, boolean underGround) { return parkedTick(bb, underGround, null); }
+
+    /** job-lookup: {@link #parkedTick} whose climb retry also forgets the brain's hold on the order's desire (re-armed at once). */
+    public static List<String> parkedTick(Blackboard bb, boolean underGround, Failures brainHolds) {
         List<String> out = new ArrayList<>();
         if (!(bb.fact(FACT) instanceof List<?>)) return out;
         List<Goal> goals = of(bb);
@@ -193,6 +196,7 @@ public final class Goals {
                 g.parked = null;
                 g.loopPark = null;
                 g.tries.clear();                 // the try asks its questions afresh (as the R1 try)
+                if (brainHolds != null) brainHolds.forget(g.id(), null);
                 bb.port.log(line);
                 bb.port.tellOwner(line);
                 out.add(line);
@@ -297,7 +301,15 @@ public final class Goals {
      * 0.39.z70 (R1 = c): every order parked by the honest loop whose parked-on facts changed tries once more - it is unparked
      * (once per order), said in the log and the whisper. Called with the goals' done check. The lines said.
      */
-    public static List<String> retryLoopParks(Blackboard bb) {
+    public static List<String> retryLoopParks(Blackboard bb) { return retryLoopParks(bb, null); }
+
+    /**
+     * job-lookup (run JAY 07:27:01-07:28:56: "tries once more: a new source seen" was followed by two minutes of "no order of
+     * the owner's"): the failed run that parked the order also put the brain's hold on its desire (Failures.failed,
+     * failures.cdBaseMs 120 s), so the unparked order could not be picked until it lapsed. The one more try re-arms the order
+     * at once: the brain's hold on its desire is forgotten with the park ({@code brainHolds} null: none to clear).
+     */
+    public static List<String> retryLoopParks(Blackboard bb, Failures brainHolds) {
         List<String> out = new ArrayList<>();
         if (!(bb.fact(FACT) instanceof List<?>)) return out;
         for (Goal g : of(bb)) {
@@ -311,6 +323,7 @@ public final class Goals {
             g.loopRetried = true;
             g.loopPark = null;
             g.tries.clear();                 // 0.39.z76 sb4 review 2: the one more try asks its questions afresh
+            if (brainHolds != null) brainHolds.forget(g.id(), null);   // job-lookup: re-armed at once, not after the brain's hold
             bb.port.log(line);
             bb.port.tellOwner(line);
             out.add(line);
