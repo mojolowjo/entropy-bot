@@ -2822,7 +2822,7 @@ public final class StepHands implements Steps.Hands {
             var now = solidYs(p, bandCell[0], bandCell[2], fromY - 1, bandCell[1]);
             for (int sy : bandSolid0) if (!now.contains(sy)) broken++;
         }
-        String r = io.github.mojolowjo.entropybot.aa.moves.BandEnd.reached(fromY, y, (System.currentTimeMillis() - bandMs0) / 1000.0, broken);
+        String r = io.github.mojolowjo.entropybot.aa.moves.BandEnd.reached(fromY, y, (System.currentTimeMillis() - bandMs0) / 1000.0, broken);   // structural: ms to s
         LOG.info("[entropybot] steps: {} - {}", t.text(), r);
         return r;
     }

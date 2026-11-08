@@ -58,7 +58,7 @@ public final class BandPrice {
      */
     public static int[] span(int y, java.util.List<int[]> points, double slack) {
         int lo = y, hi = y;
-        if (points != null) for (int[] p : points) if (p != null && p.length >= 3) { lo = Math.min(lo, p[1]); hi = Math.max(hi, p[1]); }
+        if (points != null) for (int[] p : points) if (p != null && p.length >= 3) { lo = Math.min(lo, p[1]); hi = Math.max(hi, p[1]); }   // structural: x y z
         if (lo == hi) { int s = (int) Math.round(slack); lo -= s; hi += s; }
         return new int[]{lo, hi};
     }
