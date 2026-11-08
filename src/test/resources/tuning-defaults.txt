@@ -751,7 +751,6 @@ stairPlan.torchEvery	6.0
 stashMax	74.0
 station.craftS	0.3
 station.near	48.0
-station.nearM	30.0
 station.mainBonusS	30.0
 station.placeS	0.15
 stationBase	40.0
@@ -957,3 +956,5 @@ monitor.noPathFails	3.0
 debug.monitorProbe	0.0
 steps.carIdleTicks	80.0
 pathCost.pricedTop	2.0
+station.materialS	10.0
+station.baseReachM	16.0

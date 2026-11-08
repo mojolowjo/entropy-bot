@@ -4299,7 +4299,8 @@ public final class NeedChain {
         if (table ? c.tableReady : c.furnaceReady) {
             boolean walkedBefore = table ? c.tableWalked : c.furnaceWalked;
             Spot far = walkedBefore ? null : c.w.stationAt().apply(kind);
-            if (far != null && far.dist() > stationNearM()) return farStation(c, kind, table, label, far);
+            // D14 (rule 1): every known station's walk is priced against making a new one; no distance gate decides it
+            if (far != null) return farStation(c, kind, table, label, far);
             String k = knownWalk(c, kind, table, label);
             if (c.fail != null) return null;                // 0.39.z41: its walk is not a price (path not known, unreachable)
             c.note(() -> "station " + label + ": " + (k != null ? (k.contains(UNVERIFIED) ? "not loaded, remembered, " : "known, ") + k : walkedBefore ? "known, walked to before in this chain" : "in reach"));
@@ -4328,11 +4329,11 @@ public final class NeedChain {
         return placeNew(c, kind, table, label);
     }
 
-    /** 0.39.z33: a known station farther than this many blocks (straight line) is priced against placing a new one near me. */
-    public static double stationNearM() { return Tuning.get("station.nearM"); }
+    /** D14: the seconds a new station's materials are worth when it is made rather than taken from the bag (Tuning). */
+    public static double stationMaterialS() { return Tuning.get("station.materialS"); }
 
     /**
-     * 0.39.z33 (owner 2026-10-23, S37, rule 1): a known station beyond {@link #stationNearM} is one way; making (or taking from
+     * 0.39.z33 (owner 2026-10-23, S37, rule 1): a known station (D14: at any distance) is one way; making (or taking from
      * the bag) and placing a new one near me is the other. Both are priced on the same simulated bag; the cheaper stands, the
      * other is listed dropped with its seconds. Rule 15 unchanged: a station not loaded is priced as remembered, unverified.
      */
@@ -4344,12 +4345,21 @@ public final class NeedChain {
         double walkS = c.seconds - t0;
         Ctx.Snap walked = c.snap();
         c.restore(s0);
+        // D14: making a new one spends its materials; a station item already in the bag spends none
+        String stationItem = ItemWorth.stationOf(kind);
+        boolean inBag = stationItem != null && c.bag.getOrDefault(stationItem, 0) > 0;
         String place = placeNew(c, kind, table, label);
+        if (c.fail == null && !c.stuck && !inBag) {
+            c.addS(stationMaterialS());
+            c.note(() -> "station " + label + ": a new one spends its materials: " + s(stationMaterialS()) + " (station.materialS)");
+        }
         double placeS = c.seconds - t0;
         boolean placeStands = c.fail == null && !c.stuck;
         String pw = "place a new " + label + " near me", kw = "walk to the known " + label + " " + Math.round(far.dist()) + " m" + (far.unloaded() ? " (" + UNVERIFIED + ")" : "")
                 + (c.w.isMain(far) ? " (" + Nearby.MAIN + " -" + Math.round(Math.max(0, far.bonusS())) + " s)" : "");
-        if (placeStands && walkFail != null) {
+        // D14 (rule 23 (1), rule 15): a walk whose path is not known yet is no refusal: the known station stays the way (it waits)
+        boolean notKnown = walkFail != null && (walkFail.startsWith(PathPrice.NOT_KNOWN) || walkFail.startsWith(PathPrice.NO_ESTIMATE));
+        if (placeStands && walkFail != null && !notKnown) {
             drop(c, kw, walkFail);
             c.note(() -> "station " + label + ": " + kw + " " + walkFail + " vs " + pw + " " + s(placeS) + " -> placed");
             return place;

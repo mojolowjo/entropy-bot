@@ -223,6 +223,7 @@ public final class Nearby {
                 continue;
             }
             if (!seen.add(key(p[0], p[1], p[2]))) continue;
+            if (now != null) StationBook.now().seen(m.block(), p[0], p[1], p[2], true, StationBook.clock.getAsLong());   // D14: seen there now
             if (!usable(s, p, true, first, skipped)) continue;
             out.add(priced(s, new Spot(p[0], p[1], p[2], dist(p, me), m.block()), first, priced, blocks));
         }
@@ -244,6 +245,7 @@ public final class Nearby {
             if (!seen.add(key(p[0], p[1], p[2]))) continue;
             String id = s.blockAt(p[0], p[1], p[2]);
             if (id == null || !blocks.contains(id)) continue;
+            StationBook.now().seen(id, p[0], p[1], p[2], false, StationBook.clock.getAsLong());   // D14: a station the bot saw
             if (!usable(s, p, false, first, skipped)) continue;
             out.add(priced(s, new Spot(p[0], p[1], p[2], dist(p, me), id), first, priced, blocks));
         }

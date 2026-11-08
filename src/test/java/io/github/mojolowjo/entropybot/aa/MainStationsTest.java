@@ -101,7 +101,7 @@ class MainStationsTest {
         Chain c = NeedChain.resolve("wooden_pickaxe", 1, FarStationWearUnreachableTest.world(bag,
                 new Spot(227, 70, 0, 227, "minecraft:crafting_table").withBonus(MainStations.bonusS()), Map.of()));
         assertTrue(c.ok(), c.why());
-        assertEquals(4.5, c.seconds(), 0.1, c.why());        // 0.75 + the table taken along after the craft (owner 2026-10-29: 3.75 s)
+        assertEquals(14.5, c.seconds(), 0.1, c.why());        // 0.75 + the table taken along after the craft (owner 2026-10-29: 3.75 s) + D14 station.materialS 10
         assertTrue(c.steps().stream().anyMatch(st -> st instanceof Step.PlaceNear), c.steps().toString());
         assertTrue(c.dropped().stream().anyMatch(d -> d.startsWith("walk to the known table 227 m (main -30 s): 38.")), c.dropped().toString());
     }

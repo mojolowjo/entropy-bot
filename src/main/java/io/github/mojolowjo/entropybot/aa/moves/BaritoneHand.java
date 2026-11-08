@@ -172,6 +172,23 @@ final class BaritoneHand implements JobHands.Hand {
                 @Override public String breakCell(BlockPos q) { return guardVerdict(lv, dim, q, "break"); }
             };
             builder = b().getBuilderProcess();
+            String id = rl.toString();
+            if (io.github.mojolowjo.entropybot.clear.OwnStations.station(id) || io.github.mojolowjo.entropybot.clear.OwnStations.container(id)) {
+                // D14: a station goes where the fork finds a cell with room near the base spot or the feet, on the leaf-free surface
+                // when the feet are on it (rule 2: the fork picks the cell); a fork without placeStation is said, then placeNear
+                BlockPos f = p.blockPosition();
+                int[] feet = {f.getX(), f.getY(), f.getZ()};
+                StationPlace.Ask a = StationPlace.ask(feet, io.github.mojolowjo.entropybot.world.SurfaceHeightLive.noLeaves(lv, feet[0], feet[2]), StationPlace.base);
+                try {
+                    builder.placeStation("place " + rl.getPath() + " " + a.why(), bi.getBlock().defaultBlockState(),
+                            new baritone.api.process.StationCell(new BlockPos(a.center()[0], a.center()[1], a.center()[2]), a.radius(), a.surface()), timeoutTicks, g);
+                    buildRun = builder.legRun();
+                    LOG.info("[entropybot] stations: place {} {} (fork placeStation, reach {})", rl.getPath(), a.why(), a.radius());
+                    return;
+                } catch (LinkageError | UnsupportedOperationException e) {
+                    LOG.warn("[entropybot] stations: this Baritone has no placeStation ({}): placing {} near me with placeNear", e.toString(), rl.getPath());
+                }
+            }
             builder.placeNear("place " + rl.getPath() + " near me", bi.getBlock().defaultBlockState(), radius, timeoutTicks, g);
             buildRun = builder.legRun();
         } catch (LinkageError e) {

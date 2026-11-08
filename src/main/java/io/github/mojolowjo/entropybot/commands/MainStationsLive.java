@@ -35,6 +35,36 @@ final class MainStationsLive {
 
     /** With the restore ledger's load (Commands): this world's mains. A line for the log. */
     static String load(BotFiles f) {
+        return loadMains(f) + "; " + loadBook(f);
+    }
+
+    /** D14: the station book's file (every station placed or seen, gone ones with their reason). */
+    static final String BOOK_FILE = "stations-book.json";
+
+    /** D14: this world's station book, and its saver (a file that cannot be read is never overwritten: no saver, said). */
+    private static String loadBook(BotFiles f) {
+        io.github.mojolowjo.entropybot.aa.StationBook.saver = null;
+        String text = f.readJson(BOOK_FILE);
+        StringBuilder note = new StringBuilder();
+        if (text == null) io.github.mojolowjo.entropybot.aa.StationBook.current = new io.github.mojolowjo.entropybot.aa.StationBook();
+        else {
+            JsonObject o = JsonStore.parse(text);
+            if (o == null) {
+                io.github.mojolowjo.entropybot.aa.StationBook.current = new io.github.mojolowjo.entropybot.aa.StationBook();
+                String line = BOOK_FILE + ": can't be read - READ-ONLY, not saved this session (fix or delete the file, then restart)";
+                Quiet.line(line);
+                return line;
+            }
+            io.github.mojolowjo.entropybot.aa.StationBook.current = io.github.mojolowjo.entropybot.aa.StationBook.fromJson(o, note);
+        }
+        io.github.mojolowjo.entropybot.aa.StationBook.saver = () -> {
+            String r = f.writeJson(BOOK_FILE, io.github.mojolowjo.entropybot.aa.StationBook.now().toJson().toString());
+            if (!r.startsWith("ok")) Quiet.line("stations: " + BOOK_FILE + " not saved: " + r);
+        };
+        return BOOK_FILE + ": " + io.github.mojolowjo.entropybot.aa.StationBook.now().all().size() + " stations" + (note.length() > 0 ? " (" + note + ")" : "");
+    }
+
+    private static String loadMains(BotFiles f) {
         files = f;
         readOnly = false;
         String text = f.readJson(FILE);

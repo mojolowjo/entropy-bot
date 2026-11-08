@@ -49,12 +49,12 @@ class FarStationWearUnreachableTest {
         Map<String, Integer> bag = Map.of("minecraft:oak_planks", 7, "minecraft:stick", 2);
         Chain c = NeedChain.resolve("wooden_pickaxe", 1, world(bag, new Spot(227, 70, 0, 227, "minecraft:crafting_table").notLoaded(), Map.of()));
         assertTrue(c.ok(), c.why());
-        assertEquals(4.5, c.seconds(), TOL, c.why());
+        assertEquals(14.5, c.seconds(), TOL, c.why());          // D14: + station.materialS 10
         assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.PlaceNear), c.steps().toString());
         assertTrue(c.dropped().stream().anyMatch(d -> d.startsWith("walk to the known table 227 m (" + NeedChain.UNVERIFIED + "): 68.")), c.dropped().toString());
     }
 
-    /** S37: a table 20 m (inside station.nearM 30) is used without the comparison: S31's 6.32 s, nothing dropped for it. */
+    /** S37 / D14: a table 20 m is priced against a new one too (no distance gate): S31's 6.32 s walk wins, the new one dropped. */
     @Test
     void s37_aTableNearIsUsedWithoutTheComparison() {
         ScenariosTest.world("wooden");
@@ -62,7 +62,7 @@ class FarStationWearUnreachableTest {
         Chain c = NeedChain.resolve("wooden_pickaxe", 1, world(bag, new Spot(20, 64, 0, 20, "minecraft:crafting_table"), Map.of()));
         assertEquals(6.32, c.seconds(), TOL, c.why());
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.PlaceNear), c.steps().toString());
-        assertTrue(c.dropped().stream().noneMatch(d -> d.startsWith("place a new")), c.dropped().toString());
+        assertTrue(c.dropped().stream().anyMatch(d -> d.startsWith("place a new table near me: ")), c.dropped().toString());
     }
 
     /** S37: far, and no planks to make one (3 planks, no tree): the walk stands, the new table is dropped with its reason. */
