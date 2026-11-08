@@ -893,6 +893,10 @@ nearby.scanR	32.0
 nearby.scanY	10.0
 nearby.useStationsS	30.0
 only.otherWeight	0.0
+band.dryLevels	4.0
+band.dryStepM	8.0
+band.wetBreakFactor	5.0
+steps.bandProbeS	0.0
 steps.placeNearR	3.0
 deposit.maxWalkSegments	30.0
 trail.climbLegUp	4.0

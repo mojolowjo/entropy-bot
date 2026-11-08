@@ -6760,8 +6760,9 @@ public final class NeedChain {
             return BAND_DROPPED;
         }
         int digs = wk.pickBreaks();
-        double handS = wk.seconds();
-        String head = (feet[1] > ty ? "dig down" : "walk") + " to y " + ty;
+        boolean wet = feet[1] > ty && io.github.mojolowjo.entropybot.aa.moves.BandDry.wetHere.getAsBoolean();
+        double handS = io.github.mojolowjo.entropybot.aa.moves.BandDry.price(wk.seconds(), wet);   // job-digpace: a wet start breaks at 1/5
+        String head = (feet[1] > ty ? "dig down" : "walk") + " to y " + ty + (wet ? " (from water: break times band.wetBreakFactor)" : "");
         if (digs <= 0) {
             c.steps.add(tb);
             c.addS(handS);

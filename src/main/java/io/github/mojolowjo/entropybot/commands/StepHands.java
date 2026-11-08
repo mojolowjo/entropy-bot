@@ -425,7 +425,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.HuntAt h -> hunt(p, h);
                 case Step.Build b -> build(b);
                 case Step.PlaceNear n -> placeNear(p, n);
-                case Step.ToBand t -> toBand(p, t);
+                case Step.ToBand t -> { dryTried = false; yield toBand(p, t); }
                 case Step.ToStrip t -> toStrip(p, t);
                 case Step.Climb k -> climb(p);
                 case Step.Fish fs -> fish(p, fs);
@@ -2688,6 +2688,23 @@ public final class StepHands implements Steps.Hands {
         // J6b queue item 14 (run ER: the floorless edge cell -10 61 69): the leg's column is the cell Baritone's searches start
         // from (its pathStart: the supporting block off an edge), standable or said
         Start st = searchStart(b, p);
+        // job-digpace (run JAT): a wet start (afloat, no floor, fluid in the first band.dryLevels cells) steps to a dry cell first
+        boolean dry = io.github.mojolowjo.entropybot.aa.moves.BandDry.dry(st.standable(), p.isInWater(), fluidDown(p, st.cell()));
+        if (!dry && !dryTried && y > t.target(y)) {
+            dryTried = true;
+            java.util.List<baritone.api.pathing.goals.Goal> cells = dryCells(p, st.cell());
+            var act = io.github.mojolowjo.entropybot.aa.moves.BandDry.act(false, cells.size());
+            if (act == io.github.mojolowjo.entropybot.aa.moves.BandDry.Act.STEP_DRY) {
+                LOG.info("[entropybot] steps: {} - {}", t.text(), io.github.mojolowjo.entropybot.aa.moves.BandDry.stepWhy(st.cell(), cells.size()));
+                io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "to a dry column");
+                b.getCustomGoalProcess().setGoalAndPath(new baritone.api.pathing.goals.GoalComposite(cells.toArray(new baritone.api.pathing.goals.Goal[0])));
+                drySteppingMs = System.currentTimeMillis();
+                return null;
+            }
+            LOG.info("[entropybot] steps: {} - the start {} is wet and no dry standable cell is within {} blocks (band.dryStepM): digging from here, priced times band.wetBreakFactor",
+                    t.text(), Jobs.fmt(st.cell()), io.github.mojolowjo.entropybot.aa.brain.Tuning.i("band.dryStepM"));
+        }
+        drySteppingMs = 0;
         bandStart = st;
         bandCell = new int[]{st.cell()[0], t.target(st.cell()[1]), st.cell()[2]};
         if (t.until() != null) digFrom = st.cell().clone();
@@ -2699,6 +2716,51 @@ public final class StepHands implements Steps.Hands {
         LOG.info("[entropybot] steps: {} - Baritone's priced path to {} (the band's nearest Y under the search's start {}{}; walked once its path is known)", t.text(), Jobs.fmt(bandCell),
                 Jobs.fmt(st.cell()), st.standable() ? "" : " - it has no floor: a no-path from it is not known, never the band's fact");
         return null;
+    }
+
+    /** job-digpace: the dry step's start (System ms; 0 = not stepping) and whether this leg tried it (once per leg). */
+    private long drySteppingMs;
+    private boolean dryTried;
+
+    static {
+        io.github.mojolowjo.entropybot.aa.moves.BandDry.wetHere = () -> {
+            LocalPlayer pl = Minecraft.getInstance().player;
+            return pl != null && pl.isInWater();
+        };
+    }
+
+    /** job-digpace: is each of the column's first band.dryLevels cells under {@code c} a fluid (unloaded: wet, not known). */
+    private static java.util.List<Boolean> fluidDown(LocalPlayer p, int[] c) {
+        java.util.List<Boolean> out = new java.util.ArrayList<>();
+        int n = io.github.mojolowjo.entropybot.aa.brain.Tuning.i("band.dryLevels");
+        for (int i = 1; i <= n; i++) {
+            BlockPos at = new BlockPos(c[0], c[1] - i, c[2]);
+            out.add(!p.level().isLoaded(at) || !p.level().getFluidState(at).isEmpty());
+        }
+        return out;
+    }
+
+    /**
+     * job-digpace: the dry standable cells within band.dryStepM of {@code c} (feet and head cells free of blocks and fluid, a
+     * floor, a dry column under it), as Baritone GoalBlocks - one goal of them all, Baritone's search picks which it reaches.
+     */
+    private static java.util.List<baritone.api.pathing.goals.Goal> dryCells(LocalPlayer p, int[] c) {
+        java.util.List<baritone.api.pathing.goals.Goal> out = new java.util.ArrayList<>();
+        int r = io.github.mojolowjo.entropybot.aa.brain.Tuning.i("band.dryStepM");
+        int dy = io.github.mojolowjo.entropybot.aa.brain.Tuning.i("band.dryLevels");
+        for (int x = c[0] - r; x <= c[0] + r; x++) for (int z = c[2] - r; z <= c[2] + r; z++) for (int y = c[1] - dy; y <= c[1] + dy; y++) {
+            BlockPos feet = new BlockPos(x, y, z), under = feet.below();
+            if (!p.level().isLoaded(under)) continue;
+            var fs = p.level().getBlockState(feet);
+            var hs = p.level().getBlockState(feet.above());
+            if (!fs.getCollisionShape(p.level(), feet).isEmpty() || !fs.getFluidState().isEmpty()) continue;
+            if (!hs.getCollisionShape(p.level(), feet.above()).isEmpty() || !hs.getFluidState().isEmpty()) continue;
+            if (p.level().getBlockState(under).getCollisionShape(p.level(), under).isEmpty()) continue;
+            int[] cell = {x, y, z};
+            if (!io.github.mojolowjo.entropybot.aa.moves.BandDry.dry(true, false, fluidDown(p, cell))) continue;
+            out.add(new baritone.api.pathing.goals.GoalBlock(x, y, z));
+        }
+        return out;
     }
 
     /** J6b item 14: the band leg's search start (its cell and floor). */
@@ -2742,6 +2804,21 @@ public final class StepHands implements Steps.Hands {
             return Car.Status.done("ok: " + bandReached(p, t, y));
         }
         if (b == null) return Car.Status.failed("baritone not loaded");
+        if (drySteppingMs > 0) {
+            // job-digpace: the walk to a dry column; its end (reached or not) starts the dig from where the feet are
+            if (b.getCustomGoalProcess().isActive() || Core.INSTANCE.reflexes.hold()) return Car.Status.running(t.text() + ": walking to a dry column first");
+            String err = toBand(p, t);
+            if (err != null) return Car.Status.failed(t.text() + ": " + err);
+            if (instant != null) return Car.Status.done(instant);
+            return Car.Status.running(t.text() + ": digging from the dry column " + Jobs.fmt(Jobs.here(p)));
+        }
+        if (bandWalking && bandStart != null && bandStart.standable() && p.isInWater() && y < bandStart.cell()[1]) {
+            // job-digpace: the column turned wet mid-dig; the water cause is named, the band way's side-step takes over
+            Jobs.cancel(b);
+            String why = bandStopped(p, t, "water came into the column mid-dig");
+            io.github.mojolowjo.entropybot.aa.moves.FactChange.band(t.minY(), t.maxY(), why);
+            return Car.Status.failed(t.text() + ": " + why);
+        }
         if (!bandWalking && bandCell != null) {
             io.github.mojolowjo.entropybot.aa.PathPrice.Answer a = LivePathPrice.INSTANCE.priceInto(bandCell[0], bandCell[1], bandCell[2], Math.abs(y - bandCell[1]));   // z76 send-back 2: the feet IN the band
             // J6b queue item 14 (the manager's ER ruling, rule 15): a budget stop / an estimate is NOT KNOWN, never "no path";
@@ -2790,7 +2867,22 @@ public final class StepHands implements Steps.Hands {
             io.github.mojolowjo.entropybot.aa.moves.FactChange.band(t.minY(), t.maxY(), why);     // 0.39.z42: a fact change, the order re-plans
             return Car.Status.failed(t.text() + ": " + why);
         }
+        bandProbe(p, t, y, b);
         return Car.Status.running(t.text() + ": at y " + y);
+    }
+
+    /** job-digpace: the dig-down leg's probe (steps.bandProbeS, 0 = off): why a level takes long (water, off the ground). */
+    private long bandProbeMs;
+
+    private void bandProbe(LocalPlayer p, Step.ToBand t, int y, IBaritone b) {
+        long every = (long) (io.github.mojolowjo.entropybot.aa.brain.Tuning.get("steps.bandProbeS") * 1000);
+        long now = System.currentTimeMillis();
+        if (every <= 0 || now - bandProbeMs < every) return;
+        bandProbeMs = now;
+        int fromY = bandStart != null ? bandStart.cell()[1] : y;
+        long secs = (now - bandMs0) / 1000;   // structural: ms to s
+        LOG.info("[entropybot] band probe: {} - y {} ({} levels, {} s), feet in water {}, head in water {}, on ground {}, Baritone active {}",
+                t.text(), y, fromY - y, secs, p.isInWater(), p.isUnderWater(), p.onGround(), b.getCustomGoalProcess().isActive());
     }
 
     /** job-band2: the band leg's start time, Baritone's line count then, and the solid cells of its column then (the Ys). */
