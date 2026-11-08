@@ -82,6 +82,7 @@ public final class StepMonitor {
             case Step.MineAt g -> Kind.GATHER;
             case Step.Mine g -> Kind.GATHER;
             case Step.Cave g -> Kind.GATHER;                // 0.39.z78 J6b: the caving step gathers ore
+            case Step.Tunnel g -> Kind.GATHER;              // job-tunnel: the band way's tunnel gathers ore
             case Step.Strip g -> Kind.GATHER;
             case Step.KelpCut g -> Kind.GATHER;
             case Step.TakeStation g -> Kind.GATHER;

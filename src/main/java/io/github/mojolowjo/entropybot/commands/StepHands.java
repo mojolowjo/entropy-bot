@@ -432,6 +432,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.KelpCut k -> kelpCut(p, k);
                 case Step.MineAt m -> mineAt(p, m);
                 case Step.Cave k -> caveStart(p, k);                   // 0.39.z78 J6b: the caving step (D12)
+                case Step.Tunnel t -> TunnelStep.start(p, t);          // job-tunnel: the band way's tunnel (Baritone digs)
                 case Step.Strip st -> StripStep.start(st);              // the owner's strip order: the fork's StripProcess
                 case Step.Mine m when m.how() == Step.Mine.How.STRIP -> mineStrip(p, m);   // an AA strip leg: the same fork process (the old verb is gone)
                 case Step.Deposit d when d.order() != null -> depositLeg(p, d);           // the strip order's deposit leg (DepositLeg)
@@ -475,6 +476,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.KelpCut k -> mineStatus(p);
                 case Step.MineAt m -> veinStatus(p, m);
                 case Step.Cave k -> caveStatus(p);
+                case Step.Tunnel t -> TunnelStep.status(p);
                 case Step.Strip st -> StripStep.status(st, Core.INSTANCE.reflexes.hold());
                 case Step.Mine m when m.how() == Step.Mine.How.STRIP && legStrip != null -> StripStep.status(legStrip, Core.INSTANCE.reflexes.hold());
                 case Step.Fish fs -> fishStatus(p);
@@ -533,6 +535,7 @@ public final class StepHands implements Steps.Hands {
                 if (b != null) Jobs.cancel(b);
                 caveEnd(io.github.mojolowjo.entropybot.cave.CaveWalk.End.STOPPED, why);   // review: an owner stop or a re-plan, its own end
             }
+            if (step instanceof Step.Tunnel) TunnelStep.cancel(why);   // job-tunnel
             if (step instanceof Step.ToCave && lip != null) {
                 lip = null;
                 IBaritone b = Jobs.baritone();
