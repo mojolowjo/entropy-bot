@@ -116,6 +116,62 @@ public record Reservations(List<Reserves.Reserve<String>> list, String unknown, 
         return (p.isEmpty() ? "nothing" : String.join(", ", p)) + (unknown == null ? "" : " | not loaded: " + unknown) + (note == null ? "" : " | " + note);
     }
 
+    /** The chain's reserves only (not the orders'): what a deposit and a sub-chain must leave in the bag. */
+    public List<Reserves.Reserve<String>> chain() {
+        List<Reserves.Reserve<String>> out = new ArrayList<>();
+        for (var r : list) if (r.kind != Reserves.Kind.ORDER) out.add(r);
+        return out;
+    }
+
+    /**
+     * D1 ledger (job-d1): the probe's words, "reserved: stick 2 for craft stone_pickaxe 1, fuel 600 ticks for smelt iron_ingot 3
+     * here"; "reserved: nothing"; the rule-15 unknown after it.
+     */
+    public String ledgerText() {
+        List<String> p = new ArrayList<>();
+        for (var r : list) p.add(forText(r));
+        return "reserved: " + (p.isEmpty() ? "nothing" : String.join(", ", p)) + (unknown == null ? "" : " | not loaded: " + unknown);
+    }
+
+    /** One reserve as the ledger line writes it: "stick 2 for craft stone_pickaxe 1". */
+    public static String forText(Reserves.Reserve<String> r) {
+        String units = r.whole() ? "all" : r.word.equals(FUEL) ? r.units + " ticks" : String.valueOf(r.units);
+        return StepNeeds.sh(r.word) + " " + units + (r.owner.isEmpty() ? "" : " for " + r.owner);
+    }
+
+    /**
+     * D1 ledger (job-d1, pure): the bag with the reserved counts taken out - what another use (a sub-chain's plan) may take
+     * without eating into a later step's claim. Keys stay as given (item paths or ids; both read the same). Jointly safe: each
+     * item gives only what the reserves can spare after the items before it gave theirs (the fork's {@link Reserves#spare}),
+     * so shared tag members are never counted free twice. Whole reserves keep the whole stack.
+     */
+    public static Map<String, Integer> free(List<Reserves.Reserve<String>> reserves, Map<String, Integer> bag) {
+        Map<String, Integer> out = new LinkedHashMap<>();
+        if (bag == null) return out;
+        if (reserves == null || reserves.isEmpty()) { out.putAll(bag); return out; }
+        Map<String, Integer> byId = new LinkedHashMap<>();
+        for (var e : bag.entrySet()) if (e.getValue() != null && e.getValue() > 0) byId.merge(StepNeeds.full(e.getKey()), e.getValue(), Integer::sum);
+        for (var e : bag.entrySet()) {
+            int n = e.getValue() == null ? 0 : e.getValue();
+            if (n <= 0) { out.put(e.getKey(), n); continue; }
+            String id = StepNeeds.full(e.getKey());
+            int spare = Math.max(0, Math.min(n, Reserves.spare(reserves, byId, id)));
+            out.put(e.getKey(), spare);
+            byId.merge(id, -spare, Integer::sum);                 // what is now promised to this use leaves the pool
+        }
+        return out;
+    }
+
+    /** How many of each item {@link #free} holds back for the reserves ("stone_crafting_materials" members by item), none: empty. */
+    public static Map<String, Integer> held(List<Reserves.Reserve<String>> reserves, Map<String, Integer> bag) {
+        Map<String, Integer> f = free(reserves, bag), out = new LinkedHashMap<>();
+        if (bag != null) for (var e : bag.entrySet()) {
+            int h = (e.getValue() == null ? 0 : e.getValue()) - f.getOrDefault(e.getKey(), 0);
+            if (h > 0) out.put(e.getKey(), h);
+        }
+        return out;
+    }
+
     /** One reserve as the lines write it. */
     public static String text(Reserves.Reserve<String> r) {
         String units = r.whole() ? "all" : r.word.equals(FUEL) ? r.units + " ticks" : String.valueOf(r.units);

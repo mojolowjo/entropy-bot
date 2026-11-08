@@ -79,14 +79,14 @@ public final class RunThrowaway {
         // 0.39.z55 item 1 / z61 (D1 3.7): the table at every step start and what the fork's lease can spare, behind debug.walkProbe
         if (io.github.mojolowjo.entropybot.commands.WalkProbe.on()) {
             var p = Minecraft.getInstance().player;
-            LOG.info("[entropybot] probe reserve: {} | the fork's lease spare: {}", table(reserves), p == null ? "unknown (not in a world)" : spareInBag(l, p));
+            LOG.info("[entropybot] probe reserve: reserved: {} | the fork's lease spare: {}", table(reserves), p == null ? "unknown (not in a world)" : spareInBag(l, p));
         }
     }
 
     /** The reserves as the lines write them ("stick 2 (craft stone_pickaxe), ..."; "nothing"). */
     private static String table(List<baritone.api.process.Reserves.Reserve<String>> reserves) {
         List<String> p = new ArrayList<>();
-        for (var r : reserves) p.add(io.github.mojolowjo.entropybot.aa.moves.Reservations.text(r));
+        for (var r : reserves) p.add(io.github.mojolowjo.entropybot.aa.moves.Reservations.forText(r));   // D1 ledger: "stick 2 for craft stone_pickaxe 1"
         return p.isEmpty() ? "nothing" : String.join(", ", p);
     }
 

@@ -35,6 +35,44 @@ public final class DepositRule {
         return out;
     }
 
+    /**
+     * D1 ledger (job-d1): which stacks go in, parallel to {@code bag}, with the run's chain reserves ({@code reserves}, the
+     * board's ledger; ids "minecraft:x") left in the bag. A stack goes in only while the bag after it still meets every
+     * reserve it can meet now (the fork's {@link baritone.api.process.Reserves#spare}); a stack that would cut into a reserved
+     * count stays whole (a quick move moves whole stacks: the safe side, a few over the count stay).
+     */
+    public static boolean[] goesIn(List<Item> bag, List<baritone.api.process.Reserves.Reserve<String>> reserves) {
+        boolean[] out = new boolean[bag.size()];
+        Map<String, Integer> left = new java.util.HashMap<>();
+        for (Item i : bag) if (i != null && i.count() > 0) left.merge(i.id(), i.count(), Integer::sum);
+        boolean none = reserves == null || reserves.isEmpty();
+        for (int k = 0; k < bag.size(); k++) {
+            Item i = bag.get(k);
+            if (i == null || i.count() <= 0 || kept(i)) continue;
+            if (none || !baritone.api.process.Reserves.reserved(reserves, i.id())) { out[k] = true; continue; }
+            if (baritone.api.process.Reserves.spare(reserves, left, i.id()) >= i.count()) { out[k] = true; left.merge(i.id(), -i.count(), Integer::sum); }
+        }
+        return out;
+    }
+
+    /** What goes into the chest with the reserves left in the bag ({@link #goesIn}): id -> count. */
+    public static Map<String, Integer> toPut(List<Item> bag, List<baritone.api.process.Reserves.Reserve<String>> reserves) {
+        boolean[] in = goesIn(bag, reserves);
+        Map<String, Integer> out = new TreeMap<>();
+        for (int k = 0; k < bag.size(); k++) if (in[k]) out.merge(bag.get(k).id(), bag.get(k).count(), Integer::sum);
+        return out;
+    }
+
+    /** What the reserves keep back from the chest ({@code toPut} without them, less with them): id -> count, empty: nothing. */
+    public static Map<String, Integer> heldBack(List<Item> bag, List<baritone.api.process.Reserves.Reserve<String>> reserves) {
+        Map<String, Integer> all = toPut(bag), with = toPut(bag, reserves), out = new TreeMap<>();
+        for (var e : all.entrySet()) {
+            int h = e.getValue() - with.getOrDefault(e.getKey(), 0);
+            if (h > 0) out.put(e.getKey(), h);
+        }
+        return out;
+    }
+
     public enum How { KNOWN, BAG, CRAFT, WAIT, FAIL }
 
     /**

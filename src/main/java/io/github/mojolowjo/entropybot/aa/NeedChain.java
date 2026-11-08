@@ -5794,7 +5794,8 @@ public final class NeedChain {
         }
         // the cap said with what was made (z77 round fix 4: "3 made" was said before the make, which then failed)
         if (extra < need) c.spare(sh(tool) + ": " + need + " spare " + sh(kind) + " would cover " + wear + " blocks; tools.maxSpares " + cap + " holds"
-                + (heldN > 0 ? " (" + heldN + " held already: the bag's " + bagUses + " uses / " + freshK + " a new one)" : "") + ": " + extra
+                // D1 ledger (job-d1): the bag's spares said as what this way reserves of them, not "held already"
+                + (heldN > 0 ? " (reserved: " + sh(kind) + " " + heldN + " for this strip: the bag's " + bagUses + " uses / " + freshK + " a new one)" : "") + ": " + extra
                 + " made, " + Math.max(0, wear - left - others - extra * freshK) + " blocks over, re-planned when a pickaxe breaks");
         if (extra <= 0) return null;
         c.bag.merge(kind, -extra, Integer::sum);            // they wear out in this way
