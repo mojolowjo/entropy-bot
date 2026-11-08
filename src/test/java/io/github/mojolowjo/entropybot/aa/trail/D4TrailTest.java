@@ -101,6 +101,68 @@ class D4TrailTest {
         assertNull(t.price(CLIMB, 402));
     }
 
+    // ---- pass two ---------------------------------------------------------------------------------------------------------
+
+    @Test void pillarLevelsNeedThrowawayBlocks() {
+        Trail t = down();                                        // 2 one-way levels
+        assertEquals(6.0, t.price(new Trail.Climb(3, 5, 2), 220).climbS(), 1e-9, "2 blocks for 2 levels: the pillar");
+        assertEquals(10.0, t.price(new Trail.Climb(3, 5, 1), 220).climbS(), 1e-9, "1 block for 2 levels: the stair price");
+        Trail.Price none = t.price(new Trail.Climb(3, Double.NaN, 0), 220);
+        assertFalse(none.whole());
+        assertTrue(none.broken().contains("no way up by the trail: no blocks to pillar"), none.broken());
+    }
+
+    @Test void breakingTimeIsKeptApartFromTheWalk() {
+        Trail t = new Trail();
+        t.loadedEmpty();
+        t.offer(new Cell(0, 64, 0), 0, true, JUMP);
+        t.offer(new Cell(1, 64, 0), 20, false, JUMP);
+        for (int i = 0; i < 40; i++) t.breakTick();             // 2 s of strip-digging on the walk
+        t.offer(new Cell(5, 64, 0), 100, false, JUMP);
+        t.offer(new Cell(5, 60, 0), 110, false, JUMP);           // a fall: the walk segment ends
+        Trail.Seg w = t.segs().get(0);
+        assertEquals(3.0, w.walkedS(), 1e-9, "5 s on the segment less 2 s of breaking");
+        assertEquals(2.0, w.breakS(), 1e-9);
+        for (int i = 0; i < 20; i++) t.breakTick();             // 1 s breaking on the tail
+        Trail.Price p = t.price(new Trail.Climb(1, 1), 150);
+        assertEquals(3.0 + 0.5 + 1.0, p.walkedS(), 1e-9, "the tail's 2 s less 1 s of breaking");
+        assertEquals(3.0, p.breakS(), 1e-9);
+        assertTrue(p.line().contains("3 s of breaking"), p.line());
+        Trails ts = new Trails();
+        ts.load("w", null);
+        Trail board = ts.of("o");
+        board.load(t.toJson());
+        assertEquals(t.segs(), board.segs(), "breakS round-trips through the file");
+    }
+
+    @Test void thePriceGoesOnToTheTargetOnce() {
+        List<String> routes = List.of(
+                "to GoalGetToBlock{x=30,y=64,z=7} from 0 64 1, 40 cells, 300 ticks, walks 1, saved at tick 5",
+                "to GoalGetToBlock{x=30,y=64,z=7} from 0 64 0, 38 cells, 200 ticks, walks 2, saved at tick 9",
+                "to GoalGetToBlock{x=31,y=64,z=7} from 0 64 0, 38 cells, 100 ticks, walks 2, saved at tick 9",
+                "to GoalGetToBlock{x=30,y=64,z=7} from 9 64 0, 38 cells, 50 ticks, walks 2, saved at tick 9");
+        assertEquals(200.0, Trail.routeTicks(routes, new Cell(0, 64, 0), new int[]{30, 64, 7}, 1), 1e-9, "the cheapest route from beside the start to the target");
+        assertTrue(Double.isNaN(Trail.routeTicks(routes, new Cell(0, 64, 0), new int[]{2, 2, 2}, 1)));
+        assertTrue(Double.isNaN(Trail.routeTicks(List.of("garbage"), new Cell(0, 64, 0), new int[]{30, 64, 7}, 1)));
+        Trail.Price p = down().price(CLIMB, 220);
+        Trail.Price on = p.on(10, "the fork's stored route");
+        assertEquals(p.seconds() + 10, on.seconds(), 1e-9);
+        assertEquals(on, on.on(10, "again"), "added once");
+        assertTrue(on.line().contains("on from its start 10 s (the fork's stored route)"), on.line());
+        Trail.Price unknown = p.on(Double.NaN, "no estimate");
+        assertFalse(unknown.whole(), "the way on not known: no whole price (rule 18)");
+        assertEquals(Trail.Pick.DIRECT, Trail.pick(PathPrice.Kind.UNREACHABLE, Double.NaN, unknown).pick());
+    }
+
+    @Test void theSurfaceWalkWeighsTheTrailOnToTheCell() {
+        // the walk up to the surface cell 2 64 0 (beside the trail's start 0 64 0): 17 s home + 1 s on
+        Trail.Price p = down().price(CLIMB, 220).on(1, "Baritone's estimate, no stored route");
+        assertEquals(18.0, p.seconds(), 1e-9);
+        assertEquals(Trail.Pick.TRAIL, Trail.pick(PathPrice.Kind.UNREACHABLE, Double.NaN, p).pick(), "the direct walk ended short: up by the trail");
+        assertEquals(Trail.Pick.DIRECT, Trail.pick(PathPrice.Kind.PRICED, 18, p).pick(), "as cheap a priced path wins");
+        assertEquals(Trail.Pick.TRAIL, Trail.pick(PathPrice.Kind.PRICED, 19, p).pick());
+    }
+
     @Test void saveAndLoadRoundTrip() {
         Trails ts = new Trails();
         assertFalse(ts.loaded());

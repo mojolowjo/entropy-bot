@@ -1763,6 +1763,9 @@ public final class StepHands implements Steps.Hands {
         // GoalGetToBlock is met BESIDE the cell, the bot stayed under a 9-block overhang and the explore said "under ground" each
         // time): the walk up is an INTO walk - the feet end IN the cell (LivePathPrice.walkInto, the band walk's; NeedChain
         // priced that very goal, rule 18); Baritone walks and picks the path (rule 2)
+        surfaceTrail = null;
+        surfaceTrailTried = false;
+        if (surfaceByTrail(p, t, null)) return null;        // D4 pass two: the trail home as a way up, priced against the fresh search
         io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "to the surface");
         LivePathPrice.walkInto(b, new BlockPos(t.x(), t.y(), t.z()));
         LOG.info("[entropybot] steps: {} - Baritone's walk into the cell (the feet end on it, never beside it)", t.text());
@@ -1771,6 +1774,33 @@ public final class StepHands implements Steps.Hands {
 
     /** FN fix: the walk up's ticks since its start (Baritone's process is active from its next tick; structural). */
     private int surfaceTicks;
+    /** D4 pass two: the walk up by the trail (null: none), and whether the trail was taken already for this walk up. */
+    private TrailRuntime.Walker surfaceTrail;
+    private boolean surfaceTrailTried;
+
+    /**
+     * D4 pass two: the trail home against the fresh search's answer to the surface cell (Trail.pick, as the deposit): its
+     * price goes on from the trail's start to the cell. {@code kind} non-null: that answer instead (the direct walk ended
+     * short: no path). True: the trail walk runs, then the walk into the cell.
+     */
+    private boolean surfaceByTrail(LocalPlayer p, Step.ToSurface t, io.github.mojolowjo.entropybot.aa.PathPrice.Kind kind) {
+        var tr = TrailRuntime.here();
+        if (tr == null || tr.state() != io.github.mojolowjo.entropybot.aa.trail.Trail.State.OPEN || surfaceTrailTried) return false;
+        double s = Double.NaN;
+        if (kind == null) {
+            var a = LivePathPrice.INSTANCE.price(t.x(), t.y(), t.z(), Double.NaN);
+            kind = a == null ? null : a.kind();
+            if (a != null && a.walk() != null) s = a.walk().seconds();
+        }
+        var price = TrailRuntime.priced(p, tr, new int[]{t.x(), t.y(), t.z()});
+        var pick = io.github.mojolowjo.entropybot.aa.trail.Trail.pick(kind, s, price);
+        LOG.info("[entropybot] steps: {} - {}", t.text(), pick.why());
+        if (pick.pick() != io.github.mojolowjo.entropybot.aa.trail.Trail.Pick.TRAIL) return false;
+        surfaceTrail = new TrailRuntime.Walker("to the surface", tr);
+        surfaceTrailTried = true;
+        LOG.info("[entropybot] steps: {} - up by the trail first ({} goals to its start {}), then the walk into the cell", t.text(), surfaceTrail.size(), tr.start().text());
+        return true;
+    }
 
     /**
      * 0.39.z68: done with the feet ON the surface cell; ended failed, it is the walk up's fact (a re-plan). FN fix: Baritone's
@@ -1789,6 +1819,17 @@ public final class StepHands implements Steps.Hands {
             return Car.Status.done("ok: at the surface cell " + Jobs.fmt(me));
         }
         if (b == null) return Car.Status.failed(surfaceRefused(t, "baritone not loaded"));
+        if (surfaceTrail != null) {
+            var r = surfaceTrail.tick(p);
+            if (r.state() == TrailRuntime.Walker.State.RUNNING) return Car.Status.running(t.text() + ": " + r.line());
+            surfaceTrail = null;
+            if (r.state() == TrailRuntime.Walker.State.BROKEN) LOG.info("[entropybot] steps: {} - {} - the walk into the cell from here", t.text(), r.line());
+            io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "to the surface");
+            LivePathPrice.walkInto(b, new BlockPos(t.x(), t.y(), t.z()));
+            surfaceTicks = 0;
+            LOG.info("[entropybot] steps: {} - Baritone's walk into the cell (the feet end on it, never beside it)", t.text());
+            return Car.Status.running(t.text() + ": walking into " + t.x() + " " + t.y() + " " + t.z() + " (feet " + Jobs.fmt(me) + ")");
+        }
         surfaceTicks++;
         if (b.getCustomGoalProcess().isActive() || Core.INSTANCE.reflexes.hold() || surfaceTicks <= 1) {   // structural: the process is active from the tick after its start
             return Car.Status.running(t.text() + ": walking into " + t.x() + " " + t.y() + " " + t.z() + " (feet " + Jobs.fmt(me) + ")");
@@ -1801,6 +1842,11 @@ public final class StepHands implements Steps.Hands {
             calc = wc == null ? "no calc kept" : wc.exhausted() ? "no path (the graph exhausted)" : wc.budget() ? "not known (stop " + wc.stop() + ": a budget)" : "stop " + wc.stop();
         } catch (LinkageError e) {
             calc = "the stop is not known (an older fork)";
+        }
+        // D4 pass two: the direct walk ended short (run JAL 01:44:06): the trail, if whole, against no path
+        if (surfaceByTrail(p, t, io.github.mojolowjo.entropybot.aa.PathPrice.Kind.UNREACHABLE)) {
+            LOG.info("[entropybot] steps: {} - the walk into the cell ended short at {} ({}) - up by the trail", t.text(), Jobs.fmt(me), calc);
+            return Car.Status.running(t.text() + ": up by the trail");
         }
         return Car.Status.failed(surfaceRefused(t, "the walk up ended short at " + Jobs.fmt(me) + ": Baritone's walk into the cell ended (" + calc + ")"));
     }

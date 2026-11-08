@@ -31,31 +31,97 @@ public final class Trail {
         public int[] arr() { return new int[]{x, y, z}; }
     }
 
-    /** One segment of the way down: its ends, the walked seconds, the levels lost one way (0: a walk), its cells (one-way only). */
-    public record Seg(Cell from, Cell to, double walkedS, int drop, List<Cell> cells, boolean forkRoute) {
+    /**
+     * One segment of the way down: its ends, the walked seconds (the walk's own time: ticks spent breaking blocks on it are
+     * left out, kept apart as {@code breakS}), the levels lost one way (0: a walk), its cells (one-way only).
+     */
+    public record Seg(Cell from, Cell to, double walkedS, int drop, List<Cell> cells, boolean forkRoute, double breakS) {
         public Seg { cells = cells == null ? List.of() : List.copyOf(cells); }
+        public Seg(Cell from, Cell to, double walkedS, int drop, List<Cell> cells, boolean forkRoute) { this(from, to, walkedS, drop, cells, forkRoute, 0); }
         public boolean oneWay() { return drop > 0; }
     }
 
     public enum State { NOT_LOADED, CLOSED, OPEN }
 
-    /** Baritone's price of one level up, in the chain's seconds: a pillar level, a dug stair level; NaN = not known. */
-    public record Climb(double pillarS, double stairS) {
-        public double levelS() {
-            boolean p = !Double.isNaN(pillarS) && !Double.isInfinite(pillarS), s = !Double.isNaN(stairS) && !Double.isInfinite(stairS);
+    /**
+     * Baritone's price of one level up, in the chain's seconds: a pillar level, a dug stair level; NaN = not known.
+     * {@code throwaway}: the bag's throwaway (junk) blocks; a pillar places one a level, so it is priced only for as many
+     * levels as there are blocks (Baritone's MovementPillar is COST_INF with no throwaway in the hotbar).
+     */
+    public record Climb(double pillarS, double stairS, int throwaway) {
+        public Climb(double pillarS, double stairS) { this(pillarS, stairS, Integer.MAX_VALUE); }
+        public double levelS() { return levelS(0); }
+        /** One level's price on a climb of {@code levels}: the pillar only when the bag holds a block for each level. */
+        public double levelS(int levels) {
+            boolean p = known(pillarS) && throwaway >= levels, s = known(stairS);
             if (p && s) return Math.min(pillarS, stairS);
             return p ? pillarS : s ? stairS : Double.NaN;
         }
+        /** Why no level price for {@code levels} (rule 7). */
+        public String noneWhy(int levels) {
+            if (known(pillarS) && throwaway < levels)
+                return "no way up by the trail: no blocks to pillar (" + throwaway + " throwaway in the bag for " + levels + " level" + (levels == 1 ? "" : "s") + ") and no stair price";
+            return "the climb work is not known (no Baritone price for a level up)";
+        }
+        private static boolean known(double v) { return !Double.isNaN(v) && !Double.isInfinite(v); }
     }
 
-    /** The return price: total = walked + climb; {@code broken} != null: no price, the reason. */
-    public record Price(double seconds, double walkedS, double climbS, int segs, int levels, String broken) {
+    /**
+     * The return price: total = walked + climb + on (the way on from the trail's start to the target: the fork's stored route
+     * or the estimate, {@code onHow}); {@code broken} != null: no price, the reason. {@code breakS}: seconds spent breaking on
+     * the way down, said, not priced.
+     */
+    public record Price(double seconds, double walkedS, double climbS, int segs, int levels, String broken, double onS, String onHow, double breakS) {
+        public Price(double seconds, double walkedS, double climbS, int segs, int levels, String broken) {
+            this(seconds, walkedS, climbS, segs, levels, broken, 0, null, 0);
+        }
         public boolean whole() { return broken == null; }
+        /** The price with the way on to the target added once (NaN: not known, the trail has no whole price, rule 18). */
+        public Price on(double s, String how) {
+            if (!whole() || onHow != null) return this;
+            if (Double.isNaN(s) || Double.isInfinite(s))
+                return new Price(Double.NaN, walkedS, climbS, segs, levels, "the way on from its start is not known (" + how + ")", Double.NaN, how, breakS);
+            return new Price(seconds + s, walkedS, climbS, segs, levels, null, s, how, breakS);
+        }
         public String line() {
             if (!whole()) return "home by the trail: none (" + broken + ")";
-            return String.format(Locale.ROOT, "home by the trail: %d segment%s, %.0f s, climb work %.0f s (%d level%s)", segs, segs == 1 ? "" : "s",
-                    seconds, climbS, levels, levels == 1 ? "" : "s");
+            return String.format(Locale.ROOT, "home by the trail: %d segment%s, %.0f s, climb work %.0f s (%d level%s)%s%s", segs, segs == 1 ? "" : "s",
+                    seconds, climbS, levels, levels == 1 ? "" : "s",
+                    onHow == null ? "" : String.format(Locale.ROOT, ", on from its start %.0f s (%s)", onS, onHow),
+                    breakS > 0 ? String.format(Locale.ROOT, ", %.0f s of breaking on the way down not priced", breakS) : "");
         }
+    }
+
+    /**
+     * The fork's stored routes ({@code IPricedPath.routeList} lines: "to GOAL from X Y Z, N cells, T ticks, ...") that start
+     * within {@code reach} blocks of {@code from} and whose goal text names {@code to}'s cell: the cheapest one's ticks; NaN: none.
+     */
+    public static double routeTicks(List<String> lines, Cell from, int[] to, int reach) {
+        double best = Double.NaN;
+        if (lines == null || from == null || to == null) return best;
+        java.util.regex.Pattern pat = java.util.regex.Pattern.compile("^to (.*) from (-?\\d+) (-?\\d+) (-?\\d+), \\d+ cells, (\\d+) ticks");
+        for (String l : lines) {
+            if (l == null) continue;
+            var m = pat.matcher(l);
+            if (!m.find()) continue;
+            int x = Integer.parseInt(m.group(2)), y = Integer.parseInt(m.group(3)), z = Integer.parseInt(m.group(4));
+            if (Math.abs(x - from.x) > reach || Math.abs(y - from.y) > reach || Math.abs(z - from.z) > reach) continue;
+            if (!namesCell(m.group(1), to)) continue;
+            double t = Double.parseDouble(m.group(5));
+            if (Double.isNaN(best) || t < best) best = t;
+        }
+        return best;
+    }
+
+    /** The goal's text holds the three numbers of {@code c} in a row (GoalGetToBlock{x=1,y=2,z=3}, GoalBlock, ...). */
+    static boolean namesCell(String goal, int[] c) {
+        var m = java.util.regex.Pattern.compile("-?\\d+").matcher(goal);
+        List<Integer> n = new ArrayList<>();
+        while (m.find()) {
+            try { n.add(Integer.parseInt(m.group())); } catch (NumberFormatException e) { n.add(Integer.MIN_VALUE); }
+        }
+        for (int i = 0; i + 2 < n.size(); i++) if (n.get(i) == c[0] && n.get(i + 1) == c[1] && n.get(i + 2) == c[2]) return true;
+        return false;
     }
 
     /** One goal of the walk back: the cell, the segment it ends ({@code from} -> {@code to} of the trail's way down). */
@@ -67,6 +133,8 @@ public final class Trail {
     private Cell segFrom, last;
     private long segTick = -1, lastTick = -1;
     private boolean segFork;
+    /** Break ticks (the game's break stage seen on a tick) since the game started, and their count at segTick / lastTick. */
+    private long brk, segBrk, lastBrk;
     private String broken;
     private boolean dirty;
     /** The probe's counts since the game started: segments recorded, trail chosen, segments walked, breaks. */
@@ -87,13 +155,16 @@ public final class Trail {
     /** A walk segment's fork route: the fork saved a route while this segment was walked (a walk Baritone ran to its goal). */
     public void forkSaved() { segFork = true; }
 
+    /** One game tick spent breaking a block (the break stage the step monitor sees): kept apart from the walked seconds. */
+    public void breakTick() { brk++; }
+
     /**
      * One on-ground feet cell at game tick {@code tick}; {@code out}: the bot is on the surface (the one below-surface reader).
      * Returns a line to log (opened, closed, cut, a one-way segment), null: nothing to say.
      */
     public String offer(Cell f, long tick, boolean out, int jumpBlocks) {
         if (state == State.NOT_LOADED || f == null) return null;
-        if (segTick < 0) segTick = tick;                    // loaded from a file: the tail's clock starts now
+        if (segTick < 0) { segTick = tick; segBrk = brk; }  // loaded from a file: the tail's clock starts now
         String said = null;
         if (last != null) {
             double d = Math.sqrt(sq(f.x - last.x) + sq(f.y - last.y) + sq(f.z - last.z));
@@ -107,6 +178,7 @@ public final class Trail {
             segTick = tick;
             last = f;
             lastTick = tick;
+            segBrk = lastBrk = brk;
             return said != null ? said : r;
         }
         if (state == State.CLOSED) {
@@ -117,22 +189,28 @@ public final class Trail {
             said = "trail: opened under ground, the way down starts at " + start.text();
         }
         Cell p = last;
-        long pt = lastTick;
+        long pt = lastTick, pb = lastBrk;
         last = f;
         lastTick = tick;
+        lastBrk = brk;
         if (p == null || p.equals(f)) return said;
         boolean oneWay = f.y <= p.y - 2 || (f.y == p.y - 1 && f.x == p.x && f.z == p.z);
         if (oneWay) {
-            if (!p.equals(segFrom)) addSeg(new Seg(segFrom, p, (pt - segTick) / (double) GameTimes.TPS, 0, List.of(), segFork));
+            if (!p.equals(segFrom)) {
+                long b = Math.max(0, pb - segBrk);
+                addSeg(new Seg(segFrom, p, Math.max(0, pt - segTick - b) / (double) GameTimes.TPS, 0, List.of(), segFork, b / (double) GameTimes.TPS));
+            }
             Seg tail = segs.isEmpty() ? null : segs.get(segs.size() - 1);
-            double s = Math.max(0, tick - pt) / (double) GameTimes.TPS;
+            long b = Math.max(0, brk - pb);
+            double s = Math.max(0, tick - pt - b) / (double) GameTimes.TPS, bs = b / (double) GameTimes.TPS;
             if (tail != null && tail.oneWay() && tail.to().equals(p)) {
                 List<Cell> cells = new ArrayList<>(tail.cells());
                 cells.add(f);
-                segs.set(segs.size() - 1, new Seg(tail.from(), f, tail.walkedS() + s, tail.drop() + p.y - f.y, cells, false));
-            } else addSeg(new Seg(p, f, s, p.y - f.y, List.of(p, f), false));
+                segs.set(segs.size() - 1, new Seg(tail.from(), f, tail.walkedS() + s, tail.drop() + p.y - f.y, cells, false, tail.breakS() + bs));
+            } else addSeg(new Seg(p, f, s, p.y - f.y, List.of(p, f), false, bs));
             segFrom = f;
             segTick = tick;
+            segBrk = brk;
             segFork = false;
             dirty = true;
             return said;
@@ -145,6 +223,7 @@ public final class Trail {
                 segs.subList(k, segs.size()).clear();
                 segFrom = s;
                 segTick = tick;
+                segBrk = brk;
                 segFork = false;
                 dirty = true;
                 return "trail: back by " + s.text() + ", " + n + " segment" + (n == 1 ? "" : "s") + " cut (" + segs.size() + " kept)";
@@ -189,13 +268,16 @@ public final class Trail {
     public Price price(Climb climb, long tick) {
         if (state != State.OPEN || start == null) return null;
         if (broken != null) return new Price(Double.NaN, Double.NaN, Double.NaN, segs.size(), 0, broken);
-        double walkedS = segTick < 0 ? 0 : Math.max(0, tick - segTick) / (double) GameTimes.TPS;
+        long tb = Math.max(0, brk - segBrk);
+        double walkedS = segTick < 0 ? 0 : Math.max(0, tick - segTick - tb) / (double) GameTimes.TPS;
+        double breakS = segTick < 0 ? 0 : tb / (double) GameTimes.TPS;
         int levels = 0;
-        for (Seg s : segs) { walkedS += s.walkedS(); levels += s.drop(); }
-        double lv = climb == null ? Double.NaN : climb.levelS();
-        if (levels > 0 && Double.isNaN(lv)) return new Price(Double.NaN, walkedS, Double.NaN, segs.size(), levels, "the climb work is not known (no Baritone price for a level up)");
+        for (Seg s : segs) { walkedS += s.walkedS(); breakS += s.breakS(); levels += s.drop(); }
+        double lv = climb == null ? Double.NaN : climb.levelS(levels);
+        if (levels > 0 && Double.isNaN(lv))
+            return new Price(Double.NaN, walkedS, Double.NaN, segs.size(), levels, climb == null ? "the climb work is not known (no Baritone price for a level up)" : climb.noneWhy(levels), 0, null, breakS);
         double climbS = levels == 0 ? 0 : levels * lv;
-        return new Price(walkedS + climbS, walkedS, climbS, segs.size(), levels, null);
+        return new Price(walkedS + climbS, walkedS, climbS, segs.size(), levels, null, 0, null, breakS);
     }
 
     /**
@@ -259,6 +341,7 @@ public final class Trail {
             j.addProperty("s", s.walkedS());
             j.addProperty("drop", s.drop());
             j.addProperty("fork", s.forkRoute());
+            if (s.breakS() > 0) j.addProperty("breakS", s.breakS());
             if (!s.cells().isEmpty()) {
                 JsonArray c = new JsonArray();
                 for (Cell x : s.cells()) c.add(cell(x));
@@ -277,6 +360,7 @@ public final class Trail {
         start = segFrom = last = null;
         segTick = -1;
         lastTick = -1;
+        segBrk = lastBrk = brk;
         state = State.CLOSED;
         dirty = false;
         if (o == null) return;
@@ -288,7 +372,8 @@ public final class Trail {
             JsonObject j = e.getAsJsonObject();
             List<Cell> c = new ArrayList<>();
             if (j.has("cells")) for (JsonElement x : j.getAsJsonArray("cells")) c.add(cell(x));
-            segs.add(new Seg(cell(j.get("from")), cell(j.get("to")), j.get("s").getAsDouble(), j.get("drop").getAsInt(), c, j.get("fork").getAsBoolean()));
+            segs.add(new Seg(cell(j.get("from")), cell(j.get("to")), j.get("s").getAsDouble(), j.get("drop").getAsInt(), c, j.get("fork").getAsBoolean(),
+                    j.has("breakS") ? j.get("breakS").getAsDouble() : 0));
         }
         if (o.get("open").getAsBoolean() && start != null) state = State.OPEN;
     }
