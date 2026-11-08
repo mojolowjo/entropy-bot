@@ -1098,11 +1098,28 @@ public final class AaRuntime implements JobPort {
             ways.add(new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(k.x(), k.y(), k.z(), Math.sqrt(Jobs.distSq(me, new int[]{k.x(), k.y(), k.z()})),
                     ore, fam, expected, explored, k.size(), unseen, leftKeys(sg.caveLeft(dim, k.x(), k.y(), k.z(), fam)), lp.kept())
                     .withOut(out).withInside(inside).withBasis(pr.why()).withLipOut(lp.out())
-                    .withPassages(sg.cavePassageList(dim, k.x(), k.y(), k.z())));   // D15 pass two: the walk inside is priced on the record's passages (held while a caving step runs)
+                    .withPassages(sg.cavePassageList(dim, k.x(), k.y(), k.z()))
+                    .withDensity(caveDensity(gen, pr, ex, f, fam)));   // job-price: the passages' ore by the record's game data; D15 pass two: the walk inside is priced on the record's passages (held while a caving step runs)
         }
         if (ways.isEmpty()) return null;
         ways.sort(java.util.Comparator.comparing((io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay w) -> !w.inside()));   // stable: the inside cave first, then nearest
         return ways.get(0).withMore(ways.subList(1, ways.size()));
+    }
+
+    /**
+     * Job-price (run JAO): the order's ore per unseen cell of one cave - game data when the placement fact and the record's
+     * air-exposed count are known (CaveYield's share per block at a Y x the record's blocks per cell), else the record's
+     * seen rate of the family, else the fallback (CaveWalk.Density#of says which).
+     */
+    private static io.github.mojolowjo.entropybot.cave.CaveWalk.Density caveDensity(io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact gen,
+            io.github.mojolowjo.entropybot.aa.brain.CaveYield.Prior pr, io.github.mojolowjo.entropybot.sense.CaveRecord.Exposure ex,
+            io.github.mojolowjo.entropybot.sense.CaveRecord.Facts f, String fam) {
+        java.util.function.IntToDoubleFunction perBlock = pr.known() && gen != null
+                ? y -> gen.curve(y, true) / io.github.mojolowjo.entropybot.aa.brain.CaveYield.LAYER_BLOCKS : null;
+        int[] v = f == null ? null : f.ores().get(fam);
+        int seen = v == null ? 0 : v[0] + v[1];
+        long seenCells = f == null ? 0 : Math.max(0, f.cellCount() - f.unseen());
+        return io.github.mojolowjo.entropybot.cave.CaveWalk.Density.of(perBlock, ex == null ? 0 : ex.blocks(), f == null ? 0 : f.cellCount(), seen, seenCells);
     }
 
     /** J6b run EF (3): the cave's entry first, then up to 3 other openings of its volume (the next lips to try). */

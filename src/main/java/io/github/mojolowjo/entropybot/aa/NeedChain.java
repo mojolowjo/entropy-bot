@@ -120,7 +120,8 @@ public final class NeedChain {
 
     public record CaveWay(int x, int y, int z, double dist, String ore, String family, double expected, double explored,
                           io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys, List<int[]> entries,
-                          List<CaveWay> more, String out, boolean inside, String basis, List<io.github.mojolowjo.entropybot.cave.Passages.Passage> passages, Map<String, String> lipOut) {
+                          List<CaveWay> more, String out, boolean inside, String basis, List<io.github.mojolowjo.entropybot.cave.Passages.Passage> passages, Map<String, String> lipOut,
+                          io.github.mojolowjo.entropybot.cave.CaveWalk.Density density) {
         public CaveWay {
             leftKeys = leftKeys == null ? List.of() : List.copyOf(leftKeys);
             entries = entries == null ? List.of() : List.copyOf(entries);
@@ -132,13 +133,13 @@ public final class NeedChain {
         public CaveWay(int x, int y, int z, double dist, String ore, String family, double expected, double explored,
                        io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys, List<int[]> entries,
                        List<CaveWay> more) {
-            this(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, null, false, null, null, Map.of());
+            this(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, null, false, null, null, Map.of(), null);
         }
 
         public CaveWay(int x, int y, int z, double dist, String ore, String family, double expected, double explored,
                        io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys, List<int[]> entries,
                        List<CaveWay> more, String out, boolean inside) {
-            this(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, out, inside, null, null, Map.of());
+            this(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, out, inside, null, null, Map.of(), null);
         }
 
         public CaveWay(int x, int y, int z, double dist, String ore, String family, double expected, double explored,
@@ -161,7 +162,7 @@ public final class NeedChain {
         }
 
         private CaveWay copy(List<int[]> entries, List<CaveWay> more, String out, boolean inside, String basis, List<io.github.mojolowjo.entropybot.cave.Passages.Passage> passages) {
-            return new CaveWay(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, out, inside, basis, passages, lipOut);
+            return new CaveWay(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, out, inside, basis, passages, lipOut, density);
         }
 
         /**
@@ -170,7 +171,12 @@ public final class NeedChain {
          * openings in {@code entries} only. {@code entries} never holds one of these.
          */
         public CaveWay withLipOut(Map<String, String> out) {
-            return new CaveWay(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, this.out, inside, basis, passages, out);
+            return new CaveWay(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, this.out, inside, basis, passages, out, density);
+        }
+
+        /** Job-price: the order's ore per unseen cell (CaveWalk.Density; null: not known, the fallback said). */
+        public CaveWay withDensity(io.github.mojolowjo.entropybot.cave.CaveWalk.Density d) {
+            return new CaveWay(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, out, inside, basis, passages, lipOut, d);
         }
 
         /** J6c: the world-gen estimate's words ({@code basis}: CaveYield.Prior#why; null: none said). */
@@ -6151,7 +6157,8 @@ public final class NeedChain {
      * expected along the open passages: 0, said (the world-gen share still bounds what the cave gives).
      */
     private static Inner passageWalk(CaveWay cw, int toFind) {
-        var fp = io.github.mojolowjo.entropybot.cave.CaveWalk.findSeconds(cw.passages(), toFind, Tuning.get("cave.passageSecPerCell"), Tuning.get("cave.orePerUnseenCell"));
+        var fp = io.github.mojolowjo.entropybot.cave.CaveWalk.findSeconds(cw.passages(), toFind, Tuning.get("cave.passageSecPerCell"),
+                cw.density() != null ? cw.density() : io.github.mojolowjo.entropybot.cave.CaveWalk.Density.notKnown());   // job-price: the order's ore by game data
         if (Double.isNaN(fp.seconds())) return new Inner(0, "0 s (" + fp.line() + ")");
         return new Inner(fp.seconds(), "the passages: " + fp.line());
     }
