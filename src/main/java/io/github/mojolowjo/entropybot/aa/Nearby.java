@@ -64,6 +64,11 @@ public final class Nearby {
         default Boolean seeThrough(int x, int y, int z) { return open(x, y, z); }
         /** job-sight: the reason the sightings store marked the cell covered (Baritone's mine saw none there); null: not marked. */
         default String coveredMark(int x, int y, int z) { return null; }
+        /** jbf-1: the cell holds a fluid (water or lava, a waterlogged block too); null: not loaded. Default: by the block's id. */
+        default Boolean fluidAt(int x, int y, int z) {
+            String b = blockAt(x, y, z);
+            return b == null ? null : b.equals("minecraft:water") || b.equals("minecraft:lava");
+        }
         /** The most logs one chop takes as one tree (Baritone's chopComponentMax); unknown: no cap. */
         default int treeCap() { return Integer.MAX_VALUE; }  // structural: no cap known
         /** station-memory: the stations I placed myself (the ledger), any distance, loaded or not, as {x, y, z} with their block. */
@@ -659,6 +664,9 @@ public final class Nearby {
     /** job-sight: the bucket key of a covered block left out ({@link Source#buried} words). */
     static final String MARKED_OPEN = " marked covered with nothing over it";
 
+    /** jbf-1 (run JBF-T2: stone under the spawn lake, 13 cells of water in its column): a cover column with a fluid in it is no dig. */
+    static final String FLUID_COLUMN = " covered with water or lava in the column over it (the dig hand cannot dig a fluid column)";
+
     /**
      * job-sight (run JAH 00:29: "dig cobblestone seen 5 m" was stone under grass; Baritone's mine takes only blocks it sees,
      * so it ended "none in sight"): the spot's cover fact from the same chunk reads as the exposed rule ({@link Scan#seeThrough}).
@@ -684,6 +692,12 @@ public final class Nearby {
             Boolean a = s.seeThrough(x, y + d + 1, z);
             if (a == null) return sp;                       // the cover is not known (its chunk): priced by estimate
             if (a) break;
+            // jbf-1 (run JBF-T2 10:36-10:50: the lake's bottom stone, 13 cells of water over it, "goto" into the rock 82 times):
+            // a fluid in the column is no cover to dig - the spot is no source, said (rule 7)
+            if (Boolean.TRUE.equals(s.fluidAt(x, y + d + 1, z))) {
+                if (buried != null) buried.merge(sp.block() + FLUID_COLUMN, 1, Integer::sum);
+                return null;
+            }
             if (over == null) over = s.blockAt(x, y + d + 1, z);
             d++;
             // job-lookup (run JAY): a cover deeper than sight.coverMax is no longer left out - the chain prices it as a dig of

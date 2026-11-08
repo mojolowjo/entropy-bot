@@ -135,6 +135,7 @@ final class TuningDefs {
         Tuning.def("pathCost.firstSegmentMaxS", 60, "job-segpick (run JAR 04:09:41: a 55-cell segment of 39677 ticks was walked; a guess: a minute)", "seconds of Baritone ticks a first segment may take and still be walked by the stand; a longer partial path is a guess, not a start, and the stand stands");
         Tuning.def("pathCost.notKnownHoldS", 60, "job-stand2 (run JAS: stands re-asked walks the fork had timed out; a guess: two first-answer waits)", "seconds a walk whose price ask timed out is taken by Baritone's estimate and not asked again");
         Tuning.def("pathCost.notKnownMoveM", 8, "job-stand2 (a guess: a short walk changes the search's start enough to try again)", "blocks the bot moves from where a price ask timed out before that walk is asked again");
+        Tuning.def("pathCost.researchHoldAsks", 2, "jbf-3 (run JBF-T2 10:41-10:50: 133 re-plans flipping dig-down / stand, every walk 're-search waiting' and never landing)", "re-search-wait answers of one walk in a row before it is held by Baritone's estimate like a timed-out ask (pathCost.notKnownHoldS / notKnownMoveM)");
         Tuning.def("pathCost.segmentRetryS", 30, "job-segpick (run JAR 04:09:42: the walked segment's price ask timed out; a guess: one first-answer wait)", "seconds a way whose first-segment walk ended on a no-path landing (an ask timeout among them) is not walked as a segment again");
         Tuning.def("pathCost.queueKeepS", 30, "path-queue 0.39.z58", "seconds a queued walk ask stays in the fork's queue without being asked again; past them it leaves (nobody wants it now; the chain re-prices on every landing, about once a second in run Q, so a wanted ask is asked again well within)");
         Tuning.def("price.walkX", 1.0, "full-path 0.39.z41 (owner: \"I may want to price things myself\")", "TickPrice: multiplier on every walk's seconds from Baritone's path ticks");
@@ -668,6 +669,7 @@ final class TuningDefs {
         Tuning.def("sightings.animalRange", 32, "rm-constants 0.39.u2 (was Sightings.ANIMAL_RANGE)", "the animal range of Sightings");
         Tuning.def("sight.coverMax", 4, "job-sight (run JAH 00:29)", "the deepest cover (blocks over it) priced by its own cover block; deeper is priced as a dig of that many levels of stone (job-lookup: never left out)");
         Tuning.def("sight.maxCovered", 4096, "job-sight", "the most covered marks the sightings store keeps per dimension (oldest go first)");
+        Tuning.def("sight.coverNear", 2, "jbf-1 (run JBF-T2 10:36-10:50: the walk to a covered spot went for the buried cell itself, 82 re-plans)", "blocks within which the walk to a covered spot ends of the top of its column (the first open cell over the cover)");
         Tuning.def("sightings.merge", 16,"rm-constants 0.39.u2 (was Sightings.MERGE)", "the merge of Sightings");
         Tuning.def("sightings.maxCaves", 400, "rm-constants 0.39.u2 (was Sightings.MAX_CAVES)", "the max caves of Sightings");
         Tuning.def("sightings.maxAnimals", 400, "rm-constants 0.39.u2 (was Sightings.MAX_ANIMALS)", "the max animals of Sightings");

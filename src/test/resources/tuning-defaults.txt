@@ -734,6 +734,7 @@ shoreWatch.shoreDy	3.0
 shoreWatch.shoreTries	4.0
 sight.coverMax	4.0
 sight.maxCovered	4096.0
+sight.coverNear	2.0
 sightings.animalRange	32.0
 sightings.confirmMaxMs	30000.0
 sightings.confirmMs	2000.0
@@ -941,6 +942,7 @@ pathCost.firstSegmentMinCells	4.0
 pathCost.firstSegmentMaxS	60.0
 pathCost.notKnownHoldS	60.0
 pathCost.notKnownMoveM	8.0
+pathCost.researchHoldAsks	2.0
 pathCost.segmentRetryS	30.0
 price.walkX	1.0
 price.breakX	1.0

@@ -113,6 +113,44 @@ class SightCoverTest {
         assertEquals("none in sight: " + end, back.coveredWhy("ow", 5, 64, 0));
     }
 
+    /** jbf-1 (run JBF-T2): a covered spot beyond the mine's sight is walked to the TOP of its column, near sight.coverNear, then dug down. */
+    @Test
+    void theWalkToACoveredSpotEndsOnTopOfItsColumn() {
+        Spot deep = new Spot(5, 48, 0, 13, STONE).covered(13, STONE);
+        assertEquals(62, NeedChain.columnTop(deep), "48 + 13 of cover + 1: the first open cell");
+        Chain c = NeedChain.resolve("cobblestone", 3, Z77StoneHereTest.world(word -> List.of(deep)));
+        assertTrue(c.ok(), c.why());
+        Step.Walk walk = null;
+        Step.Dig dig = null;
+        for (Step s : c.steps()) {
+            if (s instanceof Step.Walk w && walk == null) walk = w;
+            if (s instanceof Step.Dig d) dig = d;
+        }
+        assertNotNull(walk, c.steps().toString());
+        assertEquals(62, walk.y(), "never the buried cell: " + walk.text());
+        assertEquals(5, walk.x());
+        assertEquals(NeedChain.coverNear(), walk.near(), walk.text());
+        assertNotNull(dig, c.steps().toString());
+        assertArrayEquals(new int[]{5, 49, 0}, dig.from());
+        assertArrayEquals(new int[]{5, 61, 0}, dig.to());
+    }
+
+    /** jbf-1 (run JBF-T2: stone under the spawn lake): a column with water in it is no source, said in the buried words. */
+    @Test
+    void aWaterColumnIsNoSource() {
+        NearbyExposureTest.World w = new NearbyExposureTest.World().put(5, 48, 0, STONE);
+        for (int y = 49; y <= 61; y++) w.put(5, y, 0, "minecraft:water");
+        w.air(5, 62, 0);
+        Map<String, Integer> buried = new HashMap<>();
+        assertNull(Nearby.withCover(w, new Spot(5, 48, 0, 13, STONE), buried));
+        assertEquals(1, buried.getOrDefault(STONE + Nearby.FLUID_COLUMN, 0), buried.toString());
+        // the same column of dirt is a source with its cover
+        NearbyExposureTest.World d = new NearbyExposureTest.World().put(5, 48, 0, STONE);
+        for (int y = 49; y <= 61; y++) d.put(5, y, 0, DIRT);
+        d.air(5, 62, 0);
+        assertEquals(13, Nearby.withCover(d, new Spot(5, 48, 0, 13, STONE), buried).cover());
+    }
+
     /** The store's mark makes the chunk read's "exposed" a covered spot; a refused dig makes it no source, said. */
     @Test
     void theMarkIsReadByTheLookup() {

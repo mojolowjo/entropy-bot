@@ -28,6 +28,23 @@ class Stand2Test {
         assertNull(h.answer("2,2,2", 110, at, 60, 8, 12.0), "never held: asked as before");
     }
 
+    /** jbf-3 (run JBF-T2 10:41-10:50): the re-search wait twice in a row holds the walk with its own words; another answer starts the count over. */
+    @Test
+    void theResearchWaitTwiceHoldsTheWalkByTheEstimate() {
+        NotKnownHold h = new NotKnownHold(16);
+        assertFalse(h.researchAgain("k", 2), "once: not yet");
+        h.researchEnded("k");
+        assertFalse(h.researchAgain("k", 2), "a landed answer between: the count starts over");
+        assertTrue(h.researchAgain("k", 2), "twice in a row: held");
+        assertFalse(h.researchAgain("k", 0), "0: never");
+        int[] at = {0, 20, 0};
+        h.hold("k", 100, at, NotKnownHold.RESEARCH);
+        PathPrice.Answer a = h.answer("k", 100 + 5 * GameTimes.TPS, at, 60, 8, 12.0);
+        assertEquals(PathPrice.Kind.ESTIMATED, a.kind());
+        assertTrue(a.reason().startsWith("not known (" + NotKnownHold.RESEARCH + " 5 s ago): priced by the estimate until 55 s"), a.reason());
+        assertNull(h.answer("k", 100 + 61 * GameTimes.TPS, at, 60, 8, 12.0), "the hold ends after notKnownHoldS");
+    }
+
     @Test
     void standEndsWhenNothingItWaitsOnComputes() {
         StandWait w = new StandWait();

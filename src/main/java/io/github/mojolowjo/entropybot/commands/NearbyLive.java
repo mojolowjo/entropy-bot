@@ -456,6 +456,12 @@ final class NearbyLive {
                 var st = mc.level.getBlockState(q);
                 return st.getFluidState().isEmpty() && st.getCollisionShape(mc.level, q).isEmpty();
             }
+            // jbf-1: a fluid in the cover column (the block state's fluid: water, lava, a waterlogged block)
+            @Override public Boolean fluidAt(int x, int y, int z) {
+                BlockPos q = new BlockPos(x, y, z);
+                if (!mc.level.isLoaded(q)) return null;
+                return !mc.level.getBlockState(q).getFluidState().isEmpty();
+            }
             // job-sight: the one sightings store's covered mark (Baritone's mine saw none at a spot called exposed)
             @Override public String coveredMark(int x, int y, int z) {
                 var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();

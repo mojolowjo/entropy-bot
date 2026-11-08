@@ -5465,7 +5465,12 @@ public final class NeedChain {
                         : new Step.Collect(((Step.Collect) prev).item(), ((Step.Collect) prev).n() + wanted, ((Step.Collect) prev).at()));
             } else {
                 c.note(() -> "source: known " + shw(blockOf(gives, sp)) + " at " + sp.x() + " " + sp.y() + " " + sp.z() + ", " + Math.round(sp.dist()) + " m" + (sp.count() > 0 ? ", " + sp.count() + " blocks" : ""));
-                Walked wk = walk(c, sp.x(), sp.y(), sp.z(), sp.dist());
+                // jbf-1 (run JBF-T2 10:36-10:50: "goto -77 48 -112 near 10" to a stone cell 13 levels under ground, Baritone
+                // "couldn't get there" 82 times): a covered spot's walk goes to the TOP of its column (the first open cell
+                // over the cover, columnTop), never into the rock; the dig column then goes down from there (digTo)
+                boolean covered = !log && sp.isCovered();
+                int walkY = covered ? columnTop(sp) : sp.y();
+                Walked wk = walk(c, sp.x(), walkY, sp.z(), sp.dist());
                 if (c.fail != null) {                       // 0.39.z41: no price for this walk
                     if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreach(spotKey(word, sp), wk.fail());   // the z33 source fact; z69 fix 1: that spot only
                     if (sp == first) return null;           // the way's own spot: the way cannot be picked
@@ -5483,7 +5488,7 @@ public final class NeedChain {
                 // estimated walk is charged the same: the levels below the free drop, less the known cover, at the stone's break
                 if (wk.kind() == PathPrice.Kind.ESTIMATED) {
                     int[] feet = c.w.where() == null || c.w.where().feet() == null ? null : c.w.where().feet().get();
-                    int lv = feet == null ? 0 : digLevels(feet[1], sp.y(), sp.cover());
+                    int lv = feet == null ? 0 : (covered ? digLevels(feet[1], walkY, 0) : digLevels(feet[1], sp.y(), sp.cover()));   // jbf-1: the walk ends at the column top; coverS charges the cover
                     if (lv > 0) {
                         double down = blockBreakS(c, DIG_DOWN_BLOCK) * lv;
                         c.addS(down);
@@ -5498,7 +5503,12 @@ public final class NeedChain {
                 // the mine's sight of the spot (Step.Collect.MINE_SIGHT, the fork's own reach). A cut keeps no walk (the chop
                 // process finds its tree), a spot in sight neither (chop B2, 2026-10-22, stands for those). Appended, never
                 // inserted (D6's kept nodes replay their steps in the order they came in).
-                if (!log && sp.dist() > Step.Collect.MINE_SIGHT) {
+                if (covered && sp.dist() > Step.Collect.MINE_SIGHT) {
+                    // jbf-1: the covered spot's walk ends on top of its column, within sight.coverNear of it (the dig hand digs down from there)
+                    c.steps.add(new Step.Walk(sp.x(), walkY, sp.z(), coverNear()));
+                    c.note(() -> "walk to the top of the column first (" + sp.x() + " " + walkY + " " + sp.z() + ", the first open cell over the cover): "
+                            + Math.round(sp.dist()) + " m is beyond the mine's sight (" + Step.Collect.MINE_SIGHT + ")");
+                } else if (!log && sp.dist() > Step.Collect.MINE_SIGHT) {
                     c.steps.add(new Step.Walk(sp.x(), sp.y(), sp.z(), Step.Collect.MINE_SIGHT));
                     c.note(() -> "walk to the spot first: " + Math.round(sp.dist()) + " m is beyond the mine's sight (" + Step.Collect.MINE_SIGHT + ")");
                 }
@@ -5607,6 +5617,12 @@ public final class NeedChain {
 
     /** job-est: the way probe is on (Tuning debug.wayProbe). */
     static boolean wayProbe() { return Tuning.get("debug.wayProbe") > 0; }
+
+    /** jbf-1: the Y of the first open cell over a covered spot's cover (the walk's target; pure). */
+    static int columnTop(Spot sp) { return sp.y() + Math.max(0, sp.cover()) + 1; }
+
+    /** jbf-1: how near the column top the walk to a covered spot ends (Tuning sight.coverNear). */
+    static int coverNear() { return Tuning.i("sight.coverNear"); }
 
     /** job-sight: the step that digs the cover column over a covered spot (Baritone's builder, the dig hand). */
     static Step.Dig digTo(Spot sp) {

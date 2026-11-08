@@ -189,7 +189,12 @@ public final class StandWait {
      * not been registered yet), so the planner gave no stand of its own. Pure.
      */
     public static boolean stillComputing(String why) {
-        return why != null && why.contains(io.github.mojolowjo.entropybot.aa.PathPrice.NOT_KNOWN + " yet (computing");
+        if (why == null) return false;
+        // jbf-2 (run JBF-T2 10:29:11: "aa want oak_log 4" given 4 s after the world was up; the planner's answer landed with
+        // "the mining data is not loaded yet ... priced again then, rule 15" and the stand's end STOPPED the order): the game
+        // data still loading is the same kind of answer - not known yet (rule 15), no verdict; the stand stands on
+        return why.contains(io.github.mojolowjo.entropybot.aa.PathPrice.NOT_KNOWN + " yet (computing")
+                || why.contains(io.github.mojolowjo.entropybot.aa.NeedChain.MINING_WAIT);
     }
 
     private static String secs(long ticks) { return String.format(java.util.Locale.ROOT, "%.1f", ticks / (double) GameTimes.TPS); }

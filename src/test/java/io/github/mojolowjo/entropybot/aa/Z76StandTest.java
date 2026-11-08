@@ -203,4 +203,10 @@ class Z76StandTest {
         assertFalse(io.github.mojolowjo.entropybot.aa.moves.StandWait.stillComputing("unreachable: no path"));
         assertFalse(io.github.mojolowjo.entropybot.aa.moves.StandWait.stillComputing(null));
     }
+
+    /** jbf-2 (run JBF-T2 10:29:11): the mining data still loading is "not known yet" too - the stand stands on, the order is not stopped. */
+    @Test
+    void theMiningDataStillLoadingKeepsTheStandStanding() {
+        assertTrue(io.github.mojolowjo.entropybot.aa.moves.StandWait.stillComputing("oak_log: " + NeedChain.MINING_WAIT + " | dropped: tree 57 m: " + NeedChain.MINING_WAIT));
+    }
 }
