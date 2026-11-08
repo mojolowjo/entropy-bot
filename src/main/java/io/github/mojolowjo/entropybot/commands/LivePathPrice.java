@@ -399,7 +399,67 @@ public final class LivePathPrice implements PathPrice {
         }
         lastLanded = "walk to " + key.replace(',', ' ') + ": " + (out.walk() != null ? Math.round(out.walk().seconds()) + " s, complete" : out.kind() + " (" + out.reason() + ")");
         LOG.debug("[entropybot] path cost: {}", lastLanded);
+        if (out.kind() == Kind.NONE || out.kind() == Kind.UNREACHABLE) noPath.put(key, out.reason() == null ? "no path" : out.reason());
+        else noPath.remove(key);
         landed++;
+    }
+
+    // ---- job-segmod: the stand walks its cheapest way's first segment while the price computes (rule 22) ----
+
+    /** job-segmod: per goal key, the reason of its last landed "no path" answer (game thread; removed on any other landing). */
+    private final Map<String, String> noPath = new HashMap<>();
+
+    /** job-segmod: the walked way's landed no-path reason, null while none landed. Game thread. */
+    public String noPathOf(String key) { return key == null ? null : noPath.get(key); }
+
+    /** job-segmod: the cheapest computing way's first segment as read: its ask key, its words, its cells, the search still running. */
+    public record SegmentPick(String key, String way, int cells, boolean running) {}
+
+    /**
+     * job-segmod: of the walks still computing, the cheapest by Baritone's estimate from the feet (the chain's chosen way
+     * while no price is known) and its fork first segment ({@code IPricedPath.firstSegment}); null when none computes, no
+     * segment yet (rule 15: not known), or an older fork (said once). Game thread.
+     */
+    public SegmentPick cheapestFirstSegment() {
+        if (!PathPrice.pricedPathOn() || pending.isEmpty()) return null;
+        IBaritone b = Jobs.baritone();
+        if (b == null) return null;
+        String best = null;
+        double bestS = Double.POSITIVE_INFINITY;
+        for (var e : pending.entrySet()) {
+            if (e.getValue().future().isDone()) continue;
+            BlockPos p = posOf(e.getKey());
+            double s = estimate(p.getX(), p.getY(), p.getZ());
+            if (Double.isNaN(s)) s = Double.MAX_VALUE;               // not known: ranked last, still a candidate
+            if (best == null || s < bestS) { best = e.getKey(); bestS = s; }
+        }
+        if (best == null) return null;
+        baritone.api.pathing.calc.IPricedPath.FirstSegment fs;
+        try {
+            fs = b.getPricedPath().firstSegment(goalOf(best));
+        } catch (LinkageError e) {
+            none("this Baritone has no IPricedPath.firstSegment (an older fork? install the entropy fork job-seg): the stand stands while prices compute; " + e);
+            return null;
+        }
+        if (fs == null) return null;
+        return new SegmentPick(best, "the walk to " + best.replace(',', ' '), fs.cells().size(),
+                fs.state() == baritone.api.pathing.calc.IPricedPath.SearchState.RUNNING);
+    }
+
+    /** job-segmod: walk the way's first segment now (IPricedPath.walkFirstSegment); the fork's queue told it is the running walk. Game thread. */
+    public boolean walkFirstSegment(String key) {
+        IBaritone b = Jobs.baritone();
+        if (b == null || key == null) return false;
+        noPath.remove(key);
+        boolean ok;
+        try {
+            ok = b.getPricedPath().walkFirstSegment(goalOf(key));
+        } catch (LinkageError e) {
+            none("this Baritone has no IPricedPath.walkFirstSegment (an older fork? install the entropy fork job-seg): " + e);
+            return false;
+        }
+        if (ok) running(posOf(key), key.startsWith(INTO));
+        return ok;
     }
 
     /**

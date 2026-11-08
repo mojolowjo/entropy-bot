@@ -595,6 +595,7 @@ public final class StepHands implements Steps.Hands {
         carFailsAt = io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed();
         dataWait.reset();
         stand.end();
+        segmentKey = null;                      // job-segmod
     }
 
     // ---- 0.39.z76 send-back 3 (rule 22): the standing step - the bot stands while its walks' paths compute ----
@@ -626,8 +627,41 @@ public final class StepHands implements Steps.Hands {
      * amended, PathPrice.Kind.ESTIMATED).
      */
     private Car.Status standStatus(Step.AwaitPaths a) {
+        segmentStep(a);
         return stand.status(a, gameTime(), LivePathPrice.INSTANCE.firstAnswersPending(), line -> LOG.info("[entropybot] steps: {}", line));
     }
+    /** job-segmod: the ask key of the way whose first segment the stand walks (null: standing still). */
+    private String segmentKey;
+
+    /**
+     * job-segmod (rule 22: a first segment is a partial price; runs JAN / JAO: 27 / 46 "still standing" lines): while it
+     * stands, the cheapest way's running first segment of pathCost.firstSegmentMinCells cells or more is walked
+     * (IPricedPath.walkFirstSegment), the price still computing in the chain; the landing re-prices as always (Steps).
+     * A landed "no path" for that way ends the walk with the fork's reason (Baritone cancelled) and the stand stands again.
+     */
+    private void segmentStep(Step.AwaitPaths a) {
+        if (!stand.standing()) return;
+        if (stand.walkingWay() != null) {
+            String why = LivePathPrice.INSTANCE.noPathOf(segmentKey);
+            if (why == null) return;                     // still computing, or landed priced: Steps re-prices on the landing
+            String l = stand.abandon(why);
+            IBaritone b = Jobs.baritone();
+            if (b != null) Jobs.cancel(b);
+            segmentKey = null;
+            LOG.info("[entropybot] steps: {}: {}", a.text(), l);
+            return;
+        }
+        boolean on = io.github.mojolowjo.entropybot.aa.moves.StandWait.segmentWalkOn();
+        if (!on) return;
+        LivePathPrice.SegmentPick p = LivePathPrice.INSTANCE.cheapestFirstSegment();
+        if (p == null || !io.github.mojolowjo.entropybot.aa.moves.StandWait.walksSegment(on, p.running(), p.cells(),
+                io.github.mojolowjo.entropybot.aa.moves.StandWait.segmentMinCells())) return;
+        if (!LivePathPrice.INSTANCE.walkFirstSegment(p.key())) return;
+        segmentKey = p.key();
+        stand.walking(p.way());
+        LOG.info("[entropybot] steps: {}: {}", a.text(), io.github.mojolowjo.entropybot.aa.moves.StandWait.segmentWords(p.cells(), p.way()));
+    }
+
     /** one-planner: the chain for an Obtain step, on the facts as it starts (AaRuntime.obtainSteps: NeedChain). */
     @Override public Steps.Routine routine(Step.Obtain o) {
         if (c.aaRuntime == null) return new Steps.Routine(null, "no chain (aa not loaded)");

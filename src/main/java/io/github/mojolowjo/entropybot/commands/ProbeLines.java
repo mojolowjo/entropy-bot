@@ -267,9 +267,28 @@ public final class ProbeLines {
         }
     }
 
+    /**
+     * job-segmod: the fork's first-segment counts read by name like {@link #routeCounts} (IPricedPath.segmentCounts):
+     * {offered, walked, replaced, abandoned} since the game started; null when absent.
+     */
+    public static long[] segmentCounts(Object pricedPath) {
+        try {
+            Object o = pricedPath.getClass().getMethod("segmentCounts").invoke(pricedPath);
+            return o instanceof long[] a && a.length >= 4 && a[0] >= 0 ? a : null;
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
+            return null;
+        }
+    }
+
     /** The load line's other facts, as counts since the last line where a "+" is shown. */
     public record LoadFacts(int fps, String window, long pricedStarted, long pricedLanded, int pricedInFlight,
-                            long[] segs, long calcs, long calcFails, long[] recorder, long heapUsedMb, long heapMaxMb, long gcCount, long gcMs, long[] joins, long[] routes, long[] cpu) {
+                            long[] segs, long calcs, long calcFails, long[] recorder, long heapUsedMb, long heapMaxMb, long gcCount, long gcMs, long[] joins, long[] routes, long[] cpu,
+                            long[] firstSegs) {
+        public LoadFacts(int fps, String window, long pricedStarted, long pricedLanded, int pricedInFlight,
+                         long[] segs, long calcs, long calcFails, long[] recorder, long heapUsedMb, long heapMaxMb, long gcCount, long gcMs, long[] joins, long[] routes, long[] cpu) {
+            this(fps, window, pricedStarted, pricedLanded, pricedInFlight, segs, calcs, calcFails, recorder, heapUsedMb, heapMaxMb, gcCount, gcMs, joins, routes, cpu, null);
+        }
+
         public LoadFacts(int fps, String window, long pricedStarted, long pricedLanded, int pricedInFlight,
                          long[] segs, long calcs, long calcFails, long[] recorder, long heapUsedMb, long heapMaxMb, long gcCount, long gcMs, long[] joins, long[] routes) {
             this(fps, window, pricedStarted, pricedLanded, pricedInFlight, segs, calcs, calcFails, recorder, heapUsedMb, heapMaxMb, gcCount, gcMs, joins, routes, null);
@@ -303,6 +322,10 @@ public final class ProbeLines {
                 fork += "; cpu: asks timed out +" + cpu[0] + ", shared +" + cpu[1] + ", joined +" + cpu[2] + "; fluid cache hits +" + cpu[3]
                         + " fills +" + cpu[4] + "; advisor hits +" + cpu[5] + " of +" + cpu[6] + " asks";
             else if (cpu != null) fork += "; cpu counts not readable in this fork jar";    // rule 7: said, never left out
+            // job-segmod (IPricedPath.segmentCounts): {offered, walked, replaced, abandoned}
+            if (firstSegs != null && firstSegs.length >= 4 && firstSegs[0] >= 0)
+                fork += "; segments offered +" + firstSegs[0] + " walked +" + firstSegs[1] + " replaced +" + firstSegs[2] + " abandoned +" + firstSegs[3];
+            else if (firstSegs != null) fork += "; segment counts not readable in this fork jar";   // rule 7: said, never left out
             String rec = recorder == null ? "recorder off" : "recorder queue " + recorder[0] + ", lines written +" + recorder[1] + String.format(Locale.ROOT, ", disk %.1f MB", recorder[2] / 1048576.0);
             return "t=" + tick + " | fps " + fps + " | " + window
                     + " | priced paths started +" + pricedStarted + " landed +" + pricedLanded + " in flight " + pricedInFlight + "; " + fork
