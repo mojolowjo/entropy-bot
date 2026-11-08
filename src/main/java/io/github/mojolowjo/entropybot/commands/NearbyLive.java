@@ -53,7 +53,9 @@ final class NearbyLive {
         logAt = now;
         logMe = me;
         boolean[] fell = {false};
+        long t0 = LAPS.now();
         logSpot = Nearby.log(scan(), me, () -> { fell[0] = true; return fallback == null ? null : fallback.get(); });
+        if (t0 != 0) LAPS.nearby("log", LAPS.now() - t0);         // job-tick: the tree log lookup
         lastFrom = logSpot == null ? "none" : fell[0] ? "sightings" : "baritone";
         return logSpot;
     }
@@ -194,7 +196,9 @@ final class NearbyLive {
         long data = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.version();
         Known k = stations.get(kind);
         if (k != null && k.data() == data && now - k.at() < Tuning.l("nearby.cacheMs") && close(me, k.me())) return k.fact();
+        long t0 = LAPS.now();
         StationFact f = Nearby.stationFact(scan(), me, blocks);
+        if (t0 != 0) LAPS.nearby("station", LAPS.now() - t0);      // job-tick: a station lookup (its scans also counted in "scans")
         if (f instanceof StationFact.Known kn) stations.put(kind, new Known(now, me, data, kn));
         else stations.remove(kind);
         return f;
@@ -212,7 +216,10 @@ final class NearbyLive {
         java.util.Set<String> ids = containerIds();
         StationBlocks.Answer blocks = ids.isEmpty() ? new StationBlocks.Answer.None("the game tags no chest or barrel the item data calls a container")
                 : new StationBlocks.Answer.Of(ids);
-        return Nearby.stationFact(scan(), me, blocks);
+        long t0 = LAPS.now();
+        StationFact f = Nearby.stationFact(scan(), me, blocks);
+        if (t0 != 0) LAPS.nearby("containers", LAPS.now() - t0);   // job-tick: the deposit lookup (not cached)
+        return f;
     }
 
     /** The container blocks of the deposit fact: the game's chest and barrel tags that the item data calls a container. */

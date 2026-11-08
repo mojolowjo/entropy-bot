@@ -57,7 +57,8 @@ splits into arms of `cave.passageForkLayers` layers or more is a fork, shorter a
 far end, length, width, unseen cells and ore faces (`Sightings.cavePassages`). Its price is seconds to its far end per ore
 expected (`CaveWalk.passagePrice`: `cave.passageSecPerCell` and a `CaveWalk.Density`, the order's ore per unseen cell at
 the passage's mean Y: game data (`AaRuntime.caveDensity`: the placements' share per air-exposed block at that Y x the
-record's air-exposed blocks per cell), else the record's seen rate of the family, else `cave.orePerCellNotKnown`, said in the
+record's air-exposed blocks per cell; kept per record in `AaRuntime.DENSITIES`, a `CaveWalk.Density.Cache` that samples the
+curve once and returns the same object until the record's counts or placement fact change, job-tick run JAU), else the record's seen rate of the family, else `cave.orePerCellNotKnown`, said in the
 line; job-price, run JAO; the caving step's own pick uses the seen rate or the fallback; job-freeze, run JAP: a `Density`
 is a value, the curve sampled per Y over `Density.MIN_Y..MAX_Y` and rounded to `Density.PRECISION`, so the planner's fact
 check sees two equal caves as equal; the planner itself takes a result after `planner.dropsBeforeTake` drops in a row for

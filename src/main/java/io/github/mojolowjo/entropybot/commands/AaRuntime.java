@@ -1099,7 +1099,7 @@ public final class AaRuntime implements JobPort {
                     ore, fam, expected, explored, k.size(), unseen, leftKeys(sg.caveLeft(dim, k.x(), k.y(), k.z(), fam)), lp.kept())
                     .withOut(out).withInside(inside).withBasis(pr.why()).withLipOut(lp.out())
                     .withPassages(sg.cavePassageList(dim, k.x(), k.y(), k.z()))
-                    .withDensity(caveDensity(gen, pr, ex, f, fam)));   // job-price: the passages' ore by the record's game data; D15 pass two: the walk inside is priced on the record's passages (held while a caving step runs)
+                    .withDensity(caveDensity(List.of(dim, k.x(), k.y(), k.z(), fam), gen, pr, ex, f, fam)));   // job-price: the passages' ore by the record's game data; D15 pass two: the walk inside is priced on the record's passages (held while a caving step runs)
         }
         if (ways.isEmpty()) return null;
         ways.sort(java.util.Comparator.comparing((io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay w) -> !w.inside()));   // stable: the inside cave first, then nearest
@@ -1111,7 +1111,10 @@ public final class AaRuntime implements JobPort {
      * air-exposed count are known (CaveYield's share per block at a Y x the record's blocks per cell), else the record's
      * seen rate of the family, else the fallback (CaveWalk.Density#of says which).
      */
-    private static io.github.mojolowjo.entropybot.cave.CaveWalk.Density caveDensity(io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact gen,
+    /** job-tick: the per-record Density, sampled once and kept until the record's counts or placement fact change. */
+    static final io.github.mojolowjo.entropybot.cave.CaveWalk.Density.Cache DENSITIES = new io.github.mojolowjo.entropybot.cave.CaveWalk.Density.Cache();
+
+    private static io.github.mojolowjo.entropybot.cave.CaveWalk.Density caveDensity(Object record, io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact gen,
             io.github.mojolowjo.entropybot.aa.brain.CaveYield.Prior pr, io.github.mojolowjo.entropybot.sense.CaveRecord.Exposure ex,
             io.github.mojolowjo.entropybot.sense.CaveRecord.Facts f, String fam) {
         java.util.function.IntToDoubleFunction perBlock = pr.known() && gen != null
@@ -1119,7 +1122,7 @@ public final class AaRuntime implements JobPort {
         int[] v = f == null ? null : f.ores().get(fam);
         int seen = v == null ? 0 : v[0] + v[1];
         long seenCells = f == null ? 0 : Math.max(0, f.cellCount() - f.unseen());
-        return io.github.mojolowjo.entropybot.cave.CaveWalk.Density.of(perBlock, ex == null ? 0 : ex.blocks(), f == null ? 0 : f.cellCount(), seen, seenCells);
+        return DENSITIES.get(record, gen, perBlock, ex == null ? 0 : ex.blocks(), f == null ? 0 : f.cellCount(), seen, seenCells);
     }
 
     /** J6b run EF (3): the cave's entry first, then up to 3 other openings of its volume (the next lips to try). */
@@ -3504,6 +3507,7 @@ public final class AaRuntime implements JobPort {
             loadStats();
             loadPersonality();
         }
+        io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.lap("brainFacts.load");      // job-tick (run JAU t=427: brainFacts 280 ms): the tuning/stats files' share
         // review: the bag set at most every 10 s (the tech tree's caches are per bag; mining changes it all the time)
         if (now - haveAt >= Tuning.i("aaRuntime.haveEveryMs")) {
             haveAt = now;
@@ -3554,7 +3558,9 @@ public final class AaRuntime implements JobPort {
                 if (treeError == null) LOG.warn("[entropybot] aa: tech tree: {}", e.toString());
                 treeError = e.toString();
             }
+            io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.lap("brainFacts.recipes");      // job-tick: the tech tree + item worth rebuild (once per recipe set)
             loadMiningTiers();
+            io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.lap("brainFacts.tiers");
         }
         Path f = statsFile();
         if (f != null && now - statsSavedAt >= Tuning.i("aaRuntime.statsSaveMs") && tree.brain.stats.takeDirty()) {
