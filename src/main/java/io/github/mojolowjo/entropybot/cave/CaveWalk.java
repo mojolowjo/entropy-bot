@@ -12,7 +12,7 @@ import java.util.Locale;
  * <ol>
  * <li>the need met (the ore blocks mined) - ends, NEED_MET;</li>
  * <li>the step's minutes ({@code cave.exploreMinutes} at most, the cave way's cap) - ends, MINUTES;</li>
- * <li>a seen ore of the family left in reach of the eyes - mined by the vein (seen ore only, rule 17), its goto dropped
+ * <li>a seen ore of the family left in reach of the eyes, or (pass three) within the mine's sight - mined by the vein (seen ore only, rule 17), its goto dropped
  * or not (J6d, run EV);</li>
  * <li>a seen ore of the family left farther in - walked to;</li>
  * <li>D15: the open passage ({@link Passages}: not all seen, or its end past the flood's cap) of the lowest price -
@@ -79,8 +79,11 @@ public final class CaveWalk {
      * each: cave.passageSecPerCell) per ore expected along it (the ore faces seen on its walls, plus its unseen cells times
      * {@code orePerUnseen}: cave.orePerUnseenCell). Nothing expected: infinite (not offered). Pure.
      */
-    public static double passagePrice(Passages.Passage p, double secPerCell, double orePerUnseen) {
-        double expected = p.oreFaces() + p.unseen() * orePerUnseen;
+    public static double passagePrice(Passages.Passage p, double secPerCell, double orePerUnseen) { return passagePrice(p, secPerCell, orePerUnseen, 0); }
+
+    /** D15 pass three: as above, a CAPPED passage also expecting ore in {@code pastCap} cells past the flood (its share). Pure. */
+    public static double passagePrice(Passages.Passage p, double secPerCell, double orePerUnseen, double pastCap) {
+        double expected = p.oreFaces() + (p.unseen() + Math.max(0, pastCap)) * orePerUnseen;
         if (!(expected > 0)) return Double.POSITIVE_INFINITY;
         return (p.fromFeet() + p.length()) * secPerCell / expected;
     }
@@ -204,19 +207,64 @@ public final class CaveWalk {
      */
     public static Next next(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<Passages.Passage> passages,
                             List<int[]> left, int[] feet, double reach, int[] mouth, java.util.Set<Long> dropped) {
+        return next(mined, need, minutesIn, capMinutes, facts, passages, left, feet, reach, mouth, dropped, false, java.util.Set.of());
+    }
+
+    /**
+     * D15 pass three: the seen ore of the family to mine now - the nearest within the eyes' reach, or within {@code sight}
+     * blocks of the feet (Step.Collect.MINE_SIGHT, the fork's mine reach: mineWith walks to it); null: none. The walk to a
+     * passage pauses for it (run JAK: one ore seen, none mined). Pure.
+     */
+    public static int[] oreToMine(List<int[]> left, int[] feet, double sight) {
+        int[] best = null;
+        long bd = Long.MAX_VALUE;
+        for (int[] o : left) {
+            long d = d2(o, feet);
+            if (!ExploreRules.withinReach(feet, o) && d > sight * sight) continue;
+            if (d < bd) { bd = d; best = o; }
+        }
+        return best;
+    }
+
+    /**
+     * D15 pass three (run JAK): the cave's unseen cells the flood from the feet did not hold (the record's unseen less the
+     * passages' own); facts null: 0. Pure.
+     */
+    public static int beyondFlood(CaveRecord.Facts facts, List<Passages.Passage> passages) {
+        if (facts == null) return 0;
+        long in = 0;
+        for (Passages.Passage p : passages) in += p.unseen();
+        return (int) Math.max(0, facts.unseen() - in);
+    }
+
+    /**
+     * D15 pass three: a CAPPED passage the step has flooded again from (its end within {@link CaveRecord#SEE_STEPS} of a
+     * stand in {@code reflooded}) with no unseen cell of its own: spent, not offered again (else two capped ends ping-pong).
+     */
+    public static boolean spent(Passages.Passage p, java.util.Set<Long> reflooded) {
+        if (p.endKind() != Passages.EndKind.CAPPED || p.unseen() > 0 || reflooded.isEmpty()) return false;
+        long r2 = (long) CaveRecord.SEE_STEPS * CaveRecord.SEE_STEPS;
+        for (long k : reflooded) if (d2(Sightings.cellOf(k), p.end()) <= r2) return true;
+        return false;
+    }
+
+    /**
+     * D15 pass three (run JAK: DONE at 12% explored, the flood's slice judged as the cave): as above; {@code capped} the
+     * flood from the feet hit cave.passageCells; {@code reflooded} the capped ends the step stood at and flooded again
+     * from. A CAPPED passage is priced with its share of the cells past the flood ({@link #beyondFlood}). With no passage
+     * left: DONE when every cell is seen; the flood not capped - DONE, the unseen cells said unreachable by walking from
+     * here (rule 7); capped, every capped end spent - DONE once explored reaches cave.doneExplored, else NO_BRANCH (not done).
+     */
+    public static Next next(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<Passages.Passage> passages,
+                            List<int[]> left, int[] feet, double reach, int[] mouth, java.util.Set<Long> dropped, boolean capped, java.util.Set<Long> reflooded) {
         if (passages == null) passages = List.of();
+        if (reflooded == null) reflooded = java.util.Set.of();
         if (need > 0 && mined >= need) return new Stop(End.NEED_MET, mined + " of " + need + " ore mined");
         if (capMinutes > 0 && minutesIn >= capMinutes)
             return new Stop(End.MINUTES, String.format(Locale.ROOT, "budget spent: %.1f min inside (cave.exploreMinutes %.0f), %d ore mined, %d passage(s) left",
                     minutesIn, capMinutes, mined, openPassages(passages)));
         int skipped = 0;
-        int[] inReach = null;
-        long rd = Long.MAX_VALUE;
-        for (int[] o : left) {
-            if (!ExploreRules.withinReach(feet, o)) continue;
-            long d = d2(o, feet);
-            if (d < rd) { rd = d; inReach = o; }
-        }
+        int[] inReach = oreToMine(left, feet, reach);
         if (inReach != null) return new Mine(inReach);
         int[] near = null;
         long nd = Long.MAX_VALUE;
@@ -230,22 +278,42 @@ public final class CaveWalk {
         double sec = Tuning.get("cave.passageSecPerCell"), per = Tuning.get("cave.orePerUnseenCell");
         Passages.Passage best = null;
         double bp = Double.POSITIVE_INFINITY;
-        int open = 0;
+        int open = 0, spentN = 0, cappedOpen = 0;
+        for (Passages.Passage p : passages) if (p.open() && p.endKind() == Passages.EndKind.CAPPED && !spent(p, reflooded)) cappedOpen++;
+        int beyond = beyondFlood(facts, passages);
+        double share = cappedOpen == 0 ? 0 : beyond / (double) cappedOpen;
         for (Passages.Passage p : passages) {
             if (!p.open()) continue;
+            if (spent(p, reflooded)) { spentN++; continue; }
             open++;
             if (dropped.contains(p.key())) { skipped++; continue; }
-            double pr = passagePrice(p, sec, per);
+            double pr = passagePrice(p, sec, per, p.endKind() == Passages.EndKind.CAPPED ? share : 0);
             if (pr < bp) { bp = pr; best = p; }
         }
         if (best != null) {
             int[] c = best.end();
-            return Goto.toPassage(best, String.format(Locale.ROOT, "the passage to %d %d %d (%d layers, %d unseen cells, %d ore faces, %.1f s per ore expected)",
-                    c[0], c[1], c[2], best.length(), best.unseen(), best.oreFaces(), bp));
+            String capNote = best.endKind() == Passages.EndKind.CAPPED
+                    ? String.format(Locale.ROOT, ", its end at the flood's cap: %.0f of the %d cells past it counted", share, beyond) : "";
+            return Goto.toPassage(best, String.format(Locale.ROOT, "the passage to %d %d %d (%d layers, %d unseen cells, %d ore faces%s, %.1f s per ore expected)",
+                    c[0], c[1], c[2], best.length(), best.unseen(), best.oreFaces(), capNote, bp));
         }
         // 88b28290 review 3: while the cells are read, done is the saved measure (maybe a past session's): never trusted - wait
         if (facts != null && facts.filling()) return new Wait("reading the cave's cells from the index (its first pass, CaveRecord.BUDGET a tick)");
-        if (!passages.isEmpty() && open == 0) return new Stop(End.DONE, "every passage from here is walked (" + passages.size() + " passage(s), none with an unseen cell)");
+        if (!passages.isEmpty() && skipped == 0) {
+            int unseen = facts == null ? 0 : facts.unseen();
+            double explored = facts == null ? 1 : facts.explored();
+            if (unseen == 0)
+                return new Stop(End.DONE, "every passage from here is walked (" + passages.size() + " passage(s)) and every cell of the cave is seen");
+            if (!capped)
+                return new Stop(End.DONE, String.format(Locale.ROOT, "every passage from here is walked (%d passage(s), the flood whole: under cave.passageCells); "
+                        + "the %d unseen cell(s) of the cave (explored %d%%) are off the walkable flood - air over the floors, or past a drop or climb over cave.passageDrop %d: unreachable by walking from here",
+                        passages.size(), unseen, Math.round(explored * 100), Tuning.i("cave.passageDrop")));   // structural: a percent
+            double frac = Tuning.get("cave.doneExplored");
+            String why = String.format(Locale.ROOT, "the flood hit cave.passageCells and every capped end (%d) was flooded again from; explored %d%% (%d cell(s) unseen)",
+                    spentN, Math.round(explored * 100), unseen);                                   // structural: a percent
+            if (explored >= frac) return new Stop(End.DONE, why + ", at least cave.doneExplored " + frac);
+            return new Stop(End.NO_BRANCH, why + ", under cave.doneExplored " + frac + ": not done, no passage leads on from here");
+        }
         if (facts != null && facts.done()) return new Stop(End.DONE, "the cave is explored to its end (the record: its passages measured, none open)");
         if (facts != null && !facts.loaded()) return new Stop(End.NOT_LOADED, "the cave's cells are not loaded (its chunks: the record cannot say where to go)");
         // pass two, the lip: no passage from the feet (no walkable cave cell within cave.passageLipNear) - the mouth, said
@@ -281,10 +349,20 @@ public final class CaveWalk {
      * the open passages at the last pick (-1: not measured).
      */
     public static String endLine(String where, End end, String why, double minutes, int seenBefore, CaveRecord.Facts after, int oreSeen, int mined, int passagesLeft) {
+        return endLine(where, end, why, minutes, seenBefore, after, oreSeen, mined, passagesLeft, -1, -1);
+    }
+
+    /**
+     * D15 pass three: as above, with the passage cells looked at (in the eyes' cone on the walk) against those walked past
+     * unseen at the far ends ({@code looked} -1: not counted).
+     */
+    public static String endLine(String where, End end, String why, double minutes, int seenBefore, CaveRecord.Facts after, int oreSeen, int mined, int passagesLeft,
+                                 int looked, int walkedPast) {
         int seenNow = after == null ? seenBefore : after.cellCount() - after.unseen();
         return String.format(Locale.ROOT, "cave: the caving step at %s ended - %s (%s): %.1f min inside, cells seen %d -> %d of %d (explored %d%%), ore seen %d / mined %d, passages left %s",
                 where, end, why, minutes, seenBefore, seenNow, after == null ? 0 : after.cellCount(), after == null ? 0 : Math.round(after.explored() * 100), oreSeen, mined,   // structural: a percent
-                passagesLeft < 0 ? "not measured" : String.valueOf(passagesLeft));
+                passagesLeft < 0 ? "not measured" : String.valueOf(passagesLeft))
+                + (looked < 0 ? "" : ", passage cells looked at " + looked + " / walked past unseen " + walkedPast);
     }
 
     private static long d2(int[] a, int[] b) {

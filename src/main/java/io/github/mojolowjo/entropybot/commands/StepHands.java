@@ -883,6 +883,9 @@ public final class StepHands implements Steps.Hands {
         int passagesLeft = -1;
         /** D15 pass two: the lip line said once. */
         boolean lipSaid;
+        /** D15 pass three: the capped passage ends stood at (the flood went on from there), and the passage cells looked at / walked past. */
+        final java.util.Set<Long> reflooded = new java.util.HashSet<>();
+        int looked, walkedPast;
     }
 
     private Caving caving;
@@ -934,7 +937,12 @@ public final class StepHands implements Steps.Hands {
         int[] me = Jobs.here(p);
         long nowMs = System.currentTimeMillis();
         // run EK: the record's cells come from ChunkPass's one budgeted feeder (Sightings.caveFeed); the step only reads it
-        sg.caveStood(cv.dim, k.x(), k.y(), k.z(), me[0], me[1], me[2], nowMs);
+        // D15 pass three (run JAK: 234 cells "seen" by a 3 s walk): seen is looked at - the stand's cells in the eyes' cone
+        // and the ore rays' range (seen.coneDeg, seen.range), as the rays cover them; a cell walked past behind the back is not
+        var eye = p.getEyePosition();
+        var lookV = p.getLookAngle();
+        sg.caveStood(cv.dim, k.x(), k.y(), k.z(), me[0], me[1], me[2], nowMs, (x, y, z) -> io.github.mojolowjo.entropybot.sense.Seen.inRange(eye.x, eye.y, eye.z, x, y, z)
+                && io.github.mojolowjo.entropybot.sense.Seen.inCone(eye.x, eye.y, eye.z, lookV.x, lookV.y, lookV.z, x, y, z));
         // the ore seen round the feet (by sight: the ore index under aa fair) beside the cave's air goes into the record
         // run GT fix (2026-11-01): "beside the cave" is the record's own cells (Sightings.caveBeside) - never CaveIndex.volumeAt(entry),
         // which is -1 once the entry's chunk unloads (the index keeps loaded chunks only): 115 blocks in, every ore was rejected
@@ -942,7 +950,7 @@ public final class StepHands implements Steps.Hands {
         // run GT (2026-11-01: the record held iron 0 left while the sightings saw 24 iron veins, several within 5 blocks of
         // the feet for minutes): with the probe on, the page is read without the fair filter and every rejected hit is said
         // once per cell with its reason - not fair, no family, no root, not beside the volume (the six neighbours' volumes)
-        for (var h : pass.nearest(cv.dim, id -> true, me[0], me[1], me[2], io.github.mojolowjo.entropybot.sense.CaveRecord.SEE_STEPS + 2, 32,   // structural: the seen cells and their walls; a page of hits
+        for (var h : pass.nearest(cv.dim, id -> true, me[0], me[1], me[2], io.github.mojolowjo.entropybot.sense.Seen.range(), 32,   // D15 pass three: the rays' own range (every sighting in the cave is a face); structural: a page of hits
                 probe ? null : (x, y, z) -> Mining.fairOk(cv.dim, x, y, z))) {
             String why = null;
             if (probe && !Mining.fairOk(cv.dim, h.x(), h.y(), h.z())) why = "not fair (not seen by sight)";
@@ -984,9 +992,10 @@ public final class StepHands implements Steps.Hands {
             cv.veinCells = null;
             cv.veinStart = null;
         }
-        if (cv.reach != null && !cv.goalOre && oreInReach(sg, cv, k, me)) {
+        if (cv.reach != null && oreInReach(sg, cv, k, me)) {
             // D15: a seen ore of the family came within the mine's reach on the walk: the walk pauses (not dropped), the
-            // next move mines it; the passage is picked again after, by its price
+            // next move mines it; the passage is picked again after, by its price. Pass three: the mine's sight
+            // (Step.Collect.MINE_SIGHT; the fork's mineWith walks to it), not the arm's reach
             LOG.info("[entropybot] cave: a seen {} ore is in reach on the walk to {} - mined first", cv.fam, cv.goalWhy);
             Jobs.cancel(b);
             clearGoal(cv);
@@ -1059,8 +1068,8 @@ public final class StepHands implements Steps.Hands {
             LOG.info("[entropybot] cave: passages: the feet {} are outside the cave's air; the flood starts at the cave cell {} (cave.passageLipNear {})", Jobs.fmt(me), Jobs.fmt(found.start()), Tuning.i("cave.passageLipNear"));
         }
         var next = io.github.mojolowjo.entropybot.cave.CaveWalk.next(cv.mined, k.n(), minutes, k.minutes(), f, found.passages(),
-                left, me, io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH,
-                new int[]{k.x(), k.y(), k.z()}, cv.dropped);     // pass two: the mouth, when no passage is found from the feet; run EN: the dropped passed over
+                left, me, io.github.mojolowjo.entropybot.aa.moves.Step.Collect.MINE_SIGHT,
+                new int[]{k.x(), k.y(), k.z()}, cv.dropped, found.capped(), cv.reflooded);   // pass three: the capped flood goes on from its farthest ends     // pass two: the mouth, when no passage is found from the feet; run EN: the dropped passed over
         switch (next) {
             case io.github.mojolowjo.entropybot.cave.CaveWalk.Stop s -> {
                 return caveEnd(s.end(), s.why() + (cv.drops.isEmpty() ? "" : "; dropped: " + String.join("; ", cv.drops)));
@@ -1349,10 +1358,16 @@ public final class StepHands implements Steps.Hands {
     private static void arrivedAt(io.github.mojolowjo.entropybot.sense.Sightings sg, Caving cv, Step.Cave k, int[] me) {
         List<Long> seen = new ArrayList<>();
         if (cv.goalPassage != null) {
-            // D15: the bot walked the passage end to end - its cells are seen
-            seen.addAll(cv.goalPassage.cells());
-            sg.caveSaw(cv.dim, k.x(), k.y(), k.z(), seen);
-            LOG.info("[entropybot] cave: at the far end of {} (feet {}): its {} cell(s) seen", cv.goalWhy, Jobs.fmt(me), seen.size());
+            // D15 pass three (run JAK): arriving is not seeing - the passage's cells count as seen only as the eyes looked
+            // at them on the walk (caveStood's cone); the rest are walked past, said, and the passage stays open (walked again)
+            var ps = cv.goalPassage;
+            int looked = sg.caveSeenOf(cv.dim, k.x(), k.y(), k.z(), ps.cells());
+            int past = ps.cells().size() - looked;
+            cv.looked += looked;
+            cv.walkedPast += past;
+            if (ps.endKind() == io.github.mojolowjo.entropybot.cave.Passages.EndKind.CAPPED) cv.reflooded.add(ps.key());   // the flood goes on from here
+            LOG.info("[entropybot] cave: at the far end of {} (feet {}): of its {} cell(s) {} looked at, {} walked past unseen{}", cv.goalWhy, Jobs.fmt(me), ps.cells().size(), looked, past,
+                    ps.endKind() == io.github.mojolowjo.entropybot.cave.Passages.EndKind.CAPPED ? "; its end was the flood's cap - flooded again from here" : "");
         } else {
             for (int[] c : io.github.mojolowjo.entropybot.cave.CaveWalk.seenFrom(cv.reachParts, cv.reachCells, me))
                 seen.add(io.github.mojolowjo.entropybot.sense.Sightings.cell(c[0], c[1], c[2]));
@@ -1375,11 +1390,9 @@ public final class StepHands implements Steps.Hands {
 
     /** D15: a seen ore of the step's family, not left out, within the mine's reach of the feet. */
     private static boolean oreInReach(io.github.mojolowjo.entropybot.sense.Sightings sg, Caving cv, Step.Cave k, int[] me) {
-        for (int[] o : sg.caveLeft(cv.dim, k.x(), k.y(), k.z(), cv.fam)) {
-            if (cv.veinFailed.contains(io.github.mojolowjo.entropybot.sense.Sightings.cell(o[0], o[1], o[2]))) continue;
-            if (io.github.mojolowjo.entropybot.cave.ExploreRules.withinReach(me, o)) return true;
-        }
-        return false;
+        List<int[]> left = new ArrayList<>(sg.caveLeft(cv.dim, k.x(), k.y(), k.z(), cv.fam));
+        left.removeIf(o -> cv.veinFailed.contains(io.github.mojolowjo.entropybot.sense.Sightings.cell(o[0], o[1], o[2])));
+        return io.github.mojolowjo.entropybot.cave.CaveWalk.oreToMine(left, me, io.github.mojolowjo.entropybot.aa.moves.Step.Collect.MINE_SIGHT) != null;
     }
 
     /** Run EN (rule 23 (1)): a goto dropped for the step with its reason (logged; said at the step's end); the next is picked. */
@@ -1426,10 +1439,13 @@ public final class StepHands implements Steps.Hands {
             // stop judges nothing (57db13b7 review (b)); FK fix: a stop for a stall is the walk's own verdict (CaveWalk.judged)
             Boolean gained = io.github.mojolowjo.entropybot.cave.CaveWalk.judged(end, why, seenNow > cv.seenAtStart || cv.mined > 0);
             sg.caveWalked(cv.dim, k.x(), k.y(), k.z(), minutes, cv.oreSeen, System.currentTimeMillis(), gained);
+            // D15 pass three (run JAK): a DONE cave is held done in its record (not entered again until more of it is known)
+            if (end == io.github.mojolowjo.entropybot.cave.CaveWalk.End.DONE) sg.caveDone(cv.dim, k.x(), k.y(), k.z(), why);
             after = sg.caveFacts(cv.dim, k.x(), k.y(), k.z());
         }
         caveTargetDist = Double.NaN;
-        String line = io.github.mojolowjo.entropybot.cave.CaveWalk.endLine(k.x() + " " + k.y() + " " + k.z(), end, why, minutes, cv.seenAtStart, after, cv.oreSeen, cv.mined, cv.passagesLeft);
+        String line = io.github.mojolowjo.entropybot.cave.CaveWalk.endLine(k.x() + " " + k.y() + " " + k.z(), end, why, minutes, cv.seenAtStart, after, cv.oreSeen, cv.mined, cv.passagesLeft,
+                cv.looked, cv.walkedPast);
         LOG.info("[entropybot] {}", line);
         if (end == io.github.mojolowjo.entropybot.cave.CaveWalk.End.NEED_MET) return Car.Status.done("ok: " + line);
         // GA fix (runs FN, FZ, GA: a cave's end stopped the order - no fact, the run ended FAILED): the end is the order's fact -
