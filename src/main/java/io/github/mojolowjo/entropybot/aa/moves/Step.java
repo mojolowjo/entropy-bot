@@ -74,6 +74,17 @@ public sealed interface Step {
     }
 
     /**
+     * Job-tunnel (run JAS): the band way's dig at the band when no cave is known in reach - Baritone digs a 1 x 2 tunnel
+     * from x y z along {@code heading} ("north" / "east" / "south" / "west"; null: picked by price at the start, see
+     * cave.Tunnel#pick) for {@code length} blocks under the ordinary dig lease (one GoalBlock at its end; Baritone picks
+     * every move and break). Seen ore of {@code item}'s family pauses it for the vein; cave air, water or lava ends it.
+     * {@code n}: the ore blocks the price paid for (the step ends once mined).
+     */
+    record Tunnel(int x, int y, int z, String heading, int length, String item, int n) implements Step {
+        public String text() { return "tunnel " + (heading == null ? "by price" : heading) + " " + length + " from " + x + " " + y + " " + z + " for " + n + " " + item; }
+    }
+
+    /**
      * Baritone's own tree mining: its MineProcess on the log blocks ({@code log}: one block id, null = every block the
      * game tags as a log) until {@code logs} more are in the bag. {@code at}: the seen tree (Sightings) the walk before
      * it went to, or null (Baritone mines the nearest it knows).

@@ -25,6 +25,7 @@ public record StepId(String kind, String target) {
             case Step.MineAt m -> new StepId("mineAt", m.family() + " " + cell(m.x(), m.y(), m.z()) + (m.dig() ? " dig" : " walk"));
             case Step.Mine m -> new StepId("mine", m.family() + " " + m.n() + " " + m.how() + " " + m.minutes() + "m");
             case Step.Cave k -> new StepId("cave", k.family() + " " + k.n() + " " + k.x() + " " + k.y() + " " + k.z() + " " + k.minutes() + "m");
+            case Step.Tunnel t -> new StepId("tunnel", t.heading() + " " + t.length() + " " + cell(t.x(), t.y(), t.z()) + " " + t.item() + " " + t.n());
             case Step.ChopTree t -> new StepId("chopTree", t.logs() + " " + t.log() + " at " + arr(t.at()));
             case Step.Strip st -> new StepId("strip", strip(st));
             case Step.HuntAt h -> new StepId("huntAt", h.type() + " " + h.n() + " at " + arr(h.at()) + " for " + h.forItem() + " " + h.forCount());

@@ -44,13 +44,16 @@ class JobBandChainTest {
     }
 
     @Test
-    void noCaveKnown_digDownThenExploreFromThere() {
+    void noCaveKnown_digDownThenTunnel() {
         Chain c = NeedChain.resolve("raw_iron", 3, world());
         assertTrue(c.ok(), c.why());
         int peak = where("raw_iron").peaks(false).get(0).y();
         assertEquals(new Step.ToBand(peak, peak), c.steps().get(0), c.steps().toString());
         assertEquals("dig down to y " + peak, c.steps().get(0).text());
-        assertTrue(c.steps().get(c.steps().size() - 1) instanceof Step.Explore e && e.priced(), c.steps().toString());
+        // job-tunnel (run JAS): [dig down, tunnel] - the explore that refused to dig is not put at the band
+        assertEquals(2, c.steps().size(), c.steps().toString());
+        assertTrue(c.steps().get(1) instanceof Step.Tunnel t && t.y() == peak && t.heading() == null && t.length() > 0 && t.n() > 0, c.steps().toString());
+        assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Explore), c.steps().toString());
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Cave), c.steps().toString());
         assertTrue(c.why().contains("the band way: dig down to y " + peak) && c.why().contains("band price:"), c.why());
     }

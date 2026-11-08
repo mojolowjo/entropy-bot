@@ -4014,17 +4014,14 @@ public final class NeedChain {
             c.bag.merge(item, lack, Integer::sum);             // a priced way: the need is met by its end (as the cave way)
             atBand = "then the cave at " + near.x() + " " + near.y() + " " + near.z() + " (" + Math.round(near.dist()) + " m, its cells near y " + by + ")";
         } else {
-            String prev = c.down;
-            c.down = "the dig to y " + by;                     // the explore runs from where the dig leaves the bot (exploreLeaf)
-            String leaf;
-            try { leaf = exploreLeaf(c, item, "no " + shw(item) + " source known; the band way priced"); }
-            finally { c.down = prev; }
-            if (leaf == null) return null;
-            for (int i = at; i < c.steps.size(); i++)
-                if (c.steps.get(i) instanceof Step.Explore e) c.steps.set(i, new Step.Explore(e.minutes(), e.until(), e.leased(), true));
-            atBand = "then " + leaf;
+            // job-tunnel (run JAS: the explore at the band refused to dig, "no cave cell in the band ... a never-seen chunk is
+            // a goal through rock", and the order parked): the band price's own model runs - a 1 x 2 tunnel whose length is the
+            // faces the price counted (cave.Tunnel#length), its heading picked by price at the step's start
+            int len = io.github.mojolowjo.entropybot.cave.Tunnel.length(n, best.perBlock(), faces, Tuning.i("tunnel.maxLength"));
+            c.steps.add(new Step.Tunnel(feet[0], by, feet[2], null, len, where.block(), n));   // the ore block: its family is the vein's
+            c.bag.merge(item, lack, Integer::sum);             // a priced way: the need is met by its end (as the cave way)
+            atBand = "then a tunnel of " + len + " blocks at y " + by + " (heading by price at its start)";
         }
-        if (near == null && !pricedExplore(c.steps, at)) { c.fail = "the band way: its explore did not stand"; return null; }
         c.addS(best.seconds() - best.downS());
         final String line = best.line() + "; the dig priced by Baritone's path " + s(legS) + " in place of " + s(best.downS());
         c.note(() -> "source: " + shw(item) + " by the band way: " + line);
@@ -5021,6 +5018,7 @@ public final class NeedChain {
         // GA fix (run GD 03:26:04: "stopped at step 2 (cave iron 4 at -34 62 80 for 10 min): timed out after 600 s" - the step
         // watch's timeout had no source key for a caving step, so the run ended): the caving step holds its cave by the same key
         if (s instanceof Step.Cave k) return CaveWay.keyOf(new int[]{k.x(), k.y(), k.z()});
+        if (s instanceof Step.Tunnel t) return "tunnel at " + t.x() + " " + t.y() + " " + t.z();   // job-tunnel: a watch timeout holds this tunnel, not the run
         return null;
     }
 
