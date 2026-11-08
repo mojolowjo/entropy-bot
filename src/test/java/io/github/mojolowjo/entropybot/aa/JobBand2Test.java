@@ -78,9 +78,28 @@ class JobBand2Test {
         String held = FactChange.bandKey(peak, peak) + ": " + BandEnd.stopped(0, 0, 64, 40, peak, "lava in the column ahead at 0 39 0", "x");
         Chain c = NeedChain.resolve("raw_iron", 3, JobBandChainTest.world().withHeld(List.of(held)));
         assertTrue(c.ok(), c.why());
-        assertEquals(new Step.Walk(6, 64, 0, 0), c.steps().get(0), c.steps().toString());
+        // job-side: a near walk (Baritone's goal), never an exact cell
+        assertEquals(new Step.Walk(6, 64, 0, 2), c.steps().get(0), c.steps().toString());
+        assertTrue(((Step.Walk) c.steps().get(0)).near() > 0);
         assertEquals(new Step.ToBand(peak, peak), c.steps().get(1), c.steps().toString());
-        assertTrue(c.why().contains("side-step to column 6 0"), c.why());
+        assertTrue(c.why().contains("side-step near column 6 0") && c.why().contains("seen sources of raw_iron in the lookup: 0"), c.why());
+    }
+
+    /** job-side (run JAY 07:27: a vein seen 15 blocks from the dig's end): with the column held, the seen vein is priced and wins. */
+    @Test
+    void seenVeinBeatsTheHeldColumn() {
+        int peak = JobBandChainTest.where("raw_iron").peaks(false).get(0).y();
+        String held = FactChange.bandKey(peak, peak) + ": " + BandEnd.stopped(0, 0, 64, 40, peak, "water in the column ahead at 0 39 0", "x");
+        ScenariosTest.world("wooden", "stone");
+        NeedChain.Spot vein = new NeedChain.Spot(-7, 64, -2, 7.3, "minecraft:iron_ore");
+        NeedChain.World w = ScenariosTest.w(java.util.Map.of("minecraft:stone_pickaxe", 1), false, false, java.util.Map.of("raw_iron", List.of(vein)))
+                .withMobs(x -> List.of(), Z77ExploreTest.book())
+                .withWhere(new NeedChain.WhereFacts(JobBandChainTest::where, () -> new NeedChain.Surface(0, 0, 64, 0, 0), () -> new int[]{0, 64, 0}))
+                .withHeld(List.of(held));
+        Chain c = NeedChain.resolve("raw_iron", 3, w);
+        assertTrue(c.ok(), c.why());
+        assertFalse(c.why().startsWith("raw_iron <- the band way"), c.why());
+        assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Collect), c.steps().toString());
     }
 
     @Test

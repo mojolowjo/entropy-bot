@@ -95,6 +95,7 @@ band.facesPerBreak	3.0
 band.foodOff	18.0
 band.foodOn	10.0
 band.sideStepM	6.0
+band.sideStepNear	2.0
 band.notKnownTries	3.0
 band.notKnownWindowS	30.0
 band.torchOff	16.0
