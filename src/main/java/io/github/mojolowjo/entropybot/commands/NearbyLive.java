@@ -409,7 +409,7 @@ final class NearbyLive {
                 return mc.level.getBlockState(q).getCollisionShape(mc.level, q).isEmpty();   // air, water, lava, torch, grass
             }
             // job-sight: the mine's sight passes air, cave air and passable blocks with no fluid (the same loaded-chunk read)
-            @Override public Boolean air(int x, int y, int z) {
+            @Override public Boolean seeThrough(int x, int y, int z) {
                 BlockPos q = new BlockPos(x, y, z);
                 if (!mc.level.isLoaded(q)) return null;
                 var st = mc.level.getBlockState(q);

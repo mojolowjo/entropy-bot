@@ -61,7 +61,7 @@ public final class Nearby {
          * job-sight: the cell is air for the mine's sight (air, cave air, or a passable block with no fluid); null: not
          * loaded. Default: {@link #open} (a test scan states one answer for both).
          */
-        default Boolean air(int x, int y, int z) { return open(x, y, z); }
+        default Boolean seeThrough(int x, int y, int z) { return open(x, y, z); }
         /** job-sight: the reason the sightings store marked the cell covered (Baritone's mine saw none there); null: not marked. */
         default String coveredMark(int x, int y, int z) { return null; }
         /** The most logs one chop takes as one tree (Baritone's chopComponentMax); unknown: no cap. */
@@ -641,7 +641,7 @@ public final class Nearby {
 
     /**
      * job-sight (run JAH 00:29: "dig cobblestone seen 5 m" was stone under grass; Baritone's mine takes only blocks it sees,
-     * so it ended "none in sight"): the spot's cover fact from the same chunk reads as the exposed rule ({@link Scan#air}).
+     * so it ended "none in sight"): the spot's cover fact from the same chunk reads as the exposed rule ({@link Scan#seeThrough}).
      * A face of air: exposed (0). Six closed faces, or the store's mark ({@link Scan#coveredMark}): covered, N = the closed
      * cells straight over it up to the first air, {@code over} the first of them. A log keeps its chop (no cover). A read
      * not loaded: the spot as it was (rule 15: priced by estimate). Null: covered deeper than {@link #coverMax}, or marked
@@ -655,13 +655,13 @@ public final class Nearby {
             if (buried != null) buried.merge(sp.block() + " covered, " + mark, 1, Integer::sum);
             return null;
         }
-        Boolean e = mark != null ? Boolean.FALSE : exposed((Open) s::air, x, y, z);
+        Boolean e = mark != null ? Boolean.FALSE : exposed((Open) s::seeThrough, x, y, z);
         if (e == null) return sp;
         if (e) return sp.covered(0, null);
         int d = 0;
         String over = null;
         while (true) {
-            Boolean a = s.air(x, y + d + 1, z);
+            Boolean a = s.seeThrough(x, y + d + 1, z);
             if (a == null) return sp;                       // the cover is not known (its chunk): priced by estimate
             if (a) break;
             if (over == null) over = s.blockAt(x, y + d + 1, z);
