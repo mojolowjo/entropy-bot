@@ -913,6 +913,7 @@ trail.clearAfterS	10.0
 trail.routeReach	1.0
 debug.trailProbe	0.0
 estimate.freeDropLevels	3.0
+estimate.failedDigLevels	10.0
 debug.wayProbe	0.0
 place.failedNearM	8.0
 place.roomNear	1.0
