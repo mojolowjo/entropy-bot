@@ -408,6 +408,18 @@ final class NearbyLive {
                 if (!mc.level.isLoaded(q)) return null;
                 return mc.level.getBlockState(q).getCollisionShape(mc.level, q).isEmpty();   // air, water, lava, torch, grass
             }
+            // job-sight: the mine's sight passes air, cave air and passable blocks with no fluid (the same loaded-chunk read)
+            @Override public Boolean seeThrough(int x, int y, int z) {
+                BlockPos q = new BlockPos(x, y, z);
+                if (!mc.level.isLoaded(q)) return null;
+                var st = mc.level.getBlockState(q);
+                return st.getFluidState().isEmpty() && st.getCollisionShape(mc.level, q).isEmpty();
+            }
+            // job-sight: the one sightings store's covered mark (Baritone's mine saw none at a spot called exposed)
+            @Override public String coveredMark(int x, int y, int z) {
+                var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
+                return sg == null ? null : sg.coveredWhy(adim, x, y, z);
+            }
             @Override public String blockAt(int x, int y, int z) {
                 BlockPos q = new BlockPos(x, y, z);
                 return mc.level.isLoaded(q) ? BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(q).getBlock()).toString() : null;

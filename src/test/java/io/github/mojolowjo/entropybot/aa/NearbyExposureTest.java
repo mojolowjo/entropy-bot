@@ -30,7 +30,7 @@ class NearbyExposureTest {
     void clear() { TestData.clear(); }
 
     /** A fixture cache: the cells of the scan's blocks, the open cells (air, water), everything else solid; unloaded x >= 1000. */
-    static final class World implements Nearby.Scan {
+    static class World implements Nearby.Scan {
         final Map<String, String> blocks = new HashMap<>();
         final Set<String> open = new HashSet<>();
         World put(int x, int y, int z, String id) { blocks.put(x + " " + y + " " + z, id); return this; }
@@ -84,10 +84,10 @@ class NearbyExposureTest {
     void anOnlyBuriedScanFallsBackToMySightingsAndSaysSo() {
         World w = new World().put(3, 60, 0, IRON).air(50, 65, 50);       // the sighted ore has an open face
         Nearby.Source s = Nearby.source(w, ME, Set.of(IRON), () -> SIGHTED);
-        assertSame(SIGHTED, s.spot());
+        assertEquals(SIGHTED.covered(0, null), s.spot(), "job-sight: the sighting with its cover fact (exposed)");
         assertEquals("fallback", s.from());
         assertTrue(s.line().contains("from my sightings"), s.line());
-        assertSame(SIGHTED, Nearby.nearest(w, ME, Set.of(IRON), () -> SIGHTED));
+        assertEquals(SIGHTED.covered(0, null), Nearby.nearest(w, ME, Set.of(IRON), () -> SIGHTED));
     }
 
     /** 0.39.z42 (run C 20:28:52): a sighted ore goes through the same exposed-face test: buried, it is no source. */
@@ -106,15 +106,20 @@ class NearbyExposureTest {
         assertNull(Nearby.source(w, ME, Set.of(IRON), () -> null).spot());
     }
 
-    /** S49a: stone under one dirt (no open face) is a source: the exposed-face rule is for ore only. */
+    /**
+     * S49a: stone under one dirt (no open face) is a source: the exposed-face rule is for ore only. job-sight (run JAH): it
+     * is a COVERED source (1 block of dirt over it, air above that), priced and stepped as a dig to it.
+     */
     @Test
     void s49aStoneUnderOneDirtIsASource() {
         String stone = "minecraft:stone";
-        World w = new World().put(2, 62, 0, stone);                      // every side solid (dirt above, stone around)
+        World w = new World().put(2, 62, 0, stone).put(2, 63, 0, "minecraft:dirt").air(2, 64, 0);   // every side solid, dirt above
         assertFalse(Nearby.exposureRuled(stone));
         Nearby.Source s = Nearby.source(w, ME, Set.of(stone), () -> null);
         assertNotNull(s.spot(), s.line());
         assertTrue(s.line().endsWith("seen (in the loaded chunks)"), s.line());
+        assertEquals(1, s.spot().cover());
+        assertEquals("minecraft:dirt", s.spot().coverBlock());
     }
 
     /** S49b: an iron_ore with six solid neighbours is not a source; the ore set comes from the tags and the recipes. */

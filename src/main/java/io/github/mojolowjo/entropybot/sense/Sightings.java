@@ -588,6 +588,67 @@ public final class Sightings {
 
     public synchronized int animalCount(String dim) { return animals.getOrDefault(dim, List.of()).size(); }
 
+    // ---- job-sight: covered marks (Baritone's mine saw none at a spot the chunk read called exposed) ----
+
+    private final Map<String, Map<Long, String>> covered = new HashMap<>();
+
+    /** job-sight: the start of a mark whose dig was refused (keep-out, no-break, a safe area): the spot is no source. */
+    public static final String DIG_REFUSED = "dig refused: ";
+
+    /**
+     * job-sight: the cell x y z is covered for the mine's sight, with {@code why} (its end). True: newly marked (the planner
+     * re-prices once); false: already marked (no new price per re-sighting).
+     */
+    public synchronized boolean markCovered(String dim, int x, int y, int z, String why) {
+        if (dim == null) return false;
+        Map<Long, String> m = covered.computeIfAbsent(dim, d -> new java.util.LinkedHashMap<>());
+        String was = m.get(cell(x, y, z));
+        // a refused dig replaces a plain mark once (it is a new fact: the spot is no source); else the first mark stands
+        if (was != null && (why == null || !why.startsWith(DIG_REFUSED) || was.startsWith(DIG_REFUSED))) return false;
+        m.put(cell(x, y, z), why == null ? "marked covered" : why);
+        while (m.size() > maxCovered()) m.remove(m.keySet().iterator().next());
+        dirty = true;
+        return true;
+    }
+
+    /** job-sight: the reason the cell was marked covered; null: not marked. */
+    public synchronized String coveredWhy(String dim, int x, int y, int z) {
+        Map<Long, String> m = dim == null ? null : covered.get(dim);
+        return m == null ? null : m.get(cell(x, y, z));
+    }
+
+    public static int maxCovered() { return Tuning.i("sight.maxCovered"); }
+
+    private static JsonObject coveredJson(Map<String, Map<Long, String>> m) {
+        JsonObject o = new JsonObject();
+        for (var d : new TreeMap<>(m).entrySet()) {
+            JsonArray a = new JsonArray();
+            for (var e : new TreeMap<>(d.getValue()).entrySet()) {
+                JsonArray r = new JsonArray();
+                r.add(e.getKey());
+                r.add(e.getValue());
+                a.add(r);
+            }
+            o.add(d.getKey(), a);
+        }
+        return o;
+    }
+
+    private static void readCovered(JsonObject o, Sightings s, int[] skipped) {
+        try {
+            if (!o.has("covered")) return;
+            for (Map.Entry<String, JsonElement> d : o.getAsJsonObject("covered").entrySet())
+                for (JsonElement e : d.getValue().getAsJsonArray()) {
+                    try {
+                        JsonArray a = e.getAsJsonArray();
+                        s.covered.computeIfAbsent(d.getKey(), x -> new java.util.LinkedHashMap<>()).put(a.get(0).getAsLong(), a.get(1).getAsString());
+                    } catch (RuntimeException ex) {
+                        Quiet.warn("Sightings.readCovered: a mark skipped", ex); skipped[0]++; }
+                }
+        } catch (RuntimeException ex) {
+            Quiet.warn("Sightings.readCovered failed, carrying on with the fallback", ex); skipped[0]++; }
+    }
+
     // ---- status and file ----
 
     public synchronized String text(String dim, long gameNow) {
@@ -624,6 +685,7 @@ public final class Sightings {
         o.addProperty("cavesFound", cavesFound);
         o.add("knownCaves", knownJson(knownCaves));          // 0.39.z78 J6: the caves known by rays
         o.add("caveRecords", recordsJson(caveRecords));      // 0.39.z78 J6b: their records (D12)
+        o.add("covered", coveredJson(covered));              // job-sight: the covered marks
         return new Gson().toJson(o);
     }
 
@@ -665,6 +727,7 @@ public final class Sightings {
         read(o, "trees", Kind.TREE, s.trees, skipped);
         readKnown(o, s, skipped);
         readRecords(o, s, skipped);
+        readCovered(o, s, skipped);
         try {
             if (o.has("walked")) s.walked = Math.max(0, o.get("walked").getAsDouble());
             if (o.has("cavesFound")) s.cavesFound = Math.max(0, o.get("cavesFound").getAsDouble());

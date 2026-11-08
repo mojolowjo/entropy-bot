@@ -1569,8 +1569,8 @@ public final class StepHands implements Steps.Hands {
             // 0.39.z76 send-back 3 (rule 22): a chain's explore is a priced way for one source - no gathering on the way (run AU:
             // the gathers' mine process placed blocks and ran GoalRunAwayFromMaintainY), no placing (Mining's explore lease)
             case Step.Explore k -> c.stepJob(s.text(), () -> Mining.get().explore(p, k.minutes() + (k.until() == null ? "" : " until " + k.until()) + " gather off", k.leased()));   // fc cause 2: the leased first walk
-            case Step.Dig d -> c.stepJob(s.text(), () -> DigCommands.dig(c, p, d.from()[0] + " " + d.from()[1] + " " + d.from()[2] + " " + d.to()[0] + " " + d.to()[1] + " " + d.to()[2]
-                    + (d.ores() ? " ores" : "") + (d.viaEngine() ? " via engine" : ""), me));
+            case Step.Dig d -> c.stepJob(s.text(), () -> digRefusedMark(d, DigCommands.dig(c, p, d.from()[0] + " " + d.from()[1] + " " + d.from()[2] + " " + d.to()[0] + " " + d.to()[1] + " " + d.to()[2]
+                    + (d.ores() ? " ores" : "") + (d.viaEngine() ? " via engine" : ""), me)));
             case Step.DigArea k -> c.stepJob(s.text(), () -> DigCommands.dig(c, p, k.box()[0] + " " + k.box()[1] + " " + k.box()[2] + " " + k.box()[3] + " +" + k.up(), me));
             case Step.BuildSchematic k -> c.stepJob(s.text(), () -> DigCommands.build(c, p, "schematic " + k.name() + " " + k.x() + " " + k.y() + " " + k.z(), me));
             case Step.MarkMine k -> mark(p, "mine " + (k.at() == null ? "" : k.at()[0] + " " + k.at()[1] + " " + k.at()[2] + " ") + k.dir());
@@ -2242,7 +2242,9 @@ public final class StepHands implements Steps.Hands {
             // the block - "none in sight (N blocks of the feet)" / "none in range" (IMineProcess.lastEnd), never its explore
             // toward legitMineYLevel; at a priced spot that is the spot's fact, in the explore watch's words it replaces
             String end = mineEnd(b);
-            String none = io.github.mojolowjo.entropybot.aa.moves.CollectHand.mineNoneKnown(collectSpot, end, here, miningWhat, got, want);
+            var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
+            String none = io.github.mojolowjo.entropybot.aa.moves.CollectHand.mineNoneKnown(collectSpot, end, here, miningWhat, got, want,
+                    sg == null ? null : (x, y, z, w) -> sg.markCovered(Storage.dim(), x, y, z, w));
             if (none != null) return Car.Status.failed(none);
             String said = end != null && !end.isEmpty() ? end
                     : mineSaid(mineLines0, io.github.mojolowjo.entropybot.baritone.BaritoneHook.lines(), io.github.mojolowjo.entropybot.baritone.BaritoneHook.lastLine());
@@ -2253,6 +2255,20 @@ public final class StepHands implements Steps.Hands {
             return Car.Status.failed(miningWhat + ": Baritone's mine process ended with " + got + " of " + want + ": " + said);
         }
         return Car.Status.running(miningWhat + ": " + got + " of " + want + " (Baritone's mine)");
+    }
+
+    /**
+     * job-sight: a dig refused at its start (keep-out, no-break, a safe area: DigCommands' "error: ...") whose box is a
+     * cover column (one column, the "dig to" of a covered spot) marks the spot under it in the sightings store with the
+     * reason - the planner reads it as no source there (Nearby.withCover, said). The reply goes on unchanged.
+     */
+    private static String digRefusedMark(Step.Dig d, String reply) {
+        if (reply == null || !reply.startsWith("error") || d.from()[0] != d.to()[0] || d.from()[2] != d.to()[2]) return reply;
+        var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
+        int y = Math.min(d.from()[1], d.to()[1]) - 1;
+        if (sg != null && sg.markCovered(Storage.dim(), d.from()[0], y, d.from()[2], io.github.mojolowjo.entropybot.sense.Sightings.DIG_REFUSED + reply))
+            LOG.info("[entropybot] steps: {} - the spot {} {} {} marked covered, dig refused: {}", d.text(), d.from()[0], y, d.from()[2], reply);
+        return reply;
     }
 
     /** 0.39.z78 vein: the mine's own end (the fork's IMineProcess.lastEnd), null on a fork without it (the chat line then). */
