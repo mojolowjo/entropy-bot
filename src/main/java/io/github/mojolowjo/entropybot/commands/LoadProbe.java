@@ -172,13 +172,28 @@ public final class LoadProbe {
         return d;
     }
 
+    private static long[] routeSeen;
+
+    /**
+     * D11 build 2: the fork's route-memory counts since the last line, read by name (IPricedPath.routeCounts is not in the
+     * fork jar yet): {asked, reused, check failed changed, check failed not loaded, saved}; {-1} when the jar lacks it (rule 7).
+     */
+    static long[] routeDelta(Object pricedPath) {
+        long[] r = ProbeLines.routeCounts(pricedPath);
+        if (r == null) return new long[]{-1};
+        long[] d = new long[5];
+        if (routeSeen != null) for (int i = 0; i < 5; i++) d[i] = r[i] - routeSeen[i];
+        routeSeen = r.clone();
+        return d;
+    }
+
     private static ProbeLines.LoadFacts facts() {
         Minecraft mc = Minecraft.getInstance();
         long started = LivePathPrice.INSTANCE.started(), landed = LivePathPrice.INSTANCE.landed();
         long ds = started - startedSeen, dl = landed - landedSeen;
         startedSeen = started;
         landedSeen = landed;
-        long[] seg = null, joins = null;
+        long[] seg = null, joins = null, routes = null;
         var b = Jobs.baritone();
         if (b != null) {
             long[] now = b.getPricedPath().searchCounts();
@@ -199,6 +214,7 @@ public final class LoadProbe {
             } catch (LinkageError e) {
                 joins = new long[]{-1};
             }
+            routes = routeDelta(b.getPricedPath());
         }
         long[] rec = Core.INSTANCE.recorder.loadCounts();
         long[] recLine = null;
@@ -219,6 +235,6 @@ public final class LoadProbe {
         calcs = 0;
         calcFails = 0;
         return new ProbeLines.LoadFacts(mc.getFps(), window.takeLine(), ds, dl, LivePathPrice.INSTANCE.inFlight(), seg, c, f, recLine,
-                heap.getUsed() >> 20, heap.getMax() >> 20, dn, dms, joins);      // structural: bytes to MB
+                heap.getUsed() >> 20, heap.getMax() >> 20, dn, dms, joins, routes);      // structural: bytes to MB
     }
 }
