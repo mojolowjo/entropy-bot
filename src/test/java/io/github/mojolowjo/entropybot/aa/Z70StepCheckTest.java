@@ -128,6 +128,23 @@ class Z70StepCheckTest {
                 + "walk ended at y 70 short of y 16 (re-plans this run: 1; dropped: strip iron_ore|16|west)", run.why());
     }
 
+    /** job-dig2 (run JAU 05:38:44): two NOT KNOWN ends of the same step from the same cell and bag never park (rule 15). */
+    @Test
+    void dig2_notKnownEndsNeverPark() {
+        Hands h = new Hands();
+        h.status = s -> Car.Status.failed("Baritone's goal ended at y 63 without an exhausted search");
+        h.fact = s -> new FactChange.Fact(FactChange.NOT_KNOWN + FactChange.bandKey(16, 16), "Baritone's goal ended at y 63 without an exhausted search (a budget stop or another end) - not a no-path (rule 15: not known)");
+        int[] asked = {0};
+        Steps run = new Steps(h);
+        run.start("goal.iron", List.of(STRIP_K1), 0, (failed, fact, why) -> { asked[0]++; return new Steps.Routine(List.of(STRIP_K1), null); });
+        run.tick(1);
+        run.tick(2);
+        run.tick(3);
+        assertTrue(run.running(), "a not-known end is no failure: " + run.why());
+        assertEquals(3, asked[0], "every not-known end re-plans");
+        assertFalse(run.why() != null && run.why().contains("the same way failed twice"), run.why());
+    }
+
     /**
      * Test 3: A fails, re-planned to [B, A]; B ends DONE (progress: the craft put sticks in the bag); A fails the same way again -
      * re-planned, not parked. (FS fix: a step done with the feet AND the whole bag unchanged is no progress - FsParkMemoryTest.)
