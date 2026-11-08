@@ -96,6 +96,28 @@ public final class Tunnel {
         return null;
     }
 
+    /** Job-caveair: what the air a tunnel broke into is - a cave (the index knows it), a pocket (the tunnel goes on), or air the index does not hold. */
+    public enum Air { CAVE, POCKET, NOT_INDEXED }
+
+    /**
+     * Job-caveair: the index's answer for the air ({@code what}: CaveIndex.lipCredit's credit) and the cells a local flood
+     * from it counted ({@code localCells}, capped a cell past {@code minCells}): KNOWN / ALREADY_KNOWN is a cave, DIP a
+     * pocket; not in the index, a local flood under {@code minCells} is a pocket, else air the index does not hold.
+     */
+    public static Air air(io.github.mojolowjo.entropybot.sense.CaveIndex.Credit what, int localCells, long minCells) {
+        if (what == null) what = io.github.mojolowjo.entropybot.sense.CaveIndex.Credit.NO_VOLUME;
+        return switch (what) {
+            case KNOWN, ALREADY_KNOWN -> Air.CAVE;
+            case DIP -> Air.POCKET;
+            default -> localCells < minCells ? Air.POCKET : Air.NOT_INDEXED;
+        };
+    }
+
+    /** Job-caveair (rule 7): "air at x y z is a pocket (N cells): tunnelling on". */
+    public static String pocketText(int[] c, long n) {
+        return "air at " + c[0] + " " + c[1] + " " + c[2] + " is a pocket (" + n + " cells): tunnelling on";
+    }
+
     /** What the running tunnel does this tick. */
     public enum Act { DIG, MINE, END_FACT, DONE }
 

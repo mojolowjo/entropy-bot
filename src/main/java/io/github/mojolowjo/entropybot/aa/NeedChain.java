@@ -4026,11 +4026,20 @@ public final class NeedChain {
         io.github.mojolowjo.entropybot.cave.BandPrice.Price best = null;
         int[] bestSide = null;
         String bestHeld = null;
-        List<io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact.Peak> ps = new ArrayList<>();
-        for (var p : where.peaks(false)) if (p.y() <= fromY) ps.add(p);
-        if (ps.isEmpty()) ps = where.peaks(false);
         List<String> outs = new ArrayList<>();
-        for (var p : ps) {
+        // job-caveair (run JBA: "dig down to y 232" from y 16): only peaks at or under the surface over the feet's column; a
+        // peak above the feet is dug at the feet's Y (the dig leg goes down only)
+        Surface surf = c.w.where().surface() == null ? null : c.w.where().surface().get();
+        int surfaceY = surf == null ? fromY : fromY + Math.max(0, surf.depth());
+        java.util.Set<Integer> ys = new java.util.LinkedHashSet<>();
+        for (var pk : where.peaks(false)) {
+            String drop = io.github.mojolowjo.entropybot.cave.BandPrice.peakDrop(pk.y(), surfaceY);
+            if (drop != null) { outs.add(drop); continue; }
+            ys.add(io.github.mojolowjo.entropybot.cave.BandPrice.digY(pk.y(), fromY));
+        }
+        for (int py : ys) {
+            record P(int y) {}
+            P p = new P(py);
             // job-band2 (rule 7): a dig to this Y that ended short is held with its reason and its column (BandEnd): the next
             // price digs band.sideStepM away from that column; an end naming no column holds the peak (another peak is tried)
             String held = heldWhy(c, io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(p.y(), p.y()));
