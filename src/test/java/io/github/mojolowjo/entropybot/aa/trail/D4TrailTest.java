@@ -88,6 +88,34 @@ class D4TrailTest {
         assertEquals(1, t.breaks);
     }
 
+    @Test void aOneWaySegmentIsWalkedAsPriced() {
+        Trail t = down();
+        List<Trail.Goal> way = t.way(1);
+        assertFalse(way.get(0).up(), "the tail is a plain walk");
+        assertTrue(way.get(1).up() && way.get(2).up(), "the shaft's levels and its top are the climb");
+        assertFalse(way.get(3).up(), "the walked segment's start is a plain walk");
+        assertEquals(2, t.levels());
+
+        // CLIMB: a pillar 3 s beats a stair 5 s
+        assertEquals(Trail.ClimbHow.PILLAR, CLIMB.how(t.levels()));
+        Trail.Leg pillar = Trail.leg(way.get(2), CLIMB.how(2));
+        assertEquals(Boolean.TRUE, pillar.place(), "a pillar places");
+        assertEquals(Boolean.FALSE, pillar.breaks(), "a pillar breaks nothing");
+        assertTrue(pillar.exact(), "GoalBlock on the top");
+
+        Trail.Climb stairs = new Trail.Climb(3, 5, 1);                 // one block for two levels: the stairs
+        assertEquals(Trail.ClimbHow.STAIRS, stairs.how(2));
+        Trail.Leg dug = Trail.leg(way.get(2), stairs.how(2));
+        assertEquals(Boolean.TRUE, dug.breaks(), "stairs break");
+        assertNull(dug.place(), "stairs leave placing as the walk leaves it");
+        assertTrue(dug.exact());
+
+        assertSame(Trail.Leg.WALK, Trail.leg(way.get(0), Trail.ClimbHow.PILLAR), "a plain segment stays a plain walk");
+        assertSame(Trail.Leg.WALK, Trail.leg(way.get(3), Trail.ClimbHow.STAIRS));
+        assertSame(Trail.Leg.WALK, Trail.leg(way.get(1), null), "no climb price: a plain walk");
+        assertNull(new Trail.Climb(Double.NaN, Double.NaN).how(2));
+    }
+
     @Test void outClearsAndALoopCuts() {
         Trail t = down();
         t.offer(new Cell(9, 62, 1), 230, false, JUMP);
