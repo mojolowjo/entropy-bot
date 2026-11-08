@@ -1010,3 +1010,5 @@ station.materialS	10.0
 station.baseReachM	16.0
 band.legCarryS	600.0
 tunnel.heldNearM	8.0
+tunnel.legBlocks	6.0
+tunnel.shortLegBlocks	2.0

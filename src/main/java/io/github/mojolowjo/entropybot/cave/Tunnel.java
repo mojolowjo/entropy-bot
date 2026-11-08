@@ -134,6 +134,30 @@ public final class Tunnel {
         return n;
     }
 
+    /**
+     * Job-tunnel3 (run JAW 06:34:55-06:35:30: four 51-block goals through rock, each ended at its start - north "CHUNKS",
+     * the rest "TIME" - the fork's price ask cannot land a 51-block dig path in its 1-2 s budget): the tunnel runs in LEGS.
+     * A leg's steps from the feet: at most {@code legBlocks} and the {@code left} to the end, and only steps whose cells AND
+     * the cell one step past them are loaded (the search reads the goal's neighbours; run JAW's north goal ended CHUNKS on the
+     * loaded edge). 0: the next leg has no loaded goal.
+     */
+    public static int legSteps(int left, int legBlocks, java.util.function.IntPredicate loadedAt) {
+        int want = Math.max(0, Math.min(left, legBlocks));
+        if (want == 0) return 0;
+        int loaded = loadedSteps(want + 1, loadedAt);                      // structural: one cell past the goal
+        return Math.max(0, Math.min(want, loaded - 1));
+    }
+
+    /** Job-tunnel3: what a leg that ended short (timed out, stopped, no path) does: retry once shorter, then hold. */
+    public enum ShortLeg { RETRY, HOLD }
+
+    public static ShortLeg shortLeg(boolean retried) { return retried ? ShortLeg.HOLD : ShortLeg.RETRY; }
+
+    /** Job-tunnel3: the end line with the legs walked ("...; 9 leg(s)"). */
+    public static String endLine(String why, int broken, int faces, int seen, int mined, String family, int legs) {
+        return endLine(why, broken, faces, seen, mined, family) + ", " + legs + " leg(s)";
+    }
+
     /** Job-tunnel2: the words of a capped goal ("to the loaded edge at x y z first, N of the L blocks"). */
     public static String edgeLine(int[] goal, int steps, int length) {
         return "to the loaded edge at " + goal[0] + " " + goal[1] + " " + goal[2] + " first, " + steps + " of the " + length + " blocks";

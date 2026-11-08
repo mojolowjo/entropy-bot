@@ -92,7 +92,10 @@ and walked on that priced path (`LivePathPrice.priceInto` / `walkInto`, `BandLeg
 (`BandLeg.INTENT`, TRAVEL); every short end (stopped short with the fork's end, no path, water / lava, cave air) is a SOURCE
 fact `FactChange.tunnelHeldFact` ("tunnel heading x y z h", "tunnel north from x y z held: ..."), never a price fact; the
 band way (`NeedChain.bandWay`) drops a peak whose four headings are held within `tunnel.heldNearM` of its dig end
-(`Tunnel.heldHeadings`). The dig leg's end counts the whole leg over re-plan restarts toward the same Y within
+(`Tunnel.heldHeadings`). Job-tunnel3 (run JAW: four 51-block goals ended TIME / CHUNKS at their start): the tunnel walks
+in LEGS of `tunnel.legBlocks` (6), each one priced-path walk from the feet (`Tunnel.legSteps`: the goal and the cell past it
+loaded); a short leg is retried once `tunnel.shortLegBlocks` (2) ahead (`Tunnel.shortLeg`), a second short end holds the
+heading; the end line counts legs. The dig leg's end counts the whole leg over re-plan restarts toward the same Y within
 `band.legCarryS` (`aa/moves/BandLegCount`). Job-dig2 (run JAU: a fresh 46-level ask timed out twice and parked the order):
 a dig leg whose price is not known (a timed-out ask, or computing past `band.askWaitS`, or a priced walk ended without an
 exhausted search) hands Baritone the GoalBlock itself (`StepHands.bandDirect`, `aa/moves/BandDirect`: its own search, the
