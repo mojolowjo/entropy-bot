@@ -3132,7 +3132,8 @@ public final class NeedChain {
         double cost = Unit.blocks(c.seconds);
         // an explore has no price in the chain; the scorer still needs a number to weigh the whole row, so the row's cost carries the explore leg
         // 0.39.z77 J2 (manager: a unit slip): its seconds as walk-blocks (was 450 blocks = 104 s for up to 7.5 min)
-        if (c.stuck) cost += Unit.blocks(exploreS());
+        if (c.stuck && !pricedExplore(c.steps, 0)) cost += Unit.blocks(exploreS());     // job-band: a priced explore's seconds are in c.seconds
+        if (c.stuck && c.fail == null && pricedExplore(c.steps, 0)) head = head + ": " + s(c.seconds);
         String drops = c.dropped.isEmpty() ? "" : " | dropped: " + String.join("; ", c.dropped);
         List<Map<String, Integer>> uses = new ArrayList<>();
         for (Step st : c.steps) uses.add(c.uses.get(st));
@@ -3226,6 +3227,25 @@ public final class NeedChain {
      * in {@code alts}. The seconds are exact sums on the 2^-20 s grid ({@link #grid}, Ctx#addS), so two ways of the same
      * price are a true tie, never one decided by float noise - and a tie is decided by that order (work, tier, way index).
      */
+    /** Job-band: the trial ends in an explore with no price (stuck, and its new steps are not a priced explore). */
+    private static boolean unpriced(Trial t, int stepsAt) {
+        return t.stuck() && !pricedExplore(t.after().steps(), stepsAt);
+    }
+
+    /**
+     * Job-band: the steps from {@code from} end in priced explores only (at least one Step.Explore, each priced, no
+     * standing wait) - the chain's explore carries seconds (BandPrice) and is compared by them. Pure.
+     */
+    static boolean pricedExplore(List<Step> steps, int from) {
+        boolean any = false;
+        for (int i = Math.max(0, from); i < steps.size(); i++) {
+            Step s = steps.get(i);
+            if (s instanceof Step.AwaitPaths) return false;
+            if (s instanceof Step.Explore e) { if (!e.priced()) return false; any = true; }
+        }
+        return any;
+    }
+
     private static Trial choose(Ctx c, List<Alt> alts, String self) {
         if (alts.isEmpty()) return null;
         distinctLabels(alts);
@@ -3266,9 +3286,10 @@ public final class NeedChain {
         }
         stripRivals(c, trials, stepsAt, self);                // 0.39.z77 strip: before the pick, whoever wins
         double horizonS = Unit.seconds(c.w.horizonBlocks());
-        Comparator<Trial> best = Comparator.<Trial>comparingInt(t -> t.stuck() ? 1 : 0)
+        // job-band: a way ending in a PRICED explore (the band way, BandPrice) competes by its seconds like any priced way
+        Comparator<Trial> best = Comparator.<Trial>comparingInt(t -> unpriced(t, stepsAt) ? 1 : 0)
                 .thenComparingInt(t -> t.seconds() > horizonS ? 1 : 0)
-                .thenComparingDouble(t -> t.stuck() ? t.alt().rank : t.alt().value(t.seconds()))
+                .thenComparingDouble(t -> unpriced(t, stepsAt) ? t.alt().rank : t.alt().value(t.seconds()))
                 .thenComparingDouble(t -> t.alt().work).thenComparingInt(t -> t.alt().tier).thenComparingInt(Trial::index);
         Trial win = null;
         for (Trial t : trials) if (t.fail() == null && (win == null || best.compare(t, win) < 0)) win = t;
@@ -3437,7 +3458,7 @@ public final class NeedChain {
         }
         if (words.size() == own) return;
         String until = String.join("|", words);
-        for (int i = base; i < c.steps.size(); i++) if (c.steps.get(i) instanceof Step.Explore e && e.until() != null) c.steps.set(i, new Step.Explore(e.minutes(), until, e.leased()));
+        for (int i = base; i < c.steps.size(); i++) if (c.steps.get(i) instanceof Step.Explore e && e.until() != null) c.steps.set(i, new Step.Explore(e.minutes(), until, e.leased(), e.priced()));
     }
 
     private static void untilWords(List<Step> steps, int from, Set<String> into) {
@@ -3591,7 +3612,7 @@ public final class NeedChain {
             String own = shw(w.word);
             Set<String> words = new LinkedHashSet<>(List.of(e.until().split("\\|")));
             if (!words.add(own)) continue;
-            c.steps.set(i, new Step.Explore(e.minutes(), String.join("|", words), e.leased()));
+            c.steps.set(i, new Step.Explore(e.minutes(), String.join("|", words), e.leased(), e.priced()));
         }
     }
 
@@ -3922,9 +3943,73 @@ public final class NeedChain {
         alts.addAll(huntAlts(c, item, lack));
         if (c.w.seenAll().apply(item).isEmpty()) alts.addAll(stripAlts(c, item, item, lack));   // 0.39.z43: mine at the ore's level
         alts.addAll(caveAlts(c, item, item, lack));    // 0.39.z44: mine in the cave; 0.39.z77 cave: beside any seen ore too
+        Alt band = bandAlt(c, item, lack);                                                     // job-band: the band way, priced
+        if (band != null) alts.add(band);
         alts.addAll(baseAlts(c, item, lack));                                                  // 0.39.z74 item 4: dig down to the base block
         return alts;
     }
+
+    /**
+     * Job-band (run JAQ: the explore under ground carried its walk only, so a y-64 cave at 1253 s an ore beat it): the
+     * explore toward the ore's band as a PRICED way (rule 18) - for each peak of the placements' curve at or under the
+     * feet (none: every peak), {@link io.github.mojolowjo.entropybot.cave.BandPrice#dig}: the dig down (each level's
+     * block broken by the game's formula, stone over y 0, deepslate under), the climb back (rungOptions.climbBlock a
+     * level), and n ore at the curve's ore per exposed block x the faces a dig exposes a second (band.facesPerBreak).
+     * The cheapest peak's price is added and the explore step is the explore leaf's own, marked priced. A known cave in
+     * the band is its own way (the cave price at its Y); the cheaper wins in choose. Null: no band fact, the chain down
+     * there already, or the feet not known (the explore leaf stands, unpriced, as before).
+     */
+    private static Alt bandAlt(Ctx c, String item, int lack) {
+        if (c.down != null || c.w.where() == null || c.w.where().of() == null || c.w.where().feet() == null) return null;
+        var where = c.w.where().of().apply(item);
+        if (where == null || !where.band() || where.block() == null) return null;
+        int[] feet = c.w.where().feet().get();
+        if (feet == null || feet.length < 3) return null;   // structural: x y z
+        var peaks = where.peaks(false);
+        if (peaks.isEmpty()) return null;
+        return new Alt("the band way for " + shw(item), () -> bandWay(c, item, lack, where, feet));
+    }
+
+    /** Job-band: the band way's price and its explore step (see {@link #bandAlt}); null with c.fail. */
+    private static String bandWay(Ctx c, String item, int lack, io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact where, int[] feet) {
+        double per = perBlock(c, item, where.block());
+        if (!(per > 0)) { c.fail = "the band way: the yield of " + shw(item) + " from " + shw(where.block()) + " is not known (no loot entry; rule 15)"; return null; }
+        int n = (int) Math.ceil(lack / per - 1e-9);          // structural: epsilon
+        if (n <= 0) { c.fail = "the band way: 0 ore for " + lack + " " + shw(item); return null; }
+        // the band leg (exploreLeaf's bandLeg) prices the walk into the placements' union band; the dig is from where it leaves the bot
+        int fromY = Math.max(where.lo(), Math.min(where.hi(), feet[1]));
+        double faces = Tuning.get("band.facesPerBreak"), fallback = Tuning.get("cave.orePerCellNotKnown");
+        double oreS = blockBreakS(c, where.block());
+        io.github.mojolowjo.entropybot.cave.BandPrice.Price best = null;
+        List<io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact.Peak> ps = new ArrayList<>();
+        for (var p : where.peaks(false)) if (p.y() <= fromY) ps.add(p);
+        if (ps.isEmpty()) ps = where.peaks(false);
+        for (var p : ps) {
+            int lo = Math.min(fromY, p.y()), hi = Math.max(fromY, p.y());
+            double down = 0;
+            for (int y = lo; y < hi; y++) down += blockBreakS(c, bandBlock(y));
+            double back = Unit.seconds((hi - lo) * RungOptions.climbBlock());
+            double perBlock = where.curve(p.y(), false) / io.github.mojolowjo.entropybot.aa.brain.CaveYield.LAYER_BLOCKS;
+            var pr = io.github.mojolowjo.entropybot.cave.BandPrice.dig(fromY, p.y(), perBlock,
+                    "game data: the placements' " + String.format(Locale.ROOT, "%.1f", where.curve(p.y(), false)) + " a chunk layer at y " + p.y() + " / 256",
+                    n, down, back, blockBreakS(c, bandBlock(p.y())), faces, oreS, fallback);
+            if (best == null || pr.seconds() < best.seconds()) best = pr;
+        }
+        if (best == null || !Double.isFinite(best.seconds())) { c.fail = "the band way: no finite price (" + (best == null ? "no peak" : best.line()) + ")"; return null; }
+        int at = c.steps.size();
+        String leaf = exploreLeaf(c, item, "no " + shw(item) + " source known; the band way priced");
+        if (leaf == null) return null;
+        for (int i = at; i < c.steps.size(); i++)
+            if (c.steps.get(i) instanceof Step.Explore e) c.steps.set(i, new Step.Explore(e.minutes(), e.until(), e.leased(), true));
+        if (!pricedExplore(c.steps, at)) { c.fail = "the band way: its explore did not stand (" + leaf + ")"; return null; }
+        c.addS(best.seconds());
+        final String line = best.line();
+        c.note(() -> "source: " + shw(item) + " by the band way: " + line);
+        return leaf + " [band price: " + line + "]";
+    }
+
+    /** Job-band: the block a level's dig breaks - stone over y 0, deepslate under (vanilla's overworld; GenWhere.Base not read here). */
+    static String bandBlock(int y) { return y < 0 ? "minecraft:deepslate" : DIG_DOWN_BLOCK; }
 
     /** 0.39.z75 item 1: the label start of a way met before the chain's leg to another level. */
     public static final String BEFORE_DOWN = "before going down";
