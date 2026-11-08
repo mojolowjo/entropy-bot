@@ -516,7 +516,10 @@ public final class Goals {
     public static io.github.mojolowjo.entropybot.aa.moves.Steps.Routine replan(Blackboard bb, Goal g, Step failed,
                                                                              io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact, String why,
                                                                              io.github.mojolowjo.entropybot.aa.moves.Steps.Remaining left) {
-        if (fact.price()) return reprice(bb, g, fact, failed);
+        // job-handover (run JBB 08:37:57: the tunnel ended on cave air, the re-price "kept the running pick" - the tunnel way,
+        // its step ended - and the order stopped): with {@code left} the step has ENDED (Steps' failOrReplan); its pick is
+        // never kept, the new way is taken (rule 7: an order stops only when nothing is left)
+        if (fact.price()) return reprice(bb, g, fact, failed, left != null);
         // 0.39.z77 SHAPE CHANGE (owner 2026-10-26 10:30: repair locally): a failed step of the trip is repaired inside its
         // leg - the gap for what it served, from the bag as it is, the trip's later steps kept (D2's repair; never priced
         // against a whole re-plan); only when no repair stands is the trip priced again from the bag (the same derivation,
@@ -634,12 +637,17 @@ public final class Goals {
      * #seenLine}); while the walk to it is not priced yet, the answer waits (FactChange.SEEN_WAITS, logged only).
      */
     static io.github.mojolowjo.entropybot.aa.moves.Steps.Routine reprice(Blackboard bb, Goal g, io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact, Step at) {
+        return reprice(bb, g, fact, at, false);
+    }
+
+    /** job-handover: {@code ended} - the running pick's step has ended: "kept the running pick" never applies, the new way runs. */
+    static io.github.mojolowjo.entropybot.aa.moves.Steps.Routine reprice(Blackboard bb, Goal g, io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact, Step at, boolean ended) {
         boolean seen = io.github.mojolowjo.entropybot.aa.moves.FactChange.isSeen(fact);
         // 0.39.z77 answers (1) (manager: re-price only on a fact change - a failed step, a bag count off the plan): a landed
         // price never re-resolves the batch's running playbook; its legs go on as planned
         // (a playbook that ends in an explore is priced again as any explore: its find is the fact that picks the rest)
         // 0.39.z77 seen: a seen source IS a changed fact (owner 2026-10-26: the trigger is the fact itself)
-        if (!seen && g.playbookRun && g.pricedWay && !g.pricedExplore) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "kept: the trip runs on (re-planned only on a changed fact)");
+        if (!seen && !ended && g.playbookRun && g.pricedWay && !g.pricedExplore) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "kept: the trip runs on (re-planned only on a changed fact)");
         if (g.n - have(bb.in.bag, g) <= 0) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
         BatchWay.forget(g);          // SHAPE CHANGE: a re-price asks the trip's walks again (a stand's estimates, a landed path)
         var ch = chain(bb, g);
@@ -653,7 +661,7 @@ public final class Goals {
         long now = bb.clock.now();
         double left = leftS(g, now);
         boolean newWay = !io.github.mojolowjo.entropybot.aa.moves.Steps.waitsOnPaths(ch.steps());
-        if (seen && !newWay) {
+        if (seen && !newWay && !ended) {
             // 0.39.z77 seen: the walk to it is not priced yet - asked again on the next landed path (Steps), said then
             String w = io.github.mojolowjo.entropybot.aa.moves.FactChange.SEEN_WAITS + fact.text() + " (chain: " + ch.why() + ")";
             bb.port.log(g.r.key() + ": " + w);
@@ -674,7 +682,9 @@ public final class Goals {
             bb.port.log(g.r.key() + ": " + fact.text() + " - " + w);
             return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(ch.steps(), w, ch.uses());
         }
-        boolean sw = switches(g.pricedWay, left, g.pricedExplore, newWay, ch.seconds(), ch.explore(), switchMarginS());
+        boolean sw = ended || switches(g.pricedWay, left, g.pricedExplore, newWay, ch.seconds(), ch.explore(), switchMarginS());
+        if (ended) bb.port.log(g.r.key() + ": " + ENDED_TAKES + (at == null ? "?" : at.text()) + ": the new way taken, " + Math.round(ch.seconds()) + " s"
+                + (ch.explore() ? " (ends in an explore)" : "") + " (chain: " + ch.why() + ")");
         if (seen) {
             String line = seenLine(fact, ch, left, at, sw);
             bb.port.log(g.r.key() + ": " + line + " (chain: " + ch.why() + ")");
@@ -692,6 +702,9 @@ public final class Goals {
         bb.port.log(g.r.key() + ": " + fact.text() + " - priced again (chain: " + ch.why() + ")");
         return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(ch.steps(), null, ch.uses());
     }
+
+    /** job-handover: the line's start when the running pick's step ended (its pick is not kept). */
+    public static final String ENDED_TAKES = "the running pick's step ended: ";
 
     /** FH fix: the start of a found source's re-price answer that stands on the source's walk (Steps takes the stand for an until-explore). */
     public static final String FOUND_STANDS = "the found source's walk is not priced yet: the run stands for it (rule 22) ";

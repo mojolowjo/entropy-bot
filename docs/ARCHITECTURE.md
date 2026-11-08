@@ -63,7 +63,12 @@ line; job-price, run JAO; the caving step's own pick uses the seen rate or the f
 is a value, the curve sampled per Y over `Density.MIN_Y..MAX_Y` and rounded to `Density.PRECISION`, so the planner's fact
 check sees two equal caves as equal; the planner itself takes a result after `planner.dropsBeforeTake` drops in a row for
 one reason, said "this answer is taken (rule 7)", in `PlannerPort`); the walk is a `GoalNear`
-(`cave.passageNear`) at the far end. Job-band (run JAQ): the explore toward an ore's band is a priced way of its own
+(`cave.passageNear`) at the far end. Job-handover (run JBB): a record with no passages measured and nothing fed (a
+tunnel's hand-over) takes the index volume's cells and the band model's density at its Y (`AaRuntime`, density words
+`NeedChain.UNMEASURED`); `NeedChain.unmeasuredWalk` prices it as the walk through all its cells scaled to the ore asked,
+said "(unmeasured: priced by its cells at y N)", never 0 s. A price fact from an ENDED step (`Goals.replan` with what was
+left) re-prices with `ended`: "kept the running pick" (`replan.switchMarginS`) applies only while the step runs; the
+ended step's re-price takes the new way, said `Goals.ENDED_TAKES`. Job-band (run JAQ): the explore toward an ore's band is a priced way of its own
 (`NeedChain.bandAlt` / `bandWay`, `cave/BandPrice.dig`): per peak of the placements' curve at or under the feet, the dig
 down (each level's block broken by the game's formula, stone over y 0, deepslate under) + the climb back
 (`rungOptions.climbBlock` a level) + n ore at the curve's ore per exposed block (no air discard: a dig opens fresh rock) x
