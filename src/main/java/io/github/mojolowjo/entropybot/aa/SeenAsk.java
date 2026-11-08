@@ -222,6 +222,7 @@ public final class SeenAsk {
         }
         int at = st.index();
         if (at < 0 || at >= st.steps().size() || holds(st.steps().get(at))) return null;
+        if (st.steps().get(at) instanceof Step.Cave) caveHold();
         if (flightFact == null && !pending.isEmpty() && nowMs - lastAt >= everyMs) {
             for (java.util.Iterator<Wait> it = pending.iterator(); it.hasNext(); ) {
                 Wait w = it.next();
@@ -239,6 +240,30 @@ public final class SeenAsk {
         var f = take(nowMs, everyMs);
         if (f != null) st.repriceAtNextStep(f);
         return f;
+    }
+
+    /** D15: the running caving step's walk target distance (StepHands.caveTargetDist; NaN: none). */
+    private double caveTarget = Double.NaN;
+
+    /** D15: the adapter says the caving step's target distance before each tick. */
+    public void caveTarget(double dist) { caveTarget = dist; }
+
+    /**
+     * D15 (run JAD: 66 re-plans in 4 minutes): while a caving step runs, a waiting vein asks only when it is closer than the
+     * step's target by cave.seenMarginM (CaveWalk#seenRepricesCave); the others are the step's own (its record holds the
+     * ore, its next pick takes it): marked asked for this run, said once.
+     */
+    private void caveHold() {
+        double m = io.github.mojolowjo.entropybot.aa.brain.Tuning.get("cave.seenMarginM");
+        for (java.util.Iterator<Wait> it = pending.iterator(); it.hasNext(); ) {
+            Wait w = it.next();
+            if (io.github.mojolowjo.entropybot.cave.CaveWalk.seenRepricesCave(w.dist(), caveTarget, m)) continue;
+            it.remove();
+            asked.addLast(w.cell());
+            notes.add(w.text() + ": the caving step goes on, no re-price (its target " + (Double.isNaN(caveTarget) ? "none now" : Math.round(caveTarget) + " away")
+                    + ", cave.seenMarginM " + Math.round(m) + "; the cave's record holds the ore)");
+        }
+        while (asked.size() > KEEP) asked.removeFirst();
     }
 
     private final List<String> notes = new java.util.ArrayList<>();

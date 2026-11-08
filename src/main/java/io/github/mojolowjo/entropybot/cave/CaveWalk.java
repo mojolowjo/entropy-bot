@@ -1,5 +1,6 @@
 package io.github.mojolowjo.entropybot.cave;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 import io.github.mojolowjo.entropybot.sense.CaveRecord;
 import io.github.mojolowjo.entropybot.sense.Sightings;
 
@@ -14,8 +15,9 @@ import java.util.Locale;
  * <li>a seen ore of the family left in reach of the eyes - mined by the vein (seen ore only, rule 17), its goto dropped
  * or not (J6d, run EV);</li>
  * <li>a seen ore of the family left farther in - walked to;</li>
- * <li>the nearest branch (a frontier group with more than BRANCH_MIN unseen cells behind it), ranked by straight distance
- * (rule 18 as amended: ranked rough, Baritone's walk exact) - its first cell walked to;</li>
+ * <li>D15: the open passage ({@link Passages}: not all seen, or its end past the flood's cap) of the lowest price -
+ * seconds to walk to its far end per ore expected along it ({@link #passagePrice}; rule 18: a price, never a rank) -
+ * walked to its far end (a GoalNear Baritone paths to, rule 2);</li>
  * <li>none: the record's own done (THE done reader, rule 23 (2); run EK 02:24:18: an empty frontier because nothing was
  * seen yet is not done) - DONE; the cells being read from the index - Wait; not loaded - NOT_LOADED; else the unseen cell
  * nearest the cave's entry ({@code firstUnseen}, the step's first target) - walked to; none - NO_PROGRESS, said.</li>
@@ -40,16 +42,22 @@ public final class CaveWalk {
      * Walk to the cell ({@code why}: "the seen iron at ...", "the branch at ... (more than 8 cells behind)"). Run EN: the
      * step's goal is a reach goal over {@code cells} (the ore, the unseen cell, or the branch's frontier cells) - a stand
      * Baritone picks from which one of them is in reach and in sight, never the cell itself (rule 2); {@code key} the
-     * drop key (the cell, or the branch's first cell). J6d (run EV): {@code kind} ORE - the walk is to a seen ore (its
-     * arrival mines it, never drops it "arrived, nothing new"); BRANCH - fc (run FC): its cells are the unseen index cells
-     * behind the branch's frontier (CaveRecord.Group#unseen); CELL - an unseen cell (the first target by the entry).
+     * drop key (the cell, or the passage's far end). J6d (run EV): {@code kind} ORE - the walk is to a seen ore (its
+     * arrival mines it, never drops it "arrived, nothing new"); PASSAGE - D15: the walk is to a passage's far end
+     * ({@code passage}: its cells, seen on arrival - the bot walked it end to end); CELL - an unseen cell (the first
+     * target by the entry).
      */
-    public record Goto(int[] cell, String why, List<int[]> cells, long key, Kind kind) implements Next {
-        public enum Kind { ORE, BRANCH, CELL }
+    public record Goto(int[] cell, String why, List<int[]> cells, long key, Kind kind, Passages.Passage passage) implements Next {
+        public enum Kind { ORE, PASSAGE, CELL }
 
         public Goto {
             cells = cells == null || cells.isEmpty() ? List.of(cell) : List.copyOf(cells);
         }
+
+        public Goto(int[] cell, String why, List<int[]> cells, long key, Kind kind) { this(cell, why, cells, key, kind, null); }
+
+        /** D15: the walk to a passage's far end. */
+        public static Goto toPassage(Passages.Passage p, String why) { return new Goto(p.end(), why, List.of(p.end()), p.key(), Kind.PASSAGE, p); }
 
         public Goto(int[] cell, String why, List<int[]> cells, long key) { this(cell, why, cells, key, Kind.CELL); }
 
@@ -61,23 +69,38 @@ public final class CaveWalk {
         /** J6d: the walk is to a seen ore. */
         public boolean ore() { return kind == Kind.ORE; }
 
-        /** fc: the walk is to see behind a branch's frontier. */
-        public boolean branch() { return kind == Kind.BRANCH; }
+        /** D15: the walk is to a passage's far end. */
+        public boolean isPassage() { return kind == Kind.PASSAGE; }
     }
 
     /**
-     * fc (run FC, cause 3): the cells a branch's reach goal spans - the unseen index cells behind its frontier (nearest the
-     * feet first, {@link #REACH_CELLS} of them); a group that names none (a record of before fc): its frontier cells as
-     * before. Pure.
+     * D15: a passage's price - the seconds to walk to its far end ({@code fromFeet + length} layers, {@code secPerCell}
+     * each: cave.passageSecPerCell) per ore expected along it (the ore faces seen on its walls, plus its unseen cells times
+     * {@code orePerUnseen}: cave.orePerUnseenCell). Nothing expected: infinite (not offered). Pure.
      */
-    public static List<int[]> branchCells(CaveRecord.Group g, int[] feet) {
-        List<int[]> cells = new java.util.ArrayList<>();
-        for (long k : g.unseen().isEmpty() ? g.cells() : g.unseen()) cells.add(Sightings.cellOf(k));
-        return nearest(cells, feet, REACH_CELLS);
+    public static double passagePrice(Passages.Passage p, double secPerCell, double orePerUnseen) {
+        double expected = p.oreFaces() + p.unseen() * orePerUnseen;
+        if (!(expected > 0)) return Double.POSITIVE_INFINITY;
+        return (p.fromFeet() + p.length()) * secPerCell / expected;
     }
 
-    /** fc: the drop of a branch whose reach goal over the unseen cells behind it is empty (said once, the key dropped). */
-    public static String noStandSees(int cells) { return "no stand sees behind it (no standable cell within reach and sight of its " + cells + " unseen cell(s))"; }
+    /** D15: the open passages (CaveWalk's "branches left"). */
+    public static int openPassages(List<Passages.Passage> ps) {
+        int n = 0;
+        for (Passages.Passage p : ps) if (p.open()) n++;
+        return n;
+    }
+
+    /**
+     * D15 (run JAD: 66 re-plans in 4 minutes, each new sighting of the same ore re-priced the caving step): while a caving
+     * step runs, a new sighting re-prices the order only when it is closer than the step's current target by
+     * {@code margin} blocks (cave.seenMarginM); no target known (the step mining, or between picks): never - the step's
+     * own record holds the ore and its next pick takes it. Pure.
+     */
+    public static boolean seenRepricesCave(double sightDist, double targetDist, double margin) {
+        if (Double.isNaN(sightDist) || Double.isNaN(targetDist)) return false;
+        return sightDist + margin < targetDist;
+    }
 
     /**
      * J6d (run EV: ore seen 36, mined 0 - the seen-ore gotos were dropped "arrived, nothing new", then skipped): the drop
@@ -98,22 +121,6 @@ public final class CaveWalk {
 
     /** Churn fix: the reach goals built for one branch goal at most (far cells that no stand sees cost a build each). */
     public static final int REACH_TRIES = 8; // structural: twice REACH_CELLS - the far end tried, the near edge still reachable
-
-    /** Churn fix: the far flood's cell cap per layer of cave.farDepth (a 4 x 4 passage's layer). */
-    public static final int FAR_CELLS_PER_LAYER = 16; // structural: a passage's cross-section
-
-    /**
-     * Churn fix (runs GP / GS 2026-11-01: 287 and 296 goals in 4.5 caving minutes, each the branch's near edge): the cells a
-     * branch goal is built over, in the order tried - the far end first ({@code far}, deepest first, from CaveRecord#farBehind),
-     * then the near cells ({@code near}, the goto's own), no cell twice. Pure.
-     */
-    public static List<int[]> farThenNear(List<int[]> far, List<int[]> near) {
-        List<int[]> out = new java.util.ArrayList<>();
-        java.util.Set<Long> had = new java.util.HashSet<>();
-        for (List<int[]> l : List.of(far == null ? List.<int[]>of() : far, near == null ? List.<int[]>of() : near))
-            for (int[] c : l) if (had.add(Sightings.cell(c[0], c[1], c[2]))) out.add(c);
-        return out;
-    }
 
     /**
      * d0682da0 review (rule 17: seen is what is seen): of a composite goal's parts ({@code parts}, each the reach goal of
@@ -139,18 +146,18 @@ public final class CaveWalk {
 
     /**
      * The next move. {@code mined}/{@code need}: ore blocks; {@code minutesIn}/{@code capMinutes}: the step's time inside;
-     * {@code facts}: the record now; {@code frontier}: its branches; {@code left}: the family's seen ore not mined;
-     * {@code feet}: x y z; {@code reach}: the eyes' reach for a vein.
+     * {@code facts}: the record now; {@code passages}: D15, the cave's passages from the feet ({@link Passages#build});
+     * {@code left}: the family's seen ore not mined; {@code feet}: x y z; {@code reach}: the eyes' reach for a vein.
      */
-    public static Next next(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<CaveRecord.Group> frontier,
+    public static Next next(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<Passages.Passage> passages,
                             List<int[]> left, int[] feet, double reach) {
-        return next(mined, need, minutesIn, capMinutes, facts, frontier, left, feet, reach, null);
+        return next(mined, need, minutesIn, capMinutes, facts, passages, left, feet, reach, null);
     }
 
     /** As above; {@code firstUnseen}: the record's unseen cell nearest the entry (CaveRecord#firstUnseen; null: none). */
-    public static Next next(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<CaveRecord.Group> frontier,
+    public static Next next(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<Passages.Passage> passages,
                             List<int[]> left, int[] feet, double reach, int[] firstUnseen) {
-        return next(mined, need, minutesIn, capMinutes, facts, frontier, left, feet, reach, firstUnseen, java.util.Set.of());
+        return next(mined, need, minutesIn, capMinutes, facts, passages, left, feet, reach, firstUnseen, java.util.Set.of());
     }
 
     /**
@@ -160,10 +167,13 @@ public final class CaveWalk {
      * look and the click, rule 2) even when its goto was dropped - a drop is of a walk, and no walk is needed; the nearest
      * in reach first. The caller leaves out of {@code left} the ore whose vein failed (said, rule 7).
      */
-    public static Next next(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<CaveRecord.Group> frontier,
+    public static Next next(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<Passages.Passage> passages,
                             List<int[]> left, int[] feet, double reach, int[] firstUnseen, java.util.Set<Long> dropped) {
+        if (passages == null) passages = List.of();
         if (need > 0 && mined >= need) return new Stop(End.NEED_MET, mined + " of " + need + " ore mined");
-        if (capMinutes > 0 && minutesIn >= capMinutes) return new Stop(End.MINUTES, String.format(Locale.ROOT, "%.1f min inside, cave.exploreMinutes %.0f", minutesIn, capMinutes));
+        if (capMinutes > 0 && minutesIn >= capMinutes)
+            return new Stop(End.MINUTES, String.format(Locale.ROOT, "budget spent: %.1f min inside (cave.exploreMinutes %.0f), %d ore mined, %d passage(s) left",
+                    minutesIn, capMinutes, mined, openPassages(passages)));
         int skipped = 0;
         int[] inReach = null;
         long rd = Long.MAX_VALUE;
@@ -181,29 +191,33 @@ public final class CaveWalk {
             if (d < nd) { nd = d; near = o; }
         }
         if (near != null) return Goto.toOre(near, "the seen ore at " + near[0] + " " + near[1] + " " + near[2]);
-        CaveRecord.Group best = null;
-        long bd = Long.MAX_VALUE;
-        for (CaveRecord.Group g : frontier) {
-            if (g.behind() <= CaveRecord.BRANCH_MIN) continue;
-            if (dropped.contains(g.first())) { skipped++; continue; }
-            long d = d2(Sightings.cellOf(g.first()), feet);
-            if (d < bd) { bd = d; best = g; }
+        // D15: the passage of the lowest price (seconds per expected ore), its far end walked to
+        double sec = Tuning.get("cave.passageSecPerCell"), per = Tuning.get("cave.orePerUnseenCell");
+        Passages.Passage best = null;
+        double bp = Double.POSITIVE_INFINITY;
+        int open = 0;
+        for (Passages.Passage p : passages) {
+            if (!p.open()) continue;
+            open++;
+            if (dropped.contains(p.key())) { skipped++; continue; }
+            double pr = passagePrice(p, sec, per);
+            if (pr < bp) { bp = pr; best = p; }
         }
         if (best != null) {
-            int[] c = Sightings.cellOf(best.first());
-            // fc (run FC, cause 3): the goal spans the unseen cells behind the frontier - a stand that sees behind it
-            return new Goto(c, "the branch at " + c[0] + " " + c[1] + " " + c[2] + " (more than " + CaveRecord.BRANCH_MIN + " cells behind)",
-                    branchCells(best, feet), best.first(), Goto.Kind.BRANCH);
+            int[] c = best.end();
+            return Goto.toPassage(best, String.format(Locale.ROOT, "the passage to %d %d %d (%d layers, %d unseen cells, %d ore faces, %.1f s per ore expected)",
+                    c[0], c[1], c[2], best.length(), best.unseen(), best.oreFaces(), bp));
         }
         // 88b28290 review 3: while the cells are read, done is the saved measure (maybe a past session's): never trusted - wait
         if (facts != null && facts.filling()) return new Wait("reading the cave's cells from the index (its first pass, CaveRecord.BUDGET a tick)");
+        if (!passages.isEmpty() && open == 0) return new Stop(End.DONE, "every passage from here is walked (" + passages.size() + " passage(s), none with an unseen cell)");
         if (facts != null && facts.done()) return new Stop(End.DONE, "the cave is explored to its end (the record: something seen, no branch of more than " + CaveRecord.BRANCH_MIN + " cells left)");
         if (facts != null && !facts.loaded()) return new Stop(End.NOT_LOADED, "the cave's cells are not loaded (its chunks: the record cannot say where to go)");
         if (firstUnseen != null && !dropped.contains(Sightings.cell(firstUnseen[0], firstUnseen[1], firstUnseen[2])))
             return new Goto(firstUnseen, "the unseen cell nearest the entry at " + firstUnseen[0] + " " + firstUnseen[1] + " " + firstUnseen[2]);
         if (firstUnseen != null) skipped++;
-        if (skipped > 0) return new Stop(End.NO_BRANCH, "no reachable branch (" + skipped + " dropped)");
-        return new Stop(End.NO_PROGRESS, "no branch and no unseen cell near the entry within CaveRecord.BUDGET cells, yet the record is not done");
+        if (skipped > 0) return new Stop(End.NO_BRANCH, "no reachable passage (" + skipped + " dropped)");
+        return new Stop(End.NO_PROGRESS, "no open passage and no unseen cell near the entry within CaveRecord.BUDGET cells, yet the record is not done");
     }
 
     /**
@@ -227,13 +241,14 @@ public final class CaveWalk {
 
     /**
      * D12's measure on the step's end line: "cave: the caving step at x y z ended - NEED_MET (3 of 3 ore mined): 2.4 min
-     * inside, cells seen 40 -> 120 of 200 (explored 60%), ore seen 4 / mined 3, branches left 2".
+     * inside, cells seen 40 -> 120 of 200 (explored 60%), ore seen 4 / mined 3, passages left 2". D15: {@code passagesLeft}
+     * the open passages at the last pick (-1: not measured).
      */
-    public static String endLine(String where, End end, String why, double minutes, int seenBefore, CaveRecord.Facts after, int oreSeen, int mined) {
+    public static String endLine(String where, End end, String why, double minutes, int seenBefore, CaveRecord.Facts after, int oreSeen, int mined, int passagesLeft) {
         int seenNow = after == null ? seenBefore : after.cellCount() - after.unseen();
-        return String.format(Locale.ROOT, "cave: the caving step at %s ended - %s (%s): %.1f min inside, cells seen %d -> %d of %d (explored %d%%), ore seen %d / mined %d, branches left %s",
+        return String.format(Locale.ROOT, "cave: the caving step at %s ended - %s (%s): %.1f min inside, cells seen %d -> %d of %d (explored %d%%), ore seen %d / mined %d, passages left %s",
                 where, end, why, minutes, seenBefore, seenNow, after == null ? 0 : after.cellCount(), after == null ? 0 : Math.round(after.explored() * 100), oreSeen, mined,   // structural: a percent
-                after == null || after.groups() < 0 ? "not measured" : String.valueOf(after.groups()));
+                passagesLeft < 0 ? "not measured" : String.valueOf(passagesLeft));
     }
 
     private static long d2(int[] a, int[] b) {

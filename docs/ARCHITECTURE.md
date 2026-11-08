@@ -31,12 +31,19 @@ while AA is on. AA's own chain is named in `AaRuntime.CHAIN`; only AA starts and
 Caves are known by rays like ore: `sense/CaveIndex` (the air volumes per world, in the one store), credits from the sight
 rays, `aa cave list|yes|no|check`. A known cave is one way to an ore for the planner (`NeedChain.caveAlts`, the yield from
 world-gen data). Its step is `Step.Cave`, run by `StepHands.caveStatus` / `caveMove`: `sense/CaveRecord` holds the cave's
-cells, what is seen, the frontier groups (branches), the ore seen and mined; `cave/CaveWalk.next` picks the move (mine a seen
-ore in reach, walk to a seen ore, walk to the nearest branch, else the record's end). A branch's goal is a `GoalComposite`
-of the fork's `GoalReachBlock`s over unseen cells behind the frontier - since 2026-11-01 the FAR end of the branch first
-(`CaveRecord.farBehind`, `cave.farDepth` layers), the near cells after, so one walk carries the bot through the branch
-instead of one goal and one Baritone search a second (runs GP / GS). Arrival = Baritone's `isInGoal(feet)`; an arrival that
-saw nothing new drops the branch. `probe cave:` lines behind `debug.stepProbe` say each goal's parts and Baritone's state;
+cells, what is seen, the frontier groups (now only the record's own done measure for the planner), the ore seen and mined;
+`cave/CaveWalk.next` picks the move (mine a seen ore in reach, walk to a seen ore, walk the cheapest open passage, else the
+record's end). D15 (2026-11-08): `cave/Passages.build` reads the record's cells as passages from the feet - a flood of
+walkable cells (feet and head air over a floor; joins down / up `cave.passageDrop`) in breadth-first layers, a layer that
+splits into arms of `cave.passageForkLayers` layers or more is a fork, shorter arms are folded bumps; each passage has its
+far end, length, width, unseen cells and ore faces (`Sightings.cavePassages`). Its price is seconds to its far end per ore
+expected (`CaveWalk.passagePrice`: `cave.passageSecPerCell`, `cave.orePerUnseenCell`); the walk is a `GoalNear`
+(`cave.passageNear`) at the far end, arrival sees the passage's cells; a seen ore in reach on the walk pauses it and is mined.
+Seen-ore gotos and the first unseen cell keep the reach goals below. A budget end (MINUTES) is the cave's source fact
+(`FactChange.caveMinutesFact`: "cave at x y z: budget spent, N ore mined, M passages left"), so the order re-plans on the
+sources left; while a caving step runs, a sighting re-prices the order only when closer than the step's target by
+`cave.seenMarginM` (`SeenAsk.caveHold`, `StepHands.caveTargetDist`). Arrival = Baritone's `isInGoal(feet)`; an arrival that
+saw nothing new drops the goto. `probe cave:` lines behind `debug.stepProbe` say each goal's parts and Baritone's state;
 `probe cave site:` lines (`StepHands.caveSiteLines`, 5 s into a held goal, then every 10 s) say the blocks around the feet,
 the drop at each side, Baritone's own break setting and tool strengths, and per goal part its stands and the blocks on the
 eye's line to the cell. A walk's goal is built over stands the mod judges (`LipGoals.standable`: feet and head open, solid

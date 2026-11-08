@@ -413,12 +413,19 @@ public final class FactChange {
     /** GA fix: the caving step's hands say {@link #caveEndedFact} (taken once). */
     public static void caveEnded(int[] entry, String end, String why) { last = caveEndedFact(entry, end, why); }
 
+    /** The caving step ran its minutes with the need unmet: {@link #caveMinutesFact} (taken once). */
+    public static void caveMinutes(int[] entry, int mined, int passagesLeft, String why) { last = caveMinutesFact(entry, mined, passagesLeft, why); }
+
     /**
-     * GA fix: the caving step ran its minutes with the need unmet: a price fact (no try counted) - the order is priced again on
-     * the cave's record as the walk left it (its measured yield), the same cave or another by the price.
+     * D15 (runs JZ / JAE: a MINUTES end was a price fact; a failed step's price fact re-priced against the running pick,
+     * "kept the running pick" with no steps, and the whole order stopped): the budget end is the cave's SOURCE fact - the
+     * cave is out for this order, the order is re-planned on the sources left (another cave, a strip, an explore), and it
+     * stops only when the planner has none. Words: "cave at x y z: budget spent, N ore mined, M passages left (why)". Pure.
      */
-    public static void caveMinutes(int[] entry, String why) {
-        last = priced("the caving step at " + cell(entry) + " ran its minutes (" + (why == null ? "" : why) + "): priced again on its record");
+    public static Fact caveMinutesFact(int[] entry, int mined, int passagesLeft, String why) {
+        return new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay.keyOf(entry),
+                "cave at " + cell(entry) + ": budget spent, " + mined + " ore mined, " + (passagesLeft < 0 ? "not measured" : String.valueOf(passagesLeft))
+                        + " passages left" + (why == null || why.isBlank() ? "" : " (" + why.replaceFirst("^error: ", "") + ")"));
     }
 
     /** 0.39.z77 walk: {@code f} is a walk that ended short ({@link #walkShortFact}). */

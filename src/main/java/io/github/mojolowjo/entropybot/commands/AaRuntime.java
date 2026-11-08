@@ -2539,6 +2539,7 @@ public final class AaRuntime implements JobPort {
         }
         // 0.39.z77 seen 3 (run CU 21:00-21:05): a vein asks only while the run still lacks its family after the bag and the
         // furnaces' inputs (the jobs' remaining input in this dimension), and never while the running step needs no walk
+        seenAsk.caveTarget(StepHands.caveTargetDist());                         // D15: a caving step's sightings re-price only when closer
         var asked = seenAsk.tick(c.stepRun.steps, cells, Jobs.here(p), this::sourceBlocksOf, io.github.mojolowjo.entropybot.cave.ExploreRules::smeltInputs,
                 io.github.mojolowjo.entropybot.sense.Seen.range(), System.currentTimeMillis(), io.github.mojolowjo.entropybot.aa.Replan.everyMs(), liveBag(), furnaceInputs(dim));
         for (String n : seenAsk.notes()) LOG.info("[entropybot] aa: {}", n);
