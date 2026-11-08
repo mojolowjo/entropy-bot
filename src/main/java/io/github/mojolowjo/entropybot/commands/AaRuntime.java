@@ -4045,10 +4045,11 @@ public final class AaRuntime implements JobPort {
             weighDeposit(g, "done");                                          // helper: the bag to the main chest
         }
         for (var g : goals) if (g.parked != null) weighDeposit(g, "stopped");  // helper: a stopped order's bag goes to the chest too
-        io.github.mojolowjo.entropybot.aa.brain.Goals.retryLoopParks(bb);     // 0.39.z70 (R1 = c): said by Goals (log + whisper)
+        // 0.39.z70 (R1 = c): said by Goals (log + whisper); job-lookup: the brain's hold on a retried order is forgotten
+        io.github.mojolowjo.entropybot.aa.brain.Goals.retryLoopParks(bb, tree.brain.failures);
         // 0.39.z77 climb (run CM 17:43-17:48, rule 7): every order parked - under ground the waiting ones try the climb way once,
         // and the all-parked line (each park and its wake) is said once; said by Goals (log + whisper)
-        io.github.mojolowjo.entropybot.aa.brain.Goals.parkedTick(bb, bb.in.underDepth >= io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth());
+        io.github.mojolowjo.entropybot.aa.brain.Goals.parkedTick(bb, bb.in.underDepth >= io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth(), tree.brain.failures);
     }
 
     // ---- B7: schematic builds (2.12) ----

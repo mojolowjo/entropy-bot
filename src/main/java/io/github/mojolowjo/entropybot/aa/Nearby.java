@@ -557,7 +557,10 @@ public final class Nearby {
         }
         Spot f = fallback == null ? null : fallback.get();
         // 0.39.z42: a sighted ore is tested as a scanned one (run C 20:28:52: the ore index's raw_iron_block had no exposure test)
-        if (f != null && s != null && f.block() != null && !counts(s, f.block(), f.x(), f.y(), f.z(), buried, unloaded)) f = null;
+        // job-lookup (run JAY 07:27-07:28: iron seen at -178 34 -43 through the shaft wall, inside rock, was "buried, not
+        // counted" here, so the chain priced no raw_iron way for two minutes): a sighting was SEEN (the rays), so an ore with
+        // six closed faces is still a source - withCover below prices the dig to it; a side not loaded stays not known (rule 15)
+        if (f != null && s != null && f.block() != null && !sightingCounts(s, f, unloaded)) f = null;
         // 0.39.z60 item 2: a sighting goes through the structure rule as a scanned block does
         if (f != null && s != null && f.block() != null) {
             int may = mayBreak(s, f.block(), f.x(), f.y(), f.z(), refused, unloaded);
@@ -605,6 +608,17 @@ public final class Nearby {
         return false;
     }
 
+    /**
+     * job-lookup: a sighting under the exposed-face rule: it was seen, so an open face is not asked - only a face not loaded
+     * with none open is not known (rule 15, counted in {@code unloaded}). True: it counts (its cover is read by withCover).
+     */
+    private static boolean sightingCounts(Scan s, Spot f, java.util.Map<String, Integer> unloaded) {
+        if (!exposureRuled(f.block())) return true;
+        if (exposed(s, f.x(), f.y(), f.z()) != null) return true;
+        unloaded.merge(f.block(), 1, Integer::sum);
+        return false;
+    }
+
     /** The six face neighbours. */
     private static final int[][] FACES = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
 
@@ -633,18 +647,24 @@ public final class Nearby {
         return unknown ? null : false;
     }
 
-    /** job-sight: the deepest cover a covered source is dug through (Tuning {@code sight.coverMax}); deeper: not counted, said. */
+    /**
+     * job-sight: the deepest cover priced by its own cover block (Tuning {@code sight.coverMax}); job-lookup: deeper is priced
+     * as a dig of that many levels of ground (the band's per-level price), never left out.
+     */
     public static int coverMax() { return Tuning.i("sight.coverMax"); }
 
+    /** job-lookup: the cover read's bound (the overworld's build height, 384 cells); past it the cover is not known. */
+    static final int WORLD_HEIGHT = 384;   // structural: the game's build height
+
     /** job-sight: the bucket key of a covered block left out ({@link Source#buried} words). */
-    static final String DEEPER = " covered deeper than sight.coverMax", MARKED_OPEN = " marked covered with nothing over it";
+    static final String MARKED_OPEN = " marked covered with nothing over it";
 
     /**
      * job-sight (run JAH 00:29: "dig cobblestone seen 5 m" was stone under grass; Baritone's mine takes only blocks it sees,
      * so it ended "none in sight"): the spot's cover fact from the same chunk reads as the exposed rule ({@link Scan#seeThrough}).
      * A face of air: exposed (0). Six closed faces, or the store's mark ({@link Scan#coveredMark}): covered, N = the closed
      * cells straight over it up to the first air, {@code over} the first of them. A log keeps its chop (no cover). A read
-     * not loaded: the spot as it was (rule 15: priced by estimate). Null: covered deeper than {@link #coverMax}, or marked
+     * not loaded: the spot as it was (rule 15: priced by estimate). Any depth is kept (job-lookup). Null: a dig refused there, or marked
      * with air over it - counted in {@code buried} with the reason (rule 7), not a source.
      */
     public static Spot withCover(Scan s, Spot sp, java.util.Map<String, Integer> buried) {
@@ -666,10 +686,9 @@ public final class Nearby {
             if (a) break;
             if (over == null) over = s.blockAt(x, y + d + 1, z);
             d++;
-            if (d > coverMax()) {
-                if (buried != null) buried.merge(sp.block() + DEEPER, 1, Integer::sum);
-                return null;
-            }
+            // job-lookup (run JAY): a cover deeper than sight.coverMax is no longer left out - the chain prices it as a dig of
+            // that depth (NeedChain.coverS, the band's per-level price); past the world's height the cover is not known
+            if (d > WORLD_HEIGHT) return sp;
         }
         if (d == 0) {
             if (buried != null) buried.merge(sp.block() + MARKED_OPEN + " (" + mark + ")", 1, Integer::sum);

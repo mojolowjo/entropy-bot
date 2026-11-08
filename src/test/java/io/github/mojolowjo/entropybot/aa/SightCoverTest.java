@@ -56,14 +56,15 @@ class SightCoverTest {
         assertEquals("dig to cobblestone at 5 64 0, 1 block of grass_block over it", NeedChain.coverText("minecraft:cobblestone", sp));
     }
 
-    /** Deeper than sight.coverMax: not a source, said in the buried words; the cover not loaded: the spot as before (rule 15). */
+    /** job-lookup: deeper than sight.coverMax is kept with its depth; the cover not loaded: the spot as before (rule 15). */
     @Test
-    void tooDeepIsCountedAndUnknownCoverStaysAnEstimate() {
+    void tooDeepIsKeptAndUnknownCoverStaysAnEstimate() {
         NearbyExposureTest.World w = new NearbyExposureTest.World().put(5, 64, 0, STONE);
         for (int y = 65; y <= 65 + Nearby.coverMax(); y++) w.put(5, y, 0, DIRT);
+        w.air(5, 66 + Nearby.coverMax(), 0);
         Map<String, Integer> buried = new HashMap<>();
-        assertNull(Nearby.withCover(w, new Spot(5, 64, 0, 5, STONE), buried));
-        assertEquals(1, buried.get(STONE + Nearby.DEEPER));
+        assertEquals(Nearby.coverMax() + 1, Nearby.withCover(w, new Spot(5, 64, 0, 5, STONE), buried).cover());
+        assertTrue(buried.isEmpty());
         Spot far = new Spot(1000, 64, 0, 5, STONE);
         assertEquals(Spot.COVER_UNKNOWN, Nearby.withCover(w, far, buried).cover(), "not loaded: priced by estimate as today");
     }

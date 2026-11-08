@@ -666,7 +666,7 @@ final class TuningDefs {
         Tuning.def("shoreWatch.shoreTries", 4, "rm-constants 0.39.u2 (was ShoreWatch.SHORE_TRIES)", "the shore tries of ShoreWatch");
         // sightings
         Tuning.def("sightings.animalRange", 32, "rm-constants 0.39.u2 (was Sightings.ANIMAL_RANGE)", "the animal range of Sightings");
-        Tuning.def("sight.coverMax", 4, "job-sight (run JAH 00:29)", "the deepest cover (blocks over it) a covered source is dug through; deeper is not counted, said");
+        Tuning.def("sight.coverMax", 4, "job-sight (run JAH 00:29)", "the deepest cover (blocks over it) priced by its own cover block; deeper is priced as a dig of that many levels of stone (job-lookup: never left out)");
         Tuning.def("sight.maxCovered", 4096, "job-sight", "the most covered marks the sightings store keeps per dimension (oldest go first)");
         Tuning.def("sightings.merge", 16,"rm-constants 0.39.u2 (was Sightings.MERGE)", "the merge of Sightings");
         Tuning.def("sightings.maxCaves", 400, "rm-constants 0.39.u2 (was Sightings.MAX_CAVES)", "the max caves of Sightings");

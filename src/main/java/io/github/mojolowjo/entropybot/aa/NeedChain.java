@@ -5542,12 +5542,21 @@ public final class NeedChain {
     /** job-sight: the way's words for a covered spot: "dig to cobblestone at x y z, 2 blocks of dirt over it". */
     static String coverText(String gives, Spot sp) {
         return "dig to " + shw(gives) + " at " + sp.x() + " " + sp.y() + " " + sp.z() + ", " + sp.cover() + " block" + (sp.cover() == 1 ? "" : "s")
-                + " of " + (sp.coverBlock() == null ? "?" : shw(sp.coverBlock())) + " over it";
+                + " of " + (sp.coverBlock() == null ? "?" : shw(sp.coverBlock())) + " over it"
+                + (deepCover(sp) ? " (deeper than sight.coverMax " + Nearby.coverMax() + ": priced as a dig of " + sp.cover() + " levels of " + shw(DIG_DOWN_BLOCK) + ")" : "");
     }
 
-    /** job-sight: the dig of the cover: each cover block's break (Baritone's cost of the cover block) by the depth. */
+    /** job-lookup: the cover is deeper than {@code sight.coverMax} (priced per level as the band's dig, not by its top block). */
+    static boolean deepCover(Spot sp) { return sp.isCovered() && sp.cover() > Nearby.coverMax(); }
+
+    /**
+     * job-sight: the dig of the cover: each cover block's break (Baritone's cost of the cover block) by the depth. job-lookup
+     * (run JAY): a cover deeper than {@code sight.coverMax} is mixed ground, priced as the band's dig: a level of
+     * {@link #DIG_DOWN_BLOCK} each.
+     */
     static double coverS(Ctx c, Spot sp) {
         if (!sp.isCovered()) return 0;
+        if (deepCover(sp)) return blockBreakS(c, DIG_DOWN_BLOCK) * sp.cover();
         return blockBreakS(c, sp.coverBlock() == null ? sp.block() : sp.coverBlock()) * sp.cover();
     }
 

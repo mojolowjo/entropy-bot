@@ -90,13 +90,19 @@ class NearbyExposureTest {
         assertEquals(SIGHTED.covered(0, null), Nearby.nearest(w, ME, Set.of(IRON), () -> SIGHTED));
     }
 
-    /** 0.39.z42 (run C 20:28:52): a sighted ore goes through the same exposed-face test: buried, it is no source. */
+    /**
+     * 0.39.z42 (run C 20:28:52) as changed by job-lookup (run JAY): a sighted ore was seen, so six closed faces make it a
+     * covered source (its cover read), not "buried"; a side not loaded with none open stays not known (rule 15).
+     */
     @Test
-    void aBuriedSightedOreIsNoSourceEither() {
-        World w = new World();
+    void aBuriedSightedOreIsACoveredSource() {
+        World w = new World().air(50, 67, 50);
         Nearby.Source s = Nearby.source(w, ME, Set.of(IRON), () -> SIGHTED);
-        assertNull(s.spot(), s.line());
-        assertEquals(Map.of(IRON, 1), s.buried());
+        assertNotNull(s.spot(), s.line());
+        assertEquals(2, s.spot().cover());
+        assertTrue(s.buried().isEmpty());
+        Spot far = new Spot(999, 64, 50, 70, IRON);
+        assertNull(Nearby.source(new World(), ME, Set.of(IRON), () -> far).spot(), "a side not loaded: not known");
     }
 
     @Test
