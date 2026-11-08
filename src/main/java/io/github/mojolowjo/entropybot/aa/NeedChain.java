@@ -1021,6 +1021,8 @@ public final class NeedChain {
         }
 
         boolean caching() { return run != null; }
+        /** job-bandtool2: inside the band way's tool chain a computing walk is charged its straight metres ({@link #walk}). */
+        boolean toolEstimate;
 
         /**
          * Owner 2026-10-29 ("the crafting table keeps on itself"; run FV 23:43:51 "crafting table at -49 62 -33 unusable: no path",
@@ -4017,7 +4019,7 @@ public final class NeedChain {
         boolean stuck0 = c.stuck;
         String toolWords = bandTool(c, where.block());
         if (toolWords == null) return null;
-        if (c.stuck && !stuck0) return "the band way (after " + toolWords.replaceAll(", $", "") + ")";   // the pickaxe's source is still to find
+        if (c.stuck && !stuck0) return "the band way (" + toolWords.replaceAll(", $", "") + ")";   // the pickaxe's source is still to find (as the cave way)
         int fromY = feet[1];                                 // the dig starts at the feet (step 1 in this way)
         double faces = Tuning.get("band.facesPerBreak"), fallback = Tuning.get("cave.orePerCellNotKnown");
         double oreS = blockBreakS(c, where.block());
@@ -4130,7 +4132,7 @@ public final class NeedChain {
     /**
      * job-bandtool: the pickaxe the band way's ore needs ({@code block}'s harvest tier from the mining data). "" when the
      * block needs none or the bag holds one of that tier; else the cheapest pickaxe of that tier made first, its seconds
-     * charged, its phrase "with stone_pickaxe made first (N s; <- its chain), " (the parts in aa debug's node). Null with
+     * charged, its phrase "after stone_pickaxe (<- its chain), " as the cave way's (job-bandtool2: {@link #toolFirst}; the seconds in aa debug's node). Null with
      * {@code c.fail}: the tier is not known (rule 15) or no such pickaxe can be had.
      */
     private static String bandTool(Ctx c, String block) {
@@ -4140,12 +4142,12 @@ public final class NeedChain {
         if (need == MiningTiers.UNKNOWN) { c.fail = "the band way: the pickaxe tier of " + shw(block) + " is not known (rule 15)"; return null; }
         if (need < 1 || (c.pickItem != null && c.pickTier >= need)) return "";
         double s0 = c.seconds;
-        String pre = cheapestPickaxe(c, need);
+        String pre = toolFirst(c, need);              // job-bandtool2: the cave way's own tool path
         if (c.fail != null) { c.fail = "the band way: " + shw(block) + " drops only with a pickaxe of tier " + need + ": " + c.fail; return null; }
         final double ps = c.seconds - s0;
         final String fpre = pre;
         c.note(() -> "band tool: " + shw(block) + " needs pickaxe tier " + need + " (game data): " + fpre + " = " + s(ps));
-        return "with " + sh(c.pickItem) + " made first (" + s(ps) + "; <- " + pre + "), ";
+        return "after " + pre + ", ";
     }
 
     /** job-band2: the band way's cave and the walk from the dig's end to its lip (seconds, words). */
@@ -4835,6 +4837,14 @@ public final class NeedChain {
             }
             c.walk(key, out);
             walkNote(c, x, y, z, dist, out.fail() == null ? "Baritone path, complete" : out.fail(), out);
+        }
+        // job-bandtool2 (run JAZ 07:47-07:53): inside a way's tool chain (toolFirst with estimate) a walk still computing is
+        // charged the straight metres as an estimate (rule 18 amended, as job-bandwalk's band model), never a stand there
+        if (out.fail() != null && c.toolEstimate && out.kind() == PathPrice.Kind.COMPUTING && dist >= 0) {
+            double es = io.github.mojolowjo.entropybot.aa.brain.Unit.seconds(dist);
+            out = new Walked(es, "walk ~" + s(es) + " (" + RANKED + ", not priced: the path computing, the straight " + Math.round(dist) + " m in the tool chain)", null, PathPrice.Kind.ESTIMATED);
+            walkNote(c, x, y, z, dist, "computing: the straight metres in the tool chain", out);
+            return out;
         }
         if (out.fail() != null) c.fail = out.fail();
         return out;
@@ -6326,7 +6336,7 @@ public final class NeedChain {
         String head = "known cave " + Math.round(cw.dist()) + " m";
         String pre = null;
         if (tier > c.pickTier) {
-            pre = cheapestPickaxe(c, tier);
+            pre = toolFirst(c, tier);
             if (c.fail != null) return null;
             if (c.stuck) return head + " (after " + pre + ")";
         }
@@ -7030,6 +7040,23 @@ public final class NeedChain {
      * each in full (loops and unknown sources dropped as everywhere); ties: the less raw work the recipe tree still holds (a loop
      * holds infinite), then the lower tier. No candidate stands: c.fail. Returns the winner's phrase.
      */
+    /**
+     * job-bandtool2 (run JAZ 07:47-07:53: the band way lost every re-price to a cave because both tool chains stood on a tree
+     * walk still computing and the tie went by way index): one code path for "this way needs a pickaxe of {@code tier} first",
+     * the cave way's and the band way's. Within it a walk still computing is charged its straight metres (rule 18 amended,
+     * as the band model prices a computing dig column), so the way stays priced and competes by seconds; a source only an
+     * explore finds still ends the chain there (c.stuck, the explore's leaf). Null with c.fail as {@link #cheapestPickaxe}.
+     */
+    private static String toolFirst(Ctx c, int tier) {
+        boolean was = c.toolEstimate;
+        c.toolEstimate = true;
+        try {
+            return cheapestPickaxe(c, tier);
+        } finally {
+            c.toolEstimate = was;
+        }
+    }
+
     private static String cheapestPickaxe(Ctx c, int tier) {
         List<Alt> alts = new ArrayList<>();
         for (String pid : new TreeSet<>(ItemWorth.itemsIn("pickaxes"))) {

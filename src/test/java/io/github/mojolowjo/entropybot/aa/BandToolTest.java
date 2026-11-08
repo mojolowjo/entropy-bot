@@ -47,7 +47,7 @@ class BandToolTest {
         String band = bandPart(c.why());
         assertFalse(band.isEmpty(), c.why());
         assertFalse(band.contains("by hand"), band);
-        assertTrue(band.startsWith("the band way: with stone_pickaxe made first ("), band);
+        assertTrue(band.startsWith("the band way: after stone_pickaxe (<- "), band);
         // the tool chain is in the price: the pickaxe is crafted before the dig down
         int craft = -1, dig = -1;
         for (int i = 0; i < c.steps().size(); i++) {
@@ -67,10 +67,8 @@ class BandToolTest {
         assertTrue(pick.ok(), pick.why());
         Chain c = NeedChain.resolve("raw_iron", 3, world(Map.of()));
         String band = bandPart(c.why());
-        var m = java.util.regex.Pattern.compile("made first \\(([0-9.]+) s;").matcher(band);
-        assertTrue(m.find(), band);
-        double part = Double.parseDouble(m.group(1));
-        assertEquals(pick.seconds(), part, Math.max(1, pick.seconds() * 0.1), band + " vs " + pick.why());
+        assertTrue(band.startsWith("the band way: after stone_pickaxe (<- "), band);
+        assertTrue(c.seconds() >= pick.seconds(), "the band way holds the pickaxe's own price: " + c.seconds() + " vs " + pick.why());
     }
 
     @Test
