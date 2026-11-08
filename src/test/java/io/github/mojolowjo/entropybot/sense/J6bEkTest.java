@@ -56,8 +56,7 @@ class J6bEkTest {
             s.caveTouched(D, 5, 30, 5);
             s.caveStood(D, 5, 30, 5, 5 + ticks % 20, 30, 5, ticks);               // the bot walking in it
             var f = s.caveFacts(D, 5, 30, 5);
-            s.caveFrontier(D, 5, 30, 5);
-            s.caveFirstUnseen(D, 5, 30, 5);
+            s.cavePassageList(D, 5, 30, 5);                                     // D15 pass two: the passages (THE model)
             long readers = s.caveTouched(D, 5, 30, 5);
             most = Math.max(most, readers);
             assertTrue(readers <= CaveRecord.BUDGET, "tick " + ticks + ": the step's reads touched " + readers);
@@ -68,45 +67,12 @@ class J6bEkTest {
         assertTrue(ticks <= 20, "about 13 ticks for 208,896 cells: " + ticks);
         assertEquals(64 * 64 * 51, f.cellCount());
         assertTrue(f.unseen() < f.cellCount() && f.unseen() > f.cellCount() - 2000, "a walk's strip seen: " + f.unseen());
-        assertFalse(f.done(), "seen a strip of it, branches left");
-        assertTrue(f.groups() >= 1);
+        assertFalse(f.done(), "seen a strip of it, passages left");
+        assertTrue(f.passages() >= 0, "the passages measured (" + f.line() + ")");
         s.caveTouched(D, 5, 30, 5);
         for (int i = 0; i < 45; i++) s.caveFacts(D, 5, 30, 5);                  // "cave 45 asks"
         assertEquals(0, s.caveTouched(D, 5, 30, 5), "the planner's asks read the cached facts: no cell touched");
-        assertTrue(s.caveFrontier(D, 5, 30, 5).stream().allMatch(g -> g.behind() <= CaveRecord.BRANCH_MIN + 1), "behind capped at BRANCH_MIN + 1");
         assertEquals(0, s.caveFeed(D, idx, CaveRecord.BUDGET), "the index unchanged: nothing fed");
-    }
-
-    /**
-     * 88b28290 review 1: a frontier of tens of thousands of cells (16 seen planes across EK's size of volume, 52,224 cells,
-     * every one beside unseen air) is regrouped in steps - each tick's regroup and reads under the budget, done never
-     * claimed while the groups lag, the 16 branches once it is through.
-     */
-    @Test
-    void aFrontierOfThousands_isRegroupedUnderTheBudget() {
-        CaveIndex idx = bigIndex();
-        Sightings s = knownAt(5, 30, 5);
-        for (int t = 0; t < 40 && !s.caveFacts(D, 5, 30, 5).loaded(); t++) s.caveFeed(D, idx, CaveRecord.BUDGET);
-        List<Long> planes = new ArrayList<>();
-        for (int x = 0; x < 64; x += 4) for (int z = 0; z < 64; z++) for (int y = 10; y <= 60; y++) planes.add(Sightings.cell(x, y, z));
-        s.caveSaw(D, 5, 30, 5, planes);
-        s.caveTouched(D, 5, 30, 5);
-        int ticks = 0;
-        boolean lagged = false;
-        while (ticks < 50) {
-            ticks++;
-            s.caveFeed(D, idx, CaveRecord.BUDGET);                                // the tick's feed (nothing new: it only starts the tick)
-            var f = s.caveFacts(D, 5, 30, 5);
-            s.caveFrontier(D, 5, 30, 5);
-            s.caveFacts(D, 5, 30, 5);
-            long t = s.caveTouched(D, 5, 30, 5);
-            assertTrue(t <= CaveRecord.BUDGET + 3264 + 64, "tick " + ticks + ": " + t + " cells touched (the budget, past it by one group's cells at most)");
-            assertFalse(f.done(), "never done while the groups lag or with 16 branches open");
-            if (f.groups() == 16) break;
-            lagged = true;
-        }
-        assertTrue(lagged, "52,224 frontier cells took more than one tick");
-        assertEquals(16, s.caveFacts(D, 5, 30, 5).groups(), "the 16 seen planes, each a branch (after " + ticks + " ticks)");
     }
 
     /** 88b28290 review 3: while the cells are read (filling), a saved done is never trusted - the step waits. */
@@ -122,13 +88,14 @@ class J6bEkTest {
     void theIncrementalSumsMatchAWholeCount() {
         Sightings s = knownAt(0, 40, 0);
         List<Long> cells = new ArrayList<>(J6bCaveRecordTest.cave());
-        s.caveCells(D, 0, 40, 0, cells.subList(0, 100));                         // half the chunks first
+        s.caveCells(D, 0, 40, 0, cells.subList(0, 200));                         // half the chunks first
         s.caveStood(D, 0, 40, 0, 0, 40, 0, 1);
         s.caveCells(D, 0, 40, 0, cells);                                         // the rest arrives later
         var f = s.caveFacts(D, 0, 40, 0);
-        assertEquals(200, f.cellCount());
-        assertEquals(200 - 1 - CaveRecord.SEE_STEPS, f.unseen());
-        assertEquals(1, f.groups(), "the frontier grew with the cells that arrived");
+        assertEquals(400, f.cellCount());
+        assertEquals(400 - J6bCaveRecordTest.SEEN_AT_ENTRY, f.unseen());
+        assertTrue(f.passages() >= 1, "the passages measured over the cells that arrived");
+        assertFalse(f.done());
         s.caveSaw(D, 0, 40, 0, cells);
         assertTrue(s.caveFacts(D, 0, 40, 0).done(), "every cell seen");
     }
@@ -149,11 +116,11 @@ class J6bEkTest {
 
         var before = s.caveFacts(D, -59, 63, 71);
         assertFalse(before.done(), "nothing seen yet: not done");
-        var first = CaveWalk.next(0, 1, 0, 10, before, s.cavePassages(D, -59, 63, 71, lip, java.util.Set.of(), 3, 3, 4096).passages(), List.of(), new int[]{-50, 63, 75}, 4.5, s.caveFirstUnseen(D, -59, 63, 71));
+        var first = CaveWalk.next(0, 1, 0, 10, before, s.cavePassages(D, -59, 63, 71, lip, java.util.Set.of(), 3, 3, 4096).passages(), List.of(), new int[]{-50, 63, 75}, 4.5, entry);
         assertTrue(first instanceof CaveWalk.Goto g && java.util.Arrays.equals(g.cell(), entry), "the first target: the entry itself (unseen) - " + first);
 
         assertTrue(s.caveStood(D, -59, 63, 71, lip[0], lip[1], lip[2], 1) > 0, "the lip sees into the cave");
-        var next = CaveWalk.next(0, 1, 0, 10, s.caveFacts(D, -59, 63, 71), s.cavePassages(D, -59, 63, 71, lip, java.util.Set.of(), 3, 3, 4096).passages(), List.of(), lip, 4.5, s.caveFirstUnseen(D, -59, 63, 71));
+        var next = CaveWalk.next(0, 1, 0, 10, s.caveFacts(D, -59, 63, 71), s.cavePassages(D, -59, 63, 71, lip, java.util.Set.of(), 3, 3, 4096).passages(), List.of(), lip, 4.5, entry);
         assertTrue(next instanceof CaveWalk.Goto, "into the cave, never DONE: " + next);
         assertFalse(s.caveFacts(D, -59, 63, 71).done());
     }

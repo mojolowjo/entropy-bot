@@ -111,7 +111,7 @@ class J6bEpTest {
         Sightings s = new Sightings();
         s.knowCave("d", new CaveIndex.Known(0, 40, 0, CaveIndex.Size.LARGE, CaveIndex.Depth.STONE, List.of(Sightings.cell(1, 40, 0))), 1);
         List<Long> cells = new ArrayList<>();
-        for (int x = 0; x < 200; x++) cells.add(Sightings.cell(x, 40, 0));
+        for (int x = 0; x < 200; x++) { cells.add(Sightings.cell(x, 40, 0)); cells.add(Sightings.cell(x, 41, 0)); }   // D15 pass two: 2 high, walkable
         s.caveCells("d", 0, 40, 0, cells);
         s.caveStood("d", 0, 40, 0, 0, 40, 0, 1);
         s.caveWalked("d", 0, 40, 0, 10, 2, 2, true);                    // the leg's end: 10 min, 2 ore seen, the need unmet

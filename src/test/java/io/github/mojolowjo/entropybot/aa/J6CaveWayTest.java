@@ -71,8 +71,8 @@ class J6CaveWayTest {
             // J6b review 6: leftKeys are the SEEN ORE spots left there (what a collect way sees anyway, by sight), never the cave's cells
             // J6b run EF (3): entries are the cave's OPENING cells to walk to the lip of (walk targets), never its volume's cells
             // run EM: more is the OTHER known caves ranked after this one (each a CaveWay of the same facts), never cells
-            // J6d: frontier is ONE cell - the end of the price's second walk (a walk target, x y z), never the volume's cells
-            assertFalse(!c.getName().equals("leftKeys") && !c.getName().equals("entries") && !c.getName().equals("more") && !c.getName().equals("frontier")
+            // D15 pass two: passages are the record's passage facts (ends, lengths, counts), their cells left out (Sightings.cavePassageList)
+            assertFalse(!c.getName().equals("leftKeys") && !c.getName().equals("entries") && !c.getName().equals("more") && !c.getName().equals("passages")
                     && (java.util.Collection.class.isAssignableFrom(c.getType()) || c.getType().isArray()), "CaveWay." + c.getName() + " is a list");
         assertTrue(java.util.Arrays.stream(io.github.mojolowjo.entropybot.sense.Sightings.KnownCave.class.getRecordComponents()).anyMatch(c -> c.getType() == CaveIndex.Size.class));
         assertTrue(java.util.Arrays.stream(io.github.mojolowjo.entropybot.sense.Sightings.KnownCave.class.getRecordComponents()).anyMatch(c -> c.getType() == CaveIndex.Depth.class));

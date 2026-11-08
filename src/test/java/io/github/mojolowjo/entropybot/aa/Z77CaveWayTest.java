@@ -61,7 +61,7 @@ class Z77CaveWayTest {
         assertTrue(caveMined(c), "the cave way runs: " + c.steps());
         assertEquals(12.48, c.seconds(), TOL, c.why());
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Explore), c.steps().toString());
-        assertTrue(c.why().contains("in the cave: known cave 30 m: the walk to its lip 9.0 s + the walk in 0 s (no unseen cell of its record measured past the entry) + 3 ore broken ") && c.why().contains(" -> 12.5 s (world-gen not known yet, explored not measured)"), c.why());
+        assertTrue(c.why().contains("in the cave: known cave 30 m: the walk to its lip 9.0 s + the walk in 0 s (its passages not measured yet (the cave's cells not loaded)) + 3 ore broken") && c.why().contains(" -> 12.5 s (world-gen not known yet, explored not measured)"), c.why());
     }
 
     /** The same with the seen ore HELD for the order (BW: no progress): the cave way still stands and wins. */

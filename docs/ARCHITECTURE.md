@@ -37,7 +37,7 @@ line (`LoadProbe` -> `ProbeLines.LoadFacts`) says re-joins (`IPricedPath.joinCou
 Caves are known by rays like ore: `sense/CaveIndex` (the air volumes per world, in the one store), credits from the sight
 rays, `aa cave list|yes|no|check`. A known cave is one way to an ore for the planner (`NeedChain.caveAlts`, the yield from
 world-gen data). Its step is `Step.Cave`, run by `StepHands.caveStatus` / `caveMove`: `sense/CaveRecord` holds the cave's
-cells, what is seen, the frontier groups (now only the record's own done measure for the planner), the ore seen and mined;
+cells, what is seen, its passages (D15 pass two: THE cave model; the frontier groups and the first unseen cell are deleted), the ore seen and mined;
 `cave/CaveWalk.next` picks the move (mine a seen ore in reach, walk to a seen ore, walk the cheapest open passage, else the
 record's end). D15 (2026-11-08): `cave/Passages.build` reads the record's cells as passages from the feet - a flood of
 walkable cells (feet and head air over a floor; joins down / up `cave.passageDrop`) in breadth-first layers, a layer that
@@ -45,7 +45,13 @@ splits into arms of `cave.passageForkLayers` layers or more is a fork, shorter a
 far end, length, width, unseen cells and ore faces (`Sightings.cavePassages`). Its price is seconds to its far end per ore
 expected (`CaveWalk.passagePrice`: `cave.passageSecPerCell`, `cave.orePerUnseenCell`); the walk is a `GoalNear`
 (`cave.passageNear`) at the far end, arrival sees the passage's cells; a seen ore in reach on the walk pauses it and is mined.
-Seen-ore gotos and the first unseen cell keep the reach goals below. A budget end (MINUTES) is the cave's source fact
+Seen-ore gotos keep the reach goals below. Pass two: a layer piece wider than `cave.passageRoomWidth` is a ROOM node whose
+exits are its arms; at the lip (no walkable cell under the feet) the flood starts at the nearest walkable cave cell within
+`cave.passageLipNear` (run JAJ: a lip 4 blocks off), and with none the step walks to the cave's mouth (said). The record keeps the step's last passage
+list (saved as the list; an old save's frontier groups are dropped, logged); its done = measured and none open; never
+measured, it measures from the entry. The planner's walk inside is `CaveWalk.findSeconds` over that list (nearest open
+passages first, seconds per expected ore). While a caving step runs the list is HELD (`Sightings.caveHold`): the planner
+reads the step's first measure until the step ends, so the price does not move with each metre. A budget end (MINUTES) is the cave's source fact
 (`FactChange.caveMinutesFact`: "cave at x y z: budget spent, N ore mined, M passages left"), so the order re-plans on the
 sources left; while a caving step runs, a sighting re-prices the order only when closer than the step's target by
 `cave.seenMarginM` (`SeenAsk.caveHold`, `StepHands.caveTargetDist`). Arrival = Baritone's `isInGoal(feet)`; an arrival that

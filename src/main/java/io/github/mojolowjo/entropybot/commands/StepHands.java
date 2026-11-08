@@ -865,6 +865,8 @@ public final class StepHands implements Steps.Hands {
         io.github.mojolowjo.entropybot.cave.Passages.Passage goalPassage;
         /** D15: the open passages at the last pick (-1: not measured), for the end line and the budget fact. */
         int passagesLeft = -1;
+        /** D15 pass two: the lip line said once. */
+        boolean lipSaid;
     }
 
     private Caving caving;
@@ -898,6 +900,9 @@ public final class StepHands implements Steps.Hands {
         caving.fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(k.family());
         f = sg.caveFacts(dim, k.x(), k.y(), k.z());
         caving.seenAtStart = f.cellCount() - f.unseen();
+        // D15 pass two: while the step runs the planner's cave price holds (the record's passage list as the step finds it
+        // first); the step's end fact re-opens it (caveEnd)
+        sg.caveHold(dim, k.x(), k.y(), k.z(), true);
         LOG.info("[entropybot] cave: the caving step enters the known cave {} for {} {} ore ({} min at most): {}", f.x() + " " + f.y() + " " + f.z(), k.n(), caving.fam,
                 k.minutes(), f.line());
         return null;
@@ -1026,13 +1031,20 @@ public final class StepHands implements Steps.Hands {
         // D15: the cave read as passages from the feet (the record's own cells), their ore faces from the seen ore left
         java.util.Set<Long> oreCells = new java.util.HashSet<>();
         for (int[] c : left) oreCells.add(io.github.mojolowjo.entropybot.sense.Sightings.cell(c[0], c[1], c[2]));
-        var found = sg.cavePassages(cv.dim, k.x(), k.y(), k.z(), me, oreCells, Tuning.i("cave.passageDrop"), Tuning.i("cave.passageForkLayers"), Tuning.i("cave.passageCells"));
+        var found = sg.cavePassages(cv.dim, k.x(), k.y(), k.z(), me, oreCells, Tuning.i("cave.passageDrop"), Tuning.i("cave.passageForkLayers"), Tuning.i("cave.passageCells"),
+                Tuning.i("cave.passageRoomWidth"), Tuning.i("cave.passageLipNear"));   // pass two: rooms, and the lip floods from cave air near the feet
         cv.passagesLeft = io.github.mojolowjo.entropybot.cave.CaveWalk.openPassages(found.passages());
-        if (found.why() != null && cv.drops.stream().noneMatch(d -> d.startsWith("passages: ")))
+        if (found.why() != null && cv.drops.stream().noneMatch(d -> d.startsWith("passages: "))) {
             cv.drops.add("passages: " + found.why());                          // rule 7: said once at the end
+            LOG.info("[entropybot] cave: passages: {} - the step walks to the cave's mouth {} {} {}", found.why(), k.x(), k.y(), k.z());
+        }
+        if (found.lip() && !cv.lipSaid) {
+            cv.lipSaid = true;
+            LOG.info("[entropybot] cave: passages: the feet {} are outside the cave's air; the flood starts at the cave cell {} (cave.passageLipNear {})", Jobs.fmt(me), Jobs.fmt(found.start()), Tuning.i("cave.passageLipNear"));
+        }
         var next = io.github.mojolowjo.entropybot.cave.CaveWalk.next(cv.mined, k.n(), minutes, k.minutes(), f, found.passages(),
                 left, me, io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH,
-                sg.caveFirstUnseen(cv.dim, k.x(), k.y(), k.z()), cv.dropped);     // run EK (2): the first target, by the entry; run EN: the dropped passed over
+                new int[]{k.x(), k.y(), k.z()}, cv.dropped);     // pass two: the mouth, when no passage is found from the feet; run EN: the dropped passed over
         switch (next) {
             case io.github.mojolowjo.entropybot.cave.CaveWalk.Stop s -> {
                 return caveEnd(s.end(), s.why() + (cv.drops.isEmpty() ? "" : "; dropped: " + String.join("; ", cv.drops)));
@@ -1390,6 +1402,8 @@ public final class StepHands implements Steps.Hands {
         double minutes = (System.currentTimeMillis() - cv.startMs) / 60000.0;   // structural: ms a minute
         io.github.mojolowjo.entropybot.sense.CaveRecord.Facts after = null;
         if (sg != null) {
+            // D15 pass two: the step's end re-opens the planner's cave price - the step's last passage measure is stored
+            sg.caveHold(cv.dim, k.x(), k.y(), k.z(), false);
             var before = sg.caveFacts(cv.dim, k.x(), k.y(), k.z());
             int seenNow = before == null ? cv.seenAtStart : before.cellCount() - before.unseen();
             // review 4: a walk that saw no cell and mined no ore holds the cave until something new is known (no loop); an owner's

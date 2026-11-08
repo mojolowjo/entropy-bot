@@ -170,4 +170,64 @@ public class D15PassagesTest {
         assertFalse(CaveWalk.seenRepricesCave(7, 10, 4), "the same ore, about as far: the step goes on");
         assertFalse(CaveWalk.seenRepricesCave(1, Double.NaN, 4), "no target (mining or picking): the step's record takes it");
     }
+
+    /**
+     * Pass two: a 5 x 5 room with a 10-long tunnel leaving the middle of each wall; the bot in the room's middle sees a
+     * ROOM node and four arms (cave.passageRoomWidth 8: the flood's ring of 12 cells at layer 3 is the room).
+     */
+    @Test
+    void aRoomEnteredFromItsMiddle_isARoomWithFourArms() {
+        Set<Long> air = new HashSet<>();
+        for (int x = -2; x <= 2; x++) for (int z = -2; z <= 2; z++) open(air, x, 40, z);
+        for (int k = 3; k <= 12; k++) { open(air, k, 40, 0); open(air, -k, 40, 0); open(air, 0, 40, k); open(air, 0, 40, -k); }
+        var f = Passages.build((x, y, z) -> air.contains(Sightings.cell(x, y, z)), c -> false, new int[]{0, 40, 0}, Set.of(), DROP, FORK, CAP, 8, 2);
+        assertNull(f.why());
+        var ps = f.passages();
+        assertEquals(Passages.EndKind.ROOM, ps.get(0).endKind(), "the bot's own passage is the room: " + ps);
+        assertEquals(4, ps.stream().filter(p -> p.parent() == 0).count(), "four arms, one at each exit: " + ps);
+        assertEquals(5, ps.size());
+        for (var p : ps.subList(1, ps.size())) {
+            assertEquals(Passages.EndKind.DEAD_END, p.endKind());
+            assertEquals(12, Math.abs(p.end()[0]) + Math.abs(p.end()[2]), "each arm to its tunnel's end: " + java.util.Arrays.toString(p.end()));
+        }
+        assertFalse(build(air, new int[]{0, 40, 0}).passages().get(0).endKind() == Passages.EndKind.ROOM, "no room width given: no room node");
+    }
+
+    /**
+     * Pass two, the lip: the feet on the ground beside a hole, outside the cave's air - the flood starts at the nearest
+     * walkable cave cell within cave.passageNear; farther off than that, no passage and the reason names cave.passageNear.
+     */
+    @Test
+    void atTheLip_theFloodStartsAtTheNearestCaveCell_elseSaysSo() {
+        Set<Long> air = new HashSet<>();
+        for (int x = 0; x <= 20; x++) open(air, x, 40, 0);
+        int[] lip = {-2, 41, 1};                                         // on the rock beside the tunnel's mouth
+        var none = build(air, lip);
+        assertTrue(none.passages().isEmpty(), "without cave.passageNear: no passage at the lip");
+        var f = Passages.build((x, y, z) -> air.contains(Sightings.cell(x, y, z)), c -> false, lip, Set.of(), DROP, FORK, CAP, 8, 2);
+        assertTrue(f.lip(), "the flood began off the feet");
+        assertArrayEquals(new int[]{0, 40, 0}, f.start(), "the nearest walkable cave cell");
+        assertEquals(1, f.passages().size());
+        assertArrayEquals(new int[]{20, 40, 0}, f.passages().get(0).end());
+        var far = Passages.build((x, y, z) -> air.contains(Sightings.cell(x, y, z)), c -> false, new int[]{-6, 41, 0}, Set.of(), DROP, FORK, CAP, 8, 2);
+        assertTrue(far.passages().isEmpty());
+        assertTrue(far.why().contains("cave.passageLipNear 2"), far.why());
+        // the step: no passage from the feet - the cave's mouth, said
+        var next = CaveWalk.next(0, 1, 0, 10, null, far.passages(), List.of(), new int[]{-6, 41, 0}, 4.5, new int[]{0, 40, 0});
+        assertTrue(next instanceof CaveWalk.Goto g && g.why().startsWith("the cave's mouth at 0 40 0"), "the mouth - " + next);
+    }
+
+    /** Pass two: the planner's cave price - nearest open passages first, seconds per expected ore, the rest at their average. */
+    @Test
+    void thePlannersPrice_nearestFirst_inSeconds() {
+        var near = new Passages.Passage(0, -1, new int[]{0, 40, 0}, new int[]{10, 40, 0}, 10, 2, 0, List.of(), 200, 0, Passages.EndKind.DEAD_END);
+        var far = new Passages.Passage(1, -1, new int[]{0, 40, 0}, new int[]{0, 40, 40}, 20, 2, 20, List.of(), 300, 0, Passages.EndKind.DEAD_END);
+        var shut = new Passages.Passage(2, -1, new int[]{0, 40, 0}, new int[]{-5, 40, 0}, 5, 2, 0, List.of(), 0, 0, Passages.EndKind.DEAD_END);
+        // near: 2 ore for 5 s; far: 3 ore for 20 s
+        assertEquals(2.5, CaveWalk.findSeconds(List.of(far, shut, near), 1, 0.5, 0.01).seconds(), 1e-9, "1 ore: half the near passage");
+        assertEquals(5 + 20 / 3.0, CaveWalk.findSeconds(List.of(far, near), 3, 0.5, 0.01).seconds(), 1e-9, "3 ore: the near one, then a third of the far one");
+        assertEquals(25 + 25 / 5.0, CaveWalk.findSeconds(List.of(far, near), 6, 0.5, 0.01).seconds(), 1e-9, "6 ore: both (5 expected), the sixth at 5 s per ore");
+        assertTrue(Double.isNaN(CaveWalk.findSeconds(List.of(shut), 1, 0.5, 0.01).seconds()), "no open passage: not priced, said");
+        assertTrue(Double.isNaN(CaveWalk.findSeconds(null, 1, 0.5, 0.01).seconds()), "not measured");
+    }
 }

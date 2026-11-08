@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * 0.39.z78 J6d (to-do/j6d-cave-price-by-walk.md; owner 2026-10-28: "cost should be distance from cave, how much have we
  * explored; leave time per block out for now; if a vein is close it should just mine that"): a known cave is priced by its
- * walks - Baritone's walk to the lip + the walk from the lip to the record's nearest unseen cell (ranked by the estimate
+ * walks - Baritone's walk to the lip + (D15 pass two) the walk inside along the record's passages (ranked by the estimate
  * while it is not priced, rule 18 as amended). No time per ore, no density. The world-gen estimate is information (and the
  * share's count). The fake walk: FakePaths, the chain's straight metres x 1.3 / 4.317.
  */
@@ -33,8 +33,8 @@ class J6dPriceTest {
 
     static final double TOL = 0.05;
 
-    static CaveWay cave(int x, int y, int z, double dist, double expected, double explored, CaveIndex.Size size, int[] frontier) {
-        return new CaveWay(x, y, z, dist, "minecraft:iron_ore", "iron", expected, explored, size, -1, List.of(), List.of(new int[]{x, y, z})).withFrontier(frontier);
+    static CaveWay cave(int x, int y, int z, double dist, double expected, double explored, CaveIndex.Size size, List<io.github.mojolowjo.entropybot.cave.Passages.Passage> passages) {
+        return new CaveWay(x, y, z, dist, "minecraft:iron_ore", "iron", expected, explored, size, -1, List.of(), List.of(new int[]{x, y, z})).withPassages(passages);
     }
 
     static double d(int[] a, int[] b) {
@@ -97,33 +97,36 @@ class J6dPriceTest {
         assertTrue(said.contains("known cave 123 m at -14 73 -415") && said.contains("its unseen part holds ~0 by the world-gen estimate"), said);
     }
 
+    /** D15 pass two: a passage of {@code length} layers, {@code fromFeet} off, {@code unseen} cells not seen (its end far). */
+    static io.github.mojolowjo.entropybot.cave.Passages.Passage passage(int fromFeet, int length, int unseen) {
+        int[] e = {0, 0, 0};
+        return new io.github.mojolowjo.entropybot.cave.Passages.Passage(0, -1, e, e, length, 2, fromFeet, List.of(), unseen, 0, io.github.mojolowjo.entropybot.cave.Passages.EndKind.DEAD_END);
+    }
+
     /**
-     * Scenario 2, ES's walked cave (-43 67 -39, explored 60%: its nearest unseen cell is the shaft's foot -50 36 -40, 32 m
-     * in) prices higher than a fresh cave at the same 51 m (its unseen cells start at the entry: the walk in ~0); with both
-     * known the fresh one is taken.
+     * Scenario 2, D15 pass two: a walked cave whose one open passage is far in (30 layers off, 40 long, 100 unseen cells:
+     * 1 iron expected at cave.orePerUnseenCell 0.01) prices higher than a fresh cave at the same 51 m (a near passage of
+     * 400 unseen cells: 4 expected); with both known the fresh one is taken. The walk inside is CaveWalk#findSeconds.
      */
     @Test
-    void scenario2_esWalkedCave_pricesHigherThanAFreshOneAtTheSameDistance() {
+    void scenario2_aFarPassage_pricesHigherThanANearOne_atTheSameDistance() {
         var over = new NeedChain.Surface(48, -51, 65, -41, 3, false);
-        CaveWay walked = cave(-43, 67, -39, 51, Double.NaN, 0.6, CaveIndex.Size.LARGE, new int[]{-50, 36, -40});
-        CaveWay fresh = cave(40, 60, 20, 51, Double.NaN, 0.0, CaveIndex.Size.LARGE, new int[]{40, 60, 20});
+        CaveWay walked = cave(-43, 67, -39, 51, Double.NaN, 0.6, CaveIndex.Size.LARGE, List.of(passage(30, 40, 100)));
+        CaveWay fresh = cave(40, 60, 20, 51, Double.NaN, 0.0, CaveIndex.Size.LARGE, List.of(passage(0, 10, 400)));
         Chain w = NeedChain.resolve("raw_iron", 3, J6bEhTest.iron(over, Map.of()).withCave(x -> x.contains("raw_iron") || x.contains("iron_ore") ? walked : null));
         Chain f = NeedChain.resolve("raw_iron", 3, J6bEhTest.iron(over, Map.of()).withCave(x -> x.contains("raw_iron") || x.contains("iron_ore") ? fresh : null));
         assertTrue(w.ok() && f.ok(), w.why() + " | " + f.why());
-        double in = io.github.mojolowjo.entropybot.aa.brain.Unit.seconds(d(new int[]{-43, 67, -39}, new int[]{-50, 36, -40}));
-        assertEquals(f.seconds() + in, w.seconds(), TOL, "the walked one: + the walk in (no estimate here: the straight 32 m) - " + w.why());
-        assertTrue(w.why().contains("the walk in to the unseen cell at -50 36 -40: no estimate here, the straight 32 m from the lip"), w.why());
+        // walked: (30 + 40) x 0.5 s = 35 s for 1 expected, the other 2 at 35 s each = 105 s; fresh: 10 x 0.5 = 5 s for 4, 3 of them 3.75 s
+        assertEquals(f.seconds() + 105 - 3.75, w.seconds(), TOL, "the walk inside is the passages' price - " + w.why());
+        assertTrue(w.why().contains("the passages: 3 ore: 1.0 expected along all 1 open passage(s)"), w.why());
         assertTrue(w.why().contains("explored 60%"), "e shown beside the price: " + w.why());
         Chain both = NeedChain.resolve("raw_iron", 3, J6bEhTest.iron(over, Map.of()).withCave(x -> x.contains("raw_iron") || x.contains("iron_ore") ? walked.withMore(List.of(fresh)) : null));
         Step.Cave k = (Step.Cave) both.steps().stream().filter(s -> s instanceof Step.Cave).findFirst().orElseThrow();
         assertEquals(40, k.x(), "the fresh cave: " + both.why());
-        // Baritone's estimate of the walk in, when there is one (never under the straight walk from the lip)
-        PathPrice est = new PathPrice() {
-            @Override public Answer price(int x, int y, int z, double dist) { return Answer.priced(new Walk(FakePaths.walkS(dist))); }
-            @Override public double estimateFrom(int[] from, int x, int y, int z) { return 20.0; }
-        };
-        Chain e = NeedChain.resolve("raw_iron", 3, J6bEhTest.iron(over, Map.of()).withPath(est).withCave(x -> x.contains("raw_iron") || x.contains("iron_ore") ? walked : null));
-        assertTrue(e.why().contains("the walk in to the unseen cell at -50 36 -40: Baritone's estimate 20.0 s"), e.why());
+        // not measured (the cells not loaded): the walk inside is 0, said
+        CaveWay none = cave(40, 60, 20, 51, Double.NaN, 0.0, CaveIndex.Size.LARGE, null);
+        Chain n = NeedChain.resolve("raw_iron", 3, J6bEhTest.iron(over, Map.of()).withCave(x -> x.contains("raw_iron") || x.contains("iron_ore") ? none : null));
+        assertTrue(n.why().contains("its passages not measured yet"), n.why());
     }
 
     /** Scenario 3 (owner: "if a vein is close it should just mine that"): for n = 1 a seen vein 10 m off beats a cave 20 m off. */
@@ -138,9 +141,9 @@ class J6dPriceTest {
         assertEquals(FakePaths.walkS(20) + 1.15, only.seconds(), TOL, "the cave alone: its walk and the one break, no time per ore found - " + only.why());
     }
 
-    /** One volume with two entrances takes the smaller sum (bot -> lip + lip -> its nearest unseen cell), by the estimates. */
+    /** One volume with two entrances: the walk inside is the same from each (the record's passages), so the nearer lip wins. */
     @Test
-    void twoEntrances_theSmallerSum() {
+    void twoEntrances_theNearerLip() {
         int[] feet = {8, 62, 1};
         int[] entry = {18, 62, 1}, other = {12, 62, -30};
         PathPrice est = new PathPrice() {
@@ -148,12 +151,8 @@ class J6dPriceTest {
             @Override public double estimate(int x, int y, int z) { return FakePaths.walkS(d(feet, new int[]{x, y, z})); }
             @Override public double estimateFrom(int[] from, int x, int y, int z) { return FakePaths.walkS(d(from, new int[]{x, y, z})); }
         };
-        CaveWay cw = new CaveWay(18, 62, 1, 10, "minecraft:iron_ore", "iron", Double.NaN, 0.5, CaveIndex.Size.LARGE, -1, List.of(), List.of(entry, other));
-        // the unseen cell by the entry: 10 + 3 m against 31.3 + 31.8 m - the entry
-        Chain a = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(cw.withFrontier(new int[]{21, 62, 1})).withPath(est));
-        assertTrue(a.steps().contains(new Step.ToCave(18, 62, 1)), a.steps() + " " + a.why());
-        // the unseen cell by the other opening: 10 + 33.6 m against 31.3 + 2 m - the other opening
-        Chain b = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(cw.withFrontier(new int[]{12, 62, -32})).withPath(est));
-        assertTrue(b.steps().contains(new Step.ToCave(12, 62, -30)), "the smaller sum: the second entrance - " + b.steps() + " " + b.why());
+        CaveWay cw = new CaveWay(18, 62, 1, 10, "minecraft:iron_ore", "iron", Double.NaN, 0.5, CaveIndex.Size.LARGE, -1, List.of(), List.of(other, entry));
+        Chain a = NeedChain.resolve("raw_iron", 3, Z77CaveWayTest.world(cw.withPassages(List.of(passage(0, 10, 400)))).withPath(est));
+        assertTrue(a.steps().contains(new Step.ToCave(18, 62, 1)), "the nearer lip, though listed second - " + a.steps() + " " + a.why());
     }
 }

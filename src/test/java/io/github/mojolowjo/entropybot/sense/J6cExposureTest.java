@@ -77,7 +77,7 @@ class J6cExposureTest {
             long afterFeed = 0;
             for (int[] e : entry) afterFeed += s.caveTouched(D, e[0], e[1], e[2]);
             s.caveStood(D, entry[0][0], 30, 5, entry[0][0], 30, 5, ticks);       // the bot walking in the first one
-            s.caveFrontier(D, entry[0][0], 30, 5);                               // its regroup
+            s.cavePassageList(D, entry[0][0], 30, 5);                            // D15 pass two: its passages
             long sum = afterFeed;
             all = true;
             for (int[] e : entry) {

@@ -1098,7 +1098,7 @@ public final class AaRuntime implements JobPort {
             ways.add(new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(k.x(), k.y(), k.z(), Math.sqrt(Jobs.distSq(me, new int[]{k.x(), k.y(), k.z()})),
                     ore, fam, expected, explored, k.size(), unseen, leftKeys(sg.caveLeft(dim, k.x(), k.y(), k.z(), fam)), lp.kept())
                     .withOut(out).withInside(inside).withBasis(pr.why()).withLipOut(lp.out())
-                    .withFrontier(sg.caveFirstUnseen(dim, k.x(), k.y(), k.z())));   // J6d: the price's second walk ends there (null: none measured)
+                    .withPassages(sg.cavePassageList(dim, k.x(), k.y(), k.z())));   // D15 pass two: the walk inside is priced on the record's passages (held while a caving step runs)
         }
         if (ways.isEmpty()) return null;
         ways.sort(java.util.Comparator.comparing((io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay w) -> !w.inside()));   // stable: the inside cave first, then nearest

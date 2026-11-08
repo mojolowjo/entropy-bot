@@ -930,7 +930,9 @@ cave.orePerUnseenCell	0.01
 cave.passageCells	4096.0
 cave.passageDrop	3.0
 cave.passageForkLayers	3.0
+cave.passageLipNear	5.0
 cave.passageNear	2.0
+cave.passageRoomWidth	8.0
 cave.passageSecPerCell	0.5
 cave.ravineDrop	10.0
 cave.ravineR	8.0

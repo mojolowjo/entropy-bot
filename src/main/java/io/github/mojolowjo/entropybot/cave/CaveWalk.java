@@ -19,8 +19,9 @@ import java.util.Locale;
  * seconds to walk to its far end per ore expected along it ({@link #passagePrice}; rule 18: a price, never a rank) -
  * walked to its far end (a GoalNear Baritone paths to, rule 2);</li>
  * <li>none: the record's own done (THE done reader, rule 23 (2); run EK 02:24:18: an empty frontier because nothing was
- * seen yet is not done) - DONE; the cells being read from the index - Wait; not loaded - NOT_LOADED; else the unseen cell
- * nearest the cave's entry ({@code firstUnseen}, the step's first target) - walked to; none - NO_PROGRESS, said.</li>
+ * seen yet is not done) - DONE; the cells being read from the index - Wait; not loaded - NOT_LOADED; else (pass two: no
+ * passage from the feet - the lip, no cave air within cave.passageLipNear) the cave's MOUTH ({@code mouth}, its entry cell) -
+ * walked to under the ordinary hold; none - NO_PROGRESS, said.</li>
  * </ol>
  * Baritone's no progress on a walk ends the step too (NO_PROGRESS; the adapter's hold, ExploreRules.TargetHold). Torches
  * are not in this slice (D12 5). Pure (JUnit: J6bCaveStepTest). Loader notes: none (StepHands is the adapter).
@@ -82,6 +83,40 @@ public final class CaveWalk {
         double expected = p.oreFaces() + p.unseen() * orePerUnseen;
         if (!(expected > 0)) return Double.POSITIVE_INFINITY;
         return (p.fromFeet() + p.length()) * secPerCell / expected;
+    }
+
+    /** Pass two: the planner's cave price - seconds to find {@code n} ore along the open passages; {@code expected} the ore they hold. */
+    public record FindPrice(double seconds, double expected, int open, String line) {}
+
+    /**
+     * D15 pass two: the cave's price in the planner (rule 18: seconds, never a rank) - the open passages nearest first
+     * (by {@code fromFeet}), each costing the walk to its far end ({@code fromFeet + length} layers x {@code secPerCell})
+     * and holding {@code unseen x orePerUnseen} ore expected, taken until {@code n} ore are expected (the last one in
+     * part); past them all, the rest at their average seconds per ore. The seen ore is priced apart (its walk is the
+     * record's left ore), so faces are not counted here. No passage list, or nothing expected: NaN, said. Pure.
+     */
+    public static FindPrice findSeconds(List<Passages.Passage> ps, int n, double secPerCell, double orePerUnseen) {
+        if (ps == null) return new FindPrice(Double.NaN, 0, -1, "its passages not measured yet (the cave's cells not loaded)");
+        List<Passages.Passage> open = new java.util.ArrayList<>();
+        for (Passages.Passage p : ps) if (p.open()) open.add(p);
+        open.sort(java.util.Comparator.comparingInt(Passages.Passage::fromFeet));
+        if (n <= 0) return new FindPrice(0, 0, open.size(), "no ore to find");
+        double secs = 0, exp = 0, used = 0;
+        for (Passages.Passage p : open) {
+            double e = p.unseen() * orePerUnseen, w = (p.fromFeet() + p.length()) * secPerCell;
+            if (!(e > 0)) continue;
+            if (exp + e >= n) {
+                secs += w * (n - exp) / e;
+                return new FindPrice(secs, exp + e, open.size(), String.format(Locale.ROOT, "%d ore along the %d nearest of %d open passage(s): %.0f s", n, (int) used + 1, open.size(), secs));
+            }
+            secs += w;
+            exp += e;
+            used++;
+        }
+        if (!(exp > 0)) return new FindPrice(Double.NaN, 0, open.size(), open.size() + " open passage(s), no ore expected along them");
+        double all = secs + (n - exp) * secs / exp;
+        return new FindPrice(all, exp, open.size(), String.format(Locale.ROOT, "%d ore: %.1f expected along all %d open passage(s) (%.0f s), the rest at their %.1f s per ore: %.0f s",
+                n, exp, open.size(), secs, secs / exp, all));
     }
 
     /** D15: the open passages (CaveWalk's "branches left"). */
@@ -154,10 +189,10 @@ public final class CaveWalk {
         return next(mined, need, minutesIn, capMinutes, facts, passages, left, feet, reach, null);
     }
 
-    /** As above; {@code firstUnseen}: the record's unseen cell nearest the entry (CaveRecord#firstUnseen; null: none). */
+    /** As above; {@code mouth}: pass two, the cave's entry cell, walked to when no passage is found from the feet (null: none). */
     public static Next next(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<Passages.Passage> passages,
-                            List<int[]> left, int[] feet, double reach, int[] firstUnseen) {
-        return next(mined, need, minutesIn, capMinutes, facts, passages, left, feet, reach, firstUnseen, java.util.Set.of());
+                            List<int[]> left, int[] feet, double reach, int[] mouth) {
+        return next(mined, need, minutesIn, capMinutes, facts, passages, left, feet, reach, mouth, java.util.Set.of());
     }
 
     /**
@@ -168,7 +203,7 @@ public final class CaveWalk {
      * in reach first. The caller leaves out of {@code left} the ore whose vein failed (said, rule 7).
      */
     public static Next next(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<Passages.Passage> passages,
-                            List<int[]> left, int[] feet, double reach, int[] firstUnseen, java.util.Set<Long> dropped) {
+                            List<int[]> left, int[] feet, double reach, int[] mouth, java.util.Set<Long> dropped) {
         if (passages == null) passages = List.of();
         if (need > 0 && mined >= need) return new Stop(End.NEED_MET, mined + " of " + need + " ore mined");
         if (capMinutes > 0 && minutesIn >= capMinutes)
@@ -211,13 +246,14 @@ public final class CaveWalk {
         // 88b28290 review 3: while the cells are read, done is the saved measure (maybe a past session's): never trusted - wait
         if (facts != null && facts.filling()) return new Wait("reading the cave's cells from the index (its first pass, CaveRecord.BUDGET a tick)");
         if (!passages.isEmpty() && open == 0) return new Stop(End.DONE, "every passage from here is walked (" + passages.size() + " passage(s), none with an unseen cell)");
-        if (facts != null && facts.done()) return new Stop(End.DONE, "the cave is explored to its end (the record: something seen, no branch of more than " + CaveRecord.BRANCH_MIN + " cells left)");
+        if (facts != null && facts.done()) return new Stop(End.DONE, "the cave is explored to its end (the record: its passages measured, none open)");
         if (facts != null && !facts.loaded()) return new Stop(End.NOT_LOADED, "the cave's cells are not loaded (its chunks: the record cannot say where to go)");
-        if (firstUnseen != null && !dropped.contains(Sightings.cell(firstUnseen[0], firstUnseen[1], firstUnseen[2])))
-            return new Goto(firstUnseen, "the unseen cell nearest the entry at " + firstUnseen[0] + " " + firstUnseen[1] + " " + firstUnseen[2]);
-        if (firstUnseen != null) skipped++;
+        // pass two, the lip: no passage from the feet (no walkable cave cell within cave.passageLipNear) - the mouth, said
+        if (passages.isEmpty() && mouth != null && !dropped.contains(Sightings.cell(mouth[0], mouth[1], mouth[2])))
+            return new Goto(mouth, "the cave's mouth at " + mouth[0] + " " + mouth[1] + " " + mouth[2] + " (no passage from the feet: no walkable cave cell within cave.passageLipNear)");
+        if (passages.isEmpty() && mouth != null) skipped++;
         if (skipped > 0) return new Stop(End.NO_BRANCH, "no reachable passage (" + skipped + " dropped)");
-        return new Stop(End.NO_PROGRESS, "no open passage and no unseen cell near the entry within CaveRecord.BUDGET cells, yet the record is not done");
+        return new Stop(End.NO_PROGRESS, "no open passage from here and no mouth to walk to, yet the record is not done");
     }
 
     /**
