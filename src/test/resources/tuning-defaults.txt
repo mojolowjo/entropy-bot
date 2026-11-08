@@ -924,9 +924,15 @@ strip.areaMinFaces	100.0
 strip.freshStartBlocks	48.0
 strip.areaMinFactor	0.5
 cave.exploreMinutes	10.0
-cave.farDepth	16.0
+cave.orePerUnseenCell	0.01
+cave.passageCells	4096.0
+cave.passageDrop	3.0
+cave.passageForkLayers	3.0
+cave.passageNear	2.0
+cave.passageSecPerCell	0.5
 cave.ravineDrop	10.0
 cave.ravineR	8.0
+cave.seenMarginM	4.0
 pricedPath.on	1.0
 pricedPath.keepTicks	1200.0
 pricedPath.maxSegments	16.0

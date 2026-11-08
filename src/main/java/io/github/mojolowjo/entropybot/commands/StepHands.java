@@ -861,9 +861,22 @@ public final class StepHands implements Steps.Hands {
         List<int[]> veinCells;
         int[] veinStart;
         String fam;
+        /** D15: the passage walked to (its cells seen on arrival), null: the goal is not a passage. */
+        io.github.mojolowjo.entropybot.cave.Passages.Passage goalPassage;
+        /** D15: the open passages at the last pick (-1: not measured), for the end line and the budget fact. */
+        int passagesLeft = -1;
     }
 
     private Caving caving;
+
+    /**
+     * D15 (run JAD's flip loop): the running caving step's current walk target distance from the feet, NaN: none (no
+     * caving step, or it mines / picks). Read by the adapter's seen ask (AaRuntime.seenTick, CaveWalk#seenRepricesCave).
+     */
+    private static volatile double caveTargetDist = Double.NaN;
+
+    /** D15: see {@link #caveTargetDist}. */
+    public static double caveTargetDist() { return caveTargetDist; }
 
     /**
      * Starts the caving step at the known cave's entry (the chain's walk brought the bot there): its record's cells from
@@ -950,6 +963,14 @@ public final class StepHands implements Steps.Hands {
             cv.veinCells = null;
             cv.veinStart = null;
         }
+        if (cv.reach != null && !cv.goalOre && oreInReach(sg, cv, k, me)) {
+            // D15: a seen ore of the family came within the mine's reach on the walk: the walk pauses (not dropped), the
+            // next move mines it; the passage is picked again after, by its price
+            LOG.info("[entropybot] cave: a seen {} ore is in reach on the walk to {} - mined first", cv.fam, cv.goalWhy);
+            Jobs.cancel(b);
+            clearGoal(cv);
+        }
+        caveTargetDist = cv.reach != null && cv.goal != null ? Math.sqrt(sq(cv.goal[0] - me[0]) + sq(cv.goal[1] - me[1]) + sq(cv.goal[2] - me[2])) : Double.NaN;
         if (cv.reach != null) {
             // run EN (rules 2, 23 (2)): the walk's one arrived reader is its reach goal; the cells it is over are then in
             // reach and in sight - seen (the record's caveSaw), so the frontier moves on
@@ -1002,7 +1023,14 @@ public final class StepHands implements Steps.Hands {
         double minutes = (nowMs - cv.startMs) / 60000.0;                       // structural: ms a minute
         List<int[]> left = new ArrayList<>(sg.caveLeft(cv.dim, k.x(), k.y(), k.z(), cv.fam));
         left.removeIf(c -> cv.veinFailed.contains(io.github.mojolowjo.entropybot.sense.Sightings.cell(c[0], c[1], c[2])));
-        var next = io.github.mojolowjo.entropybot.cave.CaveWalk.next(cv.mined, k.n(), minutes, k.minutes(), f, sg.caveFrontier(cv.dim, k.x(), k.y(), k.z()),
+        // D15: the cave read as passages from the feet (the record's own cells), their ore faces from the seen ore left
+        java.util.Set<Long> oreCells = new java.util.HashSet<>();
+        for (int[] c : left) oreCells.add(io.github.mojolowjo.entropybot.sense.Sightings.cell(c[0], c[1], c[2]));
+        var found = sg.cavePassages(cv.dim, k.x(), k.y(), k.z(), me, oreCells, Tuning.i("cave.passageDrop"), Tuning.i("cave.passageForkLayers"), Tuning.i("cave.passageCells"));
+        cv.passagesLeft = io.github.mojolowjo.entropybot.cave.CaveWalk.openPassages(found.passages());
+        if (found.why() != null && cv.drops.stream().noneMatch(d -> d.startsWith("passages: ")))
+            cv.drops.add("passages: " + found.why());                          // rule 7: said once at the end
+        var next = io.github.mojolowjo.entropybot.cave.CaveWalk.next(cv.mined, k.n(), minutes, k.minutes(), f, found.passages(),
                 left, me, io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH,
                 sg.caveFirstUnseen(cv.dim, k.x(), k.y(), k.z()), cv.dropped);     // run EK (2): the first target, by the entry; run EN: the dropped passed over
         switch (next) {
@@ -1032,26 +1060,40 @@ public final class StepHands implements Steps.Hands {
                 if (bad != null) { cv.vein = null; return caveEnd(io.github.mojolowjo.entropybot.cave.CaveWalk.End.NO_PROGRESS, "the vein at " + Jobs.fmt(m.cell()) + ": " + bad); }
                 return Car.Status.running("caving: mining the seen ore at " + Jobs.fmt(m.cell()));
             }
+            case io.github.mojolowjo.entropybot.cave.CaveWalk.Goto g when g.isPassage() -> {
+                // D15 (rule 2): a passage's far end is a walkable cell of the flood; the goal is a GoalNear round it
+                // (cave.passageNear) - Baritone picks the stand and the path; the arrival sees the passage's cells
+                cv.goal = g.cell().clone();
+                cv.goalWhy = g.why();
+                cv.goalKey = g.key();
+                cv.goalOre = false;
+                cv.goalPassage = g.passage();
+                cv.reachCells = List.of();
+                cv.reachParts = List.of();
+                cv.seenAtGoal = f == null ? 0 : f.cellCount() - f.unseen();
+                cv.reach = new GoalNear(new BlockPos(g.cell()[0], g.cell()[1], g.cell()[2]), Tuning.i("cave.passageNear"));
+                if (cv.reach.isInGoal(me[0], me[1], me[2])) {
+                    LOG.info("[entropybot] cave: {} - at its far end already, the next move is picked now", g.why());
+                    arrived(sg, cv, k, me);
+                    return null;
+                }
+                cv.hold = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.start(new io.github.mojolowjo.entropybot.cave.ExploreRules.Target(g.cell()[0], g.cell()[2]),
+                        Core.INSTANCE.tick(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed());
+                b.getCustomGoalProcess().setGoalAndPath(cv.reach);
+                cv.goalAt = Core.INSTANCE.tick();
+                cv.holdSince = cv.goalAt;
+                cv.siteAt = -1;
+                LOG.info("[entropybot] cave: to {} - GoalNear {} round its far end ({} of {} ore mined, {} open passage(s))", g.why(), Tuning.i("cave.passageNear"), cv.mined, k.n(), cv.passagesLeft);
+                return Car.Status.running("caving: walking " + g.why());
+            }
             case io.github.mojolowjo.entropybot.cave.CaveWalk.Goto g -> {
                 // run EN (rule 2): the goal is a stand Baritone picks - a reach goal (the fork's GoalReachBlock) over each
                 // of the goto's cells, one goal for all (GoalComposite); never the cell itself (EN: a mid-air frontier cell)
                 List<baritone.api.pathing.goals.Goal> parts = new ArrayList<>();
                 List<int[]> partCells = new ArrayList<>();
                 List<io.github.mojolowjo.entropybot.cave.ExploreRules.LipGoal> partGoals = new ArrayList<>();
-                int stands = 0, tried = 0, farCount = 0;
-                // churn fix (runs GP / GS: one goal and one Baritone search a second, the goal the branch's near edge): a branch's
-                // goal spans the FAR end of what lies behind it (CaveRecord.farBehind, deepest first, cave.farDepth layers), the
-                // near cells after - the first REACH_CELLS a stand sees, at most REACH_TRIES built (the build's cost); nearer
-                // cells only when no stand sees the far ones. Baritone still picks the stand and the path (rule 2).
+                int stands = 0, tried = 0;
                 List<int[]> candidates = g.cells();
-                if (g.branch()) {
-                    List<Long> seeds = new ArrayList<>();
-                    for (int[] c : g.cells()) seeds.add(io.github.mojolowjo.entropybot.sense.Sightings.cell(c[0], c[1], c[2]));
-                    int depth = Tuning.i("cave.farDepth");
-                    List<int[]> far = sg.caveFarBehind(cv.dim, k.x(), k.y(), k.z(), seeds, depth, depth * io.github.mojolowjo.entropybot.cave.CaveWalk.FAR_CELLS_PER_LAYER);
-                    candidates = io.github.mojolowjo.entropybot.cave.CaveWalk.farThenNear(far, g.cells());
-                    farCount = candidates.size() - g.cells().size();
-                }
                 int carNo0 = LipGoals.CAR_SAID_NO.get();                            // run HB site3 probe: the car's stand refusals this build
                 for (int[] c : candidates) {
                     if (parts.size() >= io.github.mojolowjo.entropybot.cave.CaveWalk.REACH_CELLS || tried >= io.github.mojolowjo.entropybot.cave.CaveWalk.REACH_TRIES) break;
@@ -1066,15 +1108,14 @@ public final class StepHands implements Steps.Hands {
                 }
                 String carNo = StepProbe.on() ? " (the car refused " + (LipGoals.CAR_SAID_NO.get() - carNo0) + " stand(s) the mod's test took)" : "";   // run HB site3 probe
                 if (parts.isEmpty()) {
-                    // fc (cause 3): a branch whose goal over the unseen cells behind it is empty - dropped once, said so
-                    dropGoto(cv, g.key(), g.why(), (g.branch() ? io.github.mojolowjo.entropybot.cave.CaveWalk.noStandSees(g.cells().size())
-                            : "no standable cell within reach and sight of its " + g.cells().size() + " cell(s)") + carNo);
+                    dropGoto(cv, g.key(), g.why(), "no standable cell within reach and sight of its " + g.cells().size() + " cell(s)" + carNo);
                     return null;                                                         // the next one, this tick
                 }
                 cv.goal = g.cell().clone();
                 cv.goalWhy = g.why();
                 cv.goalKey = g.key();
                 cv.goalOre = g.ore();
+                cv.goalPassage = null;
                 cv.reachCells = partCells;
                 cv.reachParts = partGoals;
                 cv.seenAtGoal = f == null ? 0 : f.cellCount() - f.unseen();
@@ -1092,14 +1133,14 @@ public final class StepHands implements Steps.Hands {
                     // reads as geometry (few stands) or as pathing (stands, yet no calc)
                     StringBuilder per = new StringBuilder();
                     for (int i = 0; i < parts.size(); i++) per.append(i == 0 ? "" : ", ").append(Jobs.fmt(partCells.get(i))).append(" x").append(((baritone.api.pathing.goals.GoalReachBlock) parts.get(i)).size());
-                    LOG.info("[entropybot] probe cave: t={} feet {} | goto {} at {} ({} near cells, {} far, branch {}) | parts {} of {} tried kept: {} | before the goal: {}",
-                            Core.INSTANCE.tick(), Jobs.fmt(me), g.why(), Jobs.fmt(g.cell()), g.cells().size(), farCount, g.branch(), parts.size(), tried, per, caveHoldLine(b, cv, me));
+                    LOG.info("[entropybot] probe cave: t={} feet {} | goto {} at {} ({} cells) | parts {} of {} tried kept: {} | before the goal: {}",
+                            Core.INSTANCE.tick(), Jobs.fmt(me), g.why(), Jobs.fmt(g.cell()), g.cells().size(), parts.size(), tried, per, caveHoldLine(b, cv, me));
                 }
                 b.getCustomGoalProcess().setGoalAndPath(cv.reach);
                 cv.goalAt = Core.INSTANCE.tick();
                 cv.holdSince = cv.goalAt;
                 cv.siteAt = -1;
-                LOG.info("[entropybot] cave: to {} - the reach goal over {} cell(s) of {} tried ({} far behind it): {} standable cells in reach and sight ({} of {} ore mined){}", g.why(), parts.size(), tried, farCount, stands, cv.mined, k.n(), carNo);
+                LOG.info("[entropybot] cave: to {} - the reach goal over {} cell(s) of {} tried: {} standable cells in reach and sight ({} of {} ore mined){}", g.why(), parts.size(), tried, stands, cv.mined, k.n(), carNo);
                 return Car.Status.running("caving: walking to " + g.why());
             }
         }
@@ -1279,15 +1320,38 @@ public final class StepHands implements Steps.Hands {
      */
     private static void arrivedAt(io.github.mojolowjo.entropybot.sense.Sightings sg, Caving cv, Step.Cave k, int[] me) {
         List<Long> seen = new ArrayList<>();
-        for (int[] c : io.github.mojolowjo.entropybot.cave.CaveWalk.seenFrom(cv.reachParts, cv.reachCells, me))
-            seen.add(io.github.mojolowjo.entropybot.sense.Sightings.cell(c[0], c[1], c[2]));
-        sg.caveSaw(cv.dim, k.x(), k.y(), k.z(), seen);
-        LOG.info("[entropybot] cave: at {} (feet {}, in its reach goal: {} of its {} cell(s) in reach and in sight)", cv.goalWhy, Jobs.fmt(me), seen.size(), cv.reachCells.size());
+        if (cv.goalPassage != null) {
+            // D15: the bot walked the passage end to end - its cells are seen
+            seen.addAll(cv.goalPassage.cells());
+            sg.caveSaw(cv.dim, k.x(), k.y(), k.z(), seen);
+            LOG.info("[entropybot] cave: at the far end of {} (feet {}): its {} cell(s) seen", cv.goalWhy, Jobs.fmt(me), seen.size());
+        } else {
+            for (int[] c : io.github.mojolowjo.entropybot.cave.CaveWalk.seenFrom(cv.reachParts, cv.reachCells, me))
+                seen.add(io.github.mojolowjo.entropybot.sense.Sightings.cell(c[0], c[1], c[2]));
+            sg.caveSaw(cv.dim, k.x(), k.y(), k.z(), seen);
+            LOG.info("[entropybot] cave: at {} (feet {}, in its reach goal: {} of its {} cell(s) in reach and in sight)", cv.goalWhy, Jobs.fmt(me), seen.size(), cv.reachCells.size());
+        }
+        clearGoal(cv);
+    }
+
+    /** The walk's goal over (arrived, dropped, or paused for an ore in reach). */
+    private static void clearGoal(Caving cv) {
         cv.reach = null;
         cv.goal = null;
         cv.hold = null;
+        cv.goalPassage = null;
         cv.reachCells = List.of();
         cv.reachParts = List.of();
+        caveTargetDist = Double.NaN;
+    }
+
+    /** D15: a seen ore of the step's family, not left out, within the mine's reach of the feet. */
+    private static boolean oreInReach(io.github.mojolowjo.entropybot.sense.Sightings sg, Caving cv, Step.Cave k, int[] me) {
+        for (int[] o : sg.caveLeft(cv.dim, k.x(), k.y(), k.z(), cv.fam)) {
+            if (cv.veinFailed.contains(io.github.mojolowjo.entropybot.sense.Sightings.cell(o[0], o[1], o[2]))) continue;
+            if (io.github.mojolowjo.entropybot.cave.ExploreRules.withinReach(me, o)) return true;
+        }
+        return false;
     }
 
     /** Run EN (rule 23 (1)): a goto dropped for the step with its reason (logged; said at the step's end); the next is picked. */
@@ -1295,11 +1359,7 @@ public final class StepHands implements Steps.Hands {
         cv.dropped.add(key);
         cv.drops.add(what + ": " + why);
         LOG.info("[entropybot] cave: {} dropped: {} - the next one is picked", what, why);
-        cv.reach = null;
-        cv.goal = null;
-        cv.hold = null;
-        cv.reachCells = List.of();
-        cv.reachParts = List.of();
+        clearGoal(cv);
     }
 
     /** Run EN: the eyes at feet cell x y z see the cell - nothing collides between, or the first hit is the cell itself (an ore's face). */
@@ -1338,7 +1398,8 @@ public final class StepHands implements Steps.Hands {
             sg.caveWalked(cv.dim, k.x(), k.y(), k.z(), minutes, cv.oreSeen, System.currentTimeMillis(), gained);
             after = sg.caveFacts(cv.dim, k.x(), k.y(), k.z());
         }
-        String line = io.github.mojolowjo.entropybot.cave.CaveWalk.endLine(k.x() + " " + k.y() + " " + k.z(), end, why, minutes, cv.seenAtStart, after, cv.oreSeen, cv.mined);
+        caveTargetDist = Double.NaN;
+        String line = io.github.mojolowjo.entropybot.cave.CaveWalk.endLine(k.x() + " " + k.y() + " " + k.z(), end, why, minutes, cv.seenAtStart, after, cv.oreSeen, cv.mined, cv.passagesLeft);
         LOG.info("[entropybot] {}", line);
         if (end == io.github.mojolowjo.entropybot.cave.CaveWalk.End.NEED_MET) return Car.Status.done("ok: " + line);
         // GA fix (runs FN, FZ, GA: a cave's end stopped the order - no fact, the run ended FAILED): the end is the order's fact -
@@ -1348,7 +1409,7 @@ public final class StepHands implements Steps.Hands {
         int[] entry = {k.x(), k.y(), k.z()};
         switch (end) {
             case DONE, NO_BRANCH, NO_PROGRESS -> io.github.mojolowjo.entropybot.aa.moves.FactChange.caveEnded(entry, end.name(), why);
-            case MINUTES -> io.github.mojolowjo.entropybot.aa.moves.FactChange.caveMinutes(entry, why);
+            case MINUTES -> io.github.mojolowjo.entropybot.aa.moves.FactChange.caveMinutes(entry, cv.mined, cv.passagesLeft, why);
             default -> { }
         }
         return Car.Status.failed(line);

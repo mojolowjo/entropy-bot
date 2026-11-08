@@ -149,11 +149,11 @@ class J6bEkTest {
 
         var before = s.caveFacts(D, -59, 63, 71);
         assertFalse(before.done(), "nothing seen yet: not done");
-        var first = CaveWalk.next(0, 1, 0, 10, before, s.caveFrontier(D, -59, 63, 71), List.of(), new int[]{-50, 63, 75}, 4.5, s.caveFirstUnseen(D, -59, 63, 71));
+        var first = CaveWalk.next(0, 1, 0, 10, before, s.cavePassages(D, -59, 63, 71, lip, java.util.Set.of(), 3, 3, 4096).passages(), List.of(), new int[]{-50, 63, 75}, 4.5, s.caveFirstUnseen(D, -59, 63, 71));
         assertTrue(first instanceof CaveWalk.Goto g && java.util.Arrays.equals(g.cell(), entry), "the first target: the entry itself (unseen) - " + first);
 
         assertTrue(s.caveStood(D, -59, 63, 71, lip[0], lip[1], lip[2], 1) > 0, "the lip sees into the cave");
-        var next = CaveWalk.next(0, 1, 0, 10, s.caveFacts(D, -59, 63, 71), s.caveFrontier(D, -59, 63, 71), List.of(), lip, 4.5, s.caveFirstUnseen(D, -59, 63, 71));
+        var next = CaveWalk.next(0, 1, 0, 10, s.caveFacts(D, -59, 63, 71), s.cavePassages(D, -59, 63, 71, lip, java.util.Set.of(), 3, 3, 4096).passages(), List.of(), lip, 4.5, s.caveFirstUnseen(D, -59, 63, 71));
         assertTrue(next instanceof CaveWalk.Goto, "into the cave, never DONE: " + next);
         assertFalse(s.caveFacts(D, -59, 63, 71).done());
     }

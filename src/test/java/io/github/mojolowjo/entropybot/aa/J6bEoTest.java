@@ -91,9 +91,9 @@ class J6bEoTest {
         // dropped once: never picked again
         var facts = new CaveRecord.Facts(-45, 60, 78, 1000, 500, 0.5, 2, false, Map.of(), 0, Double.NaN, 0, true, "t");
         long key = Sightings.cell(b[0], b[1], b[2]), other = Sightings.cell(-46, 54, 79);
-        var groups = List.of(new CaveRecord.Group(key, 1, CaveRecord.BRANCH_MIN + 1), new CaveRecord.Group(other, 1, CaveRecord.BRANCH_MIN + 1));
+        var groups = List.of(io.github.mojolowjo.entropybot.cave.D15PassagesTest.passage(0, Sightings.cellOf(key), 5, 20), io.github.mojolowjo.entropybot.cave.D15PassagesTest.passage(1, Sightings.cellOf(other), 5, 20));
         var next = CaveWalk.next(0, 1, 0, 10, facts, groups, List.of(), feet, 4.5, null, Set.of(key));
-        assertTrue(next instanceof CaveWalk.Goto g && g.key() == other, "the next branch, never -51 51 81 again: " + next);
+        assertTrue(next instanceof CaveWalk.Goto g && g.key() == other, "the next passage, never -51 51 81 again: " + next);
     }
 
     /**

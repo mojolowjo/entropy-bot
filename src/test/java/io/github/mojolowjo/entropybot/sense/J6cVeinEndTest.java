@@ -68,7 +68,7 @@ class J6cVeinEndTest {
         assertArrayEquals(new int[]{0, 9}, s.caveFacts(D, -11, -4, 62).ores().get("iron"), "9 mined, none left");
         assertTrue(s.caveLeft(D, -11, -4, 62, "iron").isEmpty());
         // the chestplate's step (07:44:59, feet -8 56 73): no seen ore to walk to
-        var next = CaveWalk.next(0, 1, 0, 10, s.caveFacts(D, -11, -4, 62), s.caveFrontier(D, -11, -4, 62),
+        var next = CaveWalk.next(0, 1, 0, 10, s.caveFacts(D, -11, -4, 62), List.of(),
                 s.caveLeft(D, -11, -4, 62, "iron"), new int[]{-8, 56, 73}, ExploreRules.OPENING_REACH);
         String said = String.valueOf(next);
         assertFalse(next instanceof CaveWalk.Mine, said);

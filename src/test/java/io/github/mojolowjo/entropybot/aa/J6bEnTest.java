@@ -70,16 +70,15 @@ class J6bEnTest {
 
         var facts = new CaveRecord.Facts(0, 40, 0, 200, 80, 0.6, 2, false, Map.of(), 0, Double.NaN, 0, true, "t");
         long a = Sightings.cell(0, 60, 0), bk = Sightings.cell(30, 40, 0);
-        var groups = List.of(new CaveRecord.Group(a, 1, CaveRecord.BRANCH_MIN + 1), new CaveRecord.Group(bk, 3, CaveRecord.BRANCH_MIN + 1,
-                List.of(bk, Sightings.cell(30, 41, 0), Sightings.cell(31, 40, 0))));
+        var groups = List.of(io.github.mojolowjo.entropybot.cave.D15PassagesTest.passage(0, Sightings.cellOf(a), 2, 20), io.github.mojolowjo.entropybot.cave.D15PassagesTest.passage(1, Sightings.cellOf(bk), 30, 20));
         int[] feet = {2, 60, 2};
         var first = CaveWalk.next(0, 3, 1, 10, facts, groups, List.of(), feet, 4.5, null, Set.of());
-        assertEquals(a, ((CaveWalk.Goto) first).key(), "the nearer branch first");
+        assertEquals(a, ((CaveWalk.Goto) first).key(), "the cheaper passage first");
         var next = CaveWalk.next(0, 3, 1, 10, facts, groups, List.of(), feet, 4.5, null, Set.of(a));
-        assertTrue(next instanceof CaveWalk.Goto g && g.key() == bk && g.cells().size() == 3, "dropped: the next branch, its frontier cells for the goal - " + next);
+        assertTrue(next instanceof CaveWalk.Goto g && g.key() == bk, "dropped: the next passage - " + next);
         var none = CaveWalk.next(0, 3, 1, 10, facts, groups, List.of(), feet, 4.5, null, Set.of(a, bk));
         assertEquals(CaveWalk.End.NO_BRANCH, ((CaveWalk.Stop) none).end());
-        assertEquals("no reachable branch (2 dropped)", ((CaveWalk.Stop) none).why());
+        assertEquals("no reachable passage (2 dropped)", ((CaveWalk.Stop) none).why());
     }
 
     /** The goal is built over the REACH_CELLS frontier cells nearest the feet; a group keeps GROUP_CELLS of its cells. */
@@ -140,7 +139,10 @@ class J6bEnTest {
         int from = src.indexOf("private Car.Status caveStatus("), to = src.indexOf("private Car.Status caveEnd(");   // GT fix: besideVolume is gone (the record's cells decide)
         assertTrue(from > 0 && to > from);
         String cave = src.substring(from, to);
-        assertFalse(cave.contains("GoalNear"), "no GoalNear in the caving step");
+        // D15: one GoalNear, at a passage's far end only (a walkable cell of the flood, never a mid-air frontier cell, run EN)
+        int gn = cave.indexOf("new GoalNear("), pc = cave.indexOf("g.isPassage()");
+        assertTrue(gn > pc && pc > 0 && cave.indexOf("new GoalNear(", gn + 1) < 0, "a GoalNear only in the passage case");
+        assertTrue(cave.indexOf("case io.github.mojolowjo.entropybot.cave.CaveWalk.Goto g ->", pc) > gn, "the other gotos keep their reach goals");
         assertFalse(cave.contains("case REACHED"), "no eye-reach arrival");
         assertTrue(cave.contains("cv.reach.isInGoal(me[0], me[1], me[2])"), "arrival read from the goal");
         assertTrue(cave.contains("ExploreRules.NEVER_REACHED"), "the hold only fails or holds");

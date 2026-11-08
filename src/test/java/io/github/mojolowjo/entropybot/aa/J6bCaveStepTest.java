@@ -39,25 +39,25 @@ class J6bCaveStepTest {
 
     @Test
     void theStepsMoves_inOrder() {
-        List<CaveRecord.Group> two = List.of(new CaveRecord.Group(Sightings.cell(40, 40, 0), 1, 40), new CaveRecord.Group(Sightings.cell(100, 40, 0), 1, 40));
+        List<io.github.mojolowjo.entropybot.cave.Passages.Passage> two = List.of(io.github.mojolowjo.entropybot.cave.D15PassagesTest.passage(0, new int[]{40, 40, 0}, 30, 20), io.github.mojolowjo.entropybot.cave.D15PassagesTest.passage(1, new int[]{100, 40, 0}, 90, 20));
         assertEquals(CaveWalk.End.NEED_MET, ((CaveWalk.Stop) CaveWalk.next(3, 3, 1, 10, facts(true, false), two, List.of(), FEET, 4.5)).end());
         assertEquals(CaveWalk.End.MINUTES, ((CaveWalk.Stop) CaveWalk.next(1, 3, 10, 10, facts(true, false), two, List.of(), FEET, 4.5)).end());
         var mine = CaveWalk.next(0, 3, 1, 10, facts(true, false), two, List.of(new int[]{12, 41, 0}, new int[]{60, 40, 1}), FEET, 4.5);
         assertArrayEquals(new int[]{12, 41, 0}, ((CaveWalk.Mine) mine).cell(), "a seen ore in reach: mined");
         var toOre = CaveWalk.next(0, 3, 1, 10, facts(true, false), two, List.of(new int[]{60, 40, 1}), FEET, 4.5);
-        assertTrue(((CaveWalk.Goto) toOre).why().startsWith("the seen ore at 60 40 1"), "a seen ore farther in: walked to before a branch");
-        var branch = CaveWalk.next(0, 3, 1, 10, facts(true, false), two, List.of(), FEET, 4.5);
-        assertArrayEquals(new int[]{40, 40, 0}, ((CaveWalk.Goto) branch).cell(), "the nearest branch (ranked rough, by straight distance)");
-        assertTrue(((CaveWalk.Goto) branch).why().contains("more than " + CaveRecord.BRANCH_MIN + " cells behind"), "run EK: behind is asked only as more than BRANCH_MIN");
-        var nook = CaveWalk.next(0, 3, 1, 10, facts(true, true), List.of(new CaveRecord.Group(Sightings.cell(40, 40, 0), 1, CaveRecord.BRANCH_MIN)), List.of(), FEET, 4.5);
-        assertEquals(CaveWalk.End.DONE, ((CaveWalk.Stop) nook).end(), "a nook is no branch: done");
+        assertTrue(((CaveWalk.Goto) toOre).why().startsWith("the seen ore at 60 40 1"), "a seen ore farther in: walked to before a passage");
+        var passage = CaveWalk.next(0, 3, 1, 10, facts(true, false), two, List.of(), FEET, 4.5);
+        assertArrayEquals(new int[]{40, 40, 0}, ((CaveWalk.Goto) passage).cell(), "the cheaper passage (the same unseen cells, the nearer far end)");
+        assertTrue(((CaveWalk.Goto) passage).isPassage(), "D15: a passage goto");
+        var walked = CaveWalk.next(0, 3, 1, 10, facts(true, false), List.of(io.github.mojolowjo.entropybot.cave.D15PassagesTest.passage(0, new int[]{40, 40, 0}, 30, 0)), List.of(), FEET, 4.5);
+        assertEquals(CaveWalk.End.DONE, ((CaveWalk.Stop) walked).end(), "every passage seen: done");
         assertEquals(CaveWalk.End.NOT_LOADED, ((CaveWalk.Stop) CaveWalk.next(0, 3, 1, 10, facts(false, false), List.of(), List.of(), FEET, 4.5)).end());
     }
 
     @Test
     void theEndLineSaysWhatTheRunMeasures() {
-        String l = CaveWalk.endLine("0 40 0", CaveWalk.End.DONE, "explored", 2.42, 40, facts(true, true), 4, 3);
-        assertEquals("cave: the caving step at 0 40 0 ended - DONE (explored): 2.4 min inside, cells seen 40 -> 120 of 200 (explored 60%), ore seen 4 / mined 3, branches left 2", l);
+        String l = CaveWalk.endLine("0 40 0", CaveWalk.End.DONE, "explored", 2.42, 40, facts(true, true), 4, 3, 2);
+        assertEquals("cave: the caving step at 0 40 0 ended - DONE (explored): 2.4 min inside, cells seen 40 -> 120 of 200 (explored 60%), ore seen 4 / mined 3, passages left 2", l);
     }
 
     /** The cave way from the record: ore seen and left is mined first; the rest in what the unseen part holds (J6d: its world-gen count). */
@@ -211,9 +211,9 @@ class J6bCaveStepTest {
         for (int x = 6; x <= 30; x++) cells.add(Sightings.cell(x, 60, 5));         // the tunnel at its foot
         s.caveCells("d", 5, 64, 5, cells);
         s.caveStood("d", 5, 64, 5, lip[0], lip[1], lip[2], 1);
-        var next = CaveWalk.next(0, 3, 0, 10, s.caveFacts("d", 5, 64, 5), s.caveFrontier("d", 5, 64, 5), List.of(), lip, 4.5);
+        var next = CaveWalk.next(0, 3, 0, 10, s.caveFacts("d", 5, 64, 5), s.cavePassages("d", 5, 64, 5, lip, java.util.Set.of(), 3, 3, 4096).passages(), List.of(), lip, 4.5, s.caveFirstUnseen("d", 5, 64, 5));
         assertTrue(next instanceof CaveWalk.Goto, "from the lip: into the cave - " + next);
-        assertTrue(((CaveWalk.Goto) next).cell()[1] <= 60, "down the drop: " + java.util.Arrays.toString(((CaveWalk.Goto) next).cell()));
+        assertTrue(((CaveWalk.Goto) next).cell()[1] < 64, "down the drop: " + java.util.Arrays.toString(((CaveWalk.Goto) next).cell()));
     }
 
     /**
@@ -348,10 +348,10 @@ class J6bCaveStepTest {
         assertNotNull(taken);
         assertTrue(taken.text().contains("ended - DONE"), taken.text());
         assertNull(FactChange.take(), "taken once");
-        FactChange.caveMinutes(entry, "10 min");
+        FactChange.caveMinutes(entry, 0, 3, "10 min");
         FactChange.Fact m = FactChange.take();
-        assertTrue(m.price(), "the minutes' end is a price, no try counted: " + m);
-        assertTrue(m.text().contains("ran its minutes"), m.text());
+        assertFalse(m.price(), "D15: the minutes' end is the cave's source fact, never a price the order stops on: " + m);
+        assertTrue(m.text().contains("budget spent, 0 ore mined, 3 passages left"), m.text());
         // run GD 03:26:04: the step watch's "timed out after 600 s" on a caving step is the cave's source fact too (Steps reads sourceKey)
         assertEquals(CaveWay.keyOf(entry), NeedChain.sourceKey(new Step.Cave(181, 61, 0, "iron", 4, 10)), "the caving step's own source key is its cave's");
     }

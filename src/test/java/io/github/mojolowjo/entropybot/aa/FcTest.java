@@ -82,19 +82,4 @@ class FcTest {
         assertTrue(free.steps().stream().anyMatch(s -> s instanceof Step.Explore e && !e.leased()), "not boxed: no lease - " + free.steps());
     }
 
-    /** Cause 3: a branch's goal spans the unseen cells behind its frontier; a record of before names none: the frontier as before. */
-    @Test
-    void aBranchGoalSpansTheUnseenCellsBehindItsFrontier() {
-        long f = Sightings.cell(46, 57, -1);
-        List<Long> frontier = List.of(f, Sightings.cell(47, 57, -1));
-        List<Long> behind = List.of(Sightings.cell(46, 50, -1), Sightings.cell(46, 45, -1), Sightings.cell(46, 40, -1));
-        var g = new CaveRecord.Group(f, 2, behind.size(), frontier, behind);
-        List<int[]> cells = CaveWalk.branchCells(g, new int[]{46, 57, 0});
-        assertEquals(3, cells.size());
-        assertArrayEquals(new int[]{46, 50, -1}, cells.get(0), "the unseen cell nearest the feet first");
-        assertTrue(cells.stream().noneMatch(c -> c[1] == 57), "never the seen frontier cells (they hold where they were seen)");
-        var old = new CaveRecord.Group(f, 2, 3, frontier);
-        assertEquals(2, CaveWalk.branchCells(old, new int[]{46, 57, 0}).size(), "a record of before fc: its frontier cells");
-        assertEquals("no stand sees behind it (no standable cell within reach and sight of its 3 unseen cell(s))", CaveWalk.noStandSees(3));
-    }
 }

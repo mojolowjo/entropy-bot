@@ -226,10 +226,15 @@ public final class Sightings {
         return r != null && r.beside(ox, oy, oz);
     }
 
-    /** Churn fix 2026-11-01: the far end of one branch (CaveRecord#farBehind), deepest cells first; no record: empty. */
-    public synchronized List<int[]> caveFarBehind(String dim, int x, int y, int z, List<Long> seeds, int depth, int cap) {
+    /**
+     * D15: the passages of the known cave at x y z from {@code feet} (cave.Passages#build over the record's own cells and
+     * seen cells, rule 23); {@code ore}: the ore cells seen and not mined. No record: none, said.
+     */
+    public synchronized io.github.mojolowjo.entropybot.cave.Passages.Found cavePassages(String dim, int x, int y, int z, int[] feet, java.util.Set<Long> ore,
+                                                                                       int drop, int forkLayers, int cap) {
         CaveRecord r = rec(dim, x, y, z);
-        return r == null ? List.of() : r.farBehind(seeds, depth, cap);
+        if (r == null) return new io.github.mojolowjo.entropybot.cave.Passages.Found(List.of(), "no known cave at " + x + " " + y + " " + z, false);
+        return io.github.mojolowjo.entropybot.cave.Passages.build((px, py, pz) -> r.air(cell(px, py, pz)), r::wasSeen, feet, ore, drop, forkLayers, cap);
     }
 
     public synchronized List<int[]> caveLeft(String dim, int x, int y, int z, String family) {
