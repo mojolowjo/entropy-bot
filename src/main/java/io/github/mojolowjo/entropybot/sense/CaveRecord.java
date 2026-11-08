@@ -122,6 +122,12 @@ public final class CaveRecord {
     int recFeed(CaveIndex idx, int budget) {
         if (feed == null) feed = new CaveIndex.Feed();
         int n = idx.feed(x, y, z, feed, budget, this::addCell);
+        // D15 pass four: a merged record feeds from each kept entry (its lips) too - their index volumes may differ
+        for (int i = 0; i < lips.size() && n < budget; i++) {
+            if (lipFeeds.get(i) == null) lipFeeds.set(i, new CaveIndex.Feed());
+            int[] l = lips.get(i);
+            n += idx.feed(l[0], l[1], l[2], lipFeeds.get(i), budget - n, this::addCell);
+        }
         touched += n;
         spend.spent += n;
         return n;
@@ -440,10 +446,131 @@ public final class CaveRecord {
      * The cells are loaded: given whole, or the index's first feed pass this session ran to its end - frontier and done
      * are measured now. Run EK: while the first pass runs the record is {@link #filling}, not loaded (rule 15).
      */
-    public boolean loaded() { return !cells.isEmpty() && (feed == null || feed.complete()); }
+    public boolean loaded() {
+        if (cells.isEmpty() || (feed != null && !feed.complete())) return false;
+        for (CaveIndex.Feed lf : lipFeeds) if (lf != null && !lf.complete()) return false;
+        return true;
+    }
 
     /** Run EK: the index's first feed pass is running (the cells so far: {@link #cellsSoFar}). */
-    public boolean filling() { return feed != null && !feed.complete() && feed.filling(); }
+    public boolean filling() {
+        if (feed != null && !feed.complete() && feed.filling()) return true;
+        for (CaveIndex.Feed lf : lipFeeds) if (lf != null && !lf.complete() && lf.filling()) return true;
+        return false;
+    }
+
+    // ---- D15 pass four: one record per cave space (the merge), the entries kept as lips, the promise past a pocket ----
+
+    /** The other entries of this cave space (records merged into this one), x y z each. */
+    private final List<int[]> lips = new ArrayList<>();
+    private final List<CaveIndex.Feed> lipFeeds = new ArrayList<>();
+
+    /** The kept entries of records merged into this one (copies). */
+    public List<int[]> lips() {
+        List<int[]> out = new ArrayList<>();
+        for (int[] l : lips) out.add(l.clone());
+        return out;
+    }
+
+    /** Run JAK: the two records are one cave space - they share an air cell, or one's entry is a cell of the other. */
+    boolean sharesSpaceWith(CaveRecord o) {
+        if (o == this || cells.isEmpty() || o.cells.isEmpty()) return false;
+        if (cells.contains(Sightings.cell(o.x, o.y, o.z)) || o.cells.contains(Sightings.cell(x, y, z))) return true;
+        Set<Long> small = cells.size() <= o.cells.size() ? cells : o.cells, big = small == cells ? o.cells : cells;
+        for (long c : small) if (big.contains(c)) return true;                 // once per growth of either (Sightings.caveMerge)
+        return false;
+    }
+
+    /**
+     * D15 pass four (run JAK: the same cave space entered by two entries, two records of 44 and 37 passages, a DONE mark on
+     * one not holding the other): {@code o} is merged into this one - cells, seen cells, ore, walked minutes united; its
+     * entry and lips kept as this one's lips (with their feeds); the passages measured again from every entry. A done mark
+     * is kept with its cell count (more cells now: done no more until a step says so).
+     */
+    void recMerge(CaveRecord o) {
+        lips.add(new int[]{o.x, o.y, o.z});
+        lipFeeds.add(o.feed);
+        for (int i = 0; i < o.lips.size(); i++) { lips.add(o.lips.get(i)); lipFeeds.add(o.lipFeeds.get(i)); }
+        for (long c : o.cells) addCell(c);
+        cellCount = Math.max(cellCount, o.cellCount);
+        for (long c : o.seen) markSeen(c);
+        for (var e : o.ores.entrySet()) {
+            Ore mine = ores.get(e.getKey());
+            if (mine == null || (!mine.mined() && e.getValue().mined())) ores.put(e.getKey(), e.getValue());
+        }
+        walkedMinutes += o.walkedMinutes;
+        oreSeenWalking += o.oreSeenWalking;
+        if (doneWhy == null && o.doneWhy != null) { doneWhy = o.doneWhy; doneCells = o.doneCells; }
+        if (passages == null && o.passages != null) { passages = o.passages; passagesWhy = o.passagesWhy; }
+        measuredCells = -1;                                                     // measured again (passages(), from every entry)
+        entryAt = -1;
+        held |= o.held;
+        stuckSeen = stuckOre = stuckCells = -1;                                 // more is known of it now
+        version++;
+    }
+
+    /** The cells promised past a pocket: the open passages' cells from the record's entries, and the targets off the flood. */
+    public record Promise(int cells, int open, List<int[]> targets) {}
+
+    private List<io.github.mojolowjo.entropybot.cave.Passages.Passage> entryMeasure;
+    private int entryAt = -1;
+
+    /** The passages measured from the entry and every lip (cached by the cell count; cells only grow). */
+    private List<io.github.mojolowjo.entropybot.cave.Passages.Passage> entryMeasure() {
+        if (entryMeasure != null && entryAt == cellCount) return entryMeasure;
+        List<io.github.mojolowjo.entropybot.cave.Passages.Passage> all = new ArrayList<>();
+        List<int[]> from = new ArrayList<>();
+        from.add(new int[]{x, y, z});
+        from.addAll(lips);
+        for (int[] f : from) {
+            var found = io.github.mojolowjo.entropybot.cave.Passages.build((px, py, pz) -> cells.contains(Sightings.cell(px, py, pz)), seen::contains, f, Set.of(),
+                    io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.passageDrop"), io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.passageForkLayers"),
+                    io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.passageCells"), io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.passageRoomWidth"),
+                    io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.passageLipNear"));
+            all.addAll(found.passages());
+        }
+        entryMeasure = List.copyOf(all);
+        entryAt = cellCount;
+        return entryMeasure;
+    }
+
+    /**
+     * D15 pass four (run JAM): what the record promises past the step's flood ({@code flood}: the cells its passages hold)
+     * - the cells of the open passages measured from the entries, and the {@code n} nearest {@code feet} of their far ends
+     * off the flood (no such end: the nearest unseen cells off it). Not loaded: nothing promised.
+     */
+    public Promise promise(int[] feet, Set<Long> flood, int n) {
+        if (!loaded() || n <= 0) return new Promise(0, 0, List.of());
+        int promised = 0, open = 0;
+        List<int[]> ends = new ArrayList<>();
+        Set<Long> took = new HashSet<>();
+        for (var p : entryMeasure()) {
+            int un = 0;
+            for (long c : p.cells()) if (!seen.contains(c)) un++;
+            if (un == 0 && p.endKind() != io.github.mojolowjo.entropybot.cave.Passages.EndKind.CAPPED) continue;
+            open++;
+            promised += p.cells().size();
+            if (!flood.contains(p.key()) && took.add(p.key())) ends.add(p.end().clone());
+        }
+        if (ends.isEmpty()) {
+            for (long c : cells) {                                              // the n nearest kept (a volume may be 200,000 cells)
+                if (seen.contains(c) || flood.contains(c)) continue;
+                int[] q = Sightings.cellOf(c);
+                if (!io.github.mojolowjo.entropybot.cave.Passages.walkable((px, py, pz) -> cells.contains(Sightings.cell(px, py, pz)), q[0], q[1], q[2])) continue;   // run EN: never a mid-air cell
+                if (ends.size() >= n && d2(q, feet) >= d2(ends.get(ends.size() - 1), feet)) continue;
+                ends.add(q);
+                ends.sort(java.util.Comparator.comparingLong(a -> d2(a, feet)));
+                if (ends.size() > n) ends.remove(ends.size() - 1);
+            }
+        }
+        ends.sort(java.util.Comparator.comparingLong(a -> d2(a, feet)));
+        return new Promise(promised, open, ends.size() > n ? List.copyOf(ends.subList(0, n)) : List.copyOf(ends));
+    }
+
+    private static long d2(int[] a, int[] b) {
+        long dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
+        return dx * dx + dy * dy + dz * dz;
+    }
 
     public int cellsSoFar() { return cells.size(); }
 
@@ -625,6 +752,11 @@ public final class CaveRecord {
         }
         j.addProperty("stuckSeen", stuckSeen); j.addProperty("stuckOre", stuckOre); j.addProperty("stuckCells", stuckCells);
         if (doneWhy != null) { j.addProperty("doneWhy", doneWhy); j.addProperty("doneCells", doneCells); }
+        if (!lips.isEmpty()) {                                                  // D15 pass four: the merged entries
+            var la = new com.google.gson.JsonArray();
+            for (int[] l : lips) { var a = new com.google.gson.JsonArray(); a.add(l[0]); a.add(l[1]); a.add(l[2]); la.add(a); }
+            j.add("lips", la);
+        }
         return j;
     }
 
@@ -656,6 +788,12 @@ public final class CaveRecord {
             io.github.mojolowjo.entropybot.Quiet.line("cave: the record at " + r.where() + " is an old save (" + j.get("groups").getAsInt() + " frontier group(s), done "
                     + (j.has("done") && j.get("done").getAsBoolean()) + "): its groups are dropped, its passages are measured again when its cells load");
         }
+        if (j.has("lips"))
+            for (var e : j.getAsJsonArray("lips")) {
+                var a = e.getAsJsonArray();
+                r.lips.add(new int[]{a.get(0).getAsInt(), a.get(1).getAsInt(), a.get(2).getAsInt()});
+                r.lipFeeds.add(null);
+            }
         if (j.has("doneWhy")) { r.doneWhy = j.get("doneWhy").getAsString(); r.doneCells = j.get("doneCells").getAsInt(); }
         if (j.has("stuckSeen")) { r.stuckSeen = j.get("stuckSeen").getAsInt(); r.stuckOre = j.get("stuckOre").getAsInt(); r.stuckCells = j.get("stuckCells").getAsInt(); }
         return r;

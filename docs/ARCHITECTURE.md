@@ -61,6 +61,14 @@ passage is priced with its share of the cells past the flood (`CaveWalk.beyondFl
 (`CaveWalk.spent`). With no passage left: DONE when all is seen, or the flood was whole (the rest said unreachable by
 walking), or capped and explored past `cave.doneExplored`; else NO_BRANCH. A DONE end is kept in the record
 (`Sightings.caveDone`, saved) so `done()` holds until more cells arrive.
+Pass four (runs JAM, JAK): a pocket lip - the step's flood under `cave.pocketFraction` of the cells the record's open
+passages promise from its entries (`CaveRecord.promise`, `Sightings.cavePromise`) - is a `CaveWalk.Pocket`: after the ore,
+the step asks Baritone to the record's nearest unseen passage end off the flood (a DESCENT `Goto`, a `GoalNear` under the
+ordinary cave lease; falls are Baritone's price), floods again on arrival; no path to any of `cave.pocketTries` targets ends
+NO_BRANCH with the cells tried. A NO_BRANCH with no move and no flood from new feet tries the next target first. One
+record per cave space: `Sightings.caveMerge` (on cell growth) merges records sharing an air cell or holding the other's
+entry into the older one; the other entry becomes a lip (`CaveRecord.lips`, saved, read through an alias), so `done` and
+`offeredFor` read the merged record from either entry.
 Seen-ore gotos keep the reach goals below. Pass two: a layer piece wider than `cave.passageRoomWidth` is a ROOM node whose
 exits are its arms; at the lip (no walkable cell under the feet) the flood starts at the nearest walkable cave cell within
 `cave.passageLipNear` (run JAJ: a lip 4 blocks off), and with none the step walks to the cave's mouth (said). The record keeps the step's last passage

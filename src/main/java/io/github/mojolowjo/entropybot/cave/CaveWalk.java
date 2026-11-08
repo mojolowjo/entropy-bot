@@ -49,7 +49,11 @@ public final class CaveWalk {
      * target by the entry).
      */
     public record Goto(int[] cell, String why, List<int[]> cells, long key, Kind kind, Passages.Passage passage) implements Next {
-        public enum Kind { ORE, PASSAGE, CELL }
+        /** DESCENT (D15 pass four): the record's unseen cell off the walkable flood, a GoalNear Baritone paths to (falls priced by it). */
+        public enum Kind { ORE, PASSAGE, CELL, DESCENT }
+
+        /** D15 pass four: the walk is Baritone's way down (or up) from a pocket to the cave's unseen cell. */
+        public boolean isDescent() { return kind == Kind.DESCENT; }
 
         public Goto {
             cells = cells == null || cells.isEmpty() ? List.of(cell) : List.copyOf(cells);
@@ -257,6 +261,64 @@ public final class CaveWalk {
      */
     public static Next next(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<Passages.Passage> passages,
                             List<int[]> left, int[] feet, double reach, int[] mouth, java.util.Set<Long> dropped, boolean capped, java.util.Set<Long> reflooded) {
+        return next(mined, need, minutesIn, capMinutes, facts, passages, left, feet, reach, mouth, dropped, capped, reflooded, null);
+    }
+
+    /**
+     * D15 pass four (run JAM 02:13:33: the lip's flood held 2 cells while the record promised 38 open passages over 21331
+     * cells; NO_BRANCH twice in one second from the same feet): what the step knows past its own flood. {@code lip} the
+     * flood's start; {@code floodCells} the cells its passages hold; {@code promised} the cells of the record's open
+     * passages measured from its entries; {@code targets} the record's unseen passage ends (or unseen cells) off the flood,
+     * nearest the feet first (cave.pocketTries at most); {@code moved} the step moved or flooded from a new cell.
+     */
+    public record Pocket(int[] lip, int floodCells, int promised, List<int[]> targets, boolean moved) {
+        public Pocket { targets = targets == null ? List.of() : List.copyOf(targets); }
+    }
+
+    /** D15 pass four: the flood holds fewer than {@code frac} (cave.pocketFraction) of the promised cells. Pure. */
+    public static boolean isPocket(int floodCells, int promised, double frac) { return promised > 0 && floodCells < frac * promised; }
+
+    /** The pocket's next target not dropped (Baritone found no path to it, or it was reached); null: none left. */
+    static int[] nextTarget(Pocket pk, java.util.Set<Long> dropped) {
+        for (int[] t : pk.targets()) if (!dropped.contains(Sightings.cell(t[0], t[1], t[2]))) return t;
+        return null;
+    }
+
+    /** The targets tried (dropped), "x y z; x y z" for the end's reason (rule 7). */
+    static String tried(Pocket pk, java.util.Set<Long> dropped) {
+        List<String> out = new java.util.ArrayList<>();
+        for (int[] t : pk.targets()) if (dropped.contains(Sightings.cell(t[0], t[1], t[2]))) out.add(t[0] + " " + t[1] + " " + t[2]);
+        return out.isEmpty() ? "none" : String.join("; ", out);
+    }
+
+    static Goto descent(Pocket pk, int[] t, String head) {
+        int[] l = pk.lip() == null ? t : pk.lip();
+        return new Goto(t, String.format(Locale.ROOT, "%s at %d %d %d is a pocket (%d cells of %d): down to the cave's nearest unseen cell at %d %d %d by Baritone",
+                head, l[0], l[1], l[2], pk.floodCells(), pk.promised(), t[0], t[1], t[2]), List.of(t), Sightings.cell(t[0], t[1], t[2]), Goto.Kind.DESCENT);
+    }
+
+    /**
+     * D15 pass four: as above with {@code pocket} (null: none known). A pocket (the flood under cave.pocketFraction of what
+     * the record promises) is not walked as the cave: after the ore, the step asks Baritone to the record's nearest unseen
+     * cell (a DESCENT goto; on arrival it floods again); every target dropped - NO_BRANCH, the cells tried said. And an end
+     * NO_BRANCH with no move and no flood from a new cell ({@code pocket.moved} false) tries the next target first.
+     */
+    public static Next next(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<Passages.Passage> passages,
+                            List<int[]> left, int[] feet, double reach, int[] mouth, java.util.Set<Long> dropped, boolean capped, java.util.Set<Long> reflooded,
+                            Pocket pocket) {
+        if (dropped == null) dropped = java.util.Set.of();
+        Next n = nextCore(mined, need, minutesIn, capMinutes, facts, passages, left, feet, reach, mouth, dropped, capped, reflooded, pocket);
+        if (pocket != null && !pocket.moved() && n instanceof Stop s && s.end() == End.NO_BRANCH) {
+            int[] t = nextTarget(pocket, dropped);
+            if (t != null) return descent(pocket, t, "no move and no new flood yet before an end: the lip");
+            if (!pocket.targets().isEmpty()) return new Stop(End.NO_BRANCH, s.why() + "; Baritone found no path to the cave's unseen cells tried: " + tried(pocket, dropped));
+        }
+        return n;
+    }
+
+    private static Next nextCore(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<Passages.Passage> passages,
+                                 List<int[]> left, int[] feet, double reach, int[] mouth, java.util.Set<Long> dropped, boolean capped, java.util.Set<Long> reflooded,
+                                 Pocket pocket) {
         if (passages == null) passages = List.of();
         if (reflooded == null) reflooded = java.util.Set.of();
         if (need > 0 && mined >= need) return new Stop(End.NEED_MET, mined + " of " + need + " ore mined");
@@ -274,6 +336,14 @@ public final class CaveWalk {
             if (d < nd) { nd = d; near = o; }
         }
         if (near != null) return Goto.toOre(near, "the seen ore at " + near[0] + " " + near[1] + " " + near[2]);
+        // D15 pass four: a pocket lip - the record's cells are past a drop or climb the walkable flood stops at: Baritone's way
+        if (pocket != null && isPocket(pocket.floodCells(), pocket.promised(), Tuning.get("cave.pocketFraction")) && !pocket.targets().isEmpty()) {
+            int[] t = nextTarget(pocket, dropped);
+            if (t != null) return descent(pocket, t, "the lip");
+            int[] l = pocket.lip() == null ? feet : pocket.lip();
+            return new Stop(End.NO_BRANCH, String.format(Locale.ROOT, "the lip at %d %d %d is a pocket (%d cells of %d) and Baritone found no path to any of the cave's unseen cells tried: %s",
+                    l[0], l[1], l[2], pocket.floodCells(), pocket.promised(), tried(pocket, dropped)));
+        }
         // D15: the passage of the lowest price (seconds per expected ore), its far end walked to
         double sec = Tuning.get("cave.passageSecPerCell"), per = Tuning.get("cave.orePerUnseenCell");
         Passages.Passage best = null;

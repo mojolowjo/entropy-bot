@@ -145,7 +145,9 @@ public final class Sightings {
         while (l.size() > maxCaves()) {
             KnownCave gone = l.remove(0);
             Map<String, CaveRecord> rs = caveRecords.get(dim);
-            if (rs != null) rs.remove(gone.where());             // J6b: its record goes with it (one store)
+            if (rs != null) rs.remove(gone.where());
+            Map<String, String> al = caveAlias.get(dim);
+            if (al != null) al.remove(gone.where());             // J6b: its record goes with it (one store)
         }
         cavesFound++;
         dirty = true;
@@ -176,7 +178,73 @@ public final class Sightings {
     /** The record of the known cave entered at x y z (made on first use); null: no known cave there. */
     private CaveRecord rec(String dim, int x, int y, int z) {
         if (knownCave(dim, x, y, z) == null) return null;
-        return caveRecords.computeIfAbsent(dim, d -> new HashMap<>()).computeIfAbsent(x + " " + y + " " + z, k -> new CaveRecord(x, y, z));
+        String key = x + " " + y + " " + z;
+        String to = caveAlias.getOrDefault(dim, Map.of()).get(key);          // D15 pass four: a merged entry reads the kept record
+        if (to != null) {
+            CaveRecord r = caveRecords.getOrDefault(dim, Map.of()).get(to);
+            if (r != null) return r;
+            caveAlias.get(dim).remove(key);                                   // the kept record went (its cave dropped): this entry's own again
+        }
+        return caveRecords.computeIfAbsent(dim, d -> new HashMap<>()).computeIfAbsent(key, k -> new CaveRecord(x, y, z));
+    }
+
+    /** D15 pass four: entry key -> the key of the record it was merged into (rebuilt from the records' lips on load). */
+    private final Map<String, Map<String, String>> caveAlias = new HashMap<>();
+    /** The cell count each record had at its last merge check (the share scan runs once per growth). */
+    private final java.util.IdentityHashMap<CaveRecord, Integer> mergeCheckedAt = new java.util.IdentityHashMap<>();
+
+    /**
+     * D15 pass four (run JAK 01:31-01:36: one cave space entered by two entries, two records, a DONE on one not holding
+     * the other): records of {@code dim} that share an air cell, or one's entry inside the other's cells, are merged into
+     * the older (the earlier known cave): its id kept, the other's entry kept as a lip and read through to it. Logged once
+     * per merge. Checked when a record's cells grew. The merges made.
+     */
+    synchronized int caveMerge(String dim) {
+        Map<String, CaveRecord> rs = caveRecords.get(dim);
+        if (rs == null || rs.size() < 2) return 0;
+        List<CaveRecord> order = new ArrayList<>();                           // oldest first: the known caves' order
+        for (KnownCave k : knownCaves.getOrDefault(dim, List.of())) {
+            CaveRecord r = rs.get(k.where());
+            if (r != null && !order.contains(r)) order.add(r);
+        }
+        int merges = 0;
+        for (int i = 0; i < order.size(); i++)
+            for (int j = i + 1; j < order.size(); j++) {
+                CaveRecord a = order.get(i), b = order.get(j);
+                Integer ca = mergeCheckedAt.get(a), cb = mergeCheckedAt.get(b);
+                if (ca != null && cb != null && ca == a.cellCount() && cb == b.cellCount()) continue;
+                if (!a.sharesSpaceWith(b)) continue;
+                String line = "cave: the records at " + a.where() + " and " + b.where() + " are one cave space (" + a.cellCount() + " and " + b.cellCount()
+                        + " cells): merged into " + a.where() + ", both entries kept as lips";
+                a.recMerge(b);
+                rs.remove(b.where());
+                mergeCheckedAt.remove(b);
+                Map<String, String> al = caveAlias.computeIfAbsent(dim, d -> new HashMap<>());
+                al.put(b.where(), a.where());
+                for (var e : al.entrySet()) if (e.getValue().equals(b.where())) e.setValue(a.where());
+                Quiet.line(line);
+                order.remove(j);
+                j--;
+                merges++;
+                dirty = true;
+            }
+        for (CaveRecord r : order) mergeCheckedAt.put(r, r.cellCount());
+        return merges;
+    }
+
+    /**
+     * D15 pass four (run JAM): what the record of the known cave at x y z promises past the step's flood (CaveRecord#promise);
+     * no record: nothing.
+     */
+    public synchronized CaveRecord.Promise cavePromise(String dim, int x, int y, int z, int[] feet, java.util.Set<Long> flood, int n) {
+        CaveRecord r = rec(dim, x, y, z);
+        return r == null ? new CaveRecord.Promise(0, 0, List.of()) : r.promise(feet, flood, n);
+    }
+
+    /** D15 pass four: the other entries merged into the record of the known cave at x y z (empty: none, or no record). */
+    public synchronized List<int[]> caveLips(String dim, int x, int y, int z) {
+        CaveRecord r = rec(dim, x, y, z);
+        return r == null ? List.of() : r.lips();
     }
 
     /** The record of the known cave at x y z as it stands (a copy); null: no known cave there. */
@@ -272,7 +340,7 @@ public final class Sightings {
         if (r == null || cells.isEmpty()) return;
         int was = r.cellCount();
         r.recCells(cells);
-        if (r.cellCount() != was) dirty = true;
+        if (r.cellCount() != was) { dirty = true; caveMerge(dim); }   // D15 pass four: one record per cave space
     }
 
     /**
@@ -289,15 +357,18 @@ public final class Sightings {
         if (rs != null) for (CaveRecord r : rs.values()) r.recSpend(tickSpend);
         List<KnownCave> caves = allKnownCaves(dim);
         int feedBudget = Math.max(0, budget - CaveRecord.STAND_MAX);              // the stand later in the tick stays inside
+        java.util.Set<CaveRecord> fed = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());   // D15 pass four: a merged record once
+        boolean grew = false;
         for (KnownCave k : caves) {
             if (used >= feedBudget) break;
             CaveRecord r = rec(dim, k.x(), k.y(), k.z());
-            if (r == null) continue;
+            if (r == null || !fed.add(r)) continue;
             r.recSpend(tickSpend);                                              // made just now: the one counter too
             int was = r.cellCount();
             used += r.recFeed(idx, feedBudget - used);
-            if (r.cellCount() != was) dirty = true;
+            if (r.cellCount() != was) { dirty = true; grew = true; }
         }
+        if (grew) caveMerge(dim);
         // J6c: the air-exposed counts, round-robin (each tick another cave first: none starves), from HALF of what the
         // feeds left - the other half is the regroup's, later in the tick (the walk's own reads)
         int share = Math.max(0, Math.min(budget, CaveRecord.BUDGET) - CaveRecord.STAND_MAX - (int) Math.min(Integer.MAX_VALUE, tickSpend.spent)) / 2;
@@ -420,6 +491,7 @@ public final class Sightings {
                     try {
                         CaveRecord r = CaveRecord.of(e.getAsJsonObject());
                         s.caveRecords.computeIfAbsent(d.getKey(), x -> new HashMap<>()).put(r.where(), r);
+                        for (int[] l : r.lips()) s.caveAlias.computeIfAbsent(d.getKey(), x -> new HashMap<>()).put(l[0] + " " + l[1] + " " + l[2], r.where());   // D15 pass four
                     } catch (RuntimeException ex) {
                         Quiet.warn("Sightings.readRecords: a cave record skipped", ex); skipped[0]++; }
                 }

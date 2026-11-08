@@ -127,8 +127,9 @@ class J6bEnTest {
         assertTrue(from > 0 && to > from);
         String cave = src.substring(from, to);
         // D15: one GoalNear, at a passage's far end only (a walkable cell of the flood, never a mid-air frontier cell, run EN)
-        int gn = cave.indexOf("new GoalNear("), pc = cave.indexOf("g.isPassage()");
-        assertTrue(gn > pc && pc > 0 && cave.indexOf("new GoalNear(", gn + 1) < 0, "a GoalNear only in the passage case");
+        // D15 pass four: and at the record's walkable unseen cell off a pocket (the DESCENT case, before the passage case)
+        int dc = cave.indexOf("g.isDescent()"), gd = cave.indexOf("new GoalNear("), pc = cave.indexOf("g.isPassage()"), gn = cave.indexOf("new GoalNear(", gd + 1);
+        assertTrue(dc > 0 && gd > dc && pc > gd && gn > pc && cave.indexOf("new GoalNear(", gn + 1) < 0, "a GoalNear only in the descent and passage cases");
         assertTrue(cave.indexOf("case io.github.mojolowjo.entropybot.cave.CaveWalk.Goto g ->", pc) > gn, "the other gotos keep their reach goals");
         assertFalse(cave.contains("case REACHED"), "no eye-reach arrival");
         assertTrue(cave.contains("cv.reach.isInGoal(me[0], me[1], me[2])"), "arrival read from the goal");

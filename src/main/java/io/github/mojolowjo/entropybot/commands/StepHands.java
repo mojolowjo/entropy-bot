@@ -898,6 +898,9 @@ public final class StepHands implements Steps.Hands {
         /** D15 pass three: the capped passage ends stood at (the flood went on from there), and the passage cells looked at / walked past. */
         final java.util.Set<Long> reflooded = new java.util.HashSet<>();
         int looked, walkedPast;
+        /** D15 pass four: the feet at the step's first flood (a flood from other feet is from a new cell), the goal is Baritone's way down from a pocket. */
+        int[] firstFeet;
+        boolean goalDescent;
     }
 
     private Caving caving;
@@ -1079,9 +1082,16 @@ public final class StepHands implements Steps.Hands {
             cv.lipSaid = true;
             LOG.info("[entropybot] cave: passages: the feet {} are outside the cave's air; the flood starts at the cave cell {} (cave.passageLipNear {})", Jobs.fmt(me), Jobs.fmt(found.start()), Tuning.i("cave.passageLipNear"));
         }
+        // D15 pass four (run JAM): the record's promise past this flood - a pocket lip asks Baritone down to its unseen cells
+        if (cv.firstFeet == null) cv.firstFeet = me.clone();
+        java.util.Set<Long> flood = new java.util.HashSet<>();
+        for (var ps : found.passages()) flood.addAll(ps.cells());
+        var promise = sg.cavePromise(cv.dim, k.x(), k.y(), k.z(), me, flood, Tuning.i("cave.pocketTries"));
+        var pocket = new io.github.mojolowjo.entropybot.cave.CaveWalk.Pocket(found.start() == null ? me : found.start(), flood.size(), promise.cells(), promise.targets(),
+                !java.util.Arrays.equals(me, cv.firstFeet));
         var next = io.github.mojolowjo.entropybot.cave.CaveWalk.next(cv.mined, k.n(), minutes, k.minutes(), f, found.passages(),
                 left, me, io.github.mojolowjo.entropybot.aa.moves.Step.Collect.MINE_SIGHT,
-                new int[]{k.x(), k.y(), k.z()}, cv.dropped, found.capped(), cv.reflooded);   // pass three: the capped flood goes on from its farthest ends     // pass two: the mouth, when no passage is found from the feet; run EN: the dropped passed over
+                new int[]{k.x(), k.y(), k.z()}, cv.dropped, found.capped(), cv.reflooded, pocket);   // pass three: the capped flood goes on from its farthest ends     // pass two: the mouth, when no passage is found from the feet; run EN: the dropped passed over
         switch (next) {
             case io.github.mojolowjo.entropybot.cave.CaveWalk.Stop s -> {
                 return caveEnd(s.end(), s.why() + (cv.drops.isEmpty() ? "" : "; dropped: " + String.join("; ", cv.drops)));
@@ -1108,6 +1118,33 @@ public final class StepHands implements Steps.Hands {
                 String bad = cv.vein.begin(level);
                 if (bad != null) { cv.vein = null; return caveEnd(io.github.mojolowjo.entropybot.cave.CaveWalk.End.NO_PROGRESS, "the vein at " + Jobs.fmt(m.cell()) + ": " + bad); }
                 return Car.Status.running("caving: mining the seen ore at " + Jobs.fmt(m.cell()));
+            }
+            case io.github.mojolowjo.entropybot.cave.CaveWalk.Goto g when g.isDescent() -> {
+                // D15 pass four (rule 2): the record's unseen cell past the pocket's drop or climb - a GoalNear round it under
+                // the ordinary cave lease; Baritone paths down with the falls it prices itself, or says no path (the hold drops it)
+                cv.goal = g.cell().clone();
+                cv.goalWhy = g.why();
+                cv.goalKey = g.key();
+                cv.goalOre = false;
+                cv.goalPassage = null;
+                cv.goalDescent = true;
+                cv.reachCells = List.of();
+                cv.reachParts = List.of();
+                cv.seenAtGoal = f == null ? 0 : f.cellCount() - f.unseen();
+                cv.reach = new GoalNear(new BlockPos(g.cell()[0], g.cell()[1], g.cell()[2]), Tuning.i("cave.passageNear"));
+                if (cv.reach.isInGoal(me[0], me[1], me[2])) {
+                    arrived(sg, cv, k, me);
+                    return null;
+                }
+                cv.hold = io.github.mojolowjo.entropybot.cave.ExploreRules.TargetHold.start(new io.github.mojolowjo.entropybot.cave.ExploreRules.Target(g.cell()[0], g.cell()[2]),
+                        Core.INSTANCE.tick(), me, io.github.mojolowjo.entropybot.baritone.BaritoneHook.calcFailed());
+                b.getCustomGoalProcess().setGoalAndPath(cv.reach);
+                cv.goalAt = Core.INSTANCE.tick();
+                cv.holdSince = cv.goalAt;
+                cv.siteAt = -1;
+                LOG.info("[entropybot] cave: {} - GoalNear {} round it (the record: {} open passage(s) from its entries, {} cell(s) tried of {})", g.why(), Tuning.i("cave.passageNear"),
+                        promise.open(), cv.dropped.size(), Tuning.i("cave.pocketTries"));
+                return Car.Status.running("caving: " + g.why());
             }
             case io.github.mojolowjo.entropybot.cave.CaveWalk.Goto g when g.isPassage() -> {
                 // D15 (rule 2): a passage's far end is a walkable cell of the flood; the goal is a GoalNear round it
@@ -1356,6 +1393,13 @@ public final class StepHands implements Steps.Hands {
         long key = cv.goalKey;
         String what = cv.goalWhy;
         boolean ore = cv.goalOre;
+        if (cv.goalDescent) {
+            // D15 pass four: down at the unseen cell - not a target again; the next move floods from these feet
+            cv.dropped.add(key);
+            LOG.info("[entropybot] cave: down from the pocket (feet {}): {} - the passages are flooded again from here", Jobs.fmt(me), what);
+            clearGoal(cv);
+            return;
+        }
         arrivedAt(sg, cv, k, me);
         var after = sg.caveFacts(cv.dim, k.x(), k.y(), k.z());
         int seenNow = after == null ? cv.seenAtGoal : after.cellCount() - after.unseen();
@@ -1395,6 +1439,7 @@ public final class StepHands implements Steps.Hands {
         cv.goal = null;
         cv.hold = null;
         cv.goalPassage = null;
+        cv.goalDescent = false;
         cv.reachCells = List.of();
         cv.reachParts = List.of();
         caveTargetDist = Double.NaN;
