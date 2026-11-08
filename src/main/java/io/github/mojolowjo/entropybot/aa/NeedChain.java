@@ -1211,6 +1211,7 @@ public final class NeedChain {
         boolean pickMade;     // 0.39.z33: pickItem was made in this chain (fresh: its uses are its max damage, not the bag's)
         boolean pickOut;      // 0.39.z77 spares 2: pickItem is not in the simulated bag (spares made and worn in a way: out of it)
         int trials;           // ways priced so far (the search's bound)
+        double partWalk, partDig;   // job-est: running sums of the source walks and digs (debug.wayProbe reads a way's share as a difference; never restored)
         boolean bandPick;     // 0.39.z69 item 1: a band walk's pickaxe-first is being priced (no second one inside it)
         /**
          * 0.39.z61 (D1 J2): a craft / smelt step (this very object) -> what the simulated bag took for it, by the recipe slot's
@@ -3225,6 +3226,7 @@ public final class NeedChain {
         List<Trial> trials = new ArrayList<>();
         List<Trace.Node> nodes = new ArrayList<>();          // aa debug: each trial's node (empty outside a trace)
         int stepsAt = c.steps.size();
+        List<double[]> parts = new ArrayList<>();            // job-est: per trial {seconds, walk, dig}
         int skipped = -1;
         // 0.39.z78 D6: each way a node of the open one (its number of choose there, what that had read when the ways were made)
         int ordinal = c.caching() ? c.run.top.chooses++ : 0;
@@ -3235,6 +3237,7 @@ public final class NeedChain {
                 if (c.overBound() && trials.stream().anyMatch(t -> t.fail() == null && !t.stuck())) { skipped = i; break; }
                 Ctx.Snap s0 = c.snap();
                 double base = c.seconds;
+                double w0 = c.partWalk, d0 = c.partDig;          // job-est: the way's parts for debug.wayProbe
                 c.trials++;
                 if (c.trace != null) nodes.add(c.trace.push("way " + alts.get(i).label, true));
                 String p;
@@ -3244,6 +3247,7 @@ public final class NeedChain {
                     if (c.trace != null) c.trace.pop();
                 }
                 trials.add(new Trial(alts.get(i), p, c.seconds - base, c.stuck, c.fail, c.loopOn, c.unknown, c.snap(), i));
+                parts.add(new double[]{c.seconds - base, c.partWalk - w0, c.partDig - d0});
                 if (c.trace != null) {
                     Trial t = trials.get(trials.size() - 1);
                     Trace.Node n = nodes.get(nodes.size() - 1);
@@ -3262,6 +3266,15 @@ public final class NeedChain {
                 .thenComparingDouble(t -> t.alt().work).thenComparingInt(t -> t.alt().tier).thenComparingInt(Trial::index);
         Trial win = null;
         for (Trial t : trials) if (t.fail() == null && (win == null || best.compare(t, win) < 0)) win = t;
+        if (wayProbe() && trials.size() > 1) {               // job-est: the top three standing ways with their parts
+            List<Trial> top = new ArrayList<>();
+            for (Trial t : trials) if (t.fail() == null && !t.stuck()) top.add(t);
+            top.sort(best);
+            List<String> ls = new ArrayList<>();
+            List<double[]> ps = new ArrayList<>();
+            for (Trial t : top) { ls.add(t.alt().label); ps.add(parts.get(trials.indexOf(t))); }
+            if (!ls.isEmpty()) com.mojang.logging.LogUtils.getLogger().info(wayProbeLine(self, ls, ps));
+        }
         if (win == null) {
             // every way failed by a loop back to an item above this one: this requirement is part of that loop, the failure goes up
             // to the way that asked for it (it is listed there); a loop back to this very item, or any other failure, is listed here
@@ -5152,7 +5165,21 @@ public final class NeedChain {
                 }
                 if (firstWalk == null) firstWalk = wk;
                 c.addS(wk.seconds());
+                c.partWalk += wk.seconds();
                 c.setAway(wk.seconds());
+                // job-est (runs JAI 00:45, JAD): Baritone's estimate prices each level down at half a fall, so a spot 45 blocks
+                // under the feet ranked like one 45 m along the surface. Its own search adds a dig per level (DigDownGoal); the
+                // estimated walk is charged the same: the levels below the free drop, less the known cover, at the stone's break
+                if (wk.kind() == PathPrice.Kind.ESTIMATED) {
+                    int[] feet = c.w.where() == null || c.w.where().feet() == null ? null : c.w.where().feet().get();
+                    int lv = feet == null ? 0 : digLevels(feet[1], sp.y(), sp.cover());
+                    if (lv > 0) {
+                        double down = blockBreakS(c, DIG_DOWN_BLOCK) * lv;
+                        c.addS(down);
+                        c.partDig += down;
+                        c.note(() -> "way down to " + sp.x() + " " + sp.y() + " " + sp.z() + ": " + lv + " levels under the feet, no path known (Baritone's estimate): priced as a dig of " + lv + " x " + shw(DIG_DOWN_BLOCK) + " = " + s(down));
+                    }
+                }
                 // FY fix (run FY 00:57-01:23: "collect 4 oak_planks: Baritone's mine knows no oak_planks in its sight (10 blocks of
                 // the feet) ... the priced spot -131 -35 -108 (124 m) is not what it goes for" 16 times, two orders lost; FV, FU,
                 // FR the same at 48-124 m): the collect hand is Baritone's mine, which takes the blocks in its sight - a spot
@@ -5170,6 +5197,7 @@ public final class NeedChain {
                 if (!log && sp.isCovered()) {
                     double cov = coverS(c, sp);
                     c.addS(cov);
+                    c.partDig += cov;
                     c.steps.add(digTo(sp));
                     c.note(() -> coverText(gives, sp) + ": " + s(cov));
                 } else if (!log && sp.cover() == 0) {
@@ -5182,6 +5210,7 @@ public final class NeedChain {
             }
             double each = breakS(c, gives, sp);
             c.addS(each * take);
+            c.partDig += each * take;
             final int took = take;
             c.note(() -> "break " + shw(blockOf(gives, sp)) + " x" + took + ": tool " + (c.pickItem == null || tierOf(gives, sp) < 1 ? "hand" : sh(c.pickItem)) + ", " + s(each) + " each = " + s(each * took));
             // 0.39.z74 item 1 (run AC 16:51:46: "stick 5 m: 11.9 s" won over "stick from #planks: 28.6 s"; the leaves gave 1 stick
@@ -5193,6 +5222,7 @@ public final class NeedChain {
             if (per < 1 && take > 1 && spotWalk != null && spotWalk.fail() == null && spotWalk.seconds() > 0) {
                 double again = spotWalk.seconds() * (take - 1);
                 c.addS(again);
+                c.partWalk += again;
                 c.note(() -> shw(blockOf(gives, sp)) + " gives " + shw(gives) + " by chance (" + String.format(java.util.Locale.ROOT, "%.3f", per) + " a block, the loot data): " + (took - 1) + " more trips of " + s(spotWalk.seconds()) + " = " + s(again));
             }
             if (c.pickItem != null && tierOf(gives, sp) >= 1) c.pickWorn += take;     // 0.39.z33: one use a block (game fact: a pickaxe loses 1 durability per block mined)
@@ -5228,6 +5258,35 @@ public final class NeedChain {
         if (!sp.isCovered()) return 0;
         return blockBreakS(c, sp.coverBlock() == null ? sp.block() : sp.coverBlock()) * sp.cover();
     }
+
+    /** job-est: the block a way down through unknown ground is priced by (the overworld's ground; Baritone's break cost of it). */
+    static final String DIG_DOWN_BLOCK = "minecraft:stone";
+
+    /**
+     * job-est: the levels an estimated way down must dig (pure): the spot's depth under the feet less
+     * {@code estimate.freeDropLevels} (a slope or a drop walks those) and less the known cover (coverS charges it); 0 at or above.
+     */
+    static int digLevels(int feetY, int spotY, int cover) {
+        int lv = feetY - spotY - Tuning.i("estimate.freeDropLevels") - Math.max(0, cover);
+        return Math.max(0, lv);
+    }
+
+    /**
+     * job-est: the debug.wayProbe line of one requirement's pricing: the top three standing ways by seconds, each with its
+     * parts (walk: the source walks; dig: breaks, cover and the way down; rest: crafts, smelts, everything else). Pure.
+     */
+    static String wayProbeLine(String self, List<String> labels, List<double[]> parts) {
+        StringBuilder b = new StringBuilder("[entropybot] probe ways: ").append(self == null ? "this requirement" : shw(self)).append(":");
+        for (int i = 0; i < labels.size() && i < 3; i++) {   // structural: the probe's top three (the job's text)
+            double[] p = parts.get(i);
+            b.append(i == 0 ? " " : " | ").append(i + 1).append(". ").append(labels.get(i)).append(" ").append(s(p[0]))
+                    .append(" (walk ").append(s(p[1])).append(", dig ").append(s(p[2])).append(", rest ").append(s(Math.max(0, p[0] - p[1] - p[2]))).append(")");
+        }
+        return b.toString();
+    }
+
+    /** job-est: the way probe is on (Tuning debug.wayProbe). */
+    static boolean wayProbe() { return Tuning.get("debug.wayProbe") > 0; }
 
     /** job-sight: the step that digs the cover column over a covered spot (Baritone's builder, the dig hand). */
     static Step.Dig digTo(Spot sp) {
