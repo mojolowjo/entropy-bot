@@ -35,7 +35,45 @@ final class MainStationsLive {
 
     /** With the restore ledger's load (Commands): this world's mains. A line for the log. */
     static String load(BotFiles f) {
-        return loadMains(f) + "; " + loadBook(f);
+        String line = loadMains(f) + "; " + loadBook(f);
+        MainStations.saver = () -> {
+            String r = save();
+            if (!r.isEmpty()) Quiet.line("stations: " + FILE + r);
+        };
+        // rule 23: the mains and the book agree from the load on
+        if (MainStations.current != null) {
+            List<String> agree = MainStations.current.agree(io.github.mojolowjo.entropybot.aa.StationBook.now(), io.github.mojolowjo.entropybot.aa.StationBook.clock.getAsLong());
+            if (!agree.isEmpty()) line += "; " + String.join("; ", agree) + save();
+        }
+        return line;
+    }
+
+    /** dep-early: the commands the rebuilt lookup asks (set by the early mark). */
+    private static volatile Commands waitingFor;
+
+    /** dep-early: the item data arrived (ItemWorth.use): a main chest marked before it is looked up again, the line said once. */
+    static final Runnable ON_ITEM_DATA = MainStationsLive::onItemData;
+
+    private static void onItemData() {
+        Commands c = waitingFor;
+        MainStations.Main m = MainStations.now().takeWaiting();
+        if (m == null || c == null) return;
+        waitingFor = null;
+        c.nearby.forget();
+        StationFact f = c.nearby.containers();
+        Quiet.line(MainStations.listedLine(m, listsAt(f, m.x(), m.y(), m.z()), whyNot(f)));
+    }
+
+    private static boolean listsAt(StationFact f, int x, int y, int z) {
+        return f instanceof StationFact.Known k && k.spots().stream().anyMatch(s -> s.x() == x && s.y() == y && s.z() == z);
+    }
+
+    private static String whyNot(StationFact f) {
+        return switch (f) {
+            case StationFact.None n -> n.why();
+            case StationFact.NotLoaded n -> n.why();
+            case StationFact.Known k -> "not among its " + k.spots().size() + " known chest(s)";
+        };
     }
 
     /** D14: the station book's file (every station placed or seen, gone ones with their reason). */
@@ -187,6 +225,8 @@ final class MainStationsLive {
     private static String mark(Commands c, String kind, int[] at, String block) {
         if (MainStations.current == null) return "aa station: no world loaded";
         String r = MainStations.now().mark(new MainStations.Main(kind, at[0], at[1], at[2], block));
+        // rule 23: a main set by command is a station in the book
+        io.github.mojolowjo.entropybot.aa.StationBook.now().seen(block, at[0], at[1], at[2], false, io.github.mojolowjo.entropybot.aa.StationBook.clock.getAsLong());
         c.nearby.forget();                       // the cached station facts price the new main from the next lookup
         return "aa station: " + r + save();
     }
@@ -219,12 +259,16 @@ final class MainStationsLive {
             // run HQ (rule 7): the mark is said with whether the deposit's own lookup lists it now - a refused or unlisted main is
             // said here, at the mark, not 20 minutes later as "no chest known"
             StationFact f = c.nearby.containers();
-            boolean listed = f instanceof StationFact.Known k && k.spots().stream().anyMatch(s -> s.x() == at[0] && s.y() == at[1] && s.z() == at[2]);
-            return listed ? r : r + " - BUT the deposit's lookup does not list it: " + switch (f) {
-                case StationFact.None n -> n.why();
-                case StationFact.NotLoaded n -> n.why();
-                case StationFact.Known k -> "not among its " + k.spots().size() + " known chest(s)";
-            };
+            if (listsAt(f, at[0], at[1], at[2])) return r;
+            if (f instanceof StationFact.NotLoaded && MainStations.current != null) {
+                // dep-early (run JAN 02:26): the mark stands; the lookup is rebuilt when the item data arrives (AaRuntime's
+                // tech tree check hands it to ItemWorth.use) and says then whether it lists the chest
+                MainStations.current.waitForData(MainStations.current.of(MainStations.CONTAINER));
+                waitingFor = c;
+                io.github.mojolowjo.entropybot.aa.brain.ItemWorth.onData(ON_ITEM_DATA);
+                return r + " - " + MainStations.earlyLine(Math.round(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("aaRuntime.treeEveryMs") / 1000.0));
+            }
+            return r + " - BUT the deposit's lookup does not list it: " + whyNot(f);
         }
         StationFact f = c.nearby.containers();
         return switch (f) {
