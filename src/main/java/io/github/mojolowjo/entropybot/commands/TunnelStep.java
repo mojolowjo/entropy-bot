@@ -66,6 +66,9 @@ final class TunnelStep {
         int[] goal;
         boolean walking;
         long lines0;
+        /** job-tunnel3: legs walked to their goal; this leg's most blocks; whether this leg is the short retry. */
+        int legs, legMax;
+        boolean retried;
     }
 
     /**
@@ -104,14 +107,29 @@ final class TunnelStep {
         }
     }
 
-    /** job-tunnel2: the goal from {@code from} toward the end, capped at the loaded edge; its steps (0: the next is not loaded). */
+    /** job-tunnel3: the leg's goal from {@code from} toward the end, at most s.legMax blocks, capped at the loaded edge (Tunnel.legSteps); its steps (0: none loaded). */
     private static int capGoal(State s, Level lv, int[] from) {
         int left = Math.abs(s.end[0] - from[0]) + Math.abs(s.end[2] - from[2]);
-        int steps = Tunnel.loadedSteps(left, i -> lv.isLoaded(new BlockPos(from[0] + s.h.dx() * i, from[1], from[2] + s.h.dz() * i))
+        int steps = Tunnel.legSteps(left, s.legMax, i -> lv.isLoaded(new BlockPos(from[0] + s.h.dx() * i, from[1], from[2] + s.h.dz() * i))
                 && lv.isLoaded(new BlockPos(from[0] + s.h.dx() * i, from[1] + 1, from[2] + s.h.dz() * i)));
         s.goal = new int[]{from[0] + s.h.dx() * steps, s.end[1], from[2] + s.h.dz() * steps};
         s.walking = false;
         return steps;
+    }
+
+    /**
+     * job-tunnel3: a leg that ended short (timed out, stopped, no priced path) is retried once from the feet with its goal
+     * tunnel.shortLegBlocks ahead (Tunnel.shortLeg); null: this was the retry, the caller holds the heading.
+     */
+    private static Car.Status retryShort(State s, Level lv, int[] me, String why) {
+        if (Tunnel.shortLeg(s.retried) == Tunnel.ShortLeg.HOLD) return null;
+        IBaritone b = Jobs.baritone();
+        if (b != null) Jobs.cancel(b);
+        s.retried = true;
+        s.legMax = Tuning.i("tunnel.shortLegBlocks");
+        capGoal(s, lv, me);
+        LOG.info("[entropybot] tunnel: leg {} ended short: {}; retried once from {} with tunnel.shortLegBlocks {} to {}", s.legs + 1, why, Jobs.fmt(me), s.legMax, Jobs.fmt(s.goal));
+        return Car.Status.running("tunnel " + s.h.name() + ": the leg ended short, retried " + s.legMax + " blocks ahead");
     }
 
     private static State st;
@@ -159,6 +177,7 @@ final class TunnelStep {
             if (lv.isLoaded(q) && !lv.getBlockState(q).isAir()) s.solidAtStart.add(c);
         }
         done.add(h.name());
+        s.legMax = Tuning.i("tunnel.legBlocks");
         int steps = capGoal(s, lv, me);
         if (steps == 0) {
             String w = "the first block " + h.name() + " of " + Jobs.fmt(me) + " is not loaded (rule 15: not known)";
@@ -167,8 +186,8 @@ final class TunnelStep {
         }
         st = s;
         io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.aa.moves.BandLeg.INTENT, "tunnel");   // the dig leg's intent and lease
-        LOG.info("[entropybot] tunnel: {} {} blocks from {} to {} for {} {} ore (Baritone's priced path into the cell, breaks under the dig leg's TRAVEL lease){} - heading {}: {}",
-                h.name(), t.length(), Jobs.fmt(me), Jobs.fmt(s.end), t.n(), s.fam, steps < t.length() ? "; " + Tunnel.edgeLine(s.goal, steps, t.length()) : "", h.name(), why);
+        LOG.info("[entropybot] tunnel: {} {} blocks from {} to {} for {} {} ore (Baritone's priced path into the cell, breaks under the dig leg's TRAVEL lease), in legs of tunnel.legBlocks {}, the first to {} - heading {}: {}",
+                h.name(), t.length(), Jobs.fmt(me), Jobs.fmt(s.end), t.n(), s.fam, s.legMax, Jobs.fmt(s.goal), h.name(), why);
         return null;
     }
 
@@ -242,17 +261,21 @@ final class TunnelStep {
         boolean atGoal = me[0] == s.goal[0] && me[1] == s.goal[1] && me[2] == s.goal[2];
         if (ore == null && fluid == null && cave == null && !atEnd) {
             if (atGoal && s.walking) {
-                // job-tunnel2: the loaded edge reached - the goal moves on toward the end as the chunks load
+                // job-tunnel3: the leg reached its goal - the next leg starts from the feet
                 Jobs.cancel(b);
-                int steps = capGoal(s, lv, me);
+                s.legs++;
+                s.retried = false;
+                s.legMax = Tuning.i("tunnel.legBlocks");
+                s.walking = false;
                 int left = Math.abs(s.end[0] - me[0]) + Math.abs(s.end[2] - me[2]);
-                if (steps == 0) return Car.Status.running("tunnel " + s.h.name() + ": at the loaded edge " + Jobs.fmt(me) + ", the next block not loaded yet");
-                LOG.info("[entropybot] tunnel: {}", Tunnel.edgeLine(s.goal, steps, left));
+                LOG.info("[entropybot] tunnel: leg {} reached {}, {} block(s) to the end", s.legs, Jobs.fmt(me), left);
             }
             if (!s.walking) {
                 if (capGoal(s, lv, me) == 0) return Car.Status.running("tunnel " + s.h.name() + ": at the loaded edge " + Jobs.fmt(me) + ", the next block not loaded yet");
                 Car.Status w = walkGoal(s, b, me, t);
                 if (w != null) return w;
+                Car.Status r = retryShort(s, lv, me, "no priced path to " + Jobs.fmt(s.goal));
+                if (r != null) return r;
                 var a = LivePathPrice.INSTANCE.priceInto(s.goal[0], s.goal[1], s.goal[2], 0);
                 String why = "no path along it to " + Jobs.fmt(s.goal) + " (" + io.github.mojolowjo.entropybot.aa.moves.BandLeg.of(a, me, true).why() + ")";
                 FactChange.set(FactChange.tunnelHeldFact(s.from, s.h.name(), why));
@@ -260,6 +283,13 @@ final class TunnelStep {
             }
         }
         boolean stopped = s.walking && !b.getCustomGoalProcess().isActive() && t - s.goalAt >= 20 && !Core.INSTANCE.reflexes.hold();   // structural: a second for the goal to take
+        if (stopped && ore == null && fluid == null && cave == null && !atEnd) {
+            String w = "Baritone stopped short at " + Jobs.fmt(me) + " of " + Jobs.fmt(s.goal) + " (the fork: "
+                    + io.github.mojolowjo.entropybot.aa.moves.WalkEndText.reason(forkCalc(b), s.lines0, io.github.mojolowjo.entropybot.baritone.BaritoneHook.lines(),
+                            io.github.mojolowjo.entropybot.baritone.BaritoneHook.lastLine()) + ")";
+            Car.Status r = retryShort(s, lv, me, w);
+            if (r != null) return r;
+        }
         var next = Tunnel.next(ore, fluid, cave, atEnd, stopped, s.h, s.end, me);
         switch (next.act()) {
             case MINE -> {
@@ -289,7 +319,7 @@ final class TunnelStep {
                 FactChange.set(FactChange.tunnelHeldFact(s.from, s.h.name(), why));
                 return end(p, false, Tunnel.heldText(s.h.name(), s.from, why));
             }
-            case DONE -> { return end(p, true, next.why()); }
+            case DONE -> { s.legs++; return end(p, true, next.why()); }
             default -> { return Car.Status.running("tunnel " + s.h.name() + " to " + Jobs.fmt(s.end) + " (" + s.mined + " of " + s.step.n() + " ore)"); }
         }
     }
@@ -329,7 +359,7 @@ final class TunnelStep {
                 }
             }
             faces = faced.size();
-            line = Tunnel.endLine(why, broken, faces, s.oreSeen.size(), s.mined, s.fam);
+            line = Tunnel.endLine(why, broken, faces, s.oreSeen.size(), s.mined, s.fam, s.legs);
         }
         LOG.info("[entropybot] tunnel: ended: {}", line);
         return ok ? Car.Status.done("ok: " + line) : Car.Status.failed("tunnel: " + line);
