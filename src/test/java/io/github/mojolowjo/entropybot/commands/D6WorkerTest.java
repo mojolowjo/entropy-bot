@@ -279,6 +279,7 @@ class D6WorkerTest {
         PlannerWorker worker = new PlannerWorker();
         PlannerPort port = new PlannerPort(worker, () -> 0, log::add);
         Playbook pb = Playbook.derive(KIT, Playbook.facts(live.world(), null));
+        Tuning.set("planner.dropsBeforeTake", 1000);     // job-freeze: the take guard off - this test is the stand under it
         untilApplied(port, worker, pb, live, 30);
         // every result lands after the near tree's walk answered again (another price): each one is stale on arrival
         live.walks.put("12,64,0", PathPrice.Answer.priced(new PathPrice.Walk(9)));            // a read fact moved: the kept result fails its check
@@ -303,6 +304,32 @@ class D6WorkerTest {
         assertTrue(Deep.equal(a, PlanNodes.old(() -> NeedChain.resolvePlaybookLegs(pb, live.world()))), "the facts of now, never a stale price");
     }
 
+    /** Job-freeze (run JAP: 293 drops, the order stood until it parked): the same reason dropsBeforeTake times in a row - the next result is taken, said once. */
+    @Test
+    void theSameReasonNTimesInARow_theNextResultIsTaken_saidOnce() throws InterruptedException {
+        data();
+        Live live = new Live();
+        List<String> log = new ArrayList<>();
+        PlannerWorker worker = new PlannerWorker();
+        PlannerPort port = new PlannerPort(worker, () -> 0, log::add);
+        Playbook pb = Playbook.derive(KIT, Playbook.facts(live.world(), null));
+        untilApplied(port, worker, pb, live, 30);
+        live.walks.put("12,64,0", PathPrice.Answer.priced(new PathPrice.Walk(9)));
+        int n = PlannerPort.dropsBeforeTake();
+        assertEquals(5, n, "the Tuning default");
+        NeedChain.Legs l = null;
+        for (int i = 0; i <= n + 1; i++) {
+            long seen = worker.landed();
+            l = port.legs("b1", pb, Set.of(), live.world());
+            if (!NeedChain.thinking(l.chain())) break;
+            awaitLanding(worker, seen);
+            live.walks.put("12,64,0", PathPrice.Answer.priced(new PathPrice.Walk(10 + i)));
+        }
+        assertFalse(NeedChain.thinking(l.chain()), "taken after " + n + " drops: " + l.chain().why());
+        assertEquals(1, log.stream().filter(x -> x.contains("the facts kept changing " + n + " times") && x.contains("this answer is taken (rule 7)")).count(), log.toString());
+        assertTrue(log.stream().noneMatch(x -> x.contains("the trip stands until a result holds")), log.toString());
+    }
+
     /** Review (b): a stand past the cap that never settles says its reason again every RESAY_S (nothing else bounds it). */
     @Test
     void pastTheCap_theReasonIsSaidAgainEvery30s_whileTheFactsKeepChanging() throws InterruptedException {
@@ -312,6 +339,7 @@ class D6WorkerTest {
         long[] tick = {0};
         PlannerWorker worker = new PlannerWorker();
         PlannerPort port = new PlannerPort(worker, () -> tick[0], log::add);
+        Tuning.set("planner.dropsBeforeTake", 1000);     // job-freeze: the take guard off - this test is the stand under it
         Playbook pb = Playbook.derive(KIT, Playbook.facts(live.world(), null));
         untilApplied(port, worker, pb, live, 30);
         java.util.function.Predicate<String> said = x -> x.contains("results in a row dropped") && x.contains("the trip stands until a result holds");

@@ -26,6 +26,34 @@ class JobPriceTest {
     /** Placements' ore per air-exposed block: 0.001 above y 40, 0.01 below (the iron band). */
     static final java.util.function.IntToDoubleFunction BAND = y -> y > 40 ? 0.001 : 0.01;
 
+    /** Job-freeze (run JAP: 293 results dropped, each CaveWay printing the same): a Density built twice is equal, by value. */
+    @Test
+    void densityBuiltTwiceIsEqual() {
+        var a = CaveWalk.Density.of(BAND, 100, 100, 0, 0);
+        var b = CaveWalk.Density.of(y -> y > 40 ? 0.001 : 0.01, 100, 100, 0, 0);
+        assertEquals(a, b);
+        assertEquals(a.hashCode(), b.hashCode());
+        assertTrue(io.github.mojolowjo.entropybot.aa.Deep.equal(a, b), "the planner's fact check");
+        assertEquals(CaveWalk.Density.of(null, 0, 0, 5, 500), CaveWalk.Density.of(null, 0, 0, 5, 500));
+        assertEquals(CaveWalk.Density.notKnown(), CaveWalk.Density.notKnown());
+        assertNotEquals(a, CaveWalk.Density.of(BAND, 100, 50, 0, 0));
+        assertEquals(0.01, a.at(16), 1e-12);
+        assertEquals(0.001, a.at(70), 1e-12);
+        assertEquals(0.01, a.at(-10_000), 1e-12, "below the sampled range: the lowest sample");
+    }
+
+    /** Job-freeze: two CaveWays built twice from the same record are equal (the planner's fact check, Deep.equal). */
+    @Test
+    void caveWayBuiltTwiceIsEqual() {
+        java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay> make = () ->
+                new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(-113, 64, -40, 9.0, "minecraft:deepslate_iron_ore", "iron", 0.91796875, 0.0,
+                        null, 1.92, List.of("1,2,3"), List.of(new int[]{-113, 64, -40}))
+                        .withPassages(List.of(at(0, 16, 4, 100, 200, 0), at(1, 20, 2, 10, 5, 1)))
+                        .withDensity(CaveWalk.Density.of(y -> y > 40 ? 0.001 : 0.01, 100, 100, 0, 0));
+        assertTrue(io.github.mojolowjo.entropybot.aa.Deep.equal(make.get(), make.get()));
+        assertEquals(io.github.mojolowjo.entropybot.aa.Deep.hash(make.get()), io.github.mojolowjo.entropybot.aa.Deep.hash(make.get()));
+    }
+
     @Test
     void surfaceCavePricesFarAboveTheBand() {
         var d = CaveWalk.Density.of(BAND, 100, 100, 0, 0);     // one air-exposed block a cell

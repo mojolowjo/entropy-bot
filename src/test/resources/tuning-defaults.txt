@@ -950,6 +950,7 @@ cave.passageSecPerCell	0.5
 cave.ravineDrop	10.0
 cave.ravineR	8.0
 cave.seenMarginM	4.0
+planner.dropsBeforeTake	5.0
 pricedPath.on	1.0
 pricedPath.keepTicks	1200.0
 pricedPath.maxSegments	16.0

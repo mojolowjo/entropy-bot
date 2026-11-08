@@ -111,10 +111,49 @@ public final class CaveWalk {
      * blocks per cell x the placements' share of a block at that Y (CaveYield's count, per cell); not known (rule 15): the
      * record's seen-ore rate, else the Tuning fallback cave.orePerCellNotKnown - {@code why} says which.
      */
-    public record Density(java.util.function.IntToDoubleFunction atY, String why) {
-        public double at(double y) { return Math.max(0, atY.applyAsDouble((int) Math.round(y))); }
+    public record Density(int minY, double[] perY, String why) {
+        /*
+         * job-freeze (run JAP: 293 results in a row dropped, every CaveWay printing the same before and after): this was
+         * Density(IntToDoubleFunction atY, ...) - a fresh lambda each re-price, whose equals is identity, so the planner's
+         * fact check (Deep.equal -> lambda.equals) said every cave fact changed. Now a value: the curve sampled once per Y
+         * over [MIN_Y, MAX_Y] (a flat density: one sample), each sample rounded to PRECISION; equals by those values.
+         */
 
-        public static Density flat(double perCell, String why) { return new Density(y -> perCell, why); }
+        /** structural: the lowest / highest Y sampled (vanilla's world is -64..319; a Y outside takes the nearest sample) */
+        public static final int MIN_Y = -128, MAX_Y = 383;
+        /** structural: a density sample is rounded to this many ore per cell (a fact's double compared at a stated precision) */
+        public static final double PRECISION = 1e-9;
+
+        public Density {
+            perY = perY == null || perY.length == 0 ? new double[]{0} : perY.clone();
+            for (int i = 0; i < perY.length; i++) perY[i] = round(perY[i]);
+        }
+
+        static double round(double v) { return Double.isFinite(v) ? Math.rint(v / PRECISION) * PRECISION + 0.0 : v; }
+
+        public double at(double y) {
+            int i = (int) Math.round(y) - minY;
+            return Math.max(0, perY[Math.max(0, Math.min(perY.length - 1, i))]);
+        }
+
+        @Override public double[] perY() { return perY.clone(); }
+
+        @Override public boolean equals(Object o) {
+            return o instanceof Density d && minY == d.minY && java.util.Arrays.equals(perY, d.perY) && java.util.Objects.equals(why, d.why);
+        }
+
+        @Override public int hashCode() { return 31 * (31 * minY + java.util.Arrays.hashCode(perY)) + java.util.Objects.hashCode(why); }
+
+        @Override public String toString() { return "Density[" + why + "]"; }
+
+        public static Density flat(double perCell, String why) { return new Density(0, new double[]{perCell}, why); }
+
+        /** The curve {@code atY} sampled over [MIN_Y, MAX_Y]. */
+        public static Density sampled(java.util.function.IntToDoubleFunction atY, String why) {
+            double[] v = new double[MAX_Y - MIN_Y + 1];
+            for (int i = 0; i < v.length; i++) v[i] = atY.applyAsDouble(MIN_Y + i);
+            return new Density(MIN_Y, v, why);
+        }
 
         /**
          * The density for the order's ore: {@code perBlockAtY} the placements' ore per air-exposed block at a Y (GenWhere
@@ -125,7 +164,7 @@ public final class CaveWalk {
         public static Density of(java.util.function.IntToDoubleFunction perBlockAtY, long blocks, long cells, int seenOre, long seenCells) {
             if (perBlockAtY != null && blocks > 0 && cells > 0) {
                 double perCell = blocks / (double) cells;
-                return new Density(y -> perCell * perBlockAtY.applyAsDouble(y), String.format(Locale.ROOT,
+                return sampled(y -> perCell * perBlockAtY.applyAsDouble(y), String.format(Locale.ROOT,
                         "game data: the placements' share at each passage's mean Y x %d air-exposed blocks over %d cells", blocks, cells));
             }
             if (seenOre > 0 && seenCells > 0)

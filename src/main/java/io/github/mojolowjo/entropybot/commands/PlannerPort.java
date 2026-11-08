@@ -40,7 +40,7 @@ public final class PlannerPort implements BatchWay.Planner {
 
     /** The probe numbers (client tick): the last applied resolve and the tick-side costs. */
     private PlanNodes.Stats lastStats = PlanNodes.Stats.NONE;
-    private long lastResolveNs, lastApplyNs, lastSnapNs, resolves, drops, fetches, caps, kepts;
+    private long lastResolveNs, lastApplyNs, lastSnapNs, resolves, drops, fetches, caps, kepts, takes;
 
     /** One trip's request and its last result's facts. */
     private static final class State {
@@ -52,6 +52,9 @@ public final class PlannerPort implements BatchWay.Planner {
         String waitWords = "thinking: the first resolve of this trip";
         /** Results of this trip dropped in a row since its last apply (past ROUNDS the stand says why). */
         int dropsInRow;
+        /** job-freeze: the reason of the last drop (a fact's field and key) and how many results in a row were dropped for it. */
+        String dropReason;
+        int sameDropsInRow;
         /** Review (b): the tick the cap's line was last said (said again every RESAY_S while the streak lasts). */
         long capSaidAt;
         /** 0.39.z78 D6 (run DP): the result last applied, for its playbook and kept fuels - a new ask of the same is checked against it first. */
@@ -135,7 +138,22 @@ public final class PlannerPort implements BatchWay.Planner {
             List<String> changed = data ? check(r, w, live) : List.of("game data (items, tiers, Tuning or the loot book changed while it thought)");
             laps.split("check", System.nanoTime() - t0);
             s.keys = r.read().facts().keySet();
-            if (changed.isEmpty()) {
+            // job-freeze (run JAP: 293 results in a row dropped, the trip stood 2:28 until it parked): the same reason
+            // planner.dropsBeforeTake times in a row - this answer is taken, said once (rule 7: a planner that cannot
+            // settle says so and acts). A fetch (a fact the snapshot lacked) is never counted: its next round settles it.
+            String why = null;
+            for (String c : changed) if (!c.startsWith(MISS)) { why = reason(c); break; }
+            if (why != null && why.equals(s.dropReason)) s.sameDropsInRow++;
+            else { s.dropReason = why; s.sameDropsInRow = why == null ? 0 : 1; }
+            boolean take = why != null && s.sameDropsInRow > dropsBeforeTake();
+            if (take) {
+                log.accept("planner: trip " + key + ": the facts kept changing " + (s.sameDropsInRow - 1) + " times (" + changed.get(0)
+                        + "); this answer is taken (rule 7)");
+                takes++;
+                s.dropReason = null;
+                s.sameDropsInRow = 0;
+            }
+            if (changed.isEmpty() || take) {
                 long a0 = System.nanoTime();
                 r.read().runEffects(w.path());
                 laps.split("apply", System.nanoTime() - a0);
@@ -149,6 +167,7 @@ public final class PlannerPort implements BatchWay.Planner {
                 resolves++;
                 s.version = -1;                                  // applied: the next ask is a new request
                 s.dropsInRow = 0;
+                if (!take) { s.dropReason = null; s.sameDropsInRow = 0; }
                 return r.legs();
             }
             String said = null;
@@ -196,6 +215,8 @@ public final class PlannerPort implements BatchWay.Planner {
                 s.applied = null;
             }
             s.dropsInRow = 0;
+            s.dropReason = null;
+            s.sameDropsInRow = 0;
             s.waitWords = s.keys.isEmpty() ? "thinking: the first resolve of this trip" : "thinking: a new request for this trip";
         }
         long t0 = System.nanoTime();
@@ -208,6 +229,15 @@ public final class PlannerPort implements BatchWay.Planner {
         lastSnapNs = System.nanoTime() - t0;
         io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.split("snapshot", lastSnapNs);
         return NeedChain.thinking(s.waitWords);
+    }
+
+    /** job-freeze: results dropped in a row for one reason before the next is taken (Tuning planner.dropsBeforeTake). */
+    static int dropsBeforeTake() { return Math.max(1, (int) Math.round(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("planner.dropsBeforeTake"))); }
+
+    /** job-freeze: a drop's reason - the changed fact's field and key, the text before its ": old -> new" (pure). */
+    static String reason(String changed) {
+        int i = changed.indexOf(": ");
+        return i < 0 ? changed : changed.substring(0, i);
     }
 
     /** The start of a changed fact the snapshot did not have (a fetch: the next snapshot carries it, nothing is said). */
@@ -314,8 +344,8 @@ public final class PlannerPort implements BatchWay.Planner {
 
     /** The probe text: the last applied resolve's nodes and times, the drops, the requests in flight. */
     public String probe() {
-        return String.format(Locale.ROOT, "planner: %s, resolve %.1f ms (worker), apply %.1f ms, snapshot %.1f ms, applied %d, kept %d, dropped %d (+%d fetches), stood past the cap %d, in flight %d",
-                lastStats.text(), lastResolveNs / 1e6, lastApplyNs / 1e6, lastSnapNs / 1e6, resolves, kepts, drops, fetches, caps, worker.inFlight());     // structural: ns per ms
+        return String.format(Locale.ROOT, "planner: %s, resolve %.1f ms (worker), apply %.1f ms, snapshot %.1f ms, applied %d, kept %d, dropped %d (+%d fetches), stood past the cap %d, taken after drops %d, in flight %d",
+                lastStats.text(), lastResolveNs / 1e6, lastApplyNs / 1e6, lastSnapNs / 1e6, resolves, kepts, drops, fetches, caps, takes, worker.inFlight());     // structural: ns per ms
     }
 
     /** A new world or AA off: the requests are forgotten (a late result of the old world is dropped by its version). */
