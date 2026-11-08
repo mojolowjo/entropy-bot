@@ -267,6 +267,24 @@ public final class ProbeLines {
         }
     }
 
+    /** job-steermod: pricedPath.walk(goal, steerDig=true) read by name; null when the jar lacks it (the caller falls back, rule 7). */
+    public static Boolean steeredWalk(Object pricedPath, Object goal) {
+        java.lang.reflect.Method m;
+        try {
+            m = pricedPath.getClass().getMethod("walk", baritone.api.pathing.goals.Goal.class, boolean.class);
+        } catch (ReflectiveOperationException | LinkageError e) {
+            return null;
+        }
+        try {
+            return (Boolean) m.invoke(pricedPath, goal, true);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            if (e.getCause() instanceof RuntimeException r) throw r;
+            throw new IllegalStateException("IPricedPath.walk(goal, steerDig) failed", e.getCause());
+        } catch (IllegalAccessException e) {
+            return null;
+        }
+    }
+
     /**
      * job-segmod: the fork's first-segment counts read by name like {@link #routeCounts} (IPricedPath.segmentCounts):
      * {offered, walked, replaced, abandoned} since the game started; null when absent.

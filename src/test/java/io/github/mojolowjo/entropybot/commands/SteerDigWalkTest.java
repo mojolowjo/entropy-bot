@@ -27,14 +27,14 @@ class SteerDigWalkTest {
     void theSteeredWalkIsPickedWhenPresent() {
         Steering s = new Steering();
         GoalBlock g = new GoalBlock(1, 16, 3);
-        assertEquals(Boolean.FALSE, LivePathPrice.steeredWalk(s, g));
+        assertEquals(Boolean.FALSE, ProbeLines.steeredWalk(s, g));
         assertSame(g, s.goal);
         assertTrue(s.steer, "steerDig asked");
     }
 
     @Test
     void aJarWithoutItFallsBack() {
-        assertNull(LivePathPrice.steeredWalk(new Old(), new GoalBlock(1, 16, 3)));
+        assertNull(ProbeLines.steeredWalk(new Old(), new GoalBlock(1, 16, 3)));
     }
 
     @Test
