@@ -123,9 +123,9 @@ public final class Trail {
         if (p == null || p.equals(f)) return said;
         boolean oneWay = f.y <= p.y - 2 || (f.y == p.y - 1 && f.x == p.x && f.z == p.z);
         if (oneWay) {
-            if (!p.equals(segFrom)) addSeg(new Seg(segFrom, p, (pt - segTick) / GameTimes.TPS, 0, List.of(), segFork));
+            if (!p.equals(segFrom)) addSeg(new Seg(segFrom, p, (pt - segTick) / (double) GameTimes.TPS, 0, List.of(), segFork));
             Seg tail = segs.isEmpty() ? null : segs.get(segs.size() - 1);
-            double s = Math.max(0, tick - pt) / GameTimes.TPS;
+            double s = Math.max(0, tick - pt) / (double) GameTimes.TPS;
             if (tail != null && tail.oneWay() && tail.to().equals(p)) {
                 List<Cell> cells = new ArrayList<>(tail.cells());
                 cells.add(f);
@@ -189,7 +189,7 @@ public final class Trail {
     public Price price(Climb climb, long tick) {
         if (state != State.OPEN || start == null) return null;
         if (broken != null) return new Price(Double.NaN, Double.NaN, Double.NaN, segs.size(), 0, broken);
-        double walkedS = segTick < 0 ? 0 : Math.max(0, tick - segTick) / GameTimes.TPS;
+        double walkedS = segTick < 0 ? 0 : Math.max(0, tick - segTick) / (double) GameTimes.TPS;
         int levels = 0;
         for (Seg s : segs) { walkedS += s.walkedS(); levels += s.drop(); }
         double lv = climb == null ? Double.NaN : climb.levelS();
