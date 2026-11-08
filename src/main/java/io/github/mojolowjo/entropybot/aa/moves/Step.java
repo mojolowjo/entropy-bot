@@ -309,8 +309,11 @@ public sealed interface Step {
      * Walk new land for {@code minutes} (the explore verb: Baritone's explore goal), the want's way. live-facts: {@code until}
      * (an item id, null: none) ends it the moment a source of that item is known (a chain's explore for a missing source).
      */
-    record Explore(int minutes, String until, boolean leased) implements Step {
+    record Explore(int minutes, String until, boolean leased, boolean priced) implements Step {
         public Explore(int minutes) { this(minutes, null); }
+
+        /** Job-band: {@code priced} - the planner priced this explore in seconds (the band way, BandPrice); planner-only. */
+        public Explore(int minutes, String until, boolean leased) { this(minutes, until, leased, false); }
 
         public Explore(int minutes, String until) { this(minutes, until, false); }
 
@@ -535,6 +538,7 @@ public sealed interface Step {
 
         public String text() {
             if (until != null) return "dig down until " + until.split(",")[0].replace("minecraft:", "") + " is seen (to y " + minY + " at most)";
+            if (minY == maxY) return "dig down to y " + minY;     // job-band: one Y (the band way's dig, the base block's)
             return "to y " + minY + ".." + maxY;
         }
 

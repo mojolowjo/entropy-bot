@@ -89,6 +89,9 @@ bag.dropS	2.0
 bag.enter	3.0
 bag.leave	10.0
 bag.span	60.0
+band.caveReachM	64.0
+band.caveSpanY	8.0
+band.facesPerBreak	3.0
 band.foodOff	18.0
 band.foodOn	10.0
 band.torchOff	16.0
