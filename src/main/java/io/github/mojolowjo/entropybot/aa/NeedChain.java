@@ -4051,10 +4051,13 @@ public final class NeedChain {
             at = c.steps.size();
         }
         double s0 = c.seconds;
-        String leg = bandLeg(c, new int[]{by, by});
+        // job-bandwalk (rule 18 amended): a dig column whose path is not known yet is priced by the band model's own dig
+        // seconds (best.downS, the game's break formula per level with the tool), never dropped; a landed path replaces it
+        String leg = bandLeg(c, new int[]{by, by}, best.downS());
         if (leg == null && c.fail != null) return null;
         if (BAND_DROPPED.equals(leg)) { c.fail = "the band way: no path down to y " + by; return null; }
         double legS = c.seconds - s0;
+        boolean model = leg != null && leg.contains(BAND_MODEL);
         // step 2 at the band: a known cave with cells near that Y within band.caveReachM, else the explore from the band
         int[] digEnd = {digCol[0], by, digCol[1]};
         double oreDigS = best.seconds() - best.downS() - best.backS();       // the n ore dug at the band: what a cave's lip walk must beat
@@ -4077,7 +4080,8 @@ public final class NeedChain {
             atBand = "then a tunnel of " + len + " blocks at y " + by + " (heading by price at its start)";
         }
         c.addS(best.seconds() - best.downS());
-        final String line = best.line() + "; the dig priced by Baritone's path " + s(legS) + " in place of " + s(best.downS())
+        final String line = best.line() + (model ? "; the dig priced by the band model " + s(legS) + " (" + BAND_MODEL + ")"
+                : "; the dig priced by Baritone's path " + s(legS) + " in place of " + s(best.downS()))
                 + (near != null ? "; + " + lw.line() : "");
         c.note(() -> "source: " + shw(item) + " by the band way: " + line);
         return "the band way: " + toolWords + sideWords + "dig down to y " + by + (leg == null || leg.isEmpty() ? " (the feet are there)" : " (" + leg + ")") + ", " + atBand + " [band price: " + line + "]";
@@ -6772,7 +6776,25 @@ public final class NeedChain {
      * step as before, unpriced, said); {@link #BAND_DROPPED} with no step: Baritone found no path into the band (held for the
      * order, the z42 fact); null with {@code c.fail}: the walk's (or the pickaxe's) path is not known yet - the way waits.
      */
-    private static String bandLeg(Ctx c, int[] band) {
+    private static String bandLeg(Ctx c, int[] band) { return bandLeg(c, band, Double.NaN); }
+
+    /** job-bandwalk: the words the band way's dig carries while it is priced by the band model, not by a landed path. */
+    public static final String BAND_MODEL = "band model: the dig path not landed";
+
+    /**
+     * job-bandwalk (run JAX 06:57-07:04: every re-price dropped the band way with "walk: path not known yet (computing)" - a
+     * 46-level dig never lands inside the fork's price-ask budget - while the cave way won at 3405 s and three caves gave 0
+     * ore; rule 18 amended: a walk not known is ranked, never dropped): {@code modelS} finite - the band way's own dig seconds
+     * ({@link io.github.mojolowjo.entropybot.cave.BandPrice}, the game's break formula per level with the tool) - takes the
+     * dig's place while the column's path is not known (computing, timed out, no estimate); a landed path (priced or
+     * estimated) replaces it. An unreachable column still drops ({@link #BAND_DROPPED}). NaN: as before (the way waits).
+     */
+    /** job-bandwalk: the leg's phrase while the band model prices the dig ({@code why}: the walk's not-known words). Pure. */
+    static String bandModelWords(boolean down, int ty, double modelS, String why) {
+        return (down ? "dig down" : "walk") + " to y " + ty + ": " + s(modelS) + " (" + BAND_MODEL + "; " + why + ")";
+    }
+
+    private static String bandLeg(Ctx c, int[] band, double modelS) {
         Step.ToBand tb = new Step.ToBand(band[0], band[1]);
         int[] feet = c.w.where().feet().get();
         if (feet == null || feet.length < 3) {     // structural: x y z
@@ -6787,6 +6809,14 @@ public final class NeedChain {
         int ty = tb.target(feet[1]);
         Walked wk = walk(c, feet[0], ty, feet[2], Math.abs(feet[1] - ty), true);     // z76 send-back 2: the feet end IN the band (run AN)
         if (c.fail != null) {
+            if (wk.kind() != PathPrice.Kind.UNREACHABLE && Double.isFinite(modelS) && modelS >= 0) {
+                String why = c.fail;
+                c.fail = null;
+                c.steps.add(tb);
+                c.addS(modelS);
+                c.note(() -> "band walk: " + tb.text() + " priced by the band model " + s(modelS) + " (" + why + ")");
+                return bandModelWords(feet[1] > ty, ty, modelS, why);
+            }
             if (wk.kind() != PathPrice.Kind.UNREACHABLE) return null;
             c.unreach(io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(band[0], band[1]), wk.fail());
             c.fail = null;
