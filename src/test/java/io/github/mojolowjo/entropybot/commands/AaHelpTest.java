@@ -37,7 +37,7 @@ class AaHelpTest {
         for (AaCommands.Form f : AaCommands.allForms()) assertTrue(f.meaning().length() <= AaCommands.MEANING_MAX, f.form());
         for (VerbTable.Form f : VerbTable.of("area").forms()) assertTrue(f.meaning().length() <= VerbTable.MEANING_MAX, f.form());
         assertTrue(VerbTable.of("area").usage().contains("area tag <name> <tag...> | area untag <name> <tag...>"));
-        List<String> order = List.of("want <item|group>", "want deposit", "want strip", "drop ", "goals", "go ", "skip ", "do ", "use ", "pick ", "ask ");
+        List<String> order = List.of("want <item|group>", "want <item> [n] [-d]", "want strip", "drop ", "goals", "go ", "skip ", "do ", "use ", "pick ", "ask ");
         int at = -1;
         for (String o : order) {
             int i = -1;

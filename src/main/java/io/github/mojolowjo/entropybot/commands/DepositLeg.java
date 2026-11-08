@@ -110,6 +110,11 @@ final class DepositLeg {
     /** null = started (or an instant end in {@code instant[0]}), else "error: ...". */
     String start(LocalPlayer p, String[] instant) {
         if (step.order() != null && StripStep.met(step.order())) { instant[0] = "ok: the strip order is met, nothing to deposit"; return null; }
+        // deposit-words: the named items only; none of them in the bag = nothing to do, said
+        if (step.only() != null) {
+            if (DepositRule.onlyToPut(bag(p), step.only()).isEmpty()) instant[0] = "ok: deposit: none of " + Step.Deposit.onlyText(step.only()) + " in the bag";
+            return null;
+        }
         if (DepositRule.toPut(bag(p), reserves()).isEmpty()) { instant[0] = "ok: deposit: nothing outside the kept set and the reserves in the bag" + heldWords(p); return null; }
         return null;
     }
@@ -360,6 +365,7 @@ final class DepositLeg {
     /** Every bag stack outside the kept set goes in by QUICK_MOVE (the game moves it into the chest's free room). */
     private Car.Status put(LocalPlayer p) {
         if (!Gui.open(p)) return Car.Status.failed("deposit: the chest at " + DepositRule.at(chest) + " closed before the items went in");
+        if (step.only() != null) return putOnly(p);
         var rs = reserves();
         List<DepositRule.Item> stacks = bag(p);
         before = DepositRule.toPut(stacks, rs);
@@ -378,8 +384,55 @@ final class DepositLeg {
         return Car.Status.running("deposit: putting " + total(before) + " items in");
     }
 
+    /** deposit-words: the asked items in the bag before the put (the count after reads the same ids). */
+    private int onlyBefore;
+    /** deposit-words: split stacks that found no free chest slot, said at the end ("" none). */
+    private String splitNote = "";
+
+    /**
+     * deposit-words (owner 2026-11-08): exactly the asked counts. A whole stack within the count goes by QUICK_MOVE; the one
+     * split stack per item is picked up (PICKUP), dropped one at a time (right click) into an empty chest slot that many
+     * times, and the rest put back where it was. No empty chest slot: that split stays, said (rule 7). Vanilla menu clicks.
+     */
+    private Car.Status putOnly(LocalPlayer p) {
+        List<DepositRule.Item> stacks = bag(p);
+        int[] take = DepositRule.takeOnly(stacks, step.only());
+        before = DepositRule.onlyToPut(stacks, step.only());
+        onlyBefore = DepositRule.onlyInBag(stacks, step.only());
+        var menu = p.containerMenu;
+        var gm = Minecraft.getInstance().gameMode;
+        // the bag's slots in bag(p)'s order (0..35), each with its take
+        int[] takeBySlot = new int[36];
+        for (int i = 0, k = 0; i < 36; i++) if (!p.getInventory().getItem(i).isEmpty()) { takeBySlot[i] = take[k]; k++; }
+        int stayed = 0;
+        for (Slot s : menu.slots) {
+            if (s.container != p.getInventory() || !s.hasItem()) continue;
+            int t = takeBySlot[s.getContainerSlot()];
+            if (t <= 0) continue;
+            if (t >= s.getItem().getCount()) { gm.handleInventoryMouseClick(menu.containerId, s.index, 0, ClickType.QUICK_MOVE, p); continue; }
+            Slot free = null;
+            for (Slot q : menu.slots) if (q.container != p.getInventory() && !q.hasItem()) { free = q; break; }
+            if (free == null) { stayed += t; continue; }
+            gm.handleInventoryMouseClick(menu.containerId, s.index, 0, ClickType.PICKUP, p);          // the stack on the cursor
+            for (int n = 0; n < t; n++) gm.handleInventoryMouseClick(menu.containerId, free.index, 1, ClickType.PICKUP, p);   // one each
+            gm.handleInventoryMouseClick(menu.containerId, s.index, 0, ClickType.PICKUP, p);          // the rest back
+        }
+        splitNote = stayed > 0 ? " (" + stayed + " of a split stack stayed: no empty chest slot for it)" : "";
+        phase = Phase.COUNT;
+        return Car.Status.running("deposit: putting " + total(before) + " items in (" + Step.Deposit.onlyText(step.only()) + ")");
+    }
+
     /** One tick later: what is left, the chest noted, closed; the order's deposits saved. */
     private Car.Status count(LocalPlayer p) {
+        if (step.only() != null) {
+            putN = Math.max(0, onlyBefore - DepositRule.onlyInBag(bag(p), step.only()));
+            c.storage.rememberOpen(p);
+            Gui.close(p);
+            int meant = total(before);
+            if (putN < meant) return Car.Status.failed("deposit: " + putN + " of " + meant + " items went in at " + DepositRule.at(chest) + " (" + Step.Deposit.onlyText(step.only()) + ")" + splitNote
+                    + (splitNote.isEmpty() ? ": " + DepositRule.full(chest, meant - putN) : ""));
+            return Car.Status.done("ok: deposited " + putN + " items at " + DepositRule.at(chest) + " (" + Step.Deposit.onlyText(step.only()) + ")" + splitNote);
+        }
         Map<String, Integer> left = DepositRule.toPut(bag(p), reserves());
         int leftN = total(left);
         putN = Math.max(0, total(before) - leftN);

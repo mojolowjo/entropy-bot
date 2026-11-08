@@ -73,7 +73,8 @@ class NoOldVerbsTest {
     @Test
     void aaHelpShowsOnlyLiveForms() {
         String help = AaCommands.help();
-        for (String f : List.of("aa scan", "aa eat", "aa restore", "aa want deposit", "aa want <item> [n], <item> [n]")) assertTrue(help.contains(f), f + ": " + help);
+        for (String f : List.of("aa scan", "aa eat", "aa restore", "aa deposit <item> <n>, ...", "aa want <item> [n] [-d], <item> [n]")) assertTrue(help.contains(f), f + ": " + help);
+        assertFalse(help.contains("aa want deposit"), "deposit-words: the one-shot aa want deposit is gone");
         for (String w : AaCommands.TABLE.keySet()) assertTrue(help.contains("aa " + w), w);
         // 0.39.z54 A6: "aa deposit [x y z]" is the main-stations form (z35, owner 2026-10-23: list the deposit chests, mark
         // the main), not the deleted deposit job (that is "aa want deposit")
@@ -89,5 +90,11 @@ class NoOldVerbsTest {
         assertEquals(List.of("torch 16"), AaCommands.wantList("torch 16"));
         assertEquals(List.of("strip iron_ore 64,coal_ore 16 east"), AaCommands.wantList("strip iron_ore 64,coal_ore 16 east"), "a strip order stays one");
         assertEquals(List.of("a", "b"), AaCommands.wantList("a, , b"));
+        // deposit-words (owner 2026-11-08): a trailing deposit flags every part; -d stays where it was; both orders of the tail work
+        assertEquals(List.of("torch 4 -d", "oak_log 16 -d", "cobblestone 32 -d"), AaCommands.wantList("torch 4, oak_log 16, cobblestone 32 deposit"));
+        assertEquals(List.of("torch 4 -d", "oak_log 16", "cobblestone 32 -d"), AaCommands.wantList("torch 4 -d, oak_log 16, cobblestone 32 -d"));
+        assertEquals(List.of("torch 4 -d high", "oak_log 16 -d high"), AaCommands.wantList("torch 4, oak_log 16 deposit high"));
+        assertEquals(List.of("torch 4 -d high", "oak_log 16 -d high"), AaCommands.wantList("torch 4, oak_log 16 high deposit"));
+        assertEquals(List.of("torch -d", "oak_log 16 -deposit"), AaCommands.wantList("torch -d, oak_log 16 -deposit"), "each part keeps its own flag word (Goals.parse reads both)");
     }
 }

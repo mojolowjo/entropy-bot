@@ -3999,29 +3999,59 @@ public final class AaRuntime implements JobPort {
      */
     private final Map<String, io.github.mojolowjo.entropybot.aa.brain.Goals.Goal> carried = new java.util.HashMap<>();
 
-    /** helper (owner 2026-11-02): an order ended with some of its item in the bag and a main chest is set: the deposit waits for the job slot. */
+    /** deposit-words: a line's -d items are collected as its orders end; the deposit waits for the job slot. */
     private String depositDue;
+    private Map<String, Integer> depositItems;
+    /** deposit-words: per aa want line, the -d orders not ended yet, and the items collected so far. */
+    private final Map<String, java.util.Set<String>> lineOpen = new java.util.HashMap<>();
+    private final Map<String, Map<String, Integer>> lineItems = new java.util.HashMap<>();
+    private int lineSerial;
 
     /**
-     * helper (owner 2026-11-02: "retrieve items, and put them in a chest"): an item order that ended (done, or stopped with
-     * some of it in the bag) hands the bag to the main chest (aa deposit x y z) by itself - the owner gives one order, not
-     * two. Weighed once per order end; no main chest = nothing, said in the log (rule 7).
+     * deposit-words (owner 2026-11-08; was the helper rule of 2026-11-02: the WHOLE bag to the main chest after every order):
+     * an order flagged -d that ended (done, or stopped with some of it in the bag) adds the ordered amount of its item (what
+     * the bag holds of it) to its line's deposit; when the line's last -d order has ended, ONE deposit of exactly those items
+     * goes to the main chest (aa deposit x y z). An order with no deposit word deposits nothing, said in the log (rule 7).
+     * Weighed once per order end.
      */
     private void weighDeposit(io.github.mojolowjo.entropybot.aa.brain.Goals.Goal g, String how) {
         if (g.depositWeighed) return;
         g.depositWeighed = true;
         if (g.strip != null) return;                                     // the strip order has its own deposit leg
-        int have = io.github.mojolowjo.entropybot.aa.brain.Goals.have(bb.in.bag, g);
+        if (g.deposit <= 0) { LOG.info("[entropybot] aa: {} {}: no deposit word on the order (-d, or a trailing deposit) - its items stay in the bag", g.r.key(), how); return; }
+        Map<String, Integer> items = lineItems.computeIfAbsent(g.line, k -> new java.util.TreeMap<>());
+        int left = g.deposit;
+        for (String id : g.r.counts()) {
+            int have = bb.in.bag.getOrDefault(id, 0);
+            int take = g.r.group() ? Math.min(have, g.deposit) : Math.min(have, left);
+            if (take > 0) { items.merge(id, take, Integer::sum); left -= take; }
+            if (!g.r.group() && left <= 0) break;
+        }
+        java.util.Set<String> open = lineOpen.get(g.line);
+        if (open != null) open.remove(g.r.key());
+        if (open != null && !open.isEmpty()) {
+            LOG.info("[entropybot] aa: {} {}: its deposit items noted ({}); the line's deposit follows when {} end{}", g.r.key(), how,
+                    io.github.mojolowjo.entropybot.aa.moves.Step.Deposit.onlyText(items), String.join(", ", open), open.size() == 1 ? "s" : "");
+            return;
+        }
+        lineOpen.remove(g.line);
+        Map<String, Integer> all = lineItems.remove(g.line);
         var main = io.github.mojolowjo.entropybot.aa.MainStations.now().of(io.github.mojolowjo.entropybot.aa.MainStations.CONTAINER);
-        if (have <= 0) { LOG.info("[entropybot] aa: {} {}: nothing of it in the bag - no deposit", g.r.key(), how); return; }
-        if (main == null) { LOG.info("[entropybot] aa: {} {} with {} in the bag: no main chest set (aa deposit x y z) - it stays in the bag", g.r.key(), how, have); return; }
-        depositDue = g.r.key() + " " + how + " with " + have + " in the bag: the deposit to the main chest at " + main.at() + " follows";
+        if (all == null || all.isEmpty()) { LOG.info("[entropybot] aa: {} {}: nothing of the line's deposit items in the bag - no deposit", g.r.key(), how); return; }
+        if (main == null) {
+            String w = g.r.key() + " " + how + ": no main chest set (aa deposit x y z) - " + io.github.mojolowjo.entropybot.aa.moves.Step.Deposit.onlyText(all) + " stay in the bag";
+            LOG.info("[entropybot] aa: {}", w);
+            c.whisper(c.owner(), "aa: " + w);
+            return;
+        }
+        depositItems = all;
+        depositDue = g.r.key() + " " + how + ": the line's deposit of " + io.github.mojolowjo.entropybot.aa.moves.Step.Deposit.onlyText(all) + " to the main chest at " + main.at() + " follows";
         LOG.info("[entropybot] aa: {} (when the job slot is free)", depositDue);
     }
 
     private void depositDueTick() {
         if (depositDue == null || c.stepRun.running() || c.jobs.running() || chainRunning()) return;
-        String r = order("deposit", depositSteps());
+        String r = order("deposit", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Deposit(depositItems)));
         if (r.startsWith("aa deposit: busy")) return;                    // the slot went to something else this tick: next tick
         String why = depositDue;
         depositDue = null;
@@ -4155,7 +4185,7 @@ public final class AaRuntime implements JobPort {
             }
             return out.toString();
         }
-        if (arg != null && arg.trim().equalsIgnoreCase("deposit")) return order("deposit", depositSteps());
+        if (arg != null && arg.trim().equalsIgnoreCase("deposit")) return io.github.mojolowjo.entropybot.aa.brain.Goals.WANT_DEPOSIT_GONE;   // deposit-words
         // round 7 probe (runs FR/FS/FT: the one tick near 500 ms is the first tick after aa want, ~330 ms of it in this command):
         // the want's own splits on its log line - resolve / add / chain / blocked / score - so the fix follows the numbers
         long tStart = System.nanoTime();
@@ -4172,6 +4202,11 @@ public final class AaRuntime implements JobPort {
         }
         var g = io.github.mojolowjo.entropybot.aa.brain.Goals.add(bb, r, a.n(), a.prio(), now);
         g.batch = wantBatch;                          // 0.39.z77 J2: null for an order alone
+        // deposit-words (owner 2026-11-08): -d = the ordered amount goes to the main chest when this line's last order ends
+        g.line = wantBatch != null ? wantBatch : "l" + (++lineSerial);
+        g.deposit = a.deposit() ? g.n : 0;
+        g.depositWeighed = false;
+        if (g.deposit > 0) lineOpen.computeIfAbsent(g.line, k -> new java.util.LinkedHashSet<>()).add(g.r.key());
         tree.brain.failures.forget(g.id());           // orders-tier: aa want again clears a parked order and its old holds
         g.replans = 0;                                // 0.39.z30: and its re-plan count
         g.sourceReplans = 0;                          // 0.39.z62 item 1: and its new-source re-plans
@@ -4198,7 +4233,7 @@ public final class AaRuntime implements JobPort {
         LOG.info("[entropybot] aa: owner goal {} x{} prio {}: {}{} (want splits: resolve {} ms, add {} ms, chain {} ms, blocked {} ms, score {} ms)",
                 r.key(), g.n, g.prio, r.text(), blocked == null ? "" : " - parked: " + blocked,
                 ms(tResolve - tStart), ms(tAdd - tResolve), ms(tChain - tAdd), ms(tBlocked - tChain), ms(tScore - tBlocked));
-        return "ok: goal " + r.key() + " x" + g.n + (g.prio > 0 ? " high" : g.prio < 0 ? " low" : "") + " (score "
+        return "ok: goal " + r.key() + " x" + g.n + (g.prio > 0 ? " high" : g.prio < 0 ? " low" : "") + (g.deposit > 0 ? " -d (into the main chest when the line ends)" : "") + " (score "
                 + score + "): " + r.text()
                 + lootLine + (blocked != null ? " - parked: " + blocked : "") + (on() ? "" : " (aa is off: aa on to work on it)");
     }
@@ -4240,8 +4275,6 @@ public final class AaRuntime implements JobPort {
                 + "; aa like " + wantKey + " <n> to raise it)"
                 + (io.github.mojolowjo.entropybot.aa.brain.Only.orders() ? " - but orders only is on: wants are silent (aa needs on to let it run)" : "");
     }
-
-    private static List<io.github.mojolowjo.entropybot.aa.moves.Step> depositSteps() { return List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Deposit()); }
 
     // ---- 0.39.z28 aa debug <line>: the thinking of a want / do / use, printed, nothing written or started ----
 
@@ -4310,12 +4343,7 @@ public final class AaRuntime implements JobPort {
             for (String one : many) out.append(out.length() == 0 ? "" : "\n").append(debugWant(one));
             return out.toString();
         }
-        if (arg != null && arg.trim().equalsIgnoreCase("deposit")) {
-            var steps = depositSteps();
-            return "aa debug want deposit " + dry + "\norder: deposit (" + io.github.mojolowjo.entropybot.aa.moves.Step.label(steps) + ")"
-                    + "\n  no chain: the chest is chosen when the step starts (its own rule on the chests known then)"
-                    + "\n  first step: " + io.github.mojolowjo.entropybot.aa.moves.Steps.started(0, steps);
-        }
+        if (arg != null && arg.trim().equalsIgnoreCase("deposit")) return io.github.mojolowjo.entropybot.aa.brain.Goals.WANT_DEPOSIT_GONE;   // deposit-words
         WantAsk ask = wantAsk(arg);
         if (ask.refusal() != null) return ask.refusal();
         if (ask.wantKey() != null) return "aa debug want " + arg + " " + dry + "\nwould: " + wantBored(ask.wantKey()) + " (a want by name: no chain)";
@@ -4370,7 +4398,7 @@ public final class AaRuntime implements JobPort {
     private static String oneOption(String rung) { return rung + " has one option (its plan): nothing to choose"; }
 
     /**
-     * The owner's one-shot order (aa scan, aa eat, aa restore, aa want deposit): its typed steps on the one step runner
+     * The owner's one-shot order (aa scan, aa eat, aa restore, aa deposit <item> <n>): its typed steps on the one step runner
      * (StepRun, the same hands as AA's options); busy while a run holds the runner.
      */
     String order(String name, List<io.github.mojolowjo.entropybot.aa.moves.Step> steps) {

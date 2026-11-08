@@ -362,10 +362,25 @@ public sealed interface Step {
      * DepositRule): every bag item outside the kept set into the nearest known chest (or one from the bag / crafted, placed
      * near the tunnel start), its own hands (StepHands' DepositLeg).
      */
-    record Deposit(Strip order) implements Step {
-        public Deposit() { this(null); }
+    record Deposit(Strip order, java.util.Map<String, Integer> only) implements Step {
+        public Deposit() { this(null, null); }
 
-        public String text() { return order == null ? "deposit" : "deposit the strip's finds"; }
+        public Deposit(Strip order) { this(order, null); }
+
+        /**
+         * deposit-words (owner 2026-11-08): put EXACTLY these items and counts into the main chest ({@code only}: item id ->
+         * count); nothing else moves, no kept set applies. The order line's -d items at its end, and aa deposit <item> <n>, ...
+         */
+        public Deposit(java.util.Map<String, Integer> only) { this(null, only == null ? null : java.util.Collections.unmodifiableMap(new java.util.TreeMap<>(only))); }
+
+        public String text() { return order != null ? "deposit the strip's finds" : only == null ? "deposit" : "deposit " + onlyText(only); }
+
+        /** "cobblestone 32, torch 4" (ids without the minecraft: namespace). */
+        public static String onlyText(java.util.Map<String, Integer> only) {
+            StringBuilder b = new StringBuilder();
+            for (var e : only.entrySet()) b.append(b.length() == 0 ? "" : ", ").append(e.getKey().replaceFirst("^minecraft:", "")).append(' ').append(e.getValue());
+            return b.toString();
+        }
     }
 
     /** The strip order's walk back to where its bag filled (the saved deposits' back cell), Baritone's goal. */

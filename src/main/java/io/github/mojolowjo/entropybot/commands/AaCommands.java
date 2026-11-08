@@ -59,9 +59,8 @@ final class AaCommands {
         String O = "orders", S = "status", T = "tuning";
         // ---- orders
         v("want", (c, aa, vb, a) -> aa.want(a),
-                f(O, "want <item|group> [n] [high|low]", "get that item or group (vanilla or modded, from the game's data); high|low = its priority"),
-                f(O, "want <item> [n], <item> [n], ... [high|low]", "several orders at once, done in list order"),
-                f(O, "want deposit", "put the bag's items away in the chests"),
+                f(O, "want <item|group> [n] [-d] [high|low]", "get that item or group; -d = into the main chest when the line ends; high|low = priority"),
+                f(O, "want <item> [n] [-d], <item> [n], ... [deposit]", "several orders at once, in list order; a trailing deposit = all of them into the main chest"),
                 f(O, "want strip <ore[ amount]>[,...] [<feet y>] [<heading>]", "dig a strip mine for those ores (at that feet height, that way)"));
         v("drop", (c, aa, vb, a) -> aa.drop(a), f(O, "drop <item>|all", "drop that order, or every order"));
         v("goals", (c, aa, vb, a) -> aa.goalsText(), f(O, "goals", "the orders waiting, in turn"));
@@ -87,7 +86,8 @@ final class AaCommands {
                 f("stations", "station clear <station kind>", "forget the main of that kind"));
         v("deposit", (c, aa, vb, a) -> MainStationsLive.deposit(c, a),
                 f("stations", "deposit", "the chests the deposit uses, the main first"),
-                f("stations", "deposit <x y z>", "that chest becomes the deposit's main"));
+                f("stations", "deposit <x y z>", "that chest becomes the deposit's main"),
+                f("stations", "deposit <item> <n>, ...", "put exactly those amounts into the main chest (says what the bag holds)"));
         v("stations", (c, aa, vb, a) -> {
             String r = OwnerReads.stations(a, io.github.mojolowjo.entropybot.aa.StationBook.now(), io.github.mojolowjo.entropybot.aa.StationBook.clock.getAsLong());
             if (r.startsWith("stations: forgot")) c.nearby.forget();       // the cached station answers go
@@ -166,21 +166,31 @@ final class AaCommands {
 
     /**
      * aa want's list form: "torch 16, wooden_pickaxe, stone tools high" -> one order per part in list order, a trailing
-     * high|low applied to every part. A strip order (aa want strip ...) and a single order stay one part. Pure.
+     * high|low applied to every part. deposit-words (owner 2026-11-08): a trailing {@code deposit} (before or after the
+     * high|low) flags every part with -d. A strip order (aa want strip ...) and a single order stay one part. Pure.
      */
     static List<String> wantList(String arg) {
         String a = arg == null ? "" : arg.trim();
         if (!a.contains(",") || a.toLowerCase().startsWith("strip ") || a.equalsIgnoreCase("strip")) return List.of(a);
         String prio = null;
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?i)\\s+(high|low)$").matcher(a);
-        if (m.find()) {
-            prio = m.group(1).toLowerCase();
-            a = a.substring(0, m.start()).trim();
+        boolean deposit = false;
+        for (int round = 0; round < 2; round++) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?i)\\s+(high|low)$").matcher(a);
+            if (prio == null && m.find()) {
+                prio = m.group(1).toLowerCase();
+                a = a.substring(0, m.start()).trim();
+            }
+            java.util.regex.Matcher d = java.util.regex.Pattern.compile("(?i)\\s+deposit$").matcher(a);   // the bare word only: -d / -deposit belong to their own part
+            if (!deposit && d.find()) {
+                deposit = true;
+                a = a.substring(0, d.start()).trim();
+            }
         }
         List<String> out = new ArrayList<>();
         for (String part : a.split(",")) {
             String p = part.trim();
             if (p.isEmpty()) continue;
+            if (deposit && !p.toLowerCase().matches(".*(\\s|^)(-d|-deposit|deposit)(\\s.*|$)")) p = p + " -d";
             if (prio != null && !p.toLowerCase().matches(".*\\s(high|low)$")) p = p + " " + prio;
             out.add(p);
         }

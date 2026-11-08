@@ -64,6 +64,13 @@ public final class Steps {
         default void exploreFrozen(Step s, String why) {}
 
         /**
+         * found-fast (owner 2026-11-08, run JBG-T1: ten 30 s stands, one per tree the explore found): the walks still not
+         * priced are past their first-answer wait from now - the next price takes them by Baritone's estimate (ranked, not
+         * priced, rule 18 as amended), as a served stand does. True: these hands did it (the planner is asked again).
+         */
+        default boolean pastWait() { return false; }
+
+        /**
          * 0.39.z61 (D1 J2, replaces z38's keep list): the run's reserves to the fork's lease - what the remaining steps use up,
          * counted, and the orders' targets; Baritone places a reserved item only while the bag holds more than the reserves
          * need. Called at every step start (the whole table), with only the orders' reserves before a re-plan, empty at the
@@ -1053,11 +1060,30 @@ public final class Steps {
         // side walk never lands "known" from a moving bot (the fork prices from the feet; the explore leaves every landed
         // start), so the explore takes the planner's stand; the stand's end re-plans with the landed price (StandWait)
         boolean standsForFound = running && FactChange.isFound(f) && at instanceof Step.Explore ex && ex.until() != null && waitsOnPaths(r.steps());
+        // found-fast (owner 2026-11-08; run JBG-T1 12:16-12:35: the explore for oak_log found a tree, stood up to 30 s for its
+        // walk's price, cut it, explored again - ten times, 16 logs never done): a source the explore FOUND is taken at once
+        // on Baritone's estimate - the walks not priced yet are past their wait (hands.pastWait) and the planner is asked
+        // again; the stand stays only when the hands cannot do that, or the new answer still stands (another reason)
+        String foundFast = null;
+        if (standsForFound && hands.pastWait()) {
+            Routine again;
+            try {
+                again = replanner.replan(at, f, f.text());
+            } catch (RuntimeException e) {
+                again = null;
+            }
+            if (again != null && again.steps() != null && !again.steps().isEmpty() && !waitsOnPaths(again.steps())) {
+                r = again;
+                standsForFound = false;
+                foundFast = " - taken at once on Baritone's estimate (ranked, not priced; no stand for its price)";
+                if (StepId.same(r.steps(), left)) { pushReserve(held); return false; }
+            }
+        }
         if (running && waitsOnPaths(r.steps()) && !standsForFound) { pushReserve(held); return false; }
-        if (running) safeCancel("re-priced: " + f.text() + (standsForFound ? " - standing for its walk's price (rule 22)" : " - the pick changed"));
+        if (running) safeCancel("re-priced: " + f.text() + (standsForFound ? " - standing for its walk's price (rule 22)" : foundFast != null ? foundFast : " - the pick changed"));
         String diff = planDiff(left, r.steps(), true);
         splice(idx, r.steps(), r.uses(), steps.size());
-        replanFact = "re-priced: " + f.text() + " - switched to " + r.steps().get(0).text() + " first" + (released.isEmpty() ? "" : "; " + released) + "; " + diff;
+        replanFact = "re-priced: " + f.text() + (foundFast != null ? foundFast : "") + " - switched to " + r.steps().get(0).text() + " first" + (released.isEmpty() ? "" : "; " + released) + "; " + diff;
         idx--;
         next();
         return true;

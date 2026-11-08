@@ -232,8 +232,51 @@ final class MainStationsLive {
     }
 
     /** aa deposit: the deposit chests, the main first; aa deposit x y z: mark that chest the main. */
+    /**
+     * deposit-words (owner 2026-11-08): aa deposit <item> <n>, <item> <n>, ... - the asked items and counts, or null when the
+     * words are not that form (a position, or nothing). An item with no amount or a bad amount: the error in {@code err[0]}.
+     * Pure (JUnit: DepositWordsTest).
+     */
+    static java.util.Map<String, Integer> depositItemsOf(String a, String[] err) {
+        if (a == null || a.isBlank()) return null;
+        String[] w = a.trim().split("\\s+");
+        if (w.length == 3 && w[0].matches("-?\\d+") && w[1].matches("-?\\d+") && w[2].matches("-?\\d+")) return null;   // a position
+        java.util.Map<String, Integer> out = new java.util.TreeMap<>();
+        for (String part : a.split(",")) {
+            String p = part.trim();
+            if (p.isEmpty()) continue;
+            String[] t = p.split("\\s+");
+            if (t.length < 2 || !t[t.length - 1].matches("\\d{1,5}") || Integer.parseInt(t[t.length - 1]) <= 0) {
+                err[0] = "aa deposit: give each item an amount: aa deposit <item> <n>, <item> <n>, ... (" + p + ")";
+                return null;
+            }
+            String word = String.join("_", java.util.Arrays.copyOf(t, t.length - 1));
+            out.merge(io.github.mojolowjo.entropybot.aa.brain.DepositRule.idOf(word), Integer.parseInt(t[t.length - 1]), Integer::sum);
+        }
+        if (out.isEmpty()) { err[0] = "usage: aa deposit [x y z] | aa deposit <item> <n>, ..."; return null; }
+        return out;
+    }
+
+    /** deposit-words: aa deposit <item> <n>, ...: what the bag holds of each, said, then the one-shot deposit of exactly those. */
+    private static String depositItems(Commands c, java.util.Map<String, Integer> asked) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null) return "aa deposit: no world";
+        var bag = DepositLeg.bag(mc.player);
+        List<String> lines = io.github.mojolowjo.entropybot.aa.brain.DepositRule.onlyReport(bag, asked);
+        var put = io.github.mojolowjo.entropybot.aa.brain.DepositRule.onlyToPut(bag, asked);
+        if (put.isEmpty()) return "aa deposit: " + String.join("; ", lines) + " - nothing to put away";
+        if (MainStations.now().of(MainStations.CONTAINER) == null) return "aa deposit: " + String.join("; ", lines) + " - but no main chest is set (aa deposit x y z first)";
+        if (c.aaRuntime == null) return "aa deposit: aa is not loaded";
+        String r = c.aaRuntime.order("deposit", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Deposit(put)));
+        return String.join("; ", lines) + " - " + r;
+    }
+
     static String deposit(Commands c, String arg) {
         String a = arg == null ? "" : arg.trim();
+        String[] err = new String[1];
+        java.util.Map<String, Integer> asked = depositItemsOf(a, err);     // deposit-words: aa deposit <item> <n>, ...
+        if (err[0] != null) return err[0];
+        if (asked != null) return depositItems(c, asked);
         if (!a.isEmpty()) {
             String[] w = a.split("\\s+");
             int[] at;
@@ -241,7 +284,7 @@ final class MainStationsLive {
                 if (w.length != 3) throw new NumberFormatException();
                 at = new int[]{Integer.parseInt(w[0]), Integer.parseInt(w[1]), Integer.parseInt(w[2])};
             } catch (NumberFormatException e) {
-                return "usage: aa deposit [x y z]";
+                return "usage: aa deposit [x y z] | aa deposit <item> <n>, ...";
             }
             Minecraft mc = Minecraft.getInstance();
             if (mc.level == null) return "aa deposit: no world";

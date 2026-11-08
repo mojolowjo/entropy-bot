@@ -44,6 +44,12 @@ public final class Goals {
         /** helper (owner 2026-11-02): the deposit to the main chest was weighed for this order's end (done or parked), once. */
         public boolean depositWeighed;
 
+        /** deposit-words (owner 2026-11-08): how many of the item go into the main chest when its line ends (the amount ordered); 0: none. */
+        public int deposit;
+
+        /** deposit-words: the aa want line this order came on (its batch, or an id of its own); the line deposits once, after its last order ends. */
+        public String line;
+
         /** The owner's strip order (aa want strip ...): its one step; null for an item goal. */
         public Step.Strip strip;
 
@@ -867,22 +873,36 @@ public final class Goals {
         return w.startsWith("busy") || w.equals("nothing to run");
     }
 
-    /** {@code aa want} words: the thing (several words joined), n (0 = default), priority -1/0/+1. */
-    public record Args(String word, int n, int prio, String err) {}
+    /**
+     * {@code aa want} words: the thing (several words joined), n (0 = default), priority -1/0/+1; deposit-words (owner
+     * 2026-11-08): {@code deposit} = the item is put into the main chest when its line ends (-d, -deposit, or a trailing deposit).
+     */
+    public record Args(String word, int n, int prio, String err, boolean deposit) {
+        public Args(String word, int n, int prio, String err) { this(word, n, prio, err, false); }
+    }
+
+    /** deposit-words: the words that flag an order's item for the deposit at the line's end. */
+    public static boolean depositWord(String t) { return t.equals("-d") || t.equals("-deposit") || t.equals("deposit"); }
+
+    /** deposit-words: the old one-shot "aa want deposit" is gone; its error names the forms that do it now. */
+    public static final String WANT_DEPOSIT_GONE = "aa want deposit is gone: aa deposit <item> <n>, ... puts exactly those away now; -d on an order (aa want cobblestone 32 -d) or a trailing deposit puts the order's items away when the line ends";
 
     public static Args parse(String arg) {
         List<String> words = new ArrayList<>();
         int n = 0, prio = 0;
+        boolean deposit = false;
         for (String t : (arg == null ? "" : arg.trim().toLowerCase(Locale.ROOT)).split("\\s+")) {
             if (t.isEmpty()) continue;
             if (t.equals("high")) prio = 1;
             else if (t.equals("low")) prio = -1;
+            else if (depositWord(t)) deposit = true;
             else if (t.matches("\\d{1,5}")) n = Math.max(-1, Integer.parseInt(t) == 0 ? -1 : Integer.parseInt(t));
             else words.add(t);
         }
-        if (words.isEmpty()) return new Args(null, 0, 0, "usage: aa want <thing> [n] [high|low] (e.g. aa want iron_ore 8)");
+        if (words.isEmpty() && deposit) return new Args(null, 0, 0, WANT_DEPOSIT_GONE);
+        if (words.isEmpty()) return new Args(null, 0, 0, "usage: aa want <thing> [n] [-d] [high|low] (e.g. aa want iron_ore 8; -d: put it in the main chest when the line ends)");
         if (n < 0 || n > Tuning.i("goals.maxN")) return new Args(null, 0, 0, "error: n must be 1..4096");
-        return new Args(String.join("_", words), n, prio, null);
+        return new Args(String.join("_", words), n, prio, null, deposit);
     }
 
     @SuppressWarnings("unchecked")
@@ -1268,7 +1288,7 @@ public final class Goals {
         }
         String b = blocked(bb, g);
         var ch = b == null ? chain(bb, g) : null;
-        return g.r.key() + " " + have(bb.in.bag, g) + "/" + g.n + (g.prio > 0 ? " high" : g.prio < 0 ? " low" : "") + ": " + scoreText
+        return g.r.key() + " " + have(bb.in.bag, g) + "/" + g.n + (g.prio > 0 ? " high" : g.prio < 0 ? " low" : "") + (g.deposit > 0 ? " (deposit)" : "") + ": " + scoreText
                 + (b != null ? (g.parked == null ? " - held: " : " - parked: ") + b :ch != null ? " - chain: " + ch.why() : " - no facts for the chain yet")
                 + " [" + g.r.text() + "]";
     }

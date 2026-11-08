@@ -49,7 +49,7 @@ public record StepId(String kind, String target) {
             case Step.FindCave f -> new StepId("findCave", String.valueOf(f.minutes()));
             case Step.Explore e -> new StepId("explore", e.minutes() + " until " + e.until());
             case Step.AwaitPaths a -> new StepId("stand", "paths " + a.waitS());   // 0.39.z76 send-back 3 (rule 22)
-            case Step.Deposit d -> new StepId("deposit", d.order() == null ? "" : strip(d.order()));
+            case Step.Deposit d -> new StepId("deposit", d.order() != null ? strip(d.order()) : d.only() == null ? "" : Step.Deposit.onlyText(d.only()));
             case Step.StripBack b -> new StepId("stripBack", b.order() == null ? "" : strip(b.order()));
             case Step.DropJunk d -> new StepId("dropJunk", d.item() + " " + d.n());
             case Step.PlaceNear p -> new StepId("placeNear", p.item());

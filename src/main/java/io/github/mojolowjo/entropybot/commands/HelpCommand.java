@@ -105,7 +105,7 @@ public final class HelpCommand {
 
     /** "help gather": the verb is gone; the owner drives through aa. */
     static String gone(String word) {
-        return "\"" + word + "\" was deleted: the owner drives through aa now (aa want <item|group> [n], aa want strip <ore> [<feet y>] [<heading>], aa want deposit, aa scan, aa eat, aa restore, aa off to stop) - aa help lists every form";
+        return "\"" + word + "\" was deleted: the owner drives through aa now (aa want <item|group> [n], aa want strip <ore> [<feet y>] [<heading>], aa deposit <item> <n>, aa scan, aa eat, aa restore, aa off to stop) - aa help lists every form";
     }
 
     /** "I don't know ..." with the nearest word, if any. */

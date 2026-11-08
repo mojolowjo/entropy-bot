@@ -73,6 +73,74 @@ public final class DepositRule {
         return out;
     }
 
+    // ---- deposit-words (owner 2026-11-08): exactly these items and counts, nothing else ----
+
+    /** The item id an owner word names: "cobblestone" -> "minecraft:cobblestone"; a word with a namespace as it is. */
+    public static String idOf(String word) {
+        String w = word.trim().toLowerCase(java.util.Locale.ROOT).replace(' ', '_');
+        return w.contains(":") ? w : "minecraft:" + w;
+    }
+
+    /**
+     * How many of each bag stack go in for {@code only} (id -> count asked), parallel to {@code bag}; 0: the stack stays.
+     * Whole stacks first (a stack within what is still asked), then ONE split stack for the rest. Never more than asked;
+     * never more than the bag holds. The kept set and the reserves do not apply: the owner named the items.
+     */
+    public static int[] takeOnly(List<Item> bag, Map<String, Integer> only) {
+        int[] out = new int[bag.size()];
+        if (only == null) return out;
+        Map<String, Integer> left = new java.util.HashMap<>();
+        for (var e : only.entrySet()) if (e.getValue() != null && e.getValue() > 0) left.put(idOf(e.getKey()), e.getValue());
+        for (int k = 0; k < bag.size(); k++) {                       // whole stacks
+            Item i = bag.get(k);
+            if (i == null || i.count() <= 0) continue;
+            int need = left.getOrDefault(i.id(), 0);
+            if (need >= i.count()) { out[k] = i.count(); left.put(i.id(), need - i.count()); }
+        }
+        for (int k = 0; k < bag.size(); k++) {                       // one split stack per item for the rest
+            Item i = bag.get(k);
+            if (i == null || i.count() <= 0 || out[k] > 0) continue;
+            int need = left.getOrDefault(i.id(), 0);
+            if (need > 0) { out[k] = need; left.put(i.id(), 0); }
+        }
+        return out;
+    }
+
+    /** What {@link #takeOnly} puts in: id -> count. */
+    public static Map<String, Integer> onlyToPut(List<Item> bag, Map<String, Integer> only) {
+        int[] take = takeOnly(bag, only);
+        Map<String, Integer> out = new TreeMap<>();
+        for (int k = 0; k < bag.size(); k++) if (take[k] > 0) out.merge(bag.get(k).id(), take[k], Integer::sum);
+        return out;
+    }
+
+    /**
+     * One line per asked item, said before the walk (rule 7): "cobblestone: 32 of 40 in the bag: putting 32 away",
+     * "torch: 2 in the bag, 4 asked: putting 2 away", "iron_ingot: none in the bag".
+     */
+    public static List<String> onlyReport(List<Item> bag, Map<String, Integer> only) {
+        Map<String, Integer> have = new java.util.HashMap<>();
+        for (Item i : bag) if (i != null && i.count() > 0) have.merge(i.id(), i.count(), Integer::sum);
+        List<String> out = new java.util.ArrayList<>();
+        for (var e : only.entrySet()) {
+            String id = idOf(e.getKey()), name = id.replaceFirst("^minecraft:", "");
+            int asked = e.getValue() == null ? 0 : e.getValue(), h = have.getOrDefault(id, 0);
+            if (h <= 0) out.add(name + ": none in the bag");
+            else if (h >= asked) out.add(name + ": " + asked + " of " + h + " in the bag: putting " + asked + " away");
+            else out.add(name + ": " + h + " in the bag, " + asked + " asked: putting " + h + " away");
+        }
+        return out;
+    }
+
+    /** The bag's count of the asked items (id -> count), for the count after the put. */
+    public static int onlyInBag(List<Item> bag, Map<String, Integer> only) {
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        for (String k : only.keySet()) ids.add(idOf(k));
+        int n = 0;
+        for (Item i : bag) if (i != null && ids.contains(i.id())) n += Math.max(0, i.count());
+        return n;
+    }
+
     public enum How { KNOWN, BAG, CRAFT, WAIT, FAIL }
 
     /**

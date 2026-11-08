@@ -205,6 +205,12 @@ public final class StepHands implements Steps.Hands {
         if (fp != null && s instanceof Step.Explore) Mining.frozen(Jobs.here(fp), why);
     }
 
+    /** found-fast (owner 2026-11-08): the walks on a first-answer clock are past their wait now (as a served stand does). */
+    @Override public boolean pastWait() {
+        LivePathPrice.INSTANCE.standServed();
+        return true;
+    }
+
     @Override public Car.Status status(Step s) {
         LocalPlayer pl = Minecraft.getInstance().player;
         if (pl != null) {
