@@ -887,6 +887,10 @@ nearby.useStationsS	30.0
 only.otherWeight	0.0
 steps.placeNearR	3.0
 deposit.maxWalkSegments	30.0
+trail.climbLegUp	4.0
+trail.jumpBlocks	8.0
+trail.saveS	30.0
+debug.trailProbe	0.0
 place.failedNearM	8.0
 place.roomNear	1.0
 place.roomsKept	8.0

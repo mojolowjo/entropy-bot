@@ -255,6 +255,7 @@ public final class Core {
             boolean ownerDrives = io.github.mojolowjo.entropybot.screen.DriveRuntime.INSTANCE.on();     // 0.39.z24: I drive pauses reflexes and window care
             if (!ownerDrives) try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(io.github.mojolowjo.entropybot.aa.door.Driver.REFLEX)) { reflexes.tick(tick); }     // AA_CLEANUP 2
             if (lp) io.github.mojolowjo.entropybot.commands.LoadProbe.mark(1);
+            io.github.mojolowjo.entropybot.commands.TrailRuntime.tick(tick);   // D4: the trail home is recorded from the feet; never throws
             io.github.mojolowjo.entropybot.commands.WalkProbe.tick(tick);      // 0.39.z54 B: one probe line a tick while a walk step runs (debug.walkProbe 1); never throws
             io.github.mojolowjo.entropybot.commands.StepProbe.tick(tick);      // 0.39.z56 item 1: phase / still lines while any step runs (debug.stepProbe 1); never throws
             io.github.mojolowjo.entropybot.commands.ToolProbe.tick(tick);      // 0.39.z77 hotbar: the tool in hand per break stage (debug.toolProbe 1); never throws
