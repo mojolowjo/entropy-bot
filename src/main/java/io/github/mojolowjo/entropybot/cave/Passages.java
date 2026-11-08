@@ -37,7 +37,8 @@ public final class Passages {
     /** The seen answer, by cell key (Sightings.cell). */
     public interface Seen { boolean seen(long cell); }
 
-    public enum EndKind { FORK, DEAD_END, CAPPED }
+    /** ROOM (pass two): a room node, a layer piece wider than cave.passageRoomWidth; its exits are its arms. */
+    public enum EndKind { FORK, DEAD_END, CAPPED, ROOM }
 
     /**
      * One passage. {@code parent}: the passage it forks from (-1: the first, from the bot's cell); {@code start}/{@code end}:
@@ -49,10 +50,19 @@ public final class Passages {
         public boolean open() { return unseen > 0 || endKind == EndKind.CAPPED; }
 
         public long key() { return Sightings.cell(end[0], end[1], end[2]); }
+
+        /** Pass two: the same passage with its unseen count measured again (the record's seen cells moved on). */
+        public Passage withUnseen(int n) { return new Passage(id, parent, start, end, length, width, fromFeet, cells, n, oreFaces, endKind); }
     }
 
-    /** The result: the passages (empty: no walkable cell at the feet), and why when empty (rule 7). */
-    public record Found(List<Passage> passages, String why, boolean capped) {}
+    /**
+     * The result: the passages (empty: no walkable cell at the feet, nor cave air within {@code near}), and why when empty
+     * (rule 7). Pass two: {@code start} the walkable cell the flood began at; {@code lip} true when it is not under the feet
+     * (the bot stands at the lip, outside the cave's air: the flood began at the nearest walkable cave cell).
+     */
+    public record Found(List<Passage> passages, String why, boolean capped, int[] start, boolean lip) {
+        public Found(List<Passage> passages, String why, boolean capped) { this(passages, why, capped, null, false); }
+    }
 
     private static final int[][] SIDES = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 
@@ -92,9 +102,39 @@ public final class Passages {
      * {@code drop}, {@code forkLayers}, {@code cap}: cave.passageDrop, cave.passageForkLayers, cave.passageCells.
      */
     public static Found build(Air a, Seen seen, int[] feet, Set<Long> ore, int drop, int forkLayers, int cap) {
+        return build(a, seen, feet, ore, drop, forkLayers, cap, Integer.MAX_VALUE, 0);
+    }
+
+    /**
+     * Pass two, the lip: the walkable cave cell nearest the feet within {@code near} blocks (sides and up; down by
+     * {@code near} + drop, the floor under a lip); null: none.
+     */
+    static int[] nearCell(Air a, int[] feet, int drop, int near) {
+        int[] best = null;
+        long bd = Long.MAX_VALUE;
+        for (int dy = -near - drop; dy <= near; dy++)
+            for (int dx = -near; dx <= near; dx++)
+                for (int dz = -near; dz <= near; dz++) {
+                    if (!walkable(a, feet[0] + dx, feet[1] + dy, feet[2] + dz)) continue;
+                    long d = (long) dx * dx + (long) dy * dy + (long) dz * dz;
+                    if (d < bd) { bd = d; best = new int[]{feet[0] + dx, feet[1] + dy, feet[2] + dz}; }
+                }
+        return best;
+    }
+
+    /**
+     * Pass two: as above; {@code roomWidth} (cave.passageRoomWidth): a layer piece wider than it is a ROOM node - the
+     * passage ends there with the room's cells, and every exit of the room that goes on {@code forkLayers} layers is an
+     * arm; {@code near} (cave.passageNear): no walkable cell at the feet - the flood starts at the nearest walkable cave
+     * cell within it (the lip).
+     */
+    public static Found build(Air a, Seen seen, int[] feet, Set<Long> ore, int drop, int forkLayers, int cap, int roomWidth, int near) {
         if (feet == null || feet.length < 3) return new Found(List.of(), "the feet are not known", false);   // structural: x y z
         int[] s0 = startCell(a, feet, drop);
-        if (s0 == null) return new Found(List.of(), "no walkable cave cell at the feet " + feet[0] + " " + feet[1] + " " + feet[2] + " (nor a floor within cave.passageDrop " + drop + " below)", false);
+        boolean lip = false;
+        if (s0 == null && near > 0) { s0 = nearCell(a, feet, drop, near); lip = s0 != null; }
+        if (s0 == null) return new Found(List.of(), "no walkable cave cell at the feet " + feet[0] + " " + feet[1] + " " + feet[2] + " (nor a floor within cave.passageDrop " + drop + " below"
+                + (near > 0 ? ", nor a walkable cave cell within cave.passageNear " + near : "") + ")", false);
         // 1. the flood in layers
         Map<Long, Integer> dist = new HashMap<>();
         List<List<Long>> layers = new ArrayList<>();
@@ -185,7 +225,31 @@ public final class Passages {
             List<Long> cells = new ArrayList<>();
             int width = 0, length = 0;
             EndKind end;
+            List<Long> roomCells = null;
             while (true) {
+                if (pieces.get(cur).size() > roomWidth) {
+                    // pass two: a ROOM node - this piece and every wide piece below it; the narrow pieces leaving it are
+                    // its exits: an arm each when it goes on forkLayers layers, else folded (a nook of the room)
+                    roomCells = new ArrayList<>();
+                    List<Integer> exits = new ArrayList<>();
+                    ArrayDeque<Integer> rf = new ArrayDeque<>(List.of(cur));
+                    int last = pieceLayer.get(cur);
+                    while (!rf.isEmpty()) {
+                        int i = rf.poll();
+                        roomCells.addAll(pieces.get(i));
+                        width = Math.max(width, pieces.get(i).size());
+                        last = Math.max(last, pieceLayer.get(i));
+                        for (int k : kids.get(i)) if (pieces.get(k).size() > roomWidth) rf.add(k); else exits.add(k);
+                    }
+                    cells.addAll(roomCells);
+                    length += last - pieceLayer.get(cur) + 1;
+                    for (int k : exits) {
+                        if (depth[k] >= forkLayers) todo.add(new int[]{k, id});
+                        else fold(k, kids, pieces, cells);
+                    }
+                    end = EndKind.ROOM;
+                    break;
+                }
                 cells.addAll(pieces.get(cur));
                 width = Math.max(width, pieces.get(cur).size());
                 length++;
@@ -209,7 +273,7 @@ public final class Passages {
                 cur = next;
             }
             int[] start = middle(pieces.get(t[0]));
-            int[] endCell = middle(pieces.get(cur));
+            int[] endCell = middle(roomCells != null ? roomCells : pieces.get(cur));   // a room: its middle
             Set<Long> all = new HashSet<>();
             for (long c : cells) {
                 all.add(c);
@@ -228,7 +292,7 @@ public final class Passages {
             }
             out.set(id, new Passage(id, t[1], start, endCell, length, width, pieceLayer.get(t[0]), List.copyOf(all), unseen, faces.size(), end));
         }
-        return new Found(List.copyOf(out), null, capped);
+        return new Found(List.copyOf(out), null, capped, s0, lip);
     }
 
     private static final int[][] SIX = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};

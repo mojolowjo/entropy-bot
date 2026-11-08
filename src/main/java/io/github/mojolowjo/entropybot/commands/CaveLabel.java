@@ -106,7 +106,7 @@ final class CaveLabel {
                 return io.github.mojolowjo.entropybot.sense.CaveList.text(sg.allKnownCaves(dim), c -> sg.caveFacts(dim, c.x(), c.y(), c.z()), c -> {
                             var w = byCell.get(c.x() + " " + c.y() + " " + c.z());
                             if (w == null) return null;
-                            String u = w.frontier() == null ? "no unseen cell measured" : "its nearest unseen cell " + w.frontier()[0] + " " + w.frontier()[1] + " " + w.frontier()[2];
+                            String u = w.passages() == null ? "its passages not measured" : io.github.mojolowjo.entropybot.cave.CaveWalk.openPassages(w.passages()) + " open passage(s) of " + w.passages().size();
                             return "for " + item + ": " + w.infoLine() + "; " + u + (w.inside() ? "; the bot is inside it" : "")
                                     + (io.github.mojolowjo.entropybot.aa.NeedChain.caveOut(w) == null ? "" : "; out: " + io.github.mojolowjo.entropybot.aa.NeedChain.caveOut(w));
                         }, idx.credited(), idx.truth(p.getBlockX(), p.getBlockY(), p.getBlockZ(), within),

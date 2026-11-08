@@ -81,28 +81,15 @@ class J6bEnTest {
         assertEquals("no reachable passage (2 dropped)", ((CaveWalk.Stop) none).why());
     }
 
-    /** The goal is built over the REACH_CELLS frontier cells nearest the feet; a group keeps GROUP_CELLS of its cells. */
+    /** The goal is built over the REACH_CELLS cells nearest the feet (D15 pass two: the frontier groups are deleted). */
     @Test
-    void theNearestFewCells_andAGroupKeepsAFew() {
+    void theNearestFewCells() {
         List<int[]> cells = new ArrayList<>();
         for (int x = 0; x < 10; x++) cells.add(new int[]{x, 40, 0});
         List<int[]> n = CaveWalk.nearest(cells, new int[]{9, 40, 0}, CaveWalk.REACH_CELLS);
         assertEquals(CaveWalk.REACH_CELLS, n.size());
         assertEquals(9, n.get(0)[0]);
         assertEquals(6, n.get(3)[0]);
-        Sightings s = new Sightings();
-        s.knowCave("d", new io.github.mojolowjo.entropybot.sense.CaveIndex.Known(0, 40, 0, io.github.mojolowjo.entropybot.sense.CaveIndex.Size.SMALL,
-                io.github.mojolowjo.entropybot.sense.CaveIndex.Depth.STONE, List.of(Sightings.cell(1, 40, 0))), 1);
-        List<Long> plane = new ArrayList<>();
-        for (int x = 0; x < 20; x++) for (int z = 0; z < 20; z++) { plane.add(Sightings.cell(x, 40, z)); plane.add(Sightings.cell(x, 41, z)); }
-        s.caveCells("d", 0, 40, 0, plane);
-        List<Long> low = new ArrayList<>();
-        for (int x = 0; x < 20; x++) for (int z = 0; z < 20; z++) low.add(Sightings.cell(x, 40, z));
-        s.caveSaw("d", 0, 40, 0, low);
-        var g = s.caveFrontier("d", 0, 40, 0);
-        assertEquals(1, g.size());
-        assertEquals(400, g.get(0).size());
-        assertEquals(CaveRecord.GROUP_CELLS, g.get(0).cells().size(), "a few of its cells kept, never the whole group");
     }
 
     /**

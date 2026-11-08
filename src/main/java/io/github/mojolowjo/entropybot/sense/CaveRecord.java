@@ -21,12 +21,14 @@ import java.util.TreeMap;
  * fed in place as its chunks load ({@link #recFeed}, under {@link #BUDGET}); only their count is persisted.</li>
  * <li>{@code seen}: the cells the bot stood in or saw round it - the cave cells within {@link #SEE_STEPS} steps of the
  * feet through the cave's own air, from the cave cell nearest the feet within the eyes' reach ({@link #cellInReach}).</li>
- * <li>{@code frontier}: the seen cells with an unseen neighbour in the volume, kept incrementally as cells arrive and
- * are seen; grouped by connected run (a branch not walked), re-grouped only when it changed; each group with the unseen
- * cells behind it counted up to {@link #BRANCH_MIN} + 1 (the only question asked of it: more than BRANCH_MIN?).</li>
+ * <li>{@code passages} (D15 pass two: THE cave model; the frontier groups are deleted): the cave read as passages
+ * ({@link io.github.mojolowjo.entropybot.cave.Passages}) - the caving step's last measure from its feet, or, never
+ * measured, the record's own from the entry; each with its ends, length, unseen count and ore faces. Persisted as the
+ * list (rule 23: the one store); while a caving step runs the planner's reads HOLD the list the step found first
+ * ({@link #recHold}), so a walking bot's price does not move each metre; the step's end stores its last measure.</li>
  * <li>{@code ores}: the ore cells seen in the cave (the ore index, by sight: rule 17), by family, left or mined.</li>
- * <li>{@code done}: THE done reader (rule 23 (2)): something seen and no frontier group with more than
- * {@link #BRANCH_MIN} unseen cells behind it; the caving step asks it.</li>
+ * <li>{@code done}: THE done reader (rule 23 (2)): the passages measured and none open (every cell of each seen, no end
+ * past the flood's cap); the caving step and the planner's offered check ask it.</li>
  * <li>{@code lastAt}, {@code walkedMinutes}, {@link #oreSeenPerMinute} (the ore seen a minute walked here - a record
  * fact; 0.39.z78 J6d: no price reads it, the cave way is priced by its walks).</li>
  * </ul>
@@ -36,12 +38,6 @@ import java.util.TreeMap;
  * ({@link #facts}); the cells come by budgeted steps. Pure (JUnit: J6bCaveRecordTest, J6bEkTest). Loader notes: none.
  */
 public final class CaveRecord {
-    /**
-     * The unseen cells a frontier group must lead to, to be a branch: two blocks of the cave carver's thinnest tunnel (2
-     * by 2, CaveIndex.CROSS_SECTION 4 cells a block; configured_carver/cave.json radius 1.5 x 0.7). Less is a dead-end nook
-     * a player glances into, not a way on.
-     */
-    public static final int BRANCH_MIN = 2 * CaveIndex.CROSS_SECTION; // structural: two blocks of the thinnest carver tunnel
     /**
      * The steps through the cave's air from the feet a walker counts as seen: what a player sees of a dark tunnel round
      * him without a torch, about a carver tunnel's width (2-3) past the next bend either way (an estimate; the owner
@@ -67,47 +63,27 @@ public final class CaveRecord {
     /** An ore cell seen in the cave: its family and whether it was mined. */
     public record Ore(String family, boolean mined) {}
 
-    /**
-     * A branch: its seen frontier cells (first: the one the walk goes to), their count, the unseen cells behind - counted
-     * up to {@link #BRANCH_MIN} + 1 (run EK: "more than BRANCH_MIN" is all any reader asks). 0.39.z78 fc (run FC, cause 3):
-     * {@code unseen} - those unseen index cells behind it (the same cells the count is of, nearest the group first): the
-     * walk's reach goal spans them, so a stand that SEES behind the frontier is the goal - never the seen frontier cells,
-     * whose goal holds where they were seen ("arrived, nothing new"). Rule 17: index cells as goal cells, never a read of
-     * their block states.
-     */
-    public record Group(long first, int size, int behind, List<Long> cells, List<Long> unseen) {
-        public Group {
-            cells = cells == null || cells.isEmpty() ? List.of(first) : List.copyOf(cells);
-            unseen = unseen == null ? List.of() : List.copyOf(unseen);
-        }
-
-        public Group(long first, int size, int behind, List<Long> cells) { this(first, size, behind, cells, List.of()); }
-
-        public Group(long first, int size, int behind) { this(first, size, behind, List.of(first), List.of()); }
-    }
-
-    /**
-     * Run EN: the frontier cells a group keeps for the step's reach goal (its first ones from {@code first}, through the
-     * group): enough for the few nearest the feet the goal is built over (CaveWalk.REACH_CELLS), never the whole group.
-     */
-    public static final int GROUP_CELLS = 16; // structural: a few times the reach goal's cells, the branch's mouth
-
     public final int x, y, z;
     private final Set<Long> seen = new HashSet<>();
     private final Set<Long> cells = new HashSet<>();
     private int cellCount;
     /** Run EK: the seen cells that are cells of the volume (unseen() = cellCount - seenIn). */
     private int seenIn;
-    /** Run EK: the seen volume cells with an unseen volume neighbour; {@link #groups} rebuilt only when it changed. */
-    private final java.util.TreeSet<Long> frontierCells = new java.util.TreeSet<>();     // sorted: a regroup walks it in steps
-    private boolean frontierChanged = true;
-    private List<Group> groupsNow = List.of();
     private final Map<Long, Ore> ores = new LinkedHashMap<>();
     private long lastAt;
     private double walkedMinutes;
     private int oreSeenWalking;
-    private boolean doneSaved;
-    private int groupsSaved = -1;
+    /** D15 pass two: the passages (null: never measured), where they were measured from, why the measure is empty. */
+    private List<io.github.mojolowjo.entropybot.cave.Passages.Passage> passages;
+    private int[] passagesFrom;
+    private String passagesWhy;
+    /** D15 pass two: a caving step runs - the planner reads the list as the step found it first; {@code later} its last. */
+    private boolean held, heldFresh;
+    private io.github.mojolowjo.entropybot.cave.Passages.Found later;
+    private int[] laterFrom;
+    /** The passages with their unseen counts measured again, by the record's version. */
+    private List<io.github.mojolowjo.entropybot.cave.Passages.Passage> passagesNow;
+    private long passagesNowAt = -1;
     /** J6b review 4: a walk that gained nothing (no cell seen, no ore mined) - the counts it left; -1: none. */
     private int stuckSeen = -1, stuckOre = -1, stuckCells = -1;
     /** Run EK: the index feed (null: cells given whole, recCells) and the facts' cache (by the record's version). */
@@ -225,44 +201,15 @@ public final class CaveRecord {
         toExpose.add(c);                                                        // J6c: looked round for air-exposed blocks
         version++;
         cellCount = Math.max(cellCount, cells.size());
-        if (seen.contains(c)) {
-            seenIn++;
-            recheck(c);
-            return;
-        }
-        int[] p = Sightings.cellOf(c);
-        for (int[] o : SIX) {                                                   // a seen neighbour has an unseen one now
-            long n = Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2]);
-            if (seen.contains(n) && cells.contains(n) && frontierCells.add(n)) frontierChanged = true;
-        }
+        if (seen.contains(c)) seenIn++;
     }
 
-    /** {@code s} is a frontier cell: seen, of the volume, with an unseen volume neighbour. */
-    private void recheck(long s) {
-        boolean f = false;
-        if (cells.contains(s) && seen.contains(s)) {
-            int[] p = Sightings.cellOf(s);
-            for (int[] o : SIX) {
-                long n = Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2]);
-                if (cells.contains(n) && !seen.contains(n)) { f = true; break; }
-            }
-        }
-        if (f ? frontierCells.add(s) : frontierCells.remove(s)) frontierChanged = true;
-    }
-
-    /** A cell seen: the sum and the frontier round it changed in place; true: new. */
+    /** A cell seen: the sum changed in place; true: new. */
     private boolean markSeen(long c) {
         if (!seen.add(c)) return false;
         version++;
         touched++;
-        if (!cells.contains(c)) return true;
-        seenIn++;
-        recheck(c);
-        int[] p = Sightings.cellOf(c);
-        for (int[] o : SIX) {
-            long n = Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2]);
-            if (cells.contains(n) && seen.contains(n)) recheck(n);              // c may have been its last unseen neighbour
-        }
+        if (cells.contains(c)) seenIn++;
         return true;
     }
 
@@ -391,42 +338,90 @@ public final class CaveRecord {
         return best;
     }
 
+    // ---- D15 pass two: the passages (the store's writers) ----
+
     /**
-     * Run EK (2): the step's first target - the unseen cave cell nearest the ENTRY through the cave's air (the entry
-     * itself while unseen), searched from the entry's cell (or the cave cell nearest it) over {@link #BUDGET} cells at
-     * most; null: none within the budget, or the cells not loaded. J6d: cached until a record write (the planner's cave way
-     * asks it for every known cave - its price's second walk ends there).
+     * The caving step's measure from {@code from} (its feet). Held (a step runs) and the step's first already stored: kept
+     * as {@code later}, stored when the hold ends - so the planner's price holds while the bot walks.
      */
-    public int[] firstUnseen() {
-        if (firstUnseenAt == version) return firstUnseenNow == null ? null : firstUnseenNow.clone();
-        int[] u = firstUnseenSearch();
-        firstUnseenNow = u;
-        firstUnseenAt = version;
-        return u == null ? null : u.clone();
+    void recPassages(io.github.mojolowjo.entropybot.cave.Passages.Found f, int[] from) {
+        if (f == null) return;
+        if (held && !heldFresh) { later = f; laterFrom = from; return; }
+        heldFresh = false;
+        storePassages(f, from);
     }
 
-    private int[] firstUnseenNow;
-    private long firstUnseenAt = -1;
+    private void storePassages(io.github.mojolowjo.entropybot.cave.Passages.Found f, int[] from) {
+        passages = List.copyOf(f.passages());
+        passagesWhy = f.why();
+        passagesFrom = from == null ? null : from.clone();
+        measuredCells = cellCount;
+        version++;
+    }
 
-    private int[] firstUnseenSearch() {
-        long start = Sightings.cell(x, y, z);
-        if (!cells.contains(start)) start = cellInReach(x, y, z);
-        if (start == Long.MIN_VALUE) return null;
-        Set<Long> got = new HashSet<>();
-        ArrayDeque<Long> q = new ArrayDeque<>();
-        got.add(start);
-        q.add(start);
-        while (!q.isEmpty() && got.size() <= BUDGET) {
-            long c = q.poll();
-            touched++;
-            if (!seen.contains(c)) return Sightings.cellOf(c);
-            int[] p = Sightings.cellOf(c);
-            for (int[] o : SIX) {
-                long n = Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2]);
-                if (cells.contains(n) && got.add(n)) q.add(n);
-            }
+    /** The cells known at the last measure (the record measures again from the entry once more cells arrive). */
+    private int measuredCells;
+
+    /**
+     * A caving step starts ({@code on}) or ends: while on, the planner reads the list the step measured first; at the end
+     * the step's last measure is stored (the step's end fact re-opens the price).
+     */
+    void recHold(boolean on) {
+        if (on) { held = true; heldFresh = true; later = null; return; }
+        held = false;
+        heldFresh = false;
+        if (later != null) storePassages(later, laterFrom);
+        later = null;
+        laterFrom = null;
+        version++;
+    }
+
+    public boolean held() { return held; }
+
+    /** The record's own measure from the entry (never measured, the cells loaded): the lip case floods from cave air near it. */
+    private void measureFromEntry() {
+        Set<Long> ore = new HashSet<>();
+        for (var e : ores.entrySet()) if (!e.getValue().mined()) ore.add(e.getKey());
+        int[] from = {x, y, z};
+        var f = io.github.mojolowjo.entropybot.cave.Passages.build((px, py, pz) -> cells.contains(Sightings.cell(px, py, pz)), seen::contains, from, ore,
+                io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.passageDrop"), io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.passageForkLayers"),
+                io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.passageCells"), io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.passageRoomWidth"),
+                io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.passageNear"));
+        storePassages(f, from);
+    }
+
+    /**
+     * THE passages of this cave: the last measure, unseen counts measured again against the seen cells (not while held,
+     * not without their cells: a reloaded list keeps its saved counts); never measured and the cells loaded: measured from
+     * the entry. null: not measured (the cells not loaded).
+     */
+    public List<io.github.mojolowjo.entropybot.cave.Passages.Passage> passages() {
+        if (loaded() && !held && (passages == null || cellCount != measuredCells)) measureFromEntry();   // more cells arrived: measured again
+        if (passages == null) return null;
+        if (held) return passages;
+        if (passagesNowAt == version && passagesNow != null) return passagesNow;
+        List<io.github.mojolowjo.entropybot.cave.Passages.Passage> out = new ArrayList<>();
+        for (var p : passages) {
+            if (p.cells().isEmpty()) { out.add(p); continue; }
+            int n = 0;
+            for (long c : p.cells()) if (!seen.contains(c)) n++;          // at most 2 x cave.passageCells (not in BUDGET, as the step's flood)
+            out.add(n == p.unseen() ? p : p.withUnseen(n));
         }
-        return null;
+        passagesNow = List.copyOf(out);
+        passagesNowAt = version;
+        return passagesNow;
+    }
+
+    /** Why the last measure found no passage (rule 7); null: it found some, or none was made. */
+    public String passagesWhy() { return passagesWhy; }
+
+    /** The open passages at the last measure; -1: not measured. */
+    public int openPassages() {
+        var ps = passages();
+        if (ps == null) return -1;
+        int n = 0;
+        for (var p : ps) if (p.open()) n++;
+        return n;
     }
 
     // ---- the readers ----
@@ -456,118 +451,6 @@ public final class CaveRecord {
     public double explored() { return cellCount == 0 ? 0 : (cellCount - unseen()) / (double) cellCount; }
 
     /**
-     * The branches not walked: the frontier cells grouped by connected run, each with the unseen cells behind it (up to
-     * BRANCH_MIN + 1); the most behind first, then by cell. Rebuilt only when the frontier changed. Empty while not loaded.
-     */
-    public List<Group> frontier() {
-        if (!loaded()) return List.of();
-        if (job == null && frontierChanged) {
-            frontierChanged = false;
-            job = new Regroup(frontierCells);
-        }
-        if (job != null) {
-            // 88b28290 review 1: a frontier of thousands (a long walk in a 200k cave) is regrouped in steps - all at once
-            // when it is small (BUDGET cells), else BUDGET cells a tick (spent counted from the tick's feed or stand)
-            // J6c review: from the one per-tick budget of every record (a small one whole while it fits what is left)
-            int left = left(spend);
-            int allow = job.size <= left ? Integer.MAX_VALUE : left;
-            long before = touched;
-            if (allow > 0 && job.step(allow)) {                              // the tick's budget spent: the next tick
-                groupsNow = job.result();
-                groupsSaved = groupsNow.size();
-                job = null;
-            }
-            spend.spent += touched - before;
-        }
-        return groupsNow;
-    }
-
-    /** 88b28290 review 1: the regroup in progress (null: the groups are current); its spend is in {@link #spend}. */
-    private Regroup job;
-
-    /** Run EK / 88b28290 review 1: the frontier is being regrouped (its groups lag by a tick or a few; not done meanwhile). */
-    public boolean regrouping() { return job != null; }
-
-    /** One regroup of the frontier as it stood (its cells sorted once), resumable cell by cell. */
-    private final class Regroup {
-        /** The frontier as it stands (kept sorted: a TreeSet), walked from {@code cursor} up - never copied or sorted again. */
-        final int size;
-        long cursor = Long.MIN_VALUE;
-        boolean started;
-        final Set<Long> done = new HashSet<>();
-        final List<Group> out = new ArrayList<>();
-        ArrayDeque<Long> q;
-        List<Long> group;
-
-        Regroup(java.util.NavigableSet<Long> frontier) { size = frontier.size(); }
-
-        /** Up to {@code allow} cells touched; true: finished. */
-        boolean step(int allow) {
-            long start = touched;
-            while (touched - start < allow) {
-                if (q == null) {
-                    Long nx = started ? frontierCells.higher(cursor) : (frontierCells.isEmpty() ? null : frontierCells.first());
-                    started = true;
-                    while (nx != null && done.contains(nx)) { touched++; cursor = nx; nx = frontierCells.higher(nx); }
-                    if (nx == null) {
-                        out.sort((a, b) -> b.behind() != a.behind() ? Integer.compare(b.behind(), a.behind()) : Long.compare(a.first(), b.first()));
-                        return true;
-                    }
-                    cursor = nx;
-                    done.add(nx);
-                    q = new ArrayDeque<>();
-                    q.add(nx);
-                    group = new ArrayList<>();
-                }
-                while (!q.isEmpty() && touched - start < allow) {
-                    long c = q.poll();
-                    group.add(c);
-                    touched++;
-                    int[] p = Sightings.cellOf(c);
-                    for (int[] o : SIX) {
-                        long n = Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2]);
-                        if (frontierCells.contains(n) && done.add(n)) q.add(n);
-                    }
-                }
-                if (q.isEmpty()) {
-                    List<Long> un = behind(group);
-                    out.add(new Group(group.get(0), group.size(), un.size(), group.subList(0, Math.min(GROUP_CELLS, group.size())), un));
-                    q = null;
-                }
-            }
-            return false;
-        }
-
-        List<Group> result() { return List.copyOf(out); }
-    }
-
-    /**
-     * The unseen cells connected (through unseen cave air) to the group, up to BRANCH_MIN + 1 (run EK: the cap), in the
-     * order found - the ones touching the group first (fc: the branch goal's cells, Group#unseen; their count is behind).
-     */
-    private List<Long> behind(List<Long> group) {
-        java.util.LinkedHashSet<Long> got = new java.util.LinkedHashSet<>();
-        ArrayDeque<Long> q = new ArrayDeque<>();
-        for (long c : group) {
-            touched++;
-            int[] p = Sightings.cellOf(c);
-            for (int[] o : SIX) {
-                long n = Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2]);
-                if (cells.contains(n) && !seen.contains(n) && got.add(n)) { q.add(n); if (got.size() > BRANCH_MIN) return List.copyOf(got); }
-            }
-        }
-        while (!q.isEmpty()) {
-            int[] p = Sightings.cellOf(q.poll());
-            touched++;
-            for (int[] o : SIX) {
-                long n = Sightings.cell(p[0] + o[0], p[1] + o[1], p[2] + o[2]);
-                if (cells.contains(n) && !seen.contains(n) && got.add(n)) { q.add(n); if (got.size() > BRANCH_MIN) return List.copyOf(got); }
-            }
-        }
-        return List.copyOf(got);
-    }
-
-    /**
      * Run GT fix (2026-11-01: 115 blocks from the entry the record held iron 0 left while the eyes saw 24 veins - the feed
      * tested "beside the cave" with CaveIndex.volumeAt(entry), and the index keeps loaded chunks only, so with the entry's
      * chunk unloaded the root was -1 and every ore was rejected): an ore at x y z is beside this cave when one of its six
@@ -585,22 +468,18 @@ public final class CaveRecord {
     public boolean wasSeen(long c) { return seen.contains(c); }
 
     /**
-     * THE done reader (rule 23 (2); run EK 02:24:18: the step's own "no branch" fall-through ended a cave it had seen
-     * nothing of): loaded - something of the volume seen and no frontier group with more than BRANCH_MIN unseen cells
-     * behind; not loaded - the last measure.
+     * THE done reader (rule 23 (2); D15 pass two: on the passages): measured, the measure found passages (an empty one
+     * says why, never done), and none of them open. Not loaded: the saved list.
      */
     public boolean done() {
-        if (!loaded()) return doneSaved;
-        List<Group> gs = frontier();
-        if (job != null) return false;                                     // 88b28290 review 1: the groups lag the frontier: not known, not done
-        boolean d = seenIn > 0;
-        for (Group g : gs) if (g.behind() > BRANCH_MIN) d = false;
-        doneSaved = d;
-        return d;
+        var ps = passages();
+        if (ps == null || passagesWhy != null || ps.isEmpty()) return false;
+        for (var p : ps) if (p.open()) return false;
+        return true;
     }
 
-    /** The frontier groups at the last measure (-1: never measured). */
-    public int groups() { return loaded() ? frontier().size() : groupsSaved; }
+    /** The open passages at the last measure (-1: never measured). */
+    public int groups() { return openPassages(); }
 
     /** family -> {left, mined} of the ore cells seen here. */
     public Map<String, int[]> oresByFamily() {
@@ -626,7 +505,7 @@ public final class CaveRecord {
     /** The record as offered for {@code family}: not done, or done with ore of it seen and left. */
     public boolean offeredFor(String family) { return !stuck() && (!done() || !left(family).isEmpty()); }
 
-    /** "x y z: explored 60%, 2 branches, iron 3 left 1 mined, walked 4 min" (aa cave list, aa why, the step's end line). */
+    /** "x y z: explored 60%, 2 open passages, iron 3 left 1 mined, walked 4 min" (aa cave list, aa why, the step's end line). */
     public String line() {
         int g = groups();
         int un = unseen();
@@ -634,7 +513,7 @@ public final class CaveRecord {
         for (var e : oresByFamily().entrySet()) o.add(e.getKey() + " " + e.getValue()[0] + " left " + e.getValue()[1] + " mined");
         return where() + ": explored " + Math.round(explored() * 100) + "% (" + (cellCount - un) + " of " + cellCount + " cells)"
                 + (filling() ? " (reading its cells: " + cells.size() + " so far)" : "") + ", "
-                + (g < 0 ? "branches not measured" : g + " branch" + (g == 1 ? "" : "es")) + (done() ? ", done" : "")
+                + (g < 0 ? "passages not measured" : g + " open passage" + (g == 1 ? "" : "s")) + (passagesWhy != null ? " (" + passagesWhy + ")" : "") + (done() ? ", done" : "")
                 + (o.isEmpty() ? ", no ore seen" : ", " + String.join(", ", o)) + (walkedMinutes > 0 ? String.format(java.util.Locale.ROOT, ", walked %.1f min", walkedMinutes) : "");
     }
 
@@ -646,16 +525,16 @@ public final class CaveRecord {
     }
 
     /** A copy of what the record says now, for readers off the store's lock (the planner, aa cave list, aa why). */
-    public record Facts(int x, int y, int z, int cellCount, int unseen, double explored, int groups, boolean done, Map<String, int[]> ores,
+    public record Facts(int x, int y, int z, int cellCount, int unseen, double explored, int passages, boolean done, Map<String, int[]> ores,
                         double walkedMinutes, double oreSeenPerMinute, long lastAt, boolean loaded, String line, boolean stuck, boolean filling) {
-        public Facts(int x, int y, int z, int cellCount, int unseen, double explored, int groups, boolean done, Map<String, int[]> ores,
+        public Facts(int x, int y, int z, int cellCount, int unseen, double explored, int passages, boolean done, Map<String, int[]> ores,
                      double walkedMinutes, double oreSeenPerMinute, long lastAt, boolean loaded, String line, boolean stuck) {
-            this(x, y, z, cellCount, unseen, explored, groups, done, ores, walkedMinutes, oreSeenPerMinute, lastAt, loaded, line, stuck, false);
+            this(x, y, z, cellCount, unseen, explored, passages, done, ores, walkedMinutes, oreSeenPerMinute, lastAt, loaded, line, stuck, false);
         }
 
-        public Facts(int x, int y, int z, int cellCount, int unseen, double explored, int groups, boolean done, Map<String, int[]> ores,
+        public Facts(int x, int y, int z, int cellCount, int unseen, double explored, int passages, boolean done, Map<String, int[]> ores,
                      double walkedMinutes, double oreSeenPerMinute, long lastAt, boolean loaded, String line) {
-            this(x, y, z, cellCount, unseen, explored, groups, done, ores, walkedMinutes, oreSeenPerMinute, lastAt, loaded, line, false, false);
+            this(x, y, z, cellCount, unseen, explored, passages, done, ores, walkedMinutes, oreSeenPerMinute, lastAt, loaded, line, false, false);
         }
 
         public int left(String family) { int[] v = ores.get(family); return v == null ? 0 : v[0]; }
@@ -669,8 +548,8 @@ public final class CaveRecord {
 
     /** Run EK: the facts, cached until a record write (a cell fed or seen, an ore, a walk) - the planner's asks read the cache. */
     Facts facts() {
-        if (factsNow != null && factsAt == version && !frontierChanged && job == null) return factsNow;
-        factsNow = new Facts(x, y, z, cellCount, unseen(), explored(), groups(), done(), oresByFamily(), walkedMinutes, oreSeenPerMinute(), lastAt, loaded(), line(), stuck(), filling());
+        if (factsNow != null && factsAt == version) return factsNow;
+        factsNow = new Facts(x, y, z, cellCount, unseen(), explored(), openPassages(), done(), oresByFamily(), walkedMinutes, oreSeenPerMinute(), lastAt, loaded(), line(), stuck(), filling());
         factsAt = version;
         return factsNow;
     }
@@ -678,7 +557,6 @@ public final class CaveRecord {
     // ---- the file (the store's) ----
 
     com.google.gson.JsonObject json() {
-        if (loaded()) done();                                               // the saved measure is the latest
         var j = new com.google.gson.JsonObject();
         j.addProperty("x", x); j.addProperty("y", y); j.addProperty("z", z);
         j.addProperty("cells", cellCount);
@@ -694,8 +572,21 @@ public final class CaveRecord {
         j.addProperty("lastAt", lastAt);
         j.addProperty("walkedMinutes", walkedMinutes);
         j.addProperty("oreSeenWalking", oreSeenWalking);
-        j.addProperty("done", doneSaved);
-        j.addProperty("groups", groupsSaved);
+        // D15 pass two: the passage list is the saved record of what is left (rule 23); the cells are not saved
+        var ps = held ? passages : passages();                                   // held: the list the planner reads
+        if (ps != null) {
+            var pa = new com.google.gson.JsonArray();
+            for (var p : ps) {
+                var a = new com.google.gson.JsonArray();
+                a.add(p.id()); a.add(p.parent());
+                a.add(p.start()[0]); a.add(p.start()[1]); a.add(p.start()[2]);
+                a.add(p.end()[0]); a.add(p.end()[1]); a.add(p.end()[2]);
+                a.add(p.length()); a.add(p.width()); a.add(p.fromFeet()); a.add(p.unseen()); a.add(p.oreFaces()); a.add(p.endKind().name());
+                pa.add(a);
+            }
+            j.add("passages", pa);
+            if (passagesWhy != null) j.addProperty("passagesWhy", passagesWhy);
+        }
         j.addProperty("stuckSeen", stuckSeen); j.addProperty("stuckOre", stuckOre); j.addProperty("stuckCells", stuckCells);
         return j;
     }
@@ -711,8 +602,23 @@ public final class CaveRecord {
         r.lastAt = j.get("lastAt").getAsLong();
         r.walkedMinutes = j.get("walkedMinutes").getAsDouble();
         r.oreSeenWalking = j.get("oreSeenWalking").getAsInt();
-        r.doneSaved = j.get("done").getAsBoolean();
-        r.groupsSaved = j.get("groups").getAsInt();
+        if (j.has("passages")) {
+            List<io.github.mojolowjo.entropybot.cave.Passages.Passage> ps = new ArrayList<>();
+            for (var e : j.getAsJsonArray("passages")) {
+                var a = e.getAsJsonArray();
+                ps.add(new io.github.mojolowjo.entropybot.cave.Passages.Passage(a.get(0).getAsInt(), a.get(1).getAsInt(),
+                        new int[]{a.get(2).getAsInt(), a.get(3).getAsInt(), a.get(4).getAsInt()}, new int[]{a.get(5).getAsInt(), a.get(6).getAsInt(), a.get(7).getAsInt()},
+                        a.get(8).getAsInt(), a.get(9).getAsInt(), a.get(10).getAsInt(), List.of(), a.get(11).getAsInt(), a.get(12).getAsInt(),
+                        io.github.mojolowjo.entropybot.cave.Passages.EndKind.valueOf(a.get(13).getAsString())));
+            }
+            r.passages = List.copyOf(ps);
+            r.passagesWhy = j.has("passagesWhy") ? j.get("passagesWhy").getAsString() : null;
+        } else if (j.has("groups")) {
+            // D15 pass two (rule 7): a save from before the passage model holds frontier groups - dropped, said; the
+            // passages are measured again from the entry once the cave's cells load
+            io.github.mojolowjo.entropybot.Quiet.line("cave: the record at " + r.where() + " is an old save (" + j.get("groups").getAsInt() + " frontier group(s), done "
+                    + (j.has("done") && j.get("done").getAsBoolean()) + "): its groups are dropped, its passages are measured again when its cells load");
+        }
         if (j.has("stuckSeen")) { r.stuckSeen = j.get("stuckSeen").getAsInt(); r.stuckOre = j.get("stuckOre").getAsInt(); r.stuckCells = j.get("stuckCells").getAsInt(); }
         return r;
     }

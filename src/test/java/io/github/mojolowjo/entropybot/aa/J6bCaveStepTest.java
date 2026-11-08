@@ -208,10 +208,13 @@ class J6bCaveStepTest {
         s.knowCave("d", new CaveIndex.Known(5, 64, 5, CaveIndex.Size.SMALL, CaveIndex.Depth.HIGH, List.of(Sightings.cell(5, 63, 5))), 1);
         List<Long> cells = new java.util.ArrayList<>();
         for (int y = 60; y <= 64; y++) cells.add(Sightings.cell(5, y, 5));          // the 4-block drop under the opening
-        for (int x = 6; x <= 30; x++) cells.add(Sightings.cell(x, 60, 5));         // the tunnel at its foot
+        for (int x = 6; x <= 30; x++) { cells.add(Sightings.cell(x, 60, 5)); cells.add(Sightings.cell(x, 61, 5)); }   // the 2-high tunnel at its foot
         s.caveCells("d", 5, 64, 5, cells);
         s.caveStood("d", 5, 64, 5, lip[0], lip[1], lip[2], 1);
-        var next = CaveWalk.next(0, 3, 0, 10, s.caveFacts("d", 5, 64, 5), s.cavePassages("d", 5, 64, 5, lip, java.util.Set.of(), 3, 3, 4096).passages(), List.of(), lip, 4.5, s.caveFirstUnseen("d", 5, 64, 5));
+        // D15 pass two, the lip: the feet outside the cave's air - the flood starts at the walkable cave cell within cave.passageNear
+        var found = s.cavePassages("d", 5, 64, 5, lip, java.util.Set.of(), 3, 3, 4096, 8, 2);
+        assertTrue(found.lip(), "the flood began off the feet: " + found.why());
+        var next = CaveWalk.next(0, 3, 0, 10, s.caveFacts("d", 5, 64, 5), found.passages(), List.of(), lip, 4.5, entry);
         assertTrue(next instanceof CaveWalk.Goto, "from the lip: into the cave - " + next);
         assertTrue(((CaveWalk.Goto) next).cell()[1] < 64, "down the drop: " + java.util.Arrays.toString(((CaveWalk.Goto) next).cell()));
     }

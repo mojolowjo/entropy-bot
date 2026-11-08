@@ -213,10 +213,26 @@ public final class Sightings {
         return r == null ? 0 : r.recExpose(air, budget);
     }
 
-    /** The branches not walked of the known cave at x y z (largest behind first; empty: not loaded, or none). */
-    public synchronized List<CaveRecord.Group> caveFrontier(String dim, int x, int y, int z) {
+    /**
+     * D15 pass two: the passages of the known cave at x y z (CaveRecord#passages, THE cave model); null: not measured. The
+     * planner's copy: ends, lengths and counts, never the cells (the manager's ruling, J6CaveWayTest).
+     */
+    public synchronized List<io.github.mojolowjo.entropybot.cave.Passages.Passage> cavePassageList(String dim, int x, int y, int z) {
         CaveRecord r = rec(dim, x, y, z);
-        return r == null ? List.of() : r.frontier();
+        var ps = r == null ? null : r.passages();
+        if (ps == null) return null;
+        List<io.github.mojolowjo.entropybot.cave.Passages.Passage> out = new ArrayList<>();
+        for (var p : ps) out.add(p.cells().isEmpty() ? p : new io.github.mojolowjo.entropybot.cave.Passages.Passage(p.id(), p.parent(), p.start(), p.end(), p.length(), p.width(),
+                p.fromFeet(), List.of(), p.unseen(), p.oreFaces(), p.endKind()));
+        return List.copyOf(out);
+    }
+
+    /** D15 pass two: a caving step starts ({@code on}) or ends in the known cave at x y z (CaveRecord#recHold). */
+    public synchronized void caveHold(String dim, int x, int y, int z, boolean on) {
+        CaveRecord r = rec(dim, x, y, z);
+        if (r == null) return;
+        r.recHold(on);
+        dirty = true;
     }
 
     /** The ore cells of {@code family} seen in the known cave at x y z and not mined. */
@@ -232,9 +248,17 @@ public final class Sightings {
      */
     public synchronized io.github.mojolowjo.entropybot.cave.Passages.Found cavePassages(String dim, int x, int y, int z, int[] feet, java.util.Set<Long> ore,
                                                                                        int drop, int forkLayers, int cap) {
+        return cavePassages(dim, x, y, z, feet, ore, drop, forkLayers, cap, Integer.MAX_VALUE, 0);
+    }
+
+    /** D15 pass two: as above with rooms ({@code roomWidth}) and the lip ({@code near}); the measure is the record's (recPassages). */
+    public synchronized io.github.mojolowjo.entropybot.cave.Passages.Found cavePassages(String dim, int x, int y, int z, int[] feet, java.util.Set<Long> ore,
+                                                                                       int drop, int forkLayers, int cap, int roomWidth, int near) {
         CaveRecord r = rec(dim, x, y, z);
         if (r == null) return new io.github.mojolowjo.entropybot.cave.Passages.Found(List.of(), "no known cave at " + x + " " + y + " " + z, false);
-        return io.github.mojolowjo.entropybot.cave.Passages.build((px, py, pz) -> r.air(cell(px, py, pz)), r::wasSeen, feet, ore, drop, forkLayers, cap);
+        var f = io.github.mojolowjo.entropybot.cave.Passages.build((px, py, pz) -> r.air(cell(px, py, pz)), r::wasSeen, feet, ore, drop, forkLayers, cap, roomWidth, near);
+        r.recPassages(f, feet);
+        return f;
     }
 
     public synchronized List<int[]> caveLeft(String dim, int x, int y, int z, String family) {
@@ -293,12 +317,6 @@ public final class Sightings {
     /** J6c review: the one per-tick spend of every cave record (CaveRecord.Spend), and the exposure's round-robin turn. */
     private final CaveRecord.Spend tickSpend = new CaveRecord.Spend(false);
     private int exposeTurn = -1;
-
-    /** Run EK (2): the known cave's unseen cell nearest its entry (CaveRecord#firstUnseen); null: none, or not loaded. */
-    public synchronized int[] caveFirstUnseen(String dim, int x, int y, int z) {
-        CaveRecord r = rec(dim, x, y, z);
-        return r == null ? null : r.firstUnseen();
-    }
 
     /** Run EK: the cells the known cave's record touched since the last ask (its budget's measure; 0: no record). */
     public synchronized long caveTouched(String dim, int x, int y, int z) {
