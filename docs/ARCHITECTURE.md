@@ -58,7 +58,10 @@ far end, length, width, unseen cells and ore faces (`Sightings.cavePassages`). I
 expected (`CaveWalk.passagePrice`: `cave.passageSecPerCell` and a `CaveWalk.Density`, the order's ore per unseen cell at
 the passage's mean Y: game data (`AaRuntime.caveDensity`: the placements' share per air-exposed block at that Y x the
 record's air-exposed blocks per cell), else the record's seen rate of the family, else `cave.orePerCellNotKnown`, said in the
-line; job-price, run JAO; the caving step's own pick uses the seen rate or the fallback); the walk is a `GoalNear`
+line; job-price, run JAO; the caving step's own pick uses the seen rate or the fallback; job-freeze, run JAP: a `Density`
+is a value, the curve sampled per Y over `Density.MIN_Y..MAX_Y` and rounded to `Density.PRECISION`, so the planner's fact
+check sees two equal caves as equal; the planner itself takes a result after `planner.dropsBeforeTake` drops in a row for
+one reason, said "this answer is taken (rule 7)", in `PlannerPort`); the walk is a `GoalNear`
 (`cave.passageNear`) at the far end. Pass three (run JAK): seen is looked at - the stand marks only cells in the eyes' cone and the
 ore rays' range (`Sightings.caveStood` with a `CaveRecord.Look`; `seen.coneDeg`, `seen.range`); arrival counts the passage's
 cells looked at against walked past (an open passage is walked again); the cave's ore intake reads the rays' range; a seen
