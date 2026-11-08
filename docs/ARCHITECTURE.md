@@ -40,7 +40,10 @@ is obtained, not taken). Probe: `probe reserve: reserved: stick 2 for craft ston
 The fork keeps priced paths (`PathMemory`) and re-joins a kept path the feet left by one short search (build 1); the mod
 keeps no copy (rule 23). Waiting trips are priced at the running step's END cell (the anchor rule, `BatchWay`). The load
 line (`LoadProbe` -> `ProbeLines.LoadFacts`) says re-joins (`IPricedPath.joinCounts`) and route memory
-(`routeCounts`, read by name until the fork has build 2: "routes not readable in this fork jar" when absent).
+(`routeCounts`, read by name until the fork has build 2: "routes not readable in this fork jar" when absent) and the CPU counts (`cpuCounts` by name: price asks timed out,
+shared, joined, fluid cache, advisor cache; "cpu counts not readable in this fork jar" when absent). The break policy
+reaches A* through `CostAdvisorHook.Direct`, which implements the fork's `CostAdvisor` (a plain call per ask; the fork's
+`advisorKind()` says "direct"); the reflective Proxy stays only for a jar without that interface (said once at install).
 
 ### Caves (J6 / J6b, 0.39.z78)
 Caves are known by rays like ore: `sense/CaveIndex` (the air volumes per world, in the one store), credits from the sight

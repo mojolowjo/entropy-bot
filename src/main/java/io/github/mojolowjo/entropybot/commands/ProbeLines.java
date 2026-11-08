@@ -254,17 +254,35 @@ public final class ProbeLines {
         }
     }
 
+    /**
+     * CPU job: the fork's cpu counts read by name like {@link #routeCounts} (IPricedPath.cpuCounts): {asks timed out, shared,
+     * joined, fluid cache hits, fluid cache fills, advisor hits, advisor asks} since the game started; null when absent.
+     */
+    public static long[] cpuCounts(Object pricedPath) {
+        try {
+            Object o = pricedPath.getClass().getMethod("cpuCounts").invoke(pricedPath);
+            return o instanceof long[] a && a.length >= 7 && a[0] >= 0 ? a : null;
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
+            return null;
+        }
+    }
+
     /** The load line's other facts, as counts since the last line where a "+" is shown. */
     public record LoadFacts(int fps, String window, long pricedStarted, long pricedLanded, int pricedInFlight,
-                            long[] segs, long calcs, long calcFails, long[] recorder, long heapUsedMb, long heapMaxMb, long gcCount, long gcMs, long[] joins, long[] routes) {
+                            long[] segs, long calcs, long calcFails, long[] recorder, long heapUsedMb, long heapMaxMb, long gcCount, long gcMs, long[] joins, long[] routes, long[] cpu) {
+        public LoadFacts(int fps, String window, long pricedStarted, long pricedLanded, int pricedInFlight,
+                         long[] segs, long calcs, long calcFails, long[] recorder, long heapUsedMb, long heapMaxMb, long gcCount, long gcMs, long[] joins, long[] routes) {
+            this(fps, window, pricedStarted, pricedLanded, pricedInFlight, segs, calcs, calcFails, recorder, heapUsedMb, heapMaxMb, gcCount, gcMs, joins, routes, null);
+        }
+
         public LoadFacts(int fps, String window, long pricedStarted, long pricedLanded, int pricedInFlight,
                          long[] segs, long calcs, long calcFails, long[] recorder, long heapUsedMb, long heapMaxMb, long gcCount, long gcMs, long[] joins) {
-            this(fps, window, pricedStarted, pricedLanded, pricedInFlight, segs, calcs, calcFails, recorder, heapUsedMb, heapMaxMb, gcCount, gcMs, joins, null);
+            this(fps, window, pricedStarted, pricedLanded, pricedInFlight, segs, calcs, calcFails, recorder, heapUsedMb, heapMaxMb, gcCount, gcMs, joins, null, null);
         }
 
         public LoadFacts(int fps, String window, long pricedStarted, long pricedLanded, int pricedInFlight,
                          long[] segs, long calcs, long calcFails, long[] recorder, long heapUsedMb, long heapMaxMb, long gcCount, long gcMs) {
-            this(fps, window, pricedStarted, pricedLanded, pricedInFlight, segs, calcs, calcFails, recorder, heapUsedMb, heapMaxMb, gcCount, gcMs, null, null);
+            this(fps, window, pricedStarted, pricedLanded, pricedInFlight, segs, calcs, calcFails, recorder, heapUsedMb, heapMaxMb, gcCount, gcMs, null, null, null);
         }
 
         public String line(long tick) {
@@ -280,6 +298,11 @@ public final class ProbeLines {
             if (routes != null && routes.length >= 5 && routes[0] >= 0)
                 fork += "; routes asked +" + routes[0] + " reused +" + routes[1] + " check failed: changed +" + routes[2] + " not loaded +" + routes[3] + "; saved +" + routes[4];
             else if (routes != null) fork += "; routes not readable in this fork jar";     // rule 7: said, never left out
+            // CPU job (IPricedPath.cpuCounts): {timed out, shared, joined, fluid hits, fluid fills, advisor hits, advisor asks}
+            if (cpu != null && cpu.length >= 7 && cpu[0] >= 0)
+                fork += "; cpu: asks timed out +" + cpu[0] + ", shared +" + cpu[1] + ", joined +" + cpu[2] + "; fluid cache hits +" + cpu[3]
+                        + " fills +" + cpu[4] + "; advisor hits +" + cpu[5] + " of +" + cpu[6] + " asks";
+            else if (cpu != null) fork += "; cpu counts not readable in this fork jar";    // rule 7: said, never left out
             String rec = recorder == null ? "recorder off" : "recorder queue " + recorder[0] + ", lines written +" + recorder[1] + String.format(Locale.ROOT, ", disk %.1f MB", recorder[2] / 1048576.0);
             return "t=" + tick + " | fps " + fps + " | " + window
                     + " | priced paths started +" + pricedStarted + " landed +" + pricedLanded + " in flight " + pricedInFlight + "; " + fork
