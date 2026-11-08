@@ -125,7 +125,7 @@ public final class Passages {
     /**
      * Pass two: as above; {@code roomWidth} (cave.passageRoomWidth): a layer piece wider than it is a ROOM node - the
      * passage ends there with the room's cells, and every exit of the room that goes on {@code forkLayers} layers is an
-     * arm; {@code near} (cave.passageNear): no walkable cell at the feet - the flood starts at the nearest walkable cave
+     * arm; {@code near} (cave.passageLipNear): no walkable cell at the feet - the flood starts at the nearest walkable cave
      * cell within it (the lip).
      */
     public static Found build(Air a, Seen seen, int[] feet, Set<Long> ore, int drop, int forkLayers, int cap, int roomWidth, int near) {
@@ -134,7 +134,7 @@ public final class Passages {
         boolean lip = false;
         if (s0 == null && near > 0) { s0 = nearCell(a, feet, drop, near); lip = s0 != null; }
         if (s0 == null) return new Found(List.of(), "no walkable cave cell at the feet " + feet[0] + " " + feet[1] + " " + feet[2] + " (nor a floor within cave.passageDrop " + drop + " below"
-                + (near > 0 ? ", nor a walkable cave cell within cave.passageNear " + near : "") + ")", false);
+                + (near > 0 ? ", nor a walkable cave cell within cave.passageLipNear " + near : "") + ")", false);
         // 1. the flood in layers
         Map<Long, Integer> dist = new HashMap<>();
         List<List<Long>> layers = new ArrayList<>();

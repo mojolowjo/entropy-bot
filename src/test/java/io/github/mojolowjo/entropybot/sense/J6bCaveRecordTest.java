@@ -210,6 +210,39 @@ class J6bCaveRecordTest {
         assertTrue(after.stream().allMatch(p -> p.fromFeet() >= 0));
     }
 
+    /** Run JAJ (1): an ore seen on a passage's wall (the record's ore, by sight) is an ore face of that passage, and left to mine. */
+    @Test
+    void anOreSeenOnAPassagesWall_isItsOreFace() {
+        Sightings s = store();
+        s.caveOre(D, 0, 40, 0, Sightings.cell(40, 42, 20), "iron");            // the roof of branch A
+        var a = s.cavePassageList(D, 0, 40, 0).stream().filter(p -> p.end()[2] == 40).findFirst().orElseThrow();
+        assertEquals(1, a.oreFaces(), "the ore on A's roof: one face of A");
+        assertTrue(s.cavePassageList(D, 0, 40, 0).stream().filter(p -> p != a && p.end()[2] != 40).allMatch(p -> p.oreFaces() == 0), "on no other passage");
+        assertEquals(1, s.caveLeft(D, 0, 40, 0, "iron").size(), "left: the caving step's next moves walk to it and mine it");
+    }
+
+    /**
+     * Run JAJ (2): the lip 4 blocks from the entry (feet -124 64 -32, the entry -124 64 -28) - the flood starts at the
+     * nearest walkable cave cell within cave.passageLipNear (5), so the step has passages, not "no walkable cave cell".
+     */
+    @Test
+    void jajsLip_fourBlocksOff_floodsFromTheNearestCaveCell() {
+        Sightings s = new Sightings();
+        assertNotNull(s.knowCave(D, new CaveIndex.Known(-124, 64, -28, CaveIndex.Size.LARGE, CaveIndex.Depth.STONE, List.of(Sightings.cell(-124, 64, -28))), 1));
+        List<Long> c = new ArrayList<>();
+        for (int z = -28; z <= 0; z++) { c.add(Sightings.cell(-124, 64, z)); c.add(Sightings.cell(-124, 65, z)); }   // a tunnel north from the entry
+        s.caveCells(D, -124, 64, -28, c);
+        int[] lip = {-124, 64, -32};
+        var near2 = s.cavePassages(D, -124, 64, -28, lip, java.util.Set.of(), 3, 3, 4096, 8, 2);
+        assertTrue(near2.passages().isEmpty(), "pass one's reach (2): none, as in JAJ");
+        var f = s.cavePassages(D, -124, 64, -28, lip, java.util.Set.of(), 3, 3, 4096, 8,
+                io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.passageLipNear"));
+        assertTrue(f.lip(), f.why());
+        assertArrayEquals(new int[]{-124, 64, -28}, f.start());
+        assertFalse(f.passages().isEmpty());
+        assertArrayEquals(new int[]{-124, 64, 0}, f.passages().get(0).end());
+    }
+
     /** One store (rule 23): only Sightings writes a cave record, and nothing else makes one. */
     @Test
     void onlyTheStoreWritesTheRecord() throws java.io.IOException {

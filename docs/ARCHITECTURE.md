@@ -47,7 +47,7 @@ expected (`CaveWalk.passagePrice`: `cave.passageSecPerCell`, `cave.orePerUnseenC
 (`cave.passageNear`) at the far end, arrival sees the passage's cells; a seen ore in reach on the walk pauses it and is mined.
 Seen-ore gotos keep the reach goals below. Pass two: a layer piece wider than `cave.passageRoomWidth` is a ROOM node whose
 exits are its arms; at the lip (no walkable cell under the feet) the flood starts at the nearest walkable cave cell within
-`cave.passageNear`, and with none the step walks to the cave's mouth (said). The record keeps the step's last passage
+`cave.passageLipNear` (run JAJ: a lip 4 blocks off), and with none the step walks to the cave's mouth (said). The record keeps the step's last passage
 list (saved as the list; an old save's frontier groups are dropped, logged); its done = measured and none open; never
 measured, it measures from the entry. The planner's walk inside is `CaveWalk.findSeconds` over that list (nearest open
 passages first, seconds per expected ore). While a caving step runs the list is HELD (`Sightings.caveHold`): the planner

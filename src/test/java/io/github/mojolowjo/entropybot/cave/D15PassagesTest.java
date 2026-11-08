@@ -211,7 +211,7 @@ public class D15PassagesTest {
         assertArrayEquals(new int[]{20, 40, 0}, f.passages().get(0).end());
         var far = Passages.build((x, y, z) -> air.contains(Sightings.cell(x, y, z)), c -> false, new int[]{-6, 41, 0}, Set.of(), DROP, FORK, CAP, 8, 2);
         assertTrue(far.passages().isEmpty());
-        assertTrue(far.why().contains("cave.passageNear 2"), far.why());
+        assertTrue(far.why().contains("cave.passageLipNear 2"), far.why());
         // the step: no passage from the feet - the cave's mouth, said
         var next = CaveWalk.next(0, 1, 0, 10, null, far.passages(), List.of(), new int[]{-6, 41, 0}, 4.5, new int[]{0, 40, 0});
         assertTrue(next instanceof CaveWalk.Goto g && g.why().startsWith("the cave's mouth at 0 40 0"), "the mouth - " + next);

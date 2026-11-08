@@ -94,7 +94,7 @@ class J6bCaveStepTest {
         Sightings s = new Sightings();
         s.knowCave("d", new CaveIndex.Known(0, 40, 0, CaveIndex.Size.SMALL, CaveIndex.Depth.STONE, List.of(Sightings.cell(1, 40, 0))), 1);
         List<Long> cells = new java.util.ArrayList<>();
-        for (int x = 0; x < 30; x++) cells.add(Sightings.cell(x, 40, 0));
+        for (int x = 0; x < 30; x++) { cells.add(Sightings.cell(x, 40, 0)); cells.add(Sightings.cell(x, 41, 0)); }   // D15 pass two: 2 high, walkable
         s.caveCells("d", 0, 40, 0, cells);
         s.caveStood("d", 0, 40, 0, 0, 40, 0, 1);
         assertTrue(s.caveFacts("d", 0, 40, 0).offeredFor("iron"));
@@ -104,7 +104,7 @@ class J6bCaveStepTest {
         assertTrue(s.caveFacts("d", 0, 40, 0).offeredFor("iron"), "lifted by a new fact");
         s.caveSaw("d", 0, 40, 0, cells);
         assertFalse(s.caveFacts("d", 0, 40, 0).offeredFor("iron"), "done, no iron seen: no way");
-        s.caveOre("d", 0, 40, 0, Sightings.cell(5, 41, 0), "iron");
+        s.caveOre("d", 0, 40, 0, Sightings.cell(5, 42, 0), "iron");
         assertTrue(s.caveFacts("d", 0, 40, 0).offeredFor("iron"), "done, iron seen and left: a way for iron");
         assertFalse(s.caveFacts("d", 0, 40, 0).offeredFor("gold"));
     }
@@ -166,7 +166,7 @@ class J6bCaveStepTest {
         Sightings s = new Sightings();
         s.knowCave("d", new CaveIndex.Known(0, 40, 0, CaveIndex.Size.SMALL, CaveIndex.Depth.STONE, List.of(Sightings.cell(1, 40, 0))), 1);
         List<Long> cells = new java.util.ArrayList<>();
-        for (int x = 0; x < 30; x++) cells.add(Sightings.cell(x, 40, 0));
+        for (int x = 0; x < 30; x++) { cells.add(Sightings.cell(x, 40, 0)); cells.add(Sightings.cell(x, 41, 0)); }   // D15 pass two: 2 high, walkable
         s.caveCells("d", 0, 40, 0, cells);
         s.caveStood("d", 0, 40, 0, 0, 40, 0, 1);
         s.caveOre("d", 0, 40, 0, Sightings.cell(3, 41, 0), "iron");

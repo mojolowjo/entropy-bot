@@ -386,7 +386,7 @@ public final class CaveRecord {
         var f = io.github.mojolowjo.entropybot.cave.Passages.build((px, py, pz) -> cells.contains(Sightings.cell(px, py, pz)), seen::contains, from, ore,
                 io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.passageDrop"), io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.passageForkLayers"),
                 io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.passageCells"), io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.passageRoomWidth"),
-                io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.passageNear"));
+                io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.passageLipNear"));
         storePassages(f, from);
     }
 

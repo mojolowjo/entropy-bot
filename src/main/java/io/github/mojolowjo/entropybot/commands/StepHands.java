@@ -1032,7 +1032,7 @@ public final class StepHands implements Steps.Hands {
         java.util.Set<Long> oreCells = new java.util.HashSet<>();
         for (int[] c : left) oreCells.add(io.github.mojolowjo.entropybot.sense.Sightings.cell(c[0], c[1], c[2]));
         var found = sg.cavePassages(cv.dim, k.x(), k.y(), k.z(), me, oreCells, Tuning.i("cave.passageDrop"), Tuning.i("cave.passageForkLayers"), Tuning.i("cave.passageCells"),
-                Tuning.i("cave.passageRoomWidth"), Tuning.i("cave.passageNear"));   // pass two: rooms, and the lip floods from cave air near the feet
+                Tuning.i("cave.passageRoomWidth"), Tuning.i("cave.passageLipNear"));   // pass two: rooms, and the lip floods from cave air near the feet
         cv.passagesLeft = io.github.mojolowjo.entropybot.cave.CaveWalk.openPassages(found.passages());
         if (found.why() != null && cv.drops.stream().noneMatch(d -> d.startsWith("passages: "))) {
             cv.drops.add("passages: " + found.why());                          // rule 7: said once at the end
@@ -1040,7 +1040,7 @@ public final class StepHands implements Steps.Hands {
         }
         if (found.lip() && !cv.lipSaid) {
             cv.lipSaid = true;
-            LOG.info("[entropybot] cave: passages: the feet {} are outside the cave's air; the flood starts at the cave cell {} (cave.passageNear {})", Jobs.fmt(me), Jobs.fmt(found.start()), Tuning.i("cave.passageNear"));
+            LOG.info("[entropybot] cave: passages: the feet {} are outside the cave's air; the flood starts at the cave cell {} (cave.passageLipNear {})", Jobs.fmt(me), Jobs.fmt(found.start()), Tuning.i("cave.passageLipNear"));
         }
         var next = io.github.mojolowjo.entropybot.cave.CaveWalk.next(cv.mined, k.n(), minutes, k.minutes(), f, found.passages(),
                 left, me, io.github.mojolowjo.entropybot.cave.ExploreRules.OPENING_REACH,

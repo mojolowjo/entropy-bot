@@ -20,7 +20,7 @@ import java.util.Locale;
  * walked to its far end (a GoalNear Baritone paths to, rule 2);</li>
  * <li>none: the record's own done (THE done reader, rule 23 (2); run EK 02:24:18: an empty frontier because nothing was
  * seen yet is not done) - DONE; the cells being read from the index - Wait; not loaded - NOT_LOADED; else (pass two: no
- * passage from the feet - the lip, no cave air within cave.passageNear) the cave's MOUTH ({@code mouth}, its entry cell) -
+ * passage from the feet - the lip, no cave air within cave.passageLipNear) the cave's MOUTH ({@code mouth}, its entry cell) -
  * walked to under the ordinary hold; none - NO_PROGRESS, said.</li>
  * </ol>
  * Baritone's no progress on a walk ends the step too (NO_PROGRESS; the adapter's hold, ExploreRules.TargetHold). Torches
@@ -248,9 +248,9 @@ public final class CaveWalk {
         if (!passages.isEmpty() && open == 0) return new Stop(End.DONE, "every passage from here is walked (" + passages.size() + " passage(s), none with an unseen cell)");
         if (facts != null && facts.done()) return new Stop(End.DONE, "the cave is explored to its end (the record: its passages measured, none open)");
         if (facts != null && !facts.loaded()) return new Stop(End.NOT_LOADED, "the cave's cells are not loaded (its chunks: the record cannot say where to go)");
-        // pass two, the lip: no passage from the feet (no walkable cave cell within cave.passageNear) - the mouth, said
+        // pass two, the lip: no passage from the feet (no walkable cave cell within cave.passageLipNear) - the mouth, said
         if (passages.isEmpty() && mouth != null && !dropped.contains(Sightings.cell(mouth[0], mouth[1], mouth[2])))
-            return new Goto(mouth, "the cave's mouth at " + mouth[0] + " " + mouth[1] + " " + mouth[2] + " (no passage from the feet: no walkable cave cell within cave.passageNear)");
+            return new Goto(mouth, "the cave's mouth at " + mouth[0] + " " + mouth[1] + " " + mouth[2] + " (no passage from the feet: no walkable cave cell within cave.passageLipNear)");
         if (passages.isEmpty() && mouth != null) skipped++;
         if (skipped > 0) return new Stop(End.NO_BRANCH, "no reachable passage (" + skipped + " dropped)");
         return new Stop(End.NO_PROGRESS, "no open passage from here and no mouth to walk to, yet the record is not done");
