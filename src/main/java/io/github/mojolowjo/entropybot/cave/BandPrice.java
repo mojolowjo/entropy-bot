@@ -52,5 +52,5 @@ public final class BandPrice {
         return new Price(secs, downS, backS, perOre, d, levels, bandY, known, line);
     }
 
-    static String fmt(double v) { return String.format(Locale.ROOT, v >= 0.01 ? "%.3f" : "%.5f", v); }
+    static String fmt(double v) { return String.format(Locale.ROOT, v >= 0.01 ? "%.3f" : "%.5f", v); }   // structural: the words' digits
 }
