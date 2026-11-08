@@ -1063,6 +1063,17 @@ public final class StepHands implements Steps.Hands {
      * One move of the caving step: the next move (CaveWalk.next) acted on - its status, or null when the move was over at
      * once (a goal in reach and sight already, a goto dropped, a seen ore gone): the caller picks the next one.
      */
+    /**
+     * Job-price: the step's passage pick by the record's seen rate of the family (ore seen over cells seen), else the
+     * fallback said (CaveWalk.Density#notKnown); the planner's price reads the game-data density (AaRuntime).
+     */
+    private static io.github.mojolowjo.entropybot.cave.CaveWalk.Density caveDensity(io.github.mojolowjo.entropybot.sense.CaveRecord.Facts f, String fam) {
+        if (f == null) return null;
+        int[] v = f.ores().get(fam);
+        int seen = v == null ? 0 : v[0] + v[1];
+        return io.github.mojolowjo.entropybot.cave.CaveWalk.Density.of(null, 0, 0, seen, Math.max(0, f.cellCount() - f.unseen()));
+    }
+
     private Car.Status caveMove(LocalPlayer p, Caving cv, io.github.mojolowjo.entropybot.sense.Sightings sg, Step.Cave k, int[] me, IBaritone b, long nowMs) {
         var f = sg.caveFacts(cv.dim, k.x(), k.y(), k.z());
         double minutes = (nowMs - cv.startMs) / 60000.0;                       // structural: ms a minute
@@ -1091,7 +1102,7 @@ public final class StepHands implements Steps.Hands {
                 !java.util.Arrays.equals(me, cv.firstFeet));
         var next = io.github.mojolowjo.entropybot.cave.CaveWalk.next(cv.mined, k.n(), minutes, k.minutes(), f, found.passages(),
                 left, me, io.github.mojolowjo.entropybot.aa.moves.Step.Collect.MINE_SIGHT,
-                new int[]{k.x(), k.y(), k.z()}, cv.dropped, found.capped(), cv.reflooded, pocket);   // pass three: the capped flood goes on from its farthest ends     // pass two: the mouth, when no passage is found from the feet; run EN: the dropped passed over
+                new int[]{k.x(), k.y(), k.z()}, cv.dropped, found.capped(), cv.reflooded, pocket, caveDensity(f, cv.fam));   // pass three: the capped flood goes on from its farthest ends     // pass two: the mouth, when no passage is found from the feet; run EN: the dropped passed over
         switch (next) {
             case io.github.mojolowjo.entropybot.cave.CaveWalk.Stop s -> {
                 return caveEnd(s.end(), s.why() + (cv.drops.isEmpty() ? "" : "; dropped: " + String.join("; ", cv.drops)));

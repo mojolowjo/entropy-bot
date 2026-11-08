@@ -81,15 +81,63 @@ public final class CaveWalk {
     /**
      * D15: a passage's price - the seconds to walk to its far end ({@code fromFeet + length} layers, {@code secPerCell}
      * each: cave.passageSecPerCell) per ore expected along it (the ore faces seen on its walls, plus its unseen cells times
-     * {@code orePerUnseen}: cave.orePerUnseenCell). Nothing expected: infinite (not offered). Pure.
+     * {@code orePerUnseen}; job-price: a {@link Density}, the order's ore by game data). Nothing expected: infinite (not offered). Pure.
      */
     public static double passagePrice(Passages.Passage p, double secPerCell, double orePerUnseen) { return passagePrice(p, secPerCell, orePerUnseen, 0); }
 
     /** D15 pass three: as above, a CAPPED passage also expecting ore in {@code pastCap} cells past the flood (its share). Pure. */
     public static double passagePrice(Passages.Passage p, double secPerCell, double orePerUnseen, double pastCap) {
-        double expected = p.oreFaces() + (p.unseen() + Math.max(0, pastCap)) * orePerUnseen;
+        return passagePrice(p, secPerCell, Density.flat(orePerUnseen, "given"), pastCap);
+    }
+
+    /** Job-price: as above, the ore per unseen cell from {@code d} at the passage's mean Y (the order's ore, game data). Pure. */
+    public static double passagePrice(Passages.Passage p, double secPerCell, Density d, double pastCap) {
+        double expected = p.oreFaces() + (p.unseen() + Math.max(0, pastCap)) * d.at(meanY(p));
         if (!(expected > 0)) return Double.POSITIVE_INFINITY;
         return (p.fromFeet() + p.length()) * secPerCell / expected;
+    }
+
+    /** Job-price: a passage's mean Y over its cells (none: the middle of its start and end). Pure. */
+    public static double meanY(Passages.Passage p) {
+        if (p.cells() == null || p.cells().isEmpty()) return (p.start()[1] + p.end()[1]) / 2.0;
+        double s = 0;
+        for (long k : p.cells()) s += Sightings.cellOf(k)[1];
+        return s / p.cells().size();
+    }
+
+    /**
+     * Job-price (run JAO: a surface cave priced 3 ore in 63 s at a hand 0.01 ore a cell while its own world-gen fact said
+     * 0.6 in the whole cave): the order's ore expected per unseen cave cell at a Y. Game data: the record's air-exposed
+     * blocks per cell x the placements' share of a block at that Y (CaveYield's count, per cell); not known (rule 15): the
+     * record's seen-ore rate, else the Tuning fallback cave.orePerCellNotKnown - {@code why} says which.
+     */
+    public record Density(java.util.function.IntToDoubleFunction atY, String why) {
+        public double at(double y) { return Math.max(0, atY.applyAsDouble((int) Math.round(y))); }
+
+        public static Density flat(double perCell, String why) { return new Density(y -> perCell, why); }
+
+        /**
+         * The density for the order's ore: {@code perBlockAtY} the placements' ore per air-exposed block at a Y (GenWhere
+         * curve / CaveYield.LAYER_BLOCKS; null: no placement fact), {@code blocks} / {@code cells} the record's air-exposed
+         * blocks and cells (the count done); {@code seenOre} / {@code seenCells} the record's seen ore of the family and seen
+         * cells. Pure.
+         */
+        public static Density of(java.util.function.IntToDoubleFunction perBlockAtY, long blocks, long cells, int seenOre, long seenCells) {
+            if (perBlockAtY != null && blocks > 0 && cells > 0) {
+                double perCell = blocks / (double) cells;
+                return new Density(y -> perCell * perBlockAtY.applyAsDouble(y), String.format(Locale.ROOT,
+                        "game data: the placements' share at each passage's mean Y x %d air-exposed blocks over %d cells", blocks, cells));
+            }
+            if (seenOre > 0 && seenCells > 0)
+                return flat(seenOre / (double) seenCells, String.format(Locale.ROOT, "density not known by game data: the record's seen rate, %d ore in %d cells seen", seenOre, seenCells));
+            return notKnown();
+        }
+
+        /** No placement fact and no ore seen (rule 15): the Tuning fallback, said. */
+        public static Density notKnown() {
+            double f = Tuning.get("cave.orePerCellNotKnown");
+            return flat(f, String.format(Locale.ROOT, "density not known: no placement fact and no ore seen, the fallback cave.orePerCellNotKnown %s", f));
+        }
     }
 
     /** Pass two: the planner's cave price - seconds to find {@code n} ore along the open passages; {@code expected} the ore they hold. */
@@ -103,6 +151,20 @@ public final class CaveWalk {
      * record's left ore), so faces are not counted here. No passage list, or nothing expected: NaN, said. Pure.
      */
     public static FindPrice findSeconds(List<Passages.Passage> ps, int n, double secPerCell, double orePerUnseen) {
+        return findSeconds(ps, n, secPerCell, Density.flat(orePerUnseen, "given"));
+    }
+
+    /**
+     * Job-price: as above, each passage's ore = its unseen cells x {@code d} at its mean Y (the order's ore by game data).
+     * Under 1 ore expected along all of them: "under 1 ore expected: K s per ore" - the cave competes honestly with the
+     * ways down. The density's words close the line (rule 7). Pure.
+     */
+    public static FindPrice findSeconds(List<Passages.Passage> ps, int n, double secPerCell, Density d) {
+        FindPrice f = findCore(ps, n, secPerCell, d);
+        return ps == null || n <= 0 ? f : new FindPrice(f.seconds(), f.expected(), f.open(), f.line() + " (" + d.why() + ")");
+    }
+
+    private static FindPrice findCore(List<Passages.Passage> ps, int n, double secPerCell, Density d) {
         if (ps == null) return new FindPrice(Double.NaN, 0, -1, "its passages not measured yet (the cave's cells not loaded)");
         List<Passages.Passage> open = new java.util.ArrayList<>();
         for (Passages.Passage p : ps) if (p.open()) open.add(p);
@@ -110,7 +172,7 @@ public final class CaveWalk {
         if (n <= 0) return new FindPrice(0, 0, open.size(), "no ore to find");
         double secs = 0, exp = 0, used = 0;
         for (Passages.Passage p : open) {
-            double e = p.unseen() * orePerUnseen, w = (p.fromFeet() + p.length()) * secPerCell;
+            double e = p.unseen() * d.at(meanY(p)), w = (p.fromFeet() + p.length()) * secPerCell;
             if (!(e > 0)) continue;
             if (exp + e >= n) {
                 secs += w * (n - exp) / e;
@@ -122,6 +184,9 @@ public final class CaveWalk {
         }
         if (!(exp > 0)) return new FindPrice(Double.NaN, 0, open.size(), open.size() + " open passage(s), no ore expected along them");
         double all = secs + (n - exp) * secs / exp;
+        if (exp < 1)
+            return new FindPrice(all, exp, open.size(), String.format(Locale.ROOT, "%d ore: under 1 ore expected (%.2f along all %d open passage(s), %.0f s): %.0f s per ore -> %.0f s",
+                    n, exp, open.size(), secs, secs / exp, all));
         return new FindPrice(all, exp, open.size(), String.format(Locale.ROOT, "%d ore: %.1f expected along all %d open passage(s) (%.0f s), the rest at their %.1f s per ore: %.0f s",
                 n, exp, open.size(), secs, secs / exp, all));
     }
@@ -306,8 +371,16 @@ public final class CaveWalk {
     public static Next next(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<Passages.Passage> passages,
                             List<int[]> left, int[] feet, double reach, int[] mouth, java.util.Set<Long> dropped, boolean capped, java.util.Set<Long> reflooded,
                             Pocket pocket) {
+        return next(mined, need, minutesIn, capMinutes, facts, passages, left, feet, reach, mouth, dropped, capped, reflooded, pocket, null);
+    }
+
+    /** Job-price: as above, {@code density} the ore per unseen cell the passages are priced by (null: {@link Density#notKnown}). */
+    public static Next next(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<Passages.Passage> passages,
+                            List<int[]> left, int[] feet, double reach, int[] mouth, java.util.Set<Long> dropped, boolean capped, java.util.Set<Long> reflooded,
+                            Pocket pocket, Density density) {
         if (dropped == null) dropped = java.util.Set.of();
-        Next n = nextCore(mined, need, minutesIn, capMinutes, facts, passages, left, feet, reach, mouth, dropped, capped, reflooded, pocket);
+        Next n = nextCore(mined, need, minutesIn, capMinutes, facts, passages, left, feet, reach, mouth, dropped, capped, reflooded, pocket,
+                density == null ? Density.notKnown() : density);
         if (pocket != null && !pocket.moved() && n instanceof Stop s && s.end() == End.NO_BRANCH) {
             int[] t = nextTarget(pocket, dropped);
             if (t != null) return descent(pocket, t, "no move and no new flood yet before an end: the lip");
@@ -318,7 +391,7 @@ public final class CaveWalk {
 
     private static Next nextCore(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<Passages.Passage> passages,
                                  List<int[]> left, int[] feet, double reach, int[] mouth, java.util.Set<Long> dropped, boolean capped, java.util.Set<Long> reflooded,
-                                 Pocket pocket) {
+                                 Pocket pocket, Density density) {
         if (passages == null) passages = List.of();
         if (reflooded == null) reflooded = java.util.Set.of();
         if (need > 0 && mined >= need) return new Stop(End.NEED_MET, mined + " of " + need + " ore mined");
@@ -345,7 +418,7 @@ public final class CaveWalk {
                     l[0], l[1], l[2], pocket.floodCells(), pocket.promised(), tried(pocket, dropped)));
         }
         // D15: the passage of the lowest price (seconds per expected ore), its far end walked to
-        double sec = Tuning.get("cave.passageSecPerCell"), per = Tuning.get("cave.orePerUnseenCell");
+        double sec = Tuning.get("cave.passageSecPerCell");
         Passages.Passage best = null;
         double bp = Double.POSITIVE_INFINITY;
         int open = 0, spentN = 0, cappedOpen = 0;
@@ -357,7 +430,7 @@ public final class CaveWalk {
             if (spent(p, reflooded)) { spentN++; continue; }
             open++;
             if (dropped.contains(p.key())) { skipped++; continue; }
-            double pr = passagePrice(p, sec, per, p.endKind() == Passages.EndKind.CAPPED ? share : 0);
+            double pr = passagePrice(p, sec, density, p.endKind() == Passages.EndKind.CAPPED ? share : 0);
             if (pr < bp) { bp = pr; best = p; }
         }
         if (best != null) {

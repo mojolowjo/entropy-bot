@@ -890,6 +890,9 @@ deposit.maxWalkSegments	30.0
 trail.climbLegUp	4.0
 trail.jumpBlocks	8.0
 trail.saveS	30.0
+trail.openAfterS	5.0
+trail.openDepth	4.0
+trail.clearAfterS	10.0
 trail.routeReach	1.0
 debug.trailProbe	0.0
 estimate.freeDropLevels	3.0
@@ -934,7 +937,7 @@ strip.freshStartBlocks	48.0
 strip.areaMinFactor	0.5
 cave.exploreMinutes	10.0
 cave.doneExplored	0.9
-cave.orePerUnseenCell	0.01
+cave.orePerCellNotKnown	0.01
 cave.passageCells	4096.0
 cave.passageDrop	3.0
 cave.passageForkLayers	3.0
