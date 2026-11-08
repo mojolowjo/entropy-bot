@@ -38,6 +38,11 @@ class Z56LoadProbeTest {
         String routes = new ProbeLines.LoadFacts(60, "w", 0, 0, 0, new long[]{4, 4, 100}, 0, 0, null, 1, 2, 0, 0, new long[]{-1}, new long[]{5, 3, 1, 1, 2}).line(1);
         assertTrue(routes.contains("routes asked +5 reused +3 check failed: changed +1 not loaded +1; saved +2"), routes);
         assertTrue(new ProbeLines.LoadFacts(60, "w", 0, 0, 0, new long[]{4, 4, 100}, 0, 0, null, 1, 2, 0, 0, new long[]{-1}, new long[]{-1}).line(1).contains("routes not readable in this fork jar"));
+        // CPU job: the fork's cpu counts, and rule 7 when the jar lacks them
+        String cpu = new ProbeLines.LoadFacts(60, "w", 0, 0, 0, new long[]{4, 4, 100}, 0, 0, null, 1, 2, 0, 0, new long[]{-1}, new long[]{-1}, new long[]{1, 2, 3, 40, 5, 60, 70}).line(1);
+        assertTrue(cpu.contains("cpu: asks timed out +1, shared +2, joined +3; fluid cache hits +40 fills +5; advisor hits +60 of +70 asks"), cpu);
+        assertTrue(new ProbeLines.LoadFacts(60, "w", 0, 0, 0, new long[]{4, 4, 100}, 0, 0, null, 1, 2, 0, 0, new long[]{-1}, new long[]{-1}, new long[]{-1}).line(1).contains("cpu counts not readable in this fork jar"));
+        assertNull(ProbeLines.cpuCounts(new Object()), "no cpuCounts method: null");
         // a fork object without routeCounts: {-1}, never a silent zero
         assertNull(ProbeLines.routeCounts(new Object()));
     }

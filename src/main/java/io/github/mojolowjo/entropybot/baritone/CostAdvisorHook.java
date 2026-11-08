@@ -23,7 +23,8 @@ import java.lang.reflect.Proxy;
 /**
  * Mining plan 3.4: the policy's costs into Baritone's A*. Preferred: the fork hook, our Baritone's
  * {@code CalculationContext.costAdvisor} ({@code baritone.pathing.movement.CostAdvisor}: begin / breakMultiplier /
- * placeCost), filled by reflection with a {@link Proxy} because the mod compiles against the stock jar. Fallback: the
+ * placeCost), filled with {@link Direct} (implements the interface: a plain call per ask), or with a {@link Proxy} when the
+ * jar lacks that interface (an older or stock Baritone). Fallback: the
  * mixin on {@code breakCostMultiplierAt} / {@code costOfPlacingAt} (GuardMixinCalculationContext), which calls the same
  * two methods here with no token. The ready line, {@code check} and {@code fence rules} say which one runs.
  *
@@ -80,9 +81,21 @@ public final class CostAdvisorHook {
         try {
             Field f = CalculationContext.class.getField("costAdvisor");
             Class<?> iface = f.getType();
-            InvocationHandler h = (proxy, method, args) -> dispatch(method, args);
-            Object proxy = Proxy.newProxyInstance(iface.getClassLoader(), new Class<?>[]{iface}, h);
-            f.set(null, proxy);
+            // CPU item 5: the direct advisor (a plain call per ask, the fork says "direct"); the Proxy only when this
+            // Baritone lacks the interface the mod compiled against (said once here, rule 7)
+            Object adv = null;
+            try {
+                Object d = new Direct();
+                if (iface.isInstance(d)) adv = d;
+            } catch (LinkageError e) {
+                LOG.info("[entropybot] rules: this Baritone has no CostAdvisor interface to implement ({}) - using the reflective Proxy, slower per ask", e.toString());
+            }
+            if (adv == null) {
+                InvocationHandler h = (proxy, method, args) -> dispatch(method, args);
+                adv = Proxy.newProxyInstance(iface.getClassLoader(), new Class<?>[]{iface}, h);
+            }
+            f.set(null, adv);
+            directAdvisor = !Proxy.isProxyClass(adv.getClass());
             fork = true;
             boolean mh;
             try { iface.getMethod("moveMultiplier", Object.class, int.class, int.class, int.class); mh = true; } catch (NoSuchMethodException e) { mh = false; }
@@ -99,6 +112,55 @@ public final class CostAdvisorHook {
             LOG.warn("[entropybot] rules: installing the cost advisor failed ({}) - {}", t.toString(), pr.hookText());
         }
         return pr.hook();
+    }
+
+    private static volatile boolean directAdvisor;
+
+    /** CPU item 5: the installed advisor implements the fork's CostAdvisor (no Proxy). */
+    public static boolean directAdvisor() { return directAdvisor; }
+
+    /** The rules epoch: the policy snapshot's identity (replaced only when areas, protect boxes or the server flag change). */
+    static long rulesEpochNow() { return System.identityHashCode(PolicyRuntime.INSTANCE.snapshot()); }
+
+    /**
+     * CPU item 5: the fork's {@code CostAdvisor} implemented directly, so A* calls it with no reflection or boxing. Loaded
+     * only from {@link #install} under a LinkageError guard (a stock or older jar lacks the interface). Same answers as
+     * the Proxy's {@link #dispatch}; never throws (a throw would make the move impossible).
+     */
+    public static final class Direct implements baritone.pathing.movement.CostAdvisor {
+        @Override public Object begin() {
+            try { return CostAdvisorHook.begin(); } catch (Throwable t) { PolicyRuntime.INSTANCE.stats.error("advisor begin: " + t); return null; }
+        }
+
+        @Override public double breakMultiplier(Object token, int x, int y, int z, BlockState state, baritone.utils.BlockStateInterface bsi) {
+            try { return CostAdvisorHook.breakMultiplier(token, x, y, z, state, stateAt(bsi)); }
+            catch (Throwable t) { PolicyRuntime.INSTANCE.stats.error("advisor breakMultiplier: " + t); return COST_INF; }
+        }
+
+        @Override public double placeCost(Object token, int x, int y, int z, BlockState current, baritone.utils.BlockStateInterface bsi, double baritoneCost) {
+            try { return CostAdvisorHook.placeCost(token, x, y, z, current, stateAt(bsi), baritoneCost); }
+            catch (Throwable t) { PolicyRuntime.INSTANCE.stats.error("advisor placeCost: " + t); return COST_INF; }
+        }
+
+        @Override public double moveMultiplier(Object token, int x, int y, int z) {
+            try { return CostAdvisorHook.moveMultiplier(token, x, y, z); }
+            catch (Throwable t) { PolicyRuntime.INSTANCE.stats.error("advisor moveMultiplier: " + t); return COST_INF; }
+        }
+
+        @Override public double moveExtra(Object token, int x, int y, int z, baritone.utils.BlockStateInterface bsi) {
+            try { return CostAdvisorHook.moveExtra(token, x, y, z, stateAt(bsi)); }
+            catch (Throwable t) { PolicyRuntime.INSTANCE.stats.error("advisor moveExtra: " + t); return COST_INF; }
+        }
+
+        @Override public boolean pricesMoves(Object token) {
+            return token instanceof Token tk && (tk.boxes() || tk.lavaPenalty() > 0);
+        }
+
+        @Override public long rulesEpoch() {
+            try { return rulesEpochNow(); } catch (Throwable t) { PolicyRuntime.INSTANCE.stats.error("advisor rulesEpoch: " + t); return 0; }
+        }
+
+        @Override public String toString() { return "EntropyBot cost advisor (direct)"; }
     }
 
     private static Object dispatch(Method m, Object[] a) {
@@ -118,7 +180,7 @@ public final class CostAdvisorHook {
                 // 0.39.z57 (path memory): the break rules' epoch - the policy snapshot is replaced only when the owner's areas,
                 // protect boxes or the server flag change (PolicyRuntime.tick), so its identity is the epoch; a kept priced path
                 // is dropped when it moves. A Long: the fork's method returns long (an Integer would not unbox)
-                case "rulesEpoch": return (long) System.identityHashCode(PolicyRuntime.INSTANCE.snapshot());
+                case "rulesEpoch": return rulesEpochNow();
                 case "toString": return "EntropyBot cost advisor";
                 case "hashCode": return System.identityHashCode(CostAdvisorHook.class);
                 case "equals": return a != null && a.length == 1 && a[0] != null && Proxy.isProxyClass(a[0].getClass());
