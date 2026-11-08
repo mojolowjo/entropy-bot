@@ -27,6 +27,20 @@ final class FirstAnswerClock {
     /** {@code max}: clocks kept (past it all start again: a chain asks a few dozen). */
     FirstAnswerClock(int max) { this.max = max; }
 
+    /** job-stand2 item 3: the walks waited on by this order's full stand (cleared on a new order). */
+    private final java.util.Set<String> spent = new java.util.HashSet<>();
+
+    /** job-stand2 item 3: the order's stand ran its full wait: every walk on a clock now is spent for the order. */
+    void spendWaiting() {
+        if (spent.size() + clocks.size() > max) spent.clear();
+        spent.addAll(clocks.keySet());
+    }
+
+    /** job-stand2 item 3: a new order - its stand waits again. */
+    void newOrder() { spent.clear(); }
+
+    boolean spent(String key) { return spent.contains(key); }
+
     /**
      * The answer for {@code key} asked at game tick {@code now}: {@code a} as it is, or past {@code waitS} of waiting asks
      * Baritone's estimate ({@code estimateS}, read only then).
@@ -42,6 +56,9 @@ final class FirstAnswerClock {
             if (e != null) { clocks.remove(key); return e; }
         }
         long wait = (long) Math.max(0, waitS) * GameTimes.TPS;
+        // job-stand2 item 3 (run JAS: 6 stands of 30 s in one order): a walk this order's stand already waited its full wait
+        // on is past its wait for the rest of the order - the estimate at once, never a second stand on it
+        if (spent.contains(key)) return PricedAnswers.afterWait(a, wait, waitS, estimateS.getAsDouble());
         long[] c = clocks.get(key);
         if (c == null || now - c[1] > wait) {              // a new wait: first asked, or not asked for longer than the wait
             if (clocks.size() >= max) clocks.clear();

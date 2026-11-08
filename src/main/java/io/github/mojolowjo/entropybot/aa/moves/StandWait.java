@@ -22,6 +22,7 @@ public final class StandWait {
         said = false;
         reason = null;
         segmentWay = null;
+        sawComputing = false;
     }
 
     /** job-start: the stand's reason last said (null: none yet this stand). */
@@ -33,11 +34,33 @@ public final class StandWait {
      * stand only records it (the start line said it). Pure.
      */
     public String reasonChanged(int computing) {
-        String now = "waiting on " + (computing < 0 ? "walks not counted" : computing + " walk" + (computing == 1 ? "" : "s") + " still computing");
-        if (now.equals(reason)) return null;
+        // job-stand2 (run JAS: 371 lines, the fork's pending count went 1, 0, 1, 2 ... 69 and back, one line per count): the
+        // reason is the KIND of what the stand waits on (walks computing / not counted / none), the count only in the line
+        String kind = computing < 0 ? "walks not counted" : computing == 0 ? "no walk computing" : "walks still computing";
+        if (kind.equals(reason)) return null;
         boolean first = reason == null;
-        reason = now;
-        return first ? null : "still standing, " + now;
+        reason = kind;
+        if (first) return null;
+        return "still standing, waiting on " + (computing <= 0 ? kind : computing + " walk" + (computing == 1 ? "" : "s") + " still computing");
+    }
+
+    /** job-stand2 item 2: a walk was seen computing this stand (a count of 0 before that is the asks not registered yet). */
+    private boolean sawComputing;
+
+    /**
+     * job-stand2 item 2 (rule 22: stand only while something computes): the stand is over when it saw walks computing and now
+     * none is - each landed, timed out (held by its estimate, pathCost.notKnownHoldS) or is walked as a first segment (the
+     * fork counts a walked segment's price no more as a first answer pending). Pure.
+     */
+    public boolean setDone(int computing) {
+        if (computing > 0) sawComputing = true;
+        return sawComputing && computing == 0 && segmentWay == null;
+    }
+
+    /** job-stand2 item 2: the end line when nothing it waited on still computes. */
+    public static String setDoneWords() {
+        return "every walk the stand waited on landed, timed out (held by Baritone's estimate, pathCost.notKnownHoldS) or is walked:"
+                + " the stand ends now, the order is priced again (rule 22: stand only while something computes)";
     }
 
     public boolean standing() { return start >= 0; }
@@ -122,6 +145,13 @@ public final class StandWait {
      * the price fact ({@link FactChange#repriceAfterStand}), so the order is priced again where the bot stands.
      */
     public Car.Status status(Step.AwaitPaths a, long now, int computing, java.util.function.Consumer<String> say) {
+        if (!over(now, a.waitS()) && setDone(computing)) {
+            String why = setDoneWords();
+            say.accept(a.text() + ": " + why + " (" + secs(stood(now)) + " s stood)");
+            end();
+            FactChange.repriceAfterStand(why);
+            return Car.Status.failed(why);
+        }
         if (!over(now, a.waitS())) {
             String r = reasonChanged(computing);
             if (r != null) say.accept(a.text() + ": " + r + " (" + secs(stood(now)) + " s stood)");
