@@ -2748,7 +2748,8 @@ public final class StepHands implements Steps.Hands {
         // job-dig3 (run JAV 06:10:30, 100+ silent ends at the start): a plain setGoalAndPath never reaches the fork's
         // PricedPath.searchGoal swap (bs-vein PricedPath.java:1497, set only by IPricedPath.walk), so Baritone searched the bare
         // GoalBlock 49 levels down and its budget stopped with the best node at the feet. The priced walk steers it (DigDownGoal).
-        LivePathPrice.walkInto(b, new BlockPos(bandCell[0], bandCell[1], bandCell[2]));
+        // job-steermod: walk(goal, steerDig) so a timed-out or never-landed ask still digs steered (fallback walkInto)
+        LivePathPrice.walkIntoSteered(b, new BlockPos(bandCell[0], bandCell[1], bandCell[2]));
         bandWalking = true;
         bandDirect = true;
         LOG.info("[entropybot] steps: {} - {}", t.text(), io.github.mojolowjo.entropybot.aa.moves.BandDirect.words(bandCell[1], why));
