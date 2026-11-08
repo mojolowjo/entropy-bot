@@ -74,7 +74,10 @@ cave way at its Y. The band way requires the pickaxe tier the ore's block needs 
 `NeedChain.bandTool`, job-bandtool): with none of that tier in the bag the cheapest is made first and priced into the
 way ("with stone_pickaxe made first (N s; <- its chain)"), every break then at that tool's speed; it is never "by hand".
 The band way's steps do what its price says: (1) `Step.ToBand` at the peak's one Y ("dig down to y
-16", the band leg's Baritone path with its breaks, whose seconds replace the price's dig estimate), (2) a known cave whose
+16", the band leg's Baritone path with its breaks, whose seconds replace the price's dig estimate; while that path is not
+known - computing, timed out, no estimate - the leg is priced by the band model's own dig seconds, `BandPrice.Price.downS`,
+marked "(band model: the dig path not landed)", never dropped; job-bandwalk, `NeedChain.bandLeg(c, band, modelS)`; an
+unreachable column still drops), (2) a known cave whose
 recorded Y span (record Y, openings' and passages' ends, `cave/BandPrice.span`; a one-Y record widened by `band.caveSpanY`)
 holds the peak, within `band.caveReachM` of the feet, and whose lip walk from the dig's end (`BandPrice.lip`: Baritone's
 `estimateFrom`, floored by the straight walk, + `wayDownS` when the lip is deeper) is under the band's own dig for the ore;
