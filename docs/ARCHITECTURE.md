@@ -95,7 +95,11 @@ a dig leg whose price is not known (a timed-out ask, or computing past `band.ask
 exhausted search) hands Baritone the GoalBlock itself (`StepHands.bandDirect`, `aa/moves/BandDirect`: its own search, the
 TRAVEL lease, the band price stands); a landed dig column within `band.columnReuseM` of the feet
 (`LivePathPrice.landedInto`) is reused with no new ask; a NOT KNOWN end (`FactChange.Fact.notKnown`) never counts toward the
-park rule in `Steps`;
+park rule in `Steps`; job-dig3 (run JAV): `bandDirect` walks through `LivePathPrice.walkInto` (the fork's priced walk, so
+its search is steered by DigDownGoal; a bare `setGoalAndPath` skipped `PricedPath.searchGoal` and ended at its start), the
+dry-start rule reads the reused column too (`BandDirect.startDry`), and a dig leg ending not known `band.notKnownTries`
+times within `band.notKnownWindowS` at one column holds it (`aa/moves/BandHold`, a "column x z" band fact the side-step
+reads; `NeedChain` drops a band Y whose picked dig column is held);
 its length is the price's own faces model (`Tunnel.length`: n / ore per face / (2 x `band.facesPerBreak`), capped
 `tunnel.maxLength`); its heading is picked at the start by price (`Tunnel.pick`: headings tunnelled this order out, then
 the nearest never-seen chunk within `tunnel.unseenReachM`, rule 22, then seen density, then Baritone's estimate). Each tick

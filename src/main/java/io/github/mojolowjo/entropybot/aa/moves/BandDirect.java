@@ -51,6 +51,15 @@ public final class BandDirect {
         return best == null ? null : best.clone();
     }
 
+    /**
+     * job-dig3 (run JAV 06:00:54): the dry-start rule for every start of the dig leg, the reused column included: the start
+     * dry (BandDry.dry) and, when a column is reused ({@code colFluid} non-null), that column's first cells dry too.
+     */
+    public static boolean startDry(boolean standable, boolean feetInWater, List<Boolean> startFluid, List<Boolean> colFluid) {
+        if (!BandDry.dry(standable, feetInWater, startFluid)) return false;
+        return colFluid == null || BandDry.dry(true, false, colFluid);
+    }
+
     public static double horiz(int[] a, int[] b) {
         double dx = a[0] - b[0], dz = a[2] - b[2];
         return Math.sqrt(dx * dx + dz * dz);
