@@ -5410,15 +5410,27 @@ public final class NeedChain {
      * Seconds to break one block by the game's formula ({@link GameTimes#breakSeconds}: hardness x 30 / tool speed ticks,
      * x 100 and no drop without the tool a block asks for). No hardness known: the tuned break of an unknown block.
      */
-    private static double breakS(Ctx c, String item, Spot sp) {
+    private static double breakS(Ctx c, String item, Spot sp) { return breakS(c.pickItem, c.pickTier, item, sp); }
+
+    /**
+     * job-segpick (run JAR 04:09:41: the stand walked a 55-down way picked by Baritone's raw estimate): the job-est charge of an
+     * ESTIMATED way down, for the stand's segment pick - {@link #digLevels} (no cover known) x the stone's break with that
+     * pickaxe, the same term the chain adds to the way. Pure.
+     */
+    public static double wayDownS(int feetY, int spotY, String pickItem, int pickTier) {
+        int lv = digLevels(feetY, spotY, 0);
+        return lv <= 0 ? 0 : breakS(pickItem, pickTier, DIG_DOWN_BLOCK, new Spot(0, 0, 0, 0, DIG_DOWN_BLOCK, 1)) * lv;
+    }
+
+    private static double breakS(String pickItem, int pickTier, String item, Spot sp) {
         // the hardness of the item's own block when it is one (cobblestone, a log: SCENARIOS prices "break cobblestone"), else the spot's (an ore)
         double own = ItemWorth.facts(item).hardness();
         double hardness = own > 0 ? own : ItemWorth.facts(blockOf(item, sp)).hardness();
         if (hardness <= 0) return TickPrice.breakS(tree(item, sp) ? WoodOptions.cutLog() : Tuning.get("needChain.unknownBreakS"));
         int tier = tierOf(item, sp);
         if (tier < 1) return TickPrice.breakS(GameTimes.breakSeconds(hardness, 1, true));
-        double speed = c.pickItem == null ? 1 : Math.max(1, ItemWorth.facts(c.pickItem).digSpeed());
-        return TickPrice.breakS(GameTimes.breakSeconds(hardness, speed, c.pickTier >= tier));
+        double speed = pickItem == null ? 1 : Math.max(1, ItemWorth.facts(pickItem).digSpeed());
+        return TickPrice.breakS(GameTimes.breakSeconds(hardness, speed, pickTier >= tier));
     }
 
     /** The ways an animal gives the item: per mob kind whose loot drops it (the game's loot data), the nearest one known. */

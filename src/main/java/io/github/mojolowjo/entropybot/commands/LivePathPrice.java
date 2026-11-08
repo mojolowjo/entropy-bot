@@ -413,26 +413,45 @@ public final class LivePathPrice implements PathPrice {
     public String noPathOf(String key) { return key == null ? null : noPath.get(key); }
 
     /** job-segmod: the cheapest computing way's first segment as read: its ask key, its words, its cells, the search still running. */
-    public record SegmentPick(String key, String way, int cells, boolean running) {}
+    public record SegmentPick(String key, String way, int cells, boolean running, double ticks) {}
+
+    private final SegmentPicks.SegmentHold segmentHold = new SegmentPicks.SegmentHold();
+    /** job-segpick: the too-long segments said (once per way). */
+    private final Set<String> tooLongSaid = new java.util.HashSet<>();
+
+    /** job-segpick: the walked way's segment ended on a no-path landing: held from segments for pathCost.segmentRetryS. Game thread. */
+    public void holdSegment(String key, long now) { if (key != null) segmentHold.hold(key, now); }
 
     /**
-     * job-segmod: of the walks still computing, the cheapest by Baritone's estimate from the feet (the chain's chosen way
-     * while no price is known) and its fork first segment ({@code IPricedPath.firstSegment}); null when none computes, no
-     * segment yet (rule 15: not known), or an older fork (said once). Game thread.
+     * job-segmod / job-segpick: of the walks still computing and not held ({@link SegmentPicks.SegmentHold}), the cheapest by the mod's
+     * estimate of the way ({@link SegmentPicks#wayS}: Baritone's estimate from the feet plus the chain's dig charge per level down) and
+     * its fork first segment ({@code IPricedPath.firstSegment}); null when none computes, no segment yet (rule 15: not known),
+     * the segment is longer than pathCost.firstSegmentMaxS (said once per way), or an older fork (said once). Game thread.
      */
-    public SegmentPick cheapestFirstSegment() {
+    public SegmentPick cheapestFirstSegment(long now) {
         if (!PathPrice.pricedPathOn() || pending.isEmpty()) return null;
         IBaritone b = Jobs.baritone();
-        if (b == null) return null;
-        String best = null;
-        double bestS = Double.POSITIVE_INFINITY;
-        for (var e : pending.entrySet()) {
-            if (e.getValue().future().isDone()) continue;
-            BlockPos p = posOf(e.getKey());
-            double s = estimate(p.getX(), p.getY(), p.getZ());
-            if (Double.isNaN(s)) s = Double.MAX_VALUE;               // not known: ranked last, still a candidate
-            if (best == null || s < bestS) { best = e.getKey(); bestS = s; }
+        Minecraft mc = Minecraft.getInstance();
+        if (b == null || mc == null || mc.player == null) return null;
+        int feetY = mc.player.blockPosition().getY();
+        String pick = null;
+        int tier = 0;
+        var inv = mc.player.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var st = inv.getItem(i);
+            if (st.isEmpty()) continue;
+            String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString();
+            int t = io.github.mojolowjo.entropybot.aa.brain.MiningTiers.toolTier(id, "pickaxe");
+            if (t > tier) { tier = t; pick = id; }
         }
+        java.util.List<String> open = new java.util.ArrayList<>();
+        for (var e : pending.entrySet()) if (!e.getValue().future().isDone() && !segmentHold.held(e.getKey(), now)) open.add(e.getKey());
+        final String pk = pick;
+        final int tr = tier;
+        String best = SegmentPicks.cheapest(open, k -> {
+            BlockPos p = posOf(k);
+            return SegmentPicks.wayS(estimate(p.getX(), p.getY(), p.getZ()), feetY, p.getY(), pk, tr);
+        });
         if (best == null) return null;
         baritone.api.pathing.calc.IPricedPath.FirstSegment fs;
         try {
@@ -442,8 +461,15 @@ public final class LivePathPrice implements PathPrice {
             return null;
         }
         if (fs == null) return null;
+        if (SegmentPicks.segmentTooLong(fs.ticks())) {
+            if (tooLongSaid.add(best))
+                LOG.info("[entropybot] steps: the first segment of the walk to {} is {} s long, past pathCost.firstSegmentMaxS {}: not walked (a guess, not a start); the stand stands",
+                        best.replace(',', ' '), Math.round(fs.ticks() / io.github.mojolowjo.entropybot.aa.brain.GameTimes.TPS),
+                        io.github.mojolowjo.entropybot.aa.brain.Tuning.get("pathCost.firstSegmentMaxS"));
+            return null;
+        }
         return new SegmentPick(best, "the walk to " + best.replace(',', ' '), fs.cells().size(),
-                fs.state() == baritone.api.pathing.calc.IPricedPath.SearchState.RUNNING);
+                fs.state() == baritone.api.pathing.calc.IPricedPath.SearchState.RUNNING, fs.ticks());
     }
 
     /** job-segmod: walk the way's first segment now (IPricedPath.walkFirstSegment); the fork's queue told it is the running walk. Game thread. */
