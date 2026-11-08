@@ -628,6 +628,8 @@ public final class StepHands implements Steps.Hands {
      */
     private Car.Status standStatus(Step.AwaitPaths a) {
         segmentStep(a);
+        // job-stand2 item 3: the full wait served - the walks waited on are past their wait for the rest of this order
+        if (stand.over(gameTime(), a.waitS())) LivePathPrice.INSTANCE.standServed();
         return stand.status(a, gameTime(), LivePathPrice.INSTANCE.firstAnswersPending(), line -> LOG.info("[entropybot] steps: {}", line));
     }
     /** job-segmod: the ask key of the way whose first segment the stand walks (null: standing still). */

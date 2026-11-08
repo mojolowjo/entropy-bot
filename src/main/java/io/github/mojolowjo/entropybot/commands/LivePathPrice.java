@@ -76,8 +76,15 @@ public final class LivePathPrice implements PathPrice {
      * ({@link PricedAnswers#afterWait}); any other answer, or a move off that start, starts the clock again.
      */
     private Answer ask(int x, int y, int z, boolean into) {
-        Answer a = ask0(x, y, z, into);
         Minecraft mc = Minecraft.getInstance();
+        // job-stand2 (run JAS): a walk whose ask timed out is held - Baritone's estimate, no new ask, until the hold ends
+        if (mc != null && mc.isSameThread() && mc.player != null && mc.level != null) {
+            Answer h = notKnown.answer(key(x, y, z, into), mc.level.getGameTime(), Jobs.here(mc.player),
+                    io.github.mojolowjo.entropybot.aa.brain.Tuning.get("pathCost.notKnownHoldS"),
+                    io.github.mojolowjo.entropybot.aa.brain.Tuning.get("pathCost.notKnownMoveM"), estimate(x, y, z));
+            if (h != null) return h;
+        }
+        Answer a = ask0(x, y, z, into);
         if (mc == null || mc.player == null || mc.level == null) return a;
         // 0.39.z77 round fix 1: CHUNKS keeps the clock too (run BH); 0.39.z78 ea (run EA 20:19:51-20:20:48): the clock is the
         // walk's, wherever the bot stands - a move no longer starts it again (FirstAnswerClock)
@@ -87,6 +94,24 @@ public final class LivePathPrice implements PathPrice {
 
     /** 0.39.z76 send-back 3 / 0.39.z78 ea: the walks' first-answer clocks. */
     private final FirstAnswerClock firstAsked = new FirstAnswerClock(ASKED_AT_MAX);
+
+    /** job-stand2: the walks whose price ask timed out, held as not known (pathCost.notKnownHoldS / notKnownMoveM). */
+    private final NotKnownHold notKnown = new NotKnownHold(ASKED_AT_MAX);
+
+    /** job-stand2: the fork's answer timed out - held from now (said once per hold). Game thread. */
+    private void holdIfTimedOut(Minecraft mc, String key, IPathCost.Answer a) {
+        if (a == null || mc.level == null || mc.player == null || !NotKnownHold.timedOut(a.reason, baritone.api.pathing.calc.IPricedPath.TIMED_OUT)) return;
+        if (notKnown.held(key)) return;
+        notKnown.hold(key, mc.level.getGameTime(), Jobs.here(mc.player));
+        LOG.info("[entropybot] path cost: walk to {}: {}", key.replace(',', ' '), NotKnownHold.words(0,
+                io.github.mojolowjo.entropybot.aa.brain.Tuning.get("pathCost.notKnownHoldS"), io.github.mojolowjo.entropybot.aa.brain.Tuning.get("pathCost.notKnownMoveM")));
+    }
+
+    /**
+     * job-stand2 item 3: the order's stand ran its full first-answer wait - the walks it waited on are past their wait for the
+     * rest of the order (FirstAnswerClock#spend): a re-price takes them by the estimate at once, no second stand on them.
+     */
+    public void standServed() { firstAsked.spendWaiting(); }
 
     /** structural: a memory bound on the clocks kept (a chain asks a few dozen) */
     private static final int ASKED_AT_MAX = 1024;
@@ -255,6 +280,7 @@ public final class LivePathPrice implements PathPrice {
             Answer wait = a == null ? null : PricedAnswers.notYet(a.reason, baritone.api.pathing.calc.IPricedPath.QUEUED, baritone.api.pathing.calc.IPricedPath.RESEARCH_WAIT,
                     baritone.api.pathing.calc.IPricedPath.WITHDRAWN, PathPrice.maxPending());
             if (wait != null) return wait;
+            holdIfTimedOut(mc, key, a);
             return answer(mc, b, a, key, pos);
         }
         pending.put(key, new Pending(f, me));
@@ -315,6 +341,7 @@ public final class LivePathPrice implements PathPrice {
 
     /** 0.39.z58 item 1: a new order (aa want) - the fork's "not answered yet in this order" class starts again. Game thread. */
     public void orderStarted() {
+        firstAsked.newOrder();                           // job-stand2 item 3: the stand's wait is per order start
         if (!PathPrice.pricedPathOn()) return;
         IBaritone b = Jobs.baritone();
         if (b == null) return;
@@ -391,6 +418,7 @@ public final class LivePathPrice implements PathPrice {
             Answer wait = a == null ? null : PricedAnswers.notYet(a.reason, baritone.api.pathing.calc.IPricedPath.QUEUED, baritone.api.pathing.calc.IPricedPath.RESEARCH_WAIT,
                     baritone.api.pathing.calc.IPricedPath.WITHDRAWN, PathPrice.maxPending());
             out = wait != null ? wait : answer(mc, b, a, key, goal);
+            if (wait == null) holdIfTimedOut(mc, key, a);
         }
         if (WalkProbe.on() && a != null) {
             int[] on = a.path.isEmpty() ? from : new int[]{a.path.get(0).getX(), a.path.get(0).getY(), a.path.get(0).getZ()};

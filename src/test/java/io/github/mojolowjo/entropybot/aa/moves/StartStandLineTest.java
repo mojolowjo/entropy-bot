@@ -16,9 +16,11 @@ class StartStandLineTest {
         w.begin(0);
         for (int t = 0; t < 40; t++) w.status(a, t, 3, said::add);
         assertTrue(said.isEmpty(), "the start line said the first reason: " + said);
-        for (int t = 40; t < 80; t++) w.status(a, t, 2, said::add);
+        for (int t = 40; t < 60; t++) w.status(a, t, 2, said::add);
+        assertTrue(said.isEmpty(), "job-stand2: a count change is no new kind: " + said);
+        for (int t = 60; t < 80; t++) w.status(a, t, -1, said::add);
         assertEquals(1, said.size(), said.toString());
-        assertTrue(said.get(0).contains("2 walks still computing"), said.get(0));
+        assertTrue(said.get(0).contains("walks not counted"), said.get(0));
         w.begin(100);
         w.status(a, 100, 2, said::add);
         assertEquals(1, said.size(), "a new stand records its first reason silently");

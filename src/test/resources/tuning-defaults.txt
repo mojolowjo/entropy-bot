@@ -923,6 +923,8 @@ pathCost.firstAnswerWaitS	30.0
 pathCost.firstSegmentWalk	1.0
 pathCost.firstSegmentMinCells	4.0
 pathCost.firstSegmentMaxS	60.0
+pathCost.notKnownHoldS	60.0
+pathCost.notKnownMoveM	8.0
 pathCost.segmentRetryS	30.0
 price.walkX	1.0
 price.breakX	1.0
