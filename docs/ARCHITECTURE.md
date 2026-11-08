@@ -72,7 +72,10 @@ fallback, said. Its explore step is marked `Step.Explore.priced`; `choose` ranks
 its seconds (`NeedChain.pricedExplore`), so a surface cave and the band compare in seconds; a cave known in the band is the
 cave way at its Y. The band way requires the pickaxe tier the ore's block needs (MiningTiers, game data;
 `NeedChain.bandTool`, job-bandtool): with none of that tier in the bag the cheapest is made first and priced into the
-way ("with stone_pickaxe made first (N s; <- its chain)"), every break then at that tool's speed; it is never "by hand".
+way ("after stone_pickaxe (<- its chain)"), every break then at that tool's speed; it is never "by hand". The band and
+cave ways make that tool through one path, `NeedChain.toolFirst` (job-bandtool2): inside it a walk still computing is
+charged its straight metres (`Ctx.toolEstimate`, read in `walk`), so the way stays priced instead of standing; a source
+only an explore finds ends the way in that explore, both ways alike.
 The band way's steps do what its price says: (1) `Step.ToBand` at the peak's one Y ("dig down to y
 16", the band leg's Baritone path with its breaks, whose seconds replace the price's dig estimate; while that path is not
 known - computing, timed out, no estimate - the leg is priced by the band model's own dig seconds, `BandPrice.Price.downS`,
