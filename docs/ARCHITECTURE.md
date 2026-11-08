@@ -119,7 +119,13 @@ its length is the price's own faces model (`Tunnel.length`: n / ore per face / (
 the nearest never-seen chunk within `tunnel.unseenReachM`, rule 22, then seen density, then Baritone's estimate). Each tick
 (`Tunnel.next`): a seen ore in `MINE_SIGHT` pauses it for the vein; water or lava within `tunnel.fluidAheadM` ends it, the
 heading held; air within `tunnel.caveSeeM` that was not air at the start nor on Baritone's path ends it, "cave air at x y z:
-the cave step takes over" (the heading held, the order re-plans and prices the cave). The end line: blocks broken, faces exposed, ore seen and
+the cave step takes over". Job-caveair: the air is handed to the cave index at once (`CaveIndex.lipCredit`: a volume of
+`tunnel.caveMinCells` cells or more becomes a known cave entered at that cell, stored by `Sightings.knowCave`, even sealed
+with no sky opening; fewer is a pocket, "air at x y z is a pocket (N cells): tunnelling on", and the tunnel goes on; air
+the index does not hold is judged by a local flood). The told air and its flood are remembered (`TunnelStep.AIR_SEEN`), so
+one air cell is one fact: a cave end is a price fact (`FactChange.found`), never a held heading. The start reads its air
+one block past the sight box. The band way offers only peaks at or under the surface over the feet (`BandPrice.peakDrop`,
+the drop said) and digs down only (`BandPrice.digY`: a peak above the feet is tunnelled at the feet's Y). The end line: blocks broken, faces exposed, ore seen and
 mined. The strip way stays off and is not used. Pass three (run JAK): seen is looked at - the stand marks only cells in the eyes' cone and the
 ore rays' range (`Sightings.caveStood` with a `CaveRecord.Look`; `seen.coneDeg`, `seen.range`); arrival counts the passage's
 cells looked at against walked past (an open passage is walked again); the cave's ore intake reads the rays' range; a seen

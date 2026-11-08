@@ -681,6 +681,29 @@ public final class CaveIndex {
         return new Result(Credit.KNOWN, root, makeKnown(root));
     }
 
+    /** Job-caveair: what a tunnel's air hand-over found - the credit, the volume's cells (0: no volume), the known cave made (null: none). */
+    public record Lip(Credit what, long cells, Known known) {}
+
+    /**
+     * Job-caveair (run JBA 08:17:12: a tunnel at y 16 broke into air at -127 12 -37 that the index never credited - a
+     * sealed volume has no sky opening, so {@link #cave} is false and {@link #credit} answers DIP): the tunnel stood beside
+     * the air cell x y z and saw it, so the tunnel is the volume's lip. A volume of at least {@code minCells} cells
+     * (Tuning tunnel.caveMinCells) becomes a known cave at once, entered at that cell (KNOWN); fewer is a pocket (DIP, its
+     * cells counted); a known volume is ALREADY_KNOWN; no index cell there is NO_VOLUME (not known, rule 15).
+     */
+    public synchronized Lip lipCredit(int x, int y, int z, long minCells) {
+        fresh();
+        int r = runAt(x, y, z);
+        if (r < 0) return new Lip(Credit.NO_VOLUME, 0, null);
+        int root = find(r);
+        if (known.contains(root)) return new Lip(Credit.ALREADY_KNOWN, cells[root], null);
+        if (cells[root] < minCells) return new Lip(Credit.DIP, cells[root], null);
+        long c = cell(x, y, z);
+        credited.add(c);
+        credits.computeIfAbsent(root, k -> new LinkedHashSet<>()).add(c);
+        return new Lip(Credit.KNOWN, cells[root], makeKnown(root));
+    }
+
     /** The volume of {@code root} becomes known: its credited cells and its rim credits' cells kept by cell (known stays known). */
     private Known makeKnown(int root) {
         Set<Long> cs = credits.get(root);

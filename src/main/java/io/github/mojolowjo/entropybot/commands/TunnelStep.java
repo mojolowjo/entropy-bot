@@ -169,7 +169,10 @@ final class TunnelStep {
         s.end = Tunnel.end(me, h, t.length());
         Level lv = p.level();
         int r = Tuning.i("tunnel.caveSeeM");
-        for (int dx = -r; dx <= r; dx++) for (int dy = -r; dy <= r; dy++) for (int dz = -r; dz <= r; dz++)
+        s.known.addAll(AIR_SEEN);                                                  // job-caveair: air already told is one fact, never again
+        // job-caveair (run JBA: the feet read y 15 a tick after the start at y 16, so air 4 below the start counted as new):
+        // the start's air is read one block past the sight box every way
+        for (int dx = -r - 1; dx <= r + 1; dx++) for (int dy = -r - 1; dy <= r + 1; dy++) for (int dz = -r - 1; dz <= r + 1; dz++)   // structural: one block of margin
             if (lv.getBlockState(new BlockPos(me[0] + dx, me[1] + dy, me[2] + dz)).isAir()) s.known.add(Tunnel.key(me[0] + dx, me[1] + dy, me[2] + dz));
         for (int i = 1; i <= t.length(); i++) for (int dy = 0; dy <= 1; dy++) {      // structural: the 1 x 2 line, counted at the end
             int[] c = {me[0] + h.dx() * i, me[1] + dy, me[2] + h.dz() * i};
@@ -256,6 +259,7 @@ final class TunnelStep {
                 if (lv.isLoaded(q) && lv.getBlockState(q).isAir()) air.add(new int[]{q.getX(), q.getY(), q.getZ()});
             }
             cave = Tunnel.caveAir(air, s.known);
+            if (cave != null && !handAir(s, lv, cave)) cave = null;               // job-caveair: a pocket - the tunnel goes on
         }
         boolean atEnd = me[0] == s.end[0] && me[1] == s.end[1] && me[2] == s.end[2];
         boolean atGoal = me[0] == s.goal[0] && me[1] == s.goal[1] && me[2] == s.goal[2];
@@ -316,11 +320,67 @@ final class TunnelStep {
                           + io.github.mojolowjo.entropybot.aa.moves.WalkEndText.reason(forkCalc(b), s.lines0, io.github.mojolowjo.entropybot.baritone.BaritoneHook.lines(),
                                 io.github.mojolowjo.entropybot.baritone.BaritoneHook.lastLine()) + ")"
                         : next.why();
+                if (cave != null && fluid == null) {
+                    // job-caveair: cave air is a price fact (the index knows the cave now), never a held heading
+                    FactChange.set(FactChange.found(why));
+                    return end(p, false, why);
+                }
                 FactChange.set(FactChange.tunnelHeldFact(s.from, s.h.name(), why));
                 return end(p, false, Tunnel.heldText(s.h.name(), s.from, why));
             }
             case DONE -> { s.legs++; return end(p, true, next.why()); }
             default -> { return Car.Status.running("tunnel " + s.h.name() + " to " + Jobs.fmt(s.end) + " (" + s.mined + " of " + s.step.n() + " ore)"); }
+        }
+    }
+
+    /** Job-caveair: the air cells a tunnel already told (cave or pocket) - one fact each, never another heading's end. */
+    private static final Set<Long> AIR_SEEN = new HashSet<>();
+
+    /**
+     * Job-caveair: the air at {@code c} is handed to the cave index at once (CaveIndex.lipCredit: the tunnel is its lip).
+     * A cave is stored as a known cave (Sightings.knowCave) and the tunnel ends (true); a pocket is said and the tunnel goes
+     * on (false). Either way the air cell and the cells of a local flood from it are remembered (AIR_SEEN).
+     */
+    private static boolean handAir(State s, Level lv, int[] c) {
+        long min = Tuning.i("tunnel.caveMinCells");
+        Set<Long> flood = new HashSet<>();
+        java.util.ArrayDeque<int[]> q = new java.util.ArrayDeque<>();
+        q.add(c);
+        flood.add(Tunnel.key(c[0], c[1], c[2]));
+        while (!q.isEmpty() && flood.size() <= min) {
+            int[] a = q.poll();
+            for (int[] d : new int[][]{{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}}) {
+                int x = a[0] + d[0], y = a[1] + d[1], z = a[2] + d[2];
+                BlockPos bp = new BlockPos(x, y, z);
+                long kk = Tunnel.key(x, y, z);
+                if (s.known.contains(kk) || !lv.isLoaded(bp) || !lv.getBlockState(bp).isAir() || !flood.add(kk)) continue;   // the tunnel's own air is not the pocket's
+                q.add(new int[]{x, y, z});
+            }
+        }
+        AIR_SEEN.addAll(flood);
+        s.known.addAll(flood);
+        var pass = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE;
+        var idx = pass.caveIndex();
+        var lip = idx == null ? new io.github.mojolowjo.entropybot.sense.CaveIndex.Lip(io.github.mojolowjo.entropybot.sense.CaveIndex.Credit.NO_VOLUME, 0, null)
+                : idx.lipCredit(c[0], c[1], c[2], min);
+        Tunnel.Air a = Tunnel.air(lip.what(), flood.size(), min);
+        long n = lip.what() == io.github.mojolowjo.entropybot.sense.CaveIndex.Credit.NO_VOLUME ? flood.size() : lip.cells();
+        switch (a) {
+            case POCKET -> {
+                LOG.info("[entropybot] tunnel: {} (the cave index: {}; tunnel.caveMinCells {})", Tunnel.pocketText(c, n), lip.what(), min);
+                return false;
+            }
+            case CAVE -> {
+                var k = lip.known();
+                if (k != null && pass.sightings() != null && pass.sightings().knowCave(s.dim, k, System.currentTimeMillis()) != null)
+                    LOG.info("[entropybot] sense: cave known at {} {} {} (size {}, depth {}; a tunnel broke into it from {}, {} cells)", k.x(), k.y(), k.z(), k.size(), k.depth(), Jobs.fmt(s.from), n);
+                else LOG.info("[entropybot] tunnel: air at {} is a cave the index knows ({}, {} cells)", Jobs.fmt(c), lip.what(), n);
+                return true;
+            }
+            default -> {
+                LOG.info("[entropybot] tunnel: air at {} ({} cells or more) is not in the cave index (rule 15: not known); the tunnel ends for a re-price", Jobs.fmt(c), n);
+                return true;
+            }
         }
     }
 

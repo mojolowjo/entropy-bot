@@ -835,6 +835,7 @@ torch.base	30.0
 torch.span	30.0
 torch.target	16.0
 torchCut	0.05
+tunnel.caveMinCells	40.0
 tunnel.caveSeeM	3.0
 tunnel.fluidAheadM	2.0
 tunnel.maxLength	64.0

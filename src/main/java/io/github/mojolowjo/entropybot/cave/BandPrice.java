@@ -71,6 +71,17 @@ public final class BandPrice {
      * metres' walk {@code straightS} instead, said) at least the straight walk (an estimate is a lower bound, rule 18), plus
      * {@code downS} (the job-est dig charge) when the lip is {@code deeper} levels under the dig's end.
      */
+    /**
+     * Job-caveair (run JBA 08:18: "dig down to y 232" from y 16, ore_iron_upper's peak 216 levels over the feet): a peak
+     * above the surface height at the feet's column is dropped - its words; null: the peak is offered.
+     */
+    public static String peakDrop(int peakY, int surfaceY) {
+        return peakY > surfaceY ? "y " + peakY + " is above the surface at y " + surfaceY + " over the feet: dropped" : null;
+    }
+
+    /** Job-caveair: the dig leg goes down only - an offered peak above the feet is dug at the feet's own Y (no dig, the tunnel there). */
+    public static int digY(int peakY, int fromY) { return Math.min(peakY, fromY); }
+
     public static Lip lip(double estS, double straightS, double downS, int deeper, int[] span) {
         boolean known = Double.isFinite(estS);
         double walk = known ? Math.max(estS, straightS) : straightS;
