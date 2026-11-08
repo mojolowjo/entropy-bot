@@ -1079,6 +1079,23 @@ public final class AaRuntime implements JobPort {
                 var v = root < 0 ? null : idx.volume(root);
                 cells = v == null ? f.unseen() : Math.max(0, v.cells() - (f.cellCount() - f.unseen()));
             }
+            // job-handover (run JBB 08:37:57: a tunnel broke into a 29228-cell cave, its record had nothing fed yet, unseenMinutes
+            // -1 and expected NaN): a record with nothing measured takes the index volume's cells (all unseen)
+            var passages = sg.cavePassageList(dim, k.x(), k.y(), k.z());
+            boolean unmeasured = passages == null && cells < 0;
+            if (unmeasured) {
+                int root = idx.volumeAt(k.x(), k.y(), k.z());
+                var v = root < 0 ? null : idx.volume(root);
+                if (v != null && v.cells() > 0) cells = v.cells();
+                else unmeasured = false;
+            }
+            var dens = caveDensity(List.of(dim, k.x(), k.y(), k.z(), fam), gen, pr, ex, f, fam);
+            if (unmeasured && gen != null) {
+                // the band model's density at its Y (the placements' share per cave-wall block, game data) x its cells
+                dens = io.github.mojolowjo.entropybot.cave.CaveWalk.Density.sampled(y -> gen.curve(y, true) / io.github.mojolowjo.entropybot.aa.brain.CaveYield.LAYER_BLOCKS,
+                        io.github.mojolowjo.entropybot.aa.NeedChain.UNMEASURED + k.y());
+                if (Double.isNaN(expected)) expected = cells * dens.at(k.y());
+            }
             double unseen = cells < 0 ? -1
                     : cells / (double) io.github.mojolowjo.entropybot.sense.CaveIndex.CROSS_SECTION / io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps() / 60.0;   // structural: seconds a minute
             // run EO (rule 23 (1)): the bot stands inside this cave's volume - its branches are the way from here, ranked first
@@ -1098,8 +1115,8 @@ public final class AaRuntime implements JobPort {
             ways.add(new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(k.x(), k.y(), k.z(), Math.sqrt(Jobs.distSq(me, new int[]{k.x(), k.y(), k.z()})),
                     ore, fam, expected, explored, k.size(), unseen, leftKeys(sg.caveLeft(dim, k.x(), k.y(), k.z(), fam)), lp.kept())
                     .withOut(out).withInside(inside).withBasis(pr.why()).withLipOut(lp.out())
-                    .withPassages(sg.cavePassageList(dim, k.x(), k.y(), k.z()))
-                    .withDensity(caveDensity(List.of(dim, k.x(), k.y(), k.z(), fam), gen, pr, ex, f, fam)));   // job-price: the passages' ore by the record's game data; D15 pass two: the walk inside is priced on the record's passages (held while a caving step runs)
+                    .withPassages(passages)
+                    .withDensity(dens));   // job-price: the passages' ore by the record's game data; D15 pass two: the walk inside is priced on the record's passages (held while a caving step runs)
         }
         if (ways.isEmpty()) return null;
         ways.sort(java.util.Comparator.comparing((io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay w) -> !w.inside()));   // stable: the inside cave first, then nearest

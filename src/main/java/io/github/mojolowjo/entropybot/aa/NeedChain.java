@@ -6449,8 +6449,27 @@ public final class NeedChain {
         return noted("in the cave: " + line + (pre == null ? "" : " with " + pre) + part, wk);
     }
 
+    /** job-handover: the density's words for a record with no passages measured (AaRuntime adds the Y). */
+    public static final String UNMEASURED = "unmeasured: priced by its cells at y ";
+
+    /**
+     * job-handover (pure): an unmeasured record (no passages, its density the band model's) - its cells (from
+     * unseenMinutes, the index volume's count) x the density at its Y = the ore expected; the walk through it all
+     * (cells / CaveIndex.CROSS_SECTION layers x cave.passageSecPerCell) scaled to {@code toFind} of that. Null: not unmeasured.
+     */
+    static Inner unmeasuredWalk(CaveWay cw, int toFind) {
+        if (cw.passages() != null || cw.density() == null || cw.density().why() == null || !cw.density().why().startsWith(UNMEASURED)
+                || !(cw.unseenMinutes() > 0) || toFind <= 0) return null;
+        double cells = cw.unseenMinutes() * 60.0 * io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps() * io.github.mojolowjo.entropybot.sense.CaveIndex.CROSS_SECTION;  // structural: seconds a minute (AaRuntime's own count back)
+        double exp = cells * cw.density().at(cw.y());
+        double walk = cells / io.github.mojolowjo.entropybot.sense.CaveIndex.CROSS_SECTION * Tuning.get("cave.passageSecPerCell");
+        if (!(exp > 0)) return new Inner(0, "0 s (no ore expected at y " + cw.y() + "; " + cw.density().why() + ")");
+        double s = walk * toFind / exp;
+        return new Inner(s, String.format(java.util.Locale.ROOT, "%d ore: %.1f expected in %d cells, %.0f s (%s)", toFind, exp, Math.round(cells), s, cw.density().why()));
+    }
+
     /** J6d: the price's second walk - its seconds and its words ("to the unseen cell at x y z: Baritone's estimate 4 s"). */
-    private record Inner(double seconds, String line) {}
+    record Inner(double seconds, String line) {}
 
     /**
      * D15 pass two: the walk inside the cave - the passage model's seconds to find {@code toFind} ore (CaveWalk#findSeconds
@@ -6459,6 +6478,10 @@ public final class NeedChain {
      * expected along the open passages: 0, said (the world-gen share still bounds what the cave gives).
      */
     private static Inner passageWalk(CaveWay cw, int toFind) {
+        // job-handover (run JBB 08:37:57): a record with no passages measured (a tunnel's hand-over) is priced by its cells
+        // and the band model's density at its Y, never 0 s
+        Inner un = unmeasuredWalk(cw, toFind);
+        if (un != null) return un;
         var fp = io.github.mojolowjo.entropybot.cave.CaveWalk.findSeconds(cw.passages(), toFind, Tuning.get("cave.passageSecPerCell"),
                 cw.density() != null ? cw.density() : io.github.mojolowjo.entropybot.cave.CaveWalk.Density.notKnown());   // job-price: the order's ore by game data
         if (Double.isNaN(fp.seconds())) return new Inner(0, "0 s (" + fp.line() + ")");
