@@ -266,7 +266,21 @@ public final class PlannerPort implements BatchWay.Planner {
     static boolean same(PlanNodes.Fact f, Object kept, Object now, boolean usesCell) {
         if ("held".equals(f.field()) && kept instanceof List<?> a && now instanceof List<?> b) return new java.util.TreeSet<Object>(a).equals(new java.util.TreeSet<Object>(b)) && a.size() == b.size();
         if ("surface".equals(f.field()) && kept instanceof NeedChain.Surface a && now instanceof NeedChain.Surface b) return sameSurface(a, b, usesCell);
+        if ("price".equals(f.field()) && kept instanceof io.github.mojolowjo.entropybot.aa.PathPrice.Answer a
+                && now instanceof io.github.mojolowjo.entropybot.aa.PathPrice.Answer b) return samePrice(a, b);
         return Deep.equal(kept, now);
+    }
+
+    /**
+     * job-start (runs JAH 17, JAI 103, JAK 17 "re-planned while thinking: price ..."; JAK: COMPUTING -> COMPUTING with only
+     * the queue words changed, each drop a new worker round while the bot stood): two answers of one walk agree for a result
+     * when both are still computing - the words of why (queued, re-search waiting) do not change which way wins. A priced
+     * walk is compared by value: D6's rule (D6WorkerTest, D6ReplayTest) is that an applied trip is the resolve on the facts
+     * now, so a price margin would apply a stale price (rule 15). Pure.
+     */
+    static boolean samePrice(io.github.mojolowjo.entropybot.aa.PathPrice.Answer a, io.github.mojolowjo.entropybot.aa.PathPrice.Answer b) {
+        if (a.kind() == io.github.mojolowjo.entropybot.aa.PathPrice.Kind.COMPUTING && b.kind() == a.kind()) return true;
+        return Deep.equal(a, b);
     }
 
     /** Item 25 (pure): two surface facts agree for a result - see {@link #same(PlanNodes.Fact, Object, Object, boolean)}. */

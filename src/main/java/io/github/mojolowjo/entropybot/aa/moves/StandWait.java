@@ -20,6 +20,23 @@ public final class StandWait {
     public void begin(long now) {
         start = now;
         said = false;
+        reason = null;
+    }
+
+    /** job-start: the stand's reason last said (null: none yet this stand). */
+    private String reason;
+
+    /**
+     * job-start (rule 7, one line per change of reason, never per tick): the stand's reason now - how many walks it waits on
+     * ({@code computing} &lt; 0: not known) - when it differs from the one last said this stand, else null. The first call of a
+     * stand only records it (the start line said it). Pure.
+     */
+    public String reasonChanged(int computing) {
+        String now = "waiting on " + (computing < 0 ? "walks not counted" : computing + " walk" + (computing == 1 ? "" : "s") + " still computing");
+        if (now.equals(reason)) return null;
+        boolean first = reason == null;
+        reason = now;
+        return first ? null : "still standing, " + now;
     }
 
     public boolean standing() { return start >= 0; }
@@ -61,7 +78,11 @@ public final class StandWait {
      * the price fact ({@link FactChange#repriceAfterStand}), so the order is priced again where the bot stands.
      */
     public Car.Status status(Step.AwaitPaths a, long now, int computing, java.util.function.Consumer<String> say) {
-        if (!over(now, a.waitS())) return Car.Status.running(a.text() + ": " + words(now, a.waitS(), computing));
+        if (!over(now, a.waitS())) {
+            String r = reasonChanged(computing);
+            if (r != null) say.accept(a.text() + ": " + r + " (" + secs(stood(now)) + " s stood)");
+            return Car.Status.running(a.text() + ": " + words(now, a.waitS(), computing));
+        }
         String why = overWords(a.waitS());
         if (sayOver()) say.accept(a.text() + ": " + why);
         end();

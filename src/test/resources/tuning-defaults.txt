@@ -971,5 +971,6 @@ monitor.silentS	45.0
 debug.monitorProbe	0.0
 steps.carIdleTicks	80.0
 pathCost.pricedTop	2.0
+pathCost.askFactor	2.0
 station.materialS	10.0
 station.baseReachM	16.0

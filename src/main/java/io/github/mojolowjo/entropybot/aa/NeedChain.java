@@ -4663,6 +4663,8 @@ public final class NeedChain {
         private final List<Spot> order;
         private final int top = PathPrice.pricedTop();
         private int asked;
+        /** job-start: the estimate (s) of the first way asked; NaN before one (no factor test then). */
+        private double ref = Double.NaN;
 
         Ranks(Ctx c, List<Spot> byDist) {
             this.c = c;
@@ -4681,12 +4683,34 @@ public final class NeedChain {
                             + top + " ways get a priced path (pathCost.pricedTop, rule 18)";
                     return null;
                 }
+                // job-start (run JAK: 7 first answers pending while it stood 40 s): the slots by value - a way whose estimate is
+                // past pathCost.askFactor x the first asked way's is ranked, not asked (rule 18: rank rough)
+                PathPrice pp0 = c.w.path();
+                double est = pp0 == null ? Double.NaN : pp0.estimate(first.x(), first.y(), first.z());
+                if (pastFactor(est, ref)) {
+                    c.effect(new RankedOut(first.x(), first.y(), first.z()));
+                    c.fail = RANKED + " number " + (order.indexOf(first) + 1) + " of " + order.size() + " by Baritone's estimate (no search, not a price): "
+                            + Math.round(est) + " s, past pathCost.askFactor x the first asked way's " + Math.round(ref) + " s";
+                    return null;
+                }
                 String p = way.get();
                 Walked wk = c.walk(first.x() + "," + first.y() + "," + first.z());
-                if (wk != null && wk.kind() != PathPrice.Kind.UNREACHABLE && (wk.fail() == null || !wk.fail().startsWith(PathPrice.NO_ESTIMATE))) asked++;   // z76: no estimate frees it too
+                if (wk != null && wk.kind() != PathPrice.Kind.UNREACHABLE && (wk.fail() == null || !wk.fail().startsWith(PathPrice.NO_ESTIMATE))) {   // z76: no estimate frees it too
+                    if (asked == 0) ref = est;
+                    asked++;
+                }
                 return p;
             };
         }
+    }
+
+    /**
+     * job-start: a way's estimate {@code est} is past pathCost.askFactor x the first asked way's {@code ref} (both known; rule
+     * 15: a NaN never ranks a way out). A ref under one second counts as one (structural: a way at the feet). Pure.
+     */
+    static boolean pastFactor(double est, double ref) {
+        if (Double.isNaN(est) || Double.isNaN(ref)) return false;
+        return est > io.github.mojolowjo.entropybot.aa.brain.Tuning.get("pathCost.askFactor") * Math.max(1, ref);
     }
 
     /** The spots by Baritone's estimate from the feet when every one has one, else as given (straight metres); ties keep the given order. Pure. */
