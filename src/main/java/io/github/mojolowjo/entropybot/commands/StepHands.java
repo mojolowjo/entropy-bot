@@ -2787,7 +2787,22 @@ public final class StepHands implements Steps.Hands {
             io.github.mojolowjo.entropybot.aa.moves.FactChange.band(t.minY(), t.maxY(), why);     // 0.39.z42: a fact change, the order re-plans
             return Car.Status.failed(t.text() + ": " + why);
         }
+        bandProbe(p, t, y, b);
         return Car.Status.running(t.text() + ": at y " + y);
+    }
+
+    /** job-digpace: the dig-down leg's probe (steps.bandProbeS, 0 = off): why a level takes long (water, off the ground). */
+    private long bandProbeMs;
+
+    private void bandProbe(LocalPlayer p, Step.ToBand t, int y, IBaritone b) {
+        long every = (long) (io.github.mojolowjo.entropybot.aa.brain.Tuning.get("steps.bandProbeS") * 1000);
+        long now = System.currentTimeMillis();
+        if (every <= 0 || now - bandProbeMs < every) return;
+        bandProbeMs = now;
+        int fromY = bandStart != null ? bandStart.cell()[1] : y;
+        long secs = (now - bandMs0) / 1000;   // structural: ms to s
+        LOG.info("[entropybot] band probe: {} - y {} ({} levels, {} s), feet in water {}, head in water {}, on ground {}, Baritone active {}",
+                t.text(), y, fromY - y, secs, p.isInWater(), p.isUnderWater(), p.onGround(), b.getCustomGoalProcess().isActive());
     }
 
     /** job-band2: the band leg's start time, Baritone's line count then, and the solid cells of its column then (the Ys). */
