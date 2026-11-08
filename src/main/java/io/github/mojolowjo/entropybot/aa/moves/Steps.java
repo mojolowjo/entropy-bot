@@ -118,6 +118,13 @@ public final class Steps {
          * Read every tick; {@link Steps} ends the step after steps.carIdleTicks of it.
          */
         default String carIdle(Step s) { return null; }
+
+        /**
+         * job-mon (run JAI 00:46-00:52: the chop said "no face in sight" once, then 6 min of silence): what Baritone last said
+         * while the step runs - the process in control, its last chat line, its running line count; null: these hands do not
+         * know (the monitor's silent rule is then off, the stall rule and the outer watch stay).
+         */
+        default StepMonitor.Said said(Step s) { return null; }
     }
 
     /** 0.39.z76 J3-mod item 0: ticks the car may stand idle with no goal under a step that drives it (Tuning steps.carIdleTicks). */
@@ -143,9 +150,13 @@ public final class Steps {
      * tier, sorted; read when it failed). Two equal tries mean the planner would be asked the same question again: the run
      * parks (honest loop). Rule 15: a null cell or bag is never "the same" ({@link #sameAs}).
      */
-    public record Attempt(StepId id, String factKey, List<Integer> feet, java.util.SortedMap<String, Integer> needs) {
+    public record Attempt(StepId id, String factKey, List<Integer> feet, java.util.SortedMap<String, Integer> needs, List<Integer> end, String detail) {
+        /** The try without its end cell and detail (both not known: the start rule alone, as before job-mon). */
+        public Attempt(StepId id, String factKey, List<Integer> feet, java.util.SortedMap<String, Integer> needs) { this(id, factKey, feet, needs, null, null); }
+
         public Attempt {
             feet = feet == null ? null : List.copyOf(feet);
+            end = end == null ? null : List.copyOf(end);
             needs = needs == null ? null : java.util.Collections.unmodifiableSortedMap(new java.util.TreeMap<>(needs));
         }
 
@@ -165,10 +176,17 @@ public final class Steps {
             return String.join(", ", p);
         }
 
-        /** The same step, the same fact, from the same cell, with the same needs in the bag; any unknown part: false. */
+        /**
+         * The same step, the same fact, from the same cell, with the same needs in the bag; any unknown part: false. job-mon
+         * (run JAJ: a caving step ended NO_BRANCH at -124 64 -32, then at -136 76 -29, and parked as "the same way"): ended
+         * at the same cell too (a step that walked somewhere new is another try), and the same detail (a silent end's
+         * Baritone line: another line is another way of failing). An end cell or detail known on one side only: not the same;
+         * on neither side: the start rule alone.
+         */
         public boolean sameAs(Attempt o) {
             return o != null && id != null && id.equals(o.id) && factKey != null && factKey.equals(o.factKey)
-                    && feet != null && feet.equals(o.feet) && needs != null && needs.equals(o.needs);
+                    && feet != null && feet.equals(o.feet) && needs != null && needs.equals(o.needs)
+                    && java.util.Objects.equals(end, o.end) && java.util.Objects.equals(detail, o.detail);
         }
 
         /**
@@ -181,7 +199,8 @@ public final class Steps {
             // sb4 review 3 (coordinator): a place failure is a fact about WHERE (z67's own rule) - its try is keyed by the
             // start cell too (another cell = a new try; a cell not known: never the same, rule 15)
             if (factKey.startsWith(PLACE_FACT)) return feet == null ? null : id.text() + " | " + factKey + " | " + needsBag() + " | at " + startCell();
-            return id.text() + " | " + factKey + " | " + needsBag();
+            // job-mon: a silent end's Baritone line is part of the try (another line is another way of failing)
+            return id.text() + " | " + factKey + " | " + needsBag() + (detail == null ? "" : " | said '" + detail + "'");
         }
 
         /** The key prefix of FactChange.placeFailed's plain fact ("place minecraft:crafting_table"). */
@@ -727,6 +746,7 @@ public final class Steps {
     /** The step started (or started again): the monitor's bests from its signals now; no signals: off for this step. */
     private void startMonitor(Step s) {
         monitoredSince = -1;                     // 93fd77f5 review: the hand-off's bound starts again with the step
+        endDetail = null;                        // job-mon: a silent end's line belongs to its own step
         StepSignals sig = signalsNow(s);
         monitorOn = sig != null && StepMonitor.kind(s) != StepMonitor.Kind.EXEMPT;
         monitor.begin(s, sig, now);
@@ -794,6 +814,12 @@ public final class Steps {
         lastLook = now;
         StepSignals sig = signalsNow(s);
         if (sig == null) sig = StepSignals.notLoaded("these hands gave no signals this look");
+        try {
+            monitor.said(hands.said(s), now);    // job-mon: Baritone's last line for the silent rule
+        } catch (RuntimeException e) {
+            monitor.said(null, now);             // rule 15: not known, the silent rule is off this look (said)
+            why = stage() + ": Baritone's last line could not be read: " + e;
+        }
         StepMonitor.Look l = monitor.look(sig, now);
         if (Tuning.get("debug.monitorProbe") >= 1 && (l.v() != lastVerdict || monitor.stalled() || !sig.loaded())) {
             try {
@@ -836,6 +862,7 @@ public final class Steps {
                     }
                 }
                 safeCancel("monitor: " + l.reason());
+                endDetail = monitor.silentLine();     // job-mon: a silent end's try carries Baritone's last line
                 failOrReplan(l.reason(), l.fact());
             }
         }
@@ -1296,8 +1323,13 @@ public final class Steps {
             why = stage() + ": the bag could not be read for the try's facts: " + e;
         }
         List<Integer> feet = startFeet == null || startFeet.length != 3 ? null : List.of(startFeet[0], startFeet[1], startFeet[2]);   // structural: x y z
-        return new Attempt(StepId.of(failed), key, feet, bag);
+        int[] e = feetNow();                     // job-mon (run JAJ): where the step ended
+        List<Integer> end = e == null || e.length != 3 ? null : List.of(e[0], e[1], e[2]);   // structural: x y z
+        return new Attempt(StepId.of(failed), key, feet, bag, end, endDetail);
     }
+
+    /** job-mon: the running step's end detail for its try (a silent end's Baritone line), null: none; cleared at each step's start. */
+    private String endDetail;
 
     /** J6b item 14: the search's start cell from the hands now (null: not known; a failure to read it: not known). */
     private int[] standNow() {
