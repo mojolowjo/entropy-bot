@@ -3970,6 +3970,9 @@ public final class NeedChain {
         return new Alt("the band way for " + shw(item), () -> bandWay(c, item, lack, where, feet));
     }
 
+    /** job-side: the side-step walk's near radius (Tuning band.sideStepNear; at least 1: a near walk, never an exact cell). */
+    static int sideStepNear() { return Math.max(1, Tuning.i("band.sideStepNear")); }
+
     /** Job-band: the band way's price and its explore step (see {@link #bandAlt}); null with c.fail. */
     private static String bandWay(Ctx c, String item, int lack, io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact where, int[] feet) {
         double per = perBlock(c, item, where.block());
@@ -4043,11 +4046,17 @@ public final class NeedChain {
             // own price stays the feet's column's (the fork prices from the feet only, rule 15: said in the line)
             Walked sw = walk(c, bestSide[0], feet[1], bestSide[1], Math.hypot(bestSide[0] - feet[0], bestSide[1] - feet[2]));
             if (c.fail != null) { c.fail = "the band way: the side-step to column " + bestSide[0] + " " + bestSide[1] + ": " + c.fail; return null; }
-            c.steps.add(new Step.Walk(bestSide[0], feet[1], bestSide[1], 0));
+            // job-side (run JAY 07:26:54-07:28:56: "goto -165 19 -41 ... is inside stone and there's no free spot within 3
+            // blocks", twice, the order parked): the side column's cell at the stop Y is a cell the mod made, inside rock - a
+            // NEAR walk (walkNearTo: Baritone's goal, its own stand, digging sideways under its lease; no free-spot chooser)
+            c.steps.add(new Step.Walk(bestSide[0], feet[1], bestSide[1], sideStepNear()));
             c.addS(sw.seconds());
             digCol = bestSide;
-            sideWords = "side-step to column " + bestSide[0] + " " + bestSide[1] + " (" + s(sw.seconds()) + "; the dig to y " + by + " held: " + bestHeld
-                    + "; the dig priced at the feet's column), ";
+            // job-side probe (run JAY: a vein seen at -178 34 -43 never showed as a way beside this one): the seen sources the
+            // chain's lookup gave for the item, said, so the next run shows whether the lookup or the pricing kept it out
+            int seenN = c.w.seenAll().apply(item).size();
+            sideWords = "side-step near column " + bestSide[0] + " " + bestSide[1] + " (" + s(sw.seconds()) + "; the dig to y " + by + " held: " + bestHeld
+                    + "; the dig priced at the feet's column; seen sources of " + shw(item) + " in the lookup: " + seenN + "), ";
             at = c.steps.size();
         }
         double s0 = c.seconds;

@@ -718,7 +718,8 @@ public final class StepHands implements Steps.Hands {
             }
             @Override public String walk(int x, int y, int z) {
                 req = null; instant = null;
-                return follow("walk", () -> c.stepJob("walk " + x + " " + y + " " + z, () -> c.walkTo(p, x, y, z)));
+                // job-side (RULES: no choosers): a mod step's cell goes to Baritone's goal, never walkTo's free-spot test
+                return follow("walk", () -> c.stepJob("walk " + x + " " + y + " " + z, () -> c.walkNearTo(p, x, y, z)));
             }
         }, this::requestStatus);
         String[] inst = new String[1];
@@ -1806,7 +1807,10 @@ public final class StepHands implements Steps.Hands {
         if (p == null) return "error: not in a world";
         // run JAF (2026-11-04): a "near" walk (the chain's walk to within the mine's sight of a spot) goes to the cell itself,
         // on Baritone's goal below - never walkTo's free-spot test for a cell inside a block (it ended the walk at its start)
-        String r = follow(w.text(), () -> c.stepJob(w.text(), () -> w.near() > 0 ? c.walkNearTo(p, w.x(), w.y(), w.z()) : c.walkTo(p, w.x(), w.y(), w.z())));
+        // job-side (run JAY 07:27: the band way's side-step "goto -165 19 -41 ... inside stone and there's no free spot within
+        // 3 blocks"): every Step.Walk is a mod step, so none runs walkTo's free-spot test (a chooser, RULES); the owner's typed
+        // goto keeps it
+        String r = follow(w.text(), () -> c.stepJob(w.text(), () -> c.walkNearTo(p, w.x(), w.y(), w.z())));
         if (r != null) return r;
         if (c.jobs.running() && "travel".equals(c.jobs.job.type)) {
             walkJob = c.jobs.job;

@@ -86,7 +86,7 @@ under-ground explore refused to dig in run JAS). Job-band2 (rule 7): the leg's e
 (`bandReached` / `bandStopped`): "reached y 16 (48 levels, N s, M blocks broken)", or "stopped at y .. of .. (column x z):
 cause; the fork: ..." with the cause read from the column ahead (water / lava cell, bedrock, `PolicyRuntime.denied`'s rule)
 and the fork's end (`WalkEndText.reason`); the band key is held with it, and the next `bandWay` price walks
-`band.sideStepM` to another column (`BandEnd.sideStep`, a `Step.Walk` first) or, for an end naming no column, tries another peak. Pass three (run JAK): seen is looked at - the stand marks only cells in the eyes' cone and the
+`band.sideStepM` to another column (`BandEnd.sideStep`, a NEAR `Step.Walk` first, radius `band.sideStepNear`: job-side, StepHands runs every `Step.Walk` and the deposit walk through `Commands.walkNearTo`, never `walkTo`'s free-spot test; the band way's words say the seen sources the lookup gave) or, for an end naming no column, tries another peak. Pass three (run JAK): seen is looked at - the stand marks only cells in the eyes' cone and the
 Job-tunnel: with no cave in reach, `Step.Tunnel` (`commands/TunnelStep`, rules in
 `cave/Tunnel`): one goal at the end of a 1 x 2 tunnel, Baritone picks every move and break. Job-tunnel2 (run JAT: a
 plain 51-block `GoalBlock` on Baritone's own search ended in 2 s at the start): the goal is capped at the loaded edge
