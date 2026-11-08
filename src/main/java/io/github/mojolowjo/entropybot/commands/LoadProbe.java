@@ -60,20 +60,33 @@ public final class LoadProbe {
         preNs = System.nanoTime();
         modNs = 0;
         java.util.Arrays.fill(marks, 0);
-        stepsNs = 0;
-        aaNs = 0;
+        lapN = 0;
+        lapPrev = 0;
         eventsThisTick.clear();
         landedTick = LivePathPrice.INSTANCE.landed();
     }
 
-    /** 0.39.z62 item 4: this tick's step machine and AA tick inside Commands.tick (ns; 0: not reached). */
-    private static long stepsNs, aaNs;
+    /**
+     * job-tick3 (run JAX: 96.6 ms of 1510 ms in "guard+commands" not named by "steps" / "aa tick", 46.8 ms in one tick): the
+     * guard+commands section split into named laps, each the time since the previous lap (the first from the mod's start).
+     * The slow-tick line prints them and the unaccounted rest (ProbeLines.inside). Structural cap: 32 laps a tick.
+     */
+    private static final String[] lapNames = new String[32];
+    private static final long[] lapNs = new long[32];
+    private static int lapN;
+    private static long lapPrev;
 
-    /** 0.39.z62 item 4 (D3a 3.1 "Core sections split"): Commands.tick's step machine and AA tick took these nanoseconds. */
-    public static void inside(long steps, long aa) {
+    /** The guard+commands section: the step named {@code name} ended now (a field check when the probe is off). */
+    public static void lap(String name) {
         if (!active) return;
-        stepsNs = Math.max(0, steps);
-        aaNs = Math.max(0, aa);
+        long now = System.nanoTime();
+        long from = lapPrev != 0 ? lapPrev : modStartNs;
+        lapPrev = now;
+        if (from == 0) return;                          // outside Core.onClientTick (tests): nothing to measure against
+        for (int i = 0; i < lapN; i++) {
+            if (lapNames[i].equals(name)) { lapNs[i] += now - from; return; }
+        }
+        if (lapN < lapNames.length) { lapNames[lapN] = name; lapNs[lapN++] = now - from; }
     }
 
     /** EntropyBot: around Core.onClientTick. */
@@ -112,7 +125,10 @@ public final class LoadProbe {
             window.tick(tickMs, modMs);
             long t = Core.INSTANCE.tick();
             double limit = ProbeLines.slowTickMs();
-            if (limit > 0 && tickMs > limit) LOG.info("[entropybot] probe slowtick: {}", ProbeLines.slowTick(t, tickMs, limit, modMs, sections(), did()));
+            if (limit > 0 && tickMs > limit) {
+                double[] sec = sections();
+                LOG.info("[entropybot] probe slowtick: {}", ProbeLines.slowTick(t, tickMs, limit, modMs, sec, did(sec[0])));
+            }
             if (lastLine < 0 || t - lastLine >= ProbeLines.everyTicks()) {
                 lastLine = t;
                 var pl = planner;
@@ -137,7 +153,7 @@ public final class LoadProbe {
         return out;
     }
 
-    private static String did() {
+    private static String did(double guardMs) {
         var s = Core.INSTANCE.commands;
         String step = "-";
         String typed = null;
@@ -148,7 +164,7 @@ public final class LoadProbe {
             step = "unknown (" + e + ")";
         }
         return "job " + step + (typed == null ? "" : " | typed step " + typed)
-                + String.format(java.util.Locale.ROOT, " | inside guard+commands: steps %.1f ms, aa tick %.1f ms (see probe aatick)", stepsNs / 1e6, aaNs / 1e6)
+                + " | " + ProbeLines.inside(lapNames, lapNs, lapN, guardMs)
                 + " | path events " + (eventsThisTick.isEmpty() ? "none" : eventsThisTick)
                 + " | priced paths landed " + (LivePathPrice.INSTANCE.landed() - landedTick);
     }

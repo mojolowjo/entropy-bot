@@ -62,6 +62,9 @@ public final class OffThreadBuild<T> {
         return d.key().equals(liveKey) ? d : null;
     }
 
+    /** job-tick3: true while a build for {@code key} runs (the caller then skips the snapshot copy a start would need). */
+    public synchronized boolean building(Object key) { return building != null && building.equals(key); }
+
     /** True while a build started and has not been polled. */
     public synchronized boolean building() { return building != null; }
 

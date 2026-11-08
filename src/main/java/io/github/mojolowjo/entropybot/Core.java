@@ -192,8 +192,10 @@ public final class Core {
             tick++;
             events.setTick(tick);
             guard.core.tick(tick);
+            io.github.mojolowjo.entropybot.commands.LoadProbe.lap("guard");     // job-tick3: the guard+commands section's laps
             Minecraft mc = Minecraft.getInstance();
             reconnect.tick(tick);                         // B6: also outside a world
+            io.github.mojolowjo.entropybot.commands.LoadProbe.lap("reconnect");
             commands.tick(tick);                          // B7a: state.json says "not in a world" too
             boolean lp = io.github.mojolowjo.entropybot.commands.LoadProbe.active;    // 0.39.z56 item 3: the slow tick's sections (a field read when off)
             if (lp) io.github.mojolowjo.entropybot.commands.LoadProbe.mark(0);

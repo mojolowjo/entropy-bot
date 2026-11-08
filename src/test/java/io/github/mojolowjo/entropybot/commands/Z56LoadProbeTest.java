@@ -48,6 +48,15 @@ class Z56LoadProbeTest {
     }
 
     @Test
+    void theGuardSectionNamesItsLapsAndTheRest() {
+        String l = ProbeLines.inside(new String[]{"guard", "steps", "aa tick", "jobs", "hotbar"},
+                new long[]{100_000, 20_000, 30_000_000, 46_800_000, 10_000}, 5, 80.0);
+        assertEquals("inside guard+commands: guard 0.1, aa tick 30.0, jobs 46.8 | unaccounted 3.1 ms (see probe aatick for the aa tick)", l);
+        assertEquals("inside guard+commands: no lap over 0.05 | unaccounted 1.0 ms (see probe aatick for the aa tick)",
+                ProbeLines.inside(new String[0], new long[0], 0, 1.0));
+    }
+
+    @Test
     void theSlowTickLineSplitsTheMod() {
         String l = ProbeLines.slowTick(77, 180.4, 50, 150.2, new double[]{140, 2, 1, 5, 2, 0.2}, "job crafting furnace | path events none | priced paths landed 1");
         assertEquals("t=77 | client tick 180.4 ms (over debug.slowTickMs 50) | mod 150.2 ms: guard+commands (aa) 140.0, reflexes 2.0, probes+knowledge 1.0, chunk pass 5.0, recorder 2.0,"

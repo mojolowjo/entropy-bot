@@ -387,6 +387,25 @@ public final class ProbeLines {
         return "dropped the kept answer " + fork + " (not known until the new search lands)";
     }
 
+    /**
+     * job-tick3: the guard+commands section by its named laps (LoadProbe.lap, ns) and the rest no lap names ("unaccounted":
+     * the section's ms minus the laps). Laps under 0.05 ms are left out to keep the line short; their sum stays in the total.
+     */
+    public static String inside(String[] names, long[] ns, int n, double sectionMs) {
+        StringBuilder b = new StringBuilder("inside guard+commands:");
+        double sum = 0;
+        int shown = 0;
+        for (int i = 0; i < n; i++) {
+            double ms = ns[i] / 1e6;
+            sum += ms;
+            if (ms < 0.05) continue;
+            b.append(shown++ == 0 ? " " : ", ").append(names[i]).append(String.format(Locale.ROOT, " %.1f", ms));
+        }
+        if (shown == 0) b.append(" no lap over 0.05");
+        b.append(String.format(Locale.ROOT, " | unaccounted %.1f ms (see probe aatick for the aa tick)", Math.max(0, sectionMs - sum)));
+        return b.toString();
+    }
+
     /** Names of the mod's tick sections, in Core.onClientTick's order (LoadProbe.mark indices). */
     public static final String[] SECTIONS = {"guard+commands (aa)", "reflexes", "probes+knowledge", "chunk pass", "recorder", "rest"};
 

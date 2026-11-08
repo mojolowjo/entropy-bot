@@ -44,6 +44,8 @@ public final class TickLaps {
         split.clear();
         asks.clear();
         nearby.clear();
+        tech.clear();
+        owner = Thread.currentThread();
         renewSets = 0;
         renewMax = 0;
         renewMaxName = null;
@@ -126,6 +128,18 @@ public final class TickLaps {
         a[1] += Math.max(0, nanos);
     }
 
+    /** job-tick3 (run JAX: "tree" 785 ms over 22 aa ticks, max 147.5): this tick's tech tree calls by kind: {count, nanoseconds}. */
+    private final java.util.Map<String, long[]> tech = new java.util.LinkedHashMap<>();
+    private volatile Thread owner;
+
+    /** job-tick3: one tech tree call ({@code kind}: norm, best, share, ideas, top); said as "tech tree: norm N = ms, ...". */
+    public void tech(String kind, long nanos) {
+        if (!on || Thread.currentThread() != owner) return;     // a worker's call is not this tick's (and the map is the tick's)
+        long[] a = tech.computeIfAbsent(kind, k -> new long[2]);
+        a[0]++;
+        a[1] += Math.max(0, nanos);
+    }
+
     /** 0.39.z78 D6: the block sets renewed this tick, and the largest (its size and its blocks' names). */
     private int renewSets, renewMax;
     private String renewMaxName;
@@ -185,6 +199,12 @@ public final class TickLaps {
             b.append(" ms");
             if (renewSets > 0) b.append(" (").append(renewSets).append(" block set").append(renewSets == 1 ? "" : "s").append(" renewed, the largest ")
                     .append(renewMax).append(" block").append(renewMax == 1 ? "" : "s").append(renewMaxName == null ? "" : ": " + renewMaxName).append(")");
+        }
+        if (!tech.isEmpty()) {
+            b.append(" | tech tree:");
+            int i = 0;
+            for (var e : tech.entrySet()) b.append(i++ == 0 ? " " : ", ").append(e.getKey()).append(String.format(Locale.ROOT, " %d = %.1f", e.getValue()[0], e.getValue()[1] / 1e6));     // structural: ns per ms
+            b.append(" ms");
         }
         return b.toString();
     }
