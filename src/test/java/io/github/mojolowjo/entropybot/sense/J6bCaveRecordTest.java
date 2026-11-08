@@ -161,6 +161,7 @@ class J6bCaveRecordTest {
         assertEquals(open, back.caveFacts(D, 0, 40, 0).passages(), "measured again from the entry: the same open passages");
         assertTrue(back.caveFacts(D, 0, 40, 0).line().startsWith("0 40 0: explored 60% (240 of 400 cells), " + open + " open passages, iron 1 left 0 mined, walked 3.0 min"),
                 back.caveFacts(D, 0, 40, 0).line());
+        assertTrue(back.caveFacts(D, 0, 40, 0).line().contains(" | passages: " + open + " of "), "aa cave list: open of total passages: " + back.caveFacts(D, 0, 40, 0).line());
         assertNull(back.caveFacts(D, 5, 5, 5), "no known cave there: no record");
     }
 

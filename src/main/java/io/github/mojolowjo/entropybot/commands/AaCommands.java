@@ -88,6 +88,13 @@ final class AaCommands {
         v("deposit", (c, aa, vb, a) -> MainStationsLive.deposit(c, a),
                 f("stations", "deposit", "the chests the deposit uses, the main first"),
                 f("stations", "deposit <x y z>", "that chest becomes the deposit's main"));
+        v("stations", (c, aa, vb, a) -> {
+            String r = OwnerReads.stations(a, io.github.mojolowjo.entropybot.aa.StationBook.now(), io.github.mojolowjo.entropybot.aa.StationBook.clock.getAsLong());
+            if (r.startsWith("stations: forgot")) c.nearby.forget();       // the cached station answers go
+            return r;
+        },
+                f("stations", "stations", "the station book: kind, cell, mine or seen, there or gone (why), last seen"),
+                f("stations", "stations forget <x y z>", "drop the book's record at that cell"));
         // ---- caves (0.39.z50, S71: the owner labels spots; the cave rule comes from the labelled patterns)
         v("cave", (c, aa, vb, a) -> CaveLabel.run(a, aa),
                 f("caves", "cave list", "the caves known by rays, the index's caves near you, its counts"),
@@ -99,6 +106,14 @@ final class AaCommands {
         // ---- status
         v("status", (c, aa, vb, a) -> aa.statusLine() + StripStep.liveLine() + aa.tuningLine() + "\n" + aa.reserveLine() + "\n" + io.github.mojolowjo.entropybot.aa.MainStations.now().line() + "\n" + aa.counts() + "\n" + aa.cavesLine() + "\n" + aa.lootLine() + "\n" + aa.gameDataLine() + (aa.on() ? "\n" + aa.brainCounters() + "\ndesires: " + String.join(" | ", aa.brainLines(5)) + "\n" + aa.goalsLine() + "\n" + aa.wantsLine() + "\nrungs: " + aa.ladderLine() + "\n" + aa.optionStatus() : ""),
                 f(S, "status", "who drives, the counters, the desires, goals and wants, each rung's reason"));
+        v("trail", (c, aa, vb, a) -> OwnerReads.trail(a),
+                f(S, "trail", "the way down: state, start, segments with ends and seconds, the climb work home"),
+                f(S, "trail clear", "forget the recorded way down"));
+        v("routes", (c, aa, vb, a) -> OwnerReads.routes(a),
+                f(S, "routes", "the fork's stored routes, numbered (or that they are not readable in this fork jar)"),
+                f(S, "routes forget <n>", "drop stored route n"));
+        v("reserved", (c, aa, vb, a) -> OwnerReads.reservedText(aa.bb.reserved()),
+                f(S, "reserved", "the bag ledger: each item, its count, for which step"));
         v("why", (c, aa, vb, a) -> {
             List<String> d = aa.decisions();
             // STRUCTURE_BLOCKS: the station lookups this why reports, each with its own notes (skipped, priced); a way's

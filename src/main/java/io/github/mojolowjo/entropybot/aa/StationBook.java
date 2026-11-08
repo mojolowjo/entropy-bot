@@ -76,6 +76,13 @@ public final class StationBook {
         return line + "; " + main;
     }
 
+    /** The owner forgets the record at the cell (aa stations forget); the record it held, null: none there. */
+    public synchronized Rec forget(int x, int y, int z) {
+        Rec old = recs.remove(key(x, y, z));
+        if (old != null) changed();
+        return old;
+    }
+
     /** The record at the cell, or null. */
     public synchronized Rec at(int x, int y, int z) { return recs.get(key(x, y, z)); }
 
