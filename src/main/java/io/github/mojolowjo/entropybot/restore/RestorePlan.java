@@ -26,6 +26,13 @@ public final class RestorePlan {
 
     public record Plan(List<Action> actions, List<Left> left) {}
 
+    /** D14: the Left reason when the entry's cell is a station of mine or the cell over one ({@code stations}: "dim x y z"); null: not. */
+    static String keptOpen(java.util.Set<String> stations, Ledger.Entry e) {
+        if (stations.contains(e.dim + " " + e.x + " " + e.y + " " + e.z)) return "kept open: my station is there";
+        if (stations.contains(e.dim + " " + e.x + " " + (e.y - 1) + " " + e.z)) return "kept open: over my station at " + e.x + " " + (e.y - 1) + " " + e.z;
+        return null;
+    }
+
     public static Plan plan(List<Ledger.Entry> entries, int[] center, String dim, int maxDist, Map<String, Integer> inventory) {
         Map<String, Integer> inv = new LinkedHashMap<>(inventory == null ? Map.of() : inventory);
         List<Ledger.Entry> order = new ArrayList<>(entries);
@@ -33,9 +40,17 @@ public final class RestorePlan {
         List<Action> actions = new ArrayList<>();
         List<Left> left = new ArrayList<>();
         long max2 = (long) maxDist * maxDist;
+        // D14 (stations placed once): a station of mine is never buried by the put-back - its own cell and the cell over it stay open
+        java.util.Set<String> stationCells = new java.util.HashSet<>();
+        for (Ledger.Entry e : order) if (Ledger.STATION.equals(e.why)) stationCells.add(e.dim + " " + e.x + " " + e.y + " " + e.z);
         for (Ledger.Entry e : order) {
             if (e.pending) continue;
             if (e.why != null && e.why.startsWith("built:")) continue;       // 0.33.0: a note of what I placed, not a break
+            String over = keptOpen(stationCells, e);
+            if (over != null) {
+                left.add(new Left(e, over));
+                continue;
+            }
             if (!e.restorable()) {
                 left.add(new Left(e, e.why == null ? "not terrain" : e.why));
                 continue;

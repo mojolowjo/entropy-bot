@@ -136,7 +136,7 @@ class Z77FurnaceTest {
         assertTrue(walked.ok(), walked.why());
         assertTrue(walked.steps().stream().anyMatch(s -> s instanceof Step.ToStation t && t.x() == -8 && t.y() == 63 && t.z() == 13), walked.steps().toString());
         assertTrue(walked.dropped().stream().anyMatch(d -> d.startsWith("place a new furnace near me: ")), walked.dropped().toString());
-        assertEquals(FakePaths.walkS(67.1) - 0.45, walked.seconds() - placed.seconds(), TOL, placed.why() + " / " + walked.why());
+        assertEquals(FakePaths.walkS(67.1) - 0.45 - NeedChain.stationMaterialS(), walked.seconds() - placed.seconds(), TOL, placed.why() + " / " + walked.why());
     }
 
     /** The carried furnace: placed 0.15 s, nothing crafted. */
@@ -148,6 +148,6 @@ class Z77FurnaceTest {
         assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.PlaceNear), c.steps().toString());
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Craft k && k.item().contains("furnace")), c.steps().toString());
         Chain made = NeedChain.resolve("iron_ingot", 2, world(Map.of("minecraft:raw_iron", 2, "minecraft:cobblestone", 8, "minecraft:coal", 2, "minecraft:stone_pickaxe", 1)));
-        assertEquals(0.3, made.seconds() - c.seconds(), TOL, "the carried one saves the craft: " + c.why() + " / " + made.why());
+        assertEquals(0.3 + NeedChain.stationMaterialS(), made.seconds() - c.seconds(), TOL, "the carried one saves the craft and its materials (D14): " + c.why() + " / " + made.why());
     }
 }

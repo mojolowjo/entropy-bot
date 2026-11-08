@@ -2088,6 +2088,7 @@ public final class AaRuntime implements JobPort {
         in.baseChests = s.feas.baseChests;
         in.baseKnown = s.basePos != null;
         in.basePos = s.basePos;
+        io.github.mojolowjo.entropybot.aa.moves.StationPlace.base = s.basePos;     // D14: the place step's centre reads the same base spot
         in.campPos = s.campPos;
         in.shelterBuilt = bb.flag(AaLadder.SHELTER_FACT);
         in.basePlace = null;

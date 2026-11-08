@@ -169,7 +169,11 @@ public final class OwnStations {
             return "no station records loaded: nothing to forget at " + x + " " + y + " " + z;
         }
         try {
-            return f.at(x, y, z, why);
+            String line = f.at(x, y, z, why);
+            // D14 (rule 7): the station book keeps it as GONE with the reason; the planner prices without it
+            String gone = io.github.mojolowjo.entropybot.aa.StationBook.now().gone(x, y, z, why, io.github.mojolowjo.entropybot.aa.StationBook.clock.getAsLong());
+            io.github.mojolowjo.entropybot.Quiet.line(gone);
+            return line;
         } catch (RuntimeException e) {
             Quiet.warn("OwnStations.forget failed at " + x + " " + y + " " + z, e);
             return "the station record at " + x + " " + y + " " + z + " could not be dropped: " + e;
@@ -196,6 +200,7 @@ public final class OwnStations {
             return line;
         }
         noter.note(cell.clone(), "minecraft:" + path, "built: station");
+        io.github.mojolowjo.entropybot.aa.StationBook.now().placed("minecraft:" + path, cell[0], cell[1], cell[2], io.github.mojolowjo.entropybot.aa.StationBook.clock.getAsLong());   // D14: the station book's record
         return "stations: noted my " + path + " at " + cell[0] + " " + cell[1] + " " + cell[2];
     }
 
