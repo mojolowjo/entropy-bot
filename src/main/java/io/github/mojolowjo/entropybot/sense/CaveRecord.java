@@ -541,7 +541,16 @@ public final class CaveRecord {
         return where() + ": explored " + Math.round(explored() * 100) + "% (" + (cellCount - un) + " of " + cellCount + " cells)"
                 + (filling() ? " (reading its cells: " + cells.size() + " so far)" : "") + ", "
                 + (g < 0 ? "passages not measured" : g + " open passage" + (g == 1 ? "" : "s")) + (passagesWhy != null ? " (" + passagesWhy + ")" : "") + (done() ? ", done" : "")
-                + (o.isEmpty() ? ", no ore seen" : ", " + String.join(", ", o)) + (walkedMinutes > 0 ? String.format(java.util.Locale.ROOT, ", walked %.1f min", walkedMinutes) : "");
+                + (o.isEmpty() ? ", no ore seen" : ", " + String.join(", ", o)) + (walkedMinutes > 0 ? String.format(java.util.Locale.ROOT, ", walked %.1f min", walkedMinutes) : "")
+                + passagesTail();
+    }
+
+    /** Owner command read (aa cave list): " | passages: 2 of 5 open | done: why" - open of total, and the done reason; "" when not measured and not done. */
+    private String passagesTail() {
+        var ps = passages();
+        String open = ps == null ? "" : " | passages: " + openPassages() + " of " + ps.size() + " open";
+        String why = doneWhy != null && done() ? " | done: " + doneWhy : done() ? " | done: every passage seen" : "";
+        return open + why;
     }
 
     /** Run EK: the cells touched since the last call (the budget's measure), and the count starts again. */
