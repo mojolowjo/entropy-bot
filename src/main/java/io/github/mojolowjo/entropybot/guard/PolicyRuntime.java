@@ -153,6 +153,20 @@ public final class PolicyRuntime {
         return s != null ? s : intent;
     }
 
+    private volatile String noBreakBy;
+
+    /**
+     * job-climb: breaks off for the walk run that holds it (the trail's pillar leg: the price chose placing, not digging); the
+     * cost hook refuses every break while set, keep-out and stations still judged by the intent. Null: let go. The holder lets
+     * go at its leg's end.
+     */
+    public void noBreaks(String by) {
+        if (!java.util.Objects.equals(noBreakBy, by)) LOG.info("[entropybot] rules: breaks {} ({})", by == null ? "back as the intent prices them" : "off", by == null ? noBreakBy : by);
+        noBreakBy = by;
+    }
+
+    public String noBreakBy() { return noBreakBy; }
+
     public void setIntent(Intent i, String by) {
         if (i == null) i = Intent.TRAVEL;
         if (intent != i) LOG.debug("[entropybot] rules: intent {} -> {} ({})", intent, i, by);

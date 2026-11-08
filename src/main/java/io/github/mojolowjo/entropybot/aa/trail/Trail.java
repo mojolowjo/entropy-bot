@@ -57,6 +57,12 @@ public final class Trail {
             if (p && s) return Math.min(pillarS, stairS);
             return p ? pillarS : s ? stairS : Double.NaN;
         }
+        /** job-climb: the way {@link #levelS(int)} priced a climb of {@code levels} (null: no level price). Ties go to the pillar. */
+        public ClimbHow how(int levels) {
+            boolean p = known(pillarS) && throwaway >= levels, s = known(stairS);
+            if (p && (!s || pillarS <= stairS)) return ClimbHow.PILLAR;
+            return s ? ClimbHow.STAIRS : null;
+        }
         /** Why no level price for {@code levels} (rule 7). */
         public String noneWhy(int levels) {
             if (known(pillarS) && throwaway < levels)
@@ -125,7 +131,45 @@ public final class Trail {
     }
 
     /** One goal of the walk back: the cell, the segment it ends ({@code from} -> {@code to} of the trail's way down). */
-    public record Goal(Cell at, Cell segFrom, Cell segTo) {}
+    public record Goal(Cell at, Cell segFrom, Cell segTo, boolean up) {
+        public Goal(Cell at, Cell segFrom, Cell segTo) { this(at, segFrom, segTo, false); }
+    }
+
+    /** job-climb: how the price climbs a one-way segment (the cheaper of the two it priced, {@link Climb#how}). */
+    public enum ClimbHow { PILLAR, STAIRS }
+
+    /**
+     * job-climb (run JBC 09:00: the deposit priced an 18-level shaft as climb work, then asked Baritone for a plain walk to the
+     * top and got no path): how one goal of the walk back runs. {@code place} / {@code breaks}: the walk's lease (null = as the
+     * walk leaves it, TRAVEL prices it); {@code exact}: GoalBlock on the cell (a pillar ends standing on it) instead of
+     * GoalGetToBlock; {@code how}: the words.
+     */
+    public record Leg(Boolean place, Boolean breaks, boolean exact, String how) {
+        public static final Leg WALK = new Leg(null, null, false, "walk");
+    }
+
+    /**
+     * job-climb: a goal up a one-way segment runs as the price chose: a pillar = placing on (the bag's throwaway), no breaks,
+     * GoalBlock on the top; dug stairs = breaks on, GoalBlock on the top; any other goal (or no climb price) a plain walk.
+     * Baritone picks every move (rule 2). Pure.
+     */
+    public static Leg leg(Goal g, ClimbHow how) {
+        if (g == null || !g.up() || how == null) return Leg.WALK;
+        return how == ClimbHow.PILLAR ? new Leg(true, false, true, "pillar (placing on, no breaks)")
+                : new Leg(null, true, true, "dug stairs (breaks on)");
+    }
+
+    /** job-climb: a leg that ended short, with Baritone's own end (WalkEndText.reason) and how the leg ran. Pure. */
+    public static String breakText(String goal, Leg leg, String at, String why) {
+        return "Baritone's " + (leg == null || leg == Leg.WALK ? "walk" : leg.how()) + " to " + goal + " ended at " + at + " short of it: " + why;
+    }
+
+    /** The one-way levels of the recorded segments (the climb the price counted). */
+    public int levels() {
+        int n = 0;
+        for (Seg s : segs) n += s.drop();
+        return n;
+    }
 
     private State state = State.NOT_LOADED;
     private Cell start;
@@ -333,9 +377,9 @@ public final class Trail {
             if (s.oneWay() && s.cells().size() > 2) {
                 List<Cell> c = s.cells();
                 int base = c.get(c.size() - 1).y;
-                for (int k = c.size() - 2; k > 0; k--) if ((c.get(k).y - base) % up == 0) out.add(new Goal(c.get(k), s.from(), s.to()));
+                for (int k = c.size() - 2; k > 0; k--) if ((c.get(k).y - base) % up == 0) out.add(new Goal(c.get(k), s.from(), s.to(), true));
             }
-            out.add(new Goal(s.from(), s.from(), s.to()));
+            out.add(new Goal(s.from(), s.from(), s.to(), s.oneWay()));
         }
         return out;
     }

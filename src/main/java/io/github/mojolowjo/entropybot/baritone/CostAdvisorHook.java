@@ -42,9 +42,9 @@ public final class CostAdvisorHook {
      */
     public record Token(BreakPolicy.Snapshot snapshot, Intent intent, String dim, BreakPolicy.Where me,
                         io.github.mojolowjo.entropybot.guard.Policy areas, int[] at, int lavaReach, double lavaPenalty,
-                        StripSearch.Said said) {
+                        StripSearch.Said said, String noBreakBy) {
         public Token(BreakPolicy.Snapshot snapshot, Intent intent, String dim, BreakPolicy.Where me) {
-            this(snapshot, intent, dim, me, null, null, 0, 0, null);
+            this(snapshot, intent, dim, me, null, null, 0, 0, null, null);
         }
 
         /** The token has keep-out or danger boxes to price (moveMultiplier). */
@@ -219,7 +219,7 @@ public final class CostAdvisorHook {
         // 0.39.z77 mineintent: while a strip runs with its probe on, the search carries its own said set (one line per cell);
         // 0.39.z77 strip 4: the last search's summary line is said as this one starts
         return new Token(pr.snapshot(), pr.intentNow(), dim, pr.where(), areas, at, reach, pen,
-                StripSearch.INSTANCE.forSearch(l -> LOG.info("[entropybot] {}", l)));
+                StripSearch.INSTANCE.forSearch(l -> LOG.info("[entropybot] {}", l)), pr.noBreakBy());
     }
 
     /**
@@ -288,6 +288,9 @@ public final class CostAdvisorHook {
         BreakPolicy.Snapshot s = t != null ? t.snapshot() : pr.snapshot();
         BreakPolicy.Where me = t != null ? t.me() : pr.where();
         if (in == null || in == Intent.NONE) return refused(t, x, y, z, state, in, "break", "walking only", null);   // the route map's context
+        // job-climb: a walk run with breaks off (the trail's pillar leg, PolicyRuntime.noBreaks) refuses every break for its run
+        String nb = t != null ? t.noBreakBy() : pr.noBreakBy();
+        if (nb != null) return refused(t, x, y, z, state, in, "break", "no breaks", "a no-break run: " + nb);
         // STRUCTURE_BLOCKS (RULES 16): every intent's path refuses the cell BreakPolicy refuses for a structure block
         // (Baritone's blocksToDisallowBreaking stays empty: block types never refuse by themselves, this hook does per cell);
         // a null snapshot refuses here too ("no snapshot", BreakPolicy.pathStructure), never NaN or open

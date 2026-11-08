@@ -196,13 +196,27 @@ public final class TrailRuntime {
 
         private final String who;
         private final java.util.List<Trail.Goal> goals;
+        /** job-climb: how the price climbs the one-way segments (null: no climb, or no level price). */
+        private final Trail.ClimbHow how;
         private int idx;
         private boolean walking;
+        private Trail.Leg leg = Trail.Leg.WALK;
+        private boolean leaseHeld;
+        private long lines0;
 
         Walker(String who, Trail t) {
             this.who = who;
             this.goals = t.way(Tuning.i("trail.climbLegUp"));
             t.chosen++;
+            Trail.ClimbHow h = null;
+            int levels = t.levels();
+            var p = net.minecraft.client.Minecraft.getInstance().player;
+            if (levels > 0 && p != null) {
+                h = climb(p).how(levels);
+                LOG.info("[entropybot] trail: {} climbs {} one-way level{} as priced: {}", who, levels, levels == 1 ? "" : "s",
+                        h == null ? "no level price (a plain walk up)" : h == Trail.ClimbHow.PILLAR ? "a pillar (Baritone places the bag's throwaway, no breaks)" : "dug stairs (Baritone breaks)");
+            }
+            this.how = h;
         }
 
         int size() { return goals.size(); }
@@ -211,6 +225,29 @@ public final class TrailRuntime {
             var b = Jobs.baritone();
             if (walking && b != null) Jobs.cancel(b);
             walking = false;
+            letGo();
+        }
+
+        /** job-climb: the leg's lease back (the throwaway run, breaks back as the intent prices them). */
+        private void letGo() {
+            if (!leaseHeld) return;
+            leaseHeld = false;
+            io.github.mojolowjo.entropybot.engine.RunThrowaway.end(this);
+            if (Boolean.FALSE.equals(leg.breaks())) io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.noBreaks(null);
+        }
+
+        private boolean arrived(Trail.Leg l, BlockPos at, LocalPlayer p) {
+            return l.exact() ? p.blockPosition().equals(at) : LivePathPrice.goal(at).isInGoal(p.blockPosition());
+        }
+
+        private static io.github.mojolowjo.entropybot.aa.moves.WalkEndText.Calc forkCalc(baritone.api.IBaritone b) {
+            try {
+                var wc = b.getCustomGoalProcess().lastCalc();
+                return wc == null ? io.github.mojolowjo.entropybot.aa.moves.WalkEndText.Calc.NONE
+                        : new io.github.mojolowjo.entropybot.aa.moves.WalkEndText.Calc(true, wc.exhausted(), wc.budget(), String.valueOf(wc.stop()));
+            } catch (LinkageError e) {
+                return io.github.mojolowjo.entropybot.aa.moves.WalkEndText.Calc.NONE;     // an older fork: Baritone's line alone
+            }
         }
 
         Tick tick(LocalPlayer p) {
@@ -226,7 +263,8 @@ public final class TrailRuntime {
             }
             var g = goals.get(idx);
             BlockPos at = new BlockPos(g.at().x(), g.at().y(), g.at().z());
-            if (LivePathPrice.goal(at).isInGoal(p.blockPosition())) {
+            Trail.Leg l = walking ? leg : Trail.leg(g, how);
+            if (arrived(l, at, p)) {
                 cancel();
                 idx++;
                 t.walked++;
@@ -234,14 +272,29 @@ public final class TrailRuntime {
                 return new Tick(State.RUNNING, who + ": by the trail, at " + g.at().text());
             }
             if (!walking) {
-                io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, who);
-                LivePathPrice.walk(b, at);
+                var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
+                pr.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, who);     // keep-out and the stations judged as travel
+                leg = l;
+                lines0 = io.github.mojolowjo.entropybot.baritone.BaritoneHook.lines();
+                if (Boolean.TRUE.equals(l.place())) {
+                    // the walk's placement price back (an explore may have left it at COST_INF) and the bag's placeable blocks as throwaway
+                    io.github.mojolowjo.entropybot.engine.RunThrowaway.walkPenalty();
+                    io.github.mojolowjo.entropybot.engine.RunThrowaway.add(this, io.github.mojolowjo.entropybot.engine.RunThrowaway.bagBlocks(p));
+                    leaseHeld = true;
+                }
+                if (Boolean.FALSE.equals(l.breaks())) { pr.noBreaks(who + " pillar to " + g.at().text()); leaseHeld = true; }
+                if (l.exact()) b.getCustomGoalProcess().setGoalAndPath(new baritone.api.pathing.goals.GoalBlock(at));
+                else LivePathPrice.walk(b, at);
                 walking = true;
-                return new Tick(State.RUNNING, who + ": by the trail to " + g.at().text() + " (" + (idx + 1) + " of " + goals.size() + ")");
+                String as = l == Trail.Leg.WALK ? "" : " as " + l.how();
+                return new Tick(State.RUNNING, who + ": by the trail to " + g.at().text() + as + " (" + (idx + 1) + " of " + goals.size() + ")");
             }
             if (!b.getCustomGoalProcess().isActive() && !Core.INSTANCE.reflexes.hold()) {
                 walking = false;
-                return new Tick(State.BROKEN, t.breakAt(g, "Baritone's walk to " + g.at().text() + " ended at " + Jobs.fmt(Jobs.here(p)) + " short of it (no path, or a changed cell)"));
+                letGo();
+                String why = io.github.mojolowjo.entropybot.aa.moves.WalkEndText.reason(forkCalc(b), lines0,
+                        io.github.mojolowjo.entropybot.baritone.BaritoneHook.lines(), io.github.mojolowjo.entropybot.baritone.BaritoneHook.lastLine());
+                return new Tick(State.BROKEN, t.breakAt(g, Trail.breakText(g.at().text(), leg, Jobs.fmt(Jobs.here(p)), why)));
             }
             return new Tick(State.RUNNING, who + ": by the trail to " + g.at().text() + " - walking (" + Jobs.fmt(Jobs.here(p)) + ")");
         }
