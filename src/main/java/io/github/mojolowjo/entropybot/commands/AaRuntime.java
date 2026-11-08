@@ -1943,6 +1943,11 @@ public final class AaRuntime implements JobPort {
             laps.lap("progress");
             brainFacts(mc, now);
             laps.lap("brainFacts");
+            if (itemDataPending(now)) {     // job-tick2 (rule 22): no tech tree yet, built off the tick: stand, said once
+                tracer.beginTick();
+                snapshot(now, "item data");
+                return;
+            }
             goalsTick(p, tick);
             laps.lap("goals");
             caveTick(now);
@@ -3496,6 +3501,84 @@ public final class AaRuntime implements JobPort {
     /** AA_ROUND4 B3: the world folder the tuning was loaded for (a new world loads its own). */
     private Path tuningFor;
 
+    /** job-tick2: the item data build's key: the world (its identity) and its recipe count. */
+    private record ItemDataKey(int level, int recipes) {}
+
+    /** job-tick2: the built item data, immutable once handed over: the tech tree and the item worth source. */
+    private record ItemData(io.github.mojolowjo.entropybot.aa.brain.TechTree tree, int recipes, ItemWorthSource src, RuntimeException srcError) {}
+
+    /** job-tick2: the item data thread (one daemon thread; the planner's worker keeps to the trips). */
+    private final io.github.mojolowjo.entropybot.aa.core.OffThreadBuild<ItemData> itemData =
+            new io.github.mojolowjo.entropybot.aa.core.OffThreadBuild<>(io.github.mojolowjo.entropybot.aa.core.OffThreadBuild.daemon("entropybot-itemdata"));
+
+    /**
+     * job-tick2, on the item data thread: the tech tree from the recipes and the item worth source from the level's data.
+     * Loader note: it reads the recipe manager, the registries and the tags, which do not change while a world's data stands
+     * (a new recipe set is a new key; a result for an old key is dropped); it never reads blocks of the world or the player.
+     */
+    private static ItemData buildItemData(net.minecraft.world.level.Level level, List<? extends net.minecraft.world.item.crafting.RecipeHolder<?>> all) {
+        List<io.github.mojolowjo.entropybot.aa.brain.TechTree.Recipe> rs = new ArrayList<>();
+        for (var h : all) {
+            var r = h.value();
+            var out = r.getResultItem(level.registryAccess());
+            if (out == null || out.isEmpty()) continue;
+            List<java.util.Set<String>> slots = new ArrayList<>();
+            for (var ing : r.getIngredients()) {
+                java.util.Set<String> s = new java.util.HashSet<>();
+                for (var st : ing.getItems()) s.add(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString());
+                if (!s.isEmpty()) slots.add(s);
+            }
+            rs.add(new io.github.mojolowjo.entropybot.aa.brain.TechTree.Recipe(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(out.getItem()).toString(), slots));
+        }
+        var t = new io.github.mojolowjo.entropybot.aa.brain.TechTree(rs);
+        try {       // AA_ROUND4 C: the item data the worth is derived from (rebuilt with the recipes)
+            return new ItemData(t, all.size(), ItemWorthSource.read(level), null);
+        } catch (RuntimeException e) {
+            return new ItemData(t, all.size(), null, e);
+        }
+    }
+
+    /** job-tick2, on the client tick: the finished build handed over in one swap (the loot book joined here, on its thread). */
+    private void publishItemData(io.github.mojolowjo.entropybot.aa.core.OffThreadBuild.Done<ItemData> d) {
+        if (d == null) return;
+        if (d.error() != null) {
+            treeRecipes = ((ItemDataKey) d.key()).recipes();      // said once; built again when the recipes change
+            treeError = d.error().toString();
+            LOG.warn("[entropybot] aa: tech tree could not be built off the client tick: {}", treeError);
+            return;
+        }
+        ItemData v = d.value();
+        bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.TECH_FACT, v.tree());
+        treeRecipes = v.recipes();
+        if (v.src() != null) {
+            var src = v.src();
+            var book = currentLootBook();
+            if (book != null && book.ready()) src.loot(book, lootReader.fishPool());
+            itemWorthSrc = src;
+            io.github.mojolowjo.entropybot.aa.brain.ItemWorth.use(src);
+            LOG.info("[entropybot] aa: item worth from data: {} items with facts, {} with recipes, {} unreadable", src.itemsWithFacts(), src.itemsWithRecipes(), src.failed);
+        } else {
+            LOG.warn("[entropybot] aa: item worth data not read - the tables stay in use: {}", String.valueOf(v.srcError()));
+        }
+        io.github.mojolowjo.entropybot.aa.brain.MiningTiers.use(null);      // re-read with the recipes
+        miningTiersWarned = false;
+        treeError = null;
+        LOG.info("[entropybot] aa: tech tree from {} recipes ({} usable), built off the client tick in {} ms", v.recipes(), v.tree().size(), d.nanos() / 1_000_000);     // structural: ns per ms
+    }
+
+    /**
+     * job-tick2 (rule 22): true while the first item data build of this world is not in (no tech tree yet): the tick says
+     * so once when an order waits on it and stands.
+     */
+    private boolean itemDataPending(long now) {
+        if (bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.TECH_FACT) != null || !itemData.building()) return false;
+        if (bb.task() != null || bb.in.otherJob != null) {
+            String l = itemData.buildingLine(now);
+            if (l != null) LOG.info("[entropybot] {}", l);
+        }
+        return true;
+    }
+
     private void brainFacts(Minecraft mc, long now) {
         Path tf = tuningFile();
         if (tf != null && !tf.equals(tuningFor)) {
@@ -3517,48 +3600,26 @@ public final class AaRuntime implements JobPort {
             if (bb.in.furnaceKnown) have.add("furnace");
             if (!have.equals(bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.HAVE_FACT))) bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.HAVE_FACT, java.util.Set.copyOf(have));
         }
+        // job-tick2 (runs JAU / JAV: 280 ms of the first aa tick): the tech tree and the item worth are built on the item data
+        // thread when the world's recipes arrive (their count is read every tick, a cheap size), published here in one swap
+        try {
+            var rm = mc.level.getRecipeManager();
+            var all = rm.getRecipes();
+            ItemDataKey key = new ItemDataKey(System.identityHashCode(mc.level), all.size());
+            publishItemData(itemData.poll(key));
+            if (all.size() != treeRecipes) {
+                var level = mc.level;
+                var holders = List.copyOf(all);
+                if (itemData.start(key, () -> buildItemData(level, holders), now))
+                    LOG.info("[entropybot] item data: the tech tree and item worth are being built off the client tick ({} recipes)", holders.size());
+            }
+        } catch (RuntimeException e) {
+            if (treeError == null) LOG.warn("[entropybot] aa: tech tree: {}", e.toString());
+            treeError = e.toString();
+        }
+        io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.lap("brainFacts.recipes");      // job-tick: now the count, the start and the swap only
         if (now - treeCheckedAt >= Tuning.i("aaRuntime.treeEveryMs")) {
             treeCheckedAt = now;
-            try {
-                var rm = mc.level.getRecipeManager();
-                var all = rm.getRecipes();
-                if (all.size() != treeRecipes) {
-                    List<io.github.mojolowjo.entropybot.aa.brain.TechTree.Recipe> rs = new ArrayList<>();
-                    for (var h : all) {
-                        var r = h.value();
-                        var out = r.getResultItem(mc.level.registryAccess());
-                        if (out == null || out.isEmpty()) continue;
-                        List<java.util.Set<String>> slots = new ArrayList<>();
-                        for (var ing : r.getIngredients()) {
-                            java.util.Set<String> s = new java.util.HashSet<>();
-                            for (var st : ing.getItems()) s.add(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString());
-                            if (!s.isEmpty()) slots.add(s);
-                        }
-                        rs.add(new io.github.mojolowjo.entropybot.aa.brain.TechTree.Recipe(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(out.getItem()).toString(), slots));
-                    }
-                    var t = new io.github.mojolowjo.entropybot.aa.brain.TechTree(rs);
-                    bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.TECH_FACT, t);
-                    treeRecipes = all.size();
-                    try {       // AA_ROUND4 C: the item data the worth is derived from (rebuilt with the recipes)
-                        var src = ItemWorthSource.read(mc.level);
-                        var book = currentLootBook();
-                        if (book != null && book.ready()) src.loot(book, lootReader.fishPool());
-                        itemWorthSrc = src;
-                        io.github.mojolowjo.entropybot.aa.brain.ItemWorth.use(src);
-                        LOG.info("[entropybot] aa: item worth from data: {} items with facts, {} with recipes, {} unreadable", src.itemsWithFacts(), src.itemsWithRecipes(), src.failed);
-                    } catch (RuntimeException e) {
-                        LOG.warn("[entropybot] aa: item worth data not read - the tables stay in use: {}", e.toString());
-                    }
-                    io.github.mojolowjo.entropybot.aa.brain.MiningTiers.use(null);      // re-read with the recipes
-                    miningTiersWarned = false;
-                    treeError = null;
-                    LOG.info("[entropybot] aa: tech tree from {} recipes ({} usable)", all.size(), t.size());
-                }
-            } catch (RuntimeException e) {
-                if (treeError == null) LOG.warn("[entropybot] aa: tech tree: {}", e.toString());
-                treeError = e.toString();
-            }
-            io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.lap("brainFacts.recipes");      // job-tick: the tech tree + item worth rebuild (once per recipe set)
             loadMiningTiers();
             io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.lap("brainFacts.tiers");
         }

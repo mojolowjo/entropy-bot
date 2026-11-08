@@ -149,6 +149,7 @@ final class TuningDefs {
         Tuning.def("nearby.maxChecks", 24, "simple-tools 0.39.w1", "scanned blocks checked (nearest first) for leaves, the policy and the tier before the nearby fact falls back to the sightings");
         Tuning.def("nearby.leafReach", 2, "simple-tools 0.39.w1", "blocks above or beside a log a leaf block must be within for the log to count as a tree");
         Tuning.def("nearby.cacheMs", 3000, "simple-tools 0.39.w1", "milliseconds a nearby answer is reused while the bot stays near where it was asked");
+        Tuning.def("sense.scanBudgetMs", 8, "job-tick2 (runs JAU / JAV: 32 scans, 554 ms in the first aa tick)", "milliseconds of world scans the containers, station and tree log lookups may spend in one client tick; the rest run on a tick after");
         Tuning.def("nearby.cacheMove", 4, "simple-tools 0.39.w1", "blocks the bot may move before a cached nearby answer is asked again");
         Tuning.def("only.otherWeight", 0, "simple-tools 0.39.w1", "factor on every other need's and want's score while 'aa only <need>' is on (0: they are silent; reflexes and danger stay)");
         // campCommands (the station search radius)
