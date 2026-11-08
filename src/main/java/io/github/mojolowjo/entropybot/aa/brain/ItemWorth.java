@@ -239,7 +239,19 @@ public final class ItemWorth {
     private static boolean cutFlag;
 
     /** The adapter sets the data (null: none yet); the cache is cleared. */
-    public static synchronized void use(Source s) { source = s; CACHE.clear(); version++; }
+    public static void use(Source s) {
+        synchronized (ItemWorth.class) { source = s; CACHE.clear(); version++; }
+        if (s == null) return;
+        for (Runnable r : ON_DATA) {
+            try { r.run(); } catch (RuntimeException e) { io.github.mojolowjo.entropybot.Quiet.warn("item data: a listener of the data's arrival failed", e); }
+        }
+    }
+
+    /** dep-early: run after each {@link #use} with data (the deposit's lookup rebuilt for a main marked before the data was in). */
+    private static final java.util.List<Runnable> ON_DATA = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** Adds a listener once (the same object twice is kept once). */
+    public static void onData(Runnable r) { if (!ON_DATA.contains(r)) ON_DATA.add(r); }
 
     public static boolean hasData() { return source != null; }
 

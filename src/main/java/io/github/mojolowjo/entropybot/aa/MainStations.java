@@ -95,6 +95,67 @@ public final class MainStations {
 
     public synchronized Main of(String kind) { return mains.get(kind); }
 
+    // ---- dep-early (runs JS-JX, JAN): a main chest marked before the item data is in waits here; the deposit's lookup is
+    // rebuilt when the data arrives (commands.MainStationsLive.onItemData) and says once whether it lists the chest
+
+    /** Saves the mains after a change made outside the commands (the book's gone mark; set by the world's load). */
+    public static volatile Runnable saver;
+
+    private Main waiting;
+
+    /** The main {@code m} was marked before the item data was in: the lookup is rebuilt for it when the data arrives. */
+    public synchronized void waitForData(Main m) { waiting = m; }
+
+    /** The main waiting for the item data (taken once: the listed line is said once), or null. */
+    public synchronized Main takeWaiting() {
+        Main w = waiting;
+        waiting = null;
+        return w;
+    }
+
+    /** The early mark's answer (rule 7): the chest is the main now, the lookup lists it when the item data loads. */
+    public static String earlyLine(long maxS) {
+        return "main chest set; listed when the item data loads (" + maxS + " s at most)";
+    }
+
+    /** The line when the item data arrived for a waiting main: listed, or why not. */
+    public static String listedLine(Main m, boolean listed, String why) {
+        return "deposit lookup: main " + word(m.kind()) + " at " + m.at() + (listed ? " listed" : " NOT listed after the item data loaded: " + why);
+    }
+
+    /**
+     * rule 23 (the station book is the one store of what stands where): the main at the cell is dropped when the book marks
+     * it gone; the line (null: no main there).
+     */
+    public synchronized String goneAt(int x, int y, int z, String why) {
+        for (Main m : List.copyOf(mains.values())) {
+            if (!m.is(x, y, z)) continue;
+            mains.remove(m.kind());
+            if (m.equals(waiting)) waiting = null;
+            return "main " + word(m.kind()) + " at " + m.at() + " is no longer the main: the station book marks it gone (" + why + ")";
+        }
+        return null;
+    }
+
+    /**
+     * rule 23 at the world's load: every main is a station in the book (added as seen when missing); a main the book marks
+     * gone is dropped. The lines (empty: they agree).
+     */
+    public List<String> agree(StationBook book, long now) {
+        List<String> out = new ArrayList<>();
+        for (Main m : all()) {
+            StationBook.Rec r = book.at(m.x(), m.y(), m.z());
+            if (r == null) {
+                book.seen(m.block(), m.x(), m.y(), m.z(), false, now);
+                out.add("main " + word(m.kind()) + " at " + m.at() + " added to the station book");
+            } else if (!r.present()) {
+                String s = goneAt(m.x(), m.y(), m.z(), r.goneWhy() == null ? "no reason kept" : r.goneWhy());
+                if (s != null) out.add(s);
+            }
+        }
+        return out;
+    }
+
     /** The main at the cell whose block is in the set (a lookup's spot), or null. */
     public synchronized Main at(int x, int y, int z, Set<String> blocks) {
         for (Main m : mains.values()) if (m.is(x, y, z) && (blocks == null || blocks.contains(m.block()))) return m;

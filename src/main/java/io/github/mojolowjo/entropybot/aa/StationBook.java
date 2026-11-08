@@ -64,7 +64,16 @@ public final class StationBook {
         if (old == null) return "stations: nothing in the station book at " + x + " " + y + " " + z + " to mark gone (" + why + ")";
         recs.put(key(x, y, z), new Rec(old.block(), x, y, z, old.mine(), now, false, why));
         changed();
-        return "stations: the " + old.block().replaceFirst("^minecraft:", "") + " at " + old.at() + " is gone: " + why + " (marked gone; the planner prices without it)";
+        String line = "stations: the " + old.block().replaceFirst("^minecraft:", "") + " at " + old.at() + " is gone: " + why + " (marked gone; the planner prices without it)";
+        // rule 23: a gone station is no main (the mains file agrees with the book; the reason said)
+        MainStations ms = MainStations.current;
+        String main = ms == null ? null : ms.goneAt(x, y, z, why);
+        if (main == null) return line;
+        Runnable s = MainStations.saver;
+        if (s != null) {
+            try { s.run(); } catch (RuntimeException e) { io.github.mojolowjo.entropybot.Quiet.warn("stations: the mains were not saved", e); }
+        } else main += " (mains not saved: no world file)";
+        return line + "; " + main;
     }
 
     /** The record at the cell, or null. */
