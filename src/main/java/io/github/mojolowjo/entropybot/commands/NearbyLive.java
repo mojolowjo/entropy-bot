@@ -50,6 +50,7 @@ final class NearbyLive {
         int[] me = here();
         if (me == null) return fallback == null ? null : fallback.get();
         if (logAt >= 0 && now - logAt < Tuning.l("nearby.cacheMs") && close(me, logMe)) return logSpot;
+        if (logAt >= 0 && !scanAllowed()) return logSpot;      // job-tick2: the tick's scan budget is spent: the last answer stands
         logAt = now;
         logMe = me;
         boolean[] fell = {false};
@@ -175,7 +176,7 @@ final class NearbyLive {
         return out;
     }
 
-    private record Known(long at, int[] me, long data, StationFact.Known fact) {}
+    private record Known(long at, int[] me, long data, StationFact fact) {}
     private final java.util.Map<String, Known> stations = new java.util.HashMap<>();
 
     /**
@@ -196,13 +197,34 @@ final class NearbyLive {
         long data = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.version();
         Known k = stations.get(kind);
         if (k != null && k.data() == data && now - k.at() < Tuning.l("nearby.cacheMs") && close(me, k.me())) return k.fact();
+        if (!scanAllowed()) return k != null && k.data() == data ? k.fact() : new StationFact.NotLoaded(WAITING);
         long t0 = LAPS.now();
         StationFact f = Nearby.stationFact(scan(), me, blocks);
         if (t0 != 0) LAPS.nearby("station", LAPS.now() - t0);      // job-tick: a station lookup (its scans also counted in "scans")
-        if (f instanceof StationFact.Known kn) stations.put(kind, new Known(now, me, data, kn));
+        // job-tick2 (runs JAU / JAV: the lookups that found none were asked again every time): none is cached too (dropped by
+        // forget, a new item data, the time and the move, as a known answer is); not loaded never is
+        if (f instanceof StationFact.Known || f instanceof StationFact.None) stations.put(kind, new Known(now, me, data, f));
         else stations.remove(kind);
         return f;
     }
+
+    /** job-tick2: the not-ready reason of a first lookup put off by the scan budget (rule 15: said, never "none"). */
+    static final String WAITING = "waiting for the scan budget (sense.scanBudgetMs): asked again next tick";
+
+    /** job-tick2: the per-tick scan budget of the containers, station and tree log lookups (Tuning sense.scanBudgetMs). */
+    private final io.github.mojolowjo.entropybot.aa.core.ScanBudget scanBudget = new io.github.mojolowjo.entropybot.aa.core.ScanBudget();
+
+    io.github.mojolowjo.entropybot.aa.core.ScanBudget scanBudget() { return scanBudget; }
+
+    /** May a lookup scan this tick? False: deferred (counted for the probe as "deferred scans"). */
+    private boolean scanAllowed() {
+        if (scanBudget.allow(io.github.mojolowjo.entropybot.Core.INSTANCE.tick(), Tuning.get("sense.scanBudgetMs"))) return true;
+        LAPS.nearby("deferred scans", 0);
+        return false;
+    }
+
+    private record Box(long at, int[] me, long data, StationFact fact) {}
+    private Box containerBox;
 
     /**
      * The deposit leg (owner 2026-10-22): the known containers as a station fact (the same three states and the same one
@@ -216,9 +238,16 @@ final class NearbyLive {
         java.util.Set<String> ids = containerIds();
         StationBlocks.Answer blocks = ids.isEmpty() ? new StationBlocks.Answer.None("the game tags no chest or barrel the item data calls a container")
                 : new StationBlocks.Answer.Of(ids);
+        long now = System.currentTimeMillis();
+        long data = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.version();
+        Box k = containerBox;
+        // job-tick2: cached like the stations (time, move, item data; dropped by forget)
+        if (k != null && k.data() == data && now - k.at() < Tuning.l("nearby.cacheMs") && close(me, k.me())) return k.fact();
+        if (!scanAllowed()) return k != null && k.data() == data ? k.fact() : new StationFact.NotLoaded(WAITING);
         long t0 = LAPS.now();
         StationFact f = Nearby.stationFact(scan(), me, blocks);
-        if (t0 != 0) LAPS.nearby("containers", LAPS.now() - t0);   // job-tick: the deposit lookup (not cached)
+        if (t0 != 0) LAPS.nearby("containers", LAPS.now() - t0);   // job-tick: the deposit lookup
+        containerBox = f instanceof StationFact.NotLoaded ? null : new Box(now, me, data, f);
         return f;
     }
 
@@ -283,7 +312,10 @@ final class NearbyLive {
     }
 
     /** The station at the cell is gone: the cached answers go (the ledger record is dropped by the caller). */
-    void forget() { stations.clear(); }
+    void forget() {
+        stations.clear();
+        containerBox = null;
+    }
 
     private long notLoadedSaidAt = -1;
 
@@ -349,6 +381,7 @@ final class NearbyLive {
     private List<int[]> scanFor(List<Block> blocks, int radius) {
         List<int[]> out = new ArrayList<>();
         long t0 = LAPS.now();
+        long s0 = System.nanoTime();
         try {
             IBaritone b = Jobs.baritone();
             if (b == null || blocks.isEmpty()) return out;
@@ -359,6 +392,7 @@ final class NearbyLive {
             io.github.mojolowjo.entropybot.Quiet.warn("nearby: Baritone's world scan failed, the sightings answer instead", e);
         } finally {
             if (t0 != 0) LAPS.nearby("scans", LAPS.now() - t0);     // 0.39.z78 D6: Baritone's own share of a renewal
+            scanBudget.spend(io.github.mojolowjo.entropybot.Core.INSTANCE.tick(), System.nanoTime() - s0);    // job-tick2
         }
         return out;
     }

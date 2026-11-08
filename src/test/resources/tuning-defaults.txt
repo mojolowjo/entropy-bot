@@ -887,6 +887,7 @@ worth.speedPow	0.25
 worth.toolK	1.15
 worth.weaponK	0.09
 nearby.cacheMove	4.0
+sense.scanBudgetMs	8.0
 nearby.cacheMs	3000.0
 nearby.leafReach	2.0
 nearby.maxChecks	24.0
