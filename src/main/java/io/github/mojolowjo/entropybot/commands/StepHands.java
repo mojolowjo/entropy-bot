@@ -309,6 +309,22 @@ public final class StepHands implements Steps.Hands {
         return null;
     }
 
+    /**
+     * job-mon (run JAI): Baritone's process in control (its displayName), its last chat line and line count (BaritoneHook's
+     * logger), for the monitor's silent rule. Null: not the running step, or Baritone not loaded / not hooked (rule 15: the
+     * silent rule is then off). Loader notes: Baritone API IPathingControlManager#mostRecentInControl,
+     * IBaritoneProcess#displayName.
+     */
+    @Override public io.github.mojolowjo.entropybot.aa.moves.StepMonitor.Said said(Step s) {
+        if (s != step || !Core.INSTANCE.baritone.hooked()) return null;
+        var b = Jobs.baritone();
+        if (b == null) return null;
+        var in = b.getPathingControlManager().mostRecentInControl();
+        String proc = in.isPresent() ? in.get().displayName() : null;
+        return new io.github.mojolowjo.entropybot.aa.moves.StepMonitor.Said(proc,
+                io.github.mojolowjo.entropybot.baritone.BaritoneHook.lastLine(), io.github.mojolowjo.entropybot.baritone.BaritoneHook.lines());
+    }
+
     /** 0.39.z71: the monitor's probe lines (debug.monitorProbe 1). */
     @Override public void probe(String line) { LOG.info("[entropybot] probe monitor: {}", line); }
 

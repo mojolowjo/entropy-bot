@@ -42,6 +42,18 @@ public final class StepMonitor {
     /** The step kinds by what their progress is (design 3.2's table); EXEMPT: never judged. */
     public enum Kind { WALK, GATHER, ITEM_JOB, PLACE, HUNT, EXPLORE, EXEMPT }
 
+    /**
+     * job-mon: what Baritone last said - {@code process} in control (null: none), {@code line} its last chat line (null:
+     * none), {@code lines} its running line count (a new line raises it).
+     */
+    public record Said(String process, String line, long lines) {}
+
+    /** job-mon: the words that start a silent end's reason (FactChange's no-progress word, so every stall reader sees it). */
+    public static final String SILENT = FactChange.STALL_NO_PROGRESS + " ";
+
+    /** job-mon: ticks with no move, no break and no new Baritone line before the silent end (Tuning monitor.silentS x 20). */
+    public static long silentTicks() { return Math.round(20 * Tuning.get("monitor.silentS")); }
+
     /** Ticks between looks (Tuning monitor.everyTicks). */
     public static long everyTicks() { return Math.max(1, Tuning.l("monitor.everyTicks")); }
 
@@ -143,6 +155,28 @@ public final class StepMonitor {
     private final java.util.Map<String, Integer> stageBest = new java.util.HashMap<>();
     private long bestPlaced;
 
+    // ---- job-mon: the silent rule (no move, no break, nothing new said) ----
+    private Said said;
+    /** The tick of the last move / break / placed / made, and of the last new Baritone line (-1: none since the step). */
+    private long activeAt, saidAt = -1;
+    private long saidLines = -1;
+    private int[] lastFeet;
+    private int lastStage = -1, lastMade = -1;
+    private long lastPlacedSeen = -1;
+    /** The last silent end's Baritone line ("" when none was said), for the try's detail; null: the last end was not silent. */
+    private String silentLine;
+
+    /** job-mon: what Baritone last said, read by the run before each look (null: not known, the silent rule is off). */
+    public void said(Said s, long now) {
+        said = s;
+        if (s == null) return;
+        if (saidLines < 0) saidLines = s.lines();                        // the count at the step's start: nothing new yet
+        else if (s.lines() != saidLines) { saidLines = s.lines(); saidAt = now; }
+    }
+
+    /** job-mon: the Baritone line of the last silent end ("" when none said), null: the last REPLAN was not silent. */
+    public String silentLine() { return silentLine; }
+
     /** A step started (or started again after a pause): its bests from {@code sig} (null or not loaded: on the first loaded look). */
     public void begin(Step s, StepSignals sig, long now) {
         step = s;
@@ -151,6 +185,15 @@ public final class StepMonitor {
         stalled = false;
         startTick = now;
         lastProgress = now;
+        activeAt = now;
+        saidAt = -1;
+        saidLines = -1;
+        said = null;
+        silentLine = null;
+        lastFeet = null;
+        lastStage = -1;
+        lastMade = -1;
+        lastPlacedSeen = -1;
         if (sig != null && sig.loaded()) base(sig, now);
     }
 
@@ -197,8 +240,10 @@ public final class StepMonitor {
         if (step == null) return cont("no step runs");
         if (kind == Kind.EXEMPT) return cont(Step.verb(step) + " is not judged (it may stand still on purpose)");
         if (sig == null) return cont("no signals from these hands");
+        silentLine = null;
         if (!sig.loaded()) {
             lastProgress = now;                  // rule 15: unknown is no stall; the window starts again once known
+            activeAt = now;
             return cont("signals not loaded: " + sig.notLoaded());
         }
         if (!based) {
@@ -207,6 +252,7 @@ public final class StepMonitor {
         }
         if (sig.ownWait() != null) {
             lastProgress = now;                  // its own clock watches it (the furnace's due time, the first-answer wait)
+            activeAt = now;
             calcAtBest = sig.calcFailed();
             return cont("waiting on its own clock: " + sig.ownWait());
         }
@@ -270,6 +316,8 @@ public final class StepMonitor {
         int t = target(step);
         if (completes(step) && t > 0 && sig.made() >= t)
             return new Look(Verdict.COMPLETE, "complete: " + sig.made() + " of " + t + " " + StepNeeds.sh(output(step)) + " in the bag", null);
+        Look silent = silent(sig, now);
+        if (silent != null) return silent;
         long fails = sig.calcFailed() - calcAtBest;
         // 0.39.z74 item 2: the builder's placeNear fails searches as part of its own pick of a cell (it ends with its own reason:
         // 'no cell within N blocks', 'cannot reach: ...'), so a placement never gets the no-path verdict; its stall rule stays
@@ -299,6 +347,35 @@ public final class StepMonitor {
         stalled = moved.isEmpty();
         String said = moved.isEmpty() ? FactChange.STALL_NO_NEW_BEST + " for " + quiet / 20 + " s" : String.join(", ", moved);     // game fact: 20 ticks a second
         return cont(notKnown == null ? said : said + "; " + notKnown);
+    }
+
+    /**
+     * job-mon (run JAI 00:46:42-00:52:42: the chop said "no face in sight from the eye" once, then stood 6 min, no break, no
+     * word; no monitor line, the 180 s outer watch fired twice): any move of the feet (another cell), any break stage change,
+     * any bag gain or placed block is activity; any new Baritone line resets the clock too. Neither for monitor.silentS: the
+     * step ends with what Baritone last said, before the search hold (a search that never ends and says nothing is no
+     * progress). Null: not silent, or Baritone's lines are not known (rule 15: the other rules and the outer watch stay).
+     */
+    private Look silent(StepSignals sig, long now) {
+        boolean active = false;
+        if (sig.feet() != null && (lastFeet == null || !java.util.Arrays.equals(lastFeet, sig.feet()))) { active = lastFeet != null; lastFeet = sig.feet(); }
+        if (sig.destroyStage() >= 0 && sig.destroyStage() != lastStage) active = true;
+        lastStage = sig.destroyStage();
+        if (sig.made() > lastMade) { active |= lastMade >= 0; lastMade = sig.made(); }
+        if (sig.placedCount() != lastPlacedSeen) { active |= lastPlacedSeen >= 0; lastPlacedSeen = sig.placedCount(); }
+        if (active) activeAt = now;
+        if (said == null) return null;
+        long since = Math.max(activeAt, saidAt);
+        long quiet = now - since;
+        if (quiet < silentTicks()) return null;
+        String line = said.line() == null ? "" : said.line();
+        String who = said.process() == null ? "no process in control" : said.process();
+        String ago = saidAt < 0 ? "before this step (" + (now - startTick) / 20 + " s or more ago)" : (now - saidAt) / 20 + " s ago";     // game fact: 20 ticks a second
+        String why = SILENT + quiet / 20 + " s at " + step.text() + ": Baritone's " + who + " last said '" + line + "' " + ago     // game fact: 20 ticks a second
+                + " (no move, no break, nothing new said; monitor.silentS " + num(Tuning.get("monitor.silentS")) + ")";
+        Look l = replan(why, sig.feet());
+        silentLine = line;
+        return l;
     }
 
     /**

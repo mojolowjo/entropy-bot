@@ -63,6 +63,12 @@ rule (2026-11-02) is that the step clears the cave and notes every ore it sees, 
 10-minute cap (`Step.Cave.minutes`) is the safety net. A seen ore's vein mine (`VeinMine`) has its own no-progress clock
 (`MineRules.VeinWatch`: the feet, the vein's gone count, a break stage; `monitor.stallS`), so an ore Baritone cannot reach is
 left out of the step after 30 s. A place-near failure says its site (`StepHands.placeSiteProbe`, behind `debug.stepProbe`).
+The step monitor's silent rule (`StepMonitor.silent`, job-mon, run JAI): a judged step with no move of the feet, no break
+stage change, no bag gain, no placed block and no new Baritone chat line for `monitor.silentS` ends "no progress N s at
+<step>: Baritone's <process> last said '<line>' M s ago", even while a search holds the stall clock. Baritone's lines come
+from `Steps.Hands.said` (`StepHands.said`: the process in control, `BaritoneHook.lastLine` / `lines`); not known, the rule is
+off and the outer watch stays the backstop. The honest park (`Steps.Attempt.sameAs`) also compares the cell the step ENDED at
+and a silent end's last line (also in `Attempt.tryKey`); the fact key, the cave's hold key, is unchanged.
 
 ## Where the facts come from
 | Fact | Class | Game API or file |
