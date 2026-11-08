@@ -3996,6 +3996,14 @@ public final class NeedChain {
                 if (col == null) { outs.add("y " + p.y() + " held (" + held + ")"); continue; }
                 side = io.github.mojolowjo.entropybot.aa.moves.BandEnd.sideStep(feet, col, Tuning.get("band.sideStepM"));
             }
+            // job-tunnel2 (rule 7): a tunnel that ended short holds its heading from its start; a peak whose every heading is
+            // held near the dig's end is out (another peak is tried; none left: the way's fail says each)
+            int[] col = side != null ? side : new int[]{feet[0], feet[2]};
+            var tHeld = io.github.mojolowjo.entropybot.cave.Tunnel.heldHeadings(c.w.held(), new int[]{col[0], p.y(), col[1]}, Tuning.get("tunnel.heldNearM"));
+            if (tHeld.size() >= io.github.mojolowjo.entropybot.cave.Tunnel.HEADINGS.size()) {
+                outs.add("y " + p.y() + ": every tunnel heading from " + col[0] + " " + p.y() + " " + col[1] + " held (" + String.join(", ", tHeld) + ")");
+                continue;
+            }
             int lo = Math.min(fromY, p.y()), hi = Math.max(fromY, p.y());
             double down = 0;
             for (int y = lo; y < hi; y++) down += blockBreakS(c, bandBlock(y));

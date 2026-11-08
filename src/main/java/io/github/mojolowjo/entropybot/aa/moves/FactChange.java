@@ -242,6 +242,17 @@ public final class FactChange {
         last = new Fact("source " + bandKey(minY, maxY), why);
     }
 
+    /**
+     * Job-tunnel2 (run JAT 05:14:15: the tunnel's short stop was a price fact, the re-price "kept the running pick" and the
+     * order stopped): a tunnel that ended short (Baritone stopped short, water or lava ahead) is a SOURCE fact - its heading
+     * from its start held for the order (key {@link io.github.mojolowjo.entropybot.cave.Tunnel#holdKey}); the order re-plans,
+     * the next price picks another heading or another peak, and stops only when every heading and peak is held. Pure.
+     */
+    public static Fact tunnelHeldFact(int[] start, String heading, String why) {
+        return new Fact("source " + io.github.mojolowjo.entropybot.cave.Tunnel.holdKey(start, heading),
+                io.github.mojolowjo.entropybot.cave.Tunnel.heldText(heading, start, why));
+    }
+
     /** 0.39.z78 J6c run EU (2): a typed fact the hands found (UseEnds), the step's own fact. */
     public static void set(Fact f) { if (f != null) last = f; }
 
@@ -349,6 +360,7 @@ public final class FactChange {
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.EXPLORE_FROZEN)) return f.key().substring("source ".length());   // z76 send-back 2
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.BOXED_IN)) return f.key().substring("source ".length());   // J6b run EH (2)
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.CAVE_KEY)) return f.key().substring("source ".length());   // run EY: the lip's opening
+        if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.cave.Tunnel.HOLD)) return f.key().substring("source ".length());   // job-tunnel2
         String p = "source " + io.github.mojolowjo.entropybot.aa.NeedChain.STRIP_HEADING;
         return f != null && f.key().startsWith(p) ? f.key().substring("source ".length()) : null;
     }

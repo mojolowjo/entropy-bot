@@ -999,3 +999,5 @@ pathCost.pricedTop	2.0
 pathCost.askFactor	2.0
 station.materialS	10.0
 station.baseReachM	16.0
+band.legCarryS	600.0
+tunnel.heldNearM	8.0

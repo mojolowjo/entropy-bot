@@ -1,7 +1,6 @@
 package io.github.mojolowjo.entropybot.commands;
 
 import baritone.api.IBaritone;
-import baritone.api.pathing.goals.GoalBlock;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.aa.brain.Tuning;
@@ -27,8 +26,10 @@ import java.util.Set;
 
 /**
  * Job-tunnel (run JAS): the band way's tunnel step in the game (Step.Tunnel; the rules are cave.Tunnel's, pure). One
- * Baritone goal - a GoalBlock at the tunnel's end - under the ordinary dig lease (the band leg's TRAVEL intent): Baritone
- * picks every move and break (rules 2, 7); the mod never names a cell to break. Each tick:
+ * Baritone goal - the tunnel's end, capped at the loaded edge and moved on as chunks load (job-tunnel2) - walked on the
+ * fork's priced path into that cell under the dig leg's lease (TRAVEL intent, the band leg's priceInto / walkInto): Baritone
+ * picks every move and break (rules 2, 7); the mod never names a cell to break. Every short end holds the heading from
+ * its start (FactChange.tunnelHeldFact, a source fact). Each tick:
  * <ul>
  * <li>a seen ore of the family within the mine's sight (Step.Collect.MINE_SIGHT, the fair filter) pauses the walk and the
  * vein mine (VeinMine, Baritone's MineProcess) takes it, as the caving step does since D15 pass three;</li>
@@ -61,6 +62,56 @@ final class TunnelStep {
         List<int[]> veinCells;
         long goalAt = -1;
         long airAt = -1;
+        /** job-tunnel2: the walked goal - the end, or the loaded edge short of it - and whether Baritone walks it now. */
+        int[] goal;
+        boolean walking;
+        long lines0;
+    }
+
+    /**
+     * Job-tunnel2 (run JAT 05:14:13-15: a plain GoalBlock 51 blocks through rock, Baritone's own search, ended in 2 s at the
+     * start with nothing broken; the dig leg before it went 46 levels on the fork's PRICED path): the goal - capped at the
+     * loaded edge - is priced into its cell (LivePathPrice.priceInto, the band leg's ask) and walked on that priced path
+     * (walkInto) under the dig leg's TRAVEL intent; computing waits, a no-path or a not-known answer holds the heading.
+     */
+    private static Car.Status walkGoal(State s, IBaritone b, int[] me, long t) {
+        io.github.mojolowjo.entropybot.aa.PathPrice.Answer a = LivePathPrice.INSTANCE.priceInto(s.goal[0], s.goal[1], s.goal[2],
+                Math.abs(s.goal[0] - me[0]) + Math.abs(s.goal[2] - me[2]));
+        var next = io.github.mojolowjo.entropybot.aa.moves.BandLeg.of(a, me, true);
+        switch (next.act()) {
+            case WALK -> {
+                io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.aa.moves.BandLeg.INTENT, "tunnel");
+                s.lines0 = io.github.mojolowjo.entropybot.baritone.BaritoneHook.lines();
+                LivePathPrice.walkInto(b, new BlockPos(s.goal[0], s.goal[1], s.goal[2]));
+                s.walking = true;
+                s.goalAt = t;
+                LOG.info("[entropybot] tunnel: {} to {}: {}", s.h.name(), Jobs.fmt(s.goal), next.why());
+                return Car.Status.running("tunnel " + s.h.name() + ": " + next.why() + " to " + Jobs.fmt(s.goal));
+            }
+            case WAIT -> { return Car.Status.running("tunnel " + s.h.name() + ": the path to " + Jobs.fmt(s.goal) + " is " + next.why()); }
+            default -> { return null; }                                   // FACT / NOT_KNOWN: the caller holds the heading with these words
+        }
+    }
+
+    /** job-tunnel2: the fork's last calc, as WalkEndText reads it (NONE: an older fork or none kept). */
+    private static io.github.mojolowjo.entropybot.aa.moves.WalkEndText.Calc forkCalc(IBaritone b) {
+        try {
+            var wc = b.getCustomGoalProcess().lastCalc();
+            return wc == null ? io.github.mojolowjo.entropybot.aa.moves.WalkEndText.Calc.NONE
+                    : new io.github.mojolowjo.entropybot.aa.moves.WalkEndText.Calc(true, wc.exhausted(), wc.budget(), String.valueOf(wc.stop()));
+        } catch (LinkageError e) {
+            return io.github.mojolowjo.entropybot.aa.moves.WalkEndText.Calc.NONE;
+        }
+    }
+
+    /** job-tunnel2: the goal from {@code from} toward the end, capped at the loaded edge; its steps (0: the next is not loaded). */
+    private static int capGoal(State s, Level lv, int[] from) {
+        int left = Math.abs(s.end[0] - from[0]) + Math.abs(s.end[2] - from[2]);
+        int steps = Tunnel.loadedSteps(left, i -> lv.isLoaded(new BlockPos(from[0] + s.h.dx() * i, from[1], from[2] + s.h.dz() * i))
+                && lv.isLoaded(new BlockPos(from[0] + s.h.dx() * i, from[1] + 1, from[2] + s.h.dz() * i)));
+        s.goal = new int[]{from[0] + s.h.dx() * steps, s.end[1], from[2] + s.h.dz() * steps};
+        s.walking = false;
+        return steps;
     }
 
     private static State st;
@@ -107,12 +158,17 @@ final class TunnelStep {
             BlockPos q = new BlockPos(c[0], c[1], c[2]);
             if (lv.isLoaded(q) && !lv.getBlockState(q).isAir()) s.solidAtStart.add(c);
         }
-        st = s;
         done.add(h.name());
-        io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "tunnel");
-        b.getCustomGoalProcess().setGoalAndPath(new GoalBlock(s.end[0], s.end[1], s.end[2]));
-        s.goalAt = Core.INSTANCE.tick();
-        LOG.info("[entropybot] tunnel: {} {} blocks from {} to {} for {} {} ore (GoalBlock; Baritone digs) - heading {}: {}", h.name(), t.length(), Jobs.fmt(me), Jobs.fmt(s.end), t.n(), s.fam, h.name(), why);
+        int steps = capGoal(s, lv, me);
+        if (steps == 0) {
+            String w = "the first block " + h.name() + " of " + Jobs.fmt(me) + " is not loaded (rule 15: not known)";
+            FactChange.set(FactChange.tunnelHeldFact(me, h.name(), w));
+            return "error: " + t.text() + ": " + Tunnel.heldText(h.name(), me, w);
+        }
+        st = s;
+        io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.aa.moves.BandLeg.INTENT, "tunnel");   // the dig leg's intent and lease
+        LOG.info("[entropybot] tunnel: {} {} blocks from {} to {} for {} {} ore (Baritone's priced path into the cell, breaks under the dig leg's TRAVEL lease){} - heading {}: {}",
+                h.name(), t.length(), Jobs.fmt(me), Jobs.fmt(s.end), t.n(), s.fam, steps < t.length() ? "; " + Tunnel.edgeLine(s.goal, steps, t.length()) : "", h.name(), why);
         return null;
     }
 
@@ -135,8 +191,7 @@ final class TunnelStep {
             s.vein = null;
             s.veinCells = null;
             if (s.mined >= s.step.n()) return end(p, true, "the need is met");
-            b.getCustomGoalProcess().setGoalAndPath(new GoalBlock(s.end[0], s.end[1], s.end[2]));   // the walk goes on
-            s.goalAt = Core.INSTANCE.tick();
+            s.walking = false;                                                    // the walk goes on: priced again from here
         }
         // the cells Baritone's path will open are the tunnel's own, never cave air
         try {
@@ -184,7 +239,27 @@ final class TunnelStep {
             cave = Tunnel.caveAir(air, s.known);
         }
         boolean atEnd = me[0] == s.end[0] && me[1] == s.end[1] && me[2] == s.end[2];
-        boolean stopped = !b.getCustomGoalProcess().isActive() && t - s.goalAt >= 20 && !Core.INSTANCE.reflexes.hold();   // structural: a second for the goal to take
+        boolean atGoal = me[0] == s.goal[0] && me[1] == s.goal[1] && me[2] == s.goal[2];
+        if (ore == null && fluid == null && cave == null && !atEnd) {
+            if (atGoal && s.walking) {
+                // job-tunnel2: the loaded edge reached - the goal moves on toward the end as the chunks load
+                Jobs.cancel(b);
+                int steps = capGoal(s, lv, me);
+                int left = Math.abs(s.end[0] - me[0]) + Math.abs(s.end[2] - me[2]);
+                if (steps == 0) return Car.Status.running("tunnel " + s.h.name() + ": at the loaded edge " + Jobs.fmt(me) + ", the next block not loaded yet");
+                LOG.info("[entropybot] tunnel: {}", Tunnel.edgeLine(s.goal, steps, left));
+            }
+            if (!s.walking) {
+                if (capGoal(s, lv, me) == 0) return Car.Status.running("tunnel " + s.h.name() + ": at the loaded edge " + Jobs.fmt(me) + ", the next block not loaded yet");
+                Car.Status w = walkGoal(s, b, me, t);
+                if (w != null) return w;
+                var a = LivePathPrice.INSTANCE.priceInto(s.goal[0], s.goal[1], s.goal[2], 0);
+                String why = "no path along it to " + Jobs.fmt(s.goal) + " (" + io.github.mojolowjo.entropybot.aa.moves.BandLeg.of(a, me, true).why() + ")";
+                FactChange.set(FactChange.tunnelHeldFact(s.from, s.h.name(), why));
+                return end(p, false, Tunnel.heldText(s.h.name(), s.from, why));
+            }
+        }
+        boolean stopped = s.walking && !b.getCustomGoalProcess().isActive() && t - s.goalAt >= 20 && !Core.INSTANCE.reflexes.hold();   // structural: a second for the goal to take
         var next = Tunnel.next(ore, fluid, cave, atEnd, stopped, s.h, s.end, me);
         switch (next.act()) {
             case MINE -> {
@@ -197,16 +272,22 @@ final class TunnelStep {
                     s.veinCells = null;
                     s.veinFailed.add(Tunnel.key(ore[0], ore[1], ore[2]));
                     LOG.info("[entropybot] tunnel: the vein at {} did not start: {}", Jobs.fmt(ore), bad);
-                    b.getCustomGoalProcess().setGoalAndPath(new GoalBlock(s.end[0], s.end[1], s.end[2]));
-                    s.goalAt = t;
+                    s.walking = false;
                     return Car.Status.running("tunnel: the vein at " + Jobs.fmt(ore) + " did not start");
                 }
                 LOG.info("[entropybot] tunnel: {}", next.why());
                 return Car.Status.running("tunnel: mining the seen ore at " + Jobs.fmt(ore));
             }
             case END_FACT -> {
-                FactChange.set(FactChange.priced(next.why()));
-                return end(p, false, next.why());
+                // job-tunnel2 (run JAT): every short end holds this heading from its start - a source fact, never a price fact
+                // (a failed step's price fact re-priced against the running pick, "kept the running pick", and stopped the order)
+                String why = stopped && fluid == null && cave == null
+                        ? "Baritone stopped short at " + Jobs.fmt(me) + " of " + Jobs.fmt(s.goal) + " (the fork: "
+                          + io.github.mojolowjo.entropybot.aa.moves.WalkEndText.reason(forkCalc(b), s.lines0, io.github.mojolowjo.entropybot.baritone.BaritoneHook.lines(),
+                                io.github.mojolowjo.entropybot.baritone.BaritoneHook.lastLine()) + ")"
+                        : next.why();
+                FactChange.set(FactChange.tunnelHeldFact(s.from, s.h.name(), why));
+                return end(p, false, Tunnel.heldText(s.h.name(), s.from, why));
             }
             case DONE -> { return end(p, true, next.why()); }
             default -> { return Car.Status.running("tunnel " + s.h.name() + " to " + Jobs.fmt(s.end) + " (" + s.mined + " of " + s.step.n() + " ore)"); }
