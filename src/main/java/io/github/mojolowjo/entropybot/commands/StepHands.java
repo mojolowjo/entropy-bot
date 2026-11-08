@@ -2690,7 +2690,12 @@ public final class StepHands implements Steps.Hands {
         // from (its pathStart: the supporting block off an edge), standable or said
         Start st = searchStart(b, p);
         // job-digpace (run JAT): a wet start (afloat, no floor, fluid in the first band.dryLevels cells) steps to a dry cell first
-        boolean dry = io.github.mojolowjo.entropybot.aa.moves.BandDry.dry(st.standable(), p.isInWater(), fluidDown(p, st.cell()));
+        // job-dig3 (run JAV 06:00:54): the reused column's own top is read too - every start of the dig leg is dry first
+        int[] reuseCol = y > t.target(st.cell()[1]) ? io.github.mojolowjo.entropybot.aa.moves.BandDirect.reuse(LivePathPrice.INSTANCE.landedInto(), st.cell(),
+                t.target(st.cell()[1]), Tuning.get("band.columnReuseM")) : null;
+        if (reuseCol != null && io.github.mojolowjo.entropybot.aa.moves.BandHold.held(reuseCol[0], reuseCol[1], reuseCol[2])) reuseCol = null;
+        boolean dry = io.github.mojolowjo.entropybot.aa.moves.BandDirect.startDry(st.standable(), p.isInWater(), fluidDown(p, st.cell()),
+                reuseCol == null ? null : fluidDown(p, new int[]{reuseCol[0], st.cell()[1], reuseCol[2]}));
         if (!dry && !dryTried && y > t.target(y)) {
             dryTried = true;
             java.util.List<baritone.api.pathing.goals.Goal> cells = dryCells(p, st.cell());
@@ -2716,9 +2721,8 @@ public final class StepHands implements Steps.Hands {
         if (bandLeg.fromY() != st.cell()[1]) LOG.info("[entropybot] steps: {} - the leg counts on from its first start at y {} ({} blocks broken before this segment; band.legCarryS)", t.text(), bandLeg.fromY(), bandLeg.broken());
         // job-dig2 (run JAU): a landed dig price of a column near the feet is reused - that column is dug, no new ask
         if (y > bandCell[1]) {
-            double reuseM = Tuning.get("band.columnReuseM");
-            int[] col = io.github.mojolowjo.entropybot.aa.moves.BandDirect.reuse(LivePathPrice.INSTANCE.landedInto(), st.cell(), bandCell[1], reuseM);
-            if (col != null) {
+            int[] col = reuseCol;                    // job-dig3: read before the dry check; a held column is never reused
+            if (col != null && col[1] == bandCell[1]) {
                 LOG.info("[entropybot] steps: {} - {}", t.text(), io.github.mojolowjo.entropybot.aa.moves.BandDirect.reuseWords(col,
                         io.github.mojolowjo.entropybot.aa.moves.BandDirect.horiz(col, st.cell())));
                 bandCell = col;
@@ -2741,7 +2745,10 @@ public final class StepHands implements Steps.Hands {
      */
     private void bandDirect(IBaritone b, Step.ToBand t, String why) {
         io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.aa.moves.BandLeg.INTENT, "to band");
-        b.getCustomGoalProcess().setGoalAndPath(LivePathPrice.into(new BlockPos(bandCell[0], bandCell[1], bandCell[2])));
+        // job-dig3 (run JAV 06:10:30, 100+ silent ends at the start): a plain setGoalAndPath never reaches the fork's
+        // PricedPath.searchGoal swap (bs-vein PricedPath.java:1497, set only by IPricedPath.walk), so Baritone searched the bare
+        // GoalBlock 49 levels down and its budget stopped with the best node at the feet. The priced walk steers it (DigDownGoal).
+        LivePathPrice.walkInto(b, new BlockPos(bandCell[0], bandCell[1], bandCell[2]));
         bandWalking = true;
         bandDirect = true;
         LOG.info("[entropybot] steps: {} - {}", t.text(), io.github.mojolowjo.entropybot.aa.moves.BandDirect.words(bandCell[1], why));
@@ -2895,6 +2902,17 @@ public final class StepHands implements Steps.Hands {
                 // job-dig2 (run JAU 05:38:42): the priced walk's own search ran out - Baritone digs on, never an end
                 bandDirect(b, t, nk);
                 return Car.Status.running(t.text() + ": digging on Baritone's own path to " + Jobs.fmt(bandCell) + " (the price not known yet)");
+            }
+            if (nk != null && bandCell != null) {
+                // job-dig3 (rule 15): a not-known end repeating at one column is a fact about that column - held, side-step
+                int tries = Tuning.i("band.notKnownTries");
+                double win = Tuning.get("band.notKnownWindowS");
+                if (io.github.mojolowjo.entropybot.aa.moves.BandHold.notKnown(bandCell[0], bandCell[1], bandCell[2], System.currentTimeMillis(), tries, win)) {
+                    String why = io.github.mojolowjo.entropybot.aa.moves.BandHold.words(bandCell[0], bandCell[2], tries, win);
+                    LOG.info("[entropybot] steps: {} - {}", t.text(), why);
+                    io.github.mojolowjo.entropybot.aa.moves.FactChange.band(t.minY(), t.maxY(), why);
+                    return Car.Status.failed(t.text() + ": " + why);
+                }
             }
             if (nk != null) {
                 io.github.mojolowjo.entropybot.aa.moves.FactChange.bandNotKnown(t.minY(), t.maxY(), nk);
