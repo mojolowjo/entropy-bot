@@ -98,7 +98,7 @@ class Z77ExploreTest {
         assertTrue(c.ok() && c.explore(), c.why());
         assertEquals(List.of(new Step.Climb(), new Step.Explore(NeedChain.exploreMinutes(), "raw_iron")), c.steps());
         assertEquals((48 * 3 + 10) / Unit.WALK_BPS + NeedChain.exploreS(), c.seconds(), 0.1, c.why());
-        assertTrue(c.why().contains("climb up 48 with 20 blocks from the bag and the stone_pickaxe"), c.why());
+        assertTrue(c.why().contains("climb up 48 with 20 spare blocks of 20 in the bag and the stone_pickaxe"), c.why());
         assertTrue(c.unreachable().containsKey("surface at -181 64 27"), "the walk up's fact is held as before: " + c.unreachable());
     }
 
@@ -114,7 +114,7 @@ class Z77ExploreTest {
                 && held.missing().contains("the climb: climb up: the climb up failed"), held.missing());
         Chain none = NeedChain.resolve("raw_iron", 3, w.withBag(Map.of("minecraft:cobblestone", 20)));
         assertFalse(none.ok(), none.why());
-        assertTrue(none.missing().contains("no climb either: no pickaxe and 20 blocks in the bag for 48 up"), none.missing());
+        assertTrue(none.missing().contains("no climb either: no pickaxe and 20 spare blocks of 20 in the bag (the rest reserved) for 48 up"), none.missing());
         assertTrue(none.steps().stream().noneMatch(s -> s instanceof Step.Explore || s instanceof Step.Climb), none.steps().toString());
     }
 

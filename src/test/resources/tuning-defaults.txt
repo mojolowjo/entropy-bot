@@ -915,6 +915,8 @@ trail.openDepth	4.0
 trail.clearAfterS	10.0
 trail.routeReach	1.0
 debug.trailProbe	0.0
+forecast.digBlocksPerLevel	1.0
+forecast.climbFromLevels	2.0
 estimate.freeDropLevels	3.0
 estimate.failedDigLevels	10.0
 debug.wayProbe	0.0

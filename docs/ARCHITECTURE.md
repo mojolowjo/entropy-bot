@@ -35,6 +35,12 @@ orders' targets) are built by `Steps` at every step start from the plan itself a
 (`DepositRule.goesIn`: a stack goes in only while the chain's reserves can spare it), an Obtain's sub-chain
 (`Steps.laterReserves` -> `AaRuntime.obtainSteps(o, later)`: planned on `Reservations.free(bag)`, so a reserved count
 is obtained, not taken). Probe: `probe reserve: reserved: stick 2 for craft stone_pickaxe 1, ...`.
+Forecast (owner 2026-11-08, run JBJ-T2: a 14-level shaft, no block to spare): the planner reads the same table
+(`NeedChain.World.reserves`, from `needWorld()` = `Blackboard.reserved().list()`; a planner fact "reserves"). A covered
+spot's collect that digs down prices its way back up against the FORECAST bag after it (`NeedChain.spareBlocks`: the fork's
+`Reserves.spareThrowaway` on the simulated bag, the chain's own asked item an ORDER reserve too) - a pillar of spare blocks,
+a staircase, or extra blocks first - and a `Step.Climb` follows (`wayBackUp`); the climb-up way (`climbUp`) counts spare
+blocks the same way. Tuning `forecast.*`.
 
 ### Path memory (D11)
 The fork keeps priced paths (`PathMemory`) and re-joins a kept path the feet left by one short search (build 1); the mod

@@ -49,14 +49,14 @@ class JobLookupTest {
         assertTrue(s.buried().isEmpty(), s.line());
     }
 
-    /** A cover of 15 (deeper than sight.coverMax) is priced per level, said with its cover. */
+    /** A cover of 15 (deeper than sight.coverMax) is priced per level, said with its cover. (forecast: 2 blocks dig 1 level past the spot: no way back up priced.) */
     @Test
     void aCoverOfFifteenIsPricedPerLevel() {
         Spot open = new Spot(5, 64, 0, 5, STONE).covered(0, null);
         Spot one = open.covered(1, STONE), deep = open.covered(15, STONE);
-        Chain a = NeedChain.resolve("cobblestone", 3, Z77StoneHereTest.world(word -> List.of(open)));
-        Chain b = NeedChain.resolve("cobblestone", 3, Z77StoneHereTest.world(word -> List.of(one)));
-        Chain c = NeedChain.resolve("cobblestone", 3, Z77StoneHereTest.world(word -> List.of(deep)));
+        Chain a = NeedChain.resolve("cobblestone", 2, Z77StoneHereTest.world(word -> List.of(open)));
+        Chain b = NeedChain.resolve("cobblestone", 2, Z77StoneHereTest.world(word -> List.of(one)));
+        Chain c = NeedChain.resolve("cobblestone", 2, Z77StoneHereTest.world(word -> List.of(deep)));
         assertTrue(a.ok() && b.ok() && c.ok(), a.why() + " / " + b.why() + " / " + c.why());
         double perLevel = b.seconds() - a.seconds();
         assertTrue(perLevel > 0);

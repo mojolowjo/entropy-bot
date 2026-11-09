@@ -509,7 +509,16 @@ public final class NeedChain {
     public record World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
                         Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path,
                         Function<String, Spot> stationAt, Function<String, Integer> usesLeft, List<String> held, Function<String, StripBand> strip,
-                        Function<String, CaveWay> cave, Rooms rooms, WhereFacts where) {
+                        Function<String, CaveWay> cave, Rooms rooms, WhereFacts where,
+                        List<baritone.api.process.Reserves.Reserve<String>> reserves) {
+        /** forecast (owner 2026-11-08): no reserve table (nothing in the bag is claimed: every placeable block is spare). */
+        public World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
+                     Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path,
+                     Function<String, Spot> stationAt, Function<String, Integer> usesLeft, List<String> held, Function<String, StripBand> strip,
+                     Function<String, CaveWay> cave, Rooms rooms, WhereFacts where) {
+            this(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where, (List<baritone.api.process.Reserves.Reserve<String>>) null);
+        }
+
         /** 0.39.z68: no "where" facts ({@link WhereFacts#NONE}: every explore as before z68). */
         public World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
                      Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path,
@@ -582,6 +591,7 @@ public final class NeedChain {
             if (cave == null) cave = w -> null;
             if (rooms == null) rooms = Rooms.NONE;
             if (where == null) where = WhereFacts.NONE;
+            reserves = reserves == null ? List.of() : List.copyOf(reserves);
             if (horizonBlocks <= 0) horizonBlocks = Unit.blocks(Sequencer.defaultHorizonS());
         }
 
@@ -594,33 +604,39 @@ public final class NeedChain {
             this(bag, tableNear, false, w -> { Spot s = seen == null ? null : seen.apply(w); return s == null ? List.of() : List.of(s); }, null, null, null, horizonBlocks);
         }
 
-        public World withMobs(Function<String, List<Mob>> m, LootBook l) { return new World(bag, tableNear, furnaceNear, seenAll, m, l, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where); }
+        public World withMobs(Function<String, List<Mob>> m, LootBook l) { return new World(bag, tableNear, furnaceNear, seenAll, m, l, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where, reserves); }
 
-        public World withBand(Function<String, int[]> b) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, b, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where); }
+        public World withBand(Function<String, int[]> b) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, b, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where, reserves); }
 
         /** path-cost: the walks priced by Baritone's complete path (null: no walk has a price). */
-        public World withPath(PathPrice p) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, p, stationAt, usesLeft, held, strip, cave, rooms, where); }
+        public World withPath(PathPrice p) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, p, stationAt, usesLeft, held, strip, cave, rooms, where, reserves); }
 
         /** station-memory: where the known stations stand (recipe kind -> spot; null: no position known). */
-        public World withStations(Function<String, Spot> at) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, at, usesLeft, held, strip, cave, rooms, where); }
+        public World withStations(Function<String, Spot> at) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, at, usesLeft, held, strip, cave, rooms, where, reserves); }
 
         /** 0.39.z33: the uses left of the bag's best stack of a tool id ({@link io.github.mojolowjo.entropybot.aa.brain.ToolUses}). */
         /** 0.39.z43: the strip facts per need word ({@link StripBand}; null: no strip way for it). */
-        public World withStrip(Function<String, StripBand> s) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, s, cave, rooms, where); }
+        public World withStrip(Function<String, StripBand> s) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, s, cave, rooms, where, reserves); }
 
         /** 0.39.z44: the cave-mouth facts per need word ({@link CaveWay}; null: no cave way for it). */
-        public World withCave(Function<String, CaveWay> k) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, k, rooms, where); }   // z68 review 1: keeps the where facts
+        public World withCave(Function<String, CaveWay> k) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, k, rooms, where, reserves); }   // z68 review 1: keeps the where facts
 
-        public World withUses(Function<String, Integer> u) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, u, held, strip, cave, rooms, where); }
+        public World withUses(Function<String, Integer> u) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, u, held, strip, cave, rooms, where, reserves); }
 
         /** 0.39.z67 item 1: the cells with room known now (solid ground the bot stood on, known stations; dist from the bot). */
         public World withRooms(List<Spot> cells) {
             return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave,
-                    new Rooms(cells, rooms.hereFailed()), where);
+                    new Rooms(cells, rooms.hereFailed()), where, reserves);
         }
 
+        /**
+         * forecast (owner 2026-11-08, run JBJ-T2: a 14-level shaft with no block to spare): the reserve table the fork's lease
+         * holds (the chain's claims and the orders' targets, D1) - what the forecast bag may NOT place on a way back up.
+         */
+        public World withReserves(List<baritone.api.process.Reserves.Reserve<String>> r) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where, r); }
+
         /** 0.39.z76 send-back 2: the order's held sources ("key: why"), as the live world reads them from the order. */
-        public World withHeld(List<String> h) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, h, strip, cave, rooms, where); }
+        public World withHeld(List<String> h) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, h, strip, cave, rooms, where, reserves); }
 
         /** 0.39.z68: where explore targets generate and the surface over the bot ({@link WhereFacts}). */
         public World withWhere(WhereFacts w) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, w); }
@@ -644,7 +660,7 @@ public final class NeedChain {
         }
 
         /** 0.39.z77 J2: the same world with another bag (a chain priced from the bag another left). */
-        public World withBag(Map<String, Integer> b) { return new World(b, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where); }
+        public World withBag(Map<String, Integer> b) { return new World(b, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where, reserves); }
 
         /**
          * 0.39.z67 item 1 (run Y 09:26:14 / 09:31:16): the order's held place failures ({@code keyWhy}: its dropped sources;
@@ -1023,6 +1039,9 @@ public final class NeedChain {
         boolean caching() { return run != null; }
         /** job-bandtool2: inside the band way's tool chain a computing walk is charged its straight metres ({@link #walk}). */
         boolean toolEstimate;
+        /** forecast (owner 2026-11-08): the resolve's asked item and count (null: a tag or a sub-chain) - an ORDER reserve of the forecast bag. */
+        String asked;
+        int askedN;
 
         /**
          * Owner 2026-10-29 ("the crafting table keeps on itself"; run FV 23:43:51 "crafting table at -49 62 -33 unusable: no path",
@@ -1664,6 +1683,8 @@ public final class NeedChain {
         PathPrice path() { return rec("path provider", null, w.path() != null) ? path : null; }
         double horizonBlocks() { return rec("horizon", null, w.horizonBlocks()); }
         List<String> held() { return rec("held", null, w.held()); }
+        /** forecast: the reserve table (the fork's lease's claims; empty: nothing claimed). */
+        List<baritone.api.process.Reserves.Reserve<String>> reserves() { return rec("reserves", null, w.reserves()); }
         Rooms rooms() { return rec("rooms", null, w.rooms()); }
         boolean tableNear() { return rec("tableNear", null, w.tableNear()); }
         boolean furnaceNear() { return rec("furnaceNear", null, w.furnaceNear()); }
@@ -1696,6 +1717,7 @@ public final class NeedChain {
                 case "path provider" -> p != null;
                 case "horizon" -> w.horizonBlocks();
                 case "held" -> w.held();
+                case "reserves" -> w.reserves();
                 case "rooms" -> w.rooms();
                 case "tableNear" -> w.tableNear();
                 case "furnaceNear" -> w.furnaceNear();
@@ -2451,6 +2473,8 @@ public final class NeedChain {
             return finish(c, name, g == null ? name + ": " + c.fail : name + " <- " + g.line());
         }
         String item = id(what);
+        c.asked = item;          // forecast: the order's own target is never a spare block for its way back up
+        c.askedN = n;
         String phrase = obtain(c, item, n);
         return finish(c, sh(item), phrase == null ? sh(item) + " is in the bag" : sh(item) + " <- " + phrase);
     }
@@ -5441,6 +5465,7 @@ public final class NeedChain {
         // consumes before the collect counts: what it took is lacking again
         int remaining = lack + Math.max(0, haveBefore - have(c, asked));
         Walked firstWalk = null;
+        String backUp = null;           // forecast: the way back up from a covered spot's dig down, in the way's words
         // 0.39.z74 item 1 (rule 15): a spot whose block's yield of the item is not known is left out (said); none left: no way
         List<Spot> known = new ArrayList<>();
         for (Spot sp : order) {
@@ -5550,10 +5575,17 @@ public final class NeedChain {
             c.taken.merge(sp.key(), take, Integer::sum);
             c.bag.merge(gives, got, Integer::sum);
             remaining -= got;
+            // forecast (owner 2026-11-08): a covered spot's collect digs down for its blocks - the way back up is priced
+            // against the forecast bag after it (the orders' and the chain's reserves are no spare), a Climb step follows
+            if (!log && sp.isCovered() && at == null) {
+                String up = wayBackUp(c, gives, sp, take, each, c.leafAt.get(sp.key()));
+                if (up != null) backUp = backUp == null ? up : backUp + "; " + up;
+            }
         }
         String how = (!log && first.isCovered() ? coverText(gives, first) : (log ? "cut tree" : "dig " + shw(gives)) + " seen " + Math.round(first.dist()) + " m")
                 + (pre == null ? "" : " with " + pre);
         if (firstWalk != null) how = noted(how, firstWalk);
+        if (backUp != null) how += " + " + backUp;
         if (remaining > 0) {
             String leaf = exploreLeaf(c, word, "not enough " + shw(word) + " known");
             return leaf == null ? null : how + " + " + leaf;
@@ -5587,6 +5619,109 @@ public final class NeedChain {
         if (!sp.isCovered()) return 0;
         if (deepCover(sp)) return blockBreakS(c, DIG_DOWN_BLOCK) * sp.cover();
         return blockBreakS(c, sp.coverBlock() == null ? sp.block() : sp.coverBlock()) * sp.cover();
+    }
+
+    // ---- forecast (owner 2026-11-08): the way back up from a dig down, priced against the forecast bag ----
+
+    /**
+     * forecast (owner 2026-11-08; run JBJ-T2 13:21: "collect cobblestone 14" under 2 blocks of dirt dug a 1x1 shaft 13 levels
+     * down; the bag's 32 cobblestone were the order's own, so Baritone's lease had no block to spare and every way up said
+     * "no path"): the blocks the FORECAST bag may place - its placeable blocks ({@link AaEscape#pillarBlock}, as the live
+     * lease holds them) less every reserve of the table (the fork's {@link baritone.api.process.Reserves}, the one place of
+     * that math) and the chain's own asked item ({@code asked} x {@code askedN}: an ORDER reserve unless the table names it
+     * already). Pure (JUnit: ForecastBagTest).
+     */
+    static int spareBlocks(Map<String, Integer> bag, List<baritone.api.process.Reserves.Reserve<String>> reserves, String asked, int askedN) {
+        List<baritone.api.process.Reserves.Reserve<String>> rs = new ArrayList<>(reserves == null ? List.of() : reserves);
+        if (asked != null && askedN > 0 && !asked.startsWith("#")) {
+            String id = id(asked);
+            boolean named = false;
+            for (var r : rs) if (r.kind == baritone.api.process.Reserves.Kind.ORDER && r.members.contains(id)) named = true;
+            if (!named) rs.add(io.github.mojolowjo.entropybot.aa.moves.Reservations.order(sh(id), List.of(id), askedN));
+        }
+        Map<String, Integer> b = new LinkedHashMap<>();
+        List<String> blocks = new ArrayList<>();
+        if (bag != null) for (var e : bag.entrySet()) {
+            if (e.getValue() == null || e.getValue() <= 0) continue;
+            String id = id(e.getKey());
+            b.merge(id, e.getValue(), Integer::sum);
+            if (AaEscape.pillarBlock(id) && !blocks.contains(id)) blocks.add(id);
+        }
+        return blocks.isEmpty() ? 0 : baritone.api.process.Reserves.spareThrowaway(rs, b, blocks);
+    }
+
+    /** forecast: the bag's placeable blocks in all (reserved or not), the words' "of M in the bag". Pure. */
+    static int placeableBlocks(Map<String, Integer> bag) {
+        int n = 0;
+        if (bag != null) for (var e : bag.entrySet()) if (e.getValue() != null && e.getValue() > 0 && AaEscape.pillarBlock(id(e.getKey()))) n += e.getValue();
+        return n;
+    }
+
+    /** forecast: the forecast bag of the chain here (every word read: the open node's fact; the counts as the simulated bag has them). */
+    private static Map<String, Integer> forecastBag(Ctx c) {
+        Map<String, Integer> m = new LinkedHashMap<>();
+        for (String k : c.bag.scan(k -> true, "forecast bag")) m.put(k, c.have(k));
+        return m;
+    }
+
+    /** forecast: blocks a 1x1 dig down takes per level (Tuning forecast.digBlocksPerLevel). */
+    static double digBlocksPerLevel() { return Math.max(1e-9, Tuning.get("forecast.digBlocksPerLevel")); }      // structural: never divide by 0
+
+    /** forecast: a dig down of fewer levels than this needs no climb step (Tuning forecast.climbFromLevels). */
+    static int climbFromLevels() { return Tuning.i("forecast.climbFromLevels"); }
+
+    /** forecast: the levels a covered spot's collect of {@code take} blocks digs down PAST the spot itself (the first block is the spot). Pure. */
+    static int digDownLevels(int take) {
+        if (take <= 0) return 0;
+        return Math.max(0, (int) Math.ceil(take / digBlocksPerLevel() - 1e-9) - 1);       // structural: epsilon
+    }
+
+    /** forecast: the words of a way back up ({@link #wayBackUp}), the Climb step's note and the tests' hook. */
+    static final String WAY_BACK_UP = "way back up from the dig down: ";
+
+    /**
+     * forecast (owner 2026-11-08: "get the stone I need, then extra stone to pillar my way out"): the way back up after a
+     * covered spot's collect that digs {@code lv} levels down, priced against the forecast bag AFTER the collect - a pillar
+     * of spare blocks (rungOptions.pillarBlock a level + pillarFix), a staircase with the pickaxe (rungOptions.climbBlock a
+     * level + climbFix, the climb verb's own row), or the blocks short dug first (each at the spot's break; the collect's
+     * count raised by them) and then the pillar. The cheapest is priced and a Climb step follows the collect; Baritone picks
+     * the cells, digs and places (rule: the car). Fewer levels than forecast.climbFromLevels: nothing (a jump out).
+     */
+    private static String wayBackUp(Ctx c, String gives, Spot sp, int take, double each, Integer collectAt) {
+        int lv = digDownLevels(take);
+        if (lv < climbFromLevels()) return null;
+        Map<String, Integer> bag = forecastBag(c);
+        int spare = spareBlocks(bag, c.w.reserves(), c.asked, c.askedN);
+        int placeable = placeableBlocks(bag);
+        double pillar = Unit.seconds(lv * RungOptions.pillarBlock() + RungOptions.pillarFix());
+        double stairs = c.pickTier >= 1 ? Unit.seconds(lv * RungOptions.climbBlock() + RungOptions.climbFix()) : Double.POSITIVE_INFINITY;   // structural: tier 1 = the least pickaxe
+        int shortBy = Math.max(0, lv - spare);
+        double extra = shortBy * each + pillar;
+        final double sec;
+        final String way, how;
+        if (shortBy == 0 && pillar <= stairs) {
+            sec = pillar;
+            way = "a pillar";
+            how = "a pillar of " + lv + " of the " + spare + " spare blocks: " + s(pillar) + " (a staircase " + s(stairs) + ")";
+        } else if (stairs <= extra) {
+            sec = stairs;
+            way = "a staircase";
+            how = "a staircase with the " + sh(c.pickItem) + ": " + s(stairs) + " (" + spare + " spare block" + (spare == 1 ? "" : "s") + " for " + lv + " levels; "
+                    + (shortBy > 0 ? shortBy + " extra dug first and a pillar " + s(extra) : "a pillar " + s(pillar)) + ")";
+        } else {
+            sec = extra;
+            way = shortBy + " extra block" + (shortBy == 1 ? "" : "s") + " and a pillar";
+            how = shortBy + " extra block" + (shortBy == 1 ? "" : "s") + " dug first (" + s(shortBy * each) + "), a pillar of " + lv + " after: " + s(extra)
+                    + " (" + spare + " spare; a staircase " + (Double.isInfinite(stairs) ? "needs a pickaxe" : s(stairs)) + ")";
+            if (collectAt != null && c.steps.get(collectAt) instanceof Step.Collect k) c.steps.set(collectAt, new Step.Collect(k.item(), k.n() + shortBy, k.at()));
+        }
+        c.steps.add(new Step.Climb());
+        c.addS(sec);
+        c.partDig += sec;
+        final int reserved = Math.max(0, placeable - spare);
+        c.note(() -> WAY_BACK_UP + lv + " levels (" + take + " blocks of " + shw(gives) + " at " + sp.x() + " " + sp.y() + " " + sp.z() + ", " + digBlocksPerLevel()
+                + " a level); the forecast bag places " + spare + " of its " + placeable + " blocks (" + reserved + " reserved by the orders and the chain): " + how);
+        return WAY_BACK_UP + lv + " levels, " + spare + " of " + placeable + " blocks spare: " + way + " " + s(sec);
     }
 
     /** job-est: the block a way down through unknown ground is priced by (the overworld's ground; Baritone's break cost of it). */
@@ -6793,18 +6928,21 @@ public final class NeedChain {
         if (walk == null) for (var e : c.unreachableRead().entrySet()) if (e.getKey().startsWith(SURFACE_AT)) { walk = e.getKey() + ": " + e.getValue(); break; }
         if (walk == null) walk = "no priced walk up";
         String climbed = heldLine(c, CLIMB_KEY);
-        int blocks = 0;
-        for (String k : c.bag.scan(ItemWorth::stoneLike, "stone-like")) if (c.have(k) > 0) blocks += c.have(k);   // 0.39.z78 D6: scanned
+        // forecast (owner 2026-11-08): the blocks for a pillar are the forecast bag's SPARE placeable blocks (the orders' and
+        // the chain's reserves taken off, as Baritone's lease counts them), not every stone in the bag
+        Map<String, Integer> fbag = forecastBag(c);
+        int blocks = spareBlocks(fbag, c.w.reserves(), c.asked, c.askedN);
+        int placeable = placeableBlocks(fbag);
         boolean pick = c.pickTier >= 1;      // structural: any pickaxe (the bot's tier scale: 1 = the least pickaxe)
         if (climbed != null) { c.fail = noWalkUp(over) + " - the walk up: " + walk + "; the climb: " + climbed; return null; }
         if (!pick && blocks < over.depth()) {
-            c.fail = noWalkUp(over) + " - the walk up: " + walk + "; no climb either: no pickaxe and " + blocks + " blocks in the bag for " + over.depth() + " up";
+            c.fail = noWalkUp(over) + " - the walk up: " + walk + "; no climb either: no pickaxe and " + blocks + " spare blocks of " + placeable + " in the bag (the rest reserved) for " + over.depth() + " up";
             return null;
         }
         double sec = Unit.seconds(over.depth() * RungOptions.climbBlock() + RungOptions.climbFix());
         c.steps.add(new Step.Climb());
         c.addS(sec);
-        final String line = "climb up " + over.depth() + " with " + Math.min(blocks, over.depth()) + " blocks from the bag" + (pick ? " and the " + sh(c.pickItem) : "")
+        final String line = "climb up " + over.depth() + " with " + Math.min(blocks, over.depth()) + " spare blocks of " + placeable + " in the bag" + (pick ? " and the " + sh(c.pickItem) : "")
                 + ": " + s(sec) + " (the walk up out: " + walk + ")";
         c.note(() -> line);
         return line;

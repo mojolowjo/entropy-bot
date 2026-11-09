@@ -780,6 +780,9 @@ public final class AaRuntime implements JobPort {
                 (io.github.mojolowjo.entropybot.aa.NeedChain.Lookup) (item, skip) -> { var s = nearestSource(item, skip); return s == null ? List.of() : List.of(s); },
                 this::animalsKnown, currentLootBook(), this::band, 0, LivePathPrice.INSTANCE, this::stationAt).withUses(AaRuntime::usesLeft).withStrip(io.github.mojolowjo.entropybot.aa.brain.StripWays.gate(this::strip)).withCave(this::caveWay)
                 .withRooms(rooms(in.pos))
+                // forecast (owner 2026-11-08): the reserve table the fork's lease holds (the chain's claims and the orders' targets, D1):
+                // the planner's forecast bag may not place those on a way back up (run JBJ-T2: a 14-level shaft, no block to spare)
+                .withReserves(bb.reserved() == null ? List.of() : bb.reserved().list())
                 .withWhere(new io.github.mojolowjo.entropybot.aa.NeedChain.WhereFacts(this::whereOf, once(this::surfaceOver), AaRuntime::feetNow, AaRuntime::baseHere))   // 0.39.z68; z69: the feet; z74: the base block
                 // 0.39.z75 take 2 (run AJ 20:23:41 / 20:24:55): a station take short twice at one cell is out for every order
                 .withoutSources(io.github.mojolowjo.entropybot.aa.moves.TakeHolds.INSTANCE.held(feetNow(), AaRuntime::stationStands,

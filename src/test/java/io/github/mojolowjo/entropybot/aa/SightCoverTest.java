@@ -69,14 +69,17 @@ class SightCoverTest {
         assertEquals(Spot.COVER_UNKNOWN, Nearby.withCover(w, far, buried).cover(), "not loaded: priced by estimate as today");
     }
 
-    /** The two prices differ by the dig part only: the covered way costs the cover's break by its depth more, and digs first. */
+    /**
+     * The two prices differ by the dig part only: the covered way costs the cover's break by its depth more, and digs first.
+     * (forecast: 2 blocks dig 1 level past the spot - under forecast.climbFromLevels, so no way back up is priced here.)
+     */
     @Test
     void thePricesDifferByTheDigPart() {
         Spot open = new Spot(5, 64, 0, 5, STONE).covered(0, null);
         Spot one = open.covered(1, STONE), two = open.covered(2, STONE);
-        Chain a = NeedChain.resolve("cobblestone", 3, Z77StoneHereTest.world(word -> List.of(open)));
-        Chain b = NeedChain.resolve("cobblestone", 3, Z77StoneHereTest.world(word -> List.of(one)));
-        Chain c = NeedChain.resolve("cobblestone", 3, Z77StoneHereTest.world(word -> List.of(two)));
+        Chain a = NeedChain.resolve("cobblestone", 2, Z77StoneHereTest.world(word -> List.of(open)));
+        Chain b = NeedChain.resolve("cobblestone", 2, Z77StoneHereTest.world(word -> List.of(one)));
+        Chain c = NeedChain.resolve("cobblestone", 2, Z77StoneHereTest.world(word -> List.of(two)));
         assertTrue(a.ok() && b.ok() && c.ok(), a.why() + " / " + b.why() + " / " + c.why());
         double dig1 = b.seconds() - a.seconds(), dig2 = c.seconds() - a.seconds();
         assertTrue(dig1 > 0, a.why() + " / " + b.why());

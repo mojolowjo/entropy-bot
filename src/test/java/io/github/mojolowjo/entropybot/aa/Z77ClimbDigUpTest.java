@@ -117,7 +117,7 @@ class Z77ClimbDigUpTest {
         assertTrue(c.ok() && c.explore(), c.why());
         assertEquals(List.of(new Step.Climb(), new Step.Explore(NeedChain.exploreMinutes(), "raw_iron")), c.steps());
         assertEquals((59 * 3 + 10) / Unit.WALK_BPS + NeedChain.exploreS(), c.seconds(), 0.1, c.why());
-        assertTrue(c.why().contains("climb up 59 with 0 blocks from the bag and the stone_pickaxe"), c.why());
+        assertTrue(c.why().contains("climb up 59 with 0 spare blocks of 0 in the bag and the stone_pickaxe"), c.why());
     }
 
     static Goals.Goal order(Blackboard bb, String key) {
