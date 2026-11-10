@@ -68,11 +68,24 @@ public final class ReflexGoals {
         boolean open(int x, int y, int z);
 
         boolean sky(int x, int y, int z);
+
+        /**
+         * shaft-goal: the feet at x y z stand in a hole - two or more below the ground on every side (SurfaceHeight.holeDepth
+         * over the 8 columns round them: a sky-open shaft). The game side reads Jobs.holeDepth, the reader the step's done
+         * test uses (Jobs.belowSurface), so the goal and the done test are one answer.
+         */
+        boolean hole(int x, int y, int z);
     }
 
-    /** 0.39.z77 round fix (run BI): the feet at y are out: feet and head open, the head under open sky. */
+    /**
+     * 0.39.z77 round fix (run BI): the feet at y are out: feet and head open, the head under open sky.
+     * <p>shaft-goal (runs JBK-T2 15:20:11, JBM-T2 21:43:51, JBP-T2 23:09:04: after a dig-down collect the climb "ended
+     * (failed) after 0.1 s ... with 16 blocks over the feet", "no solid cell over the feet" - the bottom of the 1x1 shaft it
+     * had dug is open to the sky, so this was true where it stood and Baritone's walk arrived in its first tick): and not
+     * in a hole. A sky-open shaft's bottom is not out; its top, level with the ground, is.
+     */
     public static boolean underSky(SkyCells c, int x, int y, int z) {
-        return c.open(x, y, z) && c.open(x, y + 1, z) && c.sky(x, y + 1, z);
+        return c.open(x, y, z) && c.open(x, y + 1, z) && c.sky(x, y + 1, z) && !c.hole(x, y, z);
     }
 
     /**

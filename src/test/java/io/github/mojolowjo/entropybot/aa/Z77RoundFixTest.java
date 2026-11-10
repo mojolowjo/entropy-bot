@@ -236,6 +236,7 @@ class Z77RoundFixTest {
         var cells = new io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.SkyCells() {
             @Override public boolean open(int x, int y, int z) { return y < 17 || y >= 64 || y == 22 || y == 23; }      // a pocket at 22-23
             @Override public boolean sky(int x, int y, int z) { return y >= 64; }
+            @Override public boolean hole(int x, int y, int z) { return false; }      // flat ground: no shaft
         };
         var g = new io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.UnderSky(cells, 64, io.github.mojolowjo.entropybot.aa.moves.ReflexGoals.digLevelTicks(0));
         assertFalse(g.isInGoal(0, 22, 0), "a pocket under the rock is no way out");

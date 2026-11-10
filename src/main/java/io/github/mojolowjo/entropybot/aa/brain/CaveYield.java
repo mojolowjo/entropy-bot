@@ -42,14 +42,17 @@ public final class CaveYield {
      * {@code byY} / {@code blocks} / {@code open} / {@code done}: the cave record's air-exposed count
      * (CaveRecord.Exposure); {@code cells} the cave's cells now; {@code walkBps} the walk's speed.
      */
+    /** The start of a prior's words while its answer is still to come (the world-gen read, the cave's count); the cave way reads it - one source. */
+    public static final String NOT_YET = "not known yet: ";
+
     public static Prior of(String word, GenWhere.Fact where, Map<Integer, Integer> byY, long blocks, boolean open, boolean done, long cells, double walkBps) {
         String w = word == null ? "?" : word.replaceFirst("^minecraft:", "");
         if (where == null || where.kind() == GenWhere.Kind.NOT_LOADED)
-            return new Prior(Double.NaN, 0, blocks, Double.NaN, open, false, "not known yet: " + (where == null ? "the world-gen read is not done" : where.why()));
+            return new Prior(Double.NaN, 0, blocks, Double.NaN, open, false, NOT_YET + (where == null ? "the world-gen read is not done" : where.why()));
         if (!where.band() || where.bands().isEmpty())
             return new Prior(Double.NaN, 0, blocks, Double.NaN, open, true, "no world-gen data for " + w + " (" + (where.why() != null ? where.why() : where.text()) + ")");
         if (byY == null || !done || cells <= 0)
-            return new Prior(Double.NaN, 0, blocks, Double.NaN, open, false, "not known yet: the cave's cells and air-exposed blocks are still being read ("
+            return new Prior(Double.NaN, 0, blocks, Double.NaN, open, false, NOT_YET + "the cave's cells and air-exposed blocks are still being read ("
                     + Math.max(0, cells) + " cells, " + blocks + " air-exposed blocks so far)");
         double expected = 0;
         for (var e : byY.entrySet()) expected += e.getValue() * where.curve(e.getKey(), true) / LAYER_BLOCKS;

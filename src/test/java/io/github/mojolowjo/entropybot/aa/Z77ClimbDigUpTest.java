@@ -54,6 +54,7 @@ class Z77ClimbDigUpTest {
     static final ReflexGoals.SkyCells ROCK_TO_49 = new ReflexGoals.SkyCells() {
         @Override public boolean open(int x, int y, int z) { return y >= 50 || y == -9 || y == -8; }
         @Override public boolean sky(int x, int y, int z) { return y >= 50; }
+        @Override public boolean hole(int x, int y, int z) { return false; }      // flat ground: no shaft
     };
 
     static double deepslateCell() {

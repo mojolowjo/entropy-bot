@@ -6546,6 +6546,19 @@ public final class NeedChain {
         // counted again here; the ones this way counts are taken for the rest of the chain
         List<String> free = freeLeft(cw.leftKeys(), c.taken);
         int toFind = Math.max(0, oreBlocks - free.size());
+        // count-not-read (run JBP-T1 23:10:48-23:19: "known cave 12 m: ... 1 ore along the 3 nearest of 110 open passage(s):
+        // 7 s (density not known ... the fallback cave.orePerCellNotKnown 0.01) ... -> 8.5 s (world-gen not known yet (not
+        // known yet: the cave's cells and air-exposed blocks are still being read ...))" beat charcoal at 14.6 s; the torch
+        // order caved 7 min for 0 ore, its own status "583.3 s per ore expected"): ore to FIND in a cave whose estimate is
+        // still to come (its count, or the world-gen read) and of which no ore was seen has no price yet - the fallback
+        // density is for an ore no placement places, never for an answer not landed (rule 15; CaveYield: "the way waits,
+        // said"). The way is out for this pricing with the reason; the next pricing asks again
+        if (toFind > 0 && Double.isNaN(cw.expected()) && cw.basis() != null && cw.basis().startsWith(io.github.mojolowjo.entropybot.aa.brain.CaveYield.NOT_YET)
+                && (cw.density() == null || cw.density().fallback())) {
+            c.fail = head + ": " + toFind + " ore to find, not priced yet - " + cw.basis().substring(io.github.mojolowjo.entropybot.aa.brain.CaveYield.NOT_YET.length())
+                    + " and none of it was seen there (no guess stands in for a count still to come, rule 15)";
+            return null;
+        }
         Inner in = passageWalk(cw, toFind);                     // D15 pass two: the walk inside is the passages' price
         double cap = Tuning.get("cave.exploreMinutes"), holds = cw.holdsMinutes();
         String info = cw.infoLine() + (!free.isEmpty() ? ", " + free.size() + " seen there and left" : "");

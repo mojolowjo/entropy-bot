@@ -1704,6 +1704,12 @@ public final class StepHands implements Steps.Hands {
             var lv = net.minecraft.client.Minecraft.getInstance().level;
             return lv != null && lv.canSeeSky(new BlockPos(x, y, z));
         }
+
+        /** shaft-goal: the done test's own reader (Jobs.belowSurface reads it too); no level: not out, so a hole. */
+        @Override public boolean hole(int x, int y, int z) {
+            var lv = net.minecraft.client.Minecraft.getInstance().level;
+            return lv == null || Jobs.holeDepth(lv, x, y, z) > 0;
+        }
     };
 
     // ---- the item actions and the mine steps: the typed step calls its method (never a verb line), its job's request ----

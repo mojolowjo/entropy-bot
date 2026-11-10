@@ -210,11 +210,17 @@ public final class CaveWalk {
             public synchronized void clear() { kept.clear(); }
         }
 
+        /** The start of the fallback's words ({@link #notKnown}; {@link #fallback} reads it - one source). */
+        public static final String NOT_KNOWN = "density not known: no placement fact and no ore seen";
+
         /** No placement fact and no ore seen (rule 15): the Tuning fallback, said. */
         public static Density notKnown() {
             double f = Tuning.get("cave.orePerCellNotKnown");
-            return flat(f, String.format(Locale.ROOT, "density not known: no placement fact and no ore seen, the fallback cave.orePerCellNotKnown %s", f));
+            return flat(f, String.format(Locale.ROOT, NOT_KNOWN + ", the fallback cave.orePerCellNotKnown %s", f));
         }
+
+        /** This density is the fallback guess ({@link #notKnown}): neither game data nor a seen rate. */
+        public boolean fallback() { return why != null && why.startsWith(NOT_KNOWN); }
     }
 
     /** Pass two: the planner's cave price - seconds to find {@code n} ore along the open passages; {@code expected} the ore they hold. */

@@ -212,6 +212,58 @@ class OrderLineScenariosTest {
     }
 
     /**
+     * Values round the runs', swept (owner 2026-11-09: "slightly adjusting some values for possible other errors"): the
+     * mining data landing 0 s to 10 min after the order - never a stop, nothing started on the missing fact, and the order
+     * runs within 10 s of the landing.
+     */
+    @Test
+    void sweptLoadDelays_theOrderWaitsAndRuns() {
+        List<String> wrong = new java.util.ArrayList<>();
+        for (int delayS : new int[]{0, 1, 5, 29, 30, 31, 51, 90, 600}) {
+            OrderLineSim s = stoneAndTree();
+            var tiers = io.github.mojolowjo.entropybot.aa.brain.MiningTiers.source();
+            if (delayS > 0) io.github.mojolowjo.entropybot.aa.brain.MiningTiers.use(null);
+            Goals.Goal cob = s.order("cobblestone", 32, null, false);
+            for (int t = 0; t < delayS; t++) s.run(1, 1000);
+            if (delayS > 0 && s.starts() != 0) wrong.add(delayS + " s: a run started on the missing data");
+            io.github.mojolowjo.entropybot.aa.brain.MiningTiers.use(tiers);
+            s.run(10, 1000);
+            if (cob.parked != null) wrong.add(delayS + " s: stopped: " + cob.parked);
+            if (s.starts() != 1) wrong.add(delayS + " s: " + s.starts() + " runs 10 s after the data landed " + s.brain.whyLines(3));
+            clear();
+        }
+        assertTrue(wrong.isEmpty(), wrong.toString());
+    }
+
+    /**
+     * The same for the deposit: the bag at the stop (0 to 40 cobblestone) and when the line ends (0 to 58) - the line's
+     * deposit is always what the bag holds of the ordered 32 then, and the 16 logs; never more than the bag, never twice.
+     */
+    @Test
+    void sweptBags_theLinesDepositIsTheBagAtItsEnd() {
+        List<String> wrong = new java.util.ArrayList<>();
+        for (int atStop : new int[]{0, 5, 17, 31})
+            for (int atEnd : new int[]{0, 3, 9, 17, 31, 32, 58}) {
+                OrderLineSim s = stoneAndTree();
+                Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+                boolean cobFailed = false, logDone = false;
+                for (int i = 0; i < 60 && !logDone; i++) {
+                    s.run(1, 5000);
+                    String r = s.running();
+                    if (r == null) continue;
+                    if (r.equals(cob.id()) && !cobFailed) { cobFailed = true; s.bag.put("cobblestone", atStop); s.failRun("collect 32 cobblestone: Baritone's mine went away from the priced spot, got " + atStop + " of 32"); }
+                    else if (r.equals(log.id())) { s.run(2, 5000); s.bag.put("cobblestone", atEnd); s.bag.put("oak_log", 16); s.endRun("done: chopped"); logDone = true; }
+                }
+                s.run(3, 5000);
+                Map<String, Integer> want = new java.util.TreeMap<>(Map.of("oak_log", 16));
+                if (atEnd > 0) want.put("cobblestone", Math.min(32, atEnd));
+                if (!s.due.equals(List.of(want))) wrong.add("stop " + atStop + ", end " + atEnd + ": " + s.due + " (wanted " + want + ") " + s.said);
+                clear();
+            }
+        assertTrue(wrong.isEmpty(), wrong.size() + " wrong, the first: " + wrong.stream().limit(2).toList());
+    }
+
+    /**
      * The same, the other way round in time: the line's deposit went (the other order ended) BEFORE the stopped order was
      * met. Wanted: a second deposit of what the first left out, nothing twice.
      */
