@@ -25,7 +25,8 @@ public final class BaritoneHook {
     /**
      * Settings no job may turn on (B2, the drift guard): chat and prefix control would let anyone with chat
      * access drive Baritone, exploreForBlocks sends it wandering, a water-bucket fall places water. Breaking and
-     * placing are never set by the mod (0.39.z8): each fork process owns them for its own run.
+     * placing are never set by the mod while the game runs (0.39.z8): each fork process owns them for its own run. The one
+     * write is {@link #startDefaults} at the hook: a stale settings.txt line goes back to Baritone's default.
      */
     static final String[] FIXED_OFF = { "chatcontrol", "chatcontrolanyway", "prefixcontrol", "exploreforblocks", "allowwaterbucketfall" };
 
@@ -93,7 +94,27 @@ public final class BaritoneHook {
         return turned;
     }
 
-    /** Tries once; call again later when it fails (Baritone's primary instance may not exist yet). */
+    /**
+     * start-defaults (owner 2026-11-09): {@link SafetyRules#START_DEFAULT} back to Baritone's own defaults, once, when the
+     * hook is wired (settings.txt is read once at the client's start; no run holds a lease yet). Every one put back is
+     * logged; a name this Baritone does not have is logged too (never a quiet skip).
+     */
+    java.util.List<String> startDefaults(Settings s) {
+        java.util.List<String> put = new java.util.ArrayList<>();
+        for (String name : SafetyRules.START_DEFAULT) {
+            Settings.Setting<?> st = s.byLowerName.get(name.toLowerCase(java.util.Locale.ROOT));
+            if (st == null) { LOG.warn("[entropybot] Baritone start defaults: this Baritone has no setting {} - not checked", name); continue; }
+            String line = SafetyRules.startDrift(st.getName(), st.value, st.defaultValue);
+            if (line == null) continue;
+            st.reset();
+            put.add(line);
+        }
+        if (put.isEmpty()) LOG.info("[entropybot] Baritone start defaults: {} are at their defaults", SafetyRules.START_DEFAULT);
+        else LOG.warn("[entropybot] Baritone start defaults: the instance's baritone/settings.txt had {} - put back for this game (the file keeps its lines until a Baritone 'set' saves it)", put);
+        return put;
+    }
+
+    /** Tries once; call again later when it fails(Baritone's primary instance may not exist yet). */
     public void tryHook(EventRing ring, IBaritoneProcess engine) {
         if (hooked) return;
         attempts++;
@@ -141,6 +162,7 @@ public final class BaritoneHook {
             s.logger.value = previous.andThen(msg -> {
                 try { lastLine = msg.getString(); lines++; ring.push("log", lastLine, null); } catch (RuntimeException caught) { Quiet.warn("BaritoneHook.onBlockChange failed, carrying on with the fallback", caught); }
             });
+            for (String line : startDefaults(s)) ring.push("job", "Baritone start default put back: " + line, null);
             hooked = true;
             lastError = null;
             LOG.info("[entropybot] hooked into Baritone: path events, the logger and the engine process; {}", io.github.mojolowjo.entropybot.commands.BuilderDig.checkLine());

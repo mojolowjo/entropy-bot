@@ -10,6 +10,14 @@ import static org.junit.jupiter.api.Assertions.*;
 /** B7e (E1): the safety net's rules (the sim's "safety" run, ported): owned or not, the restore list, the "set" save hack. */
 class SafetyNetTest {
 
+    /** start-defaults (owner 2026-11-09): a stale settings.txt line is named and put back at the start; a default is quiet. */
+    @Test
+    void aStaleSettingsFileLineIsPutBackAtTheStart() {
+        assertEquals(List.of("allowBreak", "allowPlace"), SafetyRules.START_DEFAULT);
+        assertNull(SafetyRules.startDrift("allowBreak", true, true), "at its default: nothing to put back");
+        assertEquals("allowPlace false (settings.txt) -> true (the default)", SafetyRules.startDrift("allowPlace", false, true));
+    }
+
     @Test
     void theRestoreListLeavesBreakingAndPlacingToTheForkProcesses() {
         // 0.39.z8 (owner 2026-10-22, "remove the old job habit"): allowBreak / allowPlace / allowBreakAnyway are each

@@ -33,7 +33,22 @@ public final class SafetyRules {
     public static final List<String> RESTORE_RESET = List.of("lavaCellCost");     // 0.39.s5: the reflex lava wade
     public static final List<String> RESTORE_FALSE_IF_PRESENT = List.of("backfill", "allowBreakNextToWater", "allowBreakNextToLava", "pathUnderWater");   // 0.36.8: our fork's mine-job setting
 
-    /** A Baritone command that saves settings.txt ("set", "setting", "settings" and their forms). */
+    /**
+     * start-defaults (owner 2026-11-09, the cause behind runs JBF-JBK's dead climbs): the settings Baritone's own default
+     * holds at the start, whatever the instance's settings.txt recorded. An old mod version's "set allowBreak false" /
+     * "set allowPlace false" stayed in that file; the fork's plain-walk lease keeps the recorded values, so every goto,
+     * climb and deposit walk there could neither dig nor pillar. Put back once when the hook is wired
+     * ({@link BaritoneHook#startDefaults}), before any run holds a lease; never while the game runs (the fork's leases own
+     * them then).
+     */
+    public static final List<String> START_DEFAULT = List.of("allowBreak", "allowPlace");
+
+    /** One setting's start line: null when it is at Baritone's default, else what the file had and what it is put back to. */
+    public static String startDrift(String name, Object value, Object def) {
+        return java.util.Objects.equals(value, def) ? null : name + " " + value + " (settings.txt) -> " + def + " (the default)";
+    }
+
+    /** A Baritone command that saves settings.txt("set", "setting", "settings" and their forms). */
     private static final Pattern SAVES = Pattern.compile("^(set|setting|settings)\\b", Pattern.CASE_INSENSITIVE);
 
     public static boolean saves(String text) {
