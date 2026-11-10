@@ -44,6 +44,9 @@ public final class Goals {
         /** helper (owner 2026-11-02): the deposit to the main chest was weighed for this order's end (done or parked), once. */
         public boolean depositWeighed;
 
+        /** deposit-words (run JBK-T1): what the weighing at a park noted for the line's deposit (item -> n); a wake takes it back. */
+        public Map<String, Integer> depositTook;
+
         /** deposit-words (owner 2026-11-08): how many of the item go into the main chest when its line ends (the amount ordered); 0: none. */
         public int deposit;
 

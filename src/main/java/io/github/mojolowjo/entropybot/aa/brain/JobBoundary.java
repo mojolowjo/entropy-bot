@@ -18,11 +18,15 @@ public final class JobBoundary {
 
     private static volatile String job;
 
-    /** A job that holds the boundary checks while it runs: the block jobs, the placements, the uses. */
+    /**
+     * A job that holds the boundary checks while it runs: the block jobs, the placements, the uses. Forecast (run JBK-T2
+     * 15:20:11, owner's yes 2026-11-09): the climb too - the priced way back up after a dig-down collect runs before the
+     * order's count ends the run (the goal check, the re-plans wait for it as for any job; on the surface the climb is instant).
+     */
     public static boolean holds(Step s) {
         return s instanceof Step.ChopTree || s instanceof Step.Collect || s instanceof Step.TakeStation || s instanceof Step.KelpCut || s instanceof Step.MineAt
                 || s instanceof Step.Dig || s instanceof Step.Build || s instanceof Step.PlaceNear || s instanceof Step.BuildSchematic
-                || s instanceof Step.Light || s instanceof Step.Eat;
+                || s instanceof Step.Light || s instanceof Step.Eat || s instanceof Step.Climb;
     }
 
     /** The step started: a holding job marks the boundary closed until {@link #leave}. */

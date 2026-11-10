@@ -4024,10 +4024,11 @@ public final class AaRuntime implements JobPort {
         if (g.deposit <= 0) { LOG.info("[entropybot] aa: {} {}: no deposit word on the order (-d, or a trailing deposit) - its items stay in the bag", g.r.key(), how); return; }
         Map<String, Integer> items = lineItems.computeIfAbsent(g.line, k -> new java.util.TreeMap<>());
         int left = g.deposit;
+        g.depositTook = new java.util.TreeMap<>();
         for (String id : g.r.counts()) {
             int have = bb.in.bag.getOrDefault(id, 0);
             int take = g.r.group() ? Math.min(have, g.deposit) : Math.min(have, left);
-            if (take > 0) { items.merge(id, take, Integer::sum); left -= take; }
+            if (take > 0) { items.merge(id, take, Integer::sum); g.depositTook.merge(id, take, Integer::sum); left -= take; }
             if (!g.r.group() && left <= 0) break;
         }
         java.util.Set<String> open = lineOpen.get(g.line);
@@ -4050,6 +4051,29 @@ public final class AaRuntime implements JobPort {
         depositItems = all;
         depositDue = g.r.key() + " " + how + ": the line's deposit of " + io.github.mojolowjo.entropybot.aa.moves.Step.Deposit.onlyText(all) + " to the main chest at " + main.at() + " follows";
         LOG.info("[entropybot] aa: {} (when the job slot is free)", depositDue);
+    }
+
+    /**
+     * deposit-words (run JBK-T1 15:18:55: cobblestone parked 30 s in, "its deposit items noted ()", woken, done at 7:20 and
+     * never weighed again - the line's deposit missed it): a parked order that woke (parked null again, still weighed) is
+     * weighed again at its end. What its park noted is taken back from the line's items; when the line's deposit went
+     * already, that much of its ordered amount is done with.
+     */
+    private void reopenDeposit(io.github.mojolowjo.entropybot.aa.brain.Goals.Goal g) {
+        g.depositWeighed = false;
+        Map<String, Integer> took = g.depositTook == null ? Map.of() : g.depositTook;
+        g.depositTook = null;
+        Map<String, Integer> items = lineItems.get(g.line);
+        int noted = took.values().stream().mapToInt(Integer::intValue).sum();
+        if (items != null) {
+            for (var e : took.entrySet()) { int n = items.getOrDefault(e.getKey(), 0) - e.getValue(); if (n > 0) items.put(e.getKey(), n); else items.remove(e.getKey()); }
+        } else if (noted > 0) {
+            g.deposit = Math.max(0, g.deposit - noted);       // the line's deposit took them already
+        }
+        if (g.deposit <= 0) { LOG.info("[entropybot] aa: {} woke: its deposit went with the line already ({}) - nothing more to deposit", g.r.key(), io.github.mojolowjo.entropybot.aa.moves.Step.Deposit.onlyText(took)); return; }
+        lineOpen.computeIfAbsent(g.line, k -> new java.util.LinkedHashSet<>()).add(g.r.key());
+        LOG.info("[entropybot] aa: {} woke: its deposit items are weighed again when it ends (its stop noted {}; the line's deposit waits for it)", g.r.key(),
+                noted == 0 ? "nothing" : io.github.mojolowjo.entropybot.aa.moves.Step.Deposit.onlyText(took));
     }
 
     private void depositDueTick() {
@@ -4094,7 +4118,10 @@ public final class AaRuntime implements JobPort {
             c.whisper(c.owner(), "aa: " + msg);
             weighDeposit(g, "done");                                          // helper: the bag to the main chest
         }
-        for (var g : goals) if (g.parked != null) weighDeposit(g, "stopped");  // helper: a stopped order's bag goes to the chest too
+        for (var g : goals) {
+            if (g.parked != null) weighDeposit(g, "stopped");                 // helper: a stopped order's bag goes to the chest too
+            else if (g.depositWeighed && g.deposit > 0 && g.strip == null) reopenDeposit(g);
+        }
         // 0.39.z70 (R1 = c): said by Goals (log + whisper); job-lookup: the brain's hold on a retried order is forgotten
         io.github.mojolowjo.entropybot.aa.brain.Goals.retryLoopParks(bb, tree.brain.failures);
         // 0.39.z77 climb (run CM 17:43-17:48, rule 7): every order parked - under ground the waiting ones try the climb way once,

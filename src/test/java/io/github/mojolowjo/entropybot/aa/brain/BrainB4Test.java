@@ -126,6 +126,7 @@ class BrainB4Test {
         var chop = new io.github.mojolowjo.entropybot.aa.moves.Step.Collect("raw_iron", 4);
         assertTrue(JobBoundary.holds(chop));
         assertFalse(JobBoundary.holds(new io.github.mojolowjo.entropybot.aa.moves.Step.Craft("torch", 4)), "a craft checks between batches");
+        assertTrue(JobBoundary.holds(new io.github.mojolowjo.entropybot.aa.moves.Step.Climb()), "forecast: the way back up runs before the met order ends (run JBK-T2)");
         try {
             JobBoundary.enter(chop);
             io.github.mojolowjo.entropybot.aa.Replan.Timer timer = new io.github.mojolowjo.entropybot.aa.Replan.Timer();
