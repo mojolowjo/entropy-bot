@@ -431,7 +431,11 @@ final class DepositLeg {
             int meant = total(before);
             if (putN < meant) return Car.Status.failed("deposit: " + putN + " of " + meant + " items went in at " + DepositRule.at(chest) + " (" + Step.Deposit.onlyText(step.only()) + ")" + splitNote
                     + (splitNote.isEmpty() ? ": " + DepositRule.full(chest, meant - putN) : ""));
-            return Car.Status.done("ok: deposited " + putN + " items at " + DepositRule.at(chest) + " (" + Step.Deposit.onlyText(step.only()) + ")" + splitNote);
+            // asked-not-put (run JBO-T1 22:54:30: "deposited 4 items ... (cobblestone 17, spruce_log 3, torch 4)" - the bag held
+            // 4 of the 24 asked; rule 7): the list is what was ASKED; when the bag held fewer, the line says so
+            int asked = step.only().values().stream().mapToInt(Integer::intValue).sum();
+            return Car.Status.done("ok: deposited " + putN + " items at " + DepositRule.at(chest) + " (" + (putN < asked ? "asked: " : "") + Step.Deposit.onlyText(step.only())
+                    + (putN < asked ? "; the bag held " + putN + " of those " + asked : "") + ")" + splitNote);
         }
         Map<String, Integer> left = DepositRule.toPut(bag(p), reserves());
         int leftN = total(left);

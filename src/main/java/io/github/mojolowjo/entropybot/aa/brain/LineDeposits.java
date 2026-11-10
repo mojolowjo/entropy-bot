@@ -46,10 +46,38 @@ public final class LineDeposits {
     /** {@code text}: the line for the log (without the "aa: " head), null: nothing to say. {@code items}: for DUE. */
     public record Out(Kind kind, String text, Map<String, Integer> items) {}
 
-    /** Per aa want line, the -d orders not ended yet, and the items collected so far. */
+    /** Per aa want line, the -d orders not ended yet, and the ones ended so far (by key, in the order they ended). */
     private final Map<String, Set<String>> lineOpen = new HashMap<>();
-    private final Map<String, Map<String, Integer>> lineItems = new HashMap<>();
+    private final Map<String, Map<String, Goals.Goal>> lineEnded = new HashMap<>();
     private int lineSerial;
+
+    /** What the bag holds of the order's deposit amount now (counted id -> n; a group: up to the amount of each member). */
+    static Map<String, Integer> take(Goals.Goal g, Map<String, Integer> bag) {
+        Map<String, Integer> out = new TreeMap<>();
+        int left = g.deposit;
+        for (String id : g.r.counts()) {
+            int have = bag.getOrDefault(id, 0);
+            int take = g.r.group() ? Math.min(have, g.deposit) : Math.min(have, left);
+            if (take > 0) { out.merge(id, take, Integer::sum); left -= take; }
+            if (!g.r.group() && left <= 0) break;
+        }
+        return out;
+    }
+
+    /**
+     * The ended orders' amounts on {@code bag} (never more of an item than the bag holds); {@code keep}: the line ends now,
+     * each order keeps what went for it ({@link Goals.Goal#depositTook}, for a later {@link #reopen}).
+     */
+    private static Map<String, Integer> all(Map<String, Goals.Goal> ended, Map<String, Integer> bag, boolean keep) {
+        Map<String, Integer> all = new TreeMap<>();
+        for (Goals.Goal o : ended.values()) {
+            Map<String, Integer> t = take(o, bag);
+            if (keep) o.depositTook = t;
+            for (var e : t.entrySet()) all.merge(e.getKey(), e.getValue(), Integer::sum);
+        }
+        all.replaceAll((id, n) -> Math.min(n, bag.getOrDefault(id, 0)));
+        return all;
+    }
 
     /** A new order: its line ({@code batch}, or a line of its own), its deposit amount, and its place among the line's open orders. */
     public void add(Goals.Goal g, String batch, boolean deposit) {
@@ -78,23 +106,21 @@ public final class LineDeposits {
         g.depositWeighed = true;
         if (g.strip != null) return new Out(Kind.STRIP, null, null);     // the strip order has its own deposit leg
         if (g.deposit <= 0) return new Out(Kind.NO_WORD, g.r.key() + " " + how + ": no deposit word on the order (-d, or a trailing deposit) - its items stay in the bag", null);
-        Map<String, Integer> items = lineItems.computeIfAbsent(g.line, k -> new TreeMap<>());
-        int left = g.deposit;
-        g.depositTook = new TreeMap<>();
-        for (String id : g.r.counts()) {
-            int have = bag.getOrDefault(id, 0);
-            int take = g.r.group() ? Math.min(have, g.deposit) : Math.min(have, left);
-            if (take > 0) { items.merge(id, take, Integer::sum); g.depositTook.merge(id, take, Integer::sum); left -= take; }
-            if (!g.r.group() && left <= 0) break;
-        }
+        // bag-at-the-end (run JBO-T1 22:53:47 -> 22:54:30: cobblestone stopped with 17 in the bag, "noted (cobblestone 17)";
+        // the torch order's furnace took 8; the line's deposit still asked for the 17): an ended order is kept as an order,
+        // not as the amounts its end saw - the line's deposit is what the bag holds of each order's amount when the line ends
+        Map<String, Goals.Goal> ended = lineEnded.computeIfAbsent(g.line, k -> new java.util.LinkedHashMap<>());
+        ended.put(g.r.key(), g);
+        g.depositTook = take(g, bag);
         Set<String> open = lineOpen.get(g.line);
         if (open != null) open.remove(g.r.key());
         if (open != null && !open.isEmpty())
-            return new Out(Kind.NOTED, g.r.key() + " " + how + ": its deposit items noted (" + Step.Deposit.onlyText(items) + "); the line's deposit follows when "
-                    + String.join(", ", open) + " end" + (open.size() == 1 ? "s" : ""), null);
+            return new Out(Kind.NOTED, g.r.key() + " " + how + ": its deposit items noted (" + Step.Deposit.onlyText(all(ended, bag, false)) + "); the line's deposit follows when "
+                    + String.join(", ", open) + " end" + (open.size() == 1 ? "s" : "") + " (weighed on the bag then)", null);
         lineOpen.remove(g.line);
-        Map<String, Integer> all = lineItems.remove(g.line);
-        if (all == null || all.isEmpty()) return new Out(Kind.NOTHING, g.r.key() + " " + how + ": nothing of the line's deposit items in the bag - no deposit", null);
+        lineEnded.remove(g.line);
+        Map<String, Integer> all = all(ended, bag, true);
+        if (all.isEmpty()) return new Out(Kind.NOTHING, g.r.key() + " " + how + ": nothing of the line's deposit items in the bag - no deposit", null);
         if (mainAt == null)
             return new Out(Kind.NO_CHEST, g.r.key() + " " + how + ": no main chest set (aa deposit x y z) - " + Step.Deposit.onlyText(all) + " stay in the bag", all);
         return new Out(Kind.DUE, g.r.key() + " " + how + ": the line's deposit of " + Step.Deposit.onlyText(all) + " to the main chest at " + mainAt + " follows", all);
@@ -110,10 +136,10 @@ public final class LineDeposits {
         g.depositWeighed = false;
         Map<String, Integer> took = g.depositTook == null ? Map.of() : g.depositTook;
         g.depositTook = null;
-        Map<String, Integer> items = lineItems.get(g.line);
+        Map<String, Goals.Goal> ended = lineEnded.get(g.line);
         int noted = took.values().stream().mapToInt(Integer::intValue).sum();
-        if (items != null) {
-            for (var e : took.entrySet()) { int n = items.getOrDefault(e.getKey(), 0) - e.getValue(); if (n > 0) items.put(e.getKey(), n); else items.remove(e.getKey()); }
+        if (ended != null && ended.remove(g.r.key()) != null) {
+            // the line has not ended: the order is simply open again (its note was of the bag then, nothing was taken)
         } else if (noted > 0) {
             g.deposit = Math.max(0, g.deposit - noted);       // the line's deposit took them already
         }

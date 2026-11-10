@@ -28,6 +28,7 @@ class OrderLineScenariosTest {
     @AfterEach
     void clear() {
         Only.set("off");
+        io.github.mojolowjo.entropybot.aa.moves.FactChange.clear();
         TestData.clear();
         Tuning.reset();
     }
@@ -109,6 +110,32 @@ class OrderLineScenariosTest {
         assertEquals(2, s.starts(), "the order runs again within 15 s of the data landing: " + s.brain.whyLines(6) + " / " + s.port.log);
     }
 
+    /**
+     * Run JBO-T1 (2026-11-09 22:53:39.69-.85, feet -56 79 -11, a line of three orders): the collect ended, the trip was asked
+     * of the planner worker again ("trip: stand (not priced yet: the planner waits on its answer (thinking: ...))"), that
+     * stand ended twice within 160 ms and was counted as two path stands: "stood 2 times at -56 79 -11 ... no third stand
+     * there, and with those walks dropped no way is left" - cobblestone and spruce_log parked, "no wake by itself". Audit A5.
+     * Wanted: a trip's thinking stand is the planner's stand (as an order's own is since run EU): never counted, nothing
+     * dropped, no park.
+     */
+    @Test
+    void aLinesThinkingStandIsNeverCountedAsAPathStand() {
+        OrderLineSim s = stoneAndTree();
+        s.plannerThinks();
+        s.order("cobblestone", 32, "b1", true);
+        s.order("oak_log", 16, "b1", true);
+        s.run(1, 1000);
+        assertEquals(1, s.starts(), "the line's first run starts: " + s.brain.whyLines(6) + " log " + s.port.log);
+        var stand = s.port.started.get(0).steps().get(0);
+        assertTrue(stand instanceof io.github.mojolowjo.entropybot.aa.moves.Step.AwaitPaths, "and it is the trip's stand: " + s.port.started.get(0).steps() + " log " + s.port.log);
+        // the step machine with that stand, as in the run: a path stand, then the trip's thinking stand again and again
+        List<String> asked = new java.util.ArrayList<>();
+        var run = J6cEuTest.standing(List.of(List.of(stand), List.of(stand), List.of(stand), List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Walk(-56, 107, -9, 1))), asked);
+        for (int t = 1; t <= 8 && run.running(); t++) run.tick(t * 20L);
+        assertTrue(asked.stream().noneMatch(k -> k.contains(NeedChain.STOOD_AT)), "no 'stood' drop on the planner's thinking: " + asked);
+        assertTrue(run.running(), "and no stop: " + run.why());
+    }
+
     /** The same world start with the planner on the tick: an order given before the mining data is there waits with the reason, then runs. */
     @Test
     void anOrderGivenBeforeTheDataLoadsWaitsAndThenRuns() {
@@ -153,6 +180,35 @@ class OrderLineScenariosTest {
         assertTrue(cobFailed, "the cobblestone order ran and was stopped: " + s.brain.whyLines(6));
         assertTrue(Goals.of(s.bb).isEmpty(), "both orders met: " + s.said);
         assertEquals(List.of(Map.of("cobblestone", 32, "oak_log", 16)), s.due, "the line's one deposit has all of it: " + s.said);
+    }
+
+    /**
+     * Run JBO-T1 (2026-11-09 22:53:47-22:54:30): cobblestone stopped with 17 in the bag ("its deposit items noted
+     * (cobblestone 17)"); the torch order then used 8 of them for its furnace; the line's deposit asked for the 17 noted at
+     * the stop ("the line's deposit of cobblestone 17, spruce_log 3, torch 4"). Wanted: the line's deposit is weighed on the
+     * bag when the line ends - what is there of each order's amount then.
+     */
+    @Test
+    void theLinesDepositIsWeighedOnTheBagWhenTheLineEnds() {
+        OrderLineSim s = stoneAndTree();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        boolean cobFailed = false, logDone = false;
+        for (int i = 0; i < 60 && !logDone; i++) {
+            s.run(1, 5000);
+            String r = s.running();
+            if (r == null) continue;
+            if (r.equals(cob.id()) && !cobFailed) { cobFailed = true; s.bag.put("cobblestone", 17); s.failRun("collect 32 cobblestone: Baritone's mine went away from the priced spot, got 17 of 32"); }
+            else if (r.equals(log.id())) {
+                s.run(2, 5000);                              // the stop's weighing: "cobblestone 17" noted
+                s.bag.put("cobblestone", 9);                 // another order's furnace took 8
+                s.bag.put("oak_log", 16);
+                s.endRun("done: chopped");
+                logDone = true;
+            }
+        }
+        s.run(3, 5000);
+        assertTrue(cobFailed && logDone, s.brain.whyLines(6).toString());
+        assertEquals(List.of(Map.of("cobblestone", 9, "oak_log", 16)), s.due, "what the bag holds when the line ends: " + s.said);
     }
 
     /**

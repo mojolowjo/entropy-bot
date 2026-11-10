@@ -663,7 +663,11 @@ public final class BatchWay {
             // 0.39.z77 pending (run BV 13:59:36): a leg whose ways still wait on answers is not priced yet - the trip stands, its
             // line says the leg and what it waits on (said to the owner once while that leg waits, price()); nobody is parked
             if (pc.missing().startsWith(NeedChain.NOT_PRICED)) {
-                NeedChain.Chain stand = new NeedChain.Chain(List.of(new Step.AwaitPaths(NeedChain.firstAnswerWaitS())), 0, STAND + pc.missing() + ")", true, null);
+                // thinking-stand (run JBO-T1 22:53:39.69-.85, a line of three: the trip's "the planner waits on its answer
+                // (thinking: ...)" stand ended twice in 160 ms, was counted as two path stands, the walks dropped, "no way
+                // is left", two orders parked): the trip's thinking stand is the planner worker's stand as an order's own
+                // is (ownStand, J6c run EU 1b) - the step machine never counts it
+                NeedChain.Chain stand = new NeedChain.Chain(List.of(new Step.AwaitPaths(NeedChain.firstAnswerWaitS(), NeedChain.thinking(pc))), 0, STAND + pc.missing() + ")", true, null);
                 int cut = pc.missing().indexOf(NeedChain.WAITS_ON);
                 return new Shaped(stand, head + "stand: " + pc.missing(), false, bare + " | stand: " + (cut < 0 ? pc.missing() : pc.missing().substring(0, cut)));
             }
