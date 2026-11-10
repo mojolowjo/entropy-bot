@@ -1153,7 +1153,7 @@ public final class StepHands implements Steps.Hands {
                 !java.util.Arrays.equals(me, cv.firstFeet));
         var next = io.github.mojolowjo.entropybot.cave.CaveWalk.next(cv.mined, k.n(), minutes, k.minutes(), f, found.passages(),
                 left, me, io.github.mojolowjo.entropybot.aa.moves.Step.Collect.MINE_SIGHT,
-                new int[]{k.x(), k.y(), k.z()}, cv.dropped, found.capped(), cv.reflooded, pocket, caveDensity(f, cv.fam));   // pass three: the capped flood goes on from its farthest ends     // pass two: the mouth, when no passage is found from the feet; run EN: the dropped passed over
+                new int[]{k.x(), k.y(), k.z()}, cv.dropped, found.capped(), cv.reflooded, pocket, caveDensity(f, cv.fam), k.planS());   // pass three: the capped flood goes on from its farthest ends     // pass two: the mouth, when no passage is found from the feet; run EN: the dropped passed over
         switch (next) {
             case io.github.mojolowjo.entropybot.cave.CaveWalk.Stop s -> {
                 return caveEnd(s.end(), s.why() + (cv.drops.isEmpty() ? "" : "; dropped: " + String.join("; ", cv.drops)));
@@ -1575,6 +1575,7 @@ public final class StepHands implements Steps.Hands {
         switch (end) {
             case DONE, NO_BRANCH, NO_PROGRESS -> io.github.mojolowjo.entropybot.aa.moves.FactChange.caveEnded(entry, end.name(), why);
             case MINUTES -> io.github.mojolowjo.entropybot.aa.moves.FactChange.caveMinutes(entry, cv.mined, cv.passagesLeft, why);
+            case DEARER -> io.github.mojolowjo.entropybot.aa.moves.FactChange.caveDearer(entry, cv.mined, cv.passagesLeft, why);   // cave-guard: the same kind of fact as its minutes
             default -> { }
         }
         return Car.Status.failed(line);

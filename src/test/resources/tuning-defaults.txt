@@ -967,6 +967,7 @@ strip.freshStartBlocks	48.0
 strip.areaMinFactor	0.5
 cave.exploreMinutes	10.0
 cave.doneExplored	0.9
+cave.dearerTimes	5.0
 cave.orePerCellNotKnown	0.01
 cave.passageCells	4096.0
 cave.passageDrop	3.0

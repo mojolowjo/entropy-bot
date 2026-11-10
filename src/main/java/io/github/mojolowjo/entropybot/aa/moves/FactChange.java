@@ -451,6 +451,20 @@ public final class FactChange {
                         + " passages left" + (why == null || why.isBlank() ? "" : " (" + why.replaceFirst("^error: ", "") + ")"));
     }
 
+    /** cave-guard: the caving step ended DEARER (CaveWalk.dearer): {@link #caveDearerFact} (taken once). */
+    public static void caveDearer(int[] entry, int mined, int passagesLeft, String why) { last = caveDearerFact(entry, mined, passagesLeft, why); }
+
+    /**
+     * cave-guard: the walk ran far over its price with the need unmet - as its minutes ({@link #caveMinutesFact}), the
+     * cave's SOURCE fact: out for this order, the order planned again on the sources left. Words: "cave at x y z: far over
+     * its price, N ore mined, M passages left (why)". Pure.
+     */
+    public static Fact caveDearerFact(int[] entry, int mined, int passagesLeft, String why) {
+        return new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay.keyOf(entry),
+                "cave at " + cell(entry) + ": far over its price, " + mined + " ore mined, " + (passagesLeft < 0 ? "not measured" : String.valueOf(passagesLeft))
+                        + " passages left" + (why == null || why.isBlank() ? "" : " (" + why.replaceFirst("^error: ", "") + ")"));
+    }
+
     /** 0.39.z77 walk: {@code f} is a walk that ended short ({@link #walkShortFact}). */
     public static boolean isWalkShort(Fact f) { return f != null && f.key().startsWith(WALK_SHORT); }
 

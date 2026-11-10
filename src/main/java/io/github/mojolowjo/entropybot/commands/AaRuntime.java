@@ -1067,7 +1067,8 @@ public final class AaRuntime implements JobPort {
             // an ore that generates nowhere in the cave's Y range makes it no source (said); not known yet: no out (rule 15)
             var ex = sg.caveExposure(dim, k.x(), k.y(), k.z());
             var pr = io.github.mojolowjo.entropybot.aa.brain.CaveYield.of(word, gen, ex == null ? null : ex.byY(), ex == null ? 0 : ex.blocks(),
-                    ex != null && ex.open(), ex != null && ex.done(), f == null ? 0 : f.cellCount(), io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps());
+                    ex != null && ex.open(), ex != null && ex.done(), f == null ? 0 : f.cellCount(), io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps(),
+                    ex == null ? -1 : ex.looked());   // count-so-far: the estimate on the part counted while the count runs
             if (out == null && pr.noData()) out = pr.why() + ": the cave way is not priced for it";
             else if (out == null) out = io.github.mojolowjo.entropybot.aa.brain.CaveYield.noSource(pr, word, f == null ? 0 : f.left(fam));
             double unseenShare = f != null && f.cellCount() > 0 ? f.unseen() / (double) f.cellCount() : 1;   // structural: nothing seen yet - all of it
@@ -1142,7 +1143,10 @@ public final class AaRuntime implements JobPort {
         int[] v = f == null ? null : f.ores().get(fam);
         int seen = v == null ? 0 : v[0] + v[1];
         long seenCells = f == null ? 0 : Math.max(0, f.cellCount() - f.unseen());
-        return DENSITIES.get(record, gen, perBlock, ex == null ? 0 : ex.blocks(), f == null ? 0 : f.cellCount(), seen, seenCells);
+        // count-so-far: while the count runs the blocks counted are those round the cells LOOKED round - their ratio, not the
+        // blocks so far over every cell fed
+        long cells = pr.soFar() && ex != null ? ex.looked() : f == null ? 0 : f.cellCount();
+        return DENSITIES.get(record, gen, perBlock, ex == null ? 0 : ex.blocks(), cells, seen, seenCells);
     }
 
     /** J6b run EF (3): the cave's entry first, then up to 3 other openings of its volume (the next lips to try). */

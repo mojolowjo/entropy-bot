@@ -33,9 +33,16 @@ public final class CaveYield {
      * {@code blocks}, the minutes the walk takes, {@code open} (a lower bound), and {@code why} - the words: the basis when
      * known, the reason when not; {@code noData}: no placement places the need's ore (the way is not priced).
      */
-    public record Prior(double perMin, double expected, long blocks, double minutes, boolean open, boolean noData, String why) {
+    public record Prior(double perMin, double expected, long blocks, double minutes, boolean open, boolean noData, String why, boolean soFar) {
+        public Prior(double perMin, double expected, long blocks, double minutes, boolean open, boolean noData, String why) {
+            this(perMin, expected, blocks, minutes, open, noData, why, false);
+        }
+
         public boolean known() { return perMin == perMin; }
     }
+
+    /** count-so-far: the start of a prior's words while the cave's count is still being read and the estimate is on the part counted. */
+    public static final String SO_FAR = "game data so far: ";
 
     /**
      * The prior of one cave for need {@code word}: {@code where} its world-gen fact (GenWhere, every jar's placements);
@@ -46,18 +53,34 @@ public final class CaveYield {
     public static final String NOT_YET = "not known yet: ";
 
     public static Prior of(String word, GenWhere.Fact where, Map<Integer, Integer> byY, long blocks, boolean open, boolean done, long cells, double walkBps) {
+        return of(word, where, byY, blocks, open, done, cells, walkBps, -1);
+    }
+
+    /**
+     * count-so-far (owner 2026-11-09 / 10; run JBP-T1 23:10:48: 645,240 of 666,540 cells read, 97%, and "not known yet" -
+     * "done" is all or nothing on a cave that grows as chunks load): as above, {@code looked} the cells looked round so far
+     * (CaveRecord.Exposure; -1: not given). The count not done but {@code looked} > 0 with blocks counted: the estimate on
+     * the part counted - the blocks so far by Y x the placements' share. The count only rises (sim: CaveCountProofTest), so
+     * this is a floor of the cave's ore, said "so far"; it is never "no source" (noSource) while the count runs.
+     */
+    public static Prior of(String word, GenWhere.Fact where, Map<Integer, Integer> byY, long blocks, boolean open, boolean done, long cells, double walkBps, long looked) {
         String w = word == null ? "?" : word.replaceFirst("^minecraft:", "");
         if (where == null || where.kind() == GenWhere.Kind.NOT_LOADED)
             return new Prior(Double.NaN, 0, blocks, Double.NaN, open, false, NOT_YET + (where == null ? "the world-gen read is not done" : where.why()));
         if (!where.band() || where.bands().isEmpty())
             return new Prior(Double.NaN, 0, blocks, Double.NaN, open, true, "no world-gen data for " + w + " (" + (where.why() != null ? where.why() : where.text()) + ")");
-        if (byY == null || !done || cells <= 0)
+        boolean soFar = !done && byY != null && !byY.isEmpty() && cells > 0 && looked > 0 && blocks > 0;
+        if (byY == null || cells <= 0 || (!done && !soFar))
             return new Prior(Double.NaN, 0, blocks, Double.NaN, open, false, NOT_YET + "the cave's cells and air-exposed blocks are still being read ("
                     + Math.max(0, cells) + " cells, " + blocks + " air-exposed blocks so far)");
         double expected = 0;
         for (var e : byY.entrySet()) expected += e.getValue() * where.curve(e.getKey(), true) / LAYER_BLOCKS;
         double minutes = cells / (double) io.github.mojolowjo.entropybot.sense.CaveIndex.CROSS_SECTION / walkBps / 60.0;   // structural: seconds a minute
         double perMin = minutes > 0 ? expected / minutes : Double.NaN;
+        if (soFar)
+            return new Prior(perMin, expected, blocks, minutes, open, false, String.format(Locale.ROOT,
+                    SO_FAR + "%.1f %s ore expected in the %d air-exposed blocks counted round %d of its %d cells (still being read: at least this)",
+                    expected, w, blocks, looked, cells), true);
         String why = String.format(Locale.ROOT, "game data: %.1f %s ore expected in %d air-exposed blocks, ~%.1f min to walk its %d cells", expected, w, blocks, minutes, cells)
                 + (open ? "; open at the loaded edge - at least this, priced again as its chunks load" : "");
         return new Prior(perMin, expected, blocks, minutes, open, false, why);
@@ -69,7 +92,7 @@ public final class CaveYield {
      * and left - the cave is no source for it, said with the game data's words; null: a source (or not known yet, rule 15).
      */
     public static String noSource(Prior p, String word, int seenLeft) {
-        if (p == null || !p.known() || p.expected() > 0 || seenLeft > 0) return null;
+        if (p == null || !p.known() || p.soFar() || p.expected() > 0 || seenLeft > 0) return null;   // count-so-far: a count still running is never "no source"
         String w = word == null ? "?" : word.replaceFirst("^minecraft:", "");
         return "no " + w + " generates in its Y range (" + p.why() + ")";
     }

@@ -6581,7 +6581,10 @@ public final class NeedChain {
         if (lipAt != null) c.steps.add(new Step.ToCave(lipAt[0], lipAt[1], lipAt[2]));   // J6b run EF (1): to the lip, the entry in reach - never into the opening
         // run EP: the caving step's LEG - cave.exploreMinutes at most (or what the cave holds); the need unmet at its end, the
         // order prices the cave again and enters it again until the need is met or the record is done (then it is out)
-        c.steps.add(new Step.Cave(cw.x(), cw.y(), cw.z(), cw.family(), caveBlocks, (int) Math.max(1, Math.ceil(Math.min(cap, holds)))));   // at least a minute (the left ore's walk)
+        // cave-guard: the step carries the seconds priced for the walk inside and the breaks (ore to find, its walk priced):
+        // far over them with the need unmet, it ends DEARER and the order is planned again (CaveWalk.dearer)
+        double planS = toFind > 0 && in.seconds() > 0 ? in.seconds() + oreS : 0;
+        c.steps.add(new Step.Cave(cw.x(), cw.y(), cw.z(), cw.family(), caveBlocks, (int) Math.max(1, Math.ceil(Math.min(cap, holds))), planS));   // at least a minute (the left ore's walk)
         int got = caveBlocks == oreBlocks ? Math.max(lack, (int) Math.floor(oreBlocks * per + 1e-9)) : (int) Math.floor(caveBlocks * per + 1e-9);  // structural: epsilon
         c.bag.merge(gives, got, Integer::sum);
         final String line = head + ": " + (cw.inside() ? "inside it" : "the walk to its lip " + s(wk.seconds())) + " + the walk in " + in.line()

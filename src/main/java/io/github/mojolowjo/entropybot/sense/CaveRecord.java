@@ -196,10 +196,14 @@ public final class CaveRecord {
      * 0.39.z78 J6c: the air-exposed blocks by Y (a copy), their count; {@code open}: a neighbour's chunk is not indexed (the
      * volume touches the loaded edge: at least this, ruling 2); {@code done}: the cells are fed and every one looked round.
      */
-    public record Exposure(Map<Integer, Integer> byY, long blocks, boolean open, boolean done) {}
+    public record Exposure(Map<Integer, Integer> byY, long blocks, boolean open, boolean done, long looked) {
+        /** count-so-far: {@code looked} the cells looked round so far (the blocks counted are theirs); -1: not given. */
+        public Exposure(Map<Integer, Integer> byY, long blocks, boolean open, boolean done) { this(byY, blocks, open, done, -1); }
+    }
 
     Exposure exposure() {
-        return new Exposure(new TreeMap<>(exposedByY), exposedSet.size(), !exposePending.isEmpty(), loaded() && toExpose.isEmpty());
+        return new Exposure(new TreeMap<>(exposedByY), exposedSet.size(), !exposePending.isEmpty(), loaded() && toExpose.isEmpty(),
+                Math.max(0, cells.size() - toExpose.size()));
     }
 
     private void addCell(long c) {

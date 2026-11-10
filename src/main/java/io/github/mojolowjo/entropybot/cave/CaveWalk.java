@@ -29,7 +29,21 @@ import java.util.Locale;
 public final class CaveWalk {
     private CaveWalk() {}
 
-    public enum End { NEED_MET, MINUTES, DONE, NOT_LOADED, NO_PROGRESS, NO_BRANCH, STOPPED }
+    public enum End { NEED_MET, MINUTES, DONE, NOT_LOADED, NO_PROGRESS, NO_BRANCH, STOPPED, DEARER }
+
+    /**
+     * cave-guard (owner 2026-11-09 / 10; run JBP-T1 23:10:48-23:19: a cave walk priced 8.5 s ran 7 min for 0 ore - only
+     * cave.exploreMinutes ended a walk): the step has been inside {@code cave.dearerTimes} times the seconds the planner
+     * priced for it ({@code planS}: the walk inside and the ore's breaks) with the need unmet - the price was wrong by
+     * that much, the step ends DEARER and the order is planned again on what is known now. Asked only where the step
+     * would pick another passage to walk (never over a seen ore). {@code planS} 0 or less: not priced, no guard. Pure.
+     */
+    public static Stop dearer(double planS, double minutesIn, int mined, int need) {
+        double times = Tuning.get("cave.dearerTimes"), in = minutesIn * 60.0;   // structural: seconds a minute
+        if (!(planS > 0) || !(times > 0) || (need > 0 && mined >= need) || !(in > planS * times)) return null;
+        return new Stop(End.DEARER, String.format(Locale.ROOT, "priced %.0f s inside for %d ore; %.0f s inside and %d mined - over cave.dearerTimes %s times its price",
+                planS, need, in, mined, times == Math.rint(times) ? String.valueOf((long) times) : String.valueOf(times)));
+    }
 
     public sealed interface Next permits Mine, Goto, Stop, Wait {}
 
@@ -461,7 +475,26 @@ public final class CaveWalk {
     public static Next next(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<Passages.Passage> passages,
                             List<int[]> left, int[] feet, double reach, int[] mouth, java.util.Set<Long> dropped, boolean capped, java.util.Set<Long> reflooded,
                             Pocket pocket, Density density) {
+        return next(mined, need, minutesIn, capMinutes, facts, passages, left, feet, reach, mouth, dropped, capped, reflooded, pocket, density, 0);
+    }
+
+    /** cave-guard: as above, {@code planS} the planner's seconds for this walk ({@link #dearer}; 0: no guard). */
+    public static Next next(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<Passages.Passage> passages,
+                            List<int[]> left, int[] feet, double reach, int[] mouth, java.util.Set<Long> dropped, boolean capped, java.util.Set<Long> reflooded,
+                            Pocket pocket, Density density, double planS) {
         if (dropped == null) dropped = java.util.Set.of();
+        Next first = nextGuarded(mined, need, minutesIn, capMinutes, facts, passages, left, feet, reach, mouth, dropped, capped, reflooded, pocket, density);
+        // cave-guard: another passage (or a descent) to walk, the walk already far over its price - the order is planned again
+        if (first instanceof Goto g && !g.ore()) {
+            Stop d = dearer(planS, minutesIn, mined, need);
+            if (d != null) return d;
+        }
+        return first;
+    }
+
+    private static Next nextGuarded(int mined, int need, double minutesIn, double capMinutes, CaveRecord.Facts facts, List<Passages.Passage> passages,
+                            List<int[]> left, int[] feet, double reach, int[] mouth, java.util.Set<Long> dropped, boolean capped, java.util.Set<Long> reflooded,
+                            Pocket pocket, Density density) {
         Next n = nextCore(mined, need, minutesIn, capMinutes, facts, passages, left, feet, reach, mouth, dropped, capped, reflooded, pocket,
                 density == null ? Density.notKnown() : density);
         if (pocket != null && !pocket.moved() && n instanceof Stop s && s.end() == End.NO_BRANCH) {

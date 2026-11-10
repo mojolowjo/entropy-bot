@@ -65,7 +65,10 @@ expected (`CaveWalk.passagePrice`: `cave.passageSecPerCell` and a `CaveWalk.Dens
 the passage's mean Y: game data (`AaRuntime.caveDensity`: the placements' share per air-exposed block at that Y x the
 record's air-exposed blocks per cell; kept per record in `AaRuntime.DENSITIES`, a `CaveWalk.Density.Cache` that samples the
 curve once and returns the same object until the record's counts or placement fact change, job-tick run JAU), else the record's seen rate of the family, else `cave.orePerCellNotKnown`, said in the
-line; job-price, run JAO; the caving step's own pick uses the seen rate or the fallback; job-freeze, run JAP: a `Density`
+line; count-so-far, run JBP: while the record's air-exposed count runs, `CaveYield.of` estimates on the part counted
+(`CaveRecord.Exposure.looked`, said "so far", a floor, never "no source"); cave-guard: `Step.Cave.planS` carries the
+priced seconds and `CaveWalk.dearer` ends the step DEARER at `cave.dearerTimes` times them with the need unmet, the cave's
+source fact (`FactChange.caveDearer`); job-price, run JAO; the caving step's own pick uses the seen rate or the fallback; job-freeze, run JAP: a `Density`
 is a value, the curve sampled per Y over `Density.MIN_Y..MAX_Y` and rounded to `Density.PRECISION`, so the planner's fact
 check sees two equal caves as equal; the planner itself takes a result after `planner.dropsBeforeTake` drops in a row for
 one reason, said "this answer is taken (rule 7)", in `PlannerPort`); the walk is a `GoalNear`

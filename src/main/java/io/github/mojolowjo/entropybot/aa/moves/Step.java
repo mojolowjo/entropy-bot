@@ -69,7 +69,20 @@ public sealed interface Step {
         public String text() { return "goto the cave's lip at " + x + " " + y + " " + z + " (its entry in reach)"; }
     }
 
-    record Cave(int x, int y, int z, String family, int n, int minutes) implements Step {
+    record Cave(int x, int y, int z, String family, int n, int minutes, double planS) implements Step {
+        /**
+         * cave-guard: {@code planS} the seconds the planner priced for the walk inside and the ore's breaks (0: not priced
+         * - no guard). The step ends DEARER once it is cave.dearerTimes that long inside with the need unmet. A price,
+         * not the step's identity: two caving steps that differ only in it are the same step (equals, hashCode, text).
+         */
+        public Cave(int x, int y, int z, String family, int n, int minutes) { this(x, y, z, family, n, minutes, 0); }
+
+        @Override public boolean equals(Object o) {
+            return o instanceof Cave c && x == c.x && y == c.y && z == c.z && n == c.n && minutes == c.minutes && java.util.Objects.equals(family, c.family);
+        }
+
+        @Override public int hashCode() { return java.util.Objects.hash(x, y, z, family, n, minutes); }
+
         public String text() { return "cave " + family + " " + n + " at " + x + " " + y + " " + z + (minutes > 0 ? " for " + minutes + " min" : ""); }
     }
 
