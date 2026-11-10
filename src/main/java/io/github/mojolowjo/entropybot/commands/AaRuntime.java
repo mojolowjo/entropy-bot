@@ -3584,6 +3584,11 @@ public final class AaRuntime implements JobPort {
         miningTiersWarned = false;
         treeError = null;
         LOG.info("[entropybot] aa: tech tree from {} recipes ({} usable), built off the client tick in {} ms", v.recipes(), v.tree().size(), d.nanos() / 1_000_000);     // structural: ns per ms
+        // tiers-now (runs JBM-T1, JBN-T1: "tech tree from 1290 recipes" 22:31:47, "mining tiers from data" 22:32:46): the
+        // tiers were dropped above and read again only at the next tree check, aaRuntime.treeEveryMs (a minute) later; for
+        // that minute every dig said "no mining data loaded yet", an order given then stood at spawn and its stand's 30 s
+        // stopped it. Read them again now, as the loot book's landing does (worldFacts, 0.39.z75 metric fix B)
+        loadMiningTiers();
     }
 
     /**

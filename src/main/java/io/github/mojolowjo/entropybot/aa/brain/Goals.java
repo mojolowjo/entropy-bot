@@ -125,6 +125,9 @@ public final class Goals {
 
         /** 0.39.z77 climb: the one more try on the climb way (every order parked under ground) was taken; once per order. */
         public boolean climbRetried;
+
+        /** wait-not-park: what the order waited on when a run of it ended ({@link Goals#runFailed}); null: nothing. Cleared when it lands. */
+        public String waitEnded;
     }
 
     // ---- 0.39.z77 climb (run CM 17:43:10-17:48:31: every order parked under ground, 5 min idle, no line said why) ----
@@ -863,10 +866,51 @@ public final class Goals {
     public static boolean runFailed(Blackboard bb, Goal g, String why) {
         if (passing(why)) return false;
         boolean met = g.met || (bb.in != null && bb.in.bag != null && have(bb.in.bag, g) >= g.n);
-        if (!met) return park(bb, g, why);
+        if (!met) {
+            // wait-not-park (audit A1; runs JBM-T1 21:42:11, JBN-T1 22:32:25: the stand's 30 s ended while "the mining data is
+            // not loaded yet", the order parked for good 21 s before the data landed): an order whose chain waits on an answer
+            // still to come (the loot book, the mining data, a path, a source not loaded: Chain.waiting) is not stopped by a
+            // run's end - not known yet is no verdict (rule 15). It is held with that reason (blocked) and priced again when
+            // the answer lands (retryWaits); said once here (rule 7)
+            String waits = waitsOn(bb, g);
+            if (waits != null) {
+                g.waitEnded = waits;
+                bb.port.log("order " + g.r.key() + ": its run ended (" + (why == null || why.isBlank() ? "no reason given" : why) + ") while it waits on: " + waits
+                        + " - not stopped; it runs again when that lands (rule 15)");
+                return false;
+            }
+            return park(bb, g, why);
+        }
         bb.port.log((g.batch != null ? "batch " + g.batch : "order " + g.r.key()) + ": the run ended: "
                 + (why == null || why.isBlank() ? "no reason given" : why) + "; the order " + g.r.key() + " is met");
         return false;
+    }
+
+    /** wait-not-park: what the order's own chain waits on now (an answer still to come, Chain.waiting), null: nothing, or no chain. */
+    static String waitsOn(Blackboard bb, Goal g) {
+        if (g.strip != null || bb.in == null) return null;
+        var ch = ownChain(bb, g);
+        return ch != null && ch.waiting() ? ch.missing() : null;
+    }
+
+    /**
+     * wait-not-park: every order whose run ended while it waited on an answer ({@link #runFailed}) and whose chain waits no
+     * more runs again at once - the brain's hold on its desire from that run's end is forgotten ({@code brainHolds} null: none
+     * to clear), said in the log. Keyed on the fact, no count: it may wait and land again. The lines said.
+     */
+    public static List<String> retryWaits(Blackboard bb, Failures brainHolds) {
+        List<String> out = new ArrayList<>();
+        if (!(bb.fact(FACT) instanceof List<?>)) return out;
+        for (Goal g : of(bb)) {
+            if (g.waitEnded == null || g.parked != null) continue;
+            if (waitsOn(bb, g) != null) continue;
+            String line = "order " + g.r.key() + " runs again: what it waited on landed (" + g.waitEnded + ")";
+            g.waitEnded = null;
+            if (brainHolds != null) brainHolds.forget(g.id(), null);
+            bb.port.log(line);
+            out.add(line);
+        }
+        return out;
     }
 
     /** orders-tier: a failure that says nothing about the order itself (the slot busy, no facts yet): no park. */
@@ -975,7 +1019,8 @@ public final class Goals {
         }
         var wd = world(bb);
         boolean pathsPending = wd != null && wd.path() != null && wd.path().pending();
-        if (bb.fact(LootBook.FACT) instanceof LootBook book && !book.ready() || pathsPending) {
+        // wait-not-park (audit A1): the same while the mining data is not loaded (the game's tags read a moment after the world)
+        if (bb.fact(LootBook.FACT) instanceof LootBook book && !book.ready() || pathsPending || !MiningTiers.ready()) {
             var ch = ownChain(bb, g);      // 0.39.z77 review 1 (R3): the waiting test, no batch comparison per tick
             if (ch != null && ch.waiting()) return ch.missing();
         }

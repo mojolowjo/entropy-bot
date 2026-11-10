@@ -42,6 +42,8 @@ public final class OrderEnds {
         }
         // helper: a stopped order's bag goes to the chest too; an order that woke is weighed again at its end
         for (var g : goals) h.deposit(deposits.sweep(g, bb.in.bag, mainAt));
+        // wait-not-park (audit A1): an order whose run ended while it waited on an answer runs again when the answer landed
+        Goals.retryWaits(bb, brain.failures);
         // 0.39.z70 (R1 = c): said by Goals (log + whisper); job-lookup: the brain's hold on a retried order is forgotten
         Goals.retryLoopParks(bb, brain.failures);
         // 0.39.z77 climb (run CM 17:43-17:48, rule 7): every order parked - under ground the waiting ones try the climb way once,

@@ -83,16 +83,47 @@ class OrderLineScenariosTest {
     @Test
     void anOrderStoppedOnDataStillLoadingRunsAgain() {
         OrderLineSim s = stoneAndTree();
+        // the run's facts (JBN-T1: order 22:31:55, stopped 22:32:25, "mining tiers from data" 22:32:46): no mining data from
+        // the world's start until 51 s after the order; the planner answers off the tick, so the order's first run is the
+        // stand ("start EXPLORE stand while paths compute (up to 30 s)", "the planner waits on its answer (thinking: ...)")
+        var tiers = io.github.mojolowjo.entropybot.aa.brain.MiningTiers.source();
+        io.github.mojolowjo.entropybot.aa.brain.MiningTiers.use(null);
+        s.plannerThinks();
         Goals.Goal cob = s.order("cobblestone", 32, null, false);
         s.run(1, 1000);
-        assertEquals(1, s.starts(), "the order runs: " + s.brain.whyLines(6));
+        assertEquals(1, s.starts(), "the order's first run starts: " + s.brain.whyLines(6) + " log " + s.port.log);
+        assertTrue(s.port.started.get(0).steps().get(0) instanceof io.github.mojolowjo.entropybot.aa.moves.Step.AwaitPaths, "and it is the stand: " + s.port.started.get(0).steps());
         s.clock.advance(30_000);
+        s.plannerAnswers.run();                              // the worker's answer: "the mining data is not loaded yet"
         s.failRun(JBM_STAND_END);
-        s.run(120, 5000);                                    // ten minutes; the game's data loads within the first one
-        open("audit A1 (run JBM): an order stopped on 'not loaded yet' is parked for good", () -> {
-            assertNull(cob.parked, "still parked after ten minutes: " + cob.parked);
-            assertTrue(s.starts() >= 2, "never started again: " + s.starts() + " start(s); " + Goals.wake(cob));
-        });
+        s.run(4, 5000);                                      // 20 s more with no mining data
+        var ch = Goals.chain(s.bb, cob);
+        assertNull(cob.parked, "not parked while the data loads (chain: ok " + (ch == null ? null : ch.ok()) + ", waiting " + (ch == null ? null : ch.waiting())
+                + ", missing " + (ch == null ? null : ch.missing()) + ", why " + (ch == null ? null : ch.why()) + "): " + cob.parked);
+        assertEquals(1, s.starts(), "nothing starts while the data is not there");
+        assertTrue(String.valueOf(Goals.blocked(s.bb, cob)).contains("mining data is not loaded yet"), "it waits, with the reason: " + Goals.blocked(s.bb, cob));
+        io.github.mojolowjo.entropybot.aa.brain.MiningTiers.use(tiers);      // 51 s after the order: the data lands
+        s.plannerOnTheTick();
+        s.run(3, 5000);
+        assertNull(cob.parked);
+        assertEquals(2, s.starts(), "the order runs again within 15 s of the data landing: " + s.brain.whyLines(6) + " / " + s.port.log);
+    }
+
+    /** The same world start with the planner on the tick: an order given before the mining data is there waits with the reason, then runs. */
+    @Test
+    void anOrderGivenBeforeTheDataLoadsWaitsAndThenRuns() {
+        OrderLineSim s = stoneAndTree();
+        var tiers = io.github.mojolowjo.entropybot.aa.brain.MiningTiers.source();
+        io.github.mojolowjo.entropybot.aa.brain.MiningTiers.use(null);
+        Goals.Goal cob = s.order("cobblestone", 32, null, false);
+        s.run(6, 5000);
+        assertEquals(0, s.starts(), "nothing starts on a missing fact: " + s.port.started);
+        assertNull(cob.parked, "and nothing is stopped: " + cob.parked);
+        assertTrue(String.valueOf(Goals.blocked(s.bb, cob)).contains("mining data is not loaded yet"), "it waits, with the reason: " + Goals.blocked(s.bb, cob));
+        io.github.mojolowjo.entropybot.aa.brain.MiningTiers.use(tiers);
+        s.run(2, 5000);
+        assertEquals(1, s.starts(), "it runs once the data is there: " + s.brain.whyLines(6));
+        assertTrue(s.port.started.get(0).steps().stream().anyMatch(st -> st instanceof io.github.mojolowjo.entropybot.aa.moves.Step.Collect), "and its run is the dig: " + s.port.started.get(0).steps());
     }
 
     /**
@@ -121,7 +152,32 @@ class OrderLineScenariosTest {
         s.run(3, 5000);
         assertTrue(cobFailed, "the cobblestone order ran and was stopped: " + s.brain.whyLines(6));
         assertTrue(Goals.of(s.bb).isEmpty(), "both orders met: " + s.said);
-        open("run JBK-T1: a parked order met later is left out of its line's deposit", () ->
-                assertEquals(List.of(Map.of("cobblestone", 32, "oak_log", 16)), s.due, "the line's deposit: " + s.said));
+        assertEquals(List.of(Map.of("cobblestone", 32, "oak_log", 16)), s.due, "the line's one deposit has all of it: " + s.said);
+    }
+
+    /**
+     * The same, the other way round in time: the line's deposit went (the other order ended) BEFORE the stopped order was
+     * met. Wanted: a second deposit of what the first left out, nothing twice.
+     */
+    @Test
+    void aParkedOrderMetAfterTheLinesDepositGetsItsOwn() {
+        OrderLineSim s = stoneAndTree();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        boolean cobFailed = false, logDone = false;
+        for (int i = 0; i < 60 && !logDone; i++) {
+            s.run(1, 5000);
+            String r = s.running();
+            if (r == null) continue;
+            if (r.equals(cob.id()) && !cobFailed) { cobFailed = true; s.failRun(JBM_STAND_END); }
+            else if (r.equals(log.id())) { s.run(2, 5000); s.bag.put("oak_log", 16); s.endRun("done: chopped"); logDone = true; }
+        }
+        s.run(3, 5000);
+        assertEquals(List.of(Map.of("oak_log", 16)), s.due, "the line's deposit went with the logs: " + s.said);
+        assertNotNull(cob.parked, "the cobblestone order is still stopped");
+        s.bag.remove("oak_log");                             // deposited
+        s.bag.put("cobblestone", 33);                        // met later (the owner's own digging, another order)
+        s.run(3, 5000);
+        assertTrue(Goals.of(s.bb).isEmpty(), "met: " + s.said);
+        assertEquals(List.of(Map.of("oak_log", 16), Map.of("cobblestone", 32)), s.due, "a second deposit of what the first left out: " + s.said);
     }
 }

@@ -317,6 +317,10 @@ public final class BatchWay {
 
     private static NeedChain.Chain own(Blackboard bb, Goals.Goal g, String key, long landed, java.util.function.Supplier<NeedChain.Chain> own,
                                        OwnAsk ask, NeedChain.World w) {
+        // wait-not-park (sim, OrderLineScenariosTest: the chain kept "the mining data is not loaded yet" after the data had
+        // landed - no path answer landed in between, and the key did not name that fact): the kept chain is keyed by the
+        // mining data too, so the chain resolved without it is not the answer once it is there
+        if (!MiningTiers.ready()) key = key + " |no mining data";
         Own o = OWN.get(g.id());
         if (o != null && o.key().equals(key) && (o.settled() || o.landed() == landed)) return o.chain();
         // 0.39.z78 D6 (run DT 16:25:09-21: 2.1-2.2 s on the client tick at each landing): with the planner worker installed the

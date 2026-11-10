@@ -57,6 +57,7 @@ final class OrderLineSim {
 
     OrderLineSim() {
         Only.set(Only.ORDERS);
+        io.github.mojolowjo.entropybot.aa.brain.BatchWay.clear();      // the trips and own chains kept by an earlier test
         ScenariosTest.toolWorld();
         bb.fact(NeedChain.WORLD_FACT, (Supplier<World>) this::world);
         sense();
@@ -67,6 +68,31 @@ final class OrderLineSim {
         for (var e : bag.entrySet()) ns.put("minecraft:" + e.getKey(), e.getValue());
         return ScenariosTest.w(ns, table, furnace, seen);
     }
+
+    /**
+     * The planner worker as the game has it (BatchWay.Planner: an order's chain is resolved off the tick): every ask
+     * answers "thinking" - the order's run is then the stand ("stand while paths compute") - until {@link #plannerAnswers}
+     * runs (the worker's answer landed), then the resolve itself. {@link #plannerOnTheTick} takes it away again.
+     */
+    void plannerThinks() {
+        boolean[] thinking = {true};
+        plannerAnswers = () -> thinking[0] = false;
+        int[] left = {0};
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.BatchWay.PLANNER_FACT, new io.github.mojolowjo.entropybot.aa.brain.BatchWay.Planner() {
+            @Override public NeedChain.Legs legs(String key, Playbook pb, java.util.Set<String> keptFuel, World w) { return NeedChain.thinking("thinking: 1 node dirty"); }
+
+            @Override public boolean ready(String key) { return !thinking[0]; }
+
+            @Override public NeedChain.Chain own(String key, io.github.mojolowjo.entropybot.aa.brain.BatchWay.OwnAsk ask, World w) {
+                return thinking[0] ? NeedChain.thinking("thinking: 2 nodes dirty").chain() : ask.resolve(w);
+            }
+        });
+    }
+
+    /** The worker's answer landed: from now on every ask is the resolve itself. */
+    Runnable plannerAnswers = () -> { };
+
+    void plannerOnTheTick() { bb.fact(io.github.mojolowjo.entropybot.aa.brain.BatchWay.PLANNER_FACT, null); }
 
     /** The bag as the senses give it to the brain. */
     private void sense() { bb.in.bag = Map.copyOf(bag); }

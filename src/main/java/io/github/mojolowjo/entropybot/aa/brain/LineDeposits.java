@@ -64,7 +64,17 @@ public final class LineDeposits {
      * {@code mainAt}: the main chest's cell as text, null: none set.
      */
     public Out weigh(Goals.Goal g, String how, Map<String, Integer> bag, String mainAt) {
-        if (g.depositWeighed) return new Out(Kind.ALREADY, null, null);
+        if (g.depositWeighed) {
+            // met-after-stop (run JBK-T1 15:18:55 -> 15:25:38: cobblestone 32 -d stopped with none in the bag, "its deposit
+            // items noted ()", never woke, and was met when another order's digging filled the bag; its "done" found it
+            // weighed and the line's deposit left the cobblestone out): a stop's weighing is of the bag at the stop; an order
+            // met later is weighed again - the stop's note taken back (reopen), then the weighing below. "done" comes once
+            // per order (it leaves the goals), so this is once
+            if (!"done".equals(how) || g.depositTook == null || g.strip != null || g.deposit <= 0) return new Out(Kind.ALREADY, null, null);
+            Out back = reopen(g);
+            if (back.kind() == Kind.WOKE_GONE) return back;
+            how = "done (stopped earlier and met since: weighed again)";
+        }
         g.depositWeighed = true;
         if (g.strip != null) return new Out(Kind.STRIP, null, null);     // the strip order has its own deposit leg
         if (g.deposit <= 0) return new Out(Kind.NO_WORD, g.r.key() + " " + how + ": no deposit word on the order (-d, or a trailing deposit) - its items stay in the bag", null);
