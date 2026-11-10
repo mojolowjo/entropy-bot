@@ -4005,75 +4005,27 @@ public final class AaRuntime implements JobPort {
     /** deposit-words: a line's -d items are collected as its orders end; the deposit waits for the job slot. */
     private String depositDue;
     private Map<String, Integer> depositItems;
-    /** deposit-words: per aa want line, the -d orders not ended yet, and the items collected so far. */
-    private final Map<String, java.util.Set<String>> lineOpen = new java.util.HashMap<>();
-    private final Map<String, Map<String, Integer>> lineItems = new java.util.HashMap<>();
-    private int lineSerial;
+    /** deposit-words: the lines' weighing (sim 2026-11-09: the rules moved to LineDeposits, no game types; one store). */
+    private final io.github.mojolowjo.entropybot.aa.brain.LineDeposits lineDeposits = new io.github.mojolowjo.entropybot.aa.brain.LineDeposits();
 
-    /**
-     * deposit-words (owner 2026-11-08; was the helper rule of 2026-11-02: the WHOLE bag to the main chest after every order):
-     * an order flagged -d that ended (done, or stopped with some of it in the bag) adds the ordered amount of its item (what
-     * the bag holds of it) to its line's deposit; when the line's last -d order has ended, ONE deposit of exactly those items
-     * goes to the main chest (aa deposit x y z). An order with no deposit word deposits nothing, said in the log (rule 7).
-     * Weighed once per order end.
-     */
-    private void weighDeposit(io.github.mojolowjo.entropybot.aa.brain.Goals.Goal g, String how) {
-        if (g.depositWeighed) return;
-        g.depositWeighed = true;
-        if (g.strip != null) return;                                     // the strip order has its own deposit leg
-        if (g.deposit <= 0) { LOG.info("[entropybot] aa: {} {}: no deposit word on the order (-d, or a trailing deposit) - its items stay in the bag", g.r.key(), how); return; }
-        Map<String, Integer> items = lineItems.computeIfAbsent(g.line, k -> new java.util.TreeMap<>());
-        int left = g.deposit;
-        g.depositTook = new java.util.TreeMap<>();
-        for (String id : g.r.counts()) {
-            int have = bb.in.bag.getOrDefault(id, 0);
-            int take = g.r.group() ? Math.min(have, g.deposit) : Math.min(have, left);
-            if (take > 0) { items.merge(id, take, Integer::sum); g.depositTook.merge(id, take, Integer::sum); left -= take; }
-            if (!g.r.group() && left <= 0) break;
-        }
-        java.util.Set<String> open = lineOpen.get(g.line);
-        if (open != null) open.remove(g.r.key());
-        if (open != null && !open.isEmpty()) {
-            LOG.info("[entropybot] aa: {} {}: its deposit items noted ({}); the line's deposit follows when {} end{}", g.r.key(), how,
-                    io.github.mojolowjo.entropybot.aa.moves.Step.Deposit.onlyText(items), String.join(", ", open), open.size() == 1 ? "s" : "");
-            return;
-        }
-        lineOpen.remove(g.line);
-        Map<String, Integer> all = lineItems.remove(g.line);
+    /** The main chest's cell as text for the deposit lines; null: none set. */
+    private static String mainChestAt() {
         var main = io.github.mojolowjo.entropybot.aa.MainStations.now().of(io.github.mojolowjo.entropybot.aa.MainStations.CONTAINER);
-        if (all == null || all.isEmpty()) { LOG.info("[entropybot] aa: {} {}: nothing of the line's deposit items in the bag - no deposit", g.r.key(), how); return; }
-        if (main == null) {
-            String w = g.r.key() + " " + how + ": no main chest set (aa deposit x y z) - " + io.github.mojolowjo.entropybot.aa.moves.Step.Deposit.onlyText(all) + " stay in the bag";
-            LOG.info("[entropybot] aa: {}", w);
-            c.whisper(c.owner(), "aa: " + w);
-            return;
-        }
-        depositItems = all;
-        depositDue = g.r.key() + " " + how + ": the line's deposit of " + io.github.mojolowjo.entropybot.aa.moves.Step.Deposit.onlyText(all) + " to the main chest at " + main.at() + " follows";
-        LOG.info("[entropybot] aa: {} (when the job slot is free)", depositDue);
+        return main == null ? null : String.valueOf(main.at());
     }
 
-    /**
-     * deposit-words (run JBK-T1 15:18:55: cobblestone parked 30 s in, "its deposit items noted ()", woken, done at 7:20 and
-     * never weighed again - the line's deposit missed it): a parked order that woke (parked null again, still weighed) is
-     * weighed again at its end. What its park noted is taken back from the line's items; when the line's deposit went
-     * already, that much of its ordered amount is done with.
-     */
-    private void reopenDeposit(io.github.mojolowjo.entropybot.aa.brain.Goals.Goal g) {
-        g.depositWeighed = false;
-        Map<String, Integer> took = g.depositTook == null ? Map.of() : g.depositTook;
-        g.depositTook = null;
-        Map<String, Integer> items = lineItems.get(g.line);
-        int noted = took.values().stream().mapToInt(Integer::intValue).sum();
-        if (items != null) {
-            for (var e : took.entrySet()) { int n = items.getOrDefault(e.getKey(), 0) - e.getValue(); if (n > 0) items.put(e.getKey(), n); else items.remove(e.getKey()); }
-        } else if (noted > 0) {
-            g.deposit = Math.max(0, g.deposit - noted);       // the line's deposit took them already
+    /** A LineDeposits answer: logged (rule 7), whispered when no chest is set, the deposit queued when the line is due. */
+    private void depositSaid(io.github.mojolowjo.entropybot.aa.brain.LineDeposits.Out o) {
+        if (o == null || o.text() == null) return;
+        switch (o.kind()) {
+            case NO_CHEST -> { LOG.info("[entropybot] aa: {}", o.text()); c.whisper(c.owner(), "aa: " + o.text()); }
+            case DUE -> {
+                depositItems = o.items();
+                depositDue = o.text();
+                LOG.info("[entropybot] aa: {} (when the job slot is free)", depositDue);
+            }
+            default -> LOG.info("[entropybot] aa: {}", o.text());
         }
-        if (g.deposit <= 0) { LOG.info("[entropybot] aa: {} woke: its deposit went with the line already ({}) - nothing more to deposit", g.r.key(), io.github.mojolowjo.entropybot.aa.moves.Step.Deposit.onlyText(took)); return; }
-        lineOpen.computeIfAbsent(g.line, k -> new java.util.LinkedHashSet<>()).add(g.r.key());
-        LOG.info("[entropybot] aa: {} woke: its deposit items are weighed again when it ends (its stop noted {}; the line's deposit waits for it)", g.r.key(),
-                noted == 0 ? "nothing" : io.github.mojolowjo.entropybot.aa.moves.Step.Deposit.onlyText(took));
     }
 
     private void depositDueTick() {
@@ -4104,29 +4056,28 @@ public final class AaRuntime implements JobPort {
         if (tick % 200 != 7 && !knownDue) return;  // structural: periodic cadence in ticks (20 ticks = 1 s)
         knownDue = false;
         lootCtx();
-        for (var g : io.github.mojolowjo.entropybot.aa.brain.Goals.done(bb)) {
-            var run = tree.brain.runningDesire();
-            if (io.github.mojolowjo.entropybot.aa.brain.Goals.carriesOn(g, run == null ? null : run.id)) {
-                // 0.39.z77 answers (1): the "got" is a fact inside the batch's running playbook, not the end of its run
-                carrying.add(g.id());
-                carried.put(g.id(), g);
-                LOG.info("[entropybot] aa: {}: met inside the batch's playbook run - the run carries on (its legs keep their numbers)", g.r.key());
-                if (bb.task() != null) bb.task().carriedOn(bb, bb.clock.now());     // FK fix: the run's timeout is per order, not per batch
-            } else tree.brain.remove(g.id(), "goal reached");
-            String msg = "got " + io.github.mojolowjo.entropybot.aa.brain.Goals.have(bb.in.bag, g) + " " + g.r.key() + " (goal " + g.n + " done)";
-            LOG.info("[entropybot] aa: {}", msg);
-            c.whisper(c.owner(), "aa: " + msg);
-            weighDeposit(g, "done");                                          // helper: the bag to the main chest
-        }
-        for (var g : goals) {
-            if (g.parked != null) weighDeposit(g, "stopped");                 // helper: a stopped order's bag goes to the chest too
-            else if (g.depositWeighed && g.deposit > 0 && g.strip == null) reopenDeposit(g);
-        }
-        // 0.39.z70 (R1 = c): said by Goals (log + whisper); job-lookup: the brain's hold on a retried order is forgotten
-        io.github.mojolowjo.entropybot.aa.brain.Goals.retryLoopParks(bb, tree.brain.failures);
-        // 0.39.z77 climb (run CM 17:43-17:48, rule 7): every order parked - under ground the waiting ones try the climb way once,
-        // and the all-parked line (each park and its wake) is said once; said by Goals (log + whisper)
-        io.github.mojolowjo.entropybot.aa.brain.Goals.parkedTick(bb, bb.in.underDepth >= io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth(), tree.brain.failures);
+        // sim 2026-11-09: the pass itself (met orders leave, deposits weighed, parks retried, the all-parked line) is
+        // OrderEnds.tick, with no game types; the game side's parts are these hooks
+        io.github.mojolowjo.entropybot.aa.brain.OrderEnds.tick(bb, tree.brain, lineDeposits, mainChestAt(),
+                bb.in.underDepth >= io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth(), "goal reached", new io.github.mojolowjo.entropybot.aa.brain.OrderEnds.Hooks() {
+                    @Override public boolean carriesOn(io.github.mojolowjo.entropybot.aa.brain.Goals.Goal g) {
+                        var run = tree.brain.runningDesire();
+                        if (!io.github.mojolowjo.entropybot.aa.brain.Goals.carriesOn(g, run == null ? null : run.id)) return false;
+                        // 0.39.z77 answers (1): the "got" is a fact inside the batch's running playbook, not the end of its run
+                        carrying.add(g.id());
+                        carried.put(g.id(), g);
+                        LOG.info("[entropybot] aa: {}: met inside the batch's playbook run - the run carries on (its legs keep their numbers)", g.r.key());
+                        if (bb.task() != null) bb.task().carriedOn(bb, bb.clock.now());     // FK fix: the run's timeout is per order, not per batch
+                        return true;
+                    }
+
+                    @Override public void got(String msg) {
+                        LOG.info("[entropybot] aa: {}", msg);
+                        c.whisper(c.owner(), "aa: " + msg);
+                    }
+
+                    @Override public void deposit(io.github.mojolowjo.entropybot.aa.brain.LineDeposits.Out out) { depositSaid(out); }
+                });
     }
 
     // ---- B7: schematic builds (2.12) ----
@@ -4233,10 +4184,7 @@ public final class AaRuntime implements JobPort {
         var g = io.github.mojolowjo.entropybot.aa.brain.Goals.add(bb, r, a.n(), a.prio(), now);
         g.batch = wantBatch;                          // 0.39.z77 J2: null for an order alone
         // deposit-words (owner 2026-11-08): -d = the ordered amount goes to the main chest when this line's last order ends
-        g.line = wantBatch != null ? wantBatch : "l" + (++lineSerial);
-        g.deposit = a.deposit() ? g.n : 0;
-        g.depositWeighed = false;
-        if (g.deposit > 0) lineOpen.computeIfAbsent(g.line, k -> new java.util.LinkedHashSet<>()).add(g.r.key());
+        lineDeposits.add(g, wantBatch, a.deposit());
         tree.brain.failures.forget(g.id());           // orders-tier: aa want again clears a parked order and its old holds
         g.replans = 0;                                // 0.39.z30: and its re-plan count
         g.sourceReplans = 0;                          // 0.39.z62 item 1: and its new-source re-plans
