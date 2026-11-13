@@ -14,7 +14,7 @@ class AaHelpTest {
         String help = AaCommands.help();
         for (var e : AaCommands.TABLE.entrySet()) assertTrue(help.contains("aa " + e.getKey()), "aa " + e.getKey() + " missing: " + help);
         for (String f : List.of("aa on", "aa off", "aa needs on|off", "aa only <need>|off", "aa want <item|group> [n]",
-                "aa want strip <ore[ amount]>[,...] [<feet y>] [<heading>]", "aa goals", "aa drop <item>|all", "aa do <need>",
+                "aa want strip <ore[ amount]>[,...] [<feet y>] [<heading>]", "aa goals", "aa cancel <item>|all", "aa do <need>",
                 "aa why", "aa status", "aa tune [<group>|<name> [<n>]]", "aa forget stations", "aa fair on|off"))
             assertTrue(help.contains(f), f + " missing: " + help);
         assertEquals(help, AaCommands.handle(null, ""), "the bare aa is the help");

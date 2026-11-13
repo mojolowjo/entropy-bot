@@ -141,7 +141,7 @@ public final class Failures {
     /** A success: the desire's own record goes (its options' records stay: they keep weighing). */
     public void succeeded(String desire) { map.remove(key(desire, null)); }
 
-    /** Forget a desire and all its options (aa drop). */
+    /** Forget a desire and all its options (aa cancel). */
     public void forget(String desire) { map.values().removeIf(r -> r.desire().equals(desire)); }
 
     /** 0.39.z77 climb: forget one option of a desire (an order's held climb, tried once more). True: it was held. */

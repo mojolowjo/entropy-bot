@@ -38,7 +38,7 @@ public final class Goals {
 
         public String id() { return "goal." + r.key(); }
 
-        /** orders-tier (0.39.z9): why the order stopped (said once; aa want again or aa drop clears it), null: it goes on. */
+        /** orders-tier (0.39.z9): why the order stopped (said once; aa want again or aa cancel clears it), null: it goes on. */
         public volatile String parked;
 
         /** helper (owner 2026-11-02): the deposit to the main chest was weighed for this order's end (done or parked), once. */
@@ -836,7 +836,7 @@ public final class Goals {
 
     /**
      * orders-tier (0.39.z9): the order cannot progress: parked with its reason, said ONCE in the log and the whisper; the
-     * brain never starts it again (it is infeasible while parked). {@code aa want} again makes a fresh goal; {@code aa drop}
+     * brain never starts it again (it is infeasible while parked). {@code aa want} again makes a fresh goal; {@code aa cancel}
      * removes it. False when it was already parked.
      */
     public static boolean park(Blackboard bb, Goal g, String why) {
@@ -850,7 +850,7 @@ public final class Goals {
             g.loopPark = new LoopPark(a, needCounts(a.needs() == null ? List.of() : a.needs().keySet(), bb.in == null ? null : bb.in.bag, bb.in == null ? 0 : bb.in.pickTier), sourceCells(bb, g, a));
             again = "; it tries once more by itself when a need in the bag rises, it moves " + Math.round(Failures.movedV()) + " blocks or a new source is seen";
         }
-        String line = "order " + g.r.key() + " stopped: " + g.parked + " (aa want " + g.r.word().trim() + " to try again, aa drop " + g.r.key() + " to clear it" + again + ")";
+        String line = "order " + g.r.key() + " stopped: " + g.parked + " (aa want " + g.r.word().trim() + " to try again, aa cancel " + g.r.key() + " to clear it" + again + ")";
         bb.port.log(line);
         bb.port.tellOwner(line);
         return true;
@@ -1098,7 +1098,7 @@ public final class Goals {
     /**
      * 0.39.z61 (owner's ruling 1 on D1, option c): an order that was met - its items are never Baritone's throwaway, yet any
      * chain may use them as ingredients. {@code n} only goes down: to what the bag still holds of them (a craft used some,
-     * the owner took some); at 0 the entry goes. Cleared by {@code aa drop} and by a new {@code aa want} of the same thing.
+     * the owner took some); at 0 the entry goes. Cleared by {@code aa cancel} and by a new {@code aa want} of the same thing.
      */
     public static final class Finished {
         public final String key;

@@ -108,7 +108,7 @@ public final class Brain extends Node {
         desires.add(d);
     }
 
-    /** B4 (aa drop / a goal reached): the desire leaves the list (halted if it runs); false when no such id. */
+    /** B4 (aa cancel / a goal reached): the desire leaves the list (halted if it runs); false when no such id. */
     public boolean remove(String id, String why) {
         for (int i = 0; i < desires.size(); i++) {
             if (!desires.get(i).id.equals(id)) continue;

@@ -173,7 +173,7 @@ public final class LineDeposits {
 
     /**
      * deposit-kept (owner 2026-11-13: "if I do drop the torch order, it should still deposit the cobblestone"): the owner
-     * dropped {@code g} (aa drop). It leaves its line - nothing of its own is deposited (said); when it was the line's last
+     * dropped {@code g} (aa cancel). It leaves its line - nothing of its own is deposited (said); when it was the line's last
      * open -d order, the line ends now and the orders that ended before go to the chest as one deposit. Null: an order with
      * no deposit word, or one whose line ended already.
      */

@@ -135,9 +135,9 @@ class OrdersTierTest {
         br.add(AaDesires.ownerGoal(again));
         br.tick(bb);
         assertEquals(2, port.started.size(), "aa want again runs it: " + br.whyLines(5));
-        // aa drop clears it
+        // aa cancel clears it
         Goals.of(bb).remove(again);
-        assertTrue(br.remove(again.id(), "aa drop"));
+        assertTrue(br.remove(again.id(), "aa cancel"));
         assertTrue(Goals.of(bb).isEmpty());
     }
 

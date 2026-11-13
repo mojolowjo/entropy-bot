@@ -4419,17 +4419,34 @@ public final class AaRuntime implements JobPort {
         tree.brain.remove(g.id(), "aa want strip again");
         tree.brain.add(io.github.mojolowjo.entropybot.aa.AaDesires.ownerGoal(g));
         LOG.info("[entropybot] aa: owner goal {}", s.text());
-        return "ok: goal " + s.text() + " (" + s.ores().size() + " ore blocks; " + resume + "; aa drop strip to end it)" + (on() ? "" : " (aa is off: aa on to work on it)");
+        return "ok: goal " + s.text() + " (" + s.ores().size() + " ore blocks; " + resume + "; aa cancel strip to end it)" + (on() ? "" : " (aa is off: aa on to work on it)");
     }
 
-    /** aa drop <thing|all>. */
-    String drop(String arg) {
+    /** aa cancel <thing|all>. */
+    /**
+     * aa drop &lt;item&gt; [n|all] (owner 2026-11-13: "i want drop to be physically dropping items, and then cancel can replace
+     * what drop was"): the bag's items thrown on the floor with the inventory menu's THROW click (Storage.drop: inventory and
+     * hotbar, never armor). {@code aa drop all} alone is refused with the two commands it could mean - it used to cancel
+     * every order, and must not empty the bag by habit; {@code aa drop all all} throws the whole bag.
+     */
+    String dropItems(String arg) {
+        String w = arg == null ? "" : arg.trim().toLowerCase(java.util.Locale.ROOT);
+        if (w.isEmpty()) return "usage: aa drop <item> [n|all] (throws it on the floor); aa cancel <item>|all cancels an order";
+        if (w.equals("all")) return "aa drop all would throw the whole bag on the floor: say aa drop all all to do that; aa cancel all cancels every order (what aa drop all used to do)";
+        LocalPlayer p = Minecraft.getInstance().player;
+        if (p == null) return "error: no player in a world";
+        String r = Storage.drop(p, w);
+        LOG.info("[entropybot] aa drop {}: {}", w, r);
+        return r;
+    }
+
+    String cancel(String arg) {
         var goals = io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb);
         String w = arg == null ? "" : arg.trim().toLowerCase(java.util.Locale.ROOT).replaceAll("\\s+", "_");
-        if (w.isEmpty()) return "usage: aa drop <thing>|all";
+        if (w.isEmpty()) return "usage: aa cancel <thing>|all";
         var builds = io.github.mojolowjo.entropybot.aa.brain.Blueprint.of(bb);
         List<String> gone = new ArrayList<>();
-        // 0.39.z61 (ruling 1 option c): a finished order's items stay safe from pillaring until aa drop names it (or all)
+        // 0.39.z61 (ruling 1 option c): a finished order's items stay safe from pillaring until aa cancel names it (or all)
         var fin = io.github.mojolowjo.entropybot.aa.brain.Goals.finished(bb);
         for (var f : new ArrayList<>(fin)) {
             if (!w.equals("all") && !f.key.equals(w) && !f.key.endsWith(":" + w) && !f.ids.contains(w.contains(":") ? w : "minecraft:" + w)) continue;
@@ -4440,7 +4457,7 @@ public final class AaRuntime implements JobPort {
         for (var b : new ArrayList<>(builds)) {              // B7: builds by name
             if (!w.equals("all") && !b.name.equals(w)) continue;
             builds.remove(b);
-            tree.brain.remove(b.id(), "aa drop");        // halts its running task too
+            tree.brain.remove(b.id(), "aa cancel");        // halts its running task too
             SchematicBuild.LOADED.remove(b.name);
             SchematicBuild.LAST_STOP.remove(b.name);
             SchematicBuild.FAILS.remove(b.name);
@@ -4451,7 +4468,7 @@ public final class AaRuntime implements JobPort {
                     || g.r.ids().contains(w.contains(":") ? w : "minecraft:" + w);
             if (!hit) continue;
             goals.remove(g);
-            tree.brain.remove(g.id(), "aa drop");
+            tree.brain.remove(g.id(), "aa cancel");
             gone.add(g.r.key());
             // deposit-kept (owner 2026-11-13): a dropped -d order leaves its line; the orders that ended before it still deposit
             if (bb.in != null && bb.in.bag != null) depositSaid(lineDeposits.dropped(g, bb.in.bag, mainChestAt()));
@@ -4474,7 +4491,7 @@ public final class AaRuntime implements JobPort {
         for (var b : io.github.mojolowjo.entropybot.aa.brain.Blueprint.of(bb)) out.add("build " + io.github.mojolowjo.entropybot.aa.brain.Blueprint.line(bb, b, scoreOf(b.id())));
         List<String> fin = new ArrayList<>();          // 0.39.z61 (ruling 1 option c): met orders whose items are never pillared
         for (var f : io.github.mojolowjo.entropybot.aa.brain.Goals.finished(bb)) fin.add(f.key + " " + f.n);
-        if (!fin.isEmpty()) out.add("finished, kept from pillaring (aa drop <thing> lets them go): " + String.join(", ", fin));
+        if (!fin.isEmpty()) out.add("finished, kept from pillaring (aa cancel <thing> lets them go): " + String.join(", ", fin));
         return "owner goals" + (out.isEmpty() ? ": none (aa want <thing> [n] [high|low] | aa build <name> here)" : " (" + out.size() + "):\n" + String.join("\n", out))
                 + "\n" + ideasLine();
     }

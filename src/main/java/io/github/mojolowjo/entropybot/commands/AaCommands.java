@@ -62,9 +62,12 @@ final class AaCommands {
                 f(O, "want <item|group> [n] [-d] [high|low]", "get that item or group; -d = into the main chest when the line ends; high|low = priority"),
                 f(O, "want <item> [n] [-d], <item> [n], ... [deposit]", "several orders at once, in list order; a trailing deposit = all of them into the main chest"),
                 f(O, "want strip <ore[ amount]>[,...] [<feet y>] [<heading>]", "dig a strip mine for those ores (at that feet height, that way)"));
-        v("drop", (c, aa, vb, a) -> aa.drop(a), f(O, "drop <item>|all", "drop that order, or every order"));
+        // owner 2026-11-13: "drop" throws items on the floor; "cancel" is what drop was (the order leaves the list)
+        v("cancel", (c, aa, vb, a) -> aa.cancel(a), f(O, "cancel <item>|all", "cancel that order, or every order"));
+        // the whole bag is "aa drop all all" (said by "aa drop all"); kept short: the aa help is at the whisper cap
+        v("drop", (c, aa, vb, a) -> aa.dropItems(a), f(O, "drop <item> [n]", "throw it on the floor"));
         v("goals", (c, aa, vb, a) -> aa.goalsText(), f(O, "goals", "the orders waiting, in turn"));
-        v("go", (c, aa, vb, a) -> aa.slow.go(), f(O, "go (the slow mode's next step)", "slow mode: run the next step"));
+        v("go", (c, aa, vb, a) -> aa.slow.go(), f(O, "go (slow mode's next step)", "slow mode: run the next step"));
         v("skip|do|use|pick|ask", (c, aa, vb, a) -> {
             if (!aa.on()) return OFF;
             return aa.manual(vb, a);
@@ -140,13 +143,13 @@ final class AaCommands {
         v("needs", (c, aa, vb, a) -> aa.needs(a), f(S, "needs on|off", "own needs on (an order: only worried hunger/danger cut in), or orders only (per world)"));             // orders-tier: saved per world
         v("forget", (c, aa, vb, a) -> a.equals("stations") ? c.nearby.forgetAllStations() : "usage: aa forget stations (drops every station record of mine in this world)",
                 f(S, "forget stations", "drop every station record of mine in this world"));
-        v("eat", (c, aa, vb, a) -> aa.order("eat", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Eat())), f(S, "eat (the best food in the bag)", "eat the best food in the bag"));
-        v("scan", (c, aa, vb, a) -> aa.order("scan", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Scan(false))), f(S, "scan (read the chests in reach)", "read the chests in reach"));
+        v("eat", (c, aa, vb, a) -> aa.order("eat", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Eat())), f(S, "eat (best food in bag)", "eat the best food in the bag"));
+        v("scan", (c, aa, vb, a) -> aa.order("scan", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Scan(false))), f(S, "scan (read chests in reach)", "read the chests in reach"));
         v("restore", (c, aa, vb, a) -> {
             int r;
             try { r = a.isEmpty() ? io.github.mojolowjo.entropybot.restore.RestorePlan.nowDefault() : Integer.parseInt(a); } catch (NumberFormatException e) { return "usage: aa restore [radius]"; }
             return aa.order("restore", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.PutBack(r)));
-        }, f(S, "restore [radius] (put back the blocks I broke)", "put back the blocks I broke within that radius"));
+        }, f(S, "restore [radius] (put back what I broke)", "put back the blocks I broke within that radius"));
         v("worth", (c, aa, vb, a) -> a.isEmpty() ? "usage: aa worth <item> (e.g. aa worth iron_pickaxe): the terms its worth is derived from, or UNKNOWN" : io.github.mojolowjo.entropybot.aa.brain.ItemWorth.explain(a.replace(" ", "_")),
                 f(S, "worth <item>", "the terms an item's worth is derived from, or UNKNOWN"));
         v("ore", (c, aa, vb, a) -> aa.oreInfo(a), f(S, "ore [info] [<thing>]", "the ore heights learned from the chunks seen"));

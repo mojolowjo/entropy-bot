@@ -178,10 +178,10 @@ final class SimGame {
 
     void say(String line) { timeline.add(String.format(Locale.ROOT, "%7.1f s  %s", seconds(), line)); }
 
-    /** aa drop: the order leaves the goals and its line (the runtime's drop). */
+    /** aa cancel: the order leaves the goals and its line (the runtime's drop). */
     void drop(Goals.Goal g) {
         Goals.of(bb).remove(g);
-        brain.remove(g.id(), "aa drop");
+        brain.remove(g.id(), "aa cancel");
         say("drop: " + g.r.key());
         sense();
         LineDeposits.Out out = deposits.dropped(g, bb.in.bag, mainAt);
