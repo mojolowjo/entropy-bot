@@ -1165,7 +1165,7 @@ public final class Goals {
     static final String KEPT_SAID_FACT = "aa.depositKeptSaid";
 
     /** deposit-kept: what the bag holds for the -d orders' deposits, less {@code self}'s and {@code skip}'s ({@link LineDeposits#kept}); empty: nothing. */
-    static Map<String, Integer> kept(Blackboard bb, Goal self, java.util.Collection<Goal> skip) {
+    public static Map<String, Integer> kept(Blackboard bb, Goal self, java.util.Collection<Goal> skip) {
         if (bb.in == null || bb.in.bag == null || !(bb.fact(LineDeposits.FACT) instanceof LineDeposits ld)) return Map.of();
         return ld.kept(bb.in.bag, of(bb), self, skip);
     }

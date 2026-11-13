@@ -64,8 +64,8 @@ final class AaCommands {
                 f(O, "want strip <ore[ amount]>[,...] [<feet y>] [<heading>]", "dig a strip mine for those ores (at that feet height, that way)"));
         // owner 2026-11-13: "drop" throws items on the floor; "cancel" is what drop was (the order leaves the list)
         v("cancel", (c, aa, vb, a) -> aa.cancel(a), f(O, "cancel <item>|all", "cancel that order, or every order"));
-        // the whole bag is "aa drop all all" (said by "aa drop all"); kept short: the aa help is at the whisper cap
-        v("drop", (c, aa, vb, a) -> aa.dropItems(a), f(O, "drop <item> [n]", "throw it on the floor"));
+        // kept short: the aa help is at the whisper cap. "all" = the whole bag; a -d order's amount stays (DropPlan)
+        v("drop", (c, aa, vb, a) -> aa.dropItems(a), f(O, "drop <item|all> [n]", "throw it on the floor (-d items stay)"));
         v("goals", (c, aa, vb, a) -> aa.goalsText(), f(O, "goals", "the orders waiting, in turn"));
         v("go", (c, aa, vb, a) -> aa.slow.go(), f(O, "go (slow mode's next step)", "slow mode: run the next step"));
         v("skip|do|use|pick|ask", (c, aa, vb, a) -> {

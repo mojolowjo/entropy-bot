@@ -179,7 +179,7 @@ public final class Thing {
         return w == null ? "" : w.trim().toLowerCase(Locale.ROOT).replaceAll("\\s+", "_").replaceFirst("^minecraft:", "");
     }
 
-    static String path(String id) { return id.contains(":") ? id.substring(id.indexOf(':') + 1) : id; }
+    public static String path(String id) { return id.contains(":") ? id.substring(id.indexOf(':') + 1) : id; }
 
     static String shortId(String id) { return id.startsWith("minecraft:") ? id.substring(10) : id; }
 }

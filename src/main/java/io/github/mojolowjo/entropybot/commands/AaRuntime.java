@@ -4426,17 +4426,25 @@ public final class AaRuntime implements JobPort {
     /**
      * aa drop &lt;item&gt; [n|all] (owner 2026-11-13: "i want drop to be physically dropping items, and then cancel can replace
      * what drop was"): the bag's items thrown on the floor with the inventory menu's THROW click (Storage.drop: inventory and
-     * hotbar, never armor). {@code aa drop all} alone is refused with the two commands it could mean - it used to cancel
-     * every order, and must not empty the bag by habit; {@code aa drop all all} throws the whole bag.
+     * hotbar, never armor). {@code aa drop all} throws the whole bag (owner: "no need for the refusal of a drop all").
+     * What the bag holds for a -d order's deposit stays ("it should not drop -d items for now"; DropPlan, said in the answer).
      */
     String dropItems(String arg) {
-        String w = arg == null ? "" : arg.trim().toLowerCase(java.util.Locale.ROOT);
-        if (w.isEmpty()) return "usage: aa drop <item> [n|all] (throws it on the floor); aa cancel <item>|all cancels an order";
-        if (w.equals("all")) return "aa drop all would throw the whole bag on the floor: say aa drop all all to do that; aa cancel all cancels every order (what aa drop all used to do)";
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null) return "error: no player in a world";
-        String r = Storage.drop(p, w);
-        LOG.info("[entropybot] aa drop {}: {}", w, r);
+        var carried = io.github.mojolowjo.entropybot.gui.GuiCore.carried(new io.github.mojolowjo.entropybot.gui.McMenu(p));
+        DropPlan plan = DropPlan.of(arg, carried, io.github.mojolowjo.entropybot.aa.brain.Goals.kept(bb, null, null));
+        if (plan.err() != null) return plan.err();
+        long dropped = 0;
+        List<String> said = new ArrayList<>();
+        for (var e : plan.drops().entrySet()) {
+            int n = Crafting.throwItems(p, e.getKey(), e.getValue());
+            dropped += n;
+            if (n > 0) said.add(n + " " + io.github.mojolowjo.entropybot.aa.brain.Thing.path(e.getKey()));
+        }
+        String what = said.size() > 4 ? dropped + " items of " + said.size() + " kinds" : String.join(", ", said);     // structural: a short answer
+        String r = (dropped > 0 ? "ok: dropped " + what : "ok: nothing to drop") + plan.heldText();
+        LOG.info("[entropybot] aa drop {}: {}", arg, r);
         return r;
     }
 
