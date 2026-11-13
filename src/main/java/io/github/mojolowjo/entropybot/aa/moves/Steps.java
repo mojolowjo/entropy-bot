@@ -24,6 +24,9 @@ import java.util.List;
  * {@code baritone.api.process.Reserves} is plain Java).
  */
 public final class Steps {
+    /** The start of the reason a running step is cancelled with when the plan was priced again (the planner's own cancel, no failure); one source (ScenarioDump reads it). */
+    public static final String RE_PRICED = "re-priced: ";
+
     public enum Phase { IDLE, RUNNING, DONE, FAILED }
 
     /** What a step asks the game for. The real one is {@code commands/StepHands}; tests use a fake. */
@@ -1080,10 +1083,10 @@ public final class Steps {
             }
         }
         if (running && waitsOnPaths(r.steps()) && !standsForFound) { pushReserve(held); return false; }
-        if (running) safeCancel("re-priced: " + f.text() + (standsForFound ? " - standing for its walk's price (rule 22)" : foundFast != null ? foundFast : " - the pick changed"));
+        if (running) safeCancel(RE_PRICED + f.text() + (standsForFound ? " - standing for its walk's price (rule 22)" : foundFast != null ? foundFast : " - the pick changed"));
         String diff = planDiff(left, r.steps(), true);
         splice(idx, r.steps(), r.uses(), steps.size());
-        replanFact = "re-priced: " + f.text() + (foundFast != null ? foundFast : "") + " - switched to " + r.steps().get(0).text() + " first" + (released.isEmpty() ? "" : "; " + released) + "; " + diff;
+        replanFact = RE_PRICED + f.text() + (foundFast != null ? foundFast : "") + " - switched to " + r.steps().get(0).text() + " first" + (released.isEmpty() ? "" : "; " + released) + "; " + diff;
         idx--;
         next();
         return true;

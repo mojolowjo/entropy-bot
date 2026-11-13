@@ -55,6 +55,12 @@ public final class ScenarioDump {
     static void onFail(AaRuntime aa, String what) {
         try {
             if (Tuning.get("debug.scenarioOnFail") <= 0) return;
+            // run JBS (two of four files were "stopped: re-priced: a source of spruce_log is known"): the planner's own
+            // cancel of a running step is no failure - no file, said
+            if (plannersCancel(what)) {
+                LOG.info("[entropybot] scenario: not written for '{}' - the planner's own cancel (priced again), no failure", cut(what, 120));
+                return;
+            }
             long now = System.currentTimeMillis();
             if (now - lastAutoMs < GAP_MS) {
                 LOG.info("[entropybot] scenario: not written for '{}' - one was written {} ms ago (one per {} ms)", cut(what, 120), now - lastAutoMs, GAP_MS);
@@ -66,6 +72,9 @@ public final class ScenarioDump {
             LOG.warn("[entropybot] scenario: not written for '{}': {}", cut(what, 120), e.toString());
         }
     }
+
+    /** The end's words carry the re-price cancel (Steps.RE_PRICED: the one source of that reason). Pure. */
+    static boolean plannersCancel(String what) { return what != null && what.contains(io.github.mojolowjo.entropybot.aa.moves.Steps.RE_PRICED); }
 
     private static String cut(String s, int n) { return s == null ? "" : s.length() <= n ? s : s.substring(0, n); }
 
