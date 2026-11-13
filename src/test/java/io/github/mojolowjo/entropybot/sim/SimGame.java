@@ -167,6 +167,7 @@ final class SimGame {
         Goals.Goal g = Goals.add(bb, r, n, 0, clock.now());
         g.batch = batch;
         deposits.add(g, batch, deposit);
+        bb.fact(LineDeposits.FACT, deposits);          // deposit-kept: as the runtime's aa want
         brain.failures.forget(g.id());
         brain.add(AaDesires.ownerGoal(g));
         say("order: " + word + " " + n);
@@ -199,7 +200,7 @@ final class SimGame {
         long idleSince = clock.now();
         while (end == null) {
             tick();
-            while (!due.isEmpty() && end == null) deposit(due.remove(0));
+            while (!due.isEmpty() && end == null) { deposits.gone(); deposit(due.remove(0)); }
             if (end != null) break;
             if (Goals.of(bb).isEmpty()) { end = "done"; break; }
             if (seconds() > limitS) { end = "time limit: " + limitS + " s; orders left: " + orders(); break; }

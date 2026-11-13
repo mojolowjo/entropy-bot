@@ -12,7 +12,14 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class SimGameTest {
     @AfterEach
-    void clear() { TestData.clear(); }
+    void clear() {
+        // the game's statics SimGame sets (was left on: the tests after it read "orders only")
+        io.github.mojolowjo.entropybot.aa.brain.Only.set("off");
+        io.github.mojolowjo.entropybot.aa.brain.BatchWay.clear();
+        io.github.mojolowjo.entropybot.aa.moves.FactChange.clear();
+        TestData.clear();
+        io.github.mojolowjo.entropybot.aa.brain.Tuning.reset();
+    }
 
     /** Grass at y 63; the bot at 0 64 0; a spruce tree (a trunk of {@code logs}) at 10 64 0. */
     static SimGame treeMap(int logs) {
@@ -72,15 +79,38 @@ class SimGameTest {
         assertEquals("done", end, g.timelineText());
         String t = g.timelineText();
         assertTrue(t.contains("\"cut 1 at 10 64 3 > craft spruce_planks 4 > craft spruce_planks 4 > craft stick 4 > craft spruce_planks 4 > craft crafting_table 1 > "
-                + "place crafting_table near me > craft wooden_pickaxe 1 > take my crafting_table here > collect cobblestone 32"), "the plan's head, as run JBS-T1's: " + t);
+                + "place crafting_table near me > craft wooden_pickaxe 1 > take my crafting_table here > collect cobblestone 40"), "the plan's head, as run JBS-T1's but for the furnace's own 8 cobblestone (deposit-kept): " + t);
         assertTrue(t.contains("smelted 1 charcoal from {minecraft:spruce_log=1} on {minecraft:spruce_planks=1}"), "the game's fuel rule picks a plank (run JBS: 'spruce_planks 1 for smelt charcoal 1 here'): " + t);
         assertEquals(4, g.chest.get("minecraft:torch"), g.chest.toString());
         assertEquals(16, g.chest.get("minecraft:spruce_log"), "the trees gave 24 logs, so the torch's log and the planks' logs came from the spare: " + g.chest);
-        // SEEN in this play (the kind of run JBS-T1's "14 of 16 logs"): the line collects exactly 32 cobblestone, the torch
-        // order's furnace then takes 8 of the finished order's 32, and 24 are deposited. Not fixed here (a planner change, the
-        // owner's call; the sim does not pass the reserve table yet): this pin moves to 32 with the fix.
-        assertEquals(24, g.chest.get("minecraft:cobblestone"), "the cobblestone deposited of the 32 ordered: " + g.chest);
+        // deposit-kept (owner 2026-11-13: a -d amount goes to the chest whole; was 24 of 32 here, the torch order's furnace
+        // took 8 of the finished order's): the trip collects 40, and the finished 32 are kept from the later plans
+        assertEquals(32, g.chest.get("minecraft:cobblestone"), "the cobblestone deposited of the 32 ordered: " + g.chest);
+        assertTrue(t.contains("kept for the line's deposit: cobblestone 32 - no plan counts them as ingredients"), "said (rule 7): " + t);
         assertTrue(g.seconds() > 60 && g.seconds() < 400, "seconds: " + g.seconds());
+    }
+
+    /**
+     * deposit-kept, the owner's other half ("anything not being deposited can be used"): the same line with no deposit word
+     * on the cobblestone - the furnace takes 8 of the finished order's 32, nothing more is collected for it.
+     */
+    @Test
+    void anOrderWithNoDepositWord_isIngredientsForTheNext() {
+        SimWorld w = SimWorld.flat(63, "minecraft:grass_block", 40);
+        for (int i = 0; i < 4; i++) w.column(10 + 2 * i, 64, 3, 6, "minecraft:spruce_log");
+        for (int x = -12; x <= -6; x++) for (int z = -3; z <= 3; z++) for (int y = 64; y <= 66; y++) w.set(x, y, z, "minecraft:stone");
+        w.set(3, 64, -5, "minecraft:chest");
+        SimGame g = new SimGame(w, new int[]{0, 64, 0});
+        g.mainAt = "3 64 -5";
+        g.order("cobblestone", 32, "b1", false);
+        g.order("torch", 4, "b1", true);
+        String end = g.play(900);
+        String t = g.timelineText();
+        assertEquals("done", end, t);
+        assertTrue(t.contains("collect cobblestone 32"), "no more than the order: " + t);
+        assertEquals(24, g.bag.get("minecraft:cobblestone"), "the furnace took 8 of the 32: " + g.bag);
+        assertEquals(4, g.chest.get("minecraft:torch"), g.chest.toString());
+        assertNull(g.chest.get("minecraft:cobblestone"), "no deposit word, nothing deposited: " + g.chest);
     }
 
     /** A step kind with no actor ends the game saying so (rule 7), never skipped. */

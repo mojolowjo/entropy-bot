@@ -546,7 +546,7 @@ public final class BatchWay {
         PRICED.merge(tk, 1, Integer::sum);
         long t0 = TickLaps.AA.now();
         List<Playbook.Target> targets = new ArrayList<>();
-        for (Goals.Goal o : open) targets.add(new Playbook.Target(itemOf(o), o.n));
+        for (Goals.Goal o : open) targets.add(new Playbook.Target(itemOf(o), o.n, o.deposit > 0));     // deposit-kept: a -d order's items are no later get's ingredients
         @SuppressWarnings("unchecked")
         BiFunction<String, Integer, Double> perSlab = bb.fact(PER_SLAB_FACT) instanceof BiFunction<?, ?, ?> f ? (BiFunction<String, Integer, Double>) f : null;
         long d0 = TickLaps.AA.now();

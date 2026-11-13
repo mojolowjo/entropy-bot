@@ -4044,6 +4044,7 @@ public final class AaRuntime implements JobPort {
         if (r.startsWith("aa deposit: busy")) return;                    // the slot went to something else this tick: next tick
         String why = depositDue;
         depositDue = null;
+        lineDeposits.gone();                                             // deposit-kept: started (or refused, said below): no longer kept from the plans
         if (r.startsWith("ok")) { LOG.info("[entropybot] aa: {} - started", why); c.whisper(c.owner(), "aa: " + why); }
         else { LOG.info("[entropybot] aa: {} - but it could not start: {}", why, r); c.whisper(c.owner(), "aa: the deposit could not start: " + r); }
     }
@@ -4195,6 +4196,7 @@ public final class AaRuntime implements JobPort {
         g.batch = wantBatch;                          // 0.39.z77 J2: null for an order alone
         // deposit-words (owner 2026-11-08): -d = the ordered amount goes to the main chest when this line's last order ends
         lineDeposits.add(g, wantBatch, a.deposit());
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.LineDeposits.FACT, lineDeposits);     // deposit-kept: the planner reads what is kept (Goals.keptOff)
         tree.brain.failures.forget(g.id());           // orders-tier: aa want again clears a parked order and its old holds
         g.replans = 0;                                // 0.39.z30: and its re-plan count
         g.sourceReplans = 0;                          // 0.39.z62 item 1: and its new-source re-plans

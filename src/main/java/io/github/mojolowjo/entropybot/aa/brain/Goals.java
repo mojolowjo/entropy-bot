@@ -1161,6 +1161,31 @@ public final class Goals {
         return out;
     }
 
+    /** deposit-kept: the last "kept for the deposit" line said (said again only on a change, rule 7). */
+    static final String KEPT_SAID_FACT = "aa.depositKeptSaid";
+
+    /**
+     * deposit-kept (owner 2026-11-13): the planner's world with what the bag holds for a deposit still to come taken off its
+     * bag ({@link LineDeposits#kept}) - a later order gathers its own, the -d amounts go to the chest whole. An order with no
+     * deposit word keeps nothing: its items stay ingredients (ruling 1 option c, as before). Said in the log on a change.
+     */
+    static io.github.mojolowjo.entropybot.aa.NeedChain.World keptOff(Blackboard bb, io.github.mojolowjo.entropybot.aa.NeedChain.World w) {
+        if (w == null || bb.in == null || !(bb.fact(LineDeposits.FACT) instanceof LineDeposits ld)) return w;
+        Map<String, Integer> kept = ld.kept(bb.in.bag, of(bb));
+        String said = kept.isEmpty() ? "" : io.github.mojolowjo.entropybot.aa.moves.Step.Deposit.onlyText(kept);
+        if (!said.equals(bb.fact(KEPT_SAID_FACT) instanceof String s ? s : "")) {
+            bb.fact(KEPT_SAID_FACT, said);
+            if (bb.port != null) bb.port.log(kept.isEmpty() ? "kept for the line's deposit: nothing now" : "kept for the line's deposit: " + said + " - no plan counts them as ingredients");
+        }
+        if (kept.isEmpty()) return w;
+        Map<String, Integer> bag = new java.util.LinkedHashMap<>(w.bag());
+        for (var e : bag.entrySet()) {
+            int k = kept.getOrDefault(Thing.path(e.getKey()), 0);
+            if (k > 0) e.setValue(Math.max(0, e.getValue() - k));
+        }
+        return w.withBag(bag);
+    }
+
     /** The goal's chain on the world fact now (null: no world facts yet). */
     /** 0.39.z73: the order's world of now - the planner's facts with the order's dropped sources and failed places applied; null: none yet. */
     static io.github.mojolowjo.entropybot.aa.NeedChain.World chainWorld(Blackboard bb, Goal g) { return chainWorld(bb, g, bb.in == null ? null : bb.in.pos); }
@@ -1171,7 +1196,7 @@ public final class Goals {
      * The live hysteresis state is moved only by the live feet's read (WorldFacts.heldFor(bb, own)).
      */
     static io.github.mojolowjo.entropybot.aa.NeedChain.World chainWorld(Blackboard bb, Goal g, int[] pos) {
-        var world = world(bb);
+        var world = keptOff(bb, world(bb));
         if (world == null) return null;
         // 0.39.z78 strip-off (rule 7): the strip way off is said once per order (the World's strip facts answer none, StripWays)
         if (bb.port != null && StripWays.sayOnce(g.id() + " " + g.given)) bb.port.log(g.r.key() + ": " + StripWays.OFF);

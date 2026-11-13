@@ -51,6 +51,42 @@ public final class LineDeposits {
     private final Map<String, Map<String, Goals.Goal>> lineEnded = new HashMap<>();
     private int lineSerial;
 
+    /** deposit-kept: the blackboard fact holding the runtime's one LineDeposits (Goals.chainWorld reads {@link #kept}). */
+    public static final String FACT = "aa.lineDeposits";
+
+    /** deposit-kept: the items of the lines that ended (DUE) whose deposit has not started yet ({@link #gone}). */
+    private final Map<String, Integer> due = new TreeMap<>();
+
+    /**
+     * deposit-kept (owner 2026-11-13: "if we want 64 iron deposited, and we want an iron pickaxe, then 64 iron must be
+     * deposited and the iron pickaxe can stay on the bot"; an order with no deposit word: "anything not being deposited can
+     * be used"): what the bag holds for a deposit still to come (counted id -> n) - the ended -d orders of a line whose
+     * other -d orders still run, and a due deposit not started. No plan may count these as ingredients (Goals.chainWorld
+     * takes them off the planner's bag). Not kept: an order of {@code goals} that runs (it holds its own target), and a line
+     * none of whose -d orders is among {@code goals} any more (dropped: its deposit never comes).
+     */
+    public Map<String, Integer> kept(Map<String, Integer> bag, java.util.List<Goals.Goal> goals) {
+        Map<String, Integer> out = new TreeMap<>(due);
+        Set<String> running = new java.util.HashSet<>(), lines = new java.util.HashSet<>();
+        for (Goals.Goal g : goals) {
+            if (g.parked == null) running.add(g.r.key());
+            if (g.deposit > 0 && g.line != null) lines.add(g.line);
+        }
+        for (var e : lineEnded.entrySet()) {
+            if (!lines.contains(e.getKey())) continue;
+            for (Goals.Goal o : e.getValue().values()) {
+                if (running.contains(o.r.key())) continue;
+                for (var t : take(o, bag).entrySet()) out.merge(t.getKey(), t.getValue(), Integer::sum);
+            }
+        }
+        out.replaceAll((id, n) -> Math.min(n, bag.getOrDefault(id, 0)));
+        out.values().removeIf(n -> n <= 0);
+        return out;
+    }
+
+    /** deposit-kept: the due deposit started (or could not start, said by the caller): its items are no longer kept here. */
+    public void gone() { due.clear(); }
+
     /** What the bag holds of the order's deposit amount now (counted id -> n; a group: up to the amount of each member). */
     static Map<String, Integer> take(Goals.Goal g, Map<String, Integer> bag) {
         Map<String, Integer> out = new TreeMap<>();
@@ -123,6 +159,7 @@ public final class LineDeposits {
         if (all.isEmpty()) return new Out(Kind.NOTHING, g.r.key() + " " + how + ": nothing of the line's deposit items in the bag - no deposit", null);
         if (mainAt == null)
             return new Out(Kind.NO_CHEST, g.r.key() + " " + how + ": no main chest set (aa deposit x y z) - " + Step.Deposit.onlyText(all) + " stay in the bag", all);
+        for (var e : all.entrySet()) due.merge(e.getKey(), e.getValue(), Integer::sum);       // deposit-kept: until the deposit starts
         return new Out(Kind.DUE, g.r.key() + " " + how + ": the line's deposit of " + Step.Deposit.onlyText(all) + " to the main chest at " + mainAt + " follows", all);
     }
 

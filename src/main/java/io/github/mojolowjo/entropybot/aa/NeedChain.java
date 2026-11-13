@@ -2758,9 +2758,13 @@ public final class NeedChain {
                         int lack = (gate ? c.have(item) + 1 : t.n()) - c.have(item);
                         if (lack > 0) c.bag.merge(item, lack, Integer::sum);
                         madePick(c, item);
+                        if (t.keep()) c.aside.merge(item, t.n(), Integer::sum);
                         continue;
                     }
-                    got.add(sh(item) + " " + t.n() + (p == null ? " (in the bag)" : " <- " + p));
+                    // deposit-kept (owner 2026-11-13; sim: cobblestone 32 -d, torch 4 -d: the torch's furnace took 8 of the 32,
+                    // 24 deposited; run JBS-T1: 14 of 16 logs): a -d order's amount is set aside for the gets after it
+                    if (t.keep()) c.aside.merge(item, t.n(), Integer::sum);
+                    got.add(sh(item) + " " + t.n() + (p == null ? " (in the bag)" : " <- " + p) + (t.keep() ? " (kept for the deposit)" : ""));
                 }
             } finally {
                 c.hoisting = wasHoisting;

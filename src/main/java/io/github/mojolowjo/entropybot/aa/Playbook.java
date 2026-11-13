@@ -58,7 +58,15 @@ public record Playbook(List<Target> targets, List<Leg> legs, String why, String 
     public boolean ok() { return fail == null; }
 
     /** One order of the batch ({@code n}: the count the bag must hold, as the order counts it), or a leg's get. */
-    public record Target(String item, int n) {
+    /**
+     * deposit-kept (owner 2026-11-13: "anything not being deposited can be used ... 64 iron must be deposited"): {@code keep} -
+     * the order has the deposit word, so once the trip holds its {@code n} they are no ingredient of a later get
+     * (NeedChain.playbookChain sets them aside).
+     */
+    public record Target(String item, int n, boolean keep) {
+        /** An order with no deposit word, or a leg's get: the bag's {@code n} of it are ingredients for the gets after it. */
+        public Target(String item, int n) { this(item, n, false); }
+
         public String text() { return NeedChain.shw(item) + " " + n; }
     }
 
