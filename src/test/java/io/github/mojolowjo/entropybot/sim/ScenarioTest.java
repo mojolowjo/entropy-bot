@@ -97,6 +97,29 @@ class ScenarioTest {
         }
     }
 
+    /**
+     * The first file a game wrote (run JBS-T1 02:00:34, debug.scenarioOnFail: "explore: boxed in at -61 114 -7: 3 no-break
+     * walks in a row found no path from here"): it loads, the feet's cells are open, there is ground under them, and the
+     * whole cube was loaded.
+     */
+    @Test
+    void aFileAGameWrote_loads_withTheBotStandingInIt() throws Exception {
+        Path f = Path.of(ScenarioTest.class.getResource("/scenarios/runJBS-T1-boxed-in.json.gz").toURI());
+        Scenario s = Scenario.read(f);
+        assertArrayEquals(new int[]{-61, 114, -7}, s.feet);
+        assertEquals("minecraft:overworld", s.dim);
+        assertTrue(s.why.contains("boxed in at -61 114 -7"), s.why);
+        assertEquals(49 * 49 * 49, s.size(), s.summary());
+        assertNull(s.counts().get(Scenario.NOT_LOADED), "every cell of the cube was loaded: " + s.summary());
+        String feet = s.blockIdAt(-61, 114, -7), head = s.blockIdAt(-61, 115, -7), under = s.blockIdAt(-61, 113, -7);
+        assertNotNull(feet);
+        assertNotEquals("minecraft:air", under, "something under the feet: " + under);
+        assertTrue(s.counts().size() > 10, "real terrain: " + s.counts().keySet());
+        assertFalse(s.bag.isEmpty(), "the bag came with it");
+        System.out.println("scenario runJBS-T1 boxed in: feet " + feet + ", head " + head + ", under " + under + "; bag " + s.bagCounts() + "; top blocks "
+                + s.counts().entrySet().stream().limit(8).toList());
+    }
+
     @Test
     void aBrokenFile_isRefusedWithItsReason() {
         Scenario s = small();
