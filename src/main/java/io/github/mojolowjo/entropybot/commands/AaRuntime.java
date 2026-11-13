@@ -3007,6 +3007,7 @@ public final class AaRuntime implements JobPort {
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] aa incident: {}", e.toString());
         }
+        ScenarioDump.onFail(this, what);     // sim step 1: a scenario file at a failed end (debug.scenarioOnFail, off by default)
     }
 
     /** Chains tells every listener how a chain ended; AA keeps its own. */

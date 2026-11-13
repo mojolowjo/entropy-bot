@@ -106,6 +106,8 @@ final class AaCommands {
         // ---- status
         v("status", (c, aa, vb, a) -> aa.statusLine() + StripStep.liveLine() + aa.tuningLine() + "\n" + aa.reserveLine() + "\n" + io.github.mojolowjo.entropybot.aa.MainStations.now().line() + "\n" + aa.counts() + "\n" + aa.cavesLine() + "\n" + aa.lootLine() + "\n" + aa.gameDataLine() + (aa.on() ? "\n" + aa.brainCounters() + "\ndesires: " + String.join(" | ", aa.brainLines(5)) + "\n" + aa.goalsLine() + "\n" + aa.wantsLine() + "\nrungs: " + aa.ladderLine() + "\n" + aa.optionStatus() : ""),
                 f(S, "status", "who drives, the counters, the desires, goals and wants, each rung's reason"));
+        v("scenario", (c, aa, vb, a) -> ScenarioDump.command(aa, a),     // sim step 1 (to-do/simulator-plan.md)
+                f(S, "scenario", "write a simulator scenario file now (a note after it goes into the file's name)"));
         v("trail", (c, aa, vb, a) -> OwnerReads.trail(a),
                 f(S, "trail", "the way down: state, start, segments with ends and seconds, the climb work home"),
                 f(S, "trail clear", "forget the recorded way down"));

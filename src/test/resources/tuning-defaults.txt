@@ -993,6 +993,8 @@ station.takeReachM	6.0
 cave.exploreTowardM	128.0
 debug.walkProbe	0.0
 interact.stuckTicks	200.0
+debug.scenarioOnFail	0.0
+debug.scenarioRadius	24.0
 debug.stepProbe	0.0
 debug.loadProbe	0.0
 debug.slowTickMs	50.0

@@ -261,6 +261,7 @@ public final class Jobs {
         }
         LOG.info("[entropybot] job finished: {}", msg);
         try { core.recorder.jobEnded(j.type, j.label, msg); } catch (RuntimeException e) { LOG.warn("[entropybot] recorder job end: {}", e.toString()); }
+        if (failed && commands.aaRuntime != null) ScenarioDump.onFail(commands.aaRuntime, j.type + ": " + msg);   // sim step 1 (debug.scenarioOnFail, off by default)
         if (j.req != null) commands.requests.done(j.req.id, msg, failed);
     }
 
