@@ -86,7 +86,7 @@ class SimGameTest {
         // deposit-kept (owner 2026-11-13: a -d amount goes to the chest whole; was 24 of 32 here, the torch order's furnace
         // took 8 of the finished order's): the trip collects 40, and the finished 32 are kept from the later plans
         assertEquals(32, g.chest.get("minecraft:cobblestone"), "the cobblestone deposited of the 32 ordered: " + g.chest);
-        assertTrue(t.contains("kept for the line's deposit: cobblestone 32 - no plan counts them as ingredients"), "said (rule 7): " + t);
+        assertTrue(t.contains("kept for a deposit: cobblestone"), "said (rule 7): " + t);
         assertTrue(g.seconds() > 60 && g.seconds() < 400, "seconds: " + g.seconds());
     }
 
@@ -111,6 +111,58 @@ class SimGameTest {
         assertEquals(24, g.bag.get("minecraft:cobblestone"), "the furnace took 8 of the 32: " + g.bag);
         assertEquals(4, g.chest.get("minecraft:torch"), g.chest.toString());
         assertNull(g.chest.get("minecraft:cobblestone"), "no deposit word, nothing deposited: " + g.chest);
+    }
+
+    /** The stone outcrop, the trees and the chest of the owner's line, with 32 cobblestone in the bag already. */
+    private static SimGame lineMapWith32() {
+        SimWorld w = SimWorld.flat(63, "minecraft:grass_block", 40);
+        for (int i = 0; i < 4; i++) w.column(10 + 2 * i, 64, 3, 6, "minecraft:spruce_log");
+        for (int x = -12; x <= -6; x++) for (int z = -3; z <= 3; z++) for (int y = 64; y <= 66; y++) w.set(x, y, z, "minecraft:stone");
+        w.set(3, 64, -5, "minecraft:chest");
+        SimGame g = new SimGame(w, new int[]{0, 64, 0});
+        g.mainAt = "3 64 -5";
+        g.give("minecraft:cobblestone", 32);
+        return g;
+    }
+
+    /**
+     * deposit-kept (owner 2026-11-13: "if I do drop the torch order, it should still deposit the cobblestone"): the line's
+     * cobblestone ended, the torch order is dropped - the line ends there and the cobblestone goes to the chest.
+     */
+    @Test
+    void aDroppedOrder_stillDepositsTheLinesFinishedOnes() {
+        SimGame g = lineMapWith32();
+        g.order("cobblestone", 32, "b1", true);
+        var torch = g.order("torch", 4, "b1", true);
+        g.tick();
+        g.drop(torch);
+        String end = g.play(300);
+        String t = g.timelineText();
+        assertEquals("done", end, t);
+        assertTrue(t.contains("torch dropped (nothing of it is deposited): the line's deposit of cobblestone 32 to the main chest"), t);
+        assertEquals(32, g.chest.get("minecraft:cobblestone"), g.chest.toString());
+    }
+
+    /**
+     * deposit-kept (owner 2026-11-13: "the bot should gather 10 more if the 32 is going to be deposited ... the items that
+     * are tagged with -d should be considered separate"): 32 wait for the line's deposit, a new order of 10 is not met by them.
+     */
+    @Test
+    void aNewOrderOfAKeptItem_gathersItsOwn() {
+        SimGame g = lineMapWith32();
+        g.order("cobblestone", 32, "b1", true);
+        g.order("torch", 4, "b1", true);
+        g.tick();
+        g.order("cobblestone", 10, null, false);
+        String end = g.play(900);
+        String t = g.timelineText();
+        assertEquals("done", end, t);
+        assertTrue(t.contains("cobblestone (goal 10 done)"), "the new order met by its own: " + t);
+        assertEquals(32, g.chest.get("minecraft:cobblestone"), "the -d amount whole: " + g.chest);
+        // 32 kept + 10 for the new order + 8 for the torch's furnace, or the furnace took 8 of the no-word 10 (allowed)
+        int dug = 0;
+        for (int x = -12; x <= -6; x++) for (int z = -3; z <= 3; z++) for (int y = 64; y <= 66; y++) if (!"minecraft:stone".equals(g.world.at(x, y, z))) dug++;
+        assertTrue(dug >= 10, "at least the new order's 10 were dug: " + dug + "\n" + t);
     }
 
     /** A step kind with no actor ends the game saying so (rule 7), never skipped. */

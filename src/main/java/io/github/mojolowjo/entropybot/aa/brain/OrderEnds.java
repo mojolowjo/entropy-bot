@@ -37,7 +37,7 @@ public final class OrderEnds {
         var goals = Goals.of(bb);
         for (var g : Goals.done(bb)) {
             if (!h.carriesOn(g)) brain.remove(g.id(), reachedWhy);
-            h.got("got " + Goals.have(bb.in.bag, g) + " " + g.r.key() + " (goal " + g.n + " done)");
+            h.got("got " + Goals.have(Goals.free(bb, g), g) + " " + g.r.key() + " (goal " + g.n + " done)");
             h.deposit(deposits.weigh(g, "done", bb.in.bag, mainAt));                // helper: the bag to the main chest
         }
         // helper: a stopped order's bag goes to the chest too; an order that woke is weighed again at its end

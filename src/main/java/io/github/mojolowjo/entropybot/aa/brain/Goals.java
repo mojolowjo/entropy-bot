@@ -239,7 +239,7 @@ public final class Goals {
      * goes on for the rest of the batch. Null: no world.
      */
     static io.github.mojolowjo.entropybot.aa.NeedChain.Chain runChain(Blackboard bb, Goal g) {
-        if (g.playbookRun && g.n - have(bb.in.bag, g) <= 0) {
+        if (g.playbookRun && g.n - have(free(bb, g), g) <= 0) {
             for (Goal o : BatchWay.open(bb, g)) if (o != g) return chain(bb, o);
         }
         return chain(bb, g);
@@ -551,7 +551,7 @@ public final class Goals {
         // deleted. The order stops only when no way is left - every way held or dropped with its reason - or the honest park
         boolean newSource = sourceFact && !droppedSources(g).containsKey(src);
         // 0.39.z77 answers (1): an order met inside its batch's playbook run re-plans that run for the batch's open orders
-        if (g.n - have(bb.in.bag, g) <= 0 && !trip) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
+        if (g.n - have(free(bb, g), g) <= 0 && !trip) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
         // 0.39.z65 review 1: a station's walk fact keeps where the bot stood (released once it stands failures.moved closer)
         // 0.39.z77 walk: a held walk target keeps it too (the same per-position hold)
         int[] feet = bb.in == null ? null : bb.in.pos;
@@ -660,7 +660,7 @@ public final class Goals {
         // (a playbook that ends in an explore is priced again as any explore: its find is the fact that picks the rest)
         // 0.39.z77 seen: a seen source IS a changed fact (owner 2026-10-26: the trigger is the fact itself)
         if (!seen && !ended && g.playbookRun && g.pricedWay && !g.pricedExplore) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "kept: the trip runs on (re-planned only on a changed fact)");
-        if (g.n - have(bb.in.bag, g) <= 0) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
+        if (g.n - have(free(bb, g), g) <= 0) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "the order is met");
         BatchWay.forget(g);          // SHAPE CHANGE: a re-price asks the trip's walks again (a stand's estimates, a landed path)
         var ch = chain(bb, g);
         if (ch == null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(null, "no facts for the chain yet (the senses are not ready)");
@@ -865,7 +865,7 @@ public final class Goals {
      */
     public static boolean runFailed(Blackboard bb, Goal g, String why) {
         if (passing(why)) return false;
-        boolean met = g.met || (bb.in != null && bb.in.bag != null && have(bb.in.bag, g) >= g.n);
+        boolean met = g.met || (bb.in != null && bb.in.bag != null && have(free(bb, g), g) >= g.n);
         if (!met) {
             // wait-not-park (audit A1; runs JBM-T1 21:42:11, JBN-T1 22:32:25: the stand's 30 s ended while "the mining data is
             // not loaded yet", the order parked for good 21 s before the data landed): an order whose chain waits on an answer
@@ -997,7 +997,7 @@ public final class Goals {
     public static double score(Blackboard bb, Goal g) {
         // 0.39.z77 answers (1): a met order whose desire runs its batch's playbook keeps its score until that run ends (no
         // interrupt by the batch's next order at a step boundary)
-        if (have(bb.in.bag, g) >= g.n && !g.playbookRun) return -1;
+        if (have(free(bb, g), g) >= g.n && !g.playbookRun) return -1;
         return Math.max(1, Personality.of(bb).get("ownerBase") + g.prio * high());
     }
 
@@ -1082,7 +1082,7 @@ public final class Goals {
 
     /** 0.39.z61: as {@link #steps}, with the chain's own counts per step (Chain#uses: the run's reserves come from them). */
     public static io.github.mojolowjo.entropybot.aa.moves.Steps.Routine routine(Blackboard bb, Goal g) {
-        if (g.n - have(bb.in.bag, g) <= 0) return null;
+        if (g.n - have(free(bb, g), g) <= 0) return null;
         if (g.strip != null) return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(stripLoop(g.strip), null);   // the strip order's own loop (no chain)
         var ch = chain(bb, g);
         if (ch == null || !ch.ok() || ch.steps().isEmpty()) return null;
@@ -1164,19 +1164,40 @@ public final class Goals {
     /** deposit-kept: the last "kept for the deposit" line said (said again only on a change, rule 7). */
     static final String KEPT_SAID_FACT = "aa.depositKeptSaid";
 
+    /** deposit-kept: what the bag holds for the -d orders' deposits, less {@code self}'s and {@code skip}'s ({@link LineDeposits#kept}); empty: nothing. */
+    static Map<String, Integer> kept(Blackboard bb, Goal self, java.util.Collection<Goal> skip) {
+        if (bb.in == null || bb.in.bag == null || !(bb.fact(LineDeposits.FACT) instanceof LineDeposits ld)) return Map.of();
+        return ld.kept(bb.in.bag, of(bb), self, skip);
+    }
+
     /**
-     * deposit-kept (owner 2026-11-13): the planner's world with what the bag holds for a deposit still to come taken off its
-     * bag ({@link LineDeposits#kept}) - a later order gathers its own, the -d amounts go to the chest whole. An order with no
-     * deposit word keeps nothing: its items stay ingredients (ruling 1 option c, as before). Said in the log on a change.
+     * deposit-kept (owner 2026-11-13: "the items that are tagged with -d should be considered separate" - with cobblestone
+     * 32 -d waiting for its deposit, a new order of cobblestone 10 gathers 10 more): the bag every order counts itself on
+     * ({@link #have}) - the sensed bag less what it holds for ANOTHER order's deposit ({@code g}'s own amount counts for
+     * it: a met order carried by its batch's run stays met). Nothing kept: the sensed bag itself.
      */
-    static io.github.mojolowjo.entropybot.aa.NeedChain.World keptOff(Blackboard bb, io.github.mojolowjo.entropybot.aa.NeedChain.World w) {
-        if (w == null || bb.in == null || !(bb.fact(LineDeposits.FACT) instanceof LineDeposits ld)) return w;
-        Map<String, Integer> kept = ld.kept(bb.in.bag, of(bb));
-        String said = kept.isEmpty() ? "" : io.github.mojolowjo.entropybot.aa.moves.Step.Deposit.onlyText(kept);
+    public static Map<String, Integer> free(Blackboard bb, Goal g) {
+        Map<String, Integer> kept = kept(bb, g, null);
+        if (kept.isEmpty()) return bb.in.bag;
+        Map<String, Integer> out = new java.util.HashMap<>(bb.in.bag);
+        for (var e : kept.entrySet()) out.merge(e.getKey(), -e.getValue(), Integer::sum);
+        return out;
+    }
+
+    /**
+     * deposit-kept (owner 2026-11-13): the planner's world for {@code g} with the other -d orders' amounts taken off its bag
+     * - an order gathers its own, the -d amounts go to the chest whole. Not taken off: {@code g}'s own and its trip's open
+     * orders' (BatchWay.open: the trip obtains them and sets them aside itself). An order with no deposit word keeps
+     * nothing: its items stay ingredients (ruling 1 option c, as before). The items held are said in the log on a change.
+     */
+    static io.github.mojolowjo.entropybot.aa.NeedChain.World keptOff(Blackboard bb, io.github.mojolowjo.entropybot.aa.NeedChain.World w, Goal g) {
+        if (w == null) return w;
+        String said = String.join(", ", kept(bb, null, null).keySet());
         if (!said.equals(bb.fact(KEPT_SAID_FACT) instanceof String s ? s : "")) {
             bb.fact(KEPT_SAID_FACT, said);
-            if (bb.port != null) bb.port.log(kept.isEmpty() ? "kept for the line's deposit: nothing now" : "kept for the line's deposit: " + said + " - no plan counts them as ingredients");
+            if (bb.port != null) bb.port.log(said.isEmpty() ? "kept for a deposit: nothing now" : "kept for a deposit: " + said + " (the -d amounts) - no other order counts them or uses them as ingredients");
         }
+        Map<String, Integer> kept = kept(bb, g, g == null ? null : BatchWay.open(bb, g));
         if (kept.isEmpty()) return w;
         Map<String, Integer> bag = new java.util.LinkedHashMap<>(w.bag());
         for (var e : bag.entrySet()) {
@@ -1196,7 +1217,7 @@ public final class Goals {
      * The live hysteresis state is moved only by the live feet's read (WorldFacts.heldFor(bb, own)).
      */
     static io.github.mojolowjo.entropybot.aa.NeedChain.World chainWorld(Blackboard bb, Goal g, int[] pos) {
-        var world = keptOff(bb, world(bb));
+        var world = keptOff(bb, world(bb), g);
         if (world == null) return null;
         // 0.39.z78 strip-off (rule 7): the strip way off is said once per order (the World's strip facts answer none, StripWays)
         if (bb.port != null && StripWays.sayOnce(g.id() + " " + g.given)) bb.port.log(g.r.key() + ": " + StripWays.OFF);
@@ -1279,7 +1300,7 @@ public final class Goals {
         for (Goal g : of(bb)) {
             boolean coal = false;
             for (String id : g.r.ids()) coal |= ItemWorth.hasTag(id, "minecraft:coals");       // the game's coals tag, not a name
-            if (coal && have(bb.in.bag, g) < g.n) return new double[]{score(bb, g), g.n};
+            if (coal && have(free(bb, g), g) < g.n) return new double[]{score(bb, g), g.n};
         }
         return new double[]{0, 0};
     }
@@ -1328,7 +1349,7 @@ public final class Goals {
         List<Goal> out = new ArrayList<>();
         // jobs (owner 2026-10-22): "the goal check waits until the current job is done, then checks/cancels"
         if (JobBoundary.mid()) return out;
-        for (Goal g : of(bb)) if (have(bb.in.bag, g) >= g.n) out.add(g);
+        for (Goal g : of(bb)) if (have(free(bb, g), g) >= g.n) out.add(g);
         of(bb).removeAll(out);
         for (Goal g : out) g.met = true;         // 0.39.z77 met: a carried run's later end is logged under the batch, never a stop
         for (Goal g : out) finish(bb, g);        // 0.39.z61 (ruling 1 option c): its items stay safe from pillaring
@@ -1361,7 +1382,7 @@ public final class Goals {
         }
         String b = blocked(bb, g);
         var ch = b == null ? chain(bb, g) : null;
-        return g.r.key() + " " + have(bb.in.bag, g) + "/" + g.n + (g.prio > 0 ? " high" : g.prio < 0 ? " low" : "") + (g.deposit > 0 ? " (deposit)" : "") + ": " + scoreText
+        return g.r.key() + " " + have(free(bb, g), g) + "/" + g.n + (g.prio > 0 ? " high" : g.prio < 0 ? " low" : "") + (g.deposit > 0 ? " (deposit)" : "") + ": " + scoreText
                 + (b != null ? (g.parked == null ? " - held: " : " - parked: ") + b :ch != null ? " - chain: " + ch.why() : " - no facts for the chain yet")
                 + " [" + g.r.text() + "]";
     }

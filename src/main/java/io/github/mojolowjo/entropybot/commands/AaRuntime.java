@@ -4453,6 +4453,8 @@ public final class AaRuntime implements JobPort {
             goals.remove(g);
             tree.brain.remove(g.id(), "aa drop");
             gone.add(g.r.key());
+            // deposit-kept (owner 2026-11-13): a dropped -d order leaves its line; the orders that ended before it still deposit
+            if (bb.in != null && bb.in.bag != null) depositSaid(lineDeposits.dropped(g, bb.in.bag, mainChestAt()));
         }
         if (gone.isEmpty()) {
             List<String> keys = new ArrayList<>();
@@ -4483,7 +4485,7 @@ public final class AaRuntime implements JobPort {
         var builds = io.github.mojolowjo.entropybot.aa.brain.Blueprint.of(bb);
         if (goals.isEmpty() && builds.isEmpty()) return "goals: none";
         List<String> out = new ArrayList<>();
-        for (var g : goals) out.add(g.r.key() + " " + io.github.mojolowjo.entropybot.aa.brain.Goals.have(bb.in.bag, g) + "/" + g.n + " " + scoreOf(g.id()));
+        for (var g : goals) out.add(g.r.key() + " " + io.github.mojolowjo.entropybot.aa.brain.Goals.have(io.github.mojolowjo.entropybot.aa.brain.Goals.free(bb, g), g) + "/" + g.n + " " + scoreOf(g.id()));
         for (var b : builds) out.add("build " + b.name + (b.scan == null ? " (not scanned)" : " layer " + Math.min(b.scan.layer + 1, b.scan.layers) + "/" + b.scan.layers + " " + b.scan.placed + "/" + b.scan.total) + " " + scoreOf(b.id()));
         return "goals: " + String.join(", ", out);
     }

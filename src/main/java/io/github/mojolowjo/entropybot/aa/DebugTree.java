@@ -39,7 +39,7 @@ public final class DebugTree {
             return String.join("\n", out);
         }
         out.add("order: " + g.r.key() + " x" + g.n + (g.prio > 0 ? " high" : g.prio < 0 ? " low" : "") + " [" + g.r.text() + "]");
-        int have = Goals.have(bb.in.bag, g);
+        int have = Goals.have(Goals.free(bb, g), g);
         out.add("  need: " + Math.max(0, g.n - have) + " more " + g.r.key() + " (have " + have + " of " + g.n + ")");
         if (have >= g.n) {
             out.add("  nothing to plan: the bag holds it already (the goal would be met at once)");

@@ -206,12 +206,12 @@ public final class BatchWay {
     static List<Goals.Goal> open(Blackboard bb, Goals.Goal g) {
         List<Goals.Goal> out = new ArrayList<>();
         if (g.batch == null || !(bb.fact(Goals.FACT) instanceof List<?>)) {
-            if (bb.in == null || Goals.have(bb.in.bag, g) < g.n) out.add(g);
+            if (bb.in == null || Goals.have(Goals.free(bb, g), g) < g.n) out.add(g);
             return out;
         }
         for (Goals.Goal o : Goals.of(bb)) {
             if (!g.batch.equals(o.batch) || o.parked != null || o.strip != null || o.r.group()) continue;
-            if (bb.in != null && Goals.have(bb.in.bag, o) >= o.n) continue;
+            if (bb.in != null && Goals.have(Goals.free(bb, o), o) >= o.n) continue;
             out.add(o);
         }
         return out;

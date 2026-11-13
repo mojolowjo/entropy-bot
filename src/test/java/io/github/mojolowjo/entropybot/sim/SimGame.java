@@ -178,7 +178,19 @@ final class SimGame {
 
     void say(String line) { timeline.add(String.format(Locale.ROOT, "%7.1f s  %s", seconds(), line)); }
 
-    private void tick() {
+    /** aa drop: the order leaves the goals and its line (the runtime's drop). */
+    void drop(Goals.Goal g) {
+        Goals.of(bb).remove(g);
+        brain.remove(g.id(), "aa drop");
+        say("drop: " + g.r.key());
+        sense();
+        LineDeposits.Out out = deposits.dropped(g, bb.in.bag, mainAt);
+        if (out == null || out.text() == null) return;
+        say(out.text());
+        if (out.kind() == LineDeposits.Kind.DUE) due.add(out.items());
+    }
+
+    void tick() {
         sense();
         brain.tick(bb);
         OrderEnds.tick(bb, brain, deposits, mainAt, false, "goal reached", new OrderEnds.Hooks() {

@@ -55,30 +55,33 @@ public final class LineDeposits {
     public static final String FACT = "aa.lineDeposits";
 
     /** deposit-kept: the items of the lines that ended (DUE) whose deposit has not started yet ({@link #gone}). */
-    private final Map<String, Integer> due = new TreeMap<>();
+    private final Map<Goals.Goal, Map<String, Integer>> due = new java.util.IdentityHashMap<>();
 
     /**
      * deposit-kept (owner 2026-11-13: "if we want 64 iron deposited, and we want an iron pickaxe, then 64 iron must be
-     * deposited and the iron pickaxe can stay on the bot"; an order with no deposit word: "anything not being deposited can
-     * be used"): what the bag holds for a deposit still to come (counted id -> n) - the ended -d orders of a line whose
-     * other -d orders still run, and a due deposit not started. No plan may count these as ingredients (Goals.chainWorld
-     * takes them off the planner's bag). Not kept: an order of {@code goals} that runs (it holds its own target), and a line
-     * none of whose -d orders is among {@code goals} any more (dropped: its deposit never comes).
+     * deposited and the iron pickaxe can stay on the bot"; "the items that are tagged with -d should be considered
+     * separate"; an order with no deposit word: "anything not being deposited can be used"): what the bag holds for the -d
+     * orders' deposits (counted id -> n) - a due deposit not started, the ended -d orders of a line still open, and every
+     * -d order of {@code goals} (open, met or parked: what the bag holds of its amount now). Each order once. Left out:
+     * {@code self} (an order's own amount counts for it) and {@code skip} (the orders a trip plans for itself: their
+     * amounts are set aside inside the trip, Playbook.Target.keep). Goals.keptOff takes the answer off the planner's bag,
+     * Goals.free off the bag an order counts itself on. A line none of whose -d orders is among {@code goals} is not
+     * counted (its deposit never comes; a dropped order ends its line through {@link #dropped}).
      */
-    public Map<String, Integer> kept(Map<String, Integer> bag, java.util.List<Goals.Goal> goals) {
-        Map<String, Integer> out = new TreeMap<>(due);
-        Set<String> running = new java.util.HashSet<>(), lines = new java.util.HashSet<>();
-        for (Goals.Goal g : goals) {
-            if (g.parked == null) running.add(g.r.key());
-            if (g.deposit > 0 && g.line != null) lines.add(g.line);
-        }
+    public Map<String, Integer> kept(Map<String, Integer> bag, java.util.List<Goals.Goal> goals, Goals.Goal self, java.util.Collection<Goals.Goal> skip) {
+        Map<String, Integer> out = new TreeMap<>();
+        Set<Goals.Goal> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        if (self != null) seen.add(self);
+        if (skip != null) seen.addAll(skip);
+        for (var d : due.entrySet()) if (seen.add(d.getKey())) for (var t : d.getValue().entrySet()) out.merge(t.getKey(), t.getValue(), Integer::sum);
+        Set<String> lines = new java.util.HashSet<>();
+        for (Goals.Goal g : goals) if (g.deposit > 0 && g.line != null) lines.add(g.line);
         for (var e : lineEnded.entrySet()) {
             if (!lines.contains(e.getKey())) continue;
-            for (Goals.Goal o : e.getValue().values()) {
-                if (running.contains(o.r.key())) continue;
-                for (var t : take(o, bag).entrySet()) out.merge(t.getKey(), t.getValue(), Integer::sum);
-            }
+            for (Goals.Goal o : e.getValue().values()) if (seen.add(o)) for (var t : take(o, bag).entrySet()) out.merge(t.getKey(), t.getValue(), Integer::sum);
         }
+        for (Goals.Goal o : goals)
+            if (o.deposit > 0 && o.strip == null && seen.add(o)) for (var t : take(o, bag).entrySet()) out.merge(t.getKey(), t.getValue(), Integer::sum);
         out.replaceAll((id, n) -> Math.min(n, bag.getOrDefault(id, 0)));
         out.values().removeIf(n -> n <= 0);
         return out;
@@ -153,14 +156,38 @@ public final class LineDeposits {
         if (open != null && !open.isEmpty())
             return new Out(Kind.NOTED, g.r.key() + " " + how + ": its deposit items noted (" + Step.Deposit.onlyText(all(ended, bag, false)) + "); the line's deposit follows when "
                     + String.join(", ", open) + " end" + (open.size() == 1 ? "s" : "") + " (weighed on the bag then)", null);
+        return lineEnds(g, how, ended, bag, mainAt);
+    }
+
+    /** The line's last open -d order ended ({@code how}): its ended orders' amounts on the bag now, as one deposit. */
+    private Out lineEnds(Goals.Goal g, String how, Map<String, Goals.Goal> ended, Map<String, Integer> bag, String mainAt) {
         lineOpen.remove(g.line);
         lineEnded.remove(g.line);
         Map<String, Integer> all = all(ended, bag, true);
         if (all.isEmpty()) return new Out(Kind.NOTHING, g.r.key() + " " + how + ": nothing of the line's deposit items in the bag - no deposit", null);
         if (mainAt == null)
             return new Out(Kind.NO_CHEST, g.r.key() + " " + how + ": no main chest set (aa deposit x y z) - " + Step.Deposit.onlyText(all) + " stay in the bag", all);
-        for (var e : all.entrySet()) due.merge(e.getKey(), e.getValue(), Integer::sum);       // deposit-kept: until the deposit starts
+        for (Goals.Goal o : ended.values()) if (o.depositTook != null && !o.depositTook.isEmpty()) due.put(o, o.depositTook);       // deposit-kept: until the deposit starts
         return new Out(Kind.DUE, g.r.key() + " " + how + ": the line's deposit of " + Step.Deposit.onlyText(all) + " to the main chest at " + mainAt + " follows", all);
+    }
+
+    /**
+     * deposit-kept (owner 2026-11-13: "if I do drop the torch order, it should still deposit the cobblestone"): the owner
+     * dropped {@code g} (aa drop). It leaves its line - nothing of its own is deposited (said); when it was the line's last
+     * open -d order, the line ends now and the orders that ended before go to the chest as one deposit. Null: an order with
+     * no deposit word, or one whose line ended already.
+     */
+    public Out dropped(Goals.Goal g, Map<String, Integer> bag, String mainAt) {
+        if (g.deposit <= 0 || g.line == null || g.strip != null) return null;
+        Set<String> open = lineOpen.get(g.line);
+        Map<String, Goals.Goal> ended = lineEnded.get(g.line);
+        boolean was = open != null && open.remove(g.r.key());
+        if (ended != null && ended.get(g.r.key()) == g) { ended.remove(g.r.key()); was = true; }      // dropped while parked
+        if (!was) return null;
+        String how = "dropped (nothing of it is deposited)";
+        if (open != null && !open.isEmpty())
+            return new Out(Kind.NOTED, g.r.key() + " " + how + ": the line's deposit follows when " + String.join(", ", open) + " end" + (open.size() == 1 ? "s" : ""), null);
+        return lineEnds(g, how, ended == null ? new java.util.LinkedHashMap<>() : ended, bag, mainAt);
     }
 
     /**

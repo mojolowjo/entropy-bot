@@ -471,7 +471,7 @@ public final class AaDesires {
                 // no world facts yet or the order already met is no reason to park
                 var ch = io.github.mojolowjo.entropybot.aa.brain.Goals.chain(bb, g);
                 // loot-book-bg: a chain that only waits on the loot book is no reason to park (it is priced again when the book lands)
-                if (ch != null && !ch.waiting() && io.github.mojolowjo.entropybot.aa.brain.Goals.have(bb.in.bag, g) < g.n && (!ch.ok() || ch.steps().isEmpty()))
+                if (ch != null && !ch.waiting() && io.github.mojolowjo.entropybot.aa.brain.Goals.have(io.github.mojolowjo.entropybot.aa.brain.Goals.free(bb, g), g) < g.n && (!ch.ok() || ch.steps().isEmpty()))
                     io.github.mojolowjo.entropybot.aa.brain.Goals.park(bb, g, io.github.mojolowjo.entropybot.aa.brain.BatchWay.NO_WAY + ch.why());
                 return null;
             }
