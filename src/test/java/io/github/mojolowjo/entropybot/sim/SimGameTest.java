@@ -192,8 +192,7 @@ class SimGameTest {
         // the game said "boxed in at -61 114 -7: no way out without breaking or placing": the sim's open-way check agrees
         // (a second source), and says so on the one move that leaves the box
         assertTrue(open < 40, "boxed in: few cells open from the feet: " + open);
-        assertTrue(tl.contains("cut 5 at -55 107 -1 -> got 5 log" + SimSteps.THROUGH), "the way out of the box is marked: " + tl);
-        assertEquals(1, tl.split("THROUGH BLOCKS", -1).length - 1, "every later move has an open way: " + tl);
+        assertTrue(tl.contains("dug a way"), "slice 4b: the way out of the box is a dug way, said: " + tl);
         assertEquals("done", end, tl);
         assertEquals(java.util.Map.of("minecraft:cobblestone", 32, "minecraft:spruce_log", 16, "minecraft:torch", 4), g.chest);
         assertTrue(tl.contains("collect coal 13"), "coal in sight: the torch's fuel is coal ore here, not charcoal: " + tl);
@@ -284,6 +283,45 @@ class SimGameTest {
         System.out.println("ENDLESS LANDS\n" + table + "ENDS " + ends);
         assertEquals(java.util.Map.of("done", LANDS), ends, "every land ends done (seen 2026-11-13):\n" + table);
         assertTrue(table.toString().contains("3 explores"), "thin lands need explores:\n" + table);
+    }
+
+    /**
+     * Slice 4b: the owner's line on lands where stone and coal lie only under the ground (dirt 3 deep over them): the bot
+     * digs its way down, and comes back up to the trees and the chest. Each end is printed; "done" must have deposited whole.
+     */
+    static final int DEEP_LANDS = 6;
+
+    @Test
+    void theOwnersLine_onDeepLands_digsDown() {
+        java.util.Map<String, Integer> ends = new java.util.TreeMap<>();
+        StringBuilder table = new StringBuilder();
+        for (int seed = 1; seed <= DEEP_LANDS; seed++) {
+            clear();
+            java.util.Random r = new java.util.Random(seed * 0x9E3779B97F4A7C15L);       // structural: spreads the small seeds
+            double treeP = 0.05 + r.nextDouble() * 0.25, coalP = 0.005 + r.nextDouble() * 0.03;
+            SimWorld w = SimWorld.deep(seed, 63, treeP, coalP, 12);
+            w.set(2, 64, 2, "minecraft:chest");
+            int[] feet = {0, w.standY(0, 64, 0), 0};
+            SimGame g = new SimGame(w, feet);
+            g.sight = 24;
+            g.mainAt = "2 64 2";
+            g.order("cobblestone", 32, "b1", true);
+            g.order("spruce_log", 16, "b1", true);
+            g.order("torch", 4, "b1", true);
+            long t = System.currentTimeMillis();
+            String end = g.play(3600);
+            String tl = g.timelineText();
+            String kind = end.replaceAll("[-\\d]+", "N");
+            ends.merge(kind.length() > 100 ? kind.substring(0, 100) : kind, 1, Integer::sum);
+            table.append(String.format(java.util.Locale.ROOT, "deep %2d: trees %.2f coal %.3f -> %5.0f s, %d dug ways, %d climbs, %s | chest %s | %d ms%n", seed, treeP, coalP, g.seconds(),
+                    tl.split("dug a way", -1).length - 1, tl.split("climb", -1).length - 1, end.length() > 130 ? end.substring(0, 130) : end, g.chest, System.currentTimeMillis() - t));
+            if (seed == 1 || !end.equals("done") && ends.get(kind.length() > 100 ? kind.substring(0, 100) : kind) == 1) System.out.println("TIMELINE deep " + seed + "\n" + tl);
+            if (end.equals("done")) {
+                assertEquals(java.util.Map.of("minecraft:cobblestone", 32, "minecraft:spruce_log", 16, "minecraft:torch", 4), g.chest, "deep " + seed + ": done means the line deposited whole\n" + tl);
+                assertFalse(tl.contains("SHORT"), "deep " + seed + "\n" + tl);
+            }
+        }
+        System.out.println("DEEP LANDS\n" + table + "ENDS " + ends);
     }
 
     /** A step kind with no actor ends the game saying so (rule 7), never skipped. */

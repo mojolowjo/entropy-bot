@@ -49,10 +49,8 @@ final class SimSteps {
         if (s instanceof Step.Smelt m) return smelt(g, m);
         if (s instanceof Step.Wait w) return Result.ok(w.seconds(), "waited");
         if (s instanceof Step.AwaitPaths) return Result.ok(0, "paths: the sim's walks are priced at once");
-        if (s instanceof Step.Climb) {
-            for (int y = g.feet[1] + 2; y <= g.world.box[4]; y++) if (!g.world.open(g.feet[0], y, g.feet[2])) return Result.NOT_SIMULATED;   // under something: slice 4
-            return Result.ok(0, "nothing over the feet: at the surface");
-        }
+        if (s instanceof Step.Climb) return climb(g);
+        if (s instanceof Step.ToSurface t) return walk(g, new Step.Walk(t.x(), t.y(), t.z(), 0));
         if (s instanceof Step.Explore e) return explore(g, e);
         return Result.NOT_SIMULATED;
     }
@@ -95,24 +93,92 @@ final class SimSteps {
 
     static String full(String id) { return id.contains(":") ? id : "minecraft:" + id; }
 
-    /** The feet go to the cell, or to {@code near} short of it on the straight line. */
+    /** The feet go to the cell, or to {@code near} short of it on the straight line; with no open way there, by a dug way. */
     private static Result walk(SimGame g, Step.Walk w) {
-        int[] to = {w.x(), w.y(), w.z()};
-        java.util.Set<Long> from = g.world.reach(g.feet);
-        int[] was = g.feet.clone();
-        double d = SimWorld.dist(g.feet, to);
-        double go = Math.max(0, d - Math.max(0, w.near()));
-        if (d > 0 && go > 0) {
-            double f = go / d;
-            g.feet[0] += (int) Math.round((to[0] - g.feet[0]) * f);
-            g.feet[2] += (int) Math.round((to[2] - g.feet[2]) * f);
-            if (w.near() == 0) g.feet[1] = to[1];
-        }
-        String snap = stand(g);
-        if (snap != null) return Result.fail(FakePaths.walkS(go), snap);
-        if (!SimWorld.pastReach(was, g.feet) && !from.contains(SimWorld.cell(g.feet))) return Result.ok(FakePaths.walkS(go), "at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2] + THROUGH);
-        return Result.ok(FakePaths.walkS(go), "at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2]);
+        Way way = go(g, new int[]{w.x(), w.y(), w.z()}, Math.max(0, w.near()), w.near() == 0);
+        String at = "at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2] + way.said();
+        return way.fail() != null ? Result.fail(way.secs(), way.fail()) : Result.ok(way.secs(), at);
     }
+
+    /** One move's outcome: its seconds, the blocks it dug on the way, why it failed (null: it did not). */
+    record Way(double secs, int dug, String fail) {
+        String said() { return dug > 0 ? " (dug a way: " + dug + " blocks)" : ""; }
+    }
+
+    static final double STEP_M = 1.4;            // structural: the metres of one stair step (a block along, a block up or down)
+
+    /**
+     * Slice 4b: the feet go toward {@code to} until within {@code within} of it. An open way (no block broken) or an end
+     * past the open-way check's look: the straight line, as before. No open way: a dug way - a stair, one block along and
+     * at most one up or down a step, each block in it dug at the game's dig time and kept. Stands in for the fork's path
+     * with breaks (step 3): no search, no placed block, no falling sand, no water.
+     */
+    static Way go(SimGame g, int[] to, int within, boolean exactY) {
+        int[] was = g.feet.clone();
+        double d = SimWorld.dist(g.feet, to), line = Math.max(0, d - within);
+        if (d <= within || line <= 0) return new Way(0, 0, null);
+        java.util.Set<Long> from = g.world.reach(g.feet);
+        double f = line / d;
+        g.feet[0] += (int) Math.round((to[0] - g.feet[0]) * f);
+        g.feet[2] += (int) Math.round((to[2] - g.feet[2]) * f);
+        if (exactY) g.feet[1] = to[1];
+        String snap = stand(g);
+        double secs = 0;
+        if (snap == null && (SimWorld.pastReach(was, g.feet) || from.contains(SimWorld.cell(g.feet)))) {
+            secs = FakePaths.walkS(line);                           // the open part of the way; what is left of it is dug from here
+            if (within == 0 || SimWorld.dist(g.feet, to) <= within + 1) return new Way(secs, 0, null);
+        } else if (snap != null && SimWorld.pastReach(was, g.feet)) {
+            return new Way(FakePaths.walkS(line), 0, snap);
+        } else {
+            System.arraycopy(was, 0, g.feet, 0, 3);
+        }
+        int dug = 0, zig = 1;
+        for (int step = 0; step < CARVE_STEPS; step++) {
+            if (SimWorld.dist(g.feet, to) <= Math.max(within, 0.5)) return new Way(secs, dug, null);
+            int ax = to[0] - g.feet[0], az = to[2] - g.feet[2], dy = Integer.signum(to[1] - g.feet[1]);
+            int mx = 0, mz = 0;
+            if (ax != 0 && Math.abs(ax) >= Math.abs(az)) mx = Integer.signum(ax);
+            else if (az != 0) mz = Integer.signum(az);
+            else { mx = zig; zig = -zig; }                          // straight over or under: a stair that turns back on itself
+            int[] next = {g.feet[0] + mx, g.feet[1] + dy, g.feet[2] + mz};
+            List<int[]> cells = new ArrayList<>(List.of(new int[]{next[0], next[1], next[2]}, new int[]{next[0], next[1] + 1, next[2]}));
+            if (dy < 0) cells.add(new int[]{next[0], next[1] + 2, next[2]});
+            if (dy > 0) cells.add(new int[]{g.feet[0], g.feet[1] + 2, g.feet[2]});
+            for (int[] c : cells) {
+                String b = g.world.at(c[0], c[1], c[2]);
+                if (b.equals(SimWorld.AIR)) continue;
+                if (b.equals(Scenario.NOT_LOADED)) return new Way(secs, dug, "the way leaves the known ground at " + c[0] + " " + c[1] + " " + c[2] + "; at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2]);
+                if (b.equals("minecraft:chest") || g.mine.contains(c[0] + " " + c[1] + " " + c[2])) return new Way(secs, dug, "the dug way meets " + b + " at " + c[0] + " " + c[1] + " " + c[2] + " (the sim's stair has no way round)");
+                secs += digS(g, b) + DIG_EXTRA_S;
+                g.world.set(c[0], c[1], c[2], SimWorld.AIR);
+                if (SimWorld.drop(b) != null) g.give(SimWorld.drop(b), 1);     // leaves give nothing
+                dug++;
+            }
+            secs += FakePaths.walkS(dy == 0 ? 1 : STEP_M);
+            System.arraycopy(next, 0, g.feet, 0, 3);
+            String fell = stand(g);                                 // a hole under the step: the feet land in it
+            if (fell != null) return new Way(secs, dug, fell);
+        }
+        return new Way(secs, dug, "the dug way did not arrive in " + CARVE_STEPS + " steps; at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2] + " for " + to[0] + " " + to[1] + " " + to[2]);
+    }
+
+    static final int CARVE_STEPS = 400;          // sim: the steps one dug way may take before it is said to have failed
+
+    /**
+     * Slice 4b: the climb. Under open sky: nothing to do. Else to the nearest cell under open sky ({@link SimWorld#skyCell}),
+     * by the open way when there is one (the stair the bot dug down), else a dug stair up. The game's climb pillars up on
+     * blocks from the bag where it can: the sim digs only.
+     */
+    private static Result climb(SimGame g) {
+        if (g.world.over(g.feet[0], g.feet[1], g.feet[2]) == 0) return Result.ok(0, "nothing over the feet: at the surface");
+        int[] top = g.world.skyCell(g.feet, SKY_R);
+        if (top == null) return Result.fail(0, "climb: no cell under open sky within " + SKY_R + " blocks of " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2]);
+        Way way = go(g, top, 0, true);
+        if (way.fail() != null) return Result.fail(way.secs(), "climb: " + way.fail());
+        return Result.ok(way.secs(), "on the surface at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2] + way.said());
+    }
+
+    static final int SKY_R = 24;                 // sim: how far round the feet the climb looks for open sky
 
     /**
      * After a straight-line move on real terrain: the feet go to the standable cell of their column nearest their height
@@ -136,7 +202,7 @@ final class SimSteps {
     private static Result dig(SimGame g, int[] at, int n, java.util.function.Predicate<String> gives, String what, boolean wholeGroup) {
         double secs = 0;
         int got = 0;
-        boolean through = false;
+        int dugWay = 0;
         while (got < n) {
             List<SimWorld.Group> groups = g.world.groups(g.feet, Step.Collect.MINE_SIGHT + REACH, gives);
             SimWorld.Group pick = groups.isEmpty() ? null : groups.get(0);
@@ -153,15 +219,13 @@ final class SimSteps {
             int[] c = pick.cells().get(0);
             double d = SimWorld.dist(c, g.feet);
             if (d > REACH) {
-                java.util.Set<Long> from = g.world.reach(g.feet);
-        int[] was = g.feet.clone();
-                double go = d - REACH + 1, f = go / d;
-                g.feet[0] += (int) Math.round((c[0] - g.feet[0]) * f);
-                g.feet[2] += (int) Math.round((c[2] - g.feet[2]) * f);
-                secs += FakePaths.walkS(go);
-                String snap = stand(g);
-                if (snap != null) return Result.fail(secs, snap);
-                through |= !SimWorld.pastReach(was, g.feet) && !from.contains(SimWorld.cell(g.feet));
+                int had = g.bag.getOrDefault(SimWorld.drop(pick.block()), 0);
+                Way way = go(g, c, REACH - 1, false);
+                secs += way.secs();
+                dugWay += way.dug();
+                if (way.fail() != null) return Result.fail(secs, way.fail());
+                got += g.bag.getOrDefault(SimWorld.drop(pick.block()), 0) - had;       // the way itself went through the wanted block
+                if (!pick.block().equals(g.world.at(c[0], c[1], c[2]))) continue;
             }
             for (int[] cell : wholeGroup ? pick.cells() : List.of(c)) {
                 secs += digS(g, pick.block()) + (wholeGroup ? CHOP_EXTRA_S : DIG_EXTRA_S);
@@ -169,9 +233,12 @@ final class SimSteps {
                 g.give(SimWorld.drop(pick.block()), 1);
                 got++;
             }
+            String fell = stand(g);                                 // the block under the feet went: the feet land
+            if (fell != null) return Result.fail(secs, fell);
         }
-        if (got < n) return Result.fail(secs, "got " + got + " of " + n + " " + what + ": no more in sight of " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2]);
-        return Result.ok(secs, "got " + got + " " + what + (through ? THROUGH : ""));
+        String way = dugWay > 0 ? " (dug a way: " + dugWay + " blocks)" : "";
+        if (got < n) return Result.fail(secs, "got " + got + " of " + n + " " + what + ": no more in sight of " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2] + way);
+        return Result.ok(secs, "got " + got + " " + what + way);
     }
 
     /** The game's dig time: hardness x 1.5 s over the speed of the bag's best tool of the block's kind (1: none). */

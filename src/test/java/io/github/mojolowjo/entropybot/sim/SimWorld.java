@@ -87,6 +87,51 @@ final class SimWorld {
         return w;
     }
 
+    /**
+     * Slice 4b: a land with no edge and ground under it, made up from {@code seed}: grass at {@code y}, dirt to y - 3, stone
+     * from y - 4 down to y - {@code depth} with coal ore in 2 x 2 x 2 lumps (chance {@code coalP} a lump), not known under
+     * that; trees on top as {@link #endless}. No stone shows on top: stone and coal are under the ground.
+     */
+    static SimWorld deep(long seed, int y, double treeP, double coalP, int depth) {
+        SimWorld top = endless(seed, y, treeP, 0);
+        String coal = ItemWorth.oreDropping("minecraft:coal");
+        Base base = (x, yy, z) -> {
+            if (yy > y) return top.base.at(x, yy, z);
+            if (yy < y - depth) return Scenario.NOT_LOADED;
+            if (yy == y) return "minecraft:grass_block";
+            if (yy >= y - 3) return "minecraft:dirt";
+            long h = (seed * 0x9E3779B97F4A7C15L) ^ ((x >> 1) * 73_856_093L) ^ ((yy >> 1) * 83_492_791L) ^ ((z >> 1) * 19_349_663L);   // structural: a hash of the lump's cell
+            h ^= h >>> 29; h *= 0xBF58476D1CE4E5B9L; h ^= h >>> 32;
+            return (h & 0xFFFF) / 65536.0 < coalP ? coal : "minecraft:stone";
+        };
+        SimWorld w = new SimWorld(base, new int[]{-1_000_000, y - depth, -1_000_000, 1_000_000, y + 24, 1_000_000});
+        w.endless = true;
+        return w;
+    }
+
+    /** The blocks over the head at a feet cell, up to the box's top: 0 = under open sky. */
+    int over(int x, int y, int z) {
+        int n = 0;
+        for (int yy = y + 2; yy <= box[4]; yy++) if (!open(x, yy, z)) n++;
+        return n;
+    }
+
+    /** The nearest cell to stand in under open sky within {@code r} of the feet on x and z; null: none. */
+    int[] skyCell(int[] feet, int r) {
+        int[] best = null;
+        for (int dz = -r; dz <= r; dz++) for (int dx = -r; dx <= r; dx++) {
+            int x = feet[0] + dx, z = feet[2] + dz;
+            for (int yy = box[4] - 1; yy >= Math.max(box[1], feet[1] - 1); yy--) {
+                if (open(x, yy, z)) continue;
+                if (ItemWorth.isIn(at(x, yy, z), "minecraft:logs")) break;          // a tree's top is no ground
+                int[] c = {x, yy + 1, z};
+                if (standable(x, yy + 1, z) && over(x, yy + 1, z) == 0 && (best == null || dist(c, feet) < dist(best, feet))) best = c;
+                break;
+            }
+        }
+        return best;
+    }
+
     /** A cell the body can stand in: it and the one over it open, something under it (not air, not unknown). */
     boolean standable(int x, int y, int z) {
         String under = at(x, y - 1, z);

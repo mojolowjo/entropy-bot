@@ -175,7 +175,25 @@ final class SimGame {
 
     /** The planner's facts, worked out from the blocks in sight and the bag. */
     private World facts() {
-        return FakePaths.paths(new World(new HashMap<>(bag), stationNear("minecraft:crafting_table"), stationNear("minecraft:furnace"), this::seen, null, null, null, 0));
+        return FakePaths.paths(new World(new HashMap<>(bag), stationNear("minecraft:crafting_table"), stationNear("minecraft:furnace"), this::seen, null, null, null, 0))
+                .withWhere(new NeedChain.WhereFacts(null, this::surface, () -> feet.clone()));
+    }
+
+    /**
+     * Slice 4b: the surface over the feet, as the game's WhereFacts gives it: the blocks over the head (0: open sky) and the
+     * cell to walk up to - the nearest one under open sky, else the top of the feet's own column. The game's hole test (a
+     * sky-open shaft round the feet) is not made here: a hole is depth 0.
+     */
+    private NeedChain.Surface surface() {
+        int depth = world.over(feet[0], feet[1], feet[2]);
+        if (depth == 0) return new NeedChain.Surface(0, feet[0], feet[1], feet[2], 0);
+        int[] c = world.skyCell(feet, SimSteps.SKY_R);
+        if (c == null) {
+            int y = feet[1] + 2;
+            for (int yy = y; yy <= world.box[4]; yy++) if (!world.open(feet[0], yy, feet[2])) y = yy + 1;
+            c = new int[]{feet[0], y, feet[2]};
+        }
+        return new NeedChain.Surface(depth, c[0], c[1], c[2], SimWorld.dist(c, feet));
     }
 
     boolean stationNear(String block) {
