@@ -87,6 +87,53 @@ final class SimGame {
         sense();
     }
 
+    /** One order read from a scenario's words. */
+    record Asked(String item, int n, boolean deposit) {}
+
+    private static final java.util.regex.Pattern OPEN = java.util.regex.Pattern.compile("^(\\S+) \\d+/(\\d+)( \\(deposit\\))?:");
+    private static final java.util.regex.Pattern MAIN_CHEST = java.util.regex.Pattern.compile("chest chest (-?\\d+ -?\\d+ -?\\d+)");
+
+    /**
+     * The orders a scenario's {@code orders} words hold (aa goals, as the mod said them): each open order "item have/n
+     * (deposit): ...", and the finished ones of the line ("finished, ...: cobblestone 32"). A finished one's deposit word
+     * is not in the words: it is taken as the open orders' (a line is all deposit or none in the runs so far).
+     */
+    static List<Asked> asked(String orders) {
+        List<Asked> open = new ArrayList<>(), fin = new ArrayList<>();
+        if (orders == null) return open;
+        boolean dep = false;
+        for (String line : orders.split("\\R")) {
+            var m = OPEN.matcher(line);
+            if (m.find()) {
+                open.add(new Asked(m.group(1), Integer.parseInt(m.group(2)), m.group(3) != null));
+                dep |= m.group(3) != null;
+            } else if (line.startsWith("finished")) {
+                for (String p : line.substring(line.lastIndexOf(": ") + 2).split(", ")) {
+                    String[] w = p.trim().split(" ");
+                    if (w.length == 2 && w[1].matches("\\d+")) fin.add(new Asked(w[0], Integer.parseInt(w[1]), false));
+                }
+            }
+        }
+        List<Asked> out = new ArrayList<>();
+        for (Asked a : fin) out.add(new Asked(a.item(), a.n(), dep));
+        out.addAll(open);
+        return out;
+    }
+
+    /**
+     * Slice 3: a game from a scenario file - its cube as the map, its feet and bag, the main chest of its stations words,
+     * and its orders as one line (finished ones first, as they were given first).
+     */
+    static SimGame of(Scenario s) {
+        SimGame g = new SimGame(SimWorld.of(s), s.feet);
+        for (var e : s.bagCounts().entrySet()) g.give(e.getKey(), e.getValue());
+        var m = MAIN_CHEST.matcher(s.stations == null ? "" : s.stations);
+        if (m.find()) g.mainAt = m.group(1);
+        g.say("scenario: " + s.summary() + "; main chest " + g.mainAt + "; bag " + g.bag);
+        for (Asked a : asked(s.orders)) g.order(a.item(), a.n(), "b1", a.deposit());
+        return g;
+    }
+
     /** The tests' item data has sticks, tables and tools from oak planks only: every wood's planks stand in, as the game's tag does. */
     private static void vanillaWood(TestData d) {
         d.recipes.remove(TestData.id("stick"));

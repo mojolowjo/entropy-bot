@@ -37,6 +37,70 @@ final class SimWorld {
                 new int[]{-r, y - 3, -r, r, y + 24, r});
     }
 
+    /**
+     * Slice 3: a scenario's cube as the base - each cell its block's id (the state dropped: "minecraft:spruce_log[axis=y]"
+     * is a spruce_log), a cell with no chunk and every cell outside the cube {@link Scenario#NOT_LOADED}.
+     */
+    static SimWorld of(Scenario s) {
+        String[] ids = new String[s.size()];
+        Map<String, String> seen = new HashMap<>();
+        for (int y = 0; y < s.sy; y++) for (int z = 0; z < s.sz; z++) for (int x = 0; x < s.sx; x++) {
+            String st = s.blockAt(s.x0 + x, s.y0 + y, s.z0 + z);
+            ids[(y * s.sz + z) * s.sx + x] = seen.computeIfAbsent(st, t -> t.indexOf('[') < 0 ? t : t.substring(0, t.indexOf('[')));
+        }
+        return new SimWorld((x, y, z) -> {
+            int i = s.index(x, y, z);
+            return i < 0 ? Scenario.NOT_LOADED : ids[i];
+        }, new int[]{s.x0, s.y0, s.z0, s.x0 + s.sx - 1, s.y0 + s.sy - 1, s.z0 + s.sz - 1});
+    }
+
+    /** A cell the body can stand in: it and the one over it open, something under it (not air, not unknown). */
+    boolean standable(int x, int y, int z) {
+        String under = at(x, y - 1, z);
+        return open(x, y, z) && open(x, y + 1, z) && !AIR.equals(under) && !Scenario.NOT_LOADED.equals(under);
+    }
+
+    /** The standable cell of the column x z nearest {@code y}; null: none in the box (the walk's end is then said, never guessed). */
+    Integer standY(int x, int y, int z) {
+        for (int d = 0; d <= box[4] - box[1]; d++) {
+            if (y + d <= box[4] && standable(x, y + d, z)) return y + d;
+            if (d > 0 && y - d >= box[1] && standable(x, y - d, z)) return y - d;
+        }
+        return null;
+    }
+
+    /**
+     * The cells the body reaches from {@code feet} with no block broken or placed: steps to the four sides, one up (head
+     * room over the start) or up to three down. A rough stand-in for the fork's no-break search (step 3 replaces it): it
+     * answers "is there an open way", not what the way costs.
+     */
+    Set<Long> reach(int[] feet) {
+        Set<Long> seen = new HashSet<>();
+        ArrayDeque<int[]> open = new ArrayDeque<>();
+        if (!standable(feet[0], feet[1], feet[2])) return seen;
+        open.add(feet.clone());
+        seen.add(key(feet[0], feet[1], feet[2]));
+        int[][] sides = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        while (!open.isEmpty()) {
+            int[] c = open.poll();
+            for (int[] s : sides) {
+                int x = c[0] + s[0], z = c[2] + s[1];
+                if (x < box[0] || x > box[3] || z < box[2] || z > box[5]) continue;
+                for (int dy = 1; dy >= -3; dy--) {
+                    int y = c[1] + dy;
+                    if (dy == 1 && !open(c[0], c[1] + 2, c[2])) continue;          // no head room to step up
+                    if (dy < 0 && !open(x, y + 2, z)) break;                        // the drop's column is closed
+                    if (!standable(x, y, z)) continue;
+                    if (seen.add(key(x, y, z))) open.add(new int[]{x, y, z});
+                    break;
+                }
+            }
+        }
+        return seen;
+    }
+
+    static long cell(int[] c) { return key(c[0], c[1], c[2]); }
+
     private static long key(int x, int y, int z) { return ((long) (x + 30_000_000) << 38) | ((long) (z + 30_000_000) << 12) | (y + 2048); }   // structural: packs a cell
 
     String at(int x, int y, int z) {

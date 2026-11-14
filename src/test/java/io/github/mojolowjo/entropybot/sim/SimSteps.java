@@ -56,6 +56,7 @@ final class SimSteps {
     /** The feet go to the cell, or to {@code near} short of it on the straight line. */
     private static Result walk(SimGame g, Step.Walk w) {
         int[] to = {w.x(), w.y(), w.z()};
+        java.util.Set<Long> from = g.world.reach(g.feet);
         double d = SimWorld.dist(g.feet, to);
         double go = Math.max(0, d - Math.max(0, w.near()));
         if (d > 0 && go > 0) {
@@ -64,7 +65,25 @@ final class SimSteps {
             g.feet[2] += (int) Math.round((to[2] - g.feet[2]) * f);
             if (w.near() == 0) g.feet[1] = to[1];
         }
+        String snap = stand(g);
+        if (snap != null) return Result.fail(FakePaths.walkS(go), snap);
+        if (!from.contains(SimWorld.cell(g.feet))) return Result.ok(FakePaths.walkS(go), "at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2] + THROUGH);
         return Result.ok(FakePaths.walkS(go), "at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2]);
+    }
+
+    /**
+     * After a straight-line move on real terrain: the feet go to the standable cell of their column nearest their height
+     * (the body is not simulated: no search, no climb cost - step 3). null: standing; else why not (no such cell: said).
+     */
+    /** Said on a move whose end has no open way from its start: the game's body would dig, pillar or fail there. */
+    static final String THROUGH = " (THROUGH BLOCKS: no open way there - the sim's straight line; in the game a dig, a pillar or no path)";
+
+    static String stand(SimGame g) {
+        if (g.world.standable(g.feet[0], g.feet[1], g.feet[2])) return null;
+        Integer y = g.world.standY(g.feet[0], g.feet[1], g.feet[2]);
+        if (y == null) return "walk: no cell to stand in the column " + g.feet[0] + " " + g.feet[2] + " (the map's edge or all solid)";
+        g.feet[1] = y;
+        return null;
     }
 
     /**
@@ -74,6 +93,7 @@ final class SimSteps {
     private static Result dig(SimGame g, int[] at, int n, java.util.function.Predicate<String> gives, String what, boolean wholeGroup) {
         double secs = 0;
         int got = 0;
+        boolean through = false;
         while (got < n) {
             List<SimWorld.Group> groups = g.world.groups(g.feet, Step.Collect.MINE_SIGHT + REACH, gives);
             SimWorld.Group pick = groups.isEmpty() ? null : groups.get(0);
@@ -90,10 +110,14 @@ final class SimSteps {
             int[] c = pick.cells().get(0);
             double d = SimWorld.dist(c, g.feet);
             if (d > REACH) {
+                java.util.Set<Long> from = g.world.reach(g.feet);
                 double go = d - REACH + 1, f = go / d;
                 g.feet[0] += (int) Math.round((c[0] - g.feet[0]) * f);
                 g.feet[2] += (int) Math.round((c[2] - g.feet[2]) * f);
                 secs += FakePaths.walkS(go);
+                String snap = stand(g);
+                if (snap != null) return Result.fail(secs, snap);
+                through |= !from.contains(SimWorld.cell(g.feet));
             }
             for (int[] cell : wholeGroup ? pick.cells() : List.of(c)) {
                 secs += digS(g, pick.block());
@@ -103,7 +127,7 @@ final class SimSteps {
             }
         }
         if (got < n) return Result.fail(secs, "got " + got + " of " + n + " " + what + ": no more in sight of " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2]);
-        return Result.ok(secs, "got " + got + " " + what);
+        return Result.ok(secs, "got " + got + " " + what + (through ? THROUGH : ""));
     }
 
     /** The game's dig time: hardness x 1.5 s over the speed of the bag's best tool of the block's kind (1: none). */

@@ -165,6 +165,40 @@ class SimGameTest {
         assertTrue(dug >= 10, "at least the new order's 10 were dug: " + dug + "\n" + t);
     }
 
+    /** Slice 3: the orders of a scenario's words - open ones with their deposit word, the finished ones first. */
+    @Test
+    void aScenariosWords_giveItsOrders() {
+        var a = SimGame.asked("owner goals (3):\nspruce_log 11/16 (deposit): score 70 running - chain: trip\ntorch 0/4 (deposit): score 70\n"
+                + "finished, kept from pillaring (aa drop <thing> lets them go): cobblestone 32\nideas (1250 recipes): x 1.0");
+        assertEquals(java.util.List.of(new SimGame.Asked("cobblestone", 32, true), new SimGame.Asked("spruce_log", 16, true), new SimGame.Asked("torch", 4, true)), a);
+        assertEquals(java.util.List.of(new SimGame.Asked("dirt", 5, false)), SimGame.asked("owner goals (1):\ndirt 0/5: score 70"));
+        assertTrue(SimGame.asked("no orders").isEmpty());
+    }
+
+    /**
+     * Slice 3: the file run JBS-T1 wrote at 02:00:34 (boxed in under ground while exploring for spruce logs) played from
+     * that moment: its cube, feet, bag (53 cobblestone, 11 logs, 2 sticks), main chest and three orders.
+     */
+    @Test
+    void theRunJbsFile_playsFromItsMoment() throws Exception {
+        Scenario s = Scenario.read(java.nio.file.Path.of(SimGameTest.class.getResource("/scenarios/runJBS-T1-boxed-in.json.gz").toURI()));
+        long t = System.currentTimeMillis();
+        SimGame g = SimGame.of(s);
+        int open = g.world.reach(g.feet).size();
+        String end = g.play(900);
+        String tl = g.timelineText();
+        System.out.println(tl);
+        System.out.println("computed in " + (System.currentTimeMillis() - t) + " ms; cells open from the feet " + open + "; bag " + g.bag + "; chest " + g.chest);
+        // the game said "boxed in at -61 114 -7: no way out without breaking or placing": the sim's open-way check agrees
+        // (a second source), and says so on the one move that leaves the box
+        assertTrue(open < 40, "boxed in: few cells open from the feet: " + open);
+        assertTrue(tl.contains("cut 5 at -55 107 -1 -> got 5 log" + SimSteps.THROUGH), "the way out of the box is marked: " + tl);
+        assertEquals(1, tl.split("THROUGH BLOCKS", -1).length - 1, "every later move has an open way: " + tl);
+        assertEquals("done", end, tl);
+        assertEquals(java.util.Map.of("minecraft:cobblestone", 32, "minecraft:spruce_log", 16, "minecraft:torch", 4), g.chest);
+        assertTrue(tl.contains("collect coal 13"), "coal in sight: the torch's fuel is coal ore here, not charcoal: " + tl);
+    }
+
     /** A step kind with no actor ends the game saying so (rule 7), never skipped. */
     @Test
     void aStepWithNoActor_endsNotSimulated() {
