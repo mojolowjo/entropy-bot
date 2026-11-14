@@ -199,6 +199,52 @@ class SimGameTest {
         assertTrue(tl.contains("collect coal 13"), "coal in sight: the torch's fuel is coal ore here, not charcoal: " + tl);
     }
 
+    /**
+     * The owner's line on 40 slightly different maps (owner 2026-11-13: "run the same tests a few times but in a slightly
+     * different environment"): the trees' count, heights and places, the stone outcrop's place and size, the chest's and
+     * the bot's spots all vary by the seed. Each end is printed; a play that ends "done" must have deposited the line whole.
+     */
+    @Test
+    void theOwnersLine_onVariedMaps() {
+        java.util.Map<String, Integer> ends = new java.util.TreeMap<>();
+        StringBuilder table = new StringBuilder();
+        for (int seed = 1; seed <= 40; seed++) {
+            clear();
+            java.util.Random r = new java.util.Random(seed);
+            SimWorld w = SimWorld.flat(63, "minecraft:grass_block", 40);
+            int trees = 2 + r.nextInt(6), logs = 0;
+            for (int i = 0; i < trees; i++) {
+                int h = 4 + r.nextInt(4);
+                w.column(r.nextInt(61) - 30, 64, r.nextInt(61) - 30, h, "minecraft:spruce_log");
+                logs += h;
+            }
+            int sx = r.nextInt(51) - 25, sz = r.nextInt(51) - 25, sw = 2 + r.nextInt(5), sh = 1 + r.nextInt(3);
+            for (int x = sx; x < sx + sw; x++) for (int z = sz; z < sz + sw; z++) for (int y = 64; y < 64 + sh; y++) w.set(x, y, z, "minecraft:stone");
+            int cx = r.nextInt(31) - 15, cz = r.nextInt(31) - 15;
+            w.set(cx, 64, cz, "minecraft:chest");
+            int[] feet = {r.nextInt(11) - 5, 64, r.nextInt(11) - 5};
+            if (!w.standable(feet[0], feet[1], feet[2])) feet = new int[]{feet[0], w.standY(feet[0], 64, feet[2]), feet[2]};
+            SimGame g = new SimGame(w, feet);
+            g.mainAt = cx + " 64 " + cz;
+            g.order("cobblestone", 32, "b1", true);
+            g.order("spruce_log", 16, "b1", true);
+            g.order("torch", 4, "b1", true);
+            String end = g.play(1800);
+            String tl = g.timelineText();
+            String kind = end.startsWith("not simulated: ") ? "not simulated: " + end.substring(15).replaceAll("[-\\d]+", "N") : end.replaceAll("[-\\d]+", "N");
+            ends.merge(kind.length() > 90 ? kind.substring(0, 90) : kind, 1, Integer::sum);
+            table.append(String.format(java.util.Locale.ROOT, "seed %2d: %d trees %2d logs, stone %2d  -> %4.0f s  %s | chest %s%n", seed, trees, logs, sw * sw * sh, g.seconds(),
+                    end.length() > 110 ? end.substring(0, 110) : end, g.chest));
+            if (end.equals("done")) {
+                assertEquals(java.util.Map.of("minecraft:cobblestone", 32, "minecraft:spruce_log", 16, "minecraft:torch", 4), g.chest, "seed " + seed + ": done means the line deposited whole\n" + tl);
+                assertFalse(tl.contains("SHORT"), "seed " + seed + "\n" + tl);
+            }
+        }
+        System.out.println("VARIED MAPS\n" + table + "ENDS " + ends);
+        assertEquals(8, ends.get("done"), "the maps with 40 stone and about 20 logs in them (seen 2026-11-13): " + ends);
+        assertEquals(40, ends.get("done") + ends.get("not simulated: explore N until cobblestone") + ends.get("not simulated: explore N until spruce_log"), "every other map ends at an explore for what it lacks: " + ends);
+    }
+
     /** A step kind with no actor ends the game saying so (rule 7), never skipped. */
     @Test
     void aStepWithNoActor_endsNotSimulated() {

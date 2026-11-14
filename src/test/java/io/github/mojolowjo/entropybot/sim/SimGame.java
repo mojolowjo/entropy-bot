@@ -44,7 +44,7 @@ import java.util.function.Supplier;
  * with no actor ends the game with "not simulated: step" (rule 7), never skipped.
  */
 final class SimGame {
-    static final int SIGHT = 32;                 // sim: how far the fake senses see on each axis (the game's is the loaded chunks)
+    static final int SIGHT = 96;                 // sim: how far the fake senses see on each axis (the game's is the loaded chunks: 6 chunks at the tests' render distance)
     static final long IDLE_TICK_MS = 1000;       // sim: the clock's pace while no run is out
     static final long STALL_MS = 120_000;        // sim: this long with no run started and orders open ends the game "stalled"
 
