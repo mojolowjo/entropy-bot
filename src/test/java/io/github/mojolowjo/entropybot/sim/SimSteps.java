@@ -21,7 +21,12 @@ import java.util.Map;
 final class SimSteps {
     private SimSteps() {}
 
-    static final double CRAFT_S = 0.3;           // sim: a craft batch's seconds (the planner's scenarios price it so)
+    static final double CRAFT_S = 0.3;           // measured (runs JBK to JBS, 102 bag crafts): a craft batch's seconds, median
+    static final double TABLE_CRAFT_S = 0.9;     // measured (32 table crafts: pickaxe, furnace): the table's menu opens first
+    static final double CHOP_EXTRA_S = 1.2;      // measured (52 cuts, 4.17 s a log against the dig rule's 3.0): reaching, the drop picked up
+    static final double DIG_EXTRA_S = 0.4;       // measured (17 cobblestone collects, 1.5 s a block against the rule's 1.1)
+    static final double TAKE_EXTRA_S = 0.65;     // measured (24 takes of a crafting table, 4.4 s against the rule's 3.75)
+    static final double SMELT_SETUP_S = 8.7;     // measured (15 smelts of 1 charcoal, 17.9 to 18.8 s): the furnace filled and emptied round the 10 s
     static final double HAND_X = 1.5;            // structural: the game's dig seconds per hardness with the right tool or by hand on a block that needs none
     static final int REACH = 4;                  // sim: blocks the hands reach from the feet
 
@@ -120,7 +125,7 @@ final class SimSteps {
                 through |= !from.contains(SimWorld.cell(g.feet));
             }
             for (int[] cell : wholeGroup ? pick.cells() : List.of(c)) {
-                secs += digS(g, pick.block());
+                secs += digS(g, pick.block()) + (wholeGroup ? CHOP_EXTRA_S : DIG_EXTRA_S);
                 g.world.set(cell[0], cell[1], cell[2], SimWorld.AIR);
                 g.give(SimWorld.drop(pick.block()), 1);
                 got++;
@@ -156,12 +161,12 @@ final class SimSteps {
             if (pay == null) { lacks = r.inputs().toString(); continue; }
             for (var e : pay.entrySet()) g.take(e.getKey(), e.getValue());
             g.give(item, batches * r.outCount());
-            return Result.ok(batches * CRAFT_S, "made " + batches * r.outCount() + " " + c.item() + " from " + pay);
+            return Result.ok(batches * (c.table() ? TABLE_CRAFT_S : CRAFT_S), "made " + batches * r.outCount() + " " + c.item() + " from " + pay);
         }
         return Result.fail(0, "craft " + c.item() + ": the bag lacks the inputs " + (lacks == null ? "(no craft recipe known)" : lacks) + "; bag " + g.bag);
     }
 
-    static final double PLACE_S = 0.15;          // sim: a block placed (the planner's scenarios price it so)
+    static final double PLACE_S = 0.6;           // measured (47 places of a table or furnace near me, median)
     static final double SMELT_S = 10;            // structural: the game's 200 ticks a furnace item
     static final int SMELT_TICKS = 200;          // structural: the same in ticks, against the fuel table's burn ticks
 
@@ -197,7 +202,7 @@ final class SimSteps {
     private static Result take(SimGame g, String item, int[] c) {
         if (!item.equals(g.world.at(c[0], c[1], c[2]))) return Result.fail(0, "take: no " + item + " at " + c[0] + " " + c[1] + " " + c[2] + " (" + g.world.at(c[0], c[1], c[2]) + ")");
         if (SimWorld.dist(c, g.feet) > REACH + 1) return Result.fail(0, "take: " + item + " at " + c[0] + " " + c[1] + " " + c[2] + " is out of reach of " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2]);
-        double s = digS(g, item);
+        double s = digS(g, item) + TAKE_EXTRA_S;
         g.world.set(c[0], c[1], c[2], SimWorld.AIR);
         g.mine.remove(c[0] + " " + c[1] + " " + c[2]);
         g.give(item, 1);
@@ -223,7 +228,7 @@ final class SimSteps {
             for (var e : pay.entrySet()) g.take(e.getKey(), e.getValue());
             for (var e : burn.entrySet()) g.take(e.getKey(), e.getValue());
             g.give(item, m.n());
-            return Result.ok(m.n() * SMELT_S, "smelted " + m.n() + " " + m.item() + " from " + pay + " on " + burn);
+            return Result.ok(SMELT_SETUP_S + m.n() * SMELT_S, "smelted " + m.n() + " " + m.item() + " from " + pay + " on " + burn);
         }
         return Result.fail(0, "smelt " + m.item() + ": the bag lacks the input; bag " + g.bag);
     }
