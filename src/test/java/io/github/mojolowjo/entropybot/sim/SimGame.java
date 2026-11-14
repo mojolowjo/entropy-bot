@@ -56,6 +56,10 @@ final class SimGame {
     final LineDeposits deposits = new LineDeposits();
 
     final SimWorld world;
+    /** How far the fake senses see on each axis (an endless map sets it lower: the explore then has something to find). */
+    int sight = SIGHT;
+    /** Slice 4: the spots an explore has looked from ("i j" of the sight-wide grid). */
+    final Set<String> looked = new HashSet<>();
     /** The bot: the feet (x y z) and the bag by full item id. */
     final int[] feet;
     final Map<String, Integer> bag = new TreeMap<>();
@@ -182,9 +186,18 @@ final class SimGame {
 
     /** The sources in sight that give {@code word} (an item id, a #tag, or several joined by |): one spot per group of touching blocks. */
     private List<Spot> seen(String word) {
+        String stamp = world.version + " " + feet[0] + " " + feet[1] + " " + feet[2] + " " + sight;
+        if (!stamp.equals(seenStamp)) { seenStamp = stamp; seenKept.clear(); }       // the same blocks from the same spot: the same answer
+        return seenKept.computeIfAbsent(word, this::look);
+    }
+
+    private String seenStamp;
+    private final Map<String, List<Spot>> seenKept = new HashMap<>();
+
+    private List<Spot> look(String word) {
         List<Spot> out = new ArrayList<>();
         String[] parts = word.split("\\|");
-        for (SimWorld.Group g : world.groups(feet, SIGHT, item -> matches(item, parts) != null)) {
+        for (SimWorld.Group g : world.groups(feet, sight, item -> matches(item, parts) != null)) {
             int[] c = g.cells().get(0);
             String gives = SimWorld.drop(g.block());
             Spot s = new Spot(c[0], c[1], c[2], SimWorld.dist(c, feet), g.block(), g.cells().size());

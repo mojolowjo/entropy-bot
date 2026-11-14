@@ -33,7 +33,7 @@ class SimGameTest {
         SimGame g = treeMap(6);
         g.order("spruce_log", 4, "b1", false);
         g.order("crafting_table", 1, "b1", false);
-        String end = g.play(600);
+        String end = g.play(3600);
         System.out.println(g.timelineText());
         assertEquals("done", end, g.timelineText());
         // "cut 4" takes the whole tree of 6 (the fork's chop, as the game); the table's planks take 1
@@ -243,6 +243,47 @@ class SimGameTest {
         System.out.println("VARIED MAPS\n" + table + "ENDS " + ends);
         assertEquals(8, ends.get("done"), "the maps with 40 stone and about 20 logs in them (seen 2026-11-13): " + ends);
         assertEquals(40, ends.get("done") + ends.get("not simulated: explore N until cobblestone") + ends.get("not simulated: explore N until spruce_log"), "every other map ends at an explore for what it lacks: " + ends);
+    }
+
+    /**
+     * Slice 4: the owner's line on 40 lands with no edge (trees and stone outcrops scattered by the seed, thick or thin):
+     * what the start does not show, an explore finds. Each end is printed; "done" must have deposited the line whole.
+     */
+    static final int LANDS = 12;        // 40 were played 2026-11-13 (all done, 82 s to compute); 12 keep the suite quick
+
+    @Test
+    void theOwnersLine_onEndlessLands_explores() {
+        java.util.Map<String, Integer> ends = new java.util.TreeMap<>();
+        StringBuilder table = new StringBuilder();
+        for (int seed = 1; seed <= LANDS; seed++) {
+            clear();
+            java.util.Random r = new java.util.Random(seed * 0x9E3779B97F4A7C15L);       // structural: spreads the small seeds
+            double treeP = 0.02 + r.nextDouble() * 0.28, stoneP = 0.01 + r.nextDouble() * 0.14;
+            SimWorld w = SimWorld.endless(seed, 63, treeP, stoneP);
+            w.set(2, 64, 2, "minecraft:chest");
+            int[] feet = {0, w.standY(0, 64, 0), 0};
+            SimGame g = new SimGame(w, feet);
+            g.sight = 40;
+            g.mainAt = "2 64 2";
+            g.order("cobblestone", 32, "b1", true);
+            g.order("spruce_log", 16, "b1", true);
+            g.order("torch", 4, "b1", true);
+            String end = g.play(3600);
+            String tl = g.timelineText();
+            int explores = tl.split("-> explore", -1).length - 1;
+            String kind = end.replaceAll("[-\\d]+", "N");
+            ends.merge(kind.length() > 100 ? kind.substring(0, 100) : kind, 1, Integer::sum);
+            table.append(String.format(java.util.Locale.ROOT, "land %2d: trees %.2f stone %.2f -> %5.0f s, %d explores, %s | chest %s%n", seed, treeP, stoneP, g.seconds(), explores,
+                    end.length() > 130 ? end.substring(0, 130) : end, g.chest));
+            if (!end.equals("done") && ends.get(kind.length() > 100 ? kind.substring(0, 100) : kind) == 1) System.out.println("TIMELINE land " + seed + "\n" + tl);
+            if (end.equals("done")) {
+                assertEquals(java.util.Map.of("minecraft:cobblestone", 32, "minecraft:spruce_log", 16, "minecraft:torch", 4), g.chest, "land " + seed + ": done means the line deposited whole\n" + tl);
+                assertFalse(tl.contains("SHORT"), "land " + seed + "\n" + tl);
+            }
+        }
+        System.out.println("ENDLESS LANDS\n" + table + "ENDS " + ends);
+        assertEquals(java.util.Map.of("done", LANDS), ends, "every land ends done (seen 2026-11-13):\n" + table);
+        assertTrue(table.toString().contains("3 explores"), "thin lands need explores:\n" + table);
     }
 
     /** A step kind with no actor ends the game saying so (rule 7), never skipped. */

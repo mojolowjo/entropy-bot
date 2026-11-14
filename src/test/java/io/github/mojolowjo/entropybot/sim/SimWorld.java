@@ -25,6 +25,8 @@ final class SimWorld {
     private final Map<Long, String> changed = new HashMap<>();
     /** The box the sight scan covers (the base's known cells): x0 y0 z0 x1 y1 z1, both ends in. */
     final int[] box;
+    /** Slice 4: the map has no edge (a made-up land that goes on): an explore can find more. A bounded map's explore is "not simulated". */
+    boolean endless;
 
     SimWorld(Base base, int[] box) {
         this.base = base;
@@ -54,6 +56,37 @@ final class SimWorld {
         }, new int[]{s.x0, s.y0, s.z0, s.x0 + s.sx - 1, s.y0 + s.sy - 1, s.z0 + s.sz - 1});
     }
 
+    /**
+     * Slice 4: a flat land with no edge, made up from {@code seed}: in each 16 x 16 patch maybe one spruce tree (4 to 7
+     * logs, chance {@code treeP}) and maybe one stone outcrop (2 to 5 wide, 1 to 3 high, chance {@code stoneP}). Grass at
+     * {@code y} down to y - 3, not known under it. The same seed gives the same land.
+     */
+    static SimWorld endless(long seed, int y, double treeP, double stoneP) {
+        Map<Long, int[]> patches = new HashMap<>();       // patch -> tree x z h (h 0: none), stone x z w h (w 0: none)
+        Base base = (x, yy, z) -> {
+            if (yy < y - 3 || yy > y + 24) return Scenario.NOT_LOADED;
+            if (yy <= y) return "minecraft:grass_block";
+            if (yy > y + 7) return AIR;                                    // over the tallest tree (7 logs)
+            int px = Math.floorDiv(x, 16), pz = Math.floorDiv(z, 16);
+            for (int dx = -1; dx <= 0; dx++) for (int dz = -1; dz <= 0; dz++) {       // an outcrop may reach into the next patch
+                int qx = px + dx, qz = pz + dz;
+                int[] p = patches.computeIfAbsent(((long) qx << 32) ^ (qz & 0xffffffffL), k -> {
+                    java.util.Random r = new java.util.Random(seed * 1_000_003L + qx * 73_856_093L + qz * 19_349_663L);
+                    int[] o = new int[7];
+                    if (r.nextDouble() < treeP) { o[0] = qx * 16 + r.nextInt(16); o[1] = qz * 16 + r.nextInt(16); o[2] = 4 + r.nextInt(4); }
+                    if (r.nextDouble() < stoneP) { o[3] = qx * 16 + r.nextInt(12); o[4] = qz * 16 + r.nextInt(12); o[5] = 2 + r.nextInt(4); o[6] = 1 + r.nextInt(3); }
+                    return o;
+                });
+                if (p[5] > 0 && x >= p[3] && x < p[3] + p[5] && z >= p[4] && z < p[4] + p[5] && yy <= y + p[6]) return "minecraft:stone";
+                if (p[2] > 0 && x == p[0] && z == p[1] && yy <= y + p[2]) return "minecraft:spruce_log";
+            }
+            return AIR;
+        };
+        SimWorld w = new SimWorld(base, new int[]{-1_000_000, y - 3, -1_000_000, 1_000_000, y + 24, 1_000_000});
+        w.endless = true;
+        return w;
+    }
+
     /** A cell the body can stand in: it and the one over it open, something under it (not air, not unknown). */
     boolean standable(int x, int y, int z) {
         String under = at(x, y - 1, z);
@@ -74,6 +107,11 @@ final class SimWorld {
      * room over the start) or up to three down. A rough stand-in for the fork's no-break search (step 3 replaces it): it
      * answers "is there an open way", not what the way costs.
      */
+    static final int REACH_R = 64;               // sim: how far round the feet the open-way check looks (a land with no edge would never end)
+
+    /** True when {@code to} is past the open-way check's look from {@code from}: not known, so nothing is said of it. */
+    static boolean pastReach(int[] from, int[] to) { return Math.abs(to[0] - from[0]) > REACH_R || Math.abs(to[2] - from[2]) > REACH_R; }
+
     Set<Long> reach(int[] feet) {
         Set<Long> seen = new HashSet<>();
         ArrayDeque<int[]> open = new ArrayDeque<>();
@@ -85,7 +123,7 @@ final class SimWorld {
             int[] c = open.poll();
             for (int[] s : sides) {
                 int x = c[0] + s[0], z = c[2] + s[1];
-                if (x < box[0] || x > box[3] || z < box[2] || z > box[5]) continue;
+                if (x < box[0] || x > box[3] || z < box[2] || z > box[5] || Math.abs(x - feet[0]) > REACH_R || Math.abs(z - feet[2]) > REACH_R) continue;
                 for (int dy = 1; dy >= -3; dy--) {
                     int y = c[1] + dy;
                     if (dy == 1 && !open(c[0], c[1] + 2, c[2])) continue;          // no head room to step up
@@ -108,7 +146,10 @@ final class SimWorld {
         return c != null ? c : base.at(x, y, z);
     }
 
-    void set(int x, int y, int z, String id) { changed.put(key(x, y, z), id); }
+    /** Counts the changes: a reader may keep an answer while it stands still. */
+    int version;
+
+    void set(int x, int y, int z, String id) { changed.put(key(x, y, z), id); version++; }
 
     /** A column of {@code id} from y0 up, {@code n} high (a tree's trunk). */
     void column(int x, int y0, int z, int n, String id) { for (int i = 0; i < n; i++) set(x, y0 + i, z, id); }

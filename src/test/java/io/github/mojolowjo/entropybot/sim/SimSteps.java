@@ -53,7 +53,44 @@ final class SimSteps {
             for (int y = g.feet[1] + 2; y <= g.world.box[4]; y++) if (!g.world.open(g.feet[0], y, g.feet[2])) return Result.NOT_SIMULATED;   // under something: slice 4
             return Result.ok(0, "nothing over the feet: at the surface");
         }
+        if (s instanceof Step.Explore e) return explore(g, e);
         return Result.NOT_SIMULATED;
+    }
+
+    /**
+     * Slice 4: an explore on a map with no edge. The bot walks to the nearest spot of a sight-wide grid it has not looked
+     * from, and looks; it ends when a source of {@code until} shows that was not in sight at its start, or its minutes run
+     * out. The game's explore is the fork's (nearest chunk not seen); this stands in for it: no terrain, no search.
+     * A map with an edge (a scenario's cube, a hand-built one): not simulated - what lies past the edge is not known.
+     */
+    private static Result explore(SimGame g, Step.Explore e) {
+        if (!g.world.endless) return Result.NOT_SIMULATED;
+        String[] parts = e.until() == null ? null : e.until().split("\\|");
+        java.util.function.Predicate<String> gives = item -> parts != null && SimGame.matches(item, parts) != null;
+        java.util.Set<Long> before = new java.util.HashSet<>();
+        if (parts != null) for (SimWorld.Group gr : g.world.groups(g.feet, g.sight, gives)) for (int[] c : gr.cells()) before.add(SimWorld.cell(c));
+        double secs = 0, limit = e.minutes() * 60.0;       // structural: seconds a minute
+        int hop = g.sight;
+        g.looked.add(Math.floorDiv(g.feet[0] + hop / 2, hop) + " " + Math.floorDiv(g.feet[2] + hop / 2, hop));
+        while (secs < limit) {
+            int ci = Math.floorDiv(g.feet[0] + hop / 2, hop), cj = Math.floorDiv(g.feet[2] + hop / 2, hop);
+            int[] best = null;
+            for (int i = ci - 6; i <= ci + 6; i++) for (int j = cj - 6; j <= cj + 6; j++) {       // sim: the grid spots tried round the feet
+                if (g.looked.contains(i + " " + j)) continue;
+                int[] p = {i * hop, g.feet[1], j * hop};
+                if (best == null || SimWorld.dist(p, g.feet) < SimWorld.dist(best, g.feet)) best = p;
+            }
+            if (best == null) return Result.fail(secs, "explore: every spot within " + 6 * hop + " blocks was looked from");
+            secs += FakePaths.walkS(SimWorld.dist(best, g.feet));
+            g.feet[0] = best[0];
+            g.feet[2] = best[2];
+            g.looked.add(Math.floorDiv(best[0] + hop / 2, hop) + " " + Math.floorDiv(best[2] + hop / 2, hop));
+            String snap = stand(g);
+            if (snap != null) return Result.fail(secs, snap);
+            if (parts != null) for (SimWorld.Group gr : g.world.groups(g.feet, g.sight, gives)) for (int[] c : gr.cells())
+                if (!before.contains(SimWorld.cell(c))) return Result.ok(secs, "explore: " + e.until() + " seen at " + c[0] + " " + c[1] + " " + c[2] + " from " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2]);
+        }
+        return Result.ok(secs, "explored " + e.minutes() + " min: no new " + e.until() + " seen; at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2]);
     }
 
     static String full(String id) { return id.contains(":") ? id : "minecraft:" + id; }
@@ -62,6 +99,7 @@ final class SimSteps {
     private static Result walk(SimGame g, Step.Walk w) {
         int[] to = {w.x(), w.y(), w.z()};
         java.util.Set<Long> from = g.world.reach(g.feet);
+        int[] was = g.feet.clone();
         double d = SimWorld.dist(g.feet, to);
         double go = Math.max(0, d - Math.max(0, w.near()));
         if (d > 0 && go > 0) {
@@ -72,7 +110,7 @@ final class SimSteps {
         }
         String snap = stand(g);
         if (snap != null) return Result.fail(FakePaths.walkS(go), snap);
-        if (!from.contains(SimWorld.cell(g.feet))) return Result.ok(FakePaths.walkS(go), "at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2] + THROUGH);
+        if (!SimWorld.pastReach(was, g.feet) && !from.contains(SimWorld.cell(g.feet))) return Result.ok(FakePaths.walkS(go), "at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2] + THROUGH);
         return Result.ok(FakePaths.walkS(go), "at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2]);
     }
 
@@ -105,7 +143,7 @@ final class SimSteps {
             // the named spot's own group first, in sight or not (the fork's chop / the mine goes to the spot the plan priced)
             if (at != null) for (SimWorld.Group gr : g.world.groups(at, 1, gives)) if (gr.cells().stream().anyMatch(c -> c[0] == at[0] && c[1] == at[1] && c[2] == at[2])) {
                 List<int[]> whole = new ArrayList<>();
-                for (SimWorld.Group far : g.world.groups(at, SimGame.SIGHT, gives)) if (far.block().equals(gr.block()) && far.cells().stream().anyMatch(c -> c[0] == at[0] && c[1] == at[1] && c[2] == at[2])) whole = far.cells();
+                for (SimWorld.Group far : g.world.groups(at, g.sight, gives)) if (far.block().equals(gr.block()) && far.cells().stream().anyMatch(c -> c[0] == at[0] && c[1] == at[1] && c[2] == at[2])) whole = far.cells();
                 whole.sort(java.util.Comparator.comparingDouble(c -> SimWorld.dist(c, g.feet)));
                 pick = new SimWorld.Group(gr.block(), whole);
                 groups = List.of(pick);
@@ -116,13 +154,14 @@ final class SimSteps {
             double d = SimWorld.dist(c, g.feet);
             if (d > REACH) {
                 java.util.Set<Long> from = g.world.reach(g.feet);
+        int[] was = g.feet.clone();
                 double go = d - REACH + 1, f = go / d;
                 g.feet[0] += (int) Math.round((c[0] - g.feet[0]) * f);
                 g.feet[2] += (int) Math.round((c[2] - g.feet[2]) * f);
                 secs += FakePaths.walkS(go);
                 String snap = stand(g);
                 if (snap != null) return Result.fail(secs, snap);
-                through |= !from.contains(SimWorld.cell(g.feet));
+                through |= !SimWorld.pastReach(was, g.feet) && !from.contains(SimWorld.cell(g.feet));
             }
             for (int[] cell : wholeGroup ? pick.cells() : List.of(c)) {
                 secs += digS(g, pick.block()) + (wholeGroup ? CHOP_EXTRA_S : DIG_EXTRA_S);
