@@ -92,22 +92,58 @@ final class SimWorld {
      * from y - 4 down to y - {@code depth} with coal ore in 2 x 2 x 2 lumps (chance {@code coalP} a lump), not known under
      * that; trees on top as {@link #endless}. No stone shows on top: stone and coal are under the ground.
      */
-    static SimWorld deep(long seed, int y, double treeP, double coalP, int depth) {
+    static SimWorld deep(long seed, int y, double treeP, double coalP, int depth) { return deep(seed, y, treeP, coalP, depth, 3); }
+
+    /** {@link #deep} with the dirt {@code soil} blocks thick over the stone (a deeper dig before the first stone). */
+    static SimWorld deep(long seed, int y, double treeP, double coalP, int depth, int soil) {
         SimWorld top = endless(seed, y, treeP, 0);
-        String coal = ItemWorth.oreDropping("minecraft:coal");
+        String coal = "minecraft:coal_ore";         // the id itself: the item data is loaded after the land is made
         Base base = (x, yy, z) -> {
             if (yy > y) return top.base.at(x, yy, z);
             if (yy < y - depth) return Scenario.NOT_LOADED;
             if (yy == y) return "minecraft:grass_block";
-            if (yy >= y - 3) return "minecraft:dirt";
+            if (yy >= y - soil) return "minecraft:dirt";
             long h = (seed * 0x9E3779B97F4A7C15L) ^ ((x >> 1) * 73_856_093L) ^ ((yy >> 1) * 83_492_791L) ^ ((z >> 1) * 19_349_663L);   // structural: a hash of the lump's cell
             h ^= h >>> 29; h *= 0xBF58476D1CE4E5B9L; h ^= h >>> 32;
             return (h & 0xFFFF) / 65536.0 < coalP ? coal : "minecraft:stone";
         };
         SimWorld w = new SimWorld(base, new int[]{-1_000_000, y - depth, -1_000_000, 1_000_000, y + 24, 1_000_000});
+        w.where = word -> {
+            String[] parts = word.split("\\|");
+            if (SimGame.matches("minecraft:spruce_log", parts) != null) return new io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact(io.github.mojolowjo.entropybot.aa.brain.GenWhere.Kind.SURFACE, 0, 0, "minecraft:spruce_log", "sim:trees", null);
+            if (SimGame.matches("minecraft:coal", parts) != null) return new io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact(io.github.mojolowjo.entropybot.aa.brain.GenWhere.Kind.BAND, y - depth, y - soil - 1, coal, "sim:ore_coal", null);
+            return io.github.mojolowjo.entropybot.aa.brain.GenWhere.unknown("the sim's land has no placer for " + word);
+        };
         w.endless = true;
         return w;
     }
+
+    /** Slice 4b: where a need word's blocks generate on this land (the game's GenWhere facts); null: none given. */
+    java.util.function.Function<String, io.github.mojolowjo.entropybot.aa.brain.GenWhere.Fact> where;
+
+    /** The y of the first cell over the column's top block that is no leaf (the game's SurfaceHeight.noLeaves); not known: no block in the box. */
+    int surfaceY(int x, int z) {
+        for (int yy = box[4]; yy >= box[1]; yy--) {
+            String b = at(x, yy, z);
+            if (b.equals(AIR) || ItemWorth.hasTag(b, "minecraft:leaves")) continue;
+            return b.equals(Scenario.NOT_LOADED) ? io.github.mojolowjo.entropybot.world.SurfaceHeight.NOT_KNOWN : yy + 1;
+        }
+        return io.github.mojolowjo.entropybot.world.SurfaceHeight.NOT_KNOWN;
+    }
+
+    /** How far the feet stand below the ground round them: the game's own hole test (SurfaceHeight.holeDepth) on the 8 columns round. */
+    int holeDepth(int x, int y, int z) {
+        int[] n = new int[8];
+        int i = 0;
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) if (dx != 0 || dz != 0) n[i++] = surfaceY(x + dx, z + dz);
+        return io.github.mojolowjo.entropybot.world.SurfaceHeight.holeDepth(y, n);
+    }
+
+    /** The game's one "below the surface" answer (SurfaceHeight.belowSurface): the rock over the head or the hole round the feet. */
+    int below(int x, int y, int z) { return io.github.mojolowjo.entropybot.world.SurfaceHeight.belowSurface(over(x, y, z), holeDepth(x, y, z)); }
+
+    /** The game's surface leg target (SurfaceHeight.ringTarget): the highest standable surface within its ring of the feet; null: none. */
+    int[] ringTop(int[] feet) { return io.github.mojolowjo.entropybot.world.SurfaceHeight.ringTarget(feet, this::surfaceY, this::standable); }
 
     /** The blocks over the head at a feet cell, up to the box's top: 0 = under open sky. */
     int over(int x, int y, int z) {
@@ -125,7 +161,7 @@ final class SimWorld {
                 if (open(x, yy, z)) continue;
                 if (ItemWorth.isIn(at(x, yy, z), "minecraft:logs")) break;          // a tree's top is no ground
                 int[] c = {x, yy + 1, z};
-                if (standable(x, yy + 1, z) && over(x, yy + 1, z) == 0 && (best == null || dist(c, feet) < dist(best, feet))) best = c;
+                if (standable(x, yy + 1, z) && below(x, yy + 1, z) == 0 && (best == null || dist(c, feet) < dist(best, feet))) best = c;
                 break;
             }
         }

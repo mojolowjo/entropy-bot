@@ -176,26 +176,23 @@ final class SimGame {
     /** The planner's facts, worked out from the blocks in sight and the bag. */
     private World facts() {
         return FakePaths.paths(new World(new HashMap<>(bag), stationNear("minecraft:crafting_table"), stationNear("minecraft:furnace"), this::seen, null, null, null, 0))
-                .withWhere(new NeedChain.WhereFacts(null, this::surface, () -> feet.clone()));
+                .withWhere(new NeedChain.WhereFacts(world.where, this::surface, () -> feet.clone()));
     }
 
     /**
      * Slice 4b: the surface over the feet, as the game's WhereFacts gives it: the blocks over the head (0: open sky) and the
-     * cell to walk up to - the nearest one under open sky, else the top of the feet's own column. The game's hole test (a
-     * sky-open shaft round the feet) is not made here: a hole is depth 0.
+     * cell to walk up to. The game's own pure rules (SurfaceHeight: the hole round the feet, the ring's top) on the
+     * sim's columns; no ring top: the nearest cell under open sky, else the top of the feet's own column.
      */
     private NeedChain.Surface surface() {
-        int depth = world.over(feet[0], feet[1], feet[2]);
+        int rock = world.over(feet[0], feet[1], feet[2]), hole = world.holeDepth(feet[0], feet[1], feet[2]);
+        int depth = io.github.mojolowjo.entropybot.world.SurfaceHeight.belowSurface(rock, hole);
         if (depth == 0) return new NeedChain.Surface(0, feet[0], feet[1], feet[2], 0);
-        int[] c = world.skyCell(feet, SimSteps.SKY_R);
-        if (c == null) {
-            int y = feet[1] + 2;
-            for (int yy = y; yy <= world.box[4]; yy++) if (!world.open(feet[0], yy, feet[2])) y = yy + 1;
-            c = new int[]{feet[0], y, feet[2]};
-        }
-        return new NeedChain.Surface(depth, c[0], c[1], c[2], SimWorld.dist(c, feet));
+        int[] c = world.ringTop(feet);
+        if (c == null) c = world.skyCell(feet, SimSteps.SKY_R);
+        if (c == null) c = new int[]{feet[0], Math.max(feet[1], world.surfaceY(feet[0], feet[2])), feet[2]};
+        return new NeedChain.Surface(depth, c[0], c[1], c[2], SimWorld.dist(c, feet), rock == 0, c, SimWorld.dist(c, feet));
     }
-
     boolean stationNear(String block) {
         for (int dy = -1; dy <= 2; dy++) for (int dz = -4; dz <= 4; dz++) for (int dx = -4; dx <= 4; dx++)       // structural: within reach of the feet
             if (block.equals(world.at(feet[0] + dx, feet[1] + dy, feet[2] + dz))) return true;
@@ -347,6 +344,7 @@ final class SimGame {
         if (!"minecraft:chest".equals(world.at(c[0], c[1], c[2]))) { end = "deposit: no chest at " + mainAt + " (" + world.at(c[0], c[1], c[2]) + ")"; return; }
         SimSteps.Result w = SimSteps.apply(this, new Step.Walk(c[0], c[1], c[2], 2));
         clock.advance(Math.round(w.seconds() * 1000));       // structural: milliseconds a second
+        if (!w.ok()) { say("deposit FAILED at " + mainAt + ": the walk there: " + w.text() + "; nothing put in, the items stay in the bag " + items); return; }
         List<String> put = new ArrayList<>(), short_ = new ArrayList<>();
         for (var e : items.entrySet()) {
             String id = e.getKey().contains(":") ? e.getKey() : "minecraft:" + e.getKey();

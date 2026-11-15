@@ -322,6 +322,47 @@ class SimGameTest {
             }
         }
         System.out.println("DEEP LANDS\n" + table + "ENDS " + ends);
+        assertEquals(java.util.Map.of("done", DEEP_LANDS), ends, "every deep land ends done (seen 2026-11-14):\n" + table);
+        assertFalse(table.toString().contains(" 0 dug ways"), "stone is under the ground: every land needs a dug way:\n" + table);
+    }
+
+    /**
+     * Slice 4b: the games' failing case - the stone far down (dirt 10 thick over it) and the main chest 60 blocks off: the
+     * bot ends its dig deep under ground with trees and a deposit still to do above. Each end is printed.
+     */
+    @Test
+    void theOwnersLine_onDeepStoneAndAFarChest() {
+        java.util.Map<String, Integer> ends = new java.util.TreeMap<>();
+        StringBuilder table = new StringBuilder();
+        for (int seed = 1; seed <= DEEP_LANDS; seed++) {
+            clear();
+            java.util.Random r = new java.util.Random(seed * 0x9E3779B97F4A7C15L);       // structural: spreads the small seeds
+            double treeP = 0.05 + r.nextDouble() * 0.25, coalP = 0.005 + r.nextDouble() * 0.03;
+            SimWorld w = SimWorld.deep(seed, 63, treeP, coalP, 24, 10);
+            w.set(40, 64, 45, "minecraft:chest");
+            int[] feet = {0, w.standY(0, 64, 0), 0};
+            SimGame g = new SimGame(w, feet);
+            g.sight = 24;
+            g.mainAt = "40 64 45";
+            g.order("cobblestone", 32, "b1", true);
+            g.order("spruce_log", 16, "b1", true);
+            g.order("torch", 4, "b1", true);
+            long t = System.currentTimeMillis();
+            String end = g.play(3600);
+            String tl = g.timelineText();
+            String kind = end.replaceAll("[-\\d]+", "N");
+            ends.merge(kind.length() > 100 ? kind.substring(0, 100) : kind, 1, Integer::sum);
+            table.append(String.format(java.util.Locale.ROOT, "far %2d: trees %.2f coal %.3f -> %5.0f s, %d dug ways, %d climbs, %d up to the surface, %s | chest %s | %d ms%n", seed, treeP, coalP, g.seconds(),
+                    tl.split("dug a way", -1).length - 1, tl.split("  climb", -1).length - 1, tl.split("  up to the surface", -1).length - 1, end.length() > 130 ? end.substring(0, 130) : end, g.chest, System.currentTimeMillis() - t));
+            if (seed == 1 || !end.equals("done") && ends.get(kind.length() > 100 ? kind.substring(0, 100) : kind) == 1) System.out.println("TIMELINE far " + seed + "\n" + tl);
+            if (end.equals("done")) {
+                assertEquals(java.util.Map.of("minecraft:cobblestone", 32, "minecraft:spruce_log", 16, "minecraft:torch", 4), g.chest, "far " + seed + ": done means the line deposited whole\n" + tl);
+                assertFalse(tl.contains("SHORT"), "far " + seed + "\n" + tl);
+            }
+        }
+        System.out.println("FAR CHEST\n" + table + "ENDS " + ends);
+        assertEquals(java.util.Map.of("done", DEEP_LANDS), ends, "every land ends done (seen 2026-11-14):\n" + table);
+        assertTrue(table.toString().contains("1 up to the surface"), "the planner sends the bot up to the surface from its dig:\n" + table);
     }
 
     /** A step kind with no actor ends the game saying so (rule 7), never skipped. */
