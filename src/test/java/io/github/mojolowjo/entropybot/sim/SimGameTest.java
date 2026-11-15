@@ -365,6 +365,48 @@ class SimGameTest {
         assertTrue(table.toString().contains("1 up to the surface"), "the planner sends the bot up to the surface from its dig:\n" + table);
     }
 
+    static final int TROUBLE_GAMES = 30;         // sim: the games of the troubles test (6 lands, 5 dice each)
+
+    /**
+     * Step 5: the deep-stone far-chest lands again, with steps failing at the rates the recorded runs showed. Nothing is
+     * pinned about how they end yet: the ends are printed, with the first timeline of each kind, to see what the brain does
+     * with a failed step.
+     */
+    @Test
+    void theOwnersLine_withMeasuredTroubles() {
+        java.util.Map<String, Integer> ends = new java.util.TreeMap<>();
+        StringBuilder table = new StringBuilder();
+        int whole = 0, hit = 0, hitWhole = 0;
+        for (int i = 0; i < TROUBLE_GAMES; i++) {
+            int seed = 1 + i % DEEP_LANDS;
+            clear();
+            java.util.Random r = new java.util.Random(seed * 0x9E3779B97F4A7C15L);       // structural: spreads the small seeds
+            double treeP = 0.05 + r.nextDouble() * 0.25, coalP = 0.005 + r.nextDouble() * 0.03;
+            SimWorld w = SimWorld.deep(seed, 63, treeP, coalP, 24, 10);
+            w.set(40, 64, 45, "minecraft:chest");
+            SimGame g = new SimGame(w, new int[]{0, w.standY(0, 64, 0), 0});
+            g.sight = 24;
+            g.mainAt = "40 64 45";
+            g.troubleRates.putAll(SimGame.MEASURED);
+            g.troubleDice = new java.util.Random(1000 + i);
+            g.order("cobblestone", 32, "b1", true);
+            g.order("spruce_log", 16, "b1", true);
+            g.order("torch", 4, "b1", true);
+            String end = g.play(3600);
+            String tl = g.timelineText();
+            boolean full = java.util.Map.of("minecraft:cobblestone", 32, "minecraft:spruce_log", 16, "minecraft:torch", 4).equals(g.chest);
+            if (full) whole++;
+            if (g.troubles > 0) { hit++; if (full) hitWhole++; }
+            String kind = (full ? "whole line in the chest" : "NOT whole") + " | " + end.replaceAll("[-\\d]+", "N");
+            if (kind.length() > 110) kind = kind.substring(0, 110);
+            boolean first = ends.merge(kind, 1, Integer::sum) == 1;
+            table.append(String.format(java.util.Locale.ROOT, "game %2d land %d: %d troubles -> %5.0f s, %s | chest %s%n", i, seed, g.troubles, g.seconds(), end.length() > 110 ? end.substring(0, 110) : end, g.chest));
+            if (first) System.out.println("TIMELINE troubles game " + i + "\n" + tl);
+        }
+        System.out.println("TROUBLES\n" + table + "ENDS " + ends + "\nwhole " + whole + " of " + TROUBLE_GAMES + "; games with a trouble " + hit + ", of those whole " + hitWhole);
+        assertTrue(hit > 0, "the dice gave no trouble at all:\n" + table);
+    }
+
     /** A step kind with no actor ends the game saying so (rule 7), never skipped. */
     @Test
     void aStepWithNoActor_endsNotSimulated() {

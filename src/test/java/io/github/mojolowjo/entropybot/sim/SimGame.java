@@ -75,6 +75,31 @@ final class SimGame {
     /** How the game ended: "done", or the reason; null while it runs. */
     String end;
     private int handled, logRead;
+    /** Step 5: the chance a step of each kind ({@link #kind}) fails before it does anything; empty: no troubles. */
+    final Map<String, Double> troubleRates = new HashMap<>();
+    /** Step 5: the troubles' dice (a seed of the test's own: the same game twice). */
+    java.util.Random troubleDice = new java.util.Random(1);
+    /** Step 5: the injected troubles so far. */
+    int troubles;
+    static final double TROUBLE_S = 10;          // sim: the seconds a failing step takes before it gives up (not measured)
+    /** The rates seen in 16 recorded runs (to-do/simulator-plan.md): collect 7 of 25, climb 6 of 12, cut 4 of 56. Deposits (4 of 15) and digs (5 of 26) have no brain-run step here. */
+    static final Map<String, Double> MEASURED = Map.of("collect", 7 / 25.0, "climb", 6 / 12.0, "cut", 4 / 56.0);
+
+    /** The trouble kind of a step; null: a kind no trouble was measured for. */
+    static String kind(Step s) {
+        if (s instanceof Step.Collect) return "collect";
+        if (s instanceof Step.ChopTree) return "cut";
+        if (s instanceof Step.Climb || s instanceof Step.ToSurface) return "climb";
+        return null;
+    }
+
+    /** The injected failure of this step, or null: it runs. */
+    private String trouble(Step s) {
+        Double p = troubleRates.get(kind(s));
+        if (p == null || troubleDice.nextDouble() >= p) return null;
+        troubles++;
+        return "TROUBLE (injected, " + kind(s) + "): the step gave up";
+    }
     private final TestData data;
     private final Thing.Catalog catalog;
 
@@ -314,7 +339,8 @@ final class SimGame {
     private void run(JobPort.TaskSpec t, long id) {
         say("run " + id + " (" + t.source() + "): " + t.steps().size() + " steps");
         for (Step s : t.steps()) {
-            SimSteps.Result r = SimSteps.apply(this, s);
+            String tr = trouble(s);
+            SimSteps.Result r = tr != null ? SimSteps.Result.fail(TROUBLE_S, tr) : SimSteps.apply(this, s);
             if (r.notSimulated()) {
                 end = "not simulated: " + s.text();
                 return;
