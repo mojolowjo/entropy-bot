@@ -91,6 +91,10 @@ neoForge {
         }
     }
 
+    // sim step 3 (to-do/simulator-plan.md): the simulator's tests run Baritone's real search, which needs the game's blocks
+    // (Bootstrap, BlockState) - Minecraft on the test classpath, plain (no FML launch; the other tests stay pure Java)
+    addModdingDependenciesTo(sourceSets.test)
+
     mods {
         "${mod_id}" {
             sourceSet(sourceSets.main)
@@ -123,8 +127,7 @@ dependencies {
     // JUnit 5 for the pure-Java unit tests (guard core, event ring, files). They use no Minecraft types.
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-    // Gson is on the Minecraft classpath in game; the unit tests need it on their own.
-    testImplementation 'com.google.code.gson:gson:2.11.0'
+    // Gson: the game's own (2.10.1), with Minecraft on the test classpath (addModdingDependenciesTo above); it was 2.11.0 here
 }
 
 tasks.named('test', Test) {

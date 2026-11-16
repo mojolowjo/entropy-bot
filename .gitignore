@@ -29,3 +29,6 @@ libs/
 
 # 0.35.0 AI operator: API keys never in git
 **/ai-keys.json
+
+# the game's own log dir, written when a unit test boots the game's registries (sim/SimSearch)
+/logs/
