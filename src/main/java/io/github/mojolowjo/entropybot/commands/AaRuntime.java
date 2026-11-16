@@ -1249,13 +1249,15 @@ public final class AaRuntime implements JobPort {
     /**
      * 0.39.z61 (D1 J2; owner's ruling 1, option c): the orders' ORDER reserves for the run's lease - the running order's target
      * (the typed task's re-plan names its desire, "goal.&lt;key&gt;") and every finished order's items (Goals.orderReserves,
-     * each lowered to what the bag still holds).
+     * each lowered to what the bag still holds), and what the bag holds for the -d orders' deposits (Goals.kept).
      */
     java.util.List<baritone.api.process.Reserves.Reserve<String>> orderReserves() {
         io.github.mojolowjo.entropybot.aa.brain.Goals.Goal running = null;
         var rp = taskReplan;
         if (typedRun && rp != null) for (var g : io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb)) if (g.id().equals(rp.desire())) running = g;
-        return io.github.mojolowjo.entropybot.aa.brain.Goals.orderReserves(running, io.github.mojolowjo.entropybot.aa.brain.Goals.finished(bb), bb.in.bag);
+        // deposit-kept, placing (owner's yes 2026-11-16): the -d amounts in the bag too, whichever order runs
+        return io.github.mojolowjo.entropybot.aa.brain.Goals.orderReserves(running, io.github.mojolowjo.entropybot.aa.brain.Goals.finished(bb), bb.in.bag,
+                io.github.mojolowjo.entropybot.aa.brain.Goals.kept(bb, null, null));
     }
 
     /**

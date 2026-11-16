@@ -1161,6 +1161,26 @@ public final class Goals {
         return out;
     }
 
+    /**
+     * deposit-kept, placing (the cloud game of 2026-11-15, owner's yes 2026-11-16: 32 cobblestone -d in the bag, its order
+     * neither running nor finished, 23 of them placed on the climb for the next order): as above, plus what the bag holds
+     * for the -d orders' deposits ({@code kept}: {@link #kept}, the one store - counted id -> n, never more than the bag
+     * holds). An item a reserve above already names is not reserved twice. They stay usable as ingredients as every order
+     * reserve does (ruling 1 option c): only placing is held off.
+     */
+    public static List<baritone.api.process.Reserves.Reserve<String>> orderReserves(Goal running, List<Finished> finished, Map<String, Integer> bag, Map<String, Integer> kept) {
+        List<baritone.api.process.Reserves.Reserve<String>> out = orderReserves(running, finished, bag);
+        if (kept == null) return out;
+        for (var e : kept.entrySet()) {
+            if (e.getValue() <= 0) continue;
+            var k = io.github.mojolowjo.entropybot.aa.moves.Reservations.order(Thing.path(e.getKey()) + " (kept for a deposit)", List.of(e.getKey()), e.getValue());
+            boolean named = false;
+            for (var r : out) named |= r.members.containsAll(k.members);
+            if (!named) out.add(k);
+        }
+        return out;
+    }
+
     /** deposit-kept: the last "kept for the deposit" line said (said again only on a change, rule 7). */
     static final String KEPT_SAID_FACT = "aa.depositKeptSaid";
 

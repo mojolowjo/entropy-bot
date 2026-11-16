@@ -343,6 +343,21 @@ class Z61ReservationsTest {
     }
 
     /**
+     * The cloud game of 2026-11-15: 32 cobblestone -d in the bag, the log order running: the kept amount is not placed; with
+     * the cobblestone order itself running (or finished) the item is reserved once, not twice.
+     */
+    @Test
+    void aDepositOrdersKeptAmountIsNotPillared_whicheverOrderRuns() {
+        var rs = Goals.orderReserves(goal("mangrove_log", 16), new ArrayList<>(), Map.of("cobblestone", 32), Map.of("cobblestone", 32));
+        assertEquals(List.of("mangrove_log 16 (order mangrove_log)", "cobblestone 32 (order cobblestone (kept for a deposit))"), texts(rs));
+        assertEquals(0, Reserves.spareThrowaway(rs, Map.of(COBBLE, 32), List.of(COBBLE)));
+        assertEquals(8, Reserves.spareThrowaway(rs, Map.of(COBBLE, 40), List.of(COBBLE)));
+        rs = Goals.orderReserves(goal("cobblestone", 32), new ArrayList<>(), Map.of("cobblestone", 32), Map.of("cobblestone", 32));
+        assertEquals(List.of("cobblestone 32 (order cobblestone)"), texts(rs), "the running order already holds it");
+        assertEquals(Goals.orderReserves(null, new ArrayList<>(), Map.of()), Goals.orderReserves(null, new ArrayList<>(), Map.of(), Map.of()), "nothing kept: as before");
+    }
+
+    /**
      * Ruling 1, option c: a finished order's items stay safe from pillaring; a craft that uses some lowers its claim to what
      * the bag still holds (usable as ingredients); at 0 it goes.
      */
