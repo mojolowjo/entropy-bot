@@ -101,8 +101,66 @@ final class SimSteps {
     }
 
     /** One move's outcome: its seconds, the blocks it dug on the way, why it failed (null: it did not). */
-    record Way(double secs, int dug, String fail) {
-        String said() { return dug > 0 ? " (dug a way: " + dug + " blocks)" : ""; }
+    record Way(double secs, int dug, int placed, String fail) {
+        Way(double secs, int dug, String fail) { this(secs, dug, 0, fail); }
+
+        String said() { return (dug > 0 ? " (dug a way: " + dug + " blocks)" : "") + (placed > 0 ? " (placed " + placed + " blocks)" : ""); }
+    }
+
+    static final int SEARCH_NODES = 100_000;     // sim: the nodes one Baritone search may open (in place of its clock)
+    static final int SEGMENTS = 80;              // sim: the path segments one move may take
+
+    /**
+     * Step 3 (owner 2026-11-16, "as similar as possible to the real thing"): the move by Baritone's REAL search on the sim's
+     * blocks ({@link SimSearch}) - its goal as the game's walk gives it (the cell itself, or near it), its context with the
+     * mod's placing price (Tuning walk.placePenalty), filler allowed while the bag has some to spare ({@link SimGame#spare},
+     * the mod's reserves), the bag's tools as dig speeds. Each movement of the path is applied: its blocks broken (the
+     * drops to the bag), its block placed (out of the bag), its cost in ticks as the seconds. The body following the path
+     * is not simulated (no stuck, no fall off the path); the main chest and the bot's stations are never broken.
+     */
+    static Way goReal(SimGame g, int[] to, int within) {
+        baritone.api.pathing.goals.Goal goal = within <= 0 ? new baritone.api.pathing.goals.GoalBlock(to[0], to[1], to[2])
+                : new baritone.api.pathing.goals.GoalNear(new net.minecraft.core.BlockPos(to[0], to[1], to[2]), within);
+        double secs = 0;
+        int dug = 0, placed = 0;
+        try {
+            SimSearch.boot();
+            for (int seg = 0; seg < SEGMENTS; seg++) {
+                if (goal.isInGoal(g.feet[0], g.feet[1], g.feet[2])) return new Way(secs, dug, placed, null);
+                var c = SimSearch.context(g.world, g.bestSpare() != null, io.github.mojolowjo.entropybot.aa.brain.Tuning.get("walk.placePenalty"), 1,
+                        id -> digS(g, id), cell -> "minecraft:chest".equals(g.world.at(cell[0], cell[1], cell[2])) || g.mine.contains(cell[0] + " " + cell[1] + " " + cell[2]));
+                baritone.api.pathing.calc.IPath p = SimSearch.search(c, g.feet, goal, SEARCH_NODES);
+                if (p == null || p.movements().isEmpty())
+                    return new Way(secs, dug, placed, "no path to " + to[0] + " " + to[1] + " " + to[2] + (within > 0 ? " near " + within : "") + " from " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2]
+                            + " (Baritone's search, " + SEARCH_NODES + " nodes" + (g.bestSpare() == null ? ", no filler to spare" : "") + ")");
+                moves:
+                for (baritone.api.pathing.movement.IMovement im : p.movements()) {
+                    var m = (baritone.pathing.movement.Movement) im;
+                    for (net.minecraft.core.BlockPos b : m.toBreak(c.bsi)) {
+                        String id = g.world.at(b.getX(), b.getY(), b.getZ());
+                        if (id.equals(SimWorld.AIR)) continue;
+                        g.world.set(b.getX(), b.getY(), b.getZ(), SimWorld.AIR);
+                        if (SimWorld.drop(id) != null) g.give(SimWorld.drop(id), 1);
+                        dug++;
+                    }
+                    for (net.minecraft.core.BlockPos b : m.toPlace(c.bsi)) {
+                        String filler = g.bestSpare();
+                        if (filler == null) break moves;                 // the filler ran out inside the path: searched again without it
+                        g.world.set(b.getX(), b.getY(), b.getZ(), filler);
+                        g.give(filler, -1);
+                        placed++;
+                    }
+                    secs += im.getCost() / 20;                       // game fact: 20 ticks a second
+                    g.feet[0] = im.getDest().x;
+                    g.feet[1] = im.getDest().y;
+                    g.feet[2] = im.getDest().z;
+                }
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("sim: Baritone's search could not run: " + e, e);
+        }
+        if (goal.isInGoal(g.feet[0], g.feet[1], g.feet[2])) return new Way(secs, dug, placed, null);
+        return new Way(secs, dug, placed, "the path did not arrive in " + SEGMENTS + " segments; at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2] + " for " + to[0] + " " + to[1] + " " + to[2]);
     }
 
     static final double STEP_M = 1.4;            // structural: the metres of one stair step (a block along, a block up or down)
@@ -114,6 +172,7 @@ final class SimSteps {
      * such way). Stands in for the fork's path with breaks (step 3): no placed block, no falling sand, no water.
      */
     static Way go(SimGame g, int[] to, int within, boolean exactY) {
+        if (g.realSearch) return goReal(g, to, within);
         int[] was = g.feet.clone();
         double d = SimWorld.dist(g.feet, to), line = Math.max(0, d - within);
         if (d <= within || line <= 0) return new Way(0, 0, null);
@@ -293,7 +352,7 @@ final class SimSteps {
         int rise = Math.max(0, top[1] - g.feet[1]);
         Way way = go(g, top, 0, true);
         if (way.fail() != null) return Result.fail(way.secs(), "climb: " + way.fail());
-        return Result.ok(way.secs(), "on the surface at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2] + way.said() + placed(g, rise));
+        return Result.ok(way.secs(), "on the surface at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2] + way.said() + (g.realSearch ? "" : placed(g, rise)));
     }
 
     /** The climb's placed filler: up to {@code rise} blocks out of the bag, the most spare kind first; "" when none. */

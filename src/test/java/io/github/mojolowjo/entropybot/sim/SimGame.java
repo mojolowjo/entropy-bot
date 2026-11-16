@@ -356,6 +356,17 @@ final class SimGame {
         return Math.max(0, baritone.api.process.Reserves.spare(lease, bag, id));
     }
 
+    /** Step 3: the moves (walk, climb, the way to a block) are Baritone's real search on these blocks; false: the sim's own dug-stair search. */
+    boolean realSearch = true;
+
+    /** The filler block with the most to spare ({@link #spare}), null: none. */
+    String bestSpare() {
+        String best = null;
+        int most = 0;
+        for (String id : bag.keySet()) { int sp = spare(id); if (sp > most) { most = sp; best = id; } }
+        return best;
+    }
+
     /** The running run's order (its desire id; null: no order's run), as AaRuntime's taskReplan. */
     private String runDesire;
 

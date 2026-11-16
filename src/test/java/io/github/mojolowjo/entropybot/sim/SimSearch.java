@@ -91,10 +91,17 @@ final class SimSearch {
     static class Bsi extends BlockStateInterface {
         SimWorld world;
         int unknown;
+        /** The cells Baritone may not break (the mod's break policy in the game: the main chest, the bot's own stations); null: none. */
+        java.util.function.Predicate<int[]> held;
 
         Bsi() { super((baritone.api.utils.IPlayerContext) null); }      // never run: allocated without a constructor
 
-        @Override public BlockState get0(int x, int y, int z) { return state(world.at(x, y, z)); }
+        @Override public BlockState get0(int x, int y, int z) {
+            String id = world.at(x, y, z);
+            // ground not known (past the map's edge) and a held cell: solid and unbreakable, never walked through or dug
+            if (Scenario.NOT_LOADED.equals(id) || held != null && !SimWorld.AIR.equals(id) && held.test(new int[]{x, y, z})) return Blocks.BEDROCK.defaultBlockState();
+            return state(id);
+        }
         @Override public boolean isLoaded(int x, int z) { return true; }
         @Override public boolean worldContainsLoadedChunk(int x, int z) { return true; }
 
@@ -110,12 +117,20 @@ final class SimSearch {
     /** The tool as a speed: Baritone's destruction time, hardness x 30 / {@code speed} for a harvestable block (speed 1: by hand x 100). */
     static class Tool extends ToolSet {
         double speed = 1;
+        /** The sim's own dig seconds of a block id (the bag's tools); null: by {@link #speed}. */
+        java.util.function.ToDoubleFunction<String> digSecs;
 
         Tool() { super(null); }
 
         @Override public double getStrVsBlock(BlockState state) {
             float h = state.getDestroySpeed(EmptyBlockGetter.INSTANCE, BlockPos.ZERO);
-            return h < 0 ? -1 : h == 0 ? 1 : speed <= 1 ? 1 / (h * 100.0) : 1 / (h * 30.0 / speed);
+            if (h < 0) return -1;
+            if (h == 0) return 1;
+            if (digSecs != null) {
+                double s = digSecs.applyAsDouble(BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString());
+                return s <= 0 ? 1 : 1 / (s * 20);                  // game fact: 20 ticks a second
+            }
+            return speed <= 1 ? 1 / (h * 100.0) : 1 / (h * 30.0 / speed);
         }
     }
 
@@ -158,9 +173,16 @@ final class SimSearch {
      * {@code placeCost} (the mod's walk.placePenalty); breaking allowed, by the tool's speed.
      */
     static CalculationContext context(SimWorld world, boolean throwaway, double placeCost, double toolSpeed) throws Exception {
+        return context(world, throwaway, placeCost, toolSpeed, null, null);
+    }
+
+    /** As above with the sim's own dig seconds per block ({@code digSecs}) and the cells not to break ({@code held}). */
+    static CalculationContext context(SimWorld world, boolean throwaway, double placeCost, double toolSpeed,
+                                      java.util.function.ToDoubleFunction<String> digSecs, java.util.function.Predicate<int[]> held) throws Exception {
         boot();
         Bsi bsi = allocate(Bsi.class);
         bsi.world = world;
+        bsi.held = held;
         set(bsi, "isPassableBlockPos", new BlockPos.MutableBlockPos());
         Constructor<?> w = Class.forName("baritone.utils.BlockStateInterfaceAccessWrapper").getDeclaredConstructor(BlockStateInterface.class);
         w.setAccessible(true);
@@ -168,6 +190,7 @@ final class SimSearch {
         set(bsi, "worldBorder", new BetterWorldBorder(new WorldBorder()));
         Tool tool = allocate(Tool.class);
         tool.speed = toolSpeed;
+        tool.digSecs = digSecs;
         Context c = allocate(Context.class);
         var s = Baritone.settings();
         set(c, "precomputedData", new PrecomputedData());
@@ -203,6 +226,20 @@ final class SimSearch {
         set(c, "pricesMoves", false);
         return c;
     }
+
+    /**
+     * One search with a node budget in place of the clock (the same game twice gives the same path): the fork's cost
+     * query, {@code maxNodes} opened nodes; out of nodes, Baritone's own best-so-far segment as in the game. Null: none.
+     */
+    static IPath search(CalculationContext c, int[] from, Goal goal, int maxNodes) {
+        BetterBlockPos start = new BetterBlockPos(from[0], from[1], from[2]);
+        AStarPathFinder f = new AStarPathFinder(start, start.x, start.y, start.z, goal, new Favoring(null, c), c);
+        f.costQuery(maxNodes, Double.POSITIVE_INFINITY);
+        PathCalculationResult r = f.calculate(NO_CLOCK_MS, NO_CLOCK_MS);
+        return r.getPath().orElse(null);
+    }
+
+    static final long NO_CLOCK_MS = 600_000;     // sim: a search ends by its node budget, never by the wall clock
 
     /** One search from {@code from} (the feet) as the game's first segment runs it: Baritone's own timeouts. Null path: none found. */
     static IPath search(CalculationContext c, int[] from, Goal goal) {
