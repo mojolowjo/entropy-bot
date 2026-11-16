@@ -278,8 +278,11 @@ final class SimSteps {
 
     /**
      * Slice 4b: the climb. Under open sky: nothing to do. Else to the nearest cell under open sky ({@link SimWorld#skyCell}),
-     * by the open way when there is one (the stair the bot dug down), else a dug stair up. The game's climb pillars up on
-     * blocks from the bag where it can: the sim digs only.
+     * by the open way when there is one (the stair the bot dug down), else a dug stair up.
+     * <p>Placing (2026-11-16; the cloud game: -d cobblestone 32 -> 18 -> 9 over two climbs): the game's climb pillars up on
+     * blocks from the bag. ASSUMED until Baritone's own search runs here: one block a level risen, as far as the bag has
+     * filler to spare ({@link SimGame#spare}: the mod's reserves over the fork's count) - the blocks leave the bag and are
+     * said; the way and its time stay the dug stair's, the placed blocks are not put in the world.
      */
     private static Result climb(SimGame g, int[] planned) {
         if (g.world.below(g.feet[0], g.feet[1], g.feet[2]) == 0) return Result.ok(0, "nothing over the feet, no hole round them: at the surface");
@@ -287,9 +290,27 @@ final class SimSteps {
         int[] top = planned != null && g.world.standable(planned[0], planned[1], planned[2]) && g.world.below(planned[0], planned[1], planned[2]) == 0 ? planned : g.world.ringTop(g.feet);
         if (top == null || g.world.below(top[0], top[1], top[2]) > 0) top = g.world.skyCell(g.feet, SKY_R);
         if (top == null) return Result.fail(0, "climb: no cell under open sky within " + SKY_R + " blocks of " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2]);
+        int rise = Math.max(0, top[1] - g.feet[1]);
         Way way = go(g, top, 0, true);
         if (way.fail() != null) return Result.fail(way.secs(), "climb: " + way.fail());
-        return Result.ok(way.secs(), "on the surface at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2] + way.said());
+        return Result.ok(way.secs(), "on the surface at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2] + way.said() + placed(g, rise));
+    }
+
+    /** The climb's placed filler: up to {@code rise} blocks out of the bag, the most spare kind first; "" when none. */
+    private static String placed(SimGame g, int rise) {
+        java.util.Map<String, Integer> out = new java.util.TreeMap<>();
+        for (int left = rise; left > 0; left--) {
+            String best = null;
+            int most = 0;
+            for (String id : g.bag.keySet()) { int sp = g.spare(id); if (sp > most) { most = sp; best = id; } }
+            if (best == null) break;
+            g.give(best, -1);
+            out.merge(best.replaceFirst("^minecraft:", ""), 1, Integer::sum);
+        }
+        if (out.isEmpty()) return rise > 0 ? " (placed nothing: no filler to spare in the bag)" : "";
+        List<String> said = new ArrayList<>();
+        for (var e : out.entrySet()) said.add(e.getValue() + " " + e.getKey());
+        return " (placed " + String.join(", ", said) + ")";
     }
 
     static final int SKY_R = 24;                 // sim: how far round the feet the climb looks for open sky

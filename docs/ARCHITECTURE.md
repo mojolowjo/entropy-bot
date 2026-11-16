@@ -29,7 +29,7 @@ while AA is on. AA's own chain is named in `AaRuntime.CHAIN`; only AA starts and
 
 ### Reservations ledger (D1)
 The run's counted reserves (`aa/moves/Reservations`: per remaining step its crafts' inputs, places, fuel ticks, plus the
-orders' targets and what the bag holds for the -d orders' deposits, `Goals.orderReserves` with `Goals.kept`) are built by `Steps` at every step start from the plan itself and pushed twice: to the fork's lease
+orders' targets and what the bag holds for the -d orders' deposits, `Goals.orderReserves` with `Goals.kept`; the skip check, the dry run and a repair judge on `Steps.Hands.freeBag`, the bag less the other orders' -d amounts, `Goals.keptFromOthers` - the planner's own answer) are built by `Steps` at every step start from the plan itself and pushed twice: to the fork's lease
 (`StepHands.reserve` -> `engine/RunThrowaway`, Baritone's throwaway) and to the one ledger, `Blackboard.reserved()`
 (`StepHands.ledger`). A re-plan's release and the run's end rewrite it, so it never drifts. Readers: `DepositLeg`
 (`DepositRule.goesIn`: a stack goes in only while the chain's reserves can spare it), an Obtain's sub-chain

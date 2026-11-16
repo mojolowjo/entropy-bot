@@ -335,33 +335,134 @@ final class SimGame {
         return out.toString();
     }
 
-    /** One run the brain started: its steps applied in order; the brain ticks between them and may cancel it. */
+    static final long TICK_MS = 50;              // structural: a game tick's milliseconds
+    static final int RUN_TICKS = 20_000;         // sim: a run that asks its steps this often is ended (a loop, said)
+
+    /**
+     * One run the brain started, driven as the game drives it: the mod's own {@link io.github.mojolowjo.entropybot.aa.moves.Steps}
+     * (the dry run, the re-plan after a failed step, the park on the same try twice) with the sim's step actors as its hands.
+     * The brain ticks between the steps and may cancel the run.
+     */
+    /** The reserves the mod's Steps last sent to the lease (the fork's IRunThrowaway.reserve in the game); empty: none. */
+    List<baritone.api.process.Reserves.Reserve<String>> lease = List.of();
+
+    /**
+     * How many of {@code id} (a full item id) Baritone may place now: 0 for a block that is no filler (AaEscape.pillarBlock,
+     * the game's RunThrowaway.bagBlocks), else the fork's own count over the lease ({@code Reserves.spare}: what is left
+     * after every reserve is met).
+     */
+    int spare(String id) {
+        if (!io.github.mojolowjo.entropybot.aa.AaEscape.pillarBlock(id) || bag.getOrDefault(id, 0) <= 0) return 0;
+        return Math.max(0, baritone.api.process.Reserves.spare(lease, bag, id));
+    }
+
+    /** The running run's order (its desire id; null: no order's run), as AaRuntime's taskReplan. */
+    private String runDesire;
+
     private void run(JobPort.TaskSpec t, long id) {
         say("run " + id + " (" + t.source() + "): " + t.steps().size() + " steps");
-        for (Step s : t.steps()) {
-            String tr = trouble(s);
-            SimSteps.Result r = tr != null ? SimSteps.Result.fail(TROUBLE_S, tr) : SimSteps.apply(this, s);
-            if (r.notSimulated()) {
-                end = "not simulated: " + s.text();
-                return;
-            }
-            clock.advance(Math.round(r.seconds() * 1000));       // structural: milliseconds a second
-            say("  " + s.text() + " -> " + r.text() + String.format(Locale.ROOT, " (%.1f s)", r.seconds()));
-            if (!r.ok()) {
-                port.fail(id, r.text(), s);
-                return;
-            }
+        runDesire = t.replan() == null ? null : t.replan().desire();
+        var steps = new io.github.mojolowjo.entropybot.aa.moves.Steps(new Hands());
+        steps.start(t.chain(), t.steps(), t.uses(), clock.now() / TICK_MS, t.replan() == null ? null : t.replan().planner());
+        for (int n = 0; steps.running() && end == null; n++) {
+            if (n > RUN_TICKS) { end = "sim: run " + id + " asked its steps " + RUN_TICKS + " times without ending (" + steps.why() + ")"; steps.cancel("sim: loop"); return; }
+            long before = clock.now();
+            steps.tick(clock.now() / TICK_MS);
+            if (end != null) return;
             port.step(id);
             tick();
             if (!port.states.containsKey(id)) {
+                steps.cancel("the brain cancelled the run");
                 say("  run " + id + " cancelled: " + (port.cancelled.isEmpty() ? "?" : port.cancelled.get(port.cancelled.size() - 1)));
                 return;
             }
-            if (port.started.size() > handled + 1) return;      // the brain started another run meanwhile
+            if (port.started.size() > handled + 1) { steps.cancel("the brain started another run"); return; }
+            if (clock.now() == before) clock.advance(TICK_MS);
         }
-        port.done(id, "done");
+        if (end != null) return;
+        if (steps.phase() == io.github.mojolowjo.entropybot.aa.moves.Steps.Phase.DONE) port.done(id, "done");
+        else {
+            say("  run " + id + " ended: " + steps.why());
+            port.fail(id, steps.why(), steps.failedStep());
+        }
     }
 
+    /** The sim's hands for {@link io.github.mojolowjo.entropybot.aa.moves.Steps}: a step is applied whole when it starts; its status says how it went. */
+    private final class Hands implements io.github.mojolowjo.entropybot.aa.moves.Steps.Hands {
+        private SimSteps.Result last;
+        private io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact;
+
+        @Override public String start(Step s) {
+            String tr = trouble(s);
+            last = tr != null ? SimSteps.Result.fail(TROUBLE_S, tr) : SimSteps.apply(SimGame.this, s);
+            if (last.notSimulated()) { end = "not simulated: " + s.text(); return "not simulated"; }
+            // no fact of the hands' own: the game's failed collect or cut mostly gives none either, and the mod's Steps then
+            // makes the fact itself (StepsShort: a collect short NEAR the feet, a cut its tree). A made-up "source collect
+            // <item>" here dropped the item for the order's life (the game's timeout fact only) and the order explored for ever
+            fact = null;
+            // the walk up and the climb do give one in the game (StepHands: FactChange.surface, FactChange.climb): the same here
+            if (tr != null && s instanceof Step.ToSurface t) { io.github.mojolowjo.entropybot.aa.moves.FactChange.surface(t.x(), t.y(), t.z(), tr); fact = io.github.mojolowjo.entropybot.aa.moves.FactChange.take(); }
+            if (tr != null && s instanceof Step.Climb) { io.github.mojolowjo.entropybot.aa.moves.FactChange.climb(tr); fact = io.github.mojolowjo.entropybot.aa.moves.FactChange.take(); }
+            clock.advance(Math.round(last.seconds() * 1000));       // structural: milliseconds a second
+            say("  " + s.text() + " -> " + last.text() + String.format(Locale.ROOT, " (%.1f s)", last.seconds()));
+            return null;
+        }
+
+        @Override public io.github.mojolowjo.entropybot.aa.moves.Car.Status status(Step s) {
+            return last.ok() ? io.github.mojolowjo.entropybot.aa.moves.Car.Status.done(last.text()) : io.github.mojolowjo.entropybot.aa.moves.Car.Status.failed(last.text());
+        }
+
+        @Override public void cancel(String why) {}
+
+        @Override public io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact lastFact() { var f = fact; fact = null; return f; }
+
+        @Override public int[] feet() { return feet.clone(); }
+
+        @Override public void log(String line) { say("  steps: " + line); }
+
+        /** The fork's lease in the game (RunThrowaway.reserve): the table Steps counted for the steps from here, kept for {@link #spare}. */
+        @Override public void reserve(List<baritone.api.process.Reserves.Reserve<String>> reserves) { lease = reserves == null ? List.of() : List.copyOf(reserves); }
+
+        /** As AaRuntime.orderReserves: the running order's, the finished ones' and every -d amount in the bag. */
+        @Override public List<baritone.api.process.Reserves.Reserve<String>> orderReserves() {
+            Goals.Goal running = null;
+            if (runDesire != null) for (Goals.Goal g : Goals.of(bb)) if (g.id().equals(runDesire)) running = g;
+            return Goals.orderReserves(running, Goals.finished(bb), bb.in.bag, Goals.kept(bb, null, null));
+        }
+
+        /** As the game's hands (StepHands.freeBag over AaRuntime.keptFromOthers): the bag less the other orders' -d amounts. */
+        @Override public io.github.mojolowjo.entropybot.aa.moves.StepNeeds.Bag freeBag() {
+            Goals.Goal running = null;
+            if (runDesire != null) for (Goals.Goal g : Goals.of(bb)) if (g.id().equals(runDesire)) running = g;
+            return io.github.mojolowjo.entropybot.aa.moves.StepNeeds.less(bag(), running == null ? Map.of() : Goals.keptFromOthers(bb, running));
+        }
+
+        @Override public io.github.mojolowjo.entropybot.aa.moves.StepNeeds.Bag bag() {
+            return new io.github.mojolowjo.entropybot.aa.moves.StepNeeds.Bag() {
+                @Override public int bestTier(String kind) {
+                    int best = 0;
+                    for (var e : bag.entrySet()) if (e.getValue() > 0) best = Math.max(best, io.github.mojolowjo.entropybot.aa.brain.MiningTiers.toolTier(e.getKey(), kind));
+                    return best;
+                }
+
+                @Override public String bestTool(String kind) {
+                    String id = null;
+                    int best = 0;
+                    for (var e : bag.entrySet()) {
+                        int tier = e.getValue() > 0 ? io.github.mojolowjo.entropybot.aa.brain.MiningTiers.toolTier(e.getKey(), kind) : 0;
+                        if (tier > best) { best = tier; id = e.getKey(); }
+                    }
+                    return id;
+                }
+
+                @Override public int usesLeft(String id) { return io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED; }     // sim: tools do not wear
+
+                @Override public int count(String id) { return bag.getOrDefault(id.contains(":") ? id : "minecraft:" + id, 0); }
+
+                @Override public Map<String, Integer> items() { return new TreeMap<>(bag); }
+            };
+        }
+    }
     /** The line's deposit came due: the walk to the main chest and exactly those items into it (the game's deposit job). */
     private void deposit(Map<String, Integer> items) {
         if (mainAt == null) { end = "deposit: no main chest set"; return; }

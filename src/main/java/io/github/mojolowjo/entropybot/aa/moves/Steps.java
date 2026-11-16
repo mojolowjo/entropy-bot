@@ -56,6 +56,14 @@ public final class Steps {
         default StepNeeds.Bag bag() { return null; }
 
         /**
+         * deposit-kept, steps (owner's yes 2026-11-16; the simulator on these Steps: "collect cobblestone 8 skipped: 32
+         * cobblestone already in the bag", the furnace then made from the -d cobblestone, 24 of 32 in the chest): the bag the
+         * skip check, the dry run and a repair judge on - {@link #bag} less what it holds for the OTHER orders' deposits
+         * (the planner's own bag, Goals.keptOff: one store). The step's own checks (its tool, what it made) stay on {@link #bag}.
+         */
+        default StepNeeds.Bag freeBag() { return bag(); }
+
+        /**
          * 0.39.z75 (run AI 20:11:05-20:14:16: three explores "no progress 30 s ... Baritone executing", farthest 0): the facts
          * of a frozen walk or explore at the monitor's no-progress verdict - Baritone's process in control and its state, the
          * path's length and the index on it, the goal, the feet, in fluid, ticks since the last move; null: these hands
@@ -625,7 +633,7 @@ public final class Steps {
     private Remaining remaining() {
         java.util.Map<String, Integer> bag;
         try {
-            StepNeeds.Bag b = hands.bag();
+            StepNeeds.Bag b = hands.freeBag();
             bag = b == null ? null : b.items();
         } catch (RuntimeException e) {
             bag = null;                          // rule 15: the repair's dry run says "not readable", the full re-plan runs
@@ -646,7 +654,7 @@ public final class Steps {
     private boolean skipAhead() {
         Kernels.Skip k;
         try {
-            k = Kernels.latest(steps, idx, needsFromHere(), hands.bag());
+            k = Kernels.latest(steps, idx, needsFromHere(), hands.freeBag());
         } catch (RuntimeException e) {
             why = stage() + ": the kernel check could not be read (no skip): " + e;
             return false;
@@ -909,7 +917,7 @@ public final class Steps {
     private DryRun.Shortage dryRun(List<StepNeeds> rest) {
         java.util.Map<String, Integer> items;
         try {
-            StepNeeds.Bag bag = hands.bag();
+            StepNeeds.Bag bag = hands.freeBag();
             items = bag == null ? null : bag.items();
         } catch (RuntimeException e) {
             keepErr = (keepErr == null ? "" : keepErr + "; ") + "the dry run could not read the bag: " + e;

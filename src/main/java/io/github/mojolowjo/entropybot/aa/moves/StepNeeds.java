@@ -92,6 +92,35 @@ public record StepNeeds(String toolKind, int minTier, Map<String, Integer> consu
         default Map<String, Integer> items() { return null; }
     }
 
+    /**
+     * deposit-kept, steps: {@code bag} with {@code kept} (item -> n held for other orders' deposits, by id or by path)
+     * taken off its counts, never under 0; the tools as they are. Nothing kept or no bag: {@code bag} itself.
+     */
+    public static Bag less(Bag bag, Map<String, Integer> kept) {
+        if (bag == null || kept == null || kept.isEmpty()) return bag;
+        return new Bag() {
+            private int off(String id) {
+                Integer k = kept.get(id);
+                if (k == null && id != null && id.indexOf(':') >= 0) k = kept.get(id.substring(id.indexOf(':') + 1));
+                return k == null ? 0 : Math.max(0, k);
+            }
+            @Override public int bestTier(String kind) { return bag.bestTier(kind); }
+            @Override public String bestTool(String kind) { return bag.bestTool(kind); }
+            @Override public int usesLeft(String id) { return bag.usesLeft(id); }
+            @Override public int count(String id) { return Math.max(0, bag.count(id) - off(id)); }
+            @Override public Map<String, Integer> items() {
+                Map<String, Integer> all = bag.items();
+                if (all == null) return null;
+                Map<String, Integer> out = new LinkedHashMap<>();
+                for (var e : all.entrySet()) {
+                    int n = e.getValue() - off(e.getKey());
+                    if (n > 0) out.put(e.getKey(), n);
+                }
+                return out;
+            }
+        };
+    }
+
     public boolean hasTool() { return toolKind != null && minTier >= 1; }
 
     public boolean none() { return !hasTool() && consumes.isEmpty() && tagUses.isEmpty() && unknown == null && fuelTicks <= 0; }

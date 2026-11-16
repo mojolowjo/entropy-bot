@@ -1205,6 +1205,14 @@ public final class Goals {
     }
 
     /**
+     * deposit-kept: what the bag holds for the deposits of the orders that are not {@code g} and not its trip's open orders
+     * (BatchWay.open) - the one answer the planner ({@link #keptOff}) and the running steps (Steps.Hands.freeBag) take off.
+     */
+    public static Map<String, Integer> keptFromOthers(Blackboard bb, Goal g) {
+        return kept(bb, g, g == null ? null : BatchWay.open(bb, g));
+    }
+
+    /**
      * deposit-kept (owner 2026-11-13): the planner's world for {@code g} with the other -d orders' amounts taken off its bag
      * - an order gathers its own, the -d amounts go to the chest whole. Not taken off: {@code g}'s own and its trip's open
      * orders' (BatchWay.open: the trip obtains them and sets them aside itself). An order with no deposit word keeps
@@ -1217,7 +1225,7 @@ public final class Goals {
             bb.fact(KEPT_SAID_FACT, said);
             if (bb.port != null) bb.port.log(said.isEmpty() ? "kept for a deposit: nothing now" : "kept for a deposit: " + said + " (the -d amounts) - no other order counts them or uses them as ingredients");
         }
-        Map<String, Integer> kept = kept(bb, g, g == null ? null : BatchWay.open(bb, g));
+        Map<String, Integer> kept = keptFromOthers(bb, g);
         if (kept.isEmpty()) return w;
         Map<String, Integer> bag = new java.util.LinkedHashMap<>(w.bag());
         for (var e : bag.entrySet()) {

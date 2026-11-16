@@ -1260,6 +1260,15 @@ public final class AaRuntime implements JobPort {
                 io.github.mojolowjo.entropybot.aa.brain.Goals.kept(bb, null, null));
     }
 
+    /** deposit-kept, steps: what the bag holds for the deposits of the orders other than the running one (Goals.keptFromOthers; empty: nothing). */
+    java.util.Map<String, Integer> keptFromOthers() {
+        io.github.mojolowjo.entropybot.aa.brain.Goals.Goal running = null;
+        var rp = taskReplan;
+        if (typedRun && rp != null) for (var g : io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb)) if (g.id().equals(rp.desire())) running = g;
+        // no order's run (running null): nothing is another order's here, the bag as it is
+        return running == null ? java.util.Map.of() : io.github.mojolowjo.entropybot.aa.brain.Goals.keptFromOthers(bb, running);
+    }
+
     /**
      * 0.39.z61 (D1 3.7): aa why / aa status's reserve line: "reserved: stone_crafting_materials 8 (craft furnace), ... | spare to
      * place: 92 (cobblestone 92)" - the run's table, the last dry-run shortage, and the fork's lease's spare throwaway.

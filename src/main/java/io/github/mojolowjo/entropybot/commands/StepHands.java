@@ -365,6 +365,12 @@ public final class StepHands implements Steps.Hands {
         return c.aaRuntime == null ? List.of() : c.aaRuntime.orderReserves();
     }
 
+    /** deposit-kept, steps: the bag less the other orders' -d amounts (the skip check, the dry run, a repair). */
+    @Override public io.github.mojolowjo.entropybot.aa.moves.StepNeeds.Bag freeBag() {
+        var bag = bag();
+        return c.aaRuntime == null ? bag : io.github.mojolowjo.entropybot.aa.moves.StepNeeds.less(bag, c.aaRuntime.keptFromOthers());
+    }
+
     /** 0.39.z34: the bag as the step checks see it: the player's main inventory (one pass of its slots per look). */
     @Override public io.github.mojolowjo.entropybot.aa.moves.StepNeeds.Bag bag() {
         if (Minecraft.getInstance().player == null) return null;

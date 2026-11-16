@@ -365,6 +365,7 @@ class SimGameTest {
         assertTrue(table.toString().contains("1 up to the surface"), "the planner sends the bot up to the surface from its dig:\n" + table);
     }
 
+    static final int TROUBLE_LIMIT_S = 1500;     // sim: a troubled game's seconds allowed (the whole ones end under 450 s)
     static final int TROUBLE_GAMES = 30;         // sim: the games of the troubles test (6 lands, 5 dice each)
 
     /**
@@ -392,7 +393,7 @@ class SimGameTest {
             g.order("cobblestone", 32, "b1", true);
             g.order("spruce_log", 16, "b1", true);
             g.order("torch", 4, "b1", true);
-            String end = g.play(3600);
+            String end = g.play(TROUBLE_LIMIT_S);
             String tl = g.timelineText();
             boolean full = java.util.Map.of("minecraft:cobblestone", 32, "minecraft:spruce_log", 16, "minecraft:torch", 4).equals(g.chest);
             if (full) whole++;
@@ -400,13 +401,28 @@ class SimGameTest {
             String kind = (full ? "whole line in the chest" : "NOT whole") + " | " + end.replaceAll("[-\\d]+", "N");
             if (kind.length() > 110) kind = kind.substring(0, 110);
             boolean first = ends.merge(kind, 1, Integer::sum) == 1;
-            table.append(String.format(java.util.Locale.ROOT, "game %2d land %d: %d troubles -> %5.0f s, %s | chest %s%n", i, seed, g.troubles, g.seconds(), end.length() > 110 ? end.substring(0, 110) : end, g.chest));
+            table.append(String.format(java.util.Locale.ROOT, "game %2d land %d: %d troubles, %d climbs that placed, %d that had nothing spare -> %5.0f s, %s | chest %s%n", i, seed, g.troubles, tl.split("\\(placed \\d", -1).length - 1, tl.split("placed nothing", -1).length - 1, g.seconds(), end.length() > 110 ? end.substring(0, 110) : end, g.chest));
             if (first) System.out.println("TIMELINE troubles game " + i + "\n" + tl);
         }
         System.out.println("TROUBLES\n" + table + "ENDS " + ends + "\nwhole " + whole + " of " + TROUBLE_GAMES + "; games with a trouble " + hit + ", of those whole " + hitWhole);
         assertTrue(hit > 0, "the dice gave no trouble at all:\n" + table);
     }
 
+    /**
+     * A climb's placing is counted by the mod's reserves over the fork's own math: with 8 of 10 cobblestone reserved for an
+     * order, 2 are spare; dirt no reserve names is all spare; a torch is no filler.
+     */
+    @Test
+    void aClimbPlacesOnlyWhatTheReservesSpare() {
+        SimGame g = treeMap(6);
+        g.give("minecraft:cobblestone", 10);
+        g.give("minecraft:dirt", 3);
+        g.give("minecraft:torch", 5);
+        g.lease = java.util.List.of(io.github.mojolowjo.entropybot.aa.moves.Reservations.order("cobblestone", java.util.List.of("cobblestone"), 8));
+        assertEquals(2, g.spare("minecraft:cobblestone"));
+        assertEquals(3, g.spare("minecraft:dirt"));
+        assertEquals(0, g.spare("minecraft:torch"));
+    }
     /** A step kind with no actor ends the game saying so (rule 7), never skipped. */
     @Test
     void aStepWithNoActor_endsNotSimulated() {
