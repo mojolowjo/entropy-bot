@@ -904,7 +904,11 @@ public final class Steps {
                 }
                 safeCancel("monitor: " + l.reason());
                 endDetail = monitor.silentLine();     // job-mon: a silent end's try carries Baritone's last line
-                failOrReplan(l.reason(), l.fact());
+                // stop-wake item 4 (cloud tester run 10: "cut 7 at -262 70 -109: no progress 30 s ... farthest 0 from the
+                // start", repaired with another tree 87 times from the same hole): the feet never left the cell - that is
+                // the cell's fact, not the source's
+                FactChange.Fact cell = cellFact(s, l.reason(), monitor.farthest(), startFeet);
+                failOrReplan(l.reason(), cell != null ? cell : l.fact());
             }
         }
     }
@@ -1502,6 +1506,25 @@ public final class Steps {
                 return new FactChange.Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.nearKey(k.item(), k.at()),
                         "the dig to " + x + " " + y + " " + z + " ended: " + why + " (the spots near it held for this order)");
         return null;
+    }
+
+    /**
+     * stop-wake item 4 (pure): a step that goes to a target more than the mine's sight away ({@link Step.Collect#MINE_SIGHT})
+     * and ended on the monitor's no-progress with the feet never off its start cell ({@code farthest} under one block) is
+     * the CELL's fact - the boxed-in key at the feet (NeedChain.boxedInKey: the chain prices no walk from within
+     * failures.moved of it and takes the way out first), never one more source dropped. Null: not that.
+     */
+    public static FactChange.Fact cellFact(Step s, String reason, double farthest, int[] feet) {
+        if (reason == null || !reason.startsWith(FactChange.STALL_NO_PROGRESS) || farthest >= 1 || feet == null || feet.length < 3) return null;   // structural: one block; x y z
+        // a collect is left to its own near-collect fact (z76); the distance is the horizontal one the monitor measures
+        // (a walk straight down keeps "farthest 0" while it digs)
+        int[] to = s instanceof Step.ChopTree t ? t.at()
+                : s instanceof Step.Walk w ? new int[]{w.x(), w.y(), w.z()} : s instanceof Step.ToStation w ? new int[]{w.x(), w.y(), w.z()} : null;
+        if (to == null || to.length < 3) return null;        // structural: x y z
+        double dx = to[0] - feet[0], dz = to[2] - feet[2];
+        if (Math.sqrt(dx * dx + dz * dz) <= Step.Collect.MINE_SIGHT) return null;
+        return new FactChange.Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.boxedInKey(feet),
+                reason + " - the feet never left " + feet[0] + " " + feet[1] + " " + feet[2] + " on the way to " + to[0] + " " + to[1] + " " + to[2] + ": no walk from here until the way out");
     }
 
     public static FactChange.Fact walkTargetFact(List<? extends Step> steps, int idx, String reason) {

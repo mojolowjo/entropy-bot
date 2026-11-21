@@ -464,6 +464,12 @@ public final class AaDesires {
         String id = g.id();
         RunJob job = new RunJob(id + ".job", TaskKind.EXPLORE, bb -> {
             io.github.mojolowjo.entropybot.aa.brain.Goals.runStarts(g);     // 0.39.z70 review 1: no stale honest-loop try
+            // stop-wake (Goals.parkedTick): every order was stopped on the surface - this run is the one look-around leg,
+            // the explore step (Baritone's explore) until a source of the order's item is known; the order is priced after it
+            if (g.lookAround) {
+                g.lookAround = false;
+                return JobPort.TaskSpec.steps(TaskKind.EXPLORE, List.<Step>of(new Step.Explore(NeedChain.exploreMinutes(), g.r.key())), "owner goal");
+            }
             var rt = io.github.mojolowjo.entropybot.aa.brain.Goals.routine(bb, g);
             List<Step> s = rt == null ? null : rt.steps();
             if (s == null) {

@@ -39,6 +39,9 @@ public final class StepMonitor {
     /** One look's verdict, its reason, and for a REPLAN the fact handed to the planner (null otherwise). */
     public record Look(Verdict v, String reason, FactChange.Fact fact) {}
 
+    /** stop-wake: the farthest horizontal distance from the step's start cell so far (blocks; 0: the feet never left it). */
+    public double farthest() { return bestFar; }
+
     /** The step kinds by what their progress is (design 3.2's table); EXEMPT: never judged. */
     public enum Kind { WALK, GATHER, ITEM_JOB, PLACE, HUNT, EXPLORE, EXEMPT }
 

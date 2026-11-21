@@ -366,19 +366,21 @@ class Z70StepCheckTest {
 
         bb.in.bag = Map.of("cobblestone", 3);
         List<String> said = Goals.retryLoopParks(bb);
-        assertEquals(List.of("order furnace tries once more: cobblestone in the bag rose from 0 to 3 (it parked on: stopped at step 1 (craft furnace 1): the same way failed twice from the same place with the same bag: ...)"), said);
+        assertEquals(List.of("order furnace runs again: cobblestone in the bag rose from 0 to 3 (it stopped on: stopped at step 1 (craft furnace 1): the same way failed twice from the same place with the same bag: ...)"), said);
         assertEquals(said.get(0), port.told.get(port.told.size() - 1), "said in the chat");
         assertNull(g.parked);
         assertNull(Goals.blocked(bb, g), "feasible again");
 
-        // the second honest park: no second try (once per order)
+        // stop-wake (the owner's yes 2026-11-21): the second honest park wakes on its facts too - no once-per-order flag
         bb.in.bag = Map.of();
         Goals.replanner(bb, g).parked(cobbleTry());
         Goals.park(bb, g, "again");
-        assertNull(g.loopPark);
-        bb.in.bag = Map.of("cobblestone", 9);
-        assertTrue(Goals.retryLoopParks(bb).isEmpty());
+        assertNotNull(g.loopPark);
+        assertTrue(Goals.retryLoopParks(bb).isEmpty(), "nothing changed since the second park");
         assertEquals("again", g.parked);
+        bb.in.bag = Map.of("cobblestone", 9);
+        assertEquals(1, Goals.retryLoopParks(bb).size());
+        assertNull(g.parked);
     }
 
     /**
@@ -454,9 +456,11 @@ class Z70StepCheckTest {
         Goals.park(bb, g, "no way to get it: no cobblestone known");
         assertNull(g.loopPark);
         assertFalse(port.told.get(0).contains("tries once more"), port.told.toString());
+        // stop-wake: it waits on its own facts (the place; StopWakeTest) - the bag alone is not one of a place park's
         bb.in.bag = Map.of("cobblestone", 9);
-        bb.in.pos = new int[]{100, 64, 0};
         assertTrue(Goals.retryLoopParks(bb).isEmpty());
         assertNotNull(g.parked);
+        bb.in.pos = new int[]{100, 64, 0};
+        assertEquals(1, Goals.retryLoopParks(bb).size(), "moved: priced again");
     }
 }

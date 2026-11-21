@@ -94,8 +94,17 @@ public final class Goals {
         public io.github.mojolowjo.entropybot.aa.moves.Steps.Attempt loopAttempt;
         /** 0.39.z70 (R1 = c): the facts the order parked on by the honest loop (null: another park, or none). */
         public LoopPark loopPark;
-        /** 0.39.z70 (R1 = c): the one more try was taken (once per order; aa want again makes a new order). */
-        public boolean loopRetried;
+        /**
+         * stop-wake (to-do/stop-wake-plan.md, the owner's yes 2026-11-21): what a park that is not an honest loop waits on
+         * ({@link Park}); null: not parked, or parked by the honest loop ({@link #loopPark}).
+         */
+        public Park park;
+        /** stop-wake: the "priced again, stays stopped" words last said for this park (said again only when they differ). */
+        public String wakeSaid;
+        /** stop-wake: the look-around leg (every order parked on the surface) was taken since this order last ran on a changed fact. */
+        public boolean looked;
+        /** stop-wake: the order's next run is the look-around leg (one explore step, Baritone's explore), set by {@link Goals#parkedTick}. */
+        public boolean lookAround;
         /**
          * 0.39.z76 sb4 review 2: the order's tries ({@code Steps.Attempt#tryKey}: step, fact, needs in the bag; no cell, no
          * order); a try seen again parks the run. Emptied by the one more try (R1) and by aa want again.
@@ -134,6 +143,8 @@ public final class Goals {
 
     /** The fact holding the all-parked line last said (said again only when it changes). */
     static final String ALL_PARKED_SAID = "aa.allParkedSaid";
+    /** stop-wake: the fact holding when (the clock's ms) every order was first seen parked; null: not all parked. */
+    static final String ALL_PARKED_SINCE = "aa.allParkedSince";
 
     /** structural: a park's reason is cut to this many characters in the all-parked line (the whole reason was said at the park). */
     static final int PARK_REASON_CHARS = 120; // structural: text length
@@ -150,9 +161,11 @@ public final class Goals {
 
     /** {@link #wake(Goal)}; {@code worldClimb}: another order's failed climb holds here for it (a world fact, run EJ). */
     static String wake(Goal g, boolean worldClimb) {
-        if (g.loopPark != null && !g.loopRetried)
+        if (g.loopPark != null)
             return "wakes when a need in the bag rises, it moves " + Math.round(Failures.movedV()) + " blocks or a new source is seen";
-        if (!g.climbRetried && (climbHeld(g) || worldClimb)) return "tries once more on the climb way when every order is parked under ground";
+        String climb = !g.climbRetried && (climbHeld(g) || worldClimb) ? "tries once more on the climb way when every order is parked under ground" : null;
+        if (g.park != null) return (climb == null ? "" : climb + "; ") + g.park.wakeWords();
+        if (climb != null) return climb;
         return "no wake by itself (aa want " + g.r.word().trim() + " again)";
     }
 
@@ -198,7 +211,7 @@ public final class Goals {
         for (Goal g : goals) if (worldClimb(bb, g)) byWorld.add(g);
         if (underGround && allParked(goals) != null) {
             for (Goal g : goals) {
-                boolean movesOnly = g.loopPark != null && !g.loopRetried;
+                boolean movesOnly = g.loopPark != null || g.park != null;
                 if (g.climbRetried || !(movesOnly || climbHeld(g) || byWorld.contains(g))) continue;
                 g.climbRetried = true;
                 g.sources.forget(g.id(), io.github.mojolowjo.entropybot.aa.NeedChain.CLIMB_KEY);
@@ -207,6 +220,7 @@ public final class Goals {
                         + (bb.in == null ? "?" : String.valueOf(bb.in.underDepth)) + " blocks under ground, where nothing it waits on can change (it parked on: " + g.parked + ")";
                 g.parked = null;
                 g.loopPark = null;
+                g.park = null;
                 g.tries.clear();                 // the try asks its questions afresh (as the R1 try)
                 if (brainHolds != null) brainHolds.forget(g.id(), null);
                 bb.port.log(line);
@@ -215,7 +229,34 @@ public final class Goals {
             }
         }
         String all = allParked(goals, g -> !g.climbRetried && worldClimb(bb, g));
-        if (all == null) { bb.fact(ALL_PARKED_SAID, null); return out; }
+        if (all == null) { bb.fact(ALL_PARKED_SAID, null); bb.fact(ALL_PARKED_SINCE, null); return out; }
+        // stop-wake (the owner's yes 2026-11-21: "as long as Baritone does the moving"): every order parked on the surface and
+        // nothing that moves the bot - no fact a park waits on can change while it stands. One order at a time takes ONE
+        // look-around leg (the explore step: Baritone's explore), then it is priced where that ends; an order that looked
+        // looks again only after it ran on a changed fact. Starts once the state lasted goals.lookAroundAfterS (a deposit
+        // walk that follows the last park moves the bot by itself)
+        long nowMs = bb.clock == null ? 0 : bb.clock.now();
+        if (!(bb.fact(ALL_PARKED_SINCE) instanceof Long)) bb.fact(ALL_PARKED_SINCE, nowMs);
+        long since = (Long) bb.fact(ALL_PARKED_SINCE);
+        if (!underGround && nowMs - since >= (long) (Tuning.get("goals.lookAroundAfterS") * 1000)) {       // structural: s -> ms
+            for (Goal g : goals) {
+                if (g.looked || g.strip != null) continue;
+                g.looked = true;
+                g.lookAround = true;
+                String line = "order " + g.r.key() + " looks around: every order is stopped and nothing they wait on changes while I stand here; one explore leg (Baritone's explore), then it is priced again (it stopped on: " + g.parked + ")";
+                g.parked = null;
+                g.loopPark = null;
+                g.park = null;
+                g.tries.clear();
+                if (brainHolds != null) brainHolds.forget(g.id(), null);
+                bb.port.log(line);
+                bb.port.tellOwner(line);
+                out.add(line);
+                bb.fact(ALL_PARKED_SAID, null);
+                bb.fact(ALL_PARKED_SINCE, null);
+                return out;
+            }
+        }
         if (all.equals(bb.fact(ALL_PARKED_SAID))) return out;
         bb.fact(ALL_PARKED_SAID, all);
         bb.port.log(all);
@@ -243,6 +284,63 @@ public final class Goals {
             for (Goal o : BatchWay.open(bb, g)) if (o != g) return chain(bb, o);
         }
         return chain(bb, g);
+    }
+
+    /** The end of the other-dimension reason ({@link #blocked}): only the owner's word changes it, so a park on it keeps no wake. */
+    static final String OTHER_DIM = "; I don't travel there yet";
+
+    /** stop-wake: what a park waits on - PLACE: where the bot stands (the default when the cause is not told); BAG: an item is missing. */
+    public enum ParkKind { PLACE, BAG }
+
+    /**
+     * stop-wake (to-do/stop-wake-plan.md): the facts an order parked on, read when it parked - the feet's cell (null: not
+     * known), the bag's item total (-1: not known), the cells of the known sources of its item (null: not known) and the keys
+     * held for it then (its own dropped sources and the world facts). One check ({@link #parkChange}) asks whether any changed.
+     */
+    public record Park(ParkKind kind, int[] cell, int items, java.util.Set<String> sources, java.util.Set<String> held) {
+        public Park {
+            cell = cell == null ? null : cell.clone();
+            sources = sources == null ? null : java.util.Set.copyOf(sources);
+            held = held == null ? java.util.Set.of() : java.util.Set.copyOf(held);
+        }
+
+        static Park of(ParkKind kind, Blackboard bb, java.util.Set<String> sources, java.util.Set<String> held) {
+            int[] pos = bb.in == null || bb.in.pos == null || bb.in.pos.length < 3 ? null : bb.in.pos;     // structural: x y z
+            return new Park(kind, pos, bb.in == null ? -1 : Failures.items(bb.in), sources, held);
+        }
+
+        /** The words of what wakes it (the park line, aa goals, the all-parked line). */
+        public String wakeWords() {
+            long far = Math.round(Failures.movedV() + WorldFacts.MARGIN);
+            return "priced again by itself when I am " + far + " blocks from " + (cell == null ? "here" : cell[0] + " " + cell[1] + " " + cell[2])
+                    + ", a way held here lifts or a new source is seen" + (kind == ParkKind.BAG ? ", or the bag grows" : "");
+        }
+    }
+
+    /**
+     * stop-wake (pure): what changed since the park, the words for the log; null: nothing (it stays parked). The feet more
+     * than failures.moved + the band from the park's cell; a key held then no longer held; a source cell not known then; for
+     * a BAG park the bag's total risen. Rule 15: an unknown part (no feet, no sources, no total) is no change.
+     */
+    public static String parkChange(Park p, int itemsNow, int[] feetNow, java.util.Set<String> sourcesNow, java.util.Set<String> heldNow) {
+        if (p == null) return null;
+        if (p.kind() == ParkKind.BAG && p.items() >= 0 && itemsNow > p.items()) return "the bag grew from " + p.items() + " to " + itemsNow + " items";
+        if (p.cell() != null && feetNow != null && feetNow.length >= 3) {      // structural: x y z
+            double d = Failures.moved(feetNow, p.cell());
+            if (d >= Failures.movedV() + WorldFacts.MARGIN) return "moved " + Math.round(d) + " blocks from where it stopped (" + p.cell()[0] + " " + p.cell()[1] + " " + p.cell()[2] + ")";
+        }
+        if (heldNow != null)
+            for (String k : new java.util.TreeSet<>(p.held())) if (!heldNow.contains(k)) return "no longer held: " + k;
+        if (p.sources() != null && sourcesNow != null)
+            for (String s : new java.util.TreeSet<>(sourcesNow)) if (!p.sources().contains(s)) return "a new source seen: " + s;
+        return null;
+    }
+
+    /** stop-wake: the keys held for the order now - its own dropped sources (as the chain reads them from the feet) and the world facts. */
+    static java.util.Set<String> heldKeys(Blackboard bb, Goal g) {
+        java.util.Set<String> out = new java.util.TreeSet<>(droppedSources(g, bb.in == null ? null : bb.in.pos).keySet());
+        if (bb.in != null) out.addAll(WorldFacts.of(bb).heldFor(bb, droppedSources(g).keySet()).keySet());
+        return out;
     }
 
     /**
@@ -325,15 +423,39 @@ public final class Goals {
         List<String> out = new ArrayList<>();
         if (!(bb.fact(FACT) instanceof List<?>)) return out;
         for (Goal g : of(bb)) {
-            if (g.parked == null || g.loopPark == null || g.loopRetried) continue;
+            if (g.parked == null || (g.loopPark == null && g.park == null)) continue;
             int[] pos = bb.in == null ? null : bb.in.pos;
             Map<String, Integer> bag = bb.in == null ? null : bb.in.bag;
-            String change = loopChange(g.loopPark, needCounts(g.loopPark.counts().keySet(), bag, bb.in == null ? 0 : bb.in.pickTier), pos, sourceCells(bb, g, g.loopPark.at()));
+            // stop-wake: one check for every park, no once-per-order flag - the honest loop's facts (R1) or the park's own
+            String change = g.loopPark != null
+                    ? loopChange(g.loopPark, needCounts(g.loopPark.counts().keySet(), bag, bb.in == null ? 0 : bb.in.pickTier), pos, sourceCells(bb, g, g.loopPark.at()))
+                    : parkChange(g.park, bb.in == null ? -1 : Failures.items(bb.in), pos, sourceCells(bb, g, null), heldKeys(bb, g));
             if (change == null) continue;
-            String line = "order " + g.r.key() + " tries once more: " + change + " (it parked on: " + g.parked + ")";
+            // a wake is a PRICE, not a run: the order runs again only when its chain stands where the bot is now (or still
+            // waits on an answer: not known is no verdict, rule 15); else it stays stopped on a fresh snapshot, so the same
+            // change is never asked twice and no run starts without a way (no spin)
+            var ch = g.strip != null ? null : ownChain(bb, g);
+            // no chain (a strip order, or no world facts now): nothing says "no way" - it runs and its own start decides
+            boolean stands = ch == null || ch.waiting() || (ch.ok() && !ch.steps().isEmpty());
+            if (!stands) {
+                String why = ch.why();
+                g.loopPark = null;
+                g.park = Park.of(Failures.Cause.of(g.parked) == Failures.Cause.NO_ITEM ? ParkKind.BAG : ParkKind.PLACE, bb, sourceCells(bb, g, null), heldKeys(bb, g));
+                if (!java.util.Objects.equals(why, g.wakeSaid)) {
+                    g.wakeSaid = why;
+                    String stay = "order " + g.r.key() + " priced again (" + change + "): no way from here either (" + why + "); it stays stopped - " + g.park.wakeWords();
+                    bb.port.log(stay);
+                    out.add(stay);
+                }
+                continue;
+            }
+            String line = "order " + g.r.key() + " runs again: " + change + " (it stopped on: " + g.parked + ")";
             g.parked = null;
-            g.loopRetried = true;
             g.loopPark = null;
+            g.park = null;
+            g.wakeSaid = null;
+            g.looked = false;
+            g.climbRetried = false;
             g.tries.clear();                 // 0.39.z76 sb4 review 2: the one more try asks its questions afresh
             if (brainHolds != null) brainHolds.forget(g.id(), null);   // job-lookup: re-armed at once, not after the brain's hold
             bb.port.log(line);
@@ -847,9 +969,17 @@ public final class Goals {
         var a = g.loopAttempt;
         g.loopAttempt = null;
         String again = "";
-        if (a != null && !g.loopRetried) {
+        g.park = null;
+        if (a != null) {
             g.loopPark = new LoopPark(a, needCounts(a.needs() == null ? List.of() : a.needs().keySet(), bb.in == null ? null : bb.in.bag, bb.in == null ? 0 : bb.in.pickTier), sourceCells(bb, g, a));
             again = "; it tries once more by itself when a need in the bag rises, it moves " + Math.round(Failures.movedV()) + " blocks or a new source is seen";
+        } else if (g.parked.endsWith(OTHER_DIM)) {
+            g.loopPark = null;               // stop-wake: only the owner's word changes it - no wake, said as before
+        } else {
+            // stop-wake: every other park keeps what it waits on (its kind by the reason's cause; not told: the place)
+            g.loopPark = null;
+            g.park = Park.of(Failures.Cause.of(g.parked) == Failures.Cause.NO_ITEM ? ParkKind.BAG : ParkKind.PLACE, bb, sourceCells(bb, g, null), heldKeys(bb, g));
+            again = "; " + g.park.wakeWords();
         }
         String line = "order " + g.r.key() + " stopped: " + g.parked + " (aa want " + g.r.word().trim() + " to try again, aa cancel " + g.r.key() + " to clear it" + again + ")";
         bb.port.log(line);
@@ -1007,7 +1137,7 @@ public final class Goals {
         if (g.parked != null) return g.parked;
         Thing.Where w = g.r.where();
         if (w != null && w.dim() != null && !w.dim().equals(bb.in.dimension))
-            return g.r.key() + " is only in " + Thing.dimName(w.dim()) + "; I don't travel there yet";
+            return g.r.key() + " is only in " + Thing.dimName(w.dim()) + OTHER_DIM;
         // loot-book-bg: while the book is read in the background, an order whose chain waits on it is held (not parked) with
         // "waiting for the loot book (N of M)"; once the book is published the chain is priced again on the next pick
         // 0.39.z41: the same while a walk's full path is computed in the background (the chain waits on "path not known yet")

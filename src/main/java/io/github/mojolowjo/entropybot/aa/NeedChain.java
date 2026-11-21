@@ -1265,6 +1265,7 @@ public final class NeedChain {
         Map<String, Integer> upBag;
         /** 0.39.z75 item 1: a need is being priced before going down ({@link #beforeDown}): no second leg to another level in it. */
         boolean hoisting;
+
         /** 0.39.z75 item 3 (run AE 8): bag items an outer need has counted as had - set aside while its ways are priced. */
         final Map<String, Integer> aside = new LinkedHashMap<>();
         /** 0.39.z75 item 2: the burn the last {@link #burn} planned (the smelt step's counted fuel); null: none named. */
@@ -5499,7 +5500,17 @@ public final class NeedChain {
                 // over the cover, columnTop), never into the rock; the dig column then goes down from there (digTo)
                 boolean covered = !log && sp.isCovered();
                 int walkY = covered ? columnTop(sp) : sp.y();
-                Walked wk = walk(c, sp.x(), walkY, sp.z(), sp.dist());
+                // stop-wake item 4 (cloud tester run 10: 87 cut steps from one hole): a boxed-in fact near the feet (a
+                // no-break explore's, or a walk-first step whose feet never left the cell: Steps.cellFact) prices a SOURCE's
+                // walk beyond the mine's sight out - the ways compete without it and the explore leaf takes the way out
+                // (the walk up, the climb, the leased explore); lifted once the bot stands failures.moved from the cell
+                String boxedNow = sp.dist() <= Step.Collect.MINE_SIGHT ? null : boxedHere(c);
+                Walked wk;
+                if (boxedNow != null) {
+                    wk = new Walked(Double.NaN, "", "boxed in here (" + boxedNow + "): no walk to a source from this cell until the way out", PathPrice.Kind.NONE);
+                    walkNote(c, sp.x(), walkY, sp.z(), sp.dist(), wk.fail(), wk);
+                    c.fail = wk.fail();
+                } else wk = walk(c, sp.x(), walkY, sp.z(), sp.dist());
                 if (c.fail != null) {                       // 0.39.z41: no price for this walk
                     if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreach(spotKey(word, sp), wk.fail());   // the z33 source fact; z69 fix 1: that spot only
                     if (sp == first) return null;           // the way's own spot: the way cannot be picked

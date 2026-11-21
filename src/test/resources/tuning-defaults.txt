@@ -434,6 +434,7 @@ game.lavaHpPerS	8.0
 goals.freshMs	300000.0
 goals.high	20.0
 goals.legRestMs	0.0
+goals.lookAroundAfterS	30.0
 goals.maxN	4096.0
 goals.oreDefault	8.0
 gridLoop.clearTicks	4.0

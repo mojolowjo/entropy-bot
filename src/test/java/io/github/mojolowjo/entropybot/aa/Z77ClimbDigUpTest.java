@@ -180,7 +180,7 @@ class Z77ClimbDigUpTest {
         Goals.park(bb, furnace, "again");
         List<String> again = Goals.parkedTick(bb, true);
         assertEquals(1, again.size(), again.toString());
-        assertTrue(again.get(0).contains("iron_helmet: again - no wake by itself (aa want iron_helmet again)"), again.get(0));
+        assertTrue(again.get(0).contains("iron_helmet: again - priced again by itself when I am 24 blocks from"), again.get(0));   // stop-wake: the place park's own wake, no second climb try
         assertNotNull(helmet.parked);
     }
 }

@@ -79,6 +79,7 @@ final class TuningDefs {
         Tuning.def("bedSpot.far", 10, "rm-constants 0.39.u2 (was BedSpot.FAR)", "How far from the anchor a bed may stand");
         // blueprint
         Tuning.def("blueprint.maxFails", 3, "rm-constants 0.39.u2 (was Blueprint.MAX_FAILS)", "Largest schematic AA takes (cells, air included)");
+        Tuning.def("goals.lookAroundAfterS", 30, "stop-wake (cloud tester run 11: 26 min at the chest, every order stopped)", "every order stopped on the surface for this many s (a deposit walk after the last stop moves the bot by itself first): one order takes one look-around explore leg");
         Tuning.def("steps.bandProbeS", 0, "job-digpace (run JAT: 46 levels in 6 min, no line in between)", "the dig-down leg's probe: every this many s a line with y, levels, s, feet/head in water, on ground, Baritone active; 0 = off");
         Tuning.def("band.dryLevels", 4, "job-digpace (run JAT: dug from a lake)", "the dig-down leg's start column is dry when none of its first this many cells under the feet holds a fluid");
         Tuning.def("band.askWaitS", 5, "job-dig2 (run JAU: two not-known dig ends parked the order)", "the dig-down leg's price ask still not known after this many seconds: Baritone digs on its own path, the band price stands");
