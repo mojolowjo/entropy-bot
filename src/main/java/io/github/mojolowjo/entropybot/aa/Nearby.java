@@ -667,6 +667,15 @@ public final class Nearby {
     /** jbf-1 (run JBF-T2: stone under the spawn lake, 13 cells of water in its column): a cover column with a fluid in it is no dig. */
     static final String FLUID_COLUMN = " covered with water or lava in the column over it (the dig hand cannot dig a fluid column)";
 
+    /** Tester runs 10, 11 (2026-11-21): a cover column with a fluid beside one of its cells is no dig (the dig hand leaves that block). */
+    static final String FLUID_BESIDE = " covered with water or lava beside the column over it (the dig hand leaves a block that touches a fluid)";
+
+    /** A seen fluid in one of the four cells beside x y z (the sides of ClearEngine.nextToLiquid; not known: no). */
+    static boolean fluidBeside(Scan s, int x, int y, int z) {
+        return Boolean.TRUE.equals(s.fluidAt(x + 1, y, z)) || Boolean.TRUE.equals(s.fluidAt(x - 1, y, z))
+                || Boolean.TRUE.equals(s.fluidAt(x, y, z + 1)) || Boolean.TRUE.equals(s.fluidAt(x, y, z - 1));
+    }
+
     /**
      * job-sight (run JAH 00:29: "dig cobblestone seen 5 m" was stone under grass; Baritone's mine takes only blocks it sees,
      * so it ended "none in sight"): the spot's cover fact from the same chunk reads as the exposed rule ({@link Scan#seeThrough}).
@@ -696,6 +705,13 @@ public final class Nearby {
             // a fluid in the column is no cover to dig - the spot is no source, said (rule 7)
             if (Boolean.TRUE.equals(s.fluidAt(x, y + d + 1, z))) {
                 if (buried != null) buried.merge(sp.block() + FLUID_COLUMN, 1, Integer::sum);
+                return null;
+            }
+            // tester runs 10, 11 (2026-11-21: "dig -261 49 -94 -261 62 -94: blocked by water at -261 60 -94 ... 1 next to
+            // water/lava", the order parked): the dig hand leaves a block that touches a fluid (ClearEngine.nextToLiquid:
+            // above or beside), so a cover cell with a seen fluid beside it is no cover to dig - no source, said (rule 7)
+            if (fluidBeside(s, x, y + d + 1, z)) {
+                if (buried != null) buried.merge(sp.block() + FLUID_BESIDE, 1, Integer::sum);
                 return null;
             }
             if (over == null) over = s.blockAt(x, y + d + 1, z);

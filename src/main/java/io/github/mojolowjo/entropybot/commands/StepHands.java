@@ -2759,8 +2759,13 @@ public final class StepHands implements Steps.Hands {
                 drySteppingMs = System.currentTimeMillis();
                 return null;
             }
+            // the owner's yes 2026-11-21 ("no dig-down from a wet start"): the base block's dig ends here with the place's
+            // fact, the order re-plans (a band walk digs on as before, priced times band.wetBreakFactor)
+            if (t.until() != null) return wetStart(t, st, "no dry standable cell is within " + io.github.mojolowjo.entropybot.aa.brain.Tuning.i("band.dryStepM") + " blocks (band.dryStepM)");
             LOG.info("[entropybot] steps: {} - the start {} is wet and no dry standable cell is within {} blocks (band.dryStepM): digging from here, priced times band.wetBreakFactor",
                     t.text(), Jobs.fmt(st.cell()), io.github.mojolowjo.entropybot.aa.brain.Tuning.i("band.dryStepM"));
+        } else if (!dry && t.until() != null && y > t.target(y)) {
+            return wetStart(t, st, "the walk to a dry column ended on a wet one");
         }
         drySteppingMs = 0;
         bandStart = st;
@@ -2786,6 +2791,15 @@ public final class StepHands implements Steps.Hands {
         LOG.info("[entropybot] steps: {} - Baritone's priced path to {} (the band's nearest Y under the search's start {}{}; walked once its path is known)", t.text(), Jobs.fmt(bandCell),
                 Jobs.fmt(st.cell()), st.standable() ? "" : " - it has no floor: a no-path from it is not known, never the band's fact");
         return null;
+    }
+
+    /** The owner's yes 2026-11-21: the base block's dig does not start from a wet cell - its place's fact, the failed start's words. */
+    private String wetStart(Step.ToBand t, Start st, String why) {
+        String w = "the start " + Jobs.fmt(st.cell()) + " is wet (in water, no floor, or a fluid under it) and " + why + ": no dig down from a wet start";
+        LOG.info("[entropybot] steps: {} - {}", t.text(), w);
+        io.github.mojolowjo.entropybot.aa.moves.FactChange.digDown(w);
+        drySteppingMs = 0;
+        return "error: " + w;
     }
 
     /** job-dig2: the leg digs on Baritone's own search (no price asked; the band price stands). */
@@ -2885,7 +2899,7 @@ public final class StepHands implements Steps.Hands {
                 int[] from = digFrom == null ? Jobs.here(p) : digFrom;
                 String why = t.capFact(from);
                 if (b != null) Jobs.cancel(b);
-                io.github.mojolowjo.entropybot.aa.moves.FactChange.band(t.minY(), t.maxY(), why);     // the order re-plans without this dig
+                io.github.mojolowjo.entropybot.aa.moves.FactChange.digDown(why);     // the order re-plans without a dig down near here
                 return Car.Status.failed(t.text() + ": " + why);
             }
         } else if (y >= t.minY() && y <= t.maxY()) {
@@ -2905,7 +2919,9 @@ public final class StepHands implements Steps.Hands {
             // job-digpace: the column turned wet mid-dig; the water cause is named, the band way's side-step takes over
             Jobs.cancel(b);
             String why = bandStopped(p, t, "water came into the column mid-dig");
-            io.github.mojolowjo.entropybot.aa.moves.FactChange.band(t.minY(), t.maxY(), why);
+            // tester run 10: the base block's dig holds the PLACE (its band's Y moves with the feet); a band walk its band
+            if (t.until() != null) io.github.mojolowjo.entropybot.aa.moves.FactChange.digDown(why);
+            else io.github.mojolowjo.entropybot.aa.moves.FactChange.band(t.minY(), t.maxY(), why);
             return Car.Status.failed(t.text() + ": " + why);
         }
         if (!bandWalking && bandCell != null) {

@@ -5995,6 +5995,15 @@ public final class NeedChain {
             // 0.39.z78 dz (run DP 12:55:37: "to y 53..53" from the low spot 18 57 -20 failed, was dropped for the order and the
             // same dig down was priced again - the same way twice, parked; five orders): a band entry that failed here is a
             // fact (the order's hold and the world fact, held by distance) - this way is out from here, the next option is priced
+            // tester runs 10, 11 (the owner's yes 2026-11-21: "no dig-down from a wet start; after water, another column
+            // further off"): the feet's column under water is no start for a dig (the water follows the dig down), and a dig
+            // down that met water near here is held by the place - both said, the next way is priced (a seen spot, the explore)
+            if (read && topBlock < s.y() - 1) {
+                c.fail = "dig down to " + shw(base.block()) + ": the feet's column is under water (its floor at y " + topBlock + "): no dig down from a wet start";
+                return null;
+            }
+            String downHeld = heldWhy(c, DIG_DOWN_KEY);
+            if (downHeld != null) { c.fail = "dig down " + depth + " to " + shw(base.block()) + ": held near here (" + downHeld + ")"; return null; }
             String bandHeld = heldWhy(c, io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(top, top));
             if (bandHeld == null && read) bandHeld = heldWhy(c, io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(capY, top));   // run EP: the dig's own named fact
             if (bandHeld != null) { c.fail = "dig down " + depth + " to " + shw(base.block()) + ": the walk into y " + top + " is held here (" + bandHeld + ")"; return null; }
@@ -6954,6 +6963,15 @@ public final class NeedChain {
 
     /** 0.39.z77 answers (2): the source key a failed climb holds for the order (FactChange.climb). */
     public static final String CLIMB_KEY = "climb up";
+
+    /**
+     * Tester runs 10, 11 (2026-11-21; the owner's yes): the source key a dig down to the base block holds when water came
+     * into its column, its start was wet with no dry cell near, or its cap was reached (FactChange.digDown). A fact about
+     * the PLACE, not a Y band: run 10's second dig started 6 s after the first, 5 blocks away, because the first one's hold
+     * was keyed "to y 51..63" and the next plan's band was "to y 46..58". Held by distance as every world fact
+     * (failures.moved + the band), for the order that learned it too (Goals.droppedSources).
+     */
+    public static final String DIG_DOWN_KEY = "dig down here";
 
     /** The reason of the first held key starting with {@code prefix} ("key: why" -> the whole line), null: none. */
     private static String heldLine(Ctx c, String prefix) {

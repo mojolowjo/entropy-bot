@@ -59,11 +59,15 @@ class J6bEpTest {
         Z74RunACTest.data();
         int floor = NeedChain.floorIn(y -> epColumn(y).equals("minecraft:water"), 62);
         assertEquals(61, floor, "the pond's floor under its water (the water column is open and seen)");
-        Chain c = NeedChain.resolve("cobblestone", 2, pond(floor));
+        // the owner's yes 2026-11-21 (tester runs 10, 11): the feet's column under water is no start for the dig down
+        Chain wet = NeedChain.resolve("cobblestone", 2, pond(floor));
+        assertTrue(wet.steps().stream().noneMatch(s -> s instanceof Step.ToBand), "no dig down from a wet start: " + wet.steps());
+        // the same column with no water over its top (the floor is the top block): the dig as run EP ruled it
+        Chain c = NeedChain.resolve("cobblestone", 2, pond(62));
         assertTrue(c.ok() && !c.explore(), c.why());
         Step.ToBand dig = (Step.ToBand) c.steps().get(0);
-        assertEquals(Step.ToBand.digUntil(62 - NeedChain.BASE_REACH, 58, "minecraft:stone,minecraft:deepslate"), dig, "the dig until stone is seen, " + NeedChain.BASE_REACH + " at most: " + c.steps());
-        assertTrue(c.why().contains("dig down 4 to stone") && c.why().contains("the pond's floor under its water") && c.why().contains("the dig goes until stone is seen"), c.why());
+        assertEquals(Step.ToBand.digUntil(62 - NeedChain.BASE_REACH, 59, "minecraft:stone,minecraft:deepslate"), dig, "the dig until stone is seen, " + NeedChain.BASE_REACH + " at most: " + c.steps());
+        assertTrue(c.why().contains("dig down 3 to stone") && c.why().contains("the dig goes until stone is seen"), c.why());
         // the step, on the blocks as they are seen: the feet go down; done when the block they stand on is stone
         List<Integer> dug = new ArrayList<>();
         int feet = 62;

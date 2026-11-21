@@ -461,7 +461,8 @@ public final class Goals {
      */
     /** 0.39.z78 strip: a strip heading hold ("strip heading y Y h[|from ...]", NeedChain.stripHold) - kept with where the bot stood. Pure. */
     static boolean headingHold(String key) {
-        return key != null && key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STRIP_HEADING);
+        // tester runs 10, 11: the dig down's place hold lifts the same way (past failures.moved + the band from where it was learned)
+        return key != null && (key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STRIP_HEADING) || key.equals(io.github.mojolowjo.entropybot.aa.NeedChain.DIG_DOWN_KEY));
     }
 
     static boolean positional(String key) {

@@ -246,6 +246,16 @@ public final class FactChange {
     }
 
     /**
+     * Tester runs 10, 11 (2026-11-21): the dig down to the base block ended on the place - water came into the column, a wet
+     * start with no dry cell near, no base block within the cap: the source slot keyed
+     * {@link io.github.mojolowjo.entropybot.aa.NeedChain#DIG_DOWN_KEY}, held by distance from where it was learned (never by
+     * the band's Y, which changes with the feet); the order re-plans without a dig down near here.
+     */
+    public static void digDown(String why) {
+        last = new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.DIG_DOWN_KEY, why);
+    }
+
+    /**
      * Job-tunnel2 (run JAT 05:14:15: the tunnel's short stop was a price fact, the re-price "kept the running pick" and the
      * order stopped): a tunnel that ended short (Baritone stopped short, water or lava ahead) is a SOURCE fact - its heading
      * from its start held for the order (key {@link io.github.mojolowjo.entropybot.cave.Tunnel#holdKey}); the order re-plans,
@@ -364,6 +374,7 @@ public final class FactChange {
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.BOXED_IN)) return f.key().substring("source ".length());   // J6b run EH (2)
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.CAVE_KEY)) return f.key().substring("source ".length());   // run EY: the lip's opening
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.cave.Tunnel.HOLD)) return f.key().substring("source ".length());   // job-tunnel2
+        if (f != null && f.key().equals("source " + io.github.mojolowjo.entropybot.aa.NeedChain.DIG_DOWN_KEY)) return io.github.mojolowjo.entropybot.aa.NeedChain.DIG_DOWN_KEY;   // tester runs 10, 11: the place, not the step's band
         String p = "source " + io.github.mojolowjo.entropybot.aa.NeedChain.STRIP_HEADING;
         return f != null && f.key().startsWith(p) ? f.key().substring("source ".length()) : null;
     }

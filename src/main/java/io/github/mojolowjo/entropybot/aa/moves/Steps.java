@@ -1195,6 +1195,7 @@ public final class Steps {
                 }
             }
             if (fact == null) fact = shortFact(s, reason);       // 0.39.z75: a step that ended short of its count
+            if (fact == null) fact = digFact(steps, idx, reason);     // tester runs 10, 11: a cover dig's end is its spot's fact
             // 0.39.z77 walk: a walk that led to a named source is that source's fact (z65) over its own short end
             if (fact == null || FactChange.isWalkShort(fact)) {
                 FactChange.Fact lead = walkLeads(steps, idx, reason, startFeet, feetNow());
@@ -1485,6 +1486,24 @@ public final class Steps {
      * by the walk's own target cell ({@link FactChange#walkHeld}: "source walk target x y z", NeedChain.heldWalks prices
      * every walk there unreachable), so the planner re-prices from here. Null: not a walk. Pure.
      */
+    /**
+     * Tester runs 10, 11 (2026-11-21: "stopped at step 11 (dig -261 49 -94 -261 62 -94): blocked by water at -261 60 -94" had
+     * no fact, so the order parked with no wake): the dig of a cover column (NeedChain.digTo: one column, the collect of the
+     * spot under it follows) that ended failed is that spot's near-collect fact - the item's spots within failures.moved of
+     * it are priced out and the order re-plans (another column further off, or the next way). Null: not such a dig. Pure.
+     */
+    public static FactChange.Fact digFact(List<? extends Step> steps, int idx, String reason) {
+        if (steps == null || idx < 0 || idx >= steps.size() || !(steps.get(idx) instanceof Step.Dig d)) return null;
+        if (d.from()[0] != d.to()[0] || d.from()[2] != d.to()[2]) return null;
+        int x = d.from()[0], y = Math.min(d.from()[1], d.to()[1]) - 1, z = d.from()[2];
+        String why = reason == null ? "no reason" : reason.replaceFirst("^error: ", "");
+        for (int i = idx + 1; i < steps.size(); i++)
+            if (steps.get(i) instanceof Step.Collect k && k.at() != null && k.at().length >= 3 && k.at()[0] == x && k.at()[1] == y && k.at()[2] == z)     // structural: x y z
+                return new FactChange.Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.nearKey(k.item(), k.at()),
+                        "the dig to " + x + " " + y + " " + z + " ended: " + why + " (the spots near it held for this order)");
+        return null;
+    }
+
     public static FactChange.Fact walkTargetFact(List<? extends Step> steps, int idx, String reason) {
         if (steps == null || idx < 0 || idx >= steps.size() || !(steps.get(idx) instanceof Step.Walk w)) return null;
         int[] t = {w.x(), w.y(), w.z()};
