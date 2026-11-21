@@ -387,7 +387,12 @@ public final class AaRuntime implements JobPort {
         try {
             double bagE = io.github.mojolowjo.entropybot.aa.brain.FoodModel.energy(bb.in.bag);
             double target = io.github.mojolowjo.entropybot.aa.AaDesires.foodTarget(bb);
-            if (bb.in.hungerDrains && !io.github.mojolowjo.entropybot.aa.brain.HungerConserve.covered(bagE, target)) {
+            // Tester 2 runs 05-07 (2026-11-20, seed entropy-b: the heap from 1.2 to 2.6 GB in 20 s, the game out of memory; five thread
+            // samples with the render thread in NeedChain.resolveAny from here): orders only = the food need is off and this answer is
+            // a status note, so the food chain is not priced on the client thread 4 times a second; said in the cost note (rule 7)
+            if (io.github.mojolowjo.entropybot.aa.brain.Only.orders()) {
+                io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "sprint", "orders only: the food need is off, no food chain priced -> sprint");
+            } else if (bb.in.hungerDrains && !io.github.mojolowjo.entropybot.aa.brain.HungerConserve.covered(bagE, target)) {
                 // one-planner: food has a source when the chain for the food need stands without an explore
                 var fw = needWorld();
                 var fch = fw == null ? null : io.github.mojolowjo.entropybot.aa.NeedChain.resolveAny("food", io.github.mojolowjo.entropybot.aa.brain.ItemWorth.plainFoods(),
