@@ -230,7 +230,7 @@ public final class Goals {
         }
         String all = allParked(goals, g -> !g.climbRetried && worldClimb(bb, g));
         if (all == null) { bb.fact(ALL_PARKED_SAID, null); bb.fact(ALL_PARKED_SINCE, null); return out; }
-        // stop-wake (the owner's yes 2026-11-21: "as long as Baritone does the moving"): every order parked on the surface and
+        // stop-wake (the owner's yes 2026-11-21: "as long as Baritone does the moving"): every order parked and
         // nothing that moves the bot - no fact a park waits on can change while it stands. One order at a time takes ONE
         // look-around leg (the explore step: Baritone's explore), then it is priced where that ends; an order that looked
         // looks again only after it ran on a changed fact. Starts once the state lasted goals.lookAroundAfterS (a deposit
@@ -238,7 +238,9 @@ public final class Goals {
         long nowMs = bb.clock == null ? 0 : bb.clock.now();
         if (!(bb.fact(ALL_PARKED_SINCE) instanceof Long)) bb.fact(ALL_PARKED_SINCE, nowMs);
         long since = (Long) bb.fact(ALL_PARKED_SINCE);
-        if (!underGround && nowMs - since >= (long) (Tuning.get("goals.lookAroundAfterS") * 1000)) {       // structural: s -> ms
+        // tester run 20 (S2 NO: under a 3-block roof the bot counted as under ground, the climb way's one try was taken and nothing
+        // followed): under ground too - the climb way's try above comes first (it unparks, so this is reached only with none left)
+        if (nowMs - since >= (long) (Tuning.get("goals.lookAroundAfterS") * 1000)) {       // structural: s -> ms
             for (Goal g : goals) {
                 if (g.looked || g.strip != null) continue;
                 g.looked = true;
