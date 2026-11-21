@@ -5762,6 +5762,8 @@ public final class NeedChain {
 
     /** jbf-1: how near the column top the walk to a covered spot ends (Tuning sight.coverNear). */
     static int coverNear() { return Tuning.i("sight.coverNear"); }
+    /** Blocks within which the walk to a seen spot whose fact is not loaded ends (go and look, {@link #exploreLeaf}). */
+    static int lookNear() { return Tuning.i("sight.lookNearM"); }
 
     /** job-sight: the step that digs the cover column over a covered spot (Baritone's builder, the dig hand). */
     static Step.Dig digTo(Spot sp) {
@@ -6787,10 +6789,35 @@ public final class NeedChain {
         }
         // 0.39.z60 review 1 (rule 15): a known block whose structure fact is not loaded yet may well be a source: no explore on
         // an unknown, the chain waits with the reason (Chain.waiting) and is priced again on the next look
+        // Tester 1 runs 02 and 07 (cloud, 2026-11-20/21, the owner's line: spruce_log 2/16 and 9/16, the only tree known 85 m
+        // and 110 m away with its fact not loaded; the order waited 18 min and 7 min standing still, and ran 5 s after the
+        // tester moved the bot beside a tree: "what it waited on landed"): a fact that is not loaded because the spot is far
+        // lands only when the bot goes there - the way is the walk to within sight.lookNearM of the spot (go and look; no
+        // price, the chain ends there as at an explore) and the order is priced again on the facts of there. Near the spot
+        // already (the fact is on its way), the wait as before; a walk there that failed for this order (held): the next spot,
+        // then the explore
+        Spot far = null;
         for (Spot sp : c.w.seenAll().apply(word)) {
             if (!sp.unloaded()) continue;
-            c.fail = "source " + shw(sp.block() == null ? word : sp.block()) + " at " + sp.x() + " " + sp.y() + " " + sp.z() + ": " + SOURCE_NOT_LOADED;
+            if (sp.dist() <= lookNear()) {
+                c.fail = "source " + shw(sp.block() == null ? word : sp.block()) + " at " + sp.x() + " " + sp.y() + " " + sp.z() + ": " + SOURCE_NOT_LOADED;
+                return null;
+            }
+            if (heldKey(c, walkTargetKey(sp.x(), sp.y(), sp.z()))) continue;
+            if (far == null || sp.dist() < far.dist()) far = sp;
+        }
+        if (far != null && c.down != null) {         // priced from another level (the leg leaves the bot there): no walk from here to send, the wait as before
+            c.fail = "source " + shw(far.block() == null ? word : far.block()) + " at " + far.x() + " " + far.y() + " " + far.z() + ": " + SOURCE_NOT_LOADED;
             return null;
+        }
+        if (far != null) {
+            c.steps.add(new Step.Walk(far.x(), far.y(), far.z(), lookNear()));
+            c.stuck = true;
+            if (c.unknown == null) c.unknown = word;
+            String out = "go and look at " + shw(far.block() == null ? word : far.block()) + " seen at " + far.x() + " " + far.y() + " " + far.z() + " (" + Math.round(far.dist())
+                    + " m; " + SOURCE_NOT_LOADED + ": it loads from within " + lookNear() + " blocks) (" + reason + ")";
+            if (c.trace != null) c.trace.note("source: " + out);
+            return out;
         }
         // 0.39.z68 (owner 2026-10-25: "if it's wood - go to surface to explore, if it's ore, explore for caves"): where the
         // target generates, from the jars' world-gen data (GenWhere: heightmap-placed = the surface, height_range = a band)

@@ -671,6 +671,7 @@ final class TuningDefs {
         Tuning.def("sightings.animalRange", 32, "rm-constants 0.39.u2 (was Sightings.ANIMAL_RANGE)", "the animal range of Sightings");
         Tuning.def("sight.coverMax", 4, "job-sight (run JAH 00:29)", "the deepest cover (blocks over it) priced by its own cover block; deeper is priced as a dig of that many levels of stone (job-lookup: never left out)");
         Tuning.def("sight.maxCovered", 4096, "job-sight", "the most covered marks the sightings store keeps per dimension (oldest go first)");
+        Tuning.def("sight.lookNearM", 32, "Tester 1 runs 02 and 07 (2026-11-20/21: an order waited 18 and 7 min on a tree 85 and 110 m away whose fact was not loaded)", "blocks within which the walk to a seen spot whose structure fact is not loaded ends (go and look; two chunks: the smallest view a client loads); nearer than this the chain waits for the fact as before");
         Tuning.def("sight.coverNear", 2, "jbf-1 (run JBF-T2 10:36-10:50: the walk to a covered spot went for the buried cell itself, 82 re-plans)", "blocks within which the walk to a covered spot ends of the top of its column (the first open cell over the cover)");
         Tuning.def("sightings.merge", 16,"rm-constants 0.39.u2 (was Sightings.MERGE)", "the merge of Sightings");
         Tuning.def("sightings.maxCaves", 400, "rm-constants 0.39.u2 (was Sightings.MAX_CAVES)", "the max caves of Sightings");

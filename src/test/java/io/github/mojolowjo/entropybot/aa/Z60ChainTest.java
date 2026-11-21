@@ -41,6 +41,32 @@ class Z60ChainTest {
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof io.github.mojolowjo.entropybot.aa.moves.Step.Explore), c.steps().toString());
     }
 
+    /**
+     * Tester 1 runs 02 and 07 (2026-11-20/21: the order waited 18 and 7 minutes on a tree 85 and 110 m away, and ran 5 s
+     * after the bot was moved beside one): the only source's fact is not loaded and the spot is FAR - the way is the walk
+     * to within sight of it (go and look), no explore and no wait; the chain ends there with no price.
+     */
+    @Test
+    void aFarSourceWhoseFactIsNotLoadedIsWalkedTo() {
+        ScenariosTest.world("wooden");
+        Spot t = ScenariosTest.tree(110, 4).notLoaded();
+        Chain c = logs(new ScenariosTest.FakePath().asLine(t), t);
+        assertTrue(c.ok(), c.why());
+        assertFalse(c.waiting(), c.why());
+        assertEquals(List.of("goto 110 64 0 near 32"), c.steps().stream().map(io.github.mojolowjo.entropybot.aa.moves.Step::text).toList());
+        assertTrue(c.why().contains("go and look at oak_log seen at 110 64 0"), c.why());
+    }
+
+    /** The walk to that spot failed for this order (held): not walked to again - the explore, as with no source known. */
+    @Test
+    void aFarUnloadedSourceWhoseWalkIsHeldFallsToTheExplore() {
+        ScenariosTest.world("wooden");
+        Spot t = ScenariosTest.tree(110, 4).notLoaded();
+        Chain c = NeedChain.resolve("oak_log", 1, ScenariosTest.w(Map.of(), false, false, Map.of("oak_log", List.of(t))).withPath(new ScenariosTest.FakePath().asLine(t))
+                .withHeld(List.of(NeedChain.walkTargetKey(110, 64, 0) + ": the walk to 110 64 0 failed")));
+        assertTrue(c.steps().stream().anyMatch(s -> s instanceof io.github.mojolowjo.entropybot.aa.moves.Step.Explore), c.steps() + " " + c.why());
+        assertTrue(c.steps().stream().noneMatch(s -> s instanceof io.github.mojolowjo.entropybot.aa.moves.Step.Walk), c.steps().toString());
+    }
     /** A fork with {@code pending} first answers counted (the fake's walks otherwise). */
     private static PathPrice pending(ScenariosTest.FakePath fake, int pending) {
         return new PathPrice() {

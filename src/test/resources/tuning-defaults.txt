@@ -735,6 +735,7 @@ shoreWatch.shoreTries	4.0
 sight.coverMax	4.0
 sight.maxCovered	4096.0
 sight.coverNear	2.0
+sight.lookNearM	32.0
 sightings.animalRange	32.0
 sightings.confirmMaxMs	30000.0
 sightings.confirmMs	2000.0
