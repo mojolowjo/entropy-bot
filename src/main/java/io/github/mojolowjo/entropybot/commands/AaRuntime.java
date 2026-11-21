@@ -4054,13 +4054,24 @@ public final class AaRuntime implements JobPort {
         }
     }
 
+    /** deposit-kept: the line's deposit run is on its way to the chest (its items still in the bag, still kept). */
+    private boolean depositOnItsWay;
+
     private void depositDueTick() {
+        // Tester 1 run 09 (2026-11-21: "got 16 cobblestone (goal 8 done)" 9 s after the line's deposit STARTED, the 16 then
+        // put in the chest - the order of 8 ended with nothing): the due amounts stay kept until the deposit run has ended
+        // (in the chest then, or the run failed and said so), not from its start
+        if (depositOnItsWay && !c.stepRun.running() && !c.jobs.running()) {
+            depositOnItsWay = false;
+            lineDeposits.gone();
+        }
         if (depositDue == null || c.stepRun.running() || c.jobs.running() || chainRunning()) return;
         String r = order("deposit", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Deposit(depositItems)));
         if (r.startsWith("aa deposit: busy")) return;                    // the slot went to something else this tick: next tick
         String why = depositDue;
         depositDue = null;
-        lineDeposits.gone();                                             // deposit-kept: started (or refused, said below): no longer kept from the plans
+        if (r.startsWith("ok")) depositOnItsWay = true;                  // deposit-kept: kept until the run ends (above)
+        else lineDeposits.gone();                                        // refused (said below): no deposit comes, no longer kept from the plans
         if (r.startsWith("ok")) { LOG.info("[entropybot] aa: {} - started", why); c.whisper(c.owner(), "aa: " + why); }
         else { LOG.info("[entropybot] aa: {} - but it could not start: {}", why, r); c.whisper(c.owner(), "aa: the deposit could not start: " + r); }
     }
