@@ -778,6 +778,17 @@ public final class Steps {
      * most monitor.stallS from the first one for this step; past that the watch ends the step as before (its fact).
      * Called by the watch when it fires (it starts the bound).
      */
+    /**
+     * Worlds run 1 (cloud testers 2026-11-22, w097, w099 and more: "stuck 40 s at stand while paths compute (up to 30 s)",
+     * then "the same way failed twice", every order stopped within a minute): the running step is the stand that waits
+     * for background path prices. It has its own bound (pathCost.firstAnswerWaitS, counted on the wall clock: the
+     * searches are real compute) and stands still on purpose, so the brain's no-move watch does not judge it - at a
+     * raised tick rate that watch's 40 game seconds pass in 4 wall seconds, before any search can answer.
+     */
+    public boolean standsOnItsOwnBound() {
+        return phase == Phase.RUNNING && !paused && idx >= 0 && idx < steps.size() && steps.get(idx) instanceof Step.AwaitPaths;
+    }
+
     public boolean monitorJudges() {
         if (!(phase == Phase.RUNNING && !paused && idx >= 0 && idx < steps.size() && monitorOn && monitor.judged())) return false;
         if (monitoredSince < 0) monitoredSince = now;
