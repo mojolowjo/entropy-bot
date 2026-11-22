@@ -312,7 +312,7 @@ final class SimGame {
         long idleSince = clock.now();
         while (end == null) {
             tick();
-            while (!due.isEmpty() && end == null) { deposits.gone(); deposit(due.remove(0)); }
+            while (!due.isEmpty() && end == null) { deposit(due.remove(0)); deposits.gone(); }     // as the game since af9e82fc: the -d amounts stay kept until the deposit run has ended
             if (end != null) break;
             if (Goals.of(bb).isEmpty()) { end = "done"; break; }
             if (seconds() > limitS) { end = "time limit: " + limitS + " s; orders left: " + orders(); break; }
@@ -480,6 +480,11 @@ final class SimGame {
         String[] p = mainAt.split(" ");
         int[] c = {Integer.parseInt(p[0]), Integer.parseInt(p[1]), Integer.parseInt(p[2])};
         if (!"minecraft:chest".equals(world.at(c[0], c[1], c[2]))) { end = "deposit: no chest at " + mainAt + " (" + world.at(c[0], c[1], c[2]) + ")"; return; }
+        // the deposit walk's lease, as the game's (AaRuntime.orderReserves with no running order): every -d amount in the
+        // bag is reserved, so the walk places none of it (the 100 worlds, 2026-11-22: 10 of 68 lines came up 1-10
+        // cobblestone short because the sim let the kept amounts go before the walk and placed them on the way)
+        sense();
+        lease = Goals.orderReserves(null, Goals.finished(bb), bb.in.bag, Goals.kept(bb, null, null));
         SimSteps.Result w = SimSteps.apply(this, new Step.Walk(c[0], c[1], c[2], 2));
         clock.advance(Math.round(w.seconds() * 1000));       // structural: milliseconds a second
         if (!w.ok()) { say("deposit FAILED at " + mainAt + ": the walk there: " + w.text() + "; nothing put in, the items stay in the bag " + items); return; }
@@ -492,6 +497,16 @@ final class SimGame {
             if (n < e.getValue()) short_.add(n + " of " + e.getValue() + " " + e.getKey());
         }
         say("deposit at " + mainAt + ": " + put + (short_.isEmpty() ? "" : "; SHORT: " + short_) + String.format(Locale.ROOT, " (walk %.1f s)", w.seconds()));
+    }
+
+    /** The bag less every -d amount kept for a deposit (full item ids): what a step may use up first, as the planner counts it. */
+    Map<String, Integer> freeItems() {
+        Map<String, Integer> free = new HashMap<>(bag);
+        for (var e : Goals.kept(bb, null, null).entrySet()) {
+            String id = e.getKey().contains(":") ? e.getKey() : "minecraft:" + e.getKey();
+            free.computeIfPresent(id, (k, v) -> Math.max(0, v - e.getValue()));
+        }
+        return free;
     }
 
     void give(String item, int n) { bag.merge(item, n, Integer::sum); }

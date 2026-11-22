@@ -530,7 +530,11 @@ final class SimSteps {
         if (!g.stationNear("minecraft:furnace")) return Result.fail(0, "smelt " + m.item() + ": no furnace in reach of " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2]);
         for (ItemWorth.Recipe r : ItemWorth.recipes(item)) {
             if (!ItemWorth.SMELT.equals(r.kind())) continue;
-            Map<String, Integer> pay = pay(g.bag, r, m.n());
+            // the input from what is free first (the planner planned on the free bag: a kept -d log is not the charcoal's),
+            // the whole bag only when the free part cannot pay - as the game's furnace hand would, said in the result
+            Map<String, Integer> pay = pay(g.freeItems(), r, m.n());
+            boolean fromKept = pay == null;
+            if (fromKept) pay = pay(g.bag, r, m.n());
             if (pay == null) continue;
             Map<String, Integer> left = new HashMap<>(g.bag);
             for (var e : pay.entrySet()) left.merge(e.getKey(), -e.getValue(), Integer::sum);
@@ -540,7 +544,7 @@ final class SimSteps {
             for (var e : pay.entrySet()) g.take(e.getKey(), e.getValue());
             for (var e : burn.entrySet()) g.take(e.getKey(), e.getValue());
             g.give(item, m.n());
-            return Result.ok(SMELT_SETUP_S + m.n() * SMELT_S, "smelted " + m.n() + " " + m.item() + " from " + pay + " on " + burn);
+            return Result.ok(SMELT_SETUP_S + m.n() * SMELT_S, "smelted " + m.n() + " " + m.item() + " from " + pay + (fromKept ? " (FROM A KEPT -d AMOUNT: nothing free paid it)" : "") + " on " + burn);
         }
         return Result.fail(0, "smelt " + m.item() + ": the bag lacks the input; bag " + g.bag);
     }
