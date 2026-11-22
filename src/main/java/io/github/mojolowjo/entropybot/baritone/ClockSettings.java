@@ -22,7 +22,7 @@ public final class ClockSettings {
 
     private static final Logger LOG = LogUtils.getLogger();
     private static float applied = 20;       // game fact: 20 ticks a second
-    private static int gap0 = -1, settle0 = -1;
+    private static int gap0 = -1, settle0 = -1, stuck0 = -1, stage0 = -1;
     private static boolean failed;
 
     /** Once per client tick (Core.onClientTick, after GameClock.tick): follows the client's rate when it changed. */
@@ -35,12 +35,18 @@ public final class ClockSettings {
             if (gap0 < 0) {
                 gap0 = s.interactClickGapTicks.value;
                 settle0 = s.interactSettleTicks.value;
+                stuck0 = s.interactStuckTicks.value;
+                stage0 = s.interactStageTicks.value;
             }
             int gap = GameClock.latencyTicks(gap0), settle = GameClock.latencyTicks(settle0);
             s.interactClickGapTicks.value = gap;
             s.interactSettleTicks.value = settle;
-            LOG.warn("[entropybot] clock: the client ticks at {} a second - Baritone's interactClickGapTicks {} -> {}, interactSettleTicks {} -> {} (test tooling: the same wall time; its own values at 20)",
-                    Math.round(rate), gap0, gap, settle0, settle);
+            // tester run 49 (iron at rate 200: the deposit's use gave up "stuck 10 s short of the chest" one wall second after its
+            // walk ended, 100 m from the chest): the use's stuck and stage waits cover a path search's real compute too
+            s.interactStuckTicks.value = GameClock.latencyTicks(stuck0);
+            s.interactStageTicks.value = GameClock.latencyTicks(stage0);
+            LOG.warn("[entropybot] clock: the client ticks at {} a second - Baritone's interactClickGapTicks {} -> {}, interactSettleTicks {} -> {}, interactStuckTicks {} -> {}, interactStageTicks {} -> {} (test tooling: the same wall time; its own values at 20)",
+                    Math.round(rate), gap0, gap, settle0, settle, stuck0, s.interactStuckTicks.value, stage0, s.interactStageTicks.value);
             applied = rate;
         } catch (Throwable t) {
             failed = true;
