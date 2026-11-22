@@ -1518,8 +1518,8 @@ public final class Steps {
         if (reason == null || !reason.startsWith(FactChange.STALL_NO_PROGRESS) || farthest >= 1 || feet == null || feet.length < 3) return null;   // structural: one block; x y z
         // a collect is left to its own near-collect fact (z76); the distance is the horizontal one the monitor measures
         // (a walk straight down keeps "farthest 0" while it digs)
-        int[] to = s instanceof Step.ChopTree t ? t.at()
-                : s instanceof Step.Walk w ? new int[]{w.x(), w.y(), w.z()} : s instanceof Step.ToStation w ? new int[]{w.x(), w.y(), w.z()} : null;
+        // review 2026-11-21: a station walk keeps its own fact (the one station store, rule 23)
+        int[] to = s instanceof Step.ChopTree t ? t.at() : s instanceof Step.Walk w ? new int[]{w.x(), w.y(), w.z()} : null;
         if (to == null || to.length < 3) return null;        // structural: x y z
         double dx = to[0] - feet[0], dz = to[2] - feet[2];
         if (Math.sqrt(dx * dx + dz * dz) <= Step.Collect.MINE_SIGHT) return null;

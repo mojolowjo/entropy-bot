@@ -48,6 +48,6 @@ public final class OrderEnds {
         Goals.retryLoopParks(bb, brain.failures);
         // 0.39.z77 climb (run CM 17:43-17:48, rule 7): every order parked - under ground the waiting ones try the climb way once,
         // and the all-parked line (each park and its wake) is said once; said by Goals (log + whisper)
-        Goals.parkedTick(bb, underGround, brain.failures);
+        Goals.parkedTick(bb, underGround, brain.failures, brain.runningDesire() != null || (bb.in != null && bb.in.otherJob != null));
     }
 }

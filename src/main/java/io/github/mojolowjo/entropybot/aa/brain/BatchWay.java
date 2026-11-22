@@ -210,7 +210,7 @@ public final class BatchWay {
             return out;
         }
         for (Goals.Goal o : Goals.of(bb)) {
-            if (!g.batch.equals(o.batch) || o.parked != null || o.strip != null || o.r.group()) continue;
+            if (!g.batch.equals(o.batch) || (o.parked != null && o != g) || o.strip != null || o.r.group()) continue;   // review 2026-11-21: a parked ASKER is priced in its own trip (the wake's price), never judged on its siblings' trip
             if (bb.in != null && Goals.have(Goals.free(bb, o), o) >= o.n) continue;
             out.add(o);
         }
