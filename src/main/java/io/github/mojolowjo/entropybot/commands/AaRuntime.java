@@ -3626,6 +3626,16 @@ public final class AaRuntime implements JobPort {
     private void brainFacts(Minecraft mc, long now) {
         Path tf = tuningFile();
         if (tf != null && !tf.equals(tuningFor)) {
+            // worlds run 1 (cloud tester 2, 2026-11-22: "boxed in at 6 68 -22 held here as a world fact" in seeds w073 AND
+            // w075, two worlds made one after the other in one game): the place facts are cells of ONE world. Another world
+            // (its folder differs from the one before) starts with none - the world facts and the station holds; the first
+            // world of a session has none to drop. Said in the log (rule 7).
+            if (tuningFor != null) {
+                int n = io.github.mojolowjo.entropybot.aa.brain.WorldFacts.of(bb).size();
+                bb.fact(io.github.mojolowjo.entropybot.aa.brain.WorldFacts.FACT, null);
+                io.github.mojolowjo.entropybot.aa.brain.StationHolds.INSTANCE.reset();
+                LOG.info("[entropybot] aa: another world ({}): {} world facts and the station holds of the world before are dropped", tf.getParent() == null ? tf : tf.getParent().getFileName(), n);
+            }
             tuningFor = tf;
             loadTuning();
         }
