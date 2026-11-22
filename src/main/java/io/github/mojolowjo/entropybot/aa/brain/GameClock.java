@@ -52,9 +52,23 @@ public final class GameClock {
      * waits follow ticks, answer waits follow the wall.
      */
     public static int latencyTicks(int ticks) {
-        float r = clientRate;
-        return r <= 20 ? ticks : (int) Math.ceil(ticks * (double) r / 20.0);     // game fact: 20 ticks a second
+        double r = Math.min(clientRate, measuredRate);
+        return r <= 20 ? ticks : (int) Math.ceil(ticks * r / 20.0);     // game fact: 20 ticks a second
     }
+
+    /**
+     * Worlds run 2 (cloud tester 2, 2026-11-22, w055: a "stand while paths compute (up to 30 s)" stood three wall minutes):
+     * the rate ASKED is not the rate the client reaches - in a heavy stretch it ticks 5 to 40 times a second at "tick rate
+     * 200", and a wait stretched by the asked rate was ten times too long on the wall. The rate the client really ticks
+     * at, counted over the last second of wall time ({@link #tick}); a wait is stretched by the smaller of the two.
+     * Before the first full second: the asked rate.
+     */
+    private static volatile double measuredRate = Double.MAX_VALUE;
+    private static long windowStart;
+    private static int windowTicks;
+
+    /** The client's measured ticks a wall second (the last full second), for the status line. */
+    public static double measuredRate() { return measuredRate == Double.MAX_VALUE ? clientRate : measuredRate; }
 
     private static volatile int ticksAFrame = 10;        // game fact: vanilla's Minecraft.runTick runs 10 client ticks a frame at most
 
@@ -63,6 +77,14 @@ public final class GameClock {
 
     /** Once per client tick (Core.onClientTick): reads the switches, advances the tick clock. */
     public static void tick() {
+        long w = wall.getAsLong();
+        windowTicks++;
+        if (windowStart == 0) { windowStart = w; windowTicks = 0; }
+        else if (w - windowStart >= 1000) {       // structural: one second of wall time
+            measuredRate = windowTicks * 1000.0 / (w - windowStart);     // structural: ms a second
+            windowStart = w;
+            windowTicks = 0;
+        }
         followRate = Tuning.get("clock.clientTickRate") >= 1;
         ticksAFrame = Tuning.i("clock.ticksAFrame");
         boolean want = Tuning.get("clock.gameTicks") >= 1;
@@ -84,7 +106,7 @@ public final class GameClock {
     /** One line for aa status / the log: the mode and, ticking, how far the clock runs ahead of the wall. */
     public static String line() {
         long ahead = ms() - wall.getAsLong();
-        String hook = "; client tick-rate hook " + (clientRateApplied ? (followRate ? "ON (clock.clientTickRate 1)" : "in, off") : "NOT in");
+        String hook = "; client tick-rate hook " + (clientRateApplied ? (followRate ? "ON (clock.clientTickRate 1), " + Math.round(measuredRate()) + " ticks a wall second now of " + Math.round(clientRate) + " asked" : "in, off") : "NOT in");
         return (ticking ? "clock: game ticks (clock.gameTicks 1), " + ahead / 1000 + " s off the wall clock"   // structural: ms a second
                 : "clock: the wall clock" + (skew > 0 ? " + " + skew / 1000 + " s kept from a ticking spell" : "")) + hook;   // structural: ms a second
     }
@@ -93,6 +115,10 @@ public final class GameClock {
     static synchronized void testWall(java.util.function.LongSupplier w) {
         wall = w == null ? System::currentTimeMillis : w;
         ticking = false;
+        measuredRate = Double.MAX_VALUE;
+        windowStart = 0;
+        windowTicks = 0;
+        clientRate = 20;
         anchor = 0;
         ticks = 0;
         skew = 0;
