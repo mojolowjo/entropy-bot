@@ -4076,7 +4076,16 @@ public final class AaRuntime implements JobPort {
             lineDeposits.gone();
         }
         if (depositDue == null || c.stepRun.running() || c.jobs.running() || chainRunning()) return;
-        String r = order("deposit", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Deposit(depositItems)));
+        // A/B/C 1 (cloud tester 2, 2026-11-22: w052-B, w053-A and more - the whole line in the bag, the chest empty:
+        // "deposit: chest at 17 70 32: gave up at use ...: no path to the chest (the use's own walk to a stand within reach,
+        // from 5 47 34)", the bot 23 under ground): the use's own walk is a short one to a stand by the chest, not a way out
+        // of the ground. Under ground the deposit run first walks up to the surface (the same step the chain's ways use:
+        // Baritone's priced path, the ordinary lease with the kept amounts reserved), then deposits.
+        List<io.github.mojolowjo.entropybot.aa.moves.Step> depositSteps = new ArrayList<>();
+        var over = surfaceOver();
+        if (over != null && over.depth() > 0) depositSteps.add(new io.github.mojolowjo.entropybot.aa.moves.Step.ToSurface(over.x(), over.y(), over.z()));
+        depositSteps.add(new io.github.mojolowjo.entropybot.aa.moves.Step.Deposit(depositItems));
+        String r = order("deposit", depositSteps);
         if (r.startsWith("aa deposit: busy")) return;                    // the slot went to something else this tick: next tick
         String why = depositDue;
         depositDue = null;
