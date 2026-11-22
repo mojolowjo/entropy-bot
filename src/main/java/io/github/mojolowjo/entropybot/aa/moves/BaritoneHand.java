@@ -215,7 +215,7 @@ final class BaritoneHand implements JobHands.Hand {
      */
     private void stuckWindow(baritone.api.process.IInteractProcess ip) {
         try {
-            ip.stuckTicks(io.github.mojolowjo.entropybot.aa.brain.Tuning.i("interact.stuckTicks"));
+            ip.stuckTicks(io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(io.github.mojolowjo.entropybot.aa.brain.Tuning.i("interact.stuckTicks")));     // tester runs 49, 53: the window covers a path search's real compute - wall time at a raised client rate
         } catch (LinkageError e) {
             Object w = Minecraft.getInstance().level;
             if (w != stuckWarnedWorld) {
