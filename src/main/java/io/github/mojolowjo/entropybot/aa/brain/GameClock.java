@@ -41,6 +41,21 @@ public final class GameClock {
     /** Tuning clock.clientTickRate 1: the client ticks at the server's rate above 20 too (read once a tick). */
     public static boolean followServerRate() { return followRate; }
 
+    /** The client's tick rate now (ticks a second): 20, or the server's rate while the hook follows it (set by the mixin). */
+    public static volatile float clientRate = 20;
+
+    /**
+     * Tick-rate trial 3 (cloud tester runs 36-38: "the grid did not make oak_planks" once at rate 200, every craft at 400):
+     * a wait counted in client ticks for the SERVER'S ANSWER (a screen opening, a result slot, a slot sync) waits on real
+     * latency, so at a raised client rate it must be the same wall time, not the same tick count - {@code ticks} as
+     * written for 20 a second, in client ticks now. At 20 (the hook off): unchanged. The mirror of {@link #ms()}: game-play
+     * waits follow ticks, answer waits follow the wall.
+     */
+    public static int latencyTicks(int ticks) {
+        float r = clientRate;
+        return r <= 20 ? ticks : (int) Math.ceil(ticks * (double) r / 20.0);     // game fact: 20 ticks a second
+    }
+
     private static volatile int ticksAFrame = 10;        // game fact: vanilla's Minecraft.runTick runs 10 client ticks a frame at most
 
     /** The client ticks run in one frame at most: vanilla's 10, or Tuning clock.ticksAFrame while the hook is on. */

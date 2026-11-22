@@ -40,7 +40,7 @@ import java.util.Map;
 final class RestoreRun {
     private static final Logger LOG = LogUtils.getLogger();
     static long walkMax() { return Tuning.l("restoreRun.walkMax"); }
-    static long checkTicks() { return Tuning.l("restoreRun.checkTicks"); }
+    static long checkTicks() { return io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks((int) Tuning.l("restoreRun.checkTicks")); }   // did the placed block stay (the server's answer): wall time at a raised client rate
 
     final List<RestorePlan.Action> queue;
     final List<RestorePlan.Left> left = new ArrayList<>();

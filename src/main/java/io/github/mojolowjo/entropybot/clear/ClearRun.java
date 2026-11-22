@@ -161,7 +161,7 @@ public final class ClearRun {
             case "plan": return plan(b, now);
             case "walk": return walk(b, now);
             case "settle":
-                if (now - phaseStart >= Tuning.i("clearRun.pickTicks")) phase = "pick";
+                if (now - phaseStart >= io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(Tuning.i("clearRun.pickTicks"))) phase = "pick";   // the server's answer: wall time at a raised client rate
                 return Out.RUN;
             default:
                 phase = "pick";
@@ -426,7 +426,7 @@ public final class ClearRun {
         }
         ClearGrid.Plan p = ClearGrid.planWalk(w, bot, job);
         if (p == null && ClearEngine.retryRound(job)) p = ClearGrid.planWalk(w, bot, job);
-        if (p == null && now - (lastBreakTick == null ? -1000 : lastBreakTick) < Tuning.i("clearRun.rebreakTicks")) {
+        if (p == null && now - (lastBreakTick == null ? -1000 : lastBreakTick) < io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(Tuning.i("clearRun.rebreakTicks"))) {
             // just broke something: give the server a moment to put back a break it refused, then look again
             phase = "settle";
             phaseStart = now;

@@ -27,11 +27,15 @@ public abstract class ClockMixinMinecraft {
     private void entropybot$tickTarget(float defaultValue, CallbackInfoReturnable<Float> cir) {
         try {
             io.github.mojolowjo.entropybot.aa.brain.GameClock.clientRateApplied = true;
+            io.github.mojolowjo.entropybot.aa.brain.GameClock.clientRate = 20;
             if (!io.github.mojolowjo.entropybot.aa.brain.GameClock.followServerRate()) return;
             Minecraft mc = (Minecraft) (Object) this;
             if (mc.level == null) return;
             TickRateManager m = mc.level.tickRateManager();
-            if (m.runsNormally()) cir.setReturnValue(m.millisecondsPerTick());
+            if (m.runsNormally()) {
+                io.github.mojolowjo.entropybot.aa.brain.GameClock.clientRate = Math.max(20, m.tickrate());
+                cir.setReturnValue(m.millisecondsPerTick());
+            }
         } catch (Throwable t) {
             io.github.mojolowjo.entropybot.Quiet.warn("clock: the client tick-rate hook failed (the client stays at 20 ticks a second)", t);
         }

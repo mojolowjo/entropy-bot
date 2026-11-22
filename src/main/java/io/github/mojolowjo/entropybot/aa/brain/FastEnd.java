@@ -32,7 +32,7 @@ public final class FastEnd {
      * @return null when the end stands, else the failure text
      */
     /** 0.39.z60 review 4: game ticks a fast end with no bag change yet waits for the server's inventory sync (Tuning). */
-    public static int syncTicks() { return Tuning.i("failures.fastEndSyncTicks"); }
+    public static int syncTicks() { return GameClock.latencyTicks(Tuning.i("failures.fastEndSyncTicks")); }   // the server's answer: wall time at a raised client rate
 
     /** 0.39.z60 review 4: hold the end for the inventory sync ({@code verdict}: what it would say now), or decide it. */
     public record Hold(boolean waitSync, String verdict) {}

@@ -26,10 +26,10 @@ public final class GridLoop {
     /** A stack per cell at most (and never more than the item's own stack size). */
     public static int maxPerCell() { return Tuning.i("gridLoop.maxPerCell"); }
     /** Ticks after a clear before the next fill (the cleared items settle in the bag). */
-    public static int clearTicks() { return Tuning.i("gridLoop.clearTicks"); }
+    public static int clearTicks() { return io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(Tuning.i("gridLoop.clearTicks")); }     // the server's answer: wall time at a raised client rate
     /** Ticks after the shift-click before the batch is counted when it all arrived; at most {@link #SETTLE_MAX}. */
-    public static int settleMin() { return Tuning.i("gridLoop.settleMin"); }
-    public static int settleMax() { return Tuning.i("gridLoop.settleMax"); }
+    public static int settleMin() { return io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(Tuning.i("gridLoop.settleMin")); }
+    public static int settleMax() { return io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(Tuning.i("gridLoop.settleMax")); }
 
     public enum State { WAIT, DONE, FAIL }
 

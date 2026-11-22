@@ -183,7 +183,7 @@ public final class SleepJob {
                     s.setStatus("sleeping (" + DayNight.clock(lv.getDayTime()) + ")");
                     return "wait";
                 }
-                if (now - ps.at < 40) return "wait";
+                if (now - ps.at < io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(40)) return "wait";   // the server's answer: wall time at a raised client rate
                 String msg = lastBedAt >= ps.at - 2 ? lastBed : null;
                 s.jobs.finish("error: could not sleep: " + (msg != null ? msg : "the bed didn't take me (no answer from the server)"));
                 return "wait";

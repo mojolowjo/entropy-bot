@@ -58,7 +58,9 @@ import java.util.regex.Pattern;
  */
 public final class Storage {
     private static final Logger LOG = LogUtils.getLogger();
-    static int guiSettle() { return Tuning.i("storage.guiSettle"); }
+    static int guiSettle() { return io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(Tuning.i("storage.guiSettle")); }   // the server's answer: wall time at a raised client rate
+    /** A wait for the server's answer (a screen, a slot sync): the same wall time at a raised client rate. */
+    private static int lat(int ticks) { return io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(ticks); }
     static int potsR() { return Tuning.i("storage.potsR"); }
 
     private final Core core;
@@ -137,7 +139,7 @@ public final class Storage {
             if (containerSeen) {
                 containerSeen = false;
                 lastOpened = null;
-            } else if (lastOpened != null && now() - lastOpenedTick > 100) {
+            } else if (lastOpened != null && now() - lastOpenedTick > lat(100)) {
                 lastOpened = null;            // the click opened nothing: never file a later container under it
             }
             return;
@@ -761,7 +763,7 @@ public final class Storage {
     /** Seq step "rsdisks": the open drive's disk slots ("special"), each disk's tooltip asked once, read 20 ticks later. */
     String rsDisksStep(Seq s, Step st, LocalPlayer p, long elapsed) {
         String at = Jobs.fmt(st.pos);
-        if (!Gui.open(p)) return elapsed > 60 ? "the disk drive at " + at + " did not open" : "wait";
+        if (!Gui.open(p)) return elapsed > lat(60) ? "the disk drive at " + at + " did not open" : "wait";
         McMenu m = new McMenu(p);
         Map<String, List<Integer>> roles = GuiCore.roles(m);
         List<Integer> slots = roles.get(GuiCore.SPECIAL);
@@ -775,7 +777,7 @@ public final class Storage {
             s.stageTick = now();
             return "wait";
         }
-        if (now() - s.stageTick < 20) return "wait";
+        if (now() - s.stageTick < lat(20)) return "wait";
         List<String[]> disks = new ArrayList<>();
         for (int i : slots) disks.add(m.id(i) == null ? null : new String[]{m.id(i), StorageRules.diskInfo(tooltip(p, i))});
         String r = StorageRules.diskReport(at, disks);
@@ -866,13 +868,13 @@ public final class Storage {
     String rsMoveStep(Seq s, Step st, LocalPlayer p, long elapsed) {
         Minecraft mc = Minecraft.getInstance();
         AbstractContainerMenu m = p.containerMenu;
-        if (rsGridItems(p) == null) return elapsed > 40 ? "the grid did not open" : "wait";
+        if (rsGridItems(p) == null) return elapsed > lat(40) ? "the grid did not open" : "wait";
         if (s.stage == null) {
             s.rsBefore = Gui.inventory(p);
             s.rsQuiet = 0;
             s.rsLast = -1;
             s.stage = "go";
-            s.stageTick = now() - 8;
+            s.stageTick = now() - lat(8);
             if (st.op.equals("take")) {
                 Object[] ent = rsEntry(p, st.id);
                 if (ent == null || (long) ent[1] <= 0) return "the RS network has no " + GuiCore.bareId(st.id);
@@ -881,7 +883,7 @@ public final class Storage {
                 s.rsShort = t.had();
             }
         }
-        if (now() - s.stageTick < 8) return "wait";
+        if (now() - s.stageTick < lat(8)) return "wait";      // the server's answer between click bursts: wall time at a raised client rate
         s.stageTick = now();
         Map<String, Integer> inv = Gui.inventory(p);
         List<Map<String, Integer>> d = GuiCore.diff(s.rsBefore, inv);

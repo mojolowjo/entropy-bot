@@ -207,6 +207,9 @@ public final class Seq {
     void splice(int at, List<Step> add) { steps.addAll(at, add); }
 
 
+    /** A wait for the server's answer (a screen, a slot sync): the same wall time at a raised client rate. */
+    private static int lat(int ticks) { return io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(ticks); }
+
     private String step(Step st, LocalPlayer p) {
         long elapsed = now() - stepStart;
         switch (st.type) {
@@ -461,9 +464,9 @@ public final class Seq {
             return "wait";
         }
         if (Gui.open(p)) {
-            if (now() - stageTick < 15) return "wait";      // let the contents arrive
+            if (now() - stageTick < lat(15)) return "wait";      // let the contents arrive
             // storage that shows nothing yet may just be slow to sync: give it a little longer
-            if (!machine && now() - stageTick < 50 && GuiCore.sum(GuiCore.contents(new McMenu(p), GuiCore.ALL_ROLES, null)) == 0) return "wait";
+            if (!machine && now() - stageTick < lat(50) && GuiCore.sum(GuiCore.contents(new McMenu(p), GuiCore.ALL_ROLES, null)) == 0) return "wait";
             if (!machine) storage.rememberOpen(p);
             return "next";
         }
@@ -609,7 +612,7 @@ public final class Seq {
             stage = "put";
             return "wait";
         }
-        if (elapsed < 10) return "wait";
+        if (elapsed < lat(10)) return "wait";      // the server's answer: wall time at a raised client rate
         Map<String, Integer> nowInv = Gui.inventory(p), rest = new LinkedHashMap<>();
         int moved = 0, left = 0;
         for (Map.Entry<String, Integer> e : st.items.entrySet()) {
@@ -700,9 +703,9 @@ public final class Seq {
         }
         if (stage.equals("opening")) {
             if (mc.screen == null || !Gui.screenName().contains("Corpse") || !Gui.open(p)) {
-                return now() - stageTick > 60 ? "my corpse did not open" : "wait";
+                return now() - stageTick > lat(60) ? "my corpse did not open" : "wait";
             }
-            if (now() - stageTick < 5) return "wait";        // let the contents arrive
+            if (now() - stageTick < lat(5)) return "wait";        // let the contents arrive
             Map<String, Integer> items = Gui.containerContents(p);
             if (items == null || items.isEmpty()) {
                 // an old, empty corpse: look for another one
@@ -729,7 +732,7 @@ public final class Seq {
             return "wait";
         }
         if (stage.equals("taking")) {
-            if (now() - stageTick < 10) return "wait";
+            if (now() - stageTick < lat(10)) return "wait";      // the server's answer: wall time at a raised client rate
             Gui.close(p);
             if (!pressed) Gui.wearArmor(p);
             storage.emptyCorpses.add(c.getUUID());
@@ -744,9 +747,9 @@ public final class Seq {
 
     private String rsReadStep(Step st, LocalPlayer p, long elapsed) {
         Map<String, Integer> items = Storage.rsGridItems(p);
-        if (items == null) return elapsed > 40 ? "the block at " + st.key + " did not open a Refined Storage grid" : "wait";
+        if (items == null) return elapsed > lat(40) ? "the block at " + st.key + " did not open a Refined Storage grid" : "wait";
         // the grid fills in once the network has synced: give an empty one a little longer
-        if (items.isEmpty() && elapsed < 60) return "wait";
+        if (items.isEmpty() && elapsed < lat(60)) return "wait";
         storage.rsRemember(st.key, items);
         if (!st.keepNote) note = StorageRules.rsSummary(st.key, items);      // after a take/put its own report stays
         return "next";

@@ -980,7 +980,7 @@ final class Crafting {
                 return "next";
             }
             case "wear":
-                if (elapsed < Tuning.i("crafting.closeTicks")) return "wait";         // let the crafting screen close first
+                if (elapsed < io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(Tuning.i("crafting.closeTicks"))) return "wait";         // let the crafting screen close first (the server's answer: wall time at a raised client rate)
                 s.wore = Gui.wearArmor(p);
                 return "next";
             case "restocknote": {
@@ -1180,7 +1180,7 @@ final class Crafting {
     /** At the open furnace: busy (someone's smelting, or output nobody took) -> close it and pick another; else put input and fuel in. */
     private String smeltPut(Seq s, Step st, LocalPlayer p) {
         if (!Gui.open(p)) return "no container open";
-        if (now() - s.stepStart < Tuning.i("crafting.slotsTicks")) return "wait";            // let its slots arrive
+        if (now() - s.stepStart < io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(Tuning.i("crafting.slotsTicks"))) return "wait";            // let its slots arrive (the server's answer: wall time at a raised client rate)
         String bad = Gui.wrongScreen(p);
         if (bad != null) return bad;
         if (!furnaceMenu(p)) return "the block at " + Jobs.fmt(st.pos) + " opened a " + Gui.menuName(p).replaceFirst("Menu$", "") + ", not a furnace";
@@ -1649,7 +1649,7 @@ final class Crafting {
                 c.stage = null;
                 return "wait";
             }
-            if (now() - c.stageTick <= Tuning.i("crafting.tableWaitTicks")) return "wait";
+            if (now() - c.stageTick <= io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(Tuning.i("crafting.tableWaitTicks"))) return "wait";   // the table's screen from the server: wall time at a raised client rate
             if (Boolean.FALSE.equals(stationMemory.isStation(kind, c.table))) {
                 String why = io.github.mojolowjo.entropybot.craft.StationVisit.gone(name, c.table);
                 stationMemory.forget(kind, c.table, why);

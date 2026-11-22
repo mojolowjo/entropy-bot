@@ -410,7 +410,7 @@ final class FarmPlanting {
                 continue;
             }
             Long at = r.clickedAt.get(key);
-            if (at != null && now - at < 12) {
+            if (at != null && now - at < io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(12)) {   // wall time at a raised client rate
                 pending = true;       // the server hasn't answered yet
                 continue;
             }

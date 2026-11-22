@@ -965,7 +965,7 @@ public final class Clearing {
             return "wait";
         }
         // placed blocks show up a tick or two later; try up to 3 times (backbone step 3: not while Baritone still places)
-        if (now - ps.stageTick < Tuning.i("clearing.placeWaitTicks") || placing(pos[0], pos[1], pos[2]) && now - ps.stageTick < io.github.mojolowjo.entropybot.aa.moves.JobHands.waitTicks()) return "wait";
+        if (now - ps.stageTick < io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(Tuning.i("clearing.placeWaitTicks")) || placing(pos[0], pos[1], pos[2]) && now - ps.stageTick < io.github.mojolowjo.entropybot.aa.moves.JobHands.waitTicks()) return "wait";
         ps.tries++;
         if (ps.tries >= Tuning.i("clearing.placeTries")) {
             String last = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().lastFailure(pos[0], pos[1], pos[2]);
@@ -1237,7 +1237,7 @@ public final class Clearing {
                 return "wait";
             }
             default -> {                                            // check: placed blocks show up a tick or two later
-                if (now - bs.stageTick < Tuning.i("clearing.placeWaitTicks")) return "wait";
+                if (now - bs.stageTick < io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(Tuning.i("clearing.placeWaitTicks"))) return "wait";   // the server's answer: wall time at a raised client rate
                 Pos c = bs.pick.cell();
                 if (placing(c.x(), c.y(), c.z()) && now - bs.stageTick < 20 * Tuning.i("clearing.baritonePlaceS")) return "wait";       // backbone step 3: Baritone still places
                 if (PlaceRules.free(w, c.x(), c.y(), c.z())) triedCell(bs, c, io.github.mojolowjo.entropybot.clear.RimPlan.Why.TRIES);

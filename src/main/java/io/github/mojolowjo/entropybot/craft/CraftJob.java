@@ -24,11 +24,11 @@ public final class CraftJob {
     /** The bridge's crafts per grid fill: one. The mod's craft step fills a whole batch since package G ({@link GridLoop}). */
     public static int craftsPerFill() { return Tuning.i("craftJob.craftsPerFill"); }
     /** Ticks to wait for the result slot after a fill before giving up ("the grid did not make ..."). */
-    public static int resultWaitTicks() { return Tuning.i("craftJob.resultWaitTicks"); }
+    public static int resultWaitTicks() { return io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(Tuning.i("craftJob.resultWaitTicks")); }     // the server's answer: wall time at a raised client rate
     /** Ticks the walk to a table runs at least before the bot checks Baritone is idle. */
     public static int tableWalkMinTicks() { return Tuning.i("craftJob.tableWalkMinTicks"); }
     /** Ticks to wait for the table's screen to open. */
-    public static int tableOpenTicks() { return Tuning.i("craftJob.tableOpenTicks"); }
+    public static int tableOpenTicks() { return io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(Tuning.i("craftJob.tableOpenTicks")); }
     /** A vanilla furnace: 10 s an item. */
     public static int smeltTicks() { return Tuning.i("craftJob.smeltTicks"); }
     /** Collect rounds at a furnace before "made only N of M". */

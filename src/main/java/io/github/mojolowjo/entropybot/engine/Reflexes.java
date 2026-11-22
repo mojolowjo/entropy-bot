@@ -1099,7 +1099,7 @@ public final class Reflexes {
             events.push("reflex", "died at " + p.getBlockX() + " " + p.getBlockY() + " " + p.getBlockZ(), null);
         }
         // respawn after 2 seconds, and again every 10 s if the first click didn't take
-        if (deadTicks == Tuning.i("reflexes.deadWaitTicks") || (deadTicks > Tuning.i("reflexes.deadWaitTicks") && (deadTicks - Tuning.i("reflexes.deadWaitTicks")) % Tuning.i("reflexes.deadRetryTicks") == 0)) {
+        if (deadTicks == Tuning.i("reflexes.deadWaitTicks") || (deadTicks > Tuning.i("reflexes.deadWaitTicks") && (deadTicks - Tuning.i("reflexes.deadWaitTicks")) % io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(Tuning.i("reflexes.deadRetryTicks")) == 0)) {   // the server's answer: wall time at a raised client rate
             p.respawn();
             mc.setScreen(null);
         }
@@ -1125,7 +1125,7 @@ public final class Reflexes {
             }
         }
         // /home 2 s after arriving, then once a minute until it works
-        if (deniedDim != null && now - deniedAt >= Tuning.i("reflexes.deniedWaitTicks") && (now - deniedAt - Tuning.i("reflexes.deniedWaitTicks")) % Tuning.i("reflexes.deniedRetryTicks") == 0
+        if (deniedDim != null && now - deniedAt >= Tuning.i("reflexes.deniedWaitTicks") && (now - deniedAt - Tuning.i("reflexes.deniedWaitTicks")) % io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(Tuning.i("reflexes.deniedRetryTicks")) == 0   // the server's answer: wall time at a raised client rate
                 && io.github.mojolowjo.entropybot.move.ServerCmds.allowed("leaving " + deniedDim + " by /home (no walk out of another dimension)")) p.connection.sendCommand("home");
     }
 }

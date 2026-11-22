@@ -159,7 +159,7 @@ public final class FarmRound {
         double nearD = 0;
         for (FarmRules.Crop c : ripe) {
             Long at = clicked.get(c.key());
-            if (at != null && tick - at < 20) continue;             // the server hasn't answered yet
+            if (at != null && tick - at < io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(20)) continue;             // the server hasn't answered yet (wall time at a raised client rate)
             double dx = c.x() + 0.5 - eye[0], dy = c.y() + 0.5 - eye[1], dz = c.z() + 0.5 - eye[2];
             double d = Math.sqrt(dx * dx + dy * dy + dz * dz);
             if (near == null || d < nearD) {
@@ -190,7 +190,7 @@ public final class FarmRound {
         // Walk over the drops lying on the farm. The last crops' drops need a moment to show up, so it waits a second
         // first and looks once more before it finishes. A drop on a block the bot can't stand on (the water in the
         // middle) is picked up from a free spot next to it. Each drop gets 2 tries of 5 s.
-        if (elapsed < 20) return Tick.of("wait");
+        if (elapsed < io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(20)) return Tick.of("wait");   // the drops arriving from the server: wall time at a raised client rate
         if (gatherItem != null) {
             if (w.dropAlive(gatherItem.key()) && elapsed - gatherT < 100) return Tick.of("wait");
             gatherItem = null;
@@ -253,8 +253,8 @@ public final class FarmRound {
                 continue;
             }
             Long at = plantAt.get(key);
-            if (at != null && tick - at < 20) {
-                waiting = true;           // the server hasn't answered yet
+            if (at != null && tick - at < io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(20)) {
+                waiting = true;           // the server hasn't answered yet (wall time at a raised client rate)
                 continue;
             }
             if (plantTries.getOrDefault(key, 0) >= 3) {

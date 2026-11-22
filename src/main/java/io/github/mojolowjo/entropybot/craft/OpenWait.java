@@ -16,7 +16,7 @@ public final class OpenWait {
     public enum Next { WAIT, RETRY, FAIL }
 
     /** The open step's wait for the menu (Seq.openStep's literal of before, 4 s; Tuning crafting.openWaitTicks), counted from the click's end. */
-    public static long waitTicks() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.i("crafting.openWaitTicks"); }
+    public static long waitTicks() { return io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(io.github.mojolowjo.entropybot.aa.brain.Tuning.i("crafting.openWaitTicks")); }     // the server's answer: wall time at a raised client rate
 
     /** No menu yet {@code sinceClick} client ticks after the click: wait, click once more, or fail (after the one retry). */
     public static Next noMenu(long sinceClick, boolean retried) {

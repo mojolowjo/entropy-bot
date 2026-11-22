@@ -144,7 +144,7 @@ final class FishStep {
                 walks = 0;
                 if (!(p.getMainHandItem().getItem() instanceof FishingRodItem)) {
                     if (!Hotbar.toHand(mc, p, slot)) { nextAt = now + Tuning.l("fishing.handRetry"); return Car.Status.running("rod to hand"); }
-                    nextAt = now + Tuning.l("fishing.aimTicks");
+                    nextAt = now + io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks((int) Tuning.l("fishing.aimTicks"));     // the server's bobber removal: wall time at a raised client rate
                     return Car.Status.running("rod to hand");
                 }
                 if (!aimed) {                                         // turn first: the server uses the rotation it was last sent
@@ -158,7 +158,7 @@ final class FishStep {
                 mc.gameMode.useItem(p, InteractionHand.MAIN_HAND);
                 castAt = now;
                 casts++;
-                nextAt = now + Tuning.l("fishing.castRest");
+                nextAt = now + io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks((int) Tuning.l("fishing.castRest"));   // the bobber from the server: wall time at a raised client rate
             }
             case REEL_BITE, REEL_TIMEOUT -> {
                 if (!(p.getMainHandItem().getItem() instanceof FishingRodItem)) {

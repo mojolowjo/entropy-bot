@@ -1610,7 +1610,7 @@ public final class Steps {
     public Phase tick(long tick) {
         now = tick;
         if (phase != Phase.RUNNING || paused) return phase;
-        if (dryHold != null) { dryAgain(); return phase; }     // 0.39.z62 item 3a: the held step's second look
+        if (dryHold != null) { if (now - stepStart < io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(1)) return phase; dryAgain(); return phase; }     // 0.39.z62 item 3a: the held step's second look
         Step s = steps.get(idx);
         // 0.39.z58 (the first-answer wait): a landed answer re-prices the explore while paths compute BEFORE its status is read,
         // so a priced way ends it where it stands instead of its explore starting first and being cancelled a tick later

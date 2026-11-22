@@ -114,7 +114,7 @@ public final class StandWait {
     public long stood(long now) { return start < 0 ? 0 : Math.max(0, now - start); }
 
     /** The wait is over: {@code waitS} seconds of game time stood. */
-    public boolean over(long now, int waitS) { return start >= 0 && stood(now) >= (long) waitS * GameTimes.TPS; }
+    public boolean over(long now, int waitS) { return start >= 0 && stood(now) >= io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(waitS * GameTimes.TPS); }     // waits on background searches (real compute): wall time at a raised client rate
 
     /** The status words while standing ("standing 4.0 s of 30 while 2 walks compute; Baritone idle, no move"). */
     public String words(long now, int waitS, int computing) {

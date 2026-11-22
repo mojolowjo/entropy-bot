@@ -24,8 +24,8 @@ import java.util.Map;
 public final class Ledger {
     public static final int CAP = 2000; // structural
     /** A pending break is looked at after this many ticks, and dropped when the cell is still full after the max. */
-    public static long confirmAfter() { return Tuning.l("ledger.confirmAfter"); }
-    public static long confirmMax() { return Tuning.l("ledger.confirmMax"); }
+    public static long confirmAfter() { return io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks((int) Tuning.l("ledger.confirmAfter")); }   // the server's answer: wall time at a raised client rate
+    public static long confirmMax() { return io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks((int) Tuning.l("ledger.confirmMax")); }
 
     public static final String PATH = "path", ESCAPE = "escape", REACH = "reach";
 

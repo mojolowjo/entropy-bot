@@ -94,7 +94,7 @@ public final class PricedAnswers {
      */
     public static PathPrice.Answer afterWait(PathPrice.Answer a, long waitedTicks, int waitS, double estimateS) {
         if (!waits(a)) return a;
-        if (waitS <= 0 || waitedTicks < (long) waitS * io.github.mojolowjo.entropybot.aa.brain.GameTimes.TPS) return a;
+        if (waitS <= 0 || waitedTicks < io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks(waitS * io.github.mojolowjo.entropybot.aa.brain.GameTimes.TPS)) return a;     // a background search's real compute: wall time at a raised client rate
         // z76 review (rule 15): past the wait with no usable estimate the way drops (never another stand: no NOT_KNOWN prefix)
         if (!(estimateS >= 0) || Double.isInfinite(estimateS))
             return PathPrice.Answer.none(PathPrice.NO_ESTIMATE + " (" + waitS + " s from here, " + (a.reason() == null ? "computing" : a.reason()) + "; Baritone's estimate not known: an older fork, no player, or none for this goal)");

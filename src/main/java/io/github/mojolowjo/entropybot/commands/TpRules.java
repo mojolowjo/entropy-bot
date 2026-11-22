@@ -19,7 +19,7 @@ public final class TpRules {
     /** No new /home this many ticks after one that didn't move the bot (1 minute). */
     public static long retryTicks() { return Tuning.l("tpRules.retryTicks"); }
     /** A /home that hasn't moved the bot after this many ticks failed (10 s). */
-    public static long waitTicks() { return Tuning.l("tpRules.waitTicks"); }
+    public static long waitTicks() { return io.github.mojolowjo.entropybot.aa.brain.GameClock.latencyTicks((int) Tuning.l("tpRules.waitTicks")); }   // the server's answer: wall time at a raised client rate
     /** The bot "jumped" when it is more than this far (squared: 8 blocks) from where it was at the last check. */
     public static long jumpSq() { return Tuning.l("tpRules.jumpSq"); }
 
