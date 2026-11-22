@@ -55,7 +55,7 @@ public final class SenseRuntime {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer p = mc.player;
         BrainState s = new BrainState();
-        s.now = System.currentTimeMillis();
+        s.now = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
         if (p == null || mc.level == null || p.isDeadOrDying()) {
             s.inWorld = false;
             return s;
@@ -237,8 +237,9 @@ public final class SenseRuntime {
             f.furnace = c.crafting.knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT) instanceof io.github.mojolowjo.entropybot.aa.StationFact.Known;
             f.known = true;
         } catch (RuntimeException e) {
-            if (s.now - feasErrAt > 60_000) {
-                feasErrAt = s.now;
+            long wall = System.currentTimeMillis();        // a log limit: the wall clock
+            if (wall - feasErrAt > 60_000) {
+                feasErrAt = wall;
                 LOG.warn("[entropybot] sense feasibility facts: {}", e.toString());
             }
         }

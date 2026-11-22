@@ -113,7 +113,7 @@ public final class ThreatRuntime {
                 cache.full(src, ox, oy, oz);
                 needFull = false;
                 lastFullTick = tick;
-                lastFullMs = System.currentTimeMillis();
+                lastFullMs = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
             } else cache.moveTo(src, ox, oy, oz);
             rates(tick);
             // the hostiles near, and which are new
@@ -267,7 +267,7 @@ public final class ThreatRuntime {
 
     /** The grid is fresh (a full copy within 12 s) and the last tick ran clean. */
     public boolean gridOk() {
-        return !broken && cache.grid() != null && System.currentTimeMillis() - lastFullMs <= freshMs();
+        return !broken && cache.grid() != null && io.github.mojolowjo.entropybot.aa.brain.GameClock.ms() - lastFullMs <= freshMs();
     }
 
     public ThreatRules.Decision decision(int entityId) { return latest.get(entityId); }
@@ -339,7 +339,7 @@ public final class ThreatRuntime {
                 + " | new mobs: " + newMobReads + " answered by a read, " + newMobSearches + " bursts needed a search"
                 + " | mobs near " + mobsNear + " | counted " + counted + ", noted " + noted + " | errors " + errors
                 + (lastError != null ? " (last: " + lastError + ")" : "")
-                + " | last full copy " + (lastFullMs == 0 ? "never" : (System.currentTimeMillis() - lastFullMs) / 1000 + " s ago");  // structural: milliseconds per second
+                + " | last full copy " + (lastFullMs == 0 ? "never" : (io.github.mojolowjo.entropybot.aa.brain.GameClock.ms() - lastFullMs) / 1000 + " s ago");  // structural: milliseconds per second
     }
 
     static double r1(double d) { return Math.round(d * 100) / 100.0; }  // structural: percent
@@ -348,7 +348,7 @@ public final class ThreatRuntime {
     public List<String[]> findings() {
         List<String[]> f = new ArrayList<>();
         if (cache.lastSearchMs > overrunMs()) f.add(new String[]{"threatslow", "the threat search took " + r1(cache.lastSearchMs) + " ms (over " + (int) overrunMs() + ")", "debug threats"});
-        if (mobsNear > 0 && cache.fulls > 0 && System.currentTimeMillis() - lastFullMs > Tuning.i("threatRuntime.fullEveryMs"))
+        if (mobsNear > 0 && cache.fulls > 0 && io.github.mojolowjo.entropybot.aa.brain.GameClock.ms() - lastFullMs > Tuning.i("threatRuntime.fullEveryMs"))
             f.add(new String[]{"threatworker", "the threat grid hasn't refreshed for 15 s with mobs near (the fight code uses straight distance)", "debug threats; the game log has [entropybot] threat lines"});
         return f;
     }

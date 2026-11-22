@@ -153,8 +153,9 @@ public final class SightingsRuntime {
                     LOG.info("[entropybot] sense: seen {} x{} at {} {} {}", t.getKey().replaceFirst("^minecraft:", ""), h[3], h[0], h[1], h[2]);
                 }
             }
-        if (counted.isEmpty() && roofed && sg.animalCount(dim) == 0 && now - lastUnderLog >= UNDERGROUND_LOG_MS) {
-            lastUnderLog = now;
+        long wall = System.currentTimeMillis();   // a log limit: the wall clock (now is the game clock)
+        if (counted.isEmpty() && roofed && sg.animalCount(dim) == 0 && wall - lastUnderLog >= UNDERGROUND_LOG_MS) {
+            lastUnderLog = wall;
             LOG.info("[entropybot] sense: no animals seen yet (underground: the food options cannot plan a hunt from memory)");
         }
     }

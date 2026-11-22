@@ -66,7 +66,8 @@ final class SeenRuntime {
             }
             hits++;
             if (seen.saw(dim, h.x(), h.y(), h.z(), h.family(), now)) {
-                if (now - logAt > 1000) { logAt = now; logged = 0; }
+                long wall = System.currentTimeMillis();   // a log limit: the wall clock (now is the game clock)
+                if (wall - logAt > 1000) { logAt = wall; logged = 0; }
                 if (logged++ < 4) LOG.info("[entropybot] sense: seen {} at {} {} {}", h.family(), h.x(), h.y(), h.z());
             }
         }

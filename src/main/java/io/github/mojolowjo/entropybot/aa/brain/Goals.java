@@ -1190,7 +1190,7 @@ public final class Goals {
         // "waiting for the loot book (N of M)"; once the book is published the chain is priced again on the next pick
         // 0.39.z41: the same while a walk's full path is computed in the background (the chain waits on "path not known yet")
         // 0.39.z47 (run H, S60): a chain's explore that ended with no new source does not start again within explore.retryS
-        long waitS = exploreWaitS(exploreBareAtMs, System.currentTimeMillis(), exploreRetryS());
+        long waitS = exploreWaitS(exploreBareAtMs, GameClock.ms(), exploreRetryS());
         if (waitS > 0) {
             var ch = ownChain(bb, g);      // 0.39.z77 review 1 (R3): the waiting test, no batch comparison per tick
             if (ch != null && ch.ok() && !ch.steps().isEmpty() && ch.steps().get(0) instanceof Step.Explore)
@@ -1206,7 +1206,7 @@ public final class Goals {
         return null;
     }
 
-    /** 0.39.z47: when (System ms) the last chain explore ended with no new source; 0: none yet. */
+    /** 0.39.z47: when (GameClock ms) the last chain explore ended with no new source; 0: none yet. */
     private static volatile long exploreBareAtMs;
 
     /** 0.39.z47: the explore job (Mining) says its chain explore ended with no new source. */

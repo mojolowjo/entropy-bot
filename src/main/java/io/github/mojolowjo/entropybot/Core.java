@@ -190,6 +190,7 @@ public final class Core {
     public void onClientTick() {
         try {
             tick++;
+            io.github.mojolowjo.entropybot.aa.brain.GameClock.tick();     // test tooling: the game-play clock (clock.gameTicks)
             events.setTick(tick);
             guard.core.tick(tick);
             io.github.mojolowjo.entropybot.commands.LoadProbe.lap("guard");     // job-tick3: the guard+commands section's laps

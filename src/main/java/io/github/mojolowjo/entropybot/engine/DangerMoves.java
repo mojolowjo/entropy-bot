@@ -197,7 +197,7 @@ public final class DangerMoves {
      * touches the water (reachable by swimming); else the next candidate.
      */
     static int[] shore(Minecraft mc, LocalPlayer p, int surfaceY) {
-        long ms = System.currentTimeMillis();
+        long ms = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
         BlockPos feet = p.blockPosition();
         if (shoreMs >= 0 && ms - shoreMs < shoreCacheMs() && feet.equals(shoreAt)) return shoreMemo;
         shoreMemo = shoreScan(mc, p, surfaceY);

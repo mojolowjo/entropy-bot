@@ -13,7 +13,8 @@
     "RecorderMixinClientLevel",
     "WatchMixinCameraAccess",
     "WatchMixinLevelRenderer",
-    "RestoreMixinGameMode"
+    "RestoreMixinGameMode",
+    "ClockMixinMinecraft"
   ],
   "injectors": {
     "defaultRequire": 1

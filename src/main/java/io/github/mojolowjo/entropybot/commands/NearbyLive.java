@@ -46,7 +46,7 @@ final class NearbyLive {
 
     /** The nearest tree log, Baritone first, else {@code fallback}. */
     Spot log(Supplier<Spot> fallback) {
-        long now = System.currentTimeMillis();
+        long now = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
         int[] me = here();
         if (me == null) return fallback == null ? null : fallback.get();
         if (logAt >= 0 && now - logAt < Tuning.l("nearby.cacheMs") && close(me, logMe)) return logSpot;
@@ -102,7 +102,7 @@ final class NearbyLive {
      * the probe counts it "deferred". A set with no answer yet is always scanned (rule 15: never "none" for lack of time).
      */
     Spot nearest(java.util.Set<String> blocks, Supplier<Spot> fallback) {
-        long now = System.currentTimeMillis();
+        long now = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
         int[] me = here();
         if (me == null) return fallback == null ? null : fallback.get();
         Cached k = sets.get(blocks);
@@ -186,7 +186,7 @@ final class NearbyLive {
      * dropped at once by {@link #forget} or a new item data); not loaded and none are asked again every time.
      */
     StationFact stations(String kind) {
-        long now = System.currentTimeMillis();
+        long now = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
         StationBlocks.Answer blocks = stationBlocks(kind);
         if (blocks instanceof StationBlocks.Answer.NotLoaded n) {
             notLoadedNote(kind, n.why());
@@ -238,8 +238,8 @@ final class NearbyLive {
         java.util.Set<String> ids = containerIds();
         StationBlocks.Answer blocks = ids.isEmpty() ? new StationBlocks.Answer.None("the game tags no chest or barrel the item data calls a container")
                 : new StationBlocks.Answer.Of(ids);
-        long now = System.currentTimeMillis();
-        long data = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.version();
+        long now = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
+        long data =io.github.mojolowjo.entropybot.aa.brain.ItemWorth.version();
         Box k = containerBox;
         // job-tick2: cached like the stations (time, move, item data; dropped by forget)
         if (k != null && k.data() == data && now - k.at() < Tuning.l("nearby.cacheMs") && close(me, k.me())) return k.fact();

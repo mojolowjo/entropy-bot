@@ -152,7 +152,7 @@ public final class LivePathPrice implements PathPrice {
         window.asked(key);                               // 0.39.z76 J3-mod item 2: asked in this sweep window (kept, not withdrawn)
         if (PathPrice.pricedPathOn()) return pricedAsk(mc, b, posOf(key), key, me);
         int bag = 31 * bagHash(mc) + System.identityHashCode(mc.level);     // another level (dimension, world): not the same answer
-        long now = System.currentTimeMillis();
+        long now = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
         Kept k = kept.get(key);
         if (k != null && fresh(k, me, bag, now)) return k.answer();
         if (k != null) kept.remove(key);
@@ -684,7 +684,7 @@ public final class LivePathPrice implements PathPrice {
             if (!a.noPath) WalkProbe.price(goal, from, a);
             else if (IPathCost.Answer.UNREACHABLE.equals(a.reason) || baritone.api.pathing.calc.IPricedPath.NO_PROGRESS.equals(a.reason)) WalkProbe.unreachable(goal, from, a.reason);
         }
-        long now = System.currentTimeMillis();
+        long now = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
         kept.values().removeIf(old -> now - old.atMs() > PathPrice.keepS() * 1000);   // structural: milliseconds per second
         kept.put(key, new Kept(out, from, bag, now));
         lastLanded = "walk to " + key.replace(',', ' ') + ": " + (out.walk() != null ? Math.round(out.walk().seconds()) + " s, complete" : out.kind() + " (" + out.reason() + ")");

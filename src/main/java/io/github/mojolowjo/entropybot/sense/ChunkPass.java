@@ -131,7 +131,7 @@ public final class ChunkPass {
     public void chunkLoaded(LevelAccessor level, ChunkAccess chunk) {
         try {
             if (level != Minecraft.getInstance().level || !(chunk instanceof LevelChunk)) return;
-            schedule.loaded(chunk.getPos().x, chunk.getPos().z, System.currentTimeMillis());
+            schedule.loaded(chunk.getPos().x, chunk.getPos().z, io.github.mojolowjo.entropybot.aa.brain.GameClock.ms());
         } catch (Throwable t) {
             error("chunk load", t);
         }
@@ -181,7 +181,7 @@ public final class ChunkPass {
             if (!Seen.fair() && open(to) && !open(from)) exposedNext(x, y, z);
             if (s == null || !live.contains(k)) {
                 beforeRead++;              // its read is pending (or it is not loaded): the read covers this change
-                if (!schedule.isPending(cx, cz)) schedule.missed(cx, cz, System.currentTimeMillis());
+                if (!schedule.isPending(cx, cz)) schedule.missed(cx, cz, io.github.mojolowjo.entropybot.aa.brain.GameClock.ms());
                 return;
             }
             boolean nearTop = ColumnPatch.nearTop(s.tops, x, y, z);
@@ -194,7 +194,7 @@ public final class ChunkPass {
             patches++;
             if (!ok) {
                 dropUnsure++;
-                schedule.missed(cx, cz, now);
+                schedule.missed(cx, cz, io.github.mojolowjo.entropybot.aa.brain.GameClock.ms());   // the schedule runs on the game clock; the stamp and the file mark stay on the wall
             }
             if (nearTop) mapColumn(x, z);
             if (!out.isEmpty()) {
@@ -203,7 +203,7 @@ public final class ChunkPass {
         } catch (Throwable t) {
             dropError++;
             error("block change", t);
-            try { schedule.missed(x >> 4, z >> 4, System.currentTimeMillis()); } catch (Throwable caught) { Quiet.warn("ChunkPass.blockChanged failed, carrying on with the fallback", caught); }
+            try { schedule.missed(x >> 4, z >> 4, io.github.mojolowjo.entropybot.aa.brain.GameClock.ms()); } catch (Throwable caught) { Quiet.warn("ChunkPass.blockChanged failed, carrying on with the fallback", caught); }
         }
     }
 
@@ -214,7 +214,7 @@ public final class ChunkPass {
     private void exposedNext(int x, int y, int z) {
         Seen sn = seen();
         if (sn == null || dim == null) return;
-        long now = System.currentTimeMillis();
+        long now = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();   // the seen cells' clock (as SeenRuntime's Seen.saw)
         for (OreIndex.Hit h : index.nearest(dim, id -> true, x, y, z, 1, Seen.FACES.length, (a, b, c) -> Math.abs(a - x) + Math.abs(b - y) + Math.abs(c - z) == 1))
             sn.exposed(dim, h.x(), h.y(), h.z(), h.family(), now);
     }
@@ -229,6 +229,7 @@ public final class ChunkPass {
             ClientLevel level = mc.level;
             if (level == null || mc.player == null) return;
             long now = System.currentTimeMillis();
+            long game = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();   // the schedule and the sight rays pace on the game clock; now (the wall) stays for stamps, files and log limits
             if (startMs == 0) startMs = now;
             String d = Guard.dimOf(level);
             if (!d.equals(dim)) start(level, d, mc, now);
@@ -239,10 +240,10 @@ public final class ChunkPass {
             }
             for (String k; (k = failedWrites.poll()) != null; ) dirty.failed(k, now);
             BlockPos p = mc.player.blockPosition();
-            List<PassSchedule.Item> next = schedule.take(p.getX() >> 4, p.getZ() >> 4, now, PER_TICK);
+            List<PassSchedule.Item> next = schedule.take(p.getX() >> 4, p.getZ() >> 4, game, PER_TICK);
             for (int i = 0; i < next.size(); i++) {
                 if (i > 0 && System.nanoTime() - t0 > Limits.SENSE_BUDGET_NS) {
-                    for (int j = i; j < next.size(); j++) schedule.requeue(next.get(j), now);
+                    for (int j = i; j < next.size(); j++) schedule.requeue(next.get(j), game);
                     break;
                 }
                 readOne(level, next.get(i), now);
@@ -256,9 +257,9 @@ public final class ChunkPass {
             if (tick % 1200 == 5) saveStats();
             try {
                 Sightings sg = sightings();
-                if (sg != null && dim != null) seenRt.tick(level, mc.player, index, sg.ore(), dim, tick, now);
-                if (sg != null && dim != null) sightRt.tick(level, mc.player, sg, dim, seenRt.budget, tick, now);
-                if (sg != null && dim != null) { labels(); if (tick % 20 == 0) remeasureLabels(); refreshCaveRecords(sg);caveRays.tick(level, mc.player, caveIndex, sg, dim, seenRt.budget, tick, now); }   // structural: a second in ticks   // 0.39.z78 J6 (the labels' floor first)
+                if (sg != null && dim != null) seenRt.tick(level, mc.player, index, sg.ore(), dim, tick, game);
+                if (sg != null && dim != null) sightRt.tick(level, mc.player, sg, dim, seenRt.budget, tick, game);
+                if (sg != null && dim != null) { labels(); if (tick % 20 == 0) remeasureLabels(); refreshCaveRecords(sg);caveRays.tick(level, mc.player, caveIndex, sg, dim, seenRt.budget, tick, game); }   // structural: a second in ticks   // 0.39.z78 J6 (the labels' floor first)
             } catch (Throwable t) {
                 error("seen", t);
             }
@@ -284,7 +285,7 @@ public final class ChunkPass {
         int ecx = p.getX() >> 4, ecz = p.getZ() >> 4;
         for (int cx = ecx - rd; cx <= ecx + rd; cx++)
             for (int cz = ecz - rd; cz <= ecz + rd; cz++)
-                if (level.getChunkSource().getChunk(cx, cz, false) != null) schedule.loaded(cx, cz, now);
+                if (level.getChunkSource().getChunk(cx, cz, false) != null) schedule.loaded(cx, cz, io.github.mojolowjo.entropybot.aa.brain.GameClock.ms());
         if (filesLoaded.add(d)) {
             Path root = root();
             if (root == null) {
@@ -609,7 +610,7 @@ public final class ChunkPass {
             live.remove(k);                           // unknown: no patches on the old summary
             ChunkSummary old = index.get(dim, it.cx(), it.cz());
             if (old != null) old.stale = true;
-            schedule.failed(it, now);
+            schedule.failed(it, io.github.mojolowjo.entropybot.aa.brain.GameClock.ms());
             error("read " + it.cx() + " " + it.cz(), t);
             return;
         }

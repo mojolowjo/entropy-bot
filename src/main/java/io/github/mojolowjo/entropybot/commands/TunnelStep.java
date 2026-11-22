@@ -372,7 +372,7 @@ final class TunnelStep {
             }
             case CAVE -> {
                 var k = lip.known();
-                if (k != null && pass.sightings() != null && pass.sightings().knowCave(s.dim, k, System.currentTimeMillis()) != null)
+                if (k != null && pass.sightings() != null && pass.sightings().knowCave(s.dim, k, io.github.mojolowjo.entropybot.aa.brain.GameClock.ms()) != null)
                     LOG.info("[entropybot] sense: cave known at {} {} {} (size {}, depth {}; a tunnel broke into it from {}, {} cells)", k.x(), k.y(), k.z(), k.size(), k.depth(), Jobs.fmt(s.from), n);
                 else LOG.info("[entropybot] tunnel: air at {} is a cave the index knows ({}, {} cells)", Jobs.fmt(c), lip.what(), n);
                 return true;

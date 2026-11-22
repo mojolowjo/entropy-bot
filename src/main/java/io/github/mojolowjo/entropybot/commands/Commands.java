@@ -222,7 +222,7 @@ public final class Commands implements Chains.Env {
         }
         io.github.mojolowjo.entropybot.craft.FurnaceJobs fj = crafting.furnaces();
         if (fj.isEmpty()) return;
-        long now = System.currentTimeMillis();
+        long now = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
         for (io.github.mojolowjo.entropybot.craft.FurnaceJobs.Job j : fj.expire(now, crafting.sessionStart)) {
             String t = io.github.mojolowjo.entropybot.craft.FurnaceJobs.forgotten(j);
             LOG.info("[entropybot] {}", t);

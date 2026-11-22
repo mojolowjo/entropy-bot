@@ -71,7 +71,7 @@ final class SmeltTexts {
             return "usage: smelt forget <job number>|all";
         }
         FurnaceJobs.Job j = fj.get(id);
-        if (j == null) return "error: I have no furnace job #" + id + " - " + fj.list(System.currentTimeMillis());
+        if (j == null) return "error: I have no furnace job #" + id + " - " + fj.list(io.github.mojolowjo.entropybot.aa.brain.GameClock.ms());
         fj.forget(j);
         return "ok: forgot furnace job #" + id + " (" + j.remaining() + " " + CraftPlanner.shortId(j.item) + " at " + j.where() + " stay in the furnace)";
     }

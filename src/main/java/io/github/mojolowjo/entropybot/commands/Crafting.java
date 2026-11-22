@@ -488,7 +488,7 @@ final class Crafting {
     private FurnaceJobs furnaceJobs;
     private JsonObject furnaceRoot;
     /** When this session's commands were loaded (a job's 30 minutes past due count from here at the earliest). */
-    final long sessionStart = System.currentTimeMillis();
+    final long sessionStart = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
 
     /** The furnace jobs, kept in commands.json ("furnaces"). */
     FurnaceJobs furnaces() {
@@ -508,7 +508,7 @@ final class Crafting {
         return b.has("smeltMode") && MODE_WAIT.equals(b.get("smeltMode").getAsString()) ? MODE_WAIT : MODE_EFFICIENT;
     }
 
-    private static long nowMs() { return System.currentTimeMillis(); }
+    private static long nowMs() { return io.github.mojolowjo.entropybot.aa.brain.GameClock.ms(); }
 
     private static void issue(Seq s, String text) {
         s.furnaceIssue = s.furnaceIssue == null ? text : s.furnaceIssue + "; " + text;
@@ -1317,7 +1317,7 @@ final class Crafting {
     /** smelttake's state: taken so far, the last time more came out, a take waiting for the server. */
     static final class TakeState {
         int took, before = -1, asked, lastInput = -1;
-        long lastProgress = System.currentTimeMillis(), settleTick, lookTick = -100, reopenAt = -1;  // structural: a time long ago (sentinel)
+        long lastProgress = nowMs(), settleTick, lookTick = -100, reopenAt = -1;  // structural: a time long ago (sentinel)
     }
 
     /** The open furnace: take our output as it comes until the target is reached; wait, or say it is gone or stopped. */

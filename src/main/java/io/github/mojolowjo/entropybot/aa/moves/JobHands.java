@@ -120,7 +120,7 @@ public final class JobHands {
     private boolean buildReplace;
 
     public JobHands(Hand hand) {
-        this(hand, System::currentTimeMillis);
+        this(hand, io.github.mojolowjo.entropybot.aa.brain.GameClock::ms);
     }
 
     /** With a clock (JUnit): a reflex pause resumes the request until twice its time limit has passed on this clock. */

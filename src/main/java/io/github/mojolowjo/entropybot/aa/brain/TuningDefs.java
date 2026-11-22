@@ -79,6 +79,8 @@ final class TuningDefs {
         Tuning.def("bedSpot.far", 10, "rm-constants 0.39.u2 (was BedSpot.FAR)", "How far from the anchor a bed may stand");
         // blueprint
         Tuning.def("blueprint.maxFails", 3, "rm-constants 0.39.u2 (was Blueprint.MAX_FAILS)", "Largest schematic AA takes (cells, air included)");
+        Tuning.def("clock.clientTickRate", 0, "test tooling (cloud tester runs 25-28: the world sped up, the bot did not)", "1: the client ticks at the server's tick rate above 20 too (mixin ClockMixinMinecraft; at most 10 ticks a frame); 0: vanilla, 20 ticks a second at most");
+        Tuning.def("clock.gameTicks", 0, "test tooling (the owner 2026-11-21: games run with the tick rate raised)", "1: every wait, timeout and hold of the bot counts client ticks (50 ms each) instead of the wall clock, so it stays right at a raised tick rate; 0: the wall clock as ever");
         Tuning.def("goals.lookAroundAfterS", 30, "stop-wake (cloud tester run 11: 26 min at the chest, every order stopped)", "every order stopped on the surface for this many s (a deposit walk after the last stop moves the bot by itself first): one order takes one look-around explore leg");
         Tuning.def("steps.bandProbeS", 0, "job-digpace (run JAT: 46 levels in 6 min, no line in between)", "the dig-down leg's probe: every this many s a line with y, levels, s, feet/head in water, on ground, Baritone active; 0 = off");
         Tuning.def("band.dryLevels", 4, "job-digpace (run JAT: dug from a lake)", "the dig-down leg's start column is dry when none of its first this many cells under the feet holds a fluid");

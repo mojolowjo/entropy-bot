@@ -504,7 +504,7 @@ final class Mining {
      */
     private int[] pickNext(LocalPlayer p, MineRun j, String[] why) {
         String fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(j.target);
-        long nowMs = System.currentTimeMillis();
+        long nowMs = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
         List<io.github.mojolowjo.entropybot.aa.IronOptions.Ore> ores = new ArrayList<>(aaOres(p, fam, AaRuntime.ironOres()));
         int known = ores.size(), held = 0, other = 0, buried = 0;
         Level level = p.level();
@@ -617,9 +617,9 @@ final class Mining {
     /** A per-ore step failed at {@code stage}: charged in Failures under its cell key; the at form ends, the loop goes on without it. */
     private String stepFailed(Seq s, LocalPlayer p, MineRun j, String stage, String why) {
         String fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(j.target);
-        var rec = MineRules.charge(fam, j.at, stage, why, System.currentTimeMillis());
+        var rec = MineRules.charge(fam, j.at, stage, why, io.github.mojolowjo.entropybot.aa.brain.GameClock.ms());
         LOG.info("[entropybot] mine: per-ore step {} failed at {}: {} (charged in Failures as {} {}, held {} s)", MineRules.perOre(j.target, j.at, j.atDig), stage, why,
-                MineRules.CELL_DESIRE, MineRules.cellKey(fam, j.at[0], j.at[1], j.at[2]), Math.max(0, (rec.until() - System.currentTimeMillis()) / 1000));
+                MineRules.CELL_DESIRE, MineRules.cellKey(fam, j.at[0], j.at[1], j.at[2]), Math.max(0, (rec.until() - io.github.mojolowjo.entropybot.aa.brain.GameClock.ms()) / 1000));
         if (!j.loop) return end(s, j, MineRules.atFailText(j.target, Jobs.fmt(j.at), stage + ": " + why, gains(p, j)));
         j.at = null;
         return "wait";
@@ -1486,7 +1486,7 @@ final class Mining {
             // 0.39.z47 (run H): a chain's explore that ends with no new source is not a find: the order's next explore waits
             // explore.retryS (Goals.blocked), said once here
             if (ex.untilSource != null) {
-                io.github.mojolowjo.entropybot.aa.brain.Goals.exploreEndedBare(System.currentTimeMillis());
+                io.github.mojolowjo.entropybot.aa.brain.Goals.exploreEndedBare(io.github.mojolowjo.entropybot.aa.brain.GameClock.ms());
                 String wait = "no new source; next explore in " + io.github.mojolowjo.entropybot.aa.brain.Goals.exploreRetryS() + " s";
                 LOG.info("[entropybot] explore: {}", wait);
                 s.note = wait + "; " + s.note;

@@ -309,7 +309,7 @@ public final class StepHands implements Steps.Hands {
         if (s instanceof Step.AwaitPaths a && stand.standing()) return "standing while the walks compute (its own bound pathCost.firstAnswerWaitS " + a.waitS() + " s; rule 22)";
         if (s instanceof Step.ToBand && !bandWalking && bandCell != null) return "the priced path to " + Jobs.fmt(bandCell) + " is not known yet (its own bound steps.stepMaxS)";
         if (s instanceof Step.Smelt || s instanceof Step.Cook) {
-            long now = System.currentTimeMillis();
+            long now = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
             for (var j : c.crafting.furnaces().all())
                 if (!j.stalled && j.remaining() > 0 && j.startedAt >= stepStartMs && now < j.dueAt + io.github.mojolowjo.entropybot.craft.FurnaceJobs.slackMs())
                     return io.github.mojolowjo.entropybot.craft.FurnaceJobs.waitStatus(j, now) + " (its own watch furnaceJobs.stallMs)";
@@ -417,7 +417,7 @@ public final class StepHands implements Steps.Hands {
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null) return "error: not in a world";
         live.begin(s, p);                        // 0.39.z71: the monitor's made baseline (before the step takes or makes anything)
-        stepStartMs = System.currentTimeMillis();
+        stepStartMs = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
         // 0.39.z66 item 1 (run X 08:38:24, 08:40:39): AA's own put-back holding the slot is halted for every step kind - a
         // job step would answer "busy" and end the order's run, a Baritone step (collect, chop) would lose control to it
         String halt = c.haltRestoreFor(s.text());
@@ -987,7 +987,7 @@ public final class StepHands implements Steps.Hands {
         caving = new Caving();
         caving.step = k;
         caving.dim = dim;
-        caving.startMs = System.currentTimeMillis();
+        caving.startMs = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
         caving.fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(k.family());
         f = sg.caveFacts(dim, k.x(), k.y(), k.z());
         caving.seenAtStart = f.cellCount() - f.unseen();
@@ -1007,7 +1007,7 @@ public final class StepHands implements Steps.Hands {
         var idx = pass.caveIndex();
         Step.Cave k = cv.step;
         int[] me = Jobs.here(p);
-        long nowMs = System.currentTimeMillis();
+        long nowMs = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
         // run EK: the record's cells come from ChunkPass's one budgeted feeder (Sightings.caveFeed); the step only reads it
         // D15 pass three (run JAK: 234 cells "seen" by a 3 s walk): seen is looked at - the stand's cells in the eyes' cone
         // and the ore rays' range (seen.coneDeg, seen.range), as the rays cover them; a cell walked past behind the back is not
@@ -1553,7 +1553,7 @@ public final class StepHands implements Steps.Hands {
         if (b != null) Jobs.cancel(b);
         var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
         Step.Cave k = cv.step;
-        double minutes = (System.currentTimeMillis() - cv.startMs) / 60000.0;   // structural: ms a minute
+        double minutes = (io.github.mojolowjo.entropybot.aa.brain.GameClock.ms() - cv.startMs) / 60000.0;   // structural: ms a minute
         io.github.mojolowjo.entropybot.sense.CaveRecord.Facts after = null;
         if (sg != null) {
             // D15 pass two: the step's end re-opens the planner's cave price - the step's last passage measure is stored
@@ -1563,7 +1563,7 @@ public final class StepHands implements Steps.Hands {
             // review 4: a walk that saw no cell and mined no ore holds the cave until something new is known (no loop); an owner's
             // stop judges nothing (57db13b7 review (b)); FK fix: a stop for a stall is the walk's own verdict (CaveWalk.judged)
             Boolean gained = io.github.mojolowjo.entropybot.cave.CaveWalk.judged(end, why, seenNow > cv.seenAtStart || cv.mined > 0);
-            sg.caveWalked(cv.dim, k.x(), k.y(), k.z(), minutes, cv.oreSeen, System.currentTimeMillis(), gained);
+            sg.caveWalked(cv.dim, k.x(), k.y(), k.z(), minutes, cv.oreSeen, io.github.mojolowjo.entropybot.aa.brain.GameClock.ms(), gained);
             // D15 pass three (run JAK): a DONE cave is held done in its record (not entered again until more of it is known)
             if (end == io.github.mojolowjo.entropybot.cave.CaveWalk.End.DONE) sg.caveDone(cv.dim, k.x(), k.y(), k.z(), why);
             after = sg.caveFacts(cv.dim, k.x(), k.y(), k.z());
@@ -2771,7 +2771,8 @@ public final class StepHands implements Steps.Hands {
         bandStart = st;
         bandCell = new int[]{st.cell()[0], t.target(st.cell()[1]), st.cell()[2]};
         if (t.until() != null) digFrom = st.cell().clone();
-        bandMs0 = System.currentTimeMillis();
+        bandMs0 = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
+        bandWallMs0 = System.currentTimeMillis();
         bandLines0 = io.github.mojolowjo.entropybot.baritone.BaritoneHook.lines();
         bandSolid0 = solidYs(p, bandCell[0], bandCell[2], st.cell()[1] - 1, bandCell[1]);
         bandLeg = io.github.mojolowjo.entropybot.aa.moves.BandLegCount.start(bandLeg, prevSegBroken, st.cell()[1], bandCell[1], bandMs0, Tuning.get("band.legCarryS"));
@@ -2931,7 +2932,7 @@ public final class StepHands implements Steps.Hands {
             Start st = bandStart != null ? bandStart : searchStart(b, p);
             var next = io.github.mojolowjo.entropybot.aa.moves.BandLeg.of(a, st.cell(), st.standable());
             // job-dig2 (run JAU): not known, or still computing past band.askWaitS - Baritone digs on its own path, never an end
-            if (io.github.mojolowjo.entropybot.aa.moves.BandDirect.handOver(next.act(), System.currentTimeMillis() - bandMs0, Tuning.get("band.askWaitS"))) {
+            if (io.github.mojolowjo.entropybot.aa.moves.BandDirect.handOver(next.act(), System.currentTimeMillis() - bandWallMs0, Tuning.get("band.askWaitS"))   /* wall clock: the wait is for a background search's real compute */) {
                 bandDirect(b, t, next.why());
                 return Car.Status.running(t.text() + ": digging on Baritone's own path to " + Jobs.fmt(bandCell) + " (the price not known yet)");
             }
@@ -2976,7 +2977,7 @@ public final class StepHands implements Steps.Hands {
                 // job-dig3 (rule 15): a not-known end repeating at one column is a fact about that column - held, side-step
                 int tries = Tuning.i("band.notKnownTries");
                 double win = Tuning.get("band.notKnownWindowS");
-                if (io.github.mojolowjo.entropybot.aa.moves.BandHold.notKnown(bandCell[0], bandCell[1], bandCell[2], System.currentTimeMillis(), tries, win)) {
+                if (io.github.mojolowjo.entropybot.aa.moves.BandHold.notKnown(bandCell[0], bandCell[1], bandCell[2], io.github.mojolowjo.entropybot.aa.brain.GameClock.ms(), tries, win)) {
                     String why = io.github.mojolowjo.entropybot.aa.moves.BandHold.words(bandCell[0], bandCell[2], tries, win);
                     LOG.info("[entropybot] steps: {} - {}", t.text(), why);
                     io.github.mojolowjo.entropybot.aa.moves.FactChange.band(t.minY(), t.maxY(), why);
@@ -3006,13 +3007,15 @@ public final class StepHands implements Steps.Hands {
         if (every <= 0 || now - bandProbeMs < every) return;
         bandProbeMs = now;
         int fromY = bandStart != null ? bandStart.cell()[1] : y;
-        long secs = (now - bandMs0) / 1000;   // structural: ms to s
+        long secs = (io.github.mojolowjo.entropybot.aa.brain.GameClock.ms() - bandMs0) / 1000;   // structural: ms to s
         LOG.info("[entropybot] band probe: {} - y {} ({} levels, {} s), feet in water {}, head in water {}, on ground {}, Baritone active {}",
                 t.text(), y, fromY - y, secs, p.isInWater(), p.isUnderWater(), p.onGround(), b.getCustomGoalProcess().isActive());
     }
 
     /** job-band2: the band leg's start time, Baritone's line count then, and the solid cells of its column then (the Ys). */
     private long bandMs0;
+    /** The same start on the wall clock: band.askWaitS waits on a background path price (real compute). */
+    private long bandWallMs0;
     private long bandLines0;
     private java.util.Set<Integer> bandSolid0 = java.util.Set.of();
 
@@ -3044,7 +3047,7 @@ public final class StepHands implements Steps.Hands {
         int[] from = bandStart != null ? bandStart.cell() : digFrom;
         int fromY = from == null ? y : from[1];
         int broken = segBroken(p);
-        long now = System.currentTimeMillis();
+        long now = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
         // job-tunnel2 (run JAT): the whole leg's counts - from its first start, over every segment the re-plans restarted
         String r = bandLeg != null ? io.github.mojolowjo.entropybot.aa.moves.BandLegCount.reached(bandLeg, y, now, broken)
                 : io.github.mojolowjo.entropybot.aa.moves.BandEnd.reached(fromY, y, (now - bandMs0) / 1000.0, broken);   // structural: ms to s

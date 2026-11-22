@@ -433,7 +433,7 @@ public final class CaveIndex {
 
     private void measure() {
         fresh();
-        if (shapeDirty && (measuredAt == 0 || measureEveryNs <= 0 || System.nanoTime() - measuredAt >= measureEveryNs)) remeasure();
+        if (shapeDirty && (measuredAt == 0 || measureEveryNs <= 0 || io.github.mojolowjo.entropybot.aa.brain.GameClock.ms() * 1_000_000L - measuredAt >= measureEveryNs)) remeasure();   // structural: ns a ms (the game clock, in the field's unit)
         else if (rootsDirty) rekey();
     }
 
@@ -473,7 +473,7 @@ public final class CaveIndex {
         for (Opening o : out) for (long c : o.cells()) of.put(c, o);
         openingsAll = out;
         openingOf = of;
-        measuredAt = Math.max(1, System.nanoTime());
+        measuredAt = Math.max(1, io.github.mojolowjo.entropybot.aa.brain.GameClock.ms() * 1_000_000L);   // structural: ns a ms
         shapeDirty = false;
         rekey();
     }
