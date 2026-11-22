@@ -3497,7 +3497,7 @@ public final class AaRuntime implements JobPort {
                 + (writeErrors > 0 ? ", file write errors " + writeErrors : "")
                 + ", owner requests " + bb.requests().size() + " waiting"
                 + ", " + io.github.mojolowjo.entropybot.aa.door.Door.text()     // AA_CLEANUP 2: the one door
-                + ", " + restoreLine();
+                + ", " + restoreLine() + ", " + io.github.mojolowjo.entropybot.aa.brain.GameClock.line();     // test tooling: the clock line (clock: ...)
     }
 
     /** AA_STEP2 3: "restore pending: N blocks" (running now / waiting in the ledger). */
