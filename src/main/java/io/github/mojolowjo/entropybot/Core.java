@@ -191,6 +191,7 @@ public final class Core {
         try {
             tick++;
             io.github.mojolowjo.entropybot.aa.brain.GameClock.tick();     // test tooling: the game-play clock (clock.gameTicks)
+            io.github.mojolowjo.entropybot.baritone.ClockSettings.tick();     // test tooling: Baritone's answer waits at a raised client rate
             events.setTick(tick);
             guard.core.tick(tick);
             io.github.mojolowjo.entropybot.commands.LoadProbe.lap("guard");     // job-tick3: the guard+commands section's laps
