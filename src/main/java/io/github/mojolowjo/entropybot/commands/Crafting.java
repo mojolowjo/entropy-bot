@@ -632,8 +632,32 @@ final class Crafting {
     }
 
     /** startCraft: counts are items wanted, not crafts; short in the bag: a trip to the chests and the network first. */
+    /**
+     * deposit-kept, crafts (worlds run 1, cloud testers 2026-11-22: w088 and w090 put 15 of 16 logs in the chest, w004 13 -
+     * the torch's charcoal was smelted from an oak log of the 16 kept for the deposit with 5 free birch logs in the bag:
+     * the planner takes "the alternative there is most of"): the bag a craft or a smelt PLANS on is the bag less what it
+     * holds for the other orders' deposits (AaRuntime.keptFromOthers, by the item's path; nothing kept, or no order's run:
+     * the bag as it is). A plan that cannot stand without a kept item fails with its "missing" words and the order re-plans.
+     */
+    private Map<String, Integer> planBag(LocalPlayer p) {
+        Map<String, Integer> inv = new LinkedHashMap<>(Gui.inventory(p));
+        Map<String, Integer> kept = commands.aaRuntime == null ? Map.of() : commands.aaRuntime.keptFromOthers();
+        for (var e : kept.entrySet()) {
+            String path = e.getKey().contains(":") ? e.getKey().substring(e.getKey().indexOf(':') + 1) : e.getKey();
+            int left = e.getValue();
+            for (var it = inv.entrySet().iterator(); it.hasNext() && left > 0; ) {
+                var s = it.next();
+                if (!s.getKey().substring(s.getKey().indexOf(':') + 1).equals(path)) continue;
+                int take = Math.min(left, s.getValue());
+                left -= take;
+                if (s.getValue() - take <= 0) it.remove();
+                else s.setValue(s.getValue() - take);
+            }
+        }
+        return inv;
+    }
     Prepared prepareCraft(LocalPlayer p, String text, List<Step> extra) {
-        Map<String, Integer> inv = Gui.inventory(p);
+        Map<String, Integer> inv = planBag(p);
         CraftPlanner.Targets targets = planner.parseCraftTargets(text, inv);
         if (!targets.ok()) return Prepared.fail("error: " + targets.error());
         if (targets.list().isEmpty()) return Prepared.fail(CraftTexts.CRAFT_WHAT);
@@ -709,7 +733,7 @@ final class Crafting {
         text = form.text();
         CraftTexts.NameCount nc = CraftTexts.parseNameCount(text, 1);
         if (nc == null) return CraftTexts.SMELT_USAGE;
-        Map<String, Integer> inv = Gui.inventory(p);
+        Map<String, Integer> inv = planBag(p);          // deposit-kept, crafts: never a kept -d item as the input or the fuel
         String id = planner.resolveItem(nc.name(), inv);
         if (id == null) return CraftTexts.unknownItem(nc.words());
         if (planner.smeltingRecipes(id).isEmpty()) return CraftTexts.noFurnaceRecipe(id);
