@@ -36,4 +36,16 @@ public abstract class ClockMixinMinecraft {
             io.github.mojolowjo.entropybot.Quiet.warn("clock: the client tick-rate hook failed (the client stays at 20 ticks a second)", t);
         }
     }
+
+    /**
+     * Tick-rate trial 2 (cloud tester runs 30-33, 2026-11-22: at rate 200 the frame rate fell to 4 and the bot reached 3.4
+     * to 4.7 times, not 10): {@code Minecraft.runTick(boolean)} runs {@code Math.min(10, i)} client ticks a frame - the one
+     * Math.min(II) call in that method (read in the same sources jar, Minecraft.java line 1164). With the hook on, the
+     * 10 becomes Tuning clock.ticksAFrame, so a slow renderer no longer caps the tick rate. Off: vanilla's 10.
+     */
+    @org.spongepowered.asm.mixin.injection.ModifyArg(method = "runTick(Z)V",
+            at = @At(value = "INVOKE", target = "Ljava/lang/Math;min(II)I"), index = 0, require = 1)
+    private int entropybot$ticksAFrame(int vanilla) {
+        return io.github.mojolowjo.entropybot.aa.brain.GameClock.ticksAFrame(vanilla);
+    }
 }

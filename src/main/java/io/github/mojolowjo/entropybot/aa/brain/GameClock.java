@@ -41,9 +41,15 @@ public final class GameClock {
     /** Tuning clock.clientTickRate 1: the client ticks at the server's rate above 20 too (read once a tick). */
     public static boolean followServerRate() { return followRate; }
 
+    private static volatile int ticksAFrame = 10;        // game fact: vanilla's Minecraft.runTick runs 10 client ticks a frame at most
+
+    /** The client ticks run in one frame at most: vanilla's 10, or Tuning clock.ticksAFrame while the hook is on. */
+    public static int ticksAFrame(int vanilla) { return followRate ? Math.max(vanilla, ticksAFrame) : vanilla; }
+
     /** Once per client tick (Core.onClientTick): reads the switches, advances the tick clock. */
     public static void tick() {
         followRate = Tuning.get("clock.clientTickRate") >= 1;
+        ticksAFrame = Tuning.i("clock.ticksAFrame");
         boolean want = Tuning.get("clock.gameTicks") >= 1;
         if (want != ticking) set(want);
         if (ticking) ticks++;

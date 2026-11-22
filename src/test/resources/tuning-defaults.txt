@@ -219,6 +219,7 @@ climbPlan.hole	3.0
 climbPlan.startR	4.0
 clock.clientTickRate	0.0
 clock.gameTicks	0.0
+clock.ticksAFrame	50.0
 commands.memoryBlockMs	20000.0
 commands.mobsCap	48.0
 commands.mobsRadius	32.0
