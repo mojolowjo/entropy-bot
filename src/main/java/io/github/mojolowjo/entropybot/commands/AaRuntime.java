@@ -1267,11 +1267,9 @@ public final class AaRuntime implements JobPort {
 
     /** deposit-kept, steps: what the bag holds for the deposits of the orders other than the running one (Goals.keptFromOthers; empty: nothing). */
     java.util.Map<String, Integer> keptFromOthers() {
-        io.github.mojolowjo.entropybot.aa.brain.Goals.Goal running = null;
         var rp = taskReplan;
-        if (typedRun && rp != null) for (var g : io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb)) if (g.id().equals(rp.desire())) running = g;
-        // no order's run (running null): nothing is another order's here, the bag as it is
-        return running == null ? java.util.Map.of() : io.github.mojolowjo.entropybot.aa.brain.Goals.keptFromOthers(bb, running);
+        // no order's run: the bag as it is; an order's run whose goal has left (met, the run carried on): every kept amount
+        return io.github.mojolowjo.entropybot.aa.brain.Goals.keptForRun(bb, rp == null ? null : rp.desire(), typedRun && rp != null);
     }
 
     /**

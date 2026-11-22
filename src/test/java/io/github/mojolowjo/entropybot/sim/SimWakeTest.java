@@ -55,4 +55,22 @@ class SimWakeTest {
         assertEquals("done", end, tl);
         assertTrue(g.bag.getOrDefault("minecraft:spruce_log", 0) >= 4, g.bag.toString());
     }
+
+    /**
+     * Cloud tester run 43 (2026-11-22): an order met inside its batch's run leaves the goals while that run carries on
+     * for the next order - the kept -d amounts are still held from that run (Goals.keptForRun); a run that is no
+     * order's (the deposit itself) may use the bag as it is.
+     */
+    @Test
+    void aCarriedRunStillKeepsTheDepositAmounts() {
+        SimGame g = SimGameTest.treeMap(6);
+        g.give("minecraft:cobblestone", 32);
+        g.order("cobblestone", 32, "b1", true);
+        Goals.Goal log = g.order("spruce_log", 4, "b1", true);
+        g.tick();                                        // cobblestone is met at once: it leaves the goals, its 32 are due
+        assertNull(Goals.find(g.bb, "cobblestone"), g.timelineText());
+        assertEquals(32, Goals.keptForRun(g.bb, log.id(), true).getOrDefault("cobblestone", 0), "held from the other order's run");
+        assertEquals(32, Goals.keptForRun(g.bb, "goal.cobblestone", true).getOrDefault("cobblestone", 0), "held from the met order's carried run too (was: nothing)");
+        assertTrue(Goals.keptForRun(g.bb, null, false).isEmpty(), "no order's run (the deposit): the bag as it is");
+    }
 }

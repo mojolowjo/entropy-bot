@@ -443,9 +443,7 @@ final class SimGame {
 
         /** As the game's hands (StepHands.freeBag over AaRuntime.keptFromOthers): the bag less the other orders' -d amounts. */
         @Override public io.github.mojolowjo.entropybot.aa.moves.StepNeeds.Bag freeBag() {
-            Goals.Goal running = null;
-            if (runDesire != null) for (Goals.Goal g : Goals.of(bb)) if (g.id().equals(runDesire)) running = g;
-            return io.github.mojolowjo.entropybot.aa.moves.StepNeeds.less(bag(), running == null ? Map.of() : Goals.keptFromOthers(bb, running));
+            return io.github.mojolowjo.entropybot.aa.moves.StepNeeds.less(bag(), Goals.keptForRun(bb, runDesire, runDesire != null));
         }
 
         @Override public io.github.mojolowjo.entropybot.aa.moves.StepNeeds.Bag bag() {

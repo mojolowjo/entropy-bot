@@ -1387,6 +1387,21 @@ public final class Goals {
      * deposit-kept: what the bag holds for the deposits of the orders that are not {@code g} and not its trip's open orders
      * (BatchWay.open) - the one answer the planner ({@link #keptOff}) and the running steps (Steps.Hands.freeBag) take off.
      */
+    /**
+     * deposit-kept, steps: what a run may NOT use up from the bag - {@code orderRun}: the run is an order's (its desire
+     * {@code desireId}); false (a deposit, a plain job): nothing, the bag as it is. An order's run whose goal is no longer
+     * among the open ones is a CARRIED run (the order was met inside its batch's trip and left the goals; the run goes on
+     * for the batch's next order): every kept amount is held from it. Cloud tester run 43 (2026-11-22, the owner's line):
+     * oak_log was met at 06:20:51, its carried run then made the torch's furnace from 8 of the 32 kept cobblestone and
+     * the charcoal from a kept log - the chest got 24 and 15. (Was: no goal found = "no order's run" = nothing kept.)
+     */
+    public static Map<String, Integer> keptForRun(Blackboard bb, String desireId, boolean orderRun) {
+        if (!orderRun) return Map.of();
+        if (desireId != null && bb.fact(FACT) instanceof List<?>)
+            for (Goal g : of(bb)) if (g.id().equals(desireId)) return keptFromOthers(bb, g);
+        return kept(bb, null, null);
+    }
+
     public static Map<String, Integer> keptFromOthers(Blackboard bb, Goal g) {
         return kept(bb, g, g == null ? null : BatchWay.open(bb, g));
     }
