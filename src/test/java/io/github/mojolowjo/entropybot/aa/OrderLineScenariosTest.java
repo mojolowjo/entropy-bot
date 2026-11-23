@@ -282,8 +282,9 @@ class OrderLineScenariosTest {
         s.run(3, 5000);
         assertEquals(List.of(Map.of("oak_log", 16)), s.due, "the line's deposit went with the logs: " + s.said);
         assertNotNull(cob.parked, "the cobblestone order is still stopped");
+        s.depositRuns();                                     // the deposit run started and ended (a due one not started is taken back)
         s.bag.remove("oak_log");                             // deposited
-        s.bag.put("cobblestone", 33);                        // met later (the owner's own digging, another order)
+        s.bag.put("cobblestone", 33);                       // met later (the owner's own digging, another order)
         s.run(3, 5000);
         assertTrue(Goals.of(s.bb).isEmpty(), "met: " + s.said);
         assertEquals(List.of(Map.of("oak_log", 16), Map.of("cobblestone", 32)), s.due, "a second deposit of what the first left out: " + s.said);
