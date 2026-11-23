@@ -459,9 +459,22 @@ public final class FactChange {
      * stops only when the planner has none. Words: "cave at x y z: budget spent, N ore mined, M passages left (why)". Pure.
      */
     public static Fact caveMinutesFact(int[] entry, String family, int mined, int passagesLeft, String why) {
-        return new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay.cavedKey(family, entry),
+        return new Fact("source " + caveStoppedKey(entry, family, mined),
                 "cave at " + cell(entry) + ": budget spent, " + mined + " ore mined, " + (passagesLeft < 0 ? "not measured" : String.valueOf(passagesLeft))
                         + " passages left" + (why == null || why.isBlank() ? "" : " (" + why.replaceFirst("^error: ", "") + ")"));
+    }
+
+    /**
+     * job-planner-stick, review round 2: the key a caving that was STOPPED (its minutes, far over its price) holds. With
+     * no ore mined the space gave nothing: the caving's own key, the whole cave space out for the family (w060: five
+     * rounds, 0 ore, 50 minutes). With ore mined the space was giving and only the round ran out: the opening's key, as
+     * before this job - that opening is held, the cave the bot stands in is caved on in the next round (CaveWay.without
+     * keeps an inside cave), and other orders read it by distance. Pure.
+     */
+    static String caveStoppedKey(int[] entry, String family, int mined) {
+        return mined > 0 // structural: any ore mined at all
+                ? io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay.keyOf(entry)
+                : io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay.cavedKey(family, entry);
     }
 
     /** cave-guard: the caving step ended DEARER (CaveWalk.dearer): {@link #caveDearerFact} (taken once). */
@@ -473,7 +486,7 @@ public final class FactChange {
      * its price, N ore mined, M passages left (why)". Pure.
      */
     public static Fact caveDearerFact(int[] entry, String family, int mined, int passagesLeft, String why) {
-        return new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay.cavedKey(family, entry),
+        return new Fact("source " + caveStoppedKey(entry, family, mined),
                 "cave at " + cell(entry) + ": far over its price, " + mined + " ore mined, " + (passagesLeft < 0 ? "not measured" : String.valueOf(passagesLeft))
                         + " passages left" + (why == null || why.isBlank() ? "" : " (" + why.replaceFirst("^error: ", "") + ")"));
     }

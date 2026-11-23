@@ -62,6 +62,24 @@ class CaveSpaceHoldTest {
         assertEquals(List.of(0, 67, 61), List.of(all.get(2).x(), all.get(2).y(), all.get(2).z()));
     }
 
+    /**
+     * Review round 2: a caving stopped by its minutes or its price WITH ore mined (a large cave, 4 of 6 mined in the
+     * round) holds the opening only, as before the job: the cave the bot stands in is caved on, never out for the family.
+     */
+    @Test
+    void aStoppedCavingThatGaveOre_holdsItsOpeningOnly_theSpaceStaysOffered() {
+        int[] entry = {-8, 92, -3};
+        for (FactChange.Fact f : List.of(FactChange.caveMinutesFact(entry, "coal", 4, 131, "10 min"), FactChange.caveDearerFact(entry, "coal", 4, 131, "far over"))) {
+            assertEquals("source " + CaveWay.keyOf(entry), f.key(), "ore mined: the opening's key");
+            String held = FactChange.ownSourceKey(f);
+            assertEquals(CaveWay.keyOf(entry), held);
+            CaveWay left = w060().without(Set.of(held)::contains);
+            assertNull(NeedChain.caveOut(left.all().get(0)), "the cave the bot is inside goes on: " + left.all());
+        }
+        assertEquals("source " + CaveWay.cavedKey("coal", entry), FactChange.caveDearerFact(entry, "coal", 0, 131, "far over").key(), "no ore: the space");
+        assertEquals("source " + CaveWay.cavedKey("coal", entry), FactChange.caveEndedFact(entry, "coal", "DONE", "explored to its end").key(), "an end of the cave itself: the space");
+    }
+
     @Test
     void anOpeningsHold_orAnotherFamilysCaving_leavesTheSpaceOffered() {
         // the lip of -8 92 -3 has no path (the opening's key): that opening only - the space is entered from where the bot stands
