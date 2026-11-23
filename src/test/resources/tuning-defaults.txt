@@ -440,6 +440,7 @@ goals.legRestMs	0.0
 goals.lookAroundAfterS	30.0
 goals.maxN	4096.0
 goals.oreDefault	8.0
+goals.waitEndedMaxS	180.0
 gridLoop.clearTicks	4.0
 gridLoop.maxPerCell	64.0
 gridLoop.settleMax	40.0

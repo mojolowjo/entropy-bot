@@ -6,6 +6,7 @@ import io.github.mojolowjo.entropybot.aa.NeedChain.Spot;
 import io.github.mojolowjo.entropybot.aa.NeedChain.World;
 import io.github.mojolowjo.entropybot.aa.brain.Goals;
 import io.github.mojolowjo.entropybot.aa.brain.ItemWorth;
+import io.github.mojolowjo.entropybot.aa.brain.LineDeposits;
 import io.github.mojolowjo.entropybot.aa.brain.TestData;
 import io.github.mojolowjo.entropybot.aa.brain.Thing;
 import io.github.mojolowjo.entropybot.aa.moves.Car;
@@ -348,13 +349,49 @@ class Z61ReservationsTest {
      */
     @Test
     void aDepositOrdersKeptAmountIsNotPillared_whicheverOrderRuns() {
-        var rs = Goals.orderReserves(goal("mangrove_log", 16), new ArrayList<>(), Map.of("cobblestone", 32), Map.of("cobblestone", 32));
+        Goals.Goal cob = goal("cobblestone", 32);
+        List<LineDeposits.Kept> kept = List.of(new LineDeposits.Kept(cob, Map.of("cobblestone", 32)));
+        var rs = Goals.orderReserves(goal("mangrove_log", 16), new ArrayList<>(), Map.of("cobblestone", 32), kept);
         assertEquals(List.of("mangrove_log 16 (order mangrove_log)", "cobblestone 32 (order cobblestone (kept for a deposit))"), texts(rs));
         assertEquals(0, Reserves.spareThrowaway(rs, Map.of(COBBLE, 32), List.of(COBBLE)));
         assertEquals(8, Reserves.spareThrowaway(rs, Map.of(COBBLE, 40), List.of(COBBLE)));
-        rs = Goals.orderReserves(goal("cobblestone", 32), new ArrayList<>(), Map.of("cobblestone", 32), Map.of("cobblestone", 32));
+        rs = Goals.orderReserves(cob, new ArrayList<>(), Map.of("cobblestone", 32), kept);
         assertEquals(List.of("cobblestone 32 (order cobblestone)"), texts(rs), "the running order already holds it");
-        assertEquals(Goals.orderReserves(null, new ArrayList<>(), Map.of()), Goals.orderReserves(null, new ArrayList<>(), Map.of(), Map.of()), "nothing kept: as before");
+        assertEquals(Goals.orderReserves(null, new ArrayList<>(), Map.of()), Goals.orderReserves(null, new ArrayList<>(), Map.of(), List.of()), "nothing kept: as before");
+    }
+
+    /**
+     * Merge review 2026-11-23: cobblestone 32 -d waits for its line's deposit; a later order of cobblestone 10 (no deposit
+     * word) gathers to 42. Running, or finished, its reserve of 10 names the item - the kept 32 were then left out and 32
+     * of the 42 could be placed. The fork sums the units: 42 are held; only the SAME order's reserve is the same items.
+     */
+    @Test
+    void aKeptAmountIsHeldBesideAnotherOrdersReserveOfTheSameItem() {
+        Goals.Goal old = goal("cobblestone", 32), later = goal("cobblestone", 10);
+        List<LineDeposits.Kept> kept = List.of(new LineDeposits.Kept(old, Map.of("cobblestone", 32)));
+        var rs = Goals.orderReserves(later, new ArrayList<>(), Map.of("cobblestone", 42), kept);
+        assertEquals(List.of("cobblestone 10 (order cobblestone)", "cobblestone 32 (order cobblestone (kept for a deposit))"), texts(rs));
+        assertEquals(0, Reserves.spareThrowaway(rs, Map.of(COBBLE, 42), List.of(COBBLE)), "none of the 42 is placed");
+        assertEquals(3, Reserves.spareThrowaway(rs, Map.of(COBBLE, 45), List.of(COBBLE)));
+        // the later order met: its finished entry (made from it) names the item during the next order's run
+        List<Goals.Finished> fin = new ArrayList<>(List.of(new Goals.Finished("cobblestone", List.of(COBBLE), 10, false, later)));
+        rs = Goals.orderReserves(goal("mangrove_log", 16), fin, Map.of("cobblestone", 42), kept);
+        assertEquals(0, Reserves.spareThrowaway(rs, Map.of(COBBLE, 42), List.of(COBBLE)), "32 kept and 10 finished: none spare");
+        // the -d order's OWN finished entry is the same items: reserved once, not 64 of 40
+        fin = new ArrayList<>(List.of(new Goals.Finished("cobblestone", List.of(COBBLE), 32, false, old)));
+        rs = Goals.orderReserves(goal("mangrove_log", 16), fin, Map.of("cobblestone", 40), kept);
+        assertEquals(8, Reserves.spareThrowaway(rs, Map.of(COBBLE, 40), List.of(COBBLE)));
+    }
+
+    /** Merge review 2026-11-23: a modded -d item's kept reserve names the order's own id, not minecraft:&lt;path&gt;. */
+    @Test
+    void aModdedKeptAmountIsReservedByItsOwnId() {
+        String osmium = "mekanism:ingot_osmium";
+        Goals.Goal g = new Goals.Goal(new Thing.Result(osmium, osmium, false, List.of(osmium), List.of("ingot_osmium"), 0, null, null, null), 2, 0, 0);
+        var rs = Goals.orderReserves(null, new ArrayList<>(), Map.of("ingot_osmium", 2), List.of(new LineDeposits.Kept(g, Map.of("ingot_osmium", 2))));
+        assertEquals(1, rs.size());
+        assertEquals(List.of(osmium), rs.get(0).members);
+        assertEquals(0, Reserves.spareThrowaway(rs, Map.of(osmium, 2), List.of(osmium)));
     }
 
     /**

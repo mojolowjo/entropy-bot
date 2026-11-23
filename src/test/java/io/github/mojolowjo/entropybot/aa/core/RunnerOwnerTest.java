@@ -22,6 +22,24 @@ class RunnerOwnerTest {
         assertEquals("replan torch", r.name());
     }
 
+    /**
+     * Merge review 2026-11-23: "the runner holds the line's deposit run" is asked by that run's key, not by the task's typed
+     * flag - the deposit's own amounts are its to put away only while its run is the one in the runner.
+     */
+    @Test
+    void aRunIsHeldByItsKeyUntilTheNextStart() {
+        RunnerOwner r = new RunnerOwner();
+        assertFalse(r.holds(r.key()), "no run yet");
+        r.taskStarts("EXPLORE owner goal");
+        r.otherStarts("aa deposit");
+        long deposit = r.key();
+        assertTrue(r.holds(deposit));
+        r.otherStarts("aa eat");                           // an owner one-shot after it
+        assertFalse(r.holds(deposit), "the deposit run is no longer the one in the runner");
+        r.taskStarts("EXPLORE owner goal");
+        assertFalse(r.holds(deposit));
+    }
+
     /** w053-200-2 03:53:09.806: "owner order deposit" took the runner while the torch order's task was still open. */
     @Test
     void aDepositInTheRunnerIsNotTheTasks() {

@@ -101,6 +101,12 @@ final class OrderLineSim {
     Goals.Goal order(String word, int n, String batch, boolean deposit) {
         var r = Thing.resolve(word, CATALOG);
         if (r.err() != null) throw new IllegalArgumentException(word + ": " + r.err());
+        // as the runtime's aa want: an order of the same item that is replaced leaves its line first
+        Goals.Goal old = Goals.find(bb, r.key());
+        if (old != null && old.deposit > 0) {
+            LineDeposits.Out out = deposits.replaced(old, bag, mainAt);
+            if (out != null && out.text() != null) { said.add(out.text()); if (out.kind() == LineDeposits.Kind.DUE) due.add(out.items()); }
+        }
         Goals.Goal g = Goals.add(bb, r, n, 0, clock.now());
         g.batch = batch;
         deposits.add(g, batch, deposit);
@@ -139,7 +145,7 @@ final class OrderLineSim {
     /** The game's deposit run for what is due: it starts (a wake leaves it alone from here), then it ends. */
     void depositRuns() {
         deposits.started();
-        deposits.gone();
+        deposits.gone(true);
     }
 
     /** {@code n} passes, {@code ms} apart. */

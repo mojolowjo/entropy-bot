@@ -40,6 +40,12 @@ public final class RunnerOwner {
     /** The run the runner holds (or held last) was started for the brain's task. */
     public boolean taskHolds() { return task >= 0 && task == key; }
 
+    /** The key of the run the runner holds (or held last); 0: none yet. */
+    public long key() { return key; }
+
+    /** The run the runner holds (or held last) is the one started with {@code key} (a start's answer, or {@link #key()} read after it). */
+    public boolean holds(long key) { return key > 0 && key == this.key; }      // structural: 0 is "no run yet"
+
     /** The name of the run the runner holds (or held last). */
     public String name() { return name; }
 

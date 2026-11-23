@@ -1272,15 +1272,32 @@ public final class AaRuntime implements JobPort {
         if (typedRun && rp != null) for (var g : io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb)) if (g.id().equals(rp.desire())) running = g;
         // deposit-kept, placing (owner's yes 2026-11-16): the -d amounts in the bag too, whichever order runs
         return io.github.mojolowjo.entropybot.aa.brain.Goals.orderReserves(running, io.github.mojolowjo.entropybot.aa.brain.Goals.finished(bb), bb.in.bag,
-                io.github.mojolowjo.entropybot.aa.brain.Goals.kept(bb, null, null));
+                io.github.mojolowjo.entropybot.aa.brain.Goals.keptPer(bb));
     }
 
-    /** deposit-kept, steps: what the bag holds for the deposits of the orders other than the running one (Goals.keptFromOthers; empty: nothing). */
+    /**
+     * deposit-kept, steps: what the run on the runner may not use up from the bag (Goals.keptForRun; empty: nothing).
+     *
+     * <p>Merge review 2026-11-23 (typedRun stays set after the task's run ended, so the line's deposit run that followed was
+     * read as "an order's run" and its own amounts were taken off its free bag; the same stale answer was the protective
+     * one for an owner one-shot): asked by whose run it is, not by the flag alone - the line's own deposit run: nothing
+     * (the amounts are its to put away); the brain's task: an order's as before (its goal left: a carried run, every
+     * kept amount), a task that is no order's: the bag as it is, as before; any other run (an owner one-shot, a job):
+     * every kept amount.
+     */
     java.util.Map<String, Integer> keptFromOthers() {
+        if (depositRunHolds()) return Map.of();
         var rp = taskReplan;
-        // no order's run: the bag as it is; an order's run whose goal has left (met, the run carried on): every kept amount
-        return io.github.mojolowjo.entropybot.aa.brain.Goals.keptForRun(bb, rp == null ? null : rp.desire(), typedRun && rp != null);
+        boolean task = taskStarting || (typedRun && runner.taskHolds());
+        if (!task) return io.github.mojolowjo.entropybot.aa.brain.Goals.keptForRun(bb, null, true);
+        return io.github.mojolowjo.entropybot.aa.brain.Goals.keptForRun(bb, rp == null ? null : rp.desire(), rp != null);
     }
+
+    /** The task's run is being started on the runner: its first step runs before the runner is marked as the task's (runTyped). */
+    private boolean taskStarting;
+
+    /** The run the runner holds is the line's deposit run (or it is being started: its first step runs inside the start). */
+    private boolean depositRunHolds() { return depositStarting || (depositOnItsWay && c.stepRun.running() && runner.holds(depositRunKey)); }
 
     /**
      * 0.39.z61 (D1 3.7): aa why / aa status's reserve line: "reserved: stone_crafting_materials 8 (craft furnace), ... | spare to
@@ -2739,7 +2756,13 @@ public final class AaRuntime implements JobPort {
             factsNow();
         });
         typedRun = true;                 // 0.39.z61: set before the start, so the first step's reserves see the running order
-        String r = c.stepRun.start(key, steps, label, replan, uses);
+        String r;
+        taskStarting = true;             // merge review 2026-11-23: the first step's free bag is the task's (keptFromOthers), before the runner is marked
+        try {
+            r = c.stepRun.start(key, steps, label, replan, uses);
+        } finally {
+            taskStarting = false;
+        }
         // runner ownership: the mark follows what the runner holds (RunnerOwner.took: busy took nothing; a start that failed
         // at its first step replaced the run in the runner, its end is this task's own and the caller reads r)
         if (io.github.mojolowjo.entropybot.aa.core.RunnerOwner.took(r)) runner.taskStarts(io.github.mojolowjo.entropybot.aa.core.RunnerOwner.named(label, r));
@@ -4166,6 +4189,9 @@ public final class AaRuntime implements JobPort {
 
     /** deposit-kept: the line's deposit run is on its way to the chest (its items still in the bag, still kept). */
     private boolean depositOnItsWay;
+    /** The line's deposit run is being started (its first step runs inside the start), and the runner's key of that run once it runs. */
+    private boolean depositStarting;
+    private long depositRunKey;
     /** Runner ownership: the reason the due deposit waits on, as said last (null: it does not wait, or none is due). */
     private String depositWaitSaid;
 
@@ -4175,7 +4201,16 @@ public final class AaRuntime implements JobPort {
         // (in the chest then, or the run failed and said so), not from its start
         if (depositOnItsWay && !c.stepRun.running() && !c.jobs.running()) {
             depositOnItsWay = false;
-            lineDeposits.gone();
+            // merge review 2026-11-23 (a failed deposit run left its orders noted as "taken by the deposit"; a wake then
+            // cut their amounts by items still in the bag): the store is told whether the run reached the chest - the
+            // runner still holds that run and it ended done. Failed, or its end not read (another run took the runner
+            // since): not reached, nothing is taken off a woken order's amount (the safe side of the owner's rule that a
+            // -d amount reaches the chest whole), said
+            boolean mine = runner.holds(depositRunKey);
+            boolean reached = mine && c.stepRun.steps.phase() == io.github.mojolowjo.entropybot.aa.moves.Steps.Phase.DONE;
+            if (!reached) LOG.info("[entropybot] aa: the line's deposit run did not reach the chest ({}): its orders' amounts are not counted as deposited",
+                    mine ? c.stepRun.steps.why() : "its end was not read: the runner holds " + runner.name() + " now");
+            lineDeposits.gone(reached);
         }
         if (depositDue == null) { depositWaitSaid = null; return; }
         // review 3 (one store, rule 23): the queued deposit is what LineDeposits holds as due NOW. A take-back that came
@@ -4212,13 +4247,21 @@ public final class AaRuntime implements JobPort {
         List<io.github.mojolowjo.entropybot.aa.moves.Step> depositSteps = new ArrayList<>();
         var over = surfaceOver();
         if (over != null && over.depth() > 0) depositSteps.add(new io.github.mojolowjo.entropybot.aa.moves.Step.ToSurface(over.x(), over.y(), over.z()));
-        depositSteps.add(new io.github.mojolowjo.entropybot.aa.moves.Step.Deposit(depositItems));
-        String r = order("deposit", depositSteps);
+        // merge review 2026-11-23 (a modded -d item was sent by its path and looked for as minecraft:<path>: "none of it in
+        // the bag", nothing put in): the step is sent with the orders' full ids (LineDeposits.dueIds, the one store)
+        depositSteps.add(new io.github.mojolowjo.entropybot.aa.moves.Step.Deposit(lineDeposits.dueIds()));
+        String r;
+        depositStarting = true;          // the run's first step runs inside the start: its free bag is the deposit's (keptFromOthers)
+        try {
+            r = order("deposit", depositSteps);
+        } finally {
+            depositStarting = false;
+        }
         if (r.startsWith("aa deposit: busy")) return;                    // the slot went to something else this tick: next tick
         String why = depositDue;
         depositDue = null;
-        if (r.startsWith("ok")) { depositOnItsWay = true; lineDeposits.started(); }     // deposit-kept: kept until the run ends (above); take-back: on its way, a wake leaves it alone
-        else lineDeposits.gone();                                       // refused (said below): no deposit comes, no longer kept from the plans
+        if (r.startsWith("ok")) { depositOnItsWay = true; depositRunKey = runner.key(); lineDeposits.started(); }     // deposit-kept: kept until the run ends (above); take-back: on its way, a wake leaves it alone
+        else lineDeposits.gone(false);                                  // refused (said below): no deposit comes, no longer kept from the plans; nothing reached the chest
         if (r.startsWith("ok")) { LOG.info("[entropybot] aa: {} - started", why); c.whisper(c.owner(), "aa: " + why); }
         else { LOG.info("[entropybot] aa: {} - but it could not start: {}", why, r); c.whisper(c.owner(), "aa: the deposit could not start: " + r); }
     }
@@ -4365,6 +4408,14 @@ public final class AaRuntime implements JobPort {
             String wantKey = ask.wantKey();
             io.github.mojolowjo.entropybot.aa.brain.Wants.done(bb, "want." + wantKey, now - (long) (100 * io.github.mojolowjo.entropybot.aa.brain.Wants.DAY_MS));  // structural: percent
             return "ok: " + wantBored(wantKey);
+        }
+        // merge review 2026-11-23 (aa want of an item that is an open or stopped -d order replaced the goal and left the old
+        // one in its line: that line never ended, or deposited the amount twice): the replaced order leaves its line first,
+        // as a dropped one does - its line's finished orders deposit when the line ends without it (LineDeposits.replaced)
+        var old = io.github.mojolowjo.entropybot.aa.brain.Goals.find(bb, r.key());
+        if (old != null && old.deposit > 0) {
+            if (bb.in != null && bb.in.bag != null) depositSaid(lineDeposits.replaced(old, bb.in.bag, mainChestAt()));
+            else LOG.info("[entropybot] aa: {} ordered again while the bag is not read: its old line is left as it is (aa cancel ends it)", old.r.key());
         }
         var g = io.github.mojolowjo.entropybot.aa.brain.Goals.add(bb, r, a.n(), a.prio(), now);
         g.batch = wantBatch;                          // 0.39.z77 J2: null for an order alone
