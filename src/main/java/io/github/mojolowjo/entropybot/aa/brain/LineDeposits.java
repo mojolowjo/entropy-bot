@@ -81,7 +81,14 @@ public final class LineDeposits {
         Set<Goals.Goal> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         if (self != null) seen.add(self);
         if (skip != null) seen.addAll(skip);
-        for (var d : due.entrySet()) if (seen.add(d.getKey())) for (var t : d.getValue().entrySet()) out.merge(t.getKey(), t.getValue(), Integer::sum);
+        Set<Goals.Goal> left = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        left.addAll(seen);
+        for (var d : way.entrySet()) if (seen.add(d.getKey())) for (var t : d.getValue().entrySet()) out.merge(t.getKey(), t.getValue(), Integer::sum);
+        // an order whose line came due AGAIN while its earlier deposit is on its way counts twice: what is on its way and
+        // what is due of it now are different items of the bag (review round 2)
+        for (var d : due.entrySet())
+            if (!left.contains(d.getKey()) && (seen.add(d.getKey()) || way.containsKey(d.getKey())))
+                for (var t : d.getValue().entrySet()) out.merge(t.getKey(), t.getValue(), Integer::sum);
         Set<String> lines = new java.util.HashSet<>();
         for (Goals.Goal g : goals) if (g.deposit > 0 && g.line != null) lines.add(g.line);
         for (var e : lineEnded.entrySet()) {
@@ -116,10 +123,26 @@ public final class LineDeposits {
         return out;
     }
 
-    /** take-back: the due deposit's run started: from here a wake of one of its orders leaves it alone. */
+    /**
+     * Review round 2 (cobblestone 32 -d went with 20, was met while that run climbed out through stone, and its line came
+     * due again on the other 12; the run's end removed "the lines on their way" and the 12 with them): the amounts of the
+     * run on its way, per order as {@link #started} sent it. They are kept apart from {@link #due}, so what comes due while
+     * the run is on its way (another line, or the SAME line and the same order again) is never the run's to take off.
+     */
+    private final Map<Goals.Goal, Map<String, Integer>> way = new java.util.IdentityHashMap<>();
+    /** A deposit run is on its way ({@link #started} to {@link #gone}). */
+    private boolean onWay;
+
+    /**
+     * take-back: the due deposit's run started: from here a wake of one of its orders leaves it alone. The run takes
+     * exactly what is due now ({@link #due} and {@link #dueLine} are empty after this); what comes due later is a later run's.
+     */
     public void started() {
         for (var e : dueLine.entrySet()) wayLine.put(e.getKey(), dueOf(e.getValue()));
         dueLine.clear();
+        way.putAll(due);
+        due.clear();
+        onWay = true;
     }
 
     /** take-back: the items of every line whose deposit is due and not started (empty: none). */
@@ -131,11 +154,13 @@ public final class LineDeposits {
 
     /**
      * deposit-kept: the deposit run ended, or the due deposit could not start (said by the caller): its items are no longer
-     * kept here. With a run on its way only that run's lines go (a line that came due meanwhile stays due and kept).
+     * kept here. With a run on its way only what that run was sent with goes ({@link #way}): a line that came due
+     * meanwhile stays due and kept, the run's own line and orders included (review round 2).
      */
     public void gone() {
-        if (wayLine.isEmpty()) { due.clear(); dueLine.clear(); return; }
-        due.keySet().removeIf(o -> wayLine.containsKey(o.line));
+        if (!onWay) { due.clear(); dueLine.clear(); return; }
+        onWay = false;
+        way.clear();
         wayLine.clear();
     }
 

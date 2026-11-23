@@ -163,6 +163,67 @@ class LineDepositsTest {
     }
 
     /**
+     * Review round 2: the SAME line comes due again while its own earlier deposit is on its way. cobblestone 32 -d parked
+     * with 20 in the bag, the line went due and its run started; the run's climb through stone filled the bag, the order
+     * was met and weighed again: 12 more are due. The end of the first run takes off what it was sent with, never the 12.
+     */
+    @Test
+    void theEndOfARunLeavesItsOwnLineThatCameDueAgain() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        s.bag.put("oak_log", 16);
+        assertEquals(Kind.NOTED, s.deposits.weigh(log, "done", s.bag, AT).kind());
+        s.bag.put("cobblestone", 20);
+        cob.parked = "no source in reach";
+        LineDeposits.Out first = s.deposits.sweep(cob, s.bag, AT);
+        assertEquals(Kind.DUE, first.kind(), first.text());
+        assertEquals(Map.of("cobblestone", 20, "oak_log", 16), first.items());
+        s.deposits.started();
+        s.bag.put("cobblestone", 32);                        // the run's way up dug through stone
+        cob.parked = null;
+        LineDeposits.Out again = s.deposits.weigh(cob, "done", s.bag, AT);
+        assertEquals(Kind.DUE, again.kind(), again.text());
+        assertEquals(Map.of("cobblestone", 12), again.items(), "20 are on their way: the rest of the 32");
+        assertEquals(Map.of("cobblestone", 12), s.deposits.dueNow());
+        assertEquals(Map.of("cobblestone", 32, "oak_log", 16), s.deposits.kept(s.bag, List.of(), null, null), "the 20 on their way and the 12 due are both kept");
+        s.deposits.gone();                                   // the first run ended
+        s.bag.put("cobblestone", 12);
+        s.bag.remove("oak_log");
+        assertEquals(Map.of("cobblestone", 12), s.deposits.dueNow(), "the remainder is still due: the -d amount goes whole");
+        assertEquals(Map.of("cobblestone", 12), s.deposits.kept(s.bag, List.of(), null, null), "and still kept");
+        s.deposits.started();
+        assertTrue(s.deposits.dueNow().isEmpty());
+        s.deposits.gone();
+        assertTrue(s.deposits.kept(s.bag, List.of(), null, null).isEmpty(), "the second run ended: nothing left behind");
+        // nothing of the line leaked: a later wake of an order of it finds no deposit to take back
+        log.parked = null;
+        assertNotEquals(Kind.WOKE_TAKEN_BACK, s.deposits.reopen(log).kind());
+    }
+
+    /** A run sent with nothing noted in the store (started with no line due) still ends as a run: what came due meanwhile stays. */
+    @Test
+    void theEndOfARunSentWithNothingLeavesWhatCameDueMeanwhile() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal stick = s.order("stick", 4, "b2", true);
+        s.deposits.started();
+        s.bag.put("stick", 4);
+        assertEquals(Kind.DUE, s.deposits.weigh(stick, "done", s.bag, AT).kind());
+        s.deposits.gone();
+        assertEquals(Map.of("stick", 4), s.deposits.dueNow());
+    }
+
+    /** A due deposit that could not start (no run on its way) is no longer due or kept. */
+    @Test
+    void aDepositThatCouldNotStartIsNoLongerDue() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        due(s, cob, log, 11);
+        s.deposits.gone();
+        assertTrue(s.deposits.dueNow().isEmpty());
+        assertTrue(s.deposits.kept(s.bag, List.of(), null, null).isEmpty());
+    }
+
+    /**
      * Review 1: a line of three -d orders. The first deposit went with {@code logs} of oak_log (parked) and nothing of stick
      * (parked); stick woke, was met and the line is DUE again on stick alone. Answers the oak_log order, still parked.
      */
