@@ -515,6 +515,17 @@ public final class StepHands implements Steps.Hands {
         }
     }
 
+    /**
+     * job-planner-stick, review round 3: the step watch's timeout of a caving step is the caving's minutes end
+     * (FactChange.caveStopped: ONE fact for both ends, keyed by the ore the round mined), read here while the caving's
+     * state is still there (the cancel that follows ends it STOPPED, which says no fact). Every other step: none.
+     */
+    @Override public io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact timedOut(Step s, String out) {
+        Caving cv = caving;
+        if (!(s instanceof Step.Cave k) || cv == null) return null;
+        return io.github.mojolowjo.entropybot.aa.moves.FactChange.caveStopped(k, cv.mined, cv.passagesLeft, out);
+    }
+
     @Override public void cancel(String why) {
         try {
             if (mining) {
@@ -1579,9 +1590,9 @@ public final class StepHands implements Steps.Hands {
         // record not loaded stays a plain end (said; rule 15 for the latter).
         int[] entry = {k.x(), k.y(), k.z()};
         switch (end) {
-            case DONE, NO_BRANCH, NO_PROGRESS -> io.github.mojolowjo.entropybot.aa.moves.FactChange.caveEnded(entry, end.name(), why);
-            case MINUTES -> io.github.mojolowjo.entropybot.aa.moves.FactChange.caveMinutes(entry, cv.mined, cv.passagesLeft, why);
-            case DEARER -> io.github.mojolowjo.entropybot.aa.moves.FactChange.caveDearer(entry, cv.mined, cv.passagesLeft, why);   // cave-guard: the same kind of fact as its minutes
+            case DONE, NO_BRANCH, NO_PROGRESS -> io.github.mojolowjo.entropybot.aa.moves.FactChange.caveEnded(entry, k.family(), end.name(), why);
+            case MINUTES -> io.github.mojolowjo.entropybot.aa.moves.FactChange.say(io.github.mojolowjo.entropybot.aa.moves.FactChange.caveStopped(k, cv.mined, cv.passagesLeft, why));   // the one fact of both ends (the step watch's timeout: timedOut above)
+            case DEARER -> io.github.mojolowjo.entropybot.aa.moves.FactChange.caveDearer(entry, k.family(), cv.mined, cv.passagesLeft, why);   // cave-guard: the same kind of fact as its minutes
             default -> { }
         }
         return Car.Status.failed(line);

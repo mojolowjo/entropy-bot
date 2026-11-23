@@ -157,7 +157,7 @@ public class D15PassagesTest {
                 List.of(), new int[]{0, 40, 0}, 4.5);
         assertEquals(CaveWalk.End.MINUTES, stop.end());
         assertTrue(stop.why().contains("0 ore mined, 1 passage(s) left"), stop.why());
-        var f = FactChange.caveMinutesFact(new int[]{1, 2, 3}, 0, 1, stop.why());
+        var f = FactChange.caveMinutesFact(new int[]{1, 2, 3}, "coal", 0, 1, stop.why());
         assertFalse(f.price(), "not a price: a price fact on a failed step was 'kept the running pick' and the order stopped (runs JZ, JAE)");
         assertTrue(f.key().startsWith("source "), "the cave's source fact: out for this order, the rest priced again");
         assertTrue(f.text().startsWith("cave at 1 2 3: budget spent, 0 ore mined, 1 passages left"), f.text());

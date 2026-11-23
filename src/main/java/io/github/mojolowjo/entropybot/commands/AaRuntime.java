@@ -1134,6 +1134,7 @@ public final class AaRuntime implements JobPort {
             ways.add(new io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay(k.x(), k.y(), k.z(), Math.sqrt(Jobs.distSq(me, new int[]{k.x(), k.y(), k.z()})),
                     ore, fam, expected, explored, k.size(), unseen, leftKeys(sg.caveLeft(dim, k.x(), k.y(), k.z(), fam)), lp.kept())
                     .withOut(out).withInside(inside).withBasis(pr.why()).withLipOut(lp.out())
+                    .withSpace(f == null ? null : f.x() + "," + f.y() + "," + f.z())   // job-planner-stick: its record (a merged entry reads the kept record): the space a failed caving holds
                     .withPassages(passages)
                     .withDensity(dens));   // job-price: the passages' ore by the record's game data; D15 pass two: the walk inside is priced on the record's passages (held while a caving step runs)
         }

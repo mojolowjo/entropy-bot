@@ -54,11 +54,26 @@ public final class PlannerPort implements BatchWay.Planner {
         int dropsInRow;
         /** job-freeze: the reason of the last drop (a fact's field and key) and how many results in a row were dropped for it. */
         String dropReason;
+        /**
+         * job-planner-stick (worlds run 2, w097 07:06:55-07:08:35: 126 results in a row dropped, the reasons rotating - feet,
+         * mobs, seen, price - so the same-reason count started over each time and no answer was taken for 100 s): the
+         * results in a row dropped for a said reason (a changed fact, whichever) - the take counts these.
+         */
         int sameDropsInRow;
         /** Review (b): the tick the cap's line was last said (said again every RESAY_S while the streak lasts). */
         long capSaidAt;
         /** 0.39.z78 D6 (run DP): the result last applied, for its playbook and kept fuels - a new ask of the same is checked against it first. */
         PlannerWorker.Done applied;
+        /**
+         * job-planner-stick (worlds run 2, w079 06:02:15.066 -> .110: an answer taken after the drops was asked again 44 ms
+         * later, checked against the facts its resolve had read - the very ones it was taken in spite of - and dropped: "a
+         * new request for this trip", 24 takes that changed nothing): the live answers the applied result was TAKEN on
+         * (null: applied with every fact holding) - the kept check reads these, so a taken answer holds while the facts
+         * stay as they were when it was taken.
+         */
+        Map<PlanNodes.Fact, Object> appliedLive;
+        /** The live bag at the take (with {@link #appliedLive}): a taken answer whose difference was the bag holds while the bag stays so. */
+        Map<String, Integer> appliedBag;
         Playbook appliedPb;
         Set<String> appliedKept;
         /** 0.39.z78 D6 (run DT): an order's own chain request (null: the trip's legs) - asked and applied as the legs are. */
@@ -106,11 +121,43 @@ public final class PlannerPort implements BatchWay.Planner {
         return NeedChain.keepingFuel(kept, () -> NeedChain.resolvePlaybookLegs(pb, w));
     }
 
+    /**
+     * job-planner-stick, review round 2: a TAKEN answer was resolved on the facts before the last change, so it is the
+     * stale one by exactly that change (a stand taken with the last walk still computing stayed the answer with every
+     * walk priced). It is the answer only UNTIL a result resolved on the live facts lands: while it holds on the facts of
+     * its take, a request on the live facts is out ({@link #ask0} submits it) and the taken answer stands in for the
+     * thinking stand. A result that holds replaces it; a fact moved since the take ends it.
+     */
     private NeedChain.Legs ask(String key, Playbook pb, Set<String> kept, BatchWay.OwnAsk own, NeedChain.World w) {
+        Map<PlanNodes.Fact, Object> live = new HashMap<>();
+        NeedChain.Legs l = ask0(key, pb, kept, own, w, live);
+        if (!NeedChain.thinking(l.chain())) return l;
+        NeedChain.Legs t = taken(states.get(key), pb, kept, own, w, live);
+        return t != null ? t : l;
+    }
+
+    /** The taken answer of {@code s} for this request while the facts stay as they were at its take; null: none, or ended (forgotten). */
+    private NeedChain.Legs taken(State s, Playbook pb, Set<String> kept, BatchWay.OwnAsk own, NeedChain.World w, Map<PlanNodes.Fact, Object> live) {
+        if (s == null || s.applied == null || s.appliedLive == null) return null;
+        if (!(Deep.equal(pb, s.appliedPb) && Deep.equal(kept, s.appliedKept) && Deep.equal(own, s.appliedOwn))) return null;
+        long c0 = System.nanoTime();
+        List<String> changed = epochHolds(s.applied, w) ? check(s.applied, w, live, s.appliedLive, s.appliedBag) : List.of("game data");
+        io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.split("check", System.nanoTime() - c0);
+        if (!changed.isEmpty()) {
+            s.applied = null;
+            s.appliedLive = null;
+            s.appliedBag = null;
+            return null;
+        }
+        s.applied.read().runEffects(w.path());
+        kepts++;
+        return NeedChain.fresh(s.applied.legs());
+    }
+
+    private NeedChain.Legs ask0(String key, Playbook pb, Set<String> kept, BatchWay.OwnAsk own, NeedChain.World w, Map<PlanNodes.Fact, Object> live) {
         State s = states.computeIfAbsent(key, k -> new State());
         PlannerWorker.Done d = worker.poll(key);
         if (d != null) s.ready = d;
-        Map<PlanNodes.Fact, Object> live = new HashMap<>();
         boolean same = s.version >= 0 && Deep.equal(pb, s.pb) && Deep.equal(kept, s.kept) && Deep.equal(own, s.own);
         PlannerWorker.Done r = s.ready;
         s.ready = null;
@@ -138,16 +185,17 @@ public final class PlannerPort implements BatchWay.Planner {
             List<String> changed = data ? check(r, w, live) : List.of("game data (items, tiers, Tuning or the loot book changed while it thought)");
             laps.split("check", System.nanoTime() - t0);
             s.keys = r.read().facts().keySet();
-            // job-freeze (run JAP: 293 results in a row dropped, the trip stood 2:28 until it parked): the same reason
+            // job-freeze (run JAP: 293 results in a row dropped, the trip stood 2:28 until it parked): results dropped
             // planner.dropsBeforeTake times in a row - this answer is taken, said once (rule 7: a planner that cannot
             // settle says so and acts). A fetch (a fact the snapshot lacked) is never counted: its next round settles it.
-            String why = null;
-            for (String c : changed) if (!c.startsWith(MISS)) { why = reason(c); break; }
-            if (why != null && why.equals(s.dropReason)) s.sameDropsInRow++;
-            else { s.dropReason = why; s.sameDropsInRow = why == null ? 0 : 1; }
+            // job-planner-stick (w097): counted whatever the changed fact is - reasons that rotate never reached the take
+            String why = null, first = null;
+            for (String c : changed) if (!c.startsWith(MISS)) { why = reason(c); first = c; break; }
+            s.dropReason = why;
+            s.sameDropsInRow = why == null ? 0 : s.sameDropsInRow + 1;
             boolean take = why != null && s.sameDropsInRow > dropsBeforeTake();
             if (take) {
-                log.accept("planner: trip " + key + ": the facts kept changing " + (s.sameDropsInRow - 1) + " times (" + changed.get(0)
+                log.accept("planner: trip " + key + ": the facts kept changing " + (s.sameDropsInRow - 1) + " times (last: " + first
                         + "); this answer is taken (rule 7)");
                 takes++;
                 s.dropReason = null;
@@ -158,6 +206,8 @@ public final class PlannerPort implements BatchWay.Planner {
                 r.read().runEffects(w.path());
                 laps.split("apply", System.nanoTime() - a0);
                 s.applied = r;
+                s.appliedLive = take ? new HashMap<>(live) : null;     // job-planner-stick: a taken answer is kept on the facts it was taken on
+                s.appliedBag = take ? NeedChain.liveBag(w) : null;
                 s.appliedPb = pb;
                 s.appliedKept = Set.copyOf(kept);
                 s.appliedOwn = own;
@@ -200,7 +250,9 @@ public final class PlannerPort implements BatchWay.Planner {
             // re-priced the trip - 435 trip lines, a stand every ~250 ms): the result last applied for this very request
             // (the same playbook, the same kept fuels) is checked live first; while every fact it read holds it is the answer
             // again (its effects run again, fresh step objects: as a resolve now would give) - no worker round, no stand
-            if (s.applied != null && !worker.busy(key) && Deep.equal(pb, s.appliedPb) && Deep.equal(kept, s.appliedKept) && Deep.equal(own, s.appliedOwn)) {
+            // review round 2: a TAKEN answer (appliedLive) is never the kept one here - the request goes out on the live
+            // facts and the taken answer stands in until its result lands (ask, taken)
+            if (s.applied != null && s.appliedLive == null && !worker.busy(key) && Deep.equal(pb, s.appliedPb) && Deep.equal(kept, s.appliedKept) && Deep.equal(own, s.appliedOwn)) {
                 long c0 = System.nanoTime();
                 List<String> changed = epochHolds(s.applied, w) ? check(s.applied, w, live) : List.of("game data");
                 io.github.mojolowjo.entropybot.aa.core.TickLaps.AA.split("check", System.nanoTime() - c0);
@@ -244,19 +296,29 @@ public final class PlannerPort implements BatchWay.Planner {
     static final String MISS = "not in the snapshot: ";
 
     /** The facts and bag words of {@code r}'s resolve that differ on {@code w} now (asked once each, answers kept in {@code live}). */
-    static List<String> check(PlannerWorker.Done r, NeedChain.World w, Map<PlanNodes.Fact, Object> live) {
+    static List<String> check(PlannerWorker.Done r, NeedChain.World w, Map<PlanNodes.Fact, Object> live) { return check(r, w, live, null, null); }
+
+    /**
+     * job-planner-stick: {@link #check(PlannerWorker.Done, NeedChain.World, Map)} for a result that was TAKEN - a fact in
+     * {@code base} (the live answers at the take) is compared with that answer, never with the one the resolve read (the
+     * take said those differ and took it), and a bag that differs from the one the resolve read with {@code baseBag} (the
+     * live bag at the take); null: every fact and the bag against the resolve's own. A fact already in {@code live}
+     * (asked this tick) is not asked again.
+     */
+    static List<String> check(PlannerWorker.Done r, NeedChain.World w, Map<PlanNodes.Fact, Object> live, Map<PlanNodes.Fact, Object> base, Map<String, Integer> baseBag) {
         List<String> out = new ArrayList<>();
         boolean cell = usesSurfaceCell(r);                               // item 25: the surface fact matters as far as the result used it
         for (var e : r.read().facts().entrySet()) {
             PlanNodes.Fact f = e.getKey();
-            Object now = timedAsk(w, f);
+            Object now = live.containsKey(f) ? live.get(f) : timedAsk(w, f);
             live.put(f, now);
-            Object kept = PlanNodes.unboxed(e.getValue());
+            Object kept = base != null && base.containsKey(f) ? base.get(f) : PlanNodes.unboxed(e.getValue());
             if (same(f, kept, now, cell)) continue;
             // D11 fix probe (run FF: 6,801 "surface" drops the log could not explain - the fact's key alone was said): old -> new
             out.add((r.job().snap().copied(f) ? "" : MISS) + f.field() + (f.key() == null ? "" : " " + f.key()) + ": " + brief(kept) + " -> " + brief(now));
         }
         String bag = r.read().bagChanged(w);
+        if (bag != null && baseBag != null && NeedChain.liveBag(w).equals(baseBag)) bag = null;      // the bag of the take, unchanged since
         if (bag != null) out.add(bag);
         return out;
     }
@@ -283,6 +345,12 @@ public final class PlannerPort implements BatchWay.Planner {
      * 0.39.z78 D6 (run DP: 25 drops "re-planned while thinking: held"): a kept answer and the live one agree. The holds are
      * the batch's holds, the same set whoever of its orders asks, each asker's own first (BatchWay.trip; its trip key reads them
      * as a set): compared as a set. Everything else by value.
+     * <p>job-planner-stick (worlds run 2, w079: 104 drops "held", the list flipping between two forms on alternate rounds):
+     * a held line is "key: why" (World#withoutSources) and the why of one key differs with the order that asks - the
+     * learner reads its own reason, every other order the world fact's ("... (a world fact: X learned it at ...)",
+     * WorldFacts.text). Review round 2: the planner does read a held reason (NeedChain: BandEnd.heldColumn takes the dig
+     * column from it), so the reason is compared too - only the world fact's appended words (who learned it and where:
+     * WorldFacts.bare) are left out, the lines as a set ({@link #heldLines}).
      */
     static boolean same(PlanNodes.Fact f, Object kept, Object now) { return same(f, kept, now, true); }
 
@@ -294,7 +362,7 @@ public final class PlannerPort implements BatchWay.Planner {
      * up ({@code usesCell}) compares the cell, the depth, the hole and the floor, never the straight distance (rule 14: rough).
      */
     static boolean same(PlanNodes.Fact f, Object kept, Object now, boolean usesCell) {
-        if ("held".equals(f.field()) && kept instanceof List<?> a && now instanceof List<?> b) return new java.util.TreeSet<Object>(a).equals(new java.util.TreeSet<Object>(b)) && a.size() == b.size();
+        if ("held".equals(f.field()) && kept instanceof List<?> a && now instanceof List<?> b) return heldLines(a).equals(heldLines(b));
         if ("surface".equals(f.field()) && kept instanceof NeedChain.Surface a && now instanceof NeedChain.Surface b) return sameSurface(a, b, usesCell);
         if ("price".equals(f.field()) && kept instanceof io.github.mojolowjo.entropybot.aa.PathPrice.Answer a
                 && now instanceof io.github.mojolowjo.entropybot.aa.PathPrice.Answer b) return samePrice(a, b);
@@ -310,7 +378,18 @@ public final class PlannerPort implements BatchWay.Planner {
      */
     static boolean samePrice(io.github.mojolowjo.entropybot.aa.PathPrice.Answer a, io.github.mojolowjo.entropybot.aa.PathPrice.Answer b) {
         if (a.kind() == io.github.mojolowjo.entropybot.aa.PathPrice.Kind.COMPUTING && b.kind() == a.kind()) return true;
+        // job-planner-stick (worlds run 2, w079: 259 drops "price ... kind=ESTIMATED, reason=not known (timed out 31 s ago)
+        // -> (timed out 34 s ago)", the same walk and seconds): an estimated walk's words carry the hold's running clock
+        // (NotKnownHold.words) - for the log only; the plan reads its walk and that it is an estimate
+        if (a.kind() == io.github.mojolowjo.entropybot.aa.PathPrice.Kind.ESTIMATED && b.kind() == a.kind()) return Deep.equal(a.walk(), b.walk());
         return Deep.equal(a, b);
+    }
+
+    /** job-planner-stick (pure): a held list as the set of its "key: why" lines, each without the world fact's appended words (WorldFacts.bare). */
+    static java.util.Set<String> heldLines(List<?> held) {
+        java.util.Set<String> out = new java.util.TreeSet<>();
+        for (Object o : held) out.add(io.github.mojolowjo.entropybot.aa.brain.WorldFacts.bare(String.valueOf(o)));
+        return out;
     }
 
     /** Item 25 (pure): two surface facts agree for a result - see {@link #same(PlanNodes.Fact, Object, Object, boolean)}. */

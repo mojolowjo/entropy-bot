@@ -242,9 +242,9 @@ class CaveSoFarScenariosTest {
     @Test
     void theDearerEnd_isTheCavesSourceFact() {
         int[] entry = {-56, 108, -9};
-        FactChange.caveDearer(entry, 0, 110, "priced 9 s inside for 1 ore; 420 s inside and 0 mined");
+        FactChange.caveDearer(entry, "coal", 0, 110, "priced 9 s inside for 1 ore; 420 s inside and 0 mined");
         FactChange.Fact f = FactChange.take();
-        assertEquals("source " + CaveWay.keyOf(entry), f.key());
+        assertEquals("source " + CaveWay.cavedKey("coal", entry), f.key(), "job-planner-stick: the caving's own key (the cave space), not one opening's");
         assertFalse(f.price(), "a source fact, never a price the order stops on");
         assertTrue(f.text().contains("far over its price, 0 ore mined, 110 passages left"), f.text());
         assertEquals(new Step.Cave(1, 2, 3, "coal", 1, 10, 8.5), new Step.Cave(1, 2, 3, "coal", 1, 10, 300), "the same step at another price");

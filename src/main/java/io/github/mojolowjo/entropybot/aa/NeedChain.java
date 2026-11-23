@@ -118,16 +118,35 @@ public final class NeedChain {
      */
     public static final String CAVE_KEY = "known cave ";    // run EY: FactChange.ownSourceKey reads it too
 
+    /**
+     * job-planner-stick (worlds run 2, w060 04:46-04:52: "cave coal 1 at -8 92 -3 for 10 min" timed out, the hold named the
+     * entry -8,92,-3, and the same cave record was entered five more times from -101 92 162, -173 96 95, -56 88 -10 ... at
+     * "2.3 s", while charcoal stood at 32.3 s): the start of the key a caving step's end holds - "caving FAMILY in the cave
+     * entered at x,y,z" ({@link CaveWay#cavedKey}). It is NOT the opening's key ({@link CaveWay#keyOf}: a lip with no path
+     * holds that one cell and the next opening is tried): a caving that failed is a fact about the cave SPACE - every known
+     * cave of the same record ({@link CaveWay#space}) is out for the family while it is held ({@link CaveWay#without}),
+     * whichever spot it would be entered from, the bot inside it or not.
+     */
+    public static final String CAVED_KEY = "caving ";
+
     public record CaveWay(int x, int y, int z, double dist, String ore, String family, double expected, double explored,
                           io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys, List<int[]> entries,
                           List<CaveWay> more, String out, boolean inside, String basis, List<io.github.mojolowjo.entropybot.cave.Passages.Passage> passages, Map<String, String> lipOut,
-                          io.github.mojolowjo.entropybot.cave.CaveWalk.Density density) {
+                          io.github.mojolowjo.entropybot.cave.CaveWalk.Density density, String space) {
         public CaveWay {
             leftKeys = leftKeys == null ? List.of() : List.copyOf(leftKeys);
             entries = entries == null ? List.of() : List.copyOf(entries);
             more = more == null ? List.of() : List.copyOf(more);
             passages = passages == null ? null : List.copyOf(passages);
             lipOut = lipOut == null ? Map.of() : Map.copyOf(lipOut);
+        }
+
+        /** As before job-planner-stick: no {@code space} given - the cave is its own space ({@link #spaceKey}). */
+        public CaveWay(int x, int y, int z, double dist, String ore, String family, double expected, double explored,
+                       io.github.mojolowjo.entropybot.sense.CaveIndex.Size size, double unseenMinutes, List<String> leftKeys, List<int[]> entries,
+                       List<CaveWay> more, String out, boolean inside, String basis, List<io.github.mojolowjo.entropybot.cave.Passages.Passage> passages, Map<String, String> lipOut,
+                       io.github.mojolowjo.entropybot.cave.CaveWalk.Density density) {
+            this(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, out, inside, basis, passages, lipOut, density, null);
         }
 
         public CaveWay(int x, int y, int z, double dist, String ore, String family, double expected, double explored,
@@ -162,8 +181,22 @@ public final class NeedChain {
         }
 
         private CaveWay copy(List<int[]> entries, List<CaveWay> more, String out, boolean inside, String basis, List<io.github.mojolowjo.entropybot.cave.Passages.Passage> passages) {
-            return new CaveWay(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, out, inside, basis, passages, lipOut, density);
+            return new CaveWay(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, out, inside, basis, passages, lipOut, density, space);
         }
+
+        /**
+         * job-planner-stick: the cave SPACE this known cave lies in - its record's own entry "x,y,z" (Sightings: an entry
+         * merged into another record reads that record, so many known caves can be one space); null: not known - its own.
+         */
+        public CaveWay withSpace(String recordKey) {
+            return new CaveWay(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, out, inside, basis, passages, lipOut, density, recordKey);
+        }
+
+        /** job-planner-stick: the key of this cave's space - its record's entry, its own entry when none was given. */
+        public String spaceKey() { return space != null ? space : x + "," + y + "," + z; }
+
+        /** job-planner-stick: the hold key of a caving step for {@code family} that entered at {@code t} ({@link NeedChain#CAVED_KEY}). */
+        public static String cavedKey(String family, int[] t) { return CAVED_KEY + family + " in the cave entered at " + t[0] + "," + t[1] + "," + t[2]; }
 
         /**
          * Run EY (rules 7, 23 (2)): the openings the snapshot's lip test left out (opening key -> "no standable cell within
@@ -171,12 +204,12 @@ public final class NeedChain {
          * openings in {@code entries} only. {@code entries} never holds one of these.
          */
         public CaveWay withLipOut(Map<String, String> out) {
-            return new CaveWay(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, this.out, inside, basis, passages, out, density);
+            return new CaveWay(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, this.out, inside, basis, passages, out, density, space);
         }
 
         /** Job-price: the order's ore per unseen cell (CaveWalk.Density; null: not known, the fallback said). */
         public CaveWay withDensity(io.github.mojolowjo.entropybot.cave.CaveWalk.Density d) {
-            return new CaveWay(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, out, inside, basis, passages, lipOut, d);
+            return new CaveWay(x, y, z, dist, ore, family, expected, explored, size, unseenMinutes, leftKeys, entries, more, out, inside, basis, passages, lipOut, d, space);
         }
 
         /** J6c: the world-gen estimate's words ({@code basis}: CaveYield.Prior#why; null: none said). */
@@ -237,15 +270,29 @@ public final class NeedChain {
         /**
          * The way with only the targets not held ({@code held}: a key the order holds), for this cave and each after it;
          * a cave with every opening held is out and the next one leads (run EM); null: every cave held.
+         * <p>job-planner-stick (w060): a caving step's end is held by {@link #cavedKey} of the entry it went in by; every
+         * cave of that entry's space ({@link #spaceKey}) is then out for the family - kept in the list with its reason
+         * ({@link #out}, so the planner says each one left out, rule 7; caveOffered passes none of them), inside it or not.
+         * Only such caves left: null, as every cave held (the held lines say why).
          */
         public CaveWay without(java.util.function.Predicate<String> held) {
+            Map<String, String> failed = new java.util.LinkedHashMap<>();       // the space -> the entry its held caving went in by
+            for (CaveWay w : all()) if (held.test(cavedKey(w.family, new int[]{w.x, w.y, w.z}))) failed.putIfAbsent(w.spaceKey(), w.x + " " + w.y + " " + w.z);
             List<CaveWay> out = new ArrayList<>();
+            int spaceHeld = 0;
             for (CaveWay w : all()) {
+                String from = failed.get(w.spaceKey());
+                if (from != null) {
+                    spaceHeld++;
+                    out.add(w.out != null ? w : w.copy(w.entries, List.of(), "a caving step for " + w.family + " in this cave space (its record at " + w.spaceKey().replace(',', ' ')
+                            + ") ended with the need unmet, entered at " + from + ": the space is held for " + w.family + " from every spot (the held line says why)", w.inside, w.basis, w.passages));
+                    continue;
+                }
                 List<int[]> left = new ArrayList<>();
                 for (int[] t : w.targets()) if (!held.test(keyOf(t))) left.add(t);
                 if (!left.isEmpty() || w.inside) out.add(w.copy(left.isEmpty() ? w.entries : left, List.of(), w.out, w.inside, w.basis, w.passages));   // run EO: inside, no opening is walked to
             }
-            if (out.isEmpty()) return null;
+            if (out.size() == spaceHeld) return null;
             return out.get(0).withMore(out.subList(1, out.size()));
         }
 
@@ -5235,7 +5282,8 @@ public final class NeedChain {
         if (s instanceof Step.ToCave t) return CaveWay.keyOf(new int[]{t.x(), t.y(), t.z()});
         // GA fix (run GD 03:26:04: "stopped at step 2 (cave iron 4 at -34 62 80 for 10 min): timed out after 600 s" - the step
         // watch's timeout had no source key for a caving step, so the run ended): the caving step holds its cave by the same key
-        if (s instanceof Step.Cave k) return CaveWay.keyOf(new int[]{k.x(), k.y(), k.z()});
+        // job-planner-stick (w060): by the caving's own key (CAVED_KEY) - the cave SPACE is out, never one opening of it
+        if (s instanceof Step.Cave k) return CaveWay.cavedKey(k.family(), new int[]{k.x(), k.y(), k.z()});
         if (s instanceof Step.Tunnel t) return "tunnel at " + t.x() + " " + t.y() + " " + t.z();   // job-tunnel: a watch timeout holds this tunnel, not the run
         return null;
     }

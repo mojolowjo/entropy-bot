@@ -373,6 +373,7 @@ public final class FactChange {
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.EXPLORE_FROZEN)) return f.key().substring("source ".length());   // z76 send-back 2
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.BOXED_IN)) return f.key().substring("source ".length());   // J6b run EH (2)
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.CAVE_KEY)) return f.key().substring("source ".length());   // run EY: the lip's opening
+        if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.CAVED_KEY)) return f.key().substring("source ".length());   // job-planner-stick: a caving's end
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.cave.Tunnel.HOLD)) return f.key().substring("source ".length());   // job-tunnel2
         if (f != null && f.key().equals("source " + io.github.mojolowjo.entropybot.aa.NeedChain.DIG_DOWN_KEY)) return io.github.mojolowjo.entropybot.aa.NeedChain.DIG_DOWN_KEY;   // tester runs 10, 11: the place, not the step's band
         String p = "source " + io.github.mojolowjo.entropybot.aa.NeedChain.STRIP_HEADING;
@@ -434,21 +435,22 @@ public final class FactChange {
      * GA fix (runs FN 20:23:41, FZ 01:30:05, GA 02:16:00-02:26:25: "order iron_pickaxe stopped: ... cave: the caving step at 181 61 0
      * ended - NO_BRANCH" - five orders of one run stopped on a cave's end, no fact, so the run ended FAILED instead of
      * re-planning): the caving step's end with the need unmet - the cave explored to its end (DONE), no reachable branch
-     * (NO_BRANCH), no progress - is a SOURCE fact keyed by the cave itself ({@link io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay#keyOf},
-     * as {@link #lipFailedFact}): the order holds that cave and prices the next cave, a strip or an explore. {@code end}: the
-     * end's name, {@code why}: the walk's own words. Pure.
+     * (NO_BRANCH), no progress - is a SOURCE fact keyed by the caving itself ({@link io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay#cavedKey}:
+     * job-planner-stick - {@code family}'s caving entered at {@code entry}; was the opening's key, which held one lip and
+     * left the same cave space offered from its other spots): the order holds that cave space and prices the next cave, a
+     * strip or an explore. {@code end}: the end's name, {@code why}: the walk's own words. Pure.
      */
-    public static Fact caveEndedFact(int[] entry, String end, String why) {
+    public static Fact caveEndedFact(int[] entry, String family, String end, String why) {
         String w = why == null ? "no reason" : why.replaceFirst("^error: ", "");
-        return new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay.keyOf(entry),
+        return new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay.cavedKey(family, entry),
                 "the caving step at " + cell(entry) + " ended - " + end + " (" + w + "): the cave is out for this order");
     }
 
     /** GA fix: the caving step's hands say {@link #caveEndedFact} (taken once). */
-    public static void caveEnded(int[] entry, String end, String why) { last = caveEndedFact(entry, end, why); }
+    public static void caveEnded(int[] entry, String family, String end, String why) { last = caveEndedFact(entry, family, end, why); }
 
     /** The caving step ran its minutes with the need unmet: {@link #caveMinutesFact} (taken once). */
-    public static void caveMinutes(int[] entry, int mined, int passagesLeft, String why) { last = caveMinutesFact(entry, mined, passagesLeft, why); }
+    public static void caveMinutes(int[] entry, String family, int mined, int passagesLeft, String why) { last = caveMinutesFact(entry, family, mined, passagesLeft, why); }
 
     /**
      * D15 (runs JZ / JAE: a MINUTES end was a price fact; a failed step's price fact re-priced against the running pick,
@@ -456,22 +458,49 @@ public final class FactChange {
      * cave is out for this order, the order is re-planned on the sources left (another cave, a strip, an explore), and it
      * stops only when the planner has none. Words: "cave at x y z: budget spent, N ore mined, M passages left (why)". Pure.
      */
-    public static Fact caveMinutesFact(int[] entry, int mined, int passagesLeft, String why) {
-        return new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay.keyOf(entry),
+    public static Fact caveMinutesFact(int[] entry, String family, int mined, int passagesLeft, String why) {
+        return new Fact("source " + caveStoppedKey(entry, family, mined),
                 "cave at " + cell(entry) + ": budget spent, " + mined + " ore mined, " + (passagesLeft < 0 ? "not measured" : String.valueOf(passagesLeft))
                         + " passages left" + (why == null || why.isBlank() ? "" : " (" + why.replaceFirst("^error: ", "") + ")"));
     }
 
+    /**
+     * job-planner-stick, review round 3: the ONE fact of a caving step {@code k} that ran out of time with the need
+     * unmet, whichever clock ended it - the walk's own minutes (CaveWalk.End.MINUTES, read between walks) or the step
+     * watch (Steps: steps.stepMaxS, read every tick; the same 600 s as cave.exploreMinutes, so the watch is the end that
+     * fires on a full-length caving: w060, five of five). Both callers pass the caving's own mined count, so the key
+     * ({@link #caveStoppedKey}) is the same on either path: ore mined holds the opening, none holds the space. Pure.
+     */
+    public static Fact caveStopped(Step.Cave k, int mined, int passagesLeft, String why) {
+        return caveMinutesFact(new int[]{k.x(), k.y(), k.z()}, k.family(), mined, passagesLeft, why);
+    }
+
+    /** The hands say {@code f} (taken once, as every fact here). */
+    public static void say(Fact f) { last = f; }
+
+    /**
+     * job-planner-stick, review round 2: the key a caving that was STOPPED (its minutes, far over its price) holds. With
+     * no ore mined the space gave nothing: the caving's own key, the whole cave space out for the family (w060: five
+     * rounds, 0 ore, 50 minutes). With ore mined the space was giving and only the round ran out: the opening's key, as
+     * before this job - that opening is held, the cave the bot stands in is caved on in the next round (CaveWay.without
+     * keeps an inside cave), and other orders read it by distance. Pure.
+     */
+    static String caveStoppedKey(int[] entry, String family, int mined) {
+        return mined > 0 // structural: any ore mined at all
+                ? io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay.keyOf(entry)
+                : io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay.cavedKey(family, entry);
+    }
+
     /** cave-guard: the caving step ended DEARER (CaveWalk.dearer): {@link #caveDearerFact} (taken once). */
-    public static void caveDearer(int[] entry, int mined, int passagesLeft, String why) { last = caveDearerFact(entry, mined, passagesLeft, why); }
+    public static void caveDearer(int[] entry, String family, int mined, int passagesLeft, String why) { last = caveDearerFact(entry, family, mined, passagesLeft, why); }
 
     /**
      * cave-guard: the walk ran far over its price with the need unmet - as its minutes ({@link #caveMinutesFact}), the
      * cave's SOURCE fact: out for this order, the order planned again on the sources left. Words: "cave at x y z: far over
      * its price, N ore mined, M passages left (why)". Pure.
      */
-    public static Fact caveDearerFact(int[] entry, int mined, int passagesLeft, String why) {
-        return new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.CaveWay.keyOf(entry),
+    public static Fact caveDearerFact(int[] entry, String family, int mined, int passagesLeft, String why) {
+        return new Fact("source " + caveStoppedKey(entry, family, mined),
                 "cave at " + cell(entry) + ": far over its price, " + mined + " ore mined, " + (passagesLeft < 0 ? "not measured" : String.valueOf(passagesLeft))
                         + " passages left" + (why == null || why.isBlank() ? "" : " (" + why.replaceFirst("^error: ", "") + ")"));
     }
