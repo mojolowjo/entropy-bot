@@ -21,15 +21,21 @@ public final class ClockSettings {
     private ClockSettings() {}
 
     private static final Logger LOG = LogUtils.getLogger();
-    private static float applied = 20;       // game fact: 20 ticks a second
     private static int gap0 = -1, settle0 = -1, stuck0 = -1, stage0 = -1;
+    private static int gapSaid = -1;
     private static boolean failed;
 
-    /** Once per client tick (Core.onClientTick, after GameClock.tick): follows the client's rate when it changed. */
+    /**
+     * Once per client tick (Core.onClientTick, after GameClock.tick): the four waits follow the rate the client REACHES.
+     * Round 3c 2026-11-23 (the log at 200 asked: "interactClickGapTicks 6 -> 6 ... 200 -> 200", then "clicked 3 times,
+     * nothing opened" 13 and 26 times in two games): since GameClock.latencyTicks went by the measured rate, the one write
+     * at the moment the asked rate changed took the rate measured THEN (still 20) and nothing wrote again. Now written
+     * whenever the stretched value changes; said when the click gap moved by half or more since the last line (rule 7,
+     * not a line a second).
+     */
     public static void tick() {
         if (failed) return;
-        float rate = GameClock.clientRate;
-        if (rate == applied) return;
+        if (gap0 < 0 && GameClock.clientRate <= 20) return;       // game fact: 20 ticks a second - never sped up: nothing read, nothing written
         try {
             var s = baritone.api.BaritoneAPI.getSettings();
             if (gap0 < 0) {
@@ -37,17 +43,21 @@ public final class ClockSettings {
                 settle0 = s.interactSettleTicks.value;
                 stuck0 = s.interactStuckTicks.value;
                 stage0 = s.interactStageTicks.value;
+                gapSaid = gap0;
             }
-            int gap = GameClock.latencyTicks(gap0), settle = GameClock.latencyTicks(settle0);
+            int gap = GameClock.latencyTicks(gap0);
+            if (s.interactClickGapTicks.value == gap) return;
             s.interactClickGapTicks.value = gap;
-            s.interactSettleTicks.value = settle;
+            s.interactSettleTicks.value = GameClock.latencyTicks(settle0);
             // tester run 49 (iron at rate 200: the deposit's use gave up "stuck 10 s short of the chest" one wall second after its
             // walk ended, 100 m from the chest): the use's stuck and stage waits cover a path search's real compute too
             s.interactStuckTicks.value = GameClock.latencyTicks(stuck0);
             s.interactStageTicks.value = GameClock.latencyTicks(stage0);
-            LOG.warn("[entropybot] clock: the client ticks at {} a second - Baritone's interactClickGapTicks {} -> {}, interactSettleTicks {} -> {}, interactStuckTicks {} -> {}, interactStageTicks {} -> {} (test tooling: the same wall time; its own values at 20)",
-                    Math.round(rate), gap0, gap, settle0, settle, stuck0, s.interactStuckTicks.value, stage0, s.interactStageTicks.value);
-            applied = rate;
+            if (gap == gap0 || Math.abs(gap - gapSaid) * 2 >= gapSaid) {     // structural: half or more
+                gapSaid = gap;
+                LOG.warn("[entropybot] clock: the client ticks at {} a second ({} asked) - Baritone's interactClickGapTicks {} -> {}, interactSettleTicks {} -> {}, interactStuckTicks {} -> {}, interactStageTicks {} -> {} (test tooling: the same wall time; its own values at 20)",
+                        Math.round(Math.min(GameClock.clientRate, GameClock.measuredRate())), Math.round(GameClock.clientRate), gap0, gap, settle0, s.interactSettleTicks.value, stuck0, s.interactStuckTicks.value, stage0, s.interactStageTicks.value);
+            }
         } catch (Throwable t) {
             failed = true;
             io.github.mojolowjo.entropybot.Quiet.warn("clock: Baritone's interact waits could not be scaled to the client's tick rate (station uses may give up early in a sped-up game)", t);
