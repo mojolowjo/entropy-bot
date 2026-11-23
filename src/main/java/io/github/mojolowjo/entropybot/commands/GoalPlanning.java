@@ -36,8 +36,27 @@ final class GoalPlanning {
     }
 
     /** simple-tools: "a tree seen" is the one Nearby fact (Baritone's scan, then the sightings), not a block scan of its own. */
-    boolean treeSeen() {
-        return (c.aaRuntime != null ? c.aaRuntime.nearbyLog() : c.nearby.log(null)) != null;
+    boolean treeSeen() { return Boolean.TRUE.equals(treeKnown()); }
+
+    /** The log whose not-known fact was said last (once per log, rule 7); null: the fact is known. */
+    private String treeWaitSaid;
+
+    /**
+     * Review of the village logs build (rules 15 and 7): the same fact in its three states (Nearby.treeFact) - true: a tree
+     * near; false: none; null: a log stands near but its structure fact is not loaded yet (the world-gen read), which is
+     * neither "a tree" nor "no trees seen near". The not-known state is said once per log.
+     */
+    Boolean treeKnown() {
+        var sp = c.aaRuntime != null ? c.aaRuntime.nearbyLog() : c.nearby.log(null);
+        Boolean fact = io.github.mojolowjo.entropybot.aa.Nearby.treeFact(sp);
+        if (fact != null) { treeWaitSaid = null; return fact; }
+        String at = sp.x() + " " + sp.y() + " " + sp.z();
+        if (!at.equals(treeWaitSaid)) {
+            treeWaitSaid = at;
+            LOG.info("[entropybot] nearby: a log stands at {} but its structure fact is not loaded yet (the world-gen read): trees near are not known - "
+                    + "not \"no trees seen near\"; asked again on the next look (said once per log)", at);
+        }
+        return null;
     }
 
     String actions(String rest) { return ActionTable.shortText(rest); }

@@ -57,7 +57,7 @@ final class NearbyLive {
         long t0 = LAPS.now();
         logSpot = Nearby.log(scan(), me, () -> { fell[0] = true; return fallback == null ? null : fallback.get(); });
         if (t0 != 0) LAPS.nearby("log", LAPS.now() - t0);         // job-tick: the tree log lookup
-        lastFrom = logSpot == null ? "none" : fell[0] ? "sightings" : "baritone";
+        lastFrom = logSpot == null ? "none" : fell[0] ? "sightings" : logSpot.unloaded() ? "baritone (its structure fact not loaded yet)" : "baritone";
         return logSpot;
     }
 
@@ -430,9 +430,17 @@ final class NearbyLive {
             @Override public io.github.mojolowjo.entropybot.guard.BreakPolicy.Verdict sourceBreak(int x, int y, int z) {
                 if (mc.level == null) return null;
                 String gdim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level);
-                var f = io.github.mojolowjo.entropybot.guard.PolicyRuntime.structureFacts(mc.level, gdim, new BlockPos(x, y, z));
-                return io.github.mojolowjo.entropybot.guard.BreakPolicy.structure(io.github.mojolowjo.entropybot.guard.Guard.INSTANCE.core.policy(),
+                BlockPos q = new BlockPos(x, y, z);
+                var f = io.github.mojolowjo.entropybot.guard.PolicyRuntime.structureFacts(mc.level, gdim, q);
+                var v = io.github.mojolowjo.entropybot.guard.BreakPolicy.structure(io.github.mojolowjo.entropybot.guard.Guard.INSTANCE.core.policy(),
                         gdim, x, y, z, f.structure(), f.placedByMe());
+                // owner's ruling 2026-11-23 (village logs are protected): a log the structure rule refuses is no tree for the
+                // lookups; said once per log kind and reason (CutFacts, rule 7)
+                if (io.github.mojolowjo.entropybot.guard.BreakPolicy.structureRefusal(v) && mc.level.isLoaded(q)) {
+                    var st = mc.level.getBlockState(q);
+                    if (st.is(BlockTags.LOGS)) c.cutFacts.structureRefused(BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString(), x, y, z, v.reason());
+                }
+                return v;
             }
             // STRUCTURE_BLOCKS: the owner's areas decide which stations are options (Scan.stationUse asks BreakPolicy.stationUse)
             @Override public io.github.mojolowjo.entropybot.guard.Policy stationPolicy() { return io.github.mojolowjo.entropybot.guard.Guard.INSTANCE.core.policy(); }

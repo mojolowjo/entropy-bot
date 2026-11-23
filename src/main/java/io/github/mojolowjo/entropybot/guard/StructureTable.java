@@ -39,8 +39,11 @@ import java.util.Set;
  * 0.39.z77 natural 2 also a tag the jars' carvers name (raw_iron_block / raw_copper_block: the ore veins); no override
  * file; natural 3: drops are no terrain test), read
  * from the client's jars by WorldGenReader on singleplayer and
- * on a server alike since 0.39.z26 (2); the integrated server's registries are only a check). Ores ({@code c:ores}), logs ({@code #logs}) and planks ({@code #planks}, owner 2026-10-23) are
- * never structure blocks.
+ * on a server alike since 0.39.z26 (2); the integrated server's registries are only a check). Ores ({@code c:ores}) and planks ({@code #planks}, owner 2026-10-23) are
+ * never structure blocks. Logs ({@code #logs}; owner's ruling 2026-11-23, village logs are protected): a log world gen
+ * places is a tree's log by its block and a structure block per cell where its joined logs touch a block only a build has
+ * ({@link BuiltLogs}, asked by PolicyRuntime.structureFacts with this table's {@link #mark}s); a log no world-gen source
+ * names (a stripped log, a wood block) is a structure block outright.
  *
  * <p>Rule 15: before the client has a level with recipes (tags come in the configuration phase, before the recipes),
  * the table is absent and every block answers {@link Structure#NOT_LOADED} (never cached as "no"); it is built on the
@@ -59,8 +62,14 @@ public final class StructureTable {
             BlockTags.WALL_SIGNS, BlockTags.ALL_HANGING_SIGNS, BlockTags.BANNERS, BlockTags.CANDLES, BlockTags.IMPERMEABLE,
             BlockTags.WOOL, BlockTags.RAILS, BlockTags.BUTTONS, BlockTags.PRESSURE_PLATES, BlockTags.FLOWER_POTS);
 
-    /** Never structure blocks (owner 2026-10-23): ores, logs and, for now, planks; the game's own tag keys (StructureBlocksTest checks this line). */
-    private static final List<TagKey<Block>> NEVER_TAGS = List.of(Tags.Blocks.ORES, BlockTags.LOGS, BlockTags.PLANKS);
+    /** Never structure blocks (owner 2026-10-23): ores and, for now, planks; the game's own tag keys (StructureBlocksTest checks this line). */
+    private static final List<TagKey<Block>> NEVER_TAGS = List.of(Tags.Blocks.ORES, BlockTags.PLANKS);
+    /**
+     * Owner's ruling 2026-11-23 (village logs are protected): the tree tags, the game's own tag key. A block of them is a
+     * tree's log when world gen places it (its cells decide the rest: BuiltLogs through PolicyRuntime.structureFacts) and a
+     * structure block when no world-gen source names it (StructureBlocksTest checks this line).
+     */
+    private static final List<TagKey<Block>> TREE_TAGS = List.of(BlockTags.LOGS);
 
     private static volatile Map<Block, Structure> table;
     private static volatile Level builtFor;
@@ -71,6 +80,21 @@ public final class StructureTable {
     private static volatile boolean warnedGen, warnedNoData, checked, warnedRecipes, warnedTag;
     /** 0.39.z77 natural 2: why each structure block is one (the rule line and the dropped list); empty while not built. */
     private static volatile Map<Block, String> whys = Map.of();
+    /** Owner's ruling 2026-11-23: every block's mark for the built-log fact (BuiltLogs); empty while not built. */
+    private static volatile Map<Block, BuiltLogs.Mark> marks = Map.of();
+    /** Counts the builds and drops: a reader's memo of cell answers is dropped when it changes (PolicyRuntime). */
+    private static volatile int version;
+
+    /** The block's mark for the built-log fact; NOT_KNOWN while the table is not built. Any thread. */
+    public static BuiltLogs.Mark mark(Block b) {
+        BuiltLogs.Mark m = table == null ? null : marks.get(b);
+        return m == null ? BuiltLogs.Mark.NOT_KNOWN : m;
+    }
+
+    /** The table's build count (a new world, a changed recipe or world-gen set). Any thread. */
+    public static int version() { return version; }
+
+    private static void drop() { table = null; whys = Map.of(); marks = Map.of(); version++; }
 
     /** Why the block is a structure block ({@link WorldGenFiles#structureWhy}); null when it is not one or the table is not built. Any thread. */
     public static String why(Block b) { return whys.get(b); }
@@ -91,7 +115,7 @@ public final class StructureTable {
             int j = WorldGenReader.jars;
             String failed = WorldGenReader.failed;
             if (failed != null) Quiet.line("structure facts: the world-gen read failed (" + failed + ") - crafted blocks answer not loaded and are refused; it is read again on the next join");
-            else Quiet.line("structure facts: world-gen blocks not loaded yet (reading " + (j < 0 ? "the" : String.valueOf(j)) + " jars in the background) - crafted blocks are refused as not loaded yet until the read is done");
+            else Quiet.line("structure facts: world-gen blocks not loaded yet (reading " + (j < 0 ? "the" : String.valueOf(j)) + " jars in the background) - crafted blocks and logs are refused as not loaded yet until the read is done");
         }
         return s == null ? Structure.NOT_LOADED : s;
     }
@@ -102,14 +126,14 @@ public final class StructureTable {
         try {
             Level lv = mc == null ? null : mc.level;
             if (lv == null) {
-                if (builtFor != null || table != null) { table = null; whys = Map.of(); builtFor = null; retry.reset(); warnedNotLoaded = false; warnedNoData = false; }
+                if (builtFor != null || table != null) { drop(); builtFor = null; retry.reset(); warnedNotLoaded = false; warnedNoData = false; }
                 return;
             }
             int n = lv.getRecipeManager().getRecipes().size();
             Set<String> gen = WorldGenReader.blocks;
             if (lv == builtFor && retry.current(n, gen)) return;
             if (lv != builtFor) {
-                table = null; whys = Map.of(); warnedNotLoaded = false; warnedGen = false; checked = false; retry.reset(); warnedRecipes = false; warnedTag = false; OwnPlaced.newWorld();
+                drop(); warnedNotLoaded = false; warnedGen = false; checked = false; retry.reset(); warnedRecipes = false; warnedTag = false; OwnPlaced.newWorld();
                 var files = io.github.mojolowjo.entropybot.Core.INSTANCE.files();
                 WorldGenReader.start(files == null ? null : files.root(), net.minecraft.SharedConstants.getCurrentVersion().getName());
                 gen = null;                           // the new world's read: not loaded until it is done
@@ -127,8 +151,7 @@ public final class StructureTable {
                 if (server != null) JarPacks.POOL.execute(() -> registryCheck(server, jarSet));
             }
         } catch (RuntimeException e) {
-            table = null;
-            whys = Map.of();
+            drop();
             if (retry.firstWarn()) {
                 Quiet.warn("structure facts: the table check failed (" + e + ") - every block answers not loaded; tried again next tick", e);
             }
@@ -138,7 +161,7 @@ public final class StructureTable {
     private static Map<Block, Structure> build(Level lv, Set<String> gen, Set<String> carverTagIds) {
         if (gen != null && WorldGenReader.noData && !warnedNoData) {
             warnedNoData = true;
-            Quiet.line("structure facts: no world-gen data in " + WorldGenReader.jars + " jars: crafted blocks no carver tag holds are refused outside areas");
+            Quiet.line("structure facts: no world-gen data in " + WorldGenReader.jars + " jars: crafted blocks no carver tag holds and every log are refused outside areas");
         }
         // 0.39.z77 natural 2, leg (2): the carvers' tags, the game's synced block tags
         List<TagKey<Block>> carver = null;
@@ -178,7 +201,8 @@ public final class StructureTable {
         }
         Map<Block, Structure> out = new IdentityHashMap<>();
         Map<Block, String> why = new IdentityHashMap<>();
-        int yes = 0, tagged = 0, be = 0, st = 0, cr = 0, byGen = 0, byCarver = 0, waiting = 0;
+        Map<Block, BuiltLogs.Mark> mk = new IdentityHashMap<>();
+        int yes = 0, tagged = 0, be = 0, st = 0, cr = 0, byGen = 0, byCarver = 0, waiting = 0, treeLogs = 0, builtLogs = 0;
         for (Block b : BuiltInRegistries.BLOCK) {
             BlockState s = b.defaultBlockState();
             TagKey<Block> tag = null;
@@ -188,19 +212,29 @@ public final class StructureTable {
             boolean station = it != Items.AIR && stations.contains(it);
             boolean craft = it != Items.AIR && crafted.contains(it);
             String id = BuiltInRegistries.BLOCK.getKey(b).toString();
-            Structure v = WorldGenFiles.classify(STRUCTURE_TAGS, NEVER_TAGS, s::is, carver, entity, station, craft, it != Items.AIR && unread.contains(it), gen, id);
+            boolean unreadIt = it != Items.AIR && unread.contains(it);
+            Structure v = WorldGenFiles.classify(STRUCTURE_TAGS, NEVER_TAGS, s::is, carver, entity, station, craft, unreadIt, gen, id, TREE_TAGS);
             out.put(b, v);
+            // owner's ruling 2026-11-23: the block's mark for the built-log fact, from the same game facts
+            mk.put(b, WorldGenFiles.mark(STRUCTURE_TAGS, TREE_TAGS, s::is, carver, station, craft, unreadIt, gen, id));
+            boolean tree = false;
+            for (TagKey<Block> k : TREE_TAGS) if (s.is(k)) { tree = true; break; }
+            if (tree && v == Structure.NO) treeLogs++;
             if (v == Structure.YES) {
                 yes++;
-                if (tag != null) tagged++; else if (entity) be++; else if (station) st++; else cr++;
-                why.put(b, WorldGenFiles.structureWhy(tag == null ? null : tag.location().toString(), entity, station));
+                if (tree) builtLogs++; else if (tag != null) tagged++; else if (entity) be++; else if (station) st++; else cr++;
+                why.put(b, WorldGenFiles.structureWhy(tag == null ? null : tag.location().toString(), entity, station, tree));
             } else if (v == Structure.NO && craft && tag == null && !entity && !station) {
                 if (gen != null && gen.contains(id)) byGen++;
                 else if (carver != null && carver.stream().anyMatch(s::is)) byCarver++;
             } else if (v == Structure.NOT_LOADED) waiting++;
         }
         whys = Collections.unmodifiableMap(why);
-        LOG.info("[entropybot] structure facts: {} of {} blocks are structure blocks ({} by tag, {} block entity, {} station, {} crafted and {}; never: c:ores, #logs, #planks); "
+        marks = Collections.unmodifiableMap(mk);
+        version++;
+        LOG.info("[entropybot] structure facts: logs (owner 2026-11-23): {} blocks of #logs are placed by the jars' world gen (a tree's log; a cell whose joined logs touch a block only a build has is a structure block), "
+                + "{} are named by no world-gen source ({}: structure blocks){}", treeLogs, builtLogs, WorldGenFiles.LOG_NOT_PLACED, gen == null ? "; world gen not loaded yet: every log answers not loaded" : "");
+        LOG.info("[entropybot] structure facts: {} of {} blocks are structure blocks ({} by tag, {} block entity, {} station, {} crafted and {}; never: c:ores, #planks); "
                         + "crafted blocks kept as terrain: {} named by the jars' world gen, {} in a carver tag {}; {} not loaded; world gen: {}",
                 yes, out.size(), tagged, be, st, cr, WorldGenFiles.NOT_PLACED, byGen, byCarver, carverTagIds == null ? "(not loaded)" : carverTagIds, waiting,
                 gen == null ? "not loaded yet (crafted blocks answer not loaded)" : gen.size() + " blocks placed (from the jars)");

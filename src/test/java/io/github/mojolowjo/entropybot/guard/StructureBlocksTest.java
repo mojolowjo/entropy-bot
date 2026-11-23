@@ -183,7 +183,10 @@ class StructureBlocksTest {
         String src = java.nio.file.Files.readString(java.nio.file.Path.of("src/main/java/io/github/mojolowjo/entropybot/guard/StructureTable.java"));
         var m = java.util.regex.Pattern.compile("NEVER_TAGS = List\\.of\\(([^)]*)\\)").matcher(src);
         assertTrue(m.find(), "StructureTable keeps its NEVER_TAGS list");
-        for (String k : List.of("BlockTags.PLANKS", "BlockTags.LOGS", "Tags.Blocks.ORES")) assertTrue(m.group(1).contains(k), "NEVER_TAGS holds " + k + ": " + m.group(1));
+        for (String k : List.of("BlockTags.PLANKS", "Tags.Blocks.ORES")) assertTrue(m.group(1).contains(k), "NEVER_TAGS holds " + k + ": " + m.group(1));
+        // owner's ruling 2026-11-23 (village logs are protected): logs left the never list for the tree tags (BuiltLogsTest)
+        assertFalse(m.group(1).contains("BlockTags.LOGS"), "a log is no longer never a structure: " + m.group(1));
+        assertTrue(src.contains("TREE_TAGS = List.of(BlockTags.LOGS)"), "the logs tag is the table's tree tag");
         assertTrue(src.contains("WorldGenFiles.classify(STRUCTURE_TAGS, NEVER_TAGS, s::is"), "the table classifies through the rule tested below");
         // fixture: a small tag holder like the game's (planks.json, impermeable.json, stairs.json), the table's rule over it
         Map<String, Set<String>> tags = Map.of("#planks", Set.of("oak_planks", "spruce_planks"), "#impermeable", Set.of("glass"), "#stairs", Set.of("oak_stairs"));

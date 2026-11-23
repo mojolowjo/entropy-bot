@@ -43,7 +43,7 @@ public final class SenseRuntime {
     private long storageSeq, bedAt = -60_001, ownerOffAt = -1;
     private boolean bedNearDay;
     private long nearAt = -60_001, feasErrAt = -60_001;
-    private boolean nearTrees;
+    private boolean nearTrees, nearTreesNotKnown;
     private Map<String, Integer> lastTotals;
 
     SenseRuntime(Commands c) { this.c = c; }
@@ -227,10 +227,14 @@ public final class SenseRuntime {
                 return r == null || !r.startsWith("would refuse");
             };
             if (s.now - nearAt > 60_000) {
-                nearAt = s.now;
-                nearTrees = c.planning.treeSeen();
+                // review of the village logs build (rule 15): not known is never kept for the minute - asked again on the next loop
+                Boolean trees = c.planning.treeKnown();
+                nearTrees = Boolean.TRUE.equals(trees);
+                nearTreesNotKnown = trees == null;
+                if (trees != null) nearAt = s.now;
             }
             f.trees = nearTrees;
+            f.treesNotKnown = nearTreesNotKnown;
             // 0.39.z78 J5 slice 1 (rule 23; audit D6, B3): a table / furnace near is the one station fact - the station lookup
             // less the held ones (Crafting.knownStation, StationHolds) - never the by-name sight once a minute that was here
             f.table = c.crafting.knownStation(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.CRAFT) instanceof io.github.mojolowjo.entropybot.aa.StationFact.Known;

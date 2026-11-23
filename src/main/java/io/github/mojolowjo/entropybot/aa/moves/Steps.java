@@ -1181,7 +1181,9 @@ public final class Steps {
 
     /** {@code known}: the fact the run itself found (a source step's timeout), null: the hands say it. */
     private void failOrReplan(String reason, FactChange.Fact known) {
-        FactChange.Fact fact = known;
+        // merge review 2026-11-23: the monitor's plain stall fact of a walk ("step goto ...") is no fact of the walk's own -
+        // it goes the way of a walk that ended with none (the source it led to, else its target cell held)
+        FactChange.Fact fact = walkStall(steps, idx, reason, known, startFeet, known == null ? null : feetNow());
         if (fact == null) try {
             fact = hands.lastFact();
         } catch (RuntimeException e) {
@@ -1536,6 +1538,22 @@ public final class Steps {
         if (Math.sqrt(dx * dx + dz * dz) <= Step.Collect.MINE_SIGHT) return null;
         return new FactChange.Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.boxedInKey(feet),
                 reason + " - the feet never left " + feet[0] + " " + feet[1] + " " + feet[2] + " on the way to " + to[0] + " " + to[1] + " " + to[2] + ": no walk from here until the way out");
+    }
+
+    /**
+     * Merge review 2026-11-23 (the go-and-look walk, NeedChain.exploreLeaf: a far spot whose fact is not loaded): a walk the
+     * step monitor ended on no progress came here with the monitor's plain fact ({@link StepMonitor#stepKey}: "step goto
+     * x y z"), a key nothing reads - the re-plan returned the same walk and its second stall parked the order. Such a fact
+     * is no fact of the walk's own: the walk is the fact of the source it led to ({@link #walkLeads}), else of its target
+     * cell ({@link #walkTargetFact}: held for the order, so the chain takes the next spot or the explore). Any other
+     * fact, or another step: {@code known} as it came. Pure.
+     */
+    public static FactChange.Fact walkStall(List<? extends Step> steps, int idx, String reason, FactChange.Fact known, int[] from, int[] to) {
+        if (known == null || steps == null || idx < 0 || idx >= steps.size() || !(steps.get(idx) instanceof Step.Walk w)) return known;
+        if (!StepMonitor.stepKey(w).equals(known.key())) return known;
+        FactChange.Fact lead = walkLeads(steps, idx, reason, from, to);
+        // the target's key with the monitor's own words (what stalled, where): the hold's reason as the log said it
+        return lead != null ? lead : new FactChange.Fact(walkTargetFact(steps, idx, reason).key(), known.text());
     }
 
     public static FactChange.Fact walkTargetFact(List<? extends Step> steps, int idx, String reason) {

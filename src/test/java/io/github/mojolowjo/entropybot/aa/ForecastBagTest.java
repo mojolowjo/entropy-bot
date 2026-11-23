@@ -118,6 +118,34 @@ class ForecastBagTest {
         assertFalse(c.why().contains(NeedChain.WAY_BACK_UP), c.why());
     }
 
+    /**
+     * Merge review 2026-11-23 (the table never reached the planner in a game): AaRuntime.needWorld sets the table and then
+     * calls withWhere and withoutSources, which built their copy with no table. The World in the runtime's own call
+     * order, and through every other copy an order makes of it, still carries the table - and the planner prices with it.
+     */
+    @Test
+    void theTableReachesThePlannerThroughTheRuntimesCallOrder() {
+        Spot sp = new Spot(5, 62, 0, 5, STONE).covered(2, "minecraft:dirt");
+        List<Reserves.Reserve<String>> table = List.of(Reservations.order("dirt (finished)", List.of("minecraft:dirt"), 20));
+        Map<String, Integer> bag = Map.of("minecraft:stone_pickaxe", 1, "minecraft:dirt", 20);
+        // needWorld: ...withRooms(..).withReserves(..).withWhere(..).withoutSources(the take holds)
+        World live = world(sp, bag).withRooms(List.of(new Spot(0, 63, 0, 0, null))).withReserves(table)
+                .withWhere(NeedChain.WhereFacts.NONE)
+                .withoutSources(Map.of(NeedChain.stationKey(90, 64, 90), "a take short twice"));
+        assertEquals(table, live.reserves(), "withWhere and withoutSources keep the table");
+        // the order's own copies (Goals: the held sources, the place failures, the anchor)
+        World order = live.withPlaceFailures(Map.of(NeedChain.placeKey(40, 64, 40), "no room"), new int[]{0, 64, 0})
+                .without((word, s) -> false).withFeetAt(new int[]{0, 64, 0}).withHeld(List.of());
+        assertEquals(table, order.reserves(), "withPlaceFailures, without and withFeetAt keep it");
+        Chain c = NeedChain.resolve("cobblestone", 14, order);
+        assertTrue(c.ok(), c.why());
+        assertTrue(c.why().contains(NeedChain.WAY_BACK_UP + "13 levels, 0 of 34 blocks spare: "), "the planner reads the table: the 20 dirt are claimed: " + c.why());
+        // the worker's frozen World carries the same list the live check compares with
+        var snap = io.github.mojolowjo.entropybot.commands.PlannerSnapshot.take(order, List.of(), null, 1, 0);
+        assertEquals(table, snap.world().reserves(), "the snapshot carries the table to the worker");
+        assertEquals(order.reserves(), NeedChain.Facts.ask(snap.world(), null, new PlanNodes.Fact("reserves", null)));
+    }
+
     /** The World carries the table; the snapshot's fact replay knows it. */
     @Test
     void theWorldCarriesTheReserveTable() {

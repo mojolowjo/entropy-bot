@@ -42,6 +42,32 @@ class JobWalkendTest {
         assertNull(Steps.walkTargetFact(List.of(new Step.PlaceNear("crafting_table")), 0, WHY), "not a walk");
     }
 
+    /**
+     * Merge review 2026-11-23: the go-and-look walk (the chain's only step: a far spot whose fact is not loaded) ended by
+     * the step monitor's no-progress watch came with the monitor's plain fact "step goto ...", a key nothing reads: the
+     * re-plan returned the same walk and its second stall parked the order. It is the walk target's fact now - the key the
+     * chain's go-and-look passes a spot over by (NeedChain.exploreLeaf), so the next spot or the explore is taken.
+     */
+    @Test
+    void aWalkTheMonitorEndedOnNoProgressHoldsItsTarget_notAStepKeyNothingReads() {
+        Step.Walk look = new Step.Walk(110, 64, 0, 32);
+        String stall = FactChange.STALL_NO_PROGRESS + " 30 s";
+        FactChange.Fact plain = new FactChange.Fact(io.github.mojolowjo.entropybot.aa.moves.StepMonitor.stepKey(look), stall + " at " + look.text());
+        FactChange.Fact f = Steps.walkStall(List.of(look), 0, stall, plain, null, null);
+        assertEquals("source " + NeedChain.walkTargetKey(110, 64, 0), f.key(), "the spot's walk target is held, as a walk that ended with no fact");
+        assertEquals(plain.text(), f.text(), "the monitor's own words are the hold's reason");
+        // a walk that led to a named source is that source's fact (z65), as when it ends with no fact of its own
+        Step cut = new Step.ChopTree(new int[]{40, 64, 0}, 4, "minecraft:oak_log");
+        assertEquals(Steps.walkLeads(List.of(look, cut), 0, stall).key(), Steps.walkStall(List.of(look, cut), 0, stall, plain, null, null).key());
+        // any other fact, another step or no fact: as it came
+        FactChange.Fact boxed = new FactChange.Fact("source " + NeedChain.boxedInKey(new int[]{0, 64, 0}), "the feet never left");
+        assertSame(boxed, Steps.walkStall(List.of(look), 0, stall, boxed, null, null));
+        assertNull(Steps.walkStall(List.of(look), 0, stall, null, null, null));
+        Step place = new Step.PlaceNear("crafting_table");
+        FactChange.Fact other = new FactChange.Fact(io.github.mojolowjo.entropybot.aa.moves.StepMonitor.stepKey(place), stall);
+        assertSame(other, Steps.walkStall(List.of(place), 0, stall, other, null, null), "only a walk");
+    }
+
     @Test
     void aFailedWalkBeforeAStepWithNoSourceIsAHeldFactAndAReplan() {
         // the test hands' bag holds no crafting_table (the place's own need wins there), so a step with no needs and no

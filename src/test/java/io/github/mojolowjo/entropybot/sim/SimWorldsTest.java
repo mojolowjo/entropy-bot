@@ -17,11 +17,19 @@ import static org.junit.jupiter.api.Assertions.*;
  * by the simulator at the spawn of 100 real worlds - cubes of 65 blocks dumped by a cloud tester with {@code aa scenario}
  * (seeds w001..w100, src/test/resources/scenarios/worlds, its index.md beside them). The real brain, planner, step runner
  * and Baritone's search; the fake hands. A cube has an edge: a plan that leaves it ends "not simulated", which is said,
- * not a failure of the bot. Nothing is pinned about the ends yet: the table is the output (what the bot decides at 100
- * different spawns, in seconds), read for decisions that look wrong.
+ * not a failure of the bot. The table is the output (what the bot decides at 100 different spawns, in seconds), read for
+ * decisions that look wrong. Merge review 2026-11-23: one outcome is held when the games are played - the count of games
+ * that end with the whole line in the chest may not fall under {@link #WHOLE_FLOOR}. The games stay out of the plain
+ * build (six minutes; SIM_WORLDS=1 plays them): a build that did not play them proves nothing about them.
  */
 class SimWorldsTest {
     static final int LIMIT_S = 1500;       // sim: a game's seconds allowed (the whole lines end under 450 s)
+    /**
+     * The fewest of the 100 games that must end with the whole line in the chest: the last three runs had 67 (docs repo
+     * to-do/test-tooling-plan.md, 2026-11-22 and 23; the others leave the cube or name a wood the test data lacks), less
+     * a margin of 5 for a game that tips over the cube's edge. Raised by hand when the count rises.
+     */
+    static final int WHOLE_FLOOR = 62;
 
     @AfterEach
     void clear() {
@@ -94,6 +102,8 @@ class SimWorldsTest {
         System.out.println("WORLDS\n" + table + "ENDS\n" + sum + "whole line in the chest: " + whole + " of " + files.size() + "; threw " + threw
                 + "; computed in " + (System.currentTimeMillis() - t0) / 1000 + " s");
         assertEquals(0, threw, "a game threw (a fault in the simulator or the mod, never an end):\n" + table);
+        assertTrue(whole >= WHOLE_FLOOR, "the whole line reached the chest in " + whole + " of " + files.size() + " games, under the floor of " + WHOLE_FLOOR
+                + " (the last runs: 67):\n" + table);
     }
 
     /** One world's game with its timeline printed (a short deposit looked at): the names come from -Dsim.world or the three first seen short. */

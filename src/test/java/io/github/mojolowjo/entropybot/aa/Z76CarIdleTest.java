@@ -83,7 +83,7 @@ class Z76CarIdleTest {
         run(run, h, p, 2000);
         assertEquals(List.of(180L), p.at, "idle at 100 + steps.carIdleTicks 80");
         FactChange.Fact f = p.facts.get(0);
-        assertEquals("step walk -27 16 -55 near 0", f.key(), "a walk has no source: keyed by its StepId");
+        assertEquals("source walk target -27 16 -55", f.key(), "merge review 2026-11-23: a walk the monitor ended holds its target (was a step key nothing read)");
         assertTrue(f.text().startsWith("the car has no goal: Baritone idle with no goal for 80 ticks (steps.carIdleTicks 80): the goal was never set"), f.text());
         assertTrue(f.text().endsWith(" at goto -27 16 -55"), f.text());
         assertEquals(1, h.cancelled.size(), h.cancelled.toString());

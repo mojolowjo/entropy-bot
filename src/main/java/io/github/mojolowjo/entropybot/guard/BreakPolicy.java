@@ -176,7 +176,8 @@ public final class BreakPolicy {
 
     /**
      * The structure rule over the game's facts of one block (the game side reads them: StructureTable). Order: not loaded
-     * fails closed; an ore or a log is never a structure; a structure tag, a block entity or a recipe type's station is
+     * fails closed; a block of a never tag ({@code oreOrLog}: an ore, planks; a log no longer since the owner's ruling
+     * 2026-11-23, WorldGenFiles.classify with the tree tags and BuiltLogs) is never a structure; a structure tag, a block entity or a recipe type's station is
      * one; a block with a crafting recipe is one unless world gen places it ({@code worldGen} null = the world-gen set
      * is not loaded yet: NOT_LOADED, refused and never cached as no; 0.39.z26 (2): the set comes from the client's jars).
      */

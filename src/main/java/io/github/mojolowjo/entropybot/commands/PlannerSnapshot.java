@@ -97,7 +97,10 @@ public final class PlannerSnapshot {
                 new NeedChain.WhereFacts(word -> (GenWhere.Fact) get(a, new PlanNodes.Fact("where", word), null),
                         () -> (NeedChain.Surface) get(a, new PlanNodes.Fact("surface", null), null),
                         () -> { int[] f = (int[]) get(a, new PlanNodes.Fact("feet", null), null); return f == null ? null : f.clone(); },
-                        () -> (GenWhere.Base) get(a, new PlanNodes.Fact("base", null), null)));
+                        () -> (GenWhere.Base) get(a, new PlanNodes.Fact("base", null), null)),
+                // merge review 2026-11-23 (forecast): the reserve table is a plain fact of the World like the bag, the holds and
+                // the rooms (an immutable copy by its constructor): the worker reads the list the live check compares with
+                live.reserves());
         return new PlannerSnapshot(w, NeedChain.liveBag(live), new FrozenExtras(a), Map.copyOf(withNulls(a)), version, takenAt, NeedChain.dataEpoch(live));
     }
 

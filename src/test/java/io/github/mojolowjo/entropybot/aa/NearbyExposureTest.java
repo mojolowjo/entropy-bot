@@ -32,7 +32,10 @@ class NearbyExposureTest {
     /** A fixture cache: the cells of the scan's blocks, the open cells (air, water), everything else solid; unloaded x >= 1000. */
     static class World implements Nearby.Scan {
         final Map<String, String> blocks = new HashMap<>();
-        final Set<String> open = new HashSet<>();
+        final Set<String> open = new HashSet<>(), fluids = new HashSet<>();
+        /** A cell that holds a fluid (the scan states it, as the live one does from the block state; no block id decides). */
+        World fluid(int x, int y, int z) { fluids.add(x + " " + y + " " + z); return this; }
+        @Override public Boolean fluidAt(int x, int y, int z) { return x >= 1000 ? null : fluids.contains(x + " " + y + " " + z); }
         World put(int x, int y, int z, String id) { blocks.put(x + " " + y + " " + z, id); return this; }
         World air(int x, int y, int z) { open.add(x + " " + y + " " + z); return this; }
         @Override public io.github.mojolowjo.entropybot.guard.Policy stationPolicy() { return TestStations.OPEN; }

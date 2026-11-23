@@ -142,7 +142,8 @@ class SightCoverTest {
     @Test
     void aWaterColumnIsNoSource() {
         NearbyExposureTest.World w = new NearbyExposureTest.World().put(5, 48, 0, STONE);
-        for (int y = 49; y <= 61; y++) w.put(5, y, 0, "minecraft:water");
+        // merge review 2026-11-23: the scan states the fluid (a mod's fluid block here: no block id of ours decides)
+        for (int y = 49; y <= 61; y++) w.put(5, y, 0, "somemod:oil").fluid(5, y, 0);
         w.air(5, 62, 0);
         Map<String, Integer> buried = new HashMap<>();
         assertNull(Nearby.withCover(w, new Spot(5, 48, 0, 13, STONE), buried));
@@ -152,6 +153,15 @@ class SightCoverTest {
         for (int y = 49; y <= 61; y++) d.put(5, y, 0, DIRT);
         d.air(5, 62, 0);
         assertEquals(13, Nearby.withCover(d, new Spot(5, 48, 0, 13, STONE), buried).cover());
+    }
+
+    /** Merge review 2026-11-23 (rule 4): a scan that states no fluid answers not known - no block id of ours stands in for the game's fluid state. */
+    @Test
+    void aScanThatStatesNoFluidAnswersNotKnown_neverByABlockId() {
+        VillageLogsLookupTest.World w = new VillageLogsLookupTest.World().put(5, 49, 0, "minecraft:water").put(5, 50, 0, "minecraft:lava");
+        assertNull(w.fluidAt(5, 49, 0));
+        assertNull(w.fluidAt(5, 50, 0));
+        assertFalse(Nearby.fluidBeside(w, 4, 49, 0), "not known is no seen fluid");
     }
 
     /** The store's mark makes the chunk read's "exposed" a covered spot; a refused dig makes it no source, said. */

@@ -452,9 +452,12 @@ public final class StepMonitor {
                     "place " + pn.item().replaceFirst("^minecraft:", "") + " near me failed at " + feet[0] + " " + feet[1] + " " + feet[2] + ": " + why));
         String src = io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(step);
         FactChange.Fact f = src != null ? FactChange.noProgress(src, why + " at " + step.text())
-                : new FactChange.Fact("step " + StepId.of(step).text(), why + " at " + step.text());
+                : new FactChange.Fact(stepKey(step), why + " at " + step.text());
         return new Look(Verdict.REPLAN, why, f);
     }
+
+    /** The key of a stall's plain fact: a step with no source key of its own (Steps.walkStall reads it for a walk). */
+    public static String stepKey(Step s) { return "step " + StepId.of(s).text(); }
 
     private static Look cont(String why) { return new Look(Verdict.CONTINUE, why, null); }
 
