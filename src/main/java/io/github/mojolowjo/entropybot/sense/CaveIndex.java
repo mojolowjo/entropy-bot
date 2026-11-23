@@ -234,6 +234,25 @@ public final class CaveIndex {
         link(ch);
     }
 
+    /**
+     * job-planner-stick, review round 3: the ground of an indexed chunk as it was put (256 columns, a copy); null: the
+     * chunk is not indexed. The rim re-read (ChunkPass.rimAgain) compares against it and replaces only on a difference.
+     */
+    public synchronized int[] surfaceOf(int cx, int cz) {
+        Chunk ch = chunks.get(chunkKey(cx, cz));
+        return ch == null ? null : ch.surface.clone();
+    }
+
+    /**
+     * job-planner-stick, review round 3: an indexed chunk's runs read again with more known (a neighbour chunk loaded
+     * since: its ravine wall across the border) take the old ones' place; the volumes are rebuilt at the next ask, the
+     * credits and known marks are kept by cell. A chunk not indexed is put.
+     */
+    public synchronized void replace(ChunkRuns r) {
+        remove(r.cx(), r.cz());
+        put(r);
+    }
+
     /** The chunk unloaded: its runs leave the index (its unknown volumes are gone with it; a known cave stays in Sightings). */
     public synchronized void remove(int cx, int cz) {
         if (chunks.remove(chunkKey(cx, cz)) != null) { dirty = true; shapeDirty = rootsDirty = true; version++; }

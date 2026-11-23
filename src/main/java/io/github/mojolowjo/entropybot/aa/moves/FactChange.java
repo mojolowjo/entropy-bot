@@ -465,6 +465,20 @@ public final class FactChange {
     }
 
     /**
+     * job-planner-stick, review round 3: the ONE fact of a caving step {@code k} that ran out of time with the need
+     * unmet, whichever clock ended it - the walk's own minutes (CaveWalk.End.MINUTES, read between walks) or the step
+     * watch (Steps: steps.stepMaxS, read every tick; the same 600 s as cave.exploreMinutes, so the watch is the end that
+     * fires on a full-length caving: w060, five of five). Both callers pass the caving's own mined count, so the key
+     * ({@link #caveStoppedKey}) is the same on either path: ore mined holds the opening, none holds the space. Pure.
+     */
+    public static Fact caveStopped(Step.Cave k, int mined, int passagesLeft, String why) {
+        return caveMinutesFact(new int[]{k.x(), k.y(), k.z()}, k.family(), mined, passagesLeft, why);
+    }
+
+    /** The hands say {@code f} (taken once, as every fact here). */
+    public static void say(Fact f) { last = f; }
+
+    /**
      * job-planner-stick, review round 2: the key a caving that was STOPPED (its minutes, far over its price) holds. With
      * no ore mined the space gave nothing: the caving's own key, the whole cave space out for the family (w060: five
      * rounds, 0 ore, 50 minutes). With ore mined the space was giving and only the round ran out: the opening's key, as

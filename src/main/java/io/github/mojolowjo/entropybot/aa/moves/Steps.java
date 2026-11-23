@@ -49,6 +49,16 @@ public final class Steps {
         /** 0.39.z30: the fact the step that just failed found changed ({@link FactChange}), taken once; null: none. */
         default FactChange.Fact lastFact() { return FactChange.take(); }
 
+        /**
+         * job-planner-stick, review round 3 (w060 04:47:25: "the caving step ... ended - STOPPED (timed out): 10.0 min
+         * inside", five of five; steps.stepMaxS and cave.exploreMinutes are the same 600 s and the watch is the end that
+         * fires): the fact the running step {@code s} itself says for the step watch's timeout ({@code out}: "timed out
+         * after N s"), asked BEFORE its cancel so the step's own state is read (a caving's mined count). The same fact
+         * its own minutes end says, so the two ends cannot disagree (rule 23 (2)). Null: the step has none, its source
+         * key is the fact as before.
+         */
+        default FactChange.Fact timedOut(Step s, String out) { return null; }
+
         /** 0.39.z34: what the step needs from the bag (its own data, {@link StepNeeds#of}). */
         default StepNeeds needs(Step s) { return StepNeeds.of(s); }
 
@@ -1666,13 +1676,22 @@ public final class Steps {
                     safeCancel(lack);
                     failOrReplan(lack);
                 } else if (now - stepStart > stepTicks()) {
-                    safeCancel("timed out");
                     String out = "timed out after " + stepTicks() / 20 + " s";  // game fact: 20 game ticks per second
                     String reason = out + (st.why() == null ? "" : " (" + st.why() + ")");
+                    // job-planner-stick, review round 3: the step's own fact for this end, read before the cancel clears its
+                    // state (a caving: the same fact as its minutes end, keyed by what it mined); none: its source key below
+                    FactChange.Fact own = null;
+                    try {
+                        own = hands.timedOut(s, out);
+                    } catch (RuntimeException e) {
+                        reason = reason + " (the step's own fact could not be read: " + e + ")";
+                    }
+                    safeCancel("timed out");
                     // 0.39.z42 (run C 20:38:58): a source step that timed out is the z33 source fact: the order re-plans
                     // without that source; any other step's timeout ends the run as before
                     String src = io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(s);
-                    if (src != null) failOrReplan(reason, new FactChange.Fact("source " + src, out));
+                    if (own != null) failOrReplan(reason, own);
+                    else if (src != null) failOrReplan(reason, new FactChange.Fact("source " + src, out));
                     else fail(reason);
                 } else if (!carIdleEnds(s)) {            // 0.39.z76 J3-mod item 0: the car with no goal ends the step at once
                     if (st.why() != null) why = stage() + ": " + st.why();

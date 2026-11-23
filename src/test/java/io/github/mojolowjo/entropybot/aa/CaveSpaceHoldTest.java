@@ -80,6 +80,61 @@ class CaveSpaceHoldTest {
         assertEquals("source " + CaveWay.cavedKey("coal", entry), FactChange.caveEndedFact(entry, "coal", "DONE", "explored to its end").key(), "an end of the cave itself: the space");
     }
 
+    /** Hands as StepHands for a caving step: runs on; for the step watch's timeout it says the caving's own stopped fact. */
+    static final class CavingHands implements io.github.mojolowjo.entropybot.aa.moves.Steps.Hands {
+        final int mined;
+        final List<String> calls = new java.util.ArrayList<>();
+        CavingHands(int mined) { this.mined = mined; }
+        @Override public String start(Step s) { return null; }
+        @Override public io.github.mojolowjo.entropybot.aa.moves.Car.Status status(Step s) { return io.github.mojolowjo.entropybot.aa.moves.Car.Status.running("caving"); }
+        @Override public void cancel(String why) { calls.add("cancel"); }
+        @Override public FactChange.Fact timedOut(Step s, String out) {
+            calls.add("timedOut");
+            return s instanceof Step.Cave k ? FactChange.caveStopped(k, mined, 131, out) : null;
+        }
+    }
+
+    /** The fact the order is re-planned on when the step watch times a caving step out with {@code mined} ore. */
+    static FactChange.Fact watchTimeout(CavingHands h) {
+        Tuning.set("steps.stepMaxS", 1);
+        List<FactChange.Fact> asked = new java.util.ArrayList<>();
+        var run = new io.github.mojolowjo.entropybot.aa.moves.Steps(h);
+        run.start("owner goal", List.of(new Step.Cave(-8, 92, -3, "coal", 6, 10)), 0, (failed, fact, why) -> {
+            asked.add(fact);
+            return new io.github.mojolowjo.entropybot.aa.moves.Steps.Routine(List.of(new Step.Explore(5, "coal")), null);
+        });
+        run.tick(1);
+        run.tick(40);                                         // past 1 s (20 ticks): the watch fires
+        assertEquals(1, asked.size(), run.why());
+        return asked.get(0);
+    }
+
+    /**
+     * Review round 3 (w060 04:47:25 and four more: "the caving step at -8 92 -3 ended - STOPPED (timed out): 10.0 min
+     * inside", never "budget spent": steps.stepMaxS and cave.exploreMinutes are the same 600 s, so a full-length caving
+     * ends by the step watch): the watch's timeout says the SAME fact as the caving's minutes end, on the mined count -
+     * 4 of 6 mined holds the opening only and the cave the bot stands in is caved on; 0 mined holds the space.
+     */
+    @Test
+    void theStepWatchsTimeout_readsTheSameFactAsTheMinutesEnd_onTheMinedCount() {
+        int[] entry = {-8, 92, -3};
+        CavingHands gave = new CavingHands(4);
+        FactChange.Fact f = watchTimeout(gave);
+        assertEquals(FactChange.caveMinutesFact(entry, "coal", 4, 131, "timed out after 1 s"), f, "one fact for both ends");
+        assertEquals("source " + CaveWay.keyOf(entry), f.key(), "ore mined: the opening's key, never the space");
+        assertEquals(List.of("timedOut", "cancel"), gave.calls, "asked before the cancel clears the caving's state");
+        CaveWay left = w060().without(Set.of(FactChange.ownSourceKey(f))::contains);
+        assertNull(NeedChain.caveOut(left.all().get(0)), "the cave the bot is inside goes on: " + left.all());
+
+        FactChange.clear();
+        Tuning.reset();
+        FactChange.Fact none = watchTimeout(new CavingHands(0));
+        assertEquals("source " + CaveWay.cavedKey("coal", entry), none.key(), "no ore: the caving's key, the space is out");
+        assertTrue(none.text().contains("budget spent, 0 ore mined"), none.text());
+        CaveWay out = w060().without(Set.of(FactChange.ownSourceKey(none))::contains);
+        assertNotNull(NeedChain.caveOut(out.all().get(0)), "the same space, inside or not: out");
+    }
+
     @Test
     void anOpeningsHold_orAnotherFamilysCaving_leavesTheSpaceOffered() {
         // the lip of -8 92 -3 has no path (the opening's key): that opening only - the space is entered from where the bot stands

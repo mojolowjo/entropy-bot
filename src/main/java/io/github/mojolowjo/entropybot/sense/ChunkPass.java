@@ -103,6 +103,8 @@ public final class ChunkPass {
     private final CaveIndex caveIndex = new CaveIndex();
     { caveIndex.measureEvery(1_000_000_000L); }       // structural: the openings measured again at most once a second while chunks load (run EF)
     private final CaveRays caveRays = new CaveRays();
+    /** job-planner-stick, review round 3: the chunks whose ravine rim was read with a neighbour not loaded (read again when it arrives). */
+    private final RimWaits rimWaits = new RimWaits();
 
     public CaveIndex caveIndex() { return caveIndex; }
 
@@ -143,6 +145,7 @@ public final class ChunkPass {
             int cx = chunk.getPos().x, cz = chunk.getPos().z;
             schedule.unloaded(cx, cz);
             caveIndex.remove(cx, cz);                     // 0.39.z78 J6: the index holds the loaded chunks only (its unknown volumes go; known caves stay in Sightings)
+            rimWaits.gone(CaveIndex.chunkKey(cx, cz));
             live.remove(ChunkSummary.key(cx, cz));
             ChunkSummary s = dim == null ? null : index.get(dim, cx, cz);
             if (s != null) s.stale = true;
@@ -248,6 +251,15 @@ public final class ChunkPass {
                 }
                 readOne(level, next.get(i), now);
             }
+            // job-planner-stick, review round 3: the rim re-reads of chunks whose neighbour arrived, in what is left of the budget
+            for (long k : rimWaits.take(PER_TICK)) {
+                if (System.nanoTime() - t0 > Limits.SENSE_BUDGET_NS) { rimWaits.again(k); continue; }
+                try {
+                    rimAgain(level, k);
+                } catch (Throwable t) {
+                    error("cave index rim re-read", t);
+                }
+            }
             if (now - lastAuditMs >= AUDIT_EVERY_MS && System.nanoTime() - t0 < Limits.SENSE_BUDGET_NS / 2) {
                 lastAuditMs = now;
                 audit(level, now);
@@ -276,6 +288,7 @@ public final class ChunkPass {
         schedule.clear();
         live.clear();
         caveIndex.clear();                                // 0.39.z78 J6: the index is this dimension's
+        rimWaits.clear();
         caveRays.clear();
         index.markAllStale();
         dim = d;
@@ -329,6 +342,7 @@ public final class ChunkPass {
             fromFiles.clear();
             filesLoaded.clear();
             caveIndex.clear();                            // review c921e903: the cave index and its kept credits are the old world's (start() clears it again)
+            rimWaits.clear();
             dim = null;
             LOG.info("[entropybot] sense: world changed: ore index cleared, summaries load from {}", root());
         } catch (Throwable t) {
@@ -649,7 +663,40 @@ public final class ChunkPass {
      * SurfaceHeightLive.worldSurface.
      */
     private void caveRuns(LevelChunk chunk, int cx, int cz) {
+        // job-planner-stick, review round 3 (rule 15): this chunk is loaded - the chunks whose rim read ended on it as
+        // "not known" are due for that read again (rimAgain, in the tick's budget)
+        rimWaits.arrived(CaveIndex.chunkKey(cx, cz));
         if (caveIndex.has(cx, cz)) return;
+        caveIndex.put(indexed(chunk, cx, cz));
+        markKnown(cx, cz);
+    }
+
+    /**
+     * job-planner-stick, review round 3 (rule 15; a ravine across a chunk border was indexed by load order: the chunk
+     * read first got "not known" for the neighbour's wall and kept its floor as open ground until it unloaded): one chunk
+     * that waited on a neighbour ({@link RimWaits}) has its ground and rim read again now that neighbour is loaded. The
+     * index is touched only when the ground differs (the volumes are rebuilt then); a neighbour still missing is waited
+     * on again by the read itself. Said once per world, counted in "sense status".
+     */
+    private void rimAgain(ClientLevel level, long key) {
+        int cx = (int) (key >> 32), cz = (int) key;                              // structural: CaveIndex.chunkKey's two ints
+        LevelChunk chunk = level.getChunkSource().getChunk(cx, cz, false);
+        int[] was = caveIndex.surfaceOf(cx, cz);
+        if (chunk == null || was == null) return;                                // unloaded meanwhile, or never indexed: its next read is a first read
+        CaveIndex.ChunkRuns fresh = indexed(chunk, cx, cz);
+        rimWaits.reread++;
+        int moved = 0;
+        for (int c = 0; c < 256; c++) if (fresh.surface()[c] != was[c]) moved++;  // structural: the chunk's 256 columns
+        if (moved == 0) return;
+        caveIndex.replace(fresh);
+        markKnown(cx, cz);
+        if (rimWaits.changed++ == 0)
+            LOG.info("[entropybot] sense: cave index: chunk {} {} was read before a neighbour chunk was loaded (a ravine wall across the border was not known); "
+                    + "read again with the neighbour in: {} column(s) changed their ground. Said once per world; the counts are in sense status", cx, cz, moved);
+    }
+
+    /** The chunk's ground with its ravine rims and its air runs under it (the index's entry); its missing neighbours are waited on. */
+    private CaveIndex.ChunkRuns indexed(LevelChunk chunk, int cx, int cz) {
         var secs = chunk.getSections();
         int minSec = chunk.getMinSection();
         int[] surface = new int[256];
@@ -670,7 +717,7 @@ public final class ChunkPass {
         Map<Long, Integer> asked = new HashMap<>();
         CaveIndex.GroundAround around = (lx, lz) -> asked.computeIfAbsent(((long) lx << 32) | (lz & 0xFFFFFFFFL), k -> {   // structural: two ints in a long
             int wx = (cx << 4) + lx, wz = (cz << 4) + lz;
-            long nk = ((long) (wx >> 4) << 32) | ((wz >> 4) & 0xFFFFFFFFL);          // structural: two ints in a long
+            long nk = CaveIndex.chunkKey(wx >> 4, wz >> 4);
             if (!near.containsKey(nk)) {
                 LevelChunk c = source.getChunk(wx >> 4, wz >> 4, false);
                 near.put(nk, c);
@@ -681,12 +728,21 @@ public final class ChunkPass {
             return CaveIndex.ground(wx, wz, io.github.mojolowjo.entropybot.world.SurfaceHeightLive.worldSurface(n, wx & 15, wz & 15), n.getMinBuildHeight(), tests.get(nk));
         });
         surface = CaveIndex.rimmed(surface, io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.ravineDrop"), ravineR, around);
-        caveIndex.put(CaveIndex.runs(cx, cz, surface, chunk.getMinBuildHeight(), (x, y, z) -> {
+        // review round 3 (rule 15): a neighbour a wall search reached and found not loaded is not known - this chunk waits
+        // on it and is read again when it arrives (rimAgain)
+        List<Long> missing = new ArrayList<>();
+        for (Map.Entry<Long, LevelChunk> e : near.entrySet()) if (e.getValue() == null) missing.add(e.getKey());
+        rimWaits.waiting(CaveIndex.chunkKey(cx, cz), missing);
+        return CaveIndex.runs(cx, cz, surface, chunk.getMinBuildHeight(), (x, y, z) -> {
             int si = (y >> 4) - minSec;
             if (si < 0 || si >= secs.length) return false;
             var s = secs[si];
             return s.hasOnlyAir() || s.getBlockState(x & 15, y & 15, z & 15).isAir();
-        }));
+        });
+    }
+
+    /** The known caves of Sightings that lie in chunk cx cz mark their volumes known (a reload, a re-read keeps them known). */
+    private void markKnown(int cx, int cz) {
         Sightings sg = sightings();
         if (sg == null || dim == null) return;
         for (Sightings.KnownCave k : sg.allKnownCaves(dim)) {
@@ -954,6 +1010,7 @@ public final class ChunkPass {
         sb.append(" | patches ").append(patches).append(" applied, dropped: ").append(dropUnsure).append(" unsure (rescanned), ")
                 .append(dropError).append(" errors; ").append(beforeRead).append(" before the chunk's read (the read covers them)");
         sb.append(" | ").append(seenStatus());
+        sb.append(" | ").append(rimWaits.status());
         sb.append(" | missed marks ").append(schedule.missedMarks).append(" (+").append(schedule.missedDeduped).append(" deduped)");
         sb.append(String.format(Locale.ROOT, " | tick %.3f ms last, %.3f max, %.3f avg (1 min); max (join) %.1f ms (the first 10 s: first reads, not a steady cost)",
                 lastNs / 1e6, maxNs / 1e6, avgMs(), joinMaxNs / 1e6));
