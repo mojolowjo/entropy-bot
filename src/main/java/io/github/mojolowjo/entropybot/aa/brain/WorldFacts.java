@@ -182,7 +182,20 @@ public final class WorldFacts {
 
     /** The reason another order reads: the learner's reason, who learned it and where. */
     static String text(Rec r) {
-        return r.reason() + " (a world fact: " + r.order() + " learned it at " + r.cell()[0] + " " + r.cell()[1] + " " + r.cell()[2] + ")";
+        return r.reason() + SHARED + r.order() + " learned it at " + r.cell()[0] + " " + r.cell()[1] + " " + r.cell()[2] + ")";
+    }
+
+    /** The start of the words {@link #text} appends to the learner's reason. */
+    static final String SHARED = " (a world fact: ";
+
+    /**
+     * job-planner-stick: {@code why} without the words {@link #text} appended (who learned it and where) - the learner's
+     * own reason, the same whichever order reads the fact; a reason with none: itself. Pure.
+     */
+    public static String bare(String why) {
+        if (why == null || !why.endsWith(")")) return why;
+        int i = why.lastIndexOf(SHARED);
+        return i < 0 ? why : why.substring(0, i);
     }
 
     @SuppressWarnings("unchecked")
