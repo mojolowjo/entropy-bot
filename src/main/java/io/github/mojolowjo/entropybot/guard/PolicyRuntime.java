@@ -124,9 +124,9 @@ public final class PolicyRuntime {
     // ---- owner's ruling 2026-11-23: a log of a built thing (BuiltLogs) ----
 
     /** The memo of one table version and dimension: cell -> {the answer, its nanoTime}. Any thread. */
-    private record LogMemo(int version, String dim, java.util.concurrent.ConcurrentHashMap<Long, long[]> cells) {}
+    private record LogMemo(int version, String dim, BuiltLogs.Memo cells) {}
 
-    private static volatile LogMemo logMemo = new LogMemo(-1, "", new java.util.concurrent.ConcurrentHashMap<>());
+    private static volatile LogMemo logMemo = new LogMemo(-1, "", new BuiltLogs.Memo());
     /** The built things already said (the log's kind, the built block's kind, the chunk): once each per world (rule 7). */
     private static final java.util.Set<String> builtSaid = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static final int MEMO_MAX = 16384, SAID_MAX = 4096;   // structural: the memo's and the said set's size bounds, dropped whole past them
@@ -141,12 +141,10 @@ public final class PolicyRuntime {
         LogMemo memo = logMemo;
         if (memo.version() != ver || !memo.dim().equals(dim) || memo.cells().size() > MEMO_MAX) {
             if (memo.version() != ver) builtSaid.clear();          // a new world or table: said again
-            logMemo = memo = new LogMemo(ver, dim == null ? "" : dim, new java.util.concurrent.ConcurrentHashMap<>());
+            logMemo = memo = new LogMemo(ver, dim == null ? "" : dim, new BuiltLogs.Memo());
         }
-        long key = BuiltLogs.key(x, y, z), now = System.nanoTime();
+        long now = System.nanoTime();
         long keepNs = Math.round(Tuning.get("guard.builtLogMemoS") * 1e9);   // structural: s to ns
-        long[] kept = memo.cells().get(key);
-        if (kept != null && now - kept[1] < keepNs) return kept[0] == 1 ? BreakPolicy.Structure.YES : BreakPolicy.Structure.NO;
         BuiltLogs.Cells cells = new BuiltLogs.Cells() {
             @Override public BuiltLogs.Mark at(int cx, int cy, int cz) {
                 BlockState n = at.loaded(cx, cz) ? at.at(cx, cy, cz) : null;
@@ -154,13 +152,12 @@ public final class PolicyRuntime {
             }
             @Override public boolean mine(int cx, int cy, int cz) { return OwnPlaced.at(dim, cx, cy, cz); }
         };
-        java.util.Set<Long> walked = new java.util.HashSet<>();
-        BuiltLogs.Found f = BuiltLogs.of(cells, x, y, z, BuiltLogs.walkCap(), walked);
-        if (f.fact() == BreakPolicy.Structure.NOT_LOADED) return f.fact();
-        if (f.fact() == BreakPolicy.Structure.NO && f.whole()) {
-            long[] v = {0, now};                                    // the whole group was walked: its answer is every cell's
-            for (Long k : walked) memo.cells().put(k, v);
-        } else memo.cells().put(key, new long[]{f.fact() == BreakPolicy.Structure.YES ? 1 : 0, now});
+        // review of the first build: the memo keeps a NO for every log the walk visited, capped or whole (BuiltLogs.Memo),
+        // so a group over the cap is not walked again for each of its cells
+        BuiltLogs.Found[] walk = new BuiltLogs.Found[1];
+        BreakPolicy.Structure fact = BuiltLogs.asked(cells, x, y, z, BuiltLogs.walkCap(), memo.cells(), now, keepNs, walk);
+        BuiltLogs.Found f = walk[0];
+        if (f == null) return fact;                                 // the kept answer: nothing walked, nothing new to say
         if (f.fact() == BreakPolicy.Structure.YES) {
             BlockState built = at.at(f.bx(), f.by(), f.bz());
             String lk = BuiltInRegistries.BLOCK.getKey(log.getBlock()).toString(), bk = built == null ? "?" : BuiltInRegistries.BLOCK.getKey(built.getBlock()).toString();

@@ -105,7 +105,7 @@ class Z71StepMonitorTest {
         assertTrue(p.facts.isEmpty(), "no stall through 31 s: " + h.logged);
         run(run, h, p, 40);
         assertEquals(List.of(32), p.at);
-        assertEquals("step walk -27 16 -55 near 0", p.facts.get(0).key(), "a walk has no source: keyed by its StepId");
+        assertEquals("source walk target -27 16 -55", p.facts.get(0).key(), "merge review 2026-11-23: a stalled walk holds its target (was a step key nothing read)");
         String why = p.facts.get(0).text();
         assertTrue(why.startsWith("no progress 30 s: the goal "), why);
         assertTrue(why.contains("(best 36 at 2 s)"), why);
@@ -291,7 +291,7 @@ class Z71StepMonitorTest {
         run.start("goal.iron", List.of(a, b), 0, p);
         run(run, h, p, 25);
         assertEquals(List.of(16), p.at, "b started at 10 s with 2 failures behind it: 5 - 2 = 3 at 16 s");
-        assertEquals("step walk 9 64 9 near 0", p.facts.get(0).key());
+        assertEquals("source walk target 9 64 9", p.facts.get(0).key());
     }
 
     /** Review 3: the CALC_FAILED count starts again after a pause (the step starts again from where the bot is). */

@@ -40,7 +40,7 @@ class WaterDigTest {
         w.air(5, 62, 0);
         Map<String, Integer> buried = new HashMap<>();
         assertEquals(13, Nearby.withCover(w, new Spot(5, 48, 0, 13, STONE), buried).cover(), "dry: a source with its cover");
-        w.put(6, 60, 0, "minecraft:water");
+        w.put(6, 60, 0, "minecraft:water").fluid(6, 60, 0);
         assertNull(Nearby.withCover(w, new Spot(5, 48, 0, 13, STONE), buried));
         assertEquals(1, buried.getOrDefault(STONE + Nearby.FLUID_BESIDE, 0), buried.toString());
     }

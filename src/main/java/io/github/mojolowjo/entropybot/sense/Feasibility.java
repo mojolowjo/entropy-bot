@@ -33,6 +33,9 @@ public final class Feasibility {
      * the log ("no torches, nothing to craft them from"); item and n: what a sub-chain could provide (null: no sub-chain
      * helps, e.g. no mine marked); cls: the failure memory class (null: not remembered, e.g. sleep by day).
      */
+    /** Review of the village logs build (rule 15): a log near whose structure fact is not loaded is not "no trees". */
+    public static final String TREES_NOT_KNOWN = "trees near are not known yet (a log stands near, its structure fact is not loaded)";
+
     public record Verdict(Kind kind, int step, String stepText, String missing, String item, int n, Failures.Reason cls) {
         public boolean infeasible() { return kind == Kind.INFEASIBLE; }
 
@@ -57,6 +60,8 @@ public final class Feasibility {
         /** An area of this name exists; null = unknown (a go to a name that is no place is then UNKNOWN). */
         public Predicate<String> isArea;
         public boolean baseChests, table, furnace, trees, mineMarked, caveKnown;
+        /** A log stands near but its structure fact is not loaded yet (rule 15): {@link #trees} is false and not a "none". */
+        public boolean treesNotKnown;
         /** The policy's walk verdict: a spot (x y z) the bot may walk to (not keep-out, not by a portal); null = unknown. */
         public Predicate<int[]> walkAllowed;
         /** 0.28.0: an ore family ("iron") is known within 64 where the policy allows (the chunk pass's index); null = unknown. */
@@ -225,7 +230,7 @@ public final class Feasibility {
             }
             case "cut", "chop" -> {
                 sim.give("log", num(w, 1, 4));
-                return f.known && f.trees ? OK : Verdict.unknown(i, st, "no trees seen near");
+                return f.known && f.trees ? OK : Verdict.unknown(i, st, f.known && f.treesNotKnown ? TREES_NOT_KNOWN : "no trees seen near");
             }
             case "smelt", "cook" -> {
                 if (w.length >= 2 && !w[1].equals("collect") && !w[1].equals("jobs")) sim.give(id(w[1]), num(w, 2, 1));

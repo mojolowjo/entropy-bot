@@ -148,7 +148,15 @@ class VillageLogsLookupTest {
         Nearby.Source s = Nearby.source(w, ME, Set.of(OAK), () -> null);
         assertEquals("not loaded", s.from(), "rule 15: the chain waits on the spot with the reason");
         assertTrue(s.refused().isEmpty(), "not known is not a refusal");
-        assertNull(Nearby.log(w, ME, () -> null), "no tree is claimed on a fact not known");
+        // review of the first build (rules 15 and 7): not "no tree" either - the nearest such log, marked not loaded
+        Spot wait = Nearby.log(w, ME, () -> null);
+        assertNotNull(wait, "a log whose structure fact is not known is never passed over without a word");
+        assertTrue(wait.unloaded(), "no tree is claimed on a fact not known: the spot says not loaded");
+        assertEquals(6, wait.x());
+        assertNull(Nearby.treeFact(wait), "the tree fact: not known");
+        assertEquals(Boolean.FALSE, Nearby.treeFact(null));
+        Spot sighted = new Spot(6, 64, 0, 6, OAK);
+        assertSame(sighted, Nearby.log(w, ME, () -> sighted), "a sighting stands before the wait spot");
         w.genLoaded = true;
         assertEquals(6, Nearby.source(w, ME, Set.of(OAK), () -> null).spot().x(), "the read done: the tree is the source");
         assertEquals(6, Nearby.log(w, ME, () -> null).x());

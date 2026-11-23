@@ -92,6 +92,52 @@ public final class BuiltLogs {
     /** The structure fact of the tree log at x y z ({@link Mark#TREE_LOG}; the caller asks for such a cell only). */
     public static Found of(Cells c, int x, int y, int z, int cap) { return of(c, x, y, z, cap, null); }
 
+    /**
+     * The kept answers of one structure table version and dimension (PolicyRuntime holds it): cell -> {the answer, when}.
+     * YES and NO are kept; NOT_LOADED never is (rule 15). Review of the first build: a NO is kept for EVERY log the walk
+     * visited, also when the walk stopped at the cap - each visited log had its 26 neighbours read and none was a built
+     * block, so a group over the cap (a 2x2 giant, joined dark oaks) is walked once per cap's worth of logs and not
+     * once per log asked (a tree's size asks every cell). The limit stays the documented one: past the cap a built block
+     * further off is not seen, and while the answer is kept a visited log answers by the walk that visited it (a log
+     * that itself touches a built block is never kept as a no: that walk answers YES at once). Any thread.
+     */
+    public static final class Memo {
+        private final java.util.concurrent.ConcurrentHashMap<Long, long[]> cells = new java.util.concurrent.ConcurrentHashMap<>();
+
+        /** The kept answer of the cell, younger than {@code keepNs}; null: none kept. */
+        public Structure get(long key, long now, long keepNs) {
+            long[] kept = cells.get(key);
+            return kept == null || now - kept[1] >= keepNs ? null : kept[0] == 1 ? Structure.YES : Structure.NO;   // structural: 1 = yes in the kept pair
+        }
+
+        /** Keeps {@code f}, the answer of the walk from {@code key} over {@code walked} (the logs it visited). */
+        public void keep(Found f, long key, Set<Long> walked, long now) {
+            if (f.fact() == Structure.NOT_LOADED) return;
+            if (f.fact() == Structure.NO) {
+                long[] v = {0, now};
+                cells.put(key, v);
+                if (walked != null) for (Long k : walked) cells.put(k, v);
+            } else cells.put(key, new long[]{1, now});
+        }
+
+        public int size() { return cells.size(); }
+    }
+
+    /**
+     * The structure fact of the tree log at x y z through {@code memo}: the kept answer, else {@link #of} and its answer
+     * kept. Null {@link Found}: answered from the memo (nothing walked). Pure (the clock is the caller's).
+     */
+    public static Structure asked(Cells c, int x, int y, int z, int cap, Memo memo, long now, long keepNs, Found[] walk) {
+        long key = key(x, y, z);
+        Structure kept = memo.get(key, now, keepNs);
+        if (kept != null) return kept;
+        Set<Long> walked = new HashSet<>();
+        Found f = of(c, x, y, z, cap, walked);
+        memo.keep(f, key, walked, now);
+        if (walk != null && walk.length > 0) walk[0] = f;
+        return f.fact();
+    }
+
     /** A cell packed into one long (26 bits x and z, 12 bits y: the game's own block position packing). */
     public static long key(int x, int y, int z) {
         return ((long) x & 0x3FFFFFFL) << 38 | ((long) z & 0x3FFFFFFL) << 12 | ((long) y & 0xFFFL);   // structural: bit packing

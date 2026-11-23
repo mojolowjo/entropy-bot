@@ -529,7 +529,11 @@ public final class NeedChain {
                         Function<String, Spot> stationAt, Function<String, Integer> usesLeft, List<String> held, Function<String, StripBand> strip,
                         Function<String, CaveWay> cave, Rooms rooms, WhereFacts where,
                         List<baritone.api.process.Reserves.Reserve<String>> reserves) {
-        /** forecast (owner 2026-11-08): no reserve table (nothing in the bag is claimed: every placeable block is spare). */
+        /**
+         * forecast (owner 2026-11-08): no reserve table (nothing in the bag is claimed: every placeable block is spare). Merge
+         * review 2026-11-23: a copy of a World (every with...() and without...()) never goes through this one - it hands its
+         * own table on (the live table was dropped by withWhere / withoutSources one call after AaRuntime.needWorld set it).
+         */
         public World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
                      Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path,
                      Function<String, Spot> stationAt, Function<String, Integer> usesLeft, List<String> held, Function<String, StripBand> strip,
@@ -659,7 +663,7 @@ public final class NeedChain {
         public World withHeld(List<String> h) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, h, strip, cave, rooms, where, reserves); }
 
         /** 0.39.z68: where explore targets generate and the surface over the bot ({@link WhereFacts}). */
-        public World withWhere(WhereFacts w) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, w); }
+        public World withWhere(WhereFacts w) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, w, reserves); }   // merge review 2026-11-23: keeps the reserve table
 
         /**
          * D11 (the anchor rule; z75's "later steps priced from where the bot will be"): the same world with the FEET fact at
@@ -708,7 +712,7 @@ public final class NeedChain {
                 if (!close) cells.add(s);
             }
             return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave,
-                    new Rooms(cells, here), where);
+                    new Rooms(cells, here), where, reserves);
         }
 
         /**
@@ -721,7 +725,7 @@ public final class NeedChain {
             Function<String, List<Spot>> less = sa instanceof Lookup lk
                     ? ((Lookup) (w, skip) -> lk.apply(w, skip == null ? held : held.or(skip)).stream().filter(sp -> !held.test(word(w), sp)).toList()).refusing(lk::refused)
                     : w -> sa.apply(w).stream().filter(sp -> !held.test(word(w), sp)).toList();
-            return new World(bag, tableNear, furnaceNear, less, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, this.held, strip, cave, rooms, where);
+            return new World(bag, tableNear, furnaceNear, less, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, this.held, strip, cave, rooms, where, reserves);
         }
 
         /**
@@ -775,7 +779,7 @@ public final class NeedChain {
             boolean fn = furnaceNear && !heldStation(sa, keyWhy, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT);
             // 0.39.z77 walk: a walk target the order holds (ended short twice at the same feet) answers unreachable
             PathPrice pathLess = heldWalks(path, keyWhy);
-            return new World(bag, tn, fn, less.seenAll, mobs, loot, b, horizonBlocks, pathLess, stationLess, usesLeft, h, stripLess, caveLess, rooms, where);
+            return new World(bag, tn, fn, less.seenAll, mobs, loot, b, horizonBlocks, pathLess, stationLess, usesLeft, h, stripLess, caveLess, rooms, where, reserves);
         }
 
         /** 0.39.z65 review 1: the known station of the kind is one the order dropped. */

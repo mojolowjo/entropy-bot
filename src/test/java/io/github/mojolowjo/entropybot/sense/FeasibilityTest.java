@@ -129,7 +129,17 @@ class FeasibilityTest {
     @Nested class Gather {
         @Test void inStock() { BrainState s = empty(); s.feas.stock.put("iron_ingot", 1); assertEquals(FEASIBLE, v("gather iron_ingot 16", s).kind()); }
         @Test void elseUnknown() { assertEquals(UNKNOWN, v("gather iron_ingot 16", empty()).kind()); }
-        @Test void woodWithTrees() { BrainState s = empty(); s.feas.trees = true; assertEquals(FEASIBLE, v("gather oak_log 16", s).kind()); }
+        /** Review of the village logs build (rule 15): a log near with its structure fact not loaded is "not known", never "no trees seen near". */
+    @Test void aCutWithTheTreeFactNotKnownSaysSo() {
+        BrainState s = empty();
+        assertEquals("no trees seen near", v("cut 8 logs", s).missing());
+        s.feas.treesNotKnown = true;
+        Feasibility.Verdict r = v("cut 8 logs", s);
+        assertEquals(UNKNOWN, r.kind());
+        assertEquals(Feasibility.TREES_NOT_KNOWN, r.missing());
+    }
+
+    @Test void woodWithTrees() { BrainState s = empty(); s.feas.trees = true; assertEquals(FEASIBLE, v("gather oak_log 16", s).kind()); }
         @Test void torchesFromCoal() { BrainState s = empty(); s.coal = 2; s.logs = 1; assertEquals(FEASIBLE, v("gather torch 16", s).kind()); }
     }
 

@@ -184,4 +184,42 @@ class BuiltLogsTest {
         assertEquals(Structure.YES, BuiltLogs.of(w, 0, 195, 0, 10).fact(), "near the planks the same trunk is a built thing");
         assertEquals(Structure.YES, BuiltLogs.of(w, 0, 0, 0, 500).fact(), "a walk long enough finds them from the foot too");
     }
+
+    /**
+     * Review of the first build (a tree's size asks every cell of a 2x2 giant: 256 cells x a 96-log walk each): the memo
+     * keeps a capped walk's logs too, so a group over the cap is walked once per cap's worth, not once per cell asked.
+     */
+    @Test
+    void aGroupOverTheCapIsNotWalkedAgainForEachOfItsCells() {
+        World w = new World().column(0, 0, 199, 0, OAK);
+        BuiltLogs.Memo memo = new BuiltLogs.Memo();
+        int walks = 0;
+        for (int y = 0; y < 200; y++) {
+            BuiltLogs.Found[] walk = new BuiltLogs.Found[1];
+            assertEquals(Structure.NO, BuiltLogs.asked(w, 0, y, 0, 10, memo, 0, 1000, walk));
+            if (walk[0] != null) walks++;
+        }
+        assertTrue(walks <= 50, "200 cells asked, cap 10: far fewer walks than cells, was one per cell: " + walks);
+        assertEquals(200, memo.size(), "every log visited has its answer kept");
+        // kept for the memo's time only
+        BuiltLogs.Found[] again = new BuiltLogs.Found[1];
+        BuiltLogs.asked(w, 0, 0, 0, 10, memo, 999, 1000, again);
+        assertNull(again[0], "within the time: the kept answer, nothing walked");
+        BuiltLogs.asked(w, 0, 0, 0, 10, memo, 1000, 1000, again);
+        assertNotNull(again[0], "past it: walked again");
+    }
+
+    @Test
+    void theMemoNeverKeepsNotKnown_andALogTouchingABuiltBlockIsNeverKeptAsANo() {
+        World w = new World().column(0, 0, 199, 0, OAK).put(1, 15, 0, PLANKS);
+        BuiltLogs.Memo memo = new BuiltLogs.Memo();
+        assertEquals(Structure.NO, BuiltLogs.asked(w, 0, 0, 0, 10, memo, 0, 1000, null), "the capped walk from the foot sees no built block");
+        assertEquals(Structure.YES, BuiltLogs.asked(w, 0, 14, 0, 10, memo, 0, 1000, null), "the log that touches the planks is walked itself: a built thing");
+        assertEquals(Structure.YES, BuiltLogs.asked(w, 0, 14, 0, 10, memo, 1, 1000, null), "and kept");
+        World u = tree(0, 0);
+        u.unloaded.add(BuiltLogs.key(1, 65, 1));
+        BuiltLogs.Memo none = new BuiltLogs.Memo();
+        assertEquals(Structure.NOT_LOADED, BuiltLogs.asked(u, 0, 64, 0, 96, none, 0, 1000, null));
+        assertEquals(0, none.size(), "rule 15: not known is never kept");
+    }
 }

@@ -57,7 +57,7 @@ final class NearbyLive {
         long t0 = LAPS.now();
         logSpot = Nearby.log(scan(), me, () -> { fell[0] = true; return fallback == null ? null : fallback.get(); });
         if (t0 != 0) LAPS.nearby("log", LAPS.now() - t0);         // job-tick: the tree log lookup
-        lastFrom = logSpot == null ? "none" : fell[0] ? "sightings" : "baritone";
+        lastFrom = logSpot == null ? "none" : fell[0] ? "sightings" : logSpot.unloaded() ? "baritone (its structure fact not loaded yet)" : "baritone";
         return logSpot;
     }
 

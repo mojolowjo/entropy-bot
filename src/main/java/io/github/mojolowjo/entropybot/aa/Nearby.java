@@ -64,11 +64,12 @@ public final class Nearby {
         default Boolean seeThrough(int x, int y, int z) { return open(x, y, z); }
         /** job-sight: the reason the sightings store marked the cell covered (Baritone's mine saw none there); null: not marked. */
         default String coveredMark(int x, int y, int z) { return null; }
-        /** jbf-1: the cell holds a fluid (water or lava, a waterlogged block too); null: not loaded. Default: by the block's id. */
-        default Boolean fluidAt(int x, int y, int z) {
-            String b = blockAt(x, y, z);
-            return b == null ? null : b.equals("minecraft:water") || b.equals("minecraft:lava");
-        }
+        /**
+         * jbf-1: the cell holds a fluid (the block state's fluid: water, lava, a mod's fluid, a waterlogged block); null: not
+         * loaded or not known. Merge review 2026-11-23 (rule 4): no default by block ids - a scan that has the block states
+         * says it (NearbyLive); one that has none answers not known, which is never "no fluid" said as a fact.
+         */
+        default Boolean fluidAt(int x, int y, int z) { return null; }
         /**
          * Review of w058-2 (rule 23 (2)): why the cut's hand would leave this log block out (the owner's logs kind:
          * ChopSet.leftOut, the hand's own test); null: it may be cut. The live scan (NearbyLive) states the owner's kind;
@@ -774,8 +775,15 @@ public final class Nearby {
     public static int maxChecks() { return Tuning.i("nearby.maxChecks"); }
     public static int leafReach() { return Tuning.i("nearby.leafReach"); }
 
-    /** The nearest tree's log by Baritone's scan, else the fallback (AA's sightings); null: none. */
+    /**
+     * The nearest tree's log by Baritone's scan, else the fallback (AA's sightings); null: none. Review of the village
+     * logs build (rules 15 and 7): a log that would be the tree but whose structure fact is not known yet (the world-gen
+     * read still running) is never passed over without a word - with no tree counted and no sighting, the nearest such
+     * log comes back marked not loaded ({@link Spot#unloaded}), as {@link #source} hands its wait spot: the reader says
+     * "not known yet", never "no tree".
+     */
     public static Spot log(Scan s, int[] me, Supplier<Spot> fallback) {
+        Spot waitFor = null;
         if (s != null) {
             int checked = 0;
             List<int[]> logs = s.logs(scanR());
@@ -793,7 +801,10 @@ public final class Nearby {
                 if (may == REFUSED) continue;
                 if (checked++ >= maxChecks()) break;
                 if (!s.allowed(p[0], p[1], p[2]) || !s.leavesNear(p[0], p[1], p[2], leafReach())) continue;
-                if (may != COUNTS) continue;
+                if (may != COUNTS) {
+                    if (waitFor == null) waitFor = new Spot(p[0], p[1], p[2], dist(p, me), id).notLoaded();
+                    continue;
+                }
                 return new Spot(p[0], p[1], p[2], dist(p, me), id, treeCut(s, logs, null, p));
             }
         }
@@ -801,8 +812,15 @@ public final class Nearby {
         // owner's ruling 2026-11-23: a sighted log the structure rule refuses is no tree either; one whose fact is not known
         // (its chunk not loaded from here) stays the sighting it was (rule 15: not known is never a no)
         if (f != null && s != null && f.block() != null && mayBreak(s, f.block(), f.x(), f.y(), f.z(), new java.util.HashMap<>(), new java.util.HashMap<>()) == REFUSED) f = null;
-        return f;
+        return f != null ? f : waitFor;
     }
+
+    /**
+     * Review of the village logs build (rule 15): the "a tree nearby" fact of {@link #log}'s answer - true: a tree (or a
+     * sighted one); false: none; null: not known yet (the nearest log's structure fact is not loaded), never kept and
+     * never said as "no tree". Pure.
+     */
+    public static Boolean treeFact(Spot sp) { return sp == null ? Boolean.FALSE : sp.unloaded() ? null : Boolean.TRUE; }
 
     /**
      * Review of w058-2 (rule 23: the price and the hand read one block set): the tree a cut for {@code blocks} takes at
