@@ -38,12 +38,24 @@ final class CutFacts {
         return BuiltInRegistries.BLOCK.getOptional(ResourceLocation.tryParse(block)).map(b -> b.defaultBlockState().is(BlockTags.LOGS)).orElse(false);
     }
 
-    /** The owner's logs kind holds the block's own item. */
-    boolean inLogsKind(String block) {
+    /** The item data's version the kind was expanded on (a kind is the item tags: read again when the data changes). */
+    private long kindData = -1;
+
+    /**
+     * The owner's logs kind holds the block's own item. Review round 3 (rule 15): the kind is read from the item data's
+     * tags, and before the first item data of the client start every item answers "not in the tag". Expanded then, the
+     * kind was empty, cached under the unchanged rule, and every log stayed left out for the session. While the item
+     * data is not in, the kind is NOT KNOWN: nothing is left out on it and nothing is cached (the hand's own refusal
+     * waits on the loot data the same way). Synchronized: the planner's worker asks through the lookup's refusal too.
+     */
+    synchronized boolean inLogsKind(String block) {
+        if (!io.github.mojolowjo.entropybot.aa.brain.ItemWorth.hasData()) return true;
         Kinds.Rule r = c.vocab.rule("logs");
-        if (!r.equals(kindRule)) {
+        long data = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.version();
+        if (!r.equals(kindRule) || data != kindData) {
             kind = new HashSet<>(c.vocab.expand("logs"));
             kindRule = r;
+            kindData = data;
             said.clear();
         }
         return BuiltInRegistries.BLOCK.getOptional(ResourceLocation.tryParse(block)).map(b -> kind.contains(BuiltInRegistries.ITEM.getKey(b.asItem()).toString())).orElse(false);
@@ -65,7 +77,7 @@ final class CutFacts {
      * The tree lookups' answer for one log block (Nearby.Scan#cutLeftOut): why the cut leaves it out, null: it may be cut.
      * Said in the log once per block kind while it stays left out (the lookups run every few ticks).
      */
-    String leftOut(String block) {
+    synchronized String leftOut(String block) {
         String why = ChopSet.leftOut(block, CutFacts::isLog, this::inLogsKind);
         if (why != null && said.add(block))
             LOG.info("[entropybot] nearby: {} is left out of the tree lookups ({}): no tree of it is planned or cut", NeedChain.shw(block), why);
