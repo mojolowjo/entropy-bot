@@ -76,7 +76,13 @@ public final class PlannerSnapshot {
         Map<PlanNodes.Fact, Object> a = new HashMap<>();
         for (PlanNodes.Fact f : keys) a.put(f, known != null && known.containsKey(f) ? known.get(f) : PlannerPort.timedAsk(live, f));
         NeedChain.World w = new NeedChain.World(live.bag(), live.tableNear(), live.furnaceNear(),
-                word -> list(a, new PlanNodes.Fact("seen", word)),
+                // second review of w058-2 (rule 23 (2)): the frozen lookup is a Lookup as the live one is, so the "source
+                // refused" fact (Lookup#refused, the owner's logs kind) reaches the worker from its copy - a plain function
+                // answered "none said" off the render thread whatever was copied, so the worker planned an explore the
+                // live check dropped every round. Not copied: none said (not known, a fetch: the next snapshot carries it).
+                // The frozen list is the whole copy: a skip asked of it changes nothing (World#without filters the holds).
+                ((NeedChain.Lookup) (word, skip) -> list(a, new PlanNodes.Fact("seen", word)))
+                        .refusing(word -> (String) get(a, new PlanNodes.Fact("source refused", word), null)),
                 type -> list(a, new PlanNodes.Fact("mobs", type)),
                 live.loot(),
                 word -> (int[]) get(a, new PlanNodes.Fact("band", word), null),

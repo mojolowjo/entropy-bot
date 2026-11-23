@@ -38,7 +38,7 @@ class CutOneFactTest {
     }
 
     /** A scan over a map of cells; {@code excluded}: the log blocks the owner's logs kind leaves out (the hand's test). */
-    record World(Map<String, String> cells, Set<String> excluded) implements Nearby.Scan {
+    record World(Map<String, String> cells, Set<String> excluded, Set<String> bare) implements Nearby.Scan {
         static String k(int x, int y, int z) { return x + " " + y + " " + z; }
 
         World put(int x, int y, int z, String block) { cells.put(k(x, y, z), block); return this; }
@@ -57,14 +57,15 @@ class CutOneFactTest {
         @Override public List<int[]> find(Set<String> blocks, int radius) { return all(blocks::contains); }
         @Override public boolean isLog(String block) { return block.endsWith("_log") || block.endsWith("_wood"); }
         @Override public boolean fairOk(int x, int y, int z) { return true; }
-        @Override public boolean leavesNear(int x, int y, int z, int reach) { return true; }
+        /** {@code bare}: the cells with no leaves near (a placed log, no tree). */
+        @Override public boolean leavesNear(int x, int y, int z, int reach) { return !bare.contains(k(x, y, z)); }
         @Override public boolean allowed(int x, int y, int z) { return true; }
         @Override public String blockAt(int x, int y, int z) { return cells.get(k(x, y, z)); }
         @Override public Boolean open(int x, int y, int z) { return true; }
         @Override public String cutLeftOut(String block) { return ChopSet.leftOut(block, this::isLog, b -> !excluded.contains(b)); }
     }
 
-    static World world(String... excluded) { return new World(new LinkedHashMap<>(), Set.of(excluded)); }
+    static World world(String... excluded) { return new World(new LinkedHashMap<>(), Set.of(excluded), new java.util.HashSet<>()); }
 
     /** The w058-2 tree: one acacia_log at the foot, 51 bark blocks (acacia_wood) joined to it above. */
     static World barkTree() {
@@ -117,6 +118,36 @@ class CutOneFactTest {
         World open = world().put(3, 64, 0, OAK).put(3, 65, 0, OAK).put(20, 64, 0, LOG);
         assertEquals(3, Nearby.source(open, ME, Set.of(LOG, OAK), () -> null).spot().x());
         assertTrue(Nearby.source(open, ME, Set.of(LOG, OAK), () -> null).refused().isEmpty());
+    }
+
+    /**
+     * Second review: the left-out cells used up nearby.maxChecks (24, nearest first), so a kept tree behind an excluded
+     * forest was never reached and the answer was "none" (an explore) with a cuttable tree in the scan.
+     */
+    @Test
+    void leftOutCellsDoNotUseUpTheChecks_theKeptTreeBehindAnExcludedForestIsFound() {
+        int more = Nearby.maxChecks() * 3;                   // structural: well past the checks
+        World w = world(OAK);
+        for (int i = 0; i < more; i++) w.put(2 + i % 6, 64 + i / 6, 0, OAK);   // the oak forest, all nearer than the acacia
+        w.put(40, 64, 0, LOG).put(40, 65, 0, LOG);
+        Nearby.Source s = Nearby.source(w, ME, Set.of(LOG, OAK), () -> null);
+        assertNotNull(s.spot(), "the acacia behind " + more + " excluded oak logs is the source: " + s.line());
+        assertEquals(40, s.spot().x());
+        assertEquals("baritone", s.from());
+        assertEquals(2, s.spot().count());
+        assertEquals(Map.of(OAK + " left out of the cut (" + ChopSet.EXCLUDED + ")", more), s.refused(), "every left-out log counted, with the reason");
+        // the "a tree nearby" fact: the same order
+        Spot tree = Nearby.log(w, ME, () -> null);
+        assertNotNull(tree);
+        assertEquals(40, tree.x());
+        // the checks still bound the candidates that ARE tested: kept logs that fail a test (no leaves) past the budget end the scan
+        World bare = world();
+        for (int i = 0; i < more; i++) {
+            bare.put(2 + i % 6, 64 + i / 6, 0, OAK);
+            bare.bare().add(World.k(2 + i % 6, 64 + i / 6, 0));
+        }
+        bare.put(90, 64, 0, LOG);
+        assertNull(Nearby.source(bare, ME, Set.of(LOG, OAK), () -> null).spot(), "tested candidates still count against nearby.maxChecks");
     }
 
     @Test

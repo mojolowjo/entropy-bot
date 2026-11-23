@@ -545,13 +545,16 @@ public final class Nearby {
         if (s != null && blocks != null && !blocks.isEmpty()) {
             int checked = 0;
             List<int[]> found = s.find(blocks, scanR());
+            java.util.Map<String, java.util.Optional<String>> leftOut = new java.util.HashMap<>();
             for (int[] p : sorted(found, me)) {
-                if (checked++ >= maxChecks()) break;
                 String id = s.blockAt(p[0], p[1], p[2]);
-                if (id == null || !blocks.contains(id) || !s.allowed(p[0], p[1], p[2]) || !s.fairOk(p[0], p[1], p[2])) continue;
                 // review of w058-2: a log the cut's hand leaves out (the owner's logs kind) is no source for the planner
-                // either - passed over and counted with the reason (the source line), so the next tree is the answer
-                if (leftOutOfCut(s, id, refused)) continue;
+                // either - passed over and counted with the reason (the source line), so the next tree is the answer.
+                // Second review: BEFORE the checks are counted - a left-out cell is no candidate, so a forest of an
+                // excluded kind (more than nearby.maxChecks cells nearer) never hides the kept tree behind it
+                if (id != null && blocks.contains(id) && leftOutOfCut(s, id, refused, leftOut)) continue;
+                if (checked++ >= maxChecks()) break;
+                if (id == null || !blocks.contains(id) || !s.allowed(p[0], p[1], p[2]) || !s.fairOk(p[0], p[1], p[2])) continue;
                 if (!counts(s, id, p[0], p[1], p[2], buried, unloaded)) continue;
                 int may = mayBreak(s, id, p[0], p[1], p[2], refused, unloaded);
                 if (may == NOT_KNOWN) {
@@ -580,7 +583,7 @@ public final class Nearby {
         // six closed faces is still a source - withCover below prices the dig to it; a side not loaded stays not known (rule 15)
         if (f != null && s != null && f.block() != null && !sightingCounts(s, f, unloaded)) f = null;
         // review of w058-2: a sighted tree of a kind the cut leaves out is passed over as a scanned one is
-        if (f != null && s != null && f.block() != null && leftOutOfCut(s, f.block(), refused)) f = null;
+        if (f != null && s != null && f.block() != null && leftOutOfCut(s, f.block(), refused, null)) f = null;
         // 0.39.z60 item 2: a sighting goes through the structure rule as a scanned block does
         if (f != null && s != null && f.block() != null) {
             int may = mayBreak(s, f.block(), f.x(), f.y(), f.z(), refused, unloaded);
@@ -598,13 +601,21 @@ public final class Nearby {
         return new Source(f, f == null ? "none" : "fallback", buried, unloaded, refused);
     }
 
-    /** Review of w058-2: a log block the cut leaves out ({@link Scan#cutLeftOut}): counted in {@code refused} with the reason; true: no source. */
-    private static boolean leftOutOfCut(Scan s, String id, java.util.Map<String, Integer> refused) {
-        if (!s.isLog(id)) return false;
-        String why = s.cutLeftOut(id);
-        if (why == null) return false;
-        refused.merge(id + " left out of the cut (" + why + ")", 1, Integer::sum);
+    /**
+     * Review of w058-2: a log block the cut leaves out ({@link Scan#cutLeftOut}): counted in {@code refused} (null: not
+     * counted) with the reason; true: no source. {@code memo}: the answers by block of one lookup (the test runs before the
+     * checks are counted, so once per block kind, not per cell); null: asked now.
+     */
+    private static boolean leftOutOfCut(Scan s, String id, java.util.Map<String, Integer> refused, java.util.Map<String, java.util.Optional<String>> memo) {
+        java.util.Optional<String> why = memo == null ? cutLeftOut(s, id) : memo.computeIfAbsent(id, k -> cutLeftOut(s, k));
+        if (why.isEmpty()) return false;
+        if (refused != null) refused.merge(id + " left out of the cut (" + why.get() + ")", 1, Integer::sum);
         return true;
+    }
+
+    /** Why the cut leaves the block out ({@link Scan#cutLeftOut}, asked of a log only); empty: it may be cut, or it is no log. */
+    private static java.util.Optional<String> cutLeftOut(Scan s, String id) {
+        return s.isLog(id) ? java.util.Optional.ofNullable(s.cutLeftOut(id)) : java.util.Optional.empty();
     }
 
     /** z60 review 1: the unloaded bucket's key suffix for a block whose structure fact is not loaded yet. */
@@ -760,12 +771,14 @@ public final class Nearby {
         if (s != null) {
             int checked = 0;
             List<int[]> logs = s.logs(scanR());
+            java.util.Map<String, java.util.Optional<String>> leftOut = new java.util.HashMap<>();
             for (int[] p : sorted(logs, me)) {
+                String id = s.blockAt(p[0], p[1], p[2]);
+                // review of w058-2: a kind the cut leaves out is no tree to cut (the reason: the live scan says it once per
+                // kind). Second review: passed over before the checks are counted, as in source()
+                if (id != null && leftOutOfCut(s, id, null, leftOut)) continue;
                 if (checked++ >= maxChecks()) break;
                 if (!s.allowed(p[0], p[1], p[2]) || !s.leavesNear(p[0], p[1], p[2], leafReach())) continue;
-                String id = s.blockAt(p[0], p[1], p[2]);
-                // review of w058-2: a kind the cut leaves out is no tree to cut (the reason: the live scan says it once per kind)
-                if (id != null && s.cutLeftOut(id) != null) continue;
                 return new Spot(p[0], p[1], p[2], dist(p, me), id, treeCut(s, logs, null, p));
             }
         }
