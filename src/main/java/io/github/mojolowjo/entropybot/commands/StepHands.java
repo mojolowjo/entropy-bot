@@ -2071,19 +2071,16 @@ public final class StepHands implements Steps.Hands {
      * chop process on 20 block kind(s)", broke acacia_wood only, the next cut read "until 67 in the bag" = 51 bark + 16): the
      * blocks are the ones whose DROP is the word the cut is for, by the collect's own source set ({@link #plainSources} for
      * an item, AaRuntime.sourceBlocksOf for a tag word - the set the planner's tree lookup reads too, rule 23), kept where
-     * the game tags them as logs and the owner's logs kind holds them (ChopSet); the bag count is the word's items only
+     * the game tags them as logs and the owner's logs kind holds them (ChopSet, read through CutFacts: the planner's lookup
+     * passes over the same kinds and sizes the tree by the same set); the bag count is the word's items only
      * ({@link #memberIds} for a tag). The loot book not loaded: the not-known refusal (rule 15), never the whole tag.
      */
     private String chop(LocalPlayer p, Step.ChopTree t) {
         String word = t.word();
         boolean plain = io.github.mojolowjo.entropybot.aa.NeedChain.plain(word);
-        var book = c.aaRuntime == null ? null : c.aaRuntime.currentLootBook();
-        java.util.Set<String> sources = book == null || !book.ready() ? java.util.Set.of() : plain ? plainSources(word, book) : c.aaRuntime.sourceBlocksOf(word);
-        // the owner's logs kind (the game's log tag, less what "kinds logs exclude" left out), by the block's own item
-        java.util.Set<String> kind = new java.util.HashSet<>(c.vocab.expand("logs"));
-        var pick = io.github.mojolowjo.entropybot.aa.moves.ChopSet.of(word, book, sources,
-                bid -> BuiltInRegistries.BLOCK.getOptional(ResourceLocation.tryParse(bid)).map(b -> b.defaultBlockState().is(BlockTags.LOGS)).orElse(false),
-                bid -> BuiltInRegistries.BLOCK.getOptional(ResourceLocation.tryParse(bid)).map(b -> kind.contains(BuiltInRegistries.ITEM.getKey(b.asItem()).toString())).orElse(false));
+        // the sources, the game's logs tag and the owner's logs kind (less what "kinds logs exclude" left out): CutFacts, the
+        // one place the planner's tree lookup and its refusal up front read too (review of w058-2, rule 23 (2))
+        var pick = c.cutFacts.pick(word);
         if (!pick.ok()) return "error: " + t.text() + ": " + pick.refusal();
         List<Block> blocks = new ArrayList<>();
         for (String bid : pick.kept()) BuiltInRegistries.BLOCK.getOptional(ResourceLocation.tryParse(bid)).ifPresent(b -> { if (!blocks.contains(b)) blocks.add(b); });
@@ -2099,7 +2096,7 @@ public final class StepHands implements Steps.Hands {
      * (0.39.z66 item 2: Nearby.sourceBlocks, the chain's own pairing - an iron_ore block drops raw_iron, not iron_ore). The
      * one read of the collect and the cut (w058-2).
      */
-    private static java.util.Set<String> plainSources(String id, io.github.mojolowjo.entropybot.aa.brain.LootBook book) {
+    static java.util.Set<String> plainSources(String id, io.github.mojolowjo.entropybot.aa.brain.LootBook book) {
         return io.github.mojolowjo.entropybot.aa.Nearby.sourceBlocks(id, book, AaRuntime::ownBlock);
     }
 

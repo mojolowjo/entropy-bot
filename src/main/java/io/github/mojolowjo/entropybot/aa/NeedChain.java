@@ -494,6 +494,24 @@ public final class NeedChain {
 
         @Override
         default List<Spot> apply(String word) { return apply(word, null); }
+
+        /**
+         * Review of w058-2 (an order of a log kind the owner's logs kind leaves out was planned and priced on each known
+         * tree, each cut refused, then an explore that could never end on a usable source): why NO block could ever be a
+         * source of {@code word} by the owner's own rules (ChopSet.noSource: every block that gives it is a log his logs
+         * kind leaves out). The explore leaf fails with it before any walk. Null: none said (a lookup that knows no such
+         * rule, or the facts it needs are not loaded: rule 15, not known is never a no).
+         */
+        default String refused(String word) { return null; }
+
+        /** This lookup with {@link #refused} answered by {@code why} (a lambda cannot state it). */
+        default Lookup refusing(Function<String, String> why) {
+            Lookup me = this;
+            return new Lookup() {
+                @Override public List<Spot> apply(String word, java.util.function.BiPredicate<String, Spot> skip) { return me.apply(word, skip); }
+                @Override public String refused(String word) { return why == null ? null : why.apply(word); }
+            };
+        }
     }
 
     /**
@@ -578,11 +596,13 @@ public final class NeedChain {
             Map<String, List<Spot>> memo = new ConcurrentHashMap<>();
             Function<String, List<Spot>> once = w -> memo.computeIfAbsent(word(w), k -> { List<Spot> l = sa.apply(k); return l == null ? List.of() : List.copyOf(l); });
             // 0.39.z77 stone: a lookup that can pass over held spots stays one through the memo (World#without asks it so)
-            seenAll = sa instanceof Lookup lk ? (Lookup) (w, skip) -> {
+            // review of w058-2: the lookup's refusal (Lookup#refused) stays with it through the memo, read once per word
+            Map<String, java.util.Optional<String>> rmemo = new ConcurrentHashMap<>();
+            seenAll = sa instanceof Lookup lk ? ((Lookup) (w, skip) -> {
                 if (skip == null) return once.apply(w);
                 List<Spot> l = lk.apply(word(w), skip);
                 return l == null ? List.of() : List.copyOf(l);
-            } : once;
+            }).refusing(w -> rmemo.computeIfAbsent(word(w), k -> java.util.Optional.ofNullable(lk.refused(k))).orElse(null)) : once;
             Function<String, List<Mob>> mb = mobs == null ? w -> List.of() : mobs;
             Map<String, List<Mob>> mmemo = new ConcurrentHashMap<>();
             mobs = w -> mmemo.computeIfAbsent(id(w), k -> { List<Mob> l = mb.apply(k); return l == null ? List.of() : List.copyOf(l); });
@@ -699,7 +719,7 @@ public final class NeedChain {
         public World without(java.util.function.BiPredicate<String, Spot> held) {
             Function<String, List<Spot>> sa = seenAll;
             Function<String, List<Spot>> less = sa instanceof Lookup lk
-                    ? (Lookup) (w, skip) -> lk.apply(w, skip == null ? held : held.or(skip)).stream().filter(sp -> !held.test(word(w), sp)).toList()
+                    ? ((Lookup) (w, skip) -> lk.apply(w, skip == null ? held : held.or(skip)).stream().filter(sp -> !held.test(word(w), sp)).toList()).refusing(lk::refused)
                     : w -> sa.apply(w).stream().filter(sp -> !held.test(word(w), sp)).toList();
             return new World(bag, tableNear, furnaceNear, less, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, this.held, strip, cave, rooms, where);
         }
@@ -1681,6 +1701,11 @@ public final class NeedChain {
         /** The loot data: read-only data, the cache's epoch (a new or newly read book forgets every node). */
         LootBook loot() { return w.loot(); }
 
+        /** Review of w058-2: why no block could be a source of the word by the owner's rules ({@link Lookup#refused}); null: none said. */
+        String sourceRefused(String word) { return rec("source refused", word, refusedOn(w, word)); }
+
+        private static String refusedOn(World w, String word) { return w.seenAll() instanceof Lookup l ? l.refused(word) : null; }
+
         PathPrice path() { return rec("path provider", null, w.path() != null) ? path : null; }
         double horizonBlocks() { return rec("horizon", null, w.horizonBlocks()); }
         List<String> held() { return rec("held", null, w.held()); }
@@ -1706,6 +1731,7 @@ public final class NeedChain {
             return switch (f.field()) {
                 case "seen" -> w.seenAll().apply((String) k);
                 case "mobs" -> w.mobs().apply((String) k);
+                case "source refused" -> refusedOn(w, (String) k);
                 case "band" -> w.band().apply((String) k);
                 case "station" -> w.stationAt().apply((String) k);
                 case "uses" -> w.usesLeft().apply((String) k);
@@ -6820,6 +6846,14 @@ public final class NeedChain {
         String none = Nearby.noSource(word, c.w.loot());
         if (none != null) {
             c.fail = none;
+            return null;
+        }
+        // review of w058-2 (an order of a log kind the owner's logs kind leaves out: every known tree priced, every cut
+        // refused by the hand, then an explore no tree could end): the cut's own kind fact, read by the planner too (rule 23
+        // (2)) - every block that gives the word is a log the kind leaves out: the way fails with that, no explore
+        String refused = c.w.sourceRefused(word);
+        if (refused != null) {
+            c.fail = refused;
             return null;
         }
         // 0.39.z60 review 1 (rule 15): a known block whose structure fact is not loaded yet may well be a source: no explore on

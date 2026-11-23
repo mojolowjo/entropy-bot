@@ -69,6 +69,59 @@ class ChopSetTest {
         assertEquals("no log block drops oak_log (the game's loot data; left out: oak_log (kinds logs exclude))", none.refusal());
     }
 
+    /** The review of w058-2: the one kind test the hand and the planner's tree lookup read (rule 23 (2)). */
+    @Test
+    void theKindTestIsOneForTheHandAndTheLookup() {
+        Predicate<String> noOak = b -> !b.equals(OAK);
+        assertEquals(ChopSet.EXCLUDED, ChopSet.leftOut(OAK, IS_LOG, noOak));
+        assertNull(ChopSet.leftOut(LOG, IS_LOG, noOak), "in the kind: it may be cut");
+        assertNull(ChopSet.leftOut(LEAVES, IS_LOG, b -> false), "no log by the game's tag: not this rule's block");
+        assertNull(ChopSet.leftOut(null, IS_LOG, noOak));
+        // the hand's pick is that test, block by block
+        LootBook book = book();
+        ChopSet.Pick p = ChopSet.of("#logs", book, List.of(LOG, BARK, OAK, LEAVES), IS_LOG, noOak);
+        for (String b : List.of(LOG, BARK, OAK, LEAVES))
+            assertEquals(ChopSet.leftOut(b, IS_LOG, noOak) != null, p.excluded().contains(b), b);
+    }
+
+    /** The review of w058-2: the planner's refusal up front, and its three states of the loot book (rule 15). */
+    @Test
+    void aWordOnlyExcludedLogsGiveIsRefusedUpFront() {
+        LootBook book = book();
+        Predicate<String> noOak = b -> !b.equals(OAK);
+        assertEquals("no oak_log source: every log block that drops it is left out of the owner's logs kind (oak_log: kinds logs exclude; \"kinds logs include <id>\" lets it be cut)",
+                ChopSet.noSource("oak_log", book, sources(OAK, book), IS_LOG, noOak));
+        assertNull(ChopSet.noSource("oak_log", book, sources(OAK, book), IS_LOG, ANY), "nothing excluded: a source");
+        assertNull(ChopSet.noSource("#logs", book, List.of(LOG, BARK, OAK), IS_LOG, noOak), "another log of the tag is kept");
+        assertNull(ChopSet.noSource("acacia_log", book, sources(LOG, book), IS_LOG, b -> false), "the leaves give it too (another hand's block): not refused here");
+        assertNull(ChopSet.noSource("test:ash_log", book, Set.of(), IS_LOG, noOak), "no block gives it at all: the explore leaf's own fact, not the kind's");
+        // not loaded: not known is never a no
+        assertNull(ChopSet.noSource("oak_log", null, Set.of(OAK), IS_LOG, noOak));
+        assertNull(ChopSet.noSource("oak_log", LootBook.reading(new LootBook.Progress("test")), Set.of(OAK), IS_LOG, noOak));
+        // loaded and empty: the item's own block is its source, and the kind leaves it out
+        LootBook empty = LootBook.empty("test");
+        assertTrue(ChopSet.noSource("oak_log", empty, sources(OAK, empty), IS_LOG, noOak).startsWith("no oak_log source: "));
+    }
+
+    /**
+     * The review of w058-2 (minor): a cut asks no tool of this declaration whatever its word - an item cut is not sent to
+     * the mining-tier data (which answered "no mining data" while not loaded, and took the item word for a block id).
+     */
+    @Test
+    void aCutNeedsNoToolWhateverItsWord() {
+        Step.ChopTree item = new Step.ChopTree(new int[]{1, 64, 1}, 16, "acacia_log"), tag = new Step.ChopTree(new int[]{1, 64, 1}, 1, "#logs"), bare = new Step.ChopTree(null, 4, null);
+        io.github.mojolowjo.entropybot.aa.brain.TestData.clear();              // the mining data not loaded
+        for (Step.ChopTree t : List.of(item, tag, bare)) assertEquals(StepNeeds.NONE, StepNeeds.of(t), t.text() + " with no mining data");
+        try {
+            io.github.mojolowjo.entropybot.aa.brain.TestData d = io.github.mojolowjo.entropybot.aa.brain.TestData.planner();
+            d.tiers.put("minecraft:acacia_log", 2);          // even a tier on the word's id: the word is an item, never asked as a block
+            d.install();
+            for (Step.ChopTree t : List.of(item, tag, bare)) assertEquals(StepNeeds.NONE, StepNeeds.of(t), t.text() + " with the mining data loaded");
+        } finally {
+            io.github.mojolowjo.entropybot.aa.brain.TestData.clear();
+        }
+    }
+
     @Test
     void noSourceIsAnErrorThatNamesTheItem() {
         LootBook book = book();

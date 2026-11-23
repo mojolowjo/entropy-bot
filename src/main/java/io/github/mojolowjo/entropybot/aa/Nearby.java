@@ -69,6 +69,12 @@ public final class Nearby {
             String b = blockAt(x, y, z);
             return b == null ? null : b.equals("minecraft:water") || b.equals("minecraft:lava");
         }
+        /**
+         * Review of w058-2 (rule 23 (2)): why the cut's hand would leave this log block out (the owner's logs kind:
+         * ChopSet.leftOut, the hand's own test); null: it may be cut. The live scan (NearbyLive) states the owner's kind;
+         * a scan that knows no kind leaves nothing out.
+         */
+        default String cutLeftOut(String block) { return null; }
         /** The most logs one chop takes as one tree (Baritone's chopComponentMax); unknown: no cap. */
         default int treeCap() { return Integer.MAX_VALUE; }  // structural: no cap known
         /** station-memory: the stations I placed myself (the ledger), any distance, loaded or not, as {x, y, z} with their block. */
@@ -538,10 +544,14 @@ public final class Nearby {
         Spot waitFor = null;                 // 0.39.z60 review 1: the nearest block whose structure fact is not loaded yet
         if (s != null && blocks != null && !blocks.isEmpty()) {
             int checked = 0;
-            for (int[] p : sorted(s.find(blocks, scanR()), me)) {
+            List<int[]> found = s.find(blocks, scanR());
+            for (int[] p : sorted(found, me)) {
                 if (checked++ >= maxChecks()) break;
                 String id = s.blockAt(p[0], p[1], p[2]);
                 if (id == null || !blocks.contains(id) || !s.allowed(p[0], p[1], p[2]) || !s.fairOk(p[0], p[1], p[2])) continue;
+                // review of w058-2: a log the cut's hand leaves out (the owner's logs kind) is no source for the planner
+                // either - passed over and counted with the reason (the source line), so the next tree is the answer
+                if (leftOutOfCut(s, id, refused)) continue;
                 if (!counts(s, id, p[0], p[1], p[2], buried, unloaded)) continue;
                 int may = mayBreak(s, id, p[0], p[1], p[2], refused, unloaded);
                 if (may == NOT_KNOWN) {
@@ -554,10 +564,13 @@ public final class Nearby {
                     refused.merge(id + HELD, 1, Integer::sum);
                     continue;
                 }
-                Spot found = withCover(s, new Spot(p[0], p[1], p[2], dist(p, me), id, s.isLog(id) ? treeLogs(s.logs(scanR()), p, s.treeCap())
+                // review of w058-2 (the w058-2 world: one acacia_log joined to 51 acacia_wood was a "tree of 52" for an order
+                // of acacia_log, priced as covering it, and the hand cut one block): a tree's size is the connected cells of
+                // the NEED's block set the hand cuts (treeCut), never every log-tagged cell of the scan
+                Spot spot = withCover(s, new Spot(p[0], p[1], p[2], dist(p, me), id, s.isLog(id) ? treeCut(s, found, blocks, p)
                         : s.isOre(id) ? clusterSize(s, blocks, p) : 0), buried);
-                if (found == null) continue;                // job-sight: covered deeper than the cap, or marked with no cover: counted
-                return new Source(found, "baritone", buried, unloaded, refused);
+                if (spot == null) continue;                 // job-sight: covered deeper than the cap, or marked with no cover: counted
+                return new Source(spot, "baritone", buried, unloaded, refused);
             }
         }
         Spot f = fallback == null ? null : fallback.get();
@@ -566,6 +579,8 @@ public final class Nearby {
         // counted" here, so the chain priced no raw_iron way for two minutes): a sighting was SEEN (the rays), so an ore with
         // six closed faces is still a source - withCover below prices the dig to it; a side not loaded stays not known (rule 15)
         if (f != null && s != null && f.block() != null && !sightingCounts(s, f, unloaded)) f = null;
+        // review of w058-2: a sighted tree of a kind the cut leaves out is passed over as a scanned one is
+        if (f != null && s != null && f.block() != null && leftOutOfCut(s, f.block(), refused)) f = null;
         // 0.39.z60 item 2: a sighting goes through the structure rule as a scanned block does
         if (f != null && s != null && f.block() != null) {
             int may = mayBreak(s, f.block(), f.x(), f.y(), f.z(), refused, unloaded);
@@ -581,6 +596,15 @@ public final class Nearby {
         // loaded - the chain waits on it with the reason (NeedChain: "not known yet"), never "no source known"
         if (f == null && waitFor != null) return new Source(waitFor, "not loaded", buried, unloaded, refused);
         return new Source(f, f == null ? "none" : "fallback", buried, unloaded, refused);
+    }
+
+    /** Review of w058-2: a log block the cut leaves out ({@link Scan#cutLeftOut}): counted in {@code refused} with the reason; true: no source. */
+    private static boolean leftOutOfCut(Scan s, String id, java.util.Map<String, Integer> refused) {
+        if (!s.isLog(id)) return false;
+        String why = s.cutLeftOut(id);
+        if (why == null) return false;
+        refused.merge(id + " left out of the cut (" + why + ")", 1, Integer::sum);
+        return true;
     }
 
     /** z60 review 1: the unloaded bucket's key suffix for a block whose structure fact is not loaded yet. */
@@ -739,10 +763,48 @@ public final class Nearby {
             for (int[] p : sorted(logs, me)) {
                 if (checked++ >= maxChecks()) break;
                 if (!s.allowed(p[0], p[1], p[2]) || !s.leavesNear(p[0], p[1], p[2], leafReach())) continue;
-                return new Spot(p[0], p[1], p[2], dist(p, me), s.blockAt(p[0], p[1], p[2]), treeLogs(logs, p, s.treeCap()));
+                String id = s.blockAt(p[0], p[1], p[2]);
+                // review of w058-2: a kind the cut leaves out is no tree to cut (the reason: the live scan says it once per kind)
+                if (id != null && s.cutLeftOut(id) != null) continue;
+                return new Spot(p[0], p[1], p[2], dist(p, me), id, treeCut(s, logs, null, p));
             }
         }
         return fallback == null ? null : fallback.get();
+    }
+
+    /**
+     * Review of w058-2 (rule 23: the price and the hand read one block set): the tree a cut for {@code blocks} takes at
+     * {@code start} - the fork chop's component rule ({@link #treeLogs}: 26 neighbours, at most the scan's tree cap) over
+     * the cells of {@code cells} (the scan's answer for the set) whose block is one of {@code blocks}, a log by the game's
+     * tag, and not left out by the owner's logs kind ({@link Scan#cutLeftOut}). {@code blocks} null: any log of the list
+     * (the "a tree nearby" fact, a cut of the whole logs tag). A cell not loaded now is not counted. At least 1 (the start).
+     */
+    public static int treeCut(Scan s, List<int[]> cells, Set<String> blocks, int[] start) {
+        Set<String> known = new java.util.HashSet<>();
+        if (cells != null) for (int[] p : cells) known.add(key(p[0], p[1], p[2]));
+        Set<String> seen = new java.util.HashSet<>();
+        java.util.ArrayDeque<int[]> queue = new java.util.ArrayDeque<>();
+        seen.add(key(start[0], start[1], start[2]));
+        queue.add(start);
+        int n = 0, cap = s.treeCap();
+        while (!queue.isEmpty() && n < cap) {
+            int[] at = queue.poll();
+            n++;
+            for (int dx = -1; dx <= 1; dx++) for (int dy = -1; dy <= 1; dy++) for (int dz = -1; dz <= 1; dz++) {   // structural: the 26 neighbours
+                int x = at[0] + dx, y = at[1] + dy, z = at[2] + dz;
+                String k = key(x, y, z);
+                // the block is read only for a cell the walk reaches (at most the cap's cells and their neighbours)
+                if (known.contains(k) && seen.add(k) && cuts(s, blocks, s.blockAt(x, y, z))) queue.add(new int[]{x, y, z});
+            }
+        }
+        return n;
+    }
+
+    /** {@link #treeCut}'s cell test: the block is one the cut for {@code blocks} breaks (null set: any log of the scan's list). */
+    private static boolean cuts(Scan s, Set<String> blocks, String block) {
+        if (block == null) return false;                    // not loaded now: not counted
+        if (blocks != null && (!blocks.contains(block) || !s.isLog(block))) return false;
+        return s.cutLeftOut(block) == null;
     }
 
     /**

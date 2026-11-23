@@ -192,7 +192,10 @@ public record StepNeeds(String toolKind, int minTier, Map<String, Integer> consu
             case Step.Mine m -> m.how() == Step.Mine.How.STRIP ? NONE : forFamily(m.family());
             case Step.Cave k -> forFamily(k.family());      // 0.39.z78 J6b: the caving step mines the family's ore
             case Step.Strip st -> forBlocks(st.ores());
-            case Step.ChopTree t -> io.github.mojolowjo.entropybot.aa.NeedChain.plain(t.word()) ? forBlocks(List.of(t.word())) : NONE;
+            // review of w058-2: a cut needs no tool by this declaration, whatever its word (as before the cut carried one:
+            // the old block field was never set). The word is an ITEM or tag word, not a block id, so it is not asked of the
+            // mining-tier data here; the planner's own tier test of the tree's block stands (NeedChain's source way)
+            case Step.ChopTree t -> NONE;
             case Step.TakeStation t -> forBlocks(List.of(full(t.item())));     // 0.39.z48: the station block's own tier
             case Step.TakeNear t -> forBlocks(List.of(full(t.item())));        // owner 2026-10-29: the carried table, the same
             case Step.Craft k -> recipeInputs(k.item(), k.n(), ItemWorth.CRAFT, bag);

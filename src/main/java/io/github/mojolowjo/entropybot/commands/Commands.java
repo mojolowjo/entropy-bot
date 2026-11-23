@@ -156,6 +156,8 @@ public final class Commands implements Chains.Env {
     final GoalPlanning planning = new GoalPlanning(this);
     /** simple-tools: the one "what is nearby" fact (Baritone's scan first, sightings as the fallback). */
     final NearbyLive nearby = new NearbyLive(this);
+    /** A cut's block set, the game's side: one place for the hand, the tree lookup and the planner's refusal (rule 23 (2)). */
+    final CutFacts cutFacts = new CutFacts(this);
 
     /** The owner's typed places (camp, base, chest and other labelled areas; an empty array without a policy). */
     com.google.gson.JsonArray places() { return policy == null ? new com.google.gson.JsonArray() : policy.places(); }

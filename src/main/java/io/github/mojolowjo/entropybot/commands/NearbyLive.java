@@ -403,9 +403,10 @@ final class NearbyLive {
         return new Nearby.Scan() {
             @Override public List<int[]> logs(int radius) { return scanFor(logBlocks(), radius); }
             @Override public List<int[]> find(java.util.Set<String> blocks, int radius) { return scanFor(blocksOf(blocks), radius); }
-            @Override public boolean isLog(String block) {
-                return BuiltInRegistries.BLOCK.getOptional(net.minecraft.resources.ResourceLocation.tryParse(block)).map(b -> b.defaultBlockState().is(BlockTags.LOGS)).orElse(false);
-            }
+            @Override public boolean isLog(String block) { return CutFacts.isLog(block); }
+            // review of w058-2 (rule 23 (2)): the hand's own kind test (ChopSet.leftOut over the owner's logs kind), so a tree
+            // the cut would refuse is never the lookup's answer and never counted into a tree's size
+            @Override public String cutLeftOut(String block) { return c.cutFacts.leftOut(block); }
             @Override public boolean fairOk(int x, int y, int z) {
                 BlockPos q = new BlockPos(x, y, z);
                 if (!mc.level.isLoaded(q)) return false;

@@ -782,7 +782,9 @@ public final class AaRuntime implements JobPort {
         var in = bb.in;
         return new io.github.mojolowjo.entropybot.aa.NeedChain.World(in.bag, in.tableKnown, in.furnaceKnown,
                 // 0.39.z77 stone (run CF 16:55:38): the lookup passes over the order's held spots (NeedChain.Lookup), the next nearest counts
-                (io.github.mojolowjo.entropybot.aa.NeedChain.Lookup) (item, skip) -> { var s = nearestSource(item, skip); return s == null ? List.of() : List.of(s); },
+                // review of w058-2: the lookup also says when no block could be a source by the owner's logs kind (Lookup#refused)
+                ((io.github.mojolowjo.entropybot.aa.NeedChain.Lookup) (item, skip) -> { var s = nearestSource(item, skip); return s == null ? List.of() : List.of(s); })
+                        .refusing(item -> c.cutFacts.noSource(io.github.mojolowjo.entropybot.aa.NeedChain.word(item))),
                 this::animalsKnown, currentLootBook(), this::band, 0, LivePathPrice.INSTANCE, this::stationAt).withUses(AaRuntime::usesLeft).withStrip(io.github.mojolowjo.entropybot.aa.brain.StripWays.gate(this::strip)).withCave(this::caveWay)
                 .withRooms(rooms(in.pos))
                 // forecast (owner 2026-11-08): the reserve table the fork's lease holds (the chain's claims and the orders' targets, D1):
@@ -1425,7 +1427,13 @@ public final class AaRuntime implements JobPort {
                     .map(x -> x.defaultBlockState().is(net.minecraft.tags.BlockTags.LOGS)).orElse(false);
         final boolean tree = logs;
         java.util.function.Predicate<io.github.mojolowjo.entropybot.aa.NeedChain.Spot> pass = skip == null ? null : sp -> skip.test(word, givingOf(sp, word));
-        var s = c.nearby.nearest(blocks, () -> tree ? treeSighting(blocks) : indexedSighting(blocks), pass);
+        // review of w058-2 (rule 23 (2): "kinds logs exclude" was the hand's fact only, so an excluded tree was planned and
+        // priced and its cut refused): the scan passes over a log the cut leaves out (Nearby.Scan#cutLeftOut, CutFacts, said
+        // in the source line and once in the log) and the sighted trees serve only the logs the cut keeps
+        java.util.Set<String> cut = new java.util.LinkedHashSet<>();
+        if (tree) for (String b : blocks) if (!CutFacts.isLog(b) || c.cutFacts.leftOut(b) == null) cut.add(b);
+        // no block of the need left to cut: no sighted tree serves it (the explore leaf then refuses with the kind's reason)
+        var s = c.nearby.nearest(blocks, () -> !tree ? indexedSighting(blocks) : cut.isEmpty() ? null : treeSighting(cut), pass);
         return s == null ? null : givingOf(s, word);
     }
 
