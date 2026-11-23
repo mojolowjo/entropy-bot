@@ -113,7 +113,79 @@ public final class PolicyRuntime {
      */
     public static BreakPolicy.StructureFacts structureFacts(StateAt at, String dim, int x, int y, int z) {
         BlockState st = at == null || !at.loaded(x, z) ? null : at.at(x, y, z);
-        return BreakPolicy.cellStructure(st != null, st == null ? null : StructureTable.of(st.getBlock()), dim, x, y, z);
+        BreakPolicy.Structure s = st == null ? null : StructureTable.of(st.getBlock());
+        // owner's ruling 2026-11-23 (village logs are protected): a tree's log by its block is a structure block where its
+        // joined logs touch a block only a build has (BuiltLogs); this reader is the one place, so the click, the path
+        // cost, the fork's chop targets and the planner's tree lookups get the same answer
+        if (s == BreakPolicy.Structure.NO && StructureTable.mark(st.getBlock()) == BuiltLogs.Mark.TREE_LOG) s = builtLog(at, dim, x, y, z, st);
+        return BreakPolicy.cellStructure(st != null, s, dim, x, y, z);
+    }
+
+    // ---- owner's ruling 2026-11-23: a log of a built thing (BuiltLogs) ----
+
+    /** The memo of one table version and dimension: cell -> {the answer, its nanoTime}. Any thread. */
+    private record LogMemo(int version, String dim, java.util.concurrent.ConcurrentHashMap<Long, long[]> cells) {}
+
+    private static volatile LogMemo logMemo = new LogMemo(-1, "", new java.util.concurrent.ConcurrentHashMap<>());
+    /** The built things already said (the log's kind, the built block's kind, the chunk): once each per world (rule 7). */
+    private static final java.util.Set<String> builtSaid = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static final int MEMO_MAX = 16384, SAID_MAX = 4096;   // structural: the memo's and the said set's size bounds, dropped whole past them
+
+    /**
+     * The structure fact of the tree log at x y z: {@link BuiltLogs#of} over the caller's cells, the ledger for "placed by
+     * me". The answers YES and NO are kept {@code guard.builtLogMemoS} seconds (a lookup asks every cell of a tree, the
+     * path search every log it meets); NOT_LOADED is never kept (rule 15). A YES is said once per kind pair and chunk.
+     */
+    private static BreakPolicy.Structure builtLog(StateAt at, String dim, int x, int y, int z, BlockState log) {
+        int ver = StructureTable.version();
+        LogMemo memo = logMemo;
+        if (memo.version() != ver || !memo.dim().equals(dim) || memo.cells().size() > MEMO_MAX) {
+            if (memo.version() != ver) builtSaid.clear();          // a new world or table: said again
+            logMemo = memo = new LogMemo(ver, dim == null ? "" : dim, new java.util.concurrent.ConcurrentHashMap<>());
+        }
+        long key = BuiltLogs.key(x, y, z), now = System.nanoTime();
+        long keepNs = Math.round(Tuning.get("guard.builtLogMemoS") * 1e9);   // structural: s to ns
+        long[] kept = memo.cells().get(key);
+        if (kept != null && now - kept[1] < keepNs) return kept[0] == 1 ? BreakPolicy.Structure.YES : BreakPolicy.Structure.NO;
+        BuiltLogs.Cells cells = new BuiltLogs.Cells() {
+            @Override public BuiltLogs.Mark at(int cx, int cy, int cz) {
+                BlockState n = at.loaded(cx, cz) ? at.at(cx, cy, cz) : null;
+                return n == null ? null : StructureTable.mark(n.getBlock());
+            }
+            @Override public boolean mine(int cx, int cy, int cz) { return OwnPlaced.at(dim, cx, cy, cz); }
+        };
+        java.util.Set<Long> walked = new java.util.HashSet<>();
+        BuiltLogs.Found f = BuiltLogs.of(cells, x, y, z, BuiltLogs.walkCap(), walked);
+        if (f.fact() == BreakPolicy.Structure.NOT_LOADED) return f.fact();
+        if (f.fact() == BreakPolicy.Structure.NO && f.whole()) {
+            long[] v = {0, now};                                    // the whole group was walked: its answer is every cell's
+            for (Long k : walked) memo.cells().put(k, v);
+        } else memo.cells().put(key, new long[]{f.fact() == BreakPolicy.Structure.YES ? 1 : 0, now});
+        if (f.fact() == BreakPolicy.Structure.YES) {
+            BlockState built = at.at(f.bx(), f.by(), f.bz());
+            String lk = BuiltInRegistries.BLOCK.getKey(log.getBlock()).toString(), bk = built == null ? "?" : BuiltInRegistries.BLOCK.getKey(built.getBlock()).toString();
+            if (builtSaid.size() > SAID_MAX) builtSaid.clear();
+            if (builtSaid.add(lk + " " + bk + " " + (x >> 4) + " " + (z >> 4)))   // structural: block to chunk
+                LOG.info("[entropybot] structure facts: {} at {} {} {} is a log of a built thing: its joined logs touch {} at {} {} {} (a block only a build has, not placed by me) - "
+                                + "a structure block: its break is refused where structure blocks are, and no tree is planned on it (said once per kind pair and chunk)",
+                        lk, x, y, z, bk, f.bx(), f.by(), f.bz());
+        }
+        return f.fact();
+    }
+
+    /** Why the log cell is a structure block, for "rules why"; null: it is none by its cells (or not a tree's log). Client thread. */
+    private static String builtLogWhy(Level level, BlockPos pos) {
+        BlockState st = level.getBlockState(pos);
+        if (StructureTable.mark(st.getBlock()) != BuiltLogs.Mark.TREE_LOG) return null;
+        StateAt at = levelAt(level);
+        String dim = Guard.dimOf(level);
+        BuiltLogs.Found f = BuiltLogs.of(new BuiltLogs.Cells() {
+            @Override public BuiltLogs.Mark at(int cx, int cy, int cz) { BlockState n = at.at(cx, cy, cz); return n == null ? null : StructureTable.mark(n.getBlock()); }
+            @Override public boolean mine(int cx, int cy, int cz) { return OwnPlaced.at(dim, cx, cy, cz); }
+        }, pos.getX(), pos.getY(), pos.getZ(), BuiltLogs.walkCap());
+        if (f.fact() != BreakPolicy.Structure.YES) return null;
+        BlockState built = level.getBlockState(new BlockPos(f.bx(), f.by(), f.bz()));
+        return "a log of a built thing (its joined logs touch " + BuiltInRegistries.BLOCK.getKey(built.getBlock()) + " at " + f.bx() + " " + f.by() + " " + f.bz() + ")";
     }
 
     /** The same over a client level (client thread). */
@@ -490,6 +562,7 @@ public final class PolicyRuntime {
     /** 0.39.z77 natural 2: a structure block says why it is one ("structure: not placed by any feature the jars name"). */
     private static String structureText(BlockFacts f, Level level, BlockPos pos) {
         String why = f.structure() == BreakPolicy.Structure.YES && level != null ? StructureTable.why(level.getBlockState(pos).getBlock()) : null;
+        if (why == null && f.structure() == BreakPolicy.Structure.YES && level != null) why = builtLogWhy(level, pos);   // owner 2026-11-23
         return (why != null ? ", structure: " + why : ", structure " + f.structure().name().toLowerCase().replace('_', ' ')) + (f.placedByMe() ? " (placed by me)" : "");
     }
 }

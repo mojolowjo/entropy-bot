@@ -446,6 +446,55 @@ public final class WorldGenFiles {
         return BreakPolicy.structureOf(true, tagged, never, entity, station, crafted, natural(gen, carver, id));
     }
 
+    /** Owner's ruling 2026-11-23: the structure fact's reason for a log no world-gen source names (a stripped log, a wood block). */
+    public static final String LOG_NOT_PLACED = "a log no tree feature the jars name places";
+
+    /**
+     * Owner's ruling 2026-11-23 (village logs are protected; w058: 51 acacia_wood cells of a savanna village building cut
+     * at): the per-block rule with the tree tags ({@code treeTags}: StructureTable's logs tag). A block of a tree tag is
+     * no longer "never a structure": world gen places a tree's logs through its tree features, whose configs name them
+     * (vanilla: the eight logs and the two stems), and names no stripped log and no wood block, so a log block no
+     * world-gen source names stands only in a built thing: a structure block ({@link #LOG_NOT_PLACED}). One the jars'
+     * world gen names stays a tree's log here (its cells decide the rest: {@link BuiltLogs}); the read not done: NOT_LOADED
+     * (rule 15). Every other block: the rule as before.
+     */
+    public static <T> BreakPolicy.Structure classify(java.util.List<T> structureTags, java.util.List<T> neverTags, java.util.function.Predicate<T> inTag,
+                                                     java.util.List<T> carverTags, boolean entity, boolean station, boolean crafted, boolean unread,
+                                                     Set<String> gen, String id, java.util.List<T> treeTags) {
+        if (inAny(treeTags, inTag)) {
+            Boolean nat = natural(gen, inCarver(carverTags, inTag), id);
+            return nat == null ? BreakPolicy.Structure.NOT_LOADED : nat ? BreakPolicy.Structure.NO : BreakPolicy.Structure.YES;
+        }
+        return classify(structureTags, neverTags, inTag, carverTags, entity, station, crafted, unread, gen, id);
+    }
+
+    /**
+     * Owner's ruling 2026-11-23: a block's mark for the built-log fact ({@link BuiltLogs.Mark}). TREE_LOG: a tree tag's
+     * block world gen names. BUILT: a made block (a structure tag, a station, a crafting recipe's result or a tree tag's
+     * block) that no world-gen source names; the never tags do not count here (planks stay breakable, and are still a
+     * block only a build has), and a block entity alone does not either (a bee nest hangs on a tree and no recipe makes
+     * it). NOT_KNOWN: a made block while the world-gen read is not done, or a block whose recipe could not be read.
+     */
+    public static <T> BuiltLogs.Mark mark(java.util.List<T> structureTags, java.util.List<T> treeTags, java.util.function.Predicate<T> inTag,
+                                          java.util.List<T> carverTags, boolean station, boolean crafted, boolean unread, Set<String> gen, String id) {
+        Boolean nat = natural(gen, inCarver(carverTags, inTag), id);
+        boolean tree = inAny(treeTags, inTag);
+        if (Boolean.TRUE.equals(nat)) return tree ? BuiltLogs.Mark.TREE_LOG : BuiltLogs.Mark.PLAIN;
+        boolean made = tree || station || crafted || inAny(structureTags, inTag);
+        if (!made) return unread ? BuiltLogs.Mark.NOT_KNOWN : BuiltLogs.Mark.PLAIN;
+        return nat == null ? BuiltLogs.Mark.NOT_KNOWN : BuiltLogs.Mark.BUILT;
+    }
+
+    private static <T> boolean inAny(java.util.List<T> tags, java.util.function.Predicate<T> inTag) {
+        if (tags != null) for (T t : tags) if (inTag.test(t)) return true;
+        return false;
+    }
+
+    /** In a carver's tag; null: the carver tags are not loaded. */
+    private static <T> Boolean inCarver(java.util.List<T> carverTags, java.util.function.Predicate<T> inTag) {
+        return carverTags == null ? null : inAny(carverTags, inTag);
+    }
+
     /** The two sources' answer (rule 15): one says yes = natural; else one not loaded = not loaded (null); else no. */
     public static Boolean natural(Set<String> gen, Boolean inCarverTag, String id) {
         Boolean named = gen == null ? null : gen.contains(id);
@@ -455,7 +504,11 @@ public final class WorldGenFiles {
     }
 
     /** Why a block is a structure block (the rule line, the dropped list): its tag, a block entity, a station, or {@link #NOT_PLACED}. */
-    public static String structureWhy(String tag, boolean entity, boolean station) {
+    public static String structureWhy(String tag, boolean entity, boolean station) { return structureWhy(tag, entity, station, false); }
+
+    /** {@link #structureWhy} with the tree-tag leg (owner's ruling 2026-11-23): a log no world-gen source names says so first. */
+    public static String structureWhy(String tag, boolean entity, boolean station, boolean treeLog) {
+        if (treeLog) return LOG_NOT_PLACED;
         if (tag != null) return "tag #" + tag;
         if (entity) return "a block entity";
         if (station) return "a recipe type's station";

@@ -553,10 +553,18 @@ public final class Nearby {
                 // Second review: BEFORE the checks are counted - a left-out cell is no candidate, so a forest of an
                 // excluded kind (more than nearby.maxChecks cells nearer) never hides the kept tree behind it
                 if (id != null && blocks.contains(id) && leftOutOfCut(s, id, refused, leftOut)) continue;
+                // owner's ruling 2026-11-23 (village logs are protected): a log the structure rule refuses (a log of a built
+                // thing, a log kind no tree feature places) is no candidate either, and like a left-out kind it is passed over
+                // BEFORE the checks are counted, so a village's logs nearer than the next tree never hide that tree
+                Integer logMay = null;
+                if (id != null && blocks.contains(id) && s.isLog(id) && s.allowed(p[0], p[1], p[2])) {
+                    logMay = mayBreak(s, id, p[0], p[1], p[2], refused, unloaded);
+                    if (logMay == REFUSED) continue;
+                }
                 if (checked++ >= maxChecks()) break;
                 if (id == null || !blocks.contains(id) || !s.allowed(p[0], p[1], p[2]) || !s.fairOk(p[0], p[1], p[2])) continue;
                 if (!counts(s, id, p[0], p[1], p[2], buried, unloaded)) continue;
-                int may = mayBreak(s, id, p[0], p[1], p[2], refused, unloaded);
+                int may = logMay != null ? logMay : mayBreak(s, id, p[0], p[1], p[2], refused, unloaded);
                 if (may == NOT_KNOWN) {
                     if (waitFor == null) waitFor = new Spot(p[0], p[1], p[2], dist(p, me), id).notLoaded();
                     continue;
@@ -777,12 +785,23 @@ public final class Nearby {
                 // review of w058-2: a kind the cut leaves out is no tree to cut (the reason: the live scan says it once per
                 // kind). Second review: passed over before the checks are counted, as in source()
                 if (id != null && leftOutOfCut(s, id, null, leftOut)) continue;
+                // owner's ruling 2026-11-23 (village logs are protected): a log the break policy's structure rule refuses (a
+                // log of a built thing, a log kind no tree feature places: Scan#sourceBreak, the click's own answer) is no
+                // tree nearby (the reason: the live scan says it once per kind), passed over before the checks are counted as
+                // in source(); one whose structure fact is not known yet is no tree to claim either (rule 15)
+                int may = id == null || !s.allowed(p[0], p[1], p[2]) ? COUNTS : mayBreak(s, id, p[0], p[1], p[2], new java.util.HashMap<>(), new java.util.HashMap<>());
+                if (may == REFUSED) continue;
                 if (checked++ >= maxChecks()) break;
                 if (!s.allowed(p[0], p[1], p[2]) || !s.leavesNear(p[0], p[1], p[2], leafReach())) continue;
+                if (may != COUNTS) continue;
                 return new Spot(p[0], p[1], p[2], dist(p, me), id, treeCut(s, logs, null, p));
             }
         }
-        return fallback == null ? null : fallback.get();
+        Spot f = fallback == null ? null : fallback.get();
+        // owner's ruling 2026-11-23: a sighted log the structure rule refuses is no tree either; one whose fact is not known
+        // (its chunk not loaded from here) stays the sighting it was (rule 15: not known is never a no)
+        if (f != null && s != null && f.block() != null && mayBreak(s, f.block(), f.x(), f.y(), f.z(), new java.util.HashMap<>(), new java.util.HashMap<>()) == REFUSED) f = null;
+        return f;
     }
 
     /**
@@ -807,17 +826,23 @@ public final class Nearby {
                 int x = at[0] + dx, y = at[1] + dy, z = at[2] + dz;
                 String k = key(x, y, z);
                 // the block is read only for a cell the walk reaches (at most the cap's cells and their neighbours)
-                if (known.contains(k) && seen.add(k) && cuts(s, blocks, s.blockAt(x, y, z))) queue.add(new int[]{x, y, z});
+                if (known.contains(k) && seen.add(k) && cuts(s, blocks, s.blockAt(x, y, z), x, y, z)) queue.add(new int[]{x, y, z});
             }
         }
         return n;
     }
 
-    /** {@link #treeCut}'s cell test: the block is one the cut for {@code blocks} breaks (null set: any log of the scan's list). */
-    private static boolean cuts(Scan s, Set<String> blocks, String block) {
+    /**
+     * {@link #treeCut}'s cell test: the block is one the cut for {@code blocks} breaks (null set: any log of the scan's list).
+     * Owner's ruling 2026-11-23: and the break policy's structure rule lets the hand break the cell ({@link Scan#sourceBreak},
+     * the click's and the fork chop's own answer): a log of a built thing joined to the tree is not counted into its size.
+     */
+    private static boolean cuts(Scan s, Set<String> blocks, String block, int x, int y, int z) {
         if (block == null) return false;                    // not loaded now: not counted
         if (blocks != null && (!blocks.contains(block) || !s.isLog(block))) return false;
-        return s.cutLeftOut(block) == null;
+        if (s.cutLeftOut(block) != null) return false;
+        io.github.mojolowjo.entropybot.guard.BreakPolicy.Verdict v = s.sourceBreak(x, y, z);
+        return v == null || v.allowed();                    // refused, or its structure fact not loaded yet: not counted
     }
 
     /**

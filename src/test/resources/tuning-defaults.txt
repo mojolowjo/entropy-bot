@@ -445,6 +445,8 @@ gridLoop.maxPerCell	64.0
 gridLoop.settleMax	40.0
 gridLoop.settleMin	2.0
 guard.astarLogTicks	100.0
+guard.builtLogMemoS	2.0
+guard.builtLogWalk	96.0
 guardCore.leaseTimeoutTicks	100.0
 guardCore.maxForceVolume	64.0
 guardCore.maxLeaseVolume	4096.0

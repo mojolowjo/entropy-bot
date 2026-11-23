@@ -84,6 +84,18 @@ final class CutFacts {
         return why;
     }
 
+    /**
+     * Owner's ruling 2026-11-23 (village logs are protected): a log cell the break policy's structure rule refuses (a log of
+     * a built thing or a log kind no tree feature places: guard/BuiltLogs, StructureTable, read through the one reader
+     * PolicyRuntime.structureFacts) is passed over by the tree lookups (Nearby.source, Nearby.log, a tree's size). Said
+     * once per log kind and reason while the logs kind stays as it is, with the first such cell (rule 7).
+     */
+    synchronized void structureRefused(String block, int x, int y, int z, String reason) {
+        if (said.add(block + " refused: " + reason))
+            LOG.info("[entropybot] nearby: {} at {} {} {} is left out of the tree lookups ({}): no tree is planned on such a log and the guard refuses its break (said once per log kind and reason)",
+                    NeedChain.shw(block), x, y, z, reason);
+    }
+
     /** The blocks that give the word: the collect's own source set (StepHands.plainSources for an item, the lookup's for a tag word). */
     private Set<String> sources(String word, io.github.mojolowjo.entropybot.aa.brain.LootBook book) {
         if (book == null || !book.ready() || c.aaRuntime == null) return Set.of();

@@ -930,6 +930,8 @@ final class TuningDefs {
         Tuning.def("freeSpots.maxRing", 3, "rm-constants 0.39.u2 (inline literal in FreeSpots)", "rings of cells round a spot the free-spot search looks through");
         Tuning.def("goals.maxN", 4096, "rm-constants 0.39.u2 (inline literal in Goals)", "the most items one goal may ask for");
         Tuning.def("guard.astarLogTicks", 100, "rm-constants 0.39.u2 (inline literal in Guard)", "ticks between two logs of the A* search");
+        Tuning.def("guard.builtLogWalk", 96, "owner's ruling 2026-11-23 (village logs are protected; BuiltLogs)", "the most joined logs one walk visits to find a block only a build has; a bigger group with none among them is a tree");
+        Tuning.def("guard.builtLogMemoS", 2, "owner's ruling 2026-11-23 (village logs are protected; PolicyRuntime)", "seconds a log cell's built-thing answer is kept (a lookup asks every cell of a tree)");
         Tuning.def("help.giveWeight", 1.5, "rm-constants 0.39.u2 (inline literal in Help)", "weight of the give pick");
         Tuning.def("help.lightWeight", 1.25, "rm-constants 0.39.u2 (inline literal in Help)", "weight of the light pick");
         Tuning.def("help.perMob", 10, "rm-constants 0.39.u2 (inline literal in Help)", "score added per hostile near the owner");
