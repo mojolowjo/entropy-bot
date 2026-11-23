@@ -162,6 +162,103 @@ class LineDepositsTest {
         assertEquals(Map.of("stick", 4), s.deposits.kept(s.bag, List.of(), null, null));
     }
 
+    /**
+     * Review 1: a line of three -d orders. The first deposit went with {@code logs} of oak_log (parked) and nothing of stick
+     * (parked); stick woke, was met and the line is DUE again on stick alone. Answers the oak_log order, still parked.
+     */
+    private static Goals.Goal secondDepositDue(OrderLineSim s, int logs) {
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true), stick = s.order("stick", 4, "b1", true);
+        s.bag.put("cobblestone", 32);
+        s.bag.put("oak_log", logs);
+        assertEquals(Kind.NOTED, s.deposits.weigh(cob, "done", s.bag, AT).kind());
+        log.parked = "the explore from here froze";
+        assertEquals(Kind.NOTED, s.deposits.sweep(log, s.bag, AT).kind());
+        stick.parked = "no source known";
+        LineDeposits.Out first = s.deposits.sweep(stick, s.bag, AT);
+        assertEquals(Kind.DUE, first.kind(), first.text());
+        assertEquals(Map.of("cobblestone", 32, "oak_log", logs), first.items());
+        s.depositRuns();                                     // the first deposit went: the chest holds them
+        s.bag.remove("cobblestone");
+        s.bag.remove("oak_log");
+        stick.parked = null;
+        assertEquals(Kind.WOKE_OPEN, s.deposits.sweep(stick, s.bag, AT).kind());
+        s.bag.put("stick", 4);
+        LineDeposits.Out second = s.deposits.weigh(stick, "done", s.bag, AT);
+        assertEquals(Kind.DUE, second.kind(), second.text());
+        assertEquals(Map.of("stick", 4), second.items());
+        return log;
+    }
+
+    /**
+     * Review 1: the woken order is of the due line but not one of the due deposit's orders (its 11 went with the line's
+     * first deposit). The due deposit is taken back, and the 11 are taken off its amount: 5 more go, never 16 again.
+     */
+    @Test
+    void aWakeOfAnOrderOutsideTheDueSetKeepsWhatWentAlready() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal log = secondDepositDue(s, 11);
+        log.parked = null;
+        LineDeposits.Out woke = s.deposits.sweep(log, s.bag, AT);
+        assertEquals(Kind.WOKE_TAKEN_BACK, woke.kind(), woke.text());
+        assertTrue(woke.text().contains("stick 4") && woke.text().contains("oak_log 11") && woke.text().contains("the rest of its amount, 5"), woke.text());
+        assertEquals(5, log.deposit, "the 11 in the chest are not deposited again");
+        assertFalse(log.depositWeighed);
+        assertTrue(s.deposits.dueNow().isEmpty(), "the due deposit waits for the woken order");
+        s.bag.put("oak_log", 16);
+        assertEquals(Map.of("oak_log", 5, "stick", 4), s.deposits.kept(s.bag, List.of(log), null, null), "5 kept from the planner's bag, not 16");
+        LineDeposits.Out end = s.deposits.weigh(log, "done", s.bag, AT);
+        assertEquals(Kind.DUE, end.kind(), end.text());
+        assertEquals(Map.of("oak_log", 5, "stick", 4), end.items(), "16 for an order of 16: 11 before, 5 now");
+    }
+
+    /** Review 1: the whole amount of the woken order went with the first deposit: nothing more of it, the due deposit stays due. */
+    @Test
+    void aWakeOfAnOrderOutsideTheDueSetWithNothingLeftLeavesTheDueDeposit() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal log = secondDepositDue(s, 16);
+        log.parked = null;
+        LineDeposits.Out woke = s.deposits.sweep(log, s.bag, AT);
+        assertEquals(Kind.WOKE_GONE, woke.kind(), woke.text());
+        assertTrue(woke.text().contains("oak_log 16") && woke.text().contains("stick 4 stays due"), woke.text());
+        assertEquals(0, log.deposit);
+        assertEquals(Map.of("stick", 4), s.deposits.dueNow(), "the due deposit is not this order's: it still starts");
+        assertNull(s.deposits.sweep(log, s.bag, AT), "said once");
+    }
+
+    /**
+     * Review 3: an order stopped earlier and met since is weighed again by its "done"; a due deposit of its line that had
+     * not started is taken back by that weighing. Whatever the weighing answers, the line says so and nothing is due in
+     * the store any more (the runtime starts a queued deposit only from dueNow()).
+     */
+    @Test
+    void aTakeBackThroughAWeighingIsSaidAndNothingStaysDue() {
+        for (String mainAt : new String[] {AT, null}) {
+            OrderLineSim s = new OrderLineSim();
+            Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+            due(s, cob, log, 0);
+            if (mainAt != null) s.bag.clear();               // the bag holds nothing of the line now: NOTHING
+            else s.bag.put("oak_log", 16);                   // no main chest set any more: NO_CHEST
+            LineDeposits.Out out = s.deposits.weigh(log, "done", s.bag, mainAt);
+            assertEquals(mainAt != null ? Kind.NOTHING : Kind.NO_CHEST, out.kind(), out.text());
+            assertTrue(out.text().contains("the line's deposit that had not started is taken back"), out.text());
+            assertTrue(s.deposits.dueNow().isEmpty(), "the taken-back deposit is not due: " + s.deposits.dueNow());
+        }
+    }
+
+    /** Review 3: the same weighing with the line's items in the bag answers DUE, the take-back said in it, the store as the answer. */
+    @Test
+    void aTakeBackThroughAWeighingThatEndsTheLineIsDueAgain() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        due(s, cob, log, 0);
+        s.bag.put("oak_log", 16);
+        LineDeposits.Out out = s.deposits.weigh(log, "done", s.bag, AT);
+        assertEquals(Kind.DUE, out.kind(), out.text());
+        assertTrue(out.text().contains("taken back"), out.text());
+        assertEquals(Map.of("cobblestone", 32, "oak_log", 16), out.items());
+        assertEquals(out.items(), s.deposits.dueNow());
+    }
+
     private static List<LineDeposits.Out> pass(OrderLineSim s, boolean underGround) {
         List<LineDeposits.Out> outs = new ArrayList<>();
         s.bb.in.bag = Map.copyOf(s.bag);

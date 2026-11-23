@@ -39,6 +39,45 @@ class RunnerOwnerTest {
         assertTrue(r.taskHolds(), "the task's next run is its own again");
     }
 
+    /**
+     * Review 2 (rule 23 (2)): "AA's own task runs" has one answer. The task's typed flag stays set after its run ended, so
+     * with the line's deposit in the runner the old answer (the runner runs) took the deposit for the task's run - the swim
+     * watch could cancel it.
+     */
+    @Test
+    void aDepositRunningIsNotTheTasksOwnRun() {
+        RunnerOwner r = new RunnerOwner();
+        r.taskStarts("EXPLORE owner goal");
+        assertTrue(r.ownRunning(true, true, false), "the task's typed steps run");
+        assertFalse(r.ownRunning(true, false, false), "its run ended");
+        r.otherStarts("aa deposit");
+        assertFalse(r.ownRunning(true, true, false), "the runner runs the deposit: not AA's own run");
+        assertTrue(r.ownRunning(false, true, true), "not on typed steps: AA's own chain");
+        assertFalse(r.ownRunning(false, true, false));
+    }
+
+    /**
+     * Review 4: the mark follows what the runner holds. StepRun.start answers null (runs), "busy: ..." (took nothing) or
+     * "error: ..." (the new steps replaced the run and failed at their first step).
+     */
+    @Test
+    void theMarkFollowsWhatTheRunnerHolds() {
+        assertTrue(RunnerOwner.took(null));
+        assertFalse(RunnerOwner.took("busy: steps aa deposit"), "a busy runner kept its run");
+        assertTrue(RunnerOwner.took("error: no main chest set"), "the failed steps are the run in the runner now");
+        assertEquals("aa deposit", RunnerOwner.named("aa deposit", null));
+        assertEquals("aa deposit (failed at its start)", RunnerOwner.named("aa deposit", "error: no main chest set"));
+        RunnerOwner r = new RunnerOwner();
+        r.taskStarts("EXPLORE owner goal");
+        String busy = "busy: steps EXPLORE owner goal";
+        if (RunnerOwner.took(busy)) r.otherStarts("aa scan");
+        assertTrue(r.taskHolds(), "a busy start leaves the task's run its own");
+        String err = "error: nothing to scan";
+        if (RunnerOwner.took(err)) r.otherStarts(RunnerOwner.named("aa scan", err));
+        assertFalse(r.taskHolds(), "the failed order's steps are in the runner: their end is not the task's");
+        assertEquals("end: the runner holds aa scan (failed at its start), not this task - its end is not read as this task's", r.endNotMine());
+    }
+
     @Test
     void aTaskThatIsOverHoldsNothing() {
         RunnerOwner r = new RunnerOwner();

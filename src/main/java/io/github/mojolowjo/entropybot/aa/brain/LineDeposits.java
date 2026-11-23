@@ -189,7 +189,9 @@ public final class LineDeposits {
             if (!"done".equals(how) || g.depositTook == null || g.strip != null || g.deposit <= 0) return new Out(Kind.ALREADY, null, null);
             Out back = reopen(g);
             if (back.kind() == Kind.WOKE_GONE) return back;
-            how = "done (stopped earlier and met since: weighed again)";
+            // review 3: a due deposit this weighing took back is said in the line that follows (rule 7), whatever it answers;
+            // the runtime starts a queued deposit only from dueNow(), so a taken-back one never starts
+            how = "done (stopped earlier and met since: weighed again" + (back.kind() == Kind.WOKE_TAKEN_BACK ? "; the line's deposit that had not started is taken back and weighed with it" : "") + ")";
         }
         g.depositWeighed = true;
         if (g.strip != null) return new Out(Kind.STRIP, null, null);     // the strip order has its own deposit leg
@@ -253,18 +255,32 @@ public final class LineDeposits {
      * its way or went already say that, never "waits for it" (rule 7).
      */
     public Out reopen(Goals.Goal g) {
-        Map<String, Goals.Goal> back = dueLine.remove(g.line);
+        Map<String, Goals.Goal> back = dueLine.get(g.line);
         if (back != null) {
-            Map<String, Integer> was = dueOf(back);
-            for (Goals.Goal o : back.values()) due.remove(o);
-            back.remove(g.r.key());
+            // review 1 (line A, B, C all -d: the first deposit went with B's 11, C woke and ended again, the line is due on
+            // {C}; B wakes): an order of the line that is NOT one of the due deposit's orders was weighed for an EARLIER
+            // deposit of this line, and what that one took of it is done with - taken off its amount here as below, never
+            // deposited twice. Nothing left of it: the due deposit is not its, and stays due
+            boolean outside = back.get(g.r.key()) != g;
+            Map<String, Integer> went = outside && g.depositTook != null ? g.depositTook : Map.of();
+            int gone = went.values().stream().mapToInt(Integer::intValue).sum();
             g.depositWeighed = false;
             g.depositTook = null;
+            if (outside) {
+                g.deposit = Math.max(0, g.deposit - gone);
+                if (g.deposit <= 0) return new Out(Kind.WOKE_GONE, g.r.key() + " woke: its deposit went with the line already (" + Step.Deposit.onlyText(went)
+                        + ") - nothing more to deposit; the line's deposit of " + Step.Deposit.onlyText(dueOf(back)) + " stays due", null);
+            }
+            dueLine.remove(g.line);
+            Map<String, Integer> was = dueOf(back);
+            for (Goals.Goal o : back.values()) due.remove(o);
+            back.remove(g.r.key(), g);
             if (!back.isEmpty()) lineEnded.put(g.line, back);
             lineOpen.computeIfAbsent(g.line, k -> new LinkedHashSet<>()).add(g.r.key());
             Map<String, Integer> still = dueNow();
             return new Out(Kind.WOKE_TAKEN_BACK, g.r.key() + " woke: the line's deposit of " + Step.Deposit.onlyText(was) + " had not started - taken back, it is weighed on the bag again when "
-                    + g.r.key() + " ends" + (still.isEmpty() ? "" : " (still due: " + Step.Deposit.onlyText(still) + ")"), still.isEmpty() ? null : still);
+                    + g.r.key() + " ends" + (gone > 0 ? " (" + Step.Deposit.onlyText(went) + " of it went with an earlier deposit; the rest of its amount, " + g.deposit + ", follows then)" : "")
+                    + (still.isEmpty() ? "" : " (still due: " + Step.Deposit.onlyText(still) + ")"), still.isEmpty() ? null : still);
         }
         Map<String, Integer> way = wayLine.get(g.line);
         g.depositWeighed = false;

@@ -43,6 +43,28 @@ public final class RunnerOwner {
     /** The name of the run the runner holds (or held last). */
     public String name() { return name; }
 
+    /**
+     * Whether a start on the runner took it, from the start's answer (commands.StepRun.start has two refusals): null: the
+     * steps run; "busy: ...": the runner kept the run it had and took nothing; "error: ...": the new steps REPLACED the run
+     * in the runner and failed at their first step (aa/moves/Steps.start sets the key, the steps and the phase before the
+     * first step runs), so the runner's end and reason are the new run's from there. The mark follows the runner's
+     * content: a start that failed at its first step is marked like one that runs, or the task would read the failed
+     * run's reason as its own end.
+     */
+    public static boolean took(String refusal) { return refusal == null || !refusal.startsWith("busy"); }
+
+    /** The name a start is marked with: a start that failed at its first step says so in the lines that name it (rule 7). */
+    public static String named(String name, String refusal) { return refusal == null ? name : name + " (failed at its start)"; }
+
+    /**
+     * The one answer to "AA's own task runs" (rule 23 (2): every reader asks here): on typed steps, the runner runs AND the
+     * run in it is the task's own (a deposit or an owner order in the runner is not, though the task's typed flag stays
+     * set after its run ended); else AA's own chain.
+     */
+    public boolean ownRunning(boolean typedRun, boolean runnerRunning, boolean chainRunning) {
+        return typedRun ? runnerRunning && taskHolds() : chainRunning;
+    }
+
     /** The task is cancelled ({@code why}) while the runner holds another run: that run is not stopped. The line, once. */
     public String cancelLeft(String why) { return once("cancel " + why + ": the runner holds " + name + ", not this task - left running"); }
 

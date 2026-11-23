@@ -153,7 +153,15 @@ public final class AaRuntime implements JobPort {
     boolean ownChainRunning() { return ownRunning(); }
 
     /** rm-execution: AA's own task runs: its typed steps, or its chain (an option set not on typed steps yet). */
-    private boolean ownRunning() { return typedRun ? c.stepRun.running() : chainRunning(); }
+    private boolean ownRunning() { return runner.ownRunning(typedRun, c.stepRun.running(), chainRunning()); }
+
+    /**
+     * Runner ownership (review 2, rule 23 (2)): the steps in the runner are the task's own typed steps (running or ended).
+     * typedRun alone stays set after the task's run ended, while the line's deposit or an owner order holds the runner;
+     * every reader that acts on c.stepRun.steps for the task (the swim watch, the re-price, the pause, the no-progress
+     * watch, the progress counter) asks here.
+     */
+    private boolean ownTyped() { return typedRun && runner.taskHolds(); }
 
     /** Danger and the way out of a hole are never held by slow mode. */
     boolean slowSkip() { return "danger".equals(tree.driver()) || escapePending || escapeWay != null; }
@@ -1913,7 +1921,7 @@ public final class AaRuntime implements JobPort {
     boolean chainRunning() { return c.chains.running() && CHAIN.equals(c.chains.name()); }
     /** The owner's order while AA's needs/idle task runs: the task is preempted (logged), the order runs (AA_PLAN 4). */
     void yieldToOwner(String verb) {
-        if (!on() || !(chainRunning() || (typedRun && c.stepRun.running()))) return;
+        if (!on() || !(chainRunning() || ownRunning())) return;       // review 2: the one answer (a deposit in the runner is not AA's task)
         if (tree.preemptForOwner(bb, verb)) {
             heldUntil = 0;
             LOG.info("[entropybot] aa: steps aside for the owner's {}", verb);
@@ -2336,7 +2344,7 @@ public final class AaRuntime implements JobPort {
      * as a fallback, and then only a move of 8+ blocks from the last counted spot (standing and shuffling is no progress).
      */
     private void progressTick(LocalPlayer p) {
-        String step = typedRun ? c.stepRun.steps.stepText() : chainRunning() ? c.chains.stepText() : null;
+        String step = ownTyped() ? c.stepRun.steps.stepText() : !typedRun && chainRunning() ? c.chains.stepText() : null;
         if (step != null && !step.equals(lastStep)) progress++;
         lastStep = step;
         String js = c.jobs.running() ? c.jobs.job.status : null;
@@ -2547,6 +2555,12 @@ public final class AaRuntime implements JobPort {
      * before {@code next}'s steps replace it in the runner, so the end stays the task's own (its reason, its failed step).
      */
     private void readTaskEndBefore(String next) {
+        // review 2 (rule 23 (2)): the way up is the task's run too - its end is read by escapeTick from the same runner, so
+        // it is read here first as well, never from the steps that replace it
+        if (current >= 0 && wayUpEndRead()) {
+            LOG.info("[entropybot] aa: the task's way up had ended - its end is read before the runner goes to {}", next);
+            return;
+        }
         if (current < 0 || !typedRun || typedEndSeen || lastEnd != null || escapePending || escapeWay != null || !runner.taskHolds() || c.stepRun.running()) return;
         typedEndSeen = true;
         typedEnded();
@@ -2613,7 +2627,7 @@ public final class AaRuntime implements JobPort {
      * an order behind the explore (it ends on the source, as before).
      */
     boolean repriceOnFound(String known) {
-        if (!typedRun || taskReplan == null || c.stepRun == null || !c.stepRun.steps.running()) return false;
+        if (!ownTyped() || taskReplan == null || c.stepRun == null || !c.stepRun.steps.running()) return false;
         c.stepRun.steps.repriceAtNextStep(io.github.mojolowjo.entropybot.aa.moves.FactChange.found(known));
         return true;
     }
@@ -2634,7 +2648,7 @@ public final class AaRuntime implements JobPort {
         var seen = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.seen();
         if (seen == null) return;
         var fresh = seen.drainFresh();
-        if (!typedRun || taskReplan == null || c.stepRun == null || !c.stepRun.steps.running()) return;
+        if (!ownTyped() || taskReplan == null || c.stepRun == null || !c.stepRun.steps.running()) return;
         String dim = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.dim();
         List<io.github.mojolowjo.entropybot.aa.SeenAsk.Cell> cells = new ArrayList<>();
         for (var f : fresh) {
@@ -2664,7 +2678,7 @@ public final class AaRuntime implements JobPort {
      * the furnaces' inputs - for the batch trip's hold (BatchWay.RUN_FACT); null while no order's typed run runs.
      */
     private io.github.mojolowjo.entropybot.aa.brain.BatchWay.Run tripRun() {
-        if (!typedRun || taskReplan == null || c.stepRun == null || !c.stepRun.steps.running()) return null;
+        if (!ownTyped() || taskReplan == null || c.stepRun == null || !c.stepRun.steps.running()) return null;
         var st = c.stepRun.steps;
         int at = st.index();
         if (at < 0 || at >= st.steps().size()) return null;
@@ -2681,12 +2695,12 @@ public final class AaRuntime implements JobPort {
         long pl = plannerWorker.landed();
         if (pl != plannerLandedSeen) {
             plannerLandedSeen = pl;
-            if (typedRun && taskReplan != null) c.stepRun.steps.repriceAtNextStep(io.github.mojolowjo.entropybot.aa.moves.FactChange.priced("the planner's answer (off the render thread)"));
+            if (ownTyped() && taskReplan != null) c.stepRun.steps.repriceAtNextStep(io.github.mojolowjo.entropybot.aa.moves.FactChange.priced("the planner's answer (off the render thread)"));
         }
         long v = LivePathPrice.INSTANCE.landed();
         if (v == pathLandedSeen) return;
         pathLandedSeen = v;
-        if (typedRun && taskReplan != null) c.stepRun.steps.repriceAtNextStep(io.github.mojolowjo.entropybot.aa.moves.FactChange.priced(LivePathPrice.INSTANCE.lastLanded()));
+        if (ownTyped() && taskReplan != null) c.stepRun.steps.repriceAtNextStep(io.github.mojolowjo.entropybot.aa.moves.FactChange.priced(LivePathPrice.INSTANCE.lastLanded()));
     }
 
     /** 0.39.z30: the running task's re-plan on a changed fact (an order's), null: none. */
@@ -2718,7 +2732,9 @@ public final class AaRuntime implements JobPort {
         });
         typedRun = true;                 // 0.39.z61: set before the start, so the first step's reserves see the running order
         String r = c.stepRun.start(key, steps, label, replan, uses);
-        if (r == null || !r.startsWith("busy")) runner.taskStarts(label);      // runner ownership: the runner took the task's steps (a busy runner took nothing)
+        // runner ownership: the mark follows what the runner holds (RunnerOwner.took: busy took nothing; a start that failed
+        // at its first step replaced the run in the runner, its end is this task's own and the caller reads r)
+        if (io.github.mojolowjo.entropybot.aa.core.RunnerOwner.took(r)) runner.taskStarts(io.github.mojolowjo.entropybot.aa.core.RunnerOwner.named(label, r));
         typedEndSeen = r != null;
         if (r == null) slow.chainStarted();
         return r;
@@ -2834,7 +2850,8 @@ public final class AaRuntime implements JobPort {
             LOG.info("[entropybot] aa: in the water during {} - re-scoring", runningOpt.id());
         } else if (ev == io.github.mojolowjo.entropybot.aa.SwimWatch.Event.STALLED && (typedRun || c.jobs.running())) {
             LOG.info("[entropybot] aa: {} during {} (air {}) - that option failed", io.github.mojolowjo.entropybot.aa.SwimWatch.REASON, runningOpt.id(), p.getAirSupply());
-            if (typedRun) c.stepRun.steps.cancel(io.github.mojolowjo.entropybot.aa.SwimWatch.REASON);
+            // review 2: STALLED comes only while ownRunning() (the task's own run); the cancel asks the same mark again
+            if (typedRun) { if (ownTyped()) c.stepRun.steps.cancel(io.github.mojolowjo.entropybot.aa.SwimWatch.REASON); }
             else c.jobs.finish(io.github.mojolowjo.entropybot.aa.SwimWatch.REASON);
         }
     }
@@ -3032,7 +3049,7 @@ public final class AaRuntime implements JobPort {
      * watch leaves the end to the next poll (its own reason, never "no progress").
      */
     @Override public NoProgress noProgress(long taskId, String text) {
-        if (taskId != current || !typedRun || taskReplan == null) return NoProgress.NOT_MINE;
+        if (taskId != current || !ownTyped() || taskReplan == null) return NoProgress.NOT_MINE;
         if (!c.stepRun.steps.running()) return NoProgress.ENDED;
         if (c.stepRun.steps.standsOnItsOwnBound()) return NoProgress.MONITORED;     // worlds run 1: the stand's own bound judges it, never the no-move watch
         if (c.stepRun.steps.monitorJudges()) return NoProgress.MONITORED;      // 0.39.z78 run EJ (rule 23 (2)): the monitor is the one reader
@@ -3048,7 +3065,7 @@ public final class AaRuntime implements JobPort {
     @Override public void pause(long taskId, String why) {
         if (taskId != current) return;
         if (typedRun) {                  // rm-execution: the step's Baritone work stops, its clock stands still; resume starts it again
-            c.stepRun.steps.pause(why);
+            if (ownTyped()) c.stepRun.steps.pause(why);      // review 2: another's run in the runner is not the task's to pause
             return;
         }
         if (!chainRunning()) return;
@@ -3056,7 +3073,7 @@ public final class AaRuntime implements JobPort {
     }
 
     @Override public void resume(long taskId) {
-        if (taskId == current && typedRun) c.stepRun.steps.resume();
+        if (taskId == current && ownTyped()) c.stepRun.steps.resume();
     }
 
     @Override public void log(String line) {
@@ -3359,6 +3376,21 @@ public final class AaRuntime implements JobPort {
         escapeResumeSteps = null;
     }
 
+    /**
+     * Runner ownership (review 2): the way up's typed steps have ended and are still the run in the runner: its end is read
+     * (the task goes on, the next way up, or fails). False: no way up runs on the runner, it still runs, or the run in the
+     * runner is another's (never read as the way up's end).
+     */
+    private boolean wayUpEndRead() {
+        if (!"climb".equals(escapeWay) || c.stepRun.running() || !runner.taskHolds()) return false;
+        var st = c.stepRun.steps;
+        boolean done = st.phase() == io.github.mojolowjo.entropybot.aa.moves.Steps.Phase.DONE;
+        String msg = st.why();
+        st.clear();
+        wayUpEnded(done, msg);
+        return true;
+    }
+
     /** 0.36.a6: starts the pending escape once the stuck walk has settled; a pillar job's end -> go on, or climb. */
     private void escapeTick(LocalPlayer p, Minecraft mc) {
         if (current < 0) {
@@ -3366,12 +3398,7 @@ public final class AaRuntime implements JobPort {
             return;
         }
         if ("climb".equals(escapeWay)) {                 // rm-execution2: the way up runs on typed steps
-            if (c.stepRun.running()) return;
-            var st = c.stepRun.steps;
-            boolean done = st.phase() == io.github.mojolowjo.entropybot.aa.moves.Steps.Phase.DONE;
-            String msg = st.why();
-            st.clear();
-            wayUpEnded(done, msg);
+            wayUpEndRead();
             return;
         }
         if (escapePending) {
@@ -3433,7 +3460,8 @@ public final class AaRuntime implements JobPort {
             }
             // rm-execution2: the way up's typed steps (stairs, the climb, a walk) on the one step machine
             String cr = c.stepRun.start(WAYUP + " " + o.memoryKey(), o.steps(), "wayup " + o.id());
-            if (cr == null || !cr.startsWith("busy")) runner.taskStarts("wayup " + o.id());      // runner ownership: the task's own way up
+            // runner ownership: the task's own way up (RunnerOwner.took: a busy runner took nothing)
+            if (io.github.mojolowjo.entropybot.aa.core.RunnerOwner.took(cr)) runner.taskStarts(io.github.mojolowjo.entropybot.aa.core.RunnerOwner.named("wayup " + o.id(), cr));
             if (cr == null) escapeWay = "climb";
             else {
                 wayMem.failed(o.memoryKey(), "did not start: " + cr, bb.clock.now());
@@ -4139,6 +4167,22 @@ public final class AaRuntime implements JobPort {
             lineDeposits.gone();
         }
         if (depositDue == null) { depositWaitSaid = null; return; }
+        // review 3 (one store, rule 23): the queued deposit is what LineDeposits holds as due NOW. A take-back that came
+        // through a weighing (an order stopped earlier and met since) answers with that weighing's kind, so the queue is
+        // read from the store here: nothing due any more = the queued deposit is dropped, said; other items = the store's
+        Map<String, Integer> dueNow = lineDeposits.dueNow();
+        if (dueNow.isEmpty()) {
+            LOG.info("[entropybot] aa: {} - not started: its line was taken back (an order of it runs again or was weighed again); nothing is due now", depositDue);
+            depositDue = null;
+            depositItems = null;
+            depositWaitSaid = null;
+            return;
+        }
+        if (!dueNow.equals(depositItems)) {
+            LOG.info("[entropybot] aa: the deposit queued ({}) is now {} (what is due of the lines that ended)", depositItems == null ? "nothing" : io.github.mojolowjo.entropybot.aa.moves.Step.Deposit.onlyText(depositItems),
+                    io.github.mojolowjo.entropybot.aa.moves.Step.Deposit.onlyText(dueNow));
+            depositItems = dueNow;
+        }
         // runner ownership (w053-200-2 03:53:09.796 -> .806: the order's run ended and the deposit took the runner 10 ms
         // later, before the brain read that end, so the order's task took the deposit for its own run): the deposit also
         // waits while the brain's task has not been read to its end. Each wait says why, once per reason (rule 7)
@@ -4513,7 +4557,11 @@ public final class AaRuntime implements JobPort {
     String order(String name, List<io.github.mojolowjo.entropybot.aa.moves.Step> steps) {
         readTaskEndBefore("aa " + name);
         String err = c.stepRun.start("owner " + name, steps, "aa " + name);
-        if (err == null || !err.startsWith("busy")) runner.otherStarts("aa " + name);     // runner ownership: not the brain's task's run
+        // runner ownership: not the brain's task's run. Review 4, checked in StepRun.start / Steps.start: a busy runner took
+        // nothing and is not marked; a start that failed at its first step DID replace the run in the runner (its reason
+        // and phase are the failed order's), so it is marked, named as failed: the task's end, read just above where it
+        // was still there to read, is never read from the failed order's steps
+        if (io.github.mojolowjo.entropybot.aa.core.RunnerOwner.took(err)) runner.otherStarts(io.github.mojolowjo.entropybot.aa.core.RunnerOwner.named("aa " + name, err));
         if (err != null) return "aa " + name + ": " + err;
         c.stepRun.reportTo = c.lastFrom != null ? c.lastFrom : c.owner();     // 0.39.z24: its end is whispered
         LOG.info("[entropybot] aa: owner order {}: {}", name, io.github.mojolowjo.entropybot.aa.moves.Step.label(steps));
