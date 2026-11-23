@@ -184,8 +184,9 @@ public final class RunThrowaway {
     }
 
     /**
-     * The bag's blocks the bot may place as filler (AaEscape.pillarBlock: Junk.placeable from the item data - a cheap full
-     * block, not a kept kit item; planks included), as items. The danger ways' pillar and the standing bag lease use it.
+     * The bag's blocks the bot may place as filler (AaEscape.pillarBlock: Junk.placeable from the item data - a cheap
+     * full-cube block (ItemWorth.fullCube, read from the game by {@link #fullBlock}), not a kept kit item; planks included),
+     * as items. The danger ways' pillar and the standing bag lease use it.
      */
     public static List<Item> bagBlocks(net.minecraft.world.entity.player.Player p) {
         List<Item> out = new ArrayList<>();
@@ -197,6 +198,21 @@ public final class RunThrowaway {
             if (io.github.mojolowjo.entropybot.aa.AaEscape.pillarBlock(id) && !out.contains(s.getItem())) out.add(s.getItem());
         }
         return out;
+    }
+
+    /**
+     * Repeat run 2026-11-22 (w058-b: "the bag's placeable blocks are throwaway for every walk now: acacia_log, brown_banner",
+     * then 4,100 guard refusals of a break at 14 55 4 (a structure block), the feet cell, while two walks up stood
+     * still for their 30 s): a filler block is one a walk can stand on - the game's own fact, the block's default state has a
+     * full-cube collision shape. A banner, a torch, a door, a sapling is a cheap block item and no filler; nor is a slab,
+     * soul sand, mud or farmland (lower than a block: a pillar or bridge of them is not what Baritone prices). The ONE
+     * reader of the fact: the item data (ItemWorthSource.fullCube -> ItemWorth.fullCube -> Junk.placeable), so the prices,
+     * the danger pillar and this lease agree (rule 23). holdBag says which cheap blocks it left out (rule 7).
+     * Loader notes: vanilla BlockItem#getBlock, BlockState#isCollisionShapeFullBlock (EmptyBlockGetter: no world needed).
+     */
+    public static boolean fullBlock(Item item) {
+        if (!(item instanceof net.minecraft.world.item.BlockItem b)) return false;
+        return b.getBlock().defaultBlockState().isCollisionShapeFullBlock(net.minecraft.world.level.EmptyBlockGetter.INSTANCE, net.minecraft.core.BlockPos.ZERO);
     }
 
     private static final Object BAG_RUN = new Object();
@@ -216,6 +232,15 @@ public final class RunThrowaway {
         if (l == null) return;
         if (!bagHeld.isEmpty()) l.end(BAG_RUN);
         bagHeld = now;
+        // rule 7: a cheap block item that is no full cube is no filler - said once per change of the bag's set
+        List<String> left = new ArrayList<>();
+        if (p != null) for (int i = 0; i < 36; i++) {  // game fact: the player inventory has 36 slots
+            var s = p.getInventory().getItem(i);
+            if (s.isEmpty() || !(s.getItem() instanceof net.minecraft.world.item.BlockItem) || fullBlock(s.getItem())) continue;
+            String id = BuiltInRegistries.ITEM.getKey(s.getItem()).getPath();
+            if (io.github.mojolowjo.entropybot.aa.brain.ItemWorth.block(id) && !left.contains(id)) left.add(id);
+        }
+        if (!left.isEmpty()) LOG.info("[entropybot] run throwaway: not filler (no full cube to stand on): {}", String.join(", ", left));
         if (now.isEmpty()) return;
         l.add(BAG_RUN, now);
         List<String> names = new ArrayList<>();

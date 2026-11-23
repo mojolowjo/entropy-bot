@@ -312,6 +312,14 @@ final class ItemWorthSource implements ItemWorth.Source {
     @Override public List<String> smeltResults() { return smelts; }
     @Override public Map<String, String> cooks() { return cooks; }
     @Override public boolean stoneLike(String id) { return stoneLike.contains(id); }
+    /** The game's fact, read once per item (RunThrowaway.fullBlock: the block's default state has a full-cube collision shape). */
+    private final Map<String, Boolean> fullCubes = new java.util.concurrent.ConcurrentHashMap<>();
+    @Override public boolean fullCube(String id) {
+        return fullCubes.computeIfAbsent(id, k -> {
+            var rl = net.minecraft.resources.ResourceLocation.tryParse(k);
+            return rl != null && io.github.mojolowjo.entropybot.engine.RunThrowaway.fullBlock(net.minecraft.core.registries.BuiltInRegistries.ITEM.get(rl));
+        });
+    }
     @Override public boolean station(String id) { return stations.contains(id); }
     @Override public boolean container(String id) { return containers.contains(id); }
     @Override public java.util.Set<String> tags(String id) { return tags.getOrDefault(id, java.util.Set.of()); }

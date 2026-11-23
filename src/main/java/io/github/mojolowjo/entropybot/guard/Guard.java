@@ -238,6 +238,11 @@ public final class Guard {
     private boolean refuse(Level level, BlockPos pos, String action, GuardCore.Verdict v) {
         if (v.allowed() && !v.wouldVeto()) return false;
         String line = (v.allowed() ? "would refuse " : "refused ") + action + " at " + pos.getX() + " " + pos.getY() + " " + pos.getZ() + ": " + v.reason();
+        // repeat run 2026-11-22 (w058-b, w053-b: thousands of "refused break at <the feet cell>: structure block outside my
+        // areas" while a walk up stood still, the block never named): a refused break says which block it was (rule 7)
+        if ("break".equals(action) && level != null && level.isLoaded(pos)) {
+            line += " [the block: " + BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()) + "]";
+        }
         EventRing ring = events;
         if (ring != null) {
             JsonObject d = new JsonObject();

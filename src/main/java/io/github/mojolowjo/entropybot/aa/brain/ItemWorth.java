@@ -130,6 +130,8 @@ public final class ItemWorth {
         default Map<String, String> cooks() { return Map.of(); }
         /** A plain stone-like block item: in the base-stone tags, or a soft pickaxe/shovel block that is no ore and no block entity. */
         default boolean stoneLike(String id) { return false; }
+        /** The item's block is a full cube a walk can stand on (false: a banner, torch, door, slab; a test source: every block is). */
+        default boolean fullCube(String id) { return true; }
         /** A workstation block (it opens a menu: the crafting table, any modded bench). */
         default boolean station(String id) { return false; }
         /** A block whose block entity holds items (a chest, a barrel, a furnace: the game's Container block entities). */
@@ -418,6 +420,9 @@ public final class ItemWorth {
     public static boolean station(String id) { Source s = source; return s != null && s.station(full(id)); }
     public static boolean container(String id) { Source s = source; return s != null && s.container(full(id)); }
     public static boolean stoneLike(String id) { Source s = source; return s != null && s.stoneLike(full(id)); }
+
+    /** The item's block is a full cube (the game's collision shape; repeat run 2026-11-22: a banner handed to Baritone as filler). */
+    public static boolean fullCube(String id) { Source s = source; return s != null && s.fullCube(full(id)); }
 
     /** The items a furnace makes, from the recipes (empty: none loaded; the caller keeps its list). */
     public static List<String> smelts() {
