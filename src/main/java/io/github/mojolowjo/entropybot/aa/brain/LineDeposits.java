@@ -10,8 +10,9 @@ import java.util.TreeMap;
 
 /**
  * deposit-words (owner 2026-11-08; was the helper rule of 2026-11-02: the WHOLE bag to the main chest after every order):
- * an order flagged -d that ended (done, or stopped with some of it in the bag) adds the ordered amount of its item (what
- * the bag holds of it) to its line's deposit; when the line's last -d order has ended, ONE deposit of exactly those items
+ * an order flagged -d that ended (done, or stopped FOR GOOD with some of it in the bag; parked-holds, owner 2026-11-23: a
+ * stopped order that can still wake has not ended, it holds its line's deposit, see {@link #sweep}) adds the ordered
+ * amount of its item (what the bag holds of it) to its line's deposit; when the line's last -d order has ended, ONE deposit of exactly those items
  * goes to the main chest (aa deposit x y z). An order with no deposit word deposits nothing, said in the log (rule 7).
  * Weighed once per order end.
  *
@@ -37,6 +38,11 @@ public final class LineDeposits {
         NO_CHEST,
         /** The line ended: {@link Out#items} go to the main chest when the job slot is free (logged). */
         DUE,
+        /**
+         * parked-holds: the order stopped and can still wake by itself: it is not weighed, it stays open on its line and the
+         * line's deposit waits for it (logged and whispered, once per hold).
+         */
+        HELD,
         /** A parked order woke: its deposit went with the line already (logged). */
         WOKE_GONE,
         /** A parked order woke: weighed again at its end (logged). */
@@ -78,28 +84,54 @@ public final class LineDeposits {
      */
     public Map<String, Integer> kept(Map<String, Integer> bag, java.util.List<Goals.Goal> goals, Goals.Goal self, java.util.Collection<Goals.Goal> skip) {
         Map<String, Integer> out = new TreeMap<>();
+        for (Kept k : keptPer(bag, goals, self, skip)) for (var t : k.items().entrySet()) out.merge(t.getKey(), t.getValue(), Integer::sum);
+        out.replaceAll((id, n) -> Math.min(n, bag.getOrDefault(id, 0)));
+        out.values().removeIf(n -> n <= 0);
+        return out;
+    }
+
+    /** One order's share of {@link #kept}: the order and what the bag holds for its deposit (counted id -> n). */
+    public record Kept(Goals.Goal order, Map<String, Integer> items) {}
+
+    /**
+     * {@link #kept} per order (merge review 2026-11-23: the placing reserves need the order with each amount - an amount is
+     * the same items as a reserve only when that reserve is the SAME order's, and a reserve names the item by its full id,
+     * which only the order has). The one computation: {@link #kept} is the sum of these. An order whose line came due again
+     * while its earlier deposit is on its way is listed twice (different items of the bag).
+     */
+    public java.util.List<Kept> keptPer(Map<String, Integer> bag, java.util.List<Goals.Goal> goals, Goals.Goal self, java.util.Collection<Goals.Goal> skip) {
+        java.util.List<Kept> out = new java.util.ArrayList<>();
         Set<Goals.Goal> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         if (self != null) seen.add(self);
         if (skip != null) seen.addAll(skip);
         Set<Goals.Goal> left = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         left.addAll(seen);
-        for (var d : way.entrySet()) if (seen.add(d.getKey())) for (var t : d.getValue().entrySet()) out.merge(t.getKey(), t.getValue(), Integer::sum);
+        for (var d : way.entrySet()) if (seen.add(d.getKey())) out.add(new Kept(d.getKey(), d.getValue()));
         // an order whose line came due AGAIN while its earlier deposit is on its way counts twice: what is on its way and
         // what is due of it now are different items of the bag (review round 2)
         for (var d : due.entrySet())
-            if (!left.contains(d.getKey()) && (seen.add(d.getKey()) || way.containsKey(d.getKey())))
-                for (var t : d.getValue().entrySet()) out.merge(t.getKey(), t.getValue(), Integer::sum);
+            if (!left.contains(d.getKey()) && (seen.add(d.getKey()) || way.containsKey(d.getKey()))) out.add(new Kept(d.getKey(), d.getValue()));
         Set<String> lines = new java.util.HashSet<>();
         for (Goals.Goal g : goals) if (g.deposit > 0 && g.line != null) lines.add(g.line);
         for (var e : lineEnded.entrySet()) {
             if (!lines.contains(e.getKey())) continue;
-            for (Goals.Goal o : e.getValue().values()) if (seen.add(o)) for (var t : take(o, bag).entrySet()) out.merge(t.getKey(), t.getValue(), Integer::sum);
+            for (Goals.Goal o : e.getValue().values()) if (seen.add(o)) out.add(new Kept(o, take(o, bag)));
         }
         for (Goals.Goal o : goals)
-            if (o.deposit > 0 && o.strip == null && seen.add(o)) for (var t : take(o, bag).entrySet()) out.merge(t.getKey(), t.getValue(), Integer::sum);
-        out.replaceAll((id, n) -> Math.min(n, bag.getOrDefault(id, 0)));
-        out.values().removeIf(n -> n <= 0);
+            if (o.deposit > 0 && o.strip == null && seen.add(o)) out.add(new Kept(o, take(o, bag)));
+        out.removeIf(k -> k.items().isEmpty());
         return out;
+    }
+
+    /**
+     * Merge review 2026-11-23 (a modded -d item: the bag and the weighing count by the item's path, the chest click and
+     * the placing reserve name the item by its full id, and "minecraft:" was put before the bare path): the full id of
+     * the order's item whose counted id is {@code counted}, from the order's own ids (the game's registry names, rule 4);
+     * the order names no such item: {@code counted} as it is.
+     */
+    public static String fullId(Goals.Goal g, String counted) {
+        for (String id : g.r.ids()) if (Thing.path(id).equals(counted)) return id;
+        return counted;
     }
 
     /**
@@ -138,7 +170,7 @@ public final class LineDeposits {
      * exactly what is due now ({@link #due} and {@link #dueLine} are empty after this); what comes due later is a later run's.
      */
     public void started() {
-        for (var e : dueLine.entrySet()) wayLine.put(e.getKey(), dueOf(e.getValue()));
+        for (var e : dueLine.entrySet()) { wayLine.put(e.getKey(), dueOf(e.getValue())); wayOrders.addAll(e.getValue().values()); }
         dueLine.clear();
         way.putAll(due);
         due.clear();
@@ -153,15 +185,45 @@ public final class LineDeposits {
     }
 
     /**
+     * take-back: the due items of every line whose deposit is due and not started, by each item's FULL id (the order's own
+     * id, {@link #fullId}) - what the deposit step is sent with (merge review 2026-11-23: a modded -d item sent by its
+     * path was looked for as minecraft:&lt;path&gt;, not found, and the run ended "none of it in the bag").
+     */
+    public Map<String, Integer> dueIds() {
+        Map<String, Integer> out = new TreeMap<>();
+        for (Map<String, Goals.Goal> ended : dueLine.values())
+            for (Goals.Goal o : ended.values()) {
+                Map<String, Integer> t = due.get(o);
+                if (t != null) for (var i : t.entrySet()) out.merge(fullId(o, i.getKey()), i.getValue(), Integer::sum);
+            }
+        return out;
+    }
+
+    /** The orders of the lines whose deposit run is on its way ({@link #started}), the ones that noted nothing included. */
+    private final Set<Goals.Goal> wayOrders = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+    /**
      * deposit-kept: the deposit run ended, or the due deposit could not start (said by the caller): its items are no longer
      * kept here. With a run on its way only what that run was sent with goes ({@link #way}): a line that came due
      * meanwhile stays due and kept, the run's own line and orders included (review round 2).
+     *
+     * <p>{@code reached} (merge review 2026-11-23: a failed or refused deposit run left its orders' notes as "taken by
+     * the deposit", and a later wake cut the order's deposit amount by items that were still in the bag): the run ended
+     * done, its items are in the chest. False (failed, refused, or its end not read): the orders of that deposit are
+     * marked ({@link Goals.Goal#depositMissed}), so a wake ({@link #reopen}) takes nothing off their amounts.
      */
-    public void gone() {
-        if (!onWay) { due.clear(); dueLine.clear(); return; }
+    public void gone(boolean reached) {
+        if (!onWay) {
+            if (!reached) for (Map<String, Goals.Goal> ended : dueLine.values()) for (Goals.Goal o : ended.values()) o.depositMissed = true;
+            due.clear();
+            dueLine.clear();
+            return;
+        }
         onWay = false;
+        if (!reached) for (Goals.Goal o : wayOrders) o.depositMissed = true;
         way.clear();
         wayLine.clear();
+        wayOrders.clear();
     }
 
     /** What the bag holds of the order's deposit amount now (counted id -> n; a group: up to the amount of each member). */
@@ -219,6 +281,8 @@ public final class LineDeposits {
             how = "done (stopped earlier and met since: weighed again" + (back.kind() == Kind.WOKE_TAKEN_BACK ? "; the line's deposit that had not started is taken back and weighed with it" : "") + ")";
         }
         g.depositWeighed = true;
+        g.depositMissed = false;                     // weighed anew: an earlier deposit that did not reach the chest is behind it
+        g.depositHeld = false;                       // parked-holds: an order that ended holds nothing
         if (g.strip != null) return new Out(Kind.STRIP, null, null);     // the strip order has its own deposit leg
         if (g.deposit <= 0) return new Out(Kind.NO_WORD, g.r.key() + " " + how + ": no deposit word on the order (-d, or a trailing deposit) - its items stay in the bag", null);
         // bag-at-the-end (run JBO-T1 22:53:47 -> 22:54:30: cobblestone stopped with 17 in the bag, "noted (cobblestone 17)";
@@ -241,8 +305,11 @@ public final class LineDeposits {
         lineEnded.remove(g.line);
         Map<String, Integer> all = all(ended, bag, true);
         if (all.isEmpty()) return new Out(Kind.NOTHING, g.r.key() + " " + how + ": nothing of the line's deposit items in the bag - no deposit", null);
-        if (mainAt == null)
+        if (mainAt == null) {
+            // merge review 2026-11-23: nothing goes to a chest here - a later wake of one of these orders takes nothing off
+            for (Goals.Goal o : ended.values()) o.depositMissed = true;
             return new Out(Kind.NO_CHEST, g.r.key() + " " + how + ": no main chest set (aa deposit x y z) - " + Step.Deposit.onlyText(all) + " stay in the bag", all);
+        }
         for (Goals.Goal o : ended.values()) if (o.depositTook != null && !o.depositTook.isEmpty()) due.put(o, o.depositTook);       // deposit-kept: until the deposit starts
         dueLine.put(g.line, new java.util.LinkedHashMap<>(ended));      // take-back: the line as it ended, until its run starts
         return new Out(Kind.DUE, g.r.key() + " " + how + ": the line's deposit of " + Step.Deposit.onlyText(all) + " to the main chest at " + mainAt + " follows", all);
@@ -254,14 +321,28 @@ public final class LineDeposits {
      * open -d order, the line ends now and the orders that ended before go to the chest as one deposit. Null: an order with
      * no deposit word, or one whose line ended already.
      */
-    public Out dropped(Goals.Goal g, Map<String, Integer> bag, String mainAt) {
+    public Out dropped(Goals.Goal g, Map<String, Integer> bag, String mainAt) { return leaves(g, "dropped (nothing of it is deposited)", bag, mainAt); }
+
+    /**
+     * Merge review 2026-11-23 (aa want of an item that is an open or stopped -d order: Goals.add replaced the goal and the
+     * new one got a line of its own, while the old key stayed among its old line's open orders for ever - that line never
+     * ended, its finished orders' amounts were never deposited and stopped being kept, with no line said; or the old,
+     * weighed goal stayed among the line's ended orders and both lines deposited the amount): the order {@code g} was
+     * replaced by a new order of the same item. It leaves its line as a dropped one does ({@link #dropped}): the new
+     * order deposits its own amount with its own line. Null as {@link #dropped}.
+     */
+    public Out replaced(Goals.Goal g, Map<String, Integer> bag, String mainAt) {
+        return leaves(g, "ordered again (the new order has a line of its own; nothing of the old one is deposited with this line)", bag, mainAt);
+    }
+
+    private Out leaves(Goals.Goal g, String how, Map<String, Integer> bag, String mainAt) {
         if (g.deposit <= 0 || g.line == null || g.strip != null) return null;
         Set<String> open = lineOpen.get(g.line);
         Map<String, Goals.Goal> ended = lineEnded.get(g.line);
         boolean was = open != null && open.remove(g.r.key());
         if (ended != null && ended.get(g.r.key()) == g) { ended.remove(g.r.key()); was = true; }      // dropped while parked
         if (!was) return null;
-        String how = "dropped (nothing of it is deposited)";
+        g.depositHeld = false;
         if (open != null && !open.isEmpty())
             return new Out(Kind.NOTED, g.r.key() + " " + how + ": the line's deposit follows when " + String.join(", ", open) + " end" + (open.size() == 1 ? "s" : ""), null);
         return lineEnds(g, how, ended == null ? new java.util.LinkedHashMap<>() : ended, bag, mainAt);
@@ -287,9 +368,11 @@ public final class LineDeposits {
             // deposit of this line, and what that one took of it is done with - taken off its amount here as below, never
             // deposited twice. Nothing left of it: the due deposit is not its, and stays due
             boolean outside = back.get(g.r.key()) != g;
-            Map<String, Integer> went = outside && g.depositTook != null ? g.depositTook : Map.of();
+            // merge review 2026-11-23: an earlier deposit that did not reach the chest took nothing of it
+            Map<String, Integer> went = outside && !g.depositMissed && g.depositTook != null ? g.depositTook : Map.of();
             int gone = went.values().stream().mapToInt(Integer::intValue).sum();
             g.depositWeighed = false;
+            g.depositMissed = false;
             g.depositTook = null;
             if (outside) {
                 g.deposit = Math.max(0, g.deposit - gone);
@@ -314,14 +397,22 @@ public final class LineDeposits {
         Map<String, Goals.Goal> ended = lineEnded.get(g.line);
         int noted = took.values().stream().mapToInt(Integer::intValue).sum();
         boolean wasOpen = ended != null && ended.remove(g.r.key()) != null;
-        if (wasOpen) {
-            // the line has not ended: the order is simply open again (its note was of the bag then, nothing was taken)
+        // merge review 2026-11-23 (a deposit run that failed or was refused, or a line that ended with no main chest set:
+        // the noted items are still in the bag, and the wake cut the order's deposit amount by them - "its deposit went
+        // with the line already", and the later end deposited less or nothing): the line's deposit did not reach the
+        // chest (gone(false), NO_CHEST), so nothing is taken off the amount, and the line says so (rule 7)
+        boolean missed = g.depositMissed;
+        g.depositMissed = false;
+        if (wasOpen || missed) {
+            // the line has not ended, or its deposit never reached the chest: the order is simply open again (its note
+            // was of the bag then, nothing was taken)
         } else if (noted > 0) {
             g.deposit = Math.max(0, g.deposit - noted);       // the line's deposit took them already
         }
         if (g.deposit <= 0) return new Out(Kind.WOKE_GONE, g.r.key() + " woke: its deposit went with the line already (" + Step.Deposit.onlyText(took) + ") - nothing more to deposit", null);
         lineOpen.computeIfAbsent(g.line, k -> new LinkedHashSet<>()).add(g.r.key());
         String line = wasOpen ? "the line's deposit waits for it"
+                : missed ? "the line's deposit did not reach the chest: nothing is taken off its amount (" + g.deposit + "), it follows when it ends"
                 : way != null ? "the line's deposit of " + Step.Deposit.onlyText(way) + " is on its way; the rest of its amount (" + g.deposit + ") follows when it ends"
                 : "the line's deposit went already; the rest of its amount (" + g.deposit + ") follows when it ends";
         return new Out(Kind.WOKE_OPEN, g.r.key() + " woke: its deposit items are weighed again when it ends (its stop noted "
@@ -329,12 +420,53 @@ public final class LineDeposits {
     }
 
     /**
-     * The goals tick's pass over one open order: a parked one is weighed as "stopped" (a stopped order's bag goes to the
-     * chest too); one weighed and running again (it woke) is opened again; else null (nothing to do).
+     * The goals tick's pass over one open order; null: nothing to do.
+     *
+     * <p>parked-holds (owner 2026-11-23, in place of his 2026-11-02 "a stopped order's bag goes to the chest too" for this
+     * case; tester-1 w001, tester-2 w053-3 and three more: the line went to the chest short because its last open order
+     * was only parked): a parked -d order that can still wake by itself ({@link Goals#canWake}, the one fact every reader
+     * asks) HOLDS its line's deposit - it is not weighed, it stays among the line's open orders, and that is said once per
+     * hold ({@link Kind#HELD}). The line ends when it is met, when it stops with no wake left, or when the owner drops it
+     * ({@link #dropped}). A parked order with no wake (only the owner's word changes it) is weighed as "stopped" as before:
+     * its bag goes to the chest. An order weighed and running again (it woke) is opened again.
      */
     public Out sweep(Goals.Goal g, Map<String, Integer> bag, String mainAt) {
-        if (g.parked != null) return weigh(g, "stopped", bag, mainAt);
+        if (g.parked != null) {
+            if (!g.depositWeighed && g.deposit > 0 && g.strip == null && Goals.canWake(g)) {
+                if (g.depositHeld) return null;         // said when the hold began
+                g.depositHeld = true;
+                return new Out(Kind.HELD, g.r.key() + " stopped: the line's deposit waits for it - it can still wake (" + Goals.wake(g) + "); in the bag for the line now: "
+                        + soFar(g, bag) + "; aa cancel " + g.r.key() + " ends the line without it", null);
+            }
+            return weigh(g, "stopped", bag, mainAt);
+        }
+        g.depositHeld = false;
         if (g.depositWeighed && g.deposit > 0 && g.strip == null) return reopen(g);
         return null;
+    }
+
+    /** parked-holds: what the bag holds now for the line of {@code g}: its ended orders' amounts and its own, as text. */
+    private String soFar(Goals.Goal g, Map<String, Integer> bag) {
+        Map<String, Goals.Goal> with = new java.util.LinkedHashMap<>();
+        Map<String, Goals.Goal> ended = lineEnded.get(g.line);
+        if (ended != null) with.putAll(ended);
+        with.put(g.r.key(), g);
+        Map<String, Integer> all = all(with, bag, false);
+        all.values().removeIf(n -> n <= 0);
+        return all.isEmpty() ? "nothing" : Step.Deposit.onlyText(all);
+    }
+
+    /**
+     * parked-holds (rule 7: aa goals and aa why): one line per order of {@code goals} that holds its line's deposit now -
+     * the order, what the bag holds for the line, what wakes it and the owner's way out. Empty: no deposit is held.
+     */
+    public java.util.List<String> held(java.util.List<Goals.Goal> goals, Map<String, Integer> bag) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (Goals.Goal g : goals) {
+            if (!g.depositHeld || g.parked == null) continue;
+            out.add("deposit held: the line's deposit (in the bag now: " + (bag == null ? "bag not read" : soFar(g, bag)) + ") waits for " + g.r.key() + ", stopped - " + Goals.wake(g)
+                    + "; aa cancel " + g.r.key() + " ends the line without it, aa want " + g.r.word().trim() + " orders it anew on a line of its own (this line ends without it too)");
+        }
+        return out;
     }
 }

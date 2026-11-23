@@ -44,8 +44,17 @@ public final class Goals {
         /** helper (owner 2026-11-02): the deposit to the main chest was weighed for this order's end (done or parked), once. */
         public boolean depositWeighed;
 
+        /** parked-holds (owner 2026-11-23): parked with a wake, the order holds its line's deposit, and that was said (LineDeposits.sweep). */
+        public boolean depositHeld;
+
         /** deposit-words (run JBK-T1): what the weighing at a park noted for the line's deposit (item -> n); a wake takes it back. */
         public Map<String, Integer> depositTook;
+
+        /**
+         * Merge review 2026-11-23: the deposit this order was weighed for did not reach the chest (its run failed or was
+         * refused, or no main chest was set): a wake takes nothing off its amount (LineDeposits.gone / reopen).
+         */
+        public boolean depositMissed;
 
         /** deposit-words (owner 2026-11-08): how many of the item go into the main chest when its line ends (the amount ordered); 0: none. */
         public int deposit;
@@ -137,6 +146,8 @@ public final class Goals {
 
         /** wait-not-park: what the order waited on when a run of it ended ({@link Goals#runFailed}); null: nothing. Cleared when it lands. */
         public String waitEnded;
+        /** wait-not-park: when (the board clock's ms) the wait in {@link #waitEnded} was first noted; the bound goals.waitEndedMaxS counts from it. */
+        public long waitEndedAtMs;
     }
 
     // ---- 0.39.z77 climb (run CM 17:43:10-17:48:31: every order parked under ground, 5 min idle, no line said why) ----
@@ -158,6 +169,15 @@ public final class Goals {
      * order is parked under ground), else nothing but the owner's word.
      */
     public static String wake(Goal g) { return wake(g, false); }
+
+    /**
+     * parked-holds (owner 2026-11-23; pure, the one fact for "this park can still wake"): the order is parked and keeps
+     * facts it waits on - the honest loop's ({@link Goal#loopPark}) or the park's own ({@link Goal#park}); {@link #park}
+     * gives every park one of them except the one only the owner's word changes (another dimension). False: not parked, or
+     * stopped for good. The once-only climb try of a park with no facts is no wake here: it comes only with every order
+     * parked under ground.
+     */
+    public static boolean canWake(Goal g) { return g.parked != null && (g.loopPark != null || g.park != null); }
 
     /** {@link #wake(Goal)}; {@code worldClimb}: another order's failed climb holds here for it (a world fact, run EJ). */
     static String wake(Goal g, boolean worldClimb) {
@@ -1018,6 +1038,13 @@ public final class Goals {
         String again = "";
         g.park = null;
         g.wakeSaid = null;
+        // merge review 2026-11-23 (an order parked by another order's trip or by the no-way park kept its ended wait and
+        // its look-around flag; after its wake the pass said "runs again: what it waited on landed (<old reason>)" for
+        // nothing, or its next run was a bare explore leg): a parked order waits on its park's facts only. Every park
+        // comes through here, so the un-parks need no second clearing
+        g.waitEnded = null;
+        g.waitEndedAtMs = 0;
+        g.lookAround = false;
         if (a != null) {
             g.loopPark = new LoopPark(a, needCounts(a.needs() == null ? List.of() : a.needs().keySet(), bb.in == null ? null : bb.in.bag, bb.in == null ? 0 : bb.in.pickTier), sourceCells(bb, g, a), bb.in == null ? null : bb.in.pos);
             again = "; it tries once more by itself when a need in the bag rises, it moves " + Math.round(Failures.movedV()) + " blocks or a new source is seen";
@@ -1051,8 +1078,13 @@ public final class Goals {
             // still to come (the loot book, the mining data, a path, a source not loaded: Chain.waiting) is not stopped by a
             // run's end - not known yet is no verdict (rule 15). It is held with that reason (blocked) and priced again when
             // the answer lands (retryWaits); said once here (rule 7)
+            // merge review 2026-11-23: narrowed - only a run that ended ON the wait (waitEnd); a real failure parks as before
             String waits = waitsOn(bb, g);
-            if (waits != null) {
+            if (waitEnd(g.loopAttempt != null, why, waits)) {
+                long now = bb.clock == null ? 0 : bb.clock.now();
+                if (g.waitEnded == null) g.waitEndedAtMs = now;
+                String past = waitedOut(bb, g, now);
+                if (past != null) return park(bb, g, (why == null || why.isBlank() ? "no reason given" : why) + past);
                 g.waitEnded = waits;
                 bb.port.log("order " + g.r.key() + ": its run ended (" + (why == null || why.isBlank() ? "no reason given" : why) + ") while it waits on: " + waits
                         + " - not stopped; it runs again when that lands (rule 15)");
@@ -1073,18 +1105,56 @@ public final class Goals {
     }
 
     /**
+     * wait-not-park, narrowed (merge review 2026-11-23; pure): a failed run's end is a wait, not a stop, only when the run
+     * ended ON the wait - the failed step is the stand itself (the reason names {@link Step.AwaitPaths#TEXT}, the one
+     * source of the stand's words) or the reason carries what the chain waits on ({@code waits}: the re-plan's own
+     * answer). A step that failed for a reason of its own (stuck, timed out) parks as before even when the chain priced
+     * after it waits on an answer, and so does a run the honest loop ended ({@code loopTry}: its try is kept by the park
+     * as the facts it wakes on) - the wait rule swallowed both (the review's finding).
+     */
+    public static boolean waitEnd(boolean loopTry, String why, String waits) {
+        if (waits == null || loopTry || why == null) return false;
+        return why.contains(Step.AwaitPaths.TEXT) || why.contains(waits);
+    }
+
+    /** wait-not-park: seconds an order whose run ended on a wait may stay neither stopped nor held before it is stopped (Tuning goals.waitEndedMaxS). */
+    static double waitEndedMaxS() { return Tuning.get("goals.waitEndedMaxS"); }
+
+    /**
+     * wait-not-park, bounded (merge review 2026-11-23: an order waiting on an answer that {@link #blocked} does not hold it
+     * for - a source's structure fact not loaded - was neither stopped nor held, so its line never ended and the orders
+     * were never "all parked"): the words for the stop when the wait has lasted goals.waitEndedMaxS since it was first
+     * noted and nothing holds the order now; null: not yet, or it is held with a said reason ({@link #blocked}: the loot
+     * book, the paths, the mining data - those land by themselves and the hold says so in aa goals).
+     */
+    static String waitedOut(Blackboard bb, Goal g, long nowMs) {
+        double maxS = waitEndedMaxS();
+        if (nowMs - g.waitEndedAtMs < (long) (maxS * 1000)) return null;         // structural: s -> ms
+        if (blocked(bb, g) != null) return null;
+        return " (it waited " + Math.round((nowMs - g.waitEndedAtMs) / 1000.0) + " s for an answer that did not land, the most is " + Math.round(maxS)      // structural: ms -> s
+                + " s: stopped here, priced again when the place changes)";
+    }
+
+    /**
      * wait-not-park: every order whose run ended while it waited on an answer ({@link #runFailed}) and whose chain waits no
      * more runs again at once - the brain's hold on its desire from that run's end is forgotten ({@code brainHolds} null: none
-     * to clear), said in the log. Keyed on the fact, no count: it may wait and land again. The lines said.
+     * to clear), said in the log. Keyed on the fact, no count: it may wait and land again. An order still waiting past
+     * goals.waitEndedMaxS that nothing holds is stopped ({@link #waitedOut}; the park says it once). The lines said.
      */
     public static List<String> retryWaits(Blackboard bb, Failures brainHolds) {
         List<String> out = new ArrayList<>();
         if (!(bb.fact(FACT) instanceof List<?>)) return out;
-        for (Goal g : of(bb)) {
+        for (Goal g : new ArrayList<>(of(bb))) {
             if (g.waitEnded == null || g.parked != null) continue;
-            if (waitsOn(bb, g) != null) continue;
+            String waits = waitsOn(bb, g);
+            if (waits != null) {
+                String past = waitedOut(bb, g, bb.clock == null ? 0 : bb.clock.now());
+                if (past != null && park(bb, g, "waits on: " + waits + past)) out.add("order " + g.r.key() + " stopped: " + g.parked);
+                continue;
+            }
             String line = "order " + g.r.key() + " runs again: what it waited on landed (" + g.waitEnded + ")";
             g.waitEnded = null;
+            g.waitEndedAtMs = 0;
             if (brainHolds != null) brainHolds.forget(g.id(), null);
             bb.port.log(line);
             out.add(line);
@@ -1284,12 +1354,17 @@ public final class Goals {
         public final List<String> ids;
         public final boolean group;
         public int n;
+        /** Merge review 2026-11-23: the order this entry was made from (null: not known) - its kept -d amount is these same items ({@link #orderReserves}). */
+        public final Goal order;
 
-        public Finished(String key, List<String> ids, int n, boolean group) {
+        public Finished(String key, List<String> ids, int n, boolean group) { this(key, ids, n, group, null); }
+
+        public Finished(String key, List<String> ids, int n, boolean group, Goal order) {
             this.key = key;
             this.ids = List.copyOf(ids);
             this.n = n;
             this.group = group;
+            this.order = order;
         }
     }
 
@@ -1306,7 +1381,7 @@ public final class Goals {
         if (g.strip != null || g.r.ids().isEmpty()) return;
         List<Finished> f = finished(bb);
         f.removeIf(x -> x.key.equals(g.r.key()));
-        f.add(new Finished(g.r.key(), g.r.ids(), g.n, g.r.group()));
+        f.add(new Finished(g.r.key(), g.r.ids(), g.n, g.r.group(), g));
     }
 
     /**
@@ -1343,25 +1418,59 @@ public final class Goals {
     /**
      * deposit-kept, placing (the cloud game of 2026-11-15, owner's yes 2026-11-16: 32 cobblestone -d in the bag, its order
      * neither running nor finished, 23 of them placed on the climb for the next order): as above, plus what the bag holds
-     * for the -d orders' deposits ({@code kept}: {@link #kept}, the one store - counted id -> n, never more than the bag
-     * holds). An item a reserve above already names is not reserved twice. They stay usable as ingredients as every order
-     * reserve does (ruling 1 option c): only placing is held off.
+     * for the -d orders' deposits ({@code kept}: {@link #keptPer}, the one store - per order, counted id -> n). They stay
+     * usable as ingredients as every order reserve does (ruling 1 option c): only placing is held off.
+     *
+     * <p>Merge review 2026-11-23: the fork sums the reserves' units (a max-flow over them), so two reserves of one item
+     * are two amounts. A kept amount was left out whenever ANY reserve above named its item, whatever its units: with
+     * cobblestone 32 -d kept and a later order of cobblestone 10 running or finished, only 10 were held and 32 of the 42
+     * could be placed. Now each order's kept amount is reserved less what the SAME order's own reserve above holds (the
+     * running order's target, or the finished entry made from it: the same items of the bag); another order's reserve of
+     * the item takes nothing off. The members are the order's full ids ({@link LineDeposits#fullId}): a modded item was
+     * reserved as minecraft:&lt;path&gt;.
      */
-    public static List<baritone.api.process.Reserves.Reserve<String>> orderReserves(Goal running, List<Finished> finished, Map<String, Integer> bag, Map<String, Integer> kept) {
+    public static List<baritone.api.process.Reserves.Reserve<String>> orderReserves(Goal running, List<Finished> finished, Map<String, Integer> bag, List<LineDeposits.Kept> kept) {
         List<baritone.api.process.Reserves.Reserve<String>> out = orderReserves(running, finished, bag);
         if (kept == null) return out;
-        for (var e : kept.entrySet()) {
-            if (e.getValue() <= 0) continue;
-            var k = io.github.mojolowjo.entropybot.aa.moves.Reservations.order(Thing.path(e.getKey()) + " (kept for a deposit)", List.of(e.getKey()), e.getValue());
-            boolean named = false;
-            for (var r : out) named |= r.members.containsAll(k.members);
-            if (!named) out.add(k);
+        // what each order's own reserve above holds, used up as its kept entries are counted (an order may be listed twice)
+        Map<Goal, Integer> own = new java.util.IdentityHashMap<>();
+        if (running != null && running.strip == null && !running.r.ids().isEmpty()) own.put(running, running.n);
+        if (finished != null)
+            for (Finished f : finished)
+                if (f.order != null && (running == null || !f.key.equals(running.r.key()))) own.merge(f.order, f.n, Integer::sum);
+        for (LineDeposits.Kept k : kept) {
+            Goal o = k.order();
+            String name = o.r.key() + " (kept for a deposit)";
+            if (o.r.group()) {             // a group's reserves are per member: each member's kept less the order's own per member
+                for (var e : k.items().entrySet()) {
+                    int units = e.getValue() - own.getOrDefault(o, 0);
+                    if (units > 0) out.add(io.github.mojolowjo.entropybot.aa.moves.Reservations.order(name, List.of(LineDeposits.fullId(o, e.getKey())), units));
+                }
+                own.remove(o);
+                continue;
+            }
+            int units = 0;
+            List<String> ids = new ArrayList<>();
+            for (var e : k.items().entrySet()) {
+                if (e.getValue() <= 0) continue;
+                units += e.getValue();
+                ids.add(LineDeposits.fullId(o, e.getKey()));
+            }
+            int held = Math.min(units, own.getOrDefault(o, 0));
+            if (held > 0) own.merge(o, -held, Integer::sum);
+            if (units - held > 0) out.add(io.github.mojolowjo.entropybot.aa.moves.Reservations.order(name, ids, units - held));
         }
         return out;
     }
 
     /** deposit-kept: the last "kept for the deposit" line said (said again only on a change, rule 7). */
     static final String KEPT_SAID_FACT = "aa.depositKeptSaid";
+
+    /** deposit-kept, placing: {@link LineDeposits#keptPer} for every order (nothing left out); empty: nothing kept, or the bag is not read. */
+    public static List<LineDeposits.Kept> keptPer(Blackboard bb) {
+        if (bb.in == null || bb.in.bag == null || !(bb.fact(LineDeposits.FACT) instanceof LineDeposits ld)) return List.of();
+        return ld.keptPer(bb.in.bag, of(bb), null, null);
+    }
 
     /** deposit-kept: what the bag holds for the -d orders' deposits, less {@code self}'s and {@code skip}'s ({@link LineDeposits#kept}); empty: nothing. */
     public static Map<String, Integer> kept(Blackboard bb, Goal self, java.util.Collection<Goal> skip) {
@@ -1388,8 +1497,11 @@ public final class Goals {
      * (BatchWay.open) - the one answer the planner ({@link #keptOff}) and the running steps (Steps.Hands.freeBag) take off.
      */
     /**
-     * deposit-kept, steps: what a run may NOT use up from the bag - {@code orderRun}: the run is an order's (its desire
-     * {@code desireId}); false (a deposit, a plain job): nothing, the bag as it is. An order's run whose goal is no longer
+     * deposit-kept, steps: what a run may NOT use up from the bag - {@code orderRun} false: nothing, the bag as it is (the
+     * line's own deposit run, which puts the kept amounts away, and the brain's task that is no order's); true with
+     * {@code desireId}: an order's run; true with a null {@code desireId} (merge review 2026-11-23): any other run - an
+     * owner one-shot, a job - from which every kept amount is held (the owner's rule: a -d amount reaches the chest
+     * whole). The caller says which (AaRuntime.keptFromOthers). An order's run whose goal is no longer
      * among the open ones is a CARRIED run (the order was met inside its batch's trip and left the goals; the run goes on
      * for the batch's next order): every kept amount is held from it. Cloud tester run 43 (2026-11-22, the owner's line):
      * oak_log was met at 06:20:51, its carried run then made the torch's furnace from 8 of the 32 kept cobblestone and
@@ -1605,7 +1717,7 @@ public final class Goals {
         String b = blocked(bb, g);
         var ch = b == null ? chain(bb, g) : null;
         return g.r.key() + " " + have(free(bb, g), g) + "/" + g.n + (g.prio > 0 ? " high" : g.prio < 0 ? " low" : "") + (g.deposit > 0 ? " (deposit)" : "") + ": " + scoreText
-                + (b != null ? (g.parked == null ? " - held: " : " - parked: ") + b :ch != null ? " - chain: " + ch.why() : " - no facts for the chain yet")
+                + (b != null ? (g.parked == null ? " - held: " : " - parked: ") + b + (g.depositHeld && g.parked != null ? " (the line's deposit waits for it: it can still wake)" : "") :ch != null ? " - chain: " + ch.why() : " - no facts for the chain yet")
                 + " [" + g.r.text() + "]";
     }
 }

@@ -264,6 +264,13 @@ final class SimGame {
     Goals.Goal order(String word, int n, String batch, boolean deposit) {
         var r = Thing.resolve(word, catalog);
         if (r.err() != null) throw new IllegalArgumentException(word + ": " + r.err());
+        // as the runtime's aa want: an order of the same item that is replaced leaves its line first
+        Goals.Goal old = Goals.find(bb, r.key());
+        if (old != null && old.deposit > 0) {
+            sense();
+            LineDeposits.Out out = deposits.replaced(old, bb.in.bag, mainAt);
+            if (out != null && out.text() != null) { say(out.text()); if (out.kind() == LineDeposits.Kind.DUE) due.add(out.items()); }
+        }
         Goals.Goal g = Goals.add(bb, r, n, 0, clock.now());
         g.batch = batch;
         deposits.add(g, batch, deposit);
@@ -312,7 +319,7 @@ final class SimGame {
         long idleSince = clock.now();
         while (end == null) {
             tick();
-            while (!due.isEmpty() && end == null) { deposit(due.remove(0)); deposits.gone(); }     // as the game since af9e82fc: the -d amounts stay kept until the deposit run has ended
+            while (!due.isEmpty() && end == null) { deposits.gone(deposit(due.remove(0))); }     // as the game since af9e82fc: the -d amounts stay kept until the deposit run has ended
             if (end != null) break;
             if (Goals.of(bb).isEmpty()) { end = "done"; break; }
             if (seconds() > limitS) { end = "time limit: " + limitS + " s; orders left: " + orders(); break; }
@@ -438,7 +445,7 @@ final class SimGame {
         @Override public List<baritone.api.process.Reserves.Reserve<String>> orderReserves() {
             Goals.Goal running = null;
             if (runDesire != null) for (Goals.Goal g : Goals.of(bb)) if (g.id().equals(runDesire)) running = g;
-            return Goals.orderReserves(running, Goals.finished(bb), bb.in.bag, Goals.kept(bb, null, null));
+            return Goals.orderReserves(running, Goals.finished(bb), bb.in.bag, Goals.keptPer(bb));
         }
 
         /** As the game's hands (StepHands.freeBag over AaRuntime.keptFromOthers): the bag less the other orders' -d amounts. */
@@ -473,19 +480,19 @@ final class SimGame {
         }
     }
     /** The line's deposit came due: the walk to the main chest and exactly those items into it (the game's deposit job). */
-    private void deposit(Map<String, Integer> items) {
-        if (mainAt == null) { end = "deposit: no main chest set"; return; }
+    private boolean deposit(Map<String, Integer> items) {
+        if (mainAt == null) { end = "deposit: no main chest set"; return false; }
         String[] p = mainAt.split(" ");
         int[] c = {Integer.parseInt(p[0]), Integer.parseInt(p[1]), Integer.parseInt(p[2])};
-        if (!"minecraft:chest".equals(world.at(c[0], c[1], c[2]))) { end = "deposit: no chest at " + mainAt + " (" + world.at(c[0], c[1], c[2]) + ")"; return; }
+        if (!"minecraft:chest".equals(world.at(c[0], c[1], c[2]))) { end = "deposit: no chest at " + mainAt + " (" + world.at(c[0], c[1], c[2]) + ")"; return false; }
         // the deposit walk's lease, as the game's (AaRuntime.orderReserves with no running order): every -d amount in the
         // bag is reserved, so the walk places none of it (the 100 worlds, 2026-11-22: 10 of 68 lines came up 1-10
         // cobblestone short because the sim let the kept amounts go before the walk and placed them on the way)
         sense();
-        lease = Goals.orderReserves(null, Goals.finished(bb), bb.in.bag, Goals.kept(bb, null, null));
+        lease = Goals.orderReserves(null, Goals.finished(bb), bb.in.bag, Goals.keptPer(bb));
         SimSteps.Result w = SimSteps.apply(this, new Step.Walk(c[0], c[1], c[2], 2));
         clock.advance(Math.round(w.seconds() * 1000));       // structural: milliseconds a second
-        if (!w.ok()) { say("deposit FAILED at " + mainAt + ": the walk there: " + w.text() + "; nothing put in, the items stay in the bag " + items); return; }
+        if (!w.ok()) { say("deposit FAILED at " + mainAt + ": the walk there: " + w.text() + "; nothing put in, the items stay in the bag " + items); return false; }
         List<String> put = new ArrayList<>(), short_ = new ArrayList<>();
         for (var e : items.entrySet()) {
             String id = e.getKey().contains(":") ? e.getKey() : "minecraft:" + e.getKey();
@@ -495,6 +502,7 @@ final class SimGame {
             if (n < e.getValue()) short_.add(n + " of " + e.getValue() + " " + e.getKey());
         }
         say("deposit at " + mainAt + ": " + put + (short_.isEmpty() ? "" : "; SHORT: " + short_) + String.format(Locale.ROOT, " (walk %.1f s)", w.seconds()));
+        return true;
     }
 
     /** The bag less every -d amount kept for a deposit (full item ids): what a step may use up first, as the planner counts it. */

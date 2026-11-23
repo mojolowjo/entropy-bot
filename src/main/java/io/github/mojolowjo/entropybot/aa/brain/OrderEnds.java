@@ -47,7 +47,8 @@ public final class OrderEnds {
         // 0.39.z77 climb (run CM 17:43-17:48, rule 7): every order parked - under ground the waiting ones try the climb way once,
         // and the all-parked line (each park and its wake) is said once; said by Goals (log + whisper)
         Goals.parkedTick(bb, underGround, brain.failures, brain.runningDesire() != null || (bb.in != null && bb.in.otherJob != null));
-        // helper: a stopped order's bag goes to the chest too; an order that woke is weighed again at its end.
+        // helper: the bag of an order stopped for good goes to the chest too; an order that woke is weighed again at its
+        // end; parked-holds (owner 2026-11-23): a stopped order that can still wake holds its line's deposit (said once).
         // un-park first (tester-1 w006, 2026-11-22: torch weighed "stopped" at 04:34:10.244 and the line went due; at
         // 04:34:10.249, in this same pass, the climb retry un-parked both orders): the sweep runs after every un-park of
         // this pass (the waits, the loop parks, the climb retry and the look-around), so an order running again is never
