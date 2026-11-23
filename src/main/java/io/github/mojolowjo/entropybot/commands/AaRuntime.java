@@ -4143,6 +4143,9 @@ public final class AaRuntime implements JobPort {
         if (o == null || o.text() == null) return;
         switch (o.kind()) {
             case NO_CHEST -> { LOG.info("[entropybot] aa: {}", o.text()); c.whisper(c.owner(), "aa: " + o.text()); }
+            // parked-holds (owner 2026-11-23): finished items stay in the bag while a stopped order of the line can still
+            // wake - the owner is told once per hold, with the order and the way out (rule 7)
+            case HELD -> { LOG.info("[entropybot] aa: {}", o.text()); c.whisper(c.owner(), "aa: " + o.text()); }
             case DUE -> {
                 depositItems = o.items();
                 depositDue = o.text();
@@ -4677,8 +4680,14 @@ public final class AaRuntime implements JobPort {
         List<String> fin = new ArrayList<>();          // 0.39.z61 (ruling 1 option c): met orders whose items are never pillared
         for (var f : io.github.mojolowjo.entropybot.aa.brain.Goals.finished(bb)) fin.add(f.key + " " + f.n);
         if (!fin.isEmpty()) out.add("finished, kept from pillaring (aa cancel <thing> lets them go): " + String.join(", ", fin));
+        out.addAll(depositHeldLines());                 // parked-holds: which order holds a line's deposit
         return "owner goals" + (out.isEmpty() ? ": none (aa want <thing> [n] [high|low] | aa build <name> here)" : " (" + out.size() + "):\n" + String.join("\n", out))
                 + "\n" + ideasLine();
+    }
+
+    /** parked-holds: aa goals / aa why - one line per stopped order that holds its line's deposit (LineDeposits.held, the one store). */
+    List<String> depositHeldLines() {
+        return lineDeposits.held(io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb), bb.in == null ? null : bb.in.bag);
     }
 
     /** "goals: iron_ore 0/5 70" for aa status (empty when none). */

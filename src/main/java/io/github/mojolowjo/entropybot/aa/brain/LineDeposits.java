@@ -10,8 +10,9 @@ import java.util.TreeMap;
 
 /**
  * deposit-words (owner 2026-11-08; was the helper rule of 2026-11-02: the WHOLE bag to the main chest after every order):
- * an order flagged -d that ended (done, or stopped with some of it in the bag) adds the ordered amount of its item (what
- * the bag holds of it) to its line's deposit; when the line's last -d order has ended, ONE deposit of exactly those items
+ * an order flagged -d that ended (done, or stopped FOR GOOD with some of it in the bag; parked-holds, owner 2026-11-23: a
+ * stopped order that can still wake has not ended, it holds its line's deposit, see {@link #sweep}) adds the ordered
+ * amount of its item (what the bag holds of it) to its line's deposit; when the line's last -d order has ended, ONE deposit of exactly those items
  * goes to the main chest (aa deposit x y z). An order with no deposit word deposits nothing, said in the log (rule 7).
  * Weighed once per order end.
  *
@@ -37,6 +38,11 @@ public final class LineDeposits {
         NO_CHEST,
         /** The line ended: {@link Out#items} go to the main chest when the job slot is free (logged). */
         DUE,
+        /**
+         * parked-holds: the order stopped and can still wake by itself: it is not weighed, it stays open on its line and the
+         * line's deposit waits for it (logged and whispered, once per hold).
+         */
+        HELD,
         /** A parked order woke: its deposit went with the line already (logged). */
         WOKE_GONE,
         /** A parked order woke: weighed again at its end (logged). */
@@ -219,6 +225,7 @@ public final class LineDeposits {
             how = "done (stopped earlier and met since: weighed again" + (back.kind() == Kind.WOKE_TAKEN_BACK ? "; the line's deposit that had not started is taken back and weighed with it" : "") + ")";
         }
         g.depositWeighed = true;
+        g.depositHeld = false;                       // parked-holds: an order that ended holds nothing
         if (g.strip != null) return new Out(Kind.STRIP, null, null);     // the strip order has its own deposit leg
         if (g.deposit <= 0) return new Out(Kind.NO_WORD, g.r.key() + " " + how + ": no deposit word on the order (-d, or a trailing deposit) - its items stay in the bag", null);
         // bag-at-the-end (run JBO-T1 22:53:47 -> 22:54:30: cobblestone stopped with 17 in the bag, "noted (cobblestone 17)";
@@ -329,12 +336,53 @@ public final class LineDeposits {
     }
 
     /**
-     * The goals tick's pass over one open order: a parked one is weighed as "stopped" (a stopped order's bag goes to the
-     * chest too); one weighed and running again (it woke) is opened again; else null (nothing to do).
+     * The goals tick's pass over one open order; null: nothing to do.
+     *
+     * <p>parked-holds (owner 2026-11-23, in place of his 2026-11-02 "a stopped order's bag goes to the chest too" for this
+     * case; tester-1 w001, tester-2 w053-3 and three more: the line went to the chest short because its last open order
+     * was only parked): a parked -d order that can still wake by itself ({@link Goals#canWake}, the one fact every reader
+     * asks) HOLDS its line's deposit - it is not weighed, it stays among the line's open orders, and that is said once per
+     * hold ({@link Kind#HELD}). The line ends when it is met, when it stops with no wake left, or when the owner drops it
+     * ({@link #dropped}). A parked order with no wake (only the owner's word changes it) is weighed as "stopped" as before:
+     * its bag goes to the chest. An order weighed and running again (it woke) is opened again.
      */
     public Out sweep(Goals.Goal g, Map<String, Integer> bag, String mainAt) {
-        if (g.parked != null) return weigh(g, "stopped", bag, mainAt);
+        if (g.parked != null) {
+            if (!g.depositWeighed && g.deposit > 0 && g.strip == null && Goals.canWake(g)) {
+                if (g.depositHeld) return null;         // said when the hold began
+                g.depositHeld = true;
+                return new Out(Kind.HELD, g.r.key() + " stopped: the line's deposit waits for it - it can still wake (" + Goals.wake(g) + "); in the bag for the line now: "
+                        + soFar(g, bag) + "; aa cancel " + g.r.key() + " ends the line without it", null);
+            }
+            return weigh(g, "stopped", bag, mainAt);
+        }
+        g.depositHeld = false;
         if (g.depositWeighed && g.deposit > 0 && g.strip == null) return reopen(g);
         return null;
+    }
+
+    /** parked-holds: what the bag holds now for the line of {@code g}: its ended orders' amounts and its own, as text. */
+    private String soFar(Goals.Goal g, Map<String, Integer> bag) {
+        Map<String, Goals.Goal> with = new java.util.LinkedHashMap<>();
+        Map<String, Goals.Goal> ended = lineEnded.get(g.line);
+        if (ended != null) with.putAll(ended);
+        with.put(g.r.key(), g);
+        Map<String, Integer> all = all(with, bag, false);
+        all.values().removeIf(n -> n <= 0);
+        return all.isEmpty() ? "nothing" : Step.Deposit.onlyText(all);
+    }
+
+    /**
+     * parked-holds (rule 7: aa goals and aa why): one line per order of {@code goals} that holds its line's deposit now -
+     * the order, what the bag holds for the line, what wakes it and the owner's way out. Empty: no deposit is held.
+     */
+    public java.util.List<String> held(java.util.List<Goals.Goal> goals, Map<String, Integer> bag) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (Goals.Goal g : goals) {
+            if (!g.depositHeld || g.parked == null) continue;
+            out.add("deposit held: the line's deposit (in the bag now: " + (bag == null ? "bag not read" : soFar(g, bag)) + ") waits for " + g.r.key() + ", stopped - " + Goals.wake(g)
+                    + "; aa cancel " + g.r.key() + " ends the line without it, aa want " + g.r.word().trim() + " tries it again");
+        }
+        return out;
     }
 }

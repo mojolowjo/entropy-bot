@@ -354,7 +354,104 @@ class LineDepositsTest {
         assertTrue(s.deposits.dueNow().isEmpty());
     }
 
-    /** A park that nothing in the pass wakes still ends its line (the owner's rule of 2026-11-02 stands; part 1 waits for him). */
+    // ---- parked-holds (owner 2026-11-23): a parked order that can still wake holds its line's deposit ----
+
+    /** A park that keeps facts it waits on (every park but the owner's-word one): it can wake. */
+    private static void parkWithWake(Goals.Goal g, String why) {
+        g.parked = why;
+        g.park = new Goals.Park(Goals.ParkKind.PLACE, null, 0, null, null);
+    }
+
+    /** tester-1 w001: cobblestone 32 done, the torch order parked on a furnace click. The line does not go due on the park. */
+    @Test
+    void aParkedOrderThatCanWakeHoldsTheLinesDeposit() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        s.bag.put("cobblestone", 32);
+        s.bag.put("oak_log", 3);
+        assertEquals(Kind.NOTED, s.deposits.weigh(cob, "done", s.bag, AT).kind());
+        parkWithWake(log, "clicked 3 times, nothing opened");
+        assertTrue(Goals.canWake(log));
+        LineDeposits.Out held = s.deposits.sweep(log, s.bag, AT);
+        assertEquals(Kind.HELD, held.kind(), held.text());
+        assertTrue(held.text().contains("oak_log stopped: the line's deposit waits for it") && held.text().contains("cobblestone 32") && held.text().contains("aa cancel oak_log"), held.text());
+        assertNull(s.deposits.sweep(log, s.bag, AT), "said once per hold");
+        assertTrue(s.deposits.dueNow().isEmpty(), "nothing is due while it holds");
+        assertFalse(log.depositWeighed, "not weighed: it has not ended");
+        assertEquals(32, s.deposits.kept(s.bag, List.of(log), null, null).get("cobblestone"), "the finished amount stays kept for the line");
+        List<String> lines = s.deposits.held(List.of(log), s.bag);
+        assertEquals(1, lines.size(), String.valueOf(lines));
+        assertTrue(lines.get(0).contains("waits for oak_log") && lines.get(0).contains("cobblestone 32"), lines.get(0));
+        // it wakes, runs and is met: the line's ONE deposit goes whole
+        log.parked = null;
+        log.park = null;
+        assertNull(s.deposits.sweep(log, s.bag, AT), "it was never weighed: nothing to re-open");
+        assertFalse(log.depositHeld);
+        assertTrue(s.deposits.held(List.of(log), s.bag).isEmpty());
+        s.bag.put("oak_log", 16);
+        LineDeposits.Out end = s.deposits.weigh(log, "done", s.bag, AT);
+        assertEquals(Kind.DUE, end.kind(), end.text());
+        assertEquals(Map.of("cobblestone", 32, "oak_log", 16), end.items(), "the -d amounts reach the chest whole");
+    }
+
+    /** The owner's way out when the holding order never wakes: aa cancel ends the line, the finished orders deposit. */
+    @Test
+    void droppingTheHoldingOrderEndsTheLine() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        s.bag.put("cobblestone", 32);
+        s.deposits.weigh(cob, "done", s.bag, AT);
+        parkWithWake(log, "no source in reach");
+        assertEquals(Kind.HELD, s.deposits.sweep(log, s.bag, AT).kind());
+        LineDeposits.Out out = s.deposits.dropped(log, s.bag, AT);
+        assertEquals(Kind.DUE, out.kind(), out.text());
+        assertEquals(Map.of("cobblestone", 32), out.items());
+    }
+
+    /** A hold whose park loses its wake (only the owner's word is left) ends the line as before: its bag goes to the chest. */
+    @Test
+    void aHeldOrderWithNoWakeLeftEndsTheLine() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        s.bag.put("cobblestone", 32);
+        s.bag.put("oak_log", 5);
+        s.deposits.weigh(cob, "done", s.bag, AT);
+        parkWithWake(log, "no source in reach");
+        assertEquals(Kind.HELD, s.deposits.sweep(log, s.bag, AT).kind());
+        log.park = null;                                     // stopped for good
+        assertFalse(Goals.canWake(log));
+        LineDeposits.Out out = s.deposits.sweep(log, s.bag, AT);
+        assertEquals(Kind.DUE, out.kind(), out.text());
+        assertEquals(Map.of("cobblestone", 32, "oak_log", 5), out.items());
+        assertFalse(log.depositHeld);
+        assertTrue(s.deposits.held(List.of(log), s.bag).isEmpty());
+    }
+
+    /** An order with no deposit word holds nothing: its stop is said as before. */
+    @Test
+    void aParkedOrderWithNoDepositWordHoldsNothing() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal log = s.order("oak_log", 16, "b1", false);
+        parkWithWake(log, "no source in reach");
+        assertEquals(Kind.NO_WORD, s.deposits.sweep(log, s.bag, AT).kind());
+        assertFalse(log.depositHeld);
+    }
+
+    /** The real pass: every order of the line parked with a wake on the surface - each hold said once, nothing due. */
+    @Test
+    void thePassHoldsTheDepositOfParkedOrdersThatCanWake() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        s.bag.put("cobblestone", 11);
+        parkWithWake(cob, "stopped");
+        parkWithWake(log, "stopped");
+        List<LineDeposits.Out> outs = pass(s, false);
+        assertEquals(List.of(Kind.HELD, Kind.HELD), outs.stream().map(LineDeposits.Out::kind).toList(), String.valueOf(outs));
+        assertTrue(pass(s, false).isEmpty(), "said once");
+        assertTrue(s.deposits.dueNow().isEmpty());
+    }
+
+    /** A park with no wake (only the owner's word changes it) still ends its line: its bag goes to the chest as before. */
     @Test
     void aParkThePassDoesNotWakeStillEndsTheLine() {
         OrderLineSim s = new OrderLineSim();

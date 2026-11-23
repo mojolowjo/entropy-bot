@@ -207,6 +207,9 @@ class OrderLineScenariosTest {
             }
         }
         s.run(3, 5000);
+        assertTrue(s.due.isEmpty() && cob.depositHeld, "parked-holds: the stopped order can still wake, so the line's deposit waits for it: " + s.said);
+        s.stoppedForGood(cob);                               // no wake left: the line ends on it, as before
+        s.run(3, 5000);
         assertTrue(cobFailed && logDone, s.brain.whyLines(6).toString());
         assertEquals(List.of(Map.of("cobblestone", 9, "oak_log", 16)), s.due, "what the bag holds when the line ends: " + s.said);
     }
@@ -255,6 +258,10 @@ class OrderLineScenariosTest {
                     else if (r.equals(log.id())) { s.run(2, 5000); s.bag.put("cobblestone", atEnd); s.bag.put("oak_log", 16); s.endRun("done: chopped"); logDone = true; }
                 }
                 s.run(3, 5000);
+                if (atEnd < 32 && (!s.due.isEmpty() || !cob.depositHeld)) wrong.add(       // 32 and more: it is met, the line ends whole
+"stop " + atStop + ", end " + atEnd + ": not held while the stopped order can wake: " + s.said);
+                s.stoppedForGood(cob);                       // parked-holds: no wake left, the line ends on it
+                s.run(3, 5000);
                 Map<String, Integer> want = new java.util.TreeMap<>(Map.of("oak_log", 16));
                 if (atEnd > 0) want.put("cobblestone", Math.min(32, atEnd));
                 if (!s.due.equals(List.of(want))) wrong.add("stop " + atStop + ", end " + atEnd + ": " + s.due + " (wanted " + want + ") " + s.said);
@@ -264,7 +271,8 @@ class OrderLineScenariosTest {
     }
 
     /**
-     * The same, the other way round in time: the line's deposit went (the other order ended) BEFORE the stopped order was
+     * The same, the other way round in time: the line's deposit went (the other order ended, this one stopped for good:
+     * parked-holds, a stop that can still wake holds the deposit) BEFORE the stopped order was
      * met. Wanted: a second deposit of what the first left out, nothing twice.
      */
     @Test
@@ -279,6 +287,9 @@ class OrderLineScenariosTest {
             if (r.equals(cob.id()) && !cobFailed) { cobFailed = true; s.failRun(JBM_STAND_END); }
             else if (r.equals(log.id())) { s.run(2, 5000); s.bag.put("oak_log", 16); s.endRun("done: chopped"); logDone = true; }
         }
+        s.run(3, 5000);
+        assertTrue(s.due.isEmpty() && cob.depositHeld, "parked-holds: the stopped order can still wake, so the line's deposit waits for it: " + s.said);
+        s.stoppedForGood(cob);                               // no wake left: the line ends on it, as before
         s.run(3, 5000);
         assertEquals(List.of(Map.of("oak_log", 16)), s.due, "the line's deposit went with the logs: " + s.said);
         assertNotNull(cob.parked, "the cobblestone order is still stopped");

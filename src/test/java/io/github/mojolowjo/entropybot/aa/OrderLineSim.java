@@ -109,6 +109,12 @@ final class OrderLineSim {
         return g;
     }
 
+    /** parked-holds: the park of {@code g} keeps nothing it waits on any more (as a park only the owner's word changes): it cannot wake by itself. */
+    void stoppedForGood(Goals.Goal g) {
+        g.park = null;
+        g.loopPark = null;
+    }
+
     /** One pass: the senses, the brain, then the order-end pass (as the game's tick does). */
     void tick() {
         sense();

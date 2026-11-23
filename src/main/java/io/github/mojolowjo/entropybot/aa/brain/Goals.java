@@ -44,6 +44,9 @@ public final class Goals {
         /** helper (owner 2026-11-02): the deposit to the main chest was weighed for this order's end (done or parked), once. */
         public boolean depositWeighed;
 
+        /** parked-holds (owner 2026-11-23): parked with a wake, the order holds its line's deposit, and that was said (LineDeposits.sweep). */
+        public boolean depositHeld;
+
         /** deposit-words (run JBK-T1): what the weighing at a park noted for the line's deposit (item -> n); a wake takes it back. */
         public Map<String, Integer> depositTook;
 
@@ -158,6 +161,15 @@ public final class Goals {
      * order is parked under ground), else nothing but the owner's word.
      */
     public static String wake(Goal g) { return wake(g, false); }
+
+    /**
+     * parked-holds (owner 2026-11-23; pure, the one fact for "this park can still wake"): the order is parked and keeps
+     * facts it waits on - the honest loop's ({@link Goal#loopPark}) or the park's own ({@link Goal#park}); {@link #park}
+     * gives every park one of them except the one only the owner's word changes (another dimension). False: not parked, or
+     * stopped for good. The once-only climb try of a park with no facts is no wake here: it comes only with every order
+     * parked under ground.
+     */
+    public static boolean canWake(Goal g) { return g.parked != null && (g.loopPark != null || g.park != null); }
 
     /** {@link #wake(Goal)}; {@code worldClimb}: another order's failed climb holds here for it (a world fact, run EJ). */
     static String wake(Goal g, boolean worldClimb) {
@@ -1605,7 +1617,7 @@ public final class Goals {
         String b = blocked(bb, g);
         var ch = b == null ? chain(bb, g) : null;
         return g.r.key() + " " + have(free(bb, g), g) + "/" + g.n + (g.prio > 0 ? " high" : g.prio < 0 ? " low" : "") + (g.deposit > 0 ? " (deposit)" : "") + ": " + scoreText
-                + (b != null ? (g.parked == null ? " - held: " : " - parked: ") + b :ch != null ? " - chain: " + ch.why() : " - no facts for the chain yet")
+                + (b != null ? (g.parked == null ? " - held: " : " - parked: ") + b + (g.depositHeld && g.parked != null ? " (the line's deposit waits for it: it can still wake)" : "") :ch != null ? " - chain: " + ch.why() : " - no facts for the chain yet")
                 + " [" + g.r.text() + "]";
     }
 }
