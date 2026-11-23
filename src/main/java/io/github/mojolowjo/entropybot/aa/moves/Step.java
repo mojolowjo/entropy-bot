@@ -98,17 +98,27 @@ public sealed interface Step {
     }
 
     /**
-     * Baritone's own tree mining: its MineProcess on the log blocks ({@code log}: one block id, null = every block the
-     * game tags as a log) until {@code logs} more are in the bag. {@code at}: the seen tree (Sightings) the walk before
-     * it went to, or null (Baritone mines the nearest it knows).
+     * Baritone's own tree cut (the fork's chop process) until {@code logs} more of {@code item} are in the bag.
+     * {@code item}: the item or tag word the cut is for, the need its spot was priced for ("acacia_log", "#logs"; null:
+     * none named, read as the game's logs tag). The hand cuts only the log blocks whose DROP is that item or a member of
+     * that tag (the loot data, the collect's own source set: StepHands.chop, ChopSet) and counts only those items.
+     * {@code at}: the seen tree (Sightings) the price was for, or null (Baritone cuts the nearest it knows).
+     * <p>Cloud tester 2, probe round 3, w058-2 (2026-11-23): the field was a block id no code ever set, so an order of
+     * acacia_log 16 cut every block of the logs tag ("cut 1 logs - Baritone's chop process on 20 block kind(s)"): 51
+     * acacia_wood (bark, its drop is acacia_wood) went into the bag and counted as logs, the chest got acacia_log 1.
      */
-    record ChopTree(int[] at, int logs, String log) implements Step {
+    record ChopTree(int[] at, int logs, String item) implements Step {
         public ChopTree {
             at = at == null ? null : at.clone();
         }
 
+        /** The need word in full the cut is for ("minecraft:acacia_log", "#minecraft:logs"): the one reader of {@code item}. */
+        public String word() {
+            return item == null ? "#" + io.github.mojolowjo.entropybot.aa.NeedChain.LOGS_TAG : io.github.mojolowjo.entropybot.aa.NeedChain.word(item);
+        }
+
         public String text() {
-            return "cut " + logs + (log == null ? "" : " " + log) + (at == null ? "" : " at " + at[0] + " " + at[1] + " " + at[2]);
+            return "cut " + logs + (item == null ? "" : " " + item) + (at == null ? "" : " at " + at[0] + " " + at[1] + " " + at[2]);
         }
     }
 

@@ -540,10 +540,10 @@ class ScenariosTest {
         assertTrue(three.ok() && !three.explore(), three.why());
         assertEquals(27.01, three.seconds(), TOL, three.why());
         assertEquals(1, three.steps().size(), "the first tree covers 3: no second cut: " + three.steps());
-        assertEquals("cut 3 at 10 64 0", three.steps().get(0).text());
+        assertEquals("cut 3 oak_log at 10 64 0", three.steps().get(0).text());
         Chain ten = NeedChain.resolve("oak_log", 10, both);
         assertEquals(63.05, ten.seconds(), TOL, ten.why());
-        assertEquals(List.of("cut 8 at 10 64 0", "cut 2 at 40 64 0"), ten.steps().stream().map(Step::text).toList(), "A short by 2: B too");
+        assertEquals(List.of("cut 8 oak_log at 10 64 0", "cut 2 oak_log at 40 64 0"), ten.steps().stream().map(Step::text).toList(), "A short by 2: B too");
         // the planks of 3 logs from the same tree in one chain: the surplus is in the bag, the tree is cut once
         Chain planks = NeedChain.resolve("oak_planks", 20, both);
         assertEquals(1, planks.steps().stream().filter(s -> s instanceof Step.ChopTree).count(), planks.steps().toString());
@@ -621,11 +621,11 @@ class ScenariosTest {
         n.bindFailures(f);
         assertEquals(io.github.mojolowjo.entropybot.aa.core.Status.RUNNING, n.tick(bb));
         Step first = port.started.get(0).steps().get(0);
-        assertEquals("cut 3 at 10 64 0", first.text());
-        port.fail(1, "stopped at step 1 (cut 3 at 10 64 0): cut 3 logs: none in range (got 0 of 3)", first);
+        assertEquals("cut 3 oak_log at 10 64 0", first.text());
+        port.fail(1, "stopped at step 1 (cut 3 oak_log at 10 64 0): cut 3 logs: none in range (got 0 of 3)", first);
         assertEquals(io.github.mojolowjo.entropybot.aa.core.Status.RUNNING, n.tick(bb), "re-priced at once, no hold of the need");
         assertEquals(2, port.started.size(), "the next source started in the same tick: " + port.started);
-        assertEquals("cut 3 at 40 64 0", port.started.get(1).steps().get(0).text());
+        assertEquals("cut 3 oak_log at 40 64 0", port.started.get(1).steps().get(0).text());
         long now = clock.now();
         assertTrue(f.blocked("needs.wood", "cut at 10 64 0", now), f.describe(now).toString());
         assertTrue(f.reason("needs.wood", "cut at 10 64 0").contains("none in range"));
@@ -681,10 +681,10 @@ class ScenariosTest {
         Chain c = NeedChain.resolve("crafting_table", 1, both);
         assertTrue(c.ok() && !c.explore(), c.why());
         assertEquals(21.6, c.seconds(), TOL, c.why());
-        assertEquals(List.of("cut 1 at 10 64 0", "craft birch_planks 4", "craft crafting_table 1"), c.steps().stream().map(Step::text).toList(),
+        assertEquals(List.of("cut 1 #logs at 10 64 0", "craft birch_planks 4", "craft crafting_table 1"), c.steps().stream().map(Step::text).toList(),
                 "the cut first (any log: no wood named), the planks follow what it gives");
         assertFalse(c.steps().get(0).text().contains("birch"), "the cut names the tree's place, no wood: " + c.steps());
-        assertNull(((Step.ChopTree) c.steps().get(0)).log(), "the chop takes the tree's logs, whatever wood");
+        assertFalse(NeedChain.plain(((Step.ChopTree) c.steps().get(0)).word()), "the chop is for the need's tag word (any log of it), whatever wood the tree is");
         assertTrue(c.dropped().stream().anyMatch(d -> d.startsWith("tree 40 m: 36.0 s (dearer than tree 10 m)")), c.dropped().toString());
         assertEquals(36.6, NeedChain.resolve("crafting_table", 1, both.without((word, sp) -> sp.x() == 10)).seconds(), TOL, "the oak tree's whole chain");
         // no tree known: the chain keeps the tag words until the explore, which is for any log
@@ -693,6 +693,12 @@ class ScenariosTest {
         assertTrue(none.why().startsWith("crafting_table <- craft: 4 #planks <- craft: 1 #logs <- explore (no #logs source known)"), none.why());
         assertFalse(none.why().contains("birch") || none.why().contains("oak"), "no member before a tree is known: " + none.why());
         assertEquals(List.of(new Step.Explore(NeedChain.exploreMinutes(), "#logs")), none.steps());
+        // w058-2: one tree for two needs: the cut is for the narrower word (the ordered item, a member of the tag need too)
+        assertEquals("birch_log", NeedChain.cutWord("#logs", "birch_log"), "an item order joins a tag need's cut: the item names it");
+        assertEquals("birch_log", NeedChain.cutWord(null, "birch_log"), "no word named reads as the logs tag");
+        assertEquals("birch_log", NeedChain.cutWord("birch_log", "#logs"), "a tag need joins an item's cut: the item stays");
+        assertEquals("#logs", NeedChain.cutWord("#logs", "#logs"));
+        assertEquals("#logs", NeedChain.cutWord("#logs", "cobblestone"), "an item the tag does not take never names the cut");
     }
 
     /** S23: 2 charcoal + 2 coal + 4 sticks: 16 torches from the bag, both coals members count: 4 crafts, 1.2 s. */
@@ -716,7 +722,7 @@ class ScenariosTest {
         Chain c = NeedChain.resolve("crafting_table", 1, w(Map.of(), false, false, Map.of("test:ash_log", List.of(treeOf("test:ash_log", 5, 6)))));
         assertTrue(c.ok() && !c.explore(), c.why());
         assertEquals(20.1, c.seconds(), TOL, c.why());
-        assertEquals(List.of("cut 1 at 5 64 0", "craft test:ash_planks 4", "craft crafting_table 1"), c.steps().stream().map(Step::text).toList());
+        assertEquals(List.of("cut 1 #logs at 5 64 0", "craft test:ash_planks 4", "craft crafting_table 1"), c.steps().stream().map(Step::text).toList());
     }
 
     /**

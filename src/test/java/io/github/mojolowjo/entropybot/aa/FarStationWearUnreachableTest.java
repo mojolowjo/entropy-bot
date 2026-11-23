@@ -207,7 +207,7 @@ class FarStationWearUnreachableTest {
         ScenariosTest.world("wooden");
         Chain re = s42Replan(Map.of("oak_log", List.of(ScenariosTest.tree(10, 4), ScenariosTest.tree(40, 4))));
         assertTrue(re.ok() && !re.explore(), re.why());
-        assertEquals("cut 1 at 40 64 0", re.steps().get(0).text());
+        assertEquals("cut 1 oak_log at 40 64 0", re.steps().get(0).text());
     }
 
     /** S42: the only tree known cannot be reached: the re-plan explores. */

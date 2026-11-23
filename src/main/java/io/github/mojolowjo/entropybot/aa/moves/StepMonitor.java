@@ -110,7 +110,7 @@ public final class StepMonitor {
     public static String output(Step s) {
         return switch (s) {
             case Step.Collect k -> k.item();
-            case Step.ChopTree t -> t.log() != null ? t.log() : "#" + NeedChain.LOGS_TAG;   // the game's logs tag (the chop's own filter)
+            case Step.ChopTree t -> t.word();     // the word the cut is for (the chop counts only it; none named: the game's logs tag)
             case Step.Craft k -> k.item();
             case Step.Smelt k -> k.item();
             case Step.HuntAt h -> h.forItem();

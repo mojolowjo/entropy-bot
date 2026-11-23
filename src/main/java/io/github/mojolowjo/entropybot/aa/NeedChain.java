@@ -5491,7 +5491,7 @@ public final class NeedChain {
             Integer at = c.leafAt.get(sp.key());
             if (at != null) {
                 Step prev = c.steps.get(at);
-                c.steps.set(at, prev instanceof Step.ChopTree t ? new Step.ChopTree(t.at(), t.logs() + wanted, t.log())
+                c.steps.set(at, prev instanceof Step.ChopTree t ? new Step.ChopTree(t.at(), t.logs() + wanted, cutWord(t.item(), shw(word)))
                         : new Step.Collect(((Step.Collect) prev).item(), ((Step.Collect) prev).n() + wanted, ((Step.Collect) prev).at()));
             } else {
                 c.note(() -> "source: known " + shw(blockOf(gives, sp)) + " at " + sp.x() + " " + sp.y() + " " + sp.z() + ", " + Math.round(sp.dist()) + " m" + (sp.count() > 0 ? ", " + sp.count() + " blocks" : ""));
@@ -5565,7 +5565,10 @@ public final class NeedChain {
                     c.note(() -> "dig " + shw(gives) + " seen " + Math.round(sp.dist()) + " m exposed at " + sp.x() + " " + sp.y() + " " + sp.z());
                 }
                 // chop: no walk step before a cut (the chop paths itself; the spot names the blocks and the price)
-                c.steps.add(log ? new Step.ChopTree(new int[]{sp.x(), sp.y(), sp.z()}, wanted, null)
+                // w058-2 (cloud tester 2, probe round 3, 2026-11-23: "acacia_log 16" cut 51 acacia_wood, the cut named no
+                // item): the cut carries the need word its spot is priced for - the hand cuts the log blocks that DROP it
+                // (the loot data, the lookup's own source set) and counts only it; a tag need stays the whole tag
+                c.steps.add(log ? new Step.ChopTree(new int[]{sp.x(), sp.y(), sp.z()}, wanted, shw(word))
                         : new Step.Collect(shw(gives), wanted, new int[]{sp.x(), sp.y(), sp.z()}));   // z76 send-back 2: the priced spot named (run AP)
                 c.leafAt.put(sp.key(), c.steps.size() - 1);
             }
@@ -5615,6 +5618,18 @@ public final class NeedChain {
      * counted is the same unit (the fork's component rule mines it whole); an uncounted spot (count 0) stays "as many blocks
      * as needed".
      */
+    /**
+     * w058-2 (cloud tester 2, probe round 3, 2026-11-23): the word of a cut whose tree serves two needs (the second need's
+     * logs joined to the first need's step): the narrower one. A plain item the first word takes (an order of one log item
+     * on a tree first cut for a logs tag) names the step, so the hand cuts and counts that item, which is a member of the
+     * tag need too; else the first word stays. {@code prev} null: none named (the game's logs tag). Pure.
+     */
+    static String cutWord(String prev, String next) {
+        if (next == null || !plain(next)) return prev;
+        String first = prev == null ? "#" + LOGS_TAG : prev;
+        return !plain(first) && gives(first, word(next)) ? next : prev;
+    }
+
     /** job-sight: the way's words for a covered spot: "dig to cobblestone at x y z, 2 blocks of dirt over it". */
     static String coverText(String gives, Spot sp) {
         return "dig to " + shw(gives) + " at " + sp.x() + " " + sp.y() + " " + sp.z() + ", " + sp.cover() + " block" + (sp.cover() == 1 ? "" : "s")

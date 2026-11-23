@@ -150,7 +150,7 @@ class Z77LegsTest {
             if (n.fuelTicks() > 0) b.merge("minecraft:coal", -((n.fuelTicks() + 1599) / 1600), Integer::sum);    // the test's fuel: coal, 1600 ticks
             // the chop takes the whole tree whatever its number (S17; the planner's bag gets the tree's logs, the step's number
             // is a floor): the fake tree's 8 oak logs (a chop names no log item when the spot's block is the log)
-            Map<String, Integer> made = s instanceof Step.ChopTree t && t.log() == null ? Map.of(TREE.block(), Math.max(t.logs(), TREE.count())) : DryRun.produces(s);
+            Map<String, Integer> made = s instanceof Step.ChopTree t ? Map.of(TREE.block(), Math.max(t.logs(), TREE.count())) : DryRun.produces(s);
             if (made != null) for (var e : made.entrySet()) b.merge(e.getKey().contains(":") ? e.getKey() : "minecraft:" + e.getKey(), e.getValue(), Integer::sum);
         }
         return null;

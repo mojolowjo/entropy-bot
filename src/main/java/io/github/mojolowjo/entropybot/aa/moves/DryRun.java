@@ -136,7 +136,7 @@ public final class DryRun {
             case Step.TakeStation t -> Map.of(NeedChain.word(t.item()), 1);
             case Step.TakeNear t -> Map.of(NeedChain.word(t.item()), 1);           // owner 2026-10-29: the carried table, back in the bag
             case Step.HuntAt h -> h.forItem() == null ? null : Map.of(NeedChain.word(h.forItem()), Math.max(0, h.forCount()));
-            case Step.ChopTree t -> t.log() == null ? null : Map.of(NeedChain.word(t.log()), Math.max(0, t.logs()));
+            case Step.ChopTree t -> null;                  // the cut takes the whole tree whatever its number (S20): no count known
             case Step.Walk w -> Map.of();
             case Step.ToStation w -> Map.of();             // 0.39.z65: a walk
             case Step.ToCave w -> Map.of();                // J6b run EF: a walk

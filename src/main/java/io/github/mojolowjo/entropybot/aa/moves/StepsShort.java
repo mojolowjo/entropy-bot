@@ -14,10 +14,10 @@ public final class StepsShort {
 
     /**
      * What a step gets or makes, by need word and count: a collect, a craft, a smelt, a station take, a hunt, a cut (a cut of
-     * an unnamed log counts any log, the game's logs tag); null: no count (a walk, a place, an explore, a strip, a mine).
+     * the word it is for; none named: any log, the game's logs tag); null: no count (a walk, a place, an explore, a strip, a mine).
      */
     public static Map<String, Integer> wants(Step s) {
-        if (s instanceof Step.ChopTree t && t.log() == null) return Map.of("#" + io.github.mojolowjo.entropybot.aa.NeedChain.LOGS_TAG, Math.max(0, t.logs()));
+        if (s instanceof Step.ChopTree t) return Map.of(t.word(), Math.max(0, t.logs()));
         Map<String, Integer> m = DryRun.produces(s);
         return m == null || m.isEmpty() ? null : m;
     }

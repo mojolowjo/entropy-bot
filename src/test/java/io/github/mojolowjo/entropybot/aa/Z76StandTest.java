@@ -157,7 +157,7 @@ class Z76StandTest {
         PathPrice est = (x, y, z, d) -> PathPrice.Answer.estimated(new PathPrice.Walk(4), "not known after 30 s from here: Baritone's estimate, ranked, not priced");
         Chain c = NeedChain.resolve("oak_log", 3, ScenariosTest.w(Map.of(), false, false, Map.of("oak_log", List.of(tree))).withPath(est));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals("cut 3 at 10 64 0", c.steps().get(0).text());
+        assertEquals("cut 3 oak_log at 10 64 0", c.steps().get(0).text());
         assertTrue(c.why().contains("walk ~4.0 s (" + NeedChain.RANKED + ", not priced: Baritone's estimate after the first-answer wait"), c.why());
     }
 
@@ -189,7 +189,7 @@ class Z76StandTest {
         PathPrice pp = (x, y, z, d) -> x == 30 ? PathPrice.Answer.estimated(new PathPrice.Walk(0), "estimate") : PathPrice.Answer.priced(new PathPrice.Walk(FakePaths.walkS(d)));
         Chain c = NeedChain.resolve("oak_log", 3, ScenariosTest.w(Map.of(), false, false, Map.of("oak_log", List.of(a, b))).withPath(pp));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals("cut 3 at 20 64 0", c.steps().get(0).text(), c.why());
+        assertEquals("cut 3 oak_log at 20 64 0", c.steps().get(0).text(), c.why());
         assertTrue(c.dropped().stream().anyMatch(d -> d.startsWith("tree 30 m: ") && d.contains("dearer")), c.dropped().toString());
         assertEquals(30 / io.github.mojolowjo.entropybot.aa.brain.Unit.walkBps(), NeedChain.estimateFloor(NeedChain.walked(PathPrice.Answer.estimated(new PathPrice.Walk(0), "e")), 30).seconds(), 1e-9);
     }

@@ -194,7 +194,7 @@ class Z75UndergroundFuelTest {
         Map<String, Integer> bag = Map.of("minecraft:raw_iron", 3, PLANKS, 1, TABLE, 1);
         Chain c = NeedChain.resolve("iron_ingot", 3, ScenariosTest.w(bag, true, true, Map.of("oak_log", List.of(ScenariosTest.tree(10, 4)))));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(List.of(new Step.ChopTree(new int[]{10, 64, 0}, 1, null).text(), "craft oak_planks 4", new Step.Smelt("iron_ingot", 3, true).text()),
+        assertEquals(List.of(new Step.ChopTree(new int[]{10, 64, 0}, 1, "#logs_that_burn").text(), "craft oak_planks 4", new Step.Smelt("iron_ingot", 3, true).text()),
                 c.steps().stream().map(Step::text).toList(), c.why());
         assertEquals(15.01 + 0.3 + 3.01 + 30, c.seconds(), 0.05, c.why());
         int at = index(c, Step.Smelt.class);

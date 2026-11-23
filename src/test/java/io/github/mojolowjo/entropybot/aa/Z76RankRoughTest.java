@@ -72,7 +72,7 @@ class Z76RankRoughTest {
         Chain c = NeedChain.resolve("oak_log", 3, five(pp));
         assertTrue(c.ok() && !c.explore(), c.why());
         assertEquals(List.of("10,64,0", "20,64,0"), pp.asked, "two priced paths asked");
-        assertEquals("cut 3 at 10 64 0", c.steps().get(0).text(), c.steps().toString());
+        assertEquals("cut 3 oak_log at 10 64 0", c.steps().get(0).text(), c.steps().toString());
         for (int d : new int[]{30, 40, 50}) {
             int n = d / 10;
             assertTrue(c.dropped().stream().anyMatch(x -> x.startsWith("tree " + d + " m: " + NeedChain.RANKED + " number " + n + " of 5 by Baritone's estimate (no search, not a price)")), c.dropped().toString());
@@ -109,7 +109,7 @@ class Z76RankRoughTest {
         Chain c = NeedChain.resolve("oak_log", 3, five(pp));
         assertTrue(c.ok() && !c.explore(), c.why());
         assertEquals(List.of("10,64,0", "20,64,0", "30,64,0"), pp.asked);
-        assertEquals("cut 3 at 20 64 0", c.steps().get(0).text());
+        assertEquals("cut 3 oak_log at 20 64 0", c.steps().get(0).text());
         assertEquals(Set.of("40,64,0", "50,64,0"), pp.rankedOut);
     }
 

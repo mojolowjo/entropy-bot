@@ -39,7 +39,8 @@ final class SimSteps {
     static Result apply(SimGame g, Step s) {
         if (s instanceof Step.Walk w) return walk(g, w);
         // a chop takes the WHOLE tree whatever the number (StepHands: the fork's ChopProcess; the count is checked between trees)
-        if (s instanceof Step.ChopTree c) return dig(g, c.at(), c.logs(), item -> c.log() == null ? ItemWorth.isIn(item, "minecraft:logs") : item.equals(full(c.log())), "log", true);
+        // w058-2: only the blocks whose item is the word the cut is for (an item, or a tag's members: Step.ChopTree#word)
+        if (s instanceof Step.ChopTree c) return dig(g, c.at(), c.logs(), item -> io.github.mojolowjo.entropybot.aa.NeedChain.gives(c.word(), item), "log", true);
         if (s instanceof Step.Collect c) return dig(g, c.at(), c.n(), item -> item.equals(full(c.item())), c.item(), false);
         if (s instanceof Step.Craft c) return craft(g, c);
         if (s instanceof Step.PlaceNear p) return placeNear(g, full(p.item()));

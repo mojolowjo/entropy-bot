@@ -2066,26 +2066,51 @@ public final class StepHands implements Steps.Hands {
 
     // ---- Baritone's MineProcess: a tree, a block to collect ----
 
+    /**
+     * The cut's start. w058-2 (cloud tester 2, probe round 3, 2026-11-23: "aa want acacia_log 16" ran "cut 1 logs - Baritone's
+     * chop process on 20 block kind(s)", broke acacia_wood only, the next cut read "until 67 in the bag" = 51 bark + 16): the
+     * blocks are the ones whose DROP is the word the cut is for, by the collect's own source set ({@link #plainSources} for
+     * an item, AaRuntime.sourceBlocksOf for a tag word - the set the planner's tree lookup reads too, rule 23), kept where
+     * the game tags them as logs and the owner's logs kind holds them (ChopSet); the bag count is the word's items only
+     * ({@link #memberIds} for a tag). The loot book not loaded: the not-known refusal (rule 15), never the whole tag.
+     */
     private String chop(LocalPlayer p, Step.ChopTree t) {
+        String word = t.word();
+        boolean plain = io.github.mojolowjo.entropybot.aa.NeedChain.plain(word);
+        var book = c.aaRuntime == null ? null : c.aaRuntime.currentLootBook();
+        java.util.Set<String> sources = book == null || !book.ready() ? java.util.Set.of() : plain ? plainSources(word, book) : c.aaRuntime.sourceBlocksOf(word);
+        // the owner's logs kind (the game's log tag, less what "kinds logs exclude" left out), by the block's own item
+        java.util.Set<String> kind = new java.util.HashSet<>(c.vocab.expand("logs"));
+        var pick = io.github.mojolowjo.entropybot.aa.moves.ChopSet.of(word, book, sources,
+                bid -> BuiltInRegistries.BLOCK.getOptional(ResourceLocation.tryParse(bid)).map(b -> b.defaultBlockState().is(BlockTags.LOGS)).orElse(false),
+                bid -> BuiltInRegistries.BLOCK.getOptional(ResourceLocation.tryParse(bid)).map(b -> kind.contains(BuiltInRegistries.ITEM.getKey(b.asItem()).toString())).orElse(false));
+        if (!pick.ok()) return "error: " + t.text() + ": " + pick.refusal();
         List<Block> blocks = new ArrayList<>();
-        if (t.log() != null) {
-            Block b = BuiltInRegistries.BLOCK.getOptional(ResourceLocation.tryParse(t.log())).orElse(null);
-            if (b == null) return "error: no block " + t.log();
-            blocks.add(b);
-        } else {
-            // the owner's logs kind (the game's log tag, less what "kinds logs exclude" left out)
-            for (String id : c.vocab.expand("logs")) {
-                Block b = BuiltInRegistries.ITEM.getOptional(ResourceLocation.tryParse(id)).map(Block::byItem).orElse(net.minecraft.world.level.block.Blocks.AIR);
-                if (b != net.minecraft.world.level.block.Blocks.AIR && b.defaultBlockState().is(BlockTags.LOGS) && !blocks.contains(b)) blocks.add(b);
-            }
-        }
-        if (blocks.isEmpty()) return "error: no log block left in the logs kind (kinds logs)";
-        // 0.39.z36 (S42): the cut's source (its log or the logs kind, at its tree): an end with none got is its changed fact
-        mineSource = t.log() != null ? t.log() : "logs";
+        for (String bid : pick.kept()) BuiltInRegistries.BLOCK.getOptional(ResourceLocation.tryParse(bid)).ifPresent(b -> { if (!blocks.contains(b)) blocks.add(b); });
+        LOG.info("[entropybot] steps: {} - the log blocks that drop {} (the game's loot data): {}", t.text(), io.github.mojolowjo.entropybot.aa.NeedChain.shw(word), pick.line());
+        // 0.39.z36 (S42): the cut's source (the logs kind, at its tree): an end with none got is its changed fact
+        mineSource = "logs";
         if (t.at() != null) mineFrom = "at " + t.at()[0] + " " + t.at()[1] + " " + t.at()[2];
+        return mine(p, blocks, plain ? List.of(word) : memberIds(word), t.logs(), "cut " + t.logs() + " " + io.github.mojolowjo.entropybot.aa.NeedChain.shw(word));
+    }
+
+    /**
+     * The blocks that give a plain item: the game's loot data (LootBook), and the block of the item itself when it gives it
+     * (0.39.z66 item 2: Nearby.sourceBlocks, the chain's own pairing - an iron_ore block drops raw_iron, not iron_ore). The
+     * one read of the collect and the cut (w058-2).
+     */
+    private static java.util.Set<String> plainSources(String id, io.github.mojolowjo.entropybot.aa.brain.LootBook book) {
+        return io.github.mojolowjo.entropybot.aa.Nearby.sourceBlocks(id, book, AaRuntime::ownBlock);
+    }
+
+    /** TAG_NEEDS: every item a need word takes (a tag's members by the game's tag index): what a tag collect or cut counts in the bag. */
+    private static List<String> memberIds(String word) {
         List<String> ids = new ArrayList<>();
-        for (Block b : blocks) ids.add(BuiltInRegistries.ITEM.getKey(b.asItem()).toString());
-        return mine(p, blocks, ids, t.logs(), "cut " + t.logs() + " " + (t.log() == null ? "logs" : t.log().replaceFirst("^minecraft:", "")));
+        for (var it : BuiltInRegistries.ITEM) {
+            String iid = BuiltInRegistries.ITEM.getKey(it).toString();
+            if (io.github.mojolowjo.entropybot.aa.NeedChain.gives(word, iid)) ids.add(iid);
+        }
+        return ids;
     }
 
     /** 0.39.z76 send-back 2 (run AP): the running collect's priced spot (null: none named) and the feet's metres from it at the start. */
@@ -2098,11 +2123,9 @@ public final class StepHands implements Steps.Hands {
         collectStartDist = k.dist(Jobs.here(p));
         if (!io.github.mojolowjo.entropybot.aa.NeedChain.plain(k.item())) return collectAny(p, k);
         String id = k.item().contains(":") ? k.item() : "minecraft:" + k.item();
-        // the blocks that give it: the game's loot data (LootBook), and the block of the item itself when it gives it
-        // (0.39.z66 item 2: Nearby.sourceBlocks, the chain's own pairing - an iron_ore block drops raw_iron, not iron_ore)
         List<Block> blocks = new ArrayList<>();
         var book = c.aaRuntime == null ? null : c.aaRuntime.currentLootBook();
-        for (String bid : io.github.mojolowjo.entropybot.aa.Nearby.sourceBlocks(id, book, AaRuntime::ownBlock))
+        for (String bid : plainSources(id, book))
             BuiltInRegistries.BLOCK.getOptional(ResourceLocation.tryParse(bid)).ifPresent(b -> { if (!blocks.contains(b)) blocks.add(b); });
         if (blocks.isEmpty()) return "error: no block gives " + k.item() + (book == null || book.isEmpty() ? " (no loot data in this world)" : " (the game's loot data)");
         return mine(p, blocks, List.of(id), k.n(), "collect " + k.n() + " " + k.item());
@@ -2287,12 +2310,7 @@ public final class StepHands implements Steps.Hands {
         List<Block> blocks = new ArrayList<>();
         for (String bid : c.aaRuntime.sourceBlocksOf(word)) BuiltInRegistries.BLOCK.getOptional(ResourceLocation.tryParse(bid)).ifPresent(blocks::add);
         if (blocks.isEmpty()) return "error: no block gives any of " + k.item() + " (the game's loot data and tags)";
-        List<String> ids = new ArrayList<>();
-        for (var it : BuiltInRegistries.ITEM) {
-            String iid = BuiltInRegistries.ITEM.getKey(it).toString();
-            if (io.github.mojolowjo.entropybot.aa.NeedChain.gives(word, iid)) ids.add(iid);
-        }
-        return mine(p, blocks, ids, k.n(), "collect " + k.n() + " " + k.item());
+        return mine(p, blocks, memberIds(word), k.n(), "collect " + k.n() + " " + k.item());
     }
 
     /** chop B1: blocks the game tags as logs go to the fork's chop process (the whole tree); ores too (S26, {@link #allOres}); others to the mine process. */

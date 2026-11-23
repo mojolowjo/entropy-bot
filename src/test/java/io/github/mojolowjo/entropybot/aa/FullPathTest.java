@@ -124,7 +124,7 @@ class FullPathTest {
         Chain c = logs(8, new ScenariosTest.FakePath().asLine(a).computing(b).asLine(far), a, b, far);
         assertTrue(c.ok(), c.why());
         List<String> cuts = c.steps().stream().map(Step::text).toList();
-        assertEquals(List.of("cut 4 at 10 64 0", "cut 4 at 40 64 0"), cuts);
+        assertEquals(List.of("cut 4 oak_log at 10 64 0", "cut 4 oak_log at 40 64 0"), cuts);
     }
 
     /** Fake game for the re-price: a cut runs until told done, then its logs land and the tree is gone. */
@@ -163,7 +163,7 @@ class FullPathTest {
         java.util.function.Supplier<Chain> plan = () -> NeedChain.resolve("oak_log", 8 - g.bag.getOrDefault("minecraft:oak_log", 0),
                 ScenariosTest.w(Map.of(), false, false, Map.of("oak_log", List.copyOf(g.trees))).withPath(fake));
         Chain first = plan.get();
-        assertEquals(List.of("cut 4 at 10 64 0", "cut 4 at 40 64 0"), first.steps().stream().map(Step::text).toList());
+        assertEquals(List.of("cut 4 oak_log at 10 64 0", "cut 4 oak_log at 40 64 0"), first.steps().stream().map(Step::text).toList());
         List<FactChange.Fact> asked = new ArrayList<>();
         Steps run = new Steps(g);
         run.start("owner goal", first.steps(), 0, (failed, fact, why) -> {
@@ -178,7 +178,7 @@ class FullPathTest {
         run.tick(2);
         assertEquals(1, asked.size());
         assertTrue(asked.get(0).price(), "a new price, not a failure: " + asked.get(0));
-        assertEquals(List.of("cut 4 at 10 64 0", "cut 4 at 20 64 0"), g.ran);
-        assertTrue(run.why().contains("re-priced: walk to 20 64 0: 6 s, complete - switched to cut 4 at 20 64 0 first"), run.why());
+        assertEquals(List.of("cut 4 oak_log at 10 64 0", "cut 4 oak_log at 20 64 0"), g.ran);
+        assertTrue(run.why().contains("re-priced: walk to 20 64 0: 6 s, complete - switched to cut 4 oak_log at 20 64 0 first"), run.why());
     }
 }

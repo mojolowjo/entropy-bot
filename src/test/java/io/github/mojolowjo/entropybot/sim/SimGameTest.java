@@ -38,7 +38,7 @@ class SimGameTest {
         assertEquals("done", end, g.timelineText());
         // "cut 4" takes the whole tree of 6 (the fork's chop, as the game); the table's planks take 1
         assertEquals(5, g.bag.getOrDefault("minecraft:spruce_log", 0), "the whole tree less the table's log: " + g.bag);
-        assertTrue(g.timelineText().contains("cut 4 at 10 64 0 > craft spruce_planks 4 > craft crafting_table 1"), "the trip's plan: " + g.timelineText());
+        assertTrue(g.timelineText().contains("cut 4 spruce_log at 10 64 0 > craft spruce_planks 4 > craft crafting_table 1"), "the trip's plan: " + g.timelineText());
         assertEquals(1, g.bag.get("minecraft:crafting_table"), g.bag.toString());
         int left = 0;
         for (int y = 64; y < 70; y++) if ("minecraft:spruce_log".equals(g.world.at(10, y, 0))) left++;
@@ -78,7 +78,7 @@ class SimGameTest {
         System.out.println(g.timelineText());
         assertEquals("done", end, g.timelineText());
         String t = g.timelineText();
-        assertTrue(t.contains("\"cut 1 at 10 64 3 > craft spruce_planks 4 > craft spruce_planks 4 > craft stick 4 > craft spruce_planks 4 > craft crafting_table 1 > "
+        assertTrue(t.contains("\"cut 1 #logs_that_burn at 10 64 3 > craft spruce_planks 4 > craft spruce_planks 4 > craft stick 4 > craft spruce_planks 4 > craft crafting_table 1 > "
                 + "place crafting_table near me > craft wooden_pickaxe 1 > take my crafting_table here > collect cobblestone 40"), "the plan's head, as run JBS-T1's but for the furnace's own 8 cobblestone (deposit-kept): " + t);
         assertTrue(t.contains("smelted 1 charcoal from {minecraft:spruce_log=1} on {minecraft:spruce_planks=1}"), "the game's fuel rule picks a plank (run JBS: 'spruce_planks 1 for smelt charcoal 1 here'): " + t);
         assertEquals(4, g.chest.get("minecraft:torch"), g.chest.toString());
