@@ -198,8 +198,8 @@ final class TuningDefs {
         Tuning.def("breakPolicy.fallingAbove", 3, "surface 2026-11-02 (run HT)", "TRAVEL / BUILD under ground: a break under gravel or sand costs this much more (the surface still refuses it)");
         Tuning.def("breakPolicy.capPer", 4, "surface 2026-11-02 (owner: the cap should scale with the distance)", "the surface-break cap grows by this many per capPerBlocks walked on the job, never under travelCap");
         Tuning.def("breakPolicy.capPerBlocks", 50, "surface 2026-11-02", "blocks walked (straight, from the job's start) per capPer more surface breaks");
-        Tuning.def("cave.ravineDrop", 10, "surface 2026-11-02 (owner: a ravine is a cave mouth)", "a column whose ground lies this far below the highest ground within cave.ravineR is indexed as cave air up to that rim (its floor counts as under ground)");
-        Tuning.def("cave.ravineR", 8, "surface 2026-11-02", "blocks around a column (inside its chunk) searched for the rim");
+        Tuning.def("cave.ravineDrop", 10, "surface 2026-11-02 (owner: a ravine is a cave mouth)", "a column whose ground lies this far below a wall on both sides within cave.ravineR is indexed as cave air up to the lower wall (its floor counts as under ground); one higher side alone, a cliff or a slope, is open surface");
+        Tuning.def("cave.ravineR", 8, "surface 2026-11-02", "blocks from a column (inside its chunk), along the four lines through it, searched for a ravine's two walls");
         // buildSpotter
         Tuning.def("buildSpotter.radius", 8, "rm-constants 0.39.u2 (was BuildSpotter.RADIUS)", "the radius of BuildSpotter");
         Tuning.def("buildSpotter.minBlocks", 6, "rm-constants 0.39.u2 (was BuildSpotter.MIN_BLOCKS)", "the min blocks of BuildSpotter");

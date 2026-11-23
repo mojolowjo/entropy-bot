@@ -791,20 +791,42 @@ public final class CaveIndex {
 
     /**
      * surface (owner 2026-11-02: "treating the ravine as a cave mouth makes the most sense"): a column whose ground lies
-     * {@code drop} or more below the highest ground within {@code r} columns (inside the chunk: rule 14, rough at the
-     * chunk's edge) gets that rim as its ground, so the air between is indexed as cave air and the floor counts as under
-     * ground. A cliff's foot within r of its top gets the same. Pure; a new array.
+     * {@code drop} or more below a WALL ON BOTH SIDES within {@code r} columns (inside the chunk: rule 14, rough at the
+     * chunk's edge) gets the lower of the two walls as its ground, so the air between is indexed as cave air and the floor
+     * counts as under ground. Pure; a new array.
+     * <p>job-planner-stick (worlds run 2, w060 04:46:21: "the known cave -8 92 -3 ... 0 of 100483 cells, 254 open
+     * passages", grown to 496490 cells at y 60 to 127 with trees and animals in it, caved six times for 0 ore): the rim was
+     * the highest ground anywhere within r, so one higher side was enough - a cliff's foot and every column of a slope
+     * steeper than drop in r took the top as its ground, and the open air over a mountainside was indexed as one cave. A
+     * ravine has a wall on each side: along one of the four lines through the column ({@link #LINES}) the ground rises
+     * {@code drop} above it within r in BOTH directions. A wall the chunk's edge cuts off is not known, never a wall.
      */
     public static int[] rimmed(int[] ground, int drop, int r) {
         int[] out = ground.clone();
         if (drop <= 0 || r <= 0) return out;
         for (int c = 0; c < 256; c++) {
-            int x = c & 15, z = c >> 4, rim = ground[c];
-            for (int dz = Math.max(0, z - r); dz <= Math.min(15, z + r); dz++)
-                for (int dx = Math.max(0, x - r); dx <= Math.min(15, x + r); dx++) rim = Math.max(rim, ground[dx + 16 * dz]);
-            if (rim - ground[c] >= drop) out[c] = rim;
+            int x = c & 15, z = c >> 4, rim = Integer.MIN_VALUE;
+            for (int[] d : LINES) {
+                int lower = Math.min(wall(ground, x, z, d[0], d[1], r), wall(ground, x, z, -d[0], -d[1], r));
+                if (lower != Integer.MIN_VALUE && lower - ground[c] >= drop) rim = Math.max(rim, lower);
+            }
+            if (rim != Integer.MIN_VALUE) out[c] = rim;
         }
         return out;
+    }
+
+    /** structural: the four lines through a column (x, z and the two diagonals) a ravine's two walls are looked for along. */
+    static final int[][] LINES = {{1, 0}, {0, 1}, {1, 1}, {1, -1}};
+
+    /** The highest ground on the ray from column x z along dx dz, {@code r} columns at most, inside the chunk; MIN_VALUE: no column. */
+    private static int wall(int[] ground, int x, int z, int dx, int dz, int r) {
+        int top = Integer.MIN_VALUE;
+        for (int i = 1; i <= r; i++) {
+            int cx = x + i * dx, cz = z + i * dz;
+            if (cx < 0 || cx > 15 || cz < 0 || cz > 15) break;                   // structural: the chunk's 16 columns
+            top = Math.max(top, ground[cx + 16 * cz]);
+        }
+        return top;
     }
 
     /**
