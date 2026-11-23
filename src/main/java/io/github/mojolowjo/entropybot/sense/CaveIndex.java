@@ -799,15 +799,19 @@ public final class CaveIndex {
      * the highest ground anywhere within r, so one higher side was enough - a cliff's foot and every column of a slope
      * steeper than drop in r took the top as its ground, and the open air over a mountainside was indexed as one cave. A
      * ravine has a wall on each side: along one of the four lines through the column ({@link #LINES}) the ground rises
-     * {@code drop} above it within r in BOTH directions. A wall the chunk's edge cuts off is not known, never a wall.
+     * {@code drop} above it within r in BOTH directions.
+     * <p>Review round 2 (a ravine with one wall across the chunk's border lost its whole floor in that chunk, about half
+     * of the chunks an axis-aligned ravine crosses): the wall search goes on past the chunk's edge on the neighbour
+     * chunks' ground ({@code around}: the ground of a column outside the chunk by its local x z, -r..15+r; {@link #NO_GROUND}:
+     * that chunk is not loaded - not known, the search ends there and what it found so far stands, never a wall made up).
      */
-    public static int[] rimmed(int[] ground, int drop, int r) {
+    public static int[] rimmed(int[] ground, int drop, int r, GroundAround around) {
         int[] out = ground.clone();
         if (drop <= 0 || r <= 0) return out;
         for (int c = 0; c < 256; c++) {
             int x = c & 15, z = c >> 4, rim = Integer.MIN_VALUE;
             for (int[] d : LINES) {
-                int lower = Math.min(wall(ground, x, z, d[0], d[1], r), wall(ground, x, z, -d[0], -d[1], r));
+                int lower = Math.min(wall(ground, x, z, d[0], d[1], r, around), wall(ground, x, z, -d[0], -d[1], r, around));
                 if (lower != Integer.MIN_VALUE && lower - ground[c] >= drop) rim = Math.max(rim, lower);
             }
             if (rim != Integer.MIN_VALUE) out[c] = rim;
@@ -818,13 +822,27 @@ public final class CaveIndex {
     /** structural: the four lines through a column (x, z and the two diagonals) a ravine's two walls are looked for along. */
     static final int[][] LINES = {{1, 0}, {0, 1}, {1, 1}, {1, -1}};
 
-    /** The highest ground on the ray from column x z along dx dz, {@code r} columns at most, inside the chunk; MIN_VALUE: no column. */
-    private static int wall(int[] ground, int x, int z, int dx, int dz, int r) {
+    /** {@link #rimmed(int[], int, int, GroundAround)} with no neighbour known: the search ends at the chunk's edge (tests; a lone chunk). */
+    public static int[] rimmed(int[] ground, int drop, int r) { return rimmed(ground, drop, r, (x, z) -> NO_GROUND); }
+
+    /** The ground of a column outside the chunk being indexed, by its local x z (below 0 or above 15); {@link #NO_GROUND}: not known. */
+    @FunctionalInterface
+    public interface GroundAround {
+        int at(int lx, int lz);
+    }
+
+    /** {@link GroundAround}: the column's chunk is not loaded - its ground is not known. */
+    public static final int NO_GROUND = Integer.MIN_VALUE;
+
+    /** The highest ground on the ray from column x z along dx dz, {@code r} columns at most, up to the first column not known; MIN_VALUE: no column. */
+    private static int wall(int[] ground, int x, int z, int dx, int dz, int r, GroundAround around) {
         int top = Integer.MIN_VALUE;
         for (int i = 1; i <= r; i++) {
             int cx = x + i * dx, cz = z + i * dz;
-            if (cx < 0 || cx > 15 || cz < 0 || cz > 15) break;                   // structural: the chunk's 16 columns
-            top = Math.max(top, ground[cx + 16 * cz]);
+            boolean in = cx >= 0 && cx <= 15 && cz >= 0 && cz <= 15;             // structural: the chunk's 16 columns
+            int g = in ? ground[cx + 16 * cz] : around.at(cx, cz);
+            if (!in && g == NO_GROUND) break;
+            top = Math.max(top, g);
         }
         return top;
     }

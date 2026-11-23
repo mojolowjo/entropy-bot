@@ -654,19 +654,33 @@ public final class ChunkPass {
         int minSec = chunk.getMinSection();
         int[] surface = new int[256];
         // run ED: the ground under the crowns (leaves are no cave roof: CaveIndex.ground)
-        CaveIndex.CellTest open = (x, y, z) -> {
-            int si = (y >> 4) - minSec;
-            if (si < 0 || si >= secs.length) return true;
-            var s = secs[si];
-            if (s.hasOnlyAir()) return true;
-            var st = s.getBlockState(x & 15, y & 15, z & 15);
-            return st.isAir() || st.is(net.minecraft.tags.BlockTags.LEAVES);
-        };
+        CaveIndex.CellTest open = openOrLeaves(chunk);
         for (int lz = 0; lz < 16; lz++)
             for (int lx = 0; lx < 16; lx++)
                 surface[lx + 16 * lz] = CaveIndex.ground((cx << 4) + lx, (cz << 4) + lz, io.github.mojolowjo.entropybot.world.SurfaceHeightLive.worldSurface(chunk, lx, lz), chunk.getMinBuildHeight(), open);
         // surface (owner 2026-11-02): a ravine is a cave mouth - its floor's columns take the rim as their ground (CaveIndex.rimmed)
-        surface = CaveIndex.rimmed(surface, io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.ravineDrop"), io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.ravineR"));
+        // job-planner-stick, review round 2: a wall across the chunk's border is read from the neighbour chunk's ground (the
+        // same reader as this chunk's), asked only for the columns a wall search reaches and once each; a neighbour not
+        // loaded is not known (the search ends at the edge, as before). Loader notes: vanilla Level#getChunkSource,
+        // ChunkSource#getChunk(int, int, boolean load = false) - the loaded LevelChunk or null, never a load.
+        int ravineR = io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.ravineR");
+        var source = chunk.getLevel().getChunkSource();
+        Map<Long, LevelChunk> near = new HashMap<>();
+        Map<Long, CaveIndex.CellTest> tests = new HashMap<>();
+        Map<Long, Integer> asked = new HashMap<>();
+        CaveIndex.GroundAround around = (lx, lz) -> asked.computeIfAbsent(((long) lx << 32) | (lz & 0xFFFFFFFFL), k -> {   // structural: two ints in a long
+            int wx = (cx << 4) + lx, wz = (cz << 4) + lz;
+            long nk = ((long) (wx >> 4) << 32) | ((wz >> 4) & 0xFFFFFFFFL);          // structural: two ints in a long
+            if (!near.containsKey(nk)) {
+                LevelChunk c = source.getChunk(wx >> 4, wz >> 4, false);
+                near.put(nk, c);
+                if (c != null) tests.put(nk, openOrLeaves(c));
+            }
+            LevelChunk n = near.get(nk);
+            if (n == null) return CaveIndex.NO_GROUND;
+            return CaveIndex.ground(wx, wz, io.github.mojolowjo.entropybot.world.SurfaceHeightLive.worldSurface(n, wx & 15, wz & 15), n.getMinBuildHeight(), tests.get(nk));
+        });
+        surface = CaveIndex.rimmed(surface, io.github.mojolowjo.entropybot.aa.brain.Tuning.i("cave.ravineDrop"), ravineR, around);
         caveIndex.put(CaveIndex.runs(cx, cz, surface, chunk.getMinBuildHeight(), (x, y, z) -> {
             int si = (y >> 4) - minSec;
             if (si < 0 || si >= secs.length) return false;
@@ -682,6 +696,20 @@ public final class ChunkPass {
                 if (c[0] >> 4 == cx && c[2] >> 4 == cz) caveIndex.markKnown(c[0], c[1], c[2]);
             }
         }
+    }
+
+    /** Run ED: a cell of {@code chunk} is open for the ground's reader - air or leaves (leaves are no cave roof: CaveIndex.ground). */
+    private static CaveIndex.CellTest openOrLeaves(LevelChunk chunk) {
+        var secs = chunk.getSections();
+        int minSec = chunk.getMinSection();
+        return (x, y, z) -> {
+            int si = (y >> 4) - minSec;
+            if (si < 0 || si >= secs.length) return true;
+            var s = secs[si];
+            if (s.hasOnlyAir()) return true;
+            var st = s.getBlockState(x & 15, y & 15, z & 15);
+            return st.isAir() || st.is(net.minecraft.tags.BlockTags.LEAVES);
+        };
     }
 
     /** Self-audit: one loaded, patched chunk read again (round robin) and compared; a difference is counted, logged, replaced. */
