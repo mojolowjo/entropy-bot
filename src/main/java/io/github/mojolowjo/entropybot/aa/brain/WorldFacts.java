@@ -31,6 +31,9 @@ import java.util.regex.Pattern;
  * ({@link #scoped}: "|from area ax,az"), so the same heading from another start is another fact. Lifts: the cause re-read,
  * a fresh start elsewhere (another key), the run's end. 0.39.z77 world 4 (coordinator's decision): one whose cause names no
  * cell (a yield end, "no path" in the tunnel, blocked at its start) holds for the run - the exact tunnel only, said so.</li>
+ * <li>job-planner-stick (worlds run 2, w060): a caving's end ({@link #cavedFact}: NeedChain.CAVED_KEY) is about the cave
+ * space, never the bot's distance from where it stood when the step ended - the space reaches far past failures.moved, and
+ * the same cave was entered again from each new spot. Held for the run, as a strip fact with no cause cell.</li>
  * <li>Any other fact holds by distance with hysteresis: held within failures.moved of the cell, lifted only beyond
  * failures.moved + {@link #MARGIN}, held again only within failures.moved - feet jittering at the edge never flip it
  * (the batch trip's key reads these, BatchWay.trip).</li>
@@ -111,6 +114,14 @@ public final class WorldFacts {
                 || key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STRIP_HEADING));
     }
 
+    /** job-planner-stick: a caving step's end (NeedChain.CAVED_KEY) - about its cave space, never where the bot stands. */
+    static boolean cavedFact(String key) {
+        return key != null && key.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.CAVED_KEY);
+    }
+
+    /** A fact that does not lift by the bot's distance from where it was learned: a strip's tunnel, a caving's space. */
+    static boolean placeless(String key) { return stripFact(key) || cavedFact(key); }
+
     /**
      * 0.39.z77 world 3 (review 1): the store key - a heading fact ("strip heading y Y h") with its tunnel's start
      * ({@code start}: "area ax,az", NeedChain#stripStart) appended (NeedChain#headingFrom), every other key as it is.
@@ -155,7 +166,7 @@ public final class WorldFacts {
         map.values().removeIf(e -> gone(e.rec, in, fluid));
         if (pos == null || pos.length < 3) return;         // structural: x y z; feet unknown: states kept
         for (Entry e : map.values()) {
-            if (stripFact(e.rec.key())) continue;
+            if (placeless(e.rec.key())) continue;
             double d = Failures.moved(e.rec.cell(), pos);
             if (d <= Failures.movedV()) e.in = true;
             else if (d > Failures.movedV() + MARGIN) e.in = false;
@@ -210,7 +221,7 @@ public final class WorldFacts {
         for (Entry e : map.values()) {
             if (own.contains(e.rec.key()) || gone(e.rec, in, fluid)) continue;
             boolean held = e.in;
-            if (!stripFact(e.rec.key()) && pos != null && pos.length >= 3) {       // structural: x y z
+            if (!placeless(e.rec.key()) && pos != null && pos.length >= 3) {       // structural: x y z
                 double d = Failures.moved(e.rec.cell(), pos);
                 held = d <= Failures.movedV() || (d <= Failures.movedV() + MARGIN && e.in);
             }
@@ -233,6 +244,9 @@ public final class WorldFacts {
         if (stripFact(key) && (e == null || e.rec.cause() == null))
             return orderWord + ": " + key + " held as a world fact: " + why + "; held for this run: the cause cannot be re-read;"
                     + " another start or heading is open";
+        if (cavedFact(key))
+            return orderWord + ": " + key + " held as a world fact: " + why + "; held for this run: a caving's end is about the cave space,"
+                    + " not where the bot stands; another cave space, a strip or an explore is open";
         if (stripFact(key))
             return orderWord + ": " + key + " held as a world fact: " + why + "; that tunnel is tried again when its cause is gone"
                     + " (the water or lava cell seen without it), from another start, or in the next run";

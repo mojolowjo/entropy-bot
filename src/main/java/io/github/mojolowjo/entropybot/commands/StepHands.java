@@ -1579,9 +1579,9 @@ public final class StepHands implements Steps.Hands {
         // record not loaded stays a plain end (said; rule 15 for the latter).
         int[] entry = {k.x(), k.y(), k.z()};
         switch (end) {
-            case DONE, NO_BRANCH, NO_PROGRESS -> io.github.mojolowjo.entropybot.aa.moves.FactChange.caveEnded(entry, end.name(), why);
-            case MINUTES -> io.github.mojolowjo.entropybot.aa.moves.FactChange.caveMinutes(entry, cv.mined, cv.passagesLeft, why);
-            case DEARER -> io.github.mojolowjo.entropybot.aa.moves.FactChange.caveDearer(entry, cv.mined, cv.passagesLeft, why);   // cave-guard: the same kind of fact as its minutes
+            case DONE, NO_BRANCH, NO_PROGRESS -> io.github.mojolowjo.entropybot.aa.moves.FactChange.caveEnded(entry, k.family(), end.name(), why);
+            case MINUTES -> io.github.mojolowjo.entropybot.aa.moves.FactChange.caveMinutes(entry, k.family(), cv.mined, cv.passagesLeft, why);
+            case DEARER -> io.github.mojolowjo.entropybot.aa.moves.FactChange.caveDearer(entry, k.family(), cv.mined, cv.passagesLeft, why);   // cave-guard: the same kind of fact as its minutes
             default -> { }
         }
         return Car.Status.failed(line);

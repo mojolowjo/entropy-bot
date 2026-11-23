@@ -342,20 +342,22 @@ class J6bCaveStepTest {
     @Test
     void aCaveEnd_isTheCavesSourceFact_notAStop() {
         int[] entry = {181, 61, 0};
-        FactChange.Fact f = FactChange.caveEndedFact(entry, CaveWalk.End.NO_BRANCH.name(), "no reachable branch (10 dropped)");
-        assertEquals("source " + CaveWay.keyOf(entry), f.key(), "the cave's own key: the order holds the cave, the world fact for every order");
+        FactChange.Fact f = FactChange.caveEndedFact(entry, "iron", CaveWalk.End.NO_BRANCH.name(), "no reachable branch (10 dropped)");
+        // job-planner-stick (w060): the caving's own key - the cave SPACE is held, not one opening of it (CaveWay.keyOf)
+        assertEquals("source " + CaveWay.cavedKey("iron", entry), f.key(), "the caving's own key: the order holds the cave space, the world fact for every order");
+        assertEquals(CaveWay.cavedKey("iron", entry), FactChange.ownSourceKey(f), "the fact names its own source key");
         assertEquals("the caving step at 181 61 0 ended - NO_BRANCH (no reachable branch (10 dropped)): the cave is out for this order", f.text());
         assertFalse(f.price());
-        FactChange.caveEnded(entry, CaveWalk.End.DONE.name(), "the cave is explored to its end");
+        FactChange.caveEnded(entry, "iron", CaveWalk.End.DONE.name(), "the cave is explored to its end");
         FactChange.Fact taken = FactChange.take();
         assertNotNull(taken);
         assertTrue(taken.text().contains("ended - DONE"), taken.text());
         assertNull(FactChange.take(), "taken once");
-        FactChange.caveMinutes(entry, 0, 3, "10 min");
+        FactChange.caveMinutes(entry, "iron", 0, 3, "10 min");
         FactChange.Fact m = FactChange.take();
         assertFalse(m.price(), "D15: the minutes' end is the cave's source fact, never a price the order stops on: " + m);
         assertTrue(m.text().contains("budget spent, 0 ore mined, 3 passages left"), m.text());
         // run GD 03:26:04: the step watch's "timed out after 600 s" on a caving step is the cave's source fact too (Steps reads sourceKey)
-        assertEquals(CaveWay.keyOf(entry), NeedChain.sourceKey(new Step.Cave(181, 61, 0, "iron", 4, 10)), "the caving step's own source key is its cave's");
+        assertEquals(CaveWay.cavedKey("iron", entry), NeedChain.sourceKey(new Step.Cave(181, 61, 0, "iron", 4, 10)), "the caving step's own source key is its caving's, the same as its end facts'");
     }
 }
