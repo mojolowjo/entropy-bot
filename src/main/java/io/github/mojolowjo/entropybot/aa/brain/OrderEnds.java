@@ -5,9 +5,9 @@ import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 /**
  * sim (owner 2026-11-09, "simulate the parts we need"): the goals tick's pass over the orders, moved out of
  * {@code commands.AaRuntime.goalsTick} as it was so the order-line tests run the same sequence with no game: the met
- * orders leave (their "got" said, their deposit weighed), each open order's deposit is swept ({@link LineDeposits#sweep}),
- * the honest-loop parks whose facts changed try once more ({@link Goals#retryLoopParks}) and the all-parked line is said
- * ({@link Goals#parkedTick}). The game side's own parts come back through {@link Hooks}. No Minecraft or Baritone types.
+ * orders leave (their "got" said, their deposit weighed), the honest-loop parks whose facts changed try once more
+ * ({@link Goals#retryLoopParks}), the all-parked line is said ({@link Goals#parkedTick}), and then, after every un-park of
+ * the pass, each open order's deposit is swept ({@link LineDeposits#sweep}). The game side's own parts come back through {@link Hooks}. No Minecraft or Baritone types.
  * Loader notes: none.
  */
 public final class OrderEnds {
@@ -40,8 +40,6 @@ public final class OrderEnds {
             h.got("got " + Goals.have(Goals.free(bb, g), g) + " " + g.r.key() + " (goal " + g.n + " done)");
             h.deposit(deposits.weigh(g, "done", bb.in.bag, mainAt));                // helper: the bag to the main chest
         }
-        // helper: a stopped order's bag goes to the chest too; an order that woke is weighed again at its end
-        for (var g : goals) h.deposit(deposits.sweep(g, bb.in.bag, mainAt));
         // wait-not-park (audit A1): an order whose run ended while it waited on an answer runs again when the answer landed
         Goals.retryWaits(bb, brain.failures);
         // 0.39.z70 (R1 = c): said by Goals (log + whisper); job-lookup: the brain's hold on a retried order is forgotten
@@ -49,5 +47,11 @@ public final class OrderEnds {
         // 0.39.z77 climb (run CM 17:43-17:48, rule 7): every order parked - under ground the waiting ones try the climb way once,
         // and the all-parked line (each park and its wake) is said once; said by Goals (log + whisper)
         Goals.parkedTick(bb, underGround, brain.failures, brain.runningDesire() != null || (bb.in != null && bb.in.otherJob != null));
+        // helper: a stopped order's bag goes to the chest too; an order that woke is weighed again at its end.
+        // un-park first (tester-1 w006, 2026-11-22: torch weighed "stopped" at 04:34:10.244 and the line went due; at
+        // 04:34:10.249, in this same pass, the climb retry un-parked both orders): the sweep runs after every un-park of
+        // this pass (the waits, the loop parks, the climb retry and the look-around), so an order running again is never
+        // weighed as stopped
+        for (var g : goals) h.deposit(deposits.sweep(g, bb.in.bag, mainAt));
     }
 }

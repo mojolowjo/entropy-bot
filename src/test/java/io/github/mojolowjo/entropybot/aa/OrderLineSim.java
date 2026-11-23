@@ -122,8 +122,18 @@ final class OrderLineSim {
                 if (out == null || out.text() == null) return;
                 said.add(out.text());
                 if (out.kind() == LineDeposits.Kind.DUE) due.add(out.items());
+                if (out.kind() == LineDeposits.Kind.WOKE_TAKEN_BACK) takenBack.add(out.text());
             }
         });
+    }
+
+    /** The due deposits taken back by a wake before their run started (the line said for each). */
+    final List<String> takenBack = new ArrayList<>();
+
+    /** The game's deposit run for what is due: it starts (a wake leaves it alone from here), then it ends. */
+    void depositRuns() {
+        deposits.started();
+        deposits.gone();
     }
 
     /** {@code n} passes, {@code ms} apart. */

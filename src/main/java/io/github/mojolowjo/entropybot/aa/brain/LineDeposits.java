@@ -40,10 +40,18 @@ public final class LineDeposits {
         /** A parked order woke: its deposit went with the line already (logged). */
         WOKE_GONE,
         /** A parked order woke: weighed again at its end (logged). */
-        WOKE_OPEN
+        WOKE_OPEN,
+        /**
+         * A parked order woke while its line's deposit was due and had not started: that deposit is taken back and weighed
+         * again when the line ends (logged). {@link Out#items}: what is still due of other lines, null: nothing.
+         */
+        WOKE_TAKEN_BACK
     }
 
-    /** {@code text}: the line for the log (without the "aa: " head), null: nothing to say. {@code items}: for DUE. */
+    /**
+     * {@code text}: the line for the log (without the "aa: " head), null: nothing to say. {@code items}: for DUE (and what
+     * stays due after WOKE_TAKEN_BACK).
+     */
     public record Out(Kind kind, String text, Map<String, Integer> items) {}
 
     /** Per aa want line, the -d orders not ended yet, and the ones ended so far (by key, in the order they ended). */
@@ -87,8 +95,49 @@ public final class LineDeposits {
         return out;
     }
 
-    /** deposit-kept: the due deposit started (or could not start, said by the caller): its items are no longer kept here. */
-    public void gone() { due.clear(); }
+    /**
+     * take-back (tester-1 w006, 2026-11-22 04:34:10.244 -> 04:34:11.413: the line went due on two parked orders, both woke a
+     * second later and the stale deposit of spruce_log 11 still started): per line whose deposit is DUE and has not
+     * started, its ended orders as {@link #lineEnds} found them, so a wake of any of them ({@link #reopen}) can put the
+     * line back as it was. Keyed on the line: an order that noted nothing is not in {@link #due}, yet its wake takes the
+     * deposit back too (tester-2 w003-3: birch_log noted nothing).
+     */
+    private final Map<String, Map<String, Goals.Goal>> dueLine = new HashMap<>();
+    /** take-back: per line whose deposit run is on its way ({@link #started}), the items it was sent with (for the log). */
+    private final Map<String, Map<String, Integer>> wayLine = new HashMap<>();
+
+    /** The due items of the orders in {@code ended}, summed. */
+    private Map<String, Integer> dueOf(Map<String, Goals.Goal> ended) {
+        Map<String, Integer> out = new TreeMap<>();
+        for (Goals.Goal o : ended.values()) {
+            Map<String, Integer> t = due.get(o);
+            if (t != null) for (var i : t.entrySet()) out.merge(i.getKey(), i.getValue(), Integer::sum);
+        }
+        return out;
+    }
+
+    /** take-back: the due deposit's run started: from here a wake of one of its orders leaves it alone. */
+    public void started() {
+        for (var e : dueLine.entrySet()) wayLine.put(e.getKey(), dueOf(e.getValue()));
+        dueLine.clear();
+    }
+
+    /** take-back: the items of every line whose deposit is due and not started (empty: none). */
+    public Map<String, Integer> dueNow() {
+        Map<String, Integer> out = new TreeMap<>();
+        for (Map<String, Goals.Goal> ended : dueLine.values()) for (var i : dueOf(ended).entrySet()) out.merge(i.getKey(), i.getValue(), Integer::sum);
+        return out;
+    }
+
+    /**
+     * deposit-kept: the deposit run ended, or the due deposit could not start (said by the caller): its items are no longer
+     * kept here. With a run on its way only that run's lines go (a line that came due meanwhile stays due and kept).
+     */
+    public void gone() {
+        if (wayLine.isEmpty()) { due.clear(); dueLine.clear(); return; }
+        due.keySet().removeIf(o -> wayLine.containsKey(o.line));
+        wayLine.clear();
+    }
 
     /** What the bag holds of the order's deposit amount now (counted id -> n; a group: up to the amount of each member). */
     static Map<String, Integer> take(Goals.Goal g, Map<String, Integer> bag) {
@@ -168,6 +217,7 @@ public final class LineDeposits {
         if (mainAt == null)
             return new Out(Kind.NO_CHEST, g.r.key() + " " + how + ": no main chest set (aa deposit x y z) - " + Step.Deposit.onlyText(all) + " stay in the bag", all);
         for (Goals.Goal o : ended.values()) if (o.depositTook != null && !o.depositTook.isEmpty()) due.put(o, o.depositTook);       // deposit-kept: until the deposit starts
+        dueLine.put(g.line, new java.util.LinkedHashMap<>(ended));      // take-back: the line as it ended, until its run starts
         return new Out(Kind.DUE, g.r.key() + " " + how + ": the line's deposit of " + Step.Deposit.onlyText(all) + " to the main chest at " + mainAt + " follows", all);
     }
 
@@ -194,23 +244,47 @@ public final class LineDeposits {
      * deposit-words (run JBK-T1 15:18:55: cobblestone parked 30 s in, "its deposit items noted ()", woken, done at 7:20 and
      * never weighed again - the line's deposit missed it): a parked order that woke (parked null again, still weighed) is
      * weighed again at its end. What its park noted is taken back from the line's items; when the line's deposit went
-     * already, that much of its ordered amount is done with.
+     * already (or is on its way), that much of its ordered amount is done with.
+     *
+     * <p>take-back (tester-1 w006 04:34:11.245: "spruce_log woke ... the line's deposit waits for it", and the stale deposit
+     * started 0.2 s later): a line whose deposit is due and has NOT started is put back as it was before it ended - its
+     * ended orders noted again, the woken one open, nothing taken off its amount - and the answer says so
+     * ({@link Kind#WOKE_TAKEN_BACK}); the line is weighed on the bag again when it ends. The words for a deposit that is on
+     * its way or went already say that, never "waits for it" (rule 7).
      */
     public Out reopen(Goals.Goal g) {
+        Map<String, Goals.Goal> back = dueLine.remove(g.line);
+        if (back != null) {
+            Map<String, Integer> was = dueOf(back);
+            for (Goals.Goal o : back.values()) due.remove(o);
+            back.remove(g.r.key());
+            g.depositWeighed = false;
+            g.depositTook = null;
+            if (!back.isEmpty()) lineEnded.put(g.line, back);
+            lineOpen.computeIfAbsent(g.line, k -> new LinkedHashSet<>()).add(g.r.key());
+            Map<String, Integer> still = dueNow();
+            return new Out(Kind.WOKE_TAKEN_BACK, g.r.key() + " woke: the line's deposit of " + Step.Deposit.onlyText(was) + " had not started - taken back, it is weighed on the bag again when "
+                    + g.r.key() + " ends" + (still.isEmpty() ? "" : " (still due: " + Step.Deposit.onlyText(still) + ")"), still.isEmpty() ? null : still);
+        }
+        Map<String, Integer> way = wayLine.get(g.line);
         g.depositWeighed = false;
         Map<String, Integer> took = g.depositTook == null ? Map.of() : g.depositTook;
         g.depositTook = null;
         Map<String, Goals.Goal> ended = lineEnded.get(g.line);
         int noted = took.values().stream().mapToInt(Integer::intValue).sum();
-        if (ended != null && ended.remove(g.r.key()) != null) {
+        boolean wasOpen = ended != null && ended.remove(g.r.key()) != null;
+        if (wasOpen) {
             // the line has not ended: the order is simply open again (its note was of the bag then, nothing was taken)
         } else if (noted > 0) {
             g.deposit = Math.max(0, g.deposit - noted);       // the line's deposit took them already
         }
         if (g.deposit <= 0) return new Out(Kind.WOKE_GONE, g.r.key() + " woke: its deposit went with the line already (" + Step.Deposit.onlyText(took) + ") - nothing more to deposit", null);
         lineOpen.computeIfAbsent(g.line, k -> new LinkedHashSet<>()).add(g.r.key());
+        String line = wasOpen ? "the line's deposit waits for it"
+                : way != null ? "the line's deposit of " + Step.Deposit.onlyText(way) + " is on its way; the rest of its amount (" + g.deposit + ") follows when it ends"
+                : "the line's deposit went already; the rest of its amount (" + g.deposit + ") follows when it ends";
         return new Out(Kind.WOKE_OPEN, g.r.key() + " woke: its deposit items are weighed again when it ends (its stop noted "
-                + (noted == 0 ? "nothing" : Step.Deposit.onlyText(took)) + "; the line's deposit waits for it)", null);
+                + (noted == 0 ? "nothing" : Step.Deposit.onlyText(took)) + "; " + line + ")", null);
     }
 
     /**
