@@ -35,6 +35,21 @@ public final class OrderEnds {
      */
     public static void tick(Blackboard bb, Brain brain, LineDeposits deposits, String mainAt, boolean underGround, String reachedWhy, Hooks h) {
         var goals = Goals.of(bb);
+        // lost-after-done (tester-2 w064): a met -d order whose amount the bag no longer holds, its deposit still owed, is
+        // open again and priced like any order (read from the bag; a death, a drop, anything). Before the done check, so a
+        // line never ends on a bag that lost a finished order's amount
+        if (bb.in != null && bb.in.bag != null)
+            for (var e : deposits.lostAfterDone(bb.in.bag)) {
+                Goals.Goal g = e.getKey();
+                if (Goals.reopen(bb, g)) brain.add(io.github.mojolowjo.entropybot.aa.AaDesires.ownerGoal(g));
+                else {
+                    // rule 7: the newer order of the same item holds the key; the old one stays out of the goals, its line
+                    // waits on it - aa cancel ends that line (said)
+                    h.deposit(new LineDeposits.Out(e.getValue().kind(), e.getValue().text() + " (not put back: a newer order of " + g.r.key() + " is among the goals)", e.getValue().items()));
+                    continue;
+                }
+                h.deposit(e.getValue());
+            }
         for (var g : Goals.done(bb)) {
             if (!h.carriesOn(g)) brain.remove(g.id(), reachedWhy);
             h.got("got " + Goals.have(Goals.free(bb, g), g) + " " + g.r.key() + " (goal " + g.n + " done)");

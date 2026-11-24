@@ -51,7 +51,12 @@ public final class LineDeposits {
          * A parked order woke while its line's deposit was due and had not started: that deposit is taken back and weighed
          * again when the line ends (logged). {@link Out#items}: what is still due of other lines, null: nothing.
          */
-        WOKE_TAKEN_BACK
+        WOKE_TAKEN_BACK,
+        /**
+         * lost-after-done (tester-2 w064, run 3): a met -d order whose deposit is still owed and whose amount the bag no
+         * longer holds is open again (logged; {@link #lostAfterDone}).
+         */
+        REOPENED
     }
 
     /**
@@ -304,15 +309,68 @@ public final class LineDeposits {
         lineOpen.remove(g.line);
         lineEnded.remove(g.line);
         Map<String, Integer> all = all(ended, bag, true);
-        if (all.isEmpty()) return new Out(Kind.NOTHING, g.r.key() + " " + how + ": nothing of the line's deposit items in the bag - no deposit", null);
+        String shortText = shortfalls(ended);
+        if (all.isEmpty()) return new Out(Kind.NOTHING, g.r.key() + " " + how + ": nothing of the line's deposit items in the bag - no deposit" + shortText, null);
         if (mainAt == null) {
             // merge review 2026-11-23: nothing goes to a chest here - a later wake of one of these orders takes nothing off
             for (Goals.Goal o : ended.values()) o.depositMissed = true;
-            return new Out(Kind.NO_CHEST, g.r.key() + " " + how + ": no main chest set (aa deposit x y z) - " + Step.Deposit.onlyText(all) + " stay in the bag", all);
+            return new Out(Kind.NO_CHEST, g.r.key() + " " + how + ": no main chest set (aa deposit x y z) - " + Step.Deposit.onlyText(all) + " stay in the bag" + shortText, all);
         }
         for (Goals.Goal o : ended.values()) if (o.depositTook != null && !o.depositTook.isEmpty()) due.put(o, o.depositTook);       // deposit-kept: until the deposit starts
         dueLine.put(g.line, new java.util.LinkedHashMap<>(ended));      // take-back: the line as it ended, until its run starts
-        return new Out(Kind.DUE, g.r.key() + " " + how + ": the line's deposit of " + Step.Deposit.onlyText(all) + " to the main chest at " + mainAt + " follows", all);
+        return new Out(Kind.DUE, g.r.key() + " " + how + ": the line's deposit of " + Step.Deposit.onlyText(all) + " to the main chest at " + mainAt + " follows" + shortText, all);
+    }
+
+    /**
+     * lost-after-done (tester-2 w064, run 3: the line's end said only what the bag held, nothing of the 32 cobblestone
+     * missing; rule 7): every order of the ending line whose noted amount ({@link Goals.Goal#depositTook}, set by
+     * {@link #all} just before) is under its deposit amount, each as "item delivered of asked"; empty: none short.
+     */
+    private static String shortfalls(Map<String, Goals.Goal> ended) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (Goals.Goal o : ended.values()) {
+            if (o.deposit <= 0 || o.strip != null) continue;
+            int got = o.depositTook == null ? 0 : o.depositTook.values().stream().mapToInt(Integer::intValue).sum();
+            if (got < o.deposit) out.add(o.r.key() + " " + got + " of " + o.deposit);
+        }
+        return out.isEmpty() ? "" : "; short of what was ordered: " + String.join(", ", out);
+    }
+
+    /**
+     * lost-after-done (tester-2 w064, run 3, 23:20:30 -> 23:20:37: cobblestone 32 -d was met and noted, a creeper killed the
+     * bot 7 s later and the whole bag was lost; the met order had left the goals, so nothing opened it again, and the line
+     * deposited what the bag held): every MET -d order whose line's deposit is still owed (its line still open, or due and
+     * not started) and whose amount the bag no longer holds ({@link #take} on {@code bag} under its deposit amount) is open
+     * on its line again, by the same state change a wake makes ({@link #reopen}). Not a death script: it is read from the
+     * bag, whatever took the items. A stopped order is not opened here (its end was of the bag then; only a wake opens it).
+     * The caller puts each answer's order back among the goals ({@link Goals#reopen}). Each answer is {@link Kind#REOPENED},
+     * or {@link Kind#WOKE_TAKEN_BACK} (items: what stays due) when it took back a due deposit that had not started.
+     */
+    public java.util.List<Map.Entry<Goals.Goal, Out>> lostAfterDone(Map<String, Integer> bag) {
+        java.util.List<Goals.Goal> lost = new java.util.ArrayList<>();
+        for (var e : lineEnded.entrySet()) {
+            Set<String> open = lineOpen.get(e.getKey());
+            if (open == null || open.isEmpty()) continue;           // a line that ended is not owed here (its run went or is on its way)
+            for (Goals.Goal o : e.getValue().values()) if (isLost(o, bag)) lost.add(o);
+        }
+        for (Map<String, Goals.Goal> ended : dueLine.values()) for (Goals.Goal o : ended.values()) if (isLost(o, bag) && !lost.contains(o)) lost.add(o);
+        java.util.List<Map.Entry<Goals.Goal, Out>> out = new java.util.ArrayList<>();
+        for (Goals.Goal o : lost) {
+            Map<String, Integer> has = take(o, bag);
+            int n = has.values().stream().mapToInt(Integer::intValue).sum();
+            Out back = reopen(o);
+            String text = o.r.key() + " was done, and the bag holds " + n + " of its " + o.deposit + " for the line's deposit now: open again, the planner prices the rest";
+            // a due deposit taken back answers as a wake's take-back does, so the runtime drops its queued run (items: what stays due)
+            out.add(Map.entry(o, back.kind() == Kind.WOKE_TAKEN_BACK
+                    ? new Out(Kind.WOKE_TAKEN_BACK, text + "; the line's deposit that had not started is taken back and weighed when it ends", back.items())
+                    : new Out(Kind.REOPENED, text + "; the line's deposit waits for it", null)));
+        }
+        return out;
+    }
+
+    private static boolean isLost(Goals.Goal o, Map<String, Integer> bag) {
+        if (!o.met || o.deposit <= 0 || o.strip != null || !o.depositWeighed) return false;
+        return take(o, bag).values().stream().mapToInt(Integer::intValue).sum() < o.deposit;
     }
 
     /**
