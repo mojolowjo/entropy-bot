@@ -795,9 +795,10 @@ public final class AaRuntime implements JobPort {
                         .refusing(item -> c.cutFacts.noSource(io.github.mojolowjo.entropybot.aa.NeedChain.word(item))),
                 this::animalsKnown, currentLootBook(), this::band, 0, LivePathPrice.INSTANCE, this::stationAt).withUses(AaRuntime::usesLeft).withStrip(io.github.mojolowjo.entropybot.aa.brain.StripWays.gate(this::strip)).withCave(this::caveWay)
                 .withRooms(rooms(in.pos))
-                // forecast (owner 2026-11-08): the reserve table the fork's lease holds (the chain's claims and the orders' targets, D1):
-                // the planner's forecast bag may not place those on a way back up (run JBJ-T2: a 14-level shaft, no block to spare)
-                .withReserves(bb.reserved() == null ? List.of() : bb.reserved().list())
+                // forecast (owner 2026-11-08): the orders' reserves the forecast bag may not place on a way back up (run JBJ-T2).
+                // reserves-once (run 3 w070): computed now from the one store (Goals.orderReserves, as the lease's), never the
+                // pushed ledger; an order's chain world replaces them with Goals.plannerReserves (its bag has the kept amounts off)
+                .withReserves(orderReserves())
                 .withWhere(new io.github.mojolowjo.entropybot.aa.NeedChain.WhereFacts(this::whereOf, once(this::surfaceOver), AaRuntime::feetNow, AaRuntime::baseHere))   // 0.39.z68; z69: the feet; z74: the base block
                 // 0.39.z75 take 2 (run AJ 20:23:41 / 20:24:55): a station take short twice at one cell is out for every order
                 .withoutSources(io.github.mojolowjo.entropybot.aa.moves.TakeHolds.INSTANCE.held(feetNow(), AaRuntime::stationStands,
@@ -1286,12 +1287,20 @@ public final class AaRuntime implements JobPort {
      * kept amount), a task that is no order's: the bag as it is, as before; any other run (an owner one-shot, a job):
      * every kept amount.
      */
-    java.util.Map<String, Integer> keptFromOthers() {
+    java.util.Map<String, Integer> keptFromOthers() { return kept(false); }
+
+    /**
+     * reserves-once (b): the same reader asked what the run may not USE UP (a craft's or a smelt's input, the smelt's fuel):
+     * every kept -d amount, the running order's own included (Goals.keptForRun with consume). The crafts' plan bag reads this.
+     */
+    java.util.Map<String, Integer> keptFromUse() { return kept(true); }
+
+    private java.util.Map<String, Integer> kept(boolean consume) {
         if (depositRunHolds()) return Map.of();
         var rp = taskReplan;
         boolean task = taskStarting || (typedRun && runner.taskHolds());
-        if (!task) return io.github.mojolowjo.entropybot.aa.brain.Goals.keptForRun(bb, null, true);
-        return io.github.mojolowjo.entropybot.aa.brain.Goals.keptForRun(bb, rp == null ? null : rp.desire(), rp != null);
+        if (!task) return io.github.mojolowjo.entropybot.aa.brain.Goals.keptForRun(bb, null, true, consume);
+        return io.github.mojolowjo.entropybot.aa.brain.Goals.keptForRun(bb, rp == null ? null : rp.desire(), rp != null, consume);
     }
 
     /** The task's run is being started on the runner: its first step runs before the runner is marked as the task's (runTyped). */

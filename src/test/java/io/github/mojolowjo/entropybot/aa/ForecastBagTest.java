@@ -146,6 +146,40 @@ class ForecastBagTest {
         assertEquals(order.reserves(), NeedChain.Facts.ask(snap.world(), null, new PlanNodes.Fact("reserves", null)));
     }
 
+    /**
+     * reserves-once (run 3 w070, log line 1000: "reserved: mangrove_log 16 (finished), cobblestone 32 (finished) | spare to
+     * place: 4"; the planner said 0 spare): another order's -d amount came off the forecast bag (Goals.keptOff) AND off the
+     * spare count again through the pushed ledger. The planner's reserves now come from Goals.plannerReserves: once.
+     */
+    @Test
+    void keptAmountsAreCountedOnce_w070() {
+        ScenariosTest.world("wooden", "stone");
+        io.github.mojolowjo.entropybot.aa.brain.Goals.Goal cob = Z61ReservationsTest.goal("cobblestone", 32), iron = Z61ReservationsTest.goal("raw_iron", 3);
+        List<io.github.mojolowjo.entropybot.aa.brain.LineDeposits.Kept> kept = List.of(new io.github.mojolowjo.entropybot.aa.brain.LineDeposits.Kept(cob, Map.of("cobblestone", 32)));
+        java.util.function.Supplier<List<io.github.mojolowjo.entropybot.aa.brain.Goals.Finished>> fin = () -> new java.util.ArrayList<>(List.of(
+                new io.github.mojolowjo.entropybot.aa.brain.Goals.Finished("cobblestone", List.of(COBBLE), 32, false, cob)));
+        Map<String, Integer> live = Map.of("cobblestone", 35);
+        // the ledger the run pushed (release: the orders only) holds the 32, and the lease is right with it on the LIVE bag
+        var ledger = io.github.mojolowjo.entropybot.aa.brain.Goals.orderReserves(null, fin.get(), live, kept);
+        assertEquals(3, Reserves.spareThrowaway(ledger, Map.of(COBBLE, 35), List.of(COBBLE)), "the lease: 3 of 35");
+        // the fault: the planner's forecast bag has the 32 off already; the ledger took them off again
+        assertEquals(0, NeedChain.spareBlocks(Map.of(COBBLE, 3), ledger, "raw_iron", 3), "counted twice: 0 spare");
+        // the fix: one store, one reader for the planner
+        List<io.github.mojolowjo.entropybot.aa.brain.Goals.Finished> f = fin.get();
+        var planner = io.github.mojolowjo.entropybot.aa.brain.Goals.plannerReserves(iron, f, live, kept, List.of(iron));
+        assertEquals(3, NeedChain.spareBlocks(Map.of(COBBLE, 3), planner, "raw_iron", 3), "counted once: 3 spare " + planner);
+        assertEquals(32, f.get(0).n, "the finished list is not lowered by the planner");
+        // the -d order planned itself: its own amount is not off its bag, it is its own target: 3 spare of 35
+        var own = io.github.mojolowjo.entropybot.aa.brain.Goals.plannerReserves(cob, fin.get(), live, kept, List.of(cob));
+        assertEquals(3, NeedChain.spareBlocks(Map.of(COBBLE, 35), own, "cobblestone", 32), own.toString());
+        // a finished order with no deposit word is still held from placing (ruling 1 option c)
+        var plain = io.github.mojolowjo.entropybot.aa.brain.Goals.plannerReserves(iron, fin.get(), live, List.of(), List.of(iron));
+        assertEquals(3, NeedChain.spareBlocks(Map.of(COBBLE, 35), plain, "raw_iron", 3), plain.toString());
+        // the id forms: a path-keyed bag against full-id reserves, and a modded reserve against its path
+        assertEquals(3, NeedChain.spareBlocks(Map.of("cobblestone", 35), List.of(order(32)), null, 0));
+        assertEquals(3, NeedChain.spareBlocks(Map.of("cobblestone", 35), List.of(), "minecraft:cobblestone", 32));
+    }
+
     /** The World carries the table; the snapshot's fact replay knows it. */
     @Test
     void theWorldCarriesTheReserveTable() {

@@ -5740,20 +5740,29 @@ public final class NeedChain {
      * already). Pure (JUnit: ForecastBagTest).
      */
     static int spareBlocks(Map<String, Integer> bag, List<baritone.api.process.Reserves.Reserve<String>> reserves, String asked, int askedN) {
-        List<baritone.api.process.Reserves.Reserve<String>> rs = new ArrayList<>(reserves == null ? List.of() : reserves);
+        // reserves-once (plan step 1, the id forms): the bag counts by the item's path, a reserve names the full id (a modded
+        // item's "mod:x" against the bag's "x" read as "minecraft:x" never matched); every side is matched by its path here
+        List<baritone.api.process.Reserves.Reserve<String>> rs = new ArrayList<>();
+        if (reserves != null) for (var r : reserves) {
+            List<String> ms = new ArrayList<>();
+            for (String m : r.members) ms.add(io.github.mojolowjo.entropybot.aa.brain.Thing.path(m));
+            Map<String, Integer> wt = null;
+            if (r.weight != null && !r.weight.isEmpty()) { wt = new LinkedHashMap<>(); for (var e : r.weight.entrySet()) wt.merge(io.github.mojolowjo.entropybot.aa.brain.Thing.path(e.getKey()), e.getValue(), Math::max); }
+            rs.add(new baritone.api.process.Reserves.Reserve<>(r.word, ms, wt, r.units, r.kind, r.step, r.owner));
+        }
         if (asked != null && askedN > 0 && !asked.startsWith("#")) {
-            String id = id(asked);
+            String p = io.github.mojolowjo.entropybot.aa.brain.Thing.path(asked);
             boolean named = false;
-            for (var r : rs) if (r.kind == baritone.api.process.Reserves.Kind.ORDER && r.members.contains(id)) named = true;
-            if (!named) rs.add(io.github.mojolowjo.entropybot.aa.moves.Reservations.order(sh(id), List.of(id), askedN));
+            for (var r : rs) if (r.kind == baritone.api.process.Reserves.Kind.ORDER && r.members.contains(p)) named = true;
+            if (!named) rs.add(baritone.api.process.Reserves.Reserve.of(p, List.of(p), askedN, baritone.api.process.Reserves.Kind.ORDER, -1, "order " + sh(id(asked))));
         }
         Map<String, Integer> b = new LinkedHashMap<>();
         List<String> blocks = new ArrayList<>();
         if (bag != null) for (var e : bag.entrySet()) {
             if (e.getValue() == null || e.getValue() <= 0) continue;
-            String id = id(e.getKey());
-            b.merge(id, e.getValue(), Integer::sum);
-            if (AaEscape.pillarBlock(id) && !blocks.contains(id)) blocks.add(id);
+            String p = io.github.mojolowjo.entropybot.aa.brain.Thing.path(e.getKey());
+            b.merge(p, e.getValue(), Integer::sum);
+            if (AaEscape.pillarBlock(id(e.getKey())) && !blocks.contains(p)) blocks.add(p);
         }
         return blocks.isEmpty() ? 0 : baritone.api.process.Reserves.spareThrowaway(rs, b, blocks);
     }
