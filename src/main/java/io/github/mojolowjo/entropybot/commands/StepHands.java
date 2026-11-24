@@ -83,6 +83,9 @@ public final class StepHands implements Steps.Hands {
      * IPathingControlManager#mostRecentInControl, IBaritoneProcess#displayName, IPathingBehavior#getCurrent / getGoal /
      * isPathing, IPathExecutor#getPath / getPosition; vanilla Entity#isInWater / isInLava.
      */
+    /** job-refusal-fact: the guard's refused breaks since the last ask (guard.RefusedBreaks, the one store). */
+    @Override public String refusedBreaks() { return io.github.mojolowjo.entropybot.guard.RefusedBreaks.INSTANCE.take(); }
+
     @Override public String stallFacts(Step s) {
         LocalPlayer p = Minecraft.getInstance().player;
         IBaritone b = Jobs.baritone();

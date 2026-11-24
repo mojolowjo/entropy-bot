@@ -81,6 +81,12 @@ public final class Steps {
          */
         default String stallFacts(Step s) { return null; }
 
+        /**
+         * job-refusal-fact (worlds run 3 w072): the breaks the guard refused since the last ask, one text per cell with its
+         * count (guard.RefusedBreaks); null: none, or these hands cannot read them.
+         */
+        default String refusedBreaks() { return null; }
+
         /** 0.39.z75 review 2: the monitor ended this running explore for no progress ({@code why}); its target is held by position. */
         default void exploreFrozen(Step s, String why) {}
 
@@ -1187,6 +1193,12 @@ public final class Steps {
      * now: the run ends FAILED with the reason. 0.39.z70 (D2 3.1): a try equal to the last failed one ({@link Attempt}) parks
      * the run with the honest-loop words instead.
      */
+    /** job-refusal-fact: {@code f} with the guard's refused breaks of its step added to its text (same key); null stays null. Pure. */
+    public static FactChange.Fact withRefused(FactChange.Fact f, String refused) {
+        if (f == null || refused == null || f.text() != null && f.text().contains(refused)) return f;
+        return new FactChange.Fact(f.key(), (f.text() == null ? "" : f.text() + "; ") + refused);
+    }
+
     private void failOrReplan(String reason) { failOrReplan(reason, null); }
 
     /** {@code known}: the fact the run itself found (a source step's timeout), null: the hands say it. */
@@ -1229,6 +1241,19 @@ public final class Steps {
                 if (lead != null) fact = lead;
             }
             if (fact == null) fact = walkTargetFact(steps, idx, reason);     // job-walkend: no walk end stops the order
+        }
+        // job-refusal-fact (worlds run 3 w072: six steps in a row ended "no progress" while the guard refused the rail at the
+        // feet 8,115 times, no fact naming it): the refused breaks counted during this step are said here and carried by
+        // the end's fact, so the held fact says why (Baritone's cost already refuses those cells for the next path)
+        String refusedNow;
+        try {
+            refusedNow = hands.refusedBreaks();
+        } catch (RuntimeException e) {
+            refusedNow = "the guard's refused breaks could not be read: " + e;
+        }
+        if (refusedNow != null) {
+            reason = reason + "; " + refusedNow;
+            fact = withRefused(fact, refusedNow);
         }
         if (fact == null || replanner == null || idx < 0 || idx >= steps.size()) { fail(reason); return; }
         Step failed = steps.get(idx);

@@ -306,6 +306,11 @@ public final class CostAdvisorHook {
             pr.stats.deny(PolicyStats.SITE_ASTAR_COST, kv.reason());
             return refused(t, x, y, z, state, in, "break", kv.rule(), kv.reason());
         }
+        // job-refusal-fact: a cell whose break the guard's click refused (RefusedBreaks, held while the same block stands)
+        if (heldRefusal(dim, x, y, z, state)) {
+            pr.stats.deny(PolicyStats.SITE_ASTAR_COST, "the guard refused this break before");
+            return refused(t, x, y, z, state, in, "break", "refused before", "the guard refused this break before");
+        }
         // lava distance (0.39.z40): a break that opens lava onto the bot (lava in the cell or at a face: the fork burrow's test)
         // is refused for every intent, unless the bot starts this calculation in lava (the reflex's dig-out leg)
         var lava = lava(at);
@@ -345,6 +350,12 @@ public final class CostAdvisorHook {
             }
             default -> { return wet == 1 ? Double.NaN : wet; }                        // DIG_OUT, BUILD, RESTORE: as today, plus the water
         }
+    }
+
+    /** job-refusal-fact: the guard's click refused breaking this cell's block before (RefusedBreaks; the block read here lifts a changed cell). */
+    static boolean heldRefusal(String dim, int x, int y, int z, BlockState state) {
+        String block = state == null ? null : net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+        return io.github.mojolowjo.entropybot.guard.RefusedBreaks.INSTANCE.refused(dim, x, y, z, block);
     }
 
     /**
@@ -391,6 +402,24 @@ public final class CostAdvisorHook {
             BreakPolicy.Snapshot s = t != null ? t.snapshot() : pr.snapshot();
             BreakPolicy.Where me = t != null ? t.me() : pr.where();
             if (dim == null || s == null) return in == Intent.TRAVEL ? refused(t, x, y, z, current, in, "place", "no dimension or snapshot", "fail closed for travel") : Double.NaN;
+            // job-refusal-fact (worlds run 3 w072, the fork's MovementPillar: it prices only this place at its feet cell, then
+            // clicks the rail there): a place into a cell that holds a block first needs that block broken; when that break
+            // is refused (a structure block, a keep-out / no-break cell, or the guard's click refused it before) the place
+            // is refused too, so the plan and the click agree
+            if (current != null && !current.isAir() && !current.canBeReplaced()) {
+                String why = null;
+                BreakPolicy.Verdict sv = pr.structureVerdict(s, dim, at, x, y, z);
+                if (!sv.allowed()) why = sv.reason();
+                else {
+                    BreakPolicy.Verdict kv = BreakPolicy.pathProtect(s, dim, x, y, z);
+                    if (!kv.allowed()) why = kv.reason();
+                    else if (heldRefusal(dim, x, y, z, current)) why = "the guard refused this break before";
+                }
+                if (why != null) {
+                    pr.stats.deny(PolicyStats.SITE_ASTAR_PLACE, "the place needs a refused break: " + why);
+                    return refused(t, x, y, z, current, in, "place", "needs a refused break", "the place needs a refused break: " + why);
+                }
+            }
             BreakPolicy.Verdict v = BreakPolicy.judge(s, new BreakPolicy.Ask(BreakPolicy.Action.PLACE, in, dim, x, y, z, pr.placeFacts(at, dim, x, y, z), me));
             // the click veto (Guard.vetoPolicyPlace) asks the same policy with the same intent, so a deny here is a deny there
             if (!v.allowed()) { pr.stats.deny(PolicyStats.SITE_ASTAR_PLACE, v.reason()); return refused(t, x, y, z, current, in, "place", v.rule(), v.reason()); }

@@ -240,9 +240,17 @@ public final class Guard {
         String line = (v.allowed() ? "would refuse " : "refused ") + action + " at " + pos.getX() + " " + pos.getY() + " " + pos.getZ() + ": " + v.reason();
         // repeat run 2026-11-22 (w058-b, w053-b: thousands of "refused break at <the feet cell>: structure block outside my
         // areas" while a walk up stood still, the block never named): a refused break says which block it was (rule 7)
+        String block = null;
         if ("break".equals(action) && level != null && level.isLoaded(pos)) {
-            line += " [the block: " + BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()) + "]";
+            block = BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).toString();
+            line += " [the block: " + block + "]";
         }
+        // job-refusal-fact (worlds run 3 w072: 8,115 such lines on one rail): an enforced refused break is a cell fact
+        // (RefusedBreaks: Baritone's cost and the step's end read it); said once per cell, the rest counted and said
+        // when the step ends (Steps.failOrReplan)
+        if ("break".equals(action) && !v.allowed() && level != null
+                && !RefusedBreaks.INSTANCE.note(dimOf(level), pos.getX(), pos.getY(), pos.getZ(), block, v.reason())) return true;
+        if ("break".equals(action) && !v.allowed()) line += " (said once for this cell; held for every path; the count is said when the step ends)";
         EventRing ring = events;
         if (ring != null) {
             JsonObject d = new JsonObject();
