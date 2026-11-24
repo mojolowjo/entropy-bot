@@ -144,6 +144,28 @@ class SimGameTest {
     }
 
     /**
+     * hold-bound (owner 2026-11-24, plan step 2; worlds run 3: "deposit: held" to the end in 6 games): the line's other
+     * order is stopped and nothing it waits on can change (every order stopped, nothing runs). Wanted: the line's deposit is
+     * owed and goes, the cobblestone reaches the chest, and the end names the shortfall.
+     */
+    @Test
+    void aStoppedOrderThatNothingCanWake_doesNotHoldTheLinesDeposit() {
+        SimGame g = lineMapWith32();
+        g.order("cobblestone", 32, "b1", true);
+        var log = g.order("spruce_log", 16, "b1", true);
+        // the sim has no explore, so the stop is set as the game's park leaves it: a PLACE park that keeps its facts, its
+        // look-around leg and climb try taken (run 3 w006: looked, then nothing left)
+        log.parked = "stopped at step 1 (cut 6 spruce_log at 10 64 3): no way from here";
+        log.park = new io.github.mojolowjo.entropybot.aa.brain.Goals.Park(io.github.mojolowjo.entropybot.aa.brain.Goals.ParkKind.PLACE, new int[]{0, 64, 0}, 32, java.util.Set.of(), java.util.Set.of());
+        log.looked = true;
+        log.climbRetried = true;
+        g.play(600);
+        String t = g.timelineText();
+        assertEquals(32, g.chest.get("minecraft:cobblestone"), "the cobblestone reached the chest, not held for the stopped log order: " + g.chest + "\n" + t);
+        assertTrue(t.contains("short: spruce_log 0 of 16"), "the log order's shortfall is named (rule 7): " + t);
+    }
+
+    /**
      * deposit-kept (owner 2026-11-13: "the bot should gather 10 more if the 32 is going to be deposited ... the items that
      * are tagged with -d should be considered separate"): 32 wait for the line's deposit, a new order of 10 is not met by them.
      */

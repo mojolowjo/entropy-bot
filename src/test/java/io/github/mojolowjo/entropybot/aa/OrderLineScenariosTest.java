@@ -271,6 +271,98 @@ class OrderLineScenariosTest {
     }
 
     /**
+     * hold-bound (owner 2026-11-24, plan step 2), replaying worlds run 3 T2 w055 (log lines 1162-1163: "every order is
+     * parked, nothing runs: oak_log: stopped at step 1 ... - wakes when a need in the bag rises, it moves 16 blocks or a
+     * new source is seen; torch: ..." then "torch stopped: the line's deposit waits for it - it can still wake"; no "tries
+     * once more" and no "looks around" line to the end): on the SURFACE, both orders of the line stopped on the honest
+     * loop (loopPark, no park: the look-around skips them, the climb try is under ground only), the bot stands still.
+     * Nothing is set by hand but the run's honest-loop attempt (the brain's parked() callback in the game). Wanted: no
+     * hold, the deposit is owed and goes with what each order did not deliver named; a later wake deposits its own.
+     */
+    @Test
+    void w055_bothOrdersOnTheHonestLoopAtTheSurface_theDepositGoes() {
+        OrderLineSim s = stoneAndTree();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        for (int i = 0; i < 60 && (cob.parked == null || log.parked == null); i++) {
+            s.run(1, 5000);
+            String r = s.running();
+            if (r == null) continue;
+            Goals.Goal g = r.equals(cob.id()) ? cob : log;
+            if (g == log) s.bag.put("oak_log", 11);
+            else s.bag.put("cobblestone", 5);
+            g.loopAttempt = Z70StepCheckTest.cobbleTry();      // the run ends on the honest loop
+            s.failRun(JBM_STAND_END);
+        }
+        s.run(3, 5000);
+        for (Goals.Goal g : List.of(cob, log)) {
+            assertNotNull(g.parked, g.r.key() + " is stopped: " + s.said);
+            assertNotNull(g.loopPark, g.r.key() + " stopped on the honest loop: " + s.said);
+            assertNull(g.park, g.r.key() + ": no place park (the look-around skips it)");
+            assertFalse(g.climbRetried || g.looked, g.r.key() + ": no climb try and no look-around (w055 had neither)");
+            assertNull(Goals.stillChanges(Goals.of(s.bb), g, false, false, false), g.r.key() + ": nothing can change what it waits on");
+            assertFalse(g.depositHeld, g.r.key() + ": no hold: " + s.said);
+        }
+        assertEquals(List.of(Map.of("cobblestone", 5, "oak_log", 11)), s.due, "the line's deposit is owed and goes: " + s.said);
+        assertTrue(s.said.stream().anyMatch(l -> l.contains("short: cobblestone 5 of 32")), "cobblestone's shortfall is named (rule 7): " + s.said);
+        assertTrue(s.said.stream().anyMatch(l -> l.contains("short: oak_log 11 of 16")), "oak_log's shortfall is named (rule 7): " + s.said);
+    }
+
+    /**
+     * hold-bound, the under-ground side (run 3 w070/w073: the climb try was taken and parked again at once): the line's
+     * other order ended, the stopped one keeps facts it waits on, its climb try is used up, nothing runs. Wanted: the
+     * deposit is owed and goes with the shortfall named; when the stopped order is met later its amount follows as a
+     * second deposit of the line, whole.
+     */
+    @Test
+    void underGround_aHoldNothingCanWakeEnds_andALateWakeDepositsItsOwn() {
+        OrderLineSim s = stoneAndTree();
+        s.underGround = true;
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        boolean cobFailed = false, logDone = false;
+        for (int i = 0; i < 60 && !logDone; i++) {
+            s.run(1, 5000);
+            String r = s.running();
+            if (r == null) continue;
+            if (r.equals(cob.id()) && !cobFailed) { cobFailed = true; s.failRun(JBM_STAND_END); cob.climbRetried = true; }
+            else if (r.equals(log.id())) { s.run(2, 5000); s.bag.put("oak_log", 16); s.bag.put("cobblestone", 5); s.endRun("done: chopped"); logDone = true; }
+        }
+        s.run(3, 5000);
+        assertNotNull(cob.parked, "the cobblestone order is still stopped: " + s.said);
+        assertTrue(Goals.canWake(cob), "its park still keeps facts it waits on");
+        assertFalse(cob.depositHeld, "nothing can change those facts: no hold: " + s.said);
+        assertEquals(List.of(Map.of("cobblestone", 5, "oak_log", 16)), s.due, "the line's deposit is owed and goes: " + s.said);
+        assertTrue(s.said.stream().anyMatch(l -> l.contains("short: cobblestone 5 of 32")), "the shortfall is named (rule 7): " + s.said);
+        s.depositRuns();
+        s.bag.remove("oak_log");
+        s.bag.remove("cobblestone");
+        s.bag.put("cobblestone", 33);                        // met later
+        s.run(3, 5000);
+        assertTrue(Goals.of(s.bb).isEmpty(), "met: " + s.said);
+        assertEquals(List.of(Map.of("cobblestone", 5, "oak_log", 16), Map.of("cobblestone", 27)), s.due, "a second deposit of the rest of its amount, whole: " + s.said);
+    }
+
+    /** hold-bound (pure): what can still change a park's facts, per fact; null when nothing can. */
+    @Test
+    void stillChanges_perFact() {
+        OrderLineSim s = stoneAndTree();
+        Goals.Goal a = s.order("cobblestone", 32, "b1", true), b = s.order("oak_log", 16, "b1", true);
+        a.parked = "stopped at step 1 (collect 32 cobblestone): test";
+        a.park = new Goals.Park(Goals.ParkKind.PLACE, new int[]{0, 60, 0}, 0, java.util.Set.of(), java.util.Set.of());
+        List<Goals.Goal> both = List.of(a, b);
+        assertNotNull(Goals.stillChanges(both, a, false, false, false), "the other order is open and runs");
+        b.parked = "x";
+        assertNotNull(Goals.stillChanges(both, a, false, true, false), "a run moves the bot");
+        assertNotNull(Goals.stillChanges(both, a, false, false, false), "its look-around is still to come");
+        a.looked = true;
+        assertNull(Goals.stillChanges(both, a, false, false, false), "nothing can change: " + Goals.stillChanges(both, a, false, false, false));
+        assertNotNull(Goals.stillChanges(both, a, true, false, false), "under ground its climb try is still to come");
+        a.climbRetried = true;
+        assertNull(Goals.stillChanges(both, a, true, false, false));
+        a.park = null;
+        assertNull(Goals.stillChanges(both, a, false, true, false), "no wake at all: nothing to hold");
+    }
+
+    /**
      * The same, the other way round in time: the line's deposit went (the other order ended, this one stopped for good:
      * parked-holds, a stop that can still wake holds the deposit) BEFORE the stopped order was
      * met. Wanted: a second deposit of what the first left out, nothing twice.
