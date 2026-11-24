@@ -245,12 +245,13 @@ public final class Guard {
             block = BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).toString();
             line += " [the block: " + block + "]";
         }
-        // job-refusal-fact (worlds run 3 w072: 8,115 such lines on one rail): an enforced refused break is a cell fact
-        // (RefusedBreaks: Baritone's cost and the step's end read it); said once per cell, the rest counted and said
-        // when the step ends (Steps.failOrReplan)
-        if ("break".equals(action) && !v.allowed() && level != null
-                && !RefusedBreaks.INSTANCE.note(dimOf(level), pos.getX(), pos.getY(), pos.getZ(), block, v.reason())) return true;
-        if ("break".equals(action) && !v.allowed()) line += " (said once for this cell; held for every path; the count is said when the step ends)";
+        // job-refusal-fact (worlds run 3 w072: 8,115 such lines on one rail): an enforced refused break is counted per cell
+        // (RefusedBreaks, a count store, never a price); said once per cell, block and reason, the rest counted and said
+        // when the step ends (Steps.next / failOrReplan)
+        if ("break".equals(action) && !v.allowed() && level != null) {
+            if (!RefusedBreaks.INSTANCE.note(dimOf(level), pos.getX(), pos.getY(), pos.getZ(), block, v.reason())) return true;
+            line += " (said once for this cell; the count is said when the step ends)";
+        }
         EventRing ring = events;
         if (ring != null) {
             JsonObject d = new JsonObject();

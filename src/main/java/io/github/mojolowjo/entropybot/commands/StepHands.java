@@ -78,14 +78,14 @@ public final class StepHands implements Steps.Hands {
     private int[] lastFeet;
     private long lastMoveTick = -1;
 
+    /** job-refusal-fact: the guard's refused breaks since the last ask (guard.RefusedBreaks, the one store). */
+    @Override public String refusedBreaks() { return io.github.mojolowjo.entropybot.guard.RefusedBreaks.INSTANCE.take(); }
+
     /**
      * 0.39.z75 (run AI 20:11:05-20:14:16): a frozen walk's or explore's facts for the probe line. Loader notes: Baritone's
      * IPathingControlManager#mostRecentInControl, IBaritoneProcess#displayName, IPathingBehavior#getCurrent / getGoal /
      * isPathing, IPathExecutor#getPath / getPosition; vanilla Entity#isInWater / isInLava.
      */
-    /** job-refusal-fact: the guard's refused breaks since the last ask (guard.RefusedBreaks, the one store). */
-    @Override public String refusedBreaks() { return io.github.mojolowjo.entropybot.guard.RefusedBreaks.INSTANCE.take(); }
-
     @Override public String stallFacts(Step s) {
         LocalPlayer p = Minecraft.getInstance().player;
         IBaritone b = Jobs.baritone();
