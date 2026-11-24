@@ -229,8 +229,14 @@ public sealed interface Step {
         public String text() { return "take my " + item + " here"; }
     }
 
-    /** Smelt {@code n} of {@code item} at a furnace ({@code here}: the one from the bag, on the spot). */
-    record Smelt(String item, int n, boolean here) implements Step {
+    /**
+     * Smelt {@code n} of {@code item} at a furnace ({@code here}: the one from the bag, on the spot). {@code fuel}
+     * (reserves-once b): the fuel the plan priced (NeedChain.burn's word), burned when the bag less the kept -d amounts
+     * covers it; null: none priced (the runner picks, as before).
+     */
+    record Smelt(String item, int n, boolean here, String fuel) implements Step {
+        public Smelt(String item, int n, boolean here) { this(item, n, here, null); }
+
         public String text() { return "smelt " + item + " " + n + (here ? " here" : ""); }
     }
 

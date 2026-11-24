@@ -183,7 +183,7 @@ class Z77PlaybookTest {
         assertEquals(2, strips.size(), pc.steps().toString());
         assertEquals(List.of(IRON_ORE), strips.get(0).ores(), "the bag's 9 coal cover the fuel: no coal in the strips");
         assertEquals(List.of(3, 24), strips.stream().map(s -> s.amounts().values().stream().mapToInt(Integer::intValue).sum()).toList());
-        assertEquals(List.of(new Step.Smelt("iron_ingot", 3, true), new Step.Smelt("iron_ingot", 24, true)), pc.steps().stream().filter(s -> s instanceof Step.Smelt).toList(),
+        assertEquals(List.of(new Step.Smelt("iron_ingot", 3, true, "minecraft:coal"), new Step.Smelt("iron_ingot", 24, true, "minecraft:coal")), pc.steps().stream().filter(s -> s instanceof Step.Smelt).toList(),
                 "one smelt for the pickaxe, one for the armour");
         // SHAPE CHANGE: the watcher's words - the whole trip with what the descent carries down, then each leg as it starts
         // (the ad-hoc row's 803.55 s by hand above is no longer priced: no comparison)

@@ -425,6 +425,33 @@ public final class CraftPlanner implements Crafter {
                         : io.github.mojolowjo.entropybot.aa.brain.ItemWorth.of(id).known() ? io.github.mojolowjo.entropybot.aa.brain.ItemWorth.of(id).value() : Double.NaN);
     }
 
+    /**
+     * reserves-once (b): the smelt burns the fuel its plan priced ({@code fuel}, NeedChain.burn's word on Step.Smelt) when
+     * {@code bag} (the bag less the kept -d amounts) holds enough of that one kind after the smelt's input; else the plan's
+     * own pick stands and {@code said} gets why (rule 7). Null or blank {@code fuel}: the plan as it is. Pure.
+     */
+    public static Crafter.Plan withFuel(Crafter.Plan plan, String fuel, Map<String, Integer> bag, Map<String, Integer> fuels, int smeltTicks,
+                                        java.util.function.Consumer<String> said) {
+        if (plan == null || !plan.ok() || fuel == null || fuel.isBlank()) return plan;
+        String want = fuel.substring(fuel.indexOf(':') + 1);
+        List<Crafter.Step> out = new ArrayList<>();
+        for (Crafter.Step s : plan.steps()) {
+            if (!(s instanceof Crafter.Smelt m) || m.fuel() == null || m.fuel().substring(m.fuel().indexOf(':') + 1).equals(want)) { out.add(s); continue; }
+            String id = null;
+            for (String k : bag.keySet()) if (k.substring(k.indexOf(':') + 1).equals(want)) id = k;
+            int burn = burnTicks(fuels, id == null ? want : id);
+            int need = burn <= 0 ? 0 : (int) Math.ceil((double) m.n() * smeltTicks / burn);
+            int have = id == null ? 0 : bag.getOrDefault(id, 0) - (id.equals(m.input()) ? m.n() : 0);
+            if (id != null && burn > 0 && have >= need) out.add(new Crafter.Smelt(m.recipeId(), m.item(), m.want(), m.input(), m.n(), id, need));
+            else {
+                out.add(s);
+                if (said != null) said.accept("smelt " + shortId(m.item()) + ": the priced fuel " + want + " is not free in the bag (" + Math.max(0, have) + " of "
+                        + (burn <= 0 ? "? (not in the fuel table)" : need) + ", the kept -d amounts left out); burning " + m.fuelCount() + " " + shortId(m.fuel()));
+            }
+        }
+        return new Crafter.Plan(out, plan.error());
+    }
+
     /** The burn ticks of {@code id} in the fuel table (its key with or without the namespace); 0: not a fuel. */
     public static int burnTicks(Map<String, Integer> fuels, String id) {
         if (fuels == null || id == null) return 0;

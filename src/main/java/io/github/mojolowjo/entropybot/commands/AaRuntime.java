@@ -798,7 +798,7 @@ public final class AaRuntime implements JobPort {
                 // forecast (owner 2026-11-08): the orders' reserves the forecast bag may not place on a way back up (run JBJ-T2).
                 // reserves-once (run 3 w070): computed now from the one store (Goals.orderReserves, as the lease's), never the
                 // pushed ledger; an order's chain world replaces them with Goals.plannerReserves (its bag has the kept amounts off)
-                .withReserves(orderReserves())
+                .withReserves(orderReserves(false))
                 .withWhere(new io.github.mojolowjo.entropybot.aa.NeedChain.WhereFacts(this::whereOf, once(this::surfaceOver), AaRuntime::feetNow, AaRuntime::baseHere))   // 0.39.z68; z69: the feet; z74: the base block
                 // 0.39.z75 take 2 (run AJ 20:23:41 / 20:24:55): a station take short twice at one cell is out for every order
                 .withoutSources(io.github.mojolowjo.entropybot.aa.moves.TakeHolds.INSTANCE.held(feetNow(), AaRuntime::stationStands,
@@ -1268,12 +1268,20 @@ public final class AaRuntime implements JobPort {
      * (the typed task's re-plan names its desire, "goal.&lt;key&gt;") and every finished order's items (Goals.orderReserves,
      * each lowered to what the bag still holds), and what the bag holds for the -d orders' deposits (Goals.kept).
      */
-    java.util.List<baritone.api.process.Reserves.Reserve<String>> orderReserves() {
+    java.util.List<baritone.api.process.Reserves.Reserve<String>> orderReserves() { return orderReserves(true); }
+
+    /**
+     * {@code prune} false (reserves-once review: the planner's world read): the same reserves over copies of the finished
+     * list, so a read never lowers or drops a finished entry; only the lease's push prunes the store (as before).
+     */
+    private java.util.List<baritone.api.process.Reserves.Reserve<String>> orderReserves(boolean prune) {
         io.github.mojolowjo.entropybot.aa.brain.Goals.Goal running = null;
         var rp = taskReplan;
         if (typedRun && rp != null) for (var g : io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb)) if (g.id().equals(rp.desire())) running = g;
         // deposit-kept, placing (owner's yes 2026-11-16): the -d amounts in the bag too, whichever order runs
-        return io.github.mojolowjo.entropybot.aa.brain.Goals.orderReserves(running, io.github.mojolowjo.entropybot.aa.brain.Goals.finished(bb), bb.in.bag,
+        var finished = io.github.mojolowjo.entropybot.aa.brain.Goals.finished(bb);
+        if (!prune) finished = io.github.mojolowjo.entropybot.aa.brain.Goals.copies(finished);
+        return io.github.mojolowjo.entropybot.aa.brain.Goals.orderReserves(running, finished, bb.in.bag,
                 io.github.mojolowjo.entropybot.aa.brain.Goals.keptPer(bb));
     }
 
@@ -2757,6 +2765,9 @@ public final class AaRuntime implements JobPort {
             fastEndSeen = -1;                            // review 4: no end held from an earlier task
             LocalPlayer sp = Minecraft.getInstance().player;
             typedStartAt = sp == null ? null : Jobs.here(sp);
+            // reserves-once (b): the task's own and its trip's kept amounts as the bag holds them at its first start (an escape
+            // goes on with the same note; keptFromUse reads it)
+            io.github.mojolowjo.entropybot.aa.brain.Goals.runStarts(bb, taskReplan == null ? null : taskReplan.desire());
         }
         var rp = taskReplan;
         // 0.39.z30: an order's step failing on a changed fact is charged in Failures under the order by the fact's key, then re-planned

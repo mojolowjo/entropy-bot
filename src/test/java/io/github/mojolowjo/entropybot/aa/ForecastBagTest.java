@@ -178,6 +178,25 @@ class ForecastBagTest {
         // the id forms: a path-keyed bag against full-id reserves, and a modded reserve against its path
         assertEquals(3, NeedChain.spareBlocks(Map.of("cobblestone", 35), List.of(order(32)), null, 0));
         assertEquals(3, NeedChain.spareBlocks(Map.of("cobblestone", 35), List.of(), "minecraft:cobblestone", 32));
+        // a reserve by a namespaced id other than minecraft's against the path-keyed bag (was: no match, 35 spare)
+        assertEquals(3, NeedChain.spareBlocks(Map.of("cobblestone", 35), List.of(Reservations.order("x", List.of("othermod:cobblestone"), 32)), null, 0));
+    }
+
+    /** reserves-once (b): the smelt burns the fuel its plan priced when the free bag covers it, else the pick stands, said. */
+    @Test
+    void theSmeltBurnsThePricedFuel() {
+        var smelt = new io.github.mojolowjo.entropybot.craft.Crafter.Smelt("r", "minecraft:charcoal", 1, "minecraft:spruce_log", 1, "minecraft:spruce_planks", 1);
+        var plan = new io.github.mojolowjo.entropybot.craft.Crafter.Plan(List.of(smelt), null);
+        Map<String, Integer> fuels = Map.of("minecraft:coal", 1600, "minecraft:spruce_planks", 300);
+        List<String> said = new java.util.ArrayList<>();
+        var p = io.github.mojolowjo.entropybot.craft.CraftPlanner.withFuel(plan, "coal", Map.of("minecraft:coal", 2, "minecraft:spruce_planks", 4), fuels, 200, said::add);
+        var s = (io.github.mojolowjo.entropybot.craft.Crafter.Smelt) p.steps().get(0);
+        assertEquals("minecraft:coal", s.fuel());
+        assertEquals(1, s.fuelCount());
+        assertTrue(said.isEmpty(), said.toString());
+        var q = io.github.mojolowjo.entropybot.craft.CraftPlanner.withFuel(plan, "coal", Map.of("minecraft:spruce_planks", 4), fuels, 200, said::add);
+        assertEquals("minecraft:spruce_planks", ((io.github.mojolowjo.entropybot.craft.Crafter.Smelt) q.steps().get(0)).fuel());
+        assertEquals(1, said.size(), "rule 7: the priced fuel not free is said");
     }
 
     /** The World carries the table; the snapshot's fact replay knows it. */

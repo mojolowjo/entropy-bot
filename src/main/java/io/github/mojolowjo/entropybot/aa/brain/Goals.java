@@ -1376,6 +1376,13 @@ public final class Goals {
         return l;
     }
 
+    /** reserves-once review: copies of the finished entries, for a reader that must not lower the store's own (null: empty). */
+    public static List<Finished> copies(List<Finished> finished) {
+        List<Finished> out = new ArrayList<>();
+        if (finished != null) for (Finished f : finished) out.add(new Finished(f.key, f.ids, f.n, f.group, f.order));
+        return out;
+    }
+
     /** A met order joins the finished list (a strip order holds no items; the same key replaces the older entry). */
     static void finish(Blackboard bb, Goal g) {
         if (g.strip != null || g.r.ids().isEmpty()) return;
@@ -1519,10 +1526,55 @@ public final class Goals {
      */
     public static Map<String, Integer> keptForRun(Blackboard bb, String desireId, boolean orderRun, boolean consume) {
         if (!orderRun) return Map.of();
+        if (consume && desireId != null && bb.fact(FACT) instanceof List<?>)
+            for (Goal g : of(bb)) if (g.id().equals(desireId)) return keptFromUse(bb, g, desireId);
         if (consume) return kept(bb, null, null);
         if (desireId != null && bb.fact(FACT) instanceof List<?>)
             for (Goal g : of(bb)) if (g.id().equals(desireId)) return keptFromOthers(bb, g);
         return kept(bb, null, null);
+    }
+
+    /** reserves-once (b): the run's own and its trip's kept amounts as the bag held them when the run started ({@link #runStarts}). */
+    record KeptAtStart(String desire, Map<String, Integer> own) {}
+
+    static final String KEPT_AT_START_FACT = "aa.keptAtRunStart";
+
+    /**
+     * reserves-once (b, review: the planner and the runner must hold the same amounts): an order's run starts - what the bag
+     * holds now for its own and its trip's -d amounts (kept less the others') is noted for the run. The planner set exactly
+     * those aside from the trip's start (NeedChain.playbookChain); what the run gathers after its start is the trip's to plan
+     * with, set aside by the planner after the target's own get. Null desire or no such open order: the note is cleared.
+     */
+    public static void runStarts(Blackboard bb, String desireId) {
+        Goal g = null;
+        if (desireId != null && bb.fact(FACT) instanceof List<?>) for (Goal x : of(bb)) if (x.id().equals(desireId)) g = x;
+        if (g == null) { bb.fact(KEPT_AT_START_FACT, null); return; }
+        Map<String, Integer> own = new java.util.HashMap<>(kept(bb, null, null));
+        for (var e : keptFromOthers(bb, g).entrySet()) own.merge(e.getKey(), -e.getValue(), Integer::sum);
+        own.values().removeIf(v -> v <= 0);
+        bb.fact(KEPT_AT_START_FACT, new KeptAtStart(desireId, Map.copyOf(own)));
+    }
+
+    /**
+     * reserves-once (b): what an order's run may not use up - the others' kept amounts whole, and of its own and its trip's
+     * what the bag held at the run's start (never more than it holds now). No note for this run (a run started
+     * outside {@link #runStarts}): its own amounts are held whole, said once (rule 7).
+     */
+    private static Map<String, Integer> keptFromUse(Blackboard bb, Goal g, String desireId) {
+        Map<String, Integer> out = new java.util.HashMap<>(keptFromOthers(bb, g));
+        Map<String, Integer> all = kept(bb, null, null);
+        KeptAtStart at = bb.fact(KEPT_AT_START_FACT) instanceof KeptAtStart k && desireId.equals(k.desire()) ? k : null;
+        if (at == null && bb.port != null && !desireId.equals(bb.fact(KEPT_AT_START_FACT + ".said"))) {
+            bb.fact(KEPT_AT_START_FACT + ".said", desireId);
+            bb.port.log(g.r.key() + ": no note of the kept amounts at the run's start; its own -d amounts are held whole from its crafts and smelts");
+        }
+        for (var e : all.entrySet()) {
+            int own = e.getValue() - out.getOrDefault(e.getKey(), 0);
+            if (own <= 0) continue;
+            int hold = at == null ? own : Math.min(own, at.own().getOrDefault(e.getKey(), 0));
+            if (hold > 0) out.merge(e.getKey(), hold, Integer::sum);
+        }
+        return out;
     }
 
     public static Map<String, Integer> keptFromOthers(Blackboard bb, Goal g) {

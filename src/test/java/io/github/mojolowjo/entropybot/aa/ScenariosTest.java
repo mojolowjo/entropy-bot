@@ -350,7 +350,7 @@ class ScenariosTest {
             last = at;
         }
         assertTrue(c.steps().contains(new Step.PlaceNear("furnace")), c.steps().toString());
-        assertEquals(new Step.Smelt("charcoal", 4, true), c.steps().stream().filter(s -> s instanceof Step.Smelt).findFirst().orElseThrow());
+        assertEquals(new Step.Smelt("charcoal", 4, true, "minecraft:oak_planks"), c.steps().stream().filter(s -> s instanceof Step.Smelt).findFirst().orElseThrow());
         assertEquals(new Step.Craft("torch", 16), c.steps().get(c.steps().size() - 1));
     }
 

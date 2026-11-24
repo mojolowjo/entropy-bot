@@ -2764,6 +2764,18 @@ public final class NeedChain {
         // descent that took the chain down (a strip on, a band leg) priced when the bot gets there cuts the run before that
         // descent ({@code downBefore}: the steps before it). Nothing before it: the trip stands until the answer lands (rule 22).
         java.util.Set<Step> downBefore = null;
+        // reserves-once (b, run 3 w064: the torch's furnace priced from 8 of the cobblestone 32 -d already in the bag, and the
+        // runner's craft bag, AaRuntime.keptFromUse, refuses them): what the bag already holds of a -d target of this trip
+        // is set aside from the start, so no get (a furnace, a smelt's fuel, the target's own pickaxe) uses it up; the target's
+        // own get asks only the rest of its amount, and the whole amount stays aside for the gets after it
+        Map<Playbook.Target, Integer> heldKept = new java.util.IdentityHashMap<>();
+        for (Playbook.Leg leg : pb.legs()) for (Playbook.Target t : leg.gets()) {
+            if (!t.keep() || leg.gates().contains(id(t.item()))) continue;
+            int held = Math.min(t.n(), c.have(id(t.item())));
+            if (held <= 0) continue;
+            heldKept.put(t, held);
+            c.aside.merge(id(t.item()), held, Integer::sum);
+        }
         int legNo = 0;
         legs:
         for (Playbook.Leg leg : pb.legs()) {
@@ -2809,8 +2821,12 @@ public final class NeedChain {
                     String item = id(t.item());
                     boolean gate = leg.gates().contains(item);
                     int w0 = c.waited.size();
+                    // reserves-once (b): what the bag holds of its kept amount stays aside; the get asks only the rest, so its
+                    // own ways (a pickaxe from cobblestone) never use the kept part up either (z37 recount, not for a -d amount)
+                    Integer held = heldKept.remove(t);
+                    int ask = t.n() - (held == null ? 0 : held);
                     // a gate: the pickaxe the derivation chose for its tier (its leaves on this leg's side), made unless one digs it
-                    String p = gate ? (leg.tier() > c.pickTier ? obtain(c, item, c.have(item) + 1) : null) : obtain(c, item, t.n());
+                    String p = gate ? (leg.tier() > c.pickTier ? obtain(c, item, c.have(item) + 1) : null) : obtain(c, item, ask);
                     if (c.fail == null && !c.stuck) madePick(c, item);
                     if (c.fail != null && legNo > 1 && waitsHere(c.fail)) {
                         if (!cut.isEmpty()) {
@@ -2833,15 +2849,15 @@ public final class NeedChain {
                         exploreFor = c.unknown;
                         c.unknown = null;                               // a second unknown names itself (price review 2)
                         c.stuck = false;
-                        int lack = (gate ? c.have(item) + 1 : t.n()) - c.have(item);
+                        int lack = (gate ? c.have(item) + 1 : ask) - c.have(item);
                         if (lack > 0) c.bag.merge(item, lack, Integer::sum);
                         madePick(c, item);
-                        if (t.keep()) c.aside.merge(item, t.n(), Integer::sum);
+                        if (t.keep()) c.aside.merge(item, ask, Integer::sum);
                         continue;
                     }
                     // deposit-kept (owner 2026-11-13; sim: cobblestone 32 -d, torch 4 -d: the torch's furnace took 8 of the 32,
                     // 24 deposited; run JBS-T1: 14 of 16 logs): a -d order's amount is set aside for the gets after it
-                    if (t.keep()) c.aside.merge(item, t.n(), Integer::sum);
+                    if (t.keep()) c.aside.merge(item, ask, Integer::sum);             // reserves-once (b): the held part is aside already
                     got.add(sh(item) + " " + t.n() + (p == null ? " (in the bag)" : " <- " + p) + (t.keep() ? " (kept for the deposit)" : ""));
                 }
             } finally {
@@ -3982,7 +3998,7 @@ public final class NeedChain {
             c.steps.add(k);
             c.addS(Price.craftS() * batches);
         } else {
-            k = new Step.Smelt(out != null ? sh(out) : shw(w.word), made, true);
+            k = new Step.Smelt(out != null ? sh(out) : shw(w.word), made, true, fuel == null ? null : fuel.word());
             c.steps.add(k);
             c.addS(batches * smeltTicks() / GameTimes.TPS);
         }
@@ -4480,7 +4496,7 @@ public final class NeedChain {
         if (c.stuck) return "smelt " + String.join(" + ", parts);
         Burn fuel = c.burned;
         walkBack(c);
-        c.steps.add(new Step.Smelt(sh(item), k * rec.outCount(), true));
+        c.steps.add(new Step.Smelt(sh(item), k * rec.outCount(), true, fuel == null ? null : fuel.word()));   // reserves-once (b): the priced fuel rides on the step
         used(c, smeltUses(input, k, fuel));                        // 0.39.z61: the input by its word; z75 item 2: the planned fuel, counted
         c.addS(k * smeltTicks() / GameTimes.TPS);
         c.note(() -> "smelt " + sh(item) + " x" + k * rec.outCount() + ": " + s(k * smeltTicks() / GameTimes.TPS));
