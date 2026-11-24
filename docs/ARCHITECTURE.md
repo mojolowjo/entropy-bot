@@ -41,6 +41,12 @@ spot's collect that digs down prices its way back up against the FORECAST bag af
 `Reserves.spareThrowaway` on the simulated bag, the chain's own asked item an ORDER reserve too) - a pillar of spare blocks,
 a staircase, or extra blocks first - and a `Step.Climb` follows (`wayBackUp`); the climb-up way (`climbUp`) counts spare
 blocks the same way. Tuning `forecast.*`.
+Pickaxe price (plan step 6, run 3 w070): both are ways for `choose` (`Alt`s), never a fixed order. A way that digs with
+the pickaxe (staircase: `forecast.stairBreaksPerLevel` a level; extra blocks; a re-collect) counts its breaks against
+`pickUsesLeft` (`World.usesLeft`, the bag's other pickaxes, less `pickWorn`) in `pickWear`: past them `spareTools` prices
+the replacement, none to be had drops the way with the reason. `lendWay`: kept blocks lent to the pillar, a
+`Step.Collect` of them after the Climb (the -d amount whole again). `climbUp` adds "make a pickaxe first"
+(`cheapestPickaxe`) when there is no pickaxe and too few spare blocks.
 
 ### Path memory (D11)
 The fork keeps priced paths (`PathMemory`) and re-joins a kept path the feet left by one short search (build 1); the mod

@@ -118,6 +118,21 @@ class Z77ExploreTest {
         assertTrue(none.steps().stream().noneMatch(s -> s instanceof Step.Explore || s instanceof Step.Climb), none.steps().toString());
     }
 
+    /**
+     * Pickaxe price (b), run 3 (w002, w005, w025, w070: the pickaxe broke under ground, no priced walk up): no pickaxe, 20
+     * cobblestone, 2 sticks and a crafting table in the bag - "make a pickaxe first" is a priced way up beside the others,
+     * and with no other way standing it is the one taken: the pickaxe's steps before the Climb.
+     */
+    @Test
+    void e2c_noPickaxe_makeOneFirstIsAWayUp() {
+        var w = deep(word -> null).withPath((x, y, z, d) -> PathPrice.Answer.unreachable("no path"));
+        Chain c = NeedChain.resolve("raw_iron", 3, w.withBag(Map.of("minecraft:cobblestone", 20, "minecraft:stick", 2, "minecraft:crafting_table", 1)));
+        assertTrue(c.ok() && c.explore(), c.why());
+        assertTrue(c.why().contains("make stone_pickaxe"), c.why());
+        int climb = c.steps().indexOf(new Step.Climb());
+        assertTrue(climb > 0, "the pickaxe made before the climb: " + c.steps());
+    }
+
     /** Review 6 (E0's bound): two stands in a row at one cell, the re-plan a stand again: no third stand, the run ends with the reason. */
     @Test
     void e0_noThirdStandAtOneCell() {
