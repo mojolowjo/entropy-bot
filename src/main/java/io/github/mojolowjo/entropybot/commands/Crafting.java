@@ -641,7 +641,8 @@ final class Crafting {
      */
     private Map<String, Integer> planBag(LocalPlayer p) {
         Map<String, Integer> inv = new LinkedHashMap<>(Gui.inventory(p));
-        Map<String, Integer> kept = commands.aaRuntime == null ? Map.of() : commands.aaRuntime.keptFromOthers();
+        // reserves-once (b, run 3 w064): every -d amount, the running order's own included, is kept from a craft and a smelt
+        Map<String, Integer> kept = commands.aaRuntime == null ? Map.of() : commands.aaRuntime.keptFromUse();
         for (var e : kept.entrySet()) {
             String path = e.getKey().contains(":") ? e.getKey().substring(e.getKey().indexOf(':') + 1) : e.getKey();
             int left = e.getValue();
