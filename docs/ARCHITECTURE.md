@@ -187,6 +187,11 @@ stage change, no bag gain, no placed block and no new Baritone chat line for `mo
 from `Steps.Hands.said` (`StepHands.said`: the process in control, `BaritoneHook.lastLine` / `lines`); not known, the rule is
 off and the outer watch stays the backstop. The honest park (`Steps.Attempt.sameAs`) also compares the cell the step ENDED at
 and a silent end's last line (also in `Attempt.tryKey`); the fact key, the cave's hold key, is unchanged.
+job-silent-end-fact (run 3 w005, w025): a place-near the monitor ends is the place fact of the cell it was ASKED from
+(`StepMonitor.placeStall`: the step's start feet, else the stall's feet; the words name both), read by
+`World.withPlaceFailures` as before. A held cut key ("cut at x y z") holds every log spot of the same trunk
+(`NeedChain.trunkHeld`, inside `spotHeld`: the same x z column within `TRUNK_SPAN`), so the next plan takes another tree;
+the key and its lift (distance, WorldFacts) are the run's own.
 
 ## Where the facts come from
 | Fact | Class | Game API or file |

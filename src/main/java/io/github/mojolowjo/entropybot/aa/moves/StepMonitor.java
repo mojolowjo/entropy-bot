@@ -447,13 +447,32 @@ public final class StepMonitor {
         }
         // 0.39.z78 run EQ (rule 23 (1)): a place-near that stalls is the place fact of where it stalled - the same key and
         // words as the fork's own end (FactChange.placeFailed), held for every order by distance
-        if (step instanceof Step.PlaceNear pn && feet != null && feet.length >= 3)     // structural: x y z
-            return new Look(Verdict.REPLAN, why, FactChange.noProgress(io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(step, feet),
-                    "place " + pn.item().replaceFirst("^minecraft:", "") + " near me failed at " + feet[0] + " " + feet[1] + " " + feet[2] + ": " + why));
+        // job-silent-end-fact (run 3 w005: 22 stalls, the repair walked to a cell with room 20 28 -10, the place asked from
+        // there climbed the open shaft and stalled at 20 36 -10 each time; the held cell was the stall's, never the asked one)
+        if (step instanceof Step.PlaceNear pn) {
+            FactChange.Fact f = placeStall(pn, startFeet, feet, why);
+            if (f != null) return new Look(Verdict.REPLAN, why, f);
+        }
         String src = io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(step);
         FactChange.Fact f = src != null ? FactChange.noProgress(src, why + " at " + step.text())
                 : new FactChange.Fact(stepKey(step), why + " at " + step.text());
         return new Look(Verdict.REPLAN, why, f);
+    }
+
+    /**
+     * job-silent-end-fact (run 3 w005): the fact of a place-near the monitor ended. "Near me" is near the cell it was asked
+     * from ({@code asked}, the step's start feet): that is the cell that did not take the block, the one the chain's next
+     * place-near would ask from again ({@link io.github.mojolowjo.entropybot.aa.NeedChain.World#withPlaceFailures} reads
+     * it by distance, so the next plan walks to another cell with room or says none is known). The words name where it
+     * stalled too when the feet moved. No start known: the stall's feet; neither: null (the plain step fact, rule 15). Pure.
+     */
+    public static FactChange.Fact placeStall(Step.PlaceNear pn, int[] asked, int[] feet, String why) {
+        int[] at = asked != null && asked.length >= 3 ? asked : feet != null && feet.length >= 3 ? feet : null;     // structural: x y z
+        if (at == null) return null;
+        boolean moved = feet != null && feet.length >= 3 && at != feet && (feet[0] != at[0] || feet[1] != at[1] || feet[2] != at[2]);   // structural: x y z
+        return FactChange.noProgress(io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(pn, at),
+                "place " + pn.item().replaceFirst("^minecraft:", "") + " near me failed at " + at[0] + " " + at[1] + " " + at[2]
+                        + (moved ? " (stalled at " + feet[0] + " " + feet[1] + " " + feet[2] + ")" : "") + ": " + why);
     }
 
     /** The key of a stall's plain fact: a step with no source key of its own (Steps.walkStall reads it for a walk). */
