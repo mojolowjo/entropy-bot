@@ -784,7 +784,8 @@ public final class NeedChain {
             List<String> h = new ArrayList<>(held);
             for (var e : keyWhy.entrySet()) h.add(e.getKey() + ": " + e.getValue());
             List<String[]> near = nearHolds(keyWhy.keySet());                                // z75 review 2: a short collect's position
-            World less = without((item, sp) -> spotHeld(item, sp, keyWhy::containsKey) || nearHeld(near, item, sp));     // 0.39.z69 fix 1: an item key or one spot's
+            List<int[]> cuts = heldCuts(keyWhy.keySet());                                    // job-review-leftovers (2): read once
+            World less = without((item, sp) -> spotHeld(item, sp, keyWhy::containsKey, cuts) || nearHeld(near, item, sp));     // 0.39.z69 fix 1: an item key or one spot's
             // 0.39.z42: a dropped band (no path into it from here) is no band for the order: its explore goes overland
             Function<String, int[]> b = band == null ? null : word -> {
                 int[] r = band.apply(word);
@@ -5430,9 +5431,28 @@ public final class NeedChain {
     }
 
     /** 0.39.z69 fix 1: a spot is held by {@code held} under its item key (a failed Collect step) or its own spot key. */
-    public static boolean spotHeld(String item, Spot sp, java.util.function.Predicate<String> held) {
-        return held.test(sourceKey(item, sp)) || held.test(spotKey(item, sp)) || trunkHeld(item, sp, held);
+    public static boolean spotHeld(String item, Spot sp, java.util.function.Predicate<String> held, List<int[]> cuts) {
+        return held.test(sourceKey(item, sp)) || held.test(spotKey(item, sp)) || trunkHeld(item, sp, cuts);
     }
+
+    /**
+     * job-review-leftovers (item 2): the cells of the held cut keys ("cut at x y z"), read once per world (not one lookup
+     * per log spot and height); {@link #trunkHeld} matches spots against them.
+     */
+    public static List<int[]> heldCuts(java.util.Collection<String> keys) {
+        List<int[]> out = new ArrayList<>();
+        if (keys == null) return out;
+        for (String k : keys) {
+            if (k == null || !k.startsWith(CUT_AT)) continue;
+            String[] p = k.substring(CUT_AT.length()).trim().split(" ");
+            // structural: x y z; not a cell key is no cut of a tree (its own key still holds its spot)
+            if (p.length != 3 || !p[0].matches("-?\\d+") || !p[1].matches("-?\\d+") || !p[2].matches("-?\\d+")) continue;
+            out.add(new int[]{Integer.parseInt(p[0]), Integer.parseInt(p[1]), Integer.parseInt(p[2])});
+        }
+        return out;
+    }
+
+    private static final String CUT_AT = "cut at ";
 
     /**
      * job-silent-end-fact (run 3 w025: the chop stalled six times, each hold was the one log the plan named, "cut at 276 64
@@ -5440,13 +5460,18 @@ public final class NeedChain {
      * stalled is a fact of its tree, not of one log. A log spot is held when a held cut key names a log of the same trunk
      * (the same x z column within {@link #TRUNK_SPAN}), so the next plan prices another tree or another way. The hold's own
      * key and reason stay the one the run wrote (one store, rule 23); it lifts as that key does. Pure.
+     * job-review-leftovers (item 2): the trunk is the tree's, not one column: a 2x2 trunk (dark oak, mega spruce, jungle)
+     * stands on four columns, so a log within {@link #TRUNK_WIDE} in x and z of a held cut is of the same tree.
      */
-    static boolean trunkHeld(String item, Spot sp, java.util.function.Predicate<String> held) {
-        if (sp == null || !tree(item, sp)) return false;
-        for (int dy = -TRUNK_SPAN; dy <= TRUNK_SPAN; dy++)
-            if (dy != 0 && held.test("cut at " + sp.x() + " " + (sp.y() + dy) + " " + sp.z())) return true;
+    static boolean trunkHeld(String item, Spot sp, List<int[]> cuts) {
+        if (sp == null || cuts == null || cuts.isEmpty() || !tree(item, sp)) return false;
+        for (int[] c : cuts)
+            if (Math.abs(c[0] - sp.x()) <= TRUNK_WIDE && Math.abs(c[2] - sp.z()) <= TRUNK_WIDE && Math.abs(c[1] - sp.y()) <= TRUNK_SPAN) return true;
         return false;
     }
+
+    /** game fact: the widest vanilla trunk is 2x2, so a log one column off a held cut (diagonal included) is of that trunk. */
+    static final int TRUNK_WIDE = 1;
 
     /** game fact: no vanilla trunk is 32 logs tall (a mega jungle tree's is under 32), so logs of one column this close are one tree. */
     static final int TRUNK_SPAN = 32;

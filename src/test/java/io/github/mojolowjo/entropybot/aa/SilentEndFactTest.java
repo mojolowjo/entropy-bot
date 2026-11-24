@@ -25,10 +25,10 @@ class SilentEndFactTest {
         ScenariosTest.world("wooden");
         String held = "cut at 276 64 262";
         for (int y = 65; y <= 68; y++)
-            assertTrue(NeedChain.spotHeld("oak_log", new Spot(276, y, 262, 10, "minecraft:oak_log", 1), held::equals),
+            assertTrue(NeedChain.spotHeld("oak_log", new Spot(276, y, 262, 10, "minecraft:oak_log", 1), held::equals, NeedChain.heldCuts(List.of(held))),
                     "log 276 " + y + " 262 is of the held trunk (run 3 took it next, 740-1079)");
-        assertFalse(NeedChain.spotHeld("oak_log", new Spot(273, 63, 271, 12, "minecraft:oak_log", 1), held::equals), "tree B stays open");
-        assertFalse(NeedChain.spotHeld("cobblestone", new Spot(276, 65, 262, 10, "minecraft:stone", 1), held::equals), "not a log: no trunk");
+        assertFalse(NeedChain.spotHeld("oak_log", new Spot(273, 63, 271, 12, "minecraft:oak_log", 1), held::equals, NeedChain.heldCuts(List.of(held))), "tree B stays open");
+        assertFalse(NeedChain.spotHeld("cobblestone", new Spot(276, 65, 262, 10, "minecraft:stone", 1), held::equals, NeedChain.heldCuts(List.of(held))), "not a log: no trunk");
 
         Map<String, List<Spot>> seen = Map.of("oak_log", List.of(new Spot(276, 65, 262, 10, "minecraft:oak_log", 4),
                 new Spot(273, 63, 271, 14, "minecraft:oak_log", 6)));
@@ -36,6 +36,30 @@ class SilentEndFactTest {
         assertTrue(c.ok(), c.why());
         Step.ChopTree cut = (Step.ChopTree) c.steps().stream().filter(s -> s instanceof Step.ChopTree).findFirst().orElseThrow();
         assertArrayEquals(new int[]{273, 63, 271}, cut.at(), "the next plan takes tree B, not the next log of A: " + c.steps());
+    }
+
+    /** job-review-leftovers (2): a 2x2 trunk (dark oak) held at one column holds the adjacent columns of the same tree. */
+    @Test
+    void aStalledCutOfA2x2TrunkHoldsItsOtherColumns() {
+        ScenariosTest.world("wooden");
+        List<int[]> cuts = NeedChain.heldCuts(List.of("cut at 100 64 100", "not a cut"));
+        assertEquals(1, cuts.size());
+        for (int[] d : new int[][]{{1, 0}, {0, 1}, {1, 1}})
+            assertTrue(NeedChain.spotHeld("oak_log", new Spot(100 + d[0], 66, 100 + d[1], 10, "minecraft:oak_log", 1), k -> false, cuts),
+                    "column " + d[0] + " " + d[1] + " is of the same 2x2 trunk");
+        assertFalse(NeedChain.spotHeld("oak_log", new Spot(103, 64, 100, 10, "minecraft:oak_log", 1), k -> false, cuts), "another tree stays open");
+    }
+
+    /** job-review-leftovers (1): the place stalled away from where it was asked holds the stall cell too, through placeKey. */
+    @Test
+    void w005_theStallCellIsHeldToo() {
+        Step.PlaceNear pn = new Step.PlaceNear("crafting_table");
+        FactChange.Fact f = StepMonitor.placeStall(pn, new int[]{20, 28, -10}, new int[]{20, 36, -10}, "no progress 45 s");
+        assertEquals(NeedChain.placeKey(20, 36, -10), FactChange.stallPlaceKey(f));
+        assertNull(FactChange.stallPlaceKey(StepMonitor.placeStall(pn, new int[]{1, 2, 3}, new int[]{1, 2, 3}, "x")), "the feet did not move: one fact");
+        NeedChain.World w = ScenariosTest.w(Map.of(), false, false, Map.of());
+        NeedChain.World both = w.withPlaceFailures(Map.of(NeedChain.placeKey(20, 28, -10), f.text(), FactChange.stallPlaceKey(f), f.text()), new int[]{20, 36, -10});
+        assertNotNull(both.rooms().hereFailed(), "standing at the stall cell (8 m above the asked one): placing near me here is out at once");
     }
 
     /** w005: asked from the cell with room 20 28 -10, stalled at 20 36 -10 (lines 1079/1083): the held cell is the asked one. */

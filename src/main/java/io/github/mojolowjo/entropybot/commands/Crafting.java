@@ -750,9 +750,12 @@ final class Crafting {
             Map<String, Integer> counts = new LinkedHashMap<>(combined);
             plan = planner.planSmelt(id, nc.n(), counts, combined);
             if (!plan.ok()) return CraftTexts.cantSmelt(label, plan.error());
+            // job-review-leftovers (5): the priced fuel swapped in before the trips, so a trip never fetches the fuel not burned
+            plan = CraftPlanner.withFuel(plan, fuel, inv, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.fuels(), CraftJob.smeltTicks(), commands::log, counts);
             trips = takeTrips(src, CraftTexts.fromStorage(combined, counts, inv));
+        } else {
+            plan = CraftPlanner.withFuel(plan, fuel, inv, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.fuels(), CraftJob.smeltTicks(), commands::log);
         }
-        plan = CraftPlanner.withFuel(plan, fuel, inv, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.fuels(), CraftJob.smeltTicks(), commands::log);
         List<Step> steps = new ArrayList<>(trips.steps());
         // efficient (the default): the job ends once the furnace runs, the pickup collects it when it is due
         boolean efficient = nowait || (MODE_EFFICIENT.equals(smeltMode()) && !here);

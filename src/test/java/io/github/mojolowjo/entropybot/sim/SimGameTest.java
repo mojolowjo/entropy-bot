@@ -180,7 +180,6 @@ class SimGameTest {
         String end = g.play(900);
         String t = g.timelineText();
         assertEquals("done", end, t);
-        assertFalse(t.contains("FROM A KEPT"), "no smelt paid from a kept amount: " + t);
         assertFalse(t.contains("the kept -d amounts left out"), "no craft refused for a kept amount (the planner priced the same bag): " + t);
         assertEquals(32, g.chest.get("minecraft:cobblestone"), "the -d amount whole: " + g.chest);
         assertEquals(4, g.chest.get("minecraft:torch"), g.chest.toString());

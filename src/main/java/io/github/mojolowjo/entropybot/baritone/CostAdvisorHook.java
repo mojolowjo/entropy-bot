@@ -405,10 +405,8 @@ public final class CostAdvisorHook {
             // clicks the rail there): a place into a cell that holds a block first needs that block broken; when that break
             // is refused the place is refused too, so the plan and the click agree. Review: it asks the one break decision
             // (breakMultiplier: the no-break run, structure, keep-out, lava, the intent's judge), no second copy (rules 11, 16)
-            if (placeNeedsRefusedBreak(token, dimIfNoToken, x, y, z, current, at)) {
-                pr.stats.deny(PolicyStats.SITE_ASTAR_PLACE, "the place needs a refused break");
-                return refused(t, x, y, z, current, in, "place", "needs a refused break", "the place needs a refused break");
-            }
+            // job-review-leftovers (8): breakMultiplier already counted the deny and said the refused cell; once is the count
+            if (placeNeedsRefusedBreak(token, dimIfNoToken, x, y, z, current, at)) return COST_INF;
             BreakPolicy.Verdict v = BreakPolicy.judge(s, new BreakPolicy.Ask(BreakPolicy.Action.PLACE, in, dim, x, y, z, pr.placeFacts(at, dim, x, y, z), me));
             // the click veto (Guard.vetoPolicyPlace) asks the same policy with the same intent, so a deny here is a deny there
             if (!v.allowed()) { pr.stats.deny(PolicyStats.SITE_ASTAR_PLACE, v.reason()); return refused(t, x, y, z, current, in, "place", v.rule(), v.reason()); }

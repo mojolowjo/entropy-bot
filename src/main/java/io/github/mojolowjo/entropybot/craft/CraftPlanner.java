@@ -432,21 +432,46 @@ public final class CraftPlanner implements Crafter {
      */
     public static Crafter.Plan withFuel(Crafter.Plan plan, String fuel, Map<String, Integer> bag, Map<String, Integer> fuels, int smeltTicks,
                                         java.util.function.Consumer<String> said) {
+        return withFuel(plan, fuel, bag, fuels, smeltTicks, said, null);
+    }
+
+    /**
+     * job-review-leftovers (item 5): as above, with the steps checked in order against one running copy of the free bag
+     * (each smelt's input and fuel taken off before the next is judged, so two smelts never count the same fuel), and
+     * {@code left} (nullable: the planner's counts left after a storage plan, {@code CraftTexts.fromStorage} reads them)
+     * moved by every swap: the old fuel given back, the new taken, so a storage trip never fetches the fuel no longer
+     * burned. The words say "no fuel table loaded" when {@code fuels} is empty (rule 15: not known is not "not a fuel").
+     */
+    public static Crafter.Plan withFuel(Crafter.Plan plan, String fuel, Map<String, Integer> bag, Map<String, Integer> fuels, int smeltTicks,
+                                        java.util.function.Consumer<String> said, Map<String, Integer> left) {
         if (plan == null || !plan.ok() || fuel == null || fuel.isBlank()) return plan;
         String want = fuel.substring(fuel.indexOf(':') + 1);
+        Map<String, Integer> free = new java.util.HashMap<>(bag == null ? Map.of() : bag);
+        boolean loaded = fuels != null && !fuels.isEmpty();
         List<Crafter.Step> out = new ArrayList<>();
         for (Crafter.Step s : plan.steps()) {
-            if (!(s instanceof Crafter.Smelt m) || m.fuel() == null || m.fuel().substring(m.fuel().indexOf(':') + 1).equals(want)) { out.add(s); continue; }
+            if (!(s instanceof Crafter.Smelt m)) { out.add(s); continue; }
+            if (m.input() != null) free.merge(m.input(), -m.n(), Integer::sum);
+            if (m.fuel() == null || m.fuel().substring(m.fuel().indexOf(':') + 1).equals(want)) {
+                if (m.fuel() != null) free.merge(m.fuel(), -m.fuelCount(), Integer::sum);
+                out.add(s);
+                continue;
+            }
             String id = null;
-            for (String k : bag.keySet()) if (k.substring(k.indexOf(':') + 1).equals(want)) id = k;
+            for (String k : free.keySet()) if (k.substring(k.indexOf(':') + 1).equals(want)) id = k;
             int burn = burnTicks(fuels, id == null ? want : id);
             int need = burn <= 0 ? 0 : (int) Math.ceil((double) m.n() * smeltTicks / burn);
-            int have = id == null ? 0 : bag.getOrDefault(id, 0) - (id.equals(m.input()) ? m.n() : 0);
-            if (id != null && burn > 0 && have >= need) out.add(new Crafter.Smelt(m.recipeId(), m.item(), m.want(), m.input(), m.n(), id, need));
-            else {
+            int have = id == null ? 0 : free.getOrDefault(id, 0);
+            if (id != null && burn > 0 && have >= need) {
+                out.add(new Crafter.Smelt(m.recipeId(), m.item(), m.want(), m.input(), m.n(), id, need));
+                free.merge(id, -need, Integer::sum);
+                if (left != null) { left.merge(m.fuel(), m.fuelCount(), Integer::sum); left.merge(id, -need, Integer::sum); }
+            } else {
                 out.add(s);
+                free.merge(m.fuel(), -m.fuelCount(), Integer::sum);
                 if (said != null) said.accept("smelt " + shortId(m.item()) + ": the priced fuel " + want + " is not free in the bag (" + Math.max(0, have) + " of "
-                        + (burn <= 0 ? "? (not in the fuel table)" : need) + ", the kept -d amounts left out); burning " + m.fuelCount() + " " + shortId(m.fuel()));
+                        + (!loaded ? "? (no fuel table loaded)" : burn <= 0 ? "? (not in the fuel table)" : need)
+                        + ", the kept -d amounts and the earlier smelts left out); burning " + m.fuelCount() + " " + shortId(m.fuel()));
             }
         }
         return new Crafter.Plan(out, plan.error());

@@ -45,8 +45,10 @@ public final class RefusedBreaks {
         if (r == null || !Objects.equals(r.block, block) || !Objects.equals(r.reason, reason)) {
             if (r != null && r.count > r.told) pending.add(text(k, r, r.count - r.told));   // the old record's unsaid count
             r = new Rec(block, reason);
+            map.remove(k);                                     // the new record is the newest (oldest out first)
             map.put(k, r);
             r.count = 1;
+            bound(cap());
             return true;
         }
         r.count++;
@@ -54,6 +56,27 @@ public final class RefusedBreaks {
     }
 
     private final List<String> pending = new ArrayList<>();
+
+    /** The most cells held (Tuning guard.refusedCells; a test sets its own); 0 or less: the Tuning entry. */
+    private int capOverride;
+
+    synchronized void cap(int n) { capOverride = n; }
+
+    private int cap() { return capOverride > 0 ? capOverride : io.github.mojolowjo.entropybot.aa.brain.Tuning.i("guard.refusedCells"); }
+
+    /**
+     * job-review-leftovers (8, a long run refused thousands of cells): past {@code cap} cells the oldest goes out; its count
+     * not yet said is kept for the next {@link #take} (rule 7), and a cell refused again later is a new record, said again.
+     */
+    private void bound(int cap) {
+        var it = map.entrySet().iterator();
+        while (map.size() > Math.max(1, cap) && it.hasNext()) {   // structural: the newest record always stays
+            Map.Entry<String, Rec> e = it.next();
+            Rec r = e.getValue();
+            if (r.count > r.told) pending.add(text(e.getKey(), r, r.count - r.told) + " (the oldest cell, let go past " + cap + " cells)");
+            it.remove();
+        }
+    }
 
     private static String text(String key, Rec r, int n) {
         String cell = key.substring(key.indexOf(' ') + 1);

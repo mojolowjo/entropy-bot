@@ -110,6 +110,7 @@ final class TuningDefs {
         Tuning.def("place.roomsKept", 8, "0.39.z67 item 1 (run Y)", "solid-ground cells the bot stood on that are kept as cells with room (each more than place.failedNearM from the last kept one; the oldest goes)");
         Tuning.def("needChain.maxTrials", 4000, "one-planner 0.39.z1", "ways priced in one chain before a requirement takes the first of its ways that stands, the rest unpriced (a bound on the search)");
         Tuning.def("station.materialS", 10, "D14 (stations placed once)", "seconds a new station's materials (a table's planks, a furnace's cobblestone) are worth when it is made rather than taken from the bag: priced on the make-new way against the walk to a known station");
+        Tuning.def("station.shaftDepth", 3, "job-review-leftovers (run 3 w005, StationPlace.onSurface)", "the feet more than this many blocks below the ground round them are under ground, even in a column open to the sky (a dug shaft)");
         Tuning.def("station.baseReachM", 16, "D14 (stations placed once)", "a station is placed near the base spot instead of the feet when the feet are within this many blocks of it");
         Tuning.def("station.takeNear", 2, "0.39.z48 (S63)", "the walk before taking a known station block ends within this many blocks of it (Baritone's GoalNear)");
         Tuning.def("station.takeReachM", 6, "0.39.z48 (S63)", "a station take starts only within this many blocks of the station (the walk before it got there); farther, the step fails with the distance");
@@ -932,6 +933,7 @@ final class TuningDefs {
         Tuning.def("goals.maxN", 4096, "rm-constants 0.39.u2 (inline literal in Goals)", "the most items one goal may ask for");
         Tuning.def("guard.astarLogTicks", 100, "rm-constants 0.39.u2 (inline literal in Guard)", "ticks between two logs of the A* search");
         Tuning.def("guard.builtLogWalk", 96, "owner's ruling 2026-11-23 (village logs are protected; BuiltLogs)", "the most joined logs one walk visits to find a block only a build has; a bigger group with none among them is a tree");
+        Tuning.def("guard.refusedCells", 512, "job-review-leftovers (RefusedBreaks bound)", "the most cells the guard's refused-break count store holds; the oldest goes out first, its unsaid count said");
         Tuning.def("guard.builtLogMemoS", 2, "owner's ruling 2026-11-23 (village logs are protected; PolicyRuntime)", "seconds a log cell's built-thing answer is kept (a lookup asks every cell of a tree)");
         Tuning.def("help.giveWeight", 1.5, "rm-constants 0.39.u2 (inline literal in Help)", "weight of the give pick");
         Tuning.def("help.lightWeight", 1.25, "rm-constants 0.39.u2 (inline literal in Help)", "weight of the light pick");

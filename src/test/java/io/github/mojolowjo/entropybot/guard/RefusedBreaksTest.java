@@ -30,6 +30,21 @@ class RefusedBreaksTest {
         assertTrue(r.take().contains("-25 -32 -123 1 time ("));
     }
 
+    /** job-review-leftovers (8): the store is bounded; the oldest cell goes out first and its unsaid count is still said. */
+    @Test
+    void boundedOldestOutWithItsCountSaid() {
+        RefusedBreaks r = new RefusedBreaks();
+        r.cap(2);
+        for (int i = 0; i < 3; i++) r.note(OW, 1, 2, 3, RAIL, WHY);
+        r.note(OW, 4, 5, 6, RAIL, WHY);
+        r.note(OW, 7, 8, 9, RAIL, WHY);
+        assertEquals(2, r.size());
+        String t = r.take();
+        assertTrue(t.contains("at 1 2 3 3 times") && t.contains("let go past 2 cells"), t);
+        assertTrue(t.contains("at 7 8 9 1 time"), t);
+        assertTrue(r.note(OW, 1, 2, 3, RAIL, WHY), "a let-go cell refused again is said again");
+    }
+
     /** Review: a refusal tied to its moment (the travel cap, no job, water) is its own record and never a held block. */
     @Test
     void aDifferentReasonOrBlockIsANewRecordAndTheOldCountIsKept() {

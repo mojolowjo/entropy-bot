@@ -448,6 +448,7 @@ gridLoop.settleMin	2.0
 guard.astarLogTicks	100.0
 guard.builtLogMemoS	2.0
 guard.builtLogWalk	96.0
+guard.refusedCells	512.0
 guardCore.leaseTimeoutTicks	100.0
 guardCore.maxForceVolume	64.0
 guardCore.maxLeaseVolume	4096.0
@@ -1026,6 +1027,7 @@ pathCost.pricedTop	2.0
 pathCost.askFactor	2.0
 station.materialS	10.0
 station.baseReachM	16.0
+station.shaftDepth	3.0
 band.legCarryS	600.0
 tunnel.heldNearM	8.0
 tunnel.legBlocks	6.0

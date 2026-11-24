@@ -548,6 +548,21 @@ public final class FactChange {
      * plain fact above): a source slot keyed {@link io.github.mojolowjo.entropybot.aa.NeedChain#placeKey}, held for the
      * order; the re-plan places near a cell with room from facts instead, by its priced walk (NeedChain.roomWalk).
      */
+    private static final java.util.regex.Pattern STALLED_AT = java.util.regex.Pattern.compile("\\(stalled at (-?\\d+) (-?\\d+) (-?\\d+)\\)");
+
+    /**
+     * job-review-leftovers (item 1): the second place fact of a place-near that stalled away from where it was asked
+     * ({@link StepMonitor#placeStall}'s words "(stalled at x y z)"): the stall cell's own place key, held through the same
+     * placeKey store as the asked cell (Goals.replan), so a stall more than place.failedNearM from the asked cell is held
+     * at once too. Null: not a place fact, or the feet did not move.
+     */
+    public static String stallPlaceKey(Fact f) {
+        if (f == null || f.key() == null || !f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.PLACE_AT) || f.text() == null) return null;
+        java.util.regex.Matcher m = STALLED_AT.matcher(f.text());
+        if (!m.find()) return null;
+        return io.github.mojolowjo.entropybot.aa.NeedChain.placeKey(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)), Integer.parseInt(m.group(3)));
+    }
+
     public static void placeFailed(String item, String why, int[] at) {
         if (at == null || at.length < 3) { placeFailed(item, why); return; }     // structural: x y z
         last = new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.placeKey(at[0], at[1], at[2]),
