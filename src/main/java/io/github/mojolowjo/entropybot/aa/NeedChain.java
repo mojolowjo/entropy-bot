@@ -5415,8 +5415,25 @@ public final class NeedChain {
 
     /** 0.39.z69 fix 1: a spot is held by {@code held} under its item key (a failed Collect step) or its own spot key. */
     public static boolean spotHeld(String item, Spot sp, java.util.function.Predicate<String> held) {
-        return held.test(sourceKey(item, sp)) || held.test(spotKey(item, sp));
+        return held.test(sourceKey(item, sp)) || held.test(spotKey(item, sp)) || trunkHeld(item, sp, held);
     }
+
+    /**
+     * job-silent-end-fact (run 3 w025: the chop stalled six times, each hold was the one log the plan named, "cut at 276 64
+     * 262", and the next plan took the next log up the same trunk, 276 65 262 and on, a new key each time): a cut that
+     * stalled is a fact of its tree, not of one log. A log spot is held when a held cut key names a log of the same trunk
+     * (the same x z column within {@link #TRUNK_SPAN}), so the next plan prices another tree or another way. The hold's own
+     * key and reason stay the one the run wrote (one store, rule 23); it lifts as that key does. Pure.
+     */
+    static boolean trunkHeld(String item, Spot sp, java.util.function.Predicate<String> held) {
+        if (sp == null || !tree(item, sp)) return false;
+        for (int dy = -TRUNK_SPAN; dy <= TRUNK_SPAN; dy++)
+            if (dy != 0 && held.test("cut at " + sp.x() + " " + (sp.y() + dy) + " " + sp.z())) return true;
+        return false;
+    }
+
+    /** game fact: no vanilla trunk is 32 logs tall (a mega jungle tree's is under 32), so logs of one column this close are one tree. */
+    static final int TRUNK_SPAN = 32;
 
     /** A block the game tags as logs is a tree (Baritone's tree mining); a spot with no block known for a tag need: a tree when the need is logs only. */
     private static boolean tree(String item, Spot sp) {
