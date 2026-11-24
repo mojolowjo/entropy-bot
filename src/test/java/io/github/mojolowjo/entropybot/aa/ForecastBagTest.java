@@ -111,27 +111,34 @@ class ForecastBagTest {
     /**
      * Pickaxe price (plan step 6, run 3 w070: "15 levels, 7 of 43 blocks spare: a staircase", then the collect, then "wooden_pickaxe
      * gone (broke)" under ground): a wooden pickaxe with 30 uses digs 16 cobblestone (14 left); the staircase's 45 breaks pass
-     * them and no replacement can be had, the spot has no extra blocks, so the climb lends 15 of the 40 dirt another order
-     * keeps, and collects them again after (the kept amount whole before the deposit).
+     * them and no replacement can be had, the spot has no extra blocks, and the 40 dirt another order keeps are never lent
+     * (the Climb keeps the reserves on Baritone's lease): no way up stands, said, and no staircase is planned.
      */
     @Test
-    void theStaircasePastThePickaxesUsesIsNoWay_keptBlocksAreLent_w070() {
+    void theStaircasePastThePickaxesUsesIsNoWay_keptBlocksNotLent_w070() {
         Spot sp = new Spot(5, 62, 0, 5, STONE, 16).covered(2, "minecraft:dirt");
         World w = world(sp, Map.of("minecraft:wooden_pickaxe", 1, "minecraft:dirt", 40))
                 .withReserves(List.of(Reservations.order("dirt (finished)", List.of("minecraft:dirt"), 40)))
                 .withUses(k -> k.endsWith("wooden_pickaxe") ? 30 : io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED);
         Chain c = NeedChain.resolve("cobblestone", 16, w);
-        assertTrue(c.ok(), c.why());
         assertTrue(c.why().contains("a staircase: the staircase up 15 levels: 45" + NeedChain.PICK_SHORT + "14 left, no replacement to be had"), "the staircase is dropped with its reason: " + c.why());
-        assertTrue(c.why().contains(NeedChain.WAY_BACK_UP + "15 levels, 0 of 56 blocks spare: a pillar with 15" + NeedChain.LENT), c.why());
-        int climb = -1;
-        for (int i = 0; i < c.steps().size(); i++) if (c.steps().get(i) instanceof Step.Climb) climb = i;
-        assertTrue(climb >= 0 && climb + 1 < c.steps().size(), c.steps().toString());
-        assertEquals(new Step.Collect("dirt", 15, null).toString(), c.steps().get(climb + 1).toString(), "the lent dirt collected again after the climb: " + c.steps());
-        // unlimited uses: the staircase stands again and is the way when it is the cheapest
+        assertTrue(c.why().contains(NeedChain.WAY_BACK_UP + "15 levels: no way up stands"), c.why());
+        assertFalse(c.why().contains(NeedChain.WAY_BACK_UP + "15 levels, 0 of 56 blocks spare:"), "no way back up taken: " + c.why());
+        assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Collect k && k.item().equals("dirt")), "the kept dirt is never re-collected: " + c.steps());
+        // unlimited uses: the staircase stands again (no spare block, no extra at the spot: the only way)
         Chain free = NeedChain.resolve("cobblestone", 16, w.withUses(k -> io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED));
         assertTrue(free.ok(), free.why());
-        assertTrue(free.why().contains("blocks spare: a "), free.why());
+        assertTrue(free.why().contains(NeedChain.WAY_BACK_UP + "15 levels, 0 of 56 blocks spare: a staircase "), free.why());
+    }
+
+    /** Review: the staircase's wear counts only the levels the spare blocks do not pillar, the same in every climb way. */
+    @Test
+    void stairWearLeavesOutPillaredLevels() {
+        int per = NeedChain.stairBreaksPerLevel();
+        assertEquals(15 * per, NeedChain.stairWear(15, 0));
+        assertEquals(8 * per, NeedChain.stairWear(15, 7));
+        assertEquals(0, NeedChain.stairWear(15, 20));
+        assertEquals(15 * per, NeedChain.stairWear(15, -3));
     }
 
     /** Fewer levels than forecast.climbFromLevels: no climb step (a jump out). */

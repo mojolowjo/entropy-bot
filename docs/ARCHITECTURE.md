@@ -42,10 +42,10 @@ spot's collect that digs down prices its way back up against the FORECAST bag af
 a staircase, or extra blocks first - and a `Step.Climb` follows (`wayBackUp`); the climb-up way (`climbUp`) counts spare
 blocks the same way. Tuning `forecast.*`.
 Pickaxe price (plan step 6, run 3 w070): both are ways for `choose` (`Alt`s), never a fixed order. A way that digs with
-the pickaxe (staircase: `forecast.stairBreaksPerLevel` a level; extra blocks; a re-collect) counts its breaks against
-`pickUsesLeft` (`World.usesLeft`, the bag's other pickaxes, less `pickWorn`) in `pickWear`: past them `spareTools` prices
-the replacement, none to be had drops the way with the reason. `lendWay`: kept blocks lent to the pillar, a
-`Step.Collect` of them after the Climb (the -d amount whole again). `climbUp` adds "make a pickaxe first"
+the pickaxe (staircase: `stairWear`, `forecast.stairBreaksPerLevel` a level not pillared by spare blocks; extra blocks) counts its
+breaks against `pickUsesLeft` (`heldUses` + `bagPickUses`, the same two readers `spareTools` uses, less `pickWorn`) in
+`pickWear`: past them `spareTools` prices the replacement, none to be had drops the way with the reason. Kept blocks are
+never lent to a climb: the Climb keeps the reserves on Baritone's lease (`StepHands`). `climbUp` adds "make a pickaxe first"
 (`cheapestPickaxe`) when there is no pickaxe and too few spare blocks.
 
 ### Path memory (D11)

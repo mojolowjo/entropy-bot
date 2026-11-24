@@ -129,8 +129,9 @@ class Z77ExploreTest {
         Chain c = NeedChain.resolve("raw_iron", 3, w.withBag(Map.of("minecraft:cobblestone", 20, "minecraft:stick", 2, "minecraft:crafting_table", 1)));
         assertTrue(c.ok() && c.explore(), c.why());
         assertTrue(c.why().contains("make stone_pickaxe"), c.why());
-        int climb = c.steps().indexOf(new Step.Climb());
-        assertTrue(climb > 0, "the pickaxe made before the climb: " + c.steps());
+        int climb = c.steps().indexOf(new Step.Climb()), craft = -1;
+        for (int i = 0; i < c.steps().size(); i++) if (c.steps().get(i) instanceof Step.Craft k && k.item().endsWith("stone_pickaxe")) { craft = i; break; }
+        assertTrue(craft >= 0 && climb > craft, "the pickaxe crafted before the climb: " + c.steps());
     }
 
     /** Review 6 (E0's bound): two stands in a row at one cell, the re-plan a stand again: no third stand, the run ends with the reason. */
