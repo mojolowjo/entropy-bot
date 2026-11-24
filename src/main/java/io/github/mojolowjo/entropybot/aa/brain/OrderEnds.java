@@ -46,7 +46,8 @@ public final class OrderEnds {
         Goals.retryLoopParks(bb, brain.failures);
         // 0.39.z77 climb (run CM 17:43-17:48, rule 7): every order parked - under ground the waiting ones try the climb way once,
         // and the all-parked line (each park and its wake) is said once; said by Goals (log + whisper)
-        Goals.parkedTick(bb, underGround, brain.failures, brain.runningDesire() != null || (bb.in != null && bb.in.otherJob != null));
+        boolean busy = brain.runningDesire() != null || (bb.in != null && bb.in.otherJob != null);   // one value for parkedTick and stillChanges
+        Goals.parkedTick(bb, underGround, brain.failures, busy);
         // helper: the bag of an order stopped for good goes to the chest too; an order that woke is weighed again at its
         // end; parked-holds (owner 2026-11-23): a stopped order that can still wake holds its line's deposit (said once).
         // un-park first (tester-1 w006, 2026-11-22: torch weighed "stopped" at 04:34:10.244 and the line went due; at
@@ -54,7 +55,6 @@ public final class OrderEnds {
         // this pass (the waits, the loop parks, the climb retry and the look-around), so an order running again is never
         // weighed as stopped
         // hold-bound (owner 2026-11-24): a hold lasts only while something its park waits on can still change
-        boolean busy = brain.runningDesire() != null || (bb.in != null && bb.in.otherJob != null);
         var open = Goals.of(bb);
         for (var g : goals)
             h.deposit(deposits.sweep(g, bb.in.bag, mainAt, Goals.stillChanges(open, g, underGround, busy, bb.in != null && Goals.worldClimb(bb, g))));

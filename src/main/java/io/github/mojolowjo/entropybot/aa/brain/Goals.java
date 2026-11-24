@@ -195,11 +195,21 @@ public final class Goals {
         if (busy) return "a run or another job moves the bot now";
         if (goals != null)
             for (Goal o : goals) if (o != g && o.parked == null) return "order " + o.r.key() + " is open and not stopped";
-        if (underGround && !g.climbRetried && (g.loopPark != null || g.park != null || climbHeld(g) || worldClimb))
+        if (underGround && climbTryDue(g, worldClimb))
             return "its one more try on the climb way, taken with every order stopped under ground";
-        if (!underGround && !g.looked && g.park != null && g.park.kind() == ParkKind.PLACE)
+        if (!underGround && lookAroundDue(g))
             return "its one look-around leg, taken after goals.lookAroundAfterS with every order stopped";
         return null;
+    }
+
+    /** The one more try on the climb way is still to come for {@code g} (read by {@link #parkedTick} and {@link #stillChanges}); {@code byWorld}: a world fact of a failed climb holds for it. */
+    static boolean climbTryDue(Goal g, boolean byWorld) {
+        return !g.climbRetried && (g.loopPark != null || g.park != null || climbHeld(g) || byWorld);
+    }
+
+    /** The one look-around leg is still to come for {@code g} (read by {@link #parkedTick} and {@link #stillChanges}). */
+    static boolean lookAroundDue(Goal g) {
+        return !g.looked && g.strip == null && g.park != null && g.park.kind() == ParkKind.PLACE;
     }
 
     /** {@link #wake(Goal)}; {@code worldClimb}: another order's failed climb holds here for it (a world fact, run EJ). */
@@ -257,8 +267,7 @@ public final class Goals {
         for (Goal g : goals) if (worldClimb(bb, g)) byWorld.add(g);
         if (underGround && allParked(goals) != null) {
             for (Goal g : goals) {
-                boolean movesOnly = g.loopPark != null || g.park != null;
-                if (g.climbRetried || !(movesOnly || climbHeld(g) || byWorld.contains(g))) continue;
+                if (!climbTryDue(g, byWorld.contains(g))) continue;
                 g.climbRetried = true;
                 g.sources.forget(g.id(), io.github.mojolowjo.entropybot.aa.NeedChain.CLIMB_KEY);
                 WorldFacts.of(bb).forget(io.github.mojolowjo.entropybot.aa.NeedChain.CLIMB_KEY);   // the one more try: for every order
@@ -290,7 +299,7 @@ public final class Goals {
         if (busy) { bb.fact(ALL_PARKED_SINCE, nowMs); since = nowMs; }
         if (!underGround && nowMs - since >= (long) (Tuning.get("goals.lookAroundAfterS") * 1000)) {       // structural: s -> ms
             for (Goal g : goals) {
-                if (g.looked || g.strip != null || g.park == null || g.park.kind() != ParkKind.PLACE) continue;
+                if (!lookAroundDue(g)) continue;
                 g.looked = true;
                 g.lookAround = true;
                 g.wakeSaid = null;

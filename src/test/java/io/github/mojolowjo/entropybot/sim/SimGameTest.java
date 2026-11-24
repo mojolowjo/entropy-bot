@@ -154,7 +154,7 @@ class SimGameTest {
         g.order("cobblestone", 32, "b1", true);
         var log = g.order("spruce_log", 16, "b1", true);
         // the sim has no explore, so the stop is set as the game's park leaves it: a PLACE park that keeps its facts, its
-        // look-around leg taken (w055: "every order is parked, nothing runs" with no look-around after it)
+        // look-around leg and climb try taken (run 3 w006: looked, then nothing left)
         log.parked = "stopped at step 1 (cut 6 spruce_log at 10 64 3): no way from here";
         log.park = new io.github.mojolowjo.entropybot.aa.brain.Goals.Park(io.github.mojolowjo.entropybot.aa.brain.Goals.ParkKind.PLACE, new int[]{0, 64, 0}, 32, java.util.Set.of(), java.util.Set.of());
         log.looked = true;
@@ -162,7 +162,7 @@ class SimGameTest {
         g.play(600);
         String t = g.timelineText();
         assertEquals(32, g.chest.get("minecraft:cobblestone"), "the cobblestone reached the chest, not held for the stopped log order: " + g.chest + "\n" + t);
-        assertTrue(t.contains("short: spruce_log") || t.contains("spruce_log stopped:"), "the log order's end is said (rule 7): " + t);
+        assertTrue(t.contains("short: spruce_log 0 of 16"), "the log order's shortfall is named (rule 7): " + t);
     }
 
     /**

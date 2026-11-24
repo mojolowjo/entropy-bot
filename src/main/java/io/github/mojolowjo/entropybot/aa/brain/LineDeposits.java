@@ -448,7 +448,8 @@ public final class LineDeposits {
                         + soFar(g, bag) + "; aa cancel " + g.r.key() + " ends the line without it", null);
             }
             if (holds && !g.depositWeighed) {
-                int got = take(g, bag).values().stream().mapToInt(Integer::intValue).sum();
+                // a group order: each member is capped at the deposit, so the sum is capped at it too (never "40 of 32")
+                int got = Math.min(g.deposit, take(g, bag).values().stream().mapToInt(Integer::intValue).sum());
                 return weigh(g, "stopped, and nothing it waits on can change now (every order is stopped and nothing runs; it waits on: " + Goals.wake(g)
                         + "): the line's deposit is owed and goes without the rest of it - short: " + g.r.key() + " " + got + " of " + g.deposit
                         + "; if it wakes later, its amount follows with a deposit of its own", bag, mainAt);
