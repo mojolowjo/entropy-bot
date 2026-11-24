@@ -81,6 +81,12 @@ public final class Steps {
          */
         default String stallFacts(Step s) { return null; }
 
+        /**
+         * job-refusal-fact (worlds run 3 w072): the breaks the guard refused since the last ask, one text per cell with its
+         * count (guard.RefusedBreaks); null: none, or these hands cannot read them.
+         */
+        default String refusedBreaks() { return null; }
+
         /** 0.39.z75 review 2: the monitor ended this running explore for no progress ({@code why}); its target is held by position. */
         default void exploreFrozen(Step s, String why) {}
 
@@ -594,6 +600,10 @@ public final class Steps {
     }
 
     private void next() {
+        // job-refusal-fact (review): a step that ended well says the guard's refusals counted while it ran, so they are
+        // said at its end and not pinned on a later failing step (rule 7: the count is kept and said)
+        String refusedNow = readRefused();
+        if (refusedNow != null) hands.log((idx < 0 ? "before the run's first step" : "step " + (idx + 1) + " ended") + "; " + refusedNow);
         idx++;
         if (idx >= steps.size()) {
             phase = Phase.DONE;
@@ -1181,6 +1191,21 @@ public final class Steps {
     /** The running step's declared needs ({@link StepNeeds#NONE} when idle). */
     public StepNeeds needs() { return phase == Phase.RUNNING ? needs : StepNeeds.NONE; }
 
+    /** job-refusal-fact: {@code f} with the guard's refused breaks of its step added to its text (same key); null stays null. Pure. */
+    public static FactChange.Fact withRefused(FactChange.Fact f, String refused) {
+        if (f == null || refused == null || f.text() != null && f.text().contains(refused)) return f;
+        return new FactChange.Fact(f.key(), (f.text() == null ? "" : f.text() + "; ") + refused);
+    }
+
+    /** job-refusal-fact: the guard's refused breaks counted since the last ask (null: none); a failed read says so (rule 7). */
+    private String readRefused() {
+        try {
+            return hands.refusedBreaks();
+        } catch (RuntimeException e) {
+            return "the guard's refused breaks could not be read: " + e;
+        }
+    }
+
     /**
      * 0.39.z30 (owner 2026-10-23): a step that failed on a changed fact (its hands say which, typed) asks the run's
      * {@link Replanner} for the steps from here on the facts of now and goes on with them; no fact, no replanner or no way
@@ -1229,6 +1254,14 @@ public final class Steps {
                 if (lead != null) fact = lead;
             }
             if (fact == null) fact = walkTargetFact(steps, idx, reason);     // job-walkend: no walk end stops the order
+        }
+        // job-refusal-fact (worlds run 3 w072: six steps in a row ended "no progress" while the guard refused the rail at the
+        // feet 8,115 times, no fact naming it): the refused breaks counted during this step are said here and carried by
+        // the end's fact, so the held fact says why (a refusal that holds in every context is priced by breakMultiplier)
+        String refusedNow = readRefused();
+        if (refusedNow != null) {
+            reason = reason + "; " + refusedNow;
+            fact = withRefused(fact, refusedNow);
         }
         if (fact == null || replanner == null || idx < 0 || idx >= steps.size()) { fail(reason); return; }
         Step failed = steps.get(idx);

@@ -155,6 +155,9 @@ public final class Core {
                 io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.fileNote());
         terrain = new io.github.mojolowjo.entropybot.map.TerrainMap(f.worldRoot().resolve("map"));
         io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.worldChanged();
+        // job-refusal-fact (review): the guard's refused-break counts belong to the old world; its unsaid counts are said here
+        String unsaid = io.github.mojolowjo.entropybot.guard.RefusedBreaks.INSTANCE.clear();
+        if (unsaid != null) LOG.info("[entropybot] world: before the change, {}", unsaid);
         LOG.info("[entropybot] world: commands: {}", commands.reloadWorld(f));
     }
 

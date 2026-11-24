@@ -348,6 +348,16 @@ public final class CostAdvisorHook {
     }
 
     /**
+     * job-refusal-fact: a place into {@code current} (a block that is not air and not replaceable) needs it broken first,
+     * and {@link #breakMultiplier} (the one break decision) refuses that break. Air, a replaceable block or not read
+     * (null): no break needed, false.
+     */
+    static boolean placeNeedsRefusedBreak(Object token, String dimIfNoToken, int x, int y, int z, BlockState current, PolicyRuntime.StateAt at) {
+        if (current == null || current.isAir() || current.canBeReplaced()) return false;
+        return breakMultiplier(token, dimIfNoToken, x, y, z, current, at) >= COST_INF;
+    }
+
+    /**
      * wetbreak: the water the bot breaks {@code x y z} from. Water beside or above the cell = the bot stands in it;
      * deep = water under that water too (it floats). Never throws (no world = dry).
      */
@@ -391,6 +401,14 @@ public final class CostAdvisorHook {
             BreakPolicy.Snapshot s = t != null ? t.snapshot() : pr.snapshot();
             BreakPolicy.Where me = t != null ? t.me() : pr.where();
             if (dim == null || s == null) return in == Intent.TRAVEL ? refused(t, x, y, z, current, in, "place", "no dimension or snapshot", "fail closed for travel") : Double.NaN;
+            // job-refusal-fact (worlds run 3 w072, the fork's MovementPillar: it prices only this place at its feet cell, then
+            // clicks the rail there): a place into a cell that holds a block first needs that block broken; when that break
+            // is refused the place is refused too, so the plan and the click agree. Review: it asks the one break decision
+            // (breakMultiplier: the no-break run, structure, keep-out, lava, the intent's judge), no second copy (rules 11, 16)
+            if (placeNeedsRefusedBreak(token, dimIfNoToken, x, y, z, current, at)) {
+                pr.stats.deny(PolicyStats.SITE_ASTAR_PLACE, "the place needs a refused break");
+                return refused(t, x, y, z, current, in, "place", "needs a refused break", "the place needs a refused break");
+            }
             BreakPolicy.Verdict v = BreakPolicy.judge(s, new BreakPolicy.Ask(BreakPolicy.Action.PLACE, in, dim, x, y, z, pr.placeFacts(at, dim, x, y, z), me));
             // the click veto (Guard.vetoPolicyPlace) asks the same policy with the same intent, so a deny here is a deny there
             if (!v.allowed()) { pr.stats.deny(PolicyStats.SITE_ASTAR_PLACE, v.reason()); return refused(t, x, y, z, current, in, "place", v.rule(), v.reason()); }

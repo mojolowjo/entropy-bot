@@ -240,8 +240,17 @@ public final class Guard {
         String line = (v.allowed() ? "would refuse " : "refused ") + action + " at " + pos.getX() + " " + pos.getY() + " " + pos.getZ() + ": " + v.reason();
         // repeat run 2026-11-22 (w058-b, w053-b: thousands of "refused break at <the feet cell>: structure block outside my
         // areas" while a walk up stood still, the block never named): a refused break says which block it was (rule 7)
+        String block = null;
         if ("break".equals(action) && level != null && level.isLoaded(pos)) {
-            line += " [the block: " + BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()) + "]";
+            block = BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).toString();
+            line += " [the block: " + block + "]";
+        }
+        // job-refusal-fact (worlds run 3 w072: 8,115 such lines on one rail): an enforced refused break is counted per cell
+        // (RefusedBreaks, a count store, never a price); said once per cell, block and reason, the rest counted and said
+        // when the step ends (Steps.next / failOrReplan)
+        if ("break".equals(action) && !v.allowed() && level != null) {
+            if (!RefusedBreaks.INSTANCE.note(dimOf(level), pos.getX(), pos.getY(), pos.getZ(), block, v.reason())) return true;
+            line += " (said once for this cell; the count is said when the step ends)";
         }
         EventRing ring = events;
         if (ring != null) {
