@@ -53,6 +53,10 @@ public final class OrderEnds {
         // 04:34:10.249, in this same pass, the climb retry un-parked both orders): the sweep runs after every un-park of
         // this pass (the waits, the loop parks, the climb retry and the look-around), so an order running again is never
         // weighed as stopped
-        for (var g : goals) h.deposit(deposits.sweep(g, bb.in.bag, mainAt));
+        // hold-bound (owner 2026-11-24): a hold lasts only while something its park waits on can still change
+        boolean busy = brain.runningDesire() != null || (bb.in != null && bb.in.otherJob != null);
+        var open = Goals.of(bb);
+        for (var g : goals)
+            h.deposit(deposits.sweep(g, bb.in.bag, mainAt, Goals.stillChanges(open, g, underGround, busy, bb.in != null && Goals.worldClimb(bb, g))));
     }
 }

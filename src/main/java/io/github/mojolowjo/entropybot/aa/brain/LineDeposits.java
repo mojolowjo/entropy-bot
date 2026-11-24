@@ -430,13 +430,28 @@ public final class LineDeposits {
      * ({@link #dropped}). A parked order with no wake (only the owner's word changes it) is weighed as "stopped" as before:
      * its bag goes to the chest. An order weighed and running again (it woke) is opened again.
      */
-    public Out sweep(Goals.Goal g, Map<String, Integer> bag, String mainAt) {
+    public Out sweep(Goals.Goal g, Map<String, Integer> bag, String mainAt) { return sweep(g, bag, mainAt, Goals.canWake(g) ? Goals.wake(g) : null); }
+
+    /**
+     * hold-bound (owner 2026-11-24, plan step 2): {@link #sweep} where {@code changes} is what can still change a fact the
+     * park waits on ({@link Goals#stillChanges}); null: nothing can, so a hold ends - the order is weighed as stopped, the
+     * line's deposit is owed and goes, its end names what the order did not deliver (rule 7). A later wake reopens it
+     * ({@link #reopen}) and its amount follows with a deposit of its own.
+     */
+    public Out sweep(Goals.Goal g, Map<String, Integer> bag, String mainAt, String changes) {
         if (g.parked != null) {
-            if (!g.depositWeighed && g.deposit > 0 && g.strip == null && Goals.canWake(g)) {
+            boolean holds = !g.depositWeighed && g.deposit > 0 && g.strip == null && Goals.canWake(g);
+            if (holds && changes != null) {
                 if (g.depositHeld) return null;         // said when the hold began
                 g.depositHeld = true;
-                return new Out(Kind.HELD, g.r.key() + " stopped: the line's deposit waits for it - it can still wake (" + Goals.wake(g) + "); in the bag for the line now: "
+                return new Out(Kind.HELD, g.r.key() + " stopped: the line's deposit waits for it - it can still wake (" + Goals.wake(g) + "; what can change that: " + changes + "); in the bag for the line now: "
                         + soFar(g, bag) + "; aa cancel " + g.r.key() + " ends the line without it", null);
+            }
+            if (holds && !g.depositWeighed) {
+                int got = take(g, bag).values().stream().mapToInt(Integer::intValue).sum();
+                return weigh(g, "stopped, and nothing it waits on can change now (every order is stopped and nothing runs; it waits on: " + Goals.wake(g)
+                        + "): the line's deposit is owed and goes without the rest of it - short: " + g.r.key() + " " + got + " of " + g.deposit
+                        + "; if it wakes later, its amount follows with a deposit of its own", bag, mainAt);
             }
             return weigh(g, "stopped", bag, mainAt);
         }
